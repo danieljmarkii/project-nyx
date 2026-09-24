@@ -3,7 +3,7 @@
 **Date:** 2026-09-24
 **Status:** 🧊 Frozen point-in-time evidence capture (research brief, see `docs/research/README.md`). Correct additively, never in place.
 **Issue:** CUL-1117 (discovery). Proposed build project and decision briefs live in Linear; this file carries evidence, candidates and open questions, not decisions.
-**Companions:** `docs/research/2026-09-engines-evidence-pack.md` (the three literature lanes, with every source) and `docs/research/2026-09-engines-source-maps.md` (the engine map, the vomit-read map with its twelve-surface table, and the prior-work ledger). Reproduction tooling: `scripts/engine-replay/`.
+**Companions:** `docs/research/2026-09-engines-evidence-pack.md` (the three literature lanes, with every source) and `docs/research/2026-09-engines-source-maps.md` (the engine map, the vomit-read map with its twelve-surface table, and the prior-work ledger). Reproduction tooling: `scripts/engine-replay/`. The strategy page (the 129-evening chart, the escalation table, before and after frames, the decisions): `docs/culprit-engines-step-change.html`, published at https://claude.ai/artifact/JrGK8oz2eJeXeLgpP29xPu. The decisions are ruled on CUL-1146.
 
 **Method.** Six isolated research lanes (a source map of `generate-signal`; a source map of every path from a logged vomit to an owner-facing escalation; a ledger of what the four prior dogfood briefs recommended and what became of it; the statistical methods frontier; the veterinary vomiting evidence; AI triage calibration and alarm fatigue), plus two things no prior brief did:
 

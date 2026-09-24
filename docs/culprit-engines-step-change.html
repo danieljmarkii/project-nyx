@@ -1,0 +1,564 @@
+<title>The Accountable Engine</title>
+<meta name="description" content="Culprit's Signal and vomit read, replayed against the real record, with the step change and the decisions it needs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
+<style>
+:root{
+  --paper:#F6F6F9; --surface:#FFFFFF; --ink:#16142D; --ink-2:#4B4966; --ink-3:#6E6C88;
+  --rule:#E2E1EB; --rule-strong:#CFCDDC;
+  --teal-ink:#0B7B6C; --teal-wash:#E3F5F2;
+  --rose-mark:#E11D48; --rose-ink:#9F1239; --rose-wash:#FFE8EC;
+  --insight-mark:#0F8FA0; --insight-wash:#E2F2F5;
+  --amber-ink:#6B4A0E; --amber-wash:#FBF0D9; --amber-mark:#C9820A;
+  --shade:rgba(22,20,45,0.045);
+  --chip-bg:#EEEDF4;
+  --focus:#0B7B6C;
+  --display:"Newsreader", "Iowan Old Style", Georgia, serif;
+  --body:"Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --paper:#13112E; --surface:#1C1840; --ink:#ECEAF6; --ink-2:#B9B5DC; --ink-3:#9A96C6;
+    --rule:rgba(196,190,255,0.14); --rule-strong:rgba(196,190,255,0.28);
+    --teal-ink:#4FD8C4; --teal-wash:rgba(79,216,196,0.10);
+    --rose-mark:#EE4F79; --rose-ink:#FB7185; --rose-wash:rgba(251,113,133,0.13);
+    --insight-mark:#169CA8; --insight-wash:rgba(22,156,168,0.16);
+    --amber-ink:#F5C26B; --amber-wash:rgba(245,194,107,0.12); --amber-mark:#E3A33A;
+    --shade:rgba(236,234,246,0.05);
+    --chip-bg:rgba(236,234,246,0.08);
+    --focus:#4FD8C4;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --paper:#13112E; --surface:#1C1840; --ink:#ECEAF6; --ink-2:#B9B5DC; --ink-3:#9A96C6;
+  --rule:rgba(196,190,255,0.14); --rule-strong:rgba(196,190,255,0.28);
+  --teal-ink:#4FD8C4; --teal-wash:rgba(79,216,196,0.10);
+  --rose-mark:#EE4F79; --rose-ink:#FB7185; --rose-wash:rgba(251,113,133,0.13);
+  --insight-mark:#169CA8; --insight-wash:rgba(22,156,168,0.16);
+  --amber-ink:#F5C26B; --amber-wash:rgba(245,194,107,0.12); --amber-mark:#E3A33A;
+  --shade:rgba(236,234,246,0.05);
+  --chip-bg:rgba(236,234,246,0.08);
+  --focus:#4FD8C4;
+}
+
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.page{max-width:1080px;margin:0 auto;padding-inline:20px;padding-block:44px 72px}
+.prose{max-width:700px}
+a{color:var(--teal-ink);text-underline-offset:3px;text-decoration-thickness:1px}
+a:focus-visible,button:focus-visible,summary:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:3px;border-radius:4px}
+h1,h2,h3{font-family:var(--display);font-weight:500;text-wrap:balance;margin:0;letter-spacing:-0.01em}
+h1{font-size:clamp(2.4rem,5.2vw,3.6rem);line-height:1.04}
+h2{font-size:clamp(1.55rem,2.8vw,2rem);line-height:1.15}
+h3{font-family:var(--body);font-size:1.02rem;font-weight:600;letter-spacing:0}
+p{margin:0}
+.eyebrow{font-family:var(--mono);font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.lede{font-family:var(--display);font-size:clamp(1.15rem,2vw,1.35rem);line-height:1.5;color:var(--ink-2);max-width:40em}
+.muted{color:var(--ink-3)}
+.small{font-size:.88rem}
+.mono{font-family:var(--mono)}
+.stack{display:flex;flex-direction:column}
+.gap-s{gap:10px}.gap-m{gap:18px}.gap-l{gap:28px}
+
+header.top{display:flex;flex-direction:column;gap:20px;padding-bottom:36px;border-bottom:1px solid var(--rule)}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px}
+.figs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:8px}
+.fig{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:16px 16px 14px;display:flex;flex-direction:column;gap:6px}
+.fig b{font-family:var(--body);font-weight:600;font-size:2.1rem;line-height:1;letter-spacing:-0.02em}
+.fig span{font-size:.88rem;color:var(--ink-2);line-height:1.4}
+.fig.alert b{color:var(--rose-ink)}
+
+section{padding-block:48px 8px;display:flex;flex-direction:column;gap:18px}
+.sec-head{display:flex;flex-direction:column;gap:8px}
+.kicker{font-family:var(--mono);font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;color:var(--teal-ink)}
+
+/* the chart */
+.chart-card{background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:18px 18px 12px;display:flex;flex-direction:column;gap:10px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 20px;font-size:.86rem;color:var(--ink-2)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:7px;vertical-align:-1px}
+.chart-scroll{overflow-x:auto;overflow-y:visible;-webkit-overflow-scrolling:touch}
+.chart-scroll svg{display:block;min-width:720px;width:100%;height:auto}
+.chart-scroll svg text{font-family:var(--body)}
+.tt{position:fixed;z-index:10;pointer-events:none;max-width:340px;background:var(--surface);color:var(--ink);border:1px solid var(--rule-strong);border-radius:10px;padding:10px 12px;box-shadow:0 8px 28px rgba(10,8,30,.16);font-size:.8rem;line-height:1.45}
+.tt .d{font-family:var(--mono);font-size:.72rem;color:var(--ink-3);margin-bottom:4px}
+.tt .row{display:flex;gap:8px;margin-top:6px}
+.tt .row i{flex:0 0 8px;height:8px;border-radius:2px;margin-top:5px}
+.chart-foot{font-size:.84rem;color:var(--ink-3)}
+details{border-top:1px solid var(--rule);padding-top:10px}
+summary{cursor:pointer;font-size:.88rem;color:var(--ink-2)}
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.88rem}
+th{font-weight:600;text-align:left;color:var(--ink-2);font-size:.78rem;letter-spacing:.02em;border-bottom:1px solid var(--rule-strong);padding:8px 10px}
+td{border-bottom:1px solid var(--rule);padding:10px;vertical-align:top}
+td.num,th.num{font-variant-numeric:tabular-nums;white-space:nowrap;font-family:var(--mono);font-size:.8rem}
+
+.findings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.finding{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.finding .tag{font-family:var(--mono);font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.finding p{font-size:.93rem;color:var(--ink-2)}
+
+/* chips */
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:.76rem;font-weight:500;line-height:1;padding:5px 9px;border-radius:999px;white-space:nowrap}
+.c-was{color:var(--rose-ink);border:1px solid color-mix(in srgb,var(--rose-mark) 45%,transparent)}
+.c-now{color:#fff;background:var(--rose-mark)}
+.c-today{color:var(--amber-ink);background:var(--amber-wash);border:1px solid color-mix(in srgb,var(--amber-mark) 40%,transparent)}
+.c-logged{color:var(--ink-2);background:var(--chip-bg)}
+.c-photo{color:var(--insight-mark);border:1px solid color-mix(in srgb,var(--insight-mark) 45%,transparent)}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block}
+
+.moves{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.move{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px}
+.move .n{font-family:var(--display);font-size:1.25rem;font-weight:500}
+.move p{font-size:.9rem;color:var(--ink-2)}
+.move .ids{font-family:var(--mono);font-size:.72rem;color:var(--ink-3)}
+
+/* app frames: always the app's daylight look, like a screenshot */
+.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.frame-col{display:flex;flex-direction:column;gap:10px}
+.frame-label{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.frame-label strong{font-size:.9rem}
+.phone{background:#FAFAFA;border:1px solid #D4D4D4;border-radius:22px;padding:14px 12px 16px;color:#0A0A0A;font-family:var(--body);display:flex;flex-direction:column;gap:10px;box-shadow:0 1px 0 rgba(0,0,0,.02)}
+.phone .ph-top{display:flex;justify-content:space-between;align-items:center;padding:2px 4px 4px}
+.phone .ph-top b{font-family:var(--display);font-size:1.15rem;font-weight:500}
+.phone .ph-top span{font-size:.72rem;color:#737373}
+.pc{background:#FFFFFF;border:1px solid #EAEAEA;border-radius:14px;padding:12px 12px 12px 14px;display:flex;flex-direction:column;gap:7px;position:relative}
+.pc.safe::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:#F43F5E}
+.pc.ins::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:#00C2A8}
+.pc .pt{font-size:.66rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#9F1239}
+.pc.ins .pt{color:#0B7B6C}
+.pc .pb{font-size:.84rem;line-height:1.45;color:#262626}
+.pc .pa{display:flex;gap:8px;flex-wrap:wrap}
+.pc .pa span{font-size:.74rem;font-weight:500;padding:6px 10px;border-radius:999px;background:#F5F5F5;color:#262626;border:1px solid #EAEAEA}
+.pc .pa span.pri{background:#0A0A0A;color:#fff;border-color:#0A0A0A}
+.pc.fold{padding:10px 12px 10px 14px;gap:4px;background:#FCFCFD}
+.pc.fold .fh{display:flex;align-items:center;gap:8px;font-size:.8rem;font-weight:600;color:#262626}
+.pc.fold .fh i{width:7px;height:7px;border-radius:50%;background:#F43F5E;flex:0 0 7px}
+.pc.fold .fb{font-size:.78rem;line-height:1.45;color:#525252}
+.pill{align-self:flex-start;font-size:.72rem;font-weight:600;padding:5px 10px;border-radius:999px}
+.pill.call{background:#FFE4E6;color:#9F1239}
+.pill.logged{background:#F0F0F0;color:#404040}
+.obs{display:flex;flex-wrap:wrap;gap:6px}
+.obs span{font-size:.72rem;padding:4px 8px;border-radius:6px;background:#F5F5F5;color:#525252}
+.ask{border-top:1px solid #EAEAEA;padding-top:9px;display:flex;flex-direction:column;gap:7px}
+.ask b{font-size:.8rem;font-weight:600;color:#262626}
+.ask .opts{display:flex;flex-wrap:wrap;gap:6px}
+.ask .opts span{font-size:.74rem;padding:6px 10px;border-radius:999px;border:1px solid #D4D4D4;color:#262626;background:#fff}
+.watch{font-size:.78rem;line-height:1.45;color:#404040;background:#FDF3DC;border-radius:10px;padding:9px 10px}
+.frame-note{font-size:.84rem;color:var(--ink-3)}
+.illus{font-size:.84rem;color:var(--ink-2);background:var(--surface);border:1px dashed var(--rule-strong);border-radius:10px;padding:10px 14px}
+
+/* decisions */
+.decisions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.dec{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px}
+.dec .dh{display:flex;align-items:baseline;gap:10px}
+.dec .dh span{font-family:var(--mono);font-size:.78rem;color:var(--teal-ink);font-weight:500}
+.dec p{font-size:.88rem;color:var(--ink-2)}
+.dec .rec{font-size:.86rem;color:var(--ink);background:var(--teal-wash);border-radius:8px;padding:8px 10px}
+.dec .rec.conflict{background:var(--amber-wash)}
+.dec .rec b{font-weight:600}
+
+ol.phases{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-top:1px solid var(--rule)}
+ol.phases li{display:grid;grid-template-columns:120px minmax(0,1fr);gap:16px;padding:16px 0;border-bottom:1px solid var(--rule)}
+ol.phases .ph{font-family:var(--mono);font-size:.78rem;color:var(--ink-3);padding-top:3px}
+ol.phases h3{margin-bottom:4px}
+ol.phases p{font-size:.9rem;color:var(--ink-2)}
+
+ul.clean{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:8px;color:var(--ink-2)}
+ul.clean li::marker{color:var(--ink-3)}
+footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--rule);display:flex;flex-direction:column;gap:10px;font-size:.88rem;color:var(--ink-2)}
+.links{display:flex;flex-wrap:wrap;gap:8px 18px}
+
+@media (max-width:860px){
+  .figs{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .moves{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:640px){
+  .page{padding-inline:16px;padding-block:28px 56px}
+  .findings,.frames,.decisions,.moves{grid-template-columns:minmax(0,1fr)}
+  ol.phases li{grid-template-columns:minmax(0,1fr);gap:4px}
+  .fig b{font-size:1.8rem}
+}
+@media (prefers-reduced-motion: reduce){*{scroll-behavior:auto}}
+</style>
+
+<div class="page">
+
+<header class="top">
+  <p class="eyebrow">Culprit · the analysis engines · discovery, 24 September 2026 · CUL-1117</p>
+  <h1>The accountable engine</h1>
+  <p class="lede">The Signal and the vomit read are careful about every sentence and unaccountable for the whole. Replayed evening by evening against Nyx's real record, they asked for a vet almost every night, never heard that the vet had seen her, and could not see a 15% weight loss. The step change is an engine that is measured, calibrated, accountable, and sees the whole animal.</p>
+  <div class="figs" role="list">
+    <div class="fig alert" role="listitem"><b>110</b><span>evenings in a row Home told you to take the vomiting to a vet, including every evening after the Sep 16 visit</span></div>
+    <div class="fig" role="listitem"><b>11 of 45</b><span>vomit reads escalated, all at one urgency; three carried an intake flag raised by meals logged without a rating</span></div>
+    <div class="fig alert" role="listitem"><b>−15%</b><span>body weight, 4.4 kg in June to 3.73 kg on Sep 16, which neither engine can see</span></div>
+    <div class="fig" role="listitem"><b>0</b><span>outcomes recorded: no warning has ever learned whether it was right</span></div>
+  </div>
+</header>
+
+<section id="replay" aria-labelledby="replay-h">
+  <div class="sec-head">
+    <span class="kicker">The Signal, replayed</span>
+    <h2 id="replay-h">What Home said, evening by evening</h2>
+    <p class="prose muted">The shipped engine, run over the record as it stood at 9pm each evening from May 19 to Sep 24. Its replay of Sep 23 matches the live Home card for card and word for word. Before Aug 21 you saw fewer of these cards than the chart shows, because two lanes were not live yet; the chart shows what today's engine says about each evening.</p>
+  </div>
+  <div class="chart-card">
+    <div class="legend" aria-hidden="true">
+      <span><i style="background:var(--rose-mark)"></i>Safety card, asks for a vet</span>
+      <span><i style="background:var(--insight-mark)"></i>Insight card</span>
+      <span class="muted">Hover or tap an evening to read what it said</span>
+    </div>
+    <div class="chart-scroll" id="chartScroll">
+      <svg id="chart" viewBox="0 0 1000 400" role="img" aria-labelledby="chart-title chart-desc" tabindex="0">
+        <title id="chart-title">Signal cards on each of 129 evenings, by kind of card</title>
+        <desc id="chart-desc">The vomiting card asked for a vet on 110 consecutive evenings from June 7 (worth booking a visit on 101 of them); coughing chronicity on 54 evenings from August 2; photo red flags on 22 evenings; worsening on 14; early food culprit cards on 16 evenings in May and June; timing patterns on 77; the trial comparison on 3. Marked: trial start July 26, the Aug 21 deploy, the Sep 16 vet visit and weigh-in, prednisone from Sep 21. The table below lists every change.</desc>
+      </svg>
+    </div>
+    <p class="chart-foot">Counts at the right are evenings with that card. The shaded span is before the Aug 21 deploy.</p>
+    <details>
+      <summary>Every evening the card set changed (table)</summary>
+      <div class="tbl-wrap"><table id="changes"><thead><tr><th class="num">Evening</th><th>Cards on Home</th></tr></thead><tbody></tbody></table></div>
+    </details>
+  </div>
+
+  <div class="findings">
+    <div class="finding"><span class="tag">The ask never resolves</span><p>"Worth booking a vet visit" was right: vomiting every two to four days is moderate to severe on the vets' own index. But it is a latch with no reset. The engine reads neither visits nor treatment, so after Sep 16 it had nothing new to say and kept saying the old thing.</p></div>
+    <div class="finding"><span class="tag">The engine cannot see weight</span><p>The June 4.4 kg was overwritten when the Sep 16 reading arrived, and no lane reads weight. Weight loss is the most common sign of feline chronic GI disease and the one owners and vets most often miss.</p></div>
+    <div class="finding"><span class="tag">Culprits from noise</span><p>In the first week: "vomiting has tended to follow meals with turkey", then beef. Two data points each, p = 0.25 against a corrected 0.007. The tier that showed them runs no test.</p></div>
+    <div class="finding"><span class="tag">The best card was the rarest</span><p>"6 episodes in the trial's 39 days, compared with 19 in the 49 days before" appeared on three evenings. Stated with its uncertainty, it is the most useful thing the record says about the diet trial.</p></div>
+  </div>
+</section>
+
+<section id="read" aria-labelledby="read-h">
+  <div class="sec-head">
+    <span class="kicker">The vomit read, audited</span>
+    <h2 id="read-h">The eleven warnings, and what a calibrated read would have said</h2>
+    <p class="prose muted">"Today" is what the read said. "Recalibrated" is the rule set in the brief, as amended by the adversarial pass, replayed over the same reads. The shipped rule's replay reproduces all 43 stored flag sets, so the comparison is like for like. Photo flags can't be replayed without re-running the vision model; those rows show the rule each would now face.</p>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th class="num">Vomit</th><th>Why it fired</th><th>What the record shows</th><th>Today</th><th>Recalibrated</th></tr></thead>
+      <tbody>
+        <tr><td class="num">May 18 03:09</td><td>Photo: possible foreign material</td><td>A toy ball beside the vomit, not in it. You changed it to no.</td><td><span class="chip c-was"><span class="dot"></span>Worth a call</span></td><td><span class="chip c-photo">Photo rule</span> <span class="small muted">Beside, not in: noted, plus "could she have swallowed part of it?"</span></td></tr>
+        <tr><td class="num">May 30 07:21</td><td>Repeated vomiting</td><td>Two vomits 3.4 hours apart.</td><td><span class="chip c-was"><span class="dot"></span>Worth a call</span></td><td><span class="chip c-logged">Logged</span> <span class="small muted">two in a day, part of the pattern</span></td></tr>
+        <tr><td class="num">Jul 4 22:47</td><td>Repeated vomiting</td><td>Two piles found together, logged 4 minutes apart.</td><td><span class="chip c-was"><span class="dot"></span>Worth a call</span></td><td><span class="chip c-logged">Logged</span></td></tr>
+        <tr><td class="num">Jul 5 07:11</td><td>Repeated vomiting</td><td>A third vomit within 24 hours.</td><td><span class="chip c-was"><span class="dot"></span>Worth a call</span></td><td><span class="chip c-today">Call today</span></td></tr>
+        <tr><td class="num">Jul 9 12:21</td><td>Photo: possible foreign material</td><td>"A thin, pointed stick-like object" with hair. You changed it to no.</td><td><span class="chip c-was"><span class="dot"></span>Worth a call</span></td><td><span class="chip c-photo">Photo rule</span> <span class="small muted">anything string-like stays a warning until you answer it</span></td></tr>
+        <tr><td class="num">Jul 14 20:02</td><td>Photo: fresh red blood</td><td>You changed it to unsure, not no.</td><td><span class="chip c-was"><span class="dot"></span>Worth a call</span></td><td><span class="chip c-now">Call now</span> <span class="small muted">frank red blood stays a single-read call</span></td></tr>
+        <tr><td class="num">Jul 27 10:56</td><td>Cat not eating</td><td>Trial day 2: three refusals and two "picked" of the new diet.</td><td><span class="chip c-was"><span class="dot"></span>Worth a call</span></td><td><span class="chip c-today">Call today</span></td></tr>
+        <tr><td class="num">Aug 5 05:18</td><td>Lethargy</td><td>You logged lethargy that morning.</td><td><span class="chip c-was"><span class="dot"></span>Worth a call</span></td><td><span class="chip c-now">Call now</span></td></tr>
+        <tr><td class="num">Aug 19 17:40</td><td>Cat not eating</td><td>Six meals in the 24 hours before it, all unrated. The read ran two days late and measured a different day.</td><td><span class="chip c-was"><span class="dot"></span>Worth a call</span></td><td><span class="chip c-logged">Logged</span> <span class="small muted">plus "Has she eaten since yesterday?"</span></td></tr>
+        <tr><td class="num">Sep 4 07:02</td><td>Cat not eating</td><td>Four meals logged in the window, all unrated.</td><td><span class="chip c-was"><span class="dot"></span>Worth a call</span></td><td><span class="chip c-logged">Logged</span> <span class="small muted">plus the question</span></td></tr>
+        <tr><td class="num">Sep 22 01:30</td><td>Cat not eating, and a photo flag</td><td>Six meals, five unrated. The photo showed "a dark grey piece … could be fabric, rubber", and the read never said so.</td><td><span class="chip c-was"><span class="dot"></span>Worth a call</span></td><td><span class="chip c-now">Call now</span> <span class="small muted">for the material, named first</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="prose stack gap-s">
+    <p>The adversarial pass corrected the first draft of this table: these warnings were produced mechanically, but that does not prove they were wrong. The three intake flags fired during the months Nyx lost weight, and nobody can now say whether she was eating. That is why the recalibration asks instead of guessing, and why it only ships with a weight lane.</p>
+    <p class="muted small">Four mechanisms behind the table: context measured from when the analysis ran, not from the vomit; a vomit logged before the day's meals looks like a cat that hasn't eaten; the May edit flow briefly duplicated rows; and when a context flag fires, its sentence replaces the photo finding.</p>
+  </div>
+</section>
+
+<section id="moves" aria-labelledby="moves-h">
+  <div class="sec-head">
+    <span class="kicker">The step change</span>
+    <h2 id="moves-h">Six moves, in the order they depend on each other</h2>
+  </div>
+  <div class="moves">
+    <div class="move"><span class="n">Measure</span><p>Replay the shipped engines over synthetic pets with known truth, every day of a simulated year. Report how often a healthy pet sees a card, how fast a real problem is caught, and how many evenings carry a vet ask.</p><span class="ids">EN-1 · CUL-508 · EN-2</span></div>
+    <div class="move"><span class="n">Calibrate the read</span><p>Four tiers instead of one warning. Count episodes the way vets do, check every vomit with or without a photo, ask whether she has eaten instead of guessing, and tell the vision model what counts and what fools it.</p><span class="ids">EN-3 to EN-7</span></div>
+    <div class="move"><span class="n">A care state</span><p>Say a concern once. Hear that the vet has seen it. Then watch for change: more vomiting, weight loss, a new warning sign. Stand down only when the owner says so.</p><span class="ids">EN-9 · EN-10</span></div>
+    <div class="move"><span class="n">See the whole animal</span><p>Weight becomes a lane, with each reading's source. Visits and treatments sit beside the trajectories as dates and counts, never as causes. A problem list composes it for the vet.</p><span class="ids">EN-8 · EN-15</span></div>
+    <div class="move"><span class="n">Honest inference</span><p>No culprit card without a test. A lifetime budget for chance cards, measured on synthetic pets. A backwards-in-time check that catches owners changing food because the pet vomited.</p><span class="ids">EN-11 to EN-13</span></div>
+    <div class="move"><span class="n">Close the loop</span><p>One tap to say you called, and one follow-up: "What did the vet say?" The answers are how the engine learns which warnings earn their place.</p><span class="ids">EN-14 · CUL-1107</span></div>
+  </div>
+</section>
+
+<section id="frames" aria-labelledby="frames-h">
+  <div class="sec-head">
+    <span class="kicker">What it would look like</span>
+    <h2 id="frames-h">The same record, on the same day, before and after</h2>
+  </div>
+  <p class="illus">Illustrative frames drawn for the decisions below, not a design round. Copy is a first pass for the voice review. The frames keep the app's daylight look in either theme.</p>
+
+  <div class="frames">
+    <div class="frame-col">
+      <div class="frame-label"><strong>Home, Sep 23, today</strong><span class="small muted">the replay's exact text</span></div>
+      <div class="phone" aria-label="Home on September 23 as the app shows it today">
+        <div class="ph-top"><b>Nyx</b><span>Tue, Sep 23</span></div>
+        <div class="pc safe"><span class="pt">Worth a call</span><p class="pb">A photo you logged of Nyx's vomiting showed possible foreign material, on September 22 — worth a call to your vet. This is a read of your logs, not a diagnosis.</p></div>
+        <div class="pc safe"><span class="pt">Coughing</span><p class="pb">We've logged coughing for Nyx across 7 of the last 8 weeks — 23 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both.</p></div>
+        <div class="pc safe"><span class="pt">Vomiting</span><p class="pb">We've logged vomiting for Nyx across 5 of the last 8 weeks — 13 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit.</p></div>
+        <div class="pc ins"><span class="pt">Timing</span><p class="pb">8 of the 9 vomiting episodes we could time for Nyx happened within 30 minutes of eating — a timing pattern worth mentioning to your vet.</p></div>
+      </div>
+      <p class="frame-note">Three asks for a vet a week after the visit. No weight. Nothing about the prednisone.</p>
+    </div>
+    <div class="frame-col">
+      <div class="frame-label"><strong>Home, Sep 23, proposed</strong><span class="small muted">EN-6, EN-8, EN-9, EN-10, EN-14</span></div>
+      <div class="phone" aria-label="Home on September 23 as proposed">
+        <div class="ph-top"><b>Nyx</b><span>Tue, Sep 23</span></div>
+        <div class="pc safe"><span class="pt">Call your vet · photo from Sep 22</span><p class="pb">The photo from 1:30am on Sep 22 shows a dark grey piece that may not be food.</p><div class="pa"><span class="pri">See the photo</span><span>I've called</span></div></div>
+        <div class="pc safe"><span class="pt">Weight</span><p class="pb">Nyx weighed 3.73 kg on Sep 16, 0.67 kg less than the 4.4 kg logged in June (15%). Weight loss alongside vomiting is worth raising with your vet, even after a recent visit.</p><div class="pa"><span>Log a weigh-in</span></div></div>
+        <div class="pc fold"><div class="fh"><i></i>Vomiting · seen by your vet Sep 16 · watching</div><p class="fb">4 episodes since the visit. We'll raise it again if they come more often, if her weight drops, or if something new shows up.</p></div>
+        <div class="pc fold"><div class="fh"><i></i>Coughing · prednisone since Sep 21 · watching</div><p class="fb">1 cough logged since. Too soon to read anything from that.</p></div>
+        <div class="pc ins"><span class="pt">Timing</span><p class="pb">8 of the 9 vomiting episodes we could time happened within 30 minutes of eating.</p></div>
+      </div>
+      <p class="frame-note">One call, the weight, and two concerns the app now knows are in the vet's hands.</p>
+    </div>
+
+    <div class="frame-col">
+      <div class="frame-label"><strong>The read, Sep 4 07:02, today</strong><span class="small muted">the stored text</span></div>
+      <div class="phone" aria-label="The vomit read for September 4 as the app shows it today">
+        <div class="pc"><span class="pill call">Worth a call</span><p class="pb">Nyx has been vomiting and hasn't eaten a full meal recently. In cats that combination is worth a call to your vet sooner rather than later.</p><div class="obs"><span>Green</span><span>Partly digested food</span><span>Bile</span></div></div>
+      </div>
+      <p class="frame-note">Four meals were logged in the 24 hours before. None was rated, so the read concluded she hadn't eaten.</p>
+    </div>
+    <div class="frame-col">
+      <div class="frame-label"><strong>The read, Sep 4 07:02, proposed</strong><span class="small muted">EN-0, EN-3, EN-5</span></div>
+      <div class="phone" aria-label="The vomit read for September 4 as proposed">
+        <div class="pc"><span class="pill logged">Logged</span><p class="pb">Green, with bile and partly digested food, 3.8 hours after her last logged meal. Part of a vomiting pattern that's worth a vet visit (see Home).</p><div class="obs"><span>Green</span><span>Partly digested food</span><span>Bile</span></div>
+          <p class="watch">Call your vet today if she vomits twice more today, stops eating, seems unusually tired or hides, or you see blood.</p>
+          <div class="ask"><b>Has she eaten since yesterday?</b><div class="opts"><span>Normally</span><span>Less</span><span>No</span><span>Not sure</span></div></div>
+        </div>
+      </div>
+      <p class="frame-note">No false claim, no reassurance, and the one fact that would change the ask is asked directly.</p>
+    </div>
+  </div>
+</section>
+
+<section id="moat" aria-labelledby="moat-h">
+  <div class="sec-head">
+    <span class="kicker">Why this is the moat</span>
+    <h2 id="moat-h">Anyone can copy a detector. Nobody has the loop.</h2>
+  </div>
+  <div class="prose stack gap-m">
+    <p>Every method in this plan is published, and a competitor could ship a vomit-photo classifier next month; one already exists, unvalidated. What cannot be copied is the record behind each warning: the photo, the structured read, the context, the tier the owner saw, what the owner did, and what the vet said. No pet product publishes outcomes for its alerts. The one that knows, per warning, whether it was right is the one vets can trust, and owners keep listening to.</p>
+    <p class="muted">The evidence for the order: symptom checkers and language models over-triage by default, repeats drive people to ignore alerts, graded alarms beat binary ones, and consumer alerts that kept their users were rare and confirmed first. Sources are in the evidence pack.</p>
+  </div>
+</section>
+
+<section id="decisions" aria-labelledby="dec-h">
+  <div class="sec-head">
+    <span class="kicker">Decisions for you</span>
+    <h2 id="dec-h">Eight rulings, on CUL-1146</h2>
+    <p class="prose muted">Reply by number, for example "D1 A, D2 B, D6 B". Only EN-0, a copy and timing fix that removes no warning, can start before these.</p>
+  </div>
+  <div class="decisions">
+    <div class="dec"><div class="dh"><span>D1</span><h3>Tiers for the vomit read</h3></div><p>One warning, or call now · call today · part of a pattern · logged with watch-fors.</p><p class="rec"><b>Recommend A, four tiers.</b> A single urgency level is exactly the complaint.</p></div>
+    <div class="dec"><div class="dh"><span>D2</span><h3>What the app asks about eating</h3></div><p>Keep the rating, move to exception only plus "Has she eaten since yesterday?", or drop it.</p><p class="rec"><b>Recommend B.</b> It matches how owners actually log, and turns a guess into an answer.</p></div>
+    <div class="dec"><div class="dh"><span>D3</span><h3>What tells Home the vet has seen it</h3></div><p>A visit that carried the concern, an owner tap, or both. Also: an eight-week re-raise against the fold's no-timer rule.</p><p class="rec"><b>Recommend A:</b> the visit acknowledges; a tap folds but keeps the ask visible. Keep the re-raise.</p></div>
+    <div class="dec"><div class="dh"><span>D4</span><h3>A budget for chance cards</h3></div><p>How many insight cards a healthy pet may see by chance, measured on synthetic pets.</p><p class="rec"><b>Recommend at most 1 per 6 months.</b> Safety cards are never inside it.</p></div>
+    <div class="dec"><div class="dh"><span>D5</span><h3>The early food culprit card</h3></div><p>Require a test, or retire the tier and show only established findings.</p><p class="rec"><b>Recommend requiring a test.</b> The first-week cards were p = 0.25.</p></div>
+    <div class="dec"><div class="dh"><span>D6</span><h3>Colour-only blood calls</h3></div><p>A single read escalates (today), or disagreement between reads asks you one question, with "Unsure" keeping the call.</p><p class="rec conflict"><b>A persona conflict, no recommendation.</b> Dr. Chen: any blood is a call. Jordan and Sam: a red chew flagged weekly becomes wallpaper.</p></div>
+    <div class="dec"><div class="dh"><span>D7</span><h3>Weight as a safety card</h3></div><p>5% loss or more raises a card, 10% or more firm, with each reading's source and a peak comparison.</p><p class="rec"><b>Recommend yes.</b> It is the record's most important invisible fact.</p></div>
+    <div class="dec"><div class="dh"><span>D8</span><h3>When to build</h3></div><p>Phase 0 now and the rest after the 1.2.0 cut, everything now, or inside App Store Launch.</p><p class="rec"><b>Recommend Phase 0 now.</b> It stops a false sentence owners see today.</p></div>
+  </div>
+</section>
+
+<section id="order" aria-labelledby="order-h">
+  <div class="sec-head">
+    <span class="kicker">The run order</span>
+    <h2 id="order-h">Engines v3, phase by phase</h2>
+  </div>
+  <ol class="phases">
+    <li><span class="ph">Phase 0 · now</span><div><h3>Truth and plumbing</h3><p>EN-0 (CUL-1130): the read says only what the record shows. Plus the existing defects every before and after claim depends on: zero doses read since June (CUL-1099), unpaginated reads (CUL-989), and three flag-path defects (CUL-1104, CUL-1105, CUL-1110).</p></div></li>
+    <li><span class="ph">Phase 1</span><div><h3>Measure</h3><p>EN-1 (CUL-1131) the replay ledger and scorecard, CUL-508 synthetic pets with injected truth, EN-2 (CUL-1132) vision evaluation with version stamps.</p></div></li>
+    <li><span class="ph">Phase 2 · after D1</span><div><h3>Calibrate the read</h3><p>EN-3 tiers (CUL-1133), EN-4 counting and a check for every vomit (CUL-1134), EN-5 intake and the one-tap question (CUL-1136, ships with EN-8), EN-6 vision hardening (CUL-1137), EN-7 the stool spill-over (CUL-1138).</p></div></li>
+    <li><span class="ph">Phase 3</span><div><h3>An accountable Signal</h3><p>EN-8 weight lane and history (CUL-1135, can run beside Phase 2), EN-9 the care state as a spec and mock first (CUL-1139), EN-10 visit and treatment context (CUL-1140).</p></div></li>
+    <li><span class="ph">Phase 4 · after Phase 1</span><div><h3>Honest inference</h3><p>EN-11 tests and negative controls (CUL-1141), EN-12 the lifetime budget (CUL-1142), EN-13 observed vs expected (CUL-1143).</p></div></li>
+    <li><span class="ph">Phase 5</span><div><h3>The loop and the whole animal</h3><p>EN-14 acknowledge and ask what the vet said (CUL-1144), EN-15 the problem list (CUL-1145).</p></div></li>
+  </ol>
+</section>
+
+<section id="method" aria-labelledby="method-h">
+  <div class="sec-head">
+    <span class="kicker">How this was done</span>
+    <h2 id="method-h">Replayed, researched, and attacked</h2>
+  </div>
+  <ul class="clean prose">
+    <li>Both engines replayed over the real record with a fidelity check: the Signal matches the live cache on Sep 23, and the read's context rule reproduces all 43 stored flag sets.</li>
+    <li>Six isolated research lanes: two source maps, a ledger of every earlier recommendation, the statistical methods frontier, veterinary vomiting evidence, and AI triage and alarm fatigue.</li>
+    <li>An isolated adversarial pass failed two of the first-draft proposals: counting episodes could merge a retching dog into one, and ignoring unrated meals would have silenced the only intake signal during the weight loss. Both are amended, and three overstated claims are softened.</li>
+    <li>Every clinical threshold is still set by the Dr. Chen persona, not a veterinarian. That was your call this round, and no public "clinical-grade" claim should rest on it.</li>
+  </ul>
+</section>
+
+<footer>
+  <div class="links">
+    <a href="https://github.com/danieljmarkii/project-nyx/pull/899">PR #899</a>
+    <a href="https://github.com/danieljmarkii/project-nyx/blob/claude/lucid-mccarthy-q2wkb4/docs/research/2026-09-engines-step-change.md">The brief</a>
+    <a href="https://github.com/danieljmarkii/project-nyx/blob/claude/lucid-mccarthy-q2wkb4/docs/research/2026-09-engines-evidence-pack.md">Evidence pack</a>
+    <a href="https://github.com/danieljmarkii/project-nyx/blob/claude/lucid-mccarthy-q2wkb4/docs/research/2026-09-engines-source-maps.md">Source maps</a>
+    <a href="https://github.com/danieljmarkii/project-nyx/tree/claude/lucid-mccarthy-q2wkb4/scripts/engine-replay">Replay tooling</a>
+    <a href="https://linear.app/projectnyx/project/engines-v3-the-accountable-engine-a4f49bc72735">Engines v3 project</a>
+    <a href="https://linear.app/projectnyx/issue/CUL-1146/engines-v3-rule-d1-to-d8-the-deep-dives-decision-briefs">CUL-1146 decisions</a>
+    <a href="https://linear.app/projectnyx/issue/CUL-1117/engines-deep-dive-signals-the-per-incident-vomit-read-the-step-change">CUL-1117</a>
+  </div>
+  <p class="muted small">One real pet, n = 1. The replay evaluates today's code; it is not a record of what was on screen before the Aug 20 and 21 deploys. The record's data stays out of the repo.</p>
+</footer>
+
+</div>
+
+<div class="tt" id="tt" hidden></div>
+
+<script>
+(function(){
+  var DAYS = [{"d":"2026-05-19","c":[[4,"Nyx's vomiting has tended to follow meals with turkey within about 12 hours — an early pattern worth keeping an eye on as you keep logging."]]},{"d":"2026-05-20","c":[[4,"Nyx's vomiting has tended to follow meals with beef within about 12 hours — an early pattern worth keeping an eye on as you keep logging."],[4,"Nyx's vomiting has tended to follow meals with turkey within about 12 hours — an early pattern worth keeping an eye on as you keep logging."]]},{"d":"2026-05-21","c":[[4,"Nyx's vomiting has tended to follow meals with beef within about 12 hours — an early pattern worth keeping an eye on as you keep logging."],[4,"Nyx's vomiting has tended to follow meals with turkey within about 12 hours — an early pattern worth keeping an eye on as you keep logging."]]},{"d":"2026-05-22","c":[[4,"Nyx's vomiting has tended to follow meals with beef within about 12 hours — an early pattern worth keeping an eye on as you keep logging."],[4,"Nyx's vomiting has tended to follow meals with turkey within about 12 hours — an early pattern worth keeping an eye on as you keep logging."]]},{"d":"2026-05-23","c":[[3,"Nyx has had 4 episodes of vomiting this week, up from 2 last week — worth a word with your vet."],[4,"Nyx's vomiting has tended to follow meals with beef within about 12 hours — an early pattern worth keeping an eye on as you keep logging."],[4,"Nyx's vomiting has tended to follow meals with turkey within about 12 hours — an early pattern worth keeping an eye on as you keep logging."]]},{"d":"2026-05-24","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on May 18 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[3,"Nyx has had 4 episodes of vomiting this week, up from 2 last week — worth a word with your vet."],[4,"Nyx's vomiting has tended to follow meals with fish within about 12 hours — an early pattern worth keeping an eye on as you keep logging."],[4,"Nyx's vomiting has tended to follow meals with turkey within about 12 hours — an early pattern worth keeping an eye on as you keep logging."]]},{"d":"2026-05-25","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on May 18 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[7,"We've logged 4 episodes of vomiting for Nyx this week — about the same as last week."]]},{"d":"2026-05-26","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on May 18 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[7,"We've logged 3 episodes of vomiting for Nyx this week, down from 5 last week."]]},{"d":"2026-05-27","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on May 18 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[7,"We've logged 2 episodes of vomiting for Nyx this week, down from 6 last week."]]},{"d":"2026-05-28","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on May 18 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[7,"We've logged 2 episodes of vomiting for Nyx this week, down from 5 last week."]]},{"d":"2026-05-29","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on May 18 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[7,"We've logged 2 episodes of vomiting for Nyx this week, down from 4 last week."]]},{"d":"2026-05-30","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on May 18 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[4,"Nyx's vomiting has tended to follow meals with beef within about 12 hours — an early pattern worth keeping an eye on as you keep logging."],[7,"We've logged 4 episodes of vomiting for Nyx this week — about the same as last week."]]},{"d":"2026-05-31","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on May 18 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[4,"Nyx's vomiting has tended to follow meals with beef within about 12 hours — an early pattern worth keeping an eye on as you keep logging."],[7,"We've logged 4 episodes of vomiting for Nyx this week — about the same as last week."]]},{"d":"2026-06-01","c":[[4,"Nyx's vomiting has tended to follow meals with beef within about 12 hours — an early pattern worth keeping an eye on as you keep logging."],[7,"We've logged 2 episodes of vomiting for Nyx this week, down from 4 last week."]]},{"d":"2026-06-02","c":[[4,"Nyx's vomiting has tended to follow meals with beef within about 12 hours — an early pattern worth keeping an eye on as you keep logging."],[7,"We've logged 2 episodes of vomiting for Nyx this week, down from 3 last week."]]},{"d":"2026-06-03","c":[[4,"Nyx's vomiting has tended to follow meals with beef within about 12 hours — an early pattern worth keeping an eye on as you keep logging."]]},{"d":"2026-06-04","c":[[4,"Nyx's vomiting has tended to follow meals with beef within about 12 hours — an early pattern worth keeping an eye on as you keep logging."]]},{"d":"2026-06-05","c":[[4,"Nyx's vomiting has tended to follow meals with beef within about 12 hours — an early pattern worth keeping an eye on as you keep logging."]]},{"d":"2026-06-06","c":[[4,"Nyx's vomiting has tended to follow meals with beef within about 12 hours — an early pattern worth keeping an eye on as you keep logging."]]},{"d":"2026-06-07","c":[[0,"We've logged vomiting for Nyx across 3 of the last 8 weeks — 11 episodes since May. A symptom that keeps recurring over weeks is worth a word with your vet. This is a read of your logs, not a diagnosis."],[4,"Nyx's vomiting has tended to follow meals with beef within about 12 hours — an early pattern worth keeping an eye on as you keep logging."]]},{"d":"2026-06-08","c":[[0,"We've logged vomiting for Nyx across 3 of the last 8 weeks — 12 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[4,"Nyx's vomiting has tended to follow meals with turkey within about 12 hours — an early pattern worth keeping an eye on as you keep logging."]]},{"d":"2026-06-09","c":[[0,"We've logged vomiting for Nyx across 3 of the last 8 weeks — 13 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-06-10","c":[[0,"We've logged vomiting for Nyx across 3 of the last 8 weeks — 14 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of Nyx's 8 timed vomiting episodes happened between 3am and 7am — a timing pattern worth mentioning to your vet."]]},{"d":"2026-06-11","c":[[0,"We've logged vomiting for Nyx across 3 of the last 8 weeks — 15 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of Nyx's 8 timed vomiting episodes happened between 3am and 7am — a timing pattern worth mentioning to your vet."]]},{"d":"2026-06-12","c":[[0,"We've logged vomiting for Nyx across 3 of the last 8 weeks — 15 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of Nyx's 8 timed vomiting episodes happened between 3am and 7am — a timing pattern worth mentioning to your vet."]]},{"d":"2026-06-13","c":[[0,"We've logged vomiting for Nyx across 3 of the last 8 weeks — 15 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of Nyx's 8 timed vomiting episodes happened between 3am and 7am — a timing pattern worth mentioning to your vet."]]},{"d":"2026-06-14","c":[[0,"We've logged vomiting for Nyx across 3 of the last 8 weeks — 15 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of Nyx's 8 timed vomiting episodes happened between 3am and 7am — a timing pattern worth mentioning to your vet."]]},{"d":"2026-06-15","c":[[0,"We've logged vomiting for Nyx across 4 of the last 8 weeks — 16 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of Nyx's 8 timed vomiting episodes happened between 3am and 7am — a timing pattern worth mentioning to your vet."]]},{"d":"2026-06-16","c":[[0,"We've logged vomiting for Nyx across 4 of the last 8 weeks — 16 episodes since May. A symptom that keeps recurring over weeks is worth a word with your vet. This is a read of your logs, not a diagnosis."],[5,"5 of Nyx's 8 timed vomiting episodes happened between 3am and 7am — a timing pattern worth mentioning to your vet."]]},{"d":"2026-06-17","c":[[0,"We've logged vomiting for Nyx across 4 of the last 8 weeks — 16 episodes since May. A symptom that keeps recurring over weeks is worth a word with your vet. This is a read of your logs, not a diagnosis."],[5,"5 of Nyx's 8 timed vomiting episodes happened between 3am and 7am — a timing pattern worth mentioning to your vet."]]},{"d":"2026-06-18","c":[[0,"We've logged vomiting for Nyx across 4 of the last 8 weeks — 16 episodes since May. A symptom that keeps recurring over weeks is worth a word with your vet. This is a read of your logs, not a diagnosis."],[5,"5 of Nyx's 8 timed vomiting episodes happened between 3am and 7am — a timing pattern worth mentioning to your vet."]]},{"d":"2026-06-19","c":[[0,"We've logged vomiting for Nyx across 4 of the last 8 weeks — 16 episodes since May. A symptom that keeps recurring over weeks is worth a word with your vet. This is a read of your logs, not a diagnosis."],[5,"5 of Nyx's 8 timed vomiting episodes happened between 3am and 7am — a timing pattern worth mentioning to your vet."]]},{"d":"2026-06-20","c":[[0,"We've logged vomiting for Nyx across 4 of the last 8 weeks — 16 episodes since May. A symptom that keeps recurring over weeks is worth a word with your vet. This is a read of your logs, not a diagnosis."],[5,"5 of Nyx's 8 timed vomiting episodes happened between 3am and 7am — a timing pattern worth mentioning to your vet."]]},{"d":"2026-06-21","c":[[0,"We've logged vomiting for Nyx across 4 of the last 8 weeks — 18 episodes since May. A symptom that keeps recurring over weeks is worth a word with your vet. This is a read of your logs, not a diagnosis."]]},{"d":"2026-06-22","c":[[0,"We've logged vomiting for Nyx across 4 of the last 8 weeks — 18 episodes since May. A symptom that keeps recurring over weeks is worth a word with your vet. This is a read of your logs, not a diagnosis."]]},{"d":"2026-06-23","c":[[0,"We've logged vomiting for Nyx across 4 of the last 8 weeks — 18 episodes since May. A symptom that keeps recurring over weeks is worth a word with your vet. This is a read of your logs, not a diagnosis."]]},{"d":"2026-06-24","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 19 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"6 of Nyx's 10 timed vomiting episodes happened between 3am and 7am — a timing pattern worth mentioning to your vet."]]},{"d":"2026-06-25","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 20 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"6 of Nyx's 10 timed vomiting episodes happened between 3am and 7am — a timing pattern worth mentioning to your vet."]]},{"d":"2026-06-26","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 20 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"6 of Nyx's 10 timed vomiting episodes happened between 3am and 7am — a timing pattern worth mentioning to your vet."]]},{"d":"2026-06-27","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 21 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-06-28","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 21 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-06-29","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 21 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-06-30","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 22 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-01","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 22 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-02","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 22 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-03","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 22 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-04","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 22 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-05","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 24 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-06","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 24 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-07","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 24 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-08","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 24 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-09","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on July 9 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 24 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-10","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on July 9 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 24 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-11","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on July 9 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 24 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-12","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on July 9 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 24 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-13","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on July 9 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 22 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-14","c":[[2,"Photos you logged of Nyx's vomiting have shown possible blood and possible foreign material, most recently on July 15 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 7 of the last 8 weeks — 22 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-15","c":[[2,"Photos you logged of Nyx's vomiting have shown possible blood and possible foreign material, most recently on July 15 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 21 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-07-16","c":[[2,"Photos you logged of Nyx's vomiting have shown possible blood and possible foreign material, most recently on July 15 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 21 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[3,"Nyx has had 2 episodes of itching this week, after none last week — worth a word with your vet."]]},{"d":"2026-07-17","c":[[2,"Photos you logged of Nyx's vomiting have shown possible blood and possible foreign material, most recently on July 15 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 21 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[3,"Nyx has had 2 episodes of itching this week, after none last week — worth a word with your vet."],[5,"4 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-07-18","c":[[2,"Photos you logged of Nyx's vomiting have shown possible blood and possible foreign material, most recently on July 15 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 22 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[3,"Nyx has had 2 episodes of itching this week, after none last week — worth a word with your vet."],[5,"5 of the 11 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-07-19","c":[[2,"Photos you logged of Nyx's vomiting have shown possible blood and possible foreign material, most recently on July 15 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 22 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[3,"Nyx has had 3 episodes of itching this week, after none last week — worth a word with your vet."],[5,"5 of the 11 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-07-20","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 20 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[3,"Nyx has had 3 episodes of itching this week, after none last week — worth a word with your vet."],[5,"5 of the 11 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-07-21","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 20 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[3,"Nyx has had 3 episodes of itching this week, after none last week — worth a word with your vet."],[5,"5 of the 11 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-07-22","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 20 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[3,"Nyx has had 3 episodes of itching this week, after none last week — worth a word with your vet."],[5,"5 of the 11 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-07-23","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 20 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of the 11 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-07-24","c":[[0,"We've logged vomiting for Nyx across 7 of the last 8 weeks — 21 episodes since May. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"4 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-07-25","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 20 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of the 11 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-07-26","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 20 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of the 11 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-07-27","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 21 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of the 11 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-07-28","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 21 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of the 11 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-07-29","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 21 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-07-30","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 21 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-07-31","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 20 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-01","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 20 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"5 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-02","c":[[0,"We've logged vomiting for Nyx across 7 of the last 8 weeks — 21 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 3 of the last 8 weeks — 9 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"6 of the 11 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-03","c":[[0,"We've logged vomiting for Nyx across 7 of the last 8 weeks — 20 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 3 of the last 8 weeks — 10 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"6 of the 11 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-04","c":[[0,"We've logged vomiting for Nyx across 7 of the last 8 weeks — 19 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 3 of the last 8 weeks — 11 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"6 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-05","c":[[0,"We've logged vomiting for Nyx across 7 of the last 8 weeks — 19 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 3 of the last 8 weeks — 11 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 11 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-06","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 18 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 3 of the last 8 weeks — 11 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 11 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-07","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 18 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 3 of the last 8 weeks — 13 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-08","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 18 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 3 of the last 8 weeks — 13 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-09","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 19 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 4 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"6 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-10","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 18 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 4 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"6 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-11","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 18 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 4 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"6 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-12","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 18 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 4 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-13","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 18 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 4 of the last 8 weeks — 16 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-14","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 18 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 4 of the last 8 weeks — 18 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-15","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 17 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 4 of the last 8 weeks — 18 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-16","c":[[1,"We've logged coughing for Nyx across 4 of the last 8 weeks — 19 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 16 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-17","c":[[1,"We've logged coughing for Nyx across 4 of the last 8 weeks — 19 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 16 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-18","c":[[1,"We've logged coughing for Nyx across 5 of the last 8 weeks — 20 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 16 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-19","c":[[1,"We've logged coughing for Nyx across 5 of the last 8 weeks — 20 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 15 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 9 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-20","c":[[1,"We've logged coughing for Nyx across 5 of the last 8 weeks — 20 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 9 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-21","c":[[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 15 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 5 of the last 8 weeks — 21 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 9 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-22","c":[[1,"We've logged coughing for Nyx across 5 of the last 8 weeks — 21 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 14 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-08-23","c":[[1,"We've logged coughing for Nyx across 5 of the last 8 weeks — 21 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 6 of the last 8 weeks — 14 episodes since June. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-08-24","c":[[1,"We've logged coughing for Nyx across 5 of the last 8 weeks — 21 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 9 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-25","c":[[1,"We've logged coughing for Nyx across 5 of the last 8 weeks — 21 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 9 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-26","c":[[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 21 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-27","c":[[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 21 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-28","c":[[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 20 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-29","c":[[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 21 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-30","c":[[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 21 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-08-31","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 5 of the last 8 weeks — 20 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-01","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 5 of the last 8 weeks — 20 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-02","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 5 of the last 8 weeks — 20 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[6,"We've logged 6 episodes of vomiting for Nyx in the trial's 39 days, compared with 19 in the 49 days before it — worth reviewing with your vet."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-03","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 11 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 5 of the last 8 weeks — 20 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[6,"We've logged 6 episodes of vomiting for Nyx in the trial's 40 days, compared with 19 in the 49 days before it — worth reviewing with your vet."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-04","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 11 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 21 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-05","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 11 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 22 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-06","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 11 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 22 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[6,"We've logged 7 episodes of vomiting for Nyx in the trial's 43 days, compared with 19 in the 49 days before it — worth reviewing with your vet."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-07","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 13 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 22 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-09-08","c":[[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 23 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-09-09","c":[[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 23 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-09-10","c":[[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 22 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."]]},{"d":"2026-09-11","c":[[1,"We've logged coughing for Nyx across 7 of the last 8 weeks — 22 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[3,"Nyx has had 2 episodes of itching this week, after none last week — worth a word with your vet."]]},{"d":"2026-09-12","c":[[1,"We've logged coughing for Nyx across 7 of the last 8 weeks — 21 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 7 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-13","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 20 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"7 of the 7 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-14","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 21 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[3,"Nyx has had 2 episodes of itching this week, up from 1 last week — worth a word with your vet."],[5,"7 of the 7 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-15","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 21 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[3,"Nyx has had 2 episodes of itching this week, up from 1 last week — worth a word with your vet."],[5,"7 of the 7 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-16","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 21 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[3,"Nyx has had 2 episodes of itching this week, up from 1 last week — worth a word with your vet."],[5,"6 of the 6 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-17","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 13 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 22 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[3,"Nyx has had 2 episodes of itching this week, up from 1 last week — worth a word with your vet."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-18","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 13 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 22 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-19","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 22 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-20","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 22 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-21","c":[[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 22 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"9 of the 9 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-22","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on September 22 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 13 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 6 of the last 8 weeks — 22 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"9 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-23","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on September 22 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 7 of the last 8 weeks — 23 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 13 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 9 vomiting episodes we could time for Nyx happened within 30 minutes of eating — a timing pattern worth mentioning to your vet."]]},{"d":"2026-09-24","c":[[2,"A photo you logged of Nyx's vomiting showed possible foreign material, on September 22 — worth a call to your vet. This is a read of your logs, not a diagnosis."],[1,"We've logged coughing for Nyx across 7 of the last 8 weeks — 23 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. Vomiting is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis."],[0,"We've logged vomiting for Nyx across 5 of the last 8 weeks — 13 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis."],[5,"8 of the 9 vomiting episodes we could time for Nyx happened within 30 minutes of eating — a timing pattern worth mentioning to your vet."]]}];
+  var LANES = [
+    {label:"Vomiting keeps recurring", safe:true},
+    {label:"Coughing keeps recurring", safe:true},
+    {label:"Photo red flag", safe:true},
+    {label:"Getting worse", safe:true},
+    {label:"Food culprit, early tier", safe:false},
+    {label:"Timing pattern", safe:false},
+    {label:"Trial comparison", safe:false},
+    {label:"Week over week", safe:false}
+  ];
+  var NS = "http://www.w3.org/2000/svg";
+  var svg = document.getElementById("chart");
+  var X0 = 214, X1 = 944, Y0 = 70, ROW = 30, GROUPGAP = 22;
+  var n = DAYS.length, step = (X1 - X0) / n, barW = Math.max(2, step - 1.6);
+  function rowY(i){ return Y0 + i*ROW + (i >= 4 ? GROUPGAP : 0); }
+  var plotBottom = rowY(7) + ROW;
+  var H = plotBottom + 34;
+  svg.setAttribute("viewBox", "0 0 1000 " + H);
+
+  function el(name, attrs, parent){
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    (parent || svg).appendChild(e);
+    return e;
+  }
+  function txt(x, y, s, attrs){
+    var t = el("text", Object.assign({x:x, y:y}, attrs || {}));
+    t.textContent = s;
+    return t;
+  }
+  function dayIndex(iso){ for (var i=0;i<n;i++){ if (DAYS[i].d === iso) return i; } return -1; }
+  function dayX(i){ return X0 + i*step; }
+
+  // Pre-deploy shading: before Aug 21 the owner saw fewer cards.
+  var deploy = dayIndex("2026-08-21");
+  el("rect", {x:X0, y:Y0-6, width:dayX(deploy)-X0, height:plotBottom-Y0+6, style:"fill:var(--shade)"});
+
+  // Group labels
+  txt(14, Y0-14, "SAFETY CARDS · ASK FOR A VET", {style:"fill:var(--ink-3)", "font-size":"10.5", "letter-spacing":"1.2"});
+  txt(14, rowY(4)-14, "INSIGHT CARDS", {style:"fill:var(--ink-3)", "font-size":"10.5", "letter-spacing":"1.2"});
+
+  // Month gridlines
+  ["2026-06-01","2026-07-01","2026-08-01","2026-09-01"].forEach(function(iso){
+    var i = dayIndex(iso); if (i < 0) return;
+    var x = dayX(i);
+    el("line", {x1:x, x2:x, y1:Y0-6, y2:plotBottom, style:"stroke:var(--rule)", "stroke-width":"1"});
+    var m = {"06":"Jun","07":"Jul","08":"Aug","09":"Sep"}[iso.slice(5,7)];
+    txt(x, plotBottom+18, m + " 1", {style:"fill:var(--ink-3)", "font-size":"11", "text-anchor":"middle"});
+  });
+  txt(X0, plotBottom+18, "May 19", {style:"fill:var(--ink-3)", "font-size":"11", "text-anchor":"start"});
+
+  // Lane rows: label, baseline, marks, count
+  var counts = LANES.map(function(){ return 0; });
+  DAYS.forEach(function(day){
+    var seen = {};
+    day.c.forEach(function(c){ seen[c[0]] = true; });
+    Object.keys(seen).forEach(function(k){ counts[+k]++; });
+  });
+  LANES.forEach(function(lane, li){
+    var y = rowY(li);
+    txt(14, y + 15, lane.label, {style:"fill:var(--ink-2)", "font-size":"12.5"});
+    el("line", {x1:X0, x2:X1, y1:y+ROW-4, y2:y+ROW-4, style:"stroke:var(--rule)", "stroke-width":"1"});
+    txt(996, y + 15, String(counts[li]), {style:"fill:var(--ink);font-family:var(--mono)", "font-size":"12.5", "font-weight":"600", "text-anchor":"end"});
+  });
+  txt(996, Y0-14, "EVENINGS", {style:"fill:var(--ink-3)", "font-size":"9.5", "letter-spacing":"1", "text-anchor":"end"});
+
+  DAYS.forEach(function(day, di){
+    var lanesToday = {};
+    day.c.forEach(function(c){ lanesToday[c[0]] = true; });
+    Object.keys(lanesToday).forEach(function(k){
+      var li = +k, y = rowY(li);
+      el("rect", {x:dayX(di)+0.8, y:y+3, width:barW, height:ROW-10, rx:1.5, style: LANES[li].safe ? "fill:var(--rose-mark)" : "fill:var(--insight-mark)"});
+    });
+  });
+
+  // Event markers, two label rows so close dates never collide
+  var marks = [
+    {d:"2026-07-26", label:"Diet trial starts", row:0, anchor:"start"},
+    {d:"2026-08-21", label:"Aug 21 deploy", row:1, anchor:"end"},
+    {d:"2026-09-16", label:"Vet visit · 3.73 kg", row:0, anchor:"end"},
+    {d:"2026-09-21", label:"Prednisone", row:1, anchor:"end"}
+  ];
+  marks.forEach(function(m){
+    var i = dayIndex(m.d); if (i < 0) return;
+    var x = dayX(i) + step/2;
+    var ly = m.row === 0 ? 20 : 38;
+    el("line", {x1:x, x2:x, y1:ly+5, y2:plotBottom, style:"stroke:var(--ink-3)", "stroke-width":"1"});
+    txt(m.anchor === "end" ? x - 4 : x + 4, ly, m.label, {style:"fill:var(--ink-2)", "font-size":"11.5", "text-anchor":m.anchor, "font-weight":"500"});
+  });
+
+  // Hover layer: a column cursor and a tooltip with that evening's cards
+  var cursor = el("rect", {x:X0, y:Y0-6, width:step, height:plotBottom-Y0+6, style:"fill:var(--ink)", opacity:"0", "pointer-events":"none"});
+  var hit = el("rect", {x:X0, y:Y0-10, width:X1-X0, height:plotBottom-Y0+10, style:"fill:transparent;cursor:crosshair"});
+  var tt = document.getElementById("tt");
+  var current = -1;
+  function fmt(iso){
+    var mm = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+iso.slice(5,7)-1];
+    return mm + " " + (+iso.slice(8,10));
+  }
+  function show(i, clientX, clientY){
+    if (i < 0 || i >= n) return;
+    current = i;
+    cursor.setAttribute("x", dayX(i));
+    cursor.setAttribute("opacity", "0.07");
+    var day = DAYS[i];
+    var html = '<div class="d">' + fmt(day.d) + ', 9pm · ' + day.c.length + (day.c.length === 1 ? ' card' : ' cards') + '</div>';
+    if (!day.c.length) html += '<div>No cards.</div>';
+    day.c.forEach(function(c){
+      var color = LANES[c[0]].safe ? "var(--rose-mark)" : "var(--insight-mark)";
+      var s = c[1].replace(/ This is a read of your logs, not a diagnosis\.$/, "");
+      html += '<div class="row"><i style="background:' + color + '"></i><span>' + s.replace(/[&<>]/g, function(ch){ return {"&":"&amp;","<":"&lt;",">":"&gt;"}[ch]; }) + '</span></div>';
+    });
+    tt.innerHTML = html;
+    tt.hidden = false;
+    var w = tt.offsetWidth, h = tt.offsetHeight;
+    var left = Math.min(window.innerWidth - w - 12, Math.max(12, clientX + 14));
+    var top = clientY + h + 24 > window.innerHeight ? clientY - h - 14 : clientY + 16;
+    tt.style.left = left + "px";
+    tt.style.top = Math.max(8, top) + "px";
+  }
+  function hide(){ tt.hidden = true; cursor.setAttribute("opacity", "0"); }
+  function indexFromEvent(e){
+    var pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    var p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    return Math.floor((p.x - X0) / step);
+  }
+  hit.addEventListener("pointermove", function(e){ show(indexFromEvent(e), e.clientX, e.clientY); });
+  hit.addEventListener("pointerdown", function(e){ show(indexFromEvent(e), e.clientX, e.clientY); });
+  hit.addEventListener("pointerleave", hide);
+  document.getElementById("chartScroll").addEventListener("scroll", hide, {passive:true});
+  svg.addEventListener("keydown", function(e){
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    e.preventDefault();
+    var i = current < 0 ? n - 1 : current + (e.key === "ArrowRight" ? 1 : -1);
+    i = Math.max(0, Math.min(n - 1, i));
+    var r = svg.getBoundingClientRect(), scale = r.width / 1000;
+    show(i, r.left + (dayX(i) + step) * scale, r.top + Y0 * scale);
+  });
+  svg.addEventListener("blur", hide);
+
+  // Table view: every evening the card set changed
+  var tbody = document.querySelector("#changes tbody");
+  var prev = null;
+  DAYS.forEach(function(day){
+    var key = day.c.map(function(c){ return c[0]; }).join(",");
+    if (key === prev) return;
+    prev = key;
+    var tr = document.createElement("tr");
+    var td1 = document.createElement("td"); td1.className = "num"; td1.textContent = fmt(day.d);
+    var td2 = document.createElement("td");
+    td2.textContent = day.c.length ? day.c.map(function(c){ return LANES[c[0]].label; }).join("; ") : "No cards";
+    tr.appendChild(td1); tr.appendChild(td2); tbody.appendChild(tr);
+  });
+})();
+</script>
