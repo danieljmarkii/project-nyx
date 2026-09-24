@@ -158,8 +158,30 @@ export function BookVisitSheet({
     // A visit that happened is remembered as a day with no time, so a time
     // carried over from the booked arm would be written nowhere and shown
     // nowhere — clearing it keeps the sheet honest about what it will save.
-    if (next === 'happened') setTime(null);
+    if (next === 'happened') {
+      setTime(null);
+      // Closed with it, or switching back to Booked would reopen the wheel on 9:00
+      // over a field reading Optional: the CUL-984 disagreement, reached sideways.
+      setShowTimePicker(false);
+    }
     if (!isLegalForMode(day, next, today)) setDay(today);
+  }
+
+  // CUL-984 — on iOS the time picker is an inline spinner, and a spinner fires
+  // `onChange` only when its wheel MOVES. It opened on 9:00 with nothing committed,
+  // so an owner who wanted 9:00 opened it, saved, and booked no time. Opening it with
+  // no time now commits the seed it shows: the field reads what the wheel reads.
+  // "No time" stays representable through Clear, which appears the moment a time
+  // exists and closes the wheel. Android's picker is a dialog that commits on OK.
+  function toggleTimePicker() {
+    const opening = !showTimePicker;
+    setShowTimePicker(opening);
+    if (opening && Platform.OS === 'ios' && !time) setTime(defaultTimeOfDay(day));
+  }
+
+  function clearTime() {
+    setTime(null);
+    setShowTimePicker(false);
   }
 
   function submit() {
@@ -250,7 +272,7 @@ export function BookVisitSheet({
                 <View style={styles.timeRow}>
                   <TouchableOpacity
                     style={[styles.value, styles.timeValue]}
-                    onPress={() => setShowTimePicker((v) => !v)}
+                    onPress={toggleTimePicker}
                     activeOpacity={0.7}
                     accessibilityRole="button"
                     accessibilityLabel={time ? `Time, ${formatTime(time)}` : 'Time, not set'}
@@ -265,7 +287,7 @@ export function BookVisitSheet({
                       that something is there to remove (C-7). */}
                   {time ? (
                     <TouchableOpacity
-                      onPress={() => setTime(null)}
+                      onPress={clearTime}
                       style={styles.clearTime}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       accessibilityRole="button"

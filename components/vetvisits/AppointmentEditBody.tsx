@@ -81,6 +81,26 @@ export function AppointmentEditBody({
   const [showTimePicker, setShowTimePicker] = useState(false);
   const dayLabel = formatVisitWeekday(localDateKey(fields.day));
 
+  // CUL-984 — on iOS the time picker is an inline spinner, and a spinner fires
+  // `onChange` only when its wheel MOVES. It opened on 9:00 with nothing committed,
+  // so an owner who wanted 9:00 opened it, saved, and saved no time. Opening it with
+  // no time now commits the seed it shows: the field reads what the wheel reads.
+  // "No time" stays representable through Clear, which appears the moment a time
+  // exists and closes the wheel, so the two can never disagree the other way either.
+  // Android's picker is a dialog that commits on OK, so nothing changes there.
+  function toggleTimePicker() {
+    const opening = !showTimePicker;
+    setShowTimePicker(opening);
+    if (opening && Platform.OS === 'ios' && !fields.time) {
+      onChangeField('time', defaultTimeOfDay(fields.day));
+    }
+  }
+
+  function clearTime() {
+    onChangeField('time', null);
+    setShowTimePicker(false);
+  }
+
   return (
     <View>
       <ThemedText style={styles.pageTitle}>Change this appointment</ThemedText>
@@ -128,7 +148,7 @@ export function AppointmentEditBody({
       <View style={styles.timeRow}>
         <TouchableOpacity
           style={[styles.value, styles.timeValue]}
-          onPress={() => setShowTimePicker((s) => !s)}
+          onPress={toggleTimePicker}
           activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel={fields.time ? `Time, ${formatClockTime(fields.time)}` : 'Time, not set'}
@@ -145,7 +165,7 @@ export function AppointmentEditBody({
             already had. */}
         {fields.time ? (
           <TouchableOpacity
-            onPress={() => onChangeField('time', null)}
+            onPress={clearTime}
             style={styles.clearTime}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityRole="button"
