@@ -95,12 +95,6 @@ export default function EditEventModal() {
   // three types. It is wrong here: `cough` and `sneeze` carry the same model and DO
   // get this control today, so that version would silently change two shipped types
   // under an unrelated PR.
-  //
-  // (The wording above avoids the column-name-colon-literal shape on purpose —
-  // `lib/occurredAtConfidence.guard.test.ts` scans raw source and would read this
-  // comment as a hardcoded write. Filed as CUL-885; a fourth instance of C-18's
-  // comment-blanking rule, and the one whose remedy — allowlisting the file — the
-  // guard's own text warns against.)
   const showConfidenceControl = !config.hasFood && !isWeight && !isMedication && !isLook;
   // Seeds NULL, not 'saw' (B-527): an unclassified row must render with neither
   // segment selected, so the honest default before the reconstruct resolves is
