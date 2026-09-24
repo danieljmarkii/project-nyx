@@ -15,6 +15,7 @@ import { SYMPTOM_EVENT_TYPES } from '../lib/analytics';
 import { eventTintCategory, describeDayEvent } from '../lib/dayEvents';
 import type { TimelineRow } from '../lib/db';
 import { theme } from './theme';
+import { blankComments } from '../guards/blankComments';
 
 // ── The HR-6 membership walk for W1 (cough + sneeze) — CUL-675 ───────────────
 //
@@ -77,22 +78,22 @@ function declBlock(relPath: string, marker: string, terminator: string): string 
   return src.slice(start, end + terminator.length);
 }
 
-/** Comments out, code in (the completionCard-guard lesson, re-learned here on 3b-s1:
- *  the LANE_SYMPTOM_TYPES cell DOCSTRINGS say "cough: NEVER (§9)" — prose about the
- *  membership, matched by the Record-key regex as the membership). Same-length
- *  replacement so marker/terminator offsets stay honest. */
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
-    .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
+/** What a block of source DECLARES for each walked leaf. Comments out, code in (the
+ *  completionCard-guard lesson, re-learned here on 3b-s1: the LANE_SYMPTOM_TYPES cell
+ *  DOCSTRINGS say "cough: NEVER (§9)", prose about the membership that the Record-key
+ *  regex reads as the membership). The shared single-pass blanker (C-18, CUL-884)
+ *  replaces a `.replace()` chain that read a URL's `//` or a glob's `/*` inside a string
+ *  as a comment opener and blanked a real member after it. A leaf lives in a list as a
+ *  quoted member ('cough') OR as a Record key (cough:): the label maps use the key form,
+ *  and missing it read three joined rows as absent. */
+function declaredKeys(src: string): WalkReading {
+  const code = blankComments(src);
+  const has = (key: string) => new RegExp(`'${key}'|\\b${key}\\s*:`).test(code);
+  return { cough: has('cough'), sneeze: has('sneeze'), check_in: has('check_in') };
 }
 
 function scan(relPath: string, marker: string, terminator: string): WalkReading {
-  const block = stripComments(declBlock(relPath, marker, terminator));
-  // A leaf lives in a list as a quoted member ('cough') OR as a Record key (cough:) —
-  // the label maps use the key form, and missing it read three joined rows as absent.
-  const has = (key: string) => new RegExp(`'${key}'|\\b${key}\\s*:`).test(block);
-  return { cough: has('cough'), sneeze: has('sneeze'), check_in: has('check_in') };
+  return declaredKeys(declBlock(relPath, marker, terminator));
 }
 
 const inSet = (set: ReadonlySet<string> | readonly string[]) => (): WalkReading => {
@@ -485,12 +486,14 @@ const WALK: WalkRow[] = [
     governs: 'T-5 at its strongest: not "no lane" but "the string does not occur". Covers loggingDaysInWindow, countsTowardComparisonGate and every future consumer of a fetched row in one assertion',
     read: () => {
       const dir = join(ROOT, 'supabase/functions/generate-signal');
-      const src = readdirSync(dir)
+      const files = readdirSync(dir)
         .filter((f) => /\.ts$/.test(f) && !/\.test\.ts$/.test(f))
-        .map((f) => stripComments(readFileSync(join(dir, f), 'utf8')))
-        .join('\n');
-      const has = (key: string) => new RegExp(`'${key}'|\\b${key}\\s*:`).test(src);
-      return { cough: has('cough'), sneeze: has('sneeze'), check_in: has('check_in') };
+        .map((f) => declaredKeys(readFileSync(join(dir, f), 'utf8')));
+      return {
+        cough: files.some((r) => r.cough),
+        sneeze: files.some((r) => r.sneeze),
+        check_in: files.some((r) => r.check_in),
+      };
     },
     cough: { now: true, decision: 'YES — present since 3b (the universe, the fetch, the chronicity cell, the label). Read as "the engine knows this word", never as a lane membership: the per-lane row above is the ruling.' },
     sneeze: { now: true, decision: 'YES — typed and nameable at W1 though not fetched (§9). Same reading as cough.' },
@@ -602,6 +605,29 @@ describe('membership walk (HR-6) — every list decided, current state == decide
     // symptom leaf together. It sits BELOW the discovery guard's three-distinct-key floor
     // (two leaves), so the walk is the only place its membership decision can live.
     expect(WALK).toHaveLength(22);
+  });
+});
+
+// The reader under every text row, driven directly (CUL-884). A member AFTER a string
+// holding a comment opener must still read as present: the chained blanker this file
+// used to carry made a URL's `//` a line comment and a glob's `/*` a block running to
+// the next `*/`, so both cases below read as absent.
+describe('the walk\u2019s source reader blanks comments, never strings (C-18)', () => {
+  it('a member after a URL literal on the same line reads as present', () => {
+    expect(declaredKeys(`const DOCS = 'https://example.com/help'; const L = ['cough'];`).cough).toBe(true);
+  });
+
+  it("a member after a '/*' inside a string reads as present", () => {
+    const src = [
+      `const ACCEPT = ['image/*', 'application/pdf'];`,
+      `const LABELS = { sneeze: 'Sneezing' };`,
+      `/* a later comment, whose close the old chain paired with the glob */`,
+    ].join('\n');
+    expect(declaredKeys(src).sneeze).toBe(true);
+  });
+
+  it('prose in a comment still reads as absent (the 3b-s1 docstring lesson)', () => {
+    expect(declaredKeys(`/** cough: NEVER (§9) */ const L = ['vomit'];`).cough).toBe(false);
   });
 });
 

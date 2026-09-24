@@ -624,12 +624,18 @@ describe('loadSignalScreen', () => {
 
   it('ready: the finding found by identity, the record read, the pet named from the route (C-9), the doses from the window', async () => {
     mockReadSignalCache.mockResolvedValue({ findings: [{ ...cachedOf(chronicity()), rank: 3 }] });
+    // The trial is anchored to the REAL today (C-29, CUL-832), on day 59: the day it stood at
+    // when this fixture was written with TRIAL_START (2026-07-25, on 2026-09-21). The loader
+    // asks isTrialRunning against the wall clock, so the pinned start stopped running 56 days
+    // past its target (TRIAL_OVERRUN_GRACE_DAYS) and this title assertion went red from
+    // 2026-11-14 under a skewed-clock run. Day 59 keeps the dose bound below honest: the
+    // earlier window sits before the trial, so the read reaches back well past 100 days.
+    const today = toLocalDayKey(new Date());
     mockLoadTrialPredicateFacts.mockResolvedValue({
-      trial: { id: 't', status: 'active', startedAt: TRIAL_START, endedAt: null, targetDurationDays: 56, foodLabel: 'Rabbit & Pea', trialProtein: { protein: 'rabbit', source: 'stored' } },
+      trial: { id: 't', status: 'active', startedAt: shift(today, -58), endedAt: null, targetDurationDays: 56, foodLabel: 'Rabbit & Pea', trialProtein: { protein: 'rabbit', source: 'stored' } },
       stoppedForRefusal: false,
       facts: null,
     });
-    const today = toLocalDayKey(new Date());
     mockGetAllAsync.mockImplementation((sql: string) => {
       if (/FROM events\s+WHERE pet_id = \? AND event_type/.test(sql)) return Promise.resolve([{ id: 'v1', occurred_at: new Date().toISOString(), occurred_at_confidence: null }]);
       if (/event_attachments/.test(sql)) return Promise.resolve([{ event_id: 'v1', local_uri: null, storage_path: 'p/v1.jpg' }]);
