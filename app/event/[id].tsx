@@ -32,6 +32,7 @@ import { supabase } from '../../lib/supabase';
 import { syncPendingMedicationAdministrations } from '../../lib/sync';
 import { rateMealIntake } from '../../lib/meals';
 import { reverseLoggedEvent } from '../../lib/undoLog';
+import { removeConfirmCopy } from '../../lib/completionCard';
 import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain, awaitAnalysisChain } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
@@ -484,45 +485,16 @@ export default function EventDetailScreen() {
         console.warn('[event-detail] attachment re-check before delete failed:', e);
       }
     }
-    // CUL-869 — the same fact, one record type over. A look's note is the owner's
-    // own words about her animal and nothing recreates it: no surface in the app
-    // shows a removed one, and unlike the event itself she cannot simply write it
-    // again from memory of what she saw. So Remove names it, exactly as it names a
-    // photo, and for the identical comprehension reason (T-22, C-21).
-    //
-    // NO re-check here, and that is not an inconsistency with the photo above. The
-    // photo's `attachment` is a SEPARATE async read that lands after `event`, so
-    // `null` is ambiguous between "no photo" and "not answered yet" — the C-12 gap
-    // this footer is live inside. `look_note` arrives ON the event row, joined in the
-    // same SELECT (lib/db.ts), so by the time there is an `event` to remove there is
-    // a definite answer about its note.
-    const isLook = isLookRow(event);
-    const hasNote = isLook && !!event.look_note?.trim();
-    const label = EVENT_TYPES[event.event_type as EventTypeKey]?.label ?? 'event';
-    // "the Noticed" — the sentence template was written for NOUN labels, and every
-    // type had one until `check_in` arrived with a past participle. Fixed by naming
-    // the SUBJECT per type rather than by rewording the template, so every other
-    // type's confirm is byte-identical to what it has always said.
-    const subject = isLook ? 'what you noticed' : `the ${label}`;
-    // Composed rather than branched, matching the completion card's Undo one surface
-    // over (NamedCompletionCard). A chain would let the photo clause silently
-    // suppress the note-loss warning on a record carrying both — latent today, since
-    // `check_in` is `hasPhoto: false` and the editor no longer offers the row, but
-    // two sibling confirms about the same destructive act must not disagree about
-    // how many facts they are willing to say.
-    // Phrases lower-case, the sentence capitalises its own first letter, so joining
-    // two never produces "…and The note…" mid-sentence.
-    const takesWithIt = [
-      hasPhoto ? 'the photo you attached' : null,
-      hasNote ? 'the note you wrote' : null,
-    ].filter((x): x is string => x !== null);
-    const clause = takesWithIt.join(' and ');
-    const lead = `This will remove ${subject} from history.`;
+    // The NOTE, and the sentence around both facts, come from the one composer every
+    // removal confirm shares (`removeConfirmCopy`, lib/completionCard.ts; CUL-1125).
+    // It names an event's own note as well as a look's (CUL-869 named only the look's),
+    // and it needs no re-check here, unlike the photo above: both note columns arrive
+    // ON the event row, joined in the same SELECT (lib/db.ts), so by the time there is
+    // an `event` to remove there is a definite answer about its note.
+    const copy = removeConfirmCopy(event, { hasAttachment: hasPhoto });
     Alert.alert(
-      'Remove this log?',
-      clause
-        ? `${lead} ${clause.charAt(0).toUpperCase()}${clause.slice(1)} will be removed with it.`
-        : lead,
+      copy.title,
+      copy.body,
       [
         { text: 'Cancel', style: 'cancel' },
         {

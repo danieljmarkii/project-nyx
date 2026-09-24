@@ -15,6 +15,7 @@ import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { ValuePreview, ValuePreviewVariant } from '../../components/onboarding/ValuePreview';
 import { ThemedText } from '../../components/ui/ThemedText';
+import { reducedMotionNow } from '../../store/reducedMotionStore';
 
 // "How it works" — the value-preview carousel, reached from the Landing hero's
 // "See how it works" link (B-284 PR N2b). This is the SAME swipeable stack that
@@ -52,9 +53,10 @@ export default function HowItWorksScreen() {
   }
 
   // Accessible alternative to the swipe gesture: tapping a dot jumps to its preview.
+  // Under Reduce Motion the jump is instant (CUL-1123).
   function goTo(i: number) {
     setIndex(i);
-    scrollRef.current?.scrollTo({ x: i * stage.width, animated: true });
+    scrollRef.current?.scrollTo({ x: i * stage.width, animated: !reducedMotionNow() });
   }
 
   return (

@@ -191,3 +191,38 @@ describe('the confirm survives the attachment-read window (C-12)', () => {
     expect(alertBody()).toBe('This will remove the Vomit from history.');
   });
 });
+
+// CUL-1125 — the NOTE. The confirm used to name only a look's note, so an owner removing
+// a meal or a vomit whose note they had typed was told nothing about it, while the
+// completion card's Undo, one surface over, already named it. Both columns a note can
+// live in arrive on the event row, so no read stands between the tap and the answer.
+describe('the Remove confirm names an event\'s note (CUL-1125)', () => {
+  it('names a note the owner typed on the event', async () => {
+    mockGetEventAttachment.mockResolvedValue(null);
+    mockGetEventById.mockResolvedValue({ ...baseRow, notes: 'Grass first, then this' });
+    await pressRemove();
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    expect(alertBody()).toBe(
+      'This will remove the Vomit from history. The note you wrote will be removed with it.',
+    );
+  });
+
+  it('names the photo AND the note, as one sentence, when the record carries both', async () => {
+    mockGetEventAttachment.mockResolvedValue(withPhoto);
+    mockGetEventById.mockResolvedValue({ ...baseRow, notes: 'Grass first, then this' });
+    await pressRemove();
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    expect(alertBody()).toBe(
+      'This will remove the Vomit from history. ' +
+        'The photo you attached and the note you wrote will be removed with it.',
+    );
+  });
+
+  it('stays silent about a note that is only whitespace', async () => {
+    mockGetEventAttachment.mockResolvedValue(null);
+    mockGetEventById.mockResolvedValue({ ...baseRow, notes: '  \n ' });
+    await pressRemove();
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    expect(alertBody()).toBe('This will remove the Vomit from history.');
+  });
+});

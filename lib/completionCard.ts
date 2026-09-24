@@ -32,6 +32,8 @@
 import { kgToLbs } from './weight';
 import { summarizeSimpleEvent } from './logCopy';
 import { describeOccurredAt, type OccurredConfidence } from './utils';
+import { isLookRow } from './lookDisplay';
+import { EVENT_TYPES, type EventTypeKey } from '../constants/eventTypes';
 
 // What the just-written record IS. Structured on purpose (see the header).
 //
@@ -292,6 +294,9 @@ export const HITSLOP_ACTION_SOLO = {
   top: REACH, bottom: REACH, left: REACH, right: REACH,
 } as const;
 
+/** Every removal confirm's title: the Undo gate's and both Removes'. */
+const REMOVE_TITLE = 'Remove this log?';
+
 /** What the Undo confirm says, or `null` when this record needs no confirm.
  *
  * ── WHY A CONFIRM AT ALL (CUL-645, widened by CUL-869) ──────────────────────
@@ -326,7 +331,57 @@ export function undoGateCopy(
   if (takesWithIt.length === 0) return null;
   const clause = takesWithIt.join(' and ');
   return {
-    title: 'Remove this log?',
+    title: REMOVE_TITLE,
     body: `${clause.charAt(0).toUpperCase()}${clause.slice(1)} will be removed with it.`,
   };
+}
+
+/** A record a Remove confirm is about: its type, and the two columns a note can live in. */
+export interface RemovableRecord {
+  event_type: string;
+  notes?: string | null;
+  look_note?: string | null;
+}
+
+/**
+ * Does this record carry words the owner wrote? (CUL-1125)
+ *
+ * An event's own `notes` (the log sheet's note field, the editor's, a weigh-in's), or a
+ * look's `look_note`: a look's note lives on its child, and the parent's `notes` is NULL
+ * by CHECK (T-22). Both columns are read rather than one chosen by type, because the
+ * question is whether any text goes with the record, and whichever column holds it,
+ * it does. Whitespace is not a note.
+ */
+export function eventHasNote(record: RemovableRecord): boolean {
+  return !!(record.notes?.trim() || record.look_note?.trim());
+}
+
+/**
+ * What a Remove confirm says: the record screen's and today's History's (CUL-1125).
+ *
+ * The first sentence names the record; the second IS the Undo gate's body, so one act
+ * reads the same from every door out of a record (C-21: the card's Undo, the sheet's
+ * beat, both Removes). Before this the two Removes named a look's note and nothing else,
+ * so a meal whose note the owner typed went with no word about it, and History named no
+ * photo at all.
+ *
+ * `hasAttachment` is REQUIRED, and the caller must ASK THE RECORD for it (the record
+ * screen's CUL-825 re-check; History's read): a default here would decide the disclosure
+ * for every caller that forgot (C-37). The note needs no read, because both of its
+ * columns arrive on the row the confirm is about.
+ *
+ * The SUBJECT is named per type because the sentence was written for noun labels and a
+ * look's is "Noticed" (CUL-869): "the Noticed" is not English, so a look is "what you
+ * noticed" and every other type reads as it always has.
+ */
+export function removeConfirmCopy(
+  record: RemovableRecord,
+  facts: { hasAttachment: boolean },
+): { title: string; body: string } {
+  const subject = isLookRow(record)
+    ? 'what you noticed'
+    : `the ${EVENT_TYPES[record.event_type as EventTypeKey]?.label ?? 'event'}`;
+  const lead = `This will remove ${subject} from history.`;
+  const gate = undoGateCopy({ hasAttachment: facts.hasAttachment, hasNote: eventHasNote(record) });
+  return { title: REMOVE_TITLE, body: gate ? `${lead} ${gate.body}` : lead };
 }
