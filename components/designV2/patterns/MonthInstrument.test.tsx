@@ -267,7 +267,7 @@ describe('MonthInstrument', () => {
     const readDay = jest.fn(async (_pet: string, day: string): Promise<never[]> =>
       day === '2026-09-02' ? [row('a', 'vomit', '2026-09-02T07:00:00Z'), row('b', 'meal', '2026-09-02T08:00:00Z')] : [],
     );
-    const { getByTestId, getAllByTestId, queryAllByTestId, getByText, queryByTestId, toJSON } = mount(undefined, readDay);
+    const { getByTestId, getAllByTestId, queryAllByTestId, getByText, toJSON } = mount(undefined, readDay);
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
     const marks = getAllByTestId('daymark');
     fireEvent.press(marks[3]); // Sep 2, in row 0 (after Aug 30 and 31)
@@ -289,13 +289,22 @@ describe('MonthInstrument', () => {
     // (The close runs the fold's beats on real timers — about half a second — so the
     // wait is wider than RTL's one-second default; the choreography itself is pinned in
     // components/motion/openInPlaceMotion.test.ts under fake timers.)
-    await waitFor(() => expect(queryAllByTestId('day-slot')).toHaveLength(1), { timeout: 4000 });
+    // Each wait for something to LEAVE asserts on a count, never on the elements: those
+    // polls fail by design until the close lands, and a failing matcher formats what it
+    // received for a message `waitFor` then throws away. An element is a ReactTestInstance
+    // whose `_fiber` reaches the whole tree, so jest prints it ten levels deep, overflows its
+    // 10,000-character cap and halves the depth until it fits — 0.8–1.6 s per failed poll,
+    // measured, which was ~4.8 s of this case's 5.5 s. A number formats in nothing.
+    await waitFor(() => expect(queryAllByTestId('day-slot').length).toBe(1), { timeout: 4000 });
     expect(getByTestId('month-row-1').findAllByProps({ testID: 'day-slot' }).length).toBeGreaterThan(0);
     expect(getByTestId('month-row-0').findAllByProps({ testID: 'day-slot' })).toHaveLength(0);
     // Tapping the open day again closes it.
     fireEvent.press(marks[12]);
-    await waitFor(() => expect(queryByTestId('day-detail')).toBeNull(), { timeout: 4000 });
-    await waitFor(() => expect(queryAllByTestId('day-slot')).toHaveLength(0), { timeout: 4000 });
+    await waitFor(() => expect(queryAllByTestId('day-detail').length).toBe(0), { timeout: 4000 });
+    await waitFor(() => expect(queryAllByTestId('day-slot').length).toBe(0), { timeout: 4000 });
+    // The case's own bound stays well above its 4 s waits even though it passes in under a
+    // second: a wait that fails must report its assertion, not race jest's 5 s default
+    // (measured: with the re-tap close broken, the failure lands at ~4.7 s).
   }, 20_000);
 
   it('a day ahead is not a control; a day before the record is a plain dim square', async () => {

@@ -77,6 +77,29 @@ function makeRng(seed: number) {
   return () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
 }
 
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * `toEqual`'s verdict on the plain values this fuzz compares, without building an
+ * `expect()` per trial — 80,000 of those cost ~4.2 s of this case's 4.9 s. Arrays by
+ * length and index, records by their own keys, every leaf by `Object.is` (`toEqual`'s rule
+ * for primitives).
+ */
+function samePlain(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!samePlain(a[i], b[i])) return false;
+    return true;
+  }
+  if (isRecord(a) && isRecord(b)) {
+    const keys = Object.keys(a);
+    if (keys.length !== Object.keys(b).length) return false;
+    return keys.every((k) => Object.prototype.hasOwnProperty.call(b, k) && samePlain(a[k], b[k]));
+  }
+  return Object.is(a, b);
+}
+
 const CONF: Conf[] = ['exact', 'approximate', null];
 // The engine's per-symptom gaps (detection.ts DEFAULT_CONFIG): 3h episodes, and the
 // longer per-symptom concern windows.
@@ -88,6 +111,8 @@ describe('the re-based collapse is byte-identical to the shipped engine bodies',
     const base = new Date(2026, 7, 1, 8, 0).getTime();
     let withDupes = 0;
     let multiEpisode = 0;
+    let mismatchCount = 0;
+    const mismatches: unknown[] = [];
 
     for (let trial = 0; trial < 40_000; trial++) {
       const n = Math.floor(rnd() * 9);
@@ -103,11 +128,17 @@ describe('the re-based collapse is byte-identical to the shipped engine bodies',
 
       const refOnsets = referenceToEpisodeOnsets(msList, gap);
       if (refOnsets.length > 1) multiEpisode++;
-      expect(currentToEpisodeOnsets(msList, gap)).toEqual(refOnsets);
-      expect(currentToConfidenceEpisodes(events, gap)).toEqual(
-        referenceToConfidenceEpisodes(events, gap),
-      );
+      const onsets = currentToEpisodeOnsets(msList, gap);
+      const episodes = currentToConfidenceEpisodes(events, gap);
+      const refEpisodes = referenceToConfidenceEpisodes(events, gap);
+      if (!samePlain(onsets, refOnsets) || !samePlain(episodes, refEpisodes)) {
+        mismatchCount++;
+        // Keep the first few whole, so a failure names the input that broke it.
+        if (mismatches.length < 5) mismatches.push({ trial, gap, events, onsets, refOnsets, episodes, refEpisodes });
+      }
     }
+
+    expect({ mismatchCount, mismatches }).toEqual({ mismatchCount: 0, mismatches: [] });
 
     // The fuzz is only evidence if it actually reached the interesting shapes.
     expect(withDupes).toBeGreaterThan(5_000);
