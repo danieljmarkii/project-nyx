@@ -25,6 +25,7 @@ Bundle A of the History v2 project: CUL-1073 and CUL-1119 in one session and one
 - **A new `?day=` rather than `?date=&src=month`.** An existing parameter never changes meaning in place, and a parameter with one meaning from birth is what the doorway registry (HV-11) can list without footnotes. The widget keeps `?date=` because it is frozen; History reads it by its `src`.
 - **A minute of slack, not the month's day.** History pages this read by OFFSET and every slack row is fetched and then dropped; a day's worth could fill a page with the neighbouring day and leave the list blank. The spelling hazard lives inside one second.
 - **No mock frame for the door.** It is the shipped sheet's link, copied as is, restyled only to sit left-aligned in the slot at the slot's type size. The PM was offered one in the plan.
+- **The spec names the door (after the wrap).** The PM approved the proposed Tier-2 edit on CUL-1168: `docs/nyx-history-v2-requirements.md` is v1.1, and §5.8's month row says what the door sends (`?day=`, a local day, and `ts`).
 - **The trade in CUL-1119, said out loud.** The widget mints `ts` when it draws, not when it is tapped, so a second tap on one drawing does not re-apply the pet after an in-app switch. The day link already behaved this way. The old hook only "handled" that case by reverting every switch. Filed as CUL-1177 rather than widening this PR: the fix is an app-side per-tap signal keyed to the link's target path.
 
 ## Verification
