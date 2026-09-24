@@ -20,4 +20,6 @@
 | CUL-421 | **Left** | In review on #791 |
 | CUL-1092, CUL-1097, CUL-937, CUL-1098, CUL-1087, CUL-1095, CUL-720 | **Left** | Each re-verified at file:line and still true; CUL-720 was gated earlier today |
 
+**PM action:** CUL-1151 (Waiting on PM, Gate: device), the on-device pass for the three visible changes: Early access, the Didn't-eat heads-up, the iPhone visit time.
+
 **Lesson:** CUL-1052 told the builder to verify its "legibility beat" rather than assume it, and the check found the beat false for every custom length, not just the absurd one. When a fix leans on an existing sentence to explain itself, read the sentence with the fix's inputs before building on it.
