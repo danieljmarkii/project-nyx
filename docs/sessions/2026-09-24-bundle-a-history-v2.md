@@ -29,7 +29,7 @@ Bundle A of the History v2 project: CUL-1073 and CUL-1119 in one session and one
 
 ## Verification
 
-- 14 mutations, each restored from a tarball snapshot; every one reds at least one test: widget date read as UTC, no prefilter slack, a text `inRange`, a text live insert, paging by the list's count, the hook spending on an empty list, an unknown pet left unspent, the nonce ignored, History passing no nonce, History ignoring `?day=` on a mounted tab, the door on an empty day, the door sending `?date=`, and no round-trip check. The old hook reds 7 of 9 hook tests and the log screen test.
+- 13 mutations in the build (two more in the review round, below), each restored from a tarball snapshot; every one reds at least one test: widget date read as UTC, no prefilter slack, a text `inRange`, a text live insert, paging by the list's count, the hook spending on an empty list, an unknown pet left unspent, the nonce ignored, History passing no nonce, History ignoring `?day=` on a mounted tab, the door on an empty day, the door sending `?date=`, and no round-trip check. The old hook reds 7 of 9 hook tests and the log screen test.
 - A real-SQLite test drives History's read and the month's `readDayRows` over one table straddling both midnights and holds them equal; the exact bound through the same SQL is shown to misplace the synced edges, so the prefilter is load-bearing.
 - The widget's emitted link is parsed and fed to the reader, so the frozen sender and History are bound in one test.
 - Full suite green; `tsc --noEmit` clean; the touched suites green under Kiritimati, Chatham and Honolulu, and under the 30, 180 and 400 day clock skews.
