@@ -9,9 +9,10 @@
 //
 // Paging counts the QUERY's rows (`fetched`), not the list's: History pages by OFFSET,
 // which is a position in the query's order, and a slack row dropped here still took a
-// place there. STATED BLIND SPOT (C-41): a page whose every row is slack comes back
-// empty with `fetched === limit`, and the screen would show the page as blank until the
-// next one loads. It needs `limit` rows inside one prefilter minute past a bound.
+// place there. A page made only of slack rows is not an answer — returned as one, the
+// first page of a scope would draw the empty state over a record that has rows — so the
+// read goes on until a page holds a row of the range or the query runs dry, and "has
+// more" is the LAST query's answer, never a sum's.
 
 import { getTimeline, type TimelineRow } from './db';
 import { inRange, sqlPrefilter, type ScopeRange } from './historyDateFilter';
@@ -22,11 +23,16 @@ export async function readHistoryPage(
   offset: number,
   type: string | null,
   range: ScopeRange,
-): Promise<{ rows: TimelineRow[]; fetched: number }> {
+): Promise<{ rows: TimelineRow[]; fetched: number; hasMore: boolean }> {
   const pre = sqlPrefilter(range);
-  const fetched = await getTimeline(petId, limit, offset, type, pre.after, pre.before);
-  return {
-    rows: fetched.filter((r) => inRange(r.occurred_at, range)),
-    fetched: fetched.length,
-  };
+  let fetched = 0;
+  for (;;) {
+    const page = await getTimeline(petId, limit, offset + fetched, type, pre.after, pre.before);
+    fetched += page.length;
+    const rows = page.filter((r) => inRange(r.occurred_at, range));
+    // A read that returned nothing has nothing more, whatever the limit (a `limit` of 0
+    // must not loop).
+    const hasMore = page.length > 0 && page.length === limit;
+    if (rows.length > 0 || !hasMore) return { rows, fetched, hasMore };
+  }
 }

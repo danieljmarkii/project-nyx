@@ -157,6 +157,35 @@ describe('readHistoryPage — paging counts the query, not the list', () => {
     expect(fetched).toBe(2);
   });
 
+  it('a page made only of slack rows is read past, never returned as an empty answer', async () => {
+    const range = effectiveRange(null, local(DAY));
+    const end = Date.parse(range.before!);
+    // Newest first, the slack past the day's end fills the whole first page of three.
+    for (const s of [10, 20, 30]) insertEvent(`slack-${s}`, new Date(end + s * 1000).toISOString());
+    for (let i = 1; i <= 4; i++) insertEvent(`in-${i}`, new Date(end - i * 60_000).toISOString());
+
+    const first = await readHistoryPage(PET, 3, 0, null, range);
+    expect(sortedIds(first.rows)).toEqual(['in-1', 'in-2', 'in-3']);
+    // Two queries' worth, counted: the next page starts after both.
+    expect(first.fetched).toBe(6);
+    expect(first.hasMore).toBe(true);
+
+    const second = await readHistoryPage(PET, 3, first.fetched, null, range);
+    expect(sortedIds(second.rows)).toEqual(['in-4']);
+    expect(second.hasMore).toBe(false);
+  });
+
+  it('a scope whose only rows are slack answers empty, with nothing more — it never loops', async () => {
+    const range = effectiveRange(null, local(DAY));
+    const end = Date.parse(range.before!);
+    for (const s of [10, 20, 30]) insertEvent(`slack-${s}`, new Date(end + s * 1000).toISOString());
+
+    const page = await readHistoryPage(PET, 3, 0, null, range);
+    expect(page).toEqual({ rows: [], fetched: 3, hasMore: false });
+    // A limit of zero reads nothing and says so, rather than asking forever.
+    await expect(readHistoryPage(PET, 0, 0, null, range)).resolves.toEqual({ rows: [], fetched: 0, hasMore: false });
+  });
+
   it('pages of the query partition the day: nothing twice, nothing lost', async () => {
     for (let i = 0; i < 7; i++) insertEvent(`m${i}`, localAt(0, 8 + i).toISOString());
     insertEvent('slack-before', new Date(localAt(0, 0).getTime() - 30_000).toISOString());
@@ -164,10 +193,10 @@ describe('readHistoryPage — paging counts the query, not the list', () => {
     const seen: string[] = [];
     let offset = 0;
     for (;;) {
-      const { rows, fetched } = await readHistoryPage(PET, 3, offset, null, range);
+      const { rows, fetched, hasMore } = await readHistoryPage(PET, 3, offset, null, range);
       seen.push(...rows.map((r) => r.id));
       offset += fetched;
-      if (fetched < 3) break;
+      if (!hasMore) break;
     }
     expect(seen.sort()).toEqual(['m0', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6']);
   });

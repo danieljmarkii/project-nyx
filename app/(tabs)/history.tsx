@@ -219,8 +219,8 @@ export default function HistoryScreen() {
     try {
       // The scope's bounds are parsed, never compared as text (C-40): `readHistoryPage`
       // over-fetches in SQL and places each row on its parsed instant. `fetched` is the
-      // QUERY's count, which is what OFFSET and "has more" page.
-      const { rows, fetched } = await readHistoryPage(
+      // QUERY's count, which is what OFFSET pages; `hasMore` is the query's own answer.
+      const { rows, fetched, hasMore: more } = await readHistoryPage(
         activePet.id,
         PAGE_SIZE,
         currentOffset,
@@ -240,7 +240,7 @@ export default function HistoryScreen() {
         const seen = new Set(prev.map((e) => e.id));
         return [...prev, ...mapped.filter((e) => !seen.has(e.id))];
       });
-      setHasMore(fetched === PAGE_SIZE);
+      setHasMore(more);
       setOffset(currentOffset + fetched);
     } catch (e) {
       console.error('[history] load failed:', e);
