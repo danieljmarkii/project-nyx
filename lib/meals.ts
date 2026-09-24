@@ -16,7 +16,7 @@
 // per surface, and keeping them out keeps lib/ free of a store dependency. Each
 // caller still calls prependEvent with the ids this helper returns.
 
-import { getDb } from './db';
+import { getDb, getEventPetId, updateMealIntake } from './db';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 import { triggerSignalRegenDebounced } from './signal';
 import { uuid } from './utils';
@@ -138,4 +138,29 @@ export async function insertMeal(params: InsertMealParams): Promise<InsertMealRe
   triggerSignalRegenDebounced(petId);
 
   return { eventId, mealId, occurredAtIso, now };
+}
+
+// Rate (or clear) a logged meal's intake after the fact: the ONE write path for a
+// rating given on the completion card, the meal's own screen or the edit screen
+// (CUL-1087). The same freshness rule as `insertMeal`, for the same reason: all three
+// wrote the rating and none refreshed the Signal, so a rating that turned a cat's
+// breakfast into a decline stayed off Home until something else rebuilt it.
+// `lib/meals.test.ts` fails the build on a file outside this module that names
+// `updateMealIntake`.
+//
+// Throws only when the WRITE fails, so a caller's revert still means "not saved". The
+// push and the regen are fire-and-forget after it. The regen is for the pet on the
+// row, looked up rather than passed in: every caller is a record screen that may be
+// showing a pet who is not the active one (C-9).
+export async function rateMealIntake(
+  eventId: string,
+  rating: Parameters<typeof updateMealIntake>[1],
+): Promise<void> {
+  await updateMealIntake(eventId, rating);
+  syncPendingMeals().catch((e) => console.error('[rateMealIntake] sync push failed:', e));
+  getEventPetId(eventId)
+    .then((petId) => {
+      if (petId) triggerSignalRegenDebounced(petId);
+    })
+    .catch((e) => console.warn('[rateMealIntake] pet lookup failed; Signal not refreshed:', e));
 }

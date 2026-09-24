@@ -12,8 +12,9 @@ import {
 } from '../../lib/completionCard';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
-import { updateEvent, updateMealIntake, getEventSource } from '../../lib/db';
-import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
+import { updateEvent, getEventSource } from '../../lib/db';
+import { rateMealIntake } from '../../lib/meals';
+import { syncPendingEvents } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
 import { mealFlagCopy, membershipFlagCopy } from '../../lib/trialContaminant';
@@ -312,8 +313,8 @@ export function MealCompletionCard() {
     // selection light up before the card goes.
     rescheduleHide(INTAKE_CONFIRM_HOLD_MS);
     try {
-      await updateMealIntake(eventId, next);
-      syncPendingMeals().catch(console.error);
+      // The shared write path, which also refreshes the Signal (CUL-1087).
+      await rateMealIntake(eventId, next);
     } catch (e) {
       console.error('[meal-card] failed to update intake rating:', e);
       // Revert local state. The next focus on History/detail will refetch from
