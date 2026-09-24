@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { usePetStore } from '../store/petStore';
 
 // Honor the `?pet=` a widget deep link carries (widget PR W5).
@@ -15,14 +15,43 @@ import { usePetStore } from '../store/petStore';
 // on a widget that names its pet, and it lands on a screen that shows whose
 // record it is. Unknown / archived / absent ids are ignored — a stale widget
 // can never silently re-point the app at a pet the account no longer has.
-export function useWidgetPetLink(petId: string | undefined): void {
+//
+// ── ONCE PER TAP (CUL-1119) ─────────────────────────────────────────────────
+// The link is a one-shot request, never a standing instruction. The first version
+// re-selected the widget's pet whenever the active pet differed from `?pet=`, and
+// History is a tab that stays mounted with the widget's params in place — so every
+// later switch in the app (the FAB's "Logging for" chip, the pet switcher) was
+// reverted a frame after it happened, and the next log landed on the widget's pet.
+// Now a tap is the pair (pet, nonce), spent in a ref BEFORE the switch (C-22): the
+// switch re-renders the screen, and the effect's next run finds the tap gone.
+//
+// `nonce` is the doorway's `ts`. History passes it; the widget's day link carries
+// one, and the day filter is consumed on the same nonce, so the pet and the day of
+// one tap apply together. The log screen has none to pass (the widget's log links
+// carry no `ts`, and the widget is frozen, H-7), so there the tap is the pet alone:
+// once per mount, which for a modal is once per open.
+//
+// STATED BLIND SPOT (C-41): the widget mints `ts` when it DRAWS, not when it is
+// tapped, so two taps on one drawing send one nonce and the second does not re-apply
+// the pet after an in-app switch (nor the day, which has always behaved this way).
+// The fix is a per-tap signal from the app's side: CUL-1177.
+export function useWidgetPetLink(petId: string | undefined, nonce?: string): void {
   const pets = usePetStore((s) => s.pets);
-  const activePetId = usePetStore((s) => s.activePet?.id ?? null);
   const selectPet = usePetStore((s) => s.selectPet);
+  const spentRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!petId || petId === activePetId) return;
+    if (!petId) return;
+    const tap = `${petId}|${nonce ?? ''}`;
+    if (spentRef.current === tap) return;
+    // A cold start from the widget mounts the screen before the pet list has loaded.
+    // Wait for it rather than spend the tap on an empty list.
+    if (pets.length === 0) return;
+    spentRef.current = tap;
     if (!pets.some((p) => p.id === petId)) return;
+    // Read at the moment of the tap, never subscribed: a later switch must not re-run
+    // this effect with a live reason to act.
+    if (usePetStore.getState().activePet?.id === petId) return;
     selectPet(petId);
-  }, [petId, activePetId, pets, selectPet]);
+  }, [petId, nonce, pets, selectPet]);
 }

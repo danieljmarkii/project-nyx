@@ -15,13 +15,15 @@ const mockReplace = jest.fn();
 const mockBack = jest.fn();
 const mockPush = jest.fn();
 let mockTypeParam: string | undefined = 'vomit';
+// The widget's own params (CUL-1119): its log links carry `pet` and `src`, never a `ts`.
+let mockWidgetParams: Record<string, string> = {};
 jest.mock('expo-router', () => ({
   router: {
     replace: (...a: unknown[]) => mockReplace(...a),
     back: (...a: unknown[]) => mockBack(...a),
     push: (...a: unknown[]) => mockPush(...a),
   },
-  useLocalSearchParams: () => (mockTypeParam ? { type: mockTypeParam } : {}),
+  useLocalSearchParams: () => ({ ...(mockTypeParam ? { type: mockTypeParam } : {}), ...mockWidgetParams }),
 }));
 jest.mock('react-native-safe-area-context', () => ({
   SafeAreaView: require('react-native').View,
@@ -93,6 +95,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   mockTypeParam = 'vomit';
+  mockWidgetParams = {};
   usePetStore.setState({
     pets: [{ id: 'p1', name: 'Biscuit' }] as never,
     activePet: { id: 'p1', name: 'Biscuit' } as never,
@@ -307,5 +310,25 @@ describe('/log — the weight confirm double-submit guard (CUL-251)', () => {
     await waitFor(() => expect(Alert.alert).toHaveBeenCalledWith("Couldn't save that", expect.any(String)));
     fireEvent.press(confirm);
     await waitFor(() => expect(mockInsertWeightCheck).toHaveBeenCalledTimes(2));
+  });
+});
+
+// CUL-1119 — the REAL `useWidgetPetLink` runs here (this suite never stubbed it). The
+// widget opens this modal on its own pet; the owner may still switch on the way to Save,
+// and that switch has to stick, or the log lands on the widget's pet.
+describe('/log — the widget\'s pet applies once per open (CUL-1119)', () => {
+  it('opens on the widget\'s pet, and a switch made while the screen is open sticks', async () => {
+    usePetStore.setState({
+      pets: [{ id: 'p1', name: 'Biscuit' }, { id: 'p2', name: 'Mochi' }] as never,
+      activePet: { id: 'p1', name: 'Biscuit' } as never,
+    });
+    mockWidgetParams = { pet: 'p2', src: 'widget' };
+    render(<LogScreen />);
+    await waitFor(() => expect(usePetStore.getState().activePet?.id).toBe('p2'));
+
+    act(() => usePetStore.getState().selectPet('p1'));
+    // Let every effect the switch re-ran settle before reading the answer.
+    await act(async () => {});
+    expect(usePetStore.getState().activePet?.id).toBe('p1');
   });
 });
