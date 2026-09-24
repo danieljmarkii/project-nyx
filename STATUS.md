@@ -18,7 +18,7 @@ _A **pointer card**, not a state store._ The volatile working state lives in **L
 | What decision is still open? | **`CLAUDE.md` § Open Questions** (resolved ones: `docs/decisions-archive.md`) | already auto-loaded every session |
 | How do I build this correctly? | **`docs/`** — the `*-requirements.md` specs, `supabase/migrations/`, the design principles | `CLAUDE.md` § "Read These Before Writing Any Code" |
 | How do I get a build on a phone? | **`docs/dev-handoff-runbook.md`** — both runtimes, the installed build, the traps | |
-| How do I deploy an Edge Function / migration? | **`docs/edge-deploy-runbook.md`** + `supabase/functions/deploy-manifest.json` (the deploy ledger) | |
+| How do I deploy an Edge Function / migration? | **Merge it**: Edge Functions deploy on merge (Actions → Deploy Edge Functions); holds live in `supabase/functions/deploy-manifest.json`. Migrations and the rest: **`docs/edge-deploy-runbook.md`** | |
 | What did the pre-Linear backlog say? | **`docs/backlog.md`** 🧊 frozen 2026-08-15 | only to recover an already-ported row's history |
 
 The rule behind the table (`CLAUDE.md` § Documentation Update Protocol): **read-path → git; work-path → Linear.** Does a coding session need to `Read` this file to build correctly? Yes → git. No → Linear.
@@ -52,10 +52,10 @@ The original **build sequence** is done end to end — steps 1–10, finished Au
 
 ### Standing holds
 
-**None gates a track (verified 2026-09-23).** Every live Edge Function was read back and hashed against a bundle of `main` that day: `generate-signal`, `ask`, `analyze-vomit` and `analyze-stool` match byte for byte, so the per-incident chain CUL-557 named here has been live since 2026-09-15, unrecorded. `generate-report` is v17 (`main` at #861), one deploy behind. The ledger's one deliberate `hold` is `delete-account` (CUL-215), which deploys after the client build that sends the password. Evidence is on CUL-969.
+**None gates a track (verified 2026-09-23).** Every live Edge Function was read back and hashed against a bundle of `main` that day: `generate-signal`, `ask`, `analyze-vomit` and `analyze-stool` match byte for byte, so the per-incident chain CUL-557 named here has been live since 2026-09-15, unrecorded. `generate-report` is v17 (`main` at #861), one deploy behind. The one deliberate `hold` is `delete-account` (CUL-215), which deploys after the client build that sends the password. Evidence is on CUL-969.
 _(The `generate-report` hold — B-494 / **CUL-19**, which had held the function at v14 since 2026-07-30 — was **cleared 2026-09-15**: PM ruled CUL-965 option (a), the function deployed at **v15**, and six weeks of report work went live with it, including cough + sneeze (CUL-676), which had never printed in production. The refusal lane (CUL-50 / CUL-59 / CUL-60) shipped knowingly unfinished and is now post-deploy work. See `docs/sessions/2026-09-15-generate-report-deploy.md`.)_
 
-The ledger of what is deployed versus what is on `main` is `supabase/functions/deploy-manifest.json`, guarded in CI. The guard sees fingerprints, not the live state (CUL-700), so a `pending` entry can mean *unverified* rather than *owed*: read its `reason`.
+Since CUL-1147, merging to `main` deploys every changed Edge Function and records it (GitHub deployments, environment `edge-functions`; each run's summary shows what deployed and what is held). `supabase/functions/deploy-manifest.json` holds only the holds and the deploy order. A red **Deploy Edge Functions** run means a function is owed; its summary says which.
 
 ---
 
