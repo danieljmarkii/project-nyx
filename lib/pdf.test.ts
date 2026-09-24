@@ -101,6 +101,22 @@ describe('generateVetReport', () => {
     expect(r.photoCount).toBe(3);
   });
 
+  // R-16 (CUL-998 / CUL-861) — the pre-send allowed-list fact is the FUNCTION's verdict.
+  it('parses trial_allowed_list_missing, and an absent field is false (a pre-deploy client shows nothing)', async () => {
+    mockedInvoke.mockResolvedValue({
+      data: { html: '<html>Nyx</html>', trial_allowed_list_missing: true },
+      error: null,
+    });
+    expect((await generateVetReport({ petId: 'p1' })).trialAllowedListMissing).toBe(true);
+
+    mockedInvoke.mockResolvedValue({ data: { html: '<html>Nyx</html>' }, error: null });
+    expect((await generateVetReport({ petId: 'p1' })).trialAllowedListMissing).toBe(false);
+
+    // Only a literal `true` counts — a truthy string or a 1 is a contract drift, not a fact.
+    mockedInvoke.mockResolvedValue({ data: { html: '<html>Nyx</html>', trial_allowed_list_missing: 'yes' }, error: null });
+    expect((await generateVetReport({ petId: 'p1' })).trialAllowedListMissing).toBe(false);
+  });
+
   it('throws on an Edge Function error', async () => {
     mockedInvoke.mockResolvedValue({ data: null, error: { message: 'boom' } });
     await expect(generateVetReport({ petId: 'p1' })).rejects.toThrow(/boom/);
@@ -123,6 +139,7 @@ describe('generateVetReport', () => {
 describe('shareReportPdf', () => {
   const report: VetReport = {
     html: '<html>Nyx</html>', petName: 'Nyx', startDate: '2026-04-04', endDate: '2026-07-03', scopeBasis: 'fallback_90d', photoCount: 0,
+    trialAllowedListMissing: false,
   };
   beforeEach(() => {
     mockedIsAvailable.mockReset();

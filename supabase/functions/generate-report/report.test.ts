@@ -17,9 +17,11 @@ import {
   assembleReport,
   buildDetectionInput,
   dedupeEvents,
+  drawsStopMark,
   resolveScope,
   FALLBACK_DAYS,
   INTAKE_LOG_CAP,
+  summariseIntake,
   type ReportInput,
   type ReportEventInput,
   type ReportAiAnalysisInput,
@@ -28,6 +30,10 @@ import {
   type ReportDoseInput,
   type TimingFinding,
 } from './report.ts'
+// The CUL-976 cross-surface guards drive the REAL renderer and assert over its output, not over
+// the intermediate snapshot: "one adherence claim per drug per document" is a property of the
+// document, and a snapshot-level assertion cannot see a second claim a renderer prints.
+import { renderReport } from './render.ts'
 import type { FoodFormat } from '../generate-signal/detection.ts'
 // The Class-A key, imported so the parity assertion below compares against the REAL
 // read-path keying rather than a string literal that could drift from it.
@@ -85,6 +91,14 @@ function mkAnalysis(eventId: string, o: Partial<ReportAiAnalysisInput> = {}): Re
 }
 
 /** An empty-but-valid input skeleton; individual tests fill the arrays they need. */
+/** Rendered prose with tags stripped and the entities the report writes resolved. */
+function plainText(html: string): string {
+  return html.replace(/<[^>]*>/g, ' ')
+    .replace(/&times;/g, '\u00d7').replace(/&ndash;/g, '\u2013').replace(/&mdash;/g, '\u2014')
+    .replace(/&middot;/g, '\u00b7').replace(/&ldquo;|&rdquo;/g, '"').replace(/&rsquo;/g, "'")
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()
+}
+
 function baseInput(overrides: Partial<ReportInput> = {}): ReportInput {
   return {
     now: NOW,
@@ -298,6 +312,24 @@ Deno.test('Nyx dry-run — signalment: owner name present, neuter NOT recorded, 
   assert.equal(snap.weight.isEmpty, true)
   assert.equal(snap.weight.trend, null)
   assert.equal(snap.atAGlance.weightState, 'empty')
+})
+
+Deno.test('CUL-979 — the household passes through assembly as counts by species; absent ⇒ null, never "one pet"', () => {
+  const two = assembleReport(
+    baseInput({ household: { others: [{ species: 'dog', count: 1 }, { species: 'cat', count: 1 }, { species: 'other', count: 0 }], complete: true } }),
+  )
+  // The subject's own species leads (it is the "other cat" a vet asks about first), a zero
+  // count is dropped (a species with nobody in it is not a fact about the household), and
+  // the shape carries nothing a name or an id could hide in.
+  assert.deepEqual(two.signalment.household, {
+    others: [{ species: 'cat', count: 1 }, { species: 'dog', count: 1 }],
+    complete: true,
+  })
+  assert.equal(assembleReport(baseInput()).signalment.household, null)
+  assert.deepEqual(
+    assembleReport(baseInput({ household: { others: [], complete: true } })).signalment.household,
+    { others: [], complete: true },
+  )
 })
 
 Deno.test('Nyx dry-run — de-dup collapses the 3 same-minute duplicate vomit logs (26 raw → 23)', () => {
@@ -1012,22 +1044,40 @@ Deno.test('§4.4 lifetime table — the mock §05 record derives all four course
   assert.equal(mh!.sinceDay, '2026-02-11') // earliest dated point
 })
 
-Deno.test('§4.4 lifetime table — reads lifetimeDoses, not the windowed doses (window-ignoring)', () => {
+Deno.test('§4.4 lifetime table — window-ignoring beside a windowed orphan section (same dose set)', () => {
   const rec = mockMedRecord()
+  // PRODUCTION SHAPE (CUL-976): `doses` is the lookback-trimmed slice of the SAME pull
+  // `lifetimeDoses` carries whole — index.ts maps one query into both. The previous version of
+  // this test passed `doses: []` beside a populated `lifetimeDoses` to "prove independence",
+  // which is a shape the function can never be handed, and it was asserting over it: the
+  // windowed orphan section came back empty because its input was empty, not because anything
+  // scoped it. A fixture production cannot create is green over nothing (C-35).
+  //
+  // Independence is now shown the way it actually matters — one dose set in, two different
+  // scopings out.
   const snap = assembleReport(baseInput({
     now: MED_NOW,
     medications: rec.medications,
     medicationItems: rec.medicationItems,
-    doses: [], // the windowed sections see nothing…
-    lifetimeDoses: rec.lifetimeDoses, // …but the lifetime table sees the whole record
+    doses: rec.lifetimeDoses,
+    lifetimeDoses: rec.lifetimeDoses,
   }))
   const mh = snap.medicationHistory!
   assert.equal(mh.entries.length, 4)
   // The Feb/Mar courses — entirely outside the 90-day window — still appear with their counts.
   assert.ok(mh.entries.some((e) => e.drugName === 'Metronidazole' && e.dosesLogged === 26 && e.ended))
   assert.ok(mh.entries.some((e) => e.drugName === 'Maropitant (Cerenia)' && e.dosesLogged === 1))
-  // The windowed orphan section reads `doses` (empty) — so it is empty, proving independence.
-  assert.equal(snap.unlinkedMedications.length, 0)
+
+  // …while the WINDOWED orphan section carries only the in-window ad-hoc drug. Cerenia's single
+  // Feb 11 dose is 175 days before MED_NOW and outside the 90-day window; Cetirizine's Jun 2–9
+  // doses are inside it. Both are ad-hoc, so only the window separates them — which is the
+  // scoping this test exists to pin.
+  assert.deepEqual(snap.unlinkedMedications.map((u) => u.drugName), ['Cetirizine HCl (Zyrtec)'])
+  assert.equal(snap.unlinkedMedications[0].administeredDoses, 3)
+  assert.ok(
+    mh.entries.some((e) => e.drugName === 'Maropitant (Cerenia)'),
+    'the out-of-window ad-hoc drug is absent from the windowed section but present lifetime',
+  )
 })
 
 Deno.test('§4.4 lifetime table — falls back to `doses` when `lifetimeDoses` is absent (older callers)', () => {
@@ -1555,7 +1605,7 @@ Deno.test('#7/#8 mealItems — rated meals grouped by food (label · protein · 
   assert.equal(items[0].primaryProtein, 'chicken')
   assert.equal(items[0].firstDate, '2026-05-14', 'date span start')
   assert.equal(items[0].lastDate, '2026-06-10', 'date span end')
-  assert.equal(items[0].intakeMode, 'some', 'strict-plurality intake (2 some vs 1 all)')
+  assert.deepEqual(summariseIntake(items[0].intakeBreakdown), { kind: 'typical', rating: 'some', count: 2 }, 'strict-plurality intake (2 some vs 1 all)')
   assert.equal(items[1].foodLabel, 'Instinct Turkey (Wet)') // B-568 — same rule on every appendix row
   assert.equal(items[1].count, 1)
   // The grouped total reconciles with mealCompletion (same ratedMeals set).
@@ -1612,6 +1662,199 @@ Deno.test('A1c — a pre-window intervention that ENDED mid-window carries endIn
   assert.ok(t, 'the completed trial overlaps the window and is a concurrent change')
   assert.equal(t.ongoing, true, 'started before the window')
   assert.equal(t.endInWindow, '2026-05-15', 'its mid-window end is carried, so the note says "until" not "ongoing"')
+})
+
+// ── R-14 (CUL-291): the stop marker's bucket, and the mid-trial allowed-list change ──────
+
+/** A regimen row, minimal but real — only the span matters to a concurrent change. */
+function med(drugName: string, startedAt: string, endedAt: string | null): ReportMedicationInput {
+  return {
+    id: `reg-${drugName.toLowerCase()}`, medicationItemId: `mi-${drugName.toLowerCase()}`, drugName,
+    doseAmount: '5 mg', route: 'oral', dosesPerDay: 1, scheduleNotes: null, indication: null,
+    prescribedBy: null, startedAt, targetDurationDays: null, status: endedAt ? 'completed' : 'active',
+    endedAt, isPrescription: true, strength: '5 mg',
+  }
+}
+
+/** A `diet_trial_foods` row for the allowed set, minimal but real. */
+function allowed(label: string, from: string, until: string | null = null, role = 'permitted_treat') {
+  return {
+    foodItemId: `fi-${label.toLowerCase()}`,
+    foodLabel: label,
+    role,
+    allowedFrom: from,
+    allowedUntil: until,
+    primaryProtein: null,
+    brand: null,
+    productName: null,
+  }
+}
+
+Deno.test('R-14 — a stop carries endBucketIndex, from the SAME bucket grid the start marker uses', () => {
+  const snap = assembleReport(
+    baseInput({
+      vetVisits: [{ visitedAt: '2026-04-20', clinicName: null, vetName: null, reason: null }],
+      medications: [
+        // Started inside the window and stopped inside it: both ends are marked, so the two
+        // indices are directly comparable against one grid.
+        med('Prednisolone', '2026-04-22', '2026-05-06'),
+      ],
+    }),
+  )
+  const m = snap.concurrentChanges.find((c) => c.label === 'Prednisolone')
+  assert.ok(m, 'the course overlaps the window')
+  assert.equal(m.endInWindow, '2026-05-06', 'it stopped strictly before the window end')
+  assert.ok(m.endBucketIndex !== null, 'and the stop carries a bucket, or the chart cannot draw it')
+  // Two weeks apart (Apr 22 → May 6), and the buckets are 7 days: the stop is two buckets on
+  // from the start. Derived, not restated — a hand-written index would pass over a wrong grid.
+  assert.equal(m.endBucketIndex, (m.bucketIndex as number) + 2, 'the two indices share one 7-day grid')
+})
+
+Deno.test('R-14 — a course still running at the window end carries NO stop bucket', () => {
+  const snap = assembleReport(
+    baseInput({
+      vetVisits: [{ visitedAt: '2026-04-20', clinicName: null, vetName: null, reason: null }],
+      medications: [med('Apoquel', '2026-04-22', null)],
+    }),
+  )
+  const m = snap.concurrentChanges.find((c) => c.label === 'Apoquel')
+  assert.ok(m, 'the course overlaps the window')
+  assert.equal(m.endInWindow, null, 'still on board at the window end')
+  assert.equal(m.endBucketIndex, null, 'so nothing to draw — a stop glyph here would say a drug was withdrawn')
+})
+
+Deno.test('R-14 — a food added to the allowed list MID-TRIAL is its own change (the CUL-291 case)', () => {
+  const snap = assembleReport(
+    baseInput({
+      vetVisits: [{ visitedAt: '2026-04-20', clinicName: null, vetName: null, reason: null }],
+      dietTrials: [
+        {
+          id: 'dt', foodItemId: 'fi', startedAt: '2026-04-25', targetDurationDays: 56, status: 'active',
+          completedAt: null, vetName: null, foodLabel: 'RC HP', primaryProtein: 'hydrolyzed',
+          allowedFoods: [
+            // The primary diet, permitted from the trial's own start — NOT a second change.
+            allowed('RC HP', '2026-04-25', null, 'primary_diet'),
+            // The treat the vet permitted a fortnight in. A diet change by the legend's own
+            // definition, and the one the chart drew nothing for.
+            allowed('Dentastix', '2026-05-09'),
+          ],
+        },
+      ],
+    }),
+  )
+  const added = snap.concurrentChanges.filter((c) => c.kind === 'diet_allowed')
+  assert.equal(added.length, 1, 'exactly one allowed-list change — the mid-trial addition')
+  assert.equal(added[0].label, 'Dentastix')
+  assert.equal(added[0].startDate, '2026-05-09')
+  assert.ok(added[0].bucketIndex !== null, 'it marks the chart')
+  assert.equal(added[0].ongoing, false, 'it is a dated in-window transition, not standing context')
+  // The primary diet permitted on the trial's start day must NOT double the trial's own marker.
+  assert.equal(
+    snap.concurrentChanges.filter((c) => c.label === 'RC HP').length,
+    1,
+    'the trial is one change, not two — `allowed_from = started_at` is the trial starting',
+  )
+})
+
+Deno.test('R-14 — a permit granted before the window, with no in-window transition, is not a confounder', () => {
+  const snap = assembleReport(
+    baseInput({
+      vetVisits: [{ visitedAt: '2026-04-20', clinicName: null, vetName: null, reason: null }],
+      dietTrials: [
+        {
+          id: 'dt', foodItemId: 'fi', startedAt: '2026-04-01', targetDurationDays: 90, status: 'active',
+          completedAt: null, vetName: null, foodLabel: 'RC HP', primaryProtein: 'hydrolyzed',
+          // Added mid-trial but BEFORE this report's window opened, and never withdrawn. It is
+          // part of the standing protocol by the time the window starts; listing it under
+          // "Present during this window" would frame a snack as a confounder the trend cannot
+          // be attributed against, and the §7 allowed list already names it.
+          allowedFoods: [allowed('RC HP', '2026-04-01', null, 'primary_diet'), allowed('Dentastix', '2026-04-10')],
+        },
+      ],
+    }),
+  )
+  assert.equal(snap.concurrentChanges.filter((c) => c.kind === 'diet_allowed').length, 0, 'no change, no marker, no mention')
+})
+
+Deno.test('R-14 — a permit WITHDRAWN inside the window is a stop on the diet lane', () => {
+  const snap = assembleReport(
+    baseInput({
+      vetVisits: [{ visitedAt: '2026-04-20', clinicName: null, vetName: null, reason: null }],
+      dietTrials: [
+        {
+          id: 'dt', foodItemId: 'fi', startedAt: '2026-04-01', targetDurationDays: 90, status: 'active',
+          completedAt: null, vetName: null, foodLabel: 'RC HP', primaryProtein: 'hydrolyzed',
+          allowedFoods: [allowed('RC HP', '2026-04-01', null, 'primary_diet'), allowed('Dentastix', '2026-04-10', '2026-05-02')],
+        },
+      ],
+    }),
+  )
+  const d = snap.concurrentChanges.find((c) => c.kind === 'diet_allowed')
+  assert.ok(d, 'the withdrawal is an in-window transition, so the row is kept')
+  assert.equal(d.endInWindow, '2026-05-02')
+  assert.ok(d.endBucketIndex !== null, 'and it draws a stop')
+  assert.equal(d.bucketIndex, null, 'its permit began before the window, so there is no start to draw')
+})
+
+Deno.test('R-14 — an AD-HOC course\'s end is not declared; a regimen\'s is (the source decides, not the value)', () => {
+  // The adversarial pass\'s highest-severity finding, guarded at the source rather than only at
+  // the renderer: an ad-hoc course has no regimen row, so its span ends at the LAST DOSE THE
+  // RECORD CARRIES. An owner still giving the drug who stops logging it produces exactly the
+  // value an owner who stopped it produces. §4.4\'s lifetime table, over these same dose rows,
+  // prints that distinction verbatim; drawing a stop glyph here would contradict it on one page.
+  //
+  // Both lanes are asserted together, because "endIsDeclared is false" is only meaningful beside
+  // a case where it is true — a flag hardwired either way passes half of this.
+  const snap = assembleReport(
+    baseInput({
+      vetVisits: [{ visitedAt: '2026-06-20', clinicName: null, vetName: null, reason: null }],
+      events: [makeEvent({ type: 'vomit', occurredAt: at('2026-06-29') })],
+      // A regimen the owner ENDED: an End tap wrote `ended_at`.
+      medications: [med('Prednisolone', '2026-06-22', '2026-06-26')],
+      // …and an ad-hoc course with no regimen at all, whose last logged dose is Jun 27.
+      doses: [
+        { eventId: nextId('dose'), occurredAt: at('2026-06-24', '13:00:00'), medicationId: null, medicationItemId: 'mi-zyrtec', adherence: 'given', doseAmount: null, pairedEventId: null },
+        { eventId: nextId('dose'), occurredAt: at('2026-06-27', '13:00:00'), medicationId: null, medicationItemId: 'mi-zyrtec', adherence: 'given', doseAmount: null, pairedEventId: null },
+      ],
+      medicationItems: [
+        { id: 'mi-zyrtec', genericName: 'Cetirizine HCl', brandName: 'Zyrtec', strength: '5 mg', route: 'oral', isPrescription: false },
+      ],
+    }),
+  )
+  const adhoc = snap.concurrentChanges.find((c) => c.label.startsWith('Cetirizine'))
+  assert.ok(adhoc, 'the ad-hoc course reaches the confounder set (B-417 PR 7 round 3)')
+  assert.equal(adhoc.endInWindow, '2026-06-27', 'its span still ends at the last dose the record holds')
+  assert.equal(adhoc.endIsDeclared, false, 'but that is the logging stopping, not the owner declaring an end')
+  assert.equal(drawsStopMark(adhoc), false, 'so it draws no stop glyph')
+
+  const regimen = snap.concurrentChanges.find((c) => c.label === 'Prednisolone')
+  assert.ok(regimen, 'the regimen overlaps the window')
+  assert.equal(regimen.endInWindow, '2026-06-26')
+  assert.equal(regimen.endIsDeclared, true, 'an End tap IS an owner declaration')
+  assert.equal(drawsStopMark(regimen), true, 'so it draws')
+})
+
+Deno.test('R-14 — a trial end, a withdrawn bowl and a closed permit are all owner-declared', () => {
+  const snap = assembleReport(
+    baseInput({
+      vetVisits: [{ visitedAt: '2026-04-20', clinicName: null, vetName: null, reason: null }],
+      dietTrials: [
+        {
+          id: 'dt', foodItemId: 'fi', startedAt: '2026-04-22', targetDurationDays: 56, status: 'completed',
+          completedAt: '2026-05-10', vetName: null, foodLabel: 'RC HP', primaryProtein: 'hydrolyzed',
+          allowedFoods: [allowed('RC HP', '2026-04-22', null, 'primary_diet'), allowed('Dentastix', '2026-04-28', '2026-05-04')],
+        },
+      ],
+      // `lib/feedingArrangements.ts`'s toggle-off stamps `active_until` on an owner tap.
+      feedingArrangements: [{ id: 'fa1', foodItemId: 'fi-kibble', method: 'free_choice', foodLabel: 'Kibble', activeFrom: null, activeUntil: '2026-05-02', isShared: false, primaryProtein: null }],
+    }),
+  )
+  for (const label of ['RC HP', 'Dentastix', 'Kibble']) {
+    const c = snap.concurrentChanges.find((x) => x.label === label)
+    assert.ok(c, `${label} is a concurrent change`)
+    assert.equal(c.endIsDeclared, true, `${label}'s end comes from an owner action`)
+    assert.equal(drawsStopMark(c), true, `${label} draws its stop`)
+  }
 })
 
 // ── PM feedback round 1 (2026-07-03) — fixes from the first real on-device artifact ──
@@ -1772,7 +2015,7 @@ Deno.test('R2-2 — daysSinceLastEpisode is 0 when the most recent episode is th
   assert.equal(ag.daysSinceLastEpisode, 0, 'an episode today reads 0 days since — never negative')
 })
 
-Deno.test('R2-3 — mealCompletion.intakeMode is the strict plurality; a tie yields null', () => {
+Deno.test('R2-3 / CUL-497 — the intake summary is a plurality, a split, or nothing, and never a picked side', () => {
   const mealAt = (date: string, rating: 'all' | 'most' | 'some' | 'picked' | 'refused') =>
     makeEvent({
       type: 'meal',
@@ -1782,11 +2025,25 @@ Deno.test('R2-3 — mealCompletion.intakeMode is the strict plurality; a tie yie
   const plurality = assembleReport(
     baseInput({ events: [mealAt('2026-06-10', 'some'), mealAt('2026-06-11', 'some'), mealAt('2026-06-12', 'some'), mealAt('2026-06-13', 'all')] }),
   )
-  assert.equal(plurality.diet.mealCompletion?.intakeMode, 'some', 'the most common rating wins')
+  assert.deepEqual(
+    summariseIntake(plurality.diet.mealCompletion!.intakeBreakdown),
+    { kind: 'typical', rating: 'some', count: 3 },
+    'the most common repeated rating wins',
+  )
   const tied = assembleReport(
     baseInput({ events: [mealAt('2026-06-10', 'all'), mealAt('2026-06-11', 'all'), mealAt('2026-06-12', 'some'), mealAt('2026-06-13', 'some')] }),
   )
-  assert.equal(tied.diet.mealCompletion?.intakeMode, null, 'a tie has no honest "typical" — null, never a picked side')
+  // CUL-497 — the pre-existing contract, unchanged: a tie never picks a side. What changed
+  // is that it is now DISTINGUISHABLE from an empty set, which is what let one em-dash
+  // stand for ninety rated meals and a silence stand for an evenly split record.
+  assert.deepEqual(
+    summariseIntake(tied.diet.mealCompletion!.intakeBreakdown),
+    { kind: 'itemised', ratings: [{ rating: 'all', count: 2 }, { rating: 'some', count: 2 }] },
+    'a tie itemises, along the intake scale',
+  )
+  const none = assembleReport(baseInput({ events: [] }))
+  assert.equal(none.diet.mealCompletion, null, 'no rated meal at all')
+  assert.deepEqual(summariseIntake([]), { kind: 'none' }, 'and an empty set is its own state, not the tie')
 })
 
 Deno.test('#7/#8 — mealItems groups rated meals by food (label · protein · count · span · typical intake)', () => {
@@ -1811,12 +2068,13 @@ Deno.test('#7/#8 — mealItems groups rated meals by food (label · protein · c
   // Sorted by count desc → chicken (3) then turkey (1).
   assert.equal(items[0].count, 3)
   assert.equal(items[0].primaryProtein, 'chicken')
-  assert.equal(items[0].intakeMode, 'some', 'strict-plurality typical intake across the grouped food (some 2 vs all 1)')
+  assert.deepEqual(summariseIntake(items[0].intakeBreakdown), { kind: 'typical', rating: 'some', count: 2 }, 'strict-plurality typical intake across the grouped food (some 2 vs all 1)')
   assert.equal(items[0].firstDate, '2026-06-10')
   assert.equal(items[0].lastDate, '2026-06-14')
   assert.equal(items[1].count, 1)
   assert.equal(items[1].primaryProtein, 'turkey')
-  assert.equal(items[1].intakeMode, 'picked')
+  // One meal of this food: a fact, never a habit (the n floor).
+  assert.deepEqual(summariseIntake(items[1].intakeBreakdown), { kind: 'itemised', ratings: [{ rating: 'picked', count: 1 }] })
   // Reconciles with mealCompletion.ratedMeals — the SAME underlying set, never a double count.
   assert.equal(items.reduce((a, i) => a + i.count, 0), snap.diet.mealCompletion?.ratedMeals)
 })
@@ -2101,14 +2359,14 @@ Deno.test('PR7 photos — an analyzed vomit whose photo was REMOVED is disclosed
   )
   assert.equal(snap.incidentPhotos.length, 1, 'only the retained photo is a card')
   assert.equal(snap.incidentPhotos[0].eventId, 'kept')
-  assert.equal(snap.incidentPhotosAnalyzedNoRetained, 1, 'the removed-photo incident is counted for disclosure')
+  assert.equal(snap.incidentPhotosRemoved.length, 1, 'the removed-photo incident is counted for disclosure')
 })
 
 Deno.test('PR7 photos — a vomit with NO analysis and no photo is NOT counted as removed (never photographed)', () => {
   const noPhoto = makeEvent({ id: 'np', type: 'vomit', occurredAt: at('2026-06-20') })
   const snap = assembleReport(baseInput({ events: [noPhoto] })) // no analysis, no attachment
   assert.equal(snap.incidentPhotos.length, 0)
-  assert.equal(snap.incidentPhotosAnalyzedNoRetained, 0, 'an unphotographed incident is not a removed photo')
+  assert.equal(snap.incidentPhotosRemoved.length, 0, 'an unphotographed incident is not a removed photo')
 })
 
 Deno.test('PR7/B-246 slice — chronicity flag daysSinceLastEpisode agrees with the At-a-glance tile (local-day, no UTC drift)', () => {
@@ -2717,6 +2975,8 @@ Deno.test('B-704 TG-5 — editing the stored target never moves a report NUMBER 
       mealCompletion: s.diet.mealCompletion,
       treats: s.diet.treats,
       humanFood: { count: s.diet.humanFood.count, days: s.diet.humanFood.days },
+      previousDiet: null,
+      medicationVehicles: null,
       proteinExposureTally: s.provenance.proteinExposureTally,
       proteinTimelineTotal: s.proteinTimeline.totalFeedings,
       totalByProtein: s.proteinTimeline.totalByProtein,
@@ -3065,4 +3325,981 @@ Deno.test('CUL-564 — assembleReport extracts a merged ⑤+L1 timing_story (bot
     !snap.correlation.timing.some((t) => t.kind === 'postprandial_timing' || t.kind === 'empty_stomach_timing'),
     'the lone ⑤/L1 cards are consumed by the merge — no double-render',
   )
+})
+
+// ── CUL-976 — one drug, one adherence claim, on the prescription ─────────────────────
+//
+// The v15 artifact told a vet two different things about whether one ear infection was
+// treated: "Adherence: 9 of 30 doses" in the page-5 clinical summary, and "28 of 28" in the
+// page-10 lifetime table, for the same drug on the same document. The tell that this was a
+// defect rather than two framings is that the in-window denominator (30) EXCEEDED the whole
+// prescription (28) — a subset cannot have a bigger denominator than its set.
+//
+// Two independent causes, and each of these tests fails on its own cause:
+//   • the NUMERATOR ran a private `medicationId === regimen.id` filter, so every dose logged
+//     before the owner created the regimen row (medication_id NULL forever) was invisible to
+//     page 1 while the shared attribution pass claimed it for the course; and
+//   • the DENOMINATOR was `dosesPerDay × elapsedDaysInWindow`, a proration of the report's own
+//     window printed bare, with no referent in the record at all.
+
+const ADHERENCE_CLAIM = /Adherence: <span class="num">(\d+)<\/span> of <span class="num">(\d+)<\/span> prescribed/g
+
+/** Every "N of M prescribed" claim in a rendered document, as [numerator, denominator] pairs. */
+function adherenceClaims(html: string): Array<[number, number]> {
+  return [...html.matchAll(ADHERENCE_CLAIM)].map((m) => [Number(m[1]), Number(m[2])])
+}
+
+/**
+ * The CUL-976 record, reproduced: a 28-dose otic course the owner began dosing on Jul 17 and
+ * only configured in the app on Jul 25. The 16 doses before that carry `medication_id = NULL`
+ * forever; the 12 after it are regimen-linked. 12 + 16 = 28 = the prescription.
+ */
+function lateConfiguredCourse(): {
+  medications: ReportMedicationInput[]
+  lifetimeDoses: ReportDoseInput[]
+  medicationItems: ReportMedicationItemInput[]
+} {
+  return {
+    medications: [{
+      id: 'reg-otic', medicationItemId: 'mi-otic', drugName: 'Motozol', doseAmount: '1 drop', route: 'otic',
+      dosesPerDay: 2, scheduleNotes: null, indication: 'Ear infection', prescribedBy: null,
+      startedAt: '2026-07-16', targetDurationDays: null, targetDurationDoses: 28,
+      status: 'completed', endedAt: '2026-08-09', isPrescription: true, strength: null,
+    }],
+    lifetimeDoses: [
+      // Jul 17–24, 2×/day, logged BEFORE the regimen row existed → medication_id NULL.
+      ...courseDoses(null, 'mi-otic', '2026-07-17', 8, 2),
+      // Jul 25–30, 2×/day, logged after the owner configured the regimen → linked.
+      ...courseDoses('reg-otic', 'mi-otic', '2026-07-25', 6, 2),
+      // …and then nothing, for the final ten days of a course recorded to Aug 9.
+    ],
+    medicationItems: [
+      { id: 'mi-otic', genericName: 'Metronidazole', brandName: 'Motozol', strength: null, route: 'otic', isPrescription: true },
+    ],
+  }
+}
+
+Deno.test('CUL-976 — pre-configuration doses count toward the course (numerator by DRUG, not by regimen link)', () => {
+  const rec = lateConfiguredCourse()
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+
+  // RED PRE-FIX: the old numerator saw only the 12 regimen-linked doses.
+  assert.equal(otic.lifetimeDosesLogged, 28, 'all 28 doses of the drug count, linked or not')
+  assert.equal(otic.prescribedDoses, 28)
+
+  // And they moved rather than being duplicated — the 16 pre-configuration doses are no longer
+  // reported to the vet as a separate "no regimen configured" drug while the lifetime table
+  // counts the same doses toward the prescription. One population, one home.
+  assert.equal(snap.unlinkedMedications.length, 0, 'no orphan group for a drug that has a regimen')
+
+  // The §4.4 lifetime table agrees, because it is the same derivation.
+  const entry = snap.medicationHistory!.entries.find((e) => e.drugName === 'Motozol')!
+  assert.equal(entry.dosesLogged, 28)
+  assert.equal(entry.plannedDoses, 28)
+})
+
+Deno.test('CUL-976 — the same dose is never counted twice across the partition', () => {
+  const rec = lateConfiguredCourse()
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  // Every live dose lands in exactly one section. Summing the windowed sections cannot exceed
+  // the record, and the orphan bucket is empty here, so the regimen owns all 28.
+  const orphanTotal = snap.unlinkedMedications.reduce((n, u) => n + u.totalDoses, 0)
+  const regimenLifetime = snap.medications.reduce((n, m) => n + m.lifetimeDosesLogged, 0)
+  assert.equal(regimenLifetime + orphanTotal, 28)
+})
+
+/**
+ * The page-1 medication line for one drug, SLICED OUT of the document before matching.
+ *
+ * C-4's testing rule: never match across the document. A guard containing `.*` is not a guard —
+ * on this report it would happily bridge hundreds of characters from page 1 into Appendix D or
+ * the lifetime table and pass on a string the drug's own line never contained.
+ */
+function medLineFor(html: string, drugName: string): string {
+  // The page-1 line is a kv row: `<div class="kv"><span class="k">DRUG</span><span>…</span></div>`.
+  // Anchoring on the KEY span is what makes this page 1's line and not the drug's first mention
+  // anywhere in the document — the same name also appears in Appendix D and the lifetime table.
+  const anchor = `<span class="k">${drugName}</span>`
+  const start = html.indexOf(anchor)
+  assert.notEqual(start, -1, `page-1 medication line for ${drugName} not found`)
+  const end = html.indexOf('</div>', start)
+  assert.notEqual(end, -1, `page-1 medication line for ${drugName} is unterminated`)
+  return html.slice(start, end)
+}
+
+Deno.test('CUL-976 — PROPERTY: no adherence denominator ever exceeds the prescription', () => {
+  // The old denominator was `Math.round(dosesPerDay × elapsedDaysInWindow)`, so it grew with the
+  // REPORT's window and had no upper bound related to the drug at all. Generated across dose
+  // rates and window overlaps, that shape produces a denominator larger than the prescription in
+  // most of this space — which is exactly the "30 of a 28-dose course" the artifact printed.
+  //
+  // The assertion is over the RENDERED document, so it holds against any future renderer that
+  // reintroduces a second ratio, not merely against today's snapshot fields.
+  let claimsSeen = 0
+  let overDeliveredSeen = 0
+  for (const dosesPerDay of [1, 2, 3, 4]) {
+    for (const courseDays of [3, 7, 14, 30]) {
+      for (const startOffsetDays of [0, 20, 60]) {
+        for (const extraDoseDays of [0, 2]) {
+        // `extraDoseDays > 0` doses the course PAST its plan — the over-delivery shape, where a
+        // ratio would read "36 of 28". The prescription stays the plan; only the logging exceeds it.
+        const targetDoses = dosesPerDay * courseDays
+        const dosedDays = courseDays + extraDoseDays
+        const startedAt = addDayKey('2026-05-10', startOffsetDays)
+        const rec = {
+          medications: [{
+            id: 'reg-p', medicationItemId: 'mi-p', drugName: 'Probe', doseAmount: '1', route: 'oral',
+            dosesPerDay, scheduleNotes: null, indication: null, prescribedBy: null,
+            startedAt, targetDurationDays: null, targetDurationDoses: targetDoses,
+            status: 'completed', endedAt: addDayKey(startedAt, courseDays - 1),
+            isPrescription: true, strength: null,
+          } as ReportMedicationInput],
+          // Dosed to plan, every day of the course.
+          lifetimeDoses: courseDoses('reg-p', 'mi-p', startedAt, dosedDays, dosesPerDay),
+          medicationItems: [
+            { id: 'mi-p', genericName: 'Probe', brandName: null, strength: null, route: 'oral', isPrescription: true },
+          ],
+        }
+        const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+        const html = renderReport(snap)
+        for (const [numerator, denominator] of adherenceClaims(html)) {
+          claimsSeen++
+          assert.ok(
+            denominator <= targetDoses,
+            `denominator ${denominator} exceeds the ${targetDoses}-dose prescription ` +
+              `(dosesPerDay=${dosesPerDay}, courseDays=${courseDays}, startOffset=${startOffsetDays})`,
+          )
+          assert.ok(numerator <= denominator, `numerator ${numerator} exceeds its own denominator ${denominator}`)
+        }
+        if (extraDoseDays > 0) {
+          overDeliveredSeen++
+          assert.equal(
+            adherenceClaims(html).length,
+            0,
+            'an over-delivered course renders NO ratio — never "36 of 28"',
+          )
+        }
+        }
+      }
+    }
+  }
+  // NON-VACUITY FLOOR (C-36/C-38): a property test that matched nothing would pass over every
+  // shape above, including the defect. 4 × 4 × 3 combinations each render one claim.
+  assert.equal(claimsSeen, 48, 'every dosed-to-plan combination rendered exactly one adherence claim')
+  assert.equal(overDeliveredSeen, 48, 'and every over-delivered combination was exercised')
+})
+
+Deno.test('CUL-976 — CROSS-SURFACE: one drug yields exactly ONE adherence claim per document', () => {
+  const rec = lateConfiguredCourse()
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const html = renderReport(snap)
+
+  // The whole defect in one assertion: page 5 said "9 of 30" and page 10 said "28 of 28" about
+  // this drug. Both surfaces now render the same claim from the same derivation, so the document
+  // carries one ratio for it — and, being identical, one CLAIM however many times it is printed.
+  const claims = adherenceClaims(html)
+  assert.equal(claims.length, 1, 'exactly one prescription-denominated claim on the document')
+  assert.deepEqual(claims[0], [28, 28])
+
+  // And the lifetime table's own cell agrees with it, digit for digit. Sliced to the table's
+  // row before matching — never across the document (C-4).
+  const tableStart = html.indexOf('Medication history')
+  assert.notEqual(tableStart, -1)
+  const lifetimeTable = html.slice(tableStart)
+  assert.ok(/28<\/span> of <span class="num">28/.test(lifetimeTable), 'the lifetime cell states the same 28 of 28')
+
+  // The page-1 line carries no SECOND ratio of its own. The window clause is counts only.
+  const line = medLineFor(html, 'Motozol')
+  assert.equal(
+    (line.match(/ of <span class="num">/g) ?? []).length,
+    2,
+    'page 1 carries the prescription ratio and the day ratio, and no third "N of M" dose ratio',
+  )
+  assert.ok(!/of <span class="num">\d+<\/span> doses on/.test(line), 'the prorated dose ratio is gone')
+})
+
+Deno.test('CUL-976 — a course with no planned total states a COUNT, never an invented denominator', () => {
+  const rec = lateConfiguredCourse()
+  // An ongoing course with neither a dose target nor a day target — the PRN / open-ended shape.
+  rec.medications[0].targetDurationDoses = null
+  rec.medications[0].targetDurationDays = null
+  rec.medications[0].status = 'active'
+  rec.medications[0].endedAt = null
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(otic.prescribedDoses, null, 'no prescription ⇒ no denominator')
+
+  const html = renderReport(snap)
+  assert.equal(adherenceClaims(html).length, 0, 'no ratio is invented for a course that has no plan')
+  const line = medLineFor(html, 'Motozol')
+  assert.ok(
+    /28<\/span> doses administered across the whole course; no planned total recorded/.test(line),
+    'the count is stated, with its scope and its limit named',
+  )
+})
+
+Deno.test('CUL-976 — a drug dosed only OUTSIDE the window states its course, not "not tracked"', () => {
+  const rec = lateConfiguredCourse()
+  // MED_NOW is 2026-08-04 and the window is 90 days, so push the whole course back beyond it.
+  rec.medications[0].startedAt = '2026-01-10'
+  rec.medications[0].endedAt = '2026-02-06'
+  rec.lifetimeDoses = [
+    ...courseDoses(null, 'mi-otic', '2026-01-11', 8, 2),
+    ...courseDoses('reg-otic', 'mi-otic', '2026-01-19', 6, 2),
+  ]
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  // The old basis was "zero doses IN THE WINDOW ⇒ not tracked", which reported a fully-dosed
+  // course as untracked purely because of where the report's window happened to fall.
+  assert.equal(otic.adherenceState, 'tracked')
+  assert.equal(otic.lifetimeDosesLogged, 28)
+  assert.equal(otic.windowDosesLogged, 0)
+})
+
+Deno.test('CUL-976 — a course with NO dose ever still reads "adherence not tracked" (§4 trap holds)', () => {
+  const rec = lateConfiguredCourse()
+  rec.lifetimeDoses = []
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: [] }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(otic.adherenceState, 'not_tracked')
+  assert.equal(otic.lifetimeDosesLogged, 0)
+  const html = renderReport(snap)
+  assert.equal(adherenceClaims(html).length, 0, 'silence never becomes a ratio')
+  assert.ok(/Adherence not tracked/.test(medLineFor(html, 'Motozol')), 'and never reads as compliant')
+})
+
+Deno.test('CUL-976 — a window holding ONLY missed/refused doses never reads "no doses logged"', () => {
+  const rec = lateConfiguredCourse()
+  // The course ran to plan before the window, and the two doses that fall INSIDE the window were
+  // both refused. `windowDosesLogged` counts administered (given + partial) only, so it is 0 —
+  // but dose events were logged, and they are the most clinically loaded rows on the page.
+  // The window is the 90 days ending MED_NOW (2026-08-04), so it opens ~May 7. The regimen spans
+  // it, the administered doses all fall BEFORE it, and only the two refusals land inside.
+  rec.medications[0].startedAt = '2026-01-10'
+  rec.medications[0].endedAt = '2026-07-30'
+  rec.lifetimeDoses = [
+    ...courseDoses('reg-otic', 'mi-otic', '2026-01-11', 13, 2),
+    ...courseDoses('reg-otic', 'mi-otic', '2026-07-29', 1, 2, 'refused'),
+  ]
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(otic.windowDosesLogged, 0, 'nothing administered in the window')
+  assert.equal(otic.refusedDoses, 2, '…but two refusals were logged in it')
+
+  const line = medLineFor(renderReport(snap), 'Motozol')
+  // "No doses logged … ; 2 refused" is self-contradicting, and it buries a refusal — the exact
+  // absence-as-fact this file's own "none recorded as refused" comment forbids, eleven lines up.
+  assert.ok(!/No doses logged in this report's window/.test(line), 'refusals are dose events; the window is not empty')
+  assert.ok(/no doses administered/.test(line), 'the honest form distinguishes logged from administered')
+  assert.ok(/2 refused/.test(line), 'and the refusals stay visible')
+})
+
+Deno.test('CUL-976 — a window with NO dose event at all claims nothing about refusals', () => {
+  const rec = lateConfiguredCourse()
+  rec.medications[0].startedAt = '2026-01-10'
+  rec.medications[0].endedAt = '2026-07-30'
+  rec.lifetimeDoses = courseDoses('reg-otic', 'mi-otic', '2026-01-11', 13, 2) // all before the window
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const line = medLineFor(renderReport(snap), 'Motozol')
+  assert.ok(/No doses logged in this report's window/.test(line), 'an empty window says so')
+  // "none recorded as refused" over ZERO doses is a claim about nothing, read as a claim about
+  // the course. Absence of evidence is not evidence here either.
+  assert.ok(!/none recorded as refused/.test(line), 'no refusal claim over an empty window')
+})
+
+// ── CUL-976 follow-up: the adversarial pass ──────────────────────────────────────────
+//
+// The `adversarial-reviewer` broke the first version of this fix in five shapes, and they share
+// ONE root cause: the adherence claim became RECORD-scoped while every qualifier beside it stayed
+// WINDOW-scoped, in the same paragraph, with nothing saying which was which. C-37 names exactly
+// that — a sentence holding both must say which is which — and the failures below are what it
+// costs when it does not. The second cluster is the dosing-gap clause, whose predicate said
+// "administered" while its copy said "logged".
+
+Deno.test('CUL-976 adv — refusals OUTSIDE the window are never reported as "none refused"', () => {
+  const rec = lateConfiguredCourse()
+  // The whole course was refused, before the window opened. The numerator is the record (0 of 28);
+  // "none recorded as refused" was the WINDOW's. Two populations, one sentence, and the document
+  // said no refusals over a record of 28 — reframing a disease signal as owner non-adherence.
+  rec.medications[0].startedAt = '2026-01-10'
+  rec.medications[0].endedAt = '2026-07-30'
+  rec.lifetimeDoses = courseDoses('reg-otic', 'mi-otic', '2026-01-11', 14, 2, 'refused')
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const line = medLineFor(renderReport(snap), 'Motozol')
+  // The numerator is record-scoped and SAYS so, and 0 of 28 is itself the accusing statement.
+  assert.ok(
+    />0<\/span> of <span class="num">28<\/span> prescribed doses administered across the whole course/.test(line),
+    'the numerator is record-scoped and names its scope',
+  )
+  // The refusal COUNT is not on this line (CUL-994 owns naming it beside a record-scoped
+  // numerator without re-creating the subset/disjoint ambiguity). What must never happen is the
+  // document claiming an absence it cannot support: "none recorded as refused" over a record of
+  // 28 refusals. The empty-window register carries no extras at all, so it cannot.
+  assert.ok(!/none recorded as refused/.test(line), 'never an unscoped refusal absence over a record of 28 refusals')
+})
+
+// ── CUL-976 pass 3 — the sibling branch, and three strings the reduction left stale ──
+//
+// The third falsification pass found that fixing page 1's empty-window register and NOT
+// Appendix D's left the document asserting an absence it cannot support. That is C-4 rule 1
+// verbatim — "when you close a defect on one branch of a two-branch surface, check the sibling
+// before closing the issue, and fix the accusing side first" — and this session had just
+// finished writing that rule into `docs/engineering-lessons.md` before doing it.
+
+Deno.test('CUL-976 p3 — Appendix D never claims "none refused" over a record of refusals', () => {
+  const rec = lateConfiguredCourse()
+  // Every dose refused, all of them before the window opened. `adherenceState` is record-based
+  // (so page 1 states "0 of 28"), which means Appendix D's row no longer takes the not_tracked
+  // branch — and its else branch printed the window's zero refusals as an unscoped absence.
+  rec.medications[0].startedAt = '2026-01-10'
+  rec.medications[0].endedAt = '2026-07-30'
+  rec.lifetimeDoses = courseDoses('reg-otic', 'mi-otic', '2026-01-11', 14, 2, 'refused')
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const html = renderReport(snap)
+
+  // The whole-document form of the assertion, because the defect was that ONE sentence about
+  // refusal existed anywhere on the page and it was the false one.
+  assert.ok(
+    !/None recorded as refused/.test(html),
+    'no unscoped refusal absence anywhere on a document whose record is 28 refusals',
+  )
+
+  const appx = html.slice(html.indexOf('Appendix D'))
+  const row = appx.slice(appx.indexOf('Motozol'), appx.indexOf('Motozol') + 700)
+  assert.ok(/No doses logged in this window/.test(row), 'the empty-window row says only that')
+})
+
+Deno.test('CUL-976 p3 — Appendix D still names its refusals when the window HAS doses', () => {
+  const rec = lateConfiguredCourse()
+  rec.lifetimeDoses = [
+    ...courseDoses('reg-otic', 'mi-otic', '2026-07-17', 9, 2),
+    ...courseDoses('reg-otic', 'mi-otic', '2026-07-26', 5, 2, 'refused'),
+  ]
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const html = renderReport(snap)
+  const appx = html.slice(html.indexOf('Appendix D'))
+  const row = appx.slice(appx.indexOf('Motozol'), appx.indexOf('Motozol') + 700)
+  // The register that CAN support the claim keeps it — this is a narrowing, not a deletion.
+  assert.ok(/>10<\/span> refused/.test(row), 'a window holding refusals still states them')
+})
+
+Deno.test('CUL-976 p3 — Appendix D does not tell the reader page 1 is computed from its rows', () => {
+  const rec = lateConfiguredCourse()
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const html = renderReport(snap)
+  // Page 1's numerator is record-scoped; this table is window-scoped. The sub-head said they
+  // were the same population, which is the one sentence on the document that instructs a reader
+  // to make exactly the conflation "across the whole course" exists to prevent.
+  assert.ok(
+    !/page-1 adherence line is computed from these entries/.test(html),
+    'the stale cross-reference is gone',
+  )
+})
+
+Deno.test('CUL-976 p3 — the record claim says ADMINISTERED, and means it consistently', () => {
+  const rec = lateConfiguredCourse()
+  rec.medications[0].targetDurationDoses = null
+  rec.medications[0].targetDurationDays = null
+  rec.medications[0].status = 'active'
+  rec.medications[0].endedAt = null
+  rec.lifetimeDoses = courseDoses('reg-otic', 'mi-otic', '2026-07-17', 14, 2, 'refused')
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const line = medLineFor(renderReport(snap), 'Motozol')
+  // `lifetimeDosesLogged` is given+partial — therapy DELIVERED (B-618 D1). Calling it "logged"
+  // put two senses of the word in one paragraph: the window clause's "no doses logged" means no
+  // dose EVENT, and 28 refusals are 28 events. "administered" is the word that is true of both
+  // the number and the reader's reading of it.
+  assert.ok(/0<\/span> doses administered across the whole course/.test(line), 'the record claim says administered')
+  assert.ok(/28 refused/.test(line), 'and the refusals are visible in the window clause')
+})
+
+Deno.test('CUL-976 p3 — "adherence not tracked" is scoped to the regimen, not to the record', () => {
+  const rec = lateConfiguredCourse()
+  // A FREE-TEXT regimen (no medication_item_id) cannot be reached by the item+window fallback —
+  // `lib/medications.ts` names this as the residual gap B-153 could not close. The doses land in
+  // the orphan bucket, so page 1 carries both lines, and an absolute "no doses logged" beside an
+  // orphan line reading "28 doses given in this window" is a flat contradiction about one drug.
+  rec.medications[0].medicationItemId = null
+  // Every dose unlinked: pass 1 attributes an explicitly-linked dose by `medication_id` whatever
+  // the regimen's item, so a linked dose would reach even this regimen and mask the gap.
+  rec.lifetimeDoses = courseDoses(null, 'mi-otic', '2026-07-17', 14, 2)
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const html = renderReport(snap)
+  const line = medLineFor(html, 'Motozol')
+  assert.ok(/no doses logged against this regimen/.test(line), 'the claim is scoped to what it can see')
+  assert.ok(!/<b>Adherence not tracked<\/b> &mdash; no doses logged\./.test(line), 'never an absolute absence')
+})
+
+// ── CUL-994 Part 2 — the record-scoped administered-dose span ─────────────────────────
+
+Deno.test('CUL-994 Part 2 — lifetimeFirst/LastDoseDay are drawn from ADMINISTERED rows only, over the whole record', () => {
+  const rec = lateConfiguredCourse()
+  // A refusal AFTER the last administered dose and an unconfirmed row BEFORE the first: neither
+  // is administered, so neither moves an endpoint — both ends come from one population (C-37).
+  const doses: ReportDoseInput[] = [
+    ...rec.lifetimeDoses,
+    { eventId: 'dose-refused-late', occurredAt: at('2026-08-08', '08:00:00'), medicationId: 'reg-otic', medicationItemId: 'mi-otic', adherence: 'refused', doseAmount: null, pairedEventId: null },
+    { eventId: 'dose-unconfirmed-early', occurredAt: at('2026-07-16', '20:00:00'), medicationId: 'reg-otic', medicationItemId: 'mi-otic', adherence: null, doseAmount: null, pairedEventId: null },
+  ]
+  // Both the window pull and the untrimmed lifetime set carry the rows: the span reads the latter.
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses, lifetimeDoses: doses }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(otic.lifetimeFirstDoseDay, '2026-07-17', 'first ADMINISTERED day — the unconfirmed Jul 16 row does not count')
+  assert.equal(otic.lifetimeLastDoseDay, '2026-07-30', 'last ADMINISTERED day — the refused Aug 8 row does not count')
+  assert.equal(otic.lifetimeDosesLogged, 28, 'the same population as the numerator beside it')
+  assert.equal(otic.lifetimeDoseDayCount, 14, '28 doses at 2×/day on 14 DISTINCT days — the density, not the count')
+  // Nothing administered → null, never a fabricated day.
+  const refused = rec.lifetimeDoses.map((d) => ({ ...d, adherence: 'refused' }))
+  const refusedAll = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: refused, lifetimeDoses: refused }))
+  const none = refusedAll.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(none.lifetimeFirstDoseDay, null)
+  assert.equal(none.lifetimeLastDoseDay, null)
+  assert.equal(none.lifetimeDosesLogged, 0)
+  assert.equal(none.lifetimeDoseDayCount, 0)
+})
+
+// ── R-13 item 2 (CUL-851) — the WSAVA "Previous diet" row, derived from the meal log ──
+//
+// Appendix B printed a hardcoded "Not recorded." for previous diet while appendix E of the
+// same document listed the food the pet ate every day up to the trial. The field genuinely
+// is not captured (CUL-330 is that work, and stays separate), but the record answers the
+// question anyway, and saying "not recorded" over an answer the report itself prints is the
+// same self-contradiction R-4 fixes two rows down.
+
+Deno.test('R-13 item 2 — the previous diet is derived from meals logged BEFORE the trial started', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      dietTrials: [
+        { id: 'dt', foodItemId: 'fi-t', startedAt: '2026-05-12', targetDurationDays: 56, status: 'active', completedAt: null, vetName: null, foodLabel: 'Hydro HP', primaryProtein: 'hydrolyzed' },
+      ],
+      events: [
+        // Before the trial — the previous diet.
+        mealEvent('2026-05-08', { label: 'Tiki Cat Tuna' }),
+        mealEvent('2026-05-09', { label: 'Tiki Cat Tuna' }),
+        mealEvent('2026-05-10', { label: 'Tiki Cat Tuna' }),
+        mealEvent('2026-05-11', { label: 'Fancy Feast Salmon' }),
+        // A TREAT before the trial is not the diet.
+        mealEvent('2026-05-10', { label: 'Temptations', foodType: 'treat' }),
+        // On and after the start day — the trial diet, never the previous one.
+        mealEvent('2026-05-12', { label: 'Hydro HP' }),
+        mealEvent('2026-05-20', { label: 'Hydro HP' }),
+      ],
+    }),
+  )
+  const prev = snap.diet.previousDiet
+  assert.ok(prev, 'a trial with pre-trial meals derives a previous diet')
+  // `mealFoodLabel` carries the format, exactly as it does for `mealItems` — one labelling
+  // convention across the appendix, so a food reads the same in both rows.
+  assert.deepEqual(prev.labels, ['Tiki Cat Tuna (Dry)', 'Fancy Feast Salmon (Dry)'], 'most-fed first, treats excluded')
+  assert.equal(prev.feedings, 4, 'four pre-trial meals, and neither trial meal nor the treat')
+  assert.equal(prev.firstDay, '2026-05-08')
+  assert.equal(prev.lastDay, '2026-05-11', 'through the day before the trial began')
+})
+
+Deno.test('R-13 item 2 — no trial, or no pre-trial meal, derives nothing rather than guessing', () => {
+  idSeq = 0
+  const noTrial = assembleReport(baseInput({ events: [mealEvent('2026-05-08', { label: 'Tiki Cat Tuna' })] }))
+  assert.equal(noTrial.diet.previousDiet, null, 'without a trial there is no "previous" to speak of')
+
+  idSeq = 0
+  const noPrior = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      dietTrials: [
+        { id: 'dt', foodItemId: 'fi-t', startedAt: '2026-05-12', targetDurationDays: 56, status: 'active', completedAt: null, vetName: null, foodLabel: 'Hydro HP', primaryProtein: 'hydrolyzed' },
+      ],
+      events: [mealEvent('2026-05-20', { label: 'Hydro HP' })],
+    }),
+  )
+  assert.equal(noPrior.diet.previousDiet, null, 'a pull that saw no pre-trial meal claims nothing')
+})
+
+// ── R-13 item 3 (CUL-852) — the vehicle reaches the snapshot, and the tally is not widened ──
+
+Deno.test('R-13 item 3 — a dose paired to a feeding names that feeding as the vehicle', () => {
+  idSeq = 0
+  const pocket = mealEvent('2026-06-10', { label: 'Greenies Pill Pocket', foodType: 'treat', format: 'treat' })
+  const plain = mealEvent('2026-06-11', { label: 'Tiki Cat Tuna' })
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      events: [pocket, plain],
+      doses: [
+        { eventId: 'd1', occurredAt: at('2026-06-10', '13:00:00'), medicationId: null, medicationItemId: 'mi-1', adherence: 'given', doseAmount: null, pairedEventId: pocket.id },
+      ],
+    }),
+  )
+  const veh = snap.diet.medicationVehicles
+  assert.ok(veh, 'the paired feeding surfaces as a vehicle')
+  assert.deepEqual(veh.labels, ['Greenies Pill Pocket (Treat)'])
+  assert.equal(veh.feedings, 1, 'only the paired feeding, not every meal that day')
+  // A treat IS an off-diet exposure on a no-trial report, so this one is already in the set
+  // the tally counts — reported, not added.
+  assert.equal(veh.countedInTally, 1)
+})
+
+Deno.test('R-13 item 3 — reporting the tally membership does not change it', () => {
+  idSeq = 0
+  const build = (pair: boolean) => {
+    idSeq = 0
+    const m = mealEvent('2026-06-11', { label: 'Tiki Cat Tuna' })
+    return assembleReport(
+      baseInput({
+        now: '2026-07-02T12:00:00Z',
+        events: [m],
+        doses: pair
+          ? [{ eventId: 'd1', occurredAt: at('2026-06-11', '13:00:00'), medicationId: null, medicationItemId: 'mi-1', adherence: 'given', doseAmount: null, pairedEventId: m.id }]
+          : [],
+      }),
+    )
+  }
+  const withVehicle = build(true)
+  const without = build(false)
+  // A plain MEAL is not an off-diet exposure, so pairing a dose to it must not make one.
+  assert.equal(withVehicle.diet.medicationVehicles?.countedInTally, 0, 'a meal vehicle is not in the tally')
+  assert.deepEqual(
+    withVehicle.provenance.proteinExposureTally,
+    without.provenance.proteinExposureTally,
+    'the antigen tally is byte-identical with and without the pairing',
+  )
+  assert.equal(
+    withVehicle.provenance.confounders.length,
+    without.provenance.confounders.length,
+    'and the off-diet member set is unchanged',
+  )
+})
+
+// ── R-13 item 5 (CUL-497), Data Scientist lens — the two surfaces PARTITION one population ──
+//
+// The render-level test drives one food, which is the case a partition bug cannot show. The
+// hazard is that page 1 summarises the WHOLE window (`mealCompletion.intakeBreakdown`) while
+// appendix E summarises PER FOOD (`mealItems[].intakeBreakdown`), so "one predicate, both
+// surfaces" is only honest if the per-food multisets sum to the window's. Driven through the
+// real assembly rather than a hand-built snapshot: a fixture could satisfy the arithmetic
+// while production never produces it (C-35).
+
+Deno.test('R-13 item 5 — per-food breakdowns sum to the window breakdown, and each reads its own verdict', () => {
+  idSeq = 0
+  const mealOf = (date: string, label: string, rating: 'all' | 'refused') =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(date, '08:00:00'),
+      meal: { foodItemId: label, intakeRating: rating, quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'tuna', brand: null, productName: label },
+    })
+  const events = [
+    ...['2026-06-01', '2026-06-02', '2026-06-03'].map((d) => mealOf(d, 'Refused Food', 'refused')),
+    ...['2026-06-04', '2026-06-05', '2026-06-06'].map((d) => mealOf(d, 'Eaten Food', 'all')),
+  ]
+  const snap = assembleReport(baseInput({ now: '2026-07-02T12:00:00Z', events }))
+
+  // Page 1 sees the window: an even split, and it picks no side.
+  const windowSummary = summariseIntake(snap.diet.mealCompletion!.intakeBreakdown)
+  assert.equal(windowSummary.kind, 'itemised', 'three refused against three finished is a tie')
+
+  // Appendix E sees each food: two unanimous verdicts, neither of them a split.
+  const perFood = snap.diet.mealItems.map((i) => summariseIntake(i.intakeBreakdown))
+  assert.deepEqual(
+    perFood.map((s) => s.kind).sort(),
+    ['typical', 'typical'],
+    'a food eaten every time is not a tie, whatever the window says',
+  )
+
+  // THE PARTITION. Per-food counts sum to the window's, rating by rating — which is what
+  // makes the two densities reconcilable rather than merely different (C-4).
+  const sumPerFood = new Map<string, number>()
+  for (const i of snap.diet.mealItems) {
+    for (const b of i.intakeBreakdown) sumPerFood.set(b.rating, (sumPerFood.get(b.rating) ?? 0) + b.count)
+  }
+  for (const b of snap.diet.mealCompletion!.intakeBreakdown) {
+    assert.equal(sumPerFood.get(b.rating), b.count, `${b.rating} reconciles across the two surfaces`)
+  }
+  assert.equal(sumPerFood.size, snap.diet.mealCompletion!.intakeBreakdown.length, 'and no food carries a rating the window does not')
+
+  // And the figure printed BESIDE the split agrees with it: "N of M fully eaten" counts the
+  // same `all` rows the breakdown does.
+  const allInBreakdown = snap.diet.mealCompletion!.intakeBreakdown.find((b) => b.rating === 'all')?.count ?? 0
+  assert.equal(snap.diet.mealCompletion!.finishedMeals, allInBreakdown, 'the count beside the split is the split')
+})
+
+// ── R-13 item 4 (CUL-292) — the partition, driven through the REAL assembly ────────────
+//
+// The render-level tests hand `renderReport` an already-computed `proteinTimeline`, so the
+// production accumulators that decide which confounders ARE home food were covered by
+// nothing: a swapped `FoodFormat` literal on either line survives the whole suite, and the
+// report quietly reverts to the "3 of 4 feedings unverified" miscount this item removes.
+// Found by mutation in review, and this is the test that reds on it (C-18).
+
+Deno.test('R-13 item 4 — proteinTimeline partitions home-prepared from packaged, over real events', () => {
+  idSeq = 0
+  const feeding = (
+    date: string,
+    o: { label: string; format: FoodFormat; foodType: 'meal' | 'treat' | 'other'; proteins: string[] | null; panel?: string },
+  ): ReportEventInput =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(date, '12:00:00'),
+      meal: {
+        foodItemId: o.label,
+        intakeRating: null,
+        quantity: null,
+        foodType: o.foodType,
+        format: o.format,
+        primaryProtein: o.proteins?.[0] ?? null,
+        proteins: o.proteins,
+        brand: null,
+        productName: o.label,
+        // `complete` needs BOTH captured panel text and a confident read — the same gate the
+        // client's Tier-1 disclosure runs.
+        ingredientsNotes: o.panel ?? null,
+        extractionConfidence: o.panel ? { proteins: 0.9 } : null,
+      },
+    })
+
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      events: [
+        // Packaged, panel never read → the numerator this disclosure is actually about.
+        feeding('2026-06-01', { label: 'Jerky', format: 'treat', foodType: 'treat', proteins: ['chicken'] }),
+        // Packaged, panel read → in the denominator, out of the numerator.
+        feeding('2026-06-02', { label: 'Biscuit', format: 'treat', foodType: 'treat', proteins: ['beef'], panel: 'Beef, wheat, rice' }),
+        // Home food: no panel exists to read, which is the whole point.
+        feeding('2026-06-03', { label: 'Roast pork', format: 'human_food', foodType: 'other', proteins: ['pork'] }),
+        feeding('2026-06-04', { label: 'Lamb scraps', format: 'human_food', foodType: 'other', proteins: ['lamb'] }),
+        // Home food with NO protein captured at all: counted as unknown and skipped before
+        // the incompleteness check — so it is home food WITHOUT being an incomplete read,
+        // which is exactly where the two accumulators must not be written as one.
+        feeding('2026-06-05', { label: 'Table scraps', format: 'human_food', foodType: 'other', proteins: null }),
+      ],
+    }),
+  )
+
+  const pt = snap.proteinTimeline
+  assert.equal(pt.totalFeedings, 5, 'every off-diet feeding is in the population')
+  assert.equal(pt.incompleteFeedings, 3, 'three reads are incomplete (the no-protein row is unknown, not incomplete)')
+  assert.equal(pt.humanFoodFeedings, 3, 'three of the five are home-prepared')
+  assert.equal(pt.incompleteHumanFoodFeedings, 2, 'two of THOSE are incomplete reads')
+  assert.equal(snap.provenance.proteinUnknownCount, 1, 'and the protein-less one is disclosed as unknown')
+
+  // THE PARTITION the render divides by: packaged = total − home, and the packaged numerator
+  // is never larger than its own denominator.
+  const packagedTotal = pt.totalFeedings - pt.humanFoodFeedings
+  const packagedIncomplete = pt.incompleteFeedings - pt.incompleteHumanFoodFeedings
+  assert.equal(packagedTotal, 2)
+  assert.equal(packagedIncomplete, 1)
+  assert.ok(packagedIncomplete <= packagedTotal, 'the ratio can never exceed 1')
+  assert.ok(pt.incompleteHumanFoodFeedings <= pt.humanFoodFeedings, 'nor can the home-food one')
+})
+
+// ── Adversarial review, finding 1 — a tie that does not exhaust the population ─────────
+//
+// `split between "ate it all" ×3 and "ate most" ×3` over twelve meals reads as an exhaustive
+// two-way partition, and dropped six meals INCLUDING TWO REFUSALS. That is the B-532 defect
+// the predicate's own docstring says it exists to kill — a summary that silently deletes the
+// rest — re-entered with two survivors instead of one, and biased toward the calm half,
+// because `intakeBreakdownOf` orders best-to-worst and the tie is resolved by count.
+
+Deno.test('CUL-497 — a non-exhaustive tie names EVERY rating, never just the tied ones', () => {
+  idSeq = 0
+  const r = (date: string, rating: 'all' | 'most' | 'some' | 'picked' | 'refused') =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(date, '08:00:00'),
+      meal: { foodItemId: 'f1', intakeRating: rating, quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'tuna', brand: null, productName: 'One Food' },
+    })
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      events: [
+        r('2026-06-01', 'all'), r('2026-06-02', 'all'), r('2026-06-03', 'all'),
+        r('2026-06-04', 'most'), r('2026-06-05', 'most'), r('2026-06-06', 'most'),
+        r('2026-06-07', 'some'), r('2026-06-08', 'some'),
+        r('2026-06-09', 'picked'), r('2026-06-10', 'picked'),
+        r('2026-06-11', 'refused'), r('2026-06-12', 'refused'),
+      ],
+    }),
+  )
+  const s = summariseIntake(snap.diet.mealCompletion!.intakeBreakdown)
+  assert.equal(s.kind, 'itemised', 'no rating is habitual enough to stand for the rest')
+  if (s.kind !== 'itemised') throw new Error('unreachable')
+  assert.equal(
+    s.ratings.reduce((a, x) => a + x.count, 0),
+    12,
+    'the summary accounts for every rated meal — the refusals are not dropped',
+  )
+  assert.deepEqual(s.ratings.map((x) => x.rating), ['all', 'most', 'some', 'picked', 'refused'])
+})
+
+Deno.test('CUL-497 — "typically" needs a repeated rating, so n=1 never claims a habit', () => {
+  idSeq = 0
+  const one = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      events: [
+        makeEvent({ type: 'meal', occurredAt: at('2026-06-01', '08:00:00'), meal: { foodItemId: 'f1', intakeRating: 'all', quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'tuna', brand: null, productName: 'One Food' } }),
+      ],
+    }),
+  )
+  // A single rated meal is a fact, not a habit — and "typically ate it all" over one meal is
+  // an n=1 reassurance on the intake axis, which the clinical floor forbids by construction.
+  assert.equal(summariseIntake(one.diet.mealCompletion!.intakeBreakdown).kind, 'itemised')
+  assert.deepEqual(summariseIntake([{ rating: 'all', count: 2 }]), { kind: 'typical', rating: 'all', count: 2 })
+})
+
+// ── Adversarial review, finding 3 — the packaged ratio's two halves must be ONE population ──
+
+Deno.test('CUL-292 — the ratio counts only feedings that HAD a panel to read, on both sides', () => {
+  idSeq = 0
+  const feeding = (date: string, o: { label: string; proteins: string[] | null; panel?: string }) =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(date, '12:00:00'),
+      meal: {
+        foodItemId: o.label, intakeRating: null, quantity: null, foodType: 'treat', format: 'treat',
+        primaryProtein: o.proteins?.[0] ?? null, proteins: o.proteins, brand: null, productName: o.label,
+        ingredientsNotes: o.panel ?? null, extractionConfidence: o.panel ? { proteins: 0.9 } : null,
+      },
+    })
+  // Ten packaged off-diet feedings: 2 read complete, 3 read-but-incomplete, 5 with NO protein
+  // captured at all. `incompleteFeedings` skips the five (they are "unknown", not "unread"),
+  // so a denominator that still counts them understates the blind spot: eight of ten have no
+  // complete panel, and the sentence said three of ten.
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      events: [
+        feeding('2026-06-01', { label: 'A', proteins: ['beef'], panel: 'Beef, rice, barley' }),
+        feeding('2026-06-02', { label: 'B', proteins: ['lamb'], panel: 'Lamb, oats, peas' }),
+        feeding('2026-06-03', { label: 'C', proteins: ['chicken'] }),
+        feeding('2026-06-04', { label: 'D', proteins: ['duck'] }),
+        feeding('2026-06-05', { label: 'E', proteins: ['pork'] }),
+        feeding('2026-06-06', { label: 'F', proteins: null }),
+        feeding('2026-06-07', { label: 'G', proteins: null }),
+        feeding('2026-06-08', { label: 'H', proteins: null }),
+        feeding('2026-06-09', { label: 'I', proteins: null }),
+        feeding('2026-06-10', { label: 'J', proteins: null }),
+      ],
+    }),
+  )
+  const pt = snap.proteinTimeline
+  assert.equal(pt.totalFeedings, 10)
+  assert.equal(snap.provenance.proteinUnknownCount, 5, 'five had no protein at all')
+  // The ratio's own denominator: packaged feedings whose food HAD a protein set to judge.
+  assert.equal(pt.packagedReadable, 5, 'the five with a protein set are the population judged')
+  assert.equal(pt.packagedUnread, 3, 'three of those five were never read')
+  const html = renderReport(snap)
+  const t = plainText(html)
+  assert.ok(/3 of 5 off-diet feedings involved a food whose ingredient panel was never captured/.test(t), t.slice(t.indexOf('A floor'), t.indexOf('A floor') + 300))
+  assert.ok(!/3 of 10/.test(t), 'never a numerator drawn from one population over another\'s denominator')
+})
+
+Deno.test('CUL-292 — an all-home-food record still discloses its blind spot', () => {
+  idSeq = 0
+  const scrap = (date: string) =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(date, '19:00:00'),
+      meal: {
+        foodItemId: null, intakeRating: null, quantity: null, foodType: 'other', format: 'human_food',
+        primaryProtein: null, proteins: null, brand: null, productName: null,
+        ingredientsNotes: null, extractionConfidence: null,
+      },
+    })
+  const snap = assembleReport(
+    baseInput({ now: '2026-07-02T12:00:00Z', events: ['2026-06-01', '2026-06-02', '2026-06-03'].map(scrap) }),
+  )
+  assert.equal(snap.proteinTimeline.humanFoodFeedings, 3)
+  assert.equal(Object.keys(snap.provenance.proteinExposureTally).length, 0, 'the tally is empty')
+  const t = plainText(renderReport(snap))
+  // The floor block used to hang off a non-empty tally, so on the record where the blind spot
+  // is TOTAL the report disclosed it nowhere.
+  assert.ok(/3 home-prepared feedings/.test(t), 'the home-food limitation is stated')
+  assert.ok(/no ingredient panel at all/.test(t))
+})
+
+// ── Adversarial review, findings 4 + 5 ─────────────────────────────────────────────────
+
+Deno.test('CUL-851 — the trial food is never named as the PREVIOUS diet', () => {
+  // A 5-to-7 day transition onto the new food is the standard veterinary instruction, so an
+  // owner who logs the changeover has trial-food meals before the start date. Printing
+  // "Previous diet: Hydrolyzed HP" tells a vet the animal was NOT naive to the hydrolysate
+  // before the trial, which invalidates the elimination's premise — a clinical misread the
+  // row's completeness caveat does not touch, because the caveat is about how far back the
+  // log reaches, not about which food is which.
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      dietTrials: [
+        { id: 'dt', foodItemId: 'f-hp', startedAt: '2026-05-12', targetDurationDays: 56, status: 'active', completedAt: null, vetName: null, foodLabel: 'Hydrolyzed HP', primaryProtein: 'hydrolyzed' },
+      ],
+      events: [
+        ...['2026-05-01', '2026-05-02', '2026-05-03'].map((d) => mealEvent(d, { label: 'Purina ONE Chicken' })),
+        // the transition days, logged
+        ...['2026-05-09', '2026-05-10', '2026-05-11'].map((d) => mealEvent(d, { label: 'f-hp' })),
+        mealEvent('2026-05-20', { label: 'f-hp' }),
+      ],
+    }),
+  )
+  const prev = snap.diet.previousDiet
+  assert.ok(prev, 'the pre-trial diet is still derived')
+  assert.ok(!prev.labels.some((l) => /f-hp/i.test(l)), 'the trial food is not one of them')
+  assert.deepEqual(prev.labels, ['Purina ONE Chicken (Dry)'])
+  assert.equal(prev.feedings, 3, 'and the transition meals are out of the count')
+  assert.equal(prev.lastDay, '2026-05-03', 'so the span ends at the last genuinely-previous meal')
+})
+
+Deno.test('CUL-851 — a record of nothing but the transition derives no previous diet', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      dietTrials: [
+        { id: 'dt', foodItemId: 'f-hp', startedAt: '2026-05-12', targetDurationDays: 56, status: 'active', completedAt: null, vetName: null, foodLabel: 'Hydrolyzed HP', primaryProtein: 'hydrolyzed' },
+      ],
+      events: ['2026-05-09', '2026-05-10'].map((d) => mealEvent(d, { label: 'f-hp' })),
+    }),
+  )
+  assert.equal(snap.diet.previousDiet, null, 'silence beats naming the trial food')
+})
+
+Deno.test('CUL-852 — a dose paired to a de-duplicated meal twin still names its vehicle', () => {
+  // The guard was on the DOSE, which is the side that can never move: `dedupeEvents` gives
+  // medication events a `keep|<id>` group key. The side that does move is the paired MEAL id,
+  // and an owner who one-taps a treat and then records the pill through the combo sheet can
+  // pair the dose to the twin that dedup drops. The row then printed a negative — "no dose in
+  // this window was logged as given in food" — over a record that holds one, which is the
+  // CUL-978 class two rows up the same table.
+  idSeq = 0
+  const at1 = at('2026-06-10', '13:00:00')
+  const at2 = at('2026-06-10', '13:00:20')
+  const first = makeEvent({ type: 'meal', occurredAt: at1, meal: { foodItemId: 'f-pocket', intakeRating: null, quantity: null, foodType: 'treat', format: 'treat', primaryProtein: null, brand: null, productName: 'Greenies Pill Pocket' } })
+  const twin = makeEvent({ type: 'meal', occurredAt: at2, meal: { foodItemId: 'f-pocket', intakeRating: null, quantity: null, foodType: 'treat', format: 'treat', primaryProtein: null, brand: null, productName: 'Greenies Pill Pocket' } })
+  const build = (paired: string) =>
+    assembleReport(
+      baseInput({
+        now: '2026-07-02T12:00:00Z',
+        events: [first, twin],
+        doses: [{ eventId: 'd1', occurredAt: at2, medicationId: null, medicationItemId: 'mi-1', adherence: 'given', doseAmount: null, pairedEventId: paired }],
+      }),
+    )
+  const survivor = build(first.id).diet.medicationVehicles
+  const dropped = build(twin.id).diet.medicationVehicles
+  assert.ok(survivor, 'control: pairing to the surviving twin names the vehicle')
+  assert.ok(dropped, 'pairing to the DROPPED twin must name it too — it is the same feeding')
+  assert.deepEqual(dropped.labels, survivor.labels)
+  assert.equal(dropped.feedings, survivor.feedings)
+})
+
+// ── R-15 brief 7(b), PM-ruled 2026-09-16 — the uncategorised observations are COUNTED ──
+//
+// `REPORT_SYMPTOM_TYPES` is an allow-list of eight leaves and `other` is not among it, so an
+// `other` row reaches no count, no chart and no appendix — while Appendix A's own preamble
+// claims "every symptom event in the window". On the PM's record the day before a real
+// appointment that silently dropped two dated rows naming the ear ("Tipping ear down",
+// "Shaking her head"), which is the sign that separates otitis from general pruritus.
+//
+// The ruling is (c) WITH (b): the owner is told at Send (client, separate) and the vet is
+// given a COUNT with no content. This is the (b) half — a number, never the notes.
+
+Deno.test('R-15 brief 7(b) — an `other` observation is counted, and only counted', () => {
+  idSeq = 0
+  const other = (date: string, note: string) =>
+    makeEvent({ type: 'other', occurredAt: at(date, '16:41:00'), notes: note })
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      events: [
+        other('2026-06-20', 'Tipping ear down'),
+        other('2026-06-21', 'Shaking her head- ear is bothering her'),
+        makeEvent({ type: 'vomit', occurredAt: at('2026-06-22', '09:00:00') }),
+      ],
+    }),
+  )
+  assert.equal(snap.provenance.uncategorisedObservations, 2, 'both `other` rows are counted')
+  assert.equal(snap.provenance.symptomLog.length, 1, 'and neither reaches the symptom log')
+  assert.equal(snap.provenance.totalSymptomIncidents, 1, 'nor any symptom count')
+
+  const t = plainText(renderReport(snap))
+  assert.ok(/2 further observations/.test(t), 'the count is disclosed')
+  assert.ok(/does not categorise/.test(t), 'and what it means')
+  // (b) IS A COUNT AND NO CONTENT. The notes are un-normalised owner text of unknown
+  // clinical quality; promoting them into the clinical artifact is the CUL-848 question and
+  // was NOT what was ruled.
+  assert.ok(!/Tipping ear down/.test(t), 'the note never reaches the report')
+  assert.ok(!/Shaking her head/.test(t), 'nor the second one')
+})
+
+Deno.test('R-15 brief 7(b) — a record with no `other` row gains no line', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({ now: '2026-07-02T12:00:00Z', events: [makeEvent({ type: 'vomit', occurredAt: at('2026-06-22', '09:00:00') })] }),
+  )
+  assert.equal(snap.provenance.uncategorisedObservations, 0)
+  assert.ok(!/further observation/.test(plainText(renderReport(snap))), 'present-only, like every other disclosure on this page')
+})
+
+Deno.test('R-15 brief 7(b) — the daily look is not an uncategorised observation', () => {
+  // `check_in` is the look, already excluded from every type-agnostic count as the third
+  // exclusion at report.ts's `LOCAL_LOOK` note. Counting it here would tell a vet the record
+  // holds observations the report dropped, when what it holds is the owner answering Noticed.
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      events: [
+        makeEvent({ type: 'check_in', occurredAt: at('2026-06-20', '20:00:00') }),
+        makeEvent({ type: 'vomit', occurredAt: at('2026-06-22', '09:00:00') }),
+      ],
+    }),
+  )
+  assert.equal(snap.provenance.uncategorisedObservations, 0, 'a look is not an uncategorised observation')
+})
+
+// ── CUL-981 — the vomit colour aggregate ──────────────────────────────────────
+//
+// Both were RED against the assembly that shipped the v15 report: `VomitPhenotype` aggregated
+// everything but colour.
+
+Deno.test('CUL-981 — vomit colour is aggregated over the ASSESSED reads, unsure excluded', () => {
+  idSeq = 0
+  const days = ['2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25']
+  const events = days.map((d) => makeEvent({ type: 'vomit', occurredAt: at(d, '20:00:00') }))
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-06-27T12:00:00Z',
+      events,
+      aiAnalyses: [
+        mkAnalysis(events[0].id, { colour: 'tan' }),
+        mkAnalysis(events[1].id, { colour: 'tan' }),
+        mkAnalysis(events[2].id, { colour: 'green' }),
+        // An owner-CORRECTED read counts the same as a raw one — the rule contents and
+        // consistency already follow, not a second rule invented for colour.
+        mkAnalysis(events[3].id, { colour: 'tan', editedAt: '2026-06-23T21:00:00Z' }),
+        // 'unsure' is not a legible colour and never becomes a category.
+        mkAnalysis(events[4].id, { colour: 'unsure' }),
+        // An UNASSESSED read contributes no colour at all, whatever the column holds.
+        mkAnalysis(events[5].id, { colour: 'yellow', status: 'uncertain' }),
+      ],
+    }),
+  )
+  const p = snap.vomitPhenotype!
+  assert.deepEqual(p.colourDistribution, { tan: 3, green: 1 })
+  assert.equal(p.assessedCount, 5, 'five completed reads')
+  assert.equal(p.reviewedCount, 1, 'one of them owner-corrected — still counted above')
+  // THE DENOMINATOR IS READS, NEVER INCIDENTS. Six incidents, five assessed, four with a
+  // legible colour: the tally must never be spoken over the six.
+  assert.equal(p.totalIncidents, 6)
+  assert.equal(Object.values(p.colourDistribution).reduce((a, b) => a + b, 0), 4)
+})
+
+Deno.test('CUL-981 — no photographed incident means no colour distribution, not an empty one spoken', () => {
+  idSeq = 0
+  const events = [makeEvent({ type: 'vomit', occurredAt: at('2026-06-20', '20:00:00') })]
+  const snap = assembleReport(baseInput({ now: '2026-06-27T12:00:00Z', events, aiAnalyses: [] }))
+  assert.deepEqual(snap.vomitPhenotype!.colourDistribution, {})
+  assert.equal(snap.vomitPhenotype!.assessedCount, 0)
 })

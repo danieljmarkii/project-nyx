@@ -15,7 +15,10 @@ import {
   type ReportInput, type ReportEventInput,
 } from './report.ts'
 import { renderReport } from './render.ts'
-import { buildTrialBlock, halfPartition, looksAntibacterial, selectReportTrial } from './trial.ts'
+import { expectedFailure } from './expectedFailure.testutil.ts'
+import {
+  buildTrialBlock, halfPartition, looksAntibacterial, selectReportTrial, trialAllowedListMissing,
+} from './trial.ts'
 
 /** The rendered page as a VET READS IT: tags stripped, entities decoded.
  *
@@ -4465,4 +4468,960 @@ Deno.test('B-613 — a one-day crop takes the pronoun, never "1 of those 1 days"
   const text = plain(renderReport(snap))
   assert.ok(!/of those 1 days/.test(text))
   assert.match(text, /This report holds no meal log for that day\./)
+})
+
+// ── R-16 (CUL-998 / CUL-861) — the pre-send fact ─────────────────────────────
+
+const R16_NOW_MS = Date.parse('2026-07-02T12:00:00Z')
+type R16Trial = NonNullable<Parameters<typeof trialAllowedListMissing>[0]>
+const r16Trial = (over: Partial<R16Trial> = {}): R16Trial => ({
+  permittedFoods: [],
+  startedAt: '2026-06-22',
+  targetDurationDays: 56,
+  status: 'active',
+  endedAt: null,
+  ...over,
+})
+
+Deno.test('trialAllowedListMissing: a running trial with no primary_diet row → true', () => {
+  assert.equal(trialAllowedListMissing(r16Trial(), R16_NOW_MS, 'UTC'), true)
+})
+
+Deno.test('trialAllowedListMissing: a permitted extra is not a list — only a primary_diet row is', () => {
+  // The sanctioned protein set is built from primary rows alone (trial.ts hasPrimary), so a
+  // list holding only a treat has nothing to define the diet with. Still "not set up".
+  const t = r16Trial({ permittedFoods: [{ role: 'permitted_treat' }] })
+  assert.equal(trialAllowedListMissing(t, R16_NOW_MS, 'UTC'), true)
+})
+
+Deno.test('trialAllowedListMissing: a primary_diet row → false, whatever the unhydrated-set heuristic says', () => {
+  // `allowedSetUnavailable` also fires when a primary row matched none of ≥10 feedings.
+  // That caveat belongs on the report; a pre-send "Set it up" on a list the owner already
+  // has is the wrong door, so the fact here is the LIST'S ABSENCE only.
+  const t = r16Trial({ permittedFoods: [{ role: 'primary_diet' }] })
+  assert.equal(trialAllowedListMissing(t, R16_NOW_MS, 'UTC'), false)
+})
+
+Deno.test('trialAllowedListMissing: an ended trial → false (nothing left to set up)', () => {
+  // Ended five days ago, inside the report's 90-day grace: the report still anchors on it
+  // and still prints the caveat, but the allowed-set screen would say "isn't on a diet
+  // trial right now" — the door must not open onto a screen that contradicts the line.
+  const t = r16Trial({ status: 'completed', endedAt: '2026-06-27' })
+  assert.equal(trialAllowedListMissing(t, R16_NOW_MS, 'UTC'), false)
+})
+
+Deno.test('trialAllowedListMissing: an active-status trial past its overrun grace → false (B-422)', () => {
+  // `status = 'active'` is the steady state of a stale trial. The shared predicate withdraws
+  // belief at target + 56 days, exactly as the allowed-set screen does.
+  const t = r16Trial({ startedAt: '2026-01-01', targetDurationDays: 28 })
+  assert.equal(trialAllowedListMissing(t, R16_NOW_MS, 'UTC'), false)
+})
+
+Deno.test('trialAllowedListMissing: no trial block → false', () => {
+  assert.equal(trialAllowedListMissing(null, R16_NOW_MS, 'UTC'), false)
+})
+
+// ── CUL-1041 §5.1 — THE WINDOW MOVED, AND WHEN ───────────────────────────────
+//
+// THE GUARD THAT SHOULD HAVE EXISTED BEFORE ANY OF THIS. The adversarial pass that
+// produced the trial-extension spec could not run a live render — `trialDayPhrase`
+// and `stoppedReasonLine` were TRANSCRIBED from `render.ts`, not executed — so every
+// claim this feature was designed against was a claim about source a human had read.
+// These drive raw events → `assembleReport` → `renderReport` across a MUTATED
+// `targetDurationDays`, which is the only way the deletion below is observable: the
+// two renders differ by one integer on one input row, and the page changes in three
+// places.
+//
+// The numbers are the spec's own worked cases, not invented ones:
+//   · §5.4  — a 28-day window, day 50, extended to 64. What the tap deletes.
+//   · §5.1  — a 56-day window extended to 84 on day 56. What the report owes.
+
+const W_TZ = 'America/New_York'
+
+/** A trial started `elapsed - 1` days before NOW, fed its own diet every day.
+ *
+ *  Anchored on NOW rather than on a literal start date so the day counter is a
+ *  RESULT of the fixture rather than a constant restated beside it — a fixture that
+ *  hardcodes both drifts silently the moment the report's day math changes (C-29's
+ *  time-axis half, and C-35: build the shape the caller could actually hand over). */
+function windowTrialInput(o: {
+  dayOfTrial: number
+  targetDurationDays: number
+  targetDurationDaysInitial?: number | null
+  targetDurationSetAt?: string | null
+  targetDurationVetDirected?: boolean | null
+  /** Who directed the TRIAL — a different act from who moved its window. */
+  vetName?: string | null
+  /** Place the move on a TRIAL DAY rather than on an absolute instant.
+   *
+   *  ⚠️ EVERY FIXTURE IN THE FIRST CUT OF THIS BLOCK STAMPED THE MOVE ON THE REPORT'S
+   *  LAST DAY, so `movedOnDay === dayCounter` in all six and no test ever placed a move
+   *  in the trial's PAST — which is exactly where the D5-ladder defect below lived
+   *  (`adversarial-reviewer`, 2026-09-17). A fixture set that only ever exercises ONE
+   *  relationship between two dates has not tested the relationship. */
+  movedOnDayOfTrial?: number
+  status?: 'active' | 'completed' | 'abandoned'
+  stoppedReason?: string | null
+}): ReportInput {
+  const todayKey = NOW.slice(0, 10)
+  const startedAt = dayKeyPlus(todayKey, -(o.dayOfTrial - 1))
+  const ended = o.status !== undefined && o.status !== 'active' ? todayKey : null
+  const setAt =
+    o.movedOnDayOfTrial !== undefined
+      ? `${dayKeyPlus(startedAt, o.movedOnDayOfTrial - 1)}T14:00:00Z`
+      : (o.targetDurationSetAt ?? null)
+  return baseInput({
+    events: days(startedAt, todayKey).map((d) =>
+      meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }),
+    ),
+    dietTrials: [
+      {
+        id: 'trial-w',
+        foodItemId: 'f-hp',
+        startedAt,
+        targetDurationDays: o.targetDurationDays,
+        status: o.status ?? 'active',
+        completedAt: o.status === 'completed' ? ended : null,
+        endedAt: ended,
+        stoppedReason: o.stoppedReason ?? null,
+        indication: 'skin',
+        vetName: o.vetName ?? null,
+        foodLabel: 'Royal Canin Hydrolyzed HP',
+        primaryProtein: 'soy',
+        proteins: ['soy'],
+        allowedFoods: [{ ...TRIAL_FOOD, allowedFrom: startedAt }],
+        targetDurationDaysInitial: o.targetDurationDaysInitial ?? null,
+        targetDurationSetAt: setAt,
+        targetDurationVetDirected: o.targetDurationVetDirected ?? null,
+      },
+    ],
+  })
+}
+
+const windowPage = (o: Parameters<typeof windowTrialInput>[0]): string =>
+  plain(renderReport(assembleReport(windowTrialInput(o))))
+
+Deno.test('CUL-1041 §5.4 — the mutated target deletes the overrun line, and the clause puts it back', () => {
+  // The trial as designed: 28 days, and it is day 50. The report says so.
+  const before = windowPage({ dayOfTrial: 50, targetDurationDays: 28 })
+  assert.match(before, /day 50 — 22 days past the 28-day window/)
+  assert.ok(!/Window (extended|shortened|changed)/.test(before), 'nothing moved, so nothing is claimed')
+
+  // One extension tap, and ONE integer on ONE row changes: 28 → 64.
+  const after = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    // 07:00 local on the report's own last day — day 50, and before `now`.
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+  })
+
+  // The three places the page moves. First: the position stops disclosing the overrun,
+  // which is the deletion §5.4 executed and this PR is answering.
+  assert.match(after, /day 50 of 64/)
+  assert.ok(
+    !/22 days past the 28-day window/.test(after),
+    'the position is now inside the window — the OLD sentence is legitimately gone',
+  )
+
+  // Second and third: the original window and the day it moved, and the overrun
+  // RESTATED rather than left to be derived from two numbers a page apart.
+  assert.match(
+    after,
+    /Window extended from 28 days; last moved Jul 2 \(day 50\)\. The trial has run 22 days past that original window\./,
+  )
+
+  // The regression this test exists for, stated as the property rather than the string:
+  // whatever else the tap changes, the report may not stop saying the trial outran the
+  // window it was designed against.
+  assert.ok(/22 days past/.test(before) && /22 days past/.test(after), 'the disclosure survives the tap')
+})
+
+Deno.test('CUL-1041 §5.1 — the spec’s worked case: extended from 56 on day 56, box unchecked', () => {
+  const page = windowPage({
+    dayOfTrial: 56,
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 56,
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+  })
+  assert.match(page, /day 56 of 84/)
+  assert.match(page, /Window extended from 56 days; last moved Jul 2 \(day 56\)\./)
+  // A move ON the last day of the old window is not an overrun. The clause stops.
+  assert.ok(!/past that window/.test(page), 'day 56 of a 56-day window is not past it')
+  // THE TWO-SIDED RULE. With the box unchecked there is no attribution sentence at
+  // all — not a sentence saying the owner acted alone, and not a hedge about not
+  // knowing. Silence is the whole of it.
+  assert.match(page, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
+  assert.ok(!/a vet asked for the change/.test(page), 'and no vet is credited')
+  assert.ok(!/own initiative|on their own|owner decided/i.test(page), 'and no inverse claim either')
+})
+
+Deno.test('CUL-1041 §5.1 / D4a — the checked box adds "owner reports", and nothing stronger', () => {
+  const page = windowPage({
+    dayOfTrial: 56,
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 56,
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+    targetDurationVetDirected: true,
+  })
+  assert.match(page, /Owner reports a vet asked for the change; Culprit cannot say which\./)
+  // The app cannot verify a vet instruction and must never assert one. The hedge is
+  // not decoration: without it the sentence is a clinical claim about a third party.
+  assert.ok(
+    !/The vet (directed|extended|asked)/.test(page),
+    'the report never asserts the vet did anything',
+  )
+})
+
+Deno.test('CUL-1041 — FALSE reads exactly like NULL (the two-sided rule, both spellings)', () => {
+  const shared = {
+    dayOfTrial: 56,
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 56,
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+  }
+  const asNull = windowPage({ ...shared, targetDurationVetDirected: null })
+  const asFalse = windowPage({ ...shared, targetDurationVetDirected: false })
+  assert.equal(asFalse, asNull, 'an unchecked box and an unanswered one are one state')
+})
+
+Deno.test('CUL-1041 — the predicate is set_at, never initial-vs-current', () => {
+  // The backfilled row every live trial now carries: `initial` is populated and equal
+  // to the current target, and the window has never moved. Comparing the two would be
+  // the obvious predicate and would be right here by accident; it is wrong in the two
+  // cases below, which is why migration 068's COMMENT names `set_at` as the one.
+  const backfilled = windowPage({ dayOfTrial: 20, targetDurationDays: 56, targetDurationDaysInitial: 56 })
+  assert.ok(!/Window (extended|shortened|changed)/.test(backfilled), 'a populated initial is not a move')
+
+  // A move recorded with no prior window — the row a trial created between 068 and
+  // the PR 2 write path produces. Initial-vs-current cannot see this at all.
+  const noPrior = windowPage({
+    dayOfTrial: 20,
+    targetDurationDays: 56,
+    targetDurationDaysInitial: null,
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+  })
+  assert.match(noPrior, /Window changed; last moved Jul 2 \(day 20\)\./)
+  assert.ok(!/from null|from 0 days|from  days/.test(noPrior), 'an unrecorded window is never a number')
+
+  // THE ARM THAT MAKES `set_at` LOAD-BEARING RATHER THAN A CONVENIENCE, and the one a
+  // mutation pass found missing here: a window moved and then moved BACK. 56 → 84 → 56
+  // leaves `initial` at 56 (the write path COALESCEs, so it keeps the FIRST window) and
+  // `target_duration_days` back at 56, with `set_at` stamped twice. Initial-vs-current
+  // reads that as "never moved" and the page goes silent about two changes — §5.2's
+  // laundering, one remove further out. Swapping the predicate for the obvious
+  // comparison left every other test in this file green; this is the one that reds.
+  const movedBack = windowPage({
+    dayOfTrial: 20,
+    targetDurationDays: 56,
+    targetDurationDaysInitial: 56,
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+  })
+  assert.match(movedBack, /Window changed; last moved Jul 2 \(day 20\)\./)
+  // And it is not called an extension: the record cannot say which way it went when
+  // the first window and the current one are the same number.
+  assert.ok(!/Window (extended|shortened)/.test(movedBack))
+})
+
+Deno.test('CUL-1041 §5.2 — a SHORTENED window says shortened, on the page that could launder it', () => {
+  // §5.2 executed: a trial shortened to fit the day it stopped renders "Ran its course
+  // — the full window was completed." TE-3 closes the mid-trial door on this, but the
+  // shipped milestone path and every pre-068 row predate that rule, so the RENDER must
+  // still be able to say which direction the window moved. Calling this "extended"
+  // would hide precisely the move the laundering needs hidden.
+  //
+  // ⚠️ AND IT RENDERS A TRIAL THAT IS ACTUALLY COMPLETED. The first cut of this test
+  // used `status: 'active'` with no `stoppedReason`, so its page carried no "Ran its
+  // course", no "Marked complete" and no stop line at all — the page it named was not
+  // the page it rendered (`adversarial-reviewer`, 2026-09-17). A test whose name claims
+  // a surface has to render that surface.
+  const page = windowPage({
+    dayOfTrial: 28,
+    targetDurationDays: 28,
+    targetDurationDaysInitial: 56,
+    movedOnDayOfTrial: 28,
+    status: 'completed',
+    stoppedReason: 'completed',
+  })
+  assert.match(page, /Ran its course — the full window was completed\./, 'the laundered sentence')
+  assert.match(page, /Window shortened from 56 days; last moved Jul 2 \(day 28\)/)
+  assert.ok(!/Window extended/.test(page))
+  // D3 rules the false sentence out of reach rather than repairing it, so it survives —
+  // but the clinician now meets the contradiction in bold two sentences above it, which
+  // is strictly more than the page said before this clause existed.
+})
+
+Deno.test('CUL-1041 — an unattributed window move cannot borrow the trial\u2019s own vet', () => {
+  // THE COLD READ'S BLOCKING FINDING (2026-09-17). The identity row carries two
+  // attributable acts once this feature exists: who started the trial, and who moved
+  // its window. With the box unticked the second has no attribution — and a bare
+  // "Directed by Dr. A. Chen" two sentences later was read as covering BOTH, so a vet
+  // concluded they had authorised a retroactive re-dating they had never seen.
+  //
+  // The two-sided rule says the absence is silence. It cannot also be expected to
+  // survive a neighbour that names a vet and does not say what for.
+  const page = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+    targetDurationVetDirected: false,
+    vetName: 'Dr. A. Chen',
+  })
+  assert.match(page, /Window extended from 28 days/)
+  assert.match(page, /Trial directed by Dr\. A\. Chen\./, 'the attribution names what it attributes')
+  assert.ok(
+    !/(?<!Trial )Directed by Dr\. A\. Chen/.test(page),
+    'no unscoped attribution is left in a paragraph holding an unattributed change',
+  )
+  // And the change itself still carries no attribution of any kind, in either direction.
+  assert.match(page, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
+  assert.ok(!/a vet asked for the change/.test(page))
+})
+
+Deno.test('CUL-1041 — "a vet", never "the vet": the change is not bound to a named clinician', () => {
+  // `diet_trials.vet_name` is WHOLE-TRIAL; `target_duration_vet_directed` is PER-CHANGE.
+  // A definite article in the second sentence has exactly one referent on the page, and
+  // the record cannot support the bind: the window may have moved at an ER visit, via a
+  // specialist, or at a second practice. Attributing it to the named clinician pins an
+  // unverifiable instruction on an identifiable, non-consenting third party who does not
+  // use this app and has no way to correct the record.
+  const page = windowPage({
+    dayOfTrial: 56,
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 56,
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+    targetDurationVetDirected: true,
+    vetName: 'Dr. Sarah Kim',
+  })
+  assert.match(page, /Owner reports a vet asked for the change; Culprit cannot say which\./)
+  assert.ok(!/the vet\u2019s direction/.test(page), 'no definite article to bind')
+  // Both facts stay on the page; what is gone is the false link between them.
+  assert.match(page, /Trial directed by Dr\. Sarah Kim\./)
+
+  // THE MIRROR CASE, which the definite article got wrong in the other direction: the
+  // box is ticked and the record names no vet at all, so "the vet's" spoke about a
+  // clinician this record never identifies.
+  const unnamed = windowPage({
+    dayOfTrial: 56,
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 56,
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+    targetDurationVetDirected: true,
+    vetName: null,
+  })
+  assert.match(unnamed, /Owner reports a vet asked for the change; Culprit cannot say which\./)
+  assert.ok(!/Trial directed by/.test(unnamed), 'and no trial attribution is invented')
+})
+
+Deno.test('CUL-1041 §6.9 — the D5 ladder: three on-time taps are never an overrun', () => {
+  // THE ADVERSARIAL PASS'S FIRST FINDING, EXECUTED (2026-09-17, verdict FAIL).
+  //
+  // The spec's own D5 ladder, which §5.5 says is the EXPECTED GI shape rather than an
+  // edge case: a trial on the 42-day default whose owner meets `This trial is done` at
+  // days 42, 56 and 70 and taps `Keep going` each time. `stateFor` returns `milestone`
+  // only at `overrunDays === 0`, so every tap is exactly on time and the trial is never
+  // past its window. PR 2's COALESCE keeps `initial = 42`; `set_at` is the day-70 tap.
+  //
+  // The move-anchored arithmetic printed "— 28 days past that window", accusing the
+  // owner of running 28 days past the prescribed window before reacting. It never
+  // happened: `initial` is the FIRST window and `set_at` the LAST change, and D2(a)
+  // chose three columns over a history table, so the record cannot distinguish this
+  // ladder from a single 42→84 move after a real 28-day overrun. §6.9 forbids scoring
+  // the owner even where the arithmetic is right; here the arithmetic was about a
+  // history that did not occur.
+  const page = windowPage({
+    dayOfTrial: 75,
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 42,
+    movedOnDayOfTrial: 70,
+  })
+  assert.match(page, /Window extended from 42 days; last moved [A-Z][a-z]+ \d+ \(day 70\)\./)
+  assert.ok(!/28 days past/.test(page), 'no overrun that never happened')
+
+  // What the record DOES support, and what it now says: the trial's own length against
+  // the window it was designed for. True under one move and under five, and a statement
+  // about the TRIAL rather than about when the owner acted.
+  assert.match(page, /The trial has run 33 days past that original window\./)
+})
+
+Deno.test('CUL-1041 — the overrun is silent where the day phrase already discloses one', () => {
+  // Two "past the window" counts in adjacent sentences left a pronoun whose nearest
+  // antecedent was the wrong window (`adversarial-reviewer`): "day 70 — 30 days past the
+  // 40-day window" beside "42 days past that original window". The clause exists to fill
+  // the hole the extension makes; where the extension made no hole, it says nothing.
+  const stillOverrun = windowPage({
+    dayOfTrial: 70,
+    targetDurationDays: 40,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 50,
+  })
+  assert.match(stillOverrun, /day 70 — 30 days past the 40-day window/)
+  assert.match(stillOverrun, /Window extended from 28 days; last moved [A-Z][a-z]+ \d+ \(day 50\)\./)
+  assert.ok(!/past that original window/.test(stillOverrun), 'one overrun sentence, not two')
+
+  // And the pronoun is only ever used where its antecedent is in the same sentence.
+  const inWindow = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+  })
+  assert.match(inWindow, /Window extended from 28 days;.*The trial has run 22 days past that original window\./)
+})
+// ════════════════════════════════════════════════════════════════════════════════
+// §5.4 ON THE REPORT PATH — what the vet actually reads across one extension tap
+// ════════════════════════════════════════════════════════════════════════════════
+//
+// CUL-1036 (trial window PR 0) · `docs/nyx-trial-extension-requirements.md` §5.4,
+// TE-6, §5.6 · the repair is CUL-1038 (PR 1b), ruled D7(c) — freeze the denominator
+// at `target_duration_days_initial` AND disclose the window move. When it lands, the
+// expected failure at the foot of this block goes RED; that is the repair signal.
+//
+// ── WHY THIS BLOCK EXISTS SEPARATELY FROM `guards/trialWindow.test.ts` ──────────
+// That guard drives `computeTrialFacts` with no scope — the CLIENT read. The report
+// ALWAYS passes `scopeStart` / `scopeEnd` (`trial.ts:802`), so the numbers §5.4
+// quotes were never the numbers this page prints. §5.6 records the gap in its own
+// words: "no live Deno render — two report strings were TRANSCRIBED, not executed".
+//
+// This executes them. Raw events → `assembleReport` → `renderReport` → the text a
+// clinician reads, twice, with `targetDurationDays` as the only difference between
+// the two runs. Not one meal is added, removed or edited.
+//
+// ── WHAT IT FOUND ──────────────────────────────────────────────────────────────
+// The transcription was directionally right and numerically wrong, and the real
+// numbers are worse — because the scope a diet-trial owner actually gets is rung 1,
+// "since the most recent vet visit", and that is the shortest window on the page:
+//
+//   DEFAULT SCOPE      10 of 28 days → 32 of 50 days
+//   SINCE-VISIT SCOPE   0 of 9 days  → 22 of 31 days
+//
+// A literal ZERO becomes an affirmative "all 22 matched the trial diet or a
+// permitted food", on a tap that carries no information about the record. The owner
+// who is most likely to hit this is the one this product is for: sent home from a
+// vet visit on an elimination diet, which is exactly the record rung 1 scopes to.
+//
+// ── AND THE TAP DELETES THE PAGE'S OWN DISCLOSURE ──────────────────────────────
+// The day line goes from "day 50 — 22 days past the 28-day window" to "day 50 of
+// 64". The one sentence telling the clinician this trial had outrun its window is
+// what the tap removes — the same shape the owner's card shows, on the document
+// that matters more. §5.4's "nothing says the window moved" understates it: the
+// thing that did say so is the casualty.
+
+/** The window this trial was DESIGNED against — the shipped GI default, and the
+ *  value migration 068's backfill stamped into `target_duration_days_initial` for
+ *  every row live at apply time. It does NOT move when the owner extends. */
+const GATE_TARGET_DESIGNED = 28
+
+/** The §5.4 record as the report receives it: a GI trial on the shipped 28-day
+ *  default, 10 of days 1–28 logged, then every day to day 50, read on day 50.
+ *  Only `targetDurationDays` varies between the two runs.
+ *
+ *  ⚠ THE ROW SHAPE CHANGED WITH CUL-1038 (PR 1b), and it changed TOWARD
+ *  production, not away from it (C-35: a fixture that cannot exist in production
+ *  is green over nothing). Round 1 of this fixture carried no
+ *  `targetDurationDaysInitial` at all, which was the pre-068 row. Since migration
+ *  068 applied, every live trial carries the backfilled column, and the shipped
+ *  extension path (`extendTrial`, lib/dietTrialSetup.ts) writes ONLY
+ *  `target_duration_days` — so the row a real tap produces is
+ *  `{initial: 28, current: 64}`, which is what the two runs below are.
+ *
+ *  What did NOT change is the requirement: the `expectedFailure` at the foot of
+ *  this block is byte-identical to the one PR 0 shipped. The oracle was never the
+ *  fixture's row shape; it is that nothing the owner does may move what the page
+ *  states. A separate test below drives the un-stamped row, so the fallback this
+ *  freeze keeps is pinned rather than assumed. */
+function gateInput(targetDurationDays: number, over: Partial<ReportInput> = {}): ReportInput {
+  const events = [...days('2026-06-01', '2026-06-10'), ...days('2026-06-29', '2026-07-20')].map((d) =>
+    meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }),
+  )
+  return baseInput({
+    now: '2026-07-20T18:00:00Z',
+    events,
+    dietTrials: [
+      {
+        id: 'trial-gi',
+        foodItemId: 'f-hp',
+        startedAt: '2026-06-01',
+        targetDurationDays,
+        targetDurationDaysInitial: GATE_TARGET_DESIGNED,
+        status: 'active',
+        completedAt: null,
+        endedAt: null,
+        indication: 'gi',
+        vetName: 'Dr. Chen',
+        foodLabel: 'Royal Canin Hydrolyzed HP',
+        primaryProtein: 'soy',
+        proteins: ['soy'],
+        allowedFoods: [TRIAL_FOOD],
+      },
+    ],
+    ...over,
+  })
+}
+
+/** The tap: 28 + `extensionDays('gi')` from day 50, which the shipped arithmetic
+ *  resolves to 64. Written as a literal here because this file cannot import the
+ *  app's `lib/dietTrialCompletion.ts` without pulling it into the Edge Function's
+ *  module graph — `guards/trialWindow.test.ts` derives it from the real function and
+ *  asserts it equals 64, so the two cannot drift without that guard reding. */
+const GATE_TARGET_AFTER = 64
+
+/** The rung-1 scope every diet-trial owner gets: a vet visit inside the trial. Day
+ *  20 of the trial, which is where the owner was told to start the diet's recheck
+ *  clock — the ordinary case, not a contrived one. */
+const SINCE_VISIT: Partial<ReportInput> = {
+  vetVisits: [{ visitedAt: '2026-06-20', clinicName: 'Clinic', vetName: 'Dr. Chen', reason: 'recheck' }],
+}
+
+function gatePage(targetDurationDays: number, over: Partial<ReportInput> = {}): string {
+  return plain(renderReport(assembleReport(gateInput(targetDurationDays, over))))
+}
+
+Deno.test('§5.4 report path — REPAIRED: the default scope does not move on the tap', () => {
+  const before = gatePage(28)
+  const after = gatePage(GATE_TARGET_AFTER)
+
+  // ⚠ WHAT THIS TEST SAID BEFORE CUL-1038, kept because the executed record is
+  // the point of this block: `after` read "Meals logged on 32 of 50 days
+  // (Jun 1 – Jul 20, 2026)" and "all 32 matched the trial diet or a permitted
+  // food", where `before` read "10 of 28" and "too sparse to read that as a clean
+  // elimination". One tap, no new meal.
+  //
+  // The denominator is now frozen at the DESIGNED window, so both runs read the
+  // sentence the record earns.
+  assert.match(before, /Meals logged on 10 of 28 days \(Jun 1 – Jun 28, 2026\)\./)
+  assert.match(after, /Meals logged on 10 of 28 days \(Jun 1 – Jun 28, 2026\)\./)
+
+  for (const page of [before, after]) {
+    assert.match(page, /too sparse to read that as a clean elimination/)
+    assert.ok(!/all \d+ matched the trial diet or a permitted food/.test(page))
+  }
+
+  // NON-VACUITY: the two pages must not be identical documents, or this is
+  // asserting that the tap did nothing at all rather than that it did not move
+  // the RECORD's claims. The day line legitimately follows the live window.
+  assert.notEqual(before, after)
+})
+
+Deno.test('§5.4 report path — REPAIRED: since the vet visit, ZERO stays ZERO', () => {
+  // The scope a diet-trial owner actually gets (rung 1), and the worst instance
+  // this page ever had: before the freeze, "Meals logged on 0 of 9 days" became
+  // "22 of 31" and "all 22 matched the trial diet or a permitted food" on one
+  // tap. A literal zero bought an affirmative all-clean claim.
+  const before = gatePage(28, SINCE_VISIT)
+  const after = gatePage(GATE_TARGET_AFTER, SINCE_VISIT)
+
+  assert.match(before, /Meals logged on 0 of 9 days \(Jun 20 – Jun 28, 2026\)\./)
+  assert.match(after, /Meals logged on 0 of 9 days \(Jun 20 – Jun 28, 2026\)\./)
+
+  for (const page of [before, after]) {
+    assert.match(page, /too sparse to read that as a clean elimination/)
+    assert.ok(!/all \d+ matched the trial diet or a permitted food/.test(page))
+    // Both runs really are the narrowed scope — otherwise this test would be the
+    // one above wearing a different name.
+    assert.ok(!/Jun 1 – /.test(page))
+  }
+})
+
+Deno.test('§5.4 report path — the overrun disclosure SURVIVES the tap (D7c half 2)', () => {
+  // ⚠ THIS TEST INVERTED WITH CUL-1038. It used to assert the defect: the day
+  // line went from "day 50 — 22 days past the 28-day window" to "day 50 of 64",
+  // deleting the one sentence telling a clinician this trial had outrun the
+  // window it was designed against.
+  //
+  // Half of that is CORRECT and stays: the day line describes the window IN FORCE
+  // TODAY, and after a genuine extension that window really is 64 days. An
+  // extension is supposed to move belief. What was wrong is that nothing else on
+  // the page carried the overrun fact once the day line stopped.
+  const before = gatePage(28)
+  const after = gatePage(GATE_TARGET_AFTER)
+
+  assert.match(before, /day 50 — 22 days past the 28-day window/)
+  assert.match(after, /day 50 of 64/)
+
+  // The coverage disclosure now carries it on BOTH sides — this is the C-38 debt
+  // `lib/dietTrial.ts`'s tail clip has owed since B-422, and the reason the
+  // freeze is legible rather than merely correct.
+  //
+  // ⚠ THE COPY CHANGED WITH R2. It read "This trial has run past the window it
+  // was designed against", which asserted an overrun the day line denies on an
+  // extended trial ("day 50 of 64") — the sentence that would reconcile them
+  // names a window MOVE, and that needs `target_duration_set_at` (PR 4). It now
+  // describes the MEASURE, which is what the reader needs to read the ratio, and
+  // carries the excluded span as a NUMBER (C-3).
+  for (const page of [before, after]) {
+    assert.match(page, /Coverage above is measured over the trial’s original window\./)
+  }
+
+  // ── AND THE EXCLUDED SPAN, ONLY WHERE THERE IS ONE (C-3) ───────────────────
+  //
+  // Before the tap the designed window IS the window in force, so there is no
+  // span to state and the page says one thing. After it the two diverge, and the
+  // page states the difference as a NUMBER rather than gesturing at it — which is
+  // what the first cut lost when it replaced a quantified denominator (`32 of 50`)
+  // with an unquantified clause. This asymmetry is the `gateCoverage` contract
+  // rendered: one fact on the ordinary record, two only where the record holds
+  // two.
+  assert.ok(!/The trial has run \d+ days in all/.test(before))
+  assert.match(after, /The trial has run 50 days in all/)
+  assert.match(after, /the 22 since that window closed are not in the ratio above/)
+  assert.match(after, /the record holds a meal on 22 of them/)
+
+  // It never claims the WINDOW MOVED — that is `target_duration_set_at`, which
+  // nothing writes yet, and §5.1's sentence is PR 4's.
+  assert.ok(!/window (was )?(extended|changed|moved)/i.test(after))
+})
+
+Deno.test('§5.4 report path — an UNSTAMPED row keeps the pre-repair behaviour exactly', () => {
+  // THE RESIDUAL, PINNED RATHER THAN ASSUMED. `target_duration_days_initial` is
+  // NULL on a trial created between migration 068 and the stamp CUL-1038 adds to
+  // `startDietTrial` — and on any row a client wrote in that gap. The module
+  // treats NULL as "not recorded", never as a number, and falls back to the live
+  // target, which is the pre-repair arithmetic preserved exactly.
+  //
+  // It is a test rather than a comment because "the fallback is the old
+  // behaviour" is a claim about executed code, and because this is the shape
+  // where the hazard survives.
+  //
+  // ⚠ ITS SCOPE IS NOT BOUNDED. This said "bounded by the create-stamp"; that
+  // stamp was removed when the code review traced a clobber through the push, so
+  // CUL-1038 is reads-only and EVERY trial created until CUL-1051 + PR 2 land
+  // carries NULL here. 068's backfill covers the rows that existed when it
+  // applied and nothing after.
+  const unstamped = (targetDurationDays: number): string => {
+    const input = gateInput(targetDurationDays)
+    input.dietTrials[0].targetDurationDaysInitial = null
+    return plain(renderReport(assembleReport(input)))
+  }
+  const before = unstamped(28)
+  const after = unstamped(GATE_TARGET_AFTER)
+
+  assert.match(before, /Meals logged on 10 of 28 days/)
+  assert.match(after, /Meals logged on 32 of 50 days/)
+  assert.match(before, /too sparse to read that as a clean elimination/)
+  assert.match(after, /all 32 matched the trial diet or a permitted food/)
+})
+
+// ── THE REQUIREMENT, PROMOTED (CUL-1038) ────────────────────────────────────
+//
+// PR 0 shipped this as an `expectedFailure`: it passed while TE-6 was violated
+// and failed the moment the requirement held, so a repair could not land without
+// coming through this line. The assertion body below is BYTE-IDENTICAL to the one
+// PR 0 wrote — only the wrapper is gone. That is the whole value of the marker:
+// the oracle was fixed before the fix was, and it is the same oracle.
+Deno.test('§5.4 report path — TE-6: one tap may not move what the vet report states [CUL-1038]', () => {
+  // The requirement at the layer that matters, over BOTH scopes, because a repair
+  // that holds on the full window and not on the since-visit one has not held
+  // where the wedge's own owner reads it.
+  for (const over of [{}, SINCE_VISIT]) {
+    const before = gatePage(28, over)
+    const after = gatePage(GATE_TARGET_AFTER, over)
+    const sparse = (t: string) => /too sparse to read that as a clean elimination/.test(t)
+    const claim = (t: string) => /all \d+ matched the trial diet or a permitted food/.test(t)
+    assert.equal(sparse(after), sparse(before))
+    assert.equal(claim(after), claim(before))
+  }
+})
+
+
+Deno.test('PR 1b × PR 4 — both window sentences on ONE page, saying different things', () => {
+  // THE MERGE QUESTION, ASKED OF THE RENDERED PAGE. Until this branch merged main,
+  // the two features had never been rendered together: §5.4's fixture carried no
+  // provenance and CUL-1041's carried no silent tail. A real extended trial now has
+  // both, so the page can carry both sentences — and the risk is that they read as
+  // two answers to one question (the C-3 / one-record-two-answers class this repo
+  // treats as a defect).
+  //
+  // They are ADJACENT, not overlapping: CUL-1041 says the window MOVED and when;
+  // CUL-1038 says what the coverage ratio is MEASURED OVER. Asserted here rather
+  // than argued, because "they do not overlap" is a claim about rendered text.
+  const input = gateInput(GATE_TARGET_AFTER)
+  input.dietTrials[0].targetDurationSetAt = '2026-07-10T14:00:00Z'
+  const page = plain(renderReport(assembleReport(input)))
+
+  // PR 4's sentence: the window moved, and from what.
+  assert.match(page, /extended from 28 days/)
+  // PR 1b's: what the ratio is measured over, and what it leaves out.
+  assert.match(page, /Coverage above is measured over the trial’s original window\./)
+  assert.match(page, /are not in the ratio above/)
+
+  // NEITHER STATES THE OTHER'S FACT. PR 1b's sentence never says the window moved
+  // (it cannot know — it reads `initial`, not `set_at`), and PR 4's never claims
+  // anything about coverage.
+  assert.ok(!/Coverage above is measured[^.]*\b(extended|moved|changed)\b/.test(page))
+
+  // And the ratio really is the frozen one, on a page that also says it moved —
+  // which is the whole point of the two facts being separable.
+  assert.match(page, /Meals logged on 10 of 28 days/)
+})
+
+Deno.test('§5.4 report path — the scan-grid tile carries the same disclosure as the sentence', () => {
+  // THE TWO SURFACES MUST NOT DISAGREE ABOUT ONE NUMBER — the tile is the
+  // scan-grid twin of the coverage sentence, and `render.ts`'s own comment says
+  // so. The sentence is covered by the tests above; without this the tile's note
+  // could lose its gate, change its wording, or vanish, and nothing would notice.
+  // (Gap named by `code-reviewer` on this PR.)
+  const overrun = gatePage(28)
+  assert.match(overrun, /over the trial’s original window, not the days since/)
+
+  // THE GATE, proven by its OFF state over a record that differs in one way only:
+  // read on the last day of the prescribed window, so nothing has overrun. Without
+  // this half the assertion above passes over an unconditional string.
+  const inWindow = gatePage(28, { now: '2026-06-28T18:00:00Z' })
+  assert.ok(!/not the days since/.test(inWindow))
+  assert.ok(!/Coverage above is measured over the trial’s original window/.test(inWindow))
+  // …and it really is the same page, still printing a coverage tile to hang the
+  // note on — otherwise the absence proves nothing (C-41).
+  assert.match(inWindow, /record coverage — not intake, not a clean-elimination count/)
+  assert.match(overrun, /record coverage — not intake, not a clean-elimination count/)
+})
+
+// ── MERGE NOTE (PR 1b × PR 4) ───────────────────────────────────────────────
+//
+// PR 4 (CUL-1041) landed on main while this branch was open and re-stated the
+// §5.4 report-path marker as PR 0 left it — an `expectedFailure`. It is PROMOTED
+// here, with the body byte-identical, because this branch is the repair: the
+// freeze plus the ratio/verdict split is what makes it hold. PR 4's own tests
+// below are kept verbatim; the two features are adjacent on the page and do not
+// assert over each other — PR 4 says the window MOVED (and who asked), this says
+// what the coverage ratio is MEASURED OVER.
+
+
+Deno.test('CUL-1041 — the page-1 headline marks a target that is not the original plan', () => {
+  // `vet-report-cold-read` returned NOT READY on this: the headline is what a 60-second
+  // scan reads first, the trial block sits below the weight and at-a-glance blocks, and
+  // "day 50 of 64" unqualified reads as the plan. PM ruled (a) — a short marker here,
+  // the detail staying in the block.
+  const page = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+  })
+  // The marker rides the headline's own day phrase, ABOVE the block.
+  assert.match(page, /as a diet trial — day 50 of 64 \(window extended\)\. Primary sign logged/)
+  // And the block still carries the whole sentence; the marker replaces nothing.
+  assert.match(page, /Window extended from 28 days; last moved [A-Z][a-z]+ \d+ \(day 40\)\./)
+
+  // HEADLINE ONLY. The "Trial diet" row at the foot of page 1 repeats the day phrase and
+  // is deliberately unmarked, because it sits BELOW the block — by the time a reader is
+  // there, the full clause is behind them. Mark the number where the reader meets it
+  // before the explanation, never after.
+  assert.equal(page.match(/\(window extended\)/g)?.length, 1, 'exactly one marker on the page')
+})
+
+Deno.test('CUL-1041 — an unmoved window adds no headline marker at all', () => {
+  const page = windowPage({ dayOfTrial: 50, targetDurationDays: 64 })
+  assert.match(page, /as a diet trial — day 50 of 64\. Primary sign logged/)
+  assert.ok(!/\(window /.test(page), 'no marker, and no empty parenthetical')
+})
+
+Deno.test('CUL-1041 — the headline marker takes the arithmetic\u2019s verb, not the feature\u2019s name', () => {
+  // A shortened window announced as an extension on the most-scanned line of the page
+  // would be §5.2's laundering with a louder voice.
+  const page = windowPage({
+    dayOfTrial: 30,
+    targetDurationDays: 28,
+    targetDurationDaysInitial: 56,
+    movedOnDayOfTrial: 28,
+    status: 'completed',
+    stoppedReason: 'completed',
+  })
+  assert.match(page, /\(window shortened\)/)
+  assert.ok(!/\(window extended\)/.test(page))
+})
+
+Deno.test('CUL-1041 — a named vet and the window marker never share the headline sentence', () => {
+  // `vet-report-cold-read` (focused re-read, 2026-09-17) MADE this binding rather than
+  // predicting it: "(window extended)" is an agentless passive, and with a named vet four
+  // words earlier in the same sentence it inherits him. The reviewer would have left the
+  // consult believing a named colleague set the current endpoint.
+  const moved = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+    vetName: 'Dr. A. Chen',
+  })
+  const headline = moved.slice(moved.indexOf('Tracking'), moved.indexOf('Primary sign logged'))
+  assert.match(headline, /day 50 of 64 \(window extended\)/, 'the marker survives')
+  assert.ok(!/Dr\. A\. Chen/.test(headline), 'and the name is not in the sentence with it')
+
+  // The name is not LOST — the block restates it, scoped to what it attributes.
+  assert.match(moved, /Trial directed by Dr\. A\. Chen\./)
+})
+
+Deno.test('CUL-1041 — an unmoved window keeps the headline exactly as it always rendered', () => {
+  // The suppression is conditional, and this is the case that must not move: no window
+  // has ever moved on the overwhelming majority of reports, and this line is theirs.
+  const still = windowPage({ dayOfTrial: 50, targetDurationDays: 64, vetName: 'Dr. A. Chen' })
+  assert.match(still, /Tracking .* as a diet trial, directed by Dr\. A\. Chen — day 50 of 64\./)
+  assert.ok(!/\(window /.test(still))
+})
+
+Deno.test('CUL-1041 — the UNATTESTED extension is the dangerous one, and carries no name anywhere near it', () => {
+  // The cold read's sharpest point: with the box unticked there is no corrective
+  // sentence downstream, so a name left in the headline stands uncorrected over a record
+  // that holds no attestation for the change at all — "the less the record knows, the
+  // less the page hedges". Absence rendered as a positive.
+  const unattested = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+    targetDurationVetDirected: false,
+    vetName: 'Dr. A. Chen',
+  })
+  const headline = unattested.slice(
+    unattested.indexOf('Tracking'),
+    unattested.indexOf('Primary sign logged'),
+  )
+  assert.ok(!/Dr\. A\. Chen/.test(headline))
+  // And still no attribution of any kind on the change itself, in either direction.
+  assert.match(unattested, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
+  assert.ok(!/a vet asked for the change/.test(unattested))
+  assert.ok(!/on their own|owner decided/i.test(unattested))
+})
+
+Deno.test('CUL-1041 — the attested clause severs the referent and drops the shared verb', () => {
+  // A second cold read MEASURED the binding the indefinite article was supposed to stop:
+  // "a vet" had exactly one antecedent on the page, twenty words later, and both clauses
+  // said *directed*. An indefinite noun phrase with one available antecedent in the same
+  // paragraph is an anaphor, not an ambiguity — and indefinite-then-named is the order
+  // that closes one. ~80% confidence the reader binds.
+  const page = windowPage({
+    dayOfTrial: 56,
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 56,
+    movedOnDayOfTrial: 50,
+    targetDurationVetDirected: true,
+    vetName: 'Dr. Sarah Kim',
+  })
+  const row = page.slice(page.indexOf('Elimination diet trial'), page.indexOf('Record'))
+
+  // 1. The record's inability to resolve it is STATED, not implied by an article.
+  assert.match(row, /Owner reports a vet asked for the change; Culprit cannot say which\./)
+
+  // 2. The lexical echo is gone: `directed` appears once in the row, on the TRIAL.
+  assert.equal(row.match(/directed/g)?.length, 1, 'one "directed" in the row, and it is the trial\u2019s')
+  assert.match(row, /Trial directed by Dr\. Sarah Kim\./)
+
+  // 3. And the change is still never asserted as that clinician\u2019s.
+  assert.ok(!/Dr\. Sarah Kim (asked|directed|extended)/.test(row))
+})
+
+Deno.test('CUL-1041 brief C — the unattested change says the record cannot say, and blames nobody', () => {
+  // PM ruled (a), 2026-09-17, a deliberate deviation from §5.1's "the clause is simply
+  // absent". Two independent cold reads measured the same thing: silence next to a named
+  // vet is read as concurrence (~55–60%), INVISIBLY, because a cold reader cannot see a
+  // sentence that is missing. Absence of a disclaimer was being rendered as attribution.
+  const page = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+    targetDurationVetDirected: false,
+    vetName: 'Dr. Sarah Kim',
+  })
+  assert.match(page, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
+
+  // §8.8 STILL HOLDS, and this is the whole reason the sentence is allowed: it attributes
+  // the change to NOBODY. Not to a vet, and — the rule §5.1 actually exists to enforce —
+  // not to the owner either.
+  assert.ok(!/a vet asked for the change/.test(page), 'no vet is credited')
+  assert.ok(!/on their own|owner decided|the owner extended/i.test(page), 'and no owner is blamed')
+  assert.ok(!/Dr\. Sarah Kim (asked|extended|changed)/.test(page))
+
+  // The named vet is still on the page, still scoped to the trial — what changed is that
+  // the reader can no longer reach him from the window change through a gap.
+  assert.match(page, /Trial directed by Dr\. Sarah Kim\./)
+})
+
+Deno.test('CUL-1041 brief C — the two arms are one sentence shape, differing only in what is unknown', () => {
+  // A clinician reading two reports should meet the same construction on both, not a
+  // presence on one and an absence on the other that they would have to notice.
+  const shared = {
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+    vetName: 'Dr. Sarah Kim',
+  }
+  const attested = windowPage({ ...shared, targetDurationVetDirected: true })
+  const not = windowPage({ ...shared, targetDurationVetDirected: false })
+  assert.match(attested, /Owner reports a vet asked for the change; Culprit cannot say which\./)
+  assert.match(not, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
+  // Same subject on both arms.
+  for (const p of [attested, not]) assert.match(p, /Culprit cannot say/)
+})
+
+Deno.test('CUL-1041 brief C — it fires on the window move, not on whether a vet is named', () => {
+  // Conditioning it on `vetName` would make a sentence ABOUT THE CHANGE appear and vanish
+  // on a field that is not about the change. The reviewer's finding did not need a name:
+  // "a vet's default prior is that changes to a vet-directed plan are vet-directed".
+  const noVet = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+    vetName: null,
+  })
+  assert.match(noVet, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
+
+  // And a window that never moved says nothing about attribution at all — there is no
+  // change to be unable to attribute.
+  const unmoved = windowPage({ dayOfTrial: 50, targetDurationDays: 64, vetName: 'Dr. Sarah Kim' })
+  assert.ok(!/Culprit cannot say/.test(unmoved))
+})
+
+Deno.test('CUL-1041 — the change and the trial’s named vet are never in one row', () => {
+  // The four mechanisms the fourth cold read named are all properties of ONE JOINED
+  // PARAGRAPH, not of any sentence in it. This pins the two that a future edit could
+  // silently undo by moving the clause back: same-row adjacency, and order.
+  const page = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+    targetDurationVetDirected: true,
+    vetName: 'Dr. Sarah Kim',
+  })
+  const trialRow = page.slice(page.indexOf('Elimination diet trial'), page.indexOf('Window change'))
+  // 1. The vet's name is in the TRIAL row, and the change is not.
+  assert.match(trialRow, /Trial directed by Dr\. Sarah Kim\./)
+  assert.ok(!/Window extended from/.test(trialRow), 'the change has left the identity row')
+  assert.ok(!/asked for the change/.test(trialRow), 'and so has its attribution')
+
+  // 2. ORDER: the name comes first, the record's limit last — so the disclaimer is the
+  //    reader's final state on attribution rather than the thing the name back-fills.
+  assert.ok(
+    page.indexOf('Trial directed by Dr. Sarah Kim') < page.indexOf('Culprit cannot say'),
+    'the record’s limit is read after the name, not before it',
+  )
+})
+
+Deno.test('CUL-1041 — the unattested clause names the CAPABILITY, not just the gap', () => {
+  // The fifth cold read's mechanism 4, the "missing negative": a reader cannot tell
+  // "Culprit cannot say who asked" apart from "the app has no field for this" — and read
+  // as the latter it says nothing about this trial at all. *"Neither page ever says that
+  // an owner can move the window. Without that one fact, 'cannot say who' is
+  // indistinguishable from 'we forgot to write it down', and I will read it as the latter
+  // every time."*
+  const page = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+    targetDurationVetDirected: false,
+    vetName: 'Dr. Sarah Kim',
+  })
+  // The capability is stated, so the silence that follows it is about this record.
+  assert.match(page, /A trial\u2019s window can be changed by its owner/)
+  assert.match(page, /Culprit cannot say who asked for this one\./)
+
+  // It still blames nobody, which is why \u00a75.1's rule survives it.
+  assert.ok(!/the owner (changed|extended|moved) (it|this|the window)/i.test(page))
+  assert.ok(!/on their own|owner decided/i.test(page))
+  assert.ok(!/Dr\. Sarah Kim (asked|extended|changed)/.test(page))
 })

@@ -107,7 +107,31 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     definer: true, pinned: true, execute: ['authenticated'],
     why: 'B-403 — assessed and KEPT for authenticated (6 Edge Functions call it with the caller JWT and fail OPEN on error); anon/PUBLIC closed since 031.',
   },
+
+  // ── CUL-1051 (069): the trial-window ratchet ──────────────────────────────
+  // INVOKER on purpose, and the asymmetry with the B-520 block above is the
+  // point: those four do a cross-table lookup that RLS would filter, this one
+  // reads NOTHING — it compares two columns of the row in front of it. Elevation
+  // would be privilege with no purpose, and since it raises nothing it cannot
+  // become the CUL-867/C-31 cross-account oracle a DEFINER guard with a RAISE
+  // can. Revoked anyway so the trigger family has one posture (067's note).
+  enforce_diet_trial_initial_window_ratchet: {
+    definer: false, pinned: true, execute: [],
+    why: 'CUL-1051 (069) — INVOKER because it reads nothing and raises nothing; revoked to keep the trigger family uniform.',
+  },
 };
+
+// ⚠ KNOWN GAP, stated because an undocumented blind spot reads as coverage
+// (C-38). `NAMES` is `Object.keys(EXPECTED)` and every regex below is built from
+// that alternation, so this registry is an INCLUSION list: a function missing
+// from it is not asserted loosely, it is not looked at AT ALL. Three trigger
+// functions are currently outside it — `enforce_diet_trial_visit_same_pet`
+// (066), `enforce_vet_visit_pet_immutable` and `enforce_vet_visit_link_same_pet`
+// (067), the last of which IS `SECURITY DEFINER`. Registering them means ruling
+// on each one's intended posture, which is a Trust & Safety call per function
+// rather than a mechanical add, so it is filed as its own issue rather than
+// folded into CUL-1051's migration PR. Do not read a green run here as "every
+// trigger function in the repo is hardened".
 
 // ── SQL lexing ───────────────────────────────────────────────────────────────
 

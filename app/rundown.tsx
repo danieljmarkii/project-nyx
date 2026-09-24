@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { theme } from '../constants/theme';
 import { Header, PrimaryButton } from '../components/ui';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
@@ -13,11 +13,9 @@ import {
   GetReadyTitle,
 } from '../components/vetvisits/GetReadyHeader';
 import { WorthRaisingList } from '../components/vetvisits/WorthRaisingList';
-import { useAllowlistFlag } from '../hooks/useAppConfig';
-import { useBetaOptIn } from '../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../store/petStore';
 import { buildRundown, rundownToPlainText, type Rundown, type RundownTap } from '../lib/rundown';
-import { buildWorthRaising, type WorthRaising } from '../lib/getReady';
+import { buildWorthRaising, localIntakeDeclines, type WorthRaising } from '../lib/getReady';
 import { loadDietTrialFacts } from '../lib/dietTrialFacts';
 import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
 import { readSignalCache } from '../lib/signal';
@@ -101,7 +99,10 @@ function navigateTo(tap: RundownTap): void {
       router.push('/(tabs)/history');
       return;
     case 'log-visit':
-      router.push('/vet-visit');
+      // The booking sheet's *Already happened* arm — the same door as the Pet tab's
+      // *Log a past visit*, so there is one way to log a visit (CUL-942). This
+      // pushed `/vet-visit`, the old write-only form, until GA (CUL-905).
+      router.push('/vet-visits?add=happened');
       return;
   }
 }
@@ -123,13 +124,10 @@ export default function RundownScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  const eligible = useAllowlistFlag('vet_visits');
-  const optedIn = useBetaOptIn('vet_visits');
-  const companionOn = eligible && optedIn;
   const { appointmentId, ask } = useLocalSearchParams<{ appointmentId?: string; ask?: string }>();
-  // Off the flag the param is inert and this is the shipped rundown, unchanged —
-  // which is what AC 0 asserts about `/rundown`.
-  const wantsGetReady = companionOn && typeof appointmentId === 'string' && appointmentId.length > 0;
+  // An appointment on the route makes this Get ready; without one it is the plain
+  // rundown Ask opens.
+  const wantsGetReady = typeof appointmentId === 'string' && appointmentId.length > 0;
 
   // The strip's *Add a question* opens this screen with the sheet up. A ONE-SHOT held
   // in a ref and armed from the ref's initialiser, never in the render body: the
@@ -194,9 +192,26 @@ export default function RundownScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- petId is the intended trigger; the subject is read fresh inside
   }, [petId, wantsGetReady, appointmentId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  // ON FOCUS, not on mount (CUL-952). `load`'s deps are `[petId, wantsGetReady,
+  // appointmentId]`, and none of them change when a screen pushed FROM here pops —
+  // this one stays mounted underneath. That was harmless while every door from here
+  // was read-only, and stopped being harmless the moment ⋯ *Change the appointment*
+  // got a real destination: the owner moved Tuesday to next Tuesday, tapped Save,
+  // and landed back on a page whose eyebrow still read "TUESDAY · 3:00 PM" — which
+  // reads as "it didn't save", so the obvious next move is to do it again.
+  //
+  // It fixes the removal case in the same hook, and that one is a G5 violation
+  // rather than a cosmetic staleness: `load` already resolves a cancelled row to
+  // `setGetReady(null)` and falls back to the plain rundown, so re-reading is what
+  // stops this screen rendering a title, a questions block and a ⋯ menu for an
+  // appointment that is no longer on the record. The visits list and the Home strip
+  // have always used this hook; the door named in CUL-952's title was the one that
+  // did not.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   // Consume the one-shot once there is something to open the sheet over, then strip
   // the param so a re-focus reads a clean URL rather than relying on the ref alone.
@@ -363,7 +378,15 @@ export default function RundownScreen() {
             onCopyAsText={onCopyAsText}
             onChangeAppointment={() => {
               setMenuOpen(false);
-              router.push('/vet-visits');
+              // The appointment ITSELF, not the list (CUL-952). This pushed
+              // `/vet-visits`, where the only control is *Add* — so a menu item
+              // named *Change the appointment* booked a SECOND appointment beside
+              // the one the owner meant to move, and Home then led with whichever
+              // was earlier. The id rides the route, so the screen never asks the
+              // store which appointment this is (AC 11).
+              router.push(
+                `/vet-visits/edit-appointment?appointment=${getReady.appointment.id}`,
+              );
             }}
           />
           <AddQuestionSheet
@@ -441,13 +464,14 @@ async function buildForAppointment(
     // suppresses the reassuring trial_response row rather than letting it through.
     suppressTrialResponse: trialInput ? isAnimalNotEating(trialInput) : true,
     trialStrip: trialInput ? resolveTrialStrip(trialInput) : null,
-    // REQUIRED on the input type, never defaulted. `resolveTrialStrip` discards this
-    // headline because on Home the Signal card above the strip owns the statement —
-    // and Get ready has no Signal card above it, so passing only the strip dropped a
-    // device-local SAFETY fact on the page read aloud in the exam room. A default here
-    // would have handed that over silently (C-37: a default on a safety-relevant
-    // parameter is the decision).
-    intakeDeclineHeadline: trialInput?.intakeDeclineHeadline ?? null,
+    // REQUIRED on the input type, never defaulted. `resolveTrialStrip` discards the
+    // device's declines because on Home the Signal card above the strip owns the
+    // statement — and Get ready has no Signal card above it, so passing only the strip
+    // dropped a device-local SAFETY fact on the page read aloud in the exam room. A
+    // default here would have handed that over silently (C-37: a default on a
+    // safety-relevant parameter is the decision). EVERY flag, structured, so
+    // `buildWorthRaising` can drop only the ones the Signal already states (CUL-950).
+    intakeDecline: localIntakeDeclines(trialInput),
     rundown: built,
     nowMs: Date.now(),
   });

@@ -9,9 +9,9 @@ import {
 // The C-19-correct date formatter (year-stamped outside this year), and the
 // companion's own — Get ready is a companion surface.
 import { formatVisitDate } from './vetVisits';
-import type { CachedFinding } from './signal';
+import type { CachedFinding, IntakeDeclineFinding, IntakeDeclineTrigger, SignalFinding } from './signal';
 import type { Rundown, RundownTile } from './rundown';
-import type { TrialStripModel } from './dietTrialCard';
+import type { TrialCardInput, TrialStripModel } from './dietTrialCard';
 import type { MedicationCourse } from './medicationHistory';
 import type { MedItemName } from './rundown';
 
@@ -122,18 +122,69 @@ export interface WorthRaisingInput {
   /** `resolveTrialStrip`'s model for this pet, or null when no trial is running. */
   trialStrip: TrialStripModel | null;
   /**
-   * The DEVICE-LOCAL intake-decline headline (`TrialCardInput.intakeDeclineHeadline`),
-   * or null. Separate from `trialStrip` because `resolveTrialStrip` deliberately
-   * DISCARDS it — see `intakeRow`.
+   * The DEVICE-LOCAL intake declines (`localIntakeDeclines`), every flag the device
+   * holds, empty when it holds none. Separate from `trialStrip` because
+   * `resolveTrialStrip` deliberately DISCARDS them — see `intakeRow`.
+   *
+   * Structured, not a sentence, because this module has to know WHICH decline each
+   * one is: a phone decline the Signal already states is dropped, and one the Signal
+   * does not state is kept (`mergeIntake`, CUL-950). REQUIRED, never defaulted — a
+   * default here would hand over a safety fact by writing nothing (C-37).
    */
-  intakeDeclineHeadline: string | null;
+  intakeDecline: readonly LocalIntakeDecline[];
   /** The rundown built for this same screen — quoted, and the source of `facts`. */
   rundown: Rundown;
   nowMs: number;
 }
 
+/**
+ * One decline the device holds: which it is, the food a refusal names, and its
+ * sentence. `trigger: null` is an UNKNOWN decline (a sentence with no flag behind
+ * it), and an unknown decline matches nothing — so it is never the one dropped.
+ */
+export interface LocalIntakeDecline {
+  trigger: IntakeDeclineTrigger | null;
+  refusedFoodLabel: string | null;
+  headline: string;
+}
+
+/**
+ * The trial input's declines, as this module takes them.
+ *
+ * `loadDietTrialFacts` sets `intakeDeclineFacts` beside the headline from the same
+ * read, so in production the facts are always there. An input built any other way
+ * may carry only the sentence; that becomes an UNKNOWN decline, which is kept
+ * whatever the Signal says. The failure is an extra row, never a dropped one.
+ */
+export function localIntakeDeclines(
+  trial: Pick<TrialCardInput, 'intakeDeclineHeadline' | 'intakeDeclineFacts'> | null,
+): LocalIntakeDecline[] {
+  if (!trial) return [];
+  if (trial.intakeDeclineFacts) return [...trial.intakeDeclineFacts];
+  return trial.intakeDeclineHeadline
+    ? [{ trigger: null, refusedFoodLabel: null, headline: trial.intakeDeclineHeadline }]
+    : [];
+}
+
+/**
+ * The engine's order for two intake declines — a MIRROR of `rankFindings`' intake
+ * comparator (`supabase/functions/generate-signal/detection.ts`, "an outright refusal
+ * leads a consecutive-low"). Same value and the same question — which of two intake
+ * declines the owner meets first — so it is mirrored and the source named (C-34), and
+ * `getReady.test.ts` reads the engine's comparator and fails if the two ever differ.
+ * CUL-1084 proposes swapping the engine's order; when it lands, this moves with it.
+ *
+ * Why the engine's order and not this page's own: the vet hears the same order the
+ * owner saw on Home that morning, and a stale cache catching up never makes the two
+ * rows swap places between one opening and the next (the CUL-950 panel, 2026-09-22).
+ */
+export const INTAKE_TRIGGER_ORDER: Readonly<Record<IntakeDeclineTrigger, number>> = {
+  refused_normal_food: 0,
+  consecutive_low: 1,
+};
+
 export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
-  const signalRows = buildSignalRows(input);
+  const signal = buildSignalRows(input);
   // The trial leads the optional rows, the Signal's insight findings follow, and the
   // course and the weight gap come last.
   //
@@ -158,7 +209,7 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
   // Signal's band.
   const optional = [
     trialRow(input.trialStrip),
-    ...signalRows.filter((r) => !r.isSafety),
+    ...signal.filter((s) => !s.row.isSafety).map((s) => s.row),
     courseRow(
       input.rundown.facts.courses,
       input.rundown.facts.medItemNames,
@@ -176,10 +227,12 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
   // every ordinary case this is also the server's order — but it holds even if the
   // engine ever ranked a benign finding higher, which is what AC 5 requires.
   //
-  // The device-local decline joins them, AHEAD of the server's, because it is the row
-  // that survives when the server cannot be reached at all (see `intakeRow`).
-  const localIntake = intakeRow(input.intakeDeclineHeadline);
-  const safety = [...(localIntake ? [localIntake] : []), ...signalRows.filter((r) => r.isSafety)];
+  // The device-local declines join them, each one only if the Signal is not already
+  // saying it (see `mergeIntake`).
+  const safety = mergeIntake(
+    signal.filter((s) => s.row.isSafety),
+    input.intakeDecline,
+  );
   return {
     rows: [...safety, ...optional.slice(0, WORTH_RAISING_CAP)],
     signalUnavailable: input.findings === null,
@@ -205,8 +258,12 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
  * and no test — and deleted rather than kept, because a line that looks like it
  * enforces the safety rule while enforcing nothing is worse than no line: the next
  * reader trusts it.
+ *
+ * Each row travels with the finding it quotes, inside this module only, so the
+ * intake merge can ask WHICH decline a Signal row states from the finding's own
+ * fields rather than from its sentence (which may be model-phrased).
  */
-function buildSignalRows(input: WorthRaisingInput): WorthRaisingRow[] {
+function buildSignalRows(input: WorthRaisingInput): SignalEntry[] {
   if (!input.findings) return [];
   // AT MOST ONE STAND-DOWN MARKER. They are ABSENCE statements — *"Vomiting has been
   // quiet for 14 days. That isn't an all-clear."* — and one is useful context at a
@@ -221,14 +278,145 @@ function buildSignalRows(input: WorthRaisingInput): WorthRaisingRow[] {
   return visibleFindings(input.findings, input.suppressTrialResponse, input.nowMs)
     .filter((f) => !isStoodDown(f.finding) || ++standDowns <= 1)
     .map((f, i) => ({
-      id: `signal-${i}`,
-      // VERBATIM. The Change Contract's phrased, count-anchored sentence is the unit.
-      text: f.text,
-      detail: null,
-      source: 'signal' as const,
-      sourceLabel: 'from the Signal',
-      isSafety: f.finding.priorityClass === 'safety',
+      finding: f.finding,
+      row: {
+        id: `signal-${i}`,
+        // VERBATIM. The Change Contract's phrased, count-anchored sentence is the unit.
+        text: f.text,
+        detail: null,
+        source: 'signal' as const,
+        sourceLabel: 'from the Signal',
+        isSafety: f.finding.priorityClass === 'safety',
+      },
     }));
+}
+
+/** A Signal row and the finding it quotes. Never leaves this module. */
+interface SignalEntry {
+  row: WorthRaisingRow;
+  finding: SignalFinding;
+}
+
+/**
+ * The safety band: the Signal's safety rows with the device's own declines merged
+ * in — each device decline only when the Signal is NOT already stating it (CUL-950).
+ *
+ * ── WHY THIS EXISTS ──────────────────────────────────────────────────────────────
+ * The device and the Signal run the same intake detector, so on a reachable cache
+ * they usually say the same thing — and printing both put one hunger strike on the
+ * list twice, as two numbered items, on the page read aloud to the vet.
+ *
+ * ── WHY IT IS NOT "DROP THE DEVICE ROW WHEN THE CACHE ANSWERED" ──────────────────
+ * That would be a SUPPRESSION, and the device row exists precisely to prevent one
+ * (`intakeRow`). A cache can answer with no decline at all (the evidence aged out),
+ * so the question is asked of the Signal rows this list will PRINT, never of
+ * `input.findings` or of whether the read succeeded.
+ *
+ * ── WHY IT IS NOT "DROP IT WHEN THE SIGNAL CARRIES ANY INTAKE DECLINE" ───────────
+ * The two are the same detector over two different SNAPSHOTS of the record. Get
+ * ready reads the cache without refreshing it (AC 4), a rating added after the fact
+ * never regenerates it (CUL-1087), and the server counts free-fed bowls the device
+ * excludes (CUL-1086). So the cache can hold yesterday's "turned down Chicken Pâté"
+ * while the device knows the cat ate well under baseline TODAY — the first day of
+ * the 48-hour window. Dropping on any decline read the vet the refusal and not the
+ * anorexia. The adversarial pass measured it; the product panel ruled (1), 7/7.
+ *
+ * ── WHAT "THE SAME DECLINE" MEANS ────────────────────────────────────────────────
+ * The same trigger; for a refusal, also the same food. See `sameDecline`.
+ *
+ * ── WHERE A DEVICE ROW THAT SURVIVES GOES ────────────────────────────────────────
+ * Among the Signal's intake rows, in the ENGINE's trigger order (see
+ * `INTAKE_TRIGGER_ORDER`); the Signal's own rows are never re-ordered, only joined.
+ * With no Signal intake row at all, the device rows lead the band — the position
+ * the lone device row always held, and the one that matters most with a dead cache.
+ */
+function mergeIntake(
+  signalSafety: readonly SignalEntry[],
+  local: readonly LocalIntakeDecline[],
+): WorthRaisingRow[] {
+  // The Signal's intake declines AS RETURNED — the rows this list prints.
+  const signalIntake = signalSafety.flatMap((s) =>
+    s.finding.type === 'intake_decline' ? [s.finding] : [],
+  );
+  const survivors = local
+    .filter((l) => !signalIntake.some((f) => sameDecline(l, f)))
+    .map((l) => ({ row: intakeRow(l), rank: intakeRank(l.trigger) }))
+    // Stable, so two device rows of one rank keep the detector's order.
+    .sort((a, b) => a.rank - b.rank);
+
+  const placed: { row: WorthRaisingRow; rank: number | null }[] = signalSafety.map((s) => ({
+    row: s.row,
+    rank: s.finding.type === 'intake_decline' ? intakeRank(s.finding.trigger) : null,
+  }));
+  const firstIntake = placed.findIndex((p) => p.rank !== null);
+  if (firstIntake === -1) return [...survivors.map((s) => s.row), ...placed.map((p) => p.row)];
+
+  // The engine ranks intake declines together, so they are one contiguous run. A
+  // device row goes after every row of its run whose rank is not greater than its
+  // own: after the Signal's refusal and before its consecutive-low, and after a
+  // Signal row of its own rank (the order the owner already saw on Home comes first).
+  for (const survivor of survivors) {
+    let at = firstIntake;
+    while (at < placed.length) {
+      const rank = placed[at].rank;
+      if (rank === null || rank > survivor.rank) break;
+      at++;
+    }
+    placed.splice(at, 0, survivor);
+  }
+  return placed.map((p) => p.row);
+}
+
+/** An unknown decline leads its run: it is the one whose place nothing can argue. */
+function intakeRank(trigger: IntakeDeclineTrigger | null): number {
+  return trigger === null ? -1 : INTAKE_TRIGGER_ORDER[trigger];
+}
+
+/**
+ * Whether the Signal row states the SAME decline the device holds. Read off the
+ * finding's own fields, never its sentence — the Signal's text may be the model's.
+ *
+ * ── THE IDENTITY ─────────────────────────────────────────────────────────────────
+ *   • An unknown device decline matches nothing. The failure is an extra row.
+ *   • A different trigger is a different fact. "Ate less than usual today" and
+ *     "turned down Chicken Pâté" are two things to tell a vet, and the server itself
+ *     emits them as two rows when both fire.
+ *   • `consecutive_low` is identified by its trigger alone. Its day count is the
+ *     species constant on both sides (`daysBelowBaseline`: cat 1, dog 2), so two
+ *     `consecutive_low`s for one pet cannot disagree about anything.
+ *   • A refusal is identified by its FOOD as well. Two normally-eaten foods refused
+ *     on consecutive days is the move from aversion to anorexia — the history
+ *     Dr. Chen said she most needs — and a trigger-only match read the vet the
+ *     older food and dropped the newer one.
+ *   • A device refusal with NO food name matches any Signal refusal. The device
+ *     cannot show it is a second food, and printing both would read one refusal to
+ *     the vet as two ("Chicken Pâté" and "a food they usually finish"). DEFENSIVE,
+ *     and unreachable today (adversarial pass): the device's meal read drops a meal
+ *     whose food row is missing (`classifyRatedMeals` keeps `foodType === 'meal'`
+ *     only), and the capture forms refuse a blank brand and product. It is the ruled
+ *     answer for the day that read changes, not a path anything takes now.
+ *   • A Signal refusal with no food name matches only an unnamed device refusal, so
+ *     a named device refusal is kept beside it. Rare (the server's food row was
+ *     missing), and it errs toward stating the food. `!= null`, not `!== null`: a
+ *     cache written by an older engine may lack the field entirely, and that must
+ *     read as unnamed rather than crash the page.
+ *
+ * Labels compare trimmed and case-folded only (Class A). The two sides build them
+ * the same way from NOT NULL columns, so they differ only after a rename — and a
+ * rename shows both rows, which is the safe direction.
+ */
+function sameDecline(local: LocalIntakeDecline, signal: IntakeDeclineFinding): boolean {
+  if (local.trigger === null || local.trigger !== signal.trigger) return false;
+  if (local.trigger === 'consecutive_low') return true;
+  if (local.refusedFoodLabel === null) return true;
+  return (
+    signal.refusedFoodLabel != null &&
+    foldLabel(local.refusedFoodLabel) === foldLabel(signal.refusedFoodLabel)
+  );
+}
+
+function foldLabel(label: string): string {
+  return label.trim().toLowerCase();
 }
 
 /**
@@ -243,22 +431,31 @@ function buildSignalRows(input: WorthRaisingInput): WorthRaisingRow[] {
  * findings come from a network cache and this comes from SQLite.
  *
  * The measured shape (adversarial re-run): a cat on day 12 of a hydrolyzed trial whose
- * device holds `consecutive_low`, `daysBelowBaseline: 3` — the 48-hour feline hepatic-
- * lipidosis window — with the cache unreachable. Worth raising rendered one row, the
- * trial's day count, under a gap line asserting that the local half of this page was
- * COMPLETE. It was not.
+ * device holds `consecutive_low` — the 48-hour feline hepatic-lipidosis window — with
+ * the cache unreachable. Worth raising rendered one row, the trial's day count, under a
+ * gap line asserting that the local half of this page was COMPLETE. It was not. (The
+ * pass recorded `daysBelowBaseline: 3`, which the detector cannot emit: the count is
+ * the species constant, 1 for a cat. Corrected under CUL-950 — C-35.)
  *
- * `isSafety: true` and above the cap, like any other safety row. Quoted verbatim from
- * the same object `trialRow` quotes, so the two cannot disagree about the same pet.
+ * One row per decline the device holds that the Signal is not already stating
+ * (`mergeIntake`). `isSafety: true` and above the cap, like any other safety row.
+ * Quoted verbatim from the sentence `declineHeadline` composed for that flag.
  */
-function intakeRow(headline: string | null): WorthRaisingRow | null {
-  if (!headline) return null;
+function intakeRow(decline: LocalIntakeDecline): WorthRaisingRow {
   return {
-    id: 'intake-decline',
-    text: headline,
+    // Keyed by the decline, so two device rows never share a React key.
+    id: `intake-${decline.trigger ?? 'decline'}`,
+    text: decline.headline,
     detail: null,
     source: 'intake',
-    sourceLabel: 'from this device’s record',
+    // Was "from this device's record", which carried an IMPLEMENTATION fact — this
+    // row comes from SQLite while the Signal's come from a network cache — into the
+    // one label on the page most likely to be read aloud in a consulting room. The
+    // distinction is real and it is load-bearing in the comment above; it is not a
+    // distinction an owner has, or a vet needs, and "this device's" reads as a
+    // hedge about whether the record is the whole record (CUL-953 item 5). Plain,
+    // and identical to its siblings, because the owner meets one record.
+    sourceLabel: 'from the record',
     isSafety: true,
   };
 }

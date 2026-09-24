@@ -16,6 +16,7 @@ import { theme } from '../constants/theme';
 import { usePetStore } from '../store/petStore';
 import { useIsOnline } from '../hooks/useIsOnline';
 import { useAskStore } from '../store/askStore';
+import { useUiStore } from '../store/uiStore';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { Skeleton } from '../components/ui/Skeleton';
 import { AskChip } from '../components/ask/AskChip';
@@ -66,6 +67,9 @@ export default function AskScreen() {
   const resolveAnswer = useAskStore((s) => s.resolveAnswer);
   const resolveCapped = useAskStore((s) => s.resolveCapped);
   const resolveDisabled = useAskStore((s) => s.resolveDisabled);
+  // The empty record's door opens the app's one log sheet (CUL-503), mounted at the root
+  // so it presents over this pushed screen.
+  const openLogSheet = useUiStore((s) => s.openLogSheet);
 
   const petId = activePet?.id ?? null;
   const petName = activePet?.name ?? 'your pet';
@@ -177,7 +181,7 @@ export default function AskScreen() {
           {disabled ? (
             <Text style={styles.disabledLine}>Ask isn't available on this account right now.</Text>
           ) : emptyRecord ? (
-            <EmptyRecord petName={petName} onLog={() => router.push('/log')} />
+            <EmptyRecord petName={petName} onLog={() => openLogSheet()} />
           ) : fresh ? (
             <FreshState
               petName={petName}

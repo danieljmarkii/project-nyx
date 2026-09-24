@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { BookVisitSheet, type BookVisitSubmit } from './BookVisitSheet';
-import { localDateKey, type VisitPrefill } from '../../lib/vetVisits';
+import { APPOINTMENT_WINDOW_DAYS, localDateKey, type VisitPrefill } from '../../lib/vetVisits';
 
 // CUL-900 VV-2 — the booking sheet (mock E3).
 //
@@ -218,12 +218,25 @@ describe('the sheet asks its question, and requires only a date', () => {
     });
   });
 
-  it('does not promise a Home surface that has not been built', () => {
-    // VV-5 owns the Home strip. A booking that says it will appear there, five
-    // days running, when nothing will, reads to the owner as a failed save.
+  it('promises the Home strip now that VV-5 has built it', () => {
+    // THIS TEST USED TO ASSERT THE OPPOSITE, and the inversion is the record of
+    // why. The line was WITHHELD while the strip did not exist, because a booking
+    // that says it will appear on Home for five days when nothing will reads to
+    // the owner as a failed save. VV-5 shipped the strip; the copy did not follow,
+    // which left the last thing an owner reads before booking describing only what
+    // the app won't do (CUL-953 item 2).
     renderSheet();
-    expect(screen.queryByText(/Shows on Home/)).toBeNull();
+    expect(screen.getByText(/Shows on Home five days before/)).toBeTruthy();
+    // The other half stays true and stays said: there is still no reminder.
     expect(screen.getByText(/No reminder yet/)).toBeTruthy();
+  });
+
+  it('claims the window the strip actually carries', () => {
+    // The copy spells "five" as a word, so nothing in the sentence moves when the
+    // constant does. This is the tie: widen the strip's window and this reds,
+    // naming the line to change, instead of leaving a promise the strip no longer
+    // keeps. Bare equality is the assertion BECAUSE the string cannot compute it.
+    expect(APPOINTMENT_WINDOW_DAYS).toBe(5);
   });
 
   it('never says the report starts "from today"', () => {

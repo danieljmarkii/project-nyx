@@ -25,6 +25,10 @@ import { resolveTrialStrip, isAnimalNotEating } from '../../lib/dietTrialCard';
 import { isTrialRunning } from '../../lib/dietTrial';
 import { useMedStrips } from '../../hooks/useMedStrips';
 import { resolveMedStrips } from '../../lib/medStrip';
+import { useDesignV2 } from '../../hooks/useDesignV2';
+import { TodayCard } from '../../components/designV2/home/TodayCard';
+import { CoverageDoor } from '../../components/designV2/home/CoverageDoor';
+import { HOME_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 
 /**
  * The slice of the tab navigator this screen needs to hear a Home-tab re-tap.
@@ -140,6 +144,14 @@ export default function HomeScreen() {
   // The medication strip's input (B-614 PR M2) — resolved inline below, exactly
   // like the trial strip, so the resolver call and the placement stay on-screen.
   const { input: medInput } = useMedStrips();
+  // Design v2 — the whole day (D2-4 / CUL-1066). ONE gate, read once; the drawing behind
+  // it lives in `components/designV2/` (C-36: the flag-off guard stubs that namespace and
+  // requires this screen's flag-off tree to be unchanged by it). Flag-on, Today is the
+  // spine with the look as its header, the medication strip's one-tap write is retired
+  // (a dose is a fact on the spine once logged; Q1 ruled "that's the FAB's job"), the
+  // Trend card is retired, and the coverage door closes the feed. Flag-off is today's
+  // Home, untouched.
+  const designV2 = useDesignV2();
 
   useEffect(() => {
     loadTodayEvents();
@@ -195,7 +207,7 @@ export default function HomeScreen() {
         <PullToRefreshSky active={refreshing} />
         <ScrollView
           ref={scrollRef}
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[styles.scroll, designV2 && styles.scrollV2]}
           showsVerticalScrollIndicator={false}
           onScroll={(e) => setScrollY(e.nativeEvent.contentOffset.y)}
           // 16ms would repaint the exits every frame for a decision that only changes
@@ -246,9 +258,11 @@ export default function HomeScreen() {
               when there is nothing to show, so Home draws no hole for a pet with
               no meds (§8, AC #3). The card self-contains its one-tap confirm (M3),
               which writes local-first and bumps the hydration tick above to settle. */}
-          {(medInput ? resolveMedStrips(medInput) : []).map((m) => (
-            <MedStrip key={m.key} model={m} />
-          ))}
+          {designV2
+            ? null
+            : (medInput ? resolveMedStrips(medInput) : []).map((m) => (
+                <MedStrip key={m.key} model={m} />
+              ))}
           {/* Noticed — the daily look (CUL-871 / N-4a), in the slot the PM ruled on
               CUL-864: after the medication strip, before Today. Safety cards and the
               standing strips lead (Principle 3); the look is the owner's own
@@ -262,14 +276,31 @@ export default function HomeScreen() {
               the emergency door takes it as a positive fact or nothing, and the withheld
               predicate takes `null` as unanswered and fails closed. See its declaration
               above for why one fact carries two readings. */}
-          <LookCard
-            trialNotEating={trialNotEating}
-            onLayout={(e) =>
-              setLookRect({ top: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
-            }
-          />
-          <TodayZone />
-          <TrendZone />
+          {designV2 ? (
+            // D2-4 — Today as a spine with the look as its header, then the coverage
+            // door (the one door to Patterns on Home; left-aligned, C-5). The header's
+            // rect feeds the same pinned exits the card fed (T-21).
+            <>
+              <TodayCard
+                trialNotEating={trialNotEating}
+                onLookLayout={(e) =>
+                  setLookRect({ top: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
+                }
+              />
+              <CoverageDoor />
+            </>
+          ) : (
+            <>
+              <LookCard
+                trialNotEating={trialNotEating}
+                onLayout={(e) =>
+                  setLookRect({ top: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
+                }
+              />
+              <TodayZone />
+              <TrendZone />
+            </>
+          )}
         </ScrollView>
         {/* The second absolute layer (the first is the night band above). It draws
             nothing at all unless the Noticed grid is open — `LookExits` reads the card's
@@ -292,4 +323,7 @@ const styles = StyleSheet.create({
   body: { flex: 1 },
   scroll: { padding: theme.space3, gap: theme.space3, paddingBottom: 100 },
   // paddingBottom gives the FAB clearance over the last card
+  // D2-4 — the page's inset, written once in lib/fabFootprint.ts and asserted ≥ the
+  // FAB's floor there (C-5). The last row's control is left-aligned for the other half.
+  scrollV2: { paddingBottom: HOME_V2_SCROLL_INSET },
 });

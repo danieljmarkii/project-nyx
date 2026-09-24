@@ -12,17 +12,14 @@ import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { EventIcon } from '../event/EventIcon';
 import { PetAvatar } from '../pet/PetAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
-import { EventTypeSheet } from './EventTypeSheet';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { useUiStore } from '../../store/uiStore';
 import { openMenu as openMenuHaptic } from '../../lib/haptics';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
-import { useMomentStore, MEAL_FLAGGED_DURATION_MS, whenMealCardVisible } from '../../store/momentStore';
+import { useMomentStore } from '../../store/momentStore';
 import { getRecentFoods, PickerFood } from '../../lib/db';
 import { insertMeal } from '../../lib/meals';
-import { evaluateMealLogTimeFlag, noteTrialFlagShown } from '../../lib/trialContaminant';
+import { applyMealTrialFlag } from '../../lib/mealTrialFlag';
 import { noPetToLogForCopy } from '../../lib/logCopy';
 
 // Resolved once at module scope — a literal, shared with the log sheet (CUL-717).
@@ -32,12 +29,12 @@ export function FAB() {
   const { prependEvent } = useEventStore();
   const { pets, activePet } = usePetStore();
   const showMealMoment = useMomentStore((s) => s.showMeal);
-  const patchTrialFlag = useMomentStore((s) => s.patchTrialFlag);
-  const rescheduleMoment = useMomentStore((s) => s.rescheduleHide);
+  // The log sheet is not this component's any more (CUL-503): one root mount serves
+  // every door, and the FAB is three of them — More events, and the two quick taps.
+  const openLogSheet = useUiStore((s) => s.openLogSheet);
 
   const [open, setOpen] = useState(false);
   const [switcherVisible, setSwitcherVisible] = useState(false);
-  const [eventSheetVisible, setEventSheetVisible] = useState(false);
   // CUL-723 — the recent-food rows are keyed by the pet they were loaded FOR, and
   // render only on a match. `null` is "this pet's foods have not answered yet",
   // which is not the same fact as "this pet has no foods" (C-12).
@@ -58,15 +55,6 @@ export function FAB() {
   const [recentFoods, setRecentFoods] = useState<{ petId: string; foods: PickerFood[] } | null>(null);
   const [logging, setLogging] = useState<string | null>(null);
   const fabAnim = useRef(new Animated.Value(0)).current;
-
-  // B-745 PR 2 — the More-events destination is the new bottom sheet when
-  // log_picker_v2 is live (the B-712 two-gate beta shape: server allowlist ×
-  // local opt-in, both hooks called unconditionally then combined). Flag-off keeps
-  // the shipped full-screen push, byte-identical (FL-1). Only the "More events"
-  // destination is gated; the quick-food and Vomit/Loose-stool taps are unchanged.
-  const pickerEligible = useAllowlistFlag('log_picker_v2');
-  const pickerOptedIn = useBetaOptIn('log_picker_v2');
-  const pickerV2 = pickerEligible && pickerOptedIn;
 
   // CUL-871 (T-21) — THE FAB STEPS ASIDE for a Home capture overlay. The Noticed grid's
   // pinned Done bar stands exactly where this button does (its box is 72–128 pt off the
@@ -118,32 +106,6 @@ export function FAB() {
   // there is no flash to pay for the safety.
   const foodsForActivePet =
     activePet && recentFoods?.petId === activePet.id ? recentFoods.foods : null;
-
-  // B-351 slice 4 / B-693 — resolve the log-time trial heads-up (contents OR
-  // membership, whichever fires) and land it on the card that is already showing.
-  // Fire-and-forget by design: the meal is written, the card is up, and this is
-  // strictly additive information. One evaluator, one read of the food record
-  // (B-693 single-read composition). The ledger write happens ONLY if the patch
-  // landed, so the food's one-per-trial budget can never be spent on a heads-up the
-  // owner did not see.
-  async function applyTrialFlag(
-    eventId: string,
-    petId: string,
-    foodId: string,
-    occurredAt: string,
-  ) {
-    const flag = await evaluateMealLogTimeFlag({ petId, foodId, occurredAt });
-    if (!flag) return;
-    // Wait for the card to be on screen before patching. This path reveals
-    // synchronously (no delayMs), so it resolves at once — but the guard is kept
-    // identical to the picker path (app/log.tsx), where the reveal is deferred and
-    // a bare patch would race ahead of it and drop the heads-up. False = superseded
-    // by a newer log → skip the patch and rule 3's spend.
-    if (!(await whenMealCardVisible(eventId))) return;
-    if (!patchTrialFlag(eventId, flag)) return;
-    rescheduleMoment(MEAL_FLAGGED_DURATION_MS);
-    await noteTrialFlagShown(flag);
-  }
 
   async function handleQuickMeal(food: PickerFood) {
     // Write-time pet identity (multi-pet spec §6): read the store at the moment
@@ -220,11 +182,12 @@ export function FAB() {
       // B-351 slice 4 / B-693 — resolve the trial heads-up and patch it onto the
       // card. Fire-and-forget (not awaited here) so the tapped row's spinner
       // (setLogging(null) in the finally) releases immediately on the wedge's
-      // fastest path. applyTrialFlag waits for the card to be on screen before
+      // fastest path. applyMealTrialFlag (lib/mealTrialFlag.ts — the ONE orchestration
+      // both meal doors share, CUL-354) waits for the card to be on screen before
       // patching — a no-op here (this path reveals synchronously), but the same
       // guard the picker path needs. The ledger write happens only once the
       // heads-up renders, so one the owner never saw can't spend the food's budget.
-      void applyTrialFlag(eventId, pet.id, food.id, occurredAtIso);
+      void applyMealTrialFlag({ eventId, petId: pet.id, foodId: food.id, occurredAt: occurredAtIso });
     } finally {
       setLogging(null);
     }
@@ -280,9 +243,9 @@ export function FAB() {
                 moment the pets land; no need to close and reopen the menu.
 
                 `More events` goes with the rest even though it could arguably stay:
-                flag-on it opens the sheet, which now says this for itself (a second
-                surface repeating the message), and flag-off it pushes bare /log —
-                the same dead end. The menu gets one answer. */}
+                it opens the sheet, which says this for itself, so keeping the row
+                would put a second surface one tap away only to repeat the message.
+                The menu gets one answer. */}
             {!activePet && (
               <EmptyState
                 // Shared with the log sheet (lib/logCopy) — one state, two capture
@@ -386,17 +349,19 @@ export function FAB() {
 
                 <View style={styles.divider} />
 
-                {/* Quick GI symptom taps — route into the full log flow (the `simple`
-                    step) rather than logging silently. That flow already carries the
-                    optional photo step (a vomit photo auto-triggers the AI read) and
-                    the B-010 "Saw it / Found it" time affordance, which vomit/loose
-                    stool need because they're discovery-prone. The photo is optional,
-                    so this stays fast — one tap to the screen, one tap to save — while
-                    closing the old no-photo gap (was FAB.tsx handleQuickSymptom TODO). */}
+                {/* Quick GI symptom taps — open the log sheet straight at the confirm
+                    for that event (CUL-504) rather than logging silently. They used to
+                    push the full-screen /log flow, which put a second confirm design
+                    one tap away from the sheet's own, in the same menu. The sheet's
+                    confirm carries everything that flow did: the optional photo (a
+                    vomit or stool photo still triggers the per-incident read and lands
+                    on its record) and the B-010 "Saw it / Found it" time affordance,
+                    which vomit and loose stool need because they're discovery-prone.
+                    Still one tap to the confirm, one tap to save. */}
                 <View style={styles.symptomRow}>
                   <TouchableOpacity
                     style={styles.symptomBtn}
-                    onPress={() => { closeMenu(); router.push('/log?type=vomit'); }}
+                    onPress={() => { closeMenu(); openLogSheet('vomit'); }}
                     activeOpacity={0.7}
                   >
                     <EventIcon type="vomit" size={20} color={theme.colorEventSymptom} />
@@ -404,7 +369,7 @@ export function FAB() {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.symptomBtn}
-                    onPress={() => { closeMenu(); router.push('/log?type=diarrhea'); }}
+                    onPress={() => { closeMenu(); openLogSheet('diarrhea'); }}
                     activeOpacity={0.7}
                   >
                     <EventIcon type="diarrhea" size={20} color={theme.colorEventSymptom} />
@@ -414,19 +379,18 @@ export function FAB() {
 
                 <View style={styles.divider} />
 
-                {/* More events → the type grid. Flag-on (B-745 PR 2) this rises as a
-                    bottom sheet over the current tab; flag-off it pushes the shipped
-                    full-screen picker, byte-identical. The photo-first "Attach photo"
-                    entry it used to carry was retired in B-745 PR 1 (R4: every log
-                    starts from the event; photos still attach inside each event flow),
-                    as was the older "Log with photo" row before it — both were
-                    redundant second pathways to this one destination. */}
+                {/* More events → the type grid, as a bottom sheet over the current tab
+                    (B-745 PR 2; out of beta with CUL-962, so it never pushes /log any
+                    more; one root-mounted sheet since CUL-503). The photo-first "Attach photo" entry it used to carry was
+                    retired in B-745 PR 1 (R4: every log starts from the event; photos
+                    still attach inside each event flow), as was the older "Log with
+                    photo" row before it — both were redundant second pathways to this
+                    one destination. */}
                 <TouchableOpacity
                   style={styles.menuAction}
                   onPress={() => {
                     closeMenu();
-                    if (pickerV2) setEventSheetVisible(true);
-                    else router.push('/log');
+                    openLogSheet();
                   }}
                   activeOpacity={0.7}
                 >
@@ -467,14 +431,6 @@ export function FAB() {
         captureSurface
         onClose={() => setSwitcherVisible(false)}
       />
-
-      {/* B-745 PR 2 — the More-events destination as a bottom sheet (flag-on). Always
-          mounted with the FAB so it renders over whichever tab is active; inert until
-          setEventSheetVisible(true). Owns its own pet switcher internally. */}
-      <EventTypeSheet
-        visible={eventSheetVisible}
-        onClose={() => setEventSheetVisible(false)}
-      />
     </>
   );
 }
@@ -490,7 +446,16 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: theme.colorNeutralDark,
+    // The accent INK, not the bright accent (CUL-1063 / D2-2, PM-ruled teal on
+    // round 4). A floating disc must clear 3:1 against the ground it floats over
+    // (WCAG 1.4.11, the non-text target C-1 cites), and the bright teal measures
+    // 2.17:1 on colorNeutralLight and 2.26:1 on the white card — under the line
+    // on both. The ink clears at 4.95:1 / 5.17:1, and the white plus clears the
+    // ink at 5.17:1. Same accent, one notch darker; pinned in
+    // constants/theme.contrast.test.ts so "simplify to colorAccent" is a red
+    // build. Ships to every account, not behind design_v2: one token, no
+    // layout risk.
+    backgroundColor: theme.colorAccentInk,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',

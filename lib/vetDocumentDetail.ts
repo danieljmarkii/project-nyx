@@ -32,6 +32,7 @@ import {
   VET_DOCUMENT_KIND_LABELS,
   formatVetDocumentDate,
   defaultVetDocumentTitle,
+  localDayStemOf,
 } from './vetDocumentLibrary';
 
 // ── The document ─────────────────────────────────────────────────────────────
@@ -128,7 +129,7 @@ export function buildVetDocumentDetail(
   if (!cover) return null;
 
   const kind = asKind(cover.kind);
-  const dateLabel = formatVetDocumentDate(cover.document_date ?? cover.created_at, now);
+  const dateLabel = formatVetDocumentDate(cover.document_date ?? localDayStemOf(cover.created_at), now);
   // Same rule as the library row: '' or '   ' counts as untitled, because an owner
   // who clears the Name field is asking for the default back, not for a blank.
   const owned = cover.title?.trim() ? cover.title.trim() : null;
@@ -196,9 +197,9 @@ export const VET_VISIT_OPTIONS_QUERY =
    ORDER BY visited_at DESC, created_at DESC
    LIMIT 50`;
 
-// `visited_at` is written as a calendar day 'YYYY-MM-DD' by app/vet-visit.tsx
-// (isoToDateOnly), so formatVetDocumentDate's hand-parse is correct for it and no
-// UTC→local conversion applies — there is no time to shift.
+// `visited_at` is written as a calendar day 'YYYY-MM-DD' (every screen that writes a
+// visit passes a `localDateKey` day), so formatVetDocumentDate's hand-parse is
+// correct for it and no UTC→local conversion applies — there is no time to shift.
 //
 // The trailing half degrades through what the visit actually recorded: the clinic
 // is the filing cue an owner scans for, the vet's name is the next best, the reason

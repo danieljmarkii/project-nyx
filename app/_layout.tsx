@@ -33,10 +33,12 @@ import { initAppConfig, refreshAppConfig } from '../hooks/useAppConfig';
 import { hydrateBetaOptIns } from '../lib/betaFeatures';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
 import { IntakeDoorHost } from '../components/log/IntakeDoorHost';
+import { LogSheetHost } from '../components/log/LogSheetHost';
 import { MedicationCompletionCard } from '../components/ui/MedicationCompletionCard';
 import { NamedCompletionCard } from '../components/ui/NamedCompletionCard';
 import { Snackbar } from '../components/ui/Snackbar';
 import { ColdStartOverlay } from '../components/ColdStartOverlay';
+import { FlightHost } from '../components/motion/FlightHost';
 
 // Hold the native splash until the font gate releases, so the first painted
 // frame is already in the v1.2 faces — no system→custom flash, and no blank
@@ -305,7 +307,6 @@ export default function RootLayout() {
         <Stack.Screen name="medication-capture" options={{ presentation: 'modal' }} />
         <Stack.Screen name="food/[id]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="medication/[id]" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="vet-visit" options={{ presentation: 'modal' }} />
         <Stack.Screen name="add-pet" options={{ presentation: 'modal' }} />
         <Stack.Screen name="archived-pets" options={{ presentation: 'modal' }} />
         <Stack.Screen name="edit-event" options={{ presentation: 'modal' }} />
@@ -322,6 +323,11 @@ export default function RootLayout() {
         <Stack.Screen name="settings/feedback" />
         <Stack.Screen name="settings/password" />
       </Stack>
+      {/* The Signal chart's flight (D2-6 / CUL-1069): the clone lives HERE, above the whole
+          stack, because a push would unmount anything inside a screen — the chart lifts off
+          Home and lands on the Signal's screen across the transition. Renders nothing when
+          no flight is up; hidden from touch and from assistive tech. */}
+      <FlightHost />
       {/* The Noticed card's intake door (CUL-870 / N-3b). It is mounted HERE, beside the
           completion cards, rather than inside the card that opens it: the sheet writes a
           meal, and a meal write reachable from Home's import closure is a third Home
@@ -329,6 +335,12 @@ export default function RootLayout() {
           through `store/uiStore.ts` and this host owns the surface — the same separation
           the FAB and every other meal path already have. */}
       <IntakeDoorHost />
+      {/* The log sheet (CUL-503 / CUL-504). Every "start a log" door opens this one
+          sheet through `store/uiStore.ts`: the FAB, the Home nudge, Ask's empty record
+          and the day summary. It lives HERE, not in the tabs layout beside the FAB,
+          because Ask and the day summary are stack screens pushed over the tabs and a
+          sheet has to present from above them. */}
+      <LogSheetHost />
       <MealCompletionCard />
       <MedicationCompletionCard />
       <NamedCompletionCard />

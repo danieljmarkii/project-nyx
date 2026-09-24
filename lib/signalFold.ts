@@ -455,9 +455,26 @@ export function foldedEntry(finding: SignalFinding, nowIso: string, record: Reco
 // read-modify-write, and the zone fires it un-awaited; a `clearSignalFold()` landing
 // between the read and the write would let the stale write put the WHOLE previous
 // account's map back after `wipeLocalSession()` had already returned clean. Capture the
-// epoch on entry, re-check before writing, abandon on a wipe. Module-local because this
-// module's clear IS the key's only wipe.
+// epoch on entry, re-check before writing, abandon on a wipe — AND re-check after the
+// write, repairing if a clear landed anywhere inside the call (CUL-826: the pre-write
+// check alone holds for most interleavings, not all; see `writeFoldEntries` and
+// `clearSignalFold`, which bumps on both sides of its removal for the same reason).
+// Module-local because this module's clear IS the key's only wipe.
 let clearEpoch = 0;
+
+/**
+ * The post-write half of the guard, shared by every writer here. A clear whose removal
+ * landed between a writer's pre-write re-check and its `setItem` leaves the writer's
+ * blob on disk AFTER `wipeLocalSession()` returned clean — so the writer re-reads the
+ * epoch once its write is down and removes the key if a clear happened at any point
+ * during the call. After a wipe, empty is the correct state, so this can only ever
+ * discard the calling write's own entry; the next legitimate write puts it back.
+ */
+async function repairIfClearedSince(epoch: number): Promise<void> {
+  if (clearEpoch !== epoch) {
+    await AsyncStorage.removeItem(SIGNAL_FOLD_STORAGE_KEY);
+  }
+}
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v);
@@ -533,9 +550,35 @@ export async function writeFoldEntries(petId: string, entries: PetFoldEntries): 
     if (Object.keys(entries).length === 0) delete store[petId];
     else store[petId] = entries;
     await AsyncStorage.setItem(SIGNAL_FOLD_STORAGE_KEY, JSON.stringify(store));
+    await repairIfClearedSince(epoch);
   } catch (e) {
     console.warn('[signalFold] write failed:', e);
+    return;
   }
+  notifyFoldStore(petId);
+}
+
+// ── A second writer (D2-3 · CUL-1065) ─────────────────────────────────────────
+// The Signal's own screen folds the Home card from OFF Home (*Keep it compact on Home*),
+// so Home's `useSignalFold` needs to hear that the store moved while it was not looking:
+// its reconcile keys on the findings' content, and a fold written elsewhere changes no
+// finding. One in-process listener list, notified after a successful write, keyed by pet
+// so a listener for another pet ignores it. Never persisted, never synced — the store on
+// disk is still the one source; this is only the knock on the door.
+
+type FoldStoreListener = (petId: string) => void;
+const foldListeners = new Set<FoldStoreListener>();
+
+/** Hear every successful `writeFoldEntries`. Returns the unsubscribe. */
+export function subscribeFoldStore(listener: FoldStoreListener): () => void {
+  foldListeners.add(listener);
+  return () => {
+    foldListeners.delete(listener);
+  };
+}
+
+function notifyFoldStore(petId: string): void {
+  for (const l of foldListeners) l(petId);
 }
 
 /**
@@ -554,6 +597,7 @@ export async function pruneFoldStore(keepPetIds: readonly string[]): Promise<voi
     if (stale.length === 0) return;
     for (const id of stale) delete store[id];
     await AsyncStorage.setItem(SIGNAL_FOLD_STORAGE_KEY, JSON.stringify(store));
+    await repairIfClearedSince(epoch);
   } catch (e) {
     console.warn('[signalFold] prune failed:', e);
   }
@@ -564,12 +608,18 @@ export async function pruneFoldStore(keepPetIds: readonly string[]): Promise<voi
  * BY NAME. Best-effort and idempotent, like every other clear on that path.
  */
 export async function clearSignalFold(): Promise<void> {
-  // Bumped BEFORE the removal, so a write whose read straddles this clear is caught by the
-  // re-check rather than racing the removal itself.
+  // Bumped on BOTH sides of the removal (CUL-826; the observation-fold sibling's fix).
+  // The bump before it catches a write already in flight. It does NOT catch a write that
+  // STARTS after the bump and whose read straddles the removal: that write snapshots the
+  // already-bumped epoch, reads the pre-wipe blob, and its re-check compares equal — so
+  // it writes the previous account's map back after `wipeLocalSession()` has returned
+  // clean. The bump after the removal makes any write whose read spans it see a change.
   clearEpoch++;
   try {
     await AsyncStorage.removeItem(SIGNAL_FOLD_STORAGE_KEY);
   } catch (e) {
     console.warn('[signalFold] clear failed:', e);
+  } finally {
+    clearEpoch++;
   }
 }

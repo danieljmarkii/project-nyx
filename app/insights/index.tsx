@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, router } from 'expo-router';
@@ -67,7 +67,13 @@ import {
   noticedCardHref,
   type NoticedCardModel,
 } from '../../lib/lookPatterns';
-import { localDayIndex, dayKeyFromIndex } from '../../lib/utils';
+import { localDayIndex, dayKeyFromIndex, toLocalDayKey } from '../../lib/utils';
+import { useDesignV2 } from '../../hooks/useDesignV2';
+import { MonthInstrument } from '../../components/designV2/patterns/MonthInstrument';
+import { WeightCard as WeightCardV2 } from '../../components/designV2/patterns/WeightCard';
+import { trialStartDayKey } from '../../lib/trialWindowDates';
+import { dateWord } from '../../lib/chartCopy';
+import type { WeightReading } from '../../lib/weight';
 
 // The "Patterns" dashboard (B-023 PR 3/4) — tier 2 of the intelligence ladder (§2): the
 // full story on demand. Summary-led layout (§7): the AI summary (AiSummaryCard, cache-only,
@@ -148,6 +154,21 @@ export default function PatternsScreen() {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [cards, setCards] = useState<DashboardCard[]>([]);
   const [dashState, setDashState] = useState<DashboardState>('empty');
+
+  // Design v2 (D2-5 / CUL-1067; `docs/culprit-design-v4-mockups.html` §04): flag-on the
+  // page is the month first, then the weight as dots by date, then the "what Nyx ate"
+  // cards and the shipped Timing / Trial / What you noticed panels unchanged; the
+  // MetricCard column, the old calendar and the old weight card are absent. Flag-off is
+  // today's page to the byte (guards/designV2FlagOff.test.tsx). Every v2 read runs only
+  // behind the gate: the month instrument mounts flag-on only, and the weight series is
+  // the same read the old card already makes.
+  const designV2 = useDesignV2();
+  const [weightSeries, setWeightSeries] = useState<{ readings: WeightReading[]; count: number }>({ readings: [], count: 0 });
+  // Bumped on every focus load while the flag is on: the month re-reads the current
+  // month, and "today" is re-derived — a screen left open across midnight moves on.
+  const [v2Tick, setV2Tick] = useState(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const todayKey = useMemo(() => toLocalDayKey(new Date()), [v2Tick]);
   // Show the loading state only on the first read for a pet; later focuses refresh
   // silently so the surface doesn't flash empty on every return (the useSignal pattern).
   const loadedPetRef = useRef<string | null>(null);
@@ -202,6 +223,7 @@ export default function PatternsScreen() {
       ]);
       if (loadIdRef.current !== myId) return; // superseded by a newer load — drop these results
       const weightTrend = computeWeightTrend(weightReadings, weightReadingTotal);
+      setWeightSeries({ readings: weightReadings, count: weightTrend.readingCount });
       const noticed = await loadNoticed(pet, trialNotEating, noticedLive, nowMs);
       if (loadIdRef.current !== myId) return; // the look read is a second await — re-check
       setDashState(
@@ -240,7 +262,8 @@ export default function PatternsScreen() {
       const firstForPet = loadedPetRef.current !== activePet.id;
       loadedPetRef.current = activePet.id;
       load(firstForPet);
-    }, [activePet?.id, load]),
+      if (designV2) setV2Tick((t) => t + 1);
+    }, [activePet?.id, load, designV2]),
   );
 
   // The v2 panels load on their own (independent of the seeded-card read above), so a
@@ -290,6 +313,15 @@ export default function PatternsScreen() {
     }, [activePet?.id, loadPanels]),
   );
 
+  // The trial's start, marked on the month's bars at its day. Read through the same
+  // loader Home uses and gated on the same freshness flag — a stale pet's trial is never
+  // drawn on the active pet's month.
+  const trialMark = useMemo(() => {
+    if (!designV2 || !trialFactsFresh || !trialInput?.trial) return null;
+    const day = trialStartDayKey(trialInput.trial.startedAt);
+    return { day, label: `trial · ${dateWord(day)}` };
+  }, [designV2, trialFactsFresh, trialInput]);
+
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       {/* Arrow-only back button — the default label inherits the tab group's route
@@ -330,7 +362,42 @@ export default function PatternsScreen() {
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
-          {dashState === 'empty' ? (
+          {designV2 ? (
+            <>
+              {/* The cold-start moment stays reachable flag-on (Principle 5): on a record
+                  with nothing to chart the warm invitation leads, and the month follows
+                  it — an empty month is itself a designed state ("nothing logged yet"),
+                  never weeks of "unlogged" on an account that is minutes old. */}
+              {dashState === 'empty' && <DashboardEmptyState petName={petName} />}
+              <MonthInstrument
+                key={`month:${activePet.id}`}
+                petId={activePet.id}
+                today={todayKey}
+                trialMark={trialMark}
+                refreshTick={v2Tick}
+              />
+              <WeightCardV2
+                readings={weightSeries.readings}
+                readingCount={weightSeries.count}
+                petName={activePet.name}
+                petId={activePet.id}
+              />
+              {cards
+                .filter((c) => c.kind === 'topFood' || c.kind === 'topProtein' || c.kind === 'composition')
+                .map((card) => renderCard(card, activePet.id, activePet.name))}
+              {timingModel != null && (
+                <TimingPanelCard
+                  model={timingModel}
+                  petName={activePet.name}
+                  onPress={() => router.push('/insights/timing')}
+                />
+              )}
+              {trialModel != null && (
+                <TrialSoFarCard model={trialModel} onPress={() => router.push('/insights/trial')} />
+              )}
+              {cards.filter((c) => c.kind === 'whatYouNoticed').map((card) => renderCard(card, activePet.id, activePet.name))}
+            </>
+          ) : dashState === 'empty' ? (
             <DashboardEmptyState petName={petName} />
           ) : (
             <>

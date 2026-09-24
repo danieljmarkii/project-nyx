@@ -4,10 +4,10 @@ import { dayKeyToLocalDate, uuid } from './utils';
 // The vet-visit companion's read/write model (CUL-900, VV-2; spec §4.1 A1/E1/E2/E3/D3).
 //
 // Everything the companion's screens compute lives HERE rather than in
-// components/vetvisits/, and that is not a style preference: the AC 0 harness
-// (guards/vetVisitsFlagOff.test.tsx) stubs every export of that namespace into a
-// null-rendering component to prove flag-off equivalence, so a helper placed there
-// would be silently wrapped into a component. The namespace is UI by convention;
+// components/vetvisits/. During the beta that was enforced: the flag-off harness
+// stubbed every export of that namespace into a null-rendering component, so a
+// helper placed there would have been silently wrapped into one. The harness
+// retired with the flag at GA (CUL-905); the split stays — the namespace is UI,
 // this file is the model.
 //
 // Two tables, and the split is load-bearing (G3, migration 066): `vet_appointments`
@@ -118,6 +118,48 @@ export function composeScheduledAt(day: Date, time: Date | null): string {
   return out.toISOString();
 }
 
+/** The two pickers' values, recovered from a stored instant. */
+export interface ScheduledParts {
+  /** The appointment's own local calendar day, at local midnight. */
+  day: Date;
+  /** The clock time the owner gave, or null when they gave none. */
+  time: Date | null;
+}
+
+/**
+ * The inverse of `composeScheduledAt` — what the edit screen seeds its pickers from.
+ *
+ * `time` MUST come back null for a no-time booking, and that is the whole reason
+ * this is a function rather than two lines at the call site. The obvious seed is
+ * `time: new Date(scheduled_at)`, which for a no-time booking is local midnight —
+ * a real Date, indistinguishable at the picker from a chosen one. Save without
+ * touching it and `composeScheduledAt` sees a non-null time at 00:00, takes its
+ * one-minute nudge branch, and writes 00:01: the sentinel is destroyed and an
+ * appointment the owner never gave a time for starts printing "12:01 am" on the
+ * Home strip, the Pet-tab card and Get ready. The owner changed the clinic name and
+ * the app invented a clock time.
+ *
+ * So the null comes from `appointmentTimeKnown`, the same predicate every reader
+ * uses, and the round trip is property-tested against `composeScheduledAt` rather
+ * than asserted on examples (the B-414 lesson: an example list is what let a
+ * non-convergent canonicalizer ship under a docstring claiming otherwise).
+ */
+export function decomposeScheduledAt(scheduledAt: string): ScheduledParts | null {
+  const d = new Date(scheduledAt);
+  if (Number.isNaN(d.getTime())) return null;
+  return {
+    // `startOfLocalDay` rather than a fresh `new Date(y, m, d)` for CONSISTENCY
+    // with `appointmentTimeKnown`, which normalises the same way one field below —
+    // not because the round trip depends on it. It does not, and the mutation says
+    // so: swapping in `new Date(y, m, d)` leaves every test in
+    // `lib/vetVisits.test.ts` green, because `composeScheduledAt` re-derives from
+    // this value's y/m/d components and discards its clock part entirely. Recorded
+    // rather than left as a survived mutant someone later reads as a coverage hole.
+    day: startOfLocalDay(d),
+    time: appointmentTimeKnown(scheduledAt) ? d : null,
+  };
+}
+
 // ── Dates as the owner reads them ───────────────────────────────────────────────
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -180,7 +222,14 @@ export function formatVisitWeekday(dateOnly: string): string {
   return `${WEEKDAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
-function formatClockTime(d: Date): string {
+/**
+ * '3:00 pm'. Exported because three surfaces render a chosen clock time and a
+ * formatter copied per surface is the C-4 shape: `BookVisitSheet` had a private
+ * duplicate of this exact function, and the appointment edit would have been a
+ * third. One function, so a change to how the app writes a time cannot land on
+ * two of the three screens that show it.
+ */
+export function formatClockTime(d: Date): string {
   const h24 = d.getHours();
   const suffix = h24 < 12 ? 'am' : 'pm';
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
@@ -338,6 +387,20 @@ export interface VisitListRow {
 export interface AppointmentView {
   id: string;
   petId: string;
+  /**
+   * The row's own `scheduled_at`, unformatted.
+   *
+   * Every other field here is a STRING this module already derived from it, and the
+   * raw value is carried because a consumer sometimes has to ask the instant a new
+   * question rather than re-read an answer. CUL-952's confirm is the case: it needs
+   * "has this day passed" to choose one word, and the nearest thing already on the
+   * view is `isToday`, which is false for a future booking AND for a past one. The
+   * list could have leaned on its bucket instead (*Waiting on you* is past by
+   * construction) — that is the C-35 shape, a predicate taking its truth from the
+   * caller's context rather than from the record, and it survives exactly until
+   * someone renders the component somewhere else.
+   */
+  scheduledAt: string;
   stamp: DayStamp | null;
   /** 'Tuesday · 3:00 pm' */
   when: string;
@@ -371,6 +434,23 @@ export interface VetVisitsHome {
    */
   next: AppointmentView | null;
   /**
+   * Every OTHER live booking on or after today, soonest first — the rows after
+   * `next` (CUL-970).
+   *
+   * "What else is booked" is a different question from "what is next", and nothing
+   * answered it: this read took `upcoming[0]` and dropped the rest, so a recheck in
+   * three weeks and the annual in six months — exactly what a vet sends an owner home
+   * with — showed as one booking, and the second appeared on no screen at all until
+   * the first was logged or cancelled. Nothing stops the owner making it, either:
+   * `bookVetAppointment` is a bare INSERT.
+   *
+   * A slice of the same in-memory split, never a second query, so `next` and `later`
+   * cannot disagree about what "live" or "upcoming" means. The LIST renders these
+   * under *Next*; the Pet-tab card and Home's strip stay singular on purpose — both
+   * answer "what is next", and neither is a list.
+   */
+  later: AppointmentView[];
+  /**
    * Bookings whose DAY HAS PASSED with no visit logged against them, newest first.
    * "What is on file" — the list's question, which is a different one.
    *
@@ -390,7 +470,7 @@ export interface VetVisitsHome {
 }
 
 /** The zero value, so five call sites do not each restate the shape. */
-export const EMPTY_VET_VISITS_HOME: VetVisitsHome = { next: null, awaiting: [], visits: [] };
+export const EMPTY_VET_VISITS_HOME: VetVisitsHome = { next: null, later: [], awaiting: [], visits: [] };
 
 export function buildVisitListRow(
   visit: LocalVetVisit,
@@ -417,6 +497,7 @@ export function buildAppointmentView(
   return {
     id: appointment.id,
     petId: appointment.pet_id,
+    scheduledAt: appointment.scheduled_at,
     stamp: dayStampFromInstant(appointment.scheduled_at),
     when: formatAppointmentWhen(appointment.scheduled_at, now),
     day: formatAppointmentDay(appointment.scheduled_at, now),
@@ -562,13 +643,20 @@ export async function readVetVisitsHome(petId: string, now: Date = new Date()): 
   // until the adversarial pass drove it.
   const dayStart = startOfLocalDay(now).getTime();
   const instantOf = (a: LocalVetAppointment) => new Date(a.scheduled_at).getTime();
-  const upcoming = appointments.filter((a) => instantOf(a) >= dayStart);
-  const past = appointments.filter((a) => instantOf(a) < dayStart);
+  // Re-sorted by INSTANT, not left in the SQL's text order (C-40). The two spellings
+  // of one instant agree on their first 19 characters, so the text order was only
+  // ever wrong at an exact-second tie — harmless while one row was shown and the
+  // rest discarded, and a visible reordering now that `later` renders them. A stable
+  // sort, so rows at the same instant keep the order the read gave them.
+  const sorted = [...appointments].sort((a, b) => instantOf(a) - instantOf(b));
+  const upcoming = sorted.filter((a) => instantOf(a) >= dayStart);
+  const past = sorted.filter((a) => instantOf(a) < dayStart);
 
   const links = await readVisitLinks(visits);
 
   return {
     next: upcoming[0] ? buildAppointmentView(upcoming[0], now) : null,
+    later: upcoming.slice(1).map((a) => buildAppointmentView(a, now)),
     // Newest first: the one that just passed is the one the owner is thinking about.
     awaiting: past.reverse().map((a) => buildAppointmentView(a, now)),
     visits: visits.map((v) => buildVisitListRow(v, links.get(v.id) ?? emptyLinks(v.next_visit_at), now)),
@@ -844,7 +932,7 @@ export interface BookAppointmentInput {
  * Book an appointment. Local INSERT with `synced = 0`; the queue pushes it.
  *
  * `petId` is the CALLER'S, and every call site passes the record's pet rather than
- * the store's active one (CUL-574 / AC 11): `app/vet-visit.tsx:117` reads
+ * the store's active one (CUL-574 / AC 11): the retired `app/vet-visit.tsx` read
  * `activePet` at save time, which is the bug this whole track must not inherit.
  */
 export async function bookVetAppointment(input: BookAppointmentInput): Promise<string> {
@@ -1085,6 +1173,33 @@ export async function readAppointmentById(appointmentId: string): Promise<Appoin
   return rows[0] ?? null;
 }
 
+/**
+ * One booking by id that is still EDITABLE — the read scoped to exactly what
+ * `updateAppointmentDetails` will accept (CUL-952).
+ *
+ * `readAppointmentById` deliberately does not filter `vet_visit_id`: "Take notes"
+ * has to keep working on a booking whose visit was already logged. The edit screen
+ * is the opposite case — once a visit exists the booking is no longer a booking, and
+ * the write refuses it. Reading through that laxer function left the screen showing
+ * a normal editable form whose every Save threw, behind "That didn't save · Try that
+ * again in a moment": a dead end that reads as transient and never resolves.
+ *
+ * So the READ and the WRITE share one clause. A screen asking "may I edit this"
+ * gets one answer, rather than composing it from a laxer read plus a column check of
+ * its own — which is also why the check lives here and not there: `guards/visitReaders`
+ * makes this the one file the companion may name these columns in.
+ */
+export async function readEditableAppointment(
+  appointmentId: string,
+): Promise<AppointmentDetail | null> {
+  const rows = await getDb().getAllAsync<AppointmentDetail>(
+    `SELECT ${APPOINTMENT_COLUMNS}, questions, notes_draft FROM vet_appointments
+      WHERE id = ? AND ${LIVE_APPOINTMENT_SQL} LIMIT 1`,
+    [appointmentId],
+  );
+  return rows[0] ?? null;
+}
+
 // ── The owner's questions (spec §4.1 B1 "Your questions") ───────────────────────
 
 /**
@@ -1222,6 +1337,186 @@ export async function cancelVetAppointment(
   );
   if (res.changes === 0) {
     throw new Error(`vet_appointments ${appointmentId}: cancel matched no row`);
+  }
+}
+
+/**
+ * What the owner prepared for this visit, in one sentence — or null when there is
+ * nothing to name (CUL-952; the `goes` form CUL-987 D2).
+ *
+ * TWO FATES, ONE COUNT. The edit screen promises the prep SURVIVES a change
+ * (`stays`); the remove confirm says it LEAVES with the appointment (`goes`). They
+ * are the same fact about the same row read in opposite directions, so they are one
+ * function: a second counter beside the confirm is how "4 questions" on one screen
+ * becomes "3 questions" on the other (C-4).
+ *
+ * CONDITIONAL, because the unconditional version named two artifacts a first-time
+ * rescheduler has never seen. An owner who has never opened Get ready has no
+ * questions and no draft, and "Your questions and notes stay with it" sends her
+ * looking for notes that do not exist — answering a question she was not asking and
+ * raising one she was.
+ *
+ * SPECIFIC for the same reason the rest of this app's copy is: "your 4 questions"
+ * is a thing she remembers typing; "your questions" is a category.
+ */
+export function appointmentPrepNote(
+  questions: string | null,
+  notesDraft: string | null,
+  fate: 'stays' | 'goes' = 'stays',
+): string | null {
+  const count = parseAppointmentQuestions(questions).length;
+  const hasNotes = (notesDraft ?? '').trim().length > 0;
+  if (count === 0 && !hasNotes) return null;
+  // Plural subjects take the bare verb; a single question takes the -s form.
+  const plural = fate === 'stays' ? 'stay with it' : 'go with it';
+  const singular = fate === 'stays' ? 'stays with it' : 'goes with it';
+  if (count > 0 && hasNotes) return `Your questions and notes for this visit ${plural}.`;
+  if (hasNotes) return `Your notes for this visit ${plural}.`;
+  return count === 1
+    ? `Your question for this visit ${singular}.`
+    : `Your ${count} questions for this visit ${plural}.`;
+}
+
+/**
+ * The edit screen's scope line in a multi-pet account (CUL-987 D3), or null.
+ *
+ * Booking offers *"Also for Moss"*, which mints a SECOND row under the other pet; an
+ * edit touches one row and correctly refuses to carry that. Nothing said so, so an
+ * owner moved Pip's recheck and Moss's Home kept leading with the old Tuesday. The
+ * line names the pet the change reaches — the record's, never the active one.
+ *
+ * Keyed on the ACCOUNT, as ruled (D3 (a): "in accounts with more than one pet, and
+ * nowhere else"): a single-pet account has no other pet's appointment it could be
+ * mistaken for, so the line would warn about nothing. It still renders on a booking
+ * that was never paired — there is no link between paired rows to ask (spec §10
+ * parks one), so the account is the narrowest honest scope, not a sign that this
+ * booking has a twin. `petCount` is the store's `pets` — the non-archived set, the
+ * one "Also for" offers from.
+ */
+export function appointmentEditScopeNote(petName: string, petCount: number): string | null {
+  return petCount > 1 ? `This changes ${petName}\u2019s appointment only.` : null;
+}
+
+/** The two strings the remove confirm shows. */
+export interface RemoveAppointmentCopy {
+  title: string;
+  body: string;
+}
+
+/** The two prep columns the remove confirm needs, raw — both nullable. */
+export interface AppointmentPrep {
+  questions: string | null;
+  notesDraft: string | null;
+}
+
+/**
+ * The confirm an owner sees before an appointment is removed (CUL-952).
+ *
+ * HERE RATHER THAN AT THE CALL SITES because there are now three doors onto one
+ * write — the Home strip's *It didn't*, the visits list's *It didn't happen*, and
+ * the edit screen's *Remove this appointment* — and a destructive confirm that says
+ * three slightly different things about the same row is how an owner learns not to
+ * trust it. The `Alert` itself stays at each site: this namespace is the model, and
+ * the strings are the part that must not drift.
+ *
+ * 'Remove', never 'Cancel'. On iOS "Cancel" is also the word for backing out of the
+ * dialog, so a title and a button using it for opposite meanings is the one place an
+ * owner cannot afford ambiguity (the Home strip's original ruling, kept).
+ *
+ * ONE WORD BRANCHES. "Upcoming" is true of a booking still ahead and false of one
+ * sitting in *Waiting on you* — which is where this control is most used, because
+ * the day passed and the visit never happened. The second sentence is the one that
+ * matters to an owner who RESCHEDULED rather than skipped: nothing else moves.
+ */
+export function removeAppointmentCopy(
+  scheduledAt: string,
+  petName: string,
+  /**
+   * The row's own prep columns, REQUIRED rather than defaulted (C-37: a default on
+   * the one argument that makes this confirm honest is the decision to omit it).
+   * Every caller reads the row first; a caller with nothing to say passes nulls.
+   */
+  prep: AppointmentPrep,
+  now: Date = new Date(),
+): RemoveAppointmentCopy {
+  const when = formatAppointmentWhen(scheduledAt, now);
+  const scope = appointmentDayReached(scheduledAt, now) ? 'visits' : 'upcoming visits';
+  // BETWEEN the removal and "Nothing else in the record changes" (CUL-987 D2). That
+  // sentence is true of the trial and the courses, and read alone it says nothing is
+  // lost — while a cancel stamps `cancelled_at`, every read filters cancelled rows,
+  // and the questions and notes typed for this visit go with the row. Naming them
+  // first is what keeps the last sentence true: "else" now means everything but them.
+  const goes = appointmentPrepNote(prep.questions, prep.notesDraft, 'goes');
+  return {
+    title: 'Remove this appointment?',
+    body: [
+      `${when} will be removed from ${petName}\u2019s ${scope}.`,
+      goes,
+      'Nothing else in the record changes.',
+    ]
+      .filter(Boolean)
+      .join(' '),
+  };
+}
+
+/** The fields the appointment edit writes. Optional per key, the `VisitDetailsPatch`
+ *  rule: an omitted key leaves the column alone. */
+export interface AppointmentDetailsPatch {
+  /** The composed instant — always through `composeScheduledAt`, never a raw ISO. */
+  scheduledAt?: string;
+  clinicName?: string | null;
+  vetName?: string | null;
+  reason?: string | null;
+}
+
+/**
+ * Change a booked appointment (CUL-952; mock E4).
+ *
+ * THE MISSING HALF OF THE LIFECYCLE. `bookVetAppointment` writes the row,
+ * `cancelVetAppointment` ends it, and until this there was nothing in between — so
+ * the ⋯ item named *Change the appointment* pushed the visits list, where the only
+ * control is *Add*, and an owner following the app's own instruction booked a
+ * SECOND appointment beside the one they meant to move. Home then led with
+ * whichever was earlier.
+ *
+ * Column-by-column for `updateVisitDetails`' reason: clinic, vet and reason each
+ * have three meanings here (unchanged, cleared, set) and a fixed UPDATE list can
+ * only express two.
+ *
+ * THE `WHERE` IS `LIVE_APPOINTMENT_SQL`, not a bare id, and that is a race guard
+ * rather than tidiness: this screen is reachable while another device logs the
+ * visit against the same booking (`vet_visit_id` set) or cancels it. A bare-id
+ * UPDATE would write the owner's reschedule onto a row that is no longer a
+ * booking — resurrecting it into *Next* with a new date, after the visit it
+ * represents already happened. Zero rows is therefore not always "gone"; it is
+ * "not editable any more", which is what the screen says (C-39: a local UPDATE
+ * that matches nothing resolves `{ changes: 0 }` in silence, so the throw is the
+ * only thing standing between that and a save the owner watched succeed).
+ */
+export async function updateAppointmentDetails(
+  appointmentId: string,
+  patch: AppointmentDetailsPatch,
+): Promise<void> {
+  const sets: string[] = [];
+  const args: (string | null)[] = [];
+  if (patch.scheduledAt !== undefined) { sets.push('scheduled_at = ?'); args.push(patch.scheduledAt); }
+  if (patch.clinicName !== undefined) { sets.push('clinic_name = ?'); args.push(trimOrNull(patch.clinicName)); }
+  if (patch.vetName !== undefined) { sets.push('vet_name = ?'); args.push(trimOrNull(patch.vetName)); }
+  if (patch.reason !== undefined) { sets.push('reason = ?'); args.push(trimOrNull(patch.reason)); }
+  // Nothing to write must not become a bare `SET updated_at`: moving the version of
+  // a row nothing changed re-queues it for no reason and, under last-write-wins,
+  // lets it beat a real edit from another device (`updateVisitDetails`' own note).
+  if (sets.length === 0) return;
+
+  const now = new Date().toISOString();
+  const res = await getDb().runAsync(
+    `UPDATE vet_appointments
+        SET ${sets.join(', ')}, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
+      WHERE id = ? AND ${LIVE_APPOINTMENT_SQL}`,
+    [...args, now, appointmentId],
+  );
+  if (res.changes === 0) {
+    throw new Error(`updateAppointmentDetails: no live appointment row matched id ${appointmentId}`);
   }
 }
 
@@ -1519,8 +1814,8 @@ export async function logVisitFromAppointment(input: VisitFromAppointmentInput):
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [
         id,
-        // FROM THE APPOINTMENT. The shipped screen reads `activePet` at save time
-        // (`app/vet-visit.tsx:117`) and AC 11 is the test that catches it.
+        // FROM THE APPOINTMENT. The retired `app/vet-visit.tsx` read `activePet` at
+        // save time, and AC 11 is the test that catches that shape.
         appt.pet_id,
         input.visitedAt,
         trimOrNull(input.clinicName !== undefined ? input.clinicName : appt.clinic_name),

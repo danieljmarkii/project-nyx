@@ -2,7 +2,7 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Eye, FlaskConical, Info, LayoutGrid, Shapes, SquarePen, Stethoscope } from 'lucide-react-native';
+import { Eye, FlaskConical, Info, LayoutGrid, Palette } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
@@ -59,46 +59,24 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
         onHint:
           'It’s on. If it isn’t on your home screen yet, touch and hold an empty area, tap +, then find Culprit and add it.',
       };
-    case 'log_picker_v2':
-      // No on-state hint: the new log picker takes effect the moment it's on — the owner
-      // reaches it by tapping the FAB, nothing to place or do (unlike the widget). A
-      // distinct "log an entry" glyph helps it read apart from the widget (grid) card.
-      return { Icon: SquarePen };
-    case 'event_types_v2':
-      // No on-state hint either: once the capture PRs land, the new types simply
-      // appear in the log picker — nothing to place or do. A "kinds of things" glyph
-      // (Shapes), distinct from the widget grid and the picker pen; deliberately not
-      // a "+" mark, which reads as a tappable add-affordance on a non-interactive
-      // tile (the pm-feature-review finding on the hint glyph).
-      return { Icon: Shapes };
     case 'daily_look':
       // No on-state hint: Noticed appears as a once-a-day card on Home the moment
       // it's on — nothing to place or do (unlike the widget), and at N-0 no
       // consumer renders behind it yet. An "eye" glyph reads as noticing/looking,
       // distinct from the widget grid, the picker pen and the taxonomy shapes.
       return { Icon: Eye };
-    case 'vet_visits':
-      // An on-state hint, like the widget's and unlike the rest: this is the one
-      // beta whose surfaces stay invisible until there is an appointment on file,
-      // so an owner who flips it on and sees no change would reasonably think it
-      // broke. A stethoscope reads as the vet, distinct from the widget grid, the
-      // picker pen, the taxonomy shapes and Noticed's eye.
-      //
-      // Rewritten by CUL-900 (VV-2), which is the PR that made it true: the
-      // Pet-tab card now exists, so the hint names where to go. VV-0's version
-      // said "there is nothing to see yet", which was accurate the day it shipped
-      // and false the moment the card landed — the tripwire in
-      // guards/vetVisitsFlagOff.test.tsx named this string as one of the three
-      // things the first consumer owed, and this is that debt paid.
-      //
-      // It names the CARD, not the screens behind it: what an owner can act on
-      // today is one card on the pet's profile, and everything else in the track
-      // (the Home strip, Get ready, the after-visit capture) is still being built.
-      // A hint that promised those would be the same dead end in a new place.
+    case 'design_v2':
+      // The on-state hint. Three lanes landed the same day, each writing it for the
+      // surface it shipped (D2-4 / CUL-1066 Home's Today; D2-5 / CUL-1067 the month on
+      // Patterns; D2-3 / CUL-1065 the Signal card and its screen), so it names all three
+      // and nothing more (the VV-0 lesson: a hint that says "nothing to see yet" is true
+      // the day it ships and false the day after). A palette reads as "how the app
+      // looks", distinct from the widget grid, the picker pen, the taxonomy shapes,
+      // Noticed's eye and the vet's stethoscope.
       return {
-        Icon: Stethoscope,
+        Icon: Palette,
         onHint:
-          'It’s on. Open your pet’s profile and look for Vet visits, under the vet report — book the next appointment there, or log one that already happened.',
+          'It’s on. Home’s Signal leads with its chart — tap it for the Signal’s own screen; Today reads as one line per moment, with the daily look at the top and the month’s coverage at the foot; open Patterns to see the month with its weekly bars and the weight drawn by date.',
       };
     default:
       return { Icon: FlaskConical };
@@ -225,10 +203,17 @@ export default function BetaFeaturesScreen() {
                 reversible; the reason the opt-in is safe to try. "pulled" (the locked
                 round-1 mock's word), not "switched off" — the intro already owns "switch
                 it back off" for the owner's own control, so reusing it here for OUR
-                retraction would double-duty the same phrase (nyx-voice PR 4 pass). */}
+                retraction would double-duty the same phrase (nyx-voice PR 4 pass).
+                CUL-224: the promise is scoped to what is ALREADY in the record. The
+                page-level "won't affect your records" was true only while the one beta
+                (the widget) read and never wrote; the shelf now carries betas an owner
+                records THROUGH (the log picker, Noticed, Vet visits), so a blanket
+                "won't affect" would be false the moment one of them is on. What stays
+                true for every beta, read-only or not: switching one on rewrites nothing
+                the owner has already logged. */}
             <Text style={styles.note}>
               Beta features may change or be pulled while we keep working on them. Turning one on
-              won’t affect your records.
+              doesn’t change anything already in your records.
             </Text>
           </>
         )}

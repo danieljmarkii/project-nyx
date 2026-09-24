@@ -143,6 +143,57 @@ export function formatVetDocumentDate(dateOrTimestamp: string, now: Date = new D
   return year === now.getFullYear() ? stem : `${stem}, ${year}`;
 }
 
+// `formatVetDocumentDate` hand-parses the leading 'YYYY-MM-DD' LEXICALLY. That is
+// right — deliberately so — for the calendar-date columns it was written for
+// (`document_date`, `visited_at`): a `DATE` carries no time and no zone, and
+// `new Date('2026-07-26')` would file the document a day early for every owner
+// west of Greenwich.
+//
+// It is wrong for an INSTANT. Read lexically, a `TIMESTAMPTZ` yields the UTC
+// calendar day, so anything filed late evening west of UTC — or early morning
+// east of it — renders a date the owner's own phone disagrees with. So an
+// instant is indexed to a local day and the formatter is handed the calendar-day
+// key it expects, rather than the formatter being loosened: B-421 fixes the day
+// boundary at LOCAL midnight, and this is the half that honours it.
+//
+// Two callers, both reaching the formatter with an instant (CUL-127, CUL-959):
+//   • `buildDeletedVetDocumentRow`, where the stem sits beside
+//     `restoreCountdownLabel` — which counts LOCAL days, so an unadapted read
+//     makes the two halves of one string disagree;
+//   • the `document_date ?? created_at` fallback arm on the three library /
+//     detail / capture labels. Only the FALLBACK is wrapped, so the two arms
+//     read as the different kinds of value they are — but that placement is
+//     INTENT, not correctness, and the honest version says so: on a well-formed
+//     'YYYY-MM-DD' this helper is the IDENTITY (`localDayIndexOf`'s lexical
+//     branch and `dayKeyFromIndex`'s UTC inverse round-trip exactly), so
+//     wrapping the whole expression would behave the same. Measured rather than
+//     assumed — a mutant that wrapped both arms left every test green.
+//
+// Composed from the existing pair rather than re-spelled — `dayKeyFromIndex` is
+// the one guarded inverse of `localDayIndexOf` (lib/utils.ts) and must stay a
+// UTC read.
+export function localDayStemOf(instantIso: string): string {
+  const index = localDayIndexOf(asUtcInstant(instantIso));
+  return index == null ? '' : dayKeyFromIndex(index);
+}
+
+// Both callers hand this a timestamp column out of our own database, and our own
+// database has TWO spellings for one instant. The server returns
+// '2026-07-20T08:00:00+00:00'; the local table's own default is SQLite's
+// `datetime('now')` (lib/localSchema.ts) — '2026-07-20 08:00:00', UTC, with
+// nothing that SAYS so. `Date.parse` reads that second form as LOCAL time, so at
+// UTC+14 a row filed 08:00 UTC indexes to the previous day and the label lands
+// one day early — the exact bug this helper exists to prevent, arriving through
+// the parse instead of the format.
+//
+// So a zone-less stamp is spelled back into the instant it already is. Anything
+// carrying a zone (`Z`, `+00:00`, an offset) is left alone: it already says what
+// it means, and rewriting it would be the guess.
+function asUtcInstant(value: string): string {
+  const zoneless = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)$/.exec(value);
+  return zoneless ? `${zoneless[1]}T${zoneless[2]}Z` : value;
+}
+
 // The rendered default (never stored — see the header note).
 export function defaultVetDocumentTitle(dateLabel: string): string {
   return dateLabel ? `Document — ${dateLabel}` : 'Document';
@@ -156,7 +207,7 @@ function asKind(raw: string): VetDocumentKind {
 
 export function buildVetLibraryRow(row: VetDocumentGroupRow, now: Date = new Date()): VetLibraryRow {
   const kind = asKind(row.kind);
-  const dateLabel = formatVetDocumentDate(row.document_date ?? row.created_at, now);
+  const dateLabel = formatVetDocumentDate(row.document_date ?? localDayStemOf(row.created_at), now);
   // A title of '' or '   ' counts as untitled: an owner who opens the Name sheet
   // and clears the field is asking for the default back, not for a blank row.
   const owned = row.title?.trim() ? row.title.trim() : null;
@@ -547,24 +598,6 @@ export function restoreCountdownLabel(deletedAtIso: string, now: Date = new Date
   const left = daysLeftToRestore(deletedAtIso, now);
   if (left === 0) return 'Last day to restore';
   return left === 1 ? '1 day left' : `${left} days left`;
-}
-
-// Both halves of this label read `deleted_at`, and they must read it the same way
-// (CUL-127). `deleted_at` is an INSTANT; `formatVetDocumentDate` hand-parses the
-// leading 'YYYY-MM-DD' lexically, which is right for the calendar-date columns it
-// was written for (`document_date`, `visited_at`) and wrong here — that stem is the
-// UTC day, while `restoreCountdownLabel` beside it counts LOCAL calendar days
-// (`localDayIndexOf`). For a delete late evening west of UTC, or early morning east
-// of it, the two disagree inside one string.
-//
-// So index the instant to a local day and hand the formatter the calendar-day key
-// it expects, rather than loosening the countdown: B-421 fixes the day boundary at
-// LOCAL midnight, and the countdown is the half that already honours it. Composed
-// from the existing pair rather than re-spelled — `dayKeyFromIndex` is the one
-// guarded inverse of `localDayIndexOf` (lib/utils.ts) and must stay a UTC read.
-function localDayStemOf(instantIso: string): string {
-  const index = localDayIndexOf(instantIso);
-  return index == null ? '' : dayKeyFromIndex(index);
 }
 
 export function buildDeletedVetDocumentRow(

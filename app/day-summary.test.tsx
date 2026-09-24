@@ -52,6 +52,7 @@ jest.mock('../store/syncStore', () => ({
 import { fireEvent, render } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import DaySummaryScreen from './day-summary';
+import { useUiStore } from '../store/uiStore';
 import type { DaySummaryModel, DaySummarySection } from '../lib/daySummary';
 
 function section(over: Partial<DaySummarySection> & { petId: string; petName: string }): DaySummarySection {
@@ -73,7 +74,10 @@ function model(over: Partial<DaySummaryModel>): DaySummaryModel {
 const spineRow = (id: string, title: string, category: DaySummarySection['rows'][number]['category'] = 'meal') =>
   ({ id, eventType: 'meal', category, title, detail: null, formatTag: null, time: '9:00 AM', timeMs: 0, subline: null });
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  useUiStore.setState({ logSheet: null });
+});
 
 describe('DaySummaryScreen — four-state wiring', () => {
   it('error state renders a message + retry, never a false empty; retry bumps hydration', () => {
@@ -84,7 +88,10 @@ describe('DaySummaryScreen — four-state wiring', () => {
     expect(mockBump).toHaveBeenCalledTimes(1);
   });
 
-  it('zero-log renders the designed empty state; the CTA opens the quick-log', () => {
+  // The quick-log is the app's one log sheet (CUL-503), mounted at the root so it
+  // presents over this pushed screen. It pushed the full-screen /log picker before;
+  // this reds if it goes back to that.
+  it('zero-log renders the designed empty state; the CTA opens the log sheet', () => {
     mockState.mockReturnValue({
       status: 'ready',
       anchorMs: Date.parse('2026-08-15T21:00:00Z'),
@@ -92,8 +99,10 @@ describe('DaySummaryScreen — four-state wiring', () => {
     });
     const { getByText } = render(<DaySummaryScreen />);
     expect(getByText('Nothing in Biscuit’s record today')).toBeTruthy();
+    expect(useUiStore.getState().logSheet).toBeNull();
     fireEvent.press(getByText('Log an event'));
-    expect(router.push).toHaveBeenCalledWith('/log');
+    expect(useUiStore.getState().logSheet).toEqual({ initialType: null });
+    expect(router.push).not.toHaveBeenCalled();
   });
 
   it('single-pet ready renders lead + spine + trial strip + forward line', () => {

@@ -73,7 +73,8 @@ import {
 import { antigenPausedNote, loadTrialProteinContext, trialDietNote } from './trialContaminant';
 import { trialTargetProtein } from './trialProtein';
 import { dayKeyFromIndex, localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
-import type { TrialCardInput, TrialCardTrial } from './dietTrialCard';
+import type { IntakeDeclineFact, TrialCardInput, TrialCardTrial } from './dietTrialCard';
+import { trialStartDayKey } from './trialWindowDates';
 
 export interface DietTrialFactsPet {
   id: string;
@@ -87,6 +88,10 @@ interface TrialRow {
   id: string;
   started_at: string;
   target_duration_days: number;
+  /** migration 068 / CUL-1038 — the DESIGNED window, and the coverage freeze's
+   *  only input. NULL means "not recorded" (a trial created before the stamp
+   *  shipped, or one that has never hydrated), never a number. */
+  target_duration_days_initial: number | null;
   status: string;
   ended_at: string | null;
   stopped_reason: string | null;
@@ -96,6 +101,10 @@ interface TrialRow {
   /** B-704 — the owner-stated trial protein (canonical key or null). Resolved
    *  stored-first through `trialTargetProtein` into the card/strip identity. */
   target_protein: string | null;
+  /** Migration 068 — stamped by `changeTrialWindow` on every window change. Read
+   *  for §4.3's one line, for the rest of the local day the window moved
+   *  (CUL-1040). Null on every trial whose window has never moved. */
+  target_duration_set_at: string | null;
 }
 
 /** The card's read, against the LOCAL mirror B-417 PR 2 shipped (#453).
@@ -148,8 +157,10 @@ interface TrialRow {
  *  projection, which crosses a process boundary, persists on disk between sessions
  *  and renders nothing but a day counter. */
 export const TRIAL_FOR_CARD_SQL = `
-  SELECT t.id, t.started_at, t.target_duration_days, t.status,
+  SELECT t.id, t.started_at, t.target_duration_days,
+         t.target_duration_days_initial, t.status,
          t.ended_at, t.stopped_reason, t.outcome, t.indication, t.target_protein,
+         t.target_duration_set_at,
          COALESCE(
            NULLIF(TRIM(COALESCE(f.brand, '') || ' ' || COALESCE(f.product_name, '')), ''),
            t.food_label
@@ -256,6 +267,7 @@ export async function loadTrialPredicateFacts(
     endedAt: row.ended_at,
     targetDurationDays: row.target_duration_days,
     foodLabel: row.food_label,
+    targetDurationSetAt: row.target_duration_set_at,
     stoppedReason: row.stopped_reason,
     outcome: (row.outcome as TrialCardTrial['outcome']) ?? null,
     // Narrowed from the local TEXT column against the ENUM migration 040 defines.
@@ -298,6 +310,11 @@ export async function loadTrialPredicateFacts(
     startedAt: row.started_at,
     endedAt: trial.status === 'active' ? null : row.ended_at,
     targetDurationDays: row.target_duration_days,
+    // CUL-1038 — the coverage denominator's window, frozen at the DESIGNED one so
+    // an extension cannot move a claim about the record (TE-6). Passed beside the
+    // live target rather than instead of it: the module needs both, and which
+    // question reads which is the module's call, not this loader's.
+    targetDurationDaysInitial: row.target_duration_days_initial,
     species: pet.species,
   };
 
@@ -550,7 +567,10 @@ export async function loadDietTrialFacts(args: {
     // has. The CLAIM was already gated on it (`mayClaimAllMatched`); this is the
     // wiring the loader dropped between the module and the two owner surfaces.
     antigenArmDark: armDark,
-    intakeDeclineHeadline: decline,
+    // ONE read, both fields: the card's single sentence is the first fact's, so the
+    // two can never describe different declines (CUL-950).
+    intakeDeclineHeadline: decline[0]?.headline ?? null,
+    intakeDeclineFacts: decline,
     // The history, for the terminal cards — see the field's docstring.
     rangeRefusal: facts?.rangeRefusal ?? null,
     // R1 — the now-fact and the two inputs the live register's stand-down reads.
@@ -600,12 +620,11 @@ function shiftDayKey(dayKey: string, deltaDays: number): string {
 
 
 /** The trial's own local day key, whether the column arrived as a DATE or an ISO
- *  instant (the local mirror stores TEXT and both shapes exist in the wild). */
-function startKeyOf(startedAt: string): string {
-  return /^\d{4}-\d{2}-\d{2}$/.test(startedAt)
-    ? startedAt
-    : toLocalDayKey(new Date(startedAt));
-}
+ *  instant (the local mirror stores TEXT and both shapes exist in the wild).
+ *
+ *  DELEGATES since CUL-1040: the card and the window sheet need the same branch, and
+ *  a second inline copy is how one of them came to slice the string instead. */
+const startKeyOf = trialStartDayKey;
 
 /**
  * The lower bound every windowed read below uses.
@@ -948,15 +967,36 @@ async function readArrangements(
 async function readIntakeDecline(
   pet: DietTrialFactsPet,
   nowMs: number,
-): Promise<string | null> {
+): Promise<IntakeDeclineFact[]> {
   try {
     const result = await getIntakeDecline(pet.id, pet.species, nowMs);
-    if (result.status !== 'watch' || result.flags.length === 0) return null;
-    return declineHeadline(result.flags[0], pet.name);
+    if (result.status !== 'watch') return [];
+    return intakeDeclineFacts(result.flags, pet.name);
   } catch (e) {
     console.error('[DietTrial] intake-decline read failed:', e);
-    return null;
+    return [];
   }
+}
+
+/**
+ * Every flag, in the detector's order, each with its own sentence (CUL-950).
+ *
+ * ALL of them, not `flags[0]`. The card states one decline, so it reads the first
+ * sentence; Get ready states each decline it cannot find in the Signal, and the one
+ * it most needs is often the SECOND flag. A cat that ate little today AND refused
+ * her trial food holds `[consecutive_low, refused_normal_food]`; with a cache
+ * that has neither, reading `flags[0]` alone put "eaten less than usual today" on
+ * the page read to the vet and never mentioned the trial food at all.
+ */
+export function intakeDeclineFacts(
+  flags: readonly IntakeDeclineFlag[],
+  petName: string,
+): IntakeDeclineFact[] {
+  return flags.map((flag) => ({
+    trigger: flag.trigger,
+    refusedFoodLabel: flag.refusedFoodLabel,
+    headline: declineHeadline(flag, petName),
+  }));
 }
 
 /** The card's own note supplies the "call your vet" half, so this line is the

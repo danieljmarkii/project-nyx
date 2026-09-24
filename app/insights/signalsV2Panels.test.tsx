@@ -9,6 +9,10 @@ jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
+// Design v2 (D2-5): the screen imports the month's reads, which reach lib/supabase at
+// import time; this suite never turns the redesign on, so the stub is for the import
+// edge only (app/insights/designV2.test.tsx covers the flag-on wiring).
+jest.mock('../../lib/monthReads', () => ({ readMonthFacts: jest.fn(), readDayRows: jest.fn() }));
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 

@@ -18,7 +18,6 @@ import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/Time
 import { resolveTimeModeChange, resolveFoundModeChange, sourceAfterPointEdit, refreshedNowPoint, DEFAULT_WINDOW_SPAN_MS, buildTimeFields as deriveTimeFields } from '../lib/eventTimeEdit';
 import { insertSimpleEvent } from '../lib/simpleEvent';
 import { pickPhotoSource, type PhotoSource } from '../lib/photoSource';
-import { EventIcon } from '../components/event/EventIcon';
 import { EventTypePicker } from '../components/log/EventTypePicker';
 import { Header } from '../components/ui/Header';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES, hasPerIncidentRead } from '../constants/eventTypes';
@@ -28,9 +27,7 @@ import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { useAppActive } from '../hooks/useAppActive';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
-import { useAllowlistFlag } from '../hooks/useAppConfig';
-import { useBetaOptIn } from '../lib/betaFeatures';
-import { useMomentStore, MEAL_FLAGGED_DURATION_MS, whenMealCardVisible } from '../store/momentStore';
+import { useMomentStore } from '../store/momentStore';
 import { getActiveRegimenForDrug, getMealForEvent, updateDoseAdherence, PickerFood, PickerMedication } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingMedicationAdministrations } from '../lib/sync';
@@ -42,10 +39,10 @@ import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFi
 // regen) now live in lib/simpleEvent (imported near the eventTimeEdit import
 // above), shared with the in-sheet confirm — so log.tsx no longer imports the
 // storage / analysis / signal / sync-event helpers directly for this path.
-import { evaluateMealLogTimeFlag, noteTrialFlagShown } from '../lib/trialContaminant';
+import { applyMealTrialFlag } from '../lib/mealTrialFlag';
 import { exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, OccurredConfidence } from '../lib/utils';
 
-type Step = 'type' | 'food' | 'medication' | 'simple' | 'stool-type' | 'weight';
+type Step = 'type' | 'food' | 'medication' | 'simple' | 'weight';
 
 // B-010 — the time fields a logged event carries. occurred_at is always a
 // single derived point; confidence + window bounds describe its certainty.
@@ -61,26 +58,8 @@ export default function LogModal() {
   const { activePet, pets } = usePetStore();
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
-  // B-745 — the More-events redesign is dark behind `log_picker_v2` (the B-712
-  // two-gate beta shape): server allowlist eligibility × the local opt-in, never one
-  // alone (both hooks called unconditionally — Rules of Hooks — then combined, like
-  // SignalZone). Flag-off renders the shipped flat grid byte-identical (FL-1); only
-  // the grouped-grid PRESENTATION is gated. The rest of PR 1 (the glyph family, the
-  // shared Header, photo-first removal) is systemic and lands on both paths.
-  const pickerEligible = useAllowlistFlag('log_picker_v2');
-  const pickerOptedIn = useBetaOptIn('log_picker_v2');
-  const pickerV2 = pickerEligible && pickerOptedIn;
-  // W1 taxonomy expansion (event_types_v2, CUL-675) — same two-gate shape. Gates
-  // the grouped grid's TILE LIST only (the Breathing group + the ruled regroup);
-  // the flat grid never carries a v2 tile at any flag state, and EVENT_TYPES
-  // itself is never flag-gated (§12 FL-1 — reads stay ungated by design).
-  const taxonomyEligible = useAllowlistFlag('event_types_v2');
-  const taxonomyOptedIn = useBetaOptIn('event_types_v2');
-  const taxonomyV2 = taxonomyEligible && taxonomyOptedIn;
   const showNamedMoment = useMomentStore((s) => s.showNamed);
   const showMealMoment = useMomentStore((s) => s.showMeal);
-  const patchTrialFlag = useMomentStore((s) => s.patchTrialFlag);
-  const rescheduleMoment = useMomentStore((s) => s.rescheduleHide);
   const showMedicationMoment = useMomentStore((s) => s.showMedication);
   // B-156 PR B2b — combo params. When pairedEventId is set, this medication log is a
   // dose given WITH a just-logged meal/treat (entered from its completion card): the
@@ -218,12 +197,12 @@ export default function LogModal() {
       setStep('food');
     } else if (typeParam === 'medication') {
       // Medication has hasFood:false but needs its own picker, not the simple
-      // step — special-cased like stool_normal (handleTypeSelect mirrors this).
+      // step — special-cased here (handleTypeSelect mirrors this).
       setSelectedType('medication');
       setStep('medication');
     } else if (typeParam === 'weight_check') {
       // Weight has hasFood:false but needs its own numeric step, not the simple
-      // step — special-cased like medication/stool (handleTypeSelect mirrors this).
+      // step — special-cased like medication (handleTypeSelect mirrors this).
       setSelectedType('weight_check');
       seedWeightPrefill();
       setStep('weight');
@@ -282,11 +261,8 @@ export default function LogModal() {
     if (config.hasFood) setStep('food');
     else if (type === 'medication') setStep('medication');
     else if (type === 'weight_check') { seedWeightPrefill(); setStep('weight'); }
-    // B-745 PR 2 — the flag-on grouped grid SPLITS Stool inline (its Normal/Loose
-    // segments emit stool_normal / diarrhea directly), so only the flag-off flat
-    // grid's single Stool tile still opens the Normal/Loose sub-step. diarrhea never
-    // reaches here from the flat grid (it's filtered out), so it falls to 'simple'.
-    else if (type === 'stool_normal' && !pickerV2) setStep('stool-type');
+    // Stool needs no branch: the grid's split tile emits stool_normal / diarrhea
+    // directly from its Normal / Loose segments (B-745 PR 2), so both go to 'simple'.
     else setStep('simple');
   }
 
@@ -368,33 +344,6 @@ export default function LogModal() {
   // attached before reaching the picker, preserve that provenance and
   // the EXIF-derived time — Dr. Chen relies on EXIF-stamped meals for
   // clinical trust, and clobbering it here would silently drop that.
-  // B-351 slice 4 / B-693 — resolve the log-time trial heads-up (contents OR
-  // membership, whichever fires) and land it on the card that is already showing.
-  // Fire-and-forget by design: the meal is written, the card is up, and this is
-  // strictly additive information. One evaluator, one read of the food record
-  // (B-693 single-read composition). The ledger write happens ONLY if the patch
-  // landed, so the food's one-per-trial budget can never be spent on a heads-up the
-  // owner did not see — the read/write split that keeps rule 3 honest.
-  async function applyTrialFlag(
-    eventId: string,
-    petId: string,
-    foodId: string,
-    occurredAt: string,
-  ) {
-    const flag = await evaluateMealLogTimeFlag({ petId, foodId, occurredAt });
-    if (!flag) return;
-    // Wait for the card to actually be on screen before patching. This path defers
-    // the reveal (delayMs below) and the eval above is now an all-local read that
-    // resolves first — so a bare patch would hit a not-yet-revealed card, return
-    // false, and drop the heads-up (the FAB path has no delay and never saw this).
-    // whenMealCardVisible resolves the instant the card reveals; false means a newer
-    // log superseded it, in which case we skip BOTH the patch and rule 3's spend.
-    if (!(await whenMealCardVisible(eventId))) return;
-    if (!patchTrialFlag(eventId, flag)) return;
-    rescheduleMoment(MEAL_FLAGGED_DURATION_MS);
-    await noteTrialFlagShown(flag);
-  }
-
   // Returns whether an event was COMMITTED — the double-submit guard's contract
   // (B-336). A null result means handleConfirm wrote nothing and already alerted,
   // so the tiles must stay live for the retry.
@@ -460,12 +409,15 @@ export default function LogModal() {
       // fire-and-forget so neither the log nor the card ever waits on it
       // (Principle 1: the log stays one tap, the meal is already saved). The card
       // above reveals behind delayMs to clear the dismissing /log modal on iOS;
-      // applyTrialFlag itself waits for THAT reveal before patching (whenMealCardVisible)
-      // rather than racing ahead of it — the evaluation is a fast local read now, so
-      // without the wait the patch landed on a not-yet-visible card and the warning
-      // was dropped. The one-per-trial budget is still spent only once the heads-up
-      // is genuinely on screen, so a card that never shows can't burn it.
-      void applyTrialFlag(result.eventId, result.petId, food.id, result.occurredAt);
+      // applyMealTrialFlag (lib/mealTrialFlag.ts — the ONE orchestration both meal
+      // doors share, CUL-354) waits for THAT reveal before patching rather than racing
+      // ahead of it — the evaluation is a fast local read now, so without the wait the
+      // patch landed on a not-yet-visible card and the warning was dropped (B-710). The
+      // one-per-trial budget is still spent only once the heads-up is genuinely on
+      // screen, so a card that never shows can't burn it.
+      void applyMealTrialFlag({
+        eventId: result.eventId, petId: result.petId, foodId: food.id, occurredAt: result.occurredAt,
+      });
     } catch (e) {
       console.error('[log] meal saved, but its completion card failed:', e);
     }
@@ -1010,7 +962,7 @@ export default function LogModal() {
     // Combo mode (B-156 PR B2b) opened straight into the medication picker from the
     // meal card, so there's no type-grid to step back to — back closes the modal.
     if (isComboMode && step === 'medication') { router.back(); return; }
-    if (step === 'food' || step === 'medication' || step === 'simple' || step === 'stool-type' || step === 'weight') {
+    if (step === 'food' || step === 'medication' || step === 'simple' || step === 'weight') {
       setSelectedType(null);
       setWeightLbsStr('');
       // CUL-505 — the photo and the note are per-event state too. Left standing, a
@@ -1190,8 +1142,6 @@ export default function LogModal() {
           onLeadingPress={() => router.back()}
         />
         <EventTypePicker
-          grouped={pickerV2}
-          expanded={taxonomyV2}
           species={activePet?.species}
           onSelectType={handleTypeSelect}
         />
@@ -1284,36 +1234,6 @@ export default function LogModal() {
     );
   }
 
-  // ── Stool sub-type (normal vs loose) ───────────────────────────────────────
-
-  if (step === 'stool-type') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <Header title="What kind of stool?" leading="back" onLeadingPress={handleBack} />
-        <View style={styles.stoolChoiceContainer}>
-          <TouchableOpacity
-            style={styles.stoolChoiceBtn}
-            onPress={() => { setSelectedType('stool_normal'); setStep('simple'); }}
-            activeOpacity={0.7}
-          >
-            <EventIcon type="stool_normal" size={24} />
-            <ThemedText style={styles.stoolChoiceLabel}>Normal</ThemedText>
-            <ThemedText style={styles.stoolChoiceHint}>Formed, typical</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.stoolChoiceBtn, styles.stoolChoiceBtnLoose]}
-            onPress={() => { setSelectedType('diarrhea'); setStep('simple'); }}
-            activeOpacity={0.7}
-          >
-            <EventIcon type="diarrhea" size={24} color={theme.colorEventSymptom} />
-            <ThemedText style={styles.stoolChoiceLabel}>Loose</ThemedText>
-            <ThemedText style={styles.stoolChoiceHint}>Soft, runny, or diarrhea</ThemedText>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   // ── Weight (numeric, the value IS the entry) ───────────────────────────────
 
   if (step === 'weight') {
@@ -1367,7 +1287,7 @@ export default function LogModal() {
     // leaf (cough/sneeze) drops the Saw it / Found it affordance entirely — it
     // gets the plain witnessed time row, whose "Change" covers late logging.
     // Every pre-W1 simple type keeps both affordances (their fields describe the
-    // shipped surfaces), so flag-off capture stays byte-identical (FL-1).
+    // surfaces they shipped with), so W1 changed nothing about how they log.
     const simpleConfig = selectedType ? EVENT_TYPES[selectedType] : null;
     const witnessedOnly = simpleConfig?.confidenceModel === 'witnessed';
     const offersPhoto = simpleConfig ? simpleConfig.hasPhoto : true;
@@ -1568,37 +1488,5 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     flex: 1,
     lineHeight: theme.lineHeightSM,
-  },
-  // ── Stool choice ──
-  stoolChoiceContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    padding: theme.space2,
-    gap: theme.space2,
-    alignItems: 'stretch',
-  },
-  stoolChoiceBtn: {
-    flex: 1,
-    borderRadius: theme.radiusMedium,
-    backgroundColor: theme.colorNeutralLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: theme.space1,
-    paddingVertical: theme.space4,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-  },
-  stoolChoiceBtnLoose: {
-    backgroundColor: theme.colorEventSymptomLight,
-    borderColor: theme.colorEventSymptomLight,
-  },
-  stoolChoiceLabel: {
-    fontSize: theme.textLG,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-  },
-  stoolChoiceHint: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
   },
 });

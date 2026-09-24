@@ -101,6 +101,24 @@ export const CORRELATION_SYMPTOM_TYPES = [
  *  end rather than overflowing — the axis's last tick carries the `+`. */
 export const PATTERNS_TIMING_AXIS_MAX_MIN = 480;
 
+/**
+ * The lane's DRAWING geometry, shared by the Patterns panel (`TimingDistribution`) and
+ * the Signal screen's small multiples (`TimingLanes`, CUL-1064) so one episode sits at
+ * the same point and the same jitter row on both — a second copy of these numbers is a
+ * second lane to keep in step (the `assignJitterRows` reasoning, applied to the pixels).
+ */
+export const LANE_GEOMETRY = {
+  /** One episode dot, in pt. */
+  dotSize: 7,
+  /** Vertical distance between jitter rows, in pt. */
+  rowGap: 10,
+  /** Rows above / below the centre line before density just stacks (bounded height). */
+  jitterCap: 3,
+} as const;
+
+/** The lane's height from the geometry above: both jitter extents plus the dot, plus 8pt. */
+export const LANE_HEIGHT_PT = 2 * (LANE_GEOMETRY.jitterCap * LANE_GEOMETRY.rowGap + LANE_GEOMETRY.dotSize / 2) + 8;
+
 /** Fraction of the lane the linear head `[0, rapidWindowMinutes]` occupies; the log₂
  *  tail gets the rest. 0.2 keeps sub-30-min episodes distinguishable while leaving the
  *  30m→8h tail room to spread. A drawing constant, not a clinical one. */
@@ -169,12 +187,18 @@ export function patternsTimingAxis(
 // signal-card module's large dependency graph — it is ~10 lines of generic geometry,
 // and row→px is the renderer's call either way. Row index 0,1,2,3,4… maps to signed
 // offsets 0,−1,+1,−2,+2… (alternating around the centre line).
+//
+// EXPORTED since CUL-1064 (the chart family): `lib/chartModels.ts`'s `laneDots` lays the
+// Signal screen's two lanes with THIS function, so a dot collides on the small multiples
+// exactly where it collides on the shipped panel — the "reuse, never re-derive" the issue
+// binds on `patternsTimingPos` / `patternsTimingAxis`, extended to the third piece of the
+// lane's geometry. A second copy would be a second collision gap to keep in step.
 
 /** Min x-gap (lane fraction) before two dots are treated as colliding — about one
  *  small dot on a ~300px lane. */
 const DOT_COLLISION_GAP = 0.028;
 
-function assignJitterRows(sortedPositions: number[]): number[] {
+export function assignJitterRows(sortedPositions: number[]): number[] {
   const lastXByRow: number[] = [];
   return sortedPositions.map((x) => {
     let row = 0;
@@ -392,7 +416,10 @@ export async function readFeedingRows(petId: string): Promise<FeedingRow[]> {
     .filter((r) => Number.isFinite(r.ms));
 }
 
-function foodLabelOf(brand: string | null, product: string | null): string | null {
+/** The feeding's evidence-only form label (brand + product). Exported for Home's bounded
+ *  feeding read (`lib/spineReads.ts`, D2-4), which must label a feeding exactly as the lane
+ *  does rather than re-derive it. */
+export function foodLabelOf(brand: string | null, product: string | null): string | null {
   const label = [brand, product].filter((s) => !!s && s.trim().length > 0).join(' ').trim();
   return label.length > 0 ? label : null;
 }

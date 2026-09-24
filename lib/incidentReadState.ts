@@ -32,3 +32,16 @@ export function escalationSurvivesFailure(
 ): boolean {
   return row?.recommendation === 'worth_a_call';
 }
+
+/** The shipped recommendation enum's owner-facing words, verbatim — the ONE map the two
+ *  incident sections (`VomitAnalysisSection`, `StoolAnalysisSection`) and Home's spine
+ *  node (`lib/spineNode.ts`, D2-4 / CUL-1066) read, so a verdict is named identically on
+ *  the record and on Home. Lifted here rather than exported from a component file so a
+ *  pure module can import the words without pulling a screen into `lib/`. */
+export const INCIDENT_REC_LABEL = {
+  worth_a_call: 'Worth a call',
+  monitor: 'Keep an eye out',
+  not_enough_to_say: 'Not enough to say yet',
+} as const;
+
+export type IncidentRecommendation = keyof typeof INCIDENT_REC_LABEL;

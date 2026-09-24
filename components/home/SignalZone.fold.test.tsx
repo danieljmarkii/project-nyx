@@ -20,6 +20,12 @@ jest.mock('expo-router', () => ({
 // keyed by symptom type. Empty unless a test sets a row.
 let mockLastEpisodeByType: Record<string, string | null> = {};
 let mockDbThrows = false;
+// D2-3 (CUL-1065): the zone reads the Design v2 gate and imports the namespace, whose
+// loader reaches `lib/supabase`. This suite is the SHIPPED (flag-off) surface: the gate
+// answers false and the client is never constructed. The flag-on surface has its own
+// suite (`SignalZone.designV2.test.tsx`).
+jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => false }));
+jest.mock('../../lib/supabase', () => ({ supabase: { from: jest.fn(), functions: { invoke: jest.fn() } } }));
 jest.mock('../../lib/db', () => ({
   getDb: () => ({
     getAllSync: (_sql: string, params: unknown[]) => {

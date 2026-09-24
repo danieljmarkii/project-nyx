@@ -51,20 +51,6 @@ export type AppConfigKey = keyof AppConfigValues;
 // separate Phase-2 gate that never lives here (spec §2 — the two gates stay split so
 // the future Premium swap is one line).
 //
-// `log_picker_v2` is the More-events / log-picker redesign rollout flag (B-745,
-// migration 056) — same shape, same fail-closed resolution. Client-render-only: the
-// redesign is presentation/step-structure only (same event writes, same sync paths,
-// zero server component — spec §1/§2), so there is no server-side registration of this
-// key.
-//
-// `event_types_v2` is the event-taxonomy expansion rollout flag (B-756/CUL-509,
-// migration 061 — W1-PR-0) — same shape, same fail-closed resolution. It gates the
-// CAPTURE surfaces only (which tiles the grid offers): `EVENT_TYPES` — the shared
-// record vocabulary — is never flag-gated, so every device can render every row it
-// reads (taxonomy spec §12, FL-1 re-scoped). Client-render-only: the engine/report
-// membership work ships separately and is account-agnostic, so there is no
-// server-side registration of this key either. Nothing consumes it yet (PR 0).
-//
 // `daily_look` is the Noticed (daily look) rollout flag (Home v2 — the redesign
 // / Noticed, migration 063 — N-0) — same shape, same fail-closed resolution. It
 // gates the Noticed CLIENT surfaces (the Home card N-4a, the Patterns pairing
@@ -75,32 +61,45 @@ export type AppConfigKey = keyof AppConfigValues;
 // and a look never enters the engine or any coverage line, so there is no
 // server-side registration of this key. Nothing consumes it yet (N-0).
 //
-// `vet_visits` is the vet-visit companion rollout flag (Vet visits — the
-// appointment companion, migration 065 — VV-0) — same shape, same fail-closed
-// resolution. It gates the companion's CLIENT surfaces (the Pet-tab home VV-2,
-// the visit VV-4, the Home strip + Get ready VV-5) AND-ed with the beta-shelf
-// opt-in. A ROLLOUT gate only (G0): GA is every account — the companion is care,
-// not convenience, so it is never a Premium gate. Client-render-only: VV-1's
-// schema (vet_appointments, the three links, vet_visits.deleted_at) is
-// account-agnostic and lands for everyone, and no Edge Function reads the key,
-// so there is no server-side registration of it. Nothing consumes it yet (VV-0
-// — pinned by guards/vetVisitsFlagOff.test.tsx).
+// `design_v2` is the Design v2 rollout flag (Design v2 — the whole day,
+// migration 070 — D2-0 / CUL-1062) — same shape, same fail-closed resolution.
+// It gates the redesign's CLIENT surfaces (the Signal card + route D2-3, Home on
+// a real day D2-4, the month on Patterns D2-5, the waits D2-7) AND-ed with the
+// beta-shelf opt-in — through ONE hook, `hooks/useDesignV2.ts`, which is the
+// only file that reads this key directly. A ROLLOUT gate only (PM, 2026-09-19:
+// "behind a beta toggle too"): GA is every account — the redesign is the app's
+// own surfaces, never a Premium gate — and D2-8 retires the flag and deletes
+// the old surfaces. Client-render-only: nothing in the redesign changes a
+// write path, a row or the engine (the same record, drawn differently), and no
+// Edge Function reads the key, so there is no server-side registration of it.
+// Nothing consumes it yet (D2-0 — pinned by guards/designV2FlagOff.test.tsx).
+// Not to be confused with the RETIRED `signal_design_v2` below: that was the
+// 2026-08 Signal/Home uplift, GA'd and gone from this union; this is the 2026-09
+// whole-day redesign.
 //
-// Two keys that once lived here have GRADUATED to GA and been retired client-side
-// (CUL-546 Phase 1 / CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design
-// uplift, migration 055) and `signals_v2` (the Signals-v2 lanes, migration 057). The
-// uplift + the v2 lanes now render unconditionally, so the client reads neither key.
-// Their `app_config` rows survive for old builds until GA-4 deletes them, and
-// `signals_v2`'s SERVER eligibility gate in `generate-signal` (B-777) stays until
-// GA-3 — but neither belongs in this client-side union any more.
+// Five keys that once lived here have GRADUATED to GA and been retired client-side.
+// `signal_design_v2` (the Signal/Home design uplift, migration 055) and `signals_v2`
+// (the Signals-v2 lanes, migration 057) went first (CUL-546 Phase 1 / CUL-547 +
+// CUL-548): the uplift + the v2 lanes now render unconditionally. Their `app_config`
+// rows survive for old builds until GA-4 deletes them, and `signals_v2`'s SERVER
+// eligibility gate in `generate-signal` (B-777) stays until GA-3. The log-picker
+// redesign (B-745, migration 056) and the event-taxonomy expansion (B-756, migration
+// 061) followed (CUL-960 / CUL-962): the grouped event grid with the Breathing family
+// is the only picker, on the sheet and on `/log`. Their rows were flipped to
+// `{"enabled": true}` for installed builds (CUL-961) and are deleted by CUL-963 once
+// the GA build is installed — neither was ever read server-side. The vet-visit
+// companion's rollout flag (Vet visits — the appointment companion, VV-0, migration
+// 065) went last (CUL-905): the Pet-tab card, the visit screens, the Home strip, Get
+// ready and the History row render for every account, and the old write-only visit
+// form went with it. Its row was flipped to `{"enabled": true}` (CUL-1081) and is
+// deleted by CUL-1082 once the GA build is installed — it too was never read
+// server-side. None of the five belongs in this client-side union any more.
 export const ALLOWLIST_FLAG_KEYS = [
   'ask_enabled',
   'ask_general_enabled',
   'widget_enabled',
-  'log_picker_v2',
-  'event_types_v2',
   'daily_look',
-  'vet_visits',
+  'design_v2',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -116,10 +115,8 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   ask_enabled: undefined,
   ask_general_enabled: undefined,
   widget_enabled: undefined,
-  log_picker_v2: undefined,
-  event_types_v2: undefined,
   daily_look: undefined,
-  vet_visits: undefined,
+  design_v2: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

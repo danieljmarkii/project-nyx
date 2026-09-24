@@ -114,16 +114,24 @@ import { hasBile, hasFood, hasHair } from '../../../lib/vomitContents.ts'
 // `lib/medications.ts` + `lib/utils.ts`, both already in this bundle.
 import {
   deriveMedicationCourses,
+  type MedicationCourse,
   type MedicationHistoryRegimen,
   type CourseSource,
 } from '../../../lib/medicationHistory.ts'
-import type { AttributableDose } from '../../../lib/medications.ts'
+// CUL-976 — `attributeDoses` is the ONE dose→regimen attribution pass, and page 1 now reads it
+// instead of the private `medicationId === regimen.id` filter it used to run. That filter WAS the
+// bug this module's own header warns about ("a medication_id join counted ZERO"): a dose logged
+// before the owner created the regimen row carries `medication_id = NULL` forever, so page 1
+// could not see it while the §4.4 lifetime table — which goes through this same primitive — could.
+// One drug, two populations, two irreconcilable adherence figures on one document (C-4).
+import { attributeDoses, type AttributableDose, type DoseAttribution } from '../../../lib/medications.ts'
 // The diet-trial answer (B-417 PR 7). `trial.ts` is the seam onto `lib/dietTrial.ts`
 // — the one shared predicate — and imports NOTHING from this file, so the two are a
 // tree rather than a cycle.
 import {
   buildTrialBlock,
   halfPartition,
+  openedAfter,
   selectReportTrial,
   trialEndValue,
   trialLastDayNum,
@@ -326,6 +334,33 @@ export interface ReportPetInput {
 }
 
 /**
+ * CUL-979 — the caller's OTHER live pets, as counts by species.
+ *
+ * The vet report's first read outside the subject pet's own row, and this shape is what
+ * keeps it a structural fact rather than a disclosure: it has no field a name, an id, a
+ * weight or an event could travel in. "Lives with 1 other cat" is the central compliance
+ * question of an elimination trial (can she get at the other animal's food?), and the
+ * account already holds the answer; what it does NOT hold is whether any of that food was
+ * eaten, which is why the render only ever states availability.
+ *
+ * `complete` is the pull's own verdict: a short read makes the count a floor, and the
+ * render says "at least". Absent on the input ⇒ UNKNOWN ⇒ nothing renders — never "one
+ * pet", which would be a claim the caller did not make.
+ */
+export interface Household {
+  others: { species: Species; count: number }[]
+  complete: boolean
+}
+
+/** Subject's own species first (the "other cat" is the one a vet asks about first), then
+ *  cat, dog, other — a stable order for one sentence. The mapper merges by species, so no
+ *  two entries share a rank. */
+function householdRank(species: Species, subject: Species): number {
+  if (species === subject) return 0
+  return species === 'cat' ? 1 : species === 'dog' ? 2 : 3
+}
+
+/**
  * The three stored facts every protein-set decision needs (B-351 slice 5, D10).
  *
  * Carried RAW through the input layer and derived here in the pure module, so the
@@ -516,6 +551,26 @@ export interface ReportDietTrialInput extends ReportFoodProteinInput {
    *  disclosure ("protein confirmed day N" when it falls after day 1, §7.4); it never
    *  versions the value (TP-3: one value, whole-trial, disclosed not versioned). */
   targetProteinSetAt?: string | null
+  /**
+   * CUL-1041 / migration 068 — §5.1's WINDOW PROVENANCE, three fields read as one.
+   *
+   * `targetDurationSetAt` is THE predicate: "did this window move?" is
+   * `targetDurationSetAt != null`, never a comparison of `targetDurationDaysInitial`
+   * against `targetDurationDays` (two equal numbers are also what a corrected typo
+   * looks like, and a trial created between 068 and the PR 2 write path lands with a
+   * NULL initial and a real move). On null, the other two are not read at all.
+   *
+   * `targetDurationDaysInitial` is the window the trial was DESIGNED against — the
+   * value immediately before the first RECORDED change. NULL means "not recorded" and
+   * is never rendered as a number.
+   *
+   * `targetDurationVetDirected` is TRUE only when the owner checked the box. NULL and
+   * FALSE are indistinguishable downstream and both mean SILENCE — an unchecked box is
+   * never rendered as "the owner did this on their own" (§5.1's two-sided rule).
+   */
+  targetDurationDaysInitial?: number | null
+  targetDurationSetAt?: string | null
+  targetDurationVetDirected?: boolean | null
   /** What the trial is FOR (migration 040). Renders verbatim to a clinician and
    *  decides whether an antibiotic course is worth naming (§7). */
   indication?: 'skin' | 'gi' | 'other' | null
@@ -583,6 +638,14 @@ export interface ReportInput {
   timezone: string | null // owner IANA tz (user_profiles.timezone) — day-boundary + local-week math
   pet: ReportPetInput
   ownerName: string | null // profile/auth display name — PIMS filing (spec §7.1); NULL ⇒ "not recorded"
+  /**
+   * CUL-979 — the caller's other live pets, counted by species (never named). Optional so
+   * every pre-existing fixture keeps compiling; ABSENT ⇒ unknown ⇒ the signalment says
+   * nothing about the household and the trial block carries no housemate caveat. That is
+   * the direction that cannot mislead: silence here is the pre-R-5 report, not a claim of
+   * a single-pet home.
+   */
+  household?: Household
   requestedWindow?: { startDate: string; endDate: string } | null // owner override (DATE strings)
   events: ReportEventInput[]
   aiAnalyses: ReportAiAnalysisInput[]
@@ -652,6 +715,20 @@ export interface ReportInput {
    * caller earns `true` by observing its query was not capped, never by assuming it.
    */
   lookRowsComplete?: boolean
+  /**
+   * CUL-975 — the tables whose pull could NOT prove it read every matching row, named so
+   * the disclosure can say which part of the record is partial rather than "some data".
+   *
+   * `lookRowsComplete` above is the same idea for the one pull that had it first; this is
+   * the rest of the block, after the pull that did not have it printed a vet report with
+   * every event after Sep 7 missing and no sign anywhere that anything was absent.
+   *
+   * EMPTY ⇒ every pull reached the end of its result set. It is not defaulted for the
+   * caller: `generateReportForPet` always passes it, and where the shortfall could have
+   * cut the report's own WINDOW that caller refuses to render at all rather than
+   * disclosing (the PM's (a') ruling), so what arrives here is always the survivable kind.
+   */
+  incompletePulls?: string[]
   /**
    * CUL-875 D3 / §9 rule 4 — who this render is for, and therefore whether the owner's
    * own sentences may appear on it.
@@ -1091,6 +1168,9 @@ export interface Signalment {
   ownerName: string | null
   /** Latest weigh-in overall (weight_checks), NEVER the pets.weight_kg onboarding snapshot (spec §7.1). */
   latestWeight: { kg: number; lbs: number; date: string } | null
+  /** CUL-979 — the other live animals on the account, by species. `null` ⇒ unknown, which
+   *  renders as nothing; an empty `others` ⇒ a one-pet home, which ALSO renders as nothing. */
+  household: Household | null
 }
 
 export interface ScopeInfo extends ReportScope {
@@ -1452,6 +1532,20 @@ export interface VomitPhenotype {
   /** Primary contents category per assessed incident; the counts sum to assessedCount. */
   contentsMix: Record<VomitContentCategory, number>
   consistencyDistribution: Record<string, number>
+  /**
+   * Colour distribution over ASSESSED incidents; 'unsure' excluded (no legible colour) — the
+   * stool sibling's field, one enum over (CUL-981).
+   *
+   * THE PIPELINE ALREADY READ THIS AND THE AGGREGATE SKIPPED THE COLUMN. `event_ai_analysis.colour`
+   * is populated on every legible vomit read and reached only the per-incident rows in appendix A,
+   * so a vet tallied "tan, tan, green, tan, yellow" by eye from a page of rows while the box
+   * directly above did contents and consistency for them — in the same box that raises the blood
+   * question ("digested (coffee-ground) blood photographs poorly"), which is the one place colour
+   * is worth most. DESCRIPTIVE ONLY: nothing keys an escalation off a colour. The authoritative
+   * blood field is `bloodPresent`, present-only and derived from the owner-editable structured
+   * column (clinical-guardrails Pattern 9) — a colour is never a second, weaker route to that flag.
+   */
+  colourDistribution: Record<string, number>
   /** PRESENT-only (§5.9) — arrays of the incidents where it was actually seen. Empty ⇒ render a de-weighted limitation note, NEVER "0 of N". */
   bloodPresent: Array<{ eventId: string; occurredAt: string; kind: 'fresh_red' | 'coffee_ground' }>
   foreignPresent: Array<{ eventId: string; occurredAt: string; note: string | null }>
@@ -1679,12 +1773,20 @@ export interface DietSummary {
   intakeNotDirectlyObserved: boolean
   /**
    * MEALS-ONLY completion (treats + free-fed excluded, B-040). Null when no rated meals.
-   * `intakeMode` is the strict-plurality intake rating across the rated meals (null on a tie or
-   * when there are none) — used ONLY by the render's descriptive free-fed feeding line (R2-3), so
-   * a grazing cat's discrete meals read "typically partly eaten" instead of a scary "0 of N fully
-   * eaten." Descriptive texture, never a scored completion figure and never reassurance.
+   *
+   * The ratings feed the render's descriptive free-fed feeding line (R2-3), so a grazing cat's
+   * discrete meals read "typically ate some" rather than a scary bare "0 of N fully eaten."
+   * Descriptive texture, never a scored completion figure and never reassurance.
    */
-  mealCompletion: { ratedMeals: number; finishedMeals: number; rate: number; intakeMode: IntakeRating | null } | null
+  mealCompletion: {
+    ratedMeals: number
+    finishedMeals: number
+    rate: number
+    /** The ratings behind the figures, for `summariseIntake` — the one predicate both
+     *  surfaces read. Replaces the pre-CUL-497 `intakeMode`, whose null could not tell a
+     *  tie from an empty set. */
+    intakeBreakdown: Array<{ rating: IntakeRating; count: number }>
+  } | null
   /**
    * Grouped rated-meal items (#7/#8) — the actual foods eaten AS MEALS (e.g. a wet diet),
    * grouped by food item like Appendix B treats: label · protein · feeding count · date span ·
@@ -1699,11 +1801,11 @@ export interface DietSummary {
     count: number
     firstDate: string | null
     lastDate: string | null
-    intakeMode: IntakeRating | null
     /**
      * EVERY rating this food was given, with its count — not the mode (B-532).
      *
-     * `intakeMode` is a strict plurality, so it can stand for as little as 51% of the
+     * The mode field this note was written against is GONE (CUL-497); the warning is why.
+     * A strict plurality can stand for as little as 51% of the
      * feedings and it SILENTLY DELETES the rest: the cold read hit a cat whose 38
      * feedings of a prescribed diet rendered one word, "Refused", while four "ate some"
      * meals — the only intake this animal took in nineteen days — had no cell on the
@@ -1717,10 +1819,59 @@ export interface DietSummary {
      */
     intakeBreakdown: Array<{ rating: IntakeRating; count: number }>
     proteinSet: ProteinSetView
+    /** CUL-292 — decides WHICH incompleteness marker is true of this row, nothing else. */
+    format: FoodFormat | null
   }>
   treats: { count: number; distinctItems: number }
   /** The #1 diet-trial confounder, on its own line (B-102). */
   humanFood: { count: number; days: number; items: Array<{ date: string; label: string | null }> }
+  /**
+   * The WSAVA "Previous diet" row, DERIVED from the meals logged before the trial started
+   * (CUL-851). Null when there is no trial, or when the pull held no pre-trial meal.
+   *
+   * The field itself is not captured — CUL-330 is that work and stays separate — but the
+   * record answers the question anyway, and appendix B printed a hardcoded "Not recorded."
+   * over a document whose own meal log showed what the pet ate every day up to the trial.
+   * Rendered as a DERIVATION, never as an entered field: the appendix's sub-head promises
+   * that uncaptured fields are marked rather than guessed, so the row has to say which it is.
+   *
+   * `firstDay` is the pull's floor, not the record's: the meal pull is a generous lookback,
+   * so an older diet can sit behind it. Rendered as a span rather than a start, so nothing
+   * here reads as "this is when the previous diet began".
+   */
+  previousDiet: {
+    /** Distinct food labels, most-fed first. */
+    labels: string[]
+    /** Meals counted (foodType `meal` only — a treat is not the diet). */
+    feedings: number
+    /** Local day keys of the first and last pre-trial meal the pull could see. */
+    firstDay: string
+    lastDay: string
+  } | null
+  /**
+   * The WSAVA "Food used to give medication" row (CUL-852) — null when no dose in the
+   * window was logged as riding inside a food.
+   *
+   * `isMedicationVehicle` has existed since B-156, computed inside `buildDetectionInput`
+   * from each dose's `pairedEventId` and reaching only the correlation engine. Appendix B
+   * had no row for it, so a field the standard diet form asks for was computed on every
+   * report and printed on none. It matters clinically because a pill vehicle is a food the
+   * animal eats on a schedule the PRESCRIPTION sets, which is exactly the shape that breaks
+   * an elimination trial without ever looking like a treat.
+   */
+  medicationVehicles: {
+    /** Distinct food labels used to carry a dose, most-used first. */
+    labels: string[]
+    /** Feedings that carried a dose. */
+    feedings: number
+    /**
+     * How many of those feedings the OFF-DIET member set already holds — i.e. how many
+     * reach appendix C and the protein tally. Counted, never widened: membership is
+     * decided by `confounderFeedings` and nowhere else, and this exists so the row can
+     * SAY which, the way the oral-route disclosure names its own exclusion.
+     */
+    countedInTally: number
+  } | null
 }
 
 export interface MedicationAdherence {
@@ -1737,7 +1888,18 @@ export interface MedicationAdherence {
   status: string
   isSupplement: boolean
   overlapsWindow: boolean
-  /** 'not_tracked' when ZERO dose events fell in the window — NEVER read as "compliant" (spec §4 trap). */
+  /**
+   * 'not_tracked' when the course has ZERO attributed dose events ANYWHERE in the record —
+   * NEVER read as "compliant" (spec §4 trap).
+   *
+   * The basis changed with CUL-976, and widened rather than narrowed: it used to mean "zero doses
+   * in the WINDOW", which reported a fully-dosed course as untracked whenever the report's window
+   * happened to open after the dosing finished. The trap's intent is that silence must never read
+   * as compliance, and that still holds by construction — a course with no dose ever still lands
+   * here, and a course with doses outside the window states its count with its basis named rather
+   * than claiming anything about the window. `windowDosesLogged === 0` is what the render reads to
+   * say "no doses in this window"; it is a separate, weaker fact and is never an ending.
+   */
   adherenceState: 'tracked' | 'not_tracked'
   elapsedDaysInWindow: number
   daysWithDose: number
@@ -1752,7 +1914,67 @@ export interface MedicationAdherence {
    * administered one and does not put a date here (adversarial finding 4).
    */
   doseDays: string[]
-  expectedDoses: number | null
+  /**
+   * ── The CANONICAL adherence claim (CUL-976) ──────────────────────────────────────────
+   *
+   * The report used to state adherence against `Math.round(dosesPerDay × elapsedDaysInWindow)` —
+   * a denominator PRORATED to the report's own window, printed bare as "N of M doses" with
+   * nothing saying M was a proration. That is how one document came to say "9 of 30" on page 5
+   * and "28 of 28" on page 10 for the same drug, with the in-window denominator LARGER than the
+   * whole prescription — a subset with a bigger denominator than its set, which is unexplainable
+   * to a reader and reads as undertreated to a clinician who only gets to page 5.
+   *
+   * So there is now ONE denominator on this document, and it is the prescription: the course's
+   * own `target_duration_doses`, or `doses_per_day × target_duration_days`, via the shared
+   * `plannedDoses` (`lib/medicationHistory.ts`) that the §4.4 lifetime table already used. The
+   * window surfaces state COUNTS and DATES and no second ratio — two ratios over one drug is the
+   * shape that caused this (C-4: precedence is the only honest resolution, and the loser is
+   * deleted rather than kept alongside).
+   *
+   * `prescribedDoses` is null for an ongoing / PRN / target-less course. That is not a gap to
+   * fill with the old proration: there is no prescription to divide by, so the report states the
+   * count alone. Where the record cannot settle a question, the page does not answer it.
+   */
+  prescribedDoses: number | null
+  /** Administered (given + partial) across the WHOLE record — the canonical claim's numerator. */
+  lifetimeDosesLogged: number
+  /**
+   * The first and last local day an ADMINISTERED dose (given | partial) was logged, across the
+   * WHOLE record — the dosing span (CUL-994 Part 2). ONE population for both ends, and the same
+   * population as `lifetimeDosesLogged` beside it: the gap sentence the render prints from these
+   * can never take its start from administered rows and its end from any row, which is the C-37
+   * asymmetry R-2's second review found ("Dosed Jul 17 – Jul 27" over one administered dose and
+   * twenty refusals). Null when nothing was administered. Record-scoped, not window-scoped, so a
+   * window that truncates a course cannot manufacture a gap.
+   */
+  lifetimeFirstDoseDay: string | null
+  lifetimeLastDoseDay: string | null
+  /**
+   * How many DISTINCT local days carry an administered dose across the whole record — the
+   * density the span alone cannot carry (CUL-994 Part 2, adversarial round 3): a first and a
+   * last date read as a continuous range, and ten dosing days with a nineteen-day hole between
+   * them printed as a 29-day span. Same population and same writer as the two endpoints.
+   */
+  lifetimeDoseDayCount: number
+  /** Administered doses inside the report window. A count, never a ratio's numerator. */
+  windowDosesLogged: number
+  /**
+   * EVERY dose event inside the window — administered, missed, refused and unconfirmed alike.
+   *
+   * Distinct from `windowDosesLogged` because "nothing was administered" and "nothing was logged"
+   * are different facts and the second is the stronger claim. A window holding two refusals has
+   * `windowDosesLogged === 0`, and reporting that as "no doses logged" would both contradict
+   * itself (the refusals print in the same sentence) and bury the most clinically loaded rows on
+   * the page under a phrase that reads as nothing-to-see.
+   */
+  windowDosesTotal: number
+  /**
+   * Whether the owner ENDED this course (H1: `status` completed/stopped) — the same register the
+   * §4.4 table's `ended` reads, from the same derivation, so a course that merely went quiet can
+   * never be read as finished. `statesPrescriptionRatio` switches on it: a delivered-vs-planned
+   * ratio is a retrospective fact, and mid-course it reads as a countdown (B-618 D7).
+   */
+  courseEnded: boolean
   givenDoses: number
   partialDoses: number
   missedDoses: number
@@ -1837,7 +2059,16 @@ export interface CorrelationSummary {
   timing: TimingFinding[]
 }
 
-export type InterventionKind = 'diet_trial' | 'medication' | 'supplement' | 'free_fed'
+/**
+ * `diet_allowed` (R-14, CUL-291) is a MID-TRIAL change to the trial's allowed set — a food the
+ * vet permitted after the trial started. It is a diet change by the chart legend's own
+ * definition, and the cold read's sharpest case: a chicken-bearing treat entered the allowed
+ * list on Jun 8 and was fed 25 times, while the chart drew nothing and "Reading the trend"
+ * still said two changes overlapped. It is its own kind rather than a second `diet_trial`
+ * because the label differs — "the trial diet (Greenies)" would be a false sentence about a
+ * treat — and because the chart's face says `diet added`, never `diet start`.
+ */
+export type InterventionKind = 'diet_trial' | 'medication' | 'supplement' | 'free_fed' | 'diet_allowed'
 
 export interface ConcurrentChange {
   kind: InterventionKind
@@ -1862,6 +2093,62 @@ export interface ConcurrentChange {
    * (adversarial finding) — the note must say "until <date>" instead.
    */
   endInWindow: string | null
+  /**
+   * The 7-day bucket index where this intervention STOPPED (the stop marker, §3.5) — non-null
+   * exactly when `endInWindow` is, and derived from the SAME `bucketIndexOfDay` closure that
+   * places `bucketIndex`. R-14 (CUL-291): the chart needs a bucket and `endInWindow` is a date,
+   * so the alternative was re-deriving the bucket in the renderer off `bucketStartDates`. That
+   * is a second answer to a question the report already answered, and the two can only be
+   * argued equal — this way they are the same call.
+   */
+  endBucketIndex: number | null
+  /**
+   * Did the OWNER declare this end, or did the logging merely stop? (R-14 adversarial finding,
+   * the highest-severity one this change turned up.)
+   *
+   * An ad-hoc course has no regimen row, so its span is derived from doses and its end is
+   * `UnlinkedMedicationGroup.lastDate` — "the latest dose in window", a LOGGING fact over rows
+   * that include refusals. An owner who keeps giving a drug and stops logging it produces the
+   * same value as one who stopped the drug. §4.4's H1 invariant already refuses to let silence
+   * fill that field — *"a course shown with no end date is one whose end the owner never
+   * recorded, not one still under way"* — and R-14's first cut would have drawn `med stop ·
+   * May 20` for a drug still on board, in the most-read element on the page, contradicting the
+   * lifetime table over the same dose rows on the same document.
+   *
+   * So the chart draws a stop only where this is true, and `changeTiming` says "last dose
+   * logged" rather than "stopped" where it is false. False is not "still running" either — it
+   * is "the record does not say", which is why the date is still printed.
+   */
+  endIsDeclared: boolean
+}
+
+/**
+ * THE change predicate — "did this intervention transition inside the window?" (R-14, CUL-291).
+ *
+ * One function, three surfaces: the trend chart's marker set, the marker legend's gate, and
+ * "Reading the trend"'s `N changes overlap this window` count. They disagreed before this
+ * existed, and the disagreement was visible on the page: a drug that started before the window
+ * and stopped inside it was counted as a change in the prose and drawn by nothing, so a vet
+ * comparing the sentence to the chart found one more change than the chart had marks for.
+ *
+ * Because the count and the drawing now switch on the same call, inverting it reds both guards
+ * (C-4). Its complement is exactly the STANDING set — present across the window with no dated
+ * transition — which is why `readingTheTrend` can split on this one predicate rather than two
+ * filters that have to be kept each other's negation by hand.
+ */
+export function isWindowChange(c: ConcurrentChange): boolean {
+  return !c.ongoing || c.endInWindow !== null
+}
+
+/**
+ * Does this change draw a STOP glyph? An in-window end the owner DECLARED (R-14).
+ *
+ * Deliberately narrower than `isWindowChange`: a dose-derived end is a real dated fact and
+ * belongs in the prose with an honest verb, but it is not an ending, and a glyph cannot hedge.
+ * A change with an undeclared end is still a change — it just draws only its start.
+ */
+export function drawsStopMark(c: ConcurrentChange): boolean {
+  return c.endBucketIndex !== null && c.endInWindow !== null && c.endIsDeclared
 }
 
 export interface SymptomLogPhenotype {
@@ -1891,6 +2178,13 @@ export interface SymptomLogPhenotype {
 export interface SymptomLogEntry {
   eventId: string
   type: string
+  /**
+   * This incident was photographed and READ, and the owner has since removed the photo
+   * (CUL-634). The row still carries its full photo findings — the analysis outlives the
+   * image — so without the marker the appendix showed a complete read beside an appendix
+   * that said one photo was gone, and named neither.
+   */
+  photoRemoved: boolean
   occurredAt: string
   occurredAtConfidence: OccurredAtConfidence | null
   occurredAtEarliest: string | null
@@ -1983,6 +2277,22 @@ export interface Provenance {
   deletedExcluded: true
   /** Appendix A — every in-window symptom incident, occurred-vs-logged, with per-event phenotype. */
   symptomLog: SymptomLogEntry[]
+  /**
+   * In-window observations the owner logged as `other` (R-15 brief 7(b), PM-ruled 2026-09-16).
+   *
+   * `REPORT_SYMPTOM_TYPES` is an allow-list of eight leaves and `other` is not among them, so
+   * such a row reaches no count, no chart and no appendix — while Appendix A's preamble claims
+   * "every symptom event in the window". On the PM's own record, the day before a real
+   * appointment, that silently dropped two dated rows naming the ear ("Tipping ear down",
+   * "Shaking her head"), which is the sign a clinician most wants because it separates otitis
+   * from general pruritus.
+   *
+   * A COUNT, AND ONLY A COUNT. The ruling was (c) with (b): the owner is told at Send so the
+   * cause is fixed, and the vet is told the record is wider than the page. The notes
+   * themselves are un-normalised owner text of unknown clinical quality — promoting them into
+   * the clinical artifact is CUL-848's question and was explicitly not what was ruled.
+   */
+  uncategorisedObservations: number
   /**
    * B-213 — rated meals for the intake appendix, most-recent-first. Capped; older rated meals
    * beyond the cap are counted in intakeLogHiddenOlder, never silently dropped.
@@ -2137,6 +2447,32 @@ export interface ProteinTimeline {
   totalByProtein: Record<string, number>
   hasUnknown: boolean
   totalFeedings: number
+  /**
+   * The HOME-PREPARED subset of `totalFeedings` / `incompleteFeedings` (CUL-292).
+   *
+   * Home food has no ingredient panel, so "the list was never read" reports a capture
+   * failure that never happened, and folding these rows into the floor disclosure's
+   * numerator inflates a figure whose whole job is to say how much of the PACKAGED record
+   * went unverified. The two counts partition one population and the render states each
+   * against its own denominator (C-3, C-4); neither is dropped, because a home-cooked diet
+   * really is a protein blind spot — it is a different one.
+   */
+  humanFoodFeedings: number
+  incompleteHumanFoodFeedings: number
+  /**
+   * THE FLOOR RATIO'S OWN TWO NUMBERS (adversarial review), so the render divides one
+   * population rather than subtracting its way to two.
+   *
+   * `incompleteFeedings` counts only feedings whose food had at least one protein — a
+   * feeding with none is "unknown", not "unread", and is disclosed separately. So a
+   * denominator derived as `totalFeedings − humanFoodFeedings` silently included the
+   * unknown ones the numerator had already skipped: ten packaged feedings with two read,
+   * three unread and five with nothing captured printed "3 of 10" on the one sentence whose
+   * job is to stop the antigen tally reading as complete, when eight of the ten had no
+   * complete panel. Both halves are now counted in the same pass over the same members.
+   */
+  packagedReadable: number
+  packagedUnread: number
   /** Off-diet feedings whose food's protein set may NOT be read as complete (D10).
    *  > 0 ⇒ the tally is a floor and the render must disclose it. */
   incompleteFeedings: number
@@ -2267,6 +2603,8 @@ export interface ReportSnapshot {
   concurrentChanges: ConcurrentChange[]
   proteinTimeline: ProteinTimeline
   provenance: Provenance
+  /** CUL-975 — `ReportInput.incompletePulls`, carried through for the page-1 disclosure. */
+  incompletePulls: string[]
   /**
    * PR 7 — every photographed in-window incident, most-recent-first (Appendix E). `dataUri` is
    * populated by the index.ts I/O shell after assembly.
@@ -2278,7 +2616,23 @@ export interface ReportSnapshot {
    * never silently contradicts Appendix A's "Photo:" lines / the phenotype counts (which are
    * analysis-scoped). Appendix E renders when `incidentPhotos.length > 0 OR this > 0`.
    */
-  incidentPhotosAnalyzedNoRetained: number
+  /**
+   * Incidents that WERE photographed and read, whose photo the owner has since removed
+   * (CUL-634) — the list, not a count, because the disclosure has to name them.
+   *
+   * The count alone left a vet with "1 further incident" on the photos sheet and an unmarked
+   * full photo read on appendix A, with no way to join the two: the cross-check the
+   * disclosure exists to enable was the one thing it did not support. The list is built in
+   * the same pass that used to produce the count, so the number in the sentence and the
+   * incidents named beside it can never disagree (C-4) — and `SymptomLogEntry.photoRemoved`
+   * is set from this same set, so the appendix A marker cannot drift from either.
+   *
+   * It is a SUPERSET of the rows appendix A can mark: this pass runs over every deduped
+   * observation type, and appendix A lists the report's symptom types, so a normal stool
+   * with a removed photo is counted and named here with no row to mark. That is why the
+   * disclosure names dates rather than relying on the marker alone.
+   */
+  incidentPhotosRemoved: Array<{ eventId: string; type: string; occurredAt: string }>
   /**
    * CUL-875 — the owner's daily looks: the page-1 line, the graph and the appendix.
    * NULL when no look falls in the window (no designed empty state, deliberately — a
@@ -2321,28 +2675,57 @@ function mealFoodLabel(
   return form ? `${name} (${form})` : name
 }
 
+export type { IntakeRating }
+
 /**
- * The strict-plurality intake rating across a set of rated meals (R2-3), or null when the set is
- * empty OR two ratings tie for the top count (no honest "typically X"). Deterministic; used only
- * for descriptive texture on the free-fed feeding line. On a tie we return null rather than pick a
- * side — and we never break the tie toward the calmer rating, so this can't manufacture reassurance.
+ * What a set of rated meals supports SAYING about it (CUL-497) — the one predicate behind
+ * page 1's "typically …" clause and appendix E's intake cell.
+ *
+ * Its ancestor, `strictPluralityIntake`, returned a rating or NULL, and null carried two
+ * unrelated meanings: "the ratings tie, so there is no honest typical" and "there are no
+ * ratings at all". Every consumer then had to guess which, and each guessed differently —
+ * appendix E rendered an em-dash indistinguishable from *not recorded*, and page 1 simply
+ * dropped the clause, so ninety rated meals on a chronic-GI patient could reach the page as
+ * one dash beside a silence. Three states, named, is the whole fix: a caller can no longer
+ * collapse two of them by accident.
+ *
+ *   none      no rating at all — the ONLY state the em-dash is for
+ *   typical   one rating repeats and outnumbers the rest, so "typically X" is honest
+ *   itemised  every rating with its count — a tie, or a set too small to call habitual
+ *
+ * THE TIE IS NEVER BROKEN, in either direction. Breaking it toward the calmer rating would
+ * manufacture reassurance, which the intake floor forbids outright; breaking it toward the
+ * worse one would manufacture a finding. Itemising is the honest render and it is also the
+ * more informative one — a record evenly split between finishing and refusing is a clinical
+ * picture no single adverb can carry.
  */
-function strictPluralityIntake(ratings: IntakeRating[]): IntakeRating | null {
-  const counts = new Map<IntakeRating, number>()
-  for (const r of ratings) counts.set(r, (counts.get(r) ?? 0) + 1)
-  let mode: IntakeRating | null = null
-  let modeN = 0
-  let tie = false
-  for (const [r, c] of counts) {
-    if (c > modeN) {
-      mode = r
-      modeN = c
-      tie = false
-    } else if (c === modeN) {
-      tie = true
-    }
-  }
-  return tie ? null : mode
+export type IntakeSummary =
+  | { kind: 'none' }
+  | { kind: 'typical'; rating: IntakeRating; count: number }
+  | { kind: 'itemised'; ratings: Array<{ rating: IntakeRating; count: number }> }
+
+export function summariseIntake(
+  breakdown: ReadonlyArray<{ rating: IntakeRating; count: number }>,
+): IntakeSummary {
+  let top = 0
+  for (const b of breakdown) if (b.count > top) top = b.count
+  if (top === 0) return { kind: 'none' }
+  const tied = breakdown.filter((b) => b.count === top)
+  // A SUMMARY MAY NEVER DELETE A RATING (adversarial review). The first cut returned the
+  // TIED ratings on a tie, and the render said "split between A and B" — which reads as an
+  // exhaustive two-way partition. On `all×3 most×3 some×2 picked×2 refused×2` that dropped
+  // six of twelve meals including both refusals, and dropped them in the CALM direction,
+  // because `intakeBreakdownOf` orders best-to-worst and the tie is resolved by count. It was
+  // the B-532 defect this predicate exists to kill, with two survivors instead of one, and
+  // arguably worse: "typically X" is grammatically a partial claim and "split between A and
+  // B" is not. Where no rating is habitual, every rating goes, with its count.
+  //
+  // AND "TYPICALLY" NEEDS A REPEATED RATING. A single rated meal is a fact, not a habit, and
+  // "typically ate it all" over one meal is an n=1 reassurance on the intake axis — which the
+  // clinical floor forbids by construction, and which the plurality rule permitted at its
+  // limit. Two is the floor because it is what the word means, not a tuned threshold.
+  if (tied.length === 1 && top >= 2) return { kind: 'typical', rating: tied[0].rating, count: top }
+  return { kind: 'itemised', ratings: [...breakdown] }
 }
 
 /**
@@ -3048,6 +3431,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       unsure: 0,
     }
     const consistencyDistribution: Record<string, number> = {}
+    const colourDistribution: Record<string, number> = {}
     const bloodPresent: VomitPhenotype['bloodPresent'] = []
     const foreignPresent: VomitPhenotype['foreignPresent'] = []
     let withAnalysis = 0
@@ -3085,6 +3469,11 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       if (a.status === 'completed') {
         contentsMix[classifyVomitContents(a)]++
         if (a.consistency) consistencyDistribution[a.consistency] = (consistencyDistribution[a.consistency] ?? 0) + 1
+        // 'unsure' is NOT a legible colour and never enters the tally — the stool loop's rule
+        // (below), applied to the enum migration 013 gives this field. A read that could not
+        // name a colour is already disclosed by the assessed denominator; counting it as a
+        // category would invent a reading the photo does not carry.
+        if (a.colour && a.colour !== 'unsure') colourDistribution[a.colour] = (colourDistribution[a.colour] ?? 0) + 1
         if (a.editedAt) reviewedCount++
       }
     }
@@ -3095,6 +3484,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       assessedCount: states.completed,
       contentsMix,
       consistencyDistribution,
+      colourDistribution,
       bloodPresent,
       foreignPresent,
       reviewedCount,
@@ -3202,23 +3592,38 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const windowReadings = allReadings.filter((r) => inWindow(r.occurredAt))
   const weight = buildWeightSection(latestOverall, windowReadings, tz)
 
-  // ── Medication adherence (§3.8, B-117 §7) ────────────────────────────────────
-  const liveDoses = input.doses.filter((d) => !droppedEventIds.has(d.eventId))
+  // ── Medications (§3.8, B-117 §7, §4.4) ───────────────────────────────────────
+  // ONE attribution pass feeds every medication surface on the document (CUL-976) — page 1,
+  // Appendix D, the §3.8 orphan lines and the §4.4 lifetime table. Each surface scopes and
+  // phrases what it needs; none of them decides which doses belong to which drug.
+  const medPass = buildMedicationPass(input, droppedEventIds, tz)
+  // The lookback-trimmed live dose set, kept for the trial block's medication-overlap confounder
+  // (below), which reasons over the trial's own span rather than the whole record. The medication
+  // sections deliberately do NOT use this: attribution must see every dose a drug ever had, or a
+  // course configured after dosing began loses its early doses — the CUL-976 defect.
+  const windowLookbackDoses = input.doses.filter((d) => !droppedEventIds.has(d.eventId))
   const medications = input.medications.map((m) =>
-    buildMedicationAdherence(m, liveDoses, scope, tz),
+    buildMedicationAdherence(
+      m,
+      medPass.byRegimen.get(m.id) ?? [],
+      medPass.courseByRegimen.get(m.id) ?? null,
+      scope,
+      tz,
+    ),
   )
   // Ad-hoc / OTC doses that belong to no configured regimen — surfaced separately so a drug the
   // owner logged (but never set up as a regimen) is still reported, not silently dropped (§3.8).
+  // The set is the pass's OWN `unattributed` bucket, so this section and the regimen sections
+  // partition the record's doses instead of each filtering it independently.
   const unlinkedMedications = buildUnlinkedMedications(
-    liveDoses,
-    new Set(input.medications.map((m) => m.id)),
+    medPass.unattributed,
     input.medicationItems ?? [],
     scope,
     tz,
   )
   // §4.4 (D2) — the LIFETIME medication table, window-ignoring on purpose: derived over the
   // pet's whole record (all regimens + the untrimmed `lifetimeDoses`), not the scoped window.
-  const medicationHistory = buildMedicationHistory(input, droppedEventIds, tz)
+  const medicationHistory = buildMedicationHistory(input, medPass.courses, tz)
 
   // ── Diet / confounder summary (§3.8) ─────────────────────────────────────────
   // The trial this report DESCRIBES — active, or ended inside the window (B-417 §7).
@@ -3394,10 +3799,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // free-fed grazer's discrete meals, never a scored figure. A tie yields null (no honest "typical").
   // NOTE: this is descriptive display data only — it does NOT touch the intake-decline engine or the
   // fully-eaten anchor (detection.ts / lastFullMealIso), which the clinical-guardrails floor protects.
-  const intakeMode = strictPluralityIntake(ratedMeals.map((e) => e.meal!.intakeRating as IntakeRating))
+  const mealCompletionBreakdown = intakeBreakdownOf(
+    ratedMeals.map((e) => e.meal!.intakeRating as IntakeRating),
+  )
   const mealCompletion =
     ratedMeals.length > 0
-      ? { ratedMeals: ratedMeals.length, finishedMeals, rate: finishedMeals / ratedMeals.length, intakeMode }
+      ? {
+          ratedMeals: ratedMeals.length,
+          finishedMeals,
+          rate: finishedMeals / ratedMeals.length,
+          intakeBreakdown: mealCompletionBreakdown,
+        }
       : null
 
   // Grouped rated-meal items (#7/#8) — surface the ACTUAL foods eaten as meals (e.g. a wet diet),
@@ -3409,6 +3821,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     {
       foodLabel: string | null
       primaryProtein: string | null
+      format: FoodFormat | null
       count: number
       firstDate: string | null
       lastDate: string | null
@@ -3441,6 +3854,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     } else {
       mealGroups.set(key, {
         foodLabel: mealFoodLabel(m),
+        // The first member's format, on exactly the footing the protein set below already has
+        // — and inheriting its one known edge, stated rather than left to be rediscovered: in
+        // the fixed `__unlabeled__` bucket the members are NOT one food, so a group mixing a
+        // home-cooked and a packaged meal, both with no item id and no label, takes its marker
+        // from whichever was logged first. The cost is bounded to which of two incompleteness
+        // phrasings an unnamed row carries (CUL-292 uses this for nothing else), which is why
+        // it rides the accepted trade-off rather than re-opening it.
+        format: m.format ?? null,
         // A junk sentinel ("null"/"unknown") is not a protein — null it so no consumer prints it.
         primaryProtein: canonicalizeProtein(m.primaryProtein) ? m.primaryProtein : null,
         count: 1,
@@ -3460,10 +3881,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     .map((g) => ({
       foodLabel: g.foodLabel,
       primaryProtein: g.primaryProtein,
+      format: g.format,
       count: g.count,
       firstDate: g.firstDate,
       lastDate: g.lastDate,
-      intakeMode: strictPluralityIntake(g.intakes),
       intakeBreakdown: intakeBreakdownOf(g.intakes),
       proteinSet: g.proteinSet,
     }))
@@ -3504,7 +3925,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         // 1, the tile and the appendix" quietly stops being true.
         meals: windowMeals,
         eventsById: new Map(dedupedAll.map((e) => [e.id, e])),
-        doses: liveDoses,
+        doses: windowLookbackDoses,
         medicationItems: input.medicationItems ?? [],
         // Regimens AND the ad-hoc doses that belong to no regimen. The orphan-dose
         // gap (§3.8) is not a footnote here: a real owner's daily OTC antihistamine
@@ -3556,18 +3977,62 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       }
     : null
 
-  const diet: DietSummary = {
-    trialTargetProtein: trialProteinTarget,
-    trialProteinProvenance,
-    trialProteinMismatch,
-    trial,
-    freeFed,
-    intakeNotDirectlyObserved: freeFed.length > 0,
-    mealCompletion,
-    mealItems,
-    treats: { count: treatFeedings.length, distinctItems: treatItemIds.size },
-    humanFood: { count: humanFoodFeedings.length, days: humanFoodDays.size, items: humanFoodItems },
-  }
+  // CUL-851 — the previous diet, read off the meal log rather than left as a negative.
+  //
+  // Scoped to meals STRICTLY BEFORE the trial's start day, in the owner's local days, over
+  // `dedupedAll` rather than `windowEvents`: the report window frequently OPENS at the trial
+  // start (the §6 cascade's rung 2), in which case there is no pre-trial meal inside the
+  // window at all and the in-window set would answer "none" on every trial report that most
+  // needs the row. `dedupedAll` is the generous lookback, which is exactly the span this
+  // question wants.
+  //
+  // Treats are excluded. A pre-trial treat says nothing about what the animal was FED, and
+  // the WSAVA row is about the diet; the treats have their own row two lines down.
+  const previousDiet = ((): DietSummary['previousDiet'] => {
+    const startedAt = reportTrialInput?.startedAt
+    if (!trialBlock || !startedAt) return null
+    const startDayNum = dayNumber(startedAt)
+    if (startDayNum === null) return null
+    // THE TRIAL'S OWN FOOD IS NEVER THE PREVIOUS DIET (adversarial review). A five-to-seven
+    // day transition onto the new food is the standard veterinary instruction, so an owner who
+    // logs the changeover has trial-food meals before the start date — and naming them here
+    // tells a vet the animal was NOT naive to the trial protein before the trial, which
+    // invalidates the elimination's premise. The row's completeness caveat does not touch it:
+    // that caveat is about how far back the log reaches, not about which food is which.
+    const trialFoodId = reportTrialInput?.foodItemId ?? null
+    const trialFoodLabel = reportTrialInput?.foodLabel?.trim().toLowerCase() ?? null
+    const isTrialFood = (m: NonNullable<ReportEventInput['meal']>): boolean => {
+      if (trialFoodId && m.foodItemId === trialFoodId) return true
+      const label = mealFoodLabel(m)?.trim().toLowerCase()
+      return !!trialFoodLabel && !!label && label === trialFoodLabel
+    }
+    const counts = new Map<string, number>()
+    let feedings = 0
+    let firstDay: string | null = null
+    let lastDay: string | null = null
+    for (const e of dedupedAll) {
+      if (e.type !== 'meal' || !e.meal || e.meal.foodType !== 'meal') continue
+      if (isTrialFood(e.meal)) continue
+      const key = localDayKey(e.occurredAt, tz)
+      if (key === null) continue
+      // The BOUND is numeric, on day numbers parsed from both sides — never a text compare
+      // of two ISO spellings (C-40). The min/max below are ordering over fixed-width day
+      // keys, where lexical and chronological agree, which is the safe half of that rule.
+      const dn = dayNumber(key)
+      if (dn === null || dn >= startDayNum) continue
+      feedings++
+      if (firstDay === null || key < firstDay) firstDay = key
+      if (lastDay === null || key > lastDay) lastDay = key
+      const label = mealFoodLabel(e.meal)
+      if (label) counts.set(label, (counts.get(label) ?? 0) + 1)
+    }
+    if (feedings === 0 || firstDay === null || lastDay === null) return null
+    const labels = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([label]) => label)
+    return { labels, feedings, firstDay, lastDay }
+  })()
+
 
   // ── Detection reuse (§7 / §8.5) ──────────────────────────────────────────────
   const detInput = buildDetectionInput(input, scope, windowEvents, droppedEventIds)
@@ -3824,6 +4289,40 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   }
 
   // ── Provenance / appendices (§3.9, appendix A/B/C) ───────────────────────────
+  // Hoisted above its consumers (it is a pure index over the input) because CUL-634's
+  // removed-photo set is needed by appendix A's rows as well as by the photos appendix.
+  const attachmentsByEvent = new Map<string, ReportAttachmentInput[]>()
+  for (const at of input.attachments ?? []) {
+    const arr = attachmentsByEvent.get(at.eventId)
+    if (arr) arr.push(at)
+    else attachmentsByEvent.set(at.eventId, [at])
+  }
+
+  // CUL-634 — ONE set behind the count, the names and the appendix A marker. An incident
+  // whose photo the owner removed after it was read keeps its AI read (the app deletes the
+  // attachment row and the storage object, never `event_ai_analysis`), so the read still
+  // prints on appendix A and still counts in the phenotype figures while no image exists.
+  // Computed once here rather than inside the photo loop below, so the sentence's number,
+  // the incidents it names and the rows that carry the marker cannot disagree (C-4).
+  const incidentPhotosRemoved: ReportSnapshot['incidentPhotosRemoved'] = []
+  for (const e of windowEvents) {
+    if (!DEDUP_OBSERVATION_TYPES.has(e.type)) continue
+    // Attachments are unioned across every member of a de-duplicated bout, exactly as the
+    // photo loop does it: a photo logged on a dropped twin still belongs to the survivor.
+    let retained = false
+    for (const mid of e.memberEventIds) {
+      if ((attachmentsByEvent.get(mid)?.length ?? 0) > 0) {
+        retained = true
+        break
+      }
+    }
+    if (retained) continue
+    if (buildIncidentPhenotype(e.type, e.memberEventIds, analysisByEvent)) {
+      incidentPhotosRemoved.push({ eventId: e.id, type: e.type, occurredAt: e.occurredAt })
+    }
+  }
+  const photoRemovedIds = new Set(incidentPhotosRemoved.map((r) => r.eventId))
+
   const symptomLog: SymptomLogEntry[] = windowEvents
     .filter((e) => REPORT_SYMPTOM_SET.has(e.type))
     .map((e) => {
@@ -3834,6 +4333,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       return {
         eventId: e.id,
         type: e.type,
+        photoRemoved: photoRemovedIds.has(e.id),
         occurredAt: e.occurredAt,
         occurredAtConfidence: e.occurredAtConfidence,
         occurredAtEarliest: e.occurredAtEarliest,
@@ -3845,6 +4345,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         phenotype,
       }
     })
+  // R-15 brief 7(b). Scoped to `other` rather than "anything not in the allow-list", because
+  // the other non-symptom types are all reported in their own right — a meal, a dose, a
+  // weigh-in and the daily look each have a home on this document. `other` is the one type
+  // the app invites the owner to use and the report then declines to carry.
+  const uncategorisedObservations = windowEvents.filter((e) => e.type === 'other').length
+
   const estimatedOrWindowCount = symptomLog.filter(
     (e) => e.occurredAtConfidence === 'estimated' || e.occurredAtConfidence === 'window',
   ).length
@@ -3914,6 +4420,66 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       permittedLaterFrom: x?.permittedLaterFrom ?? null,
     }
   })
+  // CUL-852 — the WSAVA "Food used to give medication" row.
+  //
+  // THE TALLY IS NOT WIDENED HERE. Whether a vehicle feeding's protein reaches the antigen
+  // tally is decided by `confounderFeedings` above and nowhere else; this counts how many of
+  // them that set ALREADY holds, so the row can say which. Same discipline as the oral-route
+  // disclosure one block over, where naming the exclusion is what stops the tally reading as
+  // complete — and the reason the diet summary is assembled here rather than upstream: two
+  // definitions of "counted" is how a page and its appendix come to disagree (C-4).
+  const medicationVehicles = ((): DietSummary['medicationVehicles'] => {
+    // THE PAIRED MEAL IS THE SIDE THAT MOVES (adversarial review). The dose's own id can
+    // never be dropped — `dedupeEvents` keys medication events `keep|<id>` — so guarding on
+    // it, as `buildDetectionInput` does, guards nothing here. What dedup does drop is the
+    // MEAL the dose rode inside: an owner who one-taps a treat and then records the pill
+    // through the combo sheet can pair the dose to the twin that collapses, and the row then
+    // printed "no dose in this window was logged as given in food" over a record holding one.
+    // Resolving each member id to its surviving representative is what makes the vehicle
+    // survive its own de-duplication.
+    const survivorOfMember = new Map<string, string>()
+    for (const e of dedupedAll) {
+      for (const mid of e.memberEventIds) survivorOfMember.set(mid, e.id)
+    }
+    const paired = new Set<string>()
+    for (const d of input.doses) {
+      if (droppedEventIds.has(d.eventId)) continue
+      if (d.pairedEventId) paired.add(survivorOfMember.get(d.pairedEventId) ?? d.pairedEventId)
+    }
+    if (paired.size === 0) return null
+    const inTally = new Set(confounderFeedings.map((e) => e.id))
+    const counts = new Map<string, number>()
+    let feedings = 0
+    let countedInTally = 0
+    for (const e of windowMeals) {
+      if (!paired.has(e.id)) continue
+      feedings++
+      if (inTally.has(e.id)) countedInTally++
+      const label = mealFoodLabel(e.meal!)
+      if (label) counts.set(label, (counts.get(label) ?? 0) + 1)
+    }
+    if (feedings === 0) return null
+    const labels = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([label]) => label)
+    return { labels, feedings, countedInTally }
+  })()
+
+  const diet: DietSummary = {
+    trialTargetProtein: trialProteinTarget,
+    trialProteinProvenance,
+    trialProteinMismatch,
+    trial,
+    freeFed,
+    intakeNotDirectlyObserved: freeFed.length > 0,
+    mealCompletion,
+    mealItems,
+    treats: { count: treatFeedings.length, distinctItems: treatItemIds.size },
+    humanFood: { count: humanFoodFeedings.length, days: humanFoodDays.size, items: humanFoodItems },
+    previousDiet,
+    medicationVehicles,
+  }
+
   // Tally by the CANONICAL key (B-052): "chicken", "Chicken" and "Chicken By-Product Meal"
   // are one antigen for the vet weighing exposures. Feedings with no usable protein are
   // counted separately and disclosed in the render — never a "null ×N" tally line, never
@@ -3933,7 +4499,13 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const proteinExposureTally: Record<string, number> = {}
   let proteinUnknownCount = 0
   let incompleteFeedings = 0
+  let humanFoodFeedingsInTally = 0
+  let incompleteHumanFoodFeedings = 0
+  let packagedReadable = 0
+  let packagedUnread = 0
   for (const c of confounders) {
+    const isHome = c.format === 'human_food'
+    if (isHome) humanFoodFeedingsInTally++
     if (c.proteinSet.proteins.length === 0) {
       // NOT counted as an unread panel: a feeding with no captured protein at all
       // (often no food row at all — a bare human-food log) is already disclosed as
@@ -3944,7 +4516,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       proteinUnknownCount++
       continue
     }
-    if (!c.proteinSet.complete) incompleteFeedings++
+    // Past the `continue` above, this feeding HAD a protein set to judge — which is exactly
+    // the population the ratio is about, so both of its numbers are accumulated here.
+    if (!isHome) packagedReadable++
+    if (!c.proteinSet.complete) {
+      incompleteFeedings++
+      if (isHome) incompleteHumanFoodFeedings++
+      else packagedUnread++
+    }
     for (const key of c.proteinSet.proteins) {
       proteinExposureTally[key] = (proteinExposureTally[key] ?? 0) + 1
     }
@@ -3998,6 +4577,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     hasUnknown: proteinUnknownCount > 0,
     totalFeedings: confounders.length,
     incompleteFeedings,
+    humanFoodFeedings: humanFoodFeedingsInTally,
+    incompleteHumanFoodFeedings,
+    packagedReadable,
+    packagedUnread,
   }
 
   // ── Intake appendix (B-213) — recent rated meals, ONLY when an intake flag fired ─────
@@ -4064,6 +4647,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     estimatedOrWindowCount,
     deletedExcluded: true,
     symptomLog,
+    uncategorisedObservations,
     intakeLog,
     intakeLogHiddenOlder,
     intakeLogScope,
@@ -4084,21 +4668,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // (§3 Appendix E). The present-only safety class is derived from the SAME per-incident phenotype
   // the symptom log + safety band use (single source), so a blood/foreign photo that leads the
   // safety band is exactly the one flagged here. `dataUri` is populated by the index.ts I/O shell.
-  const attachmentsByEvent = new Map<string, ReportAttachmentInput[]>()
-  for (const at of input.attachments ?? []) {
-    const arr = attachmentsByEvent.get(at.eventId)
-    if (arr) arr.push(at)
-    else attachmentsByEvent.set(at.eventId, [at])
-  }
   const incidentPhotos: IncidentPhoto[] = []
-  // An incident with a persisted AI read but NO retained photo — the owner removed the photo after
-  // it was analysed (app/event/[id].tsx deletes the event_attachments row + storage object but keeps
-  // the event_ai_analysis). Its read still prints in Appendix A + counts in the vomit phenotype, so
-  // Appendix E MUST disclose it or the "every photographed incident" appendix silently contradicts
-  // them — the exact "photos silently missing → erodes trust" failure the §4 all-photos rule exists
-  // to prevent (vet-report-cold-read finding, PR 7). Counted here for the disclosure; no card (there
-  // is no image to show).
-  let incidentPhotosAnalyzedNoRetained = 0
+  // An incident with a persisted AI read but NO retained photo — the owner removed the photo
+  // after it was analysed (app/event/[id].tsx deletes the event_attachments row + storage
+  // object but keeps the event_ai_analysis). Its read still prints in Appendix A + counts in
+  // the vomit phenotype, so the photos appendix MUST disclose it or the "every photographed
+  // incident" claim silently contradicts them — the exact "photos silently missing → erodes
+  // trust" failure the §4 all-photos rule exists to prevent (vet-report-cold-read, PR 7).
+  // The disclosure's data is `incidentPhotosRemoved`, built above; this loop only skips.
   for (const e of windowEvents) {
     if (!DEDUP_OBSERVATION_TYPES.has(e.type)) continue
     // Union attachments across every member of a de-duplicated bout (§5.11) — a photo logged on a
@@ -4108,10 +4685,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       const a = attachmentsByEvent.get(mid)
       if (a) atts.push(...a)
     }
-    if (atts.length === 0) {
-      if (buildIncidentPhenotype(e.type, e.memberEventIds, analysisByEvent)) incidentPhotosAnalyzedNoRetained++
-      continue
-    }
+    // No retained photo: there is no card to build. The DISCLOSURE for these incidents is
+    // `incidentPhotosRemoved`, computed once above so it cannot drift from this loop.
+    if (atts.length === 0) continue
     atts.sort(
       (a, b) =>
         a.sortOrder - b.sortOrder ||
@@ -4306,6 +4882,19 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     dateOfBirth: input.pet.dateOfBirth,
     dateOfBirthPrecision: input.pet.dateOfBirthPrecision ?? 'exact',
     ownerName: input.ownerName,
+    // CUL-979 — zero counts dropped (a species with nobody in it is not a fact about the
+    // household), the subject's own species first. The mapper already merged by species.
+    household: input.household
+      ? {
+          others: input.household.others
+            .filter((o) => o.count > 0)
+            .sort(
+              (a, b) =>
+                householdRank(a.species, input.pet.species) - householdRank(b.species, input.pet.species),
+            ),
+          complete: input.household.complete,
+        }
+      : null,
     latestWeight: latestOverall
       ? {
           kg: latestOverall.weightKg,
@@ -4479,8 +5068,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     concurrentChanges,
     proteinTimeline,
     provenance,
+    incompletePulls: input.incompletePulls ?? [],
     incidentPhotos,
-    incidentPhotosAnalyzedNoRetained,
+    incidentPhotosRemoved,
     noticed,
   }
 }
@@ -4527,9 +5117,137 @@ function buildWeightSection(
   return { isEmpty, latest, trend }
 }
 
+/**
+ * ── The ONE medication pass for the whole document (CUL-976) ──────────────────────────
+ *
+ * Every medication surface on this report — the page-1 clinical-summary line, Appendix D's
+ * windowed dose table, the §3.8 orphan-dose lines and the §4.4 lifetime table — is built from
+ * this single pass, over the pet's WHOLE record.
+ *
+ * Before this, page 1 ran its own `dose.medicationId === regimen.id` filter, the orphan section
+ * ran a second one, and only the lifetime table went through the shared `attributeDoses`. The
+ * three disagreed exactly where it mattered: a dose logged before the owner created the regimen
+ * row carries `medication_id = NULL` forever (the one-tap path never sets it), so the shared
+ * pass's item+window fallback claimed it for the course while page 1 could not see it at all.
+ * One drug then carried two adherence figures 8 cm apart with opposite clinical answers.
+ *
+ * C-4's resolution is precedence, and precedence needs a single decision to be precedent OVER:
+ * `attributeDoses` is that decision, and every surface here now switches on it, so inverting it
+ * reds all of them together — which is the only proof the rule is shared rather than duplicated.
+ * `grouped` and `unattributed` partition every live dose exactly once, so the counts are taken by
+ * MOVING rows between sections rather than by re-counting them.
+ *
+ * Window scoping happens strictly AFTER attribution, in the consumers. Attribution asks "whose
+ * dose is this?", which the report's window has no business answering.
+ */
+interface MedicationPass {
+  /** Per-regimen attributed doses, in report shape. Keyed by `medications.id`. */
+  byRegimen: Map<string, ReportDoseInput[]>
+  /** Doses belonging to no loaded regimen — the §3.8 orphan population. */
+  unattributed: ReportDoseInput[]
+  /** Course-grain facts (planned doses, end register, spans) keyed by `medications.id`. */
+  courseByRegimen: Map<string, MedicationCourse>
+  /** Every derived course, regimen- and dose-derived alike — the §4.4 table's input. */
+  courses: MedicationCourse[]
+}
+
+function buildMedicationPass(
+  input: ReportInput,
+  droppedEventIds: Set<string>,
+  tz: string | null,
+): MedicationPass {
+  // The untrimmed dose set (window-ignoring). A caller without it falls back to the lookback-
+  // trimmed `doses`, which USED to be "narrower, never wrong" when the value only decided whether
+  // a table rendered. It is no longer harmless: this set is now the numerator of a sentence
+  // reading "N of 28 prescribed doses logged", and the not-tracked copy is the absolute "no doses
+  // logged" rather than the window-qualified form — so a truncated set understates a course and
+  // says so unconditionally. `index.ts` always supplies `lifetimeDoses` (and CUL-975 paginated
+  // that pull), so the fallback is unreachable in production; it is kept for older fixtures and
+  // named here as load-bearing rather than incidental.
+  //
+  // Then drop any dose whose parent event was collapsed as a duplicate. (Medication events never
+  // dedup — each gets a unique key in dedupeEvents — so this is a no-op in practice, but every
+  // dose path must be defined identically, §5.11, so a future dedup change can't diverge them.)
+  const sourceDoses = input.lifetimeDoses ?? input.doses
+  const liveDoses = sourceDoses.filter((d) => !droppedEventIds.has(d.eventId))
+
+  const regimens: MedicationHistoryRegimen[] = input.medications.map((m) => ({
+    id: m.id,
+    medication_item_id: m.medicationItemId,
+    drug_name: m.drugName,
+    dose_amount: m.doseAmount,
+    route: m.route,
+    doses_per_day: m.dosesPerDay,
+    schedule_notes: m.scheduleNotes,
+    started_at: m.startedAt,
+    target_duration_days: m.targetDurationDays,
+    target_duration_doses: m.targetDurationDoses ?? null,
+    status: m.status,
+    ended_at: m.endedAt,
+  }))
+
+  // Map into the shared derivation's input shape, keeping a back-reference to the report row.
+  // `attributeDoses` passes dose OBJECTS through into `grouped`/`unattributed`, so an identity
+  // Map recovers the report shape with no cast and no index arithmetic — and nothing here
+  // depends on the order the rows arrived in (CUL-975 reorders every pull).
+  //
+  // `deleted_at: null` is correct rather than lossy: index.ts pulls only non-deleted doses
+  // (soft-deleted parents are dropped in mapDoseRows) and the dedup drop is filtered above.
+  const srcOf = new Map<AttributableDose, ReportDoseInput>()
+  const attributable: AttributableDose[] = liveDoses.map((d) => {
+    const a: AttributableDose = {
+      medication_id: d.medicationId,
+      medication_item_id: d.medicationItemId,
+      adherence: d.adherence,
+      deleted_at: null,
+      occurred_at: d.occurredAt,
+    }
+    srcOf.set(a, d)
+    return a
+  })
+
+  // ONE attribution, ONE derivation, over the SAME two arrays — `deriveMedicationCourses`
+  // delegates to `attributeDoses` internally, so the partition below and the course facts are
+  // the same decision by construction, not two that happen to agree today.
+  const attribution: DoseAttribution = attributeDoses(regimens, attributable)
+  const courses = deriveMedicationCourses({ regimens, doses: attributable, timeZone: tz ?? undefined })
+
+  const toSrc = (list: readonly AttributableDose[]): ReportDoseInput[] => {
+    const out: ReportDoseInput[] = []
+    for (const a of list) {
+      const src = srcOf.get(a)
+      if (src) out.push(src)
+    }
+    return out
+  }
+
+  const byRegimen = new Map<string, ReportDoseInput[]>()
+  for (const [regimenId, doses] of attribution.grouped) byRegimen.set(regimenId, toSrc(doses))
+
+  const courseByRegimen = new Map<string, MedicationCourse>()
+  for (const c of courses) if (c.regimenId !== null) courseByRegimen.set(c.regimenId, c)
+
+  return {
+    byRegimen,
+    unattributed: toSrc(attribution.unattributed),
+    courseByRegimen,
+    courses,
+  }
+}
+
+/**
+ * Page 1 + Appendix D's per-regimen medication facts (§3.8, B-117 §7).
+ *
+ * `attributedDoses` are the doses the ONE shared attribution pass assigned to THIS regimen —
+ * explicit `medication_id` link first, then the item+window fallback — over the pet's whole
+ * record. This function no longer decides which doses belong here; it only scopes them
+ * (CUL-976). `course` is the same regimen's course-grain facts from the same pass, and is
+ * where the canonical prescription denominator comes from.
+ */
 function buildMedicationAdherence(
   m: ReportMedicationInput,
-  liveDoses: ReportDoseInput[],
+  attributedDoses: ReportDoseInput[],
+  course: MedicationCourse | null,
   scope: ReportScope,
   tz: string | null,
 ): MedicationAdherence {
@@ -4541,12 +5259,11 @@ function buildMedicationAdherence(
   const overlapsWindow = spanStart <= spanEnd
   const elapsedDaysInWindow = overlapsWindow ? spanEnd - spanStart + 1 : 0
 
-  // Doses linked to THIS regimen, administered in the window.
-  const regimenDoses = liveDoses.filter((d) => {
-    if (d.medicationId !== m.id) return false
+  const inWindow = (d: ReportDoseInput): boolean => {
     const dn = eventDayNumber(d.occurredAt, tz)
     return dn !== null && dn >= scope.startDayNum && dn <= scope.endDayNum
-  })
+  }
+
   let given = 0
   let partial = 0
   let missed = 0
@@ -4556,7 +5273,31 @@ function buildMedicationAdherence(
   // The same days as `doseDayNums`, as local day KEYS — Appendix D renders dates, and a day
   // number is only meaningful next to the scope that produced it (B-532).
   const doseDayKeys = new Set<string>()
-  for (const d of regimenDoses) {
+  // Administered-dose days across the WHOLE record, for the dosing span (CUL-994 Part 2). Day
+  // keys are fixed-width 'YYYY-MM-DD', so a lexical min/max IS the chronological one with no
+  // instant parse (B-441-safe) — and it is order-independent, so it does not care which
+  // direction the row pull happened to arrive in (CUL-975 reorders every pull).
+  let lifetimeDosesLogged = 0
+  let lifetimeFirstDoseDay: string | null = null
+  let lifetimeLastDoseDay: string | null = null
+  const lifetimeDoseDayKeys = new Set<string>()
+
+  for (const d of attributedDoses) {
+    const administered = d.adherence === 'given' || d.adherence === 'partial'
+    // Days with an ADMINISTERED dose — given OR partial ONLY. An UNCONFIRMED dose
+    // (adherence null) is deliberately NOT counted here: bundling it as administered
+    // would overstate compliance for a critical drug (adversarial finding 4). It stays
+    // visible as unconfirmedDoses so the render can be honest about it.
+    if (administered) {
+      lifetimeDosesLogged++
+      const dk = localDayKey(d.occurredAt, tz)
+      if (dk !== null) {
+        if (lifetimeFirstDoseDay === null || dk < lifetimeFirstDoseDay) lifetimeFirstDoseDay = dk
+        if (lifetimeLastDoseDay === null || dk > lifetimeLastDoseDay) lifetimeLastDoseDay = dk
+        lifetimeDoseDayKeys.add(dk)
+      }
+    }
+    if (!inWindow(d)) continue
     switch (d.adherence) {
       case 'given':
         given++
@@ -4574,11 +5315,7 @@ function buildMedicationAdherence(
         unconfirmed++
         break
     }
-    // Days with an ADMINISTERED dose — given OR partial ONLY. An UNCONFIRMED dose
-    // (adherence null) is deliberately NOT counted here: bundling it as administered
-    // would overstate compliance for a critical drug (adversarial finding 4). It stays
-    // visible as unconfirmedDoses so the render can be honest about it.
-    if (d.adherence === 'given' || d.adherence === 'partial') {
+    if (administered) {
       const dn = eventDayNumber(d.occurredAt, tz)
       if (dn !== null) doseDayNums.add(dn)
       const dk = localDayKey(d.occurredAt, tz)
@@ -4586,12 +5323,17 @@ function buildMedicationAdherence(
     }
   }
 
-  const expectedDoses =
-    m.dosesPerDay != null && overlapsWindow ? Math.round(m.dosesPerDay * elapsedDaysInWindow) : null
+  // A course with NO attributed dose anywhere in the record is "adherence not tracked", NEVER
+  // "compliant" (spec §4 trap) — baked into the state, not left to the renderer. Doses that fall
+  // outside the window no longer trip this: they are a real record of dosing, and reporting them
+  // as untracked is how the old window-scoped basis understated a completed course.
+  const adherenceState: 'tracked' | 'not_tracked' =
+    attributedDoses.length === 0 ? 'not_tracked' : 'tracked'
 
-  // A regimen with ZERO dose EVENTS in the window is "adherence not tracked", NEVER
-  // "compliant" (spec §4 trap) — baked into the state, not left to the renderer.
-  const adherenceState: 'tracked' | 'not_tracked' = regimenDoses.length === 0 ? 'not_tracked' : 'tracked'
+  // H1 — an ending reads SOLELY from an owner action. A course that merely went quiet has no
+  // recorded end, so it can never render a dosing GAP either: with nothing to be short of, the
+  // last dose is just the last dose.
+  const courseEnded = course?.end.kind === 'ended'
 
   return {
     regimenId: m.id,
@@ -4612,7 +5354,16 @@ function buildMedicationAdherence(
     elapsedDaysInWindow,
     daysWithDose: doseDayNums.size,
     doseDays: [...doseDayKeys].sort(),
-    expectedDoses,
+    // The ONE denominator on this document — the prescription, read from the shared course
+    // derivation rather than re-derived here, so page 1 and the §4.4 table cannot disagree.
+    prescribedDoses: course?.plannedDoses ?? null,
+    lifetimeDosesLogged,
+    lifetimeFirstDoseDay,
+    lifetimeLastDoseDay,
+    lifetimeDoseDayCount: lifetimeDoseDayKeys.size,
+    windowDosesLogged: given + partial,
+    windowDosesTotal: given + partial + missed + refused + unconfirmed,
+    courseEnded: courseEnded === true,
     givenDoses: given,
     partialDoses: partial,
     missedDoses: missed,
@@ -4624,22 +5375,26 @@ function buildMedicationAdherence(
 /**
  * §3.8 orphan-dose gap — doses the owner logged that belong to NO configured regimen, grouped by
  * drug so each reads as one line. A dose carries only `medicationItemId`; its name is resolved
- * through `items` (medication_items). A dose whose `medicationId` points at a regimen we DID load is
- * already counted under that regimen (buildMedicationAdherence) and is excluded here — no double
- * count. A dose whose `medicationId` points at a regimen we somehow did NOT load is treated as
- * unlinked (surfaced) rather than dropped, so nothing logged is silently lost. Counts mirror the
- * regimen path exactly (administered = given + partial; unconfirmed never bundled as given).
+ * through `items` (medication_items).
+ *
+ * `unattributedDoses` comes STRAIGHT from the shared attribution pass's `unattributed` bucket
+ * (CUL-976). That is what makes this a partition rather than two opinions: `grouped` and
+ * `unattributed` are produced by one pass over every dose, so a dose is counted under a regimen
+ * or here, never both and never neither, by construction. This function used to re-derive the
+ * split with its own `medicationId`-only filter, which meant a dose logged before its regimen
+ * row existed was filed HERE — reported to the vet as "no regimen configured" while the lifetime
+ * table counted the very same dose toward the prescription (C-4: two counts over one population
+ * that neither partition nor agree). Counts mirror the regimen path exactly (administered =
+ * given + partial; unconfirmed never bundled as given).
  */
 function buildUnlinkedMedications(
-  liveDoses: ReportDoseInput[],
-  regimenIds: Set<string>,
+  unattributedDoses: ReportDoseInput[],
   items: ReportMedicationItemInput[],
   scope: ReportScope,
   tz: string | null,
 ): UnlinkedMedicationGroup[] {
   const itemById = new Map(items.map((i) => [i.id, i]))
-  const orphan = liveDoses.filter((d) => {
-    if (d.medicationId !== null && regimenIds.has(d.medicationId)) return false
+  const orphan = unattributedDoses.filter((d) => {
     const dn = eventDayNumber(d.occurredAt, tz)
     return dn !== null && dn >= scope.startDayNum && dn <= scope.endDayNum
   })
@@ -4747,43 +5502,13 @@ function medicationItemName(item: ReportMedicationItemInput | null): string {
  */
 function buildMedicationHistory(
   input: ReportInput,
-  droppedEventIds: Set<string>,
+  courses: readonly MedicationCourse[],
   tz: string | null,
 ): MedicationHistoryTable | null {
-  // The untrimmed dose set (window-ignoring); a caller without it falls back to the lookback-
-  // trimmed `doses` — narrower, never wrong. Then drop any dose whose parent event was collapsed
-  // as a duplicate, exactly as `liveDoses` does. (Medication events never dedup — each gets a
-  // unique key in dedupeEvents — so this is a no-op in practice, but the two dose paths must be
-  // defined identically, §5.11, so a future dedup change can't diverge them.)
-  const sourceDoses = input.lifetimeDoses ?? input.doses
-  const liveDoses = sourceDoses.filter((d) => !droppedEventIds.has(d.eventId))
-
-  // Map into the shared derivation's input shape. A ReportDoseInput becomes an AttributableDose
-  // with `deleted_at: null` — index.ts pulls only non-deleted doses (soft-deleted parents are
-  // dropped in mapDoseRows) and the dedup drop is filtered above, so every dose here is live.
-  const regimens: MedicationHistoryRegimen[] = input.medications.map((m) => ({
-    id: m.id,
-    medication_item_id: m.medicationItemId,
-    drug_name: m.drugName,
-    dose_amount: m.doseAmount,
-    route: m.route,
-    doses_per_day: m.dosesPerDay,
-    schedule_notes: m.scheduleNotes,
-    started_at: m.startedAt,
-    target_duration_days: m.targetDurationDays,
-    target_duration_doses: m.targetDurationDoses ?? null,
-    status: m.status,
-    ended_at: m.endedAt,
-  }))
-  const doses: AttributableDose[] = liveDoses.map((d) => ({
-    medication_id: d.medicationId,
-    medication_item_id: d.medicationItemId,
-    adherence: d.adherence,
-    deleted_at: null,
-    occurred_at: d.occurredAt,
-  }))
-
-  const courses = deriveMedicationCourses({ regimens, doses, timeZone: tz ?? undefined })
+  // The courses come from `buildMedicationPass` — the document's ONE attribution + derivation
+  // (CUL-976). This table used to run its own copy of that derivation, which was correct but
+  // was the SECOND of three medication populations on the page; it now reads the same one page 1
+  // does, so the two can no longer disagree even in principle.
   if (courses.length === 0) return null
 
   const itemById = new Map((input.medicationItems ?? []).map((i) => [i.id, i]))
@@ -4880,7 +5605,27 @@ function buildConcurrentChanges(
   // in-window-start-only gate) let the diet take its credit — adversarial finding A1, the
   // spec §4/B-117 highest-consequence misread. An open-ended (still-active) intervention
   // runs to the window end; one that ENDED before the window never overlaps and is dropped.
-  const consider = (kind: InterventionKind, label: string, startDate: string | null, endDate: string | null) => {
+  const consider = (
+    kind: InterventionKind,
+    label: string,
+    startDate: string | null,
+    endDate: string | null,
+    /**
+     * Is `endDate` an end the OWNER declared, or the last day the record happens to carry?
+     * Every caller states it, because the answer is a property of the SOURCE COLUMN and
+     * cannot be recovered from the value. See `ConcurrentChange.endIsDeclared`.
+     */
+    endIsDeclared: boolean,
+    /**
+     * R-14. Drop the entry unless it carries a real in-window TRANSITION (a start or a stop
+     * inside the window). Only the allowed-set rows pass this: a treat permitted before the
+     * report window is part of the standing protocol, and framing a snack as a confounder the
+     * trend "cannot be attributed against" would be both noise and an over-claim. Every other
+     * caller keeps the default — a standing drug with no in-window transition is exactly what
+     * the A1 finding says must never be dropped.
+     */
+    onlyInWindowTransition = false,
+  ) => {
     // A NULL startDate = a standing arrangement whose start was never recorded (a free-fed bowl
     // "always down"). Treat it as active from before the window (spanStart -Infinity) so it is
     // never dropped from the confounder note just because its start date is missing (adversarial
@@ -4895,6 +5640,7 @@ function buildConcurrentChanges(
     // The end date ONLY when it stopped strictly before the window end — so the render says
     // "until <date>" instead of a false present-tense "ongoing since <start>" (adversarial finding).
     const endInWindow = activeEndDn !== null && activeEndDn < scope.endDayNum ? endDate : null
+    if (onlyInWindowTransition && !startedInWindow && endInWindow === null) return
     out.push({
       kind,
       label,
@@ -4903,6 +5649,11 @@ function buildConcurrentChanges(
       bucketIndex: startedInWindow ? bucketIndexOfDay(startDn as number) : null,
       ongoing: !startedInWindow,
       endInWindow,
+      // The stop marker's bucket (R-14). `endInWindow` is by construction inside the window —
+      // the overlap gate above drops a span ending before `startDayNum`, and `endInWindow` is
+      // only set strictly before `endDayNum` — so this is a real index, never a clamp artefact.
+      endBucketIndex: endInWindow !== null ? bucketIndexOfDay(activeEndDn as number) : null,
+      endIsDeclared,
     })
   }
   for (const t of input.dietTrials) {
@@ -4912,16 +5663,56 @@ function buildConcurrentChanges(
     // said "the trial diet (Royal Canin HP) — ongoing since 3 June" about a diet the
     // cat came off three weeks ago. §3.1 writes `ended_at` on BOTH outcomes precisely
     // so this reader has an end; it just never selected the column.
-    consider('diet_trial', t.foodLabel ?? 'Diet trial', t.startedAt, trialEndValue(t))
+    // `ended_at` / `completed_at` are written by an owner action on BOTH outcomes (§3.1), so a
+    // trial's end is declared.
+    consider('diet_trial', t.foodLabel ?? 'Diet trial', t.startedAt, trialEndValue(t), true)
+    // R-14 (CUL-291). A food added to the allowed set AFTER the trial started is a diet change
+    // by the chart legend's own definition, and it was the one class of change no surface drew:
+    // the cold read found a chicken-bearing treat permitted on Jun 8 and fed 25 times, with no
+    // marker on the chart and "Reading the trend" still counting two changes. Routing it through
+    // `consider` is what makes the two agree — the chart and the count read one list.
+    //
+    // The `> trialStartDn` gate is load-bearing, not a nicety: `startDietTrial` writes
+    // `allowed_from = started_at` on the primary diet, so without it EVERY trial would draw a
+    // second, duplicate diet marker on its own start week. A row's `allowedUntil` rides along as
+    // the end, so a permit granted mid-trial and withdrawn again draws both transitions through
+    // the same path.
+    //
+    // Deliberately NOT here: withdrawal of an ORIGINAL-set food (allowed from day one, permit
+    // closed mid-trial). Whether that is a change distinct from the trial itself ending is its
+    // own ruling, and §7's allowed list already carries it as `endedBeforeWindowEnd`. CUL-1018.
+    // `openedAfter` is `trial.ts`'s own predicate — the one §7's allowed list already renders as
+    // `addedAfterStart`. Re-deriving it here with a bare `dayNumber` comparison would be a second
+    // answer to a question the report has already answered, equal until one of them is edited
+    // (C-4). That is the whole reason. An earlier draft of this comment also called the shared
+    // call "the timezone-aware one" — it is not, in practice: `localDayIndexOf` has a
+    // `YYYY-MM-DD` fast path that never consults the zone, and both columns behind this call are
+    // `DATE NOT NULL`, so the argument cannot change the answer. Passing the real zone stays
+    // right (the signature takes one, and a future caller's key may not be a bare DATE), but an
+    // unearned justification is how the next edit preserves the wrong constraint.
+    for (const f of t.allowedFoods ?? []) {
+      if (!openedAfter(f.allowedFrom, t.startedAt, input.timezone ?? undefined)) continue
+      consider('diet_allowed', f.foodLabel, f.allowedFrom, f.allowedUntil, true, true)
+    }
   }
   for (const m of input.medications) {
-    consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt)
+    // A regimen's `ended_at` is an owner action (the End tap), so its end is declared.
+    consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt, true)
   }
   for (const u of unlinkedMedications) {
     // `lastDate` is the last dose IN WINDOW, so an ongoing ad-hoc course reads as
     // ending at its last logged dose rather than running open-ended. That is the
     // honest direction for a dose-derived span: the record ends where the logging does.
-    consider(u.isSupplement ? 'supplement' : 'medication', u.drugName, u.firstDate, u.lastDate)
+    // NOT DECLARED. `lastDate` is the latest dose IN THE RECORD, so an owner who keeps giving a
+    // drug and stops logging it produces the same value as one who stopped it. It stays a dated
+    // fact in the prose ("last dose logged"), and draws no stop glyph.
+    //
+    // THE START END OF THIS SPAN HAS THE SAME PROBLEM AND IS NOT FIXED HERE (CUL-1032). `firstDate`
+    // is the earliest dose IN WINDOW, so an ad-hoc course that began before the window draws
+    // `med start` on the window's first day and the prose says "started" — a window-boundary
+    // artefact wearing an exposure verb, and the mirror of the endpoint above. It is pre-existing
+    // and fixing it changes the START lane on every existing report, so it is its own change.
+    consider(u.isSupplement ? 'supplement' : 'medication', u.drugName, u.firstDate, u.lastDate, false)
   }
   for (const a of input.feedingArrangements) {
     // A free-fed arrangement's `activeFrom` is WHEN THE OWNER FIRST LOGGED THE FOOD in the app,
@@ -4931,7 +5722,10 @@ function buildConcurrentChanges(
     // So pass a NULL start: the diet is a STANDING confounder present across the window with an
     // unrecorded start (no chart marker, framed as context — not a change). `activeUntil` (a
     // deliberate "stopped feeding this" action) is kept, since a stop IS a real signal.
-    if (a.method === 'free_choice') consider('free_fed', a.foodLabel ?? 'Free-fed food', null, a.activeUntil)
+    // DECLARED: `lib/feedingArrangements.ts`'s toggle-off stamps `active_until = today` on an
+    // owner tap. Verified at the writer, not taken from the comment above — R-14's adversarial
+    // pass named this lane's provenance as the one it had not checked.
+    if (a.method === 'free_choice') consider('free_fed', a.foodLabel ?? 'Free-fed food', null, a.activeUntil, true)
   }
   // Explicit total order (matches the determinism discipline of every other sort here) —
   // by start date, then kind, then label, so same-day interventions never depend on push order.

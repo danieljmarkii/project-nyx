@@ -37,14 +37,16 @@
 //      pre-authorised hole for whatever lands in that file next.
 //
 // ── BY SHAPE, NOT BY BARE STRING (C-36, inverted) ────────────────────────────
-// VV-0 seeded a rollout FLAG whose key is also the string `vet_visits`, so a
-// bare-substring detector flags `lib/appConfig.ts`, `lib/betaFeatures.ts` and
+// VV-0 seeded a rollout FLAG whose key was also the string `vet_visits`, so a
+// bare-substring detector flagged `lib/appConfig.ts`, `lib/betaFeatures.ts` and
 // `app/settings/beta.tsx` — three files that read no table at all. C-36 measured the
 // same collision in the other direction on the daily look. Allow-listing them would
-// be the wrong fix twice over: it would excuse three files that need no excuse, and
+// have been the wrong fix twice over: it would excuse files that need no excuse, and
 // it would silently excuse a real read added to any of them later. So the detector
-// matches the SHAPE of a read — a SQL clause or a PostgREST `.from()` — and the
-// three flag files are asserted CLEAN as a measured property of the detector.
+// matches the SHAPE of a read — a SQL clause or a PostgREST `.from()`. The flag
+// retired at GA (CUL-905) and the live files no longer hold the key; the shape rule
+// stays, and the fixture test below still drives every shape the key took, so a
+// config key or a switch case that shares a table's name never reads as a hit.
 //
 // ── WHAT IS NOT SCANNED ──────────────────────────────────────────────────────
 // Test files and `guards/` itself. A guard's fixtures ARE the anti-pattern (C-18),
@@ -147,9 +149,6 @@ const ALLOWED: Record<string, string> = {
     'guards/homeWrites.test.ts measured that when they did.',
 
   // ── Surfaces that are ABOUT a visit ──
-  'app/vet-visit.tsx':
-    'The log-a-visit screen — it WRITES the vet_visits row and its attachments. ' +
-    'The one surface whose subject is the visit itself.',
   'lib/rundown.ts':
     'readLastVisitDate — the vet-visit rundown is by definition anchored to the last ' +
     'visit. It reads the DATE to bound "what changed since then"; the visit ' +
@@ -205,9 +204,6 @@ const MUST_STAY_CLEAN = [
   'supabase/functions/ask/index.ts',
 ];
 
-/** The three VV-0 flag files. Not exemptions — a measured property of the detector. */
-const FLAG_KEY_ONLY = ['lib/appConfig.ts', 'lib/betaFeatures.ts', 'app/settings/beta.tsx'];
-
 /**
  * Files holding a PostgREST read whose table name is a VARIABLE.
  *
@@ -257,8 +253,8 @@ const TABLES = '(?:vet_visits|vet_appointments)';
  * A read or write of the table, by SHAPE. Both dialects the app speaks:
  * local SQLite (`FROM`/`INTO`/`UPDATE`/`JOIN`) and PostgREST (`.from('…')`).
  *
- * Anchored on a clause keyword rather than the bare name so the VV-0 flag key — the
- * same string, used as a config key and a switch case — is not a hit.
+ * Anchored on a clause keyword rather than the bare name so a bare mention — a config
+ * key or a switch case, the shapes the retired VV-0 flag key took — is not a hit.
  */
 const TABLE_PATTERNS: readonly RegExp[] = [
   new RegExp(`\\b(?:FROM|INTO|JOIN)\\s+${TABLES}\\b`, 'i'),
@@ -471,17 +467,6 @@ describe('AC 10 — visit data never reaches a count, a coverage line or an engi
       expect(fs.existsSync(path.join(ROOT, file))).toBe(true);
     }
   });
-
-  it('the VV-0 flag key is not mistaken for the table (C-36, inverted)', () => {
-    // `vet_visits` is a rollout-flag key as well as a table name. These three files
-    // hold the key and read no row, so they must be clean WITHOUT an exemption —
-    // which is what keeps a real read added to any of them tomorrow a build failure.
-    for (const file of FLAG_KEY_ONLY) {
-      expect(fs.existsSync(path.join(ROOT, file))).toBe(true);
-      expect(found.has(file)).toBe(false);
-      expect(Object.keys(ALLOWED)).not.toContain(file);
-    }
-  });
 });
 
 // ── The detector, proven (C-18) ──────────────────────────────────────────────
@@ -539,10 +524,12 @@ describe('the detector itself', () => {
     expect(hits()).toEqual(['lib/c.ts (table)']);
   });
 
-  it('IGNORES the VV-0 flag key in every shape it actually appears in', () => {
+  it('IGNORES a same-named config key in every shape the retired VV-0 flag took', () => {
     // The measured collision, driven rather than asserted about: the registry row,
-    // the switch case and the allowlist-key array from lib/betaFeatures.ts,
-    // app/settings/beta.tsx and lib/appConfig.ts.
+    // the switch case and the allowlist-key array the flag held in
+    // lib/betaFeatures.ts, app/settings/beta.tsx and lib/appConfig.ts until GA
+    // (CUL-905). Kept after the key left the tree because the property is the
+    // detector's, not the flag's.
     writeFixture(
       root,
       'lib/flags.ts',

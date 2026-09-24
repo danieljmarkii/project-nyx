@@ -23,6 +23,20 @@ jest.mock('../../lib/analysis', () => ({
   awaitAnalysisChain: jest.fn(() => Promise.resolve(false)),
 }));
 jest.mock('../../lib/haptics', () => ({ destructiveConfirm: jest.fn() }));
+// D2-7 (CUL-1068): the load wait behind the gate. The gate is a fact this suite sets;
+// the two waits are markers so the swap is what is asserted.
+const mockUseDesignV2 = jest.fn(() => false);
+jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockUseDesignV2() }));
+jest.mock('../../components/brand/WhorlSpinner', () => {
+  const { Text } = require('react-native');
+  const React = require('react');
+  return { WhorlSpinner: () => React.createElement(Text, { testID: 'whorl' }, 'whorl') };
+});
+jest.mock('../../components/designV2/waits/EventSilhouette', () => {
+  const { Text } = require('react-native');
+  const React = require('react');
+  return { EventSilhouette: () => React.createElement(Text, { testID: 'event-silhouette' }, 'silhouette') };
+});
 jest.mock('../../components/event/VomitAnalysisSection', () => ({ VomitAnalysisSection: () => null }));
 jest.mock('../../components/event/StoolAnalysisSection', () => ({ StoolAnalysisSection: () => null }));
 jest.mock('react-native-safe-area-context', () => {
@@ -92,8 +106,30 @@ const baseRow = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockUseDesignV2.mockReturnValue(false);
   mockResolveRecordPetName.mockReturnValue('Biscuit');
   mockGetEventAttachment.mockResolvedValue(null);
+});
+
+describe('the load wait behind design_v2 (D2-7 / CUL-1068)', () => {
+  it('flag-off: the whorl while the row is read, then the record', async () => {
+    mockGetEventById.mockResolvedValue(baseRow);
+    const { getByTestId, queryByTestId, getByText } = render(<EventDetailScreen />);
+    expect(getByTestId('whorl')).toBeTruthy();
+    expect(queryByTestId('event-silhouette')).toBeNull();
+    await waitFor(() => expect(getByText("Biscuit's record")).toBeTruthy());
+    expect(queryByTestId('whorl')).toBeNull();
+  });
+
+  it('flag-on: the screen’s own silhouette while the row is read, never a whorl, then the record', async () => {
+    mockUseDesignV2.mockReturnValue(true);
+    mockGetEventById.mockResolvedValue(baseRow);
+    const { getByTestId, queryByTestId, getByText } = render(<EventDetailScreen />);
+    expect(getByTestId('event-silhouette')).toBeTruthy();
+    expect(queryByTestId('whorl')).toBeNull();
+    await waitFor(() => expect(getByText("Biscuit's record")).toBeTruthy());
+    expect(queryByTestId('event-silhouette')).toBeNull();
+  });
 });
 
 describe('the record block says whose record it is (CUL-660, §5.1)', () => {

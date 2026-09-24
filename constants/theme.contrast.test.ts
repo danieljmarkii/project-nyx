@@ -104,6 +104,44 @@ describe('the bright category colours do NOT clear AA as text on light', () => {
   });
 });
 
+describe('the FAB pair — a floating disc and its glyph (CUL-1063 / D2-2)', () => {
+  // A NON-TEXT target (WCAG 1.4.11): the disc must clear 3:1 against the ground it
+  // floats over, and the plus 3:1 against the disc. Two grounds, because the FAB
+  // floats over both — Home's colorNeutralLight container and the white Cards
+  // scrolling under it.
+  const NON_TEXT = 3;
+
+  const passing: ReadonlyArray<[label: string, fg: string, bg: string]> = [
+    ['the disc on the app ground', theme.colorAccentInk, theme.colorNeutralLight],
+    ['the disc over a white Card', theme.colorAccentInk, theme.colorSurface],
+    ['the plus on the disc', theme.colorTextOnDark, theme.colorAccentInk],
+  ];
+
+  it.each(passing)('%s clears 3:1', (_label, fg, bg) => {
+    expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+
+  // The failing half, which is why the disc is the INK and not the brand teal the
+  // round-4 frames drew: the bright accent is under 3:1 on both grounds, so "the
+  // FAB goes teal" lands one notch darker than the mock. Without this row a later
+  // "simplify to colorAccent" is a green one-token edit.
+  const failing: ReadonlyArray<[label: string, fg: string, bg: string]> = [
+    ['the bright accent on the app ground', theme.colorAccent, theme.colorNeutralLight],
+    ['the bright accent over a white Card', theme.colorAccent, theme.colorSurface],
+  ];
+
+  it.each(failing)('%s does NOT — so it is never the disc', (_label, fg, bg) => {
+    expect(contrastRatio(fg, bg)).toBeLessThan(NON_TEXT);
+  });
+
+  it('records the measured ratios the PR body cites', () => {
+    expect(contrastRatio(theme.colorAccentInk, theme.colorNeutralLight)).toBeCloseTo(4.95, 2);
+    expect(contrastRatio(theme.colorAccentInk, theme.colorSurface)).toBeCloseTo(5.17, 2);
+    expect(contrastRatio(theme.colorTextOnDark, theme.colorAccentInk)).toBeCloseTo(5.17, 2);
+    expect(contrastRatio(theme.colorAccent, theme.colorNeutralLight)).toBeCloseTo(2.17, 2);
+  });
+});
+
 describe('and on a DARK ground the pairing INVERTS — which is why the sweep was a walk', () => {
   // CUL-744 repointed 76 of the 81 accent-as-text sites to the ink and deliberately left
   // five alone. This block is why those five are correct rather than missed.

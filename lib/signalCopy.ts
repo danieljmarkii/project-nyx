@@ -86,7 +86,7 @@ const SYMPTOM_LABEL: Record<SignalSymptomType, string> = {
  *  ("labored_breathing" → "labored breathing") reads plainly instead of rendering literal
  *  "recurring undefined" on the cross-pet safety banner. The incidentFlagPhrase cache-defense
  *  below is the house precedent. */
-function symptomWord(symptomType: SignalSymptomType): string {
+export function symptomWord(symptomType: SignalSymptomType): string {
   return SYMPTOM_LABEL[symptomType] ?? String(symptomType).replace(/_/g, ' ');
 }
 

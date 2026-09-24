@@ -466,6 +466,24 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   // TEXT locally like every other timestamp column in the diet-trial mirror.
   { table: 'diet_trials', column: 'target_protein', type: 'TEXT' },
   { table: 'diet_trials', column: 'target_protein_set_at', type: 'TEXT' },
+  // CUL-1037 / migration 068 — window provenance: the record of a window that
+  // MOVED. Same reason as 053 above: `diet_trials` predates this build, so
+  // CREATE TABLE IF NOT EXISTS is a no-op on an already-installed device and only
+  // this path can add the columns. Without it, the PR 2 write path's local
+  // `UPDATE diet_trials SET target_duration_days_initial = ?` throws "no such
+  // column" on every upgrading phone while working perfectly on a fresh simulator
+  // — the exact failure this list exists to prevent.
+  //
+  // All three nullable, no default, nothing to backfill LOCALLY: the server
+  // migration's backfill travels down through the normal hydrate once PR 2 adds
+  // these to its select, and a local guess would be the app writing down a value
+  // the owner never stated. target_duration_set_at holds an ISO/UTC string, so
+  // TEXT like every other timestamp in this mirror; vet_directed is INTEGER
+  // because SQLite has no BOOLEAN, and NULL vs 0 is deliberately no distinction
+  // (both are silence — spec §5.1's two-sided rule).
+  { table: 'diet_trials', column: 'target_duration_days_initial', type: 'INTEGER' },
+  { table: 'diet_trials', column: 'target_duration_set_at', type: 'TEXT' },
+  { table: 'diet_trials', column: 'target_duration_vet_directed', type: 'INTEGER' },
   // B-671 / Daily Recap DR-6 — the pet-name warmth opt-in. `notification_preferences`
   // shipped in B-661 PR 2 (migration 050) WITHOUT this column, so on any device that
   // already has the table CREATE TABLE IF NOT EXISTS (NOTIFICATION_SCHEMA_SQL) is a

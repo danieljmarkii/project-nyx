@@ -5,11 +5,16 @@ import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { ThemedText } from '../ui/ThemedText';
 import { AppointmentBlock } from './AppointmentBlock';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments } from '../../lib/sync';
-import { cancelVetAppointment, readHomeAppointment, type HomeAppointment } from '../../lib/vetVisits';
+import {
+  cancelVetAppointment,
+  readAppointmentById,
+  readHomeAppointment,
+  removeAppointmentCopy,
+  type AppointmentDetail,
+  type HomeAppointment,
+} from '../../lib/vetVisits';
 import { hasAskedAboutAppointment, markAppointmentAsked } from '../../lib/appointmentAsked';
 
 // The moment (CUL-903 VV-5; spec §4.1 A2 / A2b, mock A2 / A2b).
@@ -49,10 +54,6 @@ import { hasAskedAboutAppointment, markAppointmentAsked } from '../../lib/appoin
 // adds to it.
 
 export function AppointmentStrip() {
-  const eligible = useAllowlistFlag('vet_visits');
-  const optedIn = useBetaOptIn('vet_visits');
-  const enabled = eligible && optedIn;
-
   const activePet = usePetStore((s) => s.activePet);
   const petId = activePet?.id ?? null;
 
@@ -76,7 +77,7 @@ export function AppointmentStrip() {
 
   const load = useCallback(async () => {
     const myId = ++loadIdRef.current;
-    if (!enabled || !petId) {
+    if (!petId) {
       setAppointment(null);
       setLoadedFor(petId);
       return;
@@ -104,7 +105,7 @@ export function AppointmentStrip() {
       setAppointment(null);
       setLoadedFor(petId);
     }
-  }, [enabled, petId]);
+  }, [petId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -112,7 +113,7 @@ export function AppointmentStrip() {
     }, [load]),
   );
 
-  if (!enabled || !appointment || loadedFor !== petId) return null;
+  if (!appointment || loadedFor !== petId) return null;
 
   const { view, phase, id } = appointment;
 
@@ -121,15 +122,44 @@ export function AppointmentStrip() {
     await markAppointmentAsked(id, new Date().toISOString());
   };
 
-  const onDidntHappen = () => {
+  const openGetReady = () => router.push({ pathname: '/rundown', params: { appointmentId: id } });
+
+  const onDidntHappen = async () => {
+    // The copy moved to `lib/vetVisits` with CUL-952, when this stopped being the
+    // only door onto this write — the visits list and the appointment edit reach it
+    // too, and a destructive confirm that says three slightly different things about
+    // the same row is how an owner learns not to trust it.
+    //
+    // It also FIXES a line this file had wrong. *It didn't* only ever renders in the
+    // `after` phase, i.e. once the day has already passed — and the string said
+    // "upcoming visits" every single time, describing a booking that is by
+    // construction not upcoming. The shared helper branches that one word on the
+    // record instead of on which surface is asking.
+    //
+    // THE PREP IS READ AT PRESS TIME (CUL-987 D2). The confirm ends "Nothing else in
+    // the record changes", which is true of the trial and the courses and would be
+    // read as "nothing is lost" — while the questions and notes typed for this visit
+    // live on this row and become unreachable once it is cancelled. So when the row
+    // holds any, the confirm names them. Asked of the RECORD, not of the strip's
+    // state (which never selects them): a one-shot destructive control must ask what
+    // is true now (C-12 / CUL-825). A read that fails shows the failed-remove line,
+    // never a confirm missing the one sentence that makes it honest.
+    let detail: AppointmentDetail | null;
+    try {
+      detail = await readAppointmentById(id);
+    } catch (err) {
+      console.warn('[appointment-strip] prep read failed:', err);
+      Alert.alert('Couldn’t remove it', 'The appointment is still here — try again.');
+      return;
+    }
+    const copy = removeAppointmentCopy(
+      view.scheduledAt,
+      activePet?.name ?? 'your pet',
+      { questions: detail?.questions ?? null, notesDraft: detail?.notes_draft ?? null },
+    );
     Alert.alert(
-      // 'Remove', not 'Cancel': the buttons below say Remove, and on iOS "Cancel"
-      // is also the word for backing out of the dialog — a title and a button using
-      // it for opposite meanings is the one place an owner cannot afford ambiguity.
-      'Remove this appointment?',
-      // Says what it does to the record, and what it does not. An owner who
-      // rescheduled rather than skipped needs to know the old row is going away.
-      `${view.when} will be removed from ${activePet?.name ?? 'your pet'}’s upcoming visits. Nothing else in the record changes.`,
+      copy.title,
+      copy.body,
       [
         { text: 'Keep it', style: 'cancel' },
         {
@@ -159,11 +189,15 @@ export function AppointmentStrip() {
         // The DAY half, never the full `when`: built from the joined string the ask came
         // out as "Did Tuesday · 3:00 pm’s visit happen?".
         appointment={phase === 'upcoming' ? view : { ...view, when: `Did ${view.day}’s visit happen?` }}
+        // On BOTH faces (CUL-987 D1). On the ask it is the door for the answer the two
+        // buttons do not offer — "it moved" — through Get ready's ⋯ *Change*. A
+        // navigation, not a write: this file's one write is still *It didn't*.
+        onPress={openGetReady}
       />
       <View style={styles.doors}>
         {phase === 'upcoming' ? (
           <>
-            <Door label="Get ready" primary onPress={() => router.push({ pathname: '/rundown', params: { appointmentId: id } })} />
+            <Door label="Get ready" primary onPress={openGetReady} />
             {/* A DOOR, not a sheet. Home carries no form (see the header): the
                 question is typed in Get ready, beside the ones already there. */}
             <Door
@@ -184,8 +218,9 @@ export function AppointmentStrip() {
                 // asked once. The visit is still bookable from the Pet tab.
                 //
                 // THE APPOINTMENT RIDES THE ROUTE (CUL-949). This pushed a bare
-                // `/vet-visit`, which flag-on redirects to `/vet-visits/after` with no
-                // param — so the likeliest path through the whole feature arrived
+                // `/vet-visit` (the old visit form, retired at GA by CUL-905), which
+                // during the beta redirected to `/vet-visits/after` with no param —
+                // so the likeliest path through the whole feature arrived
                 // blank: the notes typed before and during the visit were dropped
                 // (`after.tsx` seeds them from `appt.notes_draft`), clinic and reason
                 // were unfilled, and `logVisitFromAppointment` never ran, leaving the

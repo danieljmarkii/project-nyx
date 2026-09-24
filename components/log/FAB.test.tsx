@@ -21,13 +21,6 @@ jest.mock('../../lib/trialContaminant', () => ({
   evaluateMealLogTimeFlag: jest.fn(async () => null),
   noteTrialFlagShown: jest.fn(),
 }));
-// The log_picker_v2 two-gate pair. Both off: this file is about the FAB's own
-// switcher, not the sheet it can open.
-jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
-// Stubbed so its own tree (and its supabase edges) stay out of this file.
-jest.mock('./EventTypeSheet', () => ({ EventTypeSheet: () => null }));
-
 // The switcher is stubbed to report the props it was GIVEN. Rendering the real
 // panel here would test the panel again; what only the FAB can answer is which
 // kind of host it declares itself to be.
@@ -67,7 +60,7 @@ beforeEach(() => {
   mockSwitcherProps.length = 0;
   (router.push as jest.Mock).mockClear();
   seedPets(2);
-  useUiStore.setState({ captureOverlay: null });
+  useUiStore.setState({ captureOverlay: null, logSheet: null });
 });
 
 describe('FAB — the "Logging for" switcher', () => {
@@ -98,6 +91,42 @@ describe('FAB — the "Logging for" switcher', () => {
     seedPets(1);
     const view = await openMenu();
     expect(view.queryByLabelText('Logging for Nyx — switch pet')).toBeNull();
+  });
+});
+
+// ── Three doors, one sheet, never /log (CUL-962, CUL-503, CUL-504) ─────────────
+//
+// More events and the two quick taps all open the ONE log sheet, which the root layout
+// mounts (components/log/LogSheetHost.tsx); the FAB only publishes the request. What
+// only the FAB can answer is which request each row makes, so that is what is pinned —
+// the sheet's own behaviour for a request is LogSheetHost's and EventTypeSheet's.
+//
+// More events: the full-screen push it fell back to while the picker was a beta went
+// with the flag (CUL-962), and nothing else in the tree would notice if it came back.
+// The quick taps (CUL-504): they pushed /log?type=vomit|diarrhea, the full-screen
+// confirm, one tap away in the same menu from the sheet's own confirm for the same
+// event. Each case below reds if its row goes back to a push.
+describe('FAB — the rows that open the log sheet', () => {
+  it.each([
+    ['More events', null],
+    ['Vomit', 'vomit'],
+    ['Loose stool', 'diarrhea'],
+  ] as const)('%s opens the sheet (initialType %s) and pushes nothing', async (row, initialType) => {
+    const view = await openMenu();
+    expect(useUiStore.getState().logSheet).toBeNull();
+    fireEvent.press(view.getByText(row));
+    expect(useUiStore.getState().logSheet).toEqual({ initialType });
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  // Log food is NOT one of them: a meal has its own picker, and the sheet's grid hands a
+  // Meal tap straight back to /log?type=meal anyway. A regression guard, green before and
+  // after — it pins that the re-routing stopped at the three rows above.
+  it('Log food still goes straight to the meal logger', async () => {
+    const view = await openMenu();
+    fireEvent.press(view.getByText('Log food'));
+    expect(router.push).toHaveBeenCalledWith('/log?type=meal');
+    expect(useUiStore.getState().logSheet).toBeNull();
   });
 });
 

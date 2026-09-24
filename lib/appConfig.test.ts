@@ -321,124 +321,6 @@ describe('widget_enabled — Beta-features eligibility (B-712 PR 1)', () => {
   });
 });
 
-// ── log_picker_v2 — the More-events / log-picker redesign gate (B-745 PR 0) ───────
-// PR 0 is schema-only for consumption (migration 056 seeds it dark: {"enabled":
-// false, "allowlist": []}); nothing renders behind it until PR 1. The flag rides the
-// SAME primitive as the Ask + widget keys. The contract to pin here is the
-// same two properties every later UI PR (PR 1..3) depends on: log_picker_v2 is
-// EXTRACTED off an app_config SELECT and it resolves FAIL-CLOSED (off) for both
-// ship-dark cases — the seed unreached (undefined ⇒ fallback) and a signed-out caller
-// against the dark seed. These are unit facts backing FL-1 (byte-identical off) and
-// FL-2 (seed first).
-describe('log_picker_v2 — log-picker redesign eligibility (B-745 PR 0)', () => {
-  it('is part of the unset baseline (undefined until the row is fetched)', () => {
-    expect(ALLOWLIST_FLAGS_UNSET.log_picker_v2).toBeUndefined();
-  });
-
-  it('extracts raw off an app_config SELECT, alongside the Ask + widget keys', () => {
-    const rows = [
-      { key: 'ask_enabled', value: { enabled: false, allowlist: ['a-uid'] } },
-      { key: 'widget_enabled', value: { enabled: false, allowlist: ['w-uid'] } },
-      { key: 'log_picker_v2', value: { enabled: false, allowlist: ['pm-uid'] } },
-    ];
-    const flags = extractAllowlistFlags(rows);
-    expect(flags.log_picker_v2).toEqual({ enabled: false, allowlist: ['pm-uid'] });
-    // The new key does not disturb the other allowlist keys in the same SELECT.
-    expect(flags.ask_enabled).toEqual({ enabled: false, allowlist: ['a-uid'] });
-    expect(flags.widget_enabled).toEqual({ enabled: false, allowlist: ['w-uid'] });
-  });
-
-  it('resolves fail-closed (off) when unset — seed unreached / row absent (FL-1)', () => {
-    // A SELECT without the log-picker row leaves it undefined; the fallback=false
-    // convention (how every allowlist gate is called) then renders the shipped
-    // picker — flag-off is byte-identical because the gate is simply off.
-    const unset = extractAllowlistFlags([{ key: 'ask_enabled', value: false }]).log_picker_v2;
-    expect(unset).toBeUndefined();
-    expect(resolveAllowlistFlag(unset, 'pm-uid', false)).toBe(false);
-  });
-
-  it('the shipped-dark seed {enabled:false, allowlist:[]} is off for everyone', () => {
-    const darkSeed = { enabled: false, allowlist: [] };
-    expect(resolveAllowlistFlag(darkSeed, 'pm-uid', false)).toBe(false);
-    // …and off signed-out, never leaking to the fallback.
-    expect(resolveAllowlistFlag(darkSeed, null, true)).toBe(false);
-  });
-
-  it('an allow-listed uid resolves on; other + signed-out callers stay off', () => {
-    const gated = { enabled: false, allowlist: ['pm-uid'] };
-    expect(resolveAllowlistFlag(gated, 'pm-uid', false)).toBe(true);
-    expect(resolveAllowlistFlag(gated, 'someone-else', false)).toBe(false);
-    expect(resolveAllowlistFlag(gated, null, false)).toBe(false); // signed out → off
-  });
-
-  it('survives the cache round-trip; a cache lacking it decodes to undefined', () => {
-    const stored = { log_picker_v2: { enabled: false, allowlist: ['pm-uid'] } };
-    expect(coerceAllowlistFlags(stored).log_picker_v2).toEqual({
-      enabled: false,
-      allowlist: ['pm-uid'],
-    });
-    expect(coerceAllowlistFlags({ ask_enabled: true }).log_picker_v2).toBeUndefined();
-  });
-});
-
-// ── event_types_v2 — the event-taxonomy expansion gate (B-756/CUL-509, W1-PR-0) ──
-// PR 0 is schema-only for consumption (migration 061 seeds it dark: {"enabled":
-// false, "allowlist": []}); nothing renders behind it until W1-PR-2 gates the
-// capture grid's tile list on it. The flag rides the SAME primitive as the Ask +
-// widget + log-picker keys. The contract pinned here is the same two properties
-// every later capture PR depends on: event_types_v2 is EXTRACTED off an
-// app_config SELECT and resolves FAIL-CLOSED (off) for both ship-dark cases —
-// the seed unreached (undefined ⇒ fallback) and a signed-out caller against the
-// dark seed. These back the taxonomy spec's FL-1 (flag-off capture surfaces
-// byte-identical — because the gate is simply off) and FL-2 (seed first).
-describe('event_types_v2 — event-taxonomy expansion eligibility (B-756 W1-PR-0)', () => {
-  it('is part of the unset baseline (undefined until the row is fetched)', () => {
-    expect(ALLOWLIST_FLAGS_UNSET.event_types_v2).toBeUndefined();
-  });
-
-  it('extracts raw off an app_config SELECT, alongside the other allowlist keys', () => {
-    const rows = [
-      { key: 'widget_enabled', value: { enabled: false, allowlist: ['w-uid'] } },
-      { key: 'log_picker_v2', value: { enabled: false, allowlist: ['lp-uid'] } },
-      { key: 'event_types_v2', value: { enabled: false, allowlist: ['pm-uid'] } },
-    ];
-    const flags = extractAllowlistFlags(rows);
-    expect(flags.event_types_v2).toEqual({ enabled: false, allowlist: ['pm-uid'] });
-    // The new key does not disturb the other allowlist keys in the same SELECT.
-    expect(flags.widget_enabled).toEqual({ enabled: false, allowlist: ['w-uid'] });
-    expect(flags.log_picker_v2).toEqual({ enabled: false, allowlist: ['lp-uid'] });
-  });
-
-  it('resolves fail-closed (off) when unset — seed unreached / row absent (FL-1)', () => {
-    const unset = extractAllowlistFlags([{ key: 'ask_enabled', value: false }]).event_types_v2;
-    expect(unset).toBeUndefined();
-    expect(resolveAllowlistFlag(unset, 'pm-uid', false)).toBe(false);
-  });
-
-  it('the shipped-dark seed {enabled:false, allowlist:[]} is off for everyone', () => {
-    const darkSeed = { enabled: false, allowlist: [] };
-    expect(resolveAllowlistFlag(darkSeed, 'pm-uid', false)).toBe(false);
-    // …and off signed-out, never leaking to the fallback.
-    expect(resolveAllowlistFlag(darkSeed, null, true)).toBe(false);
-  });
-
-  it('an allow-listed uid resolves on; other + signed-out callers stay off', () => {
-    const gated = { enabled: false, allowlist: ['pm-uid'] };
-    expect(resolveAllowlistFlag(gated, 'pm-uid', false)).toBe(true);
-    expect(resolveAllowlistFlag(gated, 'someone-else', false)).toBe(false);
-    expect(resolveAllowlistFlag(gated, null, false)).toBe(false); // signed out → off
-  });
-
-  it('survives the cache round-trip; a cache lacking it decodes to undefined', () => {
-    const stored = { event_types_v2: { enabled: false, allowlist: ['pm-uid'] } };
-    expect(coerceAllowlistFlags(stored).event_types_v2).toEqual({
-      enabled: false,
-      allowlist: ['pm-uid'],
-    });
-    expect(coerceAllowlistFlags({ ask_enabled: true }).event_types_v2).toBeUndefined();
-  });
-});
-
 // ── daily_look — the Noticed (daily look) rollout flag (Home v2, N-0 / CUL-866) ──
 // N-0 is schema-only for consumption (migration 063 seeds it dark: {"enabled":
 // false, "allowlist": []}); nothing renders behind it until the Noticed card PR
@@ -458,14 +340,12 @@ describe('daily_look — Noticed (daily look) eligibility (Home v2, N-0)', () =>
   it('extracts raw off an app_config SELECT, alongside the other allowlist keys', () => {
     const rows = [
       { key: 'widget_enabled', value: { enabled: false, allowlist: ['w-uid'] } },
-      { key: 'event_types_v2', value: { enabled: false, allowlist: ['et-uid'] } },
       { key: 'daily_look', value: { enabled: false, allowlist: ['pm-uid'] } },
     ];
     const flags = extractAllowlistFlags(rows);
     expect(flags.daily_look).toEqual({ enabled: false, allowlist: ['pm-uid'] });
     // The new key does not disturb the other allowlist keys in the same SELECT.
     expect(flags.widget_enabled).toEqual({ enabled: false, allowlist: ['w-uid'] });
-    expect(flags.event_types_v2).toEqual({ enabled: false, allowlist: ['et-uid'] });
   });
 
   it('resolves fail-closed (off) when unset — seed unreached / row absent', () => {
@@ -505,38 +385,40 @@ describe('daily_look — Noticed (daily look) eligibility (Home v2, N-0)', () =>
   });
 });
 
-// ── vet_visits — the vet-visit companion rollout flag (VV-0 / CUL-898) ───────────
-// VV-0 is schema-only for consumption (migration 065 seeds it dark: {"enabled":
-// false, "allowlist": []}); nothing renders behind it until the Pet-tab home PR
-// (VV-2) gates on `eligible && optedIn`. The flag rides the SAME primitive as the
-// Ask + widget + log-picker + event-types + Noticed keys. The contract pinned here
-// is the same two properties every later companion PR depends on: vet_visits is
-// EXTRACTED off an app_config SELECT and resolves FAIL-CLOSED (off) for both
-// ship-dark cases — the seed unreached (undefined ⇒ fallback) and a signed-out
-// caller against the dark seed. These back the spec's byte-identical-off (flag off
-// ⇒ no companion surface renders, guards/vetVisitsFlagOff.test.tsx) and seed-first
-// (VV-0 before any consumer). The extra GA case pins G0 — the companion's GA is
-// EVERY account, not an allowlist forever and never a Premium gate.
-describe('vet_visits — vet-visit companion eligibility (VV-0)', () => {
+// ── design_v2 — the Design v2 rollout flag (D2-0 / CUL-1062) ─────────────────────
+// D2-0 is schema-only for consumption (migration 070 seeds it dark: {"enabled":
+// false, "allowlist": []}); nothing renders behind it until the Signal lane (D2-3)
+// gates on `useDesignV2()` = eligible && optedIn. The flag rides the SAME primitive
+// as the Ask + widget + log-picker + event-types + Noticed + vet-visits keys. The
+// contract pinned here is the same two properties every later Design v2 lane
+// depends on: design_v2 is EXTRACTED off an app_config SELECT and resolves
+// FAIL-CLOSED (off) for both ship-dark cases — the seed unreached (undefined ⇒
+// fallback) and a signed-out caller against the dark seed. These back the
+// byte-identical-off promise (guards/designV2FlagOff.test.tsx) and seed-first
+// (D2-0 before any consumer). The GA case pins the PM ruling — the redesign's GA is
+// EVERY account, a rollout gate only and never a Premium gate.
+describe('design_v2 — Design v2 eligibility (D2-0)', () => {
   it('is part of the unset baseline (undefined until the row is fetched)', () => {
-    expect(ALLOWLIST_FLAGS_UNSET.vet_visits).toBeUndefined();
+    expect(ALLOWLIST_FLAGS_UNSET.design_v2).toBeUndefined();
   });
 
   it('extracts raw off an app_config SELECT, alongside the other allowlist keys', () => {
     const rows = [
       { key: 'widget_enabled', value: { enabled: false, allowlist: ['w-uid'] } },
-      { key: 'daily_look', value: { enabled: false, allowlist: ['dl-uid'] } },
-      { key: 'vet_visits', value: { enabled: false, allowlist: ['pm-uid'] } },
+      { key: 'design_v2', value: { enabled: false, allowlist: ['pm-uid'] } },
+      // The RETIRED Signal-uplift key shares a suffix with this one and may still be
+      // in the SELECT for old builds (its row survives until GA-4). It is not in the
+      // client union, so it must neither be picked nor be mistaken for design_v2.
+      { key: 'signal_design_v2', value: { enabled: true, allowlist: [] } },
     ];
     const flags = extractAllowlistFlags(rows);
-    expect(flags.vet_visits).toEqual({ enabled: false, allowlist: ['pm-uid'] });
-    // The new key does not disturb the other allowlist keys in the same SELECT.
+    expect(flags.design_v2).toEqual({ enabled: false, allowlist: ['pm-uid'] });
     expect(flags.widget_enabled).toEqual({ enabled: false, allowlist: ['w-uid'] });
-    expect(flags.daily_look).toEqual({ enabled: false, allowlist: ['dl-uid'] });
+    expect('signal_design_v2' in flags).toBe(false);
   });
 
   it('resolves fail-closed (off) when unset — seed unreached / row absent', () => {
-    const unset = extractAllowlistFlags([{ key: 'ask_enabled', value: false }]).vet_visits;
+    const unset = extractAllowlistFlags([{ key: 'ask_enabled', value: false }]).design_v2;
     expect(unset).toBeUndefined();
     expect(resolveAllowlistFlag(unset, 'pm-uid', false)).toBe(false);
   });
@@ -544,7 +426,6 @@ describe('vet_visits — vet-visit companion eligibility (VV-0)', () => {
   it('the shipped-dark seed {enabled:false, allowlist:[]} is off for everyone', () => {
     const darkSeed = { enabled: false, allowlist: [] };
     expect(resolveAllowlistFlag(darkSeed, 'pm-uid', false)).toBe(false);
-    // …and off signed-out, never leaking to the fallback.
     expect(resolveAllowlistFlag(darkSeed, null, true)).toBe(false);
   });
 
@@ -552,23 +433,20 @@ describe('vet_visits — vet-visit companion eligibility (VV-0)', () => {
     const gated = { enabled: false, allowlist: ['pm-uid'] };
     expect(resolveAllowlistFlag(gated, 'pm-uid', false)).toBe(true);
     expect(resolveAllowlistFlag(gated, 'someone-else', false)).toBe(false);
-    expect(resolveAllowlistFlag(gated, null, false)).toBe(false); // signed out → off
+    expect(resolveAllowlistFlag(gated, null, false)).toBe(false);
   });
 
-  it('GA (enabled:true) is on for every account — a rollout gate only (G0)', () => {
-    // The companion's GA end state (spec §5.5 / G0): flipping enabled:true turns it
-    // on for everyone, allowlist ignored. The companion is care, not convenience,
-    // so it is never an allowlist-gated feature forever and never a Premium gate.
+  it('GA (enabled:true) is on for every account — a rollout gate only', () => {
     expect(resolveAllowlistFlag({ enabled: true, allowlist: [] }, 'anyone', false)).toBe(true);
     expect(resolveAllowlistFlag({ enabled: true }, null, false)).toBe(true);
   });
 
   it('survives the cache round-trip; a cache lacking it decodes to undefined', () => {
-    const stored = { vet_visits: { enabled: false, allowlist: ['pm-uid'] } };
-    expect(coerceAllowlistFlags(stored).vet_visits).toEqual({
+    const stored = { design_v2: { enabled: false, allowlist: ['pm-uid'] } };
+    expect(coerceAllowlistFlags(stored).design_v2).toEqual({
       enabled: false,
       allowlist: ['pm-uid'],
     });
-    expect(coerceAllowlistFlags({ ask_enabled: true }).vet_visits).toBeUndefined();
+    expect(coerceAllowlistFlags({ ask_enabled: true }).design_v2).toBeUndefined();
   });
 });

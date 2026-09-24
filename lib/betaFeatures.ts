@@ -73,55 +73,6 @@ export const BETA_REGISTRY: BetaFeature[] = [
     serverCost: false,
   },
   {
-    // More-events / log-picker redesign (B-745) — joins the shelf per FL-2 (the
-    // spec's "seed + shelf row land before any consumer" clause): PR 0 registers
-    // the flag and the shelf card dark; PRs 1..3 render the redesign behind
-    // `live = eligible && optedIn`, so being in the cohort no longer turns the new
-    // picker on by itself.
-    key: 'log_picker_v2',
-    title: 'Log screen redesign',
-    // nyx-voice: concrete about what the owner will notice (types grouped so they're
-    // easy to find; simple events finish without a second screen), warm, no
-    // exclamation, and it doesn't sell that it's "new".
-    blurb:
-      'A clearer way to log an event — the types grouped so what you need is easy to find, and simple ones finish without opening another screen.',
-    owner: 'Log-picker redesign (B-745) / Design',
-    addedDate: '2026-08-13',
-    // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a timer.
-    reviewBy: '2026-11-13',
-    // Zero server component (spec §1/§2): the redesign is presentation + step
-    // structure only — same event writes, same sync paths — so no server resource is
-    // spent per opt-in and no server gate is owed.
-    serverCost: false,
-  },
-  {
-    // Event-taxonomy expansion (B-756/CUL-509) — joins the shelf per the taxonomy
-    // spec's FL-2 (seed-first): W1-PR-0 registers the flag and the shelf card dark;
-    // W1-PR-2 renders the new capture tiles behind `live = eligible && optedIn`.
-    // The flag gates CAPTURE only — a flag-off device still renders every row it
-    // reads (`EVENT_TYPES` is never flag-gated, spec §12 FL-1).
-    key: 'event_types_v2',
-    title: 'More event types',
-    // nyx-voice: concrete about what the owner will notice (new kinds of events to
-    // log, named), warm, no exclamation, and it doesn't sell that it's "new-new" —
-    // it says what the record gains.
-    blurb:
-      'More kinds of events to log, starting with cough and sneeze, so what you notice has a place in the record.',
-    owner: 'Event taxonomy (B-756) / Eng',
-    addedDate: '2026-08-27',
-    // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a
-    // timer. Note W1's GA additionally queues behind the log_picker_v2 host chain
-    // (D12), so the call on this row may legitimately be "extend" while that
-    // chain closes.
-    reviewBy: '2026-11-27',
-    // Capture has no server component (spec §12): the engine/report membership
-    // work (W1-PR-3b) ships separately and is account-agnostic — lane membership
-    // is a property of the deployed function, not of any cohort — so no server
-    // gate is owed and the B-712 "server-cost betas gate server-side" rule is
-    // checked and doesn't bite.
-    serverCost: false,
-  },
-  {
     // Noticed — the daily look (Home v2 — the redesign / CUL-866). Joins the
     // shelf seed-first (spec §10 N-0): N-0 registers the flag + the shelf card
     // dark; the later Noticed PRs (N-4a the Home card, N-5 the Patterns card)
@@ -148,43 +99,47 @@ export const BETA_REGISTRY: BetaFeature[] = [
     serverCost: false,
   },
   {
-    // The vet-visit companion (Vet visits — the appointment companion / CUL-898).
-    // Joins the shelf seed-first (spec §5.5): VV-0 registers the flag + the shelf
-    // card dark; the later companion PRs (VV-2 the Pet-tab home, VV-4 the visit,
-    // VV-5 the Home strip + Get ready) render behind `live = eligible && optedIn`,
-    // so being in the cohort turns nothing on by itself. A rollout gate only (G0)
-    // — GA is every account, and the companion is care, never a Premium gate.
-    key: 'vet_visits',
-    title: 'Vet visits',
-    // nyx-voice: concrete about the four moments the owner will actually notice,
-    // warm, no exclamation, plain language (no "rundown", no "companion"). It
-    // deliberately promises no INSIGHT — Get ready brings what the record already
-    // holds, and a quiet record renders no findings at all (spec §7 AC 5) — so the
-    // blurb names what it carries, not a pattern it finds (the daily_look
-    // discipline). "without typing it twice" names the real saving: the plan the
-    // vet gave you becomes the course/trial rows rather than a second entry.
+    // Design v2 — the whole day (CUL-1062, D2-0). Joins the shelf seed-first:
+    // D2-0 registers the flag + the shelf card dark + the flag-off guard; the
+    // later lanes (D2-3 the Signal card + route, D2-4 Home on a real day, D2-5
+    // the month on Patterns, D2-7 the waits) render behind
+    // `live = eligible && optedIn` through hooks/useDesignV2.ts, so being in the
+    // cohort turns nothing on by itself. A rollout gate only (PM, 2026-09-19:
+    // "behind a beta toggle too") — GA is every account, and D2-8 retires the
+    // row along with the old surfaces.
+    key: 'design_v2',
+    title: 'Design v2',
+    // nyx-voice (PM-ruled verbatim on round 4): concrete about the three
+    // surfaces the owner will notice, no exclamation, and it promises no
+    // insight — a redesign draws the same record differently. The second
+    // sentence is the flag-off guarantee said to the owner, and it is the
+    // promise guards/designV2FlagOff.test.tsx keeps.
     blurb:
-      'Everything around a vet appointment — book it, bring what is already in the record with you, take notes in the room, and turn the plan into records without typing it twice.',
-    owner: 'Vet visits (CUL-898) / Eng',
-    addedDate: '2026-09-11',
+      'The new Home, the Signal’s own screen and the month on Patterns. Switch it off and the app is exactly as it was.',
+    owner: 'Design v2 — the whole day / Design',
+    addedDate: '2026-09-20',
     // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a
-    // timer that disables the companion under the cohort. Note GA additionally
-    // waits on the PM's own dogfood pass at a real appointment (VV-GA), so the
-    // call on this row may legitimately be "extend" until one comes around.
-    reviewBy: '2026-12-11',
-    // Client-render-only (spec §5.5): VV-1's schema (vet_appointments, the three
-    // links, vet_visits.deleted_at) is account-agnostic and lands for everyone,
-    // and no Edge Function reads the key — `ask`, `generate-signal` and
-    // `generate-report` are all unaware of it — so no server resource is spent per
-    // opt-in and no server gate is owed.
+    // timer that disables the redesign under the cohort. Graduation here is
+    // D2-8 (GA), which waits on the PM's own device pass (D2-9), so the call on
+    // this row may legitimately be "extend" until that pass has run.
+    reviewBy: '2026-12-20',
+    // Client-render-only: the redesign changes how Home, the Signal and
+    // Patterns are DRAWN — the same rows, the same engine, the same report —
+    // and no Edge Function reads the key, so no server resource is spent per
+    // opt-in and no server gate is owed. The B-712 "server-cost betas gate
+    // server-side" rule is checked and does not bite.
     serverCost: false,
   },
-  // Two Signal betas graduated to GA and were retired from the shelf (CUL-546 Phase 1 /
-  // CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design uplift, B-721) and
-  // `signals_v2` (the "deeper signals" lanes, B-755). Removing the row removes the shelf
-  // card; a persisted opt-in for either key self-cleans (parseBetaOptIns keeps only known
-  // keys), so no storage migration is owed. `signals_v2`'s SERVER eligibility gate in
-  // generate-signal (B-777) is retired separately at GA-3.
+  // Five betas graduated to GA and were retired from the shelf. Two Signal betas first
+  // (CUL-546 Phase 1 / CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design
+  // uplift, B-721) and `signals_v2` (the "deeper signals" lanes, B-755); `signals_v2`'s
+  // SERVER eligibility gate in generate-signal (B-777) is retired separately at GA-3.
+  // Then the two capture betas together (CUL-960 / CUL-962): "Log screen redesign"
+  // (B-745) and "More event types" (B-756), retired in one PR because the second's
+  // grid was the first's grid expanded. Then "Vet visits" (the appointment companion,
+  // CUL-898 → CUL-905), whose surfaces now render for every account. Removing a row
+  // removes its shelf card; a persisted opt-in for any of the five keys self-cleans
+  // (parseBetaOptIns keeps only known keys), so no storage migration is owed.
 ];
 
 // ── The shelf derivation (B-747 — the OR over the registry) ───────────────────
@@ -192,7 +147,7 @@ export const BETA_REGISTRY: BetaFeature[] = [
 // computed. app/settings.tsx's Beta row and app/settings/beta.tsx's shelf both
 // read this, so the row can never again gate on one hard-coded flag while the
 // registry holds more (the B-747 bug: `widget_enabled` alone hid the shelf from
-// an account allowlisted only for `log_picker_v2`).
+// an account allowlisted only for the log-picker redesign beta, B-745).
 //
 // Pure — no I/O, no hooks — so it unit-tests in plain jest and the hook wrapper
 // (hooks/useBetaShelf.ts) can read each store in bulk ONCE and reduce here,

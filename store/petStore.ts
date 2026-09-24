@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSyncStore } from './syncStore';
 
 export interface Pet {
   id: string;
@@ -125,6 +126,26 @@ interface PetState {
   reset: () => void;
 }
 
+// CUL-511 (B-784): a pet write counts as a hydration. The named daily-summary body
+// ("Biscuit's day…") is resolved from THIS store by `reconcileFromPreferences`, which
+// runs on foreground, on settings focus and on `hydrationTick` — so a rename, a second
+// pet, or an archive back to one, made while the app stayed foregrounded, left that
+// night's lock-screen line carrying the old name (or a name on a now-multi-pet
+// account) until something else happened to bump the tick. Same shape as
+// `notifyTrialChanged` / `notifyMedicationsChanged`, and for the same reason it lives
+// in the write path and not at the five call sites that write `pets`: the next screen
+// to add or rename a pet will not know the notification exists. Mutators that only
+// LOAD (`setPets`) or re-point (`selectPet`) never bump — a load that counted as a
+// hydration could re-enter the hydration it was answering.
+function notifyPetsChanged(): void {
+  try {
+    useSyncStore.getState().bumpHydrationTick();
+  } catch (e) {
+    // The store mutation itself succeeded; a refresh-signal failure must not fail it.
+    console.warn('[petStore] hydration tick failed:', e);
+  }
+}
+
 export const usePetStore = create<PetState>((set, get) => ({
   pets: [],
   activePet: null,
@@ -154,8 +175,10 @@ export const usePetStore = create<PetState>((set, get) => ({
       // reproduces the same selection, so nothing is lost on restart.
       activePet: options?.select ? pet : state.activePet ?? pet,
     }));
+    notifyPetsChanged();
   },
-  updatePet: (updates) =>
+  updatePet: (updates) => {
+    if (!get().activePet) return;
     set((state) => {
       if (!state.activePet) return state;
       const activePet = { ...state.activePet, ...updates };
@@ -163,7 +186,9 @@ export const usePetStore = create<PetState>((set, get) => ({
         activePet,
         pets: state.pets.map((p) => (p.id === activePet.id ? activePet : p)),
       };
-    }),
+    });
+    notifyPetsChanged();
+  },
   // The by-id sibling of `updatePet`, and the distinction is load-bearing rather than
   // stylistic (CUL-641, code review). `updatePet` can only ever patch the ACTIVE pet —
   // it derives the target from `state.activePet` — which is right for the screens that
@@ -196,7 +221,8 @@ export const usePetStore = create<PetState>((set, get) => ({
           : state.activePet,
       };
     }),
-  removePet: (petId) =>
+  removePet: (petId) => {
+    if (!get().pets.some((p) => p.id === petId)) return;
     set((state) => {
       const pets = state.pets.filter((p) => p.id !== petId);
       // If the archived pet was active, fall back to the oldest remaining
@@ -208,7 +234,9 @@ export const usePetStore = create<PetState>((set, get) => ({
         pets,
         activePet: resolveActivePet(pets, state.activePet?.id ?? null),
       };
-    }),
+    });
+    notifyPetsChanged();
+  },
   setOnboarded: (isOnboarded) => set({ isOnboarded }),
   reset: () => set({ pets: [], activePet: null, isOnboarded: false }),
 }));

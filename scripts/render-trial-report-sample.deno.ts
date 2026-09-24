@@ -173,6 +173,17 @@ const DENTASTIX = {
 
 function cleanCase(): ReportInput {
   const events: ReportEventInput[] = []
+  // The diet BEFORE the trial — two weeks of the old kibble, logged right up to the vet
+  // visit that started the elimination. Entirely outside the report window, and that is the
+  // point: CUL-851's row is derived from the meal log rather than from a field the app does
+  // not capture, so the only artifact that can show it is one whose pull reaches back past
+  // the trial start. Without this, "Previous diet" prints "Not recorded." on every fixture
+  // while the record plainly holds the answer — which is the contradiction the row exists to
+  // remove, preserved in the very artifacts the cold read reads.
+  for (const d of days('2026-05-04', '2026-05-17')) {
+    events.push(meal({ date: d, brand: 'Purina', product: 'Pro Plan Sensitive Skin', foodItemId: 'f-pp', foodType: 'meal', format: 'kibble', proteins: ['salmon', 'chicken'], ingredientsNotes: 'Salmon, rice, chicken by-product meal, fish oil', intakeRating: 'all' }))
+    events.push(meal({ date: d, time: '18:15:00', brand: 'Purina', product: 'Pro Plan Sensitive Skin', foodItemId: 'f-pp', foodType: 'meal', format: 'kibble', proteins: ['salmon', 'chicken'], ingredientsNotes: 'Salmon, rice, chicken by-product meal, fish oil', intakeRating: 'all' }))
+  }
   // Two meals a day of the trial diet, dry + wet, from the day the owner started
   // logging (three days after the vet-set start date — the car-park case).
   for (const d of days('2026-05-21', '2026-07-02')) {
@@ -194,6 +205,15 @@ function cleanCase(): ReportInput {
   events.push(meal({ date: '2026-06-14', time: '19:40:00', brand: 'Home', product: 'Roast chicken', foodItemId: 'f-hf', foodType: 'other', format: 'human_food', proteins: ['chicken'], notes: 'kids fed him at the table' }))
   events.push(meal({ date: '2026-06-27', time: '19:20:00', brand: 'Home', product: 'Roast chicken', foodItemId: 'f-hf', foodType: 'other', format: 'human_food', proteins: ['chicken'] }))
   events.push(meal({ date: '2026-06-21', time: '07:40:00', brand: 'Purina', product: 'Pro Plan Sensitive Skin', foodItemId: 'f-pp', foodType: 'meal', format: 'kibble', proteins: ['salmon', 'chicken'], ingredientsNotes: 'Salmon, rice, chicken by-product meal, fish oil', intakeRating: 'all', notes: 'ran out of the HP, one breakfast' }))
+
+  // Two observations the owner logged as `other`, because the app offers no leaf for them —
+  // the shape R-10 (CUL-974) found on the PM's own record the day before a real appointment.
+  // They reach no count, no chart and no appendix row, and R-15 brief 7(b) is why the report
+  // now says so: without a fixture carrying one, the disclosure renders in no artifact and
+  // the cold read that follows the deploy cannot see it. The NOTES are deliberately here and
+  // deliberately never printed — (b) is a count and no content.
+  events.push(sym('other', '2026-06-28', '16:41:00', 'Tipping ear down'))
+  events.push(sym('other', '2026-06-28', '21:10:00', 'Shaking her head - ear is bothering her'))
 
   // Itch and ear-scratching, falling through the trial.
   for (const d of ['2026-05-21', '2026-05-22', '2026-05-23', '2026-05-25', '2026-05-26', '2026-05-28', '2026-05-30', '2026-05-31', '2026-06-02', '2026-06-04', '2026-06-06']) {
@@ -305,6 +325,11 @@ function refusedCase(): ReportInput {
       weightKg: 4.1,
     },
     ownerName: 'Sam Ortiz',
+    // CUL-979 — Mira shares the home with a second cat. This is the Nyx shape the cold read
+    // found the report withholding: a refused trial, a free-fed bowl still down, and another
+    // animal whose food is a standing competing antigen the record can only name as
+    // AVAILABLE. Count and species only; the fixture carries no second name.
+    household: { others: [{ species: 'cat', count: 1 }], complete: true },
     events,
     aiAnalyses: [],
     weightChecks: [
@@ -732,6 +757,156 @@ function pastWindowCase(): ReportInput {
   }
 }
 
+// ── CUL-1041 §5.1 — A WINDOW THAT MOVED ──────────────────────────────────────
+//
+// The five cases above all render a window that was set once and never touched, so
+// none of them can show the sentence this PR adds — and the `vet-report-cold-read`
+// gate reads the artifact, not the code. Two are emitted, because the difference
+// between them is the clinical signal rather than a formatting variant:
+//
+//   trial-report-extended.html      — Nala, an 8-week trial taken to 12 weeks ON the
+//                                     day the 8 weeks ended, at the vet's direction.
+//                                     The disciplined case: a planned continuation.
+//   trial-report-extended-late.html — Bruno, a 4-week trial that ran 22 days past its
+//                                     window before anyone moved it. Same feature,
+//                                     and the one carrying an accusation: today this
+//                                     tap DELETES the page's own overrun disclosure
+//                                     ("day 50 — 22 days past the 28-day window"
+//                                     becomes "day 50 of 64") and the reader is left
+//                                     with a trial that looks on schedule.
+
+const FISH = {
+  foodItemId: 'f-fish',
+  foodLabel: 'Hill\u2019s Derm Complete Whitefish',
+  role: 'primary_diet',
+  allowedFrom: '2026-05-04',
+  allowedUntil: null,
+  primaryProtein: 'whitefish',
+  brand: 'Hill\u2019s',
+  productName: 'Derm Complete Whitefish',
+  proteins: ['whitefish'],
+  ingredientsNotes: 'Whitefish, brewers rice, egg, minerals',
+}
+
+/** One window-move artifact. `startedAt` is chosen so the trial lands on `dayOfTrial`
+ *  as of NOW, rather than being restated as a literal beside it. */
+function windowMoveCase(o: {
+  petId: string
+  petName: string
+  ownerName: string
+  breed: string
+  sex: 'male' | 'female'
+  dayOfTrial: number
+  priorWindowDays: number
+  targetDurationDays: number
+  /** The trial day the owner moved the window on. */
+  movedOnDayOfTrial: number
+  vetDirected: boolean
+  symptomDays: string[]
+}): ReportInput {
+  const today = NOW.slice(0, 10)
+  const plus = (key: string, n: number) =>
+    new Date(Date.parse(`${key}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
+  const startedAt = plus(today, -(o.dayOfTrial - 1))
+  const movedOn = plus(startedAt, o.movedOnDayOfTrial - 1)
+
+  const events: ReportEventInput[] = []
+  for (const d of days(startedAt, today)) {
+    events.push(meal({ date: d, brand: 'Hill\u2019s', product: 'Derm Complete Whitefish', foodItemId: 'f-fish', proteins: FISH.proteins, ingredientsNotes: FISH.ingredientsNotes, intakeRating: 'all', format: 'kibble' }))
+  }
+  for (const d of o.symptomDays) events.push(sym('itch', d))
+
+  return {
+    now: NOW,
+    timezone: TZ,
+    pet: {
+      id: o.petId,
+      name: o.petName,
+      species: 'dog',
+      breed: o.breed,
+      sex: o.sex,
+      dateOfBirth: '2021-06-14',
+      neuterStatus: 'neutered',
+      weightKg: 22.6,
+    },
+    ownerName: o.ownerName,
+    events,
+    aiAnalyses: [],
+    weightChecks: [],
+    doses: [],
+    medications: [],
+    medicationItems: [],
+    dietTrials: [
+      {
+        id: `trial-${o.petId}`,
+        foodItemId: 'f-fish',
+        startedAt,
+        targetDurationDays: o.targetDurationDays,
+        status: 'active',
+        completedAt: null,
+        endedAt: null,
+        indication: 'skin',
+        vetName: 'Dr. A. Chen',
+        foodLabel: FISH.foodLabel,
+        primaryProtein: 'whitefish',
+        proteins: FISH.proteins,
+        ingredientsNotes: FISH.ingredientsNotes,
+        extractionConfidence: { proteins: 0.9 },
+        allowedFoods: [{ ...FISH, allowedFrom: startedAt }],
+        // CUL-1041 / migration 068 — the three columns §5.1's sentence is built from.
+        targetDurationDaysInitial: o.priorWindowDays,
+        targetDurationSetAt: `${movedOn}T14:00:00Z`,
+        targetDurationVetDirected: o.vetDirected,
+      },
+    ],
+    // THE VISIT ANCHORS THE REPORT'S WINDOW, so it sits at the trial's start rather
+    // than at the move: a visit on the move date opens a `since_visit` scope of a few
+    // days and buries the trial block under a truncation disclosure, which is a real
+    // shape (B-600 owns it, and `trial-report-truncated.html` is the artifact for it)
+    // but not the one these two exist to show.
+    vetVisits: [{ visitedAt: startedAt, clinicName: 'Riverside Veterinary', vetName: 'Dr. A. Chen', reason: 'itch \u2014 start elimination diet' }],
+    feedingArrangements: [],
+    conditions: [{ conditionName: 'Suspected cutaneous adverse food reaction', status: 'active', diagnosedAt: startedAt }],
+    audience: { kind: 'owner', includeLookNotes: true },
+  }
+}
+
+/** §5.1's worked case: eight weeks taken to twelve, on the day the eight ended. */
+function extendedCase(): ReportInput {
+  return windowMoveCase({
+    petId: 'pet-nala',
+    petName: 'Nala',
+    ownerName: 'Priya Raman',
+    breed: 'Boxer',
+    sex: 'female',
+    dayOfTrial: 60,
+    priorWindowDays: 56,
+    targetDurationDays: 84,
+    movedOnDayOfTrial: 56,
+    vetDirected: true,
+    symptomDays: ['2026-05-06', '2026-05-11', '2026-05-19', '2026-05-27', '2026-06-08', '2026-06-21'],
+  })
+}
+
+/** §5.4's case: four weeks, overrun by 22 days, then moved. The tap that deletes the
+ *  page's only staleness disclosure — and the box was NOT ticked, so the report must
+ *  say nothing at all about who decided it. */
+function extendedLateCase(): ReportInput {
+  return windowMoveCase({
+    petId: 'pet-bruno',
+    petName: 'Bruno',
+    ownerName: 'Tom Ellery',
+    breed: 'Cocker Spaniel',
+    sex: 'male',
+    dayOfTrial: 50,
+    priorWindowDays: 28,
+    targetDurationDays: 64,
+    movedOnDayOfTrial: 50,
+    vetDirected: false,
+    symptomDays: ['2026-05-18', '2026-05-24', '2026-06-02', '2026-06-14', '2026-06-25', '2026-06-30'],
+  })
+}
+
 const outDir = Deno.args[0] ?? '.'
 for (const [name, input] of [
   ['trial-report-clean.html', cleanCase()],
@@ -739,6 +914,8 @@ for (const [name, input] of [
   ['trial-report-completed.html', completedCase()],
   ['trial-report-truncated.html', truncatedCase()],
   ['trial-report-past-window.html', pastWindowCase()],
+  ['trial-report-extended.html', extendedCase()],
+  ['trial-report-extended-late.html', extendedLateCase()],
 ] as const) {
   const html = renderReport(assembleReport(input))
   await Deno.writeTextFile(`${outDir}/${name}`, html)

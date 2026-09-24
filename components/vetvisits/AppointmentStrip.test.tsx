@@ -12,9 +12,6 @@ jest.mock('expo-router', () => ({
   },
 }));
 
-const flags = { eligible: true, optedIn: true };
-jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => flags.eligible }));
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => flags.optedIn }));
 const activePet: { current: { id: string; name: string; species: string } } = {
   current: { id: 'p1', name: 'Mochi', species: 'cat' },
 };
@@ -39,6 +36,8 @@ const mockGate: { holdNext: boolean; release: null | (() => void) } = {
   release: null,
 };
 const mockAsked = { value: false };
+// What the row holds when the remove confirm asks the record (CUL-987 D2).
+const mockDetail: { current: unknown; fail: boolean } = { current: null, fail: false };
 jest.mock('../../lib/vetVisits', () => {
   const actual = jest.requireActual('../../lib/vetVisits');
   return {
@@ -55,6 +54,10 @@ jest.mock('../../lib/vetVisits', () => {
       return petId in mockByPet ? mockByPet[petId] : mockHome.current;
     }),
     cancelVetAppointment: jest.fn(async () => undefined),
+    readAppointmentById: jest.fn(async () => {
+      if (mockDetail.fail) throw new Error('read failed');
+      return mockDetail.current;
+    }),
   };
 });
 jest.mock('../../lib/appointmentAsked', () => ({
@@ -66,7 +69,7 @@ import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { AppointmentStrip } from './AppointmentStrip';
-import { cancelVetAppointment, readHomeAppointment, type HomeAppointment } from '../../lib/vetVisits';
+import { cancelVetAppointment, type HomeAppointment } from '../../lib/vetVisits';
 import { markAppointmentAsked } from '../../lib/appointmentAsked';
 
 function homeAppointment(phase: 'upcoming' | 'after'): HomeAppointment {
@@ -77,6 +80,14 @@ function homeAppointment(phase: 'upcoming' | 'after'): HomeAppointment {
     view: {
       id: 'appt-1',
       petId: 'p1',
+      // Today at 3pm, matching `isToday` below. Anchored to now rather than a
+      // literal date (C-29); the strip itself never reads this, but the confirm
+      // copy shared with the visits list and the edit screen does.
+      scheduledAt: (() => {
+        const d = new Date();
+        d.setHours(15, 0, 0, 0);
+        return d.toISOString();
+      })(),
       stamp: { day: '16', month: 'Sep' },
       when: 'Tuesday · 3:00 pm',
       day: 'Tuesday',
@@ -90,36 +101,17 @@ function homeAppointment(phase: 'upcoming' | 'after'): HomeAppointment {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  flags.eligible = true;
-  flags.optedIn = true;
   mockHome.current = null;
   mockAsked.value = false;
   mockGate.holdNext = false;
   mockGate.release = null;
   for (const k of Object.keys(mockByPet)) delete mockByPet[k];
   activePet.current = { id: 'p1', name: 'Mochi', species: 'cat' };
+  mockDetail.current = null;
+  mockDetail.fail = false;
 });
 
-describe('the flag gates the strip AND the read', () => {
-  it('renders nothing and reads nothing when the account is not allowlisted', async () => {
-    flags.eligible = false;
-    mockHome.current = homeAppointment('upcoming');
-    const r = render(<AppointmentStrip />);
-    await act(async () => {});
-    expect(r.toJSON()).toBeNull();
-    // A dark feature reads nothing either: the gate is not only about pixels.
-    expect(readHomeAppointment).not.toHaveBeenCalled();
-  });
-
-  it('renders nothing when the owner has not opted in', async () => {
-    flags.optedIn = false;
-    mockHome.current = homeAppointment('upcoming');
-    const r = render(<AppointmentStrip />);
-    await act(async () => {});
-    expect(r.toJSON()).toBeNull();
-    expect(readHomeAppointment).not.toHaveBeenCalled();
-  });
-
+describe('outside the window', () => {
   it('renders nothing when there is no booking in the window', async () => {
     const r = render(<AppointmentStrip />);
     await act(async () => {});
@@ -220,12 +212,17 @@ describe('*It didn’t* — Home’s one write, and it is confirmed first', () =
     const r = render(<AppointmentStrip />);
     fireEvent.press(await r.findByText('It didn’t'));
 
-    expect(spy).toHaveBeenCalled();
+    // Awaited: the confirm now asks the record for the row's prep first (CUL-987 D2).
+    await waitFor(() => expect(spy).toHaveBeenCalled());
     const [, body] = spy.mock.calls[0];
     // C-21: exactly one safety net, and for a write with no undo it is the confirm.
     // It says what leaves the record AND what stays — an owner who rescheduled rather
     // than skipped needs to know the old row is going away.
-    expect(body).toMatch(/upcoming visits/);
+    // NOT "upcoming visits" — this door only renders once the day has PASSED, and
+    // the string said "upcoming" on every one of them until CUL-952 moved the copy
+    // into `removeAppointmentCopy`, which branches that word on the record.
+    expect(body).toMatch(/’s visits/);
+    expect(body).not.toMatch(/upcoming/);
     expect(body).toMatch(/Nothing else in the record changes/);
     // Nothing written yet.
     expect(cancelVetAppointment).not.toHaveBeenCalled();
@@ -264,6 +261,71 @@ describe('*It didn’t* — Home’s one write, and it is confirmed first', () =
     await waitFor(() => expect(alerts).toContain('Couldn’t remove it'));
     // And the strip stays put, so the owner can see the appointment is still there.
     expect(r.queryByText(/Did Tuesday/)).toBeTruthy();
+    spy.mockRestore();
+  });
+});
+
+// CUL-987 D1 — the appointment block is the door to Get ready, on both faces.
+describe('the block opens Get ready (CUL-987 D1)', () => {
+  it.each(['upcoming', 'after'] as const)('on the %s face, for THIS appointment', async (phase) => {
+    mockHome.current = homeAppointment(phase);
+    const r = render(<AppointmentStrip />);
+    const block = await r.findByLabelText(/Riverside Animal Hospital · recheck$/);
+    fireEvent.press(block);
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/rundown', params: { appointmentId: 'appt-1' } });
+  });
+
+  it('is a navigation only — no write on the tap, and the ask is not spent', async () => {
+    mockHome.current = homeAppointment('after');
+    const r = render(<AppointmentStrip />);
+    fireEvent.press(await r.findByLabelText(/Riverside Animal Hospital · recheck$/));
+    expect(cancelVetAppointment).not.toHaveBeenCalled();
+    // The ask stays for when the owner comes back — tapping to change the date is not
+    // an answer to "did it happen?".
+    expect(markAppointmentAsked).not.toHaveBeenCalled();
+  });
+
+  it('announces as a button that says where it goes', async () => {
+    mockHome.current = homeAppointment('upcoming');
+    const r = render(<AppointmentStrip />);
+    const block = await r.findByLabelText(/Riverside Animal Hospital · recheck$/);
+    expect(block.props.accessibilityRole).toBe('button');
+    expect(block.props.accessibilityHint).toBe('Opens Get ready for this visit');
+  });
+});
+
+// CUL-987 D2 — the remove confirm names the prep that leaves with the row.
+describe('the remove confirm says what goes with it (CUL-987 D2)', () => {
+  const twoQuestions = JSON.stringify([
+    { id: 'q1', text: 'Is the weight loss a worry?', source: 'owner' },
+    { id: 'q2', text: 'How long on the new food?', source: 'owner' },
+  ]);
+
+  it('names the saved questions, read from the RECORD at press time', async () => {
+    const spy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockHome.current = homeAppointment('after');
+    mockDetail.current = { id: 'appt-1', questions: twoQuestions, notes_draft: null };
+    const r = render(<AppointmentStrip />);
+    fireEvent.press(await r.findByText('It didn’t'));
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    const [, body] = spy.mock.calls[0];
+    expect(body).toMatch(/Your 2 questions for this visit go with it\. Nothing else in the record changes\.$/);
+    spy.mockRestore();
+  });
+
+  it('a failed read is a failed remove — never a confirm without the sentence', async () => {
+    const alerts: string[] = [];
+    const spy = jest.spyOn(Alert, 'alert').mockImplementation((title) => {
+      alerts.push(String(title));
+    });
+    mockHome.current = homeAppointment('after');
+    mockDetail.fail = true;
+    const r = render(<AppointmentStrip />);
+    fireEvent.press(await r.findByText('It didn’t'));
+
+    await waitFor(() => expect(alerts).toEqual(['Couldn’t remove it']));
+    expect(cancelVetAppointment).not.toHaveBeenCalled();
     spy.mockRestore();
   });
 });

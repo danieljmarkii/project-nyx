@@ -68,13 +68,6 @@ jest.mock('../../store/petStore', () => {
 });
 // Mutable so a test can simulate the owner switching pets mid-write.
 let mockPetState: { activePet: { id: string } | null } = { activePet: { id: 'p1' } };
-// CUL-904 VV-6 — the vet-visit timeline row, behind the `vet_visits` rollout flag.
-// Mutable so one suite can drive both sides of the gate.
-let mockVetVisitsFlag = false;
-jest.mock('../../hooks/useAppConfig', () => ({
-  useAllowlistFlag: () => mockVetVisitsFlag,
-}));
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => mockVetVisitsFlag }));
 // The READ is stubbed; every pure rule in the module is the real one
 // (`jest.requireActual`), because the rule is not what needs standing in — C-34,
 // where a mock that replaced a pure predicate hid the defect it was covering for.
@@ -145,7 +138,6 @@ let showSpy: jest.SpyInstance;
 beforeEach(() => {
   jest.clearAllMocks();
   mockParams = {};
-  mockVetVisitsFlag = false;
   mockReadVisits.mockResolvedValue([]);
   mockPetState = { activePet: { id: 'p1' } };
   useEventStore.setState({ todayEvents: [] });
@@ -314,11 +306,9 @@ describe('History — a delete that fails', () => {
 
 // ── The vet visit row (CUL-904 VV-6; spec §4.1 History + §7 AC 10) ──────────────
 //
-// The gate's other half. `guards/vetVisitsFlagOff.test.tsx` compares whole trees
-// but renders them SYNCHRONOUSLY, so it cannot see a row whose render waits on an
-// async read — measured in VV-6 by deleting the gate below and watching that suite
-// stay green. This is where the row's flag is actually falsifiable, because the
-// data is controllable here and the effects are flushed.
+// The row renders for every account since GA (CUL-905). Its reads are asserted
+// here rather than through a whole-tree snapshot because the row waits on an async
+// read, and this is where the data is controllable and the effects are flushed.
 
 /** Local midnight of a 'YYYY-MM-DD', the shape readVisitsForHistory returns. */
 function visitRow(id: string, visitedAt: string, over: Record<string, unknown> = {}) {
@@ -336,7 +326,6 @@ function visitRow(id: string, visitedAt: string, over: Record<string, unknown> =
 
 describe('History — the vet visit row', () => {
   it('renders a visit in the stream, with the record it names', async () => {
-    mockVetVisitsFlag = true;
     mockGetTimeline.mockResolvedValue([]);
     mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
 
@@ -348,7 +337,6 @@ describe('History — the vet visit row', () => {
   });
 
   it('opens the VISIT, not an event screen', async () => {
-    mockVetVisitsFlag = true;
     mockGetTimeline.mockResolvedValue([]);
     mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
 
@@ -365,25 +353,7 @@ describe('History — the vet visit row', () => {
     });
   });
 
-  it('flag-off: no row, and no read of the table at all', async () => {
-    mockVetVisitsFlag = false;
-    mockGetTimeline.mockResolvedValue([]);
-    // The read would answer if it were called, so a missing row can only mean the
-    // gate held — rather than the fixture simply being empty, which is the way
-    // this test would otherwise pass over the defect.
-    mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
-
-    const { queryByText, getByText } = render(<HistoryScreen />);
-
-    await waitFor(() => expect(getByText('Nothing logged yet')).toBeTruthy());
-    expect(queryByText('Vet visit')).toBeNull();
-    // Dark means dark (G0): the flag gates the READ as well as the row, so a
-    // non-allowlisted owner's device never queries the companion's tables.
-    expect(mockReadVisits).not.toHaveBeenCalled();
-  });
-
   it('a type lens is a lens over EVENTS, so the visit leaves with the markers', async () => {
-    mockVetVisitsFlag = true;
     mockParams = { type: 'meal', window: '30d', ts: '1' };
     mockGetTimeline.mockResolvedValue([row('e1')]);
     mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
@@ -404,7 +374,6 @@ describe('History — the vet visit row', () => {
   // could see. It moved to lib/historyTimeline.test.ts, over the data.
 
   it('is not an events row: the timeline query is untouched and it renders through its own component', async () => {
-    mockVetVisitsFlag = true;
     mockGetTimeline.mockResolvedValue([row('e1')]);
     mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
 
@@ -423,7 +392,6 @@ describe('History — the vet visit row', () => {
   });
 
   it('the retry re-reads visits too, not just the timeline', async () => {
-    mockVetVisitsFlag = true;
     mockGetTimeline.mockRejectedValueOnce(new Error('transient'));
     const { getByText } = render(<HistoryScreen />);
     await waitFor(() => expect(getByText("Couldn't load history")).toBeTruthy());
@@ -446,7 +414,6 @@ describe('History — the vet visit row', () => {
 
 describe('History — the visit read is a second source, and the screen treats it as one', () => {
   it('does not say "Nothing logged yet" over a pet whose only record is a vet visit', async () => {
-    mockVetVisitsFlag = true;
     // The timeline answers EMPTY and answers FIRST — the ordinary case for a pet
     // with a visit and no logged events, and the one that used to render a claim
     // about the record before the second source had spoken.
@@ -466,7 +433,6 @@ describe('History — the visit read is a second source, and the screen treats i
   });
 
   it('renders the error state when the VISIT read fails — not an empty record', async () => {
-    mockVetVisitsFlag = true;
     mockGetTimeline.mockResolvedValue([]);
     mockReadVisits.mockRejectedValue(new Error('disk gone'));
 
@@ -480,18 +446,7 @@ describe('History — the visit read is a second source, and the screen treats i
     expect(queryByText(/disk gone/)).toBeNull();
   });
 
-  it('flag-off still reaches the designed empty state rather than skeletoning forever', async () => {
-    // The other edge of the same gate: with the flag off no visit read happens, so
-    // nothing is ever going to answer and the empty state must not wait for it.
-    mockVetVisitsFlag = false;
-    mockGetTimeline.mockResolvedValue([]);
-
-    const { getByText } = render(<HistoryScreen />);
-    await waitFor(() => expect(getByText('Nothing logged yet')).toBeTruthy());
-  });
-
   it('an older visit read resolving last cannot clobber the fresher rows', async () => {
-    mockVetVisitsFlag = true;
     mockGetTimeline.mockRejectedValueOnce(new Error('transient'));
     const deferred: Array<(rows: unknown[]) => void> = [];
     mockReadVisits.mockImplementation(
@@ -518,27 +473,5 @@ describe('History — the visit read is a second source, and the screen treats i
     // is looking at disappears, with nothing to bring it back until the next focus.
     expect(getByText('Vet visit')).toBeTruthy();
     expect(queryByText('Nothing logged yet')).toBeNull();
-  });
-
-  it('a flag resolving while History is on screen does not reset the timeline', async () => {
-    // `useAllowlistFlag` re-resolves on foreground and on sign-in, so this happens
-    // to a mounted, focused History tab in ordinary use. The focus callback's deps
-    // are what decide whether that is free or costs the owner their place: with the
-    // flag in them, expo-router re-invokes the whole focus body — offset back to 0,
-    // the expanded row collapsed, every page re-queried — for a config refresh.
-    mockVetVisitsFlag = false;
-    mockGetTimeline.mockResolvedValue([row('e1')]);
-    const { getByText, rerender } = render(<HistoryScreen />);
-    await waitFor(() => expect(getByText('event e1')).toBeTruthy());
-
-    const timelineCallsBefore = mockGetTimeline.mock.calls.length;
-    mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
-    mockVetVisitsFlag = true;
-    await act(async () => { rerender(<HistoryScreen />); });
-
-    // The visits arrive — the standalone effect owns that...
-    await waitFor(() => expect(getByText('Vet visit')).toBeTruthy());
-    // ...and the timeline was not re-read to get them.
-    expect(mockGetTimeline.mock.calls.length).toBe(timelineCallsBefore);
   });
 });

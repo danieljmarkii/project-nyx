@@ -14,15 +14,13 @@ import { rundownDateLine, pastMedsSectionLabel, type Rundown, type RundownTap } 
 // one component makes the equality structural.
 //
 // It carries its own `testID` so the assertion has a handle without a convention
-// anybody has to remember (the flag-off guard's header makes the same argument
-// against testID conventions — this one belongs to the component, not to its
-// callers).
+// anybody has to remember — this one belongs to the component, not to its callers.
 //
-// DELIBERATELY NOT IN `components/vetvisits/`. That namespace is what
-// `guards/vetVisitsFlagOff.test.tsx` stubs to prove "the companion does not exist",
-// and this block renders with the flag OFF — on the shipped rundown, which is one of
-// the four surfaces AC 0 names. Putting it there would stub away half of `/rundown`
-// on one side of the comparison.
+// NOT IN `components/vetvisits/`. During the beta that namespace was what the
+// flag-off guard stubbed to prove "the companion does not exist", and this block
+// rendered on the plain rundown with the flag off, so placing it there would have
+// stubbed away half of `/rundown`. The guard retired with the flag (CUL-905); the
+// block stays here because it is the rundown's, and Ask renders it too.
 
 interface Props {
   rundown: Rundown;
@@ -85,8 +83,8 @@ const styles = StyleSheet.create({
   // The gap the ScrollView used to supply between these children directly. Before the
   // extraction they were siblings of the scroll container (`gap: theme.space2`); one
   // wrapper View would have collapsed all four spacings to zero, which no guard here
-  // would have caught — the flag-off differential compares two renders of the same
-  // tree, so it moves with the regression.
+  // would have caught — a differential over two renders of the same tree moves with
+  // the regression.
   block: { gap: theme.space2 },
   intro: {
     fontFamily: theme.fontBody,

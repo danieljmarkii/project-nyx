@@ -37,7 +37,7 @@ import {
   StoolEditableFields,
   EditableStoolField,
 } from '../../lib/analysis';
-import { escalationSurvivesFailure } from '../../lib/incidentReadState';
+import { escalationSurvivesFailure, INCIDENT_REC_LABEL } from '../../lib/incidentReadState';
 import { StoolFieldsEditor } from './StoolFieldsEditor';
 import { stoolCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -90,11 +90,9 @@ const SELECT_COLS =
   'stool_content, stool_blood_present, stool_blood_type, stool_mucus_present, ' +
   'foreign_material_present, foreign_material_note, ai_raw_payload, edited_at, dismissed_at, error';
 
-const REC_LABEL: Record<Recommendation, string> = {
-  worth_a_call: 'Worth a call',
-  monitor: 'Keep an eye out',
-  not_enough_to_say: 'Not enough to say yet',
-};
+// The words live in lib/incidentReadState.ts (INCIDENT_REC_LABEL) since D2-4 (CUL-1066),
+// so Home's spine node and this card cannot name one verdict two ways.
+const REC_LABEL: Record<Recommendation, string> = INCIDENT_REC_LABEL;
 
 export function StoolAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
@@ -303,7 +301,7 @@ export function StoolAnalysisSection(
   // Pending / actively working. Same photoless rule: no spinner for a photoless
   // event — a contextual escalation pops in clean when it resolves (B-363).
   if (hasPhoto && (working || status === 'pending')) {
-    return <IncidentReadSection arrival={arrival} pending />;
+    return <IncidentReadSection arrival={arrival} pending working />;
   }
 
   // Failed — UNLESS the record already holds an escalation, which outlives a failed

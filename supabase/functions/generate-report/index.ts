@@ -56,13 +56,14 @@ import {
   type IncidentPhoto,
   type ReportAudience,
   type ReportLookInput,
+  type Household,
   TRIAL_ANCHOR_GRACE_DAYS,
 } from './report.ts'
 import { renderReport } from './render.ts'
 // B-613 — the ONE "which trial is this report about?" predicate. Imported rather than
 // re-implemented so the pull is stretched for exactly the trial the block describes; two
 // copies of this test are what once anchored a window on an abandoned trial.
-import { selectReportTrial } from './trial.ts'
+import { selectReportTrial, trialAllowedListMissing } from './trial.ts'
 // B-568 — the same format-label map the app and report.ts render from (one copy,
 // two runtimes; a duplicate map here is the B-103 drift class).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
@@ -130,10 +131,51 @@ const MAX_EMBED_IMAGE_BYTES = 3_900_000
  */
 const LOOK_PULL_CAP = 900
 
+/**
+ * How many rows one PAGE of a paginated pull asks for (CUL-975).
+ *
+ * Not a cap on the pull — `fetchAll` below keeps asking until the result set is
+ * exhausted — so this is a round-trip size, not a claim about any record.
+ *
+ * It is deliberately NOT load-bearing for correctness. The obvious trap in a paged
+ * reader is a page size at or above the server's PostgREST `max-rows`: every page then
+ * comes back short, and a loop that stops on a short page stops on page one believing it
+ * read everything. This function cannot observe that setting (the `looks` pull's comment
+ * below says so, and the `rls-privacy-reviewer` named it unverifiable from the repo), so
+ * `fetchAll` does not depend on the two being ordered: it ADVANCES BY THE NUMBER OF ROWS
+ * IT ACTUALLY RECEIVED, which is correct at any server ceiling, and earns completeness
+ * from `count: 'exact'` rather than from the page's fullness.
+ */
+export const PULL_PAGE = 500
+
+/**
+ * The most pages `fetchAll` will request for ONE pull — a ceiling on work, not a
+ * statement about the record. It bounds `PULL_MAX_PAGES x min(PULL_PAGE, the server's own
+ * page)`, NOT `x PULL_PAGE`: at the default ceiling that is 20,000 rows, roughly eight
+ * years of the heaviest record we have measured (~7 events a day), but under a `max-rows`
+ * of 25 it is 1,000 — and a record above it then reports incomplete, which on a window-
+ * cutting shortfall means (a') refuses and the owner gets no report. That is the fail-safe
+ * direction and it is also a cliff, so a deliberately low `max-rows` is a decision about
+ * this function whether or not anyone setting it knows that.
+ *
+ * It exists because an Edge Function has a wall clock and a 256 MB isolate, and a loop
+ * with no ceiling turns a runaway query into a timeout with no diagnosis. Reaching it is
+ * reported as an INCOMPLETE pull and never as a complete one: the whole of CUL-975 is
+ * that a truncation the code cannot see is a truncation nobody discloses.
+ */
+export const PULL_MAX_PAGES = 40
+
+/** The largest positive UTC offset any IANA zone uses (+14:00, Kiritimati). Used to bound
+ *  a local day key from below when it has to be compared against stored instants. */
+const MAX_UTC_OFFSET_MS = 14 * 60 * 60 * 1000
+
 // ── DB row shapes (the raw select results) ────────────────────────────────────
 
 interface PetRow {
   id: string
+  /** CUL-979 — the owner. Read ONLY so the household pull can be scoped to the subject's
+   *  owner in code as well as by RLS (see `mapHouseholdRows`); never mapped onto the page. */
+  user_id: string
   name: string
   species: string
   breed: string | null
@@ -141,6 +183,15 @@ interface PetRow {
   date_of_birth: string | null
   date_of_birth_precision?: string | null
   weight_kg: number | string | null
+}
+
+/** CUL-979 — the three columns the household pull selects. `id` exists ONLY to exclude the
+ *  subject and to key the page overlap; `user_id` ONLY to keep the count to the subject's
+ *  owner; neither leaves `mapHouseholdRows`. */
+interface HouseholdPetRow {
+  id: string
+  species: string
+  user_id: string
 }
 
 // B-351 slice 5 (§9, D10): the join carries the full captured protein SET plus the
@@ -311,11 +362,20 @@ interface DietTrialRow {
   /** B-704 migration 053 — the owner's stored trial protein + when it was set. */
   target_protein: string | null
   target_protein_set_at: string | null
+  /** CUL-1037 migration 068 — the window this trial was DESIGNED against, when the
+   *  window last moved, and whether the owner said a vet directed it. All three are
+   *  nullable and are read only through `target_duration_set_at` (§5.1). */
+  target_duration_days_initial: number | null
+  target_duration_set_at: string | null
+  target_duration_vet_directed: boolean | null
   food_items: FoodItemJoin | FoodItemJoin[] | null
   diet_trial_foods: DietTrialFoodRow[] | null
 }
 
 interface VetVisitRow {
+  // CUL-975 — selected for `fetchAll`'s de-dupe key, not for the render: `visited_at`
+  // is not unique (two visits in one day) and a non-unique key drops live rows.
+  id: string
   visited_at: string
   clinic_name: string | null
   vet_name: string | null
@@ -334,12 +394,17 @@ interface ArrangementRow {
 }
 
 interface ConditionRow {
+  // CUL-975 — the de-dupe key; nothing else here is unique.
+  id: string
   condition_name: string
   status: string
   diagnosed_at: string | null
 }
 
 interface AttachmentRow {
+  // CUL-975 — the de-dupe key. `event_id` is NOT unique on this table (an incident can
+  // carry several photos), so it cannot serve as one.
+  id: string
   event_id: string
   storage_path: string
   mime_type: string | null
@@ -395,6 +460,201 @@ function rowsOrThrow<T>(res: { data: unknown; error: { message: string } | null 
   return (res.data ?? []) as T[]
 }
 
+/** One page of a paginated pull — the supabase-js response, narrowed to what the loop
+ *  reads. `count` is present because every page below is built with `count: 'exact'`. */
+interface PullPage {
+  data: unknown
+  error: { message: string; code?: string } | null
+  count?: number | null
+}
+
+/** PostgREST's "Requested range not satisfiable" — returned when a `.range()`'s lower bound
+ *  is past the end of the result set. On a paged read that means the set SHRANK under the
+ *  cursor, which is a short read, not a fault: the loop stops and the count comparison
+ *  below reports the pull incomplete. Everything else still throws. */
+function isRangeNotSatisfiable(err: { message: string; code?: string } | null): boolean {
+  return err !== null && (err.code === 'PGRST103' || /range not satisfiable/i.test(err.message))
+}
+
+/** A pull that knows whether it read everything. `complete` is EARNED (see below); a
+ *  consumer that treats absent/false as "the record is short" is reading it correctly. */
+export interface Pull<T> {
+  rows: T[]
+  complete: boolean
+}
+
+/**
+ * How far back the `events` pull ACTUALLY reached — the floor a count may be spoken over.
+ *
+ * `lookbackIso` is the floor the query ASKED for. Before CUL-975 the two were the same
+ * number, because a truncated pull kept the OLDEST rows and therefore still reached the
+ * bottom of its own window. Inverting the truncation direction split them: an incomplete
+ * pull now reaches only as far back as its oldest row.
+ *
+ * `report.ts` derives `countIsFloor` from this, for the sentence whose whole purpose is that
+ * a trial-crop count is never "an incomplete answer wearing a complete one's clothes". Hand
+ * it the requested floor and that count prints as a TOTAL over days nothing was read from —
+ * a 300-day elimination trial cropped to 249 days, reporting "2 symptom events" over 129
+ * days the pull never saw. (`adversarial-reviewer`, CUL-975.)
+ */
+export function reachedLookbackIso(lookbackIso: string, complete: boolean, oldestPulledMs: number): string {
+  // Complete ⇒ the pull reached its own floor. No rows ⇒ nothing to narrow to, and that case
+  // is refused upstream anyway when it matters.
+  if (complete || !Number.isFinite(oldestPulledMs)) return lookbackIso
+  // Never widen: the query was bounded at `lookbackIso`, so a row cannot predate it, but a
+  // clock or a fixture that says otherwise must not push the claimed reach further back.
+  const asked = Date.parse(lookbackIso)
+  if (Number.isNaN(asked)) return lookbackIso
+  return new Date(Math.max(asked, oldestPulledMs)).toISOString()
+}
+
+/**
+ * Every row a query matches, read in pages, with an EARNED answer to "was that all?".
+ *
+ * WHY THIS EXISTS (CUL-975). PostgREST caps an unbounded select at the project's
+ * `max-rows`. A select with no `ORDER BY` comes back in physical order, which on these
+ * append-only tables is insertion order — so the cap kept the OLDEST rows and dropped the
+ * NEWEST, silently. The vet report a PM generated for a real appointment on 2026-09-16
+ * was missing every event after Sep 7: a cough that happened yesterday printed as ten
+ * days ago, and the more diligently the owner had logged, the calmer their pet looked.
+ * There was no error, no caveat and no log line, and every number on the page agreed with
+ * every other number, because they all derived from the same truncated set.
+ *
+ * THREE THINGS MAKE A PULL HONEST, and this helper owns the second and third:
+ *
+ *  1. AN ORDER, at the call site. Every converted pull orders newest-first on a TOTAL
+ *     key. Total matters as much as the direction: `occurred_at` is not unique (this
+ *     record logs ~7 events a day and meal one-taps land on the same second), and under
+ *     a non-total sort Postgres may order tied rows differently per page, which repeats
+ *     and skips rows at every page seam. Each call site therefore ends `, id DESC`.
+ *
+ *  2. A STRIDE THAT MATCHES REALITY. The loop advances by the number of rows it actually
+ *     RECEIVED, never by `PULL_PAGE`. This is what makes it correct at a server ceiling
+ *     it cannot observe: if `max-rows` were ever below the page size, a fixed stride would
+ *     skip the rows between what was asked for and what came back, while advancing by the
+ *     received count simply costs more round trips and loses nothing.
+ *
+ *  3. COMPLETENESS FROM THE COUNT, NEVER FROM THE PAGE'S FULLNESS. `rows.length < PULL_PAGE`
+ *     is the inference the `looks` pull's comment already warns against, and it is exactly
+ *     what a lowered `max-rows` defeats. The count comes from page 0 — the SAME request
+ *     that returned page 0's rows, so for any record that fits in one page (the common
+ *     case) the count and the rows are one consistent snapshot and completeness is exact.
+ *
+ * WHAT `complete: false` MEANS AFTER THIS. Because every pull is newest-first, a shortfall
+ * drops the OLDEST rows — the inverse of the defect above. So it means one of: the page
+ * ceiling was reached, the server capped a page below what we asked for, or the table was
+ * written while the report generated. `generateReportForPet` acts on it per the PM's
+ * (a') ruling on CUL-975 — refuse only where the report's own WINDOW could have been cut,
+ * disclose otherwise.
+ *
+ * WHAT A MULTI-PAGE PULL GUARANTEES, measured rather than reasoned. Two earlier versions
+ * of this paragraph were wrong in the same way — they described what the author expected
+ * the loop to do — so each clause below is a harness result against this reader.
+ *
+ *   • INSERT during the pull: every row that existed at the count's instant is returned,
+ *     and `complete` is true. A head insert shifts the list down and re-serves a row the
+ *     previous page already gave us; `keyOf` drops the duplicate and the stride still
+ *     advances by the full batch, so the window keeps descending. The new row is NOT
+ *     included — it did not exist when the count was taken, and this document is a snapshot
+ *     as of the request (the client flushes its queues before calling). Verified for a head
+ *     insert, a mid-list backdated insert, and two backdated inserts landing inside the
+ *     final partial window.
+ *
+ *   • DELETE during the pull: the list shifts UP under the cursor, so an offset the loop
+ *     has already passed now holds a row it never requested. The overlap check sees that
+ *     directly — the overlapped row is unseen — and the pull reports INCOMPLETE. This is the
+ *     case a count cannot catch on its own: an `adversarial-reviewer` harness showed one
+ *     soft-delete PLUS one backdated insert returning `complete: true` with a live in-window
+ *     row absent, because the insert restored the number the delete took away. A number that
+ *     can be made whole by a different row is not a proof that no row is missing.
+ *
+ * So completeness now rests on three independent things, and all three must hold: the loop
+ * reached the end of the set (not the page ceiling), no page began on a row it had not
+ * already seen, and the rows in hand account for page 0's count.
+ *
+ * Neither race can reach a single-page record, where the count and the rows come from one
+ * request. Keyset pagination on `(occurred_at, id)` would make the offset space irrelevant
+ * altogether and is the upgrade if multi-page pulls ever stop being the exception.
+ *
+ * COST, stated because it is a deliberate trade: `count: 'exact'` rides every page although
+ * only page 0's is read, and each page after the first re-reads one row. Keeping the count
+ * on one builder function is what makes each call site a single readable chain; the
+ * alternative threads a page index through eleven of them to save a counted index scan.
+ *
+ * @param table   the table name, for the error message `rowsOrThrow` raises
+ * @param keyOf   a PRIMARY-KEY-unique key per row — the de-dupe above; a non-unique key
+ *                would silently drop live rows, so every call site passes a column the
+ *                schema declares unique
+ * @param page    builds the query for one half-open range; MUST carry `count: 'exact'`
+ */
+export async function fetchAll<T>(
+  table: string,
+  keyOf: (row: T) => string,
+  page: (from: number, to: number) => PromiseLike<PullPage>,
+): Promise<Pull<T>> {
+  const rows: T[] = []
+  const seen = new Set<string>()
+  let total: number | null = null
+  // Proven FALSE by a page that ends the result set. Starting true is the direction that
+  // cannot mislead: a loop that falls out of its bounds has not read to the end.
+  let hitCeiling = true
+
+  // Set when the offset space moved under the cursor — see the continuity check below.
+  let shifted = false
+
+  let from = 0
+  for (let p = 0; p < PULL_MAX_PAGES; p++) {
+    // ONE ROW OF DELIBERATE OVERLAP on every page after the first, and it is the whole of
+    // the continuity check below. It costs one duplicate per page, which `keyOf` absorbs.
+    const start = p === 0 ? 0 : from - 1
+    const res = await page(start, start + PULL_PAGE - 1)
+    if (isRangeNotSatisfiable(res.error)) break
+    const batch = rowsOrThrow<T>(res, table)
+    // PAGE 0'S COUNT, AND ONLY PAGE 0'S — enforced by the `p === 0`, not merely intended.
+    // It is the count taken in the same request as page 0's rows, so for a single-page
+    // record the two are one consistent snapshot. A later page's count is a different
+    // instant, and measuring completeness against it compares a snapshot to rows that were
+    // never in it. Page 0 returning no count leaves `total` null ⇒ incomplete, which is the
+    // direction that cannot mislead.
+    if (p === 0 && typeof res.count === 'number') total = res.count
+
+    // THE CONTINUITY CHECK. The overlapped row is one we have already returned — unless
+    // rows were REMOVED above the cursor, in which case everything shifted up and the row
+    // now sitting at this offset is one we never requested. That is a skip, and without
+    // this it is invisible: a concurrent delete skips a row while a concurrent insert
+    // restores the count, so `rows.length >= total` certifies a pull that is missing a live
+    // row. Measured on the shipped reader before this existed — one soft-delete plus one
+    // backdated insert during a 1,057-row pull returned `complete: true` with an in-window
+    // event absent and no disclosure anywhere. That is CUL-975's own failure class, and a
+    // count alone cannot see it because the count was made whole by a different row.
+    if (p > 0 && batch.length > 0 && !seen.has(keyOf(batch[0]))) shifted = true
+
+    for (const row of batch) {
+      const key = keyOf(row)
+      if (seen.has(key)) continue
+      seen.add(key)
+      rows.push(row)
+    }
+
+    // The result set ended. (An empty page is the unambiguous end; a short one may be the
+    // server's ceiling, which is why the stride follows the batch and the loop continues.)
+    if (batch.length === 0) {
+      hitCeiling = false
+      break
+    }
+    from = start + batch.length
+    if (total !== null && rows.length >= total) {
+      hitCeiling = false
+      break
+    }
+  }
+
+  // ABSENT MEANS UNKNOWN MEANS INCOMPLETE — the `lookRowsComplete` rule, the direction
+  // that cannot mislead. Every page here requests the count, so an absent one is an
+  // anomaly, and an anomaly must not read as a clean bill of health.
+  return { rows, complete: !hitCeiling && !shifted && total !== null && rows.length >= total }
+}
+
 // ── Pure DB → ReportInput mappers (exported for offline deno tests) ────────────
 // These are the load-bearing DB-column-to-contract translation. The clinical
 // honesty logic lives in report.ts; these only rename fields and normalise
@@ -419,6 +679,36 @@ export function mapPet(row: PetRow): ReportPetInput {
     // renders it as the trend, only as the signalment "latest weight".
     weightKg: num(row.weight_kg),
   }
+}
+
+/**
+ * CUL-979 — the subject's owner's other live pets, reduced to counts by species.
+ *
+ * THIS IS THE PRIVACY BOUNDARY, IN CODE. The pull selects `id, species, user_id` and
+ * nothing else; this function drops the id and the owner on the way through, so the pure
+ * layer — and the page — can only ever hold a count and a species. The subject is excluded
+ * by the id of the row ownership was just verified against (after the 404 gate), never by
+ * a body value, and the count is bound to that row's OWNER: a row another policy might one
+ * day let the caller see (a co-carer's own animals) is not this pet's household. The
+ * subject is passed as the verified row rather than as two strings, so a caller cannot
+ * hand over the body's `petId` by mistake — Postgres normalises a uuid on the way in, and
+ * a string compare against the request value would have failed to exclude the subject on
+ * an upper-cased id. A species the enum does not know reads as `other` rather than as the
+ * subject's own, which would print "another cat" about an animal the record cannot place.
+ * `complete` is the pull's verdict, carried through so the render can say "at least".
+ */
+export function mapHouseholdRows(
+  rows: HouseholdPetRow[],
+  subject: Pick<PetRow, 'id' | 'user_id'>,
+  complete: boolean,
+): Household {
+  const counts = new Map<Household['others'][number]['species'], number>()
+  for (const r of rows) {
+    if (r.id === subject.id || r.user_id !== subject.user_id) continue
+    const species = r.species === 'cat' || r.species === 'dog' ? r.species : 'other'
+    counts.set(species, (counts.get(species) ?? 0) + 1)
+  }
+  return { others: [...counts].map(([species, count]) => ({ species, count })), complete }
 }
 
 /** The raw protein evidence off a food join, unmapped and un-derived — report.ts owns
@@ -664,6 +954,12 @@ export function mapDietTrialRows(rows: DietTrialRow[]): ReportDietTrialInput[] {
       // `trialTargetProtein`; null derives, exactly as today. Never permits (TG-1).
       targetProtein: r.target_protein ?? null,
       targetProteinSetAt: r.target_protein_set_at ?? null,
+      // CUL-1041 (migration 068) — §5.1's window provenance. `?? null` on all three,
+      // because PostgREST omits a column it cannot read and `undefined` would then
+      // reach a reader that switches on `!= null`.
+      targetDurationDaysInitial: r.target_duration_days_initial ?? null,
+      targetDurationSetAt: r.target_duration_set_at ?? null,
+      targetDurationVetDirected: r.target_duration_vet_directed ?? null,
       ...mapFoodProteins(fi),
       allowedFoods: (r.diet_trial_foods ?? []).map((f) => {
         const ffi = first(f.food_items)
@@ -920,10 +1216,15 @@ export async function generateReportForPet(
   //    determining rows. All RLS-scoped by the caller's JWT — a pet the caller
   //    does not own returns null → 404. Owner name + tz come from the caller's own
   //    profile (RLS: auth.uid() = id), the PIMS-filing identity (spec §7.1).
-  const [petRes, profileRes, vetVisitsRes, dietTrialsRes] = await Promise.all([
+  //
+  //    CUL-975 — `vet_visits` and `diet_trials` paginate like every other pull, and these
+  //    two matter MORE than a count does: they are the scope cascade's rungs 1 and 2, so a
+  //    truncated pull here does not shorten a number, it MOVES THE REPORT'S WINDOW. `pets`
+  //    and `user_profiles` are `.maybeSingle()` and cannot truncate.
+  const [petRes, profileRes, vetVisitsPull, dietTrialsPull, householdPull] = await Promise.all([
     supabase
       .from('pets')
-      .select('id, name, species, breed, sex, date_of_birth, date_of_birth_precision, weight_kg')
+      .select('id, user_id, name, species, breed, sex, date_of_birth, date_of_birth_precision, weight_kg')
       .eq('id', petId)
       .maybeSingle(),
     supabase.from('user_profiles').select('display_name, timezone').maybeSingle(),
@@ -934,9 +1235,22 @@ export async function generateReportForPet(
     // which gains this reader as a third rider. That inertness is exactly why the
     // delete CONTROL waits for VV-6: shipping the control first would hide a visit
     // in the app while the deployed report still counted it.
-    supabase.from('vet_visits').select('visited_at, clinic_name, vet_name, reason')
-      .eq('pet_id', petId).is('deleted_at', null),
-    supabase
+    fetchAll<VetVisitRow>('vet_visits', (r) => r.id, (from, to) =>
+      supabase.from('vet_visits').select('id, visited_at, clinic_name, vet_name, reason', { count: 'exact' })
+        .eq('pet_id', petId).is('deleted_at', null)
+        .order('visited_at', { ascending: false }).order('id', { ascending: false })
+        .range(from, to)),
+    // A NOTE FOR WHOEVER ADDS THE NEXT COMMENT TO THIS CHAIN, not about the columns
+    // (the select says what they are): `guards/reportPullPagination.test.ts` reads
+    // 2,000 characters from `.from(` and a rationale written INSIDE the select pushed
+    // `count: 'exact'` out of that window — the guard went red on a pull that pages
+    // perfectly well (measured, CUL-1038). Its bound is deliberate (C-4: a fixed
+    // window that reaches into the next query is not a slice of the object under
+    // test), so prose about this pull belongs here, above the call, and never in the
+    // chain. `target_duration_days_initial` is the coverage freeze's input (CUL-1038);
+    // its two siblings are the window-change sentence's (CUL-1041).
+    fetchAll<DietTrialRow>('diet_trials', (r) => r.id, (from, to) =>
+      supabase
       .from('diet_trials')
       .select(
         'id, food_item_id, started_at, target_duration_days, status, completed_at, ended_at, ' +
@@ -945,6 +1259,11 @@ export async function generateReportForPet(
           // stored-first naming (§7.4). Selecting it is inert until `generate-report` is
           // redeployed; that redeploy rides the standing B-494 gate, never on its own.
           'target_protein, target_protein_set_at, ' +
+          // CUL-1041 migration 068 — the window's provenance (§5.1). `set_at` is THE
+          // predicate for "did this window move?"; `initial` is never compared against
+          // the current target to decide that, and NULL means "not recorded" rather
+          // than a number. Selecting these is inert until `generate-report` redeploys.
+          'target_duration_days_initial, target_duration_set_at, target_duration_vet_directed, ' +
           `food_items(food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name), ` +
           // The allowed set (§3.2) — rung 1 of §5.3, and the only reason the report
           // can tell a vet-permitted treat from a contaminant. Soft-deleted rows are
@@ -952,9 +1271,37 @@ export async function generateReportForPet(
           // permitting feedings, and `allowed_until` is not written on a delete.
           'diet_trial_foods(food_item_id, food_label, role, allowed_from, allowed_until, ' +
           `food_items(${FOOD_PROTEIN_COLS}, brand, product_name, format))`,
+        { count: 'exact' },
       )
       .is('diet_trial_foods.deleted_at', null)
-      .eq('pet_id', petId),
+      .eq('pet_id', petId)
+      // Newest-first on a TOTAL key. `started_at` alone is not one (two trials can start
+      // the same day), and an unstable sort repeats and skips rows at every page seam.
+      .order('started_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to)),
+    // CUL-979 — THE HOUSEHOLD, and the first read in this function outside the subject
+    // pet's own row. It stays on the USER-SCOPED client, so RLS (`pets_owner`:
+    // `auth.uid() = user_id`, migration 001) is its scope — the caller's own pets and
+    // nobody else's, with no user id taken from anywhere but the JWT and no id taken from
+    // the request body. It selects a species, an id and an owner: the id only so the
+    // subject can be excluded below by the row ownership is verified against, the owner
+    // only so the count is bound to THE SUBJECT'S OWNER in code as well as by policy;
+    // `mapHouseholdRows` drops both, so a name, a weight, a condition or an event of
+    // another animal has no path to the page. The owner predicate is defence in depth the
+    // `rls-privacy-reviewer` measured rather than argued: this is the one query here with
+    // no tenant predicate of its own, and under a widened `pets` policy (the shared-care
+    // Open Question) or a bypassed one it printed another household's animals onto this
+    // pet's signalment. `is_active = true` is the archive filter, and it is the only
+    // liveness filter the table CAN take: `pets` has no soft-delete column (account
+    // deletion hard-purges). Paged like every pull here (CUL-975) — a household is a
+    // handful of rows, but "a handful" is a judgement the deployed function cannot
+    // re-check, and a short read is disclosed on page 1 as one.
+    fetchAll<HouseholdPetRow>('pets', (r) => r.id, (from, to) =>
+      supabase.from('pets').select('id, species, user_id', { count: 'exact' })
+        .eq('is_active', true)
+        .order('created_at', { ascending: false }).order('id', { ascending: false })
+        .range(from, to)),
   ])
 
   // A real error on the pet load must NOT masquerade as a 404 ("you don't own this
@@ -988,8 +1335,8 @@ export async function generateReportForPet(
   // `America/New_York` default), so trusting it alone let the report disagree with the card
   // for a non-New-York owner; the device zone the client sends is the one the card uses (B-443).
   const timezone = resolveIanaZone(requestTimezone, profile?.timezone)
-  const vetVisits = mapVetVisitRows(rowsOrThrow<VetVisitRow>(vetVisitsRes, 'vet_visits'))
-  const dietTrials = mapDietTrialRows(rowsOrThrow<DietTrialRow>(dietTrialsRes, 'diet_trials'))
+  const vetVisits = mapVetVisitRows(vetVisitsPull.rows)
+  const dietTrials = mapDietTrialRows(dietTrialsPull.rows)
 
   // 2. Resolve the window (§6 cascade) from the small window-determining rows, so
   //    the heavy event pull can be bounded to cover exactly that window (+ buffer).
@@ -1005,84 +1352,145 @@ export async function generateReportForPet(
   const lookbackIso = computeLookbackIso(scope, nowMs, reportTrialForPull?.startedAt ?? null)
 
   // 3. Pull the remaining rows — every read RLS-scoped by the caller's JWT.
+  //
+  //    CUL-975 — every pull below except `looks` goes through `fetchAll`: it pages until
+  //    the result set is exhausted and reports whether it got there. Each one is ordered
+  //    NEWEST-FIRST ON A TOTAL KEY (`<time> DESC, id DESC`); the direction makes any
+  //    residual shortfall drop the OLDEST rows, and the `id` tiebreaker is what makes the
+  //    paging itself sound — none of these time columns is unique, and under a non-total
+  //    sort tied rows can come back in a different order per page, repeating some and
+  //    skipping others at every seam. `looks` keeps its deliberate single-page cap.
   const [
-    eventsRes,
-    aiRes,
-    weightRes,
-    dosesRes,
-    medsRes,
-    arrangementsRes,
-    conditionsRes,
-    attachmentsRes,
+    eventsPull,
+    aiPull,
+    weightPull,
+    dosesPull,
+    medsPull,
+    arrangementsPull,
+    conditionsPull,
+    attachmentsPull,
     looksRes,
   ] = await Promise.all([
     // All non-deleted events over the lookback (every type — report.ts scopes,
     // dedups and filters by type internally; meals carry their food join).
-    supabase
+    // THE PULL CUL-975 WAS ABOUT. It was bare — no `.order()`, no `.limit()`, no
+    // `.range()` — so PostgREST capped it at `max-rows` and, with no ORDER BY, Postgres
+    // returned physical (insertion) order: the cap kept the OLDEST 1,000 and dropped the
+    // NEWEST. `events` is the pull that crosses the cap first, and this document is the
+    // one where that reads as a pet getting better.
+    fetchAll<EventRow>('events', (r) => r.id, (from, to) =>
+      supabase
       .from('events')
       .select(
         'id, event_type, occurred_at, occurred_at_confidence, occurred_at_earliest, occurred_at_latest, ' +
           'severity, notes, created_at, ' +
           `meals(food_item_id, intake_rating, quantity, food_items(food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name))`,
+        { count: 'exact' },
       )
       .eq('pet_id', petId)
       .is('deleted_at', null)
-      .gte('occurred_at', lookbackIso),
+      .gte('occurred_at', lookbackIso)
+      // The one pull that can order by the clinical instant itself — every count on
+      // page 1 is derived from these rows, so this is the ordering that matters most.
+      .order('occurred_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to)),
     // Vomit phenotype source (migration 013). Keyed by pet_id; report.ts looks each
     // up by event_id. No occurred_at column → pulled for the pet (bounded, sparse).
-    supabase
+    // No `occurred_at` here (it lives on the parent event), so the order is by when the
+    // read was WRITTEN. `created_at` is not the incident's instant — a backdated incident
+    // analysed today sorts newest — so the newest-first claim is "most recently analysed",
+    // not "most recent incident". `event_id` is UNIQUE on this table (1:1 with events).
+    fetchAll<AiAnalysisRow>('event_ai_analysis', (r) => r.event_id, (from, to) =>
+      supabase
       .from('event_ai_analysis')
       .select(
         'event_id, status, colour, contents, consistency, blood_present, bile_present, ' +
           'foreign_material_present, foreign_material_note, ' +
           'stool_consistency, stool_colour, stool_blood_present, stool_blood_type, stool_mucus_present, ' +
           'edited_at',
+        { count: 'exact' },
       )
-      .eq('pet_id', petId),
+      .eq('pet_id', petId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to)),
     // Weigh-ins (migration 024) — timing + soft-delete come from the parent event.
-    supabase
+    fetchAll<WeightRow>('weight_checks', (r) => r.event_id, (from, to) =>
+      supabase
       .from('weight_checks')
-      .select('event_id, weight_kg, events(occurred_at, deleted_at)')
-      .eq('pet_id', petId),
+      .select('event_id, weight_kg, events(occurred_at, deleted_at)', { count: 'exact' })
+      .eq('pet_id', petId)
+      // `created_at`, not the weigh-in's instant — that is on the embedded parent and
+      // PostgREST cannot ORDER a page by an embedded column reliably. `event_id` is UNIQUE.
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to)),
     // Administered doses (migration 020/023) — timing + soft-delete from the parent.
     // medication_administrations has TWO FKs to events (event_id + B-156's
     // paired_event_id), so the embed MUST name the constraint or PostgREST 201s
     // (the B-196 ambiguity crash) — disambiguate to the parent-dose FK.
-    supabase
+    fetchAll<DoseRow>('medication_administrations', (r) => r.event_id, (from, to) =>
+      supabase
       .from('medication_administrations')
       .select(
         'event_id, medication_id, medication_item_id, adherence, dose_amount, paired_event_id, ' +
           'events!medication_administrations_event_id_fkey(occurred_at, deleted_at)',
+        { count: 'exact' },
       )
-      .eq('pet_id', petId),
+      .eq('pet_id', petId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to)),
     // Regimens (migration 020) — spans + the item join for strength/is_prescription.
     // No deleted_at (a regimen is "ended", not soft-deleted) and no lookback filter
     // (an old completed course is a valid historical confounder; report.ts scopes).
-    supabase
+    fetchAll<MedicationRow>('medications', (r) => r.id, (from, to) =>
+      supabase
       .from('medications')
       .select(
         'id, medication_item_id, drug_name, dose_amount, route, doses_per_day, schedule_notes, ' +
           'indication, prescribed_by, started_at, target_duration_days, target_duration_doses, ' +
           'status, ended_at, medication_items(is_prescription, strength)',
+        { count: 'exact' },
       )
-      .eq('pet_id', petId),
+      .eq('pet_id', petId)
+      // `created_at` rather than the clinically nicer `started_at`, which is nullable —
+      // NULLs sort together and would make the newest-first claim untrue for exactly the
+      // rows that carry no start date.
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to)),
     // Free-fed / meal-fed standing facts (B-040). No lookback: a bowl set long ago
     // and still down is a current standing exposure; the window overlap is resolved
     // in report.ts. Soft-deleted arrangements excluded.
-    supabase
+    fetchAll<ArrangementRow>('feeding_arrangements', (r) => r.id, (from, to) =>
+      supabase
       .from('feeding_arrangements')
       .select(
         `id, food_item_id, method, active_from, active_until, is_shared, food_items(${FOOD_PROTEIN_COLS}, brand, product_name, format)`,
+        { count: 'exact' },
       )
       .eq('pet_id', petId)
-      .is('deleted_at', null),
-    supabase.from('conditions').select('condition_name, status, diagnosed_at').eq('pet_id', petId),
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to)),
+    fetchAll<ConditionRow>('conditions', (r) => r.id, (from, to) =>
+      supabase.from('conditions').select('id, condition_name, status, diagnosed_at', { count: 'exact' })
+        .eq('pet_id', petId)
+        .order('created_at', { ascending: false }).order('id', { ascending: false })
+        .range(from, to)),
     // Incident-photo attachments (migration 003, PR 7). RLS-scoped by pet ownership, so this
     // enumerates ONLY the verified owner's pet's attachments — the trusted path set later handed
     // to the service-role Storage download. report.ts scopes to window observation incidents; a
     // meal/food photo pulled here is simply never surfaced as an incident. Metadata rows are tiny,
     // so no lookback bound is needed (the storage fetch itself is capped in embedIncidentPhotos).
-    supabase.from('event_attachments').select('event_id, storage_path, mime_type, sort_order').eq('pet_id', petId),
+    fetchAll<AttachmentRow>('event_attachments', (r) => r.id, (from, to) =>
+      supabase.from('event_attachments').select('id, event_id, storage_path, mime_type, sort_order', { count: 'exact' })
+        .eq('pet_id', petId)
+        .order('created_at', { ascending: false }).order('id', { ascending: false })
+        .range(from, to)),
     // CUL-875 — the daily looks (migration 064). THE ONE PLACE IN supabase/functions/
     // WHERE A LOOK'S NOTE IS SELECTED (guards/lookNotes.test.ts pins it at exactly one;
     // spec T-22 / §9 rule 1 — the note's only home on this document is its appendix).
@@ -1129,12 +1537,13 @@ export async function generateReportForPet(
   // dose's instant lives on its parent event), so `doseRows` is the pet's whole dose history. Map it
   // TWICE off the one pull: `doses` trimmed to the lookback for the windowed sections, and
   // `lifetimeDoses` untrimmed for the §4.4 window-ignoring medication-history table (B-140 PR 5).
-  // KNOWN LIMIT (pre-existing, shared with every pull here): the query carries no explicit .limit(),
-  // so a pet with more doses than PostgREST's default max-rows would truncate — which is why the
-  // table's copy says "the medications logged", not "every dose ever", and why it never claims a
-  // count is exhaustive. Realistic reactive-tracking volumes are far under the cap; revisit
-  // (paginate the dose pull) if a chronic-med pet ever nears it.
-  const doseRows = rowsOrThrow<DoseRow>(dosesRes, 'medication_administrations')
+  // The KNOWN LIMIT that used to be recorded here — "the query carries no explicit .limit(),
+  // so a pet with more doses than PostgREST's default max-rows would truncate" — is CLOSED
+  // by CUL-975: the pull pages. It was right about the hazard and wrong about which table
+  // would meet it first; `events` did, on a real record, on the day before an appointment.
+  // The table's copy still says "the medications logged" rather than "every dose ever",
+  // which is now a modest claim rather than a necessary one.
+  const doseRows = dosesPull.rows
   const doses = mapDoseRows(doseRows, lookbackMs)
   const lifetimeDoses = mapDoseRows(doseRows)
   // §3.8 orphan-dose gap: resolve names for the medication_items behind the doses so an ad-hoc dose
@@ -1144,12 +1553,21 @@ export async function generateReportForPet(
   // medication_items join relies on; skipped when there are no doses.
   const doseItemIds = [...new Set(lifetimeDoses.map((d) => d.medicationItemId).filter((v): v is string => v !== null))]
   let medicationItems: ReportMedicationItemInput[] = []
+  let medicationItemsComplete = true
   if (doseItemIds.length > 0) {
-    const medItemsRes = await supabase
+    // Bounded by the dose set rather than by the pet's whole catalogue, so this one was
+    // never near the cap — it pages anyway, because "near the cap" is a judgement the
+    // deployed function cannot re-check and this whole issue is what that costs.
+    const medItemsPull = await fetchAll<MedicationItemRow>('medication_items', (r) => r.id, (from, to) =>
+      supabase
       .from('medication_items')
-      .select('id, generic_name, brand_name, strength, default_route, is_prescription, form')
+      .select('id, generic_name, brand_name, strength, default_route, is_prescription, form', { count: 'exact' })
       .in('id', doseItemIds)
-    medicationItems = mapMedicationItemRows(rowsOrThrow<MedicationItemRow>(medItemsRes, 'medication_items'))
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to))
+    medicationItems = mapMedicationItemRows(medItemsPull.rows)
+    medicationItemsComplete = medItemsPull.complete
   }
 
   const rawLookRows = rowsOrThrow<LookRow>(looksRes, 'looks')
@@ -1161,33 +1579,140 @@ export async function generateReportForPet(
   const lookRowsComplete =
     typeof looksTotal === 'number' ? looksTotal <= rawLookRows.length : rawLookRows.length < LOOK_PULL_CAP
 
+  // ── CUL-975 · did every pull read everything, and does it matter? ─────────────
+  //
+  // THE PM'S (a') RULING, 2026-09-15: refuse to render ONLY where the shortfall could
+  // have cut the report's own window; disclose otherwise.
+  //
+  // The two arms are not a hedge, they are two different documents. A pull that came up
+  // short off the OLD end leaves every page-1 count correct — the window is at the new
+  // end and every pull is ordered newest-first — and costs the baseline its reach, which
+  // is a sentence. A shortfall that reaches INTO the window makes every count on page 1 a
+  // query artifact, and there is no sentence that repairs that; the cold read's finding
+  // was that such a report is internally consistent and therefore unfalsifiable by its
+  // reader. So one is disclosed and the other is refused.
+  //
+  // Failing closed on BOTH was the issue's own recommendation and was not taken, for a
+  // measured reason: the shipped client maps every error to one generic line with a retry
+  // button (`app/report.tsx`), so a refusal is indistinguishable from a network fault —
+  // and the likeliest trigger of an incomplete pull is now a row being DELETED during
+  // generation, which skips at most one row and always the oldest of the window in flight
+  // (see `fetchAll`). Refusing there would hand an owner at a clinic no report at all, to
+  // protect them from one whose window was intact.
+  const incompletePulls = (
+    [
+      ['events', eventsPull.complete],
+      ['event_ai_analysis', aiPull.complete],
+      ['weight_checks', weightPull.complete],
+      ['medication_administrations', dosesPull.complete],
+      ['medications', medsPull.complete],
+      ['medication_items', medicationItemsComplete],
+      ['feeding_arrangements', arrangementsPull.complete],
+      ['conditions', conditionsPull.complete],
+      ['event_attachments', attachmentsPull.complete],
+      ['vet_visits', vetVisitsPull.complete],
+      ['diet_trials', dietTrialsPull.complete],
+      ['pets', householdPull.complete],
+    ] as [string, boolean][]
+  )
+    .filter(([, complete]) => !complete)
+    .map(([table]) => table)
+
+  if (incompletePulls.length > 0) {
+    // Server-side only: the owner sees the page-1 disclosure, and we see WHICH pull, which
+    // is the thing that was missing when this defect ran for a week (no error, no caveat,
+    // no log line). A cap that cannot be observed will be crossed again.
+    console.error('generate-report incomplete pulls:', incompletePulls.join(','))
+  }
+
+  // The refusal test, and it is the `events` pull's alone: page 1's counts are computed
+  // from those rows and from nothing else. `noticed.ts`'s `windowTruncated` asks exactly
+  // this question of the look pull (`!pullComplete && oldestPulledNum > startDayNum`);
+  // this is the same question over the rows that carry the clinical counts.
+  //
+  // MIN over the rows rather than "the last one", so the test does not depend on the
+  // driver preserving the ORDER BY it was given.
+  //
+  // THE ASYMMETRY THIS TEST CANNOT RESOLVE, stated because it is a cliff rather than a bug
+  // (`adversarial-reviewer`). It cannot tell "the pull was cut at day 40" from "the record
+  // simply starts at day 40" — so any pet whose oldest in-window event falls after the
+  // window start refuses on ANY events-pull incompleteness, with nothing actually missing.
+  // What keeps that off the common path is that a single-page pull takes its count and its
+  // rows from one request and is therefore exact, so the spurious case needs >500 events AND
+  // a record starting inside the window AND a race. The systemic version is worth naming:
+  // if PostgREST ever stopped returning a count, every pull would report incomplete and that
+  // population would get a permanent 503 behind the client's one generic line. Fail-closed,
+  // and undiagnosable from the client — which is what the console.error above is for.
+  let oldestPulledMs = Infinity
+  for (const row of eventsPull.rows) {
+    const t = Date.parse(row.occurred_at)
+    if (!Number.isNaN(t) && t < oldestPulledMs) oldestPulledMs = t
+  }
+  // The earliest instant the window's opening LOCAL day can begin in any zone — UTC+14,
+  // the maximum positive offset in use. The window start is a local day key and these rows
+  // are instants, so the comparison needs a bound rather than a conversion; erring EARLY
+  // makes the test fire more readily, which is the direction that cannot mislead.
+  const windowStartFloorMs = Date.parse(`${scope.startDate}T00:00:00.000Z`) - MAX_UTC_OFFSET_MS
+  const windowMayBeCut =
+    !eventsPull.complete && (!Number.isFinite(oldestPulledMs) || oldestPulledMs > windowStartFloorMs)
+  if (windowMayBeCut) {
+    console.error(
+      `generate-report refusing: the events pull is incomplete and its oldest row is inside the window ` +
+        `(window opens ${scope.startDate}, ${eventsPull.rows.length} rows read)`,
+    )
+    // 503 rather than 500: the likeliest cause is a write landing mid-pull, and a retry
+    // genuinely clears that. The `error` code is for our logs and for the future client
+    // that can say more than "something went wrong" — today's client renders its own line
+    // for any non-2xx, so nothing here is owner-facing.
+    return {
+      status: 503,
+      body: {
+        error: 'record_incomplete',
+        detail: 'The record could not be read completely, so no report was produced.',
+      },
+    }
+  }
+
   const input: ReportInput = {
     now: nowIso,
     timezone,
     pet,
     ownerName,
+    // CUL-979 — a count and a species per other live animal of the subject's owner; the
+    // subject is excluded, and the owner bound, by the verified row itself. See the pull
+    // above for why this is the only read here that reaches outside the subject pet's row.
+    household: mapHouseholdRows(householdPull.rows, petRow, householdPull.complete),
     requestedWindow,
-    events: mapEventRows(rowsOrThrow<EventRow>(eventsRes, 'events')),
-    aiAnalyses: mapAiAnalysisRows(rowsOrThrow<AiAnalysisRow>(aiRes, 'event_ai_analysis')),
-    weightChecks: mapWeightRows(rowsOrThrow<WeightRow>(weightRes, 'weight_checks'), lookbackMs),
+    events: mapEventRows(eventsPull.rows),
+    aiAnalyses: mapAiAnalysisRows(aiPull.rows),
+    weightChecks: mapWeightRows(weightPull.rows, lookbackMs),
     doses,
     lifetimeDoses,
-    medications: mapMedicationRows(rowsOrThrow<MedicationRow>(medsRes, 'medications')),
+    medications: mapMedicationRows(medsPull.rows),
     medicationItems,
     dietTrials,
     vetVisits,
-    feedingArrangements: mapFeedingArrangementRows(rowsOrThrow<ArrangementRow>(arrangementsRes, 'feeding_arrangements')),
-    conditions: mapConditionRows(rowsOrThrow<ConditionRow>(conditionsRes, 'conditions')),
-    attachments: mapAttachmentRows(rowsOrThrow<AttachmentRow>(attachmentsRes, 'event_attachments')),
+    feedingArrangements: mapFeedingArrangementRows(arrangementsPull.rows),
+    conditions: mapConditionRows(conditionsPull.rows),
+    attachments: mapAttachmentRows(attachmentsPull.rows),
     // B-613 — how far back `events` actually reaches, so assembly can tell "nothing was
     // logged in the cropped trial days" apart from "the cropped days were never pulled".
-    eventsSinceIso: lookbackIso,
+    //
+    // CUL-975 MADE THIS TWO DIFFERENT NUMBERS. It used to be safe to pass the floor the
+    // query ASKED for, because a truncated pull kept the OLDEST rows and therefore still
+    // reached it. Now truncation drops the oldest, so an incomplete pull reaches only as far
+    // back as its oldest row — and `report.ts` derives `countIsFloor` from this field for
+    // exactly the sentence that must not be "an incomplete answer wearing a complete one's
+    // clothes". Passing the requested floor here would print a trial-crop count as a TOTAL
+    // over days the pull never read. (`adversarial-reviewer`, this PR.)
+    eventsSinceIso: reachedLookbackIso(lookbackIso, eventsPull.complete, oldestPulledMs),
     lookRows,
     // EARNED, never assumed — see `lookRowsComplete` above. Counted on the RAW rows,
     // before `mapLookRows` drops soft-deleted parents: it is the QUERY that was capped,
     // and a page filled with undone looks truncated the pull exactly as much as a page of
     // live ones.
     lookRowsComplete,
+    incompletePulls,
     audience,
   }
 
@@ -1216,6 +1741,13 @@ export async function generateReportForPet(
       photo_count: photoStats.total,
       photo_embedded: photoStats.embedded,
       photo_omitted: photoStats.omitted,
+      // R-16 (CUL-998 / CUL-861) — the report's own verdict that its trial has no
+      // allowed-food list, returned so the owner hears it on the report screen BEFORE
+      // Send, with a door to set the list up, rather than reading it in front of the vet.
+      // Scoped to a running trial and to the list's absence (never the unhydrated-set
+      // heuristic) — the reasons are on `trialAllowedListMissing`. The app treats an
+      // absent field as false, so a client built before this deploys shows nothing.
+      trial_allowed_list_missing: trialAllowedListMissing(snapshot.trial, nowMs, timezone),
     },
   }
 }
