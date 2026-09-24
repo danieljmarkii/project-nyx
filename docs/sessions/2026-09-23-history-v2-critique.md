@@ -1,6 +1,6 @@
 # History v2: the design critique of the round-3 proposal
 
-**Date:** 2026-09-23 (ran into 2026-09-24 UTC) · **Issue:** CUL-1108 (project *Design v2, the whole day*) · **Mode:** DISCOVERY · **Shipped via #898** (`claude/cool-brahmagupta-qs96p3`)
+**Date:** 2026-09-23 (ran into 2026-09-24 UTC) · **Issue:** CUL-1108 (filed under *Design v2, the whole day*; now in *History v2 · the record you can read*) · **Mode:** DISCOVERY · **Shipped via #898** (`claude/cool-brahmagupta-qs96p3`)
 
 **PM prompt:** claim CUL-1108 and run the design critique of the History v2 round-3 proposal: read the artifact and `docs/culprit-history-v2-mockups.html` (merged in #885), take §07 for what is settled, overruled and open; convene the lenses in isolation (Designer, Motion, Mobile IA, Data, Dr. Chen, Jordan and Sam, Trust and Safety, Engineering) against the seven principles and the Design v2 language; report in the QA-note taxonomy; end with the changes that gate the requirements, as decision briefs where the PM rules. Do not redraw and do not build.
 
@@ -38,6 +38,17 @@ The PM asked for a new mockup from the critique. `docs/culprit-history-v2-mockup
 - **Data refresh.** Rows for May 14 – 15, Jun 7 – 21 and Sep 4 – 21 plus per-day and per-course counts, read with the same owner-scoped query shape. It found the round-3 fixture wrong on doses (every dose is named), photos (40 read, 4 not) and Sep 21 (eight rows); corrected additively in the critique's §V with inline pointers, and noted on CUL-1124.
 - **Checked before publishing:** every demo pressed twice with and without Reduce Motion (zero page errors; one real bug found and fixed, "Tap History again" threw before it re-rendered the strip), every strip's visible week checked against its label, both widths (1280 and 390, no horizontal scroll), dark-mode chrome.
 
+## Round 5, the requirements and the project (2026-09-24, same session)
+
+The PM reacted to round 4 ("I LOVE LOVE LOVE where we landed"): ruled H-1 (a), H-2 (a) with the header's word in neutral grey, H-6 (a), H-8 (a) and H-9 (no count; a small link to Patterns), loved H-3 and the quiet states, and handed H-3's variant, H-4b, H-7, H-10 and H-11 to the team. Then: finalize the requirements, put them in a Linear project, and plan the build one session per issue, saying what can share a session and what can run in parallel.
+
+- **Round 5** (`docs/culprit-history-v2-mockups.html`, same URL): one ruled proposal with a ledger of every reaction. The team's calls, with dissents recorded: H-3 (b); H-4b the grey *Photo not read* only where a read was expected and never landed, nothing when the owner turned reading off (Trust and Safety would rather the list add nothing); H-7 (a); H-10 (a); H-11 the latest visit strictly before today, the report's bound (the Data Scientist and the Designer dissent).
+- **The spec:** `docs/nyx-history-v2-requirements.md` v1.0, BUILD-READY. An Explore pass mapped the code first and changed the plan twice: the timing lane cannot say which meal it measured from and `generate-signal` imports it, so CUL-1122's fix and the meal id land in one session (HV-2); and no local copy of the read's verdict exists (offline, Home's spine shows no verdict and the month draws every photographed day as seen), so HV-5 builds one. It also found the vet report's scope line without a year is the app's report screen, not the server.
+- **The project:** *History v2 · the record you can read* (P-CUL-18): HV-1 → HV-15 (CUL-1158 → CUL-1171, CUL-1175) over six steps, five sessions at once in step 1 and four in step 2, plus three gated follow-ups (CUL-1172 → CUL-1174). CUL-1073, CUL-1119, CUL-1120, CUL-1122, CUL-1124, CUL-1125, CUL-1126, CUL-1127 moved in as step 0 bundles or built-in scope; CUL-1123 stays in Design v2 and now blocks HV-10. Every issue carries its kickoff prompt; the bundle prompts are in the project description. CUL-1108 moved into the project, off `Waiting on PM`.
+- **CLAUDE.md:** a Read-These row for the spec, paid for by compacting C-36's mechanics (verbatim in the lessons file) and repointing C-36 and C-41 from the deleted `vetVisitsFlagOff` guard to the live `designV2FlagOff` one: 136,575 B → 136,490 B.
+
 ## PM actions
 
-On CUL-1108 (`Waiting on PM`): rule H-1 to H-11 (H-1 to H-5 first), or accept the team defaults as listed. Then the next session runs a short mock pass on the frames the rulings move, and the requirements are written.
+1. Merge #898 (it carries the spec, round 5 and the critique); the build sessions read the spec from `main`.
+2. Start step 1 and step 0 together: CUL-1158, CUL-1159, CUL-1160, CUL-1161, CUL-1162, and Bundles A (CUL-1073 + CUL-1119) and B (CUL-1123 + CUL-1125) from the project description.
+3. Later, on the issues that ask: the allowlist "go" and the device pass (CUL-1171), the GA "go" (CUL-1175).
