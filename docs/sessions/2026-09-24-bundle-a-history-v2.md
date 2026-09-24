@@ -36,6 +36,8 @@ Bundle A of the History v2 project: CUL-1073 and CUL-1119 in one session and one
 - Full suite green; `tsc --noEmit` clean; the touched suites green under Kiritimati, Chatham and Honolulu, and under the 30, 180 and 400 day clock skews.
 - `code-reviewer` (isolated, run over a copy of the tree): no bugs, no anti-patterns, ship-ready. It enumerated every sender of a History route across the repo and found each read as the table says. One cleanup taken rather than filed: the first draft stated as a blind spot that a page of nothing but edge rows would come back empty with more to read (the first page of a scope would then draw the empty state over a record that has rows); the read now goes on past such a page. Proven by two mutations: returning the first page anyway reds two tests, and treating an empty page as full at a zero limit hangs the suite. One nit left as is (three test files each define a two-line fixture helper; the files are self-contained by convention).
 
+- Before the merge, `main` carried #905 (Bundle B, CUL-1123 + CUL-1125), which also edits `app/(tabs)/history.tsx`. One conflict, in the import block only; resolved to the union of what the merged file uses, and the doorway suite gained the `lib/supabase` stub Bundle B's import path needs. The merged tree was green before pushing: 462 suites, and the History suites in all three CI zones.
+
 ## Residuals
 
 - CUL-1177 — the widget's `ts` is minted at draw time.
