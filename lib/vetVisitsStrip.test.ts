@@ -1,6 +1,7 @@
 import {
   APPOINTMENT_WINDOW_DAYS,
   cancelVetAppointment,
+  formatAppointmentDay,
   parseAppointmentQuestions,
   readHomeAppointment,
   resolveStripPhase,
@@ -125,17 +126,86 @@ describe('the window — five days before, through the day of', () => {
     expect(Math.round((fiveDaysOut.getTime() - now.getTime()) / 86_400_000)).toBe(4);
     expect(resolveStripPhase(fiveDaysOut.toISOString(), now)).toBe('upcoming');
   });
+});
 
-  // A STATED BLIND SPOT, not an untested one (C-36: an undocumented limitation reads
-  // as coverage). `localDayDelta` rounds two local midnights specifically so a 23- or
-  // 25-hour day inside the span cannot shift a phase — and that property cannot be
-  // driven here. Jest resolves the timezone once per worker, so assigning
-  // `process.env.TZ` mid-run does not move `Date` (measured: a fixture built for
-  // America/New_York's spring-forward came back 144 hours, i.e. still UTC), and the
-  // CI matrix (UTC+14 / +12:45 / −10) contains no DST zone at all. The test written
-  // for it here was green in UTC for a reason that had nothing to do with DST, so it
-  // was removed rather than kept as decoration. Covering it properly needs a DST zone
-  // in the matrix — filed as a follow-up.
+// ACROSS A DST TRANSITION (CUL-948). `localDayDelta` rounds two local midnights so a
+// 23- or 25-hour day inside the span cannot shift a phase or a label. That property
+// only exists where the clock changes, and it cannot be staged from inside a test:
+// jest resolves the zone once per worker, so assigning `process.env.TZ` mid-run does
+// not move `Date` (measured: a New York spring-forward fixture came back 144 hours,
+// i.e. still UTC). So these cases find the RUNNING zone's own transitions instead of
+// hard-coding one. They bite in the non-UTC CI job's `Pacific/Chatham` run (DST
+// +13:45 in January, +12:45 in July) and skip, visibly, in a zone that has no DST.
+//
+// Each edge below is placed so the odd-length day sits inside the span. A `floor`
+// (or `trunc`) in place of the rounding reds the short-day cases; a `ceil` reds the
+// long-day ones. In a zone without DST all three agree, which is why the first
+// version of this test was green for a reason that had nothing to do with DST.
+
+/** Local days in `year` whose midnight-to-midnight length is not 24 hours: the
+ *  running zone's DST transitions. Empty where the clock never changes. */
+function oddLengthDays(year: number): { day: Date; hours: number }[] {
+  const out: { day: Date; hours: number }[] = [];
+  for (let i = 0; i < 366; i++) {
+    const day = new Date(year, 0, 1 + i);
+    if (day.getFullYear() !== year) break;
+    const ms = new Date(year, 0, 2 + i).getTime() - day.getTime();
+    if (ms !== 86_400_000) out.push({ day, hours: ms / 3_600_000 });
+  }
+  return out;
+}
+
+// A fixed year, never the clock's (C-29): the edges are judged against a `now` built
+// here, so the fixture means the same thing on every run.
+const TRANSITIONS = oddLengthDays(2027);
+const SHORT_DAY = TRANSITIONS.find((t) => t.hours < 24);
+const LONG_DAY = TRANSITIONS.find((t) => t.hours > 24);
+
+/** Local noon on `day`, shifted by whole local days. */
+function noonOn(day: Date, plusDays = 0): Date {
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate() + plusDays, 12, 0, 0, 0);
+}
+
+/** Every window edge with the odd-length day inside its span. Forward edges count
+ *  from noon ON the transition day; backward edges count back from the day AFTER it. */
+function edgesAcross(transitionDay: Date) {
+  const onIt = noonOn(transitionDay);
+  const dayAfter = noonOn(transitionDay, 1);
+  return {
+    tomorrowLabel: formatAppointmentDay(at(1, onIt), onIt),
+    lastDayIn: resolveStripPhase(at(APPOINTMENT_WINDOW_DAYS, onIt), onIt),
+    firstDayOut: resolveStripPhase(at(APPOINTMENT_WINDOW_DAYS + 1, onIt), onIt),
+    yesterday: resolveStripPhase(at(-1, dayAfter), dayAfter),
+    lastDayAsked: resolveStripPhase(at(-APPOINTMENT_WINDOW_DAYS, dayAfter), dayAfter),
+    firstDayNotAsked: resolveStripPhase(at(-APPOINTMENT_WINDOW_DAYS - 1, dayAfter), dayAfter),
+  };
+}
+
+const EDGES = {
+  tomorrowLabel: 'Tomorrow',
+  lastDayIn: 'upcoming',
+  firstDayOut: null,
+  yesterday: 'after',
+  lastDayAsked: 'after',
+  firstDayNotAsked: null,
+};
+
+describe('the window across the running zone’s DST transitions (CUL-948)', () => {
+  // Non-vacuity for the job that exists to run these: a finder that quietly returned
+  // nothing would turn both cases below into skips exactly where they should bite.
+  const knownDstZone = ['Pacific/Chatham', 'America/New_York'].includes(process.env.TZ ?? '');
+  (knownDstZone ? it : it.skip)('finds a 23-hour and a 25-hour day in a zone that observes DST', () => {
+    expect(SHORT_DAY?.hours).toBe(23);
+    expect(LONG_DAY?.hours).toBe(25);
+  });
+
+  (SHORT_DAY ? it : it.skip)('a 23-hour day inside the span moves no edge', () => {
+    expect(edgesAcross((SHORT_DAY as { day: Date }).day)).toEqual(EDGES);
+  });
+
+  (LONG_DAY ? it : it.skip)('a 25-hour day inside the span moves no edge', () => {
+    expect(edgesAcross((LONG_DAY as { day: Date }).day)).toEqual(EDGES);
+  });
 });
 
 describe('readHomeAppointment — which row Home carries', () => {
