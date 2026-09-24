@@ -103,9 +103,13 @@ describe('applyMealTrialFlag — the gates, in order', () => {
   });
 });
 
-describe('one copy — the two meal-entry screens call this module and re-implement nothing', () => {
+describe('one copy — the meal-entry doors call this module and re-implement nothing', () => {
   const ROOT = join(__dirname, '..');
-  const SCREENS = ['app/log.tsx', 'components/log/FAB.tsx'];
+  // The picker, the FAB quick-add, and the Noticed card's *Didn't eat* door (CUL-893).
+  // `app/food-capture.tsx` is not here on purpose: it writes a brand-new food that is
+  // not in the cache yet, so it surfaces the CONTENTS flag through its own path and
+  // never calls the evaluator (see its attemptCommit).
+  const SCREENS = ['app/log.tsx', 'components/log/FAB.tsx', 'components/log/IntakeFirstMealSheet.tsx'];
 
   // The three pieces a local re-copy would have to reach for. A screen that imports
   // any of them has the makings of a second orchestration, whatever it names it.
@@ -125,8 +129,8 @@ describe('one copy — the two meal-entry screens call this module and re-implem
   });
 
   it('this module is the only non-test app source that wires the evaluator to the store', () => {
-    // Beyond the two known screens: nobody else composes evaluateMealLogTimeFlag with
-    // patchTrialFlag. A third meal-entry door added later must come through here.
+    // Beyond the known doors: nobody else composes evaluateMealLogTimeFlag with
+    // patchTrialFlag. A new meal-entry door must come through here.
     const { readdirSync } = require('fs') as typeof import('fs');
     const offenders: string[] = [];
     const walk = (dir: string): void => {

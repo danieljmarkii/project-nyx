@@ -501,7 +501,10 @@ export async function getTimeline(
      ${PAIRED_DOSE_REVERSE_JOIN}
      WHERE e.pet_id = ? AND e.deleted_at IS NULL
      ${typeClause} ${dateClause} ${beforeClause}
-     ORDER BY e.occurred_at DESC
+     -- id breaks the tie (CUL-1078): History pages this by OFFSET, and occurred_at
+     -- alone lets a same-minute pair swap across a page seam, one row twice and the
+     -- other never.
+     ORDER BY e.occurred_at DESC, e.id DESC
      LIMIT ? OFFSET ?`,
     params,
   );

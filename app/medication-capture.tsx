@@ -32,6 +32,7 @@ import { theme } from '../constants/theme';
 import { ThemedText, fontFamilyForWeight } from '../components/ui/ThemedText';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { ChipGroup } from '../components/ui/ChipGroup';
+import { Header } from '../components/ui/Header';
 import { MedicationNameChips } from '../components/medication/MedicationNameChips';
 import { NightMoment } from '../components/brand/NightMoment';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
@@ -488,7 +489,7 @@ export default function MedicationCaptureScreen() {
   if (step === 'intro') {
     return (
       <SafeAreaView style={styles.container}>
-        <Header title="Add a medication" onClose={() => router.back()} />
+        <Header title="Add a medication" leading="close" onLeadingPress={() => router.back()} />
         <ScrollView contentContainerStyle={styles.introScroll}>
           <ThemedText style={styles.introHeading}>Snap the medication label</ThemedText>
           <ThemedText style={styles.introBody}>
@@ -627,7 +628,8 @@ export default function MedicationCaptureScreen() {
         <Header
           title="Medication details"
           // Return to Confirm only when there is AI-extracted data to show.
-          onBack={labelPhoto && !extractionFailed ? () => setStep('confirm') : () => router.back()}
+          leading="back"
+          onLeadingPress={labelPhoto && !extractionFailed ? () => setStep('confirm') : () => router.back()}
         />
         <KeyboardAvoidingView style={styles.kav} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.formScroll} keyboardShouldPersistTaps="handled">
@@ -719,30 +721,6 @@ export default function MedicationCaptureScreen() {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-function Header({ title, onClose, onBack }: { title: string; onClose?: () => void; onBack?: () => void }) {
-  return (
-    <View style={styles.header}>
-      {onBack ? (
-        <TouchableOpacity onPress={onBack} style={styles.headerSide} hitSlop={10}>
-          {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face (CUL-654). */}
-          <Text style={styles.headerBack}>←</Text>
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.headerSide} />
-      )}
-      <ThemedText style={styles.headerTitle}>{title}</ThemedText>
-      {onClose ? (
-        <TouchableOpacity onPress={onClose} style={styles.headerSide} hitSlop={10}>
-          {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face (CUL-654). */}
-          <Text style={styles.headerClose}>✕</Text>
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.headerSide} />
-      )}
-    </View>
-  );
-}
-
 // The §6.5 strength-confirmation control. Shown wherever a strength can be saved,
 // so the gate is uniform across the confirm and edit screens. It's a real toggle —
 // ticking confirms, tapping again takes the confirmation back. Editing the strength
@@ -788,35 +766,6 @@ const styles = StyleSheet.create({
   },
   kav: {
     flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: theme.space2,
-    paddingVertical: theme.space2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-  },
-  headerSide: {
-    width: 40,
-    height: 32,
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: theme.textLG,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-    textAlign: 'center',
-  },
-  headerBack: {
-    fontSize: 22,
-    color: theme.colorTextPrimary,
-  },
-  headerClose: {
-    fontSize: 18,
-    color: theme.colorTextSecondary,
-    textAlign: 'right',
   },
 
   introScroll: {

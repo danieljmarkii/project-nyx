@@ -35,11 +35,15 @@
 //   the root with nothing up; the panel exists so a future in-Modal host (the log
 //   sheet, say) can render it as a layer instead of rediscovering CUL-662.
 //
+// • THE TRIAL HEADS-UP FIRES HERE TOO (CUL-893). The same `applyMealTrialFlag` the
+//   picker and FAB doors call, after the card is raised. The pre-fill is already the
+//   trial diet under a running trial, so it bites where it matters: *Change food ›* to
+//   something off the list, the moment the heads-up exists for.
+//
 // ── WHAT IT DELIBERATELY DOES NOT DO ─────────────────────────────────────────
-// The log-time trial heads-up (`applyTrialFlag`, on the picker and FAB paths) is not
-// wired here — CUL-893. *Add new food* from the food step leaves for the shipped
-// capture flow, which owns its own write and its own card; this sheet closes first
-// (C-14's `onNavigateAway`) and reports that it saved nothing.
+// *Add new food* from the food step leaves for the shipped capture flow, which owns
+// its own write and its own card; this sheet closes first (C-14's `onNavigateAway`)
+// and reports that it saved nothing.
 
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Modal, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -50,6 +54,7 @@ import { Skeleton } from '../ui/Skeleton';
 import { FoodPicker } from './FoodPicker';
 import { IntakeChipRow, type IntakeRating } from './IntakeChipRow';
 import { insertMeal } from '../../lib/meals';
+import { applyMealTrialFlag } from '../../lib/mealTrialFlag';
 import {
   loadIntakeDoor,
   pickedFoodSource,
@@ -269,6 +274,13 @@ export function IntakeFirstMealPanel({
             },
             { delayMs: CARD_DELAY_MS },
           );
+          // The log-time trial heads-up (B-693), the one orchestration every meal door
+          // calls (lib/mealTrialFlag.ts, CUL-354). Fire-and-forget: the meal is saved and
+          // the sheet is closing, so nothing waits on it (Principle 1). It holds the
+          // patch until the delayed card above is on screen, and spends the food's
+          // one-per-trial budget only once the heads-up is actually shown. The pet is
+          // the request's (C-9), the food the one she confirmed, picked or pre-filled.
+          void applyMealTrialFlag({ eventId, petId, foodId: food.id, occurredAt: occurredAtIso });
           return true;
         } catch (e) {
           // A FAILED WRITE IS ALWAYS SAID (C-25 / CUL-575) — and the first cut of this

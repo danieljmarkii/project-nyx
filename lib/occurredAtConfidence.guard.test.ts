@@ -29,6 +29,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, relative } from 'path';
+import { blankComments } from '../guards/blankComments';
 
 const ROOT = join(__dirname, '..');
 const SCAN_DIRS = ['app', 'components', 'lib', 'store', 'hooks'];
@@ -178,11 +179,21 @@ function assertedConfidences(src: string): Set<string> {
   return found;
 }
 
+/**
+ * A file's write-path confidences, read from its CODE: comments are blanked first, in
+ * one pass (C-18, the shared walker). CUL-869 tripped the raw-source scan with an
+ * explanatory comment in app/edit-event.tsx, and the only remedy the red offered was
+ * the allowlist, which exempts the one file this guard exists for (CUL-885).
+ */
+function writePathConfidences(src: string): Set<string> {
+  return assertedConfidences(blankComments(src));
+}
+
 function scan(): Map<string, Set<string>> {
   const hits = new Map<string, Set<string>>();
   for (const dir of SCAN_DIRS) {
     for (const file of sourceFiles(join(ROOT, dir))) {
-      const found = assertedConfidences(readFileSync(file, 'utf8'));
+      const found = writePathConfidences(readFileSync(file, 'utf8'));
       if (found.size > 0) hits.set(relative(ROOT, file).split('\\').join('/'), found);
     }
   }
@@ -232,6 +243,13 @@ describe('occurred_at_confidence write paths (B-448)', () => {
     expect(hardcoded).toEqual([]);
   });
 
+  it('reads code, never comments: a sentence about the rule is not a write path (CUL-885)', () => {
+    // Both comment shapes blank, and the write beside them still reads.
+    expect([...writePathConfidences(`// occurred_at_confidence: 'witnessed' is the claim a meal makes`)]).toEqual([]);
+    expect([...writePathConfidences(`/* the unit is confidence: { value: 'witnessed' } */`)]).toEqual([]);
+    expect([...writePathConfidences(`// why\nconst row = { occurred_at_confidence: 'witnessed' };`)]).toEqual(['witnessed']);
+  });
+
   it('leaves the edit path out entirely — an edit restates nothing it was not told', () => {
     // The B-448 leak itself. app/edit-event.tsx wrote its form's seeded default on
     // every save, promoting legacy NULL rows to 'witnessed' while the owner was
@@ -251,7 +269,9 @@ describe('occurred_at_confidence write paths (B-448)', () => {
 // write in two different shapes and every other suite stayed green; these are
 // the assertions that go red.
 describe('app/edit-event.tsx — the save may only write an ASSERTED confidence (B-448)', () => {
-  const src = readFileSync(join(ROOT, 'app/edit-event.tsx'), 'utf8');
+  // Code only (CUL-885): a comment holding one of the shapes below could otherwise pad
+  // a count or satisfy a `toContain` while the real line is gone.
+  const src = blankComments(readFileSync(join(ROOT, 'app/edit-event.tsx'), 'utf8'));
   // The single updateEvent call, from the identifier to the closing `});`.
   const updateCall = /await updateEvent\([\s\S]*?\n {6}\}\);/.exec(src)?.[0] ?? '';
 

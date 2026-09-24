@@ -322,8 +322,13 @@ export default function LogModal() {
     const exifRaw = (asset.exif as Record<string, unknown> | undefined);
     const dateRaw = exifRaw?.DateTimeOriginal ?? exifRaw?.DateTime;
     const iso = typeof dateRaw === 'string' ? trustedPastExifIso(exifDateToISO(dateRaw)) : null;
+    // A stamp belongs to the photo it came from, so it is replaced WITH the photo:
+    // null when this one has none. Set only inside the branch below, a replacement
+    // with no usable stamp (a screenshot, a stripped file, a future camera clock)
+    // kept the first photo's and wrote it as this one's taken_at (CUL-956). The
+    // in-sheet confirm has always replaced the pair together (SimpleEventConfirm).
+    setAttachmentTakenAt(iso);
     if (iso) {
-      setAttachmentTakenAt(iso);
       setOccurredAt(new Date(iso));
       setOccurredAtSource('exif');
       return;

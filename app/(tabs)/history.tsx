@@ -552,6 +552,12 @@ export default function HistoryScreen() {
               // nulled, because this path cannot know what the reading displaced
               // (lib/weight.ts, delete side).
               await reverseLoggedEvent(event.id);
+              // CUL-1078 — the row has left the table, so every row after it moved up
+              // one and the next page must start one earlier. Only here, once the
+              // write has landed: a failed Remove puts the row back. Starting a row
+              // early costs nothing, since the dedupe on append drops the repeat
+              // (B-198); starting a row late skips one that nothing ever shows.
+              setOffset((prev: number) => Math.max(0, prev - 1));
             } catch (e) {
               console.error('[history] soft delete failed:', e);
               setEvents((prev: NyxEvent[]) => {

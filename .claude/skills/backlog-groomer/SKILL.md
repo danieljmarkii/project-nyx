@@ -1,6 +1,6 @@
 ---
 name: backlog-groomer
-description: Use this skill to groom and reconcile Nyx's backlog in **Linear** (team Culprit, `linear.app/projectnyx`) — the operational procedure behind the Product Owner persona. Triggers include the PM asking to "groom the backlog", "reconcile the backlog", "clean up the backlog", "what's stale", "what are the quick wins", "find something small to pick up", or any session scan that needs to check Linear against reality; closing out a shipped item; or whenever a session record claims something shipped that Linear still lists as `Todo` / `In Progress`. Loads the reconciliation procedure: match issue status against merged PRs/commits AND open PRs AND the deploy ledger, fix stale statuses, clear abandoned claims, re-prioritize aged high-priority items, triage and label quick wins, audit recently-closed issues for unfinished business, and dedupe near-duplicate issues — without inventing scope (new product scope is a PM decision, routed to Open Questions, never a silent Linear edit). For the lens/judgment behind this procedure see the Product Owner persona in `docs/personas.md`; this skill is the how. Note: `docs/backlog.md` is frozen (migrated to Linear 2026-08-15) — this skill operates on Linear, not that file.
+description: Use this skill to groom and reconcile Nyx's backlog in **Linear** (team Culprit, `linear.app/projectnyx`) — the operational procedure behind the Product Owner persona. Triggers include the PM asking to "groom the backlog", "reconcile the backlog", "clean up the backlog", "what's stale", "what are the quick wins", "find something small to pick up", or any session scan that needs to check Linear against reality; closing out a shipped item; or whenever a session record claims something shipped that Linear still lists as `Todo` / `In Progress`. Loads the reconciliation procedure: match issue status against merged PRs/commits AND open PRs AND the deploy runs and holds, fix stale statuses, clear abandoned claims, re-prioritize aged high-priority items, triage and label quick wins, audit recently-closed issues for unfinished business, and dedupe near-duplicate issues — without inventing scope (new product scope is a PM decision, routed to Open Questions, never a silent Linear edit). For the lens/judgment behind this procedure see the Product Owner persona in `docs/personas.md`; this skill is the how. Note: `docs/backlog.md` is frozen (migrated to Linear 2026-08-15) — this skill operates on Linear, not that file.
 ---
 
 # Backlog Groomer (Linear)
@@ -41,7 +41,7 @@ Exit codes, so an unattended caller can say *which* assertion failed: `0` sound 
 
 2. **Reconcile against OPEN PRs too.** A merged-PR scan cannot see work that exists only in an unmerged branch, and this repo has a deep open-PR queue (30 as of 2026-09-06, oldest from July). `list_pull_requests` with `state: open`, then match each PR's `CUL-NNN` to its issue: an issue whose work is sitting in an open PR is **`In Review`**, not `In Progress` and not `Todo`. Two issues were mis-stated this way on 2026-09-06 (CUL-319 → #704, CUL-530 → #668).
 
-3. **Reconcile against the DEPLOY LEDGER.** Merged is not live. `git show origin/main:supabase/functions/deploy-manifest.json` — read it off the same ref as step 1, since the working tree is your own branch, not the record — says which Edge Functions are `deployed` versus `pending`, and both standing holds (CUL-19 `generate-report`, CUL-557 the per-incident chain) gate real user-visible work. An issue whose fix merged but whose function is `pending` is **not done** — and a cluster of separate "redeploy X" issues usually means one command discharges several of them (CUL-780 ↔ CUL-795 on 2026-09-06). Note the ledger guard cannot see a stale `status`, only a changed fingerprint (CUL-700), so read it rather than trusting CI's silence.
+3. **Reconcile against DEPLOYS.** Since CUL-1147, merged is live unless the function is held or its deploy failed. Read the holds off the same ref as step 1 (`git show origin/main:supabase/functions/deploy-manifest.json` — the working tree is your own branch, not the record), and the latest **Deploy Edge Functions** runs on `main` (GitHub MCP `actions_list` → `list_workflow_runs`, resource `edge-deploy.yml`): a red run means a function is owed, and its summary names which. An issue whose fix merged into a **held** function is **not done** until the hold lifts. A "redeploy X" or "PM deploys from the Codespace" issue filed before 2026-09-24 is usually discharged by the first run after its merge: close it with that run as the reference.
 
 4. **Fix stale in-flight issues — `In Progress` means three different things.** Sort every `In Progress` issue into one of these, and treat them differently:
 
@@ -128,7 +128,7 @@ Each grooming pass leaves an outcome issue carrying the calls it deliberately st
 ## Backlog grooming (Linear) — <date>
 
 ### Evidence base
-- full history: <N> commits (un-shallowed) · <N> open PRs · deploy ledger read
+- full history: <N> commits (un-shallowed) · <N> open PRs · deploy runs + holds read
 
 ### Reconciled (status corrected)
 - CUL-NNN <title>: In Progress → Done — <date> (PR #N) — <evidence>

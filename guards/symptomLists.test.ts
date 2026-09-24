@@ -28,6 +28,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankComments } from './blankComments';
 
 const ROOT = path.resolve(__dirname, '..');
 const SCAN_DIRS = ['app', 'components', 'constants', 'lib', 'store', 'hooks', 'widgets', 'supabase/functions'];
@@ -76,15 +77,6 @@ const REGISTERED: Record<string, string> = {
 
 const EXEMPTION = /\/\/\s*symptom-list-ok:\s*\S+/;
 
-/** Comments out, code in — the completionCard guard’s lesson, both directions: prose
- *  about a list must not register as one, and a list must not hide in a comment.
- *  Offsets are preserved (same-length replacement) so cluster spans stay honest. */
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
-    .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
-}
-
 function walk(dir: string, out: string[] = []): string[] {
   if (!fs.existsSync(dir)) return out;
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -110,7 +102,10 @@ const KEY_PATTERN = new RegExp(
 
 /** The distinct-key sets of every ≥MIN_DISTINCT_KEYS literal cluster in the source. */
 export function findListSites(rawSource: string): string[][] {
-  const src = stripComments(rawSource);
+  // Comments out, code in, both directions: prose about a list must not register as
+  // one, and a list must not hide in a comment. The shared single-pass blanker (C-18,
+  // CUL-884) keeps offsets, so cluster spans stay honest, and reads strings as strings.
+  const src = blankComments(rawSource);
   const hits: { key: string; at: number }[] = [];
   let m: RegExpExecArray | null;
   KEY_PATTERN.lastIndex = 0;
@@ -182,8 +177,27 @@ describe('symptom-list discovery guard', () => {
     expect(findListSites(`const s = "vomit' + 'cough' plus "sneeze`)).toEqual([]);
   });
 
+  // C-18's two string hazards (CUL-884). The chained `.replace()` blanker this file used to
+  // carry read comment openers inside strings: a URL's `//` blanked the rest of its line,
+  // and a MIME glob's `/*` blanked everything up to the next `*/` in the file. Either way a
+  // real list after it went unseen, and both shapes are ordinary in this codebase.
+  it('red-check: a list after a URL literal on the same line is still found (C-18)', () => {
+    const synthetic = `const DOCS = 'https://example.com/help'; const L = ['vomit', 'cough', 'lethargy'];`;
+    expect(findListSites(synthetic)).toEqual([['vomit', 'cough', 'lethargy']]);
+  });
+
+  it("red-check: a list after a '/*' inside a string is still found (C-18)", () => {
+    const synthetic = [
+      `const ACCEPT = ['image/*', 'application/pdf'];`,
+      `const L = ['vomit', 'cough', 'lethargy'];`,
+      `/* a later comment, whose close the old chain paired with the glob */`,
+    ].join('\n');
+    expect(findListSites(synthetic)).toEqual([['vomit', 'cough', 'lethargy']]);
+  });
+
   it('prose about keys and two-key family maps do not count', () => {
     expect(findListSites(`// vomit, diarrhea and cough are symptom keys`)).toEqual([]);
+    expect(findListSites(`/** vomit: yes; cough: never; sneeze: never */ const x = 1;`)).toEqual([]);
     expect(findListSites(`const INCIDENT = { vomit: 'vomiting', diarrhea: 'stool' };`)).toEqual([]);
     expect(findListSites(`const copy = 'A cough after meals is worth logging';`)).toEqual([]);
   });

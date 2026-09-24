@@ -19,7 +19,6 @@ import {
   getMealForEvent,
   getDoseForEvent,
   getDoubleDoseFlag,
-  updateMealIntake,
   updateDoseAdherence,
   updateDoseHowGiven,
   TimelineRow,
@@ -30,7 +29,8 @@ import { resolveEventPhotoDisplay, addPhotoHeroCopy, EVENT_HERO_HEIGHT } from '.
 import { foodFormatTag } from '../../lib/food';
 import { kgToLbs } from '../../lib/weight';
 import { supabase } from '../../lib/supabase';
-import { syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
+import { syncPendingMedicationAdministrations } from '../../lib/sync';
+import { rateMealIntake } from '../../lib/meals';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain, awaitAnalysisChain } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
@@ -354,8 +354,8 @@ export default function EventDetailScreen() {
     // Optimistic update — keep the screen responsive while the write happens.
     setIntakeRating(next);
     try {
-      await updateMealIntake(event.id, next);
-      syncPendingMeals().catch(console.error);
+      // The shared write path, which also refreshes the Signal (CUL-1087).
+      await rateMealIntake(event.id, next);
     } catch (e) {
       console.error('[event-detail] failed to update intake rating:', e);
       setIntakeRating(prev);

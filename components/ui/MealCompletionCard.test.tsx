@@ -27,7 +27,11 @@ jest.mock('../../lib/db', () => ({
   updateEvent: jest.fn(),
   updateMealIntake: jest.fn(),
   getEventSource: jest.fn(),
+  // The pet a rating's Signal refresh is for, read off the row by `rateMealIntake`.
+  getEventPetId: jest.fn(() => Promise.resolve('p1')),
 }));
+// The refresh edge, stubbed so a chip tap is assertable and arms no real timer.
+jest.mock('../../lib/signal', () => ({ triggerSignalRegenDebounced: jest.fn() }));
 jest.mock('../../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../../lib/sync', () => ({
   syncPendingEvents: jest.fn().mockResolvedValue(undefined),
@@ -72,6 +76,7 @@ import { usePetStore } from '../../store/petStore';
 import type { LogTimeTrialFlag } from '../../lib/trialContaminant';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { updateEvent, updateMealIntake, getEventSource } from '../../lib/db';
+import { triggerSignalRegenDebounced } from '../../lib/signal';
 
 const MEMBERSHIP_FLAG: LogTimeTrialFlag = {
   kind: 'off_trial_list',
@@ -419,6 +424,31 @@ describe('MealCompletionCard — a rating stated ELSEWHERE is not erasable here 
       fireEvent.press(getByText('Most'));
     });
     expect(updateMealIntake).toHaveBeenLastCalledWith('e1', null);
+  });
+});
+
+describe('MealCompletionCard — a rating refreshes the Signal (CUL-1087)', () => {
+  it('a chip tap asks the Signal to rebuild for the meal\'s pet', async () => {
+    // A rating tapped after the log's own regen has fired is the case the insert's
+    // refresh cannot cover, and a decline is exactly what it would miss.
+    seedMeal({ foodType: 'meal', intakeRating: null });
+    const { getByText } = render(<MealCompletionCard />);
+    await act(async () => {
+      fireEvent.press(getByText('Picked'));
+    });
+    expect(updateMealIntake).toHaveBeenCalledWith('e1', 'picked');
+    expect(triggerSignalRegenDebounced).toHaveBeenCalledWith('p1');
+  });
+
+  it('a failed write refreshes nothing', async () => {
+    (updateMealIntake as jest.Mock).mockRejectedValueOnce(new Error('No meal row for event e1'));
+    jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    seedMeal({ foodType: 'meal', intakeRating: null });
+    const { getByText } = render(<MealCompletionCard />);
+    await act(async () => {
+      fireEvent.press(getByText('Picked'));
+    });
+    expect(triggerSignalRegenDebounced).not.toHaveBeenCalled();
   });
 });
 

@@ -224,6 +224,66 @@ export interface LinkedLine {
   title: string;
   /** 'linked to this visit', 'added'. */
   note: string;
+  /** A course stopped or a trial ended on this screen. Its note names the day, so it
+   *  is re-derived at the save by `linkedLinesAsOf` rather than kept as written. */
+  settled?: { verdict: 'stopped' | 'ended'; endedOn: string };
+}
+
+/**
+ * The moment's line for a course stopped or a trial ended here (CUL-1092).
+ *
+ * The note is the settled row's own sentence (`settledVerdictLine`), so the verb is
+ * said once: the lines used to read "Motozol stopped · ended today". The title is the
+ * course or the trial, with no verb of its own.
+ */
+export function settledLinkedLine(args: {
+  key: string;
+  title: string;
+  verdict: 'stopped' | 'ended';
+  /** 'YYYY-MM-DD' — the day the write recorded. */
+  endedOn: string;
+  /** 'YYYY-MM-DD' — the reading device's local today. */
+  today: string;
+  /** 'Sep 22', for the not-today branch. */
+  endLabel: string;
+}): LinkedLine {
+  const { key, title, verdict, endedOn } = args;
+  return { key, title, note: settledVerdictLine(args), settled: { verdict, endedOn } };
+}
+
+/**
+ * The linked lines as of the day the owner SAVES, not the day each was answered.
+ *
+ * A course stopped at 11:58 pm and saved at 12:01 am was stopped yesterday, and a note
+ * written when the chip was tapped would go on saying "today". `dayLabel` formats the
+ * other branch's date; this module formats none of its own.
+ */
+export function linkedLinesAsOf(
+  lines: readonly LinkedLine[],
+  today: string,
+  dayLabel: (day: string) => string,
+): LinkedLine[] {
+  return lines.map((line) =>
+    line.settled
+      ? settledLinkedLine({
+          key: line.key,
+          title: line.title,
+          ...line.settled,
+          today,
+          endLabel: dayLabel(line.settled.endedOn),
+        })
+      : line,
+  );
+}
+
+/**
+ * A trial as the moment names it: "Hill's z/d trial". The bare food read as the FOOD
+ * ending ("Hill's z/d ended"). With no food on record it is "Diet trial", never
+ * "Diet trial trial" (the `endTrialCopy` rule).
+ */
+export function trialMomentTitle(foodLabel: string | null | undefined): string {
+  const food = foodLabel?.trim();
+  return food ? `${food} trial` : 'Diet trial';
 }
 
 export interface VisitSaveSummary {

@@ -1,0 +1,163 @@
+# Culprit / Nyx: deploy Edge Functions on merge (CUL-1147).
+#
+# Why this exists: merging a change to supabase/functions/** used to leave it
+# un-live until someone ran `scripts/deploy-edge.sh <fn> --deploy` from the
+# Codespace and then updated the deploy ledger by hand. Both halves got missed:
+# the vet report ran six weeks behind the app, and generate-report v16, v17 and
+# v18 went live with the ledger still saying `pending`. Now a merge deploys every
+# function whose shipping code changed since its last recorded deploy, checks it,
+# and records it, all in one run.
+#
+# One job, in the `production` environment: the ONLY place SUPABASE_ACCESS_TOKEN
+# exists. That environment admits `main` and nothing else, so a PR branch or an
+# agent session can never reach the token: a run on any other ref is refused by the
+# environment before its first step (that refusal is how the one-time setup is
+# verified; docs/edge-deploy-runbook.md § One-time setup).
+#
+#   Plan    fingerprints every function, reads each one's last recorded deploy,
+#           and decides deploy / unchanged / held. Its summary is the table the PM
+#           reads. It needs the token too: records are SIGNED with a key derived
+#           from it, and a record that does not verify is ignored. Without the
+#           signature any branch workflow, running as the same github-actions[bot],
+#           could forge a record and make an owed deploy look done
+#           (rls-privacy-reviewer). So planning happens where the key is.
+#   Deploy  only when Plan found something: tools, then the deploy, the checks and
+#           the signed record for each function, in order.
+#
+# Records are GitHub deployments in the `edge-functions` environment (holds no
+# secrets), one per function deploy, written seconds after the checks pass. See
+# scripts/edge-deploy/records.ts for why not a PR.
+#
+# Holds live in supabase/functions/deploy-manifest.json. A held function is never
+# deployed by this workflow, by a merge or by hand. docs/edge-deploy-runbook.md
+# has the whole procedure, including how to roll back.
+#
+# The repo is public, so these logs are too. Nothing here prints a secret (GitHub
+# masks it regardless), and the summaries carry names, versions, commits, hashes
+# and the function's own one-line error string from the smoke call, nothing more.
+name: Deploy Edge Functions
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      function:
+        description: 'What to deploy. all-changed = every function main has changed since its last recorded deploy.'
+        type: choice
+        default: all-changed
+        # One entry per deployable function. guards/edgeFunctionDeploy.test.ts
+        # fails the build if this list and supabase/functions/ disagree.
+        options:
+          - all-changed
+          - analyze-stool
+          - analyze-vomit
+          - ask
+          - delete-account
+          - extract-food-from-photo
+          - extract-medication-from-photo
+          - generate-report
+          - generate-signal
+      ref:
+        description: 'Commit on main to deploy it from. main = redeploy it; an older commit = roll it back. all-changed always deploys main, so leave this as main for it.'
+        type: string
+        required: true
+        default: main
+
+# Each job declares exactly what it needs. Nothing here writes to the repo.
+permissions: {}
+
+# One deploy at a time, and never cancel one mid-flight: a cancelled run can stop
+# between the upload and its record. A newer queued run replaces an older queued
+# one, which loses nothing, because each run deploys everything owed at its commit.
+concurrency:
+  group: edge-functions-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Plan and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # No `if:` on the ref. On any branch but main, the environment itself refuses the
+    # job before its first step, and that refusal is the one-time setup's proof.
+    environment:
+      name: production
+      url: https://supabase.com/dashboard/project/aigchluqluzuhtbfllgh/functions
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      # Same path as ci.yml's Deno job, so main's cached module graph restores here.
+      DENO_DIR: ${{ github.workspace }}/.deno-cache
+    steps:
+      # Actions are pinned to full commit SHAs, as in ci.yml (bump the SHA and its
+      # version comment together). Full history, because a rollback names an older
+      # commit on main and the planner checks main contains it.
+      # persist-credentials: false keeps the job token out of .git/config.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      # The planner needs `typescript` (the closure walker parses imports). No
+      # install script from any dependency runs in this workflow.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # Inputs reach the script through env vars only, never through ${{ }} in a
+      # shell line, so a crafted ref cannot become a command. The token is here only
+      # as the record-signing key.
+      - name: Plan
+        id: plan
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          INPUT_FUNCTION: ${{ inputs.function }}
+          INPUT_REF: ${{ inputs.ref }}
+        run: node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/edge-deploy/cli.ts plan
+
+      # Exact-pinned, and the same version ci.yml tests with.
+      - name: Set up Deno
+        if: steps.plan.outputs.count != '0'
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.4
+
+      # Restore only. This job never writes a cache, and a main run can only
+      # restore caches main itself saved, never one a PR saved.
+      - name: Restore the Deno module cache
+        if: steps.plan.outputs.count != '0'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.0.0
+        with:
+          path: ${{ env.DENO_DIR }}
+          key: deno-${{ runner.os }}-2.9.4-${{ hashFiles('deno.lock') }}
+          restore-keys: |
+            deno-${{ runner.os }}-2.9.4-
+
+      # esbuild and the Supabase CLI, at the exact versions pinned in
+      # scripts/deploy-edge.sh, installed in a step that cannot see the token. The
+      # deploy step below then installs nothing.
+      - name: Install deploy tools
+        if: steps.plan.outputs.count != '0'
+        run: bash scripts/deploy-edge.sh --provision-only
+
+      # For each planned function, in order: scripts/deploy-edge.sh <fn> --deploy
+      # (tests, bundle, upload), then the checks (version bumped, ACTIVE, verify_jwt
+      # on, a 401 with no JWT, the function's own 4xx with the anon key), then the
+      # signed record. The first failure records itself, skips the rest, and fails
+      # the job.
+      - name: Deploy, check, record
+        if: steps.plan.outputs.count != '0'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          PLAN: ${{ steps.plan.outputs.deploys }}
+        run: node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/edge-deploy/cli.ts deploy

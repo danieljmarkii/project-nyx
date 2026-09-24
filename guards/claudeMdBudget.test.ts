@@ -41,9 +41,9 @@
 //                   convention belongs in `docs/engineering-lessons.md` under that
 //                   convention's pointer; the rule and its enforcement stay here.
 //                   NEVER raise CEILING_BYTES to go green — that is the escape hatch
-//                   this guard exists to close, and it is the same discipline C-26
-//                   states for the deploy ledger ("move the code — never bump the
-//                   ledger").
+//                   this guard exists to close. (C-26 used to state the same
+//                   discipline for the deploy ledger, "move the code — never bump
+//                   the ledger", until CUL-1147 made merging deploy.)
 //
 //   (2) SLACK     — CLAUDE.md is more than SLACK_BYTES BELOW CEILING_BYTES, i.e. a
 //                   trim landed and the ceiling was left where it was. Fix: lower

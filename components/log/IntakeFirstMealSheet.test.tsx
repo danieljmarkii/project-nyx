@@ -16,6 +16,14 @@ jest.mock('../../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn() }));
 const mockInsertMeal = jest.fn();
 jest.mock('../../lib/meals', () => ({ insertMeal: (...a: unknown[]) => mockInsertMeal(...a) }));
 
+// The trial heads-up's orchestration is pinned in `lib/mealTrialFlag.test.ts` (its order,
+// its gates, the one-copy scan). What this suite owns is that the sheet CALLS it, for the
+// meal it just wrote, and only when it wrote one.
+const mockApplyTrialFlag = jest.fn();
+jest.mock('../../lib/mealTrialFlag', () => ({
+  applyMealTrialFlag: (...a: unknown[]) => mockApplyTrialFlag(...a),
+}));
+
 const mockLoadDoor = jest.fn();
 const mockPickedSource = jest.fn();
 jest.mock('../../lib/intakeFirstMeal', () => ({
@@ -92,6 +100,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockLoadDoor.mockResolvedValue({ prefill: { food: DIET, source: 'recent_meal' }, trial: TRIAL });
   mockPickedSource.mockReturnValue('picked');
+  mockApplyTrialFlag.mockResolvedValue('no_flag');
   mockInsertMeal.mockResolvedValue({
     eventId: 'e1',
     mealId: 'm1',
@@ -333,6 +342,43 @@ describe('the arm — the only thing that writes', () => {
     await waitFor(() => expect(mockInsertMeal).toHaveBeenCalledTimes(1));
     fireEvent.press(await findByText('Refused'));
     await waitFor(() => expect(mockInsertMeal).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('the trial heads-up (CUL-893)', () => {
+  it('fires for the meal the arm wrote, on the request’s pet', async () => {
+    // The picker and FAB doors both call it; this door skipped it, so an owner on a
+    // diet trial heard nothing here that the other two would have told her.
+    const { findByText } = setup();
+    fireEvent.press(await findByText('Refused'));
+    await waitFor(() => expect(mockApplyTrialFlag).toHaveBeenCalledTimes(1));
+    expect(mockApplyTrialFlag).toHaveBeenCalledWith({
+      eventId: 'e1',
+      petId: 'p1',
+      foodId: 'f1',
+      occurredAt: '2026-09-10T18:12:00.000Z',
+    });
+  });
+
+  it('evaluates the food she changed to, which is the case it exists for', async () => {
+    // The pre-fill is already the trial diet under a running trial, so the heads-up
+    // mostly bites after *Change food ›* to something off the list.
+    const { findByTestId, findByText } = setup();
+    fireEvent.press(await findByTestId('intake-sheet-change-food'));
+    fireEvent.press(await findByTestId('picker-pick'));
+    fireEvent.press(await findByText('All'));
+    await waitFor(() => expect(mockApplyTrialFlag).toHaveBeenCalledTimes(1));
+    expect(mockApplyTrialFlag).toHaveBeenCalledWith(expect.objectContaining({ foodId: 'picked' }));
+  });
+
+  it('fires nothing when the write failed: no meal, nothing to warn about', async () => {
+    mockInsertMeal.mockRejectedValue(new Error('disk full'));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const { findByText } = setup();
+    fireEvent.press(await findByText('Refused'));
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(mockApplyTrialFlag).not.toHaveBeenCalled();
   });
 });
 
