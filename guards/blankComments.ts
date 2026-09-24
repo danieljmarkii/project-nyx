@@ -1,5 +1,13 @@
-// The single-pass comment blanker every source-scanning guard should share (C-18;
-// CUL-884 tracks moving the three that still chain `.replace()` calls onto it).
+// The single-pass comment blanker source-scanning guards should share (C-18). CUL-884
+// moved three chained `.replace()` blankers onto it; the six still chaining are listed
+// on CUL-697, the shared-scan refactor.
+//
+// BLIND SPOT, stated so it does not read as coverage (C-38): the walker knows strings
+// and comments but not regex literals or JSX text, so a quote character inside either
+// (a character class holding a backtick, `<Text>Don't</Text>`) opens a "string" that
+// runs to the next matching quote, and the comments in that stretch are left in. It
+// never drops code, only fails to drop comments. Measured in 25 files on 2026-09-24;
+// the fix is CUL-1116.
 //
 // It lives in its own module rather than inside one guard's test file because a test
 // file cannot be imported by another test file without jest running its suites twice —
