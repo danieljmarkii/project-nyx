@@ -1,0 +1,30 @@
+# Quick Win sweep (third of the day): History paging, a rating refreshes the Signal, after-visit polish, two guards that see more, a git first-aid entry
+
+**Date:** 2026-09-24 · **Branch:** `claude/zen-ptolemy-o48iof` · shipped via #902 · six picks, one commit each, one `code-reviewer` pass (ship-ready; its one finding fixed on the branch)
+
+| Issue | Outcome | Proof |
+|---|---|---|
+| CUL-1078 | **Shipped.** A successful Remove moves History's offset back one; `getTimeline` sorts `occurred_at DESC, id DESC` | The seam test on the real SQL (node:sqlite) returned "wet" twice and "dry" never on the old statement; the Remove test read offset 50 where 49 was due. The tiebreak flipped to ASC reds only the direction test; the decrement moved ahead of the write reds the failed-Remove test |
+| CUL-1087 | **Shipped.** `rateMealIntake` (lib/meals.ts) is the one write path for an after-the-fact rating: write, push, debounced rebuild for the pet on the row. The edit screen writes the rating only when it changed | A scan reds on any file but lib/meals.ts and lib/db.ts naming `updateMealIntake`; on the old tree it named the three screens. The card test, `app/event/intakeRegen.test.tsx` and the untouched-save case in `app/editEvent.intake.test.tsx` red on their pre-fix screens. Dropping the rebuild reds four tests; seeding the as-loaded rating with null reds the never-loaded case |
+| CUL-1092 | **Shipped.** *Switched* goes back to the answer it replaced when the trial sheet closes with no trial started; the saved moment says "Stopped today" / "Stopped Sep 22" once, and names a trial as a trial | On the old screen the two dismissal tests and the two moment-copy tests red; the start and food-detour tests are green both ways. Dropping the save-time re-derivation reds the midnight test (Date-only fake clock) |
+| CUL-1106 | **Shipped.** `guards/homeWrites` reads direct PostgREST mutations off the TS parser, a builder held in a local included; `lib/analysis.ts` joins WRITE_PATH with its two edit helpers in WRITE_CALLS; C-33's sentence corrected | Measured first: 170 files, 15 mutations, 13 in the registered sync layer. A real `.from('events').update(` planted in components/home passes the old guard and reds the new one, and so does the bound-builder shape. Removing the lib/analysis.ts entry reds the live scan on both helpers and both mutations |
+| CUL-937 | **Shipped.** `guards/visitReaders`' allow-set names the kinds each file is excused for; a stale kind reds | A real `SELECT … FROM vet_visits` planted in lib/medicationSetup.ts passes the old guard and reds the new one; registering rundown.ts for a column it does not touch reds the stale-kind check |
+| CUL-971 | **Shipped.** The ref-race pull error in `docs/git-first-aid.md` | Docs only. The entry's own check (`git rev-parse HEAD` against `git ls-remote`) caught this branch's base one merge behind main while it was being written |
+| CUL-80 | **Gate: clinical** | The premise moved: the server set now holds cough and each lane has its own cell, so widening the row is a detector and membership-list change |
+| CUL-398 | **Gate: clinical** | Both offered fixes land on the trial outcome sheet; option (a) recommended, owes the voice pass and an adversarial read |
+| CUL-544 | **Gate: clinical** | Moves the Pattern-10 gate on the per-incident read; pairs with CUL-827 |
+| CUL-1116 | **Left**, comment | Re-measured (25 files, 423 lines); runs past an hour; the parser it needs takes a ScriptKind the callers do not pass |
+| CUL-1098 | **Left**, comment | Clean, but shares `app/event/[id].tsx` with CUL-1087; take it after this PR |
+| CUL-382, CUL-1097, CUL-1103 | **Left** | Each re-verified at file:line and still true; not reached under the six-pick cap |
+| CUL-1154 | **Filed**, Quick Win | homeWrites names about 20 of some 50 write helpers by hand; derive them by effect. Found building CUL-1106 |
+| CUL-1120, CUL-1125 | **Labelled Quick Win** (same-area pass) | Verified at file:line; both follow this PR (shared files) |
+| CUL-1124 | **Gate: clinical** | The dose chip rendering is Dr. Chen's to sign |
+| CUL-1127 | **Gate: privacy** | Item 3 is sign-out teardown; items 2 and 4 can split out |
+| CUL-498 | **Gate: design** | History v2 (CUL-1108) decides the scope control |
+| CUL-1105 | **Gate: clinical**, blocked by CUL-1109 | The flag-change predicate is Pattern 9 ground; the cap fix lands first |
+| CUL-1073 | **Left**, blocked by CUL-1108 | H-7 is already with the PM |
+| CUL-375 | **Canceled (obsolete)** | Home's pull-to-refresh calls `regenerateSignal` (`app/(tabs)/index.tsx:165`); the server caps rebuilds at 12 per pet per day (`generate-signal/index.ts:635`) |
+| CUL-570 | **Propose close** | Dissolves at D2-8: the Design v2 Home has no Trend card beside the Signal |
+| CUL-772 | **Waiting on PM** | Decision brief on the issue; recommend (b), a short cache expiry when the phone has unsent work |
+
+**Lesson:** a fix that adds a trigger inherits the budget of what it triggers. CUL-1087's first cut rebuilt the Signal on every meal save from the edit screen, and each rebuild spends one of the 12 a day past which detection stops (CUL-1109). The tests and the reviewer both passed it; reading a neighbour issue during the same-area pass is what found the cost.
