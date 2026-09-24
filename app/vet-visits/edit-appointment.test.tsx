@@ -1,4 +1,4 @@
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import EditAppointmentScreen from './edit-appointment';
 import { composeScheduledAt, type AppointmentDetail } from '../../lib/vetVisits';
@@ -136,6 +136,60 @@ describe('seeding from the record', () => {
     // No time means nothing to clear, so the control that undoes nothing is absent
     // rather than disabled (C-7).
     expect(screen.queryByText('Clear')).toBeNull();
+  });
+});
+
+describe('the time picker’s 9:00 seed is a value on iOS (CUL-984)', () => {
+  // iOS draws the time picker as an inline spinner, which fires `onChange` only when
+  // its wheel MOVES. On a booking with no time it opened on 9:00 with nothing
+  // committed, so opening it and saving kept "no time". Android's picker is a dialog
+  // that answers on OK.
+  const realOS = Platform.OS;
+  afterEach(() => {
+    Platform.OS = realOS;
+  });
+
+  const NO_TIME = () => composeScheduledAt(dayOut(42), null);
+  function nineAm(): string {
+    const d = dayOut(42);
+    return composeScheduledAt(d, new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9, 0));
+  }
+
+  async function saved(): Promise<string> {
+    fireEvent.press(screen.getByText('Save changes'));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    return (mockUpdate.mock.calls[0] as [string, { scheduledAt: string }])[1].scheduledAt;
+  }
+
+  it('iOS: opening the wheel on a no-time booking and saving keeps the 9:00 it showed', async () => {
+    Platform.OS = 'ios';
+    mockRow = row({ scheduled_at: NO_TIME() });
+    render(<EditAppointmentScreen />);
+    await screen.findByText('Change this appointment');
+    fireEvent.press(screen.getByLabelText('Time, not set'));
+    expect(screen.getByText('9:00 am')).toBeTruthy();
+    expect(await saved()).toBe(nineAm());
+  });
+
+  it('iOS: Clear takes the time AND closes the wheel, so no time is saved', async () => {
+    Platform.OS = 'ios';
+    render(<EditAppointmentScreen />);
+    await screen.findByText('Change this appointment');
+    fireEvent.press(screen.getByLabelText('Time, 3:00 pm'));
+    fireEvent.press(screen.getByLabelText('Clear the time'));
+    expect(screen.getByText('Optional')).toBeTruthy();
+    expect(screen.queryAllByTestId('picker')).toHaveLength(0);
+    expect(await saved()).toBe(NO_TIME());
+  });
+
+  it('Android: opening the dialog commits nothing until the dialog answers', async () => {
+    Platform.OS = 'android';
+    mockRow = row({ scheduled_at: NO_TIME() });
+    render(<EditAppointmentScreen />);
+    await screen.findByText('Change this appointment');
+    fireEvent.press(screen.getByLabelText('Time, not set'));
+    expect(screen.getByText('Optional')).toBeTruthy();
+    expect(await saved()).toBe(NO_TIME());
   });
 });
 
