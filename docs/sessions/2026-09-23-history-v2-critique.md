@@ -47,8 +47,10 @@ The PM reacted to round 4 ("I LOVE LOVE LOVE where we landed"): ruled H-1 (a), H
 - **The project:** *History v2 · the record you can read* (P-CUL-18): HV-1 → HV-15 (CUL-1158 → CUL-1171, CUL-1175) over six steps, five sessions at once in step 1 and four in step 2, plus three gated follow-ups (CUL-1172 → CUL-1174). CUL-1073, CUL-1119, CUL-1120, CUL-1122, CUL-1124, CUL-1125, CUL-1126, CUL-1127 moved in as step 0 bundles or built-in scope; CUL-1123 stays in Design v2 and now blocks HV-10. Every issue carries its kickoff prompt; the bundle prompts are in the project description. CUL-1108 moved into the project, off `Waiting on PM`.
 - **CLAUDE.md:** a Read-These row for the spec, paid for by compacting C-36's mechanics (verbatim in the lessons file) and repointing C-36 and C-41 from the deleted `vetVisitsFlagOff` guard to the live `designV2FlagOff` one: 136,575 B → 136,490 B.
 
+- **How a session starts, made explicit** (the PM asked whether to paste a table cell): a row with one issue uses Linear's *Copy as prompt* on that issue; a row with two issues uses its bundle block. The project table gained a *To start it* column, the four bundle prompts became plain code blocks (Linear's title chips no longer mix into copied text), and each bundle's block is also a comment on both of its issues, so *Copy as prompt* on half a bundle is never the only thing an issue offers.
+- **Wrap:** STATUS.md gains the new track's one row (a track started); CI green on the session's last push; the PM asked the session to merge.
+
 ## PM actions
 
-1. Merge #898 (it carries the spec, round 5 and the critique); the build sessions read the spec from `main`.
-2. Start step 1 and step 0 together: CUL-1158, CUL-1159, CUL-1160, CUL-1161, CUL-1162, and Bundles A (CUL-1073 + CUL-1119) and B (CUL-1123 + CUL-1125) from the project description.
-3. Later, on the issues that ask: the allowlist "go" and the device pass (CUL-1171), the GA "go" (CUL-1175).
+1. Start step 1 and step 0 together: *Copy as prompt* on CUL-1158, CUL-1159, CUL-1160, CUL-1161 and CUL-1162, plus the Bundle A (CUL-1073 + CUL-1119) and Bundle B (CUL-1123 + CUL-1125) blocks from the project description.
+2. Later, on the issues that ask: the allowlist "go" and the device pass (CUL-1171), the GA "go" (CUL-1175).
