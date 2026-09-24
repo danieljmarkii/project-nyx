@@ -240,8 +240,10 @@ In GitHub, repo → **Settings** → **Environments**:
 
 - Settings → Secrets and variables → Actions: `SUPABASE_ACCESS_TOKEN` must **not**
   appear under Repository secrets. A repository secret reaches every branch.
-- Push any branch, then Actions → Deploy Edge Functions → Run workflow → **Use
-  workflow from** that branch. The job must fail before its first step with
+- Once the workflow is on `main` (Run workflow only lists workflows that are),
+  create any branch from `main`, then Actions → Deploy Edge Functions → Run
+  workflow → **Use workflow from** that branch. The job must fail before its first
+  step with
   *"Branch … is not allowed to deploy to production due to environment protection
   rules"*. If it starts instead, the branch rule is missing: fix step 2 before
   anything else.
