@@ -304,6 +304,57 @@ describe('History — a delete that fails', () => {
   });
 });
 
+// ── Paging after a Remove (CUL-1078) ─────────────────────────────────────────────
+//
+// `getTimeline` is OFFSET-paginated. A removed row leaves the table, so every row
+// after it moves up one place, and a next page read from the old offset starts one
+// row too far in. The skipped row is never shown and nothing says so.
+
+describe('History — paging after a Remove', () => {
+  /** A full first page, sized by the screen's own `limit` argument rather than a
+   *  restated constant, so "Load more" is on screen. Later pages come back empty. */
+  function fullFirstPage() {
+    mockGetTimeline.mockImplementation(async (_pet: string, limit: number, offset: number) =>
+      offset === 0
+        ? Array.from({ length: limit }, (_, i) =>
+            row(`e${i}`, new Date(Date.UTC(2026, 7, 24, 9) - i * 60_000).toISOString()))
+        : []);
+  }
+
+  const offsetOfLastRead = () => mockGetTimeline.mock.calls.at(-1)?.[2];
+  const pageSize = () => mockGetTimeline.mock.calls[0][1] as number;
+
+  it('reads the next page from one row earlier once a Remove has landed', async () => {
+    fullFirstPage();
+    const view = render(<HistoryScreen />);
+    await waitFor(() => expect(view.getByText('event e0')).toBeTruthy());
+
+    fireEvent.press(view.getByTestId('delete-e0'));
+    await confirmRemove();
+    await waitFor(() => expect(view.queryByText('event e0')).toBeNull());
+
+    await act(async () => { fireEvent.press(view.getByText('Load more')); });
+
+    expect(offsetOfLastRead()).toBe(pageSize() - 1);
+  });
+
+  it('keeps the offset when the Remove fails and the row comes back', async () => {
+    fullFirstPage();
+    const view = render(<HistoryScreen />);
+    await waitFor(() => expect(view.getByText('event e0')).toBeTruthy());
+    mockReverse.mockRejectedValueOnce(new Error('write failed'));
+
+    fireEvent.press(view.getByTestId('delete-e0'));
+    await confirmRemove();
+    await waitFor(() => expect(view.getByText('event e0')).toBeTruthy());
+
+    await act(async () => { fireEvent.press(view.getByText('Load more')); });
+
+    // The row is still in the table, so nothing after it moved.
+    expect(offsetOfLastRead()).toBe(pageSize());
+  });
+});
+
 // ── The vet visit row (CUL-904 VV-6; spec §4.1 History + §7 AC 10) ──────────────
 //
 // The row renders for every account since GA (CUL-905). Its reads are asserted
