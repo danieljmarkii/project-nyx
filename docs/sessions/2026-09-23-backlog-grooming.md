@@ -327,8 +327,36 @@ Anything naming RLS, privacy, delete, purge, token or spend is read by a human i
 | `Waiting on PM` removed | 9 | CUL-44, 267, 615, 653, 741, 780, 929, 960, 965 |
 | Related links | 18 | §6 |
 | Issues filed | 2 | CUL-1099, CUL-1100 |
-| Comments | 32 | every write above carries its evidence; CUL-719 carries the outcome |
+| Comments | 36 | every write above carries its evidence; CUL-719 carries the outcome; the close-out posted the four PM briefs on CUL-552, 583, 914 and 934 |
 
 Repo, in this PR: this record; `STATUS.md` (the vet-report row per CUL-1034, the standing-hold section, two stale clauses); `CLAUDE.md`'s at-a-glance hold sentence (net shorter; `guards/claudeMdBudget.test.ts` passes at 136,541 B).
+
+## Close-out (2026-09-24)
+
+**Definition of Done.**
+
+| Check | Result |
+|---|---|
+| CUL-1034's acceptance criteria | **Pass**: real span plus the run-order pointer; no per-PR list, and the row went from 898 to 669 B; the owed deploy and the `Waiting on PM` pointer are kept |
+| Anti-pattern scan | **Pass**: docs only; no code, schema or copy change |
+| Types / lint | **Pass**: `tsc --noEmit` clean in the pre-push hook |
+| Automated tests | **N/A**: docs only. The full suite still ran green on push (444 suites, 9,688 tests) and CI was green on every head |
+| Secrets | **Pass**: none used |
+| Adversarial review | **N/A for code**: no clinical or statistical logic changed. The decision review ran isolated lenses with stated counterexamples: CUL-989 truncation and failed pulls; CUL-1099 dose suppression; CUL-946 far-future visits; CUL-60(b) a once-a-day refuser; D10 a failed consent read. Each is recorded under Team review |
+| Future-self | **Keep:** the new pattern is an isolated-lens review of a pass's own decisions before escalating. It cut eight briefs to four decisions plus three actions and caught nine errors in this record |
+| PM actions homed in Linear | **Pass**: CUL-552, CUL-583, CUL-934, CUL-914 and CUL-923 carry their decisions, and CUL-719 carries the merge batch and the team's pending go |
+
+**Persona sign-off.**
+- Product Owner ✓ (board reconciliation, dedup, D8 narrowed against live work)
+- Dir. of Engineering ✓ (deploy currency by hash, the PR queue)
+- QA ✓ (quick wins verified against the tree, 192 bodies read)
+- Dr. Chen ✓ (the Urgent tier; the CUL-1099 and CUL-989 impact)
+- Trust & Safety ✓ (the path-traversal class, the PAT declined)
+- Designer ✓ (the mock-round rejects, the #630 / #631 calls)
+- Data Scientist ✓ (the CUL-914 dissent)
+
+**Residuals.**
+- The team-owned set above waits on the PM's go and was not applied.
+- #885 merged on 2026-09-23 and closed CUL-1076 through its attachment. The triage had called it a trap, but CUL-1076's own definition of done (a published mock page plus briefs) arguably holds. It is flagged, not reopened.
 
 — Product Owner / Backlog Steward lens, with the Dir. of Engineering, QA, Dr. Chen, Trust & Safety and Designer lenses; session 2026-09-23-backlog-grooming
