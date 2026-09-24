@@ -1,316 +1,157 @@
-// The Edge-Function deploy-ledger guard (B-178 / CUL-135).
+// The Edge-Function deploy-ledger guard (B-178 / CUL-135; rebuilt for CUL-1147).
 //
-// Why this file exists: merging a PR that changes `supabase/functions/**` does
-// NOT deploy it — deploys are a separate manual step (Supabase MCP /
-// `scripts/deploy-edge.sh`, see docs/edge-deploy-runbook.md). So a merged Edge
-// Function silently drifts from `main` until someone notices. It has bitten a
-// clinical function once already: `analyze-vomit`'s B-028 (#220) merged
-// 2026-06-22 and ran the month-old bundle live until a June-24 audit caught it.
-// Nothing structurally stops the next one.
+// Since CUL-1147, merging to main DEPLOYS: `.github/workflows/edge-deploy.yml`
+// deploys every function whose shipping closure changed since its last recorded
+// deploy, checks it, and records it as a GitHub deployment. So the ledger
+// (`supabase/functions/deploy-manifest.json`) no longer records what is live and a
+// PR author no longer bumps a fingerprint for every change. It keeps only what a
+// person decides, and this guard checks exactly that:
 //
-// This turns SILENT drift into RECORDED, REASONED drift. It is a source-scan in
-// the shape of `guards/ownerFacingCopy.test.ts`: it rides the already-required
-// `App (typecheck + jest)` check, so it is blocking with no ci.yml change, and it
-// is token-free and network-free (pure fs + the TypeScript parser) — it never
-// contacts Supabase, which keeps CI's `contents: read` trust boundary intact.
-//
-// HOW IT WORKS
-// ------------
-// For each deployable function (a dir under supabase/functions/ with an
-// `index.ts`; `_shared` is inlined, never deployed), it walks the function's
-// SHIPPING CLOSURE — `index.ts` plus every file it transitively imports by a
-// relative (`./` / `../`) specifier, which is exactly the set esbuild inlines in
-// `scripts/deploy-edge.sh` (including the cross-package `../../../lib/*.ts`,
-// `../generate-signal/*.ts`, and `../_shared/*.ts` reaches). Runtime specifiers
-// (`https://`, `npm:`, `node:`, `jsr:`) stay external, same as the real bundle.
-// It hashes that closure into a per-function FINGERPRINT and compares it to the
-// recorded fingerprint in `supabase/functions/deploy-manifest.json` (the ledger).
+//   holds  a function that must not go live on merge (it waits on an app build, a
+//          clinical gate, a migration). Each hold names its CUL issue, says why, and
+//          records the fingerprint of the code it holds.
+//   order  functions that deploy in a fixed sequence when several change at once.
 //
 // It FAILS when:
-//   (1) DRIFT       — a function's current fingerprint differs from the one the
-//                     ledger recorded (its shipping code changed since it was
-//                     last acknowledged). Fix: deploy it and set the ledger
-//                     entry to the new fingerprint with status `deployed`, OR
-//                     record status `pending` (deploy owed) / `hold` (deliberately
-//                     not deployed, e.g. B-494) with a reason.
-//   (2) UNTRACKED   — a deployable function has no ledger entry (a NEW function
-//                     can't ship without recording its deploy intent).
-//   (3) STALE       — the ledger lists a function that no longer exists on disk
-//                     (renamed/removed) — the orphan-in-reverse of B-397.
-//   (4) UNREASONED  — a `pending`/`hold` entry with no `reason`. Every
-//                     non-`deployed` state is a named decision, never a silent
-//                     hole (the discipline `LOCAL_WIPE_TABLES` /
-//                     `// copy-guard-ok:` use).
-//   (5) UNRESOLVED  — a relative import in a closure the walker can't resolve to
-//                     a file. That means the walker's model of the code is wrong,
-//                     so it fails loudly rather than silently under-fingerprinting.
+//   (1) UNRESOLVED  — a relative import in a function's closure the walker can't
+//                     resolve. The walker's model of the code is wrong, so every
+//                     fingerprint (and every "did it change?" the deploy job asks)
+//                     is suspect. Fails loudly rather than under-fingerprinting.
+//   (2) HELD-DRIFT  — a held function's shipping code changed since the hold
+//                     recorded it. That change will NOT go live when it merges; the
+//                     author confirms that by updating the hold's fingerprint, or
+//                     lifts the hold. Nothing joins a held queue unnoticed. This is
+//                     the old DRIFT rule, now scoped to the functions it protects.
+//   (3) UNREASONED  — a hold without its issue ref or its reason.
+//   (4) STALE       — a hold or an order entry naming a function that isn't on disk.
+//   (5) INVALID     — anything else in the file, including the retired per-function
+//                     `functions` block (with a message saying why it went).
+//   (6) DISPATCH    — the workflow's manual-run dropdown doesn't list exactly
+//                     `all-changed` plus every deployable function, so a new
+//                     function could not be redeployed or rolled back by hand.
 //
-// SCOPE BOUNDARY (documented, not implied): this guarantees no function's
-// shipping code changes without a recorded, reasoned acknowledgment in the
-// ledger. It CANNOT prove a deploy actually happened — the live artifact is a
-// bundle, not a source closure, so CI (which has no Supabase token by design)
-// can't compare against production. Confirming live-vs-main is a separate
-// in-session reconciliation (filed as a follow-on). Because the ledger's
-// `deployed` fingerprints are self-reported, the guard's promise is "no silent
-// drift", not "everything on main is live".
+// It rides the required `App (typecheck + jest)` check, token-free and network-free
+// like before: it never contacts Supabase or GitHub. What is live is the deploy
+// workflow's to prove, per deploy (version, ACTIVE, verify_jwt, a boot smoke test),
+// and its records say so.
 //
-// Over-fires in the safe direction only: a comment-only or type-only change in a
-// closure flips the fingerprint (esbuild would emit identical bytes), so you're
-// asked to confirm a no-op deploy — never the reverse, where real drift passes
-// unrecorded. Widen/refine if that friction ever outweighs the safety.
+// The closure walker itself lives in scripts/edge-deploy/fingerprint.ts, shared with
+// the deploy job, so the guard and the deployer can never disagree about what
+// "changed" means. Its self-tests stay here, below.
 
-const ts = require('typescript') as typeof import('typescript');
-const fs = require('fs') as typeof import('fs');
-const path = require('path') as typeof import('path');
-const crypto = require('crypto') as typeof import('crypto');
-const os = require('os') as typeof import('os');
-
-type TSNode = import('typescript').Node;
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { fingerprintEntry, listFunctionDirs, type Fingerprint } from '../scripts/edge-deploy/fingerprint.ts';
+import { LEDGER_REL, ledgerProblems, parseLedger } from '../scripts/edge-deploy/ledger.ts';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const FUNCTIONS_DIR = path.join(REPO_ROOT, 'supabase', 'functions');
-const MANIFEST_PATH = path.join(FUNCTIONS_DIR, 'deploy-manifest.json');
-const MANIFEST_REL = path.relative(REPO_ROOT, MANIFEST_PATH);
+const WORKFLOW_REL = '.github/workflows/edge-deploy.yml';
 
-// Relpaths are normalized to forward slashes so a checkout on a different OS
-// fingerprints identically — the path-separator sibling of readNormalized's
-// CRLF fix (content, not host encoding, is what we hash). Only the hash
-// pre-image and the closure listing use it; content is always read from abs.
-const toRel = (root: string, abs: string) => path.relative(root, abs).split(path.sep).join('/');
+type Computed = Record<string, Pick<Fingerprint, 'fingerprint' | 'unresolved'>>;
 
-// ── fingerprint primitives ─────────────────────────────────────────────────────
-
-const sha256 = (buf: string) => 'sha256:' + crypto.createHash('sha256').update(buf, 'utf8').digest('hex');
-
-// Normalize line endings before hashing so a CRLF checkout doesn't spuriously
-// differ from the LF one the ledger was seeded on. Content, not encoding, is the
-// thing we're fingerprinting.
-const readNormalized = (abs: string): string => fs.readFileSync(abs, 'utf8').replace(/\r\n/g, '\n');
-
-// Every relative (`./` / `../`) module specifier a source file imports or
-// re-exports. Uses the TS parser (robust to multiline imports, comments, and
-// string literals inside comments) rather than a regex. Handles static
-// `import`/`export … from`, `import x = require('…')`, dynamic `import('…')`
-// with a string-literal argument, and the inline import-type query
-// `import('…').Type` (a real form here — generate-report/render.ts uses it for
-// a `report.ts` type; missing it would let that dependency go untraced, which
-// is exactly the silent-drift this guard exists to stop). Bare / `https:` /
-// `npm:` / `node:` / `jsr:` specifiers are external — Deno resolves them at
-// runtime, esbuild leaves them alone — so they are deliberately skipped.
-function relativeSpecifiers(absFile: string, src: string): string[] {
-  // Parse plain `.ts` as TS, not TSX: every file in a function's closure is a
-  // Deno `.ts` with no JSX, and TSX mode misparses a bare generic arrow
-  // (`<T>(x: T) => x`). Fixtures may be `.tsx`, so pick by extension.
-  const kind = absFile.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  const sf = ts.createSourceFile(absFile, src, ts.ScriptTarget.Latest, true, kind);
+// The choice options of the workflow_dispatch `function` input, read by
+// indentation from the YAML text. Comment lines are skipped and trailing comments
+// cut, so a commented-out option does not count. Returns null when the block
+// isn't there in block-list form, which the gate reports rather than guessing.
+export function dispatchOptions(yaml: string): string[] | null {
+  const lines = yaml.split(/\r?\n/);
+  const indent = (l: string) => l.length - l.trimStart().length;
+  const code = (l: string) => l.replace(/\s+#.*$/, '').replace(/^\s*#.*$/, '');
+  const fnLine = lines.findIndex((l) => /^\s*function:\s*$/.test(code(l)));
+  if (fnLine === -1) return null;
+  const fnIndent = indent(lines[fnLine]);
+  let optLine = -1;
+  for (let i = fnLine + 1; i < lines.length; i++) {
+    const c = code(lines[i]);
+    if (!c.trim()) continue;
+    if (indent(lines[i]) <= fnIndent) break;
+    if (/^\s*options:\s*$/.test(c)) {
+      optLine = i;
+      break;
+    }
+  }
+  if (optLine === -1) return null;
+  const optIndent = indent(lines[optLine]);
   const out: string[] = [];
-  const push = (spec: string | undefined) => {
-    if (spec && (spec.startsWith('./') || spec.startsWith('../'))) out.push(spec);
-  };
-  const visit = (n: TSNode) => {
-    if ((ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) && n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) {
-      push(n.moduleSpecifier.text);
-    } else if (
-      ts.isImportEqualsDeclaration(n) &&
-      ts.isExternalModuleReference(n.moduleReference) &&
-      ts.isStringLiteral(n.moduleReference.expression)
-    ) {
-      push(n.moduleReference.expression.text);
-    } else if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) {
-      const arg = n.arguments[0];
-      if (arg && ts.isStringLiteral(arg)) push(arg.text);
-    } else if (ts.isImportTypeNode(n) && ts.isLiteralTypeNode(n.argument) && ts.isStringLiteral(n.argument.literal)) {
-      // `import('./report.ts').ProteinTimeline` — the type-position query.
-      push(n.argument.literal.text);
-    }
-    n.forEachChild(visit);
-  };
-  visit(sf);
-  return out;
-}
-
-// Resolve a relative specifier against the importing file. Mirrors the Deno /
-// esbuild resolution the deploy actually uses: an explicit `.ts`/`.tsx`/`.json`
-// is taken verbatim; an extensionless specifier tries `.ts`, `.tsx`, `.json`,
-// then `index.*`. Returns the absolute path or null if nothing exists.
-function resolveSpec(fromFile: string, spec: string): string | null {
-  const base = path.resolve(path.dirname(fromFile), spec);
-  const candidates = /\.(ts|tsx|json)$/.test(spec)
-    ? [base]
-    : [
-        base + '.ts',
-        base + '.tsx',
-        base + '.json',
-        path.join(base, 'index.ts'),
-        path.join(base, 'index.tsx'),
-        path.join(base, 'index.json'),
-      ];
-  for (const c of candidates) {
-    try {
-      if (fs.statSync(c).isFile()) return c;
-    } catch {
-      /* not this candidate */
-    }
+  for (let i = optLine + 1; i < lines.length; i++) {
+    const c = code(lines[i]);
+    if (!c.trim()) continue;
+    if (indent(lines[i]) <= optIndent) break;
+    const m = /^\s*-\s*['"]?([^'"]+?)['"]?\s*$/.exec(c);
+    if (!m) break;
+    out.push(m[1]);
   }
-  return null;
+  return out.length ? out : null;
 }
 
-type Closure = { files: string[]; unresolved: { from: string; spec: string }[] };
-
-// The transitive local-import closure of an entry file. Absolute paths
-// throughout, so it is root-independent (the self-tests point it at a temp dir).
-// `.json` files are included in the closure (they ship) but not parsed.
-function computeClosure(entryAbs: string): Closure {
-  const visited = new Set<string>();
-  const unresolved: { from: string; spec: string }[] = [];
-  const stack = [entryAbs];
-  while (stack.length) {
-    const cur = stack.pop() as string;
-    if (visited.has(cur)) continue;
-    visited.add(cur);
-    if (!/\.(ts|tsx)$/.test(cur)) continue; // json/asset: included above, nothing to parse
-    for (const spec of relativeSpecifiers(cur, readNormalized(cur))) {
-      const resolved = resolveSpec(cur, spec);
-      if (!resolved) unresolved.push({ from: cur, spec });
-      else if (!visited.has(resolved)) stack.push(resolved);
-    }
-  }
-  return { files: [...visited], unresolved };
-}
-
-type Fingerprint = { fingerprint: string; closure: string[]; unresolved: { from: string; spec: string }[] };
-
-// Fingerprint = sha256 over the sorted `<relpath> <sha256(content)>` lines of
-// the closure. Both path and content matter, so a rename or a content edit
-// anywhere in the closure moves the fingerprint. `root` only sets the relpaths
-// (kept stable/portable); pass REPO_ROOT for real functions, temp root in tests.
-function fingerprintEntry(entryAbs: string, root: string): Fingerprint {
-  const { files, unresolved } = computeClosure(entryAbs);
-  const rels = files.map((f) => toRel(root, f)).sort();
-  const serialized = rels.map((rel) => `${rel} ${sha256(readNormalized(path.join(root, rel)))}`).join('\n');
-  return {
-    fingerprint: sha256(serialized),
-    closure: rels,
-    unresolved: unresolved.map((u) => ({ from: toRel(root, u.from), spec: u.spec })),
-  };
-}
-
-// ── ledger schema + evaluation ─────────────────────────────────────────────────
-
-const STATUSES = new Set(['deployed', 'pending', 'hold']);
-
-type LedgerEntry = {
-  status?: string;
-  fingerprint?: string;
-  reason?: string;
-  ref?: string;
-  updated?: string;
-  deployedVersion?: number;
-};
-type Manifest = { functions?: Record<string, LedgerEntry> };
-
-// The pure gate: given each function's computed fingerprint and the ledger, list
-// every problem (empty = green). Pure over its inputs so the self-tests can drive
-// it with synthetic data, no fs.
-function evaluateLedger(
-  computed: Record<string, Pick<Fingerprint, 'fingerprint' | 'unresolved'>>,
-  manifest: Manifest,
-): string[] {
+// The pure gate: every problem with the ledger and the dropdown, given the
+// computed closures. Empty = green. Pure so the self-tests drive it with fixtures.
+export function evaluateLedger(computed: Computed, rawLedger: unknown, options: string[] | null): string[] {
   const problems: string[] = [];
-  const entries = manifest.functions ?? {};
-  const onDisk = Object.keys(computed).sort();
-
-  for (const fn of onDisk) {
-    const { fingerprint, unresolved } = computed[fn];
+  for (const fn of Object.keys(computed).sort()) {
+    const { unresolved } = computed[fn];
     if (unresolved.length) {
       const list = unresolved.map((u) => `${u.spec} (from ${u.from})`).join(', ');
       problems.push(
         `UNRESOLVED — '${fn}' has relative import(s) the fingerprint walker could not resolve: ${list}. ` +
-          `Fix the import path, or if it is a real specifier the walker mis-handles, extend the walker.`,
-      );
-      continue; // an incomplete closure would produce a misleading fingerprint
-    }
-    const entry = entries[fn];
-    if (!entry) {
-      problems.push(
-        `UNTRACKED — '${fn}' has no entry in ${MANIFEST_REL}. Add one recording its current ` +
-          `fingerprint (${fingerprint}) with a status and reason. A new Edge Function cannot ship ` +
-          `without recording its deploy intent. See docs/edge-deploy-runbook.md § Deploy ledger.`,
-      );
-      continue;
-    }
-    if (!entry.status || !STATUSES.has(entry.status)) {
-      problems.push(`INVALID — '${fn}' has status ${JSON.stringify(entry.status)}; must be one of deployed | pending | hold.`);
-    } else if (entry.status !== 'deployed' && !(entry.reason && entry.reason.trim())) {
-      problems.push(
-        `UNREASONED — '${fn}' is '${entry.status}' with no reason. Every non-deployed ledger state is a ` +
-          `named decision — add a "reason" (what is owed, or why it is held).`,
-      );
-    }
-    if (entry.fingerprint !== fingerprint) {
-      problems.push(
-        `DRIFT — '${fn}' changed since the ledger last recorded it.\n` +
-          `        recorded : ${entry.fingerprint ?? '(none)'}  [status: ${entry.status ?? '(unset)'}]\n` +
-          `        current  : ${fingerprint}\n` +
-          `        Fix: deploy it (docs/edge-deploy-runbook.md) and set this entry's "fingerprint" to the ` +
-          `current value with status "deployed"; OR, if it is intentionally not being deployed yet, set the ` +
-          `"fingerprint" to the current value with status "pending"/"hold" and a "reason". The fingerprint ` +
-          `moves when the function's shipping closure changes — often a shared file (lib/*, _shared/*, or a ` +
-          `sibling function) it inlines, which drifts every function that inlines it.`,
+          `Fix the import path, or if it is a real specifier the walker mis-handles, extend the walker ` +
+          `(scripts/edge-deploy/fingerprint.ts).`,
       );
     }
   }
+  const { ledger, problems: shape } = parseLedger(rawLedger);
+  problems.push(...shape, ...ledgerProblems(ledger, computed));
 
-  for (const fn of Object.keys(entries).sort()) {
-    if (!(fn in computed)) {
+  const expected = ['all-changed', ...Object.keys(computed).sort()];
+  if (!options) {
+    problems.push(`DISPATCH — could not read the \`function\` input's options list in ${WORKFLOW_REL}.`);
+  } else {
+    const missing = expected.filter((o) => !options.includes(o));
+    const extra = options.filter((o) => !expected.includes(o));
+    if (missing.length || extra.length) {
       problems.push(
-        `STALE — ${MANIFEST_REL} lists '${fn}', but there is no deployable function directory at ` +
-          `supabase/functions/${fn}/ (with an index.ts). Remove the stale entry, or restore the function.`,
+        `DISPATCH — ${WORKFLOW_REL}'s manual-run dropdown must list all-changed plus every deployable ` +
+          `function.` +
+          (missing.length ? ` Add: ${missing.join(', ')}.` : '') +
+          (extra.length ? ` Remove: ${extra.join(', ')}.` : ''),
       );
     }
   }
   return problems;
 }
 
-// ── real-repo scan ─────────────────────────────────────────────────────────────
-
-function listFunctionDirs(functionsDir: string): string[] {
-  return fs
-    .readdirSync(functionsDir, { withFileTypes: true })
-    .filter(
-      (e) => e.isDirectory() && e.name !== '_shared' && fs.existsSync(path.join(functionsDir, e.name, 'index.ts')),
-    )
-    .map((e) => e.name)
-    .sort();
-}
-
-function loadManifest(): Manifest {
-  if (!fs.existsSync(MANIFEST_PATH)) return {};
-  return JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8')) as Manifest;
-}
-
 function report(problems: string[]): string {
   return (
     `\n${problems.length} deploy-ledger problem(s):\n\n` +
     problems.map((p) => `  • ${p}`).join('\n\n') +
-    `\n\nThe ledger (${MANIFEST_REL}) records, per Edge Function, the fingerprint of the source last ` +
-    `acknowledged as deployed. This guard fails when a function's shipping code drifts from that record ` +
-    `without a reasoned acknowledgment — turning "someone eventually notices an undeployed function" into a ` +
-    `blocked check. It does NOT prove a deploy happened (that needs the live reconciliation). ` +
-    `Runbook: docs/edge-deploy-runbook.md § Deploy ledger.\n`
+    `\n\nMerging to main deploys every changed Edge Function (${WORKFLOW_REL}). The ledger ` +
+    `(${LEDGER_REL}) holds only the holds and the deploy order. Runbook: docs/edge-deploy-runbook.md.\n`
   );
 }
 
-describe('B-178 — Edge Functions do not drift from their deploy ledger unacknowledged', () => {
-  it('every deployable function matches its ledger fingerprint (or a reasoned pending/hold)', () => {
-    const manifest = loadManifest();
-    const computed: Record<string, Pick<Fingerprint, 'fingerprint' | 'unresolved'>> = {};
+describe('CUL-1147 — the deploy ledger holds what a person decided, and nothing stale', () => {
+  it('every hold is reasoned and current, every name exists, and the dropdown lists every function', () => {
+    const computed: Computed = {};
     for (const fn of listFunctionDirs(FUNCTIONS_DIR)) {
       const fp = fingerprintEntry(path.join(FUNCTIONS_DIR, fn, 'index.ts'), REPO_ROOT);
       computed[fn] = { fingerprint: fp.fingerprint, unresolved: fp.unresolved };
     }
-    const problems = evaluateLedger(computed, manifest);
+    const raw: unknown = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, LEDGER_REL), 'utf8'));
+    const options = dispatchOptions(fs.readFileSync(path.join(REPO_ROOT, WORKFLOW_REL), 'utf8'));
+    const problems = evaluateLedger(computed, raw, options);
     expect(problems.length === 0 || report(problems)).toBe(true);
+  });
+
+  // The scan above is only worth something if it saw the real tree.
+  it('scanned the real functions directory (non-vacuity floor)', () => {
+    const dirs = fs
+      .readdirSync(FUNCTIONS_DIR, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && e.name !== '_shared')
+      .map((e) => e.name);
+    expect(dirs.length).toBeGreaterThan(0);
+    expect(listFunctionDirs(FUNCTIONS_DIR)).toEqual(dirs.filter((d) => fs.existsSync(path.join(FUNCTIONS_DIR, d, 'index.ts'))).sort());
   });
 });
 
@@ -441,54 +282,87 @@ describe("the walker's documented limits (characterization, not a guarantee)", (
   });
 });
 
-describe('the deploy-ledger gate (evaluateLedger)', () => {
-  const one = (unresolved: { from: string; spec: string }[] = []) => ({ fingerprint: 'sha256:aaa', unresolved });
+describe('the ledger gate (evaluateLedger)', () => {
+  const fp = (c: string) => `sha256:${c.repeat(64)}`;
+  const computed: Computed = {
+    a: { fingerprint: fp('1'), unresolved: [] },
+    b: { fingerprint: fp('2'), unresolved: [] },
+  };
+  const ALL = ['all-changed', 'a', 'b'];
+  const hold = { ref: 'CUL-215', reason: 'waits on the client build', fingerprint: fp('2') };
 
-  it('passes when the computed fingerprint matches a deployed entry', () => {
-    expect(
-      evaluateLedger({ fn: one() }, { functions: { fn: { status: 'deployed', fingerprint: 'sha256:aaa' } } }),
-    ).toEqual([]);
+  it('passes a clean ledger: current holds, real names, full dropdown', () => {
+    expect(evaluateLedger(computed, { order: ['b', 'a'], holds: { b: hold } }, ALL)).toEqual([]);
+    expect(evaluateLedger(computed, {}, ALL)).toEqual([]);
   });
 
-  it('passes a reasoned pending/hold whose fingerprint matches (acknowledged drift)', () => {
-    expect(
-      evaluateLedger({ fn: one() }, { functions: { fn: { status: 'hold', fingerprint: 'sha256:aaa', reason: 'B-494' } } }),
-    ).toEqual([]);
-  });
-
-  it('flags DRIFT when the fingerprint no longer matches the ledger', () => {
-    const p = evaluateLedger({ fn: one() }, { functions: { fn: { status: 'deployed', fingerprint: 'sha256:OLD' } } });
+  it('flags a held function whose code moved (HELD-DRIFT), and only that', () => {
+    const p = evaluateLedger(computed, { holds: { b: { ...hold, fingerprint: fp('9') } } }, ALL);
     expect(p).toHaveLength(1);
-    expect(p[0]).toMatch(/^DRIFT/);
+    expect(p[0]).toMatch(/^HELD-DRIFT/);
   });
 
-  it('flags an UNTRACKED function with no ledger entry', () => {
-    const p = evaluateLedger({ fn: one() }, { functions: {} });
+  it('flags a hold without its issue or reason (UNREASONED)', () => {
+    const p = evaluateLedger(computed, { holds: { b: { fingerprint: fp('2') } } }, ALL);
+    expect(p.filter((s) => s.startsWith('UNREASONED'))).toHaveLength(2);
+  });
+
+  it('flags names that match no function (STALE)', () => {
+    const p = evaluateLedger(computed, { order: ['ghost'], holds: { gone: hold } }, ALL);
+    expect(p.filter((s) => s.startsWith('STALE'))).toHaveLength(2);
+  });
+
+  it('rejects the retired per-function ledger (INVALID)', () => {
+    const p = evaluateLedger(computed, { functions: { a: { status: 'deployed', fingerprint: fp('1') } } }, ALL);
     expect(p).toHaveLength(1);
-    expect(p[0]).toMatch(/^UNTRACKED/);
+    expect(p[0]).toMatch(/^INVALID/);
   });
 
-  it('flags a STALE ledger entry with no function on disk', () => {
-    const p = evaluateLedger({}, { functions: { ghost: { status: 'deployed', fingerprint: 'sha256:x' } } });
-    expect(p).toHaveLength(1);
-    expect(p[0]).toMatch(/^STALE/);
-  });
-
-  it('flags an UNREASONED pending/hold, and an INVALID status', () => {
-    const pending = evaluateLedger({ fn: one() }, { functions: { fn: { status: 'pending', fingerprint: 'sha256:aaa' } } });
-    expect(pending.some((s) => s.startsWith('UNREASONED'))).toBe(true);
-    const invalid = evaluateLedger({ fn: one() }, { functions: { fn: { status: 'shipped', fingerprint: 'sha256:aaa' } } });
-    expect(invalid.some((s) => s.startsWith('INVALID'))).toBe(true);
-  });
-
-  it('flags UNRESOLVED and does not also emit a spurious drift for the same function', () => {
-    const p = evaluateLedger(
-      { fn: one([{ from: 'fn/index.ts', spec: './missing.ts' }]) },
-      { functions: { fn: { status: 'deployed', fingerprint: 'sha256:aaa' } } },
-    );
+  it('flags UNRESOLVED imports', () => {
+    const broken: Computed = { ...computed, a: { fingerprint: fp('1'), unresolved: [{ from: 'a/index.ts', spec: './gone.ts' }] } };
+    const p = evaluateLedger(broken, {}, ALL);
     expect(p).toHaveLength(1);
     expect(p[0]).toMatch(/^UNRESOLVED/);
   });
+
+  it('flags a dropdown that is missing a function, has an extra one, or cannot be read (DISPATCH)', () => {
+    expect(evaluateLedger(computed, {}, ['all-changed', 'a'])[0]).toMatch(/^DISPATCH.*Add: b\./);
+    expect(evaluateLedger(computed, {}, [...ALL, 'view-report'])[0]).toMatch(/Remove: view-report\./);
+    expect(evaluateLedger(computed, {}, ['a', 'b'])[0]).toMatch(/Add: all-changed\./);
+    expect(evaluateLedger(computed, {}, null)[0]).toMatch(/could not read/);
+  });
 });
 
-declare const __dirname: string;
+describe('dispatchOptions', () => {
+  const yaml = [
+    'on:',
+    '  workflow_dispatch:',
+    '    inputs:',
+    '      function:',
+    '        type: choice',
+    '        # one per function',
+    '        options:',
+    '          - all-changed',
+    "          - 'ask'  # quoted, with a comment",
+    '          # - commented-out',
+    '',
+    '          - generate-report',
+    '      ref:',
+    '        type: string',
+  ].join('\n');
+
+  it('reads the block list, skipping comments and blank lines, stopping at the next key', () => {
+    expect(dispatchOptions(yaml)).toEqual(['all-changed', 'ask', 'generate-report']);
+  });
+
+  it('returns null when there is no options block to read', () => {
+    expect(dispatchOptions('on:\n  push:\n')).toBeNull();
+    expect(dispatchOptions(yaml.replace('options:', 'choices:'))).toBeNull();
+  });
+
+  it('reads the real workflow', () => {
+    const real = dispatchOptions(fs.readFileSync(path.join(REPO_ROOT, WORKFLOW_REL), 'utf8'));
+    expect(real?.[0]).toBe('all-changed');
+    expect(real?.length).toBeGreaterThan(1);
+  });
+});
