@@ -43,11 +43,20 @@ Mutations on the new logic, each caught: holds ignored; comparing against the li
   - A new function got no hold prompt: fixed in the guard's message and the runbook.
   - The `ref` input text didn't match the code, the docs lacked the branch-rule click, and the fallback deno install was unpinned: all fixed.
 
+## Before merge
+
+- **The setup was verified from Actions**, because this session cannot read repo settings directly. A temporary workflow on the branch ([run 36044764464](https://github.com/danieljmarkii/project-nyx/actions/runs/36044764464), deleted in the next commit, tree identical to d1b5d2e) read the settings through the API:
+  - `production` admits exactly one rule, branch `main`, with no reviewers and no wait timer.
+  - `edge-functions` exists.
+  - The token is not a repository or organization secret.
+  - A job on the branch that targeted `production` was refused before a runner picked it up. That is the runbook's lock check, done before merge instead of after.
+- **The baseline changes nothing live**, checked against today's state. Five of the six functions it redeploys have no closure change on `main` since their live deploy. `generate-signal`'s one later commit (b419a1f) builds to an identical bundle. `generate-report` v18 went out after its last change. The only open PRs with unmerged function code are three stale `generate-report` branches (#860, #704, #519).
+- The runbook's lock check said "push any branch", but Run workflow only lists workflows already on `main`. Fixed in d1b5d2e.
+
 ## Still owed (post-merge, CUL-1152)
 
-1. PM: the `production` and `edge-functions` environments and the token, then the runbook's check.
-2. Merge; the push run is a bootstrap dry run.
-3. Run workflow → `extract-medication-from-photo` (the proof).
-4. Run workflow → `all-changed` (the baseline).
-5. Delete the Codespace secret; revoke its token.
-6. Propose closing CUL-700 and CUL-48; fold CUL-795's deploy step.
+1. Merge. The push run is a bootstrap dry run, and its Plan step also proves the secret is in `production`.
+2. Run workflow → `extract-medication-from-photo` (the proof, and the token's first real use).
+3. Run workflow → `all-changed` (the baseline), right after the proof.
+4. Delete the Codespace secret; revoke its token.
+5. Propose closing CUL-700 and CUL-48; fold CUL-795's deploy step.
