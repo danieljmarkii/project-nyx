@@ -8,7 +8,7 @@
 # Three jobs on purpose, run in parallel so each reports independently:
 #   app            — the RN/Expo app: `tsc --noEmit` + jest (self-contained)
 #   app-timezones  — the same jest suite again, under non-UTC clocks (B-514)
-#   edge-functions — `deno test` over supabase/functions (needs network once)
+#   edge-functions — `deno test` + `deno check` over supabase/functions (needs network once)
 # A network blip in one must not mask a real failure in the other.
 name: CI
 
@@ -211,7 +211,12 @@ jobs:
             echo "::error::found no *.test.ts under supabase/functions"
             exit 1
           fi
-          echo "Caching the module graph for ${#suites[@]} suites."
+          # Every module, not only the suites: `Deno check (functions)` below
+          # type-checks the whole tree, and a module no suite imports can carry a
+          # remote import no suite fetches (CUL-782). Warming it here keeps that
+          # step off the network, like the test step.
+          mapfile -t modules < <(find supabase/functions -name '*.ts' | sort)
+          echo "Caching the module graph for ${#modules[@]} modules (${#suites[@]} suites)."
           # 4 attempts with 10/20/40s backoff. The observed esm.sh 522 outage
           # lasted ~2.5 min and the old 3×(5/10/15s) budget gave up ~30s in;
           # this rides out roughly that long. Only reached on a cache miss, so
@@ -226,7 +231,7 @@ jobs:
             # condition fails and has no else branch itself returns 0, so `$?`
             # read after the `fi` is 0 and the real exit code is lost.
             status=0
-            timeout 120 deno cache --lock=deno.lock "${suites[@]}" || status=$?
+            timeout 120 deno cache --lock=deno.lock "${modules[@]}" || status=$?
             if [ "${status}" -eq 0 ]; then
               exit 0
             fi
@@ -247,8 +252,10 @@ jobs:
           exit 1
 
       # `--cached-only` forbids network here, so this step can only fail on the
-      # code. Note this is also the ONLY type check covering supabase/functions —
-      # tsconfig.json excludes that path, and `deno test` type-checks by default.
+      # code. `deno test` type-checks what it runs: the suites and every module
+      # they import, and nothing else. tsconfig.json excludes supabase/functions,
+      # so a module no suite reaches is covered only by `Deno check (functions)`
+      # below (CUL-782).
       #
       # `--allow-read` is scoped to the tree under test, and grants filesystem
       # READ only — it cannot re-open the network `--cached-only` closes above, so
@@ -260,6 +267,20 @@ jobs:
       # notion of deletion by design — so source is the only place to check it.
       - name: Deno test
         run: deno test --lock=deno.lock --cached-only --allow-read=supabase/functions supabase/functions/
+
+      # The rest of supabase/functions (CUL-782). The step above type-checks only
+      # what a suite reaches, so a function no test imports was checked by nothing:
+      # ask/index.ts and delete-account/index.ts (the account-deletion cascade)
+      # when it was measured. A type error planted in delete-account/index.ts
+      # passed `deno test` and `tsc` green. The whole tree rather than a list of
+      # entry points, so the next untested module is covered the day it lands
+      # instead of the day someone remembers to list it. Its graph is warmed with
+      # every module above, so it fetches nothing in practice (measured: zero
+      # downloads on a warm cache). That is structural, not enforced: `deno check`
+      # has no `--cached-only`, so a type the warm step did not fetch would reach
+      # the network here rather than fail fast on the retry above.
+      - name: Deno check (functions)
+        run: deno check --lock=deno.lock supabase/functions/
 
       # Deno entry points that live OUTSIDE supabase/functions and import its
       # modules. `tsconfig.json` excludes `scripts/*.deno.ts` (they use the `Deno`
