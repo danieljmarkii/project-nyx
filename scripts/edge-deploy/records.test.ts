@@ -7,7 +7,10 @@ import {
   recordFrom,
   RECORD_CREATOR,
   RECORD_ENVIRONMENT,
+  recordKey,
   recordTask,
+  signatureValid,
+  signPayload,
   writeRecord,
   type Gh,
   type GhDeployment,
@@ -16,6 +19,9 @@ import {
 
 const sha = (c: string) => c.repeat(40);
 const fp = (c: string) => `sha256:${c.repeat(64)}`;
+const KEY = recordKey('sbp_the-real-token');
+const OTHER_KEY = recordKey('sbp_some-other-token');
+const signed = (p: RecordPayload, key = KEY) => ({ ...p, mac: signPayload(p, key) });
 
 function payload(over: Partial<RecordPayload> = {}): RecordPayload {
   return {
@@ -38,7 +44,7 @@ function deployment(id: number, over: Partial<GhDeployment> = {}): GhDeployment 
     id,
     task: recordTask('ask'),
     environment: RECORD_ENVIRONMENT,
-    payload: payload(),
+    payload: signed(payload()),
     created_at: '2026-09-24T00:00:00Z',
     creator: { login: RECORD_CREATOR },
     ...over,
@@ -67,15 +73,47 @@ describe('recordFrom', () => {
   const ok = [{ state: 'success' }];
 
   it('reads a successful deploy', () => {
-    expect(recordFrom('ask', deployment(5), ok)).toMatchObject({ function: 'ask', version: 7, deploymentId: 5 });
+    expect(recordFrom('ask', deployment(5), ok, KEY)).toMatchObject({ function: 'ask', version: 7, deploymentId: 5 });
   });
 
   it('ignores anything that is not the workflow’s own successful record', () => {
-    expect(recordFrom('ask', deployment(5), [{ state: 'failure' }])).toBeNull();
-    expect(recordFrom('ask', deployment(5, { creator: { login: 'danieljmarkii' } }), ok)).toBeNull();
-    expect(recordFrom('ask', deployment(5, { environment: 'production' }), ok)).toBeNull();
-    expect(recordFrom('ask', deployment(5, { task: 'deploy' }), ok)).toBeNull();
-    expect(recordFrom('ask', deployment(5, { payload: payload({ version: null }) }), ok)).toBeNull();
+    expect(recordFrom('ask', deployment(5), [{ state: 'failure' }], KEY)).toBeNull();
+    expect(recordFrom('ask', deployment(5, { creator: { login: 'danieljmarkii' } }), ok, KEY)).toBeNull();
+    expect(recordFrom('ask', deployment(5, { environment: 'production' }), ok, KEY)).toBeNull();
+    expect(recordFrom('ask', deployment(5, { task: 'deploy' }), ok, KEY)).toBeNull();
+    expect(recordFrom('ask', deployment(5, { payload: signed(payload({ version: null })) }), ok, KEY)).toBeNull();
+  });
+
+  // The forgery the rls-privacy-reviewer found: any branch workflow runs as
+  // github-actions[bot] and can post a well-formed "success" record. It cannot sign
+  // one, because the key comes from a token only the production environment holds.
+  it('rejects a record that is not signed with the production key', () => {
+    const forged = (p: unknown) => deployment(5, { payload: p });
+    expect(recordFrom('ask', forged(payload()), ok, KEY)).toBeNull(); // no signature at all
+    expect(recordFrom('ask', forged(signed(payload(), OTHER_KEY)), ok, KEY)).toBeNull(); // someone else's key
+    expect(recordFrom('ask', forged({ ...signed(payload()), mac: 'f'.repeat(64) }), ok, KEY)).toBeNull(); // a made-up one
+  });
+
+  it('rejects a genuine record whose payload was edited after signing', () => {
+    const genuine = signed(payload());
+    const edited = { ...genuine, mainFingerprint: fp('9') }; // "main moved, and this is current"
+    expect(recordFrom('ask', deployment(5, { payload: edited }), ok, KEY)).toBeNull();
+  });
+});
+
+describe('signatures', () => {
+  it('verify with the key that signed them, and only that key', () => {
+    const mac = signPayload(payload(), KEY);
+    expect(signatureValid(payload(), mac, KEY)).toBe(true);
+    expect(signatureValid(payload(), mac, OTHER_KEY)).toBe(false);
+    expect(signatureValid(payload({ version: 8 }), mac, KEY)).toBe(false);
+    expect(signatureValid(payload(), 'not-hex', KEY)).toBe(false);
+  });
+
+  it('do not depend on the order the JSON came back in', () => {
+    const p = payload();
+    const reordered = Object.fromEntries(Object.entries(p).reverse()) as RecordPayload;
+    expect(signPayload(reordered, KEY)).toBe(signPayload(p, KEY));
   });
 });
 
@@ -99,19 +137,40 @@ function fakeGh(list: GhDeployment[], statuses: Record<number, { state: string }
 describe('lastSuccessfulRecord', () => {
   it('asks for this function’s records in the record environment', async () => {
     const { gh, calls } = fakeGh([], {});
-    await lastSuccessfulRecord(gh, 'o/r', 'ask');
-    expect(calls[0]).toBe('/repos/o/r/deployments?environment=edge-functions&task=deploy%3Aask&per_page=30');
+    await lastSuccessfulRecord(gh, 'o/r', 'ask', KEY);
+    expect(calls[0]).toBe('/repos/o/r/deployments?environment=edge-functions&task=deploy%3Aask&per_page=100&page=1');
+  });
+
+  // The list endpoint documents no order, so the lookup reads every page and orders
+  // the records itself; the newest success may be on any page (code-reviewer).
+  it('finds the newest success whichever page it is on', async () => {
+    const pages: GhDeployment[][] = [
+      Array.from({ length: 100 }, (_, i) => deployment(i + 1, { payload: signed(payload({ version: 1 })) })),
+      [deployment(500, { payload: signed(payload({ version: 5 })) })],
+    ];
+    const calls: string[] = [];
+    const gh: Gh = {
+      async get(path) {
+        calls.push(path);
+        if (path.includes('/statuses')) return [{ state: 'success' }];
+        return pages[Number(/[?&]page=(\d+)/.exec(path)?.[1]) - 1] ?? [];
+      },
+      post: async () => ({}),
+    };
+    const record = await lastSuccessfulRecord(gh, 'o/r', 'ask', KEY);
+    expect(record?.version).toBe(5);
+    expect(calls.filter((c) => !c.includes('/statuses'))).toHaveLength(2);
   });
 
   it('returns the newest success, skipping newer failures and foreign records, newest by id', async () => {
     const list = [
-      deployment(3, { payload: payload({ version: 3 }) }),
+      deployment(3, { payload: signed(payload({ version: 3 })) }),
       deployment(9, { creator: { login: 'someone' } }),
-      deployment(8, { payload: payload({ version: null, bundleSha256: null }) }),
-      deployment(6, { payload: payload({ version: 6 }) }),
+      deployment(8, { payload: signed(payload({ version: null, bundleSha256: null })) }),
+      deployment(6, { payload: signed(payload({ version: 6 })) }),
     ];
     const { gh, calls } = fakeGh(list, { 3: [{ state: 'success' }], 8: [{ state: 'failure' }], 6: [{ state: 'success' }] });
-    const record = await lastSuccessfulRecord(gh, 'o/r', 'ask');
+    const record = await lastSuccessfulRecord(gh, 'o/r', 'ask', KEY);
     expect(record?.version).toBe(6);
     // The foreign record is skipped without a status call; the search stops at the first success.
     expect(calls.filter((c) => c.includes('/statuses'))).toEqual([
@@ -122,14 +181,14 @@ describe('lastSuccessfulRecord', () => {
 
   it('is undefined when nothing succeeded', async () => {
     const { gh } = fakeGh([deployment(1)], { 1: [{ state: 'error' }] });
-    expect(await lastSuccessfulRecord(gh, 'o/r', 'ask')).toBeUndefined();
+    expect(await lastSuccessfulRecord(gh, 'o/r', 'ask', KEY)).toBeUndefined();
   });
 });
 
 describe('writeRecord', () => {
-  it('creates the deployment on the live commit, then gives it its one status', async () => {
+  it('creates the deployment on the live commit, signed, then gives it its one status', async () => {
     const { gh, posts } = fakeGh([], {});
-    const id = await writeRecord(gh, 'o/r', payload(), 'success', 'v7 · checks passed', 'https://dash/ask');
+    const id = await writeRecord(gh, 'o/r', payload(), 'success', 'v7 · checks passed', 'https://dash/ask', KEY);
     expect(id).toBe(42);
     expect(posts).toEqual([
       {
@@ -139,7 +198,7 @@ describe('writeRecord', () => {
           task: 'deploy:ask',
           environment: 'edge-functions',
           description: 'ask from aaaaaaa',
-          payload: payload(),
+          payload: signed(payload()),
           auto_merge: false,
           required_contexts: [],
           production_environment: true,
@@ -161,12 +220,12 @@ describe('writeRecord', () => {
 
   it('clips the status description to GitHub’s 140 characters', async () => {
     const { gh, posts } = fakeGh([], {});
-    await writeRecord(gh, 'o/r', payload(), 'failure', 'x'.repeat(300), 'https://dash/ask');
+    await writeRecord(gh, 'o/r', payload(), 'failure', 'x'.repeat(300), 'https://dash/ask', KEY);
     expect((posts[1].body as { description: string }).description).toHaveLength(140);
   });
 
   it('throws when GitHub returns no id, rather than writing a status to nowhere', async () => {
     const gh: Gh = { get: async () => [], post: async () => ({}) };
-    await expect(writeRecord(gh, 'o/r', payload(), 'success', 'x', 'u')).rejects.toThrow(/did not return a deployment id/);
+    await expect(writeRecord(gh, 'o/r', payload(), 'success', 'x', 'u', KEY)).rejects.toThrow(/did not return a deployment id/);
   });
 });

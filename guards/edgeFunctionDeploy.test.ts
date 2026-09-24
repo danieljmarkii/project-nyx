@@ -115,7 +115,13 @@ export function evaluateLedger(computed: Computed, rawLedger: unknown, options: 
         `DISPATCH — ${WORKFLOW_REL}'s manual-run dropdown must list all-changed plus every deployable ` +
           `function.` +
           (missing.length ? ` Add: ${missing.join(', ')}.` : '') +
-          (extra.length ? ` Remove: ${extra.join(', ')}.` : ''),
+          (extra.length ? ` Remove: ${extra.join(', ')}.` : '') +
+          // The one moment a new function's author is stopped, so it says what merging
+          // will do (code-reviewer, CUL-1147: the old ledger's UNTRACKED check asked this).
+          (missing.length
+            ? ` A new function deploys on the merge that adds it. If it must not go live yet, add a hold ` +
+              `for it in ${LEDGER_REL} in the same PR.`
+            : ''),
       );
     }
   }

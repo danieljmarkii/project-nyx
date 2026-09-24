@@ -63,6 +63,9 @@ PROJECT_REF="${SUPABASE_PROJECT_REF:-aigchluqluzuhtbfllgh}"
 # reach it. Bump deliberately; the next deploy of every function then uses the new one.
 ESBUILD_VERSION="0.28.2"
 SUPABASE_CLI_VERSION="2.117.0"
+# Only installed when no system deno exists (the workflow always has one, from
+# setup-deno); pinned to the same version ci.yml tests with.
+DENO_NPM_VERSION="2.9.4"
 
 usage() { sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
@@ -117,14 +120,14 @@ if [ "$DEPLOY" = 1 ] || [ "$PROVISION_ONLY" = 1 ]; then
   has_version supabase "$SUPABASE_CLI_VERSION" || stale=1
 fi
 if [ "$RUN_TESTS" = 1 ] && ! command -v deno >/dev/null 2>&1; then
-  want+=("deno")
+  want+=("deno@${DENO_NPM_VERSION}")
   [ -x "$BIN/deno" ] || stale=1
 fi
 if [ "$stale" = 1 ]; then
   # esbuild and the Supabase CLI ship their binaries as optional dependencies and
   # need no install script; the deno package links its binary in one.
   scripts_flag=(--ignore-scripts)
-  case " ${want[*]} " in *" deno "*) scripts_flag=() ;; esac
+  case " ${want[*]} " in *" deno@"*) scripts_flag=() ;; esac
   log "Provisioning ${want[*]} (npm install --no-save, single command)"
   npm install --no-save ${scripts_flag[@]+"${scripts_flag[@]}"} "${want[@]}" >/dev/null 2>&1 \
     && ok "installed ${want[*]}" \
@@ -167,7 +170,9 @@ if [ "$RUN_TESTS" = 1 ] && ls "$FUNC_DIR"/*.test.ts >/dev/null 2>&1; then
   # permissions error dressed up as a test failure. `.github/workflows/ci.yml`
   # has carried the flag since B-390; this is the same grant, read-only and
   # scoped to the same directory.
-  if timeout 180 "$DENO" test --allow-read=supabase/functions "${TEST_DIRS[@]}" >"$test_log" 2>&1; then
+  # `--lock=deno.lock`, as in ci.yml: every remote module the suite loads is
+  # checked against its committed hash.
+  if timeout 180 "$DENO" test --lock=deno.lock --allow-read=supabase/functions "${TEST_DIRS[@]}" >"$test_log" 2>&1; then
     # `|| true` keeps the count-extraction from tripping set -e/pipefail if a
     # suite somehow prints no "N passed" line.
     ok "tests passed ($(grep -oE '[0-9]+ passed' "$test_log" | tail -1 || true))"

@@ -1,7 +1,9 @@
 // The deploy workflow's entry point (CUL-1147): `.github/workflows/edge-deploy.yml`
-// runs `node scripts/edge-deploy/cli.ts plan` in a job with no secrets, then
-// `node scripts/edge-deploy/cli.ts deploy` in the `production` environment, the
-// only place SUPABASE_ACCESS_TOKEN exists.
+// runs `node scripts/edge-deploy/cli.ts plan`, then (when the plan found something
+// to deploy) `node scripts/edge-deploy/cli.ts deploy`, as steps of one job in the
+// `production` environment, the only place SUPABASE_ACCESS_TOKEN exists. `plan`
+// needs the token too: it is the key that verifies each deploy record's signature
+// (records.ts says why the author check alone is not enough).
 //
 // This file is the I/O shell: git, the filesystem, the GitHub and Supabase HTTP
 // calls, the job outputs. Every decision lives in a pure module beside it (plan,
@@ -20,7 +22,7 @@ import { runDeploys, type DeployDeps } from './deploy.ts';
 import { fingerprintEntry, fingerprintFunctions, functionsDir } from './fingerprint.ts';
 import { LEDGER_REL, ledgerProblems, parseLedger, type Ledger } from './ledger.ts';
 import { ALL_CHANGED, planDeploys, type DeployItem, type Request } from './plan.ts';
-import { lastSuccessfulRecord, writeRecord, type DeployRecord, type Gh } from './records.ts';
+import { lastSuccessfulRecord, recordKey, writeRecord, type DeployRecord, type Gh } from './records.ts';
 import { planSummary, resultSummary, type SummaryContext } from './summary.ts';
 import { parseMeta, settled, type FunctionMeta, type HttpResult } from './verify.ts';
 
@@ -79,16 +81,30 @@ function githubClient(): Gh {
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
     });
-    if (!res.ok) throw new Error(`GitHub ${method} ${p.split('?')[0]} returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    // Status only: the repo is public, so is this log, and the body adds nothing a
+    // re-run would not show.
+    if (!res.ok) throw new Error(`GitHub ${method} ${p.split('?')[0]} returned ${res.status}`);
     return (await res.json()) as unknown;
   };
   return { get: (p) => request('GET', p), post: (p, body) => request('POST', p, body) };
 }
 
-async function readRecords(gh: Gh, repo: string, functions: string[]) {
+async function readRecords(gh: Gh, repo: string, functions: string[], key: Buffer) {
   const records: Record<string, DeployRecord | undefined> = {};
-  for (const fn of functions) records[fn] = await lastSuccessfulRecord(gh, repo, fn);
+  for (const fn of functions) records[fn] = await lastSuccessfulRecord(gh, repo, fn, key);
   return records;
+}
+
+// The record-signing key, from the token only the `production` environment holds.
+function signingKey(): Buffer {
+  const token = process.env.SUPABASE_ACCESS_TOKEN;
+  if (!token) {
+    fail(
+      'SUPABASE_ACCESS_TOKEN is not set. It lives only in the `production` environment ' +
+        '(Settings → Environments → production → Environment secrets); see docs/edge-deploy-runbook.md § One-time setup.',
+    );
+  }
+  return recordKey(token);
 }
 
 function mainState(repoRoot: string) {
@@ -153,7 +169,7 @@ async function plan(args: string[]) {
     const repo = process.env.GITHUB_REPOSITORY;
     if (!repo) fail('GITHUB_REPOSITORY is not set.');
     ({ request, trigger } = resolveRequest(repoRoot, headSha, functions));
-    records = await readRecords(githubClient(), repo, functions);
+    records = await readRecords(githubClient(), repo, functions, signingKey());
   }
 
   const result = planDeploys({ functions, fingerprints, ledger, records, headSha, request });
@@ -161,6 +177,14 @@ async function plan(args: string[]) {
   console.log(md);
   appendTo('GITHUB_STEP_SUMMARY', md);
   if (result.mode === 'refused') fail(result.refusal ?? 'refused');
+  if (result.mode === 'bootstrap' && !local) {
+    // Loud on purpose: after the first recorded deploy this state means the records
+    // were lost (or the token rotated), and every merge is deploying nothing.
+    console.log(
+      '::warning::No verified deploy record exists, so this merge deployed nothing. On a first run that is expected. ' +
+        'Otherwise the records were lost or the token was rotated: run the workflow with all-changed.',
+    );
+  }
   appendTo('GITHUB_OUTPUT', `deploys=${JSON.stringify(result.deploys)}\ncount=${result.deploys.length}\n`);
 }
 
@@ -203,13 +227,8 @@ function projectConfig(repoRoot: string) {
 
 async function deploy() {
   requireMain();
-  const token = process.env.SUPABASE_ACCESS_TOKEN;
-  if (!token) {
-    fail(
-      'SUPABASE_ACCESS_TOKEN is not set. It lives only in the `production` environment ' +
-        '(Settings → Environments → production → Environment secrets). See docs/edge-deploy-runbook.md.',
-    );
-  }
+  const key = signingKey();
+  const token = process.env.SUPABASE_ACCESS_TOKEN as string;
   const repo = process.env.GITHUB_REPOSITORY;
   if (!repo) fail('GITHUB_REPOSITORY is not set.');
   const repoRoot = git(['rev-parse', '--show-toplevel'], process.cwd());
@@ -225,7 +244,7 @@ async function deploy() {
   const server = process.env.GITHUB_SERVER_URL || 'https://github.com';
   const runUrl = `${server}/${repo}/actions/runs/${process.env.GITHUB_RUN_ID ?? ''}`;
   const tempRoot = process.env.RUNNER_TEMP || fs.mkdtempSync(path.join(os.tmpdir(), 'edge-src-'));
-  const lastRecords = await readRecords(gh, repo, [...new Set(items.map((i) => i.fn))]);
+  const lastRecords = await readRecords(gh, repo, [...new Set(items.map((i) => i.fn))], key);
 
   const readMetaOnce = async (fn: string): Promise<FunctionMeta | null> => {
     const res = await fetch(`https://api.supabase.com/v1/projects/${PROJECT_REF}/functions/${encodeURIComponent(fn)}`, {
@@ -314,7 +333,15 @@ async function deploy() {
     },
     sleep,
     record: (payload, state, description) =>
-      writeRecord(gh, repo, payload, state, description, `https://supabase.com/dashboard/project/${PROJECT_REF}/functions/${payload.function}/details`),
+      writeRecord(
+        gh,
+        repo,
+        payload,
+        state,
+        description,
+        `https://supabase.com/dashboard/project/${PROJECT_REF}/functions/${payload.function}/details`,
+        key,
+      ),
     log: (line) => console.log(line),
   };
 

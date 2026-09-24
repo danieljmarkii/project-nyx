@@ -23,6 +23,7 @@ getting JS onto the PM's *phone*).
 | See what is live | The latest Deploy Edge Functions run's summary; repo → Deployments → `edge-functions`; MCP `list_edge_functions` |
 | Apply a schema migration | MCP `apply_migration` → `get_advisors` → verify (Part 2) |
 | Actions is down and a fix can't wait | § Break glass |
+| First-time setup, or checking it | § One-time setup |
 
 **The rules.** A session never deploys an Edge Function and never hands the PM a
 deploy command. A server change that must wait for an app build, or any other gate,
@@ -35,20 +36,20 @@ migration it needs is applied, because merging deploys it.
 
 ### What a merge does
 
-Every push to `main` runs **Deploy Edge Functions**, two jobs:
+Every push to `main` runs **Deploy Edge Functions**: one job, in the `production`
+environment, the only place `SUPABASE_ACCESS_TOKEN` exists.
 
-1. **Plan** (no secrets). Fingerprints every function's shipping closure (the walker
-   in `scripts/edge-deploy/fingerprint.ts`: `index.ts` plus every local file it
+1. **Plan.** Fingerprints every function's shipping closure (the walker in
+   `scripts/edge-deploy/fingerprint.ts`: `index.ts` plus every local file it
    inlines, `../../../lib/*` and `../_shared/*` included), reads each function's
-   last recorded deploy, and decides per function: **deploy** (its closure changed
-   since that deploy, or it has none on record), **unchanged**, or **held**. The run
-   summary shows the table, and every hold with its issue and reason.
-2. **Deploy**, only when something is to deploy, in the `production` environment,
-   the only place `SUPABASE_ACCESS_TOKEN` exists. For each planned function, in
+   last verified deploy record, and decides per function: **deploy** (its closure
+   changed since that deploy, or it has none on record), **unchanged**, or **held**.
+   The run summary shows the table, and every hold with its issue and reason.
+2. **Deploy**, only when something is to deploy. For each planned function, in
    order, it runs `scripts/deploy-edge.sh <fn> --deploy` (the function's `deno test`
    suite, the esbuild bundle, `node --check`, the upload), then the checks below,
-   then the record. The first failure records itself, skips the rest, and fails
-   the job red.
+   then the signed record. The first failure records itself, skips the rest, and
+   fails the job red.
 
 A change to a shared file redeploys every function that inlines it. That fan-out is
 correct: their shipping code changed. A comment-only change redeploys too (the
@@ -56,8 +57,9 @@ fingerprint is over source, not bytes); that costs a no-op deploy, never the rev
 
 **Bootstrap.** Until one deploy is on record, a push run deploys nothing and prints
 what it would do. The first deploy is a manual run (§ Manual runs); after it,
-merges deploy on their own. If the records are ever lost, the workflow falls back to
-this state rather than deploying blind.
+merges deploy on their own. If the records are ever lost, or the token is rotated
+(below), the workflow falls back to this state rather than deploying blind, and the
+run carries a warning saying so: run `all-changed` to re-record everything.
 
 ### The checks
 
@@ -105,6 +107,15 @@ and fingerprint at that moment, the version and the bundle sha256. The planner
 redeploys a function when `main`'s fingerprint moves past the one on its last
 successful record.
 
+**Records are signed.** Every workflow in this repo runs as the same
+`github-actions[bot]`, so a workflow pushed on any branch could post a well-formed
+"success" record and make an owed deploy look done. So each payload carries an
+HMAC keyed from `SUPABASE_ACCESS_TOKEN`, which only the `production` environment
+holds, and the planner ignores any record whose signature does not verify. A
+forged record is therefore just ignored, and the function deploys. **Rotating the
+token invalidates every record**: the next push is a bootstrap dry run with a
+warning, and one `all-changed` run re-records everything.
+
 The `edge-functions` environment holds **no secrets and no rules**; it is only the
 history. Never add a secret to it.
 
@@ -144,7 +155,9 @@ history. Never add a secret to it.
 else deploys after them, alphabetically.
 
 The guard also checks that the workflow's manual-run dropdown lists every function,
-so a **new function** needs one line there. It deploys on its first merge.
+so a **new function** needs one line there, and the guard's message says what the
+merge will do: **a new function deploys on the merge that adds it.** If it must not
+go live yet (no client calls it, a secret is not set), hold it in the same PR.
 
 ### Manual runs: redeploy and rollback
 
@@ -181,24 +194,57 @@ the next merge (or an `all-changed` run) tries again.
 - `SUPABASE_ACCESS_TOKEN` is an **environment secret in `production`**, whose
   deployment branches are limited to `main`. A workflow run on any other branch
   cannot reach the environment, so no PR branch or agent session can read the
-  token. It is not a repository secret and not in Codespaces.
+  token. It is not a repository secret and not in Codespaces. **This is a setting,
+  not code**: § One-time setup has the clicks and the check that proves them.
+- **`main`'s protection is the deploy gate.** Merging deploys, so the ruleset that
+  requires a PR and has an empty bypass list is what stands between a branch and
+  production. Weakening it (a bypass entry, direct pushes) opens a deploy path.
 - Prefer a **scoped token**: this project only, Edge Functions read-write, nothing
   else, where Supabase offers scoping.
 - The workflow has no `pull_request`, `pull_request_target` or `workflow_run`
   trigger. Manual inputs reach the scripts only as environment variables, and a
   rollback ref must already be on `main`.
-- **Only the deploy step sees the token.** Every tool is installed in an earlier
+- **Only the Plan step (as the record-signing key) and the Deploy step see the
+  token**, and both run only `main`'s reviewed code. Every tool is installed in a
   step without it: the lockfile's packages with install scripts off, then esbuild
   and the Supabase CLI at the exact versions pinned in `scripts/deploy-edge.sh`.
   Actions are pinned by commit SHA, as in `ci.yml`. The `deno test` run inside the
-  script has read access to `supabase/functions` and nothing else.
+  script runs against `deno.lock` with read access to `supabase/functions` and
+  nothing else: no environment, no network.
 - **The repo is public, so run logs and summaries are too.** They carry function
   names, versions, commits, hashes and the function's one-line error string from
   the smoke call. GitHub masks the token regardless.
 - **Rotate** by minting a new token (dashboard → Account → Access Tokens),
-  replacing the environment secret, and revoking the old token.
+  replacing the environment secret, revoking the old token, and then running the
+  workflow with `all-changed` (rotation invalidates the record signatures).
 - The Supabase MCP's `deploy_edge_function` still works from a session. It is
   break glass only (below), never the normal path.
+
+### One-time setup
+
+In GitHub, repo → **Settings** → **Environments**:
+
+1. **New environment** `production` → **Configure environment**.
+2. **Deployment branches and tags**: change "No restriction" to **Selected branches
+   and tags** → **Add deployment branch or tag rule** → Ref type **Branch**, name
+   pattern `main` → **Add rule**. Exactly one rule, no wildcards.
+3. Leave **Required reviewers** and **Wait timer** off (either would turn every
+   merge into a click).
+4. **Environment secrets** → **Add environment secret** → `SUPABASE_ACCESS_TOKEN`.
+   Mint it at supabase.com/dashboard/account/tokens. Where the form offers scoping,
+   choose this project only and **Edge Functions: Read-write**, nothing else.
+5. **New environment** `edge-functions`, and leave it empty: no secrets, no rules.
+   It only holds the deploy history.
+
+**Then check it**, because the whole boundary rests on it:
+
+- Settings → Secrets and variables → Actions: `SUPABASE_ACCESS_TOKEN` must **not**
+  appear under Repository secrets. A repository secret reaches every branch.
+- Push any branch, then Actions → Deploy Edge Functions → Run workflow → **Use
+  workflow from** that branch. The job must fail before its first step with
+  *"Branch … is not allowed to deploy to production due to environment protection
+  rules"*. If it starts instead, the branch rule is missing: fix step 2 before
+  anything else.
 
 ### Break glass
 
@@ -222,8 +268,9 @@ function's `deno test` suite (plus `_shared`'s when it imports `_shared`), an es
 bundle into `.edge-build/<fn>/index.ts` with every runtime specifier (`https:`,
 `npm:`, `node:`, `jsr:`) left external, a `node --check` syntax gate, and the bundle
 sha256. It is the same script the workflow runs, so a local build shows what would
-ship. With `--deploy`, a test run that does not pass is a hard failure. esbuild
-and the Supabase CLI are pinned at the top of the script; bump them there.
+ship. With `--deploy`, a test run that does not pass is a hard failure. esbuild,
+the Supabase CLI and the fallback `deno` are pinned at the top of the script; bump
+them there.
 
 ---
 
