@@ -1,6 +1,6 @@
 # History v2: the design critique of the round-3 proposal
 
-**Date:** 2026-09-23 (ran into 2026-09-24 UTC) · **Issue:** CUL-1108 (project *Design v2, the whole day*) · **Mode:** DISCOVERY · **Shipped via #__PR__** (`claude/cool-brahmagupta-qs96p3`)
+**Date:** 2026-09-23 (ran into 2026-09-24 UTC) · **Issue:** CUL-1108 (project *Design v2, the whole day*) · **Mode:** DISCOVERY · **Shipped via #898** (`claude/cool-brahmagupta-qs96p3`)
 
 **PM prompt:** claim CUL-1108 and run the design critique of the History v2 round-3 proposal: read the artifact and `docs/culprit-history-v2-mockups.html` (merged in #885), take §07 for what is settled, overruled and open; convene the lenses in isolation (Designer, Motion, Mobile IA, Data, Dr. Chen, Jordan and Sam, Trust and Safety, Engineering) against the seven principles and the Design v2 language; report in the QA-note taxonomy; end with the changes that gate the requirements, as decision briefs where the PM rules. Do not redraw and do not build.
 
