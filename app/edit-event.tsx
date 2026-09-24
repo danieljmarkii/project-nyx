@@ -13,7 +13,7 @@ import { ThemedText } from '../components/ui/ThemedText';
 import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
-import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getDoseForEvent, updateDoseAdherence, updateDoseHowGiven, getEventAttachment, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
+import { getDb, updateEvent, updateMealFood, getMealForEvent, getDoseForEvent, updateDoseAdherence, updateDoseHowGiven, getEventAttachment, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
 import { detachOtherEventAttachments } from '../lib/attachments';
 import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendingMedicationAdministrations, syncPendingLooks } from '../lib/sync';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
@@ -30,6 +30,7 @@ import { asDoseVehicle, type DoseVehicle } from '../lib/medications';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
 import { MultiChipGroup } from '../components/ui/MultiChipGroup';
 import { getLookForEvent, updateLookForEdit, localDayForLook } from '../lib/looks';
+import { rateMealIntake } from '../lib/meals';
 import { gridSectionsFor, gridChipLabel } from '../lib/lookDisplay';
 import { toggleLookWord } from '../lib/lookSelection';
 import { lookSpeciesOf, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, notHerselfLabel } from '../constants/lookWords';
@@ -154,6 +155,12 @@ export default function EditEventModal() {
   // form, so intake must follow the same discard-on-Cancel semantics as
   // every other field here.
   const [intakeRating, setIntakeRating] = useState<IntakeRating | null>(null);
+  // The rating as loaded, so Save writes it only when the owner changed it (CUL-1087):
+  // a write asks the Signal to rebuild, and rebuilds count toward a daily cap
+  // (CUL-1109). Seeded null like the dose refs below: until the meal's read answers,
+  // the chips are blank over whatever is stored, so their null is not a change (C-12)
+  // and only a rating the owner picks is.
+  const loadedIntakeRef = useRef<IntakeRating | null>(null);
 
   // Medication (dose) state — the parity twin of the meal food/intake block, so the
   // Edit modal for a dose carries the fields a dose actually has (drug identity +
@@ -214,10 +221,11 @@ export default function EditEventModal() {
           setCurrentFoodProduct(meal.food_product_name);
           setCurrentFoodFormat(meal.food_format);
           const r = meal.intake_rating;
-          setIntakeRating(
+          const loaded =
             r === 'refused' || r === 'picked' || r === 'some'
-              || r === 'most' || r === 'all' ? r : null,
-          );
+              || r === 'most' || r === 'all' ? r : null;
+          loadedIntakeRef.current = loaded;
+          setIntakeRating(loaded);
         }
       }).catch(console.error);
     }
@@ -550,8 +558,13 @@ export default function EditEventModal() {
         await updateMealFood(id, currentFoodId);
       }
 
-      if (config.hasFood) {
-        await updateMealIntake(id, intakeRating);
+      // Through the shared write path, which also refreshes the Signal (CUL-1087), and
+      // only when it changed: the dose fields below follow the same rule, which also
+      // keeps an untouched rating from overwriting a newer one from another device.
+      // Before the meal's read answers the ref is still null, so blank chips write
+      // nothing: their null would erase a stored refusal and take it off Home.
+      if (config.hasFood && intakeRating !== loadedIntakeRef.current) {
+        await rateMealIntake(id, intakeRating);
       }
 
       // Dose adherence + how-given (the meal-intake twin). Only when the dose child

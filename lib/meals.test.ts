@@ -12,8 +12,12 @@ const mockRunAsync = jest.fn().mockResolvedValue(undefined);
 // BEGIN/COMMIT); the tests assert both that the callback's writes land and WHICH
 // writes are inside it (B-126).
 const mockWithTransactionAsync = jest.fn(async (cb: () => Promise<void>) => { await cb(); });
+const mockUpdateMealIntake = jest.fn().mockResolvedValue(undefined);
+const mockGetEventPetId = jest.fn().mockResolvedValue('pet-1');
 jest.mock('./db', () => ({
   getDb: () => ({ runAsync: mockRunAsync, withTransactionAsync: mockWithTransactionAsync }),
+  updateMealIntake: (...a: unknown[]) => mockUpdateMealIntake(...a),
+  getEventPetId: (...a: unknown[]) => mockGetEventPetId(...a),
 }));
 
 const mockSyncPendingEvents = jest.fn().mockResolvedValue(undefined);
@@ -33,7 +37,10 @@ jest.mock('./utils', () => ({
   uuid: () => `id-${++mockIdCounter}`,
 }));
 
-import { insertMeal } from './meals';
+import * as fs from 'fs';
+import * as path from 'path';
+import { blankComments } from '../guards/blankComments';
+import { insertMeal, rateMealIntake } from './meals';
 
 // Lets the fire-and-forget syncPendingEvents().then(syncPendingMeals) chain
 // settle so we can assert the second call landed. A bare Promise.resolve() is
@@ -58,6 +65,10 @@ beforeEach(() => {
   mockSyncPendingEvents.mockClear();
   mockSyncPendingMeals.mockClear();
   mockTriggerSignalRegenDebounced.mockClear();
+  mockUpdateMealIntake.mockReset();
+  mockUpdateMealIntake.mockResolvedValue(undefined);
+  mockGetEventPetId.mockReset();
+  mockGetEventPetId.mockResolvedValue('pet-1');
   mockIdCounter = 0;
 });
 
@@ -209,5 +220,90 @@ describe('insertMeal', () => {
     // claim on every meal in the app — the exact thing B-014 forbids.
     await insertMeal(PARAMS);
     expect(mealInsert().at('intake_rating')).toBeNull();
+  });
+});
+
+// ── A rating given after the fact (CUL-1087) ────────────────────────────────────
+//
+// Owners often log the bowl first and rate it later, on the completion card, the
+// meal's own screen or the edit screen. All three wrote `intake_rating` and none
+// refreshed the Signal, so a rating that turned a cat's breakfast into a decline
+// stayed off Home until something else happened to rebuild it.
+describe('rateMealIntake', () => {
+  it('writes the rating, pushes it, and refreshes the Signal for the RECORD\'s pet', async () => {
+    mockGetEventPetId.mockResolvedValue('pet-9');
+    await rateMealIntake('evt-1', 'picked');
+    await flush();
+
+    expect(mockUpdateMealIntake).toHaveBeenCalledWith('evt-1', 'picked');
+    expect(mockSyncPendingMeals).toHaveBeenCalledTimes(1);
+    // The meal's own pet, read off the row: a rating can be given from a screen
+    // showing a pet who is not the active one (C-9).
+    expect(mockGetEventPetId).toHaveBeenCalledWith('evt-1');
+    expect(mockTriggerSignalRegenDebounced).toHaveBeenCalledWith('pet-9');
+  });
+
+  it('refreshes on a CLEARED rating too, since that also changes what the engine reads', async () => {
+    await rateMealIntake('evt-1', null);
+    await flush();
+    expect(mockUpdateMealIntake).toHaveBeenCalledWith('evt-1', null);
+    expect(mockTriggerSignalRegenDebounced).toHaveBeenCalledWith('pet-1');
+  });
+
+  it('a failed write throws to the caller and refreshes nothing', async () => {
+    mockUpdateMealIntake.mockRejectedValueOnce(new Error('No meal row for event evt-1'));
+    await expect(rateMealIntake('evt-1', 'some')).rejects.toThrow('No meal row');
+    await flush();
+    expect(mockSyncPendingMeals).not.toHaveBeenCalled();
+    expect(mockTriggerSignalRegenDebounced).not.toHaveBeenCalled();
+  });
+
+  it('a saved rating stays saved when the pet lookup fails: no throw, no refresh', async () => {
+    // The write has landed by then, so a throw here would make every caller revert a
+    // chip that is in fact on the record and say "Could not save".
+    mockGetEventPetId.mockRejectedValueOnce(new Error('disk gone'));
+    await expect(rateMealIntake('evt-1', 'most')).resolves.toBeUndefined();
+    await flush();
+    expect(mockTriggerSignalRegenDebounced).not.toHaveBeenCalled();
+  });
+
+  it('refreshes no pet when the row names none', async () => {
+    mockGetEventPetId.mockResolvedValue(null);
+    await rateMealIntake('evt-1', 'all');
+    await flush();
+    expect(mockTriggerSignalRegenDebounced).not.toHaveBeenCalled();
+  });
+});
+
+describe('one write path for a rating (CUL-1087)', () => {
+  // The drift B-059 closed for inserts, closed for ratings: a screen that writes
+  // `updateMealIntake` itself skips the refresh, which is how all three did. Comments
+  // are blanked first (C-18), so a sentence about the helper is not a use of it.
+  const ROOT = path.resolve(__dirname, '..');
+  const SCAN_DIRS = ['app', 'components', 'lib', 'hooks', 'store', 'widgets', 'constants'];
+  // The definition, and the one helper allowed to call it.
+  const ALLOWED = new Set(['lib/db.ts', 'lib/meals.ts']);
+
+  function walk(dir: string, out: string[] = []): string[] {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, e.name);
+      if (e.isDirectory()) walk(abs, out);
+      else if (/\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name)) out.push(abs);
+    }
+    return out;
+  }
+
+  const namers = SCAN_DIRS.flatMap((d) => walk(path.join(ROOT, d)))
+    .filter((abs) => /\bupdateMealIntake\b/.test(blankComments(fs.readFileSync(abs, 'utf8'))))
+    .map((abs) => path.relative(ROOT, abs).split(path.sep).join('/'));
+
+  it('finds the helper\'s own call, so an empty scan cannot pass', () => {
+    expect(namers).toContain('lib/meals.ts');
+    expect(namers).toContain('lib/db.ts');
+  });
+
+  it('no other file names updateMealIntake: it goes through rateMealIntake', () => {
+    // Named, not just called: an import is a reach, and an alias would hide a call.
+    expect(namers.filter((f) => !ALLOWED.has(f))).toEqual([]);
   });
 });

@@ -31,8 +31,11 @@ import {
   courseVerdictLabel,
   describeVisitSave,
   endTrialCopy,
+  linkedLinesAsOf,
   mergePlanCourses,
+  settledLinkedLine,
   stopCourseCopy,
+  trialMomentTitle,
   trialVerdictLabel,
   type CourseVerdict,
   type EndConfirmCopy,
@@ -122,6 +125,9 @@ export default function AfterVisitScreen() {
   const settledCourseIds = useRef<Set<string>>(new Set());
   const [settledCourses, setSettledCourses] = useState<Record<string, string>>({});
   const [endedTrial, setEndedTrial] = useState<EndedTrialRow | null>(null);
+  // The answer *Switched* replaced, put back if the trial sheet closes with no trial
+  // started (CUL-1092): the old trial is still running, so nothing was switched.
+  const verdictBeforeSwitch = useRef<TrialVerdict | null>(null);
   const [nextVisitAt, setNextVisitAt] = useState<string | null>(null);
   const [paperwork, setPaperwork] = useState<string[]>([]);
   const [linked, setLinked] = useState<LinkedLine[]>([]);
@@ -388,11 +394,22 @@ export default function AfterVisitScreen() {
         if (verdict === 'changed') setSheet({ kind: 'med', editing: toRegimen(course) });
       }
       setCourseVerdicts((prev) => ({ ...prev, [course.id]: verdict }));
-      note({
-        key: `course:${course.id}`,
-        title: `${course.drugName} ${courseVerdictLabel(verdict)}`,
-        note: verdict === 'stopped' ? 'ended today' : linkedNow ? 'linked to this visit' : 'still on it',
-      });
+      note(
+        verdict === 'stopped'
+          ? settledLinkedLine({
+              key: `course:${course.id}`,
+              title: course.drugName,
+              verdict: 'stopped',
+              endedOn: endOn,
+              today: localDateKey(new Date()),
+              endLabel: formatVisitDate(endOn),
+            })
+          : {
+              key: `course:${course.id}`,
+              title: `${course.drugName} ${courseVerdictLabel(verdict)}`,
+              note: linkedNow ? 'linked to this visit' : 'still on it',
+            },
+      );
       if (petId) await loadPlan(petId);
     } catch (err) {
       sayFailed(err, 'course verdict');
@@ -431,6 +448,7 @@ export default function AfterVisitScreen() {
         // owns that flow: its `blocked` step ends the running trial as part of the
         // same action that creates the next one. Opening it is the whole of *Switched*
         // — a second implementation here would be a second ordering to get wrong.
+        verdictBeforeSwitch.current = trialVerdict;
         setSheet({ kind: 'trial' });
         setTrialVerdict(verdict);
         return;
@@ -440,6 +458,7 @@ export default function AfterVisitScreen() {
       // before the end means a crash between the two leaves a running trial with its
       // provenance recorded rather than an ended one with none.
       const linkedNow = await linkTrialToVisit(trial.id, id);
+      const endedOn = endOn ?? localDateKey(new Date());
       if (verdict === 'ended') {
         const { complete } = describeActiveTrial(trial);
         await endActiveTrial({
@@ -458,15 +477,26 @@ export default function AfterVisitScreen() {
         // one (CUL-951). *Switched* is this screen's end-and-start path.
         setEndedTrial({
           label: trial.foodLabel?.trim() || 'Diet trial',
-          endedOn: endOn ?? localDateKey(new Date()),
+          endedOn,
         });
       }
       setTrialVerdict(verdict);
-      note({
-        key: 'trial',
-        title: `${trial.foodLabel?.trim() || 'Diet trial'} ${trialVerdictLabel(verdict)}`,
-        note: verdict === 'ended' ? 'ended today' : linkedNow ? 'linked to this visit' : 'still running',
-      });
+      note(
+        verdict === 'ended'
+          ? settledLinkedLine({
+              key: 'trial',
+              title: trialMomentTitle(trial.foodLabel),
+              verdict: 'ended',
+              endedOn,
+              today: localDateKey(new Date()),
+              endLabel: formatVisitDate(endedOn),
+            })
+          : {
+              key: 'trial',
+              title: `${trialMomentTitle(trial.foodLabel)} ${trialVerdictLabel(verdict)}`,
+              note: linkedNow ? 'linked to this visit' : 'still running',
+            },
+      );
       if (petId) await loadPlan(petId);
     } catch (err) {
       sayFailed(err, 'trial verdict');
@@ -595,7 +625,9 @@ export default function AfterVisitScreen() {
         describeVisitSave({
           petName: resolveRecordPetName(pets, petId),
           consequence,
-          linked,
+          // As of the SAVE, so a course stopped before midnight and saved after it
+          // names its day rather than saying "today" (CUL-1092).
+          linked: linkedLinesAsOf(linked, localDateKey(new Date()), (day) => formatVisitDate(day)),
         }),
       );
       // A soft impact, never a success chime (the issue's ruling). `commitRoutine`
@@ -643,7 +675,7 @@ export default function AfterVisitScreen() {
     const active = petId ? await getActiveTrialForPet(petId) : null;
     note({
       key: 'trial',
-      title: `${active?.foodLabel?.trim() || 'Diet trial'} started`,
+      title: `${trialMomentTitle(active?.foodLabel)} started`,
       // Asked of the RECORD at the moment the line is written (CUL-825): the trial
       // carries the link only if `startDietTrial` accepted it, and a line claiming a
       // link the row does not hold would be the moment lying about provenance.
@@ -771,7 +803,13 @@ export default function AfterVisitScreen() {
               petName={petName}
               species={pets.find((p) => p.id === petId)?.species ?? null}
               vetVisitId={visitId}
-              onClose={() => setSheet(null)}
+              onClose={() => {
+                setSheet(null);
+                // Only a trial that STARTS switches anything, and a start never lands
+                // here: `handleTrialStarted` closes the sheet itself. Closed without
+                // one, *Switched* goes back to the answer it replaced (CUL-1092).
+                setTrialVerdict((v) => (v === 'switched' ? verdictBeforeSwitch.current : v));
+              }}
               onStarted={handleTrialStarted}
               onAddFood={() => {
                 // The pending re-open lives in a REF consumed once on focus, never in

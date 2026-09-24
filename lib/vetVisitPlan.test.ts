@@ -5,9 +5,11 @@ import {
   defaultRecheckDate,
   describeVisitSave,
   endTrialCopy,
+  linkedLinesAsOf,
   mergePlanCourses,
   settledVerdictLine,
   stopCourseCopy,
+  trialMomentTitle,
   visitAnchorsAnything,
   trialVerdictLabel,
   VISIT_OFFLINE_LINE,
@@ -380,5 +382,44 @@ describe('mergePlanCourses — a settled course keeps its place across a re-read
 
   it('is the fresh read on first load', () => {
     expect(mergePlanCourses([], [c, a], new Set()).map((x) => x.id)).toEqual(['c', 'a']);
+  });
+});
+
+describe('the saved moment says what ended once, with its day (CUL-1092)', () => {
+  const label = (day: string) => (day === '2026-09-22' ? 'Sep 22' : `?${day}`);
+
+  it('names the day at the SAVE, so a save after midnight does not say "today"', () => {
+    // Answered at 11:58 pm, saved at 12:01 am: the line was written the day before.
+    const lines: LinkedLine[] = [
+      { key: 'course:1', title: 'Motozol', note: 'Stopped today', settled: { verdict: 'stopped', endedOn: '2026-09-22' } },
+      { key: 'trial', title: 'Hill’s z/d trial', note: 'Ended today', settled: { verdict: 'ended', endedOn: '2026-09-22' } },
+      { key: 'course:2', title: 'Cerenia kept', note: 'linked to this visit' },
+    ];
+    expect(linkedLinesAsOf(lines, '2026-09-23', label).map((l) => l.note)).toEqual([
+      'Stopped Sep 22',
+      'Ended Sep 22',
+      'linked to this visit',
+    ]);
+  });
+
+  it('says "today" on a same-day save, in the settled row\'s own words', () => {
+    const lines: LinkedLine[] = [
+      { key: 'course:1', title: 'Motozol', note: 'x', settled: { verdict: 'stopped', endedOn: '2026-09-22' } },
+    ];
+    const [line] = linkedLinesAsOf(lines, '2026-09-22', label);
+    expect(line.note).toBe(
+      settledVerdictLine({ verdict: 'stopped', endedOn: '2026-09-22', today: '2026-09-22', endLabel: 'Sep 22' }),
+    );
+    expect(line.note).toBe('Stopped today');
+  });
+
+  it('names a trial as a trial, never the bare food, which reads as the FOOD ending', () => {
+    expect(trialMomentTitle('Hill’s z/d')).toBe('Hill’s z/d trial');
+    expect(trialMomentTitle('  Hill’s z/d  ')).toBe('Hill’s z/d trial');
+  });
+
+  it('never reads "Diet trial trial" for a trial with no food name', () => {
+    expect(trialMomentTitle(null)).toBe('Diet trial');
+    expect(trialMomentTitle('   ')).toBe('Diet trial');
   });
 });

@@ -54,6 +54,28 @@ git branch -D <merged-branch>            # delete the local copy (it's merged; s
 ```
 The next session's handoff will name a fresh `claude/…` branch to check out — you don't reuse the merged one.
 
+### `error: fetching ref refs/remotes/origin/main failed: incorrect old value provided`
+Two git processes tried to update the same remote-tracking ref at the same moment, usually something in the background (a session's startup hook, an editor's auto-fetch) racing your own `git pull`. One wins, the other prints this. The branch in the message may be any branch, not only `main`.
+
+**The dangerous part:** before it gives up, `git pull` may already have printed `Your branch is up to date with 'origin/main'`, read from the *old* ref. It is not up to date. On 2026-09-15 this left `main` four commits behind, right before an Edge Function deploy.
+
+**Fix — pull again; the race is over by now:**
+```bash
+git pull --ff-only
+```
+If that still refuses:
+```bash
+git fetch --prune --force origin main
+git merge --ff-only origin/main
+```
+
+**Then check before anything that ships** (a deploy, a build, a tag). Never trust the "up to date" line printed beside this error; compare your commit with the remote's instead:
+```bash
+git rev-parse HEAD
+git ls-remote origin refs/heads/main
+```
+The two SHAs must match. If they don't, run the fix again.
+
 ### `You are in 'detached HEAD' state`
 You checked out a commit or tag instead of a branch. Nothing is broken; you're just not *on* a branch. Reattach:
 ```bash

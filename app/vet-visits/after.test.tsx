@@ -664,3 +664,142 @@ describe('CUL-951 — *Ended* confirms first, and never turns into *Start a tria
     expect(endActiveTrial).not.toHaveBeenCalled();
   });
 });
+
+// CUL-1092 — two rough edges `pm-feature-review` found on the after-visit screen.
+describe('CUL-1092 — *Switched* stays lit only once a new trial has started', () => {
+  const TRIAL = { id: 'trial-1', startedAt: '2026-09-01', targetDurationDays: 56, foodLabel: 'Hill’s z/d' };
+  const lit = (name: string) => screen.queryByRole('radio', { name, selected: true });
+
+  beforeEach(() => {
+    const { getActiveTrialForPet } = jest.requireMock('../../lib/dietTrialSetup');
+    getActiveTrialForPet.mockImplementation(async () => TRIAL);
+  });
+
+  it('closing the trial sheet without starting one un-lights *Switched*', async () => {
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+    await act(async () => { fireEvent.press(screen.getByText('Switched')); });
+    await waitFor(() => expect(modals()).toHaveLength(1));
+
+    await act(async () => { screen.UNSAFE_getByType(StartTrialModal).props.onClose(); });
+
+    // The old trial is still running, so nothing was switched.
+    expect(modals()).toHaveLength(0);
+    expect(lit('Switched')).toBeNull();
+  });
+
+  it('and puts back the answer it replaced', async () => {
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+    await act(async () => { fireEvent.press(screen.getByText('Keep')); });
+    await waitFor(() => expect(lit('Keep')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByText('Switched')); });
+    await waitFor(() => expect(modals()).toHaveLength(1));
+
+    await act(async () => { screen.UNSAFE_getByType(StartTrialModal).props.onClose(); });
+
+    expect(lit('Keep')).toBeTruthy();
+    expect(lit('Switched')).toBeNull();
+  });
+
+  it('a trial that starts keeps *Switched* lit', async () => {
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+    await act(async () => { fireEvent.press(screen.getByText('Switched')); });
+    await waitFor(() => expect(modals()).toHaveLength(1));
+
+    await act(async () => { screen.UNSAFE_getByType(StartTrialModal).props.onStarted('trial-2'); });
+
+    expect(lit('Switched')).toBeTruthy();
+  });
+
+  it('a detour to add a food is not a dismissal: *Switched* stays lit', async () => {
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+    await act(async () => { fireEvent.press(screen.getByText('Switched')); });
+    await waitFor(() => expect(modals()).toHaveLength(1));
+
+    // The sheet closes for food capture and reopens on the way back (C-22).
+    await act(async () => { screen.UNSAFE_getByType(StartTrialModal).props.onAddFood(); });
+
+    expect(router.push).toHaveBeenCalledWith('/food-capture');
+    expect(lit('Switched')).toBeTruthy();
+  });
+});
+
+describe('CUL-1092 — the saved moment says what ended once, with its day', () => {
+  it('a stopped course reads "Cerenia · Stopped today", never "Cerenia stopped · ended today"', async () => {
+    mockCourses = [course()];
+    answerAlertWith('Stop it');
+    render(<AfterVisitScreen />);
+    await screen.findByText('Cerenia');
+    fireEvent.press(screen.getByText('Stopped'));
+    await screen.findByText('Stopped today');
+
+    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await screen.findByText('Saved to Nyx’s visits');
+
+    expect(screen.getByText('Cerenia')).toBeTruthy();
+    expect(screen.getByText('Stopped today')).toBeTruthy();
+    expect(screen.queryByText('Cerenia stopped')).toBeNull();
+    expect(screen.queryByText('ended today')).toBeNull();
+  });
+
+  it('an ended trial is named as a trial: "Hill’s z/d trial · Ended today"', async () => {
+    const { getActiveTrialForPet, endActiveTrial } = jest.requireMock('../../lib/dietTrialSetup');
+    getActiveTrialForPet.mockImplementation(async () => ({
+      id: 'trial-1', startedAt: '2026-09-01', targetDurationDays: 56, foodLabel: 'Hill’s z/d',
+    }));
+    endActiveTrial.mockImplementationOnce(async () => {
+      getActiveTrialForPet.mockImplementation(async () => null);
+    });
+    answerAlertWith('End it');
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+    fireEvent.press(screen.getByText('Ended'));
+    await screen.findByText('Ended today');
+
+    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await screen.findByText('Saved to Nyx’s visits');
+
+    // "Hill's z/d ended" read as the FOOD ending.
+    expect(screen.getByText('Hill’s z/d trial')).toBeTruthy();
+    expect(screen.getByText('Ended today')).toBeTruthy();
+    expect(screen.queryByText('Hill’s z/d ended')).toBeNull();
+    expect(screen.queryByText('ended today')).toBeNull();
+  });
+});
+
+describe('CUL-1092 — a save after midnight names the day the course ended', () => {
+  // Only Date is faked; timers stay real, so `waitFor` and the screen's reads run as
+  // they do everywhere else in this file (the WeightCard.test.tsx pattern).
+  beforeEach(() => {
+    jest.useFakeTimers({
+      doNotFake: [
+        'hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame',
+        'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback', 'setImmediate',
+        'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout',
+      ],
+    });
+    jest.setSystemTime(new Date(2026, 8, 22, 23, 58));
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('stopped at 11:58 pm, saved at 12:01 am: "Stopped Sep 22", not "today"', async () => {
+    mockCourses = [course()];
+    answerAlertWith('Stop it');
+    render(<AfterVisitScreen />);
+    await screen.findByText('Cerenia');
+    fireEvent.press(screen.getByText('Stopped'));
+    await screen.findByText('Stopped today');
+
+    jest.setSystemTime(new Date(2026, 8, 23, 0, 1));
+    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await screen.findByText('Saved to Nyx’s visits');
+
+    expect(screen.getByText('Stopped Sep 22')).toBeTruthy();
+    expect(screen.queryByText('Stopped today')).toBeNull();
+  });
+});
