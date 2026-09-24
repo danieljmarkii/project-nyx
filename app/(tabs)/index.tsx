@@ -29,6 +29,7 @@ import { useDesignV2 } from '../../hooks/useDesignV2';
 import { TodayCard } from '../../components/designV2/home/TodayCard';
 import { CoverageDoor } from '../../components/designV2/home/CoverageDoor';
 import { HOME_V2_SCROLL_INSET } from '../../lib/fabFootprint';
+import { reducedMotionNow } from '../../store/reducedMotionStore';
 
 /**
  * The slice of the tab navigator this screen needs to hear a Home-tab re-tap.
@@ -80,12 +81,14 @@ export default function HomeScreen() {
   // declare. So the two members this screen actually uses are named structurally and
   // the cast happens once, at the boundary, instead of an `as never` per argument
   // (the same call NyxTabBar's local `TabBarProps` makes for the same reason).
+  //
+  // Under Reduce Motion the feed jumps (CUL-1123), read at the tap.
   const navigation = useNavigation() as unknown as TabPressNavigation;
   useEffect(
     () =>
       navigation.addListener('tabPress', () => {
         if (navigation.isFocused()) {
-          scrollRef.current?.scrollTo({ y: 0, animated: true });
+          scrollRef.current?.scrollTo({ y: 0, animated: !reducedMotionNow() });
         }
       }),
     [navigation],

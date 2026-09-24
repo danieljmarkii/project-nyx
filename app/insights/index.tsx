@@ -68,6 +68,7 @@ import {
   type NoticedCardModel,
 } from '../../lib/lookPatterns';
 import { localDayIndex, dayKeyFromIndex, toLocalDayKey } from '../../lib/utils';
+import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { useDesignV2 } from '../../hooks/useDesignV2';
 import { MonthInstrument } from '../../components/designV2/patterns/MonthInstrument';
 import { WeightCard as WeightCardV2 } from '../../components/designV2/patterns/WeightCard';
@@ -125,10 +126,11 @@ export default function PatternsScreen() {
 
   // Scroll-to for the summary's grounding affordance ("Based on the cards below ↓"): a real,
   // honest "take me to the evidence" action without faking card→detail navigation (B-093).
+  // Under Reduce Motion it jumps (CUL-1123), read at the tap.
   const scrollRef = useRef<ScrollView>(null);
   const cardsY = useRef(0);
   const jumpToCards = useCallback(() => {
-    scrollRef.current?.scrollTo({ y: cardsY.current, animated: true });
+    scrollRef.current?.scrollTo({ y: cardsY.current, animated: !reducedMotionNow() });
   }, []);
 
   // Noticed (CUL-874 / N-5) — the SAME three gates Home's card takes (`lookCardLive`:

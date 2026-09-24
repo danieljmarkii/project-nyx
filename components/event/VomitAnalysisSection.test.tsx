@@ -42,6 +42,7 @@ import { LayoutAnimation, StyleSheet } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { VomitAnalysisSection } from './VomitAnalysisSection';
 import { watchAnalysisRow, awaitAnalysisChain, triggerVomitAnalysis } from '../../lib/analysis';
+import { __resetReducedMotionForTest, useReducedMotionStore } from '../../store/reducedMotionStore';
 import { facing, flat, owningTouchable, touchableToken } from '../../testUtils/tree';
 
 const REASSURANCE = /\b(fine|okay|ok|healthy|all clear|no worries|nothing to worry|probably fine)\b/i;
@@ -667,10 +668,21 @@ describe('VomitAnalysisSection — the RECORD re-opens a fold (§5.3)', () => {
 describe('VomitAnalysisSection — the arrival fires only for a read the screen waited for', () => {
   let configureNext: jest.SpyInstance;
   beforeEach(() => {
+    // A reader with motion ON, known before the first render: production's shape once the
+    // root gate has the OS answer (CUL-1123). Unseeded, the store is unknown, which reads
+    // as still, so the arrival never runs: the positive tests below would fail and the
+    // negative ones would pass over nothing.
+    useReducedMotionStore.setState({ reduceMotion: false, gateOpen: true });
     configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
     (watchAnalysisRow as jest.Mock).mockClear();
   });
-  afterEach(() => { configureNext.mockRestore(); mockRow = null; });
+  afterEach(() => {
+    configureNext.mockRestore();
+    mockRow = null;
+    // Still mounted here (the renderer's cleanup runs after this hook), so the reset
+    // re-renders the section: inside act, or React warns.
+    act(() => __resetReducedMotionForTest());
+  });
 
   it('a read already in the record on open: no arrival, not one `configureNext`', async () => {
     mockRow = row({

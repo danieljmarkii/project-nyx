@@ -45,8 +45,14 @@ jest.mock('../../lib/feedingArrangements', () => ({
   getActiveArrangementsForPet: jest.fn(() => Promise.resolve([])),
   getBoundaryMarkers: jest.fn(() => Promise.resolve([])),
 }));
+// The Remove confirm's composer (lib/completionCard, CUL-1125) reaches lib/weight, which
+// imports the Supabase client at module scope, and its env guard throws under jest.
+jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../../lib/db', () => ({
   getTimeline: jest.fn(),
+  // Remove asks the record for a photo before its confirm (CUL-1125). No photo unless
+  // a test says so.
+  getEventAttachment: jest.fn(() => Promise.resolve(null)),
 }));
 // Mocked for the same reason store/momentStore.test.ts mocks it: lib/undoLog pulls in
 // lib/sync and (since CUL-641) lib/weight, both of which reach lib/supabase, whose
@@ -106,13 +112,14 @@ import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import HistoryScreen from './history';
 import { router } from 'expo-router';
-import { getTimeline } from '../../lib/db';
+import { getEventAttachment, getTimeline } from '../../lib/db';
 import { readVisitsForHistory } from '../../lib/vetVisits';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { useEventStore, NyxEvent } from '../../store/eventStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
 
 const mockGetTimeline = getTimeline as jest.Mock;
+const mockGetEventAttachment = getEventAttachment as jest.Mock;
 const mockReadVisits = readVisitsForHistory as jest.Mock;
 // CUL-641 — Remove is no longer a bare softDeleteEvent; it is the SAME reversal the
 // completion card's Undo performs, so a side-effect added to one is inherited by both.
@@ -139,6 +146,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockParams = {};
   mockReadVisits.mockResolvedValue([]);
+  mockGetEventAttachment.mockResolvedValue(null);
   mockPetState = { activePet: { id: 'p1' } };
   useEventStore.setState({ todayEvents: [] });
   showSpy = jest.spyOn(useSnackbarStore.getState(), 'show').mockImplementation(() => {});
@@ -149,8 +157,10 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-/** Fire the destructive button of the last Alert.alert confirm. */
+/** Fire the destructive button of the last Alert.alert confirm. The confirm lands a
+ *  tick after the press, once the record has been asked for a photo (CUL-1125). */
 async function confirmRemove() {
+  await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
   const [, , buttons] = (Alert.alert as jest.Mock).mock.calls.at(-1) ?? [];
   const remove = (buttons as { text: string; onPress?: () => void }[]).find(
     (b) => b.text === 'Remove',
@@ -301,6 +311,107 @@ describe('History — a delete that fails', () => {
     await confirmRemove();
 
     await waitFor(() => expect(mockReverse).toHaveBeenCalledWith('e1'));
+  });
+});
+
+// ── What the Remove confirm names (CUL-1125) ─────────────────────────────────────
+//
+// History's Remove is the likeliest door to a weeks-old record, and it used to name a
+// look's note and nothing else: a meal whose note the owner typed, or a photographed
+// vomit, went with no word about either. It now says what the record screen and the
+// completion card's Undo say, from the one composer they share. The photo needs a read
+// (History's rows never carry attachments); the note rides on the row.
+
+describe('History — the Remove confirm names what goes with the record', () => {
+  /** The body (second argument) of the confirm, once it has landed. */
+  async function confirmBody(): Promise<string> {
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    return (Alert.alert as jest.Mock).mock.calls.at(-1)?.[1] as string;
+  }
+
+  /** A row with the note / look columns a test sets on top of `row()`'s defaults. */
+  async function pressRemoveOn(r: { id: string } & Record<string, unknown>) {
+    mockGetTimeline.mockResolvedValue([r]);
+    const view = render(<HistoryScreen />);
+    await waitFor(() => expect(view.getByText(`event ${r.id}`)).toBeTruthy());
+    fireEvent.press(view.getByTestId(`delete-${r.id}`));
+    return view;
+  }
+
+  it('names a note the owner typed on a meal', async () => {
+    await pressRemoveOn({ ...row('e1'), notes: 'Only ate the topper' });
+    expect(await confirmBody()).toBe(
+      'This will remove the Meal from history. The note you wrote will be removed with it.',
+    );
+  });
+
+  it('names the photo, asked of the record', async () => {
+    mockGetEventAttachment.mockResolvedValue({ id: 'att-1', local_uri: 'file:///x.jpg' });
+    await pressRemoveOn({ ...row('e1'), event_type: 'vomit' });
+    expect(await confirmBody()).toBe(
+      'This will remove the Vomit from history. The photo you attached will be removed with it.',
+    );
+    expect(mockGetEventAttachment).toHaveBeenCalledWith('e1');
+  });
+
+  it('names BOTH, as one sentence — never the note alone over a photographed record', async () => {
+    mockGetEventAttachment.mockResolvedValue({ id: 'att-1', local_uri: 'file:///x.jpg' });
+    await pressRemoveOn({ ...row('e1'), event_type: 'vomit', notes: 'Grass first' });
+    expect(await confirmBody()).toBe(
+      'This will remove the Vomit from history. ' +
+        'The photo you attached and the note you wrote will be removed with it.',
+    );
+  });
+
+  it('still names a look\'s note, and calls the look what you noticed', async () => {
+    await pressRemoveOn({
+      ...row('e1'),
+      event_type: 'check_in',
+      look_outcome: 'off',
+      look_words: '[]',
+      look_note: 'Hung back on the walk',
+    });
+    expect(await confirmBody()).toBe(
+      'This will remove what you noticed from history. The note you wrote will be removed with it.',
+    );
+  });
+
+  it('says only what goes: a bare record gets the lead alone', async () => {
+    await pressRemoveOn(row('e1'));
+    expect(await confirmBody()).toBe('This will remove the Meal from history.');
+  });
+
+  // The confirm now waits on a read, so a second tap can land before it is up (the
+  // CUL-1125 review). One Remove, one confirm.
+  it('a second tap while the photo check is out raises one confirm, not two', async () => {
+    let release!: (v: unknown) => void;
+    mockGetEventAttachment.mockReturnValue(new Promise((r) => { release = r; }));
+    const view = await pressRemoveOn(row('e1'));
+    fireEvent.press(view.getByTestId('delete-e1'));
+    await act(async () => { release(null); });
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(mockGetEventAttachment).toHaveBeenCalledTimes(1);
+  });
+
+  it('the guard lets go: after a failed check, the next Remove still raises its confirm', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGetEventAttachment.mockRejectedValueOnce(new Error('database is locked'));
+    const view = await pressRemoveOn(row('e1'));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(1));
+    fireEvent.press(view.getByTestId('delete-e1'));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(2));
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed photo read makes no photo claim, and the confirm still comes', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGetEventAttachment.mockRejectedValue(new Error('database is locked'));
+    await pressRemoveOn({ ...row('e1'), notes: 'A note' });
+    expect(await confirmBody()).toBe(
+      'This will remove the Meal from history. The note you wrote will be removed with it.',
+    );
+    expect(warn).toHaveBeenCalled();
   });
 });
 

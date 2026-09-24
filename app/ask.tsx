@@ -32,6 +32,7 @@ import {
   type AskSuggestions,
 } from '../lib/ask';
 import { askCapCopy } from '../constants/monetizationCopy';
+import { reducedMotionNow } from '../store/reducedMotionStore';
 
 // Ask — the client surface (B-228, PR A5; requirements §3, §4, §9.3). Owner-initiated
 // Q&A over THIS pet's own record. States: fresh (chips-first) → thinking (whorl +
@@ -88,9 +89,10 @@ export default function AskScreen() {
   );
 
   // Keep the newest message in view as the conversation grows / a think starts.
+  // Under Reduce Motion the view jumps (CUL-1123), read when the scroll fires.
   useEffect(() => {
     if (messages.length > 0 || thinking) {
-      const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
+      const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: !reducedMotionNow() }), 60);
       return () => clearTimeout(t);
     }
   }, [messages.length, thinking]);

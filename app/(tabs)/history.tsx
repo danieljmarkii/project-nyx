@@ -23,11 +23,11 @@ import { useWidgetPetLink } from '../../hooks/useWidgetPetLink';
 import { useEventStore, NyxEvent } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
-import type { TimelineRow } from '../../lib/db';
+import { getEventAttachment, type TimelineRow } from '../../lib/db';
 import { syncNow } from '../../lib/sync';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { destructiveConfirm, pullThreshold } from '../../lib/haptics';
-import { isLookRow } from '../../lib/lookDisplay';
+import { removeConfirmCopy } from '../../lib/completionCard';
 import { readVisitsForHistory, HistoryVisitRow } from '../../lib/vetVisits';
 import { VisitTimelineRow } from '../../components/vetvisits/VisitTimelineRow';
 import { ListItem, mergeTimelineItems } from '../../lib/historyTimeline';
@@ -187,6 +187,9 @@ export default function HistoryScreen() {
 
   // Ref-based guard prevents concurrent loads even when the callback is stale
   const loadingRef = useRef(false);
+  // True while Remove is asking the record for a photo, before its confirm is up (CUL-1125
+  // review): a second tap in that gap would raise a second confirm for the same row.
+  const removeAskingRef = useRef(false);
 
   // Keep the current filters reachable from the hydration-tick effect without
   // making them its deps (which would re-fire it on every filter change, where
@@ -511,27 +514,37 @@ export default function HistoryScreen() {
     router.push({ pathname: '/vet-visits/[id]', params: { id: visit.id } });
   }
 
-  function handleDelete(event: NyxEvent) {
-    // CUL-869 — two things, both the record screen's confirm one surface over.
+  async function handleDelete(event: NyxEvent) {
+    // The record screen's confirm, one surface over, from the one composer every
+    // removal confirm shares (`removeConfirmCopy`, lib/completionCard.ts; CUL-1125):
+    // it names the record, and then everything that goes with it that nothing
+    // recreates. This is the likeliest door to a weeks-old record, so it is the one
+    // that can least afford to stay silent about either.
     //
-    // The SUBJECT is named per type: the sentence template was written for noun
-    // labels and `check_in`'s is "Noticed", so it read "the Noticed". Every other
-    // type's string is unchanged.
+    // The NOTE rides on the row itself (`notes`, and a look's `look_note`, joined in
+    // the same SELECT), so there is nothing to wait for. The PHOTO does not: History's
+    // rows never read attachments, so the record is asked here, exactly as the record
+    // screen asks it (CUL-825). A failed read falls back to no photo: no claim about
+    // one we cannot see, and a local read failing here means the removal below is
+    // about to fail too, and say so.
     //
-    // The NOTE is named when there is one (C-21). A look's note is the owner's own
-    // words and nothing recreates it — and this is the likeliest door to a week-old
-    // look, so it is the one that could least afford to stay silent. The fact rides
-    // on the row itself (`look_note`, joined in the same SELECT), so unlike the
-    // record screen's photo there is no read that might not have answered yet.
-    const isLook = isLookRow(event);
-    const label = EVENT_TYPES[event.event_type as EventTypeKey]?.label ?? 'event';
-    const subject = isLook ? 'what you noticed' : `the ${label}`;
-    const hasNote = isLook && !!event.look_note?.trim();
+    // One confirm per Remove: a tap that lands while the read is out is dropped. The
+    // flag clears before the confirm is raised, in the same synchronous run, so the
+    // next tap after it can only land on the confirm (which is modal) or after it.
+    if (removeAskingRef.current) return;
+    removeAskingRef.current = true;
+    let hasAttachment = false;
+    try {
+      hasAttachment = (await getEventAttachment(event.id)) !== null;
+    } catch (e) {
+      console.warn('[history] attachment check before delete failed:', e);
+    } finally {
+      removeAskingRef.current = false;
+    }
+    const copy = removeConfirmCopy(event, { hasAttachment });
     Alert.alert(
-      'Remove this log?',
-      hasNote
-        ? `This will remove ${subject} from history. The note you wrote will be removed with it.`
-        : `This will remove ${subject} from history.`,
+      copy.title,
+      copy.body,
       [
         { text: 'Cancel', style: 'cancel' },
         {

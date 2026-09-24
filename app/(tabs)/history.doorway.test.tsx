@@ -41,8 +41,12 @@ jest.mock('../../lib/feedingArrangements', () => ({
   getActiveArrangementsForPet: jest.fn(() => Promise.resolve([])),
   getBoundaryMarkers: jest.fn(() => Promise.resolve([])),
 }));
+// The screen's Remove confirm reaches lib/supabase (an import-time env guard) through
+// lib/completionCard → lib/weight (CUL-1125); nothing here removes anything.
+jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../../lib/db', () => ({
   getTimeline: jest.fn(),
+  getEventAttachment: jest.fn(() => Promise.resolve(null)),
 }));
 jest.mock('../../lib/undoLog', () => ({
   reverseLoggedEvent: jest.fn(() => Promise.resolve()),
