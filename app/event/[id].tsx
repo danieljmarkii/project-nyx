@@ -163,6 +163,10 @@ export default function EventDetailScreen() {
   // The storage_path the signed URLs in state are a handle ON. Holding a URL across a
   // refocus is only sound while the photo behind it is the same photo (CUL-302 review).
   const signedForPathRef = useRef<string | null>(null);
+  // True while Remove is asking the record for a photo, before its confirm is up (CUL-1125
+  // review): a second tap in that gap would raise a second confirm, and two confirmed
+  // Removes would pop the stack twice.
+  const removeAskingRef = useRef(false);
   const [remoteUrl, setRemoteUrl] = useState<string | null>(null);
   // Raw (non-transformed) signed URL, resolved in parallel as a fallback for when
   // the transformed URL can't load (image transformations unavailable). B-207.
@@ -477,13 +481,19 @@ export default function EventDetailScreen() {
     // attachment has hydrated pays nothing. On a read failure we fall back to the
     // state — no false claim about a photo we cannot see, and a local SQLite failure
     // here means the delete below is about to fail too and say so.
+    //
+    // One confirm per Remove: a tap that lands while the read is out is dropped. The
+    // flag clears before the confirm is raised, in the same synchronous run, so the
+    // next tap after it can only land on the confirm (which is modal) or after it.
+    if (removeAskingRef.current) return;
+    removeAskingRef.current = true;
     let hasPhoto = attachment !== null;
-    if (!hasPhoto) {
-      try {
-        hasPhoto = (await getEventAttachment(event.id)) !== null;
-      } catch (e) {
-        console.warn('[event-detail] attachment re-check before delete failed:', e);
-      }
+    try {
+      if (!hasPhoto) hasPhoto = (await getEventAttachment(event.id)) !== null;
+    } catch (e) {
+      console.warn('[event-detail] attachment re-check before delete failed:', e);
+    } finally {
+      removeAskingRef.current = false;
     }
     // The NOTE, and the sentence around both facts, come from the one composer every
     // removal confirm shares (`removeConfirmCopy`, lib/completionCard.ts; CUL-1125).

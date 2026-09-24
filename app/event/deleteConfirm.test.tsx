@@ -74,7 +74,7 @@ jest.mock('../../store/petStore', () => {
   };
 });
 
-import { render, waitFor, fireEvent } from '@testing-library/react-native';
+import { act, render, waitFor, fireEvent } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import EventDetailScreen from './[id]';
 
@@ -224,5 +224,40 @@ describe('the Remove confirm names an event\'s note (CUL-1125)', () => {
     await pressRemove();
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
     expect(alertBody()).toBe('This will remove the Vomit from history.');
+  });
+});
+
+// The CUL-1125 review: Remove waits on a read before its confirm is up, so a second tap
+// can land in that gap. Two confirms, both accepted, would reverse the record twice and
+// pop the stack twice, landing the owner a screen further back than where they came from.
+describe('one Remove, one confirm', () => {
+  it('a second tap while the photo re-check is out raises one confirm, not two', async () => {
+    mockGetEventAttachment.mockResolvedValueOnce(null); // the screen's own load: no photo yet
+    const view = render(<EventDetailScreen />);
+    await waitFor(() => expect(view.getByText('Remove')).toBeTruthy());
+
+    let release!: (v: unknown) => void;
+    mockGetEventAttachment.mockReturnValue(new Promise((r) => { release = r; }));
+    fireEvent.press(view.getByText('Remove'));
+    fireEvent.press(view.getByText('Remove'));
+    await act(async () => { release(null); });
+
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+  });
+
+  it('the guard lets go: after a failed re-check, the next Remove still raises its confirm', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGetEventAttachment.mockResolvedValueOnce(null);
+    const view = render(<EventDetailScreen />);
+    await waitFor(() => expect(view.getByText('Remove')).toBeTruthy());
+
+    mockGetEventAttachment.mockRejectedValueOnce(new Error('database is locked'));
+    fireEvent.press(view.getByText('Remove'));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(1));
+    mockGetEventAttachment.mockResolvedValue(null);
+    fireEvent.press(view.getByText('Remove'));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(2));
+    warn.mockRestore();
   });
 });

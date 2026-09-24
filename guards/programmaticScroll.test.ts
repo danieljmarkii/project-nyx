@@ -78,27 +78,40 @@ function readSource(abs: string): string | null {
 
 /**
  * The argument text of the call whose `(` sits just before `start`, up to its matching
- * `)`. Balanced over (), {} and [], skipping string literals, so a nested
- * `Math.max(0, y - 8)` or a multi-line options object is read whole.
+ * `)`. Balanced over (), {} and [], so a nested `Math.max(0, y - 8)` or a multi-line
+ * options object is read whole. String contents come back BLANKED (the quotes kept), in
+ * the same single pass (C-18): a label reading `'animated: smoothly'` is not an
+ * `animated` key, and must not satisfy the check below (the CUL-1125 review).
  */
 function argumentText(code: string, start: number): string {
   let depth = 0;
   let i = start;
+  let out = '';
   while (i < code.length) {
     const c = code[i];
     if (c === "'" || c === '"' || c === '`') {
       const quote = c;
+      out += c;
       i += 1;
-      while (i < code.length && code[i] !== quote) i += code[i] === '\\' ? 2 : 1;
+      while (i < code.length && code[i] !== quote) {
+        const step = code[i] === '\\' ? 2 : 1;
+        out += ' '.repeat(Math.min(step, code.length - i));
+        i += step;
+      }
+      if (i < code.length) out += code[i];
     } else if (c === '(' || c === '{' || c === '[') {
       depth += 1;
+      out += c;
     } else if (c === ')' || c === '}' || c === ']') {
-      if (depth === 0) return code.slice(start, i);
+      if (depth === 0) return out;
       depth -= 1;
+      out += c;
+    } else {
+      out += c;
     }
     i += 1;
   }
-  return code.slice(start);
+  return out;
 }
 
 interface Finding {
@@ -266,5 +279,17 @@ describe('the detector itself', () => {
   it('reads past a parenthesis inside a string in the arguments', () => {
     writeFixture(root, 'app/H.tsx', "ref.scrollTo({ y: 0, label: 'a (b', animated: true });\n");
     expect(findUnhonouredScrolls(root)).toEqual([{ file: 'app/H.tsx', line: 1, why: 'animated: true' }]);
+  });
+
+  it('is not satisfied by `animated:` inside a string (the CUL-1125 review)', () => {
+    writeFixture(
+      root,
+      'components/I.tsx',
+      "list.current?.scrollToIndex({ index: 3, accessibilityLabel: 'animated: smoothly' });\n" +
+        'ref.scrollTo({ y: 0, hint: `animated: ${x}`, animated: !reducedMotionNow() });\n',
+    );
+    expect(findUnhonouredScrolls(root)).toEqual([
+      { file: 'components/I.tsx', line: 1, why: 'no animated key' },
+    ]);
   });
 });

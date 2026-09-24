@@ -381,6 +381,29 @@ describe('History — the Remove confirm names what goes with the record', () =>
     expect(await confirmBody()).toBe('This will remove the Meal from history.');
   });
 
+  // The confirm now waits on a read, so a second tap can land before it is up (the
+  // CUL-1125 review). One Remove, one confirm.
+  it('a second tap while the photo check is out raises one confirm, not two', async () => {
+    let release!: (v: unknown) => void;
+    mockGetEventAttachment.mockReturnValue(new Promise((r) => { release = r; }));
+    const view = await pressRemoveOn(row('e1'));
+    fireEvent.press(view.getByTestId('delete-e1'));
+    await act(async () => { release(null); });
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(mockGetEventAttachment).toHaveBeenCalledTimes(1);
+  });
+
+  it('the guard lets go: after a failed check, the next Remove still raises its confirm', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGetEventAttachment.mockRejectedValueOnce(new Error('database is locked'));
+    const view = await pressRemoveOn(row('e1'));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(1));
+    fireEvent.press(view.getByTestId('delete-e1'));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(2));
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
   it('a failed photo read makes no photo claim, and the confirm still comes', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockGetEventAttachment.mockRejectedValue(new Error('database is locked'));

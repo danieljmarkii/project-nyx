@@ -180,6 +180,9 @@ export default function HistoryScreen() {
 
   // Ref-based guard prevents concurrent loads even when the callback is stale
   const loadingRef = useRef(false);
+  // True while Remove is asking the record for a photo, before its confirm is up (CUL-1125
+  // review): a second tap in that gap would raise a second confirm for the same row.
+  const removeAskingRef = useRef(false);
 
   // Keep the current filters reachable from the hydration-tick effect without
   // making them its deps (which would re-fire it on every filter change, where
@@ -515,11 +518,19 @@ export default function HistoryScreen() {
     // screen asks it (CUL-825). A failed read falls back to no photo: no claim about
     // one we cannot see, and a local read failing here means the removal below is
     // about to fail too, and say so.
+    //
+    // One confirm per Remove: a tap that lands while the read is out is dropped. The
+    // flag clears before the confirm is raised, in the same synchronous run, so the
+    // next tap after it can only land on the confirm (which is modal) or after it.
+    if (removeAskingRef.current) return;
+    removeAskingRef.current = true;
     let hasAttachment = false;
     try {
       hasAttachment = (await getEventAttachment(event.id)) !== null;
     } catch (e) {
       console.warn('[history] attachment check before delete failed:', e);
+    } finally {
+      removeAskingRef.current = false;
     }
     const copy = removeConfirmCopy(event, { hasAttachment });
     Alert.alert(
