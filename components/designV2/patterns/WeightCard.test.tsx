@@ -48,6 +48,26 @@ const SIX = [
 ];
 
 describe('WeightCard (Design v2)', () => {
+  // The clock is PINNED rather than the fixture anchored (C-29, CUL-832). The delta line
+  // names its first reading's date, and formatWeightDate adds the year only when that date
+  // is outside the current year, so from 2027-01-01 every "since Jul 3" below would have
+  // read "since Jul 3, 2026" (found by a skewed-clock run). A fixture anchored to Date.now()
+  // would straddle New Year every January instead. Only Date is faked; timers stay real,
+  // so the draw-in animation is untouched.
+  beforeAll(() => {
+    jest.useFakeTimers({
+      doNotFake: [
+        'hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame',
+        'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback', 'setImmediate',
+        'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout',
+      ],
+    });
+    jest.setSystemTime(new Date(2026, 8, 24, 12, 0));
+  });
+  afterAll(() => {
+    jest.useRealTimers();
+  });
+
   it('six readings: dots by date, the band, the delta spoken beside the caveat, the record count in the header', () => {
     const { getByTestId, getByText } = measured(<WeightCard readings={SIX} readingCount={6} petName="Nyx" petId="p1" />);
     expect(getByTestId('weight-card-header').props.children).toBe('Weight · 6 readings');
