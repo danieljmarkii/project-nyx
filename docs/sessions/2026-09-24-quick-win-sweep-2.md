@@ -1,6 +1,6 @@
 # Quick Win sweep (second of the day): Early access, the Didn't-eat heads-up, a real DST test, the iPhone time seed, a replaced photo's date
 
-**Date:** 2026-09-24 · **Branch:** `claude/stoic-feynman-skvcnm` · shipped via #PR_NUMBER · five picks, one commit each, one `code-reviewer` pass (REVIEW_RESULT)
+**Date:** 2026-09-24 · **Branch:** `claude/stoic-feynman-skvcnm` · shipped via #900 · five picks, one commit each, one `code-reviewer` pass (ship-ready, no findings in the changed code; its two out-of-scope finds are on Linear)
 
 | Issue | Outcome | Proof |
 |---|---|---|
@@ -11,7 +11,8 @@
 | CUL-956 | **Shipped.** `/log` replaces a photo's date with the photo | The unstamped-replacement test reds on the pre-fix screen. The vet-visit instance was already gone; SimpleEventConfirm and food-capture checked and clean |
 | CUL-1052 | **Cut, Gate: design.** The refusal's placement under a collapsible field is a new call, and the helper line the fix leaned on is wrong | Verified at `StartTrialModal.tsx:216-220` and `lib/dietTrialSetup.ts:179-185` |
 | CUL-1148 | **Filed, Gate: design.** The start-trial helper says "Most skin trials run N weeks" with N from the owner's typed length | Found sizing CUL-1052 |
-| CUL-1149 | **Filed, Gate: design.** After a photo replace, the event's time still follows the first photo, labelled "from your photo" | Found fixing CUL-956 |
+| CUL-1149 | **Filed, Gate: design, then widened to Medium.** An EXIF-dated event time outlives the photo that set it: after a replace (found fixing CUL-956), and after Back into a meal, where the meal takes the abandoned symptom photo's time as `'exif'` (found by `code-reviewer`) | `app/log.tsx` `handleBack` resets the photo but not `occurredAt` / `occurredAtSource`; `handlePickFood` reads `usingExif` |
+| CUL-1150 | **Filed, Gate: device.** After a visit, *Set a date* books on the wheel's first stop on iOS, so the six-week seed can't be kept | `components/vetvisits/AfterVisitBody.tsx:274-290`; flagged by `code-reviewer` as a neighbour of CUL-984 |
 | CUL-947 | **Gate: design** | The past-visit sheet's saved moment is a surface choice; verified at `app/vet-visits/index.tsx:207` |
 | CUL-1019 | **Gate: clinical** | The done-definition is a `vet-report-cold-read` of the new fixture |
 | CUL-1075 | **Quick Win removed** | An engineering call and its own session; stays High in the Design v2 order |
