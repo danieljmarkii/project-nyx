@@ -9,8 +9,11 @@ import { EmptyState, ThemedText } from '../../components/ui';
 import { SkeletonRows } from '../../components/ui/Skeleton';
 import { DateScopeControl } from '../../components/history/DateScopeControl';
 import { TypeScopeControl } from '../../components/history/TypeScopeControl';
-import { DAY_KEY_RE, effectiveRange, coerceDatePreset } from '../../lib/historyDateFilter';
-import type { DatePreset } from '../../lib/historyDateFilter';
+import {
+  coerceDatePreset, dayScopeFromParams, effectiveRange, historyDayLabel, inRange,
+} from '../../lib/historyDateFilter';
+import type { DatePreset, DayScope } from '../../lib/historyDateFilter';
+import { readHistoryPage } from '../../lib/historyPage';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import { EventRow } from '../../components/history/EventRow';
 import { BoundaryMarkerRow } from '../../components/history/BoundaryMarkerRow';
@@ -20,11 +23,10 @@ import { useWidgetPetLink } from '../../hooks/useWidgetPetLink';
 import { useEventStore, NyxEvent } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
-import { getEventAttachment, getTimeline, TimelineRow } from '../../lib/db';
+import { getEventAttachment, type TimelineRow } from '../../lib/db';
 import { syncNow } from '../../lib/sync';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { destructiveConfirm, pullThreshold } from '../../lib/haptics';
-import { formatUtcDayShort } from '../../lib/utils';
 import { removeConfirmCopy } from '../../lib/completionCard';
 import { readVisitsForHistory, HistoryVisitRow } from '../../lib/vetVisits';
 import { VisitTimelineRow } from '../../components/vetvisits/VisitTimelineRow';
@@ -40,7 +42,7 @@ type LoadEvents = (
   currentOffset: number,
   type: EventTypeKey | null,
   preset: DatePreset,
-  day: string | null,
+  day: DayScope | null,
   replace: boolean,
 ) => Promise<void>;
 
@@ -103,21 +105,24 @@ function coerceEventTypeKey(value: string | undefined | null): EventTypeKey | nu
 
 export default function HistoryScreen() {
   const { activePet } = usePetStore();
-  // Two doorways deep-link here with ?date=…&ts=<nonce>: the Home "Today" doorway (§8,
-  // ?date=today) and the Calendar v3 drill-in (B-308, ?date=YYYY-MM-DD → a single UTC
-  // day). `ts` is a nonce so the filter re-applies even when this tab is already mounted (a
-  // doorway tap is not a remount). Either filter is fully clearable — picking any date
-  // scope clears it.
-  // W5 adds a third: the widget's status column deep-links here with
-  // ?date=YYYY-MM-DD&pet=<id> — the day AND whose day it is.
-  // B-378 adds a fourth: Ask's answer-card provenance deep-links here with
-  // ?type=<event_type>&window=<preset>&ts=<nonce> to open the filtered list an answer's count
-  // was drawn from ("audit the whole count at its source") instead of a single event. A
-  // type/window link and a date link are mutually exclusive — Ask sends one shape or the other.
+  // Doorways deep-link here with a `ts` nonce, so a filter re-applies even when this tab
+  // is already mounted (a doorway tap is not a remount). Any filter is fully clearable —
+  // picking any date scope clears it.
+  //   • ?date=today — the Today preset (Ask's History chip).
+  //   • ?date=YYYY-MM-DD — the flag-off Calendar v3 drill-in (B-308), a UTC day.
+  //   • ?date=YYYY-MM-DD&pet=<id>&src=widget — the widget (W5): the owner's LOCAL day,
+  //     and whose day it is. Frozen: History reads what it sends (H-7).
+  //   • ?day=YYYY-MM-DD — the Design v2 month's door (CUL-1073), a LOCAL day.
+  //   • ?type=<event_type>&window=<preset> — Ask's answer-card provenance (B-378): the
+  //     filtered list an answer's count was drawn from ("audit the whole count at its
+  //     source"). A type/window link and a date link are mutually exclusive.
+  // A day link is read BY SENDER (`dayScopeFromParams`), never by flag: one `?date=`
+  // cannot mean two clocks, and an existing parameter never changes meaning in place.
   const params = useLocalSearchParams<{
-    date?: string; ts?: string; pet?: string; type?: string; window?: string;
+    date?: string; day?: string; src?: string; ts?: string; pet?: string; type?: string; window?: string;
   }>();
-  useWidgetPetLink(params.pet);
+  // The widget's pet and its day are one tap: both are spent on the same `ts` (CUL-1119).
+  useWidgetPetLink(params.pet, params.ts);
   // A type/window deep-link (B-378) and a date deep-link are separate doorways; whichever the
   // navigation carried seeds the initial filter. `hasFilterLink` distinguishes a fresh
   // type/window arrival from an ordinary mount so the date-based seeds don't fight it.
@@ -127,8 +132,9 @@ export default function HistoryScreen() {
   const initialDatePreset: DatePreset = hasFilterLink
     ? initialWindowPreset
     : params.date === 'today' ? 'today' : null;
-  const initialDay: string | null =
-    !hasFilterLink && params.date && DAY_KEY_RE.test(params.date) ? params.date : null;
+  const initialDay: DayScope | null = hasFilterLink
+    ? null
+    : dayScopeFromParams({ date: params.date, day: params.day, src: params.src });
   const { removeFromToday, restoreToToday, todayEvents } = useEventStore();
   // B-054 §6 — reactive refresh-after-hydrate: re-read the timeline when a sync
   // cycle finishes while this tab is open, so another device's writes appear
@@ -172,9 +178,10 @@ export default function HistoryScreen() {
   const [loaded, setLoaded] = useState(false);
   const [typeFilter, setTypeFilter] = useState<EventTypeKey | null>(initialTypeFilter);
   const [datePreset, setDatePreset] = useState<DatePreset>(initialDatePreset);
-  // A single-day filter from the Calendar v3 drill-in (B-308). Mutually exclusive with
-  // datePreset — whichever the owner picked last wins; picking a preset clears the day.
-  const [dayFilter, setDayFilter] = useState<string | null>(initialDay);
+  // A single-day filter from a day doorway (B-308), with the clock its sender counted the
+  // day on. Mutually exclusive with datePreset — whichever the owner picked last wins;
+  // picking a preset clears the day.
+  const [dayFilter, setDayFilter] = useState<DayScope | null>(initialDay);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -203,7 +210,7 @@ export default function HistoryScreen() {
     currentOffset: number,
     type: EventTypeKey | null,
     preset: DatePreset,
-    day: string | null,
+    day: DayScope | null,
     replace: boolean,
   ) => {
     if (!activePet || loadingRef.current) return;
@@ -213,14 +220,15 @@ export default function HistoryScreen() {
     // state down, and a retry that fails must leave it up.
     setLoadError(false);
     try {
-      const { after, before } = effectiveRange(preset, day);
-      const rows = await getTimeline(
+      // The scope's bounds are parsed, never compared as text (C-40): `readHistoryPage`
+      // over-fetches in SQL and places each row on its parsed instant. `fetched` is the
+      // QUERY's count, which is what OFFSET pages; `hasMore` is the query's own answer.
+      const { rows, fetched, hasMore: more } = await readHistoryPage(
         activePet.id,
         PAGE_SIZE,
         currentOffset,
         type,
-        after,
-        before,
+        effectiveRange(preset, day),
       );
       const mapped = rows.map(rowToEvent);
       setEvents((prev: NyxEvent[]) => {
@@ -235,8 +243,8 @@ export default function HistoryScreen() {
         const seen = new Set(prev.map((e) => e.id));
         return [...prev, ...mapped.filter((e) => !seen.has(e.id))];
       });
-      setHasMore(rows.length === PAGE_SIZE);
-      setOffset(currentOffset + rows.length);
+      setHasMore(more);
+      setOffset(currentOffset + fetched);
     } catch (e) {
       console.error('[history] load failed:', e);
       setLoadError(true);
@@ -405,9 +413,8 @@ export default function HistoryScreen() {
   // doorway tap doesn't remount). The `ts` nonce changes per tap; the ref guards against
   // re-applying on unrelated re-renders. Setting the filter state re-runs the focus effect
   // (which reloads). First mount is handled by the initial* seeds above, so the ref is seeded
-  // to that ts to avoid a redundant re-apply. Handles the Home "Today" doorway (?date=today),
-  // the Calendar drill-in (?date=YYYY-MM-DD, B-308), AND Ask's provenance link
-  // (?type=&window=, B-378).
+  // to that ts to avoid a redundant re-apply. Handles every doorway in the table at the
+  // top: the Today preset, a day on its sender's clock, and Ask's provenance link.
   const appliedDateTsRef = useRef<string | null>(
     initialDatePreset || initialDay || hasFilterLink ? params.ts ?? null : null,
   );
@@ -422,19 +429,21 @@ export default function HistoryScreen() {
       setDatePreset(coerceDatePreset(params.window));
       return;
     }
-    if (!params.date) return;
     if (params.date === 'today') {
       appliedDateTsRef.current = params.ts;
       setTypeFilter(null);
       setDayFilter(null);
       setDatePreset('today');
-    } else if (DAY_KEY_RE.test(params.date)) {
+      return;
+    }
+    const day = dayScopeFromParams({ date: params.date, day: params.day, src: params.src });
+    if (day) {
       appliedDateTsRef.current = params.ts;
       setTypeFilter(null);
       setDatePreset(null);
-      setDayFilter(params.date);
+      setDayFilter(day);
     }
-  }, [params.date, params.ts, params.type, params.window]);
+  }, [params.date, params.day, params.src, params.ts, params.type, params.window]);
 
   // Real-time: prepend new events logged via FAB while this tab is visible
   const latestTodayId = todayEvents[0]?.id;
@@ -446,10 +455,10 @@ export default function HistoryScreen() {
       if (!newEvent) return prev;
       if (typeFilter && newEvent.event_type !== typeFilter) return prev;
       // Respect BOTH the preset cutoff and a single-day filter's upper bound — a freshly
-      // logged event outside the current scope shouldn't jump into a filtered view.
-      const { after, before } = effectiveRange(datePreset, dayFilter);
-      if (after && newEvent.occurred_at < after) return prev;
-      if (before && newEvent.occurred_at >= before) return prev;
+      // logged event outside the current scope shouldn't jump into a filtered view. The
+      // same parsed predicate the read uses (C-40), so a row's day never depends on how
+      // its instant is spelled.
+      if (!inRange(newEvent.occurred_at, effectiveRange(datePreset, dayFilter))) return prev;
       return [newEvent, ...prev];
     });
   }, [latestTodayId]);
@@ -659,7 +668,7 @@ export default function HistoryScreen() {
             <DateScopeControl
               value={datePreset}
               onChange={handleDatePreset}
-              dayLabel={dayFilter ? formatUtcDayShort(dayFilter) : null}
+              dayLabel={dayFilter ? historyDayLabel(dayFilter.key) : null}
             />
           </View>
         </View>

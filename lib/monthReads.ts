@@ -241,9 +241,10 @@ const DAY_ROW_LIMIT = 200;
 /**
  * Every surviving event on one LOCAL day, oldest first. The bounds are the local day's
  * with a day of slack each side (C-40: the SQL bound is a coarse prefilter), and the
- * parsed instant decides membership. Distinct from History's `?date=` deep link, which
- * filters a UTC day (`lib/historyDateFilter.ts`) — the month does not link there,
- * because a local day and a UTC day are not the same set of events.
+ * parsed instant decides membership. The day's door into History sends `?day=`, which
+ * History reads as this same local day (`lib/historyDateFilter.ts`, CUL-1073); a bare
+ * `?date=` is still the flag-off calendar's UTC day, a different set of events.
+ * `lib/historyPage.test.ts` drives both reads over one table and holds them equal.
  */
 export async function readDayRows(petId: string, dayKey: string): Promise<TimelineRow[]> {
   const bounds = slackBounds({ fromKey: dayKey, toKey: dayKey });

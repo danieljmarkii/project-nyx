@@ -89,7 +89,8 @@ export default function LogModal() {
   // opens pre-scoped. A bad value falls back to the picker's 'all' default.
   const initialFoodScope = parseFoodScope(scopeParam);
   // W5 — the widget's "Something else…" app door names its bound pet, so this
-  // screen opens on that pet rather than whichever one the app last showed.
+  // screen opens on that pet rather than whichever one the app last showed. Once per
+  // open (CUL-1119): the widget's log links carry no `ts`, so a switch made here sticks.
   useWidgetPetLink(petParam);
   const isComboMode = !!pairedEventId;
   // B-325 — a RETROACTIVE combo: the med is being added to an ALREADY-logged meal/treat

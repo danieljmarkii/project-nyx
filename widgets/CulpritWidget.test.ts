@@ -17,6 +17,7 @@
 jest.mock('expo', () => require('expo-widgets/bundle/expo-stub'));
 
 import { CulpritWidgetLayout } from './CulpritWidget';
+import { dayScopeFromParams } from '../lib/historyDateFilter';
 import type {
   CulpritWidgetProps,
   WidgetBand,
@@ -186,6 +187,18 @@ describe('resting state (mock Day A)', () => {
       expect(link).toMatch(
         /^link:nyx:\/\/\/history\?date=2026-07-24&ts=\d+&pet=11111111-1111-4111-8111-111111111111&src=widget$/,
       );
+    }
+  });
+
+  // The widget is frozen (H-7): History reads what it sends, never the reverse. This binds
+  // the emitted link to the reader, so a drift on either side reds here (CUL-1073, CUL-1119).
+  it('History reads the day link as a LOCAL day, and its ts is the nonce the pet link spends', () => {
+    const links = texts(render(props(), ENV)).filter((t) => t.startsWith('link:nyx:///history'));
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      const params = Object.fromEntries(new URLSearchParams(link.slice(link.indexOf('?') + 1)));
+      expect(dayScopeFromParams(params)).toEqual({ key: '2026-07-24', basis: 'local' });
+      expect(params.ts).toMatch(/^\d+$/);
     }
   });
 

@@ -517,7 +517,10 @@ describe('History — the vet visit row', () => {
 
   it('a type lens is a lens over EVENTS, so the visit leaves with the markers', async () => {
     mockParams = { type: 'meal', window: '30d', ts: '1' };
-    mockGetTimeline.mockResolvedValue([row('e1')]);
+    // A row the 30-day read can return, anchored to the clock (C-29): the page places
+    // each row on its parsed instant (CUL-1073), so a row outside the window is dropped
+    // the way the real query drops it (C-35).
+    mockGetTimeline.mockResolvedValue([row('e1', new Date(Date.now() - 86_400_000).toISOString())]);
     mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
 
     const { getByText, queryByText } = render(<HistoryScreen />);
