@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-24
 
-Shipped via #PR (CUL-1073, CUL-1119). Follow-up filed: CUL-1177. Evidence posted for Bundle C on CUL-1120.
+Shipped via #904 (CUL-1073, CUL-1119). Follow-up filed: CUL-1177. Evidence posted for Bundle C on CUL-1120.
 
 ## The ask
 
