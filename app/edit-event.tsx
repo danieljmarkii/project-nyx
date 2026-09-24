@@ -157,9 +157,10 @@ export default function EditEventModal() {
   const [intakeRating, setIntakeRating] = useState<IntakeRating | null>(null);
   // The rating as loaded, so Save writes it only when the owner changed it (CUL-1087):
   // a write asks the Signal to rebuild, and rebuilds count toward a daily cap
-  // (CUL-1109). `undefined` until the meal loads, so a meal whose row never loaded
-  // still writes, and still fails loudly if the row is missing.
-  const loadedIntakeRef = useRef<IntakeRating | null | undefined>(undefined);
+  // (CUL-1109). Seeded null like the dose refs below: until the meal's read answers,
+  // the chips are blank over whatever is stored, so their null is not a change (C-12)
+  // and only a rating the owner picks is.
+  const loadedIntakeRef = useRef<IntakeRating | null>(null);
 
   // Medication (dose) state — the parity twin of the meal food/intake block, so the
   // Edit modal for a dose carries the fields a dose actually has (drug identity +
@@ -560,6 +561,8 @@ export default function EditEventModal() {
       // Through the shared write path, which also refreshes the Signal (CUL-1087), and
       // only when it changed: the dose fields below follow the same rule, which also
       // keeps an untouched rating from overwriting a newer one from another device.
+      // Before the meal's read answers the ref is still null, so blank chips write
+      // nothing: their null would erase a stored refusal and take it off Home.
       if (config.hasFood && intakeRating !== loadedIntakeRef.current) {
         await rateMealIntake(id, intakeRating);
       }

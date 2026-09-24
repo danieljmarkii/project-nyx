@@ -124,12 +124,46 @@ describe('the meal rating on the edit screen (CUL-1087)', () => {
     expect(mockRateMealIntake).toHaveBeenCalledWith('evt-1', null);
   });
 
-  it('a meal whose row never loaded still writes, so a missing row still fails loudly', async () => {
-    // Before this change the write ran on every save, and its zero-row throw is what
-    // turned a meal with no child row into "Could not save". That stays true.
+});
+
+// Until the meal's read answers, the chips are blank over whatever is stored, so their
+// null is not the record (C-12). The first cut seeded the as-loaded rating `undefined`
+// and so wrote that null on an untouched Save: over a stored refusal, it erased the
+// refusal and its rebuild took the decline off Home (adversarial-reviewer, at the wrap).
+describe('a Save before the meal read answers (CUL-1087)', () => {
+  it('a read still pending: the blank chips write nothing', async () => {
+    mockGetMealForEvent.mockReturnValue(new Promise(() => {}));
+    const { getByText } = await open();
+    await act(async () => { fireEvent.press(getByText('Save')); });
+    expect(mockRateMealIntake).not.toHaveBeenCalled();
+  });
+
+  it('a read that failed: the stored rating is left alone', async () => {
+    const quiet = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockGetMealForEvent.mockRejectedValue(new Error('database is locked'));
+    const { getByText } = await open();
+    await act(async () => { fireEvent.press(getByText('Save')); });
+    expect(mockRateMealIntake).not.toHaveBeenCalled();
+    quiet.mockRestore();
+  });
+
+  it('no meal row: an untouched Save writes no rating, so the rest of the edit is not failed by it', async () => {
+    // The food and dose writes already skip a child that did not load; the rating now
+    // matches them. A rating the owner PICKS on a rowless meal still writes and still
+    // fails loudly on the zero-row guard, which the case below covers.
     mockGetMealForEvent.mockResolvedValue(null);
     const { getByText } = await open();
     await act(async () => { fireEvent.press(getByText('Save')); });
-    expect(mockRateMealIntake).toHaveBeenCalledWith('evt-1', null);
+    expect(mockRateMealIntake).not.toHaveBeenCalled();
+  });
+
+  it('a rating the owner picked still saves, read or no read', async () => {
+    // Refactor safety for the fix's shape: "skip the write until the read answers with
+    // a rating" would drop a deliberate pick silently.
+    mockGetMealForEvent.mockReturnValue(new Promise(() => {}));
+    const { getByText } = await open();
+    fireEvent.press(getByText('Refused'));
+    await act(async () => { fireEvent.press(getByText('Save')); });
+    expect(mockRateMealIntake).toHaveBeenCalledWith('evt-1', 'refused');
   });
 });
