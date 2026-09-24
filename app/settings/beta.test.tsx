@@ -66,7 +66,7 @@ describe('BetaFeaturesScreen — zero eligible betas (B-729)', () => {
     const { getByText, queryByText, queryAllByRole } = render(<BetaFeaturesScreen />);
 
     expect(getByText('Nothing to try right now')).toBeTruthy();
-    expect(getByText(/Beta features come and go while we build/)).toBeTruthy();
+    expect(getByText(/Early-access features come and go while we build/)).toBeTruthy();
 
     // The action-promising intro and the honesty note are gone with the cards —
     // there is nothing to switch on and nothing "on" to be honest about.
@@ -157,5 +157,63 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(getByRole('switch').props.value).toBe(false);
     expect(queryByText('Home screen widget')).toBeNull();
     expect(queryByText('Noticed')).toBeNull();
+  });
+});
+
+// CUL-70 (D8, ruled 2026-08-20): owner-facing, the shelf is "Early access". "Beta"
+// pattern-matches App Review Guideline 2.2 in a reviewer's skim, and a screen-reader
+// user hears the accessibility props, so the word is checked in what the screen
+// SHOWS and in what it SPEAKS. The code keeps its names; only rendered strings count.
+
+// Every string the rendered host tree shows (text children) or speaks (label, hint).
+function shownOrSpoken(tree: unknown): string[] {
+  if (typeof tree === 'string') return [tree];
+  if (tree === null || typeof tree !== 'object') return [];
+  if (Array.isArray(tree)) return tree.flatMap(shownOrSpoken);
+  const node = tree as { props?: Record<string, unknown>; children?: unknown };
+  const spoken = [node.props?.accessibilityLabel, node.props?.accessibilityHint].filter(
+    (v): v is string => typeof v === 'string',
+  );
+  return [...spoken, ...shownOrSpoken(node.children ?? null)];
+}
+
+const BETA_WORD = /\bbetas?\b/i;
+
+describe('BetaFeaturesScreen — says early access, never beta (CUL-70)', () => {
+  it('shows and speaks no "beta" with every card up and a hint open', () => {
+    setAllowlist({ widget_enabled: gatedToPm, daily_look: gatedToPm, design_v2: gatedToPm });
+    useBetaOptInStore.getState().setOptIn('widget_enabled', true);
+    const { toJSON } = render(<BetaFeaturesScreen />);
+    const strings = shownOrSpoken(toJSON());
+
+    // Non-vacuity: the walk reached the title, the cards, the on-state hint and the
+    // footer note, so an empty list cannot pass for a clean one.
+    expect(strings).toContain('Early access');
+    expect(strings).toContain('Home screen widget');
+    expect(strings.some((t) => t.startsWith('It’s on. If it isn’t on your home screen'))).toBe(true);
+    expect(strings.some((t) => t.includes('Early-access features may change'))).toBe(true);
+
+    expect(strings.filter((t) => BETA_WORD.test(t))).toEqual([]);
+  });
+
+  it('shows and speaks no "beta" in the empty state either', () => {
+    const { toJSON } = render(<BetaFeaturesScreen />);
+    const strings = shownOrSpoken(toJSON());
+
+    expect(strings).toContain('Nothing to try right now');
+    expect(strings.filter((t) => BETA_WORD.test(t))).toEqual([]);
+  });
+
+  it('labels each switch with its feature’s title and nothing else', () => {
+    // The pill is gone, so the label no longer carries a ", beta" to stand in for it:
+    // VoiceOver says the title the owner reads, then "switch", then its state.
+    setAllowlist({ widget_enabled: gatedToPm, daily_look: gatedToPm, design_v2: gatedToPm });
+    const { getAllByRole } = render(<BetaFeaturesScreen />);
+
+    expect(getAllByRole('switch').map((sw) => sw.props.accessibilityLabel)).toEqual([
+      'Home screen widget',
+      'Noticed',
+      'Design v2',
+    ]);
   });
 });

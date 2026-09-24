@@ -16,9 +16,16 @@ import {
 import type { AllowlistFlagKey } from '../../lib/appConfig';
 import { ThemedText } from '../../components/ui/ThemedText';
 
-// Beta features — the self-serve shelf (B-712 PR 3, spec §5 / §2). A cohort-gated
+// Early access — the self-serve shelf (B-712 PR 3, spec §5 / §2). A cohort-gated
 // page where an eligible owner opts into unfinished features, one at a time. The
 // widget is the only beta in v1.
+//
+// OWNER-FACING, IT IS "EARLY ACCESS", NEVER "BETA" (CUL-70, D8 ruled 2026-08-20).
+// "Beta" pattern-matches App Review Guideline 2.2 ("demos, betas, and trial versions
+// don't belong on the App Store") in a reviewer's skim, so every string this screen
+// shows or speaks says early access. The code keeps its names (`BETA_REGISTRY`, the
+// `settings/beta` route, the flag keys): they are never shown, and renaming them buys
+// a migration for nothing.
 //
 // TWO GATES, NEVER CONFLATED (spec §2):
 //   • Gate 1 — eligibility (server allowlist, resolved by useAllowlistFlag). Owned
@@ -100,26 +107,22 @@ function BetaFeatureCard({ feature }: { feature: BetaFeature }) {
         <View style={styles.iconTile}>
           <Icon size={21} color={theme.colorAccentInk} strokeWidth={1.9} />
         </View>
+        {/* No per-card "Beta" pill (CUL-70): inside a shelf titled Early access it
+            said the page's own title again, and it put the word App Review reads as
+            "unfinished app" on every card. */}
         <View style={styles.headLead}>
-          <View style={styles.titleRow}>
-            <Text style={styles.title}>{feature.title}</Text>
-            {/* The "Beta" pill — the calm on-brand mark register (IntakeBadge's
-                positive tint), not a tappable chip. Sets expectations without
-                over-promising: unfinished, may change. */}
-            <View style={styles.pill} pointerEvents="none">
-              <ThemedText style={styles.pillText}>Beta</ThemedText>
-            </View>
-          </View>
+          <Text style={styles.title}>{feature.title}</Text>
         </View>
         <Switch
           value={optedIn}
           onValueChange={(next) => setOptIn(feature.key, next)}
           trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
           ios_backgroundColor={theme.colorBorderStrong}
-          // Fold "beta" into the control's own label so a screen-reader user toggling
-          // it hears "Home screen widget, beta" — the pill is a separate Text, and the
-          // switch shouldn't rely on adjacency to say what kind of feature it gates.
-          accessibilityLabel={`${feature.title}, beta`}
+          // The switch names the feature it gates: RN's Switch takes no label from
+          // the Text beside it. The label once added ", beta" to stand in for the
+          // pill; with the pill gone and the screen titled Early access, a
+          // screen-reader user hears what a sighted owner reads (CUL-70).
+          accessibilityLabel={feature.title}
         />
       </View>
 
@@ -156,7 +159,7 @@ export default function BetaFeaturesScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <Header title="Beta features" leading="back" onLeadingPress={handleBack} />
+      <Header title="Early access" leading="back" onLeadingPress={handleBack} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {eligible.length === 0 ? (
@@ -178,8 +181,8 @@ export default function BetaFeaturesScreen() {
             </View>
             <ThemedText style={styles.emptyTitle}>Nothing to try right now</ThemedText>
             <ThemedText style={styles.emptyBody}>
-              Beta features come and go while we build. When there’s one ready for your account,
-              you’ll find it here.
+              Early-access features come and go while we build. When there’s one ready for your
+              account, you’ll find it here.
             </ThemedText>
           </View>
         ) : (
@@ -212,8 +215,8 @@ export default function BetaFeaturesScreen() {
                 true for every beta, read-only or not: switching one on rewrites nothing
                 the owner has already logged. */}
             <Text style={styles.note}>
-              Beta features may change or be pulled while we keep working on them. Turning one on
-              doesn’t change anything already in your records.
+              Early-access features may change or be pulled while we keep working on them. Turning
+              one on doesn’t change anything already in your records.
             </Text>
           </>
         )}
@@ -264,31 +267,10 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space1,
-    flexWrap: 'wrap',
-  },
   title: {
     fontFamily: theme.fontBodySemibold,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
-  },
-  // The pill mirrors IntakeBadge's calm "positive" mark: accent-light fill + darkened
-  // teal small-caps ink — a status tag, never a teal-outlined tappable chip.
-  pill: {
-    paddingHorizontal: theme.space1,
-    paddingVertical: theme.spaceMicro,
-    borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorAccentLight,
-  },
-  pillText: {
-    fontSize: theme.textXS,
-    fontWeight: theme.weightMedium,
-    textTransform: 'uppercase',
-    letterSpacing: theme.trackingWide,
-    color: theme.colorAccentInk,
   },
   blurb: {
     fontFamily: theme.fontBody,
