@@ -80,19 +80,19 @@ afterEach(() => {
   __resetAppConfigForTest();
 });
 
-describe('Settings — the Beta-features row gate (B-747)', () => {
+describe('Settings — the Early-access row gate (B-747)', () => {
   it('shows the row for an account eligible ONLY for a non-widget beta', () => {
     // The B-747 regression case: a non-widget beta allowlisted, widget dark. (The
     // original case used the log-picker beta, retired with CUL-962; Noticed is the
     // same shape.) Pre-fix, this account had no row and therefore no path to the shelf.
     setAllowlist({ daily_look: gatedToPm });
     const { getByText } = render(<SettingsScreen />);
-    expect(getByText('Beta features')).toBeTruthy();
+    expect(getByText('Early access')).toBeTruthy();
   });
 
   it('shows no row (and no hint the program exists) when no beta is eligible', () => {
     const { queryByText } = render(<SettingsScreen />);
-    expect(queryByText('Beta features')).toBeNull();
+    expect(queryByText('Early access')).toBeNull();
   });
 
   it('counts every eligible+opted-in beta in the "N on" note, not just the widget', () => {
@@ -109,10 +109,24 @@ describe('Settings — the Beta-features row gate (B-747)', () => {
     expect(queryByText('1 on')).toBeNull();
   });
 
+  it('says early access, never beta, in what it shows and speaks (CUL-70)', () => {
+    // "Beta" reads as Guideline 2.2 ("demos, betas, and trial versions") in App
+    // Review's skim, and a screen-reader user hears the label and hint, not the text.
+    setAllowlist({ widget_enabled: gatedToPm });
+    useBetaOptInStore.getState().setOptIn('widget_enabled', true);
+    const { getByText, getByLabelText, getByHintText, queryByText } = render(<SettingsScreen />);
+
+    expect(getByText('Early access')).toBeTruthy();
+    expect(getByText('Try new features early')).toBeTruthy();
+    expect(getByLabelText('Early access, 1 on')).toBeTruthy();
+    expect(getByHintText('Opens the early-access features you can switch on')).toBeTruthy();
+    expect(queryByText(/\bbeta\b/i)).toBeNull();
+  });
+
   it('hides the count at 0 on — an eligible owner sees a clean doorway', () => {
     setAllowlist({ widget_enabled: gatedToPm });
     const { getByText, queryByText } = render(<SettingsScreen />);
-    expect(getByText('Beta features')).toBeTruthy();
+    expect(getByText('Early access')).toBeTruthy();
     expect(queryByText(/\d+ on/)).toBeNull();
   });
 });

@@ -1,6 +1,12 @@
+import { Platform } from 'react-native';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { BookVisitSheet, type BookVisitSubmit } from './BookVisitSheet';
-import { APPOINTMENT_WINDOW_DAYS, localDateKey, type VisitPrefill } from '../../lib/vetVisits';
+import {
+  APPOINTMENT_WINDOW_DAYS,
+  composeScheduledAt,
+  localDateKey,
+  type VisitPrefill,
+} from '../../lib/vetVisits';
 
 // CUL-900 VV-2 — the booking sheet (mock E3).
 //
@@ -144,6 +150,67 @@ describe('switching the arm carries the date with it', () => {
 
     expect(screen.queryByText('3:30 pm')).toBeNull();
     expect(screen.getByText('Optional')).toBeTruthy();
+  });
+});
+
+describe('the time picker’s 9:00 seed is a value on iOS (CUL-984)', () => {
+  // iOS draws the time picker as an inline spinner, and a spinner fires `onChange`
+  // only when its wheel MOVES. It opened on 9:00 with nothing committed, so an owner
+  // who wanted 9:00 opened it, saved, and booked no time. Android's picker is a
+  // dialog that answers on OK, so it keeps committing only what the dialog returns.
+  const realOS = Platform.OS;
+  afterEach(() => {
+    Platform.OS = realOS;
+  });
+
+  /** Today at `h`:`m`, through the sheet's own composer (C-34: never re-derived). */
+  function todayAt(h: number, m: number): string {
+    const d = new Date();
+    return composeScheduledAt(d, new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m));
+  }
+  const NO_TIME_TODAY = () => composeScheduledAt(new Date(), null);
+
+  it('iOS: opening the wheel and saving without spinning books the 9:00 it shows', () => {
+    Platform.OS = 'ios';
+    const onSubmit = renderSheet();
+    fireEvent.press(screen.getByLabelText('Time, not set'));
+    // The field reads what the wheel reads, before any save.
+    expect(screen.getByText('9:00 am')).toBeTruthy();
+    fireEvent.press(screen.getByText('Add the appointment'));
+    expect(onSubmit.mock.calls[0][0].scheduledAt).toBe(todayAt(9, 0));
+  });
+
+  it('iOS: Clear takes the time AND closes the wheel, so no time is booked', () => {
+    // Left open, the wheel would sit on a value over a field reading Optional: the
+    // same disagreement, reached from the other side.
+    Platform.OS = 'ios';
+    const onSubmit = renderSheet();
+    fireEvent.press(screen.getByLabelText('Time, not set'));
+    pick(new Date(2026, 8, 16, 15, 30));
+    fireEvent.press(screen.getByLabelText('Clear the time'));
+    expect(screen.getByText('Optional')).toBeTruthy();
+    expect(screen.queryAllByTestId('picker')).toHaveLength(0);
+    fireEvent.press(screen.getByText('Add the appointment'));
+    expect(onSubmit.mock.calls[0][0].scheduledAt).toBe(NO_TIME_TODAY());
+  });
+
+  it('iOS: switching the arm away and back does not reopen the wheel over Optional', () => {
+    Platform.OS = 'ios';
+    renderSheet();
+    fireEvent.press(screen.getByLabelText('Time, not set'));
+    fireEvent.press(screen.getByText('Already happened'));
+    fireEvent.press(screen.getByText('Booked'));
+    expect(screen.getByText('Optional')).toBeTruthy();
+    expect(screen.queryAllByTestId('picker')).toHaveLength(0);
+  });
+
+  it('Android: opening the dialog commits nothing until the dialog answers', () => {
+    Platform.OS = 'android';
+    const onSubmit = renderSheet();
+    fireEvent.press(screen.getByLabelText('Time, not set'));
+    expect(screen.getByText('Optional')).toBeTruthy();
+    fireEvent.press(screen.getByText('Add the appointment'));
+    expect(onSubmit.mock.calls[0][0].scheduledAt).toBe(NO_TIME_TODAY());
   });
 });
 
