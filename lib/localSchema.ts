@@ -164,6 +164,27 @@ export const BASE_SCHEMA_SQL = `
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS event_ai_verdicts (
+      -- The per-incident read's copy on the phone (History v2 §5.3, HV-5 / CUL-1162), so
+      -- "Worth a call" never waits on the network. FOUR columns of the server's analysis
+      -- row and nothing else: never the read's words (no surface that reads this shows
+      -- any) and never the hide stamp (Hide never touches the rose). lib/readCopy.test.ts
+      -- pins this column set against the real DDL. Written ONLY by lib/readCopy.ts (the
+      -- sync pull, and a read landing on this device); read only through it; wiped at
+      -- sign-out with the rest of the account's record (LOCAL_WIPE_TABLES).
+      --
+      -- No local FK to events, on purpose (the vet_documents precedent): a verdict can
+      -- land before its event does (the events step failed this cycle), and an FK would
+      -- turn that ordinary transient into a verdict dropped on the floor, which here is a
+      -- missing rose. Every reader asks by an event id it already holds. No synced
+      -- column: the copy is server-owned and never pushed.
+      event_id        TEXT PRIMARY KEY,
+      status          TEXT NOT NULL,
+      recommendation  TEXT,
+      -- The server's updated_at, verbatim: the pull's watermark and the last write wins key.
+      updated_at      TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS vet_visits (
       id              TEXT PRIMARY KEY,
       pet_id          TEXT NOT NULL,

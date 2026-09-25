@@ -279,10 +279,23 @@ const WRITE_PATH: Record<string, { helpers: readonly string[]; why: string }> = 
     helpers: ['saveVomitFieldEdits', 'saveStoolFieldEdits'],
     why:
       'declares both owner edits to the per-incident read (CUL-1106), a direct ' +
-      'PostgREST update because event_ai_analysis is server-owned and never mirrored ' +
-      'locally. Home reaches this module for the read\u2019s state (TodayCard) and writes ' +
+      'PostgREST update because event_ai_analysis is server-owned (its structured ' +
+      'fields are never mirrored locally; the verdict copy below never holds them). ' +
+      'Home reaches this module for the read\u2019s state (TodayCard) and writes ' +
       'nothing through it; both helpers are in WRITE_CALLS, so a Home card that calls ' +
       'one is still caught BY NAME.',
+  },
+  // HV-5 (CUL-1162) \u2014 registered the PR it SHIPS (C-32). Home's spine reads the read's
+  // verdict from this module, so its one upsert is in Home's closure; without this entry
+  // the raw-SQL detector reds on it, and marking it `home-write-ok` would call sync
+  // fabric a Home write class.
+  'lib/readCopy.ts': {
+    helpers: [],
+    why:
+      'the per-incident read\u2019s verdict copy (History v2 \u00a75.3): its one upsert ' +
+      'mirrors rows the SERVER wrote, called by the sync pull, the analysis chain and ' +
+      'the realtime watch. Home only READS through it (readAnalysisRows); nothing an ' +
+      'owner does on Home writes the copy, and it holds no record of its own.',
   },
 };
 

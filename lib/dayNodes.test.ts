@@ -52,12 +52,13 @@ const SEP_17: DayEvent[] = [
   row('lk', 'check_in', 17, 14),
 ];
 
+// The phone's copy of the read (HV-5, CUL-1162): four columns, never the words, never
+// the hide stamp.
 const analysisRow = (event_id: string, recommendation: string | null, status = 'completed'): SpineAnalysisRow => ({
   event_id,
   status,
   recommendation,
-  read_text: recommendation ? 'Streaks of red in tonight’s photo are worth a call to your vet today.' : null,
-  dismissed_at: null,
+  updated_at: '2026-09-17T18:00:00+00:00',
 });
 
 /** A meal row's feeding as the lane takes it: keyed by its event id, witnessed, unrated,
@@ -193,8 +194,7 @@ function randomDay(rand: () => number): SweepDay {
         event_id: id,
         status: pick(STATUSES),
         recommendation: pick(RECS),
-        read_text: rand() < 0.5 ? 'A read.' : null,
-        dismissed_at: rand() < 0.2 ? new Date(BASE).toISOString() : null,
+        updated_at: new Date(BASE).toISOString(),
       });
     }
   }

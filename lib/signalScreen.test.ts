@@ -1,7 +1,8 @@
 // The Signal screen's model and loader (D2-3 · CUL-1065). The pure builder is driven
 // over a fixture shaped exactly like the loader's own output (C-35), on the mock's
 // Thursday with the mock's 55-day rabbit trial; the reads are driven against a mocked
-// local DB and a mocked PostgREST chain whose pages are counted.
+// local DB. Since HV-5 (CUL-1162) the verdicts are the phone's copy too, so the screen
+// issues no server read at all, and the loader test says so.
 //
 // Timezone honesty (B-514): the builder takes day keys; the loader tests build instants
 // at LOCAL noon (`new Date(y, m, d, 12)`), so the day key the loader derives is the
@@ -41,11 +42,10 @@ import {
   medicationLines,
   readLoggedDays,
   readSignalEpisodes,
+  readTileVerdicts,
   readVerdicts,
   safeLabel,
   trialLine,
-  VERDICT_CHUNK,
-  VERDICT_PAGE,
   whyLines,
   type SignalScreenEpisode,
   type SignalScreenInput,
@@ -57,6 +57,7 @@ import type { SignalTrialWindow } from './signalWindows';
 import { signalCompareSpec } from './signalWindows';
 import { dayKeyFromIndex, formatCalendarDate, localDayIndexOf, toLocalDayKey } from './utils';
 import { usePetStore } from '../store/petStore';
+import { claimAnalysisChain } from './analysisChain';
 
 const idx = (key: string): number => {
   const i = localDayIndexOf(key);
@@ -446,78 +447,129 @@ describe('what the screen may never say', () => {
 
 // ── The reads ─────────────────────────────────────────────────────────────────
 
-/** A PostgREST chain whose `.range()` returns the queued pages, in order. */
-function chainReturning(pages: Array<{ data: unknown[] | null; error: { message: string } | null }>) {
-  const calls: { ranges: [number, number][]; ins: string[][] } = { ranges: [], ins: [] };
-  const chain: Record<string, jest.Mock> = {};
-  for (const m of ['select', 'order']) chain[m] = jest.fn(() => chain);
-  chain.in = jest.fn((_col: string, ids: string[]) => {
-    calls.ins.push(ids);
-    return chain;
-  });
-  chain.range = jest.fn((from: number, to: number) => {
-    calls.ranges.push([from, to]);
-    return Promise.resolve(pages.shift() ?? { data: [], error: null });
-  });
-  return { chain, calls };
-}
+/** The copy's rows, as the local read answers them. */
+const verdictRow = (event_id: string, status: string, recommendation: string | null) => ({
+  event_id,
+  status,
+  recommendation,
+  updated_at: '2026-09-17T12:00:00+00:00',
+});
 
-describe('readVerdicts — chunked by id, paged on a total key (C-42)', () => {
-  it('advances by the rows RECEIVED and stops on an empty page — a short page under a lower cap is not the end (B4)', () => {
-    // A server capping at 40 rows a page, 100 ids all with rows: three pages, then empty.
-    const ids = Array.from({ length: 100 }, (_, i) => `e${i}`);
-    const rows = (from: number, n: number) =>
-      Array.from({ length: n }, (_, i) => ({ event_id: `e${from + i}`, status: 'completed', recommendation: i % 7 === 0 ? 'worth_a_call' : 'monitor' }));
-    const { chain, calls } = chainReturning([
-      { data: rows(0, 40), error: null },
-      { data: rows(40, 40), error: null },
-      { data: rows(80, 20), error: null },
-      { data: [], error: null },
-    ]);
-    mockFrom.mockReturnValue(chain);
-    return readVerdicts(ids).then((out) => {
-      expect(calls.ranges).toEqual([
-        [0, VERDICT_PAGE - 1],
-        [40, 40 + VERDICT_PAGE - 1],
-        [80, 80 + VERDICT_PAGE - 1],
-        [100, 100 + VERDICT_PAGE - 1],
-      ]);
-      expect(Object.keys(out)).toHaveLength(100);
-      expect(out.e87).toBe('worth_a_call');
-      expect(out.e77).toBe('monitor');
+describe('readVerdicts — the phone’s copy, through the one read predicate (HV-5 / CUL-1162)', () => {
+  beforeEach(() => {
+    mockGetAllAsync.mockReset();
+    mockFrom.mockReset();
+  });
+
+  it('answers every id from the copy: the rose, the calm words, and “no read yet”, with no server read', async () => {
+    mockGetAllAsync.mockImplementation((sql: string) =>
+      Promise.resolve(
+        /FROM event_ai_verdicts/.test(sql)
+          ? [
+              verdictRow('e1', 'completed', 'worth_a_call'),
+              verdictRow('e2', 'completed', 'monitor'),
+              verdictRow('e3', 'uncertain', 'not_enough_to_say'),
+              // A failed re-read beside a calm verdict: the calm words may describe a
+              // replaced photo, so they do not stand (CUL-812).
+              verdictRow('e4', 'failed', 'monitor'),
+              // A failed re-read beside an escalation: the rose stands (CUL-812).
+              verdictRow('e5', 'failed', 'worth_a_call'),
+              verdictRow('e6', 'pending', null),
+              // A verdict this build does not know: the rose's words, never a blank tile.
+              verdictRow('e7', 'completed', 'looks_fine_to_me'),
+            ]
+          : [],
+      ),
+    );
+    const out = await readVerdicts(['e1', 'e2', 'e3', 'e4', 'e5', 'e6', 'e7', 'e8'], 'vomit');
+    expect(out).toEqual({
+      e1: 'worth_a_call',
+      e2: 'monitor',
+      e3: 'not_enough_to_say',
+      e4: null,
+      e5: 'worth_a_call',
+      e6: null,
+      e7: 'worth_a_call',
+      e8: null,
     });
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 
-  it('a pending row is no verdict even when it carries a stale recommendation (M18)', () => {
-    const { chain } = chainReturning([
-      { data: [{ event_id: 'e1', status: 'completed', recommendation: 'worth_a_call' }, { event_id: 'e2', status: 'pending', recommendation: 'monitor' }], error: null },
-      { data: [], error: null },
-    ]);
-    mockFrom.mockReturnValue(chain);
-    return readVerdicts(['e1', 'e2', 'e3']).then((out) => {
-      expect(out.e1).toBe('worth_a_call');
-      expect(out.e2).toBeNull();
-      expect('e3' in out).toBe(false);
-    });
+  it('a read in flight takes the calm words off a tile, and never the rose', async () => {
+    mockGetAllAsync.mockImplementation((sql: string) =>
+      Promise.resolve(
+        /FROM event_ai_verdicts/.test(sql)
+          ? [verdictRow('calm', 'completed', 'monitor'), verdictRow('rose', 'completed', 'worth_a_call')]
+          : [],
+      ),
+    );
+    const calmClaim = claimAnalysisChain('calm');
+    const roseClaim = claimAnalysisChain('rose');
+    try {
+      expect(await readVerdicts(['calm', 'rose'], 'vomit')).toEqual({ calm: null, rose: 'worth_a_call' });
+    } finally {
+      calmClaim?.settle(true);
+      roseClaim?.settle(true);
+    }
+    expect(await readVerdicts(['calm'], 'vomit')).toEqual({ calm: 'monitor' });
   });
 
-  it('chunks the ids, and a chunk that errors leaves its ids absent rather than failing', () => {
-    const ids = Array.from({ length: VERDICT_CHUNK + 5 }, (_, i) => `e${i}`);
-    const { chain, calls } = chainReturning([
-      { data: null, error: { message: 'boom' } },
-      { data: [{ event_id: `e${VERDICT_CHUNK}`, status: 'completed', recommendation: 'not_enough_to_say' }], error: null },
-      { data: [], error: null },
-    ]);
-    mockFrom.mockReturnValue(chain);
+  it('a copy that cannot be read answers nothing and never throws the screen', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    return readVerdicts(ids).then((out) => {
-      // The second chunk pages twice: its one row, then the empty page that ends it.
-      expect(calls.ins.map((c) => c.length)).toEqual([VERDICT_CHUNK, 5, 5]);
-      expect(out[`e${VERDICT_CHUNK}`]).toBe('not_enough_to_say');
-      expect('e0' in out).toBe(false);
-      expect(chain.order).toHaveBeenCalledWith('event_id', { ascending: true });
+    try {
+      mockGetAllAsync.mockRejectedValue(new Error('SQLITE_BUSY'));
+      await expect(readVerdicts(['e1'], 'vomit')).resolves.toEqual({});
+      expect(warn).toHaveBeenCalledWith('[signal-screen] read copy failed:', expect.any(Error));
+    } finally {
       warn.mockRestore();
-    });
+    }
+  });
+
+  it('asks nothing for nothing', async () => {
+    expect(await readVerdicts([], 'vomit')).toEqual({});
+    expect(mockGetAllAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('readTileVerdicts — a tile is read across its whole bout (F3 on #912)', () => {
+  const copyWith = (rows: ReturnType<typeof verdictRow>[]) =>
+    mockGetAllAsync.mockImplementation((sql: string) => Promise.resolve(/FROM event_ai_verdicts/.test(sql) ? rows : []));
+  beforeEach(() => {
+    mockGetAllAsync.mockReset();
+    mockFrom.mockReset();
+  });
+
+  it('two photographed rows, the tile’s calm and the other’s escalated: the tile carries the rose', async () => {
+    copyWith([verdictRow('a', 'completed', 'monitor'), verdictRow('a2', 'completed', 'worth_a_call')]);
+    expect(await readTileVerdicts([{ eventId: 'a', boutIds: ['a', 'a2'] }], 'vomit')).toEqual({ a: 'worth_a_call' });
+  });
+
+  it('the tile’s photo unread and a photoless row’s contextual read escalated: the tile carries the rose', async () => {
+    copyWith([verdictRow('first', 'completed', 'worth_a_call')]);
+    expect(await readTileVerdicts([{ eventId: 'photo', boutIds: ['first', 'photo'] }], 'vomit')).toEqual({ photo: 'worth_a_call' });
+  });
+
+  it('nothing calmer crosses rows: another row’s calm read never speaks for this photo', async () => {
+    copyWith([verdictRow('first', 'completed', 'monitor')]);
+    expect(await readTileVerdicts([{ eventId: 'photo', boutIds: ['first', 'photo'] }], 'vomit')).toEqual({ photo: null });
+    copyWith([verdictRow('photo', 'completed', 'monitor'), verdictRow('first', 'completed', 'not_enough_to_say')]);
+    expect(await readTileVerdicts([{ eventId: 'photo', boutIds: ['first', 'photo'] }], 'vomit')).toEqual({ photo: 'monitor' });
+  });
+
+  it('a tile with no bout listed is its own row, and every row is read once, locally', async () => {
+    copyWith([verdictRow('solo', 'completed', 'monitor'), verdictRow('x2', 'failed', 'worth_a_call')]);
+    const out = await readTileVerdicts(
+      [
+        { eventId: 'solo' },
+        { eventId: 'x1', boutIds: ['x1', 'x2'] },
+      ],
+      'vomit',
+    );
+    expect(out).toEqual({ solo: 'monitor', x1: 'worth_a_call' });
+    const copyCalls = mockGetAllAsync.mock.calls.filter(([sql]) => /FROM event_ai_verdicts/.test(sql as string));
+    expect(copyCalls).toHaveLength(1);
+    expect([...(copyCalls[0][1] as string[])].sort()).toEqual(['solo', 'x1', 'x2']);
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 });
 
@@ -559,6 +611,9 @@ describe('the local reads', () => {
     expect(bout?.photo).toEqual({ localUri: null, storagePath: 'p/a2.jpg' });
     expect(b?.minutesSinceMeal).toBeNull();
     expect(b?.photo).toEqual({ localUri: 'file:///b.jpg', storagePath: 'p/b.jpg' });
+    // Each episode carries its whole bout, so its tile can be read across every row of it.
+    expect(bout?.boutIds).toEqual(['a', 'a2']);
+    expect(b?.boutIds).toEqual(['b']);
     // The attachment read is scoped to the pet AND EVERY row of every bout.
     const [sql, params] = mockGetAllAsync.mock.calls[1] as [string, unknown[]];
     expect(sql).toMatch(/event_attachments/);
@@ -641,10 +696,10 @@ describe('loadSignalScreen', () => {
       if (/event_attachments/.test(sql)) return Promise.resolve([{ event_id: 'v1', local_uri: null, storage_path: 'p/v1.jpg' }]);
       if (/FROM looks/.test(sql)) return Promise.resolve([]);
       if (/medication_administrations/.test(sql)) return Promise.resolve([{ occurred_at: new Date().toISOString(), generic_name: 'maropitant', brand_name: 'Cerenia' }]);
+      if (/FROM event_ai_verdicts/.test(sql)) return Promise.resolve([verdictRow('v1', 'completed', 'monitor')]);
       return Promise.resolve([{ occurred_at: new Date().toISOString() }]);
     });
-    const { chain } = chainReturning([{ data: [{ event_id: 'v1', status: 'completed', recommendation: 'monitor' }], error: null }]);
-    mockFrom.mockReturnValue(chain);
+    mockFrom.mockReset();
 
     const out = await loadSignalScreen('pet-1', 'symptom_chronicity:vomit');
     expect(out.status).toBe('ready');
@@ -652,6 +707,8 @@ describe('loadSignalScreen', () => {
     expect(out.petName).toBe('Nyx');
     expect(out.model.title).toMatch(/^Vomiting, day \d+ of the rabbit trial$/);
     expect(out.model.episodes?.tiles[0]).toMatchObject({ eventId: 'v1', verdict: 'monitor' });
+    // The verdict came off the phone: the screen made no server read at all (HV-5).
+    expect(mockFrom).not.toHaveBeenCalled();
     expect(out.model.weekLine).toMatch(/^1 this week/);
     expect(out.model.why.some((l) => l.startsWith(`Cerenia was given ${expect.anything() && ''}`) || /^Cerenia was given/.test(l))).toBe(true);
     expect(out.model.why[out.model.why.length - 1]).toMatch(/on Rabbit & Pea\.$/);
@@ -662,6 +719,33 @@ describe('loadSignalScreen', () => {
     expect(doseCall[0]).toMatch(/substr\(e\.occurred_at, 1, 19\) >= substr\(\?, 1, 19\)/);
     expect(Date.parse(doseCall[1][2] as string)).toBeLessThan(Date.parse(`${today}T00:00:00Z`) - 100 * 86_400_000);
     expect(mockLoadTrialPredicateFacts).toHaveBeenCalledWith(expect.objectContaining({ id: 'pet-1', name: 'Nyx', species: 'cat' }), expect.any(Number));
+  });
+
+  it('a tile carries the rose its bout holds on another row, and reads it off the phone (F3 on #912)', async () => {
+    mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(chronicity())] });
+    mockLoadTrialPredicateFacts.mockResolvedValue({ trial: null, stoppedForRefusal: false, facts: null });
+    // A vomit logged without a photo, its contextual read escalated; re-logged twenty
+    // minutes later WITH the photo, whose own read said monitor. One bout, one tile.
+    const first = new Date(Date.now() - 20 * 60_000).toISOString();
+    const relog = new Date().toISOString();
+    mockGetAllAsync.mockImplementation((sql: string) => {
+      if (/FROM events\s+WHERE pet_id = \? AND event_type/.test(sql))
+        return Promise.resolve([
+          { id: 'v0', occurred_at: first, occurred_at_confidence: 'witnessed' },
+          { id: 'v1', occurred_at: relog, occurred_at_confidence: 'witnessed' },
+        ]);
+      if (/event_attachments/.test(sql)) return Promise.resolve([{ event_id: 'v1', local_uri: null, storage_path: 'p/v1.jpg' }]);
+      if (/FROM event_ai_verdicts/.test(sql))
+        return Promise.resolve([verdictRow('v1', 'completed', 'monitor'), verdictRow('v0', 'completed', 'worth_a_call')]);
+      return Promise.resolve([]);
+    });
+    mockFrom.mockReset();
+    const out = await loadSignalScreen('pet-1', 'symptom_chronicity:vomit');
+    expect(out.status).toBe('ready');
+    if (out.status !== 'ready') return;
+    expect(out.model.episodes?.tiles).toHaveLength(1);
+    expect(out.model.episodes?.tiles[0]).toMatchObject({ eventId: 'v1', verdict: 'worth_a_call' });
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 
   it('a trial that is not running today gives no trial window, and a failed trial read does not fail the screen', async () => {

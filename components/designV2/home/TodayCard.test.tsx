@@ -193,7 +193,10 @@ describe('the ten-event day', () => {
     const t = render(<TodayCard />);
     await waitFor(() => expect(t.getByTestId('spine-read-rail-v2')).toBeTruthy());
     expect(t.getByText('Reading the photo…')).toBeTruthy();
-    expect(t.queryByTestId('spine-read-rail-v1')).toBeNull();
+    // Only the node whose chain is outstanding waits. v1, photographed with no read on
+    // the phone, is UNREAD since HV-5 (an empty slot until HV-6 draws "Photo not read"),
+    // never the tick.
+    expect(t.getAllByText('Reading the photo…')).toHaveLength(1);
     mockReadAnalysis.mockResolvedValue(
       new Map([['v2', { event_id: 'v2', status: 'completed', recommendation: 'monitor', read_text: 'Second one today.', dismissed_at: null }]]),
     );

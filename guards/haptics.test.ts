@@ -153,6 +153,14 @@ const ALWAYS_SCANNED = [
   // `commitSymptom` import in either reds the build).
   'components/designV2/patterns/MonthInstrument.tsx',
   'components/motion/openInPlaceMotion.ts',
+  // HV-5 (CUL-1162) — the one read predicate. It paints nothing, and it is named anyway
+  // because History v2's spec puts the READ itself in this scan (§4: "a haptic on
+  // anything safety-bearing (the haptics guard's scan includes History v2's read)"):
+  // every surface's `worth_a_call` is decided here, so a "the read escalated" buzz added
+  // to it would fire from Home, the month, the Signal screen and History at once, from a
+  // `.ts` file `walk()` cannot see. Proven by mutation on CUL-1162: a `commitSymptom`
+  // import there reds the build. The painters come with their own sessions (HV-6, HV-7).
+  'lib/readState.ts',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;

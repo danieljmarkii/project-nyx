@@ -27,35 +27,41 @@
 //     Each line also carries the id of the meal it was measured from (`timingsByRow`,
 //     HV-2), which is never a bowl the owner rated Refused (CUL-1122): a refusal is not
 //     eating, so a vomit five minutes after one is timed from the meal she last ate.
-//   • The read — an `event_ai_analysis` row observed for the event (never triggered
-//     from Home), or the `working` fact that a chain is outstanding (C-30). The verdict's
-//     words are `INCIDENT_REC_LABEL`, the record's own map.
+//   • The read — the phone's copy of the event's verdict (`lib/readCopy.ts`, HV-5 /
+//     CUL-1162; never triggered from Home), and the `working` fact that a chain is
+//     outstanding (C-30), decided by the one read predicate (`lib/readState.ts`) every
+//     surface shares. The verdict's words are `INCIDENT_REC_LABEL`, the record's own map.
 //   • The count line — `buildCountChips`, the recap's C2 counter, plus a total that
 //     counts the same population (looks are never events — T-5; C-3).
 //   • The lines — `compactSpine`.
 //
 // ── WHAT A READ MAY SAY ───────────────────────────────────────────────────────
-// A landed recommendation renders in its shipped words, in the rose ink for
-// `worth_a_call` and the secondary ink for `monitor`. An escalation SURVIVES a failed
-// or capped row (`escalationSurvivesFailure`): if the row carries `worth_a_call` it
-// renders, whatever its status. A row with no recommendation — failed, capped, read
-// disabled — renders NO verdict line: the photo glyph stays and the node says nothing
-// about the read, because "nothing was found" is not a thing one photo can say
-// (clinical-guardrails, Pattern 1). A read the owner hid on the record (`dismissed_at`)
-// is hidden here too — Home never resurfaces what the record folded away. A
-// recommendation outside the shipped enum fails toward the rose (the same allowlist
-// shape `IncidentReadCard` uses): a fourth verdict the server gains before this build
-// does is not calm until someone says it is.
+// Whatever `readVerdictOf` (`lib/readState.ts`) says, and nothing it does not: the
+// predicate's header carries the precedence and the reasons. In short, `worth_a_call`
+// renders in the rose whatever the row's status (CUL-812) and whatever else is true, and
+// so does a verdict outside the shipped enum (not calm until someone says it is); a
+// read in flight shows the tick, even over a calm verdict that may describe a replaced
+// photo; a finished calm read renders in its shipped words, the secondary ink for
+// `monitor` (HV-6 draws calm as nothing); a photographed row whose read never landed is
+// `unread` (HV-6 draws the grey *Photo not read*; until then the row carries an empty
+// read slot, the PM's ruling of 2026-09-25); and a row with no read expected says
+// nothing, because "nothing was found" is not a thing one photo can say
+// (clinical-guardrails, Pattern 1).
+//
+// Hide is NOT an input, and that reverses what this block used to say. The node once
+// dropped a hidden read, so hiding the words on the record silenced "Worth a call" on
+// Home while the month and the Signal screen kept it. Hide hides WORDS (H-4a); the copy
+// has no column for it, so no surface can do that again. And no read here carries its
+// words: the copy never holds `read_text` (§5.3), so `readText` is always null until
+// HV-6 removes the field (the sentence Home showed under a watched arrival went with
+// it, by the same ruling).
 
 import { buildCountChips, type DayCountChip } from './daySummary';
 import { describeDayEvent, eventTintCategory, foodLabelOf, type EventTintCategory } from './dayEvents';
 import type { TimelineRow } from './db';
 import { mealRowLabel } from './food';
-import {
-  INCIDENT_REC_LABEL,
-  escalationSurvivesFailure,
-  type IncidentRecommendation,
-} from './incidentReadState';
+import { INCIDENT_REC_LABEL, type IncidentRecommendation } from './incidentReadState';
+import { readVerdictOf, type ReadCopyRow } from './readState';
 import {
   DEFAULT_MEAL_TIMING_CONFIG,
   classifyEpisodeSet,
@@ -91,14 +97,10 @@ export type SpineEventInput = Pick<TimelineRow, 'id' | 'pet_id' | 'event_type' |
     >
   >;
 
-/** What Home observes of an `event_ai_analysis` row. Read, never written, from here. */
-export interface SpineAnalysisRow {
-  event_id: string;
-  status: string;
-  recommendation: string | null;
-  read_text: string | null;
-  dismissed_at: string | null;
-}
+/** What Home observes of an event's read: its row in the phone's copy (`lib/readCopy.ts`),
+ *  read and never written from here. Four columns, and no field a surface could hide
+ *  the rose with or print the read's words from (§5.3). */
+export type SpineAnalysisRow = ReadCopyRow;
 
 export interface SpineInput {
   /** Today's rows for ONE pet, any order (the model sorts). Looks may be present — they
@@ -106,7 +108,8 @@ export interface SpineInput {
   rows: readonly SpineEventInput[];
   /** Event ids that carry at least one attachment (`lib/spineReads.ts`). */
   photographed: ReadonlySet<string>;
-  /** The observed analysis rows, by event id. Absent ⇒ no read is known. */
+  /** The phone's copy of the reads, by event id (`readAnalysisRows`). Absent ⇒ the phone
+   *  holds no read for that event. */
   analysis: ReadonlyMap<string, SpineAnalysisRow>;
   /** Event ids whose read is being PRODUCED right now (`analysisChainOutstanding`) —
    *  the C-30 fact, handed in rather than read here so the model stays pure. */
@@ -126,20 +129,35 @@ export interface SpineInput {
 
 export type NodeReadTone = 'attn' | 'quiet' | 'muted';
 
-/** The read, as the node may state it. */
+/** The read, as the node may state it: `readVerdictOf`'s state, in the shape the spine
+ *  row draws. */
 export type NodeRead =
-  /** No read is known and none is being produced — the node says nothing about it. */
+  /** No read is expected, or photo reading is off — the node says nothing about it. */
   | { state: 'none' }
   /** The server was asked (C-30), or the row itself is still `pending`. */
   | { state: 'pending' }
-  /** A recommendation the record holds, in its shipped words. */
+  /** A read was expected and none landed: failed, never sent, capped, or the phone holds
+   *  no copy. Never calm (absence is not wellness); HV-6 draws it as a grey *Photo not
+   *  read*. */
+  | { state: 'unread' }
+  /** A verdict the record holds, in its shipped words: the rose, or a finished calm read. */
   | {
       state: 'landed';
-      verdict: string;
+      verdict: IncidentRecommendation;
       label: string;
       tone: NodeReadTone;
+      /** Always null since HV-5: the phone's copy never holds the read's words (§5.3).
+       *  Kept only because today's row reads it; HV-6 removes it with the calm words. */
       readText: string | null;
     };
+
+/** Whether a read is EXPECTED for the event: its type, and whether this device holds its
+ *  photo. Without it a missing read cannot be told from no photo, so it reads as `none`
+ *  rather than `unread`; every caller that knows the event passes it. */
+export interface NodeReadExpectation {
+  eventType: string;
+  hasPhoto: boolean;
+}
 
 export interface SpineEventNode {
   kind: 'event';
@@ -193,47 +211,48 @@ export interface SpineModel {
 
 // ── The verdict's tone ─────────────────────────────────────────────────────────
 
-/** The two verdicts that may render CALM — an allowlist, not an equality test, for the
- *  reason `IncidentReadCard` gives: an unknown value fails toward the rose. */
-const CALM_TONE: Readonly<Record<string, NodeReadTone>> = {
+/** Each verdict's ink. Exhaustive over the shipped enum: an unknown value never reaches
+ *  it, because `readVerdictOf` already names it `worth_a_call`. */
+const TONE: Readonly<Record<IncidentRecommendation, NodeReadTone>> = {
+  worth_a_call: 'attn',
   monitor: 'quiet',
   not_enough_to_say: 'muted',
 };
 
-function toneOf(verdict: string): NodeReadTone {
-  return CALM_TONE[verdict] ?? 'attn';
-}
-
-function labelOf(verdict: string): string {
-  return (INCIDENT_REC_LABEL as Record<string, string>)[verdict] ?? INCIDENT_REC_LABEL.worth_a_call;
-}
-
-/** Fold the observed row and the working fact into what the node may say. */
+/**
+ * Fold the phone's copy and the working fact into what the node may say, through the one
+ * read predicate. The call signature is the one Home's pipeline already uses (HV-1 moves
+ * it into `lib/dayNodes.ts`); `expect` is optional so that call still compiles, and a
+ * caller that knows the event passes it so a missing read can be `unread`.
+ */
 export function nodeReadOf(
   row: SpineAnalysisRow | undefined,
   working: boolean,
+  expect?: NodeReadExpectation,
 ): NodeRead {
-  if (row === undefined) return working ? { state: 'pending' } : { state: 'none' };
-  if (row.dismissed_at) return { state: 'none' };
-  if (row.recommendation) {
-    // An escalation survives a failed / capped row; a calm verdict on a completed or
-    // uncertain row renders as itself. Either way the words are the record's.
-    if (
-      row.status === 'completed' ||
-      row.status === 'uncertain' ||
-      escalationSurvivesFailure({ recommendation: row.recommendation })
-    ) {
-      return {
-        state: 'landed',
-        verdict: row.recommendation,
-        label: labelOf(row.recommendation),
-        tone: toneOf(row.recommendation),
-        readText: row.read_text,
-      };
-    }
+  const { state, verdict } = readVerdictOf({
+    eventType: expect?.eventType ?? null,
+    hasPhoto: expect?.hasPhoto ?? false,
+    copy: row,
+    inFlight: working,
+    // The owner's photo-reading choice arrives with CUL-552 (HV-18).
+    readingOff: false,
+  });
+  switch (state) {
+    case 'worth_a_call':
+    case 'calm':
+      // A verdict is named for exactly these two states (`lib/readState.test.ts`).
+      return verdict === null
+        ? { state: 'none' }
+        : { state: 'landed', verdict, label: INCIDENT_REC_LABEL[verdict], tone: TONE[verdict], readText: null };
+    case 'pending':
+      return { state: 'pending' };
+    case 'unread':
+      return { state: 'unread' };
+    case 'off':
+    case 'none':
+      return { state: 'none' };
   }
-  if (row.status === 'pending' || working) return { state: 'pending' };
-  return { state: 'none' };
 }
 
 // ── Timing ──────────────────────────────────────────────────────────────────────
@@ -333,14 +352,18 @@ function eventNode(
   }
   const photo = input.photographed.has(row.id);
   // The read attaches to a SYMPTOM whenever the record holds one for it — or the server
-  // is producing one — not only when the local attachment fact is in: an
-  // `event_ai_analysis` row exists only for a photographed incident, so the photo fact
-  // is redundant as a gate and merely fragile as one (a failed or lagging attachment
-  // read must never hide a `worth_a_call`; the adversarial pass, F5). A meal never
-  // carries a read, whatever the map holds.
+  // is producing one — not only when the local attachment fact is in: a read row exists
+  // only for a photographed incident (or a photoless stool's contextual read), so the
+  // photo fact is redundant as a gate and merely fragile as one (a failed or lagging
+  // attachment read must never hide a `worth_a_call`; the adversarial pass, F5). The
+  // photo fact DOES decide whether a missing read is `unread` (HV-5), which is why it is
+  // handed through. A meal never carries a read, whatever the map holds.
   const read: NodeRead =
     category === 'symptom' && (photo || input.analysis.has(row.id) || input.working.has(row.id))
-      ? nodeReadOf(input.analysis.get(row.id), input.working.has(row.id))
+      ? nodeReadOf(input.analysis.get(row.id), input.working.has(row.id), {
+          eventType: row.event_type,
+          hasPhoto: photo,
+        })
       : { state: 'none' };
   return {
     kind: 'event',
