@@ -137,9 +137,16 @@ export async function wipeLocalSession(): Promise<void> {
   // (the save each tick makes is already fenced by the sign-out epoch, `refreshReadCopy`).
   // Then every channel, whoever opened it — the food screen's extraction channel, and any
   // added later — so the teardown does not depend on a registry each new channel must
-  // remember to join. NOT awaited: each unsubscribe waits on the server's reply (up to the
-  // client's timeout offline), and a sign-out must never wait on the network. The wipe
-  // below does not depend on the socket; a failure is logged, never thrown.
+  // remember to join. In realtime-js 2.105 each channel's leave resolves locally (the
+  // channel is already `leaving`, so nothing waits on a server reply) and the list is
+  // empty before the next owner's `SIGNED_IN` re-authenticates the socket. NOT awaited
+  // anyway: the wipe below does not depend on the socket, and a sign-out must never
+  // wait on it if a later client version does. A failure is logged, never thrown.
+  //
+  // THE BLIND SPOT, stated so it does not read as coverage (C-38): this closes what is
+  // LIVE when the wipe runs. A read started before sign-out whose screen is still
+  // mounted under another route can finish afterwards and OPEN a new watch; fencing that
+  // open is CUL-1256.
   cancelAllAnalysisWatches();
   supabase.removeAllChannels().catch((e: unknown) =>
     console.warn('[session] closing realtime channels failed:', e));
