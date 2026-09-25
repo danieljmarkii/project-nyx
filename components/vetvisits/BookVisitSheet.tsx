@@ -142,7 +142,7 @@ export function BookVisitSheet({
    * reopening the picker.
    *
    * That is not a cosmetic slip. `vet_visits.visited_at` is the date the report's
-   * window rung 1 keys off, the rundown's `MAX(visited_at)` trusts, and the Vet
+   * window rung 1 keys off, the rundown's since-visit bound reads, and the Vet
    * Files link picker lists — the reason migration 066 put bookings in a separate
    * table at all was to make "a visit that happened" unable to hold a future date.
    * A future row written through this sheet would have walked straight past that.

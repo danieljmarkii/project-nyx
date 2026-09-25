@@ -687,9 +687,10 @@ describe('the course row asks a question the record can actually answer', () => 
 
 describe('the weight gate refuses a future "last visit"', () => {
   it('stays silent when the last visit has not happened yet', () => {
-    // `facts.lastVisitAt` is `readLastVisitDate`'s unbounded MAX(visited_at), which
-    // CLAUDE.md names as undefended — and CUL-946 puts a tomorrow-dated row there for
-    // every visit logged after ~5pm PDT. Without the bound this printed
+    // `facts.lastVisitAt` was once `readLastVisitDate`'s unbounded MAX(visited_at), and
+    // CUL-946 put a tomorrow-dated row there for every visit logged after ~5pm PDT. The
+    // rundown now hands over the shared bound (CUL-1127), and this pins the gate's OWN
+    // check for any rundown built another way. Without the bound this printed
     // "Last weighed <today> — before the last visit" over a pet weighed an hour ago.
     const tomorrow = new Date(NOW + DAY).toISOString().slice(0, 10);
     const { rows } = buildWorthRaising(

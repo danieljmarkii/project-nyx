@@ -562,8 +562,9 @@ function courseRow(
  *      IS STILL THE NEWEST ONE. Nothing has been measured since they last saw this
  *      animal, which is precisely the thing worth saying out loud at the next visit.
  *      Bounded to a visit STRICTLY BEFORE TODAY, the report's own rung-1 rule: the
- *      date behind it is an unbounded `MAX(visited_at)`, and a future-dated row made
- *      the gate fire over a pet weighed an hour ago.
+ *      date behind it was once an unbounded `MAX(visited_at)`, and a future-dated row
+ *      made the gate fire over a pet weighed an hour ago (the rundown now hands over
+ *      the shared bound, CUL-1127; the gate keeps its own check).
  *
  * Gate 2 fires only for a pet with a logged prior visit, so a first-time owner sees
  * it only through gate 1. That under-fires rather than over-claims, which is the
