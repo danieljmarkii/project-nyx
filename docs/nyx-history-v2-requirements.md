@@ -1,6 +1,6 @@
 # Nyx History v2 — The Record You Can Read — Requirements (CUL-1108)
 
-**Version:** 1.0 — **BUILD-READY** | **Date:** 2026-09-24 | **Status:** every ruling made. The PM ruled on round 4 of the mock (2026-09-24) and handed five calls to the team (H-3, H-4b, H-7, H-10, H-11), which are made in §0.2 with their dissents recorded. Nothing is open that blocks a build session; four pieces wait on issues outside this project (§10).
+**Version:** 1.1 — **BUILD-READY** | **Date:** 2026-09-24 | **Status:** every ruling made. The PM ruled on round 4 of the mock (2026-09-24) and handed five calls to the team (H-3, H-4b, H-7, H-10, H-11), which are made in §0.2 with their dissents recorded. Nothing is open that blocks a build session; four pieces wait on issues outside this project (§10).
 
 **Design authority:** round 5 of *The Record You Can Read* (https://claude.ai/artifact/RNvdtUG6FX5utWmzGqBNa6), committed as `docs/culprit-history-v2-mockups.html`. The repo file wins on divergence. Round 4 (the options side by side) is in git at `b0479342`; round 3 at `ab20698c`.
 
@@ -333,7 +333,7 @@ The row (lifted by HV-1); the pipeline `lib/dayNodes.ts` (a day's events in, nod
 | Sender | Sends | Under the flag |
 |---|---|---|
 | The widget (`widgets/CulpritWidget.tsx:143`) | a local day, the pet, `src=widget` | **frozen**; v2 reads `date` as a local day and `pet` once per tap (CUL-1119) |
-| The month's day detail | (none today; CUL-1073 adds it) | lands on the day |
+| The month's day detail (`MonthInstrument.tsx`, `historyDayHref`) | `?day=` (a local day), `ts` | lands on the day (CUL-1073) |
 | `PatternCalendar.tsx:256` | a day (flag-off calendar only) | lands on the day, read by sender |
 | `lib/lookPatterns.ts:88`, `lib/lookCard.ts:164` | Noticed (and today) | the Noticed filter |
 | `lib/ask.ts:308`, `app/ask.tsx:394` | a type and Ask's window; today | the window moves to local days; the trial window (CUL-498) |
@@ -509,3 +509,4 @@ The Linear project **History v2 · the record you can read** carries every sessi
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-09-24 | First build-ready spec: the PM's rulings on round 4 and the team's calls at the PM's deferral (§0); design authority round 5; the run order (§8) mirrored in the Linear project. |
+| 1.1 | 2026-09-24 | §5.8: the month's row names what its door sends (`?day=`, a local day, and `ts`), as built in #904 (CUL-1073). PM-approved on CUL-1168. |

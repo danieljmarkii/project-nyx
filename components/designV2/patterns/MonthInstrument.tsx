@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Animated, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { router } from 'expo-router';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { theme, shadows } from '../../../constants/theme';
 import { useAppActive } from '../../../hooks/useAppActive';
@@ -16,6 +17,7 @@ import {
   type MonthModel,
 } from '../../../lib/monthModel';
 import { readDayRows, readMonthFacts, type MonthFacts } from '../../../lib/monthReads';
+import { historyDayHref, historyDayLabel } from '../../../lib/historyDateFilter';
 import { TIMING_SYMPTOM_TYPE } from '../../../lib/patternsTiming';
 import { describeDayEvents, daySheetSubtitle } from '../../../lib/dayEvents';
 import type { EventTintCategory } from '../../../lib/dayEvents';
@@ -48,7 +50,8 @@ import { useOpenInPlace } from '../../motion/openInPlaceMotion';
 //   the legend ......... vomit day with the count · logged · left some · nothing logged
 //   the day ............ opens IN PLACE under its row with the fold's physics (C-14: this
 //                        card may sit under a screen that presents a Modal, and a second
-//                        Modal from the same presenter is unreliable on iOS), one at a time
+//                        Modal from the same presenter is unreliable on iOS), one at a time,
+//                        with a door into History on the same LOCAL day (CUL-1073)
 //
 // Everything counted is counted in `lib/monthModel.ts`; this file draws, pages and
 // fetches. One read per shown month (`readMonthFacts`), cached per month, keyed writes
@@ -236,6 +239,11 @@ export function MonthInstrument({
     [openDay, dayLoads, petId, readDay],
   );
 
+  // The open day's door into History (CUL-1073): `?day=`, the local day this card counts.
+  const openInHistory = useCallback((dayKey: string) => {
+    router.push(historyDayHref(dayKey));
+  }, []);
+
   const toggleLayer = useCallback((key: keyof MonthLayers) => {
     setLayers((l) => ({ ...l, [key]: !l[key] }));
   }, []);
@@ -350,6 +358,7 @@ export function MonthInstrument({
                     dayKey={openInRow ? (openDay as string) : null}
                     load={openInRow ? (dayLoads.get(openDay as string) ?? null) : null}
                     onRetry={() => openDay && void openDayInPlace(openDay)}
+                    onOpenInHistory={openInHistory}
                   />
                 </View>
               );
@@ -429,11 +438,13 @@ function DaySlot({
   dayKey,
   load,
   onRetry,
+  onOpenInHistory,
 }: {
   shown: boolean;
   dayKey: string | null;
   load: DayLoad;
   onRetry: () => void;
+  onOpenInHistory: (dayKey: string) => void;
 }) {
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
@@ -511,6 +522,25 @@ function DaySlot({
                   <ThemedText style={styles.rowTime}>{it.time}</ThemedText>
                 </View>
               ))}
+              {/* CUL-1073 — the door into History, landing on this same LOCAL day: History
+                  reads `?day=` on the clock this read counted (`lib/historyDateFilter.ts`).
+                  Suppressed on a day with nothing logged, where it would land on History's
+                  empty filter, a dead end (the shipped sheet's rule), and absent until the
+                  rows have answered. */}
+              {items.length > 0 && (
+                <Pressable
+                  style={styles.historyLink}
+                  onPress={() => onOpenInHistory(aboutKey)}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Open in History, ${historyDayLabel(aboutKey)}`}
+                  testID="day-history-link"
+                >
+                  <ThemedText style={styles.historyLinkText}>
+                    Open in History · {historyDayLabel(aboutKey)}
+                  </ThemedText>
+                  <ChevronRight size={16} color={theme.colorAccent} strokeWidth={2} />
+                </Pressable>
+              )}
             </>
           )}
         </RowsStage>
@@ -828,6 +858,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   retryText: {
+    fontSize: theme.textSM,
+    color: theme.colorAccentInk,
+    fontWeight: theme.weightMedium,
+  },
+  // The day → History door: the shipped sheet's link (accent ink, a chevron, so it reads
+  // as navigation). 44pt from its own height, so it takes no hitSlop (C-5), and the next
+  // week row's marks keep their gap.
+  historyLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: theme.spaceMicro,
+    minHeight: 44,
+  },
+  historyLinkText: {
     fontSize: theme.textSM,
     color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,

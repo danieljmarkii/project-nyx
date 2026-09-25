@@ -39,6 +39,7 @@ import { NamedCompletionCard } from '../components/ui/NamedCompletionCard';
 import { Snackbar } from '../components/ui/Snackbar';
 import { ColdStartOverlay } from '../components/ColdStartOverlay';
 import { FlightHost } from '../components/motion/FlightHost';
+import { startReducedMotionRead, useReducedMotionStore } from '../store/reducedMotionStore';
 
 // Hold the native splash until the font gate releases, so the first painted
 // frame is already in the v1.2 faces — no system→custom flash, and no blank
@@ -46,6 +47,11 @@ import { FlightHost } from '../components/motion/FlightHost';
 // a bare `return null` gate). Errors are swallowed: a splash-control hiccup must
 // never block startup.
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+// CUL-1123: ask the OS for Reduce Motion now, at module load, so the answer is in
+// flight before the first render; the gate below waits for it beside the fonts. Every
+// `useReducedMotion()` in the tree then reads the real value on its first render.
+startReducedMotionRead();
 
 export default function RootLayout() {
   const { setSession, setLoading } = useAuthStore();
@@ -284,14 +290,20 @@ export default function RootLayout() {
   // tree waits. Fonts ready (or a load error → system fallback) releases the
   // gate and hides the native splash that's been held since module load.
   const fontGateReleased = fontsLoaded || !!fontError;
+  // CUL-1123: the tree also waits for the Reduce Motion answer, so nothing triggered on
+  // mount starts before the app knows whether it may move. The read is a native call
+  // started at module load and answers long before the fonts, so this costs nothing in
+  // practice; it is bounded (`REDUCED_MOTION_GATE_MS`), so it can never hold the splash.
+  const motionGateOpen = useReducedMotionStore((s) => s.gateOpen);
+  const gateReleased = fontGateReleased && motionGateOpen;
 
   useEffect(() => {
-    if (fontGateReleased) {
+    if (gateReleased) {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, [fontGateReleased]);
+  }, [gateReleased]);
 
-  if (!fontGateReleased) {
+  if (!gateReleased) {
     return null;
   }
 

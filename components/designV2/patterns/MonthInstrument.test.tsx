@@ -20,6 +20,7 @@ jest.mock('../../../lib/sync', () => ({
   syncPendingFeedingArrangements: jest.fn(),
 }));
 jest.mock('../../../lib/db', () => ({ getDb: () => ({}), getTimeline: jest.fn() }));
+jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
 import { act, configure, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { LayoutAnimation, StyleSheet } from 'react-native';
@@ -28,6 +29,8 @@ import { monthReadRange } from '../../../lib/monthModel';
 import type { MonthFacts } from '../../../lib/monthReads';
 import { theme } from '../../../constants/theme';
 import { dayKeyFromIndex, localDayIndexOf } from '../../../lib/utils';
+import { router } from 'expo-router';
+import { dayScopeFromParams } from '../../../lib/historyDateFilter';
 
 configure({ defaultIncludeHiddenElements: true });
 
@@ -305,6 +308,61 @@ describe('MonthInstrument', () => {
     // The case's own bound stays well above its 4 s waits even though it passes in under a
     // second: a wait that fails must report its assertion, not race jest's 5 s default
     // (measured: with the re-tap close broken, the failure lands at ~4.7 s).
+  }, 20_000);
+
+  it('the open day has a door into History on the same LOCAL day (CUL-1073)', async () => {
+    const push = router.push as jest.Mock;
+    push.mockClear();
+    const readDay = jest.fn(async (): Promise<never[]> => [row('a', 'vomit', '2026-09-02T07:00:00Z')]);
+    const { getAllByTestId, findByTestId, getByText } = mount(undefined, readDay);
+    await waitFor(() => expect(getAllByTestId('daymark').length).toBeGreaterThan(0));
+    fireEvent.press(getAllByTestId('daymark')[3]); // Sep 2
+
+    const door = await findByTestId('day-history-link');
+    // The shipped sheet's link, named for the day it opens, spoken in the order it reads.
+    expect(getByText('Open in History · Sep 2')).toBeTruthy();
+    expect(door.props.accessibilityRole).toBe('link');
+    expect(door.props.accessibilityLabel).toBe('Open in History, Sep 2');
+    // 44pt from its own height, so it carries no slop into the next week row (C-5).
+    expect(flat(door.props.style).minHeight).toBe(44);
+    expect(door.props.hitSlop).toBeUndefined();
+
+    fireEvent.press(door);
+    // Counted, not matched: an identical second push is invisible to toHaveBeenCalledWith.
+    expect(push).toHaveBeenCalledTimes(1);
+    const href = push.mock.calls[0][0];
+    expect(href).toEqual({ pathname: '/(tabs)/history', params: { day: '2026-09-02', ts: expect.any(String) } });
+    // And History reads it back as the local day this card counted (never the UTC one).
+    expect(dayScopeFromParams(href.params)).toEqual({ key: '2026-09-02', basis: 'local' });
+  });
+
+  it('no door on a day with nothing logged, while the rows load, or when they fail', async () => {
+    let answer: (rows: never[]) => void = () => undefined;
+    const readDay = jest.fn((_pet: string, day: string): Promise<never[]> => {
+      if (day === '2026-09-02') return new Promise((res) => { answer = res; });
+      if (day === '2026-09-05') return Promise.reject(new Error('disk'));
+      return Promise.resolve([]);
+    });
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { getAllByTestId, getByText, queryByTestId, findByText } = mount(undefined, readDay);
+    await waitFor(() => expect(getAllByTestId('daymark').length).toBeGreaterThan(0));
+
+    // Loading: the rows have not answered, so there is nothing to open yet.
+    fireEvent.press(getAllByTestId('daymark')[3]); // Sep 2
+    await findByText('Loading…');
+    expect(queryByTestId('day-history-link')).toBeNull();
+    await act(async () => { answer([row('a', 'meal', '2026-09-02T08:00:00Z')] as never[]); });
+    await waitFor(() => expect(queryByTestId('day-history-link')).toBeTruthy());
+
+    // A failed read: an error and a retry, never a door onto a day it could not read.
+    fireEvent.press(getAllByTestId('daymark')[6]); // Sep 5
+    await findByText("Couldn't load this day's log.");
+    await waitFor(() => expect(queryByTestId('day-history-link')).toBeNull(), { timeout: 4000 });
+
+    // Nothing logged: the door would land on History's empty filter, a dead end.
+    fireEvent.press(getAllByTestId('daymark')[12]); // Sep 11
+    await waitFor(() => expect(getByText('Nothing logged this day.')).toBeTruthy(), { timeout: 4000 });
+    await waitFor(() => expect(queryByTestId('day-history-link')).toBeNull(), { timeout: 4000 });
   }, 20_000);
 
   it('a day ahead is not a control; a day before the record is a plain dim square', async () => {

@@ -14,6 +14,7 @@ import {
   summarizeLoggedRecord, canChangeTime, resolveNamedTimeEdit, applyNamedTimeEdit,
   timeEditPrompt, removedNoticeCopy,
   HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT, HITSLOP_ACTION_SOLO, undoGateCopy,
+  eventHasNote, removeConfirmCopy,
   type LoggedRecord,
 } from './completionCard';
 import { formatTime, describeOccurredAt } from './utils';
@@ -453,5 +454,91 @@ describe('undoGateCopy', () => {
       expect(copy).not.toBeNull();
       expect(`${copy?.title} ${copy?.body}`).not.toMatch(/!/);
     }
+  });
+});
+
+// CUL-1125. Both Remove confirms (the record screen's and today's History's) are built
+// here, and their second sentence IS the Undo gate's body: one act, one wording, from
+// every door out of a record (C-21).
+describe('eventHasNote', () => {
+  it('reads an event\'s own note, on any type', () => {
+    expect(eventHasNote({ event_type: 'meal', notes: 'Ate half, left the rest' })).toBe(true);
+    expect(eventHasNote({ event_type: 'vomit', notes: 'Grass first' })).toBe(true);
+  });
+
+  it('reads a look\'s note, which lives on its child', () => {
+    expect(eventHasNote({ event_type: 'check_in', notes: null, look_note: 'Slept all afternoon' })).toBe(true);
+  });
+
+  it('whitespace, null and a missing column are not a note', () => {
+    expect(eventHasNote({ event_type: 'meal', notes: '   \n ' })).toBe(false);
+    expect(eventHasNote({ event_type: 'meal', notes: null, look_note: null })).toBe(false);
+    expect(eventHasNote({ event_type: 'meal' })).toBe(false);
+    expect(eventHasNote({ event_type: 'check_in', look_note: '  ' })).toBe(false);
+  });
+});
+
+describe('removeConfirmCopy', () => {
+  const meal = { event_type: 'meal', notes: null, look_note: null };
+
+  it('a bare record: the lead alone, never a warning about something that is not there', () => {
+    expect(removeConfirmCopy(meal, { hasAttachment: false })).toEqual({
+      title: 'Remove this log?',
+      body: 'This will remove the Meal from history.',
+    });
+  });
+
+  it('names an EVENT\'s note, which neither Remove used to', () => {
+    expect(removeConfirmCopy({ ...meal, notes: 'Only ate the topper' }, { hasAttachment: false }).body).toBe(
+      'This will remove the Meal from history. The note you wrote will be removed with it.',
+    );
+  });
+
+  it('names the photo', () => {
+    expect(removeConfirmCopy({ ...meal, event_type: 'vomit' }, { hasAttachment: true }).body).toBe(
+      'This will remove the Vomit from history. The photo you attached will be removed with it.',
+    );
+  });
+
+  it('names BOTH when the record carries both, as one sentence', () => {
+    expect(
+      removeConfirmCopy({ ...meal, event_type: 'vomit', notes: 'Grass first' }, { hasAttachment: true }).body,
+    ).toBe(
+      'This will remove the Vomit from history. ' +
+        'The photo you attached and the note you wrote will be removed with it.',
+    );
+  });
+
+  it('a look is "what you noticed", never "the Noticed", and its note is named', () => {
+    expect(
+      removeConfirmCopy({ event_type: 'check_in', notes: null, look_note: 'Off her food' }, { hasAttachment: false })
+        .body,
+    ).toBe('This will remove what you noticed from history. The note you wrote will be removed with it.');
+  });
+
+  it('an unknown type still reads as a sentence', () => {
+    expect(removeConfirmCopy({ event_type: 'retired_type' }, { hasAttachment: false }).body).toBe(
+      'This will remove the event from history.',
+    );
+  });
+
+  it('its second sentence IS the Undo gate\'s body, for every combination', () => {
+    // The sharing is structural, not a copy kept in step: change the gate's wording and
+    // every Remove follows.
+    for (const hasAttachment of [false, true]) {
+      for (const notes of [null, 'A note']) {
+        const gate = undoGateCopy({ hasAttachment, hasNote: notes !== null });
+        const copy = removeConfirmCopy({ ...meal, notes }, { hasAttachment });
+        expect(copy.body).toBe(
+          gate ? `This will remove the Meal from history. ${gate.body}` : 'This will remove the Meal from history.',
+        );
+        if (gate) expect(copy.title).toBe(gate.title);
+      }
+    }
+  });
+
+  it('never carries an exclamation mark (nyx-voice)', () => {
+    const copy = removeConfirmCopy({ ...meal, notes: 'A note' }, { hasAttachment: true });
+    expect(`${copy.title} ${copy.body}`).not.toMatch(/!/);
   });
 });
