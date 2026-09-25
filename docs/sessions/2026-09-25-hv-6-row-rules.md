@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 
-Shipped via #PR (fixes CUL-1163, CUL-1121, CUL-1197).
+Shipped via #914 (CUL-1163; fixes CUL-1121 and CUL-1197).
 
 ## The ask
 
