@@ -51,7 +51,30 @@ HV-10 is step 3 of History v2, running beside HV-11 (the links into History). It
 
 ## The reviews
 
-REVIEWS_PLACEHOLDER
+- **`code-reviewer`: ship-ready, no bugs, no anti-patterns.** It traced the risky paths by hand and re-ran the suites and `tsc` itself:
+  - the ledger's claim and seal, and the reason Home can seal in its own commit while History seals through the ledger's microtask;
+  - a draw surviving its token going null;
+  - Reduce Motion leaving the token unspent;
+  - the fold's fade settling before `FOLD_LAYOUT` commits (so the Fabric two-engine split holds);
+  - `gone` clearing safely against a concurrent sync, because the local soft delete lands first;
+  - a scope change mid-fold resetting everything;
+  - `configureNext` only while a row is still leaving;
+  - the `SPINE_THREAD` refactor reproducing the old thread position exactly.
+
+  Two optional nits:
+  - **Fixed:** a stray double blank line.
+  - **Left:** VoiceOver focus takes the first removed row's day when two removals land on one return to History. No flow produces that (every Remove is one event, then one navigation back), and both rows still fold.
+
+  It judged the adversarial reviewer not needed. The diff is motion and focus plumbing and changes no read, detection or escalation logic. The arrival it reroutes through the row wrapper is unchanged, and it stays in the haptics scan.
+- **Motion Designer lens** (`docs/personas.md`), in session: every motion here is one of the six gestures:
+  - draw in: the first paint and the landing;
+  - open in place;
+  - arrive;
+  - fold: the removal;
+  - the wait.
+
+  Nothing new moves on its own, nothing loops, and a rose row lands exactly as a calm one does. Durations are 370, 300, 180 and 300ms, and the per-row step is a sub-beat. One finding: the draw's end rode on the animation's completion callback alone, so a stalled frame clock would have stranded the line. Fixed with a timer set to the draw's own length, and pinned.
+- **D2 (not built):** the strip's week does not fade on a filter change, because §4 has no row for it and says "Nothing else moves".
 
 ## Verification
 
@@ -61,7 +84,7 @@ REVIEWS_PLACEHOLDER
   - Folding every vanished row (no notice) reds the removal suite.
   - Removing the ledger's self-seal, and sealing synchronously on the first claim, each red the ledger suite.
   - One mutation survived, and the survivor is recorded as a blind spot in `HistoryList.test.tsx`: an extra seal in the list's opening commit. Under the test renderer the list mounts a filter's cells in that same commit, so the screen cannot tell the two rules apart. The ledger's own suite holds the rule.
-- **Suites:** `tsc --noEmit` clean. Full jest green (511 suites, 11,510 tests before the review round). The touched suites are green under Kiritimati and Honolulu.
+- **Suites:** `tsc --noEmit` clean. Full jest green (511 suites, 11,510 tests), and the pre-push hook re-ran it before each push. The touched suites are green under Kiritimati and Honolulu.
 - **Screen tests assert the trigger, not a mid-flight opacity.** Under jest's mocked native driver a 370ms draw ends in about 20ms, so the list and Home suites record the real ledger's granted claims, and the hook suite pins the from-state and the timings.
 
 ## Residuals

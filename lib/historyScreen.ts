@@ -463,7 +463,6 @@ export function rePressFocusDay(sections: readonly HistorySection[], today: stri
   return sectionIndexFor(sections, today) >= 0 ? today : sectionToDay(sections[0]);
 }
 
-
 /** A day card header's one spoken sentence: the date, *Today* on today, then its counts. */
 export function dayHeaderSpoken(date: string, isToday: boolean, parts: readonly string[]): string {
   return [date, isToday ? 'Today' : null, ...parts].filter((p): p is string => !!p).map(spokenLine).join(', ');
