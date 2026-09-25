@@ -8,7 +8,9 @@
 // reduced motion, the breath; AC 24's resting half (an arrival ends in exactly the row a
 // fresh render of that state draws); VoiceOver hearing the whole row as one sentence in
 // reading order (C-8); and open in place, the static half (AC 17: every member of a run of
-// 2, 5, 9 and 12 drawn as a full row, nothing capped or clipped).
+// 2, 5, 9 and 12 drawn as a full row, nothing capped or clipped) and its motion (HV-10,
+// `openInPlace`: the month's choreography on the thread, its Reduce Motion form, and
+// VoiceOver staying on the run).
 
 const mockUseReducedMotion = jest.fn(() => false);
 jest.mock('../../hooks/useReducedMotion', () => ({
@@ -22,7 +24,9 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 import { AccessibilityInfo, Animated, LayoutAnimation, StyleSheet } from 'react-native';
 import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
-import { FOLD_MOTION, UNFOLD_LAYOUT } from '../motion/foldMotion';
+import { FOLD_LAYOUT, FOLD_MOTION, UNFOLD_LAYOUT } from '../motion/foldMotion';
+import { OPEN_IN_PLACE_LEAD_PT } from '../motion/openInPlaceMotion';
+import { useState } from 'react';
 import { TICK_BREATH } from '../motion/arrivalMotion';
 import type { NodeRead, SpineCompactNode, SpineDose, SpineEventNode } from '../../lib/spineNode';
 import {
@@ -568,5 +572,117 @@ describe('a run opens in place: every member, a full row, nothing capped (AC 17,
     const t = render(<Host node={run(3)} expanded={false} onToggle={jest.fn()} />);
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
     expect(configureNext).not.toHaveBeenCalled();
+  });
+});
+
+// ── Open in place, the motion (HV-10 / CUL-1167; spec §4 "Open a run", AC 32) ─────────
+
+describe('open in place (HV-10): the one choreography the month uses, on the thread', () => {
+  /** A host that owns the open state, as a day card and Home's spine do. */
+  function InPlace({ node, initial = false }: { node: SpineCompactNode; initial?: boolean }) {
+    const [expanded, setExpanded] = useState(initial);
+    return (
+      <SpineCompactRow
+        node={node}
+        isFirst
+        isLast
+        expanded={expanded}
+        onToggle={() => setExpanded((e) => !e)}
+        onOpen={jest.fn()}
+        openInPlace
+      />
+    );
+  }
+  const advance = (ms: number) =>
+    act(() => {
+      jest.advanceTimersByTime(ms);
+    });
+  const settleOpen = () => advance(FOLD_MOTION.railLagMs + FOLD_MOTION.openMs + FOLD_MOTION.landMs + FOLD_MOTION.settleSlackMs * 3);
+
+  it('a tap: the rail leads along the thread with no member yet; the box follows on the fold\'s spring; the members land; at rest, the shipped shape', () => {
+    const node = run(3);
+    const t = render(<InPlace node={node} />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    // Beat 1: the slot is there at the lead height, its rail out of the flow and growing;
+    // no member is mounted, and nothing has touched the layout yet.
+    expect(styleOf(t.getByTestId('spine-members-compact:m0')).minHeight).toBe(OPEN_IN_PLACE_LEAD_PT);
+    const leadRail = styleOf(t.getByTestId('spine-run-rail-compact:m0'));
+    expect(leadRail.height).toBe(OPEN_IN_PLACE_LEAD_PT);
+    expect(leadRail.transformOrigin).toBe('top');
+    expect(t.queryByTestId('spine-node-m0')).toBeNull();
+    expect(configureNext).not.toHaveBeenCalled();
+    // Beat 2: railLagMs later, ONE layout commit on the fold's unfold spring, and the members
+    // mount in their animated stage.
+    advance(FOLD_MOTION.railLagMs);
+    expect(configureNext).toHaveBeenCalledTimes(1);
+    expect(configureNext).toHaveBeenCalledWith(UNFOLD_LAYOUT);
+    expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
+    for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
+    // At rest: no stage, the rail back on the thread with no explicit height, every member a
+    // full row, nothing capping the box (AC 17 under the motion too).
+    settleOpen();
+    expect(t.queryByTestId('spine-members-stage-compact:m0')).toBeNull();
+    const rail = styleOf(t.getByTestId('spine-run-rail-compact:m0'));
+    expect(rail.height).toBeUndefined();
+    expect((rail.left as number) + (rail.width as number) / 2).toBe(THREAD_X);
+    const box = styleOf(t.getByTestId('spine-members-compact:m0'));
+    expect(box.maxHeight).toBeUndefined();
+    expect(box.height).toBeUndefined();
+    expect(box.overflow).not.toBe('hidden');
+    for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
+  });
+
+  it('VoiceOver stays on the run: the same element before and after, now saying it hides them', () => {
+    const t = render(<InPlace node={run(3)} />);
+    const before = t.getByTestId('spine-node-compact:m0');
+    fireEvent.press(before);
+    settleOpen();
+    const after = t.getByTestId('spine-node-compact:m0');
+    expect(after).toBe(before);
+    expect(after.props.accessibilityState).toEqual({ expanded: true });
+    expect(after.props.accessibilityLabel).toMatch(/Hides each one$/);
+  });
+
+  it('closing: the members leave, then the box closes on the fold\'s ease, then the rail trails and the slot goes', () => {
+    const t = render(<InPlace node={run(3)} initial />);
+    expect(t.getByTestId('spine-node-m0')).toBeTruthy();
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    // Beat 1: the members fade out in their stage, still mounted; no layout commit yet.
+    expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
+    expect(configureNext).not.toHaveBeenCalled();
+    advance(FOLD_MOTION.leaveMs);
+    expect(configureNext).toHaveBeenCalledWith(FOLD_LAYOUT);
+    advance(FOLD_MOTION.closeMs + FOLD_MOTION.railLagMs + FOLD_MOTION.railTrailMs + FOLD_MOTION.settleSlackMs * 3);
+    expect(t.queryByTestId('spine-members-compact:m0')).toBeNull();
+  });
+
+  it('Reduce Motion (known on the first render): the box at once, the members fade in over 150ms, no layout keyframe', () => {
+    mockUseReducedMotion.mockReturnValue(true);
+    const node = run(3);
+    const t = render(<InPlace node={node} />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    // Geometry at once: every member mounted on the same frame as the tap, in the fading stage.
+    for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
+    expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
+    expect(configureNext).not.toHaveBeenCalled();
+    advance(theme.durationFast + FOLD_MOTION.settleSlackMs);
+    expect(theme.durationFast).toBe(150);
+    expect(t.queryByTestId('spine-members-stage-compact:m0')).toBeNull();
+    expect(configureNext).not.toHaveBeenCalled();
+  });
+
+  it('without `openInPlace` the shipped open is untouched: no stage, no lead, the fold\'s config on the tap', () => {
+    function Shipped() {
+      const [expanded, setExpanded] = useState(false);
+      return <SpineCompactRow node={run(3)} isFirst isLast expanded={expanded} onToggle={() => setExpanded((e) => !e)} onOpen={jest.fn()} />;
+    }
+    const t = render(<Shipped />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    expect(configureNext).toHaveBeenCalledWith(UNFOLD_LAYOUT);
+    expect(t.getByTestId('spine-node-m0')).toBeTruthy();
+    expect(t.queryByTestId('spine-members-stage-compact:m0')).toBeNull();
+    expect(styleOf(t.getByTestId('spine-members-compact:m0')).minHeight).toBeUndefined();
+    advance(1_000);
+    expect(configureNext).toHaveBeenCalledTimes(1);
   });
 });

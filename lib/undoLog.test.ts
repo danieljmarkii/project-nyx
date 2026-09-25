@@ -65,8 +65,12 @@ describe('reverseLoggedEvent', () => {
     // also write adherence, "reversal only" stops being true by construction. The
     // import list is the real gate — a write needs something imported to do it.
     const imports = body().match(/^import[\s\S]*?;$/gm) ?? [];
+    // HV-10 (CUL-1167) added `noteRemoval`: an event id and a time held in memory for a
+    // few seconds so the list the owner returns to can fold the row away. It writes no
+    // record, and the next test's closure walk holds it to that.
     expect(imports.join('\n')).toBe(
       "import { getEventPetId, softDeleteEvent } from './db';\n" +
+      "import { noteRemoval } from './removalNotice';\n" +
       "import { triggerSignalRegenDebounced } from './signal';\n" +
       "import { syncPendingEvents } from './sync';\n" +
       "import { reconcileWeightSnapshotAfterDelete } from './weight';",

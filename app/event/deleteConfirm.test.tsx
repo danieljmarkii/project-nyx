@@ -261,3 +261,30 @@ describe('one Remove, one confirm', () => {
     warn.mockRestore();
   });
 });
+
+// HV-10 (CUL-1167; History v2 §4 "Open a record"): VoiceOver focus lands on the record's
+// Back button. The push itself moves it: a new screen's first element takes focus, so the
+// contract this screen owns is that Back COMES first. Walked over the rendered tree in
+// document order, every node a screen reader stops on (an explicit `accessible`, a role, or
+// a label) counted; the first must be Back.
+describe('the record opens with VoiceOver on Back (HV-10)', () => {
+  type Node = { props: Record<string, unknown>; children: (Node | string)[] | null };
+  function firstStop(node: Node | string | null): Node | null {
+    if (node === null || typeof node === 'string') return null;
+    const p = node.props;
+    if (p.accessible === true || p.accessibilityRole != null || p.accessibilityLabel != null) return node;
+    for (const c of node.children ?? []) {
+      const hit = firstStop(c);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  it('the first thing a screen reader reaches on the record is the Back button', async () => {
+    const view = render(<EventDetailScreen />);
+    await waitFor(() => expect(view.getByText('Remove')).toBeTruthy());
+    const first = firstStop(view.toJSON() as unknown as Node);
+    expect(first?.props.accessibilityLabel).toBe('Back');
+    expect(first?.props.accessibilityRole).toBe('button');
+  });
+});

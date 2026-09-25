@@ -29,10 +29,11 @@
 //
 // ── THE SURFACES, AND WHY HOME IS LISTED TWICE ─────────────────────────────────────
 //
-// History is where the flag lands at HV-1. Home does not read the flag yet, so its two
-// comparisons are green by construction today; they are listed now so the day HV-10
-// makes Home a consumer, its flag-off tree is already checked (C-41: a surface absent
-// from the list is checked by nothing). Home is rendered in BOTH `design_v2` states
+// History is where the flag landed at HV-1. Home became a consumer at HV-10 (CUL-1167):
+// `TodayCard` reads the gate and draws the namespace's `HomeSpine` (the first paint and
+// open in place) or the shipped spine. Its two comparisons were listed from HV-1 on, so
+// the day Home consumed the flag its flag-off tree was already checked (C-41: a surface
+// absent from the list is checked by nothing). Home is rendered in BOTH `design_v2` states
 // because HV-10's Home change rides both flags (spec §5.1, §5.6): a leak that exists
 // only on the redesigned Home would never reach a tree rendered with `design_v2` off.
 // The `design_v2` state is arranged through the REAL stores, and each surface's floor
@@ -48,8 +49,12 @@
 // proven in the screen's own suite (`app/(tabs)/history.historyV2.test.tsx`: flag-off,
 // over a page read that answers, v1 draws its row and the v2 root never mounts; flag-on,
 // v1's read is never issued). At HV-1 the v2 screen issues no read of its own, so that
-// suite proves the MOUNT; HV-7 extends it to the real reads. Home's async half is
-// HV-10's, in the redesigned Home's own suite, the day Home consumes the flag.
+// suite proves the MOUNT; HV-7 extends it to the real reads. Home's async half is in the
+// redesigned Home's own suite (`components/designV2/home/TodayCard.test.tsx`, "under
+// history_v2"): flag-off, over a day whose rows do arrive, the shipped spine draws them and
+// no `HomeSpine` node renders; flag-on, the rows arrive on `HomeSpine`. HomeSpine issues no
+// read of its own (TodayCard's reads are the same in both states), so the ROWS are what
+// could leak, and that suite's fixture has rows that would.
 //
 // ── WHY MOCKING HEAVY CHILDREN IS SAFE HERE ────────────────────────────────────
 //
@@ -570,10 +575,18 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('History v2 has one gate, and its consumers stay inside the namespace', () => {
-  it('every consumer of the gate is a known one: the History tab (HV-1) and the link deciders (HV-11)', () => {
+  it('every consumer of the gate is a known one: the History tab, Home\'s Today card, and the link deciders', () => {
     // PINNED, not floored: a new consumer is a new surface, and it joins this list —
-    // with its flag-off proof — in the diff that adds it (HV-10 adds Home).
-    expect(gateConsumers()).toEqual(['app/(tabs)/history.tsx', 'app/rundown.tsx', 'components/ask/AskAnswerCard.tsx']);
+    // with its flag-off proof — in the diff that adds it. HV-10 (CUL-1167) added Home's
+    // Today card, which draws `HomeSpine` from the namespace; its async flag-off proof is
+    // in `TodayCard.test.tsx` (the header). HV-11 (CUL-1168) added the two link deciders,
+    // which draw nothing of v2 (`DRAWS_ELSEWHERE_OK`, each with its named proof).
+    expect(gateConsumers()).toEqual([
+      'app/(tabs)/history.tsx',
+      'app/rundown.tsx',
+      'components/ask/AskAnswerCard.tsx',
+      'components/designV2/home/TodayCard.tsx',
+    ]);
   });
 
   it('the key is read directly in exactly one file — the hook — for both gates', () => {

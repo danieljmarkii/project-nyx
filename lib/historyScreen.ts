@@ -36,6 +36,7 @@ import type { ResolvedWindow, WindowFacts } from './historyWindows';
 import { foodFormatWord } from './foodFormat';
 import { recordDay, recordRange, recordWeekday } from './recordDates';
 import { dayKeyFromIndex, dayKeyToLocalDate } from './utils';
+import { spokenLine } from './spokenLine';
 import type { ActiveArrangementView } from './feedingArrangements';
 
 // ── The one date formatter, for the screen (H-10) ──────────────────────────────
@@ -437,4 +438,68 @@ export function sectionKeyOf(section: HistorySection): string {
  */
 export function scrollAnimates(args: { reducedMotion: boolean; distance: number; viewport: number }): boolean {
   return !args.reducedMotion && args.viewport > 0 && Math.abs(args.distance) <= args.viewport;
+}
+
+// ── Focus and the spoken word (HV-10 / CUL-1167; §4's focus column) ─────────────
+
+/** The latest day a section holds: its day, or its run's last day. Where the tab re-press
+ *  puts VoiceOver when today has no section of its own (a filter that hides it). */
+export function sectionToDay(section: HistorySection): string {
+  switch (section.kind) {
+    case 'day':
+    case 'today-open':
+    case 'items-only':
+      return section.day;
+    case 'unlogged':
+    case 'no-match':
+      return section.toDay;
+  }
+}
+
+/** The day the tab re-press lands VoiceOver on (§4: "today's header"): today, whenever a
+ *  section holds it; else the list's first (newest) section; null for an empty list. */
+export function rePressFocusDay(sections: readonly HistorySection[], today: string): string | null {
+  if (sections.length === 0) return null;
+  return sectionIndexFor(sections, today) >= 0 ? today : sectionToDay(sections[0]);
+}
+
+/** A day card header's one spoken sentence: the date, *Today* on today, then its counts. */
+export function dayHeaderSpoken(date: string, isToday: boolean, parts: readonly string[]): string {
+  return [date, isToday ? 'Today' : null, ...parts].filter((p): p is string => !!p).map(spokenLine).join(', ');
+}
+
+// ── The first paint's identity, and the rows a removal can fold (HV-10) ──────────
+
+/**
+ * The MOUNT IDENTITY the first paint draws once per (§4: "pet · filter · window · first
+ * day"). The first day is the day the list opens on, today: a new day is a new list. The
+ * search is not in it on purpose: typing narrows the list the owner is reading, and a draw
+ * per keystroke would be motion that answers no new fact.
+ */
+export function paintIdentityOf(args: { petId: string; filterId: string; windowParam: string; today: string }): string {
+  return JSON.stringify([args.petId, args.filterId, args.windowParam, args.today]);
+}
+
+/**
+ * The rows on screen a removal can fold away, each with its day: a single row the filter
+ * shows (an event node, or a look under Noticed). A member of a closed run is not one: the
+ * run re-forms without it, so it has no row of its own to fold.
+ */
+export function foldableRowsOf(args: {
+  nodesByDay: ReadonlyMap<string, readonly DayNode[]>;
+  shownByDay: ReadonlyMap<string, readonly HistoryRow[]>;
+  noticed: boolean;
+}): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [day, rows] of args.shownByDay) {
+    if (args.noticed) {
+      for (const r of rows) out.set(r.id, day);
+      continue;
+    }
+    const shown = new Set(rows.map((r) => r.id));
+    for (const node of args.nodesByDay.get(day) ?? []) {
+      if (node.kind === 'event' && shown.has(node.id)) out.set(node.id, day);
+    }
+  }
+  return out;
 }

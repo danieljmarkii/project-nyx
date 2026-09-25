@@ -23,12 +23,16 @@ import {
   countLineDoorHref,
   countLineWindowOf,
   dateOnlyItemText,
+  dayHeaderSpoken,
+  foldableRowsOf,
   historyDatesFor,
   historyNodesByDay,
   instantOnDay,
   itemsOnlyLineText,
   needsWholeDays,
+  paintIdentityOf,
   priorOnsetsFor,
+  rePressFocusDay,
   scrollAnimates,
   sectionFromDay,
   sectionIndexFor,
@@ -491,5 +495,62 @@ describe('instantOnDay: the instant nearest now on the request\'s own day', () =
 
   it('a malformed key answers NaN, so the read fails loudly rather than reading the real day', () => {
     expect(instantOnDay('not-a-day', 1234)).toBeNaN();
+  });
+});
+
+// ── HV-10 (CUL-1167): the first paint's identity, the rows a removal folds, focus, speech ──
+
+describe('paintIdentityOf: pet · filter · window · the day the list opens on (§4)', () => {
+  const base = { petId: 'pa', filterId: 'all', windowParam: 'all', today: '2026-09-25' };
+  it('each part is a new identity; the search is not one of them', () => {
+    const id = paintIdentityOf(base);
+    expect(paintIdentityOf({ ...base })).toBe(id);
+    for (const change of [{ petId: 'pb' }, { filterId: 'type:vomit' }, { windowParam: 'last7' }, { today: '2026-09-26' }]) {
+      expect(paintIdentityOf({ ...base, ...change })).not.toBe(id);
+    }
+  });
+});
+
+describe('foldableRowsOf: only a single row the filter shows can fold', () => {
+  const day = '2026-09-24';
+  const rows = (ids: string[]) => ids.map((id) => ({ id }) as unknown as HistoryRow);
+  const event = (id: string) => ({ kind: 'event', id }) as unknown as DayNode;
+  const run = (ids: string[]) => ({ kind: 'compact', id: `run:${ids[0]}`, rows: ids.map((id) => ({ id })) }) as unknown as DayNode;
+
+  it('an event node the filter shows folds; a run member and a hidden row do not', () => {
+    const out = foldableRowsOf({
+      nodesByDay: new Map([[day, [event('v1'), run(['m1', 'm2']), event('hidden')]]]),
+      shownByDay: new Map([[day, rows(['v1', 'm1', 'm2'])]]),
+      noticed: false,
+    });
+    expect([...out.entries()]).toEqual([['v1', day]]);
+  });
+
+  it('under Noticed, every look drawn folds', () => {
+    const out = foldableRowsOf({ nodesByDay: new Map(), shownByDay: new Map([[day, rows(['look1'])]]), noticed: true });
+    expect([...out.entries()]).toEqual([['look1', day]]);
+  });
+});
+
+describe('rePressFocusDay: VoiceOver lands on today\'s header (§4)', () => {
+  const today = '2026-09-25';
+  it('today, whenever a section holds it', () => {
+    const sections: HistorySection[] = [{ kind: 'today-open', day: today }, { kind: 'day', day: '2026-09-24' }];
+    expect(rePressFocusDay(sections, today)).toBe(today);
+  });
+  it('the list\'s first day when a filter hides today, and nothing for an empty list', () => {
+    const sections: HistorySection[] = [
+      { kind: 'no-match', fromDay: '2026-09-22', toDay: '2026-09-24', days: 3 },
+      { kind: 'day', day: '2026-09-21' },
+    ];
+    expect(rePressFocusDay(sections, today)).toBe('2026-09-24');
+    expect(rePressFocusDay([], today)).toBeNull();
+  });
+});
+
+describe('dayHeaderSpoken: the header\'s one sentence, its dots said as pauses', () => {
+  it('the date, Today, then the counts, joined as a voice reads them', () => {
+    expect(dayHeaderSpoken('Thu, Sep 25', true, ['8 logged', '1 vomit'])).toBe('Thu, Sep 25, Today, 8 logged, 1 vomit');
+    expect(dayHeaderSpoken('Wed, Sep 24', false, [])).toBe('Wed, Sep 24');
   });
 });
