@@ -129,6 +129,9 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
         // design_v2 (Design v2 — the whole day, D2-0 / CUL-1062) — same allowlist
         // shape, account UUIDs wiped too.
         design_v2: { enabled: false, allowlist: ['15151515-6767-8989-0101-232323232323'] },
+        // history_v2 (History v2, HV-1 / CUL-1158) — same allowlist shape, account
+        // UUIDs wiped too.
+        history_v2: { enabled: false, allowlist: ['17171717-8989-0101-2323-454545454545'] },
       },
     });
     expect(await loadCachedAppConfig()).not.toBeNull();

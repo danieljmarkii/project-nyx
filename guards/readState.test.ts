@@ -155,6 +155,13 @@ const MUST_STAY_CLEAN = [
   'components/designV2/patterns/MonthInstrument.tsx',
   'components/charts/DayMark.tsx',
   'app/(tabs)/history.tsx',
+  // The row Home and History v2 share (HV-1, #907): its pipeline and its two renderers,
+  // and the History v2 screen that will draw it. AC 20 names History as a reader.
+  'lib/dayNodes.ts',
+  'components/dayRow/DayNodeRow.tsx',
+  'components/dayRow/SpineNodeRow.tsx',
+  'components/historyV2/HistoryScreen.tsx',
+  'components/historyV2/HistoryList.tsx',
 ];
 
 // ── The detector ─────────────────────────────────────────────────────────────

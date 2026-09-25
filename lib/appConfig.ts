@@ -77,6 +77,16 @@ export type AppConfigKey = keyof AppConfigValues;
 // 2026-08 Signal/Home uplift, GA'd and gone from this union; this is the 2026-09
 // whole-day redesign.
 //
+// `history_v2` is the History v2 rollout flag (History v2 · the record you can
+// read, migration 071 — HV-1 / CUL-1158; spec §5.1, H-8) — same shape, same
+// fail-closed resolution. It gates the History tab's v2 screen (and, from HV-10,
+// Home's first paint under design_v2) AND-ed with the beta-shelf opt-in, through
+// ONE hook, `hooks/useHistoryV2.ts`, the only file that reads this key directly
+// (pinned by guards/historyV2FlagOff.test.tsx). A ROLLOUT gate only: GA is every
+// account and HV-14 retires the key with v1's screen. Client-render-only — v2
+// reads the local record the app already holds, no Edge Function reads the key,
+// so there is no server-side registration of it.
+//
 // Five keys that once lived here have GRADUATED to GA and been retired client-side.
 // `signal_design_v2` (the Signal/Home design uplift, migration 055) and `signals_v2`
 // (the Signals-v2 lanes, migration 057) went first (CUL-546 Phase 1 / CUL-547 +
@@ -100,6 +110,7 @@ export const ALLOWLIST_FLAG_KEYS = [
   'widget_enabled',
   'daily_look',
   'design_v2',
+  'history_v2',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -117,6 +128,7 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   widget_enabled: undefined,
   daily_look: undefined,
   design_v2: undefined,
+  history_v2: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

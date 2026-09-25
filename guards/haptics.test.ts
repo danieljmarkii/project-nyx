@@ -141,8 +141,11 @@ const ALWAYS_SCANNED = [
   // enum word), so it is named by hand. Proven by mutation — a `selectChip` import there
   // reds the build. Its sibling `LookHeader.tsx` is deliberately NOT here: the header
   // ticks on every chip tap (`selectChip`, T-10) and is not a safety surface; the
-  // emergency door it opens is its own scanned file (`LookEmergencySheet.tsx`).
-  'components/designV2/home/SpineNodeRow.tsx',
+  // emergency door it opens is its own scanned file (`LookEmergencySheet.tsx`). Moved to
+  // `components/dayRow/` by History v2 (HV-1 / CUL-1158) — the row Home and History
+  // share — and followed here in the same PR (a stale path reds "every always-scanned
+  // safety surface still exists" below; the entry belongs to the file, wherever it lives).
+  'components/dayRow/SpineNodeRow.tsx',
   // CUL-1067 (D2-5) — the month instrument draws `DayMark` (and so `worth_a_call`)
   // over a whole month and lists a day's incidents in place; the motion hook beneath
   // that day is where a "landed" haptic would read as natural, exactly the fold's and
