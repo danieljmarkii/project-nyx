@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 
-Shipped via #911 (CUL-1161). Filed: CUL-1193 (the course count's wording; the PM ruled (b) the same day, built here, below), CUL-1194 (the Patterns month's record start counts a look), CUL-1207 (HV-3's window test under a half-hour DST shift), CUL-1208 (Waiting on PM: the §5.2 `vomitEpisode` spec edit). Handoff notes posted on CUL-1160, CUL-1164, CUL-1165, CUL-1166 and CUL-1169.
+Shipped via #911 (CUL-1161). Filed: CUL-1193 (the course count's wording; the PM ruled (b) the same day, built here, below), CUL-1194 (the Patterns month's record start counts a look), CUL-1207 (HV-3's window test under a half-hour DST shift), CUL-1208 (Waiting on PM: the §5.2 `vomitEpisode` spec edit), CUL-1209 (Waiting on PM: unconfirmed doses and the word "logged"), CUL-1210, CUL-1211 (from the adversarial review at the wrap). Handoff notes posted on CUL-1160, CUL-1164, CUL-1165, CUL-1166 and CUL-1169.
 
 ## The ask
 
@@ -81,6 +81,19 @@ The PM ruled (b): under a course and under Medication the count says *16 logged 
 - **A premise, stated where it is used:** Medication's clause is a subset of its count only because a dose row always hangs off a medication event (migration 020's design, one writer, nothing re-types an event). History keeps the report's course grain, which reads every dose row, rather than narrowing "a dose" for a record no write path can produce; the comment on `notInFullOf` says so.
 - **Tests:** AC 1 now checks the clause against every window × filter (named only under a dose filter, equal to the facts, never more than the count, equal to the sheet's); AC 30 ties each course's not-in-full to `deriveMedicationCourses`'s own Partial + Missed + Refused tally, over a record holding every chip (neither fixture had a Missed dose, so dropping `missed` from the set survived until that test existed); the node:sqlite suite checks it against the rows the dose filters actually list. Eleven mutations, each red.
 - **Spec v1.4** (§3.2, §3.8, AC 30; ⚠ RULED markers; HV-3 took v1.3 for CUL-1189's rulings, below) and **round 5 of the mock** amended to match, republished to the same URL (version 7), as the CUL-1183 amendment was.
+
+### The reviews of the CUL-1193 change (at the wrap)
+
+- **`code-reviewer`: ship-ready.** One low finding, taken: the spec's three citations of the Cetirizine example said *3 not given in full* where the mock's own record (run through its live `countLine` and `sheetHtml`) gives 4. Fixed in 6a90665d.
+- **`adversarial-reviewer`: FAIL, one level beyond the ruling.** Every case inside it held: 18 dose rows at the window's edges (both instant spellings, local midnight, same-minute pairs, a −07:00 offset, an unparseable instant, soft-deleted, a link to a regimen not on the device, no medicine named) across nine zones, and the clause always equalled the listed Partial / Missed / Refused rows and agreed with `deriveMedicationCourses` and the vet report. What broke:
+  1. **The unrated remainder reads as given.** A pill hidden in a refused meal is saved unconfirmed; *5 logged · 1 not given in full* reads as 4 given where the report says 3 given, 1 unconfirmed. The fix (name *N unconfirmed*, the report's and the med strip's word) changes the ruled copy, so it went to the PM as a brief: **CUL-1209** (Waiting on PM), which gates HV-7's dose line.
+  2. **"logged" means two populations:** every dose row on History, given + partial on the report. Same brief, CUL-1209.
+  3. **The report is silent** on short doses of supplement courses and of doses outside their course's own dates (pre-existing): **CUL-1210**.
+  4. **Medication's premise is unenforced** (a dose row hangs off a medication event; true by construction today), and a comment in `lib/medicationHistoryFacts.ts` credits migration 023 with a pet guard it lacks: **CUL-1211**.
+  5. **A surviving mutant** (Medication summing only each day's first course passed all 199 tests): fixed here with a same-day, three-course test driven against the derivation's own tallies. Now red.
+  6. **The short-chip set was a plain string set:** now derived from an exhaustive `Record<DoseAdherence, boolean>`, so a chip added to the type does not compile until it is placed (proven: adding `vomited_up` fails `tsc` at `lib/historyDays.ts`).
+
+  Merged anyway, deliberately: nothing renders these modules yet (HV-7 draws the list), four step-2 sessions wait on this merge, and finding 1 is a copy decision with its own issue gating the screen, not a defect in building what was ruled.
 
 ## A base that moved mid-session
 

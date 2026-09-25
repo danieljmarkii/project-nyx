@@ -356,6 +356,32 @@ describe('AC 30 — the course counts key on the vet report\'s course grain', ()
     expect(notInFullOf(days, { kind: 'type', type: 'medication' })).toBe(3);
   });
 
+  it('under Medication, every course short on the same day is counted, as the derivation tallies it', () => {
+    // Three courses, each short once, on one day: a sum that stopped at the day's first
+    // course would still pass every single-course fixture above.
+    const rows = [
+      dose('mc-1', '2026-09-06', '08:00', { medicationId: 'reg-pred', medicationItemId: 'item-pred', adherence: 'partial' }),
+      dose('mc-2', '2026-09-06', '09:00', { medicationItemId: 'item-cet', adherence: 'refused' }),
+      dose('mc-3', '2026-09-06', '10:00', { adherence: 'missed' }),
+      dose('mc-4', '2026-09-06', '11:00', { medicationItemId: 'item-cet', adherence: 'given' }),
+    ];
+    const facts = factsFor(WINDOWS.all.range, rows);
+    const derived = deriveMedicationCourses({
+      regimens: REGIMENS,
+      doses: rows.map((r) => ({
+        medication_id: r.medicationId, medication_item_id: r.medicationItemId, adherence: r.adherence, deleted_at: null, occurred_at: r.occurredAt,
+      })),
+    });
+    const short = derived.reduce((n, c) => n + c.tally.partial + c.tally.missed + c.tally.refused, 0);
+    expect(short).toBe(3);
+    expect(Object.keys(dayFactsOn(facts.days, '2026-09-06').doses)).toHaveLength(3);
+    const medication: HistoryFilter = { kind: 'type', type: 'medication' };
+    expect(notInFullOf(facts.days, medication)).toBe(short);
+    const line = countLineOf({ filter: medication, search: null, window: WINDOWS.all, facts, course: null, trialRange: null, today: TODAY, dates: DATES });
+    expect(line).toMatchObject({ kind: 'count', line1: { strong: '4 logged on 1 day' } });
+    expect(line.kind === 'count' ? line.line2 : null).toMatch(/^3 not given in full( · |$)/);
+  });
+
   it('names the ones not given in full, and nothing when none were recorded short (CUL-1193)', () => {
     expect(notGivenInFullText(3)).toBe('3 not given in full');
     expect(notGivenInFullText(1094)).toBe('1,094 not given in full');

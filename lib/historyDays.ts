@@ -33,7 +33,7 @@
 import { EVENT_TYPES, SYMPTOM_TYPES, type EventTypeKey } from '../constants/eventTypes';
 import { isFinishedMeal, qualifyingIntakeMeals, type AnalyticsMeal } from './analytics';
 import { episodeDaysOf } from './chartModels';
-import { attributeDoses, type AttributableDose, type RegimenWindow } from './medications';
+import { attributeDoses, type AttributableDose, type DoseAdherence, type RegimenWindow } from './medications';
 import type { MedicationCourse } from './medicationHistory';
 import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import type { HistoryVisitRow } from './vetVisits';
@@ -258,7 +258,13 @@ export function courseKeysOf(doses: readonly DoseRow[], regimens: readonly Regim
   return out;
 }
 
-const NOT_IN_FULL: ReadonlySet<string> = new Set(['partial', 'missed', 'refused']);
+/** Every recorded chip, decided. A chip added to `DoseAdherence` does not compile until it is
+ *  placed here, so a new chip is never silently left out of "not given in full". A stored
+ *  string outside the type (an older or future chip) is counted as logged and named nowhere. */
+const GIVEN_IN_FULL: Record<DoseAdherence, boolean> = { given: true, partial: false, missed: false, refused: false };
+const NOT_IN_FULL: ReadonlySet<string> = new Set(
+  (Object.keys(GIVEN_IN_FULL) as DoseAdherence[]).filter((chip) => !GIVEN_IN_FULL[chip]),
+);
 
 export interface DayFactsInput {
   /** The population rows read for the range (a day of slack either side is fine: rows
