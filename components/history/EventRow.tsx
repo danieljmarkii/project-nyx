@@ -15,7 +15,8 @@ import {
 } from '../../lib/medications';
 import { asDoseAdherence, doseDrugLabel } from '../../lib/doseDisplay';
 import { foodFormatTag, mealRowLabel } from '../../lib/food';
-import { describeOccurredAt } from '../../lib/utils';
+import { describeOccurredAt, toLocalDayKey } from '../../lib/utils';
+import { recordDay } from '../../lib/recordDates';
 import { kgToLbs } from '../../lib/weight';
 import { describeLook, lookSummary, isLookRow } from '../../lib/lookDisplay';
 import { usePetStore } from '../../store/petStore';
@@ -61,8 +62,17 @@ interface Props {
 
 const FALLBACK_CONFIG = { label: 'Event', hasSeverity: false };
 
-function formatDatePart(iso: string): string {
-  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+/**
+ * The row's date, the event's LOCAL day through the one formatter (H-10, CUL-1126): "Sep 16"
+ * in the current year, "Sep 16, 2025" outside it, so a row paged back past New Year never
+ * reads as this year's. `today` is the list's render-time day key, passed in so every row
+ * on one screen judges "the current year" against the same day. An unreadable instant
+ * prints nothing rather than "Invalid Date".
+ */
+export function formatDatePart(iso: string, today: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '';
+  return recordDay(toLocalDayKey(at), today) ?? '';
 }
 
 export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete }: Props) {
@@ -178,7 +188,7 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
   // two different times, and so the note-less branch is the ORIGINAL element.
   const timeText = (
     <ThemedText style={styles.time}>
-      {formatDatePart(event.occurred_at)}, {timeDisplay.compact}
+      {formatDatePart(event.occurred_at, toLocalDayKey(new Date()))}, {timeDisplay.compact}
     </ThemedText>
   );
 
