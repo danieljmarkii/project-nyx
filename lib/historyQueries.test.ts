@@ -529,6 +529,17 @@ describe('search — named fields, wildcards escaped, never a note (AC 39)', () 
     expect(await found('rabbit', { kind: 'noticed' })).toEqual([]);
   });
 
+  it('never borrows another pet\'s course name: not on the row, not in a search (CUL-1124)', async () => {
+    seedRich();
+    mockRaw
+      .prepare(`INSERT INTO medications (id, pet_id, medication_item_id, drug_name, started_at, status) VALUES ('reg-theirs', ?, NULL, 'Gabapentin compound', '2026-09-01', 'active')`)
+      .run(OTHER_PET);
+    insertDose('d-cross', localAt(11, 9).toISOString(), { regimen: 'reg-theirs', item: null, adherence: 'given' });
+    const rows = (await allPages(scopeOf(RANGE))).flatMap((p) => p.days.flatMap((d) => d.rows));
+    expect(rows.find((r) => r.id === 'd-cross')).toMatchObject({ regimen_drug_name: null, course_key: 'item:unspecified' });
+    expect(await found('gabapentin')).toEqual([]);
+  });
+
   it('SEARCH_READS_NOTES is false and no searched field is a note, until CUL-848 (HV-16 flips both)', () => {
     expect(SEARCH_READS_NOTES).toBe(false);
     expect(SEARCHED_FIELDS.some((f) => /note/i.test(f))).toBe(false);

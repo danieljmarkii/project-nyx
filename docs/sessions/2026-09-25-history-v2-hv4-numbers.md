@@ -71,10 +71,14 @@ Made during the review fixes, and stated in #911:
 
   Every fix was proven by mutation (seven, each red).
 
+## A base that moved mid-session
+
+Bundle C (#908, CUL-1124) landed on `main` during the wrap and added `regimen_drug_name` to `getTimeline`, joined pet-scoped (`rx.pet_id = e.pet_id`), so a dose linked to another pet's course never borrows its name. This branch had the same column without that guard, which would have let a search find another pet's course name. The branch merged `main`, and the join is now pet-scoped in both the row read and every scope condition. A test drives a dose linked to another pet's regimen (no name on the row, no search hit); dropping the guard turns it red. The column-for-column test against `getTimeline` now covers the course's name too.
+
 ## Verification
 
 - `tsc --noEmit` clean.
-- Full jest suite green: 466 suites, 10,161 passed, 3 skipped (unchanged).
+- Full jest suite green on the merged tree: 469 suites, 10,222 passed, 3 skipped (unchanged).
 - The three new suites green under Kiritimati, Chatham, Honolulu, New York and Lord Howe.
 - CI green on the first push (all three jobs).
 

@@ -85,7 +85,7 @@ const SCOPE_JOINS = `
     LEFT JOIN food_items_cache f ON f.id = m.food_item_id
     LEFT JOIN medication_administrations ma ON ma.event_id = e.id
     LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
-    LEFT JOIN medications rg ON rg.id = ma.medication_id
+    LEFT JOIN medications rg ON rg.id = ma.medication_id AND rg.pet_id = e.pet_id
     ${PHOTO_JOIN}`;
 
 /** With a note: the owner's note on the event row, the only note field the app writes (a
@@ -271,7 +271,8 @@ export async function readHistoryCourses(petId: string): Promise<HistoryCourse[]
 export const SEARCH_READS_NOTES: boolean = false;
 
 /** The named fields a search reads (§3.7): the food's brand and product, the medicine's
- *  generic and brand names, and the regimen's own name for a dose with no library item. */
+ *  generic and brand names, and the regimen's own name for a dose with no library item
+ *  (the pet's own regimen only: the join is pet-scoped, as `getTimeline`'s is). */
 const NAME_FIELDS = ['f.brand', 'f.product_name', 'mi.generic_name', 'mi.brand_name', 'rg.drug_name'] as const;
 export const SEARCHED_FIELDS: readonly string[] = SEARCH_READS_NOTES ? [...NAME_FIELDS, 'e.notes'] : NAME_FIELDS;
 
@@ -314,11 +315,10 @@ const MAX_CHUNK_DAYS = 256;
 /** A row as History v2 draws it: the `getTimeline` row, column for column (so a row says
  *  the same thing in v1 and v2), plus what the shared row and the course filter need. */
 export type HistoryRow = TimelineRow & {
-  /** The dose's explicit regimen link. */
+  /** The dose's explicit regimen link. (Its course's NAME is `TimelineRow.regimen_drug_name`,
+   *  joined here exactly as `getTimeline` joins it: pet-scoped, so a dose linked to another
+   *  pet's course never borrows that course's name, CUL-1124.) */
   medication_id: string | null;
-  /** That regimen's own name: a dose with no library item is named from its course
-   *  (GAP-25), never guessed. */
-  regimen_drug_name: string | null;
   /** Any attachment on the event (the camera glyph; never the photo itself). */
   has_photo: boolean;
   /** The dose's course key (the vet report's course grain), null for any other row. */
@@ -392,7 +392,7 @@ const HISTORY_ROW_SELECT = `
     LEFT JOIN looks lk ON lk.event_id = e.id
     LEFT JOIN medication_administrations ma ON ma.event_id = e.id
     LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
-    LEFT JOIN medications rg ON rg.id = ma.medication_id
+    LEFT JOIN medications rg ON rg.id = ma.medication_id AND rg.pet_id = e.pet_id
     LEFT JOIN events pe ON pe.id = ma.paired_event_id AND pe.deleted_at IS NULL
     LEFT JOIN meals pm ON pm.event_id = pe.id
     LEFT JOIN food_items_cache pf ON pf.id = pm.food_item_id
