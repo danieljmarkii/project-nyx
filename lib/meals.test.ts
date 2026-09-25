@@ -41,6 +41,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { blankComments } from '../guards/blankComments';
 import { insertMeal, rateMealIntake } from './meals';
+import { useSyncStore } from '../store/syncStore';
 
 // Lets the fire-and-forget syncPendingEvents().then(syncPendingMeals) chain
 // settle so we can assert the second call landed. A bare Promise.resolve() is
@@ -272,6 +273,23 @@ describe('rateMealIntake', () => {
     await rateMealIntake('evt-1', 'all');
     await flush();
     expect(mockTriggerSignalRegenDebounced).not.toHaveBeenCalled();
+  });
+
+  // CUL-1122 / CUL-1159: the rating decides what counts as eating, so a Refused given AFTER the
+  // vomit must reach Home's timing line, which re-reads its feedings on `hydrationTick` only.
+  it('a saved rating counts as a hydration, so Home re-reads the feedings it times vomits from', async () => {
+    const before = useSyncStore.getState().hydrationTick;
+    await rateMealIntake('evt-1', 'refused');
+    expect(useSyncStore.getState().hydrationTick).toBe(before + 1);
+    await rateMealIntake('evt-1', null); // clearing a rating changes what anchors too
+    expect(useSyncStore.getState().hydrationTick).toBe(before + 2);
+  });
+
+  it('a failed write bumps nothing: no screen re-reads for a rating that was not saved', async () => {
+    const before = useSyncStore.getState().hydrationTick;
+    mockUpdateMealIntake.mockRejectedValueOnce(new Error('No meal row for event evt-1'));
+    await expect(rateMealIntake('evt-1', 'refused')).rejects.toThrow('No meal row');
+    expect(useSyncStore.getState().hydrationTick).toBe(before);
   });
 });
 

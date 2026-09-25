@@ -9,23 +9,47 @@
 // ate' — a client/server drift here is the §5.3 diet-trial lesson repeated, and it
 // is pre-empted, not learned again."
 //
-// Today the machinery below lives INLINE inside detector ⑤ (postprandial timing)
-// in `supabase/functions/generate-signal/detection.ts`: `classifyTimedFeedings`,
-// `toConfidenceEpisodes`, `nearestPreceding`, `freeFedNear`, and the rapid-band
-// test are all private to that one function. Signals v2 adds L1 (the
-// empty-stomach ≥6h lane), the A2 timing card, and two Patterns panels — five new
+// The machinery below once lived INLINE inside detector ⑤ (postprandial timing) in
+// `supabase/functions/generate-signal/detection.ts` (`classifyTimedFeedings`,
+// `nearestPreceding`, `freeFedNear`, the rapid-band test). Signals v2 added L1 (the
+// empty-stomach ≥6h lane), the A2 timing rows, and the Patterns panels — more
 // readers of "minutes since the pet last ate". If each re-derived the eligibility
 // ladder, the app would drift exactly the way the diet-trial track had three
 // contradictory off-diet predicates before `lib/dietTrial.ts` collapsed them into
-// one. So the ladder is extracted HERE, once, and every reader — the Deno engine
-// and the React Native Patterns screens alike — imports it.
+// one. So the ladder lives HERE, once, and every reader imports it.
 //
-// This PR (CUL-6) only CREATES the module + its tests; it does not yet rewire
-// `detection.ts` (PR 2's L1 work does that, under an adversarial-review gate,
-// because ⑤ is a shipped, deployed, calibrated detector). The module is therefore
-// written to be a behaviour-preserving drop-in for ⑤'s inline logic: the gate
-// order, the boundary inclusivity, and the two-tier confidence rule below all
-// match `detection.ts` as shipped, so PR 2 is a lift-and-call, not a re-decision.
+// It is ONE predicate, not a client copy of a server one. `detection.ts` imports this
+// file (CUL-7 lifted ⑤ onto it and deleted the inline twin), and so do Home's spine,
+// the Patterns panels, the Signal screen and the trial panel on the client. A change
+// here therefore changes the deployed engine: `generate-signal` inlines this file and
+// redeploys when it changes (CUL-1147's deploy-on-merge).
+//
+// ── WHAT COUNTS AS EATING (CUL-1122, ruled 2026-09-24) ────────────────────────
+//
+// A feeding ANCHORS "minutes since she last ate" when food went in. The owner's intake
+// rating is the record of that:
+//
+//   • Refused — no food went in. NEVER an anchor, whatever the food type. Before this
+//     rule a vomit five minutes after a refused bowl read "5 min after eating", which
+//     fits ⑤'s eating-too-fast pattern for a cat that last ate fourteen hours earlier.
+//   • Picked at, Some, Most, All — food went in; an anchor. Picked at is the ruled one
+//     (Dr. Chen lens, recorded on CUL-1122): the lane's claim is literal, and "6h or
+//     more after eating" under a row that reads "picked at" five minutes earlier would
+//     be false beside its own contradiction. It is also the safe direction: dropping a
+//     nibble would move a poorly eating cat's vomits into the empty-stomach band, the
+//     benign-looking one. The sets that group Picked with Refused elsewhere
+//     (`VEHICLE_NOT_FINISHED`, `isRefusedOrPickedMeal`) answer "did the pill go down"
+//     and "is she eating enough"; this answers "when did food last go in".
+//   • Unrated — an anchor, as before. Ratings are exception-only (CUL-1118), so an
+//     unrated bowl is presumed eaten; reading it as refused would invent a refusal.
+//
+// A treat anchors like any feeding (⑤ §3.2), and a treat rated Refused does not: the
+// rule reads the rating, never the food type. The refusal is dropped from the ANCHOR
+// set in `timedEligibleFeedings`, which is also the set ⑤'s grazing guard and L1's
+// base rate count, so the timed episodes and the chance baseline they are compared
+// against always agree about what eating was. The refused feedings are kept only to
+// say WHY an episode could not be timed (`refused_only`), so no surface tells an owner
+// "no meal logged" about a record that logged one.
 //
 // ── PURE AND DEPENDENCY-FREE, AND THAT IS A HARD CONSTRAINT ───────────────────
 //
@@ -103,6 +127,34 @@ export function onsetIsTimeEligible(confidence: OnsetConfidence | null | undefin
   return (confidence ?? null) === 'witnessed';
 }
 
+// ── Intake: did food go in? (CUL-1122 — the header's "WHAT COUNTS AS EATING") ──
+
+/** `meals.intake_rating`, the WSAVA 5-point scale (migration 011). Structurally identical to
+ *  `IntakeRating` in `detection.ts`, redeclared for the reason `OnsetConfidence` is: this leaf
+ *  has no edge back up to its importers. */
+export type IntakeRating = 'refused' | 'picked' | 'some' | 'most' | 'all';
+
+/**
+ * Whether food went in at a feeding with this rating — the ruling, one row per rating. A
+ * `Record` over the union rather than a set of exclusions, so a rating added to the enum does
+ * not compile until someone decides it here.
+ */
+const INTAKE_IS_EATING: Readonly<Record<IntakeRating, boolean>> = {
+  refused: false,
+  picked: true, // a few bites is food (Dr. Chen lens, CUL-1122)
+  some: true,
+  most: true,
+  all: true,
+};
+
+/** May a feeding with this rating ANCHOR "minutes since she last ate"? Never when Refused.
+ *  Unrated anchors (exception-only rating, CUL-1118), and so does a value outside the enum,
+ *  which is what every feeding did before the rating was read. */
+export function feedingIsEatingAnchor(intakeRating: IntakeRating | null | undefined): boolean {
+  if (intakeRating == null) return true;
+  return INTAKE_IS_EATING[intakeRating] !== false;
+}
+
 // ── The three bands ──────────────────────────────────────────────────────────
 
 /**
@@ -155,7 +207,8 @@ export interface MealTimingConfig {
    *  too far back to trust (the pet may have eaten unlogged). 24h, verbatim from ⑤'s
    *  `feedingLookbackHours`. Note the interaction: with a 24h lookback the 'long'
    *  band is a bounded interval [longGapHours, 24h], not an open ray — an onset with
-   *  no feeding at all in 24h is `no_preceding_feeding` (un-timeable), never 'long'. */
+   *  no eaten feeding in 24h is `no_preceding_feeding` or `refused_only` (un-timeable), never
+   *  'long'. */
   feedingLookbackHours: number;
   /** Same-type events within this many hours collapse into ONE episode — the engine's
    *  re-log guard, so a bout double-tapped or sync-replayed is one episode, never an
@@ -164,7 +217,7 @@ export interface MealTimingConfig {
 }
 
 /**
- * The shipped defaults. Reused by both `detection.ts` (in PR 2) and the client
+ * The shipped defaults. Reused by both `detection.ts` and the client
  * Patterns screens, so the phenotype boundaries cannot differ between server and
  * device — the whole point of the file.
  */
@@ -236,35 +289,72 @@ export function collapseEpisodes<T extends { ms: number }>(
 
 // ── Feedings ─────────────────────────────────────────────────────────────────
 
-/** A logged feeding as this module sees it — an instant, its B-010 confidence, and
- *  an EVIDENCE-ONLY form label (never the owner claim; it rides into the vet report
- *  as anamnesis, §2 L1 / ⑤ §9.1). */
+/** A logged feeding as this module sees it — its event id, an instant, its B-010
+ *  confidence, the owner's intake rating, and an EVIDENCE-ONLY form label (never the
+ *  owner claim; it rides into the vet report as anamnesis, §2 L1 / ⑤ §9.1). */
 export interface FeedingInput {
+  /** The feeding's EVENT id (`events.id`, the id every row surface keys on). Never
+   *  `meals.id`, which is a different column locally. The anchor's id comes back on
+   *  every timing, so a line can name the meal it measured from (HV-2 / CUL-1159). */
+  id: string;
   ms: number;
   confidence?: OnsetConfidence | null;
+  /** `meals.intake_rating`, or null when unrated. REQUIRED, not optional: an optional
+   *  field would let a reader that forgot to select the column fall back to "eaten" in
+   *  silence, which is CUL-1122 again. */
+  intakeRating: IntakeRating | null;
   /** e.g. `foodLabel ?? foodType` — carried for evidence/vet-report only. */
   form?: string | null;
 }
 
-/** A feeding reduced to what the timing math needs: a finite instant + its form. */
+/** A feeding reduced to what the timing math needs: its id, a finite instant, its form. */
 export interface TimedFeeding {
+  id: string;
   ms: number;
   form: string | null;
 }
 
+function toTimed(f: FeedingInput): TimedFeeding {
+  return { id: f.id, ms: f.ms, form: f.form ?? null };
+}
+
 /**
- * The time-eligible feedings, finite and sorted ascending. NULL-tolerant on
- * confidence (see `feedingIsTimeEligible`); ANY food type is kept — a treat is
- * exactly a relevant feeding for "minutes since she last ate" (§3.2). Verbatim
- * behaviour of `detection.ts`'s `classifyTimedFeedings`, minus the DB-row → form
- * mapping, which stays with the caller that has the row.
+ * The feedings that may ANCHOR a minutes-since claim, finite and sorted ascending:
+ * time-trustworthy (`feedingIsTimeEligible`, NULL-tolerant) AND eaten
+ * (`feedingIsEatingAnchor` — never Refused). ANY food type is kept — a treat is exactly
+ * a relevant feeding for "minutes since she last ate" (§3.2). The DB-row → input
+ * mapping stays with the caller that has the row.
+ *
+ * `detection.ts` also counts THIS list as the pet's feeding rate: ⑤'s grazing guard
+ * (how often a pet is within 30 min of eating by chance) and L1's per-episode base
+ * rate. A refused bowl is out of both, because it is out of the numerator they are
+ * compared against.
  */
 export function timedEligibleFeedings(feedings: readonly FeedingInput[]): TimedFeeding[] {
   return feedings
-    .filter((f) => feedingIsTimeEligible(f.confidence))
-    .map((f) => ({ ms: f.ms, form: f.form ?? null }))
+    .filter((f) => feedingIsTimeEligible(f.confidence) && feedingIsEatingAnchor(f.intakeRating))
+    .map(toTimed)
     .filter((f) => Number.isFinite(f.ms))
     .sort((a, b) => a.ms - b.ms);
+}
+
+/** The time-trustworthy feedings the owner rated REFUSED — never an anchor, prepared
+ *  only so an episode with nothing else in its lookback can say why (`refused_only`). */
+function timedRefusedFeedings(feedings: readonly FeedingInput[]): TimedFeeding[] {
+  return feedings
+    .filter((f) => feedingIsTimeEligible(f.confidence) && !feedingIsEatingAnchor(f.intakeRating))
+    .map(toTimed)
+    .filter((f) => Number.isFinite(f.ms));
+}
+
+/** Both lists, prepared once per classification. */
+interface PreparedFeedings {
+  anchors: TimedFeeding[];
+  refused: TimedFeeding[];
+}
+
+function prepareFeedings(feedings: readonly FeedingInput[]): PreparedFeedings {
+  return { anchors: timedEligibleFeedings(feedings), refused: timedRefusedFeedings(feedings) };
 }
 
 /**
@@ -314,7 +404,7 @@ export function nearestPrecedingFeeding(
  *  ⚠️ VALID SPANS ONLY (`untilMs > fromMs`). `isFreeFedNear` does not filter an
  *  INVERTED span, and an inverted one can read as overlapping and wrongly mark an
  *  episode `free_fed`. ⑤ never hits this because `classifyArrangements` drops
- *  `untilMs <= fromMs`; PR 2 and the client Patterns path must pre-filter the same way. */
+ *  `untilMs <= fromMs`; the client Patterns path pre-filters the same way (`parseFreeFedSpans`). */
 export interface FreeFedSpan {
   fromMs: number;
   untilMs: number;
@@ -350,7 +440,11 @@ export type TimingIneligibility =
   | 'not_witnessed'
   /** A free-choice bowl was available — minutes-since-feeding is fiction (B-040). */
   | 'free_fed'
-  /** No time-eligible feeding fell in the lookback before the onset. */
+  /** Time-trustworthy feedings fell in the lookback, but the owner rated every one of
+   *  them Refused: no food the lane can time against went in (CUL-1122). Kept apart from
+   *  `no_preceding_feeding` so no surface says "no meal logged" about a logged meal. */
+  | 'refused_only'
+  /** No time-eligible feeding at all fell in the lookback before the onset. */
   | 'no_preceding_feeding';
 
 /** The classification of one episode: either an eligible, banded timing, or an
@@ -362,6 +456,9 @@ export type EpisodeTiming =
       /** Observed minutes between the nearest preceding feeding and the onset. */
       minutesSinceFeeding: number;
       band: TimingBand;
+      /** The EVENT id of the feeding the minutes are measured from — the meal a timing
+       *  line names, so History and Home can keep it visible as its own row (HV-2). */
+      feedingId: string;
       /** The preceding feeding's evidence-only form label, or null. */
       feedingForm: string | null;
     }
@@ -369,18 +466,18 @@ export type EpisodeTiming =
 
 /**
  * Classify ONE symptom episode against the pet's feedings and free-fed spans — the
- * eligibility ladder detector ⑤ runs, extracted.
+ * eligibility ladder detector ⑤ runs.
  *
- * The gate order is load-bearing and matches ⑤ exactly: witnessed-onset →
- * not-free-fed → has-a-preceding-feeding → band. It is the order that determines
- * WHICH ineligibility reason a rejected episode reports, which the Patterns panel
- * renders, so it is not free to reorder.
+ * The gate order is load-bearing: witnessed-onset → not-free-fed → has-an-eaten-
+ * feeding → band, and when no eaten feeding precedes it, `refused_only` before
+ * `no_preceding_feeding`. It is the order that determines WHICH ineligibility reason a
+ * rejected episode reports, which the Patterns panel renders, so it is not free to
+ * reorder.
  *
- * `feedings` may be raw `FeedingInput[]`; this function prepares them with
- * `timedEligibleFeedings` itself, so a caller cannot forget the NULL-tolerant
- * feeding filter and accidentally anchor a claim on an estimated feeding. When
- * classifying MANY episodes against the same feedings, prefer `classifyEpisodeSet`,
- * which prepares once.
+ * `feedings` may be raw `FeedingInput[]`; this function prepares them itself, so a
+ * caller cannot forget the NULL-tolerant feeding filter or the refusal rule and
+ * anchor a claim on an estimated or refused feeding. When classifying MANY episodes
+ * against the same feedings, prefer `classifyEpisodeSet`, which prepares once.
  */
 export function classifyEpisodeTiming(
   episode: { onsetMs: number; confidence?: OnsetConfidence | null },
@@ -388,12 +485,7 @@ export function classifyEpisodeTiming(
   freeFedSpans: readonly FreeFedSpan[],
   config: MealTimingConfig = DEFAULT_MEAL_TIMING_CONFIG,
 ): EpisodeTiming {
-  return classifyEpisodeTimingPrepared(
-    episode,
-    timedEligibleFeedings(feedings),
-    freeFedSpans,
-    config,
-  );
+  return classifyEpisodeTimingPrepared(episode, prepareFeedings(feedings), freeFedSpans, config);
 }
 
 /** The core, taking already-prepared feedings. Internal to keep the O(episodes ×
@@ -401,7 +493,7 @@ export function classifyEpisodeTiming(
  *  every episode; the public `classifyEpisodeTiming` prepares for the single case. */
 function classifyEpisodeTimingPrepared(
   episode: { onsetMs: number; confidence?: OnsetConfidence | null },
-  timedFeedings: readonly TimedFeeding[],
+  prepared: PreparedFeedings,
   freeFedSpans: readonly FreeFedSpan[],
   config: MealTimingConfig,
 ): EpisodeTiming {
@@ -411,15 +503,19 @@ function classifyEpisodeTimingPrepared(
   if (isFreeFedNear(episode.onsetMs, freeFedSpans, config)) {
     return { eligible: false, reason: 'free_fed' };
   }
-  const feeding = nearestPrecedingFeeding(episode.onsetMs, timedFeedings, config);
+  const feeding = nearestPrecedingFeeding(episode.onsetMs, prepared.anchors, config);
   if (!feeding) {
-    return { eligible: false, reason: 'no_preceding_feeding' };
+    // The same lookback as the anchor search, so "refused" means refused inside the window
+    // the line would have been measured over, never a refusal from last week.
+    const refusedInLookback = nearestPrecedingFeeding(episode.onsetMs, prepared.refused, config);
+    return { eligible: false, reason: refusedInLookback ? 'refused_only' : 'no_preceding_feeding' };
   }
   const minutesSinceFeeding = (episode.onsetMs - feeding.ms) / MS_PER_MINUTE;
   return {
     eligible: true,
     minutesSinceFeeding,
     band: classifyGapMinutes(minutesSinceFeeding, config),
+    feedingId: feeding.id,
     feedingForm: feeding.form,
   };
 }
@@ -427,11 +523,13 @@ function classifyEpisodeTimingPrepared(
 // ── The batch: a whole episode set → the timing distribution ─────────────────
 
 /** One eligible episode's timing, with its onset carried so the Patterns dot lane
- *  can position it. */
+ *  can position it, and the id of the feeding it was measured from. */
 export interface EligibleEpisodeTiming {
   onsetMs: number;
   minutesSinceFeeding: number;
   band: TimingBand;
+  /** The anchor feeding's EVENT id (see `EpisodeTiming`). */
+  feedingId: string;
   feedingForm: string | null;
 }
 
@@ -460,7 +558,7 @@ export interface IneligibleEpisode {
  * entry per bout, so that a re-logged bout is not counted three times here. The
  * feedings may be raw; they are prepared once.
  *
- * ⚠️ PR-2 WIRING (⑤ drop-in) — COLLAPSE ON THE FULL LIST, THEN WINDOW. This module
+ * ⚠️ WIRING — COLLAPSE ON THE FULL LIST, THEN WINDOW. This module
  * does NO windowing; ⑤ collapses on the full event list and only then filters to the
  * 60-day window. The two orders differ: two witnessed onsets 2h apart that straddle
  * the window boundary collapse to ONE pre-window episode under ⑤ (→ 0 in-window) but
@@ -484,18 +582,19 @@ export function classifyEpisodeSet(
   freeFedSpans: readonly FreeFedSpan[],
   config: MealTimingConfig = DEFAULT_MEAL_TIMING_CONFIG,
 ): TimingDistribution {
-  const timedFeedings = timedEligibleFeedings(feedings);
+  const prepared = prepareFeedings(feedings);
   const eligible: EligibleEpisodeTiming[] = [];
   const ineligible: IneligibleEpisode[] = [];
   const bandCounts: Record<TimingBand, number> = { rapid: 0, mid: 0, long: 0 };
 
   for (const episode of episodes) {
-    const result = classifyEpisodeTimingPrepared(episode, timedFeedings, freeFedSpans, config);
+    const result = classifyEpisodeTimingPrepared(episode, prepared, freeFedSpans, config);
     if (result.eligible) {
       eligible.push({
         onsetMs: episode.onsetMs,
         minutesSinceFeeding: result.minutesSinceFeeding,
         band: result.band,
+        feedingId: result.feedingId,
         feedingForm: result.feedingForm,
       });
       bandCounts[result.band] += 1;

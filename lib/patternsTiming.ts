@@ -38,6 +38,7 @@ import {
   DEFAULT_MEAL_TIMING_CONFIG,
   type FeedingInput,
   type FreeFedSpan,
+  type IntakeRating,
   type MealTimingConfig,
   type OnsetConfidence,
   type TimingBand,
@@ -319,6 +320,7 @@ export function buildTimingDistribution(input: TimingDistributionInput): TimingP
   const untimedReasons: Record<TimingIneligibility, number> = {
     not_witnessed: 0,
     free_fed: 0,
+    refused_only: 0,
     no_preceding_feeding: 0,
   };
   for (const e of dist.ineligible) untimedReasons[e.reason] += 1;
@@ -345,7 +347,7 @@ export function buildTimingDistribution(input: TimingDistributionInput): TimingP
 // caller cannot forget it; these queries just supply the confidence column.
 
 /** A logged feeding with everything both Patterns panels need: the `lib/mealTiming`
- *  fields (ms / confidence / form) plus the `food_type` the trial panel splits
+ *  fields (id / ms / confidence / intake / form) plus the `food_type` the trial panel splits
  *  meals-vs-treats on. `FeedingInput`-compatible, so it drops straight into the timing
  *  predicate. Exported (with the reads below) so `lib/patternsTrial.ts` shares ONE
  *  local-event source with this module — two readers is how a client surface starts
@@ -388,32 +390,51 @@ export async function readCorrelationSymptomMs(petId: string): Promise<number[]>
   return rows.map((r) => Date.parse(r.occurred_at)).filter((ms) => Number.isFinite(ms));
 }
 
-/** All logged feedings (meals + treats) for the pet, with confidence, food_type, and
- *  the evidence-only `foodLabel ?? foodType` form the engine carries. */
+/** The columns every feeding read selects, over `meals m JOIN events e LEFT JOIN
+ *  food_items_cache f`. Shared with Home's bounded read (`lib/spineReads.ts`) so the two
+ *  cannot drift apart on what a feeding carries: `e.id` is the EVENT id (the anchor a timing
+ *  line names; never `m.id`) and `m.intake_rating` is what keeps a refused bowl from
+ *  anchoring (CUL-1122). */
+export const FEEDING_COLUMNS =
+  'e.id, e.occurred_at, e.occurred_at_confidence, m.intake_rating, f.food_type, f.brand, f.product_name';
+
+/** One row of a `FEEDING_COLUMNS` select, as SQLite hands it over. */
+export interface FeedingSqlRow {
+  id: string;
+  occurred_at: string;
+  occurred_at_confidence: string | null;
+  intake_rating: string | null;
+  food_type: string | null;
+  brand: string | null;
+  product_name: string | null;
+}
+
+/** The one row → `FeedingRow` mapping, for both feeding reads. */
+export function toFeedingRow(r: FeedingSqlRow): FeedingRow {
+  return {
+    id: r.id,
+    ms: Date.parse(r.occurred_at),
+    confidence: (r.occurred_at_confidence as OnsetConfidence | null) ?? null,
+    intakeRating: (r.intake_rating as IntakeRating | null) ?? null,
+    form: foodLabelOf(r.brand, r.product_name) ?? r.food_type ?? null,
+    foodType: r.food_type,
+  };
+}
+
+/** All logged feedings (meals + treats) for the pet, with their event id, confidence,
+ *  intake rating, food_type, and the evidence-only `foodLabel ?? foodType` form the engine
+ *  carries. */
 export async function readFeedingRows(petId: string): Promise<FeedingRow[]> {
   const db = getDb();
-  const rows = await db.getAllAsync<{
-    occurred_at: string;
-    occurred_at_confidence: string | null;
-    food_type: string | null;
-    brand: string | null;
-    product_name: string | null;
-  }>(
-    `SELECT e.occurred_at, e.occurred_at_confidence, f.food_type, f.brand, f.product_name
+  const rows = await db.getAllAsync<FeedingSqlRow>(
+    `SELECT ${FEEDING_COLUMNS}
      FROM meals m
      JOIN events e ON e.id = m.event_id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
      WHERE e.pet_id = ? AND e.deleted_at IS NULL`,
     [petId],
   );
-  return rows
-    .map((r) => ({
-      ms: Date.parse(r.occurred_at),
-      confidence: (r.occurred_at_confidence as OnsetConfidence | null) ?? null,
-      form: foodLabelOf(r.brand, r.product_name) ?? r.food_type ?? null,
-      foodType: r.food_type,
-    }))
-    .filter((r) => Number.isFinite(r.ms));
+  return rows.map(toFeedingRow).filter((r) => Number.isFinite(r.ms));
 }
 
 /** The feeding's evidence-only form label (brand + product). Exported for Home's bounded
@@ -476,7 +497,9 @@ export function timingPanelTitle(): string {
 /** The one-line lead under the title: what a dot is. Names the pet; no gendered
  *  pronoun (nyx-voice — the pet's sex is not always known). */
 export function timingPanelLead(petName: string): string {
-  return `Each dot is one of ${petName}'s vomiting episodes, placed by how long after the last meal it happened.`;
+  // "after eating", not "after the last meal": a refused bowl is a logged meal the dot is never placed
+  // from (CUL-1122), so "the last meal" would name the wrong one on exactly the record that matters.
+  return `Each dot is one of ${petName}'s vomiting episodes, placed by how long after eating it happened.`;
 }
 
 /** The denominator line: "N timed of M episodes · whole record". Always both numbers
@@ -506,6 +529,9 @@ export function timingUntimedBreakdown(model: TimingPanelModel): string | null {
   const parts: string[] = [];
   if (r.not_witnessed > 0) parts.push(`${r.not_witnessed} discovered later, not witnessed`);
   if (r.no_preceding_feeding > 0) parts.push(`${r.no_preceding_feeding} with no meal logged in the prior day`);
+  // Its own clause, never folded into the one above: a refused bowl IS a logged meal, so "no meal
+  // logged" would be false about it (CUL-1122).
+  if (r.refused_only > 0) parts.push(`${r.refused_only} with only refused meals logged in the prior day`);
   if (r.free_fed > 0) parts.push(`${r.free_fed} near a free-fed bowl`);
   return `Couldn't be timed: ${parts.join('; ')}.`;
 }
@@ -521,11 +547,11 @@ export function timingBandMedianLabel(medianMinutes: number | null): string | nu
 }
 
 /** The honest thin state, when the pet has vomiting episodes but none could be placed
- *  against a meal (all discovered, free-fed, or with no logged meal in the prior day).
- *  Never reassures — absence of a timing is not absence of a problem. */
+ *  against a meal (all discovered, free-fed, or with no logged meal in the prior day that
+ *  was not refused). Never reassures — absence of a timing is not absence of a problem. */
 export function timingNoneTimeableLine(petName: string, totalCount: number): string {
   const eps = totalCount === 1 ? 'episode' : 'episodes';
-  return `None of ${petName}'s ${totalCount} logged vomiting ${eps} could be timed against a meal yet — each was discovered later, near a free-fed bowl, or with no meal logged in the day before.`;
+  return `None of ${petName}'s ${totalCount} logged vomiting ${eps} could be timed against a meal yet — each was discovered later, near a free-fed bowl, or with no meal logged in the day before except refused ones.`;
 }
 
 export async function readFreeFedSpans(petId: string): Promise<FreeFedSpan[]> {

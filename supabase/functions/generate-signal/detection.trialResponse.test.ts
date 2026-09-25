@@ -410,6 +410,41 @@ Deno.test('detectTrialResponse — per-phenotype (rapid/long) counts split corre
   assert.equal(t.longGapHours, 6)
 })
 
+Deno.test('detectTrialResponse — CUL-1122: a REFUSED bowl never times a vomit; the phenotype rows move, the pooled counts do not', () => {
+  // The same record as above, except that on the eight baseline "rapid" days the 08:00 bowl was
+  // refused and the cat had eaten at midnight. Each 08:20 vomit is then 8 h 20 min after the meal she
+  // ate: long, not rapid. Timing is context, never the trigger, so the pooled counts and the firing
+  // decision are untouched; only the rapid/long split changes.
+  const rapidDays = [70, 68, 66, 64, 62, 60, 58, 56]
+  const longDays = [52, 50, 48, 46, 44, 42, 40, 38]
+  const rapid = (d: number): SymptomEvent => ({
+    id: nextId(),
+    type: 'vomit',
+    occurredAt: new Date(NOW_MS - d * MS_PER_DAY - (12 - 8) * HOUR + 20 * 60_000).toISOString(),
+    occurredAtConfidence: 'witnessed',
+  })
+  const long = (d: number): SymptomEvent => ({
+    id: nextId(),
+    type: 'vomit',
+    occurredAt: new Date(NOW_MS - d * MS_PER_DAY - (12 - 15) * HOUR).toISOString(),
+    occurredAtConfidence: 'witnessed',
+  })
+  const refusedBowls = new Set(rapidDays.map((d) => dayAt(d, 8)))
+  const mealEvents = [
+    ...mealsAcross(77, 0).map((m) => (refusedBowls.has(m.occurredAt) ? { ...m, intakeRating: 'refused' as const } : m)),
+    ...rapidDays.map((d) => mealOn(d, 0)),
+  ]
+  const symptomEvents = [...rapidDays.map(rapid), ...longDays.map(long), rapid(5)]
+  const f = detectTrialResponse(trialInput({ mealEvents, symptomEvents }))
+  assert.equal(f.length, 1, 'the pooled comparison still fires: 16 baseline vs 1 trial')
+  const t = f[0]
+  assert.equal(t.rapid.baseline, 0, 'no baseline vomit is timed from a refused bowl')
+  assert.equal(t.long.baseline, 16, 'the eight re-timed episodes join the eight long ones')
+  assert.equal(t.rapid.trial, 1, 'the trial-era vomit followed a bowl she ate')
+  assert.equal(t.pooledBaselineCount, 16)
+  assert.equal(t.pooledTrialCount, 1)
+})
+
 // ── Diet-structure context rows (treat share, meals/day) ─────────────────────
 
 Deno.test('detectTrialResponse — diet-structure deltas (treat share, meals/day) computed per window', () => {

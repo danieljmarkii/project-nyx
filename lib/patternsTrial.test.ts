@@ -37,12 +37,12 @@ const dayIndexOf = (ms: number): number => Math.floor(ms / MS_PER_DAY);
 // evidence-window clip is exercised.
 function scenario(overrides: Partial<TrialSoFarInput> = {}): TrialSoFarInput {
   const feedings: FeedingRow[] = [
-    { ms: at(90, 8), confidence: 'witnessed', form: 'Kibble', foodType: 'meal' }, // pre-trial
-    { ms: at(105, 8), confidence: 'witnessed', form: 'Kibble', foodType: 'meal' },
-    { ms: at(106, 12), confidence: 'witnessed', form: 'Treat', foodType: 'treat' },
-    { ms: at(107, 12), confidence: 'witnessed', form: 'Treat', foodType: 'treat' },
-    { ms: at(110, 20), confidence: 'witnessed', form: 'Wet', foodType: 'meal' },
-    { ms: at(120, 9), confidence: 'witnessed', form: 'Kibble', foodType: 'meal' },
+    { id: 'f1', ms: at(90, 8), confidence: 'witnessed', intakeRating: null, form: 'Kibble', foodType: 'meal' }, // pre-trial
+    { id: 'f2', ms: at(105, 8), confidence: 'witnessed', intakeRating: null, form: 'Kibble', foodType: 'meal' },
+    { id: 'f3', ms: at(106, 12), confidence: 'witnessed', intakeRating: null, form: 'Treat', foodType: 'treat' },
+    { id: 'f4', ms: at(107, 12), confidence: 'witnessed', intakeRating: null, form: 'Treat', foodType: 'treat' },
+    { id: 'f5', ms: at(110, 20), confidence: 'witnessed', intakeRating: null, form: 'Wet', foodType: 'meal' },
+    { id: 'f6', ms: at(120, 9), confidence: 'witnessed', intakeRating: null, form: 'Kibble', foodType: 'meal' },
   ];
   const vomitOnsets = [
     { ms: at(90, 8, 15), confidence: 'witnessed' as const }, // rapid, OUT of window
@@ -100,7 +100,7 @@ describe('buildTrialSoFar — phenotype rows through lib/mealTiming, windowed on
         { ms: at(99, 23), confidence: 'witnessed' }, // bout onset, pre-window
         { ms: at(100, 1), confidence: 'witnessed' }, // 2h later — SAME episode, in-window instant
       ],
-      feedings: [{ ms: at(99, 22), confidence: 'witnessed', form: 'Kibble', foodType: 'meal' }],
+      feedings: [{ id: 'f7', ms: at(99, 22), confidence: 'witnessed', intakeRating: null, form: 'Kibble', foodType: 'meal' }],
     });
     const m = buildTrialSoFar(s)!;
     // One episode, placed by its collapsed onset (day 99) → OUT of window. Never split
