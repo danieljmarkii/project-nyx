@@ -19,8 +19,6 @@ import {
   getMealForEvent,
   getDoseForEvent,
   getDoubleDoseFlag,
-  updateDoseAdherence,
-  updateDoseHowGiven,
   TimelineRow,
 } from '../../lib/db';
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
@@ -29,7 +27,7 @@ import { resolveEventPhotoDisplay, addPhotoHeroCopy, EVENT_HERO_HEIGHT } from '.
 import { foodFormatTag } from '../../lib/food';
 import { kgToLbs } from '../../lib/weight';
 import { supabase } from '../../lib/supabase';
-import { syncPendingMedicationAdministrations } from '../../lib/sync';
+import { rateDoseAdherence, recordDoseHowGiven } from '../../lib/medicationDose';
 import { rateMealIntake } from '../../lib/meals';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { removeConfirmCopy } from '../../lib/completionCard';
@@ -379,8 +377,7 @@ export default function EventDetailScreen() {
     if (next === prev) return;
     setAdherence(next);
     try {
-      await updateDoseAdherence(event.id, next);
-      syncPendingMedicationAdministrations().catch(console.error);
+      await rateDoseAdherence(event.id, next);
     } catch (e) {
       console.error('[event-detail] failed to update adherence:', e);
       setAdherence(prev);
@@ -408,8 +405,7 @@ export default function EventDetailScreen() {
     if (next === prev) return;
     setHowGiven(next);
     try {
-      await updateDoseHowGiven(event.id, next);
-      syncPendingMedicationAdministrations().catch(console.error);
+      await recordDoseHowGiven(event.id, next);
     } catch (e) {
       console.error('[event-detail] failed to update vehicle:', e);
       setHowGiven(prev);

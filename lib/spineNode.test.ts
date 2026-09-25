@@ -553,6 +553,11 @@ describe('rule K — every meal named, and a run names its one product and count
     expect(runFormatsLine(['DRY', 'WET', 'DRY', 'DRY'])).toBe('1 wet · 3 dry');
     expect(runFormatsLine(['WET', 'WET'])).toBe('all wet');
     expect(runFormatsLine(['RAW', 'DRY'])).toBe('1 dry · 1 raw');
+    // A noun inflects and an adjective never does (the HV-6 PM pass: "2 topper").
+    expect(runFormatsLine(['TOPPER', 'TOPPER', 'DRY'])).toBe('1 dry · 2 toppers');
+    expect(runFormatsLine(['TOPPER', 'DRY', 'DRY'])).toBe('2 dry · 1 topper');
+    expect(runFormatsLine(['TREAT', 'TREAT'])).toBe('all treats');
+    expect(runFormatsLine(['FREEZE-DRIED', 'FREEZE-DRIED', 'WET'])).toBe('1 wet · 2 freeze-dried');
     expect(runFormatsLine(['DRY', null])).toBeNull();
     expect(runFormatsLine([null, null])).toBeNull();
   });
@@ -605,9 +610,10 @@ describe('the dose row (AC 18) — its name, its four chips, its vehicle from th
         row('d', 'medication', 13, 20, { drug_generic_name: 'Prednisone', adherence: 'partial', paired_event_id: 'lunch', how_given: 'in_food' }),
       ]),
     );
-    const lunchTime = byId.get('lunch')?.time;
+    // A clock in prose, as spec §3.6 draws it: "in the 1:00 PM meal", never the column's
+    // two-digit "01:00 PM" (the HV-6 PM pass).
     expect(byId.get('d')?.dose).toMatchObject({
-      vehicle: `in the ${lunchTime} meal`,
+      vehicle: expect.stringMatching(/^in the 1:00\sPM meal$/),
       vehicleIntake: { phrase: 'picked at', tone: 'attn' },
     });
     expect(byId.get('lunch')?.carries).toBe('with Prednisone');
@@ -635,7 +641,7 @@ describe('the dose row (AC 18) — its name, its four chips, its vehicle from th
         row('d', 'medication', 13, 0, { drug_generic_name: 'Prednisone', adherence: 'given', paired_event_id: 't' }),
       ]),
     );
-    expect(byId.get('d')?.dose?.vehicle).toBe(`in the ${byId.get('t')?.time} treat`);
+    expect(byId.get('d')?.dose?.vehicle).toMatch(/^in the 1:00\sPM treat$/);
     const words = (how_given: string | null) =>
       eventsOf(bare([row('d', 'medication', 8, 0, { adherence: 'given', how_given })]))[0].dose?.vehicle;
     expect(words('direct')).toBe('directly');
@@ -705,6 +711,35 @@ describe('the timed meal is stable across reads (HV-2’s handoff: same-instant 
     expect(timingsByRow(rows, [], feedings, [], DEFAULT_MEAL_TIMING_CONFIG).get('v')?.mealId).toBe(
       timingsByRow(rows, [], [...feedings].reverse(), [], DEFAULT_MEAL_TIMING_CONFIG).get('v')?.mealId,
     );
+  });
+});
+
+describe('two vomits at one instant resolve the same way in every order (rule H; the adversarial pass, B3)', () => {
+  /** Every ordering of a list. */
+  const orders = <T,>(xs: readonly T[]): T[][] =>
+    xs.length <= 1 ? [[...xs]] : xs.flatMap((x, i) => orders([...xs.slice(0, i), ...xs.slice(i + 1)]).map((rest) => [x, ...rest]));
+
+  it.each([
+    ['both seen', { occurred_at_confidence: 'witnessed' } as const],
+    ['one found (a window), the lane timing only what was seen', { occurred_at_confidence: 'window' } as const],
+  ])('%s: the line, the timed meal and the run are one answer across all 24 row orders', (_name, vb) => {
+    const rows = [
+      row('a', 'meal', 8, 0, { ...DRY, intake_rating: 'all' }),
+      row('b', 'meal', 8, 2, { ...DRY, intake_rating: 'all' }),
+      row('va', 'vomit', 8, 5),
+      row('vb', 'vomit', 8, 5, vb),
+    ];
+    const feedings = feedingsOf(rows);
+    const answers = new Set(
+      orders(rows).map((ordered) => {
+        const model = buildSpine(input({ rows: ordered, feedings, photographed: new Set() }));
+        const timed = eventsOf(model).filter((n) => n.timing).map((n) => `${n.id}:${n.timing}`);
+        return JSON.stringify([linesOf(model), timed]);
+      }),
+    );
+    expect(answers.size).toBe(1);
+    // Non-vacuity: the witnessed case really does draw a line, so "one answer" is not "no answer".
+    if (vb.occurred_at_confidence === 'witnessed') expect([...answers][0]).toContain('after eating');
   });
 });
 

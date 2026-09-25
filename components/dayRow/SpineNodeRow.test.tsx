@@ -193,11 +193,20 @@ describe('the chips — the shipped words, three inks, text in the INK (C-1)', (
     ['all', 'All', theme.colorAccentInk, theme.colorAccentLight],
     ['most', 'Most', theme.colorAccentInk, theme.colorAccentLight],
     ['some', 'Some', theme.colorTextSecondary, theme.colorSurfaceSubtle],
-    ['picked', 'Picked', theme.colorEventSymptomInk, theme.colorEventSymptomLight],
+    // *Picked at* on the row (spec §3.6), where the log sheet's chip says *Picked*.
+    ['picked', 'Picked at', theme.colorEventSymptomInk, theme.colorEventSymptomLight],
     ['refused', 'Refused', theme.colorEventSymptomInk, theme.colorEventSymptomLight],
-  ])('a meal rated %s draws "%s": All and Most teal, Some grey, Picked and Refused rose', (intake, label, ink, ground) => {
+  ])('a meal rated %s draws "%s": All and Most teal, Some grey, Picked at and Refused rose', (intake, label, ink, ground) => {
     const t = render(<SpineEventRow node={meal('m1', '8:00 AM', { intake })} isFirst isLast onOpen={jest.fn()} />);
     expect(inkOf(t, 'm1')).toEqual({ color: ink, ground, label });
+  });
+
+  it('the format tag is a step lighter than the grey chip beside it, so "DRY SOME" is two facts', () => {
+    // The HV-6 PM pass: one ink for the food's fact and the owner's rating read as one phrase.
+    const t = render(<SpineEventRow node={meal('m1', '8:00 AM', { intake: 'some', formatTag: 'DRY' })} isFirst isLast onOpen={jest.fn()} />);
+    const tag = styleOf(t.getByText('DRY')).color;
+    expect(tag).toBe(theme.colorTextTertiary);
+    expect(tag).not.toBe(inkOf(t, 'm1').color);
   });
 
   it('an unrated meal draws no chip, and no rating is ever inferred', () => {
@@ -237,13 +246,13 @@ describe('the chips — the shipped words, three inks, text in the INK (C-1)', (
 describe('both halves inline (rule E): the dose names its meal, the meal names its dose', () => {
   const inTheMeal = dose({
     adherence: 'partial',
-    vehicle: 'in the 01:00 PM meal',
+    vehicle: 'in the 1:00 PM meal',
     vehicleIntake: { phrase: 'picked at', tone: 'attn' },
   });
 
-  it('"Prednisone · in the 01:00 PM meal · picked at", the intake in the meal chip’s rose ink, then the Partial chip', () => {
+  it('"Prednisone · in the 1:00 PM meal · picked at", the intake in the meal chip’s rose ink, then the Partial chip', () => {
     const t = render(<SpineEventRow node={inTheMeal} isFirst isLast onOpen={jest.fn()} />);
-    expect(t.getByText(/in the 01:00 PM meal/)).toBeTruthy();
+    expect(t.getByText(/in the 1:00 PM meal/)).toBeTruthy();
     const phrase = t.getByText(/· picked at/);
     expect(styleOf(phrase).color).toBe(theme.colorEventSymptomInk);
     expect(t.getByTestId('spine-chip-d1')).toBeTruthy();
@@ -317,13 +326,13 @@ describe('VoiceOver hears each row as one sentence, in reading order', () => {
   it('a meal: its food, its format, its intake, what it carried, its time and its tag', () => {
     expect(
       eventRowLabel(meal('m1', '7:02 AM', { intake: 'refused', carries: 'with Prednisone', timeTag: 'estimated' })),
-    ).toBe('Meal, Royal Canin · Selected Protein PR, dry, refused, with Prednisone, 7:02 AM, estimated. Opens details');
+    ).toBe('Meal, Royal Canin, Selected Protein PR, dry, refused, with Prednisone, 7:02 AM, estimated. Opens details');
   });
 
   it('a dose: its vehicle and the vehicle’s intake, then its adherence', () => {
     expect(
-      eventRowLabel(dose({ adherence: 'partial', vehicle: 'in the 01:00 PM meal', vehicleIntake: { phrase: 'picked at', tone: 'attn' } })),
-    ).toBe('Prednisone, in the 01:00 PM meal, picked at, partial dose, 1:00 PM. Opens details');
+      eventRowLabel(dose({ adherence: 'partial', vehicle: 'in the 1:00 PM meal', vehicleIntake: { phrase: 'picked at', tone: 'attn' } })),
+    ).toBe('Prednisone, in the 1:00 PM meal, picked at, partial dose, 1:00 PM. Opens details');
   });
 
   it('the drawn name may cut at two lines; the spoken one never does', () => {
@@ -509,7 +518,7 @@ describe('a run opens in place: every member, a full row, nothing capped (AC 17,
     expect(t.getByTestId('spine-formats-compact:m0').props.children).toBe('all dry');
     const row = t.getByTestId('spine-node-compact:m0');
     expect(row.props.accessibilityLabel).toBe(
-      '3 meals, Royal Canin · Selected Protein PR, all dry, 6:02 AM – 8:40 AM. Shows each one',
+      '3 meals, Royal Canin, Selected Protein PR, all dry, 6:02 AM – 8:40 AM. Shows each one',
     );
     expect(row.props.accessibilityState).toEqual({ expanded: false });
     expect(t.queryByTestId('spine-members-compact:m0')).toBeNull();

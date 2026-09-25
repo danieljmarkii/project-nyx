@@ -28,11 +28,10 @@ import { useAppActive } from '../hooks/useAppActive';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useMomentStore } from '../store/momentStore';
-import { getActiveRegimenForDrug, getMealForEvent, updateDoseAdherence, PickerFood, PickerMedication } from '../lib/db';
+import { getActiveRegimenForDrug, getMealForEvent, PickerFood, PickerMedication } from '../lib/db';
 import { supabase } from '../lib/supabase';
-import { syncPendingMedicationAdministrations } from '../lib/sync';
 import { insertMeal } from '../lib/meals';
-import { insertMedicationDose, applyLogTimeDoubleDoseCheck } from '../lib/medicationDose';
+import { insertMedicationDose, applyLogTimeDoubleDoseCheck, optimisticDoseRow, rateDoseAdherence } from '../lib/medicationDose';
 import { insertWeightCheck, getLatestWeightKg, parseWeightLbsToKg, kgToLbs } from '../lib/weight';
 import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFinished, drugDisplayName, type DoseAdherence } from '../lib/medications';
 // The simple-event write side-effects (event row + photo + its AI read + sync +
@@ -528,30 +527,11 @@ export default function LogModal() {
       // pet — it appears when that pet's timeline next loads. A later adherence edit on the
       // completion card / detail screen re-reads ground truth on focus.
       if (writePetId === (usePetStore.getState().activePet?.id ?? null)) {
-        prependEvent({
-          id: result.eventId,
-          pet_id: writePetId,
-          event_type: 'medication',
-          occurred_at: result.occurredAtIso,
-          occurred_at_confidence: 'witnessed',
-          severity: null,
-          notes: null,
-          source: 'manual',
-          deleted_at: null,
-          created_at: result.now,
-          updated_at: result.now,
-          medication_item_id: med.id,
-          adherence, // mirrors the dose write — null for a not-finished-vehicle combo (B-156 PR B3)
-          // The stored pair and the vehicle, as the dose write carries them: the shared day
-          // row on Home (History v2 HV-6) names the meal a dose rode in and raises the
-          // in-doubt tag off them, reading this optimistic row until the next reload. The
-          // vehicle's intake is read off that meal's own row in the same store, so
-          // paired_vehicle_intake / paired_food_name stay the timeline read's.
-          how_given: howGiven,
-          paired_event_id: pairedEventId ?? null,
-          drug_generic_name: med.generic_name,
-          drug_brand_name: med.brand_name,
-        });
+        // The same facts the write carried, the stored pair and the vehicle included
+        // (`optimisticDoseRow`, History v2 HV-6: the shared day row draws them).
+        prependEvent(
+          optimisticDoseRow({ petId: writePetId, adherence, howGiven, pairedEventId, drug: med }, result),
+        );
       }
       // B-325 — RETROACTIVE combo (added from the treat's detail screen). No completion card
       // here (that card is the moment-of-logging warmth for a FRESH log on Home; a retroactive
@@ -656,8 +636,7 @@ export default function LogModal() {
     setComboConfirm(null);
     if (target) {
       try {
-        await updateDoseAdherence(target.doseEventId, next);
-        syncPendingMedicationAdministrations().catch(console.error);
+        await rateDoseAdherence(target.doseEventId, next);
       } catch (e) {
         console.error('[log] combo dose confirm failed; dose stays unconfirmed:', e);
         // Tell the owner it didn't save (matching the sibling adherence-write sites) and,

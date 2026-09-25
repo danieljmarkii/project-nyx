@@ -15,11 +15,13 @@
 // recompute an identical signal and falsely imply med→signal wiring already exists.
 // When PR 9 lands, add triggerSignalRegenDebounced(petId) here.
 
-import { getDb, getDoubleDoseFlag } from './db';
+import { getDb, getDoubleDoseFlag, updateDoseAdherence, updateDoseHowGiven } from './db';
 import { syncPendingEvents, syncPendingMedicationAdministrations } from './sync';
 import { uuid } from './utils';
 import type { DoseVehicle } from './medications';
 import { useMomentStore, whenMedicationCardVisible } from '../store/momentStore';
+import type { NyxEvent } from '../store/eventStore';
+import { useSyncStore } from '../store/syncStore';
 import type { DoseAdherence } from '../components/log/AdherenceChipRow';
 
 export interface InsertMedicationDoseParams {
@@ -85,6 +87,42 @@ export interface InsertMedicationDoseResult {
   now: string;
 }
 
+/**
+ * The optimistic store row for a dose just written, built from the SAME facts the write
+ * carried, so the row Home draws before its next read says what the record says. The
+ * shared day row (History v2 HV-6) reads the stored pair and the vehicle off it: the dose
+ * names the meal it rode in and raises the in-doubt tag, and the meal says "with" the
+ * drug. The vehicle's own intake is read off that meal's row in the same store, so
+ * `paired_vehicle_intake` / `paired_food_name` stay the timeline read's.
+ */
+export function optimisticDoseRow(
+  write: Pick<InsertMedicationDoseParams, 'petId' | 'adherence' | 'howGiven' | 'pairedEventId'> & {
+    drug: { id: string; generic_name: string | null; brand_name: string | null };
+  },
+  result: Pick<InsertMedicationDoseResult, 'eventId' | 'occurredAtIso' | 'now'>,
+): NyxEvent {
+  return {
+    id: result.eventId,
+    pet_id: write.petId,
+    event_type: 'medication',
+    occurred_at: result.occurredAtIso,
+    occurred_at_confidence: 'witnessed',
+    severity: null,
+    notes: null,
+    source: 'manual',
+    deleted_at: null,
+    created_at: result.now,
+    updated_at: result.now,
+    medication_item_id: write.drug.id,
+    // Mirrors the dose write: null for a not-finished-vehicle combo (B-156 PR B3).
+    adherence: write.adherence,
+    how_given: write.howGiven ?? null,
+    paired_event_id: write.pairedEventId ?? null,
+    drug_generic_name: write.drug.generic_name,
+    drug_brand_name: write.drug.brand_name,
+  };
+}
+
 // Write a dose (its parent event + the administration child) and push it to
 // Supabase. Throws if a local write fails so the caller's guard can react; the
 // sync push is fire-and-forget and never blocks or throws into the caller.
@@ -141,6 +179,47 @@ export async function insertMedicationDose(
   return { eventId, administrationId, occurredAtIso, now };
 }
 
+
+// ── Re-rating a logged dose (History v2 HV-6) ───────────────────────────────────
+// A dose's adherence and its vehicle are what Home's row says about it (the adherence
+// chip, *Unconfirmed*, the vehicle's words), and Home draws from a store its own read
+// fills, which none of the four screens that re-rate a dose touched: a dose downgraded to
+// Refused on its card kept a teal *Given* on Home until the next reload (the HV-6
+// adversarial pass, B2). The move `rateMealIntake` makes (CUL-1087, lib/meals.ts): a local
+// write counts as a hydration, here in the write path, so no screen that re-rates a dose
+// has to know Home exists. `lib/medicationDose.test.ts` fails the build on a file outside
+// this module (and the definitions in lib/db.ts) that names either write.
+function notifyDoseChanged(): void {
+  try {
+    useSyncStore.getState().bumpHydrationTick();
+  } catch (e) {
+    // The rating is saved; a refresh-signal failure must not fail it.
+    console.warn('[medication-dose] hydration tick failed:', e);
+  }
+}
+
+/** Set a logged dose's adherence: the write, then Home's refresh, then the push. Throws
+ *  only when the WRITE fails, so a caller's revert still means "not saved"; the push is
+ *  fire-and-forget after it. */
+export async function rateDoseAdherence(
+  eventId: string,
+  adherence: Parameters<typeof updateDoseAdherence>[1],
+): Promise<void> {
+  await updateDoseAdherence(eventId, adherence);
+  notifyDoseChanged();
+  syncPendingMedicationAdministrations().catch((e) => console.error('[rateDoseAdherence] sync push failed:', e));
+}
+
+/** Set or clear a logged dose's vehicle (`how_given`), the same way: the row says it in
+ *  words ("directly", "in a pill pocket"), so a stale one contradicts the record. */
+export async function recordDoseHowGiven(
+  eventId: string,
+  howGiven: Parameters<typeof updateDoseHowGiven>[1],
+): Promise<void> {
+  await updateDoseHowGiven(eventId, howGiven);
+  notifyDoseChanged();
+  syncPendingMedicationAdministrations().catch((e) => console.error('[recordDoseHowGiven] sync push failed:', e));
+}
 
 // ── B-157 (CUL-284): the log-time double-dose note ──────────────────────────────
 // The §6.4 check (B-135) shipped correct but reachable from ONE place — the second

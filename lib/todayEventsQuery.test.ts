@@ -28,7 +28,8 @@ const { DatabaseSync } = require('node:sqlite');
 import { buildDayNodes, type DayNode, type DayEvent } from './dayNodes';
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
-import { TODAY_EVENTS_SQL } from './todayEventsQuery';
+import { TODAY_EVENTS_SQL, readTodayEvents } from './todayEventsQuery';
+import type { SQLiteDatabase } from 'expo-sqlite';
 
 const PET = 'pet-1';
 const OTHER_PET = 'pet-2';
@@ -100,6 +101,12 @@ function readToday(): DayEvent[] {
   return db.prepare(TODAY_EVENTS_SQL).all(PET, DAY_START) as DayEvent[];
 }
 
+/** The production reader over this database: `getAllAsync` as expo-sqlite spells it. */
+const asyncDb = (): Pick<SQLiteDatabase, 'getAllAsync'> =>
+  ({
+    getAllAsync: async (sql: string, params: unknown[]) => db.prepare(sql).all(...params),
+  }) as unknown as Pick<SQLiteDatabase, 'getAllAsync'>;
+
 const NO_FACTS = {
   reads: { photographed: new Set<string>(), analysis: new Map(), working: new Set<string>() },
   timings: { feedings: [], freeFedSpans: [] },
@@ -169,8 +176,8 @@ describe("Home's today read carries what the row's rules read", () => {
     const d1 = byId.get('d1');
     expect(d1?.kind === 'event' && d1.dose).toMatchObject({
       adherence: 'partial',
-      // The app's own clock format (`formatTime`, a two-digit hour): "01:00 PM".
-      vehicle: expect.stringMatching(/^in the 0?1:00\s?PM meal$/),
+      // A clock in prose, no leading zero (spec §3.6; the column keeps its two-digit hour).
+      vehicle: expect.stringMatching(/^in the 1:00\sPM meal$/),
       vehicleIntake: { phrase: 'picked at', tone: 'attn' },
     });
     expect(byId.get('lunch')).toMatchObject({ carries: 'with Prednisone' });
@@ -203,5 +210,33 @@ describe("Home's today read carries what the row's rules read", () => {
     const rows = readToday();
     expect(rows.map((r) => r.id).sort()).toEqual(['d1', 'd2', 'lunch']);
     expect(buildDayNodes(rows, NO_FACTS).find((n) => n.id === 'lunch')).toMatchObject({ carries: 'with 2 doses of Prednisone' });
+  });
+});
+
+describe('the day is decided on parsed instants, never as text (C-40; the adversarial pass, P1)', () => {
+  it('a row pulled from another phone at exactly local midnight is today’s, in either spelling', async () => {
+    const midnight = new Date(2026, 8, 26, 0, 0);
+    const local = midnight.toISOString();
+    const pulled = local.replace('.000Z', '+00:00');
+    // One instant, two texts, and the pulled one sorts BELOW the bound: without both halves
+    // this measures nothing (C-40).
+    expect(Date.parse(pulled)).toBe(Date.parse(local));
+    expect(pulled < local).toBe(true);
+    event('pulled', 'vomit', pulled);
+    event('written-here', 'vomit', local);
+    // A second before midnight, in the pulled spelling, is last night's.
+    event('last-night', 'vomit', new Date(midnight.getTime() - 1000).toISOString().replace('.000Z', '+00:00'));
+    const rows = await readTodayEvents<DayEvent>(asyncDb(), PET, midnight);
+    expect(rows.map((r) => r.id).sort()).toEqual(['pulled', 'written-here']);
+  });
+
+  it('never another pet’s rows, and never a soft-deleted one, however early the SQL bound reaches', async () => {
+    const midnight = new Date(2026, 8, 26, 0, 0);
+    event('mine', 'vomit', at(9));
+    event('theirs', 'vomit', at(9), { pet: OTHER_PET });
+    event('undone', 'vomit', at(9), { deleted: true });
+    event('yesterday', 'vomit', new Date(2026, 8, 25, 23, 0).toISOString());
+    const rows = await readTodayEvents<DayEvent>(asyncDb(), PET, midnight);
+    expect(rows.map((r) => r.id)).toEqual(['mine']);
   });
 });

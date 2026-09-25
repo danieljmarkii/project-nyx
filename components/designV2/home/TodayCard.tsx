@@ -17,7 +17,12 @@
 //     every row whose record can hold a read, whatever its tint (CUL-1197: a photographed
 //     normal stool is not rose-tinted, and its read can be worth a call), so a day of
 //     meals and doses alone issues no read at all, which is also what the flag-off proof
-//     measures (C-41: no row AND no read).
+//     measures (C-41: no row AND no read). A row that can carry a read gets its photo
+//     handed to the pipeline only once this read has ANSWERED for it (C-12): since H-4b
+//     every read slot is a claim, so before the copy lands a grey "Photo not read" says no
+//     check happened and a glyph over nothing says it was calm. Until then the row is drawn
+//     as one with no photo, which claims neither; a failed read answers nothing, and the
+//     card keeps the last answer it had (a rose it drew stays drawn, CUL-1198 item 1).
 //   • The `working` fact — `analysisChainOutstanding` per photographed row (C-30). While a
 //     chain is outstanding the node shows the breathing tick; when it settles the rows are
 //     re-read and the read lands ON that node. A row the server left at `pending` is
@@ -36,6 +41,7 @@ import { DEFAULT_MEAL_TIMING_CONFIG } from '../../../lib/mealTiming';
 import { countLine, mayCarryRead, type SpineAnalysisRow } from '../../../lib/spineNode';
 import { buildDay } from '../../../lib/dayNodes';
 import {
+  readAnalysisCopy,
   readAnalysisRows,
   readFeedingsSince,
   readFreeFedSpans,
@@ -114,7 +120,11 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
   const rowKey = useMemo(() => rows.map((e) => e.id).sort().join('|'), [rows]);
 
   const [facts, setFacts] = useState<Facts | null>(null);
-  const [analysis, setAnalysis] = useState<Map<string, SpineAnalysisRow>>(() => new Map());
+  // The phone's copy of the reads, and the ids that read has ANSWERED for (header).
+  const [copy, setCopy] = useState<{ answered: ReadonlySet<string>; rows: Map<string, SpineAnalysisRow> }>(
+    () => ({ answered: new Set(), rows: new Map() }),
+  );
+  const copySeq = useRef(0);
   const [working, setWorking] = useState<Set<string>>(() => new Set());
   const activePetIdRef = useRef<string | null>(null);
   activePetIdRef.current = petId;
@@ -158,13 +168,15 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
   const photographedKey = readableIds.join('|');
 
   const refreshAnalysis = useCallback(async (ids: string[]) => {
-    if (ids.length === 0) {
-      setAnalysis(new Map());
-      return;
-    }
-    const next = await readAnalysisRows(ids);
-    if (activePetIdRef.current !== petId) return;
-    setAnalysis(next);
+    // The newest read wins: an older one landing late would answer for a smaller set.
+    const seq = ++copySeq.current;
+    // A day with nothing that can carry a read asks nothing at all (C-41).
+    const rows = ids.length === 0 ? new Map<string, SpineAnalysisRow>() : await readAnalysisCopy(ids);
+    if (seq !== copySeq.current || activePetIdRef.current !== petId) return;
+    // A failed look answers nothing: the card keeps its last answer, so a rose it had stays
+    // drawn and a row it never answered for claims no photo (CUL-1198 item 1, Home's half).
+    if (rows === null) return;
+    setCopy({ answered: new Set(ids), rows });
   }, [petId]);
 
   useEffect(() => {
@@ -192,7 +204,7 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
 
   // A row the server left at `pending` — watched as the sections watch it, then re-read.
   useEffect(() => {
-    const pendingIds = [...analysis.values()].filter((r) => r.status === 'pending').map((r) => r.event_id);
+    const pendingIds = [...copy.rows.values()].filter((r) => r.status === 'pending').map((r) => r.event_id);
     if (pendingIds.length === 0) return;
     const ids = photographedKey ? photographedKey.split('|') : [];
     const teardowns = pendingIds.map((id) =>
@@ -211,7 +223,15 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
       ),
     );
     return () => teardowns.forEach((t) => t());
-  }, [analysis, photographedKey, refreshAnalysis]);
+  }, [copy.rows, photographedKey, refreshAnalysis]);
+
+  // The photo set the pipeline sees: every photo but a readable row's whose copy has not
+  // answered (header). A meal's photo, which carries no read, goes at once: it breaks a run.
+  const readable = useMemo(() => new Set(readableIds), [readableIds]);
+  const photographed = useMemo(() => {
+    if (!facts || facts.petId !== petId) return new Set<string>();
+    return new Set([...facts.photographed].filter((id) => !readable.has(id) || copy.answered.has(id)));
+  }, [facts, petId, readable, copy.answered]);
 
   // The day's pipeline (`lib/dayNodes.ts`, History v2 HV-1) — the one History's day
   // cards call too. The facts are this pet's or they are empty: a read that answered
@@ -220,8 +240,8 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
     () =>
       buildDay(rows, {
         reads: {
-          photographed: facts && facts.petId === petId ? facts.photographed : new Set(),
-          analysis,
+          photographed,
+          analysis: copy.rows,
           working,
         },
         timings: {
@@ -230,7 +250,7 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
           priorOnsets: facts && facts.petId === petId ? facts.priorOnsets : [],
         },
       }),
-    [rows, facts, petId, analysis, working],
+    [rows, facts, petId, photographed, copy.rows, working],
   );
 
   const readState: 'loading' | 'ready' | 'failed' =

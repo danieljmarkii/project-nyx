@@ -21,7 +21,10 @@ jest.mock('../../../lib/spineReads', () => ({
   readPhotographedIds: (...a: unknown[]) => mockReadPhotographed(...a),
   readFeedingsSince: (...a: unknown[]) => mockReadFeedings(...a),
   readFreeFedSpans: (...a: unknown[]) => mockReadSpans(...a),
+  // Both readers of the copy answer from one mock; `readAnalysisCopy` answers `null` for a
+  // failed look (its production shape), the other only ever a map.
   readAnalysisRows: (...a: unknown[]) => mockReadAnalysis(...a),
+  readAnalysisCopy: (...a: unknown[]) => mockReadAnalysis(...a),
   readVomitOnsetsSince: (...a: unknown[]) => mockReadOnsets(...a),
 }));
 const mockOutstanding = jest.fn((_id: string) => false);
@@ -199,6 +202,66 @@ describe('the ten-event day', () => {
     await waitFor(() => expect(t.queryByTestId('spine-unread-v1')).toBeNull());
     for (const id of ['spine-read-v1', 'spine-verdict-v1']) expect(t.queryByTestId(id)).toBeNull();
     expect(t.queryByText(/keep an eye out/i)).toBeNull();
+  });
+
+  it('draws no "Photo not read" and no photo before the phone’s copy has answered, then the grey mark (C-12)', async () => {
+    // The production order: the facts read (the photo set) lands, the copy read has not.
+    // Since H-4b every read slot is a claim, so the row claims nothing until it can.
+    let answer: (rows: Map<string, unknown>) => void = () => {};
+    mockReadAnalysis.mockImplementation(() => new Promise((r) => { answer = r; }));
+    const t = render(<TodayCard />);
+    // The facts are in: the lane's line needs the feedings they carry.
+    await waitFor(() => expect(t.getAllByText(/after eating/).length).toBeGreaterThan(0));
+    for (const id of ['v1', 'v2']) {
+      expect(t.queryByTestId(`spine-unread-${id}`)).toBeNull();
+      // The glyph is hidden from assistive tech (the row's label speaks it), so a plain query
+      // would find nothing either way: look for it where it is.
+      expect(t.queryByTestId(`spine-photo-${id}`, { includeHiddenElements: true })).toBeNull();
+    }
+    await act(async () => answer(new Map()));
+    await waitFor(() => expect(t.getByTestId('spine-unread-v1')).toBeTruthy());
+    expect(t.getByTestId('spine-photo-v1', { includeHiddenElements: true })).toBeTruthy();
+    expect(t.getByTestId('spine-unread-v2')).toBeTruthy();
+  });
+
+  it('a meal’s photo is never held for a copy: no read rides on it, and it breaks a run at once', async () => {
+    mockReadPhotographed.mockResolvedValue(new Set(['v1', 'v2', 'm3']));
+    // A copy that never answers holds back the vomits' photos and nothing else.
+    mockReadAnalysis.mockImplementation(() => new Promise(() => {}));
+    const t = render(<TodayCard />);
+    await waitFor(() => expect(t.getByTestId('spine-photo-m3', { includeHiddenElements: true })).toBeTruthy());
+    // Its own row, not a member of the 12:41 – 3:02 PM run it would otherwise open.
+    expect(t.getByTestId('spine-node-m3')).toBeTruthy();
+    expect(t.queryByTestId('spine-node-compact:m3')).toBeNull();
+    expect(t.queryByTestId('spine-photo-v1', { includeHiddenElements: true })).toBeNull();
+  });
+
+  it('a failed look answers nothing: no "Photo not read" for a row it never answered for', async () => {
+    // `readAnalysisCopy`'s failure is a `null`, never a throw and never an empty map.
+    mockReadAnalysis.mockResolvedValue(null);
+    const t = render(<TodayCard />);
+    await waitFor(() => expect(mockReadAnalysis).toHaveBeenCalled());
+    await waitFor(() => expect(t.getAllByText(/after eating/).length).toBeGreaterThan(0));
+    for (const id of ['v1', 'v2']) {
+      expect(t.queryByTestId(`spine-unread-${id}`)).toBeNull();
+      expect(t.queryByTestId(`spine-photo-${id}`, { includeHiddenElements: true })).toBeNull();
+    }
+  });
+
+  it('a failed look after a rose keeps the rose: the card keeps its last answer (CUL-1198 item 1)', async () => {
+    const ROSE_V1 = { event_id: 'v1', status: 'completed', recommendation: 'worth_a_call', updated_at: '2026-09-25T00:00:00Z' };
+    mockOutstanding.mockImplementation((id: string) => id === 'v2');
+    mockReadAnalysis.mockResolvedValue(new Map([['v1', ROSE_V1]]));
+    const t = render(<TodayCard />);
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
+    // v2's chain settles and the card looks again; this time the look fails.
+    mockReadAnalysis.mockResolvedValue(null);
+    const calls = mockReadAnalysis.mock.calls.length;
+    await act(async () => {
+      settleChain?.();
+    });
+    await waitFor(() => expect(mockReadAnalysis.mock.calls.length).toBeGreaterThan(calls));
+    expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call');
   });
 
   it('CUL-1197: a photographed normal stool is asked about and its "Worth a call" drawn, whatever its tint', async () => {

@@ -326,6 +326,23 @@ function feedingsInStableOrder(feedings: readonly FeedingInput[]): FeedingInput[
   return [...feedings].sort((a, b) => a.ms - b.ms || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
+/** The onsets in one order before the lane collapses them, for the same reason as the bowls
+ *  above: `collapseEpisodes` sorts on the instant alone, so of two vomits logged at one
+ *  instant the one that ARRIVED first opened the episode, and the store's order is not
+ *  SQLite's. The line jumped between the two rows, and where one was found rather than
+ *  seen, the timed meal (and so a run) came and went (the HV-6 adversarial pass, B3). Ties
+ *  go to the row id (rule H); the onsets before the day carry none and tie on their
+ *  confidence's spelling. Which confidence SHOULD open a same-instant episode is the
+ *  lane's question, not this order's (CUL-1230). */
+function onsetsInStableOrder<T extends { id: string | null; ms: number; confidence: OnsetConfidence | null }>(
+  onsets: readonly T[],
+): T[] {
+  const text = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  return [...onsets].sort(
+    (a, b) => a.ms - b.ms || text(a.id ?? '', b.id ?? '') || text(a.confidence ?? '', b.confidence ?? ''),
+  );
+}
+
 /**
  * The lane's timings for the day's vomit rows, keyed by the row that opened each
  * episode. Runs the lane's exact sequence (collapse at the episode gap, then the
@@ -352,7 +369,7 @@ export function timingsByRow(
   const prior = priorOnsets
     .filter((o) => Number.isFinite(o.ms))
     .map((o) => ({ id: null as string | null, ms: o.ms, confidence: o.confidence ?? null }));
-  const episodes = collapseEpisodes([...prior, ...todays], config.episodeGapHours);
+  const episodes = collapseEpisodes(onsetsInStableOrder([...prior, ...todays]), config.episodeGapHours);
   const dist = classifyEpisodeSet(
     episodes.map((e) => ({ onsetMs: e.ms, confidence: e.confidence })),
     feedingsInStableOrder(feedings),
@@ -436,6 +453,13 @@ function vehicleWords(howGiven: string | null | undefined): string | null {
   return howGiven === 'other' ? 'another way' : label.toLowerCase();
 }
 
+/** A clock time inside a sentence: "in the 1:00 PM meal", as spec §3.6 draws it. The time
+ *  column keeps the app's two-digit hour (`formatTime`), which lines up in a column and
+ *  reads wrong in prose (the HV-6 PM pass: "in the 01:00 PM meal"). */
+function clockInProse(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
 function doseOf(row: SpineEventInput, ctx: DayContext): SpineDose {
   const adherence = asDoseAdherence(row.adherence);
   const meal = row.paired_event_id ? ctx.byId.get(row.paired_event_id) : undefined;
@@ -443,7 +467,7 @@ function doseOf(row: SpineEventInput, ctx: DayContext): SpineDose {
   // the timeline read's live join of it (`paired_vehicle_intake`).
   const vehicleRating = meal ? meal.intake_rating ?? null : row.paired_vehicle_intake ?? null;
   const vehicle = meal
-    ? `in the ${describeDayEvent(meal as unknown as TimelineRow).time} ${mealRowLabel(meal.food_type).toLowerCase()}`
+    ? `in the ${clockInProse(meal.occurred_at)} ${mealRowLabel(meal.food_type).toLowerCase()}`
     : vehicleWords(row.how_given);
   const phrase = row.paired_event_id ? unfinishedIntakePhrase(vehicleRating) : null;
   return {
@@ -574,6 +598,11 @@ const FORMAT_WORD_ORDER: readonly string[] = [
     .filter((w) => w !== 'wet' && w !== 'dry'),
 ];
 
+/** The formats that are NOUNS, by their lowercased label, and their plurals. Every other
+ *  label reads as an adjective beside a count ("3 dry", "2 freeze-dried") or as a mass noun
+ *  ("2 jerky"), and so never inflects. */
+const FORMAT_NOUN_PLURAL: Readonly<Record<string, string>> = { topper: 'toppers', treat: 'treats' };
+
 /** "1 wet · 3 dry" · "all dry" · null (no member carries a tag). The members' own tags,
  *  counted, so the line speaks for exactly what an opened run shows. */
 export function runFormatsLine(tags: readonly (string | null)[]): string | null {
@@ -581,14 +610,18 @@ export function runFormatsLine(tags: readonly (string | null)[]): string | null 
   if (words.some((w) => w === null)) return null;
   const counts = new Map<string, number>();
   for (const w of words as string[]) counts.set(w, (counts.get(w) ?? 0) + 1);
-  if (counts.size === 1) return `all ${[...counts.keys()][0]}`;
+  // An adjective never inflects ("3 dry"); a noun does ("2 toppers", "all treats"), since
+  // "2 topper" is not English (the HV-6 PM pass). A run has two members at least, so "all"
+  // is always many.
+  const word = (w: string, many: boolean) => (many ? FORMAT_NOUN_PLURAL[w] ?? w : w);
+  if (counts.size === 1) return `all ${word([...counts.keys()][0], true)}`;
   const rank = (w: string) => {
     const i = FORMAT_WORD_ORDER.indexOf(w);
     return i === -1 ? FORMAT_WORD_ORDER.length : i;
   };
   return [...counts.entries()]
     .sort((a, b) => rank(a[0]) - rank(b[0]) || (a[0] < b[0] ? -1 : 1))
-    .map(([w, n]) => `${n} ${w}`)
+    .map(([w, n]) => `${n} ${word(w, n > 1)}`)
     .join(' · ');
 }
 

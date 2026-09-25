@@ -1,7 +1,9 @@
 // Home's read of today's rows (`hooks/useEvents.ts`, `loadTodayEvents`), as a constant so
 // a test can run the production string against the real local schema on `node:sqlite`
 // (the `lib/historyPage.test.ts` harness) rather than trusting a mocked row's shape.
-//
+
+import type { SQLiteDatabase } from 'expo-sqlite';
+
 // ── WHY IT JOINS WHAT IT JOINS ────────────────────────────────────────────────
 // Every row Home draws goes through the shared day row's rules (History v2 HV-6 /
 // CUL-1163, `lib/spineNode.ts`), and a rule can only read a field this query selected. A
@@ -18,10 +20,18 @@
 //     same-minute guess) with that meal's live intake (a soft-deleted vehicle nulls it,
 //     so the dose's in-doubt flag drops with the evidence, B-156);
 //   • the look's child (CUL-871): the Noticed card renders today's looks from these rows.
+// Not the meal's reverse link to its doses (`PAIRED_DOSE_REVERSE_JOIN`, which the timeline
+// read carries): Home learns a meal's doses from today's own rows, which an Undo edits in
+// place, where a count read here would go stale over an undone dose and keep saying "with
+// Prednisone". A dose on ANOTHER day than its meal (reachable only by re-timing one of the
+// two across midnight) is therefore not seen as a vehicle here: CUL-1229.
 // Home v1's Today strip reads none of the fields HV-6 added, so it draws exactly what it
 // drew before.
 //
-// Params, in placeholder order: pet_id, today's local midnight as an ISO instant.
+// Read it through `readTodayEvents` (below), never bare: the bound it takes is a lexical
+// pre-filter a day early, and the day is decided on parsed instants (C-40).
+//
+// Params, in placeholder order: pet_id, the SQL bound (`readTodayEvents`).
 export const TODAY_EVENTS_SQL = `SELECT e.*, m.food_item_id, m.quantity, m.intake_rating,
         f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
         f.format AS food_format,
@@ -43,3 +53,23 @@ export const TODAY_EVENTS_SQL = `SELECT e.*, m.food_item_id, m.quantity, m.intak
  LEFT JOIN looks lk ON lk.event_id = e.id
  WHERE e.pet_id = ? AND e.occurred_at >= ? AND e.deleted_at IS NULL
  ORDER BY e.occurred_at DESC`;
+
+// ── C-40: the day's bound is decided on parsed instants ───────────────────────
+// `occurred_at` holds two spellings of one instant, a local write's `…T04:00:00.000Z` and a
+// pulled row's `…T04:00:00+00:00`, and `'+'` sorts before `'.'`: a TEXT `>=` against local
+// midnight dropped a row synced from another phone at exactly 12:00 AM, so a vomit logged
+// then was missing from Home, rose included (the HV-6 adversarial pass, P1). The SQL bound
+// is taken a whole day early, a generous lexical pre-filter and never the decision (the
+// rule `lib/spineReads.ts` follows), and the day is decided here.
+const BOUND_SLACK_MS = 24 * 3_600_000;
+
+/** Today's rows for a pet, from `dayStart` (its local midnight) on, newest first. */
+export async function readTodayEvents<T extends { occurred_at: string }>(
+  db: Pick<SQLiteDatabase, 'getAllAsync'>,
+  petId: string,
+  dayStart: Date,
+): Promise<T[]> {
+  const startMs = dayStart.getTime();
+  const rows = await db.getAllAsync<T>(TODAY_EVENTS_SQL, [petId, new Date(startMs - BOUND_SLACK_MS).toISOString()]);
+  return rows.filter((r) => Date.parse(r.occurred_at) >= startMs);
+}

@@ -109,6 +109,23 @@ export async function readAnalysisRows(
   }
 }
 
+/** The same copy for a surface that keeps its last answer: `null` when the local read
+ *  FAILED, so "no read on this phone" and "could not look" stay two answers (CUL-1198 item
+ *  1, Home's half, History v2 HV-6). Home hands a photo to its pipeline only once this
+ *  answered for the row, so a failed look never draws a photo nobody read, and never
+ *  replaces a rose the card already had. */
+export async function readAnalysisCopy(
+  eventIds: readonly string[],
+): Promise<Map<string, SpineAnalysisRow> | null> {
+  if (eventIds.length === 0) return new Map();
+  try {
+    return await readCopies(eventIds);
+  } catch (e) {
+    console.warn('[spine] read copy failed:', e);
+    return null;
+  }
+}
+
 /** Every non-deleted row's instant AND type for this pet since `sinceIso` — the month
  *  door's population. The type rides along so `monthCoverage` can refuse a look (floor
  *  5) where a test can see it; the caller derives the day keys in the owner's zone. */

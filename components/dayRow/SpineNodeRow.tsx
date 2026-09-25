@@ -103,11 +103,18 @@ const ADHERENCE_SPOKEN: Record<string, string> = {
   refused: 'refused',
 };
 
-/** A meal's intake chip, in the log sheet's own words (`INTAKE_OPTIONS`: one spelling per
- *  rating, B-035). A rating this build does not know shows as recorded, in the rose. */
+/** The picked rating's chip on a ROW, where the log sheet's own chip says *Picked*. Spec
+ *  §3.6 and round 5 draw *Picked at*: the sheet's chip is a choice among five, tapped by the
+ *  owner who saw the bowl, while a row is read cold by someone who did not log it, beside a
+ *  dose line that says "picked at" (the HV-6 PM pass counted three spellings of one rating
+ *  in one glance). */
+export const PICKED_AT_CHIP = 'Picked at';
+
+/** A meal's intake chip: the log sheet's words (`INTAKE_OPTIONS`) but for *Picked at*. A
+ *  rating this build does not know shows as recorded, in the rose. */
 function intakeChipOf(rating: string | null): Chip | null {
   if (rating === null) return null;
-  const label = INTAKE_OPTIONS.find((o) => o.value === rating)?.label ?? rating;
+  const label = rating === 'picked' ? PICKED_AT_CHIP : INTAKE_OPTIONS.find((o) => o.value === rating)?.label ?? rating;
   return { label, tone: intakeChipTone(rating), spoken: INTAKE_SPOKEN[rating] ?? rating };
 }
 
@@ -129,6 +136,12 @@ function chipOf(node: SpineEventNode): Chip | null {
   if (node.category === 'medication') return doseChipOf(node);
   return null;
 }
+
+// The unread mark's geometry: an 8pt circle, hatched at a 3pt pitch (round 5's
+// `repeating-linear-gradient(45deg, transparent 0 2px, … 2px 3px)`).
+const UNREAD_MARK_SIZE = 8;
+const UNREAD_HATCH_GAP = 2;
+const UNREAD_HATCH_LINES = [0, 1, 2, 3, 4] as const;
 
 const CHIP_GROUND = { ok: 'chipOk', mid: 'chipMid', attn: 'chipAttn' } as const;
 const CHIP_INK = { ok: 'chipInkOk', mid: 'chipInkMid', attn: 'chipInkAttn' } as const;
@@ -158,6 +171,11 @@ function readSpoken(read: NodeRead): string {
   }
 }
 
+/** A part of a row as VoiceOver says it: the middle dot the row draws between a brand and
+ *  its product, or between a run's format counts, is a comma (a pause), since a voice may
+ *  read "·" aloud (the HV-6 PM pass). */
+const spokenPart = (part: string): string => part.replace(/\s·\s/g, ', ');
+
 /** The row's accessible label: the whole row in reading order (C-8). Exported so a test
  *  reads the sentence without re-typing its order. */
 export function eventRowLabel(node: SpineEventNode): string {
@@ -174,7 +192,7 @@ export function eventRowLabel(node: SpineEventNode): string {
     node.time,
     node.timeTag ? TIME_TAG_LABEL[node.timeTag] : null,
   ].filter((p): p is string => !!p);
-  return `${parts.join(', ')}${readSpoken(node.read)}. Opens details`;
+  return `${parts.map(spokenPart).join(', ')}${readSpoken(node.read)}. Opens details`;
 }
 
 // ── The event node ───────────────────────────────────────────────────────────────
@@ -366,7 +384,16 @@ function ReadSlot({
 function UnreadMark({ nodeId }: { nodeId: string }) {
   return (
     <View style={styles.unread} testID={`spine-unread-${nodeId}`}>
-      <View style={styles.unreadMark} />
+      {/* Hatched, as round 5 draws it: a filled-in "missing", where a plain ring read as an
+          unchecked radio button (the HV-6 PM pass). The ring is drawn last, over the hatch. */}
+      <View style={styles.unreadMark} testID={`spine-unread-mark-${nodeId}`}>
+        <View style={styles.unreadHatch}>
+          {UNREAD_HATCH_LINES.map((i) => (
+            <View key={i} style={styles.unreadHatchLine} />
+          ))}
+        </View>
+        <View style={styles.unreadRing} />
+      </View>
       <ThemedText style={styles.unreadText}>{PHOTO_NOT_READ_LABEL}</ThemedText>
     </View>
   );
@@ -374,11 +401,11 @@ function UnreadMark({ nodeId }: { nodeId: string }) {
 
 // ── The run ───────────────────────────────────────────────────────────────────────
 
-/** The run's one sentence: "4 meals, Royal Canin · Selected Protein PR, 1 wet · 3 dry,
+/** The run's one sentence: "4 meals, Royal Canin, Selected Protein PR, 1 wet, 3 dry,
  *  12:41 – 5:07 PM. Shows each one". */
 export function runRowLabel(node: SpineCompactNode, expanded: boolean): string {
   const parts = [node.title, node.detail, node.formats, node.timeRange].filter((p): p is string => !!p);
-  return `${parts.join(', ')}. ${expanded ? 'Hides' : 'Shows'} each one`;
+  return `${parts.map(spokenPart).join(', ')}. ${expanded ? 'Hides' : 'Shows'} each one`;
 }
 
 export function SpineCompactRow({
@@ -477,9 +504,12 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightRegular,
     color: theme.colorTextSecondary,
   },
+  // The tertiary grey, a step lighter than a chip's ink: a tag is a fact about the food and
+  // a chip is the owner's rating, and in one grey the two read as one phrase ("DRY SOME";
+  // round 5 draws the tag lighter, the HV-6 PM pass). 4.74:1 on the white card.
   formatTag: {
     fontSize: theme.textXS,
-    color: theme.colorTextSecondary,
+    color: theme.colorTextTertiary,
     letterSpacing: theme.trackingWide,
     fontWeight: theme.weightMedium,
     flexShrink: 0,
@@ -553,9 +583,28 @@ const styles = StyleSheet.create({
     marginTop: theme.space0_5,
   },
   unreadMark: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: UNREAD_MARK_SIZE,
+    height: UNREAD_MARK_SIZE,
+    borderRadius: UNREAD_MARK_SIZE / 2,
+    overflow: 'hidden',
+  },
+  // A square twice the mark's side, turned 45°, its stripes vertical: diagonal hatching
+  // across the circle that clips it.
+  unreadHatch: {
+    position: 'absolute',
+    left: -UNREAD_MARK_SIZE / 2,
+    top: -UNREAD_MARK_SIZE / 2,
+    width: UNREAD_MARK_SIZE * 2,
+    height: UNREAD_MARK_SIZE * 2,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    columnGap: UNREAD_HATCH_GAP,
+    transform: [{ rotate: '45deg' }],
+  },
+  unreadHatchLine: { width: 1, alignSelf: 'stretch', backgroundColor: theme.colorBorderStrong },
+  unreadRing: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: UNREAD_MARK_SIZE / 2,
     borderWidth: 1.5,
     borderColor: theme.colorTextTertiary,
   },

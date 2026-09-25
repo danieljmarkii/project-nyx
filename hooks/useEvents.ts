@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { getDb } from '../lib/db';
-import { TODAY_EVENTS_SQL } from '../lib/todayEventsQuery';
+import { readTodayEvents } from '../lib/todayEventsQuery';
+import type { NyxEvent } from '../store/eventStore';
 import { useEventStore } from '../store/eventStore';
 import { usePetStore } from '../store/petStore';
 
@@ -21,17 +22,15 @@ export function useEvents() {
       setTodayRead({ petId: activePet.id, state: 'loading' });
     }
 
-    // The query is `TODAY_EVENTS_SQL` (`lib/todayEventsQuery.ts`), whose header says why it
+    // The read is `readTodayEvents` (`lib/todayEventsQuery.ts`), whose header says why it
     // joins each table: the shared day row's rules read the meal's intake, the dose's
     // course, its stored pair and the weight (History v2 HV-6 / CUL-1163), the Noticed card
     // reads the look's child (CUL-871), and a dose names its drug on a cold open (B-161).
     // A field the query leaves out fails silently (an unrated meal, an unpaired dose), which
-    // is why it is a constant a test runs against the real schema.
+    // is why it is a constant a test runs against the real schema; and it decides the day
+    // on parsed instants, since a row pulled at exactly midnight is spelled differently (C-40).
     try {
-      const events = await db.getAllAsync<any>(
-        TODAY_EVENTS_SQL,
-        [activePet.id, todayStart.toISOString()]
-      );
+      const events = await readTodayEvents<NyxEvent>(db, activePet.id, todayStart);
       setTodayEvents(events);
       setTodayRead({ petId: activePet.id, state: 'ready' });
     } catch (e) {

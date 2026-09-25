@@ -30,6 +30,9 @@
 //     re-exports or wraps a row internal is not followed (one hop is not walked). The row
 //     modules' own exports are the realistic path, and they are checked.
 //   • A dynamic `import()` is not parsed.
+//   • A THIRD surface, a screen outside both directories that draws a day (a future
+//     day-summary on the spine, say), is not scanned at all: the rule covers the two
+//     surfaces AC 15 names. Such a screen adds its directory to `SURFACE_DIRS` the PR it lands.
 //   • History v1 (`components/history/`, the flag-off tab) draws its own `EventRow` and is
 //     out of scope by design: it is deleted at GA (HV-14), and until then flag-off is
 //     byte-identical to today (C-36), which this rule must not disturb.

@@ -55,7 +55,7 @@ export interface NyxEvent {
   drug_brand_name?: string | null;
   // CUL-1124 — the name of the course the dose was logged against, the second source of
   // a dose's name after the item (`lib/doseDisplay.ts`). Carried by the timeline read
-  // (`getTimeline`); absent on Today's read.
+  // (`getTimeline`) and Today's (`lib/todayEventsQuery.ts`, History v2 HV-6).
   regimen_drug_name?: string | null;
   // B-156 PR B4 — the reverse combo link (vehicle → dose), for the cross-link on a
   // meal/treat row that carried co-logged dose(s). The mirror of paired_* above so the
