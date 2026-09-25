@@ -99,7 +99,7 @@ export const PHOTO_READING_OFF: boolean = false;
 /** The search button, and the field it opens (§3.7). The field's button ends the search and
  *  clears it, which the platform calls Cancel: "Done" promises to keep what was found. The
  *  keyboard's own search key keeps it. */
-export const SEARCH_DONE_LABEL = 'Cancel';
+export const SEARCH_CANCEL_LABEL = 'Cancel';
 export function searchLabelOf(petName: string): string {
   return `Search ${petName}'s record`;
 }

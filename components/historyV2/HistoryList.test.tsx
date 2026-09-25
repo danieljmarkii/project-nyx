@@ -515,8 +515,9 @@ describe('AC 10 / AC 11 — gap lines and date-only items, drawn', () => {
     await renderList();
     expect(screen.getByTestId(`history-day-header-${dayAgo(3)}`)).toBeTruthy();
     expect(screen.getByTestId('history-item-visit-visit-2')).toBeTruthy();
-    // Its header says nothing ELSE was logged: the visit under it is on the record (HV-12).
-    expect(text(`history-day-counts-${dayAgo(3)}`)).toBe('nothing else logged');
+    // Its header is the date alone: the visit under it speaks for the day, and no count
+    // claim contradicts the strip or the coverage clause (HV-12).
+    expect(screen.queryByTestId(`history-day-counts-${dayAgo(3)}`)).toBeNull();
   });
 });
 

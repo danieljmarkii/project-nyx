@@ -640,21 +640,27 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
       .toMatchObject({ line1: { strong: '1 logged on 1 day' }, line2: null });
   });
 
-  it('the day header keeps its noun under a dose filter and names the doses not given in full', () => {
-    // CUL-1193 ruled the count line and the sheet's sub-row; "2 logged · 3 logged" would
-    // collide with the day's total, so the header's words are HV-12's call (CUL-1169): the
-    // noun stays, and the doses recorded Partial, Missed or Refused follow in the neutral
-    // grey a meal not finished takes, so "2 doses" never reads as two given.
+  it('a dose filter\'s header reads "logged" and names the doses not given in full, with their noun', () => {
+    // CUL-1193 ruled "logged" for a dose count, because a vet reads "2 doses" as two given.
+    // HV-12's adversarial pass showed why the header needs it too: a dose left unconfirmed
+    // in a refused meal carries no not-in-full, so "1 dose" beside a day that names one
+    // read as given. With "in all" on the total, "2 logged" no longer collides with it.
     const facts = factsFor(WINDOWS.all.range);
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-06'), { kind: 'course', courseKey: 'reg-pred' })).toEqual([
-      { text: '1 dose', tone: 'neutral' },
-      { text: '3 in all', tone: 'neutral' },
-      { text: '1 not given in full', tone: 'unfinished' },
+      { text: '1 logged', tone: 'neutral' },
+      { text: '3 in all', tone: 'dayTotal' },
+      { text: '1 dose not given in full', tone: 'unfinished' },
     ]);
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-09'), { kind: 'type', type: 'medication' }).map((p) => p.text))
-      .toEqual(['2 doses', '3 in all', '1 not given in full']);
+      .toEqual(['2 logged', '3 in all', '1 dose not given in full']);
     // Only under a dose filter: All types never names a dose's chip in the header.
-    expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-06'), { kind: 'all' }).map((p) => p.text)).not.toContain('1 not given in full');
+    expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-06'), { kind: 'all' }).map((p) => p.text).join(' ')).not.toMatch(/not given/);
+    // And never the retired noun, on any day of the fixture (the ruled word, CUL-1193).
+    for (const f of facts.days.values()) {
+      for (const filter of [{ kind: 'type', type: 'medication' } as const, { kind: 'course', courseKey: 'reg-pred' } as const]) {
+        expect(dayHeaderOf(f, filter).map((p) => p.text).join(' · ')).not.toMatch(/\d+ doses?(?! not given)/);
+      }
+    }
   });
 
   it('Photographed and With a note: their rows and days, coverage, never a duplicates clause', () => {
@@ -871,12 +877,12 @@ describe('the day header (rule C)', () => {
   it('a filter: its count first, then the day\'s total "in all" (never "logged", which read as more rows)', () => {
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-04'), { kind: 'type', type: 'vomit' })).toEqual([
       { text: '2 vomits', tone: 'symptom' },
-      { text: '3 in all', tone: 'neutral' },
+      { text: '3 in all', tone: 'dayTotal' },
     ]);
     // "Stool" is the formed one: "no stool logged" on a loose-stool day read as none at all.
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-10'), { kind: 'type', type: 'stool_normal' })).toEqual([
       { text: '1 formed stool', tone: 'neutral' },
-      { text: '3 in all', tone: 'neutral' },
+      { text: '3 in all', tone: 'dayTotal' },
     ]);
     expect(absenceText({ kind: 'type', type: 'stool_normal' })).toBe('no formed stool logged');
     expect(filterNoun({ kind: 'type', type: 'weight_check' }, 3)).toBe('weigh-ins');
@@ -889,7 +895,7 @@ describe('the day header (rule C)', () => {
     const parts = dayHeaderOf(f, { kind: 'symptoms' });
     expect(parts).toEqual([
       { text: '2 vomits', tone: 'symptom' },
-      { text: '3 in all', tone: 'neutral' },
+      { text: '3 in all', tone: 'dayTotal' },
     ]);
     // The kinds named sum to the filter's one count (R-1): the header never disagrees with it.
     const named = parts.filter((p) => p.tone === 'symptom').reduce((n, p) => n + Number(p.text.split(' ')[0]), 0);
@@ -906,12 +912,13 @@ describe('the day header (rule C)', () => {
     expect(dayHeaderOf(visitOnly, { kind: 'all' }, { isToday: true })).toEqual([{ text: 'nothing logged yet', tone: 'neutral' }]);
   });
 
-  it('a day holding a visit says nothing ELSE was logged, never contradicting the visit under it', () => {
+  it('a day whose only content is a visit shows the date alone: no claim the strip and coverage would contradict', () => {
+    // "nothing logged" contradicted the visit under it; "nothing else logged" called the
+    // visit a log, which the strip and the coverage clause (a visit is no event) do not
+    // (HV-12's adversarial pass). The card's items speak for the day.
     const visitOnly = dayFactsOn(facts.days, '2026-09-07');
-    expect(dayHeaderOf(visitOnly, { kind: 'all' }, { hasItems: true })).toEqual([{ text: 'nothing else logged', tone: 'neutral' }]);
-    expect(dayHeaderOf(visitOnly, { kind: 'all' }, { hasItems: true, isToday: true })).toEqual([
-      { text: 'nothing else logged yet', tone: 'neutral' },
-    ]);
+    expect(dayHeaderOf(visitOnly, { kind: 'all' }, { hasItems: true })).toEqual([]);
+    expect(dayHeaderOf(visitOnly, { kind: 'all' }, { hasItems: true, isToday: true })).toEqual([]);
     // A logged day's header is the same with or without an item.
     const logged = dayFactsOn(facts.days, '2026-09-04');
     expect(dayHeaderOf(logged, { kind: 'all' }, { hasItems: true })).toEqual(dayHeaderOf(logged, { kind: 'all' }));
@@ -920,13 +927,13 @@ describe('the day header (rule C)', () => {
   it('under Meal the meals not finished stay: a refusal never reads as routine (§1, H-2)', () => {
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-03'), { kind: 'type', type: 'meal' })).toEqual([
       { text: '2 meals', tone: 'neutral' },
-      { text: '3 in all', tone: 'neutral' },
+      { text: '3 in all', tone: 'dayTotal' },
       { text: '1 meal not finished', tone: 'unfinished' },
     ]);
     // Only under Meal: a vomit filter's header does not carry the intake word.
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-03'), { kind: 'type', type: 'cough' })).toEqual([
       { text: '1 cough', tone: 'symptom' },
-      { text: '3 in all', tone: 'neutral' },
+      { text: '3 in all', tone: 'dayTotal' },
     ]);
   });
 });

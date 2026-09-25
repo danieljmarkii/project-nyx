@@ -5,7 +5,7 @@
 // offline retry) into one incident, `dedupeEvents` in `generate-report/report.ts`. History
 // counts rows, so its "1,094 logged" and the report's count of the same record could differ
 // with nothing on either surface saying why (the critique's PMD-10). History v2 discloses
-// the difference instead ("3 logged twice in the same minute"), and a disclosure is only
+// the difference instead ("3 possible repeats within a minute"), and a disclosure is only
 // honest if it is the report's OWN rule, not a second one that agrees today. So the rule is
 // lifted here, verbatim, onto a minimal event shape; History imports it now and the report
 // moves onto it in HV-15 (CUL-1170). Until then `sameMinuteDuplicates.test.ts` evaluates the

@@ -686,6 +686,9 @@ export interface HistoryCourse {
   isActive: boolean;
   /** A regimen's own start day (its date-only item); null for a course of doses alone. */
   startedDay: string | null;
+  /** The course's first dose's day, or null when no dose was ever logged against it (a
+   *  regimen with none): the quiet state's "yet" reads it, never the regimen's start. */
+  firstDoseDay: string | null;
   days: CourseDays;
 }
 
@@ -696,6 +699,7 @@ export function historyCourseOf(course: MedicationCourse, name: string): History
     source: course.source,
     isActive: course.isActive,
     startedDay: course.source === 'regimen' ? dayOfStored(course.startedAt) : null,
+    firstDoseDay: course.firstDoseDay,
     days: courseDaysOf(course),
   };
 }
@@ -759,7 +763,8 @@ export function filterNoun(filter: HistoryFilter, n: number): string {
 }
 
 /** A day's total beside a filtered count: "2 vomits · 10 in all". "10 logged" beside two
- *  rows read as ten more somewhere (HV-12); the strip speaks the same words. */
+ *  rows read as ten more somewhere (HV-12). The strip SPEAKS the same fact as "10 logged
+ *  in all" (`lib/stripMarks.ts`): a spoken total with no noun before it needs the verb. */
 export function inAllText(n: number): string {
   return `${formatCount(n)} in all`;
 }
@@ -1011,11 +1016,13 @@ export function countLineOf(input: CountLineInput): CountLine {
 
 // ── The day header (§3.5, rule C) ────────────────────────────────────────────────
 
-export type DayHeaderTone = 'total' | 'symptom' | 'neutral' | 'unfinished';
+export type DayHeaderTone = 'total' | 'symptom' | 'neutral' | 'unfinished' | 'dayTotal';
 
 export interface DayHeaderPart {
   text: string;
-  /** `symptom` is rose; `unfinished` is the neutral grey of H-2, never rose. */
+  /** `symptom` is rose; `unfinished` is the neutral grey of H-2, never rose; `dayTotal` is
+   *  the day's total beside a filtered count ("10 in all"), the quietest ink wherever it
+   *  falls in the list (All symptoms puts it after every kind). */
   tone: DayHeaderTone;
 }
 
@@ -1024,16 +1031,17 @@ function mealsNotFinishedPart(f: DayFacts): DayHeaderPart | null {
   return n > 0 ? { text: `${formatCount(n)} ${n === 1 ? 'meal' : 'meals'} not finished`, tone: 'unfinished' } : null;
 }
 
-/** Under a dose filter, the day's doses recorded Partial, Missed or Refused, in the same
- *  neutral grey as a meal not finished: the header's "2 doses" then never reads as two given
- *  (CUL-1193's reading, carried to the header by HV-12). Nothing at zero, as the count line. */
+/** Under a dose filter, the day's doses recorded Partial, Missed or Refused, named with
+ *  their noun ("1 dose not given in full": after "10 in all", a bare "1 not given in full"
+ *  read as one of the ten) in the neutral grey a meal not finished takes. Nothing at zero, as
+ *  the count line: an unrated or unconfirmed dose is never named here (CUL-1193; whether to
+ *  name the unconfirmed is CUL-1209's), which is why the count beside it reads "logged". */
 function dosesNotInFullPart(f: DayFacts, filter: HistoryFilter): DayHeaderPart | null {
   if (!countsDoses(filter)) return null;
   let n = 0;
   if (filter.kind === 'course') n = f.doses[filter.courseKey]?.notInFull ?? 0;
   else for (const d of Object.values(f.doses)) n += d.notInFull;
-  const text = notGivenInFullText(n);
-  return text === null ? null : { text, tone: 'unfinished' };
+  return n > 0 ? { text: `${formatCount(n)} ${n === 1 ? 'dose' : 'doses'} not given in full`, tone: 'unfinished' } : null;
 }
 
 /** Every symptom kind the day holds, in rose, in the one symptom order: All types names them
@@ -1054,10 +1062,14 @@ function symptomParts(f: DayFacts): DayHeaderPart[] {
  * count first, then the day's total ("2 vomits · 10 in all"); All symptoms names each kind
  * instead of one sum; under Meal the meals not finished follow, and under a dose filter the
  * doses not given in full, so a refusal never reads as routine one level above the rows (§1,
- * H-2). Under All types, the total, every symptom kind, the other entries, the meals not
- * finished. A day with nothing logged says only that (today: not yet), never what its
- * nothing lacked; a day holding a date-only item (a visit) says nothing ELSE was logged, so
- * the header never contradicts the visit drawn under it.
+ * H-2). A dose filter's count reads "logged", the count line's ruled word (CUL-1193): "2
+ * doses" read as two given, and a dose left unconfirmed in a refused meal carries no
+ * not-in-full to qualify it. Under All types, the total, every symptom kind, the other
+ * entries, the meals not finished. A day with nothing logged says only that (today: not
+ * yet), never what its nothing lacked. A day whose only content is a date-only item (a
+ * visit) shows the date alone: "nothing logged" would contradict the visit under it, and
+ * "nothing else logged" would call the visit a log, which the strip and the coverage clause
+ * (a visit is not an event of the record) do not.
  */
 export function dayHeaderOf(
   f: DayFacts,
@@ -1066,8 +1078,8 @@ export function dayHeaderOf(
 ): DayHeaderPart[] {
   if (opts.search || filter.kind === 'noticed') return [];
   if (f.total === 0) {
-    const nothing = opts.hasItems ? 'nothing else logged' : 'nothing logged';
-    return [{ text: opts.isToday ? `${nothing} yet` : nothing, tone: 'neutral' }];
+    if (opts.hasItems) return [];
+    return [{ text: opts.isToday ? 'nothing logged yet' : 'nothing logged', tone: 'neutral' }];
   }
   const total: DayHeaderPart = { text: `${formatCount(f.total)} logged`, tone: 'total' };
   if (filter.kind !== 'all') {
@@ -1077,11 +1089,14 @@ export function dayHeaderOf(
         ? symptomParts(f)
         : [
             {
-              text: n > 0 ? `${formatCount(n)} ${filterNoun(filter, n)}` : (absenceText(filter) ?? ''),
+              text:
+                n === 0
+                  ? (absenceText(filter) ?? '')
+                  : `${formatCount(n)} ${countsDoses(filter) ? 'logged' : filterNoun(filter, n)}`,
               tone: isSymptomFilter(filter) ? 'symptom' : 'neutral',
             },
           ];
-    const parts: DayHeaderPart[] = [...counted, { text: inAllText(f.total), tone: 'neutral' }];
+    const parts: DayHeaderPart[] = [...counted, { text: inAllText(f.total), tone: 'dayTotal' }];
     const unfinished = filter.kind === 'type' && filter.type === 'meal' ? mealsNotFinishedPart(f) : null;
     if (unfinished) parts.push(unfinished);
     const notInFull = dosesNotInFullPart(f, filter);

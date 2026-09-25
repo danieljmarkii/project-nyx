@@ -17,7 +17,7 @@ import { StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { Search } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
-import { SEARCH_DONE_LABEL, searchLabelOf, searchPlaceholderOf } from '../../lib/historyControls';
+import { SEARCH_CANCEL_LABEL, searchLabelOf, searchPlaceholderOf } from '../../lib/historyControls';
 import { SEARCH_READS_NOTES } from '../../lib/historyQueries';
 import { useHistoryScopeStore } from '../../store/historyScopeStore';
 
@@ -87,7 +87,7 @@ export function SearchField({ petId, petName, focusTick }: Props) {
         accessibilityRole="button"
         accessibilityHint="Clears the search"
       >
-        <ThemedText style={styles.doneLabel}>{SEARCH_DONE_LABEL}</ThemedText>
+        <ThemedText style={styles.cancelLabel}>{SEARCH_CANCEL_LABEL}</ThemedText>
       </TouchableOpacity>
     </View>
   );
@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: theme.space1,
   },
-  doneLabel: {
+  cancelLabel: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
     color: theme.colorAccentInk,

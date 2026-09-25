@@ -506,7 +506,7 @@
     <div class="r"><b>The quiet states · "LOVE that we added an empty state."</b><span><i class="k">kept</i>As drawn. <a href="#s08">§08</a></span></div>
     <div class="r"><b>"Finalize these requirements; put them in a Linear project with a session-by-session plan."</b><span><i class="k">next</i><code>docs/nyx-history-v2-requirements.md</code> is written against this page, and the build is the Linear project <b>History v2 · the record you can read</b>.</span></div>
     <div class="r"><b>CUL-1183 · "Go with 60." (2026-09-25, after round 5)</b><span><i class="d">ruled</i>The time column is 60pt, not 56. At the app's 11pt, a run across noon's first line, "11:30 AM –", is 58.7pt; in 56 it fell to three lines. Every frame on this page draws the 60pt column; Home, History and the Daily Recap move together. <a href="#s02">§02</a></span></div>
-    <div class="r"><b>HV-12 · the copy pass (2026-09-25)</b><span><i class="d">built</i>The words on every frame are the ones the app now ships, replacing round 5's placeholders: the doors name what they open ("The trial so far ›", "Vomiting over time ›", "Symptoms on Patterns ›"), coverage reads "N days with nothing logged", duplicates "N possible repeats within a minute", search "Searching for …" with why it counts nothing, a filtered header ends "in all", gap lines lead with the date, a filter with nothing to show names the record's fact, and "Try again" is the component's text link. The facts and the layout did not move. CUL-1169.</span></div>
+    <div class="r"><b>HV-12 · the copy pass (2026-09-25)</b><span><i class="d">built</i>The words on every frame are the ones the app now ships, replacing round 5's placeholders: the doors name what they open ("The trial so far ›", "Vomiting over time ›", "Symptoms on Patterns ›"), coverage reads "N days with nothing logged", duplicates "N possible repeats within a minute", search "Searching for …" with why it counts nothing, a filtered header ends "in all" (a dose filter's reads "2 logged · 8 in all · 1 dose not given in full"), a visit-only day shows its date alone, gap lines lead with the date, a filter with nothing to show names the record's fact, and "Try again" is the component's text link. The facts and the layout did not move. CUL-1169.</span></div>
     <div class="r"><b>HV-9 · four calls from the build (2026-09-25, open)</b><span><i class="o">open</i>The pinned row's build and review raised four questions round 5 does not answer: what the two menus' numbers count, the pet's name as the switcher, Meal's meals not finished, and search while a filter is on. Each is drawn beside the frame it would change; the briefs are on CUL-1247. <a href="#s12">§12</a></span></div>
     <div class="r"><b>CUL-1193 · "(b)" (2026-09-25, after round 5)</b><span><i class="d">ruled</i>A dose count reads "logged". Under a course or Medication the count line says "16 logged on 16 days", and its second line names the doses recorded Partial, Missed or Refused: "Cetirizine HCl · Jul 1 – Sep 5 · 4 not given in full". A course's row on the type sheet names them after its span, the way Photographed names "not read". "16 doses" read as sixteen given. <a href="#s06">§06</a></span></div>
   </div>
@@ -1174,6 +1174,7 @@ function markerHtml(m, opts) {
 function headerRight(b, shown, opts) {
   if (opts.search) return ''; // search counts nothing (R-2)
   const total = b.rows.length;
+  if (!total && b.markers.length) return ''; // HV-12: a visit-only day is its date; the visit speaks for it
   if (opts.lens) {
     const n = shown.length; const sym = opts.lens === 'symptom' || SYMPTOM.includes(opts.lens);
     const c = opts.lens.startsWith('course:') ? courseOf(COURSES.find((x) => x.key === opts.lens.slice(7)).name) : null;
@@ -1184,10 +1185,13 @@ function headerRight(b, shown, opts) {
     if (opts.lens === 'symptom' && n > 0) {
       const cnt = {}; for (const r of shown) cnt[r.ty] = (cnt[r.ty] || 0) + 1;
       lead = SYMPTOM.filter((k) => cnt[k]).map((k) => `<span class="sym">${plural(cnt[k], SINGULAR[k], PLURAL[k])}</span>`).join(' · ');
-    } else lead = `<span class="${sym ? 'sym' : ''}">${n ? plural(n, noun[0], noun[1]) : esc(absenceOf(opts.lens))}</span>`;
+    } else {
+      const dose = c || opts.lens === 'medication'; // CUL-1193's word, carried to the header by HV-12
+      lead = `<span class="${sym ? 'sym' : ''}">${n ? (dose ? `${n} logged` : plural(n, noun[0], noun[1])) : esc(absenceOf(opts.lens))}</span>`;
+    }
     const dose = c || opts.lens === 'medication';
     const shortN = dose ? shown.filter((r) => r.m && ['partial', 'missed', 'refused'].includes(r.m.ad)).length : 0;
-    return `${lead}<span class="tot"> · ${total} in all</span>${shortN ? ` · <span class="nfw">${shortN} not given in full</span>` : ''}`;
+    return `${lead}<span class="tot"> · ${total} in all</span>${shortN ? ` · <span class="nfw">${plural(shortN, 'dose not given in full', 'doses not given in full')}</span>` : ''}`;
   }
   const cnt = {}; for (const r of b.rows) cnt[r.ty] = (cnt[r.ty] || 0) + 1;
   const parts = [];

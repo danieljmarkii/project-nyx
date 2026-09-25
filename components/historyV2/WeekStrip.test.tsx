@@ -448,6 +448,7 @@ describe('the filter, from the store', () => {
       source: 'regimen',
       isActive: false,
       startedDay: '2026-07-01',
+      firstDoseDay: null,
       days: { fromDay: '2026-07-01', toDay: '2026-09-23' },
     };
     resetScope({ filter: { kind: 'course', courseKey: 'reg-cet' } });
@@ -476,6 +477,7 @@ describe('the filter, from the store', () => {
       source: 'regimen',
       isActive: false,
       startedDay: '2026-06-01',
+      firstDoseDay: null,
       days: { fromDay: '2026-06-01', toDay: '2026-06-20' },
     };
     resetScope({ filter: { kind: 'course', courseKey: 'reg-cet' } });

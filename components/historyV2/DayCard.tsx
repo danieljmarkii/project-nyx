@@ -68,14 +68,13 @@ const CARD_BORDER = LANDED_OUTLINE_WIDTH;
 
 // ── The header ──────────────────────────────────────────────────────────────────
 
-/** A header part's ink. Under a filter the day's total (the part after the filtered count,
- *  `dayHeaderOf`'s documented order) is the quieter one; a symptom is always the rose ink
- *  (C-1: the ink, never the bright rose, as text on white); an unfinished meal is neutral
- *  grey (H-2); a day with nothing logged says so in the quietest ink. */
-function partColor(part: DayHeaderPart, index: number, filtered: boolean, empty: boolean): string {
+/** A header part's ink. Under a filter the day's total (`dayTotal`) is the quieter one,
+ *  wherever it falls (All symptoms puts it after every kind); a symptom is always the rose
+ *  ink (C-1: the ink, never the bright rose, as text on white); an unfinished meal is
+ *  neutral grey (H-2); a day with nothing logged says so in the quietest ink. */
+function partColor(part: DayHeaderPart, empty: boolean): string {
   if (part.tone === 'symptom') return theme.colorEventSymptomInk;
-  if (empty) return theme.colorTextTertiary;
-  if (filtered && index === 1) return theme.colorTextTertiary;
+  if (empty || part.tone === 'dayTotal') return theme.colorTextTertiary;
   return theme.colorTextSecondary;
 }
 
@@ -118,7 +117,6 @@ export function DayCardHeader({
 }) {
   const isToday = day === today;
   const parts = withCounts ? dayHeaderOf(facts, filter, { search, isToday, hasItems }) : [];
-  const filtered = filter.kind !== 'all';
   const empty = facts.total === 0;
   const date = recordWeekday(day, today) ?? day;
   return (
@@ -143,7 +141,7 @@ export function DayCardHeader({
           {parts.length > 0 ? (
             <ThemedText style={styles.counts} testID={`history-day-counts-${day}`}>
               {parts.map((part, i) => {
-                const color = partColor(part, i, filtered, empty);
+                const color = partColor(part, empty);
                 return (
                   <Fragment key={`${i}:${part.text}`}>
                     {i > 0 ? <ThemedText style={[styles.countPart, styles.countSep]}>{' · '}</ThemedText> : null}

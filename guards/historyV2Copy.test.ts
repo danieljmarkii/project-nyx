@@ -112,7 +112,7 @@ describe('History v2 never shouts (AC 38)', () => {
 
   it('the words HV-12 wrote are among the strings it reads', () => {
     const all = files.flatMap((f) => stringsIn(fs.readFileSync(path.join(ROOT, f), 'utf8'), f).map((s) => s.text));
-    for (const words of ['The trial so far ›', ' with nothing logged', 'nothing else logged', 'Photos and notes']) {
+    for (const words of ['The trial so far ›', ' with nothing logged', 'possible ', 'Photos and notes']) {
       expect(all.some((t) => t.includes(words))).toBe(true);
     }
   });

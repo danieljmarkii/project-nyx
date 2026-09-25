@@ -186,12 +186,17 @@ function courseOf(snapshot: HistorySnapshot, filter: HistoryFilter = snapshot.fi
 
 /** A filter that left the list empty (§3.12): the record's fact, never the filter's fault.
  *  Whether the kind was ever logged is read over the whole record (`FirstDays`); a course
- *  that has not loaded cannot say, so only the window form is claimed. */
+ *  asks its first DOSE, never its span, which a regimen's start opens with no dose logged;
+ *  a course that has not loaded cannot say, so only the window form is claimed. */
 function filterQuietStateFor(snapshot: HistorySnapshot): QuietState {
   const { filter, facts, today } = snapshot;
   const course = courseOf(snapshot);
   const everLogged =
-    filter.kind === 'course' && course === null ? null : firstDayFor(facts.firsts, filter, course?.days ?? null) !== null;
+    filter.kind === 'course'
+      ? course === null
+        ? null
+        : course.firstDoseDay !== null
+      : firstDayFor(facts.firsts, filter, null) !== null;
   return filterQuietStateOf({
     filter,
     everLogged,
