@@ -20,12 +20,18 @@ const { DatabaseSync } = require('node:sqlite');
 let mockRaw: InstanceType<typeof DatabaseSync>;
 let mockGate: Promise<void> | null = null;
 let mockFail = false;
+/** When set, a read of the verdict copy answers what it read NOW but only once released: an
+ *  old answer that lands after a newer one. */
+let mockHoldVerdicts = false;
+const mockHeldVerdicts: (() => void)[] = [];
 jest.mock('expo-sqlite', () => ({
   openDatabaseSync: () => ({
     getAllAsync: async (sql: string, params: unknown[] = []) => {
       if (mockGate) await mockGate;
       if (mockFail) throw new Error('disk I/O error');
-      return mockRaw.prepare(sql).all(...(params as never[]));
+      const rows = mockRaw.prepare(sql).all(...(params as never[]));
+      if (mockHoldVerdicts && sql.includes('event_ai_verdicts')) await new Promise<void>((r) => mockHeldVerdicts.push(r));
+      return rows;
     },
     getFirstAsync: async (sql: string, params: unknown[] = []) => {
       if (mockGate) await mockGate;
@@ -98,6 +104,8 @@ beforeEach(async () => {
   mockFail = false;
   mockHoldPages = false;
   mockHeldPages.splice(0).forEach((release) => release());
+  mockHoldVerdicts = false;
+  mockHeldVerdicts.splice(0).forEach((release) => release());
   mockRaw = new DatabaseSync(':memory:');
   mockRaw.exec(BASE_SCHEMA_SQL);
   mockRaw.exec(MEDICATION_SCHEMA_SQL);
@@ -136,25 +144,30 @@ describe('a load: one snapshot, every read together', () => {
     expect(snap.wholeDays.get(dayAgo(1))?.map((r) => r.id)).toEqual(['pa-1-0', 'pa-1-1', 'v1']);
   });
 
-  it('the reads: fetched for every type with a per-incident read, a formed stool included', async () => {
-    // A formed stool tints as "other", never as a symptom, and analyze-stool still writes a
-    // Worth-a-call read for one (mucus, say): the gate is the write side's own predicate.
+  it('the reads: asked for every row the pipeline can draw one on, a formed stool included', async () => {
+    // The one gate is the pipeline's (`mayCarryRead`, HV-6): a formed stool tints "other",
+    // never a symptom, and analyze-stool still writes a Worth-a-call read for one.
     insertEvent('st', at(1, 8), 'stool_normal');
     insertEvent('vo', at(1, 9), 'vomit');
     insertEvent('co', at(1, 10), 'cough');
+    insertEvent('me', at(1, 11), 'meal');
     const verdict = mockRaw.prepare(
       `INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES (?, 'completed', 'worth_a_call', ?)`,
     );
     verdict.run('st', at(1, 8, 30));
     verdict.run('vo', at(1, 9, 30));
     await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY });
-    const analysis = store().snapshot!.analysis;
+    const { analysis, answered } = store().snapshot!;
     expect(analysis.get('st')?.recommendation).toBe('worth_a_call');
     expect(analysis.get('vo')?.recommendation).toBe('worth_a_call');
     expect(analysis.has('co')).toBe(false);
+    // Answered for every readable row, a row with no read included; never asked for a meal.
+    expect([...answered].sort()).toEqual(['co', 'st', 'vo']);
   });
 
-  it('a read only ever lands: a reload whose local read fails keeps the rose already shown', async () => {
+  it('a look that fails answers nothing: the last answer stands, and a row it never answered claims no photo', async () => {
+    // HV-6's contract (TodayCard the template): "no read on this phone" and "could not look"
+    // are two answers, and a failed look must never draw a photo nobody read.
     insertEvent('vo', at(1, 9), 'vomit');
     mockRaw
       .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES ('vo', 'completed', 'worth_a_call', ?)`)
@@ -162,42 +175,50 @@ describe('a load: one snapshot, every read together', () => {
     const req = { pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY };
     await store().load(req);
     expect(store().snapshot!.analysis.get('vo')?.recommendation).toBe('worth_a_call');
-    // The copy's read fails on the reload (HV-5 answers an empty map, never a throw).
     const warned = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockRaw.exec('ALTER TABLE event_ai_verdicts RENAME TO event_ai_verdicts_gone');
+    insertEvent('v2', at(1, 12), 'vomit');
     await store().load(req);
     expect(warned).toHaveBeenCalled();
+    // The rose already drawn stays drawn (CUL-1198); the new vomit was never answered.
+    expect(store().snapshot!.analysis.get('vo')?.recommendation).toBe('worth_a_call');
+    expect(store().snapshot!.answered.has('vo')).toBe(true);
+    expect(store().snapshot!.answered.has('v2')).toBe(false);
+    // The same through a read landing.
+    await store().refreshReads();
     expect(store().snapshot!.analysis.get('vo')?.recommendation).toBe('worth_a_call');
     warned.mockRestore();
   });
 
-  it('a reload whose local read fails never brings back a calm the record has replaced: the row reads unread', async () => {
-    // CUL-812's class: a calm read, then the copy flips to a rose (a later read, a synced
-    // escalation), then the reload's local read fails. Only a rose may outlive a failed read.
+  it('a fresh answer always wins, a calm over a rose included', async () => {
+    insertEvent('vo', at(1, 9), 'vomit');
+    mockRaw
+      .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES ('vo', 'completed', 'worth_a_call', ?)`)
+      .run(at(1, 9, 30));
+    await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY });
+    mockRaw.prepare(`UPDATE event_ai_verdicts SET recommendation = 'monitor' WHERE event_id = 'vo'`).run();
+    await store().refreshReads();
+    expect(store().snapshot!.analysis.get('vo')?.recommendation).toBe('monitor');
+  });
+
+  it('an older look that lands after a newer one never overwrites it (TodayCard\'s order)', async () => {
     insertEvent('vo', at(1, 9), 'vomit');
     mockRaw
       .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES ('vo', 'completed', 'monitor', ?)`)
       .run(at(1, 9, 30));
-    const req = { pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY };
-    await store().load(req);
-    expect(store().snapshot!.analysis.get('vo')?.recommendation).toBe('monitor');
+    await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY });
+    // An older look reads the calm and is held; the copy then flips to a rose, and a newer
+    // look reads and lands it.
+    mockHoldVerdicts = true;
+    const older = store().refreshReads();
+    for (let i = 0; i < 50 && mockHeldVerdicts.length < 1; i++) await new Promise((r) => setTimeout(r, 0));
+    mockHoldVerdicts = false;
     mockRaw.prepare(`UPDATE event_ai_verdicts SET recommendation = 'worth_a_call' WHERE event_id = 'vo'`).run();
-    const warned = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    mockRaw.exec('ALTER TABLE event_ai_verdicts RENAME TO event_ai_verdicts_gone');
-    await store().load(req);
-    expect(store().snapshot!.analysis.has('vo')).toBe(false);
-    // The same through a read landing (`refreshReads`).
-    mockRaw.exec('ALTER TABLE event_ai_verdicts_gone RENAME TO event_ai_verdicts');
-    await store().load(req);
+    await store().refreshReads();
     expect(store().snapshot!.analysis.get('vo')?.recommendation).toBe('worth_a_call');
-    mockRaw.prepare(`UPDATE event_ai_verdicts SET recommendation = 'monitor' WHERE event_id = 'vo'`).run();
-    await store().refreshReads();
-    // A fresh answer always wins: a rose a re-read replaced with a calm is gone.
-    expect(store().snapshot!.analysis.get('vo')?.recommendation).toBe('monitor');
-    mockRaw.exec('ALTER TABLE event_ai_verdicts RENAME TO event_ai_verdicts_gone');
-    await store().refreshReads();
-    expect(store().snapshot!.analysis.has('vo')).toBe(false);
-    warned.mockRestore();
+    mockHeldVerdicts.splice(0).forEach((release) => release());
+    await older;
+    expect(store().snapshot!.analysis.get('vo')?.recommendation).toBe('worth_a_call');
   });
 
   it('a removed row\'s read leaves with it on the next reload', async () => {

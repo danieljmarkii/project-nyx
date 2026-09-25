@@ -83,6 +83,7 @@ jest.mock('../../lib/visitWindow', () => ({
 }));
 jest.mock('../../lib/spineReads', () => ({
   readAnalysisRows: jest.fn(async () => new Map()),
+  readAnalysisCopy: jest.fn(async () => new Map()),
   readFeedingsSince: jest.fn(async () => []),
   readFreeFedSpans: jest.fn(async () => []),
   readVomitOnsetsSince: jest.fn(async () => []),
@@ -178,6 +179,8 @@ function mockPage(): DayPage {
 function mockFacts(): HistoryFacts {
   const range = { fromDay: TODAY, toDay: TODAY };
   return {
+    // The pet every row here belongs to (the mocked pet store's).
+    petId: 'p1',
     range,
     days: buildDayFacts({
       rows: [

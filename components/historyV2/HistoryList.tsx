@@ -53,16 +53,15 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { router, useFocusEffect, useNavigation } from 'expo-router';
-import { hasPerIncidentRead } from '../../constants/eventTypes';
 import { theme } from '../../constants/theme';
 import { analysisChainOutstanding, awaitAnalysisChain, watchAnalysisRow } from '../../lib/analysis';
+import type { DayNode } from '../../lib/dayNodes';
 import { HISTORY_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 import {
   countLineOf,
   dayFactsOn,
   gapLineText,
   listSectionsOf,
-  type DayFacts,
   type HistoryCourse,
   type HistoryFilter,
   type HistorySection,
@@ -74,6 +73,7 @@ import {
   countLineWindowOf,
   historyDatesFor,
   itemsOnlyLineText,
+  historyNodesByDay,
   scrollAnimates,
   sectionFromDay,
   sectionIndexFor,
@@ -83,6 +83,7 @@ import {
   trialRangeOf,
 } from '../../lib/historyScreen';
 import { recordWeekday } from '../../lib/recordDates';
+import { mayCarryRead } from '../../lib/spineNode';
 import { readAnalysisRows } from '../../lib/spineReads';
 import { syncNow } from '../../lib/sync';
 import { toLocalDayKey } from '../../lib/utils';
@@ -141,6 +142,8 @@ type TabPressNavigation = {
 };
 
 const NO_ROWS: readonly HistoryRow[] = [];
+const NO_NODES: readonly DayNode[] = [];
+const NO_NODES_BY_DAY: ReadonlyMap<string, DayNode[]> = new Map();
 const NO_OPEN: ReadonlySet<string> = new Set();
 /** How many times a landing re-aims at a section the list had not measured yet, and how
  *  long it waits for the jump near it to be measured before each re-aim. */
@@ -151,13 +154,13 @@ function courseOf(snapshot: HistorySnapshot, filter: HistoryFilter = snapshot.fi
   return filter.kind === 'course' ? (snapshot.courses.find((c) => c.key === filter.courseKey) ?? null) : null;
 }
 
-/** The loaded rows a read can sit on: every type with a per-incident read, the write side's
- *  own predicate, so a formed stool's read is watched though a formed stool is no symptom. */
+/** The loaded rows a read can sit on: the pipeline's one gate (`mayCarryRead`, HV-6), so a
+ *  formed stool's read is watched though a formed stool is no symptom (CUL-1197). */
 function readableIdsOf(snapshot: HistorySnapshot | null): string {
   if (!snapshot) return '';
   const ids: string[] = [];
   for (const rows of snapshot.wholeDays.values()) {
-    for (const r of rows) if (hasPerIncidentRead(r.event_type)) ids.push(r.id);
+    for (const r of rows) if (mayCarryRead(r.event_type)) ids.push(r.id);
   }
   return ids.sort().join('|');
 }
@@ -305,14 +308,19 @@ export function HistoryList() {
     setWorking(outstanding.length > 0 ? new Set(outstanding) : NO_OPEN);
     let cancelled = false;
     for (const id of outstanding) {
-      void awaitAnalysisChain(id).then(() => {
+      void awaitAnalysisChain(id).then(async () => {
+        if (cancelled) return;
+        // Re-read FIRST, then drop the working fact (C-30, HV-6's second adversarial pass):
+        // dropped first, the row spends the re-read's round trip on the copy from before the
+        // read landed, a frame of "Photo not read" with its tick gone, and the rose then
+        // arrives on a new rail with no announcement.
+        await useHistoryListStore.getState().refreshReads();
         if (cancelled) return;
         setWorking((prev) => {
           const next = new Set(prev);
           next.delete(id);
           return next;
         });
-        void useHistoryListStore.getState().refreshReads();
       });
     }
     return () => {
@@ -373,6 +381,20 @@ export function HistoryList() {
     [snapshot],
   );
 
+  // Every loaded day's nodes at once, over the whole days (R-2), so each card is handed the
+  // meals a timing line on another card measures from (`timedElsewhere`, HV-6).
+  const nodesByDay = useMemo(
+    () =>
+      snapshot && snapshot.filter.kind !== 'noticed'
+        ? historyNodesByDay({
+            days: snapshot.wholeDays,
+            reads: { analysis: snapshot.analysis, answered: snapshot.answered, working },
+            timing: snapshot.timing,
+          })
+        : NO_NODES_BY_DAY,
+    [snapshot, working],
+  );
+
   const countLine = useMemo(() => {
     if (!headerSnap) return null;
     const c = courseOf(headerSnap, filter);
@@ -388,10 +410,6 @@ export function HistoryList() {
     });
   }, [headerSnap, filter, shownSearch]);
 
-  const stripDays = useMemo<DayFacts[]>(
-    () => (headerSnap ? [...headerSnap.facts.days.values()].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0)) : []),
-    [headerSnap],
-  );
 
   const toggleRun = useCallback((id: string) => {
     setOpenRuns((prev) => {
@@ -539,12 +557,9 @@ export function HistoryList() {
             <DayCardBody
               day={m.day}
               items={snapshot.search !== null || m.kind === 'today-open' ? [] : (snapshot.items.get(m.day) ?? [])}
-              wholeDay={snapshot.wholeDays.get(m.day) ?? NO_ROWS}
+              nodes={nodesByDay.get(m.day) ?? NO_NODES}
               shownRows={pageRows.get(m.day) ?? NO_ROWS}
               noticed={snapshot.filter.kind === 'noticed'}
-              analysis={snapshot.analysis}
-              working={working}
-              timing={snapshot.timing}
               openRuns={openRuns}
               onToggleRun={toggleRun}
               onOpenVisit={openVisit}
@@ -576,7 +591,7 @@ export function HistoryList() {
           );
       }
     },
-    [snapshot, pageRows, working, openRuns, toggleRun, openVisit, landedDay, dates, courseName],
+    [snapshot, pageRows, nodesByDay, openRuns, toggleRun, openVisit, landedDay, dates, courseName],
   );
 
   const header = headerSnap ? (
@@ -593,7 +608,13 @@ export function HistoryList() {
             </View>
           ))
         : null}
-      <WeekStrip days={stripDays} />
+      <WeekStrip
+        facts={headerSnap.facts}
+        window={headerSnap.resolved}
+        course={courseOf(headerSnap, filter)}
+        today={headerSnap.today}
+        petName={petName}
+      />
     </View>
   ) : null;
 

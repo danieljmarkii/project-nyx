@@ -17,13 +17,13 @@
 // never listed, and the directories themselves are asserted to exist (C-38: a floor
 // derived from the constant under test is green when an entry is removed from it).
 //
-// THE TWO SIDES (C-32). Home already draws through the modules, so its side is a floor
-// with a real call site: some Home file must import `DayNodeRow` and some must call the
-// pipeline. History v2's list is still HV-1's placeholder, so History's side is
-// registered the PR the rule ships with the EMPTY SET MADE AN ASSERTION: exactly zero
-// History files draw a day row today. HV-7 (CUL-1164) lands the first one; that PR reds
-// this line, and turning it into History's own floor (the Home shape below) is the edit
-// it forces. A rule registered after the first caller is a rule registered after the bug.
+// THE TWO SIDES (C-32). Each surface's side is a floor with a real call site: some file must
+// import `DayNodeRow` and some must call the pipeline. Home's were there when the rule
+// shipped; History's landed with HV-7 (CUL-1164), which turned the rule's registered empty set
+// into this floor. History builds its nodes in its pure half, `lib/historyScreen.ts`
+// (`historyNodesByDay`: every loaded day at once, so a card is handed the meals a timing line
+// on another card measures from), so that file is scanned as History's, by name, and held to
+// the same imports.
 //
 // BLIND SPOTS, stated so they do not read as coverage (C-38):
 //   • A surface that imports a helper module OUTSIDE both surface directories which itself
@@ -51,6 +51,13 @@ const SURFACE_DIRS = {
   history: 'components/historyV2',
 } as const;
 
+/** A surface's pure half outside its directory, scanned as the surface's own (never a way
+ *  around the rule: it is held to the same imports). */
+const SURFACE_FILES = {
+  home: [] as string[],
+  history: ['lib/historyScreen.ts'],
+} as const;
+
 /**
  * The row's modules (repo-relative, no extension), and exactly what a surface may import
  * from each. An empty set means a surface imports nothing from it: that module is the
@@ -76,7 +83,10 @@ const ROW_MODULES: Readonly<Record<string, ReadonlySet<string>>> = {
   'lib/spineNode': new Set(['countLine', 'mayCarryRead', 'SpineAnalysisRow']),
   'lib/spineCompaction': new Set(),
   'lib/rowChips': new Set(),
-  'components/recap/DaySpine': new Set(),
+  // The time column's width, the rail's width and the time column's line-breaking: the grid a
+  // surface's OWN lines align to (History's date-only items and looks sit on the day's thread).
+  // Never the frame (`SpineRowFrame`), which only the row may draw.
+  'components/recap/DaySpine': new Set(['TIME_W', 'RAIL_W', 'timeColumnText']),
 };
 
 /** The names a surface must reach for, to draw a day row at all. */
@@ -185,11 +195,12 @@ function callersIn(root: string, files: readonly string[]) {
 // ── The live tree ─────────────────────────────────────────────────────────────
 
 describe('one row, one way: Home and History draw a day only through the pipeline and DayNodeRow (AC 15)', () => {
-  const homeFiles = walk(ROOT, SURFACE_DIRS.home);
-  const historyFiles = walk(ROOT, SURFACE_DIRS.history);
+  const homeFiles = [...walk(ROOT, SURFACE_DIRS.home), ...SURFACE_FILES.home];
+  const historyFiles = [...walk(ROOT, SURFACE_DIRS.history), ...SURFACE_FILES.history];
 
   it('the floor: both surface directories exist in the repository and hold source to scan', () => {
     for (const dir of Object.values(SURFACE_DIRS)) expect(fs.existsSync(path.join(ROOT, dir))).toBe(true);
+    for (const file of [...SURFACE_FILES.home, ...SURFACE_FILES.history]) expect(fs.existsSync(path.join(ROOT, file))).toBe(true);
     expect(homeFiles.length).toBeGreaterThan(0);
     expect(historyFiles.length).toBeGreaterThan(0);
     // Every row module named here is a real file, so a rename cannot leave an entry that
@@ -209,12 +220,10 @@ describe('one row, one way: Home and History draw a day only through the pipelin
     expect(home.builds).toEqual(['components/designV2/home/TodayCard.tsx']);
   });
 
-  it('History: EXACTLY ZERO files draw a day row yet — firstCallerLands: HV-7 (CUL-1164)', () => {
-    // When HV-7 wires History's list to `DayNodeRow` over `buildDayNodes`, this line reds.
-    // That is the tripwire working (C-32): replace it with History's own floor, the shape
-    // of the Home case above, in the same PR.
+  it('History draws its day through DayNodeRow over the pipeline (a real call site on each side)', () => {
     const history = callersIn(ROOT, historyFiles);
-    expect(history).toEqual({ draws: [], builds: [] });
+    expect(history.draws).toEqual(['components/historyV2/DayCard.tsx']);
+    expect(history.builds).toEqual(['lib/historyScreen.ts']);
   });
 });
 
@@ -247,6 +256,11 @@ describe('the detector catches each way a surface could build a row another way'
     expect(surface(`import * as Row from '../../dayRow/SpineNodeRow';`)).toHaveLength(1);
     expect(surface(`const Row = require('../../dayRow/SpineNodeRow');`)).toHaveLength(1);
     expect(surface(`export { SpineEventRow } from '../../dayRow/SpineNodeRow';`)).toHaveLength(1);
+  });
+
+  it('the column grid is a surface\'s to align to; the frame never is', () => {
+    expect(surface(`import { RAIL_W, TIME_W, timeColumnText } from '../../recap/DaySpine';`)).toEqual([]);
+    expect(surface(`import { SpineRowFrame, TIME_W } from '../../recap/DaySpine';`)).toHaveLength(1);
   });
 
   it('the one way is clean, and a comment ABOUT an internal is not an import of it', () => {

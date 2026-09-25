@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 
-import { hasPerIncidentRead } from '../constants/eventTypes';
 import { getDb } from '../lib/db';
 import { loadTrialPredicateFacts } from '../lib/dietTrialFacts';
 import {
@@ -38,10 +37,9 @@ import {
   type WindowFacts,
 } from '../lib/historyWindows';
 import { DEFAULT_MEAL_TIMING_CONFIG } from '../lib/mealTiming';
-import { isWorthACall } from '../lib/readState';
-import type { SpineAnalysisRow } from '../lib/spineNode';
+import { mayCarryRead, type SpineAnalysisRow } from '../lib/spineNode';
 import {
-  readAnalysisRows,
+  readAnalysisCopy,
   readFeedingsSince,
   readFreeFedSpans,
   readVomitOnsetsSince,
@@ -133,6 +131,9 @@ export interface HistorySnapshot {
   timing: HistoryTiming;
   /** The phone's copy of the reads, for the loaded rows a read can sit on (HV-5). */
   analysis: ReadonlyMap<string, SpineAnalysisRow>;
+  /** The rows whose copy a look has ANSWERED for (HV-6, `TodayCard` the template): only these
+   *  may claim their photo, so a look that failed never draws a photo nobody read. */
+  answered: ReadonlySet<string>;
 }
 
 /** The pet a load reads for: the trial predicate needs its species (route rules) and sex. */
@@ -307,45 +308,60 @@ async function readTiming(petId: string, span: DayRange | null): Promise<History
   return { feedings, freeFedSpans, onsets };
 }
 
-/** The phone's copy of the reads for these days' rows that can carry one: every type with a
- *  per-incident read (`hasPerIncidentRead`, the write side's own predicate), so a formed
- *  stool's read is fetched though a formed stool is not a symptom. Never rejects: a failed
- *  local read is an empty map, which the row draws as unread, never as calm (HV-5). */
-function readAnalysis(days: ReadonlyMap<string, readonly HistoryRow[]>): Promise<Map<string, SpineAnalysisRow>> {
-  return readAnalysisRows([...readableIdsIn(days)]);
-}
-
+/** The rows of these days that can carry a read: the pipeline's one gate (`mayCarryRead`,
+ *  HV-6), never the rose tint, so a formed stool's read is read (CUL-1197) and a row re-typed
+ *  after its read landed keeps the rose the predicate stands. */
 function readableIdsIn(days: ReadonlyMap<string, readonly HistoryRow[]>): Set<string> {
   const ids = new Set<string>();
   for (const rows of days.values()) {
-    for (const r of rows) if (hasPerIncidentRead(r.event_type)) ids.add(r.id);
+    for (const r of rows) if (mayCarryRead(r.event_type)) ids.add(r.id);
   }
   return ids;
 }
 
+/** What a look at the phone's copy answered: the rows it asked about and what it found, or
+ *  nothing at all when the local read FAILED (`readAnalysisCopy` answers null), so "no read
+ *  on this phone" and "could not look" stay two answers (CUL-1198). */
+interface ReadAnswer {
+  answered: ReadonlySet<string>;
+  rows: ReadonlyMap<string, SpineAnalysisRow>;
+}
+
+const NO_ANSWER: ReadAnswer = { answered: new Set(), rows: new Map() };
+
+async function readAnalysis(days: ReadonlyMap<string, readonly HistoryRow[]>): Promise<ReadAnswer> {
+  const asked = readableIdsIn(days);
+  const rows = await readAnalysisCopy([...asked]);
+  return rows === null ? NO_ANSWER : { answered: asked, rows };
+}
+
+/** Two answers as one: the later one's rows win for the ids it answered. */
+function joinAnswers(a: ReadAnswer, b: ReadAnswer): ReadAnswer {
+  return { answered: new Set([...a.answered, ...b.answered]), rows: new Map([...a.rows, ...b.rows]) };
+}
+
 /**
- * A re-read's answer laid over the reads on screen. The fresh answer always wins. From the
- * old ones, a read the re-read did not ask about stays as it was, and one it did ask about
- * stays only if it is a ROSE: a local read that fails answers an empty map (HV-5), and the
- * rose must survive that (it never waits on a read, CUL-1198), while a calm must not, since
- * the record may have replaced it with a rose meanwhile, and a stale calm standing in for a
- * read is CUL-812's class. So a failed re-read shows a photographed row unread, never calm.
- * A read for a row no longer loaded (removed meanwhile) is dropped.
+ * A look's answer laid over the reads on screen, `TodayCard`'s rule (HV-6): the ids the look
+ * answered take its answer (a missing row means "no read on this phone"); every other loaded
+ * row keeps its last answer, so a look that failed changes nothing and a rose already drawn
+ * stays drawn (CUL-1198). A read for a row no longer loaded (removed meanwhile) leaves.
  */
-function layReads(
-  prev: ReadonlyMap<string, SpineAnalysisRow>,
-  fresh: ReadonlyMap<string, SpineAnalysisRow>,
-  asked: ReadonlySet<string>,
+function settleReads(
+  prev: Pick<HistorySnapshot, 'analysis' | 'answered'> | null,
+  answer: ReadAnswer,
   loaded: ReadonlyMap<string, readonly HistoryRow[]>,
-): Map<string, SpineAnalysisRow> {
+): Pick<HistorySnapshot, 'analysis' | 'answered'> {
   const present = new Set<string>();
   for (const rows of loaded.values()) for (const r of rows) present.add(r.id);
-  const out = new Map<string, SpineAnalysisRow>();
-  for (const [id, copy] of prev) {
-    if (present.has(id) && (!asked.has(id) || isWorthACall(copy))) out.set(id, copy);
+  const analysis = new Map<string, SpineAnalysisRow>();
+  const answered = new Set<string>();
+  if (prev) {
+    for (const id of prev.answered) if (present.has(id) && !answer.answered.has(id)) answered.add(id);
+    for (const [id, row] of prev.analysis) if (present.has(id) && !answer.answered.has(id)) analysis.set(id, row);
   }
-  for (const [id, copy] of fresh) out.set(id, copy);
-  return out;
+  for (const id of answer.answered) if (present.has(id)) answered.add(id);
+  for (const [id, row] of answer.rows) if (present.has(id)) analysis.set(id, row);
+  return { analysis, answered };
 }
 
 /** Whether the pet a read was made for is still the pet on screen, read FRESH (CUL-1120). */
@@ -356,6 +372,11 @@ function stillActive(petId: string): boolean {
 // ── The store ───────────────────────────────────────────────────────────────────
 
 let loadSeq = 0;
+/** Looks at the phone's copy, issued and applied. An answer yields only to a NEWER one
+ *  already applied, never to one merely issued: a newer look that then fails must not throw
+ *  away an older answer that carried the rose (`TodayCard`, HV-6's second adversarial pass). */
+let readsIssued = 0;
+let readsApplied = 0;
 /**
  * The next-page read in flight, with the pages it extends. Two calls for the SAME pages share
  * one read; a call after a load replaced them never joins a read made for the old ones, which
@@ -406,7 +427,8 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
       let wholeDays = await wholeDaysFor(pet.id, pages.days, scope.filter, search);
       const timingFor = (span: DayRange | null) =>
         scope.filter.kind === 'noticed' ? Promise.resolve(EMPTY_TIMING) : readTiming(pet.id, span);
-      let [timing, analysis] = await Promise.all([timingFor(pages.span), readAnalysis(wholeDays)]);
+      const readSeq = ++readsIssued;
+      let [timing, answer] = await Promise.all([timingFor(pages.span), readAnalysis(wholeDays)]);
       // The depth to keep can grow WHILE this load reads: a landing pages the snapshot on
       // screen back to its day, or the owner scrolls on. Read on to that depth before landing,
       // so a re-read never takes back a day the list already holds (a landing would lose the
@@ -417,14 +439,23 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
         if (reached === null || !pages.next || !pages.span || pages.span.fromDay <= reached) break;
         const deeper = await readPagesThrough(pet.id, pageScope, reached, pages);
         const added = await wholeDaysFor(pet.id, deeper.days.slice(pages.days.length), scope.filter, search);
-        const [deeperTiming, addedAnalysis] = await Promise.all([timingFor(deeper.span), readAnalysis(added)]);
+        const [deeperTiming, addedAnswer] = await Promise.all([timingFor(deeper.span), readAnalysis(added)]);
         pages = deeper;
         wholeDays = new Map([...wholeDays, ...added]);
         timing = deeperTiming;
-        analysis = new Map([...analysis, ...addedAnalysis]);
+        answer = joinAnswers(answer, addedAnswer);
         if (myId !== loadSeq || !stillActive(pet.id)) return 'superseded';
       }
       if (myId !== loadSeq || !stillActive(pet.id)) return 'superseded';
+      // The reads are laid over the ones on screen NOW (a same-scope snapshot), and an answer
+      // older than one already applied does not overwrite it.
+      const onScreen = get().snapshot;
+      const shown = onScreen && onScreen.key === key && onScreen.petId === pet.id ? onScreen : null;
+      const current = readSeq < readsApplied && shown
+        ? { answered: new Set([...answer.answered].filter((id) => !shown.answered.has(id))), rows: answer.rows }
+        : answer;
+      if (answer.answered.size > 0) readsApplied = Math.max(readsApplied, readSeq);
+      const reads = settleReads(shown, current, wholeDays);
       set({
         snapshot: {
           request,
@@ -443,9 +474,8 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
           pages,
           wholeDays,
           timing,
-          // A re-read of the same scope lays its answer over the reads on screen (`layReads`):
-          // a rose survives a local read that fails, a calm does not.
-          analysis: same ? layReads(same.analysis, analysis, readableIdsIn(wholeDays), wholeDays) : analysis,
+          analysis: reads.analysis,
+          answered: reads.answered,
         },
         failedRequest: null,
         more: null,
@@ -474,7 +504,7 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
         const page = await readDayPage(snap.petId, pageScope, cursor);
         const added = await wholeDaysFor(snap.petId, page.days, snap.filter, snap.search);
         const pages = mergePages(snap.pages, page);
-        const [timing, addedAnalysis] = await Promise.all([
+        const [timing, addedAnswer] = await Promise.all([
           snap.filter.kind === 'noticed' ? Promise.resolve(EMPTY_TIMING) : readTiming(snap.petId, pages.span),
           readAnalysis(added),
         ]);
@@ -483,14 +513,9 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
         // between replaces the snapshot and keeps its pages, so the page lands on that one.
         const now = get().snapshot;
         if (!now || now.pages !== of || !stillActive(now.petId)) return;
+        const wholeDays = new Map([...now.wholeDays, ...added]);
         set({
-          snapshot: {
-            ...now,
-            pages,
-            wholeDays: new Map([...now.wholeDays, ...added]),
-            timing,
-            analysis: new Map([...now.analysis, ...addedAnalysis]),
-          },
+          snapshot: { ...now, pages, wholeDays, timing, ...settleReads(now, addedAnswer, wholeDays) },
           more: null,
         });
       } catch (e) {
@@ -525,13 +550,16 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
   refreshReads: async () => {
     const snap = get().snapshot;
     if (!snap) return;
-    const asked = readableIdsIn(snap.wholeDays);
-    const analysis = await readAnalysisRows([...asked]);
+    const seq = ++readsIssued;
+    const answer = await readAnalysis(snap.wholeDays);
+    // A failed look answers nothing, and an answer older than one applied yields to it.
+    if (answer.answered.size === 0 || seq < readsApplied) return;
     const now = get().snapshot;
     // Laid over whatever the snapshot on screen holds now (a page may have landed since,
     // whose reads this did not ask about), as long as it is still the same scope's.
     if (!now || now.key !== snap.key || now.petId !== snap.petId) return;
-    set({ snapshot: { ...now, analysis: layReads(now.analysis, analysis, asked, now.wholeDays) } });
+    readsApplied = seq;
+    set({ snapshot: { ...now, ...settleReads(now, answer, now.wholeDays) } });
   },
 
   reset: () => {

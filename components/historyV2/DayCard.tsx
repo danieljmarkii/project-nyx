@@ -17,14 +17,16 @@
 //   • Date-only items sit at the top of their day on the same thread, under every filter
 //     (rule L, AC 11), never counted: a visit (a square, and a door to the visit), a course's
 //     start (a short bar), a bowl's change. Never under a search: they are not rows it found.
-//   • The rows are the shared row (`DayNodeRow`, HV-1/HV-6) over `historyDayNodes`: the WHOLE
-//     day through the pipeline Home calls, then hidden by the filter (R-2). A card never
-//     builds a row another way.
-//   • Under Noticed the rows are the day's looks, each on the recap spine's hollow bead with
-//     the shared describer's words (`describeDayEvent`): the pipeline leaves looks out on
-//     purpose (a look is Home's header, not a node), so this is the one other row shape, and
-//     it is the shipped look row's content, not a new one.
-import { Fragment, useMemo } from 'react';
+//   • The rows are the shared row (`DayNodeRow`, HV-1/HV-6) over the day's nodes, which the
+//     list builds for every loaded day at once (`historyNodesByDay`: the WHOLE day through the
+//     pipeline Home calls, with the meals a line on another card measures from), then hidden
+//     by the filter (R-2). A card never builds a row another way (`guards/dayRowOneWay`).
+//   • Under Noticed the rows are the day's looks: the pipeline leaves looks out on purpose (a
+//     look is Home's header, not a node), so a look is History's own line, like a date-only
+//     item: the row's time column and rail (their widths are the row's), the hollow bead a
+//     look wears on every spine (`nodeDotColors`), and the shared describer's words
+//     (`describeDayEvent`). It is not a row frame, which only the row may draw.
+import { Fragment } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
@@ -37,12 +39,12 @@ import {
   type HistoryFilter,
 } from '../../lib/historyDays';
 import type { HistoryRow } from '../../lib/historyQueries';
-import { dateOnlyItemText, historyDayNodes, type HistoryDayTiming } from '../../lib/historyScreen';
+import type { DayNode } from '../../lib/dayNodes';
+import { dateOnlyItemText, visibleNodesOf } from '../../lib/historyScreen';
 import { recordWeekday } from '../../lib/recordDates';
-import type { SpineAnalysisRow } from '../../lib/spineNode';
 import { DayNodeRow } from '../dayRow/DayNodeRow';
-import { NODE_DOT_SIZE } from '../recap/nodeTints';
-import { RAIL_W, SpineRowFrame, TIME_W } from '../recap/DaySpine';
+import { NODE_DOT_RING, NODE_DOT_SIZE, NODE_TINT_DAY, nodeDotColors } from '../recap/nodeTints';
+import { RAIL_W, TIME_W, timeColumnText } from '../recap/DaySpine';
 import { ThemedText } from '../ui/ThemedText';
 import { LANDED_OUTLINE_WIDTH } from './GapLine';
 
@@ -220,7 +222,10 @@ function DateOnlyItemRow({
 
 // ── A look, under Noticed ────────────────────────────────────────────────────────
 
-function LookRow({ row, isFirst, isLast }: { row: HistoryRow; isFirst: boolean; isLast: boolean }) {
+/** The look's bead: hollow, as on every spine (`nodeDotColors`, CUL-869). */
+const LOOK_BEAD = nodeDotColors('look', NODE_TINT_DAY, theme.colorSurface);
+
+function LookLine({ row, isFirst, isLast }: { row: HistoryRow; isFirst: boolean; isLast: boolean }) {
   // The shared describer: a HistoryRow is a TimelineRow, column for column (HV-4).
   const d = describeDayEvent(row);
   const label = `${d.title}${d.detail ? `, ${d.detail}` : ''}, ${d.time}. Opens details`;
@@ -229,16 +234,23 @@ function LookRow({ row, isFirst, isLast }: { row: HistoryRow; isFirst: boolean; 
       onPress={() => router.push({ pathname: '/event/[id]', params: { id: row.id } })}
       accessibilityRole="button"
       accessibilityLabel={label}
+      style={({ pressed }) => [styles.lookDoor, pressed && styles.pressed]}
       testID={`history-look-${row.id}`}
     >
-      {({ pressed }) => (
-        <SpineRowFrame ground="day" category="look" isFirst={isFirst} isLast={isLast} time={d.time} pressed={pressed}>
+      <View style={[styles.itemRow, isLast ? styles.itemRowLast : styles.itemRowGap]}>
+        <ThemedText style={styles.lookTime}>{timeColumnText(d.time)}</ThemedText>
+        <View style={styles.rail}>
+          {!isFirst ? <View style={[styles.thread, styles.threadTop]} /> : null}
+          {!isLast ? <View style={[styles.thread, styles.threadBottom]} /> : null}
+          <View style={[styles.mark, styles.lookBead, { backgroundColor: LOOK_BEAD.fill, borderColor: LOOK_BEAD.ring }]} />
+        </View>
+        <View style={styles.itemBody}>
           <ThemedText style={styles.lookTitle}>
             {d.title}
             {d.detail ? <ThemedText style={styles.lookDetail}>{` · ${d.detail}`}</ThemedText> : null}
           </ThemedText>
-        </SpineRowFrame>
-      )}
+        </View>
+      </View>
     </Pressable>
   );
 }
@@ -249,14 +261,11 @@ export interface DayCardBodyProps {
   day: string;
   /** Date-only items, top of the day; empty under a search. */
   items: readonly DateOnlyItem[];
-  /** Every row of the day (R-2); ignored under Noticed. */
-  wholeDay: readonly HistoryRow[];
+  /** The WHOLE day's nodes (`historyNodesByDay`); ignored under Noticed. */
+  nodes: readonly DayNode[];
   /** The page's rows for the day: what the filter shows (under Noticed, the looks). */
   shownRows: readonly HistoryRow[];
   noticed: boolean;
-  analysis: ReadonlyMap<string, SpineAnalysisRow>;
-  working: ReadonlySet<string>;
-  timing: HistoryDayTiming;
   /** Runs open in place, by node id (per mount, never the record's). */
   openRuns: ReadonlySet<string>;
   onToggleRun: (id: string) => void;
@@ -269,32 +278,17 @@ export interface DayCardBodyProps {
 export function DayCardBody({
   day,
   items,
-  wholeDay,
+  nodes: dayNodes,
   shownRows,
   noticed,
-  analysis,
-  working,
-  timing,
   openRuns,
   onToggleRun,
   onOpenVisit,
   landed,
   emptyLine = null,
 }: DayCardBodyProps) {
-  const nodes = useMemo(
-    () =>
-      noticed
-        ? []
-        : historyDayNodes({
-            day,
-            rows: wholeDay,
-            shown: new Set(shownRows.map((r) => r.id)),
-            analysis,
-            working,
-            timing,
-          }),
-    [noticed, day, wholeDay, shownRows, analysis, working, timing],
-  );
+  // A filter only hides (R-2): the day's nodes were built over the whole day.
+  const nodes = noticed ? [] : visibleNodesOf(dayNodes, new Set(shownRows.map((r) => r.id)));
   const looks = noticed ? shownRows : [];
   const threadLength = items.length + nodes.length + looks.length;
   return (
@@ -321,7 +315,7 @@ export function DayCardBody({
           />
         ))}
         {looks.map((row, i) => (
-          <LookRow key={row.id} row={row} isFirst={items.length + i === 0} isLast={items.length + i === threadLength - 1} />
+          <LookLine key={row.id} row={row} isFirst={items.length + i === 0} isLast={items.length + i === threadLength - 1} />
         ))}
       </View>
     </View>
@@ -469,6 +463,23 @@ const styles = StyleSheet.create({
   },
 
   // ── A look ──
+  // The whole line is the tap target, at the row's 44pt floor.
+  lookDoor: { minHeight: 44, borderRadius: theme.radiusSmall },
+  lookTime: {
+    width: TIME_W,
+    paddingTop: theme.spaceMicro,
+    textAlign: 'right',
+    fontSize: theme.textXS,
+    fontVariant: ['tabular-nums'],
+    color: theme.colorTextTertiary,
+  },
+  lookBead: {
+    marginTop: MARK_CENTER_Y - NODE_DOT_SIZE / 2,
+    width: NODE_DOT_SIZE,
+    height: NODE_DOT_SIZE,
+    borderRadius: NODE_DOT_SIZE / 2,
+    borderWidth: NODE_DOT_RING,
+  },
   lookTitle: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,

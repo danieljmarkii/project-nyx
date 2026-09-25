@@ -11,6 +11,7 @@ import { theme } from '../../constants/theme';
 import { DayCardBody, DayCardHeader, TODAY_NOTHING_YET } from './DayCard';
 import { emptyDayFacts, type DateOnlyItem, type DayFacts } from '../../lib/historyDays';
 import type { HistoryRow } from '../../lib/historyQueries';
+import { historyNodesByDay } from '../../lib/historyScreen';
 
 interface RenderedNode {
   children: (RenderedNode | string)[];
@@ -33,10 +34,15 @@ function row(id: string, event_type: string, hour: number, extra: Partial<Histor
   } as HistoryRow;
 }
 
+/** The whole day's nodes, as the list builds them for every loaded day. */
+const nodesOf = (rows: HistoryRow[], day = '2026-09-17') =>
+  historyNodesByDay({
+    days: new Map([[day, rows]]),
+    reads: { analysis: new Map(), answered: new Set(), working: new Set() },
+    timing: { feedings: [], freeFedSpans: [], onsets: [] },
+  }).get(day) ?? [];
+
 const bodyProps = {
-  analysis: new Map(),
-  working: new Set<string>(),
-  timing: { feedings: [], freeFedSpans: [], onsets: [] },
   openRuns: new Set<string>(),
   onToggleRun: () => {},
   onOpenVisit: jest.fn(),
@@ -103,7 +109,7 @@ describe('DayCardBody', () => {
   it('date-only items at the top of the day, the visit a door to the visit; then the rows', () => {
     const rows = [row('m1', 'meal', 9, { food_brand: 'Royal Canin', food_product_name: 'Selected Protein PR', food_type: 'meal' } as Partial<HistoryRow>)];
     render(
-      <DayCardBody {...bodyProps} day="2026-09-17" items={[visit, start]} wholeDay={rows} shownRows={rows} noticed={false} />,
+      <DayCardBody {...bodyProps} day="2026-09-17" items={[visit, start]} nodes={nodesOf(rows)} shownRows={rows} noticed={false} />,
     );
     const body = screen.getByTestId('history-day-body-2026-09-17');
     const order = (body as unknown as { findAll: (p: (n: { props: { testID?: string } }) => boolean) => { props: { testID: string } }[] })
@@ -121,21 +127,25 @@ describe('DayCardBody', () => {
 
   it('a filter hides rows, never builds them another way: only the shown row is drawn', () => {
     const rows = [row('m1', 'meal', 8), row('v1', 'vomit', 9), row('m2', 'meal', 10)];
-    render(<DayCardBody {...bodyProps} day="2026-09-17" items={[]} wholeDay={rows} shownRows={[rows[1]]} noticed={false} />);
+    render(<DayCardBody {...bodyProps} day="2026-09-17" items={[]} nodes={nodesOf(rows)} shownRows={[rows[1]]} noticed={false} />);
     expect(screen.getByTestId('spine-node-v1')).toBeTruthy();
     expect(screen.queryByTestId('spine-node-m1')).toBeNull();
   });
 
-  it('under Noticed: each look on the hollow bead, opening its record', () => {
+  it('under Noticed: each look on the hollow bead, at its time, opening its record', () => {
     const look = row('lk', 'check_in', 21, { look_outcome: 'observed', look_words: null, look_note: null } as Partial<HistoryRow>);
-    render(<DayCardBody {...bodyProps} day="2026-09-17" items={[]} wholeDay={[]} shownRows={[look]} noticed />);
-    fireEvent.press(screen.getByTestId('history-look-lk'));
+    render(<DayCardBody {...bodyProps} day="2026-09-17" items={[]} nodes={[]} shownRows={[look]} noticed />);
+    const line = screen.getByTestId('history-look-lk');
+    // The whole line is a door at the row's 44pt floor (C-5).
+    expect(StyleSheet.flatten(line.props.style).minHeight).toBeGreaterThanOrEqual(44);
+    expect(line.props.accessibilityLabel).toMatch(/Opens details$/);
+    fireEvent.press(line);
     expect(router.push).toHaveBeenCalledWith({ pathname: '/event/[id]', params: { id: 'lk' } });
   });
 
   it('today with nothing yet: the one line', () => {
     render(
-      <DayCardBody {...bodyProps} day={TODAY} items={[]} wholeDay={[]} shownRows={[]} noticed={false} emptyLine={TODAY_NOTHING_YET} />,
+      <DayCardBody {...bodyProps} day={TODAY} items={[]} nodes={[]} shownRows={[]} noticed={false} emptyLine={TODAY_NOTHING_YET} />,
     );
     expect(screen.getByText('Nothing logged yet today.')).toBeTruthy();
   });

@@ -61,11 +61,26 @@ jest.mock('expo-router', () => {
   };
 });
 
-// The strip's slot: a probe holding what the list handed it.
+// The strip's slot: a probe holding what the list handed it (HV-8's props: the count line's
+// own facts, window, course, day and pet).
 let mockStripDays: { day: string; total: number }[] = [];
+let mockStripProps: { windowPetId: string; factsPetId: string | null; today: string; petName: string } | null = null;
 jest.mock('./WeekStrip', () => ({
-  WeekStrip: ({ days }: { days: { day: string; total: number }[] }) => {
-    mockStripDays = days.map((d) => ({ day: d.day, total: d.total }));
+  WeekStrip: ({
+    facts,
+    window,
+    today,
+    petName,
+  }: {
+    facts: { petId: string; days: Map<string, { day: string; total: number }> } | null;
+    window: { petId: string };
+    today: string;
+    petName: string;
+  }) => {
+    mockStripDays = facts
+      ? [...facts.days.values()].map((d) => ({ day: d.day, total: d.total })).sort((a, b) => (a.day < b.day ? -1 : 1))
+      : [];
+    mockStripProps = { windowPetId: window.petId, factsPetId: facts?.petId ?? null, today, petName };
     return null;
   },
 }));
@@ -104,7 +119,7 @@ import { DIET_TRIAL_SCHEMA_SQL } from '../../lib/dietTrialMirror';
 import { FAB_SCROLL_INSET_FLOOR, HISTORY_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 import { shiftDay } from '../../lib/historyDays';
 import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
-import { analysisChainOutstanding } from '../../lib/analysis';
+import { analysisChainOutstanding, claimAnalysisChain } from '../../lib/analysis';
 import { syncNow } from '../../lib/sync';
 import { usePetStore, type Pet } from '../../store/petStore';
 import { defaultHistoryScope, useHistoryScopeStore } from '../../store/historyScopeStore';
@@ -227,6 +242,23 @@ async function settle(): Promise<void> {
   });
 }
 
+/** Hold every read until released. Each gate is registered and released after the test
+ *  whatever it asserted, so a failing test never leaves its reads held for the next one. */
+const mockHeld: (() => void)[] = [];
+function holdReads(): () => void {
+  let release: () => void = () => {};
+  mockGate = new Promise<void>((r) => {
+    release = r;
+  });
+  mockHeld.push(release);
+  return release;
+}
+
+afterEach(() => {
+  mockGate = null;
+  mockHeld.splice(0).forEach((release) => release());
+});
+
 async function renderList(): Promise<ReturnType<typeof render>> {
   const view = render(<HistoryList />);
   await settle();
@@ -244,6 +276,7 @@ beforeEach(async () => {
   mockGate = null;
   mockFail = false;
   mockStripDays = [];
+  mockStripProps = null;
   mockNavigation.focused = true;
   mockNavigation.listeners.clear();
   mockFocusCallbacks.clear();
@@ -278,10 +311,11 @@ describe('one read behind every number on screen (AC 1, R-1)', () => {
     // Each header's total, summed, is the line's total.
     const totals = [0, 1, 2, 4].map((n) => Number(/^(\d+) logged/.exec(text(`history-day-counts-${dayAgo(n)}`))?.[1]));
     expect(totals.reduce((a, b) => a + b, 0)).toBe(7);
-    // The strip was handed the very same days, with the same totals.
+    // The strip was handed the very same days, with the same totals, for this pet and day.
     expect(mockStripDays).toEqual(
       [4, 2, 1, 0].map((n) => ({ day: dayAgo(n), total: n === 4 || n === 2 ? (n === 4 ? 2 : 3) : 1 })),
     );
+    expect(mockStripProps).toEqual({ windowPetId: PET_A.id, factsPetId: PET_A.id, today: TODAY, petName: 'Nyx' });
   });
 
   it('a header names symptoms in the rose ink and an unfinished meal in neutral grey (H-2)', async () => {
@@ -448,10 +482,7 @@ describe('AC 12 — a read that answers for another pet is dropped', () => {
   it('pet A\'s read, held in flight across a switch to B, never draws under B', async () => {
     seedWeek();
     insertMeal('b-meal', at(0, 0, 20), 'rc', 'all', PET_B.id);
-    let release: () => void = () => {};
-    mockGate = new Promise<void>((r) => {
-      release = r;
-    });
+    const release = holdReads();
     render(<HistoryList />);
     await settle();
     expect(screen.getByTestId('history-skeleton', { includeHiddenElements: true })).toBeTruthy();
@@ -474,10 +505,7 @@ describe('a new scope never shows the old scope\'s rows while its read is in fli
     await renderList();
     expect(screen.getByTestId('spine-node-m1')).toBeTruthy();
     const stripBefore = mockStripDays;
-    let release: () => void = () => {};
-    mockGate = new Promise<void>((r) => {
-      release = r;
-    });
+    const release = holdReads();
     setScope({ filter: { kind: 'type', type: 'vomit' } });
     await settle();
     expect(screen.queryByTestId('spine-node-m1')).toBeNull();
@@ -497,10 +525,7 @@ describe('a new scope never shows the old scope\'s rows while its read is in fli
   it('a window change asks for new facts: the header waits with the days', async () => {
     seedWeek();
     await renderList();
-    let release: () => void = () => {};
-    mockGate = new Promise<void>((r) => {
-      release = r;
-    });
+    const release = holdReads();
     setScope({ window: { kind: 'last', days: 7 } });
     await settle();
     expect(screen.queryByTestId('history-list-header')).toBeNull();
@@ -553,10 +578,7 @@ describe('AC 14 — the last row clears the + button', () => {
 describe('the quiet states (§3.12, C-12)', () => {
   it('loading: the silhouette, never "Nothing logged yet" over a read that has not answered', async () => {
     seedWeek();
-    let release: () => void = () => {};
-    mockGate = new Promise<void>((r) => {
-      release = r;
-    });
+    const release = holdReads();
     render(<HistoryList />);
     await settle();
     expect(screen.getByTestId('history-skeleton', { includeHiddenElements: true })).toBeTruthy();
@@ -697,10 +719,7 @@ describe('the landed day (§3.1, C-22)', () => {
     seedDays(12, 10);
     await renderList();
     const aim = jest.spyOn(SectionList.prototype, 'scrollToLocation').mockImplementation(() => {});
-    let release: () => void = () => {};
-    mockGate = new Promise<void>((r) => {
-      release = r;
-    });
+    const release = holdReads();
     act(() => {
       useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(10));
     });
@@ -755,13 +774,37 @@ describe('the tab re-press (§3.1)', () => {
 // ── The reads a row can carry (HV-5; CUL-1197) ─────────────────────────────────
 
 describe('the reads a row can carry', () => {
-  it('a formed stool is watched for its read like a vomit: the gate is the per-incident read, never the symptom tint', async () => {
+  it('a read in flight keeps its tick until the re-read has answered, then lands on the row that waited (C-30)', async () => {
+    seedWeek();
+    const claim = claimAnalysisChain('v2');
+    await renderList();
+    expect(screen.getByTestId('spine-read-v2')).toBeTruthy();
+    expect(screen.queryByTestId('spine-verdict-v2')).toBeNull();
+    mockRaw
+      .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES ('v2', 'completed', 'worth_a_call', ?)`)
+      .run(at(2, 8, 20));
+    // The chain settles while its re-read is held: the row keeps the tick, never a frame of
+    // "Photo not read" or of nothing before the rose (HV-6's second adversarial pass).
+    const release = holdReads();
+    await act(async () => claim?.settle(true));
+    await settle();
+    expect(screen.getByTestId('spine-read-v2')).toBeTruthy();
+    expect(screen.queryByTestId('spine-verdict-v2')).toBeNull();
+    mockGate = null;
+    await act(async () => release());
+    await settle();
+    expect(screen.getByTestId('spine-verdict-v2')).toBeTruthy();
+  });
+
+  it('every row the pipeline can draw a read on is watched: the one gate (mayCarryRead), never the symptom tint', async () => {
     seedWeek();
     insertEvent('st', at(1, 7), 'stool_normal');
+    insertEvent('co', at(1, 8), 'cough');
     await renderList();
     const asked = (analysisChainOutstanding as jest.Mock).mock.calls.map(([id]) => id);
-    expect(asked).toContain('st');
-    expect(asked).toContain('v2');
+    // A formed stool tints "other" and still carries a read (CUL-1197); a cough is a row the
+    // pipeline draws a read slot on, whatever writes one.
+    expect(asked).toEqual(expect.arrayContaining(['st', 'co', 'v2']));
     // A meal carries no read.
     expect(asked).not.toContain('m1');
   });

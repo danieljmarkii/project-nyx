@@ -24,7 +24,7 @@ import {
   countLineWindowOf,
   dateOnlyItemText,
   historyDatesFor,
-  historyDayNodes,
+  historyNodesByDay,
   itemsOnlyLineText,
   needsWholeDays,
   priorOnsetsFor,
@@ -37,6 +37,7 @@ import {
   trialRangeOf,
   visibleNodesOf,
   type HistoryDayTiming,
+  type HistoryReads,
 } from './historyScreen';
 import { resolveWindow, windowTrialOf, type WindowFacts } from './historyWindows';
 import type { FeedingInput } from './mealTiming';
@@ -101,15 +102,13 @@ const TIMING: HistoryDayTiming = {
   onsets: [],
 };
 
-const nodesFor = (shown: readonly string[]) =>
-  historyDayNodes({
-    day: DAY,
-    rows: WHOLE,
-    shown: new Set(shown),
-    analysis: new Map(),
-    working: new Set(),
-    timing: TIMING,
-  });
+/** The copy answered for the photographed vomit (it holds no read), so its photo claims. */
+const READS: HistoryReads = { analysis: new Map(), answered: new Set(['v2']), working: new Set() };
+const NO_READS: HistoryReads = { analysis: new Map(), answered: new Set(), working: new Set() };
+
+const wholeDayNodes = (reads: HistoryReads = READS) =>
+  historyNodesByDay({ days: new Map([[DAY, WHOLE]]), reads, timing: TIMING }).get(DAY) ?? [];
+const nodesFor = (shown: readonly string[]) => visibleNodesOf(wholeDayNodes(), new Set(shown));
 
 const ALL_IDS = WHOLE.map((r) => r.id);
 const idsOf = (nodes: readonly DayNode[]) => nodes.map((n) => (n.kind === 'compact' ? `run(${n.ids.join(',')})` : n.id));
@@ -170,8 +169,65 @@ describe('a filter only hides: the nodes are the whole day\'s, then filtered (R-
   });
 });
 
+describe('the read slot claims only once the copy answered (HV-6, TodayCard\'s rule)', () => {
+  const v2 = (reads: HistoryReads) => {
+    const node = wholeDayNodes(reads).find((n) => n.id === 'v2');
+    return node && node.kind === 'event' ? node : null;
+  };
+
+  it('a photographed vomit whose copy answered with no read: the photo, and Photo not read', () => {
+    expect(v2(READS)?.photo).toBe(true);
+    expect(v2(READS)?.read.state).toBe('unread');
+  });
+
+  it('whose copy has not answered (a look that failed): no photo claimed, so no grey claim either', () => {
+    expect(v2(NO_READS)?.photo).toBe(false);
+    expect(v2(NO_READS)?.read.state).toBe('none');
+  });
+
+  it('a rose in the copy is drawn whether or not the photo fact is in', () => {
+    const rose = new Map([['v2', { event_id: 'v2', status: 'completed', recommendation: 'worth_a_call', updated_at: iso(17, 20) }]]);
+    expect(v2({ ...NO_READS, analysis: rose })?.read.state).toBe('worth_a_call');
+  });
+
+  it('a meal\'s photo carries no read and claims at once: it breaks a run', () => {
+    const rows = WHOLE.map((r) => (r.id === 'm4' ? { ...r, has_photo: true } : r));
+    const nodes = historyNodesByDay({ days: new Map([[DAY, rows]]), reads: NO_READS, timing: TIMING }).get(DAY) ?? [];
+    const m4 = nodes.find((n) => n.kind === 'event' && n.id === 'm4');
+    expect(m4 && m4.kind === 'event' ? m4.photo : null).toBe(true);
+  });
+});
+
+describe('a timing line on another card keeps its meal on its own row (timedElsewhere, HV-6)', () => {
+  const at = (d: number, h: number) => new Date(2026, 8, d, h, 0, 0, 0).toISOString();
+  const onDay = (id: string, type: string, d: number, h: number, extra: Partial<HistoryRow> = {}) =>
+    ({ ...row(id, type, 0, 0, extra), occurred_at: at(d, h), created_at: at(d, h), updated_at: at(d, h) }) as HistoryRow;
+  const evening = [onDay('e1', 'meal', 16, 18, PR), onDay('e2', 'meal', 16, 20, PR), onDay('e3', 'meal', 16, 22, PR)];
+  const night = [onDay('n1', 'vomit', 17, 2)];
+  const timing: HistoryDayTiming = { feedings: evening.map(feedingOf), freeFedSpans: [], onsets: [] };
+
+  it('a 2 AM vomit timed from last night\'s 10 PM bowl: that bowl is its own row on the previous card', () => {
+    const byDay = historyNodesByDay({
+      days: new Map([['2026-09-17', night], ['2026-09-16', evening]]),
+      reads: NO_READS,
+      timing,
+    });
+    const vomit = byDay.get('2026-09-17')?.[0];
+    expect(vomit?.kind === 'event' ? vomit.timing : null).toMatch(/after eating/);
+    expect(idsOf(byDay.get('2026-09-16') ?? [])).toEqual(['run(e1,e2)', 'e3']);
+  });
+
+  it('without the next day loaded, the evening is one run: the anchor is what kept the bowl out', () => {
+    const alone = historyNodesByDay({ days: new Map([['2026-09-16', evening]]), reads: NO_READS, timing }).get('2026-09-16');
+    expect(idsOf(alone ?? [])).toEqual(['run(e1,e2,e3)']);
+  });
+});
+
 describe('visibleNodesOf', () => {
-  const all = nodesFor(ALL_IDS);
+  // Three bowls of one product and no vomit, so no timing line keeps one out: one run.
+  const breakfastToLunch = [row('a1', 'meal', 8, 0, PR), row('a2', 'meal', 9, 0, PR), row('a3', 'meal', 10, 0, PR)];
+  const all =
+    historyNodesByDay({ days: new Map([[DAY, breakfastToLunch]]), reads: NO_READS, timing: TIMING }).get(DAY) ?? [];
   const run = all.find((n) => n.kind === 'compact');
 
   it('a run shows whole when every member shows, and as its members when only some do', () => {

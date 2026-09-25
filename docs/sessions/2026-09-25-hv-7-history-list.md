@@ -124,3 +124,27 @@ HV-7 is the list half of History v2's step 2, one of four sessions running at on
 - **Of HV-9's PR:** `readWindowFacts` moves to `lib/historyWindowFacts.ts`; the pill can read `headerSnapshotFor` to stop blinking.
 - **Four PM decisions** (CUL-1242–1245), none of them blocking this PR. CUL-1242 and CUL-1244 block the HV-13 device pass.
 - **Not built, by design:** VoiceOver focus on a landing and on the re-tap, and every motion (HV-10); the strip, the pinned row and the sheets (HV-8, HV-9).
+
+## After the wrap: HV-6 (#914) and HV-8 (#915) merged first
+
+The one check-in (10:02 UTC) found both on `main`, so #917 merged second to each and owed their hand-offs. The merge itself was clean; the integration is its own commit.
+
+- **HV-8, the strip.** `WeekStrip` takes its new props (`facts`, `window`, `course`, `today`, `petName`) from the header snapshot, so it stays mounted across a filter or search change; the flag test's facts carry `petId`.
+- **HV-6, the guard.**
+  - `guards/dayRowOneWay.test.ts`'s History zero is now History's floor: `DayCard.tsx` draws, and `lib/historyScreen.ts` builds. `lib/historyScreen.ts` is scanned by name as History's pure half and held to the same imports.
+  - A surface may now import the column grid (`TIME_W`, `RAIL_W`, `timeColumnText`), never the frame. So the look under Noticed is History's own line on that grid (time column, rail, the hollow bead), no longer `SpineRowFrame`.
+- **HV-6, the anchors.** The pipeline now reports the anchors it used (`DayModel.anchors`, additive). The list builds every loaded day at once (`historyNodesByDay`, two passes) and hands each card the meals a timing line on another card measures from (`timedElsewhere`). A 2 AM vomit timed from last night's 10 PM bowl keeps that bowl on its own row on the previous card.
+- **HV-6, the read slot, on `TodayCard`'s template:**
+  - reads go through `readAnalysisCopy`;
+  - a readable row claims its photo only once its copy answered (the `answered` set);
+  - the one gate is `mayCarryRead`;
+  - an older look never overwrites a newer one;
+  - the working mark drops only after the re-read (C-30).
+- **This replaces the first round's `layReads`.**
+  - HV-6's contract keeps the last answer on a failed look, calm included, and never claims *Photo not read* for a row whose copy did not answer: under H-4b both the grey and the empty slot are claims.
+  - The re-check's stale-calm case therefore behaves as it does on Home. A calm draws nothing (n=1 never reassures), and the new rose cannot be known without a read, so the row shows no rose either way; only the photo glyph differs.
+  - One contract on both surfaces is what AC 15 asks for.
+- **Still owed: HV-9's `lib/historyWindowFacts.ts`,** by whichever of HV-9's PR and #917 merges second.
+- **Verification.**
+  - 10 more mutations (the second pass dropped, a photo claimed before its copy answered, a failed look discarding the last answer, an older look overwriting, the working mark dropped first, both read gates narrowed, the pipeline's anchors emptied, the look back on the frame, the strip handed another pet's window).
+  - The full suite: 500 suites, 11,332 tests. The History and pipeline suites under Kiritimati, Chatham and Honolulu.

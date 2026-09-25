@@ -13,7 +13,7 @@
 // same under every filter, because the nodes never saw the filter.
 
 import { SYMPTOM_TYPES, type EventTypeKey } from '../constants/eventTypes';
-import { buildDayNodes, type DayNode } from './dayNodes';
+import { buildDay, type DayNode } from './dayNodes';
 import {
   DEFAULT_MEAL_TIMING_CONFIG,
   type FeedingInput,
@@ -21,7 +21,7 @@ import {
   type OnsetConfidence,
 } from './mealTiming';
 import type { HistoryRow } from './historyQueries';
-import type { SpineAnalysisRow } from './spineNode';
+import { mayCarryRead, type SpineAnalysisRow } from './spineNode';
 import {
   absenceText,
   type CountLineDoorKey,
@@ -207,34 +207,80 @@ export interface HistoryDayTiming {
   onsets: readonly { ms: number; confidence: OnsetConfidence | null }[];
 }
 
-/**
- * A day card's nodes: the WHOLE day through the shared pipeline (`buildDayNodes`, the one
- * Home's Today card calls; spec §5.5), then hidden by what the page showed
- * (`visibleNodesOf`). The photo fact is the row's own (`has_photo`, the month's predicate);
- * the reads are the phone's copy and the chains in flight; the timing lane gets the onsets
- * before the day inside its episode gap, so a bout across midnight is one episode here as on
- * the lane.
- */
-export function historyDayNodes(args: {
-  day: string;
-  /** Every row of the day, morning to night (`readWholeDays`, or the page's own). */
-  rows: readonly HistoryRow[];
-  /** The ids the page's filter or search showed. */
-  shown: ReadonlySet<string>;
+/** The phone's copy of the reads for the loaded rows, and the ids whose copy a look has
+ *  ANSWERED for (HV-6's contract, `TodayCard` the template). */
+export interface HistoryReads {
   analysis: ReadonlyMap<string, SpineAnalysisRow>;
+  answered: ReadonlySet<string>;
+  /** Reads being produced right now (C-30). */
   working: ReadonlySet<string>;
+}
+
+/**
+ * Every loaded day's nodes: the WHOLE day through the shared pipeline (`buildDay`, the one
+ * Home's Today card calls; spec §5.5), before any filter hides a row (`visibleNodesOf`).
+ *
+ * The photo set: a row's own `has_photo` (the month's predicate), except a row that can carry
+ * a read (`mayCarryRead`, the pipeline's one gate) whose copy has not ANSWERED: the read slot
+ * claims only once the copy answered, so a look that failed never draws a photo nobody read
+ * (HV-6). A meal's photo carries no read and goes at once: it breaks a run.
+ *
+ * The timing lane gets each day's onsets before its midnight inside the episode gap, so a
+ * bout across midnight is one episode here as on the lane. And each day is handed the meals a
+ * timing line on ANOTHER day measures from (`timedElsewhere`, HV-6): a 2 AM vomit timed from
+ * last night's 10 PM bowl keeps that bowl on its own row on the previous card. The anchors
+ * are the ones the pipeline itself used (`DayModel.anchors`), read off a first pass; only a
+ * day that holds such a meal is built again.
+ */
+export function historyNodesByDay(args: {
+  /** Every loaded day's rows, morning to night (`readWholeDays`, or the page's own). */
+  days: ReadonlyMap<string, readonly HistoryRow[]>;
+  reads: HistoryReads;
   timing: HistoryDayTiming;
-}): DayNode[] {
-  const photographed = new Set(args.rows.filter((r) => r.has_photo).map((r) => r.id));
-  const nodes = buildDayNodes(args.rows, {
-    reads: { photographed, analysis: args.analysis, working: args.working },
-    timings: {
-      feedings: args.timing.feedings,
-      freeFedSpans: args.timing.freeFedSpans,
-      priorOnsets: priorOnsetsFor(args.day, args.timing.onsets),
-    },
-  });
-  return visibleNodesOf(nodes, args.shown);
+}): Map<string, DayNode[]> {
+  const { reads, timing } = args;
+  const build = (day: string, rows: readonly HistoryRow[], timedElsewhere?: ReadonlySet<string>) =>
+    buildDay(rows, {
+      reads: {
+        photographed: new Set(
+          rows
+            .filter((r) => r.has_photo && (!mayCarryRead(r.event_type) || reads.answered.has(r.id)))
+            .map((r) => r.id),
+        ),
+        analysis: reads.analysis,
+        working: reads.working,
+      },
+      timings: {
+        feedings: timing.feedings,
+        freeFedSpans: timing.freeFedSpans,
+        priorOnsets: priorOnsetsFor(day, timing.onsets),
+        timedElsewhere,
+      },
+    });
+
+  const dayOfRow = new Map<string, string>();
+  for (const [day, rows] of args.days) for (const r of rows) dayOfRow.set(r.id, day);
+
+  const first = new Map<string, ReturnType<typeof build>>();
+  const elsewhere = new Map<string, Set<string>>();
+  for (const [day, rows] of args.days) {
+    const model = build(day, rows);
+    first.set(day, model);
+    for (const mealId of model.anchors.values()) {
+      const mealDay = dayOfRow.get(mealId);
+      if (mealDay === undefined || mealDay === day) continue;
+      const set = elsewhere.get(mealDay) ?? new Set<string>();
+      set.add(mealId);
+      elsewhere.set(mealDay, set);
+    }
+  }
+
+  const out = new Map<string, DayNode[]>();
+  for (const [day, rows] of args.days) {
+    const timed = elsewhere.get(day);
+    out.set(day, timed ? build(day, rows, timed).nodes : (first.get(day)?.nodes ?? []));
+  }
+  return out;
 }
 
 // ── Date-only items (§3.5, rule L) ──────────────────────────────────────────────
