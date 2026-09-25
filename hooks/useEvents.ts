@@ -1,7 +1,16 @@
 import { useCallback } from 'react';
 import { getDb } from '../lib/db';
+import { readTodayEvents } from '../lib/todayEventsQuery';
+import type { NyxEvent } from '../store/eventStore';
 import { useEventStore } from '../store/eventStore';
 import { usePetStore } from '../store/petStore';
+
+// The newest read wins. expo-sqlite answers async calls on a concurrent queue, so two reads
+// can answer out of order, and a late OLDER one put back what a newer one had replaced: a
+// teal "Given" over a dose the owner had just marked Refused (the HV-6 second adversarial
+// pass), or the previous pet's rows after a switch. Module-level, because every mount of this
+// hook fills the one store.
+let todayReadsIssued = 0;
 
 export function useEvents() {
   const { activePet } = usePetStore();
@@ -20,37 +29,17 @@ export function useEvents() {
       setTodayRead({ petId: activePet.id, state: 'loading' });
     }
 
-    // The medication join (ma + mi) mirrors getTimeline so a dose loaded on a cold
-    // Home open carries its drug name — without it, drug_generic_name is only ever
-    // populated by the live prepend path (app/log.tsx), so two doses logged in a
-    // prior session both render the bare "Medication" label on Today (B-161). The
-    // combo paired_* fields stay deliberately absent here (Today is not an edit
-    // surface — that's the B-176 scope boundary).
-    //
-    // The LOOKS join is the same lesson, one feature later (CUL-871): the Noticed
-    // card renders today's looks from these rows, and without the child a look logged
-    // in a prior session would come back on a cold open with no words — the entry
-    // would read as the bare act while its words sat one table away. `describeLook`
-    // is total over a missing child, so the failure is silent, which is exactly why
-    // the join belongs here rather than in a second query beside it.
+    // The read is `readTodayEvents` (`lib/todayEventsQuery.ts`), whose header says why it
+    // joins each table: the shared day row's rules read the meal's intake, the dose's
+    // course, its stored pair and the weight (History v2 HV-6 / CUL-1163), the Noticed card
+    // reads the look's child (CUL-871), and a dose names its drug on a cold open (B-161).
+    // A field the query leaves out fails silently (an unrated meal, an unpaired dose), which
+    // is why it is a constant a test runs against the real schema; and it decides the day
+    // on parsed instants, since a row pulled at exactly midnight is spelled differently (C-40).
+    const seq = ++todayReadsIssued;
     try {
-      const events = await db.getAllAsync<any>(
-        `SELECT e.*, m.food_item_id, m.quantity,
-                f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
-                f.format AS food_format,
-                ma.medication_item_id, ma.adherence, ma.how_given,
-                mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name,
-                lk.outcome AS look_outcome, lk.words AS look_words, lk.notes AS look_note
-         FROM events e
-         LEFT JOIN meals m ON m.event_id = e.id
-         LEFT JOIN food_items_cache f ON f.id = m.food_item_id
-         LEFT JOIN medication_administrations ma ON ma.event_id = e.id
-         LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
-         LEFT JOIN looks lk ON lk.event_id = e.id
-         WHERE e.pet_id = ? AND e.occurred_at >= ? AND e.deleted_at IS NULL
-         ORDER BY e.occurred_at DESC`,
-        [activePet.id, todayStart.toISOString()]
-      );
+      const events = await readTodayEvents<NyxEvent>(db, activePet.id, todayStart);
+      if (seq !== todayReadsIssued) return;
       setTodayEvents(events);
       setTodayRead({ petId: activePet.id, state: 'ready' });
     } catch (e) {
@@ -59,6 +48,7 @@ export function useEvents() {
       // not yet populated on a fresh install). Log and leave prior state intact;
       // a focus/refresh re-runs this load rather than blanking Today on a transient error.
       console.warn('[useEvents] loadTodayEvents failed:', e);
+      if (seq !== todayReadsIssued) return;
       setTodayRead({ petId: activePet.id, state: 'failed' });
     }
   }, [activePet, setTodayEvents, setTodayRead]);

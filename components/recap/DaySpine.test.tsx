@@ -204,3 +204,57 @@ describe('SpineRowFrame — no line cap, no scale cap, no height that could cut 
     expect([TIME_W, RAIL_W]).toEqual([60, 18]);
   });
 });
+
+// ── The tag under the time (History v2 HV-6 / CUL-1163; §3.6: "a found time reads by
+// 7:02 AM with FOUND under it; an estimated time carries ESTIMATED") ────────────────
+describe('SpineRowFrame with a time tag — the tag rides the column under the same rules (AC 19)', () => {
+  type TestNode = { props: { style?: unknown }; parent: TestNode | null };
+  const flat = (style: unknown): ViewStyle & TextStyle =>
+    (StyleSheet.flatten(style as StyleProp<ViewStyle & TextStyle>) ?? {}) as ViewStyle & TextStyle;
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each([1, 3.571])('at font scale %s: neither the time nor its tag is capped, cut or clipped', (scale) => {
+    jest.spyOn(PixelRatio, 'getFontScale').mockReturnValue(scale);
+    jest.spyOn(Dimensions, 'get').mockReturnValue({ width: 320, height: 568, scale: 2, fontScale: scale });
+    const t = render(
+      <SpineRowFrame ground="day" category="symptom" isFirst isLast={false} time="by 07:02 AM" timeTag="found">
+        <Text>Vomit</Text>
+      </SpineRowFrame>,
+    );
+    const time = t.getByText(timeColumnText('by 07:02 AM'), RAW) as unknown as TestNode & { props: Record<string, unknown> };
+    const tag = t.getByText('found', RAW) as unknown as TestNode & { props: Record<string, unknown> };
+    for (const text of [time, tag]) {
+      expect(text.props.numberOfLines).toBeUndefined();
+      expect(text.props.ellipsizeMode).toBeUndefined();
+      expect(text.props.adjustsFontSizeToFit).toBeUndefined();
+      expect(text.props.maxFontSizeMultiplier).toBeUndefined();
+    }
+    // Both sit in ONE column of the time's fixed width, which holds no height.
+    const columnOf = (n: TestNode): TestNode => {
+      let at: TestNode | null = n.parent;
+      while (at && flat(at.props.style).width !== TIME_W) at = at.parent;
+      if (!at) throw new Error('the time column was not found above the text');
+      return at;
+    };
+    const column = columnOf(time);
+    expect(columnOf(tag) === column).toBe(true);
+    for (let n: TestNode | null = column; n; n = n.parent) {
+      const s = flat(n.props.style);
+      expect(s.height).toBeUndefined();
+      expect(s.maxHeight).toBeUndefined();
+      expect(s.overflow).not.toBe('hidden');
+      if (s.minHeight != null) break;
+    }
+    expect(flat(tag.props.style).textTransform).toBe('uppercase');
+  });
+
+  it('without a tag the column is exactly what it was: one text, no wrapper', () => {
+    const t = render(
+      <SpineRowFrame ground="day" category="meal" isFirst isLast={false} time="09:15 AM">
+        <Text>Meal</Text>
+      </SpineRowFrame>,
+    );
+    const time = t.getByText(timeColumnText('09:15 AM'), RAW) as unknown as { props: { style?: unknown } };
+    expect(flat(time.props.style).width).toBe(TIME_W);
+  });
+});

@@ -68,6 +68,12 @@ export interface DayTimings {
    *  "collapse on the full list, then window"). */
   priorOnsets?: readonly { ms: number; confidence?: OnsetConfidence | null }[];
   config?: MealTimingConfig;
+  /** Meal ids a timing line on ANOTHER day measures from (a 2 AM vomit timed from last
+   *  night's 10 PM bowl). Rule B keeps the meal a line names as its own row (HV-6); a day's
+   *  own lines are computed here, but a line on the next day is not, so a surface that
+   *  draws one card per day (History) hands the next day's anchors in. Home draws today
+   *  alone and leaves it out. Optional, so the call shape HV-7 renders from is unchanged. */
+  timedElsewhere?: ReadonlySet<string>;
 }
 
 export interface DayNodeFacts {
@@ -90,6 +96,7 @@ export function buildDay(events: readonly DayEvent[], { reads, timings }: DayNod
     freeFedSpans: timings.freeFedSpans,
     priorOnsets: timings.priorOnsets,
     config: timings.config,
+    timedElsewhere: timings.timedElsewhere,
   });
 }
 

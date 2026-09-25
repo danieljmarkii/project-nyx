@@ -43,7 +43,10 @@ const ALLOWED: Record<string, string> = {
     'confirm screen SHOWS and lets them change), never from an inference the owner cannot see.',
   'lib/medicationDose.ts':
     'insertMedicationDose — you do not discover that you gave a pill. Administration is an ' +
-    'act the owner performs, so the B-010 found/window path never applies.',
+    'act the owner performs, so the B-010 found/window path never applies. optimisticDoseRow ' +
+    'is the store\u2019s mirror of that row (History v2 HV-6), built from the same write\u2019s ' +
+    'result at the same instant; the picker and the label capture\u2019s first dose both ' +
+    'prepend through it, so neither restates the claim.',
   'lib/weight.ts':
     'insertWeightCheck — you read the scale. occurred_at is now, or a time the owner set ' +
     'themselves via the back-dating escape hatch.',
@@ -73,9 +76,6 @@ const ALLOWED: Record<string, string> = {
   'app/food-capture.tsx':
     'Photo capture that also logs the meal. prependEvent mirroring the row insertMeal just ' +
     'wrote, at the EXIF-seeded time the owner saw and could change on the confirm screen.',
-  'app/medication-capture.tsx':
-    'Label capture that also logs the first dose. prependEvent mirroring the row ' +
-    'insertMedicationDose just wrote, at now.',
   'components/log/FAB.tsx':
     'One-tap meal from the FAB. prependEvent mirroring the row insertMeal just wrote, at now.',
   'components/ui/MealCompletionCard.tsx':
