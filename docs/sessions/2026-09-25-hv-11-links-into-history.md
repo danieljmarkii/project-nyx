@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 
-Shipped via #918 (CUL-1168, and `Fixes CUL-498`). Filed: CUL-1251 (Ask's server counts 7 / 14 / 30 as UTC days), CUL-1252 (the rundown's History tiles open the active pet), CUL-1253 (Waiting on PM: approve the §5.8 spec edit).
+Shipped via #918 (CUL-1168, and `Fixes CUL-498`). Filed: CUL-1251 (Ask's server counts 7 / 14 / 30 as UTC days), CUL-1252 (the rundown's History tiles open the active pet), CUL-1253 (the §5.8 spec edit, approved and written as spec v1.6 in this PR).
 
 ## The ask
 
@@ -80,5 +80,5 @@ A plan was posted in the session with three decision briefs, and the PM ruled th
 - CUL-1252: in Get-ready mode for another pet's appointment, the rundown's History tiles open the active pet's History. With the flag on, they keep the bare route in that case rather than a wrong scope.
 - The registry works per file. A second door added to a file that already holds one is not a new finding; that blind spot is stated in the guard.
 - A course key for a course that no longer exists lands on an empty course filter named *Medication*. HV-9's label rule covers the name; the list says *Nothing matches that filter*.
-- CUL-1253 (Waiting on PM): the §5.8 spec edit that makes the table say what the rows say.
+- CUL-1253: the §5.8 spec edit that makes the table say what the rows say. The PM approved it at the wrap, and it is written in this PR (spec v1.6).
 - For the device pass (HV-13): each door once on a phone with the flag on, and one Beta-shelf flip while History shows.
