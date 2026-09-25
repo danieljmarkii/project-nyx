@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 
 import { historyDoorRequestOf, historyDoorTapKey, type HistoryDoorParams } from '../lib/historyDoorParams';
-import { isWidgetPetTapSpent } from '../lib/widgetPetTap';
+import { isHistoryDoorTapSpent, isWidgetPetTapSpent, spendHistoryDoorTap } from '../lib/spentTaps';
 import { useHistoryScopeStore } from '../store/historyScopeStore';
 import { usePetStore } from '../store/petStore';
 import { useWidgetPetLink } from './useWidgetPetLink';
@@ -20,7 +20,7 @@ import { useWidgetPetLink } from './useWidgetPetLink';
 // keyed by the sender's nonce (`ts`) and the request. HV-7 kept that in a ref, which is once
 // per MOUNT, and the tab mounts a fresh screen when `history_v2` flips: flipping off and on
 // again re-applied an old link over whatever the owner had chosen since. So the spent taps
-// live at module scope, for the app's session, like the widget's pet (`lib/widgetPetTap.ts`).
+// live in `lib/spentTaps.ts`, for the app's session (wiped on sign-out), like the widget's pet.
 // The first mount after a flip still applies a tap v2 has never seen: the screen that mounts
 // lands where the link says, whichever screen the link was tapped on (AC 37).
 //
@@ -36,13 +36,6 @@ import { useWidgetPetLink } from './useWidgetPetLink';
 // dropped: it never lands late, on whichever pet the owner reaches next. A pet the account
 // no longer has is ignored, as the widget hook ignores it, and the request lands on the pet
 // on screen.
-const spentTaps = new Set<string>();
-
-/** Tests only: forget every spent tap (module state outlives a test, not a test file). */
-export function __resetHistoryDoorForTest(): void {
-  spentTaps.clear();
-}
-
 export function useHistoryDoor(): void {
   const params = useLocalSearchParams<HistoryDoorParams & Record<string, string>>();
   useWidgetPetLink(params.pet, params.ts);
@@ -58,19 +51,21 @@ export function useHistoryDoor(): void {
     const request = historyDoorRequestOf(doorParams);
     if (request === null) return;
     const tap = historyDoorTapKey(doorParams, request);
-    if (spentTaps.has(tap)) return;
+    if (isHistoryDoorTapSpent(tap)) return;
     const live = usePetStore.getState();
     const liveId = live.activePet?.id ?? null;
     if (liveId === null) return;
     const named = pet && live.pets.some((p) => p.id === pet) ? pet : null;
     if (named !== null && named !== liveId) {
-      // The switch is still to come: wait for it.
+      // The switch is still to come: wait for it. Unreachable while `useWidgetPetLink` runs
+      // first in this flush (it switches before this effect reads the store); it is what
+      // keeps the link from being dropped if the two hooks are ever reordered.
       if (!isWidgetPetTapSpent(named, ts)) return;
       // The switch happened and the owner has left that pet since: the link is over.
-      spentTaps.add(tap);
+      spendHistoryDoorTap(tap);
       return;
     }
-    spentTaps.add(tap);
+    spendHistoryDoorTap(tap);
     useHistoryScopeStore.getState().applyDoor(liveId, request);
   }, [date, day, src, ts, pet, type, window, course, activePetId, petCount]);
 }

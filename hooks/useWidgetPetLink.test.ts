@@ -6,7 +6,7 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { useWidgetPetLink } from './useWidgetPetLink';
 import { usePetStore, type Pet } from '../store/petStore';
-import { __resetWidgetPetTapsForTest } from '../lib/widgetPetTap';
+import { clearSpentTaps } from '../lib/spentTaps';
 
 function makePet(id: string, name: string): Pet {
   return {
@@ -43,7 +43,7 @@ function recordSwitches(): { ids: (string | null)[]; stop: () => void } {
 }
 
 beforeEach(() => {
-  __resetWidgetPetTapsForTest();
+  clearSpentTaps();
   usePetStore.setState({ pets: [nyx, mochi], activePet: nyx });
 });
 

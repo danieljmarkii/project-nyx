@@ -17,6 +17,7 @@ import { clearAppointmentAsked } from './appointmentAsked';
 import { clearLookWithheld } from './lookWithheld';
 import { clearObservationFold } from './observationFold';
 import { cancelPendingSignalRegens } from './signal';
+import { clearSpentTaps } from './spentTaps';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 
 /**
@@ -188,6 +189,10 @@ export async function wipeLocalSession(): Promise<void> {
   // context for a pet id that is simply gone is). Same FR-9 parity reasoning as the
   // App Group wipe above: wipe every place account data rests, not just SQLite.
   clearTrialContextCache();
+  // HV-11 (CUL-1168): which links into History have been applied, keyed by pet id and a
+  // nonce, in JS memory (`lib/spentTaps.ts`). Not health data; an identifier of the last
+  // account, wiped with the rest for the same FR-9 parity.
+  clearSpentTaps();
   // …and the persisted "which foods have we already flagged" ledger, which lives
   // in AsyncStorage (outside the SQLite clearLocalData wipes) and is per-account
   // bookkeeping. Awaited-with-catch like the rest: never throws, always completes.

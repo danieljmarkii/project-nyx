@@ -477,8 +477,10 @@ const DRAWS_ELSEWHERE_OK: Record<string, { reason: string; proof: string; mentio
   },
   'components/ask/AskAnswerCard.tsx': {
     reason: 'decides which Ask windows open History (AskHistoryReach); draws nothing of History v2',
-    proof: 'lib/ask.test.ts',
-    mentions: 'ASK_HISTORY_V1',
+    // The card rendered, not only its pure resolvers: the wiring is what a flag-off proof
+    // for a decider has to cover (code-reviewer, HV-11).
+    proof: 'components/ask/AskAnswerCard.test.tsx',
+    mentions: "describe('flag off: today",
   },
 };
 

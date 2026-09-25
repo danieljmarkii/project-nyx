@@ -4,8 +4,8 @@ let mockParams: Record<string, string | undefined> = {};
 jest.mock('expo-router', () => ({ useLocalSearchParams: () => mockParams }));
 
 import { act, render } from '@testing-library/react-native';
-import { __resetHistoryDoorForTest, useHistoryDoor } from './useHistoryDoor';
-import { __resetWidgetPetTapsForTest } from '../lib/widgetPetTap';
+import { useHistoryDoor } from './useHistoryDoor';
+import { clearSpentTaps } from '../lib/spentTaps';
 import { usePetStore, type Pet } from '../store/petStore';
 import { defaultHistoryScope, useHistoryScopeStore } from '../store/historyScopeStore';
 
@@ -23,8 +23,7 @@ function Probe() {
 const scope = () => useHistoryScopeStore.getState();
 
 beforeEach(() => {
-  __resetHistoryDoorForTest();
-  __resetWidgetPetTapsForTest();
+  clearSpentTaps();
   mockParams = {};
   act(() => {
     usePetStore.setState({ pets: [PET_A, PET_B], activePet: PET_A });
@@ -95,6 +94,28 @@ describe('useHistoryDoor', () => {
     view.rerender(<Probe />);
     expect(scope().filter).toEqual({ kind: 'symptoms' });
     expect(scope().window).toEqual({ kind: 'last', days: 30 });
+  });
+});
+
+describe('useHistoryDoor — a cold start from the widget', () => {
+  it('spends nothing while the pet list loads, then lands on the widget\'s pet once the switch is made', () => {
+    // A cold start from the widget: no pet list yet, so neither the switch nor the landing
+    // can happen, and neither is spent.
+    act(() => {
+      usePetStore.setState({ pets: [], activePet: null });
+    });
+    mockParams = { date: '2026-09-17', src: 'widget', pet: PET_B.id, ts: '1' };
+    const view = render(<Probe />);
+    expect(scope().landedDay).toBeNull();
+    // The list lands (one step, `usePet`), with A active: the widget hook switches to B in
+    // the same flush and the door lands on B's scope.
+    act(() => {
+      usePetStore.setState({ pets: [PET_A, PET_B], activePet: PET_A });
+    });
+    view.rerender(<Probe />);
+    expect(usePetStore.getState().activePet?.id).toBe(PET_B.id);
+    expect(scope().petId).toBe(PET_B.id);
+    expect(scope().landedDay).toBe('2026-09-17');
   });
 });
 

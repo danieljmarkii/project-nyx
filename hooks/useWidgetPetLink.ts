@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { isWidgetPetTapSpent, spendWidgetPetTap } from '../lib/widgetPetTap';
+import { isWidgetPetTapSpent, spendWidgetPetTap } from '../lib/spentTaps';
 import { usePetStore } from '../store/petStore';
 
 // Honor the `?pet=` a widget deep link carries (widget PR W5).
@@ -32,7 +32,7 @@ import { usePetStore } from '../store/petStore';
 // carry no `ts`, and the widget is frozen, H-7), so there the tap is the pet alone:
 // once per mount, which for a modal is once per open.
 //
-// A tap WITH a nonce is spent for every instance at once (`lib/widgetPetTap.ts`, HV-11 /
+// A tap WITH a nonce is spent for every instance at once (`lib/spentTaps.ts`, HV-11 /
 // CUL-1168): the History tab mounts a fresh screen when `history_v2` flips, and a ref
 // would let that screen select the widget's pet a second time. Without a nonce the ref
 // is all there is (once per mount).

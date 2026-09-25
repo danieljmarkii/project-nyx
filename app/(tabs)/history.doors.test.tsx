@@ -79,8 +79,7 @@ import { historyHref, rundownHistoryHref, HISTORY_DOORS, type HistoryDoorId } fr
 import { lookMoreTodayHref } from '../../lib/lookCard';
 import { noticedCardHref } from '../../lib/lookPatterns';
 import { toLocalDayKey } from '../../lib/utils';
-import { __resetWidgetPetTapsForTest } from '../../lib/widgetPetTap';
-import { __resetHistoryDoorForTest } from '../../hooks/useHistoryDoor';
+import { clearSpentTaps } from '../../lib/spentTaps';
 import { __resetAppConfigForTest } from '../../hooks/useAppConfig';
 import { ALLOWLIST_FLAGS_UNSET, APP_CONFIG_DEFAULTS } from '../../lib/appConfig';
 import { useBetaOptInStore } from '../../lib/betaFeatures';
@@ -247,8 +246,7 @@ const CASES: DoorCase[] = [
 
 beforeEach(() => {
   jest.clearAllMocks();
-  __resetWidgetPetTapsForTest();
-  __resetHistoryDoorForTest();
+  clearSpentTaps();
   mockParams = {};
   useAuthStore.setState({ user: { id: 'u1' } } as never);
   useEventStore.setState({ todayEvents: [] });

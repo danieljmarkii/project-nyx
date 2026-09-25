@@ -104,7 +104,7 @@ import { usePetStore, type Pet } from '../../store/petStore';
 import { useEventStore, type NyxEvent } from '../../store/eventStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { PREFILTER_SLACK_MS } from '../../lib/historyDateFilter';
-import { __resetWidgetPetTapsForTest } from '../../lib/widgetPetTap';
+import { clearSpentTaps } from '../../lib/spentTaps';
 
 const mockGetTimeline = getTimeline as jest.Mock;
 const mockArrangements = getActiveArrangementsForPet as jest.Mock;
@@ -143,7 +143,7 @@ const lastBounds = () => {
 const active = () => usePetStore.getState().activePet?.id ?? null;
 
 beforeEach(() => {
-  __resetWidgetPetTapsForTest();
+  clearSpentTaps();
   jest.clearAllMocks();
   mockParams = {};
   mockGetTimeline.mockResolvedValue([]);
