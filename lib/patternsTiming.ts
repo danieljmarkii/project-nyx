@@ -551,7 +551,7 @@ export function timingBandMedianLabel(medianMinutes: number | null): string | nu
  *  was not refused). Never reassures — absence of a timing is not absence of a problem. */
 export function timingNoneTimeableLine(petName: string, totalCount: number): string {
   const eps = totalCount === 1 ? 'episode' : 'episodes';
-  return `None of ${petName}'s ${totalCount} logged vomiting ${eps} could be timed against a meal yet — each was discovered later, near a free-fed bowl, or with no meal logged in the day before apart from refused ones.`;
+  return `None of ${petName}'s ${totalCount} logged vomiting ${eps} could be timed against a meal yet — each was discovered later, near a free-fed bowl, or with no meal logged in the day before except refused ones.`;
 }
 
 export async function readFreeFedSpans(petId: string): Promise<FreeFedSpan[]> {

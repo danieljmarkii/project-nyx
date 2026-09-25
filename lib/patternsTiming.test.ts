@@ -243,7 +243,7 @@ describe('copy — nyx-voice + the §6 guardrail spine', () => {
 
   it('the none-timeable line covers a refused-only record without saying no meal was logged', () => {
     expect(timingNoneTimeableLine('Nyx', 2)).toBe(
-      "None of Nyx's 2 logged vomiting episodes could be timed against a meal yet — each was discovered later, near a free-fed bowl, or with no meal logged in the day before apart from refused ones.",
+      "None of Nyx's 2 logged vomiting episodes could be timed against a meal yet — each was discovered later, near a free-fed bowl, or with no meal logged in the day before except refused ones.",
     );
   });
 });

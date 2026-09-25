@@ -1,6 +1,7 @@
 // lib/mealTiming.ts — the shared meal-relative timing predicate (B-755 PR 1, CUL-6).
 //
-// This suite pins the behaviour PR 2 will lift ⑤ onto, so its job is twofold:
+// This suite pins the behaviour detector ⑤ runs on (CUL-7 lifted ⑤ onto this module), so its
+// job is twofold:
 //   1. assert the raw timing facts (bands, collapse, eligibility) directly;
 //   2. pin the TWO-TIER eligibility asymmetry and the gate ORDER, because those are
 //      the parts a re-derivation gets silently wrong (the whole reason the file
@@ -372,10 +373,10 @@ describe('mealTiming — classifyEpisodeSet (the distribution the surfaces read)
   });
 });
 
-// A behaviour-parity pin for PR 2's drop-in: the exact per-episode facts detector ⑤
-// computes today, reproduced through this module. If PR 2 rewires ⑤ onto
-// classifyEpisodeSet and any of these change, the drop-in was not behaviour-preserving.
-describe('mealTiming — parity with detector ⑤ as shipped (guards the PR-2 drop-in)', () => {
+// A behaviour-parity pin for the drop-in CUL-7 made: the exact per-episode facts detector ⑤
+// computed before it, reproduced through this module. ⑤ now runs on classifyEpisodeSet, so
+// if any of these change, the change moved the shipped detector too.
+describe('mealTiming — parity with detector ⑤ as shipped (guards the CUL-7 drop-in)', () => {
   it('reproduces ⑤ eligibility: witnessed+timed in / discovered out / free-fed out', () => {
     const feedings: FeedingInput[] = [
       { id: 't', ms: at(0), confidence: 'witnessed', intakeRating: null, form: 'dry treat' },

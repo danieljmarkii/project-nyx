@@ -4577,9 +4577,10 @@ export function detectChronicity(
 // `nearestPreceding` + `freeFedNear` + the rapid-band test are GONE — they moved to
 // `lib/mealTiming.ts` (the one meal-relative timing predicate, G9) in PR 1 and are called via
 // `classifyEpisodeSet` in `scanVomitTiming` below. Since CUL-1122 that predicate also reads the
-// intake rating: a feeding the owner rated Refused is never the meal an episode is timed from (Picked
-// at is; the ruling is in the module header), which moves an episode only where a refusal was its
-// anchor. A record with no Refused rating is byte-identical (detection.intakeTiming.test.ts). ⑤ and L1 (empty-stomach) both read that ONE
+// intake rating: a feeding the owner rated Refused is never the meal an episode is timed from
+// (Picked at is; the ruling is in the module header), which moves an episode only where a refusal
+// was its anchor. A record with no Refused rating is byte-identical
+// (detection.intakeTiming.test.ts). ⑤ and L1 (empty-stomach) both read that ONE
 // distribution, so their bands, denominators and eligibility can never drift (§3, the §5.3
 // diet-trial lesson pre-empted). The rewrite is behaviour-preserving IN EVERY OWNER-FACING FIELD —
 // the gate order, boundary inclusivity and NULL-tolerant-feeding / strict-witnessed-onset asymmetry
