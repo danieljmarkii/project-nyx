@@ -170,6 +170,16 @@ const ALWAYS_SCANNED = [
   // CUL-1164: a `commitSymptom` import in either reds the build.
   'components/historyV2/DayCard.tsx',
   'components/historyV2/HistoryList.tsx',
+  // HV-10 (CUL-1167) — the first paint and a removal's fold. The thread module and its
+  // renderer land every row of a day, a photographed vomit's `worth_a_call` among them, and
+  // fade a removed one out: "the day drew in" and "the row is gone" are two beats a buzz
+  // would read as natural for, on vomit days. Home's spine under `history_v2` paints the
+  // same rows and hosts the read's arrival on its node, the case `SpineNodeRow.tsx` is
+  // named for above. None carries the MARKERS, so all three are named the PR they ship
+  // (C-16). Proven by mutation on CUL-1167: a `commitSymptom` import in each reds the build.
+  'components/motion/threadMotion.ts',
+  'components/motion/ThreadDraw.tsx',
+  'components/historyV2/HomeSpine.tsx',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;

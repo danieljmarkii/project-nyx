@@ -8,10 +8,13 @@
 // fixture shaped unlike production is green over nothing). Days are local keys anchored to
 // today (C-29), rows are built from local components (B-514).
 //
-// Only the edges are stubbed: the router, the motion hooks, the sync (pull to refresh calls
-// it), the network client, and the week strip, replaced by a probe that records what it was
-// handed (HV-8 fills the real one in parallel; AC 1's screen half is that the strip is handed
-// the count line's own facts).
+// Only the edges are stubbed: the router, the app-active hook, the sync (pull to refresh calls
+// it), the network client, the focus call (a test asserts the CALL; the device pass asserts
+// the focus), and the week strip, replaced by a probe that records what it was handed (HV-8
+// fills the real one in parallel; AC 1's screen half is that the strip is handed the count
+// line's own facts). Reduce Motion is NOT mocked: each test sets the one store the app reads
+// before the first render, which is production's shape since CUL-1123 (HV-10's motion tests
+// set it both ways).
 
 jest.mock('expo-file-system', () => ({ File: class {} }));
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
@@ -22,8 +25,30 @@ jest.mock('../../lib/sync', () => ({
   ensureEventAttachmentsSynced: jest.fn(),
   syncPendingVetVisits: jest.fn(),
 }));
-jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
+const mockFocus = jest.fn((..._a: unknown[]) => true);
+jest.mock('../../lib/a11yFocus', () => ({ focusAccessibility: (...a: unknown[]) => mockFocus(...a) }));
+// The paint ledger is the REAL one; every claim it grants is recorded, because a draw's
+// opacity cannot be caught mid-flight here (the mocked native driver ends a 370ms draw in
+// a few ms). What a claim proves is the trigger: this card, on this identity, drew.
+const mockClaims: string[] = [];
+jest.mock('../motion/threadMotion', () => {
+  const actual = jest.requireActual<typeof import('../motion/threadMotion')>('../motion/threadMotion');
+  return {
+    ...actual,
+    createPaintLedger: () => {
+      const ledger = actual.createPaintLedger();
+      return {
+        ...ledger,
+        claim: (token: string) => {
+          const granted = ledger.claim(token);
+          if (granted) mockClaims.push(token);
+          return granted;
+        },
+      };
+    },
+  };
+});
 // The chain registry is the real one; only its question is recorded, so a test can see which
 // rows the list watches for a read in flight.
 jest.mock('../../lib/analysis', () => {
@@ -109,7 +134,8 @@ jest.mock('expo-sqlite', () => ({
   }),
 }));
 
-import { SectionList, StyleSheet } from 'react-native';
+import { LayoutAnimation, SectionList, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { HistoryList } from './HistoryList';
@@ -128,7 +154,10 @@ import { useHistoryListStore } from '../../store/historyListStore';
 import { useEventStore } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
 import { recordDay, recordWeekday } from '../../lib/recordDates';
-import { FOLD_MOTION } from '../motion/foldMotion';
+import { FOLD_LAYOUT, FOLD_MOTION } from '../motion/foldMotion';
+import { threadDrawTotalMs } from '../motion/threadMotion';
+import { useReducedMotionStore } from '../../store/reducedMotionStore';
+import { clearRemovalNotices, noteRemoval } from '../../lib/removalNotice';
 
 // ── The record ──────────────────────────────────────────────────────────────────
 
@@ -291,6 +320,11 @@ function setScope(patch: Partial<ReturnType<typeof defaultHistoryScope>>) {
 
 beforeEach(async () => {
   jest.clearAllMocks();
+  // Motion on, known before the first render (CUL-1123): the tests that need Reduce Motion
+  // set it the same way before they render.
+  useReducedMotionStore.setState({ reduceMotion: false, gateOpen: true });
+  clearRemovalNotices();
+  mockClaims.length = 0;
   mockGate = null;
   mockFail = false;
   mockStripDays = [];
@@ -802,6 +836,9 @@ describe('the reads a row can carry', () => {
     await renderList();
     expect(screen.getByTestId('spine-read-v2')).toBeTruthy();
     expect(screen.queryByTestId('spine-verdict-v2')).toBeNull();
+    // The tick that waits is the rail that lands (C-30): the day's thread wrapper is mounted
+    // for the row's whole life (HV-10), so the first paint never remounts a waiting row.
+    const railWhileReading = screen.getByTestId('spine-read-rail-v2');
     mockRaw
       .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES ('v2', 'completed', 'worth_a_call', ?)`)
       .run(at(2, 8, 20));
@@ -816,6 +853,7 @@ describe('the reads a row can carry', () => {
     await act(async () => release());
     await settle();
     expect(screen.getByTestId('spine-verdict-v2')).toBeTruthy();
+    expect(screen.getByTestId('spine-read-rail-v2')).toBe(railWhileReading);
     // The arrival runs on to its end, and the rose is still what the row holds.
     await waitOut(ARRIVAL_TAIL_MS);
     expect(screen.getByTestId('spine-verdict-v2')).toBeTruthy();
@@ -864,5 +902,295 @@ describe('a visit\'s day under the visit window (H-11)', () => {
     await waitFor(() =>
       expect(text('history-count-line-1')).toBe(`Since the last vet visit, ${recordDay(dayAgo(1), TODAY)} · 2 logged`),
     );
+  });
+});
+
+// ── Motion and focus (HV-10 / CUL-1167; spec §4, every row of its table; AC 32, AC 33) ───
+
+/** Set Reduce Motion the way the app does: in the one store, before the first render. */
+function reduceMotion(on: boolean) {
+  act(() => {
+    useReducedMotionStore.setState({ reduceMotion: on, gateOpen: true });
+  });
+}
+
+/** A row's wrapper on its day's thread: its opacity is the draw's (and a removal's) opacity. */
+const rowOpacity = (day: string, key: string) =>
+  StyleSheet.flatten(screen.getByTestId(`history-thread-${day}-row-${key}`).props.style).opacity as number;
+
+/** The longest draw a seeded day can take, plus a batch: past it, every draw has landed. */
+const DRAW_TAIL_MS = threadDrawTotalMs(8) + LIST_BATCH_MS + 20;
+
+/** The node VoiceOver was last sent to, by its testID. */
+const lastFocusedId = () => {
+  const call = mockFocus.mock.calls[mockFocus.mock.calls.length - 1];
+  return (call?.[0] as { props?: { testID?: string } } | undefined)?.props?.testID ?? null;
+};
+
+/** The days that drew, from the claims granted: `paint` for a first paint, `land` a landing. */
+const drewDays = (kind: 'paint' | 'land') =>
+  mockClaims.filter((t) => t.startsWith(`${kind}:`)).map((t) => t.slice(t.lastIndexOf(':') + 1)).sort();
+
+// STATED BLIND SPOT (C-38): which commit counts as "the first frame" is the ledger's rule
+// (sealed after the commit of the identity's first claim), and it is proven there
+// (`threadMotion.test.ts`, by mutation). Here the test renderer's list mounts a filter's
+// cells in the same commit as the render that opened the identity, so a seal in that
+// commit (the rule the ledger replaced) passes these tests too: measured, HV-10.
+describe('the first paint (§4 "First paint"; AC 32)', () => {
+  it('when the first read answers, each day card on the first frame draws once; the rows end at rest', async () => {
+    seedWeek();
+    await renderList();
+    // Every day card the first frame drew (today's card, and the three logged days before
+    // it), and nothing else: a gap line has no thread to draw.
+    expect(drewDays('paint')).toEqual([dayAgo(4), dayAgo(2), dayAgo(1), TODAY].sort());
+    await waitOut(DRAW_TAIL_MS);
+    expect(rowOpacity(dayAgo(2), 'v2')).toBe(1);
+    expect(rowOpacity(dayAgo(4), 'm4a')).toBe(1);
+    expect(screen.queryByTestId(`history-thread-${dayAgo(2)}-line`)).toBeNull();
+  });
+
+  it('once per mount identity: a sync tick\'s re-read and a return to the screen draw nothing', async () => {
+    seedWeek();
+    await renderList();
+    await waitOut(DRAW_TAIL_MS);
+    const drawn = mockClaims.length;
+    act(() => {
+      useSyncStore.setState({ hydrationTick: useSyncStore.getState().hydrationTick + 1 });
+    });
+    await settle();
+    await act(async () => {
+      mockFocusCallbacks.forEach((cb) => cb());
+    });
+    await settle();
+    expect(mockClaims).toHaveLength(drawn);
+  });
+
+  it('a new identity (a filter) is a new list: its first read draws its days, under the new identity', async () => {
+    seedWeek();
+    await renderList();
+    await waitOut(DRAW_TAIL_MS);
+    mockClaims.length = 0;
+    setScope({ filter: { kind: 'type', type: 'vomit' } });
+    await settle();
+    expect(drewDays('paint')).toEqual([dayAgo(2)]);
+    expect(mockClaims[0]).toContain('type:vomit');
+    await waitOut(DRAW_TAIL_MS);
+    expect(rowOpacity(dayAgo(2), 'v2')).toBe(1);
+  });
+
+  it('Reduce Motion (set before the first render): the still frame, every row there on the first frame, nothing drawn', async () => {
+    reduceMotion(true);
+    seedWeek();
+    await renderList();
+    expect(mockClaims).toEqual([]);
+    expect(rowOpacity(dayAgo(2), 'v2')).toBe(1);
+    expect(rowOpacity(dayAgo(4), 'm4a')).toBe(1);
+    expect(screen.queryByTestId(`history-thread-${dayAgo(2)}-line`)).toBeNull();
+  });
+});
+
+describe('the wait (§4 "The wait"; AC 32)', () => {
+  it('the first read in flight is the silhouette, hidden from VoiceOver; under Reduce Motion it is still', async () => {
+    reduceMotion(true);
+    seedWeek();
+    holdReads();
+    render(<HistoryList />);
+    await settle();
+    const skeleton = screen.getByTestId('history-skeleton', { includeHiddenElements: true });
+    expect(skeleton.props.accessibilityElementsHidden).toBe(true);
+    expect(skeleton.props.importantForAccessibility).toBe('no-hide-descendants');
+    // The shimmer's band is an animated gradient; the still silhouette draws none.
+    expect(screen.UNSAFE_queryAllByType(LinearGradient)).toHaveLength(0);
+  });
+});
+
+describe('landing on a day (§4 "Land on a day"; AC 32, AC 33)', () => {
+  it('motion on: a jump, the outline, the day draws again where it landed, and VoiceOver goes to its header', async () => {
+    seedWeek();
+    await renderList();
+    await waitOut(DRAW_TAIL_MS);
+    const aim = jest.spyOn(SectionList.prototype, 'scrollToLocation').mockImplementation(() => {});
+    act(() => {
+      useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(2));
+    });
+    await settle();
+    expect(aim).toHaveBeenLastCalledWith(expect.objectContaining({ animated: false }));
+    expect(StyleSheet.flatten(screen.getByTestId(`history-day-header-${dayAgo(2)}`).props.style).borderColor).toBe('#0B7B6C');
+    expect(screen.getByTestId(`history-day-header-${dayAgo(2)}`).props.accessibilityState).toEqual({ selected: true });
+    // The landed day draws once more; no other day does.
+    expect(drewDays('land')).toEqual([dayAgo(2)]);
+    expect(lastFocusedId()).toBe(`history-day-header-${dayAgo(2)}`);
+    await waitOut(DRAW_TAIL_MS);
+    expect(rowOpacity(dayAgo(2), 'v2')).toBe(1);
+    aim.mockRestore();
+  });
+
+  it('Reduce Motion: a jump and the outline, no draw; VoiceOver still goes to the header', async () => {
+    reduceMotion(true);
+    seedWeek();
+    await renderList();
+    const aim = jest.spyOn(SectionList.prototype, 'scrollToLocation').mockImplementation(() => {});
+    act(() => {
+      useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(2));
+    });
+    await settle();
+    expect(aim).toHaveBeenLastCalledWith(expect.objectContaining({ animated: false }));
+    expect(StyleSheet.flatten(screen.getByTestId(`history-day-header-${dayAgo(2)}`).props.style).borderColor).toBe('#0B7B6C');
+    expect(drewDays('land')).toEqual([]);
+    expect(rowOpacity(dayAgo(2), 'v2')).toBe(1);
+    expect(lastFocusedId()).toBe(`history-day-header-${dayAgo(2)}`);
+    aim.mockRestore();
+    await waitOut(LANDING_TAIL_MS);
+  });
+
+  it('a landing on an unlogged day sends VoiceOver to the gap line that holds it, which says it is the landed one', async () => {
+    seedWeek();
+    await renderList();
+    act(() => {
+      useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(3));
+    });
+    await settle();
+    expect(lastFocusedId()).toBe(`history-gap-${dayAgo(3)}`);
+    expect(screen.getByTestId(`history-gap-${dayAgo(3)}`).props.accessibilityState).toEqual({ selected: true });
+    await waitOut(DRAW_TAIL_MS);
+  });
+});
+
+describe('tapping History again (§4 "Tap History again"; AC 32, AC 33)', () => {
+  function spyScroll() {
+    const scrollTo = jest.fn();
+    const responder = jest.spyOn(SectionList.prototype, 'getScrollResponder').mockReturnValue({ scrollTo } as never);
+    return { scrollTo, restore: () => responder.mockRestore() };
+  }
+  const layoutList = (height: number, y: number) => {
+    const list = screen.getByTestId('history-list');
+    act(() => {
+      list.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height } } });
+      list.props.onScroll({
+        nativeEvent: { contentOffset: { x: 0, y }, layoutMeasurement: { width: 390, height }, contentSize: { width: 390, height: 20_000 } },
+      });
+    });
+  };
+  const rePress = () => act(() => mockNavigation.listeners.forEach((cb) => cb()));
+
+  it('within one screen it glides to the top; VoiceOver goes to today\'s header', async () => {
+    seedWeek();
+    await renderList();
+    await waitOut(DRAW_TAIL_MS);
+    const { scrollTo, restore } = spyScroll();
+    layoutList(800, 300);
+    rePress();
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 0, animated: true });
+    expect(lastFocusedId()).toBe(`history-day-header-${TODAY}`);
+    restore();
+  });
+
+  it('beyond one screen it jumps', async () => {
+    seedWeek();
+    await renderList();
+    await waitOut(DRAW_TAIL_MS);
+    const { scrollTo, restore } = spyScroll();
+    layoutList(800, 5_000);
+    rePress();
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 0, animated: false });
+    restore();
+  });
+
+  it('Reduce Motion: a jump however near; VoiceOver still goes to today\'s header', async () => {
+    reduceMotion(true);
+    seedWeek();
+    await renderList();
+    const { scrollTo, restore } = spyScroll();
+    layoutList(800, 100);
+    rePress();
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 0, animated: false });
+    expect(lastFocusedId()).toBe(`history-day-header-${TODAY}`);
+    restore();
+  });
+
+  it('a filter that hides today: VoiceOver goes to the list\'s first day, here yesterday\'s visit line', async () => {
+    reduceMotion(true);
+    seedWeek();
+    await renderList();
+    setScope({ filter: { kind: 'type', type: 'vomit' } });
+    await settle();
+    rePress();
+    // Under Vomit today holds nothing, and yesterday's only content is the vet visit, which
+    // stays as its day's line (AC 11): the newest section, so the one VoiceOver lands on.
+    expect(screen.queryByTestId(`history-day-header-${TODAY}`)).toBeNull();
+    expect(lastFocusedId()).toBe(`history-items-${dayAgo(1)}`);
+  });
+});
+
+describe('removing a row (§4 "Remove a row"; AC 32, AC 33)', () => {
+  let configureNext: jest.SpyInstance;
+  beforeEach(() => {
+    configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
+  });
+  afterEach(() => configureNext.mockRestore());
+
+  /** The record screen's confirm, as the shared reversal leaves it: the row is gone from the
+   *  record and the notice is written; then History is focused again. */
+  async function removeOnRecordAndReturn(id: string) {
+    softDelete(id);
+    noteRemoval(id);
+    await act(async () => {
+      mockFocusCallbacks.forEach((cb) => cb());
+    });
+  }
+
+  it('motion on: the row fades out (still drawn), then leaves under the fold\'s close, the counts re-derive, and VoiceOver goes to its day', async () => {
+    seedWeek();
+    await renderList();
+    await waitOut(DRAW_TAIL_MS);
+    expect(text(`history-day-counts-${dayAgo(2)}`)).toMatch(/^3 logged/);
+    await removeOnRecordAndReturn('v2');
+    // Beat 1: the row is still on screen, fading; nothing has closed yet.
+    expect(screen.getByTestId('spine-node-v2')).toBeTruthy();
+    expect(configureNext).not.toHaveBeenCalled();
+    await waitOut(FOLD_MOTION.leaveMs + LIST_BATCH_MS);
+    await settle();
+    // Beat 2: the box closes on the fold's own ease, the row is gone, every count follows.
+    expect(configureNext).toHaveBeenCalledWith(FOLD_LAYOUT);
+    expect(screen.queryByTestId('spine-node-v2')).toBeNull();
+    expect(text(`history-day-counts-${dayAgo(2)}`)).toMatch(/^2 logged/);
+    expect(lastFocusedId()).toBe(`history-day-header-${dayAgo(2)}`);
+  });
+
+  it('Reduce Motion: gone at once, no fold; VoiceOver goes to its day', async () => {
+    reduceMotion(true);
+    seedWeek();
+    await renderList();
+    await removeOnRecordAndReturn('v2');
+    await settle();
+    expect(screen.queryByTestId('spine-node-v2')).toBeNull();
+    expect(configureNext).not.toHaveBeenCalled();
+    expect(lastFocusedId()).toBe(`history-day-header-${dayAgo(2)}`);
+  });
+
+  it('a row that left for any other reason (another device, no notice) is simply re-read away: no fold, no focus', async () => {
+    seedWeek();
+    await renderList();
+    await waitOut(DRAW_TAIL_MS);
+    softDelete('v2');
+    await act(async () => {
+      mockFocusCallbacks.forEach((cb) => cb());
+    });
+    await settle();
+    expect(screen.queryByTestId('spine-node-v2')).toBeNull();
+    expect(configureNext).not.toHaveBeenCalledWith(FOLD_LAYOUT);
+    expect(mockFocus).not.toHaveBeenCalled();
+  });
+});
+
+describe('VoiceOver hears the day header as one sentence (HV-7\'s focus note)', () => {
+  it('the date and its counts, the drawn dots said as pauses', async () => {
+    seedWeek();
+    await renderList();
+    const header = screen.getByTestId(`history-day-header-${dayAgo(2)}`);
+    expect(header.props.accessibilityLabel).not.toContain('·');
+    expect(header.props.accessibilityLabel).toMatch(/, 3 logged, 1 vomit/);
+    expect(header.props.accessibilityState).toEqual({ selected: false });
+    await waitOut(DRAW_TAIL_MS);
   });
 });

@@ -40,6 +40,8 @@ import { Snackbar } from '../components/ui/Snackbar';
 import { ColdStartOverlay } from '../components/ColdStartOverlay';
 import { FlightHost } from '../components/motion/FlightHost';
 import { startReducedMotionRead, useReducedMotionStore } from '../store/reducedMotionStore';
+import { useReducedMotion } from '../hooks/useReducedMotion';
+import { recordRouteOptions } from '../lib/recordRoute';
 
 // Hold the native splash until the font gate releases, so the first painted
 // frame is already in the v1.2 faces — no system→custom flash, and no blank
@@ -296,6 +298,11 @@ export default function RootLayout() {
   // practice; it is bounded (`REDUCED_MOTION_GATE_MS`), so it can never hold the splash.
   const motionGateOpen = useReducedMotionStore((s) => s.gateOpen);
   const gateReleased = fontGateReleased && motionGateOpen;
+  // The record screen opens with the platform's own push, and with none under Reduce
+  // Motion (History v2 §3.10 / §4 "Open a record", HV-10 / CUL-1167): the native push slides
+  // whatever the setting, so the route says it, as the Signal route does. Every door into a
+  // record takes it, flag or no flag: Reduce Motion is the owner's, not a feature's.
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     if (gateReleased) {
@@ -322,7 +329,7 @@ export default function RootLayout() {
         <Stack.Screen name="add-pet" options={{ presentation: 'modal' }} />
         <Stack.Screen name="archived-pets" options={{ presentation: 'modal' }} />
         <Stack.Screen name="edit-event" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="event/[id]" />
+        <Stack.Screen name="event/[id]" options={recordRouteOptions(reducedMotion)} />
         <Stack.Screen name="weight-history" />
         <Stack.Screen name="vet-document/[id]" />
         <Stack.Screen name="day-summary" />

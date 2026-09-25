@@ -15,10 +15,13 @@
 // A landed day (§3.1) can be a gap: a strip tap on a day with nothing logged lands on the
 // line that holds it, and the line keeps the outline until the owner scrolls. The outline
 // and the box are two nested borders that are always drawn (transparent when off), so
-// landing changes a colour and never moves the words.
+// landing changes a colour and never moves the words. It is where VoiceOver lands too
+// (HV-10: `focusRef`), and it says it is the landed one (`selected`), not only by colour.
+// Each line's spoken sentence says the drawn " · " as a pause (`spokenLine`).
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import type { DateOnlyItem } from '../../lib/historyDays';
+import { spokenLine } from '../../lib/spokenLine';
 import { ThemedText } from '../ui/ThemedText';
 
 /** The landed outline (§3.1: 2pt teal ink), the same weight as a day card's. */
@@ -36,17 +39,27 @@ export function GapLine({
   text,
   boxed,
   landed,
+  focusRef,
   testID,
 }: {
   text: string;
   /** A run of more than one day: the dashed box. */
   boxed: boolean;
   landed: boolean;
+  /** The line's accessible node, for the list to move VoiceOver onto (§4). */
+  focusRef?: (node: View | null) => void;
   testID?: string;
 }) {
   return (
     <View style={styles.cell}>
-      <View style={[styles.outline, landed && styles.outlineLanded]} testID={testID} accessible accessibilityLabel={text}>
+      <View
+        ref={focusRef}
+        style={[styles.outline, landed && styles.outlineLanded]}
+        testID={testID}
+        accessible
+        accessibilityLabel={spokenLine(text)}
+        accessibilityState={{ selected: landed }}
+      >
         <View style={[styles.line, boxed && !landed && styles.box]}>
           <View style={styles.dot} />
           <ThemedText style={styles.text}>{text}</ThemedText>
@@ -68,12 +81,15 @@ export function ItemsLine({
   items,
   landed,
   onOpenVisit,
+  focusRef,
   testID,
 }: {
   text: string;
   items: readonly DateOnlyItem[];
   landed: boolean;
   onOpenVisit: (visitId: string) => void;
+  /** The line's accessible node, for the list to move VoiceOver onto (§4). */
+  focusRef?: (node: View | null) => void;
   testID?: string;
 }) {
   const visit = items.find((i): i is Extract<DateOnlyItem, { kind: 'visit' }> => i.kind === 'visit');
@@ -87,17 +103,26 @@ export function ItemsLine({
     <View style={styles.cell}>
       {visit ? (
         <TouchableOpacity
+          ref={focusRef}
           onPress={() => onOpenVisit(visit.id)}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel={`${text}. Opens the visit`}
+          accessibilityLabel={`${spokenLine(text)}. Opens the visit`}
+          accessibilityState={{ selected: landed }}
           style={[styles.outline, styles.door, landed && styles.outlineLanded]}
           testID={testID}
         >
           {line}
         </TouchableOpacity>
       ) : (
-        <View style={[styles.outline, landed && styles.outlineLanded]} testID={testID} accessible accessibilityLabel={text}>
+        <View
+          ref={focusRef}
+          style={[styles.outline, landed && styles.outlineLanded]}
+          testID={testID}
+          accessible
+          accessibilityLabel={spokenLine(text)}
+          accessibilityState={{ selected: landed }}
+        >
           {line}
         </View>
       )}
@@ -107,7 +132,7 @@ export function ItemsLine({
 
 export function RecordStartLine({ text }: { text: string }) {
   return (
-    <View style={styles.recordStart} testID="history-record-start" accessible accessibilityLabel={text}>
+    <View style={styles.recordStart} testID="history-record-start" accessible accessibilityLabel={spokenLine(text)}>
       <View style={styles.recordRule} />
       <ThemedText style={styles.recordText}>{text}</ThemedText>
     </View>

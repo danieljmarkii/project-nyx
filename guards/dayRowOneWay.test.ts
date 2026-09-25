@@ -85,8 +85,10 @@ const ROW_MODULES: Readonly<Record<string, ReadonlySet<string>>> = {
   'lib/rowChips': new Set(),
   // The time column's width, the rail's width and the time column's line-breaking: the grid a
   // surface's OWN lines align to (History's date-only items and looks sit on the day's thread).
-  // Never the frame (`SpineRowFrame`), which only the row may draw.
-  'components/recap/DaySpine': new Set(['TIME_W', 'RAIL_W', 'timeColumnText']),
+  // `SPINE_THREAD` is where the thread itself runs, for the first paint's drawing line, which
+  // stands on it while the rows land (HV-10, `components/motion/ThreadDraw.tsx`). Never the
+  // frame (`SpineRowFrame`), which only the row may draw.
+  'components/recap/DaySpine': new Set(['TIME_W', 'RAIL_W', 'timeColumnText', 'SPINE_THREAD']),
 };
 
 /** The names a surface must reach for, to draw a day row at all. */
@@ -222,7 +224,10 @@ describe('one row, one way: Home and History draw a day only through the pipelin
 
   it('History draws its day through DayNodeRow over the pipeline (a real call site on each side)', () => {
     const history = callersIn(ROOT, historyFiles);
-    expect(history.draws).toEqual(['components/historyV2/DayCard.tsx']);
+    // `HomeSpine` is Home's spine under `history_v2` (HV-10, CUL-1167), drawn from History
+    // v2's namespace because the flag's rendering lives there (C-36). It is Home's day, and
+    // it is scanned with History's directory, held to the same imports either way.
+    expect(history.draws).toEqual(['components/historyV2/DayCard.tsx', 'components/historyV2/HomeSpine.tsx']);
     expect(history.builds).toEqual(['lib/historyScreen.ts']);
   });
 });

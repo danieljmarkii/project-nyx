@@ -17,6 +17,7 @@ import { clearAppointmentAsked } from './appointmentAsked';
 import { clearLookWithheld } from './lookWithheld';
 import { clearObservationFold } from './observationFold';
 import { cancelPendingSignalRegens } from './signal';
+import { clearRemovalNotices } from './removalNotice';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 
 /**
@@ -122,6 +123,10 @@ export async function wipeLocalSession(): Promise<void> {
   // Same FR-9 parity rule as the App Group / moment-store / trial-cache clears below:
   // wipe every place account state rests, not just SQLite.
   cancelPendingSignalRegens();
+  // HV-10 (CUL-1167): the removal notices are the previous owner's event ids resting in
+  // memory for a few seconds (`lib/removalNotice.ts`). An id matches no other account's
+  // row, and it goes anyway: every place account state rests, not just SQLite.
+  clearRemovalNotices();
   await clearLocalData().catch((e) => console.warn('[session] local wipe failed:', e));
   // B-290 (FR-9 parity): the App Group container is OUTSIDE the app sandbox and
   // holds account data on a Home Screen surface — per-pet snapshots and any
