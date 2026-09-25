@@ -34,7 +34,7 @@ Not for a code diff (`/code-review`, `code-reviewer`), a statistics check (`adve
 | Agents | lenses + 2 (six for four lenses) | 2 × lenses + 3 to 9 (CUL-1108: 27) |
 | Use for | a small surface, a second opinion, a finish pass | a mock round before requirements, anything the PM will rule on |
 
-Default to full for a mock round or a spec headed to build, light otherwise. Name the depth and why in the claim comment: a full run is a deliberate spend. A workflow runs at most CPUs − 2 agents at once (two on a 4-core cloud container), so the lenses read in waves; plan for the wall clock as well as the tokens.
+Default to full for a mock round or a spec headed to build, light otherwise. Name the depth and why in the claim comment: a full run is a deliberate spend. A workflow runs at most CPUs − 2 agents at once (two on a 4-core cloud container), so the lenses read in waves; plan for the wall clock as well as the tokens (CUL-1176's light dry run, four lenses, took about 75 minutes).
 
 ## Steps
 
