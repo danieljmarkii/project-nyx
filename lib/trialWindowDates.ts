@@ -18,6 +18,7 @@
 // untouched and there is exactly one implementation.
 
 import { toLocalDayKey, dayKeyToLocalDate } from './utils';
+import { recordDay } from './recordDates';
 
 /**
  * A trial's own local day key, whether `started_at` arrived as a DATE or an ISO
@@ -51,15 +52,10 @@ export function trialEndDayKey(startDayKey: string, targetDays: number): string 
   return toLocalDayKey(end);
 }
 
-// "27 August" — and "27 August 2027" when the trial runs past new year, because a
-// bare "27 August" on a 12-week trial started in November is genuinely ambiguous.
+// "Aug 27" — and "Aug 27, 2027" when the trial runs past new year, because a bare
+// "Aug 27" on a 12-week trial started in November is genuinely ambiguous. The house form
+// through the one formatter (`lib/recordDates.ts`, H-10), so the setup sheet, the window
+// sheet and the card name one date one way (PM ruling on CUL-1126, 2026-09-25).
 export function formatTrialEndDate(dayKey: string, now: Date = new Date()): string | null {
-  const d = dayKeyToLocalDate(dayKey);
-  if (!d) return null;
-  const sameYear = d.getFullYear() === now.getFullYear();
-  return d.toLocaleDateString([], {
-    day: 'numeric',
-    month: 'long',
-    ...(sameYear ? {} : { year: 'numeric' }),
-  });
+  return recordDay(dayKey, toLocalDayKey(now));
 }

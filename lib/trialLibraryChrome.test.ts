@@ -350,7 +350,7 @@ describe('trialStripFoodsLine (B-627)', () => {
 describe('the food-detail membership row (FR-13)', () => {
   it('states membership as a dated fact', () => {
     expect(trialMembershipLine(SET, ON_LIST_DRY, 'Biscuit', DAY_12))
-      .toBe('On Biscuit’s trial list · since 1 July');
+      .toBe('On Biscuit’s trial list · since Jul 1');
   });
 
   // The mid-trial add's date IS the disclosure on this surface: it is visibly not
@@ -359,7 +359,7 @@ describe('the food-detail membership row (FR-13)', () => {
   // sheet, before the write.
   it('dates a mid-trial add to the day it joined', () => {
     expect(trialMembershipLine(SET, lib('food-jerky', 'Real Meat', 'Kangaroo Jerky'), 'Biscuit', DAY_12))
-      .toBe('On Biscuit’s trial list · since 12 July');
+      .toBe('On Biscuit’s trial list · since Jul 12');
   });
 
   // FR-13, verbatim: for a food not on the list the row is ABSENT. Never
