@@ -98,6 +98,7 @@ export function DayCardHeader({
   filter,
   search,
   landed,
+  hasItems = false,
   withCounts = true,
   focusRef,
 }: {
@@ -107,13 +108,16 @@ export function DayCardHeader({
   filter: HistoryFilter;
   search: boolean;
   landed: boolean;
+  /** The day holds a date-only item (a visit, a course start, a bowl): with nothing logged,
+   *  its header says *nothing else logged*, never contradicting the item under it. */
+  hasItems?: boolean;
   /** Off for today's open card, whose body says *Nothing logged yet today.* already. */
   withCounts?: boolean;
   /** The header's accessible node, for the list to move VoiceOver onto (§4). */
   focusRef?: (node: View | null) => void;
 }) {
   const isToday = day === today;
-  const parts = withCounts ? dayHeaderOf(facts, filter, { search, isToday }) : [];
+  const parts = withCounts ? dayHeaderOf(facts, filter, { search, isToday, hasItems }) : [];
   const filtered = filter.kind !== 'all';
   const empty = facts.total === 0;
   const date = recordWeekday(day, today) ?? day;

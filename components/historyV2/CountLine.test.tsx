@@ -28,13 +28,13 @@ describe('CountLine', () => {
     const line: CountLineModel = {
       kind: 'count',
       line1: { lead: 'Since the last vet visit, Jul 26 · record from Aug 3 · ', strong: '33 logged', tail: '' },
-      line2: '1 day unlogged · 3 logged twice in the same minute',
+      line2: '1 day with nothing logged · 3 possible repeats within a minute',
       doors: [{ key: 'outside-trial-diet', label: 'Outside the trial diet ›' }],
     };
     render(<CountLine line={line} filter={ALL} />);
     expect(text('history-count-line-1')).toBe('Since the last vet visit, Jul 26 · record from Aug 3 · 33 logged');
     expect(screen.getByText('33 logged')).toBeTruthy();
-    expect(screen.getByText('1 day unlogged · 3 logged twice in the same minute')).toBeTruthy();
+    expect(screen.getByText('1 day with nothing logged · 3 possible repeats within a minute')).toBeTruthy();
     fireEvent.press(screen.getByTestId('history-door-outside-trial-diet'));
     expect(router.push).toHaveBeenCalledWith('/trial-exposures');
     // The door is its own 44pt box (C-5) and speaks its words without the chevron.
@@ -65,11 +65,11 @@ describe('CountLine', () => {
   it('search: the word, the window, and that it never counts (R-2)', () => {
     render(
       <CountLine
-        line={{ kind: 'search', line1: { lead: 'Rows that mention ', strong: '“rabbit”', tail: ' · All time' }, line2: 'Search finds; it never counts.' }}
+        line={{ kind: 'search', line1: { lead: 'Searching for ', strong: '“rabbit”', tail: ' · All time' }, line2: 'No count here, because search reads names, not ingredients.' }}
         filter={ALL}
       />,
     );
-    expect(text('history-count-line')).toBe('Rows that mention “rabbit” · All timeSearch finds; it never counts.');
+    expect(text('history-count-line')).toBe('Searching for “rabbit” · All timeNo count here, because search reads names, not ingredients.');
   });
 
   it('none draws nothing; pending draws the silhouette, never a number (C-12)', () => {

@@ -250,7 +250,7 @@ describe('the type sheet (§3.8)', () => {
     ]);
     expect(rows.filter((r) => r.nested).map((r) => r.label)).toEqual(['Motozol', 'Cetirizine HCl']);
     expect(rows.filter((r) => r.section).map((r) => [r.label, r.section])).toEqual([
-      ['Photographed', 'What the record holds'],
+      ['Photographed', 'Photos and notes'],
       ['Noticed', 'The daily look'],
     ]);
   });
@@ -580,9 +580,9 @@ describe('a window row says what its number counts (spokenCountOf)', () => {
       [{ kind: 'type', type: 'vomit' }, 3, '3 vomits'],
       [{ kind: 'type', type: 'vomit' }, 0, '0 vomits'],
       [{ kind: 'symptoms' }, 2, '2 symptoms'],
-      [{ kind: 'photographed' }, 1, '1 photographed row'],
-      [{ kind: 'photographed' }, 1094, '1,094 photographed rows'],
-      [{ kind: 'noted' }, 2, '2 rows with a note'],
+      [{ kind: 'photographed' }, 1, '1 with a photo'],
+      [{ kind: 'photographed' }, 1094, '1,094 with a photo'],
+      [{ kind: 'noted' }, 2, '2 with a note'],
       // All types counts every row, and a dose count is never 'doses' (CUL-1193).
       [{ kind: 'all' }, 1094, '1,094 logged'],
       [{ kind: 'type', type: 'medication' }, 46, '46 logged'],

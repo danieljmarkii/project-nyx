@@ -3,9 +3,10 @@
 // fresh the way the list is (GAP-18: every count re-derives after a write, a removal, a
 // sync or a refresh).
 //
-// WHEN IT READS. On mount; when a sync cycle lands rows (`hydrationTick`); when a log
-// lands in today's list (a write, an Undo); and on a return to the tab, which is how an
-// edit or a removal made on a record screen reaches it. Never while the tab is out of
+// WHEN IT READS. On mount; when a sync cycle lands rows (`hydrationTick`); after a pull to
+// refresh (`pullTick`: a pull syncs without moving the hydration tick); when a log lands in
+// today's list (a write, an Undo); and on a return to the tab, which is how an edit or a
+// removal made on a record screen reaches it. Never while the tab is out of
 // view: a tab stays mounted behind the others, and a whole-record read on every Home
 // refresh would be work nobody sees, so a change made elsewhere is read once, on return.
 //
@@ -30,7 +31,7 @@ import { PHOTO_READING_OFF } from '../lib/historyControls';
 import { instantOnDay } from '../lib/historyScreen';
 import { readHistoryRecord, type HistoryRecordData } from '../lib/historyWindowFacts';
 import { useEventStore } from '../store/eventStore';
-import { useHistoryToday } from '../store/historyListStore';
+import { useHistoryListStore, useHistoryToday } from '../store/historyListStore';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 
@@ -47,6 +48,7 @@ const LOADING: HistoryRecordState = { status: 'loading' };
 export function useHistoryRecordFacts(): HistoryRecordState {
   const { activePet } = usePetStore();
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
+  const pullTick = useHistoryListStore((s) => s.pullTick);
   const todayEvents = useEventStore((s) => s.todayEvents);
 
   // In view. Mounted counts as in view, so the mount reads once; a blur and a return flip
@@ -82,7 +84,7 @@ export function useHistoryRecordFacts(): HistoryRecordState {
     return () => {
       cancelled = true;
     };
-  }, [focused, petId, name, species, sex, hydrationTick, todayEvents, day]);
+  }, [focused, petId, name, species, sex, hydrationTick, pullTick, todayEvents, day]);
 
   return answer !== null && answer.petId === petId && answer.day === day ? answer.state : LOADING;
 }

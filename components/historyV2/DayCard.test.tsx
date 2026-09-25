@@ -79,8 +79,8 @@ describe('DayCardHeader', () => {
         landed={false}
       />,
     );
-    expect(text('history-day-counts-2026-09-17')).toBe('2 vomits · 10 logged');
-    expect(StyleSheet.flatten(screen.getByText('10 logged').props.style).color).toBe(theme.colorTextTertiary);
+    expect(text('history-day-counts-2026-09-17')).toBe('2 vomits · 10 in all');
+    expect(StyleSheet.flatten(screen.getByText('10 in all').props.style).color).toBe(theme.colorTextTertiary);
   });
 
   it('a search: the date only (R-2); today carries its tag', () => {

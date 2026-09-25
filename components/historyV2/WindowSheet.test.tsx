@@ -53,7 +53,7 @@ describe('WindowSheet', () => {
     const view = render(<WindowSheet petId="p1" current={{ kind: 'trial' }} rows={ROWS} pill={{ label: 'Since Jul 26', accessibilityLabel: 'Date range: Since the trial started, Jul 26' }} />);
     fireEvent.press(view.getByLabelText('Date range: Since the trial started, Jul 26'));
     expect(view.getByText('Since Jul 26')).toBeTruthy();
-    expect(view.getByText('Show events from')).toBeTruthy();
+    expect(view.getByText('Date range')).toBeTruthy();
     expect(view.getByLabelText('Since the trial started, Jul 26, 378 logged').props.accessibilityState.selected).toBe(true);
     expect(view.getByText('2026')).toBeTruthy();
     // The months run past the fold, so the sheet opens at the window on screen.
@@ -77,6 +77,6 @@ describe('WindowSheet', () => {
     const view = render(<WindowSheet petId="p1" current={{ kind: 'all' }} rows={ROWS} pill={{ label: 'All time', accessibilityLabel: 'Date range: All time' }} />);
     fireEvent.press(view.getByLabelText('Date range: All time'));
     view.rerender(<WindowSheet petId="p2" current={{ kind: 'all' }} rows={ROWS} pill={{ label: 'All time', accessibilityLabel: 'Date range: All time' }} />);
-    expect(view.queryByText('Show events from')).toBeNull();
+    expect(view.queryByText('Date range')).toBeNull();
   });
 });

@@ -85,7 +85,7 @@ export function SearchField({ petId, petName, focusTick }: Props) {
         style={styles.done}
         activeOpacity={0.7}
         accessibilityRole="button"
-        accessibilityHint="Ends the search"
+        accessibilityHint="Clears the search"
       >
         <ThemedText style={styles.doneLabel}>{SEARCH_DONE_LABEL}</ThemedText>
       </TouchableOpacity>

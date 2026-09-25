@@ -22,10 +22,12 @@ import type { AttributableDose } from './medications';
 import type { HistoryVisitRow } from './vetVisits';
 import { toLocalDayKey } from './utils';
 import { episodeDaysOf } from './chartModels';
+import { stripMarkOf, type StripWindow } from './stripMarks';
 import {
   HISTORY_TYPE_KEYS,
   absenceText,
   buildDayFacts,
+  claimsFromOf,
   countLineOf,
   courseDaysOf,
   courseKeysOf,
@@ -35,6 +37,7 @@ import {
   dayHeaderOf,
   duplicateCountsOf,
   duplicatesFor,
+  filterNoun,
   firstDaysOf,
   gapLineText,
   historyCourseOf,
@@ -453,6 +456,32 @@ describe('AC 1 — the count line, the type sheet and every day header agree, ev
       else if (n > 0) expect(lead.text.startsWith(`${n} `)).toBe(true);
       else expect(lead.text).toBe(absenceText(filter));
     }
+    // The strip speaks the same day counts (HV-12's §7 walk found it outside this table):
+    // every logged day's cell says the day's total, and under a filter it is quiet exactly
+    // when the header's count is zero, and otherwise speaks that count.
+    const strip: StripWindow = {
+      fromDay: window.range.fromDay,
+      toDay: window.range.toDay,
+      recordStart: facts.firsts.record,
+      petName: 'Nyx',
+      courseName: null,
+      claimsFrom: claimsFromOf(facts.firsts, filter, course?.days ?? null),
+    };
+    let spoken = 0;
+    for (const f of facts.days.values()) {
+      if (f.total === 0 || facts.firsts.record === null || f.day < facts.firsts.record || f.day > TODAY) continue;
+      const mark = stripMarkOf(f, filter, strip, TODAY);
+      expect(mark.label).toContain(`, ${f.total} logged in all`);
+      spoken += 1;
+      if (filter.kind === 'all') continue;
+      const n = dayCountFor(f, filter) ?? 0;
+      if (n === 0) expect(mark.state).toBe('quiet');
+      else {
+        expect(mark.state).not.toBe('quiet');
+        expect(mark.label).toMatch(new RegExp(`, ${n} [^,]*logged`));
+      }
+    }
+    if (window.range.toDay >= '2026-09-02' && window.range.fromDay <= TODAY && facts.days.size > 0) expect(spoken).toBeGreaterThan(0);
   });
 
   it('the fixture is not vacuous: most filters count something in some window', () => {
@@ -507,7 +536,7 @@ describe('AC 2 — "N days unlogged": on or after the record, before today, only
       window: { longName: 'Last 2 days', anchorDay: null, isAllTime: false, isTrial: false, recordFrom: null, pastPlannedEnd: false, range: { fromDay: '2026-09-20', toDay: TODAY } },
     });
     // Coverage says nothing; the other clause still speaks (the pair across midnight).
-    expect(line).toMatchObject({ kind: 'count', line2: '1 logged twice in the same minute' });
+    expect(line).toMatchObject({ kind: 'count', line2: '1 possible repeat within a minute' });
   });
 
   it('a course\'s coverage is over the course\'s own days (a course that started mid-window)', () => {
@@ -534,7 +563,7 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
     expect(lineFor(WINDOWS.all, { kind: 'all' })).toEqual({
       kind: 'count',
       line1: { lead: 'All time · ', strong: '22 logged', tail: ' since Sep 1' },
-      line2: '12 days unlogged · 2 logged twice in the same minute',
+      line2: '12 days with nothing logged · 2 possible repeats within a minute',
       doors: [],
     });
   });
@@ -543,7 +572,7 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
     expect(lineFor(WINDOWS.last7, { kind: 'all' })).toEqual({
       kind: 'count',
       line1: { lead: 'Last 7 days · ', strong: '5 logged', tail: '' },
-      line2: '4 days unlogged · 1 logged twice in the same minute',
+      line2: '4 days with nothing logged · 1 possible repeat within a minute',
       doors: [],
     });
   });
@@ -552,15 +581,22 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
     expect(lineFor(WINDOWS.trial, { kind: 'type', type: 'vomit' })).toEqual({
       kind: 'count',
       line1: { lead: 'Since the trial started, Sep 3 · ', strong: '3 vomits on 2 days', tail: '' },
-      line2: '11 days unlogged · 1 logged twice in the same minute',
-      doors: [{ key: 'trial-compare', label: 'Before and since the trial ›' }],
+      line2: '11 days with nothing logged · 1 possible repeat within a minute',
+      doors: [{ key: 'trial-compare', label: 'The trial so far ›' }],
     });
   });
 
   it('All symptoms outside the trial window: the other compare door', () => {
     expect(lineFor(WINDOWS.all, { kind: 'symptoms' })).toMatchObject({
       line1: { strong: '6 symptoms on 5 days', tail: ' since Sep 1' },
-      doors: [{ key: 'symptom-compare', label: 'See the compare ›' }],
+      doors: [{ key: 'symptom-compare', label: 'Symptoms on Patterns ›' }],
+    });
+    // One symptom's door names the metric it opens, in the occurrence form (HV-12).
+    expect(lineFor(WINDOWS.all, { kind: 'type', type: 'vomit' })).toMatchObject({
+      doors: [{ key: 'symptom-compare', label: 'Vomiting over time ›' }],
+    });
+    expect(lineFor(WINDOWS.all, { kind: 'type', type: 'lethargy' })).toMatchObject({
+      doors: [{ key: 'symptom-compare', label: 'Lethargy over time ›' }],
     });
   });
 
@@ -573,7 +609,7 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
     ).toEqual({
       kind: 'count',
       line1: { lead: 'All time · ', strong: '2 logged on 2 days', tail: '' },
-      line2: 'Prednisone · since Sep 4 · 1 not given in full · 11 days unlogged',
+      line2: 'Prednisone · since Sep 4 · 1 not given in full · 11 days with nothing logged',
       doors: [],
     });
     // A Refused is named.
@@ -596,7 +632,7 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
     expect(lineFor(WINDOWS.all, { kind: 'type', type: 'medication' })).toEqual({
       kind: 'count',
       line1: { lead: 'All time · ', strong: '5 logged on 4 days', tail: ' since Sep 1' },
-      line2: '2 not given in full · 12 days unlogged',
+      line2: '2 not given in full · 12 days with nothing logged',
       doors: [],
     });
     // A window holding only the Given dose names nothing.
@@ -604,24 +640,31 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
       .toMatchObject({ line1: { strong: '1 logged on 1 day' }, line2: null });
   });
 
-  it('the day header keeps its noun under a dose filter: the rows under it carry their own chips', () => {
+  it('the day header keeps its noun under a dose filter and names the doses not given in full', () => {
     // CUL-1193 ruled the count line and the sheet's sub-row; "2 logged · 3 logged" would
-    // collide with the day's total, so the header's words are HV-12's call (CUL-1169).
+    // collide with the day's total, so the header's words are HV-12's call (CUL-1169): the
+    // noun stays, and the doses recorded Partial, Missed or Refused follow in the neutral
+    // grey a meal not finished takes, so "2 doses" never reads as two given.
     const facts = factsFor(WINDOWS.all.range);
-    expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-06'), { kind: 'course', courseKey: 'reg-pred' }).map((p) => p.text))
-      .toEqual(['1 dose', '3 logged']);
+    expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-06'), { kind: 'course', courseKey: 'reg-pred' })).toEqual([
+      { text: '1 dose', tone: 'neutral' },
+      { text: '3 in all', tone: 'neutral' },
+      { text: '1 not given in full', tone: 'unfinished' },
+    ]);
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-09'), { kind: 'type', type: 'medication' }).map((p) => p.text))
-      .toEqual(['2 doses', '3 logged']);
+      .toEqual(['2 doses', '3 in all', '1 not given in full']);
+    // Only under a dose filter: All types never names a dose's chip in the header.
+    expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-06'), { kind: 'all' }).map((p) => p.text)).not.toContain('1 not given in full');
   });
 
   it('Photographed and With a note: their rows and days, coverage, never a duplicates clause', () => {
     expect(lineFor(WINDOWS.all, { kind: 'photographed' })).toMatchObject({
-      line1: { strong: '2 photographed rows on 2 days' },
-      line2: '12 days unlogged',
+      line1: { strong: '2 with a photo on 2 days' },
+      line2: '12 days with nothing logged',
     });
     expect(lineFor(WINDOWS.all, { kind: 'noted' })).toMatchObject({
-      line1: { strong: '2 rows with a note on 2 days' },
-      line2: '12 days unlogged',
+      line1: { strong: '2 with a note on 2 days' },
+      line2: '12 days with nothing logged',
     });
   });
 
@@ -632,11 +675,23 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
     expect(lineFor(WINDOWS.august, { kind: 'type', type: 'vomit' })).toMatchObject({ line1: { strong: 'no vomit logged' } });
     expect(lineFor(WINDOWS.last7, { kind: 'type', type: 'cough' })).toMatchObject({
       line1: { strong: 'no cough logged' },
-      line2: '4 days unlogged',
+      line2: '4 days with nothing logged',
     });
     expect(lineFor(WINDOWS.last7, { kind: 'course', courseKey: 'reg-pred' }, {
       course: { name: 'Prednisone', days: { fromDay: '2026-09-04', toDay: null } },
     })).toMatchObject({ line1: { strong: 'no dose logged' } });
+  });
+
+  it('Today with nothing logged says "yet", as the card below it does; a closed day never does', () => {
+    // A day in the fixture with nothing logged, taken as "today".
+    const quiet = '2026-09-19';
+    const todayOnly: CountLineWindow = { ...WINDOWS.all, longName: 'Today', isAllTime: false, range: { fromDay: quiet, toDay: quiet } };
+    expect(lineFor(todayOnly, { kind: 'all' }, { today: quiet })).toMatchObject({ line1: { lead: 'Today · ', strong: 'nothing logged yet' } });
+    expect(lineFor(todayOnly, { kind: 'type', type: 'vomit' }, { today: quiet })).toMatchObject({
+      line1: { strong: 'no vomit logged yet' },
+    });
+    // The same single day seen from a later today is closed: no "yet".
+    expect(lineFor(todayOnly, { kind: 'all' })).toMatchObject({ line1: { strong: 'nothing logged' } });
   });
 
   it('a stale read never prints under a new window\'s name: pending until the facts answer it', () => {
@@ -649,8 +704,8 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
   it('Search: the word, the window, and that it never counts', () => {
     expect(lineFor(WINDOWS.all, { kind: 'all' }, { search: '  rabbit ' })).toEqual({
       kind: 'search',
-      line1: { lead: 'Rows that mention ', strong: '“rabbit”', tail: ' · All time' },
-      line2: 'Search finds; it never counts.',
+      line1: { lead: 'Searching for ', strong: '“rabbit”', tail: ' · All time' },
+      line2: 'No count here, because search reads names, not ingredients.',
     });
   });
 
@@ -666,7 +721,7 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
     expect(lineFor(visit, { kind: 'all' })).toEqual({
       kind: 'count',
       line1: { lead: 'Since the last vet visit, Aug 26 · record from Sep 1 · ', strong: '22 logged', tail: '' },
-      line2: '12 days unlogged · 2 logged twice in the same minute',
+      line2: '12 days with nothing logged · 2 possible repeats within a minute',
       doors: [],
     });
   });
@@ -813,15 +868,32 @@ describe('the day header (rule C)', () => {
     ]);
   });
 
-  it('a filter: its count first, then the day\'s total', () => {
+  it('a filter: its count first, then the day\'s total "in all" (never "logged", which read as more rows)', () => {
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-04'), { kind: 'type', type: 'vomit' })).toEqual([
       { text: '2 vomits', tone: 'symptom' },
-      { text: '3 logged', tone: 'neutral' },
+      { text: '3 in all', tone: 'neutral' },
     ]);
+    // "Stool" is the formed one: "no stool logged" on a loose-stool day read as none at all.
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-10'), { kind: 'type', type: 'stool_normal' })).toEqual([
-      { text: '1 stool', tone: 'neutral' },
-      { text: '3 logged', tone: 'neutral' },
+      { text: '1 formed stool', tone: 'neutral' },
+      { text: '3 in all', tone: 'neutral' },
     ]);
+    expect(absenceText({ kind: 'type', type: 'stool_normal' })).toBe('no formed stool logged');
+    expect(filterNoun({ kind: 'type', type: 'weight_check' }, 3)).toBe('weigh-ins');
+    expect(absenceText({ kind: 'photographed' })).toBe('no photo logged');
+    expect(absenceText({ kind: 'noted' })).toBe('no note logged');
+  });
+
+  it('All symptoms names each kind instead of one sum, then the day\'s total', () => {
+    const f = dayFactsOn(facts.days, '2026-09-04');
+    const parts = dayHeaderOf(f, { kind: 'symptoms' });
+    expect(parts).toEqual([
+      { text: '2 vomits', tone: 'symptom' },
+      { text: '3 in all', tone: 'neutral' },
+    ]);
+    // The kinds named sum to the filter's one count (R-1): the header never disagrees with it.
+    const named = parts.filter((p) => p.tone === 'symptom').reduce((n, p) => n + Number(p.text.split(' ')[0]), 0);
+    expect(named).toBe(dayCountFor(f, { kind: 'symptoms' }));
   });
 
   it('a search shows the date only', () => {
@@ -834,16 +906,27 @@ describe('the day header (rule C)', () => {
     expect(dayHeaderOf(visitOnly, { kind: 'all' }, { isToday: true })).toEqual([{ text: 'nothing logged yet', tone: 'neutral' }]);
   });
 
+  it('a day holding a visit says nothing ELSE was logged, never contradicting the visit under it', () => {
+    const visitOnly = dayFactsOn(facts.days, '2026-09-07');
+    expect(dayHeaderOf(visitOnly, { kind: 'all' }, { hasItems: true })).toEqual([{ text: 'nothing else logged', tone: 'neutral' }]);
+    expect(dayHeaderOf(visitOnly, { kind: 'all' }, { hasItems: true, isToday: true })).toEqual([
+      { text: 'nothing else logged yet', tone: 'neutral' },
+    ]);
+    // A logged day's header is the same with or without an item.
+    const logged = dayFactsOn(facts.days, '2026-09-04');
+    expect(dayHeaderOf(logged, { kind: 'all' }, { hasItems: true })).toEqual(dayHeaderOf(logged, { kind: 'all' }));
+  });
+
   it('under Meal the meals not finished stay: a refusal never reads as routine (§1, H-2)', () => {
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-03'), { kind: 'type', type: 'meal' })).toEqual([
       { text: '2 meals', tone: 'neutral' },
-      { text: '3 logged', tone: 'neutral' },
+      { text: '3 in all', tone: 'neutral' },
       { text: '1 meal not finished', tone: 'unfinished' },
     ]);
     // Only under Meal: a vomit filter's header does not carry the intake word.
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-03'), { kind: 'type', type: 'cough' })).toEqual([
       { text: '1 cough', tone: 'symptom' },
-      { text: '3 logged', tone: 'neutral' },
+      { text: '3 in all', tone: 'neutral' },
     ]);
   });
 });
@@ -1022,13 +1105,14 @@ describe('AC 10 / AC 11 — the list\'s sections', () => {
     expect(sections({ kind: 'type', type: 'sneeze' })).toEqual([]);
   });
 
-  it('gap lines say what the record holds, a day with its weekday, a run with its range', () => {
+  it('gap lines say what the record holds, the date first, a day with its weekday, a run with its range', () => {
     const vomit: HistoryFilter = { kind: 'type', type: 'vomit' };
     expect(gapLineText({ kind: 'unlogged', fromDay: '2026-09-20', toDay: '2026-09-20', days: 1 }, vomit, DATES)).toBe('Day, Sep 20 · nothing logged');
-    expect(gapLineText({ kind: 'unlogged', fromDay: '2026-09-13', toDay: '2026-09-16', days: 4 }, vomit, DATES)).toBe('nothing logged · Sep 13 – 16');
-    expect(gapLineText({ kind: 'no-match', fromDay: '2026-09-18', toDay: '2026-09-19', days: 2 }, vomit, DATES)).toBe('no vomit logged · Sep 18 – 19');
+    expect(gapLineText({ kind: 'unlogged', fromDay: '2026-09-13', toDay: '2026-09-16', days: 4 }, vomit, DATES)).toBe('Sep 13 – 16 · nothing logged');
+    expect(gapLineText({ kind: 'no-match', fromDay: '2026-09-18', toDay: '2026-09-19', days: 2 }, vomit, DATES)).toBe('Sep 18 – 19 · no vomit logged');
     expect(gapLineText({ kind: 'no-match', fromDay: '2026-09-18', toDay: '2026-09-18', days: 1 }, { kind: 'course', courseKey: 'reg-pred' }, DATES, 'Prednisone'))
-      .toBe('no Prednisone dose logged · Sep 18');
+      .toBe('Day, Sep 18 · no Prednisone dose logged');
+    expect(gapLineText({ kind: 'no-match', fromDay: '2026-09-18', toDay: '2026-09-19', days: 2 }, { kind: 'noticed' }, DATES)).toBeNull();
     expect(gapLineText({ kind: 'day', day: '2026-09-18' }, vomit, DATES)).toBeNull();
     expect(absenceText({ kind: 'noticed' })).toBeNull();
   });

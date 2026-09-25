@@ -368,6 +368,50 @@ export function itemsOnlyLineText(
   return parts.join(' · ');
 }
 
+// ── A filter with nothing to show (§3.12, HV-12) ───────────────────────────────
+
+/** A quiet state's two lines, as `EmptyState` draws them. */
+export interface QuietState {
+  title: string;
+  body: string;
+}
+
+/**
+ * What the list says when a filter leaves it with no section at all (§3.12). It names the
+ * record's fact, never the owner's filter as a mistake ("Nothing matches that filter / Try
+ * clearing a filter" blamed Jordan's daily Vomit + Today check, HV-12's product review):
+ *   • the kind was never logged: *No vomit logged yet*, and what happens when one is;
+ *   • it was, just not in this window: *No vomit logged in this date range* (today: *yet
+ *     today*), and the way to see every one.
+ * `everLogged` is null when the record cannot say (a course whose days have not loaded):
+ * then only the window form is claimed, which is true either way.
+ * Under Noticed nothing ever says a day had no look (H-9): the state names what the filter
+ * is for, or that this window holds nothing to show, never that a look is missing.
+ */
+export function filterQuietStateOf(args: {
+  filter: HistoryFilter;
+  everLogged: boolean | null;
+  todayOnly: boolean;
+  courseName: string | null;
+}): QuietState {
+  const { filter, everLogged, todayOnly } = args;
+  if (filter.kind === 'noticed') {
+    return everLogged === false
+      ? {
+          title: 'What you noticed shows up here',
+          body: 'Answer the daily look on Home, and the days you answer show up here.',
+        }
+      : { title: 'Nothing to show in this date range', body: 'Change the date range to see the days you answered.' };
+  }
+  const absence = absenceText(filter, args.courseName) ?? 'nothing logged';
+  const Absence = absence.charAt(0).toUpperCase() + absence.slice(1);
+  if (everLogged === false) return { title: `${Absence} yet`, body: 'When you log one, it shows up here.' };
+  return {
+    title: todayOnly ? `${Absence} yet today` : `${Absence} in this date range`,
+    body: 'Change the date range to All time to see every one logged.',
+  };
+}
+
 // ── The list's end, and where a landing lands ──────────────────────────────────
 
 /**

@@ -168,7 +168,7 @@ describe('the default week', () => {
     const cells = within(api.getByTestId('week-strip-page-2026-09-20')).getAllByTestId('daymark');
     expect(cells.map((c) => c.props.accessibilityLabel)).toEqual([
       'Sunday, September 20, no vomit logged, 4 logged in all',
-      'Monday, September 21, 2 vomits logged, 6 logged in all, a meal left unfinished',
+      'Monday, September 21, 2 vomits logged, 6 logged in all, a meal not finished',
       'Tuesday, September 22, nothing logged',
       'Wednesday, September 23, no vomit logged, 2 logged in all',
       'Thursday, September 24, no vomit logged, 1 logged in all',
@@ -343,7 +343,7 @@ describe('a tap lands on its day (§3.1, §3.4)', () => {
     expect(s.landTick).toBe(1);
     expect(s.stripWeek).toBe('2026-09-20');
     const landed = within(api.getByTestId('week-strip-page-2026-09-20')).getAllByTestId('daymark')[1];
-    expect(landed.props.accessibilityLabel).toBe('Monday, September 21, 2 vomits logged, 6 logged in all, a meal left unfinished, selected');
+    expect(landed.props.accessibilityLabel).toBe('Monday, September 21, 2 vomits logged, 6 logged in all, a meal not finished, selected');
     expect(flat(landed.props.style)).toMatchObject({ borderWidth: 2, borderColor: theme.colorAccentInk });
   });
 
