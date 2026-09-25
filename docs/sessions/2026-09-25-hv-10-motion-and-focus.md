@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 
-Shipped via #PR_NUMBER (CUL-1167).
+Shipped via #919 (CUL-1167).
 
 ## The ask
 
