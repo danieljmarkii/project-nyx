@@ -64,6 +64,7 @@ function mkRow(over: Partial<TimelineRow> & { id: string; occurred_at: string })
     paired_food_name: null,
     drug_generic_name: null,
     drug_brand_name: null,
+    regimen_drug_name: null,
     paired_dose_count: 0,
     paired_dose_event_id: null,
     paired_dose_drug_name: null,
