@@ -131,8 +131,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space1,
-    paddingVertical: theme.space1,
-    paddingHorizontal: theme.space2,
+    // Round 5's gap line: quieter than a card, its dot a little in from the card's edge.
+    paddingVertical: theme.space0_5 + theme.spaceMicro,
+    paddingHorizontal: theme.space1 + theme.space0_5,
     borderRadius: theme.radiusMedium - LANDED_OUTLINE_WIDTH,
     borderWidth: BOX_WIDTH,
     borderColor: 'transparent',

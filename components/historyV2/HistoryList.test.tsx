@@ -201,9 +201,14 @@ function textOf(node: RenderedNode | string | null | undefined): string {
 
 const text = (testID: string) => textOf(screen.getByTestId(testID) as unknown as RenderedNode);
 
+// VirtualizedList batches its cell updates on a timer (`updateCellsBatchingPeriod`, 50ms by
+// default); waiting it out inside `act` keeps that update inside the test's own scope.
+const LIST_BATCH_MS = 50;
+
 async function settle(): Promise<void> {
   await act(async () => {
     for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, LIST_BATCH_MS + 5));
   });
 }
 
@@ -448,6 +453,28 @@ describe('AC 12 — a read that answers for another pet is dropped', () => {
   });
 });
 
+describe('a new scope never shows the old scope\'s rows while its read is in flight (C-12)', () => {
+  it('a filter change draws the silhouette, never the old rows under the new pill', async () => {
+    seedWeek();
+    await renderList();
+    expect(screen.getByTestId('spine-node-m1')).toBeTruthy();
+    let release: () => void = () => {};
+    mockGate = new Promise<void>((r) => {
+      release = r;
+    });
+    setScope({ filter: { kind: 'type', type: 'vomit' } });
+    await settle();
+    expect(screen.queryByTestId('spine-node-m1')).toBeNull();
+    expect(screen.queryByTestId('history-count-line')).toBeNull();
+    expect(screen.getByTestId('history-skeleton', { includeHiddenElements: true })).toBeTruthy();
+    mockGate = null;
+    await act(async () => release());
+    await settle();
+    expect(screen.getByTestId('spine-node-v2')).toBeTruthy();
+    expect(screen.queryByTestId('spine-node-m1')).toBeNull();
+  });
+});
+
 describe('AC 13 — a pet switch resets every scope', () => {
   it('under every non-default scope, the new pet opens on All types, All time, no search, nothing landed', async () => {
     seedWeek();
@@ -505,17 +532,21 @@ describe('the quiet states (§3.12, C-12)', () => {
   });
 
   it('a failed read: the shipped copy and a way back; no count line, no strip', async () => {
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
     seedWeek();
     mockFail = true;
     await renderList();
     expect(text('history-error')).toContain("Couldn't load history");
     expect(text('history-error')).toContain("Something went wrong loading Nyx's history.");
     expect(screen.queryByTestId('history-list-header')).toBeNull();
+    // Said on screen and in the log, never swallowed.
+    expect(logged).toHaveBeenCalledWith('[history] load failed:', expect.any(Error));
     mockFail = false;
     fireEvent.press(screen.getByText('Try again'));
     await settle();
     expect(screen.queryByTestId('history-error')).toBeNull();
     expect(text('history-count-line-1')).toContain('7 logged');
+    logged.mockRestore();
   });
 
   it('a new account: the first-log line under the strip, and no count line', async () => {

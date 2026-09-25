@@ -344,9 +344,10 @@ const styles = StyleSheet.create({
     borderWidth: CARD_BORDER,
     borderBottomWidth: 0,
     borderColor: theme.colorBorder,
-    paddingHorizontal: theme.space2,
-    paddingTop: theme.space2,
-    paddingBottom: theme.space1,
+    // Round 5's header: the date a little in from the card's edge, close under its top.
+    paddingHorizontal: theme.space1 + theme.space0_5,
+    paddingTop: theme.space1 + theme.spaceMicro,
+    paddingBottom: theme.space0_5,
   },
   bodyCell: {
     paddingHorizontal: theme.space2,

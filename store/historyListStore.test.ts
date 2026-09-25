@@ -120,15 +120,18 @@ describe('a load: one snapshot, every read together', () => {
   });
 
   it('a failed read is a state for its request, and a retry that succeeds takes it down', async () => {
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
     seedDays(1, 1);
     mockFail = true;
     const scope = scopeFor(PET_A.id);
     expect(await store().load({ pet: PET_A, scope, today: TODAY })).toBe('failed');
     expect(store().failedRequest).toBe(historyRequestKey(TODAY, scope));
     expect(store().snapshot).toBeNull();
+    expect(logged).toHaveBeenCalledWith('[history] load failed:', expect.any(Error));
     mockFail = false;
     expect(await store().load({ pet: PET_A, scope, today: TODAY })).toBe('drawn');
     expect(store().failedRequest).toBeNull();
+    logged.mockRestore();
   });
 });
 
@@ -164,6 +167,15 @@ describe('a read that answers for another scope or pet is dropped (CUL-1120, AC 
     mockGate = null;
     release();
     expect(await inFlight).toBe('superseded');
+    expect(store().snapshot).toBeNull();
+  });
+
+  it('a load made for a pet that is no longer the active one lands nowhere, even with no newer load', async () => {
+    seedDays(1, 1);
+    usePetStore.setState({ activePet: PET_B });
+    // A caller holding the old pet and its old scope (a stale closure): no load follows it,
+    // so only the fresh active-pet check at commit can refuse it.
+    expect(await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY })).toBe('superseded');
     expect(store().snapshot).toBeNull();
   });
 
@@ -243,12 +255,15 @@ describe('pages: whole days, the depth a refresh keeps, the landing\'s reach', (
   });
 
   it('a failed page is said at the foot of the snapshot it was for', async () => {
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
     seedDays(12, 10);
     await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY });
     const snap = store().snapshot;
     mockFail = true;
     await store().loadMore();
     expect(store().more).toEqual({ of: snap, state: 'failed' });
+    expect(logged).toHaveBeenCalledWith('[history] next page failed:', expect.any(Error));
+    logged.mockRestore();
   });
 
   it('ensureDay pages back until the day is loaded, and says when it cannot be', async () => {
