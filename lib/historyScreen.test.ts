@@ -29,6 +29,7 @@ import {
   needsWholeDays,
   priorOnsetsFor,
   scrollAnimates,
+  sectionFromDay,
   sectionIndexFor,
   sectionKeyOf,
   showsBowlLine,
@@ -334,11 +335,22 @@ describe('date-only items: their words in a card and in a filter\'s line', () =>
 // ── The list's end, the landing's target, the viewport ─────────────────────────
 
 describe('showsRecordStart', () => {
-  it('only when every page is loaded and the window reaches the record\'s first day', () => {
-    expect(showsRecordStart({ recordStart: '2026-05-14', windowFromDay: '2026-05-14', allLoaded: true })).toBe(true);
-    expect(showsRecordStart({ recordStart: '2026-05-14', windowFromDay: '2026-05-14', allLoaded: false })).toBe(false);
-    expect(showsRecordStart({ recordStart: '2026-05-14', windowFromDay: '2026-09-15', allLoaded: true })).toBe(false);
-    expect(showsRecordStart({ recordStart: null, windowFromDay: '2026-09-15', allLoaded: true })).toBe(false);
+  it('only when every page is loaded and the list\'s last section holds the record\'s first day', () => {
+    expect(showsRecordStart({ recordStart: '2026-05-14', lastSectionFromDay: '2026-05-14', allLoaded: true })).toBe(true);
+    expect(showsRecordStart({ recordStart: '2026-05-14', lastSectionFromDay: '2026-05-14', allLoaded: false })).toBe(false);
+    expect(showsRecordStart({ recordStart: null, lastSectionFromDay: '2026-09-15', allLoaded: true })).toBe(false);
+    expect(showsRecordStart({ recordStart: '2026-05-14', lastSectionFromDay: null, allLoaded: true })).toBe(false);
+  });
+
+  it('never under a card that is not the record\'s first day (a filter\'s first vomit, a later window)', () => {
+    // Vomit over All time: the record starts Aug 16, the first vomit is Sep 20, and the 35
+    // logged days between are not drawn, so "here" would be false under Sep 20's card.
+    expect(showsRecordStart({ recordStart: '2026-08-16', lastSectionFromDay: '2026-09-20', allLoaded: true })).toBe(false);
+  });
+
+  it('sectionFromDay: a card\'s day, a run\'s first day', () => {
+    expect(sectionFromDay({ kind: 'day', day: '2026-09-17' } as HistorySection)).toBe('2026-09-17');
+    expect(sectionFromDay({ kind: 'unlogged', fromDay: '2026-09-13', toDay: '2026-09-16', days: 4 } as HistorySection)).toBe('2026-09-13');
   });
 });
 

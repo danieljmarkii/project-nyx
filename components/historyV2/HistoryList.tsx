@@ -15,7 +15,12 @@
 // list ends by naming where the record starts; the next page is one skeleton row at the foot.
 // The snapshot is drawn only while it answers the scope on screen (`snapshotForScope`), so a
 // scope change, a pet switch or midnight shows the silhouette until the new read lands, never
-// the old rows under the new pill (CUL-1120).
+// the old rows under the new pill (CUL-1120). A filter or a search change keeps the HEADER:
+// its reads are the window's, the same ones the new load makes (`headerSnapshotFor`), so the
+// count line, the bowl's line and the strip redraw under the new filter at once and only the
+// days below wait. A window change, a pet switch or midnight asks for new facts, and the
+// header waits with them. With no pet at all there is no read to wait for, so the screen is
+// the first-log line rather than a silhouette that never ends (v1's rule).
 //
 // ── WHAT RE-DERIVES THE COUNTS (AC 5) ────────────────────────────────────────────
 // One reload, whole: on focus (a removal on the record screen lands here), on the sync tick
@@ -33,9 +38,9 @@
 //     landed state cleared, the list to its top. It glides only within one viewport and never
 //     under Reduce Motion (read at the tap, CUL-1123).
 //   • A new scope (a filter, a window, a search, a pet) resets the list to its top without
-//     animating it.
+//     animating it. A new day alone (midnight) re-reads and leaves the owner where they are.
 // VoiceOver focus on a landing and on the re-tap, and every motion, are HV-10's (CUL-1167).
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AppState,
   RefreshControl,
@@ -48,9 +53,9 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { router, useFocusEffect, useNavigation } from 'expo-router';
+import { hasPerIncidentRead } from '../../constants/eventTypes';
 import { theme } from '../../constants/theme';
 import { analysisChainOutstanding, awaitAnalysisChain, watchAnalysisRow } from '../../lib/analysis';
-import { eventTintCategory } from '../../lib/dayEvents';
 import { HISTORY_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 import {
   countLineOf,
@@ -59,6 +64,7 @@ import {
   listSectionsOf,
   type DayFacts,
   type HistoryCourse,
+  type HistoryFilter,
   type HistorySection,
 } from '../../lib/historyDays';
 import { SEARCH_READS_NOTES, type HistoryRow } from '../../lib/historyQueries';
@@ -69,6 +75,7 @@ import {
   historyDatesFor,
   itemsOnlyLineText,
   scrollAnimates,
+  sectionFromDay,
   sectionIndexFor,
   sectionKeyOf,
   showsBowlLine,
@@ -81,13 +88,15 @@ import { syncNow } from '../../lib/sync';
 import { toLocalDayKey } from '../../lib/utils';
 import { useEventStore } from '../../store/eventStore';
 import {
+  headerSnapshotFor,
   historyRequestKey,
+  historyScopeRequestKey,
   snapshotForScope,
   useHistoryListStore,
   type HistoryLoadOutcome,
   type HistorySnapshot,
 } from '../../store/historyListStore';
-import { useHistoryScopeStore, type HistoryScope } from '../../store/historyScopeStore';
+import { effectiveSearch, useHistoryScopeStore, type HistoryScope } from '../../store/historyScopeStore';
 import { usePetStore } from '../../store/petStore';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
@@ -134,20 +143,22 @@ type TabPressNavigation = {
 
 const NO_ROWS: readonly HistoryRow[] = [];
 const NO_OPEN: ReadonlySet<string> = new Set();
-/** How many times a landing re-aims at a section the list had not measured yet. */
+/** How many times a landing re-aims at a section the list had not measured yet, and how
+ *  long it waits for the jump near it to be measured before each re-aim. */
 const LANDING_RETRIES = 3;
+const LANDING_RETRY_MS = 50;
 
-function courseOf(snapshot: HistorySnapshot): HistoryCourse | null {
-  const filter = snapshot.filter;
+function courseOf(snapshot: HistorySnapshot, filter: HistoryFilter = snapshot.filter): HistoryCourse | null {
   return filter.kind === 'course' ? (snapshot.courses.find((c) => c.key === filter.courseKey) ?? null) : null;
 }
 
-/** The loaded symptom rows' ids: the rows a read can sit on. */
-function symptomIdsOf(snapshot: HistorySnapshot | null): string {
+/** The loaded rows a read can sit on: every type with a per-incident read, the write side's
+ *  own predicate, so a formed stool's read is watched though a formed stool is no symptom. */
+function readableIdsOf(snapshot: HistorySnapshot | null): string {
   if (!snapshot) return '';
   const ids: string[] = [];
   for (const rows of snapshot.wholeDays.values()) {
-    for (const r of rows) if (eventTintCategory(r.event_type) === 'symptom') ids.push(r.id);
+    for (const r of rows) if (hasPerIncidentRead(r.event_type)) ids.push(r.id);
   }
   return ids.sort().join('|');
 }
@@ -172,8 +183,12 @@ export function HistoryList() {
   // ── Today: the screen's one clock (the store shares it with the pinned row and strip) ──
   const [today, setToday] = useState(() => toLocalDayKey(new Date()));
   const refreshToday = useCallback(() => setToday(toLocalDayKey(new Date())), []);
-  useEffect(() => {
+  // The shared clock moves in the same commit as the list's, before paint, so the pinned row
+  // and the strip (`useHistorySnapshot`) never draw a frame on the other side of midnight.
+  useLayoutEffect(() => {
     useHistoryListStore.getState().setToday(today);
+  }, [today]);
+  useEffect(() => {
     // A screen left open across midnight moves with it (HV-3: every window fact is
     // recomputed for the new day, and a read made before midnight is dropped after it).
     const now = new Date();
@@ -195,6 +210,10 @@ export function HistoryList() {
   const more = useHistoryListStore((s) => s.more);
   const snapshot = snapshotForScope(rawSnapshot, scope, today);
   const failed = snapshot === null && failedRequest === request;
+  // The header's reads, through a filter or search change (the header comment). Drawn under
+  // the filter and search ON SCREEN, which are the snapshot's own whenever it answers.
+  const headerSnap = snapshot ?? (failed ? null : headerSnapshotFor(rawSnapshot, scope, today));
+  const shownSearch = effectiveSearch(scope);
 
   const latest = useRef({ activePet, scope, today });
   latest.current = { activePet, scope, today };
@@ -210,12 +229,15 @@ export function HistoryList() {
 
   // A new scope: read it, close every run, and start at the top without a glide (§4).
   const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(NO_OPEN);
+  const scopeRequest = historyScopeRequestKey(scope);
   useEffect(() => {
     setOpenRuns(NO_OPEN);
     // A new scope REPLACES the list's content, so the viewport goes back to its top in the
     // same instant, with nothing to glide across (§4: "resets the list without animating
-    // the viewport").
+    // the viewport"). A new day alone is not a new scope: the owner stays where they are.
     listRef.current?.getScrollResponder()?.scrollTo({ y: 0, animated: false });
+  }, [scopeRequest]);
+  useEffect(() => {
     void reload();
   }, [request, reload]);
 
@@ -278,10 +300,10 @@ export function HistoryList() {
   }, [reload, refreshToday]);
 
   // ── Reads in flight (C-30): the tick while a chain is outstanding, then the landing ──
-  const symptomIds = useMemo(() => symptomIdsOf(snapshot), [snapshot]);
+  const readableIds = useMemo(() => readableIdsOf(snapshot), [snapshot]);
   const [working, setWorking] = useState<ReadonlySet<string>>(NO_OPEN);
   useEffect(() => {
-    const ids = symptomIds ? symptomIds.split('|') : [];
+    const ids = readableIds ? readableIds.split('|') : [];
     const outstanding = ids.filter((id) => analysisChainOutstanding(id));
     setWorking(outstanding.length > 0 ? new Set(outstanding) : NO_OPEN);
     let cancelled = false;
@@ -299,7 +321,7 @@ export function HistoryList() {
     return () => {
       cancelled = true;
     };
-  }, [symptomIds, hydrationTick]);
+  }, [readableIds, hydrationTick]);
 
   // A read the server left `pending`: watched as Home's Today card and the record watch it.
   const pendingKey = useMemo(
@@ -355,23 +377,23 @@ export function HistoryList() {
   );
 
   const countLine = useMemo(() => {
-    if (!snapshot) return null;
-    const c = courseOf(snapshot);
+    if (!headerSnap) return null;
+    const c = courseOf(headerSnap, filter);
     return countLineOf({
-      filter: snapshot.filter,
-      search: snapshot.search,
-      window: countLineWindowOf(snapshot.resolved, snapshot.windowFacts),
-      facts: snapshot.facts,
+      filter,
+      search: shownSearch,
+      window: countLineWindowOf(headerSnap.resolved, headerSnap.windowFacts),
+      facts: headerSnap.facts,
       course: c ? { name: c.name, days: c.days } : null,
-      trialRange: trialRangeOf(snapshot.windowFacts),
-      today: snapshot.today,
-      dates: historyDatesFor(snapshot.today),
+      trialRange: trialRangeOf(headerSnap.windowFacts),
+      today: headerSnap.today,
+      dates: historyDatesFor(headerSnap.today),
     });
-  }, [snapshot]);
+  }, [headerSnap, filter, shownSearch]);
 
   const stripDays = useMemo<DayFacts[]>(
-    () => (snapshot ? [...snapshot.facts.days.values()].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0)) : []),
-    [snapshot],
+    () => (headerSnap ? [...headerSnap.facts.days.values()].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0)) : []),
+    [headerSnap],
   );
 
   const toggleRun = useCallback((id: string) => {
@@ -406,7 +428,12 @@ export function HistoryList() {
     void useHistoryListStore
       .getState()
       .ensureDay(day)
-      .then(() => setScrollTarget(day));
+      .then((reached) => {
+        // Scroll only to a day the pages now hold, and only while it is still the landed
+        // day: the owner's own scroll or a pet switch while older pages read ends it, and
+        // the app never yanks a list the owner has taken back.
+        if (reached && useHistoryScopeStore.getState().landedDay === day) setScrollTarget(day);
+      });
   }, [landingSeq, snapshotReady]);
 
   const retries = useRef(0);
@@ -427,6 +454,13 @@ export function HistoryList() {
     aim(index);
   }, [scrollTarget, sections, aim]);
 
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (retryTimer.current !== null) clearTimeout(retryTimer.current);
+    },
+    [],
+  );
   const onScrollToIndexFailed = useCallback(
     (info: { index: number; averageItemLength: number }) => {
       // The section is past what the list has measured: jump near it, then aim again (the
@@ -435,14 +469,17 @@ export function HistoryList() {
       if (retries.current >= LANDING_RETRIES) return;
       retries.current += 1;
       const target = useHistoryScopeStore.getState().landedDay;
-      setTimeout(() => {
-        if (target === null) return;
+      if (retryTimer.current !== null) clearTimeout(retryTimer.current);
+      retryTimer.current = setTimeout(() => {
+        retryTimer.current = null;
+        // Still the landed day: the owner's scroll in between ends the landing.
+        if (target === null || useHistoryScopeStore.getState().landedDay !== target) return;
         const index = sectionIndexFor(
           sections.map((s) => s.model),
           target,
         );
         if (index >= 0) aim(index);
-      }, 50);
+      }, LANDING_RETRY_MS);
     },
     [sections, aim],
   );
@@ -545,16 +582,16 @@ export function HistoryList() {
     [snapshot, pageRows, working, openRuns, toggleRun, openVisit, landedDay, dates, courseName],
   );
 
-  const header = snapshot ? (
+  const header = headerSnap ? (
     <View style={styles.header} testID="history-list-header">
-      {countLine ? <CountLine line={countLine} filter={snapshot.filter} /> : null}
-      {showsBowlLine(snapshot.filter, snapshot.search)
-        ? snapshot.arrangements.map((bowl) => (
+      {countLine ? <CountLine line={countLine} filter={filter} /> : null}
+      {showsBowlLine(filter, shownSearch)
+        ? headerSnap.arrangements.map((bowl) => (
             <View key={bowl.id} style={styles.bowlLine} testID={`history-bowl-${bowl.id}`}>
               <View style={styles.bowlBar} />
               <ThemedText style={styles.bowlText}>
                 <ThemedText style={styles.bowlLead}>{BOWL_LINE_LEAD}</ThemedText>
-                {` · ${bowlLineText(bowl, snapshot.today)}`}
+                {` · ${bowlLineText(bowl, headerSnap.today)}`}
               </ThemedText>
             </View>
           ))
@@ -563,7 +600,10 @@ export function HistoryList() {
     </View>
   ) : null;
 
-  const empty = !snapshot ? (
+  const empty = !activePet ? (
+    // No pet, so no read to wait for: the first-log line, never a silhouette that never ends.
+    <EmptyState title={HISTORY_EMPTY_TITLE} body={historyEmptyBody(petName)} testID="history-empty" />
+  ) : !snapshot ? (
     failed ? (
       <EmptyState
         title={HISTORY_ERROR_TITLE}
@@ -572,7 +612,8 @@ export function HistoryList() {
         testID="history-error"
       />
     ) : (
-      <ListSkeleton />
+      // Under a header that stayed (a filter or search change), only the days wait.
+      <ListSkeleton daysOnly={headerSnap !== null} />
     )
   ) : snapshot.facts.firsts.record === null && !noticed ? (
     <EmptyState title={HISTORY_EMPTY_TITLE} body={historyEmptyBody(petName)} testID="history-empty" />
@@ -582,7 +623,7 @@ export function HistoryList() {
     <EmptyState title={HISTORY_NO_MATCH_TITLE} body={historyNoMatchBody(petName)} testID="history-no-match" />
   );
 
-  const moreState = more && rawSnapshot !== null && more.of === rawSnapshot ? more.state : null;
+  const moreState = more && snapshot !== null && more.of === snapshot.pages ? more.state : null;
   const footer = !snapshot || sections.length === 0 ? null : moreState === 'failed' ? (
     <View style={styles.moreFailed} testID="history-more-failed">
       <ThemedText style={styles.moreFailedText}>{historyMoreFailed(petName)}</ThemedText>
@@ -603,7 +644,7 @@ export function HistoryList() {
     </View>
   ) : showsRecordStart({
       recordStart: snapshot.facts.firsts.record,
-      windowFromDay: snapshot.resolved.bounds.fromDay,
+      lastSectionFromDay: sectionFromDay(sections[sections.length - 1].model),
       allLoaded: snapshot.pages.next === null,
     }) && snapshot.facts.firsts.record !== null ? (
     <RecordStartLine text={recordStartText(petName, recordWeekday(snapshot.facts.firsts.record, today) ?? snapshot.facts.firsts.record)} />
@@ -652,7 +693,7 @@ const NEXT_PAGE_ROW = 44;
 /** Seven days of cells on the first paint (header, body and footer per day). */
 const INITIAL_CELLS = 7 * 3;
 
-function ListSkeleton() {
+function ListSkeleton({ daysOnly = false }: { daysOnly?: boolean }) {
   return (
     <View
       style={styles.skeleton}
@@ -660,9 +701,13 @@ function ListSkeleton() {
       importantForAccessibility="no-hide-descendants"
       testID="history-skeleton"
     >
-      <Skeleton width="64%" height={SKELETON_HEADLINE} radius={theme.radiusSmall} />
-      <Skeleton width="52%" height={SKELETON_LINE} />
-      <Skeleton height={SKELETON_STRIP} radius={theme.radiusSmall} />
+      {daysOnly ? null : (
+        <>
+          <Skeleton width="64%" height={SKELETON_HEADLINE} radius={theme.radiusSmall} />
+          <Skeleton width="52%" height={SKELETON_LINE} />
+          <Skeleton height={SKELETON_STRIP} radius={theme.radiusSmall} />
+        </>
+      )}
       <Skeleton height={SKELETON_CARD} radius={theme.radiusMedium} />
       <Skeleton height={SKELETON_CARD} radius={theme.radiusMedium} />
       <Skeleton height={SKELETON_CARD} radius={theme.radiusMedium} />

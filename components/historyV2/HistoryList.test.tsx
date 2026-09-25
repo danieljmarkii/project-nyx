@@ -88,7 +88,7 @@ jest.mock('expo-sqlite', () => ({
   }),
 }));
 
-import { StyleSheet } from 'react-native';
+import { SectionList, StyleSheet } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { HistoryList } from './HistoryList';
@@ -163,6 +163,14 @@ function insertLook(id: string, occurredAt: string, localDay: string) {
   mockRaw
     .prepare(`INSERT INTO looks (id, event_id, pet_id, outcome, local_day) VALUES (?, ?, ?, 'observed', ?)`)
     .run(`look-${id}`, id, PET_A.id, localDay);
+}
+
+/** `perDay` coughs a day for `days` days back from today, five minutes apart (never one
+ *  bout logged twice): more than one page of rows. */
+function seedDays(days: number, perDay: number) {
+  for (let n = 0; n < days; n++) {
+    for (let i = 0; i < perDay; i++) insertEvent(`c-${n}-${i}`, at(n, 0, i * 5 + 1), 'cough');
+  }
 }
 
 const softDelete = (id: string) =>
@@ -454,10 +462,11 @@ describe('AC 12 — a read that answers for another pet is dropped', () => {
 });
 
 describe('a new scope never shows the old scope\'s rows while its read is in flight (C-12)', () => {
-  it('a filter change draws the silhouette, never the old rows under the new pill', async () => {
+  it('a filter change: the days wait as the silhouette, never the old rows under the new pill; the header stays, already under the new filter', async () => {
     seedWeek();
     await renderList();
     expect(screen.getByTestId('spine-node-m1')).toBeTruthy();
+    const stripBefore = mockStripDays;
     let release: () => void = () => {};
     mockGate = new Promise<void>((r) => {
       release = r;
@@ -465,13 +474,34 @@ describe('a new scope never shows the old scope\'s rows while its read is in fli
     setScope({ filter: { kind: 'type', type: 'vomit' } });
     await settle();
     expect(screen.queryByTestId('spine-node-m1')).toBeNull();
-    expect(screen.queryByTestId('history-count-line')).toBeNull();
     expect(screen.getByTestId('history-skeleton', { includeHiddenElements: true })).toBeTruthy();
+    // The header's reads are the window's, the same ones the new load makes (R-1), so the
+    // count line speaks the new filter at once and the strip keeps its days: nothing blanks.
+    expect(text('history-count-line-1')).toBe('All time · 1 vomit on 1 day since ' + recordDay(dayAgo(4), TODAY));
+    expect(mockStripDays).toEqual(stripBefore);
     mockGate = null;
     await act(async () => release());
     await settle();
     expect(screen.getByTestId('spine-node-v2')).toBeTruthy();
     expect(screen.queryByTestId('spine-node-m1')).toBeNull();
+    expect(text('history-count-line-1')).toBe('All time · 1 vomit on 1 day since ' + recordDay(dayAgo(4), TODAY));
+  });
+
+  it('a window change asks for new facts: the header waits with the days', async () => {
+    seedWeek();
+    await renderList();
+    let release: () => void = () => {};
+    mockGate = new Promise<void>((r) => {
+      release = r;
+    });
+    setScope({ window: { kind: 'last', days: 7 } });
+    await settle();
+    expect(screen.queryByTestId('history-list-header')).toBeNull();
+    expect(screen.queryByTestId('spine-node-m1')).toBeNull();
+    mockGate = null;
+    await act(async () => release());
+    await settle();
+    expect(text('history-count-line-1')).toContain('Last 7 days');
   });
 });
 
@@ -577,6 +607,25 @@ describe('the quiet states (§3.12, C-12)', () => {
     await renderList();
     expect(text('history-record-start')).toBe(`Nyx's record starts here · ${recordWeekday(dayAgo(4), TODAY)}`);
   });
+
+  it('under a filter the list ends at the kind\'s first row, and never names the record\'s start under it', async () => {
+    // The record starts four days back; the one vomit is two days back, and the logged
+    // days before it are not drawn under Vomit (AC 10), so "here" would be false.
+    seedWeek();
+    setScope({ filter: { kind: 'type', type: 'vomit' } });
+    await renderList();
+    expect(screen.getByTestId('spine-node-v2')).toBeTruthy();
+    expect(screen.queryByTestId('history-record-start')).toBeNull();
+  });
+
+  it('no pet at all: the first-log line, never a silhouette that never ends', async () => {
+    act(() => {
+      usePetStore.setState({ pets: [], activePet: null });
+    });
+    await renderList();
+    expect(text('history-empty')).toContain('Nothing logged yet');
+    expect(screen.queryByTestId('history-skeleton', { includeHiddenElements: true })).toBeNull();
+  });
 });
 
 // ── The bowl's line (§3.3) ──────────────────────────────────────────────────────
@@ -619,6 +668,42 @@ describe('the landed day (§3.1, C-22)', () => {
     expect(useHistoryScopeStore.getState().landedDay).toBeNull();
     const after = screen.getByTestId(`history-day-header-${dayAgo(2)}`);
     expect(StyleSheet.flatten(after.props.style).borderColor).not.toBe('#0B7B6C');
+  });
+
+  it('a landing further back than the pages reach pages back, then jumps to its day', async () => {
+    seedDays(12, 10);
+    await renderList();
+    const aim = jest.spyOn(SectionList.prototype, 'scrollToLocation').mockImplementation(() => {});
+    act(() => {
+      useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(10));
+    });
+    await settle();
+    // Every day is logged, newest first, so the day ten back is section ten. A jump, never a
+    // glide (§4: a landing is a state).
+    expect(aim).toHaveBeenLastCalledWith({ sectionIndex: 10, itemIndex: 0, viewOffset: 0, animated: false });
+    // The pages reached it: the store holds the day the list jumped to.
+    expect(useHistoryListStore.getState().snapshot!.pages.span!.fromDay <= dayAgo(10)).toBe(true);
+    aim.mockRestore();
+  });
+
+  it('the owner\'s scroll while older pages read ends the landing: the list never jumps after it', async () => {
+    seedDays(12, 10);
+    await renderList();
+    const aim = jest.spyOn(SectionList.prototype, 'scrollToLocation').mockImplementation(() => {});
+    let release: () => void = () => {};
+    mockGate = new Promise<void>((r) => {
+      release = r;
+    });
+    act(() => {
+      useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(10));
+    });
+    await settle();
+    act(() => screen.getByTestId('history-list').props.onScrollBeginDrag());
+    mockGate = null;
+    await act(async () => release());
+    await settle();
+    expect(aim).not.toHaveBeenCalled();
+    aim.mockRestore();
   });
 
   it('a landing on an unlogged day outlines the gap line that holds it', async () => {

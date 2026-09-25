@@ -301,17 +301,34 @@ export function itemsOnlyLineText(
 // ── The list's end, and where a landing lands ──────────────────────────────────
 
 /**
- * *{pet}'s record starts here · Thu, May 14* (§3.12) closes the list only when the list has
- * truly reached the record's first day: every page is loaded and the window starts at the
- * record (every window is clipped there, GAP-24, so this is "the window reaches back that
- * far"). A window that starts later ends where it starts, and says nothing about the record.
+ * *{pet}'s record starts here · Thu, May 14* (§3.12) closes the list only where it is TRUE:
+ * every page is loaded and the list's last section holds the record's first day. "Here" is
+ * a place in the list, so the rule reads the list, not the window: under a filter or a search
+ * the list ends at the kind's first row, and the logged days before it are not drawn (gap
+ * lines never start before the kind's first row, AC 10), so a line naming the record's start
+ * under that card would put weeks of unshown record at "here". A window that starts later
+ * ends where it starts, and says nothing about the record either.
  */
 export function showsRecordStart(args: {
   recordStart: string | null;
-  windowFromDay: string;
+  /** The earliest day the list's last section holds (a card's day, a run's first day). */
+  lastSectionFromDay: string | null;
   allLoaded: boolean;
 }): boolean {
-  return args.allLoaded && args.recordStart !== null && args.windowFromDay <= args.recordStart;
+  return args.allLoaded && args.recordStart !== null && args.lastSectionFromDay === args.recordStart;
+}
+
+/** The earliest day a section holds: its day, or its run's first day. */
+export function sectionFromDay(section: HistorySection): string {
+  switch (section.kind) {
+    case 'day':
+    case 'today-open':
+    case 'items-only':
+      return section.day;
+    case 'unlogged':
+    case 'no-match':
+      return section.fromDay;
+  }
 }
 
 /** The section that holds a day: its card, or the gap line whose run includes it (§3.1). */

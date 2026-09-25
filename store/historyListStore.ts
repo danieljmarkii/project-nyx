@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 
+import { hasPerIncidentRead } from '../constants/eventTypes';
 import { getDb } from '../lib/db';
-import { eventTintCategory } from '../lib/dayEvents';
 import { loadTrialPredicateFacts } from '../lib/dietTrialFacts';
 import {
   getActiveArrangementsForPet,
@@ -72,9 +72,11 @@ import { usePetStore, type Pet } from './petStore';
 // Two checks, protecting different things, as v1's loaders hold them: a monotonic load id
 // stops an older load from overwriting a newer one, and the active pet read FRESH at commit
 // stops a load a switch overtook. And a snapshot is stamped with the request it answers
-// (`historyRequestKey`: the pet, the day, the window's identity, the filter, the search) and
-// with HV-3's `historyScopeKey` (the resolved dates), so the screen draws it only while both
-// are still the ones on screen: an old snapshot is never painted under a new pill.
+// (`historyRequestKey`: the pet, the day, the window's identity, the filter, the search), so
+// the screen draws it only while that is still the request on screen: an old snapshot is
+// never painted under a new pill. Its resolved dates are the ones the load read for that
+// request; a change in the facts behind them (a first log, a visit, a trial) is a write, and
+// every write reloads.
 //
 // ── THE WHOLE DAY BEHIND A FILTER (R-2, AC 9) ───────────────────────────────────
 // A filtered page tells the list WHICH rows show; `readWholeDays` supplies each shown day's
@@ -104,8 +106,12 @@ export type HistoryTiming = HistoryDayTiming;
 export interface HistorySnapshot {
   /** `historyRequestKey(today, scope)`: what was asked. */
   request: string;
-  /** HV-3's `historyScopeKey(scope, resolved)`: what was answered, dates included. */
+  /** HV-3's `historyScopeKey(scope, resolved)`: what was answered, dates included. A
+   *  re-read keeps the depth scrolled to, and a landing carries on, only under the same key. */
   key: string;
+  /** `historyWindowRequestKey(today, scope)`: the part of the request the header's reads
+   *  depend on. A filter or search change keeps it, so the header can stay (`headerSnapshotFor`). */
+  windowRequest: string;
   petId: string;
   /** The local day the whole snapshot was read for. */
   today: string;
@@ -124,7 +130,7 @@ export interface HistorySnapshot {
    *  looks are drawn straight from the page. */
   wholeDays: ReadonlyMap<string, readonly HistoryRow[]>;
   timing: HistoryTiming;
-  /** The phone's copy of the reads, for the loaded days' symptom rows (HV-5). */
+  /** The phone's copy of the reads, for the loaded rows a read can sit on (HV-5). */
   analysis: ReadonlyMap<string, SpineAnalysisRow>;
 }
 
@@ -149,8 +155,10 @@ interface HistoryListState {
   snapshot: HistorySnapshot | null;
   /** The request whose latest load failed. Cleared when a load for it starts again. */
   failedRequest: string | null;
-  /** The next page, for the snapshot it extends: in flight, or failed (said at the foot). */
-  more: { of: HistorySnapshot; state: 'loading' | 'failed' } | null;
+  /** The next page, for the pages it extends: in flight, or failed (said at the foot). Keyed
+   *  on the PAGES, not the snapshot object: a read landing mid-page replaces the snapshot and
+   *  keeps its pages, and must neither drop the page nor orphan this state. */
+  more: { of: HistoryPages; state: 'loading' | 'failed' } | null;
 
   setToday: (today: string) => void;
   load: (request: HistoryLoadRequest) => Promise<HistoryLoadOutcome>;
@@ -173,19 +181,47 @@ export function historyRequestKey(today: string, scope: HistoryScope): string {
   return JSON.stringify([scope.petId, today, windowParam(scope.window), filterId(scope.filter), effectiveSearch(scope)]);
 }
 
+/** The request with the day left out: what the owner asked to see. A new one resets the
+ *  list's viewport; a new day alone (midnight) re-reads and leaves the owner where they are. */
+export function historyScopeRequestKey(scope: HistoryScope): string {
+  return JSON.stringify([scope.petId, windowParam(scope.window), filterId(scope.filter), effectiveSearch(scope)]);
+}
+
+/** The part of the request every header read depends on: the pet, the day and the window's
+ *  identity. The facts, courses, items, bowls and window facts are all read for exactly
+ *  these; only the pages and what hangs off them depend on the filter and the search. */
+export function historyWindowRequestKey(today: string, scope: HistoryScope): string {
+  return JSON.stringify([scope.petId, today, windowParam(scope.window)]);
+}
+
 /**
  * The snapshot, only when it answers the scope on screen right now: the same request (pet,
- * day, window, filter, search) and the same resolved dates. Everything the list, the pinned
- * row and the strip draw from the list's reads goes through this, so none of them can paint
- * one scope's numbers under another's name.
+ * day, window, filter, search). Everything the list, the pinned row and the strip draw from
+ * the list's reads goes through this, so none of them can paint one scope's numbers under
+ * another's name.
  */
 export function snapshotForScope(
   snapshot: HistorySnapshot | null,
   scope: HistoryScope,
   today: string,
 ): HistorySnapshot | null {
-  if (!snapshot || snapshot.request !== historyRequestKey(today, scope)) return null;
-  return snapshot.key === historyScopeKey(scope, snapshot.resolved) ? snapshot : null;
+  return snapshot && snapshot.request === historyRequestKey(today, scope) ? snapshot : null;
+}
+
+/**
+ * The snapshot whose HEADER reads still answer the scope on screen: the same pet, day and
+ * window, whatever the filter or search. While a filter or search change reads its pages,
+ * the header (the count line, the bowl's line, the strip) is drawn from these, under the new
+ * filter, so it never blanks and returns; the list below waits as the silhouette (C-12). They
+ * are the same reads the new load makes, so no number here belongs to another scope
+ * (CUL-1120): a window change asks for new facts, and the header waits with the list.
+ */
+export function headerSnapshotFor(
+  snapshot: HistorySnapshot | null,
+  scope: HistoryScope,
+  today: string,
+): HistorySnapshot | null {
+  return snapshot && snapshot.windowRequest === historyWindowRequestKey(today, scope) ? snapshot : null;
 }
 
 // ── The reads ───────────────────────────────────────────────────────────────────
@@ -270,12 +306,14 @@ async function readTiming(petId: string, span: DayRange | null): Promise<History
   return { feedings, freeFedSpans, onsets };
 }
 
-/** The phone's copy of the reads for these days' symptom rows. Never rejects: a failed local
- *  read is an empty map, which the row draws as unread, never as calm (HV-5). */
+/** The phone's copy of the reads for these days' rows that can carry one: every type with a
+ *  per-incident read (`hasPerIncidentRead`, the write side's own predicate), so a formed
+ *  stool's read is fetched though a formed stool is not a symptom. Never rejects: a failed
+ *  local read is an empty map, which the row draws as unread, never as calm (HV-5). */
 function readAnalysis(days: ReadonlyMap<string, readonly HistoryRow[]>): Promise<Map<string, SpineAnalysisRow>> {
   const ids: string[] = [];
   for (const rows of days.values()) {
-    for (const r of rows) if (eventTintCategory(r.event_type) === 'symptom') ids.push(r.id);
+    for (const r of rows) if (hasPerIncidentRead(r.event_type)) ids.push(r.id);
   }
   return readAnalysisRows(ids);
 }
@@ -288,7 +326,13 @@ function stillActive(petId: string): boolean {
 // ── The store ───────────────────────────────────────────────────────────────────
 
 let loadSeq = 0;
-let moreInFlight: Promise<void> | null = null;
+/**
+ * The next-page read in flight, with the pages it extends. Two calls for the SAME pages share
+ * one read; a call after a load replaced them never joins a read made for the old ones, which
+ * could not land (a refresh or a switch mid-page would otherwise hand a landing a read that
+ * changes nothing). Released by identity, never a bare clear (C-24).
+ */
+let moreInFlight: { of: HistoryPages; run: Promise<void> } | null = null;
 
 export const useHistoryListStore = create<HistoryListState>((set, get) => ({
   today: null,
@@ -318,7 +362,8 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
       // A re-read of the scope on screen keeps the depth the owner scrolled to, so a sync
       // tick or a removal never snaps a long list back to its first page.
       const prior = get().snapshot;
-      const keepTo = prior && prior.key === key && prior.pages.span ? prior.pages.span.fromDay : null;
+      const same = prior !== null && prior.key === key && prior.petId === pet.id ? prior : null;
+      const keepTo = same && same.pages.span ? same.pages.span.fromDay : null;
       const [facts, courses, visits, bowls, arrangements, pages] = await Promise.all([
         readHistoryFacts(pet.id, resolved.bounds),
         readHistoryCourses(pet.id),
@@ -337,6 +382,7 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
         snapshot: {
           request,
           key,
+          windowRequest: historyWindowRequestKey(today, scope),
           petId: pet.id,
           today,
           filter: scope.filter,
@@ -350,7 +396,10 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
           pages,
           wholeDays,
           timing,
-          analysis,
+          // A read only ever lands (as `refreshReads` has it): a re-read of the same scope lays
+          // the fresh copies over the ones on screen, so a local read that fails on a reload
+          // (an empty map, HV-5) never turns a rose already shown into unread.
+          analysis: same ? new Map([...same.analysis, ...analysis]) : analysis,
         },
         failedRequest: null,
         more: null,
@@ -367,12 +416,13 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
   },
 
   loadMore: () => {
-    if (moreInFlight) return moreInFlight;
     const snap = get().snapshot;
     if (!snap || !snap.pages.next) return Promise.resolve();
+    if (moreInFlight && moreInFlight.of === snap.pages) return moreInFlight.run;
     const cursor = snap.pages.next;
+    const of = snap.pages;
     const run = (async () => {
-      set({ more: { of: snap, state: 'loading' } });
+      set({ more: { of, state: 'loading' } });
       try {
         const pageScope: DayPageScope = { range: snap.resolved.bounds, filter: snap.filter, search: snap.search };
         const page = await readDayPage(snap.petId, pageScope, cursor);
@@ -382,39 +432,46 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
           snap.filter.kind === 'noticed' ? Promise.resolve(EMPTY_TIMING) : readTiming(snap.petId, pages.span),
           readAnalysis(added),
         ]);
-        // Only onto the snapshot it was read for: a load that replaced it (a refresh, a new
-        // scope, a switch) owns the list now, and its own cursor pages it.
-        if (get().snapshot !== snap || !stillActive(snap.petId)) return;
+        // Only onto the pages it was read for: a load that replaced them (a refresh, a new
+        // scope, a switch) owns the list now, and its own cursor pages it. A read landing in
+        // between replaces the snapshot and keeps its pages, so the page lands on that one.
+        const now = get().snapshot;
+        if (!now || now.pages !== of || !stillActive(now.petId)) return;
         set({
           snapshot: {
-            ...snap,
+            ...now,
             pages,
-            wholeDays: new Map([...snap.wholeDays, ...added]),
+            wholeDays: new Map([...now.wholeDays, ...added]),
             timing,
-            analysis: new Map([...snap.analysis, ...addedAnalysis]),
+            analysis: new Map([...now.analysis, ...addedAnalysis]),
           },
           more: null,
         });
       } catch (e) {
         console.error('[history] next page failed:', e);
-        if (get().snapshot === snap) set({ more: { of: snap, state: 'failed' } });
+        if (get().snapshot?.pages === of) set({ more: { of, state: 'failed' } });
       }
     })().finally(() => {
-      moreInFlight = null;
+      if (moreInFlight?.run === run) moreInFlight = null;
     });
-    moreInFlight = run;
+    moreInFlight = { of, run };
     return run;
   },
 
   ensureDay: async (day) => {
+    const first = get().snapshot;
+    if (!first) return false;
     for (let guard = 0; guard < MAX_LANDING_PAGES; guard++) {
       const snap = get().snapshot;
-      if (!snap || !snap.pages.span) return false;
+      // The landing belongs to the scope it was asked in: a refresh of that scope carries
+      // it on, while another scope or pet (a switch mid-landing) ends it, so a day asked
+      // for one pet never moves another pet's list.
+      if (!snap || snap.key !== first.key || snap.petId !== first.petId || !snap.pages.span) return false;
       if (snap.pages.span.fromDay <= day) return true;
       if (!snap.pages.next) return false;
       await get().loadMore();
-      // The page failed, or a load replaced the snapshot mid-page: stop, never loop.
-      if (get().snapshot === snap) return false;
+      // The page failed: the pages did not move. Stop, never loop.
+      if (get().snapshot?.pages === snap.pages) return false;
     }
     return false;
   },
@@ -432,6 +489,7 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
 
   reset: () => {
     loadSeq += 1;
+    moreInFlight = null;
     set({ snapshot: null, failedRequest: null, more: null });
   },
 }));

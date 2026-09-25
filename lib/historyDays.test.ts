@@ -687,11 +687,29 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
     });
   });
 
-  it('a search names the window alone: the two qualifiers describe a count it does not make', () => {
-    const both: CountLineWindow = { ...WINDOWS.trial, recordFrom: '2026-09-03', pastPlannedEnd: true };
+  it('a search names the window with its qualifiers: they describe the window, not a count', () => {
+    // The old food searched inside the grace reads as after the planned end, and a search
+    // under a bound before the record never seems to cover days nobody logged.
+    const past: CountLineWindow = { ...WINDOWS.trial, pastPlannedEnd: true };
+    expect(lineFor(past, { kind: 'all' }, { search: 'chicken' })).toMatchObject({
+      kind: 'search',
+      line1: { tail: ' · Since the trial started, Sep 3 · past its planned end' },
+    });
+    const early: CountLineWindow = {
+      longName: 'Since the last vet visit', anchorDay: '2026-08-26', isAllTime: false, isTrial: false,
+      recordFrom: '2026-09-01', pastPlannedEnd: false, range: { fromDay: '2026-09-01', toDay: TODAY },
+    };
+    expect(lineFor(early, { kind: 'all' }, { search: 'chicken' })).toMatchObject({
+      kind: 'search',
+      line1: { tail: ' · Since the last vet visit, Aug 26 · record from Sep 1' },
+    });
+    const both: CountLineWindow = {
+      ...WINDOWS.trial, anchorDay: '2026-08-20', recordFrom: '2026-09-01', pastPlannedEnd: true,
+      range: { fromDay: '2026-09-01', toDay: TODAY },
+    };
     expect(lineFor(both, { kind: 'all' }, { search: 'rabbit' })).toMatchObject({
       kind: 'search',
-      line1: { tail: ' · Since the trial started, Sep 3' },
+      line1: { tail: ' · Since the trial started, Aug 20 · record from Sep 1 · past its planned end' },
     });
   });
 

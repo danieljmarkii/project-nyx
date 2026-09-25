@@ -883,19 +883,21 @@ export function countLineOf(input: CountLineInput): CountLine {
   if (recordStart === null) return { kind: 'none' };
 
   const head = window.anchorDay ? `${window.longName}, ${dates.day(window.anchorDay)}` : window.longName;
-  // What an anchored window says about itself, right after its name and before the count
-  // (CUL-1189, PM-ruled (a)/(a)): where the record starts when the anchor is earlier, and
-  // that a trial is past its planned end. Both qualify the COUNT, so a search, which
-  // counts nothing, names the window alone.
+  // What an anchored window says about itself, right after its name (CUL-1189, PM-ruled
+  // (a)/(a)): where the record starts when the anchor is earlier, and that a trial is past
+  // its planned end. Both describe the WINDOW, so every form that names it carries them,
+  // search included: a search for the old food inside the grace reads as a relapse after
+  // the planned end, never as the trial failing, and a search under a visit bound before the
+  // record never seems to cover days nobody logged.
   const qualifiers: string[] = [];
   if (window.recordFrom !== null) qualifiers.push(`record from ${dates.day(window.recordFrom)}`);
   if (window.pastPlannedEnd) qualifiers.push('past its planned end');
-  const countHead = [head, ...qualifiers].join(' · ');
+  const windowHead = [head, ...qualifiers].join(' · ');
   const term = input.search?.trim() ?? '';
   if (term.length > 0) {
     return {
       kind: 'search',
-      line1: { lead: 'Rows that mention ', strong: `“${term}”`, tail: ` · ${head}` },
+      line1: { lead: 'Rows that mention ', strong: `“${term}”`, tail: ` · ${windowHead}` },
       line2: 'Search finds; it never counts.',
     };
   }
@@ -903,7 +905,7 @@ export function countLineOf(input: CountLineInput): CountLine {
   const total = windowTotalOf(facts.days, filter) ?? { count: 0, days: 0 };
   const course = filter.kind === 'course' ? input.course : null;
   const line1: CountLineText = {
-    lead: `${countHead} · `,
+    lead: `${windowHead} · `,
     strong: countPhrase(filter, total),
     tail: window.isAllTime && filter.kind !== 'course' ? ` since ${dates.day(recordStart)}` : '',
   };

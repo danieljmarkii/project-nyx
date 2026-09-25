@@ -36,6 +36,21 @@ jest.mock('expo-sqlite', () => ({
   }),
 }));
 
+// The page read, held on demand: a next-page read kept in flight while a load replaces its
+// snapshot around it. Only `readDayPage` waits, so the load can land while the page cannot.
+let mockHoldPages = false;
+const mockHeldPages: (() => void)[] = [];
+jest.mock('../lib/historyQueries', () => {
+  const actual = jest.requireActual<typeof import('../lib/historyQueries')>('../lib/historyQueries');
+  return {
+    ...actual,
+    readDayPage: async (...args: Parameters<typeof actual.readDayPage>) => {
+      if (mockHoldPages) await new Promise<void>((r) => mockHeldPages.push(r));
+      return actual.readDayPage(...args);
+    },
+  };
+});
+
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from '../lib/localSchema';
 import { MEDICATION_SCHEMA_SQL } from '../lib/medications';
 import { DIET_TRIAL_SCHEMA_SQL } from '../lib/dietTrialMirror';
@@ -81,6 +96,8 @@ const store = () => useHistoryListStore.getState();
 beforeEach(async () => {
   mockGate = null;
   mockFail = false;
+  mockHoldPages = false;
+  mockHeldPages.splice(0).forEach((release) => release());
   mockRaw = new DatabaseSync(':memory:');
   mockRaw.exec(BASE_SCHEMA_SQL);
   mockRaw.exec(MEDICATION_SCHEMA_SQL);
@@ -117,6 +134,41 @@ describe('a load: one snapshot, every read together', () => {
     const snap = store().snapshot!;
     expect(snap.pages.days.map((d) => d.rows.map((r) => r.id))).toEqual([['v1']]);
     expect(snap.wholeDays.get(dayAgo(1))?.map((r) => r.id)).toEqual(['pa-1-0', 'pa-1-1', 'v1']);
+  });
+
+  it('the reads: fetched for every type with a per-incident read, a formed stool included', async () => {
+    // A formed stool tints as "other", never as a symptom, and analyze-stool still writes a
+    // Worth-a-call read for one (mucus, say): the gate is the write side's own predicate.
+    insertEvent('st', at(1, 8), 'stool_normal');
+    insertEvent('vo', at(1, 9), 'vomit');
+    insertEvent('co', at(1, 10), 'cough');
+    const verdict = mockRaw.prepare(
+      `INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES (?, 'complete', 'worth_a_call', ?)`,
+    );
+    verdict.run('st', at(1, 8, 30));
+    verdict.run('vo', at(1, 9, 30));
+    await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY });
+    const analysis = store().snapshot!.analysis;
+    expect(analysis.get('st')?.recommendation).toBe('worth_a_call');
+    expect(analysis.get('vo')?.recommendation).toBe('worth_a_call');
+    expect(analysis.has('co')).toBe(false);
+  });
+
+  it('a read only ever lands: a reload whose local read fails keeps the rose already shown', async () => {
+    insertEvent('vo', at(1, 9), 'vomit');
+    mockRaw
+      .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES ('vo', 'complete', 'worth_a_call', ?)`)
+      .run(at(1, 9, 30));
+    const req = { pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY };
+    await store().load(req);
+    expect(store().snapshot!.analysis.get('vo')?.recommendation).toBe('worth_a_call');
+    // The copy's read fails on the reload (HV-5 answers an empty map, never a throw).
+    const warned = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockRaw.exec('ALTER TABLE event_ai_verdicts RENAME TO event_ai_verdicts_gone');
+    await store().load(req);
+    expect(warned).toHaveBeenCalled();
+    expect(store().snapshot!.analysis.get('vo')?.recommendation).toBe('worth_a_call');
+    warned.mockRestore();
   });
 
   it('a failed read is a state for its request, and a retry that succeeds takes it down', async () => {
@@ -237,6 +289,74 @@ describe('pages: whole days, the depth a refresh keeps, the landing\'s reach', (
     await a;
   });
 
+  it('a page call for a newer snapshot never joins a read made for an older one', async () => {
+    seedDays(12, 10);
+    const req = { pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY };
+    await store().load(req);
+    mockHoldPages = true;
+    const stale = store().loadMore();
+    mockHoldPages = false;
+    // A refresh replaces the snapshot while that page is still reading.
+    await store().load(req);
+    const fresh = store().loadMore();
+    expect(fresh).not.toBe(stale);
+    // So a landing across the refresh pages the snapshot on screen and reaches its day.
+    expect(await store().ensureDay(dayAgo(11))).toBe(true);
+    mockHeldPages.splice(0).forEach((release) => release());
+    await Promise.all([stale, fresh]);
+  });
+
+  it('the page slot is released by identity: an older read finishing never frees a newer one (C-24)', async () => {
+    seedDays(12, 10);
+    const req = { pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY };
+    await store().load(req);
+    mockHoldPages = true;
+    const stale = store().loadMore();
+    mockHoldPages = false;
+    await store().load(req);
+    const before = store().snapshot!.pages.span!.fromDay;
+    mockHoldPages = true;
+    const fresh = store().loadMore();
+    mockHoldPages = false;
+    mockHeldPages.shift()!();
+    await stale;
+    // The newer read still holds the slot, so a second call joins it rather than reading twice.
+    expect(store().loadMore()).toBe(fresh);
+    mockHeldPages.shift()!();
+    await fresh;
+    expect(store().snapshot!.pages.span!.fromDay < before).toBe(true);
+  });
+
+  it('a landing asked for one pet ends at a switch: the next pet\'s list is never paged for it', async () => {
+    seedDays(12, 10);
+    seedDays(12, 10, PET_B.id);
+    await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY });
+    mockHoldPages = true;
+    const landing = store().ensureDay(dayAgo(11));
+    mockHoldPages = false;
+    usePetStore.setState({ activePet: PET_B });
+    await store().load({ pet: PET_B, scope: scopeFor(PET_B.id), today: TODAY });
+    const first = store().snapshot!.pages.span!.fromDay;
+    mockHeldPages.splice(0).forEach((release) => release());
+    expect(await landing).toBe(false);
+    expect(store().snapshot!.petId).toBe(PET_B.id);
+    expect(store().snapshot!.pages.span!.fromDay).toBe(first);
+  });
+
+  it('a read landing mid-page keeps the page: it lands on the snapshot the read replaced', async () => {
+    seedDays(12, 10);
+    await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY });
+    const before = store().snapshot!.pages.span!.fromDay;
+    mockHoldPages = true;
+    const page = store().loadMore();
+    mockHoldPages = false;
+    await store().refreshReads();
+    mockHeldPages.splice(0).forEach((release) => release());
+    await page;
+    expect(store().snapshot!.pages.span!.fromDay < before).toBe(true);
+    expect(store().more).toBeNull();
+  });
+
   it('a page read for a snapshot a load replaced lands nowhere', async () => {
     seedDays(12, 10);
     const req = { pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY };
@@ -261,7 +381,7 @@ describe('pages: whole days, the depth a refresh keeps, the landing\'s reach', (
     const snap = store().snapshot;
     mockFail = true;
     await store().loadMore();
-    expect(store().more).toEqual({ of: snap, state: 'failed' });
+    expect(store().more).toEqual({ of: snap!.pages, state: 'failed' });
     expect(logged).toHaveBeenCalledWith('[history] next page failed:', expect.any(Error));
     logged.mockRestore();
   });

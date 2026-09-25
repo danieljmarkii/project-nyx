@@ -29,9 +29,7 @@ export interface CountLineProps {
 }
 
 function openDoor(door: CountLineDoor, filter: HistoryFilter): void {
-  const href = countLineDoorHref(door.key, filter);
-  if (typeof href === 'string') router.push(href);
-  else router.push(href);
+  router.push(countLineDoorHref(door.key, filter));
 }
 
 export function CountLine({ line, filter, onOpenDoor }: CountLineProps) {
