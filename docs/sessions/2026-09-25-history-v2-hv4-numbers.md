@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 
-Shipped via #911 (CUL-1161). Filed: CUL-1193 (the course count's wording; the PM ruled (b) the same day, built here, below), CUL-1194 (the Patterns month's record start counts a look), CUL-1207 (HV-3's window test under a half-hour DST shift). Handoff notes posted on CUL-1160, CUL-1164, CUL-1165, CUL-1166 and CUL-1169.
+Shipped via #911 (CUL-1161). Filed: CUL-1193 (the course count's wording; the PM ruled (b) the same day, built here, below), CUL-1194 (the Patterns month's record start counts a look), CUL-1207 (HV-3's window test under a half-hour DST shift), CUL-1208 (Waiting on PM: the §5.2 `vomitEpisode` spec edit). Handoff notes posted on CUL-1160, CUL-1164, CUL-1165, CUL-1166 and CUL-1169.
 
 ## The ask
 
@@ -86,16 +86,16 @@ The PM ruled (b): under a course and under Medication the count says *16 logged 
 
 Bundle C (#908, CUL-1124) landed on `main` during the wrap and added `regimen_drug_name` to `getTimeline`, joined pet-scoped (`rx.pet_id = e.pet_id`), so a dose linked to another pet's course never borrows its name. This branch had the same column without that guard, which would have let a search find another pet's course name. The branch merged `main`, and the join is now pet-scoped in both the row read and every scope condition. A test drives a dose linked to another pet's regimen (no name on the row, no search hit); dropping the guard turns it red. The column-for-column test against `getTimeline` now covers the course's name too.
 
-`main` moved again after the wrap: HV-1 (#907) and HV-2 (#910) landed, sharing no file with this branch, and the merge was clean. Then HV-3 (#909) landed with its own spec v1.3 (CUL-1189's rulings) twenty minutes before this branch pushed CUL-1193's, so the PR went unmergeable and GitHub ran no CI on that push at all (a `pull_request` run needs a merge ref). The one-time check-in caught it; the merge kept both sides (HV-3's two §3.2 rules, then the dose count's; this PR's spec edit became v1.4). Running the History suites in six zones after the merge turned up a half-hour-DST gap in HV-3's own window test (its fixture assumes the clocks move a whole hour; the window code is right): CUL-1207.
+`main` moved again after the wrap: HV-1 (#907) and HV-2 (#910) landed, sharing no file with this branch, and the merge was clean. Then HV-3 (#909) landed with its own spec v1.3 (CUL-1189's rulings) twenty minutes before this branch pushed CUL-1193's, so the PR went unmergeable and GitHub ran no CI on that push at all (a `pull_request` run needs a merge ref). The one-time check-in caught it; the merge kept both sides (HV-3's two §3.2 rules, then the dose count's; this PR's spec edit became v1.4). Running the History suites in six zones after the merge turned up a half-hour-DST gap in HV-3's own window test (its fixture assumes the clocks move a whole hour; the window code is right): CUL-1207. At the wrap HV-5 (#912) had landed too; it shares `lib/monthReads.ts` with this branch (its `readWorthACall` change, this branch's export) and git merged the two cleanly.
 
 ## Verification
 
 - `tsc --noEmit` clean.
-- Full jest suite green on the merged tree (with HV-3): 480 suites, 10,620 passed, 6 skipped.
+- Full jest suite green on the merged tree (with HV-3 and HV-5): 484 suites, 10,731 passed, 6 skipped.
 - The History suites (222 tests) green under Kiritimati, Chatham, Honolulu, New York and Lord Howe.
 - CI green on the first push (all three jobs).
 
 ## Residuals
 
-- **Proposed spec edit (Tier 2, awaiting PM approval to write):** `docs/nyx-history-v2-requirements.md` §5.2, `DayFacts` gains `vomitEpisode: boolean`, the Patterns month's episode mark, which §3.4's never-disagree rule needs.
+- **Proposed spec edit (Tier 2, awaiting PM approval to write), filed as CUL-1208:** `docs/nyx-history-v2-requirements.md` §5.2, `DayFacts` gains `vomitEpisode: boolean`, the Patterns month's episode mark, which §3.4's never-disagree rule needs.
 - Where "{pet}'s record starts here" sits when a visit predates the first event is HV-7's call (noted on CUL-1164).
