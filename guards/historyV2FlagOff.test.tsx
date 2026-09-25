@@ -460,10 +460,27 @@ function drawsThroughNamespace(rel: string, src: string): boolean {
 
 /**
  * Consumers excused from the draws-through-the-namespace rule: a file that reads the
- * gate to DECIDE something without drawing. Declared empty rather than left implicit
- * (C-32); the staleness check keeps it honest.
+ * gate to DECIDE something without drawing. The staleness check keeps it honest.
+ *
+ * HV-11 (CUL-1168) added the first two: the senders that decide which parameters a link
+ * into History carries (H-7, `lib/historyDoors.ts`). The gate's value reaches only a
+ * press handler there, which the tree comparison normalises to a marker, so there is no
+ * v2 tree to compare. What such a file owes instead is a behaviour proof that flag off it
+ * links exactly as it did before: `proof` names it, and the check below requires it to
+ * exist and to render or call the decider, so an entry cannot outlive its proof.
  */
-const DRAWS_ELSEWHERE_OK: Record<string, string> = {};
+const DRAWS_ELSEWHERE_OK: Record<string, { reason: string; proof: string; mentions: string }> = {
+  'app/rundown.tsx': {
+    reason: 'decides where a History tile lands (rundownHistoryHref); draws nothing of History v2',
+    proof: 'app/rundown.test.tsx',
+    mentions: 'flag off: every History tile pushes the bare route',
+  },
+  'components/ask/AskAnswerCard.tsx': {
+    reason: 'decides which Ask windows open History (AskHistoryReach); draws nothing of History v2',
+    proof: 'lib/ask.test.ts',
+    mentions: 'ASK_HISTORY_V1',
+  },
+};
 
 /** The directories every detector reads. Checked against the repository below. */
 const SCAN_DIRS = ['app', 'components', 'hooks', 'lib', 'store'];
@@ -551,10 +568,10 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('History v2 has one gate, and its consumers stay inside the namespace', () => {
-  it('the History tab is the one consumer of the gate (HV-1), and every consumer is a known one', () => {
+  it('every consumer of the gate is a known one: the History tab (HV-1) and the link deciders (HV-11)', () => {
     // PINNED, not floored: a new consumer is a new surface, and it joins this list —
     // with its flag-off proof — in the diff that adds it (HV-10 adds Home).
-    expect(gateConsumers()).toEqual(['app/(tabs)/history.tsx']);
+    expect(gateConsumers()).toEqual(['app/(tabs)/history.tsx', 'app/rundown.tsx', 'components/ask/AskAnswerCard.tsx']);
   });
 
   it('the key is read directly in exactly one file — the hook — for both gates', () => {
@@ -606,10 +623,20 @@ describe('History v2 has one gate, and its consumers stay inside the namespace',
     expect(drawsElsewhere).toEqual([]);
   });
 
-  it('every route under app/ that consumes the gate is a listed surface', () => {
+  it('every route under app/ that consumes the gate is a listed surface, or a decider with a flag-off proof', () => {
     const listed = new Set(SURFACES.map((s) => s.rel));
-    const unlisted = gateConsumers().filter((r) => r.startsWith('app/') && !listed.has(r));
+    const unlisted = gateConsumers().filter(
+      (r) => r.startsWith('app/') && !listed.has(r) && !(r in DRAWS_ELSEWHERE_OK),
+    );
     expect(unlisted).toEqual([]);
+  });
+
+  it('each decider names a proof that exists and still pins its flag-off link', () => {
+    for (const [consumer, { proof, mentions }] of Object.entries(DRAWS_ELSEWHERE_OK)) {
+      const abs = path.join(REPO_ROOT, proof);
+      expect({ consumer, exists: fs.existsSync(abs) }).toEqual({ consumer, exists: true });
+      expect(fs.readFileSync(abs, 'utf8')).toContain(mentions);
+    }
   });
 
   it('the delegation detector reads both import shapes, and still refuses type-only ones', () => {

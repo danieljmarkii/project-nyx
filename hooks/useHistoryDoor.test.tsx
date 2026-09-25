@@ -4,7 +4,8 @@ let mockParams: Record<string, string | undefined> = {};
 jest.mock('expo-router', () => ({ useLocalSearchParams: () => mockParams }));
 
 import { act, render } from '@testing-library/react-native';
-import { useHistoryDoor } from './useHistoryDoor';
+import { __resetHistoryDoorForTest, useHistoryDoor } from './useHistoryDoor';
+import { __resetWidgetPetTapsForTest } from '../lib/widgetPetTap';
 import { usePetStore, type Pet } from '../store/petStore';
 import { defaultHistoryScope, useHistoryScopeStore } from '../store/historyScopeStore';
 
@@ -22,6 +23,8 @@ function Probe() {
 const scope = () => useHistoryScopeStore.getState();
 
 beforeEach(() => {
+  __resetHistoryDoorForTest();
+  __resetWidgetPetTapsForTest();
   mockParams = {};
   act(() => {
     usePetStore.setState({ pets: [PET_A, PET_B], activePet: PET_A });
@@ -81,5 +84,59 @@ describe('useHistoryDoor', () => {
     });
     render(<Probe />);
     expect(scope().filter).toEqual({ kind: 'symptoms' });
+  });
+
+  it('a course link filters to the course, All time; All symptoms is its own value (HV-11)', () => {
+    mockParams = { type: 'medication', course: 'reg-1', ts: '1' };
+    const view = render(<Probe />);
+    expect(scope().filter).toEqual({ kind: 'course', courseKey: 'reg-1' });
+    expect(scope().window).toEqual({ kind: 'all' });
+    mockParams = { type: 'symptoms', window: '30d', ts: '2' };
+    view.rerender(<Probe />);
+    expect(scope().filter).toEqual({ kind: 'symptoms' });
+    expect(scope().window).toEqual({ kind: 'last', days: 30 });
+  });
+});
+
+describe('useHistoryDoor — once per tap across mounts (HV-11: the flag flipping after mount)', () => {
+  it('a screen mounted again over the same link never re-applies it over the owner\'s choice', () => {
+    mockParams = { type: 'vomit', window: '7d', ts: '1' };
+    const first = render(<Probe />);
+    expect(scope().filter).toEqual({ kind: 'type', type: 'vomit' });
+    act(() => {
+      scope().setFilter(PET_A.id, { kind: 'symptoms' });
+    });
+    // The flag flips off and on: the tab mounts a fresh v2 screen over the same params.
+    first.unmount();
+    render(<Probe />);
+    expect(scope().filter).toEqual({ kind: 'symptoms' });
+  });
+
+  it('the first mount after a flip still lands a tap v2 has not seen', () => {
+    // Tapped while v1 showed (v1 applied it in its own state); v2 mounts over it.
+    mockParams = { day: '2026-09-17', ts: '9' };
+    render(<Probe />);
+    expect(scope().landedDay).toBe('2026-09-17');
+  });
+
+  it('the widget\'s switch spent on one mount is not made again on the next, and the day waits for no one', () => {
+    mockParams = { date: '2026-09-17', src: 'widget', pet: PET_B.id, ts: '1' };
+    const first = render(<Probe />);
+    expect(usePetStore.getState().activePet?.id).toBe(PET_B.id);
+    first.unmount();
+    // The owner switches back to A, then the flag flips and a fresh screen mounts.
+    act(() => {
+      usePetStore.getState().selectPet(PET_A.id);
+    });
+    render(<Probe />);
+    expect(usePetStore.getState().activePet?.id).toBe(PET_A.id);
+    // A's scope is untouched: the widget's day was B's.
+    expect(scope().petId).toBe(PET_A.id);
+    expect(scope().landedDay).toBeNull();
+    // And switching to B later does not land the old link late.
+    act(() => {
+      usePetStore.getState().selectPet(PET_B.id);
+    });
+    expect(scope().landedDay).toBeNull();
   });
 });

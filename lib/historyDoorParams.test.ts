@@ -47,6 +47,29 @@ describe('historyDoorRequestOf: what each shipped sender asks for', () => {
     });
   });
 
+  it('HV-11: a course link is that course over All time, whatever type rides with it', () => {
+    // The medication screen sends Medication too, so v1 (which ignores `course`) lands as before.
+    expect(historyDoorRequestOf({ type: 'medication', course: 'reg-1', ts: '1' })).toEqual({
+      filter: { kind: 'course', courseKey: 'reg-1' },
+      window: { kind: 'all' },
+    });
+    // The rundown's past course sends the course alone.
+    expect(historyDoorRequestOf({ course: 'item:med-9', ts: '1' })).toEqual({
+      filter: { kind: 'course', courseKey: 'item:med-9' },
+      window: { kind: 'all' },
+    });
+  });
+
+  it('HV-11: All symptoms, and the windows only the flag-on senders send', () => {
+    expect(historyDoorRequestOf({ type: 'symptoms', window: '30d', ts: '1' })).toEqual({
+      filter: { kind: 'symptoms' },
+      window: { kind: 'last', days: 30 },
+    });
+    expect(historyDoorRequestOf({ type: 'vomit', window: '14d', ts: '1' })?.window).toEqual({ kind: 'last', days: 14 });
+    expect(historyDoorRequestOf({ type: 'vomit', window: 'trial', ts: '1' })?.window).toEqual({ kind: 'trial' });
+    expect(historyDoorRequestOf({ window: 'visit', ts: '1' })).toEqual({ filter: { kind: 'all' }, window: { kind: 'visit' } });
+  });
+
   it('a type/window link wins over a day link (no sender sends both; v1\'s precedence)', () => {
     expect(historyDoorRequestOf({ type: 'vomit', date: '2026-09-17', ts: '1' })).toEqual({
       filter: { kind: 'type', type: 'vomit' },
