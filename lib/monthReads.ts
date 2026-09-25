@@ -64,7 +64,7 @@ export interface MonthReadRange {
 
 const MS_PER_DAY = 86_400_000;
 /** The daily look's event type — the one row that is never coverage (§5.6, T-5). */
-const LOOK_EVENT_TYPE = 'check_in';
+export const LOOK_EVENT_TYPE = 'check_in';
 /** Delivered doses — B-618 D1's therapy-delivered count. */
 const DELIVERED_ADHERENCE = ['given', 'partial'] as const;
 
