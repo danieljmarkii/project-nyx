@@ -309,7 +309,7 @@
   .emptyst { text-align: center; padding: 26px 16px; font-size: 12px; color: #525252; line-height: 1.5; }
   .emptyst b { display: block; font-size: 14px; font-weight: 600; color: #0A0A0A; margin-bottom: 4px; }
   .emptyst.big { padding-top: 40px; }
-  .emptyst .retry { display: block; margin: 14px auto 0; font: inherit; font-size: 13px; font-weight: 600; color: #FFFFFF; background: #0A0A0A; border: 0; border-radius: 12px; padding: 10px 18px; min-height: 44px; }
+  .emptyst .retry { display: block; margin: 14px auto 0; font: inherit; font-size: 13px; font-weight: 600; color: #0A7A6B; background: none; border: 0; padding: 10px 18px; min-height: 44px; } /* HV-12: EmptyState's own text link, as built */
   .recend { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 11px; color: #737373; padding: 14px 0 4px; }
   .recend i { width: 14px; height: 1px; background: #C9C9C9; }
   .p2 { padding: 8px 0 0; } .p2 .k { height: 44px; border-radius: 12px; background: linear-gradient(90deg, #EFEFEF, #F7F7F7, #EFEFEF); }
@@ -506,6 +506,7 @@
     <div class="r"><b>The quiet states · "LOVE that we added an empty state."</b><span><i class="k">kept</i>As drawn. <a href="#s08">§08</a></span></div>
     <div class="r"><b>"Finalize these requirements; put them in a Linear project with a session-by-session plan."</b><span><i class="k">next</i><code>docs/nyx-history-v2-requirements.md</code> is written against this page, and the build is the Linear project <b>History v2 · the record you can read</b>.</span></div>
     <div class="r"><b>CUL-1183 · "Go with 60." (2026-09-25, after round 5)</b><span><i class="d">ruled</i>The time column is 60pt, not 56. At the app's 11pt, a run across noon's first line, "11:30 AM –", is 58.7pt; in 56 it fell to three lines. Every frame on this page draws the 60pt column; Home, History and the Daily Recap move together. <a href="#s02">§02</a></span></div>
+    <div class="r"><b>HV-12 · the copy pass (2026-09-25)</b><span><i class="d">built</i>The words on every frame are the ones the app now ships, replacing round 5's placeholders: the doors name what they open ("The trial so far ›", "Vomiting over time ›", "Symptoms on Patterns ›"), coverage reads "N days with nothing logged", duplicates "N possible repeats within a minute", search "Searching for …" with why it counts nothing, a filtered header ends "in all", gap lines lead with the date, a filter with nothing to show names the record's fact, and "Try again" is the component's text link. The facts and the layout did not move. CUL-1169.</span></div>
     <div class="r"><b>HV-9 · four calls from the build (2026-09-25, open)</b><span><i class="o">open</i>The pinned row's build and review raised four questions round 5 does not answer: what the two menus' numbers count, the pet's name as the switcher, Meal's meals not finished, and search while a filter is on. Each is drawn beside the frame it would change; the briefs are on CUL-1247. <a href="#s12">§12</a></span></div>
     <div class="r"><b>CUL-1193 · "(b)" (2026-09-25, after round 5)</b><span><i class="d">ruled</i>A dose count reads "logged". Under a course or Medication the count line says "16 logged on 16 days", and its second line names the doses recorded Partial, Missed or Refused: "Cetirizine HCl · Jul 1 – Sep 5 · 4 not given in full". A course's row on the type sheet names them after its span, the way Photographed names "not read". "16 doses" read as sixteen given. <a href="#s06">§06</a></span></div>
   </div>
@@ -524,19 +525,19 @@
       <span class="tag cur">Sep 21 · All time</span>
       <div class="phone vp wait" id="p-days" data-mount='{"when":"all","pendingKey":"2026-09-21 16:40"}'><div class="notch"></div><div class="wait-skel" aria-hidden="true"></div><div class="vpbody wait-content"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
       <div class="btnrow"><button class="btn" type="button" data-replay="wait~p-days">Replay the first paint</button><button class="btn" type="button" data-replay="arrive~p-days~2026-09-21 16:40">Replay the read</button><button class="btn" type="button" data-replay="open~p-days~run:2026-09-21|6">Open "2 meals"</button><button class="btn" type="button" data-replay="route~p-days~2026-09-21|4">Open the 4:40 PM vomit · Back</button><button class="btn" type="button" data-replay="remove~p-days~2026-09-21|5">Remove the 6:27 PM meal</button><button class="btn" type="button" data-replay="restore~p-days~2026-09-21|5">Put it back</button><button class="btn" type="button" data-replay="land~p-days~2026-09-17">Back a week · tap Sep 17</button><button class="btn" type="button" data-replay="tab~p-days">Tap History again</button></div>
-      <p class="frame-cap"><b>Whose record, how much of it, and what the count cannot see.</b> "All time · 1,094 logged since May 14", then one day unlogged (Sep 20) and three pairs logged twice in the same minute, which the vet report drops. "Outside the trial diet ›" answers Jordan's "anything besides the trial food?" on the screen that already owns that answer. Today is eight rows. Prednisone started today, so its marker sits at the top of the day; the rabbit meal was picked at and carried it, and the dose is Partial. The 4:40 PM read was calm: the tick waits, then leaves nothing behind, which is exactly the resting row.</p>
+      <p class="frame-cap"><b>Whose record, how much of it, and what the count cannot see.</b> "All time · 1,094 logged since May 14", then one day with nothing logged (Sep 20) and three possible repeats within a minute, which the vet report counts once. "Outside the trial diet ›" answers Jordan's "anything besides the trial food?" on the screen that already owns that answer. Today is eight rows. Prednisone started today, so its marker sits at the top of the day; the rabbit meal was picked at and carried it, and the dose is Partial. The 4:40 PM read was calm: the tick waits, then leaves nothing behind, which is exactly the resting row.</p>
     </div>
     <div class="frame-slot">
       <span class="tag cur">Vomit · since the trial</span>
       <div class="phone vp" id="p-lens" data-mount='{"when":"trial","lens":"vomit"}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
       <div class="btnrow"><button class="btn" type="button" data-replay="lens~p-lens~vomit">Toggle the filter</button><button class="btn" type="button" data-replay="back~p-lens">Back a week</button></div>
-      <p class="frame-cap"><b>Every number follows the filter, and says where it fell.</b> "Since the trial started, Jul 26 · 13 vomits on 11 days", and "Before and since the trial ›" opens the view that owns that number. Rose squares are vomit days, white squares are days logged with no vomit, and Sep 20 is grey because nothing was logged. Between vomits the list says "no vomit logged · Sep 18 – 19" and splits at Sep 20 rather than claim it. Sep 16 keeps its visit.</p>
+      <p class="frame-cap"><b>Every number follows the filter, and says where it fell.</b> "Since the trial started, Jul 26 · 13 vomits on 11 days", and "The trial so far ›" opens the trial's own screen, by its own title. Rose squares are vomit days, white squares are days logged with no vomit, and Sep 20 is grey because nothing was logged. Between vomits the list says "Sep 18 – 19 · no vomit logged" and splits at Sep 20 rather than claim it. Sep 16 keeps its visit.</p>
     </div>
   </div>
   <div class="col">
     <h3>What the screen now says that round 3's could not</h3>
     <div class="facts">
-      <div><b>How much the record holds, and what it cannot see</b>"1,094 logged since May 14 · 1 day unlogged · 3 logged twice in the same minute".<small>the count line · R-1</small></div>
+      <div><b>How much the record holds, and what it cannot see</b>"1,094 logged since May 14 · 1 day with nothing logged · 3 possible repeats within a minute".<small>the count line · R-1</small></div>
       <div><b>Which days ran short, above the rows</b>A broken line in the strip, "1 meal not finished" in the header, "Picked at" on the row.<small>the strip · the header · H-2</small></div>
       <div><b>Which day you are in, mid-scroll</b>The day's header sticks under the pinned pills until the next day takes its place.<small>the pinned row · H-3</small></div>
       <div><b>What was given, and how</b>"Prednisone · in the 1:00 PM meal · picked at", then the Partial chip.<small>the dose row · R-3</small></div>
@@ -681,7 +682,7 @@
     <div class="frame-slot">
       <span class="tag cur">Search</span>
       <div class="phone vp" id="p-search" data-mount='{"when":"all","searchOpen":true,"search":"rabbit"}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
-      <p class="frame-cap"><b>Search finds; it never counts.</b> One extra condition on the list's own query, over food and medicine names and your notes; day headers show the date only, and nothing is saved. Searching notes ships with the note line, after CUL-848.</p>
+      <p class="frame-cap"><b>Search finds, and never counts.</b> One extra condition on the list's own query, over food and medicine names; the count line says why there is no number ("search reads names, not ingredients"), day headers show the date only, and nothing is saved. Searching notes ships with the note line, after CUL-848.</p>
     </div>
   </div>
 </section>
@@ -745,8 +746,8 @@
   <div class="frames">
     <div class="frame-slot">
       <span class="tag cur">Over Nyx's visit on Sep 16</span>
-      <div class="crop"><p class="cropcap">Since the last vet visit</p><div class="cl" style="padding:0"><div class="c1">Since the last vet visit, Sep 16 · <b>33 logged</b></div><div class="c2">1 day unlogged</div></div></div>
-      <p class="frame-cap"><b>33 logged, Sep 16 – 21,</b> with Sep 20 disclosed as unlogged.</p>
+      <div class="crop"><p class="cropcap">Since the last vet visit</p><div class="cl" style="padding:0"><div class="c1">Since the last vet visit, Sep 16 · <b>33 logged</b></div><div class="c2">1 day with nothing logged</div></div></div>
+      <p class="frame-cap"><b>33 logged, Sep 16 – 21,</b> with Sep 20 disclosed as a day with nothing logged.</p>
     </div>
   </div>
 </section>
@@ -890,7 +891,7 @@
       <span class="tag opt">Option (a) · during a search</span>
       <div class="frame-slot">
         <div class="phone vp" id="p-c1-a3" data-mount='{"when":"all","searchOpen":true,"search":"rabbit","openSheet":"type","sheetCaption":true}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
-        <p class="frame-cap"><b>"Search finds; it never counts."</b> As built, a search takes every number off both sheets, and a sheet with no numbers also looks like one still loading or one whose read failed. The caption says why, in the count line's own ruled words.</p>
+        <p class="frame-cap"><b>"No count here, because search reads names, not ingredients."</b> As built, a search takes every number off both sheets, and a sheet with no numbers also looks like one still loading or one whose read failed. The caption says why, in the count line's own ruled words.</p>
       </div>
     </div>
   </div>
@@ -938,7 +939,7 @@
       <span class="tag opt">Option (a) · name the filter, offer the rest</span>
       <div class="frame-slot">
         <div class="phone vp short" id="p-c4-a" data-mount='{"when":"all","lens":"vomit","searchOpen":true,"search":"prednisone","missScope":true}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
-        <p class="frame-cap"><b>The filter is named, and one tap searches everything.</b> The search line reads "Rows that mention 'prednisone' · Vomit · All time", and the empty state says the filter is on. "Search all types ›" keeps the words and drops the filter: tap it, and Sep 21's dose appears. Search still never counts (R-2). These words are HV-7's; the field is HV-9's.</p>
+        <p class="frame-cap"><b>The filter is named, and one tap searches everything.</b> The search line reads "Searching for 'prednisone' · Vomit · All time", and the empty state says the filter is on. "Search all types ›" keeps the words and drops the filter: tap it, and Sep 21's dose appears. Search still never counts (R-2). These words are HV-7's; the field is HV-9's.</p>
       </div>
     </div>
   </div>
@@ -976,8 +977,15 @@ const VISITS = { '2026-09-16': { reason: 'Recheck', clinic: 'Riverside Clinic' }
 const COURSE_START = { '2026-09-21': 'Prednisone started' };
 const TRIAL = { start: '2026-07-26' };
 const LABEL = { meal: 'Meal', vomit: 'Vomit', diarrhea: 'Loose stool', stool_normal: 'Stool', cough: 'Cough', sneeze: 'Sneeze', lethargy: 'Lethargy', itch: 'Itch/Scratch', medication: 'Medication', weight_check: 'Weight', other: 'Other', check_in: 'Noticed' };
-const SINGULAR = { meal: 'meal', vomit: 'vomit', diarrhea: 'loose stool', stool_normal: 'stool', cough: 'cough', sneeze: 'sneeze', lethargy: 'lethargy entry', itch: 'itch', medication: 'dose', weight_check: 'weight', other: 'other entry', symptom: 'symptom', photographed: 'photographed row', noted: 'row with a note' };
-const PLURAL = { meal: 'meals', vomit: 'vomits', diarrhea: 'loose stools', stool_normal: 'stools', cough: 'coughs', sneeze: 'sneezes', lethargy: 'lethargy entries', itch: 'itches', medication: 'doses', weight_check: 'weights', other: 'other entries', symptom: 'symptoms', photographed: 'photographed rows', noted: 'rows with a note' };
+const SINGULAR = { meal: 'meal', vomit: 'vomit', diarrhea: 'loose stool', stool_normal: 'formed stool', cough: 'cough', sneeze: 'sneeze', lethargy: 'lethargy entry', itch: 'itch', medication: 'dose', weight_check: 'weigh-in', other: 'other entry', symptom: 'symptom', photographed: 'with a photo', noted: 'with a note' };
+const PLURAL = { meal: 'meals', vomit: 'vomits', diarrhea: 'loose stools', stool_normal: 'formed stools', cough: 'coughs', sneeze: 'sneezes', lethargy: 'lethargy entries', itch: 'itches', medication: 'doses', weight_check: 'weigh-ins', other: 'other entries', symptom: 'symptoms', photographed: 'with a photo', noted: 'with a note' };
+// HV-12's copy pass (CUL-1169): what a filter's absence says, about the record (PMD-10)
+const ABSENCE = { photographed: 'no photo logged', noted: 'no note logged' };
+const OCCURRENCE = { vomit: 'Vomiting', diarrhea: 'Loose stools', itch: 'Itching', cough: 'Coughing', sneeze: 'Sneezing', lethargy: 'Lethargy' };
+function absenceOf(lens) {
+  if (lens.startsWith('course:')) return `no ${COURSES.find((x) => x.key === lens.slice(7)).name} dose logged`;
+  return ABSENCE[lens] || `no ${SINGULAR[lens] || 'match'} logged`;
+}
 const SYMPTOM = ['vomit', 'diarrhea', 'cough', 'sneeze', 'lethargy', 'itch'];
 const TINT = { symptom: '#F43F5E', meal: '#00C2A8', medication: '#5B7A9E', other: '#737373' };
 const WINDOWS = {
@@ -1114,7 +1122,7 @@ function content(r, opts) {
     if (r.carries) l2.push(`with ${esc(r.carries.m && r.carries.m.d ? r.carries.m.d : 'a dose')}`);
   } else if (r.ty === 'medication') {
     title = r.m && r.m.d ? r.m.d : 'Medication';
-    if (!r.m || !r.m.d) detail.push('no medicine named');
+    // HV-6 (ruled 2026-09-25): an unnamed dose says only "Medication", never "no medicine named"
     const hg = r.m && r.m.hg;
     if (hg === 'in_food' && r.vehicle) {
       const ir = r.vehicle.f && r.vehicle.f.ir;
@@ -1170,7 +1178,16 @@ function headerRight(b, shown, opts) {
     const n = shown.length; const sym = opts.lens === 'symptom' || SYMPTOM.includes(opts.lens);
     const c = opts.lens.startsWith('course:') ? courseOf(COURSES.find((x) => x.key === opts.lens.slice(7)).name) : null;
     const noun = c ? ['dose', 'doses'] : [SINGULAR[opts.lens] || 'match', PLURAL[opts.lens] || 'matches'];
-    return `<span class="${sym ? 'sym' : ''}">${plural(n, noun[0], noun[1])}</span><span class="tot"> · ${total} logged</span>`;
+    // HV-12: All symptoms names each kind; a filtered total reads "in all"; a dose filter names
+    // the doses not given in full, in the grey a meal not finished takes
+    let lead;
+    if (opts.lens === 'symptom' && n > 0) {
+      const cnt = {}; for (const r of shown) cnt[r.ty] = (cnt[r.ty] || 0) + 1;
+      lead = SYMPTOM.filter((k) => cnt[k]).map((k) => `<span class="sym">${plural(cnt[k], SINGULAR[k], PLURAL[k])}</span>`).join(' · ');
+    } else lead = `<span class="${sym ? 'sym' : ''}">${n ? plural(n, noun[0], noun[1]) : esc(absenceOf(opts.lens))}</span>`;
+    const dose = c || opts.lens === 'medication';
+    const shortN = dose ? shown.filter((r) => r.m && ['partial', 'missed', 'refused'].includes(r.m.ad)).length : 0;
+    return `${lead}<span class="tot"> · ${total} in all</span>${shortN ? ` · <span class="nfw">${shortN} not given in full</span>` : ''}`;
   }
   const cnt = {}; for (const r of b.rows) cnt[r.ty] = (cnt[r.ty] || 0) + 1;
   const parts = [];
@@ -1199,10 +1216,10 @@ function dayCardHtml(b, opts, st) {
 }
 function gapLine(kind, days, opts, extra) {
   const a = days[days.length - 1], b = days[0];
-  if (kind === 'unlogged') return `<div class="gap${days.length > 1 ? ' wide' : ''}" data-gap-from="${a}" data-gap-to="${b}"><i></i>${days.length === 1 ? `${dayName(a)} · nothing logged` : `nothing logged · ${rangeLabel(a, b)}`}</div>`;
+  // HV-12: the date always leads, as it does on the cards the line sits between
+  if (kind === 'unlogged') return `<div class="gap${days.length > 1 ? ' wide' : ''}" data-gap-from="${a}" data-gap-to="${b}"><i></i>${days.length === 1 ? dayName(a) : rangeLabel(a, b)} · nothing logged</div>`;
   if (kind === 'marker') return `<div class="gap mkline" data-gap-from="${a}" data-gap-to="${a}"><i class="sq"></i>${dayName(a)} · ${esc(extra)}</div>`;
-  const noun = opts.lens.startsWith('course:') ? `${COURSES.find((x) => x.key === opts.lens.slice(7)).name} dose` : SINGULAR[opts.lens] || 'match';
-  return `<div class="gap${days.length > 1 ? ' wide' : ''}" data-gap-from="${a}" data-gap-to="${b}"><i></i>no ${esc(noun)} logged · ${days.length === 1 ? shortDay(a) : rangeLabel(a, b)}</div>`;
+  return `<div class="gap${days.length > 1 ? ' wide' : ''}" data-gap-from="${a}" data-gap-to="${b}"><i></i>${days.length === 1 ? dayName(a) : rangeLabel(a, b)} · ${esc(absenceOf(opts.lens))}</div>`;
 }
 function listBounds(opts) {
   let [from, to] = BOUNDS[opts.when || 'all'];
@@ -1234,7 +1251,7 @@ function listHtml(opts, st) {
       if (day === TODAY) continue; // a gap never includes today
       if (!logged && !b.markers.length) { flushN(); unl.push(day); continue; } // absence only over watched days (R-1)
       flushU();
-      if (b.markers.length) { flushN(); out.push(gapLine('marker', [day], opts, `${b.markers.map((m) => (m.kind === 'visit' ? `Vet visit, ${m.reason}` : m.text)).join(' · ')} · no ${opts.lens.startsWith('course:') ? 'dose' : SINGULAR[opts.lens] || 'match'} logged`)); continue; }
+      if (b.markers.length) { flushN(); out.push(gapLine('marker', [day], opts, `${b.markers.map((m) => (m.kind === 'visit' ? `Vet visit, ${m.reason}` : m.text)).join(' · ')} · ${absenceOf(opts.lens)}`)); continue; }
       nom.push(day);
     }
     flushU(); flushN();
@@ -1245,8 +1262,13 @@ function listHtml(opts, st) {
       const what = opts.lens.startsWith('course:') ? 'its doses' : PLURAL[opts.lens] || 'those rows';
       return `<div class="emptyst"><b>No ${esc(opts.lens.startsWith('course:') ? 'doses' : what)} mention “${esc(opts.search)}”</b>The ${esc(lensLabel(opts.lens))} filter is on, so this search looked only at ${esc(what)}.<br><span class="door-l" role="link" tabindex="0" data-pick="type|null">Search all types ›</span></div>`;
     }
-    if (opts.search) return `<div class="emptyst"><b>Nothing matches “${esc(opts.search)}”</b>Search looks in food and medicine names and in your notes.</div>`;
-    return `<div class="emptyst"><b>Nothing matches that filter</b>Try clearing a filter to see more of ${PET}'s history.</div>`;
+    if (opts.search) return `<div class="emptyst"><b>Nothing matches “${esc(opts.search)}”</b>Search looks in food and medicine names.</div>`;
+    // HV-12: the record's fact, never the owner's filter as a mistake (the list's filterQuietStateOf)
+    if (opts.lens === 'check_in') return `<div class="emptyst"><b>What you noticed shows up here</b>Answer the daily look on Home, and the days you answer show up here.</div>`;
+    const abs = absenceOf(opts.lens).replace(/^./, (c) => c.toUpperCase());
+    const ever = !opts.lens || lensFacts('all', opts.lens).n > 0;
+    if (!ever) return `<div class="emptyst"><b>${esc(abs)} yet</b>When you log one, it shows up here.</div>`;
+    return `<div class="emptyst"><b>${esc(abs)} ${(opts.when || 'all') === 'today' ? 'yet today' : 'in this date range'}</b>Change the date range to All time to see every one logged.</div>`;
   }
   let foot = '';
   if (opts.recordEnd) foot = `<div class="recend"><i></i>${PET}'s record starts here · ${dayName(RECORD_START)}</div>`;
@@ -1283,26 +1305,28 @@ function clockedWin(k, opts) {
 function countLine(opts) {
   if (opts.quiet) return '';
   const k = opts.when || 'all', w = clockedWin(k, opts), W = WINDOWS[k], lens = opts.lens;
-  if (opts.search) return `<div class="cl"><div class="c1">Rows that mention <b>“${esc(opts.search)}”</b>${opts.missScope && lens ? ` · ${esc(lensLabel(lens))}` : ''} · ${W.name}</div><div class="c2">Search finds; it never counts.</div></div>`;
+  if (opts.search) return `<div class="cl"><div class="c1">Searching for <b>“${esc(opts.search)}”</b>${opts.missScope && lens ? ` · ${esc(lensLabel(lens))}` : ''} · ${W.name}</div><div class="c2">No count here, because search reads names, not ingredients.</div></div>`;
   const f = lensFacts(k, lens, opts);
   const head = W.name + (W.anchor ? `, ${shortDay(W.anchor)}` : '');
   const course = lens && lens.startsWith('course:') ? COURSES.find((x) => x.key === lens.slice(7)) : null;
   let what;
-  if (!lens) what = `${f.n.toLocaleString('en-US')} logged`;
-  else if (course || lens === 'medication') what = f.n > 0 ? `${f.n.toLocaleString('en-US')} logged` : 'no dose logged'; // CUL-1193: "16 doses" read as 16 given
-  else what = plural(f.n, SINGULAR[lens], PLURAL[lens]);
+  const yet = k === 'today' ? ' yet' : ''; // HV-12: an open day says "yet", as its card does
+  if (!lens) what = f.n > 0 ? `${f.n.toLocaleString('en-US')} logged` : `nothing logged${yet}`;
+  else if (course || lens === 'medication') what = f.n > 0 ? `${f.n.toLocaleString('en-US')} logged` : `no dose logged${yet}`; // CUL-1193: "16 doses" read as 16 given
+  else what = f.n > 0 ? plural(f.n, SINGULAR[lens], PLURAL[lens]) : `${absenceOf(lens)}${yet}`;
   if (lens && f.days && f.n > 0) what += ` on ${plural(f.days, 'day', 'days')}`; // a filtered count names its days
   const since = k === 'all' && !course ? ` since ${shortDay(RECORD_START)}` : '';
   const q = [];
   if (course) q.push(`${course.name} · ${course.to ? rangeLabel(course.from, course.to) : `since ${shortDay(course.from)}`}`);
   if (f.short) q.push(`${f.short} not given in full`); // CUL-1193: after the course, before coverage
   const unl = course ? w.unlogged.filter((d) => d >= course.from && (!course.to || d <= course.to)) : w.unlogged;
-  if (unl.length) q.push(plural(unl.length, 'day unlogged', 'days unlogged'));
+  if (unl.length) q.push(plural(unl.length, 'day with nothing logged', 'days with nothing logged'));
   const dup = !lens ? w.dupes.meal + w.dupes.vomit : w.dupes[lens] || 0;
-  if (dup && opts.dupes !== false) q.push(`${dup} logged twice in the same minute`);
+  if (dup && opts.dupes !== false) q.push(plural(dup, 'possible repeat within a minute', 'possible repeats within a minute'));
   const doors = [];
   const symLens = lens && (lens === 'symptom' || SYMPTOM.includes(lens));
-  if (symLens) doors.push(k === 'trial' ? 'Before and since the trial ›' : 'See the compare ›'); // H-2 (a): the chart that owns this number
+  // HV-12: a door says what it opens; the trial door carries its screen's own title
+  if (symLens) doors.push(k === 'trial' ? 'The trial so far ›' : lens === 'symptom' ? 'Symptoms on Patterns ›' : `${OCCURRENCE[lens] || LABEL[lens]} over time ›`);
   if (BOUNDS[k][1] >= TRIAL.start && (!lens || lens === 'meal') && opts.exposureDoor !== false) doors.push('Outside the trial diet ›'); // PMD-9
   return `<div class="cl"><div class="c1">${head} · <b>${what}</b>${since}</div>${q.length ? `<div class="c2">${q.join(' · ')}</div>` : ''}${doors.length ? `<div class="c3">${doors.map((d) => `<span class="door-l" role="link" tabindex="0">${d}</span>`).join('')}</div>` : ''}</div>`;
 }
@@ -1348,7 +1372,7 @@ function cellLabel(iso, m, opts) {
   else {
     parts.push(m.n ? `${noun} logged ${plural(m.n, 'time', 'times')}` : `no ${noun} logged`);
     parts.push(`${m.total} logged in all`); // PMD-13: the filtered count, then the day's total
-    if (m.less) parts.push(lens === 'medication' || (lens && lens.startsWith('course:')) ? 'a dose not given in full' : 'a meal left unfinished');
+    if (m.less) parts.push(lens === 'medication' || (lens && lens.startsWith('course:')) ? 'a dose not given in full' : 'a meal not finished');
   }
   return parts.join(', ');
 }
@@ -1419,7 +1443,7 @@ function headerHtml(opts) {
 }
 function searchBarHtml(opts) {
   if (!opts.searchOpen) return '';
-  return `<div class="searchbar"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#737373" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" placeholder="Foods, medicines, your notes" value="${esc(opts.search || '')}" aria-label="Search ${PET}'s record" /><button type="button" class="x" data-open="search-close">Done</button></div>`;
+  return `<div class="searchbar"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#737373" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" placeholder="Foods, medicines" value="${esc(opts.search || '')}" aria-label="Search ${PET}'s record" /><button type="button" class="x" data-open="search-close">Cancel</button></div>`;
 }
 const freeFedLine = (opts) => (opts.freeFed ? `<div class="ffl"><i></i><span><b>Always available</b> · ${esc(opts.freeFed.food)} · since ${shortDay(opts.freeFed.since)}</span></div>` : '');
 
@@ -1441,10 +1465,10 @@ function sheetHtml(kind, opts) {
     rows = o('All types', 'null') + o('All symptoms', 'symptom') + ['vomit', 'diarrhea', 'stool_normal', 'cough', 'sneeze', 'lethargy', 'itch', 'meal'].map((t) => o(LABEL[t], t)).join('') + o('Medication', 'medication');
     if (!opts.noCourses) rows += COURSES.filter((c) => lensFacts(k, `course:${c.key}`).n > 0).map((c) => row(esc(c.name), `course:${c.key}`, opts.lens === `course:${c.key}`, num(lensFacts(k, `course:${c.key}`).n), 'sub', (c.to ? rangeLabel(c.from, c.to) : `since ${shortDay(c.from)}`) + (!quiet && lensFacts(k, `course:${c.key}`).short ? ` · ${lensFacts(k, `course:${c.key}`).short} not given in full` : ''))).join('');
     rows += o('Weight', 'weight_check') + o('Other', 'other');
-    rows += `<div class="sl gapt">What the record holds</div>` + row('Photographed', 'photographed', opts.lens === 'photographed', num(w.photo), '', !quiet && w.unread ? `${w.unread} not read` : '') + row('With a note', 'noted', opts.lens === 'noted', num(w.note));
+    rows += `<div class="sl gapt">Photos and notes</div>` + row('Photographed', 'photographed', opts.lens === 'photographed', num(w.photo), '', !quiet && w.unread ? `${w.unread} not read` : '') + row('With a note', 'noted', opts.lens === 'noted', num(w.note));
     rows += `<div class="sl gapt">The daily look</div>` + row('Noticed', 'check_in', false, null);
   } else if (kind === 'when') {
-    label = 'Show events from';
+    label = 'Date range';
     const o = (key, sub) => row(esc(WINDOWS[key].name), key, k === key, num(lensFacts(key, opts.lens).n.toLocaleString('en-US')), '', sub);
     rows = o('all', `since ${shortDay(RECORD_START)}`) + o('today') + o('7d') + o('14d') + o('30d') + o('trial', shortDay(WINDOWS.trial.anchor)) + o('visit', shortDay(WINDOWS.visit.anchor)) + `<div class="sl gapt">${YEAR}</div>` + o('sep') + o('aug') + o('jul') + o('jun') + o('may', `from ${shortDay(RECORD_START)}`);
   } else if (kind === 'pets') {
@@ -1465,10 +1489,10 @@ function sheetHtml(kind, opts) {
       : `Logged in ${W.name}`;
     const whenCap = !lens ? 'Everything logged, in each window'
       : lens.startsWith('course:') || lens === 'medication' ? `${lensLabel(lens)}, logged in each window` // CUL-1193: never "doses"
-      : lens === 'photographed' ? 'Photographed rows in each window'
-      : lens === 'noted' ? 'Rows with a note in each window'
+      : lens === 'photographed' ? 'Logged with a photo, in each window'
+      : lens === 'noted' ? 'Logged with a note, in each window'
       : `${PLURAL[lens].replace(/^./, (c) => c.toUpperCase())} logged in each window`;
-    const text = quiet ? 'Search finds; it never counts.' : kind === 'type' ? typeCap : whenCap;
+    const text = quiet ? 'No count here, because search reads names, not ingredients.' : kind === 'type' ? typeCap : whenCap;
     if (text) cap = `<div class="scap">${esc(text)}</div>`;
   }
   return `<div class="sheetwrap on" data-sheet><button type="button" class="scrim" aria-label="Close" data-pick="close|"></button><div class="sheet" role="dialog" aria-label="${esc(label)}"><div class="grab"></div><div class="sl">${esc(label)}</div>${cap}${rows}</div></div>`;
