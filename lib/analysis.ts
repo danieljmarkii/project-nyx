@@ -182,6 +182,27 @@ export async function triggerStoolAnalysis(eventId: string): Promise<{ error: st
 // calling the teardown more than once is safe.
 export const ANALYSIS_WATCH_FALLBACK_DELAYS_MS = [8000, 20000, 40000];
 
+// Every live watch's teardown, so sign-out can stop them all (CUL-1127). A watch is
+// account state resting in JS memory: an event id held by a realtime channel and by up to
+// three fallback timers, whose owner (a detail screen, Home's day card, History's list) is
+// not guaranteed to unmount before the next account signs in. Left running, a fallback
+// tick would re-read the previous owner's event id under the next owner's session, and
+// the channel would rejoin under the next owner's token carrying that id (the CUL-642
+// identifier class: RLS refuses the rows, not the identifier). Each teardown removes
+// itself, so the set holds exactly the watches still running.
+const liveWatches = new Set<() => void>();
+
+/**
+ * Stop every analysis watch: clear its timers, mark it done so an in-flight tick runs no
+ * check, and remove its channel. Called by `wipeLocalSession` before its first await; the
+ * component that started a watch may still call its own teardown later, which is a no-op
+ * (the teardown is idempotent). `onGiveUp` is NOT called: a sign-out is not a read that
+ * failed to land, and nothing on the next account's screen should say it was.
+ */
+export function cancelAllAnalysisWatches(): void {
+  for (const finish of [...liveWatches]) finish();
+}
+
 export function watchAnalysisRow(
   eventId: string,
   check: () => Promise<boolean>,
@@ -194,9 +215,11 @@ export function watchAnalysisRow(
   const finish = () => {
     if (done) return;
     done = true;
+    liveWatches.delete(finish);
     timers.forEach(clearTimeout);
     if (channel) supabase.removeChannel(channel);
   };
+  liveWatches.add(finish);
 
   // A single reconcile attempt: re-read, and resolve or (on the last fallback)
   // give up. `isLast` marks the final scheduled fallback so the give-up fires

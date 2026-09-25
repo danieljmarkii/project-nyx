@@ -17,6 +17,8 @@ import { clearAppointmentAsked } from './appointmentAsked';
 import { clearLookWithheld } from './lookWithheld';
 import { clearObservationFold } from './observationFold';
 import { cancelPendingSignalRegens } from './signal';
+import { cancelAllAnalysisWatches } from './analysis';
+import { supabase } from './supabase';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 
 /**
@@ -122,6 +124,25 @@ export async function wipeLocalSession(): Promise<void> {
   // Same FR-9 parity rule as the App Group / moment-store / trial-cache clears below:
   // wipe every place account state rests, not just SQLite.
   cancelPendingSignalRegens();
+  // CUL-1127 (rls-privacy-reviewer): realtime channels are account state too, and nothing
+  // closed them. Each is a socket subscription joined under the signing-out owner's token
+  // and filtered on one of their row ids, and its owner (a screen) is not guaranteed to
+  // unmount before the next account signs in; the socket would then rejoin every channel
+  // under the NEW owner's token, carrying the previous owner's ids to the server. RLS
+  // refuses the rows; it does not refuse the identifier (CUL-642's class).
+  //
+  // Two halves, in this order. The analysis watches first and synchronously, before the
+  // first await, like the Signal timers above: each holds fallback timers that would
+  // otherwise tick mid-teardown and re-read an event under whichever session is current
+  // (the save each tick makes is already fenced by the sign-out epoch, `refreshReadCopy`).
+  // Then every channel, whoever opened it — the food screen's extraction channel, and any
+  // added later — so the teardown does not depend on a registry each new channel must
+  // remember to join. NOT awaited: each unsubscribe waits on the server's reply (up to the
+  // client's timeout offline), and a sign-out must never wait on the network. The wipe
+  // below does not depend on the socket; a failure is logged, never thrown.
+  cancelAllAnalysisWatches();
+  supabase.removeAllChannels().catch((e: unknown) =>
+    console.warn('[session] closing realtime channels failed:', e));
   await clearLocalData().catch((e) => console.warn('[session] local wipe failed:', e));
   // B-290 (FR-9 parity): the App Group container is OUTSIDE the app sandbox and
   // holds account data on a Home Screen surface — per-pet snapshots and any

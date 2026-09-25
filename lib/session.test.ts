@@ -10,6 +10,11 @@ jest.mock('./sync', () => ({
   // teardown test can run the REAL debounce → regen path and observe it at the wire.
   syncPendingEvents: jest.fn().mockResolvedValue(undefined),
   syncPendingMeals: jest.fn().mockResolvedValue(undefined),
+  // lib/analysis's watch saves each tick's verdict through this before its check
+  // (HV-5). Stubbed so the CUL-1127 teardown test can run a REAL watch and observe
+  // whether a tick reaches the wire after the wipe.
+  ensureEventAttachmentsSynced: jest.fn().mockResolvedValue(undefined),
+  refreshReadCopy: jest.fn().mockResolvedValue(false),
 }));
 jest.mock('./db', () => ({
   clearLocalData: jest.fn().mockResolvedValue(undefined),
@@ -32,9 +37,24 @@ jest.mock('./notifications', () => ({
 // the client only — the two teardown functions themselves run for real below
 // (one is in-memory, one is AsyncStorage-backed), which is the same split the
 // note above describes.
-jest.mock('./supabase', () => ({
-  supabase: { functions: { invoke: jest.fn().mockResolvedValue({ error: null }) } },
-}));
+// CUL-1127: the realtime half, so the teardown test can open a real analysis watch's
+// channel and see what closes it.
+jest.mock('./supabase', () => {
+  const channel = jest.fn((name: string) => {
+    const ch: Record<string, unknown> = { name };
+    ch.on = jest.fn(() => ch);
+    ch.subscribe = jest.fn(() => ch);
+    return ch;
+  });
+  return {
+    supabase: {
+      functions: { invoke: jest.fn().mockResolvedValue({ error: null }) },
+      channel,
+      removeChannel: jest.fn().mockResolvedValue('ok'),
+      removeAllChannels: jest.fn().mockResolvedValue([]),
+    },
+  };
+});
 
 import { wipeLocalSession, flushForSignOut, unsentSignOutWarning } from './session';
 import { notifySignedOut, flushPendingForSignOut } from './sync';
@@ -52,6 +72,8 @@ import { hasPlayedArrival, markArrivalPlayed } from './signalArrival';
 import { readFoldEntries, writeFoldEntries } from './signalFold';
 import { readObservationFold, setObservationFold } from './observationFold';
 import { triggerSignalRegenDebounced } from './signal';
+import { watchAnalysisRow, ANALYSIS_WATCH_FALLBACK_DELAYS_MS } from './analysis';
+import { refreshReadCopy } from './sync';
 import { supabase } from './supabase';
 import { useSyncStore } from '../store/syncStore';
 
@@ -303,6 +325,96 @@ describe('wipeLocalSession — the Signal regen teardown (CUL-642)', () => {
     expect(invoke).toHaveBeenCalledWith('generate-signal', {
       body: { petId: 'pet-of-account-a' },
     });
+  });
+});
+
+describe('wipeLocalSession closes realtime and stops every analysis watch (CUL-1127)', () => {
+  // The leak this closes (rls-privacy-reviewer): a realtime channel is joined under the
+  // signing-out owner's token and filtered on one of their event ids, and its owner (a
+  // record screen, Home's day card, History's list) need not unmount before the next
+  // account signs in. The socket then rejoins under the NEXT owner's token with the
+  // previous owner's id, and the watch's fallback timers re-read that event under the
+  // next session. RLS refuses the rows; it does not refuse the identifier.
+  //
+  // Observed at the wire, with a control, as the regen test above is: the watch's tick
+  // calls `refreshReadCopy` (its save to the phone's copy) before its check, so a tick
+  // that fires after the wipe is a call to that function.
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  });
+
+  it('closes every channel, whoever opened it', async () => {
+    const removeAll = supabase.removeAllChannels as jest.Mock;
+    removeAll.mockClear();
+    await wipeLocalSession();
+    expect(removeAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('a live watch cannot tick, check or give up after the wipe, and its channel is removed', async () => {
+    jest.useFakeTimers();
+    const read = refreshReadCopy as jest.Mock;
+    read.mockClear();
+    const check = jest.fn().mockResolvedValue(false);
+    const onGiveUp = jest.fn();
+    watchAnalysisRow('event-of-account-a', check, onGiveUp);
+    const ch = (supabase.channel as jest.Mock).mock.results.at(-1)?.value;
+
+    await wipeLocalSession();
+    expect(supabase.removeChannel).toHaveBeenCalledWith(ch);
+
+    await jest.advanceTimersByTimeAsync(ANALYSIS_WATCH_FALLBACK_DELAYS_MS.at(-1)! + 1000);
+    expect(read).not.toHaveBeenCalled();
+    expect(check).not.toHaveBeenCalled();
+    // A sign-out is not a read that failed to land: nothing says so.
+    expect(onGiveUp).not.toHaveBeenCalled();
+  });
+
+  it('the SAME watch DOES tick without the wipe — the control', async () => {
+    jest.useFakeTimers();
+    const read = refreshReadCopy as jest.Mock;
+    read.mockClear();
+    const check = jest.fn().mockResolvedValue(false);
+    const teardown = watchAnalysisRow('event-of-account-a', check, jest.fn());
+
+    await jest.advanceTimersByTimeAsync(ANALYSIS_WATCH_FALLBACK_DELAYS_MS[0]);
+    expect(read).toHaveBeenCalledWith('event-of-account-a');
+    expect(check).toHaveBeenCalled();
+    teardown();
+  });
+
+  it('stops the watch BEFORE the first await, so a slow wipe cannot let a tick through', async () => {
+    // The Signal-timer ordering rule: a tick that fires while `clearLocalData` is still
+    // running would re-read mid-teardown. Hold the wipe open across a fallback delay.
+    jest.useFakeTimers();
+    const read = refreshReadCopy as jest.Mock;
+    read.mockClear();
+    let release: () => void = () => {};
+    (clearLocalData as jest.Mock).mockImplementationOnce(
+      () => new Promise<void>((resolve) => { release = resolve; }),
+    );
+    const check = jest.fn().mockResolvedValue(false);
+    watchAnalysisRow('event-of-account-a', check, jest.fn());
+
+    const wiping = wipeLocalSession();
+    expect(supabase.removeAllChannels).toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(ANALYSIS_WATCH_FALLBACK_DELAYS_MS[0] + 1000);
+    expect(read).not.toHaveBeenCalled();
+    expect(check).not.toHaveBeenCalled();
+
+    release();
+    await wiping;
+  });
+
+  it('a channel that fails to close never blocks the wipe', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    (supabase.removeAllChannels as jest.Mock).mockRejectedValueOnce(new Error('socket gone'));
+    (clearLocalData as jest.Mock).mockClear();
+    await wipeLocalSession();
+    await Promise.resolve();
+    expect(clearLocalData).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith('[session] closing realtime channels failed:', expect.any(Error));
+    warn.mockRestore();
   });
 });
 
