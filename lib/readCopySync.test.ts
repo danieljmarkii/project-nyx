@@ -1,11 +1,13 @@
 // The sync layer's two doors onto the read's copy (HV-5 / CUL-1162): the hydrate step
 // `hydrateFromCloud` runs every cycle, and `refreshReadCopy`, which saves a read the
 // moment it lands on this device. What is pinned here is the sync layer's half only —
-// the session check, the sign-out epoch handed to the writer, and that neither door
+// the two session checks, the sign-out epoch handed to the writer, and that neither door
 // can throw into its caller. The copy's own SQL is `lib/readCopy.test.ts`'s, on a real
-// engine; here it is mocked so the epoch it receives can be driven by hand.
+// engine; here it is mocked so the epoch it receives can be driven by hand. The app's
+// session is the REAL store (`store/authStore.ts`), set per test, because the §6.4 case
+// below is decided by exactly the value its recovery handler writes there.
 
-const mockPullFor = jest.fn();
+const mockPullFor = jest.fn(async (..._a: unknown[]) => 1);
 const mockPullAll = jest.fn(async () => undefined);
 let mockSession: { user: { id: string } } | null = { user: { id: 'u1' } };
 
@@ -47,12 +49,18 @@ jest.mock('./medications', () => ({
   administrationRowToRemote: jest.fn(),
 }));
 
+import type { Session } from '@supabase/supabase-js';
+import { useAuthStore } from '../store/authStore';
 import { hydrateFromCloud, notifySignedOut, refreshReadCopy } from './sync';
+
+const appSessionOf = (id: string) => ({ user: { id } }) as unknown as Session;
 
 beforeEach(() => {
   mockPullFor.mockReset();
+  mockPullFor.mockImplementation(async () => 1);
   mockPullAll.mockClear();
   mockSession = { user: { id: 'u1' } };
+  useAuthStore.getState().setSession(appSessionOf('u1'));
 });
 
 describe('refreshReadCopy — a landed read, copied at once', () => {
@@ -79,11 +87,35 @@ describe('refreshReadCopy — a landed read, copied at once', () => {
     expect(mockPullFor).not.toHaveBeenCalled();
   });
 
+  it('the §6.4 recovery swap: auth-js still live, the app’s session already gone → nothing asked, nothing written (R1)', async () => {
+    // Step 3 nulled the app's session and step 4 wiped this device (bumping the epoch),
+    // but auth-js still holds the previous account's session until step 5's exchange. A
+    // chain that settles now captures the POST-wipe epoch, so only this check stands
+    // between its landed verdict and the copy the wipe just cleared.
+    useAuthStore.getState().setSession(null);
+    notifySignedOut();
+    await expect(refreshReadCopy('ev-a')).resolves.toBe(false);
+    expect(mockPullFor).not.toHaveBeenCalled();
+  });
+
+  it('asks nothing when the app and auth-js name different accounts', async () => {
+    useAuthStore.getState().setSession(appSessionOf('someone-else'));
+    await expect(refreshReadCopy('ev-b')).resolves.toBe(false);
+    expect(mockPullFor).not.toHaveBeenCalled();
+  });
+
+  it('says whether the copy changed, which is the watch’s cue to tell Home', async () => {
+    mockPullFor.mockImplementationOnce(async () => 1);
+    await expect(refreshReadCopy('ev-c')).resolves.toBe(true);
+    mockPullFor.mockImplementationOnce(async () => 0);
+    await expect(refreshReadCopy('ev-c')).resolves.toBe(false);
+  });
+
   it('never throws into the chain or the watch that called it', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       mockPullFor.mockRejectedValueOnce(new Error('socket closed'));
-      await expect(refreshReadCopy('ev-4')).resolves.toBeUndefined();
+      await expect(refreshReadCopy('ev-4')).resolves.toBe(false);
       expect(warn).toHaveBeenCalledWith('[sync] read copy refresh failed:', expect.any(Error));
     } finally {
       warn.mockRestore();

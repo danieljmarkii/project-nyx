@@ -36,8 +36,8 @@ jest.mock('./supabase', () => {
 jest.mock('./sync', () => ({
   syncPendingEvents: jest.fn().mockResolvedValue(undefined),
   ensureEventAttachmentsSynced: jest.fn().mockResolvedValue(undefined),
-  // HV-5 (CUL-1162): the landed read's save to the phone's copy.
-  refreshReadCopy: jest.fn().mockResolvedValue(undefined),
+  // HV-5 (CUL-1162): the landed read's save to the phone's copy; true when it changed it.
+  refreshReadCopy: jest.fn().mockResolvedValue(false),
 }));
 
 import {
@@ -58,10 +58,13 @@ import {
   claimAnalysisChain,
   awaitAnalysisChain,
   watchAnalysisRow,
+  analysisChainOutstanding,
   ANALYSIS_WATCH_FALLBACK_DELAYS_MS,
 } from './analysis';
+import { onAnalysisChainClaimed } from './analysisChain';
 import { supabase } from './supabase';
 import { refreshReadCopy } from './sync';
+import { useSyncStore } from '../store/syncStore';
 
 // Grab a typed handle to the mocked invoke AFTER import (referencing it inside
 // the jest.mock factory hits a TDZ/hoisting trap).
@@ -647,6 +650,58 @@ describe('analysis-chain claim (CUL-801)', () => {
   });
 });
 
+// ── Home hears about every chain, including one it never sampled (F1 on #912) ──
+// Home samples the working fact when it reads and rereads on the settle of a chain it
+// sampled. A chain claimed after that sample was invisible to it, so every claim is
+// announced, and `lib/analysis.ts` turns the announcement into the tick Home rereads on.
+describe('a claimed chain is announced, and Home hears it (F1 on #912)', () => {
+  const tick = () => useSyncStore.getState().hydrationTick;
+
+  it('every new claim moves hydrationTick once; a second claim of the same chain and its settle do not', () => {
+    const before = tick();
+    const claim = claimAnalysisChain('ev-f1-claim');
+    expect(claim).not.toBeNull();
+    expect(tick()).toBe(before + 1);
+    expect(claimAnalysisChain('ev-f1-claim')).toBeNull();
+    claim?.settle(true);
+    expect(tick()).toBe(before + 1);
+  });
+
+  it('a trigger that claims its own chain announces it', async () => {
+    mockInvoke.mockReset().mockResolvedValue({ error: null });
+    const before = tick();
+    await triggerVomitAnalysis('ev-f1-trigger');
+    expect(tick()).toBe(before + 1);
+  });
+
+  it('a listener runs with the chain already outstanding, and unsubscribes', () => {
+    const seen: boolean[] = [];
+    const off = onAnalysisChainClaimed((id) => seen.push(analysisChainOutstanding(id)));
+    claimAnalysisChain('ev-f1-listener-a')?.settle(false);
+    off();
+    claimAnalysisChain('ev-f1-listener-b')?.settle(false);
+    expect(seen).toEqual([true]);
+  });
+
+  it('a listener that throws cannot fail the claim that keeps a photo to one read', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const off = onAnalysisChainClaimed(() => {
+      throw new Error('listener broke');
+    });
+    try {
+      const claim = claimAnalysisChain('ev-f1-throws');
+      expect(claim).not.toBeNull();
+      expect(analysisChainOutstanding('ev-f1-throws')).toBe(true);
+      expect(claimAnalysisChain('ev-f1-throws')).toBeNull();
+      expect(warn).toHaveBeenCalledWith('[analysis-chain] a claim listener failed:', expect.any(Error));
+      claim?.settle(false);
+    } finally {
+      off();
+      warn.mockRestore();
+    }
+  });
+});
+
 // ── A landed read reaches the phone's copy before the chain settles (HV-5) ─────
 // Home rereads the verdict when the chain settles, from the copy, and never through a
 // watch. So the ORDER is the contract: a waiter released by the settle must find the
@@ -655,7 +710,7 @@ describe('analysis-chain claim (CUL-801)', () => {
 describe('the chain saves its read to the phone’s copy before it settles (HV-5 / CUL-1162)', () => {
   beforeEach(() => {
     mockInvoke.mockReset();
-    mockRefreshReadCopy.mockReset().mockResolvedValue(undefined);
+    mockRefreshReadCopy.mockReset().mockResolvedValue(false);
   });
 
   it.each([
@@ -667,7 +722,7 @@ describe('the chain saves its read to the phone’s copy before it settles (HV-5
     // checked the call alone, and a settle-then-save mutant passed it).
     let saved = false;
     mockRefreshReadCopy.mockImplementation(
-      () => new Promise<void>((r) => setTimeout(() => { saved = true; r(); }, 0)),
+      () => new Promise<boolean>((r) => setTimeout(() => { saved = true; r(true); }, 0)),
     );
     let release!: (v: { error: null }) => void;
     mockInvoke.mockReturnValue(new Promise((r) => { release = r; }));
@@ -777,7 +832,7 @@ describe('watchAnalysisRow — realtime watch (CUL-171)', () => {
     // check must not run until it has.
     let saved = false;
     mockRefreshReadCopy.mockReset().mockImplementation(
-      () => new Promise<void>((r) => setTimeout(() => { saved = true; r(); }, 0)),
+      () => new Promise<boolean>((r) => setTimeout(() => { saved = true; r(true); }, 0)),
     );
     let savedAtCheck: boolean | null = null;
     const check = jest.fn(async () => { savedAtCheck = saved; return true; });
@@ -789,20 +844,44 @@ describe('watchAnalysisRow — realtime watch (CUL-171)', () => {
     expect(mockRefreshReadCopy).toHaveBeenCalledWith('ev-copy-watch');
     expect(check).toHaveBeenCalledTimes(1);
     expect(savedAtCheck).toBe(true);
-    mockRefreshReadCopy.mockReset().mockResolvedValue(undefined);
+    mockRefreshReadCopy.mockReset().mockResolvedValue(false);
   });
 
   it('a watch torn down while its tick is saving runs no check (HV-5)', async () => {
-    let finishSave!: () => void;
-    mockRefreshReadCopy.mockReset().mockReturnValue(new Promise<void>((r) => { finishSave = r; }));
+    let finishSave!: (changed: boolean) => void;
+    mockRefreshReadCopy.mockReset().mockReturnValue(new Promise<boolean>((r) => { finishSave = r; }));
     const check = jest.fn().mockResolvedValue(false);
     const teardown = watchAnalysisRow('ev-copy-teardown', check, jest.fn());
     chans().at(-1)!.subCb!('SUBSCRIBED');
     teardown();
-    finishSave();
+    finishSave(false);
     await flush();
     expect(check).not.toHaveBeenCalled();
-    mockRefreshReadCopy.mockReset().mockResolvedValue(undefined);
+    mockRefreshReadCopy.mockReset().mockResolvedValue(false);
+  });
+
+  it('tells Home when its save CHANGED the copy, and only then, even when torn down mid-save (F1 on #912)', async () => {
+    const tick = () => useSyncStore.getState().hydrationTick;
+    // A save that changed nothing: no tick.
+    mockRefreshReadCopy.mockReset().mockResolvedValue(false);
+    const quiet = watchAnalysisRow('ev-f1-quiet', jest.fn().mockResolvedValue(true), jest.fn());
+    let before = tick();
+    chans().at(-1)!.subCb!('SUBSCRIBED');
+    await flush();
+    expect(tick()).toBe(before);
+    quiet();
+    // A save that changed the copy: one tick, even though the watch was torn down while
+    // it was saving (the copy moved either way, and Home reads the copy).
+    let finishSave!: (changed: boolean) => void;
+    mockRefreshReadCopy.mockReset().mockReturnValue(new Promise<boolean>((r) => { finishSave = r; }));
+    const moved = watchAnalysisRow('ev-f1-moved', jest.fn().mockResolvedValue(true), jest.fn());
+    before = tick();
+    chans().at(-1)!.subCb!('SUBSCRIBED');
+    moved();
+    finishSave(true);
+    await flush();
+    expect(tick()).toBe(before + 1);
+    mockRefreshReadCopy.mockReset().mockResolvedValue(false);
   });
 
   it('teardown removes the channel and is safe to call twice', () => {

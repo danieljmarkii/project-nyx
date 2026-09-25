@@ -42,6 +42,7 @@ import {
   medicationLines,
   readLoggedDays,
   readSignalEpisodes,
+  readTileVerdicts,
   readVerdicts,
   safeLabel,
   trialLine,
@@ -530,6 +531,48 @@ describe('readVerdicts — the phone’s copy, through the one read predicate (H
   });
 });
 
+describe('readTileVerdicts — a tile is read across its whole bout (F3 on #912)', () => {
+  const copyWith = (rows: ReturnType<typeof verdictRow>[]) =>
+    mockGetAllAsync.mockImplementation((sql: string) => Promise.resolve(/FROM event_ai_verdicts/.test(sql) ? rows : []));
+  beforeEach(() => {
+    mockGetAllAsync.mockReset();
+    mockFrom.mockReset();
+  });
+
+  it('two photographed rows, the tile’s calm and the other’s escalated: the tile carries the rose', async () => {
+    copyWith([verdictRow('a', 'completed', 'monitor'), verdictRow('a2', 'completed', 'worth_a_call')]);
+    expect(await readTileVerdicts([{ eventId: 'a', boutIds: ['a', 'a2'] }], 'vomit')).toEqual({ a: 'worth_a_call' });
+  });
+
+  it('the tile’s photo unread and a photoless row’s contextual read escalated: the tile carries the rose', async () => {
+    copyWith([verdictRow('first', 'completed', 'worth_a_call')]);
+    expect(await readTileVerdicts([{ eventId: 'photo', boutIds: ['first', 'photo'] }], 'vomit')).toEqual({ photo: 'worth_a_call' });
+  });
+
+  it('nothing calmer crosses rows: another row’s calm read never speaks for this photo', async () => {
+    copyWith([verdictRow('first', 'completed', 'monitor')]);
+    expect(await readTileVerdicts([{ eventId: 'photo', boutIds: ['first', 'photo'] }], 'vomit')).toEqual({ photo: null });
+    copyWith([verdictRow('photo', 'completed', 'monitor'), verdictRow('first', 'completed', 'not_enough_to_say')]);
+    expect(await readTileVerdicts([{ eventId: 'photo', boutIds: ['first', 'photo'] }], 'vomit')).toEqual({ photo: 'monitor' });
+  });
+
+  it('a tile with no bout listed is its own row, and every row is read once, locally', async () => {
+    copyWith([verdictRow('solo', 'completed', 'monitor'), verdictRow('x2', 'failed', 'worth_a_call')]);
+    const out = await readTileVerdicts(
+      [
+        { eventId: 'solo' },
+        { eventId: 'x1', boutIds: ['x1', 'x2'] },
+      ],
+      'vomit',
+    );
+    expect(out).toEqual({ solo: 'monitor', x1: 'worth_a_call' });
+    const copyCalls = mockGetAllAsync.mock.calls.filter(([sql]) => /FROM event_ai_verdicts/.test(sql as string));
+    expect(copyCalls).toHaveLength(1);
+    expect([...(copyCalls[0][1] as string[])].sort()).toEqual(['solo', 'x1', 'x2']);
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+});
+
 describe('the local reads', () => {
   const noon = (y: number, m: number, d: number, h = 12, min = 0) => new Date(y, m - 1, d, h, min).toISOString();
 
@@ -568,6 +611,9 @@ describe('the local reads', () => {
     expect(bout?.photo).toEqual({ localUri: null, storagePath: 'p/a2.jpg' });
     expect(b?.minutesSinceMeal).toBeNull();
     expect(b?.photo).toEqual({ localUri: 'file:///b.jpg', storagePath: 'p/b.jpg' });
+    // Each episode carries its whole bout, so its tile can be read across every row of it.
+    expect(bout?.boutIds).toEqual(['a', 'a2']);
+    expect(b?.boutIds).toEqual(['b']);
     // The attachment read is scoped to the pet AND EVERY row of every bout.
     const [sql, params] = mockGetAllAsync.mock.calls[1] as [string, unknown[]];
     expect(sql).toMatch(/event_attachments/);
@@ -673,6 +719,33 @@ describe('loadSignalScreen', () => {
     expect(doseCall[0]).toMatch(/substr\(e\.occurred_at, 1, 19\) >= substr\(\?, 1, 19\)/);
     expect(Date.parse(doseCall[1][2] as string)).toBeLessThan(Date.parse(`${today}T00:00:00Z`) - 100 * 86_400_000);
     expect(mockLoadTrialPredicateFacts).toHaveBeenCalledWith(expect.objectContaining({ id: 'pet-1', name: 'Nyx', species: 'cat' }), expect.any(Number));
+  });
+
+  it('a tile carries the rose its bout holds on another row, and reads it off the phone (F3 on #912)', async () => {
+    mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(chronicity())] });
+    mockLoadTrialPredicateFacts.mockResolvedValue({ trial: null, stoppedForRefusal: false, facts: null });
+    // A vomit logged without a photo, its contextual read escalated; re-logged twenty
+    // minutes later WITH the photo, whose own read said monitor. One bout, one tile.
+    const first = new Date(Date.now() - 20 * 60_000).toISOString();
+    const relog = new Date().toISOString();
+    mockGetAllAsync.mockImplementation((sql: string) => {
+      if (/FROM events\s+WHERE pet_id = \? AND event_type/.test(sql))
+        return Promise.resolve([
+          { id: 'v0', occurred_at: first, occurred_at_confidence: 'witnessed' },
+          { id: 'v1', occurred_at: relog, occurred_at_confidence: 'witnessed' },
+        ]);
+      if (/event_attachments/.test(sql)) return Promise.resolve([{ event_id: 'v1', local_uri: null, storage_path: 'p/v1.jpg' }]);
+      if (/FROM event_ai_verdicts/.test(sql))
+        return Promise.resolve([verdictRow('v1', 'completed', 'monitor'), verdictRow('v0', 'completed', 'worth_a_call')]);
+      return Promise.resolve([]);
+    });
+    mockFrom.mockReset();
+    const out = await loadSignalScreen('pet-1', 'symptom_chronicity:vomit');
+    expect(out.status).toBe('ready');
+    if (out.status !== 'ready') return;
+    expect(out.model.episodes?.tiles).toHaveLength(1);
+    expect(out.model.episodes?.tiles[0]).toMatchObject({ eventId: 'v1', verdict: 'worth_a_call' });
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 
   it('a trial that is not running today gives no trial window, and a failed trial read does not fail the screen', async () => {

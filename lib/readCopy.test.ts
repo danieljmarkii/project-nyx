@@ -3,6 +3,8 @@
 // module makes lives in SQL: the four-column table, the upsert whose WHERE decides last
 // write wins on parsed instants (C-40), and the pull whose watermark only moves when a
 // count proves it complete (C-42). A mocked database would pass all of them over a typo.
+// The pull's own promise, that no row it misses can sort behind the watermark, is driven
+// against a table that CHANGES between pages (the reviews on #912).
 // node:sqlite, require()'d to stay off the babel/jest-expo path (the monthReads
 // precedent).
 
@@ -22,7 +24,9 @@ let mockDb: Db;
 const mockAdapter = {
   getAllAsync: async <T,>(sql: string, params: unknown[] = []) => mockDb.prepare(sql).all(...params) as T[],
   getFirstAsync: async <T,>(sql: string, params: unknown[] = []) => (mockDb.prepare(sql).get(...params) ?? null) as T | null,
-  runAsync: async (sql: string, params: unknown[] = []) => mockDb.prepare(sql).run(...params),
+  runAsync: async (sql: string, params: unknown[] = []) => ({
+    changes: Number((mockDb.prepare(sql).run(...params) as { changes: number | bigint }).changes),
+  }),
 };
 jest.mock('./db', () => ({
   getDb: () => mockAdapter,
@@ -42,10 +46,13 @@ jest.mock('./db', () => ({
 }));
 
 // ── A fake PostgREST over `event_ai_analysis` ─────────────────────────────────
-// It honours exactly the calls the module makes (select with an exact head count, gte,
-// order, range, eq, maybeSingle), PROJECTS each row onto the columns asked for, and can
-// cap a page below the size asked (the server's `max-rows`), fail a call, or hold a page
-// until a test releases it.
+// It honours the calls a pull can make (select with an exact head count, gte, gt, eq,
+// the keyset `or`, order, limit, range, maybeSingle), compares instants to the
+// MICROSECOND as Postgres does (a JS Date stops at the millisecond), PROJECTS each row
+// onto the columns asked for, and can cap a page below the size asked (the server's
+// `max-rows`), fail a call, hold a page until a test releases it, change the table
+// between pages, or ignore the cursor. It still speaks offsets (`range`) on purpose: the
+// offset pull this module replaced can be run against these tests, and fails them.
 interface ServerRow {
   event_id: string;
   status: string;
@@ -58,28 +65,75 @@ interface Query {
   cols: string;
   head: boolean;
   gte: string | null;
+  gt: [string, string][];
   eq: string | null;
+  or: string | null;
+  order: string[];
+  limit: number | null;
   range: [number, number] | null;
 }
 let mockServer: ServerRow[] = [];
 let mockMaxRows = Number.POSITIVE_INFINITY;
 let mockFail: (q: Query) => string | null = () => null;
 let mockHold: ((q: Query) => Promise<void> | null) | null = null;
-/** The Nth paged request (1-based) answers `[]` with no error, however many rows remain:
- *  the "data:[] under load" answer `reconcileDeletedMeals` documents. */
+/** Runs before the Nth list request (1-based) is answered: the table changing between
+ *  pages, while the app sat suspended or another device wrote. */
+let mockBeforePage: ((n: number) => void) | null = null;
+/** The Nth list request answers `[]` with no error, however many rows remain: the
+ *  "data:[] under load" answer `reconcileDeletedMeals` documents. */
 let mockEmptyPage: number | null = null;
+/** A server that drops the keyset filter and answers from the top again. */
+let mockIgnoreCursor = false;
 let mockPagesServed = 0;
 const mockQueries: Query[] = [];
 
-function mockAnswer(q: Query): { data: unknown; error: { message: string } | null; count?: number | null } {
+/** A list read: what the pull pages through (not the count, not a read by id). */
+const isPage = (q: Query) => !q.head && q.eq === null;
+
+/** An instant in microseconds since the epoch: exact in a double until the year 2255. */
+function mockMicros(ts: string): number {
+  const m = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$/.exec(ts);
+  if (!m) throw new Error(`fake PostgREST: not a timestamptz: ${ts}`);
+  return Date.parse(`${m[1]}${m[3]}`) * 1000 + Number((m[2] ?? '').padEnd(6, '0'));
+}
+const KEYSET = /^updated_at\.gt\.([^,()]+),and\(updated_at\.eq\.([^,()]+),event_id\.gt\.([^,()]+)\)$/;
+function mockAfterCursor(filter: string): (r: ServerRow) => boolean {
+  const m = KEYSET.exec(filter);
+  if (!m || m[1] !== m[2]) throw new Error(`fake PostgREST: unexpected or() filter: ${filter}`);
+  const at = mockMicros(m[1]);
+  const id = m[3];
+  return (r) => mockMicros(r.updated_at) > at || (mockMicros(r.updated_at) === at && r.event_id > id);
+}
+function mockCompare(a: ServerRow, b: ServerRow, order: string[]): number {
+  for (const col of order) {
+    const c =
+      col === 'updated_at'
+        ? mockMicros(a.updated_at) - mockMicros(b.updated_at)
+        : a.event_id < b.event_id
+          ? -1
+          : a.event_id > b.event_id
+            ? 1
+            : 0;
+    if (c !== 0) return c;
+  }
+  return 0;
+}
+
+function mockAnswer(q: Query, pageNo: number | null): { data: unknown; error: { message: string } | null; count?: number | null } {
   const failure = mockFail(q);
   if (failure) return { data: null, error: { message: failure }, count: null };
-  let rows = mockServer.filter((r) => (q.gte ? Date.parse(r.updated_at) >= Date.parse(q.gte) : true));
+  let rows = mockServer.filter((r) => (q.gte ? mockMicros(r.updated_at) >= mockMicros(q.gte) : true));
+  for (const [col, v] of q.gt) {
+    rows = rows.filter((r) => (col === 'updated_at' ? mockMicros(r.updated_at) > mockMicros(v) : r.event_id > v));
+  }
   if (q.eq) rows = rows.filter((r) => r.event_id === q.eq);
   if (q.head) return { data: null, error: null, count: rows.length };
-  if (q.range && ++mockPagesServed === mockEmptyPage) return { data: [], error: null };
-  rows = [...rows].sort((a, b) => (a.event_id < b.event_id ? -1 : a.event_id > b.event_id ? 1 : 0));
-  if (q.range) rows = rows.slice(q.range[0], q.range[1] + 1).slice(0, mockMaxRows);
+  if (pageNo !== null && pageNo === mockEmptyPage) return { data: [], error: null };
+  if (q.or && !mockIgnoreCursor) rows = rows.filter(mockAfterCursor(q.or));
+  rows = [...rows].sort((a, b) => mockCompare(a, b, q.order));
+  if (q.range) rows = rows.slice(q.range[0], q.range[1] + 1);
+  if (q.limit !== null) rows = rows.slice(0, q.limit);
+  if (pageNo !== null) rows = rows.slice(0, mockMaxRows);
   const cols = q.cols.split(',').map((c) => c.trim());
   const projected = rows.map((r) => Object.fromEntries(cols.map((c) => [c, (r as unknown as Record<string, unknown>)[c]])));
   return { data: projected, error: null };
@@ -89,12 +143,14 @@ jest.mock('./supabase', () => ({
   supabase: {
     from: (table: string) => {
       if (table !== 'event_ai_analysis') throw new Error(`unexpected table ${table}`);
-      const q: Query = { cols: '', head: false, gte: null, eq: null, range: null };
+      const q: Query = { cols: '', head: false, gte: null, gt: [], eq: null, or: null, order: [], limit: null, range: null };
       const run = async () => {
+        const pageNo = isPage(q) ? ++mockPagesServed : null;
+        if (pageNo !== null) mockBeforePage?.(pageNo);
         // Snapshot the answer when the request is MADE, then hold it if asked: the
         // interleaving test needs a page that left the server before a newer write.
-        const answer = mockAnswer(q);
-        mockQueries.push({ ...q });
+        const answer = mockAnswer(q, pageNo);
+        mockQueries.push({ ...q, gt: [...q.gt], order: [...q.order] });
         const held = mockHold?.(q);
         if (held) await held;
         return answer;
@@ -106,7 +162,14 @@ jest.mock('./supabase', () => ({
           return b;
         },
         gte: (_c: string, v: string) => ((q.gte = v), b),
-        order: () => b,
+        gt: (c: string, v: string) => (q.gt.push([c, v]), b),
+        or: (f: string) => ((q.or = f), b),
+        order: (c: string, opts?: { ascending?: boolean }) => {
+          if (opts?.ascending === false) throw new Error('fake PostgREST: the pull never reads descending');
+          q.order.push(c);
+          return b;
+        },
+        limit: (n: number) => ((q.limit = n), b),
         range: (f: number, t: number) => ((q.range = [f, t]), b),
         eq: (_c: string, v: string) => ((q.eq = v), b),
         maybeSingle: async () => {
@@ -126,6 +189,7 @@ import { HYDRATE_WATERMARK_OVERLAP_MS } from './hydration';
 import {
   READ_COPY_COLUMNS,
   READ_COPY_PAGE,
+  keysetAfter,
   pullReadCopies,
   pullReadCopyFor,
   readCopies,
@@ -164,7 +228,9 @@ beforeEach(() => {
   mockMaxRows = Number.POSITIVE_INFINITY;
   mockFail = () => null;
   mockHold = null;
+  mockBeforePage = null;
   mockEmptyPage = null;
+  mockIgnoreCursor = false;
   mockPagesServed = 0;
   mockQueries.length = 0;
 });
@@ -216,6 +282,16 @@ describe('writeCopies — the one statement, last write wins on parsed instants 
   it('inserts a row the copy does not hold', async () => {
     await writeCopies(mockAdapter, [row('a', '2026-09-24T10:00:00+00:00', 'worth_a_call')], never);
     expect(copyOf('a')).toMatchObject({ recommendation: 'worth_a_call' });
+  });
+
+  it('says how many rows it changed: an insert and a newer row count, a refused row does not', async () => {
+    expect(await writeCopies(mockAdapter, [row('a', '2026-09-24T10:00:00+00:00', 'monitor')], never)).toBe(1);
+    // Older, and the same instant spelled the other way: both refused, neither counted.
+    expect(await writeCopies(mockAdapter, [row('a', '2026-09-24T09:00:00+00:00', 'worth_a_call')], never)).toBe(0);
+    expect(await writeCopies(mockAdapter, [row('a', '2026-09-24T10:00:00.000Z', 'worth_a_call')], never)).toBe(0);
+    expect(
+      await writeCopies(mockAdapter, [row('a', '2026-09-24T11:00:00+00:00', 'worth_a_call'), row('b', '2026-09-24T11:00:00+00:00')], never),
+    ).toBe(2);
   });
 
   it('a strictly newer row replaces, across the two spellings of an instant', async () => {
@@ -284,21 +360,91 @@ describe('pullReadCopies — the hydrate step', () => {
     await pullReadCopies(mockAdapter, never);
     expect(copyRows()).toHaveLength(7);
     expect(watermark()).toBe('2026-09-26T10:00:00+00:00');
-    // Advanced by rows RECEIVED (0, 3, 6, 7), and ended on an EMPTY page, not a short one.
-    expect(mockQueries.filter((q) => !q.head).map((q) => q.range?.[0])).toEqual([0, 3, 6, 7]);
+    // Each page after the first asks from the last row RECEIVED, in one order, and the
+    // pull ends on an EMPTY page, not a short one.
+    const pages = mockQueries.filter(isPage);
+    expect(pages.map((q) => q.or)).toEqual([
+      null,
+      keysetAfter({ updated_at: '2026-09-22T10:00:00+00:00', event_id: 'e2' }),
+      keysetAfter({ updated_at: '2026-09-25T10:00:00+00:00', event_id: 'e5' }),
+      keysetAfter({ updated_at: '2026-09-26T10:00:00+00:00', event_id: 'e6' }),
+    ]);
+    for (const q of pages) {
+      expect(q.order).toEqual(['updated_at', 'event_id']);
+      expect(q.range).toBeNull();
+    }
     expect(READ_COPY_PAGE).toBeGreaterThan(3);
   });
 
-  it('an incremental pull asks from the watermark less the commit-skew overlap', async () => {
+  it('an incremental pull asks from the watermark less the commit-skew overlap, then from the cursor', async () => {
     mockServer = [row('a', '2026-09-24T10:00:00+00:00')];
     await pullReadCopies(mockAdapter, never);
     mockQueries.length = 0;
     mockServer.push(row('b', '2026-09-25T10:00:00+00:00', 'worth_a_call'));
     await pullReadCopies(mockAdapter, never);
     const floor = new Date(Date.parse('2026-09-24T10:00:00+00:00') - HYDRATE_WATERMARK_OVERLAP_MS).toISOString();
-    expect(mockQueries.every((q) => q.gte === floor)).toBe(true);
+    const [count, first, ...later] = mockQueries;
+    expect(count).toMatchObject({ head: true, gte: floor });
+    expect(first).toMatchObject({ head: false, gte: floor, or: null });
+    expect(later.length).toBeGreaterThan(0);
+    for (const q of later) expect(q).toMatchObject({ gte: null, or: keysetAfter({ updated_at: '2026-09-25T10:00:00+00:00', event_id: 'b' }) });
     expect(copyOf('b')).toMatchObject({ recommendation: 'worth_a_call' });
     expect(watermark()).toBe('2026-09-25T10:00:00+00:00');
+  });
+
+  it('a tie wider than a page is read to its end before the pull moves on', async () => {
+    // One instant for seven rows: a server backfill, or one transaction's rows (NOW() is
+    // the transaction's start). A cursor on the instant alone would skip t4 to t7.
+    const at = '2026-09-24T10:00:00.123456+00:00';
+    mockServer = [
+      ...['t1', 't2', 't3', 't4', 't5', 't6', 't7'].map((id) => row(id, at)),
+      row('u1', '2026-09-24T11:00:00+00:00', 'worth_a_call'),
+    ];
+    mockMaxRows = 3;
+    await pullReadCopies(mockAdapter, never);
+    expect(copyRows()).toHaveLength(8);
+    expect(copyOf('u1')).toMatchObject({ recommendation: 'worth_a_call' });
+    expect(watermark()).toBe('2026-09-24T11:00:00+00:00');
+    // The cursor inside the tie is the server's own string, microseconds and offset
+    // intact: re-spelled through a JS Date it would sit before its own row.
+    expect(mockQueries.filter(isPage)[1].or).toBe(keysetAfter({ updated_at: at, event_id: 't3' }));
+  });
+
+  it('a row deleted behind the cursor and one inserted ahead of it cost the pull nothing', async () => {
+    // The code review's trace on #912: under the offset pull this shifted `c` out of view
+    // while `f` made the count look whole, and the watermark moved past `c`.
+    mockServer = ['a', 'b', 'c', 'd', 'e'].map((id, i) => row(id, `2026-09-24T10:0${i}:00+00:00`));
+    mockMaxRows = 2;
+    mockBeforePage = (n) => {
+      if (n !== 2) return;
+      mockServer = mockServer.filter((r) => r.event_id !== 'a'); // its event's cascade
+      mockServer.push(row('f', '2026-09-24T10:30:00+00:00', 'worth_a_call')); // a new read lands
+    };
+    await pullReadCopies(mockAdapter, never);
+    for (const id of ['b', 'c', 'd', 'e', 'f']) expect(copyOf(id)).toBeDefined();
+    expect(watermark()).toBe('2026-09-24T10:30:00+00:00');
+  });
+
+  it('a row the pull already passed, re-read while the app sat suspended, still arrives', async () => {
+    // The adversarial pass's F5: `a` is received as monitor, the app is backgrounded,
+    // `a` is re-read to worth_a_call at 09:20 and `e` changes at 09:23, then the pull
+    // resumes. The offset pull never came back for `a`, and the watermark it set (09:23,
+    // less two minutes) put `a`'s new verdict behind every later pull too.
+    mockServer = ['a', 'b', 'c', 'd', 'e'].map((id, i) => row(id, `2026-09-24T09:0${i}:00+00:00`, 'monitor'));
+    mockMaxRows = 2;
+    mockBeforePage = (n) => {
+      if (n !== 2) return;
+      mockServer = mockServer.map((r) =>
+        r.event_id === 'a'
+          ? row('a', '2026-09-24T09:20:00+00:00', 'worth_a_call')
+          : r.event_id === 'e'
+            ? row('e', '2026-09-24T09:23:00+00:00', 'monitor')
+            : r,
+      );
+    };
+    await pullReadCopies(mockAdapter, never);
+    expect(copyOf('a')).toMatchObject({ recommendation: 'worth_a_call', updated_at: '2026-09-24T09:20:00+00:00' });
+    expect(watermark()).toBe('2026-09-24T09:23:00+00:00');
   });
 
   it('a pull the count cannot vouch for writes what it has and HOLDS the watermark', async () => {
@@ -310,8 +456,8 @@ describe('pullReadCopies — the hydrate step', () => {
     try {
       await pullReadCopies(mockAdapter, never);
       expect(copyRows()).toHaveLength(2);
-      // Advancing to the newest row SEEN would skip the three never received: ordered on
-      // the immutable key, the first page is not the oldest-changed one.
+      // The rows it missed all sort after its cursor, so the next pull would reach them
+      // from there as well; the count still decides, and it says the pull fell short.
       expect(watermark()).toBeNull();
       expect(warn).toHaveBeenCalledWith('[read-copy] pull incomplete, holding the watermark for the next cycle');
       // The next cycle, answered in full, completes and advances.
@@ -319,6 +465,21 @@ describe('pullReadCopies — the hydrate step', () => {
       await pullReadCopies(mockAdapter, never);
       expect(copyRows()).toHaveLength(5);
       expect(watermark()).toBe('2026-09-24T10:00:00+00:00');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('a server that ignores the cursor cannot keep the pull going', async () => {
+    mockServer = [row('a', '2026-09-24T10:00:00+00:00'), row('b', '2026-09-24T10:01:00+00:00')];
+    mockIgnoreCursor = true;
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await pullReadCopies(mockAdapter, never);
+      expect(mockQueries.filter(isPage)).toHaveLength(2);
+      expect(copyRows()).toHaveLength(2);
+      expect(watermark()).toBeNull();
+      expect(warn).toHaveBeenCalledWith('[read-copy] a page repeated rows already received; stopping the pull');
     } finally {
       warn.mockRestore();
     }
@@ -349,22 +510,41 @@ describe('pullReadCopies — the hydrate step', () => {
     expect(watermark()).toBeNull();
   });
 
+  it('a sign-out after the writes, before the watermark, leaves no watermark behind (FR-9)', async () => {
+    // A watermark written after the wipe would outlive it, and the next account's first
+    // pull would start from the previous account's place and never see its older reads.
+    mockServer = [row('a', '2026-09-24T10:00:00+00:00', 'worth_a_call')];
+    let signedOut = false;
+    const signsOutAfterWriting = {
+      getAllAsync: mockAdapter.getAllAsync,
+      runAsync: async (sql: string, params: (string | number | null)[]) => {
+        const result = await mockAdapter.runAsync(sql, params);
+        signedOut = true;
+        return result;
+      },
+    };
+    await pullReadCopies(signsOutAfterWriting, () => signedOut);
+    expect(watermark()).toBeNull();
+  });
+
   it('nothing changed since the watermark: no page is asked for', async () => {
     mockServer = [row('a', '2026-09-24T10:00:00+00:00')];
     await pullReadCopies(mockAdapter, never);
     mockServer = [];
     mockQueries.length = 0;
     await pullReadCopies(mockAdapter, never);
-    expect(mockQueries.filter((q) => !q.head)).toEqual([]);
+    expect(mockQueries.filter(isPage)).toEqual([]);
   });
 });
 
 describe('pullReadCopyFor — a read landing on this device', () => {
-  it('copies the one row, and moves no watermark', async () => {
+  it('copies the one row, says it changed the copy, and moves no watermark', async () => {
     mockServer = [row('a', '2026-09-24T10:00:00+00:00', 'worth_a_call', 'completed')];
-    await pullReadCopyFor(mockAdapter, 'a', never);
+    await expect(pullReadCopyFor(mockAdapter, 'a', never)).resolves.toBe(1);
     expect(copyOf('a')).toMatchObject({ recommendation: 'worth_a_call' });
     expect(watermark()).toBeNull();
+    // The same row again changes nothing, and says so.
+    await expect(pullReadCopyFor(mockAdapter, 'a', never)).resolves.toBe(0);
   });
 
   it('writes nothing when the server errs, holds no row, or the account signed out', async () => {
@@ -387,7 +567,7 @@ describe('pullReadCopyFor — a read landing on this device', () => {
     mockServer = [row('a', '2026-09-24T10:00:00+00:00', 'monitor')];
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    mockHold = (q) => (!q.head && q.range ? gate : null);
+    mockHold = (q) => (isPage(q) ? gate : null);
     const pulling = pullReadCopies(mockAdapter, never);
     await new Promise((r) => setTimeout(r, 0));
     // Meanwhile the re-read lands: a newer escalation, copied at once.

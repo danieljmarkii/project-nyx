@@ -31,7 +31,9 @@
 // (`readVerdictOf`, `lib/readState.ts`). They used to be the one server fetch, so offline
 // every tile said "no read yet". A copy that cannot be read leaves the episodes as "no
 // read yet" rather than failing the screen: a verdict absent from the screen is not a
-// reassurance (the tile says "no read yet"), and the record is still the record.
+// reassurance (the tile says "no read yet"), and the record is still the record. A tile
+// is read across its WHOLE bout (`readTileVerdicts`): the rose on any row of it is the
+// tile's rose, and nothing calmer crosses from one row to another.
 //
 // C-9: the pet is the FINDING's pet — the id the route carries — named through
 // `resolveRecordPetName`, never `activePet`.
@@ -88,6 +90,10 @@ export interface SignalScreenEpisode {
   /** Minutes since the preceding logged meal where the engine could time it; null where not. */
   minutesSinceMeal: number | null;
   photo: SignalScreenPhoto | null;
+  /** Every logged row the engine's re-log collapse folded into this episode, the tile's
+   *  own row among them. The loader reads the bout's verdicts from it; the builder never
+   *  does. Absent reads as the one row `eventId` names. */
+  boutIds?: readonly string[];
 }
 
 /** One delivered dose on one local day. */
@@ -494,6 +500,7 @@ export async function readSignalEpisodes(petId: string, symptomType: string): Pr
       dayKey: toLocalDayKey(new Date(e.ms)),
       minutesSinceMeal: minutesByOnset.get(e.ms) ?? null,
       photo: held ? held.photo : null,
+      boutIds: members.get(e.id) ?? [e.id],
     };
   });
 }
@@ -621,13 +628,39 @@ export async function readVerdicts(
   for (const eventId of eventIds) {
     out[eventId] = readVerdictOf({
       eventType,
-      // Only photographed episodes are asked about: the gallery is their tiles.
+      // The gallery asks about its tiles' bouts. `hasPhoto` only separates the states
+      // that carry no verdict (none, unread, off), so a photoless row of a bout is still
+      // answered truly: its verdict is null unless its read finished.
       hasPhoto: true,
       copy: copies.get(eventId),
       inFlight: analysisChainOutstanding(eventId),
       // The owner's photo-reading choice arrives with CUL-552 (HV-18).
       readingOff: false,
     }).verdict;
+  }
+  return out;
+}
+
+/**
+ * One verdict per photographed tile, read across its WHOLE bout (the adversarial pass's
+ * F3 on #912). A tile shows one photo, but its bout may hold a second photographed row,
+ * or a photoless row whose contextual read escalated (a cat that has not eaten, a second
+ * vomit that hour); reading the tile's row alone put "Keep an eye out", or "no read yet",
+ * over a rose sitting one row away. So the rose on ANY row of the bout is the tile's
+ * (presence escalates: the month's own "the worse verdict wins"), and anything calmer
+ * stays the tile's own row's, because a calm or missing read of another row says nothing
+ * about this photo. A photoless row is asked about through the same predicate: its
+ * verdict is null whenever it is not a finished read, whatever `hasPhoto` says.
+ */
+export async function readTileVerdicts(
+  tiles: readonly Pick<SignalScreenEpisode, 'eventId' | 'boutIds'>[],
+  eventType: string,
+): Promise<Record<string, EpisodeVerdict | null>> {
+  const boutOf = (t: Pick<SignalScreenEpisode, 'eventId' | 'boutIds'>) => [t.eventId, ...(t.boutIds ?? [])];
+  const each = await readVerdicts([...new Set(tiles.flatMap(boutOf))], eventType);
+  const out: Record<string, EpisodeVerdict | null> = {};
+  for (const tile of tiles) {
+    out[tile.eventId] = boutOf(tile).some((id) => each[id] === 'worth_a_call') ? 'worth_a_call' : (each[tile.eventId] ?? null);
   }
   return out;
 }
@@ -661,10 +694,10 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   const fromIso = new Date((indexOf(before.startDay) - 1) * 86_400_000).toISOString();
   const doses = await readDoseDays(petId, fromIso).catch(() => [] as SignalDoseDay[]);
 
-  const photographedIds = episodes.filter((e) => e.photo != null).map((e) => e.eventId);
+  const photographed = episodes.filter((e) => e.photo != null);
   // Every episode is the finding's symptom (`readSignalEpisodes` reads one type), so the
-  // symptom is each photographed row's type.
-  const verdicts = photographedIds.length > 0 && symptom ? await readVerdicts(photographedIds, symptom) : {};
+  // symptom is every bout row's type.
+  const verdicts = photographed.length > 0 && symptom ? await readTileVerdicts(photographed, symptom) : {};
 
   const model = buildSignalScreenModel({
     cached,

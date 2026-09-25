@@ -7,6 +7,14 @@
 //
 // Imports nothing: the Map below is the one registry, and a module with no imports
 // has exactly one instance however it is reached.
+//
+// A CLAIM IS ANNOUNCED (the adversarial pass's F1 on #912). Home samples
+// `analysisChainOutstanding` when it reads and rereads when a chain it sampled settles,
+// so a chain claimed AFTER Home last looked was invisible to it: a photo added or
+// replaced on the record screen, the section's own trigger, Try again. Calm words stood
+// over a photo nothing had read, and stayed there after the copy held the rose. Every
+// claim now calls the listeners `onAnalysisChainClaimed` registered; `lib/analysis.ts`
+// registers the one that tells Home. The registry still knows nothing about Home.
 
 // ── One read per photo: the analysis-chain claim (CUL-801) ────────────────────
 //
@@ -79,6 +87,20 @@ interface ChainSlot {
 
 const analysisChains = new Map<string, ChainSlot>();
 
+type ClaimListener = (eventId: string) => void;
+const claimListeners = new Set<ClaimListener>();
+
+/** Hear about every chain the moment it is claimed. Returns the unsubscribe. A listener
+ *  runs after the claim is in place, so asking `analysisChainOutstanding` from inside it
+ *  answers true; one that throws is said and skipped, never allowed to fail the claim
+ *  (the claim is what keeps a photo to one read). */
+export function onAnalysisChainClaimed(listener: ClaimListener): () => void {
+  claimListeners.add(listener);
+  return () => {
+    claimListeners.delete(listener);
+  };
+}
+
 /** Claim this event's first read. Returns null when a chain is ALREADY claimed —
  *  the caller does not own it and must not settle it (the owner will, and until
  *  then `awaitAnalysisChain` holds anyone who asks). Nesting is therefore safe:
@@ -90,6 +112,13 @@ export function claimAnalysisChain(eventId: string): AnalysisChainClaim | null {
   const promise = new Promise<boolean>((r) => { resolve = r; });
   const slot: ChainSlot = { promise, resolve };
   analysisChains.set(eventId, slot);
+  for (const listener of [...claimListeners]) {
+    try {
+      listener(eventId);
+    } catch (e) {
+      console.warn('[analysis-chain] a claim listener failed:', e);
+    }
+  }
   let settled = false;
   return {
     settle(invoked: boolean) {

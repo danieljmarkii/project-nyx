@@ -34,18 +34,30 @@
 // server spells its timestamps `…+00:00`, and C-40 is the scar for comparing two
 // spellings of one instant as strings.
 //
-// THE PULL EARNS COMPLETENESS FROM A COUNT (C-42). It pages on `event_id` (immutable,
-// so an update landing mid-pull cannot move a row across a page boundary the way
-// ordering on `updated_at` would), advances by the rows RECEIVED, stops only on an
-// EMPTY page, and moves the watermark only when the rows received cover an exact count
-// taken first. A short or truncated pull writes what it has and leaves the watermark
-// where it was, so the next cycle asks again rather than skipping what it never saw.
+// THE PULL READS ONE ORDERED STREAM (the code review's BUG and the adversarial pass's
+// F5 on #912). It pages by KEYSET on (updated_at, event_id), ascending, from the
+// watermark's floor: every page asks for the rows strictly after the last row received,
+// never for an offset. An earlier draft paged by offset on `event_id`, and two things
+// broke it. A row the pull had already passed could change while the app sat suspended
+// between pages; a later row's change then carried the watermark past it, and the copy
+// kept the old verdict for good. And a row deleted behind the offset shifted every row
+// after it back by one, skipping a live row while a new one restored the count. A
+// keyset closes both by construction: a changed row moves AHEAD of the cursor, so the
+// same pull still receives it, and a cursor is a value, not a position, so a delete
+// behind it moves nothing. What follows is the property the watermark stands on: every
+// row a pull did not receive sorts after its cursor, and the cursor is where the next
+// pull starts (the watermark, less the commit-skew overlap). The exact count taken
+// first still decides whether the watermark moves at all (C-42): it is the guard
+// against a page that comes back empty while rows remain. The cursor's instant is the
+// server's own string, passed back untouched (`keysetAfter` says why).
 //
-// STATED BLIND SPOT (C-38). A server row that is DELETED is never mirrored: nothing in
-// the client deletes an analysis row, and the server removes one only through a cascade
-// from its event or pet (account deletion wipes this device anyway). A verdict the
-// server no longer holds would therefore linger here; for `worth_a_call` that fails
-// toward the rose, which is the safe direction.
+// STATED BLIND SPOT (C-38). A server row that is DELETED is never mirrored. Nothing in
+// the client deletes an analysis row today. The server removes one through a cascade
+// from its event or pet (account deletion wipes this device anyway), and the table's
+// `FOR ALL` policy (migration 013) would also let the owner's own session delete one,
+// though no shipped path does. A verdict the server no longer holds would linger here;
+// for `worth_a_call` that fails toward the rose, which is the safe direction, and every
+// reader asks only for events this device still holds.
 
 import { getDb, getWatermark, setWatermark } from './db';
 import { advanceWatermark, watermarkQueryFloor } from './hydration';
@@ -61,18 +73,19 @@ export const READ_COPY_COLUMNS = 'event_id, status, recommendation, updated_at';
 /** The copy's key in `sync_watermarks` (wiped at sign-out with the rest). */
 const WATERMARK_KEY = 'event_ai_verdicts';
 
-/** Rows asked for per page. The loop advances by rows RECEIVED, so a server `max-rows`
- *  below this number costs pages, never rows. */
+/** Rows asked for per page. A server `max-rows` below this number costs pages, never
+ *  rows: the cursor is the last row RECEIVED, whatever the page's length. */
 export const READ_COPY_PAGE = 1000;
 
 /** SQLite's host-parameter budget, with room to spare (the sync layer's chunk). */
 const READ_CHUNK = 400;
 
 /** The slice of the expo-sqlite handle the copy needs, so `lib/readCopy.test.ts` runs
- *  this module's real SQL on node:sqlite. */
+ *  this module's real SQL on node:sqlite. `changes` is how the writer knows whether a
+ *  row actually moved, which is the watch's cue to tell Home. */
 export interface ReadCopyDb {
   getAllAsync<T>(source: string, params: (string | number | null)[]): Promise<T[]>;
-  runAsync(source: string, params: (string | number | null)[]): Promise<unknown>;
+  runAsync(source: string, params: (string | number | null)[]): Promise<{ changes: number }>;
 }
 
 // ── Reading ──────────────────────────────────────────────────────────────────
@@ -133,36 +146,64 @@ function isWritable(row: Partial<ReadCopyRow> | null | undefined): row is ReadCo
 }
 
 /**
- * Write server rows into the copy. `stale` is re-checked before EVERY row, not once
- * before the loop: a sign-out's wipe landing mid-loop must not be followed by the rest
- * of the previous account's verdicts (FR-9). A row that cannot be keyed is skipped and
- * said, never thrown: one malformed row must not cost the rest of the page its rose.
+ * Write server rows into the copy, and return how many rows it CHANGED (an insert, or a
+ * replace the last-write-wins rule allowed; a row it refused counts nothing). `stale` is
+ * re-checked before EVERY row, not once before the loop: a sign-out's wipe landing
+ * mid-loop must not be followed by the rest of the previous account's verdicts (FR-9).
+ * A row that cannot be keyed is skipped and said, never thrown: one malformed row must
+ * not cost the rest of the page its rose.
  */
 export async function writeCopies(
   db: ReadCopyDb,
   rows: readonly (Partial<ReadCopyRow> | null | undefined)[],
   stale: () => boolean,
-): Promise<void> {
+): Promise<number> {
+  let changed = 0;
   for (const row of rows) {
-    if (stale()) return;
+    if (stale()) return changed;
     if (!isWritable(row)) {
       console.warn('[read-copy] skipped a row with no usable key:', row?.event_id ?? '(none)');
       continue;
     }
-    await db.runAsync(UPSERT_SQL, [row.event_id, row.status, row.recommendation ?? null, row.updated_at]);
+    const result = await db.runAsync(UPSERT_SQL, [row.event_id, row.status, row.recommendation ?? null, row.updated_at]);
+    changed += result.changes;
   }
+  return changed;
 }
 
 // ── Pulling ──────────────────────────────────────────────────────────────────
 
+/** Where a pull has read to: the last row received, in the order it reads. */
+interface Cursor {
+  updated_at: string;
+  event_id: string;
+}
+
+/**
+ * The rows strictly after `cursor` in (updated_at, event_id) order, as one PostgREST
+ * `or` filter. ONE filter, not "the rest of this instant" and then "every later instant"
+ * as two passes: with two passes a first pass that stopped early would hand the second a
+ * cursor past rows it never read, and those rows would sort BEFORE the watermark.
+ *
+ * The instant is the server's own string, passed back untouched and never parsed. A JS
+ * `Date` keeps milliseconds and the column keeps microseconds, so a re-spelled cursor
+ * would sit before its own row: the next page would hand the same rows back, and the
+ * pull would never end.
+ */
+export function keysetAfter(cursor: Cursor): string {
+  return `updated_at.gt.${cursor.updated_at},and(updated_at.eq.${cursor.updated_at},event_id.gt.${cursor.event_id})`;
+}
+
 interface PulledVerdicts {
   rows: ReadCopyRow[];
-  /** The rows received cover the exact count taken before paging. */
+  /** The rows received cover the exact count taken before paging, and every page moved
+   *  the cursor forward. */
   complete: boolean;
 }
 
-/** Every verdict row changed at or after `floor` (all of them when `floor` is null).
- *  Null when the server could not be read, which is "we do not know", never "none". */
+/** Every verdict row changed at or after `floor` (all of them when `floor` is null), in
+ *  (updated_at, event_id) order. Null when the server could not be read, which is "we do
+ *  not know", never "none". */
 async function fetchVerdictsSince(floor: string | null): Promise<PulledVerdicts | null> {
   let counted = supabase.from('event_ai_analysis').select('event_id', { count: 'exact', head: true });
   if (floor) counted = counted.gte('updated_at', floor);
@@ -174,29 +215,46 @@ async function fetchVerdictsSince(floor: string | null): Promise<PulledVerdicts 
   if (count === 0) return { rows: [], complete: true };
 
   const rows: ReadCopyRow[] = [];
-  for (let from = 0; ; ) {
-    let page = supabase
-      .from('event_ai_analysis')
-      .select(READ_COPY_COLUMNS)
+  // Every (event, version) received. A page that adds none is a server that did not
+  // honour the cursor, and asking again would only get the same page back.
+  const seen = new Set<string>();
+  let cursor: Cursor | null = null;
+  for (;;) {
+    let page = supabase.from('event_ai_analysis').select(READ_COPY_COLUMNS);
+    if (cursor) page = page.or(keysetAfter(cursor));
+    else if (floor) page = page.gte('updated_at', floor);
+    const { data, error } = await page
+      .order('updated_at', { ascending: true })
       .order('event_id', { ascending: true })
-      .range(from, from + READ_COPY_PAGE - 1);
-    if (floor) page = page.gte('updated_at', floor);
-    const { data, error } = await page;
+      .limit(READ_COPY_PAGE);
     if (error) {
       console.warn('[read-copy] pull failed:', error.message);
       return null;
     }
     const received = (data ?? []) as unknown as ReadCopyRow[];
-    // An EMPTY page is the end. A short one is not (C-42): under a `max-rows` cap below
-    // the page size a page comes back short while rows remain.
+    // An EMPTY page is the end: nothing sorts after the cursor. A short one is not
+    // (C-42): under a `max-rows` cap below the page size, a page comes back short while
+    // rows remain.
     if (received.length === 0) break;
+    let fresh = 0;
+    for (const row of received) {
+      const key = `${row.event_id}\u0000${row.updated_at}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      fresh += 1;
+    }
     rows.push(...received);
-    from += received.length;
+    if (fresh === 0) {
+      console.warn('[read-copy] a page repeated rows already received; stopping the pull');
+      return { rows, complete: false };
+    }
+    const last = received[received.length - 1];
+    cursor = { updated_at: last.updated_at, event_id: last.event_id };
   }
+  // `>=`, not `===`: a row changed after the count was taken is received but was not
+  // counted. A counted row deleted before the pull reached it (a cascade) leaves the pull
+  // short, and the watermark then waits a cycle rather than moving on a count it missed.
   const distinct = new Set(rows.map((r) => r.event_id)).size;
-  // `>=`, not `===`: a row that lands between the count and the last page is received
-  // but was not counted. A row deleted in that gap (the cascade case) leaves the pull
-  // short, and the watermark then waits a cycle rather than skipping anything.
   return { rows, complete: distinct >= count };
 }
 
@@ -226,11 +284,11 @@ export async function pullReadCopies(db: ReadCopyDb, stale: () => boolean): Prom
 
 /**
  * One event's verdict, pulled into the copy the moment its read lands on this device
- * (the chain's settle and the realtime watch). Moves no watermark: the incremental pull
- * still owes every row its own watermark says it has not seen, and this write cannot
- * change which rows those are.
+ * (the chain's settle and the realtime watch). Returns how many rows it changed (0 or
+ * 1). Moves no watermark: the incremental pull still owes every row its own watermark
+ * says it has not seen, and this write cannot change which rows those are.
  */
-export async function pullReadCopyFor(db: ReadCopyDb, eventId: string, stale: () => boolean): Promise<void> {
+export async function pullReadCopyFor(db: ReadCopyDb, eventId: string, stale: () => boolean): Promise<number> {
   const { data, error } = await supabase
     .from('event_ai_analysis')
     .select(READ_COPY_COLUMNS)
@@ -238,8 +296,8 @@ export async function pullReadCopyFor(db: ReadCopyDb, eventId: string, stale: ()
     .maybeSingle();
   if (error) {
     console.warn('[read-copy] landed read not copied:', error.message);
-    return;
+    return 0;
   }
-  if (!data || stale()) return;
-  await writeCopies(db, [data as unknown as ReadCopyRow], stale);
+  if (!data || stale()) return 0;
+  return writeCopies(db, [data as unknown as ReadCopyRow], stale);
 }

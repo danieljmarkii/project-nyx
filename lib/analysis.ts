@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { syncPendingEvents, ensureEventAttachmentsSynced, refreshReadCopy } from './sync';
-import { claimAnalysisChain } from './analysisChain';
+import { claimAnalysisChain, onAnalysisChainClaimed } from './analysisChain';
+import { useSyncStore } from '../store/syncStore';
 
 // ── A landed read is saved to the phone's copy (History v2 §5.3, HV-5 / CUL-1162) ──
 //
@@ -18,14 +19,33 @@ import { claimAnalysisChain } from './analysisChain';
 //     the copy, so it can only see a landing the tick has already saved.
 // Both go through `refreshReadCopy`, which never throws; `copyLandedRead` catches anyway,
 // because a trigger that threw would break its own "never throws, returns { error }"
-// contract with every caller that awaits it.
-async function copyLandedRead(eventId: string): Promise<void> {
+// contract with every caller that awaits it. Resolves true when the copy changed.
+async function copyLandedRead(eventId: string): Promise<boolean> {
   try {
-    await refreshReadCopy(eventId);
+    return await refreshReadCopy(eventId);
   } catch (e) {
     console.warn('[analysis] landed read not copied:', e);
+    return false;
   }
 }
+
+// ── Home hears about a read it did not start (the adversarial pass's F1 on #912) ──
+// Home rereads the copy when `hydrationTick` moves, and nothing in `components/` may
+// change in HV-5, so that tick is how it hears about two things it could not see:
+//   • a chain claimed after it last looked. Every claim is made through this module
+//     (its own triggers; the log path and the record screen import the claim from
+//     here), so the listener registered below hears all of them. Home re-samples the
+//     working fact, draws the read as pending, and awaits the settle like any chain it
+//     sampled itself;
+//   • a landing the WATCH saved that changed the copy (a read that arrived after its
+//     chain had settled). A chain's own landing needs no tick: it lands before the
+//     settle Home is already awaiting.
+// Every other reader of the tick rereads local rows it already holds; a MedStrip dose
+// confirm bumps the same tick for the same reason.
+function tellHomeTheReadMoved(): void {
+  useSyncStore.getState().bumpHydrationTick();
+}
+onAnalysisChainClaimed(tellHomeTheReadMoved);
 
 // The analysis-chain claim (CUL-801) lives in `lib/analysisChain.ts`, which imports
 // nothing (HV-5 moved it there so a read-only surface can ask whether a read is in
@@ -174,8 +194,10 @@ export function watchAnalysisRow(
   const tick = async (isLast: boolean) => {
     if (done) return;
     // Save this event's verdict to the phone's copy FIRST (HV-5): Home's check reads
-    // the copy, so it can only see a landing this tick has already saved.
-    await copyLandedRead(eventId);
+    // the copy, so it can only see a landing this tick has already saved. A save that
+    // changed the copy is told to Home whether or not this watch is still wanted: the
+    // copy moved either way.
+    if (await copyLandedRead(eventId)) tellHomeTheReadMoved();
     if (done) return; // torn down mid-save
     let resolved = false;
     try {

@@ -49,14 +49,6 @@ jest.mock('../../lib/signal', () => ({ regenerateSignal: jest.fn() }));
 jest.mock('../../lib/haptics', () => ({ pullThreshold: jest.fn() }));
 let mockDesignV2 = false;
 jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockDesignV2 }));
-jest.mock('../../store/syncStore', () => {
-  const state = { hydrationTick: 0, bumpHydrationTick: jest.fn() };
-  return {
-    useSyncStore: Object.assign((sel?: (s: typeof state) => unknown) => (sel ? sel(state) : state), {
-      getState: () => state,
-    }),
-  };
-});
 jest.mock('../../store/petStore', () => {
   const pet = { id: 'p1', name: 'Nyx', species: 'cat', sex: 'female' };
   const state = { activePet: pet, pets: [pet] };
@@ -94,15 +86,18 @@ const mockFrom = jest.fn(() => {
   throw new Error('offline: Home must not reach the server for a verdict');
 });
 jest.mock('../../lib/supabase', () => ({ supabase: { from: (...a: unknown[]) => mockFrom(...(a as [])) } }));
+// The REAL claim registry and the real announcement that tells Home about a chain (the
+// sync store is real too, so the tick it moves is the one Home rereads on). Only the
+// realtime watch is stubbed: it is a socket, not a rule.
 jest.mock('../../lib/analysis', () => ({
-  analysisChainOutstanding: () => false,
-  awaitAnalysisChain: async () => false,
+  ...jest.requireActual('../../lib/analysis'),
   watchAnalysisRow: () => () => {},
 }));
 
 import { act, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { FAB_SCROLL_INSET_FLOOR, HOME_V2_SCROLL_INSET } from '../../lib/fabFootprint';
+import { claimAnalysisChain, type AnalysisChainClaim } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
 import HomeScreen from './index';
 
@@ -188,6 +183,30 @@ describe('with the network off, the spine shows the rose (HV-5 / CUL-1162, AC 21
     await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
     await waitFor(() => expect(t.getByTestId('spine-read-v1')).toBeTruthy());
     expect(t.queryByTestId('spine-verdict-v1')).toBeNull();
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+});
+
+describe('a read Home never saw start still reaches it (the adversarial pass’s F1 on #912)', () => {
+  it('a chain claimed after Home drew the row: the calm words stand down while it runs, the rose once it lands', async () => {
+    mockDesignV2 = true;
+    mockCopyRows = [copyRow('monitor')];
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Keep an eye out'));
+    // The owner replaces the photo on the record screen: a chain Home did not sample.
+    let claim: AnalysisChainClaim | null = null;
+    act(() => {
+      claim = claimAnalysisChain('v1');
+    });
+    expect(claim).not.toBeNull();
+    await waitFor(() => expect(t.getByText('Reading the photo…')).toBeTruthy());
+    expect(t.queryByTestId('spine-verdict-v1')).toBeNull();
+    // The read lands: the chain saves it to the copy, then settles.
+    mockCopyRows = [copyRow('worth_a_call')];
+    await act(async () => {
+      claim?.settle(true);
+    });
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
     expect(mockFrom).not.toHaveBeenCalled();
   });
 });

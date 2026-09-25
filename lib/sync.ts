@@ -54,6 +54,7 @@ import {
   type LocalVetDocument,
 } from './vetDocuments';
 import { pullReadCopies, pullReadCopyFor } from './readCopy';
+import { useAuthStore } from '../store/authStore';
 
 type Db = ReturnType<typeof getDb>;
 
@@ -3238,14 +3239,29 @@ export async function hydrateFromCloud(): Promise<void> {
 // previous account's verdict into the copy the wipe just cleared (FR-9). The session is
 // checked first (supabase-sync Pattern 4). Never throws: a landed read that could not be
 // copied is not something a caller can act on, and the next cycle's pull brings it.
-export async function refreshReadCopy(eventId: string): Promise<void> {
+// Resolves true when the copy CHANGED, which is the watch's cue to tell Home.
+//
+// TWO sessions must agree, not one (the rls-privacy-reviewer's R1 on #912). A chain is
+// fire-and-forget from the log path, so it can settle long after the account that
+// started it is gone. On an ordinary sign-out auth-js drops its session first and the
+// check above returns. The §6.4 recovery swap is the other order: step 3 nulls the
+// APP's session, step 4 wipes this device while auth-js still holds the previous
+// account's live session, and only step 5 hands over. A chain settling inside that
+// window saw a live session and captured the post-wipe epoch, so nothing was stale: it
+// wrote the previous account's verdict into the copy the wipe had just cleared, where
+// no later wipe removed it. The app's session is the one step 3 nulls, so it is read
+// synchronously, right before the epoch is taken, and must name the same account.
+export async function refreshReadCopy(eventId: string): Promise<boolean> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+    if (!session) return false;
+    const appSession = useAuthStore.getState().session;
+    if (!appSession || appSession.user.id !== session.user.id) return false;
     const epoch = signOutEpoch;
-    await pullReadCopyFor(getDb(), eventId, () => signOutEpoch !== epoch);
+    return (await pullReadCopyFor(getDb(), eventId, () => signOutEpoch !== epoch)) > 0;
   } catch (e) {
     console.warn('[sync] read copy refresh failed:', e);
+    return false;
   }
 }
 
