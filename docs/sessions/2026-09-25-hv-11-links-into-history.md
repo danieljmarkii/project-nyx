@@ -72,6 +72,11 @@ A plan was posted in the session with three decision briefs, and the PM ruled th
   - the answer card's reach fields swapped;
   - the trial-offer check ignored;
   - the door spending a tap before a pet exists.
+- **After the first wrap, HV-10 (#919) merged to `main` and was merged into this branch.** Both conflicts were additive, and both sides were kept:
+  - the flag-off guard's pinned consumers now list the History tab, Home's Today card (HV-10) and the two link deciders (HV-11);
+  - the sign-out wipe clears both HV-10's removal notices and this PR's spent taps.
+
+  After the merge, `tsc` was clean and the full suite passed (515 suites, 11,621 tests). The merged suites passed in the three zones, and CI passed on the merge commit. The doorway guard found no new link into History among HV-10's files.
 - **The first cut of the guard stayed green when the rundown's row was removed.** The rundown's builder lives in a file the registry already knew for another row. Detector (c) closes that hole. The C-38 addendum tells the story.
 
 ## Residuals
