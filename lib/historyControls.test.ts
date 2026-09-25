@@ -337,6 +337,7 @@ describe('the course sub-rows (AC 30, CUL-488, CUL-1193)', () => {
       search: null,
       window: { longName: 'All time', anchorDay: null, isAllTime: true, isTrial: false, range: ALL_RANGE },
       facts: {
+        petId: PET,
         range: ALL_RANGE,
         days: RECORD,
         firsts: { record: RECORD_START, look: null, byType: {}, symptoms: null, photographed: null, noted: null },

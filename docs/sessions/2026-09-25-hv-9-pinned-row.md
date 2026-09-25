@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 
-Shipped via #916 (CUL-1166; the body says `Fixes CUL-488`, as CUL-1166 asked, pending the PM's call 5 on CUL-1247). Filed: CUL-1228, CUL-1238, CUL-1239, CUL-1240, CUL-1241, CUL-1247 (Waiting on PM), CUL-1248. The History v2 mock gained §12, four open calls drawn beside the frames they would change, republished to the same URL (version 8).
+Shipped via #916 (CUL-1166, and `Fixes CUL-488` as CUL-1166 asked). The PM asked for the merge at the wrap without ruling CUL-1247 call 5b, so the merge closes CUL-488; HV-11 still owes the medication screen's tap-through. Filed: CUL-1228, CUL-1238, CUL-1239, CUL-1240, CUL-1241, CUL-1247 (Waiting on PM), CUL-1248. The History v2 mock gained §12, four open calls drawn beside the frames they would change, republished to the same URL (version 8).
 
 ## The ask
 
@@ -82,11 +82,12 @@ HV-9 of History v2: the row that stays pinned above the list while it scrolls. I
 
 ## Residuals
 
-- Two reads of the record until HV-7 and HV-9 reconcile, and the whole-record read's cost on a long record (CUL-1228).
+- Two reads of the record until they reconcile. #916 merges ahead of HV-7, so HV-7's PR (CUL-1164) owns the reconciliation to one read. The whole-record read's cost on a long record is CUL-1228.
 - A failed read leaves the trial and visit rows off the window sheet with no word why (CUL-1238, before GA).
 - For the device pass (HV-13):
   - truncation at 375pt and 320pt with a long name, "Loose stool · 4" and "Since Jul 26"
   - the keyboard and a sheet
   - how VoiceOver reads "Jul 1 – Sep 5"
   - Dynamic Type at the largest sizes
+- Before the merge, `main` (HV-6 #914, HV-8 #915) was merged into the branch. It merged without conflicts; one test fixture gained HV-8's new `HistoryFacts.petId`. After that, `tsc` is clean, the full suite is green at 499 suites and 11,306 tests, and the history suites are green in the three zones.
 - Lord Howe's zone fails one of HV-3's window tests. That's pre-existing (CUL-1207), outside CI's zones, and not this work's.
