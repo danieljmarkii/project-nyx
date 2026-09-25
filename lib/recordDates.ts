@@ -171,3 +171,15 @@ export function recordMonthUnderYear(month: string): string | null {
 export function recordYearOf(day: string): number | null {
   return partsOf(day)?.year ?? null;
 }
+
+/**
+ * A day key's whole-day index (days since 1970-01-01), or null when it is not a real
+ * calendar day. The ONE strict day-key parser the History modules share: a key only,
+ * never an instant, never a rolled-over date. `lib/visitWindow.ts` and
+ * `lib/historyWindows.ts` both compare days through it, so the two cannot drift apart
+ * on what counts as a day. The same index basis as `lib/utils.ts`'s `localDayIndexOf`
+ * and its inverse `dayKeyFromIndex`.
+ */
+export function recordDayIndex(day: string): number | null {
+  return partsOf(day)?.index ?? null;
+}

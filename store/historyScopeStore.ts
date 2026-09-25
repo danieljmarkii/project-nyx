@@ -5,8 +5,8 @@ import {
   ALL_TIME,
   sameWindow,
   weekStartOf,
-  windowParam,
   type HistoryWindowKey,
+  type ResolvedWindow,
 } from '../lib/historyWindows';
 import { usePetStore } from './petStore';
 
@@ -114,7 +114,9 @@ interface HistoryScopeState extends HistoryScope {
    *  The scroll to the top is the screen's. */
   returnToToday: (petId: string) => boolean;
   /** A link into History: its filter, window and landing in ONE update, so the pill, the
-   *  strip's week and the count line agree however the request was put together. */
+   *  strip's week and the count line agree however the request was put together. False
+   *  when it was for another pet (nothing applied) or asked to land on a day that is not
+   *  a day (the rest applied). */
   applyDoor: (petId: string, request: HistoryDoorRequest) => boolean;
 }
 
@@ -167,16 +169,28 @@ export function effectiveSearch(scope: Pick<HistoryScope, 'searchOpen' | 'search
 }
 
 /**
- * The key a read is tagged with (HV-7): the pet, the filter, the window and the search
- * that decide which rows the read returns. A read that answers under a different key is
- * for a scope no longer on screen and is dropped (CUL-1120's shape, AC 12). The landed
- * day and the strip's week are not part of it: neither changes a row.
+ * The key a read is tagged with (HV-7): everything that decides which rows the read
+ * returns. A read that answers under a different key is for a scope no longer on screen
+ * and is dropped (CUL-1120's shape, AC 12).
+ *
+ * It takes the RESOLVED window, not the window's name, because the name does not fix the
+ * dates: *Last 7 days* moves at midnight, and *Since the last vet visit* moves when a
+ * newer visit syncs in, while the name stays the same. Keyed on the name, a read made
+ * before midnight that answered after it would paint days the pill no longer names (the
+ * adversarial pass on CUL-1160). The facts' pet rides along too, so a window resolved
+ * from another pet's record never matches this pet's key. The landed day and the strip's
+ * week are not part of it: neither changes a row.
  */
-export function historyScopeKey(scope: HistoryScope): string {
+export function historyScopeKey(
+  scope: HistoryScope,
+  window: Pick<ResolvedWindow, 'bounds' | 'petId'>,
+): string {
   return JSON.stringify([
     scope.petId,
+    window.petId,
     filterId(scope.filter),
-    windowParam(scope.window),
+    window.bounds.fromDay,
+    window.bounds.toDay,
     effectiveSearch(scope),
   ]);
 }
@@ -223,9 +237,15 @@ export const useHistoryScopeStore = create<HistoryScopeState>((set, get) => {
     setWindow: (petId, window) =>
       forPet(petId, (s) => (sameWindow(s.window, window) ? {} : { window, stripWeek: null })),
 
-    openSearch: (petId) => forPet(petId, () => ({ searchOpen: true })),
-    setSearchText: (petId, text) => forPet(petId, () => ({ searchOpen: true, searchText: text })),
-    closeSearch: (petId) => forPet(petId, () => ({ searchOpen: false, searchText: '' })),
+    openSearch: (petId) => forPet(petId, (s) => (s.searchOpen ? {} : { searchOpen: true })),
+    setSearchText: (petId, text) =>
+      forPet(petId, (s) =>
+        s.searchOpen && s.searchText === text ? {} : { searchOpen: true, searchText: text },
+      ),
+    closeSearch: (petId) =>
+      forPet(petId, (s) =>
+        !s.searchOpen && s.searchText === '' ? {} : { searchOpen: false, searchText: '' },
+      ),
 
     landOn: (petId, day) => forPet(petId, (s) => landing(s, day)),
 
@@ -248,9 +268,11 @@ export const useHistoryScopeStore = create<HistoryScopeState>((set, get) => {
       forPet(petId, () => ({ landedDay: null, pendingLanding: null, stripWeek: null })),
 
     // A day that is not a day is skipped and the rest still applies: a bad link degrades
-    // to showing more (v1's rule), never to ignoring the filter it asked for.
-    applyDoor: (petId, request) =>
-      forPet(petId, (s) => {
+    // to showing more (v1's rule), never to ignoring the filter it asked for. The answer
+    // is then false, so a caller can tell the link did not land where it asked.
+    applyDoor: (petId, request) => {
+      let landingRefused = false;
+      const applied = forPet(petId, (s) => {
         const next: Partial<HistoryScopeState> = {};
         if (request.filter && !sameFilter(s.filter, request.filter)) next.filter = request.filter;
         if (request.window && !sameWindow(s.window, request.window)) {
@@ -258,10 +280,15 @@ export const useHistoryScopeStore = create<HistoryScopeState>((set, get) => {
           next.stripWeek = null;
         }
         // Last, so the landed day's week wins over the window's default.
-        const landed = request.landOn === undefined ? null : landing(s, request.landOn);
-        if (landed) Object.assign(next, landed);
+        if (request.landOn !== undefined) {
+          const landed = landing(s, request.landOn);
+          if (landed) Object.assign(next, landed);
+          else landingRefused = true;
+        }
         return next;
-      }),
+      });
+      return applied && !landingRefused;
+    },
   };
 });
 

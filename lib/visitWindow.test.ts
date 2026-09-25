@@ -59,8 +59,12 @@ describe('latestVisitBefore — the latest visit strictly before today, includin
     expect(latestVisitBefore(['2026-02-30'], TODAY)).toBeNull();
   });
 
-  it('offers no window when today itself cannot be read', () => {
-    expect(latestVisitBefore(['2026-09-16'], 'today')).toBeNull();
+  it('throws on an unreadable today, never reading as "no visit before today"', () => {
+    // Null is a FACT here, and the report falls to its next rung on it (HV-15), so a
+    // caller's bug must not be able to produce it (the adversarial pass's finding 5).
+    expect(() => latestVisitBefore(['2026-09-16'], 'today')).toThrow(RangeError);
+    expect(() => latestVisitBefore(['2026-09-16'], '2026-02-30')).toThrow(RangeError);
+    expect(() => latestVisitBefore([], '')).toThrow(RangeError);
   });
 
   it('holds on the device clock at both edges of a local day (C-29)', () => {
@@ -126,6 +130,12 @@ describe('readLatestVisitBefore — the local read', () => {
 
   it('a pet with no visit has no window, which is a fact and not a failure', async () => {
     expect(await readLatestVisitBefore(adapter(freshDb()), PET, TODAY)).toBeNull();
+  });
+
+  it('an unreadable today throws before the read is made', async () => {
+    const getAllAsync = jest.fn();
+    await expect(readLatestVisitBefore({ getAllAsync }, PET, 'today')).rejects.toThrow(RangeError);
+    expect(getAllAsync).not.toHaveBeenCalled();
   });
 
   it('a failed read throws instead of reading as "no visit"', async () => {

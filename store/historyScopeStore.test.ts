@@ -9,7 +9,7 @@
 import React from 'react';
 import { act, render } from '@testing-library/react-native';
 
-import type { HistoryWindowKey } from '../lib/historyWindows';
+import type { HistoryWindowKey, ResolvedWindow } from '../lib/historyWindows';
 import {
   ALL_TYPES,
   defaultHistoryScope,
@@ -314,10 +314,16 @@ describe('a link into History, applied at once (AC 37’s store half)', () => {
     expect(store().pendingLanding).toBeNull();
   });
 
-  it('a day that is not a day is skipped and the rest still applies', () => {
-    store().applyDoor(id, { filter: { kind: 'noticed' }, landOn: 'yesterday' });
+  it('a day that is not a day is skipped, the rest still applies, and the answer says so', () => {
+    // False, so a caller can tell the link did not land where it asked; the filter it
+    // asked for is shown anyway (a bad link shows more, never less).
+    expect(store().applyDoor(id, { filter: { kind: 'noticed' }, landOn: 'yesterday' })).toBe(false);
     expect(scope()).toMatchObject({ filter: { kind: 'noticed' }, landedDay: null });
     expect(store().takeLanding()).toBeNull();
+  });
+
+  it('a whole request that applies answers true', () => {
+    expect(store().applyDoor(id, { window: { kind: 'last', days: 7 }, landOn: '2026-09-16' })).toBe(true);
   });
 });
 
@@ -330,6 +336,22 @@ describe('search (§3.7): nothing is saved', () => {
     expect(scope()).toMatchObject({ searchOpen: false, searchText: '' });
   });
 
+  it('a search write that changes nothing is not a change', () => {
+    // A second tap on the search button, or a keystroke that re-sends the same text,
+    // must not wake every subscriber (the rule `setFilter` and `setWindow` already keep).
+    store().openSearch(id);
+    store().setSearchText(id, 'rabbit');
+    const heard = jest.fn();
+    const unsubscribe = useHistoryScopeStore.subscribe(heard);
+    expect(store().openSearch(id)).toBe(true);
+    expect(store().setSearchText(id, 'rabbit')).toBe(true);
+    store().closeSearch(id);
+    expect(heard).toHaveBeenCalledTimes(1); // the close, and only the close
+    expect(store().closeSearch(id)).toBe(true);
+    expect(heard).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
   it('the query takes the trimmed text while the field is open, and nothing otherwise', () => {
     expect(effectiveSearch({ searchOpen: true, searchText: '  rabbit ' })).toBe('rabbit');
     expect(effectiveSearch({ searchOpen: true, searchText: '   ' })).toBeNull();
@@ -339,18 +361,36 @@ describe('search (§3.7): nothing is saved', () => {
 
 describe('the scope key: what decides the rows, and nothing else', () => {
   const base: HistoryScope = defaultHistoryScope('pet-1');
-  const key = (patch: Partial<HistoryScope>) => historyScopeKey({ ...base, ...patch });
+  const WEEK: Pick<ResolvedWindow, 'bounds' | 'petId'> = {
+    bounds: { fromDay: '2026-09-15', toDay: '2026-09-21' },
+    petId: 'pet-1',
+  };
+  const key = (patch: Partial<HistoryScope>, window = WEEK) => historyScopeKey({ ...base, ...patch }, window);
 
-  it('changes with the pet, the filter, the window and the search', () => {
+  it('changes with the pet, the filter, the dates and the search', () => {
     const k = key({});
     expect(key({ petId: 'pet-2' })).not.toBe(k);
     expect(key({ filter: { kind: 'type', type: 'vomit' } })).not.toBe(k);
     expect(key({ filter: { kind: 'course', courseKey: 'item:unspecified' } })).not.toBe(k);
-    expect(key({ window: { kind: 'last', days: 7 } })).not.toBe(k);
-    expect(key({ window: { kind: 'month', month: '2026-08' } })).not.toBe(
-      key({ window: { kind: 'month', month: '2026-09' } }),
-    );
+    expect(key({}, { ...WEEK, bounds: { fromDay: '2026-09-14', toDay: '2026-09-21' } })).not.toBe(k);
+    expect(key({}, { ...WEEK, bounds: { fromDay: '2026-09-15', toDay: '2026-09-20' } })).not.toBe(k);
     expect(key({ searchOpen: true, searchText: 'rabbit' })).not.toBe(k);
+  });
+
+  it('follows the DATES, not the window’s name, so a read from before midnight is dropped after it', () => {
+    // *Last 7 days* at 11:59 PM and at 12:01 AM: one name, two sets of rows (the
+    // adversarial pass's finding 3). The same holds when a newer visit syncs in under
+    // *Since the last vet visit*.
+    const beforeMidnight = key({ window: { kind: 'last', days: 7 } });
+    const afterMidnight = key(
+      { window: { kind: 'last', days: 7 } },
+      { ...WEEK, bounds: { fromDay: '2026-09-16', toDay: '2026-09-22' } },
+    );
+    expect(afterMidnight).not.toBe(beforeMidnight);
+  });
+
+  it('never matches a window resolved from another pet’s record', () => {
+    expect(key({}, { ...WEEK, petId: 'pet-2' })).not.toBe(key({}));
   });
 
   it('does not change with the landed day, the strip’s week or a search that finds nothing yet', () => {

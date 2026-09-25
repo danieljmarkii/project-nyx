@@ -1,11 +1,11 @@
 // History's windows: one table, in local days (BRK-5, BRK-17, H-10, H-11; CUL-1160;
-// docs/nyx-history-v2-requirements.md §3.9, §5.2).
+// docs/nyx-history-v2-requirements.md §3.9, §5.2, §11).
 //
 //   All time                  the pet's first record → today
 //   Today                     today
 //   Last 7 / 14 / 30 days     today − 6 / 13 / 29 → today
-//   Since the trial started   the trial's `exposureRange` start → today, while that range
-//                             reaches today
+//   Since the trial started   the trial's `exposureRange` start → today, while the trial
+//                             runs and that range reaches today
 //   Since the last vet visit  the latest visit strictly before today, including its day →
 //                             today (`lib/visitWindow.ts`, the report's bound)
 //   A month                   its first → last day
@@ -21,7 +21,9 @@
 // hour into the wrong day. Here every bound is day-key arithmetic on whole-day indices,
 // so "Last 7 days" is the seven local days ending today, on every clock and in every
 // zone. The caller derives `today` once (`toLocalDayKey(new Date())`); nothing here reads
-// a clock.
+// a clock. Every field of `WindowFacts` must be derived for that same `today`: a screen
+// left open across midnight recomputes all of them together (a trial read the night
+// before reads as not offered until it is recomputed).
 //
 // ── THE WINDOW IS AN IDENTITY; ITS DATES ARE RESOLVED ──────────────────────────
 //
@@ -29,23 +31,44 @@
 // resolved against the pet's own trial every time. So the store and a link hold only the
 // identity, and no window can carry one pet's trial or visit date to another (GAP-27).
 //
-// ── THE TRIAL WINDOW READS `exposureRange`, NEVER `range` ──────────────────────
+// ── THE TRIAL WINDOW: BELIEF DECIDES IF, EVIDENCE DECIDES WHEN ─────────────────
 //
-// The diet-trial spec's hardest-won rule (§5, the B-494 lineage): `range` is the COVERAGE
-// window, clipped at both ends for the denominator's sake, and a consumer that bounds
-// rows by it deletes logged exposures. So `WindowFacts.trial` is typed as
-// `Pick<TrialFacts, 'exposureRange'>`: the compiler will not let this module read the
-// other field. The window is offered only while that range reaches today (§11 parks a
-// window over an ended trial), which also answers a trial that ended yesterday: its
-// evidence stops at its end, so it is not offered today.
+// §11: v1 offers the trial window "only while the trial runs", and "is this trial running
+// today" has exactly one answer in this app, `isTrialRunning` (belief, B-422). Its DATES
+// come from `TrialFacts.exposureRange` (evidence), never `range`: the diet-trial spec's
+// hardest-won rule (§5, the B-494 lineage) is that `range` is the COVERAGE window, clipped
+// at both ends for the denominator's sake, and bounding rows by it deletes logged
+// exposures. Both are read by `windowTrialOf`, the one way to build a `WindowTrial`, so
+// neither can be passed without the other, and the belief is read for the table's own
+// `today` (evidence computed the night before fails the evidence check, below).
 //
-// A trial nobody ended, past its effective end, is still offered: `exposureRange` reaches
-// today because the evidence does (the effective end bounds belief and one denominator,
-// never evidence, B-422). A window is a lens over the record, not a claim about it, so
-// offering it over an overrun trial states nothing the record does not hold.
+// The first cut offered the window whenever `exposureRange` reached today, and the
+// adversarial pass (CUL-1160) priced it: a 56-day trial nobody closed was still offered as
+// *Since the trial started* a year later, so vomits after the owner went back to the old
+// food would read as a failed trial. `exposureRange` reaches today on every un-ended trial
+// because the evidence does; belief is what ends. A trial completed or abandoned today is
+// no longer running, so its window goes the same day.
+//
+// ── WHAT THE COUNT LINE MAY NEED TO SAY (CUL-1189, a PM ruling) ─────────────────
+//
+// Two facts ride out on `ResolvedWindow` for the count line to state once CUL-1189 rules
+// the words: `recordStartsLater` (the window's own start is before the pet's first
+// record, so the bounds start at the record: a visit on Jul 26 with the first log on
+// Aug 3), and `trialPastTarget` (the trial window, offered inside B-422's grace past the
+// trial's planned end). The table exposes them rather than choosing the copy.
+//
+// ── BLIND SPOTS, STATED (C-38) ─────────────────────────────────────────────────
+//
+// A row dated after today (a device clock that was set forward when it was logged) sits
+// outside every window, All time included, because every window ends today (§3.9). And a
+// first record dated after today puts nothing before today in any window.
 
-import type { TrialFacts } from './dietTrial';
-import { recordDay, recordMonth, recordMonthUnderYear } from './recordDates';
+import {
+  isTrialRunning,
+  trialTargetEndDayIndex,
+  type TrialFacts,
+} from './dietTrial';
+import { recordDay, recordDayIndex, recordMonth, recordMonthUnderYear } from './recordDates';
 import { dayKeyFromIndex, localDayIndexOf } from './utils';
 import type { SinceVisitDay } from './visitWindow';
 
@@ -71,21 +94,42 @@ export interface WindowBounds {
   toDay: string;
 }
 
+/**
+ * The trial as the window table takes it. Mint it with `windowTrialOf` only (the brand
+ * says so): that is what keeps the belief and the evidence on the shared predicates.
+ */
+export interface WindowTrial {
+  readonly __brand: 'WindowTrial';
+  /** The trial's own first day ('YYYY-MM-DD'), the window's anchor, or null when its
+   *  start cannot be placed. */
+  readonly startDay: string | null;
+  /** `TrialFacts.exposureRange` (evidence), from facts computed with NO scope. */
+  readonly exposureRange: TrialFacts['exposureRange'];
+  /** `isTrialRunning` for the `today` it was built with (belief): whether the window is
+   *  offered at all. */
+  readonly running: boolean;
+  /** That day is past the trial's planned last day, inside B-422's grace (CUL-1189). */
+  readonly pastTargetEnd: boolean;
+}
+
 /** What a window is resolved against: one pet's record, as of today. */
 export interface WindowFacts {
+  /** The pet these facts were read for. A screen drops facts read for another pet the
+   *  way it drops rows (AC 12); `ResolvedWindow` carries it into the read key. */
+  petId: string | null;
   /** The owner's local day, 'YYYY-MM-DD' (`toLocalDayKey(new Date())`). */
   today: string;
-  /** The local day the pet's record starts (the list's "{pet}'s record starts here",
-   *  §3.12), or null for a pet with nothing logged. The data layer decides what counts
-   *  as the record; a visit never does (`guards/visitReaders.test.ts`). */
-  firstRecordDay: string | null;
   /**
-   * The pet's trial, as the trial predicates computed it, or null for no trial. Compute
-   * it with NO report scope, so `exposureRange` opens on the trial's own first day. Only
-   * `exposureRange` is read, and the type says so.
+   * The pet's first record: its local day key, or its INSTANT (what `MIN(occurred_at)`
+   * returns), read as its local day on this device. Null for a pet with nothing logged.
+   * The data layer decides what counts as the record; a visit never does
+   * (`guards/visitReaders.test.ts`). Anything else throws: an unreadable start must
+   * never read as an empty record, which would hide every earlier row.
    */
-  trial: Pick<TrialFacts, 'exposureRange'> | null;
-  /** "Since the last vet visit" — minted only by `lib/visitWindow.ts` (H-11). */
+  firstRecordDay: string | null;
+  /** The pet's trial, from `windowTrialOf`, or null for no trial. */
+  trial: WindowTrial | null;
+  /** "Since the last vet visit": minted only by `lib/visitWindow.ts` (H-11). */
   sinceVisit: SinceVisitDay | null;
 }
 
@@ -108,16 +152,28 @@ export interface WindowLabel {
   sheetSub: string | null;
 }
 
-/** A window as the screen uses it: the identity that actually applies, its bounds and
- *  its names. */
+/** A window as the screen uses it: the identity that applies, its bounds, its names, and
+ *  the facts its count line may need to state. */
 export interface ResolvedWindow {
   key: HistoryWindowKey;
   bounds: WindowBounds;
   label: WindowLabel;
-  /** The window asked for is not offered for this pet today (no trial running, no visit
-   *  before today, a month outside the record), so All time applies instead. The screen
-   *  writes All time back rather than show a pill that names a window it is not using. */
+  /**
+   * The window asked for is not offered for this pet today (no trial running, no visit
+   * before today, a month outside the record), so All time applies. The screen shows the
+   * window that applies and does NOT write it back to the store: the owner's choice
+   * stays, so a window that is only briefly unavailable (facts being recomputed across
+   * midnight) comes back by itself.
+   */
   fellBack: boolean;
+  /** The pet the facts were read for (`WindowFacts.petId`). */
+  petId: string | null;
+  /** The record's first day ('YYYY-MM-DD') when this window's own start is earlier, so its
+   *  bounds start at the record (GAP-24). Null otherwise. CUL-1189 rules the words. */
+  recordStartsLater: string | null;
+  /** The trial window, offered past the trial's planned last day (B-422's grace).
+   *  CUL-1189 rules the words. Always false for any other window. */
+  trialPastTarget: boolean;
 }
 
 /** One year's months on the window sheet, newest first, under a subhead. */
@@ -130,12 +186,15 @@ export interface MonthGroup {
 
 // ── Day arithmetic ────────────────────────────────────────────────────────────
 
-const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_KEY = /^(\d{4})-(\d{2})$/;
+const INSTANT = /^\d{4}-\d{2}-\d{2}T/;
 
-/** A day key's whole-day index, or null when it is not a real calendar day. */
-function dayIndex(key: string | null | undefined): number | null {
-  return typeof key === 'string' && DAY_KEY.test(key) ? localDayIndexOf(key) : null;
+/** Today as a day index, or a thrown error: `today` comes from the device clock, so an
+ *  unreadable one is a caller's bug, and no window can be placed on it. */
+function todayIndexOf(today: string): number {
+  const index = recordDayIndex(today);
+  if (index === null) throw new RangeError(`historyWindows: today is not a day key: "${today}"`);
+  return index;
 }
 
 /** The first and last day of a month key, as indices, or null for a malformed key. */
@@ -145,10 +204,10 @@ function monthSpan(month: string): { first: number; last: number } | null {
   const year = Number(m[1]);
   const monthIndex = Number(m[2]) - 1;
   if (monthIndex < 0 || monthIndex > 11) return null;
-  const first = dayIndex(`${m[1]}-${m[2]}-01`);
+  const first = recordDayIndex(`${m[1]}-${m[2]}-01`);
   if (first === null) return null;
   // Day 0 of the next month is this month's last day, and Date.UTC has no DST.
-  const last = dayIndex(new Date(Date.UTC(year, monthIndex + 1, 0)).toISOString().slice(0, 10));
+  const last = recordDayIndex(new Date(Date.UTC(year, monthIndex + 1, 0)).toISOString().slice(0, 10));
   return last === null ? null : { first, last };
 }
 
@@ -160,10 +219,56 @@ function monthOf(index: number): string {
 /** The Sunday on or before a day (the strip pages by the week, Sunday first, §3.4), or
  *  null for a malformed key. 1970-01-01, index 0, was a Thursday. */
 export function weekStartOf(day: string): string | null {
-  const index = dayIndex(day);
+  const index = recordDayIndex(day);
   if (index === null) return null;
   const weekday = (((index + 4) % 7) + 7) % 7; // 0 = Sunday
   return dayKeyFromIndex(index - weekday);
+}
+
+// ── The trial ─────────────────────────────────────────────────────────────────
+
+/**
+ * The trial as the window table takes it: the evidence window's dates and the belief that
+ * the trial is running on `today`, read by the shared predicates (the header).
+ *
+ * `trial` is the trial row as the trial predicates take it (`TrialCardTrial` from
+ * `loadTrialPredicateFacts` fits); `facts` are its `computeTrialFacts` answer, computed
+ * with NO scope. Facts computed with a report scope open `exposureRange` on the scope's
+ * first day, which would print *Since the trial started · Sep 16* over a trial that
+ * started Jul 26, so they throw rather than mislabel.
+ */
+export function windowTrialOf(
+  trial: {
+    startedAt: string;
+    targetDurationDays?: number | null;
+    status?: string | null;
+    endedAt?: string | null;
+  },
+  facts: Pick<TrialFacts, 'exposureRange'>,
+  today: string,
+): WindowTrial {
+  const todayIndex = todayIndexOf(today);
+  // `started_at` may be a DATE or an instant (`trialStartDayKey`'s two shapes); either is
+  // read as its local day on this device, the basis `computeTrialFacts` used.
+  const startIndex = localDayIndexOf(trial.startedAt);
+  const range = facts.exposureRange;
+  if (range && startIndex !== null && range.startDayIndex !== startIndex) {
+    throw new RangeError(
+      'windowTrialOf: the trial facts were computed with a scope; History needs them unscoped',
+    );
+  }
+  // Local noon on `today`, built from its parts: on `today` in every zone and across every
+  // DST change, so the belief is read for exactly the day the table resolves.
+  const [y, m, d] = dayKeyFromIndex(todayIndex).split('-').map(Number);
+  const noon = new Date(y, m - 1, d, 12, 0, 0, 0).getTime();
+  const targetEnd = trialTargetEndDayIndex(trial);
+  const window: Omit<WindowTrial, '__brand'> = {
+    startDay: startIndex === null ? null : dayKeyFromIndex(startIndex),
+    exposureRange: range,
+    running: isTrialRunning(trial, noon),
+    pastTargetEnd: targetEnd !== null && todayIndex > targetEnd,
+  };
+  return window as WindowTrial;
 }
 
 // ── The record's span ─────────────────────────────────────────────────────────
@@ -174,27 +279,54 @@ interface Span {
    *  no record (nothing before today can be in a window of an empty record). Never after
    *  today, so a record dated in the future cannot invert a window. */
   floor: number;
-  /** The record's first day, or null for an empty record. */
-  first: number | null;
+  /** The record's first day when it is on or before today, else null. What a label may
+   *  state as the record's start: a first record dated after today has no honest place
+   *  on a line that ends today. */
+  recordStart: number | null;
+  /** Whether the pet has a record at all. */
+  hasRecord: boolean;
 }
 
-function spanOf(facts: WindowFacts): Span | null {
-  const today = dayIndex(facts.today);
-  if (today === null) return null;
-  const first = dayIndex(facts.firstRecordDay);
-  return { today, first, floor: first === null ? today : Math.min(first, today) };
+/** The first record's day index (the `firstRecordDay` contract), or null for none. */
+function firstRecordIndexOf(value: string | null): number | null {
+  if (value === null) return null;
+  const day = recordDayIndex(value);
+  if (day !== null) return day;
+  const instant = INSTANT.test(value) ? localDayIndexOf(value) : null;
+  if (instant === null) {
+    throw new RangeError(`historyWindows: firstRecordDay is neither a day key nor an instant: "${value}"`);
+  }
+  return instant;
+}
+
+function spanOf(facts: WindowFacts): Span {
+  const today = todayIndexOf(facts.today);
+  const first = firstRecordIndexOf(facts.firstRecordDay);
+  return {
+    today,
+    floor: first === null ? today : Math.min(first, today),
+    recordStart: first !== null && first <= today ? first : null,
+    hasRecord: first !== null,
+  };
 }
 
 /** The anchor day of an anchored window, as an index, when it is offered. */
 function anchorIndex(key: HistoryWindowKey, facts: WindowFacts, span: Span): number | null {
   if (key.kind === 'trial') {
-    const range = facts.trial?.exposureRange ?? null;
-    // Offered only while the evidence reaches today, and only once the trial has begun.
+    const trial = facts.trial;
+    // Belief first: only a running trial (§11).
+    if (!trial || !trial.running) return null;
+    const range = trial.exposureRange;
+    // Then the evidence: it must reach today, and the trial must have begun. A trial read
+    // the night before fails here (its evidence stops last night), so a screen left open
+    // across midnight shows All time until it recomputes, and the store keeps the choice.
+    // One read for a LATER day needs no check: belief only ever turns off as days pass,
+    // so a trial running tomorrow was running today.
     if (!range || range.endDayIndex < span.today || range.startDayIndex > span.today) return null;
     return range.startDayIndex;
   }
   if (key.kind === 'visit') {
-    const visit = dayIndex(facts.sinceVisit);
+    const visit = facts.sinceVisit === null ? null : recordDayIndex(facts.sinceVisit);
     // Strictly before today, re-checked: a bound read on an earlier day is still honest
     // tomorrow, but one computed for a later "today" than this one is not.
     return visit !== null && visit < span.today ? visit : null;
@@ -225,30 +357,36 @@ function rawBounds(
       // A month is offered only inside the record: from the first record's month through
       // this one. An empty record offers none.
       const m = monthSpan(key.month);
-      if (!m || span.first === null) return null;
+      if (!m || !span.hasRecord) return null;
       if (m.last < span.floor || m.first > span.today) return null;
       return { from: m.first, to: Math.min(m.last, span.today) };
     }
   }
 }
 
-// ── The table ─────────────────────────────────────────────────────────────────
-
-/**
- * A window's bounds for this pet today, or null when the window is not offered (or
- * `today` cannot be read).
- *
- * Clipped to the record: never before its first day, never past today.
- */
-export function windowBounds(key: HistoryWindowKey, facts: WindowFacts): WindowBounds | null {
-  const span = spanOf(facts);
-  if (!span) return null;
+/** The clipped window, as indices, with the unclipped start kept for `recordStartsLater`. */
+function clippedBounds(
+  key: HistoryWindowKey,
+  facts: WindowFacts,
+  span: Span,
+): { from: number; to: number; rawFrom: number } | null {
   const raw = rawBounds(key, facts, span);
   if (!raw) return null;
   const from = Math.min(Math.max(raw.from, span.floor), span.today);
   const to = Math.min(raw.to, span.today);
-  if (from > to) return null;
-  return { fromDay: dayKeyFromIndex(from), toDay: dayKeyFromIndex(to) };
+  return from > to ? null : { from, to, rawFrom: raw.from };
+}
+
+// ── The table ─────────────────────────────────────────────────────────────────
+
+/**
+ * A window's bounds for this pet today, or null when the window is not offered.
+ * Clipped to the record: never before its first day, never past today. Throws on an
+ * unreadable `today` or first record (the `WindowFacts` contract).
+ */
+export function windowBounds(key: HistoryWindowKey, facts: WindowFacts): WindowBounds | null {
+  const c = clippedBounds(key, facts, spanOf(facts));
+  return c ? { fromDay: dayKeyFromIndex(c.from), toDay: dayKeyFromIndex(c.to) } : null;
 }
 
 /** Is this window offered for this pet today? */
@@ -263,14 +401,13 @@ export function isWindowOffered(key: HistoryWindowKey, facts: WindowFacts): bool
  */
 export function windowLabel(key: HistoryWindowKey, facts: WindowFacts): WindowLabel | null {
   const span = spanOf(facts);
-  if (!span || !windowBounds(key, facts)) return null;
+  if (!clippedBounds(key, facts, span)) return null;
   const day = (index: number) => recordDay(dayKeyFromIndex(index), facts.today) as string;
+  const start = span.recordStart;
 
-  // The record's first day as the windows see it: `floor`, so a first record dated in
-  // the future (a skewed clock) never prints a start the window does not have.
   switch (key.kind) {
     case 'all': {
-      const since = span.first === null ? null : `since ${day(span.floor)}`;
+      const since = start === null ? null : `since ${day(start)}`;
       return { long: 'All time', short: 'All time', anchor: null, sheetTitle: 'All time', sheetSub: since };
     }
     case 'today':
@@ -289,30 +426,37 @@ export function windowLabel(key: HistoryWindowKey, facts: WindowFacts): WindowLa
       const name = recordMonth(key.month, facts.today) as string;
       const m = monthSpan(key.month);
       // The month the record starts inside says where: *from May 14*.
-      const startsInside = m !== null && span.first !== null && span.floor > m.first;
+      const startsInside = m !== null && start !== null && start > m.first;
       return {
         long: name,
         short: name,
         anchor: null,
         sheetTitle: recordMonthUnderYear(key.month) as string,
-        sheetSub: startsInside ? `from ${day(span.floor)}` : null,
+        sheetSub: startsInside ? `from ${day(start as number)}` : null,
       };
     }
   }
 }
 
 /**
- * The window that applies: the one asked for when it is offered, All time when it is
- * not. Null only when `today` cannot be read, which no caller deriving it from the device
- * clock can produce, and which no window could be placed on.
+ * The window that applies: the one asked for when it is offered, All time when it is not
+ * (All time is always offered). Throws on an unreadable `today` or first record.
  */
-export function resolveWindow(key: HistoryWindowKey, facts: WindowFacts): ResolvedWindow | null {
-  const asked = windowBounds(key, facts);
+export function resolveWindow(key: HistoryWindowKey, facts: WindowFacts): ResolvedWindow {
+  const span = spanOf(facts);
+  const asked = clippedBounds(key, facts, span);
   const effective = asked ? key : ALL_TIME;
-  const bounds = asked ?? windowBounds(ALL_TIME, facts);
-  const label = bounds ? windowLabel(effective, facts) : null;
-  if (!bounds || !label) return null;
-  return { key: effective, bounds, label, fellBack: asked === null };
+  const c = asked ?? (clippedBounds(ALL_TIME, facts, span) as { from: number; to: number; rawFrom: number });
+  return {
+    key: effective,
+    bounds: { fromDay: dayKeyFromIndex(c.from), toDay: dayKeyFromIndex(c.to) },
+    label: windowLabel(effective, facts) as WindowLabel,
+    fellBack: asked === null,
+    petId: facts.petId,
+    recordStartsLater:
+      span.recordStart !== null && c.rawFrom < span.recordStart ? dayKeyFromIndex(span.recordStart) : null,
+    trialPastTarget: effective.kind === 'trial' && facts.trial !== null && facts.trial.pastTargetEnd,
+  };
 }
 
 /**
@@ -337,7 +481,7 @@ export function offeredWindows(facts: WindowFacts): HistoryWindowKey[] {
  */
 export function monthGroups(facts: WindowFacts): MonthGroup[] {
   const span = spanOf(facts);
-  if (!span || span.first === null) return [];
+  if (!span.hasRecord) return [];
   const groups: MonthGroup[] = [];
   // Walk back a month at a time by DAY INDEX: `cursor` is a day in the month being
   // added, and a month is in the record while any of its days is on or after the floor.

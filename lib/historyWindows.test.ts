@@ -1,11 +1,11 @@
-// History's window table (CUL-1160; spec §3.9, AC 28, AC 31's window half).
+// History's window table (CUL-1160; spec §3.9, §11, AC 28, AC 31's window half).
 //
 // FIXTURES ARE ONES THE REAL CALLER COULD HAND OVER (C-35). `today` is derived exactly as
 // the screen derives it, `toLocalDayKey` over an instant built from LOCAL components
-// (C-29), so the non-UTC CI job's clocks decide nothing. The trial facts come from the
-// real `computeTrialFacts` rather than a hand-typed `exposureRange`, so "a trial that
-// ended yesterday" is the predicate's own answer about such a trial. The visit bound
-// comes from `latestVisitBefore`, the only thing that can mint one.
+// (C-29), so the non-UTC CI job's clocks decide nothing. The trial comes from the real
+// `computeTrialFacts` through `windowTrialOf` (the only way to mint one), so "a trial
+// that ended yesterday" is the predicates' own answer about such a trial. The visit
+// bound comes from `latestVisitBefore`, the only thing that can mint one.
 //
 // The main table is the mock's own (round 5's `BOUNDS`, Nyx's real record through Mon
 // Sep 21): the screen and its design authority agree on every window by construction.
@@ -15,7 +15,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import { blankComments } from '../guards/blankComments';
-import { computeTrialFacts, type TrialSpec } from './dietTrial';
+import { computeTrialFacts } from './dietTrial';
 import {
   ALL_TIME,
   monthGroups,
@@ -27,9 +27,11 @@ import {
   windowFromParam,
   windowLabel,
   windowParam,
+  windowTrialOf,
   type HistoryWindowKey,
   type WindowBounds,
   type WindowFacts,
+  type WindowTrial,
 } from './historyWindows';
 import { localDayIndexOf, toLocalDayKey } from './utils';
 import { latestVisitBefore } from './visitWindow';
@@ -37,23 +39,35 @@ import { latestVisitBefore } from './visitWindow';
 /** Local noon on a calendar day: the instant the screen would hold at lunchtime. */
 const localNoon = (y: number, m: number, d: number) => new Date(y, m - 1, d, 12, 0, 0, 0);
 
-/** A trial's facts as the real predicate computes them for a pet with no feedings yet. */
-function trialFacts(spec: Partial<TrialSpec> & { startedAt: string }, now: Date) {
-  return computeTrialFacts({
-    trial: { id: 'trial-1', ...spec },
+interface TrialRow {
+  startedAt: string;
+  targetDurationDays: number;
+  status: 'active' | 'completed' | 'abandoned';
+  endedAt?: string | null;
+}
+
+/**
+ * A trial exactly as History will get one: the row, its unscoped facts from the real
+ * predicate (a pet with no feedings yet), and `windowTrialOf` for `now`'s day.
+ */
+function trialAt(row: TrialRow, now: Date): WindowTrial {
+  const facts = computeTrialFacts({
+    trial: { id: 'trial-1', startedAt: row.startedAt, endedAt: row.endedAt ?? null, targetDurationDays: row.targetDurationDays },
     allowedFoods: [],
     feedings: [],
     nowMs: now.getTime(),
   });
+  return windowTrialOf(row, facts, toLocalDayKey(now));
 }
 
 /** Nyx's record, round 5: first logged May 14, a trial since Jul 26, a visit Sep 16. */
 const NOW = localNoon(2026, 9, 21);
 const TODAY = toLocalDayKey(NOW);
 const NYX: WindowFacts = {
+  petId: 'pet-nyx',
   today: TODAY,
   firstRecordDay: '2026-05-14',
-  trial: trialFacts({ startedAt: '2026-07-26', targetDurationDays: 84 }, NOW),
+  trial: trialAt({ startedAt: '2026-07-26', targetDurationDays: 84, status: 'active' }, NOW),
   sinceVisit: latestVisitBefore(['2026-09-16'], TODAY),
 };
 
@@ -113,9 +127,23 @@ describe('never before the record (GAP-24) — the Data Scientist lens', () => {
     }
   });
 
-  it('a clipped window keeps its own name and anchor: only the bounds move', () => {
-    expect(windowLabel({ kind: 'trial' }, young)?.short).toBe('Since Jul 26');
-    expect(windowLabel({ kind: 'last', days: 30 }, young)?.long).toBe('Last 30 days');
+  it('a clipped window keeps its own name and anchor, and says the record starts later', () => {
+    // The fact CUL-1189 rules the words for: *Since the last vet visit, Sep 16* over a
+    // window that starts at the first log, Sep 19.
+    const visit = resolveWindow({ kind: 'visit' }, young);
+    expect(visit.label.short).toBe('Since Sep 16');
+    expect(visit.bounds).toEqual(b('2026-09-19', TODAY));
+    expect(visit.recordStartsLater).toBe('2026-09-19');
+    expect(resolveWindow({ kind: 'trial' }, young).recordStartsLater).toBe('2026-09-19');
+    expect(resolveWindow({ kind: 'last', days: 30 }, young).recordStartsLater).toBe('2026-09-19');
+  });
+
+  it('a window that starts inside the record says nothing about the record’s start', () => {
+    for (const key of [{ kind: 'all' }, { kind: 'today' }, { kind: 'last', days: 7 }, { kind: 'visit' }] as HistoryWindowKey[]) {
+      expect(resolveWindow(key, NYX).recordStartsLater).toBeNull();
+    }
+    // The month the record starts inside states it, as the sheet's *from May 14* does.
+    expect(resolveWindow({ kind: 'month', month: '2026-05' }, NYX).recordStartsLater).toBe('2026-05-14');
   });
 
   it('an empty record puts nothing before today in any window, and offers no month', () => {
@@ -127,11 +155,26 @@ describe('never before the record (GAP-24) — the Data Scientist lens', () => {
     expect(windowLabel({ kind: 'all' }, empty)?.sheetSub).toBeNull();
   });
 
-  it('a first record dated after today never inverts a window', () => {
+  it('reads the first record’s INSTANT as its local day, never as an empty record', () => {
+    // What a plain `MIN(occurred_at)` hands over. Read as "no record", it would collapse
+    // All time to today and hide every earlier row (the adversarial pass's finding 4).
+    const firstLog = new Date(2026, 4, 14, 9, 30).toISOString(); // May 14, 9:30 AM local
+    const facts: WindowFacts = { ...NYX, firstRecordDay: firstLog };
+    expect(windowBounds({ kind: 'all' }, facts)).toEqual(b('2026-05-14', TODAY));
+    expect(monthGroups(facts)[0].months).toHaveLength(5);
+  });
+
+  it('throws on a first record that is neither a day nor an instant', () => {
+    expect(() => windowBounds(ALL_TIME, { ...NYX, firstRecordDay: 'May 14' })).toThrow(RangeError);
+    expect(() => windowBounds(ALL_TIME, { ...NYX, firstRecordDay: '2026-02-30' })).toThrow(RangeError);
+  });
+
+  it('a first record dated after today never inverts a window, and states no start', () => {
     const skewed: WindowFacts = { ...NYX, firstRecordDay: '2026-09-25' };
     expect(windowBounds({ kind: 'all' }, skewed)).toEqual(b(TODAY, TODAY));
     expect(windowBounds({ kind: 'last', days: 7 }, skewed)).toEqual(b(TODAY, TODAY));
-    expect(windowLabel({ kind: 'all' }, skewed)?.sheetSub).toBe('since Sep 21');
+    expect(windowLabel({ kind: 'all' }, skewed)?.sheetSub).toBeNull();
+    expect(resolveWindow({ kind: 'last', days: 7 }, skewed).recordStartsLater).toBeNull();
   });
 });
 
@@ -155,6 +198,7 @@ describe('since the last vet visit (H-11) — a same-day visit', () => {
     const facts: WindowFacts = {
       ...NYX,
       today: tomorrow,
+      trial: null,
       sinceVisit: latestVisitBefore(['2026-09-02', TODAY], tomorrow),
     };
     expect(windowBounds({ kind: 'visit' }, facts)).toEqual(b(TODAY, tomorrow));
@@ -172,53 +216,101 @@ describe('since the last vet visit (H-11) — a same-day visit', () => {
   });
 });
 
-describe('since the trial started — `exposureRange`, while it reaches today', () => {
-  it('a trial that ended YESTERDAY is not offered today', () => {
-    const yesterday = toLocalDayKey(localNoon(2026, 9, 20));
-    const facts: WindowFacts = {
-      ...NYX,
-      trial: trialFacts({ startedAt: '2026-07-26', endedAt: yesterday, targetDurationDays: 56 }, NOW),
-    };
-    // The predicate's own answer: the evidence stops at the end, so the range does too.
-    expect(facts.trial?.exposureRange?.endDayIndex).toBe(localDayIndexOf(yesterday));
+describe('since the trial started — offered while the trial runs (§11), dated by `exposureRange`', () => {
+  const YESTERDAY = toLocalDayKey(localNoon(2026, 9, 20));
+
+  it('a trial completed YESTERDAY is not offered today', () => {
+    const trial = trialAt(
+      { startedAt: '2026-07-26', targetDurationDays: 56, status: 'completed', endedAt: YESTERDAY },
+      NOW,
+    );
+    // The predicates' own answers: the evidence stops at the end, and it is not running.
+    expect(trial.exposureRange?.endDayIndex).toBe(localDayIndexOf(YESTERDAY));
+    expect(trial.running).toBe(false);
+    const facts: WindowFacts = { ...NYX, trial };
     expect(windowBounds({ kind: 'trial' }, facts)).toBeNull();
     expect(offeredWindows(facts)).not.toContainEqual({ kind: 'trial' });
   });
 
-  it('a trial that ended TODAY still reaches today, so it is offered through today', () => {
-    const facts: WindowFacts = {
-      ...NYX,
-      trial: trialFacts({ startedAt: '2026-07-26', endedAt: TODAY, targetDurationDays: 56 }, NOW),
-    };
-    expect(windowBounds({ kind: 'trial' }, facts)).toEqual(b('2026-07-26', TODAY));
+  it('a trial completed TODAY is no longer running, so its window goes the same day', () => {
+    const trial = trialAt(
+      { startedAt: '2026-07-26', targetDurationDays: 56, status: 'completed', endedAt: TODAY },
+      NOW,
+    );
+    // Its evidence still reaches today; belief is what ends (§11: "only while it runs").
+    expect(trial.exposureRange?.endDayIndex).toBe(localDayIndexOf(TODAY));
+    expect(windowBounds({ kind: 'trial' }, { ...NYX, trial })).toBeNull();
   });
 
   it('a trial that has not started yet is not offered', () => {
-    const facts: WindowFacts = {
-      ...NYX,
-      trial: trialFacts({ startedAt: '2026-09-28', targetDurationDays: 56 }, NOW),
-    };
-    expect(windowBounds({ kind: 'trial' }, facts)).toBeNull();
+    const trial = trialAt({ startedAt: '2026-09-28', targetDurationDays: 56, status: 'active' }, NOW);
+    expect(windowBounds({ kind: 'trial' }, { ...NYX, trial })).toBeNull();
   });
 
   it('a trial that started today is a one-day window', () => {
     const facts: WindowFacts = {
       ...NYX,
-      trial: trialFacts({ startedAt: TODAY, targetDurationDays: 28 }, NOW),
+      trial: trialAt({ startedAt: TODAY, targetDurationDays: 28, status: 'active' }, NOW),
     };
     expect(windowBounds({ kind: 'trial' }, facts)).toEqual(b(TODAY, TODAY));
     expect(windowLabel({ kind: 'trial' }, facts)?.short).toBe('Since Sep 21');
   });
 
-  it('a trial nobody ended, long past its planned end, is still offered (evidence, not belief)', () => {
-    // 28 days planned from Mar 1 and never closed: the effective end is long gone, but the
-    // record since Mar 1 is the record, and a window over it claims nothing (header).
+  describe('a trial nobody closed (the adversarial pass’s finding 2)', () => {
+    // 28 days planned from Jul 1: the planned last day is Jul 28, and B-422's 56-day
+    // grace keeps believing it runs through Sep 22.
+    const row: TrialRow = { startedAt: '2026-07-01', targetDurationDays: 28, status: 'active' };
+    const on = (y: number, m: number, d: number) => {
+      const now = localNoon(y, m, d);
+      return { ...NYX, today: toLocalDayKey(now), trial: trialAt(row, now), sinceVisit: null };
+    };
+
+    it('inside its planned window: offered, and not past its target', () => {
+      const w = resolveWindow({ kind: 'trial' }, on(2026, 7, 20));
+      expect(w).toMatchObject({ key: { kind: 'trial' }, fellBack: false, trialPastTarget: false });
+    });
+
+    it('inside the grace: still offered, and says it is past its planned end', () => {
+      const w = resolveWindow({ kind: 'trial' }, on(2026, 9, 1));
+      expect(w).toMatchObject({ key: { kind: 'trial' }, bounds: b('2026-07-01', '2026-09-01'), trialPastTarget: true });
+    });
+
+    it('past the grace: no longer offered, a year later least of all', () => {
+      // The misread this prevents: vomits after the owner went back to the old food,
+      // counted under "Since the trial started" as if the diet had failed.
+      for (const facts of [on(2026, 9, 23), on(2027, 7, 1)]) {
+        expect(windowBounds({ kind: 'trial' }, facts)).toBeNull();
+        expect(resolveWindow({ kind: 'trial' }, facts)).toMatchObject({ key: ALL_TIME, fellBack: true, trialPastTarget: false });
+      }
+    });
+  });
+
+  it('a trial read the night before is not offered until it is read again', () => {
+    // Facts from 11:59 PM with a `today` from the next morning: the evidence they saw
+    // stops last night, so the window is refused for this render and comes back once the
+    // screen recomputes (the store keeps the owner's choice).
+    const lastNight = new Date(2026, 8, 20, 23, 59);
     const facts: WindowFacts = {
       ...NYX,
-      firstRecordDay: '2026-02-20',
-      trial: trialFacts({ startedAt: '2026-03-01', targetDurationDays: 28 }, NOW),
+      trial: trialAt({ startedAt: '2026-07-26', targetDurationDays: 84, status: 'active' }, lastNight),
     };
-    expect(windowBounds({ kind: 'trial' }, facts)).toEqual(b('2026-03-01', TODAY));
+    expect(windowBounds({ kind: 'trial' }, facts)).toBeNull();
+    expect(windowBounds({ kind: 'trial' }, NYX)).toEqual(b('2026-07-26', TODAY));
+  });
+
+  it('refuses trial facts computed with a report scope rather than mislabel the window', () => {
+    // A scope opens `exposureRange` on the scope's first day: the label would read
+    // *Since the trial started · Sep 16* over a trial that started Jul 26.
+    const scoped = computeTrialFacts({
+      trial: { id: 'trial-1', startedAt: '2026-07-26', targetDurationDays: 84 },
+      allowedFoods: [],
+      feedings: [],
+      nowMs: NOW.getTime(),
+      scopeStart: '2026-09-16',
+    });
+    expect(() =>
+      windowTrialOf({ startedAt: '2026-07-26', targetDurationDays: 84, status: 'active' }, scoped, TODAY),
+    ).toThrow(RangeError);
   });
 
   it('reads `exposureRange` only: the coverage `range` is never consulted', () => {
@@ -228,6 +320,17 @@ describe('since the trial started — `exposureRange`, while it reaches today', 
     const src = blankComments(readFileSync(join(__dirname, 'historyWindows.ts'), 'utf8'));
     expect(src).toMatch(/\.exposureRange\b/);
     expect(src).not.toMatch(/\.range\b/);
+  });
+
+  it('only the trial window can be past its target', () => {
+    const graceFacts = {
+      ...NYX,
+      today: toLocalDayKey(localNoon(2026, 9, 1)),
+      trial: trialAt({ startedAt: '2026-07-01', targetDurationDays: 28, status: 'active' }, localNoon(2026, 9, 1)),
+      sinceVisit: null,
+    };
+    expect(resolveWindow({ kind: 'last', days: 7 }, graceFacts).trialPastTarget).toBe(false);
+    expect(resolveWindow(ALL_TIME, graceFacts).trialPastTarget).toBe(false);
   });
 });
 
@@ -252,9 +355,10 @@ describe('names (H-10): one long and one short per window, anchored windows keep
     const NOW_2027 = localNoon(2027, 1, 5);
     const TODAY_2027 = toLocalDayKey(NOW_2027);
     const facts: WindowFacts = {
+      petId: 'pet-nyx',
       today: TODAY_2027,
       firstRecordDay: '2026-11-20',
-      trial: trialFacts({ startedAt: '2026-12-27', targetDurationDays: 56 }, NOW_2027),
+      trial: trialAt({ startedAt: '2026-12-27', targetDurationDays: 56, status: 'active' }, NOW_2027),
       sinceVisit: latestVisitBefore(['2026-12-30'], TODAY_2027),
     };
 
@@ -331,9 +435,13 @@ describe('the sheet', () => {
 });
 
 describe('resolveWindow — the window that applies', () => {
-  it('an offered window applies as asked', () => {
-    const w = resolveWindow({ kind: 'trial' }, NYX);
-    expect(w).toMatchObject({ key: { kind: 'trial' }, bounds: b('2026-07-26', TODAY), fellBack: false });
+  it('an offered window applies as asked, and carries the facts’ pet', () => {
+    expect(resolveWindow({ kind: 'trial' }, NYX)).toMatchObject({
+      key: { kind: 'trial' },
+      bounds: b('2026-07-26', TODAY),
+      fellBack: false,
+      petId: 'pet-nyx',
+    });
   });
 
   it('a window no longer offered falls back to All time and says so', () => {
@@ -343,12 +451,21 @@ describe('resolveWindow — the window that applies', () => {
       bounds: b('2026-05-14', TODAY),
       label: windowLabel(ALL_TIME, NYX),
       fellBack: true,
+      petId: 'pet-nyx',
+      recordStartsLater: null,
+      trialPastTarget: false,
     });
   });
 
-  it('places no window at all on an unreadable today', () => {
-    expect(resolveWindow(ALL_TIME, { ...NYX, today: '2026-02-30' })).toBeNull();
-    expect(windowBounds(ALL_TIME, { ...NYX, today: 'today' })).toBeNull();
+  it('throws on an unreadable today: no window can be placed on it', () => {
+    for (const today of ['2026-02-30', 'today', '']) {
+      const facts = { ...NYX, today };
+      expect(() => resolveWindow(ALL_TIME, facts)).toThrow(RangeError);
+      expect(() => windowBounds(ALL_TIME, facts)).toThrow(RangeError);
+      expect(() => windowLabel(ALL_TIME, facts)).toThrow(RangeError);
+      expect(() => offeredWindows(facts)).toThrow(RangeError);
+      expect(() => monthGroups(facts)).toThrow(RangeError);
+    }
   });
 });
 
@@ -439,7 +556,10 @@ const LONG_DAY = TRANSITIONS.find((t) => t.hours > 24);
 function lastSevenAcross(odd: Date, hour: number, minute: number) {
   const now = new Date(odd.getFullYear(), odd.getMonth(), odd.getDate() + 3, hour, minute);
   const today = toLocalDayKey(now);
-  const bounds = windowBounds({ kind: 'last', days: 7 }, { ...NYX, today, firstRecordDay: '2026-01-01' });
+  const bounds = windowBounds(
+    { kind: 'last', days: 7 },
+    { ...NYX, today, firstRecordDay: '2026-01-01', trial: null, sinceVisit: null },
+  );
   const calendar = toLocalDayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 12));
   const naive = toLocalDayKey(new Date(now.getTime() - 6 * 86_400_000));
   return { bounds, today, calendar, naive };

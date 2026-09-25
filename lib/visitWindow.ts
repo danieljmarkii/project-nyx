@@ -33,7 +33,7 @@
 //
 // ── DENO-COMPATIBLE ────────────────────────────────────────────────────────────
 //
-// No React Native import, and the one intra-lib import spells its `.ts` extension
+// No React Native import, and every intra-lib import spells its `.ts` extension
 // (tsconfig's `allowImportingTsExtensions` note), so HV-15 can import this module into
 // `generate-report` unchanged. The local read takes its database as a parameter for the
 // same reason: importing `./db` would pull `expo-sqlite` into the Edge Function graph.
@@ -45,7 +45,8 @@
 // Registered in `guards/visitReaders.test.ts`: the read returns ONE day, the start of a
 // window. A visit contributes no row and no number to anything that uses it.
 
-import { dayKeyFromIndex, localDayIndexOf } from './utils.ts';
+import { recordDayIndex } from './recordDates.ts';
+import { dayKeyFromIndex } from './utils.ts';
 
 /**
  * The first day of "since the last vet visit": a local day key, 'YYYY-MM-DD'.
@@ -55,12 +56,13 @@ import { dayKeyFromIndex, localDayIndexOf } from './utils.ts';
  */
 export type SinceVisitDay = string & { readonly __brand: 'SinceVisitDay' };
 
-const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
-
-/** A day key's whole-day index, or null when it is not a real calendar day. Instants are
- *  refused: `visited_at` is a DATE, and a value shaped otherwise is not one. */
-function dayIndex(key: string): number | null {
-  return DAY_KEY.test(key) ? localDayIndexOf(key) : null;
+/** Today as a day index, or a thrown error: an unreadable `today` is a caller's bug,
+ *  and answering null would read as the FACT "no visit before today" (the report would
+ *  quietly fall to its next rung). */
+function todayIndexOf(today: string): number {
+  const index = recordDayIndex(today);
+  if (index === null) throw new RangeError(`visitWindow: today is not a day key: "${today}"`);
+  return index;
 }
 
 /**
@@ -68,17 +70,19 @@ function dayIndex(key: string): number | null {
  * pet has none (so the window is not offered at all, PMD-17).
  *
  * `visitDays` are `visited_at` values in any order; `today` is the owner's local day key
- * (`toLocalDayKey(new Date())` on the phone, the owner's zone on the server).
+ * (`toLocalDayKey(new Date())` on the phone, the owner's zone on the server). A visit
+ * value that is not a real calendar day is skipped, never guessed: `visited_at` is a
+ * DATE, so an instant or a rolled-over date is not one (`recordDayIndex`). Throws on an
+ * unreadable `today`.
  */
 export function latestVisitBefore(
   visitDays: readonly string[],
   today: string,
 ): SinceVisitDay | null {
-  const todayIndex = dayIndex(today);
-  if (todayIndex === null) return null;
+  const todayIndex = todayIndexOf(today);
   let latest: number | null = null;
   for (const visited of visitDays) {
-    const index = dayIndex(visited);
+    const index = recordDayIndex(visited);
     // Today's visit and a future-dated one anchor nothing: the report's rung 1, verbatim.
     if (index === null || index >= todayIndex) continue;
     if (latest === null || index > latest) latest = index;
@@ -110,12 +114,14 @@ const VISIT_DAYS_SQL = `SELECT visited_at FROM vet_visits
  * THROWS on a failed read rather than returning null, because null here is a FACT (this
  * pet has no visit before today) and a failed read is not that fact: collapsing the two
  * would quietly drop the window from the sheet. The `loadTrialPredicateFacts` precedent.
+ * An unreadable `today` throws before the read, for the same reason.
  */
 export async function readLatestVisitBefore(
   db: VisitDaysDb,
   petId: string,
   today: string,
 ): Promise<SinceVisitDay | null> {
+  todayIndexOf(today);
   let rows: { visited_at: string | null }[];
   try {
     rows = await db.getAllAsync<{ visited_at: string | null }>(VISIT_DAYS_SQL, [petId]);
