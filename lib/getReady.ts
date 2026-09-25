@@ -9,6 +9,7 @@ import {
 // The C-19-correct date formatter (year-stamped outside this year), and the
 // companion's own — Get ready is a companion surface.
 import { formatVisitDate } from './vetVisits';
+import { toLocalDayKey } from './utils';
 import type { CachedFinding, IntakeDeclineFinding, IntakeDeclineTrigger, SignalFinding } from './signal';
 import type { Rundown, RundownTile } from './rundown';
 import type { TrialCardInput, TrialStripModel } from './dietTrialCard';
@@ -525,13 +526,16 @@ function courseRow(
   // one behind it while the block below named them both.
   const course = shown.find((c) => c.source === 'doses' && c.dosesLogged >= 2);
   if (!course) return null;
+  // The rundown's own day, so the quoted strings carry the same years the block below
+  // prints for the same course (H-10: a year only outside the current year).
+  const today = toLocalDayKey(new Date(nowMs));
   return screen({
     id: `course-${course.key}`,
     // `resolveCourseName` is the RUNDOWN's own namer, exported rather than reimplemented.
     // The first cut had a private copy without its `?? 'Medication'` fallback, which is
     // how the two surfaces came to disagree about whether a course had a name at all.
-    text: `${resolveCourseName(course, names)} — ${pastMedTileValue(course)}`,
-    detail: pastMedEndDetail(course),
+    text: `${resolveCourseName(course, names)} — ${pastMedTileValue(course, today)}`,
+    detail: pastMedEndDetail(course, today),
     source: 'course',
     sourceLabel: 'from the course',
     isSafety: false,
@@ -601,16 +605,16 @@ function weightRow(rundown: Rundown): WorthRaisingRow | null {
   if (Number.isNaN(newestMs) || Number.isNaN(visitMs)) return null;
 
   // A FUTURE-DATED VISIT IS NOT "THE LAST VISIT" (adversarial pass). `facts.lastVisitAt`
-  // is `readLastVisitDate`'s unbounded `MAX(visited_at)` — the reader migration 066 and
-  // CLAUDE.md both name as undefended — so a visit row dated tomorrow made this gate
-  // fire against a pet weighed an hour ago and print "Last weighed Sep 11 — before the
-  // last visit" on a page that also says the visit has not happened. Live today via
-  // CUL-946, which serialises `visited_at` through `toISOString()` and stores every
-  // evening's visit as tomorrow.
+  // was once `readLastVisitDate`'s unbounded `MAX(visited_at)`, so a visit row dated
+  // tomorrow made this gate fire against a pet weighed an hour ago and print "Last
+  // weighed Sep 11 — before the last visit" on a page that also says the visit has not
+  // happened (CUL-946 stored every evening's visit as tomorrow).
   //
-  // The bound is the report's own rung 1 — STRICTLY BEFORE TODAY (`report.ts` skips
-  // today- and future-dated visits) — so this page and the document it hands the vet
-  // agree about which visit is the last one.
+  // Since CUL-1127 `buildRundown` fills it from the shared bound (`lib/visitWindow.ts`):
+  // the latest visit STRICTLY BEFORE the rundown's day, the report's own rung 1, so this
+  // page and the document it hands the vet agree about which visit is the last one. The
+  // check below stays because the rule belongs to this gate, not to its one producer: a
+  // rundown built any other way (a fixture, a future caller) must not reopen the hole.
   // THE RUNDOWN'S CLOCK, like every other read in this module. A fresh `new Date()`
   // here was a THIRD clock (the re-run found it): the gate judged "today" on the wall
   // clock while the sentence below printed its date off `generatedAtMs`, so the two
