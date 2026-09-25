@@ -37,8 +37,8 @@
 //   • A second tap on the History tab returns to today: the strip back to this week, the
 //     landed state cleared, the list to its top. It glides only within one viewport and never
 //     under Reduce Motion (read at the tap, CUL-1123).
-//   • A new scope (a filter, a window, a search, a pet) resets the list to its top without
-//     animating it. A new day alone (midnight) re-reads and leaves the owner where they are.
+//   • A new request (a filter, a window, a search, a pet, a new day) resets the list to its
+//     top without animating it: its content is replaced, and at midnight so is every window.
 // VoiceOver focus on a landing and on the re-tap, and every motion, are HV-10's (CUL-1167).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -90,7 +90,6 @@ import { useEventStore } from '../../store/eventStore';
 import {
   headerSnapshotFor,
   historyRequestKey,
-  historyScopeRequestKey,
   snapshotForScope,
   useHistoryListStore,
   type HistoryLoadOutcome,
@@ -229,15 +228,13 @@ export function HistoryList() {
 
   // A new scope: read it, close every run, and start at the top without a glide (§4).
   const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(NO_OPEN);
-  const scopeRequest = historyScopeRequestKey(scope);
   useEffect(() => {
     setOpenRuns(NO_OPEN);
-    // A new scope REPLACES the list's content, so the viewport goes back to its top in the
-    // same instant, with nothing to glide across (§4: "resets the list without animating
-    // the viewport"). A new day alone is not a new scope: the owner stays where they are.
+    // A new request REPLACES the list's content, so the viewport goes back to its top in the
+    // same instant, with nothing to glide across (§4: "resets the list without animating the
+    // viewport"). Midnight is one: every window moves with the day, and the list waits for
+    // the new day's read as the silhouette, so there is no place to leave the owner in.
     listRef.current?.getScrollResponder()?.scrollTo({ y: 0, animated: false });
-  }, [scopeRequest]);
-  useEffect(() => {
     void reload();
   }, [request, reload]);
 

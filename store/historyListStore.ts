@@ -38,6 +38,7 @@ import {
   type WindowFacts,
 } from '../lib/historyWindows';
 import { DEFAULT_MEAL_TIMING_CONFIG } from '../lib/mealTiming';
+import { isWorthACall } from '../lib/readState';
 import type { SpineAnalysisRow } from '../lib/spineNode';
 import {
   readAnalysisRows,
@@ -181,12 +182,6 @@ export function historyRequestKey(today: string, scope: HistoryScope): string {
   return JSON.stringify([scope.petId, today, windowParam(scope.window), filterId(scope.filter), effectiveSearch(scope)]);
 }
 
-/** The request with the day left out: what the owner asked to see. A new one resets the
- *  list's viewport; a new day alone (midnight) re-reads and leaves the owner where they are. */
-export function historyScopeRequestKey(scope: HistoryScope): string {
-  return JSON.stringify([scope.petId, windowParam(scope.window), filterId(scope.filter), effectiveSearch(scope)]);
-}
-
 /** The part of the request every header read depends on: the pet, the day and the window's
  *  identity. The facts, courses, items, bowls and window facts are all read for exactly
  *  these; only the pages and what hangs off them depend on the filter and the search. */
@@ -252,17 +247,23 @@ async function readWindowFacts(pet: HistoryListPet, today: string): Promise<Wind
 }
 
 /** Pages until the span reaches `keepTo` (a re-read keeps the depth the owner scrolled to),
- *  or one page when there is nothing to keep. */
-async function readPagesThrough(petId: string, scope: DayPageScope, keepTo: string | null): Promise<HistoryPages> {
-  let pages: HistoryPages = { days: [], span: null, next: null };
-  let cursor: DayPageCursor | null = null;
+ *  or one page when there is nothing to keep. From `from`'s cursor on when it is given (a
+ *  load reading on to a depth the list reached while it read). */
+async function readPagesThrough(
+  petId: string,
+  scope: DayPageScope,
+  keepTo: string | null,
+  from: HistoryPages | null = null,
+): Promise<HistoryPages> {
+  let pages: HistoryPages | null = from;
+  let cursor: DayPageCursor | null = from ? from.next : null;
   for (let guard = 0; guard < MAX_LANDING_PAGES; guard++) {
     const page: DayPage = await readDayPage(petId, scope, cursor);
-    pages = guard === 0 ? { days: page.days, span: page.span, next: page.next } : mergePages(pages, page);
+    pages = pages === null ? { days: page.days, span: page.span, next: page.next } : mergePages(pages, page);
     if (!pages.next || keepTo === null || !pages.span || pages.span.fromDay <= keepTo) break;
     cursor = pages.next;
   }
-  return pages;
+  return pages ?? { days: [], span: null, next: null };
 }
 
 /** A later page appended to the ones before it: its days after theirs, the span extended
@@ -311,11 +312,40 @@ async function readTiming(petId: string, span: DayRange | null): Promise<History
  *  stool's read is fetched though a formed stool is not a symptom. Never rejects: a failed
  *  local read is an empty map, which the row draws as unread, never as calm (HV-5). */
 function readAnalysis(days: ReadonlyMap<string, readonly HistoryRow[]>): Promise<Map<string, SpineAnalysisRow>> {
-  const ids: string[] = [];
+  return readAnalysisRows([...readableIdsIn(days)]);
+}
+
+function readableIdsIn(days: ReadonlyMap<string, readonly HistoryRow[]>): Set<string> {
+  const ids = new Set<string>();
   for (const rows of days.values()) {
-    for (const r of rows) if (hasPerIncidentRead(r.event_type)) ids.push(r.id);
+    for (const r of rows) if (hasPerIncidentRead(r.event_type)) ids.add(r.id);
   }
-  return readAnalysisRows(ids);
+  return ids;
+}
+
+/**
+ * A re-read's answer laid over the reads on screen. The fresh answer always wins. From the
+ * old ones, a read the re-read did not ask about stays as it was, and one it did ask about
+ * stays only if it is a ROSE: a local read that fails answers an empty map (HV-5), and the
+ * rose must survive that (it never waits on a read, CUL-1198), while a calm must not, since
+ * the record may have replaced it with a rose meanwhile, and a stale calm standing in for a
+ * read is CUL-812's class. So a failed re-read shows a photographed row unread, never calm.
+ * A read for a row no longer loaded (removed meanwhile) is dropped.
+ */
+function layReads(
+  prev: ReadonlyMap<string, SpineAnalysisRow>,
+  fresh: ReadonlyMap<string, SpineAnalysisRow>,
+  asked: ReadonlySet<string>,
+  loaded: ReadonlyMap<string, readonly HistoryRow[]>,
+): Map<string, SpineAnalysisRow> {
+  const present = new Set<string>();
+  for (const rows of loaded.values()) for (const r of rows) present.add(r.id);
+  const out = new Map<string, SpineAnalysisRow>();
+  for (const [id, copy] of prev) {
+    if (present.has(id) && (!asked.has(id) || isWorthACall(copy))) out.set(id, copy);
+  }
+  for (const [id, copy] of fresh) out.set(id, copy);
+  return out;
 }
 
 /** Whether the pet a read was made for is still the pet on screen, read FRESH (CUL-1120). */
@@ -364,7 +394,7 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
       const prior = get().snapshot;
       const same = prior !== null && prior.key === key && prior.petId === pet.id ? prior : null;
       const keepTo = same && same.pages.span ? same.pages.span.fromDay : null;
-      const [facts, courses, visits, bowls, arrangements, pages] = await Promise.all([
+      const [facts, courses, visits, bowls, arrangements, firstPages] = await Promise.all([
         readHistoryFacts(pet.id, resolved.bounds),
         readHistoryCourses(pet.id),
         readVisitsForHistory(pet.id),
@@ -372,11 +402,28 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
         getActiveArrangementsForPet(pet.id),
         readPagesThrough(pet.id, pageScope, keepTo),
       ]);
-      const wholeDays = await wholeDaysFor(pet.id, pages.days, scope.filter, search);
-      const [timing, analysis] = await Promise.all([
-        scope.filter.kind === 'noticed' ? Promise.resolve(EMPTY_TIMING) : readTiming(pet.id, pages.span),
-        readAnalysis(wholeDays),
-      ]);
+      let pages = firstPages;
+      let wholeDays = await wholeDaysFor(pet.id, pages.days, scope.filter, search);
+      const timingFor = (span: DayRange | null) =>
+        scope.filter.kind === 'noticed' ? Promise.resolve(EMPTY_TIMING) : readTiming(pet.id, span);
+      let [timing, analysis] = await Promise.all([timingFor(pages.span), readAnalysis(wholeDays)]);
+      // The depth to keep can grow WHILE this load reads: a landing pages the snapshot on
+      // screen back to its day, or the owner scrolls on. Read on to that depth before landing,
+      // so a re-read never takes back a day the list already holds (a landing would lose the
+      // day it just jumped to, and a scrolling owner the rows under their thumb).
+      for (let guard = 0; guard < MAX_LANDING_PAGES; guard++) {
+        const now = get().snapshot;
+        const reached = now && now.key === key && now.petId === pet.id && now.pages.span ? now.pages.span.fromDay : null;
+        if (reached === null || !pages.next || !pages.span || pages.span.fromDay <= reached) break;
+        const deeper = await readPagesThrough(pet.id, pageScope, reached, pages);
+        const added = await wholeDaysFor(pet.id, deeper.days.slice(pages.days.length), scope.filter, search);
+        const [deeperTiming, addedAnalysis] = await Promise.all([timingFor(deeper.span), readAnalysis(added)]);
+        pages = deeper;
+        wholeDays = new Map([...wholeDays, ...added]);
+        timing = deeperTiming;
+        analysis = new Map([...analysis, ...addedAnalysis]);
+        if (myId !== loadSeq || !stillActive(pet.id)) return 'superseded';
+      }
       if (myId !== loadSeq || !stillActive(pet.id)) return 'superseded';
       set({
         snapshot: {
@@ -396,10 +443,9 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
           pages,
           wholeDays,
           timing,
-          // A read only ever lands (as `refreshReads` has it): a re-read of the same scope lays
-          // the fresh copies over the ones on screen, so a local read that fails on a reload
-          // (an empty map, HV-5) never turns a rose already shown into unread.
-          analysis: same ? new Map([...same.analysis, ...analysis]) : analysis,
+          // A re-read of the same scope lays its answer over the reads on screen (`layReads`):
+          // a rose survives a local read that fails, a calm does not.
+          analysis: same ? layReads(same.analysis, analysis, readableIdsIn(wholeDays), wholeDays) : analysis,
         },
         failedRequest: null,
         more: null,
@@ -479,12 +525,13 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
   refreshReads: async () => {
     const snap = get().snapshot;
     if (!snap) return;
-    const analysis = await readAnalysis(snap.wholeDays);
+    const asked = readableIdsIn(snap.wholeDays);
+    const analysis = await readAnalysisRows([...asked]);
     const now = get().snapshot;
-    // A read only ever lands, so the fresh answer is laid over whatever the snapshot on
-    // screen holds now, as long as it is still the same scope's.
+    // Laid over whatever the snapshot on screen holds now (a page may have landed since,
+    // whose reads this did not ask about), as long as it is still the same scope's.
     if (!now || now.key !== snap.key || now.petId !== snap.petId) return;
-    set({ snapshot: { ...now, analysis: new Map([...now.analysis, ...analysis]) } });
+    set({ snapshot: { ...now, analysis: layReads(now.analysis, analysis, asked, now.wholeDays) } });
   },
 
   reset: () => {

@@ -35,6 +35,7 @@ HV-7 is the list half of History v2's step 2, one of four sessions running at on
 
 - **`useHistoryDoor` lives in `hooks/`.** The issue listed it with the namespace's files, but the flag-off guard wraps every export of `components/historyV2/` into a component, and the namespace's own header says a hook belongs in `hooks/`.
 - **The screen sits on `colorNeutralLight`** (round 5's #FAFAFA), not HV-1's white, so a stuck day header's white card reads against it.
+- **Midnight resets the viewport**, like any new request (the first round tried to keep it and could not: the list waits as the silhouette over a new day).
 - **The header stays across a filter or search change.** This came from the product review; it recommended it as a PM decision. The header's reads (facts, courses, items, bowls, window facts) depend only on the pet, the day and the window, so while only the filter or search moved, the list draws the count line, the bowl's line and the strip from the previous snapshot under the new filter (`headerSnapshotFor`). Only the days wait as the silhouette, never the old rows (CUL-1120 holds). A window change, a pet switch or midnight still blank the header with the list. Built rather than escalated because it is the spec's own intent: the count line's `pending` form exists for exactly this, and §3.12's silhouette is for the first read. The PM can overrule it at HV-13.
 - **"{pet}'s record starts here" only where it is true.** It closes the list only when the list's last section holds the record's first day. Under a filter the list ends at the kind's first row, so the line no longer sits under a card weeks later than the record's start. A filtered list now ends without a line; an end line naming the window's start is on HV-12's copy list.
 - **STATUS.md is unchanged.** The kickoff asked for a STATUS.md update on this PR; CLAUDE.md and `/wrap` say it changes only when a track boundary moves, and HV-7 moves none.
@@ -44,7 +45,7 @@ HV-7 is the list half of History v2's step 2, one of four sessions running at on
 - **`code-reviewer`:** fix-before-merge on two findings, both fixed.
   - The next-page slot was a module singleton that a refresh or a switch mid-page could hand to a landing as a dead read, released without an identity check (C-24). It is now keyed on the pages it extends and released by identity.
   - The landing's scroll had no direct test. There is one now (`scrollToLocation` spied, a landing that must page back), plus one proving the owner's own scroll mid-landing wins.
-  - Nits: the retry timer is cleared on unmount; midnight no longer resets the owner's scroll; the door handler's two identical branches collapsed to one call. A comment claiming the narrowing was needed was checked against `tsc`, found false, and never committed (C-38).
+  - Nits: the retry timer is cleared on unmount; the door handler's two identical branches collapsed to one call; midnight's viewport reset was questioned, changed, and restored after the re-check measured it (below). A comment claiming the narrowing was needed was checked against `tsc`, found false, and never committed (C-38).
 - **`pm-feature-review`** (as Jordan and as Sam): pet switch and the quiet states SHIP-SHAPED; NEEDS-WORK on five things.
   - **Fixed here:** the header blanking on every filter tap; the no-pet state (a silhouette that never ended; now the first-log line, v1's rule); the jump that still fired after the owner scrolled.
   - **Filed as decisions:** CUL-1242 (a visit or course dated before the first log never shows, and a visit-only record reads "Nothing logged yet", a v1 regression); CUL-1243 (treats counted and named as meals under Meal); CUL-1244 (looks hidden under All types, so a check-in-only day reads "nothing logged"); CUL-1245 (refused vs not finished in the header).
@@ -65,10 +66,15 @@ HV-7 is the list half of History v2's step 2, one of four sessions running at on
     - **Latent:** `snapshotForScope`'s second check compared the snapshot's key with itself (removed, and the comment that claimed it now says what is guaranteed); the shared clock lagged the list's by one effect at midnight (now set in a layout effect).
   - **Residual, closed here:** a failed local read on a reload replaced the whole read map, so a rose could blink to unread (CUL-1198's class). A same-scope reload now lays fresh reads over the ones shown.
   - **Noted for HV-6:** before #914, the run rule folds a Refused, noted, other-food meal into a run under All types (CUL-1121). No account should be allowlisted for `history_v2` before #914 merges.
+- **The adversarial re-check of the fixes (C-19):** FAIL, narrowly. The high finding is closed; with #914's gate emulated, the rose draws on a formed stool. Nothing leaked another scope's or pet's reads, and the qualifiers and the record-start line held everywhere. Two things broke, both fixed:
+  - **Clinical class, new with the first fix round:** laying fresh reads over old ones also kept an old CALM when the reload's local read failed after the copy had flipped to a rose. The pre-fix code showed unread there. Now only a rose survives a failed re-read, the fresh answer always wins, and a removed row's read leaves with it (`layReads`, in `load` and `refreshReads`).
+  - **Navigation, pre-existing:** a same-scope reload that started before a landing paged back committed at its old depth and took the landed day off the list after the jump. The load now reads on to the depth the list reached while it read, which also keeps a scrolling owner's rows.
+  - **Also taken:** a list test for the list-side read gate, which a mutation had shown unguarded. The midnight change from the first round is reverted: its comment said the owner stays put, but the list waits as the silhouette over a new day, so the viewport resets as before (C-38).
+  - **Left as is (LOW):** after a failed filter change, *Try again* brings the header back while it retries.
 
 ## Verification
 
-- **Mutations: 25 run, every one red.** 12 in the build round:
+- **Mutations: 31 run, every one red.** 12 in the build round:
   - nodes over the shown rows;
   - page rows as whole days;
   - no fresh pet check;
@@ -97,8 +103,16 @@ HV-7 is the list half of History v2's step 2, one of four sessions running at on
   - the kept header counting under the old filter;
   - a window change keeping the old header.
 
+  6 in the re-check round:
+  - a re-read keeping every old read, calm included;
+  - a removed row's read staying;
+  - a failed re-read dropping the rose;
+  - a re-read keeping only the depth it set out with;
+  - the list watching symptoms only;
+  - `refreshReads` keeping every old read.
+
   Both haptics entries are proven by planted imports. The mutations ran in a scratch copy, never the shared tree.
-- **Suites:** `tsc --noEmit` clean. Full jest green: 492 suites, 10,856 tests. The History suites are green under Kiritimati, Chatham and Honolulu. The list suite waits out the virtualized list's 50ms cell batch inside `act`, so it runs without act() warnings.
+- **Suites:** `tsc --noEmit` clean. Full jest green after each round: 492 suites. The History suites are green under Kiritimati, Chatham and Honolulu. The list suite waits out the virtualized list's 50ms cell batch inside `act`, so it runs without act() warnings.
 
 ## Residuals
 

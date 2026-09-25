@@ -24,6 +24,12 @@ jest.mock('../../lib/sync', () => ({
 }));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
+// The chain registry is the real one; only its question is recorded, so a test can see which
+// rows the list watches for a read in flight.
+jest.mock('../../lib/analysis', () => {
+  const actual = jest.requireActual<typeof import('../../lib/analysis')>('../../lib/analysis');
+  return { ...actual, analysisChainOutstanding: jest.fn((id: string) => actual.analysisChainOutstanding(id)) };
+});
 
 // The navigator: a stable object, as React Navigation's is, whose listeners a test can fire
 // (the History tab's re-tap), and a focus callback a test can replay (returning to History).
@@ -98,6 +104,7 @@ import { DIET_TRIAL_SCHEMA_SQL } from '../../lib/dietTrialMirror';
 import { FAB_SCROLL_INSET_FLOOR, HISTORY_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 import { shiftDay } from '../../lib/historyDays';
 import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
+import { analysisChainOutstanding } from '../../lib/analysis';
 import { syncNow } from '../../lib/sync';
 import { usePetStore, type Pet } from '../../store/petStore';
 import { defaultHistoryScope, useHistoryScopeStore } from '../../store/historyScopeStore';
@@ -742,6 +749,21 @@ describe('the tab re-press (§3.1)', () => {
     mockNavigation.focused = false;
     act(() => mockNavigation.listeners.forEach((cb) => cb()));
     expect(useHistoryScopeStore.getState().landedDay).toBe(dayAgo(4));
+  });
+});
+
+// ── The reads a row can carry (HV-5; CUL-1197) ─────────────────────────────────
+
+describe('the reads a row can carry', () => {
+  it('a formed stool is watched for its read like a vomit: the gate is the per-incident read, never the symptom tint', async () => {
+    seedWeek();
+    insertEvent('st', at(1, 7), 'stool_normal');
+    await renderList();
+    const asked = (analysisChainOutstanding as jest.Mock).mock.calls.map(([id]) => id);
+    expect(asked).toContain('st');
+    expect(asked).toContain('v2');
+    // A meal carries no read.
+    expect(asked).not.toContain('m1');
   });
 });
 

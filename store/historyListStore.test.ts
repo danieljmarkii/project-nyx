@@ -143,7 +143,7 @@ describe('a load: one snapshot, every read together', () => {
     insertEvent('vo', at(1, 9), 'vomit');
     insertEvent('co', at(1, 10), 'cough');
     const verdict = mockRaw.prepare(
-      `INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES (?, 'complete', 'worth_a_call', ?)`,
+      `INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES (?, 'completed', 'worth_a_call', ?)`,
     );
     verdict.run('st', at(1, 8, 30));
     verdict.run('vo', at(1, 9, 30));
@@ -157,7 +157,7 @@ describe('a load: one snapshot, every read together', () => {
   it('a read only ever lands: a reload whose local read fails keeps the rose already shown', async () => {
     insertEvent('vo', at(1, 9), 'vomit');
     mockRaw
-      .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES ('vo', 'complete', 'worth_a_call', ?)`)
+      .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES ('vo', 'completed', 'worth_a_call', ?)`)
       .run(at(1, 9, 30));
     const req = { pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY };
     await store().load(req);
@@ -169,6 +169,49 @@ describe('a load: one snapshot, every read together', () => {
     expect(warned).toHaveBeenCalled();
     expect(store().snapshot!.analysis.get('vo')?.recommendation).toBe('worth_a_call');
     warned.mockRestore();
+  });
+
+  it('a reload whose local read fails never brings back a calm the record has replaced: the row reads unread', async () => {
+    // CUL-812's class: a calm read, then the copy flips to a rose (a later read, a synced
+    // escalation), then the reload's local read fails. Only a rose may outlive a failed read.
+    insertEvent('vo', at(1, 9), 'vomit');
+    mockRaw
+      .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES ('vo', 'completed', 'monitor', ?)`)
+      .run(at(1, 9, 30));
+    const req = { pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY };
+    await store().load(req);
+    expect(store().snapshot!.analysis.get('vo')?.recommendation).toBe('monitor');
+    mockRaw.prepare(`UPDATE event_ai_verdicts SET recommendation = 'worth_a_call' WHERE event_id = 'vo'`).run();
+    const warned = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockRaw.exec('ALTER TABLE event_ai_verdicts RENAME TO event_ai_verdicts_gone');
+    await store().load(req);
+    expect(store().snapshot!.analysis.has('vo')).toBe(false);
+    // The same through a read landing (`refreshReads`).
+    mockRaw.exec('ALTER TABLE event_ai_verdicts_gone RENAME TO event_ai_verdicts');
+    await store().load(req);
+    expect(store().snapshot!.analysis.get('vo')?.recommendation).toBe('worth_a_call');
+    mockRaw.prepare(`UPDATE event_ai_verdicts SET recommendation = 'monitor' WHERE event_id = 'vo'`).run();
+    await store().refreshReads();
+    // A fresh answer always wins: a rose a re-read replaced with a calm is gone.
+    expect(store().snapshot!.analysis.get('vo')?.recommendation).toBe('monitor');
+    mockRaw.exec('ALTER TABLE event_ai_verdicts RENAME TO event_ai_verdicts_gone');
+    await store().refreshReads();
+    expect(store().snapshot!.analysis.has('vo')).toBe(false);
+    warned.mockRestore();
+  });
+
+  it('a removed row\'s read leaves with it on the next reload', async () => {
+    insertEvent('vo', at(1, 9), 'vomit');
+    insertEvent('co', at(1, 10), 'cough');
+    mockRaw
+      .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES ('vo', 'completed', 'worth_a_call', ?)`)
+      .run(at(1, 9, 30));
+    const req = { pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY };
+    await store().load(req);
+    expect(store().snapshot!.analysis.has('vo')).toBe(true);
+    mockRaw.prepare(`UPDATE events SET deleted_at = ? WHERE id = 'vo'`).run(new Date().toISOString());
+    await store().load(req);
+    expect(store().snapshot!.analysis.has('vo')).toBe(false);
   });
 
   it('a failed read is a state for its request, and a retry that succeeds takes it down', async () => {
@@ -268,6 +311,27 @@ describe('pages: whole days, the depth a refresh keeps, the landing\'s reach', (
     const days = second.pages.days.map((d) => d.day);
     expect(new Set(days).size).toBe(days.length);
     expect([...days].sort().reverse()).toEqual(days);
+  });
+
+  it('a re-read keeps the depth the list reached WHILE it read: a landing never loses the day it jumped to', async () => {
+    seedDays(20, 10);
+    const req = { pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY };
+    await store().load(req);
+    const first = store().snapshot!.pages.span!.fromDay;
+    // A reload (a focus, a sync tick) starts and holds its first page read...
+    mockHoldPages = true;
+    const reload = store().load(req);
+    for (let i = 0; i < 50 && mockHeldPages.length < 1; i++) await new Promise((r) => setTimeout(r, 0));
+    const reloadPage = mockHeldPages.shift()!;
+    mockHoldPages = false;
+    // ...while a landing pages the list on screen past the depth the reload set out to keep.
+    const day = shiftDay(first, -2);
+    expect(await store().ensureDay(day)).toBe(true);
+    reloadPage();
+    expect(await reload).toBe('drawn');
+    expect(store().snapshot!.pages.span!.fromDay <= day).toBe(true);
+    // Every loaded day still has its whole day behind it.
+    for (const d of store().snapshot!.pages.days) expect(store().snapshot!.wholeDays.has(d.day)).toBe(true);
   });
 
   it('a re-read of the same scope keeps the depth the owner scrolled to', async () => {
