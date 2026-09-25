@@ -1005,9 +1005,13 @@ export function countLineOf(input: CountLineInput): CountLine {
   if (duplicates !== null && duplicates > 0) clauses.push(possibleRepeatsText(duplicates));
 
   const doors: CountLineDoor[] = [];
-  if (isSymptomFilter(filter)) doors.push(window.isTrial ? DOORS['trial-compare'] : symptomDoorOf(filter));
+  const symptoms = isSymptomFilter(filter);
+  if (symptoms) doors.push(window.isTrial ? DOORS['trial-compare'] : symptomDoorOf(filter));
+  // "Anything besides the trial food?" is asked under All types and Meal, and (CUL-1264,
+  // PM-ruled (a), 2026-09-25) right after a symptom's count: the next question once Jordan
+  // has read "13 vomits on 11 days". Only while a running trial overlaps the window (PMD-9).
   const mealsInView = filter.kind === 'all' || (filter.kind === 'type' && filter.type === 'meal');
-  if (mealsInView && input.trialRange !== null && overlaps(window.range, input.trialRange)) {
+  if ((mealsInView || symptoms) && input.trialRange !== null && overlaps(window.range, input.trialRange)) {
     doors.push(DOORS['outside-trial-diet']);
   }
 

@@ -802,6 +802,26 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
     expect(lineFor(WINDOWS.august, { kind: 'all' }, { trialRange: trial })).toMatchObject({ doors: [] });
     expect(lineFor(WINDOWS.all, { kind: 'type', type: 'weight_check' }, { trialRange: trial })).toMatchObject({ doors: [] });
   });
+
+  it('and under a symptom filter, after the symptom\'s own door (CUL-1264, PM-ruled (a))', () => {
+    const trial = { fromDay: '2026-09-03', toDay: TODAY };
+    // Jordan's next question after "N vomits on N days since the trial started".
+    expect(lineFor(WINDOWS.trial, { kind: 'type', type: 'vomit' }, { trialRange: trial })).toMatchObject({
+      doors: [
+        { key: 'trial-compare', label: 'The trial so far ›' },
+        { key: 'outside-trial-diet', label: 'Outside the trial diet ›' },
+      ],
+    });
+    expect(lineFor(WINDOWS.all, { kind: 'symptoms' }, { trialRange: trial })).toMatchObject({
+      doors: [{ key: 'symptom-compare' }, { key: 'outside-trial-diet' }],
+    });
+    // Only while the trial overlaps the window, and never on a non-symptom filter it did not name.
+    expect(lineFor(WINDOWS.august, { kind: 'type', type: 'vomit' }, { trialRange: trial })).toMatchObject({
+      doors: [{ key: 'symptom-compare' }],
+    });
+    expect(lineFor(WINDOWS.trial, { kind: 'type', type: 'vomit' })).toMatchObject({ doors: [{ key: 'trial-compare' }] });
+    expect(lineFor(WINDOWS.all, { kind: 'type', type: 'stool_normal' }, { trialRange: trial })).toMatchObject({ doors: [] });
+  });
 });
 
 // ── AC 4 — same-minute duplicates, by the report's rule ─────────────────────────

@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 
-Shipped via #921 (CUL-1169). Filed: CUL-1258, CUL-1259, CUL-1260, CUL-1261, CUL-1262; on Waiting on PM: CUL-1263, CUL-1264, CUL-1265, CUL-1266. The device script is on HV-13 (CUL-1171). Round 5 of the mock was republished to the same URL (version 9) with the new words.
+Shipped via #921 (CUL-1169, CUL-1264, CUL-1266). Filed: CUL-1258, CUL-1259, CUL-1260, CUL-1261, CUL-1262, and four PM calls, all ruled in-session (CUL-1263 (a), now its own build; CUL-1264 (a), built here; CUL-1265 (b), closed; CUL-1266 approved, spec v1.7 written here). The device script is on HV-13 (CUL-1171). Round 5 of the mock was republished to the same URL (versions 9 and 10) with the new words.
 
 ## The ask
 
@@ -68,11 +68,11 @@ Its comments carried the copy lists from HV-4, HV-7 and HV-8. The plan went to t
 - **The trial door carries its destination's title.** It no longer promises a comparison. That comparison exists nowhere in the app (CUL-1258).
 - **A dose filter's header reads "logged".** This came from the adversarial pass. *1 dose* beside a day naming *1 not given in full* made a dose left unconfirmed in a refused meal read as given, because nothing qualifies it. "Logged" is CUL-1193's ruled word, and with "in all" on the total it no longer collides. Naming the unconfirmed doses stays CUL-1209's (Waiting on PM).
 - **A visit-only day shows its date alone.** The first round's *nothing else logged* called the visit a log, which the strip and the coverage clause (a visit is no event) do not. Coverage keeps counting that day, matching the report.
-- **Three product calls are filed, not decided:**
-  - CUL-1263: Home's Today line and History's header.
-  - CUL-1264: the outside-diet door under a symptom filter.
-  - CUL-1265: the default window during a trial.
-- **The Tier-2 spec edit is proposed on CUL-1266, not written.** Until the PM approves it, the code and the mock win.
+- **Three product calls were filed, and the PM ruled them in the session, along with the spec edit:**
+  - **CUL-1264 (a):** *Outside the trial diet ›* also shows under a symptom filter while a trial overlaps the window. Built here: `countLineOf`, plus a mutation-proven test. The count line's doors now sit in one wrapping row, as round 5 draws them; each door is a 44pt box with no hitSlop, so no C-5 slop to separate.
+  - **CUL-1266 approved:** spec v1.7 is written in this PR (§0.6 records all four rulings), and CLAUDE.md's Read-These row now says v1.7.
+  - **CUL-1265 (b):** All time stays the default. Nothing to build; the issue is closed.
+  - **CUL-1263 (a):** Home's Today line adopts History's day header. This is its own build, not part of this PR: it changes a shipped `design_v2` surface whose chips the Daily Recap shares, and it needs a Home mock frame first (Mock what you change). The issue now carries the build scope.
 - **STATUS.md is unchanged.** No track boundary moved.
 
 ## The reviews
