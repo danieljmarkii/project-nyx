@@ -15,9 +15,9 @@
 
 ## The dry run
 
-Light depth, four lenses (Designer, Jordan, Data, Engineering) on `docs/culprit-food-library-trial-mockups.html`, the round-1 mock of a track that shipped in August, set against the shipped code with D1 to D11 as the settled list. The render: 32 files, no page errors, no sideways scroll at 390. Six agents, about 75 minutes of wall clock (the container runs two agents at a time; the command now says so).
+Light depth, four lenses (Designer, Jordan, Data, Engineering) on `docs/culprit-food-library-trial-mockups.html`, the round-1 mock of a track that shipped in August, set against the shipped code with D1 to D11 as the settled list. The render: 32 files, no page errors, no sideways scroll at 390. Six agents, about 85 minutes of wall clock (the container runs two agents at a time; the command now says so).
 
-**The numbers:** 38 findings; the verifier confirmed 35, found 3 plausible, refuted none, and added five things the lenses missed. Every lens returned *ready with conditions*.
+**The numbers:** 38 findings; the verifier confirmed 35, found 3 plausible, refuted none, and added five things the lenses missed. Every lens returned *ready with conditions*. The synthesis merged them into 23 items (6 broken, 4 works-but-confusing, 7 design gaps, 3 missing follow-ups, 3 PM decisions; 18 in shipped code), named one persona conflict, and cut five gating changes, two of them decision briefs: when a mid-trial add starts to count (B-702), and what the Foods tab's favorites shelf shows during a trial. The briefs are on CUL-1182 and CUL-346. So the method ran end to end, down to the decisions it exists to produce.
 
 **What it found that matters:**
 
