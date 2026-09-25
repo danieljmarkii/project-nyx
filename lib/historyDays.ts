@@ -753,6 +753,19 @@ export function formatCount(n: number): string {
   return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
+/**
+ * A course's span, the one wording the count line and the type sheet's sub-row share
+ * (§3.2, §3.8): 'since Jul 16' while it runs, 'Jul 1 – Sep 5' once it ended, a single day
+ * when it spans one, and null when its first day is unknown (the name then stands alone).
+ */
+export function courseSpanText(days: CourseDays, dates: HistoryDateFormat): string | null {
+  const { fromDay, toDay } = days;
+  if (fromDay === null) return null;
+  if (toDay === null) return `since ${dates.day(fromDay)}`;
+  if (toDay === fromDay) return dates.day(fromDay);
+  return dates.range(fromDay, toDay);
+}
+
 /** The subset a dose count names (CUL-1193): '3 not given in full', on the count line and
  *  on a course's sheet sub-row (after its span, as Photographed's 'N not read'). Null at
  *  zero: an unrated dose is never counted, so a zero would claim every dose was given when
@@ -889,11 +902,8 @@ export function countLineOf(input: CountLineInput): CountLine {
 
   const clauses: string[] = [];
   if (course) {
-    const { fromDay, toDay } = course.days;
-    if (fromDay === null) clauses.push(course.name);
-    else if (toDay === null) clauses.push(`${course.name} · since ${dates.day(fromDay)}`);
-    else if (toDay === fromDay) clauses.push(`${course.name} · ${dates.day(fromDay)}`);
-    else clauses.push(`${course.name} · ${dates.range(fromDay, toDay)}`);
+    const span = courseSpanText(course.days, dates);
+    clauses.push(span === null ? course.name : `${course.name} · ${span}`);
   }
   // Right after the course it describes (the ruling's order: CUL-1193).
   const notInFull = notGivenInFullText(notInFullOf(facts.days, filter) ?? 0);

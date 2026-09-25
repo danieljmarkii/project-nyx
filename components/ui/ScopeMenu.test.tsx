@@ -123,3 +123,81 @@ describe('ScopeMenu — both accent labels are legible on their own grounds (CUL
     expect(flat(label as never).color).not.toBe(theme.colorAccent);
   });
 });
+
+// HV-9 (CUL-1166) — the additive props History v2's two sheets need (spec §3.8, §3.9):
+// a count and a second line on a row, a nested sub-row, a section label, a spoken label
+// that says more than the visible one, and the pill's own words and count. Each is drawn
+// only when set; a caller that sets none renders the tree it always rendered (checked
+// against the pre-change tree when the props landed, and by the v1 History suites).
+describe('ScopeMenu — History v2 rows and pill (HV-9)', () => {
+  const V2_OPTIONS: ScopeMenuOption[] = [
+    { key: null, label: 'All types', count: '1,094', accessibilityLabel: 'All types, 1,094 logged' },
+    { key: 'type:medication', label: 'Medication', count: '46' },
+    {
+      key: 'course:reg-cet',
+      label: 'Cetirizine HCl',
+      count: '16',
+      detail: 'Jul 1 – Sep 5 · 4 not given in full',
+      nested: true,
+      accessibilityLabel: 'Cetirizine HCl, Jul 1 – Sep 5, 4 not given in full, 16 logged',
+    },
+    { key: 'photographed', label: 'Photographed', count: '44', detail: '4 not read', section: 'What the record holds' },
+    { key: 'noticed', label: 'Noticed', section: 'The daily look' },
+  ];
+
+  it('draws each row’s count, second line and section, and speaks the row’s own label', () => {
+    const { getByLabelText, getByText } = renderMenu({ options: V2_OPTIONS, value: 'course:reg-cet' });
+    fireEvent.press(getByLabelText('Event type: Cetirizine HCl'));
+    getByText('1,094');
+    getByText('Jul 1 – Sep 5 · 4 not given in full');
+    getByText('What the record holds');
+    getByText('The daily look');
+    // A section label is a heading the rotor can jump to.
+    expect(getByText('The daily look').props.accessibilityRole).toBe('header');
+    const course = getByLabelText('Cetirizine HCl, Jul 1 – Sep 5, 4 not given in full, 16 logged');
+    expect(course.props.accessibilityState.selected).toBe(true);
+    // Without an override, a row speaks its label.
+    expect(getByLabelText('Noticed').props.accessibilityState.selected).toBe(false);
+  });
+
+  it('indents a nested row and sets its label a size down', () => {
+    const { getByLabelText } = renderMenu({ options: V2_OPTIONS, value: null });
+    fireEvent.press(getByLabelText('Event type: All types'));
+    const nested = getByLabelText('Cetirizine HCl, Jul 1 – Sep 5, 4 not given in full, 16 logged');
+    const plain = getByLabelText('Medication');
+    const rowStyle = (n: { props: { style?: unknown } }) => StyleSheet.flatten(n.props.style) as { paddingLeft?: number };
+    expect(rowStyle(nested).paddingLeft).toBe(theme.space2);
+    expect(rowStyle(plain).paddingLeft).toBeUndefined();
+    const [nestedLabel] = nested.findAllByType(Text);
+    const [plainLabel] = plain.findAllByType(Text);
+    expect((StyleSheet.flatten(nestedLabel.props.style) as { fontSize: number }).fontSize).toBe(theme.textMD);
+    expect((StyleSheet.flatten(plainLabel.props.style) as { fontSize: number }).fontSize).toBe(theme.textLG);
+  });
+
+  it('pillLabel names the pill without deselecting the row it stands for (unlike overrideLabel)', () => {
+    const { getByLabelText } = renderMenu({ options: V2_OPTIONS, value: 'type:medication', pillLabel: 'Since Jul 26' });
+    fireEvent.press(getByLabelText('Event type: Since Jul 26'));
+    expect(getByLabelText('Medication').props.accessibilityState.selected).toBe(true);
+  });
+
+  it('pillCount follows the words in its own, unshrinking text, and pillAccessibilityLabel is what the pill says', () => {
+    const { getByLabelText, getByText } = renderMenu({
+      options: V2_OPTIONS,
+      value: 'type:medication',
+      pillCount: '46',
+      pillAccessibilityLabel: 'Filter: Medication, 46 logged',
+    });
+    getByLabelText('Filter: Medication, 46 logged');
+    const count = getByText('· 46');
+    expect(count.props.numberOfLines).toBeUndefined();
+    expect((StyleSheet.flatten(count.props.style) as { flexShrink?: number }).flexShrink).toBe(0);
+  });
+
+  it('a row with a count but no second line keeps its label a direct sibling of the check', () => {
+    const { getByLabelText, getByText } = renderMenu({ options: V2_OPTIONS, value: 'type:medication' });
+    fireEvent.press(getByLabelText('Event type: Medication'));
+    getByText('46');
+    // No second line rendered for a row that sets none.
+    expect(getByLabelText('Medication').findAllByType(Text)).toHaveLength(2);
+  });
+});

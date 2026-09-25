@@ -1,11 +1,174 @@
-// The pinned row — a placeholder slot (History v2, HV-1 / CUL-1158). HV-9 (CUL-1166)
-// replaces this file: the pet's name, the type pill, the window pill and the search
-// button, pinned at the top of the scroller, about 44pt (spec §3.1, §3.7–3.9).
+// The pinned row (History v2, HV-9 / CUL-1166; spec §3.1, §3.7–3.9, H-3, H-5, H-9).
 //
-// Its contract: no props. Everything the row shows and sets is scope state in
-// `store/historyScopeStore.ts` (HV-3, spec §5.2) or the active pet (`store/petStore.ts`),
-// so the composition root mounts it bare and HV-9 fills it without touching another
-// lane's file.
-export function PinnedRow(): null {
-  return null;
+// What stays on screen while the list scrolls: whose record it is (the active pet), what
+// the list is filtered to (the type pill, with its count once the record has answered),
+// which days (the window pill), and the search button. The composition root mounts it
+// bare above the list (HV-1): everything it shows is scope state (`historyScopeStore`),
+// the active pet, and the record's facts, which it reads for itself
+// (`useHistoryRecordFacts`), so no other lane's file had to change to fill it.
+//
+// Every rule is `lib/historyControls.ts`'s; this file only draws what it returns. The
+// search field it opens sits directly under the row, in this slot, so it stays in reach
+// while the owner reads what it found.
+//
+// A pet switch resets the scope inside the pet store's own update (HV-3), so this row
+// never shows one pet's name over another pet's filter; the two sheets close because they
+// are keyed on the pet, and the field closes with the scope (AC 13).
+import { useMemo, useState } from 'react';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Search } from 'lucide-react-native';
+import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
+import { SearchField } from './SearchField';
+import { TypeSheet } from './TypeSheet';
+import { WindowSheet } from './WindowSheet';
+import { useAllowlistFlag } from '../../hooks/useAppConfig';
+import { useHistoryRecordFacts } from '../../hooks/useHistoryRecordFacts';
+import { useBetaOptIn } from '../../lib/betaFeatures';
+import {
+  PHOTO_READING_OFF,
+  daysIn,
+  searchLabelOf,
+  sumIn,
+  typePillOf,
+  typeSheetRows,
+  windowPillLabelOf,
+  windowSheetRows,
+} from '../../lib/historyControls';
+import { historyDateFormatFor } from '../../lib/historyDateFormat';
+import { typeSheetCountsOf } from '../../lib/historyDays';
+import { resolveWindow } from '../../lib/historyWindows';
+import { lookCardLive } from '../../lib/lookCard';
+import { toLocalDayKey } from '../../lib/utils';
+import { effectiveSearch, useHistoryScopeStore } from '../../store/historyScopeStore';
+import { usePetStore } from '../../store/petStore';
+
+/** The 44pt touch floor: the row's height, and the search button's box. */
+const TOUCH_FLOOR = 44;
+/** The round search button, drawn at the pills' height so the three sit level. */
+const SEARCH_CIRCLE = 32;
+
+export function PinnedRow() {
+  const { activePet } = usePetStore();
+  const filter = useHistoryScopeStore((s) => s.filter);
+  const windowKey = useHistoryScopeStore((s) => s.window);
+  const searchOpen = useHistoryScopeStore((s) => s.searchOpen);
+  const searchText = useHistoryScopeStore((s) => s.searchText);
+  const record = useHistoryRecordFacts();
+  const lookEligible = useAllowlistFlag('daily_look');
+  const lookOptedIn = useBetaOptIn('daily_look');
+  const [focusTick, setFocusTick] = useState(0);
+  const species = activePet?.species;
+
+  const view = useMemo(() => {
+    const data = record.status === 'ready' ? record.data : null;
+    const facts = data?.windowFacts ?? null;
+    const today = facts?.today ?? toLocalDayKey(new Date());
+    const resolved = facts ? resolveWindow(windowKey, facts) : null;
+    const windowDays = data && resolved ? daysIn(data.record.days, resolved.bounds) : null;
+    const courses = data?.courses ?? [];
+    const showCounts = effectiveSearch({ searchOpen, searchText }) === null;
+    const notRead = data?.notReadDays && resolved ? sumIn(data.notReadDays, resolved.bounds) : null;
+    return {
+      typeRows: typeSheetRows({
+        counts: windowDays ? typeSheetCountsOf(windowDays) : null,
+        showCounts,
+        courses,
+        notRead,
+        readingOff: PHOTO_READING_OFF,
+        lookLive: lookCardLive({ eligible: lookEligible, optedIn: lookOptedIn, species }),
+        current: filter,
+        dates: historyDateFormatFor(today),
+      }),
+      typePill: typePillOf({ filter, courses, windowDays, showCounts }),
+      windowRows: windowSheetRows({ facts, recordDays: data?.record.days ?? null, filter, showCounts, today }),
+      windowPill: windowPillLabelOf(resolved, windowKey, today),
+      currentWindow: resolved?.key ?? windowKey,
+    };
+  }, [record, filter, windowKey, searchOpen, searchText, lookEligible, lookOptedIn, species]);
+
+  if (!activePet) return null;
+  const petId = activePet.id;
+
+  return (
+    <View style={styles.container} testID="history-v2-pinned-row">
+      <View style={styles.row}>
+        <ThemedText accessibilityRole="header" numberOfLines={1} style={styles.petName}>
+          {activePet.name}
+        </ThemedText>
+        <View style={styles.controls}>
+          <TypeSheet petId={petId} filter={filter} rows={view.typeRows} pill={view.typePill} />
+          <WindowSheet petId={petId} current={view.currentWindow} rows={view.windowRows} pillLabel={view.windowPill} />
+          <TouchableOpacity
+            style={styles.searchButton}
+            onPress={() => {
+              // Already open: take the owner back to the field rather than doing nothing.
+              if (useHistoryScopeStore.getState().openSearch(petId) && searchOpen) setFocusTick((n) => n + 1);
+            }}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={searchLabelOf(activePet.name)}
+            accessibilityState={{ expanded: searchOpen }}
+            testID="history-v2-search-button"
+          >
+            <View style={styles.searchCircle}>
+              <Search size={16} color={theme.colorTextSecondary} strokeWidth={2} />
+            </View>
+          </TouchableOpacity>
+        </View>
+      </View>
+      {searchOpen ? (
+        <SearchField key={petId} petId={petId} petName={activePet.name} focusTick={focusTick} />
+      ) : null}
+    </View>
+  );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    paddingHorizontal: theme.space2,
+    paddingBottom: theme.space1,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: TOUCH_FLOOR,
+    gap: theme.space1,
+  },
+  // Gives ground to a narrow frame (an ellipsis) before the pills do; its full name is
+  // still what VoiceOver reads (C-8).
+  petName: {
+    flexShrink: 1,
+    minWidth: 0,
+    fontSize: theme.textLG,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+  },
+  // The pills carry vertical slop only (ScopeMenu), and the search button reaches its
+  // floor by its box with none, so no two controls here share hit area at this gap (C-5).
+  controls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space0_5,
+    marginLeft: 'auto',
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  searchButton: {
+    width: TOUCH_FLOOR,
+    height: TOUCH_FLOOR,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  searchCircle: {
+    width: SEARCH_CIRCLE,
+    height: SEARCH_CIRCLE,
+    borderRadius: theme.radiusFull,
+    borderWidth: 1,
+    borderColor: theme.colorBorderStrong,
+    backgroundColor: theme.colorSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

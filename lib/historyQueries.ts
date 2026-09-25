@@ -183,6 +183,34 @@ export const FIRST_LOOK_SQL = `
     JOIN events e ON e.id = l.event_id
    WHERE e.pet_id = ? AND e.deleted_at IS NULL`;
 
+interface RawTypeFirsts {
+  event_type: string;
+  first_jd: number | null;
+  first_photo_jd: number | null;
+  first_note_jd: number | null;
+}
+
+function typeFirstsOf(rows: readonly RawTypeFirsts[]): TypeFirsts[] {
+  return rows.map((t) => ({
+    eventType: t.event_type,
+    firstMs: msOfJulianDay(t.first_jd),
+    firstPhotoMs: msOfJulianDay(t.first_photo_jd),
+    firstNoteMs: msOfJulianDay(t.first_note_jd),
+  }));
+}
+
+/**
+ * The pet's first record: the population's first local day (never a look's, §5.6), or null
+ * for a pet with nothing logged. The answer `readHistoryFacts` returns as `firsts.record`,
+ * from the same query and the same mapping, for a caller that needs it BEFORE it has a
+ * window to read facts over: the window table's floor, `WindowFacts.firstRecordDay` (HV-9).
+ * Rejects on a failed read: an unreadable start is not an empty record.
+ */
+export async function readRecordStartDay(petId: string): Promise<string | null> {
+  const rows = await getDb().getAllAsync<RawTypeFirsts>(TYPE_FIRSTS_SQL, [petId, LOOK_EVENT_TYPE]);
+  return firstDaysOf(typeFirstsOf(rows), null).record;
+}
+
 function toPopulationRow(r: RawPopulationRow): PopulationRow {
   return {
     id: r.id,
@@ -212,21 +240,13 @@ export async function readHistoryFacts(petId: string, range: DayRange): Promise<
   const [rows, lookRows, typeFirsts, firstLook, regimens, arrangements] = await Promise.all([
     db.getAllAsync<RawPopulationRow>(POPULATION_SQL, [petId, LOOK_EVENT_TYPE, bounds.after, bounds.before]),
     db.getAllAsync<{ local_day: string }>(LOOK_DAYS_SQL, [petId, range.fromDay, range.toDay]),
-    db.getAllAsync<{ event_type: string; first_jd: number | null; first_photo_jd: number | null; first_note_jd: number | null }>(
-      TYPE_FIRSTS_SQL,
-      [petId, LOOK_EVENT_TYPE],
-    ),
+    db.getAllAsync<RawTypeFirsts>(TYPE_FIRSTS_SQL, [petId, LOOK_EVENT_TYPE]),
     db.getFirstAsync<{ local_day: string | null }>(FIRST_LOOK_SQL, [petId]),
     readRegimens(petId),
     getActiveArrangementsForPet(petId),
   ]);
   const population = rows.map(toPopulationRow);
-  const firsts: TypeFirsts[] = typeFirsts.map((t) => ({
-    eventType: t.event_type,
-    firstMs: msOfJulianDay(t.first_jd),
-    firstPhotoMs: msOfJulianDay(t.first_photo_jd),
-    firstNoteMs: msOfJulianDay(t.first_note_jd),
-  }));
+  const firsts = typeFirstsOf(typeFirsts);
   return {
     range,
     days: buildDayFacts({
