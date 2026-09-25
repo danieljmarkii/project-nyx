@@ -118,6 +118,7 @@ import { MEDICATION_SCHEMA_SQL } from '../../lib/medications';
 import { DIET_TRIAL_SCHEMA_SQL } from '../../lib/dietTrialMirror';
 import { FAB_SCROLL_INSET_FLOOR, HISTORY_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 import { shiftDay } from '../../lib/historyDays';
+import { LANDING_RETRIES, LANDING_RETRY_MS } from '../../lib/historyScreen';
 import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
 import { analysisChainOutstanding, claimAnalysisChain } from '../../lib/analysis';
 import { syncNow } from '../../lib/sync';
@@ -127,6 +128,7 @@ import { useHistoryListStore } from '../../store/historyListStore';
 import { useEventStore } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
 import { recordDay, recordWeekday } from '../../lib/recordDates';
+import { FOLD_MOTION } from '../motion/foldMotion';
 
 // ── The record ──────────────────────────────────────────────────────────────────
 
@@ -241,6 +243,22 @@ async function settle(): Promise<void> {
     await new Promise((r) => setTimeout(r, LIST_BATCH_MS + 5));
   });
 }
+
+/** Waits `ms` inside act. A test never ends with the screen's own timers pending: one that
+ *  fires after the test's last act updates a tree nothing is watching (the act warning),
+ *  and under load it lands in whichever test runs next. */
+async function waitOut(ms: number): Promise<void> {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, ms));
+  });
+}
+
+/** A landing's scroll re-aims on timers (the list's own retry chain), and each jump asks the
+ *  list for a cell batch: past both, whatever the landing set in motion has landed. */
+const LANDING_TAIL_MS = LANDING_RETRIES * LANDING_RETRY_MS + LIST_BATCH_MS + 5;
+
+/** The rose's arrival beats (`useNodeArrival`): the rail's lag, the slot's open, the settle. */
+const ARRIVAL_TAIL_MS = FOLD_MOTION.railLagMs + FOLD_MOTION.openMs + FOLD_MOTION.settleSlackMs * 2 + 5;
 
 /** Hold every read until released. Each gate is registered and released after the test
  *  whatever it asserted, so a failing test never leaves its reads held for the next one. */
@@ -697,6 +715,7 @@ describe('the landed day (§3.1, C-22)', () => {
     expect(useHistoryScopeStore.getState().landedDay).toBeNull();
     const after = screen.getByTestId(`history-day-header-${dayAgo(2)}`);
     expect(StyleSheet.flatten(after.props.style).borderColor).not.toBe('#0B7B6C');
+    await waitOut(LANDING_TAIL_MS);
   });
 
   it('a landing further back than the pages reach pages back, then jumps to its day', async () => {
@@ -741,6 +760,7 @@ describe('the landed day (§3.1, C-22)', () => {
     await settle();
     const gap = screen.getByTestId(`history-gap-${dayAgo(3)}`);
     expect(StyleSheet.flatten(gap.props.style).borderColor).toBe('#0B7B6C');
+    await waitOut(LANDING_TAIL_MS);
   });
 });
 
@@ -756,6 +776,7 @@ describe('the tab re-press (§3.1)', () => {
     act(() => mockNavigation.listeners.forEach((cb) => cb()));
     expect(useHistoryScopeStore.getState().landedDay).toBeNull();
     expect(useHistoryScopeStore.getState().stripWeek).toBeNull();
+    await waitOut(LANDING_TAIL_MS);
   });
 
   it('does nothing when History is not the tab on screen', async () => {
@@ -768,6 +789,7 @@ describe('the tab re-press (§3.1)', () => {
     mockNavigation.focused = false;
     act(() => mockNavigation.listeners.forEach((cb) => cb()));
     expect(useHistoryScopeStore.getState().landedDay).toBe(dayAgo(4));
+    await waitOut(LANDING_TAIL_MS);
   });
 });
 
@@ -793,6 +815,9 @@ describe('the reads a row can carry', () => {
     mockGate = null;
     await act(async () => release());
     await settle();
+    expect(screen.getByTestId('spine-verdict-v2')).toBeTruthy();
+    // The arrival runs on to its end, and the rose is still what the row holds.
+    await waitOut(ARRIVAL_TAIL_MS);
     expect(screen.getByTestId('spine-verdict-v2')).toBeTruthy();
   });
 

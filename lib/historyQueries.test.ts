@@ -50,7 +50,8 @@ import {
   readDayPage,
   readHistoryCourses,
   readHistoryFacts,
-  readRecordFirstDay,
+  readRecordDays,
+  readRecordStartDay,
   readWholeDays,
   searchCondition,
   type DayPage,
@@ -445,21 +446,21 @@ describe('HV-7 — the whole day behind a filtered page, and the record\'s first
     expect(await readWholeDays(PET, [])).toEqual(new Map());
   });
 
-  it('readRecordFirstDay: the facts\' own record start, over both spellings of an instant; a look never starts it', async () => {
+  it('readRecordStartDay: the facts\' own record start, over both spellings of an instant; a look never starts it', async () => {
     seedRich();
     // An earlier look must not move the record's start (§5.6).
     insertLook('look-early', localAt(1, 7).toISOString(), '2026-09-01');
     const facts = await readHistoryFacts(PET, RANGE);
-    expect(await readRecordFirstDay(PET)).toBe(facts.firsts.record);
-    expect(await readRecordFirstDay(PET)).toBe('2026-09-02');
+    expect(await readRecordStartDay(PET)).toBe(facts.firsts.record);
+    expect(await readRecordStartDay(PET)).toBe('2026-09-02');
     // A hydrated row at exactly local midnight is on its own day, never the day before.
     insertEvent('midnight', hydrated(localAt(1, 0, 0, 0)), 'cough');
-    expect(await readRecordFirstDay(PET)).toBe('2026-09-01');
+    expect(await readRecordStartDay(PET)).toBe('2026-09-01');
   });
 
-  it('readRecordFirstDay: null for a pet with nothing logged, and removed rows never start a record', async () => {
+  it('readRecordStartDay: null for a pet with nothing logged, and removed rows never start a record', async () => {
     insertEvent('gone-early', localAt(1, 9).toISOString(), 'vomit', { deleted: true });
-    expect(await readRecordFirstDay(PET)).toBeNull();
+    expect(await readRecordStartDay(PET)).toBeNull();
   });
 });
 
@@ -544,6 +545,29 @@ describe('the facts — flags, looks, firsts, duplicates', () => {
     expect(facts.duplicates.total).toBe(0);
     expect(dayFactsOn(facts.days, '2026-09-10').total).toBe(2);
     expect(facts.days.has('2026-09-09')).toBe(false);
+  });
+});
+
+// HV-9's pinned row reads only the days (CUL-1228: the duplicates pass is most of the
+// whole-record read's cost, and the row never shows them). The two reads must never
+// disagree about a day, or the pill and the count line would print two numbers.
+describe('readRecordDays — the facts\' days, and nothing else', () => {
+  it('reads exactly the days readHistoryFacts reads, over any window', async () => {
+    seedRich();
+    insertEvent('before', localAt(9, 23, 59, 50).toISOString(), 'cough');
+    insertEvent('seam', hydrated(localAt(10, 0, 0, 40)), 'cough');
+    const windows: DayRange[] = [RANGE, { fromDay: '2026-09-10', toDay: '2026-09-21' }, { fromDay: '2026-09-05', toDay: '2026-09-05' }];
+    for (const range of windows) {
+      const [days, facts] = await Promise.all([readRecordDays(PET, range), readHistoryFacts(PET, range)]);
+      expect(days.size).toBeGreaterThan(0);
+      expect([range, days]).toEqual([range, facts.days]);
+    }
+  });
+
+  it('the record\'s first day is the facts\' first day (the window table\'s All time)', async () => {
+    seedRich();
+    expect(await readRecordStartDay(PET)).toBe((await readHistoryFacts(PET, RANGE)).firsts.record);
+    expect(await readRecordStartDay(OTHER_PET)).toBeNull();
   });
 });
 

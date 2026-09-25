@@ -69,6 +69,8 @@ import {
 import { SEARCH_READS_NOTES, type HistoryRow } from '../../lib/historyQueries';
 import {
   BOWL_LINE_LEAD,
+  LANDING_RETRIES,
+  LANDING_RETRY_MS,
   bowlLineText,
   countLineWindowOf,
   historyDatesFor,
@@ -145,10 +147,6 @@ const NO_ROWS: readonly HistoryRow[] = [];
 const NO_NODES: readonly DayNode[] = [];
 const NO_NODES_BY_DAY: ReadonlyMap<string, DayNode[]> = new Map();
 const NO_OPEN: ReadonlySet<string> = new Set();
-/** How many times a landing re-aims at a section the list had not measured yet, and how
- *  long it waits for the jump near it to be measured before each re-aim. */
-const LANDING_RETRIES = 3;
-const LANDING_RETRY_MS = 50;
 
 function courseOf(snapshot: HistorySnapshot, filter: HistoryFilter = snapshot.filter): HistoryCourse | null {
   return filter.kind === 'course' ? (snapshot.courses.find((c) => c.key === filter.courseKey) ?? null) : null;

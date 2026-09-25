@@ -135,6 +135,25 @@ describe('a load: one snapshot, every read together', () => {
     expect(snapshotForScope(snap, scopeFor(PET_A.id), TODAY)).toBe(snap);
   });
 
+  it('the window facts belong to the request\'s day while the real clock is past midnight (HV-9\'s assembly)', async () => {
+    // A visit today anchors nothing today; tomorrow it is "the last vet visit". Facts read
+    // for the real clock's day would carry today's visit under today's key.
+    seedDays(1, 1);
+    const visit = mockRaw.prepare('INSERT INTO vet_visits (id, pet_id, visited_at) VALUES (?, ?, ?)');
+    visit.run('vv-old', PET_A.id, dayAgo(10));
+    visit.run('vv-today', PET_A.id, TODAY);
+    const tomorrow = dayKeyToLocalDate(shiftDay(TODAY, 1)) as Date;
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(tomorrow.getTime() + 30_000);
+    try {
+      expect(await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY })).toBe('drawn');
+    } finally {
+      clock.mockRestore();
+    }
+    const { windowFacts } = store().snapshot!;
+    expect(windowFacts.today).toBe(TODAY);
+    expect(windowFacts.sinceVisit).toBe(dayAgo(10));
+  });
+
   it('under a filter, every shown day\'s WHOLE day is read too (R-2)', async () => {
     seedDays(2, 2);
     insertEvent('v1', at(1, 9), 'vomit');

@@ -25,6 +25,7 @@ import {
   dateOnlyItemText,
   historyDatesFor,
   historyNodesByDay,
+  instantOnDay,
   itemsOnlyLineText,
   needsWholeDays,
   priorOnsetsFor,
@@ -41,7 +42,7 @@ import {
 } from './historyScreen';
 import { resolveWindow, windowTrialOf, type WindowFacts } from './historyWindows';
 import type { FeedingInput } from './mealTiming';
-import { toLocalDayKey } from './utils';
+import { dayKeyFromIndex, dayKeyToLocalDate, localDayIndexOf, toLocalDayKey } from './utils';
 import { latestVisitBefore } from './visitWindow';
 
 // ── The day: Sep 17, as History's page read hands it over ────────────────────────
@@ -451,5 +452,44 @@ describe('historyDatesFor: the one formatter, for one today (H-10)', () => {
     expect(d.day('2026-12-31')).toBe('Dec 31, 2026');
     expect(d.weekday('2026-12-31')).toBe('Thu, Dec 31, 2026');
     expect(d.range('2026-12-27', '2027-01-02')).toBe('Dec 27, 2026 – Jan 2');
+  });
+});
+
+describe('instantOnDay: the instant nearest now on the request\'s own day', () => {
+  // Built from LOCAL components, so the day boundary is the running zone's midnight (C-29).
+  const at = (day: string, h: number, m = 0, sec = 0, ms = 0) => {
+    const d = dayKeyToLocalDate(day) as Date;
+    d.setHours(h, m, sec, ms);
+    return d.getTime();
+  };
+  const DAY = '2026-09-25';
+
+  it('now itself on the day; past the day, its last millisecond; before it, its first', () => {
+    const noon = at(DAY, 12);
+    expect(instantOnDay(DAY, noon)).toBe(noon);
+    // The screen's clock still reads Sep 25 while the real one is 30 seconds into Sep 26.
+    const late = instantOnDay(DAY, at('2026-09-26', 0, 0, 30));
+    expect(late).toBe(at('2026-09-26', 0) - 1);
+    expect(toLocalDayKey(new Date(late))).toBe(DAY);
+    // A clock moved back a day (a flight west) still reads the day the request names.
+    expect(instantOnDay(DAY, at('2026-09-24', 23))).toBe(at(DAY, 0));
+  });
+
+  it('every day of a year, every edge: the answer is always on the day asked for (DST days included)', () => {
+    // Chatham, one of CI's zones, changes its clocks on Apr 5 and Sep 27 2026: a 25-hour
+    // and a 23-hour day, where a fixed 86,400,000 would land on the wrong day.
+    const first = localDayIndexOf('2026-01-01') as number;
+    for (let i = 0; i < 365; i++) {
+      const day = dayKeyFromIndex(first + i);
+      const start = at(day, 0);
+      const next = at(dayKeyFromIndex(first + i + 1), 0);
+      for (const now of [start - 1, start, (start + next) / 2, next - 1, next, next + 30_000]) {
+        expect([day, toLocalDayKey(new Date(instantOnDay(day, now)))]).toEqual([day, day]);
+      }
+    }
+  });
+
+  it('a malformed key answers now, since no caller derives one', () => {
+    expect(instantOnDay('not-a-day', 1234)).toBe(1234);
   });
 });

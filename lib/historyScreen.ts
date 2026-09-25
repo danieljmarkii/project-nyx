@@ -177,10 +177,32 @@ export function visibleNodesOf(nodes: readonly DayNode[], shown: ReadonlySet<str
 
 // ── The timing lane's inputs, per day ──────────────────────────────────────────
 
+/** How many times a landing re-aims at a section the list had not measured yet, and how
+ *  long it waits for the jump near it to be measured before each re-aim. Here rather than
+ *  in the list so a test can wait out the whole chain from the numbers the list uses. */
+export const LANDING_RETRIES = 3;
+export const LANDING_RETRY_MS = 50;
+
 /** A local day key's midnight, in epoch ms, or null for a malformed key. */
 export function dayStartMs(day: string): number | null {
   const d = dayKeyToLocalDate(day);
   return d ? d.getTime() : null;
+}
+
+/**
+ * The instant nearest `nowMs` that falls on local `day`: `nowMs` itself on that day, else
+ * the day's first or last millisecond. `readWindowFacts` derives its `today` from the
+ * instant it is handed (HV-3: every field of `WindowFacts` belongs to one day), and the
+ * list's request names its day, so a screen whose clock has not yet ticked past midnight
+ * still reads its own day's facts, never the next day's under its own day's key. `nowMs`
+ * for a malformed key, which no caller derives (the list's day is `toLocalDayKey`'s).
+ */
+export function instantOnDay(day: string, nowMs: number): number {
+  const start = dayKeyToLocalDate(day);
+  if (!start) return nowMs;
+  // The next day's local midnight, from its components: a DST day is 23 or 25 hours long.
+  const next = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1).getTime();
+  return Math.min(Math.max(nowMs, start.getTime()), next - 1);
 }
 
 /**

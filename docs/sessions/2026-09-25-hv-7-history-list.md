@@ -148,3 +148,26 @@ The one check-in (10:02 UTC) found both on `main`, so #917 merged second to each
 - **Verification.**
   - 10 more mutations (the second pass dropped, a photo claimed before its copy answered, a failed look discarding the last answer, an older look overwriting, the working mark dropped first, both read gates narrowed, the pipeline's anchors emptied, the look back on the frame, the strip handed another pet's window).
   - The full suite: 500 suites, 11,332 tests. The History and pipeline suites under Kiritimati, Chatham and Honolulu.
+
+## After the wrap, second: HV-9 (#916) merged, carrying CUL-1250
+
+By 12:57 UTC `main` held HV-9 (#916), so #917 merged second to all three of its step-2 siblings.
+
+- **CI's timezone leg went red on `39db398` over a test this PR never touched.** `lib/lookPatterns.test.ts` asserted that the withheld Patterns card never prints `24`, its answered-day total, and the card prints a clock-anchored date two days back. On the 26th of any month, local, that date reads *first marked Sep 24, 2026*.
+  - `main` failed identically at the same clock. A 35-day sweep of unpatched `main` failed on exactly the 26ths, in UTC and in Kiritimati. The required UTC check would have gone red for all of Sep 26.
+  - Filed CUL-1250 (High) with a proven patch: four zones, the sweep, four mutants. The PR got one standing-down comment, holding the re-run inside the red window.
+  - HV-9's PR ported the patch verbatim, so it reached `main` first.
+- **The merge had five conflicts,** each a place both lanes had written:
+  - `lib/historyQueries.ts`: HV-9's `readRecordStartDay` is this PR's `readRecordFirstDay` exactly (same SQL, same mapping). Mine is gone, and its two tests (both ISO spellings of one instant, a look never starting the record, removed rows) now test `readRecordStartDay`.
+  - Three test files' pet-store mocks: the same `subscribe` line, written twice.
+  - The flag test (AC 35's async half): both lanes' reads are now listed together, including the pinned row's `readHistoryRecord`. HV-9's `historyWindowFacts` mock now spreads the real module (C-39). Narrow, it hid the `readWindowFacts` the list now imports; a mutant proves the flag-on case needs it.
+  - One more that `tsc` caught: HV-9's two `CountLineWindow` literals lacked this PR's required `recordFrom` and `pastPlannedEnd`. They now carry their true values, `null` and `false`.
+- **One `WindowFacts` assembly.** The list store calls HV-9's `readWindowFacts(pet, nowMs)`, and its private copy is deleted.
+  - That function derives its day from the instant it is handed, while the list's request names its day. So the store passes `instantOnDay(today, Date.now())`, the instant nearest now that falls on the request's own day.
+  - A screen whose clock has not ticked past midnight therefore reads its own day's facts, never the next day's under its own key. Otherwise a visit logged today would become "the last vet visit".
+  - Proven by a property test over every day of 2026 at six edges each, which catches a 24-hour-day shortcut on Chatham's 23- and 25-hour days, and by a store test over the real schema.
+- **Not done here: the one read.** HV-9's proposal (CUL-1228) publishes one All-time read in the list store for the count line, the pill, both sheets and the strip. That re-architects the store and has its own issue, so it went to the PM as a decision brief instead of into this PR unasked.
+- **A test-hygiene race, found while verifying.** Under parallel load, four of the list's tests ended with the screen's own timers pending: a landing's retry chain and cell batch, and the rose's arrival beats. A timer that fires after a test's last `act` updates a tree nothing watches, which is the act warning.
+  - Each test now waits out its tail inside `act`. The waits derive from the shipped constants: `LANDING_RETRIES` and `LANDING_RETRY_MS`, moved to `lib/historyScreen.ts` for that, and `FOLD_MOTION`.
+  - The same contention batch, 16 runs each: 7 warnings before, 0 after, with every run green both times.
+- **Verification.** 4 mutants, all red: the store reading at `Date.now()`, `instantOnDay` without its clamp, a 24-hour-day shortcut (under Chatham), and the narrow mock.

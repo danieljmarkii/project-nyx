@@ -1,8 +1,6 @@
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 
-import { getDb } from '../lib/db';
-import { loadTrialPredicateFacts } from '../lib/dietTrialFacts';
 import {
   getActiveArrangementsForPet,
   getBoundaryMarkers,
@@ -20,7 +18,6 @@ import {
   readDayPage,
   readHistoryCourses,
   readHistoryFacts,
-  readRecordFirstDay,
   readWholeDays,
   type DayPage,
   type DayPageCursor,
@@ -28,14 +25,9 @@ import {
   type HistoryDay,
   type HistoryRow,
 } from '../lib/historyQueries';
-import { dayStartMs, needsWholeDays, type HistoryDayTiming } from '../lib/historyScreen';
-import {
-  resolveWindow,
-  windowParam,
-  windowTrialOf,
-  type ResolvedWindow,
-  type WindowFacts,
-} from '../lib/historyWindows';
+import { dayStartMs, instantOnDay, needsWholeDays, type HistoryDayTiming } from '../lib/historyScreen';
+import { readWindowFacts } from '../lib/historyWindowFacts';
+import { resolveWindow, windowParam, type ResolvedWindow, type WindowFacts } from '../lib/historyWindows';
 import { DEFAULT_MEAL_TIMING_CONFIG } from '../lib/mealTiming';
 import { mayCarryRead, type SpineAnalysisRow } from '../lib/spineNode';
 import {
@@ -45,7 +37,6 @@ import {
   readVomitOnsetsSince,
 } from '../lib/spineReads';
 import { readVisitsForHistory } from '../lib/vetVisits';
-import { readLatestVisitBefore } from '../lib/visitWindow';
 import {
   effectiveSearch,
   filterId,
@@ -227,26 +218,6 @@ const EMPTY_TIMING: HistoryTiming = { feedings: [], freeFedSpans: [], onsets: []
 /** A landing pages back at most this far: past it, the day is not reachable by paging. */
 const MAX_LANDING_PAGES = 400;
 
-/** The window facts for one pet and one `today`, all read for the same day (HV-3's
- *  contract: every field of `WindowFacts` derives from one `today`). */
-async function readWindowFacts(pet: HistoryListPet, today: string): Promise<WindowFacts> {
-  const [firstRecordDay, trial, sinceVisit] = await Promise.all([
-    readRecordFirstDay(pet.id),
-    loadTrialPredicateFacts({ id: pet.id, name: pet.name, species: pet.species, sex: pet.sex }),
-    readLatestVisitBefore(getDb(), pet.id, today),
-  ]);
-  return {
-    petId: pet.id,
-    today,
-    firstRecordDay,
-    // Unscoped facts, as `windowTrialOf` requires. Facts the trial loader could not compute
-    // carry no evidence window, so the trial window is simply not offered (never dated off
-    // a guess); the loader has already said why in the log.
-    trial: trial ? windowTrialOf(trial.trial, trial.facts ?? { exposureRange: null }, today) : null,
-    sinceVisit,
-  };
-}
-
 /** Pages until the span reaches `keepTo` (a re-read keeps the depth the owner scrolled to),
  *  or one page when there is nothing to keep. From `from`'s cursor on when it is given (a
  *  load reading on to a depth the list reached while it read). */
@@ -405,7 +376,9 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
     // it back (v1's rule, per attempt, not per mount).
     if (get().failedRequest === request) set({ failedRequest: null });
     try {
-      const windowFacts = await readWindowFacts(pet, today);
+      // The one `WindowFacts` assembly, the pinned row's too (HV-9), read at an instant on
+      // the request's own day so every field belongs to `today` (`instantOnDay`).
+      const windowFacts = await readWindowFacts(pet, instantOnDay(today, Date.now()));
       const resolved = resolveWindow(scope.window, windowFacts);
       const key = historyScopeKey(scope, resolved);
       const search = effectiveSearch(scope);

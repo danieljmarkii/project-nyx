@@ -7,8 +7,9 @@
 // the page read answers. So this file renders the tab over a record that WOULD answer,
 // in BOTH screens' reads, and asserts:
 //   • flag-off: v1 draws its row, the v2 root never mounts, and NOT ONE of v2's reads is
-//     issued (the window's facts, the numbers, the page, the whole days, the courses, the
-//     trial, the visit bound), before or after every read settles;
+//     issued (the list's: the window's facts, the numbers, the page, the whole days, the
+//     courses, the trial, the visit bound; and the pinned row's record read, HV-9), before
+//     or after every read settles;
 //   • flag-on: the v2 root mounts, v2's reads ARE issued and its row is drawn from them, and
 //     v1's page read is never issued (the two screens never run at once).
 // An absence proves a gate only when the thing gated was available to leak: the flag-on
@@ -53,6 +54,14 @@ jest.mock('../../lib/db', () => ({
   getDb: jest.fn(() => ({})),
 }));
 jest.mock('../../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn(() => Promise.resolve()) }));
+// The pinned row's one read (HV-9): stubbed to a record that ANSWERS, so its absence
+// flag-off proves the gate rather than an empty fixture (C-41). The rest of the module
+// stays real: the list assembles its window facts through `readWindowFacts`, over the
+// reads stubbed below, and a mock narrower than that would hide the dependency (C-39).
+jest.mock('../../lib/historyWindowFacts', () => ({
+  ...jest.requireActual('../../lib/historyWindowFacts'),
+  readHistoryRecord: jest.fn(),
+}));
 jest.mock('../../store/petStore', () => {
   const pet = { id: 'p1', name: 'Rex', species: 'dog', sex: 'male' };
   const state = { activePet: pet, pets: [pet] };
@@ -67,7 +76,7 @@ jest.mock('../../lib/vetVisits', () => ({
 // v2's reads: each answers with a record (below), so a leak would have something to draw.
 jest.mock('../../lib/historyQueries', () => ({
   ...jest.requireActual('../../lib/historyQueries'),
-  readRecordFirstDay: jest.fn(async () => '2026-09-20'),
+  readRecordStartDay: jest.fn(async () => '2026-09-20'),
   readHistoryFacts: jest.fn(async () => mockFacts()),
   readDayPage: jest.fn(async () => mockPage()),
   readWholeDays: jest.fn(async () => new Map()),
@@ -106,20 +115,21 @@ jest.mock('../../components/history/EventRow', () => {
   };
 });
 
-import { act, render, waitFor } from '@testing-library/react-native';
+import { act, render, waitFor, within } from '@testing-library/react-native';
 import HistoryTab from './history';
 import { getTimeline } from '../../lib/db';
 import {
   readDayPage,
   readHistoryCourses,
   readHistoryFacts,
-  readRecordFirstDay,
+  readRecordStartDay,
   readWholeDays,
   type DayPage,
   type HistoryRow,
 } from '../../lib/historyQueries';
 import { buildDayFacts, firstDaysOf, type HistoryFacts } from '../../lib/historyDays';
 import { loadTrialPredicateFacts } from '../../lib/dietTrialFacts';
+import { readHistoryRecord, type HistoryRecordData } from '../../lib/historyWindowFacts';
 import { readLatestVisitBefore } from '../../lib/visitWindow';
 import { toLocalDayKey } from '../../lib/utils';
 import { __resetAppConfigForTest } from '../../hooks/useAppConfig';
@@ -130,17 +140,20 @@ import { useEventStore } from '../../store/eventStore';
 import { useHistoryListStore } from '../../store/historyListStore';
 
 const mockGetTimeline = getTimeline as jest.Mock;
+const mockReadRecord = readHistoryRecord as jest.MockedFunction<typeof readHistoryRecord>;
 const V2_ROOT = 'history-v2-screen';
 
 /** Every read v2 makes that v1 never does: the gate's async half is their absence. */
 const V2_READS: ReadonlyArray<[string, jest.Mock]> = [
-  ['readRecordFirstDay', readRecordFirstDay as jest.Mock],
+  ['readRecordStartDay', readRecordStartDay as jest.Mock],
   ['readHistoryFacts', readHistoryFacts as jest.Mock],
   ['readDayPage', readDayPage as jest.Mock],
   ['readWholeDays', readWholeDays as jest.Mock],
   ['readHistoryCourses', readHistoryCourses as jest.Mock],
   ['loadTrialPredicateFacts', loadTrialPredicateFacts as jest.Mock],
   ['readLatestVisitBefore', readLatestVisitBefore as jest.Mock],
+  // The pinned row's record read (HV-9).
+  ['readHistoryRecord', readHistoryRecord as jest.Mock],
 ];
 
 // ── The record both screens would draw: one meal, today, at 9 AM local ──────────
@@ -199,6 +212,24 @@ function mockFacts(): HistoryFacts {
   };
 }
 
+/** What the pinned row's read answers: one meal on the day the page read holds. */
+function answeringHistoryRecord(): HistoryRecordData {
+  const range = { fromDay: '2026-09-20', toDay: '2026-09-25' };
+  const meal = {
+    id: 'e1', eventType: 'meal', occurredAt: '2026-09-20T09:00:00Z', foodItemId: null, foodType: 'meal',
+    intakeRating: null, isDose: false, medicationId: null, medicationItemId: null, adherence: null,
+    hasPhoto: false, hasNote: false,
+  };
+  return {
+    petId: 'p1',
+    windowFacts: { petId: 'p1', today: '2026-09-25', firstRecordDay: '2026-09-20', trial: null, sinceVisit: null },
+    range,
+    recordDays: buildDayFacts({ rows: [meal], lookDays: [], range, freeFedFoodIds: new Set(), regimens: [] }),
+    courses: [],
+    notReadDays: new Map(),
+  };
+}
+
 /** A page read that answers with one meal — the record the flag-off screen must draw. */
 function answeringRecord(): void {
   mockGetTimeline.mockResolvedValue([
@@ -246,6 +277,7 @@ beforeEach(() => {
   useEventStore.setState({ todayEvents: [] });
   useHistoryListStore.getState().reset();
   answeringRecord();
+  mockReadRecord.mockResolvedValue(answeringHistoryRecord());
 });
 
 afterAll(() => {
@@ -315,5 +347,24 @@ describe('the flag flipping while the tab is mounted swaps the screen', () => {
     const hookErrors = errors.mock.calls.filter((c) => /hooks?/i.test(String(c[0])));
     expect(hookErrors).toEqual([]);
     errors.mockRestore();
+  });
+});
+
+describe('the pinned row reads the record only under the flag (HV-9 / CUL-1166; C-41)', () => {
+  it('flag-off: its read is never issued, over a record that would answer', async () => {
+    arrange({ eligible: true, optedIn: false });
+    const view = render(<HistoryTab />);
+    expect(await view.findByTestId('row-e1')).toBeTruthy();
+    await settle();
+    expect(mockReadRecord).not.toHaveBeenCalled();
+    expect(view.queryByTestId('history-v2-pinned-row')).toBeNull();
+  });
+
+  it('flag-on: it reads the active pet’s record and names whose record it is', async () => {
+    arrange({ eligible: true, optedIn: true });
+    const view = render(<HistoryTab />);
+    await settle();
+    expect(mockReadRecord).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }), false);
+    expect(within(view.getByTestId('history-v2-pinned-row')).getByText('Rex')).toBeTruthy();
   });
 });
