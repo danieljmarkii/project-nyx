@@ -44,7 +44,7 @@ Also noticed: Geist has no glyph for U+202F, the narrow no-break space newer pla
 
 ## Residuals
 
-- **Tier-2, proposed and not written:** the spec's §3.6 names the column "`TIME_W`, 56pt", and round 5 of the mock draws 56px; both need a one-line edit to match the 60pt ruling. The spec's §2 table (verified at #902) still names the row's old path.
+- ~~Tier 2: the spec and the mock still say 56.~~ Approved by the PM and done in the same session: spec v1.2 records the 60pt ruling inline in §3.6 and says where the row lives in §2; round 5 of the mock draws the 60px column (its grid, thread, open-in-place rail and bowl line moved together, with a dated ledger row), republished to the same URL as version 6.
 - The async proof covers the MOUNT only; HV-7 extends it to the real v2 reads.
 - Two comments still point at the row's old home: `lib/spineNode.test.ts:7` (left alone because HV-2 and HV-5 edit that file in parallel) and `components/designV2/index.ts`'s description of `home/`.
 - Merge order with HV-2: if HV-2 makes a new `FeedingInput` field required, `lib/dayNodes.test.ts`'s sweep adds it; whoever merges second.
