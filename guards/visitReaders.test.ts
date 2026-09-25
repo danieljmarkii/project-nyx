@@ -223,6 +223,17 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'coverage line, a day count, Patterns or an engine input.',
   },
 
+  // ── The shared visit bound (H-11, CUL-1160) ──
+  'lib/visitWindow.ts': {
+    kinds: ['table'],
+    why:
+      'readLatestVisitBefore — the ONE "since the last vet visit" bound that History, ' +
+      'the rundown (CUL-1127) and the report (HV-15) share. It reads visited_at to ' +
+      'return ONE day, the START of a window, as a branded SinceVisitDay: never a visit ' +
+      'row, never a count. The visit contributes no row and no number to whatever the ' +
+      'window then counts (the report\'s rung-1 entry below is the same kind of reader).',
+  },
+
   // ── The report ──
   'supabase/functions/generate-report/index.ts': {
     kinds: ['table'],
@@ -736,6 +747,10 @@ describe('the detector itself', () => {
 //      exports its first `listAppointments()`. The rule for VV-2, stated here because
 //      that is when it will be needed: a helper that returns visit data is exported
 //      from an allow-listed file ONLY if its own callers are scanned too.
+//      `lib/visitWindow.ts` (CUL-1160) exports one visit-derived value on purpose: the
+//      window's first day, a branded `SinceVisitDay`. A single boundary day cannot be
+//      summed into a count, which is the property this limit protects, so its callers
+//      need no scan of their own; a helper returning visit ROWS would.
 //
 //   4. An `rpc()` to a server function that reads visits. No such function exists.
 

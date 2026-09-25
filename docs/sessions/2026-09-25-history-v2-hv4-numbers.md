@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 
-Shipped via #911 (CUL-1161). Filed: CUL-1193 (the course count's wording; the PM ruled (b) the same day, built here, below), CUL-1194 (the Patterns month's record start counts a look). Handoff notes posted on CUL-1160, CUL-1164, CUL-1165, CUL-1166 and CUL-1169.
+Shipped via #911 (CUL-1161). Filed: CUL-1193 (the course count's wording; the PM ruled (b) the same day, built here, below), CUL-1194 (the Patterns month's record start counts a look), CUL-1207 (HV-3's window test under a half-hour DST shift). Handoff notes posted on CUL-1160, CUL-1164, CUL-1165, CUL-1166 and CUL-1169.
 
 ## The ask
 
@@ -80,18 +80,18 @@ The PM ruled (b): under a course and under Medication the count says *16 logged 
 - **Left alone, on purpose:** the day header under a dose filter still reads *1 dose · 8 logged*. The ruling named the count line and the sub-row; the rows under a header carry their own chips; and *2 logged · 8 logged* collides with the day's total. HV-12's copy pass owns the word (noted on CUL-1169).
 - **A premise, stated where it is used:** Medication's clause is a subset of its count only because a dose row always hangs off a medication event (migration 020's design, one writer, nothing re-types an event). History keeps the report's course grain, which reads every dose row, rather than narrowing "a dose" for a record no write path can produce; the comment on `notInFullOf` says so.
 - **Tests:** AC 1 now checks the clause against every window × filter (named only under a dose filter, equal to the facts, never more than the count, equal to the sheet's); AC 30 ties each course's not-in-full to `deriveMedicationCourses`'s own Partial + Missed + Refused tally, over a record holding every chip (neither fixture had a Missed dose, so dropping `missed` from the set survived until that test existed); the node:sqlite suite checks it against the rows the dose filters actually list. Eleven mutations, each red.
-- **Spec v1.3** (§3.2, §3.8, AC 30; ⚠ RULED markers) and **round 5 of the mock** amended to match, republished to the same URL (version 7), as the CUL-1183 amendment was.
+- **Spec v1.4** (§3.2, §3.8, AC 30; ⚠ RULED markers; HV-3 took v1.3 for CUL-1189's rulings, below) and **round 5 of the mock** amended to match, republished to the same URL (version 7), as the CUL-1183 amendment was.
 
 ## A base that moved mid-session
 
 Bundle C (#908, CUL-1124) landed on `main` during the wrap and added `regimen_drug_name` to `getTimeline`, joined pet-scoped (`rx.pet_id = e.pet_id`), so a dose linked to another pet's course never borrows its name. This branch had the same column without that guard, which would have let a search find another pet's course name. The branch merged `main`, and the join is now pet-scoped in both the row read and every scope condition. A test drives a dose linked to another pet's regimen (no name on the row, no search hit); dropping the guard turns it red. The column-for-column test against `getTimeline` now covers the course's name too.
 
-`main` moved again after the wrap: HV-1 (#907) and HV-2 (#910) landed. They share no file with this branch; the merge was clean.
+`main` moved again after the wrap: HV-1 (#907) and HV-2 (#910) landed, sharing no file with this branch, and the merge was clean. Then HV-3 (#909) landed with its own spec v1.3 (CUL-1189's rulings) twenty minutes before this branch pushed CUL-1193's, so the PR went unmergeable and GitHub ran no CI on that push at all (a `pull_request` run needs a merge ref). The one-time check-in caught it; the merge kept both sides (HV-3's two §3.2 rules, then the dose count's; this PR's spec edit became v1.4). Running the History suites in six zones after the merge turned up a half-hour-DST gap in HV-3's own window test (its fixture assumes the clocks move a whole hour; the window code is right): CUL-1207.
 
 ## Verification
 
 - `tsc --noEmit` clean.
-- Full jest suite green on the merged tree: 475 suites, 10,328 passed, 3 skipped.
+- Full jest suite green on the merged tree (with HV-3): 480 suites, 10,620 passed, 6 skipped.
 - The History suites (222 tests) green under Kiritimati, Chatham, Honolulu, New York and Lord Howe.
 - CI green on the first push (all three jobs).
 
