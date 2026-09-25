@@ -207,9 +207,14 @@ describe('the chip is read-only, and a value this build does not know reads as u
   // read the narrowed one, so this dose drew nothing at all, while the record screen,
   // which narrows first, marked it in doubt. Migration 020 names the value this is for
   // (S1 may add `vomited_up`), and an older build would meet it on the next sync.
-  it('a value this build does not know, on a combo whose meal was refused, reads Unconfirmed like the record', () => {
+  // Named and unnamed: on an unnamed dose the whole dose line vanished (the code review's
+  // case), since nothing else held it open.
+  it.each([
+    ['named', byItem],
+    ['unnamed', {}],
+  ] as const)('a value this build does not know, on a %s combo whose meal was refused, reads Unconfirmed like the record', (_case, naming) => {
     const { getByText, queryByText } = draw(dose({
-      ...byItem,
+      ...naming,
       adherence: 'vomited_up' as unknown as Adherence,
       paired_event_id: 'meal-1',
       paired_vehicle_intake: 'refused',
