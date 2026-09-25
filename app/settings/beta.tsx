@@ -2,7 +2,7 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Eye, FlaskConical, Info, LayoutGrid, Palette } from 'lucide-react-native';
+import { Eye, FlaskConical, Info, LayoutGrid, Palette, ScrollText } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
@@ -85,6 +85,14 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
         onHint:
           'It’s on. Home’s Signal leads with its chart — tap it for the Signal’s own screen; Today reads as one line per moment, with the daily look at the top and the month’s coverage at the foot; open Patterns to see the month with its weekly bars and the weight drawn by date.',
       };
+    case 'history_v2':
+      // No on-state hint yet: at HV-1 (CUL-1158) the v2 screen is its empty
+      // composition root, and the VV-0 lesson says a "nothing to see yet" hint is
+      // false the day the next lane lands. The step-2 lane that draws the list
+      // (HV-7) writes the hint for what it shipped, as D2-3/4/5 did above. A
+      // scroll of text reads as "the record you can read", distinct from the
+      // widget grid, Noticed's eye and the redesign's palette.
+      return { Icon: ScrollText };
     default:
       return { Icon: FlaskConical };
   }

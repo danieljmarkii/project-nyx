@@ -20,6 +20,7 @@ import {
   extractAllowlistFlags,
   coerceAllowlistFlags,
   ALLOWLIST_FLAGS_UNSET,
+  ALLOWLIST_FLAG_KEYS,
 } from './appConfig';
 
 describe('app_config resolution — shipped defaults (§11 row 9)', () => {
@@ -448,5 +449,42 @@ describe('design_v2 — Design v2 eligibility (D2-0)', () => {
       allowlist: ['pm-uid'],
     });
     expect(coerceAllowlistFlags({ ask_enabled: true }).design_v2).toBeUndefined();
+  });
+});
+
+// ── history_v2 — the History v2 rollout flag (HV-1 / CUL-1158) ───────────────────
+// Migration 071 seeds it dark ({"enabled": false, "allowlist": []}); the History tab
+// gates on `useHistoryV2()` = eligible && optedIn. Same primitive as every allowlist
+// key above, so the resolver's own cases are not re-tested here — what is pinned is
+// the registration: history_v2 is IN the client union (extracted off a SELECT,
+// carried through the cache) and fails closed while the row is unreached. These back
+// the flag-off promise (guards/historyV2FlagOff.test.tsx).
+describe('history_v2 — History v2 eligibility (HV-1)', () => {
+  it('is registered in the key list and part of the unset baseline', () => {
+    expect(ALLOWLIST_FLAG_KEYS).toContain('history_v2');
+    expect('history_v2' in ALLOWLIST_FLAGS_UNSET).toBe(true);
+    expect(ALLOWLIST_FLAGS_UNSET.history_v2).toBeUndefined();
+  });
+
+  it('extracts raw off an app_config SELECT, alongside the other allowlist keys', () => {
+    const flags = extractAllowlistFlags([
+      { key: 'design_v2', value: { enabled: false, allowlist: ['d-uid'] } },
+      { key: 'history_v2', value: { enabled: false, allowlist: ['pm-uid'] } },
+    ]);
+    expect(flags.history_v2).toEqual({ enabled: false, allowlist: ['pm-uid'] });
+    expect(flags.design_v2).toEqual({ enabled: false, allowlist: ['d-uid'] });
+  });
+
+  it('resolves fail-closed (off) while the row is unreached, and off for everyone on the dark seed', () => {
+    const unset = extractAllowlistFlags([{ key: 'ask_enabled', value: false }]).history_v2;
+    expect(unset).toBeUndefined();
+    expect(resolveAllowlistFlag(unset, 'pm-uid', false)).toBe(false);
+    expect(resolveAllowlistFlag({ enabled: false, allowlist: [] }, 'pm-uid', false)).toBe(false);
+  });
+
+  it('survives the cache round-trip; a cache lacking it decodes to undefined', () => {
+    const stored = { history_v2: { enabled: false, allowlist: ['pm-uid'] } };
+    expect(coerceAllowlistFlags(stored).history_v2).toEqual({ enabled: false, allowlist: ['pm-uid'] });
+    expect(coerceAllowlistFlags({ design_v2: true }).history_v2).toBeUndefined();
   });
 });

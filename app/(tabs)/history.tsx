@@ -35,6 +35,19 @@ import {
   getActiveArrangementsForPet, getBoundaryMarkers,
   ActiveArrangementView, BoundaryMarker,
 } from '../../lib/feedingArrangements';
+import { useHistoryV2 } from '../../hooks/useHistoryV2';
+import { HistoryScreen } from '../../components/historyV2/HistoryScreen';
+
+// History v2 (HV-1 / CUL-1158; spec §5.1, H-8) — the gate, and only the gate. Flag off
+// is today's screen, byte for byte (`HistoryScreenV1` below, untouched); flag on is the
+// v2 composition root, whose drawing lives in `components/historyV2/` so the flag-off
+// guard can stub it (C-36). Two components rather than an early return in v1's body:
+// a flag that flips while the tab is mounted then swaps screens instead of changing
+// the number of hooks v1 calls. v1 is deleted at GA (HV-14).
+export default function HistoryTab() {
+  const historyV2 = useHistoryV2();
+  return historyV2 ? <HistoryScreen /> : <HistoryScreenV1 />;
+}
 
 const PAGE_SIZE = 50;
 
@@ -114,7 +127,7 @@ function coerceEventTypeKey(value: string | undefined | null): EventTypeKey | nu
     : null;
 }
 
-export default function HistoryScreen() {
+function HistoryScreenV1() {
   const { activePet } = usePetStore();
   const activePetId = activePet?.id ?? null;
   // Doorways deep-link here with a `ts` nonce, so a filter re-applies even when this tab

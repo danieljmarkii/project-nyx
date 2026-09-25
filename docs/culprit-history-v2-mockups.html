@@ -242,7 +242,7 @@
   .ffl { display: flex; gap: 8px; align-items: center; font-size: 11px; color: #525252; padding: 0 2px 8px; }
   .ffl i { width: 3px; height: 14px; border-radius: 2px; background: #00C2A8; flex-shrink: 0; }
   .ffl b { color: #0A0A0A; font-weight: 600; }
-  .ffin { display: flex; gap: 7px; align-items: center; font-size: 10.5px; color: #525252; padding: 2px 0 4px 78px; }
+  .ffin { display: flex; gap: 7px; align-items: center; font-size: 10.5px; color: #525252; padding: 2px 0 4px 82px; }
   .ffin i { width: 3px; height: 12px; border-radius: 2px; background: #00C2A8; }
 
   /* ── The strip: the month's day mark, no counts (H-2 a) ───────────── */
@@ -316,9 +316,10 @@
   .pagenote { font-size: 10px; color: #A3A3A3; text-align: center; padding: 6px 12px 0; line-height: 1.4; }
 
   /* ── The row, H-1 (a): shipped Home's frame, the time in a left column that wraps ── */
+  /* the time column is 60px, not 56 (CUL-1183, PM 2026-09-25): at the app's 11pt a run across noon's first line is 58.7pt */
   .spineL { position: relative; }
-  .spineL::before { content: ""; position: absolute; left: 69px; top: 12px; bottom: 12px; width: 2px; border-radius: 1px; background: #EAEAEA; }
-  .rw { position: relative; display: grid; grid-template-columns: 56px 16px minmax(0, 1fr) auto; column-gap: 6px; align-items: start; min-height: 44px; padding: 6px 0 5px; border-radius: 8px; box-sizing: border-box; }
+  .spineL::before { content: ""; position: absolute; left: 73px; top: 12px; bottom: 12px; width: 2px; border-radius: 1px; background: #EAEAEA; }
+  .rw { position: relative; display: grid; grid-template-columns: 60px 16px minmax(0, 1fr) auto; column-gap: 6px; align-items: start; min-height: 44px; padding: 6px 0 5px; border-radius: 8px; box-sizing: border-box; }
   .rw.door { cursor: pointer; }
   .rw.door:focus-visible { outline: 2px solid #0B7B6C; outline-offset: -1px; }
   .rw .rt { font-size: 10.5px; line-height: 1.3; color: #525252; padding-top: 1px; font-variant-numeric: tabular-nums; }
@@ -356,7 +357,7 @@
   /* open in place, uncapped (GAP-8): the rail appears with the open box, along the spine */
   .ddw { position: relative; }
   .ddw .ddb { overflow: hidden; max-height: 0; transition: max-height 370ms cubic-bezier(.2,.8,.2,1.05); }
-  .ddw::before { content: ""; position: absolute; left: 68px; top: 0; bottom: 8px; width: 4px; border-radius: 2px; background: #00C2A8; opacity: 0; transform-origin: top; transform: scaleY(0); transition: transform 160ms ease-out, opacity 120ms ease-out; z-index: 1; }
+  .ddw::before { content: ""; position: absolute; left: 72px; top: 0; bottom: 8px; width: 4px; border-radius: 2px; background: #00C2A8; opacity: 0; transform-origin: top; transform: scaleY(0); transition: transform 160ms ease-out, opacity 120ms ease-out; z-index: 1; }
   .ddw.in::before { opacity: 1; transform: none; }
   .ddw .ddin .rw .rr i { width: 8px; height: 8px; margin-left: -4px; top: 4px; z-index: 2; }
   .ddw .ddin .rw { opacity: 0; transform: translateY(-6px); transition: opacity 260ms ease-out 60ms, transform 260ms ease-out 60ms; }
@@ -493,6 +494,7 @@
     <div class="r"><b>H-11 · "I'll defer to the team."</b><span><i class="t">team</i>Dr. Chen and Jordan's position: the window starts on the day of the latest visit before today and includes it, the bound the vet report and the rundown already use, through one shared function. Home's "since last visit", which restarts the day a visit is saved, is written down as a known difference. <a href="#s07">§07</a></span></div>
     <div class="r"><b>The quiet states · "LOVE that we added an empty state."</b><span><i class="k">kept</i>As drawn. <a href="#s08">§08</a></span></div>
     <div class="r"><b>"Finalize these requirements; put them in a Linear project with a session-by-session plan."</b><span><i class="k">next</i><code>docs/nyx-history-v2-requirements.md</code> is written against this page, and the build is the Linear project <b>History v2 · the record you can read</b>.</span></div>
+    <div class="r"><b>CUL-1183 · "Go with 60." (2026-09-25, after round 5)</b><span><i class="d">ruled</i>The time column is 60pt, not 56. At the app's 11pt, a run across noon's first line, "11:30 AM –", is 58.7pt; in 56 it fell to three lines. Every frame on this page draws the 60pt column; Home, History and the Daily Recap move together. <a href="#s02">§02</a></span></div>
   </div>
   <div class="howto"><b>How to read this page.</b> §01 is the whole screen with every demo. §02 to §07 are the rulings, one per section, each drawn once. §08 is the quiet states, §09 the motion inventory, §10 the rules a build carries, §11 the rulings in one list. Round 4, with the options side by side, is in git at <code>b0479342</code>; the critique is <code>docs/history-v2-round3-critique-2026-09.md</code>.</div>
   <div class="howto" style="margin-top:14px;border-left:3px solid var(--gold)"><b>The record, not a fixture.</b> Times, types, food and drug names, ratings, doses, photo presence and each read's verdict come from a service-role read scoped to Nyx's id paired with her owner's account. Note <em>text</em> was never read: where a note's words appear they are the Designer's and are marked <span class="illus">illustrative</span>, as are the vet visit's reason and clinic.</div>
@@ -534,7 +536,7 @@
 <section id="s02">
   <div class="sec-head"><span class="sec-num">§02</span><h2>The row: one row for History and Home (H-1, ruled a)</h2></div>
   <div class="col">
-    <p>History's row and Home's day spine are one row: the time in a fixed left column that wraps instead of cutting off, the category's dot on the spine, then what the record holds. Round 3's rules for runs, chevrons and names (B, D, K) move into Home in the same bundle, which also fixes CUL-1121, Home folding a refused bowl into "3 meals". Names are real and they wrap: "Instinct · Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy" takes two lines, and a chip never cuts. <strong>Open the 9 meals on Sep 9</strong>: all nine open, each a full 44pt row with every fact.</p>
+    <p>History's row and Home's day spine are one row: the time in a fixed 60pt left column that wraps instead of cutting off, the category's dot on the spine, then what the record holds. Round 3's rules for runs, chevrons and names (B, D, K) move into Home in the same bundle, which also fixes CUL-1121, Home folding a refused bowl into "3 meals". Names are real and they wrap: "Instinct · Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy" takes two lines, and a chip never cuts. <strong>Open the 9 meals on Sep 9</strong>: all nine open, each a full 44pt row with every fact.</p>
   </div>
   <div class="frames">
     <div class="frame-slot">
