@@ -3,8 +3,7 @@
 // renders (and is suppressed when the mapper returns null), and the screen-reader label
 // reads in visual order (title · detail · format-tag … sub-line … time).
 import { fireEvent, render } from '@testing-library/react-native';
-import { Dimensions, PixelRatio, StyleSheet, Text } from 'react-native';
-import type { ReactTestInstance } from 'react-test-renderer';
+import { Dimensions, PixelRatio, StyleSheet, Text, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 import { DaySpine, RAIL_W, SpineRowFrame, TIME_W, timeColumnText } from './DaySpine';
 import type { DaySummaryRow } from '../../lib/daySummary';
 
@@ -138,10 +137,16 @@ describe('SpineRowFrame — no line cap, no scale cap, no height that could cut 
 
   afterEach(() => jest.restoreAllMocks());
 
+  // A structural stand-in for react-test-renderer's instance (the
+  // NamedCompletionCard.test.tsx convention: its types are not a dependency here).
+  type TestNode = { props: { style?: unknown }; parent: TestNode | null };
+  const flat = (style: unknown): ViewStyle & TextStyle =>
+    (StyleSheet.flatten(style as StyleProp<ViewStyle & TextStyle>) ?? {}) as ViewStyle & TextStyle;
+
   /** The host view the frame's row is, found by walking up from the time. */
-  function rowOf(time: ReactTestInstance): ReactTestInstance {
-    let node: ReactTestInstance | null = time.parent;
-    while (node && StyleSheet.flatten(node.props.style)?.minHeight == null) node = node.parent;
+  function rowOf(time: TestNode): TestNode {
+    let node: TestNode | null = time.parent;
+    while (node && flat(node.props.style).minHeight == null) node = node.parent;
     if (!node) throw new Error('the frame row was not found above the time');
     return node;
   }
@@ -168,20 +173,20 @@ describe('SpineRowFrame — no line cap, no scale cap, no height that could cut 
     expect(time.props.maxFontSizeMultiplier).toBeUndefined();
 
     // A fixed column (the rail lines up row to row), free to grow downward.
-    const own = StyleSheet.flatten(time.props.style);
+    const own = flat(time.props.style);
     expect(own.width).toBe(TIME_W);
     expect(own.height).toBeUndefined();
     expect(own.maxHeight).toBeUndefined();
 
     // Nothing between the time and the row clips, and the row holds a FLOOR, not a height.
     const row = rowOf(time);
-    for (let n: ReactTestInstance | null = time.parent; n && n !== row.parent; n = n.parent) {
-      const s = StyleSheet.flatten(n.props.style) ?? {};
+    for (let n: TestNode | null = time.parent; n && n !== row.parent; n = n.parent) {
+      const s = flat(n.props.style);
       expect(s.height).toBeUndefined();
       expect(s.maxHeight).toBeUndefined();
       expect(s.overflow).not.toBe('hidden');
     }
-    expect(StyleSheet.flatten(row.props.style).minHeight).toBe(44);
+    expect(flat(row.props.style).minHeight).toBe(44);
   });
 
   it('the recap draws the shaped time and still speaks the plain one', () => {
