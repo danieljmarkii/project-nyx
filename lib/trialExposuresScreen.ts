@@ -54,7 +54,8 @@ import {
   type TrialFacts,
   type VerdictReason,
 } from './dietTrial';
-import { dayKeyFromIndex, formatLongDate, formatTime, toLocalDayKey } from './utils';
+import { dayKeyFromIndex, formatTime, toLocalDayKey } from './utils';
+import { recordDay, recordRange } from './recordDates';
 
 // ── Copy this module owns ───────────────────────────────────────────────────
 
@@ -191,35 +192,36 @@ function rungTag(rung: ClassificationRung, antigens: readonly string[]): string 
   }
 }
 
-/** "24 July, 6:40 PM". The LOCAL day and the local time — the owner's own clock is
- *  the one they logged against, and `formatLongDate` takes a day key rather
- *  than an instant precisely so a bare calendar day can never shift a date. */
-function whenLabel(occurredAt: string): string | null {
+/** "Jul 24, 6:40 PM" ("Jul 24, 2025, 6:40 PM" outside the current year; H-10). The LOCAL
+ *  day and the local time — the owner's own clock is the one they logged against, and
+ *  `recordDay` takes a day key rather than an instant precisely so a bare calendar day
+ *  can never shift a date. */
+function whenLabel(occurredAt: string, today: string): string | null {
   const at = new Date(occurredAt);
   if (Number.isNaN(at.getTime())) return null;
-  const date = formatLongDate(toLocalDayKey(at));
+  const date = recordDay(toLocalDayKey(at), today);
   if (date === null) return null;
   return `${date}, ${formatTime(at)}`;
 }
 
-function metaLine(occurredAt: string, tag: string | null): string {
-  const when = whenLabel(occurredAt);
+function metaLine(occurredAt: string, tag: string | null, today: string): string {
+  const when = whenLabel(occurredAt, today);
   return [when, tag].filter((p): p is string => p !== null && p !== '').join(' · ');
 }
 
-function feedingRow(item: TrialExposureItem): TrialExposureRow {
+function feedingRow(item: TrialExposureItem, today: string): TrialExposureRow {
   const label = item.label ?? 'A food with no name recorded';
   return {
     key: item.eventId,
     label,
-    meta: metaLine(item.occurredAt, rungTag(item.classification.rung, item.classification.antigens)),
+    meta: metaLine(item.occurredAt, rungTag(item.classification.rung, item.classification.antigens), today),
     // The food label is passed through so the reason names the same food the row
     // does; `explainVerdict` falls back to "This food" on a null.
     reason: explainVerdict(item.classification, item.label),
   };
 }
 
-function doseRow(exposure: OralRouteExposure): TrialExposureRow {
+function doseRow(exposure: OralRouteExposure, today: string): TrialExposureRow {
   return {
     // Prefixed: a dose and a meal are different events, but a combo dose (B-156)
     // carries the vehicle meal's id in its own row, and two rows sharing a React
@@ -229,6 +231,7 @@ function doseRow(exposure: OralRouteExposure): TrialExposureRow {
     meta: metaLine(
       exposure.occurredAt,
       exposure.trigger === 'chewable' ? 'flavoured chewable' : 'given inside food',
+      today,
     ),
     reason: oralRouteCopy(exposure),
   };
@@ -244,12 +247,11 @@ function doseRow(exposure: OralRouteExposure): TrialExposureRow {
  * them. A row in this list can sit outside `range` and still be in the record —
  * so the dates printed above the list are the evidence window's, or nothing.
  */
-function windowLabel(facts: TrialFacts): string | null {
+function windowLabel(facts: TrialFacts, today: string): string | null {
   const r = facts.exposureRange;
   if (!r) return null;
-  const from = formatLongDate(dayKeyFromIndex(r.startDayIndex));
-  const to = formatLongDate(dayKeyFromIndex(r.endDayIndex));
-  return from !== null && to !== null ? `${from} – ${to}` : null;
+  // The year stated once, only where it is needed (H-10).
+  return recordRange(dayKeyFromIndex(r.startDayIndex), dayKeyFromIndex(r.endDayIndex), today);
 }
 
 /**
@@ -264,8 +266,11 @@ function windowLabel(facts: TrialFacts): string | null {
 export function buildTrialExposuresScreen(
   petName: string,
   facts: TrialFacts | null,
+  nowMs: number = Date.now(),
 ): TrialExposuresScreenModel | null {
   if (!facts || !facts.range) return null;
+  // Every date on the screen judges "the current year" against this one day (H-10).
+  const today = toLocalDayKey(new Date(nowMs));
 
   // NEWEST FIRST — an owner opening this from "4 logged feedings were outside the
   // trial diet" is looking for the most recent one, which is the one they can
@@ -281,10 +286,10 @@ export function buildTrialExposuresScreen(
   // this, and the asymmetry between two groups in one function was the tell.
   const feedings = [...facts.exposures.items]
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
-    .map(feedingRow);
+    .map((item) => feedingRow(item, today));
   const doses = [...facts.oralRoute]
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
-    .map(doseRow);
+    .map((exposure) => doseRow(exposure, today));
 
   const groups: TrialExposureGroup[] = [];
   const bothPresent = feedings.length > 0 && doses.length > 0;
@@ -305,7 +310,7 @@ export function buildTrialExposuresScreen(
   }
 
   const empty = groups.length === 0;
-  const window = windowLabel(facts);
+  const window = windowLabel(facts, today);
   // The count is FEEDINGS ONLY on both sides of the ratio (§5.1: exposure is
   // feedings over feedings). The doses group is deliberately not in it, and is
   // not silently absorbed either — it has its own header and its own reasons.

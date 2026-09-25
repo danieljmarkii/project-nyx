@@ -175,15 +175,6 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'guards/homeWrites.test.ts measured that when they did.',
   },
 
-  // ── Surfaces that are ABOUT a visit ──
-  'lib/rundown.ts': {
-    kinds: ['table'],
-    why:
-      'readLastVisitDate — the vet-visit rundown is by definition anchored to the last ' +
-      'visit. It reads the DATE to bound "what changed since then"; the visit ' +
-      'contributes no row to any count in the rundown.',
-  },
-
   // ── Vet Files: a document may LINK to a visit (B-478 D7) ──
   'lib/vetDocumentDetail.ts': {
     kinds: ['table', 'column'],
@@ -741,8 +732,9 @@ describe('the detector itself', () => {
 //      transitive consumer is invisible to the scan"). Measured today: the allow-set
 //      exports exactly one thing that carries visit data, `VET_VISIT_OPTIONS_QUERY`
 //      (a query STRING, whose consumers are themselves scanned because using it means
-//      calling `db.getAllAsync`). `lib/rundown.ts`'s `readLastVisitDate` is NOT
-//      exported — the reviewer's specific example does not compile — so the hole is
+//      calling `db.getAllAsync`). `lib/rundown.ts`'s old `readLastVisitDate` was NOT
+//      exported — the reviewer's specific example did not compile, and since CUL-1127
+//      the rundown reads the shared bound instead — so the hole is
 //      narrower than reported, but the CLASS is real and it opens the moment VV-2
 //      exports its first `listAppointments()`. The rule for VV-2, stated here because
 //      that is when it will be needed: a helper that returns visit data is exported

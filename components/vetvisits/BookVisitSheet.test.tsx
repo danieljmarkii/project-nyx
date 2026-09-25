@@ -95,7 +95,7 @@ describe('switching the arm carries the date with it', () => {
     // `maximumDate` only constrain the PICKER, and a date already in state when
     // the arm flips was re-validated by nothing. Submitting here used to write a
     // future `visited_at` — the one date the report's window, the rundown's
-    // MAX(visited_at) and the Vet Files picker all trust not to be one.
+    // since-visit bound and the Vet Files picker all trust not to be one.
     const onSubmit = renderSheet();
     fireEvent.press(screen.getByLabelText(/^Date, /));
     pick(daysFromToday(28));

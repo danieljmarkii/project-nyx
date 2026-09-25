@@ -99,13 +99,12 @@ import {
 import { milestoneNote, trialDecisionChoices, type TrialOutcome } from './dietTrialCompletion';
 import { type TrialProteinSource } from './trialProtein';
 import { proteinTrialLabel } from './trialProteinPicker';
-import { localDayIndexOf, MONTHS } from './utils';
+import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
+import { recordDay, recordRange } from './recordDates';
 import type { TrialIndication } from './dietTrialSetup';
 import { TRIAL_RESPONSE_COUNTS_DEFAULTS, type TrialResponseCounts } from './trialResponseCounts';
 import { windowMovedTodayLine } from './trialWindowSheet';
 import { trialStartDayKey } from './trialWindowDates';
-
-const MS_PER_DAY = 86_400_000;
 
 // ── Inputs ───────────────────────────────────────────────────────────────────
 
@@ -536,12 +535,14 @@ const DECISION_ACTION_ID: Record<'extend' | 'complete' | 'stopped_early', TrialC
 
 // ── Small pure helpers ───────────────────────────────────────────────────────
 
-/** "3 July". Formatted from the day INDEX rather than via `toLocaleDateString`
- *  so the string is identical under every device locale and test environment —
- *  a date on this card is read next to a vet's instructions, not localised. */
-export function formatTrialDate(dayIndex: number): string {
-  const d = new Date(dayIndex * MS_PER_DAY);
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+/** "Jul 3", or "Jul 3, 2025" outside the current year: the house form through the one
+ *  formatter (`lib/recordDates.ts`, H-10; PM ruling on CUL-1126, 2026-09-25, which moved
+ *  every trial surface off the day-first "3 July" so the card, the trial lists and
+ *  History name one date one way). Locale-independent, since a date on this card is read
+ *  next to a vet's instructions. `today` is the caller's day key, from its own `nowMs`. */
+export function formatTrialDate(dayIndex: number, today: string): string {
+  const key = dayKeyFromIndex(dayIndex);
+  return recordDay(key, today) ?? key;
 }
 
 /** Day 1 IS the start day, so the last day of an N-day window is start + N - 1.
@@ -1622,6 +1623,9 @@ function activeCard(
 ): TrialCardModel {
   const { trial, startIndex, progress, overrunDays } = ctx;
   const endIndex = trialEndDayIndex(startIndex, trial.targetDurationDays);
+  // The card's one day key, from its own clock: every date it prints judges "the
+  // current year" against this (H-10).
+  const today = toLocalDayKey(new Date(input.nowMs));
 
   const base = {
     // B-704 — "{Protein} trial" when a protein resolves, else "Diet trial". The
@@ -1659,7 +1663,7 @@ function activeCard(
       state,
       dayLine: dayLineFor(progress, overrunDays),
       dayLineRole: 'meta',
-      windowLine: windowLineFor(endIndex, overrunDays),
+      windowLine: windowLineFor(endIndex, overrunDays, today),
       lines,
       // THE DECLINE REPLACES THE RECORD LINES, NOT THE WAY OUT OF THE TRIAL.
       //
@@ -1705,7 +1709,7 @@ function activeCard(
       state,
       dayLine: dayLineFor(progress, overrunDays),
       dayLineRole: 'meta',
-      windowLine: windowLineFor(endIndex, overrunDays),
+      windowLine: windowLineFor(endIndex, overrunDays, today),
       lines: recordRegion(register, input, rc),
       // Same argument as the decline branch above: at or past the window a bar
       // pinned at 100% is completion vocabulary drawn in pixels, and drawing it
@@ -1816,7 +1820,7 @@ function activeCard(
       state,
       dayLine: dayLineFor(progress, overrunDays),
       dayLineRole: 'meta',
-      windowLine: windowLineFor(endIndex, overrunDays),
+      windowLine: windowLineFor(endIndex, overrunDays, today),
       lines,
       actions: [viewAllowedFoodsAction(input.petName)],
     };
@@ -1842,7 +1846,7 @@ function activeCard(
       state,
       dayLine: dayLineFor(progress, overrunDays),
       dayLineRole: 'meta',
-      windowLine: windowLineFor(endIndex, overrunDays),
+      windowLine: windowLineFor(endIndex, overrunDays, today),
       lines,
       actions: [viewAllowedFoodsAction(input.petName)],
     };
@@ -1861,7 +1865,7 @@ function activeCard(
       state,
       dayLine: dayLineFor(progress, overrunDays),
       dayLineRole: 'meta',
-      windowLine: windowLineFor(endIndex, overrunDays),
+      windowLine: windowLineFor(endIndex, overrunDays, today),
       lines: recordRegion(register, input, rc),
       actions: [viewAllowedFoodsAction(input.petName)],
     };
@@ -1896,7 +1900,7 @@ function activeCard(
       state,
       dayLine: dayLineFor(progress, overrunDays),
       dayLineRole: 'meta',
-      windowLine: windowLineFor(endIndex, overrunDays),
+      windowLine: windowLineFor(endIndex, overrunDays, today),
       lines,
       actions: [{ id: 'milestone', label: 'Tell Culprit what’s next', emphasis: 'link' }],
     };
@@ -1929,7 +1933,7 @@ function activeCard(
     state,
     dayLine: dayLineFor(progress, overrunDays),
     dayLineRole: 'meta',
-    windowLine: windowLineFor(endIndex, overrunDays),
+    windowLine: windowLineFor(endIndex, overrunDays, today),
     lines,
     actions: [
       ...(state === 'exposures' && (input.exposures?.offDiet ?? 0) > 0
@@ -2224,10 +2228,10 @@ function dayLineFor(
   return `Day ${progress.dayCounter} of ${progress.targetDays}`;
 }
 
-function windowLineFor(endIndex: number, overrunDays: number): string {
+function windowLineFor(endIndex: number, overrunDays: number, today: string): string {
   return overrunDays > 0
-    ? `Window ended ${formatTrialDate(endIndex)}`
-    : `Ends ${formatTrialDate(endIndex)}`;
+    ? `Window ended ${formatTrialDate(endIndex, today)}`
+    : `Ends ${formatTrialDate(endIndex, today)}`;
 }
 
 /** State 4's single combined sentence — deliberately one paragraph, because the
@@ -2290,17 +2294,22 @@ function pushScopeCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
 
 // ── States 7a / 7b (terminal) ────────────────────────────────────────────────
 
-/** "3 July – 27 August · 56 days". The end date is `ended_at` when it exists —
+/** "Jul 3 – Aug 27 · 56 days", the year stated once outside the current year
+ *  ("Jul 3 – Aug 27, 2025 · 56 days"; H-10). The end date is `ended_at` when it exists —
  *  §3.1 makes that column non-optional precisely so an ABANDONED trial has an
  *  end at all; without it `report.ts` reads a null end as "still ongoing" and
  *  the day counter renders "Day 104 of 28". */
-function terminalRange(trial: TrialCardTrial, startIndex: number): string | null {
+function terminalRange(trial: TrialCardTrial, startIndex: number, today: string): string | null {
   const endIndex = trial.endedAt
     ? localDayIndexOf(trial.endedAt)
     : trialEndDayIndex(startIndex, trial.targetDurationDays);
   if (endIndex === null) return null;
   const days = Math.max(1, endIndex - startIndex + 1);
-  return `${formatTrialDate(startIndex)} – ${formatTrialDate(endIndex)} · ${days} ${days === 1 ? 'day' : 'days'}`;
+  // An end recorded before the start prints the start alone, never an inverted window.
+  const dates =
+    recordRange(dayKeyFromIndex(startIndex), dayKeyFromIndex(endIndex), today) ??
+    formatTrialDate(startIndex, today);
+  return `${dates} · ${days} ${days === 1 ? 'day' : 'days'}`;
 }
 
 function outcomeSentence(petName: string, outcome: TrialOutcome): string {
@@ -2334,7 +2343,7 @@ function completedCard(
   // the owner CALLED a refusal and not the one the record shows was one.
   const lines = recordRegion(register, input, {
     terminal: true,
-    dayCount: terminalDayCount(trial, startIndex),
+    dayCount: terminalDayCount(trial, startIndex, toLocalDayKey(new Date(input.nowMs))),
     // 7a never names a refusal: the owner tapped "This trial is done", so there
     // is no reason of theirs for the "different diet, not a different plan" note
     // to answer.
@@ -2366,7 +2375,7 @@ function completedCard(
     state: 'completed',
     kicker: `${trialIdentityLabel(input.trial)} · finished`,
     foodLabel: trial.foodLabel ?? null,
-    dayLine: terminalRange(trial, startIndex),
+    dayLine: terminalRange(trial, startIndex, toLocalDayKey(new Date(input.nowMs))),
     dayLineRole: 'meta',
     windowLine: null,
     // A finished window has no progress left to encode; a full bar here would be
@@ -2433,8 +2442,8 @@ function wasRefused(trial: TrialCardTrial): boolean {
 }
 
 /** "56 days", else the pronoun-ish fallback the withheld sentence reads with. */
-function terminalDayCount(trial: TrialCardTrial, startIndex: number): string {
-  return terminalRange(trial, startIndex)?.split('· ')[1] ?? 'these days';
+function terminalDayCount(trial: TrialCardTrial, startIndex: number, today: string): string {
+  return terminalRange(trial, startIndex, today)?.split('· ')[1] ?? 'these days';
 }
 
 /**
@@ -2475,7 +2484,7 @@ function abandonedCard(
 ): TrialCardModel {
   const { trial, startIndex } = ctx;
   const lines: TrialCardLine[] = [];
-  const range = terminalRange(trial, startIndex);
+  const range = terminalRange(trial, startIndex, toLocalDayKey(new Date(input.nowMs)));
 
   if (trial.stoppedReason) {
     lines.push({ role: 'lead', text: stoppedBecauseLine(input.petName, trial) });
@@ -2656,8 +2665,8 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   const endIndex = trialEndDayIndex(startIndex, trial.targetDurationDays);
   parts.push(
     overrunDays > 0
-      ? `window ended ${formatTrialDate(endIndex)}`
-      : `ends ${formatTrialDate(endIndex)}`,
+      ? `window ended ${formatTrialDate(endIndex, toLocalDayKey(new Date(input.nowMs)))}`
+      : `ends ${formatTrialDate(endIndex, toLocalDayKey(new Date(input.nowMs)))}`,
   );
   // THE STRIP IS STRICTER THAN THE CARD, DELIBERATELY — AND ITS RULE IS NOW ONE
   // SENTENCE: Home states the ratio only when the record carries NONE of the

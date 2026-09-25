@@ -142,9 +142,10 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
           // A visit that happened cannot be in the future. Without this bound a
           // mis-spun picker writes a future `visited_at`, which the report skips
-          // entirely while the rundown's unbounded MAX(visited_at) adopts it — so
-          // "nothing has changed since your last visit" would be measured from a
-          // day that has not happened (CUL-946's sibling).
+          // entirely and every other reader of the table trusts. The rundown's old
+          // unbounded MAX(visited_at) adopted it, measuring "nothing has changed since
+          // your last visit" from a day that had not happened (CUL-946's sibling); it
+          // reads the shared bound now (CUL-1127), and the Vet Files picker still lists it.
           maximumDate={new Date()}
           onChange={(_, picked) => {
             if (Platform.OS !== 'ios') setShowDayPicker(false);

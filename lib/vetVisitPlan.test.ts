@@ -15,6 +15,7 @@ import {
   VISIT_OFFLINE_LINE,
   type LinkedLine,
 } from './vetVisitPlan';
+import { ANCHORED_WINDOW_NAMES } from './historyWindows';
 
 // CUL-902 VV-4 — the after-visit view model, and in particular the ONE clinically
 // load-bearing string on the saved moment: what the save did to the vet report's
@@ -125,23 +126,31 @@ describe('the report-window sentence (AC 9)', () => {
     expect(s.reportLine).toBeNull();
   });
 
-  it('says NOTHING about Home either for a future-dated visit — the truer sentence is the worse one', () => {
-    // Home's anchor IS unbounded, so "since last visit starts again from here" would
-    // be literally true — and that is the harm: the rundown then renders an absence
-    // over a window that cannot contain anything, which is a false all-clear on the
-    // surface an owner reads in the exam room.
+  it('says NOTHING about the since-visit window either for a future-dated visit', () => {
+    // When the rundown's anchor was an unbounded MAX(visited_at) this sentence would
+    // have been literally true, and that was the harm: the rundown rendered an absence
+    // over a window that could not contain anything. It takes the report's bound now
+    // (CUL-1127), so the sentence would be false as well.
     expect(describeVisitSave({ petName: 'Mochi', consequence: future, linked: [] }).homeLine)
       .toBeNull();
   });
 
-  it('moves Home’s "since last visit" on any latest visit, today’s included', () => {
-    // Home's anchor is an UNBOUNDED MAX(visited_at) (`lib/rundown.ts`), so it moves
-    // the moment this visit is the latest — a DIFFERENT bound from the report's, and
-    // the reason these are two sentences rather than one.
+  it('moves "Since the last vet visit" when the report moves, never before (CUL-1127)', () => {
+    // The rundown takes the report's bound (`lib/visitWindow.ts`, H-11): a visit dated
+    // today starts the window TOMORROW, so the moment must not tell the owner it
+    // "starts again from here" today, while the tile they open next still shows the
+    // previous visit. The report line already carries the "From tomorrow" timing.
     expect(describeVisitSave({ petName: 'Mochi', consequence: today, linked: [] }).homeLine)
-      .toContain('Since last visit');
+      .toBeNull();
     expect(describeVisitSave({ petName: 'Mochi', consequence: earlier, linked: [] }).homeLine)
-      .toContain('Since last visit');
+      .toBe('“Since the last vet visit” starts again from here.');
+  });
+
+  it('the moment\'s quoted name is the one the rundown tile prints', () => {
+    // One name for one window (CUL-1126): a quote that differs from the tile it points
+    // at reads as a second window.
+    const line = describeVisitSave({ petName: 'Mochi', consequence: earlier, linked: [] }).homeLine;
+    expect(line).toContain(`“${ANCHORED_WINDOW_NAMES.visit}”`);
   });
 
   it('never asserts wellness, in any branch (clinical-guardrails Pattern 8)', () => {
@@ -245,8 +254,8 @@ describe('visitAnchorsAnything — what the report window and Home key off', () 
 
   it('is false for a FUTURE-dated visit even though it is the latest', () => {
     // A future row anchors nothing and is claimed for nothing: the report skips it
-    // until the day arrives, and Home's unbounded MAX(visited_at) WOULD adopt it
-    // and then render an absence over a window that cannot contain anything.
+    // until the day arrives, and so does the rundown since it took the same bound
+    // (CUL-1127); its old unbounded MAX(visited_at) would have adopted it.
     expect(visitAnchorsAnything({ isLatest: true, dayRelation: 'after_today' })).toBe(false);
   });
 
@@ -273,7 +282,9 @@ describe('visitAnchorsAnything — what the report window and Home key off', () 
     for (const consequence of cases) {
       const s = describeVisitSave({ petName: 'Mochi', consequence, linked: [] });
       const anchors = visitAnchorsAnything(consequence);
-      expect(s.homeLine !== null).toBe(anchors);
+      // The since-visit line moves with the report, so it is said only once the visit
+      // already anchors it: before today. Today's visit starts it tomorrow (CUL-1127).
+      expect(s.homeLine !== null).toBe(anchors && consequence.dayRelation === 'before_today');
       expect(s.reportLine !== null).toBe(anchors);
     }
   });

@@ -36,12 +36,15 @@
 // first alone. The line's "K days unlogged" is the un-logged days and NOTHING when the
 // month is fully covered; a day ahead is `ahead`, never "unlogged" (a day that has not
 // happened is not a day nobody logged); a day before the record is `before_record` and
-// out of every denominator. What counts as "logged" is the caller's predicate, and the
-// caller uses the one the neighbouring Trial panel uses (a feeding OR a
-// correlation-symptom day — `lib/patternsTrial.ts`), so the two surfaces one scroll apart
-// partition the same days. That predicate includes vomit, so an episode day is a logged
-// day by construction of the READ, not by inference here — this module never infers
-// "logged" from "had an episode" and never infers "unlogged" from "no episode".
+// out of every denominator. What counts as "logged" is the caller's predicate:
+// `lib/monthReads.ts` counts a day on which the owner logged ANYTHING about the pet,
+// every event type except a look (the PM's R3 ruling, "a logged cough IS a logged day").
+// It is deliberately NOT the neighbouring Trial panel's comparison-gate set (a feeding OR
+// a correlation-symptom day, `lib/patternsTrial.ts`): same word, two questions, two
+// predicates (C-34), and this comment described the Trial panel's until CUL-1127.
+// Every event type includes vomit, so an episode day is a logged day by construction of
+// the READ, not by inference here — this module never infers "logged" from "had an
+// episode" and never infers "unlogged" from "no episode".
 
 import { dayKeyFromIndex, localDayIndexOf, MONTHS } from './utils';
 import { weekdayOfIndex, weekStartIndex, weeklyBuckets, type WeeklyBucketsModel } from './chartModels';

@@ -65,7 +65,7 @@ describe('TrialStrip', () => {
     const tree = render(<TrialStrip model={resolveTrialStrip(input())} />);
     expect(tree.getByText('Diet trial · day 23 of 56')).toBeTruthy();
     expect(tree.getByText(
-      'Zignature Kangaroo Formula · ends 27 August · meals logged on 22 of 23 days',
+      'Zignature Kangaroo Formula · ends Aug 27 · meals logged on 22 of 23 days',
     )).toBeTruthy();
   });
 

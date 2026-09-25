@@ -138,7 +138,7 @@ describe('defaultDurationDays', () => {
 // ── End date: INCLUSIVE of day 1 ────────────────────────────────────────────
 
 describe('trialEndDayKey', () => {
-  it('is inclusive — 56 days from 3 July ends 27 August, not 28', () => {
+  it('is inclusive — 56 days from Jul 3 ends Aug 27, not 28', () => {
     // Both of the mock's worked examples encode the inclusive form, and
     // getDietTrialProgress counts day 1 as the start day.
     expect(trialEndDayKey('2026-07-03', 56)).toBe('2026-08-27');
@@ -157,19 +157,16 @@ describe('trialEndDayKey', () => {
 });
 
 describe('formatTrialEndDate', () => {
-  // Day/month ORDER is the device locale's business (the repo formats every
-  // owner-facing date with `toLocaleDateString([])`); what this pins is the two
-  // things that are ours: the parts present, and the year rule.
+  // The house form through the one formatter (H-10; PM ruling on CUL-1126): the exact
+  // string is ours now, locale-independent, so it is pinned whole.
   it('omits the year in-year and includes it across the boundary', () => {
     const now = new Date(2026, 6, 25);
-    const inYear = formatTrialEndDate('2026-08-27', now)!;
-    expect(inYear).toContain('27');
-    expect(inYear).toContain('August');
-    expect(inYear).not.toContain('2026');
+    expect(formatTrialEndDate('2026-08-27', now)).toBe('Aug 27');
 
-    // A 12-week trial started in November ends in a year a bare "25 January"
+    // A 12-week trial started in November ends in a year a bare "Jan 25"
     // leaves genuinely ambiguous.
-    expect(formatTrialEndDate('2027-01-25', now)).toContain('2027');
+    expect(formatTrialEndDate('2027-01-25', now)).toBe('Jan 25, 2027');
+    expect(formatTrialEndDate('2026-02-30', now)).toBeNull();
   });
 });
 
@@ -179,15 +176,14 @@ describe('durationHelperLine', () => {
     const line = durationHelperLine('skin', 56, toLocalDayKey(now), '2026-09-18', now);
     expect(line).toContain('8 weeks');
     expect(line).toContain('Starting today');
-    expect(line).toContain('September');
-    expect(line).toContain('18');
+    expect(line).toContain('Sep 18');
   });
 
   it('stays true after a back-date — never "starting today" on a June trial', () => {
     const now = new Date(2026, 6, 25);
     const line = durationHelperLine('skin', 56, '2026-06-01', '2026-07-26', now);
     expect(line).not.toContain('Starting today');
-    expect(line).toContain('June');
+    expect(line).toContain('Jun 1');
   });
 });
 
