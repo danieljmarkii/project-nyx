@@ -90,4 +90,5 @@ HV-9 of History v2: the row that stays pinned above the list while it scrolls. I
   - how VoiceOver reads "Jul 1 – Sep 5"
   - Dynamic Type at the largest sizes
 - Before the merge, `main` (HV-6 #914, HV-8 #915) was merged into the branch. It merged without conflicts; one test fixture gained HV-8's new `HistoryFacts.petId`. After that, `tsc` is clean, the full suite is green at 499 suites and 11,306 tests, and the history suites are green in the three zones.
+- After that merge, the timezone job went red on a test this PR never touched. `lib/lookPatterns.test.ts` read a date as a count on the 26th local, and `main` reds identically. CUL-1250's proven fix, from the HV-7 session, is ported verbatim, so this merge lands it on `main` before the required UTC check would have gone red for all of Sep 26.
 - Lord Howe's zone fails one of HV-3's window tests. That's pre-existing (CUL-1207), outside CI's zones, and not this work's.
