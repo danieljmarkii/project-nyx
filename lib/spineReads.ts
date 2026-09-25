@@ -12,7 +12,13 @@
 
 import { getDb } from './db';
 import { readCopies } from './readCopy';
-import { readFreeFedSpans, foodLabelOf, type FeedingRow } from './patternsTiming';
+import {
+  readFreeFedSpans,
+  toFeedingRow,
+  FEEDING_COLUMNS,
+  type FeedingRow,
+  type FeedingSqlRow,
+} from './patternsTiming';
 import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import type { FreeFedSpan, OnsetConfidence } from './mealTiming';
 import type { MonthRow } from './monthCoverage';
@@ -46,32 +52,20 @@ export async function readPhotographedIds(eventIds: readonly string[]): Promise<
  * The feedings the lane would time today's vomits against: this pet's meals from
  * `sinceIso` on — the caller passes today's start minus the lookback, so last night's
  * bowl is in scope for a 6 AM episode. The SAME SQL shape `readFeedingRows` runs (the
- * Patterns lane), bounded; the mapping is its mapping.
+ * Patterns lane), bounded; the mapping is its mapping, the event id and the intake
+ * rating included (a Refused bowl is never the meal a line is timed from — CUL-1122).
  */
 export async function readFeedingsSince(petId: string, sinceIso: string): Promise<FeedingRow[]> {
   const { sqlSince, sinceMs } = sqlBoundFor(sinceIso);
-  const rows = await getDb().getAllAsync<{
-    occurred_at: string;
-    occurred_at_confidence: string | null;
-    food_type: string | null;
-    brand: string | null;
-    product_name: string | null;
-  }>(
-    `SELECT e.occurred_at, e.occurred_at_confidence, f.food_type, f.brand, f.product_name
+  const rows = await getDb().getAllAsync<FeedingSqlRow>(
+    `SELECT ${FEEDING_COLUMNS}
      FROM meals m
      JOIN events e ON e.id = m.event_id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
      WHERE e.pet_id = ? AND e.deleted_at IS NULL AND e.occurred_at >= ?`,
     [petId, sqlSince],
   );
-  return rows
-    .map((r) => ({
-      ms: Date.parse(r.occurred_at),
-      confidence: (r.occurred_at_confidence as OnsetConfidence | null) ?? null,
-      form: foodLabelOf(r.brand, r.product_name) ?? r.food_type ?? null,
-      foodType: r.food_type,
-    }))
-    .filter((r) => Number.isFinite(r.ms) && r.ms >= sinceMs);
+  return rows.map(toFeedingRow).filter((r) => Number.isFinite(r.ms) && r.ms >= sinceMs);
 }
 
 /** The pet's vomit onsets from `sinceIso` on — the caller passes the day's start minus

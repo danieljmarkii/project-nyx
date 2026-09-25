@@ -24,6 +24,9 @@
 //     long band speaks the lane's own band label ("6h or more after eating"), because a
 //     bare "24 h after eating" states an intake fact off an absence of logs (F8) —
 //     whether Home should say "since her last logged meal" is Dr. Chen's, on the issue.
+//     Each line also carries the id of the meal it was measured from (`timingsByRow`,
+//     HV-2), which is never a bowl the owner rated Refused (CUL-1122): a refusal is not
+//     eating, so a vomit five minutes after one is timed from the meal she last ate.
 //   • The read — the phone's copy of the event's verdict (`lib/readCopy.ts`, HV-5 /
 //     CUL-1162; never triggered from Home), and the `working` fact that a chain is
 //     outstanding (C-30), decided by the one read predicate (`lib/readState.ts`) every
@@ -267,18 +270,30 @@ export function timingLine(minutes: number, band: TimingBand, config: MealTiming
   return r >= 5 ? `${h} h ${r} min after eating` : `${h} h after eating`;
 }
 
+/** A vomit row's timing line: the words, and the meal they are measured from. The meal id is
+ *  what lets a surface keep that meal visible as its own row rather than folding it into a run
+ *  (HV-2 / CUL-1159 returns it; HV-6 draws the row rule from it). */
+export interface SpineTimingLine {
+  /** "3 min after eating" · "2 h 20 min after eating" · "6h or more after eating". */
+  text: string;
+  /** The anchor feeding's EVENT id: the meal or treat the lane measured from, which is never
+   *  one the owner rated Refused (CUL-1122). Every line has one: no anchor, no line. */
+  mealId: string;
+}
+
 /**
  * The lane's timings for the day's vomit rows, keyed by the row that opened each
  * episode. Runs the lane's exact sequence — collapse at the episode gap, then the
- * eligibility ladder — so a row the lane would not put on the lane gets no number here.
+ * eligibility ladder — so a row the lane would not put on the lane gets no line here,
+ * and a row that gets one also learns which meal it was timed from.
  */
-function timingsByRow(
+export function timingsByRow(
   rows: readonly SpineEventInput[],
   priorOnsets: readonly { ms: number; confidence?: OnsetConfidence | null }[],
   feedings: readonly FeedingInput[],
   freeFedSpans: readonly FreeFedSpan[],
   config: MealTimingConfig,
-): Map<string, string> {
+): Map<string, SpineTimingLine> {
   const todays = rows
     .filter((r) => r.event_type === TIMING_SYMPTOM_TYPE)
     .map((r) => ({
@@ -299,12 +314,17 @@ function timingsByRow(
     freeFedSpans,
     config,
   );
-  const out = new Map<string, string>();
+  const out = new Map<string, SpineTimingLine>();
   for (const eligible of dist.eligible) {
     // Keyed back through the episode that carries this onset — the row the collapse
     // kept, never a later row of the same bout.
     const opener = episodes.find((e) => e.ms === eligible.onsetMs);
-    if (opener?.id) out.set(opener.id, timingLine(eligible.minutesSinceFeeding, eligible.band, config));
+    if (opener?.id) {
+      out.set(opener.id, {
+        text: timingLine(eligible.minutesSinceFeeding, eligible.band, config),
+        mealId: eligible.feedingId,
+      });
+    }
   }
   return out;
 }
@@ -314,7 +334,7 @@ function timingsByRow(
 function eventNode(
   row: SpineEventInput,
   input: SpineInput,
-  timing: Map<string, string>,
+  timing: ReadonlyMap<string, SpineTimingLine>,
 ): SpineEventNode {
   // `describeDayEvent` reads only the fields `SpineEventInput` carries; the cast is
   // the type's, not the data's (every other TimelineRow column is unread there).
@@ -357,7 +377,7 @@ function eventNode(
     time: described.time,
     timeMs: described.timeMs,
     photo,
-    timing: timing.get(row.id) ?? null,
+    timing: timing.get(row.id)?.text ?? null,
     read,
   };
 }
