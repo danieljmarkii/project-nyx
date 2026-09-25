@@ -8,11 +8,13 @@
 //      4 minutes, a read in its shipped words, a read still being produced — and asserted
 //      through BOTH calls: `buildSpine`, the call TodayCard made before this PR (green
 //      before), and `buildDayNodes`, the call it makes now (green after).
-//   2. A seeded sweep of random days: `buildDay(events, facts)` IS `buildSpine` over the
-//      same facts, field for field. That pins the one thing `lib/dayNodes.ts` owns — how
-//      the facts are handed to the composition — so a fact dropped or crossed on the way
-//      (the prior onsets, the photo set, the working set, the config) reds here. The
-//      sweep's own floor proves it CAN see each of those, rather than assuming it.
+//   2. A sweep of days: `buildDay(events, facts)` IS `buildSpine` over the same facts,
+//      field for field. That pins the one thing `lib/dayNodes.ts` owns — how the facts
+//      are handed to the composition — so a fact dropped or crossed on the way (the
+//      prior onsets, the photo set, the working set, the config) reds here. The floor
+//      under it is a WITNESS per fact, a named day whose answer needs that fact, so the
+//      sweep provably CAN see each one; 400 seeded random days add breadth, never the
+//      floor (on their own they saw the prior onsets on 2 days in 400).
 //
 // TIMEZONE HONESTY (C-29): instants are offsets from one UTC anchor; no assertion reads a
 // clock string (the sweep compares both calls in the runner's own zone).
@@ -58,6 +60,14 @@ const analysisRow = (event_id: string, recommendation: string | null, status = '
   dismissed_at: null,
 });
 
+/** A meal row's feeding as the lane takes it: witnessed, the fixture's one food. Every
+ *  built day's feedings are spelled here, once. */
+const feedingOf = (meal: DayEvent) => ({
+  ms: Date.parse(meal.occurred_at),
+  confidence: 'witnessed' as const,
+  form: 'Royal Canin Selected Protein PR',
+});
+
 const SEP_17_FACTS: DayNodeFacts = {
   reads: {
     photographed: new Set(['v1', 'v2']),
@@ -66,11 +76,7 @@ const SEP_17_FACTS: DayNodeFacts = {
     working: new Set(['v1']),
   },
   timings: {
-    feedings: SEP_17.filter((r) => r.event_type === 'meal').map((r) => ({
-      ms: Date.parse(r.occurred_at),
-      confidence: 'witnessed' as const,
-      form: 'Royal Canin Selected Protein PR',
-    })),
+    feedings: SEP_17.filter((r) => r.event_type === 'meal').map(feedingOf),
     freeFedSpans: [],
     priorOnsets: [],
   },
@@ -150,12 +156,12 @@ const RECS: (string | null)[] = ['worth_a_call', 'monitor', 'not_enough_to_say',
 const CONFIDENCES = ['witnessed', 'witnessed', 'estimated', 'window', null] as const;
 const CUSTOM_CONFIG: MealTimingConfig = { ...DEFAULT_MEAL_TIMING_CONFIG, episodeGapHours: 1, rapidWindowMinutes: 10 };
 
-interface RandomDay {
+interface SweepDay {
   events: DayEvent[];
   facts: DayNodeFacts;
 }
 
-function randomDay(rand: () => number): RandomDay {
+function randomDay(rand: () => number): SweepDay {
   const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(rand() * xs.length)];
   const n = Math.floor(rand() * 13);
   const events: DayEvent[] = [];
@@ -220,36 +226,120 @@ function randomDay(rand: () => number): RandomDay {
 
 const DAYS = Array.from({ length: 400 }, (_, i) => randomDay(prng(1158 + i)));
 
-describe('the sweep: `buildDay` IS the old call, over 400 random days', () => {
+// ── The witnesses: a day built to need each fact ──────────────────────────────────
+// The equality below can red on a fact dropped on the way only if some day's answer
+// depends on that fact. On the random days alone the prior onsets decide the answer on 2
+// days in 400 and the config on 3 (measured): a floor that held by the generator's luck,
+// and that any edit to its draws can zero. Giving the feedings the two fields CUL-1159
+// makes required zeroed the prior onsets, measured on a test merge. So each fact is
+// NAMED against a day that needs it: the Sep 17 fixture for the four common facts, and
+// three days built in the lane's own terms for the three that only matter in rare shapes.
+
+const WITHOUT = {
+  photographed: (f: DayNodeFacts): DayNodeFacts => ({ ...f, reads: { ...f.reads, photographed: new Set<string>() } }),
+  analysis: (f: DayNodeFacts): DayNodeFacts => ({ ...f, reads: { ...f.reads, analysis: new Map() } }),
+  working: (f: DayNodeFacts): DayNodeFacts => ({ ...f, reads: { ...f.reads, working: new Set<string>() } }),
+  feedings: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, feedings: [] } }),
+  freeFedSpans: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, freeFedSpans: [] } }),
+  priorOnsets: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, priorOnsets: undefined } }),
+  config: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, config: undefined } }),
+};
+type Fact = keyof typeof WITHOUT;
+
+/** Does withholding `fact` change the composition's own answer for this day? */
+function needs({ events, facts }: SweepDay, fact: Fact): boolean {
+  const whole = JSON.stringify(buildSpine(asSpineInput(events, facts)));
+  return JSON.stringify(buildSpine(asSpineInput(events, WITHOUT[fact](facts)))) !== whole;
+}
+
+/** A day of witnessed meals and vomits, its feedings the meals, no photo and no read. */
+function timedDay(rows: DayEvent[], timings: Partial<DayNodeFacts['timings']>): SweepDay {
+  return {
+    events: rows,
+    facts: {
+      reads: { photographed: new Set(), analysis: new Map(), working: new Set() },
+      timings: {
+        feedings: rows.filter((r) => r.event_type === 'meal').map(feedingOf),
+        freeFedSpans: [],
+        ...timings,
+      },
+    },
+  };
+}
+
+const SEP_17_DAY: SweepDay = { events: SEP_17, facts: SEP_17_FACTS };
+
+interface Witness {
+  fact: Fact;
+  why: string;
+  day: SweepDay;
+  /** For a timing witness: the row whose line the fact decides, and whether it has one
+   *  WITH the fact handed over (withholding the fact must flip it). */
+  timed?: { row: string; withFact: boolean };
+}
+
+const WITNESSES: Witness[] = [
+  { fact: 'photographed', why: 'Sep 17: both vomits carry a photo', day: SEP_17_DAY },
+  { fact: 'analysis', why: 'Sep 17: v2’s read has landed', day: SEP_17_DAY },
+  { fact: 'working', why: 'Sep 17: v1’s read is being produced', day: SEP_17_DAY },
+  { fact: 'feedings', why: 'Sep 17: both vomits are timed from a meal', day: SEP_17_DAY },
+  {
+    fact: 'priorOnsets',
+    why: 'a bout that began at 23:30 absorbs the 00:15 vomit into last night’s episode',
+    day: timedDay([row('wp-v', 'vomit', 0, 15), row('wp-m', 'meal', 0, 10, PR)], {
+      priorOnsets: [{ ms: at(0, -30), confidence: 'witnessed' }],
+    }),
+    timed: { row: 'wp-v', withFact: false },
+  },
+  {
+    fact: 'config',
+    why: 'two vomits 90 minutes apart are one episode at the lane’s gap and two at the custom 1 hour',
+    day: timedDay(
+      [row('wc-v2', 'vomit', 9, 35), row('wc-m2', 'meal', 9, 30, PR), row('wc-v1', 'vomit', 8, 5), row('wc-m1', 'meal', 8, 0, PR)],
+      { config: CUSTOM_CONFIG },
+    ),
+    timed: { row: 'wc-v2', withFact: true },
+  },
+  {
+    fact: 'freeFedSpans',
+    why: 'a vomit inside a free-fed span is not timed',
+    day: timedDay([row('wf-v', 'vomit', 12, 5), row('wf-m', 'meal', 12, 0, PR)], {
+      freeFedSpans: [{ fromMs: at(11, 0), untilMs: at(14, 0) }],
+    }),
+    timed: { row: 'wf-v', withFact: false },
+  },
+];
+
+/** Every day the equality runs over: each witness day once, then the random ones. */
+const SWEEP: SweepDay[] = [...new Set(WITNESSES.map((w) => w.day)), ...DAYS];
+
+describe('the sweep: `buildDay` IS the old call, over the witness days and 400 random ones', () => {
   it('field for field — nodes, count and chips — and `buildDayNodes` is its nodes', () => {
-    for (const { events, facts } of DAYS) {
+    for (const { events, facts } of SWEEP) {
       const before = buildSpine(asSpineInput(events, facts));
       expect(buildDay(events, facts)).toEqual(before);
       expect(buildDayNodes(events, facts)).toEqual(before.nodes);
     }
   });
+});
 
-  it('the sweep can SEE every fact it hands over (the floor under the equality)', () => {
-    // An equality over facts that never change the output proves nothing about how they
-    // are handed over. So, per fact: on how many days does withholding it change the
-    // composition's own answer? Every count must be non-zero, or the sweep above could
-    // not red on that fact going missing.
-    const without = {
-      photographed: (f: DayNodeFacts) => ({ ...f, reads: { ...f.reads, photographed: new Set<string>() } }),
-      analysis: (f: DayNodeFacts) => ({ ...f, reads: { ...f.reads, analysis: new Map() } }),
-      working: (f: DayNodeFacts) => ({ ...f, reads: { ...f.reads, working: new Set<string>() } }),
-      feedings: (f: DayNodeFacts) => ({ ...f, timings: { ...f.timings, feedings: [] } }),
-      freeFedSpans: (f: DayNodeFacts) => ({ ...f, timings: { ...f.timings, freeFedSpans: [] } }),
-      priorOnsets: (f: DayNodeFacts) => ({ ...f, timings: { ...f.timings, priorOnsets: undefined } }),
-      config: (f: DayNodeFacts) => ({ ...f, timings: { ...f.timings, config: undefined } }),
+describe('the floor under the equality: the sweep can SEE every fact it hands over', () => {
+  // An equality over facts that never change the output proves nothing about how they
+  // are handed over, so every fact has a named day whose answer needs it.
+  it('every fact the pipeline hands over has a witness', () => {
+    const facts = Object.keys(WITHOUT) as Fact[];
+    expect(facts.filter((fact) => !WITNESSES.some((w) => w.fact === fact))).toEqual([]);
+  });
+
+  it.each(WITNESSES)('$fact — $why', (w) => {
+    expect(needs(w.day, w.fact)).toBe(true);
+    if (!w.timed) return;
+    const timingOf = (facts: DayNodeFacts) => {
+      const node = buildDayNodes(w.day.events, facts).find((n) => n.kind === 'event' && n.id === w.timed?.row);
+      if (!node || node.kind !== 'event') throw new Error(`${w.timed?.row} is not an event node`);
+      return node.timing;
     };
-    const sensitive: Record<string, number> = {};
-    for (const [fact, drop] of Object.entries(without)) {
-      sensitive[fact] = DAYS.filter(({ events, facts }) => {
-        const whole = JSON.stringify(buildSpine(asSpineInput(events, facts)));
-        return JSON.stringify(buildSpine(asSpineInput(events, drop(facts)))) !== whole;
-      }).length;
-    }
-    for (const count of Object.values(sensitive)) expect(count).toBeGreaterThan(0);
+    expect(timingOf(w.day.facts) !== null).toBe(w.timed.withFact);
+    expect(timingOf(WITHOUT[w.fact](w.day.facts)) !== null).toBe(!w.timed.withFact);
   });
 });
