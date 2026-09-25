@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 
-Shipped via #920 (CUL-1126, CUL-1127). Filed CUL-1254, CUL-1255, CUL-1256 and CUL-1257 (Waiting on PM). CUL-1127 item 2 moved to CUL-1188 by PM ruling.
+Shipped via #920 (CUL-1126, CUL-1127). Filed CUL-1254, CUL-1255 and CUL-1256; CUL-1257 (a spec correction) was approved by the PM the same session and written here. CUL-1127 item 2 moved to CUL-1188 by PM ruling.
 
 ## The ask
 
@@ -42,7 +42,7 @@ Bundle D of History v2, step 4: two small issues from the round-3 critique, buil
   - **Boundaries held.** Meals at 23:59 the night before and 00:00 on the visit day, across five DST dates and six zones (UTC−10 to UTC+14), with mixed `Z` / `+00:00` spellings.
   - **Anchor held.** A visit today with older and future rows anchors on the older one. A pet weighed at today's visit keeps Get ready's weight row silent. Three boundary mutations each failed tests.
   - **One real break, fixed in this PR.** The saved-visit moment told the owner *"'Since last visit' on Home starts again from here"* the day a visit is saved. That was true only while the rundown's anchor was unbounded, and this PR removed that. The line now moves with the report: it is said for a visit dated before today and dropped for one dated today (the report line already says "From tomorrow…"). Its test was rewritten to pin the new rule, and reverting the fix fails it.
-  - That also made a sentence in the History v2 spec untrue (§3.9, "Home's *since last visit* restarts the day a visit is saved"). It is a Tier 2 edit, filed for approval as CUL-1257.
+  - That also made a sentence in the History v2 spec untrue (§3.9, "Home's *since last visit* restarts the day a visit is saved"). It is a Tier 2 edit, filed for approval as CUL-1257; the PM approved it and it is written in this PR as spec v1.7.
 - **`rls-privacy-reviewer`: HOLDS WITH NOTES.** It drove the real realtime-js 2.105 through a dead transport.
   - Every live watch and channel closes before the next owner's `SIGNED_IN` re-authenticates the socket. Each leave resolves locally, so the list is empty in about 1 ms, and an in-flight tick is fenced twice (`done` and the sign-out epoch).
   - My comment claimed each unsubscribe waited on a server reply; it does not, and the comment now says so.
@@ -64,5 +64,4 @@ Bundle D of History v2, step 4: two small issues from the round-3 critique, buil
 - CUL-1256: the late-open watch and its siblings (above).
 - CUL-1255: Today's rows survive sign-out.
 - CUL-1254: about ten other surfaces print yearless dates through `formatCalendarDate`, plus `formatLongDate`'s retirement.
-- CUL-1257 (Waiting on PM): approve the §3.9 spec correction.
 - CUL-1188: the hydration pager, now carrying CUL-1127 item 2.
