@@ -13,6 +13,8 @@ import { LOOK_WORDS, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, lookWordKind } from
 import { TREND_SYMPTOM_TYPES } from '../lib/trendSummary';
 import { SYMPTOM_EVENT_TYPES } from '../lib/analytics';
 import { eventTintCategory, describeDayEvent } from '../lib/dayEvents';
+import { HISTORY_TYPE_KEYS, emptyDayFacts, type HistoryFilter } from '../lib/historyDays';
+import { stripMarkOf, type StripWindow } from '../lib/stripMarks';
 import type { TimelineRow } from '../lib/db';
 import { theme } from './theme';
 import { blankComments } from '../guards/blankComments';
@@ -108,7 +110,12 @@ const WALK: WalkRow[] = [
     governs: 'row-surface tint + the soft commit haptic (§8a de-symptomization). Transitive consumers (C-11): '
       + 'History v2\'s All-symptoms filter, its rose day-header words and its symptom compare door '
       + '(lib/historyDays.ts, CUL-1161) ride this set, so a leaf that joins it joins those the same day; '
-      + 'stool_normal stays out, so the Stool filter and its header word are neutral, as its rows are',
+      + 'stool_normal stays out, so the Stool filter and its header word are neutral, as its rows are. '
+      + 'So does History v2\'s week strip ROSE (lib/stripMarks.ts, CUL-1165): All symptoms roses any leaf '
+      + 'of this set and a type filter roses its own leaf exactly when the leaf is in it (through '
+      + 'isSymptomFilter), so stool_normal\'s filter draws a neutral line, as its rows do. All types does '
+      + 'NOT ride it: that rose is the Patterns month\'s vomiting-episode mark, so a cough day is never rose '
+      + 'there (the set equality is asserted below, over the shipped function)',
     read: inSet(SYMPTOM_TYPES),
     cough: { now: true, decision: 'YES — joins in THIS PR (§6 pairing rule)' },
     sneeze: { now: true, decision: 'YES — joins in THIS PR (§6 pairing rule)' },
@@ -638,6 +645,38 @@ describe('membership walk (HR-6) — every list decided, current state == decide
 // holding a comment opener must still read as present: the chained blanker this file
 // used to carry made a URL's `//` a line comment and a glob's `/*` a block running to
 // the next `*/`, so both cases below read as absent.
+// History v2's week strip rides SYMPTOM_TYPES transitively (C-11, CUL-1165), so its
+// decision lives here as a set equality over the SHIPPED function rather than a registry
+// entry: registering lib/stripMarks.ts in guards/symptomLists.test.ts would exempt it from
+// the scan that must catch it declaring a list of its own (C-32).
+describe('the week strip\u2019s rose per filter (History v2 spec §3.4; CUL-1165)', () => {
+  const day = '2026-09-19';
+  const window: StripWindow = { fromDay: '2026-09-01', toDay: '2026-09-25', recordStart: '2026-09-01', petName: 'Nyx', courseName: null };
+  const roseUnder = (filter: HistoryFilter, byType: Record<string, number>) =>
+    stripMarkOf({ ...emptyDayFacts(day), total: 1, byType }, filter, window, '2026-09-25').state === 'rose';
+
+  it('a type filter roses its own leaf exactly for the leaves of SYMPTOM_TYPES', () => {
+    const rosed = HISTORY_TYPE_KEYS.filter((type) => roseUnder({ kind: 'type', type }, { [type]: 1 }));
+    expect(new Set(rosed)).toEqual(new Set([...SYMPTOM_TYPES]));
+  });
+
+  it('stool_normal\u2019s decision: its filter draws a neutral line, never the rose', () => {
+    expect(roseUnder({ kind: 'type', type: 'stool_normal' }, { stool_normal: 1 })).toBe(false);
+  });
+
+  it('All symptoms roses every leaf of the set, and nothing outside it', () => {
+    for (const type of HISTORY_TYPE_KEYS) {
+      expect(roseUnder({ kind: 'symptoms' }, { [type]: 1 })).toBe(SYMPTOM_TYPES.has(type));
+    }
+  });
+
+  it('All types does not ride the set: only a vomiting episode is rose, as on the month', () => {
+    for (const type of HISTORY_TYPE_KEYS) expect(roseUnder({ kind: 'all' }, { [type]: 1 })).toBe(false);
+    const episode = stripMarkOf({ ...emptyDayFacts(day), total: 1, byType: { vomit: 1 }, vomitEpisode: true }, { kind: 'all' }, window, '2026-09-25');
+    expect(episode.state).toBe('rose');
+  });
+});
+
 describe('the walk\u2019s source reader blanks comments, never strings (C-18)', () => {
   it('a member after a URL literal on the same line reads as present', () => {
     expect(declaredKeys(`const DOCS = 'https://example.com/help'; const L = ['cough'];`).cough).toBe(true);
