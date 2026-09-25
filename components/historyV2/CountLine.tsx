@@ -74,9 +74,13 @@ export function CountLine({ line, filter, onOpenDoor }: CountLineProps) {
               {line.line2}
             </ThemedText>
           ) : null}
-          {line.doors.map((door) => (
-            <Door key={door.key} door={door} onPress={open} />
-          ))}
+          {line.doors.length > 0 ? (
+            <View style={styles.doors} testID="history-count-doors">
+              {line.doors.map((door) => (
+                <Door key={door.key} door={door} onPress={open} />
+              ))}
+            </View>
+          ) : null}
         </View>
       );
   }
@@ -137,6 +141,15 @@ const styles = StyleSheet.create({
     marginTop: theme.spaceMicro,
   },
   pendingLine2: { marginTop: theme.space0_5 },
+  // A symptom filter inside a trial carries two doors (CUL-1264): one row, as round 5 draws
+  // it, wrapping when the words do not fit. Each door is a 44pt box with no slop, so a row
+  // needs only a visible gap, and a wrapped door sits flush under the other (C-5).
+  doors: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: theme.space2,
+    rowGap: 0,
+  },
   // Its own 44pt box, left-aligned and only as wide as its words (C-5; the FAB).
   door: {
     alignSelf: 'flex-start',

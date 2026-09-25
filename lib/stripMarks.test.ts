@@ -108,22 +108,22 @@ describe('stripMarkOf: every row of the §3.4 table (AC 25)', () => {
       `${SAT_WORD}, 2 vomits logged, 6 logged in all`,
     ],
     [
-      'a meal left unfinished (All types)',
+      'a meal not finished (All types)',
       day(SAT, { total: 4, byType: { meal: 4 }, mealsNotFinished: 1 }),
       ALL,
       WIN,
       'logged',
       'broken',
-      `${SAT_WORD}, no vomit logged, 4 logged in all, a meal left unfinished`,
+      `${SAT_WORD}, no vomit logged, 4 logged in all, a meal not finished`,
     ],
     [
-      'a meal left unfinished (Meal)',
+      'a meal not finished (Meal)',
       day(SAT, { total: 5, byType: { meal: 4, vomit: 1 }, mealsNotFinished: 2 }),
       MEAL,
       WIN,
       'logged',
       'broken',
-      `${SAT_WORD}, 4 meals logged, 5 logged in all, 2 meals left unfinished`,
+      `${SAT_WORD}, 4 meals logged, 5 logged in all, 2 meals not finished`,
     ],
     [
       'the filtered kind (a symptom filter)',
@@ -141,7 +141,7 @@ describe('stripMarkOf: every row of the §3.4 table (AC 25)', () => {
       WIN,
       'logged',
       'solid',
-      `${SAT_WORD}, 1 stool logged, 3 logged in all`,
+      `${SAT_WORD}, 1 formed stool logged, 3 logged in all`,
     ],
     [
       'a dose not given in full (Medication)',
@@ -277,10 +277,10 @@ describe('the rose per filter (C-11): All types marks what the month marks; a fi
   it('Photographed and With a note draw the plain line, never rose and never broken', () => {
     const p = stripMarkOf(day(SAT, { total: 3, byType: { vomit: 1, meal: 2 }, photographed: 1, mealsNotFinished: 1, vomitEpisode: true }), PHOTOS, WIN, TODAY);
     expect({ state: p.state, line: p.line }).toEqual({ state: 'logged', line: 'solid' });
-    expect(p.label).toBe(`${SAT_WORD}, 1 photographed row logged, 3 logged in all`);
+    expect(p.label).toBe(`${SAT_WORD}, 1 logged with a photo, 3 logged in all`);
     const n = stripMarkOf(day(SAT, { total: 3, byType: { meal: 3 }, noted: 2 }), NOTED, WIN, TODAY);
     expect({ state: n.state, line: n.line }).toEqual({ state: 'logged', line: 'solid' });
-    expect(n.label).toBe(`${SAT_WORD}, 2 rows with a note logged, 3 logged in all`);
+    expect(n.label).toBe(`${SAT_WORD}, 2 logged with a note, 3 logged in all`);
   });
 });
 
@@ -290,7 +290,7 @@ describe('the broken line keys on a recorded state (§3.4)', () => {
   it('on a vomit day the line still breaks, so an unfinished meal is never painted over (§5.7)', () => {
     const m = stripMarkOf(unfinishedVomitDay, ALL, WIN, TODAY);
     expect({ state: m.state, line: m.line }).toEqual({ state: 'rose', line: 'broken' });
-    expect(m.label).toBe(`${SAT_WORD}, 1 vomit logged, 5 logged in all, a meal left unfinished`);
+    expect(m.label).toBe(`${SAT_WORD}, 1 vomit logged, 5 logged in all, a meal not finished`);
   });
 
   it('a symptom filter does not break its line for a meal: the filter is about the symptom', () => {

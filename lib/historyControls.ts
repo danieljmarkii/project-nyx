@@ -63,16 +63,18 @@ import type { HistoryRecordData } from './historyWindowFacts';
 import { recordMonth } from './recordDates';
 
 // ── The words ─────────────────────────────────────────────────────────────────────
-// Placeholders for HV-12's copy pass, gathered here so that pass edits one place.
+// HV-12's copy pass (CUL-1169), gathered here so a later pass edits one place.
 
-/** The two sheets' own labels, and the pills' spoken prefixes. */
+/** The two sheets' own labels, and the pills' spoken prefixes. The window sheet is titled
+ *  with the pill's own name: "events" is the app's word, not the owner's. */
 export const TYPE_SHEET_LABEL = 'Show only';
-export const WINDOW_SHEET_LABEL = 'Show events from';
+export const WINDOW_SHEET_LABEL = 'Date range';
 export const TYPE_PILL_PREFIX = 'Filter';
 export const WINDOW_PILL_PREFIX = 'Date range';
 
-/** The type sheet's two section labels (§3.8). */
-export const RECORD_HOLDS_SECTION = 'What the record holds';
+/** The type sheet's two section labels (§3.8): what the rows under each hold, in the
+ *  owner's words. */
+export const RECORD_HOLDS_SECTION = 'Photos and notes';
 export const DAILY_LOOK_SECTION = 'The daily look';
 
 /** The filters that are not a single event type, in the pill's and the sheet's words. */
@@ -94,8 +96,10 @@ export const READING_OFF_TEXT = 'photo reading is off';
  */
 export const PHOTO_READING_OFF: boolean = false;
 
-/** The search button, and the field it opens (§3.7). */
-export const SEARCH_DONE_LABEL = 'Done';
+/** The search button, and the field it opens (§3.7). The field's button ends the search and
+ *  clears it, which the platform calls Cancel: "Done" promises to keep what was found. The
+ *  keyboard's own search key keeps it. */
+export const SEARCH_CANCEL_LABEL = 'Cancel';
 export function searchLabelOf(petName: string): string {
   return `Search ${petName}'s record`;
 }
@@ -138,7 +142,7 @@ export function emptyWindowFacts(petId: string | null, today: string): WindowFac
 
 /**
  * A count as VoiceOver says it on the window sheet, where every row counts the ONE filter
- * on screen and the visible number carries no noun: '3 vomits', '12 photographed rows'.
+ * on screen and the visible number carries no noun: '3 vomits', '12 with a photo'.
  * All types and a dose filter read 'logged' (a dose count is never 'doses', CUL-1193).
  */
 export function spokenCountOf(filter: HistoryFilter, n: number): string {

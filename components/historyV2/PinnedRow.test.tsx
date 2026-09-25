@@ -245,7 +245,7 @@ describe('the type sheet (§3.8)', () => {
     expect(view.getByLabelText('Cetirizine HCl, Jul 1 – Sep 5, 2 not given in full, 3 logged')).toBeTruthy();
     expect(view.getByLabelText('Photographed, 1 not read, 2 logged')).toBeTruthy();
     expect(view.getByLabelText('Noticed').props.accessibilityState).toMatchObject({ selected: false });
-    expect(view.getByText('What the record holds')).toBeTruthy();
+    expect(view.getByText('Photos and notes')).toBeTruthy();
     expect(view.getByText('The daily look')).toBeTruthy();
   });
 
@@ -333,7 +333,7 @@ describe('search (§3.7, AC 7)', () => {
     expect(view.queryByText('· 3')).toBeNull();
     expect(view.getByLabelText('Filter: Vomit')).toBeTruthy();
 
-    fireEvent.press(view.getByText('Done'));
+    fireEvent.press(view.getByText('Cancel'));
     expect(store()).toMatchObject({ searchOpen: false, searchText: '' });
     expect(view.queryByPlaceholderText('Foods, medicines')).toBeNull();
   });
@@ -384,10 +384,10 @@ describe('a pet switch (AC 13)', () => {
     fireEvent.press(view.getByLabelText('Date range: All time'));
     fireEvent.press(view.getByLabelText('Since the trial started, Jul 26, 5 logged'));
     fireEvent.press(view.getByLabelText('Date range: Since the trial started, Jul 26'));
-    expect(view.getByText('Show events from')).toBeTruthy();
+    expect(view.getByText('Date range')).toBeTruthy();
 
     act(() => usePetStore.setState({ activePet: REX }));
-    expect(view.queryByText('Show events from')).toBeNull();
+    expect(view.queryByText('Date range')).toBeNull();
     expect(store().window).toEqual({ kind: 'all' });
     expect(view.getByLabelText('Date range: All time')).toBeTruthy();
     // Rex's own record answers, and his pill still reads All time: nothing carried over.

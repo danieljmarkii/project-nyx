@@ -1,5 +1,5 @@
 // The search field (HV-9 / CUL-1166; spec §3.7, AC 7, AC 39). It writes the REAL scope
-// store after a pause, at once on the search key, and clears it on Done; it names only
+// store after a pause, at once on the search key, and clears it on Cancel; it names only
 // what search reads; and it spells its font family (the geistRollout guard's TextInput rule).
 
 import { StyleSheet } from 'react-native';
@@ -82,10 +82,10 @@ describe('SearchField', () => {
     expect(store().searchText).toBe('changed elsewhere');
   });
 
-  it('Done closes the search and clears it: nothing is kept', () => {
+  it('Cancel closes the search and clears it: nothing is kept', () => {
     const view = field();
     fireEvent.changeText(view.getByLabelText('Search Nyx\'s record'), 'rabbit');
-    fireEvent.press(view.getByText('Done'));
+    fireEvent.press(view.getByText('Cancel'));
     expect(store()).toMatchObject({ searchOpen: false, searchText: '' });
     act(() => {
       jest.advanceTimersByTime(SEARCH_WRITE_DELAY_MS * 2);
@@ -104,12 +104,13 @@ describe('SearchField', () => {
     expect(store().searchText).toBe('');
   });
 
-  it('the Done control is a real button at the 44pt floor, labelled by its own words', () => {
+  it('the Cancel control is a real button at the 44pt floor, labelled by its own words', () => {
     const view = field();
     const done = view.getByRole('button');
     expect(done.props.accessibilityLabel).toBeUndefined();
-    // The hint says what Done does to the list, where "Done" alone could read as "saved".
-    expect(done.props.accessibilityHint).toBe('Ends the search');
+    // The platform's word for a control that throws the search away is Cancel; "Done"
+    // promised to keep it (HV-12). The hint says what it does to the list.
+    expect(done.props.accessibilityHint).toBe('Clears the search');
     const style = StyleSheet.flatten(done.props.style) as { minHeight?: number; minWidth?: number };
     expect(style.minHeight).toBeGreaterThanOrEqual(44);
     expect(style.minWidth).toBeGreaterThanOrEqual(44);

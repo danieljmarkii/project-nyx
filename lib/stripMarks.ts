@@ -181,10 +181,10 @@ function possessive(petName: string): string | null {
 
 // ── The mark ─────────────────────────────────────────────────────────────────────
 
-/** "a meal left unfinished" / "2 meals left unfinished": the month's own words for the
- *  broken line, with the count the header gives. */
+/** "a meal not finished" / "2 meals not finished": the day header's own words, so a tap
+ *  lands on a header that says what the cell said (HV-12). */
 function unfinishedMealsText(n: number): string {
-  return n === 1 ? 'a meal left unfinished' : `${formatCount(n)} meals left unfinished`;
+  return n === 1 ? 'a meal not finished' : `${formatCount(n)} meals not finished`;
 }
 
 /** "a dose not given in full" / "2 doses not given in full" (CUL-1193's words). */
@@ -219,6 +219,8 @@ function presentText(filter: HistoryFilter, k: number, courseName: string | null
   if (filter.kind === 'course' && courseName) {
     return `${formatCount(k)} ${courseName} ${k === 1 ? 'dose' : 'doses'} logged`;
   }
+  // The record filters' nouns are phrases ("with a photo"), which go after the verb.
+  if (filter.kind === 'photographed' || filter.kind === 'noted') return `${formatCount(k)} logged ${filterNoun(filter, k)}`;
   return `${formatCount(k)} ${filterNoun(filter, k)} logged`;
 }
 

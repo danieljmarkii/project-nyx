@@ -68,14 +68,13 @@ const CARD_BORDER = LANDED_OUTLINE_WIDTH;
 
 // ── The header ──────────────────────────────────────────────────────────────────
 
-/** A header part's ink. Under a filter the day's total (the part after the filtered count,
- *  `dayHeaderOf`'s documented order) is the quieter one; a symptom is always the rose ink
- *  (C-1: the ink, never the bright rose, as text on white); an unfinished meal is neutral
- *  grey (H-2); a day with nothing logged says so in the quietest ink. */
-function partColor(part: DayHeaderPart, index: number, filtered: boolean, empty: boolean): string {
+/** A header part's ink. Under a filter the day's total (`dayTotal`) is the quieter one,
+ *  wherever it falls (All symptoms puts it after every kind); a symptom is always the rose
+ *  ink (C-1: the ink, never the bright rose, as text on white); an unfinished meal is
+ *  neutral grey (H-2); a day with nothing logged says so in the quietest ink. */
+function partColor(part: DayHeaderPart, empty: boolean): string {
   if (part.tone === 'symptom') return theme.colorEventSymptomInk;
-  if (empty) return theme.colorTextTertiary;
-  if (filtered && index === 1) return theme.colorTextTertiary;
+  if (empty || part.tone === 'dayTotal') return theme.colorTextTertiary;
   return theme.colorTextSecondary;
 }
 
@@ -98,6 +97,7 @@ export function DayCardHeader({
   filter,
   search,
   landed,
+  hasItems = false,
   withCounts = true,
   focusRef,
 }: {
@@ -107,14 +107,16 @@ export function DayCardHeader({
   filter: HistoryFilter;
   search: boolean;
   landed: boolean;
+  /** The day holds a date-only item (a visit, a course start, a bowl): with nothing logged,
+   *  its header shows the date alone, so no count claim contradicts the item under it. */
+  hasItems?: boolean;
   /** Off for today's open card, whose body says *Nothing logged yet today.* already. */
   withCounts?: boolean;
   /** The header's accessible node, for the list to move VoiceOver onto (§4). */
   focusRef?: (node: View | null) => void;
 }) {
   const isToday = day === today;
-  const parts = withCounts ? dayHeaderOf(facts, filter, { search, isToday }) : [];
-  const filtered = filter.kind !== 'all';
+  const parts = withCounts ? dayHeaderOf(facts, filter, { search, isToday, hasItems }) : [];
   const empty = facts.total === 0;
   const date = recordWeekday(day, today) ?? day;
   return (
@@ -139,7 +141,7 @@ export function DayCardHeader({
           {parts.length > 0 ? (
             <ThemedText style={styles.counts} testID={`history-day-counts-${day}`}>
               {parts.map((part, i) => {
-                const color = partColor(part, i, filtered, empty);
+                const color = partColor(part, empty);
                 return (
                   <Fragment key={`${i}:${part.text}`}>
                     {i > 0 ? <ThemedText style={[styles.countPart, styles.countSep]}>{' · '}</ThemedText> : null}

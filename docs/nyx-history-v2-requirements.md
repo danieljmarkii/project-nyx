@@ -1,6 +1,6 @@
 # Nyx History v2 — The Record You Can Read — Requirements (CUL-1108)
 
-**Version:** 1.7 — **BUILD-READY** | **Date:** 2026-09-25 | **Status:** every ruling made (v1.3 adds CUL-1189's two, §0.5; v1.4 adds CUL-1193's, §3.2 and §3.8; v1.5 adds HV-6's two, §3.6 and §5.4 under ⚠ RULED; v1.6 adds HV-11's three link rows, §5.8; v1.7 corrects §3.9's since-visit note, CUL-1257). The PM ruled on round 4 of the mock (2026-09-24) and handed five calls to the team (H-3, H-4b, H-7, H-10, H-11), which are made in §0.2 with their dissents recorded. Nothing is open that blocks a build session; four pieces wait on issues outside this project (§10).
+**Version:** 1.8 — **BUILD-READY** | **Date:** 2026-09-25 | **Status:** every ruling made (v1.3 adds CUL-1189's two, §0.5; v1.4 adds CUL-1193's, §3.2 and §3.8; v1.5 adds HV-6's two, §3.6 and §5.4 under ⚠ RULED; v1.6 adds HV-11's three link rows, §5.8; v1.7 corrects §3.9's since-visit note, CUL-1257; v1.8 writes HV-12's final words over the placeholders and records its four rulings, §0.6). The PM ruled on round 4 of the mock (2026-09-24) and handed five calls to the team (H-3, H-4b, H-7, H-10, H-11), which are made in §0.2 with their dissents recorded. Nothing is open that blocks a build session; four pieces wait on issues outside this project (§10).
 
 **Design authority:** round 5 of *The Record You Can Read* (https://claude.ai/artifact/RNvdtUG6FX5utWmzGqBNa6), committed as `docs/culprit-history-v2-mockups.html`. The repo file wins on divergence. Round 4 (the options side by side) is in git at `b0479342`; round 3 at `ab20698c`.
 
@@ -58,6 +58,17 @@ Two count-line calls the HV-3 adversarial pass surfaced, each briefed on CUL-118
 
 With it, §3.9's trial row says what was built in #909 and stood unobjected on CUL-1189: the trial window is offered only while `isTrialRunning` says the trial runs (§11), dated by `exposureRange`. v1.1's row read "offered only while that range reaches today", which on its own kept offering a trial nobody closed for as long as the record ran.
 
+### 0.6 HV-12's rulings (PM, 2026-09-25; v1.8)
+
+The finish pass (CUL-1169) replaced every placeholder with its final wording and filed four calls. The PM ruled all four in the session.
+
+| # | Decision | Ruling |
+|---|---|---|
+| **CUL-1263** | Home's Today line and History's day header summarise one day differently (Home names meals and doses; History names the meals not finished) | **(a) Home uses History's day header,** so a refusal never reads as routine on Home the day History names it. Built in its own issue after a Home mock frame; the Daily Recap, which shares Home's chips today, is not changed by the ruling (§5.6). |
+| **CUL-1264** | *Outside the trial diet ›* under a symptom filter | **(a) Show it** while a running trial overlaps the window, after the symptom's own door (§3.2). Built in #921. |
+| **CUL-1265** | History's default window while a trial runs | **(b) All time stays the default** for v1. A trial default needs its own brief and a frame. |
+| **CUL-1266** | The spec edit for HV-12's words | **Approved:** this version (§3.2, §3.4, §3.5, §3.7, §3.8, §3.12). |
+
 ---
 
 ## 1. The job
@@ -109,24 +120,24 @@ One line under the pinned row, over **one population and one query**: every logg
 
 | State | Line 1 | Line 2 (coverage, only when true) | Doors |
 |---|---|---|---|
-| All types, All time | *All time · **1,094 logged** since May 14* (the pet's first record) | *1 day unlogged · 3 logged twice in the same minute* | *Outside the trial diet ›* while a trial overlaps the window (PMD-9) |
+| All types, All time | *All time · **1,094 logged** since May 14* (the pet's first record) | *1 day with nothing logged · 3 possible repeats within a minute* | *Outside the trial diet ›* while a trial overlaps the window (PMD-9) |
 | All types, any other window | *Last 30 days · **195 logged*** | the same coverage clauses, over the window | the same |
-| One type (or All symptoms) | *Since the trial started, Jul 26 · **13 vomits on 11 days*** | coverage over the window | a symptom filter: the chart that owns the number (*Before and since the trial ›* under the trial window; *See the compare ›* otherwise) |
+| One type (or All symptoms) | *Since the trial started, Jul 26 · **13 vomits on 11 days*** | coverage over the window | a symptom filter: the screen that owns the number (*The trial so far ›* under the trial window; *Vomiting over time ›* otherwise, *Symptoms on Patterns ›* under All symptoms), then *Outside the trial diet ›* while a trial overlaps the window (⚠ RULED 2026-09-25, CUL-1264) |
 | A medication course | *All time · **16 logged on 16 days*** (⚠ RULED 2026-09-25, CUL-1193: was *16 doses*) | *Cetirizine HCl · Jul 1 – Sep 5 · 4 not given in full*, then coverage over the course's days | — |
-| Photographed / With a note | *June · **12 photographed rows*** | coverage | — |
+| Photographed / With a note | *June · **12 with a photo on 9 days*** | coverage | — |
 | Noticed (H-9) | *(no count)* one link: ***What you noticed is on Patterns ›*** | — | — |
-| Search | *Rows that mention **"rabbit"** · All time* | *Search finds; it never counts.* | — |
+| Search | *Searching for **"rabbit"** · All time* | *No count here, because search reads names, not ingredients.* | — |
 
 Rules:
-- **Coverage** ("N days unlogged") appears on every window and under every filter, All time included, and says nothing when the window is fully covered (C-3). A window starts no earlier than the pet's first record (GAP-24); a course filter's coverage is over the course's own days.
-- **Same-minute duplicates** are disclosed (*N logged twice in the same minute*) using the vet report's duplicate rule, lifted into one shared module (PMD-10, §5.2).
+- **Coverage** (*N days with nothing logged*, the gap lines' own words) appears on every window and under every filter, All time included, and says nothing when the window is fully covered (C-3). A window starts no earlier than the pet's first record (GAP-24); a course filter's coverage is over the course's own days.
+- **Same-minute duplicates** are disclosed (*N possible repeats within a minute*, true of a pair and of a triple alike) using the vet report's duplicate rule, lifted into one shared module (PMD-10, §5.2).
 - **A filtered count names its days** (*13 vomits on 11 days*) and the window's start date (*Since the trial started, Jul 26*).
 - **An anchored window before the record names where the record starts** (⚠ v1.3, CUL-1189 · 1): when the trial or visit window's anchor is before the pet's first record, line 1 reads *Since the last vet visit, Jul 26 · record from Aug 3 · **33 logged***. The window starts at the record and coverage counts from it (GAP-24); the days before it are named, never counted as unlogged. Rolling windows and months never say it (HV-3's `recordStartsLater` is null for them).
 - **A trial past its planned end says so** (⚠ v1.3, CUL-1189 · 2): inside B-422's grace, line 1 reads *Since the trial started, Jul 26 · past its planned end · **9 vomits on 7 days*** (HV-3's `trialPastTarget`).
-- **A dose count reads *logged*** (⚠ RULED 2026-09-25, CUL-1193, GAP-26's wording): under a course and under Medication, line 1 counts every dose row whatever its chip (*16 logged on 16 days*, never *16 doses*, which a vet reads as 16 given), and line 2 names the ones recorded Partial, Missed or Refused (*4 not given in full*), after the course's name and span and before coverage. Nothing when none were: an unrated dose is counted and never named, so a zero would claim every dose was given. Never a delivered count. The day header's *2 doses* is outside the ruling (the rows under it carry their chips); HV-12's copy pass owns that word (CUL-1169).
+- **A dose count reads *logged*** (⚠ RULED 2026-09-25, CUL-1193, GAP-26's wording): under a course and under Medication, line 1 counts every dose row whatever its chip (*16 logged on 16 days*, never *16 doses*, which a vet reads as 16 given), and line 2 names the ones recorded Partial, Missed or Refused (*4 not given in full*), after the course's name and span and before coverage. Nothing when none were: an unrated dose is counted and never named, so a zero would claim every dose was given. Never a delivered count. The day header follows (HV-12, CUL-1169): under a dose filter it reads *2 logged · 8 in all · 1 dose not given in full*, because *1 dose* beside a day naming one not given in full made a dose left unconfirmed in a refused meal read as given.
 - **Every count re-derives together** after a write, a removal, a sync or a refresh (GAP-18): the line, the pill's count, the day headers, the strip.
-- A month with nothing logged reads *nothing logged*, never 0.
-- The door labels are placeholders for the copy pass; the destinations are fixed.
+- A month with nothing logged reads *nothing logged*, never 0. A window that is today alone says *nothing logged yet* (or *no vomit logged yet*), as today's card does.
+- **A door names what it opens** (HV-12): the trial door carries its screen's own title (*The trial so far*, which draws no "before"; a before-and-since view is CUL-1258), a symptom's door names its Patterns metric in the occurrence form (*Vomiting over time ›*), and *Outside the trial diet ›* is that screen's title. The destinations are fixed (`countLineDoorHref`).
 
 ### 3.3 The free-fed bowl (H-6)
 
@@ -147,7 +158,7 @@ One week of the Patterns month's day marks (`components/charts/DayMark.tsx`), Su
 | Today, nothing logged yet | white box, today's border | "{day}, today, nothing logged yet" |
 | Logged (All types) | white box, a line | "{day}, no vomiting logged, {n} logged in all" |
 | A vomit day (All types) | rose fill, white date | "{day}, vomiting logged {k} times, {n} logged in all" |
-| A meal left unfinished (All types, Meal) | the line **broken** | "…, a meal left unfinished" |
+| A meal left unfinished (All types, Meal) | the line **broken** | "…, a meal not finished" (the header's words) |
 | The filtered kind (a symptom filter) | rose fill | "{day}, {symptom} logged {k} times, {n} logged in all" |
 | The filtered kind (any other filter) | a line | "{day}, {type} logged {k} times, {n} logged in all" |
 | A dose not given in full (Medication, a course) | the line **broken** | "…, a dose not given in full" |
@@ -162,10 +173,10 @@ One week of the Patterns month's day marks (`components/charts/DayMark.tsx`), Su
 
 ### 3.5 The day card
 
-- **The header (rule C):** the date (*Mon, Sep 21*, with *Today* on today), the total (*8 logged*), every symptom kind in rose (*1 vomit · 1 cough*), *other* entries neutral, and ***N meals not finished* in neutral grey** (H-2; qualifying meals only, never a treat). Under a filter: the filtered count first, then the day's total (*2 vomits · 10 logged*). Under search: the date only (R-2). The date never wraps.
+- **The header (rule C):** the date (*Mon, Sep 21*, with *Today* on today), the total (*8 logged*), every symptom kind in rose (*1 vomit · 1 cough*), *other* entries neutral, and ***N meals not finished* in neutral grey** (H-2; qualifying meals only, never a treat). Under a filter: the filtered count first, then the day's total in the quietest ink (*2 vomits · 10 in all*; *10 logged* beside two rows read as ten more somewhere); All symptoms names each kind (*2 vomits · 1 cough · 8 in all*); a dose filter reads *2 logged · 8 in all · 1 dose not given in full* (§3.2). Nouns follow the record (*12 with a photo*; *formed stool*, so a day of loose stools never reads *no stool logged*; *weigh-in*). A day whose only content is a date-only item shows the date alone: it neither says *nothing logged* over the visit nor calls the visit a log, which the strip and coverage do not. Under search: the date only (R-2). The date never wraps.
 - **Date-only items (rule L)** sit at the top of their day, above the first row, and stay visible under every filter: a vet visit (a small square mark, *Vet visit · Recheck · Riverside Clinic*, opens the visit), a course start (a short bar, *Prednisone started*), a bowl's Started / Stopped / Switched. Never counted; never the hollow bead Home uses for a look (BRK-11).
 - **Rows** morning to night; the sort key is (occurred_at, id), so a same-minute pair never swaps between renders (rule H).
-- **Gap lines (R-1):** under All types, a run of days with nothing logged is one line (*Sun, Sep 20 · nothing logged*; *nothing logged · Sep 13 – 16*). Under a filter, *no vomit logged · Sep 18 – 19* spans **only closed, logged days**: it splits at an unlogged day (which gets its own line), never includes today, never starts before the type's first row or a course's start, and carries dates only. A day whose only content is a date-only item renders its card (a visit-only day is a day). Under Noticed, no gap line ever states a miss (H-9).
+- **Gap lines (R-1):** the date always leads, as on the cards between them. Under All types, a run of days with nothing logged is one line (*Sun, Sep 20 · nothing logged*; *Sep 13 – 16 · nothing logged*). Under a filter, *Sep 18 – 19 · no vomit logged* spans **only closed, logged days**: it splits at an unlogged day (which gets its own line), never includes today, never starts before the type's first row or a course's start, and carries dates only. A day whose only content is a date-only item renders its card (a visit-only day is a day). Under Noticed, no gap line ever states a miss (H-9).
 
 ### 3.6 The row (H-1)
 
@@ -194,7 +205,7 @@ One week of the Patterns month's day marks (`components/charts/DayMark.tsx`), Su
 
 ### 3.7 Search (R-2, GAP-15)
 
-The search button opens a field under the pinned row: *Foods, medicines, your notes*. Search is **one extra condition on the list's own pet-scoped query** over named fields: the food's brand and product, the medicine's name, the type's label, and the note (the note only once CUL-848's cue is live; until then, names and labels only). It counts nothing (day headers show the date only; the count line says *Search finds; it never counts.*), builds no index, and saves no history. Rows keep every fact (R-2). A search with no match names the word searched (§3.12).
+The search button opens a field under the pinned row: *Foods, medicines, your notes*. Search is **one extra condition on the list's own pet-scoped query** over named fields: the food's brand and product, the medicine's name, the type's label, and the note (the note only once CUL-848's cue is live; until then, names and labels only). It counts nothing (day headers show the date only; the count line says *No count here, because search reads names, not ingredients.*), builds no index, and saves no history. The field's button is *Cancel*: it ends the search and clears it; the keyboard's own search key keeps it, and a drag through the list puts the keyboard away. Rows keep every fact (R-2). A search with no match names the word searched (§3.12).
 
 ### 3.8 The type sheet (H-5, H-9)
 
@@ -203,7 +214,7 @@ A full-width ScopeMenu sheet, every option visible, a count on every row from th
 - *All types*, *All symptoms*, each type (Loose stool and Stool show 0 rather than hiding), *Meal*;
 - *Medication*, then **one sub-row per course with a dose in the window**, keyed and bounded by the vet report's course grain (`lib/medicationHistory.ts`): *Motozol · since Jul 16 · 29*; *Cetirizine HCl · Jul 1 – Sep 5 · 16 · 4 not given in full*, the doses recorded Partial, Missed or Refused named after the span as Photographed names *N not read*, and nothing when none were (⚠ RULED 2026-09-25, CUL-1193). A course's count is **every dose row logged in the window, whatever its chip**; the medication card's *Dose X of Y* counts what was given (`dosesTowardTarget`), and the two are never shown side by side (GAP-26). Absent for a pet with no course (PMD-17). Closes CUL-488 (B-688).
 - *Weight*, *Other*;
-- **What the record holds:** *Photographed* with its sub-line *N not read* (or *photo reading is off*, H-4b), *With a note*;
+- **Photos and notes** (the section's label): *Photographed* with its sub-line *N not read* (or *photo reading is off*, H-4b), *With a note*;
 - **The daily look:** *Noticed*, with no count (H-9), only where the look is live for the account (`daily_look`; every account after CUL-876).
 
 One pill always names what is filtering (the type pill shows *Vomit · 13*, tinted). "With a read" is retired; no filter exists over a read's verdict (rule 3).
@@ -221,6 +232,7 @@ One pill always names what is filtering (the type pill shows *Vomit · 13*, tint
 | Since the last vet visit | **the latest visit strictly before today, including its day** (H-11; the report's bound) → today | *Since the last vet visit · Sep 16* | *Since Sep 16* |
 | A month | the month's first → last day (clipped at the record's start and today) | *September* under a *2026* subhead | *September* |
 
+- The default window is *All time*, a trial or not (⚠ RULED 2026-09-25, CUL-1265 (b): a trial default needs its own brief and a frame).
 - The trial and visit rows are absent for a pet with none (PMD-17). History's "Last 7 days" is seven local days, and Ask's in-app link adopts the same (BRK-5, §5.8).
 - **The trial window follows belief** (⚠ v1.3, §0.5): offered while `isTrialRunning` says the trial runs, dated by `exposureRange`. A trial completed or abandoned today stops being offered the same day; a trial nobody closed stops when B-422's grace ends, and inside the grace the count line says *past its planned end* (§3.2).
 - **No surface restarts the day a visit is saved (CUL-1127).** The *since last visit* that did was the rundown's own unbounded `MAX(visited_at)`, reached from Home through Get ready; it takes this bound now, so History, the rundown, the report and the saved-visit moment all start the window the day after a visit dated today is saved. (§0.2's H-11 line records the ruling as it was made.)
@@ -242,9 +254,10 @@ The list shows the days with a look, each look a row (the shipped look row). The
 | A new account | the pinned row; the strip on this week, today outlined, earlier days as before-record; the shipped empty state: ***Nothing logged yet*** / *Tap + anywhere to log {pet}'s first food or symptom. Everything you log builds up here.* No count line. |
 | Today, nothing logged yet | today's card keeps its header and *Today* tag and reads *Nothing logged yet today.*; it never merges into yesterday's gap line; the count line counts only what exists. |
 | Loading | the list's silhouette (skeleton), hidden from VoiceOver, until the first read answers; never *Nothing logged yet* over a read that has not answered (C-12). |
-| A failed read | the shipped copy: ***Couldn't load history*** / *Something went wrong loading {pet}'s history.* / **Try again**. No strip, no count line. |
-| A filter with no match | ***Nothing matches that filter*** / *Try clearing a filter to see more of {pet}'s history.* (shipped) |
-| A search with no match | ***Nothing matches "{word}"*** / *Search looks in food and medicine names and in your notes.* (the notes clause only once notes are searched) |
+| A failed read | the shipped copy: ***Couldn't load history*** / *Something went wrong loading {pet}'s history.* / **Try again** (`EmptyState`'s text link). No strip, no count line. |
+| A filter with no match | the record's fact, never the filter as the owner's mistake (HV-12): the kind never logged, ***No vomit logged yet*** / *When you log one, it shows up here.*; logged outside the window, ***No vomit logged in this date range*** (today: ***…yet today***) / *Change the date range to All time to see every one logged.*; an ended course with no dose, ***No Apoquel dose logged*** / *This course ended with no dose logged against it.* |
+| Noticed with nothing to show | ***What you noticed shows up here*** / *Answer the daily look on Home, and the days you answer show up here.* (no look ever), else ***Nothing to show in this date range*** / *Change the date range to see the days you answered.* Never a sentence saying a day had no look (H-9). |
+| A search with no match | ***Nothing matches "{word}"*** / *Search looks in food and medicine names.* (and *in your notes* only once notes are searched) |
 | The record's first day | the list ends with *{pet}'s record starts here · Thu, May 14*; the strip's back arrow disables and says why |
 | The next page loading | one skeleton row at the foot, then a whole day at a time |
 
@@ -336,6 +349,7 @@ The row (lifted by HV-1); the pipeline `lib/dayNodes.ts` (a day's events in, nod
 
 - **Under `design_v2` (HV-6, HV-5):** the time column wraps; single rows lose their chevron (rule D); runs follow rule B and name the product (rule K), so a refused bowl is its own row (CUL-1121); the dose row carries its four chips and its named drug; the timed meal stays its own row; the read follows `readStateOf`, so the rose stays after Hide and *Photo not read* appears.
 - **Under `design_v2` and `history_v2` (HV-10):** the first paint and open-in-place.
+- **Home's Today line (⚠ RULED 2026-09-25, CUL-1263 (a)):** Home uses History's day header (`dayHeaderOf`), so the day's meals not finished are named on Home as on History and the two surfaces never summarise one day two ways. Built in its own issue after a Home mock frame; the Daily Recap keeps its own line unless ruled otherwise.
 
 ### 5.7 The month's marks (HV-8)
 
@@ -381,7 +395,7 @@ Every criterion names its test shape. "Pure" means a table test over a pure modu
 
 **The count line and coverage (R-1)**
 1. The count line, the type pill's count, every day header and the strip derive from one population (every logged event except a look) and agree for every window × filter pair in a table test over a fixture record (pure).
-2. *N days unlogged* appears on every window and filter, All time included, counts only days on or after the pet's first record and before today, and is absent when the window is fully covered (pure).
+2. *N days with nothing logged* appears on every window and filter, All time included, counts only days on or after the pet's first record and before today, and is absent when the window is fully covered (pure).
 3. A filtered count names its days and the window's start date (pure; copy snapshot per form).
 4. Same-minute duplicates are disclosed with the report's rule, imported from the shared module; a guard fails if History re-derives it (pure + guard).
 5. After a removal, a write, a sync tick and a pull-to-refresh, every count on screen re-derives (component test over the store).
@@ -433,7 +447,7 @@ Every criterion names its test shape. "Pure" means a table test over a pure modu
 37. Each registered door lands as the registry says (filter or anchor; the pill, the strip page, the count line) in both flag states and when the flag flips after mount; the widget's pet and day apply once per tap (component tests; CUL-1119).
 
 **Copy and safety**
-38. Every owner-facing string passes the `ownerFacingCopy` guard and a `nyx-voice` read; no string asserts a record fact the query did not return.
+38. Every owner-facing string passes the `ownerFacingCopy` guard, `guards/historyV2Copy.test.ts` (which reads the strings the pure modules return, where the sink-keyed guard cannot see), and a `nyx-voice` read; no string asserts a record fact the query did not return.
 39. The note never renders on a row, and search never reads a note, until the CUL-848 gate flips (a guarded constant, asserted).
 
 **CUL-1189's rulings (⚠ v1.3)**
@@ -483,7 +497,7 @@ The Linear project **History v2 · the record you can read** carries every sessi
 - **Designer:** the row, the strip and the sticky header as ruled; dissented on the header word's ink (rose; the PM ruled neutral) and on H-11 (anchor on today's visit; the team ruled the report's bound).
 - **Data Scientist:** carried the one-population rule, the coverage clauses and the Noticed floor; dissented on H-11 (the midnight after).
 - **Dr. Chen:** the exam-room questions each answered on one screen; H-11 as ruled; the dose chips all four states.
-- **Jordan:** *Outside the trial diet ›* and *Before and since the trial ›* are the two doors a diet-trial owner needed; the unread mark (H-4b).
+- **Jordan:** *Outside the trial diet ›* and the trial door are the two doors a diet-trial owner needed; the trial door reads *The trial so far ›*, its screen's title, since that screen draws no "before" (HV-12; the before-and-since view itself is CUL-1258); the unread mark (H-4b).
 - **Sam:** a refusing cat is visible one level above the rows (the broken line, the header's words).
 - **Trust and Safety:** the note gate (CUL-848), local search, no consent pressure (H-4b); residual dissent on the unread mark recorded in §0.2.
 - **Mobile IA / Motion / Engineering:** the pinned row and sticky header, uncapped open-in-place, scroll-event pager, the motion table, whole-day pages, the doorway registry.
@@ -535,3 +549,4 @@ The Linear project **History v2 · the record you can read** carries every sessi
 | 1.5 | 2026-09-25 | §3.6, §5.4, §7 AC 18: HV-6's two rulings (PM, in the HV-6 session, CUL-1163). A dose with no name on this phone says only *Medication*, never *no medicine named*; a finished `not_enough_to_say` read is `unread` (the grey *Photo not read*), never `calm`. |
 | 1.6 | 2026-09-25 | §5.8: three rows of the links table say what HV-11 built (#918), under ⚠ RULED (PM approved CUL-1253, after the D1–D3 rulings on CUL-1168). The rundown's three tiles land on their own scope under the flag, and only for the pet on screen; Ask's trial link opens History only while History offers the window, and Ask's server still counts 7 / 14 / 30 as UTC days (CUL-1251); a medication's past course sends its key in both flag states. `lib/historyDoors.ts` carries the same rows. |
 | 1.7 | 2026-09-25 | §3.9: the note on H-11's difference from Home corrected. The "Home" *since last visit* that restarted the day a visit was saved was the rundown's unbounded `MAX(visited_at)`, which Bundle D moved onto this bound (#920, CUL-1127); no surface restarts that day now. §0.2's H-11 line is the dated record and stays. PM-approved on CUL-1257. |
+| 1.8 | 2026-09-25 | §0.6, §3.2, §3.4, §3.5, §3.7, §3.8, §3.9, §3.12, §5.6, AC 38: HV-12's final words over the placeholders (the doors name what they open, coverage *days with nothing logged*, duplicates *possible repeats*, search's no-count line and *Cancel*, headers *in all*, a dose filter *logged*, date-first gap lines, the filter's quiet states), and HV-12's four rulings: CUL-1263 (a), CUL-1264 (a), CUL-1265 (b), CUL-1266 approved. Built in #921; round 5 of the mock carries the same words (version 10, republished with this PR). |

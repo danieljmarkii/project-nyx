@@ -35,6 +35,7 @@ import { isFinishedMeal, qualifyingIntakeMeals, type AnalyticsMeal } from './ana
 import { episodeDaysOf } from './chartModels';
 import { attributeDoses, type AttributableDose, type DoseAdherence, type RegimenWindow } from './medications';
 import type { MedicationCourse } from './medicationHistory';
+import { symptomOccurrenceLabel } from './metricDetail';
 import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import type { HistoryVisitRow } from './vetVisits';
 import type { BoundaryMarker } from './feedingArrangements';
@@ -685,6 +686,9 @@ export interface HistoryCourse {
   isActive: boolean;
   /** A regimen's own start day (its date-only item); null for a course of doses alone. */
   startedDay: string | null;
+  /** The course's first dose's day, or null when no dose was ever logged against it (a
+   *  regimen with none): the quiet state's "yet" reads it, never the regimen's start. */
+  firstDoseDay: string | null;
   days: CourseDays;
 }
 
@@ -695,6 +699,7 @@ export function historyCourseOf(course: MedicationCourse, name: string): History
     source: course.source,
     isActive: course.isActive,
     startedDay: course.source === 'regimen' ? dayOfStored(course.startedAt) : null,
+    firstDoseDay: course.firstDoseDay,
     days: courseDaysOf(course),
   };
 }
@@ -715,13 +720,17 @@ export interface HistoryDateFormat {
 }
 
 /** Nouns a label cannot give. Every other type counts as its label, lowercased, with an
- *  s for many (vomit, loose stool, stool, cough, sneeze, meal, weight), so a new leaf is
- *  nouned the day it ships instead of missing from a map. */
+ *  s for many (vomit, loose stool, cough, sneeze, meal), so a new leaf is nouned the day it
+ *  ships instead of missing from a map. `stool_normal` is labelled "Stool", and "no stool
+ *  logged" on a day of loose stools reads as no stool at all (HV-12's product review), so
+ *  its noun says which stool. A weight is a weigh-in: "3 weights" reads as three values. */
 const NOUN_OVERRIDES: Partial<Record<HistoryTypeKey, readonly [string, string]>> = {
   medication: ['dose', 'doses'],
   other: ['other entry', 'other entries'],
   lethargy: ['lethargy entry', 'lethargy entries'],
   itch: ['itch', 'itches'],
+  stool_normal: ['formed stool', 'formed stools'],
+  weight_check: ['weigh-in', 'weigh-ins'],
 };
 
 function typeNoun(type: HistoryTypeKey, n: number): string {
@@ -731,8 +740,9 @@ function typeNoun(type: HistoryTypeKey, n: number): string {
   return n === 1 ? base : `${base}s`;
 }
 
-/** The noun a filter counts in: '13 vomits', '12 photographed rows', a day header's '2 doses'.
- *  A dose filter's count line reads 'logged' instead (`countPhrase`, CUL-1193). */
+/** The noun a filter counts in: '13 vomits', '12 with a photo', a day header's '2 doses'.
+ *  A dose filter's count line reads 'logged' instead (`countPhrase`, CUL-1193). The two
+ *  record filters count in their own names, never "rows" (build vocabulary, HV-12). */
 export function filterNoun(filter: HistoryFilter, n: number): string {
   const one = n === 1;
   switch (filter.kind) {
@@ -743,13 +753,20 @@ export function filterNoun(filter: HistoryFilter, n: number): string {
     case 'course':
       return one ? 'dose' : 'doses';
     case 'photographed':
-      return one ? 'photographed row' : 'photographed rows';
+      return 'with a photo';
     case 'noted':
-      return one ? 'row with a note' : 'rows with a note';
+      return 'with a note';
     case 'all':
     case 'noticed':
       return one ? 'entry' : 'entries';
   }
+}
+
+/** A day's total beside a filtered count: "2 vomits · 10 in all". "10 logged" beside two
+ *  rows read as ten more somewhere (HV-12). The strip SPEAKS the same fact as "10 logged
+ *  in all" (`lib/stripMarks.ts`): a spoken total with no noun before it needs the verb. */
+export function inAllText(n: number): string {
+  return `${formatCount(n)} in all`;
 }
 
 /** 1094 → '1,094'. Grouped by hand so a count reads the same on every engine. */
@@ -778,22 +795,55 @@ export function notGivenInFullText(n: number): string | null {
   return n > 0 ? `${formatCount(n)} not given in full` : null;
 }
 
+/** Coverage (C-3): "4 days with nothing logged", the gap lines' own words, never a second
+ *  word for one fact ("unlogged" beside "nothing logged", HV-12). */
+export function unloggedDaysText(n: number): string {
+  return `${formatCount(n)} ${n === 1 ? 'day' : 'days'} with nothing logged`;
+}
+
+/**
+ * Same-minute duplicates (PMD-10, the report's rule): the rows the report counts once.
+ * "Possible repeat" is true of a pair and of a triple alike ("2 logged twice" described
+ * pairs, HV-4's adversarial pass), and says what the owner is looking at without calling
+ * it a mistake: two people can log one vomit, and a pet can vomit twice in a minute.
+ */
+export function possibleRepeatsText(n: number): string {
+  return `${formatCount(n)} possible ${n === 1 ? 'repeat' : 'repeats'} within a minute`;
+}
+
+/** Under search, the count line's second line: why there is no number (R-2). Search reads
+ *  names (§3.7), so a count would miss a food whose ingredient matches and name does not. */
+export const SEARCH_COUNTS_NOTHING = 'No count here, because search reads names, not ingredients.';
+// When search reads notes (HV-16, CUL-1172, `SEARCH_READS_NOTES`), "reads names" stops being
+// the whole story: that session rewords this line with the placeholder it flips.
+
 // ── The count line (§3.2) ────────────────────────────────────────────────────────
 
 export type CountLineDoorKey = 'outside-trial-diet' | 'trial-compare' | 'symptom-compare' | 'noticed-patterns';
 
-/** A door: the destination is fixed (§3.2); the label is a copy-pass placeholder. */
+/** A door: the destination is fixed (§3.2, `countLineDoorHref`); the label names it. */
 export interface CountLineDoor {
   key: CountLineDoorKey;
   label: string;
 }
 
-const DOORS: Record<CountLineDoorKey, CountLineDoor> = {
+/**
+ * The doors' words (HV-12's copy pass). A door says what it opens: the two trial doors carry
+ * their screens' own titles, so the owner lands on the words they tapped. The trial one was
+ * *Before and since the trial*, a comparison "The trial so far" does not draw. The symptom
+ * door names the one metric it opens (its Patterns detail, the kind over time), and under
+ * All symptoms, Patterns itself. The Noticed link is the PM's own words (H-9).
+ */
+const DOORS: Record<Exclude<CountLineDoorKey, 'symptom-compare'>, CountLineDoor> = {
   'outside-trial-diet': { key: 'outside-trial-diet', label: 'Outside the trial diet ›' },
-  'trial-compare': { key: 'trial-compare', label: 'Before and since the trial ›' },
-  'symptom-compare': { key: 'symptom-compare', label: 'See the compare ›' },
+  'trial-compare': { key: 'trial-compare', label: 'The trial so far ›' },
   'noticed-patterns': { key: 'noticed-patterns', label: 'What you noticed is on Patterns ›' },
 };
+
+function symptomDoorOf(filter: HistoryFilter): CountLineDoor {
+  const label = filter.kind === 'type' ? `${symptomOccurrenceLabel(filter.type)} over time ›` : 'Symptoms on Patterns ›';
+  return { key: 'symptom-compare', label };
+}
 
 /** One line with its emphasis: `lead` + **`strong`** + `tail`. */
 export interface CountLineText {
@@ -810,7 +860,7 @@ export type CountLine =
   | { kind: 'none' }
   /** Under Noticed: no count, one link to Patterns (H-9). */
   | { kind: 'noticed'; door: CountLineDoor }
-  /** Under search: search finds; it never counts (R-2). */
+  /** Under search: it finds, and never counts (R-2). */
   | { kind: 'search'; line1: CountLineText; line2: string }
   | { kind: 'count'; line1: CountLineText; line2: string | null; doors: CountLineDoor[] };
 
@@ -878,14 +928,22 @@ export function absenceText(filter: HistoryFilter, courseName: string | null = n
       return null;
     case 'course':
       return courseName ? `no ${courseName} dose logged` : 'no dose logged';
+    case 'photographed':
+      return 'no photo logged';
+    case 'noted':
+      return 'no note logged';
     default:
       return `no ${filterNoun(filter, 1)} logged`;
   }
 }
 
-function countPhrase(filter: HistoryFilter, total: WindowTotal): string {
-  if (filter.kind === 'all') return total.count > 0 ? `${formatCount(total.count)} logged` : 'nothing logged';
-  if (total.count === 0) return absenceText(filter) ?? '';
+/** "yet" on a window that is still open: today alone, where the day is not over and the day
+ *  card below already says *Nothing logged yet today.* A longer window holds closed days,
+ *  and its nothing is said plainly. */
+function countPhrase(filter: HistoryFilter, total: WindowTotal, todayOnly: boolean): string {
+  const yet = todayOnly ? ' yet' : '';
+  if (filter.kind === 'all') return total.count > 0 ? `${formatCount(total.count)} logged` : `nothing logged${yet}`;
+  if (total.count === 0) return `${absenceText(filter) ?? ''}${yet}`;
   const days = `${formatCount(total.days)} ${total.days === 1 ? 'day' : 'days'}`;
   const noun = countsDoses(filter) ? 'logged' : filterNoun(filter, total.count);
   return `${formatCount(total.count)} ${noun} on ${days}`;
@@ -914,8 +972,8 @@ export function countLineOf(input: CountLineInput): CountLine {
   if (term.length > 0) {
     return {
       kind: 'search',
-      line1: { lead: 'Rows that mention ', strong: `“${term}”`, tail: ` · ${windowHead}` },
-      line2: 'Search finds; it never counts.',
+      line1: { lead: 'Searching for ', strong: `“${term}”`, tail: ` · ${windowHead}` },
+      line2: SEARCH_COUNTS_NOTHING,
     };
   }
 
@@ -923,7 +981,7 @@ export function countLineOf(input: CountLineInput): CountLine {
   const course = filter.kind === 'course' ? input.course : null;
   const line1: CountLineText = {
     lead: `${windowHead} · `,
-    strong: countPhrase(filter, total),
+    strong: countPhrase(filter, total, window.range.fromDay === input.today && window.range.toDay === input.today),
     tail: window.isAllTime && filter.kind !== 'course' ? ` since ${dates.day(recordStart)}` : '',
   };
 
@@ -942,14 +1000,18 @@ export function countLineOf(input: CountLineInput): CountLine {
     today: input.today,
     within: filter.kind === 'course' ? (course?.days ?? { fromDay: null, toDay: null }) : null,
   }).length;
-  if (unlogged > 0) clauses.push(`${formatCount(unlogged)} ${unlogged === 1 ? 'day' : 'days'} unlogged`);
+  if (unlogged > 0) clauses.push(unloggedDaysText(unlogged));
   const duplicates = duplicatesFor(facts.duplicates, filter);
-  if (duplicates !== null && duplicates > 0) clauses.push(`${formatCount(duplicates)} logged twice in the same minute`);
+  if (duplicates !== null && duplicates > 0) clauses.push(possibleRepeatsText(duplicates));
 
   const doors: CountLineDoor[] = [];
-  if (isSymptomFilter(filter)) doors.push(DOORS[window.isTrial ? 'trial-compare' : 'symptom-compare']);
+  const symptoms = isSymptomFilter(filter);
+  if (symptoms) doors.push(window.isTrial ? DOORS['trial-compare'] : symptomDoorOf(filter));
+  // "Anything besides the trial food?" is asked under All types and Meal, and (CUL-1264,
+  // PM-ruled (a), 2026-09-25) right after a symptom's count: the next question once Jordan
+  // has read "13 vomits on 11 days". Only while a running trial overlaps the window (PMD-9).
   const mealsInView = filter.kind === 'all' || (filter.kind === 'type' && filter.type === 'meal');
-  if (mealsInView && input.trialRange !== null && overlaps(window.range, input.trialRange)) {
+  if ((mealsInView || symptoms) && input.trialRange !== null && overlaps(window.range, input.trialRange)) {
     doors.push(DOORS['outside-trial-diet']);
   }
 
@@ -958,11 +1020,13 @@ export function countLineOf(input: CountLineInput): CountLine {
 
 // ── The day header (§3.5, rule C) ────────────────────────────────────────────────
 
-export type DayHeaderTone = 'total' | 'symptom' | 'neutral' | 'unfinished';
+export type DayHeaderTone = 'total' | 'symptom' | 'neutral' | 'unfinished' | 'dayTotal';
 
 export interface DayHeaderPart {
   text: string;
-  /** `symptom` is rose; `unfinished` is the neutral grey of H-2, never rose. */
+  /** `symptom` is rose; `unfinished` is the neutral grey of H-2, never rose; `dayTotal` is
+   *  the day's total beside a filtered count ("10 in all"), the quietest ink wherever it
+   *  falls in the list (All symptoms puts it after every kind). */
   tone: DayHeaderTone;
 }
 
@@ -971,41 +1035,79 @@ function mealsNotFinishedPart(f: DayFacts): DayHeaderPart | null {
   return n > 0 ? { text: `${formatCount(n)} ${n === 1 ? 'meal' : 'meals'} not finished`, tone: 'unfinished' } : null;
 }
 
-/**
- * A day header's counts, after the date the screen prints. Empty (the date only) under a
- * search, which counts nothing (R-2), and under Noticed (H-9). Under a filter, the filtered
- * count first, then the day's total ("2 vomits · 10 logged"); under Meal the meals not
- * finished follow, so a refusal never reads as routine one level above the rows (§1, H-2).
- * Under All types, the total, every symptom kind, the other entries, the meals not finished.
- * A day with nothing logged says only that (today: not yet), never what its nothing lacked.
- */
-export function dayHeaderOf(
-  f: DayFacts,
-  filter: HistoryFilter,
-  opts: { search?: boolean; isToday?: boolean } = {},
-): DayHeaderPart[] {
-  if (opts.search || filter.kind === 'noticed') return [];
-  if (f.total === 0) return [{ text: opts.isToday ? 'nothing logged yet' : 'nothing logged', tone: 'neutral' }];
-  const total: DayHeaderPart = { text: `${formatCount(f.total)} logged`, tone: 'total' };
-  if (filter.kind !== 'all') {
-    const n = dayCountFor(f, filter) ?? 0;
-    const parts: DayHeaderPart[] = [
-      {
-        text: n > 0 ? `${formatCount(n)} ${filterNoun(filter, n)}` : (absenceText(filter) ?? ''),
-        tone: isSymptomFilter(filter) ? 'symptom' : 'neutral',
-      },
-      { ...total, tone: 'neutral' },
-    ];
-    const unfinished = filter.kind === 'type' && filter.type === 'meal' ? mealsNotFinishedPart(f) : null;
-    if (unfinished) parts.push(unfinished);
-    return parts;
-  }
-  const parts: DayHeaderPart[] = [total];
+/** Under a dose filter, the day's doses recorded Partial, Missed or Refused, named with
+ *  their noun ("1 dose not given in full": after "10 in all", a bare "1 not given in full"
+ *  read as one of the ten) in the neutral grey a meal not finished takes. Nothing at zero, as
+ *  the count line: an unrated or unconfirmed dose is never named here (CUL-1193; whether to
+ *  name the unconfirmed is CUL-1209's), which is why the count beside it reads "logged". */
+function dosesNotInFullPart(f: DayFacts, filter: HistoryFilter): DayHeaderPart | null {
+  if (!countsDoses(filter)) return null;
+  let n = 0;
+  if (filter.kind === 'course') n = f.doses[filter.courseKey]?.notInFull ?? 0;
+  else for (const d of Object.values(f.doses)) n += d.notInFull;
+  return n > 0 ? { text: `${formatCount(n)} ${n === 1 ? 'dose' : 'doses'} not given in full`, tone: 'unfinished' } : null;
+}
+
+/** Every symptom kind the day holds, in rose, in the one symptom order: All types names them
+ *  after its total, and All symptoms names them instead of one "3 symptoms" (HV-12). */
+function symptomParts(f: DayFacts): DayHeaderPart[] {
+  const parts: DayHeaderPart[] = [];
   for (const type of HISTORY_TYPE_KEYS) {
     if (!SYMPTOM_TYPES.has(type)) continue;
     const n = f.byType[type] ?? 0;
     if (n > 0) parts.push({ text: `${formatCount(n)} ${typeNoun(type, n)}`, tone: 'symptom' });
   }
+  return parts;
+}
+
+/**
+ * A day header's counts, after the date the screen prints. Empty (the date only) under a
+ * search, which counts nothing (R-2), and under Noticed (H-9). Under a filter, the filtered
+ * count first, then the day's total ("2 vomits · 10 in all"); All symptoms names each kind
+ * instead of one sum; under Meal the meals not finished follow, and under a dose filter the
+ * doses not given in full, so a refusal never reads as routine one level above the rows (§1,
+ * H-2). A dose filter's count reads "logged", the count line's ruled word (CUL-1193): "2
+ * doses" read as two given, and a dose left unconfirmed in a refused meal carries no
+ * not-in-full to qualify it. Under All types, the total, every symptom kind, the other
+ * entries, the meals not finished. A day with nothing logged says only that (today: not
+ * yet), never what its nothing lacked. A day whose only content is a date-only item (a
+ * visit) shows the date alone: "nothing logged" would contradict the visit under it, and
+ * "nothing else logged" would call the visit a log, which the strip and the coverage clause
+ * (a visit is not an event of the record) do not.
+ */
+export function dayHeaderOf(
+  f: DayFacts,
+  filter: HistoryFilter,
+  opts: { search?: boolean; isToday?: boolean; hasItems?: boolean } = {},
+): DayHeaderPart[] {
+  if (opts.search || filter.kind === 'noticed') return [];
+  if (f.total === 0) {
+    if (opts.hasItems) return [];
+    return [{ text: opts.isToday ? 'nothing logged yet' : 'nothing logged', tone: 'neutral' }];
+  }
+  const total: DayHeaderPart = { text: `${formatCount(f.total)} logged`, tone: 'total' };
+  if (filter.kind !== 'all') {
+    const n = dayCountFor(f, filter) ?? 0;
+    const counted: DayHeaderPart[] =
+      filter.kind === 'symptoms' && n > 0
+        ? symptomParts(f)
+        : [
+            {
+              text:
+                n === 0
+                  ? (absenceText(filter) ?? '')
+                  : `${formatCount(n)} ${countsDoses(filter) ? 'logged' : filterNoun(filter, n)}`,
+              tone: isSymptomFilter(filter) ? 'symptom' : 'neutral',
+            },
+          ];
+    const parts: DayHeaderPart[] = [...counted, { text: inAllText(f.total), tone: 'dayTotal' }];
+    const unfinished = filter.kind === 'type' && filter.type === 'meal' ? mealsNotFinishedPart(f) : null;
+    if (unfinished) parts.push(unfinished);
+    const notInFull = dosesNotInFullPart(f, filter);
+    if (notInFull) parts.push(notInFull);
+    return parts;
+  }
+  const parts: DayHeaderPart[] = [total, ...symptomParts(f)];
   const other = f.byType.other ?? 0;
   if (other > 0) parts.push({ text: `${formatCount(other)} ${typeNoun('other', other)}`, tone: 'neutral' });
   const unfinished = mealsNotFinishedPart(f);
@@ -1228,9 +1330,11 @@ export function listSectionsOf(input: ListSectionsInput): HistorySection[] {
 }
 
 /**
- * A gap line's words (§3.5): "Sun, Sep 20 · nothing logged", "nothing logged · Sep 13 – 16",
- * "no vomit logged · Sep 18 – 19". Null for a section that is not a gap line. A course names
- * its drug when the caller knows it.
+ * A gap line's words (§3.5): "Sun, Sep 20 · nothing logged", "Sep 13 – 16 · nothing logged",
+ * "Sep 18 – 19 · no vomit logged". The date always leads, as it does on the day cards the
+ * line sits between, so the list's left edge reads as one column of dates (HV-12: the two
+ * orders read as two kinds of line). A single day names its weekday, as a card does. Null
+ * for a section that is not a gap line. A course names its drug when the caller knows it.
  */
 export function gapLineText(
   section: HistorySection,
@@ -1238,16 +1342,9 @@ export function gapLineText(
   dates: HistoryDateFormat,
   courseName: string | null = null,
 ): string | null {
-  if (section.kind === 'unlogged') {
-    return section.days === 1
-      ? `${dates.weekday(section.fromDay)} · nothing logged`
-      : `nothing logged · ${dates.range(section.fromDay, section.toDay)}`;
-  }
-  if (section.kind === 'no-match') {
-    const words = absenceText(filter, courseName);
-    if (words === null) return null;
-    const when = section.days === 1 ? dates.day(section.fromDay) : dates.range(section.fromDay, section.toDay);
-    return `${words} · ${when}`;
-  }
-  return null;
+  if (section.kind !== 'unlogged' && section.kind !== 'no-match') return null;
+  const words = section.kind === 'unlogged' ? 'nothing logged' : absenceText(filter, courseName);
+  if (words === null) return null;
+  const when = section.days === 1 ? dates.weekday(section.fromDay) : dates.range(section.fromDay, section.toDay);
+  return `${when} · ${words}`;
 }

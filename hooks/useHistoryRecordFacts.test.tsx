@@ -122,6 +122,14 @@ describe('useHistoryRecordFacts — when it reads', () => {
     expect(result.current).toEqual({ status: 'ready', data: answer('p1', 2) });
   });
 
+  it('re-reads after a pull to refresh, which moves no hydration tick (AC 5, HV-12)', async () => {
+    const reads = deferredReads();
+    renderHook(() => useHistoryRecordFacts());
+    await act(async () => reads[0].resolve(answer('p1', 1)));
+    act(() => useHistoryListStore.getState().bumpPullTick());
+    expect(mockRead).toHaveBeenCalledTimes(2);
+  });
+
   it('re-reads when a log lands in today’s list (a write, an Undo)', async () => {
     const reads = deferredReads();
     renderHook(() => useHistoryRecordFacts());

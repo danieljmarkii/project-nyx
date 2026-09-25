@@ -79,8 +79,24 @@ describe('DayCardHeader', () => {
         landed={false}
       />,
     );
-    expect(text('history-day-counts-2026-09-17')).toBe('2 vomits · 10 logged');
-    expect(StyleSheet.flatten(screen.getByText('10 logged').props.style).color).toBe(theme.colorTextTertiary);
+    expect(text('history-day-counts-2026-09-17')).toBe('2 vomits · 10 in all');
+    expect(StyleSheet.flatten(screen.getByText('10 in all').props.style).color).toBe(theme.colorTextTertiary);
+  });
+
+  it('the day\'s total keeps the quieter ink wherever it falls: after every kind under All symptoms', () => {
+    render(
+      <DayCardHeader
+        day="2026-09-17"
+        today={TODAY}
+        facts={facts({ total: 10, byType: { vomit: 2, cough: 1 } })}
+        filter={{ kind: 'symptoms' }}
+        search={false}
+        landed={false}
+      />,
+    );
+    expect(text('history-day-counts-2026-09-17')).toBe('2 vomits · 1 cough · 10 in all');
+    expect(StyleSheet.flatten(screen.getByText('10 in all').props.style).color).toBe(theme.colorTextTertiary);
+    expect(StyleSheet.flatten(screen.getByText('1 cough').props.style).color).toBe(theme.colorEventSymptomInk);
   });
 
   it('a search: the date only (R-2); today carries its tag', () => {

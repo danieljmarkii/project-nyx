@@ -359,7 +359,7 @@ describe('one read behind every number on screen (AC 1, R-1)', () => {
     await renderList();
     // Six meals and a vomit since the record's first day; three days back is unlogged.
     expect(text('history-count-line-1')).toBe(`All time · 7 logged since ${recordDay(dayAgo(4), TODAY)}`);
-    expect(text('history-count-line')).toContain('1 day unlogged');
+    expect(text('history-count-line')).toContain('1 day with nothing logged');
     // Each header's total, summed, is the line's total.
     const totals = [0, 1, 2, 4].map((n) => Number(/^(\d+) logged/.exec(text(`history-day-counts-${dayAgo(n)}`))?.[1]));
     expect(totals.reduce((a, b) => a + b, 0)).toBe(7);
@@ -423,6 +423,7 @@ describe('AC 5 — a write, a removal, a sync tick and a pull each re-derive eve
     seedWeek();
     await renderList();
     insertMeal('pulled', at(3, 10), 'rc', 'all');
+    const before = useHistoryListStore.getState().pullTick;
     const list = screen.getByTestId('history-list');
     await act(async () => {
       await list.props.refreshControl.props.onRefresh();
@@ -430,6 +431,9 @@ describe('AC 5 — a write, a removal, a sync tick and a pull each re-derive eve
     await settle();
     expect(syncNow).toHaveBeenCalledTimes(1);
     expect(total()).toContain('8 logged');
+    // The pinned row's record read re-reads on this tick (`useHistoryRecordFacts`): a pull
+    // moves no hydration tick, so without it the pills kept the old counts (HV-12, AC 5).
+    expect(useHistoryListStore.getState().pullTick).toBe(before + 1);
   });
 });
 
@@ -459,8 +463,8 @@ describe('AC 7 — under search: the date only, and the search form of the line'
     insertMeal('rab', at(1, 13), 'rabbit', 'all');
     setScope({ searchOpen: true, searchText: 'rabbit' });
     await renderList();
-    expect(text('history-count-line-1')).toBe('Rows that mention “rabbit” · All time');
-    expect(text('history-count-line')).toContain('Search finds; it never counts.');
+    expect(text('history-count-line-1')).toBe('Searching for “rabbit” · All time');
+    expect(text('history-count-line')).toContain('No count here, because search reads names, not ingredients.');
     expect(screen.queryByTestId(`history-day-counts-${dayAgo(1)}`)).toBeNull();
     // The matched day only; its visit is not a row the search found.
     expect(screen.getByTestId(`history-day-header-${dayAgo(1)}`)).toBeTruthy();
@@ -511,7 +515,9 @@ describe('AC 10 / AC 11 — gap lines and date-only items, drawn', () => {
     await renderList();
     expect(screen.getByTestId(`history-day-header-${dayAgo(3)}`)).toBeTruthy();
     expect(screen.getByTestId('history-item-visit-visit-2')).toBeTruthy();
-    expect(text(`history-day-counts-${dayAgo(3)}`)).toBe('nothing logged');
+    // Its header is the date alone: the visit under it speaks for the day, and no count
+    // claim contradicts the strip or the coverage clause (HV-12).
+    expect(screen.queryByTestId(`history-day-counts-${dayAgo(3)}`)).toBeNull();
   });
 });
 
@@ -676,11 +682,28 @@ describe('the quiet states (§3.12, C-12)', () => {
     expect(screen.getByText('Nothing logged yet today.')).toBeTruthy();
   });
 
-  it('a filter with no row ever: the shipped no-match state', async () => {
+  it('a kind logged, just not today: the window is named, "yet" on an open day (Jordan\'s daily check, HV-12)', async () => {
+    seedWeek();
+    setScope({ filter: { kind: 'type', type: 'vomit' }, window: { kind: 'today' } });
+    await renderList();
+    expect(text('history-no-match')).toBe('No vomit logged yet todayChange the date range to All time to see every one logged.');
+  });
+
+  it('Noticed on a record with no look: what the filter is for, never that a day had no look (H-9)', async () => {
+    seedWeek();
+    setScope({ filter: { kind: 'noticed' } });
+    await renderList();
+    expect(text('history-no-match')).toBe(
+      'What you noticed shows up hereAnswer the daily look on Home, and the days you answer show up here.',
+    );
+  });
+
+  it('a filter with no row ever: the record\'s fact, never the filter\'s fault (HV-12)', async () => {
     seedWeek();
     setScope({ filter: { kind: 'type', type: 'weight_check' } });
     await renderList();
-    expect(text('history-no-match')).toContain('Nothing matches that filter');
+    expect(text('history-no-match')).toBe('No weigh-in logged yetWhen you log one, it shows up here.');
+    expect(text('history-no-match')).not.toContain('filter');
   });
 
   it('the list ends where the record starts, naming the pet and the day', async () => {
@@ -857,6 +880,53 @@ describe('the reads a row can carry', () => {
     // The arrival runs on to its end, and the rose is still what the row holds.
     await waitOut(ARRIVAL_TAIL_MS);
     expect(screen.getByTestId('spine-verdict-v2')).toBeTruthy();
+  });
+
+  it('offline, the rose stands from the phone\'s copy, and a photographed row with no read says so (AC 21, History\'s half)', async () => {
+    // The network client is an empty object in this file, so any remote read would throw:
+    // everything drawn here came from the phone (HV-5's local copy, §5.3).
+    seedWeek();
+    insertEvent('vr', at(1, 14), 'vomit');
+    insertEvent('vn', at(1, 16), 'vomit');
+    for (const id of ['vr', 'vn']) {
+      mockRaw
+        .prepare(`INSERT INTO event_attachments (id, event_id, pet_id, local_uri, storage_path) VALUES (?, ?, ?, 'file:///x.jpg', 'p/x.jpg')`)
+        .run(`att-${id}`, id, PET_A.id);
+    }
+    mockRaw
+      .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES ('vr', 'completed', 'worth_a_call', ?)`)
+      .run(at(1, 14, 5));
+    await renderList();
+    expect(screen.getByTestId('spine-verdict-vr')).toBeTruthy();
+    expect(screen.queryByTestId('spine-unread-vr')).toBeNull();
+    // No verdict for a photographed vomit: never nothing, which would read as a calm read.
+    expect(screen.getByTestId('spine-unread-vn')).toBeTruthy();
+    expect(screen.queryByTestId('spine-verdict-vn')).toBeNull();
+  });
+
+  it('a note never renders on a row until CUL-848\'s gate flips (AC 39, the row\'s half)', async () => {
+    seedWeek();
+    insertEvent('noted-vomit', at(1, 15), 'vomit', { notes: 'NOTE-TEXT-ON-A-VOMIT' });
+    insertFood('rc2', 'Acana', 'Singles Duck');
+    insertEvent('noted-meal', at(1, 17), 'meal', { notes: 'NOTE-TEXT-ON-A-MEAL' });
+    mockRaw
+      .prepare(`INSERT INTO meals (id, event_id, pet_id, food_item_id, intake_rating) VALUES ('meal-noted', 'noted-meal', ?, 'rc2', 'some')`)
+      .run(PET_A.id);
+    for (const filter of [{ kind: 'all' as const }, { kind: 'noted' as const }]) {
+      setScope({ filter });
+      const view = await renderList();
+      // Not vacuous: the noted rows are on screen, and the note is not.
+      expect(screen.getByTestId('spine-node-noted-vomit')).toBeTruthy();
+      expect(screen.getByTestId('spine-node-noted-meal')).toBeTruthy();
+      // Neither drawn nor spoken.
+      expect(screen.queryAllByText(/NOTE-TEXT/)).toHaveLength(0);
+      const spoken = view.UNSAFE_root.findAll(
+        (n: { props: { accessibilityLabel?: unknown } }) =>
+          typeof n.props.accessibilityLabel === 'string' && /NOTE-TEXT/.test(n.props.accessibilityLabel),
+      );
+      expect(spoken).toHaveLength(0);
+      view.unmount();
+    }
   });
 
   it('every row the pipeline can draw a read on is watched: the one gate (mayCarryRead), never the symptom tint', async () => {

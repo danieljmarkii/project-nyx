@@ -86,6 +86,7 @@ import { HISTORY_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 import {
   countLineOf,
   dayFactsOn,
+  firstDayFor,
   gapLineText,
   listSectionsOf,
   type HistoryCourse,
@@ -99,6 +100,7 @@ import {
   LANDING_RETRY_MS,
   bowlLineText,
   countLineWindowOf,
+  filterQuietStateOf,
   foldableRowsOf,
   historyDatesFor,
   itemsOnlyLineText,
@@ -112,6 +114,7 @@ import {
   showsBowlLine,
   showsRecordStart,
   trialRangeOf,
+  type QuietState,
 } from '../../lib/historyScreen';
 import { recordWeekday } from '../../lib/recordDates';
 import { mayCarryRead } from '../../lib/spineNode';
@@ -150,8 +153,6 @@ export const historyEmptyBody = (pet: string) =>
 export const HISTORY_ERROR_TITLE = "Couldn't load history";
 export const historyErrorBody = (pet: string) => `Something went wrong loading ${pet}'s history.`;
 export const HISTORY_RETRY = 'Try again';
-export const HISTORY_NO_MATCH_TITLE = 'Nothing matches that filter';
-export const historyNoMatchBody = (pet: string) => `Try clearing a filter to see more of ${pet}'s history.`;
 export const historyNoSearchMatchTitle = (word: string) => `Nothing matches “${word}”`;
 /** Where search looks (§3.12): the notes clause only once notes are searched (CUL-848). */
 export const HISTORY_SEARCH_LOOKS = SEARCH_READS_NOTES
@@ -181,6 +182,28 @@ const NO_OPEN: ReadonlySet<string> = new Set();
 
 function courseOf(snapshot: HistorySnapshot, filter: HistoryFilter = snapshot.filter): HistoryCourse | null {
   return filter.kind === 'course' ? (snapshot.courses.find((c) => c.key === filter.courseKey) ?? null) : null;
+}
+
+/** A filter that left the list empty (§3.12): the record's fact, never the filter's fault.
+ *  Whether the kind was ever logged is read over the whole record (`FirstDays`); a course
+ *  asks its first DOSE, never its span, which a regimen's start opens with no dose logged;
+ *  a course that has not loaded cannot say, so only the window form is claimed. */
+function filterQuietStateFor(snapshot: HistorySnapshot): QuietState {
+  const { filter, facts, today } = snapshot;
+  const course = courseOf(snapshot);
+  const everLogged =
+    filter.kind === 'course'
+      ? course === null
+        ? null
+        : course.firstDoseDay !== null
+      : firstDayFor(facts.firsts, filter, null) !== null;
+  return filterQuietStateOf({
+    filter,
+    everLogged,
+    todayOnly: facts.range.fromDay === today && facts.range.toDay === today,
+    courseName: course?.name ?? null,
+    courseEnded: course !== null && !course.isActive,
+  });
 }
 
 /** The loaded rows a read can sit on: the pipeline's one gate (`mayCarryRead`, HV-6), so a
@@ -423,6 +446,8 @@ export function HistoryList() {
     } catch (e) {
       console.warn('[history] manual sync failed:', e);
     }
+    // The pinned row's counts re-read with the list (AC 5): the pull moved no sync tick.
+    useHistoryListStore.getState().bumpPullTick();
     refreshToday();
     const outcome = await reload();
     setRefreshing(false);
@@ -711,6 +736,7 @@ export function HistoryList() {
           filter={snapshot.filter}
           search={snapshot.search !== null}
           landed={landedDay === m.day}
+          hasItems={snapshot.items.has(m.day)}
           withCounts={m.kind === 'day'}
           focusRef={focusRefFor(section.key, m.day, m.day)}
         />
@@ -817,7 +843,7 @@ export function HistoryList() {
   ) : search !== null ? (
     <EmptyState title={historyNoSearchMatchTitle(search)} body={HISTORY_SEARCH_LOOKS} testID="history-no-search-match" />
   ) : (
-    <EmptyState title={HISTORY_NO_MATCH_TITLE} body={historyNoMatchBody(petName)} testID="history-no-match" />
+    <EmptyState {...filterQuietStateFor(snapshot)} testID="history-no-match" />
   );
 
   const moreState = more && snapshot !== null && more.of === snapshot.pages ? more.state : null;
@@ -856,6 +882,8 @@ export function HistoryList() {
       renderSectionHeader={renderSectionHeader}
       renderItem={renderItem}
       stickySectionHeadersEnabled
+      // A drag through search results puts the keyboard away, as the platform's own lists do.
+      keyboardDismissMode="on-drag"
       // A week of days on the first paint (a day is three cells: its header, its body, its
       // footer): the strip shows this week, so a landing from it never waits on a measure.
       initialNumToRender={INITIAL_CELLS}

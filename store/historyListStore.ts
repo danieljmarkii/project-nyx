@@ -151,8 +151,15 @@ interface HistoryListState {
    *  on the PAGES, not the snapshot object: a read landing mid-page replaces the snapshot and
    *  keeps its pages, and must neither drop the page nor orphan this state. */
   more: { of: HistoryPages; state: 'loading' | 'failed' } | null;
+  /** Moves once per pull to refresh, after its sync. The list re-reads by its own `load`;
+   *  the pinned row's record read (`useHistoryRecordFacts`) re-reads on this, so the pills
+   *  and sheets never keep a count the list just replaced (AC 5, GAP-18). A pull calls
+   *  `syncNow` directly, which moves no `hydrationTick`. */
+  pullTick: number;
 
   setToday: (today: string) => void;
+  /** A pull to refresh finished its sync. */
+  bumpPullTick: () => void;
   load: (request: HistoryLoadRequest) => Promise<HistoryLoadOutcome>;
   /** The next page of the snapshot on screen. Joins a page already in flight. */
   loadMore: () => Promise<void>;
@@ -360,10 +367,13 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
   snapshot: null,
   failedRequest: null,
   more: null,
+  pullTick: 0,
 
   setToday: (today) => {
     if (get().today !== today) set({ today });
   },
+
+  bumpPullTick: () => set((s) => ({ pullTick: s.pullTick + 1 })),
 
   load: async ({ pet, scope, today }) => {
     // A scope that is not this pet's is a caller's race (the pet store moved first); the

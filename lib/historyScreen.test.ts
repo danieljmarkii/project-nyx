@@ -24,6 +24,7 @@ import {
   countLineWindowOf,
   dateOnlyItemText,
   dayHeaderSpoken,
+  filterQuietStateOf,
   foldableRowsOf,
   historyDatesFor,
   historyNodesByDay,
@@ -81,7 +82,9 @@ function row(id: string, event_type: string, h: number, m: number, extra: Partia
 }
 
 /** Morning to night, the page's order: two meals, a vomit five minutes after the second, two
- *  more meals, a photographed vomit, a meal. */
+ *  more meals, a photographed vomit, a meal, then a Partial dose given in a picked-at, noted
+ *  meal (the stored pair, both halves). The dose is here so the R-2 property holds a dose's
+ *  vehicle, the vehicle's intake and its chip under every subset (HV-12's §7 walk, AC 9). */
 const WHOLE: HistoryRow[] = [
   row('m1', 'meal', 8, 0, PR),
   row('m2', 'meal', 8, 30, PR),
@@ -90,6 +93,23 @@ const WHOLE: HistoryRow[] = [
   row('m4', 'meal', 13, 0, PR),
   row('v2', 'vomit', 17, 10, { has_photo: true }),
   row('m5', 'meal', 18, 0, PR),
+  row('d1', 'medication', 19, 0, {
+    medication_item_id: 'item-pred',
+    drug_generic_name: 'Prednisone',
+    adherence: 'partial',
+    how_given: 'in_food',
+    paired_event_id: 'm6',
+    paired_vehicle_intake: 'picked',
+    paired_food_name: 'Royal Canin · Selected Protein PR',
+  }),
+  row('m6', 'meal', 19, 0, {
+    ...PR,
+    intake_rating: 'picked',
+    notes: 'ate around the kibble',
+    paired_dose_count: 1,
+    paired_dose_event_id: 'd1',
+    paired_dose_drug_name: 'Prednisone',
+  }),
 ];
 
 /** A feeding as the lane reads one (`readFeedingsSince`): its event id, instant and rating. */
@@ -154,7 +174,14 @@ describe('a filter only hides: the nodes are the whole day\'s, then filtered (R-
 
   it('property: for every subset a filter could show, each survivor equals its whole-day node', () => {
     const all = nodesFor(ALL_IDS);
-    // Every subset of the seven ids (128), not only the ones today's filters produce.
+    // Not vacuous: the dose carries its vehicle, the vehicle's intake and its chip, and the
+    // meal names the dose it carried, so a filter that hid one half and re-derived the other
+    // would change a node the property compares.
+    const dose = all.find((n) => n.id === 'd1');
+    const meal = all.find((n) => n.id === 'm6');
+    expect(dose?.kind === 'event' ? [dose.dose?.vehicleIntake?.phrase, dose.dose?.adherence] : null).toEqual([expect.any(String), 'partial']);
+    expect(meal?.kind === 'event' ? meal.carries : null).toEqual(expect.stringContaining('Prednisone'));
+    // Every subset of the nine ids (512), not only the ones today's filters produce.
     for (let mask = 0; mask < 1 << ALL_IDS.length; mask++) {
       const shown = ALL_IDS.filter((_, i) => mask & (1 << i));
       const visible = nodesFor(shown);
@@ -394,6 +421,66 @@ describe('date-only items: their words in a card and in a filter\'s line', () =>
 });
 
 // ── The list's end, the landing's target, the viewport ─────────────────────────
+
+describe('filterQuietStateOf: a filter that shows nothing names the record, never the filter (§3.12, HV-12)', () => {
+  const vomit: HistoryFilter = { kind: 'type', type: 'vomit' };
+
+  it('never logged: "yet", and what happens when one is', () => {
+    expect(filterQuietStateOf({ filter: vomit, everLogged: false, todayOnly: false, courseName: null })).toEqual({
+      title: 'No vomit logged yet',
+      body: 'When you log one, it shows up here.',
+    });
+    expect(filterQuietStateOf({ filter: { kind: 'course', courseKey: 'reg-pred' }, everLogged: false, todayOnly: false, courseName: 'Prednisone' }).title)
+      .toBe('No Prednisone dose logged yet');
+    expect(filterQuietStateOf({ filter: { kind: 'photographed' }, everLogged: false, todayOnly: false, courseName: null }).title)
+      .toBe('No photo logged yet');
+  });
+
+  it('logged, just not in this window: the window is named, and the way to every one', () => {
+    expect(filterQuietStateOf({ filter: vomit, everLogged: true, todayOnly: false, courseName: null })).toEqual({
+      title: 'No vomit logged in this date range',
+      body: 'Change the date range to All time to see every one logged.',
+    });
+    // Jordan's daily check: Vomit, Today. The day is open, so "yet".
+    expect(filterQuietStateOf({ filter: vomit, everLogged: true, todayOnly: true, courseName: null }).title).toBe('No vomit logged yet today');
+  });
+
+  it('an ended course with no dose promises nothing: a dose logged now never joins it', () => {
+    expect(
+      filterQuietStateOf({ filter: { kind: 'course', courseKey: 'reg-apo' }, everLogged: false, todayOnly: true, courseName: 'Apoquel', courseEnded: true }),
+    ).toEqual({ title: 'No Apoquel dose logged', body: 'This course ended with no dose logged against it.' });
+    // A running course with none keeps the forward-looking line.
+    expect(
+      filterQuietStateOf({ filter: { kind: 'course', courseKey: 'reg-apo' }, everLogged: false, todayOnly: false, courseName: 'Apoquel', courseEnded: false }).title,
+    ).toBe('No Apoquel dose logged yet');
+  });
+
+  it('a course that has not loaded cannot say whether it was ever logged: only the window form, true either way', () => {
+    expect(filterQuietStateOf({ filter: { kind: 'course', courseKey: 'x' }, everLogged: null, todayOnly: false, courseName: null }).title)
+      .toBe('No dose logged in this date range');
+  });
+
+  it('under Noticed nothing says a look is missing (H-9): what the filter is for, or that this range holds nothing to show', () => {
+    const never = filterQuietStateOf({ filter: { kind: 'noticed' }, everLogged: false, todayOnly: true, courseName: null });
+    const elsewhere = filterQuietStateOf({ filter: { kind: 'noticed' }, everLogged: true, todayOnly: true, courseName: null });
+    expect(never.title).toBe('What you noticed shows up here');
+    expect(never.body).toContain('daily look on Home');
+    expect(elsewhere.title).toBe('Nothing to show in this date range');
+    for (const q of [never, elsewhere]) expect(`${q.title} ${q.body}`).not.toMatch(/\bno (look|check-in)|not answered|missed|didn.t/i);
+  });
+
+  it('no state blames the owner\'s filter, and none shouts', () => {
+    const filters: HistoryFilter[] = [vomit, { kind: 'symptoms' }, { kind: 'all' }, { kind: 'noted' }, { kind: 'noticed' }];
+    for (const filter of filters) {
+      for (const everLogged of [true, false, null]) {
+        for (const todayOnly of [true, false]) {
+          const q = filterQuietStateOf({ filter, everLogged, todayOnly, courseName: null });
+          expect(`${q.title} ${q.body}`).not.toMatch(/filter|!/);
+        }
+      }
+    }
+  });
+});
 
 describe('showsRecordStart', () => {
   it('only when every page is loaded and the list\'s last section holds the record\'s first day', () => {
