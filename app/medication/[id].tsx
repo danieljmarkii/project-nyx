@@ -65,6 +65,7 @@ import {
 import { loadMedicationCourses } from '../../lib/medicationHistoryFacts';
 import { buildPastCourseFacts, EVIDENCE_LINK_LABEL } from '../../lib/medicationHistoryDetail';
 import type { MedicationCourse } from '../../lib/medicationHistory';
+import { historyHref } from '../../lib/historyDoors';
 import { ThemedText } from '../../components/ui/ThemedText';
 
 interface MedicationItemRow {
@@ -187,11 +188,13 @@ export default function MedicationDetailScreen() {
     return () => { cancelled = true; };
   }, [id, activePet?.id, hydrationTick]);
 
-  // The evidence link (§4.2) — History filtered to the Medication lens. A per-drug History
-  // lens is B-688 (not v1), so this opens the whole medication stream; the `ts` nonce
-  // re-applies the filter even if History is already mounted.
-  function openMedicationHistory() {
-    router.push({ pathname: '/(tabs)/history', params: { type: 'medication', ts: String(Date.now()) } });
+  // The evidence link (§4.2) — History filtered to this course's doses. A registered door
+  // (`lib/historyDoors.ts`, HV-11 / CUL-1168): `course` is the course's key (the vet report's
+  // grain, which History's course filter keys on, CUL-488), sent in both flag states because
+  // v1 does not read it — flag off this opens the whole Medication stream, as before; flag
+  // on, this course over All time. The `ts` nonce re-applies it if History is mounted.
+  function openMedicationHistory(courseKey: string) {
+    router.push(historyHref({ type: 'medication', course: courseKey }));
   }
 
   // Current form state as the pure edit shape (drives the diff + the payload).
@@ -458,7 +461,7 @@ export default function MedicationDetailScreen() {
                     {hasEvidence && (
                       <TouchableOpacity
                         style={styles.linkRow}
-                        onPress={openMedicationHistory}
+                        onPress={() => openMedicationHistory(c.key)}
                         activeOpacity={0.7}
                         hitSlop={8}
                         accessibilityRole="button"

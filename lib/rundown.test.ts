@@ -273,8 +273,8 @@ describe('sinceVisitTap', () => {
   it('routes a MED-ONLY change to meds (never the food library)', () => {
     expect(sinceVisitTap({ newFoods: 0, newMeds: 1 })).toEqual({ kind: 'meds' });
   });
-  it('routes no change to History', () => {
-    expect(sinceVisitTap({ newFoods: 0, newMeds: 0 })).toEqual({ kind: 'history' });
+  it('routes no change to History, since the last visit (HV-11)', () => {
+    expect(sinceVisitTap({ newFoods: 0, newMeds: 0 })).toEqual({ kind: 'history', door: { scope: 'since-visit' } });
   });
 });
 
@@ -455,10 +455,10 @@ describe('pastMedCourseTile (tap targets)', () => {
       { kind: 'medication', medicationId: 'reg-9' },
     );
   });
-  it('a dose-derived course (no regimen) taps to History', () => {
+  it('a dose-derived course (no regimen) taps to History, on that course (HV-11)', () => {
     expect(
-      pastMedCourseTile(course({ source: 'doses', regimenId: null, drugName: null }), 'Zyrtec').tap,
-    ).toEqual({ kind: 'history' });
+      pastMedCourseTile(course({ key: 'item:item-1', source: 'doses', regimenId: null, drugName: null }), 'Zyrtec').tap,
+    ).toEqual({ kind: 'history', door: { scope: 'course', courseKey: 'item:item-1' } });
   });
 });
 
@@ -510,7 +510,7 @@ describe('buildPastMedications', () => {
     expect(tiles[0].label).toBe('Zyrtec'); // brand-first (B-171)
     expect(tiles[0].value).toContain('3 doses');
     expect(tiles[0].detail).toBe('No end recorded');
-    expect(tiles[0].tap).toEqual({ kind: 'history' });
+    expect(tiles[0].tap).toEqual({ kind: 'history', door: { scope: 'course', courseKey: 'item:item-zyrtec' } });
     expect(tiles[1].label).toBe('Metronidazole');
     expect(tiles[1].detail).toMatch(/^Ended /);
     expect(tiles[1].tap).toEqual({ kind: 'medication', medicationId: 'reg-metro' });
@@ -613,6 +613,8 @@ describe('buildRundown', () => {
 
     // Symptoms: coverage fact, never wellness (G2).
     expect(byKey('symptoms')?.value).toBe('None logged in 30 days');
+    // Its door is the claim's own scope (HV-11): an absence, audited over All symptoms.
+    expect(byKey('symptoms')?.tap).toEqual({ kind: 'history', door: { scope: 'symptoms-30d' } });
     // No timing tile without symptoms.
     expect(byKey('timing')).toBeUndefined();
     // Appetite: honest data-gap, not a guess.
@@ -748,7 +750,9 @@ describe('buildRundown', () => {
     expect(zyrtec).toBeDefined();
     expect(zyrtec?.value).toContain('3 doses');
     expect(zyrtec?.detail).toBe('No end recorded');
-    expect(zyrtec?.tap).toEqual({ kind: 'history' });
+    // The key History's course filter reads is the derivation's own (`deriveMedicationCourses`,
+    // which History's `courseKeysOf` also runs), so the door lands on this course's doses.
+    expect(zyrtec?.tap).toEqual({ kind: 'history', door: { scope: 'course', courseKey: 'item:item-zyrtec' } });
 
     assertNoReassuranceAcrossTiles(r);
   });

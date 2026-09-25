@@ -18,6 +18,7 @@ jest.mock('expo', () => require('expo-widgets/bundle/expo-stub'));
 
 import { CulpritWidgetLayout } from './CulpritWidget';
 import { dayScopeFromParams } from '../lib/historyDateFilter';
+import { historyDoorRequestOf } from '../lib/historyDoorParams';
 import type {
   CulpritWidgetProps,
   WidgetBand,
@@ -199,6 +200,9 @@ describe('resting state (mock Day A)', () => {
       const params = Object.fromEntries(new URLSearchParams(link.slice(link.indexOf('?') + 1)));
       expect(dayScopeFromParams(params)).toEqual({ key: '2026-07-24', basis: 'local' });
       expect(params.ts).toMatch(/^\d+$/);
+      // History v2 reads it too (HV-11, `lib/historyDoors.ts` row `widget-day`): it lands on
+      // that day, under All types and All time, whatever else the link carries.
+      expect(historyDoorRequestOf(params)).toEqual({ filter: { kind: 'all' }, window: { kind: 'all' }, landOn: '2026-07-24' });
     }
   });
 

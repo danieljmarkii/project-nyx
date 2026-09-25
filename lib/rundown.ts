@@ -46,6 +46,14 @@ import { drugDisplayName, type AttributableDose } from './medications';
 // ── Tap targets ─────────────────────────────────────────────────────────────
 // Semantic (route-agnostic) so the pure layer stays testable; the screen maps
 // each to an expo-router destination. Every tile that has a source carries one.
+// Which History a tile's claim is about (HV-11 / CUL-1168). The route is the screen's to
+// build (`rundownHistoryHref`, `lib/historyDoors.ts`): under `history_v2` each lands on its
+// own scope, flag off all three keep the bare route.
+export type RundownHistoryDoor =
+  | { scope: 'since-visit' } //                  the since-visit tile, nothing new logged
+  | { scope: 'symptoms-30d' } //                 *None logged in 30 days*
+  | { scope: 'course'; courseKey: string }; //   a past course with no regimen screen
+
 export type RundownTap =
   | { kind: 'symptom'; symptomType: string } // → /insights/[metric]
   | { kind: 'patterns' } //                     → /insights
@@ -53,7 +61,7 @@ export type RundownTap =
   | { kind: 'medication'; medicationId: string } // → /medication/[id]
   | { kind: 'meds' } //                         → /(tabs)/profile?focus=medications (no single med)
   | { kind: 'foods' } //                        → /(tabs)/foods
-  | { kind: 'history' } //                      → /(tabs)/history
+  | { kind: 'history'; door: RundownHistoryDoor } // → /(tabs)/history (`rundownHistoryHref`)
   | { kind: 'log-visit' }; //                   → /vet-visits?add=happened (none logged yet)
 
 export type RundownTileKey =
@@ -313,7 +321,7 @@ export function sinceVisitValue(changes: SinceVisitChanges): string {
 export function sinceVisitTap(changes: SinceVisitChanges): RundownTap {
   if (changes.newFoods > 0) return { kind: 'foods' };
   if (changes.newMeds > 0) return { kind: 'meds' };
-  return { kind: 'history' };
+  return { kind: 'history', door: { scope: 'since-visit' } };
 }
 
 /** "Since Jul 2" from a YYYY-MM-DD (or ISO) visit date. */
@@ -480,7 +488,7 @@ export function pastMedCourseTile(course: MedicationCourse, drugName: string): R
     tap:
       course.source === 'regimen' && course.regimenId
         ? { kind: 'medication', medicationId: course.regimenId }
-        : { kind: 'history' },
+        : { kind: 'history', door: { scope: 'course', courseKey: course.key } },
   };
 }
 
@@ -807,7 +815,7 @@ export async function buildRundown(
       label: 'Symptoms',
       // Absence is a coverage fact, never wellness (G2): "none logged", not "she's well".
       value: 'None logged in 30 days',
-      tap: { kind: 'history' },
+      tap: { kind: 'history', door: { scope: 'symptoms-30d' } },
       empty: true,
     });
   } else {

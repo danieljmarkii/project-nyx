@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { isWidgetPetTapSpent, spendWidgetPetTap } from '../lib/spentTaps';
 import { usePetStore } from '../store/petStore';
 
 // Honor the `?pet=` a widget deep link carries (widget PR W5).
@@ -31,6 +32,11 @@ import { usePetStore } from '../store/petStore';
 // carry no `ts`, and the widget is frozen, H-7), so there the tap is the pet alone:
 // once per mount, which for a modal is once per open.
 //
+// A tap WITH a nonce is spent for every instance at once (`lib/spentTaps.ts`, HV-11 /
+// CUL-1168): the History tab mounts a fresh screen when `history_v2` flips, and a ref
+// would let that screen select the widget's pet a second time. Without a nonce the ref
+// is all there is (once per mount).
+//
 // STATED BLIND SPOT (C-41): the widget mints `ts` when it DRAWS, not when it is
 // tapped, so two taps on one drawing send one nonce and the second does not re-apply
 // the pet after an in-app switch (nor the day, which has always behaved this way).
@@ -43,11 +49,12 @@ export function useWidgetPetLink(petId: string | undefined, nonce?: string): voi
   useEffect(() => {
     if (!petId) return;
     const tap = `${petId}|${nonce ?? ''}`;
-    if (spentRef.current === tap) return;
+    if (spentRef.current === tap || isWidgetPetTapSpent(petId, nonce)) return;
     // A cold start from the widget mounts the screen before the pet list has loaded.
     // Wait for it rather than spend the tap on an empty list.
     if (pets.length === 0) return;
     spentRef.current = tap;
+    if (nonce) spendWidgetPetTap(petId, nonce);
     if (!pets.some((p) => p.id === petId)) return;
     // Read at the moment of the tap, never subscribed: a later switch must not re-run
     // this effect with a live reason to act.
