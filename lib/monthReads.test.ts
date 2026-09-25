@@ -7,8 +7,10 @@
 //
 // Two of the read's promises are pinned here rather than in the model: an episode
 // day is a LOGGED day by construction of the predicate (the burden DayMark's header
-// puts on this caller), and a verdict the server did not answer is `seen`, never a
-// colour.
+// puts on this caller), and a verdict the phone does not hold is `seen`, never a
+// colour. Since HV-5 (CUL-1162) the verdicts are the phone's copy (`event_ai_verdicts`,
+// in the same production DDL), and the server is stubbed to THROW: the month must draw
+// its rose with the network off.
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
@@ -20,9 +22,13 @@ interface Db {
 
 let mockDb: Db;
 const mockGetTimeline = jest.fn();
+const mockSqlLog: string[] = [];
 jest.mock('./db', () => ({
   getDb: () => ({
-    getAllAsync: async (sql: string, params: unknown[] = []) => mockDb.prepare(sql).all(...params),
+    getAllAsync: async (sql: string, params: unknown[] = []) => {
+      mockSqlLog.push(sql);
+      return mockDb.prepare(sql).all(...params);
+    },
     getFirstAsync: async (sql: string, params: unknown[] = []) => mockDb.prepare(sql).get(...params) ?? null,
   }),
   getTimeline: (...a: unknown[]) => mockGetTimeline(...a),
@@ -33,14 +39,12 @@ jest.mock('./sync', () => ({
   ensureEventAttachmentsSynced: jest.fn(),
 }));
 
-// The verdict read: a controllable `.from('event_ai_analysis').select().in()` chain.
-let mockVerdictAnswer: () => Promise<{ data: unknown; error: unknown }> = async () => ({ data: [], error: null });
-const mockIn = jest.fn((_col: string, _ids: string[]) => mockVerdictAnswer());
-jest.mock('./supabase', () => ({
-  supabase: {
-    from: jest.fn(() => ({ select: jest.fn(() => ({ in: mockIn })) })),
-  },
-}));
+// The server, OFF: any call throws, and none may be made (HV-5 — the month's verdicts
+// are the phone's copy). The count proves the absence was asked about, not assumed.
+const mockFrom = jest.fn(() => {
+  throw new Error('offline: the month must not reach the server');
+});
+jest.mock('./supabase', () => ({ supabase: { from: () => mockFrom() } }));
 
 import { BASE_SCHEMA_SQL, COLUMN_UPGRADES } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
@@ -104,14 +108,20 @@ function photo(eventId: string) {
     .prepare(`INSERT INTO event_attachments (id, event_id, pet_id, local_uri, storage_path) VALUES (?, ?, ?, 'file://x', 'p/x')`)
     .run(`att${++seq}`, eventId, PET);
 }
+/** A row of the phone's copy of the read (HV-5), as the sync pull would have written it. */
+function verdict(eventId: string, recommendation: string | null, status = 'completed') {
+  mockDb
+    .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES (?, ?, ?, ?)`)
+    .run(eventId, status, recommendation, '2026-09-10T12:00:00+00:00');
+}
 
 const RANGE = { fromKey: '2026-09-01', toKey: '2026-09-30' };
 
 beforeEach(() => {
   mockDb = freshDb();
   seq = 0;
-  mockVerdictAnswer = async () => ({ data: [], error: null });
-  mockIn.mockClear();
+  mockFrom.mockClear();
+  mockSqlLog.length = 0;
   food('food-1', 'meal');
   food('treat-1', 'treat');
 });
@@ -180,29 +190,23 @@ describe('readMonthFacts against the production DDL', () => {
     expect(facts.dosedDays).toEqual(['2026-09-03', '2026-09-04']);
   });
 
-  it('photographed days carry the verdict the server answered, in one batched read', async () => {
+  it('photographed days carry the verdict the PHONE holds, with the network off (HV-5)', async () => {
     const a = ev('vomit', at('2026-09-02'));
-    const b = ev('stool', at('2026-09-05'));
-    const c = ev('vomit', at('2026-09-09'));
+    const b = ev('vomit', at('2026-09-05'));
+    const c = ev('stool', at('2026-09-09'));
     photo(a);
-    photo(a); // two attachments on one event: one day, one id
     photo(b);
     photo(c);
-    mockVerdictAnswer = async () => ({
-      data: [
-        { event_id: a, recommendation: 'worth_a_call' },
-        { event_id: b, recommendation: 'monitor' },
-      ],
-      error: null,
-    });
+    verdict(a, 'worth_a_call');
+    verdict(b, 'monitor');
     const facts = await readMonthFacts(PET, RANGE);
-    expect(mockIn).toHaveBeenCalledTimes(1);
-    expect(mockIn.mock.calls[0][1].sort()).toEqual([a, b, c].sort());
     expect(facts.photoDays).toEqual([
       { day: '2026-09-02', verdict: 'worth_a_call' },
       { day: '2026-09-05', verdict: 'seen' },
       { day: '2026-09-09', verdict: 'seen' },
     ]);
+    // The rose drew with the server throwing on any call, because no call was made.
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 
   it('a day holding one seen photo and one worth-a-call photo answers the escalation FIRST (mutant R14)', async () => {
@@ -210,7 +214,7 @@ describe('readMonthFacts against the production DDL', () => {
     const b = ev('stool', at('2026-09-02', 19));
     photo(a);
     photo(b);
-    mockVerdictAnswer = async () => ({ data: [{ event_id: b, recommendation: 'worth_a_call' }], error: null });
+    verdict(b, 'worth_a_call');
     const facts = await readMonthFacts(PET, RANGE);
     expect(facts.photoDays).toEqual([
       { day: '2026-09-02', verdict: 'worth_a_call' },
@@ -218,29 +222,39 @@ describe('readMonthFacts against the production DDL', () => {
     ]);
   });
 
-  it('a verdict the server could not answer is `seen`, never a colour (offline, error, throw)', async () => {
+  it('a verdict the phone does not hold, or cannot read, is `seen`, never a colour', async () => {
     const a = ev('vomit', at('2026-09-02'));
     photo(a);
-    mockVerdictAnswer = async () => ({ data: null, error: { message: 'offline' } });
+    // No copy row: the read never landed on this phone.
     expect((await readMonthFacts(PET, RANGE)).photoDays).toEqual([{ day: '2026-09-02', verdict: 'seen' }]);
-    // An error BESIDE a payload is still an error: nothing in it is trusted (mutant R11).
-    mockVerdictAnswer = async () => ({ data: [{ event_id: a, recommendation: 'worth_a_call' }], error: { message: 'partial' } });
-    expect((await readMonthFacts(PET, RANGE)).photoDays).toEqual([{ day: '2026-09-02', verdict: 'seen' }]);
-    mockVerdictAnswer = async () => {
-      throw new Error('network');
-    };
-    expect((await readMonthFacts(PET, RANGE)).photoDays).toEqual([{ day: '2026-09-02', verdict: 'seen' }]);
-    // And a month with no photos issues no network read at all.
+    // A copy that cannot be read at all degrades the same way, and says so.
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mockDb.exec('DROP TABLE event_ai_verdicts');
+      expect((await readMonthFacts(PET, RANGE)).photoDays).toEqual([{ day: '2026-09-02', verdict: 'seen' }]);
+      // node:sqlite's error comes from another realm, so match its message, not its class.
+      expect(warn).toHaveBeenCalledWith('[month] read copy failed:', expect.objectContaining({ message: expect.stringMatching(/event_ai_verdicts/) }));
+    } finally {
+      warn.mockRestore();
+    }
+    // And a month with no photos asks the copy nothing at all.
     mockDb = freshDb();
-    mockIn.mockClear();
+    mockSqlLog.length = 0;
     await readMonthFacts(PET, RANGE);
-    expect(mockIn).not.toHaveBeenCalled();
+    expect(mockSqlLog.filter((q) => /event_ai_verdicts/.test(q))).toEqual([]);
   });
 
-  it('a read that failed later still counts if its escalation survived (CUL-812)', async () => {
+  it('the rose is the one predicate’s: a failed re-read keeps it (CUL-812), an unknown verdict takes it, a calm one never does', async () => {
     expect(await readWorthACall([])).toEqual(new Set());
-    mockVerdictAnswer = async () => ({ data: [{ event_id: 'x', recommendation: 'worth_a_call', status: 'failed' }], error: null });
-    expect(await readWorthACall(['x'])).toEqual(new Set(['x']));
+    verdict('failed-rose', 'worth_a_call', 'failed');
+    verdict('unknown', 'looks_fine_to_me');
+    verdict('failed-calm', 'monitor', 'failed');
+    verdict('calm', 'monitor');
+    verdict('unsure', 'not_enough_to_say', 'uncertain');
+    verdict('capped', null, 'capped');
+    expect(await readWorthACall(['failed-rose', 'unknown', 'failed-calm', 'calm', 'unsure', 'capped', 'absent'])).toEqual(
+      new Set(['failed-rose', 'unknown']),
+    );
   });
 
   it('the record start is the earliest surviving event of any type, as a local day', async () => {

@@ -443,6 +443,11 @@ describe('LOCAL_WIPE_TABLES (FR-9 logout wipe order)', () => {
     // entry, never a MISORDERED one, and every entry whose own comment claims an
     // ordering owes a line here.
     expect(order('vet_appointments')).toBeLessThan(order('vet_visits'));
+    // HV-5 (CUL-1162) — event_ai_verdicts, the read's copy on the phone. No local FK
+    // (a verdict may land before its event), so only this line pins the stated
+    // children-first position; the entry's own comment claims it, so it owes one here
+    // (the rule the vet_appointments comment above states for every new mirror table).
+    expect(order('event_ai_verdicts')).toBeLessThan(order('events'));
   });
 
   // B-424 — this used to compare the constant against a HARDCODED list, which

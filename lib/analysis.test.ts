@@ -36,6 +36,8 @@ jest.mock('./supabase', () => {
 jest.mock('./sync', () => ({
   syncPendingEvents: jest.fn().mockResolvedValue(undefined),
   ensureEventAttachmentsSynced: jest.fn().mockResolvedValue(undefined),
+  // HV-5 (CUL-1162): the landed read's save to the phone's copy.
+  refreshReadCopy: jest.fn().mockResolvedValue(undefined),
 }));
 
 import {
@@ -59,10 +61,12 @@ import {
   ANALYSIS_WATCH_FALLBACK_DELAYS_MS,
 } from './analysis';
 import { supabase } from './supabase';
+import { refreshReadCopy } from './sync';
 
 // Grab a typed handle to the mocked invoke AFTER import (referencing it inside
 // the jest.mock factory hits a TDZ/hoisting trap).
 const mockInvoke = supabase.functions.invoke as jest.Mock;
+const mockRefreshReadCopy = refreshReadCopy as jest.Mock;
 
 const blank = (): VomitEditableFields => ({
   colour: null,
@@ -643,6 +647,73 @@ describe('analysis-chain claim (CUL-801)', () => {
   });
 });
 
+// ── A landed read reaches the phone's copy before the chain settles (HV-5) ─────
+// Home rereads the verdict when the chain settles, from the copy, and never through a
+// watch. So the ORDER is the contract: a waiter released by the settle must find the
+// copy already saved. Each case takes its waiter before the chain can settle (a freed
+// key answers false whatever happened, the reason the claim tests above do the same).
+describe('the chain saves its read to the phone’s copy before it settles (HV-5 / CUL-1162)', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    mockRefreshReadCopy.mockReset().mockResolvedValue(undefined);
+  });
+
+  it.each([
+    ['vomit', triggerVomitAnalysis],
+    ['stool', triggerStoolAnalysis],
+  ])('%s: the waiter released by the settle finds the copy already saved', async (_kind, trigger) => {
+    // The save FINISHES on a later macrotask, so "called before the settle" is not
+    // enough to pass: only a save the trigger awaited to completion is (a first draft
+    // checked the call alone, and a settle-then-save mutant passed it).
+    let saved = false;
+    mockRefreshReadCopy.mockImplementation(
+      () => new Promise<void>((r) => setTimeout(() => { saved = true; r(); }, 0)),
+    );
+    let release!: (v: { error: null }) => void;
+    mockInvoke.mockReturnValue(new Promise((r) => { release = r; }));
+    const id = `ev-copy-${_kind}`;
+    const triggering = trigger(id);
+    let savedWhenReleased: boolean | null = null;
+    const waiter = awaitAnalysisChain(id).then((invoked) => {
+      savedWhenReleased = saved;
+      return invoked;
+    });
+    release({ error: null });
+    await triggering;
+    await expect(waiter).resolves.toBe(true);
+    expect(savedWhenReleased).toBe(true);
+    expect(mockRefreshReadCopy).toHaveBeenCalledWith(id);
+  });
+
+  it('a refused invoke still pulls: the server may have written the failure row the copy must hear', async () => {
+    let release!: (v: { error: { message: string } }) => void;
+    mockInvoke.mockReturnValue(new Promise((r) => { release = r; }));
+    const triggering = triggerVomitAnalysis('ev-copy-refused');
+    const waiter = awaitAnalysisChain('ev-copy-refused');
+    release({ error: { message: 'capped' } });
+    await expect(triggering).resolves.toEqual({ error: 'capped' });
+    await expect(waiter).resolves.toBe(false);
+    expect(mockRefreshReadCopy).toHaveBeenCalledWith('ev-copy-refused');
+  });
+
+  it('a save that throws never breaks the trigger’s contract: it resolves { error } and settles', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mockRefreshReadCopy.mockRejectedValueOnce(new Error('contract broken'));
+      let release!: (v: { error: null }) => void;
+      mockInvoke.mockReturnValue(new Promise((r) => { release = r; }));
+      const triggering = triggerStoolAnalysis('ev-copy-throws');
+      const waiter = awaitAnalysisChain('ev-copy-throws');
+      release({ error: null });
+      await expect(triggering).resolves.toEqual({ error: null });
+      await expect(waiter).resolves.toBe(true);
+      expect(warn).toHaveBeenCalledWith('[analysis] landed read not copied:', expect.any(Error));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
 // ── watchAnalysisRow: realtime watch over event_ai_analysis (CUL-171) ──────────
 // The per-incident sections wait for the analyze-* Edge Function to write the
 // row. This replaces a 3s×12 poll with a filtered realtime subscription plus a
@@ -698,6 +769,40 @@ describe('watchAnalysisRow — realtime watch (CUL-171)', () => {
     expect(check).toHaveBeenCalledTimes(1);
     expect(supabase.removeChannel).toHaveBeenCalledWith(ch);
     expect(onGiveUp).not.toHaveBeenCalled();
+  });
+
+  it('saves the event’s verdict to the phone’s copy BEFORE each check (HV-5)', async () => {
+    // Home's check reads the copy, so it can only see a landing the tick already saved.
+    // Finished, not merely started: the save completes on a later macrotask, and the
+    // check must not run until it has.
+    let saved = false;
+    mockRefreshReadCopy.mockReset().mockImplementation(
+      () => new Promise<void>((r) => setTimeout(() => { saved = true; r(); }, 0)),
+    );
+    let savedAtCheck: boolean | null = null;
+    const check = jest.fn(async () => { savedAtCheck = saved; return true; });
+    watchAnalysisRow('ev-copy-watch', check, jest.fn());
+    const ch = chans().at(-1)!;
+    ch.subCb!('SUBSCRIBED');
+    await flush();
+    await flush();
+    expect(mockRefreshReadCopy).toHaveBeenCalledWith('ev-copy-watch');
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(savedAtCheck).toBe(true);
+    mockRefreshReadCopy.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('a watch torn down while its tick is saving runs no check (HV-5)', async () => {
+    let finishSave!: () => void;
+    mockRefreshReadCopy.mockReset().mockReturnValue(new Promise<void>((r) => { finishSave = r; }));
+    const check = jest.fn().mockResolvedValue(false);
+    const teardown = watchAnalysisRow('ev-copy-teardown', check, jest.fn());
+    chans().at(-1)!.subCb!('SUBSCRIBED');
+    teardown();
+    finishSave();
+    await flush();
+    expect(check).not.toHaveBeenCalled();
+    mockRefreshReadCopy.mockReset().mockResolvedValue(undefined);
   });
 
   it('teardown removes the channel and is safe to call twice', () => {

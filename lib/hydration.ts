@@ -261,6 +261,17 @@ export function reconcileBatch<T extends RemoteRow>(
 export const LOCAL_WIPE_TABLES = [
   'meals',
   'event_attachments',
+  // HV-5 (CUL-1162) event_ai_verdicts — the per-incident read's copy on the phone. It
+  // declares no local FK to events (see localSchema.ts for why), so nothing would throw
+  // on a parent-first order; it leads 'events' because this file's stated contract is
+  // children-before-parents, and hydration.test.ts pins that position.
+  //
+  // A TRUST & SAFETY REQUIREMENT, not bookkeeping. Four columns is minimised, not
+  // harmless: a row says that a photographed vomit or stool happened, when, and whether
+  // an AI read of it said "worth a call to your vet". Keyed by event id, that is a dated
+  // clinical flag about a named household's animal, and surviving a sign-out would leave
+  // it on a device now in someone else's hands. Its watermark goes with sync_watermarks.
+  'event_ai_verdicts',
   'vet_visit_attachments',
   // B-117 medication mirror (children-first). medication_administrations
   // FK→events ON DELETE CASCADE locally, so it MUST precede events. medications

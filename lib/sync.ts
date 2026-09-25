@@ -53,6 +53,7 @@ import {
   vetDocumentRowToRemote,
   type LocalVetDocument,
 } from './vetDocuments';
+import { pullReadCopies, pullReadCopyFor } from './readCopy';
 
 type Db = ReturnType<typeof getDb>;
 
@@ -3185,6 +3186,13 @@ export async function hydrateFromCloud(): Promise<void> {
   if (stale()) return;
   await runHydrationStep('event_attachments', () => hydrateEventAttachments(db, stale));
   if (stale()) return;
+  // HV-5 (CUL-1162): the per-incident read's copy on the phone. No local FK to events,
+  // so the order is free; it sits beside the attachments it describes. The step's body
+  // is `lib/readCopy.ts`, the one module allowed to write the copy, which is why it
+  // lives there and not inline here, and why this file names neither table, not even in
+  // the step's label (`guards/readState.test.ts` keeps it that way).
+  await runHydrationStep('verdict copy', () => pullReadCopies(db, stale));
+  if (stale()) return;
   await runHydrationStep('vet_visits', () => hydrateVetVisits(db, stale));
   if (stale()) return;
   await runHydrationStep('vet_visit_attachments', () => hydrateVetVisitAttachments(db, stale));
@@ -3220,6 +3228,25 @@ export async function hydrateFromCloud(): Promise<void> {
   if (stale()) return;
   // B-661: account-scoped, no local FK — order is free. Last, after the mirrors.
   await runHydrationStep('notification_preferences', () => hydrateNotificationPreferences(db, stale));
+}
+
+// HV-5 (CUL-1162) — a per-incident read that just landed on THIS device, saved to the
+// phone's copy at the moment it lands rather than at the next sync cycle. Called by the
+// analysis chain before it settles and by the realtime watch before each check
+// (`lib/analysis.ts`); the reason is `lib/readCopy.ts`'s header. It lives here, not
+// there, because the sign-out epoch does: a sign-out landing mid-save must not write the
+// previous account's verdict into the copy the wipe just cleared (FR-9). The session is
+// checked first (supabase-sync Pattern 4). Never throws: a landed read that could not be
+// copied is not something a caller can act on, and the next cycle's pull brings it.
+export async function refreshReadCopy(eventId: string): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const epoch = signOutEpoch;
+    await pullReadCopyFor(getDb(), eventId, () => signOutEpoch !== epoch);
+  } catch (e) {
+    console.warn('[sync] read copy refresh failed:', e);
+  }
 }
 
 // One full sync cycle: push local writes UP, then pull remote rows DOWN

@@ -4,11 +4,16 @@
 // `guards/designV2FlagOff.test.tsx` proves the SYNCHRONOUS half: Home's first frame is
 // byte-identical with the namespace stubbed. It cannot see a node whose render waits on
 // a read, and Today's spine is exactly that shape — its rows come from the store and its
-// reads (the photo set, the analysis rows) land a tick later. So this file renders Home
-// over a fixture that WOULD answer — a photographed vomit in today's store, an analysis
-// row the server would return — and asserts, flag-off, that no spine row renders and no
-// `event_ai_analysis` read is issued; then, flag-on, that both happen. An absence proves
-// a gate only when the thing gated was available to leak (C-41).
+// reads (the photo set, the read's verdict) land a tick later. So this file renders Home
+// over a fixture that WOULD answer — a photographed vomit in today's store, its verdict
+// in the phone's copy — and asserts, flag-off, that no spine row renders and the copy is
+// never read; then, flag-on, that both happen. An absence proves a gate only when the
+// thing gated was available to leak (C-41).
+//
+// Since HV-5 (CUL-1162) the verdict is the phone's copy (`event_ai_verdicts`), never a
+// server read, so the SERVER is stubbed to throw on any call here and must never be
+// called: the last case is the issue's acceptance line, "with the network off, Home's
+// spine shows the rose".
 
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
@@ -72,19 +77,23 @@ jest.mock('../../hooks/useEvents', () => ({
   }),
 }));
 // The LOCAL reads answer as the record would: the vomit has a photo, no feedings, no
-// spans, and a month with one logged day.
+// spans, a month with one logged day, and the phone's copy of its read (HV-5).
+let mockCopyRows: Record<string, unknown>[] = [];
 const mockDb = {
   getAllAsync: jest.fn(async (sql: string) => {
     if (/FROM event_attachments/.test(sql)) return [{ event_id: 'v1' }];
+    if (/FROM event_ai_verdicts/.test(sql)) return mockCopyRows;
     if (/FROM events WHERE/.test(sql)) return [{ occurred_at: new Date().toISOString() }];
     return [];
   }),
 };
 jest.mock('../../lib/db', () => ({ getDb: () => mockDb }));
-// The SERVER read — what a leak would reach for. It answers, so an absent read is a gate
-// and not an absent fixture.
-const mockFrom = jest.fn();
-jest.mock('../../lib/supabase', () => ({ supabase: { from: (...a: unknown[]) => mockFrom(...a) } }));
+// The SERVER, off: any call throws. Home's verdict comes from the copy, so no case below
+// may call it, flag on or off.
+const mockFrom = jest.fn(() => {
+  throw new Error('offline: Home must not reach the server for a verdict');
+});
+jest.mock('../../lib/supabase', () => ({ supabase: { from: (...a: unknown[]) => mockFrom(...(a as [])) } }));
 jest.mock('../../lib/analysis', () => ({
   analysisChainOutstanding: () => false,
   awaitAnalysisChain: async () => false,
@@ -105,22 +114,23 @@ const vomitNow = () => ({
   occurred_at_confidence: 'witnessed',
 });
 
+const copyRow = (recommendation: string | null, status = 'completed') => ({
+  event_id: 'v1',
+  status,
+  recommendation,
+  updated_at: new Date().toISOString(),
+});
+const copyReads = () =>
+  mockDb.getAllAsync.mock.calls.filter(([sql]) => /FROM event_ai_verdicts/.test(sql as string));
+
 beforeEach(() => {
-  mockFrom.mockReset();
-  mockFrom.mockImplementation(() => {
-    const chain: Record<string, unknown> = {};
-    const result = Promise.resolve({
-      data: [{ event_id: 'v1', status: 'completed', recommendation: 'monitor', read_text: 'x', dismissed_at: null }],
-      error: null,
-    });
-    for (const m of ['select', 'in', 'eq']) chain[m] = jest.fn(() => chain);
-    Object.assign(chain, { then: result.then.bind(result), catch: result.catch.bind(result) });
-    return chain;
-  });
+  mockFrom.mockClear();
+  mockDb.getAllAsync.mockClear();
+  mockCopyRows = [copyRow('monitor')];
   useEventStore.setState({ todayEvents: [vomitNow() as never], todayRead: { petId: 'p1', state: 'ready' } });
 });
 
-describe('flag-off: Home renders no spine row and issues no analysis read (C-41)', () => {
+describe('flag-off: Home renders no spine row and reads no verdict (C-41)', () => {
   it('over a fixture that would answer', async () => {
     mockDesignV2 = false;
     const t = render(<HomeScreen />);
@@ -129,24 +139,56 @@ describe('flag-off: Home renders no spine row and issues no analysis read (C-41)
     expect(t.queryByTestId('home-spine')).toBeNull();
     expect(t.queryByTestId('spine-node-v1')).toBeNull();
     expect(t.queryByTestId('coverage-door')).toBeNull();
+    expect(copyReads()).toEqual([]);
     expect(mockFrom).not.toHaveBeenCalled();
     // The fixture was available to leak: the shipped zones rendered around it.
     expect(t.getByTestId('zone-today')).toBeTruthy();
   });
 });
 
-describe('flag-on: the spine draws the row, the read is issued, the door speaks coverage', () => {
-  it('and the same fixture now reaches the server read and the node', async () => {
+describe('flag-on: the spine draws the row, the copy is read, the door speaks coverage', () => {
+  it('and the same fixture now reaches the phone’s copy and the node, never the server', async () => {
     mockDesignV2 = true;
     const t = render(<HomeScreen />);
     await waitFor(() => expect(t.getByTestId('spine-node-v1')).toBeTruthy());
-    await waitFor(() => expect(mockFrom).toHaveBeenCalledWith('event_ai_analysis'));
+    await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
     await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Keep an eye out'));
     expect(t.getByTestId('coverage-door')).toBeTruthy();
     await waitFor(() => expect(t.getByText(/logged 1 of \d+ day/)).toBeTruthy());
     expect(t.queryByTestId('zone-today')).toBeNull();
     expect(t.queryByTestId('zone-trend')).toBeNull();
     expect(t.queryByTestId('zone-med')).toBeNull();
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+});
+
+describe('with the network off, the spine shows the rose (HV-5 / CUL-1162, AC 21)', () => {
+  it('a worth-a-call read draws its rose word from the phone’s copy, the server throwing on any call', async () => {
+    mockDesignV2 = true;
+    mockCopyRows = [copyRow('worth_a_call')];
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it('a failed re-read over a live escalation still draws the rose (CUL-812)', async () => {
+    mockDesignV2 = true;
+    mockCopyRows = [copyRow('worth_a_call', 'failed')];
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
+  });
+
+  it('a photographed vomit whose read the phone does not hold is never drawn calm: a read slot, no verdict', async () => {
+    // The interim the PM ruled on 2026-09-25: the node is UNREAD, and today's row draws
+    // that as an empty grey slot until HV-6 draws "Photo not read" there. When HV-6
+    // lands, this assertion becomes the words.
+    mockDesignV2 = true;
+    mockCopyRows = [];
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
+    await waitFor(() => expect(t.getByTestId('spine-read-v1')).toBeTruthy());
+    expect(t.queryByTestId('spine-verdict-v1')).toBeNull();
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 });
 
