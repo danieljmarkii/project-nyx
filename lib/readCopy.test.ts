@@ -86,6 +86,8 @@ let mockEmptyPage: number | null = null;
 let mockIgnoreCursor = false;
 let mockPagesServed = 0;
 const mockQueries: Query[] = [];
+/** The wall clock the pull times itself by; a test that suspends the app moves it. */
+let mockNow = Date.parse('2026-09-25T09:30:00Z');
 
 /** A list read: what the pull pages through (not the count, not a read by id). */
 const isPage = (q: Query) => !q.head && q.eq === null;
@@ -189,6 +191,7 @@ import { HYDRATE_WATERMARK_OVERLAP_MS } from './hydration';
 import {
   READ_COPY_COLUMNS,
   READ_COPY_PAGE,
+  READ_COPY_PULL_BUDGET_MS,
   keysetAfter,
   pullReadCopies,
   pullReadCopyFor,
@@ -219,6 +222,15 @@ const row = (event_id: string, updated_at: string, recommendation: string | null
   // What the server row also holds, and the copy must never take.
   read_text: 'Streaks of red in tonight’s photo are worth a call.',
   dismissed_at: '2026-09-20T08:00:00+00:00',
+});
+
+let nowSpy: jest.SpyInstance<number, []>;
+beforeEach(() => {
+  mockNow = Date.parse('2026-09-25T09:30:00Z');
+  nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => mockNow);
+});
+afterEach(() => {
+  nowSpy.mockRestore();
 });
 
 beforeEach(() => {
@@ -426,14 +438,15 @@ describe('pullReadCopies — the hydrate step', () => {
   });
 
   it('a row the pull already passed, re-read while the app sat suspended, still arrives', async () => {
-    // The adversarial pass's F5: `a` is received as monitor, the app is backgrounded,
-    // `a` is re-read to worth_a_call at 09:20 and `e` changes at 09:23, then the pull
-    // resumes. The offset pull never came back for `a`, and the watermark it set (09:23,
-    // less two minutes) put `a`'s new verdict behind every later pull too.
+    // The adversarial pass's F5: `a` is received as monitor, the app is backgrounded for
+    // twenty minutes, `a` is re-read to worth_a_call at 09:20 and `e` changes at 09:23,
+    // then the pull resumes. The offset pull never came back for `a`, and the watermark it
+    // set (09:23, less two minutes) put `a`'s new verdict behind every later pull too.
     mockServer = ['a', 'b', 'c', 'd', 'e'].map((id, i) => row(id, `2026-09-24T09:0${i}:00+00:00`, 'monitor'));
     mockMaxRows = 2;
     mockBeforePage = (n) => {
       if (n !== 2) return;
+      mockNow += 20 * 60_000;
       mockServer = mockServer.map((r) =>
         r.event_id === 'a'
           ? row('a', '2026-09-24T09:20:00+00:00', 'worth_a_call')
@@ -442,9 +455,77 @@ describe('pullReadCopies — the hydrate step', () => {
             : r,
       );
     };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await pullReadCopies(mockAdapter, never);
+      // The new verdict arrives in the SAME pull: it moved ahead of the cursor.
+      expect(copyOf('a')).toMatchObject({ recommendation: 'worth_a_call', updated_at: '2026-09-24T09:20:00+00:00' });
+      // A pull that sat suspended past its budget holds the watermark (the next case says
+      // why); the next pull, run without a pause, moves it.
+      expect(watermark()).toBeNull();
+      mockBeforePage = null;
+      await pullReadCopies(mockAdapter, never);
+      expect(watermark()).toBe('2026-09-24T09:23:00+00:00');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('commit skew across a long pause: a row behind the cursor is read by the next pull, because the watermark waited', async () => {
+    // The second adversarial pass: `x`'s transaction BEGAN at 09:00:59.997 (its
+    // updated_at, 3 ms before `b`'s) and COMMITTED just after page 1 was read, so it sits
+    // behind the cursor, unseen. The app then sits suspended for three minutes while `e`
+    // is written at 09:23. Had the watermark moved to 09:23, every later pull would start
+    // at 09:21 and never reach `x`.
+    mockServer = [row('a', '2026-09-24T09:00:00+00:00', 'monitor'), row('b', '2026-09-24T09:01:00.000000+00:00', 'monitor')];
+    mockBeforePage = (n) => {
+      if (n !== 2) return;
+      mockServer.push(row('x', '2026-09-24T09:00:59.997000+00:00', 'worth_a_call'));
+      mockNow += 3 * 60_000;
+      mockServer.push(row('e', '2026-09-24T09:23:00+00:00', 'monitor'));
+    };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await pullReadCopies(mockAdapter, never);
+      expect(copyOf('x')).toBeUndefined();
+      expect(watermark()).toBeNull();
+      expect(warn).toHaveBeenCalledWith('[read-copy] the pull outran its time budget; holding the watermark');
+      mockBeforePage = null;
+      await pullReadCopies(mockAdapter, never);
+      expect(copyOf('x')).toMatchObject({ recommendation: 'worth_a_call' });
+      expect(watermark()).toBe('2026-09-24T09:23:00+00:00');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('the same skew inside the budget is caught by the overlap, and the watermark moves', async () => {
+    mockServer = [row('a', '2026-09-24T09:00:00+00:00', 'monitor'), row('b', '2026-09-24T09:01:00.000000+00:00', 'monitor')];
+    mockBeforePage = (n) => {
+      if (n !== 2) return;
+      mockServer.push(row('x', '2026-09-24T09:00:59.997000+00:00', 'worth_a_call'));
+      mockNow += READ_COPY_PULL_BUDGET_MS; // exactly the budget: still in it
+    };
     await pullReadCopies(mockAdapter, never);
-    expect(copyOf('a')).toMatchObject({ recommendation: 'worth_a_call', updated_at: '2026-09-24T09:20:00+00:00' });
-    expect(watermark()).toBe('2026-09-24T09:23:00+00:00');
+    expect(watermark()).toBe('2026-09-24T09:01:00.000000+00:00');
+    mockBeforePage = null;
+    await pullReadCopies(mockAdapter, never);
+    expect(copyOf('x')).toMatchObject({ recommendation: 'worth_a_call' });
+  });
+
+  it('a clock set backwards mid-pull reads as over budget: the watermark waits one cycle', async () => {
+    mockServer = [row('a', '2026-09-24T09:00:00+00:00'), row('b', '2026-09-24T09:01:00+00:00')];
+    mockBeforePage = (n) => {
+      if (n === 2) mockNow -= 60 * 60_000;
+    };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await pullReadCopies(mockAdapter, never);
+      expect(copyRows()).toHaveLength(2);
+      expect(watermark()).toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('a pull the count cannot vouch for writes what it has and HOLDS the watermark', async () => {
@@ -506,6 +587,20 @@ describe('pullReadCopies — the hydrate step', () => {
     let signedOut = false;
     mockHold = (q) => (q.head ? null : Promise.resolve().then(() => void (signedOut = true)));
     await pullReadCopies(mockAdapter, () => signedOut);
+    expect(copyRows()).toEqual([]);
+    expect(watermark()).toBeNull();
+  });
+
+  it('a sign-out between pages stops the pull: the previous account’s cursor never leaves the phone', async () => {
+    // Privacy's second pass on #912: the next page's filter carries the last event id
+    // received, and after a sign-out it would go out under whoever holds the session now.
+    mockServer = ['a', 'b', 'c'].map((id, i) => row(id, `2026-09-24T09:0${i}:00+00:00`, 'worth_a_call'));
+    mockMaxRows = 1;
+    let signedOut = false;
+    mockHold = (q) => (isPage(q) && q.or === null ? Promise.resolve().then(() => void (signedOut = true)) : null);
+    await pullReadCopies(mockAdapter, () => signedOut);
+    expect(mockQueries.filter(isPage)).toHaveLength(1);
+    expect(mockQueries.some((q) => q.or !== null)).toBe(false);
     expect(copyRows()).toEqual([]);
     expect(watermark()).toBeNull();
   });

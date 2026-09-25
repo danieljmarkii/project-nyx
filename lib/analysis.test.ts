@@ -674,6 +674,49 @@ describe('a claimed chain is announced, and Home hears it (F1 on #912)', () => {
     expect(tick()).toBe(before + 1);
   });
 
+  it('a trigger holding no claim, landing after the owner settled, tells Home itself (second pass on #912)', async () => {
+    // The owner replaced the photo (its chain) and the owner tapped Re-run while it ran:
+    // the re-run's trigger found the claim taken. The owner's read landed and settled
+    // first; the re-run lands after, with nobody left to settle, so it must tick.
+    const owner = claimAnalysisChain('ev-f1-rerun');
+    let release!: (v: { error: null }) => void;
+    mockInvoke.mockReset().mockReturnValue(new Promise((r) => { release = r; }));
+    mockRefreshReadCopy.mockReset().mockResolvedValue(true);
+    const rerun = triggerVomitAnalysis('ev-f1-rerun');
+    owner?.settle(true);
+    const before = tick();
+    release({ error: null });
+    await rerun;
+    expect(tick()).toBe(before + 1);
+    mockRefreshReadCopy.mockReset().mockResolvedValue(false);
+  });
+
+  it('no landing tick where a settle will release Home: inside an outstanding chain, or from a trigger that owns its claim', async () => {
+    mockInvoke.mockReset().mockResolvedValue({ error: null });
+    mockRefreshReadCopy.mockReset().mockResolvedValue(true);
+    // The log path's nested call: its owner settles after the trigger returns.
+    const owner = claimAnalysisChain('ev-f1-nested');
+    let before = tick();
+    await triggerVomitAnalysis('ev-f1-nested');
+    expect(tick()).toBe(before);
+    owner?.settle(true);
+    // A trigger that claimed its own chain: its claim's announcement, and nothing more.
+    before = tick();
+    await triggerStoolAnalysis('ev-f1-owned');
+    expect(tick()).toBe(before + 1);
+    // A landing that changed nothing, after the owner settled: nothing to tell.
+    const settled = claimAnalysisChain('ev-f1-unchanged');
+    let release!: (v: { error: null }) => void;
+    mockInvoke.mockReset().mockReturnValue(new Promise((r) => { release = r; }));
+    mockRefreshReadCopy.mockReset().mockResolvedValue(false);
+    const rerun = triggerVomitAnalysis('ev-f1-unchanged');
+    settled?.settle(true);
+    before = tick();
+    release({ error: null });
+    await rerun;
+    expect(tick()).toBe(before);
+  });
+
   it('a listener runs with the chain already outstanding, and unsubscribes', () => {
     const seen: boolean[] = [];
     const off = onAnalysisChainClaimed((id) => seen.push(analysisChainOutstanding(id)));

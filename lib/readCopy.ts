@@ -51,6 +51,17 @@
 // against a page that comes back empty while rows remain. The cursor's instant is the
 // server's own string, passed back untouched (`keysetAfter` says why).
 //
+// THE ONE ROW A KEYSET CAN STILL MISS, AND WHY THE PULL HAS A TIME BUDGET (the second
+// adversarial pass on #912). `updated_at` is the writing transaction's START, so a row
+// whose transaction began just before the cursor passed its place and committed just
+// after is behind the cursor, unseen. The overlap brings it back on the next pull, but
+// only if the watermark has not run more than the overlap past it, and the watermark
+// runs as far as the pull's last page: a pull that sat suspended between pages for
+// minutes while other rows changed put that row behind the watermark for good. So a
+// pull that ran longer than `READ_COPY_PULL_BUDGET_MS` writes what it received and
+// holds the watermark, and the next pull, from the old place, reads the row. Half the
+// overlap for the pull leaves the other half for the writing transaction's own length.
+//
 // STATED BLIND SPOT (C-38). A server row that is DELETED is never mirrored. Nothing in
 // the client deletes an analysis row today. The server removes one through a cascade
 // from its event or pet (account deletion wipes this device anyway), and the table's
@@ -60,7 +71,7 @@
 // reader asks only for events this device still holds.
 
 import { getDb, getWatermark, setWatermark } from './db';
-import { advanceWatermark, watermarkQueryFloor } from './hydration';
+import { advanceWatermark, HYDRATE_WATERMARK_OVERLAP_MS, watermarkQueryFloor } from './hydration';
 import type { ReadCopyRow } from './readState';
 import { supabase } from './supabase';
 
@@ -76,6 +87,10 @@ const WATERMARK_KEY = 'event_ai_verdicts';
 /** Rows asked for per page. A server `max-rows` below this number costs pages, never
  *  rows: the cursor is the last row RECEIVED, whatever the page's length. */
 export const READ_COPY_PAGE = 1000;
+
+/** The longest a pull may run, first request to last page, and still move the
+ *  watermark: half the commit-skew overlap (the header's last section says why). */
+export const READ_COPY_PULL_BUDGET_MS = HYDRATE_WATERMARK_OVERLAP_MS / 2;
 
 /** SQLite's host-parameter budget, with room to spare (the sync layer's chunk). */
 const READ_CHUNK = 400;
@@ -196,15 +211,21 @@ export function keysetAfter(cursor: Cursor): string {
 
 interface PulledVerdicts {
   rows: ReadCopyRow[];
-  /** The rows received cover the exact count taken before paging, and every page moved
-   *  the cursor forward. */
+  /** The rows received cover the exact count taken before paging, every page moved the
+   *  cursor forward, and the pull ran inside its time budget. */
   complete: boolean;
 }
 
 /** Every verdict row changed at or after `floor` (all of them when `floor` is null), in
  *  (updated_at, event_id) order. Null when the server could not be read, which is "we do
- *  not know", never "none". */
-async function fetchVerdictsSince(floor: string | null): Promise<PulledVerdicts | null> {
+ *  not know", never "none", and null once `stale` turns: after a sign-out the next page
+ *  would send the previous account's cursor (its last event id) under whoever holds the
+ *  session now, so the pull stops asking (the second privacy pass on #912). */
+async function fetchVerdictsSince(floor: string | null, stale: () => boolean): Promise<PulledVerdicts | null> {
+  // Wall-clock, not a monotonic timer: a suspension is exactly what this must count, and
+  // a monotonic clock can stop while the device sleeps. A clock set backwards reads as
+  // over budget, which only holds the watermark for one cycle.
+  const startedAt = Date.now();
   let counted = supabase.from('event_ai_analysis').select('event_id', { count: 'exact', head: true });
   if (floor) counted = counted.gte('updated_at', floor);
   const { count, error: countError } = await counted;
@@ -220,6 +241,7 @@ async function fetchVerdictsSince(floor: string | null): Promise<PulledVerdicts 
   const seen = new Set<string>();
   let cursor: Cursor | null = null;
   for (;;) {
+    if (stale()) return null;
     let page = supabase.from('event_ai_analysis').select(READ_COPY_COLUMNS);
     if (cursor) page = page.or(keysetAfter(cursor));
     else if (floor) page = page.gte('updated_at', floor);
@@ -255,7 +277,10 @@ async function fetchVerdictsSince(floor: string | null): Promise<PulledVerdicts 
   // counted. A counted row deleted before the pull reached it (a cascade) leaves the pull
   // short, and the watermark then waits a cycle rather than moving on a count it missed.
   const distinct = new Set(rows.map((r) => r.event_id)).size;
-  return { rows, complete: distinct >= count };
+  const spanMs = Date.now() - startedAt;
+  const inBudget = spanMs >= 0 && spanMs <= READ_COPY_PULL_BUDGET_MS;
+  if (!inBudget) console.warn('[read-copy] the pull outran its time budget; holding the watermark');
+  return { rows, complete: distinct >= count && inBudget };
 }
 
 /**
@@ -267,7 +292,7 @@ async function fetchVerdictsSince(floor: string | null): Promise<PulledVerdicts 
  */
 export async function pullReadCopies(db: ReadCopyDb, stale: () => boolean): Promise<void> {
   const since = await getWatermark(WATERMARK_KEY);
-  const pulled = await fetchVerdictsSince(watermarkQueryFloor(since));
+  const pulled = await fetchVerdictsSince(watermarkQueryFloor(since), stale);
   if (pulled === null || stale()) return;
   await writeCopies(db, pulled.rows, stale);
   if (!pulled.complete) {

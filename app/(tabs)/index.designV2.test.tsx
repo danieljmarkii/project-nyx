@@ -44,7 +44,19 @@ jest.mock('../../components/home/TrendZone', () => ({ TrendZone: marker('trend')
 jest.mock('../../components/designV2/home/LookHeader', () => ({ LookHeader: marker('look-header') }));
 jest.mock('../../hooks/useDietTrial', () => ({ useDietTrial: () => ({ input: null, inputIsForActivePet: true }) }));
 jest.mock('../../hooks/useMedStrips', () => ({ useMedStrips: () => ({ input: null }) }));
-jest.mock('../../lib/sync', () => ({ syncNow: jest.fn() }));
+// The sync layer as the analysis chain meets it: the landed read's save puts the
+// server's current verdict into the phone's copy and says whether it moved.
+let mockServerVerdict = 'monitor';
+jest.mock('../../lib/sync', () => ({
+  syncNow: jest.fn(),
+  syncPendingEvents: jest.fn(async () => {}),
+  ensureEventAttachmentsSynced: jest.fn(async () => {}),
+  refreshReadCopy: jest.fn(async () => {
+    const before = mockCopyRows[0]?.recommendation;
+    mockCopyRows = [{ event_id: 'v1', status: 'completed', recommendation: mockServerVerdict, updated_at: new Date().toISOString() }];
+    return before !== mockServerVerdict;
+  }),
+}));
 jest.mock('../../lib/signal', () => ({ regenerateSignal: jest.fn() }));
 jest.mock('../../lib/haptics', () => ({ pullThreshold: jest.fn() }));
 let mockDesignV2 = false;
@@ -85,7 +97,14 @@ jest.mock('../../lib/db', () => ({ getDb: () => mockDb }));
 const mockFrom = jest.fn(() => {
   throw new Error('offline: Home must not reach the server for a verdict');
 });
-jest.mock('../../lib/supabase', () => ({ supabase: { from: (...a: unknown[]) => mockFrom(...(a as [])) } }));
+let mockInvokeRelease: ((v: { error: null }) => void) | null = null;
+const mockInvoke = jest.fn(() => new Promise((r) => { mockInvokeRelease = r as (v: { error: null }) => void; }));
+jest.mock('../../lib/supabase', () => ({
+  supabase: {
+    from: (...a: unknown[]) => mockFrom(...(a as [])),
+    functions: { invoke: (...a: unknown[]) => mockInvoke(...(a as [])) },
+  },
+}));
 // The REAL claim registry and the real announcement that tells Home about a chain (the
 // sync store is real too, so the tick it moves is the one Home rereads on). Only the
 // realtime watch is stubbed: it is a socket, not a rule.
@@ -97,7 +116,7 @@ jest.mock('../../lib/analysis', () => ({
 import { act, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { FAB_SCROLL_INSET_FLOOR, HOME_V2_SCROLL_INSET } from '../../lib/fabFootprint';
-import { claimAnalysisChain, type AnalysisChainClaim } from '../../lib/analysis';
+import { analysisChainOutstanding, claimAnalysisChain, triggerVomitAnalysis, type AnalysisChainClaim } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
 import HomeScreen from './index';
 
@@ -205,6 +224,44 @@ describe('a read Home never saw start still reaches it (the adversarial pass’s
     mockCopyRows = [copyRow('worth_a_call')];
     await act(async () => {
       claim?.settle(true);
+    });
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it('a re-run that held no claim lands after the chain it waited on settled: Home still gets the rose (second pass)', async () => {
+    // The adversarial reviewer's reproduction on #912, with its last assertions turned
+    // around: before the fix the copy held the rose and Home kept the calm words until
+    // some unrelated tick.
+    mockDesignV2 = true;
+    mockServerVerdict = 'monitor';
+    mockCopyRows = [copyRow('monitor')];
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Keep an eye out'));
+    // The record screen replaces the photo: its chain.
+    let owner: AnalysisChainClaim | null = null;
+    act(() => {
+      owner = claimAnalysisChain('v1');
+    });
+    await waitFor(() => expect(t.getByText('Reading the photo…')).toBeTruthy());
+    // Re-run, tapped while that chain runs: its trigger finds the claim taken.
+    let rerun!: Promise<{ error: string | null }>;
+    act(() => {
+      rerun = triggerVomitAnalysis('v1');
+    });
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(1));
+    const releaseRerun = mockInvokeRelease!;
+    // The owner's chain lands first (monitor) and settles.
+    await act(async () => {
+      owner!.settle(true);
+    });
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Keep an eye out'));
+    expect(analysisChainOutstanding('v1')).toBe(false);
+    // The re-run lands after it, as worth_a_call, and nothing else happens.
+    mockServerVerdict = 'worth_a_call';
+    await act(async () => {
+      releaseRerun({ error: null });
+      await rerun;
     });
     await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
     expect(mockFrom).not.toHaveBeenCalled();

@@ -3250,7 +3250,9 @@ export async function hydrateFromCloud(): Promise<void> {
 // window saw a live session and captured the post-wipe epoch, so nothing was stale: it
 // wrote the previous account's verdict into the copy the wipe had just cleared, where
 // no later wipe removed it. The app's session is the one step 3 nulls, so it is read
-// synchronously, right before the epoch is taken, and must name the same account.
+// synchronously, right before the epoch is taken, and must name the same account. AFTER
+// the await, never before it: a getSession slow enough to span step 3 and the wipe would
+// otherwise carry a gate read from before the swap (`lib/readCopySync.test.ts` pins it).
 export async function refreshReadCopy(eventId: string): Promise<boolean> {
   try {
     const { data: { session } } = await supabase.auth.getSession();

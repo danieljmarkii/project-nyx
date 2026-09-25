@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { syncPendingEvents, ensureEventAttachmentsSynced, refreshReadCopy } from './sync';
-import { claimAnalysisChain, onAnalysisChainClaimed } from './analysisChain';
+import { analysisChainOutstanding, claimAnalysisChain, onAnalysisChainClaimed, type AnalysisChainClaim } from './analysisChain';
 import { useSyncStore } from '../store/syncStore';
 
 // ── A landed read is saved to the phone's copy (History v2 §5.3, HV-5 / CUL-1162) ──
@@ -37,15 +37,27 @@ async function copyLandedRead(eventId: string): Promise<boolean> {
 //     here), so the listener registered below hears all of them. Home re-samples the
 //     working fact, draws the read as pending, and awaits the settle like any chain it
 //     sampled itself;
-//   • a landing the WATCH saved that changed the copy (a read that arrived after its
-//     chain had settled). A chain's own landing needs no tick: it lands before the
-//     settle Home is already awaiting.
+//   • a landing that changed the copy with no chain left to settle: one the WATCH saved
+//     (a read that arrived after its chain had settled), or one a trigger saved while
+//     holding no claim of its own, after the chain that did own it had settled (Re-run
+//     or Try again tapped while another read ran; the second pass on #912). A landing
+//     inside a chain someone still owns needs no tick: it lands before the settle Home
+//     is already awaiting.
 // Every other reader of the tick rereads local rows it already holds; a MedStrip dose
 // confirm bumps the same tick for the same reason.
 function tellHomeTheReadMoved(): void {
   useSyncStore.getState().bumpHydrationTick();
 }
 onAnalysisChainClaimed(tellHomeTheReadMoved);
+
+/** A trigger's landing, saved to the copy before its claim (if it holds one) settles.
+ *  With no claim and no chain outstanding, nothing will release Home to reread, so the
+ *  landing tells Home itself. */
+async function landChain(eventId: string, claim: AnalysisChainClaim | null, invoked: boolean): Promise<void> {
+  const moved = await copyLandedRead(eventId);
+  if (moved && claim === null && !analysisChainOutstanding(eventId)) tellHomeTheReadMoved();
+  claim?.settle(invoked);
+}
 
 // The analysis-chain claim (CUL-801) lives in `lib/analysisChain.ts`, which imports
 // nothing (HV-5 moved it there so a read-only surface can ask whether a read is in
@@ -91,8 +103,7 @@ export async function triggerVomitAnalysis(eventId: string): Promise<{ error: st
   } finally {
     // The copy hears about this read before anyone waiting on the chain does (HV-5):
     // Home rereads the verdict on the settle, from the copy.
-    await copyLandedRead(eventId);
-    claim?.settle(invoked);
+    await landChain(eventId, claim, invoked);
   }
 }
 
@@ -134,8 +145,7 @@ export async function triggerStoolAnalysis(eventId: string): Promise<{ error: st
   } finally {
     // The copy hears about this read before anyone waiting on the chain does (HV-5):
     // Home rereads the verdict on the settle, from the copy.
-    await copyLandedRead(eventId);
-    claim?.settle(invoked);
+    await landChain(eventId, claim, invoked);
   }
 }
 

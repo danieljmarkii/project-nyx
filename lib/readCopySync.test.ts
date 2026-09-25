@@ -10,6 +10,8 @@
 const mockPullFor = jest.fn(async (..._a: unknown[]) => 1);
 const mockPullAll = jest.fn(async () => undefined);
 let mockSession: { user: { id: string } } | null = { user: { id: 'u1' } };
+/** Held open, auth-js's session read waits here: the slow getSession of the ordering case. */
+let mockGetSessionGate: Promise<void> | null = null;
 
 jest.mock('./readCopy', () => ({
   pullReadCopyFor: (...a: unknown[]) => mockPullFor(...a),
@@ -27,7 +29,12 @@ jest.mock('./supabase', () => {
   };
   return {
     supabase: {
-      auth: { getSession: async () => ({ data: { session: mockSession } }) },
+      auth: {
+        getSession: async () => {
+          if (mockGetSessionGate) await mockGetSessionGate;
+          return { data: { session: mockSession } };
+        },
+      },
       from: () => chain(),
       storage: { from: () => ({ download: async () => ({ data: null, error: { message: 'n/a' } }) }) },
     },
@@ -56,6 +63,7 @@ import { hydrateFromCloud, notifySignedOut, refreshReadCopy } from './sync';
 const appSessionOf = (id: string) => ({ user: { id } }) as unknown as Session;
 
 beforeEach(() => {
+  mockGetSessionGate = null;
   mockPullFor.mockReset();
   mockPullFor.mockImplementation(async () => 1);
   mockPullAll.mockClear();
@@ -95,6 +103,22 @@ describe('refreshReadCopy — a landed read, copied at once', () => {
     useAuthStore.getState().setSession(null);
     notifySignedOut();
     await expect(refreshReadCopy('ev-a')).resolves.toBe(false);
+    expect(mockPullFor).not.toHaveBeenCalled();
+  });
+
+  it('reads the app’s session AFTER auth-js answers: a slow getSession spanning step 3 and the wipe writes nothing (R1, second pass)', async () => {
+    // Both sessions name u1 when the landing starts. auth-js takes its time; meanwhile
+    // step 3 nulls the app's session and step 4 wipes, and auth-js then answers u1 (step
+    // 5 has not run). A gate read BEFORE the await would have seen u1 and let the
+    // post-wipe write through: hoisting it reopened R1 with every other case here green.
+    let release!: () => void;
+    mockGetSessionGate = new Promise<void>((r) => (release = r));
+    const landing = refreshReadCopy('ev-slow');
+    useAuthStore.getState().setSession(null);
+    notifySignedOut();
+    mockGetSessionGate = null;
+    release();
+    await expect(landing).resolves.toBe(false);
     expect(mockPullFor).not.toHaveBeenCalled();
   });
 
