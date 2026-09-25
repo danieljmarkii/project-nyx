@@ -69,7 +69,9 @@ jest.mock('../../store/petStore', () => {
   const activePet = { id: 'p1', name: 'Rex', species: 'dog' };
   const state = { activePet };
   return {
-    usePetStore: Object.assign(() => state, { getState: () => mockPetState }),
+    // `subscribe`, and `state` until `mockPetState` is assigned: History v2's scope store
+    // reads and follows the pet store from import on (HV-3), before this file's body runs.
+    usePetStore: Object.assign(() => state, { getState: () => mockPetState ?? state, subscribe: () => () => {} }),
   };
 });
 // Mutable so a test can simulate the owner switching pets mid-write.

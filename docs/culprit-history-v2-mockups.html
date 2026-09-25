@@ -429,6 +429,17 @@
   .sheet .opt .ck { color: #00C2A8; font-weight: 700; }
   .sheet .opt:focus-visible { outline: 2px solid #0B7B6C; outline-offset: -2px; }
   .sheet .opt.sub { padding-left: 16px; font-size: 13.5px; }
+  /* §12, the HV-9 calls (open, 2026-09-25): drawn only by the frames that ask for them */
+  .sheet .scap { font-size: 11.5px; color: #525252; line-height: 1.4; margin: 0 0 4px; }
+  .sheet .ph { font-size: 16px; font-weight: 600; color: #0A0A0A; margin: 0 0 6px; }
+  .sheet .opt .pet { display: inline-flex; align-items: center; gap: 10px; }
+  .sheet .opt .pet i { width: 30px; height: 30px; border-radius: 50%; background: #E0FBF7; color: #0B7B6C; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+  .sheet .opt .pet small { margin-top: 0; }
+  .sheet .opt.add { color: #525252; }
+  .hh .ttl.door { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; border: 0; background: none; padding: 0; font-family: inherit; cursor: pointer; }
+  .hh .ttl.door .chev { font-size: 9px; color: #737373; }
+  .hh .ttl.door:focus-visible { outline: 2px solid #0B7B6C; outline-offset: 2px; border-radius: 6px; }
+  .emptyst .door-l { display: inline-block; margin-top: 10px; font-size: 13px; }
   /* the wait: the list's silhouette, one form */
   .wait { position: relative; }
   .wait .wait-skel { position: absolute; inset: 0; transition: opacity 320ms ease-out; z-index: 7; border-radius: 34px; background: #FAFAFA; }
@@ -475,9 +486,9 @@
 <body>
 <div class="wrap">
 <header class="mast" id="mast">
-  <p class="eyebrow"><span>Culprit · History v2</span><span>CUL-1108 · ruled</span><span>2026-09-24</span><span class="roundtag">Round 5 · ruled</span></p>
+  <p class="eyebrow"><span>Culprit · History v2</span><span>CUL-1108 · ruled</span><span>2026-09-24</span><span class="roundtag">Round 5 · ruled</span><span class="pill gold">§12 · 4 calls open</span></p>
   <h1>The record you can read</h1>
-  <p class="standfirst">Round 5 is the ruled design, and the one the requirements are written against. It applies your reactions to round 4: the options you turned down have left the page, the calls you handed to the team are made and marked as the team's, and <strong>nothing on the page is open</strong>. Every frame is <strong>Nyx's real record</strong>, refreshed through Mon Sep 21: rows for May 14 – 15, Jun 7 – 21 and Sep 4 – 21, and a count for every day since May 14 (Central time).</p>
+  <p class="standfirst">Round 5 is the ruled design, and the one the requirements are written against. It applies your reactions to round 4: the options you turned down have left the page, the calls you handed to the team are made and marked as the team's, and <strong>nothing in §01 to §11 is open</strong>. §12 is: four calls the HV-9 build raised on Sep 25, each drawn beside the frame it would change. Every frame is <strong>Nyx's real record</strong>, refreshed through Mon Sep 21: rows for May 14 – 15, Jun 7 – 21 and Sep 4 – 21, and a count for every day since May 14 (Central time).</p>
   <div class="ledger">
     <div class="r"><b>Your reaction to round 4</b><span><b>What it ruled, and what moved on this page</b></span></div>
     <div class="r"><b>H-1 · "Time on the right doesn't feel as intuitive as time on the left. The time is an integral part of a timeline."</b><span><i class="d">ruled</i>(a). The time sits in a fixed left column, on History and on Home. Round 3's row has left the page. <a href="#s02">§02</a></span></div>
@@ -495,9 +506,10 @@
     <div class="r"><b>The quiet states · "LOVE that we added an empty state."</b><span><i class="k">kept</i>As drawn. <a href="#s08">§08</a></span></div>
     <div class="r"><b>"Finalize these requirements; put them in a Linear project with a session-by-session plan."</b><span><i class="k">next</i><code>docs/nyx-history-v2-requirements.md</code> is written against this page, and the build is the Linear project <b>History v2 · the record you can read</b>.</span></div>
     <div class="r"><b>CUL-1183 · "Go with 60." (2026-09-25, after round 5)</b><span><i class="d">ruled</i>The time column is 60pt, not 56. At the app's 11pt, a run across noon's first line, "11:30 AM –", is 58.7pt; in 56 it fell to three lines. Every frame on this page draws the 60pt column; Home, History and the Daily Recap move together. <a href="#s02">§02</a></span></div>
+    <div class="r"><b>HV-9 · four calls from the build (2026-09-25, open)</b><span><i class="o">open</i>The pinned row's build and review raised four questions round 5 does not answer: what the two menus' numbers count, the pet's name as the switcher, Meal's meals not finished, and search while a filter is on. Each is drawn beside the frame it would change; the briefs are on CUL-1247. <a href="#s12">§12</a></span></div>
     <div class="r"><b>CUL-1193 · "(b)" (2026-09-25, after round 5)</b><span><i class="d">ruled</i>A dose count reads "logged". Under a course or Medication the count line says "16 logged on 16 days", and its second line names the doses recorded Partial, Missed or Refused: "Cetirizine HCl · Jul 1 – Sep 5 · 4 not given in full". A course's row on the type sheet names them after its span, the way Photographed names "not read". "16 doses" read as sixteen given. <a href="#s06">§06</a></span></div>
   </div>
-  <div class="howto"><b>How to read this page.</b> §01 is the whole screen with every demo. §02 to §07 are the rulings, one per section, each drawn once. §08 is the quiet states, §09 the motion inventory, §10 the rules a build carries, §11 the rulings in one list. Round 4, with the options side by side, is in git at <code>b0479342</code>; the critique is <code>docs/history-v2-round3-critique-2026-09.md</code>.</div>
+  <div class="howto"><b>How to read this page.</b> §01 is the whole screen with every demo. §02 to §07 are the rulings, one per section, each drawn once. §08 is the quiet states, §09 the motion inventory, §10 the rules a build carries, §11 the rulings in one list. §12 holds the four open calls from the HV-9 build, options beside current frames. Round 4, with the options side by side, is in git at <code>b0479342</code>; the critique is <code>docs/history-v2-round3-critique-2026-09.md</code>.</div>
   <div class="howto" style="margin-top:14px;border-left:3px solid var(--gold)"><b>The record, not a fixture.</b> Times, types, food and drug names, ratings, doses, photo presence and each read's verdict come from a service-role read scoped to Nyx's id paired with her owner's account. Note <em>text</em> was never read: where a note's words appear they are the Designer's and are marked <span class="illus">illustrative</span>, as are the vet visit's reason and clinic.</div>
 </header>
 
@@ -847,7 +859,92 @@
   </div>
 </section>
 
-<footer class="foot">Round 5 of the History v2 page, 2026-09-24, CUL-1108: the ruled design. Republished over round 4 at the same URL. Round 4 (the options side by side) is in git at <code>b0479342</code>, round 3 at <code>ab20698c</code>; the critique is <code>docs/history-v2-round3-critique-2026-09.md</code>. Every demo on this page was driven in a headless browser, pressed twice, with and without Reduce Motion, before it was published.</footer>
+<section id="s12">
+  <div class="sec-head"><span class="sec-num">§12</span><h2>Four calls from the HV-9 build (open, 2026-09-25)</h2></div>
+  <div class="col">
+    <p>Building the pinned row (HV-9, CUL-1166) and reviewing it as Jordan and Sam raised four questions the rulings above do not answer. Each is drawn here twice: the frame tagged <em>current</em> is what round 5 rules and what HV-9 built, and each gold box is an option, drawn for the decision, not the current proposal. The briefs, with the team's recommendation on each, are on <b>CUL-1247</b>. Nothing in §01 to §11 moved. The words inside the options are illustrative; HV-12's copy pass sets them.</p>
+  </div>
+
+  <h3>Call 1 · Should the two menus say what their numbers count?</h3>
+  <div class="optrow">
+    <div class="frame-slot">
+      <span class="tag cur">The type sheet, since the trial</span>
+      <div class="phone vp" id="p-c1-cur" data-mount='{"when":"trial","openSheet":"type"}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
+      <p class="frame-cap"><b>"Loose stool 0", since when?</b> The window is Since the trial started, and nothing on the sheet says so: the pill that names it sits under the dimmed backdrop. A 0 under All time would read exactly the same.</p>
+    </div>
+    <div class="optbox">
+      <span class="tag opt">Option (a) · one caption line</span>
+      <div class="frame-slot">
+        <div class="phone vp" id="p-c1-a" data-mount='{"when":"trial","openSheet":"type","sheetCaption":true}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
+        <p class="frame-cap"><b>"Logged since the trial started, Jul 26."</b> Every number on the sheet becomes a stated fact about its window: the scope sits where the reader meets the claim (C-3). A course's bare 16 now reads as 16 logged.</p>
+      </div>
+    </div>
+    <div class="optbox">
+      <span class="tag opt">Option (a) · the window sheet</span>
+      <div class="frame-slot">
+        <div class="phone vp" id="p-c1-a2" data-mount='{"when":"all","lens":"vomit","openSheet":"when","sheetCaption":true}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
+        <p class="frame-cap"><b>"Vomits logged in each window."</b> The mirror case: under Vomit, "Last 7 days · 3" means three vomits, and until now nothing on this sheet said so.</p>
+      </div>
+    </div>
+    <div class="optbox">
+      <span class="tag opt">Option (a) · during a search</span>
+      <div class="frame-slot">
+        <div class="phone vp" id="p-c1-a3" data-mount='{"when":"all","searchOpen":true,"search":"rabbit","openSheet":"type","sheetCaption":true}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
+        <p class="frame-cap"><b>"Search finds; it never counts."</b> As built, a search takes every number off both sheets, and a sheet with no numbers also looks like one still loading or one whose read failed. The caption says why, in the count line's own ruled words.</p>
+      </div>
+    </div>
+  </div>
+
+  <h3>Call 2 · Should History's pet name open the pet switcher, as Home's does?</h3>
+  <div class="optrow">
+    <div class="frame-slot">
+      <span class="tag cur">The pinned row</span>
+      <div class="phone vp short" id="p-c2-cur" data-mount='{"when":"all","only":["2026-09-21"]}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
+      <p class="frame-cap"><b>A heading where Home has a door.</b> On Home, tapping the pet's name opens "Your pets". Here it is a heading: Sam, with two cats, taps it to reach the other one and nothing happens, and her way round is Home, the switch, and back to History's defaults.</p>
+    </div>
+    <div class="optbox">
+      <span class="tag opt">Option (a) · the name opens "Your pets"</span>
+      <div class="frame-slot">
+        <div class="phone vp short" id="p-c2-a" data-mount='{"when":"all","only":["2026-09-21"],"petDoor":true,"openSheet":"pets"}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
+        <p class="frame-cap"><b>The shipped sheet, as Home opens it.</b> A chevron only when there is a second pet, as on Home. A switch already resets the filter, the window and the search to the new pet's defaults (AC 13). The second pet is illustrative. Close the sheet, then tap the name to open it again.</p>
+      </div>
+    </div>
+  </div>
+
+  <h3>Call 3 · Should Meal say how many meals were left unfinished?</h3>
+  <div class="optrow">
+    <div class="frame-slot">
+      <span class="tag cur">The type sheet, at Meal</span>
+      <div class="phone vp" id="p-c3-cur" data-mount='{"when":"trial","openSheet":"type","sheetAnchor":"meal"}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
+      <p class="frame-cap"><b>"Meal 308", and nothing else.</b> Photographed names its unread photos and a course names its short doses, but Meal names nothing, one level above the day headers that do. Seven of Nyx's meals since Jul 26 were left unfinished.</p>
+    </div>
+    <div class="optbox">
+      <span class="tag opt">Option (a) · the meals not finished</span>
+      <div class="frame-slot">
+        <div class="phone vp" id="p-c3-a" data-mount='{"when":"trial","openSheet":"type","sheetAnchor":"meal","mealShort":true}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
+        <p class="frame-cap"><b>"Meal · 7 not finished · 308."</b> The day header's own count, summed over the window, by the same rule: a treat is never "not finished". A cat who is refusing food never reads as routine one level above the rows (spec §1).</p>
+      </div>
+    </div>
+  </div>
+
+  <h3>Call 4 · What should search do while a filter is on?</h3>
+  <div class="optrow">
+    <div class="frame-slot">
+      <span class="tag cur">Search, with Vomit still on</span>
+      <div class="phone vp short" id="p-c4-cur" data-mount='{"when":"all","lens":"vomit","searchOpen":true,"search":"prednisone"}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
+      <p class="frame-cap"><b>"Nothing matches 'prednisone'."</b> Jordan is still on Vomit from her last question and searches for the prednisone Nyx started on Sep 21, to see where it falls among the vomits. The search ran inside the filter, found no vomit that mentions it, and said so as if it were the whole record. Asked "chicken" by an owner checking the diet, the same screen answers "nothing" about a record whose June treats mention chicken in 93 rows.</p>
+    </div>
+    <div class="optbox">
+      <span class="tag opt">Option (a) · name the filter, offer the rest</span>
+      <div class="frame-slot">
+        <div class="phone vp short" id="p-c4-a" data-mount='{"when":"all","lens":"vomit","searchOpen":true,"search":"prednisone","missScope":true}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
+        <p class="frame-cap"><b>The filter is named, and one tap searches everything.</b> The search line reads "Rows that mention 'prednisone' · Vomit · All time", and the empty state says the filter is on. "Search all types ›" keeps the words and drops the filter: tap it, and Sep 21's dose appears. Search still never counts (R-2). These words are HV-7's; the field is HV-9's.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">Round 5 of the History v2 page, 2026-09-24, CUL-1108: the ruled design. Republished over round 4 at the same URL. Round 4 (the options side by side) is in git at <code>b0479342</code>, round 3 at <code>ab20698c</code>; the critique is <code>docs/history-v2-round3-critique-2026-09.md</code>. Every demo on this page was driven in a headless browser, pressed twice, with and without Reduce Motion, before it was published. §12 added 2026-09-25 (HV-9, CUL-1166; briefs on CUL-1247): four open calls drawn as options, and the search now keeps only rows both the filter and the words keep (R-2), which no earlier frame exercised. §12's two demos were pressed once each, with and without Reduce Motion. §01 to §11 are unchanged.</footer>
 </div>
 
 <script>
@@ -1125,7 +1222,8 @@ function listHtml(opts, st) {
     const flushN = () => { if (nom.length) { out.push(gapLine('nomatch', nom, opts)); nom = []; } };
     for (let day = hi; day >= lo; day = addDays(day, -1)) {
       const b = buildDay(day, opts); const logged = b.rows.length > 0;
-      if (opts.search) { if (b.rows.some((r) => matchesSearch(r, opts.search))) out.push(dayCardHtml(b, opts, st)); continue; }
+      // R-2: a search is one more condition on the filtered query, so a day shows only a row both keep
+      if (opts.search) { if (b.rows.some((r) => matchesLens(r, opts.lens) && matchesSearch(r, opts.search))) out.push(dayCardHtml(b, opts, st)); continue; }
       if (day === TODAY && !logged && !b.markers.length) { // an open day keeps its header and never merges into a gap (GAP-5)
         flushU(); flushN();
         if (!opts.lens) out.push(`<div class="dayc" data-day="${day}"><div class="dayhdr" tabindex="-1"><span class="dn">${dayName(day)}<small>Today</small></span><span class="dc"></span></div><div class="empty-line">Nothing logged yet today.</div></div>`);
@@ -1142,6 +1240,11 @@ function listHtml(opts, st) {
     flushU(); flushN();
   }
   if (!out.length) {
+    // §12, call 4 (open): a search inside a filter says so, and offers the rest of the record
+    if (opts.search && opts.lens && opts.missScope) {
+      const what = opts.lens.startsWith('course:') ? 'its doses' : PLURAL[opts.lens] || 'those rows';
+      return `<div class="emptyst"><b>No ${esc(opts.lens.startsWith('course:') ? 'doses' : what)} mention “${esc(opts.search)}”</b>The ${esc(lensLabel(opts.lens))} filter is on, so this search looked only at ${esc(what)}.<br><span class="door-l" role="link" tabindex="0" data-pick="type|null">Search all types ›</span></div>`;
+    }
     if (opts.search) return `<div class="emptyst"><b>Nothing matches “${esc(opts.search)}”</b>Search looks in food and medicine names and in your notes.</div>`;
     return `<div class="emptyst"><b>Nothing matches that filter</b>Try clearing a filter to see more of ${PET}'s history.</div>`;
   }
@@ -1180,7 +1283,7 @@ function clockedWin(k, opts) {
 function countLine(opts) {
   if (opts.quiet) return '';
   const k = opts.when || 'all', w = clockedWin(k, opts), W = WINDOWS[k], lens = opts.lens;
-  if (opts.search) return `<div class="cl"><div class="c1">Rows that mention <b>“${esc(opts.search)}”</b> · ${W.name}</div><div class="c2">Search finds; it never counts.</div></div>`;
+  if (opts.search) return `<div class="cl"><div class="c1">Rows that mention <b>“${esc(opts.search)}”</b>${opts.missScope && lens ? ` · ${esc(lensLabel(lens))}` : ''} · ${W.name}</div><div class="c2">Search finds; it never counts.</div></div>`;
   const f = lensFacts(k, lens, opts);
   const head = W.name + (W.anchor ? `, ${shortDay(W.anchor)}` : '');
   const course = lens && lens.startsWith('course:') ? COURSES.find((x) => x.key === lens.slice(7)) : null;
@@ -1304,9 +1407,15 @@ function lensLabel(lens) {
 }
 function headerHtml(opts) {
   const k = opts.when || 'all'; const lensOn = !!opts.lens, whenOn = k !== 'all';
-  const n = lensOn && !opts.quiet ? lensFacts(k, opts.lens, opts).n : null;
+  // no number on the pill while a search word is in (HV-9, as built): search finds, it never counts
+  const n = lensOn && !opts.quiet && !opts.search ? lensFacts(k, opts.lens, opts).n : null;
   const third = opts.thirdPill ? `<button type="button" class="spill on sm3">${esc(opts.thirdPill)} <span class="x" aria-hidden="true">✕</span></button>` : '';
-  return `<div class="hh"><span class="ttl">${esc(PET)}</span><div class="pills"><button type="button" class="spill${lensOn ? ' on' : ''}" data-open="type">${esc(lensLabel(opts.lens))}${n != null ? ` <b>· ${n}</b>` : ''} <span class="chev">▼</span></button><button type="button" class="spill${whenOn ? ' on' : ''}" data-open="when">${esc(WINDOWS[k].pill)} <span class="chev">▼</span></button>${third}<button type="button" class="srch" data-open="search" aria-label="Search ${PET}'s record"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button></div></div>`;
+  // §12, call 2 (open): the name opens the shipped "Your pets" sheet, as Home's does; a
+  // chevron only in a multi-pet household, as on Home (HomeHeader.tsx)
+  const ttl = opts.petDoor
+    ? `<button type="button" class="ttl door" data-open="pets" aria-label="Switch pet, ${esc(PET)} active">${esc(PET)} <span class="chev" aria-hidden="true">▼</span></button>`
+    : `<span class="ttl">${esc(PET)}</span>`;
+  return `<div class="hh">${ttl}<div class="pills"><button type="button" class="spill${lensOn ? ' on' : ''}" data-open="type">${esc(lensLabel(opts.lens))}${n != null ? ` <b>· ${n}</b>` : ''} <span class="chev">▼</span></button><button type="button" class="spill${whenOn ? ' on' : ''}" data-open="when">${esc(WINDOWS[k].pill)} <span class="chev">▼</span></button>${third}<button type="button" class="srch" data-open="search" aria-label="Search ${PET}'s record"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button></div></div>`;
 }
 function searchBarHtml(opts) {
   if (!opts.searchOpen) return '';
@@ -1318,21 +1427,51 @@ const freeFedLine = (opts) => (opts.freeFed ? `<div class="ffl"><i></i><span><b>
 function sheetHtml(kind, opts) {
   const k = opts.when || 'all', w = WIN[k];
   const row = (label, key, sel, n, cls, sub) => `<button type="button" class="opt${sel ? ' sel' : ''}${cls ? ' ' + cls : ''}" data-pick="${kind}|${key}"><span>${label}${sub ? `<small>${sub}</small>` : ''}</span><span>${n != null ? `<span class="n">${n}</span>` : ''}${sel ? ' <span class="ck">✓</span>' : ''}</span></button>`;
+  // While a search is open, no row counts (HV-9, as built: a number labels what its
+  // destination holds, and under a search that is only the matches; C-3)
+  const quiet = !!(opts.searchOpen && opts.search);
+  const num = (n) => (quiet ? null : n);
   let rows = '', label = '';
   if (kind === 'type') {
     label = 'Show only';
-    const o = (l, key) => row(esc(l), key, (opts.lens || 'null') === key, lensFacts(k, key === 'null' ? null : key).n.toLocaleString('en-US'));
+    // §12, call 3 (open): Meal names its meals not finished, the header's own count
+    const nf = winSum(BOUNDS[k][0], BOUNDS[k][1], (d) => UNFIN[d] || 0).n;
+    const subOf = (key) => (key === 'meal' && opts.mealShort && !quiet && nf > 0 ? `${nf} not finished` : '');
+    const o = (l, key) => row(esc(l), key, (opts.lens || 'null') === key, num(lensFacts(k, key === 'null' ? null : key).n.toLocaleString('en-US')), '', subOf(key));
     rows = o('All types', 'null') + o('All symptoms', 'symptom') + ['vomit', 'diarrhea', 'stool_normal', 'cough', 'sneeze', 'lethargy', 'itch', 'meal'].map((t) => o(LABEL[t], t)).join('') + o('Medication', 'medication');
-    if (!opts.noCourses) rows += COURSES.filter((c) => lensFacts(k, `course:${c.key}`).n > 0).map((c) => row(esc(c.name), `course:${c.key}`, opts.lens === `course:${c.key}`, lensFacts(k, `course:${c.key}`).n, 'sub', (c.to ? rangeLabel(c.from, c.to) : `since ${shortDay(c.from)}`) + (lensFacts(k, `course:${c.key}`).short ? ` · ${lensFacts(k, `course:${c.key}`).short} not given in full` : ''))).join('');
+    if (!opts.noCourses) rows += COURSES.filter((c) => lensFacts(k, `course:${c.key}`).n > 0).map((c) => row(esc(c.name), `course:${c.key}`, opts.lens === `course:${c.key}`, num(lensFacts(k, `course:${c.key}`).n), 'sub', (c.to ? rangeLabel(c.from, c.to) : `since ${shortDay(c.from)}`) + (!quiet && lensFacts(k, `course:${c.key}`).short ? ` · ${lensFacts(k, `course:${c.key}`).short} not given in full` : ''))).join('');
     rows += o('Weight', 'weight_check') + o('Other', 'other');
-    rows += `<div class="sl gapt">What the record holds</div>` + row('Photographed', 'photographed', opts.lens === 'photographed', w.photo, '', w.unread ? `${w.unread} not read` : '') + row('With a note', 'noted', opts.lens === 'noted', w.note);
+    rows += `<div class="sl gapt">What the record holds</div>` + row('Photographed', 'photographed', opts.lens === 'photographed', num(w.photo), '', !quiet && w.unread ? `${w.unread} not read` : '') + row('With a note', 'noted', opts.lens === 'noted', num(w.note));
     rows += `<div class="sl gapt">The daily look</div>` + row('Noticed', 'check_in', false, null);
   } else if (kind === 'when') {
     label = 'Show events from';
-    const o = (key, sub) => row(esc(WINDOWS[key].name), key, k === key, lensFacts(key, opts.lens).n.toLocaleString('en-US'), '', sub);
+    const o = (key, sub) => row(esc(WINDOWS[key].name), key, k === key, num(lensFacts(key, opts.lens).n.toLocaleString('en-US')), '', sub);
     rows = o('all', `since ${shortDay(RECORD_START)}`) + o('today') + o('7d') + o('14d') + o('30d') + o('trial', shortDay(WINDOWS.trial.anchor)) + o('visit', shortDay(WINDOWS.visit.anchor)) + `<div class="sl gapt">${YEAR}</div>` + o('sep') + o('aug') + o('jul') + o('jun') + o('may', `from ${shortDay(RECORD_START)}`);
+  } else if (kind === 'pets') {
+    // §12, call 2 (open): the shipped PetSwitcherSheet as Home opens it; the second pet is illustrative
+    const pet = (name, line, sel) => `<button type="button" class="opt${sel ? ' sel' : ''}" data-pick="pets|${esc(name)}" aria-label="Switch to ${esc(name)}"><span class="pet"><i aria-hidden="true">${esc(name[0])}</i><span>${esc(name)}<small>${esc(line)}</small></span></span><span>${sel ? '<span class="ck">✓</span>' : ''}</span></button>`;
+    const add = `<button type="button" class="opt add" data-pick="pets|add"><span class="pet"><i aria-hidden="true">+</i><span>Add a pet</span></span><span></span></button>`;
+    return `<div class="sheetwrap on" data-sheet><button type="button" class="scrim" aria-label="Close" data-pick="close|"></button><div class="sheet" role="dialog" aria-label="Your pets"><div class="grab"></div><div class="ph">Your pets</div>${pet(PET, 'Cat', true)}${pet('Juniper', 'Cat · illustrative', false)}${add}</div></div>`;
   }
-  return `<div class="sheetwrap on" data-sheet><button type="button" class="scrim" aria-label="Close" data-pick="close|"></button><div class="sheet" role="dialog" aria-label="${esc(label)}"><div class="grab"></div><div class="sl">${esc(label)}</div>${rows}</div></div>`;
+  // §12, call 1 (open): one caption says what the numbers count; during a search, why there are none
+  let cap = '';
+  if (opts.sheetCaption) {
+    const W = WINDOWS[k], lens = opts.lens;
+    // the type sheet names the window its numbers count; the window sheet names the filter
+    const typeCap = k === 'all' ? `Logged since ${shortDay(RECORD_START)}`
+      : k === 'today' ? 'Logged today'
+      : W.anchor ? `Logged ${W.name.toLowerCase()}, ${shortDay(W.anchor)}`
+      : /^Last /.test(W.name) ? `Logged in the ${W.name.toLowerCase()}`
+      : `Logged in ${W.name}`;
+    const whenCap = !lens ? 'Everything logged, in each window'
+      : lens.startsWith('course:') || lens === 'medication' ? `${lensLabel(lens)}, logged in each window` // CUL-1193: never "doses"
+      : lens === 'photographed' ? 'Photographed rows in each window'
+      : lens === 'noted' ? 'Rows with a note in each window'
+      : `${PLURAL[lens].replace(/^./, (c) => c.toUpperCase())} logged in each window`;
+    const text = quiet ? 'Search finds; it never counts.' : kind === 'type' ? typeCap : whenCap;
+    if (text) cap = `<div class="scap">${esc(text)}</div>`;
+  }
+  return `<div class="sheetwrap on" data-sheet><button type="button" class="scrim" aria-label="Close" data-pick="close|"></button><div class="sheet" role="dialog" aria-label="${esc(label)}"><div class="grab"></div><div class="sl">${esc(label)}</div>${cap}${rows}</div></div>`;
 }
 
 // ── The record screen (the shipped /event/[id], drawn; unchanged but for CUL-848's cue) ─
@@ -1457,7 +1596,7 @@ function onClick(el, e) {
   if (t.dataset.pick) {
     const [kind, key] = t.dataset.pick.split('|');
     const sh = el.querySelector('[data-sheet]'); if (sh) sh.remove();
-    if (kind === 'close' || key === 'check_in') return;
+    if (kind === 'close' || kind === 'pets' || key === 'check_in') return;
     if (kind === 'type') st.opts.lens = key === 'null' ? null : key;
     if (kind === 'when') st.opts.when = key;
     st.opts.stripPage = null; st.stripPlay = true; clearLanded(el); st.open.clear();

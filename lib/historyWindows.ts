@@ -404,6 +404,14 @@ export function isWindowOffered(key: HistoryWindowKey, facts: WindowFacts): bool
   return windowBounds(key, facts) !== null;
 }
 
+/** The anchored windows' long names: the sheet row and the count line (§3.9). Exported so
+ *  the pinned row can name a trial or visit window whose anchor is still being read
+ *  (HV-9) in the same words, rather than retyping them. */
+export const ANCHORED_WINDOW_NAMES: Readonly<Record<'trial' | 'visit', string>> = {
+  trial: 'Since the trial started',
+  visit: 'Since the last vet visit',
+};
+
 /**
  * How a window reads, or null when it is not offered. Every date goes through the one
  * formatter (H-10), so an anchor outside the current year carries its year everywhere
@@ -429,7 +437,7 @@ export function windowLabel(key: HistoryWindowKey, facts: WindowFacts): WindowLa
     case 'trial':
     case 'visit': {
       const anchor = day(anchorIndex(key, facts, span) as number);
-      const long = key.kind === 'trial' ? 'Since the trial started' : 'Since the last vet visit';
+      const long = ANCHORED_WINDOW_NAMES[key.kind];
       return { long, short: `Since ${anchor}`, anchor, sheetTitle: long, sheetSub: anchor };
     }
     case 'month': {

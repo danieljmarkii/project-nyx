@@ -50,6 +50,8 @@ import {
   readDayPage,
   readHistoryCourses,
   readHistoryFacts,
+  readRecordDays,
+  readRecordStartDay,
   searchCondition,
   type DayPage,
   type DayPageScope,
@@ -498,6 +500,29 @@ describe('the facts — flags, looks, firsts, duplicates', () => {
     expect(facts.duplicates.total).toBe(0);
     expect(dayFactsOn(facts.days, '2026-09-10').total).toBe(2);
     expect(facts.days.has('2026-09-09')).toBe(false);
+  });
+});
+
+// HV-9's pinned row reads only the days (CUL-1228: the duplicates pass is most of the
+// whole-record read's cost, and the row never shows them). The two reads must never
+// disagree about a day, or the pill and the count line would print two numbers.
+describe('readRecordDays — the facts\' days, and nothing else', () => {
+  it('reads exactly the days readHistoryFacts reads, over any window', async () => {
+    seedRich();
+    insertEvent('before', localAt(9, 23, 59, 50).toISOString(), 'cough');
+    insertEvent('seam', hydrated(localAt(10, 0, 0, 40)), 'cough');
+    const windows: DayRange[] = [RANGE, { fromDay: '2026-09-10', toDay: '2026-09-21' }, { fromDay: '2026-09-05', toDay: '2026-09-05' }];
+    for (const range of windows) {
+      const [days, facts] = await Promise.all([readRecordDays(PET, range), readHistoryFacts(PET, range)]);
+      expect(days.size).toBeGreaterThan(0);
+      expect([range, days]).toEqual([range, facts.days]);
+    }
+  });
+
+  it('the record\'s first day is the facts\' first day (the window table\'s All time)', async () => {
+    seedRich();
+    expect(await readRecordStartDay(PET)).toBe((await readHistoryFacts(PET, RANGE)).firsts.record);
+    expect(await readRecordStartDay(OTHER_PET)).toBeNull();
   });
 });
 

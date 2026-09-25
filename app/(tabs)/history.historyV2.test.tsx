@@ -11,9 +11,10 @@
 // An absence proves a gate only when the thing gated was available to leak: the
 // flag-on case is what shows the v2 root CAN render here.
 //
-// STATED LIMIT (C-38): at HV-1 the v2 screen is its empty composition root and issues
-// no read of its own, so what this file proves is the MOUNT. HV-7 (CUL-1164) extends it
-// to the real v2 reads — flag-off, none issued, over a fixture that would answer.
+// STATED LIMIT (C-38): at HV-1 the v2 screen was its empty composition root and issued
+// no read of its own, so what this file proved was the MOUNT. HV-9 (CUL-1166) gave the
+// pinned row its read (`readHistoryRecord`), proven at the foot: flag-off, never issued,
+// over a record that would answer. HV-7 (CUL-1164) extends it to the list's reads.
 //
 // The gate is the REAL one — `useHistoryV2` over the real app-config observable, the
 // real opt-in store and the real auth store — so the flip test below drives it the way
@@ -52,9 +53,13 @@ jest.mock('../../lib/db', () => ({
   getEventAttachment: jest.fn(() => Promise.resolve(null)),
 }));
 jest.mock('../../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn(() => Promise.resolve()) }));
+// The pinned row's one read (HV-9): stubbed to a record that ANSWERS, so its absence
+// flag-off proves the gate rather than an empty fixture (C-41).
+jest.mock('../../lib/historyWindowFacts', () => ({ readHistoryRecord: jest.fn() }));
 jest.mock('../../store/petStore', () => {
   const state = { activePet: { id: 'p1', name: 'Rex', species: 'dog' } };
-  return { usePetStore: Object.assign(() => state, { getState: () => state }) };
+  // `subscribe`: History v2's scope store follows the pet store from import on (HV-3).
+  return { usePetStore: Object.assign(() => state, { getState: () => state, subscribe: () => () => {} }) };
 });
 jest.mock('../../lib/vetVisits', () => ({
   ...jest.requireActual('../../lib/vetVisits'),
@@ -78,9 +83,11 @@ jest.mock('../../components/history/EventRow', () => {
   };
 });
 
-import { act, render, waitFor } from '@testing-library/react-native';
+import { act, render, waitFor, within } from '@testing-library/react-native';
 import HistoryTab from './history';
 import { getTimeline } from '../../lib/db';
+import { buildDayFacts } from '../../lib/historyDays';
+import { readHistoryRecord, type HistoryRecordData } from '../../lib/historyWindowFacts';
 import { __resetAppConfigForTest } from '../../hooks/useAppConfig';
 import { ALLOWLIST_FLAGS_UNSET, APP_CONFIG_DEFAULTS } from '../../lib/appConfig';
 import { useBetaOptInStore } from '../../lib/betaFeatures';
@@ -88,7 +95,26 @@ import { useAuthStore } from '../../store/authStore';
 import { useEventStore } from '../../store/eventStore';
 
 const mockGetTimeline = getTimeline as jest.Mock;
+const mockReadRecord = readHistoryRecord as jest.MockedFunction<typeof readHistoryRecord>;
 const V2_ROOT = 'history-v2-screen';
+
+/** What the pinned row's read answers: one meal on the day the page read holds. */
+function answeringHistoryRecord(): HistoryRecordData {
+  const range = { fromDay: '2026-09-20', toDay: '2026-09-25' };
+  const meal = {
+    id: 'e1', eventType: 'meal', occurredAt: '2026-09-20T09:00:00Z', foodItemId: null, foodType: 'meal',
+    intakeRating: null, isDose: false, medicationId: null, medicationItemId: null, adherence: null,
+    hasPhoto: false, hasNote: false,
+  };
+  return {
+    petId: 'p1',
+    windowFacts: { petId: 'p1', today: '2026-09-25', firstRecordDay: '2026-09-20', trial: null, sinceVisit: null },
+    range,
+    recordDays: buildDayFacts({ rows: [meal], lookDays: [], range, freeFedFoodIds: new Set(), regimens: [] }),
+    courses: [],
+    notReadDays: new Map(),
+  };
+}
 
 /** A page read that answers with one meal — the record the flag-off screen must draw. */
 function answeringRecord(): void {
@@ -130,6 +156,7 @@ beforeEach(() => {
   useAuthStore.setState({ user: { id: 'u1' } } as never);
   useEventStore.setState({ todayEvents: [] });
   answeringRecord();
+  mockReadRecord.mockResolvedValue(answeringHistoryRecord());
 });
 
 afterAll(() => {
@@ -188,5 +215,24 @@ describe('the flag flipping while the tab is mounted swaps the screen', () => {
     const hookErrors = errors.mock.calls.filter((c) => /hooks?/i.test(String(c[0])));
     expect(hookErrors).toEqual([]);
     errors.mockRestore();
+  });
+});
+
+describe('the pinned row reads the record only under the flag (HV-9 / CUL-1166; C-41)', () => {
+  it('flag-off: its read is never issued, over a record that would answer', async () => {
+    arrange({ eligible: true, optedIn: false });
+    const view = render(<HistoryTab />);
+    expect(await view.findByTestId('row-e1')).toBeTruthy();
+    await settle();
+    expect(mockReadRecord).not.toHaveBeenCalled();
+    expect(view.queryByTestId('history-v2-pinned-row')).toBeNull();
+  });
+
+  it('flag-on: it reads the active pet’s record and names whose record it is', async () => {
+    arrange({ eligible: true, optedIn: true });
+    const view = render(<HistoryTab />);
+    await settle();
+    expect(mockReadRecord).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }), false);
+    expect(within(view.getByTestId('history-v2-pinned-row')).getByText('Rex')).toBeTruthy();
   });
 });
