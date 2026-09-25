@@ -445,6 +445,16 @@ describe('filterQuietStateOf: a filter that shows nothing names the record, neve
     expect(filterQuietStateOf({ filter: vomit, everLogged: true, todayOnly: true, courseName: null }).title).toBe('No vomit logged yet today');
   });
 
+  it('an ended course with no dose promises nothing: a dose logged now never joins it', () => {
+    expect(
+      filterQuietStateOf({ filter: { kind: 'course', courseKey: 'reg-apo' }, everLogged: false, todayOnly: true, courseName: 'Apoquel', courseEnded: true }),
+    ).toEqual({ title: 'No Apoquel dose logged', body: 'This course ended with no dose logged against it.' });
+    // A running course with none keeps the forward-looking line.
+    expect(
+      filterQuietStateOf({ filter: { kind: 'course', courseKey: 'reg-apo' }, everLogged: false, todayOnly: false, courseName: 'Apoquel', courseEnded: false }).title,
+    ).toBe('No Apoquel dose logged yet');
+  });
+
   it('a course that has not loaded cannot say whether it was ever logged: only the window form, true either way', () => {
     expect(filterQuietStateOf({ filter: { kind: 'course', courseKey: 'x' }, everLogged: null, todayOnly: false, courseName: null }).title)
       .toBe('No dose logged in this date range');

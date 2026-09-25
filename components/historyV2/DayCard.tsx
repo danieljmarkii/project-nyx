@@ -108,7 +108,7 @@ export function DayCardHeader({
   search: boolean;
   landed: boolean;
   /** The day holds a date-only item (a visit, a course start, a bowl): with nothing logged,
-   *  its header says *nothing else logged*, never contradicting the item under it. */
+   *  its header shows the date alone, so no count claim contradicts the item under it. */
   hasItems?: boolean;
   /** Off for today's open card, whose body says *Nothing logged yet today.* already. */
   withCounts?: boolean;

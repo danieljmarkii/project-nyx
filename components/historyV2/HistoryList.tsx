@@ -202,6 +202,7 @@ function filterQuietStateFor(snapshot: HistorySnapshot): QuietState {
     everLogged,
     todayOnly: facts.range.fromDay === today && facts.range.toDay === today,
     courseName: course?.name ?? null,
+    courseEnded: course !== null && !course.isActive,
   });
 }
 

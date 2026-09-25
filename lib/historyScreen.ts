@@ -393,6 +393,10 @@ export function filterQuietStateOf(args: {
   everLogged: boolean | null;
   todayOnly: boolean;
   courseName: string | null;
+  /** A course filter's course has ENDED. A dose logged now never joins it (a new dose links
+   *  only to the active regimen), so "When you log one" would be a promise the list cannot
+   *  keep: an ended course with no dose says what it holds and stops. */
+  courseEnded?: boolean;
 }): QuietState {
   const { filter, everLogged, todayOnly } = args;
   if (filter.kind === 'noticed') {
@@ -405,6 +409,9 @@ export function filterQuietStateOf(args: {
   }
   const absence = absenceText(filter, args.courseName) ?? 'nothing logged';
   const Absence = absence.charAt(0).toUpperCase() + absence.slice(1);
+  if (everLogged === false && filter.kind === 'course' && args.courseEnded) {
+    return { title: Absence, body: 'This course ended with no dose logged against it.' };
+  }
   if (everLogged === false) return { title: `${Absence} yet`, body: 'When you log one, it shows up here.' };
   return {
     title: todayOnly ? `${Absence} yet today` : `${Absence} in this date range`,

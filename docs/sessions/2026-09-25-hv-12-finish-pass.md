@@ -95,7 +95,15 @@ Its comments carried the copy lists from HV-4, HV-7 and HV-8. The plan went to t
     - The day's total took its quiet ink by position, so it lost it under All symptoms. Fixed with a `dayTotal` tone.
     - A zero-dose regimen could read *…see every one logged*. Fixed by reading the course's first dose.
   - **Noted:** *formed stool* is the type's third name (the picker says Normal, the report *Stool (normal)*). It is not false. It's on the HV-13 script.
-  - **The re-check on the corrections** is recorded on CUL-1169.
+  - **The re-check on the corrections (C-19): PASS on all four.**
+    - An unanswered dose in a refused meal reads *1 logged · 2 in all*, with no dose noun to read as given.
+    - The visit-only day agrees with the strip and the coverage count.
+    - The zero-dose regimen reads *…yet*.
+    - *in all* keeps the quiet ink wherever it falls.
+  - **Two lows from the re-check, fixed:**
+    - A stale prop comment.
+    - An ENDED course with no dose promised *When you log one, it shows up here*, which a new dose never does, since it links only to the active regimen. It now reads *This course ended with no dose logged against it.*
+  - **The re-check's residual, sent to CUL-1209:** under Medication, the strip draws an unconfirmed dose with a solid line.
 
 ## Verification
 
