@@ -77,3 +77,12 @@ HV-3 of History v2, one of five step-1 sessions running at once. It builds the r
 - **Blind spots, stated in `lib/historyWindows.ts`:** a row dated after today, from a device clock that was set forward, sits outside every window. A first record dated after today puts nothing before today in any window.
 - **HV-7 has to assemble `WindowFacts` for one `today`:** `windowTrialOf`, `readLatestVisitBefore` and the first record, recomputed together when the day changes. The read key takes the resolved window. Both are posted on CUL-1164.
 - **Not wired anywhere yet, by design:** no screen imports these modules until step 2.
+
+## After the wrap: CUL-1189 ruled
+
+The PM ruled both briefs **(a)** the same night, so the ruling rides this PR rather than a second one:
+
+- **Brief 1:** a trial or visit window whose anchor is before the pet's first record keeps starting at the record (GAP-24), and the count line names where it starts (*Since the last vet visit, Jul 26 · record from Aug 3*). The ruling covers the two anchored windows only, so `recordStartsLater` is now null for rolling windows and months (a month already says *from May 14* on the sheet). Proven by mutation: dropping the anchored-only condition reds the new test.
+- **Brief 2:** inside B-422's grace, the trial window's count line says *past its planned end* (`trialPastTarget`, unchanged).
+- **The spec is v1.2** (`docs/nyx-history-v2-requirements.md`): §0.5 records both rulings; §3.2 carries the two count-line clauses; §3.9's trial row and §5.2 say the window follows `isTrialRunning` (§11), which stood unobjected on CUL-1189; §7 gains AC 40 and 41. The words are HV-7's to build (CUL-1164 has them).
+

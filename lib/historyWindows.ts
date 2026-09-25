@@ -49,13 +49,21 @@
 // because the evidence does; belief is what ends. A trial completed or abandoned today is
 // no longer running, so its window goes the same day.
 //
-// ── WHAT THE COUNT LINE MAY NEED TO SAY (CUL-1189, a PM ruling) ─────────────────
+// ── WHAT THE COUNT LINE SAYS BESIDE A WINDOW (CUL-1189, PM-ruled 2026-09-25) ────
 //
-// Two facts ride out on `ResolvedWindow` for the count line to state once CUL-1189 rules
-// the words: `recordStartsLater` (the window's own start is before the pet's first
-// record, so the bounds start at the record: a visit on Jul 26 with the first log on
-// Aug 3), and `trialPastTarget` (the trial window, offered inside B-422's grace past the
-// trial's planned end). The table exposes them rather than choosing the copy.
+// Two facts ride out on `ResolvedWindow`, and the spec's §3.2 holds the words:
+//
+//   • `recordStartsLater`: an ANCHORED window (the trial, the visit) whose anchor is
+//     before the pet's first record keeps its bounds at the record (GAP-24) and names
+//     where the record starts: *Since the last vet visit, Jul 26 · record from Aug 3*.
+//     The unwatched days are named, never counted as gaps. Only the two anchored windows
+//     carry it: a rolling window or a month on a young record stays quiet, as GAP-24
+//     ruled (a month already says *from May 14* on the sheet), so this is null there
+//     and the count line has nothing to decide.
+//   • `trialPastTarget`: the trial window, offered inside B-422's grace after the trial's
+//     planned end, says so: *Since the trial started, Jul 26 · past its planned end*.
+//
+// The table exposes the facts; the count line (HV-7) owns the words.
 //
 // ── BLIND SPOTS, STATED (C-38) ─────────────────────────────────────────────────
 //
@@ -168,11 +176,13 @@ export interface ResolvedWindow {
   fellBack: boolean;
   /** The pet the facts were read for (`WindowFacts.petId`). */
   petId: string | null;
-  /** The record's first day ('YYYY-MM-DD') when this window's own start is earlier, so its
-   *  bounds start at the record (GAP-24). Null otherwise. CUL-1189 rules the words. */
+  /** For the trial or visit window only: the record's first day ('YYYY-MM-DD') when the
+   *  anchor is earlier, so the bounds start at the record (GAP-24) and the count line says
+   *  *record from Aug 3* (CUL-1189). Null for every other window, and when the anchor is
+   *  inside the record. */
   recordStartsLater: string | null;
-  /** The trial window, offered past the trial's planned last day (B-422's grace).
-   *  CUL-1189 rules the words. Always false for any other window. */
+  /** The trial window, offered past the trial's planned last day (B-422's grace): the count
+   *  line says *past its planned end* (CUL-1189). Always false for any other window. */
   trialPastTarget: boolean;
 }
 
@@ -454,7 +464,11 @@ export function resolveWindow(key: HistoryWindowKey, facts: WindowFacts): Resolv
     fellBack: asked === null,
     petId: facts.petId,
     recordStartsLater:
-      span.recordStart !== null && c.rawFrom < span.recordStart ? dayKeyFromIndex(span.recordStart) : null,
+      (effective.kind === 'trial' || effective.kind === 'visit') &&
+      span.recordStart !== null &&
+      c.rawFrom < span.recordStart
+        ? dayKeyFromIndex(span.recordStart)
+        : null,
     trialPastTarget: effective.kind === 'trial' && facts.trial !== null && facts.trial.pastTargetEnd,
   };
 }

@@ -127,23 +127,29 @@ describe('never before the record (GAP-24) — the Data Scientist lens', () => {
     }
   });
 
-  it('a clipped window keeps its own name and anchor, and says the record starts later', () => {
-    // The fact CUL-1189 rules the words for: *Since the last vet visit, Sep 16* over a
-    // window that starts at the first log, Sep 19.
+  it('an anchored window before the record keeps its anchor and names where the record starts', () => {
+    // CUL-1189 brief 1, ruled (a): *Since the last vet visit, Sep 16 · record from Sep 19*.
+    // The unwatched days are named, never counted as gaps.
     const visit = resolveWindow({ kind: 'visit' }, young);
     expect(visit.label.short).toBe('Since Sep 16');
     expect(visit.bounds).toEqual(b('2026-09-19', TODAY));
     expect(visit.recordStartsLater).toBe('2026-09-19');
     expect(resolveWindow({ kind: 'trial' }, young).recordStartsLater).toBe('2026-09-19');
-    expect(resolveWindow({ kind: 'last', days: 30 }, young).recordStartsLater).toBe('2026-09-19');
+  });
+
+  it('a rolling window or a month on a young record stays quiet, as GAP-24 ruled', () => {
+    // The ruling covers the two anchored windows only: *Last 30 days* on a three-day
+    // record says nothing about the record's start, and a month already says *from May
+    // 14* on the sheet.
+    expect(resolveWindow({ kind: 'last', days: 30 }, young).recordStartsLater).toBeNull();
+    expect(resolveWindow({ kind: 'month', month: '2026-09' }, young).recordStartsLater).toBeNull();
+    expect(resolveWindow({ kind: 'month', month: '2026-05' }, NYX).recordStartsLater).toBeNull();
   });
 
   it('a window that starts inside the record says nothing about the record’s start', () => {
-    for (const key of [{ kind: 'all' }, { kind: 'today' }, { kind: 'last', days: 7 }, { kind: 'visit' }] as HistoryWindowKey[]) {
+    for (const key of [{ kind: 'all' }, { kind: 'today' }, { kind: 'last', days: 7 }, { kind: 'visit' }, { kind: 'trial' }] as HistoryWindowKey[]) {
       expect(resolveWindow(key, NYX).recordStartsLater).toBeNull();
     }
-    // The month the record starts inside states it, as the sheet's *from May 14* does.
-    expect(resolveWindow({ kind: 'month', month: '2026-05' }, NYX).recordStartsLater).toBe('2026-05-14');
   });
 
   it('an empty record puts nothing before today in any window, and offers no month', () => {

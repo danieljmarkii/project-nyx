@@ -1,6 +1,6 @@
 # Nyx History v2 — The Record You Can Read — Requirements (CUL-1108)
 
-**Version:** 1.1 — **BUILD-READY** | **Date:** 2026-09-24 | **Status:** every ruling made. The PM ruled on round 4 of the mock (2026-09-24) and handed five calls to the team (H-3, H-4b, H-7, H-10, H-11), which are made in §0.2 with their dissents recorded. Nothing is open that blocks a build session; four pieces wait on issues outside this project (§10).
+**Version:** 1.2 — **BUILD-READY** | **Date:** 2026-09-25 | **Status:** every ruling made (v1.2 adds CUL-1189's two, §0.5). The PM ruled on round 4 of the mock (2026-09-24) and handed five calls to the team (H-3, H-4b, H-7, H-10, H-11), which are made in §0.2 with their dissents recorded. Nothing is open that blocks a build session; four pieces wait on issues outside this project (§10).
 
 **Design authority:** round 5 of *The Record You Can Read* (https://claude.ai/artifact/RNvdtUG6FX5utWmzGqBNa6), committed as `docs/culprit-history-v2-mockups.html`. The repo file wins on divergence. Round 4 (the options side by side) is in git at `b0479342`; round 3 at `ab20698c`.
 
@@ -46,6 +46,17 @@ Days at local midnight, newest first, morning to night inside a day; one door pe
 ### 0.4 The critique's four rules, adopted without a ruling
 
 R-1 (one population and one query behind every number; absence only over watched days), R-2 (a row says the same thing under every filter and every search), R-3 (import what the app already computes), R-4 (a list that survives paging, a pet switch and Reduce Motion). Each is specified where it lands (§3, §5) and carried as acceptance criteria (§7).
+
+### 0.5 Rulings after v1.1 (CUL-1189, PM, 2026-09-25)
+
+Two count-line calls the HV-3 adversarial pass surfaced, each briefed on CUL-1189 and ruled (a).
+
+| # | Decision | Ruling |
+|---|---|---|
+| **CUL-1189 · 1** | A *Since the last vet visit* or *Since the trial started* window whose anchor is before the pet's first record | **(a) The window keeps starting at the record (GAP-24) and the count line names where it starts:** *Since the last vet visit, Jul 26 · record from Aug 3*. The days between the anchor and the first log are named, never counted as unlogged, so a new owner's line stays free of the noise GAP-24 removed. Only the two anchored windows say it: a rolling window or a month on a young record stays quiet (a month already says *from May 14* on the sheet). The vet report still starts on the visit day and counts those days (*62 days · 54 days with a log*); History names them instead. |
+| **CUL-1189 · 2** | The trial window during B-422's 56-day grace after an un-ended trial's planned end | **(a) Say it:** *Since the trial started, Jul 26 · past its planned end*, so relapse vomits after the owner went back to the old food never read as the trial failing. |
+
+With it, §3.9's trial row says what was built in #909 and stood unobjected on CUL-1189: the trial window is offered only while `isTrialRunning` says the trial runs (§11), dated by `exposureRange`. v1.1's row read "offered only while that range reaches today", which on its own kept offering a trial nobody closed for as long as the record ran.
 
 ---
 
@@ -110,6 +121,8 @@ Rules:
 - **Coverage** ("N days unlogged") appears on every window and under every filter, All time included, and says nothing when the window is fully covered (C-3). A window starts no earlier than the pet's first record (GAP-24); a course filter's coverage is over the course's own days.
 - **Same-minute duplicates** are disclosed (*N logged twice in the same minute*) using the vet report's duplicate rule, lifted into one shared module (PMD-10, §5.2).
 - **A filtered count names its days** (*13 vomits on 11 days*) and the window's start date (*Since the trial started, Jul 26*).
+- **An anchored window before the record names where the record starts** (⚠ v1.2, CUL-1189 · 1): when the trial or visit window's anchor is before the pet's first record, line 1 reads *Since the last vet visit, Jul 26 · record from Aug 3 · **33 logged***. The window starts at the record and coverage counts from it (GAP-24); the days before it are named, never counted as unlogged. Rolling windows and months never say it (HV-3's `recordStartsLater` is null for them).
+- **A trial past its planned end says so** (⚠ v1.2, CUL-1189 · 2): inside B-422's grace, line 1 reads *Since the trial started, Jul 26 · past its planned end · **9 vomits on 7 days*** (HV-3's `trialPastTarget`).
 - **Every count re-derives together** after a write, a removal, a sync or a refresh (GAP-18): the line, the pill's count, the day headers, the strip.
 - A month with nothing logged reads *nothing logged*, never 0.
 - The door labels are placeholders for the copy pass; the destinations are fixed.
@@ -203,11 +216,12 @@ One pill always names what is filtering (the type pill shows *Vomit · 13*, tint
 | All time | the pet's first record → today | *All time* (sheet sub-line *since May 14*) | *All time* |
 | Today | today | *Today* | *Today* |
 | Last 7 / 14 / 30 days | today − 6 / 13 / 29 → today | *Last 7 days* … | *Last 7 days* … |
-| Since the trial started | the trial's `TrialFacts.exposureRange` start → today, offered only while that range reaches today (never `range`; diet-trial spec §5) | *Since the trial started · Jul 26* | *Since Jul 26* |
+| Since the trial started | the trial's `TrialFacts.exposureRange` start → today, offered only while the trial runs (`isTrialRunning`, §11) and that range reaches today (never `range`; diet-trial spec §5) (⚠ v1.2) | *Since the trial started · Jul 26* | *Since Jul 26* |
 | Since the last vet visit | **the latest visit strictly before today, including its day** (H-11; the report's bound) → today | *Since the last vet visit · Sep 16* | *Since Sep 16* |
 | A month | the month's first → last day (clipped at the record's start and today) | *September* under a *2026* subhead | *September* |
 
 - The trial and visit rows are absent for a pet with none (PMD-17). History's "Last 7 days" is seven local days, and Ask's in-app link adopts the same (BRK-5, §5.8).
+- **The trial window follows belief** (⚠ v1.2, §0.5): offered while `isTrialRunning` says the trial runs, dated by `exposureRange`. A trial completed or abandoned today stops being offered the same day; a trial nobody closed stops when B-422's grace ends, and inside the grace the count line says *past its planned end* (§3.2).
 - **H-11's difference from Home, written down:** Home's *since last visit* restarts the day a visit is saved; History's, the rundown's and the report's do not until the next day.
 - **Dates (H-10):** one formatter for every date and range on the screen. A date in the current year is bare (*Sep 16*); any other carries its year (*Dec 31, 2026*); a range states the year once (*Dec 27, 2026 – Jan 2*); months group under year subheads. CUL-1126 adopts the same formatter on the rundown, the report's scope line and the trial card.
 - **A pet switch resets every scope** (All types, All time, search closed, the strip on this week, runs closed, sheets dismissed), and nothing carries a trial or visit date to another pet (GAP-27).
@@ -289,7 +303,7 @@ type DayFacts = {
 };
 ```
 
-- **Windows and dates** (HV-3): `lib/historyWindows.ts` holds §3.9's table and returns `WindowBounds = { fromDay: string; toDay: string }` (local day keys, inclusive), which is all the data layer takes. The trial window reads `TrialFacts.exposureRange` (never `range`; diet-trial spec §5) and is offered only while that range reaches today. `lib/recordDates.ts` is the one formatter (H-10). `lib/visitWindow.ts` is the visit bound: the latest visit strictly before today, including its day, compared as parsed local days; registered in `guards/visitReaders.test.ts`; a text pin on `report.ts:873` until HV-15.
+- **Windows and dates** (HV-3): `lib/historyWindows.ts` holds §3.9's table and returns `WindowBounds = { fromDay: string; toDay: string }` (local day keys, inclusive), which is all the data layer takes. The trial window reads `TrialFacts.exposureRange` (never `range`; diet-trial spec §5) and is offered only while the trial runs (`isTrialRunning`, §11) and that range reaches today; `windowTrialOf` is the one way to build it (⚠ v1.2). `lib/recordDates.ts` is the one formatter (H-10). `lib/visitWindow.ts` is the visit bound: the latest visit strictly before today, including its day, compared as parsed local days; registered in `guards/visitReaders.test.ts`; a text pin on `report.ts:873` until HV-15.
 - **Scope state** (HV-3): `store/historyScopeStore.ts` holds the type filter (a type, All symptoms, a course, Photographed, With a note, Noticed), the window, the search text, the landed day and the strip's week. A pet switch resets all of it. `landOn(day)` is a one-shot request the list consumes in a ref (C-22). A read that answers for a scope or pet other than the current one is dropped.
 
 ### 5.3 The read's local copy (H-4)
@@ -421,6 +435,10 @@ Every criterion names its test shape. "Pure" means a table test over a pure modu
 38. Every owner-facing string passes the `ownerFacingCopy` guard and a `nyx-voice` read; no string asserts a record fact the query did not return.
 39. The note never renders on a row, and search never reads a note, until the CUL-848 gate flips (a guarded constant, asserted).
 
+**Rulings after v1.1 (CUL-1189, ⚠ v1.2)**
+40. A trial or visit window whose anchor is before the pet's first record starts at the record, keeps its anchor, and its count line names where the record starts (*record from Aug 3*); a rolling window or a month on a young record says nothing (pure: `recordStartsLater`; the count line's copy is HV-7's).
+41. The trial window is offered only while `isTrialRunning`, dated by `exposureRange`; inside B-422's grace its count line says *past its planned end*, and once the grace ends it is not offered (pure: `windowTrialOf` and `trialPastTarget`; the copy is HV-7's).
+
 ---
 
 ## 8. The build plan (one issue, one session)
@@ -510,3 +528,4 @@ The Linear project **History v2 · the record you can read** carries every sessi
 |---|---|---|
 | 1.0 | 2026-09-24 | First build-ready spec: the PM's rulings on round 4 and the team's calls at the PM's deferral (§0); design authority round 5; the run order (§8) mirrored in the Linear project. |
 | 1.1 | 2026-09-24 | §5.8: the month's row names what its door sends (`?day=`, a local day, and `ts`), as built in #904 (CUL-1073). PM-approved on CUL-1168. |
+| 1.2 | 2026-09-25 | §0.5, §3.2, §3.9, §5.2, §7 AC 40–41: CUL-1189's two rulings (an anchored window before the record names where the record starts; the trial window says *past its planned end* inside B-422's grace), and §3.9's trial row made to say what #909 built (offered only while `isTrialRunning`, per §11). PM-ruled on CUL-1189. |
