@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 
-Shipped via #PR_NUMBER (CUL-1165). Filed: CUL-1226 (the Patterns month says "logged, no vomiting" on a day that continues the night before's bout), CUL-1227 (Waiting on PM: under a filter, "logged, not this kind" and "nothing logged" look almost alike). Handoff notes posted on CUL-1164 (the strip's new props), CUL-1167 and CUL-1169.
+Shipped via #915 (CUL-1165). Filed: CUL-1226 (the Patterns month says "logged, no vomiting" on a day that continues the night before's bout), CUL-1227 (Waiting on PM: under a filter, "logged, not this kind" and "nothing logged" look almost alike). Handoff notes posted on CUL-1164 (the strip's new props), CUL-1167 and CUL-1169.
 
 ## The ask
 
