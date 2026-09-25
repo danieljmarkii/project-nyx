@@ -15,6 +15,8 @@ import {
 import { WorthRaisingList } from '../components/vetvisits/WorthRaisingList';
 import { resolveRecordPetName, usePetStore } from '../store/petStore';
 import { buildRundown, rundownToPlainText, type Rundown, type RundownTap } from '../lib/rundown';
+import { rundownHistoryHref } from '../lib/historyDoors';
+import { useHistoryV2 } from '../hooks/useHistoryV2';
 import { buildWorthRaising, localIntakeDeclines, type WorthRaising } from '../lib/getReady';
 import { loadDietTrialFacts } from '../lib/dietTrialFacts';
 import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
@@ -70,12 +72,19 @@ type Status = 'loading' | 'ready' | 'error';
 // in lib/rundown) so the pure layer stays route-agnostic and testable; the
 // mapping itself is pinned by `rundown.test.tsx`.
 //
+// The History tiles are registered doors (`lib/historyDoors.ts`, HV-11 / CUL-1168): under
+// `history_v2` each lands on the scope its claim is about, but only when this rundown is
+// about the pet on screen, because History shows the active pet and a scoped door onto
+// another pet's record would be confidently wrong (C-9; the pet itself is CUL-1252). Flag
+// off, or for another pet, the bare route as before. This screen reads the gate for that
+// one decision and draws nothing of History v2.
+//
 // The weight and meds tiles are DOORS onto the Pet tab and go through
 // `profileFocusHref` — the CUL-170 vocabulary — never the bare tab route, which
 // lands at the top of the profile and leaves the owner scrolling for the card in
 // the consult room (CUL-753). The meds tile names no single med (lib/rundown), so
 // it takes the section fallback the medications door already has.
-function navigateTo(tap: RundownTap): void {
+function navigateTo(tap: RundownTap, historyScoped: boolean): void {
   switch (tap.kind) {
     case 'symptom':
       router.push({ pathname: '/insights/[metric]', params: { metric: tap.symptomType } });
@@ -96,7 +105,7 @@ function navigateTo(tap: RundownTap): void {
       router.push('/(tabs)/foods');
       return;
     case 'history':
-      router.push('/(tabs)/history');
+      router.push(rundownHistoryHref(tap.door, historyScoped));
       return;
     case 'log-visit':
       // The booking sheet's *Already happened* arm — the same door as the Pet tab's
@@ -120,6 +129,9 @@ export default function RundownScreen() {
   const insets = useSafeAreaInsets();
   const [status, setStatus] = useState<Status>('loading');
   const [rundown, setRundown] = useState<Rundown | null>(null);
+  // Whose record `rundown` is: the appointment's pet in Get ready, else the active pet.
+  const [rundownPetId, setRundownPetId] = useState<string | null>(null);
+  const historyV2 = useHistoryV2();
   const [getReady, setGetReady] = useState<GetReadyState | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -161,6 +173,7 @@ export default function RundownScreen() {
       const built = await buildRundown(subjectId, subjectName);
       if (loadIdRef.current !== myId) return;
       setRundown(built);
+      setRundownPetId(subjectId);
 
       if (!appointment) {
         setGetReady(null);
@@ -324,7 +337,11 @@ export default function RundownScreen() {
               </>
             ) : null}
 
-            <RundownBlock rundown={rundown} petName={rundown.petName} onTap={navigateTo} />
+            <RundownBlock
+              rundown={rundown}
+              petName={rundown.petName}
+              onTap={(tap) => navigateTo(tap, historyV2 && rundownPetId !== null && rundownPetId === petId)}
+            />
           </ScrollView>
 
           <View style={[styles.bar, { paddingBottom: insets.bottom + theme.space2 }]}>

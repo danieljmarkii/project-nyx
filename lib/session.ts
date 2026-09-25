@@ -17,6 +17,8 @@ import { clearAppointmentAsked } from './appointmentAsked';
 import { clearLookWithheld } from './lookWithheld';
 import { clearObservationFold } from './observationFold';
 import { cancelPendingSignalRegens } from './signal';
+import { clearSpentTaps } from './spentTaps';
+import { clearRemovalNotices } from './removalNotice';
 import { cancelAllAnalysisWatches } from './analysis';
 import { supabase } from './supabase';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
@@ -124,6 +126,10 @@ export async function wipeLocalSession(): Promise<void> {
   // Same FR-9 parity rule as the App Group / moment-store / trial-cache clears below:
   // wipe every place account state rests, not just SQLite.
   cancelPendingSignalRegens();
+  // HV-10 (CUL-1167): the removal notices are the previous owner's event ids resting in
+  // memory for a few seconds (`lib/removalNotice.ts`). An id matches no other account's
+  // row, and it goes anyway: every place account state rests, not just SQLite.
+  clearRemovalNotices();
   // CUL-1127 (rls-privacy-reviewer): realtime channels are account state too, and nothing
   // closed them. Each is a socket subscription joined under the signing-out owner's token
   // and filtered on one of their row ids, and its owner (a screen) is not guaranteed to
@@ -216,6 +222,10 @@ export async function wipeLocalSession(): Promise<void> {
   // context for a pet id that is simply gone is). Same FR-9 parity reasoning as the
   // App Group wipe above: wipe every place account data rests, not just SQLite.
   clearTrialContextCache();
+  // HV-11 (CUL-1168): which links into History have been applied, keyed by pet id and a
+  // nonce, in JS memory (`lib/spentTaps.ts`). Not health data; an identifier of the last
+  // account, wiped with the rest for the same FR-9 parity.
+  clearSpentTaps();
   // …and the persisted "which foods have we already flagged" ledger, which lives
   // in AsyncStorage (outside the SQLite clearLocalData wipes) and is per-account
   // bookkeeping. Awaited-with-catch like the rest: never throws, always completes.

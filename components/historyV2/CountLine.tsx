@@ -12,10 +12,14 @@
 //
 // The door is left-aligned and its own 44pt box (C-5): the FAB floats over the bottom-right
 // of every tab, and a control that reached under it mid-scroll would be under the disc.
+//
+// Each line is said as it is drawn, with its " · " as a pause rather than a word
+// (`spokenLine`, HV-10's focus pass).
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { countLineDoorHref } from '../../lib/historyScreen';
+import { spokenLine } from '../../lib/spokenLine';
 import type { CountLine as CountLineModel, CountLineDoor, CountLineText, HistoryFilter } from '../../lib/historyDays';
 import { Skeleton } from '../ui/Skeleton';
 import { ThemedText } from '../ui/ThemedText';
@@ -56,14 +60,20 @@ export function CountLine({ line, filter, onOpenDoor }: CountLineProps) {
       return (
         <View style={styles.block} testID="history-count-line">
           <LineOne text={line.line1} />
-          <ThemedText style={styles.line2}>{line.line2}</ThemedText>
+          <ThemedText style={styles.line2} accessibilityLabel={spokenLine(line.line2)}>
+            {line.line2}
+          </ThemedText>
         </View>
       );
     case 'count':
       return (
         <View style={styles.block} testID="history-count-line">
           <LineOne text={line.line1} />
-          {line.line2 ? <ThemedText style={styles.line2}>{line.line2}</ThemedText> : null}
+          {line.line2 ? (
+            <ThemedText style={styles.line2} accessibilityLabel={spokenLine(line.line2)}>
+              {line.line2}
+            </ThemedText>
+          ) : null}
           {line.doors.map((door) => (
             <Door key={door.key} door={door} onPress={open} />
           ))}
@@ -75,7 +85,11 @@ export function CountLine({ line, filter, onOpenDoor }: CountLineProps) {
 /** `lead` + **`strong`** + `tail`, one sentence to a screen reader. */
 function LineOne({ text }: { text: CountLineText }) {
   return (
-    <ThemedText style={styles.line1} testID="history-count-line-1">
+    <ThemedText
+      style={styles.line1}
+      accessibilityLabel={spokenLine(`${text.lead}${text.strong}${text.tail}`)}
+      testID="history-count-line-1"
+    >
       {text.lead}
       <ThemedText style={styles.strong}>{text.strong}</ThemedText>
       {text.tail}

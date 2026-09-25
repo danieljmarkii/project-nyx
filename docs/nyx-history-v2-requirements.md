@@ -1,6 +1,6 @@
 # Nyx History v2 — The Record You Can Read — Requirements (CUL-1108)
 
-**Version:** 1.5 — **BUILD-READY** | **Date:** 2026-09-25 | **Status:** every ruling made (v1.3 adds CUL-1189's two, §0.5; v1.4 adds CUL-1193's, §3.2 and §3.8; v1.5 adds HV-6's two, §3.6 and §5.4 under ⚠ RULED). The PM ruled on round 4 of the mock (2026-09-24) and handed five calls to the team (H-3, H-4b, H-7, H-10, H-11), which are made in §0.2 with their dissents recorded. Nothing is open that blocks a build session; four pieces wait on issues outside this project (§10).
+**Version:** 1.6 — **BUILD-READY** | **Date:** 2026-09-25 | **Status:** every ruling made (v1.3 adds CUL-1189's two, §0.5; v1.4 adds CUL-1193's, §3.2 and §3.8; v1.5 adds HV-6's two, §3.6 and §5.4 under ⚠ RULED; v1.6 adds HV-11's three link rows, §5.8). The PM ruled on round 4 of the mock (2026-09-24) and handed five calls to the team (H-3, H-4b, H-7, H-10, H-11), which are made in §0.2 with their dissents recorded. Nothing is open that blocks a build session; four pieces wait on issues outside this project (§10).
 
 **Design authority:** round 5 of *The Record You Can Read* (https://claude.ai/artifact/RNvdtUG6FX5utWmzGqBNa6), committed as `docs/culprit-history-v2-mockups.html`. The repo file wins on divergence. Round 4 (the options side by side) is in git at `b0479342`; round 3 at `ab20698c`.
 
@@ -351,9 +351,9 @@ The row (lifted by HV-1); the pipeline `lib/dayNodes.ts` (a day's events in, nod
 | The month's day detail (`MonthInstrument.tsx`, `historyDayHref`) | `?day=` (a local day), `ts` | lands on the day (CUL-1073) |
 | `PatternCalendar.tsx:256` | a day (flag-off calendar only) | lands on the day, read by sender |
 | `lib/lookPatterns.ts:88`, `lib/lookCard.ts:164` | Noticed (and today) | the Noticed filter |
-| `lib/ask.ts:308`, `app/ask.tsx:394` | a type and Ask's window; today | the window moves to local days; the trial window (CUL-498) |
-| `app/medication/[id].tsx:194` | Medication | adds the course (CUL-488) |
-| `app/rundown.tsx:99` | nothing | *Since the last vet visit* |
+| `lib/ask.ts:308`, `app/ask.tsx:394` | a type and Ask's window; today | the window moves to local days; the trial window (CUL-498), only while History offers it for this pet today (`isWindowOffered`), else Patterns (B-378); Ask's server still counts 7 / 14 / 30 as UTC days (CUL-1251) (⚠ RULED 2026-09-25, CUL-1253) |
+| `app/medication/[id].tsx:194` | Medication and the past course's key (`course`, sent in both flag states; v1 does not read it) | that course, All time (CUL-488) (⚠ RULED 2026-09-25, CUL-1253) |
+| `app/rundown.tsx:99` | nothing flag off; under the flag, per tile, `window=visit` · `type=symptoms&window=30d` · `course`, with `ts` | since the last visit → *Since the last vet visit*; *None logged in 30 days* → All symptoms, Last 30 days; a past course with no regimen → that course, All time; only when the rundown is about the pet on screen, else the bare route (CUL-1252) (⚠ RULED 2026-09-25, CUL-1253) |
 
 A landing lands on the day or the gap line that holds it, with the pill, the strip's week and the count line all agreeing (AC 37).
 
@@ -533,3 +533,4 @@ The Linear project **History v2 · the record you can read** carries every sessi
 | 1.3 | 2026-09-25 | §0.5, §3.2, §3.9, §5.2, §7 AC 40–41: CUL-1189's two rulings (an anchored window before the record names where the record starts; the trial window says *past its planned end* inside B-422's grace), and §3.9's trial row made to say what #909 built (offered only while `isTrialRunning`, per §11). PM-ruled on CUL-1189. |
 | 1.4 | 2026-09-25 | §3.2, §3.8, AC 30: a dose count (a course, Medication) reads *logged*, and the doses recorded Partial, Missed or Refused are named beside it, on the count line and on a course's sheet sub-row (CUL-1193, PM-ruled option (b), GAP-26's wording; round 5 of the mock amended to match, same URL). Built in #911 (HV-4). |
 | 1.5 | 2026-09-25 | §3.6, §5.4, §7 AC 18: HV-6's two rulings (PM, in the HV-6 session, CUL-1163). A dose with no name on this phone says only *Medication*, never *no medicine named*; a finished `not_enough_to_say` read is `unread` (the grey *Photo not read*), never `calm`. |
+| 1.6 | 2026-09-25 | §5.8: three rows of the links table say what HV-11 built (#918), under ⚠ RULED (PM approved CUL-1253, after the D1–D3 rulings on CUL-1168). The rundown's three tiles land on their own scope under the flag, and only for the pet on screen; Ask's trial link opens History only while History offers the window, and Ask's server still counts 7 / 14 / 30 as UTC days (CUL-1251); a medication's past course sends its key in both flag states. `lib/historyDoors.ts` carries the same rows. |

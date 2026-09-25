@@ -29,10 +29,11 @@
 //
 // ── THE SURFACES, AND WHY HOME IS LISTED TWICE ─────────────────────────────────────
 //
-// History is where the flag lands at HV-1. Home does not read the flag yet, so its two
-// comparisons are green by construction today; they are listed now so the day HV-10
-// makes Home a consumer, its flag-off tree is already checked (C-41: a surface absent
-// from the list is checked by nothing). Home is rendered in BOTH `design_v2` states
+// History is where the flag landed at HV-1. Home became a consumer at HV-10 (CUL-1167):
+// `TodayCard` reads the gate and draws the namespace's `HomeSpine` (the first paint and
+// open in place) or the shipped spine. Its two comparisons were listed from HV-1 on, so
+// the day Home consumed the flag its flag-off tree was already checked (C-41: a surface
+// absent from the list is checked by nothing). Home is rendered in BOTH `design_v2` states
 // because HV-10's Home change rides both flags (spec §5.1, §5.6): a leak that exists
 // only on the redesigned Home would never reach a tree rendered with `design_v2` off.
 // The `design_v2` state is arranged through the REAL stores, and each surface's floor
@@ -48,8 +49,12 @@
 // proven in the screen's own suite (`app/(tabs)/history.historyV2.test.tsx`: flag-off,
 // over a page read that answers, v1 draws its row and the v2 root never mounts; flag-on,
 // v1's read is never issued). At HV-1 the v2 screen issues no read of its own, so that
-// suite proves the MOUNT; HV-7 extends it to the real reads. Home's async half is
-// HV-10's, in the redesigned Home's own suite, the day Home consumes the flag.
+// suite proves the MOUNT; HV-7 extends it to the real reads. Home's async half is in the
+// redesigned Home's own suite (`components/designV2/home/TodayCard.test.tsx`, "under
+// history_v2"): flag-off, over a day whose rows do arrive, the shipped spine draws them and
+// no `HomeSpine` node renders; flag-on, the rows arrive on `HomeSpine`. HomeSpine issues no
+// read of its own (TodayCard's reads are the same in both states), so the ROWS are what
+// could leak, and that suite's fixture has rows that would.
 //
 // ── WHY MOCKING HEAVY CHILDREN IS SAFE HERE ────────────────────────────────────
 //
@@ -460,10 +465,29 @@ function drawsThroughNamespace(rel: string, src: string): boolean {
 
 /**
  * Consumers excused from the draws-through-the-namespace rule: a file that reads the
- * gate to DECIDE something without drawing. Declared empty rather than left implicit
- * (C-32); the staleness check keeps it honest.
+ * gate to DECIDE something without drawing. The staleness check keeps it honest.
+ *
+ * HV-11 (CUL-1168) added the first two: the senders that decide which parameters a link
+ * into History carries (H-7, `lib/historyDoors.ts`). The gate's value reaches only a
+ * press handler there, which the tree comparison normalises to a marker, so there is no
+ * v2 tree to compare. What such a file owes instead is a behaviour proof that flag off it
+ * links exactly as it did before: `proof` names it, and the check below requires it to
+ * exist and to render or call the decider, so an entry cannot outlive its proof.
  */
-const DRAWS_ELSEWHERE_OK: Record<string, string> = {};
+const DRAWS_ELSEWHERE_OK: Record<string, { reason: string; proof: string; mentions: string }> = {
+  'app/rundown.tsx': {
+    reason: 'decides where a History tile lands (rundownHistoryHref); draws nothing of History v2',
+    proof: 'app/rundown.test.tsx',
+    mentions: 'flag off: every History tile pushes the bare route',
+  },
+  'components/ask/AskAnswerCard.tsx': {
+    reason: 'decides which Ask windows open History (AskHistoryReach); draws nothing of History v2',
+    // The card rendered, not only its pure resolvers: the wiring is what a flag-off proof
+    // for a decider has to cover (code-reviewer, HV-11).
+    proof: 'components/ask/AskAnswerCard.test.tsx',
+    mentions: "describe('flag off: today",
+  },
+};
 
 /** The directories every detector reads. Checked against the repository below. */
 const SCAN_DIRS = ['app', 'components', 'hooks', 'lib', 'store'];
@@ -551,10 +575,18 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('History v2 has one gate, and its consumers stay inside the namespace', () => {
-  it('the History tab is the one consumer of the gate (HV-1), and every consumer is a known one', () => {
+  it('every consumer of the gate is a known one: the History tab, Home\'s Today card, and the link deciders', () => {
     // PINNED, not floored: a new consumer is a new surface, and it joins this list —
-    // with its flag-off proof — in the diff that adds it (HV-10 adds Home).
-    expect(gateConsumers()).toEqual(['app/(tabs)/history.tsx']);
+    // with its flag-off proof — in the diff that adds it. HV-10 (CUL-1167) added Home's
+    // Today card, which draws `HomeSpine` from the namespace; its async flag-off proof is
+    // in `TodayCard.test.tsx` (the header). HV-11 (CUL-1168) added the two link deciders,
+    // which draw nothing of v2 (`DRAWS_ELSEWHERE_OK`, each with its named proof).
+    expect(gateConsumers()).toEqual([
+      'app/(tabs)/history.tsx',
+      'app/rundown.tsx',
+      'components/ask/AskAnswerCard.tsx',
+      'components/designV2/home/TodayCard.tsx',
+    ]);
   });
 
   it('the key is read directly in exactly one file — the hook — for both gates', () => {
@@ -606,10 +638,20 @@ describe('History v2 has one gate, and its consumers stay inside the namespace',
     expect(drawsElsewhere).toEqual([]);
   });
 
-  it('every route under app/ that consumes the gate is a listed surface', () => {
+  it('every route under app/ that consumes the gate is a listed surface, or a decider with a flag-off proof', () => {
     const listed = new Set(SURFACES.map((s) => s.rel));
-    const unlisted = gateConsumers().filter((r) => r.startsWith('app/') && !listed.has(r));
+    const unlisted = gateConsumers().filter(
+      (r) => r.startsWith('app/') && !listed.has(r) && !(r in DRAWS_ELSEWHERE_OK),
+    );
     expect(unlisted).toEqual([]);
+  });
+
+  it('each decider names a proof that exists and still pins its flag-off link', () => {
+    for (const [consumer, { proof, mentions }] of Object.entries(DRAWS_ELSEWHERE_OK)) {
+      const abs = path.join(REPO_ROOT, proof);
+      expect({ consumer, exists: fs.existsSync(abs) }).toEqual({ consumer, exists: true });
+      expect(fs.readFileSync(abs, 'utf8')).toContain(mentions);
+    }
   });
 
   it('the delegation detector reads both import shapes, and still refuses type-only ones', () => {

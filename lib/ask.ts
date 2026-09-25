@@ -243,8 +243,9 @@ export type AskNav =
   | { pathname: '/insights/[metric]'; params: { metric: string } }
   | { pathname: '/insights' }
   // B-378 — the filtered History list a symptom count was drawn from. `window` is History's own
-  // preset vocabulary (today/7d/30d); absent = all time. The screen adds a `ts` nonce at nav
-  // time so the filter re-applies even when the History tab is already mounted.
+  // vocabulary (today/7d/30d, plus 14d/trial under `history_v2`, HV-11); absent = all time.
+  // The screen adds a `ts` nonce at nav time so the filter re-applies even when the History
+  // tab is already mounted.
   | { pathname: '/(tabs)/history'; params: { type: string; window?: string } };
 
 // The symptom event_types that have a real `/insights/[metric]` detail screen (a
@@ -266,23 +267,53 @@ function historySymptomType(symptomType: string | undefined): EventTypeKey | nul
     : null;
 }
 
+/**
+ * What History can show for Ask's link, decided by the screen that renders the link
+ * (HV-11 / CUL-1168; spec §3.9, §5.8, BRK-5). Required on both resolvers, never defaulted:
+ * a caller that forgot it would quietly keep the flag-off route under the flag.
+ */
+export interface AskHistoryReach {
+  /** `history_v2` is on for this owner: the link opens History v2, whose window table has
+   *  *Last 14 days* and *Since the trial started* (CUL-498). */
+  historyV2: boolean;
+  /** History v2 offers *Since the trial started* for this pet today (`isWindowOffered` over
+   *  the same facts History reads). False while that is still being read. */
+  trialWindowOffered: boolean;
+}
+
+/** The reach with `history_v2` off: today's History, v1's three presets. */
+export const ASK_HISTORY_V1: AskHistoryReach = { historyV2: false, trialWindowOffered: false };
+
 /** The History `?window=` params for an Ask window History can represent EXACTLY, or null when
- *  it can't. 7d/30d map to their presets; 'all' maps to an all-time link (no window param); and
- *  14d / since_trial_start / an unstated window — which History has no exact preset for — return
- *  null so the caller keeps the window-agnostic Patterns route instead.
+ *  it can't, in which case the caller keeps the window-agnostic Patterns route.
  *
  *  Exact-match-only is deliberate (pm-feature-review, B-378): widening to a superset (14d→30d,
  *  since_trial_start→all-time) would make the source list show MORE rows than the count it is
  *  meant to audit — "3 since the trial started" opening onto 15 all-time vomits — which is the
  *  G5 "Ask's number must never disagree with the Timeline's" red line surfacing at the UI. A
  *  window History can't reproduce exactly is better audited on Patterns, which makes no count
- *  promise. Returns `{}` (not `{ window: undefined }`) for all-time so the spread adds no key. */
-function historyWindow(askWindow: string | undefined): { window?: string } | null {
+ *  promise. Returns `{}` (not `{ window: undefined }`) for all-time so the spread adds no key.
+ *
+ *  With `history_v2` on (HV-11) the window table reproduces two more: *Last 14 days*, and
+ *  *Since the trial started*, but the latter ONLY while History offers it for this pet today.
+ *  Ask counts `since_trial_start` over any `status = 'active'` trial, and History offers the
+ *  window only while `isTrialRunning` says the trial runs (§3.9, B-422): a trial nobody closed
+ *  is still Ask's trial after its grace, and History would show All time there. Both start on
+ *  the trial's first local day and run through today, so where History offers it the two
+ *  spans are the same days.
+ *
+ *  STATED LIMIT (BRK-5, CUL-1251): History v2's 7 / 14 / 30 days are LOCAL days; the `ask`
+ *  function still counts those three as UTC days. The link lands on the window table's span;
+ *  an entry near UTC midnight can sit in one count and not the other until the server moves.
+ *  Flag off, v1 reads `7d` / `30d` as now minus 7 / 30 × 24 hours, a third definition. */
+function historyWindow(askWindow: string | undefined, reach: AskHistoryReach): { window?: string } | null {
   switch (askWindow) {
     case '7d': return { window: '7d' };
     case '30d': return { window: '30d' };
     case 'all': return {};      // all time — an exact match, expressed as a History link with no window
-    default: return null;       // 14d / since_trial_start / unset → no exact History window
+    case '14d': return reach.historyV2 ? { window: '14d' } : null;
+    case 'since_trial_start': return reach.historyV2 && reach.trialWindowOffered ? { window: 'trial' } : null;
+    default: return null;       // unset → no exact History window
   }
 }
 
@@ -290,20 +321,21 @@ function historyWindow(askWindow: string | undefined): { window?: string } | nul
  *  linkable. A symptom `filter` History can render, WITH a window History can reproduce exactly,
  *  opens the FILTERED History list (B-378 — the mock's "Open in History", auditing the whole
  *  count at its source). A symptom History can't render (scratch/skin_reaction), OR a window it
- *  can't reproduce exactly (14d/since_trial_start), opens that symptom's Patterns detail — the
+ *  can't reproduce exactly (see `historyWindow`), opens that symptom's Patterns detail — the
  *  window-agnostic view that makes no count promise, so the source can never contradict the
  *  count (G5). Any other filter opens the Patterns index. An `events` tap-through has no
  *  type/window to filter History by, so it opens the first (most-recent) event's detail — the
  *  honest available target. Pure, so the mapping is unit-testable and the "does this even go
- *  anywhere" decision stays out of the render path. */
-export function resolveTapThrough(tp: AskTapThrough | null | undefined): AskNav | null {
+ *  anywhere" decision stays out of the render path. A registered door into History
+ *  (`lib/historyDoors.ts`). */
+export function resolveTapThrough(tp: AskTapThrough | null | undefined, reach: AskHistoryReach): AskNav | null {
   if (!tp) return null;
   if (tp.kind === 'events') {
     return tp.eventIds.length ? { pathname: '/event/[id]', params: { id: tp.eventIds[0] } } : null;
   }
   // filter
   const historyType = historySymptomType(tp.symptomType);
-  const hw = historyType ? historyWindow(tp.window) : null;
+  const hw = historyType ? historyWindow(tp.window, reach) : null;
   if (historyType && hw) {
     return { pathname: '/(tabs)/history', params: { type: historyType, ...hw } };
   }
@@ -311,6 +343,18 @@ export function resolveTapThrough(tp: AskTapThrough | null | undefined): AskNav 
     return { pathname: '/insights/[metric]', params: { metric: tp.symptomType } };
   }
   return { pathname: '/insights' };
+}
+
+/** Does this tap-through need to know whether History offers the trial window? Only a
+ *  History-renderable symptom counted since the trial started, with `history_v2` on: the
+ *  answer card reads the trial for that case alone. */
+export function tapThroughNeedsTrialWindow(tp: AskTapThrough | null | undefined, historyV2: boolean): boolean {
+  return (
+    historyV2 &&
+    tp?.kind === 'filter' &&
+    tp.window === 'since_trial_start' &&
+    historySymptomType(tp.symptomType) !== null
+  );
 }
 
 /** The owner-facing "go" label for a tap-through (mock §2 provenance row). The label MUST
@@ -321,13 +365,13 @@ export function resolveTapThrough(tp: AskTapThrough | null | undefined): AskNav 
  *  else that came from a filter opens Patterns. A single event opens the event; a several-event
  *  tap-through has no filtered route, so it opens the LATEST event and says so. Null when there's
  *  nowhere to go. */
-export function tapThroughLabel(tp: AskTapThrough | null | undefined): string | null {
+export function tapThroughLabel(tp: AskTapThrough | null | undefined, reach: AskHistoryReach): string | null {
   if (!tp) return null;
   if (tp.kind === 'events') {
     if (tp.eventIds.length === 0) return null;
     return tp.eventIds.length === 1 ? 'Open the event' : 'Open the latest event';
   }
-  if (historySymptomType(tp.symptomType) && historyWindow(tp.window)) return 'Open in History';
+  if (historySymptomType(tp.symptomType) && historyWindow(tp.window, reach)) return 'Open in History';
   return 'Open in Patterns';
 }
 

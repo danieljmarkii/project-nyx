@@ -39,10 +39,33 @@
 //     under Reduce Motion (read at the tap, CUL-1123).
 //   • A new request (a filter, a window, a search, a pet, a new day) resets the list to its
 //     top without animating it: its content is replaced, and at midnight so is every window.
-// VoiceOver focus on a landing and on the re-tap, and every motion, are HV-10's (CUL-1167).
+//
+// ── MOTION AND FOCUS (HV-10 / CUL-1167; spec §4, every row of its table) ─────────
+//   • The first paint: when the first read for a MOUNT IDENTITY (pet · filter · window · the
+//     day the list opens on, `paintIdentityOf`) answers, every day card on that first frame
+//     draws its thread down once (`ThreadDraw`). The PAINT LEDGER (`createPaintLedger`) is
+//     opened in the render that first draws the snapshot and seals itself after the commit
+//     in which the first card claimed (the list mounts its cells a batch after an empty-to-
+//     full data change, so "the first frame" is the cards', not this render's); the owner's
+//     own scroll seals it too. So exactly the cards on that frame draw, and a card the owner
+//     scrolls to later, or a card the list unmounts and mounts again, never does. A reload
+//     of the same identity draws nothing.
+//   • A landing, with motion on, draws its day once more after the jump (`ledger.land`).
+//   • A run opens in place on every card (`openInPlace`).
+//   • A removal: the record screen's confirm removes the row through the shared reversal,
+//     which leaves a notice (`lib/removalNotice.ts`); on coming back the list takes the
+//     notices for the rows it draws, fades them out (`leaving`, the fold's 180ms), then takes
+//     them out under `FOLD_LAYOUT` (the box closes over 300ms) and re-reads. Under Reduce
+//     Motion they are gone at once. Nothing folds for a row that left for any other reason.
+//   • VoiceOver: a landing, a removal and the re-press each move focus to a day's header
+//     (or the gap line holding the day), through one pending request that the header's own
+//     mount fulfils when the list has not drawn it yet. The owner's own scroll cancels it.
+//   • Reduce Motion is read at the moment of each move (`reducedMotionNow()`), and is known
+//     before the first frame (CUL-1123), so nothing starts and then snaps.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AppState,
+  LayoutAnimation,
   RefreshControl,
   SectionList,
   StyleSheet,
@@ -55,6 +78,9 @@ import {
 import { router, useFocusEffect, useNavigation } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { analysisChainOutstanding, awaitAnalysisChain, watchAnalysisRow } from '../../lib/analysis';
+import { focusAccessibility } from '../../lib/a11yFocus';
+import { takeRemovals } from '../../lib/removalNotice';
+import { windowParam } from '../../lib/historyWindows';
 import type { DayNode } from '../../lib/dayNodes';
 import { HISTORY_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 import {
@@ -73,9 +99,12 @@ import {
   LANDING_RETRY_MS,
   bowlLineText,
   countLineWindowOf,
+  foldableRowsOf,
   historyDatesFor,
   itemsOnlyLineText,
   historyNodesByDay,
+  paintIdentityOf,
+  rePressFocusDay,
   scrollAnimates,
   sectionFromDay,
   sectionIndexFor,
@@ -98,11 +127,13 @@ import {
   type HistoryLoadOutcome,
   type HistorySnapshot,
 } from '../../store/historyListStore';
-import { effectiveSearch, useHistoryScopeStore, type HistoryScope } from '../../store/historyScopeStore';
+import { effectiveSearch, filterId, useHistoryScopeStore, type HistoryScope } from '../../store/historyScopeStore';
 import { usePetStore } from '../../store/petStore';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { useSyncStore } from '../../store/syncStore';
+import { FOLD_LAYOUT, FOLD_MOTION } from '../motion/foldMotion';
+import { createPaintLedger } from '../motion/threadMotion';
 import { EmptyState } from '../ui/EmptyState';
 import { Skeleton } from '../ui/Skeleton';
 import { ThemedText } from '../ui/ThemedText';
@@ -228,30 +259,130 @@ export function HistoryList() {
   const scrollY = useRef(0);
   const viewport = useRef(0);
 
+  // ── Focus (§4's focus column) ───────────────────────────────────────────────────
+  // Every node VoiceOver can be sent to, by section, with the days it holds: a day card's
+  // header, or the line holding a gap or a day's items. A request waits here until a node
+  // holding its day is mounted (a jump far down draws the day a frame after it).
+  const focusTargets = useRef(new Map<string, { from: string; to: string; node: View }>());
+  const focusRefs = useRef(new Map<string, (node: View | null) => void>());
+  const pendingFocus = useRef<string | null>(null);
+  const tryFocus = useCallback(() => {
+    const day = pendingFocus.current;
+    if (day === null) return;
+    for (const t of focusTargets.current.values()) {
+      if (t.from <= day && day <= t.to) {
+        pendingFocus.current = null;
+        focusAccessibility(t.node);
+        return;
+      }
+    }
+  }, []);
+  const requestFocus = useCallback(
+    (day: string | null) => {
+      pendingFocus.current = day;
+      tryFocus();
+    },
+    [tryFocus],
+  );
+  /** One stable ref callback per section, so a render never detaches and re-attaches it. */
+  const focusRefFor = useCallback(
+    (key: string, from: string, to: string) => {
+      let ref = focusRefs.current.get(key);
+      if (!ref) {
+        ref = (node: View | null) => {
+          if (node === null) {
+            focusTargets.current.delete(key);
+            return;
+          }
+          focusTargets.current.set(key, { from, to, node });
+          tryFocus();
+        };
+        focusRefs.current.set(key, ref);
+      }
+      return ref;
+    },
+    [tryFocus],
+  );
+
+  // ── The first paint's ledger (the header) ───────────────────────────────────────
+  const ledger = useRef(createPaintLedger()).current;
+  const [landDraw, setLandDraw] = useState(0);
+
+  // ── A removal's fold ────────────────────────────────────────────────────────────
+  const [leaving, setLeaving] = useState<ReadonlySet<string>>(NO_OPEN);
+  const [gone, setGone] = useState<ReadonlySet<string>>(NO_OPEN);
+  const foldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelFold = useCallback(() => {
+    if (foldTimer.current !== null) clearTimeout(foldTimer.current);
+    foldTimer.current = null;
+  }, []);
+  useEffect(() => cancelFold, [cancelFold]);
+
   // A new scope: read it, close every run, and start at the top without a glide (§4).
   const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(NO_OPEN);
   useEffect(() => {
     setOpenRuns(NO_OPEN);
+    // Nothing from the old list carries over: no fold half done, no focus waiting on a
+    // day of the old scope.
+    cancelFold();
+    setLeaving(NO_OPEN);
+    setGone(NO_OPEN);
+    pendingFocus.current = null;
     // A new request REPLACES the list's content, so the viewport goes back to its top in the
     // same instant, with nothing to glide across (§4: "resets the list without animating the
     // viewport"). Midnight is one: every window moves with the day, and the list waits for
     // the new day's read as the silhouette, so there is no place to leave the owner in.
     listRef.current?.getScrollResponder()?.scrollTo({ y: 0, animated: false });
     void reload();
-  }, [request, reload]);
+  }, [request, reload, cancelFold]);
 
   // Focus: a removal or an edit on the record screen lands here. The mount's own focus is
-  // the request effect's read, so the first is skipped.
+  // the request effect's read, so the first is skipped. A row the owner just removed folds
+  // away first (§4 "Remove a row"), and the read that re-derives every count follows it.
   const focusedOnce = useRef(false);
+  const foldable = useRef<ReadonlyMap<string, string>>(new Map());
+  const foldAway = useCallback(
+    (ids: string[], day: string) => {
+      const finish = () => {
+        foldTimer.current = null;
+        setLeaving(NO_OPEN);
+        setGone(new Set(ids));
+        // The day's header, or the line that holds the day once it has nothing left (§4).
+        requestFocus(day);
+        refreshToday();
+        void reload();
+      };
+      if (reducedMotionNow()) {
+        finish();
+        return;
+      }
+      setLeaving(new Set(ids));
+      cancelFold();
+      foldTimer.current = setTimeout(() => {
+        // The box closes over the fold's 300ms, geometry only, on the commit that takes the
+        // rows out. Only while one is still drawn: `configureNext` is GLOBAL, and fired over
+        // a commit with nothing leaving it would land on whatever else lays out there.
+        if (ids.some((id) => foldable.current.has(id))) LayoutAnimation.configureNext(FOLD_LAYOUT);
+        finish();
+      }, FOLD_MOTION.leaveMs);
+    },
+    [requestFocus, refreshToday, reload, cancelFold],
+  );
   useFocusEffect(
     useCallback(() => {
       if (!focusedOnce.current) {
         focusedOnce.current = true;
         return;
       }
+      const removed = takeRemovals(foldable.current.keys());
+      const day = removed.length > 0 ? foldable.current.get(removed[0]) : undefined;
+      if (day !== undefined) {
+        foldAway(removed, day);
+        return;
+      }
       refreshToday();
       void reload();
-    }, [reload, refreshToday]),
+    }, [reload, refreshToday, foldAway]),
   );
 
   // The sync tick: another device's rows, and a per-incident read claimed or landed.
@@ -376,9 +507,16 @@ export function HistoryList() {
   }, [snapshot]);
 
   const pageRows = useMemo(
-    () => new Map(snapshot ? snapshot.pages.days.map((d) => [d.day, d.rows] as const) : []),
-    [snapshot],
+    () =>
+      new Map(
+        snapshot
+          ? snapshot.pages.days.map((d) => [d.day, gone.size === 0 ? d.rows : d.rows.filter((r) => !gone.has(r.id))] as const)
+          : [],
+      ),
+    [snapshot, gone],
   );
+  // A new read has answered: the rows a fold took out are the record's to show or not now.
+  useEffect(() => setGone(NO_OPEN), [rawSnapshot]);
 
   // Every loaded day's nodes at once, over the whole days (R-2), so each card is handed the
   // meals a timing line on another card measures from (`timedElsewhere`, HV-6).
@@ -393,6 +531,20 @@ export function HistoryList() {
         : NO_NODES_BY_DAY,
     [snapshot, working],
   );
+
+  // The rows a removal could fold, read by the focus callback when the owner comes back.
+  foldable.current = useMemo(
+    () => foldableRowsOf({ nodesByDay, shownByDay: pageRows, noticed: snapshot?.filter.kind === 'noticed' }),
+    [nodesByDay, pageRows, snapshot],
+  );
+
+  // The first paint: opened by the render that first draws a snapshot for its identity; the
+  // ledger seals itself once that identity's first cards have claimed (the header).
+  if (snapshot && scopePetId !== null) {
+    ledger.open(
+      paintIdentityOf({ petId: snapshot.petId, filterId: filterId(snapshot.filter), windowParam: windowParam(windowKey), today: snapshot.today }),
+    );
+  }
 
   const countLine = useMemo(() => {
     if (!headerSnap) return null;
@@ -466,7 +618,15 @@ export function HistoryList() {
     if (index < 0) return;
     retries.current = 0;
     aim(index);
-  }, [scrollTarget, sections, aim]);
+    // §4 "Land on a day": with motion on, the day draws once more where it landed; with
+    // Reduce Motion, the jump and the outline are the whole landing. VoiceOver goes to the
+    // day's header, or the line holding it, either way.
+    if (!reducedMotionNow()) {
+      ledger.land(scrollTarget);
+      setLandDraw((n) => n + 1);
+    }
+    requestFocus(scrollTarget);
+  }, [scrollTarget, sections, aim, ledger, requestFocus]);
 
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -498,11 +658,16 @@ export function HistoryList() {
     [sections, aim],
   );
 
-  // The owner's own scroll clears the landed state; a scroll the app makes never does.
+  // The owner's own scroll clears the landed state; a scroll the app makes never does. It
+  // also ends a landing's draw and a focus request that have not happened yet: the owner has
+  // taken the list back, and neither may land on them later.
   const onScrollBeginDrag = useCallback(() => {
     const s = useHistoryScopeStore.getState();
     if (s.landedDay !== null && s.petId !== null) s.clearLanded(s.petId);
-  }, []);
+    ledger.seal();
+    ledger.dropLanding();
+    pendingFocus.current = null;
+  }, [ledger]);
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrollY.current = e.nativeEvent.contentOffset.y;
   }, []);
@@ -510,19 +675,26 @@ export function HistoryList() {
     viewport.current = e.nativeEvent.layout.height;
   }, []);
 
-  // A second tap on the History tab: back to today (§3.1).
+  // A second tap on the History tab: back to today (§3.1), and VoiceOver onto today's
+  // header (the list's first day's, when a filter hides today).
+  const sectionModels = useRef<HistorySection[]>([]);
+  sectionModels.current = sections.map((s) => s.model);
+  const todayRef = useRef(today);
+  todayRef.current = today;
   useEffect(
     () =>
       navigation.addListener('tabPress', () => {
         if (!navigation.isFocused()) return;
         const s = useHistoryScopeStore.getState();
         if (s.petId !== null) s.returnToToday(s.petId);
+        ledger.dropLanding();
         listRef.current?.getScrollResponder()?.scrollTo({
           y: 0,
           animated: scrollAnimates({ reducedMotion: reducedMotionNow(), distance: scrollY.current, viewport: viewport.current }),
         });
+        requestFocus(rePressFocusDay(sectionModels.current, todayRef.current));
       }),
-    [navigation],
+    [navigation, ledger, requestFocus],
   );
 
   // ── Drawing ─────────────────────────────────────────────────────────────────────
@@ -540,10 +712,11 @@ export function HistoryList() {
           search={snapshot.search !== null}
           landed={landedDay === m.day}
           withCounts={m.kind === 'day'}
+          focusRef={focusRefFor(section.key, m.day, m.day)}
         />
       );
     },
-    [snapshot, landedDay],
+    [snapshot, landedDay, focusRefFor],
   );
 
   const renderItem = useCallback(
@@ -564,6 +737,9 @@ export function HistoryList() {
               onOpenVisit={openVisit}
               landed={landedDay === m.day}
               emptyLine={m.kind === 'today-open' ? TODAY_NOTHING_YET : null}
+              drawToken={ledger.peek(m.day)}
+              claimDraw={ledger.claim}
+              leaving={leaving}
             />
           );
         case 'items-only': {
@@ -574,6 +750,7 @@ export function HistoryList() {
               items={items}
               landed={landedDay === m.day}
               onOpenVisit={openVisit}
+              focusRef={focusRefFor(sectionKeyOf(m), m.day, m.day)}
               testID={`history-items-${m.day}`}
             />
           );
@@ -585,12 +762,15 @@ export function HistoryList() {
               text={gapLineText(m, snapshot.filter, dates, courseName) ?? ''}
               boxed={m.days > 1}
               landed={landedDay !== null && m.fromDay <= landedDay && landedDay <= m.toDay}
+              focusRef={focusRefFor(sectionKeyOf(m), m.fromDay, m.toDay)}
               testID={`history-gap-${m.fromDay}`}
             />
           );
       }
     },
-    [snapshot, pageRows, nodesByDay, openRuns, toggleRun, openVisit, landedDay, dates, courseName],
+    // `landDraw` re-renders the cells when a landing asks its day to draw (the ledger is a
+    // ref, so its answer changes without a render of its own).
+    [snapshot, pageRows, nodesByDay, openRuns, toggleRun, openVisit, landedDay, dates, courseName, ledger, leaving, focusRefFor, landDraw],
   );
 
   const header = headerSnap ? (

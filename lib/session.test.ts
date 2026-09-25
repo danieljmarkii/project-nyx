@@ -75,6 +75,7 @@ import { triggerSignalRegenDebounced } from './signal';
 import { watchAnalysisRow, ANALYSIS_WATCH_FALLBACK_DELAYS_MS } from './analysis';
 import { refreshReadCopy } from './sync';
 import { supabase } from './supabase';
+import { isHistoryDoorTapSpent, isWidgetPetTapSpent, spendHistoryDoorTap, spendWidgetPetTap } from './spentTaps';
 import { useSyncStore } from '../store/syncStore';
 
 const GATE_KEY = 'nyx.recoveryInProgress';
@@ -224,6 +225,14 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     expect(await readObservationFold('pet-a', 'ev-1')).toBe(true);
     await wipeLocalSession();
     expect(await readObservationFold('pet-a', 'ev-1')).toBe(false);
+  });
+
+  it('clears the spent link taps — the last account\'s pet ids resting in memory (HV-11)', async () => {
+    spendWidgetPetTap('pet-a', '1');
+    spendHistoryDoorTap('["1",{"kind":"all"}]');
+    await wipeLocalSession();
+    expect(isWidgetPetTapSpent('pet-a', '1')).toBe(false);
+    expect(isHistoryDoorTapSpent('["1",{"kind":"all"}]')).toBe(false);
   });
 
   it('never throws when a wipe step fails — teardown always completes', async () => {

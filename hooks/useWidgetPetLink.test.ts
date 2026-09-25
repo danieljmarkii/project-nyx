@@ -6,6 +6,7 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { useWidgetPetLink } from './useWidgetPetLink';
 import { usePetStore, type Pet } from '../store/petStore';
+import { clearSpentTaps } from '../lib/spentTaps';
 
 function makePet(id: string, name: string): Pet {
   return {
@@ -42,6 +43,7 @@ function recordSwitches(): { ids: (string | null)[]; stop: () => void } {
 }
 
 beforeEach(() => {
+  clearSpentTaps();
   usePetStore.setState({ pets: [nyx, mochi], activePet: nyx });
 });
 
@@ -132,4 +134,24 @@ describe('useWidgetPetLink — once per tap (CUL-1119)', () => {
     mount({ pet: undefined, ts: 'T1' });
     expect(active()).toBe(nyx.id);
   });
+
+  it('a tap spent by one mount is spent for the next: the History tab swaps screens when history_v2 flips (HV-11)', () => {
+    const first = mount({ pet: mochi.id, ts: 'T1' });
+    expect(active()).toBe(mochi.id);
+    first.unmount();
+    switchTo(nyx.id);
+    // The other screen mounts over the same link.
+    mount({ pet: mochi.id, ts: 'T1' });
+    expect(active()).toBe(nyx.id);
+  });
+
+  it('without a nonce there is nothing to tell two taps apart by, so it stays once per mount (the log screen)', () => {
+    const first = mount({ pet: mochi.id });
+    expect(active()).toBe(mochi.id);
+    first.unmount();
+    switchTo(nyx.id);
+    mount({ pet: mochi.id });
+    expect(active()).toBe(mochi.id);
+  });
 });
+

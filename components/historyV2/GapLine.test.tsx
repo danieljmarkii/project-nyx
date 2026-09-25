@@ -8,9 +8,10 @@ import type { DateOnlyItem } from '../../lib/historyDays';
 const outlineOf = (id: string) => StyleSheet.flatten(screen.getByTestId(id).props.style);
 
 describe('GapLine', () => {
-  it('one day is a plain line; a run is boxed; the words are read as one sentence', () => {
+  it('one day is a plain line; a run is boxed; the words are read as one sentence, the dot a pause', () => {
     render(<GapLine text="Sun, Sep 20 · nothing logged" boxed={false} landed={false} testID="g1" />);
-    expect(screen.getByTestId('g1').props.accessibilityLabel).toBe('Sun, Sep 20 · nothing logged');
+    // HV-10's focus pass: the drawn " · " is said as a comma, never read aloud as a word.
+    expect(screen.getByTestId('g1').props.accessibilityLabel).toBe('Sun, Sep 20, nothing logged');
     expect(outlineOf('g1').borderColor).toBe('transparent');
   });
 
@@ -45,6 +46,6 @@ describe('ItemsLine', () => {
 describe('RecordStartLine', () => {
   it('names where the record starts', () => {
     render(<RecordStartLine text="Nyx's record starts here · Thu, May 14" />);
-    expect(screen.getByTestId('history-record-start').props.accessibilityLabel).toBe("Nyx's record starts here · Thu, May 14");
+    expect(screen.getByTestId('history-record-start').props.accessibilityLabel).toBe("Nyx's record starts here, Thu, May 14");
   });
 });

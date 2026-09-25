@@ -19,9 +19,12 @@ export interface DayNodeRowProps {
   onToggle: (id: string) => void;
   /** Overridable so a test opens a row without a router. */
   onOpen?: (id: string) => void;
+  /** A run opens on the shared open-in-place choreography (History v2, HV-10): History's day
+   *  cards, and Home's spine under `history_v2`. Off, the run keeps the shipped open. */
+  openInPlace?: boolean;
 }
 
-export function DayNodeRow({ node, isFirst, isLast, expanded, onToggle, onOpen }: DayNodeRowProps) {
+export function DayNodeRow({ node, isFirst, isLast, expanded, onToggle, onOpen, openInPlace = false }: DayNodeRowProps) {
   return node.kind === 'compact' ? (
     <SpineCompactRow
       node={node}
@@ -30,6 +33,7 @@ export function DayNodeRow({ node, isFirst, isLast, expanded, onToggle, onOpen }
       expanded={expanded}
       onToggle={onToggle}
       onOpen={onOpen}
+      openInPlace={openInPlace}
     />
   ) : (
     <SpineEventRow node={node} isFirst={isFirst} isLast={isLast} onOpen={onOpen} />
