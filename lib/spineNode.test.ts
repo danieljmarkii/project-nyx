@@ -19,11 +19,12 @@ import {
   nodeReadOf,
   timeRangeLabel,
   timingLine,
+  timingsByRow,
   type SpineAnalysisRow,
   type SpineEventInput,
   type SpineInput,
 } from './spineNode';
-import { DEFAULT_MEAL_TIMING_CONFIG } from './mealTiming';
+import { DEFAULT_MEAL_TIMING_CONFIG, type FeedingInput, type IntakeRating } from './mealTiming';
 
 const BASE = Date.parse('2026-09-17T05:00:00Z');
 const MIN = 60_000;
@@ -59,10 +60,17 @@ const SEP_17: SpineEventInput[] = [
   row('lk', 'check_in', 17, 14),
 ];
 
-const feedingsOf = (rows: readonly SpineEventInput[]) =>
+// Shaped the way `readFeedingsSince` hands them over: the row's EVENT id and its own rating.
+const feedingsOf = (rows: readonly SpineEventInput[]): FeedingInput[] =>
   rows
     .filter((r) => r.event_type === 'meal')
-    .map((r) => ({ ms: Date.parse(r.occurred_at), confidence: 'witnessed' as const, form: 'Royal Canin Selected Protein PR' }));
+    .map((r) => ({
+      id: r.id,
+      ms: Date.parse(r.occurred_at),
+      confidence: 'witnessed' as const,
+      intakeRating: (r.intake_rating as IntakeRating | null | undefined) ?? null,
+      form: 'Royal Canin Selected Protein PR',
+    }));
 
 function input(over: Partial<SpineInput> = {}): SpineInput {
   return {
@@ -198,7 +206,7 @@ describe('buildSpine — the timing is the lane’s, never imputed', () => {
 
   it('yesterday’s bowl times a 6 AM vomit — the feedings are the caller’s lookback, not today’s rows', () => {
     const rows = [row('v', 'vomit', 6, 0)];
-    const lastNight = [{ ms: at(4, 30), confidence: 'witnessed' as const, form: null }];
+    const lastNight = [{ id: 'last-night', ms: at(4, 30), confidence: 'witnessed' as const, intakeRating: null, form: null }];
     const v = buildSpine(input({ rows, feedings: lastNight, photographed: new Set() })).nodes[0];
     expect(v.kind === 'event' && v.timing).toBe('1 h 30 min after eating');
   });
@@ -210,7 +218,7 @@ describe('buildSpine — the timing is the lane’s, never imputed', () => {
     // a number the lane never computed. The prior onset is the caller's (the read reaches
     // back by the episode gap), and an episode it opens is the lane's, not this row's.
     const rows = [row('v', 'vomit', 0, 30)];
-    const supper = [{ ms: at(-2, 0), confidence: 'witnessed' as const, form: null }];
+    const supper = [{ id: 'supper', ms: at(-2, 0), confidence: 'witnessed' as const, intakeRating: null, form: null }];
     const prior = [{ ms: at(-1, 0), confidence: 'witnessed' as const }];
     const v = buildSpine(input({ rows, feedings: supper, priorOnsets: prior, photographed: new Set() })).nodes[0];
     expect(v.kind === 'event' && v.timing).toBeNull();
@@ -221,9 +229,88 @@ describe('buildSpine — the timing is the lane’s, never imputed', () => {
 
   it('the LONG band speaks the lane’s band label, never "12 h after eating" off an unlogged dinner (F8)', () => {
     const rows = [row('v', 'vomit', 20, 0)];
-    const breakfastOnly = [{ ms: at(8, 0), confidence: 'witnessed' as const, form: null }];
+    const breakfastOnly = [{ id: 'breakfast', ms: at(8, 0), confidence: 'witnessed' as const, intakeRating: null, form: null }];
     const v = buildSpine(input({ rows, feedings: breakfastOnly, photographed: new Set() })).nodes[0];
     expect(v.kind === 'event' && v.timing).toBe('6h or more after eating');
+  });
+});
+
+// ── HV-2 / CUL-1159 + CUL-1122: the line names its meal, and a refused bowl is not eating ──────
+
+describe('timingsByRow — every line names the meal it measured from (HV-2)', () => {
+  const cfg = DEFAULT_MEAL_TIMING_CONFIG;
+
+  it('the ten-event day: each timed vomit carries its line AND the meal row it was measured from', () => {
+    const lines = timingsByRow(SEP_17, [], feedingsOf(SEP_17), [], cfg);
+    expect(Object.fromEntries(lines)).toEqual({
+      v1: { text: '3 min after eating', mealId: 'm2' }, // 10:55 meal → 10:58 vomit
+      v2: { text: '4 min after eating', mealId: 'm5' }, // 17:07 meal → 17:11 vomit
+    });
+    // The id is a real meal row of the day, so a surface can find it and keep it its own line.
+    for (const line of lines.values()) {
+      expect(SEP_17.find((r) => r.id === line.mealId)?.event_type).toBe('meal');
+    }
+  });
+
+  it('the node shows the same words the map holds — the text did not move', () => {
+    const lines = timingsByRow(SEP_17, [], feedingsOf(SEP_17), [], cfg);
+    const model = buildSpine(input());
+    for (const [id, line] of lines) {
+      const node = model.nodes.find((n) => n.id === id);
+      expect(node?.kind === 'event' && node.timing).toBe(line.text);
+    }
+  });
+
+  it('Pixel refuses the 10 PM bowl and vomits at 10:05 — the line measures from the 8 AM meal she ate, never the bowl', () => {
+    const rows = [
+      row('breakfast', 'meal', 8, 0, PR),
+      row('dinner', 'meal', 22, 0, { ...PR, intake_rating: 'refused' }),
+      row('v', 'vomit', 22, 5),
+    ];
+    const lines = timingsByRow(rows, [], feedingsOf(rows), [], cfg);
+    expect(lines.get('v')).toEqual({ text: '6h or more after eating', mealId: 'breakfast' });
+    const v = buildSpine(input({ rows, feedings: feedingsOf(rows), photographed: new Set() })).nodes.find((n) => n.id === 'v');
+    expect(v?.kind === 'event' && v.timing).toBe('6h or more after eating');
+    // Before CUL-1122 this row read "5 min after eating".
+    expect(v?.kind === 'event' && v.timing).not.toBe('5 min after eating');
+  });
+
+  it('Pixel with nothing eaten in the lane’s window — no line at all, never a number off the refused bowl', () => {
+    const rows = [row('dinner', 'meal', 22, 0, { ...PR, intake_rating: 'refused' }), row('v', 'vomit', 22, 5)];
+    expect(timingsByRow(rows, [], feedingsOf(rows), [], cfg).size).toBe(0);
+    const v = buildSpine(input({ rows, feedings: feedingsOf(rows), photographed: new Set() })).nodes.find((n) => n.id === 'v');
+    expect(v?.kind === 'event' && v.timing).toBeNull();
+  });
+
+  it('a staple dinner at 6 PM, then a refused treat at 9 PM — a 9:10 vomit is 3 h 10 min after dinner, and names dinner', () => {
+    const rows = [
+      row('dinner', 'meal', 18, 0, { ...PR, intake_rating: 'all' }),
+      row('snack', 'meal', 21, 0, { food_brand: 'Acme', food_product_name: 'Treat', food_type: 'treat', intake_rating: 'refused' }),
+      row('v', 'vomit', 21, 10),
+    ];
+    expect(timingsByRow(rows, [], feedingsOf(rows), [], cfg).get('v')).toEqual({
+      text: '3 h 10 min after eating',
+      mealId: 'dinner',
+    });
+  });
+
+  it('a picked-at vehicle meal carrying a dose at 1 PM — a 1:10 vomit is 10 min after it, and names the vehicle', () => {
+    const rows = [
+      row('breakfast', 'meal', 8, 0, PR),
+      row('vehicle', 'meal', 13, 0, { ...PR, intake_rating: 'picked' }),
+      row('dose', 'medication', 13, 0, { drug_generic_name: 'prednisone', adherence: 'given' }),
+      row('v', 'vomit', 13, 10),
+    ];
+    expect(timingsByRow(rows, [], feedingsOf(rows), [], cfg).get('v')).toEqual({
+      text: '10 min after eating',
+      mealId: 'vehicle',
+    });
+  });
+
+  it('keeps its call signature: the five parameters, the same keys, the row that opened the episode', () => {
+    expect(timingsByRow.length).toBe(5);
+    const rows = [row('m', 'meal', 8, 0, PR), row('v1', 'vomit', 8, 3), row('v2', 'vomit', 8, 23)];
+    expect([...timingsByRow(rows, [], feedingsOf(rows), [], cfg).keys()]).toEqual(['v1']);
   });
 });
 

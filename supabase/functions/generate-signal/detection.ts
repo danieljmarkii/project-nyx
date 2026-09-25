@@ -4576,7 +4576,10 @@ export function detectChronicity(
 // NOTE (Signals v2 / CUL-7): ⑤'s former inline `TimedFeeding` + `classifyTimedFeedings` +
 // `nearestPreceding` + `freeFedNear` + the rapid-band test are GONE — they moved to
 // `lib/mealTiming.ts` (the one meal-relative timing predicate, G9) in PR 1 and are called via
-// `classifyEpisodeSet` in `scanVomitTiming` below. ⑤ and L1 (empty-stomach) both read that ONE
+// `classifyEpisodeSet` in `scanVomitTiming` below. Since CUL-1122 that predicate also reads the
+// intake rating: a feeding the owner rated Refused is never the meal an episode is timed from (Picked
+// at is; the ruling is in the module header), which moves an episode only where a refusal was its
+// anchor. A record with no Refused rating is byte-identical (detection.intakeTiming.test.ts). ⑤ and L1 (empty-stomach) both read that ONE
 // distribution, so their bands, denominators and eligibility can never drift (§3, the §5.3
 // diet-trial lesson pre-empted). The rewrite is behaviour-preserving IN EVERY OWNER-FACING FIELD —
 // the gate order, boundary inclusivity and NULL-tolerant-feeding / strict-witnessed-onset asymmetry
@@ -4682,12 +4685,15 @@ function scanVomitTiming(input: DetectionInput, config: DetectionConfig): Timing
   const windowStart = nowMs - config.postprandial.windowDays * MS_PER_DAY
   const timingConfig = timingConfigFor(config)
 
-  // Feedings: DB rows → FeedingInput (parse the instant; carry the evidence-only form). The
-  // NULL-tolerant witnessed filter + sort live in `lib/mealTiming.ts` (`classifyEpisodeSet`
-  // prepares them once), so a caller can't forget it and anchor a claim on an estimated feeding.
+  // Feedings: DB rows → FeedingInput (the event id, the instant, the intake rating, the
+  // evidence-only form). The NULL-tolerant witnessed filter, the refusal rule (a Refused bowl never
+  // anchors — CUL-1122) and the sort all live in `lib/mealTiming.ts` (`classifyEpisodeSet` prepares
+  // them once), so a caller can't forget one and anchor a claim on an estimated or refused feeding.
   const feedings: FeedingInput[] = input.mealEvents.map((m) => ({
+    id: m.id,
     ms: Date.parse(m.occurredAt),
     confidence: m.occurredAtConfidence ?? null,
+    intakeRating: m.intakeRating,
     form: m.foodLabel ?? m.foodType ?? null,
   }))
   // Free-fed standing facts (B-040): a bowl available in the preceding window makes
@@ -4711,7 +4717,9 @@ function scanVomitTiming(input: DetectionInput, config: DetectionConfig): Timing
     timingConfig,
   )
 
-  const allFeedings = timedEligibleFeedings(feedings).map((f) => f.ms) // sorted ascending
+  // The EATING anchors (a refused bowl is out, CUL-1122), sorted ascending: the same set the episodes
+  // were timed against, so ⑤'s grazing rate and L1's base rate count what eating was, as the numerator does.
+  const allFeedings = timedEligibleFeedings(feedings).map((f) => f.ms)
   const inWindowFeedings = allFeedings.filter((ms) => ms >= windowStart && ms <= nowMs)
 
   return { dist, totalEpisodes: inWindowEpisodes.length, inWindowFeedings, allFeedings, nowMs }
@@ -5423,8 +5431,10 @@ export function detectTrialResponse(
   // trigger). Collapse vomit episodes on the FULL list, classify each through the ONE predicate,
   // then split the eligible episodes by window + band (collapse-then-window).
   const feedings: FeedingInput[] = input.mealEvents.map((m) => ({
+    id: m.id,
     ms: Date.parse(m.occurredAt),
     confidence: m.occurredAtConfidence ?? null,
+    intakeRating: m.intakeRating,
     form: m.foodLabel ?? m.foodType ?? null,
   }))
   const freeFedSpans: FreeFedSpan[] = classifyArrangements(input.feedingArrangements ?? []).map(

@@ -23,7 +23,9 @@ import {
   nearestPrecedingFeeding,
   onsetIsTimeEligible,
   timedEligibleFeedings,
+  feedingIsEatingAnchor,
   type FeedingInput,
+  type IntakeRating,
   type MealTimingConfig,
 } from './mealTiming';
 
@@ -33,6 +35,9 @@ const BASE = Date.parse('2026-07-01T12:00:00Z');
 const MIN = 60_000;
 const HOUR = 3_600_000;
 const at = (msFromBase: number): number => BASE + msFromBase;
+
+// Every intake rating a feeding can carry, unrated included — the property sweeps draw from it.
+const RATINGS: readonly (IntakeRating | null)[] = ['refused', 'picked', 'some', 'most', 'all', null];
 
 // A tiny seeded PRNG so property sweeps are reproducible — a flaky property failure
 // you cannot re-run is worse than none (the engine's calibration-ritual style).
@@ -156,59 +161,72 @@ describe('mealTiming — collapseEpisodes (the re-log guard)', () => {
 });
 
 describe('mealTiming — timedEligibleFeedings', () => {
-  it('drops estimated/window, keeps null+witnessed, sorts ascending, maps form', () => {
+  it('drops estimated/window, keeps null+witnessed, sorts ascending, maps id + form', () => {
     const feedings: FeedingInput[] = [
-      { ms: at(3 * HOUR), confidence: 'witnessed', form: 'kibble' },
-      { ms: at(1 * HOUR), confidence: null, form: null }, // legacy NULL kept
-      { ms: at(2 * HOUR), confidence: 'estimated', form: 'treat' }, // dropped
-      { ms: at(4 * HOUR), confidence: 'window' }, // dropped
-      { ms: Number.NaN, confidence: 'witnessed' }, // non-finite dropped
+      { id: 'k', ms: at(3 * HOUR), confidence: 'witnessed', intakeRating: null, form: 'kibble' },
+      { id: 'n', ms: at(1 * HOUR), confidence: null, intakeRating: null, form: null }, // legacy NULL kept
+      { id: 'e', ms: at(2 * HOUR), confidence: 'estimated', intakeRating: null, form: 'treat' }, // dropped
+      { id: 'w', ms: at(4 * HOUR), confidence: 'window', intakeRating: null }, // dropped
+      { id: 'x', ms: Number.NaN, confidence: 'witnessed', intakeRating: null }, // non-finite dropped
     ];
     const out = timedEligibleFeedings(feedings);
     expect(out).toEqual([
-      { ms: at(1 * HOUR), form: null },
-      { ms: at(3 * HOUR), form: 'kibble' },
+      { id: 'n', ms: at(1 * HOUR), form: null },
+      { id: 'k', ms: at(3 * HOUR), form: 'kibble' },
     ]);
+  });
+
+  it('CUL-1122: drops a Refused feeding and keeps every other rating, meal or treat alike', () => {
+    const feedings: FeedingInput[] = [
+      { id: 'refused', ms: at(1 * HOUR), confidence: 'witnessed', intakeRating: 'refused', form: 'kibble' },
+      { id: 'refused-treat', ms: at(2 * HOUR), confidence: 'witnessed', intakeRating: 'refused', form: 'treat' },
+      { id: 'picked', ms: at(3 * HOUR), confidence: 'witnessed', intakeRating: 'picked' },
+      { id: 'some', ms: at(4 * HOUR), confidence: 'witnessed', intakeRating: 'some' },
+      { id: 'most', ms: at(5 * HOUR), confidence: null, intakeRating: 'most' },
+      { id: 'all', ms: at(6 * HOUR), confidence: 'witnessed', intakeRating: 'all', form: 'treat' },
+      { id: 'unrated', ms: at(7 * HOUR), confidence: 'witnessed', intakeRating: null },
+    ];
+    expect(timedEligibleFeedings(feedings).map((f) => f.id)).toEqual(['picked', 'some', 'most', 'all', 'unrated']);
   });
 });
 
 describe('mealTiming — nearestPrecedingFeeding', () => {
   const feedings = timedEligibleFeedings([
-    { ms: at(0), form: 'breakfast' },
-    { ms: at(5 * HOUR), form: 'lunch' },
-    { ms: at(9 * HOUR), form: 'dinner' },
+    { id: 'b', ms: at(0), intakeRating: null, form: 'breakfast' },
+    { id: 'l', ms: at(5 * HOUR), intakeRating: null, form: 'lunch' },
+    { id: 'd', ms: at(9 * HOUR), intakeRating: null, form: 'dinner' },
   ]);
 
   it('picks the largest instant at/before the onset within the lookback', () => {
     const onset = at(6 * HOUR); // between lunch (5h) and dinner (9h)
-    expect(nearestPrecedingFeeding(onset, feedings)).toEqual({ ms: at(5 * HOUR), form: 'lunch' });
+    expect(nearestPrecedingFeeding(onset, feedings)).toEqual({ id: 'l', ms: at(5 * HOUR), form: 'lunch' });
   });
 
   it('ignores feedings after the onset', () => {
     const onset = at(1 * HOUR); // only breakfast precedes
-    expect(nearestPrecedingFeeding(onset, feedings)).toEqual({ ms: at(0), form: 'breakfast' });
+    expect(nearestPrecedingFeeding(onset, feedings)).toEqual({ id: 'b', ms: at(0), form: 'breakfast' });
   });
 
   it('returns null when the nearest feeding is older than the lookback', () => {
     const onset = at(0 + 25 * HOUR); // breakfast was 25h earlier; lookback is 24h
-    expect(nearestPrecedingFeeding(onset, [{ ms: at(0), form: 'breakfast' }])).toBeNull();
+    expect(nearestPrecedingFeeding(onset, [{ id: 'b', ms: at(0), form: 'breakfast' }])).toBeNull();
   });
 
   it('includes a feeding exactly at the lookback boundary and exactly at the onset', () => {
     const onset = at(24 * HOUR);
-    const exactlyLookback = [{ ms: at(0), form: 'x' }]; // 24h before → inclusive
-    expect(nearestPrecedingFeeding(onset, exactlyLookback)).toEqual({ ms: at(0), form: 'x' });
-    const atOnset = [{ ms: at(24 * HOUR), form: 'y' }]; // gap 0
-    expect(nearestPrecedingFeeding(onset, atOnset)).toEqual({ ms: at(24 * HOUR), form: 'y' });
+    const exactlyLookback = [{ id: 'x', ms: at(0), form: 'x' }]; // 24h before → inclusive
+    expect(nearestPrecedingFeeding(onset, exactlyLookback)).toEqual({ id: 'x', ms: at(0), form: 'x' });
+    const atOnset = [{ id: 'y', ms: at(24 * HOUR), form: 'y' }]; // gap 0
+    expect(nearestPrecedingFeeding(onset, atOnset)).toEqual({ id: 'y', ms: at(24 * HOUR), form: 'y' });
   });
 
   it('is order-independent (does not rely on a sorted input)', () => {
     const unsorted = [
-      { ms: at(9 * HOUR), form: 'dinner' },
-      { ms: at(0), form: 'breakfast' },
-      { ms: at(5 * HOUR), form: 'lunch' },
+      { id: 'd', ms: at(9 * HOUR), form: 'dinner' },
+      { id: 'b', ms: at(0), form: 'breakfast' },
+      { id: 'l', ms: at(5 * HOUR), form: 'lunch' },
     ];
-    expect(nearestPrecedingFeeding(at(6 * HOUR), unsorted)).toEqual({ ms: at(5 * HOUR), form: 'lunch' });
+    expect(nearestPrecedingFeeding(at(6 * HOUR), unsorted)).toEqual({ id: 'l', ms: at(5 * HOUR), form: 'lunch' });
   });
 
   it('B-788 — same-ms tie keeps the FIRST feeding in input order (a KNOWN divergence from the v27 ⑤ engine, which kept the last)', () => {
@@ -223,10 +241,10 @@ describe('mealTiming — nearestPrecedingFeeding', () => {
     // restores v27's behaviour, this expectation becomes `form: 'FormB'`.
     const onset = at(6 * HOUR);
     const tie = [
-      { ms: at(5 * HOUR), form: 'FormA' },
-      { ms: at(5 * HOUR), form: 'FormB' },
+      { id: 'a', ms: at(5 * HOUR), form: 'FormA' },
+      { id: 'b', ms: at(5 * HOUR), form: 'FormB' },
     ];
-    expect(nearestPrecedingFeeding(onset, tie)).toEqual({ ms: at(5 * HOUR), form: 'FormA' });
+    expect(nearestPrecedingFeeding(onset, tie)).toEqual({ id: 'a', ms: at(5 * HOUR), form: 'FormA' });
   });
 });
 
@@ -257,7 +275,7 @@ describe('mealTiming — isFreeFedNear', () => {
 });
 
 describe('mealTiming — classifyEpisodeTiming (the one predicate + gate ORDER)', () => {
-  const feedings: FeedingInput[] = [{ ms: at(0), confidence: 'witnessed', form: 'kibble' }];
+  const feedings: FeedingInput[] = [{ id: 'k', ms: at(0), confidence: 'witnessed', intakeRating: null, form: 'kibble' }];
   const noBowls: { fromMs: number; untilMs: number }[] = [];
 
   it('rung 1: a discovered onset is not_witnessed — even when everything else would time', () => {
@@ -279,7 +297,7 @@ describe('mealTiming — classifyEpisodeTiming (the one predicate + gate ORDER)'
 
   it('eligible RAPID: witnessed onset 12 min after the meal', () => {
     const r = classifyEpisodeTiming({ onsetMs: at(12 * MIN), confidence: 'witnessed' }, feedings, noBowls);
-    expect(r).toEqual({ eligible: true, minutesSinceFeeding: 12, band: 'rapid', feedingForm: 'kibble' });
+    expect(r).toEqual({ eligible: true, minutesSinceFeeding: 12, band: 'rapid', feedingId: 'k', feedingForm: 'kibble' });
   });
 
   it('eligible MID: witnessed onset 2h after the meal', () => {
@@ -305,7 +323,7 @@ describe('mealTiming — classifyEpisodeTiming (the one predicate + gate ORDER)'
 
 describe('mealTiming — classifyEpisodeSet (the distribution the surfaces read)', () => {
   it('splits eligible/ineligible, counts bands, and keeps honest denominators', () => {
-    const feedings: FeedingInput[] = [{ ms: at(0), confidence: 'witnessed', form: 'kibble' }];
+    const feedings: FeedingInput[] = [{ id: 'k', ms: at(0), confidence: 'witnessed', intakeRating: null, form: 'kibble' }];
     const episodes = [
       { onsetMs: at(10 * MIN), confidence: 'witnessed' as const }, // rapid
       { onsetMs: at(7 * HOUR), confidence: 'witnessed' as const }, // long
@@ -332,7 +350,12 @@ describe('mealTiming — classifyEpisodeSet (the distribution the surfaces read)
       const feedings: FeedingInput[] = [];
       const fCount = Math.floor(rng() * 6);
       for (let i = 0; i < fCount; i++) {
-        feedings.push({ ms: at(Math.floor(rng() * 24 * HOUR)), confidence: rng() < 0.5 ? 'witnessed' : null });
+        feedings.push({
+          id: `f${i}`,
+          ms: at(Math.floor(rng() * 24 * HOUR)),
+          confidence: rng() < 0.5 ? 'witnessed' : null,
+          intakeRating: RATINGS[Math.floor(rng() * RATINGS.length)],
+        });
       }
       const confs = ['witnessed', 'estimated', 'window', null] as const;
       const episodes: { onsetMs: number; confidence: (typeof confs)[number] }[] = [];
@@ -355,8 +378,8 @@ describe('mealTiming — classifyEpisodeSet (the distribution the surfaces read)
 describe('mealTiming — parity with detector ⑤ as shipped (guards the PR-2 drop-in)', () => {
   it('reproduces ⑤ eligibility: witnessed+timed in / discovered out / free-fed out', () => {
     const feedings: FeedingInput[] = [
-      { ms: at(0), confidence: 'witnessed', form: 'dry treat' },
-      { ms: at(8 * HOUR), confidence: 'witnessed', form: 'kibble' },
+      { id: 't', ms: at(0), confidence: 'witnessed', intakeRating: null, form: 'dry treat' },
+      { id: 'k', ms: at(8 * HOUR), confidence: 'witnessed', intakeRating: null, form: 'kibble' },
     ];
     const bowls = [{ fromMs: at(20 * HOUR), untilMs: at(40 * HOUR) }]; // a later free-fed window
     const episodes = [
@@ -368,9 +391,205 @@ describe('mealTiming — parity with detector ⑤ as shipped (guards the PR-2 dr
 
     // Exactly one eligible episode — the rapid one — and it names the treat form for evidence.
     expect(dist.eligibleCount).toBe(1);
-    expect(dist.eligible[0]).toMatchObject({ band: 'rapid', minutesSinceFeeding: 15, feedingForm: 'dry treat' });
+    expect(dist.eligible[0]).toMatchObject({ band: 'rapid', minutesSinceFeeding: 15, feedingId: 't', feedingForm: 'dry treat' });
     // The discovered and the free-fed episodes are ineligible for the reasons ⑤ excludes them.
     const reasons = dist.ineligible.map((e) => e.reason).sort();
     expect(reasons).toEqual(['free_fed', 'not_witnessed']);
+  });
+});
+
+// ── CUL-1122: a refused bowl is not eating (HV-2 / CUL-1159) ──────────────────
+//
+// The ruling (Dr. Chen lens, recorded on CUL-1122): a feeding anchors when food went in. Refused
+// never does; Picked at, Some, Most, All and an unrated bowl do; the rule reads the rating, never the
+// food type. The named counterexamples below are the issue's own.
+
+describe('mealTiming — CUL-1122: which ratings are eating', () => {
+  it('the ruling, one row per rating: only Refused is not an eating anchor', () => {
+    expect(feedingIsEatingAnchor('refused')).toBe(false);
+    expect(feedingIsEatingAnchor('picked')).toBe(true);
+    expect(feedingIsEatingAnchor('some')).toBe(true);
+    expect(feedingIsEatingAnchor('most')).toBe(true);
+    expect(feedingIsEatingAnchor('all')).toBe(true);
+    // Unrated is presumed eaten (exception-only rating, CUL-1118): never an invented refusal.
+    expect(feedingIsEatingAnchor(null)).toBe(true);
+    expect(feedingIsEatingAnchor(undefined)).toBe(true);
+    // A value outside the enum anchors, as every feeding did before the rating was read.
+    expect(feedingIsEatingAnchor('licked' as IntakeRating)).toBe(true);
+  });
+});
+
+describe('mealTiming — CUL-1122: the named counterexamples', () => {
+  // A local 8 AM breakfast and a 10 PM dinner on one day, as offsets from BASE (the numbers are
+  // differences of instants, so the wall-clock names are labels, not a time zone).
+  const H8 = at(0);
+  const H22 = at(14 * HOUR);
+  const noBowls: { fromMs: number; untilMs: number }[] = [];
+
+  it('Pixel refuses the 10 PM bowl and vomits at 10:05 — timed from the 8 AM meal she ate, 845 min, long band', () => {
+    const feedings: FeedingInput[] = [
+      { id: 'breakfast', ms: H8, confidence: 'witnessed', intakeRating: null, form: 'kibble' },
+      { id: 'dinner', ms: H22, confidence: 'witnessed', intakeRating: 'refused', form: 'kibble' },
+    ];
+    const r = classifyEpisodeTiming({ onsetMs: H22 + 5 * MIN, confidence: 'witnessed' }, feedings, noBowls);
+    expect(r).toEqual({
+      eligible: true,
+      minutesSinceFeeding: 14 * 60 + 5,
+      band: 'long',
+      feedingId: 'breakfast',
+      feedingForm: 'kibble',
+    });
+  });
+
+  it('Pixel with nothing eaten in the lookback — refused_only, never timed, never "no meal logged"', () => {
+    const feedings: FeedingInput[] = [
+      { id: 'two-days-ago', ms: H22 - 30 * HOUR, confidence: 'witnessed', intakeRating: 'all' }, // outside 24h
+      { id: 'dinner', ms: H22, confidence: 'witnessed', intakeRating: 'refused' },
+    ];
+    const r = classifyEpisodeTiming({ onsetMs: H22 + 5 * MIN, confidence: 'witnessed' }, feedings, noBowls);
+    expect(r).toEqual({ eligible: false, reason: 'refused_only' });
+  });
+
+  it('a refusal OUTSIDE the lookback is not a reason — nothing logged in the prior day is no_preceding_feeding', () => {
+    const feedings: FeedingInput[] = [
+      { id: 'old-refusal', ms: H22 - 30 * HOUR, confidence: 'witnessed', intakeRating: 'refused' },
+    ];
+    const r = classifyEpisodeTiming({ onsetMs: H22 + 5 * MIN, confidence: 'witnessed' }, feedings, noBowls);
+    expect(r).toEqual({ eligible: false, reason: 'no_preceding_feeding' });
+  });
+
+  it('a refusal whose time is a guess is not a reason either — only time-trustworthy feedings are read at all', () => {
+    const feedings: FeedingInput[] = [
+      { id: 'estimated-refusal', ms: H22, confidence: 'estimated', intakeRating: 'refused' },
+    ];
+    const r = classifyEpisodeTiming({ onsetMs: H22 + 5 * MIN, confidence: 'witnessed' }, feedings, noBowls);
+    expect(r).toEqual({ eligible: false, reason: 'no_preceding_feeding' });
+  });
+
+  it('a staple dinner at 6 PM followed by a refused treat at 9 PM — a 9:10 vomit is 190 min after dinner', () => {
+    const dinner = at(10 * HOUR);
+    const feedings: FeedingInput[] = [
+      { id: 'dinner', ms: dinner, confidence: 'witnessed', intakeRating: 'all', form: 'kibble' },
+      { id: 'snack', ms: dinner + 3 * HOUR, confidence: 'witnessed', intakeRating: 'refused', form: 'dry treat' },
+    ];
+    const r = classifyEpisodeTiming({ onsetMs: dinner + 3 * HOUR + 10 * MIN, confidence: 'witnessed' }, feedings, noBowls);
+    expect(r).toEqual({ eligible: true, minutesSinceFeeding: 190, band: 'mid', feedingId: 'dinner', feedingForm: 'kibble' });
+  });
+
+  it('a picked-at vehicle meal carrying a dose at 1 PM — a 1:10 vomit is 10 min after it, and names it', () => {
+    const lunch = at(5 * HOUR);
+    const feedings: FeedingInput[] = [
+      { id: 'breakfast', ms: H8, confidence: 'witnessed', intakeRating: 'all' },
+      { id: 'vehicle', ms: lunch, confidence: 'witnessed', intakeRating: 'picked', form: 'wet' },
+    ];
+    const r = classifyEpisodeTiming({ onsetMs: lunch + 10 * MIN, confidence: 'witnessed' }, feedings, noBowls);
+    expect(r).toEqual({ eligible: true, minutesSinceFeeding: 10, band: 'rapid', feedingId: 'vehicle', feedingForm: 'wet' });
+  });
+
+  it('a refused TREAT never anchors; a treat she ate does', () => {
+    const feedings: FeedingInput[] = [
+      { id: 'meal', ms: H8, confidence: 'witnessed', intakeRating: null, form: 'kibble' },
+      { id: 'treat-refused', ms: H8 + 4 * HOUR, confidence: 'witnessed', intakeRating: 'refused', form: 'dry treat' },
+      { id: 'treat-eaten', ms: H8 + 6 * HOUR, confidence: 'witnessed', intakeRating: 'all', form: 'dry treat' },
+    ];
+    const afterRefused = classifyEpisodeTiming({ onsetMs: H8 + 4 * HOUR + 5 * MIN, confidence: 'witnessed' }, feedings, noBowls);
+    expect(afterRefused).toMatchObject({ eligible: true, feedingId: 'meal', minutesSinceFeeding: 245, band: 'mid' });
+    const afterEaten = classifyEpisodeTiming({ onsetMs: H8 + 6 * HOUR + 5 * MIN, confidence: 'witnessed' }, feedings, noBowls);
+    expect(afterEaten).toMatchObject({ eligible: true, feedingId: 'treat-eaten', minutesSinceFeeding: 5, band: 'rapid' });
+  });
+
+  it('the gate order holds with a refusal present: a discovered onset and a free-fed bowl still win', () => {
+    const feedings: FeedingInput[] = [{ id: 'dinner', ms: H22, confidence: 'witnessed', intakeRating: 'refused' }];
+    const onset = H22 + 5 * MIN;
+    expect(classifyEpisodeTiming({ onsetMs: onset, confidence: 'estimated' }, feedings, noBowls)).toEqual({
+      eligible: false,
+      reason: 'not_witnessed',
+    });
+    const bowl = [{ fromMs: H22 - HOUR, untilMs: H22 + HOUR }];
+    expect(classifyEpisodeTiming({ onsetMs: onset, confidence: 'witnessed' }, feedings, bowl)).toEqual({
+      eligible: false,
+      reason: 'free_fed',
+    });
+  });
+});
+
+describe('mealTiming — CUL-1122 properties over random records with refusals', () => {
+  const LOOKBACK = DEFAULT_MEAL_TIMING_CONFIG.feedingLookbackHours * HOUR;
+
+  function randomRecord(rng: () => number) {
+    const feedings: FeedingInput[] = [];
+    const fCount = Math.floor(rng() * 8);
+    for (let i = 0; i < fCount; i++) {
+      const confs = ['witnessed', null, 'estimated'] as const;
+      feedings.push({
+        id: `f${i}`,
+        ms: at(Math.floor(rng() * 48 * HOUR)),
+        confidence: confs[Math.floor(rng() * confs.length)],
+        intakeRating: RATINGS[Math.floor(rng() * RATINGS.length)],
+      });
+    }
+    const episodes: { onsetMs: number; confidence: 'witnessed' }[] = [];
+    const eCount = 1 + Math.floor(rng() * 8);
+    for (let i = 0; i < eCount; i++) episodes.push({ onsetMs: at(Math.floor(rng() * 50 * HOUR)), confidence: 'witnessed' });
+    return { feedings, episodes };
+  }
+
+  const eatenAndTimed = (f: FeedingInput) =>
+    (f.confidence == null || f.confidence === 'witnessed') && f.intakeRating !== 'refused' && Number.isFinite(f.ms);
+
+  it('PROPERTY: an eligible episode is timed from the LATEST eaten, time-trustworthy feeding in its lookback — never a refused one', () => {
+    const rng = makeRng(1122);
+    let eligibleSeen = 0;
+    for (let trial = 0; trial < 400; trial++) {
+      const { feedings, episodes } = randomRecord(rng);
+      const dist = classifyEpisodeSet(episodes, feedings, []);
+      for (const e of dist.eligible) {
+        eligibleSeen++;
+        const anchor = feedings.find((f) => f.id === e.feedingId);
+        expect(anchor).toBeDefined();
+        expect(anchor!.intakeRating).not.toBe('refused');
+        expect(eatenAndTimed(anchor!)).toBe(true);
+        expect(anchor!.ms).toBeLessThanOrEqual(e.onsetMs);
+        expect(e.onsetMs - anchor!.ms).toBeLessThanOrEqual(LOOKBACK);
+        expect(e.minutesSinceFeeding).toBe((e.onsetMs - anchor!.ms) / MIN);
+        // Nothing she ate sits between the anchor and the onset.
+        const later = feedings.filter((f) => eatenAndTimed(f) && f.ms > anchor!.ms && f.ms <= e.onsetMs);
+        expect(later).toEqual([]);
+      }
+    }
+    expect(eligibleSeen).toBeGreaterThan(200); // non-vacuity: the sweep checked real timings
+  });
+
+  it('PROPERTY: deleting every refused feeding changes no timing — it only turns refused_only into no_preceding_feeding', () => {
+    const rng = makeRng(2211);
+    let refusedOnlySeen = 0;
+    for (let trial = 0; trial < 400; trial++) {
+      const { feedings, episodes } = randomRecord(rng);
+      const withRefusals = classifyEpisodeSet(episodes, feedings, []);
+      const without = classifyEpisodeSet(episodes, feedings.filter((f) => f.intakeRating !== 'refused'), []);
+      expect(withRefusals.eligible).toEqual(without.eligible);
+      expect(withRefusals.bandCounts).toEqual(without.bandCounts);
+      expect(withRefusals.ineligible.length).toBe(without.ineligible.length);
+      withRefusals.ineligible.forEach((e, i) => {
+        const bare = without.ineligible[i];
+        expect(bare.onsetMs).toBe(e.onsetMs);
+        if (e.reason === 'refused_only') {
+          refusedOnlySeen++;
+          expect(bare.reason).toBe('no_preceding_feeding');
+          // …and the record really does hold a trustworthy refusal inside this episode's lookback.
+          const refusalInLookback = feedings.some(
+            (f) =>
+              f.intakeRating === 'refused' &&
+              (f.confidence == null || f.confidence === 'witnessed') &&
+              f.ms <= e.onsetMs &&
+              e.onsetMs - f.ms <= LOOKBACK,
+          );
+          expect(refusalInLookback).toBe(true);
+        } else {
+          expect(bare.reason).toBe(e.reason);
+        }
+      });
+    }
+    expect(refusedOnlySeen).toBeGreaterThan(20); // non-vacuity: the refused_only branch was exercised
   });
 });

@@ -268,3 +268,99 @@ Deno.test('CUL-1122 differential — across 300 seeded records with no refusal, 
   assert.ok(fired >= 150, `only ${fired} of 300 records fired ⑤ or L1; the differential would be comparing empty lists`)
   assert.ok(pickedFeedings >= 4000, `only ${pickedFeedings} Picked at feedings drawn`)
 })
+
+// ── 2. The refusal cases ──────────────────────────────────────────────────────
+
+/**
+ * Pixel's pattern, as a record: breakfast at 08:00 every day, dinner at 22:00 every day, and on eight
+ * nights the dinner is REFUSED and a witnessed vomit follows at 22:05. Before CUL-1122 each of those
+ * vomits was "5 min after eating", eight of eight rapid, and ⑤ printed its eating-too-fast card for a
+ * cat that had not eaten since breakfast.
+ */
+function pixelRefusalNights(): { symptomEvents: SymptomEvent[]; mealEvents: MealEvent[] } {
+  const mealEvents: MealEvent[] = []
+  const symptomEvents: SymptomEvent[] = []
+  const refusalNights = new Set([18, 19, 21, 22, 24, 25, 27, 28])
+  for (let d = 5; d <= 29; d++) {
+    mealEvents.push(feed(d, 8, 0, null))
+    mealEvents.push(feed(d, 22, 0, refusalNights.has(d) ? 'refused' : 'all'))
+    if (refusalNights.has(d)) symptomEvents.push(wVomit(d, 22, 5))
+  }
+  return { symptomEvents, mealEvents }
+}
+
+Deno.test('CUL-1122 — Pixel: vomits 5 min after REFUSED dinners no longer make ⑤’s soon-after-eating card', () => {
+  const record = pixelRefusalNights()
+  assert.deepEqual(detectPostprandialTiming(input(record)), [])
+  // The same nights with the dinner EATEN are the real pattern, and ⑤ still sees it: the refusal is
+  // the only thing that moved.
+  const eaten = { ...record, mealEvents: record.mealEvents.map((m) => ({ ...m, intakeRating: null })) }
+  const f = detectPostprandialTiming(input(eaten))
+  assert.equal(f.length, 1)
+  assert.equal(f[0].rapidCount, 8)
+  assert.equal(f[0].eligibleCount, 8)
+})
+
+Deno.test('CUL-1122 — Pixel: each vomit is timed from breakfast (14 h), so no timing card claims a short gap', () => {
+  const record = pixelRefusalNights()
+  // No meal-relative card fires: ⑤ is silent (above), and L1's schedule guard holds it too — a cat
+  // whose dinners are refused is a long way from her last meal most of the day, so eight long
+  // episodes are what her own schedule predicts. The refusals themselves belong to the intake lane,
+  // which this change does not touch.
+  assert.deepEqual(detectEmptyStomachTiming(input(record)), [])
+  const types: string[] = detectSignals(input(record)).map((r) => r.finding.type)
+  for (const t of ['postprandial_timing', 'empty_stomach_timing', 'timing_story']) {
+    assert.ok(!types.includes(t), `${t} must not fire: ${types.join(', ')}`)
+  }
+  // What remains is true: every vomit fell at 22:05, and ⑥'s clock card — suppressed while ⑤ claimed
+  // these episodes as rapid — now says so.
+  assert.ok(types.includes('timeofday_clustering'), `⑥ states the clock fact: ${types.join(', ')}`)
+})
+
+Deno.test('CUL-1122 — a refused anchor moves only its own episode: ⑤’s golden with one rapid bowl refused', () => {
+  // The golden's four rapid anchors (11:40) and its eight slow ones (07:00); refuse the LAST rapid
+  // anchor. That episode re-times from the 06:00 feeding (6 h → long), the other three stay rapid,
+  // and 3 of 12 no longer clears the grazing guard's bar at ~8 feedings a day, so ⑤ goes quiet.
+  const record = postprandialNoRefusals()
+  const lastRapid = record.mealEvents.find((m) => m.occurredAt === at(27, 11, 40))!
+  const refusedOne = {
+    ...record,
+    mealEvents: record.mealEvents.map((m) => (m === lastRapid ? { ...m, intakeRating: 'refused' as const } : m)),
+  }
+  assert.deepEqual(detectPostprandialTiming(input(refusedOne)), [])
+  // Rated Picked at instead, the same bowl anchors and ⑤ is exactly the pinned finding.
+  const pickedOne = {
+    ...record,
+    mealEvents: record.mealEvents.map((m) => (m === lastRapid ? { ...m, intakeRating: 'picked' as const } : m)),
+  }
+  assert.equal(detectPostprandialTiming(input(pickedOne))[0]?.rapidCount, 4)
+})
+
+Deno.test('CUL-1122 — a refused TREAT is not eating either; the rule reads the rating, never the food type', () => {
+  const record = postprandialNoRefusals()
+  const rapidAnchors = record.mealEvents.filter((m) => m.occurredAt.includes('T11:40'))
+  assert.equal(rapidAnchors.length, 4)
+  const asRefusedTreats = {
+    ...record,
+    mealEvents: record.mealEvents.map((m) =>
+      rapidAnchors.includes(m) ? { ...m, foodType: 'treat' as const, intakeRating: 'refused' as const } : m,
+    ),
+  }
+  assert.deepEqual(detectPostprandialTiming(input(asRefusedTreats)), [])
+})
+
+Deno.test('CUL-1122 — the grazing guard counts eating, not bowls: refused bowls leave the feeding rate', () => {
+  // ⑤'s golden fires 4 rapid of 12 at ~8 feedings a day, exactly at the guard's bar. Add six refused
+  // bowls a day on top: they are not eating, so the rate the guard reads is unchanged and ⑤ still
+  // fires with the golden's numbers. Counted as feedings, they would push the chance-expected rapid
+  // count above 4 and silence a real pattern.
+  const record = postprandialNoRefusals()
+  const extra: MealEvent[] = []
+  for (let day = 16; day <= 27; day++) {
+    for (const h of [13, 15, 17, 19, 21, 23]) extra.push(feed(day, h, 0, 'refused'))
+  }
+  const findings = detectPostprandialTiming(input({ ...record, mealEvents: [...record.mealEvents, ...extra] }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].rapidCount, 4)
+  assert.equal(findings[0].eligibleCount, 12)
+})

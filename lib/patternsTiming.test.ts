@@ -26,10 +26,10 @@ const ms = (iso: string): number => Date.parse(iso);
 // A record spanning rapid / mid / long eligible episodes + one of each untimed reason.
 function scenario(): TimingDistributionInput {
   const feedings: FeedingInput[] = [
-    { ms: ms('2026-05-01T08:00:00Z'), confidence: 'witnessed', form: 'Kibble' }, // F1
-    { ms: ms('2026-05-01T20:00:00Z'), confidence: 'witnessed', form: 'Wet' }, // F2
-    { ms: ms('2026-05-03T09:00:00Z'), confidence: 'witnessed', form: 'Kibble' }, // F3
-    { ms: ms('2026-05-09T07:00:00Z'), confidence: 'witnessed', form: 'Kibble' }, // F6
+    { id: 'F1', ms: ms('2026-05-01T08:00:00Z'), confidence: 'witnessed', intakeRating: null, form: 'Kibble' },
+    { id: 'F2', ms: ms('2026-05-01T20:00:00Z'), confidence: 'witnessed', intakeRating: null, form: 'Wet' },
+    { id: 'F3', ms: ms('2026-05-03T09:00:00Z'), confidence: 'witnessed', intakeRating: null, form: 'Kibble' },
+    { id: 'F6', ms: ms('2026-05-09T07:00:00Z'), confidence: 'witnessed', intakeRating: null, form: 'Kibble' },
   ];
   const vomitOnsets = [
     { ms: ms('2026-05-01T08:15:00Z'), confidence: 'witnessed' as const }, // V1 → 15m rapid
@@ -99,7 +99,7 @@ describe('buildTimingDistribution — the full-record distribution through lib/m
 
   it('breaks the untimed count out by reason, never imputing them onto the lane', () => {
     const m = buildTimingDistribution(scenario());
-    expect(m.untimedReasons).toEqual({ not_witnessed: 1, no_preceding_feeding: 1, free_fed: 1 });
+    expect(m.untimedReasons).toEqual({ not_witnessed: 1, no_preceding_feeding: 1, free_fed: 1, refused_only: 0 });
     const breakdown = timingUntimedBreakdown(m)!;
     expect(breakdown).toMatch(/1 discovered later/);
     expect(breakdown).toMatch(/no meal logged in the prior day/);
@@ -118,7 +118,7 @@ describe('buildTimingDistribution — the full-record distribution through lib/m
     const base = scenario();
     const withOld: TimingDistributionInput = {
       ...base,
-      feedings: [{ ms: ms('2020-01-01T08:00:00Z'), confidence: 'witnessed', form: 'Kibble' }, ...base.feedings],
+      feedings: [{ id: 'old', ms: ms('2020-01-01T08:00:00Z'), confidence: 'witnessed', intakeRating: null, form: 'Kibble' }, ...base.feedings],
       vomitOnsets: [{ ms: ms('2020-01-01T08:10:00Z'), confidence: 'witnessed' }, ...base.vomitOnsets],
     };
     const m = buildTimingDistribution(withOld);
@@ -128,7 +128,7 @@ describe('buildTimingDistribution — the full-record distribution through lib/m
 
   it('collapses a re-logged bout into one episode (3h gap rule, via lib/mealTiming)', () => {
     const input: TimingDistributionInput = {
-      feedings: [{ ms: ms('2026-05-01T08:00:00Z'), confidence: 'witnessed', form: 'Kibble' }],
+      feedings: [{ id: 'F1', ms: ms('2026-05-01T08:00:00Z'), confidence: 'witnessed', intakeRating: null, form: 'Kibble' }],
       vomitOnsets: [
         { ms: ms('2026-05-01T08:15:00Z'), confidence: 'witnessed' },
         { ms: ms('2026-05-01T09:00:00Z'), confidence: 'witnessed' }, // 45m later — same episode
@@ -199,7 +199,7 @@ describe('copy — nyx-voice + the §6 guardrail spine', () => {
     const m = buildTimingDistribution(scenario());
     expect(timingUntimedLine(m)).toMatch(/3 episodes couldn't be timed/);
     const allTimed = buildTimingDistribution({
-      feedings: [{ ms: ms('2026-05-01T08:00:00Z'), confidence: 'witnessed', form: 'Kibble' }],
+      feedings: [{ id: 'F1', ms: ms('2026-05-01T08:00:00Z'), confidence: 'witnessed', intakeRating: null, form: 'Kibble' }],
       vomitOnsets: [{ ms: ms('2026-05-01T08:15:00Z'), confidence: 'witnessed' }],
       freeFedSpans: [],
     });
@@ -217,5 +217,33 @@ describe('copy — nyx-voice + the §6 guardrail spine', () => {
     expect(timingNoneTimeableLine('Nyx', 4)).not.toMatch(/fine|healthy|nothing to worry|all clear/i);
     expect(timingPanelLead('Nyx')).toContain('Nyx');
     expect(timingPanelLead('Nyx')).not.toContain('!');
+  });
+
+  // CUL-1122: a refused bowl is a LOGGED meal the lane never times from, so no line may say "the last
+  // meal" or "no meal logged" about a record that holds one.
+  it('the lead places a dot by how long after EATING, never "the last meal" (a refused bowl is a meal)', () => {
+    expect(timingPanelLead('Nyx')).toBe(
+      "Each dot is one of Nyx's vomiting episodes, placed by how long after eating it happened.",
+    );
+    expect(timingPanelLead('Nyx')).not.toMatch(/last meal/);
+  });
+
+  it('a refused-only episode gets its own clause in the breakdown, never "no meal logged"', () => {
+    const refusedOnly = buildTimingDistribution({
+      feedings: [{ id: 'F1', ms: ms('2026-05-01T22:00:00Z'), confidence: 'witnessed', intakeRating: 'refused', form: 'Kibble' }],
+      vomitOnsets: [{ ms: ms('2026-05-01T22:05:00Z'), confidence: 'witnessed' }],
+      freeFedSpans: [],
+    });
+    expect(refusedOnly.untimedReasons.refused_only).toBe(1);
+    expect(timingUntimedBreakdown(refusedOnly)).toBe(
+      "Couldn't be timed: 1 with only refused meals logged in the prior day.",
+    );
+    expect(timingUntimedBreakdown(refusedOnly)).not.toMatch(/no meal logged/);
+  });
+
+  it('the none-timeable line covers a refused-only record without saying no meal was logged', () => {
+    expect(timingNoneTimeableLine('Nyx', 2)).toBe(
+      "None of Nyx's 2 logged vomiting episodes could be timed against a meal yet — each was discovered later, near a free-fed bowl, or with no meal logged in the day before apart from refused ones.",
+    );
   });
 });
