@@ -158,6 +158,34 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(queryByText('Home screen widget')).toBeNull();
     expect(queryByText('Noticed')).toBeNull();
   });
+
+  it('renders the History v2 card for an allowlisted account only, opt-in default off (CUL-1158)', () => {
+    // HV-1 AC: the shelf lists History v2 for an eligible account only. Allowlisted
+    // for history_v2 → the card renders (title + blurb) with its switch OFF, and no
+    // on-state hint (the v2 screen is empty until HV-7). The zero-eligible case (the
+    // dark seed reaches nobody → no card) is the B-729 test above.
+    setAllowlist({ history_v2: gatedToPm });
+    const { getByText, queryByText, getByRole } = render(<BetaFeaturesScreen />);
+
+    expect(getByText('History v2')).toBeTruthy();
+    expect(getByText(/Switch it off and History is exactly as it was/)).toBeTruthy();
+    expect(getByRole('switch').props.value).toBe(false);
+    expect(queryByText('Design v2')).toBeNull();
+    expect(queryByText('Noticed')).toBeNull();
+
+    // Opted in, it says nothing more: no hint promises a screen that is not drawn yet.
+    act(() => useBetaOptInStore.getState().setOptIn('history_v2', true));
+    expect(getByRole('switch').props.value).toBe(true);
+    expect(queryByText(/^It’s on\./)).toBeNull();
+  });
+
+  it('a different account is not shown the History v2 card', () => {
+    setAllowlist({ history_v2: { enabled: false, allowlist: ['someone-else'] } });
+    const { getByText, queryByText } = render(<BetaFeaturesScreen />);
+
+    expect(queryByText('History v2')).toBeNull();
+    expect(getByText('Nothing to try right now')).toBeTruthy();
+  });
 });
 
 // CUL-70 (D8, ruled 2026-08-20): owner-facing, the shelf is "Early access". "Beta"
@@ -181,7 +209,7 @@ const BETA_WORD = /\bbetas?\b/i;
 
 describe('BetaFeaturesScreen — says early access, never beta (CUL-70)', () => {
   it('shows and speaks no "beta" with every card up and a hint open', () => {
-    setAllowlist({ widget_enabled: gatedToPm, daily_look: gatedToPm, design_v2: gatedToPm });
+    setAllowlist({ widget_enabled: gatedToPm, daily_look: gatedToPm, design_v2: gatedToPm, history_v2: gatedToPm });
     useBetaOptInStore.getState().setOptIn('widget_enabled', true);
     const { toJSON } = render(<BetaFeaturesScreen />);
     const strings = shownOrSpoken(toJSON());
@@ -207,13 +235,14 @@ describe('BetaFeaturesScreen — says early access, never beta (CUL-70)', () => 
   it('labels each switch with its feature’s title and nothing else', () => {
     // The pill is gone, so the label no longer carries a ", beta" to stand in for it:
     // VoiceOver says the title the owner reads, then "switch", then its state.
-    setAllowlist({ widget_enabled: gatedToPm, daily_look: gatedToPm, design_v2: gatedToPm });
+    setAllowlist({ widget_enabled: gatedToPm, daily_look: gatedToPm, design_v2: gatedToPm, history_v2: gatedToPm });
     const { getAllByRole } = render(<BetaFeaturesScreen />);
 
     expect(getAllByRole('switch').map((sw) => sw.props.accessibilityLabel)).toEqual([
       'Home screen widget',
       'Noticed',
       'Design v2',
+      'History v2',
     ]);
   });
 });
