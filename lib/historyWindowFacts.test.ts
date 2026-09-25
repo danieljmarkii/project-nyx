@@ -211,6 +211,13 @@ describe('readWindowFacts: one pet, one today', () => {
     await expect(readWindowFacts(THE_PET, NOW)).rejects.toThrow();
     errors.mockRestore();
   });
+
+  it('rejects an instant that names no day (instantOnDay\'s NaN), rather than reading some day', async () => {
+    seedRecord();
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(readWindowFacts(THE_PET, Number.NaN)).rejects.toThrow();
+    errors.mockRestore();
+  });
 });
 
 // ── *N not read* ─────────────────────────────────────────────────────────────────
@@ -320,7 +327,7 @@ describe('readHistoryRecord', () => {
         const line = countLineOf({
           filter,
           search: null,
-          window: { longName: 'window', anchorDay: null, isAllTime: false, isTrial: false, range: bounds },
+          window: { longName: 'window', anchorDay: null, isAllTime: false, isTrial: false, range: bounds, recordFrom: null, pastPlannedEnd: false },
           facts: windowed,
           course: filter.kind === 'course' ? { name: 'Motozol', days: (data.courses ?? [])[0].days } : null,
           trialRange: null,

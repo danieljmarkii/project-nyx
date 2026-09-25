@@ -170,12 +170,12 @@ const DATES: HistoryDateFormat = {
 };
 
 const WINDOWS: Record<string, CountLineWindow> = {
-  all: { longName: 'All time', anchorDay: null, isAllTime: true, isTrial: false, range: { fromDay: '2026-09-01', toDay: TODAY } },
-  last7: { longName: 'Last 7 days', anchorDay: null, isAllTime: false, isTrial: false, range: { fromDay: '2026-09-15', toDay: TODAY } },
-  trial: { longName: 'Since the trial started', anchorDay: '2026-09-03', isAllTime: false, isTrial: true, range: { fromDay: '2026-09-03', toDay: TODAY } },
+  all: { longName: 'All time', anchorDay: null, isAllTime: true, isTrial: false, recordFrom: null, pastPlannedEnd: false, range: { fromDay: '2026-09-01', toDay: TODAY } },
+  last7: { longName: 'Last 7 days', anchorDay: null, isAllTime: false, isTrial: false, recordFrom: null, pastPlannedEnd: false, range: { fromDay: '2026-09-15', toDay: TODAY } },
+  trial: { longName: 'Since the trial started', anchorDay: '2026-09-03', isAllTime: false, isTrial: true, recordFrom: null, pastPlannedEnd: false, range: { fromDay: '2026-09-03', toDay: TODAY } },
   // A window reaching back before the record: nothing before Sep 1 may be claimed.
-  wide: { longName: 'Last 30 days', anchorDay: null, isAllTime: false, isTrial: false, range: { fromDay: '2026-08-23', toDay: TODAY } },
-  august: { longName: 'August', anchorDay: null, isAllTime: false, isTrial: false, range: { fromDay: '2026-08-01', toDay: '2026-08-31' } },
+  wide: { longName: 'Last 30 days', anchorDay: null, isAllTime: false, isTrial: false, recordFrom: null, pastPlannedEnd: false, range: { fromDay: '2026-08-23', toDay: TODAY } },
+  august: { longName: 'August', anchorDay: null, isAllTime: false, isTrial: false, recordFrom: null, pastPlannedEnd: false, range: { fromDay: '2026-08-01', toDay: '2026-08-31' } },
 };
 
 const COURSE_KEYS = ['reg-pred', 'item:item-cet', 'item:unspecified'];
@@ -504,7 +504,7 @@ describe('AC 2 — "N days unlogged": on or after the record, before today, only
     expect(unlogged).toEqual([]);
     const line = countLineOf({
       filter: { kind: 'all' }, search: null, facts, course: null, trialRange: null, today: TODAY, dates: DATES,
-      window: { longName: 'Last 2 days', anchorDay: null, isAllTime: false, isTrial: false, range: { fromDay: '2026-09-20', toDay: TODAY } },
+      window: { longName: 'Last 2 days', anchorDay: null, isAllTime: false, isTrial: false, recordFrom: null, pastPlannedEnd: false, range: { fromDay: '2026-09-20', toDay: TODAY } },
     });
     // Coverage says nothing; the other clause still speaks (the pair across midnight).
     expect(line).toMatchObject({ kind: 'count', line2: '1 logged twice in the same minute' });
@@ -652,6 +652,74 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
       line1: { lead: 'Rows that mention ', strong: '“rabbit”', tail: ' · All time' },
       line2: 'Search finds; it never counts.',
     });
+  });
+
+  // ── CUL-1189's two rulings (spec §3.2, AC 40 / 41: "the count line's copy is HV-7's") ──
+
+  it('an anchored window before the record names where the record starts; coverage counts from the record (CUL-1189 · 1)', () => {
+    // The visit is Aug 26, the record starts Sep 1: HV-3 starts the window at the record
+    // and hands its first day over. The unlogged count is over the record's days only.
+    const visit: CountLineWindow = {
+      longName: 'Since the last vet visit', anchorDay: '2026-08-26', isAllTime: false, isTrial: false,
+      recordFrom: '2026-09-01', pastPlannedEnd: false, range: { fromDay: '2026-09-01', toDay: TODAY },
+    };
+    expect(lineFor(visit, { kind: 'all' })).toEqual({
+      kind: 'count',
+      line1: { lead: 'Since the last vet visit, Aug 26 · record from Sep 1 · ', strong: '22 logged', tail: '' },
+      line2: '12 days unlogged · 2 logged twice in the same minute',
+      doors: [],
+    });
+  });
+
+  it('a trial past its planned end says so, before the count (CUL-1189 · 2)', () => {
+    const past: CountLineWindow = { ...WINDOWS.trial, pastPlannedEnd: true };
+    expect(lineFor(past, { kind: 'type', type: 'vomit' })).toMatchObject({
+      line1: { lead: 'Since the trial started, Sep 3 · past its planned end · ', strong: '3 vomits on 2 days' },
+    });
+  });
+
+  it('both at once read in one order: where the record starts, then the planned end', () => {
+    const both: CountLineWindow = {
+      ...WINDOWS.trial, anchorDay: '2026-08-20', recordFrom: '2026-09-01', pastPlannedEnd: true,
+      range: { fromDay: '2026-09-01', toDay: TODAY },
+    };
+    expect(lineFor(both, { kind: 'all' })).toMatchObject({
+      line1: { lead: 'Since the trial started, Aug 20 · record from Sep 1 · past its planned end · ' },
+    });
+  });
+
+  it('a search names the window with its qualifiers: they describe the window, not a count', () => {
+    // The old food searched inside the grace reads as after the planned end, and a search
+    // under a bound before the record never seems to cover days nobody logged.
+    const past: CountLineWindow = { ...WINDOWS.trial, pastPlannedEnd: true };
+    expect(lineFor(past, { kind: 'all' }, { search: 'chicken' })).toMatchObject({
+      kind: 'search',
+      line1: { tail: ' · Since the trial started, Sep 3 · past its planned end' },
+    });
+    const early: CountLineWindow = {
+      longName: 'Since the last vet visit', anchorDay: '2026-08-26', isAllTime: false, isTrial: false,
+      recordFrom: '2026-09-01', pastPlannedEnd: false, range: { fromDay: '2026-09-01', toDay: TODAY },
+    };
+    expect(lineFor(early, { kind: 'all' }, { search: 'chicken' })).toMatchObject({
+      kind: 'search',
+      line1: { tail: ' · Since the last vet visit, Aug 26 · record from Sep 1' },
+    });
+    const both: CountLineWindow = {
+      ...WINDOWS.trial, anchorDay: '2026-08-20', recordFrom: '2026-09-01', pastPlannedEnd: true,
+      range: { fromDay: '2026-09-01', toDay: TODAY },
+    };
+    expect(lineFor(both, { kind: 'all' }, { search: 'rabbit' })).toMatchObject({
+      kind: 'search',
+      line1: { tail: ' · Since the trial started, Aug 20 · record from Sep 1 · past its planned end' },
+    });
+  });
+
+  it('neither qualifier appears on a window that carries neither', () => {
+    for (const w of Object.values(WINDOWS)) {
+      const line = lineFor(w, { kind: 'all' });
+      const lead = line.kind === 'count' ? line.line1.lead : '';
+      expect(lead).not.toMatch(/record from|past its planned end/);
+    }
   });
 
   it('A new account: no count line at all', () => {

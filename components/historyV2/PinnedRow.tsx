@@ -27,7 +27,7 @@ import { useHistoryRecordFacts } from '../../hooks/useHistoryRecordFacts';
 import { useBetaOptIn } from '../../lib/betaFeatures';
 import { PHOTO_READING_OFF, pinnedRowViewOf, searchLabelOf } from '../../lib/historyControls';
 import { lookCardLive } from '../../lib/lookCard';
-import { toLocalDayKey } from '../../lib/utils';
+import { useHistoryToday } from '../../store/historyListStore';
 import { effectiveSearch, useHistoryScopeStore } from '../../store/historyScopeStore';
 import { usePetStore } from '../../store/petStore';
 
@@ -43,6 +43,7 @@ export function PinnedRow() {
   const searchOpen = useHistoryScopeStore((s) => s.searchOpen);
   const searchText = useHistoryScopeStore((s) => s.searchText);
   const record = useHistoryRecordFacts();
+  const today = useHistoryToday();
   const lookEligible = useAllowlistFlag('daily_look');
   const lookOptedIn = useBetaOptIn('daily_look');
   const [focusTick, setFocusTick] = useState(0);
@@ -57,9 +58,9 @@ export function PinnedRow() {
         search: effectiveSearch({ searchOpen, searchText }),
         lookLive: lookCardLive({ eligible: lookEligible, optedIn: lookOptedIn, species }),
         readingOff: PHOTO_READING_OFF,
-        today: toLocalDayKey(new Date()),
+        today,
       }),
-    [record, filter, windowKey, searchOpen, searchText, lookEligible, lookOptedIn, species],
+    [record, filter, windowKey, searchOpen, searchText, lookEligible, lookOptedIn, species, today],
   );
 
   if (!activePet) return null;

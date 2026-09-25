@@ -376,7 +376,7 @@ describe('a pet switch (AC 13)', () => {
     expect(view.getByRole('header').props.children).toBe('Rex');
     expect(view.getByLabelText('Filter: All types')).toBeTruthy();
     await settle();
-    expect(mockRead).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'p2' }), false);
+    expect(mockRead).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'p2' }), false, expect.any(Number));
   });
 
   it('closes an open window sheet, and no trial date carries to the new pet', async () => {

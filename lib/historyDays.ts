@@ -826,6 +826,19 @@ export interface CountLineWindow {
   /** The window's days. Must be the days the facts were read for; when it is not, the line
    *  is `pending`, so a stale read never prints its numbers under the new window's name. */
   range: DayRange;
+  /**
+   * The record's first day, when an anchored window (the trial, the visit) is dated before
+   * it: the window starts at the record (GAP-24) and line 1 says where, *Since the last vet
+   * visit, Jul 26 · record from Aug 3* (CUL-1189 · 1, HV-3's `recordStartsLater`). Null for
+   * every other window. Required, never defaulted: a caller that forgot it would print a
+   * window that seems to start on its anchor over days nobody logged (C-37's lesson).
+   */
+  recordFrom: string | null;
+  /** The trial window, offered past the trial's planned last day inside B-422's grace:
+   *  line 1 says so, *past its planned end* (CUL-1189 · 2, HV-3's `trialPastTarget`), so
+   *  a relapse after the owner went back to the old food never reads as the trial failing.
+   *  False for every other window. */
+  pastPlannedEnd: boolean;
 }
 
 export interface CountLineInput {
@@ -887,11 +900,21 @@ export function countLineOf(input: CountLineInput): CountLine {
   if (recordStart === null) return { kind: 'none' };
 
   const head = window.anchorDay ? `${window.longName}, ${dates.day(window.anchorDay)}` : window.longName;
+  // What an anchored window says about itself, right after its name (CUL-1189, PM-ruled
+  // (a)/(a)): where the record starts when the anchor is earlier, and that a trial is past
+  // its planned end. Both describe the WINDOW, so every form that names it carries them,
+  // search included: a search for the old food inside the grace reads as a relapse after
+  // the planned end, never as the trial failing, and a search under a visit bound before the
+  // record never seems to cover days nobody logged.
+  const qualifiers: string[] = [];
+  if (window.recordFrom !== null) qualifiers.push(`record from ${dates.day(window.recordFrom)}`);
+  if (window.pastPlannedEnd) qualifiers.push('past its planned end');
+  const windowHead = [head, ...qualifiers].join(' · ');
   const term = input.search?.trim() ?? '';
   if (term.length > 0) {
     return {
       kind: 'search',
-      line1: { lead: 'Rows that mention ', strong: `“${term}”`, tail: ` · ${head}` },
+      line1: { lead: 'Rows that mention ', strong: `“${term}”`, tail: ` · ${windowHead}` },
       line2: 'Search finds; it never counts.',
     };
   }
@@ -899,7 +922,7 @@ export function countLineOf(input: CountLineInput): CountLine {
   const total = windowTotalOf(facts.days, filter) ?? { count: 0, days: 0 };
   const course = filter.kind === 'course' ? input.course : null;
   const line1: CountLineText = {
-    lead: `${head} · `,
+    lead: `${windowHead} · `,
     strong: countPhrase(filter, total),
     tail: window.isAllTime && filter.kind !== 'course' ? ` since ${dates.day(recordStart)}` : '',
   };

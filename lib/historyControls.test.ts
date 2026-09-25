@@ -335,7 +335,7 @@ describe('the course sub-rows (AC 30, CUL-488, CUL-1193)', () => {
     const line = countLineOf({
       filter: { kind: 'course', courseKey: cet.key },
       search: null,
-      window: { longName: 'All time', anchorDay: null, isAllTime: true, isTrial: false, range: ALL_RANGE },
+      window: { longName: 'All time', anchorDay: null, isAllTime: true, isTrial: false, range: ALL_RANGE, recordFrom: null, pastPlannedEnd: false },
       facts: {
         petId: PET,
         range: ALL_RANGE,

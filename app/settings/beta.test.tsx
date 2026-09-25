@@ -161,9 +161,8 @@ describe('BetaFeaturesScreen — eligible account', () => {
 
   it('renders the History v2 card for an allowlisted account only, opt-in default off (CUL-1158)', () => {
     // HV-1 AC: the shelf lists History v2 for an eligible account only. Allowlisted
-    // for history_v2 → the card renders (title + blurb) with its switch OFF, and no
-    // on-state hint (the v2 screen is empty until HV-7). The zero-eligible case (the
-    // dark seed reaches nobody → no card) is the B-729 test above.
+    // for history_v2 → the card renders (title + blurb) with its switch OFF. The
+    // zero-eligible case (the dark seed reaches nobody → no card) is the B-729 test above.
     setAllowlist({ history_v2: gatedToPm });
     const { getByText, queryByText, getByRole } = render(<BetaFeaturesScreen />);
 
@@ -173,10 +172,12 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(queryByText('Design v2')).toBeNull();
     expect(queryByText('Noticed')).toBeNull();
 
-    // Opted in, it says nothing more: no hint promises a screen that is not drawn yet.
+    // Off, no hint; opted in, the hint names what HV-7 drew (CUL-1164) and nothing it
+    // did not: no strip, no filter, no search yet.
+    expect(queryByText(/^It’s on\./)).toBeNull();
     act(() => useBetaOptInStore.getState().setOptIn('history_v2', true));
     expect(getByRole('switch').props.value).toBe(true);
-    expect(queryByText(/^It’s on\./)).toBeNull();
+    expect(getByText(/^It’s on\. Open History: each day is its own card/)).toBeTruthy();
   });
 
   it('a different account is not shown the History v2 card', () => {

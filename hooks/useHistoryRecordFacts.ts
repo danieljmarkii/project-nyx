@@ -9,17 +9,17 @@
 // view: a tab stays mounted behind the others, and a whole-record read on every Home
 // refresh would be work nobody sees, so a change made elsewhere is read once, on return.
 //
-// ACROSS MIDNIGHT. Each read derives its own `today` (`readWindowFacts`), and the row
-// resolves every window against the answer's day, so the pills, the sheets and their
-// numbers always agree on which day it is. They move to the new day at the next read: a
-// return to the app runs a sync cycle, which bumps `hydrationTick` even when it fails
-// (`useSync`), so only a screen left open through midnight with nothing logged and no
-// sync keeps yesterday's day until then.
+// ACROSS MIDNIGHT. Each read is for the day the list shows (`useHistoryToday`), taken at an
+// instant on that day (`instantOnDay`), and the row resolves every window against the
+// answer's day. The list's clock moves at midnight, and that tick re-reads here, so the
+// pills and the count line are never on two sides of midnight: a screen left open through
+// it no longer counts yesterday under the window the count line has moved to today (C-3).
 //
-// WHOSE ANSWER. Each answer is stamped with the pet it was read for and drawn only while
-// that pet is on screen (CUL-1120's shape): a switch shows no numbers until the new pet's
-// read answers, never the last pet's under the new pet's name. A newer read for the same
-// pet replaces the last answer when it lands, so the numbers never blank between reads.
+// WHOSE ANSWER. Each answer is stamped with the pet and the day it was read for, and drawn
+// only while both are on screen (CUL-1120's shape): a switch, or midnight, shows no numbers
+// until the new read answers, never the last pet's under the new pet's name nor yesterday's
+// under today's window. A newer read for the same pet and day replaces the last answer
+// when it lands, so the numbers never blank between reads.
 //
 // A hook, not a component: nothing here lives in `components/historyV2/`, whose every
 // exported function the flag-off guard wraps into a component.
@@ -27,8 +27,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { PHOTO_READING_OFF } from '../lib/historyControls';
+import { instantOnDay } from '../lib/historyScreen';
 import { readHistoryRecord, type HistoryRecordData } from '../lib/historyWindowFacts';
 import { useEventStore } from '../store/eventStore';
+import { useHistoryToday } from '../store/historyListStore';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 
@@ -57,7 +59,10 @@ export function useHistoryRecordFacts(): HistoryRecordState {
     }, []),
   );
 
-  const [answer, setAnswer] = useState<{ petId: string; state: HistoryRecordState } | null>(null);
+  // The day the list shows (its clock moves at midnight): the read is for it, and the list's
+  // tick re-reads here.
+  const day = useHistoryToday();
+  const [answer, setAnswer] = useState<{ petId: string; day: string; state: HistoryRecordState } | null>(null);
   const petId = activePet?.id ?? null;
   const name = activePet?.name;
   const species = activePet?.species;
@@ -66,18 +71,18 @@ export function useHistoryRecordFacts(): HistoryRecordState {
   useEffect(() => {
     if (!focused || !petId || !name || !species) return;
     let cancelled = false;
-    readHistoryRecord({ id: petId, name, species, sex }, PHOTO_READING_OFF)
+    readHistoryRecord({ id: petId, name, species, sex }, PHOTO_READING_OFF, instantOnDay(day, Date.now()))
       .then((data) => {
-        if (!cancelled) setAnswer({ petId, state: { status: 'ready', data } });
+        if (!cancelled) setAnswer({ petId, day, state: { status: 'ready', data } });
       })
       .catch((e: unknown) => {
         console.error('[useHistoryRecordFacts] reading the record failed:', e);
-        if (!cancelled) setAnswer({ petId, state: { status: 'error' } });
+        if (!cancelled) setAnswer({ petId, day, state: { status: 'error' } });
       });
     return () => {
       cancelled = true;
     };
-  }, [focused, petId, name, species, sex, hydrationTick, todayEvents]);
+  }, [focused, petId, name, species, sex, hydrationTick, todayEvents, day]);
 
-  return answer !== null && answer.petId === petId ? answer.state : LOADING;
+  return answer !== null && answer.petId === petId && answer.day === day ? answer.state : LOADING;
 }

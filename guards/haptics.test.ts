@@ -161,6 +161,15 @@ const ALWAYS_SCANNED = [
   // `.ts` file `walk()` cannot see. Proven by mutation on CUL-1162: a `commitSymptom`
   // import there reds the build. The painters come with their own sessions (HV-6, HV-7).
   'lib/readState.ts',
+  // HV-7 (CUL-1164) — History v2's list and its day card. The card lays every day's rows
+  // down the thread through the shared row, so a photographed vomit's `worth_a_call` and
+  // its arrival are drawn inside it, and the list hosts every card, the pull to refresh
+  // and the landing; the landing is a "you are here" beat a buzz would read as natural
+  // for, and it lands on vomit days. Neither carries the MARKERS (the verdict is the row's,
+  // one import away), so both are named the PR they ship (C-16). Proven by mutation on
+  // CUL-1164: a `commitSymptom` import in either reds the build.
+  'components/historyV2/DayCard.tsx',
+  'components/historyV2/HistoryList.tsx',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;

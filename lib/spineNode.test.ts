@@ -125,6 +125,12 @@ describe('buildSpine — the ten-event day', () => {
     expect(v2?.kind === 'event' && v2.timing).toBe('4 min after eating');
   });
 
+  it('the model names each line\'s anchor, the meal the lane measured from (for a card that draws one day of many)', () => {
+    // History hands a card the meals a line on ANOTHER card names (`timedElsewhere`), and it
+    // reads them here: the very anchors this call's rule B kept on their own rows.
+    expect(buildSpine(input()).anchors).toEqual(new Map([['v1', 'm2'], ['v2', 'm5']]));
+  });
+
   it('a cough is never timed (the lane times vomiting only), and carries no read', () => {
     const c1 = buildSpine(input()).nodes.find((n) => n.id === 'c1');
     expect(c1?.kind === 'event' && c1.timing).toBeNull();
@@ -495,7 +501,7 @@ describe('the safety day and the quiet day', () => {
 
   it('quiet: nothing logged is an empty model with no count line', () => {
     const model = buildSpine(input({ rows: [], feedings: [], photographed: new Set() }));
-    expect(model).toEqual({ total: 0, counts: [], nodes: [] });
+    expect(model).toEqual({ total: 0, counts: [], nodes: [], anchors: new Map() });
     expect(countLine(model)).toBeNull();
   });
 

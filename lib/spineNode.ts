@@ -255,6 +255,11 @@ export interface SpineModel {
   /** The recap's C2 chips, symptoms first: the same counter, the same order. */
   counts: DayCountChip[];
   nodes: SpineNode[];
+  /** The meal each of the day's timing lines measures from, by the vomit that carries the
+   *  line: the anchors this very call used. A surface that draws one card per day (History)
+   *  hands a card the meals a line on ANOTHER card names (`timedElsewhere`), and reads them
+   *  here rather than running the lane a second time. */
+  anchors: ReadonlyMap<string, string>;
 }
 
 // ── The read ─────────────────────────────────────────────────────────────────────
@@ -663,7 +668,8 @@ export function buildSpine(input: SpineInput): SpineModel {
     g.kind === 'compact' ? compactNode(g.nodes.map((x) => x.node)) : g.node.node,
   );
   const countable = nodes.map((n) => ({ category: n.category, eventType: n.eventType }));
-  return { total: countable.length, counts: buildCountChips(countable), nodes: lines };
+  const anchors = new Map([...timing].map(([vomitId, line]) => [vomitId, line.mealId] as const));
+  return { total: countable.length, counts: buildCountChips(countable), nodes: lines, anchors };
 }
 
 /** The count line: "10 logged · 2 vomits · 1 cough · 7 meals". The recap's chips, led by

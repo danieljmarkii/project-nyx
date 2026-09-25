@@ -35,7 +35,9 @@ jest.mock('../lib/historyWindowFacts', () => ({ readHistoryRecord: jest.fn() }))
 import { act, renderHook } from '@testing-library/react-native';
 import { useHistoryRecordFacts } from './useHistoryRecordFacts';
 import { readHistoryRecord, type HistoryRecordData } from '../lib/historyWindowFacts';
+import { dayKeyToLocalDate, toLocalDayKey } from '../lib/utils';
 import { useEventStore, type NyxEvent } from '../store/eventStore';
+import { useHistoryListStore } from '../store/historyListStore';
 import { usePetStore, type Pet } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 
@@ -93,6 +95,7 @@ beforeEach(() => {
   mockFocus.focused = true;
   useSyncStore.setState({ hydrationTick: 0 });
   useEventStore.setState({ todayEvents: [] });
+  useHistoryListStore.setState({ today: null });
   act(() => usePetStore.setState({ activePet: NYX, pets: [NYX, REX] }));
 });
 
@@ -102,7 +105,7 @@ describe('useHistoryRecordFacts — when it reads', () => {
     const { result } = renderHook(() => useHistoryRecordFacts());
     expect(result.current).toEqual({ status: 'loading' });
     expect(mockRead).toHaveBeenCalledTimes(1);
-    expect(mockRead).toHaveBeenCalledWith({ id: 'p1', name: 'Nyx', species: 'cat', sex: 'male' }, false);
+    expect(mockRead).toHaveBeenCalledWith({ id: 'p1', name: 'Nyx', species: 'cat', sex: 'male' }, false, expect.any(Number));
     await act(async () => reads[0].resolve(answer('p1', 1)));
     expect(result.current).toEqual({ status: 'ready', data: answer('p1', 1) });
   });
@@ -185,5 +188,50 @@ describe('useHistoryRecordFacts — whose answer', () => {
     act(() => useSyncStore.getState().bumpHydrationTick());
     await act(async () => reads[1].resolve(answer('p1', 2)));
     expect(result.current).toEqual({ status: 'ready', data: answer('p1', 2) });
+  });
+});
+
+describe('useHistoryRecordFacts — which day', () => {
+  // Local instants, so the day boundary is the running zone's midnight (C-29).
+  const at = (day: string, h: number, m = 0, sec = 0) => {
+    const d = dayKeyToLocalDate(day) as Date;
+    d.setHours(h, m, sec, 0);
+    return d.getTime();
+  };
+  const dayOfRead = (n: number) => toLocalDayKey(new Date(mockRead.mock.calls[n][2] as number));
+
+  it('reads for the day the list shows, even while the real clock is past its midnight', () => {
+    deferredReads();
+    act(() => useHistoryListStore.setState({ today: '2026-09-25' }));
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(at('2026-09-26', 0, 0, 30));
+    try {
+      renderHook(() => useHistoryRecordFacts());
+    } finally {
+      clock.mockRestore();
+    }
+    expect(dayOfRead(0)).toBe('2026-09-25');
+  });
+
+  it('the list’s midnight tick re-reads for the new day, and draws nothing from the old day meanwhile (C-3)', async () => {
+    const reads = deferredReads();
+    act(() => useHistoryListStore.setState({ today: '2026-09-25' }));
+    const { result } = renderHook(() => useHistoryRecordFacts());
+    await act(async () => reads[0].resolve(answer('p1', 1)));
+    expect(result.current).toEqual({ status: 'ready', data: answer('p1', 1) });
+    // Midnight: the count line has moved to the new day, so yesterday's numbers are not
+    // drawn under today's window while the new day's read is in flight.
+    act(() => useHistoryListStore.setState({ today: '2026-09-26' }));
+    expect(result.current).toEqual({ status: 'loading' });
+    expect(mockRead).toHaveBeenCalledTimes(2);
+    expect(dayOfRead(1)).toBe('2026-09-26');
+    await act(async () => reads[1].resolve(answer('p1', 2)));
+    expect(result.current).toEqual({ status: 'ready', data: answer('p1', 2) });
+  });
+
+  it('reads once on mount when the list’s day arrives after it and is the same day', () => {
+    deferredReads();
+    renderHook(() => useHistoryRecordFacts());
+    act(() => useHistoryListStore.setState({ today: toLocalDayKey(new Date()) }));
+    expect(mockRead).toHaveBeenCalledTimes(1);
   });
 });

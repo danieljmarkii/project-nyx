@@ -591,6 +591,42 @@ async function readDays(
     .map(([day, rows]) => ({ day, rows: rows.sort(compareRows) }));
 }
 
+/** Day keys, newest first, as runs of consecutive days (each run newest first too). */
+function consecutiveRuns(days: readonly string[]): DayRange[] {
+  const sorted = [...new Set(days.filter((d) => isDayKey(d)))].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+  const runs: DayRange[] = [];
+  for (const day of sorted) {
+    const last = runs[runs.length - 1];
+    if (last && shiftDay(last.fromDay, -1) === day) last.fromDay = day;
+    else runs.push({ fromDay: day, toDay: day });
+  }
+  return runs;
+}
+
+/**
+ * EVERY row on these local days, whatever the filter or search on screen, by day, morning
+ * to night: the day as the shared row builds it (R-2, AC 9). A filter or a search only
+ * HIDES rows, so the nodes a day draws are built over the whole day and then filtered: built
+ * over the filtered rows instead, a Meal filter would join two runs a hidden vomit keeps
+ * apart, and Photographed would time a second vomit its unphotographed first had already
+ * opened the episode for. The page read decides WHICH rows show (its SQL is the one
+ * predicate per filter); this read only supplies their neighbours.
+ *
+ * Read in runs of consecutive days, one read per run, so a rare filter's scattered days do
+ * not pull the months between them. Looks are not here (the population excludes them; the
+ * Noticed filter draws its own rows). Rejects on a failed read.
+ */
+export async function readWholeDays(petId: string, days: readonly string[]): Promise<Map<string, HistoryRow[]>> {
+  const out = new Map<string, HistoryRow[]>();
+  const runs = consecutiveRuns(days);
+  if (runs.length === 0) return out;
+  const regimens = await readRegimens(petId);
+  const scope: DayPageScope = { range: { fromDay: runs[runs.length - 1].fromDay, toDay: runs[0].toDay }, filter: { kind: 'all' }, search: null };
+  const answers = await Promise.all(runs.map((run) => readDays(petId, scope, run, regimens)));
+  for (const answer of answers) for (const day of answer) out.set(day.day, day.rows);
+  return out;
+}
+
 /**
  * One page of History's list: whole local days, newest first, until the page holds at least
  * `minRows` rows (§5.2). `cursor` is the previous page's `next`, or null for the first page.

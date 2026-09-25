@@ -86,13 +86,16 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
           'It’s on. Home’s Signal leads with its chart — tap it for the Signal’s own screen; Today reads as one line per moment, with the daily look at the top and the month’s coverage at the foot; open Patterns to see the month with its weekly bars and the weight drawn by date.',
       };
     case 'history_v2':
-      // No on-state hint yet: at HV-1 (CUL-1158) the v2 screen is its empty
-      // composition root, and the VV-0 lesson says a "nothing to see yet" hint is
-      // false the day the next lane lands. The step-2 lane that draws the list
-      // (HV-7) writes the hint for what it shipped, as D2-3/4/5 did above. A
-      // scroll of text reads as "the record you can read", distinct from the
-      // widget grid, Noticed's eye and the redesign's palette.
-      return { Icon: ScrollText };
+      // The on-state hint, written by the lane that drew the list (HV-7, CUL-1164) for
+      // what it shipped and nothing more (the VV-0 lesson): the day cards, the lines
+      // between them and the count line. The strip (HV-8) and the pinned row (HV-9) add
+      // their own clause when they land. A scroll of text reads as "the record you can
+      // read", distinct from the widget grid, Noticed's eye and the redesign's palette.
+      return {
+        Icon: ScrollText,
+        onHint:
+          'It’s on. Open History: each day is its own card with its counts at the top, the days with nothing logged are named between them, and the line above the days says what the counts cover.',
+      };
     default:
       return { Icon: FlaskConical };
   }
