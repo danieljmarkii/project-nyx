@@ -13,9 +13,9 @@
 // the ones DR-2's lane already reads, so a meal is the same teal and a symptom the same
 // rose whether it is a bead on the night spine, a dot on the lane or a node on Home.
 // The row CHROME — the time column, the rail, the thread, the ground-ringed dot — is
-// `SpineRowFrame`, exported so Home's node renderer draws the same bead and thread and
-// only its BODY differs (the compact line, the read, the photo glyph). One node
-// language, two bodies; never two threads.
+// `SpineRowFrame`, exported so the day row Home and History share (`components/dayRow/`,
+// History v2 HV-1) draws the same bead and thread and only its BODY differs (the compact
+// line, the read, the photo glyph). One node language, two bodies; never two threads.
 //
 // The connecting thread is drawn per-row as two absolute line segments in the rail
 // column (RN has no `::before`): a top segment (omitted on the first row) and a
@@ -44,9 +44,11 @@ export type SpineGround = 'night' | 'day';
 // Geometry — the rail column that carries the dot + thread, and where the dot's
 // centre sits from the row top (so the thread segments and the title line up). The dot
 // SIZE + ring come from the shared node constants so the spine and DR-2's Home lane
-// draw the same bead (nodeTints.ts).
-const TIME_W = 56;
-const RAIL_W = 18;
+// draw the same bead (nodeTints.ts). The two column widths are EXPORTED (History v2,
+// HV-1): a row that indents under the time and the rail (a run's opened members, a
+// History day card's date-only items) derives its inset from these, never re-types them.
+export const TIME_W = 56;
+export const RAIL_W = 18;
 const DOT = NODE_DOT_SIZE;
 const LINE_W = 2;
 const DOT_TOP = 3; // marginTop lifting the dot to the title's first line
@@ -111,6 +113,31 @@ export const DaySpine = memo(DaySpineImpl);
 
 // ── The frame — the chrome every spine row shares ─────────────────────────────
 
+/** A no-break space: glues a clock time to its meridiem, and a range's first time to
+ *  its dash. */
+const NBSP = '\u00A0';
+
+/**
+ * The time column's text, shaped so it WRAPS instead of cutting off (History v2, HV-1;
+ * spec §3.6, AC 19: "a range breaks after its dash, each time unbreakable"). The column
+ * is a fixed 56pt, so a run's range always takes two lines and a time at a large text
+ * size may too; where the break falls is the whole design:
+ *   • inside a clock time, the space before its meridiem becomes a no-break space, so
+ *     "12:41 PM" never splits into "12:41" / "PM";
+ *   • a spaced range dash takes a no-break space BEFORE it and keeps the ordinary one
+ *     after it, so "12:41 – 5:07 PM" reads "12:41 –" / "5:07 PM", never "12:41" / "– 5:07 PM".
+ * A prefix word ("by", "after") keeps its own break on purpose: "by 07:02 AM" is 64pt of
+ * Geist at the column's 11pt, wider than the column, so the break lands after "by"
+ * rather than inside the time. A narrow no-break space the platform's formatter already
+ * put before the meridiem (U+202F) is left as it is. The shaping only ever swaps a
+ * space for a no-break space, so the text says exactly what it said before.
+ */
+export function timeColumnText(time: string): string {
+  return time
+    .replace(/(\d{1,2}[:.]\d{2}) (?=[AaPp]\.?[Mm]\.?)/g, `$1${NBSP}`)
+    .replace(/ – /g, `${NBSP}– `);
+}
+
 export interface SpineRowFrameProps {
   ground: SpineGround;
   category: EventTintCategory;
@@ -159,9 +186,11 @@ export function SpineRowFrame({
         style,
       ]}
     >
-      <ThemedText style={[styles.time, { color: g.time }]} numberOfLines={1}>
-        {time}
-      </ThemedText>
+      {/* No line cap (History v2, AC 19): the time wraps inside its fixed column instead
+          of truncating, at the default size and at the largest. The row grows from its
+          44pt floor (`minHeight`, never `height`) and the thread's segments stretch with
+          it. The row's spoken label carries the plain string; this is the drawn one. */}
+      <ThemedText style={[styles.time, { color: g.time }]}>{timeColumnText(time)}</ThemedText>
 
       <View style={styles.rail}>
         {!isFirst && <View style={[styles.line, styles.lineTop, { backgroundColor: g.thread }]} />}

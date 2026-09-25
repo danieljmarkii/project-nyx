@@ -9,19 +9,19 @@
 // the arrival is announced politely; a compact node opens in place and closes.
 
 const mockUseReducedMotion = jest.fn(() => false);
-jest.mock('../../../hooks/useReducedMotion', () => ({
+jest.mock('../../hooks/useReducedMotion', () => ({
   useReducedMotion: () => mockUseReducedMotion(),
 }));
 const mockUseAppActive = jest.fn(() => true);
-jest.mock('../../../hooks/useAppActive', () => ({ useAppActive: () => mockUseAppActive() }));
+jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => mockUseAppActive() }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { AccessibilityInfo, Animated, LayoutAnimation, StyleSheet } from 'react-native';
-import { theme } from '../../../constants/theme';
-import { FOLD_MOTION, UNFOLD_LAYOUT } from '../../motion/foldMotion';
-import { TICK_BREATH } from '../../motion/arrivalMotion';
-import type { NodeRead, SpineCompactNode, SpineEventNode } from '../../../lib/spineNode';
+import { theme } from '../../constants/theme';
+import { FOLD_MOTION, UNFOLD_LAYOUT } from '../motion/foldMotion';
+import { TICK_BREATH } from '../motion/arrivalMotion';
+import type { NodeRead, SpineCompactNode, SpineEventNode } from '../../lib/spineNode';
 import {
   PHOTOGRAPHED_LABEL,
   SPINE_READ_PENDING_LABEL,
@@ -289,7 +289,12 @@ describe('a compact node opens in place', () => {
   it('closed: one line — the count, the food, the range — and `expanded: false`', () => {
     const t = render(<Host expanded={false} onToggle={jest.fn()} />);
     expect(t.getByText('3 meals', { exact: false })).toBeTruthy();
-    expect(t.getByText(/12:41 – 5:07 PM/)).toBeTruthy();
+    // The range as DRAWN, compared raw — the default normalizer folds a no-break space
+    // into a space and would pass the unshaped string too. It breaks only after its
+    // dash (History v2 AC 19; the frame's `timeColumnText`), and the spoken label keeps
+    // the plain string.
+    expect(t.getByText('12:41\u00A0– 5:07\u00A0PM', { normalizer: (s: string) => s })).toBeTruthy();
+    expect(t.getByTestId('spine-node-compact:m3').props.accessibilityLabel).toContain('12:41 – 5:07 PM');
     expect(t.getByTestId('spine-node-compact:m3').props.accessibilityState).toEqual({ expanded: false });
     expect(t.queryByTestId('spine-members-compact:m3')).toBeNull();
   });
