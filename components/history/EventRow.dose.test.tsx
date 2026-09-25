@@ -202,4 +202,20 @@ describe('the chip is read-only, and a value this build does not know reads as u
     expect(getByText('Prednisolone')).toBeTruthy();
     for (const l of Object.values(LABEL)) expect(queryByText(l)).toBeNull();
   });
+
+  // The adversarial pass on this PR: doubt was decided on the RAW value while the chip
+  // read the narrowed one, so this dose drew nothing at all, while the record screen,
+  // which narrows first, marked it in doubt. Migration 020 names the value this is for
+  // (S1 may add `vomited_up`), and an older build would meet it on the next sync.
+  it('a value this build does not know, on a combo whose meal was refused, reads Unconfirmed like the record', () => {
+    const { getByText, queryByText } = draw(dose({
+      ...byItem,
+      adherence: 'vomited_up' as unknown as Adherence,
+      paired_event_id: 'meal-1',
+      paired_vehicle_intake: 'refused',
+      paired_food_name: 'Churu',
+    }));
+    expect(getByText('Unconfirmed')).toBeTruthy();
+    for (const l of Object.values(LABEL)) expect(queryByText(l)).toBeNull();
+  });
 });

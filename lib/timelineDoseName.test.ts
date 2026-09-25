@@ -162,4 +162,16 @@ describe('the timeline names a dose by its course when it has no item (CUL-1124)
     const record = await getEventById('dose-1');
     expect(record?.regimen_drug_name).toBe('Metronidazole');
   });
+
+  // Its own case because the two queries carry their own copy of the join: the
+  // adversarial pass deleted this read's pet condition and every test stayed green.
+  it('the record read never borrows a name from another pet\'s course either', async () => {
+    insertCourse('rx-dog', DOG, 'Carprofen');
+    insertEvent('dose-1', CAT, 'medication', AT);
+    insertDose('dose-1', CAT, { courseId: 'rx-dog', adherence: 'given' });
+
+    const record = await getEventById('dose-1');
+    expect(record?.id).toBe('dose-1');
+    expect(record?.regimen_drug_name).toBeNull();
+  });
 });

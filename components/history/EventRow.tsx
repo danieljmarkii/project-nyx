@@ -117,10 +117,14 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
   // daily scan which dose still needs confirming, without opening every one. The detail
   // screen carries the full ask + the chips to resolve it. Not an alarm; the owner
   // answering (anywhere) clears it by giving the dose an explicit adherence.
+  //
+  // The NARROWED adherence, as the record screen reads it (`app/event/[id].tsx`): a
+  // value this build does not know draws no chip, so it must count as unanswered here
+  // too, or the row would go silent on a dose the record screen marks in doubt.
   const doseInDoubt = isComboDoseInDoubt({
     isCombo: !!event.paired_event_id,
     vehicleIntake: event.paired_vehicle_intake,
-    adherence: event.adherence ?? null,
+    adherence,
   });
 
   // CUL-1124 — the dose line holds the name AND the chip, so it renders for a dose with
