@@ -7,15 +7,15 @@
 // the active pet, and the record's facts, which it reads for itself
 // (`useHistoryRecordFacts`), so no other lane's file had to change to fill it.
 //
-// Every rule is `lib/historyControls.ts`'s; this file only draws what it returns. The
-// search field it opens sits directly under the row, in this slot, so it stays in reach
-// while the owner reads what it found.
+// Every rule is `lib/historyControls.ts`'s (`pinnedRowViewOf`); this file only draws what
+// it returns. The search field it opens sits directly under the row, in this slot, so it
+// stays in reach while the owner reads what it found.
 //
 // A pet switch resets the scope inside the pet store's own update (HV-3), so this row
 // never shows one pet's name over another pet's filter; the two sheets close because they
 // are keyed on the pet, and the field closes with the scope (AC 13).
 import { useMemo, useState } from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Keyboard, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Search } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
@@ -25,19 +25,7 @@ import { WindowSheet } from './WindowSheet';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useHistoryRecordFacts } from '../../hooks/useHistoryRecordFacts';
 import { useBetaOptIn } from '../../lib/betaFeatures';
-import {
-  PHOTO_READING_OFF,
-  daysIn,
-  searchLabelOf,
-  sumIn,
-  typePillOf,
-  typeSheetRows,
-  windowPillLabelOf,
-  windowSheetRows,
-} from '../../lib/historyControls';
-import { historyDateFormatFor } from '../../lib/historyDateFormat';
-import { typeSheetCountsOf } from '../../lib/historyDays';
-import { resolveWindow } from '../../lib/historyWindows';
+import { PHOTO_READING_OFF, pinnedRowViewOf, searchLabelOf } from '../../lib/historyControls';
 import { lookCardLive } from '../../lib/lookCard';
 import { toLocalDayKey } from '../../lib/utils';
 import { effectiveSearch, useHistoryScopeStore } from '../../store/historyScopeStore';
@@ -60,32 +48,19 @@ export function PinnedRow() {
   const [focusTick, setFocusTick] = useState(0);
   const species = activePet?.species;
 
-  const view = useMemo(() => {
-    const data = record.status === 'ready' ? record.data : null;
-    const facts = data?.windowFacts ?? null;
-    const today = facts?.today ?? toLocalDayKey(new Date());
-    const resolved = facts ? resolveWindow(windowKey, facts) : null;
-    const windowDays = data && resolved ? daysIn(data.record.days, resolved.bounds) : null;
-    const courses = data?.courses ?? [];
-    const showCounts = effectiveSearch({ searchOpen, searchText }) === null;
-    const notRead = data?.notReadDays && resolved ? sumIn(data.notReadDays, resolved.bounds) : null;
-    return {
-      typeRows: typeSheetRows({
-        counts: windowDays ? typeSheetCountsOf(windowDays) : null,
-        showCounts,
-        courses,
-        notRead,
-        readingOff: PHOTO_READING_OFF,
+  const view = useMemo(
+    () =>
+      pinnedRowViewOf({
+        record: record.status === 'ready' ? record.data : null,
+        filter,
+        window: windowKey,
+        search: effectiveSearch({ searchOpen, searchText }),
         lookLive: lookCardLive({ eligible: lookEligible, optedIn: lookOptedIn, species }),
-        current: filter,
-        dates: historyDateFormatFor(today),
+        readingOff: PHOTO_READING_OFF,
+        today: toLocalDayKey(new Date()),
       }),
-      typePill: typePillOf({ filter, courses, windowDays, showCounts }),
-      windowRows: windowSheetRows({ facts, recordDays: data?.record.days ?? null, filter, showCounts, today }),
-      windowPill: windowPillLabelOf(resolved, windowKey, today),
-      currentWindow: resolved?.key ?? windowKey,
-    };
-  }, [record, filter, windowKey, searchOpen, searchText, lookEligible, lookOptedIn, species]);
+    [record, filter, windowKey, searchOpen, searchText, lookEligible, lookOptedIn, species],
+  );
 
   if (!activePet) return null;
   const petId = activePet.id;
@@ -97,8 +72,14 @@ export function PinnedRow() {
           {activePet.name}
         </ThemedText>
         <View style={styles.controls}>
-          <TypeSheet petId={petId} filter={filter} rows={view.typeRows} pill={view.typePill} />
-          <WindowSheet petId={petId} current={view.currentWindow} rows={view.windowRows} pillLabel={view.windowPill} />
+          {/* A sheet opened while the search field is focused must not sit under the
+              keyboard, so a touch on either pill puts the keyboard away first. */}
+          <View style={styles.typePill} onTouchStart={Keyboard.dismiss} testID="history-v2-type-pill">
+            <TypeSheet petId={petId} filter={filter} rows={view.typeRows} pill={view.typePill} />
+          </View>
+          <View style={styles.windowPill} onTouchStart={Keyboard.dismiss} testID="history-v2-window-pill">
+            <WindowSheet petId={petId} current={view.currentWindow} rows={view.windowRows} pill={view.windowPill} />
+          </View>
           <TouchableOpacity
             style={styles.searchButton}
             onPress={() => {
@@ -124,6 +105,12 @@ export function PinnedRow() {
   );
 }
 
+// ── WHAT GIVES WAY ON A NARROW PHONE ──────────────────────────────────────────────
+// The window pill never shrinks: a date cut by an ellipsis can read as another date
+// (*Since Jul 2…* for Jul 26), and the design authority pins its pills (round 5). The pet's
+// name and the type pill's words give way instead, together and in proportion to their
+// width; the type pill's count never does (ScopeMenu keeps it in its own unshrinking
+// text), and VoiceOver reads every one of them whole (C-8).
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: theme.space2,
@@ -135,8 +122,6 @@ const styles = StyleSheet.create({
     minHeight: TOUCH_FLOOR,
     gap: theme.space1,
   },
-  // Gives ground to a narrow frame (an ellipsis) before the pills do; its full name is
-  // still what VoiceOver reads (C-8).
   petName: {
     flexShrink: 1,
     minWidth: 0,
@@ -153,6 +138,13 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
     flexShrink: 1,
     minWidth: 0,
+  },
+  typePill: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  windowPill: {
+    flexShrink: 0,
   },
   searchButton: {
     width: TOUCH_FLOOR,

@@ -1,5 +1,5 @@
-import { ComponentType, Fragment, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ComponentType, Fragment, useRef, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, ChevronDown } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
@@ -71,14 +71,39 @@ interface Props {
   // What VoiceOver reads for the pill when it says more than `prefix: label` (the
   // count, with its noun). (HV-9)
   pillAccessibilityLabel?: string;
+  // A set long enough to run past the sheet's fold (History v2's type sheet, ~19 rows):
+  // open with the selected row in view rather than at the top, and flash the scroll
+  // indicator so the rows past the fold read as there, never as the end of the list
+  // (B-146's hidden option, turned vertical). Off by default. (HV-9)
+  openAtSelected?: boolean;
 }
+
+// How much of the list above the selected row stays in view when a sheet opens at it:
+// about one row, so the owner can see it is not the top.
+const SELECTED_ROW_PEEK = 48;
 
 export function ScopeMenu({
   options, value, onChange, sheetLabel, accessibilityPrefix, overrideLabel,
-  pillLabel: pillText, pillCount, pillAccessibilityLabel,
+  pillLabel: pillText, pillCount, pillAccessibilityLabel, openAtSelected,
 }: Props) {
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
+  // One jump to the selected row per opening: a later layout (a count arriving and
+  // resizing a row) must never pull the list back from where the owner scrolled.
+  const landedOnSelected = useRef(false);
+
+  function openSheet() {
+    landedOnSelected.current = false;
+    setOpen(true);
+  }
+
+  function landOnSelected(e: LayoutChangeEvent) {
+    if (landedOnSelected.current) return;
+    landedOnSelected.current = true;
+    // An instant jump on opening, never animated: nothing moves under the owner's eye.
+    scrollRef.current?.scrollTo({ y: Math.max(0, e.nativeEvent.layout.y - SELECTED_ROW_PEEK), animated: false });
+  }
 
   const active = options.find((o) => o.key === value) ?? options[0];
   const pillLabel = overrideLabel ?? pillText ?? active.label;
@@ -97,7 +122,7 @@ export function ScopeMenu({
     <>
       <TouchableOpacity
         style={[styles.pill, filtered && styles.pillActive]}
-        onPress={() => setOpen(true)}
+        onPress={openSheet}
         activeOpacity={0.7}
         // Pill is ~32pt tall; expand the vertical tap zone to the 44pt floor
         // (Designer anti-pattern: sub-44pt targets without hitSlop). Vertical
@@ -137,7 +162,12 @@ export function ScopeMenu({
             {/* Longer sets (the 10-row event-type lens) can outgrow a small
                 screen; the sheet caps its height and the rows scroll INSIDE it
                 with the native indicator visible — never a hidden overflow. */}
-            <ScrollView style={styles.optionScroll} bounces={false}>
+            <ScrollView
+              ref={scrollRef}
+              style={styles.optionScroll}
+              bounces={false}
+              {...(openAtSelected ? { onLayout: () => scrollRef.current?.flashScrollIndicators() } : {})}
+            >
               {options.map((o, i) => {
                 const selected = overrideLabel == null && o.key === value;
                 const isLast = i === options.length - 1;
@@ -169,6 +199,7 @@ export function ScopeMenu({
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
                     accessibilityLabel={o.accessibilityLabel ?? o.label}
+                    {...(openAtSelected && selected ? { onLayout: landOnSelected } : {})}
                   >
                     <View style={styles.optionMain}>
                       {hasIcons ? (

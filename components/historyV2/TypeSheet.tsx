@@ -56,6 +56,7 @@ export function TypeSheet({ petId, filter, rows, pill }: Props) {
       pillLabel={pill.label}
       pillCount={pill.count}
       pillAccessibilityLabel={pill.accessibilityLabel}
+      openAtSelected
     />
   );
 }

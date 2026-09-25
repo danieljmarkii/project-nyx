@@ -17,7 +17,9 @@ interface Props {
   /** The window the list shows: the applied one, or the store's while its facts load. */
   current: HistoryWindowKey;
   rows: readonly SheetRow<HistoryWindowKey>[];
-  pillLabel: string;
+  /** The pill's words (the short name, *Since Jul 26*) and what VoiceOver reads for it
+   *  (the long name and its date). */
+  pill: { label: string; accessibilityLabel: string };
 }
 
 /** The menu's key for a window: All time is the default, null. */
@@ -25,7 +27,7 @@ function keyOf(window: HistoryWindowKey): string | null {
   return window.kind === 'all' ? null : windowParam(window);
 }
 
-export function WindowSheet({ petId, current, rows, pillLabel }: Props) {
+export function WindowSheet({ petId, current, rows, pill }: Props) {
   const { options, byKey } = useMemo(() => {
     const map = new Map<string | null, HistoryWindowKey>();
     const opts: ScopeMenuOption[] = rows.map((row) => {
@@ -54,7 +56,9 @@ export function WindowSheet({ petId, current, rows, pillLabel }: Props) {
       }}
       sheetLabel={WINDOW_SHEET_LABEL}
       accessibilityPrefix={WINDOW_PILL_PREFIX}
-      pillLabel={pillLabel}
+      pillLabel={pill.label}
+      pillAccessibilityLabel={pill.accessibilityLabel}
+      openAtSelected
     />
   );
 }

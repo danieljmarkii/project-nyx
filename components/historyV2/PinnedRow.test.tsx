@@ -27,7 +27,7 @@ jest.mock('../../lib/sync', () => ({
 }));
 jest.mock('../../lib/historyWindowFacts', () => ({ readHistoryRecord: jest.fn() }));
 
-import { StyleSheet } from 'react-native';
+import { Keyboard, StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { PinnedRow } from './PinnedRow';
 import { SEARCH_WRITE_DELAY_MS } from './SearchField';
@@ -151,12 +151,8 @@ function recordFor(forPet: Pet): HistoryRecordData {
   return {
     petId: forPet.id,
     windowFacts: facts,
-    record: {
-      range,
-      days: buildDayFacts({ rows: ROWS, lookDays: [], range, freeFedFoodIds: new Set(), regimens: REGIMENS }),
-      firsts: { record: '2026-05-14', look: null, byType: {}, symptoms: null, photographed: null, noted: null },
-      duplicates: { total: 0, byType: {} },
-    },
+    range,
+    recordDays: buildDayFacts({ rows: ROWS, lookDays: [], range, freeFedFoodIds: new Set(), regimens: REGIMENS }),
     courses,
     notReadDays: new Map([['2026-09-18', 1]]),
   };
@@ -281,7 +277,9 @@ describe('the window sheet (§3.9)', () => {
     fireEvent.press(view.getByLabelText('Date range: All time')); // tap 1
     fireEvent.press(view.getByLabelText('Since the trial started, Jul 26, 5 logged')); // tap 2
     expect(store().window).toEqual({ kind: 'trial' });
-    expect(view.getByLabelText('Date range: Since Jul 26')).toBeTruthy();
+    // The pill shows the short name; VoiceOver reads the long one and its date (C-8).
+    expect(view.getByText('Since Jul 26')).toBeTruthy();
+    expect(view.getByLabelText('Date range: Since the trial started, Jul 26')).toBeTruthy();
   });
 
   it('counts the filter on screen in each window, and lists the months under their year', async () => {
@@ -290,11 +288,12 @@ describe('the window sheet (§3.9)', () => {
     });
     const view = await renderAnswered();
     fireEvent.press(view.getByLabelText('Date range: All time'));
-    expect(view.getByLabelText('All time, since May 14, 3 logged')).toBeTruthy();
-    expect(view.getByLabelText('Last 7 days, 1 logged')).toBeTruthy();
-    expect(view.getByLabelText('Since the last vet visit, Sep 16, 2 logged')).toBeTruthy();
+    // A window's row names the window, so VoiceOver says what its number counts.
+    expect(view.getByLabelText('All time, since May 14, 3 vomits')).toBeTruthy();
+    expect(view.getByLabelText('Last 7 days, 1 vomit')).toBeTruthy();
+    expect(view.getByLabelText('Since the last vet visit, Sep 16, 2 vomits')).toBeTruthy();
     expect(view.getByText('2026')).toBeTruthy();
-    expect(view.getByLabelText('May, from May 14, 0 logged')).toBeTruthy();
+    expect(view.getByLabelText('May, from May 14, 0 vomits')).toBeTruthy();
   });
 
   it('under Noticed no window carries a count (H-9)', async () => {
@@ -384,7 +383,7 @@ describe('a pet switch (AC 13)', () => {
     const view = await renderAnswered();
     fireEvent.press(view.getByLabelText('Date range: All time'));
     fireEvent.press(view.getByLabelText('Since the trial started, Jul 26, 5 logged'));
-    fireEvent.press(view.getByLabelText('Date range: Since Jul 26'));
+    fireEvent.press(view.getByLabelText('Date range: Since the trial started, Jul 26'));
     expect(view.getByText('Show events from')).toBeTruthy();
 
     act(() => usePetStore.setState({ activePet: REX }));
@@ -410,6 +409,72 @@ describe('a pet switch (AC 13)', () => {
     });
     expect(view.getByLabelText('Filter: Vomit')).toBeTruthy();
     expect(view.queryByText('· 3')).toBeNull();
+  });
+});
+
+describe('no number it cannot stand behind (C-12)', () => {
+  it('a failed read draws no number on the pill or in either sheet, and never a zero', async () => {
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockRead.mockRejectedValue(new Error('database is locked'));
+    act(() => {
+      store().setFilter('p1', { kind: 'type', type: 'vomit' });
+    });
+    const view = await renderAnswered();
+    expect(view.getByLabelText('Filter: Vomit')).toBeTruthy();
+    expect(view.queryByText(/^· /)).toBeNull();
+    fireEvent.press(view.getByLabelText('Filter: Vomit'));
+    // Every row speaks its name alone: no count, and no *N not read*.
+    expect(view.getByLabelText('All types')).toBeTruthy();
+    expect(view.getByLabelText('Photographed')).toBeTruthy();
+    expect(view.queryByText(/^\d/)).toBeNull();
+    fireEvent.press(view.getByLabelText('Close'));
+    fireEvent.press(view.getByLabelText('Date range: All time'));
+    expect(view.getByLabelText('Last 7 days')).toBeTruthy();
+    expect(view.queryByText(/^\d/)).toBeNull();
+    // The trial and visit rows are off with no word why: CUL-1238's gap, stated here so
+    // the fix reds this line on purpose.
+    expect(view.queryByLabelText(/^Since the trial started/)).toBeNull();
+    errors.mockRestore();
+  });
+
+  it('a record with nothing in it yet shows no count anywhere: a column of zeros is not an empty state', async () => {
+    mockRead.mockImplementation(async (p) => ({
+      petId: p.id,
+      windowFacts: { petId: p.id, today: TODAY, firstRecordDay: null, trial: null, sinceVisit: null },
+      range: { fromDay: TODAY, toDay: TODAY },
+      recordDays: new Map(),
+      courses: [],
+      notReadDays: new Map(),
+    }));
+    act(() => {
+      store().setFilter('p1', { kind: 'type', type: 'vomit' });
+    });
+    const view = await renderAnswered();
+    expect(view.getByLabelText('Filter: Vomit')).toBeTruthy();
+    expect(view.queryByText('· 0')).toBeNull();
+    fireEvent.press(view.getByLabelText('Filter: Vomit'));
+    expect(view.getByLabelText('Loose stool')).toBeTruthy();
+    expect(view.queryByText('0')).toBeNull();
+  });
+});
+
+describe('a narrow phone and the keyboard', () => {
+  it('the window pill never shrinks, so its date is never cut; the type pill gives way', async () => {
+    const view = await renderAnswered();
+    const flex = (id: string) => StyleSheet.flatten(view.getByTestId(id).props.style) as { flexShrink?: number; minWidth?: number };
+    expect(flex('history-v2-window-pill').flexShrink).toBe(0);
+    expect(flex('history-v2-type-pill')).toMatchObject({ flexShrink: 1, minWidth: 0 });
+  });
+
+  it('a touch on either pill puts the keyboard away, so its sheet never opens under it', async () => {
+    const dismiss = jest.spyOn(Keyboard, 'dismiss').mockImplementation(() => {});
+    const view = await renderAnswered();
+    fireEvent.press(view.getByLabelText('Search Nyx\'s record'));
+    fireEvent(view.getByTestId('history-v2-type-pill'), 'touchStart');
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    fireEvent(view.getByTestId('history-v2-window-pill'), 'touchStart');
+    expect(dismiss).toHaveBeenCalledTimes(2);
+    dismiss.mockRestore();
   });
 });
 

@@ -447,7 +447,7 @@ export function typeSheetCountsOf(days: ReadonlyMap<string, DayFacts>): TypeShee
 /** A filter whose rows are doses: a course, or Medication. Its count reads "logged", never
  *  "doses", because it counts every dose row whatever its chip and a vet reads "16 doses"
  *  as 16 given (CUL-1193, GAP-26). */
-function countsDoses(filter: HistoryFilter): boolean {
+export function countsDoses(filter: HistoryFilter): boolean {
   return filter.kind === 'course' || (filter.kind === 'type' && filter.type === 'medication');
 }
 

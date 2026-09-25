@@ -27,12 +27,16 @@ import {
   emptyWindowFacts,
   filterLabelOf,
   notReadText,
+  pinnedRowViewOf,
   searchPlaceholderOf,
+  spokenCountOf,
   sumIn,
   typePillOf,
   typeSheetRows,
   windowPillLabelOf,
+  windowPillSpokenOf,
   windowSheetRows,
+  type PinnedRowInput,
   type SheetRow,
   type TypeSheetInput,
 } from './historyControls';
@@ -60,6 +64,7 @@ import {
   type HistoryWindowKey,
   type WindowFacts,
 } from './historyWindows';
+import type { HistoryRecordData } from './historyWindowFacts';
 import { deriveMedicationCourses, type MedicationHistoryRegimen } from './medicationHistory';
 import type { AttributableDose } from './medications';
 import { localDayIndexOf } from './utils';
@@ -546,6 +551,155 @@ describe('the window pill (§3.9)', () => {
       [{ kind: 'month', month: '2026-13' }, 'All time'],
     ];
     for (const [key, name] of cases) expect([key, windowPillLabelOf(null, key, TODAY)]).toEqual([key, name]);
+  });
+
+  it('VoiceOver reads the long name and its date, which the pill’s short name leaves out (C-8)', () => {
+    const cases: [HistoryWindowKey, string][] = [
+      [{ kind: 'trial' }, 'Date range: Since the trial started, Jul 26'],
+      [{ kind: 'visit' }, 'Date range: Since the last vet visit, Sep 16'],
+      [ALL_TIME, 'Date range: All time'],
+      [{ kind: 'last', days: 14 }, 'Date range: Last 14 days'],
+      [{ kind: 'month', month: '2026-08' }, 'Date range: August'],
+    ];
+    for (const [key, spoken] of cases) {
+      expect([key, windowPillSpokenOf(resolveWindow(key, FACTS), key, TODAY)]).toEqual([key, spoken]);
+    }
+    // A window asked for but not offered is spoken as the one that applies.
+    const noTrial = resolveWindow({ kind: 'trial' }, { ...FACTS, trial: null });
+    expect(windowPillSpokenOf(noTrial, { kind: 'trial' }, TODAY)).toBe('Date range: All time');
+    // Before the facts are read, it says what the pill says: no date it has not read.
+    expect(windowPillSpokenOf(null, { kind: 'trial' }, TODAY)).toBe('Date range: Since the trial started');
+  });
+});
+
+describe('a window row says what its number counts (spokenCountOf)', () => {
+  it('names the filter’s noun, since the row’s label names only the window', () => {
+    const cases: [HistoryFilter, number, string][] = [
+      [{ kind: 'type', type: 'vomit' }, 1, '1 vomit'],
+      [{ kind: 'type', type: 'vomit' }, 3, '3 vomits'],
+      [{ kind: 'type', type: 'vomit' }, 0, '0 vomits'],
+      [{ kind: 'symptoms' }, 2, '2 symptoms'],
+      [{ kind: 'photographed' }, 1, '1 photographed row'],
+      [{ kind: 'photographed' }, 1094, '1,094 photographed rows'],
+      [{ kind: 'noted' }, 2, '2 rows with a note'],
+      // All types counts every row, and a dose count is never 'doses' (CUL-1193).
+      [{ kind: 'all' }, 1094, '1,094 logged'],
+      [{ kind: 'type', type: 'medication' }, 46, '46 logged'],
+      [{ kind: 'course', courseKey: 'reg-cet' }, 16, '16 logged'],
+    ];
+    for (const [filter, n, spoken] of cases) expect([filter, n, spokenCountOf(filter, n)]).toEqual([filter, n, spoken]);
+  });
+
+  it('the window sheet speaks it after the window and its date', () => {
+    const rows = windowSheetRows({ facts: FACTS, recordDays: RECORD, filter: { kind: 'type', type: 'vomit' }, showCounts: true, today: TODAY });
+    expect(byLabel(rows, 'All time').accessibilityLabel).toBe('All time, since May 14, 3 vomits');
+    expect(byLabel(rows, 'Last 7 days').accessibilityLabel).toBe('Last 7 days, 1 vomit');
+    expect(byLabel(rows, 'Since the trial started').accessibilityLabel).toBe('Since the trial started, Jul 26, 2 vomits');
+  });
+});
+
+// ── The row, whole ───────────────────────────────────────────────────────────────
+
+describe('pinnedRowViewOf: everything the row draws, from one answer', () => {
+  const NOT_READ = new Map([
+    ['2026-06-01', 1],
+    ['2026-09-18', 1],
+  ]);
+  const ANSWER: HistoryRecordData = {
+    petId: PET,
+    windowFacts: FACTS,
+    range: ALL_RANGE,
+    recordDays: RECORD,
+    courses: COURSES,
+    notReadDays: NOT_READ,
+  };
+  const viewOf = (over: Partial<PinnedRowInput> = {}) =>
+    pinnedRowViewOf({
+      record: ANSWER,
+      filter: { kind: 'all' },
+      window: ALL_TIME,
+      search: null,
+      lookLive: true,
+      readingOff: false,
+      today: TODAY,
+      ...over,
+    });
+  const counts = <T>(rows: readonly SheetRow<T>[]) => rows.map((r) => r.count);
+
+  it('counts the filter on screen over the window that applies, on the pill and in both sheets', () => {
+    const trial = resolveWindow({ kind: 'trial' }, FACTS);
+    const view = viewOf({ filter: { kind: 'type', type: 'vomit' }, window: { kind: 'trial' } });
+    expect(view.typePill).toEqual({
+      label: 'Vomit',
+      count: String(windowTotalOf(daysIn(RECORD, trial.bounds), { kind: 'type', type: 'vomit' })?.count),
+      accessibilityLabel: 'Filter: Vomit, 2 logged',
+    });
+    expect(view.windowPill).toEqual({ label: 'Since Jul 26', accessibilityLabel: 'Date range: Since the trial started, Jul 26' });
+    expect(view.currentWindow).toEqual({ kind: 'trial' });
+    // The type sheet counts the trial's days; the window sheet counts vomits in every window.
+    expect(byLabel(view.typeRows, 'All types').count).toBe(String(windowTotalOf(daysIn(RECORD, trial.bounds), { kind: 'all' })?.count));
+    expect(byLabel(view.windowRows, 'All time').count).toBe('3');
+  });
+
+  it('*N not read* counts the applied window’s photos only', () => {
+    const photographed = (w: HistoryWindowKey) => byLabel(viewOf({ window: w }).typeRows, 'Photographed').detail;
+    expect(photographed(ALL_TIME)).toBe('2 not read');
+    expect(photographed({ kind: 'last', days: 14 })).toBe('1 not read');
+    // Sep 18 falls a day outside the last seven: nothing unread, and nothing said.
+    expect(photographed({ kind: 'last', days: 7 })).toBeNull();
+  });
+
+  it('a window asked for but not offered applies as All time, and the store’s choice is left alone', () => {
+    const noVisit = { ...ANSWER, windowFacts: { ...FACTS, sinceVisit: latestVisitBefore([], TODAY) } };
+    const view = viewOf({ record: noVisit, window: { kind: 'visit' } });
+    expect(view.currentWindow).toEqual(ALL_TIME);
+    expect(view.windowPill).toEqual({ label: 'All time', accessibilityLabel: 'Date range: All time' });
+    expect(labels(view.windowRows)).not.toContain('Since the last vet visit');
+  });
+
+  it('before the answer (or after a failed read) no number anywhere, and the pills name the scope truthfully (C-12)', () => {
+    const view = viewOf({ record: null, filter: { kind: 'type', type: 'vomit' }, window: { kind: 'trial' } });
+    expect(view.typePill).toEqual({ label: 'Vomit', count: null, accessibilityLabel: 'Filter: Vomit' });
+    expect(counts(view.typeRows).every((c) => c === null)).toBe(true);
+    expect(view.typeRows.every((r) => r.detail === null || !/\d/.test(r.detail))).toBe(true);
+    expect(counts(view.windowRows).every((c) => c === null)).toBe(true);
+    expect(view.windowPill).toEqual({ label: 'Since the trial started', accessibilityLabel: 'Date range: Since the trial started' });
+    // The store's window stands until the facts can say whether it is offered.
+    expect(view.currentWindow).toEqual({ kind: 'trial' });
+  });
+
+  it('a record with nothing in it carries no number: a column of zeros is not an empty state', () => {
+    const empty: HistoryRecordData = {
+      petId: PET,
+      windowFacts: emptyWindowFacts(PET, TODAY),
+      range: { fromDay: TODAY, toDay: TODAY },
+      recordDays: new Map(),
+      courses: [],
+      notReadDays: new Map(),
+    };
+    const view = viewOf({ record: empty, filter: { kind: 'type', type: 'vomit' } });
+    expect(view.typePill.count).toBeNull();
+    expect(counts(view.typeRows).every((c) => c === null)).toBe(true);
+    expect(counts(view.windowRows).every((c) => c === null)).toBe(true);
+    // And the same record with one row in it counts again, zeros included.
+    const one = viewOf({ filter: { kind: 'type', type: 'diarrhea' } });
+    expect(one.typePill.count).toBe('0');
+  });
+
+  it('an open search quiets every count and keeps every row (C-3, §3.7)', () => {
+    const view = viewOf({ search: 'kibble', filter: { kind: 'type', type: 'vomit' } });
+    expect(view.typePill.count).toBeNull();
+    expect(counts(view.typeRows).every((c) => c === null)).toBe(true);
+    expect(counts(view.windowRows).every((c) => c === null)).toBe(true);
+    expect(labels(view.typeRows)).toEqual(labels(viewOf().typeRows));
+  });
+
+  it('names its dates against the answer’s own day, never a fresher one than the numbers were counted on', () => {
+    // The phone has crossed into the new year; the answer was read on Sep 25. The course's
+    // span is stamped as the numbers beside it were counted: in this year, no year needed.
+    const later = viewOf({ today: '2027-01-02' });
+    expect(byLabel(later.typeRows, 'Cetirizine HCl').detail).toBe(byLabel(viewOf().typeRows, 'Cetirizine HCl').detail);
+    expect(later.windowRows.map((r) => r.section).filter(Boolean)).toEqual(['2026']);
   });
 });
 

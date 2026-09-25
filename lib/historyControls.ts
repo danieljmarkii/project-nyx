@@ -31,10 +31,13 @@
 import { EVENT_TYPES } from '../constants/eventTypes';
 import {
   HISTORY_TYPE_KEYS,
+  countsDoses,
   courseSpanText,
+  filterNoun,
   formatCount,
   inRange,
   notGivenInFullText,
+  typeSheetCountsOf,
   windowTotalOf,
   type DayFacts,
   type DayRange,
@@ -55,6 +58,8 @@ import {
   type ResolvedWindow,
   type WindowFacts,
 } from './historyWindows';
+import { historyDateFormatFor } from './historyDateFormat';
+import type { HistoryRecordData } from './historyWindowFacts';
 import { recordMonth } from './recordDates';
 
 // ── The words ─────────────────────────────────────────────────────────────────────
@@ -131,6 +136,16 @@ export function emptyWindowFacts(petId: string | null, today: string): WindowFac
   return { petId, today, firstRecordDay: null, trial: null, sinceVisit: null };
 }
 
+/**
+ * A count as VoiceOver says it on the window sheet, where every row counts the ONE filter
+ * on screen and the visible number carries no noun: '3 vomits', '12 photographed rows'.
+ * All types and a dose filter read 'logged' (a dose count is never 'doses', CUL-1193).
+ */
+export function spokenCountOf(filter: HistoryFilter, n: number): string {
+  if (filter.kind === 'all' || countsDoses(filter)) return `${formatCount(n)} logged`;
+  return `${formatCount(n)} ${filterNoun(filter, n)}`;
+}
+
 // ── The rows ─────────────────────────────────────────────────────────────────────
 
 /** One sheet row: what it picks and everything it shows. */
@@ -157,12 +172,11 @@ function rowOf<T>(
   label: string,
   count: string | null,
   parts: readonly (string | null)[] = [],
-  opts: { nested?: boolean; section?: string | null } = {},
+  opts: { nested?: boolean; section?: string | null; spokenCount?: string | null } = {},
 ): SheetRow<T> {
   const detail = parts.filter((p): p is string => p !== null && p.length > 0);
-  const spoken = [label, ...detail, count === null ? null : `${count} logged`].filter(
-    (p): p is string => p !== null,
-  );
+  const spokenCount = count === null ? null : (opts.spokenCount ?? `${count} logged`);
+  const spoken = [label, ...detail, spokenCount].filter((p): p is string => p !== null);
   return {
     value,
     label,
@@ -296,16 +310,21 @@ export interface WindowSheetInput {
 export function windowSheetRows(input: WindowSheetInput): SheetRow<HistoryWindowKey>[] {
   const facts = input.facts ?? emptyWindowFacts(null, input.today);
   const counting = input.showCounts && input.facts !== null && input.recordDays !== null;
-  const countOf = (key: HistoryWindowKey): string | null => {
+  const totalOf = (key: HistoryWindowKey): number | null => {
     if (!counting) return null;
     const bounds = windowBounds(key, facts);
     // Null under Noticed: `windowTotalOf` counts nothing there (H-9), so no row does either.
     const total = bounds && input.recordDays ? windowTotalOf(daysIn(input.recordDays, bounds), input.filter) : null;
-    return total === null ? null : formatCount(total.count);
+    return total === null ? null : total.count;
   };
   const rowFor = (key: HistoryWindowKey, section: string | null = null): SheetRow<HistoryWindowKey> | null => {
     const label = windowLabel(key, facts);
-    return label === null ? null : rowOf(key, label.sheetTitle, countOf(key), [label.sheetSub], { section });
+    if (label === null) return null;
+    const n = totalOf(key);
+    return rowOf(key, label.sheetTitle, n === null ? null : formatCount(n), [label.sheetSub], {
+      section,
+      spokenCount: n === null ? null : spokenCountOf(input.filter, n),
+    });
   };
 
   const rows: SheetRow<HistoryWindowKey>[] = [];
@@ -372,4 +391,83 @@ export function windowPillLabelOf(resolved: ResolvedWindow | null, key: HistoryW
   // unreadable is All time, the window `resolveWindow` would apply.
   const empty = emptyWindowFacts(null, today);
   return (windowLabel(key, empty) ?? resolveWindow(key, empty).label).short;
+}
+
+/**
+ * What VoiceOver reads for the window pill: the window's long name and its date, where the
+ * pill itself shows only the short one (*Since Jul 26*). Jordan remembers the trial, not the
+ * day it began, and a label is right exactly when it says something the visible text does
+ * not (C-8).
+ */
+export function windowPillSpokenOf(resolved: ResolvedWindow | null, key: HistoryWindowKey, today: string): string {
+  if (resolved === null) return `${WINDOW_PILL_PREFIX}: ${windowPillLabelOf(null, key, today)}`;
+  const { long, anchor } = resolved.label;
+  return `${WINDOW_PILL_PREFIX}: ${anchor === null ? long : `${long}, ${anchor}`}`;
+}
+
+// ── The row, whole ───────────────────────────────────────────────────────────────
+
+export interface PinnedRowInput {
+  /** The record's answer for the pet on screen, or null while it loads or after it failed:
+   *  either way there is nothing to count, and no row may carry a number (C-12). */
+  record: HistoryRecordData | null;
+  /** The filter on screen. */
+  filter: HistoryFilter;
+  /** The window the store holds: the owner's choice, applied only when it is offered. */
+  window: HistoryWindowKey;
+  /** The search the list's query takes (`effectiveSearch`), or null. */
+  search: string | null;
+  /** The daily look is live for this account and pet (`lookCardLive`). */
+  lookLive: boolean;
+  /** The owner turned photo reading off (`PHOTO_READING_OFF` until HV-18). */
+  readingOff: boolean;
+  /** The owner's local day: names the windows while the record has not answered. */
+  today: string;
+}
+
+export interface PinnedRowView {
+  typeRows: SheetRow<HistoryFilter>[];
+  typePill: TypePill;
+  windowRows: SheetRow<HistoryWindowKey>[];
+  windowPill: { label: string; accessibilityLabel: string };
+  /** The window the list shows: the applied one, or the store's while its facts load. */
+  currentWindow: HistoryWindowKey;
+}
+
+/**
+ * Everything the pinned row draws, from the record's answer and the scope. Every window is
+ * resolved against the answer's own `today`, so the pills and the sheets name the days the
+ * numbers were counted over, never a fresher day than the facts.
+ */
+export function pinnedRowViewOf(input: PinnedRowInput): PinnedRowView {
+  const { record, filter, window, search, lookLive, readingOff } = input;
+  const facts = record?.windowFacts ?? null;
+  const today = facts?.today ?? input.today;
+  const resolved = facts ? resolveWindow(window, facts) : null;
+  // A record with nothing in it has nothing to count: no number anywhere, since a column of
+  // zeros is not a designed empty state (§3.12's new account shows no count line either).
+  const counted = record !== null && facts !== null && facts.firstRecordDay !== null ? record : null;
+  const windowDays = counted !== null && resolved ? daysIn(counted.recordDays, resolved.bounds) : null;
+  const courses = record?.courses ?? [];
+  const showCounts = search === null;
+  const notRead = counted?.notReadDays && resolved ? sumIn(counted.notReadDays, resolved.bounds) : null;
+  return {
+    typeRows: typeSheetRows({
+      counts: windowDays ? typeSheetCountsOf(windowDays) : null,
+      showCounts,
+      courses,
+      notRead,
+      readingOff,
+      lookLive,
+      current: filter,
+      dates: historyDateFormatFor(today),
+    }),
+    typePill: typePillOf({ filter, courses, windowDays, showCounts }),
+    windowRows: windowSheetRows({ facts, recordDays: counted?.recordDays ?? null, filter, showCounts, today }),
+    windowPill: {
+      label: windowPillLabelOf(resolved, window, today),
+      accessibilityLabel: windowPillSpokenOf(resolved, window, today),
+    },
+    currentWindow: resolved?.key ?? window,
+  };
 }

@@ -108,6 +108,8 @@ describe('SearchField', () => {
     const view = field();
     const done = view.getByRole('button');
     expect(done.props.accessibilityLabel).toBeUndefined();
+    // The hint says what Done does to the list, where "Done" alone could read as "saved".
+    expect(done.props.accessibilityHint).toBe('Ends the search');
     const style = StyleSheet.flatten(done.props.style) as { minHeight?: number; minWidth?: number };
     expect(style.minHeight).toBeGreaterThanOrEqual(44);
     expect(style.minWidth).toBeGreaterThanOrEqual(44);

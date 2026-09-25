@@ -5,7 +5,7 @@ jest.mock('react-native-safe-area-context', () => ({
 }));
 
 import { render, fireEvent } from '@testing-library/react-native';
-import { StyleSheet, Text } from 'react-native';
+import { ScrollView, StyleSheet, Text } from 'react-native';
 import { Pill } from 'lucide-react-native';
 import { ScopeMenu, ScopeMenuOption } from './ScopeMenu';
 import { theme } from '../../constants/theme';
@@ -199,5 +199,84 @@ describe('ScopeMenu — History v2 rows and pill (HV-9)', () => {
     getByText('46');
     // No second line rendered for a row that sets none.
     expect(getByLabelText('Medication').findAllByType(Text)).toHaveLength(2);
+  });
+});
+
+// HV-9 (CUL-1166) — `openAtSelected`: a set that runs past the sheet's fold (the type
+// sheet's ~19 rows) opens with the selected row in view, never at the top with the choice
+// out of sight, and flashes the indicator so the rows past the fold read as there. The
+// preset's ScrollView mock puts `scrollTo` and `flashScrollIndicators` on its prototype, so
+// every instance shares one spy: each test clears it first.
+describe('ScopeMenu — openAtSelected (HV-9)', () => {
+  const LONG: ScopeMenuOption[] = Array.from({ length: 20 }, (_, i) => ({
+    key: i === 0 ? null : `type:${i}`,
+    label: i === 0 ? 'All types' : `Type ${i}`,
+  }));
+  const layoutAt = (y: number) => ({ nativeEvent: { layout: { x: 0, y, width: 320, height: 48 } } });
+
+  function openMenu(over: Partial<React.ComponentProps<typeof ScopeMenu>> = {}) {
+    const utils = renderMenu({ options: LONG, value: 'type:15', openAtSelected: true, ...over });
+    fireEvent.press(utils.getByLabelText(`Event type: ${over.value === null ? 'All types' : 'Type 15'}`));
+    const scroll = utils.UNSAFE_getByType(ScrollView).instance as unknown as {
+      scrollTo: jest.Mock;
+      flashScrollIndicators: jest.Mock;
+    };
+    return { ...utils, scroll };
+  }
+
+  beforeEach(() => {
+    const proto = ScrollView.prototype as unknown as { scrollTo: jest.Mock; flashScrollIndicators: jest.Mock };
+    proto.scrollTo.mockClear();
+    proto.flashScrollIndicators.mockClear();
+  });
+
+  it('jumps to the selected row once it is laid out, a row’s height short of it, without animating', () => {
+    const { getByLabelText, scroll } = openMenu();
+    fireEvent(getByLabelText('Type 15'), 'layout', layoutAt(720));
+    expect(scroll.scrollTo).toHaveBeenCalledTimes(1);
+    expect(scroll.scrollTo).toHaveBeenCalledWith({ y: 672, animated: false });
+  });
+
+  it('jumps once per opening: a later layout never pulls the list back from where the owner scrolled', () => {
+    const { getByLabelText, scroll } = openMenu();
+    fireEvent(getByLabelText('Type 15'), 'layout', layoutAt(720));
+    // A count arriving resizes the rows above and lays the selected row out again.
+    fireEvent(getByLabelText('Type 15'), 'layout', layoutAt(760));
+    expect(scroll.scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens at the selected row again on the next opening', () => {
+    const { getByLabelText, getByText, scroll } = openMenu();
+    fireEvent(getByLabelText('Type 15'), 'layout', layoutAt(720));
+    fireEvent.press(getByLabelText('Close'));
+    fireEvent.press(getByLabelText('Event type: Type 15'));
+    getByText('Show only');
+    fireEvent(getByLabelText('Type 15'), 'layout', layoutAt(720));
+    expect(scroll.scrollTo).toHaveBeenCalledTimes(2);
+  });
+
+  it('never scrolls above the top: a selected row near it leaves the list where it starts', () => {
+    const { getByLabelText, scroll } = openMenu({ value: null });
+    fireEvent(getByLabelText('All types'), 'layout', layoutAt(0));
+    expect(scroll.scrollTo).toHaveBeenCalledWith({ y: 0, animated: false });
+  });
+
+  it('only the selected row carries the jump', () => {
+    const { getByLabelText } = openMenu();
+    expect(getByLabelText('Type 3').props.onLayout).toBeUndefined();
+    expect(typeof getByLabelText('Type 15').props.onLayout).toBe('function');
+  });
+
+  it('flashes the scroll indicator when the list is laid out', () => {
+    const { UNSAFE_getByType, scroll } = openMenu();
+    fireEvent(UNSAFE_getByType(ScrollView), 'layout', layoutAt(0));
+    expect(scroll.flashScrollIndicators).toHaveBeenCalledTimes(1);
+  });
+
+  it('off by default: no row and no list carries a layout handler, so nothing moves', () => {
+    const { getByLabelText, UNSAFE_getByType } = renderMenu({ options: LONG, value: 'type:15' });
+    fireEvent.press(getByLabelText('Event type: Type 15'));
+    expect(getByLabelText('Type 15').props.onLayout).toBeUndefined();
+    expect(UNSAFE_getByType(ScrollView).props.onLayout).toBeUndefined();
   });
 });

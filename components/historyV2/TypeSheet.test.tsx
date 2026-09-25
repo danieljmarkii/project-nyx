@@ -56,6 +56,9 @@ describe('TypeSheet', () => {
     for (const r of ROWS) expect(view.getByLabelText(r.accessibilityLabel)).toBeTruthy();
     expect(view.getByLabelText('Cetirizine HCl, 3 logged').props.accessibilityState.selected).toBe(true);
     expect(view.getByLabelText('All types, 12 logged').props.accessibilityState.selected).toBe(false);
+    // The sheet runs past its fold, so it opens at the filter on screen (ScopeMenu's
+    // `openAtSelected`, whose jump the selected row alone carries).
+    expect(typeof view.getByLabelText('Cetirizine HCl, 3 logged').props.onLayout).toBe('function');
   });
 
   it('a pick writes the filter the row stands for, for the pet it was made for', () => {

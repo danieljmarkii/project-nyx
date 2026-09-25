@@ -9,6 +9,13 @@
 // view: a tab stays mounted behind the others, and a whole-record read on every Home
 // refresh would be work nobody sees, so a change made elsewhere is read once, on return.
 //
+// ACROSS MIDNIGHT. Each read derives its own `today` (`readWindowFacts`), and the row
+// resolves every window against the answer's day, so the pills, the sheets and their
+// numbers always agree on which day it is. They move to the new day at the next read: a
+// return to the app runs a sync cycle, which bumps `hydrationTick` even when it fails
+// (`useSync`), so only a screen left open through midnight with nothing logged and no
+// sync keeps yesterday's day until then.
+//
 // WHOSE ANSWER. Each answer is stamped with the pet it was read for and drawn only while
 // that pet is on screen (CUL-1120's shape): a switch shows no numbers until the new pet's
 // read answers, never the last pet's under the new pet's name. A newer read for the same

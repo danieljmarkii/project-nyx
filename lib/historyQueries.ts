@@ -54,6 +54,8 @@ import {
   inRange,
   isDayKey,
   shiftDay,
+  type DayFacts,
+  type DayFactsInput,
   type DayRange,
   type HistoryCourse,
   type HistoryFacts,
@@ -228,6 +230,34 @@ function toPopulationRow(r: RawPopulationRow): PopulationRow {
   };
 }
 
+/** The reads every day's facts are built from (R-1): the population over the range with a
+ *  day of slack each side, the looks' days, the regimens and the free-fed foods. The one
+ *  place both `readHistoryFacts` and `readRecordDays` read them, so their days agree. */
+async function readDayFactsInput(
+  db: ReturnType<typeof getDb>,
+  petId: string,
+  range: DayRange,
+): Promise<{ population: PopulationRow[]; input: DayFactsInput }> {
+  const bounds = slackBounds(range);
+  const [rows, lookRows, regimens, arrangements] = await Promise.all([
+    db.getAllAsync<RawPopulationRow>(POPULATION_SQL, [petId, LOOK_EVENT_TYPE, bounds.after, bounds.before]),
+    db.getAllAsync<{ local_day: string }>(LOOK_DAYS_SQL, [petId, range.fromDay, range.toDay]),
+    readRegimens(petId),
+    getActiveArrangementsForPet(petId),
+  ]);
+  const population = rows.map(toPopulationRow);
+  return {
+    population,
+    input: {
+      rows: population,
+      lookDays: lookRows.map((l) => l.local_day),
+      range,
+      freeFedFoodIds: new Set(arrangements.map((a) => a.food_item_id)),
+      regimens,
+    },
+  };
+}
+
 /**
  * Every number History shows for one window: each day's facts, the record's first days,
  * and the same-minute duplicates. One population read feeds all of it (R-1), so the count
@@ -235,30 +265,30 @@ function toPopulationRow(r: RawPopulationRow): PopulationRow {
  * failed read: the screen shows its error state, never an empty record (C-12).
  */
 export async function readHistoryFacts(petId: string, range: DayRange): Promise<HistoryFacts> {
-  const bounds = slackBounds(range);
   const db = getDb();
-  const [rows, lookRows, typeFirsts, firstLook, regimens, arrangements] = await Promise.all([
-    db.getAllAsync<RawPopulationRow>(POPULATION_SQL, [petId, LOOK_EVENT_TYPE, bounds.after, bounds.before]),
-    db.getAllAsync<{ local_day: string }>(LOOK_DAYS_SQL, [petId, range.fromDay, range.toDay]),
+  const [{ population, input }, typeFirsts, firstLook] = await Promise.all([
+    readDayFactsInput(db, petId, range),
     db.getAllAsync<RawTypeFirsts>(TYPE_FIRSTS_SQL, [petId, LOOK_EVENT_TYPE]),
     db.getFirstAsync<{ local_day: string | null }>(FIRST_LOOK_SQL, [petId]),
-    readRegimens(petId),
-    getActiveArrangementsForPet(petId),
   ]);
-  const population = rows.map(toPopulationRow);
-  const firsts = typeFirstsOf(typeFirsts);
   return {
     range,
-    days: buildDayFacts({
-      rows: population,
-      lookDays: lookRows.map((l) => l.local_day),
-      range,
-      freeFedFoodIds: new Set(arrangements.map((a) => a.food_item_id)),
-      regimens,
-    }),
-    firsts: firstDaysOf(firsts, firstLook?.local_day ?? null),
+    days: buildDayFacts(input),
+    firsts: firstDaysOf(typeFirstsOf(typeFirsts), firstLook?.local_day ?? null),
     duplicates: duplicateCountsOf(population, range),
   };
+}
+
+/**
+ * Each day's facts over `range` and nothing else: the days `readHistoryFacts` builds, from
+ * the same reads (`readDayFactsInput`), without the first days and the same-minute
+ * duplicates only a count line reads. The pinned row counts every window from these (HV-9),
+ * and the duplicate sweep is most of the cost of a long record (CUL-1228). Rejects on a
+ * failed read.
+ */
+export async function readRecordDays(petId: string, range: DayRange): Promise<Map<string, DayFacts>> {
+  const { input } = await readDayFactsInput(getDb(), petId, range);
+  return buildDayFacts(input);
 }
 
 // ── Courses ──────────────────────────────────────────────────────────────────────

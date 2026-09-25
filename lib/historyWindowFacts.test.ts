@@ -290,7 +290,7 @@ describe('readHistoryRecord', () => {
     const data = await readHistoryRecord(THE_PET, false, NOW);
     expect(data.petId).toBe(PET);
     expect(data.windowFacts.today).toBe(TODAY);
-    expect(data.record.range).toEqual({ fromDay: '2026-05-14', toDay: TODAY });
+    expect(data.range).toEqual({ fromDay: '2026-05-14', toDay: TODAY });
     expect(data.courses?.map((c) => [c.key, c.name])).toEqual([['reg-mot', 'Motozol']]);
     // Two photographed vomits with no copy (Jun 1, Sep 18); the photographed weight expects no read.
     expect(data.notReadDays && [...data.notReadDays.entries()].sort()).toEqual([
@@ -314,7 +314,7 @@ describe('readHistoryRecord', () => {
       // The count line's own read: its facts over the window, not a slice of the record.
       const windowed = await readHistoryFacts(PET, bounds);
       for (const filter of EVERY_FILTER) {
-        const pill = typePillOf({ filter, courses: data.courses ?? [], windowDays: daysIn(data.record.days, bounds), showCounts: true });
+        const pill = typePillOf({ filter, courses: data.courses ?? [], windowDays: daysIn(data.recordDays, bounds), showCounts: true });
         const lineTotal = windowTotalOf(windowed.days, filter);
         expect([key, filter, pill.count]).toEqual([key, filter, filter.kind === 'all' ? null : String(lineTotal?.count)]);
         const line = countLineOf({
@@ -347,7 +347,7 @@ describe('readHistoryRecord', () => {
     errors.mockRestore();
     expect(data.courses).toBeNull();
     expect(data.notReadDays).toBeNull();
-    expect(windowTotalOf(data.record.days, { kind: 'type', type: 'vomit' })?.count).toBe(3);
+    expect(windowTotalOf(data.recordDays, { kind: 'type', type: 'vomit' })?.count).toBe(3);
   });
 
   it('rejects when the record itself cannot be read', async () => {

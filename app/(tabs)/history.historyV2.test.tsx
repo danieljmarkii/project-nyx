@@ -109,12 +109,8 @@ function answeringHistoryRecord(): HistoryRecordData {
   return {
     petId: 'p1',
     windowFacts: { petId: 'p1', today: '2026-09-25', firstRecordDay: '2026-09-20', trial: null, sinceVisit: null },
-    record: {
-      range,
-      days: buildDayFacts({ rows: [meal], lookDays: [], range, freeFedFoodIds: new Set(), regimens: [] }),
-      firsts: { record: '2026-09-20', look: null, byType: {}, symptoms: null, photographed: null, noted: null },
-      duplicates: { total: 0, byType: {} },
-    },
+    range,
+    recordDays: buildDayFacts({ rows: [meal], lookDays: [], range, freeFedFoodIds: new Set(), regimens: [] }),
     courses: [],
     notReadDays: new Map(),
   };

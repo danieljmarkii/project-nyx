@@ -11,13 +11,16 @@
 // second `Date.now()` that could fall across midnight.
 //
 // ── A FAILED READ IS NOT AN EMPTY RECORD (C-12) ─────────────────────────────────────
-// The window facts and the record's numbers reject on a failed read, and the caller
-// shows no numbers at all rather than a zero or a missing window: `readLatestVisitBefore`
-// and `loadTrialPredicateFacts` throw precisely so a failure never reads as "this pet has
-// no visit" or "no trial", which would quietly drop a row from the window sheet. The two
-// extras degrade on their own terms instead: unreadable courses list no course sub-row
-// (a course filter's pill then names Medication), and an unreadable read state prints no
-// *N not read*, which it would not print at zero either.
+// The window facts and the record's numbers reject on a failed read, and the caller then
+// draws no number anywhere, never a zero: `readLatestVisitBefore` and
+// `loadTrialPredicateFacts` throw precisely so a failure never becomes "this pet has no
+// visit" or "no trial". What the sheet does NOT yet do is say why. With no facts it offers
+// the windows that need none (All time, Today, the three rolling ones), which is also its
+// loading state, so a failure leaves the trial and visit rows off without a word: that gap
+// is CUL-1238 (a notice and a retry on the sheet). The two extras degrade on their own
+// terms: unreadable courses list no course sub-row (a course filter's pill then names
+// Medication), and an unreadable read state prints no *N not read*, which it would not
+// print at zero either.
 //
 // ── THE READ STATE COMES THROUGH THE ONE PREDICATE (§5.4) ───────────────────────────
 // *N not read* counts the rows History's own page query lists under Photographed
@@ -30,8 +33,8 @@
 import { analysisChainOutstanding } from './analysisChain';
 import { getDb } from './db';
 import { loadTrialPredicateFacts, type DietTrialFactsPet } from './dietTrialFacts';
-import type { DayRange, HistoryCourse, HistoryFacts } from './historyDays';
-import { readDayPage, readHistoryCourses, readHistoryFacts, readRecordStartDay } from './historyQueries';
+import type { DayFacts, DayRange, HistoryCourse } from './historyDays';
+import { readDayPage, readHistoryCourses, readRecordDays, readRecordStartDay } from './historyQueries';
 import { ALL_TIME, resolveWindow, windowTrialOf, type WindowFacts } from './historyWindows';
 import { readCopies } from './readCopy';
 import { readStateOf } from './readState';
@@ -92,8 +95,11 @@ export interface HistoryRecordData {
   petId: string;
   /** The window table's facts (`today` is theirs). */
   windowFacts: WindowFacts;
-  /** Every number over All time: each window is a slice of these days (`daysIn`). */
-  record: HistoryFacts;
+  /** All time's days (`resolveWindow(ALL_TIME, windowFacts).bounds`). */
+  range: DayRange;
+  /** Each day's facts over All time: every window's numbers are a slice of these days
+   *  (`daysIn`), from the population read the count line's facts are built from. */
+  recordDays: ReadonlyMap<string, DayFacts>;
   /** The pet's courses in the derivation's order, or null when they could not be read. */
   courses: readonly HistoryCourse[] | null;
   /** Unread photographed rows per local day over All time, or null when not known. */
@@ -112,8 +118,8 @@ export async function readHistoryRecord(
 ): Promise<HistoryRecordData> {
   const windowFacts = await readWindowFacts(pet, nowMs);
   const allTime = resolveWindow(ALL_TIME, windowFacts).bounds;
-  const [record, courses, notReadDays] = await Promise.all([
-    readHistoryFacts(pet.id, allTime),
+  const [recordDays, courses, notReadDays] = await Promise.all([
+    readRecordDays(pet.id, allTime),
     readHistoryCourses(pet.id).catch((e: unknown) => {
       console.error('[historyWindowFacts] reading the courses failed:', e);
       return null;
@@ -123,5 +129,5 @@ export async function readHistoryRecord(
       return null;
     }),
   ]);
-  return { petId: pet.id, windowFacts, record, courses, notReadDays };
+  return { petId: pet.id, windowFacts, range: allTime, recordDays, courses, notReadDays };
 }
