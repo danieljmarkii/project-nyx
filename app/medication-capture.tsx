@@ -42,7 +42,7 @@ import { useEventStore } from '../store/eventStore';
 import { useMomentStore } from '../store/momentStore';
 import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
-import { insertMedicationDose } from '../lib/medicationDose';
+import { insertMedicationDose, optimisticDoseRow } from '../lib/medicationDose';
 import {
   initialStrengthConfirmed, canSaveMedicationCapture, drugDisplayName,
   MEDICATION_FORM_OPTIONS, MEDICATION_ROUTE_OPTIONS,
@@ -384,19 +384,21 @@ export default function MedicationCaptureScreen() {
         doseAmount: null,   // honest-null; the drug's strength is NOT the dose
         occurredAt: new Date(),
       });
-      prependEvent({
-        id: result.eventId,
-        pet_id: pet.id,
-        event_type: 'medication',
-        occurred_at: result.occurredAtIso,
-        occurred_at_confidence: 'witnessed',
-        severity: null,
-        notes: null,
-        source: 'manual',
-        deleted_at: null,
-        created_at: result.now,
-        updated_at: result.now,
-      });
+      // The same facts the write carried (`optimisticDoseRow`): the adherence and the
+      // drug's names, so Home's row says *Given* and names the drug before its next read
+      // (History v2 HV-6), where a bare row read as an unnamed, unrated dose.
+      prependEvent(
+        optimisticDoseRow(
+          {
+            petId: pet.id,
+            adherence: 'given',
+            howGiven: null,
+            pairedEventId: null,
+            drug: { id: medicationItemId, generic_name: trimmedGeneric, brand_name: trimmedBrand },
+          },
+          result,
+        ),
+      );
 
       // CUL-613 — the first-dose path ends on the REAL dose completion card, not
       // this screen's hand-rolled ✓. That beat showed the word "Logged" over a dose

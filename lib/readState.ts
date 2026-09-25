@@ -23,18 +23,28 @@
 //      replaced, and standing it in front of the new one is reassurance about an image
 //      nothing has read (CUL-812's reasoning, applied to the wait as well as the
 //      failure).
-//   3. calm: a FINISHED read (`completed`, or `uncertain`, which is a finished read
-//      that said `not_enough_to_say`, migration 013) with a recognised calm verdict.
-//      It stands whether or not this device holds the photo: a photoless stool's
-//      contextual read is still the record's read (B-363 is the record screen's
-//      business, not this predicate's).
+//   3. calm: a FINISHED read that said `monitor`. It stands whether or not this device
+//      holds the photo: a photoless stool's contextual read is still the record's read
+//      (B-363 is the record screen's business, not this predicate's).
 //   4. none: no read is expected (the type has no per-incident read, or there is no
-//      photo) and none is on record.
+//      photo) and no read above applies.
 //   5. off: a read was expected but the owner turned photo reading off (CUL-552,
 //      HV-18). The owner's choice is not a missing read, so it is never marked (H-4b).
-//   6. unread: a read was expected and none completed: it failed, it was never sent,
-//      it hit the day's cap, or the phone holds no copy. Never calm, because absence
-//      is never wellness (the n=1 rule); HV-6 draws it as a grey *Photo not read*.
+//   6. unread: a read was expected and none completed a check: it failed, it was never
+//      sent, it hit the day's cap, the phone holds no copy, OR it finished saying
+//      `not_enough_to_say` (status `uncertain`, migration 013: "the photo is unclear or
+//      does not appear to show vomit"). Never calm, because absence is never wellness
+//      (the n=1 rule); the shared day row draws it as a grey *Photo not read*.
+//
+// ── `not_enough_to_say` IS NOT CALM (PM ruling, 2026-09-25, HV-6 / CUL-1163) ─────
+// HV-5 shipped the unclear read as calm, which the day row draws as NOTHING, exactly what
+// it draws for a photo that was read and found nothing to flag. So an unreadable photo
+// looked like a read one, which is the one thing H-4b forbids. It is now `unread` on a row
+// whose photo this phone holds, and nothing on one that has none (a photoless stool's
+// contextual read collapses to `not_enough_to_say` too, and "Photo not read" under a row
+// with no photo would be false). The finished verdict still RIDES on `verdict`, so a
+// surface that speaks the record's words (the Signal gallery) keeps saying *Not enough
+// to say yet* rather than *No read yet*: each surface says the most specific true thing.
 //
 // ── WHAT IS NOT AN INPUT ─────────────────────────────────────────────────────
 // Dismissal. Hide hides the read's WORDS on the record (H-4a); it never stands the
@@ -89,16 +99,21 @@ export interface ReadStateInput {
   readingOff: boolean;
 }
 
-/** The calm verdicts, as an ALLOWLIST: any other non-null value fails toward the rose. */
-export type CalmVerdict = 'monitor' | 'not_enough_to_say';
-const CALM_VERDICT_LIST: readonly CalmVerdict[] = ['monitor', 'not_enough_to_say'];
-const CALM_VERDICTS: readonly string[] = CALM_VERDICT_LIST;
+/** The verdicts that are NOT the rose, as an ALLOWLIST: any other non-null value fails
+ *  toward the rose. Two of them, and only one is calm (`CalmVerdict`). */
+export type QuietVerdict = 'monitor' | 'not_enough_to_say';
+const QUIET_VERDICT_LIST: readonly QuietVerdict[] = ['monitor', 'not_enough_to_say'];
+const QUIET_VERDICTS: readonly string[] = QUIET_VERDICT_LIST;
 
-/** The statuses under which a calm verdict STANDS: a read that finished. */
+/** The one verdict that stands as a calm read: the read looked and said to keep an eye out.
+ *  `not_enough_to_say` is quiet (never the rose) but never calm (the PM's 2026-09-25 ruling). */
+export type CalmVerdict = 'monitor';
+
+/** The statuses under which a finished verdict STANDS: a read that finished. */
 const FINISHED_STATUSES: readonly string[] = ['completed', 'uncertain'];
 
-function isCalmVerdict(value: string): value is CalmVerdict {
-  return CALM_VERDICTS.includes(value);
+function isQuietVerdict(value: string): value is QuietVerdict {
+  return QUIET_VERDICTS.includes(value);
 }
 
 /**
@@ -113,13 +128,14 @@ export function isWorthACall(copy: ReadCopy | null | undefined): boolean {
   // The shipped escalation survives whatever the status says (CUL-812)...
   if (escalationSurvivesFailure(copy)) return true;
   // ...and a verdict this build does not recognise is not calm until someone says it is.
-  return !isCalmVerdict(verdict);
+  return !isQuietVerdict(verdict);
 }
 
-/** The calm verdict that stands on a finished read, or null. */
-function standingCalmOf(copy: ReadCopy | null | undefined): CalmVerdict | null {
+/** The quiet verdict a FINISHED read stands on, or null (no read, a read in flight, a
+ *  read that failed or was capped, or the rose). */
+function finishedQuietOf(copy: ReadCopy | null | undefined): QuietVerdict | null {
   const verdict = copy?.recommendation;
-  if (verdict === null || verdict === undefined || !isCalmVerdict(verdict)) return null;
+  if (verdict === null || verdict === undefined || !isQuietVerdict(verdict)) return null;
   return FINISHED_STATUSES.includes(copy?.status ?? '') ? verdict : null;
 }
 
@@ -128,21 +144,24 @@ export interface ReadVerdict {
   /**
    * The verdict a surface that still speaks WORDS may name, or null. `worth_a_call` for
    * the rose whatever the stored value was (an unknown verdict is spoken in the rose's
-   * words), the standing calm verdict for `calm`, and null for every other state.
+   * words); `monitor` for `calm`; `not_enough_to_say` when a finished read said so (its
+   * state is `unread`, `none` or `off`, never `calm`); null for everything else, a read
+   * in flight included.
    */
   verdict: IncidentRecommendation | null;
 }
 
-/** The state, with the verdict a word-speaking surface may name (the Signal gallery,
- *  and Home's spine until HV-6 draws calm as nothing). */
+/** The state, with the verdict a word-speaking surface may name (the Signal gallery).
+ *  The shared day row speaks no verdict words since HV-6: it draws the state. */
 export function readVerdictOf(input: ReadStateInput): ReadVerdict {
   if (isWorthACall(input.copy)) return { state: 'worth_a_call', verdict: 'worth_a_call' };
   if (input.inFlight || input.copy?.status === 'pending') return { state: 'pending', verdict: null };
-  const calm = standingCalmOf(input.copy);
-  if (calm !== null) return { state: 'calm', verdict: calm };
-  if (!input.hasPhoto || !hasPerIncidentRead(input.eventType)) return { state: 'none', verdict: null };
-  if (input.readingOff) return { state: 'off', verdict: null };
-  return { state: 'unread', verdict: null };
+  const finished = finishedQuietOf(input.copy);
+  if (finished === 'monitor') return { state: 'calm', verdict: finished };
+  // From here the photo was not checked: no read finished, or it finished unable to say.
+  if (!input.hasPhoto || !hasPerIncidentRead(input.eventType)) return { state: 'none', verdict: finished };
+  if (input.readingOff) return { state: 'off', verdict: finished };
+  return { state: 'unread', verdict: finished };
 }
 
 /** The read's state, as §5.4's table defines it. */

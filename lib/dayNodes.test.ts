@@ -16,8 +16,14 @@
 //      sweep provably CAN see each one; 400 seeded random days add breadth, never the
 //      floor (on their own they saw the prior onsets on 2 days in 400).
 //
-// TIMEZONE HONESTY (C-29): instants are offsets from one UTC anchor; no assertion reads a
-// clock string (the sweep compares both calls in the runner's own zone).
+// HV-6 (CUL-1163) changed what the pipeline RETURNS, as §5.5 says it would (the run rule:
+// the two meals the lane timed now keep their own rows), so the fixture day states the new
+// answer. The equality halves did not move: both calls still draw that answer, field for
+// field, which is what says HV-6 changed the rule and not the composition.
+//
+// TIMEZONE HONESTY (C-29, B-514): instants are offsets from LOCAL midnight, because a run
+// breaks at the local day and the fixture must be one day in every zone; no assertion
+// reads a clock string (the sweep compares both calls in the runner's own zone).
 
 jest.mock('./supabase', () => ({ supabase: { from: jest.fn() } }));
 
@@ -25,7 +31,7 @@ import { buildDay, buildDayNodes, type DayEvent, type DayNodeFacts } from './day
 import { buildSpine, type SpineAnalysisRow, type SpineInput } from './spineNode';
 import { DEFAULT_MEAL_TIMING_CONFIG, type MealTimingConfig } from './mealTiming';
 
-const BASE = Date.parse('2026-09-17T05:00:00Z');
+const BASE = new Date(2026, 8, 17, 0, 0, 0, 0).getTime();
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const at = (h: number, m: number): number => BASE + (h * 60 + m) * MIN;
@@ -96,6 +102,7 @@ function asSpineInput(events: readonly DayEvent[], { reads, timings }: DayNodeFa
     freeFedSpans: timings.freeFedSpans,
     priorOnsets: timings.priorOnsets,
     config: timings.config,
+    timedElsewhere: timings.timedElsewhere,
   };
 }
 
@@ -104,25 +111,31 @@ function shapeOf(nodes: ReturnType<typeof buildDayNodes>) {
   return nodes.map((n) =>
     n.kind === 'compact'
       ? { run: n.ids, title: n.title, food: n.detail }
-      : { id: n.id, title: n.title, timing: n.timing, photo: n.photo, read: n.read.state === 'landed' ? n.read.label : n.read.state },
+      : { id: n.id, title: n.title, timing: n.timing, photo: n.photo, read: n.read.state === 'worth_a_call' ? n.read.label : n.read.state },
   );
 }
 
+const meal = (id: string) => ({ id, title: 'Meal', timing: null, photo: false, read: 'none' });
+
 const SEP_17_NODES = [
-  { run: ['m1', 'm2'], title: '2 meals', food: 'Royal Canin · Selected Protein PR' },
+  meal('m1'),
+  // The meal v1's line was measured from: its own row (rule B, HV-6).
+  meal('m2'),
   { id: 'v1', title: 'Vomit', timing: '3 min after eating', photo: true, read: 'pending' },
-  { run: ['m3', 'm4', 'm5'], title: '3 meals', food: 'Royal Canin · Selected Protein PR' },
+  { run: ['m3', 'm4'], title: '2 meals', food: 'Royal Canin · Selected Protein PR' },
+  // The meal v2's line was measured from.
+  meal('m5'),
   { id: 'c1', title: 'Cough', timing: null, photo: false, read: 'none' },
   { id: 'v2', title: 'Vomit', timing: '4 min after eating', photo: true, read: 'Worth a call' },
   { run: ['m6', 'm7'], title: '2 meals', food: 'Royal Canin · Selected Protein PR' },
 ];
 
 describe('the fixture day: Home draws the same nodes before and after the move', () => {
-  it('BEFORE — TodayCard’s old call (`buildSpine`) draws the six nodes', () => {
+  it('BEFORE — TodayCard’s old call (`buildSpine`) draws the eight lines', () => {
     expect(shapeOf(buildSpine(asSpineInput(SEP_17, SEP_17_FACTS)).nodes)).toEqual(SEP_17_NODES);
   });
 
-  it('AFTER — the pipeline (`buildDayNodes`) draws the same six', () => {
+  it('AFTER — the pipeline (`buildDayNodes`) draws the same eight', () => {
     expect(shapeOf(buildDayNodes(SEP_17, SEP_17_FACTS))).toEqual(SEP_17_NODES);
   });
 
@@ -247,6 +260,7 @@ const WITHOUT = {
   freeFedSpans: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, freeFedSpans: [] } }),
   priorOnsets: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, priorOnsets: undefined } }),
   config: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, config: undefined } }),
+  timedElsewhere: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, timedElsewhere: undefined } }),
 };
 type Fact = keyof typeof WITHOUT;
 
@@ -311,6 +325,13 @@ const WITNESSES: Witness[] = [
       freeFedSpans: [{ fromMs: at(11, 0), untilMs: at(14, 0) }],
     }),
     timed: { row: 'wf-v', withFact: false },
+  },
+  {
+    fact: 'timedElsewhere',
+    why: 'last night’s 10 PM bowl, the one a 2 AM vomit on the next card was timed from, keeps its own row (HV-6)',
+    day: timedDay([row('we-m1', 'meal', 18, 0, PR), row('we-m2', 'meal', 22, 0, PR)], {
+      timedElsewhere: new Set(['we-m2']),
+    }),
   },
 ];
 

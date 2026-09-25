@@ -85,7 +85,7 @@ describe('the two feeding reads carry the event id and the intake rating (HV-2)'
     const byId = Object.fromEntries(rows.map((r) => [r.id, r.intakeRating]));
     expect(byId).toEqual({ breakfast: null, dinner: 'refused', snack: 'picked' });
     expect(rows.every((r) => !r.id.startsWith('meals-row-'))).toBe(true);
-    expect(rows.find((r) => r.id === 'breakfast')).toMatchObject({ form: 'Acme Kibble', foodType: 'meal', confidence: 'witnessed' });
+    expect(rows.find((r) => r.id === 'breakfast')).toMatchObject({ form: 'Acme · Kibble', foodType: 'meal', confidence: 'witnessed' });
   });
 
   it('readFeedingsSince: the same mapping, and the bound decided on parsed instants (C-40)', async () => {

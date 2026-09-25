@@ -1,6 +1,6 @@
 # Nyx History v2 — The Record You Can Read — Requirements (CUL-1108)
 
-**Version:** 1.4 — **BUILD-READY** | **Date:** 2026-09-25 | **Status:** every ruling made (v1.3 adds CUL-1189's two, §0.5; v1.4 adds CUL-1193's, §3.2 and §3.8). The PM ruled on round 4 of the mock (2026-09-24) and handed five calls to the team (H-3, H-4b, H-7, H-10, H-11), which are made in §0.2 with their dissents recorded. Nothing is open that blocks a build session; four pieces wait on issues outside this project (§10).
+**Version:** 1.5 — **BUILD-READY** | **Date:** 2026-09-25 | **Status:** every ruling made (v1.3 adds CUL-1189's two, §0.5; v1.4 adds CUL-1193's, §3.2 and §3.8; v1.5 adds HV-6's two, §3.6 and §5.4 under ⚠ RULED). The PM ruled on round 4 of the mock (2026-09-24) and handed five calls to the team (H-3, H-4b, H-7, H-10, H-11), which are made in §0.2 with their dissents recorded. Nothing is open that blocks a build session; four pieces wait on issues outside this project (§10).
 
 **Design authority:** round 5 of *The Record You Can Read* (https://claude.ai/artifact/RNvdtUG6FX5utWmzGqBNa6), committed as `docs/culprit-history-v2-mockups.html`. The repo file wins on divergence. Round 4 (the options side by side) is in git at `b0479342`; round 3 at `ab20698c`.
 
@@ -178,7 +178,7 @@ One week of the Patterns month's day marks (`components/charts/DayMark.tsx`), Su
 | Meal | *Meal · Royal Canin · Selected Protein PR* + WET/DRY tag | the intake chip when rated (All, Most teal; Some grey; Picked at, Refused rose); *with Prednisone* when it carried a dose | folded into a run when rated below Most, photographed, noted, the meal a timing line measures from, or a dose's vehicle |
 | Treat | *Treat · …* | as a meal | counted in *meals not finished* |
 | A run (rule B) | *4 meals · Royal Canin · Selected Protein PR* + chevron | *1 wet · 3 dry*; the time span in the time column | a second product, a symptom, a dose, a photo, a note or midnight inside it |
-| Dose | *Prednisone · in the 1:00 PM meal · picked at* | Given / Partial / Missed / Refused, the shipped chips (GAP-2) | a guessed name: the drug comes from the dose's item, else its course (GAP-25), else *Medication · no medicine named* |
+| Dose | *Prednisone · in the 1:00 PM meal · picked at* | Given / Partial / Missed / Refused, the shipped chips (GAP-2) | a guessed name: the drug comes from the dose's item, else its course (GAP-25), else only *Medication* (⚠ RULED 2026-09-25, HV-6: never *no medicine named*, because an item or course that has not synced reads exactly like none; the v1 ruling on CUL-1124, carried to v2) |
 | Vomit (and stool) | *Vomit · 5 min after eating* (witnessed only) + camera glyph | *Worth a call* in rose (rule 7); grey *Photo not read* (H-4b) | minutes on a found vomit; a calm word; the photo |
 | Weight | *Weight · 8.2 lbs* (the owner's unit) | — | a trend |
 | Other kinds | the type's label | — | — |
@@ -189,7 +189,7 @@ One week of the Patterns month's day marks (`components/charts/DayMark.tsx`), Su
 - **Runs (rule B)** cross wet and dry of one product and speak their counts; any other fact breaks a run. A run's chevron says it opens here (rule D); a single row carries no chevron because every row is a door. **Open in place shows every member**, each a full 44pt row with every fact (GAP-8), on the shared open-in-place module (§4).
 - **Both halves inline (rule E):** the dose names its vehicle (*in the 1:00 PM meal*, with the meal's intake when not finished); the meal says *with Prednisone*. The pair is the **stored link** (`paired_event_id`), never a minute match (GAP-3).
 - **The timing line** is Home's shared lane, imported (GAP-1, R-3): it returns the meal it measured from, and that meal stays its own row. A refused bowl is never a meal eaten once CUL-1122 lands.
-- **The read (rule 7, H-4):** one word, *Worth a call*, in rose (`colorEventSymptomInk`), only when the read's verdict is worth a call. It comes from the **one read predicate** shared with Home, the month and the Signal screen (§5.4), reads the phone's copy (§5.3) so it never waits on the network, and an unknown verdict fails toward rose. A read's status never silences it (CUL-812). Hide hides words, never the rose; only the owner's "No" (CUL-1107, when it ships) stands it down, on every surface at once. A calm read shows nothing on the row. *Photo not read* (grey) marks a row whose read was expected and never landed; with photo reading off (CUL-552), rows stay unmarked.
+- **The read (rule 7, H-4):** one word, *Worth a call*, in rose (`colorEventSymptomInk`), only when the read's verdict is worth a call. It comes from the **one read predicate** shared with Home, the month and the Signal screen (§5.4), reads the phone's copy (§5.3) so it never waits on the network, and an unknown verdict fails toward rose. A read's status never silences it (CUL-812). Hide hides words, never the rose; only the owner's "No" (CUL-1107, when it ships) stands it down, on every surface at once. A calm read shows nothing on the row. *Photo not read* (grey) marks a row whose read was expected and never landed; with photo reading off (CUL-552), rows stay unmarked. ⚠ RULED 2026-09-25 (HV-6, the PM on the HV-5 adversarial pass's recommendation): a read that finished saying `not_enough_to_say` (status `uncertain`: the photo was unclear or did not show the subject) is not calm either; on a row whose photo this phone holds it draws the grey *Photo not read*, because nothing was really checked and an unread photo must never look like a read one.
 - **A removed row** leaves through the one shared reversal (`reverseLoggedEvent`, C-20) and the record screen's confirm, which names an event's note (CUL-1125).
 
 ### 3.7 Search (R-2, GAP-15)
@@ -318,9 +318,9 @@ A local table mirroring **only** `event_ai_analysis`'s `event_id`, `status`, `re
 | State | Row shows | When |
 |---|---|---|
 | `worth_a_call` | *Worth a call* in rose | the copy says worth a call; or the recommendation is one the app does not recognise (fails toward rose); a failed re-read never takes a live one away (`escalationSurvivesFailure`, CUL-812) |
-| `calm` | nothing | a completed read with a recognised calm recommendation |
+| `calm` | nothing | a finished read that said `monitor` (⚠ RULED 2026-09-25: `not_enough_to_say` is never calm) |
 | `pending` | the breathing tick | a read in flight |
-| `unread` | grey *Photo not read* | a read was expected (`hasPerIncidentRead`, a photo, reading on) and none completed: it failed, was never sent, hit the cap, or the phone holds no copy |
+| `unread` | grey *Photo not read* | a read was expected (`hasPerIncidentRead`, a photo, reading on) and none completed a check: it failed, was never sent, hit the cap, the phone holds no copy, or (⚠ RULED 2026-09-25) it finished saying `not_enough_to_say`. The finished verdict still rides on `readVerdictOf`'s `verdict` for a surface that speaks words (the Signal gallery keeps *Not enough to say yet*) |
 | `off` | nothing (said once on the type sheet) | photo reading is off (CUL-552) |
 | `none` | nothing | no read is expected |
 
@@ -401,7 +401,7 @@ Every criterion names its test shape. "Pure" means a table test over a pure modu
 15. History and Home render a row through the same content and run modules; a guard fails if either surface builds a row another way (guard).
 16. A run never absorbs a meal rated below Most, a photographed or noted meal, a dose's vehicle, or the meal a timing line measures from; a refused bowl is its own row on History **and on Home** (pure; closes CUL-1121).
 17. Opening a run shows every member at full height; no member is clipped (component test measuring the open box).
-18. The dose row renders all four adherence chips and names its drug from the item, else the course, else *no medicine named*; the vehicle pairing comes from the stored link (pure).
+18. The dose row renders all four adherence chips and names its drug from the item, else the course, else only *Medication* (⚠ RULED 2026-09-25); the vehicle pairing comes from the stored link (pure).
 19. The time column never truncates at the default and the largest supported text size; a range breaks after its dash (render test at both sizes).
 
 **The read (H-4)**
@@ -532,3 +532,4 @@ The Linear project **History v2 · the record you can read** carries every sessi
 | 1.2 | 2026-09-25 | §3.6: the time column is 60pt, not 56 (CUL-1183, PM-ruled; round 5 of the mock amended to match, same URL). §2: where the row lives after HV-1 (#907). PM-approved in the HV-1 session. |
 | 1.3 | 2026-09-25 | §0.5, §3.2, §3.9, §5.2, §7 AC 40–41: CUL-1189's two rulings (an anchored window before the record names where the record starts; the trial window says *past its planned end* inside B-422's grace), and §3.9's trial row made to say what #909 built (offered only while `isTrialRunning`, per §11). PM-ruled on CUL-1189. |
 | 1.4 | 2026-09-25 | §3.2, §3.8, AC 30: a dose count (a course, Medication) reads *logged*, and the doses recorded Partial, Missed or Refused are named beside it, on the count line and on a course's sheet sub-row (CUL-1193, PM-ruled option (b), GAP-26's wording; round 5 of the mock amended to match, same URL). Built in #911 (HV-4). |
+| 1.5 | 2026-09-25 | §3.6, §5.4, §7 AC 18: HV-6's two rulings (PM, in the HV-6 session, CUL-1163). A dose with no name on this phone says only *Medication*, never *no medicine named*; a finished `not_enough_to_say` read is `unread` (the grey *Photo not read*), never `calm`. |

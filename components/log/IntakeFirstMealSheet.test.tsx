@@ -258,8 +258,12 @@ describe('the arm — the only thing that writes', () => {
     fireEvent.press(await findByText('Refused'));
     await waitFor(() => expect(useEventStore.getState().todayEvents).toHaveLength(1));
     expect(useEventStore.getState().todayEvents[0]).toEqual(
-      expect.objectContaining({ id: 'e1', pet_id: 'p1', event_type: 'meal', food_item_id: 'f1' }),
+      // The arm rides the mirror (History v2 HV-6, B1): Home draws this row before its next
+      // read, and an unrated one folds into a run beside the bowls she ate.
+      expect.objectContaining({ id: 'e1', pet_id: 'p1', event_type: 'meal', food_item_id: 'f1', intake_rating: 'refused' }),
     );
+    // The same rating the write carried, not a restatement of the chip.
+    expect(mockInsertMeal).toHaveBeenCalledWith(expect.objectContaining({ intakeRating: 'refused' }));
   });
 
   it('SAYS a failed write, and leaves the sheet up with the arms live', async () => {

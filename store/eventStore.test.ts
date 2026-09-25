@@ -69,3 +69,20 @@ describe('restoreToToday', () => {
     ]);
   });
 });
+
+describe('prependEvent', () => {
+  it('is idempotent by id: a read that landed first keeps its row, and the bowl is drawn once', () => {
+    // The HV-6 second adversarial pass (4): a rated insert re-reads Home, and that read can
+    // land BEFORE the caller's optimistic prepend.
+    const fromRead = { ...noon, notes: 'from the record' };
+    useEventStore.setState({ todayEvents: [fromRead, nine] });
+    useEventStore.getState().prependEvent(noon);
+    expect(useEventStore.getState().todayEvents).toEqual([fromRead, nine]);
+  });
+
+  it('still puts a new event at the top', () => {
+    useEventStore.setState({ todayEvents: [nine] });
+    useEventStore.getState().prependEvent(noon);
+    expect(useEventStore.getState().todayEvents.map((e) => e.id)).toEqual(['noon', 'nine']);
+  });
+});

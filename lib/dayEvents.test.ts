@@ -10,6 +10,10 @@ import {
   daySheetSubtitle,
   eventTintCategory,
   assertNeverCategory,
+  productKeyOf,
+  productNameBesideTag,
+  rowFoodLabelOf,
+  unfinishedIntakePhrase,
 } from './dayEvents';
 import type { TimelineRow } from './db';
 
@@ -194,5 +198,119 @@ describe('daySheetSubtitle (never an all-clear)', () => {
 
   it('a symptom-free day with other events is factual, not a reassurance', () => {
     expect(daySheetSubtitle('Vomiting', 0, 4)).toBe('No vomiting logged · everything this day:');
+  });
+});
+
+// ── The row's product name and product key (History v2 HV-6 / CUL-1163; rule B, rule K) ──
+
+describe('productNameBesideTag — a trailing word that only repeats the tag is dropped', () => {
+  it('drops ", Dry" beside a DRY tag and ", Wet" beside a WET one (the owner’s two Royal Canin items)', () => {
+    expect(productNameBesideTag('Selected Protein PR, Dry', 'dry_kibble', 'Meal')).toBe('Selected Protein PR');
+    expect(productNameBesideTag('Selected Protein PR, Wet', 'wet_canned', 'Meal')).toBe('Selected Protein PR');
+  });
+
+  it('reads the qualifier off the item’s OWN format, never a fixed word list (BRK-12)', () => {
+    // The record disagrees with itself: the row shows both halves rather than choosing.
+    expect(productNameBesideTag('Selected Protein PR, Wet', 'dry_kibble', 'Meal')).toBe('Selected Protein PR, Wet');
+    // Any format the one label map names, spelled the way the map spells it.
+    expect(productNameBesideTag('Rabbit Bites, Freeze-dried', 'freeze_dried', 'Treat')).toBe('Rabbit Bites');
+    expect(productNameBesideTag('Turkey (Raw)', 'raw', 'Meal')).toBe('Turkey');
+    expect(productNameBesideTag('Turkey - Raw', 'raw', 'Meal')).toBe('Turkey');
+  });
+
+  it('touches nothing when there is no tag beside it, or no separator before the word', () => {
+    expect(productNameBesideTag('Mystery Food, Dry', 'other', 'Meal')).toBe('Mystery Food, Dry');
+    expect(productNameBesideTag('Mystery Food, Dry', null, 'Meal')).toBe('Mystery Food, Dry');
+    // A treat-format treat shows no tag (it would echo "Treat"), so its name keeps the word.
+    expect(productNameBesideTag('Tasty Chicken, Treat', 'treat', 'Treat')).toBe('Tasty Chicken, Treat');
+    expect(productNameBesideTag("Hill's Dry", 'dry_kibble', 'Meal')).toBe("Hill's Dry");
+  });
+
+  it('never strips a name to nothing', () => {
+    expect(productNameBesideTag(', Dry', 'dry_kibble', 'Meal')).toBe(', Dry');
+    expect(productNameBesideTag('Dry', 'dry_kibble', 'Meal')).toBe('Dry');
+    expect(productNameBesideTag('   ', 'dry_kibble', 'Meal')).toBeNull();
+  });
+
+  it('rowFoodLabelOf names the food beside its tag: "Royal Canin · Selected Protein PR"', () => {
+    expect(rowFoodLabelOf({ brand: 'Royal Canin', product: 'Selected Protein PR, Dry', format: 'dry_kibble', rowLabel: 'Meal' })).toBe(
+      'Royal Canin · Selected Protein PR',
+    );
+  });
+});
+
+describe('CONVERGENCE (a Class A key, CLAUDE.md § Canonical keys): f(f(x)) === f(x), over a cross product', () => {
+  const NAMES = [
+    'Selected Protein PR, Dry',
+    'Selected Protein PR, Dry, Dry',
+    'Selected Protein PR , dry',
+    'Selected Protein PR (Dry)',
+    'Selected Protein PR - Dry',
+    'Selected Protein PR, Wet',
+    'Selected Protein PR',
+    ', Dry',
+    'Dry',
+    'Dry, Dry',
+    'Freeze-dried, Freeze-dried',
+    'Tasty Chicken, Treat',
+    '  padded , Wet  ',
+    '',
+  ];
+  const FORMATS = [null, 'dry_kibble', 'wet_canned', 'freeze_dried', 'treat', 'other', 'a_format_from_the_future'];
+  const LABELS = ['Meal', 'Treat'];
+  const cases = NAMES.flatMap((n) => FORMATS.flatMap((f) => LABELS.map((l) => [n, f, l] as const)));
+
+  it('builds a non-trivial product (and strips on some of it)', () => {
+    expect(cases.length).toBe(NAMES.length * FORMATS.length * LABELS.length);
+    expect(cases.some(([n, f, l]) => productNameBesideTag(n, f, l) !== (n.trim() || null))).toBe(true);
+  });
+
+  it.each(cases)('%p · %p · %p', (name, format, label) => {
+    const once = productNameBesideTag(name, format, label);
+    expect(productNameBesideTag(once, format, label)).toBe(once);
+    // The key is stable under the same re-application (a key computed from a stripped
+    // name is the key of the unstripped one).
+    expect(productKeyOf({ brand: 'Royal Canin', product: once, format, rowLabel: label })).toBe(
+      productKeyOf({ brand: 'Royal Canin', product: name, format, rowLabel: label }),
+    );
+  });
+});
+
+describe('productKeyOf — which product a meal is of', () => {
+  const key = (brand: string | null, product: string | null, format: string | null, rowLabel = 'Meal') =>
+    productKeyOf({ brand, product, format, rowLabel });
+
+  it('wet and dry of one line are ONE product (the run crosses them)', () => {
+    expect(key('Royal Canin', 'Selected Protein PR, Dry', 'dry_kibble')).toBe(key('Royal Canin', 'Selected Protein PR, Wet', 'wet_canned'));
+  });
+
+  it('formatting noise folds (case, spacing, trademark glyphs, apostrophes); a word never does', () => {
+    expect(key('Hill’s®', '  Z/D  ', 'dry_kibble')).toBe(key("hill's", 'z/d', 'dry_kibble'));
+    expect(key('Wellness', 'Core', 'dry_kibble')).not.toBe(key('Wellness Core', '', 'dry_kibble'));
+  });
+
+  it('another brand or another product is another key', () => {
+    expect(key('Royal Canin', 'Selected Protein PR', 'dry_kibble')).not.toBe(key('Purina', 'Selected Protein PR', 'dry_kibble'));
+    expect(key('Royal Canin', 'Selected Protein PR', 'dry_kibble')).not.toBe(key('Royal Canin', 'Weight Care', 'dry_kibble'));
+  });
+
+  it('a tagged and an untagged member are never one run (its second line speaks for every member)', () => {
+    expect(key('Delectables', 'Squeeze Up with Chicken & Duck', 'wet_canned', 'Treat')).not.toBe(
+      key('Delectables', 'Squeeze Up with Chicken & Duck', 'treat', 'Treat'),
+    );
+  });
+
+  it('a meal that names no food has no key: it never joins a run', () => {
+    expect(key(null, null, 'dry_kibble')).toBeNull();
+    expect(key('  ', '', null)).toBeNull();
+  });
+});
+
+describe('unfinishedIntakePhrase — the vehicle meal’s intake beside a dose', () => {
+  it('names Some, Picked and Refused in the drill-in’s words; says nothing for a finished or unrated bowl', () => {
+    expect(unfinishedIntakePhrase('some')).toBe('some eaten');
+    expect(unfinishedIntakePhrase('picked')).toBe('picked at');
+    expect(unfinishedIntakePhrase('refused')).toBe('refused');
+    for (const r of ['all', 'most', null, undefined, 'odd']) expect(unfinishedIntakePhrase(r)).toBeNull();
   });
 });

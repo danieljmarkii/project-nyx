@@ -55,7 +55,7 @@ export interface NyxEvent {
   drug_brand_name?: string | null;
   // CUL-1124 — the name of the course the dose was logged against, the second source of
   // a dose's name after the item (`lib/doseDisplay.ts`). Carried by the timeline read
-  // (`getTimeline`); absent on Today's read.
+  // (`getTimeline`) and Today's (`lib/todayEventsQuery.ts`, History v2 HV-6).
   regimen_drug_name?: string | null;
   // B-156 PR B4 — the reverse combo link (vehicle → dose), for the cross-link on a
   // meal/treat row that carried co-logged dose(s). The mirror of paired_* above so the
@@ -113,8 +113,13 @@ export const useEventStore = create<EventState>((set) => ({
   todayRead: null,
   setTodayRead: (todayRead) => set({ todayRead }),
   setTodayEvents: (todayEvents) => set({ todayEvents }),
+  // Idempotent by id, as restoreToToday is: a write that re-reads Home (a rated insert, a
+  // re-rating) can land that read BEFORE its caller's optimistic prepend, and the read's row
+  // is the record's (the HV-6 second adversarial pass: the intake door's bowl drawn twice).
   prependEvent: (event) =>
-    set((state) => ({ todayEvents: [event, ...state.todayEvents] })),
+    set((state) =>
+      state.todayEvents.some((e) => e.id === event.id) ? state : { todayEvents: [event, ...state.todayEvents] },
+    ),
   removeFromToday: (eventId) =>
     set((state) => ({
       todayEvents: state.todayEvents.filter((e) => e.id !== eventId),

@@ -13,7 +13,7 @@ import { ThemedText } from '../components/ui/ThemedText';
 import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
-import { getDb, updateEvent, updateMealFood, getMealForEvent, getDoseForEvent, updateDoseAdherence, updateDoseHowGiven, getEventAttachment, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
+import { getDb, updateEvent, updateMealFood, getMealForEvent, getDoseForEvent, getEventAttachment, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
 import { detachOtherEventAttachments } from '../lib/attachments';
 import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendingMedicationAdministrations, syncPendingLooks } from '../lib/sync';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
@@ -31,6 +31,7 @@ import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/Time
 import { MultiChipGroup } from '../components/ui/MultiChipGroup';
 import { getLookForEvent, updateLookForEdit, localDayForLook } from '../lib/looks';
 import { rateMealIntake } from '../lib/meals';
+import { rateDoseAdherence, recordDoseHowGiven } from '../lib/medicationDose';
 import { gridSectionsFor, gridChipLabel } from '../lib/lookDisplay';
 import { toggleLookWord } from '../lib/lookSelection';
 import { lookSpeciesOf, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, notHerselfLabel } from '../constants/lookWords';
@@ -575,8 +576,8 @@ export default function EditEventModal() {
       // stays unrated, never a phantom 'given', and a caregiver's newer state isn't
       // clobbered), and an untouched legacy how_given isn't round-tripped to null.
       if (isMedication && dose) {
-        if (adherence !== loadedAdherenceRef.current) await updateDoseAdherence(id, adherence);
-        if (howGiven !== loadedHowGivenRef.current) await updateDoseHowGiven(id, howGiven);
+        if (adherence !== loadedAdherenceRef.current) await rateDoseAdherence(id, adherence);
+        if (howGiven !== loadedHowGivenRef.current) await recordDoseHowGiven(id, howGiven);
       }
 
       if (isWeight && weightKg != null) {

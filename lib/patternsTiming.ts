@@ -45,6 +45,11 @@ import {
   type TimingIneligibility,
 } from './mealTiming';
 import { formatTimingBandLabel } from './timingBandLabels';
+// The feeding's evidence-only form label is THE food label (History v2 HV-6, CUL-1163:
+// this module kept its own copy, joined by a bare space, until the row's rule K unified
+// them). Home's bounded feeding read (`lib/spineReads.ts`) maps through `toFeedingRow`
+// below, so it labels a feeding exactly as the lane does.
+import { foodLabelOf } from './food';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -435,14 +440,6 @@ export async function readFeedingRows(petId: string): Promise<FeedingRow[]> {
     [petId],
   );
   return rows.map(toFeedingRow).filter((r) => Number.isFinite(r.ms));
-}
-
-/** The feeding's evidence-only form label (brand + product). Exported for Home's bounded
- *  feeding read (`lib/spineReads.ts`, D2-4), which must label a feeding exactly as the lane
- *  does rather than re-derive it. */
-export function foodLabelOf(brand: string | null, product: string | null): string | null {
-  const label = [brand, product].filter((s) => !!s && s.trim().length > 0).join(' ').trim();
-  return label.length > 0 ? label : null;
 }
 
 /**

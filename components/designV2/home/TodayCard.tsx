@@ -12,11 +12,17 @@
 //     (`lib/spineReads.ts`), re-read whenever the row set or the sync tick changes. A
 //     failed read leaves the previous facts in place; a node without them is a node
 //     without a glyph or a timing, never a wrong one.
-//   • The reads on today's symptoms — `event_ai_analysis`, OBSERVED, never triggered
-//     (the issue: "an observe-only read … never a trigger"). Issued for the day's symptom
-//     rows (a row exists only for a photographed one), so a day with no symptom issues no
-//     server read at all — which is also what the flag-off proof measures (C-41: no row
-//     AND no read).
+//   • The reads — the phone's copy of each verdict (`lib/readCopy.ts`, HV-5), OBSERVED,
+//     never triggered (the issue: "an observe-only read … never a trigger"). Issued for
+//     every row whose record can hold a read, whatever its tint (CUL-1197: a photographed
+//     normal stool is not rose-tinted, and its read can be worth a call), so a day of
+//     meals and doses alone issues no read at all, which is also what the flag-off proof
+//     measures (C-41: no row AND no read). A row that can carry a read gets its photo
+//     handed to the pipeline only once this read has ANSWERED for it (C-12): since H-4b
+//     every read slot is a claim, so before the copy lands a grey "Photo not read" says no
+//     check happened and a glyph over nothing says it was calm. Until then the row is drawn
+//     as one with no photo, which claims neither; a failed read answers nothing, and the
+//     card keeps the last answer it had (a rose it drew stays drawn, CUL-1198 item 1).
 //   • The `working` fact — `analysisChainOutstanding` per photographed row (C-30). While a
 //     chain is outstanding the node shows the breathing tick; when it settles the rows are
 //     re-read and the read lands ON that node. A row the server left at `pending` is
@@ -32,9 +38,10 @@ import { theme } from '../../../constants/theme';
 import { useEvents } from '../../../hooks/useEvents';
 import { analysisChainOutstanding, awaitAnalysisChain, watchAnalysisRow } from '../../../lib/analysis';
 import { DEFAULT_MEAL_TIMING_CONFIG } from '../../../lib/mealTiming';
-import { countLine, type SpineAnalysisRow } from '../../../lib/spineNode';
+import { countLine, mayCarryRead, type SpineAnalysisRow } from '../../../lib/spineNode';
 import { buildDay } from '../../../lib/dayNodes';
 import {
+  readAnalysisCopy,
   readAnalysisRows,
   readFeedingsSince,
   readFreeFedSpans,
@@ -44,7 +51,6 @@ import {
 } from '../../../lib/spineReads';
 import type { OnsetConfidence } from '../../../lib/mealTiming';
 import type { FeedingRow } from '../../../lib/patternsTiming';
-import { eventTintCategory } from '../../../lib/dayEvents';
 import { useEventStore } from '../../../store/eventStore';
 import { usePetStore } from '../../../store/petStore';
 import { useSyncStore } from '../../../store/syncStore';
@@ -102,16 +108,25 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
       ),
     [todayEvents, petId, dayStartMs],
   );
-  // The ids that can carry a read: photographed symptoms. Read as a stable key so the
-  // effects below re-run on a change in the SET, not on every store reference.
-  const symptomIds = useMemo(
-    () => rows.filter((e) => eventTintCategory(e.event_type) === 'symptom').map((e) => e.id).sort(),
+  // The ids that can carry a read (`mayCarryRead`, the pipeline's own gate, CUL-1197):
+  // never the rose tint, because a `stool_normal` is outside the symptom set and inside
+  // `hasPerIncidentRead`, and a row re-typed after its read landed keeps the rose the one
+  // predicate stands. Read as a stable key so the effects below re-run on a change in the
+  // SET, not on every store reference.
+  const readableIds = useMemo(
+    () => rows.filter((e) => mayCarryRead(e.event_type)).map((e) => e.id).sort(),
     [rows],
   );
   const rowKey = useMemo(() => rows.map((e) => e.id).sort().join('|'), [rows]);
 
   const [facts, setFacts] = useState<Facts | null>(null);
-  const [analysis, setAnalysis] = useState<Map<string, SpineAnalysisRow>>(() => new Map());
+  // The phone's copy of the reads, and the ids that read has ANSWERED for (header).
+  const [copy, setCopy] = useState<{ answered: ReadonlySet<string>; rows: Map<string, SpineAnalysisRow> }>(
+    () => ({ answered: new Set(), rows: new Map() }),
+  );
+  // The last read issued, and the last one whose answer was applied.
+  const copyIssued = useRef(0);
+  const copyApplied = useRef(0);
   const [working, setWorking] = useState<Set<string>>(() => new Set());
   const activePetIdRef = useRef<string | null>(null);
   activePetIdRef.current = petId;
@@ -147,21 +162,26 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
   }, [petId, rowKey, dayStartMs, hydrationTick]);
 
   // ── The reads, observed ───────────────────────────────────────────────────────
-  // For EVERY symptom row today, not only the ones the local attachment read says have
-  // a photo: an `event_ai_analysis` row exists only for a photographed incident, so the
-  // photo fact is redundant as a gate — and fragile, since a failed or lagging attachment
-  // read would otherwise hide a `worth_a_call` sitting in the record (the adversarial
-  // pass, F5). A day with no symptom issues no server read at all.
-  const photographedKey = symptomIds.join('|');
+  // For EVERY row that can carry a read, not only the ones the local attachment read says
+  // have a photo: a read row exists only for a photographed incident (or a photoless
+  // stool's contextual read), so the photo fact is redundant as a gate, and fragile, since
+  // a failed or lagging attachment read would otherwise hide a `worth_a_call` sitting in
+  // the record (the D2-4 adversarial pass, F5). A day of meals and doses reads nothing.
+  const photographedKey = readableIds.join('|');
 
   const refreshAnalysis = useCallback(async (ids: string[]) => {
-    if (ids.length === 0) {
-      setAnalysis(new Map());
-      return;
-    }
-    const next = await readAnalysisRows(ids);
-    if (activePetIdRef.current !== petId) return;
-    setAnalysis(next);
+    const seq = ++copyIssued.current;
+    // A day with nothing that can carry a read asks nothing at all (C-41).
+    const rows = ids.length === 0 ? new Map<string, SpineAnalysisRow>() : await readAnalysisCopy(ids);
+    // An answer yields only to a NEWER one already applied, never to one merely issued: a
+    // newer read that then fails must not have thrown away an older answer that carried the
+    // rose (the HV-6 second adversarial pass). A read for the previous pet never lands.
+    if (seq < copyApplied.current || activePetIdRef.current !== petId) return;
+    // A failed look answers nothing: the card keeps its last answer, so a rose it had stays
+    // drawn and a row it never answered for claims no photo (CUL-1198 item 1, Home's half).
+    if (rows === null) return;
+    copyApplied.current = seq;
+    setCopy({ answered: new Set(ids), rows });
   }, [petId]);
 
   useEffect(() => {
@@ -172,14 +192,20 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
     const outstanding = ids.filter((id) => analysisChainOutstanding(id));
     setWorking(new Set(outstanding));
     for (const id of outstanding) {
-      void awaitAnalysisChain(id).then(() => {
+      void awaitAnalysisChain(id).then(async () => {
+        if (cancelled) return;
+        // Re-read FIRST, then drop the working fact. Dropped first, the node spent the
+        // re-read's round trip on the copy from BEFORE the read landed: a frame of "Photo not
+        // read", its tick unmounted, and the rose then arriving on a new rail with no
+        // announcement (the HV-6 second adversarial pass). Kept until the copy answers, the
+        // read lands on the node that waited (C-30).
+        await refreshAnalysis(ids);
         if (cancelled) return;
         setWorking((prev) => {
           const n = new Set(prev);
           n.delete(id);
           return n;
         });
-        void refreshAnalysis(ids);
       });
     }
     return () => {
@@ -189,7 +215,7 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
 
   // A row the server left at `pending` — watched as the sections watch it, then re-read.
   useEffect(() => {
-    const pendingIds = [...analysis.values()].filter((r) => r.status === 'pending').map((r) => r.event_id);
+    const pendingIds = [...copy.rows.values()].filter((r) => r.status === 'pending').map((r) => r.event_id);
     if (pendingIds.length === 0) return;
     const ids = photographedKey ? photographedKey.split('|') : [];
     const teardowns = pendingIds.map((id) =>
@@ -208,7 +234,15 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
       ),
     );
     return () => teardowns.forEach((t) => t());
-  }, [analysis, photographedKey, refreshAnalysis]);
+  }, [copy.rows, photographedKey, refreshAnalysis]);
+
+  // The photo set the pipeline sees: every photo but a readable row's whose copy has not
+  // answered (header). A meal's photo, which carries no read, goes at once: it breaks a run.
+  const readable = useMemo(() => new Set(readableIds), [readableIds]);
+  const photographed = useMemo(() => {
+    if (!facts || facts.petId !== petId) return new Set<string>();
+    return new Set([...facts.photographed].filter((id) => !readable.has(id) || copy.answered.has(id)));
+  }, [facts, petId, readable, copy.answered]);
 
   // The day's pipeline (`lib/dayNodes.ts`, History v2 HV-1) — the one History's day
   // cards call too. The facts are this pet's or they are empty: a read that answered
@@ -217,8 +251,8 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
     () =>
       buildDay(rows, {
         reads: {
-          photographed: facts && facts.petId === petId ? facts.photographed : new Set(),
-          analysis,
+          photographed,
+          analysis: copy.rows,
           working,
         },
         timings: {
@@ -227,7 +261,7 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
           priorOnsets: facts && facts.petId === petId ? facts.priorOnsets : [],
         },
       }),
-    [rows, facts, petId, analysis, working],
+    [rows, facts, petId, photographed, copy.rows, working],
   );
 
   const readState: 'loading' | 'ready' | 'failed' =
