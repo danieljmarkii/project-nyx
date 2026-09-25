@@ -199,6 +199,8 @@ describe('SpineRowFrame — no line cap, no scale cap, no height that could cut 
 
   it('the column widths are exported, so an inset under the time and the rail is derived, never retyped', () => {
     // The opened run's members indent by exactly these (components/dayRow/SpineNodeRow).
-    expect([TIME_W, RAIL_W]).toEqual([56, 18]);
+    // 60, not the mock's 56 (PM, 2026-09-25, CUL-1183): the widest first line a run can
+    // put in the column, "11:30 AM –", is 58.7pt of Geist at 11pt.
+    expect([TIME_W, RAIL_W]).toEqual([60, 18]);
   });
 });

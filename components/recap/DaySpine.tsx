@@ -47,7 +47,14 @@ export type SpineGround = 'night' | 'day';
 // draw the same bead (nodeTints.ts). The two column widths are EXPORTED (History v2,
 // HV-1): a row that indents under the time and the rail (a run's opened members, a
 // History day card's date-only items) derives its inset from these, never re-types them.
-export const TIME_W = 56;
+//
+// TIME_W is 60, not the mock's 56 (PM, 2026-09-25, CUL-1183). Measured with Geist 400 at
+// the column's 11pt: every single time fits 56, but a run across noon's first line,
+// "11:30 AM –", is 58.7pt, so at 56 it fell to three lines. 60 fits it with 1.3pt spare
+// (and a found window's "06:00 AM–", 55.9pt, with 4.1), and it is the mock's own
+// proportion at our size (56px at the mock's 10.5px is 58.7pt at 11). Home, History and
+// the Daily Recap move together, because this constant is the one they all read.
+export const TIME_W = 60;
 export const RAIL_W = 18;
 const DOT = NODE_DOT_SIZE;
 const LINE_W = 2;
@@ -120,7 +127,7 @@ const NBSP = '\u00A0';
 /**
  * The time column's text, shaped so it WRAPS instead of cutting off (History v2, HV-1;
  * spec §3.6, AC 19: "a range breaks after its dash, each time unbreakable"). The column
- * is a fixed 56pt, so a run's range always takes two lines and a time at a large text
+ * is a fixed `TIME_W`, so a run's range always takes two lines and a time at a large text
  * size may too; where the break falls is the whole design:
  *   • inside a clock time, the space before its meridiem becomes a no-break space, so
  *     "12:41 PM" never splits into "12:41" / "PM";
