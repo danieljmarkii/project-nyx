@@ -23,8 +23,11 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 // Not the meal's reverse link to its doses (`PAIRED_DOSE_REVERSE_JOIN`, which the timeline
 // read carries): Home learns a meal's doses from today's own rows, which an Undo edits in
 // place, where a count read here would go stale over an undone dose and keep saying "with
-// Prednisone". A dose on ANOTHER day than its meal (reachable only by re-timing one of the
-// two across midnight) is therefore not seen as a vehicle here: CUL-1229.
+// Prednisone". So one of TODAY's meals whose dose sits on an earlier day (reachable only by
+// re-timing one of the two across midnight) is not seen as a vehicle here: CUL-1229. The
+// other direction, today's dose paired to an earlier day's meal (a dose added from that
+// meal's record, or a combo logged across midnight), is the dose row's, which reads its
+// vehicle's intake off `paired_vehicle_intake` above.
 // Home v1's Today strip reads none of the fields HV-6 added, so it draws exactly what it
 // drew before.
 //

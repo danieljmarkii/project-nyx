@@ -74,10 +74,17 @@ function inserted(table: string): Record<string, unknown> {
 
 const DRUG = { id: 'pred', generic_name: 'Prednisone', brand_name: null };
 
-async function logAndMirror(write: InsertMedicationDoseParams) {
+async function logAndMirror(write: InsertMedicationDoseParams, pairedVehicleIntake?: string | null) {
   const result = await insertMedicationDose(write);
   const row = optimisticDoseRow(
-    { petId: write.petId, adherence: write.adherence, howGiven: write.howGiven, pairedEventId: write.pairedEventId, drug: DRUG },
+    {
+      petId: write.petId,
+      adherence: write.adherence,
+      howGiven: write.howGiven,
+      pairedEventId: write.pairedEventId,
+      pairedVehicleIntake,
+      drug: DRUG,
+    },
     result,
   ) as unknown as Record<string, unknown>;
   return { row, event: inserted('events'), dose: inserted('medication_administrations') };
@@ -109,6 +116,24 @@ describe('optimisticDoseRow: the store row says what the write wrote', () => {
     // And the pair really was written, so the loop above compared something.
     expect(dose).toMatchObject({ paired_event_id: 'meal-1', how_given: 'in_food', adherence: null });
     expect(row).toMatchObject({ drug_generic_name: 'Prednisone', drug_brand_name: null });
+  });
+
+  it('a combo dose carries the vehicle intake its adherence was decided on, so a cross-day pair is in doubt at once', async () => {
+    // The HV-6 second adversarial pass (2): a dose added to an earlier day's refused treat has
+    // no meal row on Home's day, so without this the row read "not in doubt" until a reload.
+    const write = {
+      petId: 'pet-1',
+      medicationItemId: DRUG.id,
+      adherence: null,
+      howGiven: 'in_treat' as const,
+      pairedEventId: 'treat-yesterday',
+      occurredAt: new Date('2026-09-25T09:00:00.000Z'),
+    };
+    expect((await logAndMirror(write, 'refused')).row).toMatchObject({ paired_vehicle_intake: 'refused', adherence: null });
+    // A value this build does not know reads as none, which is what the in-doubt predicate
+    // makes of it anyway; and a standalone dose never carries one.
+    expect((await logAndMirror(write, 'half')).row).toMatchObject({ paired_vehicle_intake: null });
+    expect((await logAndMirror({ ...write, pairedEventId: null }, 'refused')).row).toMatchObject({ paired_vehicle_intake: null });
   });
 
   it('a standalone dose: no pair and no vehicle, as null rather than absent', async () => {

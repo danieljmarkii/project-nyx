@@ -530,7 +530,10 @@ export default function LogModal() {
         // The same facts the write carried, the stored pair and the vehicle included
         // (`optimisticDoseRow`, History v2 HV-6: the shared day row draws them).
         prependEvent(
-          optimisticDoseRow({ petId: writePetId, adherence, howGiven, pairedEventId, drug: med }, result),
+          optimisticDoseRow(
+            { petId: writePetId, adherence, howGiven, pairedEventId, pairedVehicleIntake: vehicleIntake, drug: med },
+            result,
+          ),
         );
       }
       // B-325 — RETROACTIVE combo (added from the treat's detail screen). No completion card

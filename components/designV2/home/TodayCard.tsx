@@ -124,7 +124,9 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
   const [copy, setCopy] = useState<{ answered: ReadonlySet<string>; rows: Map<string, SpineAnalysisRow> }>(
     () => ({ answered: new Set(), rows: new Map() }),
   );
-  const copySeq = useRef(0);
+  // The last read issued, and the last one whose answer was applied.
+  const copyIssued = useRef(0);
+  const copyApplied = useRef(0);
   const [working, setWorking] = useState<Set<string>>(() => new Set());
   const activePetIdRef = useRef<string | null>(null);
   activePetIdRef.current = petId;
@@ -168,14 +170,17 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
   const photographedKey = readableIds.join('|');
 
   const refreshAnalysis = useCallback(async (ids: string[]) => {
-    // The newest read wins: an older one landing late would answer for a smaller set.
-    const seq = ++copySeq.current;
+    const seq = ++copyIssued.current;
     // A day with nothing that can carry a read asks nothing at all (C-41).
     const rows = ids.length === 0 ? new Map<string, SpineAnalysisRow>() : await readAnalysisCopy(ids);
-    if (seq !== copySeq.current || activePetIdRef.current !== petId) return;
+    // An answer yields only to a NEWER one already applied, never to one merely issued: a
+    // newer read that then fails must not have thrown away an older answer that carried the
+    // rose (the HV-6 second adversarial pass). A read for the previous pet never lands.
+    if (seq < copyApplied.current || activePetIdRef.current !== petId) return;
     // A failed look answers nothing: the card keeps its last answer, so a rose it had stays
     // drawn and a row it never answered for claims no photo (CUL-1198 item 1, Home's half).
     if (rows === null) return;
+    copyApplied.current = seq;
     setCopy({ answered: new Set(ids), rows });
   }, [petId]);
 
@@ -187,14 +192,20 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
     const outstanding = ids.filter((id) => analysisChainOutstanding(id));
     setWorking(new Set(outstanding));
     for (const id of outstanding) {
-      void awaitAnalysisChain(id).then(() => {
+      void awaitAnalysisChain(id).then(async () => {
+        if (cancelled) return;
+        // Re-read FIRST, then drop the working fact. Dropped first, the node spent the
+        // re-read's round trip on the copy from BEFORE the read landed: a frame of "Photo not
+        // read", its tick unmounted, and the rose then arriving on a new rail with no
+        // announcement (the HV-6 second adversarial pass). Kept until the copy answers, the
+        // read lands on the node that waited (C-30).
+        await refreshAnalysis(ids);
         if (cancelled) return;
         setWorking((prev) => {
           const n = new Set(prev);
           n.delete(id);
           return n;
         });
-        void refreshAnalysis(ids);
       });
     }
     return () => {

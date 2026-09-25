@@ -5,6 +5,13 @@ import type { NyxEvent } from '../store/eventStore';
 import { useEventStore } from '../store/eventStore';
 import { usePetStore } from '../store/petStore';
 
+// The newest read wins. expo-sqlite answers async calls on a concurrent queue, so two reads
+// can answer out of order, and a late OLDER one put back what a newer one had replaced: a
+// teal "Given" over a dose the owner had just marked Refused (the HV-6 second adversarial
+// pass), or the previous pet's rows after a switch. Module-level, because every mount of this
+// hook fills the one store.
+let todayReadsIssued = 0;
+
 export function useEvents() {
   const { activePet } = usePetStore();
   const { todayEvents, setTodayEvents, setTodayRead, prependEvent } = useEventStore();
@@ -29,8 +36,10 @@ export function useEvents() {
     // A field the query leaves out fails silently (an unrated meal, an unpaired dose), which
     // is why it is a constant a test runs against the real schema; and it decides the day
     // on parsed instants, since a row pulled at exactly midnight is spelled differently (C-40).
+    const seq = ++todayReadsIssued;
     try {
       const events = await readTodayEvents<NyxEvent>(db, activePet.id, todayStart);
+      if (seq !== todayReadsIssued) return;
       setTodayEvents(events);
       setTodayRead({ petId: activePet.id, state: 'ready' });
     } catch (e) {
@@ -39,6 +48,7 @@ export function useEvents() {
       // not yet populated on a fresh install). Log and leave prior state intact;
       // a focus/refresh re-runs this load rather than blanking Today on a transient error.
       console.warn('[useEvents] loadTodayEvents failed:', e);
+      if (seq !== todayReadsIssued) return;
       setTodayRead({ petId: activePet.id, state: 'failed' });
     }
   }, [activePet, setTodayEvents, setTodayRead]);

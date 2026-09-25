@@ -113,8 +113,13 @@ export const useEventStore = create<EventState>((set) => ({
   todayRead: null,
   setTodayRead: (todayRead) => set({ todayRead }),
   setTodayEvents: (todayEvents) => set({ todayEvents }),
+  // Idempotent by id, as restoreToToday is: a write that re-reads Home (a rated insert, a
+  // re-rating) can land that read BEFORE its caller's optimistic prepend, and the read's row
+  // is the record's (the HV-6 second adversarial pass: the intake door's bowl drawn twice).
   prependEvent: (event) =>
-    set((state) => ({ todayEvents: [event, ...state.todayEvents] })),
+    set((state) =>
+      state.todayEvents.some((e) => e.id === event.id) ? state : { todayEvents: [event, ...state.todayEvents] },
+    ),
   removeFromToday: (eventId) =>
     set((state) => ({
       todayEvents: state.todayEvents.filter((e) => e.id !== eventId),

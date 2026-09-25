@@ -87,17 +87,32 @@ export interface InsertMedicationDoseResult {
   now: string;
 }
 
+/** A vehicle's recorded intake as the store row types it; a value this build does not know
+ *  reads as none, which is also what the in-doubt predicate makes of it. */
+const VEHICLE_INTAKES = ['refused', 'picked', 'some', 'most', 'all'] as const;
+function asVehicleIntake(value: string | null | undefined): NyxEvent['paired_vehicle_intake'] {
+  return (VEHICLE_INTAKES as readonly string[]).includes(value ?? '')
+    ? (value as (typeof VEHICLE_INTAKES)[number])
+    : null;
+}
+
 /**
  * The optimistic store row for a dose just written, built from the SAME facts the write
  * carried, so the row Home draws before its next read says what the record says. The
  * shared day row (History v2 HV-6) reads the stored pair and the vehicle off it: the dose
  * names the meal it rode in and raises the in-doubt tag, and the meal says "with" the
- * drug. The vehicle's own intake is read off that meal's row in the same store, so
- * `paired_vehicle_intake` / `paired_food_name` stay the timeline read's.
+ * drug. The vehicle's intake the adherence was decided on rides as `paired_vehicle_intake`:
+ * the row reads the meal's own row when that meal is on the same day, and this when it is
+ * not (a dose added to an earlier day's refused treat from its record, or a combo logged
+ * across midnight), so *Unconfirmed* never waits for Home's next read (the HV-6 second
+ * adversarial pass). `paired_food_name` stays the timeline read's.
  */
 export function optimisticDoseRow(
   write: Pick<InsertMedicationDoseParams, 'petId' | 'adherence' | 'howGiven' | 'pairedEventId'> & {
     drug: { id: string; generic_name: string | null; brand_name: string | null };
+    /** The paired meal's intake as the write read it (`handlePickMedication`); absent on a
+     *  standalone dose. */
+    pairedVehicleIntake?: string | null;
   },
   result: Pick<InsertMedicationDoseResult, 'eventId' | 'occurredAtIso' | 'now'>,
 ): NyxEvent {
@@ -118,6 +133,7 @@ export function optimisticDoseRow(
     adherence: write.adherence,
     how_given: write.howGiven ?? null,
     paired_event_id: write.pairedEventId ?? null,
+    paired_vehicle_intake: write.pairedEventId ? asVehicleIntake(write.pairedVehicleIntake) : null,
     drug_generic_name: write.drug.generic_name,
     drug_brand_name: write.drug.brand_name,
   };

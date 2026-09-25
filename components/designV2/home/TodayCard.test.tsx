@@ -53,6 +53,7 @@ jest.mock('../../../store/syncStore', () => ({
 }));
 
 import { act, render, waitFor } from '@testing-library/react-native';
+import { AccessibilityInfo } from 'react-native';
 import { useEventStore } from '../../../store/eventStore';
 import { TODAY_EMPTY_LINE, TODAY_EMPTY_LOOK_LINE, TODAY_FAILED_LINE, TodayCard } from './TodayCard';
 
@@ -262,6 +263,50 @@ describe('the ten-event day', () => {
     });
     await waitFor(() => expect(mockReadAnalysis.mock.calls.length).toBeGreaterThan(calls));
     expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call');
+  });
+
+  it('an older answer that carried the rose lands even when the newer read then fails', async () => {
+    // The HV-6 second adversarial pass (5): an answer yields only to a NEWER one already
+    // APPLIED. Keeping merely the newest ISSUED read threw the rose away when that read failed.
+    const ROSE_V1 = { event_id: 'v1', status: 'completed', recommendation: 'worth_a_call', updated_at: '2026-09-25T00:00:00Z' };
+    const answers: ((rows: Map<string, unknown> | null) => void)[] = [];
+    mockReadAnalysis.mockImplementation(() => new Promise((r) => answers.push(r)));
+    const t = render(<TodayCard />);
+    await waitFor(() => expect(answers).toHaveLength(1));
+    // A new readable row arrives while the first read is out: a second, wider read.
+    await act(async () => {
+      useEventStore.setState({ todayEvents: [...SEP_17, row('s1', 'stool_normal', 9, 0)] as never });
+    });
+    await waitFor(() => expect(answers).toHaveLength(2));
+    await act(async () => answers[0](new Map([['v1', ROSE_V1]])));
+    await act(async () => answers[1](null));
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
+  });
+
+  it('a read that lands while Home watches keeps its node: no "Photo not read" frame, the same rail, one announcement (C-30)', async () => {
+    // The HV-6 second adversarial pass (1): the settle dropped the working fact BEFORE its
+    // re-read answered, so for that round trip the node read the copy from before the read
+    // landed. Held open here, as a real SQLite round trip is.
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    mockOutstanding.mockImplementation((id: string) => id === 'v2');
+    const t = render(<TodayCard />);
+    await waitFor(() => expect(t.getByTestId('spine-read-rail-v2')).toBeTruthy());
+    const railWhileReading = t.getByTestId('spine-read-rail-v2');
+    let answer: (rows: Map<string, unknown>) => void = () => {};
+    mockReadAnalysis.mockImplementation(() => new Promise((r) => (answer = r)));
+    await act(async () => {
+      settleChain?.();
+    });
+    // The chain has settled and the re-read is still out: the node still waits.
+    expect(t.queryByTestId('spine-unread-v2')).toBeNull();
+    expect(t.getByTestId('spine-read-rail-v2')).toBe(railWhileReading);
+    await act(async () =>
+      answer(new Map([['v2', { event_id: 'v2', status: 'completed', recommendation: 'worth_a_call', updated_at: '2026-09-25T00:00:00Z' }]])),
+    );
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v2').props.children).toBe('Worth a call'));
+    expect(t.getByTestId('spine-read-rail-v2')).toBe(railWhileReading);
+    expect(announce).toHaveBeenCalledWith('Worth a call');
+    announce.mockRestore();
   });
 
   it('CUL-1197: a photographed normal stool is asked about and its "Worth a call" drawn, whatever its tint', async () => {
