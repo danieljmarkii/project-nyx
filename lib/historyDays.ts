@@ -643,6 +643,10 @@ export function firstDayFor(firsts: FirstDays, filter: HistoryFilter, course: Co
 
 /** What the queries hand the screen for one window: every number derives from this. */
 export interface HistoryFacts {
+  /** The pet these facts were read for. Two pets can share a window's dates, so a range
+   *  match alone cannot tell one pet's facts from another's across a switch; a consumer
+   *  compares this too before it draws them (AC 12, CUL-1165). */
+  petId: string;
   range: DayRange;
   days: ReadonlyMap<string, DayFacts>;
   firsts: FirstDays;
@@ -1086,6 +1090,23 @@ export interface ListSectionsInput {
 }
 
 /**
+ * The first day the list says anything about a day the filter did not show (a gap line,
+ * or today's open card under All types), or null when it never does: the later of the
+ * pet's first record and the filter's first row or the course's start (§3.5, GAP-24).
+ * Null under Noticed (H-9), for an empty record, and for a course filter whose course has
+ * not loaded. `listSectionsOf` lays out by it, and the week strip reads it so a cell is a
+ * door only to a day the list holds (CUL-1165).
+ */
+export function claimsFromOf(firsts: FirstDays, filter: HistoryFilter, course: CourseDays | null): string | null {
+  const record = firsts.record;
+  if (filter.kind === 'noticed' || record === null) return null;
+  if (filter.kind === 'all') return record;
+  if (filter.kind === 'course' && course === null) return null;
+  const first = firstDayFor(firsts, filter, course);
+  return first === null ? null : laterDay(record, first);
+}
+
+/**
  * The list, newest day first, as sections. Pure, so every absence rule is a table test.
  *
  * Two kinds of thing appear, under two different rules:
@@ -1124,7 +1145,6 @@ export function listSectionsOf(input: ListSectionsInput): HistorySection[] {
     hi = earlierDay(hi, course.toDay) ?? hi;
   }
 
-  // The first day absence may be claimed on, or null for none at all.
   const record = facts.firsts.record;
   const first = firstDayFor(facts.firsts, filter, course);
   // A record with nothing in it, or a filter with no row ever: nothing to lay out, so the
@@ -1132,11 +1152,7 @@ export function listSectionsOf(input: ListSectionsInput): HistorySection[] {
   // course has not loaded yet is not "nothing": its rows are in the facts already.
   const courseLoading = filter.kind === 'course' && course === null;
   if (!courseLoading && (first === null || (filter.kind !== 'noticed' && record === null))) return [];
-  let claimFrom: string | null;
-  if (filter.kind === 'noticed' || record === null) claimFrom = null;
-  else if (filter.kind === 'all') claimFrom = record;
-  else if (filter.kind === 'course' && course === null) claimFrom = null;
-  else claimFrom = first === null ? null : laterDay(record, first);
+  const claimFrom = claimsFromOf(facts.firsts, filter, course);
   const claims = (day: string): boolean => claimFrom !== null && day >= claimFrom && day < today;
 
   const out: HistorySection[] = [];

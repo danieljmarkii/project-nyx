@@ -150,11 +150,12 @@ describe('MonthInstrument', () => {
     expect(getAllByTestId('daymark-date')).toHaveLength(35);
     expect(() => getAllByTestId('daymark-count')).toThrow();
     expect(flat(getAllByTestId('daymark')[3].props.style).backgroundColor).not.toBe(theme.colorEventSymptom);
-    expect(getAllByTestId('daymark-hairline-logged').length).toBeGreaterThan(10);
-    // Meals off: the left-some day draws the plain hairline — still logged, never grey.
-    expect(getByTestId('daymark-hairline-left_some')).toBeTruthy();
+    expect(getAllByTestId('daymark-line-solid').length).toBeGreaterThan(10);
+    // Meals on, the left-some day's line is broken; Meals off, it draws the whole line:
+    // still logged, never grey.
+    expect(getByTestId('daymark-line-broken')).toBeTruthy();
     fireEvent.press(getByText('Meals'));
-    expect(() => getByTestId('daymark-hairline-left_some')).toThrow();
+    expect(() => getByTestId('daymark-line-broken')).toThrow();
     expect(getAllByTestId('daymark')[5].props.accessibilityLabel).toContain('logged');
     expect(getAllByTestId('daymark')[5].props.accessibilityLabel).not.toContain('nothing logged');
     // The two unlogged days stay grey whatever the layers say.
@@ -186,6 +187,10 @@ describe('MonthInstrument', () => {
     expect(getByText('logged')).toBeTruthy();
     expect(getByText('left some')).toBeTruthy();
     expect(getByText('nothing logged')).toBeTruthy();
+    // The key IS the mark (CUL-1165): the grid's own stroke, the glyph teal, whole and
+    // broken, never the retired pale swatches a paler line could only tell apart by colour.
+    expect(flat(getByTestId('month-legend-line-solid').props.style).backgroundColor).toBe(theme.colorAccentGlyph);
+    expect(getByTestId('month-legend-line-broken')).toBeTruthy();
     // Off by default: no unexplained dot, no key for it.
     expect(queryByTestId('month-legend-medication')).toBeNull();
     expect(queryByTestId('month-legend-photo')).toBeNull();

@@ -255,6 +255,10 @@ export function IntakeFirstMealPanel({
             food_product_name: food.product_name,
             food_format: food.format,
             food_type: foodType,
+            // The arm the write carried, so Home's row says it before its next read: a
+            // mirror without it is an unrated meal, which the day row folds into "2 meals"
+            // (CUL-1121 through this door; History v2 HV-6's adversarial pass, B1).
+            intake_rating: rating,
           });
 
           // Close FIRST, then raise the card — see CARD_DELAY_MS.

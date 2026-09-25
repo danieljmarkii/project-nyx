@@ -11,8 +11,9 @@ import {
 import { useMomentStore } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
-import { getDoubleDoseFlag, getEventSource, updateDoseAdherence, updateDoseHowGiven, updateEvent } from '../../lib/db';
-import { syncPendingMedicationAdministrations, syncPendingEvents } from '../../lib/sync';
+import { getDoubleDoseFlag, getEventSource, updateEvent } from '../../lib/db';
+import { syncPendingEvents } from '../../lib/sync';
+import { rateDoseAdherence, recordDoseHowGiven } from '../../lib/medicationDose';
 import { formatTime } from '../../lib/utils';
 import {
   isComboDoseInDoubt, isGivenAssumed, doseAdherencePrompt, comboInDoubtReason, doubleDoseNote,
@@ -170,8 +171,7 @@ export function MedicationCompletionCard() {
     patchAdherence(next);
     rescheduleHide(CHIP_CONFIRM_HOLD_MS);
     try {
-      await updateDoseAdherence(eventId, next);
-      syncPendingMedicationAdministrations().catch(console.error);
+      await rateDoseAdherence(eventId, next);
     } catch (e) {
       console.error('[medication-card] failed to update adherence:', e);
       // Revert local state. The next focus on History/detail refetches ground truth.
@@ -212,8 +212,7 @@ export function MedicationCompletionCard() {
     patchHowGiven(next);
     rescheduleHide(CHIP_CONFIRM_HOLD_MS);
     try {
-      await updateDoseHowGiven(eventId, next);
-      syncPendingMedicationAdministrations().catch(console.error);
+      await recordDoseHowGiven(eventId, next);
     } catch (e) {
       console.error('[medication-card] failed to update vehicle:', e);
       patchHowGiven(prev);

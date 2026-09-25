@@ -13,7 +13,7 @@
 import type { TimelineRow } from './db';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
 import { formatDrugLabel } from './medications';
-import { foodFormatTag, mealRowLabel } from './food';
+import { FORMAT_LABEL, canonicalizeBrand, foodFormatTag, foodLabelOf, mealRowLabel } from './food';
 import { describeOccurredAt } from './utils';
 import { pluralize } from './dashboardCards';
 import { describeLook, lookSummary } from './lookDisplay';
@@ -109,12 +109,90 @@ export interface DayEventDisplay {
   timeMs: number;
 }
 
-/** brand · product — matches EventRow so the two surfaces name a food identically.
- *  Exported for Home's spine node (D2-4), which names a meal's food in a compact line and
- *  must not re-derive this rule. */
-export function foodLabelOf(row: TimelineRow): string | null {
-  if (row.food_brand && row.food_product_name) return `${row.food_brand} · ${row.food_product_name}`;
-  return row.food_product_name ?? row.food_brand ?? null;
+/** A regex-safe copy of a format word ("Freeze-dried" carries a hyphen). */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The product's name as a row prints it BESIDE its format tag: a trailing qualifier that
+ * only restates the item's own recorded format is dropped, because the tag already says
+ * it ("Selected Protein PR, Dry" beside DRY reads "Selected Protein PR").
+ *
+ * WHY THIS IS A DATA KEY, NOT A ", Wet" REGEX (BRK-12, the round-3 critique): the owner's
+ * library holds one prescription line as two items, "Selected Protein PR, Dry"
+ * (dry_kibble) and "Selected Protein PR, Wet" (wet_canned), and rule B's run crosses wet
+ * and dry of ONE product. What decides that the trailing word is a qualifier is the
+ * item's own `format` column: only the word `FORMAT_LABEL` gives that format can be
+ * dropped, and only when the row shows it as a tag. A dry item named "…, Wet" keeps its
+ * name (the record disagrees with itself, and the row shows both halves rather than
+ * choosing); a name that merely ends in a format word with no separator ("Hill's Dry")
+ * is never touched; an unknown or 'other' format has no tag, so nothing is dropped.
+ *
+ * A Class A canonical key in CLAUDE.md's sense (a form-qualifier spelling), so it is
+ * CONVERGENT: it strips until nothing more matches, and never strips a name to nothing
+ * (", Dry" alone is kept). `f(f(x)) === f(x)` is pinned by a property test.
+ */
+export function productNameBesideTag(
+  product: string | null | undefined,
+  format: string | null | undefined,
+  rowLabel?: string | null,
+): string | null {
+  const name = product?.trim() || null;
+  if (name === null || !format || foodFormatTag(format, rowLabel) === null) return name;
+  const word = escapeRegExp(FORMAT_LABEL[format]);
+  const qualifier = new RegExp(`(?:\\s*,\\s*|\\s+[-–—]\\s+)${word}$|\\s*\\(${word}\\)$`, 'i');
+  let out = name;
+  for (;;) {
+    const next = out.replace(qualifier, '').trim();
+    if (next === out || next.length === 0) return out;
+    out = next;
+  }
+}
+
+/** The food a row names beside its format tag: `foodLabelOf` over `productNameBesideTag`. */
+export function rowFoodLabelOf(food: {
+  brand: string | null | undefined;
+  product: string | null | undefined;
+  format: string | null | undefined;
+  rowLabel?: string | null;
+}): string | null {
+  return foodLabelOf(food.brand, productNameBesideTag(food.product, food.format, food.rowLabel));
+}
+
+/**
+ * Which PRODUCT a meal is of, as a key two meals compare (rule B: a run crosses wet and
+ * dry of one product and nothing else). Built from the brand and the tag-stripped name,
+ * each folded by `canonicalizeBrand` (formatting noise only: case, spacing, trademark
+ * glyphs, apostrophe style; never a word), plus whether the row shows a format tag at
+ * all, so a run's second line ("1 wet · 3 dry") always speaks for every member.
+ *
+ * Null when the meal names no food: an unnamed meal never joins a run, because a run
+ * always names its product (rule K) and two unnamed meals cannot be shown to be one.
+ * The item id is deliberately NOT the key: wet and dry of one line are two items.
+ */
+export function productKeyOf(food: {
+  brand: string | null | undefined;
+  product: string | null | undefined;
+  format: string | null | undefined;
+  rowLabel?: string | null;
+}): string | null {
+  const name = productNameBesideTag(food.product, food.format, food.rowLabel);
+  if (foodLabelOf(food.brand, name) === null) return null;
+  const tagged = foodFormatTag(food.format, food.rowLabel) !== null;
+  return [canonicalizeBrand(food.brand ?? ''), canonicalizeBrand(name ?? ''), tagged ? 'tagged' : 'untagged'].join(
+    '␟',
+  );
+}
+
+// ── The row's vehicle phrase (History v2 §3.6) ────────────────────────────────
+
+/** The phrase a dose row gives its vehicle meal's intake when the meal was NOT finished
+ *  ("in the 1:00 PM meal · picked at"), or null for a finished or unrated one. The
+ *  drill-in's own phrase map, so the two never disagree on the words. */
+export function unfinishedIntakePhrase(rating: string | null | undefined): string | null {
+  if (rating !== 'some' && rating !== 'picked' && rating !== 'refused') return null;
+  return INTAKE_PHRASE[rating] ?? null;
 }
 
 /** The row's three display strings, decided by CATEGORY rather than by a chain of
@@ -132,7 +210,7 @@ function describeByCategory(
 
   switch (category) {
     case 'meal': {
-      const food = foodLabelOf(row);
+      const food = foodLabelOf(row.food_brand, row.food_product_name);
       // The meal's word when there's no food name — the one shared rule (CUL-625),
       // so this drill-in, EventRow and TodayZone cannot drift apart.
       const mealLabel = mealRowLabel(row.food_type);

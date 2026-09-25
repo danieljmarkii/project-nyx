@@ -244,6 +244,9 @@ describe('AC 8 — pages are whole local days; a seam loses nothing and repeats 
     // And the count line counts the pair once, whatever the paging: the facts do not page.
     const facts = await readHistoryFacts(PET, WINDOW);
     expect(facts.duplicates.byType.vomit).toBe(1);
+    // The facts name the pet they were read for, so a consumer can tell one pet's facts
+    // from another's that share a window's dates (CUL-1165).
+    expect(facts.petId).toBe(PET);
   });
 
   it('rows in a day run morning to night on (occurred_at, id): a same-instant pair never swaps', async () => {

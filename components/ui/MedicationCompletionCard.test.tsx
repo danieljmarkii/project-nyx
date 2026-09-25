@@ -47,6 +47,7 @@ import { reverseLoggedEvent } from '../../lib/undoLog';
 import { useMomentStore } from '../../store/momentStore';
 import { updateEvent, getEventSource } from '../../lib/db';
 import { usePetStore } from '../../store/petStore';
+import { useSyncStore } from '../../store/syncStore';
 
 const CONFLICT = { conflict: true, otherEventId: 'm0', gapMinutes: 95 };
 const NO_CONFLICT = { conflict: false, otherEventId: null, gapMinutes: null };
@@ -134,11 +135,15 @@ describe('MedicationCompletionCard — the log-time double-dose note (B-157)', (
     getByText(NOTE);
 
     mockGetDoubleDoseFlag.mockResolvedValue(NO_CONFLICT);
+    const tick = useSyncStore.getState().hydrationTick;
     await act(async () => {
       fireEvent.press(getByText('Missed'));
     });
 
     expect(mockUpdateDoseAdherence).toHaveBeenCalledWith('m1', 'missed');
+    // Through the one re-rating path, which re-reads Home: its row must not keep a teal
+    // "Given" over a dose the owner just said was missed (History v2 HV-6, B2).
+    expect(useSyncStore.getState().hydrationTick).toBe(tick + 1);
     // The recheck runs against the NEW adherence, not the one the card was showing.
     expect(mockGetDoubleDoseFlag).toHaveBeenCalledWith(
       expect.objectContaining({ eventId: 'm1', petId: 'p1', medicationItemId: 'drug-1', adherence: 'missed' }),

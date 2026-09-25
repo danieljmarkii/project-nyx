@@ -108,6 +108,11 @@ export async function insertMeal(params: InsertMealParams): Promise<InsertMealRe
     );
   });
 
+  // A rated insert (the intake door) is a rating too: Home re-reads, so its row says what
+  // the record says even where a caller's optimistic mirror left the rating off (History
+  // v2 HV-6's adversarial pass, B1: the day row folds an unrated bowl into a run).
+  if (intakeRating !== null) notifyIntakeChanged();
+
   // Deliberately OUTSIDE the transaction, AND swallowed: last_used_at is a
   // local-only recency stamp for the picker's ordering, with no server column and
   // no bearing on the health record. Excluding it from the transaction stops a

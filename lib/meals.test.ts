@@ -222,6 +222,16 @@ describe('insertMeal', () => {
     await insertMeal(PARAMS);
     expect(mealInsert().at('intake_rating')).toBeNull();
   });
+
+  it('a rated insert (the intake door) counts as a hydration; an unrated one does not', async () => {
+    // History v2 HV-6 (B1): Home draws the store's mirror until it re-reads, and the day row
+    // folds an unrated bowl into a run, so a refusal written at insert must re-read Home.
+    const before = useSyncStore.getState().hydrationTick;
+    await insertMeal({ ...PARAMS, intakeRating: 'refused' });
+    expect(useSyncStore.getState().hydrationTick).toBe(before + 1);
+    await insertMeal(PARAMS);
+    expect(useSyncStore.getState().hydrationTick).toBe(before + 1);
+  });
 });
 
 // ── A rating given after the fact (CUL-1087) ────────────────────────────────────

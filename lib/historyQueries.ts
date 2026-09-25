@@ -272,6 +272,7 @@ export async function readHistoryFacts(petId: string, range: DayRange): Promise<
     db.getFirstAsync<{ local_day: string | null }>(FIRST_LOOK_SQL, [petId]),
   ]);
   return {
+    petId,
     range,
     days: buildDayFacts(input),
     firsts: firstDaysOf(typeFirstsOf(typeFirsts), firstLook?.local_day ?? null),
