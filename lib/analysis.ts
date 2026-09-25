@@ -1,123 +1,70 @@
 import { supabase } from './supabase';
-import { syncPendingEvents, ensureEventAttachmentsSynced } from './sync';
+import { syncPendingEvents, ensureEventAttachmentsSynced, refreshReadCopy } from './sync';
+import { analysisChainOutstanding, claimAnalysisChain, onAnalysisChainClaimed, type AnalysisChainClaim } from './analysisChain';
+import { useSyncStore } from '../store/syncStore';
 
-// ── One read per photo: the analysis-chain claim (CUL-801) ────────────────────
+// ── A landed read is saved to the phone's copy (History v2 §5.3, HV-5 / CUL-1162) ──
 //
-// Two independent paths trigger a per-incident read for the same event: the log
-// path (lib/simpleEvent.ts attachPhotoBestEffort — compress → upload → invoke)
-// and the incident screen's mount (VomitAnalysisSection / StoolAnalysisSection).
-// Before CUL-800 routed owners to that screen an immediate detail-open was rare;
-// with the route it is EVERY photographed incident. Two invocations are not a
-// harmless duplicate — the analyze-* functions upsert, so nothing corrupts, but:
-//   · each call increments the usage counter (incident-analysis.ts step 4), so a
-//     10/day cap is really 5 photographed incidents a day;
-//   · the two write-backs are last-writer-wins over two INDEPENDENT model runs,
-//     so the card can change under an owner who is already reading it;
-//   · worst, if the second call is the one that crosses the cap it takes the
-//     gated branch while the first call's read has not landed yet — so
-//     `existingRealAnalysis` is still false there and a 'capped' state is
-//     written OVER a good read of a photo that did land.
-//
-// The fix is a claim, held in memory for the life of the process and keyed by
-// event id: whoever starts a chain owns that event's first read, and anyone else
-// AWAITS it rather than starting a second one.
-//
-// WHY IN MEMORY, and not the `pending` row migration 013 originally described.
-// A persisted row would have to survive a process death to be worth writing, and
-// that is exactly when it becomes a trap: an app killed mid-upload would leave a
-// 'pending' row no chain is coming back for. The recovery today is that start()
-// finds NO row and triggers; a persisted claim would have to be distinguishable
-// from a stuck one to keep it, and nothing can make that distinction from the
-// row alone. An in-memory claim dies with the process, so the recovery survives
-// by construction — the claim can only ever suppress a trigger while the runtime
-// that owes the read is still alive to make it.
-//
-// (Migration 013's header says analysis rows are "created by the client on log
-// (status='pending')" and the column defaults to it. That was never built: every
-// write of `status` is the Edge Function's — completed / uncertain / capped /
-// read_disabled / failed — and no client inserts the row. The sections' "stale
-// pending → re-trigger" branch is therefore dead code against today's server, not
-// the live recovery an earlier draft of this comment claimed it was.)
-//
-// WHY AWAIT, and not skip-if-claimed. A chain can settle without ever invoking
-// (the upload threw, the attachment upsert errored). A skip would then leave the
-// incident with no read at all — no descriptive read AND no deterministic
-// escalation — which is the one outcome this must never produce.
-// `awaitAnalysisChain` resolves FALSE in exactly that case, and the caller
-// triggers its own read.
-//
-// WHAT THIS DOES NOT CLOSE, stated rather than left to be discovered. The claim
-// covers the window while a chain is RUNNING, not after it: a caller arriving
-// once a chain has settled gets false and decides for itself. Covering that is
-// the SECTION's job, not the claim's — start() reads the row first, and the Edge
-// Function writes its row before it responds, so by the time an invoke resolves
-// the row exists and start() returns on it. The residual is a section that
-// completes its read inside the milliseconds between that DB write and the
-// response landing; it degrades to exactly the pre-CUL-801 behaviour (one extra
-// call), never to anything worse, which is why it does not buy a settled-chain
-// cache — a cache with an expiry would also have to be prevented from swallowing
-// a legitimate retry after the watch gives up.
-
-export interface AnalysisChainClaim {
-  /** Release everyone awaiting this event's chain. `invoked` is true only when an
-   *  analyze-* call was actually made AND accepted; false means the chain died
-   *  before the read, so an awaiting caller must trigger one itself. Idempotent. */
-  settle: (invoked: boolean) => void;
+// Every surface that shows a read's verdict (Home's spine, the Patterns month, the
+// Signal screen, History) reads it from the phone's copy (`lib/readCopy.ts`), never
+// from the server, so "Worth a call" survives offline. That makes the moment a read
+// LANDS a moment the copy must hear about, and this module is where both of those
+// moments live:
+//   • the chain: each trigger saves the read BEFORE it settles its claim. Home rereads
+//     the verdict when the chain settles and never through a watch, so a save after the
+//     settle would find Home already read an empty copy (the PM's ruling on the plan,
+//     2026-09-25);
+//   • the watch: each tick saves before it runs the caller's check, for a read that
+//     lands after the chain's own call returned. Before, not after: Home's check reads
+//     the copy, so it can only see a landing the tick has already saved.
+// Both go through `refreshReadCopy`, which never throws; `copyLandedRead` catches anyway,
+// because a trigger that threw would break its own "never throws, returns { error }"
+// contract with every caller that awaits it. Resolves true when the copy changed.
+async function copyLandedRead(eventId: string): Promise<boolean> {
+  try {
+    return await refreshReadCopy(eventId);
+  } catch (e) {
+    console.warn('[analysis] landed read not copied:', e);
+    return false;
+  }
 }
 
-interface ChainSlot {
-  promise: Promise<boolean>;
-  resolve: (invoked: boolean) => void;
+// ── Home hears about a read it did not start (the adversarial pass's F1 on #912) ──
+// Home rereads the copy when `hydrationTick` moves, and nothing in `components/` may
+// change in HV-5, so that tick is how it hears about two things it could not see:
+//   • a chain claimed after it last looked. Every claim is made through this module
+//     (its own triggers; the log path and the record screen import the claim from
+//     here), so the listener registered below hears all of them. Home re-samples the
+//     working fact, draws the read as pending, and awaits the settle like any chain it
+//     sampled itself;
+//   • a landing that changed the copy with no chain left to settle: one the WATCH saved
+//     (a read that arrived after its chain had settled), or one a trigger saved while
+//     holding no claim of its own, after the chain that did own it had settled (Re-run
+//     or Try again tapped while another read ran; the second pass on #912). A landing
+//     inside a chain someone still owns needs no tick: it lands before the settle Home
+//     is already awaiting.
+// Every other reader of the tick rereads local rows it already holds; a MedStrip dose
+// confirm bumps the same tick for the same reason.
+function tellHomeTheReadMoved(): void {
+  useSyncStore.getState().bumpHydrationTick();
+}
+onAnalysisChainClaimed(tellHomeTheReadMoved);
+
+/** A trigger's landing, saved to the copy before its claim (if it holds one) settles.
+ *  With no claim and no chain outstanding, nothing will release Home to reread, so the
+ *  landing tells Home itself. */
+async function landChain(eventId: string, claim: AnalysisChainClaim | null, invoked: boolean): Promise<void> {
+  const moved = await copyLandedRead(eventId);
+  if (moved && claim === null && !analysisChainOutstanding(eventId)) tellHomeTheReadMoved();
+  claim?.settle(invoked);
 }
 
-const analysisChains = new Map<string, ChainSlot>();
-
-/** Claim this event's first read. Returns null when a chain is ALREADY claimed —
- *  the caller does not own it and must not settle it (the owner will, and until
- *  then `awaitAnalysisChain` holds anyone who asks). Nesting is therefore safe:
- *  the log path claims before its upload, and the trigger it eventually calls
- *  finds the claim taken and leaves the settle to its owner. */
-export function claimAnalysisChain(eventId: string): AnalysisChainClaim | null {
-  if (analysisChains.has(eventId)) return null;
-  let resolve!: (invoked: boolean) => void;
-  const promise = new Promise<boolean>((r) => { resolve = r; });
-  const slot: ChainSlot = { promise, resolve };
-  analysisChains.set(eventId, slot);
-  let settled = false;
-  return {
-    settle(invoked: boolean) {
-      if (settled) return;
-      settled = true;
-      // Identity-checked, not key-checked (the CUL-622 lesson): a settle arriving
-      // after the map moved on must never delete a NEWER chain's slot. Wiring
-      // rather than a live gate — the `settled` flag above already makes a second
-      // settle unreachable, so nothing in this API can exercise this comparison
-      // today (its test says so plainly rather than pretending to prove it). It
-      // stays because dropping the flag in a later refactor would make it live,
-      // and the failure it prevents is silent: an unclaimed key hands the next
-      // mount a second invoke.
-      if (analysisChains.get(eventId) === slot) analysisChains.delete(eventId);
-      resolve(invoked);
-    },
-  };
-}
-
-/** True once an outstanding chain for this event has made its analyze-* call.
- *  False immediately when no chain is outstanding, and false when one settles
- *  without ever invoking — both mean "no read is coming, trigger your own". */
-export function awaitAnalysisChain(eventId: string): Promise<boolean> {
-  return analysisChains.get(eventId)?.promise ?? Promise.resolve(false);
-}
-
-/** Is a chain claimed and not yet settled for this event? The `working` FACT for a
- *  surface that only OBSERVES a read (Home's spine node, D2-4 / CUL-1066; C-30): true
- *  means this runtime has asked, or is about to ask, the server for this event's read,
- *  which is what the arrival's trigger must switch on — never "the pending box is on
- *  screen". Home never triggers; it awaits the claim it finds (`awaitAnalysisChain`)
- *  and re-reads the row when it settles. */
-export function analysisChainOutstanding(eventId: string): boolean {
-  return analysisChains.has(eventId);
-}
+// The analysis-chain claim (CUL-801) lives in `lib/analysisChain.ts`, which imports
+// nothing (HV-5 moved it there so a read-only surface can ask whether a read is in
+// flight without this module's sync graph). Re-exported, so every caller keeps
+// importing it from here.
+export { claimAnalysisChain, awaitAnalysisChain, analysisChainOutstanding } from './analysisChain';
+export type { AnalysisChainClaim } from './analysisChain';
 
 // Kicks off per-incident AI analysis for a vomit event (B-027). The
 // analyze-vomit Edge Function reads the event AND its photo from Supabase, so we
@@ -154,7 +101,9 @@ export async function triggerVomitAnalysis(eventId: string): Promise<{ error: st
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
   } finally {
-    claim?.settle(invoked);
+    // The copy hears about this read before anyone waiting on the chain does (HV-5):
+    // Home rereads the verdict on the settle, from the copy.
+    await landChain(eventId, claim, invoked);
   }
 }
 
@@ -194,7 +143,9 @@ export async function triggerStoolAnalysis(eventId: string): Promise<{ error: st
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
   } finally {
-    claim?.settle(invoked);
+    // The copy hears about this read before anyone waiting on the chain does (HV-5):
+    // Home rereads the verdict on the settle, from the copy.
+    await landChain(eventId, claim, invoked);
   }
 }
 
@@ -252,6 +203,12 @@ export function watchAnalysisRow(
   // exactly once, only when realtime never delivered.
   const tick = async (isLast: boolean) => {
     if (done) return;
+    // Save this event's verdict to the phone's copy FIRST (HV-5): Home's check reads
+    // the copy, so it can only see a landing this tick has already saved. A save that
+    // changed the copy is told to Home whether or not this watch is still wanted: the
+    // copy moved either way.
+    if (await copyLandedRead(eventId)) tellHomeTheReadMoved();
+    if (done) return; // torn down mid-save
     let resolved = false;
     try {
       resolved = await check();
@@ -460,8 +417,10 @@ export function buildVomitEditWrite(edits: VomitEditableFields, nowIso: string):
 
 // Persist an owner's edits to the structured fields. Direct Supabase write (RLS
 // scopes it to the owner via pet_id), mirroring the dismiss toggle — NOT the
-// local-first sync queue, since event_ai_analysis is server-owned and read
-// straight from Supabase, never mirrored into SQLite.
+// local-first sync queue, since event_ai_analysis is server-owned and its structured
+// fields are read straight from Supabase. The one part mirrored into SQLite is the
+// four-column verdict copy (HV-5, `lib/readCopy.ts`), which an owner edit never
+// changes: it touches none of the read's columns (see buildVomitEditWrite).
 export async function saveVomitFieldEdits(
   eventId: string,
   edits: VomitEditableFields,

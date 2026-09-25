@@ -25,8 +25,10 @@
 //   • A DOSED day is a delivered dose — `given` or `partial`, the therapy-delivered
 //     count B-618 D1 ratified — never a missed or refused one.
 //   • A PHOTOGRAPHED day is any surviving attachment on a surviving event; its VERDICT
-//     is the per-incident read's `worth_a_call`, read from the server in one batch.
-//     Offline, or on any error, a photographed day is `seen` — presence escalates and
+//     is the per-incident read's rose, read from the PHONE'S COPY (`lib/readCopy.ts`)
+//     through the one read predicate every surface shares (`isWorthACall`,
+//     `lib/readState.ts`; HV-5 / CUL-1162), so offline the rose still draws. A day whose
+//     read the phone does not hold, or cannot read, is `seen`: presence escalates and
 //     absence never reassures, so a missing verdict is never drawn as a benign one.
 //
 // ── BOUNDS ARE PARSED, NEVER COMPARED AS TEXT (C-40) ───────────────────────────
@@ -36,12 +38,12 @@
 // the parsed instant. The slack costs a few rows; a text bound costs a boundary row.
 
 import { getDb, getTimeline, type TimelineRow } from './db';
-import { supabase } from './supabase';
 import { episodeDaysOf } from './chartModels';
 import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import { isFinishedMeal, qualifyingIntakeMeals, type AnalyticsMeal } from './analytics';
 import { getActiveArrangementsForPet } from './feedingArrangements';
-import { escalationSurvivesFailure } from './incidentReadState';
+import { readCopies } from './readCopy';
+import { isWorthACall } from './readState';
 import { dayKeyToLocalDate, toLocalDayKey } from './utils';
 import type { MonthPhotoDay } from './monthModel';
 
@@ -204,27 +206,24 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
 }
 
 /**
- * The event ids among `eventIds` whose per-incident read said `worth_a_call`. The
- * `event_ai_analysis` table is server-owned and never mirrored into SQLite, so this is
- * one network read per month page — and on any failure it answers EMPTY, which the
- * caller draws as `seen`: a verdict the app could not fetch is not a benign verdict.
- * `escalationSurvivesFailure` is the shipped predicate (CUL-812): a row that failed a
- * later re-read but still holds the escalation still counts.
+ * The event ids among `eventIds` whose read is the rose, from the phone's copy (HV-5 /
+ * CUL-1162): no network, so the month draws the same marks offline. The question is
+ * `isWorthACall`, the rose branch `readStateOf` is built on, so the month and every
+ * other surface agree by construction: `worth_a_call` at any status (a failed re-read
+ * never takes a live one away, CUL-812), and a verdict the app does not recognise.
+ * Hide is no input. On a local failure it answers EMPTY, which the caller draws as
+ * `seen`: a verdict the app could not read is not a benign verdict.
  */
 export async function readWorthACall(eventIds: readonly string[]): Promise<Set<string>> {
   const out = new Set<string>();
   if (eventIds.length === 0) return out;
   try {
-    const { data, error } = await supabase
-      .from('event_ai_analysis')
-      .select('event_id, recommendation')
-      .in('event_id', [...eventIds]);
-    if (error || !data) return out;
-    for (const row of data as { event_id: string; recommendation: string | null }[]) {
-      if (escalationSurvivesFailure(row)) out.add(row.event_id);
+    const copies = await readCopies(eventIds);
+    for (const [eventId, copy] of copies) {
+      if (isWorthACall(copy)) out.add(eventId);
     }
-  } catch {
-    // Offline or unreachable: no verdicts, every photographed day stays `seen`.
+  } catch (e) {
+    console.warn('[month] read copy failed:', e);
   }
   return out;
 }

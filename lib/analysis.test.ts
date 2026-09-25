@@ -36,6 +36,8 @@ jest.mock('./supabase', () => {
 jest.mock('./sync', () => ({
   syncPendingEvents: jest.fn().mockResolvedValue(undefined),
   ensureEventAttachmentsSynced: jest.fn().mockResolvedValue(undefined),
+  // HV-5 (CUL-1162): the landed read's save to the phone's copy; true when it changed it.
+  refreshReadCopy: jest.fn().mockResolvedValue(false),
 }));
 
 import {
@@ -56,13 +58,18 @@ import {
   claimAnalysisChain,
   awaitAnalysisChain,
   watchAnalysisRow,
+  analysisChainOutstanding,
   ANALYSIS_WATCH_FALLBACK_DELAYS_MS,
 } from './analysis';
+import { onAnalysisChainClaimed } from './analysisChain';
 import { supabase } from './supabase';
+import { refreshReadCopy } from './sync';
+import { useSyncStore } from '../store/syncStore';
 
 // Grab a typed handle to the mocked invoke AFTER import (referencing it inside
 // the jest.mock factory hits a TDZ/hoisting trap).
 const mockInvoke = supabase.functions.invoke as jest.Mock;
+const mockRefreshReadCopy = refreshReadCopy as jest.Mock;
 
 const blank = (): VomitEditableFields => ({
   colour: null,
@@ -643,6 +650,168 @@ describe('analysis-chain claim (CUL-801)', () => {
   });
 });
 
+// ── Home hears about every chain, including one it never sampled (F1 on #912) ──
+// Home samples the working fact when it reads and rereads on the settle of a chain it
+// sampled. A chain claimed after that sample was invisible to it, so every claim is
+// announced, and `lib/analysis.ts` turns the announcement into the tick Home rereads on.
+describe('a claimed chain is announced, and Home hears it (F1 on #912)', () => {
+  const tick = () => useSyncStore.getState().hydrationTick;
+
+  it('every new claim moves hydrationTick once; a second claim of the same chain and its settle do not', () => {
+    const before = tick();
+    const claim = claimAnalysisChain('ev-f1-claim');
+    expect(claim).not.toBeNull();
+    expect(tick()).toBe(before + 1);
+    expect(claimAnalysisChain('ev-f1-claim')).toBeNull();
+    claim?.settle(true);
+    expect(tick()).toBe(before + 1);
+  });
+
+  it('a trigger that claims its own chain announces it', async () => {
+    mockInvoke.mockReset().mockResolvedValue({ error: null });
+    const before = tick();
+    await triggerVomitAnalysis('ev-f1-trigger');
+    expect(tick()).toBe(before + 1);
+  });
+
+  it('a trigger holding no claim, landing after the owner settled, tells Home itself (second pass on #912)', async () => {
+    // The owner replaced the photo (its chain) and the owner tapped Re-run while it ran:
+    // the re-run's trigger found the claim taken. The owner's read landed and settled
+    // first; the re-run lands after, with nobody left to settle, so it must tick.
+    const owner = claimAnalysisChain('ev-f1-rerun');
+    let release!: (v: { error: null }) => void;
+    mockInvoke.mockReset().mockReturnValue(new Promise((r) => { release = r; }));
+    mockRefreshReadCopy.mockReset().mockResolvedValue(true);
+    const rerun = triggerVomitAnalysis('ev-f1-rerun');
+    owner?.settle(true);
+    const before = tick();
+    release({ error: null });
+    await rerun;
+    expect(tick()).toBe(before + 1);
+    mockRefreshReadCopy.mockReset().mockResolvedValue(false);
+  });
+
+  it('no landing tick where a settle will release Home: inside an outstanding chain, or from a trigger that owns its claim', async () => {
+    mockInvoke.mockReset().mockResolvedValue({ error: null });
+    mockRefreshReadCopy.mockReset().mockResolvedValue(true);
+    // The log path's nested call: its owner settles after the trigger returns.
+    const owner = claimAnalysisChain('ev-f1-nested');
+    let before = tick();
+    await triggerVomitAnalysis('ev-f1-nested');
+    expect(tick()).toBe(before);
+    owner?.settle(true);
+    // A trigger that claimed its own chain: its claim's announcement, and nothing more.
+    before = tick();
+    await triggerStoolAnalysis('ev-f1-owned');
+    expect(tick()).toBe(before + 1);
+    // A landing that changed nothing, after the owner settled: nothing to tell.
+    const settled = claimAnalysisChain('ev-f1-unchanged');
+    let release!: (v: { error: null }) => void;
+    mockInvoke.mockReset().mockReturnValue(new Promise((r) => { release = r; }));
+    mockRefreshReadCopy.mockReset().mockResolvedValue(false);
+    const rerun = triggerVomitAnalysis('ev-f1-unchanged');
+    settled?.settle(true);
+    before = tick();
+    release({ error: null });
+    await rerun;
+    expect(tick()).toBe(before);
+  });
+
+  it('a listener runs with the chain already outstanding, and unsubscribes', () => {
+    const seen: boolean[] = [];
+    const off = onAnalysisChainClaimed((id) => seen.push(analysisChainOutstanding(id)));
+    claimAnalysisChain('ev-f1-listener-a')?.settle(false);
+    off();
+    claimAnalysisChain('ev-f1-listener-b')?.settle(false);
+    expect(seen).toEqual([true]);
+  });
+
+  it('a listener that throws cannot fail the claim that keeps a photo to one read', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const off = onAnalysisChainClaimed(() => {
+      throw new Error('listener broke');
+    });
+    try {
+      const claim = claimAnalysisChain('ev-f1-throws');
+      expect(claim).not.toBeNull();
+      expect(analysisChainOutstanding('ev-f1-throws')).toBe(true);
+      expect(claimAnalysisChain('ev-f1-throws')).toBeNull();
+      expect(warn).toHaveBeenCalledWith('[analysis-chain] a claim listener failed:', expect.any(Error));
+      claim?.settle(false);
+    } finally {
+      off();
+      warn.mockRestore();
+    }
+  });
+});
+
+// ── A landed read reaches the phone's copy before the chain settles (HV-5) ─────
+// Home rereads the verdict when the chain settles, from the copy, and never through a
+// watch. So the ORDER is the contract: a waiter released by the settle must find the
+// copy already saved. Each case takes its waiter before the chain can settle (a freed
+// key answers false whatever happened, the reason the claim tests above do the same).
+describe('the chain saves its read to the phone’s copy before it settles (HV-5 / CUL-1162)', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    mockRefreshReadCopy.mockReset().mockResolvedValue(false);
+  });
+
+  it.each([
+    ['vomit', triggerVomitAnalysis],
+    ['stool', triggerStoolAnalysis],
+  ])('%s: the waiter released by the settle finds the copy already saved', async (_kind, trigger) => {
+    // The save FINISHES on a later macrotask, so "called before the settle" is not
+    // enough to pass: only a save the trigger awaited to completion is (a first draft
+    // checked the call alone, and a settle-then-save mutant passed it).
+    let saved = false;
+    mockRefreshReadCopy.mockImplementation(
+      () => new Promise<boolean>((r) => setTimeout(() => { saved = true; r(true); }, 0)),
+    );
+    let release!: (v: { error: null }) => void;
+    mockInvoke.mockReturnValue(new Promise((r) => { release = r; }));
+    const id = `ev-copy-${_kind}`;
+    const triggering = trigger(id);
+    let savedWhenReleased: boolean | null = null;
+    const waiter = awaitAnalysisChain(id).then((invoked) => {
+      savedWhenReleased = saved;
+      return invoked;
+    });
+    release({ error: null });
+    await triggering;
+    await expect(waiter).resolves.toBe(true);
+    expect(savedWhenReleased).toBe(true);
+    expect(mockRefreshReadCopy).toHaveBeenCalledWith(id);
+  });
+
+  it('a refused invoke still pulls: the server may have written the failure row the copy must hear', async () => {
+    let release!: (v: { error: { message: string } }) => void;
+    mockInvoke.mockReturnValue(new Promise((r) => { release = r; }));
+    const triggering = triggerVomitAnalysis('ev-copy-refused');
+    const waiter = awaitAnalysisChain('ev-copy-refused');
+    release({ error: { message: 'capped' } });
+    await expect(triggering).resolves.toEqual({ error: 'capped' });
+    await expect(waiter).resolves.toBe(false);
+    expect(mockRefreshReadCopy).toHaveBeenCalledWith('ev-copy-refused');
+  });
+
+  it('a save that throws never breaks the trigger’s contract: it resolves { error } and settles', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mockRefreshReadCopy.mockRejectedValueOnce(new Error('contract broken'));
+      let release!: (v: { error: null }) => void;
+      mockInvoke.mockReturnValue(new Promise((r) => { release = r; }));
+      const triggering = triggerStoolAnalysis('ev-copy-throws');
+      const waiter = awaitAnalysisChain('ev-copy-throws');
+      release({ error: null });
+      await expect(triggering).resolves.toEqual({ error: null });
+      await expect(waiter).resolves.toBe(true);
+      expect(warn).toHaveBeenCalledWith('[analysis] landed read not copied:', expect.any(Error));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
 // ── watchAnalysisRow: realtime watch over event_ai_analysis (CUL-171) ──────────
 // The per-incident sections wait for the analyze-* Edge Function to write the
 // row. This replaces a 3s×12 poll with a filtered realtime subscription plus a
@@ -698,6 +867,64 @@ describe('watchAnalysisRow — realtime watch (CUL-171)', () => {
     expect(check).toHaveBeenCalledTimes(1);
     expect(supabase.removeChannel).toHaveBeenCalledWith(ch);
     expect(onGiveUp).not.toHaveBeenCalled();
+  });
+
+  it('saves the event’s verdict to the phone’s copy BEFORE each check (HV-5)', async () => {
+    // Home's check reads the copy, so it can only see a landing the tick already saved.
+    // Finished, not merely started: the save completes on a later macrotask, and the
+    // check must not run until it has.
+    let saved = false;
+    mockRefreshReadCopy.mockReset().mockImplementation(
+      () => new Promise<boolean>((r) => setTimeout(() => { saved = true; r(true); }, 0)),
+    );
+    let savedAtCheck: boolean | null = null;
+    const check = jest.fn(async () => { savedAtCheck = saved; return true; });
+    watchAnalysisRow('ev-copy-watch', check, jest.fn());
+    const ch = chans().at(-1)!;
+    ch.subCb!('SUBSCRIBED');
+    await flush();
+    await flush();
+    expect(mockRefreshReadCopy).toHaveBeenCalledWith('ev-copy-watch');
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(savedAtCheck).toBe(true);
+    mockRefreshReadCopy.mockReset().mockResolvedValue(false);
+  });
+
+  it('a watch torn down while its tick is saving runs no check (HV-5)', async () => {
+    let finishSave!: (changed: boolean) => void;
+    mockRefreshReadCopy.mockReset().mockReturnValue(new Promise<boolean>((r) => { finishSave = r; }));
+    const check = jest.fn().mockResolvedValue(false);
+    const teardown = watchAnalysisRow('ev-copy-teardown', check, jest.fn());
+    chans().at(-1)!.subCb!('SUBSCRIBED');
+    teardown();
+    finishSave(false);
+    await flush();
+    expect(check).not.toHaveBeenCalled();
+    mockRefreshReadCopy.mockReset().mockResolvedValue(false);
+  });
+
+  it('tells Home when its save CHANGED the copy, and only then, even when torn down mid-save (F1 on #912)', async () => {
+    const tick = () => useSyncStore.getState().hydrationTick;
+    // A save that changed nothing: no tick.
+    mockRefreshReadCopy.mockReset().mockResolvedValue(false);
+    const quiet = watchAnalysisRow('ev-f1-quiet', jest.fn().mockResolvedValue(true), jest.fn());
+    let before = tick();
+    chans().at(-1)!.subCb!('SUBSCRIBED');
+    await flush();
+    expect(tick()).toBe(before);
+    quiet();
+    // A save that changed the copy: one tick, even though the watch was torn down while
+    // it was saving (the copy moved either way, and Home reads the copy).
+    let finishSave!: (changed: boolean) => void;
+    mockRefreshReadCopy.mockReset().mockReturnValue(new Promise<boolean>((r) => { finishSave = r; }));
+    const moved = watchAnalysisRow('ev-f1-moved', jest.fn().mockResolvedValue(true), jest.fn());
+    before = tick();
+    chans().at(-1)!.subCb!('SUBSCRIBED');
+    moved();
+    finishSave(true);
+    await flush();
+    expect(tick()).toBe(before + 1);
+    mockRefreshReadCopy.mockReset().mockResolvedValue(false);
   });
 
   it('teardown removes the channel and is safe to call twice', () => {

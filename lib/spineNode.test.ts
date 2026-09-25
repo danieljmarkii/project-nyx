@@ -84,8 +84,9 @@ function input(over: Partial<SpineInput> = {}): SpineInput {
   };
 }
 
-const landed = (event_id: string, recommendation: string | null, status = 'completed', read_text: string | null = null): SpineAnalysisRow => ({
-  event_id, status, recommendation, read_text, dismissed_at: null,
+/** A row of the phone's copy (HV-5): four columns, no words, no hide stamp. */
+const landed = (event_id: string, recommendation: string | null, status = 'completed'): SpineAnalysisRow => ({
+  event_id, status, recommendation, updated_at: '2026-09-17T12:00:00+00:00',
 });
 
 describe('buildSpine — the ten-event day', () => {
@@ -351,9 +352,9 @@ describe('the read on a node — nodeReadOf', () => {
   it('a pending row is pending whether or not this runtime asked', () => {
     expect(nodeReadOf(landed('v', null, 'pending'), false)).toEqual({ state: 'pending' });
   });
-  it('a landed monitor reads in the shipped words, in the quiet tone, with its sentence', () => {
-    expect(nodeReadOf(landed('v', 'monitor', 'completed', 'Second one today.'), false)).toEqual({
-      state: 'landed', verdict: 'monitor', label: 'Keep an eye out', tone: 'quiet', readText: 'Second one today.',
+  it('a landed monitor reads in the shipped words, in the quiet tone, with no sentence (the copy holds no words)', () => {
+    expect(nodeReadOf(landed('v', 'monitor', 'completed'), false)).toEqual({
+      state: 'landed', verdict: 'monitor', label: 'Keep an eye out', tone: 'quiet', readText: null,
     });
   });
   it('a landed worth_a_call reads in the rose (attention) tone', () => {
@@ -373,8 +374,12 @@ describe('the read on a node — nodeReadOf', () => {
       expect(r.state === 'landed' && r.tone).toBe('attn');
     }
   });
-  it('a failed / capped row with no recommendation says NOTHING — absence is never wellness', () => {
+  it('a failed / capped row with no recommendation is never calm — absence is never wellness', () => {
+    const photographedVomit = { eventType: 'vomit', hasPhoto: true };
     for (const status of ['failed', 'capped', 'read_disabled']) {
+      // With the event known, the read that was expected and never landed is UNREAD…
+      expect(nodeReadOf(landed('v', null, status), false, photographedVomit)).toEqual({ state: 'unread' });
+      // …and a two-argument caller, which cannot tell it from no photo, says nothing.
       expect(nodeReadOf(landed('v', null, status), false)).toEqual({ state: 'none' });
     }
   });
@@ -382,19 +387,54 @@ describe('the read on a node — nodeReadOf', () => {
     // A 'monitor' left on a row whose status later became 'failed' is not a read that
     // stands; the escalation branch is the only one that outlives a failure.
     expect(nodeReadOf(landed('v', 'monitor', 'failed'), false)).toEqual({ state: 'none' });
+    expect(nodeReadOf(landed('v', 'monitor', 'failed'), false, { eventType: 'vomit', hasPhoto: true })).toEqual({
+      state: 'unread',
+    });
   });
-  it('a read the owner hid on the record is hidden here too', () => {
-    expect(nodeReadOf({ ...landed('v', 'worth_a_call'), dismissed_at: '2026-09-17T20:00:00Z' }, false)).toEqual({ state: 'none' });
+  it('Hide never silences the rose here: the copy has no hide stamp, and one handed in is ignored (H-4a)', () => {
+    // The reversal of what this block used to pin (`spineNode.ts:214`): hiding the words
+    // on the record dropped "Worth a call" from Home while the month and the Signal
+    // screen kept it. Hide hides WORDS.
+    const hidden = { ...landed('v', 'worth_a_call'), dismissed_at: '2026-09-17T20:00:00Z' } as unknown as SpineAnalysisRow;
+    expect(nodeReadOf(hidden, false)).toMatchObject({ state: 'landed', tone: 'attn', label: 'Worth a call' });
   });
-  it('an unknown recommendation fails toward the rose, never toward calm', () => {
+  it('an unknown recommendation fails toward the rose, never toward calm, and is spoken in the rose’s words', () => {
     const r = nodeReadOf(landed('v', 'looks_fine_to_me'), false);
-    expect(r.state === 'landed' && r.tone).toBe('attn');
+    expect(r).toEqual({ state: 'landed', verdict: 'worth_a_call', label: 'Worth a call', tone: 'attn', readText: null });
+  });
+  it('a photographed vomit whose read the phone does not hold is UNREAD, never nothing (AC 21, the model half)', () => {
+    expect(nodeReadOf(undefined, false, { eventType: 'vomit', hasPhoto: true })).toEqual({ state: 'unread' });
+    expect(nodeReadOf(undefined, false, { eventType: 'diarrhea', hasPhoto: true })).toEqual({ state: 'unread' });
+    // No read is expected: an unphotographed vomit, a photographed cough.
+    expect(nodeReadOf(undefined, false, { eventType: 'vomit', hasPhoto: false })).toEqual({ state: 'none' });
+    expect(nodeReadOf(undefined, false, { eventType: 'cough', hasPhoto: true })).toEqual({ state: 'none' });
+  });
+  it('a read in flight shows the tick over a calm verdict, never over the rose', () => {
+    const expect_ = { eventType: 'vomit', hasPhoto: true };
+    expect(nodeReadOf(landed('v', 'monitor'), true, expect_)).toEqual({ state: 'pending' });
+    expect(nodeReadOf(landed('v', 'worth_a_call'), true, expect_)).toMatchObject({ state: 'landed', tone: 'attn' });
   });
   it('a read the record holds attaches to its SYMPTOM row even when the local photo fact is missing (F5 — a lagging attachment read never hides an escalation)', () => {
     const model = buildSpine(input({ photographed: new Set(), analysis: new Map([['v1', landed('v1', 'worth_a_call')]]) }));
     const v1 = model.nodes.find((n) => n.id === 'v1');
     expect(v1?.kind === 'event' && v1.read).toMatchObject({ state: 'landed', tone: 'attn' });
     expect(v1?.kind === 'event' && v1.photo).toBe(false);
+  });
+
+  it('buildSpine: a photographed vomit with no read on the phone is unread; one with no photo says nothing', () => {
+    // The default day photographs v1 and v2 and the phone holds no read for either.
+    const model = buildSpine(input({ photographed: new Set(['v1']) }));
+    const v1 = model.nodes.find((n) => n.id === 'v1');
+    const v2 = model.nodes.find((n) => n.id === 'v2');
+    expect(v1?.kind === 'event' && v1.read).toEqual({ state: 'unread' });
+    expect(v2?.kind === 'event' && v2.read).toEqual({ state: 'none' });
+  });
+
+  it('buildSpine: Hide never takes the rose off a node', () => {
+    const hidden = { ...landed('v2', 'worth_a_call'), dismissed_at: '2026-09-17T20:00:00Z' } as unknown as SpineAnalysisRow;
+    const model = buildSpine(input({ analysis: new Map([['v2', hidden]]) }));
+    const v2 = model.nodes.find((n) => n.id === 'v2');
+    expect(v2?.kind === 'event' && v2.read).toMatchObject({ state: 'landed', label: 'Worth a call', tone: 'attn' });
   });
 
   it('a read never attaches to a MEAL, whatever the map holds', () => {
@@ -406,7 +446,7 @@ describe('the read on a node — nodeReadOf', () => {
 
 describe('the safety day and the quiet day', () => {
   it('safety: the worth-a-call read is words on the node, and no image exists anywhere in the model', () => {
-    const model = buildSpine(input({ analysis: new Map([['v2', landed('v2', 'worth_a_call', 'completed', 'Streaks of red in tonight’s photo are worth a call to your vet today.')]]) }));
+    const model = buildSpine(input({ analysis: new Map([['v2', landed('v2', 'worth_a_call', 'completed')]]) }));
     const v2 = model.nodes.find((n) => n.id === 'v2');
     expect(v2?.kind === 'event' && v2.read).toMatchObject({ state: 'landed', label: 'Worth a call', tone: 'attn' });
     // No node carries a URI, a path or an image of any kind — the model has no field for one.

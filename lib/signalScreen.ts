@@ -24,15 +24,16 @@
 //     and says nothing about medication when none was.
 //
 // ── THE READS ────────────────────────────────────────────────────────────────────
-// Local SQLite for the record (the finding's episodes with their attachments, every
-// logged day, the feedings + free-fed spans the lanes time against, the trial, the
-// doses), and ONE PostgREST read: the per-incident verdicts, which live in the
-// server-owned `event_ai_analysis` (never mirrored locally). That read is paged with
-// `.range()` on a total key in fixed-size chunks (C-42: a read capped by a setting the
-// code cannot see earns completeness from paging, never from a short page), and a chunk
-// that fails leaves those episodes as "no read yet" rather than failing the screen — a
-// verdict absent from the screen is not a reassurance (the tile says "no read yet"), and
-// the record is still the record.
+// Local SQLite, all of it: the record (the finding's episodes with their attachments,
+// every logged day, the feedings + free-fed spans the lanes time against, the trial, the
+// doses) and, since HV-5 (CUL-1162), the per-incident verdicts, from the PHONE'S COPY
+// (`lib/readCopy.ts`) through the one read predicate every surface shares
+// (`readVerdictOf`, `lib/readState.ts`). They used to be the one server fetch, so offline
+// every tile said "no read yet". A copy that cannot be read leaves the episodes as "no
+// read yet" rather than failing the screen: a verdict absent from the screen is not a
+// reassurance (the tile says "no read yet"), and the record is still the record. A tile
+// is read across its WHOLE bout (`readTileVerdicts`): the rose on any row of it is the
+// tile's rose, and nothing calmer crosses from one row to another.
 //
 // C-9: the pet is the FINDING's pet — the id the route carries — named through
 // `resolveRecordPetName`, never `activePet`.
@@ -62,7 +63,9 @@ import {
   type SignalLanesModel,
   type SignalTrialWindow,
 } from './signalWindows';
-import { supabase } from './supabase';
+import { analysisChainOutstanding } from './analysisChain';
+import { readCopies } from './readCopy';
+import { readVerdictOf, type ReadCopyRow } from './readState';
 import { dayKeyFromIndex, formatCalendarDate, formatTime, localDayIndexOf, toLocalDayKey } from './utils';
 import { resolveRecordPetName, usePetStore } from '../store/petStore';
 
@@ -87,6 +90,10 @@ export interface SignalScreenEpisode {
   /** Minutes since the preceding logged meal where the engine could time it; null where not. */
   minutesSinceMeal: number | null;
   photo: SignalScreenPhoto | null;
+  /** Every logged row the engine's re-log collapse folded into this episode, the tile's
+   *  own row among them. The loader reads the bout's verdicts from it; the builder never
+   *  does. Absent reads as the one row `eventId` names. */
+  boutIds?: readonly string[];
 }
 
 /** One delivered dose on one local day. */
@@ -493,6 +500,7 @@ export async function readSignalEpisodes(petId: string, symptomType: string): Pr
       dayKey: toLocalDayKey(new Date(e.ms)),
       minutesSinceMeal: minutesByOnset.get(e.ms) ?? null,
       photo: held ? held.photo : null,
+      boutIds: members.get(e.id) ?? [e.id],
     };
   });
 }
@@ -594,46 +602,65 @@ export async function readSignalTrial(
   };
 }
 
-/** Ids per `.in()` chunk — well under PostgREST's URL budget. */
-export const VERDICT_CHUNK = 100;
-/** Rows ASKED for per page inside a chunk. The loop advances by the rows RECEIVED and
- *  stops on an empty page, never on a short one: under a `max-rows` cap below this
- *  number a page comes back short while rows remain, and a read that stopped there lost
- *  a `worth_a_call` (C-42 — CUL-975's own failure; adversarial pass, B4). */
-export const VERDICT_PAGE = 100;
+/**
+ * The per-incident verdicts for the photographed episodes of one symptom, from the
+ * phone's copy through the one read predicate (HV-5 / CUL-1162). Every id asked for gets
+ * an answer: `worth_a_call` for the rose (a verdict the app does not recognise included,
+ * spoken in the rose's words rather than the blank a raw lookup gave it), the standing
+ * calm verdict for a finished calm read, and null — "no read yet" — for a read in flight,
+ * a read that did not finish, or no read on this phone. A calm verdict never stands in
+ * front of a read in flight, since it may describe a replaced photo (CUL-812's
+ * reasoning). A copy that cannot be read answers nothing and never throws the screen.
+ */
+export async function readVerdicts(
+  eventIds: readonly string[],
+  eventType: string,
+): Promise<Record<string, EpisodeVerdict | null>> {
+  const out: Record<string, EpisodeVerdict | null> = {};
+  if (eventIds.length === 0) return out;
+  let copies: Map<string, ReadCopyRow>;
+  try {
+    copies = await readCopies(eventIds);
+  } catch (e) {
+    console.warn('[signal-screen] read copy failed:', e);
+    return out;
+  }
+  for (const eventId of eventIds) {
+    out[eventId] = readVerdictOf({
+      eventType,
+      // The gallery asks about its tiles' bouts. `hasPhoto` only separates the states
+      // that carry no verdict (none, unread, off), so a photoless row of a bout is still
+      // answered truly: its verdict is null unless its read finished.
+      hasPhoto: true,
+      copy: copies.get(eventId),
+      inFlight: analysisChainOutstanding(eventId),
+      // The owner's photo-reading choice arrives with CUL-552 (HV-18).
+      readingOff: false,
+    }).verdict;
+  }
+  return out;
+}
 
 /**
- * The per-incident verdicts for the photographed episodes: `event_ai_analysis` rows by
- * event id, chunked and paged. A `null` verdict is a row without one (pending, failed);
- * an absent id is "no read yet". A chunk that errors is left absent — the tiles say so —
- * and never throws the screen.
+ * One verdict per photographed tile, read across its WHOLE bout (the adversarial pass's
+ * F3 on #912). A tile shows one photo, but its bout may hold a second photographed row,
+ * or a photoless row whose contextual read escalated (a cat that has not eaten, a second
+ * vomit that hour); reading the tile's row alone put "Keep an eye out", or "no read yet",
+ * over a rose sitting one row away. So the rose on ANY row of the bout is the tile's
+ * (presence escalates: the month's own "the worse verdict wins"), and anything calmer
+ * stays the tile's own row's, because a calm or missing read of another row says nothing
+ * about this photo. A photoless row is asked about through the same predicate: its
+ * verdict is null whenever it is not a finished read, whatever `hasPhoto` says.
  */
-export async function readVerdicts(eventIds: readonly string[]): Promise<Record<string, EpisodeVerdict | null>> {
+export async function readTileVerdicts(
+  tiles: readonly Pick<SignalScreenEpisode, 'eventId' | 'boutIds'>[],
+  eventType: string,
+): Promise<Record<string, EpisodeVerdict | null>> {
+  const boutOf = (t: Pick<SignalScreenEpisode, 'eventId' | 'boutIds'>) => [t.eventId, ...(t.boutIds ?? [])];
+  const each = await readVerdicts([...new Set(tiles.flatMap(boutOf))], eventType);
   const out: Record<string, EpisodeVerdict | null> = {};
-  for (let c = 0; c < eventIds.length; c += VERDICT_CHUNK) {
-    const chunk = eventIds.slice(c, c + VERDICT_CHUNK);
-    for (let from = 0; ; ) {
-      const { data, error } = await supabase
-        .from('event_ai_analysis')
-        .select('event_id, status, recommendation')
-        .in('event_id', chunk)
-        // A TOTAL key: event_id is unique per row (one analysis per event), so no row can
-        // be skipped between pages.
-        .order('event_id', { ascending: true })
-        .range(from, from + VERDICT_PAGE - 1);
-      if (error) {
-        console.warn('[signal-screen] verdict read failed:', error.message);
-        break;
-      }
-      const page = (data ?? []) as { event_id: string; status: string | null; recommendation: EpisodeVerdict | null }[];
-      for (const row of page) {
-        out[row.event_id] = row.status === 'pending' ? null : (row.recommendation ?? null);
-      }
-      // Advance by what arrived; an empty page is the end. A chunk holds at most
-      // VERDICT_CHUNK ids and one row each, so this terminates at any ceiling.
-      if (page.length === 0) break;
-      from += page.length;
-    }
+  for (const tile of tiles) {
+    out[tile.eventId] = boutOf(tile).some((id) => each[id] === 'worth_a_call') ? 'worth_a_call' : (each[tile.eventId] ?? null);
   }
   return out;
 }
@@ -667,8 +694,10 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   const fromIso = new Date((indexOf(before.startDay) - 1) * 86_400_000).toISOString();
   const doses = await readDoseDays(petId, fromIso).catch(() => [] as SignalDoseDay[]);
 
-  const photographedIds = episodes.filter((e) => e.photo != null).map((e) => e.eventId);
-  const verdicts = photographedIds.length > 0 ? await readVerdicts(photographedIds) : {};
+  const photographed = episodes.filter((e) => e.photo != null);
+  // Every episode is the finding's symptom (`readSignalEpisodes` reads one type), so the
+  // symptom is every bout row's type.
+  const verdicts = photographed.length > 0 && symptom ? await readTileVerdicts(photographed, symptom) : {};
 
   const model = buildSignalScreenModel({
     cached,

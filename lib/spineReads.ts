@@ -2,14 +2,16 @@
 //
 // Four reads, each bounded to what the spine needs today, kept apart from the pure
 // model (`lib/spineNode.ts`, `lib/monthCoverage.ts`) so the model is testable without a
-// database and the reads are visible as reads. Three are local SQLite; one — the
-// per-incident read — is the server's `event_ai_analysis`, which has no local mirror
-// (the sections read it the same way). That one is OBSERVE-ONLY: nothing in this file
-// invokes an analyze-* function, and `guards/homeWrites.test.ts` would red a mutation
+// database and the reads are visible as reads. All four are local SQLite. The
+// per-incident read used to be the one server fetch, so offline the spine drew no
+// verdict at all; since HV-5 (CUL-1162) it is the phone's copy of the verdict
+// (`lib/readCopy.ts`), decided by the one predicate every surface shares
+// (`lib/readState.ts`). It is OBSERVE-ONLY: nothing in this file invokes an analyze-*
+// function or writes the copy, and `guards/homeWrites.test.ts` would red a mutation
 // here (it walks Home's closure by effect).
 
 import { getDb } from './db';
-import { supabase } from './supabase';
+import { readCopies } from './readCopy';
 import {
   readFreeFedSpans,
   toFeedingRow,
@@ -90,24 +92,21 @@ export async function readVomitOnsetsSince(
 export { readFreeFedSpans };
 export type { FreeFedSpan };
 
-/** The observed reads for these events, by event id. RLS scopes the rows to the owner.
- *  A failed read returns an empty map — the node then says nothing about the read, which
- *  is the honest degrade (never a verdict the record did not hand over). */
+/** The phone's copy of these events' reads, by event id (HV-5 / CUL-1162). Local only,
+ *  so offline the spine still draws "Worth a call". A failed local read returns an empty
+ *  map: the node then shows a photographed incident as unread, never as calm (never a
+ *  verdict the record did not hand over). The call signature is unchanged, because Home's
+ *  pipeline calls it as it always has (HV-1's `lib/dayNodes.ts`). */
 export async function readAnalysisRows(
   eventIds: readonly string[],
 ): Promise<Map<string, SpineAnalysisRow>> {
-  const out = new Map<string, SpineAnalysisRow>();
-  if (eventIds.length === 0) return out;
-  const { data, error } = await supabase
-    .from('event_ai_analysis')
-    .select('event_id, status, recommendation, read_text, dismissed_at')
-    .in('event_id', [...eventIds]);
-  if (error) {
-    console.warn('[spine] analysis read failed:', error.message);
-    return out;
+  if (eventIds.length === 0) return new Map();
+  try {
+    return await readCopies(eventIds);
+  } catch (e) {
+    console.warn('[spine] read copy failed:', e);
+    return new Map();
   }
-  for (const row of (data ?? []) as SpineAnalysisRow[]) out.set(row.event_id, row);
-  return out;
 }
 
 /** Every non-deleted row's instant AND type for this pet since `sinceIso` — the month
