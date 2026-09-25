@@ -16,9 +16,13 @@
 //   • The read: *Worth a call* in rose, a grey *Photo not read*, the breathing tick, and
 //     NOTHING for a calm read (a calm verdict is never a word on a list; n=1 never
 //     reassures).
-//   • Open in place, the static half: every member of an opened run is a full row, the
-//     same row a single event draws, with every fact and the 44pt floor (GAP-8). The
-//     motion is HV-10's.
+//   • Open in place: every member of an opened run is a full row, the same row a single
+//     event draws, with every fact and the 44pt floor (GAP-8). Where the host asks for it
+//     (`openInPlace`: History v2's day cards, and Home's spine under `history_v2`), the run
+//     opens on the ONE open-in-place choreography the month's day uses (`useOpenInPlace`,
+//     HV-10 / CUL-1167): the run's rail leads along the thread, the box follows, the members
+//     land; under Reduce Motion the box is there at once and the members fade in over
+//     150ms. Without it, the run keeps the shipped `LayoutAnimation` open, byte for byte.
 //
 // Never an image: Home is the surface a guest sees over the owner's shoulder (T&S; R4-2
 // option A), so the photo is one tap in, on the record, where the vet will ask to see it.
@@ -44,16 +48,17 @@
 // `accessibilityState.expanded` and its members announce individually once opened. The
 // rose's arrival is announced politely, never assertively: a verdict is not an alert.
 
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { AccessibilityInfo, Animated, LayoutAnimation, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
 import { router } from 'expo-router';
 import { Camera, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
-import { RAIL_W, SpineRowFrame, TIME_W } from '../recap/DaySpine';
+import { SPINE_THREAD, SpineRowFrame } from '../recap/DaySpine';
 import { ThemedText } from '../ui/ThemedText';
 import { useNodeArrival } from '../motion/arrivalMotion';
 import { FOLD_LAYOUT, UNFOLD_LAYOUT } from '../motion/foldMotion';
+import { useOpenInPlace } from '../motion/openInPlaceMotion';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { ADHERENCE_OPTIONS } from '../log/AdherenceChipRow';
@@ -74,10 +79,9 @@ export const PHOTOGRAPHED_LABEL = 'photographed';
 /** The words under a time the owner did not witness (B-010), drawn in small caps. */
 export const TIME_TAG_LABEL = { found: 'found', estimated: 'estimated' } as const;
 
-/** Where the thread runs, from the row's left edge: the time column, the frame's gap, then
- *  the middle of the rail (`SpineRowFrame`). Derived from the exported widths, never
- *  retyped, so an opened run's rail sits on the thread it belongs to. */
-export const THREAD_X = TIME_W + theme.space1 + RAIL_W / 2;
+/** Where the thread runs, from the row's left edge: the frame's own figure
+ *  (`SPINE_THREAD`), never retyped, so an opened run's rail sits on the thread it belongs to. */
+export const THREAD_X = SPINE_THREAD.x;
 /** The opened run's rail, laid over the thread along its members. */
 const RUN_RAIL_W = 4;
 
@@ -435,6 +439,7 @@ export function SpineCompactRow({
   expanded,
   onToggle,
   onOpen,
+  openInPlace = false,
 }: {
   node: SpineCompactNode;
   isFirst: boolean;
@@ -442,16 +447,33 @@ export function SpineCompactRow({
   expanded: boolean;
   onToggle: (id: string) => void;
   onOpen?: (id: string) => void;
+  /** Open on the shared open-in-place choreography (HV-10). Off: the shipped open. */
+  openInPlace?: boolean;
 }) {
   const reducedMotion = useReducedMotion();
+  const appActive = useAppActive();
+  // Called either way (the rules of hooks) and held closed when the host did not ask for it,
+  // so the shipped path runs no timer, no beat and no `configureNext` of this machine's.
+  const motion = useOpenInPlace({ shown: openInPlace && expanded, identity: node.id, reducedMotion, appActive });
   const toggle = () => {
-    // The fold's physics, in place: geometry on `LayoutAnimation`, nothing else moves.
-    // Under reduced motion the rows appear: no keyframe, no drift. (HV-10 moves this onto
-    // the shared open-in-place module.)
-    if (!reducedMotion) LayoutAnimation.configureNext(expanded ? FOLD_LAYOUT : UNFOLD_LAYOUT);
+    // The shipped open: geometry on `LayoutAnimation`, nothing else moves; under reduced
+    // motion the rows appear. The open-in-place machine drives its own layout commits.
+    if (!openInPlace && !reducedMotion) LayoutAnimation.configureNext(expanded ? FOLD_LAYOUT : UNFOLD_LAYOUT);
     onToggle(node.id);
   };
   const Chevron = expanded ? ChevronUp : ChevronDown;
+  // Whether the members are on screen under the run: the host's state for the shipped open;
+  // the machine's slot for open in place, which stays through the close's last beat.
+  const membersOut = openInPlace ? motion.slotMounted : expanded;
+  const members = node.rows.map((row, i) => (
+    <SpineEventRow
+      key={row.id}
+      node={row}
+      isFirst={false}
+      isLast={isLast && i === node.rows.length - 1}
+      onOpen={onOpen}
+    />
+  ));
   return (
     <View>
       <Pressable
@@ -466,7 +488,7 @@ export function SpineCompactRow({
             ground="day"
             category="meal"
             isFirst={isFirst}
-            isLast={isLast && !expanded}
+            isLast={isLast && !membersOut}
             time={node.timeRange}
             pressed={pressed}
             // The chevron rides the row's edge, not the title's end, so a long food name
@@ -486,21 +508,70 @@ export function SpineCompactRow({
           </SpineRowFrame>
         )}
       </Pressable>
-      {expanded ? (
+      {openInPlace ? (
+        <RunInPlace nodeId={node.id} motion={motion}>
+          {members}
+        </RunInPlace>
+      ) : expanded ? (
         // Every member, each the same full row a single event draws: uncapped, unclipped,
         // every fact (GAP-8). The run's rail lies over the thread along them.
         <View style={styles.members} testID={`spine-members-${node.id}`}>
           <View style={styles.runRail} pointerEvents="none" testID={`spine-run-rail-${node.id}`} />
-          {node.rows.map((row, i) => (
-            <SpineEventRow
-              key={row.id}
-              node={row}
-              isFirst={false}
-              isLast={isLast && i === node.rows.length - 1}
-              onOpen={onOpen}
-            />
-          ))}
+          {members}
         </View>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * The members opening in place (HV-10): the month's day anatomy, on the thread. The slot is
+ * the members' box; the run's rail lies over the thread along it. Idle and open it is the
+ * shipped tree's shape, a plain rail and plain rows; in flight the rail leaves the flow with
+ * an explicit height (so no layout keyframe re-commits a view carrying a native-driver
+ * transform, the fold's Fabric rule) and the members sit in an animated stage that exists
+ * only while they arrive or leave.
+ */
+function RunInPlace({
+  nodeId,
+  motion,
+  children,
+}: {
+  nodeId: string;
+  motion: ReturnType<typeof useOpenInPlace>;
+  children: ReactNode;
+}) {
+  if (!motion.slotMounted) return null;
+  const railOut = motion.inFlight && motion.railHeight != null;
+  return (
+    <View
+      style={[styles.members, { minHeight: motion.slotMinHeight }]}
+      onLayout={(e) => motion.onSlotLayout(e.nativeEvent.layout.height)}
+      testID={`spine-members-${nodeId}`}
+    >
+      {railOut ? (
+        <Animated.View
+          pointerEvents="none"
+          testID={`spine-run-rail-${nodeId}`}
+          style={[
+            styles.runRailOut,
+            { height: motion.railHeight as number, transform: [{ scaleY: motion.values.railScale }] },
+          ]}
+        />
+      ) : (
+        <View style={styles.runRail} pointerEvents="none" testID={`spine-run-rail-${nodeId}`} />
+      )}
+      {motion.rowsMounted ? (
+        motion.phase === 'open' ? (
+          children
+        ) : (
+          <Animated.View
+            testID={`spine-members-stage-${nodeId}`}
+            style={{ opacity: motion.values.rowsOpacity, transform: [{ translateY: motion.values.rowsShift }] }}
+          >
+            {children}
+          </Animated.View>
+        )
       ) : null}
     </View>
   );
@@ -617,5 +688,15 @@ const styles = StyleSheet.create({
     width: RUN_RAIL_W,
     borderRadius: RUN_RAIL_W / 2,
     backgroundColor: theme.colorEventMeal,
+  },
+  // In flight (open in place): out of the flow with an explicit height, growing about its top.
+  runRailOut: {
+    position: 'absolute',
+    left: THREAD_X - RUN_RAIL_W / 2,
+    top: 0,
+    width: RUN_RAIL_W,
+    borderRadius: RUN_RAIL_W / 2,
+    backgroundColor: theme.colorEventMeal,
+    transformOrigin: 'top',
   },
 });

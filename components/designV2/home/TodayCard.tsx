@@ -30,12 +30,22 @@
 //
 // The model is pure (`buildDay`, `lib/dayNodes.ts` — the pipeline History v2 shares) and
 // the states are the card's; nothing here decides a clinical fact.
+//
+// ── UNDER `history_v2` (HV-10 / CUL-1167; spec §5.6) ─────────────────────────────
+// The spine is History v2's `HomeSpine` (its namespace draws it, C-36): the first paint and
+// the run's open in place. This card holds the gate and the PAINT LEDGER, because it is the
+// one that knows when today's read first answered: the ledger opens for the identity (the
+// pet and the day) on the render that first has the answer and is sealed after that commit.
+// So the spine draws once when Home first shows the day, never again as rows are logged, and
+// a day that answered empty draws nothing when its first row arrives (that moment is the
+// completion card's). With the flag off, the shipped spine, byte for byte.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import { useEvents } from '../../../hooks/useEvents';
+import { useHistoryV2 } from '../../../hooks/useHistoryV2';
 import { analysisChainOutstanding, awaitAnalysisChain, watchAnalysisRow } from '../../../lib/analysis';
 import { DEFAULT_MEAL_TIMING_CONFIG } from '../../../lib/mealTiming';
 import { countLine, mayCarryRead, type SpineAnalysisRow } from '../../../lib/spineNode';
@@ -51,6 +61,7 @@ import {
 } from '../../../lib/spineReads';
 import type { OnsetConfidence } from '../../../lib/mealTiming';
 import type { FeedingRow } from '../../../lib/patternsTiming';
+import { toLocalDayKey } from '../../../lib/utils';
 import { useEventStore } from '../../../store/eventStore';
 import { usePetStore } from '../../../store/petStore';
 import { useSyncStore } from '../../../store/syncStore';
@@ -58,6 +69,8 @@ import { Card } from '../../ui/Card';
 import { SectionLabel } from '../../ui/SectionLabel';
 import { SkeletonRows } from '../../ui/Skeleton';
 import { ThemedText } from '../../ui/ThemedText';
+import { HomeSpine } from '../../historyV2/HomeSpine';
+import { createPaintLedger } from '../../motion/threadMotion';
 import { LookHeader } from './LookHeader';
 import { Spine } from './Spine';
 
@@ -268,6 +281,16 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
     todayRead && todayRead.petId === petId ? todayRead.state : 'loading';
   const line = countLine(model);
 
+  // History v2's first paint on Home (the header): opened by the render that first has the
+  // day's answer for this pet, sealed once that commit is on screen.
+  const historyV2 = useHistoryV2();
+  const ledger = useRef(createPaintLedger()).current;
+  const dayKey = useMemo(() => toLocalDayKey(new Date(dayStartMs)), [dayStartMs]);
+  if (historyV2 && readState === 'ready' && petId) ledger.open(JSON.stringify([petId, dayKey]));
+  useLayoutEffect(() => {
+    if (readState === 'ready') ledger.seal();
+  });
+
   return (
     <Card testID="today-card">
       <SectionLabel label="Today" header />
@@ -301,7 +324,11 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
               {line.slice(String(model.total).length)}
             </ThemedText>
           ) : null}
-          <Spine nodes={model.nodes} onOpen={onOpenEvent} />
+          {historyV2 ? (
+            <HomeSpine nodes={model.nodes} onOpen={onOpenEvent} drawToken={ledger.peek(dayKey)} claimDraw={ledger.claim} />
+          ) : (
+            <Spine nodes={model.nodes} onOpen={onOpenEvent} />
+          )}
         </>
       )}
     </Card>

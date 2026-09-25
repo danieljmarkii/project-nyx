@@ -26,6 +26,16 @@
 //     item: the row's time column and rail (their widths are the row's), the hollow bead a
 //     look wears on every spine (`nodeDotColors`), and the shared describer's words
 //     (`describeDayEvent`). It is not a row frame, which only the row may draw.
+//
+// ── MOTION AND FOCUS (HV-10 / CUL-1167; spec §4) ─────────────────────────────────
+//   • The rows lie on `ThreadDraw` (`components/motion/`): the first paint draws the day's
+//     thread down and lands its rows as it passes, once per mount identity, and a landing
+//     draws its day again; the list's paint ledger grants the token (`drawToken`). A row the
+//     owner just removed fades out there (`leaving`) before the list closes the box over it.
+//   • A run opens in place (`openInPlace`), the one choreography the month's day uses.
+//   • The header is VoiceOver's landing place: after a landing, a removal and the tab
+//     re-press the list focuses it (`focusRef`). A landed day says so (`selected`), not only
+//     by its outline, and the header's one sentence says its " · " as a pause.
 import { Fragment } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
@@ -40,11 +50,12 @@ import {
 } from '../../lib/historyDays';
 import type { HistoryRow } from '../../lib/historyQueries';
 import type { DayNode } from '../../lib/dayNodes';
-import { dateOnlyItemText, visibleNodesOf } from '../../lib/historyScreen';
+import { dateOnlyItemText, dayHeaderSpoken, visibleNodesOf } from '../../lib/historyScreen';
 import { recordWeekday } from '../../lib/recordDates';
 import { DayNodeRow } from '../dayRow/DayNodeRow';
 import { NODE_DOT_RING, NODE_DOT_SIZE, NODE_TINT_DAY, nodeDotColors } from '../recap/nodeTints';
-import { RAIL_W, TIME_W, timeColumnText } from '../recap/DaySpine';
+import { RAIL_W, SPINE_THREAD, TIME_W, timeColumnText } from '../recap/DaySpine';
+import { ThreadDraw, type ThreadGeometry, type ThreadRow } from '../motion/ThreadDraw';
 import { ThemedText } from '../ui/ThemedText';
 import { LANDED_OUTLINE_WIDTH } from './GapLine';
 
@@ -88,6 +99,7 @@ export function DayCardHeader({
   search,
   landed,
   withCounts = true,
+  focusRef,
 }: {
   day: string;
   today: string;
@@ -97,6 +109,8 @@ export function DayCardHeader({
   landed: boolean;
   /** Off for today's open card, whose body says *Nothing logged yet today.* already. */
   withCounts?: boolean;
+  /** The header's accessible node, for the list to move VoiceOver onto (§4). */
+  focusRef?: (node: View | null) => void;
 }) {
   const isToday = day === today;
   const parts = withCounts ? dayHeaderOf(facts, filter, { search, isToday }) : [];
@@ -106,10 +120,15 @@ export function DayCardHeader({
   return (
     <View style={styles.headerCell}>
       <View
+        ref={focusRef}
         style={[styles.cardTop, landed && styles.cardLanded]}
-        // One heading: the date and its counts read together, as the eye reads them.
+        // One heading: the date and its counts read together, as the eye reads them, with
+        // the drawn " · " said as a pause. A landed day is SAID to be the one landed on
+        // (HV-7's focus note): the outline alone is for sight.
         accessible
         accessibilityRole="header"
+        accessibilityLabel={dayHeaderSpoken(date, isToday, parts.map((p) => p.text))}
+        accessibilityState={{ selected: landed }}
         testID={`history-day-header-${day}`}
       >
         <View style={styles.headerRow}>
@@ -273,7 +292,23 @@ export interface DayCardBodyProps {
   landed: boolean;
   /** Today's open card: the one line, and no rows. */
   emptyLine?: string | null;
+  /** The paint ledger's token for this day (`PaintLedger.peek`), or null: nothing to draw. */
+  drawToken?: string | null;
+  /** The ledger's claim, called once when the draw starts. */
+  claimDraw?: (token: string) => boolean;
+  /** Rows fading out ahead of their removal (event ids). */
+  leaving?: ReadonlySet<string>;
 }
+
+/** The day card's thread: the frame's own, on the body's inner edge. */
+const CARD_THREAD: ThreadGeometry = {
+  x: SPINE_THREAD.x,
+  dotCenterY: SPINE_THREAD.dotCenterY,
+  lineW: SPINE_THREAD.lineW,
+  color: SPINE_THREAD.dayColor,
+};
+const NO_CLAIM = () => false;
+const NO_LEAVING: ReadonlySet<string> = new Set();
 
 export function DayCardBody({
   day,
@@ -286,37 +321,51 @@ export function DayCardBody({
   onOpenVisit,
   landed,
   emptyLine = null,
+  drawToken = null,
+  claimDraw = NO_CLAIM,
+  leaving = NO_LEAVING,
 }: DayCardBodyProps) {
   // A filter only hides (R-2): the day's nodes were built over the whole day.
   const nodes = noticed ? [] : visibleNodesOf(dayNodes, new Set(shownRows.map((r) => r.id)));
   const looks = noticed ? shownRows : [];
   const threadLength = items.length + nodes.length + looks.length;
+  const rows: ThreadRow[] = [
+    ...items.map((item, i) => ({
+      key: `${item.kind}:${item.kind === 'course-start' ? item.courseKey : item.id}`,
+      node: (
+        <DateOnlyItemRow item={item} isFirst={i === 0} isLast={i === threadLength - 1} onOpenVisit={onOpenVisit} />
+      ),
+    })),
+    ...nodes.map((node, i) => ({
+      key: node.id,
+      node: (
+        <DayNodeRow
+          node={node}
+          isFirst={items.length + i === 0}
+          isLast={items.length + i === threadLength - 1}
+          expanded={openRuns.has(node.id)}
+          onToggle={onToggleRun}
+          openInPlace
+        />
+      ),
+    })),
+    ...looks.map((row, i) => ({
+      key: row.id,
+      node: <LookLine row={row} isFirst={items.length + i === 0} isLast={items.length + i === threadLength - 1} />,
+    })),
+  ];
   return (
     <View style={styles.bodyCell}>
       <View style={[styles.cardBottom, landed && styles.cardLanded]} testID={`history-day-body-${day}`}>
         {emptyLine ? <ThemedText style={styles.emptyLine}>{emptyLine}</ThemedText> : null}
-        {items.map((item, i) => (
-          <DateOnlyItemRow
-            key={`${item.kind}:${item.kind === 'course-start' ? item.courseKey : item.id}`}
-            item={item}
-            isFirst={i === 0}
-            isLast={i === threadLength - 1}
-            onOpenVisit={onOpenVisit}
-          />
-        ))}
-        {nodes.map((node, i) => (
-          <DayNodeRow
-            key={node.id}
-            node={node}
-            isFirst={items.length + i === 0}
-            isLast={items.length + i === threadLength - 1}
-            expanded={openRuns.has(node.id)}
-            onToggle={onToggleRun}
-          />
-        ))}
-        {looks.map((row, i) => (
-          <LookLine key={row.id} row={row} isFirst={items.length + i === 0} isLast={items.length + i === threadLength - 1} />
-        ))}
+        <ThreadDraw
+          rows={rows}
+          token={drawToken}
+          claim={claimDraw}
+          thread={CARD_THREAD}
+          leaving={leaving}
+          testID={`history-thread-${day}`}
+        />
       </View>
     </View>
   );

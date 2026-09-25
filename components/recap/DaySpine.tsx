@@ -61,6 +61,8 @@ const LINE_W = 2;
 const DOT_TOP = 3; // marginTop lifting the dot to the title's first line
 const DOT_CENTER_Y = DOT_TOP + DOT / 2;
 const LINE_LEFT = (RAIL_W - LINE_W) / 2;
+/** The row's gap between its three columns (`styles.row.gap`). */
+const ROW_GAP = theme.space1;
 
 /** The per-ground colours the frame and the default body read. The night set is the
  *  shipped one, verbatim; the day set is Home's light ground (D2-4), where small
@@ -89,6 +91,22 @@ const GROUND = {
     chevron: theme.colorAccentInk,
     pressed: theme.colorSurfaceSubtle,
   },
+} as const;
+
+/**
+ * Where the thread runs, as the frame draws it: its centre from a row's left edge, the
+ * dot's centre from a row's top (where each segment meets the next), its width, and its
+ * colour on the day ground. Exported for the one thing that must stand exactly on the
+ * thread without being a row: the first paint's drawing line (History v2, HV-10 /
+ * CUL-1167; `components/motion/ThreadDraw.tsx`), which lies over the rows' own segments
+ * while they land and leaves once they have. Read from here, never re-derived, so the two
+ * cannot drift apart by a point (C-34).
+ */
+export const SPINE_THREAD = {
+  x: TIME_W + ROW_GAP + RAIL_W / 2,
+  dotCenterY: DOT_CENTER_Y,
+  lineW: LINE_W,
+  dayColor: GROUND.day.thread,
 } as const;
 
 interface Props {
@@ -301,7 +319,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: theme.space1,
+    gap: ROW_GAP,
     // The whole row is the tap target. `minHeight` bounds the border-box (padding
     // sits INSIDE it in Yoga), so a plain single-line row would otherwise fall to
     // ~40pt regardless of the gap below — under the 44pt floor, and worst on the LAST

@@ -6,6 +6,12 @@
 // waiting tick. The feedings are handed over in `readFeedingsSince`'s shape: an event id
 // and an intake rating on every one (C-35: without the id the lane cannot name its meal,
 // and a fixture that drops it tests a day production never builds).
+//
+// Under `history_v2` (HV-10 / CUL-1167; spec §5.6): the spine is History v2's `HomeSpine`,
+// with the first paint and the run's open in place; with the flag off it is the shipped
+// spine. This suite is Home's ASYNC flag-off proof (`guards/historyV2FlagOff.test.tsx`'s
+// header): the rows arrive after the first frame, so the guard's first-frame comparison
+// cannot see a leak into them, and the fixture here has rows that would carry one.
 
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 jest.mock('./LookHeader', () => {
@@ -51,10 +57,34 @@ jest.mock('../../../store/petStore', () => ({
 jest.mock('../../../store/syncStore', () => ({
   useSyncStore: (sel: (s: { hydrationTick: number }) => unknown) => sel({ hydrationTick: 0 }),
 }));
+// The gate, as the flag-off guard proves it is read (the one hook).
+let mockHistoryV2 = false;
+jest.mock('../../../hooks/useHistoryV2', () => ({ useHistoryV2: () => mockHistoryV2 }));
+// The paint ledger is the real one; every claim it grants is recorded (a draw's opacity
+// cannot be caught mid-flight under the mocked native driver). A claim is the trigger.
+const mockClaims: string[] = [];
+jest.mock('../../motion/threadMotion', () => {
+  const actual = jest.requireActual<typeof import('../../motion/threadMotion')>('../../motion/threadMotion');
+  return {
+    ...actual,
+    createPaintLedger: () => {
+      const ledger = actual.createPaintLedger();
+      return {
+        ...ledger,
+        claim: (token: string) => {
+          const granted = ledger.claim(token);
+          if (granted) mockClaims.push(token);
+          return granted;
+        },
+      };
+    },
+  };
+});
 
-import { act, render, waitFor } from '@testing-library/react-native';
-import { AccessibilityInfo } from 'react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { AccessibilityInfo, LayoutAnimation } from 'react-native';
 import { useEventStore } from '../../../store/eventStore';
+import { useReducedMotionStore } from '../../../store/reducedMotionStore';
 import { TODAY_EMPTY_LINE, TODAY_EMPTY_LOOK_LINE, TODAY_FAILED_LINE, TodayCard } from './TodayCard';
 
 const at = (h: number, m: number): string => {
@@ -74,6 +104,8 @@ const SEP_17 = [
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockHistoryV2 = false;
+  mockClaims.length = 0;
   settleChain = null;
   mockOutstanding.mockReturnValue(false);
   mockReadPhotographed.mockResolvedValue(new Set(['v1', 'v2']));
@@ -343,5 +375,106 @@ describe('the ten-event day', () => {
     // itself), and the tick that waited is the rail that landed — same node.
     expect(mockReadAnalysis.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(t.getByTestId('spine-read-rail-v2')).toBeTruthy();
+  });
+});
+
+// ── Under history_v2 (HV-10 / CUL-1167; spec §4, §5.6; AC 32, AC 35's async half) ─────
+
+describe('under history_v2: Home\'s first paint and open in place', () => {
+  beforeEach(() => {
+    act(() => {
+      useReducedMotionStore.setState({ reduceMotion: false, gateOpen: true });
+    });
+  });
+  afterEach(() => {
+    act(() => {
+      useReducedMotionStore.setState({ reduceMotion: null, gateOpen: false });
+    });
+  });
+  const ready = (events: unknown[]) =>
+    act(() => {
+      useEventStore.setState({ todayRead: { petId: 'p1', state: 'ready' }, todayEvents: events as never });
+    });
+
+  it('flag OFF, over a day whose rows do arrive: the shipped spine draws them and no HomeSpine node renders; flag ON, the same rows arrive on HomeSpine', async () => {
+    ready(SEP_17);
+    const off = render(<TodayCard />);
+    await waitFor(() => expect(off.getByTestId('spine-node-v2')).toBeTruthy());
+    expect(off.getByTestId('home-spine')).toBeTruthy();
+    // HomeSpine wraps every row on its thread; the shipped spine wraps none.
+    expect(off.queryByTestId('home-spine-row-v2')).toBeNull();
+    expect(mockClaims).toEqual([]);
+    off.unmount();
+    mockHistoryV2 = true;
+    const on = render(<TodayCard />);
+    await waitFor(() => expect(on.getByTestId('spine-node-v2')).toBeTruthy());
+    expect(on.getByTestId('home-spine-row-v2')).toBeTruthy();
+  });
+
+  it('the first paint: when today\'s read first answers, the spine draws once; a row logged later draws nothing', async () => {
+    mockHistoryV2 = true;
+    ready(SEP_17);
+    const t = render(<TodayCard />);
+    await waitFor(() => expect(t.getByTestId('home-spine-row-v2')).toBeTruthy());
+    expect(mockClaims).toHaveLength(1);
+    expect(mockClaims[0]).toMatch(/^paint:.*"p1"/);
+    ready([...SEP_17, row('c2', 'cough', 23, 0)]);
+    await waitFor(() => expect(t.getByTestId('home-spine-row-c2')).toBeTruthy());
+    expect(mockClaims).toHaveLength(1);
+  });
+
+  it('a day that answered empty draws nothing when its first row arrives (that moment is the completion card\'s)', async () => {
+    mockHistoryV2 = true;
+    ready([]);
+    const t = render(<TodayCard />);
+    await waitFor(() => expect(t.getByTestId('today-empty')).toBeTruthy());
+    ready([row('c2', 'cough', 9, 0)]);
+    await waitFor(() => expect(t.getByTestId('home-spine-row-c2')).toBeTruthy());
+    expect(mockClaims).toEqual([]);
+  });
+
+  it('Reduce Motion (known before the first render): the still frame, nothing drawn', async () => {
+    act(() => {
+      useReducedMotionStore.setState({ reduceMotion: true, gateOpen: true });
+    });
+    mockHistoryV2 = true;
+    ready(SEP_17);
+    const t = render(<TodayCard />);
+    await waitFor(() => expect(t.getByTestId('home-spine-row-v2')).toBeTruthy());
+    expect(mockClaims).toEqual([]);
+  });
+
+  it('a run opens in place: the rail leads with no member yet (the shipped spine would mount them at once)', async () => {
+    const configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
+    mockHistoryV2 = true;
+    ready(SEP_17);
+    const t = render(<TodayCard />);
+    await waitFor(() => expect(t.getByTestId('spine-node-compact:m6')).toBeTruthy());
+    fireEvent.press(t.getByTestId('spine-node-compact:m6'));
+    expect(t.getByTestId('spine-members-compact:m6')).toBeTruthy();
+    expect(t.queryByTestId('spine-node-m6')).toBeNull();
+    expect(configureNext).not.toHaveBeenCalled();
+    await waitFor(() => expect(t.getByTestId('spine-node-m6')).toBeTruthy());
+    configureNext.mockRestore();
+  });
+
+  it('a read that lands while Home watches keeps its node through the thread\'s wrapper: the same rail, one announcement', async () => {
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    mockHistoryV2 = true;
+    ready(SEP_17);
+    mockOutstanding.mockImplementation((id: string) => id === 'v2');
+    const t = render(<TodayCard />);
+    await waitFor(() => expect(t.getByTestId('spine-read-rail-v2')).toBeTruthy());
+    const railWhileReading = t.getByTestId('spine-read-rail-v2');
+    mockReadAnalysis.mockResolvedValue(
+      new Map([['v2', { event_id: 'v2', status: 'completed', recommendation: 'worth_a_call', updated_at: '2026-09-25T00:00:00Z' }]]),
+    );
+    await act(async () => {
+      settleChain?.();
+    });
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v2').props.children).toBe('Worth a call'));
+    expect(t.getByTestId('spine-read-rail-v2')).toBe(railWhileReading);
+    expect(announce).toHaveBeenCalledWith('Worth a call');
+    announce.mockRestore();
   });
 });
