@@ -194,12 +194,13 @@ export function dayStartMs(day: string): number | null {
  * the day's first or last millisecond. `readWindowFacts` derives its `today` from the
  * instant it is handed (HV-3: every field of `WindowFacts` belongs to one day), and the
  * list's request names its day, so a screen whose clock has not yet ticked past midnight
- * still reads its own day's facts, never the next day's under its own day's key. `nowMs`
- * for a malformed key, which no caller derives (the list's day is `toLocalDayKey`'s).
+ * still reads its own day's facts, never the next day's under its own day's key. `NaN`
+ * for a malformed key, so the read fails loudly (the visit bound throws on an unreadable
+ * day) instead of reading the real day's facts under a key that names no day (C-12).
  */
 export function instantOnDay(day: string, nowMs: number): number {
   const start = dayKeyToLocalDate(day);
-  if (!start) return nowMs;
+  if (!start) return Number.NaN;
   // The next day's local midnight, from its components: a DST day is 23 or 25 hours long.
   const next = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1).getTime();
   return Math.min(Math.max(nowMs, start.getTime()), next - 1);

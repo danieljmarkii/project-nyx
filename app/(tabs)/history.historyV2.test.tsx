@@ -364,7 +364,7 @@ describe('the pinned row reads the record only under the flag (HV-9 / CUL-1166; 
     arrange({ eligible: true, optedIn: true });
     const view = render(<HistoryTab />);
     await settle();
-    expect(mockReadRecord).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }), false);
+    expect(mockReadRecord).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }), false, expect.any(Number));
     expect(within(view.getByTestId('history-v2-pinned-row')).getByText('Rex')).toBeTruthy();
   });
 });

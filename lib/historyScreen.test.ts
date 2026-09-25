@@ -489,7 +489,7 @@ describe('instantOnDay: the instant nearest now on the request\'s own day', () =
     }
   });
 
-  it('a malformed key answers now, since no caller derives one', () => {
-    expect(instantOnDay('not-a-day', 1234)).toBe(1234);
+  it('a malformed key answers NaN, so the read fails loudly rather than reading the real day', () => {
+    expect(instantOnDay('not-a-day', 1234)).toBeNaN();
   });
 });

@@ -180,11 +180,12 @@ export function HistoryList() {
     [scopePetId, filter, windowKey, searchOpen, searchText, landedDay, stripWeek],
   );
 
-  // ── Today: the screen's one clock (the store shares it with the pinned row and strip) ──
+  // ── Today: the screen's one clock ──
   const [today, setToday] = useState(() => toLocalDayKey(new Date()));
   const refreshToday = useCallback(() => setToday(toLocalDayKey(new Date())), []);
-  // The shared clock moves in the same commit as the list's, before paint, so the pinned row
-  // and the strip (`useHistorySnapshot`) never draw a frame on the other side of midnight.
+  // Published in the same commit, before paint: the pinned row reads its record for this day
+  // (`useHistoryToday`) and the strip takes it as a prop, so neither draws a frame on the
+  // other side of midnight from the count line.
   useLayoutEffect(() => {
     useHistoryListStore.getState().setToday(today);
   }, [today]);

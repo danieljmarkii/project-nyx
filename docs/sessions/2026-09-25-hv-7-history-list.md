@@ -171,3 +171,21 @@ By 12:57 UTC `main` held HV-9 (#916), so #917 merged second to all three of its 
   - Each test now waits out its tail inside `act`. The waits derive from the shipped constants: `LANDING_RETRIES` and `LANDING_RETRY_MS`, moved to `lib/historyScreen.ts` for that, and `FOLD_MOTION`.
   - The same contention batch, 16 runs each: 7 warnings before, 0 after, with every run green both times.
 - **Verification.** 4 mutants, all red: the store reading at `Date.now()`, `instantOnDay` without its clamp, a 24-hour-day shortcut (under Chatham), and the narrow mock.
+
+## The second wrap: an adversarial pass, one fix, then the merge
+
+The PM ran `/wrap and merge` after the HV-9 integration. Merging without the one All-time read settles CUL-1228 as option (B): it lands as its own PR, before HV-13's device pass.
+
+- **The adversarial pass on the integration** (the `adversarial-reviewer`, isolated): HOLDS for the change's claim.
+  - It rebuilt the deleted private assembly and ran it against the new read over 108 cases (trials × visits × clocks) on the real schema.
+  - It then swept every IANA zone from 2000 to 2035, 55 of them with days that have no local midnight.
+  - `windowFacts.today` was always the request's day. V8 was tested; Hermes could not be tested here.
+- **Its finding, fixed before the merge (F1, medium).** The pinned row read on its own clock and had no midnight trigger.
+  - A History screen left open past midnight showed the pill "Vomit · 2" (yesterday's count) over the count line "Today · no vomit logged". That is a count spoken under a window it does not count (C-3).
+  - Now the pinned row reads for the list's day (`useHistoryToday`, the day `HistoryList` publishes), and the list's midnight tick re-reads it. An answer for another day draws nothing, so the pill blanks with the header at midnight, as it already does for a pet switch.
+  - Two comments claimed the pill already shared the list's read. They are corrected, and the hook they named (`useHistorySnapshot`, which had no callers) is deleted (C-38).
+- **Its nit, taken (F2).** `instantOnDay` answers `NaN` for a malformed day. The read then fails loudly instead of reading the real day under a key that names no day (C-12). A test in HV-9's module holds that `readWindowFacts` rejects it.
+- **Verification:**
+  - 5 more mutants, all red: the hook reading at `Date.now()`, its effect not following the day, an answer for another day drawn, the hook ignoring the list's clock, and `instantOnDay` answering now for a malformed day.
+  - 507 suites and 11,452 tests pass, and the touched suites and every guard pass in the three CI zones.
+- **Step 2 is complete.** HV-6, HV-7, HV-8 and HV-9 are all in, and every gate for step 3 (HV-10 and HV-11, together) is Done.

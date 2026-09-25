@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { useShallow } from 'zustand/react/shallow';
 
 import {
   getActiveArrangementsForPet,
@@ -36,12 +35,12 @@ import {
   readFreeFedSpans,
   readVomitOnsetsSince,
 } from '../lib/spineReads';
+import { toLocalDayKey } from '../lib/utils';
 import { readVisitsForHistory } from '../lib/vetVisits';
 import {
   effectiveSearch,
   filterId,
   historyScopeKey,
-  useHistoryScopeStore,
   type HistoryScope,
 } from './historyScopeStore';
 import { usePetStore, type Pet } from './petStore';
@@ -543,25 +542,15 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
 }));
 
 /**
- * The snapshot for the scope on screen, or null while it has not answered (the pending
- * state: a skeleton, never another scope's numbers, C-12). The one way a surface reads the
- * list's reads, so the count line, the pinned row's counts and the strip agree (AC 1).
+ * The day History's screen shows: the list's clock, which moves at midnight before paint
+ * (`HistoryList`), or the real day before the list has set one. The pinned row reads its
+ * record for this day and resolves its pills against it, so the pills and the count line
+ * never sit on two sides of midnight: a count is never spoken under a window it does not
+ * count (C-3).
  */
-export function useHistorySnapshot(): HistorySnapshot | null {
-  const snapshot = useHistoryListStore((s) => s.snapshot);
+export function useHistoryToday(): string {
   const today = useHistoryListStore((s) => s.today);
-  const scope = useHistoryScopeStore(
-    useShallow((s) => ({
-      petId: s.petId,
-      filter: s.filter,
-      window: s.window,
-      searchOpen: s.searchOpen,
-      searchText: s.searchText,
-      landedDay: s.landedDay,
-      stripWeek: s.stripWeek,
-    })),
-  );
-  return today === null ? null : snapshotForScope(snapshot, scope, today);
+  return today ?? toLocalDayKey(new Date());
 }
 
 /**

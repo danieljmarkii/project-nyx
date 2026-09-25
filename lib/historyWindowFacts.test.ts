@@ -211,6 +211,13 @@ describe('readWindowFacts: one pet, one today', () => {
     await expect(readWindowFacts(THE_PET, NOW)).rejects.toThrow();
     errors.mockRestore();
   });
+
+  it('rejects an instant that names no day (instantOnDay\'s NaN), rather than reading some day', async () => {
+    seedRecord();
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(readWindowFacts(THE_PET, Number.NaN)).rejects.toThrow();
+    errors.mockRestore();
+  });
 });
 
 // ── *N not read* ─────────────────────────────────────────────────────────────────
