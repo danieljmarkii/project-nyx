@@ -412,8 +412,9 @@ export interface TypeSheetCounts {
   symptoms: number;
   byType: Record<HistoryTypeKey, number>;
   /** Only courses with a dose row in the window, by course key: a course with none is not
-   *  an option (the sheet's sub-rows, PMD-17). */
-  courses: Record<string, number>;
+   *  an option (the sheet's sub-rows, PMD-17). `logged` is the sub-row's count; `notInFull`
+   *  is named after its span (CUL-1193, `notGivenInFullText`). */
+  courses: Record<string, DoseFacts>;
   photographed: number;
   noted: number;
 }
@@ -426,11 +427,42 @@ export function typeSheetCountsOf(days: ReadonlyMap<string, DayFacts>): TypeShee
     out.all += f.total;
     out.symptoms += symptomCountOf(f);
     for (const t of HISTORY_TYPE_KEYS) out.byType[t] += f.byType[t] ?? 0;
-    for (const [key, d] of Object.entries(f.doses)) out.courses[key] = (out.courses[key] ?? 0) + d.logged;
+    for (const [key, d] of Object.entries(f.doses)) {
+      const c = out.courses[key] ?? (out.courses[key] = { logged: 0, notInFull: 0 });
+      c.logged += d.logged;
+      c.notInFull += d.notInFull;
+    }
     out.photographed += f.photographed;
     out.noted += f.noted;
   }
   return out;
+}
+
+/** A filter whose rows are doses: a course, or Medication. Its count reads "logged", never
+ *  "doses", because it counts every dose row whatever its chip and a vet reads "16 doses"
+ *  as 16 given (CUL-1193, GAP-26). */
+function countsDoses(filter: HistoryFilter): boolean {
+  return filter.kind === 'course' || (filter.kind === 'type' && filter.type === 'medication');
+}
+
+/**
+ * How many of a dose filter's rows over the window were recorded Partial, Missed or Refused:
+ * the subset the count line names beside "N logged" (CUL-1193). A course counts its own;
+ * Medication counts every course's. Null for any other filter.
+ *
+ * Under Medication this is a subset of the count because a dose row always hangs off a
+ * medication event: migration 020 makes the dose an `event_type = 'medication'` row,
+ * `insertMedicationDose` is its one writer, and nothing re-types an event. A dose row on
+ * another type would count here and not in the list; no write path makes one.
+ */
+export function notInFullOf(days: ReadonlyMap<string, DayFacts>, filter: HistoryFilter): number | null {
+  if (!countsDoses(filter)) return null;
+  let n = 0;
+  for (const f of days.values()) {
+    if (filter.kind === 'course') n += f.doses[filter.courseKey]?.notInFull ?? 0;
+    else for (const d of Object.values(f.doses)) n += d.notInFull;
+  }
+  return n;
 }
 
 // ── Coverage ─────────────────────────────────────────────────────────────────────
@@ -689,7 +721,8 @@ function typeNoun(type: HistoryTypeKey, n: number): string {
   return n === 1 ? base : `${base}s`;
 }
 
-/** The noun a filter counts in: '13 vomits', '16 doses', '12 photographed rows'. */
+/** The noun a filter counts in: '13 vomits', '12 photographed rows', a day header's '2 doses'.
+ *  A dose filter's count line reads 'logged' instead (`countPhrase`, CUL-1193). */
 export function filterNoun(filter: HistoryFilter, n: number): string {
   const one = n === 1;
   switch (filter.kind) {
@@ -712,6 +745,14 @@ export function filterNoun(filter: HistoryFilter, n: number): string {
 /** 1094 → '1,094'. Grouped by hand so a count reads the same on every engine. */
 export function formatCount(n: number): string {
   return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+/** The subset a dose count names (CUL-1193): '3 not given in full', on the count line and
+ *  on a course's sheet sub-row (after its span, as Photographed's 'N not read'). Null at
+ *  zero: an unrated dose is never counted, so a zero would claim every dose was given when
+ *  some were only never rated. */
+export function notGivenInFullText(n: number): string | null {
+  return n > 0 ? `${formatCount(n)} not given in full` : null;
 }
 
 // ── The count line (§3.2) ────────────────────────────────────────────────────────
@@ -810,7 +851,8 @@ function countPhrase(filter: HistoryFilter, total: WindowTotal): string {
   if (filter.kind === 'all') return total.count > 0 ? `${formatCount(total.count)} logged` : 'nothing logged';
   if (total.count === 0) return absenceText(filter) ?? '';
   const days = `${formatCount(total.days)} ${total.days === 1 ? 'day' : 'days'}`;
-  return `${formatCount(total.count)} ${filterNoun(filter, total.count)} on ${days}`;
+  const noun = countsDoses(filter) ? 'logged' : filterNoun(filter, total.count);
+  return `${formatCount(total.count)} ${noun} on ${days}`;
 }
 
 /** The count line, in every form of §3.2. Pure: the facts in, the words out. */
@@ -847,6 +889,9 @@ export function countLineOf(input: CountLineInput): CountLine {
     else if (toDay === fromDay) clauses.push(`${course.name} · ${dates.day(fromDay)}`);
     else clauses.push(`${course.name} · ${dates.range(fromDay, toDay)}`);
   }
+  // Right after the course it describes (the ruling's order: CUL-1193).
+  const notInFull = notGivenInFullText(notInFullOf(facts.days, filter) ?? 0);
+  if (notInFull !== null) clauses.push(notInFull);
   const unlogged = unloggedDaysOf({
     days: facts.days,
     range: window.range,

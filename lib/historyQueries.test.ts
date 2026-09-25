@@ -41,7 +41,7 @@ jest.mock('expo-sqlite', () => ({
 import { getTimeline, type TimelineRow } from './db';
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
-import { dayCountFor, dayFactsOn, shiftDay, type DayRange, type HistoryFilter } from './historyDays';
+import { dayCountFor, dayFactsOn, notInFullOf, shiftDay, type DayRange, type HistoryFilter } from './historyDays';
 import {
   DAY_PAGE_MIN_ROWS,
   SEARCHED_FIELDS,
@@ -425,6 +425,24 @@ describe('the facts — flags, looks, firsts, duplicates', () => {
     expect(dayFactsOn(facts.days, '2026-09-06').doses).toEqual({ 'reg-pred': { logged: 1, notInFull: 1 } });
     expect(dayFactsOn(facts.days, '2026-09-07').doses).toEqual({ 'reg-free': { logged: 1, notInFull: 1 } });
     expect(dayFactsOn(facts.days, '2026-09-09').doses).toEqual({ 'item:item-cet': { logged: 1, notInFull: 0 } });
+  });
+
+  it('the doses not given in full are rows the dose filters list: Partial, Missed or Refused, never unrated (CUL-1193)', async () => {
+    seedRich();
+    const facts = await readHistoryFacts(PET, RANGE);
+    const listed = async (filter: HistoryFilter) =>
+      (await allPages(scopeOf(RANGE, filter))).flatMap((p) => p.days.flatMap((d) => d.rows));
+    const shortOf = (rows: readonly HistoryRow[]) =>
+      rows.filter((r) => r.adherence === 'partial' || r.adherence === 'missed' || r.adherence === 'refused').length;
+    const medication: HistoryFilter = { kind: 'type', type: 'medication' };
+    // d2 refused and d3 partial; d1 given and d4 unrated are counted and never named.
+    expect(notInFullOf(facts.days, medication)).toBe(2);
+    expect(shortOf(await listed(medication))).toBe(2);
+    for (const courseKey of ['reg-pred', 'reg-free', 'item:item-cet']) {
+      const course: HistoryFilter = { kind: 'course', courseKey };
+      expect(notInFullOf(facts.days, course)).toBe(shortOf(await listed(course)));
+    }
+    expect(notInFullOf(facts.days, { kind: 'course', courseKey: 'item:item-cet' })).toBe(0);
   });
 
   it('meals not finished: the intake lens\'s own (Some and Refused count; a treat never does)', async () => {

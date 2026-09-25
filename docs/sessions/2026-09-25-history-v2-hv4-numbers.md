@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 
-Shipped via #911 (CUL-1161). Filed: CUL-1193 (Waiting on PM: the course count's wording), CUL-1194 (the Patterns month's record start counts a look). Handoff notes posted on CUL-1160, CUL-1164, CUL-1165 and CUL-1169.
+Shipped via #911 (CUL-1161). Filed: CUL-1193 (the course count's wording; the PM ruled (b) the same day, built here, below), CUL-1194 (the Patterns month's record start counts a look). Handoff notes posted on CUL-1160, CUL-1164, CUL-1165, CUL-1166 and CUL-1169.
 
 ## The ask
 
@@ -57,7 +57,7 @@ Made during the review fixes, and stated in #911:
 
   It also found that the duplicate disclosure equalled History's count minus the report's over 3,000 cases straddling the window's edges, and that removing the one-day read margin broke that. What failed, and what was done:
   1. **A zero read as absence.** "Last 7 days · no vomits" over an unwatched week. Now "no vomit logged" on the count line and the header. A header on a day with nothing logged says only that, and "not yet" on today.
-  2. **"10 doses" for a course where 4 weren't fully given.** The spec's letter (§3.2 / §3.8); the critique's GAP-26 asked for "logged" plus the subset not given. Filed as CUL-1193 for the PM; the code keeps the spec's form.
+  2. **"10 doses" for a course where 4 weren't fully given.** The spec's letter (§3.2 / §3.8); the critique's GAP-26 asked for "logged" plus the subset not given. Filed as CUL-1193; the PM ruled (b), built below.
   3. **Visit and course-start items vanished under a filter before the type's first row** (AC 11). Fixed: items render before the first row and before the record's first day. Absence is still claimed only on or after both, and never on today.
   4. **Future days could be drawn "nothing logged"** if a window ran past today. Fixed: nothing is claimed after today, and a row there still shows.
   5. **A window clipped at the record's start is still named in full.** Its partial range is the window table's to name (GAP-24); noted on CUL-1160.
@@ -71,19 +71,31 @@ Made during the review fixes, and stated in #911:
 
   Every fix was proven by mutation (seven, each red).
 
+## The ruling on CUL-1193: a dose count reads "logged"
+
+The PM ruled (b): under a course and under Medication the count says *16 logged on 16 days*, and line 2 names the doses recorded Partial, Missed or Refused, *Prednisone · since Sep 4 · 3 not given in full · 1 day unlogged*.
+
+- **`lib/historyDays.ts`:** `countPhrase` words a dose filter's count "logged"; `notInFullOf` sums the window's `DayFacts.doses[…].notInFull` (a course's own, or every course's under Medication); `notGivenInFullText` is the clause, null at zero, because an unrated dose is never counted and a zero would claim every dose was given. The clause sits after the course's name and span and before coverage, the ruling's order. `TypeSheetCounts.courses` now carries `{ logged, notInFull }` per course for HV-9's sub-row.
+- **The sheet's sub-row** names them after its span, the shape Photographed's *N not read* already has: *Cetirizine HCl · Jul 1 – Sep 5 · 16 · 4 not given in full*. The count column stays a bare number, as on every other row.
+- **Left alone, on purpose:** the day header under a dose filter still reads *1 dose · 8 logged*. The ruling named the count line and the sub-row; the rows under a header carry their own chips; and *2 logged · 8 logged* collides with the day's total. HV-12's copy pass owns the word (noted on CUL-1169).
+- **A premise, stated where it is used:** Medication's clause is a subset of its count only because a dose row always hangs off a medication event (migration 020's design, one writer, nothing re-types an event). History keeps the report's course grain, which reads every dose row, rather than narrowing "a dose" for a record no write path can produce; the comment on `notInFullOf` says so.
+- **Tests:** AC 1 now checks the clause against every window × filter (named only under a dose filter, equal to the facts, never more than the count, equal to the sheet's); AC 30 ties each course's not-in-full to `deriveMedicationCourses`'s own Partial + Missed + Refused tally, over a record holding every chip (neither fixture had a Missed dose, so dropping `missed` from the set survived until that test existed); the node:sqlite suite checks it against the rows the dose filters actually list. Eleven mutations, each red.
+- **Spec v1.3** (§3.2, §3.8, AC 30; ⚠ RULED markers) and **round 5 of the mock** amended to match, republished to the same URL (version 7), as the CUL-1183 amendment was.
+
 ## A base that moved mid-session
 
 Bundle C (#908, CUL-1124) landed on `main` during the wrap and added `regimen_drug_name` to `getTimeline`, joined pet-scoped (`rx.pet_id = e.pet_id`), so a dose linked to another pet's course never borrows its name. This branch had the same column without that guard, which would have let a search find another pet's course name. The branch merged `main`, and the join is now pet-scoped in both the row read and every scope condition. A test drives a dose linked to another pet's regimen (no name on the row, no search hit); dropping the guard turns it red. The column-for-column test against `getTimeline` now covers the course's name too.
 
+`main` moved again after the wrap: HV-1 (#907) and HV-2 (#910) landed. They share no file with this branch; the merge was clean.
+
 ## Verification
 
 - `tsc --noEmit` clean.
-- Full jest suite green on the merged tree: 469 suites, 10,222 passed, 3 skipped (unchanged).
-- The three new suites green under Kiritimati, Chatham, Honolulu, New York and Lord Howe.
+- Full jest suite green on the merged tree: 475 suites, 10,328 passed, 3 skipped.
+- The History suites (222 tests) green under Kiritimati, Chatham, Honolulu, New York and Lord Howe.
 - CI green on the first push (all three jobs).
 
 ## Residuals
 
-- CUL-1193 (Waiting on PM) decides the course count's words; the data (`notInFull`) is already in `DayFacts`.
 - **Proposed spec edit (Tier 2, awaiting PM approval to write):** `docs/nyx-history-v2-requirements.md` §5.2, `DayFacts` gains `vomitEpisode: boolean`, the Patterns month's episode mark, which §3.4's never-disagree rule needs.
 - Where "{pet}'s record starts here" sits when a visit predates the first event is HV-7's call (noted on CUL-1164).
