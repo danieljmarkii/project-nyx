@@ -11,7 +11,9 @@
 // per-consumer rule reds a file that reads the hook without importing from here.
 //
 // The first surface landed with D2-4 (CUL-1066): `home/` holds Today's card — the
-// look header, the spine, its nodes — and the coverage door. A screen imports the
+// look header and the spine — and the coverage door. The spine's rows are not here:
+// History v2 HV-1 (CUL-1158) lifted them into `components/dayRow/`, the one row Home
+// and History share, reached only through a gated surface. A screen imports the
 // module it draws (`components/designV2/home/TodayCard`), never this index, so the
 // guard's switch wraps the module the screen actually reaches.
 //

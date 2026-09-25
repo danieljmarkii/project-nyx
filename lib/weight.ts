@@ -27,31 +27,14 @@ import { syncPendingEvents, syncPendingWeightChecks } from './sync';
 import { uuid } from './utils';
 import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
 import { usePetStore } from '../store/petStore';
+import { kgToLbs, kgToLbsNum, lbsToKg } from './weightUnits';
 
 // ── Unit conversion ─────────────────────────────────────────────────────────
-// Owners enter and read pounds; kilograms is the canonical storage unit
-// (pets.weight_kg + weight_checks.weight_kg). Extracted here from EditPetModal
-// (its original home) so the log step and the profile edit share one rounding
-// rule and can't drift. kgToLbs returns a display STRING rounded to 0.1 lb (the
-// pre-fill value); lbsToKg returns a NUMBER rounded to 2 dp (the stored value,
-// matching NUMERIC(5,2)).
-export function kgToLbs(kg: number): string {
-  return String(kgToLbsNum(kg));
-}
-
-// Numeric sibling of kgToLbs — the display value as a NUMBER (rounded to 0.1 lb),
-// for trend math where we need to subtract/compare readings rather than show one.
-// Sharing the one rounding rule means the sparkline points, the big number, and the
-// "x lbs since y" delta are all derived from the same rounded value — so the delta
-// the owner reads is exactly latest − earliest of the numbers drawn (no off-by-0.1
-// mismatch between the chart and the caption).
-export function kgToLbsNum(kg: number): number {
-  return Math.round(kg * 2.20462 * 10) / 10;
-}
-
-export function lbsToKg(lbs: number): number {
-  return Math.round((lbs / 2.20462) * 100) / 100;
-}
+// The three converters live in `lib/weightUnits.ts`, a module with no imports, so a
+// pure pipeline (the shared day row's `lib/spineNode.ts`, History v2 HV-6) can name a
+// weight without pulling this file's database, sync and Supabase imports along.
+// Re-exported here so every existing import keeps working.
+export { kgToLbs, kgToLbsNum, lbsToKg };
 
 // Largest plausible pet weight, in pounds. A guard against a fat-fingered entry
 // ("9999") — not a clinical limit. Two reasons it matters: (1) it stops an absurd

@@ -142,6 +142,66 @@ describe('the FAB pair — a floating disc and its glyph (CUL-1063 / D2-2)', () 
   });
 });
 
+/** An `rgba(r, g, b, a)` token laid over an opaque ground, as the eye sees it: the one
+ *  honest way to measure a translucent mark (WCAG measures the rendered colours). */
+function over(rgba: string, ground: string): string {
+  const m = /^rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)$/.exec(rgba);
+  if (!m) throw new Error(`not an rgba token: ${rgba}`);
+  const alpha = Number(m[4]);
+  const g = ground.replace('#', '');
+  const bg = [0, 2, 4].map((i) => parseInt(g.slice(i, i + 2), 16));
+  const mixed = [m[1], m[2], m[3]].map((v, i) => Math.round(Number(v) * alpha + bg[i] * (1 - alpha)));
+  return `#${mixed.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+describe('the day mark’s line — a NON-TEXT mark, told apart by shape (CUL-1165)', () => {
+  // History v2 spec §3.4 / §5.7, AC 26. The line under a logged day, whole or broken
+  // (a meal left unfinished; under a medication filter, a dose not given in full), is a
+  // graphical object, so its floor is WCAG 1.4.11's 3:1 against the box it sits in, not
+  // the 4.5:1 text floor. The broken line is the SAME colour, dashed: the difference is
+  // shape, so it only reads if the colour itself is visible. Two boxes carry a line: the
+  // white one of a logged day, and the rose one of a vomit day, where the line draws white
+  // and still breaks, so an unfinished meal on a vomit day is not painted over.
+  const NON_TEXT = 3;
+
+  const passing: ReadonlyArray<[label: string, line: string, box: string]> = [
+    ['the logged line on a logged day’s white box', theme.colorAccentGlyph, theme.colorSurface],
+    ['the line on a vomit day’s rose box (solid white)', theme.colorTextOnDark, theme.colorEventSymptom],
+  ];
+
+  it.each(passing)('%s clears 3:1', (_label, line, box) => {
+    expect(contrastRatio(line, box)).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+
+  // The failing half: the three colours this change retired. Each one drew a line an
+  // owner could not see, and the paler "left some" line was the only thing telling an
+  // unfinished meal apart, so a later "soften the line back" is a red build here rather
+  // than a tidy-looking diff.
+  const failing: ReadonlyArray<[label: string, line: string, box: string]> = [
+    ['the retired logged line (colorAccentSoft) on white', theme.colorAccentSoft, theme.colorSurface],
+    ['the retired left-some line (colorAccentWashDeep) on white', theme.colorAccentWashDeep, theme.colorSurface],
+    ['the retired on-rose line (55% white) on the rose', over(theme.colorTextOnDarkFaint, theme.colorEventSymptom), theme.colorEventSymptom],
+    // And the brand teal itself, so "just use colorAccent" is not the tempting repair.
+    ['the brand teal on white', theme.colorAccent, theme.colorSurface],
+  ];
+
+  it.each(failing)('%s does NOT, so it is never the line', (_label, line, box) => {
+    expect(contrastRatio(line, box)).toBeLessThan(NON_TEXT);
+  });
+
+  it('records the measured ratios', () => {
+    expect(contrastRatio(theme.colorAccentGlyph, theme.colorSurface)).toBeCloseTo(3.27, 2);
+    expect(contrastRatio(theme.colorTextOnDark, theme.colorEventSymptom)).toBeCloseTo(3.67, 2);
+    expect(contrastRatio(theme.colorAccentSoft, theme.colorSurface)).toBeCloseTo(1.64, 2);
+    expect(contrastRatio(theme.colorAccentWashDeep, theme.colorSurface)).toBeCloseTo(1.18, 2);
+    expect(contrastRatio(over(theme.colorTextOnDarkFaint, theme.colorEventSymptom), theme.colorEventSymptom)).toBeCloseTo(2.0, 2);
+  });
+
+  it('the glyph is not a text colour: it fails AA on white, where text takes the ink', () => {
+    expect(contrastRatio(theme.colorAccentGlyph, theme.colorSurface)).toBeLessThan(AA_NORMAL_TEXT);
+  });
+});
+
 describe('and on a DARK ground the pairing INVERTS — which is why the sweep was a walk', () => {
   // CUL-744 repointed 76 of the 81 accent-as-text sites to the ink and deliberately left
   // five alone. This block is why those five are correct rather than missed.

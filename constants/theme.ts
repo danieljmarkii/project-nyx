@@ -77,6 +77,15 @@ export const theme = {
   colorAccentInkSelected: '#08685B',   // its label AND its check, at full opacity —
                                        // never a tint of itself (a 75% mark on this
                                        // wash lands back under the floor)
+  // The accent as a NON-TEXT mark on white (CUL-1165; History v2 spec §3.4, §5.7): the
+  // day mark's logged line, whole or broken, on the Patterns month and History's week
+  // strip. A glyph clears 3:1 (WCAG 1.4.11), not the 4.5:1 text floor, so it sits between
+  // the brand teal and the ink: colorAccent is 2.26:1 on white and the line it replaced,
+  // colorAccentSoft, 1.64:1, both too faint to tell a broken line from a whole one.
+  // 3.27:1 on colorSurface, the round-5 mock's own value. Same accent, one notch darker;
+  // never a text colour (text on white takes colorAccentInk). Both halves are pinned in
+  // theme.contrast.test.ts.
+  colorAccentGlyph: '#0FA08B',
 
   // Neutrals
   colorNeutralDark: '#0A0A0A',

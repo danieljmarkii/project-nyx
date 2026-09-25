@@ -228,6 +228,7 @@ export async function readHistoryFacts(petId: string, range: DayRange): Promise<
     firstNoteMs: msOfJulianDay(t.first_note_jd),
   }));
   return {
+    petId,
     range,
     days: buildDayFacts({
       rows: population,

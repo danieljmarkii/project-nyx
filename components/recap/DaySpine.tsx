@@ -152,6 +152,9 @@ export interface SpineRowFrameProps {
   isLast: boolean;
   /** The time column's text ("9:15 AM", "12:41 – 5:07 PM"). */
   time: string;
+  /** A small tag under the time, for a time the owner did not witness ("FOUND",
+   *  "ESTIMATED"; History v2 §3.6). Absent, the column is exactly what it was. */
+  timeTag?: string | null;
   /** The row's body — the caller's, laid to the right of the rail. */
   children: ReactNode;
   /** The trailing control's slot (a chevron, or nothing). */
@@ -172,6 +175,7 @@ export function SpineRowFrame({
   isFirst,
   isLast,
   time,
+  timeTag = null,
   children,
   trailing,
   pressed = false,
@@ -197,7 +201,16 @@ export function SpineRowFrame({
           of truncating, at the default size and at the largest. The row grows from its
           44pt floor (`minHeight`, never `height`) and the thread's segments stretch with
           it. The row's spoken label carries the plain string; this is the drawn one. */}
-      <ThemedText style={[styles.time, { color: g.time }]}>{timeColumnText(time)}</ThemedText>
+      {timeTag ? (
+        // The tag rides in the time's own fixed column, under it, held to the same rules:
+        // no line cap, nothing that clips, free to grow downward (AC 19).
+        <View style={styles.timeColumn}>
+          <ThemedText style={[styles.timeInColumn, { color: g.time }]}>{timeColumnText(time)}</ThemedText>
+          <ThemedText style={[styles.timeTag, { color: g.detail }]}>{timeTag}</ThemedText>
+        </View>
+      ) : (
+        <ThemedText style={[styles.time, { color: g.time }]}>{timeColumnText(time)}</ThemedText>
+      )}
 
       <View style={styles.rail}>
         {!isFirst && <View style={[styles.line, styles.lineTop, { backgroundColor: g.thread }]} />}
@@ -305,6 +318,22 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontSize: theme.textXS,
     fontVariant: ['tabular-nums'],
+  },
+  // With a tag: the column is a View of the same width, and the time inside it keeps
+  // the time's own type.
+  timeColumn: { width: TIME_W, paddingTop: theme.spaceMicro, alignItems: 'flex-end' },
+  timeInColumn: {
+    textAlign: 'right',
+    fontSize: theme.textXS,
+    fontVariant: ['tabular-nums'],
+  },
+  timeTag: {
+    marginTop: theme.spaceMicro,
+    textAlign: 'right',
+    fontSize: theme.textMicro,
+    fontWeight: theme.weightMedium,
+    letterSpacing: theme.trackingWide,
+    textTransform: 'uppercase',
   },
 
   rail: { width: RAIL_W, alignItems: 'center' },

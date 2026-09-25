@@ -2,7 +2,9 @@
 // table, every precedence edge the header names, and a cross product that holds the
 // month's rose (`isWorthACall`) and the full state (`readStateOf`) equal over every
 // input this file can build. AC 22: Hide never stands the rose down, and an unknown or
-// failed verdict never renders calm.
+// failed verdict never renders calm. Since the PM's 2026-09-25 ruling (HV-6 / CUL-1163),
+// a finished `not_enough_to_say` is never calm either: on a photographed row it is
+// `unread`, the grey *Photo not read*.
 
 import {
   isWorthACall,
@@ -43,12 +45,19 @@ describe('the §5.4 table, row by row', () => {
     }
   });
 
-  it('calm: a finished read with a recognised calm verdict', () => {
+  it('calm: a finished read that said monitor, and only that', () => {
     expect(readVerdictOf(base({ copy: copy('completed', 'monitor') }))).toEqual({ state: 'calm', verdict: 'monitor' });
-    expect(readVerdictOf(base({ copy: copy('uncertain', 'not_enough_to_say') }))).toEqual({
-      state: 'calm',
-      verdict: 'not_enough_to_say',
-    });
+  });
+
+  it('unread: a finished read that could not say (the photo was unclear), with its verdict riding for word surfaces', () => {
+    // Status `uncertain` IS `not_enough_to_say` (`_shared/incident-analysis.ts`); a
+    // `completed` row carrying it is handled the same way.
+    for (const status of ['uncertain', 'completed']) {
+      expect(readVerdictOf(base({ copy: copy(status, 'not_enough_to_say') }))).toEqual({
+        state: 'unread',
+        verdict: 'not_enough_to_say',
+      });
+    }
   });
 
   it('pending: a read in flight, or a row that says pending', () => {
@@ -107,9 +116,19 @@ describe('precedence: the edges the header names', () => {
   });
 
   it('a standing calm read is the record whether or not this device holds the photo', () => {
-    expect(readStateOf(base({ eventType: 'stool_normal', hasPhoto: false, copy: copy('uncertain', 'not_enough_to_say') }))).toBe(
-      'calm',
-    );
+    expect(readStateOf(base({ eventType: 'stool_normal', hasPhoto: false, copy: copy('completed', 'monitor') }))).toBe('calm');
+  });
+
+  it('an unclear read on a row with no photo here is nothing, never "Photo not read" under no photo', () => {
+    // A photoless stool's contextual read collapses to not_enough_to_say too.
+    expect(readVerdictOf(base({ eventType: 'stool_normal', hasPhoto: false, copy: copy('uncertain', 'not_enough_to_say') }))).toEqual({
+      state: 'none',
+      verdict: 'not_enough_to_say',
+    });
+  });
+
+  it('an unclear read with photo reading off is off, never marked (H-4b)', () => {
+    expect(readStateOf(base({ copy: copy('uncertain', 'not_enough_to_say'), readingOff: true }))).toBe('off');
   });
 
   it('a standing calm read outranks the owner turning photo reading off', () => {
@@ -167,14 +186,38 @@ describe('the cross product: one predicate, never two answers', () => {
     expect(disagree).toEqual([]);
   });
 
-  it('a verdict is named exactly when the state is the rose or calm', () => {
+  it('a verdict is named exactly for the rose, calm, and a finished read that could not say', () => {
     for (const i of inputs) {
       const { state, verdict } = readVerdictOf(i);
       expect(state).toBe(readStateOf(i));
       if (state === 'worth_a_call') expect(verdict).toBe('worth_a_call');
-      else if (state === 'calm') expect(['monitor', 'not_enough_to_say']).toContain(verdict);
-      else expect(verdict).toBeNull();
+      else if (state === 'calm') expect(verdict).toBe('monitor');
+      else if (state === 'pending') expect(verdict).toBeNull();
+      else {
+        const finishedUnclear =
+          i.copy?.recommendation === 'not_enough_to_say' && ['completed', 'uncertain'].includes(i.copy.status);
+        expect(verdict).toBe(finishedUnclear ? 'not_enough_to_say' : null);
+      }
     }
+  });
+
+  it('an unclear read is never calm, whatever else is true (the 2026-09-25 ruling)', () => {
+    const calmOverUnclear = inputs.filter((i) => i.copy?.recommendation === 'not_enough_to_say' && readStateOf(i) === 'calm');
+    expect(calmOverUnclear).toEqual([]);
+  });
+
+  it('a photographed row expecting a read, reading on, with an unclear finished read, is always the grey mark', () => {
+    const shouldBeGrey = inputs.filter(
+      (i) =>
+        i.hasPhoto &&
+        !i.inFlight &&
+        !i.readingOff &&
+        ['vomit', 'stool_normal', 'diarrhea'].includes(i.eventType ?? '') &&
+        i.copy?.recommendation === 'not_enough_to_say' &&
+        ['completed', 'uncertain'].includes(i.copy.status),
+    );
+    expect(shouldBeGrey.length).toBeGreaterThan(0);
+    for (const i of shouldBeGrey) expect(readStateOf(i)).toBe('unread');
   });
 
   it('an escalation or an unknown verdict never renders calm, whatever else is true (AC 22)', () => {
