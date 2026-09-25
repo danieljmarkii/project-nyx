@@ -119,7 +119,7 @@ function slackBounds(range: DayRange): { after: string; before: string } {
 }
 
 async function readRegimens(petId: string): Promise<MedicationHistoryRegimen[]> {
-  return (await getDb().getAllAsync<MedicationHistoryRegimen>(ALL_REGIMENS_FOR_HISTORY_SQL, [petId])) ?? [];
+  return getDb().getAllAsync<MedicationHistoryRegimen>(ALL_REGIMENS_FOR_HISTORY_SQL, [petId]);
 }
 
 // ── The facts: one population behind every number ───────────────────────────────
@@ -220,8 +220,8 @@ export async function readHistoryFacts(petId: string, range: DayRange): Promise<
     readRegimens(petId),
     getActiveArrangementsForPet(petId),
   ]);
-  const population = (rows ?? []).map(toPopulationRow);
-  const firsts: TypeFirsts[] = (typeFirsts ?? []).map((t) => ({
+  const population = rows.map(toPopulationRow);
+  const firsts: TypeFirsts[] = typeFirsts.map((t) => ({
     eventType: t.event_type,
     firstMs: msOfJulianDay(t.first_jd),
     firstPhotoMs: msOfJulianDay(t.first_photo_jd),
@@ -231,7 +231,7 @@ export async function readHistoryFacts(petId: string, range: DayRange): Promise<
     range,
     days: buildDayFacts({
       rows: population,
-      lookDays: (lookRows ?? []).map((l) => l.local_day),
+      lookDays: lookRows.map((l) => l.local_day),
       range,
       freeFedFoodIds: new Set(arrangements.map((a) => a.food_item_id)),
       regimens,
@@ -256,7 +256,7 @@ export async function readHistoryCourses(petId: string): Promise<HistoryCourse[]
     'SELECT id, generic_name, brand_name FROM medication_items_cache',
   );
   const names = new Map<string, MedItemName>();
-  for (const r of rows ?? []) names.set(r.id, { generic: r.generic_name, brand: r.brand_name });
+  for (const r of rows) names.set(r.id, { generic: r.generic_name, brand: r.brand_name });
   return courses.map((c) => historyCourseOf(c, resolveCourseName(c, names)));
 }
 
@@ -436,9 +436,48 @@ function scopeWhere(scope: DayPageScope): { sql: string; params: string[] } {
 }
 
 /** The earliest local day the scope could show anything on, from the parsed instants: how
- *  far back a page need read. A course filter is bounded by every dose, a lower bound. */
-async function earliestScopeDay(petId: string, scope: DayPageScope): Promise<string | null> {
+ *  far back a page need read. A course's rows are decided in JS (`courseKeysOf`), so its
+ *  floor is found the same way, over the doses the scope's SQL admits: the earliest dose of
+ *  ANY course would be a correct floor too, but on a long medication history it would walk
+ *  a recent course's pages back through years of other courses' doses. */
+async function earliestScopeDay(
+  petId: string,
+  scope: DayPageScope,
+  regimens: readonly MedicationHistoryRegimen[],
+): Promise<string | null> {
   const where = scopeWhere(scope);
+  if (scope.filter.kind === 'course') {
+    const courseKey = scope.filter.courseKey;
+    const doses = await getDb().getAllAsync<{
+      id: string;
+      occurred_at: string;
+      medication_id: string | null;
+      medication_item_id: string | null;
+      adherence: string | null;
+    }>(
+      `SELECT e.id, e.occurred_at, ma.medication_id, ma.medication_item_id, ma.adherence
+         FROM events e ${SCOPE_JOINS}
+        WHERE e.pet_id = ? AND ${where.sql}`,
+      [petId, ...where.params],
+    );
+    const keys = courseKeysOf(
+      doses.map((d) => ({
+        id: d.id,
+        medicationId: d.medication_id,
+        medicationItemId: d.medication_item_id,
+        adherence: d.adherence,
+        occurredAt: d.occurred_at,
+      })),
+      regimens,
+    );
+    let earliestMs: number | null = null;
+    for (const d of doses) {
+      if (keys.get(d.id) !== courseKey) continue;
+      const ms = Date.parse(d.occurred_at);
+      if (Number.isFinite(ms) && (earliestMs === null || ms < earliestMs)) earliestMs = ms;
+    }
+    return earliestMs === null ? null : dayOfInstant(new Date(earliestMs).toISOString());
+  }
   const row = await getDb().getFirstAsync<{ first_jd: number | null }>(
     `SELECT MIN(julianday(e.occurred_at)) AS first_jd FROM events e ${SCOPE_JOINS}
       WHERE e.pet_id = ? AND ${where.sql}`,
@@ -464,13 +503,12 @@ async function readDays(
 ): Promise<HistoryDay[]> {
   const bounds = slackBounds(range);
   const where = scopeWhere(scope);
-  const raw =
-    (await getDb().getAllAsync<RawHistoryRow>(
-      `${HISTORY_ROW_SELECT}
-        WHERE e.pet_id = ? AND ${where.sql}
-          AND e.occurred_at >= ? AND e.occurred_at < ?`,
-      [petId, ...where.params, bounds.after, bounds.before],
-    )) ?? [];
+  const raw = await getDb().getAllAsync<RawHistoryRow>(
+    `${HISTORY_ROW_SELECT}
+      WHERE e.pet_id = ? AND ${where.sql}
+        AND e.occurred_at >= ? AND e.occurred_at < ?`,
+    [petId, ...where.params, bounds.after, bounds.before],
+  );
   const keys = courseKeysOf(
     raw
       .filter((r) => r.dose_id !== null)
@@ -528,14 +566,14 @@ export async function readDayPage(
 
   // Nothing the scope shows lies before its earliest row, so the read stops there; the
   // page still ACCOUNTS for every day down to the window's start (none of them holds a row).
-  const earliest = await earliestScopeDay(petId, scope);
+  const regimens = await readRegimens(petId);
+  const earliest = await earliestScopeDay(petId, scope, regimens);
   if (earliest === null || shiftDay(earliest, -1) > hi) return { days: [], span: { fromDay: lo, toDay: hi }, next: null };
   // A day of slack: a look sits on its `local_day`, which can be a day either side of its
   // instant's day for an owner who crossed a zone.
   const reachBack = shiftDay(earliest, -1);
   const floor = reachBack > lo ? reachBack : lo;
 
-  const regimens = await readRegimens(petId);
   const days: HistoryDay[] = [];
   let count = 0;
   let chunkHi = hi;

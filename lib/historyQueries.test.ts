@@ -21,12 +21,19 @@ jest.mock('./sync', () => ({
 const { DatabaseSync } = require('node:sqlite');
 
 let mockRaw: InstanceType<typeof DatabaseSync>;
+/** Every read the code under test issues, counted: how far back a page reads is a cost. */
+let mockReads = 0;
 
 jest.mock('expo-sqlite', () => ({
   openDatabaseSync: () => ({
-    getAllAsync: async (sql: string, params: unknown[] = []) => mockRaw.prepare(sql).all(...(params as never[])),
-    getFirstAsync: async (sql: string, params: unknown[] = []) =>
-      mockRaw.prepare(sql).get(...(params as never[])) ?? null,
+    getAllAsync: async (sql: string, params: unknown[] = []) => {
+      mockReads += 1;
+      return mockRaw.prepare(sql).all(...(params as never[]));
+    },
+    getFirstAsync: async (sql: string, params: unknown[] = []) => {
+      mockReads += 1;
+      return mockRaw.prepare(sql).get(...(params as never[])) ?? null;
+    },
     runAsync: async (sql: string, params: unknown[] = []) => mockRaw.prepare(sql).run(...(params as never[])),
   }),
 }));
@@ -551,6 +558,24 @@ describe('readHistoryCourses — the vet report\'s course grain, named and bound
     expect(byKey.get('item:item-cet')).toMatchObject({
       name: 'cetirizine HCl', source: 'doses', startedDay: null, days: { fromDay: '2026-09-09', toDay: '2026-09-09' },
     });
+  });
+
+  it('a recent course pages from its own first dose, not back through older courses\' years', async () => {
+    insertItem('item-old', 'metronidazole', 'Flagyl');
+    insertItem('item-new', 'maropitant', 'Cerenia');
+    insertRegimen('reg-old', 'item-old', 'Flagyl', '2025-03-01', 'completed', '2025-03-20');
+    insertRegimen('reg-new', 'item-new', 'Cerenia', '2026-09-18');
+    for (let d = 1; d <= 20; d++) insertDose(`old-${d}`, new Date(2025, 2, d, 9).toISOString(), { regimen: 'reg-old', item: 'item-old', adherence: 'given' });
+    for (let d = 18; d <= 21; d++) insertDose(`new-${d}`, localAt(d, 9).toISOString(), { regimen: 'reg-new', item: 'item-new', adherence: 'given' });
+    const scope = scopeOf({ fromDay: '2025-01-01', toDay: '2026-09-21' }, { kind: 'course', courseKey: 'reg-new' });
+    mockReads = 0;
+    const page = await readDayPage(PET, scope, null);
+    expect(page.days.map((d) => d.day)).toEqual(['2026-09-21', '2026-09-20', '2026-09-19', '2026-09-18']);
+    expect(page.span).toEqual({ fromDay: '2025-01-01', toDay: '2026-09-21' });
+    expect(page.next).toBeNull();
+    // The regimens, the course's own first dose, one week's rows. Floored at the earliest dose
+    // of ANY course, the same page walked back through a year and a half of empty chunks.
+    expect(mockReads).toBeLessThanOrEqual(3);
   });
 
   it('every dose row on a page carries the key its course carries', async () => {

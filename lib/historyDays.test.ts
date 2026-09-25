@@ -20,8 +20,11 @@ import type { BoundaryMarker } from './feedingArrangements';
 import { deriveMedicationCourses, type MedicationHistoryRegimen } from './medicationHistory';
 import type { AttributableDose } from './medications';
 import type { HistoryVisitRow } from './vetVisits';
+import { toLocalDayKey } from './utils';
+import { episodeDaysOf } from './chartModels';
 import {
   HISTORY_TYPE_KEYS,
+  absenceText,
   buildDayFacts,
   countLineOf,
   courseDaysOf,
@@ -33,6 +36,7 @@ import {
   duplicateCountsOf,
   duplicatesFor,
   firstDaysOf,
+  gapLineText,
   historyCourseOf,
   listSectionsOf,
   typeSheetCountsOf,
@@ -250,6 +254,25 @@ describe('buildDayFacts — one day, one population', () => {
     expect([...last7.days.keys()].sort()).toEqual(['2026-09-15', '2026-09-20', TODAY]);
   });
 
+  it('marks the day a vomiting EPISODE began, as the month does: a bout across midnight marks its first day', () => {
+    const rows = [
+      row('n1', '2026-09-20', '23:10', 'vomit'),
+      row('n2', TODAY, '00:40', 'vomit'),
+      row('n3', TODAY, '02:15', 'vomit'),
+      row('n4', TODAY, '19:00', 'vomit'),
+    ];
+    const f = buildDayFacts({ rows, lookDays: [], range: WINDOWS.all.range, freeFedFoodIds: new Set(), regimens: [] });
+    const month = episodeDaysOf(rows.map((r) => ({ ms: Date.parse(r.occurredAt) })), (ms) => toLocalDayKey(new Date(ms)));
+    expect(month).toEqual(['2026-09-20', TODAY]);
+    expect([...f.values()].filter((d) => d.vomitEpisode).map((d) => d.day).sort()).toEqual([...month].sort());
+    // The rows still count on the days they were logged.
+    expect(dayFactsOn(f, '2026-09-20').byType.vomit).toBe(1);
+    expect(dayFactsOn(f, TODAY).byType.vomit).toBe(3);
+    // A bout that began before the window marks no day inside it.
+    const inside = buildDayFacts({ rows: rows.slice(0, 3), lookDays: [], range: { fromDay: TODAY, toDay: TODAY }, freeFedFoodIds: new Set(), regimens: [] });
+    expect(dayFactsOn(inside, TODAY)).toMatchObject({ vomitEpisode: false, byType: { vomit: 2 } });
+  });
+
   it('a stored type this build does not know counts in the total only (the §8 contract)', () => {
     const f = buildDayFacts({
       rows: [row('future', '2026-09-02', '09:00', 'a_future_leaf')],
@@ -349,11 +372,10 @@ describe('AC 1 — the count line, the type sheet and every day header agree, ev
     for (const f of facts.days.values()) {
       const n = dayCountFor(f, filter) ?? 0;
       const [lead] = dayHeaderOf(f, filter);
-      if (filter.kind === 'all') {
-        expect(lead.text).toBe(n > 0 ? `${n} logged` : 'nothing logged');
-      } else {
-        expect(lead.text.startsWith(n > 0 ? `${n} ` : 'no ')).toBe(true);
-      }
+      if (f.total === 0) expect(lead.text).toBe('nothing logged');
+      else if (filter.kind === 'all') expect(lead.text).toBe(`${n} logged`);
+      else if (n > 0) expect(lead.text.startsWith(`${n} `)).toBe(true);
+      else expect(lead.text).toBe(absenceText(filter));
     }
   });
 
@@ -495,9 +517,25 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
     });
   });
 
-  it('A month with nothing logged reads "nothing logged", never 0; a filter reads "no …"', () => {
+  it('A month with nothing logged reads "nothing logged", never 0; a filter\'s zero is about the record', () => {
     expect(lineFor(WINDOWS.august, { kind: 'all' })).toMatchObject({ line1: { lead: 'August · ', strong: 'nothing logged' }, line2: null });
-    expect(lineFor(WINDOWS.august, { kind: 'type', type: 'vomit' })).toMatchObject({ line1: { strong: 'no vomits' } });
+    // "no vomits" would say the pet did not vomit on days nobody watched; this says what the
+    // record holds (PMD-10), and the coverage clause beside it scopes it.
+    expect(lineFor(WINDOWS.august, { kind: 'type', type: 'vomit' })).toMatchObject({ line1: { strong: 'no vomit logged' } });
+    expect(lineFor(WINDOWS.last7, { kind: 'type', type: 'cough' })).toMatchObject({
+      line1: { strong: 'no cough logged' },
+      line2: '4 days unlogged',
+    });
+    expect(lineFor(WINDOWS.last7, { kind: 'course', courseKey: 'reg-pred' }, {
+      course: { name: 'Prednisone', days: { fromDay: '2026-09-04', toDay: null } },
+    })).toMatchObject({ line1: { strong: 'no dose logged' } });
+  });
+
+  it('a stale read never prints under a new window\'s name: pending until the facts answer it', () => {
+    const facts = factsFor(WINDOWS.all.range);
+    expect(
+      countLineOf({ filter: { kind: 'all' }, search: null, window: WINDOWS.last7, facts, course: null, trialRange: null, today: TODAY, dates: DATES }),
+    ).toEqual({ kind: 'pending' });
   });
 
   it('Search: the word, the window, and that it never counts', () => {
@@ -613,6 +651,25 @@ describe('the day header (rule C)', () => {
   it('a search shows the date only', () => {
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-04'), { kind: 'all' }, { search: true })).toEqual([]);
   });
+
+  it('a day with nothing logged says only that, under any filter; today says not yet', () => {
+    const visitOnly = dayFactsOn(facts.days, '2026-09-07');
+    expect(dayHeaderOf(visitOnly, { kind: 'type', type: 'vomit' })).toEqual([{ text: 'nothing logged', tone: 'neutral' }]);
+    expect(dayHeaderOf(visitOnly, { kind: 'all' }, { isToday: true })).toEqual([{ text: 'nothing logged yet', tone: 'neutral' }]);
+  });
+
+  it('under Meal the meals not finished stay: a refusal never reads as routine (§1, H-2)', () => {
+    expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-03'), { kind: 'type', type: 'meal' })).toEqual([
+      { text: '2 meals', tone: 'neutral' },
+      { text: '3 logged', tone: 'neutral' },
+      { text: '1 meal not finished', tone: 'unfinished' },
+    ]);
+    // Only under Meal: a vomit filter's header does not carry the intake word.
+    expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-03'), { kind: 'type', type: 'cough' })).toEqual([
+      { text: '1 cough', tone: 'symptom' },
+      { text: '3 logged', tone: 'neutral' },
+    ]);
+  });
 });
 
 // ── AC 10 + AC 11 — gap lines and date-only items ───────────────────────────────
@@ -692,10 +749,51 @@ describe('AC 10 / AC 11 — the list\'s sections', () => {
     ]);
   });
 
-  it('never starts before the type\'s first row, whatever the window', () => {
+  it('never claims an absence before the type\'s first row, and keeps the items there (AC 11)', () => {
     const out = sections({ kind: 'type', type: 'weight_check' });
-    const days = out.flatMap((s) => ('day' in s ? [s.day] : [s.fromDay, s.toDay]));
-    expect(days.every((d) => d >= '2026-09-10')).toBe(true);
+    const gaps = out.filter((s) => s.kind === 'unlogged' || s.kind === 'no-match');
+    expect(gaps.every((s) => 'fromDay' in s && s.fromDay >= '2026-09-10')).toBe(true);
+    // The drug start, the bowl and the visit all predate the first weigh-in: all three stay,
+    // none with an absence beside it.
+    expect(out.filter((s) => s.kind === 'items-only')).toEqual([
+      { kind: 'items-only', day: '2026-09-07', statesAbsence: false },
+      { kind: 'items-only', day: '2026-09-06', statesAbsence: false },
+      { kind: 'items-only', day: '2026-09-04', statesAbsence: false },
+    ]);
+  });
+
+  it('a date-only item before the record\'s first day is still drawn, and nothing is claimed there', () => {
+    const early = new Set([...itemDays, '2026-08-28']);
+    const out = listSectionsOf({
+      span: { fromDay: '2026-08-25', toDay: TODAY }, facts, filter: { kind: 'all' }, course: null, itemDays: early, today: TODAY,
+    });
+    expect(out[out.length - 1]).toEqual({ kind: 'day', day: '2026-08-28' });
+    expect(out.filter((s) => s.kind === 'unlogged').every((s) => 'fromDay' in s && s.fromDay >= '2026-09-01')).toBe(true);
+  });
+
+  it('a day after today is never claimed; a row on it still shows', () => {
+    const future = factsFor({ fromDay: '2026-09-01', toDay: '2026-09-30' }, [...ROWS, row('late', '2026-09-25', '09:00', 'meal')]);
+    const out = listSectionsOf({
+      span: { fromDay: '2026-09-15', toDay: '2026-09-30' }, facts: future, filter: { kind: 'all' }, course: null, itemDays: new Set(), today: TODAY,
+    });
+    expect(out).toEqual([
+      { kind: 'day', day: '2026-09-25' },
+      { kind: 'day', day: TODAY },
+      { kind: 'day', day: '2026-09-20' },
+      { kind: 'unlogged', fromDay: '2026-09-16', toDay: '2026-09-19', days: 4 },
+      { kind: 'day', day: '2026-09-15' },
+    ]);
+  });
+
+  it('a course filter whose course has not loaded shows its rows and claims nothing', () => {
+    const out = listSectionsOf({
+      span: WINDOWS.all.range, facts, filter: { kind: 'course', courseKey: 'reg-pred' }, course: null, itemDays, today: TODAY,
+    });
+    expect(out).toEqual([
+      { kind: 'items-only', day: '2026-09-07', statesAbsence: false },
+      { kind: 'day', day: '2026-09-06' },
+      { kind: 'day', day: '2026-09-04' },
+    ]);
   });
 
   it('a course: starts at the course\'s start and ends with the course', () => {
@@ -727,6 +825,7 @@ describe('AC 10 / AC 11 — the list\'s sections', () => {
       { kind: 'items-only', day: '2026-09-07', statesAbsence: false },
       { kind: 'items-only', day: '2026-09-06', statesAbsence: false },
       { kind: 'day', day: '2026-09-05' },
+      { kind: 'items-only', day: '2026-09-04', statesAbsence: false },
     ]);
   });
 
@@ -745,6 +844,17 @@ describe('AC 10 / AC 11 — the list\'s sections', () => {
 
   it('a filter with no row ever lays out nothing (the screen\'s empty state)', () => {
     expect(sections({ kind: 'type', type: 'sneeze' })).toEqual([]);
+  });
+
+  it('gap lines say what the record holds, a day with its weekday, a run with its range', () => {
+    const vomit: HistoryFilter = { kind: 'type', type: 'vomit' };
+    expect(gapLineText({ kind: 'unlogged', fromDay: '2026-09-20', toDay: '2026-09-20', days: 1 }, vomit, DATES)).toBe('Day, Sep 20 · nothing logged');
+    expect(gapLineText({ kind: 'unlogged', fromDay: '2026-09-13', toDay: '2026-09-16', days: 4 }, vomit, DATES)).toBe('nothing logged · Sep 13 – 16');
+    expect(gapLineText({ kind: 'no-match', fromDay: '2026-09-18', toDay: '2026-09-19', days: 2 }, vomit, DATES)).toBe('no vomit logged · Sep 18 – 19');
+    expect(gapLineText({ kind: 'no-match', fromDay: '2026-09-18', toDay: '2026-09-18', days: 1 }, { kind: 'course', courseKey: 'reg-pred' }, DATES, 'Prednisone'))
+      .toBe('no Prednisone dose logged · Sep 18');
+    expect(gapLineText({ kind: 'day', day: '2026-09-18' }, vomit, DATES)).toBeNull();
+    expect(absenceText({ kind: 'noticed' })).toBeNull();
   });
 
   it('a record with no events lays out nothing (the new-account state)', () => {

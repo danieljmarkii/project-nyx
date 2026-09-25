@@ -32,8 +32,10 @@
 
 import { EVENT_TYPES, SYMPTOM_TYPES, type EventTypeKey } from '../constants/eventTypes';
 import { isFinishedMeal, qualifyingIntakeMeals, type AnalyticsMeal } from './analytics';
+import { episodeDaysOf } from './chartModels';
 import { attributeDoses, type AttributableDose, type RegimenWindow } from './medications';
 import type { MedicationCourse } from './medicationHistory';
+import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import type { HistoryVisitRow } from './vetVisits';
 import type { BoundaryMarker } from './feedingArrangements';
 import { collapseSameMinute } from './sameMinuteDuplicates';
@@ -182,10 +184,26 @@ export interface DayFacts {
   noted: number;
   /** A look was answered this day. Shown as a date under Noticed; never counted. */
   looked: boolean;
+  /** A vomiting EPISODE began this day: the Patterns month's own mark (`episodeDaysOf`,
+   *  re-logs inside the engine's gap are one episode, dated by its first row). A bout that
+   *  starts at 23:10 and is logged again at 00:40 marks the first day only, so the strip,
+   *  which marks what the month marks under All types (§3.4), can never disagree with it.
+   *  The day's rows still count on the day they were logged (`byType`). */
+  vomitEpisode: boolean;
 }
 
 export function emptyDayFacts(day: string): DayFacts {
-  return { day, total: 0, byType: {}, mealsNotFinished: 0, doses: {}, photographed: 0, noted: 0, looked: false };
+  return {
+    day,
+    total: 0,
+    byType: {},
+    mealsNotFinished: 0,
+    doses: {},
+    photographed: 0,
+    noted: 0,
+    looked: false,
+    vomitEpisode: false,
+  };
 }
 
 /** A dose's fields, for the course key. */
@@ -319,6 +337,14 @@ export function buildDayFacts(input: DayFactsInput): Map<string, DayFacts> {
   }
   for (const day of lookDays) {
     if (isDayKey(day) && inRange(day, range)) factsOf(day).looked = true;
+  }
+  // Episodes over every row read, the slack included, exactly as the month reads them: a
+  // bout that began before the window marks no day inside it.
+  const vomits = rows
+    .filter((r) => r.eventType === TIMING_SYMPTOM_TYPE)
+    .map((r) => ({ ms: Date.parse(r.occurredAt) }));
+  for (const day of episodeDaysOf(vomits, (ms) => toLocalDayKey(new Date(ms)))) {
+    if (inRange(day, range)) factsOf(day).vomitEpisode = true;
   }
   return out;
 }
@@ -713,6 +739,9 @@ export interface CountLineText {
 }
 
 export type CountLine =
+  /** The facts answer a different window than the one on screen (a read in flight after a
+   *  window change): draw the skeleton, never these numbers under that name (C-12). */
+  | { kind: 'pending' }
   /** No record yet: a new account shows no count line (§3.12). */
   | { kind: 'none' }
   /** Under Noticed: no count, one link to Patterns (H-9). */
@@ -730,6 +759,8 @@ export interface CountLineWindow {
   isAllTime: boolean;
   /** The trial window: a symptom filter's door goes to the before-and-since chart. */
   isTrial: boolean;
+  /** The window's days. Must be the days the facts were read for; when it is not, the line
+   *  is `pending`, so a stale read never prints its numbers under the new window's name. */
   range: DayRange;
 }
 
@@ -752,9 +783,32 @@ function overlaps(a: DayRange, b: DayRange): boolean {
   return a.fromDay <= b.toDay && b.fromDay <= a.toDay;
 }
 
+function sameRange(a: DayRange, b: DayRange): boolean {
+  return a.fromDay === b.fromDay && a.toDay === b.toDay;
+}
+
+/**
+ * What a filter's absence says: always about the RECORD, never about the pet. "No vomit
+ * logged" is true over any day; "no vomits" asserts the pet did not vomit on days nobody
+ * watched (PMD-10: call every count "logged"). Null under Noticed, which never states a
+ * miss (H-9). A course names its drug when the caller knows it.
+ */
+export function absenceText(filter: HistoryFilter, courseName: string | null = null): string | null {
+  switch (filter.kind) {
+    case 'all':
+      return 'nothing logged';
+    case 'noticed':
+      return null;
+    case 'course':
+      return courseName ? `no ${courseName} dose logged` : 'no dose logged';
+    default:
+      return `no ${filterNoun(filter, 1)} logged`;
+  }
+}
+
 function countPhrase(filter: HistoryFilter, total: WindowTotal): string {
   if (filter.kind === 'all') return total.count > 0 ? `${formatCount(total.count)} logged` : 'nothing logged';
-  if (total.count === 0) return `no ${filterNoun(filter, 0)}`;
+  if (total.count === 0) return absenceText(filter) ?? '';
   const days = `${formatCount(total.days)} ${total.days === 1 ? 'day' : 'days'}`;
   return `${formatCount(total.count)} ${filterNoun(filter, total.count)} on ${days}`;
 }
@@ -763,6 +817,7 @@ function countPhrase(filter: HistoryFilter, total: WindowTotal): string {
 export function countLineOf(input: CountLineInput): CountLine {
   const { filter, window, facts, dates } = input;
   if (filter.kind === 'noticed') return { kind: 'noticed', door: DOORS['noticed-patterns'] };
+  if (!sameRange(window.range, facts.range)) return { kind: 'pending' };
   const recordStart = facts.firsts.record;
   if (recordStart === null) return { kind: 'none' };
 
@@ -823,25 +878,39 @@ export interface DayHeaderPart {
   tone: DayHeaderTone;
 }
 
+function mealsNotFinishedPart(f: DayFacts): DayHeaderPart | null {
+  const n = f.mealsNotFinished;
+  return n > 0 ? { text: `${formatCount(n)} ${n === 1 ? 'meal' : 'meals'} not finished`, tone: 'unfinished' } : null;
+}
+
 /**
  * A day header's counts, after the date the screen prints. Empty (the date only) under a
  * search, which counts nothing (R-2), and under Noticed (H-9). Under a filter, the filtered
- * count first, then the day's total ("2 vomits · 10 logged"). Under All types, the total,
- * every symptom kind, the other entries, and the meals not finished.
+ * count first, then the day's total ("2 vomits · 10 logged"); under Meal the meals not
+ * finished follow, so a refusal never reads as routine one level above the rows (§1, H-2).
+ * Under All types, the total, every symptom kind, the other entries, the meals not finished.
+ * A day with nothing logged says only that (today: not yet), never what its nothing lacked.
  */
-export function dayHeaderOf(f: DayFacts, filter: HistoryFilter, opts: { search?: boolean } = {}): DayHeaderPart[] {
+export function dayHeaderOf(
+  f: DayFacts,
+  filter: HistoryFilter,
+  opts: { search?: boolean; isToday?: boolean } = {},
+): DayHeaderPart[] {
   if (opts.search || filter.kind === 'noticed') return [];
-  const total: DayHeaderPart =
-    f.total > 0 ? { text: `${formatCount(f.total)} logged`, tone: 'total' } : { text: 'nothing logged', tone: 'neutral' };
+  if (f.total === 0) return [{ text: opts.isToday ? 'nothing logged yet' : 'nothing logged', tone: 'neutral' }];
+  const total: DayHeaderPart = { text: `${formatCount(f.total)} logged`, tone: 'total' };
   if (filter.kind !== 'all') {
     const n = dayCountFor(f, filter) ?? 0;
-    return [
+    const parts: DayHeaderPart[] = [
       {
-        text: n > 0 ? `${formatCount(n)} ${filterNoun(filter, n)}` : `no ${filterNoun(filter, 0)}`,
+        text: n > 0 ? `${formatCount(n)} ${filterNoun(filter, n)}` : (absenceText(filter) ?? ''),
         tone: isSymptomFilter(filter) ? 'symptom' : 'neutral',
       },
       { ...total, tone: 'neutral' },
     ];
+    const unfinished = filter.kind === 'type' && filter.type === 'meal' ? mealsNotFinishedPart(f) : null;
+    if (unfinished) parts.push(unfinished);
+    return parts;
   }
   const parts: DayHeaderPart[] = [total];
   for (const type of HISTORY_TYPE_KEYS) {
@@ -851,10 +920,8 @@ export function dayHeaderOf(f: DayFacts, filter: HistoryFilter, opts: { search?:
   }
   const other = f.byType.other ?? 0;
   if (other > 0) parts.push({ text: `${formatCount(other)} ${typeNoun('other', other)}`, tone: 'neutral' });
-  if (f.mealsNotFinished > 0) {
-    const n = f.mealsNotFinished;
-    parts.push({ text: `${formatCount(n)} ${n === 1 ? 'meal' : 'meals'} not finished`, tone: 'unfinished' });
-  }
+  const unfinished = mealsNotFinishedPart(f);
+  if (unfinished) parts.push(unfinished);
   return parts;
 }
 
@@ -946,7 +1013,8 @@ export interface ListSectionsInput {
   span: DayRange;
   facts: HistoryFacts;
   filter: HistoryFilter;
-  /** The course a course filter shows, with its days (its sections stay inside them). */
+  /** The course a course filter shows, with its days (its sections stay inside them).
+   *  Null while the courses load: the course's rows still show, and nothing is claimed. */
   course: CourseDays | null;
   /** Days carrying a date-only item (`dateOnlyItemsOf`). */
   itemDays: ReadonlySet<string>;
@@ -957,15 +1025,25 @@ export interface ListSectionsInput {
 }
 
 /**
- * The list, newest day first, as sections. Pure, so every absence rule is a table test:
- *   • All types: a day with a row or a date-only item is a card; today with nothing is its
- *     own open card; every other run of days is one "nothing logged" line.
- *   • A filter: a day with a match is a card; a closed, logged day without one joins a
- *     no-match run; an unlogged day splits that run and joins its own; a day with a date-only
- *     item and no match keeps its items on one line; today is a card or nothing, never a gap.
- *     Nothing starts before the filter's first row (or a course's start), and a course's
- *     sections end with the course.
- *   • Noticed: the days with a look, and item lines; no line ever states a miss (H-9).
+ * The list, newest day first, as sections. Pure, so every absence rule is a table test.
+ *
+ * Two kinds of thing appear, under two different rules:
+ *   • What HAPPENED is drawn wherever it is: a day with a row the filter shows is a card,
+ *     and a day with a date-only item keeps its items under every filter (AC 11), before
+ *     the filter's first row and before the record's first day included. Under All types a
+ *     day with only items is a card (a visit-only day is a day, §3.5); under a filter it is
+ *     one item line.
+ *   • What did NOT happen is said only over days the owner watched: on or after the pet's
+ *     first record (GAP-24) and the filter's first row or the course's start (§3.5), and
+ *     strictly before today. Under All types a run of such days with nothing logged is one
+ *     line; under a filter a closed, logged day without a match joins a no-match run, which
+ *     an unlogged day splits. An item line adds its absence only on such a day. Under
+ *     Noticed nothing is ever said (H-9), and while a course filter's course is unknown
+ *     nothing is said either (its rows still show).
+ * Today with nothing logged keeps its own open card under All types (§3.12); a day after
+ * today holds no claim. A course filter's list stays inside the course's days, as every
+ * filter's stays inside the window. A record with no events, or a filter with no row at
+ * all, lays out nothing: the screen's quiet state speaks instead.
  */
 export function listSectionsOf(input: ListSectionsInput): HistorySection[] {
   const { span, facts, filter, course, itemDays, today } = input;
@@ -975,12 +1053,30 @@ export function listSectionsOf(input: ListSectionsInput): HistorySection[] {
       .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
       .map((day) => ({ kind: 'day' as const, day }));
   }
-  if (!isDayKey(span.fromDay) || !isDayKey(span.toDay)) return [];
+  if (!isDayKey(span.fromDay) || !isDayKey(span.toDay) || !isDayKey(today)) return [];
+
+  let lo: string = span.fromDay;
+  let hi: string = span.toDay;
+  if (filter.kind === 'course' && course !== null) {
+    if (course.fromDay === null) return [];
+    lo = laterDay(lo, course.fromDay) ?? lo;
+    hi = earlierDay(hi, course.toDay) ?? hi;
+  }
+
+  // The first day absence may be claimed on, or null for none at all.
+  const record = facts.firsts.record;
   const first = firstDayFor(facts.firsts, filter, course);
-  if (first === null) return [];
-  const lo = laterDay(span.fromDay, filter.kind === 'noticed' ? first : laterDay(facts.firsts.record, first));
-  const hi = filter.kind === 'course' ? earlierDay(span.toDay, course?.toDay ?? null) : span.toDay;
-  if (lo === null || hi === null) return [];
+  // A record with nothing in it, or a filter with no row ever: nothing to lay out, so the
+  // screen's quiet state speaks (§3.12), not a scatter of item lines. A course filter whose
+  // course has not loaded yet is not "nothing": its rows are in the facts already.
+  const courseLoading = filter.kind === 'course' && course === null;
+  if (!courseLoading && (first === null || (filter.kind !== 'noticed' && record === null))) return [];
+  let claimFrom: string | null;
+  if (filter.kind === 'noticed' || record === null) claimFrom = null;
+  else if (filter.kind === 'all') claimFrom = record;
+  else if (filter.kind === 'course' && course === null) claimFrom = null;
+  else claimFrom = first === null ? null : laterDay(record, first);
+  const claims = (day: string): boolean => claimFrom !== null && day >= claimFrom && day < today;
 
   const out: HistorySection[] = [];
   let unlogged: string[] = [];
@@ -1003,36 +1099,21 @@ export function listSectionsOf(input: ListSectionsInput): HistorySection[] {
   for (const day of daysDescending(lo, hi)) {
     const f = dayFactsOn(facts.days, day);
     const hasItems = itemDays.has(day);
-    const isToday = day === today;
+    const shows =
+      filter.kind === 'noticed' ? f.looked : filter.kind === 'all' ? f.total > 0 : (dayCountFor(f, filter) ?? 0) > 0;
 
-    if (filter.kind === 'noticed') {
-      if (f.looked) out.push({ kind: 'day', day });
-      else if (hasItems) out.push({ kind: 'items-only', day, statesAbsence: false });
-      continue;
-    }
-
-    if (filter.kind === 'all') {
-      if (f.total > 0 || hasItems) {
-        flushBoth();
-        out.push({ kind: 'day', day });
-      } else if (isToday) {
-        flushBoth();
-        out.push({ kind: 'today-open', day });
-      } else {
-        unlogged.push(day);
-      }
-      continue;
-    }
-
-    if ((dayCountFor(f, filter) ?? 0) > 0) {
+    if (shows || (filter.kind === 'all' && hasItems)) {
       flushBoth();
       out.push({ kind: 'day', day });
     } else if (hasItems) {
-      // The items stay; the line names an absence only on a closed, logged day.
       flushBoth();
-      out.push({ kind: 'items-only', day, statesAbsence: !isToday && f.total > 0 });
-    } else if (isToday) {
-      // A gap never includes today: it is still open.
+      out.push({ kind: 'items-only', day, statesAbsence: claims(day) && f.total > 0 });
+    } else if (day === today && filter.kind === 'all' && claimFrom !== null && day >= claimFrom) {
+      flushBoth();
+      out.push({ kind: 'today-open', day });
+    } else if (!claims(day)) {
+      // Today, a day after it, or a day before the claims begin: nothing is said, and no
+      // run reaches across it.
       flushBoth();
     } else if (f.total === 0) {
       flushNoMatch();
@@ -1044,4 +1125,29 @@ export function listSectionsOf(input: ListSectionsInput): HistorySection[] {
   }
   flushBoth();
   return out;
+}
+
+/**
+ * A gap line's words (§3.5): "Sun, Sep 20 · nothing logged", "nothing logged · Sep 13 – 16",
+ * "no vomit logged · Sep 18 – 19". Null for a section that is not a gap line. A course names
+ * its drug when the caller knows it.
+ */
+export function gapLineText(
+  section: HistorySection,
+  filter: HistoryFilter,
+  dates: HistoryDateFormat,
+  courseName: string | null = null,
+): string | null {
+  if (section.kind === 'unlogged') {
+    return section.days === 1
+      ? `${dates.weekday(section.fromDay)} · nothing logged`
+      : `nothing logged · ${dates.range(section.fromDay, section.toDay)}`;
+  }
+  if (section.kind === 'no-match') {
+    const words = absenceText(filter, courseName);
+    if (words === null) return null;
+    const when = section.days === 1 ? dates.day(section.fromDay) : dates.range(section.fromDay, section.toDay);
+    return `${words} · ${when}`;
+  }
+  return null;
 }
