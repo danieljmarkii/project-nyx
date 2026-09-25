@@ -80,13 +80,19 @@ jest.mock('../../hooks/useEvents', () => ({
     prependEvent: jest.fn(),
   }),
 }));
-// The LOCAL reads answer as the record would: the vomit has a photo, no feedings, no
-// spans, a month with one logged day, and the phone's copy of its read (HV-5).
+// The LOCAL reads answer as the record would: the photographed events have a photo, no
+// feedings, no spans, a month with one logged day, and the phone's copy of each read
+// (HV-5). The attachment and copy reads answer ONLY for the ids they are asked about, as
+// the real `IN (…)` queries do (C-39: a mock that answers every question hides a caller
+// that never asked it, which is exactly CUL-1197's shape).
 let mockCopyRows: Record<string, unknown>[] = [];
+let mockPhotographed = new Set<string>(['v1']);
 const mockDb = {
-  getAllAsync: jest.fn(async (sql: string) => {
-    if (/FROM event_attachments/.test(sql)) return [{ event_id: 'v1' }];
-    if (/FROM event_ai_verdicts/.test(sql)) return mockCopyRows;
+  getAllAsync: jest.fn(async (sql: string, params: unknown[] = []) => {
+    if (/FROM event_attachments/.test(sql)) {
+      return params.filter((id) => mockPhotographed.has(id as string)).map((event_id) => ({ event_id }));
+    }
+    if (/FROM event_ai_verdicts/.test(sql)) return mockCopyRows.filter((r) => params.includes(r.event_id));
     if (/FROM events WHERE/.test(sql)) return [{ occurred_at: new Date().toISOString() }];
     return [];
   }),
@@ -140,6 +146,7 @@ const copyReads = () =>
 beforeEach(() => {
   mockFrom.mockClear();
   mockDb.getAllAsync.mockClear();
+  mockPhotographed = new Set(['v1']);
   mockCopyRows = [copyRow('monitor')];
   useEventStore.setState({ todayEvents: [vomitNow() as never], todayRead: { petId: 'p1', state: 'ready' } });
 });
@@ -166,7 +173,10 @@ describe('flag-on: the spine draws the row, the copy is read, the door speaks co
     const t = render(<HomeScreen />);
     await waitFor(() => expect(t.getByTestId('spine-node-v1')).toBeTruthy());
     await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
-    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Keep an eye out'));
+    // The copy says monitor: a calm read draws nothing on the row (HV-6, §3.6 rule 7), so
+    // once the copy has landed the row carries neither the grey mark nor a word.
+    await waitFor(() => expect(t.queryByTestId('spine-unread-v1')).toBeNull());
+    expect(t.queryByTestId('spine-verdict-v1')).toBeNull();
     expect(t.getByTestId('coverage-door')).toBeTruthy();
     await waitFor(() => expect(t.getByText(/logged 1 of \d+ day/)).toBeTruthy());
     expect(t.queryByTestId('zone-today')).toBeNull();
@@ -192,26 +202,47 @@ describe('with the network off, the spine shows the rose (HV-5 / CUL-1162, AC 21
     await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
   });
 
-  it('a photographed vomit whose read the phone does not hold is never drawn calm: a read slot, no verdict', async () => {
-    // The interim the PM ruled on 2026-09-25: the node is UNREAD, and today's row draws
-    // that as an empty grey slot until HV-6 draws "Photo not read" there. When HV-6
-    // lands, this assertion becomes the words.
+  it('a photographed vomit whose read the phone does not hold is never drawn calm: it says "Photo not read"', async () => {
     mockDesignV2 = true;
     mockCopyRows = [];
     const t = render(<HomeScreen />);
     await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
-    await waitFor(() => expect(t.getByTestId('spine-read-v1')).toBeTruthy());
+    await waitFor(() => expect(t.getByText('Photo not read')).toBeTruthy());
     expect(t.queryByTestId('spine-verdict-v1')).toBeNull();
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it('an unclear read (not enough to say) is never drawn calm either: "Photo not read" (the PM’s 2026-09-25 ruling)', async () => {
+    mockDesignV2 = true;
+    mockCopyRows = [copyRow('not_enough_to_say', 'uncertain')];
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
+    await waitFor(() => expect(t.getByText('Photo not read')).toBeTruthy());
+  });
+});
+
+describe('the read gate follows the record, never the tint (CUL-1197)', () => {
+  it('a photographed normal-looking stool whose read is worth a call shows the rose on Home', async () => {
+    mockDesignV2 = true;
+    mockPhotographed = new Set(['s1']);
+    mockCopyRows = [{ ...copyRow('worth_a_call'), event_id: 's1' }];
+    useEventStore.setState({
+      todayEvents: [{ ...vomitNow(), id: 's1', event_type: 'stool_normal' } as never],
+      todayRead: { petId: 'p1', state: 'ready' },
+    });
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(t.getByTestId('spine-verdict-s1').props.children).toBe('Worth a call'));
     expect(mockFrom).not.toHaveBeenCalled();
   });
 });
 
 describe('a read Home never saw start still reaches it (the adversarial pass’s F1 on #912)', () => {
-  it('a chain claimed after Home drew the row: the calm words stand down while it runs, the rose once it lands', async () => {
+  it('a chain claimed after Home drew the row: the calm row gives way to the tick while it runs, the rose once it lands', async () => {
     mockDesignV2 = true;
     mockCopyRows = [copyRow('monitor')];
     const t = render(<HomeScreen />);
-    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Keep an eye out'));
+    await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
+    await waitFor(() => expect(t.queryByTestId('spine-unread-v1')).toBeNull());
     // The owner replaces the photo on the record screen: a chain Home did not sample.
     let claim: AnalysisChainClaim | null = null;
     act(() => {
@@ -237,7 +268,8 @@ describe('a read Home never saw start still reaches it (the adversarial pass’s
     mockServerVerdict = 'monitor';
     mockCopyRows = [copyRow('monitor')];
     const t = render(<HomeScreen />);
-    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Keep an eye out'));
+    await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
+    await waitFor(() => expect(t.queryByTestId('spine-unread-v1')).toBeNull());
     // The record screen replaces the photo: its chain.
     let owner: AnalysisChainClaim | null = null;
     act(() => {
@@ -255,7 +287,9 @@ describe('a read Home never saw start still reaches it (the adversarial pass’s
     await act(async () => {
       owner!.settle(true);
     });
-    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Keep an eye out'));
+    // The owner's chain landed calm: the tick is gone and the row is quiet again.
+    await waitFor(() => expect(t.queryByText('Reading the photo…')).toBeNull());
+    expect(t.queryByTestId('spine-verdict-v1')).toBeNull();
     expect(analysisChainOutstanding('v1')).toBe(false);
     // The re-run lands after it, as worth_a_call, and nothing else happens.
     mockServerVerdict = 'worth_a_call';

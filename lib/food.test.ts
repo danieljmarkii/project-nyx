@@ -11,6 +11,7 @@ import {
   FAVORITE_MIN_RATED_MEALS, FAVORITE_MIN_RATE, FAVORITE_SHELF_LIMIT,
   type FavoriteMealRow,
   mealRowLabel,
+  foodLabelOf,
 } from './food';
 import type { FoodIntakeStat, PickerFood } from './db';
 
@@ -801,5 +802,22 @@ describe('mealRowLabel (CUL-625 — one rule for three surfaces)', () => {
       expect({ file: rel, restates: /'Treat'/.test(src) }).toEqual({ file: rel, restates: false });
       expect({ file: rel, calls: /\bmealRowLabel\(/.test(src) }).toEqual({ file: rel, calls: true });
     }
+  });
+});
+
+// ── THE food label (History v2 HV-6 / CUL-1163: one function where there were two) ──
+
+describe('foodLabelOf — brand · product, blanks dropped', () => {
+  it('joins brand and product with the one separator every row uses', () => {
+    expect(foodLabelOf('Royal Canin', 'Selected Protein PR')).toBe('Royal Canin · Selected Protein PR');
+  });
+  it('drops a blank or missing part, and trims what it keeps', () => {
+    expect(foodLabelOf('  ', 'Kibble')).toBe('Kibble');
+    expect(foodLabelOf(' Acme ', null)).toBe('Acme');
+    expect(foodLabelOf(undefined, ' Salmon ')).toBe('Salmon');
+  });
+  it('is null when nothing names the food', () => {
+    expect(foodLabelOf(null, null)).toBeNull();
+    expect(foodLabelOf('', '   ')).toBeNull();
   });
 });

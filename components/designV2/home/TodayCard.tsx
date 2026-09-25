@@ -12,11 +12,12 @@
 //     (`lib/spineReads.ts`), re-read whenever the row set or the sync tick changes. A
 //     failed read leaves the previous facts in place; a node without them is a node
 //     without a glyph or a timing, never a wrong one.
-//   • The reads on today's symptoms — `event_ai_analysis`, OBSERVED, never triggered
-//     (the issue: "an observe-only read … never a trigger"). Issued for the day's symptom
-//     rows (a row exists only for a photographed one), so a day with no symptom issues no
-//     server read at all — which is also what the flag-off proof measures (C-41: no row
-//     AND no read).
+//   • The reads — the phone's copy of each verdict (`lib/readCopy.ts`, HV-5), OBSERVED,
+//     never triggered (the issue: "an observe-only read … never a trigger"). Issued for
+//     every row whose record can hold a read, whatever its tint (CUL-1197: a photographed
+//     normal stool is not rose-tinted, and its read can be worth a call), so a day of
+//     meals and doses alone issues no read at all, which is also what the flag-off proof
+//     measures (C-41: no row AND no read).
 //   • The `working` fact — `analysisChainOutstanding` per photographed row (C-30). While a
 //     chain is outstanding the node shows the breathing tick; when it settles the rows are
 //     re-read and the read lands ON that node. A row the server left at `pending` is
@@ -32,7 +33,7 @@ import { theme } from '../../../constants/theme';
 import { useEvents } from '../../../hooks/useEvents';
 import { analysisChainOutstanding, awaitAnalysisChain, watchAnalysisRow } from '../../../lib/analysis';
 import { DEFAULT_MEAL_TIMING_CONFIG } from '../../../lib/mealTiming';
-import { countLine, type SpineAnalysisRow } from '../../../lib/spineNode';
+import { countLine, mayCarryRead, type SpineAnalysisRow } from '../../../lib/spineNode';
 import { buildDay } from '../../../lib/dayNodes';
 import {
   readAnalysisRows,
@@ -44,7 +45,6 @@ import {
 } from '../../../lib/spineReads';
 import type { OnsetConfidence } from '../../../lib/mealTiming';
 import type { FeedingRow } from '../../../lib/patternsTiming';
-import { eventTintCategory } from '../../../lib/dayEvents';
 import { useEventStore } from '../../../store/eventStore';
 import { usePetStore } from '../../../store/petStore';
 import { useSyncStore } from '../../../store/syncStore';
@@ -102,10 +102,13 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
       ),
     [todayEvents, petId, dayStartMs],
   );
-  // The ids that can carry a read: photographed symptoms. Read as a stable key so the
-  // effects below re-run on a change in the SET, not on every store reference.
-  const symptomIds = useMemo(
-    () => rows.filter((e) => eventTintCategory(e.event_type) === 'symptom').map((e) => e.id).sort(),
+  // The ids that can carry a read (`mayCarryRead`, the pipeline's own gate, CUL-1197):
+  // never the rose tint, because a `stool_normal` is outside the symptom set and inside
+  // `hasPerIncidentRead`, and a row re-typed after its read landed keeps the rose the one
+  // predicate stands. Read as a stable key so the effects below re-run on a change in the
+  // SET, not on every store reference.
+  const readableIds = useMemo(
+    () => rows.filter((e) => mayCarryRead(e.event_type)).map((e) => e.id).sort(),
     [rows],
   );
   const rowKey = useMemo(() => rows.map((e) => e.id).sort().join('|'), [rows]);
@@ -147,12 +150,12 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
   }, [petId, rowKey, dayStartMs, hydrationTick]);
 
   // ── The reads, observed ───────────────────────────────────────────────────────
-  // For EVERY symptom row today, not only the ones the local attachment read says have
-  // a photo: an `event_ai_analysis` row exists only for a photographed incident, so the
-  // photo fact is redundant as a gate — and fragile, since a failed or lagging attachment
-  // read would otherwise hide a `worth_a_call` sitting in the record (the adversarial
-  // pass, F5). A day with no symptom issues no server read at all.
-  const photographedKey = symptomIds.join('|');
+  // For EVERY row that can carry a read, not only the ones the local attachment read says
+  // have a photo: a read row exists only for a photographed incident (or a photoless
+  // stool's contextual read), so the photo fact is redundant as a gate, and fragile, since
+  // a failed or lagging attachment read would otherwise hide a `worth_a_call` sitting in
+  // the record (the D2-4 adversarial pass, F5). A day of meals and doses reads nothing.
+  const photographedKey = readableIds.join('|');
 
   const refreshAnalysis = useCallback(async (ids: string[]) => {
     if (ids.length === 0) {

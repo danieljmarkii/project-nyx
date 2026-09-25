@@ -542,11 +542,13 @@ export default function LogModal() {
           updated_at: result.now,
           medication_item_id: med.id,
           adherence, // mirrors the dose write — null for a not-finished-vehicle combo (B-156 PR B3)
-          // paired_event_id / paired_vehicle_intake / paired_food_name are deliberately
-          // omitted here: the in-doubt tag + note render only on the DB-backed read
-          // surfaces (History EventRow via getTimeline, dose detail via getEventById),
-          // never the Today zone, which reads this optimistic store row. If a Today-zone
-          // in-doubt tag is ever added, thread the paired fields through here.
+          // The stored pair and the vehicle, as the dose write carries them: the shared day
+          // row on Home (History v2 HV-6) names the meal a dose rode in and raises the
+          // in-doubt tag off them, reading this optimistic row until the next reload. The
+          // vehicle's intake is read off that meal's own row in the same store, so
+          // paired_vehicle_intake / paired_food_name stay the timeline read's.
+          how_given: howGiven,
+          paired_event_id: pairedEventId ?? null,
           drug_generic_name: med.generic_name,
           drug_brand_name: med.brand_name,
         });

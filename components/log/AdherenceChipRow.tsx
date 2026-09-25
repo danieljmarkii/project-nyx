@@ -11,8 +11,10 @@ export type DoseAdherence = 'given' | 'partial' | 'missed' | 'refused';
 
 // Order runs from the affirmative default (`given`) leftward-first, then the
 // three "less than fully given" states. `given` is the only on-track state; the
-// rest are clinically worth noting (see CONCERN below).
-const OPTIONS: { value: DoseAdherence; label: string }[] = [
+// rest are clinically worth noting (see CONCERN below). Exported so a read-only
+// surface names a dose's adherence in this row's own words (the shared day row,
+// History v2 HV-6): one vocabulary, never a second spelling of a chip.
+export const ADHERENCE_OPTIONS: { value: DoseAdherence; label: string }[] = [
   { value: 'given',   label: 'Given' },
   { value: 'partial', label: 'Partial' },
   { value: 'missed',  label: 'Missed' },
@@ -94,7 +96,7 @@ export function AdherenceChipRow({
   // Read-only with a value: a single static chip. pointerEvents none lets taps
   // fall through to the parent row's own gesture (mirrors IntakeChipRow).
   if (readOnly) {
-    const opt = OPTIONS.find((o) => o.value === value)!;
+    const opt = ADHERENCE_OPTIONS.find((o) => o.value === value)!;
     const concern = CONCERN.has(value!);
     return (
       <View style={styles.readOnlyWrap} pointerEvents="none">
@@ -115,7 +117,7 @@ export function AdherenceChipRow({
         </ThemedText>
       )}
       <View style={styles.row}>
-        {OPTIONS.map((opt) => (
+        {ADHERENCE_OPTIONS.map((opt) => (
           <Chip
             key={opt.value}
             label={opt.label}
