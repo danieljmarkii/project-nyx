@@ -20,6 +20,7 @@ import { getDb, getEventPetId, updateMealIntake } from './db';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 import { triggerSignalRegenDebounced } from './signal';
 import { uuid } from './utils';
+import { useSyncStore } from '../store/syncStore';
 
 export interface InsertMealParams {
   petId: string;
@@ -140,6 +141,23 @@ export async function insertMeal(params: InsertMealParams): Promise<InsertMealRe
   return { eventId, mealId, occurredAtIso, now };
 }
 
+// A rating also decides what counts as eating (CUL-1122): a bowl rated Refused is never the
+// meal a vomit is timed from, so Home's timing line has to re-read the feedings after one. The
+// card re-reads on `hydrationTick` and is otherwise keyed on today's event ids, which a rating
+// does not change (and last night's bowl, inside the lookback, is not among today's rows at
+// all), so a rating given after the vomit left "5 min after eating" standing over a refused
+// bowl. The move the trial and medication writes already make (`notifyTrialChanged` in
+// lib/dietTrialSetup.ts): a local write counts as a hydration, here in the write path, so no
+// screen that rates a meal has to know Home exists.
+function notifyIntakeChanged(): void {
+  try {
+    useSyncStore.getState().bumpHydrationTick();
+  } catch (e) {
+    // The rating is saved; a refresh-signal failure must not fail it.
+    console.warn('[rateMealIntake] hydration tick failed:', e);
+  }
+}
+
 // Rate (or clear) a logged meal's intake after the fact: the ONE write path for a
 // rating given on the completion card, the meal's own screen or the edit screen
 // (CUL-1087). The same freshness rule as `insertMeal`, for the same reason: all three
@@ -157,6 +175,7 @@ export async function rateMealIntake(
   rating: Parameters<typeof updateMealIntake>[1],
 ): Promise<void> {
   await updateMealIntake(eventId, rating);
+  notifyIntakeChanged();
   syncPendingMeals().catch((e) => console.error('[rateMealIntake] sync push failed:', e));
   getEventPetId(eventId)
     .then((petId) => {
