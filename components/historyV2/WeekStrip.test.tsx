@@ -219,6 +219,24 @@ describe('the page, the label and the visible week agree (AC 27)', () => {
     expect(useHistoryScopeStore.getState().stripWeek).toBe(WEEKS_ALL[5]);
   });
 
+  it('the end event rounds to the nearest page, and a settle on the page that shows writes nothing', () => {
+    const api = mount();
+    const pager = api.getByTestId('week-strip-pager');
+    // A native offset can land a fraction short of a page; it still belongs to that page.
+    act(() => {
+      fireEvent(pager, 'momentumScrollEnd', nativeEvent(6 * WIDTH - 0.4));
+    });
+    expect(useHistoryScopeStore.getState().stripWeek).toBe(WEEKS_ALL[6]);
+    // Settling again where it already is: no second write for any subscriber to hear.
+    const writes = jest.fn();
+    const unsubscribe = useHistoryScopeStore.subscribe(writes);
+    act(() => {
+      fireEvent(pager, 'momentumScrollEnd', nativeEvent(6 * WIDTH));
+    });
+    unsubscribe();
+    expect(writes).not.toHaveBeenCalled();
+  });
+
   it('after a resize: the same week, placed afresh at the new width', () => {
     resetScope({ stripWeek: '2026-09-06' });
     const api = mount();

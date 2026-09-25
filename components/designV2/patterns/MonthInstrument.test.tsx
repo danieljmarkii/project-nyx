@@ -151,7 +151,8 @@ describe('MonthInstrument', () => {
     expect(() => getAllByTestId('daymark-count')).toThrow();
     expect(flat(getAllByTestId('daymark')[3].props.style).backgroundColor).not.toBe(theme.colorEventSymptom);
     expect(getAllByTestId('daymark-line-solid').length).toBeGreaterThan(10);
-    // Meals off: the left-some day draws the whole line — still logged, never grey.
+    // Meals on, the left-some day's line is broken; Meals off, it draws the whole line:
+    // still logged, never grey.
     expect(getByTestId('daymark-line-broken')).toBeTruthy();
     fireEvent.press(getByText('Meals'));
     expect(() => getByTestId('daymark-line-broken')).toThrow();

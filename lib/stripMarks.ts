@@ -77,6 +77,7 @@ import {
   type DayRange,
   type HistoryFilter,
 } from './historyDays';
+import { weekdayOfIndex } from './chartModels';
 import { weekStartOf, type HistoryWindowKey } from './historyWindows';
 import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import { recordDay, recordDayIndex, recordMonthUnderYear, recordRange, recordYearOf } from './recordDates';
@@ -140,8 +141,7 @@ export function stripDayWord(day: string, today: string): string {
   const index = recordDayIndex(day);
   const date = spokenMonthDay(day, today);
   if (index === null || date === null) return day;
-  const weekday = WEEKDAYS_LONG[(((index + 4) % 7) + 7) % 7]; // 1970-01-01 was a Thursday
-  return `${weekday}, ${date}`;
+  return `${WEEKDAYS_LONG[weekdayOfIndex(index)]}, ${date}`;
 }
 
 /** "September 19", or "December 27, 2026" outside the current year; null for a malformed
