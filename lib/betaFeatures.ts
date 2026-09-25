@@ -130,6 +130,33 @@ export const BETA_REGISTRY: BetaFeature[] = [
     // server-side" rule is checked and does not bite.
     serverCost: false,
   },
+  {
+    // History v2 · the record you can read (CUL-1158, HV-1; spec §5.1, H-8). Joins
+    // the shelf with the gate: HV-1 registers the flag, the shelf card, the gate
+    // on the History tab and the flag-off guard; the step-2 lanes (HV-7 the list,
+    // HV-8 the strip, HV-9 the pinned row) fill the v2 screen behind
+    // `live = eligible && optedIn` through hooks/useHistoryV2.ts, so being in the
+    // cohort turns nothing on by itself. A rollout gate only — GA is every account,
+    // and HV-14 retires the row with v1's screen.
+    key: 'history_v2',
+    title: 'History v2',
+    // nyx-voice: concrete about what the owner will see (the day, the week strip,
+    // counts that say what they cover — the spec's R-1), no exclamation, no insight
+    // promised: History reads the same record, drawn so it can be read. The second
+    // sentence is the flag-off guarantee said to the owner, the promise
+    // guards/historyV2FlagOff.test.tsx keeps.
+    blurb:
+      'The new History: each day at a glance, a week strip to move through the record, and counts that say what they cover. Switch it off and History is exactly as it was.',
+    owner: 'History v2 · the record you can read / Eng',
+    addedDate: '2026-09-24',
+    // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a
+    // timer. Graduation is HV-14 (GA), which waits on the PM's device pass (HV-13).
+    reviewBy: '2026-12-24',
+    // Client-render-only: v2 reads the local record the app already holds and no
+    // Edge Function reads the key, so no server resource is spent per opt-in and
+    // no server gate is owed. The B-712 rule is checked and does not bite.
+    serverCost: false,
+  },
   // Five betas graduated to GA and were retired from the shelf. Two Signal betas first
   // (CUL-546 Phase 1 / CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design
   // uplift, B-721) and `signals_v2` (the "deeper signals" lanes, B-755); `signals_v2`'s

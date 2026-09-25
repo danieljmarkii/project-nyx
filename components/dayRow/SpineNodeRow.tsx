@@ -1,5 +1,15 @@
-// A node on Home's spine — one event, or one compact run of meals (Design v2 — the
+// A node on the day's spine — one event, or one compact run of meals (Design v2 — the
 // whole day, D2-4 / CUL-1066; the round-4 page §01 / §02, R4-2 option A).
+//
+// ── ONE ROW FOR HOME AND HISTORY (History v2, HV-1 / CUL-1158; spec §5.5, H-1) ──
+// Lifted out of `components/designV2/home/` into this neutral module so History can
+// draw the same row without becoming a `design_v2` consumer, and without its rows being
+// stubbed by the design_v2 flag-off guard's namespace switch. It is still reached only
+// through a gated surface: Home's spine (behind `design_v2`) and History v2's list
+// (behind `history_v2`). The contract is "node in, row out": `lib/dayNodes.ts` builds
+// the node and `DayNodeRow` picks the row; the row's rules (runs, chevrons, naming, the
+// dose row, the read's states) are HV-6's (CUL-1163), and they land on both surfaces
+// at once because there is one row.
 //
 // Draws the model `lib/spineNode.ts` hands over and nothing it does not: the type and
 // its detail, "N min after eating" as the lane timed it, a PHOTO GLYPH where the row has
@@ -41,15 +51,15 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Camera, ChevronDown, ChevronRight } from 'lucide-react-native';
-import { theme } from '../../../constants/theme';
-import { NODE_DOT_RING, NODE_DOT_SIZE, NODE_TINT_DAY, nodeDotColors } from '../../recap/nodeTints';
-import { SpineRowFrame } from '../../recap/DaySpine';
-import { ThemedText } from '../../ui/ThemedText';
-import { useNodeArrival } from '../../motion/arrivalMotion';
-import { FOLD_LAYOUT, UNFOLD_LAYOUT } from '../../motion/foldMotion';
-import { useAppActive } from '../../../hooks/useAppActive';
-import { useReducedMotion } from '../../../hooks/useReducedMotion';
-import type { NodeRead, SpineCompactNode, SpineEventNode } from '../../../lib/spineNode';
+import { theme } from '../../constants/theme';
+import { NODE_DOT_RING, NODE_DOT_SIZE, NODE_TINT_DAY, nodeDotColors } from '../recap/nodeTints';
+import { RAIL_W, SpineRowFrame, TIME_W } from '../recap/DaySpine';
+import { ThemedText } from '../ui/ThemedText';
+import { useNodeArrival } from '../motion/arrivalMotion';
+import { FOLD_LAYOUT, UNFOLD_LAYOUT } from '../motion/foldMotion';
+import { useAppActive } from '../../hooks/useAppActive';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
+import type { NodeRead, SpineCompactNode, SpineEventNode } from '../../lib/spineNode';
 
 /** The waiting tick — the fold's own resting rail, 3pt × 16pt. */
 export const SPINE_RAIL_WIDTH = 3;
@@ -437,7 +447,7 @@ const styles = StyleSheet.create({
 
   // A compact node's members, opened in place.
   members: {
-    marginLeft: 56 + 18 + theme.space1 * 2, // the time column + the rail + the gaps
+    marginLeft: TIME_W + RAIL_W + theme.space1 * 2, // the time column + the rail + the gaps
     borderLeftWidth: 2,
     borderLeftColor: theme.colorEventMeal,
     paddingLeft: theme.space1,
