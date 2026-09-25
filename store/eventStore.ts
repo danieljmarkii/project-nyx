@@ -53,6 +53,10 @@ export interface NyxEvent {
   paired_food_name?: string | null;
   drug_generic_name?: string | null;
   drug_brand_name?: string | null;
+  // CUL-1124 — the name of the course the dose was logged against, the second source of
+  // a dose's name after the item (`lib/doseDisplay.ts`). Carried by the timeline read
+  // (`getTimeline`); absent on Today's read.
+  regimen_drug_name?: string | null;
   // B-156 PR B4 — the reverse combo link (vehicle → dose), for the cross-link on a
   // meal/treat row that carried co-logged dose(s). The mirror of paired_* above so the
   // combo reads from BOTH sides without merging. count = NON-DELETED paired doses (0 on a

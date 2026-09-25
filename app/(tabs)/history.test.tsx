@@ -92,14 +92,19 @@ jest.mock('../../components/history/DateScopeControl', () => ({ DateScopeControl
 jest.mock('../../components/history/TypeScopeControl', () => ({ TypeScopeControl: () => null }));
 jest.mock('../../components/history/FreeFeedingStrip', () => ({ FreeFeedingStrip: () => null }));
 jest.mock('../../components/history/BoundaryMarkerRow', () => ({ BoundaryMarkerRow: () => null }));
-// EventRow stubbed to its wiring: the label (so a row is identifiable) and the
-// delete affordance (so the failure path is reachable).
+// EventRow stubbed to its wiring: the label (so a row is identifiable), the delete
+// affordance (so the failure path is reachable), and a dose's course name (so the row
+// mapper's line for it is checkable, CUL-1124).
 jest.mock('../../components/history/EventRow', () => {
   const { Text, TouchableOpacity, View } = require('react-native');
   return {
-    EventRow: ({ event, onDelete }: { event: { id: string }; onDelete: () => void }) => (
+    EventRow: ({ event, onDelete }: {
+      event: { id: string; regimen_drug_name?: string | null };
+      onDelete: () => void;
+    }) => (
       <View testID={`row-${event.id}`}>
         <Text>{`event ${event.id}`}</Text>
+        {event.regimen_drug_name ? <Text>{`course ${event.regimen_drug_name}`}</Text> : null}
         <TouchableOpacity testID={`delete-${event.id}`} onPress={onDelete}>
           <Text>Remove</Text>
         </TouchableOpacity>
@@ -173,6 +178,9 @@ describe('History — the read states', () => {
     // A read that hasn't answered yet.
     mockGetTimeline.mockReturnValue(new Promise(() => {}));
     const { queryByText, queryByTestId } = render(<HistoryScreen />);
+    // Every OTHER read answers (the visits, the bowl), inside act: the list's read being
+    // out is enough on its own to hold the skeleton up.
+    await act(async () => {});
 
     // Hidden from assistive tech by design, so the query has to opt in.
     expect(queryByTestId('history-skeleton', { includeHiddenElements: true })).toBeTruthy();
@@ -638,5 +646,25 @@ describe('History — the visit read is a second source, and the screen treats i
     // is looking at disappears, with nothing to bring it back until the next focus.
     expect(getByText('Vet visit')).toBeTruthy();
     expect(queryByText('Nothing logged yet')).toBeNull();
+  });
+});
+
+// ── A dose's course name reaches the row (CUL-1124) ─────────────────────────────
+//
+// `rowToEvent` is an explicit mapper and the field is OPTIONAL on NyxEvent, so leaving
+// its line out compiles clean (the B-568 trap): every dose of a course typed in by hand
+// would go back to reading "Medication" with nothing red anywhere.
+
+describe('History — the row mapper carries a dose\'s course name', () => {
+  it('a dose of a course typed in by hand reaches the row with the course\'s name', async () => {
+    mockGetTimeline.mockResolvedValue([{
+      ...row('d1'),
+      event_type: 'medication',
+      medication_item_id: null,
+      adherence: 'refused',
+      regimen_drug_name: 'Metronidazole',
+    }]);
+    const { findByText } = render(<HistoryScreen />);
+    await findByText('course Metronidazole');
   });
 });

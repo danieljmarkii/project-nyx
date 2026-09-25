@@ -38,6 +38,13 @@ import {
 
 const PAGE_SIZE = 50;
 
+// What the list draws in place of an answer that is not the active pet's (CUL-1120).
+// Module constants so a hidden answer hands `merged` the same identity every render.
+const NO_EVENTS: NyxEvent[] = [];
+const NO_ARRANGEMENTS: ActiveArrangementView[] = [];
+const NO_MARKERS: BoundaryMarker[] = [];
+const NO_VISITS: HistoryVisitRow[] = [];
+
 type LoadEvents = (
   currentOffset: number,
   type: EventTypeKey | null,
@@ -81,6 +88,10 @@ function rowToEvent(row: TimelineRow): NyxEvent {
     paired_food_name: row.paired_food_name,
     drug_generic_name: row.drug_generic_name,
     drug_brand_name: row.drug_brand_name,
+    // CUL-1124 — the course's name, a dose's second name. The B-568 trap again: optional
+    // on NyxEvent, so leaving this line out compiles clean and every dose of a course
+    // typed in by hand goes back to reading "Medication".
+    regimen_drug_name: row.regimen_drug_name,
     paired_dose_count: row.paired_dose_count,
     paired_dose_event_id: row.paired_dose_event_id,
     paired_dose_drug_name: row.paired_dose_drug_name,
@@ -105,6 +116,7 @@ function coerceEventTypeKey(value: string | undefined | null): EventTypeKey | nu
 
 export default function HistoryScreen() {
   const { activePet } = usePetStore();
+  const activePetId = activePet?.id ?? null;
   // Doorways deep-link here with a `ts` nonce, so a filter re-applies even when this tab
   // is already mounted (a doorway tap is not a remount). Any filter is fully clearable —
   // picking any date scope clears it.
@@ -141,14 +153,25 @@ export default function HistoryScreen() {
   // without a manual pull-to-refresh.
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
 
+  // CUL-1120 — every answer below is STAMPED with the pet it answered for (the `*For`
+  // fields, AppointmentStrip's `loadedFor`), and only the active pet's answers are drawn
+  // (`isActivePets`, above `merged`). A pet switch therefore draws the skeleton until the
+  // new pet's reads answer (C-12), never the previous pet's rows under the new pet's
+  // name, and a failed read after a switch draws the error state. It did not: a list
+  // that is not empty never shows the error, so the old pet's rows stayed up with
+  // nothing on screen to say anything was wrong. The loaders' load ids stop a late
+  // answer from being WRITTEN; the stamps stop an old one from being DRAWN.
   const [events, setEvents] = useState<NyxEvent[]>([]);
+  const [eventsFor, setEventsFor] = useState<string | null>(null);
   // B-040 R1 §6a — free-feeding standing facts: the pinned ambient strip
   // (currently-active arrangements) + the inline lifecycle boundary markers.
   const [arrangements, setArrangements] = useState<ActiveArrangementView[]>([]);
   const [markers, setMarkers] = useState<BoundaryMarker[]>([]);
+  const [freeFeedingFor, setFreeFeedingFor] = useState<string | null>(null);
   // Vet visits on the timeline (CUL-904 VV-6). Held as its own list rather than
   // mapped into `events`: see the ListItem union above.
   const [visits, setVisits] = useState<HistoryVisitRow[]>([]);
+  const [visitsFor, setVisitsFor] = useState<string | null>(null);
   // C-12 for the SECOND source. `loaded` / `loadError` below are driven by
   // `loadEvents` alone, which was complete while every row in the stream came from
   // the timeline query. It is not any more: a pet whose only record is a vet visit
@@ -158,10 +181,10 @@ export default function HistoryScreen() {
   // exact sentence CUL-575 built this state machine to stop, arriving through a
   // source the machine did not know about.
   //
-  // Set once and never reset, matching `loaded`: a later refresh keeps the rows on
-  // screen rather than flashing a skeleton over them.
-  const [visitsAnswered, setVisitsAnswered] = useState(false);
-  const [visitsError, setVisitsError] = useState(false);
+  // Never reset for the same pet, matching `loadedFor`: a later refresh keeps the rows
+  // on screen rather than flashing a skeleton over them.
+  const [visitsAnsweredFor, setVisitsAnsweredFor] = useState<string | null>(null);
+  const [visitsErrorFor, setVisitsErrorFor] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -170,12 +193,13 @@ export default function HistoryScreen() {
   // over a read it never completed. The day-summary screen refuses to do this
   // (day-summary.tsx: "A failed read is NEVER rendered as 'nothing logged'"); History
   // holds the same line.
-  const [loadError, setLoadError] = useState(false);
-  // Whether a read has ever ANSWERED for this screen. `loading` alone can't carry the
+  const [loadErrorFor, setLoadErrorFor] = useState<string | null>(null);
+  // Whether a read has ever ANSWERED for this pet. `loading` alone can't carry the
   // first paint: it starts false and only flips inside the focus effect, so the very
   // first frame had merged=[] + loading=false and rendered "Nothing logged yet" for a
-  // beat before the rows landed. (Foods gates its empty state on the same flag.)
-  const [loaded, setLoaded] = useState(false);
+  // beat before the rows landed. (Foods gates its empty state on the same flag.) Per
+  // pet, because the first frame after a switch is the same frame again (CUL-1120).
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<EventTypeKey | null>(initialTypeFilter);
   const [datePreset, setDatePreset] = useState<DatePreset>(initialDatePreset);
   // A single-day filter from a day doorway (B-308), with the clock its sender counted the
@@ -185,7 +209,8 @@ export default function HistoryScreen() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Ref-based guard prevents concurrent loads even when the callback is stale
+  // True while the newest list read is out, readable from a stale callback. Load more
+  // waits on it; a replace never does (CUL-1120, `loadEvents`).
   const loadingRef = useRef(false);
   // True while Remove is asking the record for a photo, before its confirm is up (CUL-1125
   // review): a second tap in that gap would raise a second confirm for the same row.
@@ -206,6 +231,20 @@ export default function HistoryScreen() {
   // always points at the current closure (a captured binding would go stale).
   const loadEventsRef = useRef<LoadEvents | null>(null);
 
+  // CUL-1120 — the list's reads, newest wins. A REPLACE always starts and supersedes
+  // whatever is out. The guard that stood here (`if (loadingRef.current) return`) threw
+  // away the NEWER request: a pet switch, a filter picked or a door tapped while a read
+  // was out never read at all, and the old read's rows landed under the new pet's name
+  // or the new pill and stayed until something else reloaded. An APPEND (Load more)
+  // still waits its turn: it extends the list on screen, so it starts only when nothing
+  // is out and the list is the active pet's. The id catches an answer that arrives out
+  // of order; the pet check, one a switch overtook before a newer read was asked. They
+  // protect different things (`loadVisits` holds both for the same reason).
+  const eventsLoadIdRef = useRef(0);
+  // Whose rows `events` holds, readable from the loaders' stale closures.
+  const eventsForRef = useRef<string | null>(null);
+  eventsForRef.current = eventsFor;
+
   const loadEvents = useCallback<LoadEvents>(async (
     currentOffset: number,
     type: EventTypeKey | null,
@@ -213,23 +252,29 @@ export default function HistoryScreen() {
     day: DayScope | null,
     replace: boolean,
   ) => {
-    if (!activePet || loadingRef.current) return;
+    if (!activePet) return;
+    const petId = activePet.id;
+    if (!replace && (loadingRef.current || eventsForRef.current !== petId)) return;
+    const myId = ++eventsLoadIdRef.current;
+    const answersForScreen = () =>
+      myId === eventsLoadIdRef.current && usePetStore.getState().activePet?.id === petId;
     loadingRef.current = true;
     setLoading(true);
     // Cleared per attempt, not per mount: a retry that succeeds must take the error
     // state down, and a retry that fails must leave it up.
-    setLoadError(false);
+    setLoadErrorFor(null);
     try {
       // The scope's bounds are parsed, never compared as text (C-40): `readHistoryPage`
       // over-fetches in SQL and places each row on its parsed instant. `fetched` is the
       // QUERY's count, which is what OFFSET pages; `hasMore` is the query's own answer.
       const { rows, fetched, hasMore: more } = await readHistoryPage(
-        activePet.id,
+        petId,
         PAGE_SIZE,
         currentOffset,
         type,
         effectiveRange(preset, day),
       );
+      if (!answersForScreen()) return;
       const mapped = rows.map(rowToEvent);
       setEvents((prev: NyxEvent[]) => {
         if (replace) return mapped;
@@ -243,11 +288,17 @@ export default function HistoryScreen() {
         const seen = new Set(prev.map((e) => e.id));
         return [...prev, ...mapped.filter((e) => !seen.has(e.id))];
       });
+      setEventsFor(petId);
       setHasMore(more);
       setOffset(currentOffset + fetched);
+      setLoadedFor(petId);
     } catch (e) {
+      // Logged whoever it answers for (no silent failures); only the newest read, for
+      // the pet on screen, may put the screen in its error state.
       console.error('[history] load failed:', e);
-      setLoadError(true);
+      if (!answersForScreen()) return;
+      setLoadErrorFor(petId);
+      setLoadedFor(petId);
       // An APPEND failure can't use the error state below — there are rows on screen,
       // so the list isn't empty and the owner would just see "Load more" do nothing.
       // (`replace` is false only after a first page already landed.) Same defect, the
@@ -256,13 +307,22 @@ export default function HistoryScreen() {
         useSnackbarStore.getState().show({
           message: "Couldn't load more history.",
           actionLabel: 'Try again',
-          onAction: () => { void loadEventsRef.current?.(currentOffset, type, preset, day, false); },
+          // Only while this is still the newest read. After a refresh, a filter or a pet
+          // switch, `currentOffset` is a place in a list that is no longer on screen,
+          // and paging the new list from it would skip rows nothing ever shows.
+          onAction: () => {
+            if (myId !== eventsLoadIdRef.current) return;
+            void loadEventsRef.current?.(currentOffset, type, preset, day, false);
+          },
         });
       }
     } finally {
-      loadingRef.current = false;
-      setLoading(false);
-      setLoaded(true);
+      // The in-flight flags belong to the newest read: a superseded one finishing must
+      // not tell the screen nothing is loading while its successor still is.
+      if (myId === eventsLoadIdRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
     }
   }, [activePet]);
   loadEventsRef.current = loadEvents;
@@ -270,21 +330,30 @@ export default function HistoryScreen() {
   // Free-feeding standing facts (§6a): the active arrangements for the pinned
   // strip + the lifecycle boundary markers for the stream. Cheap reads (few
   // rows); re-run on focus and after a hydrate so another device's toggle shows.
+  // The newest read for the pet on screen wins, `loadEvents`' two checks (CUL-1120).
+  const freeFeedingLoadIdRef = useRef(0);
   const loadFreeFeeding = useCallback(async () => {
+    const myId = ++freeFeedingLoadIdRef.current;
     if (!activePet) {
       setArrangements([]);
       setMarkers([]);
+      setFreeFeedingFor(null);
       return;
     }
+    const petId = activePet.id;
     try {
       const [active, bm] = await Promise.all([
-        getActiveArrangementsForPet(activePet.id),
-        getBoundaryMarkers(activePet.id),
+        getActiveArrangementsForPet(petId),
+        getBoundaryMarkers(petId),
       ]);
+      if (myId !== freeFeedingLoadIdRef.current) return;
+      if (usePetStore.getState().activePet?.id !== petId) return;
       setArrangements(active);
       setMarkers(bm);
+      setFreeFeedingFor(petId);
     } catch (e) {
-      // No silent failures (house rule). Leave prior state; focus re-runs this.
+      // No silent failures (house rule). Leave prior state; focus re-runs this. After a
+      // switch that state is the previous pet's, and its stamp keeps it off screen.
       console.warn('[history] free-feeding load failed:', e);
     }
   }, [activePet]);
@@ -306,17 +375,17 @@ export default function HistoryScreen() {
   const loadVisits = useCallback(async () => {
     const myId = ++visitLoadIdRef.current;
     if (!activePet) {
+      // Nothing to wait for, and nothing to stamp: with no pet the screen never draws
+      // the skeleton (`showSkeleton` needs one), so no read is held open here.
       setVisits([]);
-      // Nothing to wait for, so the empty state must not be held behind a read that
-      // is never going to happen, or this screen would skeleton forever.
-      setVisitsAnswered(true);
-      setVisitsError(false);
+      setVisitsFor(null);
+      setVisitsErrorFor(null);
       return;
     }
     const petId = activePet.id;
     // Cleared per attempt, not per mount: a retry that succeeds takes the error
     // state down, and one that fails leaves it up (the `loadEvents` rule).
-    setVisitsError(false);
+    setVisitsErrorFor(null);
     try {
       const rows = await readVisitsForHistory(petId);
       // The read is async and the owner can switch pets while it is in flight, so
@@ -328,6 +397,7 @@ export default function HistoryScreen() {
       if (myId !== visitLoadIdRef.current) return;
       if (usePetStore.getState().activePet?.id !== petId) return;
       setVisits(rows);
+      setVisitsFor(petId);
     } catch (e) {
       // No silent failures (house rule). With rows already on screen this leaves
       // prior state and lets the next focus retry — the posture `loadFreeFeeding`
@@ -335,9 +405,11 @@ export default function HistoryScreen() {
       // to "Nothing logged yet": that is a claim about the record, over a read that
       // failed. The flag below is what the empty-state gate reads.
       console.warn('[history] load vet visits failed:', e);
-      if (myId === visitLoadIdRef.current) setVisitsError(true);
+      if (myId === visitLoadIdRef.current) setVisitsErrorFor(petId);
     } finally {
-      if (myId === visitLoadIdRef.current) setVisitsAnswered(true);
+      // Stamped with the pet this read was for, so an answer for a pet no longer on
+      // screen is never taken as the new pet's (CUL-1120).
+      if (myId === visitLoadIdRef.current) setVisitsAnsweredFor(petId);
     }
   }, [activePet?.id]);
 
@@ -449,6 +521,10 @@ export default function HistoryScreen() {
   const latestTodayId = todayEvents[0]?.id;
   useEffect(() => {
     if (!latestTodayId) return;
+    // Only into the list of the pet it belongs to (CUL-1120). Today's list can still
+    // hold the previous pet's rows while its own re-read is out (`loadTodayEvents` has
+    // no late-answer guard), and a row put here would draw under this pet's name.
+    if (todayEvents[0]?.pet_id !== eventsForRef.current) return;
     setEvents((prev: NyxEvent[]) => {
       if (prev.some((e: NyxEvent) => e.id === latestTodayId)) return prev;
       const newEvent = todayEvents[0];
@@ -579,17 +655,27 @@ export default function HistoryScreen() {
               // write has landed: a failed Remove puts the row back. Starting a row
               // early costs nothing, since the dedupe on append drops the repeat
               // (B-198); starting a row late skips one that nothing ever shows.
-              setOffset((prev: number) => Math.max(0, prev - 1));
+              // Only the list the row was on: after a pet switch the list on screen
+              // is another pet's, where this row never held a place (CUL-1120).
+              if (eventsForRef.current === event.pet_id) {
+                setOffset((prev: number) => Math.max(0, prev - 1));
+              }
             } catch (e) {
               console.error('[history] soft delete failed:', e);
-              setEvents((prev: NyxEvent[]) => {
-                const idx = prev.findIndex(
-                  (e: NyxEvent) => new Date(e.occurred_at) < new Date(event.occurred_at),
-                );
-                const next = [...prev];
-                next.splice(idx === -1 ? prev.length : idx, 0, event);
-                return next;
-              });
+              // Back into the list it came from, and only that one (CUL-1120): after a
+              // pet switch the list on screen is another pet's, and the row would draw
+              // under that pet's name. The removal failed, so the next read of this
+              // row's own pet finds it anyway.
+              if (eventsForRef.current === event.pet_id) {
+                setEvents((prev: NyxEvent[]) => {
+                  const idx = prev.findIndex(
+                    (e: NyxEvent) => new Date(e.occurred_at) < new Date(event.occurred_at),
+                  );
+                  const next = [...prev];
+                  next.splice(idx === -1 ? prev.length : idx, 0, event);
+                  return next;
+                });
+              }
               // Home reloads Today on mount and on a hydration tick, not on focus — so
               // without this the app goes on hiding an event that is still in the
               // record, on the one surface the owner checks most (CUL-575).
@@ -615,15 +701,28 @@ export default function HistoryScreen() {
     );
   }
 
+  // CUL-1120 — only the active pet's answers are drawn; see the stamps at the top.
+  const isActivePets = (answeredFor: string | null) =>
+    answeredFor !== null && answeredFor === activePetId;
+  const shownEvents = isActivePets(eventsFor) ? events : NO_EVENTS;
+  const shownArrangements = isActivePets(freeFeedingFor) ? arrangements : NO_ARRANGEMENTS;
+  const shownMarkers = isActivePets(freeFeedingFor) ? markers : NO_MARKERS;
+  const shownVisits = isActivePets(visitsFor) ? visits : NO_VISITS;
+  const loaded = isActivePets(loadedFor);
+  const loadError = isActivePets(loadErrorFor);
+  const visitsAnswered = isActivePets(visitsAnsweredFor);
+  const visitsError = isActivePets(visitsErrorFor);
+
   // The merged stream. The rule itself lives in `lib/historyTimeline.ts`, pure, so
   // it can be asserted over data — its effect is at the TAIL of a virtualized list,
   // which a rendered-tree test cannot see (measured; the file's header has it).
   const merged = useMemo<ListItem[]>(() => {
     const { after, before } = effectiveRange(datePreset, dayFilter);
     return mergeTimelineItems({
-      events, markers, visits, typeFilter, after, before, hasMore,
+      events: shownEvents, markers: shownMarkers, visits: shownVisits,
+      typeFilter, after, before, hasMore,
     });
-  }, [events, markers, visits, typeFilter, datePreset, dayFilter, hasMore]);
+  }, [shownEvents, shownMarkers, shownVisits, typeFilter, datePreset, dayFilter, hasMore]);
 
   // The three "nothing on screen" states, kept mutually exclusive and in priority
   // order (CUL-575). Before this, the screen had ONE of them: an empty list, which a
@@ -645,7 +744,7 @@ export default function HistoryScreen() {
   const handleRetry = useCallback(() => {
     setOffset(0);
     setHasMore(true);
-    setVisitsError(false);
+    setVisitsErrorFor(null);
     loadEvents(0, typeFilter, datePreset, dayFilter, true);
     loadFreeFeeding();
     void loadVisits();
@@ -682,7 +781,7 @@ export default function HistoryScreen() {
           Vomit reads incongruously. Hidden under any other type filter; the
           markers in the stream are already type-gated the same way (§6a). */}
       {(typeFilter === null || typeFilter === 'meal') && (
-        <FreeFeedingStrip arrangements={arrangements} />
+        <FreeFeedingStrip arrangements={shownArrangements} />
       )}
 
       {/* Event list — flex: 1 so it fills remaining space regardless of event count */}
