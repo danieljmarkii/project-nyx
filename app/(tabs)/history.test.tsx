@@ -69,7 +69,14 @@ jest.mock('../../store/petStore', () => {
   const activePet = { id: 'p1', name: 'Rex', species: 'dog' };
   const state = { activePet };
   return {
-    usePetStore: Object.assign(() => state, { getState: () => mockPetState }),
+    usePetStore: Object.assign(() => state, {
+      // Read at module load too: History v2's scope and list stores (HV-3, HV-7), which the
+      // tab imports, take the active pet and subscribe before any test body runs, when
+      // `mockPetState` is not assigned yet. A mock narrower than the real API hides that
+      // dependency (C-39).
+      getState: () => mockPetState ?? state,
+      subscribe: () => () => {},
+    }),
   };
 });
 // Mutable so a test can simulate the owner switching pets mid-write.

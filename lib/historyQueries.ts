@@ -241,6 +241,30 @@ export async function readHistoryFacts(petId: string, range: DayRange): Promise<
   };
 }
 
+/**
+ * The pet's first record, as a local day key, or null for a pet with nothing logged: what
+ * the window table resolves against (`WindowFacts.firstRecordDay`, HV-3). It is the SAME
+ * answer `readHistoryFacts` gives as `firsts.record` (the same SQL through the same
+ * `firstDaysOf`), so the window a count line names and the record its coverage counts from
+ * cannot disagree about where the record starts. A look never starts the record (§5.6).
+ * Rejects on a failed read: an unreadable start must never read as an empty record.
+ */
+export async function readRecordFirstDay(petId: string): Promise<string | null> {
+  const rows = await getDb().getAllAsync<{ event_type: string; first_jd: number | null; first_photo_jd: number | null; first_note_jd: number | null }>(
+    TYPE_FIRSTS_SQL,
+    [petId, LOOK_EVENT_TYPE],
+  );
+  return firstDaysOf(
+    rows.map((t) => ({
+      eventType: t.event_type,
+      firstMs: msOfJulianDay(t.first_jd),
+      firstPhotoMs: msOfJulianDay(t.first_photo_jd),
+      firstNoteMs: msOfJulianDay(t.first_note_jd),
+    })),
+    null,
+  ).record;
+}
+
 // ── Courses ──────────────────────────────────────────────────────────────────────
 
 /**
@@ -538,6 +562,42 @@ async function readDays(
   return [...byDay.entries()]
     .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
     .map(([day, rows]) => ({ day, rows: rows.sort(compareRows) }));
+}
+
+/** Day keys, newest first, as runs of consecutive days (each run newest first too). */
+function consecutiveRuns(days: readonly string[]): DayRange[] {
+  const sorted = [...new Set(days.filter((d) => isDayKey(d)))].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+  const runs: DayRange[] = [];
+  for (const day of sorted) {
+    const last = runs[runs.length - 1];
+    if (last && shiftDay(last.fromDay, -1) === day) last.fromDay = day;
+    else runs.push({ fromDay: day, toDay: day });
+  }
+  return runs;
+}
+
+/**
+ * EVERY row on these local days, whatever the filter or search on screen, by day, morning
+ * to night: the day as the shared row builds it (R-2, AC 9). A filter or a search only
+ * HIDES rows, so the nodes a day draws are built over the whole day and then filtered: built
+ * over the filtered rows instead, a Meal filter would join two runs a hidden vomit keeps
+ * apart, and Photographed would time a second vomit its unphotographed first had already
+ * opened the episode for. The page read decides WHICH rows show (its SQL is the one
+ * predicate per filter); this read only supplies their neighbours.
+ *
+ * Read in runs of consecutive days, one read per run, so a rare filter's scattered days do
+ * not pull the months between them. Looks are not here (the population excludes them; the
+ * Noticed filter draws its own rows). Rejects on a failed read.
+ */
+export async function readWholeDays(petId: string, days: readonly string[]): Promise<Map<string, HistoryRow[]>> {
+  const out = new Map<string, HistoryRow[]>();
+  const runs = consecutiveRuns(days);
+  if (runs.length === 0) return out;
+  const regimens = await readRegimens(petId);
+  const scope: DayPageScope = { range: { fromDay: runs[runs.length - 1].fromDay, toDay: runs[0].toDay }, filter: { kind: 'all' }, search: null };
+  const answers = await Promise.all(runs.map((run) => readDays(petId, scope, run, regimens)));
+  for (const answer of answers) for (const day of answer) out.set(day.day, day.rows);
+  return out;
 }
 
 /**

@@ -149,7 +149,10 @@ jest.mock('../store/petStore', () => {
   const state = { activePet: pet, pets: [pet] };
   const hook = (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state);
   return {
-    usePetStore: Object.assign(hook, { getState: () => state }),
+    // `subscribe` because History v2's scope and list stores follow the pet store from the
+    // moment the History tab is imported (HV-3, HV-7): a mock narrower than the real API
+    // hides the dependency (C-39).
+    usePetStore: Object.assign(hook, { getState: () => state, subscribe: () => () => {} }),
     resolveRecordPetName: () => 'Mochi',
   };
 });

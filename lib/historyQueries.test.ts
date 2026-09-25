@@ -50,6 +50,8 @@ import {
   readDayPage,
   readHistoryCourses,
   readHistoryFacts,
+  readRecordFirstDay,
+  readWholeDays,
   searchCondition,
   type DayPage,
   type DayPageScope,
@@ -411,6 +413,50 @@ describe('AC 1 + AC 9, the query halves — one population behind the list and t
     expect(ids).not.toContain('elsewhere');
     const facts = await readHistoryFacts(PET, RANGE);
     expect([...facts.days.values()].reduce((n, f) => n + f.total, 0)).toBe(ids.length);
+  });
+});
+
+describe('HV-7 — the whole day behind a filtered page, and the record\'s first day', () => {
+  it('readWholeDays: every row of each asked day, the same rows All types pages hold, nothing from another day', async () => {
+    seedRich();
+    const everything = (await allPages(scopeOf(RANGE))).flatMap((p) => p.days);
+    const byDay = new Map(everything.map((d) => [d.day, d.rows]));
+    // A vomit filter shows Sep 3 only; its whole day is the two vomits, and Sep 4 (scattered,
+    // not consecutive) comes back whole too: a run of one.
+    const days = [localDay(localAt(3, 7, 10).toISOString()), localDay(localAt(9, 9).toISOString())];
+    const whole = await readWholeDays(PET, days);
+    expect([...whole.keys()].sort()).toEqual([...days].sort());
+    for (const day of days) expect(whole.get(day)).toEqual(byDay.get(day));
+  });
+
+  it('readWholeDays: runs of consecutive days read once per run, and a day with nothing is simply absent', async () => {
+    seedRich();
+    mockReads = 0;
+    const whole = await readWholeDays(PET, ['2026-09-06', '2026-09-05', '2026-09-04', '2026-09-10', '2026-09-15']);
+    // The regimens, then one read per run: Sep 4 – 6, Sep 10, Sep 15.
+    expect(mockReads).toBe(4);
+    expect(whole.has('2026-09-15')).toBe(false);
+    expect(whole.get('2026-09-04')?.map((r) => r.id)).toEqual(['m3', 'm4', 't1', 't2', 't3']);
+    // The look on Sep 10 is not in the population: the Noticed filter draws its own rows.
+    expect(whole.get('2026-09-10')?.map((r) => r.id)).toEqual(['other1', 'w1']);
+    expect(await readWholeDays(PET, [])).toEqual(new Map());
+  });
+
+  it('readRecordFirstDay: the facts\' own record start, over both spellings of an instant; a look never starts it', async () => {
+    seedRich();
+    // An earlier look must not move the record's start (§5.6).
+    insertLook('look-early', localAt(1, 7).toISOString(), '2026-09-01');
+    const facts = await readHistoryFacts(PET, RANGE);
+    expect(await readRecordFirstDay(PET)).toBe(facts.firsts.record);
+    expect(await readRecordFirstDay(PET)).toBe('2026-09-02');
+    // A hydrated row at exactly local midnight is on its own day, never the day before.
+    insertEvent('midnight', hydrated(localAt(1, 0, 0, 0)), 'cough');
+    expect(await readRecordFirstDay(PET)).toBe('2026-09-01');
+  });
+
+  it('readRecordFirstDay: null for a pet with nothing logged, and removed rows never start a record', async () => {
+    insertEvent('gone-early', localAt(1, 9).toISOString(), 'vomit', { deleted: true });
+    expect(await readRecordFirstDay(PET)).toBeNull();
   });
 });
 

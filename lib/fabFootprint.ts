@@ -19,3 +19,8 @@ export const FAB_SCROLL_INSET_FLOOR = 88;
 
 /** Home's Design v2 bottom inset — the page's 96pt. Never below the floor. */
 export const HOME_V2_SCROLL_INSET = 96;
+
+/** History v2's bottom inset (HV-7, spec AC 14): the last row clears the + button at scroll
+ *  end. The round-5 page's list pads by the same 96pt Home does, and it is never below the
+ *  floor. */
+export const HISTORY_V2_SCROLL_INSET = 96;

@@ -1,0 +1,662 @@
+// History v2's list, rendered over the REAL reads (CUL-1164 / HV-7; spec §7 AC 1 (the screen
+// half), 5, 6, 7, 10, 11, 12, 13, 14; §3.1 the landing and the tab re-press; §3.12 the quiet
+// states).
+//
+// Every read runs its production SQL against the production DDL on `node:sqlite` (the
+// `lib/historyQueries.test.ts` harness), and the stores are the real ones, so a count on screen
+// is the count the app would show over this record, never a fixture's idea of it (C-35: a
+// fixture shaped unlike production is green over nothing). Days are local keys anchored to
+// today (C-29), rows are built from local components (B-514).
+//
+// Only the edges are stubbed: the router, the motion hooks, the sync (pull to refresh calls
+// it), the network client, and the week strip, replaced by a probe that records what it was
+// handed (HV-8 fills the real one in parallel; AC 1's screen half is that the strip is handed
+// the count line's own facts).
+
+jest.mock('expo-file-system', () => ({ File: class {} }));
+jest.mock('../../lib/supabase', () => ({ supabase: {} }));
+jest.mock('../../lib/sync', () => ({
+  syncNow: jest.fn(async () => undefined),
+  syncPendingEvents: jest.fn(),
+  syncPendingFeedingArrangements: jest.fn(),
+  ensureEventAttachmentsSynced: jest.fn(),
+  syncPendingVetVisits: jest.fn(),
+}));
+jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
+jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
+
+// The navigator: a stable object, as React Navigation's is, whose listeners a test can fire
+// (the History tab's re-tap), and a focus callback a test can replay (returning to History).
+const mockNavigation = {
+  focused: true,
+  listeners: new Set<() => void>(),
+  isFocused() {
+    return this.focused;
+  },
+  addListener(_event: 'tabPress', cb: () => void) {
+    this.listeners.add(cb);
+    return () => this.listeners.delete(cb);
+  },
+};
+const mockFocusCallbacks = new Set<() => void>();
+jest.mock('expo-router', () => {
+  const React = require('react');
+  return {
+    router: { push: jest.fn() },
+    useLocalSearchParams: () => ({}),
+    useNavigation: () => mockNavigation,
+    useFocusEffect: (cb: () => void) => {
+      React.useEffect(() => {
+        mockFocusCallbacks.add(cb);
+        cb();
+        return () => mockFocusCallbacks.delete(cb);
+      }, [cb]);
+    },
+  };
+});
+
+// The strip's slot: a probe holding what the list handed it.
+let mockStripDays: { day: string; total: number }[] = [];
+jest.mock('./WeekStrip', () => ({
+  WeekStrip: ({ days }: { days: { day: string; total: number }[] }) => {
+    mockStripDays = days.map((d) => ({ day: d.day, total: d.total }));
+    return null;
+  },
+}));
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { DatabaseSync } = require('node:sqlite');
+let mockRaw: InstanceType<typeof DatabaseSync>;
+/** When set, every read waits on it: a read held in flight (AC 12). */
+let mockGate: Promise<void> | null = null;
+/** When set, every read rejects: a failed read (§3.12). */
+let mockFail = false;
+jest.mock('expo-sqlite', () => ({
+  openDatabaseSync: () => ({
+    getAllAsync: async (sql: string, params: unknown[] = []) => {
+      if (mockGate) await mockGate;
+      if (mockFail) throw new Error('disk I/O error');
+      return mockRaw.prepare(sql).all(...(params as never[]));
+    },
+    getFirstAsync: async (sql: string, params: unknown[] = []) => {
+      if (mockGate) await mockGate;
+      if (mockFail) throw new Error('disk I/O error');
+      return mockRaw.prepare(sql).get(...(params as never[])) ?? null;
+    },
+    runAsync: async (sql: string, params: unknown[] = []) => mockRaw.prepare(sql).run(...(params as never[])),
+    execAsync: async (sql: string) => mockRaw.exec(sql),
+  }),
+}));
+
+import { StyleSheet } from 'react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { router } from 'expo-router';
+import { HistoryList } from './HistoryList';
+import { BASE_SCHEMA_SQL, applyColumnUpgrades } from '../../lib/localSchema';
+import { MEDICATION_SCHEMA_SQL } from '../../lib/medications';
+import { DIET_TRIAL_SCHEMA_SQL } from '../../lib/dietTrialMirror';
+import { FAB_SCROLL_INSET_FLOOR, HISTORY_V2_SCROLL_INSET } from '../../lib/fabFootprint';
+import { shiftDay } from '../../lib/historyDays';
+import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
+import { syncNow } from '../../lib/sync';
+import { usePetStore, type Pet } from '../../store/petStore';
+import { defaultHistoryScope, useHistoryScopeStore } from '../../store/historyScopeStore';
+import { useHistoryListStore } from '../../store/historyListStore';
+import { useEventStore } from '../../store/eventStore';
+import { useSyncStore } from '../../store/syncStore';
+import { recordDay, recordWeekday } from '../../lib/recordDates';
+
+// ── The record ──────────────────────────────────────────────────────────────────
+
+const TODAY = toLocalDayKey(new Date());
+const dayAgo = (n: number) => shiftDay(TODAY, -n);
+/** An instant on a local day, from its local components (B-514). */
+function at(n: number, h: number, m = 0): string {
+  const d = dayKeyToLocalDate(dayAgo(n)) as Date;
+  d.setHours(h, m, 0, 0);
+  return d.toISOString();
+}
+
+const PET_A: Pet = {
+  id: 'pa', name: 'Nyx', species: 'dog', breed: null, date_of_birth: null, date_of_birth_precision: 'exact',
+  sex: 'female', weight_kg: null, photo_path: null,
+};
+const PET_B: Pet = { ...PET_A, id: 'pb', name: 'Mochi', species: 'cat', sex: 'male' };
+
+function insertEvent(id: string, occurredAt: string, type: string, opts: { pet?: string; notes?: string | null } = {}) {
+  mockRaw
+    .prepare(
+      `INSERT INTO events (id, pet_id, event_type, occurred_at, occurred_at_confidence, notes,
+                           source, created_at, updated_at, deleted_at, synced)
+       VALUES (?, ?, ?, ?, 'witnessed', ?, 'manual', ?, ?, NULL, 1)`,
+    )
+    .run(id, opts.pet ?? PET_A.id, type, occurredAt, opts.notes ?? null, occurredAt, occurredAt);
+}
+
+function insertFood(id: string, brand: string, product: string, format = 'dry_kibble') {
+  mockRaw
+    .prepare(`INSERT INTO food_items_cache (id, brand, product_name, format, food_type) VALUES (?, ?, ?, ?, 'meal')`)
+    .run(id, brand, product, format);
+}
+
+function insertMeal(id: string, occurredAt: string, foodId: string, rating: string | null, pet = PET_A.id) {
+  insertEvent(id, occurredAt, 'meal', { pet });
+  mockRaw
+    .prepare(`INSERT INTO meals (id, event_id, pet_id, food_item_id, intake_rating) VALUES (?, ?, ?, ?, ?)`)
+    .run(`meal-${id}`, id, pet, foodId, rating);
+}
+
+function insertVisit(id: string, day: string, reason: string, clinic: string, pet = PET_A.id) {
+  mockRaw
+    .prepare(`INSERT INTO vet_visits (id, pet_id, visited_at, clinic_name, reason) VALUES (?, ?, ?, ?, ?)`)
+    .run(id, pet, day, clinic, reason);
+}
+
+function insertBowl(id: string, foodId: string, from: string) {
+  mockRaw
+    .prepare(`INSERT INTO feeding_arrangements (id, pet_id, food_item_id, method, active_from) VALUES (?, ?, ?, 'free_choice', ?)`)
+    .run(id, PET_A.id, foodId, from);
+}
+
+function insertLook(id: string, occurredAt: string, localDay: string) {
+  insertEvent(id, occurredAt, 'check_in');
+  mockRaw
+    .prepare(`INSERT INTO looks (id, event_id, pet_id, outcome, local_day) VALUES (?, ?, ?, 'observed', ?)`)
+    .run(`look-${id}`, id, PET_A.id, localDay);
+}
+
+const softDelete = (id: string) =>
+  mockRaw.prepare(`UPDATE events SET deleted_at = ? WHERE id = ?`).run(new Date().toISOString(), id);
+
+/**
+ * Nyx's week: four days back a finished and an unfinished meal; three days back nothing
+ * logged; two days back a meal, a vomit five minutes later and another meal; yesterday a
+ * vet visit and a meal; today a meal.
+ */
+function seedWeek() {
+  insertFood('rc', 'Royal Canin', 'Selected Protein PR');
+  insertMeal('m4a', at(4, 8), 'rc', 'all');
+  insertMeal('m4b', at(4, 18), 'rc', 'some');
+  insertMeal('m2a', at(2, 8), 'rc', 'all');
+  insertEvent('v2', at(2, 8, 5), 'vomit');
+  insertMeal('m2b', at(2, 12), 'rc', 'all');
+  insertVisit('visit-1', dayAgo(1), 'Recheck', 'Riverside Clinic');
+  insertMeal('m1', at(1, 9), 'rc', 'all');
+  insertMeal('m0', at(0, 0, 5), 'rc', 'all');
+}
+
+// ── The harness ─────────────────────────────────────────────────────────────────
+
+/** The slice of a rendered node this file reads (react-test-renderer ships no types). */
+interface RenderedNode {
+  children: (RenderedNode | string)[];
+}
+
+/** Every string under a node, in order: nested Text spans included. */
+function textOf(node: RenderedNode | string | null | undefined): string {
+  if (node == null) return '';
+  if (typeof node === 'string') return node;
+  return node.children.map(textOf).join('');
+}
+
+const text = (testID: string) => textOf(screen.getByTestId(testID) as unknown as RenderedNode);
+
+async function settle(): Promise<void> {
+  await act(async () => {
+    for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
+  });
+}
+
+async function renderList(): Promise<ReturnType<typeof render>> {
+  const view = render(<HistoryList />);
+  await settle();
+  return view;
+}
+
+function setScope(patch: Partial<ReturnType<typeof defaultHistoryScope>>) {
+  act(() => {
+    useHistoryScopeStore.setState(patch);
+  });
+}
+
+beforeEach(async () => {
+  jest.clearAllMocks();
+  mockGate = null;
+  mockFail = false;
+  mockStripDays = [];
+  mockNavigation.focused = true;
+  mockNavigation.listeners.clear();
+  mockFocusCallbacks.clear();
+  mockRaw = new DatabaseSync(':memory:');
+  mockRaw.exec(BASE_SCHEMA_SQL);
+  mockRaw.exec(MEDICATION_SCHEMA_SQL);
+  mockRaw.exec(DIET_TRIAL_SCHEMA_SQL);
+  await applyColumnUpgrades(async (sql: string) => {
+    try {
+      mockRaw.exec(sql);
+    } catch {
+      /* a column another constant already carries */
+    }
+  });
+  act(() => {
+    usePetStore.setState({ pets: [PET_A, PET_B], activePet: PET_A });
+    useHistoryScopeStore.setState({ ...defaultHistoryScope(PET_A.id), pendingLanding: null });
+    useHistoryListStore.getState().reset();
+    useEventStore.setState({ todayEvents: [] });
+  });
+});
+
+// ── The count line, the headers, the strip: one read (AC 1, the screen half) ─────
+
+describe('one read behind every number on screen (AC 1, R-1)', () => {
+  it('the count line, every day header and the strip are the same facts', async () => {
+    seedWeek();
+    await renderList();
+    // Six meals and a vomit since the record's first day; three days back is unlogged.
+    expect(text('history-count-line-1')).toBe(`All time · 7 logged since ${recordDay(dayAgo(4), TODAY)}`);
+    expect(text('history-count-line')).toContain('1 day unlogged');
+    // Each header's total, summed, is the line's total.
+    const totals = [0, 1, 2, 4].map((n) => Number(/^(\d+) logged/.exec(text(`history-day-counts-${dayAgo(n)}`))?.[1]));
+    expect(totals.reduce((a, b) => a + b, 0)).toBe(7);
+    // The strip was handed the very same days, with the same totals.
+    expect(mockStripDays).toEqual(
+      [4, 2, 1, 0].map((n) => ({ day: dayAgo(n), total: n === 4 || n === 2 ? (n === 4 ? 2 : 3) : 1 })),
+    );
+  });
+
+  it('a header names symptoms in the rose ink and an unfinished meal in neutral grey (H-2)', async () => {
+    seedWeek();
+    await renderList();
+    expect(text(`history-day-counts-${dayAgo(2)}`)).toBe('3 logged · 1 vomit');
+    expect(text(`history-day-counts-${dayAgo(4)}`)).toBe('2 logged · 1 meal not finished');
+    const vomit = screen.getByText('1 vomit');
+    const unfinished = screen.getByText('1 meal not finished');
+    expect(StyleSheet.flatten(vomit.props.style).color).toBe('#9F1239');
+    expect(StyleSheet.flatten(unfinished.props.style).color).not.toBe('#9F1239');
+  });
+});
+
+// ── AC 5: every count re-derives together ───────────────────────────────────────
+
+describe('AC 5 — a write, a removal, a sync tick and a pull each re-derive every count', () => {
+  const total = () => text('history-count-line-1');
+
+  it('a write through the Today store while History is on screen', async () => {
+    seedWeek();
+    await renderList();
+    expect(total()).toContain('7 logged');
+    insertMeal('m0b', at(0, 0, 10), 'rc', 'all');
+    act(() => useEventStore.setState({ todayEvents: [{ id: 'm0b' } as never] }));
+    await settle();
+    expect(total()).toContain('8 logged');
+    expect(text(`history-day-counts-${TODAY}`)).toBe('2 logged');
+  });
+
+  it('a removal on the record screen, seen when History is focused again', async () => {
+    seedWeek();
+    await renderList();
+    softDelete('v2');
+    act(() => mockFocusCallbacks.forEach((cb) => cb()));
+    await settle();
+    expect(total()).toContain('6 logged');
+    expect(text(`history-day-counts-${dayAgo(2)}`)).toBe('2 logged');
+  });
+
+  it('a sync tick', async () => {
+    seedWeek();
+    await renderList();
+    insertMeal('from-elsewhere', at(3, 10), 'rc', 'all');
+    act(() => useSyncStore.getState().bumpHydrationTick());
+    await settle();
+    expect(total()).toContain('8 logged');
+    // Three days back is logged now: no unlogged day is left to disclose.
+    expect(text('history-count-line')).not.toContain('unlogged');
+  });
+
+  it('a pull to refresh syncs, then re-reads', async () => {
+    seedWeek();
+    await renderList();
+    insertMeal('pulled', at(3, 10), 'rc', 'all');
+    const list = screen.getByTestId('history-list');
+    await act(async () => {
+      await list.props.refreshControl.props.onRefresh();
+    });
+    await settle();
+    expect(syncNow).toHaveBeenCalledTimes(1);
+    expect(total()).toContain('8 logged');
+  });
+});
+
+// ── AC 6 / AC 7: Noticed and search ─────────────────────────────────────────────
+
+describe('AC 6 — under Noticed: the one link, no count, no coverage, no gap line', () => {
+  it('the count line is exactly the link to Patterns, and nothing states a miss', async () => {
+    seedWeek();
+    insertLook('look-1', at(1, 21), dayAgo(1));
+    setScope({ filter: { kind: 'noticed' } });
+    await renderList();
+    expect(text('history-count-line')).toBe('What you noticed is on Patterns ›');
+    expect(screen.queryByTestId('history-count-line-1')).toBeNull();
+    expect(screen.queryAllByTestId(/^history-gap-/)).toEqual([]);
+    expect(screen.queryByTestId(`history-day-counts-${dayAgo(1)}`)).toBeNull();
+    // The look is drawn, on its own day.
+    expect(screen.getByTestId('history-look-look-1')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('history-door-noticed-patterns'));
+    expect(router.push).toHaveBeenCalledWith('/insights');
+  });
+});
+
+describe('AC 7 — under search: the date only, and the search form of the line', () => {
+  it('headers carry no counts; the line names the word and that search never counts', async () => {
+    seedWeek();
+    insertFood('rabbit', 'Instinct', 'Limited Ingredient Rabbit', 'wet_canned');
+    insertMeal('rab', at(1, 13), 'rabbit', 'all');
+    setScope({ searchOpen: true, searchText: 'rabbit' });
+    await renderList();
+    expect(text('history-count-line-1')).toBe('Rows that mention “rabbit” · All time');
+    expect(text('history-count-line')).toContain('Search finds; it never counts.');
+    expect(screen.queryByTestId(`history-day-counts-${dayAgo(1)}`)).toBeNull();
+    // The matched day only; its visit is not a row the search found.
+    expect(screen.getByTestId(`history-day-header-${dayAgo(1)}`)).toBeTruthy();
+    expect(screen.queryByTestId(`history-day-header-${dayAgo(2)}`)).toBeNull();
+    expect(screen.queryByTestId('history-item-visit-visit-1')).toBeNull();
+    expect(screen.getByTestId('spine-node-rab')).toBeTruthy();
+    expect(screen.queryByTestId('spine-node-m1')).toBeNull();
+  });
+
+  it('a search with no match names the word searched', async () => {
+    seedWeek();
+    setScope({ searchOpen: true, searchText: 'insulin' });
+    await renderList();
+    expect(text('history-no-search-match')).toContain('Nothing matches “insulin”');
+    expect(text('history-no-search-match')).toContain('Search looks in food and medicine names.');
+  });
+});
+
+// ── AC 10 / AC 11: gap lines and date-only items ───────────────────────────────
+
+describe('AC 10 / AC 11 — gap lines and date-only items, drawn', () => {
+  it('All types: an unlogged day is one line; a visit sits at the top of its day and opens it', async () => {
+    seedWeek();
+    await renderList();
+    expect(text(`history-gap-${dayAgo(3)}`)).toBe(`${recordWeekday(dayAgo(3), TODAY)} · nothing logged`);
+    fireEvent.press(screen.getByTestId('history-item-visit-visit-1'));
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/vet-visits/[id]', params: { id: 'visit-1' } });
+  });
+
+  it('a filter: the visit stays as its day\'s line with its absence; nothing is claimed before the first row of the kind, or today', async () => {
+    seedWeek();
+    setScope({ filter: { kind: 'type', type: 'vomit' } });
+    await renderList();
+    // Yesterday held only a visit and a meal: its line keeps the visit and says what it lacks.
+    expect(text(`history-items-${dayAgo(1)}`)).toBe(
+      `${recordWeekday(dayAgo(1), TODAY)} · Vet visit, Recheck · no vomit logged`,
+    );
+    // Three days back is before the first vomit (two days back): nothing is claimed there.
+    expect(screen.queryByTestId(`history-gap-${dayAgo(3)}`)).toBeNull();
+    expect(screen.getByTestId(`history-day-header-${dayAgo(2)}`)).toBeTruthy();
+    expect(screen.queryByTestId(`history-day-header-${TODAY}`)).toBeNull();
+    expect(screen.queryAllByTestId(/^history-gap-/).map((n) => n.props.testID)).not.toContain(`history-gap-${TODAY}`);
+  });
+
+  it('a visit-only day renders its card under All types (a visit-only day is a day)', async () => {
+    seedWeek();
+    insertVisit('visit-2', dayAgo(3), 'Vaccines', 'Riverside Clinic');
+    await renderList();
+    expect(screen.getByTestId(`history-day-header-${dayAgo(3)}`)).toBeTruthy();
+    expect(screen.getByTestId('history-item-visit-visit-2')).toBeTruthy();
+    expect(text(`history-day-counts-${dayAgo(3)}`)).toBe('nothing logged');
+  });
+});
+
+// ── R-2 on screen: a filter only hides ─────────────────────────────────────────
+
+describe('a filter only hides (R-2, AC 9 on screen)', () => {
+  it('under Meal, two meals a vomit sits between are never folded into one run', async () => {
+    seedWeek();
+    setScope({ filter: { kind: 'type', type: 'meal' } });
+    await renderList();
+    expect(screen.getByTestId('spine-node-m2a')).toBeTruthy();
+    expect(screen.getByTestId('spine-node-m2b')).toBeTruthy();
+    expect(screen.queryByTestId('spine-node-v2')).toBeNull();
+  });
+});
+
+// ── AC 12 / AC 13: the pet switch ───────────────────────────────────────────────
+
+describe('AC 12 — a read that answers for another pet is dropped', () => {
+  it('pet A\'s read, held in flight across a switch to B, never draws under B', async () => {
+    seedWeek();
+    insertMeal('b-meal', at(0, 0, 20), 'rc', 'all', PET_B.id);
+    let release: () => void = () => {};
+    mockGate = new Promise<void>((r) => {
+      release = r;
+    });
+    render(<HistoryList />);
+    await settle();
+    expect(screen.getByTestId('history-skeleton', { includeHiddenElements: true })).toBeTruthy();
+    act(() => usePetStore.setState({ activePet: PET_B }));
+    await settle();
+    mockGate = null;
+    await act(async () => {
+      release();
+    });
+    await settle();
+    expect(screen.queryByTestId('spine-node-m0')).toBeNull();
+    expect(screen.getByTestId('spine-node-b-meal')).toBeTruthy();
+    expect(useHistoryListStore.getState().snapshot?.petId).toBe(PET_B.id);
+  });
+});
+
+describe('AC 13 — a pet switch resets every scope', () => {
+  it('under every non-default scope, the new pet opens on All types, All time, no search, nothing landed', async () => {
+    seedWeek();
+    insertMeal('b-meal', at(0, 0, 20), 'rc', 'all', PET_B.id);
+    setScope({
+      filter: { kind: 'type', type: 'vomit' },
+      window: { kind: 'visit' },
+      searchOpen: true,
+      searchText: 'royal',
+      landedDay: dayAgo(2),
+      stripWeek: dayAgo(7),
+    });
+    await renderList();
+    act(() => usePetStore.setState({ activePet: PET_B }));
+    await settle();
+    const s = useHistoryScopeStore.getState();
+    expect({ petId: s.petId, filter: s.filter, window: s.window, searchOpen: s.searchOpen, searchText: s.searchText, landedDay: s.landedDay, stripWeek: s.stripWeek })
+      .toEqual(defaultHistoryScope(PET_B.id));
+    // The new pet's own record, under All time: no visit anchor came across.
+    expect(text('history-count-line-1')).toContain('All time · 1 logged');
+    expect(useHistoryListStore.getState().snapshot?.windowFacts.sinceVisit).toBeNull();
+  });
+});
+
+// ── AC 14: the + button ─────────────────────────────────────────────────────────
+
+describe('AC 14 — the last row clears the + button', () => {
+  it('the list pads its end by the shipped inset, never below the floor', async () => {
+    seedWeek();
+    await renderList();
+    const style = StyleSheet.flatten(screen.getByTestId('history-list').props.contentContainerStyle);
+    expect(style.paddingBottom).toBe(HISTORY_V2_SCROLL_INSET);
+    expect(HISTORY_V2_SCROLL_INSET).toBeGreaterThanOrEqual(FAB_SCROLL_INSET_FLOOR);
+  });
+});
+
+// ── §3.12 the quiet states ──────────────────────────────────────────────────────
+
+describe('the quiet states (§3.12, C-12)', () => {
+  it('loading: the silhouette, never "Nothing logged yet" over a read that has not answered', async () => {
+    seedWeek();
+    let release: () => void = () => {};
+    mockGate = new Promise<void>((r) => {
+      release = r;
+    });
+    render(<HistoryList />);
+    await settle();
+    expect(screen.getByTestId('history-skeleton', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.queryByText('Nothing logged yet')).toBeNull();
+    expect(screen.queryByTestId('history-count-line')).toBeNull();
+    mockGate = null;
+    await act(async () => release());
+    await settle();
+    expect(screen.queryByTestId('history-skeleton', { includeHiddenElements: true })).toBeNull();
+  });
+
+  it('a failed read: the shipped copy and a way back; no count line, no strip', async () => {
+    seedWeek();
+    mockFail = true;
+    await renderList();
+    expect(text('history-error')).toContain("Couldn't load history");
+    expect(text('history-error')).toContain("Something went wrong loading Nyx's history.");
+    expect(screen.queryByTestId('history-list-header')).toBeNull();
+    mockFail = false;
+    fireEvent.press(screen.getByText('Try again'));
+    await settle();
+    expect(screen.queryByTestId('history-error')).toBeNull();
+    expect(text('history-count-line-1')).toContain('7 logged');
+  });
+
+  it('a new account: the first-log line under the strip, and no count line', async () => {
+    await renderList();
+    expect(text('history-empty')).toContain('Nothing logged yet');
+    expect(text('history-empty')).toContain("Tap + anywhere to log Nyx's first food or symptom.");
+    expect(screen.queryByTestId('history-count-line')).toBeNull();
+    expect(screen.getByTestId('history-list-header')).toBeTruthy();
+  });
+
+  it('today with nothing logged keeps its own card and never joins yesterday\'s gap', async () => {
+    seedWeek();
+    softDelete('m0');
+    await renderList();
+    expect(screen.getByTestId(`history-day-header-${TODAY}`)).toBeTruthy();
+    expect(screen.getByText('Nothing logged yet today.')).toBeTruthy();
+  });
+
+  it('a filter with no row ever: the shipped no-match state', async () => {
+    seedWeek();
+    setScope({ filter: { kind: 'type', type: 'weight_check' } });
+    await renderList();
+    expect(text('history-no-match')).toContain('Nothing matches that filter');
+  });
+
+  it('the list ends where the record starts, naming the pet and the day', async () => {
+    seedWeek();
+    await renderList();
+    expect(text('history-record-start')).toBe(`Nyx's record starts here · ${recordWeekday(dayAgo(4), TODAY)}`);
+  });
+});
+
+// ── The bowl's line (§3.3) ──────────────────────────────────────────────────────
+
+describe('the bowl\'s line (§3.3, H-6)', () => {
+  it('under All types and Meal, while a bowl is down; never under another filter', async () => {
+    seedWeek();
+    insertBowl('bowl-1', 'rc', dayAgo(2));
+    await renderList();
+    expect(text('history-bowl-bowl-1')).toBe(
+      `Always available · Royal Canin · Selected Protein PR, Dry · since ${recordDay(dayAgo(2), TODAY)}`,
+    );
+    setScope({ filter: { kind: 'type', type: 'vomit' } });
+    await settle();
+    expect(screen.queryByTestId('history-bowl-bowl-1')).toBeNull();
+    setScope({ filter: { kind: 'type', type: 'meal' } });
+    await settle();
+    expect(screen.getByTestId('history-bowl-bowl-1')).toBeTruthy();
+  });
+});
+
+// ── §3.1 the landed day and the tab re-press ────────────────────────────────────
+
+describe('the landed day (§3.1, C-22)', () => {
+  it('a landing outlines its day, jumps to it, and clears only on the owner\'s own scroll', async () => {
+    seedWeek();
+    await renderList();
+    const list = screen.getByTestId('history-list');
+    act(() => {
+      useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(2));
+    });
+    await settle();
+    const header = screen.getByTestId(`history-day-header-${dayAgo(2)}`);
+    expect(StyleSheet.flatten(header.props.style).borderColor).toBe('#0B7B6C');
+    // Consumed once: the request is gone from the store.
+    expect(useHistoryScopeStore.getState().pendingLanding).toBeNull();
+    // The owner's scroll clears it.
+    act(() => list.props.onScrollBeginDrag());
+    await settle();
+    expect(useHistoryScopeStore.getState().landedDay).toBeNull();
+    const after = screen.getByTestId(`history-day-header-${dayAgo(2)}`);
+    expect(StyleSheet.flatten(after.props.style).borderColor).not.toBe('#0B7B6C');
+  });
+
+  it('a landing on an unlogged day outlines the gap line that holds it', async () => {
+    seedWeek();
+    await renderList();
+    act(() => {
+      useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(3));
+    });
+    await settle();
+    const gap = screen.getByTestId(`history-gap-${dayAgo(3)}`);
+    expect(StyleSheet.flatten(gap.props.style).borderColor).toBe('#0B7B6C');
+  });
+});
+
+describe('the tab re-press (§3.1)', () => {
+  it('returns to today: the landed state and the strip\'s week cleared', async () => {
+    seedWeek();
+    await renderList();
+    act(() => {
+      useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(4));
+    });
+    await settle();
+    expect(useHistoryScopeStore.getState().landedDay).toBe(dayAgo(4));
+    act(() => mockNavigation.listeners.forEach((cb) => cb()));
+    expect(useHistoryScopeStore.getState().landedDay).toBeNull();
+    expect(useHistoryScopeStore.getState().stripWeek).toBeNull();
+  });
+
+  it('does nothing when History is not the tab on screen', async () => {
+    seedWeek();
+    await renderList();
+    act(() => {
+      useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(4));
+    });
+    await settle();
+    mockNavigation.focused = false;
+    act(() => mockNavigation.listeners.forEach((cb) => cb()));
+    expect(useHistoryScopeStore.getState().landedDay).toBe(dayAgo(4));
+  });
+});
+
+// ── The record route (§3.10) and the doors (§3.2) ──────────────────────────────
+
+describe('the record route and the doors', () => {
+  it('a row opens its record', async () => {
+    seedWeek();
+    await renderList();
+    fireEvent.press(screen.getByTestId('spine-node-v2'));
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/event/[id]', params: { id: 'v2' } });
+  });
+
+  it('a symptom filter\'s door opens that symptom\'s compare', async () => {
+    seedWeek();
+    setScope({ filter: { kind: 'type', type: 'vomit' } });
+    await renderList();
+    fireEvent.press(screen.getByTestId('history-door-symptom-compare'));
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/insights/[metric]', params: { metric: 'vomit' } });
+  });
+});
+
+// ── Waiting for this in a test's own words ─────────────────────────────────────
+
+describe('a visit\'s day under the visit window (H-11)', () => {
+  it('"Since the last vet visit" starts on the visit\'s day and names it', async () => {
+    seedWeek();
+    setScope({ window: { kind: 'visit' } });
+    await renderList();
+    await waitFor(() =>
+      expect(text('history-count-line-1')).toBe(`Since the last vet visit, ${recordDay(dayAgo(1), TODAY)} · 2 logged`),
+    );
+  });
+});
