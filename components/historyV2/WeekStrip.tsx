@@ -15,8 +15,10 @@
 // ── A READ THAT HAS NOT ANSWERED IS NEVER A GREY SQUARE (C-12) ───────────────────
 //
 // The facts on hand may answer another window (a read in flight after a window change),
-// another pet (a switch the list has not caught up with), or a course filter whose course
-// has not loaded. Drawn anyway, they would call days "nothing logged" that nobody has read,
+// another pet (a switch the list has not caught up with: the window's pet AND the facts'
+// pet are checked, since two pets can share a window's dates), or a course filter whose
+// course has not loaded. Drawn anyway, they would call days "nothing logged" that nobody
+// has read,
 // so the strip draws its silhouette instead, hidden from VoiceOver, at its own height so
 // nothing shifts when the facts land (GAP-10: "a cell whose count has not answered is never
 // drawn as a mark").
@@ -58,7 +60,7 @@ import {
 } from 'react-native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
-import { dayFactsOn, shiftDay, type DayFacts, type HistoryCourse, type HistoryFacts } from '../../lib/historyDays';
+import { claimsFromOf, dayFactsOn, shiftDay, type DayFacts, type HistoryCourse, type HistoryFacts } from '../../lib/historyDays';
 import type { ResolvedWindow } from '../../lib/historyWindows';
 import {
   factsAnswerWindow,
@@ -146,11 +148,17 @@ export function WeekStrip({ facts, window, course, today, petName }: WeekStripPr
   const weeks = useMemo(() => (bounds ? stripWeeksOf(bounds) : []), [bounds]);
   const page = stripPageOf(weeks, stripWeek);
 
+  // Every input must describe the same pet and the same days: the window and the facts
+  // both for the pet on screen (two pets can share a window's dates, so a range match
+  // alone is not enough), the facts read for exactly this window, and a window that does
+  // not reach past the `today` the cells are judged against.
   const answered =
     facts !== null &&
     petId !== null &&
     window.petId === petId &&
+    facts.petId === petId &&
     factsAnswerWindow(facts.range, window.bounds) &&
+    window.bounds.toDay <= today &&
     !courseLoading;
 
   if (petId === null) return null;
@@ -229,8 +237,9 @@ function StripPager({
       recordStart: facts.firsts.record,
       petName,
       courseName: course?.name ?? null,
+      claimsFrom: claimsFromOf(facts.firsts, filter, course?.days ?? null),
     }),
-    [bounds.fromDay, bounds.toDay, facts.firsts.record, petName, course],
+    [bounds.fromDay, bounds.toDay, facts.firsts, petName, course, filter],
   );
 
   const arrows = stripArrowsOf(weeks, page, {

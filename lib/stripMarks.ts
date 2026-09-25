@@ -107,7 +107,15 @@ export interface StripMark {
   /** What VoiceOver reads. Null for an absent cell, which is never focusable. */
   label: string | null;
   /** The cell is a door: a tap lands on its day's card, or on the gap line that holds it
-   *  (§3.4). A day ahead, before the record or outside the bounds is a plain view (C-7). */
+   *  (§3.4). Only a day the list holds is one: never a day ahead, before the record or
+   *  outside the bounds; under Noticed only a day with a look; under any other filter,
+   *  never today without a match nor a day before the filter's first row, where the list
+   *  lays out nothing (`listSectionsOf`). A cell that is not a door is a plain view (C-7).
+   *
+   *  BLIND SPOT, stated (C-38): a date-only item (a visit, a course start, a bowl) gives a
+   *  day an item line under every filter, and the strip cannot see items, so such a day
+   *  before the filter's first row is not a door here though the list holds it. A missed
+   *  door, never a door to nothing. */
   tappable: boolean;
 }
 
@@ -124,6 +132,11 @@ export interface StripWindow {
   petName: string;
   /** A course filter's course name ("no Cetirizine HCl dose logged"), else null. */
   courseName: string | null;
+  /** The first day the list says anything about a day the filter did not show
+   *  (`claimsFromOf`, HV-4's own rule), or null when it never does. A cell is a door only
+   *  to a day the list holds (§3.4: a tap lands on the day's card or the gap line holding
+   *  it), and this is what decides it for a day the filter did not show. */
+  claimsFrom: string | null;
 }
 
 // ── The spoken day ───────────────────────────────────────────────────────────────
@@ -232,6 +245,15 @@ export function stripMarkOf(f: DayFacts, filter: HistoryFilter, window: StripWin
     label,
     tappable,
   });
+  // Does the list hold this day (`listSectionsOf`)? A day the filter shows is a card; a
+  // day it did not show is held only by a gap line, from the list's first claim day on and
+  // before today, or under All types by today's open card.
+  const listHolds = (shows: boolean): boolean => {
+    if (shows) return true;
+    const from = window.claimsFrom;
+    if (from === null || day < from) return false;
+    return isToday ? filter.kind === 'all' : true;
+  };
 
   if (day > today) {
     return window.toDay >= today ? mark('ahead', 'none', `${word}, ahead`, false) : mark('outside', 'none', null, false);
@@ -248,12 +270,13 @@ export function stripMarkOf(f: DayFacts, filter: HistoryFilter, window: StripWin
   if (day < window.fromDay || day > window.toDay) return mark('outside', 'none', null, false);
 
   // H-9: under Noticed the strip shows dates only, and nothing says a day had no look.
-  if (filter.kind === 'noticed') return mark('noticed', 'none', head, true);
+  // The list shows only the days with a look there, and says nothing about the rest.
+  if (filter.kind === 'noticed') return mark('noticed', 'none', head, f.looked);
 
   if (f.total === 0) {
     return isToday
-      ? mark('open', 'none', `${word}, today, nothing logged yet`, true)
-      : mark('unlogged', 'none', `${word}, nothing logged`, true);
+      ? mark('open', 'none', `${word}, today, nothing logged yet`, listHolds(false))
+      : mark('unlogged', 'none', `${word}, nothing logged`, listHolds(false));
   }
 
   const total = `${formatCount(f.total)} logged in all`;
@@ -267,17 +290,17 @@ export function stripMarkOf(f: DayFacts, filter: HistoryFilter, window: StripWin
     const vomit = k > 0 ? presentText({ kind: 'type', type: TIMING_SYMPTOM_TYPE }, k, null) : rose ? 'a vomiting episode began' : 'no vomit logged';
     const parts = [head, vomit, total];
     if (broken.count > 0) parts.push(broken.text(broken.count));
-    return mark(rose ? 'rose' : 'logged', broken.count > 0 ? 'broken' : 'solid', parts.join(', '), true);
+    return mark(rose ? 'rose' : 'logged', broken.count > 0 ? 'broken' : 'solid', parts.join(', '), listHolds(true));
   }
 
   const k = dayCountFor(f, filter) ?? 0;
   if (k === 0) {
     const none = absenceText(filter, window.courseName) ?? 'nothing of this kind logged';
-    return mark('quiet', 'none', [head, none, total].join(', '), true);
+    return mark('quiet', 'none', [head, none, total].join(', '), listHolds(false));
   }
   const parts = [head, presentText(filter, k, window.courseName), total];
   if (broken.count > 0) parts.push(broken.text(broken.count));
-  return mark(isSymptomFilter(filter) ? 'rose' : 'logged', broken.count > 0 ? 'broken' : 'solid', parts.join(', '), true);
+  return mark(isSymptomFilter(filter) ? 'rose' : 'logged', broken.count > 0 ? 'broken' : 'solid', parts.join(', '), listHolds(true));
 }
 
 // ── The pager (§3.4: bounded by the window, the record and a course) ─────────────

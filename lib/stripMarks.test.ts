@@ -17,6 +17,8 @@ import { SYMPTOM_TYPES } from '../constants/eventTypes';
 import {
   HISTORY_TYPE_KEYS,
   buildDayFacts,
+  claimsFromOf,
+  firstDaysOf,
   dayFactsOn,
   emptyDayFacts,
   type DayFacts,
@@ -49,7 +51,14 @@ const PHOTOS: HistoryFilter = { kind: 'photographed' };
 const NOTED: HistoryFilter = { kind: 'noted' };
 const NOTICED: HistoryFilter = { kind: 'noticed' };
 
-const WIN: StripWindow = { fromDay: '2026-05-14', toDay: TODAY, recordStart: '2026-05-14', petName: 'Nyx', courseName: null };
+const WIN: StripWindow = {
+  fromDay: '2026-05-14',
+  toDay: TODAY,
+  recordStart: '2026-05-14',
+  petName: 'Nyx',
+  courseName: null,
+  claimsFrom: '2026-05-14',
+};
 
 function day(key: string, over: Partial<DayFacts> = {}): DayFacts {
   return { ...emptyDayFacts(key), ...over };
@@ -172,7 +181,7 @@ describe('stripMarkOf: every row of the §3.4 table (AC 25)', () => {
     expect(tap(day(TODAY))).toBe(true);
     expect(tap(day(SAT, { total: 4, byType: { meal: 4 } }), VOMIT)).toBe(true);
     expect(tap(day(SAT, { total: 1, byType: { vomit: 1 }, vomitEpisode: true }))).toBe(true);
-    expect(tap(day(SAT), NOTICED)).toBe(true);
+    expect(tap(day(SAT, { looked: true }), NOTICED)).toBe(true);
   });
 
   it('today carries its word on every state it can be in', () => {
@@ -182,6 +191,55 @@ describe('stripMarkOf: every row of the §3.4 table (AC 25)', () => {
     expect(stripMarkOf(day(TODAY), NOTICED, WIN, TODAY).label).toBe('Friday, September 25, today');
     expect(stripMarkOf(day(TODAY), VOMIT, WIN, TODAY).state).toBe('open');
     expect(stripMarkOf(day(SAT), ALL, WIN, TODAY).today).toBe(false);
+  });
+});
+
+describe('a cell is a door only to a day the list holds (§3.4; CUL-1165, the adversarial pass)', () => {
+  // The list (`listSectionsOf`) lays out a card for a day the filter shows, a gap line for
+  // a day it did not show from its first claim day on and before today, and today's open
+  // card under All types. Anything else is nowhere in the list, so a tap there would land
+  // on nothing: those cells are plain views, and keep their words.
+  const vomitFrom: StripWindow = { ...WIN, claimsFrom: '2026-09-17' }; // the first vomit ever
+
+  it('under a filter, a day before its first row is not a door, and still says what it holds', () => {
+    const quiet = stripMarkOf(day('2026-09-16', { total: 2, byType: { meal: 2 } }), VOMIT, vomitFrom, TODAY);
+    expect({ state: quiet.state, tappable: quiet.tappable }).toEqual({ state: 'quiet', tappable: false });
+    expect(quiet.label).toBe('Wednesday, September 16, no vomit logged, 2 logged in all');
+    const grey = stripMarkOf(day('2026-09-15'), VOMIT, vomitFrom, TODAY);
+    expect({ state: grey.state, tappable: grey.tappable }).toEqual({ state: 'unlogged', tappable: false });
+    // From the first row on, a gap line holds the same days.
+    expect(stripMarkOf(day('2026-09-18', { total: 1, byType: { meal: 1 } }), VOMIT, vomitFrom, TODAY).tappable).toBe(true);
+    expect(stripMarkOf(day('2026-09-19'), VOMIT, vomitFrom, TODAY).tappable).toBe(true);
+  });
+
+  it('today without a match is not a door under a filter; today\u2019s open card is one under All types', () => {
+    expect(stripMarkOf(day(TODAY, { total: 2, byType: { meal: 2 } }), VOMIT, vomitFrom, TODAY).tappable).toBe(false);
+    expect(stripMarkOf(day(TODAY), VOMIT, vomitFrom, TODAY).tappable).toBe(false);
+    expect(stripMarkOf(day(TODAY), ALL, WIN, TODAY).tappable).toBe(true);
+    expect(stripMarkOf(day(TODAY, { total: 1, byType: { vomit: 1 }, vomitEpisode: true }), VOMIT, vomitFrom, TODAY).tappable).toBe(true);
+  });
+
+  it('a new account\u2019s today is not a door: the quiet state speaks there, not a card', () => {
+    const fresh: StripWindow = { fromDay: TODAY, toDay: TODAY, recordStart: null, petName: 'Nyx', courseName: null, claimsFrom: null };
+    expect(stripMarkOf(day(TODAY), ALL, fresh, TODAY).tappable).toBe(false);
+  });
+
+  it('under Noticed only a day with a look is a door', () => {
+    expect(stripMarkOf(day(SAT, { looked: true }), NOTICED, { ...WIN, claimsFrom: null }, TODAY).tappable).toBe(true);
+    expect(stripMarkOf(day(SAT, { total: 3, byType: { meal: 3 } }), NOTICED, { ...WIN, claimsFrom: null }, TODAY).tappable).toBe(false);
+  });
+
+  it('claimsFromOf: the record under All types, the later of the record and the first row under a filter', () => {
+    const firsts = { ...firstDaysOf([], null), record: '2026-05-14', byType: { vomit: '2026-09-17', stool_normal: '2026-05-01' }, symptoms: '2026-09-17' };
+    expect(claimsFromOf(firsts, ALL, null)).toBe('2026-05-14');
+    expect(claimsFromOf(firsts, VOMIT, null)).toBe('2026-09-17');
+    expect(claimsFromOf(firsts, SYMPTOMS, null)).toBe('2026-09-17');
+    expect(claimsFromOf(firsts, STOOL, null)).toBe('2026-05-14'); // a row before the record never moves it earlier
+    expect(claimsFromOf(firsts, MEAL, null)).toBeNull(); // no meal ever: the list says nothing
+    expect(claimsFromOf(firsts, COURSE, { fromDay: '2026-07-01', toDay: '2026-09-05' })).toBe('2026-07-01');
+    expect(claimsFromOf(firsts, COURSE, null)).toBeNull(); // the course has not loaded
+    expect(claimsFromOf(firsts, NOTICED, null)).toBeNull(); // H-9
+    expect(claimsFromOf(firstDaysOf([], null), ALL, null)).toBeNull(); // an empty record
   });
 });
 
@@ -286,7 +344,7 @@ describe('precedence, and the record’s edges', () => {
   });
 
   it('a new account: every earlier day before the record, today open, later days ahead (§3.12)', () => {
-    const fresh: StripWindow = { fromDay: TODAY, toDay: TODAY, recordStart: null, petName: 'Nyx', courseName: null };
+    const fresh: StripWindow = { fromDay: TODAY, toDay: TODAY, recordStart: null, petName: 'Nyx', courseName: null, claimsFrom: null };
     expect(stripMarkOf(day('2026-09-24'), ALL, fresh, TODAY).state).toBe('before_record');
     expect(stripMarkOf(day(TODAY), ALL, fresh, TODAY).state).toBe('open');
     expect(stripMarkOf(day('2026-09-26'), ALL, fresh, TODAY).state).toBe('ahead');

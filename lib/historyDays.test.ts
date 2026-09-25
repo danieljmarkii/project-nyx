@@ -151,6 +151,7 @@ function firstsFrom(rows: readonly PopulationRow[], lookDays: readonly string[])
 
 function factsFor(range: DayRange, rows: readonly PopulationRow[] = ROWS): HistoryFacts {
   return {
+    petId: PET,
     range,
     days: buildDayFacts({ rows, lookDays: LOOK_DAYS, range, freeFedFoodIds: FREE_FED, regimens: REGIMENS }),
     firsts: firstsFrom(rows, LOOK_DAYS),
@@ -655,7 +656,7 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
 
   it('A new account: no count line at all', () => {
     const facts: HistoryFacts = {
-      range: WINDOWS.all.range, days: new Map(), firsts: firstDaysOf([], null), duplicates: { total: 0, byType: {} },
+      petId: PET, range: WINDOWS.all.range, days: new Map(), firsts: firstDaysOf([], null), duplicates: { total: 0, byType: {} },
     };
     expect(countLineOf({ filter: { kind: 'all' }, search: null, window: WINDOWS.all, facts, course: null, trialRange: null, today: TODAY, dates: DATES }))
       .toEqual({ kind: 'none' });
@@ -965,7 +966,7 @@ describe('AC 10 / AC 11 — the list\'s sections', () => {
   });
 
   it('a record with no events lays out nothing (the new-account state)', () => {
-    const empty: HistoryFacts = { range: WINDOWS.all.range, days: new Map(), firsts: firstDaysOf([], null), duplicates: { total: 0, byType: {} } };
+    const empty: HistoryFacts = { petId: PET, range: WINDOWS.all.range, days: new Map(), firsts: firstDaysOf([], null), duplicates: { total: 0, byType: {} } };
     expect(listSectionsOf({ span: WINDOWS.all.range, facts: empty, filter: { kind: 'all' }, course: null, itemDays, today: TODAY })).toEqual([]);
   });
 });

@@ -48,11 +48,21 @@ function day(key: string, over: Partial<DayFacts> = {}): DayFacts {
   return { ...emptyDayFacts(key), ...over };
 }
 
-function factsFor(window: ResolvedWindow, days: DayFacts[] = RECORD_DAYS): HistoryFacts {
+function factsFor(window: ResolvedWindow, days: DayFacts[] = RECORD_DAYS, petId: string = window.petId ?? PET): HistoryFacts {
   return {
+    petId,
     range: window.bounds,
     days: new Map(days.map((d) => [d.day, d])),
-    firsts: { record: RECORD, look: null, byType: {}, symptoms: null, photographed: null, noted: null },
+    // As the population read would find them: the first meal starts the record, the first
+    // vomit and the first dose come later (the list's first claim day per filter).
+    firsts: {
+      record: RECORD,
+      look: null,
+      byType: { meal: RECORD, vomit: '2026-09-21', medication: '2026-09-23' },
+      symptoms: '2026-09-21',
+      photographed: null,
+      noted: null,
+    },
     duplicates: { total: 0, byType: {} },
   };
 }
@@ -365,6 +375,15 @@ describe('a read that has not answered is never drawn as marks (C-12, GAP-10)', 
     silhouette(mount({ window: other, facts: factsFor(other) }));
   });
 
+  it('facts read for ANOTHER pet whose window has the same dates (a switch caught halfway)', () => {
+    silhouette(mount({ facts: factsFor(ALL_TIME, RECORD_DAYS, 'pet-2') }));
+  });
+
+  it('a window reaching past the today the cells are judged against', () => {
+    const tomorrowWindow = resolveWindow({ kind: 'all' }, { petId: PET, today: '2026-09-26', firstRecordDay: RECORD, trial: null, sinceVisit: null });
+    silhouette(mount({ window: tomorrowWindow, facts: factsFor(tomorrowWindow) }));
+  });
+
   it('a course filter whose course has not loaded', () => {
     resetScope({ filter: { kind: 'course', courseKey: 'reg-cet' } });
     silhouette(mount({ course: null }));
@@ -381,6 +400,34 @@ describe('a read that has not answered is never drawn as marks (C-12, GAP-10)', 
 });
 
 describe('the filter, from the store', () => {
+  it('under a filter, a day the list does not hold is not a door (the first row, today)', () => {
+    resetScope({ filter: { kind: 'type', type: 'vomit' } });
+    const api = mount();
+    const cells = within(api.getByTestId('week-strip-page-2026-09-20')).getAllByTestId('daymark');
+    // Sep 20 is before the first vomit ever (Sep 21): the list lays out nothing there.
+    expect(cells[0].props.accessibilityRole).toBeUndefined();
+    expect(cells[0].props.accessibilityLabel).toBe('Sunday, September 20, no vomit logged, 4 logged in all');
+    // Sep 21 holds the vomit; Sep 22 (nothing logged) and Sep 24 (no vomit) sit in gap lines.
+    expect(cells[1].props.accessibilityRole).toBe('button');
+    expect(cells[2].props.accessibilityRole).toBe('button');
+    expect(cells[4].props.accessibilityRole).toBe('button');
+    // Today without a vomit is nowhere in a filtered list.
+    expect(cells[5].props.accessibilityRole).toBeUndefined();
+    fireEvent.press(cells[5]);
+    expect(useHistoryScopeStore.getState().landedDay).toBeNull();
+  });
+
+  it('under Noticed only a day with a look is a door, and every day shows its date alone', () => {
+    resetScope({ filter: { kind: 'noticed' } });
+    const looked = RECORD_DAYS.map((d) => (d.day === '2026-09-24' ? { ...d, looked: true } : d));
+    const api = mount({ facts: factsFor(ALL_TIME, looked) });
+    const cells = within(api.getByTestId('week-strip-page-2026-09-20')).getAllByTestId('daymark');
+    expect(cells.filter((c) => c.props.accessibilityRole === 'button').map((c) => c.props.accessibilityLabel)).toEqual([
+      'Thursday, September 24',
+    ]);
+    expect(within(api.getByTestId('week-strip-page-2026-09-20')).queryAllByTestId(/daymark-line/)).toHaveLength(0);
+  });
+
   it('re-marks the same week for a new filter, keeping the week', () => {
     resetScope({ stripWeek: '2026-09-20' });
     const api = mount();

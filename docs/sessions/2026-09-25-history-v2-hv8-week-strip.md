@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 
-Shipped via #915 (CUL-1165). Filed: CUL-1226 (the Patterns month says "logged, no vomiting" on a day that continues the night before's bout), CUL-1227 (Waiting on PM: under a filter, "logged, not this kind" and "nothing logged" look almost alike). Handoff notes posted on CUL-1164 (the strip's new props), CUL-1167 and CUL-1169.
+Shipped via #915 (CUL-1165). Filed: CUL-1226 (the Patterns month says "logged, no vomiting" on a day that continues the night before's bout), CUL-1227 (Waiting on PM: under a filter, "logged, not this kind" and "nothing logged" look almost alike), CUL-1237 (High: a refusal stops counting once its food is later left down free-choice). Commented: CUL-991 (History's course filter inherits the dose attribution's zone bug), CUL-1208 (persistent vomiting roses only its first day, for the PM's ruling). Handoff notes posted on CUL-1164 (the strip's new props; `HistoryFacts.petId`; `claimsFromOf`), CUL-1167 and CUL-1169.
 
 ## The ask
 
@@ -35,9 +35,19 @@ Made during the build:
 
 ## The reviews
 
-REVIEWS
+- **`code-reviewer`: ship-ready.** Two cleanups and a comment, all taken: the spoken weekday reads `weekdayOfIndex` rather than restating the formula; a new test pins the settle's rounding and that a settle on the page already showing writes nothing (both mutations it named now red); the month test's Meals comment says which line shows in which state.
+- **`adversarial-reviewer`: FAIL on three counts**, over production SQL on `node:sqlite`, random and DST-clustered data in seven zones, 5,000 days × 20 filters against the day header, 3,000 windows against the count line's coverage, and 21 mutants (all killed). What held: the midnight bout (day 2 not rose, its label "1 vomit logged"), strip versus month (0 rose disagreements), label versus header (0), grey cells versus "N days unlogged" (identical). What failed, and what was done:
+  1. **A refusal stops counting once its food is later free-fed** (High). The intake lens excludes by TODAY's free-choice bowls for every past day; every consumer of the one qualifying set inherits it (History, the month, the intake rate, possibly the daily look's withheld predicate). Not HV-8's module: filed CUL-1237.
+  2. **An unlinked partial or refused dose on a course's edge day reads "no … dose logged" under that course** for a non-UTC owner: the dose attribution's zone bug, CUL-991 (Urgent, open). Commented there with the reproduction.
+  3. **Another pet's facts drawn when two windows share their dates** (latent until HV-7 mounts the strip). Fixed here: `HistoryFacts` carries `petId` (set by `readHistoryFacts`) and the strip requires the window's pet, the facts' pet and the store's pet to agree; it also waits when a window reaches past the `today` its cells are judged against.
+
+  Also fixed: **strip cells were doors to days the list does not hold** (before a filter's first row, today without a match under a filter, a Noticed day with no look), so a tap could land on nothing. `claimsFromOf` (extracted from `listSectionsOf`, behaviour unchanged) now decides it; the one stated blind spot is a day held only by a date-only item. Surfaced, not changed: persistent vomiting roses only its first day under All types (the chained episode; on CUL-1208 for the PM), and non-vomit symptoms and refused doses are not rose under All types (the spec's rule).
+
+  Every fix was proven by mutation (five, each red).
+
+**Persona sign-off:** Designer ✓ (round 5's frames; the rose, line and grey square as ruled; CUL-1227 for the filtered pair) · Engineer ✓ (the pager's store and scroll never fight; no timers; guards green) · Data Scientist ✓ (one population; the words follow the rows; the free-fed defect filed) · Dr. Chen: dissent recorded on CUL-1208 (a day with eight vomits must not read calmer than a day with one) · Data Visualization Designer ✓ with CUL-1227 open · Jordan and Sam: N/A until the strip is mounted (HV-7) and on a device (HV-13).
 
 ## Verification
 
 - `tsc --noEmit` clean; the full jest suite green (486 suites); the six touched suites green under Pacific/Kiritimati, Pacific/Chatham and Pacific/Honolulu.
-- Twelve mutations, each red: the dash array, a broken line drawn whole, the on-rose stroke, the token reverted to the pale teal, every type rosed, a vomit's words keyed on the rose, the rose day's broken line dropped, the silhouette's range check and pet check removed, every page shown to VoiceOver, the arrow's Reduce Motion dropped, and the pager's echo check removed (which re-creates the mock's syncRail bug).
+- Seventeen mutations across the build and the review fixes, each red. The first twelve: the dash array, a broken line drawn whole, the on-rose stroke, the token reverted to the pale teal, every type rosed, a vomit's words keyed on the rose, the rose day's broken line dropped, the silhouette's range check and pet check removed, every page shown to VoiceOver, the arrow's Reduce Motion dropped, and the pager's echo check removed (which re-creates the mock's syncRail bug).

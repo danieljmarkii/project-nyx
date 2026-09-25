@@ -651,7 +651,14 @@ describe('membership walk (HR-6) — every list decided, current state == decide
 // the scan that must catch it declaring a list of its own (C-32).
 describe('the week strip\u2019s rose per filter (History v2 spec §3.4; CUL-1165)', () => {
   const day = '2026-09-19';
-  const window: StripWindow = { fromDay: '2026-09-01', toDay: '2026-09-25', recordStart: '2026-09-01', petName: 'Nyx', courseName: null };
+  const window: StripWindow = {
+    fromDay: '2026-09-01',
+    toDay: '2026-09-25',
+    recordStart: '2026-09-01',
+    petName: 'Nyx',
+    courseName: null,
+    claimsFrom: '2026-09-01',
+  };
   const roseUnder = (filter: HistoryFilter, byType: Record<string, number>) =>
     stripMarkOf({ ...emptyDayFacts(day), total: 1, byType }, filter, window, '2026-09-25').state === 'rose';
 
