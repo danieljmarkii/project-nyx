@@ -60,11 +60,13 @@ const analysisRow = (event_id: string, recommendation: string | null, status = '
   dismissed_at: null,
 });
 
-/** A meal row's feeding as the lane takes it: witnessed, the fixture's one food. Every
- *  built day's feedings are spelled here, once. */
+/** A meal row's feeding as the lane takes it: keyed by its event id, witnessed, unrated,
+ *  the fixture's one food. Every built day's feedings are spelled here, once. */
 const feedingOf = (meal: DayEvent) => ({
+  id: meal.id,
   ms: Date.parse(meal.occurred_at),
   confidence: 'witnessed' as const,
+  intakeRating: null,
   form: 'Royal Canin Selected Protein PR',
 });
 
@@ -196,9 +198,11 @@ function randomDay(rand: () => number): SweepDay {
       });
     }
   }
-  const feedings = Array.from({ length: Math.floor(rand() * 6) }, () => ({
+  const feedings = Array.from({ length: Math.floor(rand() * 6) }, (_, k) => ({
+    id: `f${k}`,
     ms: BASE - 12 * HOUR + Math.floor(rand() * 36 * 60) * MIN,
     confidence: pick(['witnessed', null, 'estimated'] as const),
+    intakeRating: pick(['all', 'most', 'some', 'picked', 'refused', null] as const),
     form: pick(['Royal Canin Selected Protein PR', null]),
   }));
   const spanStart = BASE + Math.floor(rand() * 20) * HOUR;
