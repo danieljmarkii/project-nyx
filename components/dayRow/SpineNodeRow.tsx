@@ -46,6 +46,7 @@
 
 import { useLayoutEffect, useRef } from 'react';
 import { AccessibilityInfo, Animated, LayoutAnimation, Pressable, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle, Line } from 'react-native-svg';
 import { router } from 'expo-router';
 import { Camera, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
@@ -137,11 +138,23 @@ function chipOf(node: SpineEventNode): Chip | null {
   return null;
 }
 
-// The unread mark's geometry: an 8pt circle, hatched at a 3pt pitch (round 5's
-// `repeating-linear-gradient(45deg, transparent 0 2px, … 2px 3px)`).
+// The unread mark's geometry: an 8pt circle with a 1.5pt ring, hatched at 45° (round 5's
+// `repeating-linear-gradient(45deg, transparent 0 2px, … 2px 3px)`). Each stripe is the
+// chord of the ring's inner circle at a perpendicular offset, so the hatch ends at the ring
+// without a clip.
 const UNREAD_MARK_SIZE = 8;
-const UNREAD_HATCH_GAP = 2;
-const UNREAD_HATCH_LINES = [0, 1, 2, 3, 4] as const;
+const UNREAD_RING_W = 1.5;
+const UNREAD_RING_R = (UNREAD_MARK_SIZE - UNREAD_RING_W) / 2;
+const UNREAD_HATCH_PITCH = 2.5;
+const UNREAD_HATCH_CHORDS = [-1, 0, 1].map((k) => {
+  const c = UNREAD_MARK_SIZE / 2;
+  const d = k * UNREAD_HATCH_PITCH;
+  const half = Math.sqrt(UNREAD_RING_R * UNREAD_RING_R - d * d);
+  // Along (1, 1)/√2, offset by d along (1, -1)/√2.
+  const [ox, oy] = [c + d / Math.SQRT2, c - d / Math.SQRT2];
+  const [tx, ty] = [half / Math.SQRT2, half / Math.SQRT2];
+  return { x1: ox - tx, y1: oy - ty, x2: ox + tx, y2: oy + ty };
+});
 
 const CHIP_GROUND = { ok: 'chipOk', mid: 'chipMid', attn: 'chipAttn' } as const;
 const CHIP_INK = { ok: 'chipInkOk', mid: 'chipInkMid', attn: 'chipInkAttn' } as const;
@@ -385,15 +398,22 @@ function UnreadMark({ nodeId }: { nodeId: string }) {
   return (
     <View style={styles.unread} testID={`spine-unread-${nodeId}`}>
       {/* Hatched, as round 5 draws it: a filled-in "missing", where a plain ring read as an
-          unchecked radio button (the HV-6 PM pass). The ring is drawn last, over the hatch. */}
-      <View style={styles.unreadMark} testID={`spine-unread-mark-${nodeId}`}>
-        <View style={styles.unreadHatch}>
-          {UNREAD_HATCH_LINES.map((i) => (
-            <View key={i} style={styles.unreadHatchLine} />
-          ))}
-        </View>
-        <View style={styles.unreadRing} />
-      </View>
+          unchecked radio button (the HV-6 PM pass). Each stripe is drawn as its own chord of
+          the circle, so nothing is clipped: a rotated child inside a rounded `overflow:
+          hidden` view does not clip reliably on Android (the HV-6 code review). */}
+      <Svg width={UNREAD_MARK_SIZE} height={UNREAD_MARK_SIZE} testID={`spine-unread-mark-${nodeId}`}>
+        {UNREAD_HATCH_CHORDS.map((c, i) => (
+          <Line key={i} x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} stroke={theme.colorBorderStrong} strokeWidth={1} />
+        ))}
+        <Circle
+          cx={UNREAD_MARK_SIZE / 2}
+          cy={UNREAD_MARK_SIZE / 2}
+          r={UNREAD_RING_R}
+          stroke={theme.colorTextTertiary}
+          strokeWidth={UNREAD_RING_W}
+          fill="none"
+        />
+      </Svg>
       <ThemedText style={styles.unreadText}>{PHOTO_NOT_READ_LABEL}</ThemedText>
     </View>
   );
@@ -581,32 +601,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.space0_5,
     marginTop: theme.space0_5,
-  },
-  unreadMark: {
-    width: UNREAD_MARK_SIZE,
-    height: UNREAD_MARK_SIZE,
-    borderRadius: UNREAD_MARK_SIZE / 2,
-    overflow: 'hidden',
-  },
-  // A square twice the mark's side, turned 45°, its stripes vertical: diagonal hatching
-  // across the circle that clips it.
-  unreadHatch: {
-    position: 'absolute',
-    left: -UNREAD_MARK_SIZE / 2,
-    top: -UNREAD_MARK_SIZE / 2,
-    width: UNREAD_MARK_SIZE * 2,
-    height: UNREAD_MARK_SIZE * 2,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    columnGap: UNREAD_HATCH_GAP,
-    transform: [{ rotate: '45deg' }],
-  },
-  unreadHatchLine: { width: 1, alignSelf: 'stretch', backgroundColor: theme.colorBorderStrong },
-  unreadRing: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: UNREAD_MARK_SIZE / 2,
-    borderWidth: 1.5,
-    borderColor: theme.colorTextTertiary,
   },
   unreadText: {
     fontSize: theme.textXS,
