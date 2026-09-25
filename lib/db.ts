@@ -409,6 +409,13 @@ export interface TimelineRow {
   paired_food_name: string | null;
   drug_generic_name: string | null;
   drug_brand_name: string | null;
+  // CUL-1124 — the name of the course (the `medications` regimen) the dose was logged
+  // against: a dose's second name, after its item's (`doseDrugLabel`). A course typed
+  // in by hand has no item, so without this every one of its doses read "Medication"
+  // while the vet report named it. NULL on a non-dose row, on a dose with no course,
+  // on one whose course has not reached this device, and on one linked to another
+  // pet's course: the join never borrows a name across pets.
+  regimen_drug_name: string | null;
   // B-156 PR B4 — the REVERSE combo link (vehicle → dose), for the cross-link shown on a
   // MEAL/treat row that carried co-logged dose(s). The forward fields above link a dose to
   // its vehicle; these are the mirror so the combo is legible from BOTH sides without
@@ -484,6 +491,7 @@ export async function getTimeline(
             pm.intake_rating AS paired_vehicle_intake,
             pf.product_name AS paired_food_name,
             mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name,
+            rx.drug_name AS regimen_drug_name,
             COALESCE(pd.dose_count, 0) AS paired_dose_count,
             pd.rep_event_id AS paired_dose_event_id,
             pdmi.generic_name AS paired_dose_drug_name,
@@ -495,6 +503,7 @@ export async function getTimeline(
      LEFT JOIN looks lk ON lk.event_id = e.id
      LEFT JOIN medication_administrations ma ON ma.event_id = e.id
      LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
+     LEFT JOIN medications rx ON rx.id = ma.medication_id AND rx.pet_id = e.pet_id
      LEFT JOIN events pe ON pe.id = ma.paired_event_id AND pe.deleted_at IS NULL
      LEFT JOIN meals pm ON pm.event_id = pe.id
      LEFT JOIN food_items_cache pf ON pf.id = pm.food_item_id
@@ -526,6 +535,7 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
             pm.intake_rating AS paired_vehicle_intake,
             pf.product_name AS paired_food_name,
             mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name,
+            rx.drug_name AS regimen_drug_name,
             COALESCE(pd.dose_count, 0) AS paired_dose_count,
             pd.rep_event_id AS paired_dose_event_id,
             pdmi.generic_name AS paired_dose_drug_name,
@@ -537,6 +547,7 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
      LEFT JOIN looks lk ON lk.event_id = e.id
      LEFT JOIN medication_administrations ma ON ma.event_id = e.id
      LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
+     LEFT JOIN medications rx ON rx.id = ma.medication_id AND rx.pet_id = e.pet_id
      LEFT JOIN events pe ON pe.id = ma.paired_event_id AND pe.deleted_at IS NULL
      LEFT JOIN meals pm ON pm.event_id = pe.id
      LEFT JOIN food_items_cache pf ON pf.id = pm.food_item_id

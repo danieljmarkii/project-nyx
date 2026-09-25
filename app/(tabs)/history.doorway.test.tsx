@@ -69,23 +69,46 @@ jest.mock('../../components/history/DateScopeControl', () => {
   };
 });
 jest.mock('../../components/history/TypeScopeControl', () => ({ TypeScopeControl: () => null }));
-jest.mock('../../components/history/FreeFeedingStrip', () => ({ FreeFeedingStrip: () => null }));
-jest.mock('../../components/history/BoundaryMarkerRow', () => ({ BoundaryMarkerRow: () => null }));
-jest.mock('../../components/history/EventRow', () => {
+// The bowl strip renders its arrangements' ids, so a test can see WHOSE bowl is up (CUL-1120).
+jest.mock('../../components/history/FreeFeedingStrip', () => {
   const { Text } = require('react-native');
   return {
-    EventRow: ({ event }: { event: { id: string } }) => <Text>{`event ${event.id}`}</Text>,
+    FreeFeedingStrip: ({ arrangements }: { arrangements: { id: string }[] }) =>
+      arrangements.map((a) => <Text key={a.id}>{`bowl ${a.id}`}</Text>),
+  };
+});
+jest.mock('../../components/history/BoundaryMarkerRow', () => ({ BoundaryMarkerRow: () => null }));
+// The label, and the Remove affordance so a failed Remove's rollback is reachable (CUL-1120).
+jest.mock('../../components/history/EventRow', () => {
+  const { Text, TouchableOpacity, View } = require('react-native');
+  return {
+    EventRow: ({ event, onDelete }: { event: { id: string }; onDelete: () => void }) => (
+      <View>
+        <Text>{`event ${event.id}`}</Text>
+        <TouchableOpacity testID={`delete-${event.id}`} onPress={onDelete}>
+          <Text>Remove</Text>
+        </TouchableOpacity>
+      </View>
+    ),
   };
 });
 
+import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import HistoryScreen from './history';
 import { getTimeline } from '../../lib/db';
+import { getActiveArrangementsForPet } from '../../lib/feedingArrangements';
+import { readVisitsForHistory } from '../../lib/vetVisits';
+import { reverseLoggedEvent } from '../../lib/undoLog';
 import { usePetStore, type Pet } from '../../store/petStore';
 import { useEventStore, type NyxEvent } from '../../store/eventStore';
+import { useSnackbarStore } from '../../store/snackbarStore';
 import { PREFILTER_SLACK_MS } from '../../lib/historyDateFilter';
 
 const mockGetTimeline = getTimeline as jest.Mock;
+const mockArrangements = getActiveArrangementsForPet as jest.Mock;
+const mockReadVisits = readVisitsForHistory as jest.Mock;
+const mockReverse = reverseLoggedEvent as jest.Mock;
 
 function makePet(id: string, name: string): Pet {
   return {
@@ -122,6 +145,11 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockParams = {};
   mockGetTimeline.mockResolvedValue([]);
+  // Reset, not just cleared: a test below holds these reads open or fails them per pet,
+  // and `clearAllMocks` keeps an implementation.
+  mockArrangements.mockResolvedValue([]);
+  mockReadVisits.mockResolvedValue([]);
+  mockReverse.mockResolvedValue(undefined);
   usePetStore.setState({ pets: [rex, mochi], activePet: rex });
   useEventStore.setState({ todayEvents: [] });
 });
@@ -157,9 +185,8 @@ describe('History — a day link is read by sender (CUL-1073, H-7)', () => {
   });
 
   it('the widget\'s ?date= (src=widget) is the LOCAL day too — the frozen sender always meant one', async () => {
-    // The widget's pet is already the active one: this case is about the day. (Arriving on
-    // ANOTHER pet races the read already in flight for the old one, and the new pet's read
-    // is dropped — CUL-1120, Bundle C; the pet's own rule is the last describe below.)
+    // The widget's pet is already the active one: this case is about the day. Arriving on
+    // ANOTHER pet is the CUL-1120 describe at the foot of this file.
     usePetStore.setState({ activePet: mochi });
     mockParams = { date: DAY, ts: '1', pet: 'p2', src: 'widget' };
     render(<HistoryScreen />);
@@ -258,5 +285,271 @@ describe('History — the widget\'s pet applies once per tap (CUL-1119)', () => 
     mockParams = { ...mockParams, ts: 'T2' };
     rerender(<HistoryScreen />);
     await waitFor(() => expect(active()).toBe('p2'));
+  });
+});
+
+// ── A read answers only for the pet on screen (CUL-1120) ────────────────────────────
+//
+// Every read on this screen is async, and the pet it was asked for can change while it
+// is out: a switch in the FAB's chip, or the widget's pet arriving a render after the
+// first read started (the Bundle A evidence). Three failures of the CUL-574 class:
+//   • the new pet's read DROPPED because the old one was still in flight, so the old
+//     rows land under the new pet's name and stay there;
+//   • an old read answering LAST over the new pet's rows;
+//   • the new pet's read FAILING with the old pet's rows still up: a list that is not
+//     empty never shows the error state, so nothing said anything was wrong.
+
+describe('History — a read answers only for the pet on screen (CUL-1120)', () => {
+  type Held = {
+    petId: string;
+    after: string | null;
+    resolve: (rows: unknown[]) => void;
+    reject: (e: Error) => void;
+  };
+  /** Every list read waits for the test to answer it; `held` is in the order asked. */
+  function holdReads(): Held[] {
+    const held: Held[] = [];
+    mockGetTimeline.mockImplementation(
+      (petId: string, _limit: number, _offset: number, _type: unknown, after: string | null) =>
+        new Promise((resolve, reject) => { held.push({ petId, after, resolve, reject }); }),
+    );
+    return held;
+  }
+  const readsFor = (held: Held[], petId: string) => held.filter((r) => r.petId === petId);
+  async function answer(reads: Held[], rows: unknown[]) {
+    await act(async () => { reads.forEach((r) => r.resolve(rows)); });
+  }
+
+  const rexMeal = () => row('rex-meal', new Date(2026, 8, 16, 8).toISOString(), 'p1');
+  const mochiMeal = () => row('mochi-meal', new Date(2026, 8, 16, 9).toISOString(), 'p2');
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('a switch while the old pet\'s read is out still reads the new pet, and the old answer landing last is dropped', async () => {
+    const held = holdReads();
+    const view = render(<HistoryScreen />);
+    await waitFor(() => expect(readsFor(held, 'p1').length).toBeGreaterThan(0));
+
+    act(() => usePetStore.getState().selectPet('p2'));
+    // Rex's read is still out. Before the fix, Mochi's was never asked at all.
+    await waitFor(() => expect(readsFor(held, 'p2').length).toBeGreaterThan(0));
+
+    await answer(readsFor(held, 'p2'), [mochiMeal()]);
+    await view.findByText('event mochi-meal');
+
+    // The OLDER read answers last, with the other pet's rows.
+    await answer(readsFor(held, 'p1'), [rexMeal()]);
+    expect(view.queryByText('event rex-meal')).toBeNull();
+    expect(view.getByText('event mochi-meal')).toBeTruthy();
+  });
+
+  it('the widget arriving on another pet lists THAT pet\'s rows (the Bundle A case)', async () => {
+    const held = holdReads();
+    mockParams = { date: DAY, ts: 'T1', pet: 'p2', src: 'widget' };
+    const view = render(<HistoryScreen />);
+    await waitFor(() => expect(active()).toBe('p2'));
+    await waitFor(() => expect(readsFor(held, 'p2').length).toBeGreaterThan(0));
+    // The race this case is about: a read went out for the pet the screen mounted on,
+    // before the link selected the widget's pet in the same flush.
+    expect(readsFor(held, 'p1').length).toBeGreaterThan(0);
+
+    const noon = new Date(2026, 8, 16, 12).toISOString();
+    await answer(readsFor(held, 'p2'), [row('mochi-noon', noon, 'p2')]);
+    await answer(readsFor(held, 'p1'), [row('rex-noon', noon, 'p1')]);
+
+    expect(view.getByText('event mochi-noon')).toBeTruthy();
+    expect(view.queryByText('event rex-noon')).toBeNull();
+  });
+
+  it('when the new pet\'s read fails, the error names the new pet and the old rows are gone', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockGetTimeline.mockImplementation(async (petId: string) => {
+      if (petId === 'p1') return [rexMeal()];
+      throw new Error('disk gone');
+    });
+    const view = render(<HistoryScreen />);
+    await view.findByText('event rex-meal');
+
+    act(() => usePetStore.getState().selectPet('p2'));
+
+    await view.findByText("Couldn't load history");
+    expect(view.getByText("Something went wrong loading Mochi's history.")).toBeTruthy();
+    expect(view.queryByText('event rex-meal')).toBeNull();
+  });
+
+  it('a switch draws the skeleton until the new pet answers: never the old rows, never the empty state', async () => {
+    mockGetTimeline.mockImplementation((petId: string) =>
+      petId === 'p1' ? Promise.resolve([rexMeal()]) : new Promise(() => {}));
+    const view = render(<HistoryScreen />);
+    await view.findByText('event rex-meal');
+
+    act(() => usePetStore.getState().selectPet('p2'));
+    // Let every read that CAN answer do so (the visits, the bowl); the list's never does.
+    await act(async () => {});
+
+    expect(view.queryByText('event rex-meal')).toBeNull();
+    expect(view.queryByTestId('history-skeleton', { includeHiddenElements: true })).toBeTruthy();
+    expect(view.queryByText('Nothing logged yet')).toBeNull();
+  });
+
+  it('a door tapped while a read is out lands on its day: the newer read wins, the older is dropped', async () => {
+    const held = holdReads();
+    const view = render(<HistoryScreen />);
+    await waitFor(() => expect(held.length).toBeGreaterThan(0));
+    const unscoped = [...held];
+
+    mockParams = { day: DAY, ts: '2' };
+    view.rerender(<HistoryScreen />);
+    // Same pet, so no pet check can see this one: before the fix the door's read was
+    // dropped because the first was still out, and the list sat under the day's pill.
+    const dayAfter = shifted(localMidnight(0), -PREFILTER_SLACK_MS);
+    await waitFor(() => expect(held.some((r) => r.after === dayAfter)).toBe(true));
+
+    await answer(held.filter((r) => r.after === dayAfter), [
+      row('noon', new Date(2026, 8, 16, 12).toISOString(), 'p1'),
+    ]);
+    await view.findByText('event noon');
+    // The unscoped read answers last, with a row from another week.
+    await answer(unscoped, [row('last-week', new Date(2026, 8, 9, 12).toISOString(), 'p1')]);
+
+    expect(view.queryByText('event last-week')).toBeNull();
+    expect(view.getByText('event noon')).toBeTruthy();
+    expect(view.getByTestId('day-pill').props.children).toBe('Sep 16');
+  });
+
+  it('the bowl strip shows only the pet on screen\'s bowl, whatever order its reads answer in', async () => {
+    const bowls: { petId: string; resolve: (a: unknown[]) => void }[] = [];
+    mockArrangements.mockImplementation((petId: string) =>
+      new Promise((resolve) => { bowls.push({ petId, resolve }); }));
+    const bowl = (id: string) => ({
+      id, food_item_id: 'f1', active_from: null, updated_at: '2026-09-01T00:00:00Z',
+      brand: 'Royal Canin', product_name: 'Selected Protein PR', format: 'dry_kibble',
+    });
+    const view = render(<HistoryScreen />);
+    await waitFor(() => expect(bowls.some((b) => b.petId === 'p1')).toBe(true));
+
+    act(() => usePetStore.getState().selectPet('p2'));
+    await waitFor(() => expect(bowls.some((b) => b.petId === 'p2')).toBe(true));
+
+    await act(async () => {
+      bowls.filter((b) => b.petId === 'p2').forEach((b) => b.resolve([bowl('mochi-bowl')]));
+    });
+    await view.findByText('bowl mochi-bowl');
+    await act(async () => {
+      bowls.filter((b) => b.petId === 'p1').forEach((b) => b.resolve([bowl('rex-bowl')]));
+    });
+
+    expect(view.queryByText('bowl rex-bowl')).toBeNull();
+    expect(view.getByText('bowl mochi-bowl')).toBeTruthy();
+  });
+
+  it('a switch takes the old pet\'s bowl down at once, before the new pet\'s read answers', async () => {
+    mockArrangements.mockImplementation((petId: string) =>
+      petId === 'p1'
+        ? Promise.resolve([{
+          id: 'rex-bowl', food_item_id: 'f1', active_from: null, updated_at: '2026-09-01T00:00:00Z',
+          brand: 'Royal Canin', product_name: 'Selected Protein PR', format: 'dry_kibble',
+        }])
+        : new Promise(() => {}));
+    const view = render(<HistoryScreen />);
+    await view.findByText('bowl rex-bowl');
+
+    act(() => usePetStore.getState().selectPet('p2'));
+    await act(async () => {});
+
+    expect(view.queryByText('bowl rex-bowl')).toBeNull();
+  });
+
+  it('a Today row for another pet never enters the list (the live insert)', async () => {
+    mockGetTimeline.mockImplementation(async (petId: string) =>
+      petId === 'p2' ? [mochiMeal()] : [rexMeal()]);
+    usePetStore.setState({ activePet: mochi });
+    const view = render(<HistoryScreen />);
+    await view.findByText('event mochi-meal');
+
+    // Today's list still holding the previous pet's rows: `loadTodayEvents` answering
+    // late for Rex after the switch to Mochi.
+    const rexToday = row('rex-today', new Date().toISOString(), 'p1') as unknown as NyxEvent;
+    act(() => useEventStore.setState({ todayEvents: [rexToday] }));
+
+    expect(view.queryByText('event rex-today')).toBeNull();
+    expect(view.getByText('event mochi-meal')).toBeTruthy();
+  });
+
+  it('a vet visit read that fails after a switch does not leave the old pet\'s visit up', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const [y, m, d] = [2026, 9, 10];
+    mockReadVisits.mockImplementation(async (petId: string) => {
+      if (petId !== 'p1') throw new Error('disk gone');
+      return [{
+        id: 'rex-visit', petId: 'p1', visitedAt: '2026-09-10', sortMs: new Date(y, m - 1, d).getTime(),
+        reason: 'GI follow-up', where: 'Riverside Animal Hospital',
+      }];
+    });
+    const view = render(<HistoryScreen />);
+    await view.findByText('Vet visit');
+
+    act(() => usePetStore.getState().selectPet('p2'));
+
+    await view.findByText("Couldn't load history");
+    expect(view.queryByText('Vet visit')).toBeNull();
+  });
+
+  it('a Remove that fails after a switch does not put the old pet\'s row into the new pet\'s list', async () => {
+    jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockGetTimeline.mockImplementation(async (petId: string) =>
+      petId === 'p1' ? [rexMeal()] : [mochiMeal()]);
+    let failReverse!: (e: Error) => void;
+    mockReverse.mockImplementationOnce(
+      () => new Promise((_resolve, reject) => { failReverse = reject; }));
+    const view = render(<HistoryScreen />);
+    await view.findByText('event rex-meal');
+
+    fireEvent.press(view.getByTestId('delete-rex-meal'));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    const [, , buttons] = (Alert.alert as jest.Mock).mock.calls.at(-1) ?? [];
+    const remove = (buttons as { text: string; onPress: () => Promise<void> }[])
+      .find((b) => b.text === 'Remove')!;
+    let removal!: Promise<void>;
+    act(() => { removal = remove.onPress(); });
+
+    // The write is still out when the owner switches, and Mochi's rows land.
+    act(() => usePetStore.getState().selectPet('p2'));
+    await view.findByText('event mochi-meal');
+
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    await act(async () => { failReverse(new Error('write failed')); await removal; });
+
+    expect(view.queryByText('event rex-meal')).toBeNull();
+    expect(view.getByText('event mochi-meal')).toBeTruthy();
+  });
+
+  it('a failed Load more\'s Try again does nothing once a newer read has replaced the list', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const show = jest.spyOn(useSnackbarStore.getState(), 'show').mockImplementation(() => {});
+    mockGetTimeline.mockImplementation(async (petId: string, limit: number, offset: number) => {
+      if (petId === 'p2') return [mochiMeal()];
+      if (offset > 0) throw new Error('disk gone');
+      return Array.from({ length: limit }, (_, i) =>
+        row(`rex${i}`, new Date(2026, 8, 16, 8, 59 - (i % 60), 0, i).toISOString(), 'p1'));
+    });
+    const view = render(<HistoryScreen />);
+    await view.findByText('event rex0');
+
+    await act(async () => { fireEvent.press(view.getByText('Load more')); });
+    await waitFor(() => expect(show).toHaveBeenCalled());
+    const retry = show.mock.calls.at(-1)?.[0].onAction;
+    expect(retry).toBeDefined();
+
+    act(() => usePetStore.getState().selectPet('p2'));
+    await view.findByText('event mochi-meal');
+
+    // The retry was for Rex's list at Rex's offset. Run now, it would page Mochi's list
+    // from a place in Rex's.
+    const reads = mockGetTimeline.mock.calls.length;
+    await act(async () => { retry?.(); });
+    expect(mockGetTimeline.mock.calls.length).toBe(reads);
   });
 });
