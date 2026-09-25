@@ -23,7 +23,7 @@ import { describeDayEvents, daySheetSubtitle } from '../../../lib/dayEvents';
 import type { EventTintCategory } from '../../../lib/dayEvents';
 import type { TimelineRow } from '../../../lib/db';
 import { WeeklyBars } from '../../charts/WeeklyBars';
-import { DayMark } from '../../charts/DayMark';
+import { DayMark, DayMarkLine } from '../../charts/DayMark';
 import { EventIcon } from '../../event/EventIcon';
 import { FilterChip } from '../../ui/FilterChip';
 import { SkeletonCard } from '../../ui/Skeleton';
@@ -591,13 +591,13 @@ function Legend({ model, layers }: { model: MonthModel; layers: MonthLayers }) {
       </View>
       <View style={styles.legendItem}>
         <View style={[styles.swatch, styles.swatchLogged]}>
-          <View style={[styles.swatchHairline, styles.swatchHairlineLogged]} />
+          <DayMarkLine kind="solid" style={styles.swatchLine} testID="month-legend-line-solid" />
         </View>
         <ThemedText style={styles.legendText}>logged</ThemedText>
       </View>
       <View style={styles.legendItem}>
         <View style={[styles.swatch, styles.swatchLogged]}>
-          <View style={[styles.swatchHairline, styles.swatchHairlineLeftSome]} />
+          <DayMarkLine kind="broken" style={styles.swatchLine} testID="month-legend-line-broken" />
         </View>
         <ThemedText style={styles.legendText}>left some</ThemedText>
       </View>
@@ -814,17 +814,11 @@ const styles = StyleSheet.create({
   swatchUnlogged: {
     backgroundColor: theme.colorSurfaceSubtle,
   },
-  swatchHairline: {
-    width: 7,
-    height: 2,
-    borderRadius: 1,
+  // DayMark's own stroke (CUL-1165): the glyph teal, whole or dashed 3 on 3. Nine points
+  // wide so the broken swatch shows a dash, a gap and a dash, the rhythm the grid draws.
+  swatchLine: {
+    width: 9,
     marginBottom: 2,
-  },
-  swatchHairlineLogged: {
-    backgroundColor: theme.colorAccentSoft,
-  },
-  swatchHairlineLeftSome: {
-    backgroundColor: theme.colorAccentWashDeep,
   },
   // The layer dots, drawn at DayMark's own size and colours so the key IS the mark.
   legendDot: {
