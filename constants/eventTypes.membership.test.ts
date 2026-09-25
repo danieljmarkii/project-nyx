@@ -105,7 +105,10 @@ const inSet = (set: ReadonlySet<string> | readonly string[]) => (): WalkReading 
 const WALK: WalkRow[] = [
   {
     list: 'SYMPTOM_TYPES (constants/eventTypes.ts)',
-    governs: 'row-surface tint + the soft commit haptic (§8a de-symptomization)',
+    governs: 'row-surface tint + the soft commit haptic (§8a de-symptomization). Transitive consumers (C-11): '
+      + 'History v2\'s All-symptoms filter, its rose day-header words and its symptom compare door '
+      + '(lib/historyDays.ts, CUL-1161) ride this set, so a leaf that joins it joins those the same day; '
+      + 'stool_normal stays out, so the Stool filter and its header word are neutral, as its rows are',
     read: inSet(SYMPTOM_TYPES),
     cough: { now: true, decision: 'YES — joins in THIS PR (§6 pairing rule)' },
     sneeze: { now: true, decision: 'YES — joins in THIS PR (§6 pairing rule)' },
@@ -559,6 +562,28 @@ const WALK: WalkRow[] = [
     },
   },
   {
+    list: 'SAME_MINUTE_OBSERVATION_TYPES (lib/sameMinuteDuplicates.ts)',
+    governs:
+      'which types collapse BY TYPE in the same-minute duplicate rule History v2 discloses and the vet '
+      + 'report drops (CUL-1161; the report adopts the module in HV-15). A REPORT mirror, not a client '
+      + 'list: DEDUP_OBSERVATION_TYPES = REPORT_SYMPTOM_TYPES + stool_normal, held equal by the '
+      + 'differential in lib/sameMinuteDuplicates.test.ts, so this row flips when that row does',
+    read: () => scan('lib/sameMinuteDuplicates.ts', 'export const SAME_MINUTE_OBSERVATION_TYPES', ']);'),
+    cough: {
+      now: true,
+      decision: 'YES — REPORT_SYMPTOM_TYPES holds cough (3b session 2), so a cough logged twice inside a '
+        + 'minute is one incident in the report, and History must disclose that pair or its count and '
+        + 'the report\'s disagree with nothing to say why (PMD-10).',
+    },
+    sneeze: { now: true, decision: 'YES — same ground: sneeze is in REPORT_SYMPTOM_TYPES.' },
+    check_in: {
+      now: false,
+      decision: 'NO — a look is outside the population both surfaces read (the report filters it at its '
+        + 'input boundary, History\'s population excludes it), so it can only ever reach the rule as '
+        + '`keep|<id>`, never collapsed and never counted.',
+    },
+  },
+  {
     list: 'signalWatching gap row (lib/signalWatching.ts)',
     governs: 'the sub-floor "watching" register — vomit-anchored BY DESIGN (v1 scoped to the dominant symptom)',
     read: () => scan('lib/signalWatching.ts', 'export const WATCHING_GAP_SYMPTOM_LABEL', ';'),
@@ -604,7 +629,8 @@ describe('membership walk (HR-6) — every list decided, current state == decide
     // +1 (CUL-874 / N-5): LOOK_LEAF_TWINS — the one object that names a look word and a
     // symptom leaf together. It sits BELOW the discovery guard's three-distinct-key floor
     // (two leaves), so the walk is the only place its membership decision can live.
-    expect(WALK).toHaveLength(22);
+    // +1 (CUL-1161 / HV-4): SAME_MINUTE_OBSERVATION_TYPES, the shared duplicate rule's set.
+    expect(WALK).toHaveLength(23);
   });
 });
 
