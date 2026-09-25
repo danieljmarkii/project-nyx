@@ -1,4 +1,4 @@
-import { isCustomWindowEdit, CUSTOM_RANGE_SETTLE_MS } from './reportRange';
+import { isCustomWindowEdit, CUSTOM_RANGE_SETTLE_MS, reportScopeLine } from './reportRange';
 
 // CUL-371 — the one predicate behind the report's settle timer. Only an edit of a
 // custom window already on screen waits; every other change regenerates at once.
@@ -39,5 +39,44 @@ describe('isCustomWindowEdit', () => {
   it('the settle window covers a From tap followed by a To tap without feeling ignored', () => {
     expect(CUSTOM_RANGE_SETTLE_MS).toBeGreaterThanOrEqual(300);
     expect(CUSTOM_RANGE_SETTLE_MS).toBeLessThanOrEqual(1000);
+  });
+});
+
+describe('reportScopeLine (H-10, CUL-1126)', () => {
+  const TODAY = '2026-09-25';
+
+  it('names the visit rung as History names the window, the range bare in the current year', () => {
+    expect(reportScopeLine('since_visit', '2026-07-02', '2026-09-25', TODAY)).toBe(
+      'Since the last vet visit · Jul 2 – Sep 25',
+    );
+  });
+
+  it('stamps the year a visit fourteen months back needs (the issue\'s counterexample)', () => {
+    expect(reportScopeLine('since_visit', '2025-07-02', '2026-09-25', TODAY)).toBe(
+      'Since the last vet visit · Jul 2, 2025 – Sep 25',
+    );
+  });
+
+  it('a window wholly in another year states its year once', () => {
+    expect(reportScopeLine('custom', '2025-06-01', '2025-08-30', TODAY)).toBe(
+      'Custom range · Jun 1 – Aug 30, 2025',
+    );
+  });
+
+  it('keeps the other bases\' names', () => {
+    expect(reportScopeLine('diet_trial', '2026-07-26', '2026-09-25', TODAY)).toBe(
+      'Active diet trial · Jul 26 – Sep 25',
+    );
+    expect(reportScopeLine('fallback_90d', '2026-06-28', '2026-09-25', TODAY)).toBe(
+      'Last 90 days · Jun 28 – Sep 25',
+    );
+    expect(reportScopeLine('something_new', '2026-09-01', '2026-09-25', TODAY)).toBe(
+      'Report range · Sep 1 – 25',
+    );
+  });
+
+  it('an unreadable or inverted pair prints the basis alone, never a window the report never had', () => {
+    expect(reportScopeLine('since_visit', 'garbage', '2026-09-25', TODAY)).toBe('Since the last vet visit');
+    expect(reportScopeLine('custom', '2026-09-25', '2026-09-01', TODAY)).toBe('Custom range');
   });
 });

@@ -105,11 +105,11 @@ describe('the log-a-visit door (CUL-942, CUL-905)', () => {
       pastMedications: [],
       facts: { courses: [], medItemNames: new Map(), lastVisitAt: null, weighIns: [] },
       tiles: [
-        { key: 'since_visit', label: 'Since last visit', value: 'No prior visit logged', tap: { kind: 'log-visit' }, empty: true },
+        { key: 'since_visit', label: 'Since the last vet visit', value: 'No prior visit logged', tap: { kind: 'log-visit' }, empty: true },
       ],
     });
     const { findByLabelText } = render(<RundownScreen />);
-    fireEvent.press(await findByLabelText(/^Since last visit:/));
+    fireEvent.press(await findByLabelText(/^Since the last vet visit:/));
     expect(router.push).toHaveBeenCalledTimes(1);
     expect(router.push).toHaveBeenCalledWith('/vet-visits?add=happened');
   });
@@ -122,7 +122,7 @@ describe('the History doors (HV-11 / CUL-1168: registered in lib/historyDoors.ts
       generatedAtMs: 0,
       facts: { courses: [], medItemNames: new Map(), lastVisitAt: null, weighIns: [] },
       tiles: [
-        tile('since_visit', 'Since last visit', { kind: 'history', door: { scope: 'since-visit' } }),
+        tile('since_visit', 'Since the last vet visit', { kind: 'history', door: { scope: 'since-visit' } }),
         tile('symptoms', 'Symptoms', { kind: 'history', door: { scope: 'symptoms-30d' } }),
       ],
       pastMedications: [tile('meds_past', 'Zyrtec', { kind: 'history', door: { scope: 'course', courseKey: 'item:zyr' } })],
@@ -132,7 +132,7 @@ describe('the History doors (HV-11 / CUL-1168: registered in lib/historyDoors.ts
   it('flag off: every History tile pushes the bare route, as before', async () => {
     withHistoryTiles();
     const { findByLabelText } = render(<RundownScreen />);
-    for (const label of [/^Since last visit:/, /^Symptoms:/, /^Zyrtec:/]) {
+    for (const label of [/^Since the last vet visit:/, /^Symptoms:/, /^Zyrtec:/]) {
       fireEvent.press(await findByLabelText(label));
     }
     expect((router.push as jest.Mock).mock.calls).toEqual([['/(tabs)/history'], ['/(tabs)/history'], ['/(tabs)/history']]);
@@ -142,7 +142,7 @@ describe('the History doors (HV-11 / CUL-1168: registered in lib/historyDoors.ts
     mockHistoryV2 = true;
     withHistoryTiles();
     const { findByLabelText } = render(<RundownScreen />);
-    fireEvent.press(await findByLabelText(/^Since last visit:/));
+    fireEvent.press(await findByLabelText(/^Since the last vet visit:/));
     fireEvent.press(await findByLabelText(/^Symptoms:/));
     fireEvent.press(await findByLabelText(/^Zyrtec:/));
     const history = (params: Record<string, string>) => ({

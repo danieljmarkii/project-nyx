@@ -35,7 +35,10 @@ import {
 } from './analytics';
 import { getWeightHistory, computeWeightTrend, type WeightReading } from './weight';
 import { symptomLabel } from './metricDetail';
-import { toLocalDayKey, dayKeyToLocalDate, formatCalendarDate } from './utils';
+import { toLocalDayKey, dayKeyToLocalDate, localDayIndexOf } from './utils';
+import { recordDay, recordDayIndex, recordRange } from './recordDates';
+import { readLatestVisitBefore, type SinceVisitDay } from './visitWindow';
+import { ANCHORED_WINDOW_NAMES } from './historyWindows';
 import {
   deriveMedicationCourses,
   type MedicationCourse,
@@ -115,7 +118,14 @@ export interface RundownFacts {
   courses: MedicationCourse[];
   /** The drug-name cache a dose-derived course is named from. */
   medItemNames: Map<string, MedItemName>;
-  /** The pet's most recent logged visit ('YYYY-MM-DD'), or null. */
+  /**
+   * The first day of "since the last vet visit" ('YYYY-MM-DD'): the latest visit STRICTLY
+   * BEFORE the rundown's day, through the one shared bound (`lib/visitWindow.ts`, H-11), so
+   * the rundown, History and the report name one visit. Null when there is none. A visit
+   * saved today, or dated ahead, anchors nothing until the day after it (CUL-1127).
+   * Typed as a plain day key so a consumer's fixture can state one; the brand stays on
+   * History's window input, where it guards who may mint a start.
+   */
   lastVisitAt: string | null;
   /** Every weigh-in the weight tile was computed over, oldest first. */
   weighIns: WeightReading[];
@@ -287,12 +297,18 @@ export function frequencyLabel(dosesPerDay: number | null): string {
   }
 }
 
-/** "last Jul 10" from an ISO dose timestamp, or "no dose logged yet" (never "none needed"). */
-export function lastDoseLabel(lastDoseIso: string | null): string {
+/**
+ * "last Jul 10" from an ISO dose timestamp, or "no dose logged yet" (never "none needed").
+ * The dose's LOCAL day through the one formatter (H-10, CUL-1126), so a dormant PRN course
+ * whose last dose was last July reads "last Jul 10, 2025", never a bare date that looks
+ * like eleven weeks ago. `today` is the rundown's own day key, never a second clock.
+ */
+export function lastDoseLabel(lastDoseIso: string | null, today: string): string {
   if (!lastDoseIso) return 'no dose logged yet';
   const ms = Date.parse(lastDoseIso);
   if (!Number.isFinite(ms)) return 'no dose logged yet';
-  return `last ${new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+  const day = recordDay(toLocalDayKey(new Date(ms)), today);
+  return day ? `last ${day}` : 'no dose logged yet';
 }
 
 export interface SinceVisitChanges {
@@ -324,11 +340,21 @@ export function sinceVisitTap(changes: SinceVisitChanges): RundownTap {
   return { kind: 'history', door: { scope: 'since-visit' } };
 }
 
-/** "Since Jul 2" from a YYYY-MM-DD (or ISO) visit date. */
-export function visitDateLabel(visitedAt: string): string {
-  const ms = Date.parse(visitedAt);
-  if (!Number.isFinite(ms)) return 'Since your last visit';
-  return `Since ${new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+/** The since-visit tile's label: History's own long name for the window (§3.9), imported
+ *  so the rundown, the report screen and History cannot name one window three ways. */
+export const SINCE_VISIT_LABEL = ANCHORED_WINDOW_NAMES.visit;
+
+/**
+ * The since-visit tile's date: the day the window starts, through the one formatter (H-10,
+ * CUL-1126). "Jul 2" in the current year, "Jul 2, 2025" outside it, so fourteen months can
+ * never read as eleven weeks. The label beside it already says "Since the last vet visit",
+ * so the date stands alone, as it does on History's window sheet.
+ *
+ * Takes the day KEY and never `Date.parse`s it: a bare 'YYYY-MM-DD' parses as UTC
+ * midnight, which printed the day before the visit for every owner behind UTC.
+ */
+export function visitDateLabel(sinceDay: SinceVisitDay, today: string): string | null {
+  return recordDay(sinceDay, today);
 }
 
 // ── Past medications (B-140 PR 4) — pure copy + windowing, tested off the DB ─────
@@ -380,43 +406,36 @@ export function courseRecencyMs(course: MedicationCourse): number | null {
 }
 
 /**
- * "Mar 16" from a 'YYYY-MM-DD' day key (a derived local dose day, or a regimen DATE column).
- * Delegates the day→string conversion to `lib/utils.formatCalendarDate` (the ONE answer to
- * "what does a bare calendar day look like" — B-616), which routes through `dayKeyToLocalDate`
- * so the day never shifts across a timezone (the B-441 trap). Slices to the leading date so a
- * stray datetime still yields its calendar day. Null (surface omits the date) when absent or
- * malformed — never a guessed date.
+ * "Mar 16" from a 'YYYY-MM-DD' day key (a derived local dose day, or a regimen DATE column),
+ * through the one formatter (`lib/recordDates.ts`, H-10, CUL-1126): bare in the current year,
+ * "Mar 16, 2025" outside it. The past-meds block spans twelve months, so it crosses a new
+ * year every January, and a bare date there could mean either. The key is read as a
+ * calendar day, never an instant, so the day cannot shift across a timezone (the B-441
+ * trap). Slices to the leading date so a stray datetime still yields its calendar day.
+ * Null (surface omits the date) when absent or malformed, never a guessed date.
  */
-export function formatMedDate(value: string | null): string | null {
-  return value ? formatCalendarDate(value.slice(0, 10)) : null;
+export function formatMedDate(value: string | null, today: string): string | null {
+  return value ? recordDay(value.slice(0, 10), today) : null;
 }
 
 /**
- * A speakable date range: "Mar 3 – 16" (same month collapses the trailing month),
- * "Mar 3 – Apr 2" (cross-month), "Dec 30, 2025 – Jan 2, 2026" (cross-YEAR carries the years so
- * "Dec 30 – Jan 2" can't read as one year, or worse, a 11-month span read backwards), "Mar 3"
- * (single day, or only one endpoint known), or null (neither known). Endpoint strings go
- * through `formatMedDate` (→ formatCalendarDate); the parsed Dates are used only for the
- * month/year/day COMPARISON, so the collapse is locale-safe (never a string-split guess).
+ * A speakable date range, the year stated once and only where it is needed (H-10):
+ * "Mar 3 – 16" (same month), "Mar 3 – Apr 2" (cross-month), "Mar 3 – 16, 2025" (another
+ * year), "Dec 30, 2025 – Jan 2" (across a new year, read in 2026: the direction stays
+ * unambiguous because at most one side is ever bare, and a bare side is this year), "Mar 3"
+ * (single day, or only one endpoint known), or null (neither known). An inverted pair (an
+ * end recorded before its start) prints its start alone rather than a window the record
+ * never had.
  */
 export function formatMedDateRange(
   startKey: string | null,
   endKey: string | null,
+  today: string,
 ): string | null {
-  const sd = startKey ? dayKeyToLocalDate(startKey.slice(0, 10)) : null;
-  const ed = endKey ? dayKeyToLocalDate(endKey.slice(0, 10)) : null;
-  const sStr = formatMedDate(startKey);
-  const eStr = formatMedDate(endKey);
-  if (sStr && eStr && sd && ed) {
-    if (sd.getTime() === ed.getTime()) return sStr; // single day
-    if (sd.getFullYear() !== ed.getFullYear()) {
-      // Cross-year — carry both years so the direction is unambiguous.
-      return `${sStr}, ${sd.getFullYear()} – ${eStr}, ${ed.getFullYear()}`;
-    }
-    if (sd.getMonth() === ed.getMonth()) {
-      return `${sStr} – ${ed.getDate()}`; // same month: "Mar 3 – 16"
-    }
-    return `${sStr} – ${eStr}`; // same year, cross-month: "Mar 3 – Apr 2"
+  const sStr = formatMedDate(startKey, today);
+  const eStr = formatMedDate(endKey, today);
+  if (sStr && eStr && startKey && endKey) {
+    return recordRange(startKey.slice(0, 10), endKey.slice(0, 10), today) ?? sStr;
   }
   return sStr ?? eStr ?? null;
 }
@@ -432,10 +451,10 @@ export function doseCountPhrase(n: number): string {
  * course a vet places on a timeline. A course with no recorded end leads with the dose
  * count, then the logged span — "what was logged", since there is no formal window to state.
  */
-export function pastMedTileValue(course: MedicationCourse): string {
+export function pastMedTileValue(course: MedicationCourse, today: string): string {
   const count = doseCountPhrase(course.dosesLogged);
   if (course.end.kind === 'ended') {
-    const range = formatMedDateRange(course.startedAt, course.end.endedAt);
+    const range = formatMedDateRange(course.startedAt, course.end.endedAt, today);
     const parts: string[] = [];
     if (range) parts.push(range);
     if (course.runDays != null) {
@@ -444,7 +463,7 @@ export function pastMedTileValue(course: MedicationCourse): string {
     parts.push(count);
     return parts.join(' · ');
   }
-  const range = formatMedDateRange(course.firstDoseDay, course.lastDoseDay);
+  const range = formatMedDateRange(course.firstDoseDay, course.lastDoseDay, today);
   return range ? `${count} · ${range}` : count;
 }
 
@@ -453,9 +472,9 @@ export function pastMedTileValue(course: MedicationCourse): string {
  * course; every other course reads "No end recorded" — the record's silence stated
  * honestly, never softened into "completed"/"ongoing" and never a wellness word.
  */
-export function pastMedEndDetail(course: MedicationCourse): string {
+export function pastMedEndDetail(course: MedicationCourse, today: string): string {
   if (course.end.kind === 'ended') {
-    const when = formatMedDate(course.end.endedAt);
+    const when = formatMedDate(course.end.endedAt, today);
     return when ? `Ended ${when}` : 'Ended';
   }
   return 'No end recorded';
@@ -479,12 +498,16 @@ export function earlierCoursesTile(count: number): RundownTile {
  * course, not a designed-empty row, so it is NOT faded (the register line carries the
  * distinction, not the styling).
  */
-export function pastMedCourseTile(course: MedicationCourse, drugName: string): RundownTile {
+export function pastMedCourseTile(
+  course: MedicationCourse,
+  drugName: string,
+  today: string,
+): RundownTile {
   return {
     key: 'meds_past',
     label: drugName,
-    value: pastMedTileValue(course),
-    detail: pastMedEndDetail(course),
+    value: pastMedTileValue(course, today),
+    detail: pastMedEndDetail(course, today),
     tap:
       course.source === 'regimen' && course.regimenId
         ? { kind: 'medication', medicationId: course.regimenId }
@@ -542,7 +565,8 @@ export function buildPastMedications(
   nowMs: number,
 ): RundownTile[] {
   const { shown, earlierCount } = splitPastCourses(courses, nowMs);
-  const tiles = shown.map((c) => pastMedCourseTile(c, resolveCourseName(c, itemNames)));
+  const today = toLocalDayKey(new Date(nowMs));
+  const tiles = shown.map((c) => pastMedCourseTile(c, resolveCourseName(c, itemNames), today));
   if (earlierCount > 0) tiles.push(earlierCoursesTile(earlierCount));
   return tiles;
 }
@@ -670,51 +694,70 @@ async function readMedicationItemNames(): Promise<Map<string, MedItemName>> {
 }
 
 /**
- * The most recent logged vet visit's date (YYYY-MM-DD), or null if none logged.
+ * Changes since the window's first day: foods whose FIRST-EVER logged feed falls on or after
+ * it (genuinely introduced since), and regimens started on or after it.
  *
- * CUL-899 VV-1 — `deleted_at IS NULL` is load-bearing, not hygiene. This is an
- * UNBOUNDED MAX, and its result is the date `readSinceVisitChanges` measures the
- * whole "what's changed since your last visit" section from. A soft-deleted visit
- * left in the MAX would keep anchoring that window to a visit the owner has removed
- * — and because the anchor moves the window rather than adding a row, the section
- * would simply go quiet rather than look wrong. Nothing writes `deleted_at` yet (the
- * control is VV-6); the filter ships with the column so the reader is already correct
- * when it does.
+ * ── THE DAY IS COMPARED AS A DAY, NEVER AS TEXT (C-40, CUL-1127) ──────────────
+ * This used to bind the visit's 'YYYY-MM-DD' into `HAVING MIN(e.occurred_at) >= ?`, a TEXT
+ * comparison against ISO instants. '2026-07-02' sorts before every '2026-07-02T…' string,
+ * so the bound was UTC midnight: for an owner at UTC−7 a food first fed at 8pm the evening
+ * BEFORE the visit counted as new since it, and at UTC+10 a food first fed at 8am on the
+ * visit's own day did not. Both sides are now read as LOCAL day indices (`localDayIndexOf`
+ * takes a DATE key verbatim and an instant by the day it falls on) and compared as numbers.
+ *
+ * The food half reads each linked meal's instant and takes the earliest per food in code,
+ * so no text MIN picks between two spellings of one instant (`…Z` local, `…+00:00`
+ * hydrated). A meal whose time cannot be parsed is skipped for that food, never guessed
+ * into the window. `started_at` is a Postgres DATE, compared through the same index so a
+ * stray instant in the mirror still lands on its local day.
+ *
+ * `sinceDay` is a branded `SinceVisitDay`, so only the shared bound can hand this a start.
  */
-async function readLastVisitDate(petId: string): Promise<string | null> {
+async function readSinceVisitChanges(petId: string, sinceDay: SinceVisitDay): Promise<SinceVisitChanges> {
+  const since = recordDayIndex(sinceDay);
+  if (since === null) throw new RangeError(`rundown: since-visit day is not a day key: "${sinceDay}"`);
   const db = getDb();
-  const row = await db.getFirstAsync<{ visited_at: string | null }>(
-    `SELECT MAX(visited_at) AS visited_at FROM vet_visits
-      WHERE pet_id = ? AND deleted_at IS NULL`,
-    [petId],
-  );
-  return row?.visited_at ?? null;
+  const [feeds, regimens] = await Promise.all([
+    db.getAllAsync<{ food_item_id: string; occurred_at: string }>(
+      `SELECT m.food_item_id AS food_item_id, e.occurred_at AS occurred_at
+         FROM meals m
+         JOIN events e ON e.id = m.event_id
+        WHERE e.pet_id = ? AND e.deleted_at IS NULL AND m.food_item_id IS NOT NULL`,
+      [petId],
+    ),
+    db.getAllAsync<{ started_at: string | null }>(
+      `SELECT started_at FROM medications WHERE pet_id = ?`,
+      [petId],
+    ),
+  ]);
+  return countSinceVisitChanges(feeds ?? [], regimens ?? [], since);
 }
 
 /**
- * Changes since a visit date: foods whose FIRST-EVER logged feed is on/after the
- * date (genuinely introduced since), and regimens started on/after it. ISO-8601
- * timestamps compare lexicographically, so a date-only bound works against the
- * datetime `occurred_at`/`started_at` columns.
+ * The pure half of `readSinceVisitChanges`, exported so the day comparison is tested over
+ * real instants in every CI zone rather than through a mocked database.
  */
-async function readSinceVisitChanges(petId: string, visitedAt: string): Promise<SinceVisitChanges> {
-  const db = getDb();
-  const foodRow = await db.getFirstAsync<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM (
-       SELECT m.food_item_id
-         FROM meals m
-         JOIN events e ON e.id = m.event_id
-        WHERE e.pet_id = ? AND e.deleted_at IS NULL AND m.food_item_id IS NOT NULL
-        GROUP BY m.food_item_id
-       HAVING MIN(e.occurred_at) >= ?
-     )`,
-    [petId, visitedAt],
-  );
-  const medRow = await db.getFirstAsync<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM medications WHERE pet_id = ? AND started_at >= ?`,
-    [petId, visitedAt],
-  );
-  return { newFoods: foodRow?.n ?? 0, newMeds: medRow?.n ?? 0 };
+export function countSinceVisitChanges(
+  feeds: readonly { food_item_id: string; occurred_at: string }[],
+  regimens: readonly { started_at: string | null }[],
+  sinceIndex: number,
+): SinceVisitChanges {
+  const firstFeed = new Map<string, number>();
+  for (const f of feeds) {
+    const day = localDayIndexOf(f.occurred_at);
+    if (day === null) continue;
+    const prior = firstFeed.get(f.food_item_id);
+    if (prior === undefined || day < prior) firstFeed.set(f.food_item_id, day);
+  }
+  let newFoods = 0;
+  for (const day of firstFeed.values()) if (day >= sinceIndex) newFoods++;
+
+  let newMeds = 0;
+  for (const r of regimens) {
+    const day = r.started_at ? localDayIndexOf(r.started_at) : null;
+    if (day !== null && day >= sinceIndex) newMeds++;
+  }
+  return { newFoods, newMeds };
 }
 
 /** LOCAL hours-of-day of a symptom type's events in a window (for the timing recount). */
@@ -777,6 +820,10 @@ export async function buildRundown(
 ): Promise<Rundown> {
   const monthRange = calendarWindow('month', nowMs);
   const windowDays = WINDOW_DAYS.month;
+  // The rundown's one day key. Every date it prints and the visit bound it reads are judged
+  // against this, never a fresh `new Date()`, so a rundown built at an explicit `nowMs`
+  // (and the saved copy stamped "As of" that day) agree with themselves.
+  const today = toLocalDayKey(new Date(nowMs));
 
   const [
     monthCounts,
@@ -796,7 +843,12 @@ export async function buildRundown(
     getWeightHistory(petId, RUNDOWN_WEIGHIN_LIMIT),
     readMealTimestamps(petId, monthRange.currentStartMs, monthRange.currentEndMs),
     readActiveRegimens(petId),
-    readLastVisitDate(petId),
+    // The ONE since-visit bound (H-11, `lib/visitWindow.ts`), judged on the rundown's own
+    // day: the latest visit strictly before it, so the rundown, History's *Since the last
+    // vet visit* and the report's rung 1 start on the same day. A visit saved today, or a
+    // row dated ahead, anchors nothing until the day after it (CUL-1127; CUL-946 wrote
+    // exactly such rows, and the old `MAX(visited_at)` measured "nothing changed" from them).
+    readLatestVisitBefore(getDb(), petId, today),
     // Past-meds block: the whole regimen+dose history + the drug-name cache, read alongside
     // everything else. readActiveRegimens (above) still drives the "Current meds" block
     // unchanged; these three feed the SEPARATE past block via the shared course derivation.
@@ -901,17 +953,17 @@ export async function buildRundown(
       tiles.push({
         key: 'meds',
         label: reg.drugName,
-        value: `${frequencyLabel(reg.dosesPerDay)} · ${lastDoseLabel(reg.lastDoseIso)}`,
+        value: `${frequencyLabel(reg.dosesPerDay)} · ${lastDoseLabel(reg.lastDoseIso, today)}`,
         tap: { kind: 'medication', medicationId: reg.id },
       });
     }
   }
 
-  // 6 — Since the last logged visit (or an honest "none logged" forward state).
+  // 6 — Since the last vet visit (or an honest "none logged" forward state).
   if (!lastVisit) {
     tiles.push({
       key: 'since_visit',
-      label: 'Since last visit',
+      label: SINCE_VISIT_LABEL,
       value: 'No prior visit logged',
       tap: { kind: 'log-visit' },
       empty: true,
@@ -921,9 +973,9 @@ export async function buildRundown(
     const hasChanges = changes.newFoods > 0 || changes.newMeds > 0;
     tiles.push({
       key: 'since_visit',
-      label: 'Since last visit',
+      label: SINCE_VISIT_LABEL,
       value: sinceVisitValue(changes),
-      detail: visitDateLabel(lastVisit),
+      detail: visitDateLabel(lastVisit, today) ?? undefined,
       tap: sinceVisitTap(changes),
       empty: !hasChanges,
     });

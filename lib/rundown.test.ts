@@ -45,6 +45,8 @@ import {
   sinceVisitValue,
   sinceVisitTap,
   visitDateLabel,
+  SINCE_VISIT_LABEL,
+  countSinceVisitChanges,
   rundownDateLine,
   rundownToPlainText,
   medHistoryCutoffMs,
@@ -67,7 +69,8 @@ import {
   type MedItemName,
 } from './rundown';
 import type { MedicationCourse } from './medicationHistory';
-import { dayKeyToLocalDate } from './utils';
+import { dayKeyToLocalDate, localDayIndexOf } from './utils';
+import type { SinceVisitDay } from './visitWindow';
 
 // A derived MedicationCourse fixture for the pure past-meds copy/split tests — full defaults
 // (a quiet, ended-less regimen course), overridable. The buildRundown integration test below
@@ -242,13 +245,25 @@ describe('frequencyLabel', () => {
   });
 });
 
+// The rundown's day for the pure date helpers (H-10: a year only outside this year).
+const TODAY = '2026-09-25';
+
 describe('lastDoseLabel', () => {
   it('is honest — "no dose logged yet", never "none needed"', () => {
-    expect(lastDoseLabel(null)).toBe('no dose logged yet');
-    expect(lastDoseLabel('garbage')).toBe('no dose logged yet');
+    expect(lastDoseLabel(null, TODAY)).toBe('no dose logged yet');
+    expect(lastDoseLabel('garbage', TODAY)).toBe('no dose logged yet');
   });
-  it('prefixes a real date with "last"', () => {
-    expect(lastDoseLabel('2026-07-10T09:00:00Z')).toMatch(/^last /);
+  // Built from LOCAL components (C-29): midday UTC is already tomorrow at UTC+14.
+  const localNoon = (y: number, m: number, d: number) => new Date(y, m - 1, d, 12).toISOString();
+  it('prefixes the dose\'s LOCAL day with "last", bare in the current year', () => {
+    expect(lastDoseLabel(localNoon(2026, 7, 10), TODAY)).toBe('last Jul 10');
+  });
+  it('stamps the year on a dose from another year (CUL-1126: a dormant PRN course)', () => {
+    expect(lastDoseLabel(localNoon(2025, 7, 10), TODAY)).toBe('last Jul 10, 2025');
+  });
+  it('names the LOCAL day of a late-evening dose, not its UTC day', () => {
+    const lateEvening = new Date(2026, 6, 10, 23, 30).toISOString();
+    expect(lastDoseLabel(lateEvening, TODAY)).toBe('last Jul 10');
   });
 });
 
@@ -286,12 +301,22 @@ describe('rundownDateLine', () => {
   });
 });
 
-describe('visitDateLabel', () => {
-  it('prefixes with "Since"', () => {
-    expect(visitDateLabel('2026-07-02')).toMatch(/^Since /);
+describe('visitDateLabel (H-10, CUL-1126)', () => {
+  const day = (k: string) => k as SinceVisitDay;
+  it('is the visit day, bare in the current year', () => {
+    expect(visitDateLabel(day('2026-07-02'), TODAY)).toBe('Jul 2');
   });
-  it('falls back gracefully on a bad date', () => {
-    expect(visitDateLabel('nope')).toBe('Since your last visit');
+  it('carries the year outside it: fourteen months never reads as eleven weeks', () => {
+    // The issue's counterexample: a visit on Jul 2, 2025 read in September 2026.
+    expect(visitDateLabel(day('2025-07-02'), TODAY)).toBe('Jul 2, 2025');
+  });
+  it('reads the key as a calendar day, never as UTC midnight (the day before, behind UTC)', () => {
+    // `Date.parse('2026-07-02')` is UTC midnight, which the old label printed as Jul 1 at
+    // every negative offset. The non-UTC CI job runs this at UTC−10.
+    expect(visitDateLabel(day('2026-07-02'), TODAY)).not.toBe('Jul 1');
+  });
+  it('the tile is named as History names the window', () => {
+    expect(SINCE_VISIT_LABEL).toBe('Since the last vet visit');
   });
 });
 
@@ -336,39 +361,46 @@ describe('courseRecencyMs', () => {
 
 describe('formatMedDate', () => {
   it('formats a day key as "Mon D", picking the right day (TZ-stable)', () => {
-    expect(formatMedDate('2026-03-16')).toMatch(/^\w+ 16$/);
+    expect(formatMedDate('2026-03-16', TODAY)).toBe('Mar 16');
+  });
+  it('stamps the year outside the current year (the block spans twelve months)', () => {
+    expect(formatMedDate('2025-10-16', TODAY)).toBe('Oct 16, 2025');
   });
   it('slices a stray datetime to its calendar day', () => {
-    expect(formatMedDate('2026-03-16T09:00:00Z')).toMatch(/^\w+ 16$/);
+    expect(formatMedDate('2026-03-16T09:00:00Z', TODAY)).toBe('Mar 16');
   });
   it('returns null for absent/malformed input (never a guessed date)', () => {
-    expect(formatMedDate(null)).toBeNull();
-    expect(formatMedDate('garbage')).toBeNull();
+    expect(formatMedDate(null, TODAY)).toBeNull();
+    expect(formatMedDate('garbage', TODAY)).toBeNull();
+    expect(formatMedDate('2026-02-30', TODAY)).toBeNull();
   });
 });
 
-describe('formatMedDateRange', () => {
+describe('formatMedDateRange (the year stated once, H-10)', () => {
   it('collapses a same-month range to "Mon D – D"', () => {
-    expect(formatMedDateRange('2026-03-03', '2026-03-16')).toMatch(/ – 16$/);
+    expect(formatMedDateRange('2026-03-03', '2026-03-16', TODAY)).toBe('Mar 3 – 16');
   });
   it('keeps both months across a same-year boundary', () => {
-    expect(formatMedDateRange('2026-03-30', '2026-04-02')).toMatch(/– \w+ 2$/);
+    expect(formatMedDateRange('2026-03-30', '2026-04-02', TODAY)).toBe('Mar 30 – Apr 2');
   });
-  it('carries both years across a year boundary (never a bare "Dec 30 – Jan 2")', () => {
-    const r = formatMedDateRange('2025-12-30', '2026-01-02');
-    expect(r).toContain('2025');
-    expect(r).toContain('2026');
-    expect(r).toMatch(/^\w+ 30, 2025 – \w+ 2, 2026$/);
+  it('states another year once, at the end', () => {
+    expect(formatMedDateRange('2025-10-03', '2025-10-16', TODAY)).toBe('Oct 3 – 16, 2025');
+  });
+  it('across a new year, stamps only the side outside this year (never a bare "Dec 30 – Jan 2")', () => {
+    expect(formatMedDateRange('2025-12-30', '2026-01-02', TODAY)).toBe('Dec 30, 2025 – Jan 2');
+    // Read the following year, both sides are outside it.
+    expect(formatMedDateRange('2025-12-30', '2026-01-02', '2027-02-01')).toBe('Dec 30, 2025 – Jan 2, 2026');
   });
   it('renders a single day when the endpoints coincide', () => {
-    const r = formatMedDateRange('2026-02-11', '2026-02-11');
-    expect(r).toMatch(/^\w+ 11$/);
-    expect(r).not.toContain('–');
+    expect(formatMedDateRange('2026-02-11', '2026-02-11', TODAY)).toBe('Feb 11');
   });
   it('renders the one known endpoint, or null when neither is known', () => {
-    expect(formatMedDateRange('2026-02-11', null)).toMatch(/^\w+ 11$/);
-    expect(formatMedDateRange(null, '2026-02-11')).toMatch(/^\w+ 11$/);
-    expect(formatMedDateRange(null, null)).toBeNull();
+    expect(formatMedDateRange('2026-02-11', null, TODAY)).toBe('Feb 11');
+    expect(formatMedDateRange(null, '2026-02-11', TODAY)).toBe('Feb 11');
+    expect(formatMedDateRange(null, null, TODAY)).toBeNull();
+  });
+  it('an end recorded before its start prints the start alone, never an inverted window', () => {
+    expect(formatMedDateRange('2026-03-16', '2026-03-03', TODAY)).toBe('Mar 16');
   });
 });
 
@@ -389,8 +421,9 @@ describe('pastMedTileValue', () => {
         dosesLogged: 26,
         end: { kind: 'ended', status: 'completed', endedAt: '2026-03-16' },
       }),
+      TODAY,
     );
-    expect(v).toMatch(/ – 16 · 14 days · 26 doses$/);
+    expect(v).toBe('Mar 3 – 16 · 14 days · 26 doses');
   });
   it('a no-end course leads with the dose count, then the logged span', () => {
     const v = pastMedTileValue(
@@ -402,8 +435,9 @@ describe('pastMedTileValue', () => {
         lastDoseDay: '2026-06-09',
         end: { kind: 'none', lastDoseIso: '2026-06-09T09:00:00Z' },
       }),
+      TODAY,
     );
-    expect(v).toMatch(/^3 doses · \w+ 2 – 9$/);
+    expect(v).toBe('3 doses · Jun 2 – 9');
   });
   it('a single logged dose reads "1 dose · Mon D"', () => {
     const v = pastMedTileValue(
@@ -414,23 +448,27 @@ describe('pastMedTileValue', () => {
         firstDoseDay: '2026-02-11',
         lastDoseDay: '2026-02-11',
       }),
+      TODAY,
     );
-    expect(v).toMatch(/^1 dose · \w+ 11$/);
+    expect(v).toBe('1 dose · Feb 11');
   });
 });
 
 describe('pastMedEndDetail (H1 — ending only from an owner action)', () => {
   it('renders "Ended {date}" ONLY for an owner-ended course', () => {
     expect(
-      pastMedEndDetail(course({ end: { kind: 'ended', status: 'completed', endedAt: '2026-03-16' } })),
-    ).toMatch(/^Ended \w+ 16$/);
+      pastMedEndDetail(course({ end: { kind: 'ended', status: 'completed', endedAt: '2026-03-16' } }), TODAY),
+    ).toBe('Ended Mar 16');
+    expect(
+      pastMedEndDetail(course({ end: { kind: 'ended', status: 'completed', endedAt: '2025-11-02' } }), TODAY),
+    ).toBe('Ended Nov 2, 2025');
     // Ended but the date did not survive: still "Ended", never a guessed date.
     expect(
-      pastMedEndDetail(course({ end: { kind: 'ended', status: 'stopped', endedAt: null } })),
+      pastMedEndDetail(course({ end: { kind: 'ended', status: 'stopped', endedAt: null } }), TODAY),
     ).toBe('Ended');
   });
   it('renders "No end recorded" for silence — never "completed"/"ongoing"/a wellness word', () => {
-    const d = pastMedEndDetail(course({ end: { kind: 'none', lastDoseIso: null } }));
+    const d = pastMedEndDetail(course({ end: { kind: 'none', lastDoseIso: null } }), TODAY);
     expect(d).toBe('No end recorded');
     expect(d).not.toMatch(/\b(complete|completed|ongoing|active|fine|well|good|normal)\b/i);
   });
@@ -451,13 +489,13 @@ describe('earlierCoursesTile (the D3 fold)', () => {
 
 describe('pastMedCourseTile (tap targets)', () => {
   it('a regimen course taps to its detail screen', () => {
-    expect(pastMedCourseTile(course({ source: 'regimen', regimenId: 'reg-9' }), 'Metronidazole').tap).toEqual(
+    expect(pastMedCourseTile(course({ source: 'regimen', regimenId: 'reg-9' }), 'Metronidazole', TODAY).tap).toEqual(
       { kind: 'medication', medicationId: 'reg-9' },
     );
   });
   it('a dose-derived course (no regimen) taps to History, on that course (HV-11)', () => {
     expect(
-      pastMedCourseTile(course({ key: 'item:item-1', source: 'doses', regimenId: null, drugName: null }), 'Zyrtec').tap,
+      pastMedCourseTile(course({ key: 'item:item-1', source: 'doses', regimenId: null, drugName: null }), 'Zyrtec', TODAY).tap,
     ).toEqual({ kind: 'history', door: { scope: 'course', courseKey: 'item:item-1' } });
   });
 });
@@ -646,10 +684,30 @@ describe('buildRundown', () => {
       { weightKg: 4.3, occurredAt: '2026-07-10T12:00:00Z' },
     ]);
 
+    // Local components throughout (C-29), so every CI zone reads the same days.
+    const at = (m: number, d: number, h = 12) => new Date(2026, m - 1, d, h).toISOString();
     mockGetAllAsync.mockImplementation(async (sql: string) => {
       // readActiveRegimens (the "Current meds" block) — matched by its status filter.
       if (sql.includes("status = 'active'")) {
-        return [{ id: 'reg-1', drug_name: 'Cerenia', doses_per_day: null, last_dose: '2026-07-10T09:00:00Z' }];
+        return [{ id: 'reg-1', drug_name: 'Cerenia', doses_per_day: null, last_dose: at(7, 10, 9) }];
+      }
+      // The shared visit bound (`readLatestVisitBefore`): every live visit day, filtered
+      // in code. Jul 18 is the rundown's own day and Jul 25 is ahead: neither anchors.
+      if (sql.includes('FROM vet_visits')) {
+        return [{ visited_at: '2026-06-01' }, { visited_at: '2026-07-02' }, { visited_at: '2026-07-18' }, { visited_at: '2026-07-25' }];
+      }
+      // Since-visit foods: food-a was first fed before the visit, b and c after it.
+      if (sql.includes('m.food_item_id AS food_item_id')) {
+        return [
+          { food_item_id: 'food-a', occurred_at: at(6, 1) },
+          { food_item_id: 'food-a', occurred_at: at(7, 5) },
+          { food_item_id: 'food-b', occurred_at: at(7, 3) },
+          { food_item_id: 'food-c', occurred_at: at(7, 10) },
+        ];
+      }
+      // Since-visit regimens: one started ON the visit day (the window includes it).
+      if (sql.includes('SELECT started_at FROM medications')) {
+        return [{ started_at: '2026-07-02' }, { started_at: '2026-06-01' }];
       }
       // The three past-meds reads have no history in this test → empty (past block absent).
       if (sql.includes('target_duration_doses')) return []; // readAllRegimens
@@ -662,14 +720,7 @@ describe('buildRundown', () => {
       // readEventTimestamps (days-logged)
       return [{ occurred_at: '2026-07-14T12:00:00Z' }, { occurred_at: '2026-07-15T12:00:00Z' }];
     });
-    mockGetFirstAsync.mockImplementation(async (sql: string) => {
-      if (sql.includes('MAX(visited_at)')) return { visited_at: '2026-07-02' };
-      if (sql.includes('FROM meals')) return { n: 2 }; // new foods
-      if (sql.includes('FROM medications')) return { n: 1 }; // new meds
-      return null;
-    });
-
-    const r = await buildRundown('pet-1', 'Pixel', Date.parse('2026-07-18T12:00:00Z'));
+    const r = await buildRundown('pet-1', 'Pixel', new Date(2026, 6, 18, 12).getTime());
     const byKey = (k: string) => r.tiles.find((t) => t.key === k);
 
     expect(byKey('symptoms')?.value).toBe('7 in 30 days · 3 this week');
@@ -680,9 +731,14 @@ describe('buildRundown', () => {
     expect(byKey('appetite')?.detail).toMatch(/meals logged on \d+ of 30 days/);
     expect(byKey('weight')?.value).toMatch(/lbs$/);
     expect(byKey('meds')?.label).toBe('Cerenia');
-    expect(byKey('meds')?.value).toMatch(/^As needed · last /);
+    expect(byKey('meds')?.value).toBe('As needed · last Jul 10');
+    // The shared bound: the latest visit strictly before the rundown's day (Jul 2), never
+    // today's or a future-dated row, and History's own name for the window (CUL-1127).
+    expect(byKey('since_visit')?.label).toBe('Since the last vet visit');
     expect(byKey('since_visit')?.value).toBe('2 new foods · 1 new med');
+    expect(byKey('since_visit')?.detail).toBe('Jul 2');
     expect(byKey('since_visit')?.tap).toEqual({ kind: 'foods' });
+    expect(r.facts.lastVisitAt).toBe('2026-07-02');
     expect(r.pastMedications).toEqual([]);
 
     assertNoReassuranceAcrossTiles(r);
@@ -755,5 +811,108 @@ describe('buildRundown', () => {
     expect(zyrtec?.tap).toEqual({ kind: 'history', door: { scope: 'course', courseKey: 'item:item-zyrtec' } });
 
     assertNoReassuranceAcrossTiles(r);
+  });
+
+  it('a visit saved TODAY anchors nothing until tomorrow (H-11): no window, never "since today"', async () => {
+    mockGetAllAsync.mockImplementation(async (sql: string) =>
+      sql.includes('FROM vet_visits') ? [{ visited_at: '2026-07-18' }] : [],
+    );
+    const r = await buildRundown('pet-1', 'Pixel', new Date(2026, 6, 18, 12).getTime());
+    const tile = r.tiles.find((t) => t.key === 'since_visit');
+    expect(tile?.value).toBe('No prior visit logged');
+    expect(tile?.detail).toBeUndefined();
+    expect(r.facts.lastVisitAt).toBeNull();
+  });
+
+  it('a visit from another year carries its year on the tile (CUL-1126\'s counterexample)', async () => {
+    mockGetAllAsync.mockImplementation(async (sql: string) =>
+      sql.includes('FROM vet_visits') ? [{ visited_at: '2025-07-02' }] : [],
+    );
+    const r = await buildRundown('pet-1', 'Pixel', new Date(2026, 8, 25, 12).getTime());
+    expect(r.tiles.find((t) => t.key === 'since_visit')?.detail).toBe('Jul 2, 2025');
+  });
+
+  it('a failed visit read fails the rundown, never a quiet "No prior visit logged"', async () => {
+    // Null from the bound is a FACT (no visit before today); a failed read is not that fact.
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockGetAllAsync.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM vet_visits')) throw new Error('disk I/O error');
+      return [];
+    });
+    await expect(buildRundown('pet-1', 'Pixel', new Date(2026, 6, 18, 12).getTime())).rejects.toThrow('disk I/O error');
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
+  });
+});
+
+// ── Since the visit, by local DAY (CUL-1127 item 1; C-40) ───────────────────────
+// The old bound was a TEXT comparison of the visit's 'YYYY-MM-DD' against ISO instants,
+// i.e. UTC midnight. Every instant below is built from LOCAL components, so under the
+// non-UTC CI job (UTC−10 … UTC+14) each assertion is the case the text bound got wrong
+// in one direction or the other.
+describe('countSinceVisitChanges', () => {
+  const since = localDayIndexOf('2026-07-02') as number;
+  const at = (d: number, h: number, min = 0) => new Date(2026, 6, d, h, min).toISOString();
+
+  it('a food first fed the EVENING BEFORE the visit is not new (behind UTC, the text bound said it was)', () => {
+    const r = countSinceVisitChanges([{ food_item_id: 'f', occurred_at: at(1, 20) }], [], since);
+    expect(r.newFoods).toBe(0);
+  });
+
+  it('a food first fed the MORNING OF the visit is new (ahead of UTC, the text bound missed it)', () => {
+    const r = countSinceVisitChanges([{ food_item_id: 'f', occurred_at: at(2, 8) }], [], since);
+    expect(r.newFoods).toBe(1);
+  });
+
+  it('the boundary minute: local midnight is in, one minute before is out', () => {
+    expect(countSinceVisitChanges([{ food_item_id: 'f', occurred_at: at(2, 0, 0) }], [], since).newFoods).toBe(1);
+    expect(countSinceVisitChanges([{ food_item_id: 'f', occurred_at: at(1, 23, 59) }], [], since).newFoods).toBe(0);
+  });
+
+  it('"new" is the FIRST-EVER feed: a food fed before the visit and again after is not new', () => {
+    const r = countSinceVisitChanges(
+      [
+        { food_item_id: 'f', occurred_at: at(5, 12) },
+        { food_item_id: 'f', occurred_at: at(1, 12) },
+      ],
+      [],
+      since,
+    );
+    expect(r.newFoods).toBe(0);
+  });
+
+  it('reads both spellings of one instant alike (`…Z` local, `…+00:00` hydrated)', () => {
+    const z = at(2, 8);
+    const plus = z.replace(/\.\d{3}Z$/, '+00:00');
+    const r = countSinceVisitChanges(
+      [
+        { food_item_id: 'a', occurred_at: z },
+        { food_item_id: 'b', occurred_at: plus },
+      ],
+      [],
+      since,
+    );
+    expect(r.newFoods).toBe(2);
+  });
+
+  it('an unparseable time is skipped for that food, never guessed into the window', () => {
+    const r = countSinceVisitChanges(
+      [
+        { food_item_id: 'f', occurred_at: 'garbage' },
+        { food_item_id: 'f', occurred_at: at(1, 12) },
+      ],
+      [],
+      since,
+    );
+    expect(r.newFoods).toBe(0);
+  });
+
+  it('a regimen started ON the visit day is new (the window includes its day); before it is not', () => {
+    const r = countSinceVisitChanges(
+      [],
+      [{ started_at: '2026-07-02' }, { started_at: '2026-07-01' }, { started_at: null }],
+      since,
+    );
+    expect(r.newMeds).toBe(1);
   });
 });

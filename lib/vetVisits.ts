@@ -1980,19 +1980,20 @@ export interface VisitConsequence {
 
 /**
  * Ask the record what this visit changed. Both surfaces the moment speaks about —
- * the vet report's window and Home's "since last visit" — are anchored on the pet's
- * LATEST visit, and neither is anchored on "the one just saved".
+ * the vet report's window and the rundown's "since the last vet visit" — are anchored
+ * on the pet's LATEST visit, and neither is anchored on "the one just saved".
  *
  * That distinction is the whole reason this is a read rather than a constant. A
  * visit logged late (the owner catching up on a visit from March, with April's
  * already on record) changes neither surface, and a moment that told them it had
  * would be describing an app they are not using.
  *
- * The two conditions differ, and they differ for a reason worth keeping straight:
- * the rundown's anchor is an UNBOUNDED `MAX(visited_at)`, so a visit logged today is
- * the anchor today; the report's rung 1 is STRICTLY BEFORE today
- * (`generate-report/report.ts` — "ignore today/future-dated visits"), so the same
- * visit becomes the report's anchor tomorrow. The moment says both, separately.
+ * Since CUL-1127 the two share one bound: the report's rung 1 is STRICTLY BEFORE today
+ * (`generate-report/report.ts` — "ignore today/future-dated visits"), and the rundown
+ * takes the same rule through `lib/visitWindow.ts` (H-11). So a visit logged today
+ * becomes the anchor of both tomorrow, and `dayRelation` is what lets the moment say
+ * so. (Before, the rundown's anchor was an unbounded `MAX(visited_at)` and moved the
+ * same day, which is why the moment once carried two differently timed sentences.)
  */
 export async function readVisitConsequence(
   visit: Pick<LocalVetVisit, 'id' | 'pet_id' | 'visited_at'>,

@@ -29,7 +29,8 @@
 import { getDietTrialProgress } from './analytics';
 import type { AllowedFood, TrialFoodRole } from './dietTrial';
 import { trialListFoodsOn, type TrialAllowedSet, type TrialAllowedSetTrial } from './trialAllowedSet';
-import { dayKeyToLocalDate, formatLongDate, toLocalDayKey } from './utils';
+import { dayKeyToLocalDate, toLocalDayKey } from './utils';
+import { recordDay } from './recordDates';
 
 // ── §4 copy pack, verbatim ──────────────────────────────────────────────────
 //
@@ -173,8 +174,9 @@ export function trialDayOn(trial: TrialAllowedSetTrial, dayKey: string): number 
  * is written at `started_at`). Nothing on the row records "this was an add", so
  * inferring it from a stored boolean would mean adding one.
  */
-export function membershipFact(trial: TrialAllowedSetTrial, food: AllowedFood): string {
-  const date = formatLongDate(food.allowedFrom);
+export function membershipFact(trial: TrialAllowedSetTrial, food: AllowedFood, today: string): string {
+  // The house form (H-10; PM ruling on CUL-1126): "since Jul 3", "since Dec 20, 2025".
+  const date = food.allowedFrom ? recordDay(food.allowedFrom, today) : null;
   if (!date) return 'On the list';
   const day = trialDayOn(trial, food.allowedFrom);
   if (day === null || day <= 1) return `On the list since ${date}`;
@@ -211,7 +213,7 @@ export function buildTrialFoodsScreen(
   const toRow = (f: AllowedFood): TrialFoodsRow => ({
     key: rowKey(f),
     label: f.label,
-    fact: membershipFact(set.trial, f),
+    fact: membershipFact(set.trial, f, toLocalDayKey(new Date(atMs))),
   });
 
   return {
@@ -278,9 +280,10 @@ export function buildAddTrialFoodSheet(
   // The LOCAL day, because that is the day key `addTrialFood` will write. Naming
   // a different date here than the row records is the one way this sheet could
   // lie, and it would only show up near midnight.
-  const today = formatLongDate(toLocalDayKey(new Date(nowMs)));
+  const todayKey = toLocalDayKey(new Date(nowMs));
+  const todayDate = recordDay(todayKey, todayKey);
   const joins = [
-    today ? `Today, ${today}` : 'Today',
+    todayDate ? `Today, ${todayDate}` : 'Today',
     progress ? `day ${progress.dayCounter}` : null,
   ]
     .filter((p): p is string => p !== null)

@@ -298,9 +298,9 @@ export const BASE_SCHEMA_SQL = `
     --
     -- A SEPARATE TABLE FROM vet_visits, AND THAT IS THE WHOLE POINT (G3). Every
     -- reader of vet_visits — here and server-side — means "a visit that
-    -- happened", and two of them say so only by being unbounded: lib/rundown.ts
-    -- readLastVisitDate is a bare MAX(visited_at), and vetDocumentDetail's link
-    -- picker is reverse-chron with no upper bound. A booking stored in that table
+    -- happened", and some say so only by being unbounded: vetDocumentDetail's link
+    -- picker is reverse-chron with no upper bound, as the rundown's MAX(visited_at)
+    -- was until it took the shared bound (CUL-1127). A booking stored in that table
     -- would become "your last visit" and silently move the rundown's whole
     -- what-changed-since window. Two tables makes that unwritable rather than
     -- something four readers each have to remember to filter.

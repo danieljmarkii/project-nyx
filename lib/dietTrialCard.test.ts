@@ -68,8 +68,8 @@ function allStrings(model: TrialCardModel): string[] {
 
 const FOOD = 'Zignature Kangaroo Formula';
 
-/** The design lock's worked example: started 3 July, 56-day skin trial, read on
- *  25 July → day 23 of 56, ending 27 August. */
+/** The design lock's worked example: started Jul 3, 56-day skin trial, read on
+ *  Jul 25 → day 23 of 56, ending Aug 27 (the house date form since CUL-1126). */
 function activeInput(over: Partial<TrialCardInput> = {}): TrialCardInput {
   return {
     trial: {
@@ -406,7 +406,7 @@ describe('state 1 — day one', () => {
   it('renders the day and the end date', () => {
     expect(model.state).toBe('day_one');
     expect(model.dayLine).toBe('Day 1 of 56');
-    expect(model.windowLine).toBe('Ends 27 August');
+    expect(model.windowLine).toBe('Ends Aug 27');
   });
 
   it('makes no claim in EITHER direction — the forward line is the whole card', () => {
@@ -546,7 +546,7 @@ describe('state 2 — mid-trial, clean', () => {
   it('renders day progress, not quality', () => {
     expect(model.state).toBe('clean');
     expect(model.dayLine).toBe('Day 23 of 56');
-    expect(model.windowLine).toBe('Ends 27 August');
+    expect(model.windowLine).toBe('Ends Aug 27');
     expect(model.progressFraction).toBeCloseTo(23 / 56, 10);
   });
 
@@ -886,7 +886,7 @@ describe('state 6 — overrun', () => {
     expect(model.state).toBe('overrun');
     expect(model.dayLine).toBe('Day 61 — 5 days past the window you set');
     expect(model.dayLine).not.toMatch(/of 56/);
-    expect(model.windowLine).toBe('Window ended 27 August');
+    expect(model.windowLine).toBe('Window ended Aug 27');
   });
 
   it('clamps the bar and lets the copy take over', () => {
@@ -924,7 +924,7 @@ describe('state 7a — completed', () => {
   it('keeps rendering after completion, as a dated range', () => {
     expect(model.state).toBe('completed');
     expect(model.kicker).toBe('Diet trial · finished');
-    expect(model.dayLine).toBe('3 July – 27 August · 56 days');
+    expect(model.dayLine).toBe('Jul 3 – Aug 27 · 56 days');
     expect(model.progressFraction).toBeNull();
   });
 
@@ -993,7 +993,7 @@ describe('state 7b — abandoned', () => {
   it('is never framed as failure', () => {
     expect(refused.state).toBe('abandoned');
     expect(refused.kicker).toBe('Diet trial · stopped early');
-    expect(refused.dayLine).toBe('3 July – 21 July · 19 days');
+    expect(refused.dayLine).toBe('Jul 3 – 21 · 19 days');
     expect(allStrings(refused).join(' ')).not.toMatch(/failed|failure|gave up|didn’t manage/i);
   });
 
@@ -1372,7 +1372,14 @@ describe('day math', () => {
 
   it('ends a 56-day window on start + 55, not start + 56', () => {
     const start = trialEndDayIndex(Math.floor(Date.UTC(2026, 6, 3) / MS_PER_DAY), 56);
-    expect(formatTrialDate(start)).toBe('27 August');
+    expect(formatTrialDate(start, '2026-07-25')).toBe('Aug 27');
+  });
+
+  it('dates the house way, the year only outside the current one (H-10, CUL-1126)', () => {
+    const end = trialEndDayIndex(Math.floor(Date.UTC(2026, 10, 20) / MS_PER_DAY), 84);
+    // A 12-week trial started in November ends in a year a bare date leaves ambiguous.
+    expect(formatTrialDate(end, '2026-11-20')).toBe('Feb 11, 2027');
+    expect(formatTrialDate(end, '2027-01-05')).toBe('Feb 11');
   });
 
   it('survives an unparseable start date without guessing a day', () => {
@@ -1409,7 +1416,7 @@ describe('the Home strip', () => {
     const strip = resolveTrialStrip(activeInput())!;
     expect(strip.header).toBe('Diet trial · day 23 of 56');
     expect(strip.line).toBe(
-      'Zignature Kangaroo Formula · ends 27 August · meals logged on 22 of 23 days',
+      'Zignature Kangaroo Formula · ends Aug 27 · meals logged on 22 of 23 days',
     );
     expect(strip.progressFraction).toBeCloseTo(23 / 56, 10);
   });
@@ -1422,7 +1429,7 @@ describe('the Home strip', () => {
   it('never reads "day N of M" past the window', () => {
     const strip = resolveTrialStrip(activeInput({ nowMs: localNoon(2026, 9, 1) }))!;
     expect(strip.header).toBe('Diet trial · day 61 — 5 days past');
-    expect(strip.line).toContain('window ended 27 August');
+    expect(strip.line).toContain('window ended Aug 27');
   });
 
   it('drops the coverage line while an intake-decline flag is live', () => {

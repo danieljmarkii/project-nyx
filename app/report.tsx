@@ -15,10 +15,10 @@ import { ChipGroup } from '../components/ui/ChipGroup';
 import { usePetStore } from '../store/petStore';
 import { useAllowlistFlag } from '../hooks/useAppConfig';
 import { useBetaOptIn } from '../lib/betaFeatures';
-import { toLocalDayKey, dayKeyToLocalDate } from '../lib/utils';
+import { toLocalDayKey } from '../lib/utils';
 import { readVetLibrary } from '../lib/vetDocumentLibrary';
 import { VET_FILES_ENTRY_ENABLED } from '../lib/vetFilesEntry';
-import { CUSTOM_RANGE_SETTLE_MS, isCustomWindowEdit } from '../lib/reportRange';
+import { CUSTOM_RANGE_SETTLE_MS, isCustomWindowEdit, reportScopeLine } from '../lib/reportRange';
 import {
   flushBeforeReport, generateVetReport, reportFreshnessLine, shareReportPdf,
   type VetReport, type VetReportParams,
@@ -81,25 +81,14 @@ const RANGE_OPTIONS: { value: RangeMode; label: string }[] = [
   { value: 'custom', label: 'Custom…' },
 ];
 
-// toLocalDayKey / dayKeyToLocalDate live in lib/utils (unit-tested there) — the
-// server treats window bounds as local calendar days, so both avoid a UTC
-// round-trip that would shift the day for owners behind UTC.
-
-function formatDayKey(key: string): string {
-  const d = dayKeyToLocalDate(key);
-  return d ? d.toLocaleDateString([], { month: 'short', day: 'numeric' }) : key;
-}
+// toLocalDayKey lives in lib/utils (unit-tested there) — the server treats window
+// bounds as local calendar days, so it avoids a UTC round-trip that would shift the
+// day for owners behind UTC. The resolved window is printed by `reportScopeLine`
+// (lib/reportRange), through the one date formatter.
 
 function formatFieldDate(d: Date): string {
   return d.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' });
 }
-
-const SCOPE_BASIS_LABEL: Record<string, string> = {
-  since_visit: 'Since your last visit',
-  diet_trial: 'Active diet trial',
-  fallback_90d: 'Last 90 days',
-  custom: 'Custom range',
-};
 
 export default function ReportScreen() {
   const activePet = usePetStore((s) => s.activePet);
@@ -273,7 +262,7 @@ export default function ReportScreen() {
   // window on screen while the new one is still generating (stale-label guard).
   const resolvedLabel =
     status === 'ready' && report && report.startDate && report.endDate
-      ? `${SCOPE_BASIS_LABEL[report.scopeBasis] ?? 'Report range'} · ${formatDayKey(report.startDate)} – ${formatDayKey(report.endDate)}`
+      ? reportScopeLine(report.scopeBasis, report.startDate, report.endDate, toLocalDayKey(new Date()))
       : null;
 
   // Soft refresh: once a report exists, a range change re-generates it *in place*

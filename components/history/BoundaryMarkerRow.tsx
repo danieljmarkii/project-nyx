@@ -1,7 +1,9 @@
 import { View, StyleSheet } from 'react-native';
 import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
-import { BoundaryMarker, formatCalendarDate } from '../../lib/feedingArrangements';
+import { BoundaryMarker } from '../../lib/feedingArrangements';
+import { recordDay } from '../../lib/recordDates';
+import { toLocalDayKey } from '../../lib/utils';
 
 // B-040 R1 §6a — a free-feeding lifecycle boundary on the History timeline
 // (Started / Stopped / Switched). Rendered as a QUIET timeline annotation, not an
@@ -12,13 +14,15 @@ export function BoundaryMarkerRow({ marker }: { marker: BoundaryMarker }) {
   return (
     <View style={styles.row}>
       <View style={styles.dot} />
-      <ThemedText style={styles.text}>{describe(marker)}</ThemedText>
+      <ThemedText style={styles.text}>{boundaryMarkerText(marker, toLocalDayKey(new Date()))}</ThemedText>
     </View>
   );
 }
 
-function describe(marker: BoundaryMarker): string {
-  const when = formatCalendarDate(marker.date);
+// The date through the one formatter (H-10, CUL-1126): a year only outside the current
+// year, so an edge from last year's feeding never reads as this year's.
+export function boundaryMarkerText(marker: BoundaryMarker, today: string): string {
+  const when = recordDay(marker.date, today);
   const suffix = when ? ` · ${when}` : '';
   switch (marker.kind) {
     case 'started':

@@ -13,6 +13,7 @@
 // (Principle 1: zero decisions at the moment of the event).
 
 import type { VisitConsequence } from './vetVisits';
+import { ANCHORED_WINDOW_NAMES } from './historyWindows';
 
 // ── The next-visit row ──────────────────────────────────────────────────────────
 
@@ -299,7 +300,9 @@ export interface VisitSaveSummary {
    * one.
    */
   reportLine: string | null;
-  /** Home's "since last visit", or null when this visit is not the anchor. */
+  /** "Since the last vet visit" (the rundown and History), or null when this visit does
+   *  not start it yet: not the anchor, or dated today (it starts tomorrow, as the
+   *  report's line already says). */
   homeLine: string | null;
   linked: LinkedLine[];
   /** The Vet Files offline line, verbatim (§4.1 D2). */
@@ -312,12 +315,12 @@ export const VISIT_OFFLINE_LINE = 'On this phone now — backs up when you’re 
 /**
  * Does this visit, as dated, anchor anything the owner can see?
  *
- * A FUTURE-DATED visit anchors nothing and is claimed for nothing — not the report,
- * which skips it until the day arrives, and not Home, whose unbounded
- * `MAX(visited_at)` WOULD adopt it and then render an absence over a window that
- * cannot contain anything. That second case is why this gates both lines rather
- * than only the report's: a true sentence about a false window is the worse of the
- * two.
+ * A FUTURE-DATED visit anchors nothing and is claimed for nothing: the report skips it
+ * until the day arrives, and since CUL-1127 so does the rundown's "since the last vet
+ * visit", which takes the same bound (`lib/visitWindow.ts`, H-11). Before that the
+ * rundown's unbounded `MAX(visited_at)` WOULD adopt it and render an absence over a
+ * window that cannot contain anything, which is why this gates both lines rather than
+ * only the report's: a true sentence about a false window is the worse of the two.
  *
  * EXPORTED because the saved moment is no longer its only reader. The EDIT screen
  * carried the consequence as an unconditional sentence — *"Moving this date moves
@@ -369,10 +372,18 @@ export function describeVisitSave(args: {
   return {
     heading: `Saved to ${petName}’s visits`,
     reportLine,
-    // Home's "since last visit" is anchored on the pet's most recent visit with no
-    // before-today bound, so it moves the moment this visit becomes the latest —
-    // which is why it is a separate sentence from the report's, not a clause in it.
-    homeLine: anchorsAnything ? '“Since last visit” on Home starts again from here.' : null,
+    // The rundown's "Since the last vet visit" (Get ready) and History's window take the
+    // report's own bound since CUL-1127 (the latest visit STRICTLY BEFORE today, H-11),
+    // so they move when the report does. Dated before today, this visit starts all of
+    // them now, and the line says so in the window's one name. Dated today it starts
+    // them tomorrow, which the report line already says; a second sentence claiming the
+    // window "starts again from here" today was true only while the rundown's anchor
+    // was an unbounded `MAX(visited_at)`, and would now contradict the tile the owner
+    // opens next.
+    homeLine:
+      anchorsAnything && consequence.dayRelation === 'before_today'
+        ? `“${ANCHORED_WINDOW_NAMES.visit}” starts again from here.`
+        : null,
     linked,
     offlineLine: VISIT_OFFLINE_LINE,
   };

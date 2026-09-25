@@ -58,6 +58,7 @@ import {
   claimAnalysisChain,
   awaitAnalysisChain,
   watchAnalysisRow,
+  cancelAllAnalysisWatches,
   analysisChainOutstanding,
   ANALYSIS_WATCH_FALLBACK_DELAYS_MS,
 } from './analysis';
@@ -934,6 +935,33 @@ describe('watchAnalysisRow — realtime watch (CUL-171)', () => {
     teardown(); // idempotent — no throw, no double remove
     expect(supabase.removeChannel).toHaveBeenCalledTimes(1);
     expect(supabase.removeChannel).toHaveBeenCalledWith(ch);
+  });
+
+  it('cancelAllAnalysisWatches stops every LIVE watch once, and a finished one never again (CUL-1127)', async () => {
+    // Start from an empty set, whatever an earlier test left running.
+    cancelAllAnalysisWatches();
+    const giveUpA = jest.fn();
+    const checkA = jest.fn().mockResolvedValue(false);
+    watchAnalysisRow('ev-a', checkA, giveUpA);
+    const chA = chans().at(-1)!;
+    watchAnalysisRow('ev-b', jest.fn().mockResolvedValue(false), jest.fn());
+    const chB = chans().at(-1)!;
+    const tornDown = watchAnalysisRow('ev-c', jest.fn().mockResolvedValue(false), jest.fn());
+    tornDown(); // its owner unmounted first: it leaves the set with its own teardown
+    (supabase.removeChannel as jest.Mock).mockClear();
+
+    cancelAllAnalysisWatches();
+    expect((supabase.removeChannel as jest.Mock).mock.calls).toEqual([[chA], [chB]]);
+
+    // Cancelled means done: a late realtime delivery runs no check and gives up on nothing.
+    chA.pgHandler?.({});
+    await flush();
+    expect(checkA).not.toHaveBeenCalled();
+    expect(giveUpA).not.toHaveBeenCalled();
+
+    // The set is empty now: a second sign-out removes nothing twice.
+    cancelAllAnalysisWatches();
+    expect(supabase.removeChannel).toHaveBeenCalledTimes(2);
   });
 
   it('a failing check() is logged, not fatal — keeps watching, no give-up', async () => {
