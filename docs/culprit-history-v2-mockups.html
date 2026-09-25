@@ -495,6 +495,7 @@
     <div class="r"><b>The quiet states · "LOVE that we added an empty state."</b><span><i class="k">kept</i>As drawn. <a href="#s08">§08</a></span></div>
     <div class="r"><b>"Finalize these requirements; put them in a Linear project with a session-by-session plan."</b><span><i class="k">next</i><code>docs/nyx-history-v2-requirements.md</code> is written against this page, and the build is the Linear project <b>History v2 · the record you can read</b>.</span></div>
     <div class="r"><b>CUL-1183 · "Go with 60." (2026-09-25, after round 5)</b><span><i class="d">ruled</i>The time column is 60pt, not 56. At the app's 11pt, a run across noon's first line, "11:30 AM –", is 58.7pt; in 56 it fell to three lines. Every frame on this page draws the 60pt column; Home, History and the Daily Recap move together. <a href="#s02">§02</a></span></div>
+    <div class="r"><b>CUL-1193 · "(b)" (2026-09-25, after round 5)</b><span><i class="d">ruled</i>A dose count reads "logged". Under a course or Medication the count line says "16 logged on 16 days", and its second line names the doses recorded Partial, Missed or Refused: "Cetirizine HCl · Jul 1 – Sep 5 · 4 not given in full". A course's row on the type sheet names them after its span, the way Photographed names "not read". "16 doses" read as sixteen given. <a href="#s06">§06</a></span></div>
   </div>
   <div class="howto"><b>How to read this page.</b> §01 is the whole screen with every demo. §02 to §07 are the rulings, one per section, each drawn once. §08 is the quiet states, §09 the motion inventory, §10 the rules a build carries, §11 the rulings in one list. Round 4, with the options side by side, is in git at <code>b0479342</code>; the critique is <code>docs/history-v2-round3-critique-2026-09.md</code>.</div>
   <div class="howto" style="margin-top:14px;border-left:3px solid var(--gold)"><b>The record, not a fixture.</b> Times, types, food and drug names, ratings, doses, photo presence and each read's verdict come from a service-role read scoped to Nyx's id paired with her owner's account. Note <em>text</em> was never read: where a note's words appear they are the Designer's and are marked <span class="illus">illustrative</span>, as are the vet visit's reason and clinic.</div>
@@ -528,7 +529,7 @@
       <div><b>Which day you are in, mid-scroll</b>The day's header sticks under the pinned pills until the next day takes its place.<small>the pinned row · H-3</small></div>
       <div><b>What was given, and how</b>"Prednisone · in the 1:00 PM meal · picked at", then the Partial chip.<small>the dose row · R-3</small></div>
       <div><b>How long after eating</b>"5 min after eating", the shared lane's number, from the meal that stays its own row.<small>the timing line · R-3</small></div>
-      <div><b>A course, as the vet report keys it</b>Cetirizine HCl, Jul 1 – Sep 5, 16 doses on 16 days.<small>the type sheet · H-5</small></div>
+      <div><b>A course, as the vet report keys it</b>Cetirizine HCl, Jul 1 – Sep 5: 16 logged on 16 days, 4 not given in full.<small>the type sheet · H-5</small></div>
     </div>
   </div>
 </section>
@@ -647,18 +648,18 @@
 <section id="s06">
   <div class="sec-head"><span class="sec-num">§06</span><h2>The filters: one pill always names the filter (H-5, as drawn)</h2></div>
   <div class="col">
-    <p>The ⋯ pill is gone; its choices sit on the type sheet, so one pill always names what is filtering. "With a read" is retired. Photographed names the unread. Medication gains one sub-row per course with a dose in the window, keyed and bounded the way the vet report keys a course. A course counts every dose row logged, whatever its chip; the medication card's "Dose X of Y" counts only what was given, and the requirements write that difference down.</p>
+    <p>The ⋯ pill is gone; its choices sit on the type sheet, so one pill always names what is filtering. "With a read" is retired. Photographed names the unread. Medication gains one sub-row per course with a dose in the window, keyed and bounded the way the vet report keys a course. A course counts every dose row logged, whatever its chip; the medication card's "Dose X of Y" counts only what was given, and the requirements write that difference down. The count reads "logged", and the doses recorded Partial, Missed or Refused are named beside it (CUL-1193).</p>
   </div>
   <div class="frames">
     <div class="frame-slot">
       <span class="tag cur">The type sheet</span>
       <div class="phone vp" id="p-type" data-mount='{"when":"all","openSheet":"type","sheetAnchor":"medication"}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
-      <p class="frame-cap"><b>One sheet, every fact filter.</b> Every type, Medication with its three courses (Motozol since Jul 16, 29; Cetirizine HCl Jul 1 – Sep 5, 16; Prednisone since Sep 21, 1), then what the record holds: Photographed, 44, of which 4 were not read; With a note, 64; and Noticed, under the daily look, with no count (H-9).</p>
+      <p class="frame-cap"><b>One sheet, every fact filter.</b> Every type, Medication with its three courses (Motozol since Jul 16, 29; Cetirizine HCl Jul 1 – Sep 5, 16, with "4 not given in full" after its span; Prednisone since Sep 21, 1, with "1 not given in full"), then what the record holds: Photographed, 44, of which 4 were not read; With a note, 64; and Noticed, under the daily look, with no count (H-9).</p>
     </div>
     <div class="frame-slot">
       <span class="tag cur">A course, picked</span>
       <div class="phone vp" id="p-course" data-mount='{"when":"all","lens":"course:cetirizine"}'><div class="notch"></div><div class="vpbody"></div><div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" role="button" aria-label="Log event" tabindex="0"></div></div>
-      <p class="frame-cap"><b>A course, not a display name.</b> "16 doses on 16 days", bounded by the course, Jul 1 – Sep 5: the strip ends at its last week and no gap line reaches past Sep 5. Sep 5's dose was Partial, so that day's line breaks.</p>
+      <p class="frame-cap"><b>A course, not a display name.</b> "16 logged on 16 days", and "4 not given in full" after the course's name and span (CUL-1193), bounded by the course, Jul 1 – Sep 5: the strip ends at its last week and no gap line reaches past Sep 5. Sep 5's dose was Partial, so that day's line breaks.</p>
     </div>
     <div class="frame-slot">
       <span class="tag cur">The window sheet</span>
@@ -1164,7 +1165,9 @@ function lensFacts(k, lens, opts) {
   if (lens === 'symptom') return { n: SYMPTOM.reduce((a, s) => a + (w[s] || 0), 0) };
   if (lens === 'photographed') return { n: w.photo, unread: w.unread };
   if (lens === 'noted') return { n: w.note };
-  if (lens.startsWith('course:')) { const key = lens.slice(7); const r = winSum(from, to, (d) => (COURSE_DAYS[key][d] || [0])[0]); return { n: r.n, days: r.days }; }
+  if (lens.startsWith('course:')) { const key = lens.slice(7); const r = winSum(from, to, (d) => (COURSE_DAYS[key][d] || [0])[0]); const s = winSum(from, to, (d) => (COURSE_DAYS[key][d] || [0, 0])[1]); return { n: r.n, days: r.days, short: s.n }; }
+  // CUL-1193: a dose filter also carries the doses recorded Partial, Missed or Refused
+  if (lens === 'medication') { const s = winSum(from, to, (d) => Object.values(COURSE_DAYS).reduce((a, c) => a + ((c[d] || [0, 0])[1]), 0)); return { n: w.medication || 0, days: w.tdays ? w.tdays.medication : null, short: s.n }; }
   return { n: w[lens] || 0, days: w.tdays ? w.tdays[lens] : null };
 }
 function clockedWin(k, opts) {
@@ -1183,12 +1186,13 @@ function countLine(opts) {
   const course = lens && lens.startsWith('course:') ? COURSES.find((x) => x.key === lens.slice(7)) : null;
   let what;
   if (!lens) what = `${f.n.toLocaleString('en-US')} logged`;
-  else if (course) what = plural(f.n, 'dose', 'doses');
+  else if (course || lens === 'medication') what = f.n > 0 ? `${f.n.toLocaleString('en-US')} logged` : 'no dose logged'; // CUL-1193: "16 doses" read as 16 given
   else what = plural(f.n, SINGULAR[lens], PLURAL[lens]);
   if (lens && f.days && f.n > 0) what += ` on ${plural(f.days, 'day', 'days')}`; // a filtered count names its days
   const since = k === 'all' && !course ? ` since ${shortDay(RECORD_START)}` : '';
   const q = [];
   if (course) q.push(`${course.name} · ${course.to ? rangeLabel(course.from, course.to) : `since ${shortDay(course.from)}`}`);
+  if (f.short) q.push(`${f.short} not given in full`); // CUL-1193: after the course, before coverage
   const unl = course ? w.unlogged.filter((d) => d >= course.from && (!course.to || d <= course.to)) : w.unlogged;
   if (unl.length) q.push(plural(unl.length, 'day unlogged', 'days unlogged'));
   const dup = !lens ? w.dupes.meal + w.dupes.vomit : w.dupes[lens] || 0;
@@ -1319,7 +1323,7 @@ function sheetHtml(kind, opts) {
     label = 'Show only';
     const o = (l, key) => row(esc(l), key, (opts.lens || 'null') === key, lensFacts(k, key === 'null' ? null : key).n.toLocaleString('en-US'));
     rows = o('All types', 'null') + o('All symptoms', 'symptom') + ['vomit', 'diarrhea', 'stool_normal', 'cough', 'sneeze', 'lethargy', 'itch', 'meal'].map((t) => o(LABEL[t], t)).join('') + o('Medication', 'medication');
-    if (!opts.noCourses) rows += COURSES.filter((c) => lensFacts(k, `course:${c.key}`).n > 0).map((c) => row(esc(c.name), `course:${c.key}`, opts.lens === `course:${c.key}`, lensFacts(k, `course:${c.key}`).n, 'sub', c.to ? rangeLabel(c.from, c.to) : `since ${shortDay(c.from)}`)).join('');
+    if (!opts.noCourses) rows += COURSES.filter((c) => lensFacts(k, `course:${c.key}`).n > 0).map((c) => row(esc(c.name), `course:${c.key}`, opts.lens === `course:${c.key}`, lensFacts(k, `course:${c.key}`).n, 'sub', (c.to ? rangeLabel(c.from, c.to) : `since ${shortDay(c.from)}`) + (lensFacts(k, `course:${c.key}`).short ? ` · ${lensFacts(k, `course:${c.key}`).short} not given in full` : ''))).join('');
     rows += o('Weight', 'weight_check') + o('Other', 'other');
     rows += `<div class="sl gapt">What the record holds</div>` + row('Photographed', 'photographed', opts.lens === 'photographed', w.photo, '', w.unread ? `${w.unread} not read` : '') + row('With a note', 'noted', opts.lens === 'noted', w.note);
     rows += `<div class="sl gapt">The daily look</div>` + row('Noticed', 'check_in', false, null);

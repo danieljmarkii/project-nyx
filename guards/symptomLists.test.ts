@@ -68,6 +68,8 @@ const REGISTERED: Record<string, string> = {
   'supabase/functions/generate-signal/detection.ts': 'CORRELATION_SYMPTOM_TYPES — the engine fetch + lanes (per-lane map = 3b)',
   'supabase/functions/generate-signal/phrasing.ts': 'server SYMPTOM_LABEL — engine owner copy (cough lands with 3b)',
   'supabase/functions/generate-report/report.ts': 'REPORT_SYMPTOM_TYPES — the report frequency section (3b co-work)',
+  'lib/sameMinuteDuplicates.ts':
+    'SAME_MINUTE_OBSERVATION_TYPES — the same-minute duplicate rule History v2 and the vet report share (CUL-1161; the report moves onto it in HV-15). Its members are the report\'s by construction, held equal by lib/sameMinuteDuplicates.test.ts',
   'supabase/functions/generate-report/render.ts':
     'symptomLabel switch — report display labels (guard-discovered 2026-08-27; safe humanizing default; proper cough/sneeze labels are 3b report co-work)',
   'supabase/functions/ask/tools.ts': 'ASK_SYMPTOM_TYPES — Ask server counts (G5; edits with 3b)',

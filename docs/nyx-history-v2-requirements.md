@@ -1,6 +1,6 @@
 # Nyx History v2 — The Record You Can Read — Requirements (CUL-1108)
 
-**Version:** 1.4 — **BUILD-READY** | **Date:** 2026-09-25 | **Status:** every ruling made (v1.3 adds CUL-1189's two, §0.5; v1.4 adds HV-6's two, in §3.6 and §5.4 under ⚠ RULED). The PM ruled on round 4 of the mock (2026-09-24) and handed five calls to the team (H-3, H-4b, H-7, H-10, H-11), which are made in §0.2 with their dissents recorded. Nothing is open that blocks a build session; four pieces wait on issues outside this project (§10).
+**Version:** 1.5 — **BUILD-READY** | **Date:** 2026-09-25 | **Status:** every ruling made (v1.3 adds CUL-1189's two, §0.5; v1.4 adds CUL-1193's, §3.2 and §3.8; v1.5 adds HV-6's two, §3.6 and §5.4 under ⚠ RULED). The PM ruled on round 4 of the mock (2026-09-24) and handed five calls to the team (H-3, H-4b, H-7, H-10, H-11), which are made in §0.2 with their dissents recorded. Nothing is open that blocks a build session; four pieces wait on issues outside this project (§10).
 
 **Design authority:** round 5 of *The Record You Can Read* (https://claude.ai/artifact/RNvdtUG6FX5utWmzGqBNa6), committed as `docs/culprit-history-v2-mockups.html`. The repo file wins on divergence. Round 4 (the options side by side) is in git at `b0479342`; round 3 at `ab20698c`.
 
@@ -112,7 +112,7 @@ One line under the pinned row, over **one population and one query**: every logg
 | All types, All time | *All time · **1,094 logged** since May 14* (the pet's first record) | *1 day unlogged · 3 logged twice in the same minute* | *Outside the trial diet ›* while a trial overlaps the window (PMD-9) |
 | All types, any other window | *Last 30 days · **195 logged*** | the same coverage clauses, over the window | the same |
 | One type (or All symptoms) | *Since the trial started, Jul 26 · **13 vomits on 11 days*** | coverage over the window | a symptom filter: the chart that owns the number (*Before and since the trial ›* under the trial window; *See the compare ›* otherwise) |
-| A medication course | *All time · **16 doses on 16 days*** | *Cetirizine HCl · Jul 1 – Sep 5* and coverage over the course's days | — |
+| A medication course | *All time · **16 logged on 16 days*** (⚠ RULED 2026-09-25, CUL-1193: was *16 doses*) | *Cetirizine HCl · Jul 1 – Sep 5 · 4 not given in full*, then coverage over the course's days | — |
 | Photographed / With a note | *June · **12 photographed rows*** | coverage | — |
 | Noticed (H-9) | *(no count)* one link: ***What you noticed is on Patterns ›*** | — | — |
 | Search | *Rows that mention **"rabbit"** · All time* | *Search finds; it never counts.* | — |
@@ -123,6 +123,7 @@ Rules:
 - **A filtered count names its days** (*13 vomits on 11 days*) and the window's start date (*Since the trial started, Jul 26*).
 - **An anchored window before the record names where the record starts** (⚠ v1.3, CUL-1189 · 1): when the trial or visit window's anchor is before the pet's first record, line 1 reads *Since the last vet visit, Jul 26 · record from Aug 3 · **33 logged***. The window starts at the record and coverage counts from it (GAP-24); the days before it are named, never counted as unlogged. Rolling windows and months never say it (HV-3's `recordStartsLater` is null for them).
 - **A trial past its planned end says so** (⚠ v1.3, CUL-1189 · 2): inside B-422's grace, line 1 reads *Since the trial started, Jul 26 · past its planned end · **9 vomits on 7 days*** (HV-3's `trialPastTarget`).
+- **A dose count reads *logged*** (⚠ RULED 2026-09-25, CUL-1193, GAP-26's wording): under a course and under Medication, line 1 counts every dose row whatever its chip (*16 logged on 16 days*, never *16 doses*, which a vet reads as 16 given), and line 2 names the ones recorded Partial, Missed or Refused (*4 not given in full*), after the course's name and span and before coverage. Nothing when none were: an unrated dose is counted and never named, so a zero would claim every dose was given. Never a delivered count. The day header's *2 doses* is outside the ruling (the rows under it carry their chips); HV-12's copy pass owns that word (CUL-1169).
 - **Every count re-derives together** after a write, a removal, a sync or a refresh (GAP-18): the line, the pill's count, the day headers, the strip.
 - A month with nothing logged reads *nothing logged*, never 0.
 - The door labels are placeholders for the copy pass; the destinations are fixed.
@@ -200,7 +201,7 @@ The search button opens a field under the pinned row: *Foods, medicines, your no
 A full-width ScopeMenu sheet, every option visible, a count on every row from the query for the current window:
 
 - *All types*, *All symptoms*, each type (Loose stool and Stool show 0 rather than hiding), *Meal*;
-- *Medication*, then **one sub-row per course with a dose in the window**, keyed and bounded by the vet report's course grain (`lib/medicationHistory.ts`): *Motozol · since Jul 16 · 29*; *Cetirizine HCl · Jul 1 – Sep 5 · 16*. A course's count is **every dose row logged in the window, whatever its chip**; the medication card's *Dose X of Y* counts what was given (`dosesTowardTarget`), and the two are never shown side by side (GAP-26). Absent for a pet with no course (PMD-17). Closes CUL-488 (B-688).
+- *Medication*, then **one sub-row per course with a dose in the window**, keyed and bounded by the vet report's course grain (`lib/medicationHistory.ts`): *Motozol · since Jul 16 · 29*; *Cetirizine HCl · Jul 1 – Sep 5 · 16 · 4 not given in full*, the doses recorded Partial, Missed or Refused named after the span as Photographed names *N not read*, and nothing when none were (⚠ RULED 2026-09-25, CUL-1193). A course's count is **every dose row logged in the window, whatever its chip**; the medication card's *Dose X of Y* counts what was given (`dosesTowardTarget`), and the two are never shown side by side (GAP-26). Absent for a pet with no course (PMD-17). Closes CUL-488 (B-688).
 - *Weight*, *Other*;
 - **What the record holds:** *Photographed* with its sub-line *N not read* (or *photo reading is off*, H-4b), *With a note*;
 - **The daily look:** *Noticed*, with no count (H-9), only where the look is live for the account (`daily_look`; every account after CUL-876).
@@ -418,7 +419,7 @@ Every criterion names its test shape. "Pure" means a table test over a pure modu
 **Filters, windows and dates (H-5, H-9, H-10, H-11)**
 28. Every window's bounds come from the one window table, in local days; *Last 7 days* is identical on History and in Ask's in-app link (pure + the Ask sender test).
 29. *Since the last vet visit* uses the report's bound function, the latest visit strictly before today, including its day (pure; shared with the rundown, CUL-1127).
-30. The course sub-rows key on the vet report's course grain and count every dose row in the window; the medication card's count is untouched (pure).
+30. The course sub-rows key on the vet report's course grain and count every dose row in the window, naming the ones recorded Partial, Missed or Refused (CUL-1193); the medication card's count is untouched (pure).
 31. Every date and range on the screen goes through the one formatter; a date outside the current year carries its year (pure, with a fixture crossing Jan 1).
 
 **Motion and accessibility (§4)**
@@ -529,5 +530,6 @@ The Linear project **History v2 · the record you can read** carries every sessi
 | 1.0 | 2026-09-24 | First build-ready spec: the PM's rulings on round 4 and the team's calls at the PM's deferral (§0); design authority round 5; the run order (§8) mirrored in the Linear project. |
 | 1.1 | 2026-09-24 | §5.8: the month's row names what its door sends (`?day=`, a local day, and `ts`), as built in #904 (CUL-1073). PM-approved on CUL-1168. |
 | 1.2 | 2026-09-25 | §3.6: the time column is 60pt, not 56 (CUL-1183, PM-ruled; round 5 of the mock amended to match, same URL). §2: where the row lives after HV-1 (#907). PM-approved in the HV-1 session. |
-| 1.4 | 2026-09-25 | §3.6, §5.4, §7 AC 18: HV-6's two rulings (PM, in the HV-6 session, CUL-1163). A dose with no name on this phone says only *Medication*, never *no medicine named*; a finished `not_enough_to_say` read is `unread` (the grey *Photo not read*), never `calm`. |
 | 1.3 | 2026-09-25 | §0.5, §3.2, §3.9, §5.2, §7 AC 40–41: CUL-1189's two rulings (an anchored window before the record names where the record starts; the trial window says *past its planned end* inside B-422's grace), and §3.9's trial row made to say what #909 built (offered only while `isTrialRunning`, per §11). PM-ruled on CUL-1189. |
+| 1.4 | 2026-09-25 | §3.2, §3.8, AC 30: a dose count (a course, Medication) reads *logged*, and the doses recorded Partial, Missed or Refused are named beside it, on the count line and on a course's sheet sub-row (CUL-1193, PM-ruled option (b), GAP-26's wording; round 5 of the mock amended to match, same URL). Built in #911 (HV-4). |
+| 1.5 | 2026-09-25 | §3.6, §5.4, §7 AC 18: HV-6's two rulings (PM, in the HV-6 session, CUL-1163). A dose with no name on this phone says only *Medication*, never *no medicine named*; a finished `not_enough_to_say` read is `unread` (the grey *Photo not read*), never `calm`. |
