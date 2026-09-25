@@ -1,6 +1,6 @@
 # Engines deep dive: the Signal and the vomit read, replayed against the record
 
-**Date:** 2026-09-24 · **Issue:** CUL-1117 · **Mode:** DISCOVERY · **Shipped via #899** (`claude/lucid-mccarthy-q2wkb4`) · **Artifact:** *The Accountable Engine*, https://claude.ai/artifact/JrGK8oz2eJeXeLgpP29xPu (version 2)
+**Date:** 2026-09-24, wrapped 2026-09-25 after the PM's first rulings · **Issue:** CUL-1117 · **Mode:** DISCOVERY · **Shipped via #899** (`claude/lucid-mccarthy-q2wkb4`) · **Artifact:** *The Accountable Engine*, https://claude.ai/artifact/JrGK8oz2eJeXeLgpP29xPu (version 3)
 
 **PM prompt:** a deep dive on the Signal generation engine and the per-incident vomit analysis. "What can we do to ensure a step level improvement in our signals and analysis engine", learning from the record now in the database and from the literature; the vomit read "has raised more red flags for me than it's worth"; "these analysis engines are our wedge. They need to be our moat."
 
@@ -37,15 +37,25 @@ An isolated `adversarial-reviewer` failed the first draft as a package: **P2** (
 - Two additive §V corrections to frozen briefs: the 2026-05 feeding brief's hepatic-lipidosis durations are not on the pages it cites; the 2026-08 signals brief's F5 pause did not persist.
 - `scripts/engine-replay/` (`export.sql`, `record.deno.ts`, `signalReplay.deno.ts`, `incidentReplay.deno.ts`, README). The `.deno.ts` suffix keeps them out of the app's `tsc`.
 - `docs/culprit-engines-step-change.html`, published as the artifact above: the 129-evening chart, the eleven-row escalation table, today-vs-proposed frames of Home and the read, D1 to D8, the run order.
-- Linear: project **Engines v3: the accountable engine** (P-CUL-17, Backlog, awaiting greenlight) with EN-0 to EN-15 as CUL-1130 to CUL-1145; CUL-1118 (intake rating); CUL-1146 (the decision briefs, `Waiting on PM`).
+- Linear: project **Engines v3: the accountable engine** (P-CUL-17, Backlog, awaiting greenlight) with EN-0 to EN-15 as CUL-1130 to CUL-1145, and EN-F as CUL-1267 (filed at the wrap, below); CUL-1118 (intake rating); CUL-1146 (the decision briefs, `Waiting on PM`).
+
+## The PM's rulings at the wrap (2026-09-25)
+
+- **The build ships behind a feature flag.** "Let's make sure this would be wrapped in a feature flag." Filed as EN-F (CUL-1267), Phase 0, ahead of EN-0 and blocking every EN issue that changes what an owner sees. It is an `app_config` allowlist flag in the Ask §8 shape, **read on the server**, because the engines run there and every rollout flag since `daily_look` has been client-render-only. Flag-off is asserted against the new code's absence (C-36), and the PM's account goes first. Measurement work (EN-1, EN-2) and additive schema need no flag.
+- **D6 goes to flag review.** The PM is building, in another session, a way for the owner to decline a photo escalation directly (CUL-1101, CUL-1107). EN-6 (CUL-1137) drops its own owner question and builds on that path; the rest of EN-6 stands. Dr. Chen's dissent is recorded: a visible bleed is rare, and the floor is usually cleaned before a retake. One input carried to that track, not imposed on it: this session's adversarial pass found that an "Unsure" answer should keep the call, since agreement between reads cannot settle a systematic lookalike (liver pâté reads as blood three times out of three).
+- **Direction endorsed** ("I like where we're starting to land"). D1 to D5, D7 and D8 stay open on CUL-1146. Nothing was ruled by implication, and the project stays in Backlog until they are.
 
 ## Persona sign-off
 
-Data Scientist ✓ (both fidelity checks; the p = 0.25 recomputation; the replay's blind spots stated in its header, not left to read as coverage) · Dr. Chen ✓ (the clinical lane; every threshold marked persona-ratified pending a real vet; D6 left without a recommendation) · Jordan / Sam ✓ (the D6 dissent, recorded verbatim) · Designer ✓ (the frames drawn in Culprit's daylight register; every decision in the brief shape) · Trust & Safety ✓ (no record data in the repo; C-27 on the export; provenance columns excluded) · Engineer ✓ (deno check; `tsc`; the full jest suite in the pre-push hook; CI green on the first push) · Product Owner ✓ (one project with a run order; decisions on one issue, not scattered).
+Data Scientist ✓ (both fidelity checks; the p = 0.25 recomputation; the replay's blind spots stated in its header, not left to read as coverage) · Dr. Chen ✓ (the clinical lane; every threshold marked persona-ratified pending a real vet; D6 left without a recommendation, and the dissent recorded when the PM routed it to flag review) · Jordan / Sam ✓ (the D6 dissent, recorded verbatim) · Designer ✓ (the frames drawn in Culprit's daylight register; every decision in the brief shape) · Trust & Safety ✓ (no record data in the repo; C-27 on the export; provenance columns excluded) · Engineer ✓ (deno check, re-run against `main` at the wrap; `tsc`; the full jest suite in the pre-push hook; CI green on every push) · Product Owner ✓ (one project with a run order; decisions on one issue, not scattered).
 
 ## PM actions
 
-- CUL-1146: rule D1 to D8 (D6 is a persona conflict with no recommendation).
+- CUL-1146: rule D1 to D5, D7 and D8 (D6 was ruled at the wrap).
 - CUL-1118: whether meal intake rating stays (rides D2).
-- P-CUL-17: greenlight the project, or not, after the rulings. Only Phase 0 (EN-0, CUL-1130) can start before them.
+- P-CUL-17: greenlight the project, or not, after the rulings. Only Phase 0 can start before them: the flag (EN-F, CUL-1267), then EN-0 (CUL-1130).
 - Not a product call: share the June 4.4 kg reading with the vet beside the 9/16 one, and whether any of the loss was intended (noted on CUL-1146).
+
+## Definition of Done
+
+Acceptance (CUL-1117's deliverables, listed on #899) ✓ · anti-patterns: none introduced (docs and research scripts; no app code) · `tsc` and the full jest suite ✓ · tests: N/A for the app (no store, Edge Function or `lib/` change); the replay scripts' own check is fidelity (43 of 43 stored flag sets; the 9/23 ledger equals the live cache) · no new secret · adversarial review ✓ (isolated; the counterexamples are in the brief §8) · future self: the replay tooling is a new pattern worth keeping, since it is the seed of EN-1; its one drift risk is `shippedInput` restating `assembleContext`, and a drift prints as a mismatch rather than passing silently · Dev Handoff: docs only, nothing to load on a phone · PM actions filed in Linear (above).

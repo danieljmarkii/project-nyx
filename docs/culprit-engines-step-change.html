@@ -159,6 +159,11 @@ td.num,th.num{font-variant-numeric:tabular-nums;white-space:nowrap;font-family:v
 .dec p{font-size:.88rem;color:var(--ink-2)}
 .dec .rec{font-size:.86rem;color:var(--ink);background:var(--teal-wash);border-radius:8px;padding:8px 10px}
 .dec .rec.conflict{background:var(--amber-wash)}
+.dec .rec.ruled{background:var(--paper);border:1px solid var(--rule-strong)}
+.ruling{background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--teal-ink);border-radius:10px;padding:14px 16px;margin:0 0 16px;font-size:.9rem;color:var(--ink-2)}
+.ruling b{color:var(--ink);font-weight:600}
+.ruling ul{margin:8px 0 0;padding-left:18px}
+.ruling li{margin:4px 0}
 .dec .rec b{font-weight:600}
 
 ol.phases{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-top:1px solid var(--rule)}
@@ -188,7 +193,7 @@ footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--rule);display
 <div class="page">
 
 <header class="top">
-  <p class="eyebrow">Culprit · the analysis engines · discovery, 24 September 2026 · CUL-1117</p>
+  <p class="eyebrow">Culprit · the analysis engines · discovery, 24 September 2026 · first rulings 25 September · CUL-1117</p>
   <h1>The accountable engine</h1>
   <p class="lede">The Signal and the vomit read are careful about every sentence and unaccountable for the whole. Replayed evening by evening against Nyx's real record, they asked for a vet almost every night, never heard that the vet had seen her, and could not see a 15% weight loss. The step change is an engine that is measured, calibrated, accountable, and sees the whole animal.</p>
   <div class="figs" role="list">
@@ -344,7 +349,14 @@ footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--rule);display
   <div class="sec-head">
     <span class="kicker">Decisions for you</span>
     <h2 id="dec-h">Eight rulings, on CUL-1146</h2>
-    <p class="prose muted">Reply by number, for example "D1 A, D2 B, D6 B". Only EN-0, a copy and timing fix that removes no warning, can start before these.</p>
+    <p class="prose muted">Reply by number, for example "D1 A, D2 B". Only Phase 0 can start before these: the flag, then EN-0, a copy and timing fix that removes no warning.</p>
+  </div>
+  <div class="ruling" role="note"><b>Ruled 25 September.</b>
+    <ul>
+      <li><b>Everything ships behind a feature flag.</b> A new first step, EN-F (CUL-1267): every change an owner sees turns on for your account first and stays invisible to everyone else until the evidence says it is ready. The engines read the flag on the server, where they run. With it off, the app is exactly today's.</li>
+      <li><b>D6 goes to flag review.</b> You are building a way for owners to decline a photo escalation directly (CUL-1101); EN-6 builds on that instead of asking its own question.</li>
+      <li><b>Still open:</b> D1 to D5, D7 and D8.</li>
+    </ul>
   </div>
   <div class="decisions">
     <div class="dec"><div class="dh"><span>D1</span><h3>Tiers for the vomit read</h3></div><p>One warning, or call now · call today · part of a pattern · logged with watch-fors.</p><p class="rec"><b>Recommend A, four tiers.</b> A single urgency level is exactly the complaint.</p></div>
@@ -352,7 +364,7 @@ footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--rule);display
     <div class="dec"><div class="dh"><span>D3</span><h3>What tells Home the vet has seen it</h3></div><p>A visit that carried the concern, an owner tap, or both. Also: an eight-week re-raise against the fold's no-timer rule.</p><p class="rec"><b>Recommend A:</b> the visit acknowledges; a tap folds but keeps the ask visible. Keep the re-raise.</p></div>
     <div class="dec"><div class="dh"><span>D4</span><h3>A budget for chance cards</h3></div><p>How many insight cards a healthy pet may see by chance, measured on synthetic pets.</p><p class="rec"><b>Recommend at most 1 per 6 months.</b> Safety cards are never inside it.</p></div>
     <div class="dec"><div class="dh"><span>D5</span><h3>The early food culprit card</h3></div><p>Require a test, or retire the tier and show only established findings.</p><p class="rec"><b>Recommend requiring a test.</b> The first-week cards were p = 0.25.</p></div>
-    <div class="dec"><div class="dh"><span>D6</span><h3>Colour-only blood calls</h3></div><p>A single read escalates (today), or disagreement between reads asks you one question, with "Unsure" keeping the call.</p><p class="rec conflict"><b>A persona conflict, no recommendation.</b> Dr. Chen: any blood is a call. Jordan and Sam: a red chew flagged weekly becomes wallpaper.</p></div>
+    <div class="dec"><div class="dh"><span>D6</span><h3>Colour-only blood calls</h3></div><p>A single read escalates (today), or disagreement between reads asks you one question, with "Unsure" keeping the call.</p><p class="rec ruled"><b>Ruled 25 September: flag review.</b> The owner can decline a photo escalation directly (CUL-1101), and EN-6 builds on that path. Dr. Chen's dissent is recorded: any blood is a call, and the floor is usually cleaned before a retake.</p></div>
     <div class="dec"><div class="dh"><span>D7</span><h3>Weight as a safety card</h3></div><p>5% loss or more raises a card, 10% or more firm, with each reading's source and a peak comparison.</p><p class="rec"><b>Recommend yes.</b> It is the record's most important invisible fact.</p></div>
     <div class="dec"><div class="dh"><span>D8</span><h3>When to build</h3></div><p>Phase 0 now and the rest after the 1.2.0 cut, everything now, or inside App Store Launch.</p><p class="rec"><b>Recommend Phase 0 now.</b> It stops a false sentence owners see today.</p></div>
   </div>
@@ -364,7 +376,7 @@ footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--rule);display
     <h2 id="order-h">Engines v3, phase by phase</h2>
   </div>
   <ol class="phases">
-    <li><span class="ph">Phase 0 · now</span><div><h3>Truth and plumbing</h3><p>EN-0 (CUL-1130): the read says only what the record shows. Plus the existing defects every before and after claim depends on: zero doses read since June (CUL-1099), unpaginated reads (CUL-989), and three flag-path defects (CUL-1104, CUL-1105, CUL-1110).</p></div></li>
+    <li><span class="ph">Phase 0 · now</span><div><h3>Truth and plumbing</h3><p>First EN-F (CUL-1267), the rollout flag every owner-visible change ships behind. Then EN-0 (CUL-1130): the read says only what the record shows. Plus the existing defects every before and after claim depends on: zero doses read since June (CUL-1099), unpaginated reads (CUL-989), and three flag-path defects (CUL-1104, CUL-1105, CUL-1110).</p></div></li>
     <li><span class="ph">Phase 1</span><div><h3>Measure</h3><p>EN-1 (CUL-1131) the replay ledger and scorecard, CUL-508 synthetic pets with injected truth, EN-2 (CUL-1132) vision evaluation with version stamps.</p></div></li>
     <li><span class="ph">Phase 2 · after D1</span><div><h3>Calibrate the read</h3><p>EN-3 tiers (CUL-1133), EN-4 counting and a check for every vomit (CUL-1134), EN-5 intake and the one-tap question (CUL-1136, ships with EN-8), EN-6 vision hardening (CUL-1137), EN-7 the stool spill-over (CUL-1138).</p></div></li>
     <li><span class="ph">Phase 3</span><div><h3>An accountable Signal</h3><p>EN-8 weight lane and history (CUL-1135, can run beside Phase 2), EN-9 the care state as a spec and mock first (CUL-1139), EN-10 visit and treatment context (CUL-1140).</p></div></li>
