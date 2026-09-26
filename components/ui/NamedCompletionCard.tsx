@@ -8,6 +8,7 @@ import { useMomentStore } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { updateEvent, getEventSource } from '../../lib/db';
 import { syncPendingEvents } from '../../lib/sync';
 import {
@@ -299,12 +300,11 @@ export function NamedCompletionCard() {
     void runUndo(payload.eventId, false);
   }
 
-  // Keep rendering through the dismiss fade (hide() preserves the payload), but
-  // never mount for another card's payload.
-  if (!payload || payload.kind !== 'named') return null;
-
-  const celebrate = payload.tone === 'celebrate';
-  const sentence = summarizeLoggedRecord(payload.record, payload.occurredAt);
+  // The words, derived ABOVE the early return below because the announcement is a hook
+  // and must run on every render (the rules of hooks). `named` is null for another
+  // card's payload, so nothing here is computed for a payload this card never paints.
+  const named = payload?.kind === 'named' ? payload : null;
+  const sentence = named ? summarizeLoggedRecord(named.record, named.occurredAt) : '';
   // Name the RECORD's pet, not the active one, through the one shared lookup
   // (CUL-574). The write already landed on the right animal, but a
   // queue-then-switch would otherwise print another pet's name on a card about
@@ -313,10 +313,25 @@ export function NamedCompletionCard() {
   // so a miss here means the record's pet is not the active one either, and the
   // `?? activePet?.name` fallback this line used to carry could only ever name
   // the wrong animal. A miss falls to the anonymous form.
-  const petName = resolveRecordPetName(pets, payload.petId);
+  const petName = named ? resolveRecordPetName(pets, named.petId) : '';
+  const notice = named && removed ? removedNoticeCopy(petName) : null;
+  // ONE string per state, and it is both the summary node's label and what VoiceOver is
+  // told — so the two can never describe the card differently.
+  const summaryLabel = notice ? notice.a11yLabel : `${sentence}. Saved to ${petName}’s record`;
+
+  // CUL-1275 — the summary node's `accessibilityLiveRegion` is Android-only, so on an
+  // iPhone this card confirmed every save and every Undo in silence. Spoken only while
+  // the card is SHOWN (a payload kept for the dismiss fade says nothing), and keyed on the
+  // event so a second save with the same sentence is still a second confirmation.
+  useLiveRegionAnnouncement(shown && named ? summaryLabel : null, named?.eventId);
+
+  // Keep rendering through the dismiss fade (hide() preserves the payload), but
+  // never mount for another card's payload.
+  if (!payload || payload.kind !== 'named') return null;
+
+  const celebrate = payload.tone === 'celebrate';
   const showChangeTime = canChangeTime(payload.record);
   const prompt = timeEditPrompt(payload.record);
-  const notice = removed ? removedNoticeCopy(petName) : null;
 
   return (
     <>
@@ -336,9 +351,12 @@ export function NamedCompletionCard() {
                the only confirmation this state gets. */
             <View
               style={styles.labelCol}
+              // `accessible` is load-bearing: without it the label never applies and
+              // the two lines stay two separate stops (SheetLogBeat, CUL-682).
+              accessible
               accessibilityRole="summary"
               accessibilityLiveRegion="polite"
-              accessibilityLabel={notice.a11yLabel}
+              accessibilityLabel={summaryLabel}
             >
               <ThemedText style={styles.title}>{notice.title}</ThemedText>
               <ThemedText style={styles.subLabel}>{notice.detail}</ThemedText>
@@ -364,9 +382,10 @@ export function NamedCompletionCard() {
                 went as a single announcement, not two orphan lines. */}
             <View
               style={styles.labelCol}
+              accessible
               accessibilityRole="summary"
               accessibilityLiveRegion="polite"
-              accessibilityLabel={`${sentence}. Saved to ${petName}’s record`}
+              accessibilityLabel={summaryLabel}
             >
               <ThemedText style={styles.title}>{sentence}</ThemedText>
               <ThemedText style={styles.subLabel}>{`Saved to ${petName}’s record`}</ThemedText>

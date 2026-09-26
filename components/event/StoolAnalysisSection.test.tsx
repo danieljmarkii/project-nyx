@@ -42,6 +42,7 @@ import { render, waitFor, act } from '@testing-library/react-native';
 import { LayoutAnimation } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { StoolAnalysisSection } from './StoolAnalysisSection';
+import { readLandedCopy } from './useReadLandingAnnouncement';
 import { watchAnalysisRow, awaitAnalysisChain, triggerStoolAnalysis } from '../../lib/analysis';
 import { __resetReducedMotionForTest, useReducedMotionStore } from '../../store/reducedMotionStore';
 
@@ -513,5 +514,60 @@ describe('StoolAnalysisSection — the arrival fires only for a read the screen 
 
     await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
     expect(configureNext).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── CUL-1275 — the landing is SPOKEN ──────────────────────────────────────────
+// The vomit suite carries the full matrix (every verdict, the edit re-read, failed,
+// Android); this pins that the stool section is wired to the same announcer, on the two
+// cases that matter most: a landing on an open record, and the photoless escalation that
+// never shows a pending box.
+describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
+  const { AccessibilityInfo } = jest.requireActual<typeof import('react-native')>('react-native');
+  let announce: jest.SpyInstance;
+
+  beforeEach(() => {
+    mockRow = null;
+    (watchAnalysisRow as jest.Mock).mockClear();
+    (awaitAnalysisChain as jest.Mock).mockReset().mockResolvedValue(false);
+    // RN's jest preset already makes this a `jest.fn`, and `spyOn` over a mock returns
+    // THAT mock, calls and all — so every earlier render in the file is still on it.
+    announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    announce.mockClear();
+  });
+  afterEach(() => {
+    announce.mockRestore();
+    mockRow = null;
+  });
+
+  async function land(next: Record<string, unknown>) {
+    mockRow = next;
+    const check = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![1] as () => Promise<boolean>;
+    await act(async () => { await check(); });
+  }
+
+  it('a Worth a call that lands while the record is open is spoken, once', async () => {
+    mockRow = row({ status: 'pending', recommendation: null });
+    const view = render(<StoolAnalysisSection eventId="as-1" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(row({ recommendation: 'worth_a_call', read_text: 'Black, tarry stool is worth a call today.' }));
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
+  it('a PHOTOLESS contextual escalation is spoken', async () => {
+    const view = render(<StoolAnalysisSection eventId="as-2" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    expect(view.toJSON()).toBeNull();
+    await land(row({ recommendation: 'worth_a_call', read_text: 'Worth a call.' }));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
+  it('a read already in the record on open says nothing', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.' });
+    const view = render(<StoolAnalysisSection eventId="as-3" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(announce).not.toHaveBeenCalled();
   });
 });

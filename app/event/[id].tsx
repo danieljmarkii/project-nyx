@@ -799,6 +799,12 @@ export default function EventDetailScreen() {
             testID="event-hero-photo"
             activeOpacity={0.95}
             onPress={() => setPhotoViewerVisible(true)}
+            // CUL-1275 — an unlabelled touchable over an image announced as a bare
+            // "button". An image has no visible text for the label to differ from (C-7),
+            // so it names what the photo is of; the hint says what the tap does.
+            accessibilityRole="imagebutton"
+            accessibilityLabel={`${label} photo`}
+            accessibilityHint="Opens the photo full screen"
           >
             <Image
               source={{ uri: photoUri }}

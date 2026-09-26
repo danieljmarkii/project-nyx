@@ -5,6 +5,7 @@ import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText, fontFamilyForWeight } from '../ui/ThemedText';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { useMomentStore } from '../../store/momentStore';
 import { removedNoticeCopy, undoGateCopy, HITSLOP_ACTION_SOLO } from '../../lib/completionCard';
 import type { MomentTone } from '../../store/momentStore';
@@ -258,6 +259,11 @@ export function SheetLogBeat({ tone, title, petName, eventId, onDone }: Props) {
   // One announcement for a screen reader, not two: the label carries the sentence and
   // the pet together, in the order they are read on screen.
   const a11yLabel = notice ? notice.a11yLabel : `${title}. Saved to ${petName}’s record`;
+  // CUL-1275 — the label node's `accessibilityLiveRegion` is Android-only, so inside the
+  // sheet on an iPhone the beat confirmed every save and every Undo in silence. This is
+  // its iOS half, handed the same string: spoken while the register is speaking for THIS
+  // log (`visible && mine`), so a beat outliving its payload says nothing.
+  useLiveRegionAnnouncement(visible && mine ? a11yLabel : null, eventId);
 
   return (
     <Animated.View

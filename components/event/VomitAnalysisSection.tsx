@@ -41,7 +41,10 @@ import {
   BLOOD_OPTIONS,
 } from './vomitFields';
 import { ThemedText } from '../ui/ThemedText';
-import { IncidentReadCard, RAIL_TICK_HEIGHT } from './IncidentReadCard';
+import {
+  IncidentReadCard, RAIL_TICK_HEIGHT, INCIDENT_READ_FAILED_LINE, INCIDENT_READ_NOT_ENOUGH_LINE,
+} from './IncidentReadCard';
+import { useReadLandingAnnouncement } from './useReadLandingAnnouncement';
 import { IncidentReadSection } from './IncidentReadSection';
 import { ObservationGrid } from './ObservationGrid';
 import { useIncidentArrival } from '../motion/arrivalMotion';
@@ -137,6 +140,10 @@ export function VomitAnalysisSection(
     identity: eventId,
     tickHeight: RAIL_TICK_HEIGHT,
   });
+  // CUL-1275 — the landing's screen-reader half. The same FACT as the arrival
+  // (`awaitingRead`) but not its gates: it speaks a re-read over an owner edit, and a
+  // photoless contextual escalation that never showed a pending box — see the hook.
+  const announcer = useReadLandingAnnouncement({ awaitingRead, identity: eventId });
 
   const fetchRow = useCallback(async (): Promise<AnalysisRow | null> => {
     const { data } = await supabase
@@ -284,7 +291,7 @@ export function VomitAnalysisSection(
   // stays silent until it resolves (to an escalation, or to nothing), so the
   // section never appears-then-vanishes on the common photoless path (B-363).
   if (hasPhoto && row === undefined && !working) {
-    return <IncidentReadSection arrival={arrival} pending />;
+    return <IncidentReadSection arrival={arrival} announcer={announcer} pending />;
   }
 
   const status: Status | undefined = row?.status;
@@ -292,7 +299,7 @@ export function VomitAnalysisSection(
   // Pending / actively working. Same photoless rule: no spinner for a photoless
   // event — a contextual escalation pops in clean when it resolves (B-363).
   if (hasPhoto && (working || status === 'pending')) {
-    return <IncidentReadSection arrival={arrival} pending working />;
+    return <IncidentReadSection arrival={arrival} announcer={announcer} pending working />;
   }
 
   // Failed — UNLESS the record already holds an escalation, which outlives a failed
@@ -302,9 +309,14 @@ export function VomitAnalysisSection(
   // escalationSurvivesFailure for why the rule is asymmetric.
   if (status === 'failed' && !escalationSurvivesFailure(row)) {
     return (
-      <IncidentReadSection arrival={arrival} pending={false}>
+      <IncidentReadSection
+        arrival={arrival}
+        announcer={announcer}
+        announcement={INCIDENT_READ_FAILED_LINE}
+        pending={false}
+      >
         <View style={styles.failedBox}>
-          <ThemedText style={styles.failedText}>Couldn't finish reading this one.</ThemedText>
+          <ThemedText style={styles.failedText}>{INCIDENT_READ_FAILED_LINE}</ThemedText>
           <TouchableOpacity
             style={styles.retryBtn}
             onPress={handleRetry}
@@ -336,7 +348,12 @@ export function VomitAnalysisSection(
   // daily cap of 10.
   if (status === 'capped') {
     return (
-      <IncidentReadSection arrival={arrival} pending={false}>
+      <IncidentReadSection
+        arrival={arrival}
+        announcer={announcer}
+        announcement={vomitCapCopy(petName, 'daily')}
+        pending={false}
+      >
         <View style={styles.capBox}>
           <ThemedText style={styles.capText}>{vomitCapCopy(petName, 'daily')}</ThemedText>
         </View>
@@ -366,9 +383,14 @@ export function VomitAnalysisSection(
   // synced yet, the documented race triggerVomitAnalysis guards against).
   if (!row || !row.recommendation) {
     return (
-      <IncidentReadSection arrival={arrival} pending={false}>
+      <IncidentReadSection
+        arrival={arrival}
+        announcer={announcer}
+        announcement={INCIDENT_READ_NOT_ENOUGH_LINE}
+        pending={false}
+      >
         <View style={styles.neutralCard}>
-          <ThemedText style={styles.readText}>Not enough to say about this one yet.</ThemedText>
+          <ThemedText style={styles.readText}>{INCIDENT_READ_NOT_ENOUGH_LINE}</ThemedText>
           <TouchableOpacity onPress={handleRetry} hitSlop={16} disabled={retrying}>
             <ThemedText style={styles.linkText}>{retrying ? 'Working…' : 'Try analysis'}</ThemedText>
           </TouchableOpacity>
@@ -388,7 +410,14 @@ export function VomitAnalysisSection(
   );
 
   return (
-    <IncidentReadSection arrival={arrival} pending={false}>
+    <IncidentReadSection
+      arrival={arrival}
+      announcer={announcer}
+      // The verdict, in the enum's own words. Nothing for a hidden note: the owner chose
+      // not to see it, and the screen shows only that it is hidden.
+      announcement={dismissed ? null : REC_LABEL[rec]}
+      pending={false}
+    >
       {dismissed ? (
         <View style={styles.dismissedRow}>
           <ThemedText style={styles.dismissedText}>AI note hidden</ThemedText>

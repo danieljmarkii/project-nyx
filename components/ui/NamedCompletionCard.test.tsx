@@ -840,3 +840,88 @@ describe('Undo — the note gate (CUL-869)', () => {
     alert.mockRestore();
   });
 });
+
+// ── CUL-1275 — the card SPEAKS on iOS ─────────────────────────────────────────
+//
+// The summary node carried `accessibilityLiveRegion="polite"`, which is Android-only:
+// on an iPhone every save and every Undo was confirmed in silence. The fix is the iOS
+// half (`useLiveRegionAnnouncement`), so these cases pin what it is handed — the SAME
+// string as the node's label — and that it stays off Android, where the live region
+// already speaks and a second channel would double-speak.
+describe('NamedCompletionCard — the VoiceOver announcement (CUL-1275)', () => {
+  const { AccessibilityInfo, Platform } = jest.requireActual<typeof import('react-native')>('react-native');
+  const SAVED = `Vomit · today at ${formatTime(OCCURRED)}. Saved to Biscuit’s record`;
+  let announce: jest.SpyInstance;
+  const prevOS = Platform.OS;
+
+  beforeEach(() => {
+    Platform.OS = 'ios';
+    // RN's jest preset already makes this a `jest.fn`, and `spyOn` over a mock returns
+    // THAT mock, calls and all — so every earlier render in the file is still on it.
+    announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    announce.mockClear();
+  });
+  afterEach(() => {
+    announce.mockRestore();
+    Platform.OS = prevOS;
+  });
+
+  it('speaks what was saved and whose record it went to, the moment the card appears', () => {
+    render(<NamedCompletionCard />);
+    expect(announce).not.toHaveBeenCalled();
+    seed();
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith(SAVED);
+  });
+
+  it('speaks exactly the summary node’s label — one string, never two descriptions', () => {
+    const view = render(<NamedCompletionCard />);
+    seed();
+    const node = view.getByLabelText(SAVED);
+    // `accessible` is what makes the label apply at all (CUL-682's finding on the sheet):
+    // without it VoiceOver reads the two lines as separate stops and the label is dead.
+    expect(node.props.accessible).toBe(true);
+    expect(announce.mock.calls[0][0]).toBe(node.props.accessibilityLabel);
+  });
+
+  it('speaks the reversal when Undo lands — the removal line’s only confirmation', async () => {
+    const view = render(<NamedCompletionCard />);
+    seed();
+    announce.mockClear();
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+    expect(announce).toHaveBeenCalledWith('Removed. Taken out of Biscuit’s record');
+    expect(view.getByLabelText('Removed. Taken out of Biscuit’s record').props.accessible).toBe(true);
+  });
+
+  it('names the RECORD’s pet in what it speaks, not a since-switched active one', () => {
+    render(<NamedCompletionCard />);
+    seed({}, 'p2'); // logged for Biscuit while Mochi is active
+    expect(announce).toHaveBeenCalledWith(SAVED);
+  });
+
+  it('speaks a second save even when its sentence is word-for-word the first', () => {
+    render(<NamedCompletionCard />);
+    seed();
+    seed({ eventId: 'e2' }); // same type, same minute, still on screen: a new confirmation
+    expect(announce).toHaveBeenCalledTimes(2);
+  });
+
+  it('says nothing for a payload it does not paint (a meal card’s)', () => {
+    render(<NamedCompletionCard />);
+    act(() => {
+      useMomentStore.getState().showMeal({
+        eventId: 'm1', petId: 'p1', occurredAt: OCCURRED.toISOString(),
+        foodType: 'meal', intakeRating: null,
+      });
+    });
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('is silent on Android — the live region already speaks there', () => {
+    Platform.OS = 'android';
+    const view = render(<NamedCompletionCard />);
+    seed();
+    expect(announce).not.toHaveBeenCalled();
+    expect(view.getByLabelText(SAVED).props.accessibilityLiveRegion).toBe('polite');
+  });
+});

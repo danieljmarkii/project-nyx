@@ -214,3 +214,17 @@ describe('the lightbox caption (§5.4, mock V1)', () => {
     expect(queryByText(/· estimated/)).toBeNull();
   });
 });
+
+// CUL-1275 — the hero photo announced as a bare "button": no label, no image role, and
+// nothing saying the tap opens it.
+describe('the hero photo speaks to VoiceOver (CUL-1275)', () => {
+  it('is an image button named for what it shows, with a hint for what the tap does', async () => {
+    mockGetEventById.mockResolvedValue(baseRow);
+    mockGetEventAttachment.mockResolvedValue({ id: 'att-1', local_uri: 'file:///photo.jpg', storage_path: 'p/1.jpg' });
+    const { findByTestId } = render(<EventDetailScreen />);
+    const hero = await findByTestId('event-hero-photo');
+    expect(hero.props.accessibilityRole).toBe('imagebutton');
+    expect(hero.props.accessibilityLabel).toBe('Vomit photo');
+    expect(hero.props.accessibilityHint).toBe('Opens the photo full screen');
+  });
+});

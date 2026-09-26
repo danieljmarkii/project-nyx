@@ -41,6 +41,7 @@ import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
 import { LayoutAnimation, StyleSheet } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { VomitAnalysisSection } from './VomitAnalysisSection';
+import { readLandedCopy } from './useReadLandingAnnouncement';
 import { watchAnalysisRow, awaitAnalysisChain, triggerVomitAnalysis } from '../../lib/analysis';
 import { __resetReducedMotionForTest, useReducedMotionStore } from '../../store/reducedMotionStore';
 import { facing, flat, owningTouchable, touchableToken } from '../../testUtils/tree';
@@ -754,5 +755,145 @@ describe('VomitAnalysisSection — the arrival fires only for a read the screen 
     const rail = StyleSheet.flatten(view.getByTestId('incident-read-rail').props.style as never) as Record<string, unknown>;
     expect(rail.height).toBe(152);
     expect(rail.position).toBe('absolute');
+  });
+});
+
+// ── CUL-1275 — the landing is SPOKEN ──────────────────────────────────────────
+// Nothing told a screen-reader owner the read had landed — including a Worth a call. The
+// announcement rides the FACT the arrival rides (a read was being produced, and now is
+// not), but none of the arrival's visual gates: the photoless escalation that never shows
+// a pending box, and the re-read over an owner's edit that lands un-animated, are the two
+// cases a copied gate would have dropped, and both are pinned here.
+describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
+  const { AccessibilityInfo, Platform } = jest.requireActual<typeof import('react-native')>('react-native');
+  let announce: jest.SpyInstance;
+  let configureNext: jest.SpyInstance;
+  const prevOS = Platform.OS;
+
+  beforeEach(() => {
+    mockRow = null;
+    (watchAnalysisRow as jest.Mock).mockClear();
+    (awaitAnalysisChain as jest.Mock).mockReset().mockResolvedValue(false);
+    useReducedMotionStore.setState({ reduceMotion: false, gateOpen: true });
+    // RN's jest preset already makes this a `jest.fn`, and `spyOn` over a mock returns
+    // THAT mock, calls and all — so every earlier render in the file is still on it.
+    announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    announce.mockClear();
+    configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    announce.mockRestore();
+    configureNext.mockRestore();
+    Platform.OS = prevOS;
+    mockRow = null;
+    act(() => __resetReducedMotionForTest());
+  });
+
+  async function land(next: Record<string, unknown>) {
+    mockRow = next;
+    const check = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![1] as () => Promise<boolean>;
+    await act(async () => { await check(); });
+  }
+
+  it('a Worth a call that lands while the record is open is spoken, once', async () => {
+    mockRow = row({ status: 'pending', recommendation: null });
+    const view = render(<VomitAnalysisSection eventId="an-1" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    expect(announce).not.toHaveBeenCalled();
+
+    await land(row({ recommendation: 'worth_a_call', read_text: 'Blood in it is worth a vet’s eye today.' }));
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
+  it('a calm read is spoken in the same form — silence must never mean "calm"', async () => {
+    mockRow = row({ status: 'pending', recommendation: null });
+    render(<VomitAnalysisSection eventId="an-2" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(row({ recommendation: 'monitor', read_text: 'Yellow, foamy, mostly bile.' }));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Keep an eye out'));
+  });
+
+  it('a PHOTOLESS contextual escalation is spoken — it never showed a pending box, so the arrival never runs', async () => {
+    // No row yet, no photo: the section stays silent while it waits (B-363) and the
+    // escalation "pops in clean". This is the case riding the arrival's edge would drop.
+    mockRow = null;
+    const view = render(<VomitAnalysisSection eventId="an-3" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    expect(view.toJSON()).toBeNull();
+
+    await land(row({ recommendation: 'worth_a_call', read_text: 'Given the repeated vomiting, a call to your vet is worth it.' }));
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
+    expect(configureNext).not.toHaveBeenCalled(); // no arrival…
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call')); // …and still spoken
+  });
+
+  it('a re-read over an owner’s EDIT is spoken — the arrival is suppressed there, the words are still new', async () => {
+    mockRow = row({ recommendation: 'monitor', read_text: 'Yellow, foamy.', edited_at: '2026-09-20T10:00:00.000Z' });
+    const view = render(<VomitAnalysisSection eventId="an-4" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    expect(announce).not.toHaveBeenCalled();
+
+    await land(row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', edited_at: '2026-09-20T10:00:00.000Z' }));
+    await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
+    expect(configureNext).not.toHaveBeenCalled();
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
+  it('a failed read is spoken too — the wait ended, and the owner is told how', async () => {
+    mockRow = row({ status: 'pending', recommendation: null });
+    render(<VomitAnalysisSection eventId="an-5" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(row({ status: 'failed', recommendation: null }));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy("Couldn't finish reading this one."));
+  });
+
+  it('a read already in the record on open says NOTHING — it did not land, it was there', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.' });
+    const view = render(<VomitAnalysisSection eventId="an-6" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('a landing whose branch renders nothing says nothing (photoless not_enough_to_say)', async () => {
+    mockRow = null;
+    const view = render(<VomitAnalysisSection eventId="an-7" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(row({ recommendation: 'not_enough_to_say' }));
+    expect(view.toJSON()).toBeNull();
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('never speaks a STALE read: a photoless re-run that lands on nothing says nothing', async () => {
+    // A photoless Worth a call is on screen; the owner re-runs it. The section keeps
+    // painting the old card through the wait (a photoless incident has no pending box),
+    // then the re-read lands `not_enough_to_say` and the branch renders nothing. The line
+    // the stage last reported was "Worth a call" — speaking it now would announce an
+    // escalation the record no longer shows. The section's unmount report is what clears it.
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Given the repeated vomiting, a call is worth it.' });
+    const view = render(<VomitAnalysisSection eventId="an-10" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(row({ recommendation: 'not_enough_to_say' }));
+    expect(view.toJSON()).toBeNull();
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('is spoken on ANDROID too — the section carries no live region to cover it', async () => {
+    Platform.OS = 'android';
+    mockRow = row({ status: 'pending', recommendation: null });
+    render(<VomitAnalysisSection eventId="an-8" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(row({ recommendation: 'worth_a_call', read_text: 'Worth a call.' }));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
+  it('the section’s label is a heading, so the rotor can jump to the read', async () => {
+    mockRow = row({ recommendation: 'monitor', read_text: 'Yellow, foamy.' });
+    const view = render(<VomitAnalysisSection eventId="an-9" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByRole('header', { name: 'AI READ' })).toBeTruthy();
   });
 });

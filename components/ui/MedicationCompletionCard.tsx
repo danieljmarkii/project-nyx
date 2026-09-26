@@ -3,6 +3,7 @@ import { View, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-nativ
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
+import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { TimeEditSheet } from './TimeEditSheet';
 import {
@@ -229,17 +230,18 @@ export function MedicationCompletionCard() {
     }
   }
 
-  // Keep rendering through the dismiss fade (payload preserved by hide()), but
-  // never mount for a non-medication payload.
-  if (!payload || payload.kind !== 'medication') return null;
-
-  const occurredDate = new Date(payload.occurredAt);
+  // The header's words, derived ABOVE the early return below because the announcement
+  // is a hook and must run on every render (the rules of hooks). `dose` is null for
+  // another card's payload, so nothing here is computed for a payload this card never
+  // paints.
+  const dose = payload?.kind === 'medication' ? payload : null;
+  const occurredDate = new Date(dose?.occurredAt ?? 0);
   // B-156 PR B2b — a COMBO dose (logged WITH a meal/treat) frames the card as "Logged
   // together" with a subline naming the drug + the food it rode in, so the one-act link
   // is legible; a STANDALONE dose keeps "Logged · {drug}" + the logged time. Neutral
   // "Logged" (never "Gave") either way: the title must not contradict a downgrade to
   // Missed/Refused on the chips below.
-  const isCombo = !!payload.pairedFoodName;
+  const isCombo = !!dose?.pairedFoodName;
   // CUL-614 — the nameless fallback says "Dose logged", never a bare "Logged". §5's
   // sentence rule is that a beat names the record, and a dose card that has lost its
   // drug name still knows it wrote a DOSE — dropping to the same word every other
@@ -249,9 +251,9 @@ export function MedicationCompletionCard() {
   // canSaveRegimen), so this is the honest floor rather than dead code.
   const title = isCombo
     ? 'Logged together'
-    : (payload.drugName ? `Logged · ${payload.drugName}` : 'Dose logged');
+    : (dose?.drugName ? `Logged · ${dose.drugName}` : 'Dose logged');
   const subLabel = isCombo
-    ? `${payload.drugName} · with ${payload.pairedFoodName}`
+    ? `${dose?.drugName} · with ${dose?.pairedFoodName}`
     : formatTime(occurredDate);
   // ONE name on this card, and it is the DOSE's (CUL-626). The card outlives a pet
   // switch — it is queued against the pet captured at write time and the store can
@@ -261,8 +263,22 @@ export function MedicationCompletionCard() {
   // fallback names whichever pet is now active, which is the same defect wearing a
   // fallback's clothes. A clinical prompt naming the wrong animal is worse than one
   // naming none — see store/petStore.ts for the full argument.
-  const petName = resolveRecordPetName(pets, payload.petId);
-  const notice = removed ? removedNoticeCopy(petName) : null;
+  const petName = dose ? resolveRecordPetName(pets, dose.petId) : '';
+  const notice = dose && removed ? removedNoticeCopy(petName) : null;
+  // ONE string per state: the header's summary label and what VoiceOver is told.
+  const summaryLabel = notice ? notice.a11yLabel : `${title}. ${subLabel}`;
+
+  // CUL-1275 — the removal line's `accessibilityLiveRegion` is Android-only, and the
+  // header had no live region at all, so this card confirmed a dose on NEITHER platform
+  // and an Undo on Android only. The header now carries the live region too, and this
+  // is its iOS half: spoken while the card is SHOWN, keyed on the dose so a second
+  // identical log still speaks. It says the header and only the header — the in-doubt
+  // prompt and the double-dose note below it are their own nodes.
+  useLiveRegionAnnouncement(shown && dose ? summaryLabel : null, dose?.eventId);
+
+  // Keep rendering through the dismiss fade (payload preserved by hide()), but
+  // never mount for a non-medication payload.
+  if (!payload || payload.kind !== 'medication') return null;
 
   // B-156 PR B3 — the intake → adherence safety coupling on the card. A combo dose
   // whose linked vehicle was NOT finished (refused/picked) lands UNCONFIRMED (adherence
@@ -336,9 +352,12 @@ export function MedicationCompletionCard() {
              for a screen-reader owner. */
           <View
             style={styles.labelCol}
+            // `accessible` is load-bearing: without it the label never applies and
+            // the two lines stay two separate stops (SheetLogBeat, CUL-682).
+            accessible
             accessibilityRole="summary"
             accessibilityLiveRegion="polite"
-            accessibilityLabel={notice.a11yLabel}
+            accessibilityLabel={summaryLabel}
           >
             <ThemedText style={styles.title}>{notice.title}</ThemedText>
             <ThemedText style={styles.subLabel}>{notice.detail}</ThemedText>
@@ -349,7 +368,15 @@ export function MedicationCompletionCard() {
           <Animated.View style={[styles.checkBadge, { transform: [{ scale: checkScale }] }]}>
             <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
           </Animated.View>
-          <View style={styles.labelCol}>
+          {/* One summary node, as on the named card: what was given and when (or
+              what it rode in) is one announcement, not two orphan lines. */}
+          <View
+            style={styles.labelCol}
+            accessible
+            accessibilityRole="summary"
+            accessibilityLiveRegion="polite"
+            accessibilityLabel={summaryLabel}
+          >
             <ThemedText style={styles.title} numberOfLines={1}>{title}</ThemedText>
             <ThemedText style={styles.subLabel} numberOfLines={1}>{subLabel}</ThemedText>
           </View>
