@@ -142,6 +142,11 @@ interface UiState {
   /** Open the log sheet at its grid, or straight at the confirm for `initialType`. */
   openLogSheet: (initialType?: LogSheetConfirmType) => void;
   closeLogSheet: () => void;
+  /** True while the FAB's menu is open. The tabs layout reads it to hide everything
+   *  under the menu from assistive tech (CUL-322 / C-14): the menu declares itself
+   *  modal, but on Android only the host can take its siblings out of the tree. */
+  fabMenuOpen: boolean;
+  setFabMenuOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -158,4 +163,6 @@ export const useUiStore = create<UiState>((set) => ({
       logSheetOpens: st.logSheetOpens + 1,
     })),
   closeLogSheet: () => set({ logSheet: null }),
+  fabMenuOpen: false,
+  setFabMenuOpen: (fabMenuOpen) => set({ fabMenuOpen }),
 }));
