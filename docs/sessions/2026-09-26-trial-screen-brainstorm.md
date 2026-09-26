@@ -1,6 +1,6 @@
 # Should the diet trial get its own screen? The brainstorm
 
-**Date:** 2026-09-26 · **Issue:** CUL-1291 (DISCOVERY) · **Outcome:** round-1 mock and six decision briefs, shipped via the draft PR for CUL-1291
+**Date:** 2026-09-26 · **Issue:** CUL-1291 (DISCOVERY) · **Outcome:** round-1 mock and six decision briefs, shipped via #932
 
 ## The idea
 
