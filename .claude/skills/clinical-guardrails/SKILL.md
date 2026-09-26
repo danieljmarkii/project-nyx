@@ -249,7 +249,7 @@ export function buildAnalysisWriteBack(params): AnalysisWriteBack {
 
 **RULE:** Every templated owner-facing string that the function can emit (contextual read text, no-flag fallback, photo-unreadable fallback) must be covered by a test that scans for reassurance words and asserts none appear. Documentation comments are not enough — the test is the guardrail.
 
-**CANONICAL EXAMPLE** (`supabase/functions/analyze-vomit/index.test.ts:545–554`; the regex is now the shared `REASSURE_VOCAB`):
+**CANONICAL EXAMPLE** (`supabase/functions/analyze-vomit/index.test.ts:545–554`; the regex is now a file-local `REASSURE_VOCAB`, copied word for word at `analyze-stool/index.test.ts:537`, so widen both together):
 
 ```ts
 // :542 — const REASSURE_VOCAB = /\b(fine|okay|ok|healthy|normal|unremarkable|all clear|nothing (?:to worry|concerning|alarming))\b/i
@@ -278,7 +278,7 @@ Deno.test('buildContextualReadText — never reassures', () => {
 - **A monitor-tier visual finding surfaces via a structured field, never `visual_flags`.** Any entry in `visual_flags` forces `worth_a_call`, so a non-escalating observation (stool mucus-without-blood, B-247) rides its own structured column (`stool_mucus_present`) and the `monitor` copy stays generic — naming a benign finding in prose flirts with reassurance-on-absence.
 - **A "repeat" escalation keys off the pre-vision, owner-classified contextual flag, not this photo's read.** `repeated_loose_stool` / `repeated_vomiting` are computed before the vision call from the owner's event classifications (Pattern 3), so they survive the per-incident cap and the extraction being flag-gated off (Pattern 2; B-247 seam ruling (a)).
 
-**CANONICAL EXAMPLE** — the readers derive present flags from the structured fields, never the cached array: `generate-signal/detection.ts` `deriveIncidentFlags` (the B-340 lane), `generate-report/report.ts` `unionPresentFlags` / `stoolUnionPresentFlags`, and Ask's `derivePresentFlags` (`ask/tools.ts`). At write time only `analyze-stool/index.ts` (~279) unions blood / foreign derived from the model's own fresh fields into `visual_flags`; vomit parity is still open as CUL-534, so the shared pipeline does NOT do this yet.
+**CANONICAL EXAMPLE** — the readers derive present flags from the structured fields, never the cached array: `generate-signal/detection.ts` `deriveIncidentFlags` (the B-340 lane), `generate-report/report.ts` `unionPresentFlags` / `stoolUnionPresentFlags`, and Ask's `derivePresentFlags` (`ask/tools.ts`). At write time only `analyze-stool/index.ts` (~276–283) unions blood / foreign derived from the model's own fresh fields into `visual_flags`; vomit parity is still open as CUL-534, so the shared pipeline does NOT do this yet. **The write-time rule stands regardless: a descriptor's parse MUST union flags derived from the model's structured fields into `visual_flags`, with `analyze-stool` as the template. `analyze-vomit` is the known exception (CUL-534); do not copy it into a new incident type.**
 
 ```ts
 // generate-signal/detection.ts — present-only, each family's blood in its own column.
@@ -338,4 +338,4 @@ These are gaps between what the skill claims and what the code currently enforce
 
 3. **`VomitAnalysisSection.tsx` carries the no-reassure rule as a comment (`:11–13`).** The component never renders an all-clear UI element — but that's enforced by the absence of a `looks_normal` enum value (Pattern 1), not by any test in the component itself. Acceptable as long as Pattern 1 holds. _(Still open — accepted.)_
 
-4. **No cross-incident-type abstraction yet.** — **RESOLVED (B-247 PR 2 / D2, 2026-07-16).** The pipeline is now the shared `_shared/incident-analysis.ts`, parameterized by an `IncidentDescriptor` (analyze-vomit + analyze-stool live on it). The patterns above are framework-owned there; a descriptor controls which findings become flags, never what flags do — it cannot weaken the safety contract.
+4. **No cross-incident-type abstraction yet.** — **RESOLVED (B-247 PR 2 / D2, 2026-07-16).** The pipeline is now the shared `_shared/incident-analysis.ts`, parameterized by an `IncidentDescriptor` (analyze-vomit + analyze-stool live on it). The patterns above are framework-owned there; a descriptor controls which findings become flags, never what flags do. It can still weaken the floor through its parse: `analyze-vomit` trusts the model's `visual_flags` alone (CUL-534), which is what Pattern 9's write-time rule forbids.
