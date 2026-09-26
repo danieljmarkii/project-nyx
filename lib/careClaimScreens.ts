@@ -70,16 +70,20 @@ export const TREATMENT_ATTRIBUTION_RE = new RegExp(
     // "has helped", "seems to have worked", "made a difference", and the bare past forms
     // ("the prednisone helped her cough", "the new food worked") — an effect verdict in any
     // tense. Bare "helped"/"worked" never appear in an honest count/date recount.
-    String.raw`\b(?:helped|worked|kicked in|took effect|paid off)\b`,
+    String.raw`\b(?:helped(?!\s+(?:herself|himself|themselves|itself))|worked(?!\s+(?:through|on|at|out|her way|his way|their way))|kicked in|took effect|paid off)\b`,
     String.raw`\b(?:made|makes|making) (?:a|the|some|a real|a big) difference\b`,
     String.raw`\bdid the trick\b`,
     // "has settled since the prednisone started", "calmed down after the visit",
     // "eased off once she started the new food". The verb is the verdict, "since" the
     // attribution; "4 episodes since the visit" carries neither verb and passes.
     String.raw`\b(?:(?:settled|eased|calmed|subsided|quiet(?:ed|ened)|lessened|cleared|improved|gotten better|got better)(?:\s+(?:down|off|up))?|died down|let up|tapered off)\s+(?:(?:a lot|a bit|right|quite a bit|noticeably|nicely)\s+)?(?:since|after|once)\b`,
-    // "thanks to the prednisone", "responding well to the treatment"
+    // "thanks to the prednisone", "responding well to the treatment", "she is responding to
+    // the prednisone". A bare "responds to" is behaviour ("responds to her name", "responded to
+    // the doorbell"), so the arm needs a qualifier, an auxiliary, or a treatment object.
     String.raw`\bthanks to\b`,
-    String.raw`\brespond(?:s|ed|ing)?\s+(?:(?:well|nicely|poorly|badly)\s+)?to\b`,
+    String.raw`\brespond(?:s|ed|ing)?\s+(?:well|nicely|poorly|badly|quickly)\s+to\b`,
+    String.raw`\b(?:is|are|was|were|seems? to be|appears? to be|has been|have been)\s+(?:already\s+|clearly\s+)?responding\s+to\b`,
+    String.raw`\brespond(?:s|ed|ing)?\s+to\s+(?:(?:the|her|his|their|its)\s+)?(?:new\s+)?(?:treatment|medication|meds?|medicine|drugs?|pills?|therapy|diet|food|course|dose|steroids?|antibiotics?)\b`,
   ].join('|'),
   'i',
 )

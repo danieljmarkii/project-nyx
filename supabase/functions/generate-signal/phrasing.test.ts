@@ -399,8 +399,13 @@ const CUL1271_SENTENCES = [
   "Pixel's cough has settled since the prednisone started.",
 ]
 
-Deno.test('validatePhrasing — rejects delegation and treatment attribution on safety, reflection and correlation (CUL-1271)', () => {
-  for (const f of [intakeDecline(), worsening(), reflection(), correlation({ tier: 'early' })]) {
+Deno.test('validatePhrasing — rejects delegation and treatment attribution on EVERY finding type (CUL-1271)', () => {
+  // The check runs before the per-type branches, so the insight-class lanes that skip the safety
+  // branch (trial_response — where "working" lives — gap_shortening, the timing lanes) hold too.
+  for (const f of [
+    intakeDecline(), worsening(), chronicity(), incidentRedFlag(), reflection(), correlation({ tier: 'early' }),
+    postprandial(), emptyStomach(), timingStory(), timeofday(), trialResponse(), gapShortening(),
+  ]) {
     for (const t of CUL1271_SENTENCES) {
       assert.equal(validatePhrasing(t, f), false, `${f.type}: ${t}`)
     }

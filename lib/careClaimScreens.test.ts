@@ -61,6 +61,9 @@ const ATTRIBUTION = [
   'Her cough has let up since the visit.',
   'She is doing better thanks to the prednisone.',
   'She is responding well to the treatment.',
+  'Nyx is responding to the prednisone.',
+  'She responded to the new diet within a week.',
+  'The prednisone helped.',
   'The prednisone appears to be effective.',
 ];
 
@@ -76,6 +79,10 @@ const HONEST = [
   "Nyx has eaten less on 5 of the last 7 days — worth a word with your vet if it carries on.",
   'Nyx is working through her bowl slowly: 3 of 7 meals finished this week.',
   'She was helping herself to the other cat’s food on Sep 12.',
+  "She helped herself to Max's food again on Sep 12.",
+  'Nyx worked through her bowl in 10 minutes.',
+  'Nyx responds to her name most mornings.',
+  'Nyx responded to the doorbell by barking.',
   'Her weight is logged at 4.1 kg on Sep 20, and 4.8 kg on Aug 1.',
   'Is the prednisone working?',
   'Has anything changed since the new food?',
