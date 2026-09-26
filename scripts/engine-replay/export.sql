@@ -5,8 +5,11 @@
 -- session scratchpad.
 --
 -- Service-role discipline (C-27): the subject is named by id PAIRED WITH ITS OWNER,
--- written exactly once, in the CTE. Replace both literals before running. Zero rows back
--- is ambiguous (wrong id, wrong owner, or both) and never means an empty record.
+-- written exactly once, in the CTE. Replace both literals before running. A wrong id or
+-- owner does NOT come back as zero rows: each query is one json_build_object, so it comes
+-- back as one row of nulls. That is why each also returns `subjects` (how many pets the
+-- CTE matched) and `pet_id`: record.deno.ts refuses anything but the same one pet in both
+-- (CUL-1276), so a typo can never replay as an empty record.
 --
 -- Deliberately NOT exported: diet_trials.target_duration_days_initial,
 -- target_duration_set_at and target_duration_vet_directed. They carry a treatment-response
@@ -22,6 +25,8 @@ with subj as (
     and p.user_id = (select id from auth.users where email = '<owner email>')
 )
 select json_build_object(
+  'subjects', (select count(*) from subj),
+  'pet_id', (select id from subj),
   'tz', (select up.timezone from user_profiles up join pets p on p.user_id = up.id where p.id = (select id from subj)),
   'pet', (select json_build_object('name', p.name, 'species', p.species) from pets p where p.id = (select id from subj)),
   'events', (select json_agg(json_build_object(
@@ -70,6 +75,8 @@ with subj as (
     and p.user_id = (select id from auth.users where email = '<owner email>')
 )
 select json_build_object(
+  'subjects', (select count(*) from subj),
+  'pet_id', (select id from subj),
   'meals', (select json_agg(json_build_array(
       e.id, e.occurred_at, e.occurred_at_confidence, e.created_at, e.deleted_at,
       m.food_item_id, m.intake_rating, m.updated_at) order by e.occurred_at)
