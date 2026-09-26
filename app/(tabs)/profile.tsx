@@ -45,21 +45,14 @@ import { endRegimen } from '../../lib/medicationSetup';
 import { StartTrialModal } from '../../components/profile/StartTrialModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
 import { DietTrialCard } from '../../components/profile/DietTrialCard';
-import {
-  TrialCompletionSheet, type TrialCompletionEntry,
-} from '../../components/profile/TrialCompletionSheet';
-import { TrialManageSheet } from '../../components/profile/TrialManageSheet';
+import { TrialLifecycleSheets } from '../../components/trial/TrialLifecycleSheets';
 import { useDietTrial } from '../../hooks/useDietTrial';
+import { useTrialLifecycle } from '../../hooks/useTrialLifecycle';
 import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { useWidgetSlotLabel } from '../../hooks/useWidgetSlotLabel';
 import { useWidgetPetLink } from '../../hooks/useWidgetPetLink';
 import { resolveTrialCard, trialManageTarget } from '../../lib/dietTrialCard';
-import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
-import { changeTrialWindow, extendTrial, TrialWindowRefused } from '../../lib/dietTrialSetup';
-import { windowRefusedLine } from '../../lib/trialWindowSheet';
-import { trialStartDayKey } from '../../lib/trialWindowDates';
-import { getDietTrialProgress } from '../../lib/analytics';
-import { dayKeyToLocalDate, petPronouns, toLocalDayKey } from '../../lib/utils';
+import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
 import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
@@ -473,163 +466,15 @@ export default function ProfileScreen() {
     [tryFocusScroll],
   );
 
-  // B-417 PR 6 — which completion screen is open, if any. `null` is closed.
-  const [completionEntry, setCompletionEntry] = useState<TrialCompletionEntry | null>(null);
-  // The extension is a one-tap write with no confirm (see `handleExtendTrial`),
-  // which makes a pending state non-optional rather than polish: without one the
-  // owner taps the biggest button on the card, nothing visibly happens until the
-  // write and reload land, and a slow write earns a second tap — two extensions
-  // from one decision.
-  const [extendingTrial, setExtendingTrial] = useState(false);
-
-  /**
-   * `Keep going` — B-417 PR 6 (§4.3). One implementation, called by BOTH the
-   * milestone card's inline button and the overrun sheet's row, because the two
-   * must never disagree about which day the extension counts from.
-   *
-   * ONE TAP, NO CONFIRM, DELIBERATELY. The named default is the whole point of
-   * the affordance — Jordan's review said what stops her tapping "done" on day 56
-   * is that keep-going "already has the four weeks filled in" — and putting a
-   * dialog in front of the option that keeps a diet going would make the safe path
-   * the slower one. The change is legible without a dialog: the card immediately
-   * re-reads "Day 56 of 84" with a new end date, and the owner can extend again.
-   */
-  const handleExtendTrial = useCallback(async () => {
-    const trial = trialInput?.trial;
-    if (!trial?.id || extendingTrial) return;
-    const progress = getDietTrialProgress(
-      { startedAt: trial.startedAt, targetDurationDays: trial.targetDurationDays },
-      Date.now(),
-    );
-    if (!progress) return;
-    setCompletionEntry(null);
-    setExtendingTrial(true);
-    try {
-      await extendTrial({
-        trialId: trial.id,
-        targetDurationDays: nextTargetDays({
-          currentTargetDays: trial.targetDurationDays,
-          dayCounter: progress.dayCounter,
-          extraDays: extensionDays(trial.indication),
-        }),
-      });
-      reloadTrial();
-    } catch (e) {
-      // A REFUSAL IS NOT A FAILURE — IT MEANS THIS CARD IS STALE (CUL-1039).
-      //
-      // Since the write path became one clamp, this tap can be refused where it
-      // used to be a harmless no-op, and EVERY refusal arm says the same thing
-      // about the same fact: the row is not what the card was rendered from.
-      // `not_forward` — the stored window already meets or beats what this tap
-      // would set, so the owner's intent is already satisfied. `not_running` — the
-      // trial was ended, here or on another device. `not_found` — the row is gone.
-      // In all three the write correctly did nothing and the fix is the same: re-read,
-      // and let the card say what is true.
-      //
-      // So no alert on any of them. The existing copy is wrong twice over on the
-      // arms it used to reach: "The trial is still running on its current window"
-      // is FALSE when the refusal is `not_running`, and "have another go in a
-      // moment" is advice to repeat something that cannot succeed, on every arm.
-      // Re-routing without re-reading the copy is how a true string becomes a false
-      // one (C-28) — so the string keeps the one job it is still true for, a write
-      // that actually failed.
-      if (e instanceof TrialWindowRefused) {
-        reloadTrial();
-      } else {
-        console.error('[DietTrial] extend failed:', e);
-        Alert.alert(
-          'That didn’t save',
-          'The trial is still running on its current window. Have another go in a moment.',
-        );
-      }
-    } finally {
-      setExtendingTrial(false);
-    }
-  }, [trialInput, reloadTrial, extendingTrial]);
-
-  // ── CUL-1040 — the header's door and the window sheet behind it (§4.1/§4.2) ──
-  //
-  // TWO SHEETS, NOT ONE, because §4.1's two acts must never be confused: *Change
-  // the window* keeps one continuous episode and is reversible; *Replace the trial*
-  // ends it and is not. The door names both and opens neither by default.
-  const [manageVisible, setManageVisible] = useState(false);
-  const [savingWindow, setSavingWindow] = useState(false);
-  const [windowError, setWindowError] = useState<string | null>(null);
-  /**
-   * `Replace the trial` chosen, waiting for the door's Modal to finish dismissing.
-   *
-   * A REF, NEVER STATE (C-22). It is a one-shot request consumed by a side effect,
-   * and held in state an already-scheduled passive effect re-enters with the
-   * pre-clear closure and fires twice — here, two presentations of the start form.
-   * Cleared BEFORE the side effect, for the same reason.
-   *
-   * It exists because `StartTrialModal` is the one hand-off that still crosses a
-   * Modal boundary: it is reached independently from a terminal card's header and
-   * keeps a half-filled form alive across dismissals (`resumeTrialModalOnFocus`), so
-   * folding it into the door is a wider change than this PR should make. Sequencing
-   * it costs one ref.
-   */
-  const pendingAfterManage = useRef<'replace_trial' | null>(null);
-
-  /**
-   * The §4.2 write. One total, one optional vet statement, no confirm (the sheet's
-   * own Save is the confirmation and the act is fully reversible — CUL-645).
-   *
-   * THE REFUSAL IS PHRASED HERE FROM STRUCTURED FIELDS, NEVER FROM `e.message`.
-   * `guards/ownerFacingCopy.test.ts` fails the build on a display sink reading a
-   * string off an error, and `TrialWindowRefused` carries `reason` /
-   * `requestedDays` / `floorDays` / `currentTargetDays` / `dayCounter` precisely so
-   * this can say something true (CUL-1039's handoff, point 2).
-   *
-   * It is reachable even though the sheet gates against the same floor, and the
-   * gap is the point: the sheet gates against the HYDRATED card and the predicate
-   * against the ROW. A card a sync behind, or a trial ended on another device, is
-   * exactly the case where the owner deserves the reason rather than a silent
-   * nothing — so every arm re-reads the trial and says what is true of it.
-   */
-  const handleChangeWindow = useCallback(
-    async (input: { targetDurationDays: number; vetDirected: boolean }) => {
-      const trial = trialInput?.trial;
-      if (!trial?.id || savingWindow) return;
-      setSavingWindow(true);
-      setWindowError(null);
-      try {
-        await changeTrialWindow({
-          trialId: trial.id,
-          targetDurationDays: input.targetDurationDays,
-          // false is recorded as false, never folded into null: the column keeps
-          // three states and 0 vs NULL are indistinguishable DOWNSTREAM, which is
-          // not the same as being interchangeable here.
-          vetDirected: input.vetDirected,
-        });
-        setManageVisible(false);
-        reloadTrial();
-      } catch (e) {
-        reloadTrial();
-        if (e instanceof TrialWindowRefused) {
-          setWindowError(
-            windowRefusedLine({
-              reason: e.reason,
-              requestedDays: e.requestedDays,
-              currentTargetDays: e.currentTargetDays,
-              dayCounter: e.dayCounter,
-              // The RECORD's pet would be the rule (C-9), and here they are the
-              // same row: this sheet only ever opens over `trialInput`, which is
-              // read for the active pet. A blank name falls back to second person
-              // inside the phrasing, never to "the pet".
-              petName: activePet?.name ?? '',
-            }),
-          );
-        } else {
-          console.error('[DietTrial] change window failed:', e);
-          setWindowError('That didn’t save. The trial is still on its current window.');
-        }
-      } finally {
-        setSavingWindow(false);
-      }
-    },
-    [trialInput, reloadTrial, savingWindow, activePet?.name],
-  );
+  // CUL-1299 (TS-3) — the card's lifecycle writes (Keep going, change the window,
+  // This trial is done, Stopped early), the two sheets' state and the Replace hand-off.
+  // Shared with the trial's own screen; it takes this screen's trial read rather than
+  // making a second one (B-421). `StartTrialModal` stays here (B-535).
+  const trialLifecycle = useTrialLifecycle({
+    petId: activePet?.id ?? null,
+    input: trialInput,
+    reload: reloadTrial,
+  });
 
   const [photoUploading, setPhotoUploading] = useState(false);
 
@@ -1253,53 +1098,6 @@ export default function ProfileScreen() {
   // said it would cut, and it is correct content — C2's standing fact).
   const trialCard = trialInput ? resolveTrialCard(trialInput) : null;
 
-  // What PR 6's sheets write against. The id rides on the card's INPUT (the
-  // resolver never reads it) so the completion flow does not re-query a row this
-  // screen already loaded — and so the sheet cannot end a different trial than the
-  // one the card is showing.
-  //
-  // `status === 'active'` HERE IS CORRECT AND MUST NOT BECOME `isTrialRunning`
-  // (B-422). The effective end withdraws BEHAVIOUR from a trial nobody ended; it
-  // does not end the trial, and this sheet is the only way an owner can. Gating
-  // it would take the completion action away from precisely the overrun trials
-  // the staleness rule exists to get closed — §4.3's milestone "never expires and
-  // re-surfaces until acted on". Same rule at `dietTrialSetup.getActiveTrialForPet`.
-  const sheetTrial =
-    trialInput?.trial?.id && trialInput.trial.status === 'active'
-      ? {
-          id: trialInput.trial.id,
-          petId: activePet.id,
-          startedAt: trialInput.trial.startedAt,
-          targetDurationDays: trialInput.trial.targetDurationDays,
-          indication: trialInput.trial.indication,
-        }
-      : null;
-  const sheetDayCounter = trialInput?.trial
-    ? getDietTrialProgress(
-        {
-          startedAt: trialInput.trial.startedAt,
-          targetDurationDays: trialInput.trial.targetDurationDays,
-        },
-        trialInput.nowMs,
-      )?.dayCounter ?? 1
-    : 1;
-
-  /** CUL-1040 — the window sheet's trial. Denominated the way the sheet is: a start
-   *  DAY KEY (the end-date math takes one) and the day counter, not the raw row. It
-   *  is null on anything but a running trial, so the sheet cannot open over a window
-   *  that is a finished fact. */
-  const windowSheetTrial =
-    trialInput?.trial?.id && trialInput.trial.status === 'active'
-      ? {
-          id: trialInput.trial.id,
-          // `trialStartDayKey`, never a slice: on an ISO-instant `started_at` the
-          // slice yields the UTC day and every chip's end date would sit a day off
-          // the card's own (CUL-1040).
-          startDayKey: trialStartDayKey(trialInput.trial.startedAt),
-          currentTargetDays: trialInput.trial.targetDurationDays,
-          dayCounter: sheetDayCounter,
-        }
-      : null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -1684,16 +1482,16 @@ export default function ProfileScreen() {
             style={styles.sectionGap}
             // CUL-170 anchor — the trial strip's doorway.
             onLayout={handleTrialAnchorLayout}
-            busyAction={extendingTrial ? 'trial_extend' : null}
+            busyAction={trialLifecycle.extending ? 'trial_extend' : null}
             actions={{
               start_trial: () => setStartTrialVisible(true),
               // B-417 PR 6. The milestone's three buttons and the overrun card's
               // single one land on the same decision; `Keep going` is a write
               // rather than a screen, so it has no sheet.
-              trial_extend: handleExtendTrial,
-              trial_complete: () => setCompletionEntry('complete'),
-              trial_stopped_early: () => setCompletionEntry('stopped_early'),
-              milestone: () => setCompletionEntry('decision'),
+              trial_extend: trialLifecycle.extend,
+              trial_complete: () => trialLifecycle.openCompletion('complete'),
+              trial_stopped_early: () => trialLifecycle.openCompletion('stopped_early'),
+              milestone: () => trialLifecycle.openCompletion('decision'),
               // State 7a's action, reachable for the first time now that a trial
               // can be completed — and the reason the completed card keeps its
               // slot for a month (`ENDED_TRIAL_GRACE_DAYS`, 30 — R5): the report
@@ -1711,7 +1509,7 @@ export default function ProfileScreen() {
               // (one active trial per pet being a DB constraint) is the ordered
               // end-the-running-one-first flow. Now it opens both acts, which is
               // the label it has carried since B-533.
-              trial_manage: () => setManageVisible(true),
+              trial_manage: trialLifecycle.openManage,
               // B-616 PR 2 (§2.2). Present only on a hydrated set — see the hook
               // read above; `undefined` here means the card draws no link.
               ...(trialAllowedSet.status === 'ready'
@@ -1738,7 +1536,7 @@ export default function ProfileScreen() {
             // decides the DESTINATION from the same fact the verb is derived from.
             onManage={() => {
               if (trialManageTarget(trialCard) === 'start_trial') setStartTrialVisible(true);
-              else setManageVisible(true);
+              else trialLifecycle.openManage();
             }}
           />
         )}
@@ -1915,48 +1713,12 @@ export default function ProfileScreen() {
         onLogFirstMeal={() => { setStartTrialVisible(false); router.push('/log?type=meal'); }}
       />
 
-      {/* B-417 PR 6 — the completion milestone's sheets (§4.3). Not mounted while
-          closed: unlike StartTrialModal it has no half-filled form to preserve
-          across a dismissal, and every answer on it is deliberately discarded on
-          Cancel rather than pre-filled from a previous attempt. */}
-      <TrialCompletionSheet
-        entry={completionEntry}
-        trial={sheetTrial}
-        petName={activePet.name}
-        species={activePet.species}
-        pronouns={petPronouns(activePet.sex ?? 'unknown')}
-        dayCounter={sheetDayCounter}
-        intakeDeclineHeadline={trialInput?.intakeDeclineHeadline ?? null}
-        onClose={() => setCompletionEntry(null)}
-        onExtend={handleExtendTrial}
-        onChanged={reloadTrial}
-      />
-
-      {/* CUL-1040 §4.1/§4.2 — ONE Modal, two steps: the door's two rows, and
-          *Change the window* behind the first of them. `windowSheetTrial` is null on
-          a terminal card, which disables that row rather than opening a window
-          change over a trial that has ended. */}
-      <TrialManageSheet
-        visible={manageVisible}
-        trial={windowSheetTrial}
-        petName={activePet.name}
-        busy={savingWindow}
-        writeError={windowError}
-        onClose={() => { setManageVisible(false); setWindowError(null); }}
-        // The EXISTING flow, with its existing confirm. One active trial per pet is
-        // a DB constraint, so the start form is the ordered end-the-running-one-first
-        // sheet — which is what "Replace the trial" has always meant. It is ARMED
-        // here and presented on `onDismissed`, never in the row's own commit (C-14).
-        onReplaceTrial={() => { pendingAfterManage.current = 'replace_trial'; }}
-        onDismissed={() => {
-          const pending = pendingAfterManage.current;
-          pendingAfterManage.current = null;
-          if (pending === 'replace_trial') setStartTrialVisible(true);
-        }}
-        // A new total makes the last refusal stale, and a stale refusal outranks the
-        // live reason on the sheet — so the host clears what the host set.
-        onSelectionChanged={() => setWindowError(null)}
-        onSave={handleChangeWindow}
+      {/* CUL-1299 (TS-3) — the completion sheets and the Manage door, drawn from
+          `trialLifecycle`. Replace lands on the start form above, presented only once
+          the door has dismissed (C-14). */}
+      <TrialLifecycleSheets
+        lifecycle={trialLifecycle}
+        onReplaceTrial={() => setStartTrialVisible(true)}
       />
     </SafeAreaView>
   );
