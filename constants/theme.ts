@@ -145,8 +145,13 @@ export const theme = {
   // ground/backdrop (icon field, marketing heroes, dark brand surfaces) — never a
   // tappable/interactive fill. Teal (colorAccent #00C2A8) stays the SOLE
   // interactive accent (buttons, trend line, live state), so the "one accent,
-  // never decorative" rule above survives. Additive only — no component adopts
-  // these yet.
+  // never decorative" rule above survives.
+  //
+  // ONE EXCEPTION (CUL-322, D3 = C, PM-ruled 2026-09-26; in-app brand spec §1 rule
+  // 3): the FAB's disc is colorBrandNightElevated carrying the teal plus. The
+  // indigo is still the ground and the teal is still the live glyph on it, the
+  // Culprit mark in miniature; no other control is indigo, which is what keeps
+  // the exception from becoming a second accent (CUL-1279 parks the wider idea).
   //
   // Two dark tokens, two distinct roles (the colorSurfaceDark reconciliation —
   // resolved: KEEP BOTH): colorBrandNight is the indigo *brand* night (Culprit's
@@ -163,7 +168,7 @@ export const theme = {
   // the Signal card's night variant — spec §1.2 the register rule). No component
   // repoints in this PR — capture & records stay the shipped light system.
   //
-  // THE ACCENT RULE (spec §1.3, unchanged): teal `colorAccent #00C2A8` remains the
+  // THE ACCENT RULE (spec §1.3; its one exception, the FAB, is noted above): teal `colorAccent #00C2A8` remains the
   // SOLE tappable/live/interactive accent on every ground. Every token below is a
   // world/ground colour — text, safety rail, hairline, gradient stop, or starfield
   // — never an interactive fill, so the design-system "one accent, never decorative"
@@ -298,6 +303,10 @@ export const theme = {
   // Modal scrim — one value for every bottom-sheet/confirm overlay so stacked
   // surfaces dim identically (switcher sheet, archive confirm; FAB chip next).
   colorScrim: 'rgba(10, 10, 10, 0.35)',
+  // The FAB menu's scrim (CUL-322, mock round 1 §06 beat 3): the brand night at
+  // 34%, so Home steps back under an indigo veil rather than a grey one. A ground,
+  // never a fill; nothing is drawn on it but the menu's own opaque pills.
+  colorScrimNight: 'rgba(19, 17, 46, 0.34)',
 
   // Completion "moment" — consumed by PR 4 (gold ring in app/log.tsx).
   colorMomentGlow: '#FBBF24',

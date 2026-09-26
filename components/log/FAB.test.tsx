@@ -33,12 +33,13 @@ jest.mock('../pet/PetSwitcherSheet', () => ({
   },
 }));
 
-import { TouchableOpacity } from 'react-native';
+import { Animated, Text } from 'react-native';
 import { act, render, fireEvent } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { FAB } from './FAB';
+import { FAB, HiddenUnderFabMenu } from './FAB';
 import { usePetStore } from '../../store/petStore';
 import { useUiStore } from '../../store/uiStore';
+import { useReducedMotionStore } from '../../store/reducedMotionStore';
 
 function seedPets(count: number) {
   const pets =
@@ -56,11 +57,34 @@ async function openMenu() {
   return view;
 }
 
+/** Every text in the rendered tree, top to bottom — the fan's order as drawn. The
+ *  fan is a column anchored to the disc, so the LAST label is the pill nearest it. */
+function fanLabels(view: ReturnType<typeof render>): string[] {
+  return view
+    .UNSAFE_queryAllByType(Text)
+    .map((t: TreeNode) => [t.props.children].flat().join(''))
+    .filter((label) => label.length > 0);
+}
+
+/** A node of the rendered tree, as `findAll` hands it over. */
+type TreeNode = ReturnType<typeof render>['UNSAFE_root'];
+/** A flattened style entry, as the tree carries it. */
+type StyleEntry = { transform?: unknown; transformOrigin?: string } | null | undefined;
+
+/** Every host view that takes a touch — TouchableOpacity and Pressable alike render
+ *  one carrying the responder's release handler. */
+function pressableHosts(view: ReturnType<typeof render>) {
+  return view.UNSAFE_root.findAll(
+    (n: TreeNode) => typeof n.type === 'string' && typeof n.props.onResponderRelease === 'function',
+  );
+}
+
 beforeEach(() => {
   mockSwitcherProps.length = 0;
   (router.push as jest.Mock).mockClear();
   seedPets(2);
-  useUiStore.setState({ captureOverlay: null, logSheet: null });
+  useUiStore.setState({ captureOverlay: null, logSheet: null, fabMenuOpen: false });
+  useReducedMotionStore.setState({ reduceMotion: null });
 });
 
 describe('FAB — the "Logging for" switcher', () => {
@@ -199,8 +223,12 @@ describe('FAB — no pet to log for', () => {
     const view = await openMenu();
 
     // Pre-fix this was 5 — Log food, Vomit, Loose stool, More events, and the
-    // FAB. Only the FAB is a way OUT rather than a way in.
-    const touchables = view.UNSAFE_queryAllByType(TouchableOpacity);
+    // FAB. Only the FAB is a way OUT rather than a way in. Counted at the HOST, by
+    // responder, so every kind of touchable is in it: since CUL-322 the disc is a
+    // Pressable (it answers touch-DOWN), and a TouchableOpacity-only count would
+    // read 0 and pass over a Pressable row. The scrim is excluded by id — it is the
+    // other way out.
+    const touchables = pressableHosts(view).filter((t: TreeNode) => t.props.testID !== 'fab-scrim');
     expect(touchables).toHaveLength(1);
     expect(touchables[0].props.accessibilityLabel).toBe('Close menu');
     expect(router.push).not.toHaveBeenCalled();
@@ -286,10 +314,12 @@ describe('FAB — a pet flip never leaves the previous pet’s foods on screen',
   });
 
   it('does not call the incoming pet foodless while its read is in flight', async () => {
-    // The other half, and the reason the fix keys the list rather than clearing it:
-    // `setRecentFoods([])` on the flip would also drop A's rows, and would replace
-    // them with "No foods logged yet" — a statement about B's record made before
-    // anything has read it (C-12). Absent, then correct; never wrong in between.
+    // The other half. Before CUL-322 this pinned the empty-foods line ("No foods
+    // logged yet") against a `setRecentFoods([])` fix, which would have stated B had
+    // no foods before anything read B's record (C-12). The fan dropped that line with
+    // the panel's section headers, so the claim it guarded now has no sentence to make
+    // — what remains is that the in-flight frame says NOTHING about B's foods, and
+    // still offers the way forward in the thumb's slot.
     getRecentFoods.mockResolvedValueOnce([
       { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet', food_type: 'meal' },
     ]);
@@ -300,9 +330,9 @@ describe('FAB — a pet flip never leaves the previous pet’s foods on screen',
       usePetStore.setState({ activePet: { id: 'p2', name: 'Mochi' } as never });
     });
 
-    expect(view.queryByText('No foods logged yet')).toBeNull();
-    // The section header stays — it is the stable label for what is arriving.
-    expect(view.getByText('Recent foods')).toBeTruthy();
+    expect(view.queryByText(/No foods/)).toBeNull();
+    expect(view.queryByText(/Hills/)).toBeNull();
+    expect(fanLabels(view).at(-1)).toBe('Log food');
   });
 });
 
@@ -342,5 +372,225 @@ describe('FAB — the Home capture overlay', () => {
     // The store fails OPEN by design: losing the app's primary control is a worse
     // failure than a Done bar sharing a corner for a frame.
     expect(view.queryByLabelText('Log event')).toBeTruthy();
+  });
+});
+
+
+// ── CUL-322 · the indigo FAB, the fan, and BRK-37 ─────────────────────────────────
+//
+// D3 = C / D5 = (a), PM-ruled 2026-09-26 (mock round 1 §05–§06). What is pinned here
+// is what a test can see: the accessibility contract BRK-37 found missing, the fan's
+// order, and that Reduce Motion is a crossfade that never reaches for a spring or a
+// turn. The motion's feel is the device pass's; its constants live in FAB.tsx.
+
+/** Let every running animation finish, so a close's completion (the unmount) lands. */
+async function settleAnimations() {
+  await act(async () => { jest.runOnlyPendingTimers(); });
+  await act(async () => { jest.runAllTimers(); });
+}
+
+describe('FAB — BRK-37, the accessibility contract', () => {
+  it('the disc is a button that says whether its menu is expanded', async () => {
+    const view = render(<FAB />);
+    const closed = view.getByLabelText('Log event');
+    expect(closed.props.accessibilityRole).toBe('button');
+    expect(closed.props.accessibilityState).toEqual({ expanded: false });
+
+    fireEvent.press(closed);
+    await act(async () => {});
+    const opened = view.getByLabelText('Close menu');
+    expect(opened.props.accessibilityState).toEqual({ expanded: true });
+  });
+
+  it('the open layer is modal, and the host is told to hide what is under it', async () => {
+    const view = render(<FAB />);
+    const modalLayers = () =>
+      view.UNSAFE_root.findAll((n: TreeNode) => typeof n.type === 'string' && n.props.accessibilityViewIsModal === true);
+    expect(modalLayers()).toHaveLength(0);
+    expect(useUiStore.getState().fabMenuOpen).toBe(false);
+
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    expect(modalLayers()).toHaveLength(1);
+    expect(useUiStore.getState().fabMenuOpen).toBe(true);
+    // The disc — the way out — is INSIDE the modal layer, or VoiceOver could not reach it.
+    const disc = view.getByLabelText('Close menu');
+    expect(modalLayers()[0].findAll((n: TreeNode) => n === disc)).toHaveLength(1);
+  });
+
+  it('the host hides its descendants exactly while the menu is open', () => {
+    const { Text: RNText } = require('react-native');
+    const view = render(<HiddenUnderFabMenu><RNText>home</RNText></HiddenUnderFabMenu>);
+    const host = () => view.getByText('home', { includeHiddenElements: true }).parent!.parent!;
+    expect(host().props.importantForAccessibility).toBe('auto');
+    expect(host().props.accessibilityElementsHidden).toBe(false);
+    expect(view.queryByText('home')).toBeTruthy();
+
+    act(() => { useUiStore.setState({ fabMenuOpen: true }); });
+    expect(host().props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(host().props.accessibilityElementsHidden).toBe(true);
+    // What assistive tech would find: nothing under the menu.
+    expect(view.queryByText('home')).toBeNull();
+  });
+
+  it('closing — by the scrim, or by the escape gesture — hands the host back', async () => {
+    jest.useFakeTimers();
+    try {
+      const view = render(<FAB />);
+      fireEvent.press(view.getByLabelText('Log event'));
+      await act(async () => {});
+      fireEvent.press(view.getByTestId('fab-scrim'));
+      await settleAnimations();
+      expect(view.getByLabelText('Log event')).toBeTruthy();
+      expect(useUiStore.getState().fabMenuOpen).toBe(false);
+
+      fireEvent.press(view.getByLabelText('Log event'));
+      await act(async () => {});
+      const layer = view.UNSAFE_root.find(
+        (n: TreeNode) => typeof n.type === 'string' && n.props.accessibilityViewIsModal === true,
+      );
+      act(() => { layer.props.onAccessibilityEscape(); });
+      await settleAnimations();
+      expect(view.getByLabelText('Log event')).toBeTruthy();
+      expect(useUiStore.getState().fabMenuOpen).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a capture overlay opening under the menu closes it, so Home is never left hidden', async () => {
+    // Unreachable by today's callers (the scrim eats the Home tap that opens one); the
+    // guard is for the first caller that is not a tap. The stand-down keeps this
+    // instance mounted, so without the close `fabMenuOpen` stays true with no disc left.
+    const view = render(<FAB />);
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    expect(useUiStore.getState().fabMenuOpen).toBe(true);
+
+    act(() => {
+      useUiStore.setState({
+        captureOverlay: { summary: null, inViewport: true, busy: false, onBack: jest.fn(), onDone: null },
+      });
+    });
+    expect(useUiStore.getState().fabMenuOpen).toBe(false);
+
+    act(() => { useUiStore.setState({ captureOverlay: null }); });
+    // It comes back closed, not mid-menu.
+    expect(view.getByLabelText('Log event')).toBeTruthy();
+  });
+
+  it('never outlives the FAB — an unmount with the menu open releases the host', async () => {
+    const view = render(<FAB />);
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    expect(useUiStore.getState().fabMenuOpen).toBe(true);
+    view.unmount();
+    expect(useUiStore.getState().fabMenuOpen).toBe(false);
+  });
+});
+
+describe('FAB — the fan, nearest the thumb first', () => {
+  it('draws the recent foods lowest, the newest nearest the disc', async () => {
+    // getRecentFoods answers newest first.
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f-new', brand: 'Royal Canin', product_name: 'wet', format: 'wet', food_type: 'meal' },
+      { id: 'f-old', brand: 'Royal Canin', product_name: 'dry', format: 'dry', food_type: 'meal' },
+    ]);
+    seedPets(1);
+    const view = await openMenu();
+    expect(fanLabels(view)).toEqual([
+      'More events', 'Loose stool', 'Vomit', 'Log food', 'Royal Canin dry', 'Royal Canin wet',
+    ]);
+  });
+
+  it('puts the pet the log is for at the top, above every action', async () => {
+    const view = await openMenu();
+    // 'N' is the avatar's initial, inside the chip.
+    expect(fanLabels(view).slice(0, 4)).toEqual(['N', 'Logging for', 'Nyx', 'More events']);
+  });
+});
+
+describe('FAB — motion, and the Reduce Motion frame (beat 8)', () => {
+  function discGlyphRotations(view: ReturnType<typeof render>): unknown[] {
+    // Every rotate on the disc's glyph layers, as the style carries it: a string for
+    // the static × of the crossfade, an interpolation for the turn.
+    const disc = view.getByLabelText(/Log event|Close menu/);
+    return disc
+      .findAll((n: TreeNode) => typeof n.type === 'string')
+      .flatMap((n: TreeNode) => [n.props.style].flat(3))
+      .flatMap((st: StyleEntry) => (st && Array.isArray(st.transform) ? st.transform : []))
+      .filter((t: Record<string, unknown>) => 'rotate' in t)
+      .map((t: Record<string, unknown>) => t.rotate);
+  }
+
+  it('in motion: the press scales, the plus turns on a spring, the fan staggers 38ms', async () => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    const spring = jest.spyOn(Animated, 'spring');
+    const stagger = jest.spyOn(Animated, 'stagger');
+    try {
+      const view = render(<FAB />);
+      const disc = view.getByLabelText('Log event');
+      fireEvent(disc, 'pressIn');
+      expect(spring).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 0.9 }));
+      fireEvent.press(disc);
+      await act(async () => {});
+      expect(stagger).toHaveBeenCalledWith(38, expect.any(Array));
+      // The turn is the underdamped spring (the overshoot), not the old linear rotate.
+      expect(spring).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ toValue: 1, tension: 90, friction: 7 }),
+      );
+      // One glyph layer, turning — the crossfade's second (×) layer is absent.
+      const rotations = discGlyphRotations(view);
+      expect(rotations).toHaveLength(1);
+      expect(rotations[0]).not.toBe('45deg');
+    } finally {
+      spring.mockRestore();
+      stagger.mockRestore();
+    }
+  });
+
+  it('under Reduce Motion: no scale, no turn, no fan — the plus and the × crossfade', async () => {
+    useReducedMotionStore.setState({ reduceMotion: true });
+    const spring = jest.spyOn(Animated, 'spring');
+    const stagger = jest.spyOn(Animated, 'stagger');
+    try {
+      const view = render(<FAB />);
+      const disc = view.getByLabelText('Log event');
+      fireEvent(disc, 'pressIn');
+      fireEvent.press(disc);
+      await act(async () => {});
+      expect(spring).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 0.9 }));
+      expect(spring).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 1 }));
+      expect(stagger).not.toHaveBeenCalled();
+      // The only rotate left is the × drawn still, which fades in over the plus.
+      expect(discGlyphRotations(view)).toEqual(['45deg']);
+      // And no fan pill moves: the slots carry an opacity and no transform at all.
+      const slots = view.UNSAFE_root.findAll(
+        (n: TreeNode) => typeof n.type === 'string'
+          && [n.props.style].flat(3).some((st: StyleEntry) => st?.transformOrigin === 'bottom right'),
+      );
+      expect(slots.length).toBeGreaterThan(0);
+      for (const slot of slots) {
+        expect([slot.props.style].flat(3).some((st: StyleEntry) => st && 'transform' in st)).toBe(false);
+      }
+    } finally {
+      spring.mockRestore();
+      stagger.mockRestore();
+    }
+  });
+
+  it('an unknown setting reads as still (C-43) — the first open of a cold start does not spin', async () => {
+    useReducedMotionStore.setState({ reduceMotion: null });
+    const stagger = jest.spyOn(Animated, 'stagger');
+    try {
+      const view = render(<FAB />);
+      fireEvent.press(view.getByLabelText('Log event'));
+      await act(async () => {});
+      expect(stagger).not.toHaveBeenCalled();
+      expect(discGlyphRotations(view)).toEqual(['45deg']);
+    } finally {
+      stagger.mockRestore();
+    }
   });
 });

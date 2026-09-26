@@ -104,40 +104,46 @@ describe('the bright category colours do NOT clear AA as text on light', () => {
   });
 });
 
-describe('the FAB pair — a floating disc and its glyph (CUL-1063 / D2-2)', () => {
+describe('the FAB pair — an indigo disc and its teal plus (CUL-322, D3 = C)', () => {
   // A NON-TEXT target (WCAG 1.4.11): the disc must clear 3:1 against the ground it
-  // floats over, and the plus 3:1 against the disc. Two grounds, because the FAB
-  // floats over both — Home's colorNeutralLight container and the white Cards
-  // scrolling under it.
+  // floats over, and the plus 3:1 against the disc. Three grounds, because the FAB
+  // floats over Home's colorNeutralLight container, the white Cards scrolling under
+  // it, and — while its menu is open — the indigo scrim laid over both.
+  //
+  // CUL-1063 shipped the disc as colorAccentInk, the one teal that cleared 3:1 with
+  // a white plus, and the PM read it on device as drab. D3 = C inverts the pair: the
+  // brand night is the disc and the BRIGHT teal is the glyph, the one place it passes
+  // (in-app brand spec §1 rule 3 names the FAB as its one exception).
   const NON_TEXT = 3;
 
   const passing: ReadonlyArray<[label: string, fg: string, bg: string]> = [
-    ['the disc on the app ground', theme.colorAccentInk, theme.colorNeutralLight],
-    ['the disc over a white Card', theme.colorAccentInk, theme.colorSurface],
-    ['the plus on the disc', theme.colorTextOnDark, theme.colorAccentInk],
+    ['the disc on the app ground', theme.colorBrandNightElevated, theme.colorNeutralLight],
+    ['the disc over a white Card', theme.colorBrandNightElevated, theme.colorSurface],
+    ['the disc over its own open scrim', theme.colorBrandNightElevated, over(theme.colorScrimNight, theme.colorNeutralLight)],
+    ['the teal plus on the disc', theme.colorAccent, theme.colorBrandNightElevated],
   ];
 
   it.each(passing)('%s clears 3:1', (_label, fg, bg) => {
     expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(NON_TEXT);
   });
 
-  // The failing half, which is why the disc is the INK and not the brand teal the
-  // round-4 frames drew: the bright accent is under 3:1 on both grounds, so "the
-  // FAB goes teal" lands one notch darker than the mock. Without this row a later
-  // "simplify to colorAccent" is a green one-token edit.
+  // The failing halves, each the pair a later "tidy" would reach for. A white plus
+  // on the bright teal is why CUL-1063 could not draw the round-4 frame; the bright
+  // teal as the disc fails both grounds. Without these rows either edit is green.
   const failing: ReadonlyArray<[label: string, fg: string, bg: string]> = [
-    ['the bright accent on the app ground', theme.colorAccent, theme.colorNeutralLight],
-    ['the bright accent over a white Card', theme.colorAccent, theme.colorSurface],
+    ['the bright accent as the disc, on the app ground', theme.colorAccent, theme.colorNeutralLight],
+    ['the bright accent as the disc, over a white Card', theme.colorAccent, theme.colorSurface],
+    ['a white plus on the bright accent', theme.colorTextOnDark, theme.colorAccent],
   ];
 
-  it.each(failing)('%s does NOT — so it is never the disc', (_label, fg, bg) => {
+  it.each(failing)('%s does NOT — so it is never the FAB', (_label, fg, bg) => {
     expect(contrastRatio(fg, bg)).toBeLessThan(NON_TEXT);
   });
 
-  it('records the measured ratios the PR body cites', () => {
-    expect(contrastRatio(theme.colorAccentInk, theme.colorNeutralLight)).toBeCloseTo(4.95, 2);
-    expect(contrastRatio(theme.colorAccentInk, theme.colorSurface)).toBeCloseTo(5.17, 2);
-    expect(contrastRatio(theme.colorTextOnDark, theme.colorAccentInk)).toBeCloseTo(5.17, 2);
+  it('records the measured ratios the PR body and the brand spec cite', () => {
+    expect(contrastRatio(theme.colorBrandNightElevated, theme.colorNeutralLight)).toBeCloseTo(14.25, 2);
+    expect(contrastRatio(theme.colorBrandNightElevated, theme.colorSurface)).toBeCloseTo(14.87, 2);
+    expect(contrastRatio(theme.colorAccent, theme.colorBrandNightElevated)).toBeCloseTo(6.57, 2);
     expect(contrastRatio(theme.colorAccent, theme.colorNeutralLight)).toBeCloseTo(2.17, 2);
   });
 });
