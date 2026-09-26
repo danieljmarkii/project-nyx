@@ -43,13 +43,15 @@ All in `supabase/functions/_shared/incident-analysis.ts`, the pipeline both `ana
 - A decision on the stale row is caught by a behavior test ✓
 - The step-9 race is narrowed to one round trip, not closed (CUL-1321).
 
-## Open for the PM
+## Ruled by the PM
 
 **Persona conflict (defect 3 of the adversarial pass): should a contextual "Worth a call" be held until CUL-131 lands?**
 
 > **Dr. Chen:** Hold it. The ruling is never to lower an escalation automatically. A context window that lapsed because two days passed is not the owner's act, and the write can't tell it from one the owner corrected. Over-escalating is the safe error (E-6: louder changes are adopted provisionally).
 > **Designer / Sam:** It makes two existing context defects permanent. One vomit logged twice fires "thrown up more than once", and deleting the duplicate and re-running no longer clears it. Re-running a three-week-old read while the cat is tired today attaches today's lethargy, and it can never come off. A false sentence that won't go away is the nagging-engine failure Engines v3 exists to fix.
 > **PM decision needed:** keep the hold (built) until CUL-131 anchors the windows to the incident, or let a contextual-only escalation be lowered by a re-read now and accept the clock-lapse lowering?
+
+**Ruling (PM, 2026-09-26): keep the hold until CUL-131.** Relaxing the contextual hold, and the deleted-duplicate case, are now part of CUL-131's scope (commented there and on CUL-1201).
 
 ## The rebase
 
@@ -67,9 +69,23 @@ PR-01 (#936) and PR-04 (#939) merged while this was in review, so `main` was mer
 
 ## Next
 
-Rebase onto `main` after PR-04 (CUL-1203 part 2) and PR-01 (CUL-1277) merge. At the rebase:
-- swap the `'worth_a_call'` literals to PR-01's `isEscalationVerdict`;
-- extend the fake client for PR-04's pet-keyed writes;
-- rerun the behavior tests and the adversarial pass.
+#940 is rebased, green and ready for review. Then, in the Engines v3 run order:
+- **PR-10:** the stamps migration (CUL-1267, CUL-1132, CUL-1201 part 1).
+- **CUL-1110:** lands after this PR and inherits `resolveReanalysisWrite` as its seam.
+- **CUL-1327:** the photo-list read; same function, small.
+- **CUL-131:** now carries the contextual hold's relaxation.
 
-Then mark #940 ready. CUL-1110 lands after this PR and inherits `resolveReanalysisWrite` as its seam.
+## Close-out
+
+- **Definition of Done:**
+  - The acceptance criteria of CUL-815, CUL-532 and CUL-817, and CUL-1201 part 2's ruling, pass. Each is covered by a pipeline test listed in #940.
+  - Types: `deno check` over `supabase/functions` is clean, and CI's App typecheck + jest is green.
+  - Tests: 1,918 Edge Function tests pass, plus the jest guards.
+  - Secrets: none new.
+  - Persona sign-off: Dir. Eng ✓ (the pipeline seam, the pet-keyed writes); Dr. Chen ✓ (never lower an escalation, presence carries); Data Scientist ✓ (Pattern 9 parity with `deriveIncidentFlags`); Designer and Sam raised the contextual-hold conflict (ruled above); T&S ✓ (CUL-1203's pet key held through the merge); QA ✓ (mutation-proven guards).
+  - Adversarial line: two isolated passes with named counterexamples (above). No claim is left unaddressed.
+- **Future-self review:** `PipelineDeps` is a new pattern, an injectable seam so the real pipeline runs against a fake database. I would still want it in 12 months: it is what caught what the source guard could not. The risk is the fake drifting from PostgREST and migration 074; the fake states each production rule it models, beside the code.
+- **Linear:**
+  - CUL-815, CUL-532 and CUL-817 are In Review with #940 attached, so they close on merge.
+  - CUL-1201 is back to Todo, with #940's automatic attachment removed. The PR title named it, and the attachment would have closed it with part 1 unbuilt.
+  - `STATUS.md` and `CLAUDE.md` are unchanged: no track boundary, hold or convention moved.
