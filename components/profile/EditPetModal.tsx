@@ -13,7 +13,7 @@ import { FilterChip } from '../ui/FilterChip';
 import { ThemedText } from '../ui/ThemedText';
 import { BreedPicker } from '../pet/BreedPicker';
 import { supabase } from '../../lib/supabase';
-import { kgToLbs, lbsToKg } from '../../lib/weight';
+import { kgToLbs, resolveWeightFieldSave } from '../../lib/weightUnits';
 import { dateToYmd, formatBirthdayField, resolveDobPrecisionOnSave, DobPrecision } from '../../lib/age';
 import { usePetStore, Pet } from '../../store/petStore';
 
@@ -63,6 +63,9 @@ export function EditPetModal({ visible, onClose }: Props) {
   const [showBreedPicker, setShowBreedPicker] = useState(false);
   const [sex, setSex] = useState<Sex>('unknown');
   const [weightStr, setWeightStr] = useState('');
+  // The stored weight the field was seeded from. The field shows it rounded to 0.1 lb,
+  // so saving the field back would move it (CUL-1283); an untouched field saves nothing.
+  const [seededWeightKg, setSeededWeightKg] = useState<number | null>(null);
   const [dob, setDob] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   // Precision the DOB was loaded with, and whether the owner has since picked a
@@ -91,6 +94,7 @@ export function EditPetModal({ visible, onClose }: Props) {
       setShowBreedPicker(false);
       setSex(activePet.sex);
       setWeightStr(activePet.weight_kg != null ? kgToLbs(activePet.weight_kg) : '');
+      setSeededWeightKg(activePet.weight_kg);
       // Parse the stored 'YYYY-MM-DD' to a LOCAL date so its components (and the
       // dateToYmd round-trip on save) match the stored day exactly, timezone-agnostic.
       setDob(parseDobLocal(activePet.date_of_birth));
@@ -133,13 +137,15 @@ export function EditPetModal({ visible, onClose }: Props) {
     }
     setSaving(true);
     try {
-      const lbs = weightStr.trim() ? parseFloat(weightStr) : null;
-      const updates = {
+      // An untouched weight field omits weight_kg entirely (resolveWeightFieldSave):
+      // the stored value stays exact, and the store patch below leaves it alone too.
+      const weight = resolveWeightFieldSave(weightStr, seededWeightKg);
+      const updates: Partial<Pet> = {
         name: name.trim(),
         species,
         breed: breed.trim() || null,
         sex,
-        weight_kg: lbs != null && !isNaN(lbs) ? lbsToKg(lbs) : null,
+        ...(weight.write ? { weight_kg: weight.weightKg } : {}),
         // dateToYmd (local components) round-trips the picked day exactly — unlike
         // toISOString(), which shifts a local-midnight date across the UTC boundary.
         date_of_birth: dob ? dateToYmd(dob) : null,
