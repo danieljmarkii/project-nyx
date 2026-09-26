@@ -31,6 +31,11 @@
 //     outside the scan is invisible to it. Review's job, not a scan's.
 //   · It reads the migration FILES, so it cannot see a trigger changed by hand in the
 //     dashboard (the B-505 class); `get_advisors` and the apply-time probe cover that.
+//   · "Nothing reads it" is a claim about PRODUCT CODE. The owner's own rows are
+//     readable through PostgREST and pg_graphql by design (data rights, and EN-8's
+//     read); the claim is that no surface of ours renders, counts or ships them.
+//   · It scans .ts / .tsx / .js / .sql. Native sources (the widget's Swift, a .mjs /
+//     .cjs script) are outside it; none exists today that talks to Supabase.
 //   · It cannot execute plpgsql. The behavioural proof (every writer shape, the chain,
 //     the refusals, the failure injection, the cascade) was run against a PG16 replay
 //     and against production in rolled-back transactions; it is recorded in the PR.
@@ -227,6 +232,21 @@ describe('migration 072: clients can read their rows and write none', () => {
     expect(migrationSql).toMatch(
       /REVOKE\s+INSERT,\s*UPDATE,\s*DELETE,\s*TRUNCATE[^;]*ON\s+TABLE\s+public\.pet_weight_displacements\s+FROM\s+authenticated/i,
     );
+  });
+
+  it('revokes the identity sequence (a client setval would silently drop other accounts\' rows)', () => {
+    expect(migrationSql).toMatch(
+      /REVOKE\s+ALL\s+ON\s+SEQUENCE\s+public\.pet_weight_displacements_id_seq\s+FROM\s+anon,\s*authenticated/i,
+    );
+  });
+
+  it('pins search_path with pg_temp LAST (under \'\' the temp schema shadows type names in a DEFINER body)', () => {
+    // lib/functionHardening.test.ts only asks that SOME search_path is pinned; this
+    // asserts WHICH, because the house '' is the vulnerable form for a DEFINER
+    // function that names a type (rls-privacy-reviewer, CUL-694).
+    const fn = /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.preserve_displaced_pet_weight\(\)([\s\S]*?)AS\s+\$\$/i.exec(migrationSql);
+    expect(fn).not.toBeNull();
+    expect(fn![1]).toMatch(/SET\s+search_path\s*=\s*pg_catalog\s*,\s*pg_temp\s*$/im);
   });
 
   it('is deleted with the pet (account deletion is the users → pets FK cascade)', () => {

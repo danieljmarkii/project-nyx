@@ -91,9 +91,22 @@
 --   · NO INSERT, UPDATE or DELETE policy. A client can neither forge a row nor
 --     erase one; the only writer is the trigger.
 --   · The function is SECURITY DEFINER because the inserting client has no
---     INSERT policy, with search_path pinned to '' and every name schema
---     qualified, and EXECUTE revoked from PUBLIC / anon / authenticated (trigger
---     firing does not check EXECUTE). Registered in lib/functionHardening.test.ts.
+--     INSERT policy, and EXECUTE is revoked from PUBLIC / anon / authenticated
+--     (trigger firing does not check EXECUTE). Registered in
+--     lib/functionHardening.test.ts.
+--   · search_path is `pg_catalog, pg_temp`, NOT the house `''`, and the difference
+--     is load-bearing. With `''`, Postgres still searches the session's temp
+--     schema FIRST for type names, so a client holding TEMP could create
+--     `pg_temp.timestamptz` as a domain whose CHECK calls its own function, and
+--     this DEFINER function's TIMESTAMPTZ declarations would resolve to it and
+--     run that code as the owner. The rls-privacy-reviewer ran it on a PG16
+--     replay and forged rows on another account's pet. Naming pg_temp LAST, as
+--     the Postgres docs recommend for SECURITY DEFINER, closes it (verified: the
+--     same attack then calls nothing). Reaching it needs a raw SQL login, which no
+--     app role has (anon and authenticated are NOLOGIN, PostgREST cannot run
+--     DDL), so it is defence in depth. The other DEFINER functions pinned to ''
+--     carry the same class; that repo-wide pass is CUL-1281.
+--   · The identity sequence is revoked from clients too (below the table REVOKEs).
 --   · C-31 (CUL-867): a DEFINER trigger's error message never carries a value
 --     read from another row. This one RAISEs no error at all, and its LOG line
 --     names only the pet id the caller's own UPDATE already named. Its one lookup
@@ -163,6 +176,13 @@ ALTER TABLE public.pet_weight_displacements ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.pet_weight_displacements FROM anon;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
   ON TABLE public.pet_weight_displacements FROM authenticated;
+-- The identity sequence is a separate object that the table REVOKEs do not touch,
+-- and Supabase's default privileges hand clients full rights on it. A raw-SQL
+-- `setval` to 1 then made the next insert collide (23505); the trigger swallows
+-- that by design, so another account's preserved weight was silently lost
+-- (rls-privacy-reviewer, CUL-694). The trigger inserts as the owner and needs no
+-- client grant at all.
+REVOKE ALL ON SEQUENCE public.pet_weight_displacements_id_seq FROM anon, authenticated;
 
 -- SELECT only. The absence of an INSERT / UPDATE / DELETE policy is the point:
 -- the trigger is the only writer and nothing a client sends can add or erase a row.
@@ -175,7 +195,7 @@ CREATE OR REPLACE FUNCTION public.preserve_displaced_pet_weight()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = ''
+SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   prev_displaced_at TIMESTAMPTZ;
@@ -224,7 +244,7 @@ REVOKE ALL ON FUNCTION public.preserve_displaced_pet_weight() FROM anon;
 REVOKE ALL ON FUNCTION public.preserve_displaced_pet_weight() FROM authenticated;
 
 COMMENT ON FUNCTION public.preserve_displaced_pet_weight() IS
-  'CUL-694 / BRK-11: AFTER UPDATE OF weight_kg on pets, keeps the displaced non-NULL value in pet_weight_displacements with the window in which it was set. AFTER so it can never cancel the write; the insert is wrapped so a preservation failure is RAISE LOG''d and the owner''s write still lands. SECURITY DEFINER because clients hold no INSERT policy on the table; search_path pinned to '''', EXECUTE revoked from PUBLIC/anon/authenticated. Raises no error; its one lookup reads the table scoped to OLD.id (C-31).';
+  'CUL-694 / BRK-11: AFTER UPDATE OF weight_kg on pets, keeps the displaced non-NULL value in pet_weight_displacements with the window in which it was set. AFTER so it can never cancel the write; the insert is wrapped so a preservation failure is RAISE LOG''d and the owner''s write still lands. SECURITY DEFINER because clients hold no INSERT policy on the table; search_path = pg_catalog, pg_temp (pg_temp LAST: under '''' the temp schema is searched first for types, a DEFINER type-shadowing hole), EXECUTE revoked from PUBLIC/anon/authenticated, identity sequence revoked from clients. Raises no error; its one lookup reads the table scoped to OLD.id (C-31).';
 
 CREATE TRIGGER trg_pets_preserve_displaced_weight
   AFTER UPDATE OF weight_kg ON public.pets
