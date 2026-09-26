@@ -49,7 +49,7 @@ import { drugDisplayName } from './medications';
 import { readFeedingRows, readFreeFedSpans, TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import { readSignalCache, type CachedFinding, type SignalFinding } from './signal';
 import { evidenceText, hasBannedSignalVocabulary, symptomWord } from './signalCopy';
-import { canFold, foldIdentity } from './signalFold';
+import { foldIdentity } from './signalFold';
 import { signalTitle } from './signalTitle';
 import {
   signalCompare,
@@ -154,8 +154,6 @@ export interface SignalScreenModel {
   episodes: SignalScreenEpisodes | null;
   /** *Why this is a Signal* — the lines, in order. */
   why: string[];
-  /** The screen offers *Keep it compact on Home* only for a class that folds. */
-  foldable: boolean;
   /** The Home card is plain text for these (S1); the screen carries the phone script. */
   safety: boolean;
 }
@@ -341,6 +339,19 @@ function trialDayWord(trial: SignalTrialWindow): string {
   return `Day ${trial.dayCounter} of the ${lowerFirst(trial.identity)}`;
 }
 
+/**
+ * Whether the screen's first chart is the timing lanes (CUL-1270 · D2 = a): the finding
+ * CLAIMS a time-from-a-meal, so the lanes are its evidence and lead; the weekly bars move
+ * below the sentence. A recurrence or a frequency finding claims weeks, so its bars lead.
+ * The clock-band finding claims an hour of the day, which the lanes do not draw, so it keeps
+ * the bars first. No lanes to draw (a symptom the engine does not time) — the bars lead.
+ */
+export function screenLeadsWithLanes(model: Pick<SignalScreenModel, 'finding' | 'lanes'>): boolean {
+  if (!model.lanes) return false;
+  const t = model.finding.type;
+  return t === 'postprandial_timing' || t === 'empty_stomach_timing' || t === 'timing_story';
+}
+
 // ── The builder (pure) ────────────────────────────────────────────────────────
 
 export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenModel {
@@ -364,7 +375,6 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
       lanes: null,
       episodes: null,
       why: whyLines(input, null),
-      foldable: canFold(finding),
       safety,
     };
   }
@@ -405,7 +415,6 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     lanes,
     episodes: galleryOf(inWeeks, input.verdicts, weekly.weeks.length),
     why: whyLines(input, compare),
-    foldable: canFold(finding),
     safety,
   };
 }
