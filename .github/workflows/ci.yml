@@ -301,4 +301,12 @@ jobs:
         # `--cached-only` was the first attempt and is NOT a valid `deno check`
         # flag — it belongs to `deno cache`/`deno test`. It failed the first CI run
         # this step ever had, after the 948 tests had already passed.
-        run: deno check --lock=deno.lock scripts/*.deno.ts
+        #
+        # scripts/engine-replay/ (CUL-1276) is the engine replay EN-0's acceptance
+        # runs, and the glob above is one level deep, so it was checked by nothing.
+        # Its graph is NOT entirely local: incidentReplay imports
+        # analyze-vomit/index.ts, which imports supabase-js from esm.sh. Those are
+        # modules under supabase/functions, so the warm step above has already
+        # cached them: measured zero downloads for this whole step after that warm
+        # step, starting from a cold DENO_DIR.
+        run: deno check --lock=deno.lock scripts/*.deno.ts scripts/engine-replay/*.deno.ts
