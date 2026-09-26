@@ -7,10 +7,11 @@
 // bumps the same tick, which is what makes a mid-trial add (FR-12) land on the
 // list the owner is looking at.
 //
-// SCOPED TO THE ACTIVE PET (D7). The library is per-account and trials are
-// per-pet, so every consumer of this hook is rendering pet-context chrome; pet
-// A's trial marks nothing while pet B is selected, because this never resolves a
-// trial for a pet that is not the active one.
+// SCOPED TO THE PET IT IS HANDED (D7; CUL-1297). The library is per-account and
+// trials are per-pet, so every consumer of this hook is rendering pet-context
+// chrome. The Foods tab, the picker and the Pet tab hand it the ACTIVE pet, so pet
+// A's trial marks nothing there while pet B is selected; `/trial-foods` hands it
+// the pet its route names, which may not be the active one (C-9).
 //
 // While it loads, the state is `unknown` — which the contract already defines as
 // RENDER NOTHING. There is no loading flag here on purpose: a surface that
@@ -20,13 +21,12 @@ import { useEffect, useState } from 'react';
 import {
   loadTrialAllowedSet,
   UNKNOWN_ALLOWED_SET,
+  UNREADABLE_ALLOWED_SET,
   type TrialAllowedSet,
 } from '../lib/trialAllowedSet';
-import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 
-export function useTrialAllowedSet(): TrialAllowedSet {
-  const activePet = usePetStore((s) => s.activePet);
+export function useTrialAllowedSet(petId: string | null): TrialAllowedSet {
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
   // THE ANSWER IS STORED WITH THE PET IT IS AN ANSWER FOR, and that pairing is
   // what makes D7 hold in the gap (B-616 PR 3).
@@ -41,14 +41,12 @@ export function useTrialAllowedSet(): TrialAllowedSet {
   // Clearing state in an effect would not fix it — an effect runs AFTER the
   // render that already drew the stale chrome. So the pet is stored alongside
   // its answer and the mismatch is resolved during render below: the instant
-  // `activePet` changes, this hook reports `unknown`, which the whole track
+  // named pet changes, this hook reports `unknown`, which the whole track
   // already defines as RENDER NOTHING. A wrong mark is worse than no mark (R1).
   const [state, setState] = useState<{ petId: string | null; set: TrialAllowedSet }>({
     petId: null,
     set: UNKNOWN_ALLOWED_SET,
   });
-
-  const petId = activePet?.id ?? null;
 
   useEffect(() => {
     if (!petId) {
@@ -61,12 +59,14 @@ export function useTrialAllowedSet(): TrialAllowedSet {
         if (!cancelled) setState({ petId, set: next });
       })
       .catch((e) => {
-        // The loader already narrows its own failures to `unknown`; this is the
+        // The loader already narrows its own failures to `unreadable`; this is the
         // belt-and-braces path. It resets rather than keeping the previous
         // answer: a stale allowed set would keep marking foods for a pet whose
         // trial may have ended, and a wrong mark is worse than no mark (R1).
+        // `unreadable`, not `unknown` (CUL-400): `unknown` is a spinner that
+        // waits for an answer this read is not going to give.
         console.error('[useTrialAllowedSet] load failed:', e);
-        if (!cancelled) setState({ petId, set: UNKNOWN_ALLOWED_SET });
+        if (!cancelled) setState({ petId, set: UNREADABLE_ALLOWED_SET });
       });
 
     return () => {

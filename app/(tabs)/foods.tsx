@@ -95,7 +95,7 @@ export default function FoodsScreen() {
   // `unknown` (a read that hasn't answered, or hasn't hydrated) renders nothing —
   // no strip, no chips — rather than an un-marked library that looks identical to
   // a pet with no trial (R2).
-  const trialSet = useTrialAllowedSet();
+  const trialSet = useTrialAllowedSet(activePetId);
   // D7: the strip names the pet only when there is another pet it could be
   // confused with. `pets` holds non-archived pets only (petStore's invariant).
   const multiPet = usePetStore((s) => s.pets.length > 1);

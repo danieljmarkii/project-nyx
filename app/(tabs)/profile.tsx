@@ -253,12 +253,12 @@ export default function ProfileScreen() {
   // rather than a guard: an offline trial, or one started offline and not yet
   // flushed, is still a row the card can see, so "No trial running." cannot be a
   // lie told by a failed network read.
-  const { input: trialInput, isLoading: trialLoading, reload: reloadTrial } = useDietTrial();
+  const { input: trialInput, isLoading: trialLoading, reload: reloadTrial } = useDietTrial(activePet?.id ?? null);
   // B-616 FR-5 — the card's door into "What {pet} can eat". Read here rather than
   // inside the screen so R2 is enforced at the ENTRY: an allowed set that has not
   // hydrated draws no action at all (`DietTrialCard` renders an action only when a
   // handler exists), instead of a link that opens a screen with nothing to say.
-  const trialAllowedSet = useTrialAllowedSet();
+  const trialAllowedSet = useTrialAllowedSet(activePet?.id ?? null);
   const [startTrialVisible, setStartTrialVisible] = useState(false);
   // B-535 — the start-modal → food-capture round trip. "Snap a new food" closes
   // the modal and routes out; the modal stays mounted so the half-filled form
