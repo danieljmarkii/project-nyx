@@ -7,7 +7,7 @@
 // drift from the real one without either suite going red. Living here, the sections
 // import it directly and their tests exercise the REAL predicate.
 
-import { isEscalationVerdict } from './incidentVerdict';
+import { isEscalationVerdict, isQuietVerdict } from './incidentVerdict';
 
 // Both incident sections render `status === 'failed'` ahead of the read card, so a
 // row that still holds `worth_a_call` + its read_text displayed as "Couldn't finish
@@ -40,6 +40,34 @@ export function escalationSurvivesFailure(
   row: { recommendation?: string | null } | null | undefined,
 ): boolean {
   return isEscalationVerdict(row?.recommendation);
+}
+
+// ── A quiet verdict stands only on a read that FINISHED (CUL-1277) ─────────────
+//
+// The statuses under which a finished verdict STANDS. `lib/readState.ts` (History, the
+// month, Home's spine, the Signal gallery) has always read status this way, as an
+// ALLOWLIST; the record sections used to read it as a DENYLIST (`failed`, `read_disabled`,
+// `capped`, `pending`, and anything else rendered the card). So a status nobody has
+// defined yet (a future "reading again", a "stale") put a calm "Keep an eye out" on the
+// record while History said the photo was not read: CUL-812's hazard for an unknown
+// STATUS rather than an unknown verdict, and the same promise to an installed build.
+// One list now, and both read it.
+//
+// An ESCALATION is not held to it: presence escalates at any status (CUL-812), which is
+// `escalationSurvivesFailure` above and `isWorthACall` in lib/readState.ts.
+export const FINISHED_READ_STATUSES: readonly string[] = ['completed', 'uncertain'];
+
+/**
+ * The row holds a QUIET verdict on a status that is not a finished read: the record must
+ * not stand it as the read. It falls to the section's honest "not read yet" frame, the
+ * same one a row with no verdict takes. PM ruling 2026-09-26 (CUL-1277, option (a)).
+ */
+export function quietVerdictUnfinished(
+  row: { status?: string | null; recommendation?: string | null } | null | undefined,
+): boolean {
+  const verdict = row?.recommendation;
+  if (verdict === null || verdict === undefined || !isQuietVerdict(verdict)) return false;
+  return !FINISHED_READ_STATUSES.includes(row?.status ?? '');
 }
 
 /** The shipped recommendation enum's owner-facing words, verbatim — the ONE map the two

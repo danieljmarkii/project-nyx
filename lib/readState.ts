@@ -58,7 +58,11 @@
 // be mocked away is a predicate two test files end up re-typing).
 
 import { hasPerIncidentRead } from '../constants/eventTypes';
-import { escalationSurvivesFailure, type IncidentRecommendation } from './incidentReadState';
+import {
+  escalationSurvivesFailure,
+  FINISHED_READ_STATUSES,
+  type IncidentRecommendation,
+} from './incidentReadState';
 import { isQuietVerdict, type QuietVerdict } from './incidentVerdict';
 
 /**
@@ -110,8 +114,9 @@ export interface ReadStateInput {
  *  `not_enough_to_say` is quiet (never the rose) but never calm (the PM's 2026-09-25 ruling). */
 export type CalmVerdict = 'monitor';
 
-/** The statuses under which a finished verdict STANDS: a read that finished. */
-const FINISHED_STATUSES: readonly string[] = ['completed', 'uncertain'];
+// The statuses under which a finished verdict STANDS are `FINISHED_READ_STATUSES`
+// (lib/incidentReadState.ts), the list the record sections read too (CUL-1277), so the
+// record and this predicate cannot disagree about a status nobody has defined yet.
 
 /**
  * The rose, decided on the copy alone. Exported because it is the whole of the month's
@@ -132,7 +137,7 @@ export function isWorthACall(copy: ReadCopy | null | undefined): boolean {
 function finishedQuietOf(copy: ReadCopy | null | undefined): QuietVerdict | null {
   const verdict = copy?.recommendation;
   if (verdict === null || verdict === undefined || !isQuietVerdict(verdict)) return null;
-  return FINISHED_STATUSES.includes(copy?.status ?? '') ? verdict : null;
+  return FINISHED_READ_STATUSES.includes(copy?.status ?? '') ? verdict : null;
 }
 
 export interface ReadVerdict {

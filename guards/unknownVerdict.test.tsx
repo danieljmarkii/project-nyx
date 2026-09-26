@@ -20,6 +20,13 @@
 // `NOT_A_SURFACE` entry are exemptions a reviewer reads, with no structural check that a
 // `describe` exercises them (C-32: the registry is an exemption, so each entry earns it).
 //
+// AND A STATUS IT DOES NOT KNOW (PM ruling 2026-09-26, option (a)). The adversarial pass
+// found the same promise broken one column over: the record sections read `status` as a
+// denylist, so a quiet verdict on a status nobody has defined yet stood as a calm read
+// while History said the photo was not read. A quiet verdict now stands only on a
+// finished read (`FINISHED_READ_STATUSES`, `lib/incidentReadState.ts`), the list
+// `lib/readState.ts` reads too; an escalation stands at any status.
+//
 // THE FIXTURES. `call_now` is the likeliest real name (the critique's tier). The other
 // can never be one, so a future PR that ships `call_now` for real leaves this file still
 // testing an unknown value.
@@ -66,13 +73,19 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { ComponentType } from 'react';
 import { StyleSheet } from 'react-native';
-import { render } from '@testing-library/react-native';
+import { act, render } from '@testing-library/react-native';
 
 import { theme } from '../constants/theme';
 import { OBSERVATION_FOLD_LABEL } from '../components/event/ObservationGrid';
 import { StoolAnalysisSection } from '../components/event/StoolAnalysisSection';
 import { VomitAnalysisSection } from '../components/event/VomitAnalysisSection';
-import { escalationSurvivesFailure, INCIDENT_REC_LABEL, incidentVerdictLabel } from '../lib/incidentReadState';
+import {
+  escalationSurvivesFailure,
+  FINISHED_READ_STATUSES,
+  INCIDENT_REC_LABEL,
+  incidentVerdictLabel,
+  quietVerdictUnfinished,
+} from '../lib/incidentReadState';
 import { isEscalationVerdict, isQuietVerdict, QUIET_VERDICTS } from '../lib/incidentVerdict';
 import { isWorthACall, readVerdictOf } from '../lib/readState';
 import { blankComments } from './blankComments';
@@ -83,6 +96,9 @@ const FUTURE = ['call_now', 'a_verdict_from_the_future'] as const;
 
 /** Every status the pipeline writes, plus one it may write later. */
 const STATUSES = ['completed', 'uncertain', 'failed', 'capped', 'read_disabled', 'pending', 'a_status_from_the_future'];
+
+/** Statuses no build has been taught: a plausible future name, and one that can never be. */
+const FUTURE_STATUSES = ['reading_again', 'a_status_from_the_future'] as const;
 
 // ── The surfaces ─────────────────────────────────────────────────────────────
 
@@ -192,6 +208,69 @@ describe.each(SECTIONS)('$file — a verdict this build does not know', (section
   });
 });
 
+describe.each(SECTIONS)('$file — a status this build does not know', (section) => {
+  const { Section } = section;
+  afterEach(() => { mockRow = null; });
+
+  const QUIET_CASES = [
+    ['monitor', INCIDENT_REC_LABEL.monitor],
+    ['not_enough_to_say', INCIDENT_REC_LABEL.not_enough_to_say],
+  ] as const;
+
+  describe.each(QUIET_CASES)('a quiet %s', (verdict, words) => {
+    it('stands as the read on a FINISHED status (the non-vacuity half)', async () => {
+      for (const status of FINISHED_READ_STATUSES) {
+        mockRow = rowFor(section, { status, recommendation: verdict, read_text: 'The read the server wrote.' });
+        const { findByText, unmount } = render(<Section eventId="e1" petId="pet-1" petName="Rex" hasPhoto />);
+        expect(await findByText(words)).toBeTruthy();
+        unmount();
+      }
+    });
+
+    it.each(FUTURE_STATUSES)('on %s: never stood as the read; the honest "not read yet" frame instead', async (status) => {
+      mockRow = rowFor(section, { status, recommendation: verdict, read_text: 'The read the server wrote.', ...section.facts });
+      const { findByText, queryByText, queryByTestId } = render(<Section eventId="e1" petId="pet-1" petName="Rex" hasPhoto />);
+
+      expect(await findByText('Not enough to say about this one yet.')).toBeTruthy();
+      expect(queryByText('Try analysis')).toBeTruthy();
+      expect(queryByText(words)).toBeNull();
+      expect(queryByText('The read the server wrote.')).toBeNull();
+      expect(queryByTestId('incident-read-card')).toBeNull();
+      // Its facts go with it: a fact grid under no read is a read by another name.
+      expect(queryByText(OBSERVATION_FOLD_LABEL)).toBeNull();
+    });
+
+  });
+
+  // Photoless, only `monitor` can tell: a photoless `not_enough_to_say` renders nothing at
+  // ANY status (B-363), so an absence there proves nothing about the status rule.
+  it.each(FUTURE_STATUSES)('a quiet monitor on %s with no photo: nothing (a finished one renders)', async (status) => {
+    // Non-vacuity: the same photoless row on a finished status DOES render the read.
+    mockRow = rowFor(section, { status: 'completed', recommendation: 'monitor', read_text: 'The read the server wrote.' });
+    const finished = render(<Section eventId="e1" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    expect(await finished.findByText(INCIDENT_REC_LABEL.monitor)).toBeTruthy();
+    finished.unmount();
+
+    mockRow = rowFor(section, { status, recommendation: 'monitor', read_text: 'The read the server wrote.' });
+    const { toJSON } = render(<Section eventId="e2" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    // The row arrives on a resolved promise inside an effect. Flush it (the finished render
+    // above shows one tick is enough for it to land) before asserting the absence, or an
+    // empty first frame would pass this for free.
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(toJSON()).toBeNull();
+  });
+
+  it.each(FUTURE_STATUSES)('an escalation on %s still stands, in the rose (presence escalates at any status)', async (status) => {
+    for (const verdict of ['worth_a_call', ...FUTURE]) {
+      mockRow = rowFor(section, { status, recommendation: verdict, read_text: 'The read the server wrote.' });
+      const { findByText, getByTestId, unmount } = render(<Section eventId="e1" petId="pet-1" petName="Rex" hasPhoto />);
+      expect(await findByText(INCIDENT_REC_LABEL.worth_a_call)).toBeTruthy();
+      expect(cardStyle(getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
+      unmount();
+    }
+  });
+});
+
 // ── The predicates every other surface draws through ──────────────────────────
 
 describe('lib/incidentReadState.ts — the rescue and the words', () => {
@@ -206,6 +285,20 @@ describe('lib/incidentReadState.ts — the rescue and the words', () => {
     }
   });
 
+  it('a quiet verdict is unfinished on any status but a finished read; an escalation never is', () => {
+    for (const verdict of ['monitor', 'not_enough_to_say']) {
+      for (const status of FINISHED_READ_STATUSES) expect(quietVerdictUnfinished({ status, recommendation: verdict })).toBe(false);
+      for (const status of [...FUTURE_STATUSES, 'failed', 'capped', 'pending', null]) {
+        expect(quietVerdictUnfinished({ status, recommendation: verdict })).toBe(true);
+      }
+    }
+    for (const verdict of ['worth_a_call', ...FUTURE]) {
+      for (const status of STATUSES) expect(quietVerdictUnfinished({ status, recommendation: verdict })).toBe(false);
+    }
+    expect(quietVerdictUnfinished({ status: 'reading_again', recommendation: null })).toBe(false);
+    expect(quietVerdictUnfinished(null)).toBe(false);
+  });
+
   it('a value that names a prototype member is not mistaken for a known verdict', () => {
     for (const verdict of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
       expect(incidentVerdictLabel(verdict)).toBe(INCIDENT_REC_LABEL.worth_a_call);
@@ -214,6 +307,13 @@ describe('lib/incidentReadState.ts — the rescue and the words', () => {
 });
 
 describe('lib/readState.ts — History, the month, Home’s spine, the Signal gallery', () => {
+  it.each(FUTURE_STATUSES)('a quiet verdict on %s is not calm there either: the record and History agree', (status) => {
+    for (const verdict of ['monitor', 'not_enough_to_say']) {
+      const read = readVerdictOf({ eventType: 'vomit', hasPhoto: true, copy: { status, recommendation: verdict }, inFlight: false, readingOff: false });
+      expect(read.state).toBe('unread');
+    }
+  });
+
   it.each(FUTURE)('%s: the rose at every status, spoken as `worth_a_call`', (verdict) => {
     for (const status of STATUSES) {
       const copy = { status, recommendation: verdict };

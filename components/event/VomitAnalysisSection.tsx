@@ -30,7 +30,11 @@ import {
   VomitEditableFields,
   EditableVomitField,
 } from '../../lib/analysis';
-import { escalationSurvivesFailure, incidentVerdictLabel } from '../../lib/incidentReadState';
+import {
+  escalationSurvivesFailure,
+  incidentVerdictLabel,
+  quietVerdictUnfinished,
+} from '../../lib/incidentReadState';
 import { isEscalationVerdict } from '../../lib/incidentVerdict';
 import { VomitFieldsEditor } from './VomitFieldsEditor';
 import { vomitCapCopy } from '../../constants/monetizationCopy';
@@ -356,14 +360,20 @@ export function VomitAnalysisSection(
   // contextual escalation is never hidden. Auto-refreshing the section the instant a
   // photo lands is a tracked follow-up (B-370). Matches the read_disabled branch: no
   // dead affordance, no empty frame (B-363).
-  if (!hasPhoto && (!row?.recommendation || row.recommendation === 'not_enough_to_say')) {
+  //
+  // A QUIET verdict stands only on a read that FINISHED (CUL-1277): on a status this
+  // build does not know, it is no read at all, which is the same frame a row with no
+  // verdict takes (here, nothing; below, the honest retry). An escalation is never held
+  // to this: presence escalates at any status.
+  const unfinishedQuiet = quietVerdictUnfinished(row);
+  if (!hasPhoto && (!row?.recommendation || row.recommendation === 'not_enough_to_say' || unfinishedQuiet)) {
     return null;
   }
 
   // No analysis and not working (e.g. gave up, or an unclear/unsynced photo). Only
   // reached WITH a photo now — the retry is legitimate (the photo may not have
   // synced yet, the documented race triggerVomitAnalysis guards against).
-  if (!row || !row.recommendation) {
+  if (!row || !row.recommendation || unfinishedQuiet) {
     return (
       <IncidentReadSection arrival={arrival} pending={false}>
         <View style={styles.neutralCard}>
