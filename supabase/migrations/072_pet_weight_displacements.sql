@@ -186,10 +186,13 @@ ALTER TABLE public.pet_weight_displacements ENABLE ROW LEVEL SECURITY;
 
 -- Belt and braces under RLS. Supabase's default privileges grant ALL on a new
 -- public table to anon and authenticated, and ALL includes TRUNCATE, which RLS
--- does not govern. Clients keep SELECT (the owner's read) and nothing else.
+-- does not govern, and on PG17 (production) MAINTAIN, which allows LOCK TABLE and
+-- so could stall the trigger's insert. Clients keep SELECT (the owner's read) and
+-- nothing else. REVOKE ALL + GRANT SELECT rather than a named list: a named list
+-- missed MAINTAIN on the first apply, and the next Postgres may add another.
 REVOKE ALL ON TABLE public.pet_weight_displacements FROM anon;
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
-  ON TABLE public.pet_weight_displacements FROM authenticated;
+REVOKE ALL ON TABLE public.pet_weight_displacements FROM authenticated;
+GRANT SELECT ON TABLE public.pet_weight_displacements TO authenticated;
 -- The identity sequence is a separate object that the table REVOKEs do not touch,
 -- and Supabase's default privileges hand clients full rights on it. A raw-SQL
 -- `setval` to 1 then made the next insert collide (23505); the trigger swallows

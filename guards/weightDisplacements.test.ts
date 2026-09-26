@@ -228,11 +228,14 @@ describe('migration 072: clients can read their rows and write none', () => {
     expect(policies).toEqual(['SELECT']);
   });
 
-  it('revokes the writes RLS does not govern (TRUNCATE) along with the rest', () => {
+  it('leaves clients SELECT and nothing else (TRUNCATE and MAINTAIN are outside RLS)', () => {
     expect(migrationSql).toMatch(/REVOKE\s+ALL\s+ON\s+TABLE\s+public\.pet_weight_displacements\s+FROM\s+anon/i);
-    expect(migrationSql).toMatch(
-      /REVOKE\s+INSERT,\s*UPDATE,\s*DELETE,\s*TRUNCATE[^;]*ON\s+TABLE\s+public\.pet_weight_displacements\s+FROM\s+authenticated/i,
-    );
+    // REVOKE ALL then GRANT SELECT, never a named list: a named list missed PG17's
+    // MAINTAIN (LOCK TABLE) on the first production apply.
+    expect(migrationSql).toMatch(/REVOKE\s+ALL\s+ON\s+TABLE\s+public\.pet_weight_displacements\s+FROM\s+authenticated/i);
+    const grants = [...migrationSql.matchAll(/GRANT\s+([\w\s,]+?)\s+ON\s+TABLE\s+public\.pet_weight_displacements\s+TO\s+(\w+)/gi)]
+      .map((m) => `${m[1].trim().toUpperCase()} -> ${m[2]}`);
+    expect(grants).toEqual(['SELECT -> authenticated']);
   });
 
   it('revokes the identity sequence (a client setval would silently drop other accounts\' rows)', () => {
