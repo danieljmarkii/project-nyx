@@ -4472,12 +4472,43 @@ Deno.test('CUL-1274 — a twin logged unrated and re-logged with a rating keeps 
   assert.deepEqual(item.intakeBreakdown, [{ rating: 'all', count: 5 }, { rating: 'refused', count: 1 }], 'the refusal survives the collapse')
   assert.equal(item.lastRatedDate, '2026-06-20')
   assert.equal(snap.diet.mealCompletion?.ratedMeals, 6)
-  // Two ratings on one pair of twins: the lower stands, as the higher severity does.
+  // Two CONFLICTING ratings keep the representative's, as before this fix: the merge fills a
+  // gap and never re-ranks (the conflict question is CUL-1328).
   idSeq = 0
   const both = assembleReport(baseInput({ events: [twin('12:00:00', 'all'), twin('12:00:20', 'refused')] }))
-  assert.deepEqual(both.diet.mealItems[0].intakeBreakdown, [{ rating: 'refused', count: 1 }])
+  assert.deepEqual(both.diet.mealItems[0].intakeBreakdown, [{ rating: 'all', count: 1 }])
   // A food whose only rating is on its first meal carries that day.
   idSeq = 0
   const firstOnly = assembleReport(baseInput({ events: [earlier[0], ...later] }))
   assert.equal(firstOnly.diet.mealItems[0].lastRatedDate, '2026-06-02')
+})
+
+Deno.test('CUL-1274 — a conflicting twin in a food\'s history never lowers the baseline a refusal is read against', () => {
+  // The round-5 counterexample: keeping the LOWER of two conflicting ratings looked like
+  // escalate-on-presence, and for the relative detector it was the opposite. Kibble X was
+  // eaten on the 27th, 28th and 29th (the 29th logged twice, the re-log "refused"); refused
+  // on Jul 2. Lower-wins dropped the food's baseline to 2.67, under the normally-eaten floor,
+  // and the report stopped flagging the refusal of a food this dog normally eats.
+  idSeq = 0
+  const x = (date: string, time: string, rating: 'all' | 'refused') =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: `${date}T${time}Z`,
+      meal: { foodItemId: 'fx', intakeRating: rating, quantity: null, foodType: 'meal', format: 'dry_kibble', primaryProtein: 'chicken', brand: 'Kibble', productName: 'X' },
+    })
+  const snap = assembleReport(
+    baseInput({
+      pet: { id: 'pet-bo', name: 'Bo', species: 'dog', breed: 'Lab', sex: 'male', dateOfBirth: '2020-01-01', weightKg: 30 },
+      events: [
+        x('2026-06-27', '12:00:00', 'all'),
+        x('2026-06-28', '12:00:00', 'all'),
+        x('2026-06-29', '12:00:00', 'all'),
+        x('2026-06-29', '12:00:30', 'refused'),
+        x('2026-07-02', '10:00:00', 'refused'),
+      ],
+    }),
+  )
+  const flag = snap.safetyFlags.find((f) => f.kind === 'intake_decline')
+  assert.ok(flag, 'the refusal of a normally-eaten food still flags')
+  assert.equal(flag!.kind === 'intake_decline' && flag.trigger, 'refused_normal_food')
 })

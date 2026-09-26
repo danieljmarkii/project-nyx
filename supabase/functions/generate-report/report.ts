@@ -1112,18 +1112,18 @@ export function dedupeEvents(
         if (e.severity != null && (severity == null || e.severity > severity)) severity = e.severity
       }
       const note = rep.notes ?? cluster.find((e) => e.notes != null)?.notes ?? null
-      // And the intake rating, on the same rule (CUL-1274 adversarial review). The earliest twin
-      // wins the collapse, so a one-tap logged unrated and re-logged "refused" thirty seconds
-      // later lost the refusal from every intake surface, and page 1's "intake last recorded"
-      // date then named a day before it. A rating fills a missing one; of two ratings the LOWER
-      // stands, escalate-on-presence as severity above. A value outside the known scale fills
-      // a gap but never displaces a known rating.
-      const intakeRank = (r: IntakeRating): number => INTAKE_SCALE.indexOf(r)
-      let intakeRating = rep.meal?.intakeRating ?? null
-      for (const e of cluster) {
-        const r = e.meal?.intakeRating ?? null
-        if (r !== null && (intakeRating === null || intakeRank(r) > intakeRank(intakeRating))) intakeRating = r
-      }
+      // And the intake rating, FILLED, never re-ranked (CUL-1274 adversarial review, two
+      // rounds). The earliest twin wins the collapse, so a one-tap logged unrated and
+      // re-logged "refused" thirty seconds later lost the refusal from every intake surface,
+      // and page 1's "intake last recorded" date then named a day before it. A missing rating
+      // now takes the first rating in the cluster. Two CONFLICTING ratings keep the
+      // representative's, exactly as before: keeping the lower one looked like
+      // escalate-on-presence and was the opposite for the relative intake detector, where a
+      // lower HISTORICAL meal lowers the baseline a real decline is measured against, and the
+      // report went quiet on a refusal Home still flagged. Whether a conflicting pair should
+      // collapse at all is CUL-1328.
+      const intakeRating =
+        rep.meal?.intakeRating ?? cluster.find((e) => e.meal?.intakeRating != null)?.meal?.intakeRating ?? null
       const meal = rep.meal ? { ...rep.meal, intakeRating } : rep.meal
       // Every raw member id (sorted, deterministic). assembleReport reads the phenotype
       // across ALL of them — best-status member for the four-state/assessed aggregate, and
