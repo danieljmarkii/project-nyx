@@ -1,11 +1,13 @@
 # Signal on Home, lighter: a row per finding, titles that name the claim
 
-**Date:** 2026-09-26 · **Issues:** CUL-1270, CUL-1285 · **Mode:** BUILD · **Branch:** `claude/festive-babbage-xr9oai` · **Shipped via #927** (draft, design_v2 only)
+**Date:** 2026-09-26 · **Issues:** CUL-1270, CUL-1285 · **Mode:** BUILD · **Branch:** `claude/festive-babbage-xr9oai` · **Shipped via #927** (design_v2 only)
 
 **PM prompt:** "Build CUL-1270 (D1 B, D2 a) under design_v2. Read the issue and the mock §01–§02 first, then post a plan before coding." Plan posted on the issue. The PM said "go, recommended on all three" to the three build calls:
 - (i) the frequency thumbnail is drawn from the finding's own counts;
 - (ii) asks on Home on safety rows only;
-- (iii) "Show it in full on Home" on the screen.
+- (iii) "Show it in full on Home" on the screen. Superseded the same session, when CUL-1285 retired the fold.
+
+The PM asked to wrap and merge before the device pass; that pass is CUL-1289.
 
 ## What shipped (#927)
 
@@ -70,7 +72,11 @@ Proven by mutation, each going red:
 - CUL-1217 has the pre-existing count mismatches D2 surfaced.
 - Filed **CUL-1285**: does the fold still earn its place under D1 = B? The PM ruled (a), retire it; built in this PR. CUL-1273 (the fold's false re-open reasons) is now flag-off only.
 
+## Merge
+
+`main` moved six commits while the branch was open, CUL-1271 among them, which changed `generate-signal/phrasing.ts`. `main` was merged into the branch, and the full suite and the parity test passed against the new templates (526 suites) before the merge.
+
 ## Next
 
-- The device pass on #927.
+- The device pass, CUL-1289.
 - GC-4 (CUL-1225 / CUL-1179) decides CUL-1217's "one count", which the chronicity title now makes more visible.
