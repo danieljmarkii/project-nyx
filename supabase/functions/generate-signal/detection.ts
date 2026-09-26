@@ -1143,7 +1143,9 @@ export interface SymptomWorseningFinding extends FindingBase {
  *                  a vet visit." Also inherited (PR 2) when the same symptom is ALSO worsening
  *                  week-over-week — the §4.5 valve coupling, applied in the composition layer
  *                  (suppressWorseningWhenChronic), NOT in resolveChronicityTier (which stays
- *                  pure/span-only and has no view of the worsening findings).
+ *                  pure/span-only and has no view of the worsening findings). And HELD
+ *                  (CUL-1272) once earned, until the course's count falls below the count it
+ *                  was earned at or the course stands down — holdChronicityTier, below.
  *   - 'standard' — a present-and-recurring course (span in [minSpanDays, firmSpanDays)):
  *                  "...worth a word with your vet."
  * There is deliberately NO 'soft' register (one fewer than ④): a symptom recurring for
@@ -4462,7 +4464,8 @@ function resolveChronicityTier(
 // NOTE: the §4.6 firm-tier INHERITANCE arm (firm when the same symptom is also worsening
 // week-over-week) is applied downstream in suppressWorseningWhenChronic, not here — that fact
 // is only knowable from the COMPOSED finding set, and keeping this resolver pure/span-only is
-// what let PR 1 ship it with no untested clinical path.
+// what let PR 1 ship it with no untested clinical path. The HOLD (CUL-1272: a firm tier
+// earned on an earlier day of the same course) is downstream too, in holdChronicityTier.
 
 export function detectChronicity(
   input: DetectionInput,
@@ -6692,7 +6695,7 @@ function composeTimingStory(findings: Finding[]): Finding[] {
  * missing). Lives in the COMPOSITION layer (like suppressTimeOfDayWhenPostprandial) so each
  * detector stays pure and independently unit-testable; runs before ranking.
  */
-function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
+export function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
   const chronicTypes = new Set(
     findings
       .filter((f): f is SymptomChronicityFinding => f.type === 'symptom_chronicity')
@@ -6716,6 +6719,94 @@ function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
         ? { ...f, tier: 'firm' as ChronicityTier }
         : f,
     )
+}
+
+/**
+ * The furthest back `holdChronicityTier` walks. With `windowDays` 56, a replay 120 days back
+ * reads events 176 days back — inside `generate-signal`'s 180-day fetch, so every day it
+ * replays is replayed over the same record the live run reads. A firm tier earned further
+ * back than this no longer anchors a hold (the stated blind spot below).
+ */
+export const CHRONICITY_HOLD_MAX_DAYS = 120
+
+/**
+ * CUL-1272 (BRK-10) — a chronicity card's FIRM ask holds until the course's count FALLS or
+ * the course STANDS DOWN, never because a comparison window slid.
+ *
+ * The defect: `suppressWorseningWhenChronic` lends ⑦ the firm tier only while the dropped ④
+ * exists, and ④ is a week-over-week comparison. When its week slid past, the vomiting card went
+ * from "worth booking a vet visit" to "worth a word with your vet" at 16 episodes, stayed soft
+ * while the count rose to 18, and firmed again at 19 (Nyx, 6/15 to 6/24). Nothing improved;
+ * the window moved. An owner reads a softer ask as the app being less worried. The span arm
+ * has the same shape at its edge (PM ruling (a), 2026-09-26): a six-week course whose first
+ * episode ages out of the 8-week lookback drops below `firmSpanDays` while still going.
+ *
+ * The rule: a card resolving to 'standard' today is held 'firm' when, walking back one day at
+ * a time, the course fired on EVERY day until one on which it EARNED firm (the span arm or the
+ * inheritance arm, exactly as `suppressWorseningWhenChronic` composes them on that day), and
+ * today's `episodeCount` is at least that day's. The anchor is an EARNED day, never a held
+ * one: an owner told "book a visit" at 16 is not told "a word" at 18, and a hold that
+ * re-anchored on itself would soften on any one-episode dip below yesterday, flapping on noise.
+ *
+ * Why a replay and not memory: the engine is stateless, and a hold kept in the Signal cache
+ * would be lost on a cache miss and would never reach the vet report, which runs this same
+ * `detectSignals` over its own window. Replaying the SHIPPED detectors at an earlier `now` is
+ * sound because both read only onsets strictly before their `now` (`computeChronicityStats`,
+ * `computeWindowedStats`) and `toEpisodeOnsets` chains forward, so a later event never moves
+ * an earlier onset. Nothing here restates a floor.
+ *
+ * What it guarantees, and what the tests pin:
+ *   - It only ever RAISES a tier (an OR on top of both arms), so it can never lose a warning.
+ *   - Between two consecutive days of a course, the ask never softens unless the count fell:
+ *     yesterday is exactly the first day this walk replays.
+ * Stated blind spots (not coverage):
+ *   - Days are sampled 24h apart from `now`, so an earned firm that lasted under a day between
+ *     two samples may not anchor a hold. That errs toward today's behaviour, never below it.
+ *   - The walk stops at CHRONICITY_HOLD_MAX_DAYS. A course firing continuously for longer with
+ *     no earned firm day inside that reach is not held.
+ *   - The vet report hands the engine only its own window's events, so its replay can see less
+ *     of the course than Home's and hold less often. Never less than it held before this.
+ */
+export function holdChronicityTier(
+  findings: Finding[],
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): Finding[] {
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return findings
+  // symptomType → today's count, for every card the two arms left at 'standard'.
+  const pending = new Map<SymptomType, number>()
+  for (const f of findings) {
+    if (f.type === 'symptom_chronicity' && f.tier !== 'firm') pending.set(f.symptomType, f.episodeCount)
+  }
+  if (pending.size === 0) return findings
+
+  const held = new Set<SymptomType>()
+  for (let k = 1; k <= CHRONICITY_HOLD_MAX_DAYS && pending.size > 0; k++) {
+    const at: DetectionInput = { ...input, now: new Date(nowMs - k * MS_PER_DAY).toISOString() }
+    // The tier the card EARNED that day: both arms, composed by the shipped rule.
+    const earned = suppressWorseningWhenChronic([
+      ...detectChronicity(at, config),
+      ...detectWorsening(at, config),
+    ])
+    for (const [symptomType, countToday] of pending) {
+      const then = earned.find(
+        (f): f is SymptomChronicityFinding => f.type === 'symptom_chronicity' && f.symptomType === symptomType,
+      )
+      if (!then) {
+        // The course was not firing that day: it stood down, and whatever it earned before
+        // belongs to an earlier course. No hold.
+        pending.delete(symptomType)
+      } else if (then.tier === 'firm') {
+        if (countToday >= then.episodeCount) held.add(symptomType)
+        pending.delete(symptomType)
+      }
+    }
+  }
+  if (held.size === 0) return findings
+  return findings.map((f) =>
+    f.type === 'symptom_chronicity' && held.has(f.symptomType) ? { ...f, tier: 'firm' as ChronicityTier } : f,
+  )
 }
 
 /**
@@ -6820,6 +6911,9 @@ export function detectSignals(
   //      L1's long onsets onto the merged card's `long` block for L3's retained-food join.
   //   3. suppressWorseningWhenChronic — ⑦ suppresses same-symptom ④ with firm-tier inheritance
   //      (§4.5/§5); disjoint type pair from the timing lane, so its position is free.
+  //   4. holdChronicityTier (CUL-1272) — a firm tier earned on an earlier day of the same course
+  //      holds until the count falls or the course stands down. After 3, because it reads the
+  //      tier 3 resolved; before the adjacency mark and ranking, neither of which reads tier.
   //
   // The internal onset arrays are NOT stripped here (CUL-9). They must survive `detectSignals`'s
   // return so the I/O shell's L3 decoration (computePhotoComposition) can join retained food to the
@@ -6830,5 +6924,6 @@ export function detectSignals(
   // the lone empty_stomach card. suppressWorseningWhenChronic (⑦→④, B-182) is a disjoint type pair
   // from the timing lane, so its position is free.
   const composed = composeTimingStory(suppressTimeOfDayWhenPostprandial(findings, config))
-  return rankFindings(discloseCoughVomitAdjacency(suppressWorseningWhenChronic(composed)), input.pet)
+  const tiered = holdChronicityTier(suppressWorseningWhenChronic(composed), input, config)
+  return rankFindings(discloseCoughVomitAdjacency(tiered), input.pet)
 }

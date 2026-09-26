@@ -122,10 +122,12 @@ Anchored on **duration** (chronicity's natural urgency axis), not the week-over-
 
 | Tier | Condition | Register |
 |---|---|---|
-| `firm` | `spanDays ≥ firmSpanDays` (≥6 weeks) **OR** the same symptom is also worsening (§4.5 inheritance) | "...worth **booking a vet visit**." |
+| `firm` | `spanDays ≥ firmSpanDays` (≥6 weeks) **OR** the same symptom is also worsening (§4.5 inheritance) **OR** the course said `firm` on an earlier day, its count has not fallen below that day's count, and it fired on every day in between (the hold, CUL-1272) | "...worth **booking a vet visit**." |
 | `standard` | otherwise (span in [3 weeks, 6 weeks)) | "...worth **a word with your vet**." |
 
 No `soft` register: a symptom present and recurring for ≥3 weeks always points at the vet — the gentlest chronicity register still does. (This is intentionally one tier fewer than ④, which has a `soft` spread-only arm that has no chronicity analog.)
+
+> **⚠ The hold (CUL-1272, PM-approved 2026-09-26; ruling (a): both arms).** A firm ask never softens because a comparison window slid. Before this, the inherited arm lapsed the evening ④'s week slid past (Nyx, June 2026: "book a vet visit" at 16 episodes, then "a word with your vet" for eight evenings while the count held and rose to 18), and the span arm lapsed the day a course's first episode aged out of the 8-week lookback. The anchor is the most recent earlier day on which the card **earned** `firm` by either arm above (never a day it was only held, so a one-episode dip below yesterday does not flap the ask); the hold ends when today's `episodeCount` falls below that day's, or when the course did not fire on some day in between (it stood down, and a new course earns its own tier). Built in the composition layer (`holdChronicityTier`, after `suppressWorseningWhenChronic`) by replaying the shipped detectors at earlier days, so the Signal and the vet report share it. Stated blind spots: days are sampled 24h apart from `now`; the walk reaches back at most 120 days (inside the 180-day fetch); the report replays only its own window's events, so it can hold less often than Home, never less than before.
 
 ### 4.7 Guardrails specific to ⑦ (the never-reassure asymmetry, made concrete)
 

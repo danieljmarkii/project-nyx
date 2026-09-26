@@ -21,6 +21,8 @@ import {
   pruneFoldStore,
   readFoldEntries,
   reconcileFolds,
+  setFactsFor,
+  specPaths,
   writeFoldEntries,
   type FoldFingerprint,
   type PetFoldEntries,
@@ -311,7 +313,7 @@ describe('canFold — every card folds, the safety class included (DF-2)', () =>
     // Its table row is inert: no material field, so the same payload is never a change and a
     // stray entry could never be re-opened by it.
     const spec = MATERIAL_FIELDS.stood_down;
-    expect([...spec.increaseOnly, ...spec.decreaseOnly, ...spec.turnOn, ...spec.anyChange]).toHaveLength(0);
+    expect(specPaths(spec)).toHaveLength(0);
     expect(materialChange(foldFingerprint(stoodDown), foldFingerprint(stoodDown))).toBeNull();
     // Its identity is its own — a marker's presence never shadows the chronicity key, so when
     // the course re-fires the finding returns under its own key and renders open.
@@ -324,13 +326,20 @@ describe('materialChange — the per-type table, walked as a property', () => {
   it('every type has a row and every listed field exists on the base fixture', () => {
     for (const t of TYPES) {
       const spec = MATERIAL_FIELDS[t];
-      const fields = [...spec.increaseOnly, ...spec.decreaseOnly, ...spec.turnOn, ...spec.anyChange];
+      const fields = [
+        ...spec.increaseOnly,
+        ...spec.decreaseOnly,
+        ...spec.promoteOnly.map(({ path }) => path),
+        ...spec.anyChange,
+      ];
       expect(fields.length).toBeGreaterThan(0);
-      for (const f of fields) {
-        // turnOn fields may legitimately be absent on the base (the adjacency is optional).
-        if (spec.turnOn.includes(f)) continue;
-        expect(getPath(BASE[t], f)).toBeDefined();
-      }
+      // An arrives-with-pair flag may legitimately be absent on the base (the adjacency is
+      // optional); its pair is a `set.*` fact, read from the set and never from the finding.
+      for (const f of fields) expect(getPath(BASE[t], f)).toBeDefined();
+      for (const { pair } of spec.arrivesWithPair) expect(pair.startsWith('set.')).toBe(true);
+      // A promotion order names every value the field can hold on the base, so the walk below
+      // is never vacuous.
+      for (const { path, order } of spec.promoteOnly) expect(order).toContain(getPath(BASE[t], path));
       // A record witness is a `record.*` path (read from RecordFacts, never the finding), and
       // only the two standing safety types carry one (CUL-785).
       for (const f of spec.laterInstant) expect(f.startsWith('record.')).toBe(true);
@@ -399,15 +408,55 @@ describe('materialChange — the per-type table, walked as a property', () => {
     }
   });
 
-  it('a turn-on field re-opens when it turns on, and not when it turns off', () => {
+  it('an arrives-with-pair flag re-opens when it arrives WITH the pair, never when it hops to this card or turns off', () => {
+    let walked = 0;
     for (const t of TYPES) {
-      for (const f of MATERIAL_FIELDS[t].turnOn) {
-        const off = withPath(BASE[t], f, undefined);
-        const on = withPath(BASE[t], f, true);
-        expect(materialChange(foldFingerprint(off), foldFingerprint(on))).toBe(MATERIAL_FIELDS[t].reason(f, 'turn_on'));
-        expect(materialChange(foldFingerprint(on), foldFingerprint(off))).toBeNull();
+      for (const { path, pair } of MATERIAL_FIELDS[t].arrivesWithPair) {
+        const key = pair.slice('set.'.length);
+        const off = withPath(BASE[t], path, undefined);
+        const on = withPath(BASE[t], path, true);
+        const solo = { [key]: false };
+        const paired = { [key]: true };
+        // The pair forms and the flag lands here: the ask changed on this card.
+        expect(materialChange(foldFingerprint(off, {}, solo), foldFingerprint(on, {}, paired))).toBe(
+          MATERIAL_FIELDS[t].reason(path, 'turn_on'),
+        );
+        // The pair already stood and the flag moved here from the other card: a window slide.
+        expect(materialChange(foldFingerprint(off, {}, paired), foldFingerprint(on, {}, paired))).toBeNull();
+        // It left this card, or the pair came apart.
+        expect(materialChange(foldFingerprint(on, {}, paired), foldFingerprint(off, {}, paired))).toBeNull();
+        expect(materialChange(foldFingerprint(on, {}, paired), foldFingerprint(off, {}, solo))).toBeNull();
+        // The pair formed but the flag landed on the OTHER card: nothing changed on this one.
+        expect(materialChange(foldFingerprint(off, {}, solo), foldFingerprint(off, {}, paired))).toBeNull();
+        // A stored fingerprint with no pair fact (an older build, or a fold written without the
+        // set) cannot tell an arrival from a hop, so it decides nothing.
+        expect(materialChange(foldFingerprint(off), foldFingerprint(on, {}, paired))).toBeNull();
+        walked++;
       }
     }
+    expect(walked).toBeGreaterThan(0);
+  });
+
+  it('a promote-only field re-opens on a promotion, and stays folded on a demotion or an unknown value', () => {
+    let walked = 0;
+    for (const t of TYPES) {
+      for (const { path, order } of MATERIAL_FIELDS[t].promoteOnly) {
+        for (let i = 0; i < order.length; i++) {
+          for (let j = 0; j < order.length; j++) {
+            const prev = foldFingerprint(withPath(BASE[t], path, order[i]));
+            const next = foldFingerprint(withPath(BASE[t], path, order[j]));
+            expect([t, path, order[i], order[j], materialChange(prev, next)]).toEqual([
+              t, path, order[i], order[j], j > i ? MATERIAL_FIELDS[t].reason(path, 'promote') : null,
+            ]);
+            walked++;
+          }
+        }
+        const top = foldFingerprint(withPath(BASE[t], path, order[order.length - 1]));
+        expect(materialChange(top, foldFingerprint(withPath(BASE[t], path, 'unknown-tier')))).toBeNull();
+        expect(materialChange(foldFingerprint(withPath(BASE[t], path, 'unknown-tier')), top)).toBeNull();
+      }
+    }
+    expect(walked).toBeGreaterThan(0);
   });
 
   it('FLIP ⇒ re-opens, for every any-change field of every type (in either direction)', () => {
@@ -447,6 +496,29 @@ describe('materialChange — the per-type table, walked as a property', () => {
   it('correlation: Early pattern → established says so', () => {
     const next = { ...correlation, tier: 'established' as const };
     expect(materialChange(foldFingerprint(correlation), foldFingerprint(next))).toBe('tier_established');
+  });
+
+  it('CUL-1273: a correlation DEMOTED to Early (prednisone capping it) stays folded — never "now established"', () => {
+    // The critique's counterexample: an established chicken card folded; a medication starts and
+    // caps it at Early. The old table named every tier change `tier_established`.
+    const established = { ...correlation, tier: 'established' as const };
+    expect(materialChange(foldFingerprint(established), foldFingerprint(correlation))).toBeNull();
+    // Through the reconcile: stays folded, and the fingerprint follows the tier down, so a later
+    // re-promotion is judged from Early and says so.
+    const key = foldIdentity(correlation);
+    let r = reconcileFolds({ [key]: foldedEntry(established, NOW) }, [correlation], NOW);
+    expect(r.entries[key].state).toBe('folded');
+    expect(r.entries[key].fingerprint.tier).toBe('early');
+    r = reconcileFolds(r.entries, [established], NOW);
+    expect(r.entries[key]).toMatchObject({ state: 'reopened', reason: 'tier_established' });
+  });
+
+  it('a folded chronicity card whose ask FIRMS UP still re-opens (the CUL-1273 fix narrows only the adjacency)', () => {
+    const firm = { ...chronicity, tier: 'firm' as const };
+    expect(materialChange(foldFingerprint(chronicity), foldFingerprint(firm))).toBe('ask_changed');
+    const key = foldIdentity(chronicity);
+    const r = reconcileFolds({ [key]: foldedEntry(chronicity, NOW) }, [firm], NOW);
+    expect(r.entries[key]).toMatchObject({ state: 'reopened', reason: 'ask_changed' });
   });
 
   it('red flag: a newer flagged photo re-opens; the same photo re-cached does not', () => {
@@ -548,7 +620,9 @@ describe('reconcileFolds', () => {
   it('the record witness rides reconcileFolds: a newer local episode re-opens the fold with NO change to the payload (offline)', () => {
     const ck = foldIdentity(chronicity);
     const foldDay = { lastEpisodeIso: '2026-09-03T08:00:00.000Z' };
-    const entries: PetFoldEntries = { [ck]: foldedEntry(chronicity, NOW, foldDay) };
+    // Folded as the hook folds it: with the set's facts (CUL-1273), so the reconcile has
+    // nothing to add and "nothing moved" means nothing moved.
+    const entries: PetFoldEntries = { [ck]: foldedEntry(chronicity, NOW, foldDay, setFactsFor(chronicity, [chronicity])) };
     // The same payload, the same day: nothing.
     expect(reconcileFolds(entries, [chronicity], NOW, () => foldDay).changed).toBe(false);
     // The owner logs a vomit; the regen has not landed; the record's newest instant moved.
@@ -559,7 +633,7 @@ describe('reconcileFolds', () => {
   it('a read that did not answer never erases the witness a fold holds (keepWitnesses)', () => {
     const ck = foldIdentity(chronicity);
     const foldDay = { lastEpisodeIso: '2026-09-03T08:00:00.000Z' };
-    let entries: PetFoldEntries = { [ck]: foldedEntry(chronicity, NOW, foldDay) };
+    let entries: PetFoldEntries = { [ck]: foldedEntry(chronicity, NOW, foldDay, setFactsFor(chronicity, [chronicity])) };
     // Transient store failure: the record reads null. Not a change, and the witness survives.
     let r = reconcileFolds(entries, [chronicity], NOW, () => ({ lastEpisodeIso: null }));
     expect(r.changed).toBe(false);
@@ -622,7 +696,7 @@ describe('reconcileFolds', () => {
 
   it('the refusing cat: a folded chronicity is untouched by intake decline arriving above it (FS-7), and never inherits its release', () => {
     const ck = foldIdentity(chronicity);
-    const entries: PetFoldEntries = { [ck]: foldedEntry(chronicity, NOW) };
+    const entries: PetFoldEntries = { [ck]: foldedEntry(chronicity, NOW, {}, setFactsFor(chronicity, [chronicity])) };
     // Intake decline fires at rank 0 (a new safety finding lands as a full card above the
     // strip); the chronicity fold is neither released nor re-keyed by it.
     const r = reconcileFolds(entries, [intake, chronicity], NOW);
@@ -636,6 +710,77 @@ describe('reconcileFolds', () => {
     const r = reconcileFolds(entries, [{ ...postprandial, rapidCount: 9 }, reflection], NOW);
     expect(r.entries[k2]).toBe(entries[k2]);
     expect(r.entries[key].state).toBe('reopened');
+  });
+});
+
+// ── CUL-1273 (BRK-12): the cough↔vomit leader swap ────────────────────────────
+//
+// The engine marks the pair's disclosure on whichever chronicity course LEADS, and the lead
+// swaps at unchanged counts as old onsets age out (7 times in 54 co-chronic evenings on the
+// dogfood replay). Keyed to the card's own flag, every swap re-opened the card it landed on
+// with "Back because the vet ask changed." Keyed to the pair, only the pair forming does.
+describe('CUL-1273 — the cough↔vomit note re-opens on the pair forming, never on a leader swap', () => {
+  const vomitCard: SymptomChronicityFinding = { ...chronicity, symptomType: 'vomit' };
+  const coughCard: SymptomChronicityFinding = { ...chronicity, symptomType: 'cough', episodeCount: 9 };
+  const vk = foldIdentity(vomitCard);
+  const ck = foldIdentity(coughCard);
+  const vomitLeads = [{ ...vomitCard, coughVomitAdjacent: true as const }, coughCard];
+  const coughLeads = [{ ...coughCard, coughVomitAdjacent: true as const }, vomitCard];
+
+  it('the pair fact is carried on BOTH cards, from the engine’s one mark, and on nothing else', () => {
+    expect(setFactsFor(vomitLeads[0], vomitLeads)).toEqual({ coughVomitPair: true });
+    expect(setFactsFor(vomitLeads[1], vomitLeads)).toEqual({ coughVomitPair: true });
+    expect(setFactsFor(vomitCard, [vomitCard])).toEqual({ coughVomitPair: false });
+    const diarrhea: SymptomChronicityFinding = { ...chronicity, symptomType: 'diarrhea' };
+    expect(setFactsFor(diarrhea, [...vomitLeads, diarrhea])).toEqual({});
+    expect(setFactsFor(postprandial, vomitLeads)).toEqual({});
+  });
+
+  it('a net-zero day that swaps the leader re-opens NEITHER folded card', () => {
+    // Both cards folded while vomiting led; the next regen, at identical counts, cough leads.
+    const entries: PetFoldEntries = {
+      [vk]: foldedEntry(vomitLeads[0], NOW, {}, setFactsFor(vomitLeads[0], vomitLeads)),
+      [ck]: foldedEntry(vomitLeads[1], NOW, {}, setFactsFor(vomitLeads[1], vomitLeads)),
+    };
+    const r = reconcileFolds(entries, coughLeads, NOW);
+    expect(r.entries[vk].state).toBe('folded');
+    expect(r.entries[ck].state).toBe('folded');
+    // And back again the day after: still folded.
+    const back = reconcileFolds(r.entries, vomitLeads, NOW);
+    expect(back.entries[vk].state).toBe('folded');
+    expect(back.entries[ck].state).toBe('folded');
+  });
+
+  it('the pair FORMING re-opens the card the note lands on, and only that card', () => {
+    // Vomiting folded alone; then the cough course turns chronic. The usual order: vomiting leads.
+    const soloFold: PetFoldEntries = { [vk]: foldedEntry(vomitCard, NOW, {}, setFactsFor(vomitCard, [vomitCard])) };
+    const formed = reconcileFolds(soloFold, vomitLeads, NOW);
+    expect(formed.entries[vk]).toMatchObject({ state: 'reopened', reason: 'ask_changed' });
+    // The unusual order: the NEW cough course leads, so the note lands on its (open) card and the
+    // folded vomiting card's face is unchanged. It stays folded.
+    const formedOther = reconcileFolds(soloFold, coughLeads, NOW);
+    expect(formedOther.entries[vk].state).toBe('folded');
+  });
+
+  it('the upgrade seam: a fold stored before the pair fact existed never re-opens on a swap', () => {
+    // An older build's fingerprint of the vomiting card while cough led: the flag's key (off),
+    // no `set.*` key. Then the lead swaps to vomiting at identical counts.
+    const legacy = foldFingerprint(vomitCard);
+    expect(legacy).toHaveProperty('coughVomitAdjacent', null);
+    expect(legacy).not.toHaveProperty('set.coughVomitPair');
+    const entries: PetFoldEntries = { [vk]: { state: 'folded', fingerprint: legacy, foldedAtIso: NOW } };
+    const r = reconcileFolds(entries, vomitLeads, NOW);
+    expect(r.entries[vk].state).toBe('folded');
+    // …and the reconcile writes the pair fact, so the next swap is judged with it.
+    expect(r.entries[vk].fingerprint['set.coughVomitPair']).toBe(true);
+  });
+
+  it('a fold written without the set leaves the pair UNKNOWN, never off (so a swap cannot read as the pair forming)', () => {
+    // The vomiting card folded while cough led, by a caller with no set in hand.
+    const blind = foldedEntry(vomitCard, NOW);
+    expect(blind.fingerprint).not.toHaveProperty('set.coughVomitPair');
+    const r = reconcileFolds({ [vk]: blind }, vomitLeads, NOW);
+    expect(r.entries[vk].state).toBe('folded');
   });
 });
 
