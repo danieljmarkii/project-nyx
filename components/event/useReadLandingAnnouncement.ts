@@ -66,6 +66,10 @@ import { AccessibilityInfo } from 'react-native';
 /** The stage's report channel: what the landed section says, or null while it waits. */
 export interface ReadLandingAnnouncer {
   note: (line: string | null) => void;
+  /** The host is about to show a read the owner has not been shown, outside a wait it can
+   *  rely on committing (a failed re-run's restore — see the sections' `handleRetry`). The
+   *  next movement of the row is a landing, however React batches the writes around it. */
+  expectLanding: () => void;
 }
 
 /** What is spoken when a read lands: the section's own label, then its first line. */
@@ -121,6 +125,12 @@ export function useReadLandingAnnouncement({
   //   · an armed quiet end, then the owner's own writes, then one more in-flight tick that
   //     reads the row those writes bumped, re-speaks the CURRENT verdict once. Never a
   //     stale or unseen one — the line is what the screen shows.
+  // And from round 4: `handleRetry` writes whole rows, so a late tick from an EARLIER watch
+  // that lands during the re-run's re-base read can be overwritten by the older row (M2);
+  // `showsSameRead` ignores the observation fields, so a new finding under an unchanged
+  // verdict lands silently through a skipped re-run (M4 — the audio never carries
+  // observations, only the verdict line); and a legacy `status: 'pending'` row as the
+  // re-base read could re-park a failed re-run (M5 — the server never writes `pending`).
   //
   // A QUIET END STAYS ARMED. The watch's give-up can race one last in-flight re-read: the
   // wait has already ended silently when that read commits a Worth a call, and a one-shot
@@ -135,34 +145,52 @@ export function useReadLandingAnnouncement({
     awaiting: awaitingRead,
     waitVersion: awaitingRead ? version : null,
     armed: false,
+    // The marker as of the last commit this effect saw, so `expectLanding` (called from a
+    // handler, between commits) can arm against it.
+    version,
   });
   useLayoutEffect(() => {
     const prev = seen.current;
     if (prev.identity !== identity) {
-      seen.current = { identity, awaiting: awaitingRead, waitVersion: awaitingRead ? version : null, armed: false };
+      seen.current = { identity, awaiting: awaitingRead, waitVersion: awaitingRead ? version : null, armed: false, version };
       return;
     }
     if (awaitingRead) {
-      // A wait begins (re-based on the row it began over), or continues (the baseline
-      // holds, whatever the row does mid-wait).
-      seen.current = prev.awaiting ? prev : { identity, awaiting: true, waitVersion: version, armed: false };
+      // A wait begins (re-based on the row it began over, and disarmed), or continues (the
+      // baseline holds, whatever the row does mid-wait).
+      seen.current = prev.awaiting
+        ? { ...prev, version }
+        : { identity, awaiting: true, waitVersion: version, armed: false, version };
       return;
     }
     if (!prev.awaiting && !prev.armed) {
-      seen.current = prev;
+      seen.current = { ...prev, version };
       return;
     }
     if (version === prev.waitVersion) {
       // Ended with nothing written: silent, and armed for a late write.
-      seen.current = { identity, awaiting: false, waitVersion: prev.waitVersion, armed: true };
+      seen.current = { identity, awaiting: false, waitVersion: prev.waitVersion, armed: true, version };
       return;
     }
-    seen.current = { identity, awaiting: false, waitVersion: version, armed: false };
+    seen.current = { identity, awaiting: false, waitVersion: version, armed: false, version };
     if (line.current) AccessibilityInfo.announceForAccessibility(readLandedCopy(line.current));
   }, [awaitingRead, identity, version]);
+
+  // THE EXPLICIT HALF (adversarial round 4, F1). A failed re-run marks the row pending and
+  // then restores the server's copy; if React batches those two writes into one commit the
+  // wait never rises and never falls, and a read the owner has not seen lands unspoken.
+  // It holds today only because the trigger always crosses a native task first — a
+  // client-side fast-fail (a cap pre-check) would break it silently. So the host says so:
+  // arm against the last committed marker, and the next movement speaks. Inside a wait the
+  // fall already owns the baseline and this changes nothing.
+  const expectLanding = useCallback(() => {
+    const cur = seen.current;
+    if (cur.awaiting) return;
+    seen.current = { ...cur, armed: true, waitVersion: cur.version };
+  }, []);
 
   // Stable across renders: the stage keys its report effects on this object, and a fresh
   // one every render would run the unmount report (null) and the current one on every
   // commit rather than once.
-  return useMemo(() => ({ note }), [note]);
+  return useMemo(() => ({ note, expectLanding }), [note, expectLanding]);
 }

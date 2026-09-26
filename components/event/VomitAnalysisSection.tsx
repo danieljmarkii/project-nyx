@@ -286,9 +286,16 @@ export function VomitAnalysisSection(
       // The re-run never started, so the pending mark comes off — before CUL-1275 it
       // stayed, parking the section on "Reading the photo…" with nothing watching and a
       // stored Worth a call out of sight for the rest of the visit. Back onto the SERVER's
-      // copy when there is one: if it says something the owner has not seen, the screen
-      // shows it, and the wait's fall speaks it.
-      if (base) setRow(fresh ?? base);
+      // copy when there is one — including from the not-enough frame, whose "Not enough to
+      // say" is not a read (CUL-820) — keeping the owner's own latest Hide / Show, which
+      // may not have reached the server yet. A read the owner has not been shown is a
+      // landing, and is told to the announcer outright rather than left to the pending
+      // write and this one committing apart (adversarial round 4, F1).
+      const back = fresh ? { ...fresh, dismissed_at: shown ? shown.dismissed_at : fresh.dismissed_at } : base;
+      if (back) {
+        if (fresh && !(shown && showsSameRead(fresh, shown))) announcer.expectLanding();
+        setRow(back);
+      }
       Alert.alert('Could not start analysis', 'Try again in a moment.');
       return;
     }

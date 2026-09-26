@@ -33,6 +33,26 @@ jest.mock('../../lib/analysis', () => ({
   normalizeVomitEdits: jest.fn((x: unknown) => x),
 }));
 jest.mock('./VomitFieldsEditor', () => ({ VomitFieldsEditor: () => null }));
+// CUL-1275 (adversarial round 4, F1) — the REAL announcer, with `expectLanding` recorded on
+// the way through. The section's call to it matters only when React batches a failed
+// re-run's two writes into one commit, which an `act`-driven test never does (each step
+// flushes apart), so the call itself is what these tests can pin. Behaviour is the real
+// hook's: this wraps, it does not replace (C-34).
+const mockExpectLanding = jest.fn();
+jest.mock('./useReadLandingAnnouncement', () => {
+  const actual = jest.requireActual('./useReadLandingAnnouncement');
+  const { useMemo } = jest.requireActual('react');
+  return {
+    ...actual,
+    useReadLandingAnnouncement: (args: unknown) => {
+      const real = actual.useReadLandingAnnouncement(args);
+      return useMemo(
+        () => ({ note: real.note, expectLanding: () => { mockExpectLanding(); real.expectLanding(); } }),
+        [real],
+      );
+    },
+  };
+});
 jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -992,6 +1012,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
 
   it('a FAILED re-run trigger never parks the section on "Reading the photo…" over a stored Worth a call (R3)', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockExpectLanding.mockClear();
     (triggerVomitAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'FunctionsHttpError: 500' });
     mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-20T09:00:00.000Z' });
     const view = render(<VomitAnalysisSection eventId="an-18" petId="pet-1" petName="Rex" hasPhoto />);
@@ -1001,6 +1022,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(view.queryByText('Reading the photo…')).toBeNull();
     expect(announce).not.toHaveBeenCalled(); // nothing new: back to what the owner saw
+    expect(mockExpectLanding).not.toHaveBeenCalled(); // and nothing expected: the same read
     alert.mockRestore();
   });
 
@@ -1011,26 +1033,51 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     const view = render(<VomitAnalysisSection eventId="an-19" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await view.findByText('Keep an eye out')).toBeTruthy();
     mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T11:00:00.000Z' });
+    mockExpectLanding.mockClear();
     await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
     expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    // Told outright, so a batched commit cannot drop it (F1).
+    expect(mockExpectLanding).toHaveBeenCalledTimes(1);
     alert.mockRestore();
   });
 
-  it('a failed trigger from the not-enough frame keeps the frame and its retry (R4)', async () => {
+  it('a failed trigger from the not-enough frame shows the SERVER’s read, and speaks it (R4, M1)', async () => {
+    // "Not enough to say about this one yet" after a give-up is not a read (CUL-820). The
+    // re-run's own fetch found the real row; a failed trigger shows it rather than
+    // throwing it away, and never parks on the pending box.
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     mockRow = null;
     const view = render(<VomitAnalysisSection eventId="an-20" petId="pet-1" petName="Rex" hasPhoto />);
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     const onGiveUp = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![2] as () => void;
     await act(async () => { onGiveUp(); });
-    mockRow = row({ recommendation: 'monitor', read_text: 'Yellow.', updated_at: '2026-09-26T10:00:00.000Z' });
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T10:00:00.000Z' });
     (triggerVomitAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'offline' });
     const tryIt = await view.findByText('Try analysis');
     await act(async () => { fireEvent.press(tryIt); });
     await waitFor(() => expect(alert).toHaveBeenCalledWith('Could not start analysis', 'Try again in a moment.'));
-    expect(await view.findByText('Try analysis')).toBeTruthy();
+    expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(view.queryByText('Reading the photo…')).toBeNull();
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    alert.mockRestore();
+  });
+
+  it('the owner’s own in-flight Show survives a failed trigger’s restore (M3)', async () => {
+    // Show, then Re-run before the Show reached the server: the server's copy still says
+    // hidden. The restore must not put the note back behind "AI note hidden".
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const hidden = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', dismissed_at: '2026-09-19T08:00:00.000Z', updated_at: '2026-09-20T09:00:00.000Z' });
+    mockRow = hidden;
+    const view = render(<VomitAnalysisSection eventId="an-21" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Show'));
+    mockRow = hidden; // the Show's write has not landed server-side yet
+    (triggerVomitAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'FunctionsHttpError: 500' });
+    const rerun = await view.findByText('Re-run analysis');
+    await act(async () => { fireEvent.press(rerun); });
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(view.queryByText('AI note hidden')).toBeNull();
     alert.mockRestore();
   });
 

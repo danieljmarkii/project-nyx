@@ -28,10 +28,14 @@ function Stage({ announcer, line }: { announcer: ReadLandingAnnouncer; line: str
 // are not about it read as "the row moved"; the cases that ARE about it pass it explicitly.
 let tick = 0;
 function Host({
-  awaiting, id, line, v,
-}: { awaiting: boolean; id: string; line: string | null; v?: string | null }) {
+  awaiting, id, line, v, onAnnouncer,
+}: {
+  awaiting: boolean; id: string; line: string | null; v?: string | null;
+  onAnnouncer?: (a: ReadLandingAnnouncer) => void;
+}) {
   const version = v === undefined ? `t${(tick += 1)}` : v;
   const announcer = useReadLandingAnnouncement({ awaitingRead: awaiting, identity: id, version });
+  onAnnouncer?.(announcer);
   return line === null ? null : <Stage announcer={announcer} line={line} />;
 }
 
@@ -149,5 +153,33 @@ describe('useReadLandingAnnouncement', () => {
     view.rerender(<Host awaiting={false} id="e1" line={null} v={null} />);
     view.rerender(<Host awaiting={false} id="e1" line={null} v={null} />);
     expect(announce).not.toHaveBeenCalled();
+  });
+
+  // ── The fourth adversarial pass (CUL-1275, F1) ─────────────────────────────
+  // A failed re-run writes the pending mark and then restores the server's copy. When
+  // React batches the two into ONE commit (a trigger that fails without crossing a native
+  // task), the wait never rises or falls. These drive exactly that commit.
+  it('a batched restore with NO rise or fall is silent — the gap `expectLanding` exists for', () => {
+    const view = render(<Host awaiting={false} id="e1" line="Keep an eye out" v="t0" />);
+    view.rerender(<Host awaiting={false} id="e1" line="Worth a call" v="t1" />);
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('`expectLanding` makes that same batched restore a landing, spoken once', () => {
+    let a: ReadLandingAnnouncer | null = null;
+    const view = render(<Host awaiting={false} id="e1" line="Keep an eye out" v="t0" onAnnouncer={(x) => { a = x; }} />);
+    a!.expectLanding();
+    view.rerender(<Host awaiting={false} id="e1" line="Worth a call" v="t1" />);
+    view.rerender(<Host awaiting={false} id="e1" line="Worth a call" v="t2" />);
+    expect(announce.mock.calls).toEqual([[readLandedCopy('Worth a call')]]);
+  });
+
+  it('`expectLanding` inside a wait changes nothing — the fall owns it, no double speech', () => {
+    let a: ReadLandingAnnouncer | null = null;
+    const view = render(<Host awaiting={false} id="e1" line="Keep an eye out" v="t0" onAnnouncer={(x) => { a = x; }} />);
+    view.rerender(<Host awaiting id="e1" line={null} v="t0" />);
+    a!.expectLanding();
+    view.rerender(<Host awaiting={false} id="e1" line="Worth a call" v="t1" />);
+    expect(announce.mock.calls).toEqual([[readLandedCopy('Worth a call')]]);
   });
 });

@@ -36,6 +36,23 @@ jest.mock('../../lib/analysis', () => ({
   normalizeStoolEdits: jest.fn((x: unknown) => x),
 }));
 jest.mock('./StoolFieldsEditor', () => ({ StoolFieldsEditor: () => null }));
+// CUL-1275 (F1) — the real announcer, `expectLanding` recorded on the way through (see the
+// vomit suite for why the call itself is what an act-driven test can pin).
+const mockExpectLanding = jest.fn();
+jest.mock('./useReadLandingAnnouncement', () => {
+  const actual = jest.requireActual('./useReadLandingAnnouncement');
+  const { useMemo } = jest.requireActual('react');
+  return {
+    ...actual,
+    useReadLandingAnnouncement: (args: unknown) => {
+      const real = actual.useReadLandingAnnouncement(args);
+      return useMemo(
+        () => ({ note: real.note, expectLanding: () => { mockExpectLanding(); real.expectLanding(); } }),
+        [real],
+      );
+    },
+  };
+});
 jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
 import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
@@ -601,6 +618,21 @@ describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
     await waitFor(() => expect(alert).toHaveBeenCalled());
     expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(view.queryByText('Reading the photo…')).toBeNull();
+    alert.mockRestore();
+  });
+
+  it('a failed trigger that uncovers an UNSEEN Worth a call shows it, speaks it, and says so outright (F1)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockExpectLanding.mockClear();
+    (triggerStoolAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'FunctionsHttpError: 500' });
+    mockRow = row({ recommendation: 'monitor', read_text: 'Formed.', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<StoolAnalysisSection eventId="as-7" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T11:00:00.000Z' });
+    await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(mockExpectLanding).toHaveBeenCalledTimes(1);
     alert.mockRestore();
   });
 

@@ -59,6 +59,16 @@ Each card speaks its summary node's own label, only while shown, keyed on the ev
   * **Residuals** (stated in the hook):
     * R5: a failed re-base read plus a succeeding, skipped trigger can re-speak the current verdict (same root as CUL-1324).
     * R7: an armed quiet end, then the owner's own writes, then one late tick re-speaks the CURRENT verdict once. Never a stale or unseen one.
+* **`adversarial-reviewer`, round 4** (on the round-3 correction): **HOLDS.** No path remains where a verdict the owner has not been shown ends up on screen unspoken.
+  * **F1, pinned before merge:** after a failed trigger, the announcement of an unseen read depended on the pending write and the restore committing apart. That holds today because the trigger crosses a native task, but a client-side fast-fail would batch them. **Fix:** `announcer.expectLanding()`. It is proven at the hook by a test that drives the merged render `act` cannot produce, and the section's call is pinned by wrapping the real hook (`jest.requireActual`).
+  * **Taken alongside:**
+    * M1: a failed trigger from the not-enough frame shows the server's read instead of keeping CUL-820's false "Not enough to say".
+    * M3: the owner's own in-flight Show or Hide survives the restore.
+  * **Residuals** (stated in the hook):
+    * M2: whole-row writes can overwrite a late tick from an earlier watch.
+    * M4: `showsSameRead` ignores observations, and the audio never carries them.
+    * M5: a legacy `pending` row as the re-base read.
+* **`adversarial-reviewer`, round 5** (on the round-4 correction): see the CUL-1275 outcome comment.
 * **`code-reviewer`: ship-ready.** One cleanup, taken: a `new Date(x ?? 0)` epoch fallback left by hoisting the header's words above the early return. It was inert, but one refactor away from a 1970 time on screen.
 
 ## Residuals and follow-ups
