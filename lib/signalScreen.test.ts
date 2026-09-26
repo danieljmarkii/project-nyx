@@ -165,7 +165,6 @@ describe('buildSignalScreenModel — the mock’s Thursday', () => {
     expect(model.sentence).toMatch(/^Nyx has vomited 21 times/);
     expect(model.noun).toBe('vomiting');
     expect(model.safety).toBe(true);
-    expect(model.foldable).toBe(true);
     expect(model.identity).toBe('symptom_chronicity:vomit');
   });
 
@@ -383,7 +382,6 @@ describe('other findings', () => {
     expect(model.episodes).toBeNull();
     expect(model.why.length).toBeGreaterThanOrEqual(1);
     expect(model.why.join(' ')).not.toMatch(/Two windows/);
-    expect(model.foldable).toBe(false);
   });
 
   it('the trial card counts vomiting and names the trial', () => {

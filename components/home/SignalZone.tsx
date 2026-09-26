@@ -942,6 +942,11 @@ function LiveStack({
         // finding HAS a strip — `stripRenderable`, the same predicate `FoldedStrip` refuses on —
         // so a finding is never dropped for want of a strip (FS-7), and a SAFETY finding folds
         // only when its strip can say its ask (FS-3): otherwise the open card renders.
+        //
+        // CUL-1285 (PM-ruled 2026-09-26): there is no fold under Design v2 — every card is
+        // already a row. The two design_v2 branches below take no fold state at all (their
+        // props have none, so the types hold it), and a stored fold only ever reaches the
+        // shipped `InsightCard`.
         const folded = fold.stateOf(f.finding) === 'folded' && stripRenderable(f.finding, { lastEpisodeIso });
         const row = (
           <>
@@ -955,30 +960,14 @@ function LiveStack({
                 The canvas goes to the first card (`leadIndex`, above). */}
             {isStoodDown(f.finding) ? (
               <StoodDownLine text={f.text} />
-            ) : designV2 && onOpen && petId && !folded && i === leadIndex && f.finding.priorityClass === 'insight' ? (
+            ) : designV2 && onOpen && petId && i === leadIndex && f.finding.priorityClass === 'insight' ? (
               // D2-3: the lead insight card is the title + chart + line, and a door.
-              <SignalLeadCard
-                cached={f}
-                petId={petId}
-                onOpen={onOpen}
-                backBecause={fold.backBecauseOf(f.finding)}
-                onTouch={fold.touch}
-              />
+              <SignalLeadCard cached={f} petId={petId} onOpen={onOpen} />
             ) : designV2 && onOpen && petId ? (
-              // CUL-1270 (D1 = B): every other card — a safety lead, every lower card, and
-              // every folded card — is a row: headline, the ask, a chevron, a door to its own
-              // screen. A safety row stays words (S1) and keeps its ask folded or not; a
-              // folded row is its headline (and ask), and still opens its screen.
-              <SignalRow
-                cached={f}
-                petId={petId}
-                onOpen={onOpen}
-                isLead={i === leadIndex}
-                folded={folded}
-                backBecause={fold.backBecauseOf(f.finding)}
-                onTouch={fold.touch}
-                lastEpisodeIso={lastEpisodeIso}
-              />
+              // CUL-1270 (D1 = B): every other card — a safety lead and every lower card — is
+              // a row: headline, the ask, a chevron, a door to its own screen. A safety row
+              // stays words (S1) and always carries its ask.
+              <SignalRow cached={f} petId={petId} onOpen={onOpen} isLead={i === leadIndex} />
             ) : (
               // CUL-788: the card renders its own strip when `folded` — one row, one rail,
               // so the fold motion has a single continuous node to hold (§12). The host

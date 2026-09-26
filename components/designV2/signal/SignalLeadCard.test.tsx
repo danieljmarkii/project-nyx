@@ -94,8 +94,7 @@ describe('SignalLeadCard — a benign lead', () => {
 
   it('the face is ONE door: it opens, never folds, never expands; the label is the title and the line', async () => {
     const onOpen = jest.fn();
-    const onTouch = jest.fn();
-    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" onOpen={onOpen} onTouch={onTouch} />);
+    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" onOpen={onOpen} />);
     await waitFor(() => expect(view.getByTestId('signal-lead-face')).toBeTruthy());
     const face = view.getByTestId('signal-lead-face');
     expect(face.props.accessibilityHint).toBe(DOOR_A11Y_HINT);
@@ -103,7 +102,6 @@ describe('SignalLeadCard — a benign lead', () => {
     fireEvent.press(face);
     // The door measures first (D2-6) — the platform's answer, or the grace, then the open.
     await waitFor(() => expect(onOpen).toHaveBeenCalledWith(reflection.finding));
-    expect(onTouch).toHaveBeenCalledWith(reflection.finding);
     expect(view.queryByTestId('insight-fold-control')).toBeNull();
     expect(view.queryByTestId('insight-evidence-control')).toBeNull();
     expect(view.queryByTestId('insight-folded-strip')).toBeNull();

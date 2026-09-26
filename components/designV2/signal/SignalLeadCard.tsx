@@ -8,7 +8,6 @@ import type { CachedFinding, PriorityClass, SignalFinding } from '../../../lib/s
 import { foldIdentity } from '../../../lib/signalFold';
 import { loadSignalLead, type SignalLeadModel } from '../../../lib/signalLead';
 import { WeeklyBars } from '../../charts/WeeklyBars';
-import type { BackBecauseReason } from '../../../lib/signalFold';
 import { RAIL_WIDTH } from '../../home/InsightCard';
 import { FLIGHT_ENABLED, FLIGHT_MOTION, flightActiveFor, retargetSource, stageFlight, useFlightState } from '../../motion/flightMotion';
 import { Skeleton } from '../../ui/Skeleton';
@@ -23,8 +22,8 @@ import { DOOR_A11Y_HINT, SignalRow } from './SignalRow';
 //   2 this week so far · 3 last week            ← `weekLine`, read off the same buckets
 //
 // THE FACE IS A DOOR. One `Pressable`, one verb: it opens the Signal's own screen and
-// never folds, never expands (the fold spec §3's face tap, amended on round 3 — the
-// control moved to the screen and the strip). No control row, no chevron in the words.
+// never expands. No control row; the chevron sits beside the title (CUL-1270). There is no
+// fold under Design v2 (CUL-1285).
 //
 // S1 HOLDS: a SAFETY finding does not take this canvas. It renders the Signal row
 // (`SignalRow`, CUL-1270) — the headline and the ask in words, no chart — with the same
@@ -75,13 +74,11 @@ interface Props {
   /** The pet the findings belong to (C-9) — the zone's `petId`, never the store's active pet. */
   petId: string;
   onOpen: (finding: SignalFinding) => void;
-  backBecause?: BackBecauseReason | null;
-  onTouch?: (finding: SignalFinding) => void;
 }
 
 type Load = { status: 'loading' } | { status: 'ready'; model: SignalLeadModel } | { status: 'failed' };
 
-export function SignalLeadCard({ cached, petId, onOpen, backBecause = null, onTouch }: Props) {
+export function SignalLeadCard({ cached, petId, onOpen }: Props) {
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
   const signalTick = useSyncStore((s) => s.signalTick);
   const identity = foldIdentity(cached.finding);
@@ -134,7 +131,7 @@ export function SignalLeadCard({ cached, petId, onOpen, backBecause = null, onTo
 
   // S1: a safety lead is the plain row, with the door. The fallback is the same.
   if (safety || load.status === 'failed') {
-    return <SignalRow cached={cached} petId={petId} onOpen={onOpen} isLead backBecause={backBecause} onTouch={onTouch} />;
+    return <SignalRow cached={cached} petId={petId} onOpen={onOpen} isLead />;
   }
 
   const rail = RAIL_COLOR[cached.finding.priorityClass];
@@ -155,10 +152,7 @@ export function SignalLeadCard({ cached, petId, onOpen, backBecause = null, onTo
   const { model } = load;
   const label = model.line ? `${model.title}. ${model.line}.` : `${model.title}.`;
   const chart = model.weekly && model.noun ? <WeeklyBars model={model.weekly} noun={model.noun} identity={identity} /> : null;
-  const open = () => {
-    onTouch?.(cached.finding);
-    onOpen(cached.finding);
-  };
+  const open = () => onOpen(cached.finding);
   const press = () => {
     if (!FLIGHT_ENABLED || reducedMotion || !chart) {
       open();

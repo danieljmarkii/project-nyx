@@ -134,7 +134,7 @@ export function signalTitle(finding: SignalFinding, trial: SignalTrialWindow | n
     case 'food_symptom_correlation':
       // The pairing is the claim: a sequence observed ("after"), never an attribution. A
       // joint candidate names every member (the label already does). The early tier says it
-      // is early IN the title — the one line a folded row keeps (adversarial pass).
+      // is early IN the title, which every surface naming the finding prints (adversarial pass).
       return `${symptomThing(finding.symptomType)} after ${finding.protein}${finding.tier === 'early' ? ', an early pattern' : ''}`;
     case 'stood_down':
       // Not a card and never a door: it keeps D2-3's thing-and-window form.

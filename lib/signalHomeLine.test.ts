@@ -458,18 +458,12 @@ describe('the row’s words', () => {
 describe('the spoken label', () => {
   it('says every line, the eyebrow’s dot as a comma, and the ask with a capital', () => {
     const [redFlag] = redFlags();
-    expect(signalHomeLabel(line(redFlag), false)).toBe('Photo read, Sep 22. Possible blood in a vomit photo. Worth a call to your vet.');
+    expect(signalHomeLabel(line(redFlag))).toBe('Photo read, Sep 22. Possible blood in a vomit photo. Worth a call to your vet.');
   });
 
-  it('a folded row speaks the date it keeps', () => {
-    const f = chronicities('vomit')[0];
-    expect(signalHomeLabel(line(f), true, 'September 24')).toBe('Vomiting in 1 of the last 8 weeks. Last episode September 24. Worth a word with your vet.');
-  });
-
-  it('a folded row still speaks its ask — never behind a tap, for any reader', () => {
-    const f = chronicities('vomit')[0];
-    const label = signalHomeLabel(line(f), true);
-    expect(label).toContain(askStandalone(line(f).ask as string));
-    expect(label).not.toContain('since');
+  it('every safety row speaks its ask — never behind a tap, for any reader', () => {
+    for (const f of everyFinding().filter((x) => x.priorityClass === 'safety')) {
+      expect(signalHomeLabel(line(f))).toContain(askStandalone(line(f).ask as string));
+    }
   });
 });

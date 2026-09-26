@@ -25,7 +25,7 @@ jest.mock('../../hooks/useSignalFold', () => {
   return {
     useSignalFold: () => ({
       stateOf: (f: never) => (mockFolded.has(foldIdentity(f)) ? 'folded' : 'open'),
-      backBecauseOf: () => null,
+      backBecauseOf: (f: never) => (mockFolded.has(`back:${foldIdentity(f)}`) ? 'new_episode' : null),
       fold: jest.fn(),
       unfold: jest.fn(),
       touch: jest.fn(),
@@ -243,27 +243,36 @@ describe('flag-on', () => {
     expect(gap).toBeGreaterThanOrEqual((link.props.hitSlop as { top: number }).top + 0);
   });
 
-  it('a folded card collapses to its headline (and its ask) and still opens its screen', async () => {
+  it('there is no fold under Design v2 (CUL-1285): a stored fold is ignored and the card renders in full', async () => {
     mockFolded.add('symptom_chronicity:vomit');
+    mockFolded.add('back:postprandial_timing:vomit');
     mockUseSignal.mockReturnValue(state([redFlag, chronicityRow, timing]));
     const view = render(<SignalZone />);
     const rows = view.getAllByTestId('signal-row');
     expect(rows).toHaveLength(3);
-    // The folded row keeps its headline and its ask; the count line is the screen's.
-    expect(rows[1].props.accessibilityLabel).toBe('Vomiting in 5 of the last 8 weeks. Worth a word with your vet.');
-    expect(view.queryByText(/episodes since August/)).toBeNull();
-    // The shipped strip never draws under the flag, and a tap opens the screen — it does not unfold.
+    // The folded chronicity card is its full row: headline, count, ask.
+    expect(rows[1].props.accessibilityLabel).toBe('Vomiting in 5 of the last 8 weeks. 14 episodes since August. Worth a word with your vet.');
+    expect(view.getByText(/14 episodes since August/)).toBeTruthy();
+    // No shipped strip, no "Back because" line (the fold's re-open reason is the fold's).
     expect(view.queryByTestId('insight-folded-strip')).toBeNull();
-    fireEvent.press(rows[1]);
-    expect(router.push).toHaveBeenCalledWith('/signal/symptom_chronicity%3Avomit?pet=pet-1');
+    expect(view.queryByText(/Back because/)).toBeNull();
+    expect(rows[2].props.accessibilityLabel).not.toMatch(/Back because/);
   });
 
-  it('a folded card holds its rank: nothing below it inherits the lead', async () => {
-    mockFolded.add('incident_red_flag:vomit');
-    mockUseSignal.mockReturnValue(state([redFlag, benignLead]));
+  it('a stored fold on the benign lead does not demote it: it keeps the lead card', async () => {
+    mockFolded.add('reflection:vomit');
+    mockUseSignal.mockReturnValue(state([benignLead, secondary]));
     const view = render(<SignalZone />);
-    expect(view.queryByTestId('signal-lead-card')).toBeNull();
-    expect(view.getAllByTestId('signal-row-headline')[0].props.children).toBe('Possible foreign material in a vomit photo');
+    await waitFor(() => expect(view.getByTestId('signal-lead-card')).toBeTruthy());
+  });
+
+  it('flag-off, the shipped fold still works: a stored fold draws the shipped strip', () => {
+    mockUseDesignV2.mockReturnValue(false);
+    mockFolded.add('symptom_chronicity:vomit');
+    mockUseSignal.mockReturnValue(state([redFlag, chronicityRow, timing]));
+    const view = render(<SignalZone />);
+    expect(view.getByTestId('insight-folded-strip')).toBeTruthy();
+    mockUseDesignV2.mockReturnValue(true);
   });
 
   it('a safety lead is a row (S1) — no chart, no lead read — with its own door', async () => {

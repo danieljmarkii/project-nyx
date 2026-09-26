@@ -49,7 +49,7 @@ import { drugDisplayName } from './medications';
 import { readFeedingRows, readFreeFedSpans, TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import { readSignalCache, type CachedFinding, type SignalFinding } from './signal';
 import { evidenceText, hasBannedSignalVocabulary, symptomWord } from './signalCopy';
-import { canFold, foldIdentity } from './signalFold';
+import { foldIdentity } from './signalFold';
 import { signalTitle } from './signalTitle';
 import {
   signalCompare,
@@ -154,8 +154,6 @@ export interface SignalScreenModel {
   episodes: SignalScreenEpisodes | null;
   /** *Why this is a Signal* — the lines, in order. */
   why: string[];
-  /** The screen offers *Keep it compact on Home* only for a class that folds. */
-  foldable: boolean;
   /** The Home card is plain text for these (S1); the screen carries the phone script. */
   safety: boolean;
 }
@@ -377,7 +375,6 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
       lanes: null,
       episodes: null,
       why: whyLines(input, null),
-      foldable: canFold(finding),
       safety,
     };
   }
@@ -418,7 +415,6 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     lanes,
     episodes: galleryOf(inWeeks, input.verdicts, weekly.weeks.length),
     why: whyLines(input, compare),
-    foldable: canFold(finding),
     safety,
   };
 }

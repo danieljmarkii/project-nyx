@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../../constants/theme';
 import type { CachedFinding, PriorityClass, ReflectionFinding, SignalFinding } from '../../../lib/signal';
-import { backBecauseCopy, type CompareRow, dotLaneModel, isTimingFinding, stripDayLocal, timingCompareRows, timingReceiptDegrades } from '../../../lib/signalCopy';
-import type { BackBecauseReason } from '../../../lib/signalFold';
+import { type CompareRow, dotLaneModel, isTimingFinding, timingCompareRows, timingReceiptDegrades } from '../../../lib/signalCopy';
 import { askStandalone, signalHomeLabel, signalHomeLine } from '../../../lib/signalHomeLine';
 import { loadSignalRowTrial } from '../../../lib/signalLead';
 import type { SignalTrialWindow } from '../../../lib/signalWindows';
@@ -22,18 +21,22 @@ import { ThemedText } from '../../ui/ThemedText';
 //   [ the timing lane, miniature ]                       ← insight rows only (never safety)
 //   9 of 10 timed episodes within 30 min of eating
 //
-// THE ROW IS A DOOR. One `Pressable`, one verb: it opens the finding's own screen, folded
-// or not. It never folds and never expands (the fold spec's face tap; the fold control is
-// the screen's). The chevron is what makes a lower card LOOK like a door — the PM's device
+// THE ROW IS A DOOR. One `Pressable`, one verb: it opens the finding's own screen, and
+// never expands. The chevron is what makes a lower card LOOK like a door — the PM's device
 // reaction was that nothing below the lead did.
+//
+// THERE IS NO FOLD UNDER DESIGN V2 (CUL-1285, PM-ruled 2026-09-26): every card is already a
+// row, so "Keep it compact" had almost nothing left to compact and no mark on Home to say it
+// had. A fold stored by the shipped surface is ignored here; the flag-off fold is untouched
+// until the design_v2 GA deletes it.
 //
 // S1 HOLDS, AND IS STRUCTURAL HERE: a safety row never draws a thumbnail — the branch that
 // draws one is guarded on `priorityClass === 'insight'` and `SignalRow.test.tsx` asserts no
 // chart node on every safety type. Plain means words, not length: a safety row is the
 // headline and the ask, and the full sentence lives on the finding's screen.
 //
-// THE ASK NEVER GOES BEHIND A TAP. A safety row prints its ask whether or not it is folded
-// (clinical-guardrails), in the symptom ink, and its spoken label carries it too.
+// THE ASK NEVER GOES BEHIND A TAP. A safety row always prints its ask (clinical-guardrails),
+// in the symptom ink, and its spoken label carries it too.
 //
 // THE THUMBNAIL IS DRAWN FROM THE FINDING, not from a second read of the record, so the
 // picture and the line beside it can never disagree (the PM's ruling on CUL-1270, build
@@ -65,18 +68,9 @@ interface Props {
   onOpen: (finding: SignalFinding) => void;
   /** The top card of the zone: the headline takes the display face. */
   isLead?: boolean;
-  /** The reader compacted this card from its screen: the headline and the ask only. */
-  folded?: boolean;
-  /** Present when the RECORD re-opened this card (DF-8): the one line that says why. */
-  backBecause?: BackBecauseReason | null;
-  /** Any owner touch clears a Back-because line (fold spec §5.3). */
-  onTouch?: (finding: SignalFinding) => void;
-  /** The record's most recent episode of this finding's symptom (fold spec §3.4) — a folded
-   *  STANDING safety row keeps its date, a DATE and never a counter. Null / absent: no date. */
-  lastEpisodeIso?: string | null;
 }
 
-export function SignalRow({ cached, petId, onOpen, isLead = false, folded = false, backBecause = null, onTouch, lastEpisodeIso = null }: Props) {
+export function SignalRow({ cached, petId, onOpen, isLead = false }: Props) {
   const { finding } = cached;
   // The trial card names the local trial's identity and day, as its screen does; every
   // other claim is the same claim on a trial day, so no other row reads it.
@@ -98,48 +92,34 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, folded = fals
   if (!line) return null;
 
   const safety = finding.priorityClass === 'safety';
-  const backLine = backBecause ? backBecauseCopy(backBecause) : null;
-  // Folded, a safety row keeps what the fold spec keeps on a safety strip: its ask, its date
-  // (the photo read's eyebrow; a standing concern's last episode, from the record). A worried
-  // owner coming back sees when it last happened, not only that it recurs.
-  const lastDay = folded && safety && lastEpisodeIso ? stripDayLocal(lastEpisodeIso) : null;
-  const showEyebrow = line.eyebrow != null && (!folded || safety);
-  // An open frequency row whose pair renders prints its counts in the pair, not twice (S10).
-  const pairDrawn = !folded && finding.type === 'reflection' && weekPairOf(finding) != null;
-  const subCount = folded ? (lastDay ? `Last episode ${lastDay.short}` : null) : pairDrawn ? null : line.count;
-  let label = signalHomeLabel({ ...line, eyebrow: showEyebrow ? line.eyebrow : null }, folded, lastDay ? lastDay.spoken : null);
-  if (backLine) label = `${backLine} ${label}`;
-  const thumbnail = !safety && !folded ? <Thumbnail finding={finding} /> : null;
-
-  const open = () => {
-    onTouch?.(finding);
-    onOpen(finding);
-  };
+  // A frequency row whose pair renders prints its counts in the pair, not twice (S10).
+  const pairDrawn = finding.type === 'reflection' && weekPairOf(finding) != null;
+  const subCount = pairDrawn ? null : line.count;
+  const thumbnail = safety ? null : <Thumbnail finding={finding} />;
 
   return (
     <Pressable
-      onPress={open}
+      onPress={() => onOpen(finding)}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={signalHomeLabel(line)}
       accessibilityHint={DOOR_A11Y_HINT}
-      style={folded ? [styles.row, styles.rowFolded] : styles.row}
+      style={styles.row}
       testID="signal-row"
     >
       <View style={[styles.rail, { backgroundColor: RAIL_COLOR[finding.priorityClass] }]} />
       <View style={styles.body}>
-        {backLine ? <ThemedText style={styles.backBecause}>{backLine}</ThemedText> : null}
-        {showEyebrow ? (
+        {line.eyebrow ? (
           <ThemedText style={styles.eyebrow} testID="signal-row-eyebrow">
             {line.eyebrow}
           </ThemedText>
         ) : null}
-        <ThemedText style={isLead && !folded ? styles.headlineLead : styles.headline} testID="signal-row-headline">
+        <ThemedText style={isLead ? styles.headlineLead : styles.headline} testID="signal-row-headline">
           {line.headline}
         </ThemedText>
         {thumbnail}
         <SubLine count={subCount} ask={line.ask} />
       </View>
-      <View style={isLead && !folded ? styles.chevronLead : styles.chevronBox}>
+      <View style={isLead ? styles.chevronLead : styles.chevronBox}>
         {/* geist-ok: Icon glyph, not copy — stays a raw <Text> (the strips' chevron). */}
         <Text style={styles.chevron}>›</Text>
       </View>
@@ -231,9 +211,6 @@ const styles = StyleSheet.create({
     minHeight: ROW_MIN_HEIGHT,
     paddingVertical: theme.space1,
   },
-  rowFolded: {
-    paddingVertical: theme.space0_5,
-  },
   rail: {
     width: RAIL_WIDTH,
     alignSelf: 'stretch',
@@ -244,11 +221,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 2,
-  },
-  backBecause: {
-    fontSize: theme.textXS,
-    lineHeight: theme.lineHeightXS,
-    color: theme.colorTextSecondary,
   },
   eyebrow: {
     fontSize: theme.textXS,

@@ -1,6 +1,6 @@
 # Signal on Home, lighter: a row per finding, titles that name the claim
 
-**Date:** 2026-09-26 · **Issue:** CUL-1270 · **Mode:** BUILD · **Branch:** `claude/festive-babbage-xr9oai` · **Shipped via #927** (draft, design_v2 only)
+**Date:** 2026-09-26 · **Issues:** CUL-1270, CUL-1285 · **Mode:** BUILD · **Branch:** `claude/festive-babbage-xr9oai` · **Shipped via #927** (draft, design_v2 only)
 
 **PM prompt:** "Build CUL-1270 (D1 B, D2 a) under design_v2. Read the issue and the mock §01–§02 first, then post a plan before coding." Plan posted on the issue. The PM said "go, recommended on all three" to the three build calls:
 - (i) the frequency thumbnail is drawn from the finding's own counts;
@@ -17,13 +17,17 @@
   - "Vomiting in 5 of the last 8 weeks", "Vomiting soon after meals", "Vomiting after chicken, an early pattern", "Possible foreign material in a vomit photo".
   - The frequency comparison stays count-free ("Vomiting, week over week"), because its lead card prints the bars' own line under the title.
 - **`components/designV2/signal/SignalRow.tsx`**, a door per finding.
-  - Safety rows are words: no chart, and the ask is in ink, open or folded. A folded safety row keeps its date.
+  - Safety rows are words: no chart, and the ask always in ink.
   - Insight rows carry a thumbnail drawn from the finding: the dot lane, or the shipped Shape C pair.
 - **`SignalZoneFoot.tsx`**: "not a diagnosis" is said once, beside "All patterns ›".
 - **Retired:** "Open ›" (`SignalOpenLink` deleted), and `InsightCard`'s design_v2-only `onOpen` (the shipped card is back to its pre-D2-3 body).
-- **`SignalScreen`**:
-  - Timing findings lead with the lanes.
-  - A folded card's screen offers "Show it in full on Home", since the folded row now opens the screen.
+- **`SignalScreen`**: timing findings lead with the lanes.
+- **The fold retires under design_v2 (CUL-1285, PM ruled (a) mid-session).**
+  - A stored fold is ignored and the card renders in full; the Back-because line is not drawn; the screen loses its fold control and never reads or writes the fold store.
+  - The design_v2 row and lead card take no fold props, so the types hold it.
+  - Flag-off is untouched until the design_v2 GA (CUL-1071).
+  - The fold spec carries the retirement note (v1.3), and so does CLAUDE.md's Read-These row.
+  - (The in-between build, where a folded row opened its screen and the screen offered "Show it in full on Home", was superseded before merge.)
 - **Tier-2:** S1 of `nyx-signal-home-requirements.md` gains "plain means words, not length" (v1.4, PM-approved with D1).
 
 ## The parity guard
@@ -38,6 +42,7 @@ Proven by mutation, each going red:
 - a paraphrased ask;
 - a local-time onset month;
 - a worsening current/prior swap;
+- a stored fold re-gating the lead card (the fold retirement's test);
 - a reflection swap;
 - intake `<= 1` changed to `<= 2`;
 - chronicity `round` changed to `ceil`.
@@ -51,7 +56,7 @@ Proven by mutation, each going red:
   - the timing story had no noun;
   - the refusal had no time anchor;
   - the soft asks had no verb;
-  - a folded safety row had no date.
+  - a folded safety row had no date (moot once the fold retired).
 - **adversarial-reviewer:** FAIL, then HOLD on re-attack.
   - Fixed: the correlation row claimed `matchedPairs` as "days seen after chicken" (it is the days compared). Parity was role-blind. The timing story was out of the sweep, with counts on neither the sentence nor the screen. The pair was a new receipt shape.
   - Routed to CUL-1217 (comment posted): titles carrying the engine's rolling counts over calendar bars, and timing screens opening on locally computed lanes.
@@ -63,10 +68,9 @@ Proven by mutation, each going red:
 
 - Plan, go-ahead and claim are on CUL-1270.
 - CUL-1217 has the pre-existing count mismatches D2 surfaced.
-- Filed **CUL-1285** (Waiting on PM): does the fold still earn its place under D1 = B? It carries the proposed fold-spec Tier-2 edit.
+- Filed **CUL-1285**: does the fold still earn its place under D1 = B? The PM ruled (a), retire it; built in this PR. CUL-1273 (the fold's false re-open reasons) is now flag-off only.
 
 ## Next
 
 - The device pass on #927.
-- The PM rules CUL-1285.
 - GC-4 (CUL-1225 / CUL-1179) decides CUL-1217's "one count", which the chronicity title now makes more visible.

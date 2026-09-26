@@ -15,8 +15,8 @@
 // sentence's own words.
 //
 // THE ASK STAYS ON HOME, IN WORDS (clinical-guardrails; S1). A safety row always carries
-// its ask — the server's own vet phrase, verbatim, never the strip's compressed verb — and
-// the folded row keeps it too. Benign rows carry none (the PM's ruling on CUL-1270, build
+// its ask — the server's own vet phrase, verbatim, never the strip's compressed verb.
+// Benign rows carry none (the PM's ruling on CUL-1270, build
 // call ii): an ask on a benign row would be the escalation S1 reserves for the safety lane,
 // and the timing card's "worth mentioning to your vet" lives on its screen.
 //
@@ -125,7 +125,7 @@ function countLine(finding: SignalFinding): string | null {
       // claim 20 chicken-then-vomit days where there were 14 (adversarial pass). So the row
       // says what the number is, beside the sentence's own hedge ("has tended to follow"):
       // a tendency, compared. "Matched days" is the engine's word, not the owner's. The
-      // early tier's hedge lives in its title, where a fold cannot drop it.
+      // early tier's hedge lives in its title, the line every surface naming the finding keeps.
       return finding.tier === 'established'
         ? `A tendency, compared across ${finding.matchedPairs} days of logs`
         : `Within about ${Math.round(finding.correlationWindowHours)} hours of ${finding.protein}`;
@@ -182,16 +182,13 @@ export function askStandalone(ask: string): string {
 
 /**
  * The row's spoken label — one sentence per line, the eyebrow's middle dot said as a
- * comma (VoiceOver reads "·" as nothing), and the ask always in it. A folded row speaks
- * its headline, its date when it keeps one, and its ask: the ask is never behind a tap,
- * for a sighted owner or not.
+ * comma (VoiceOver reads "·" as nothing), and the ask always in it.
  */
-export function signalHomeLabel(line: SignalHomeLine, folded: boolean, foldedDateSpoken: string | null = null): string {
+export function signalHomeLabel(line: SignalHomeLine): string {
   const parts: string[] = [];
   if (line.eyebrow) parts.push(line.eyebrow.replace(' · ', ', '));
   parts.push(line.headline);
-  if (!folded && line.count) parts.push(line.count);
-  if (folded && foldedDateSpoken) parts.push(`Last episode ${foldedDateSpoken}`);
+  if (line.count) parts.push(line.count);
   if (line.ask) parts.push(askStandalone(line.ask));
   return `${parts.join('. ')}.`;
 }

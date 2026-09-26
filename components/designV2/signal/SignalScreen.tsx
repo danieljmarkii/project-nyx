@@ -4,10 +4,8 @@ import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import { useAppActive } from '../../../hooks/useAppActive';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
-import { readLastEpisodeIso } from '../../../hooks/useLastEpisodeDates';
 import { focusAccessibility } from '../../../lib/a11yFocus';
 import { measureNodeInWindow, type WindowRect } from '../../../lib/measureNode';
-import { foldedEntry, readFoldEntries, writeFoldEntries, type RecordFacts } from '../../../lib/signalFold';
 import { loadSignalScreen, screenLeadsWithLanes, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
 import { WhorlSpinner } from '../../brand/WhorlSpinner';
 import { CompareBars } from '../../charts/CompareBars';
@@ -41,7 +39,10 @@ import { leadChartWidth } from './SignalLeadCard';
 //   5. the lanes                       timed from meals, before / in the trial, the untimed line
 //   6. the episodes                    a gallery, each tile its OWN read
 //   7. why this is a Signal            counts, not a verdict; the medication inside the window
-//   8. keep it compact on Home         folds the Home card for the owner's return
+//
+// There is no section 8 any more: *Keep it compact on Home* retired with the Signal fold
+// under Design v2 (CUL-1285, PM-ruled 2026-09-26 — every Home card is already a row, and
+// a fold had nothing left to compact and no mark on Home to say it had).
 //
 // A TIMING finding leads with its own evidence (CUL-1270 · D2 = a): the lanes move to
 // section 2 and the weekly bars follow the sentence, because minutes-from-a-meal is what
@@ -49,10 +50,6 @@ import { leadChartWidth } from './SignalLeadCard';
 // counted the same rows and drew the same first chart, so the PM read their screens as
 // one screen twice; the first chart is now the one only that finding has
 // (`screenLeadsWithLanes`).
-//
-// Section 8 is two-way since CUL-1270: a folded Home card is a door to this screen (the
-// face tap never unfolds), so the way back to the full card lives here too — *Show it in
-// full on Home* when the card is folded, *Keep it compact on Home* when it is not.
 //
 // A safety finding gets the screen too (S1 lives on Home's card, not here): the same
 // sections over its record, plus the shipped phone script (`ExpandedReceipts`) after the
@@ -79,12 +76,6 @@ import { leadChartWidth } from './SignalLeadCard';
 // No haptic anywhere on this screen: it paints `worth_a_call` (the gallery, the phone
 // script), and it is named in `guards/haptics.test.ts`'s ALWAYS_SCANNED.
 
-/** *Keep it compact on Home* — the fold control's words on the screen. */
-export const KEEP_COMPACT_LABEL = 'Keep it compact on Home';
-export const KEEP_COMPACT_HINT = 'Folds this signal to its headline on Home. It reopens on its own when the picture changes.';
-/** The same control on a folded card: the way back to the full card on Home. */
-export const SHOW_FULL_LABEL = 'Show it in full on Home';
-export const SHOW_FULL_HINT = 'Shows this signal in full on Home again.';
 /** The Why block's title. */
 export const WHY_TITLE = 'Why this is a Signal';
 /** The phone script's title on a safety screen. */
@@ -177,11 +168,9 @@ export function SignalScreen({ petId, identity }: Props) {
       ) : (
         <Body
           model={load.model}
-          petId={petId}
           petName={load.petName}
           landStyle={landStyle}
           titleRef={titleRef}
-          onFolded={() => router.back()}
           flight={flight}
           flew={flew}
           windowWidth={windowWidth}
@@ -292,41 +281,21 @@ function Hero({
 
 function Body({
   model,
-  petId,
   petName,
   landStyle,
   titleRef,
-  onFolded,
   flight,
   flew,
   windowWidth,
 }: {
   model: SignalScreenModel;
-  petId: string;
   petName: string;
   landStyle: ReturnType<typeof useSignalOpen>;
   titleRef: React.RefObject<View | null>;
-  onFolded: () => void;
   flight: FlightRecord | null;
   flew: boolean;
   windowWidth: number;
 }) {
-  const [folding, setFolding] = useState(false);
-  // Whether the Home card is folded now — read from the one store, never assumed. Null until
-  // the read answers (C-12): the control then shows its shipped *Keep it compact* form, the
-  // one that can never hide a card the owner has not folded.
-  const [foldedNow, setFoldedNow] = useState<boolean | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    readFoldEntries(petId)
-      .then((entries) => {
-        if (!cancelled && entries) setFoldedNow(entries[model.identity]?.state === 'folded');
-      })
-      .catch((e) => console.warn('[signal-screen] fold read failed:', e));
-    return () => {
-      cancelled = true;
-    };
-  }, [petId, model.identity]);
   // The hero tells the flight where it is (a retarget if the slot guessed wrong) and that
   // it exists — the release, when the spring has already rested.
   const onHeroRect = useCallback(
@@ -336,44 +305,6 @@ function Body({
     },
     [model.identity],
   );
-
-  // *Keep it compact on Home*: the same entry Home's control writes (`foldedEntry`, with
-  // the record's witness for a standing safety type), through the same store, then back
-  // to Home — where `useSignalFold` has heard the write (`subscribeFoldStore`) and draws
-  // the strip. The strip keeps its own re-open.
-  const keepCompact = async () => {
-    if (folding) return;
-    setFolding(true);
-    try {
-      const stored = (await readFoldEntries(petId)) ?? {};
-      const facts: RecordFacts =
-        model.finding.type === 'symptom_chronicity' || model.finding.type === 'symptom_worsening'
-          ? { lastEpisodeIso: readLastEpisodeIso(petId, model.finding.symptomType) }
-          : {};
-      await writeFoldEntries(petId, { ...stored, [model.identity]: foldedEntry(model.finding, new Date().toISOString(), facts) });
-    } finally {
-      setFolding(false);
-      onFolded();
-    }
-  };
-
-  // *Show it in full on Home*: the same removal Home's strip tap made (`useSignalFold.unfold`
-  // — the entry goes, the card is open), through the same store, then back to Home.
-  const showInFull = async () => {
-    if (folding) return;
-    setFolding(true);
-    try {
-      const stored = await readFoldEntries(petId);
-      if (stored && stored[model.identity]?.state === 'folded') {
-        const next = { ...stored };
-        delete next[model.identity];
-        await writeFoldEntries(petId, next);
-      }
-    } finally {
-      setFolding(false);
-      onFolded();
-    }
-  };
 
   const drawIn = true;
   const lanesLead = screenLeadsWithLanes(model);
@@ -439,38 +370,6 @@ function Body({
         </View>
       ) : null}
 
-      {/* 8 · keep it compact on Home — or, on a folded card, show it in full again */}
-      {model.foldable ? (
-        <View style={styles.section} testID="signal-section-fold">
-          {foldedNow ? (
-            <Pressable
-              onPress={() => void showInFull()}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={SHOW_FULL_LABEL}
-              accessibilityHint={SHOW_FULL_HINT}
-              style={styles.foldControl}
-              testID="signal-show-full"
-            >
-              <ThemedText style={styles.foldLabel}>{SHOW_FULL_LABEL}</ThemedText>
-              <ThemedText style={styles.foldVerb}>Unfold</ThemedText>
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={() => void keepCompact()}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={KEEP_COMPACT_LABEL}
-              accessibilityHint={KEEP_COMPACT_HINT}
-              style={styles.foldControl}
-              testID="signal-keep-compact"
-            >
-              <ThemedText style={styles.foldLabel}>{KEEP_COMPACT_LABEL}</ThemedText>
-              <ThemedText style={styles.foldVerb}>Fold</ThemedText>
-            </Pressable>
-          )}
-        </View>
-      ) : null}
     </ScrollView>
   );
 }
@@ -548,23 +447,5 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     lineHeight: theme.lineHeightSM,
     color: theme.colorTextSecondary,
-  },
-  foldControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 44,
-    paddingVertical: theme.space1,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorBorder,
-  },
-  foldLabel: {
-    fontSize: theme.textMD,
-    color: theme.colorTextPrimary,
-  },
-  foldVerb: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
   },
 });

@@ -1,7 +1,7 @@
 // The Signal row on Home (CUL-1270 · D1 = B). What it must never do is the spine of this
 // file: a safety row never draws a chart (S1), and a safety row never loses its ask — open
-// or folded, sighted or not (clinical-guardrails). Then the door: every row opens its OWN
-// finding, folded or not, and never folds or unfolds from the face.
+// sighted or not (clinical-guardrails). Then the door: every row opens its OWN finding, and
+// there is no fold under Design v2 (CUL-1285).
 
 const mockLoadSignalRowTrial = jest.fn(async (..._a: unknown[]) => null as unknown);
 jest.mock('../../../lib/signalLead', () => ({ loadSignalRowTrial: (...a: unknown[]) => mockLoadSignalRowTrial(...a) }));
@@ -71,49 +71,11 @@ describe('S1 — a safety row is words: the headline and the ask, never a chart'
     expect(view.queryByText(/not a diagnosis/)).toBeNull();
   });
 
-  it.each(SAFETY.map((f) => [f.type, f] as const))('%s folded: still no chart, and the ask is still printed and spoken', (_t, f) => {
-    const view = render(<SignalRow cached={cached(f)} petId="pet-1" onOpen={jest.fn()} folded />);
-    for (const id of CHART_IDS) expect(view.queryByTestId(id)).toBeNull();
-    const ask = view.getByTestId('signal-row-ask');
-    const printed = String(ask.props.children);
-    expect(printed.length).toBeGreaterThan(0);
-    expect(view.getByTestId('signal-row').props.accessibilityLabel.toLowerCase()).toContain(printed.toLowerCase());
-  });
-
   it('the ask is the symptom INK, never the bright rose on white (C-1)', () => {
     const view = render(<SignalRow cached={cached(SAFETY[4])} petId="pet-1" onOpen={jest.fn()} />);
     expect(StyleSheet.flatten(view.getByTestId('signal-row-ask').props.style).color).toBe(theme.colorEventSymptomInk);
     expect(view.getByTestId('signal-row-ask').props.children).toBe('Worth a call to your vet');
     expect(view.getByTestId('signal-row-eyebrow').props.children).toBe('Photo read · Sep 22');
-  });
-});
-
-// The last episode is a LOCAL day (the record's, read by the device), so the instant is
-// built from local components — never a UTC literal (B-514; the non-UTC CI job).
-const SEP_24_LOCAL = new Date(2026, 8, 24, 12, 0).toISOString();
-
-describe('a folded safety row keeps its date (fold spec §3.4)', () => {
-  it('a standing concern: its last episode from the record, printed and spoken, with the ask', () => {
-    const view = render(<SignalRow cached={cached(SAFETY[0])} petId="pet-1" onOpen={jest.fn()} folded lastEpisodeIso={SEP_24_LOCAL} />);
-    expect(view.getByTestId('signal-row-sub').props.children[0]).toBe('Last episode Sep 24');
-    expect(view.getByTestId('signal-row').props.accessibilityLabel).toBe(
-      'Vomiting in 5 of the last 8 weeks. Last episode September 24. Worth booking a vet visit.',
-    );
-  });
-
-  it('the photo read keeps its dated eyebrow folded; an unread record prints no date rather than a guess', () => {
-    const red = render(<SignalRow cached={cached(SAFETY[4])} petId="pet-1" onOpen={jest.fn()} folded />);
-    expect(red.getByTestId('signal-row-eyebrow').props.children).toBe('Photo read · Sep 22');
-    const noDate = render(<SignalRow cached={cached(SAFETY[0])} petId="pet-1" onOpen={jest.fn()} folded lastEpisodeIso={null} />);
-    expect(noDate.queryByTestId('signal-row-sub')).toBeNull();
-    expect(noDate.getByTestId('signal-row-ask')).toBeTruthy();
-  });
-
-  it('an insight row keeps no date folded, and an open row prints its count, not the date', () => {
-    const open = render(<SignalRow cached={cached(SAFETY[0])} petId="pet-1" onOpen={jest.fn()} lastEpisodeIso={SEP_24_LOCAL} />);
-    expect(open.queryByText(/Last episode/)).toBeNull();
-    const insight = render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={jest.fn()} folded lastEpisodeIso={SEP_24_LOCAL} />);
-    expect(insight.queryByText(/Last episode/)).toBeNull();
   });
 });
 
@@ -147,24 +109,18 @@ describe('the thumbnail — insight rows, drawn from the finding', () => {
     expect(view.getByTestId('signal-row-sub').props.children).toBe('3 this week');
   });
 
-  it('every other type is words only; a folded insight row drops its picture', () => {
-    expect(render(<SignalRow cached={cached(correlation)} petId="pet-1" onOpen={jest.fn()} />).queryByTestId('signal-row-thumb-pair')).toBeNull();
-    const folded = render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={jest.fn()} folded />);
-    expect(folded.queryByTestId('signal-row-thumb-lane')).toBeNull();
-    expect(folded.queryByTestId('signal-row-sub')).toBeNull();
+  it('every other type is words only', () => {
+    const view = render(<SignalRow cached={cached(correlation)} petId="pet-1" onOpen={jest.fn()} />);
+    for (const id of CHART_IDS) expect(view.queryByTestId(id)).toBeNull();
   });
 });
 
 describe('the door', () => {
-  it('opens its own finding, open or folded; the touch clears a Back-because line', () => {
-    for (const folded of [false, true]) {
-      const onOpen = jest.fn();
-      const onTouch = jest.fn();
-      const view = render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={onOpen} onTouch={onTouch} folded={folded} />);
-      fireEvent.press(view.getByTestId('signal-row'));
-      expect(onOpen).toHaveBeenCalledWith(timing);
-      expect(onTouch).toHaveBeenCalledWith(timing);
-    }
+  it('opens its own finding', () => {
+    const onOpen = jest.fn();
+    const view = render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={onOpen} />);
+    fireEvent.press(view.getByTestId('signal-row'));
+    expect(onOpen).toHaveBeenCalledWith(timing);
   });
 
   it('is one button: role, the door hint, a label that says every line', () => {
@@ -181,11 +137,6 @@ describe('the door', () => {
     expect(row.props.hitSlop).toBeUndefined();
     expect(StyleSheet.flatten(row.props.style).minHeight).toBe(ROW_MIN_HEIGHT);
     expect(ROW_MIN_HEIGHT).toBeGreaterThanOrEqual(44);
-  });
-
-  it('a record-reopened card says why first, in the label too', () => {
-    const view = render(<SignalRow cached={cached(SAFETY[0])} petId="pet-1" onOpen={jest.fn()} backBecause="new_episode" />);
-    expect(view.getByTestId('signal-row').props.accessibilityLabel).toMatch(/^Back because/);
   });
 });
 

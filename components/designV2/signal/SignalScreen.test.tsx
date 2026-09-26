@@ -63,7 +63,7 @@ jest.mock('../../../lib/measureNode', () => ({
 
 import { act, configure, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Animated, Dimensions, StyleSheet } from 'react-native';
-import { SignalScreen, KEEP_COMPACT_LABEL, SCRIPT_TITLE, SHOW_FULL_LABEL, WHY_TITLE } from './SignalScreen';
+import { SignalScreen, SCRIPT_TITLE, WHY_TITLE } from './SignalScreen';
 import { NO_READ_LABEL } from './EpisodeGallery';
 import SignalRoute, { OFF_TITLE } from '../../../app/signal/[id]';
 import { INCIDENT_REC_LABEL as REC_LABEL } from '../../../lib/incidentReadState';
@@ -197,7 +197,7 @@ beforeEach(() => {
 });
 
 describe('SignalScreen — the sections, in the ruled order', () => {
-  it('title · bars · sentence · compare · lanes · episodes · why · keep it compact', async () => {
+  it('title · bars · sentence · compare · lanes · episodes · why', async () => {
     mockLoadSignalScreen.mockResolvedValue(ready(benign));
     const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
     await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
@@ -210,7 +210,6 @@ describe('SignalScreen — the sections, in the ruled order', () => {
       'signal-section-lanes',
       'signal-section-episodes',
       'signal-section-why',
-      'signal-section-fold',
     ].map((id) => ids.indexOf(id));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -296,7 +295,6 @@ describe('SignalScreen — the sections, in the ruled order', () => {
     await waitFor(() => expect(view.getByText(SCRIPT_TITLE)).toBeTruthy());
     const ids = testIds(view.toJSON());
     expect(ids.indexOf('signal-section-script')).toBeGreaterThan(ids.indexOf('signal-section-why'));
-    expect(ids.indexOf('signal-section-script')).toBeLessThan(ids.indexOf('signal-section-fold'));
     expect(view.getByTestId('signal-screen-title')).toBeTruthy();
   });
 
@@ -333,50 +331,17 @@ describe('SignalScreen — the sections, in the ruled order', () => {
     timing.mockRestore();
   });
 
-  it('"Keep it compact on Home" writes the same fold entry Home writes, for the route’s pet, then goes back', async () => {
-    mockLoadSignalScreen.mockResolvedValue(ready(safety));
-    const view = render(<SignalScreen petId="pet-1" identity="symptom_chronicity:vomit" />);
-    await waitFor(() => expect(view.getByText(KEEP_COMPACT_LABEL)).toBeTruthy());
-    await act(async () => {
-      fireEvent.press(view.getByTestId('signal-keep-compact'));
-    });
-    await waitFor(() => expect(mockWriteFoldEntries).toHaveBeenCalledTimes(1));
-    const [petId, entries] = mockWriteFoldEntries.mock.calls[0] as unknown as [string, Record<string, { state: string; fingerprint: Record<string, unknown> }>];
-    expect(petId).toBe('pet-1');
-    expect(entries['symptom_chronicity:vomit'].state).toBe('folded');
-    // The standing safety type carries the record's witness (CUL-785).
-    expect(entries['symptom_chronicity:vomit'].fingerprint['record.lastEpisodeIso']).toBe('2026-09-17T22:11:00.000Z');
-    expect(mockRouter.back).toHaveBeenCalledTimes(1);
-  });
-
-  it('on a FOLDED card the control is "Show it in full on Home": it removes the fold entry, for the route’s pet, then goes back', async () => {
-    mockReadFoldEntries.mockResolvedValue({
-      'symptom_chronicity:vomit': { state: 'folded', fingerprint: {}, foldedAtIso: '2026-09-20T10:00:00.000Z' },
-      'reflection:vomit': { state: 'folded', fingerprint: {}, foldedAtIso: '2026-09-20T10:00:00.000Z' },
-    } as never);
-    mockLoadSignalScreen.mockResolvedValue(ready(safety));
-    const view = render(<SignalScreen petId="pet-1" identity="symptom_chronicity:vomit" />);
-    await waitFor(() => expect(view.getByText(SHOW_FULL_LABEL)).toBeTruthy());
-    expect(view.queryByTestId('signal-keep-compact')).toBeNull();
-    await act(async () => {
-      fireEvent.press(view.getByTestId('signal-show-full'));
-    });
-    await waitFor(() => expect(mockWriteFoldEntries).toHaveBeenCalledTimes(1));
-    const [petId, entries] = mockWriteFoldEntries.mock.calls[0] as unknown as [string, Record<string, unknown>];
-    expect(petId).toBe('pet-1');
-    // Only this card's entry goes; another card's fold is untouched.
-    expect(Object.keys(entries)).toEqual(['reflection:vomit']);
-    expect(mockRouter.back).toHaveBeenCalledTimes(1);
-    mockReadFoldEntries.mockResolvedValue({});
-  });
-
-  it('an unreadable fold store shows the shipped "Keep it compact" form (C-12: never assume folded)', async () => {
-    mockReadFoldEntries.mockResolvedValue(null as never);
-    mockLoadSignalScreen.mockResolvedValue(ready(safety));
-    const view = render(<SignalScreen petId="pet-1" identity="symptom_chronicity:vomit" />);
-    await waitFor(() => expect(view.getByText(KEEP_COMPACT_LABEL)).toBeTruthy());
-    expect(view.queryByTestId('signal-show-full')).toBeNull();
-    mockReadFoldEntries.mockResolvedValue({});
+  it('there is no fold under Design v2 (CUL-1285): no control, and the fold store is neither read nor written', async () => {
+    for (const cached of [safety, benign, timingCached]) {
+      mockLoadSignalScreen.mockResolvedValue(ready(cached));
+      const view = render(<SignalScreen petId="pet-1" identity={`${cached.finding.type}:vomit`} />);
+      await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+      expect(view.queryByTestId('signal-section-fold')).toBeNull();
+      expect(view.queryByText(/Keep it compact|Show it in full/)).toBeNull();
+      view.unmount();
+    }
+    expect(mockReadFoldEntries).not.toHaveBeenCalled();
+    expect(mockWriteFoldEntries).not.toHaveBeenCalled();
   });
 
   it('the missing state names the route’s pet, never the active one (C-9)', async () => {
@@ -545,7 +510,7 @@ describe('the flight’s landing (D2-6 · CUL-1069)', () => {
     expect(mockRouter.back).toHaveBeenCalledTimes(1);
   });
 
-  it('leaving any other way (the gesture, the fold control) aborts the flight — the record too, so a later visit cannot reverse onto it', async () => {
+  it('leaving any other way (the gesture) aborts the flight — the record too, so a later visit cannot reverse onto it', async () => {
     stage();
     mockLoadSignalScreen.mockResolvedValue(ready(benign));
     const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
