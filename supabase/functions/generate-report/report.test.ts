@@ -1608,9 +1608,10 @@ Deno.test('#7/#8 mealItems — rated meals grouped by food (label · protein · 
   assert.deepEqual(summariseIntake(items[0].intakeBreakdown), { kind: 'typical', rating: 'some', count: 2 }, 'strict-plurality intake (2 some vs 1 all)')
   assert.equal(items[1].foodLabel, 'Instinct Turkey (Wet)') // B-568 — same rule on every appendix row
   assert.equal(items[1].count, 1)
-  // The grouped total reconciles with mealCompletion (same ratedMeals set).
+  // Every meal in this fixture is rated, so the meals logged and the meals rated are one
+  // number here; CUL-1274's test below is the record where they are not.
   const grouped = items.reduce((s, i) => s + i.count, 0)
-  assert.equal(grouped, snap.diet.mealCompletion?.ratedMeals, 'grouped meal count === ratedMeals')
+  assert.equal(grouped, snap.diet.mealCompletion?.ratedMeals, 'fully rated: logged === rated')
   assert.equal(grouped, 4)
 })
 
@@ -2075,7 +2076,8 @@ Deno.test('#7/#8 — mealItems groups rated meals by food (label · protein · c
   assert.equal(items[1].primaryProtein, 'turkey')
   // One meal of this food: a fact, never a habit (the n floor).
   assert.deepEqual(summariseIntake(items[1].intakeBreakdown), { kind: 'itemised', ratings: [{ rating: 'picked', count: 1 }] })
-  // Reconciles with mealCompletion.ratedMeals — the SAME underlying set, never a double count.
+  // Fully rated, so the meals logged reconcile with mealCompletion.ratedMeals — never a double
+  // count. A partly rated record is CUL-1274's test below.
   assert.equal(items.reduce((a, i) => a + i.count, 0), snap.diet.mealCompletion?.ratedMeals)
 })
 
@@ -4302,4 +4304,246 @@ Deno.test('CUL-981 — no photographed incident means no colour distribution, no
   const snap = assembleReport(baseInput({ now: '2026-06-27T12:00:00Z', events, aiAnalyses: [] }))
   assert.deepEqual(snap.vomitPhenotype!.colourDistribution, {})
   assert.equal(snap.vomitPhenotype!.assessedCount, 0)
+})
+
+// ── CUL-1274 — mealItems counts every LOGGED meal; the ratings are the subset that exists ──
+// The list was built from the rated meals alone, so a selectively rated record printed its
+// rated subset as the meals fed on page 1, in appendix B's "Meals logged" row and in appendix
+// E, and a food fed only in unrated meals was missing from the protein panel.
+
+Deno.test('CUL-1274 — mealItems groups every logged meal, rated or not; mealCompletion stays the rated subset', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        // Six meals of the wet food, one of them rated (the one that went wrong).
+        mealEvent('2026-06-10', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+        mealEvent('2026-06-11', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+        mealEvent('2026-06-12', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken', rating: 'refused' }),
+        mealEvent('2026-06-13', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+        mealEvent('2026-06-14', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+        mealEvent('2026-06-15', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+        // A second food, fed as meals and never rated.
+        mealEvent('2026-06-16', { format: 'wet_canned', protein: 'duck', label: 'Wet Duck' }),
+        mealEvent('2026-06-17', { format: 'wet_canned', protein: 'duck', label: 'Wet Duck' }),
+        // A treat is not a meal, rated or not: it joins neither the meals logged nor the rated.
+        mealEvent('2026-06-18', { foodType: 'treat', format: 'treat', protein: 'salmon', label: 'Salmon Treat', rating: 'all' }),
+      ],
+    }),
+  )
+  const items = snap.diet.mealItems
+  assert.deepEqual(
+    items.map((i) => [i.foodLabel, i.count]),
+    [['Wet Chicken (Wet)', 6], ['Wet Duck (Wet)', 2]],
+    'every logged meal is counted, and the never-rated food has a row',
+  )
+  assert.deepEqual(items[0].intakeBreakdown, [{ rating: 'refused', count: 1 }], 'the ratings that exist, and only those')
+  // The date span is the food's meals, rated or not; the one rating was on Jun 12.
+  assert.deepEqual([items[0].firstDate, items[0].lastDate], ['2026-06-10', '2026-06-15'])
+  assert.deepEqual([items[1].firstDate, items[1].lastDate], ['2026-06-16', '2026-06-17'], 'a never-rated food keeps its dates')
+  assert.equal(items[0].lastRatedDate, '2026-06-12', 'the last day intake was recorded, not the last day fed')
+  assert.equal(items[1].lastRatedDate, null, 'never rated')
+  assert.deepEqual(items[1].intakeBreakdown, [], 'an unrated meal adds nothing to the breakdown')
+  assert.equal(items.reduce((a, i) => a + i.count, 0), 8, 'meals logged; the treat is not one')
+  const ratedInItems = items.reduce((a, i) => a + i.intakeBreakdown.reduce((b, x) => b + x.count, 0), 0)
+  assert.equal(ratedInItems, snap.diet.mealCompletion?.ratedMeals, 'the per-food ratings ARE the rated subset')
+  assert.equal(snap.diet.mealCompletion?.ratedMeals, 1, 'the rated treat is not a rated meal')
+  assert.equal(snap.diet.mealCompletion?.finishedMeals, 0)
+
+  // Through the render: page 1 and both appendices count the 8, and the duck reaches the
+  // protein panel a vet scans for overlap.
+  const html = renderReport(snap)
+  const t = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ')
+  assert.ok(/8 meals logged, intake not recorded for 7; recorded for 1 of the 6 meals of Wet Chicken \(Wet\), intake last recorded Jun 12: "refused" ×1, 0 of 1 fully eaten \(owner-observed\)/.test(t.replace(/&ldquo;|&rdquo;/g, '"').replace(/&times;/g, '×')), 'page 1 states both numbers, and whose rating it is')
+  assert.ok(/8 logged meals across 2 foods/.test(t), 'appendix B and E count the same 8')
+  assert.ok(/Wet Duck \(Wet\) \(fed as meals\)/.test(t), 'the never-rated food is in the protein panel')
+})
+
+Deno.test('CUL-1274 — a record with meals and NO rating keeps its meals; the completion figure stays null', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        mealEvent('2026-06-10', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+        mealEvent('2026-06-11', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+        mealEvent('2026-06-12', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+      ],
+    }),
+  )
+  assert.equal(snap.diet.mealCompletion, null, 'no rated meal, no completion figure')
+  assert.equal(snap.diet.mealItems.length, 1)
+  assert.equal(snap.diet.mealItems[0].count, 3)
+  assert.deepEqual(snap.diet.mealItems[0].intakeBreakdown, [])
+  const t = renderReport(snap).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ')
+  assert.ok(/3 meals logged, intake not recorded for any/.test(t), 'page 1 says the meals were fed')
+  assert.ok(!/No rated meals logged in this window/.test(t))
+})
+
+Deno.test('CUL-1274 — the trial diet\'s own meal row reads its proteins by the trial rule, rated or not', () => {
+  // A hydrolysed-chicken diet whose label also names chicken: the trial row, the diet-trial
+  // block and appendix B read that as the diet itself (B-529's kin-absorbing comparison).
+  // The meal row did not, so appendix E starred the diet's own chicken as off-trial. It took
+  // a RATED trial meal to reach before CUL-1274; every logged meal reaches it now.
+  idSeq = 0
+  const PANEL = 'Hydrolyzed chicken liver, rice starch, chicken fat.'
+  const trialMeal = (day: string, intakeRating: 'all' | null) =>
+    proteinMeal({
+      occurredAt: at(day), foodItemId: 'f-hydro', foodType: 'meal', format: 'dry_kibble',
+      primaryProtein: 'hydrolyzed chicken', proteins: ['hydrolyzed chicken', 'chicken'],
+      ingredientsNotes: PANEL, extractionConfidence: { proteins: 0.9 }, productName: 'HydroChick', intakeRating,
+    })
+  const snap = assembleReport(
+    baseInput({
+      dietTrials: [
+        {
+          id: 'dt-h', foodItemId: 'f-hydro', startedAt: '2026-05-08', targetDurationDays: 56,
+          status: 'active', completedAt: null, vetName: null, foodLabel: 'Brand HydroChick (Dry)',
+          primaryProtein: 'hydrolyzed chicken', proteins: ['hydrolyzed chicken', 'chicken'],
+          ingredientsNotes: PANEL, extractionConfidence: { proteins: 0.9 },
+          allowedFoods: [
+            {
+              foodItemId: 'f-hydro', foodLabel: 'HydroChick', role: 'primary_diet',
+              allowedFrom: '2026-05-08', allowedUntil: null, primaryProtein: 'hydrolyzed chicken',
+              brand: 'Brand', productName: 'HydroChick', proteins: ['hydrolyzed chicken', 'chicken'],
+              ingredientsNotes: PANEL, extractionConfidence: { proteins: 0.9 },
+            },
+          ],
+        },
+      ],
+      events: [
+        trialMeal('2026-06-10', null),
+        trialMeal('2026-06-11', null),
+        trialMeal('2026-06-12', 'all'),
+        // The same product under a duplicate library row, matched by its label (B-009/B-018).
+        { ...trialMeal('2026-06-13', null), meal: { ...trialMeal('2026-06-13', null).meal!, foodItemId: 'f-hydro-dup' } },
+        { ...trialMeal('2026-06-14', null), meal: { ...trialMeal('2026-06-14', null).meal!, foodItemId: 'f-hydro-dup' } },
+        // An intact-chicken food fed under the hydrolysed trial: a real contaminant, which the
+        // trial rule must never absorb (lib/proteinRelation.ts: a broken trial read as clean).
+        proteinMeal({ occurredAt: at('2026-06-15'), foodItemId: 'f-stew', foodType: 'meal', format: 'wet_canned', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken, broth.', extractionConfidence: { proteins: 0.9 }, productName: 'Chicken Stew' }),
+      ],
+    }),
+  )
+  const row = snap.diet.mealItems.find((i) => i.count === 3)
+  assert.ok(row, 'the trial diet has its meal row')
+  const dup = snap.diet.mealItems.find((i) => i.count === 2)
+  assert.ok(dup, 'the duplicate library row groups on its own')
+  assert.deepEqual(dup!.proteinSet.offTrial, [], 'matched by label, it is the trial diet too')
+  const stew = snap.diet.mealItems.find((i) => i.foodLabel?.includes('Chicken Stew'))
+  assert.deepEqual(stew!.proteinSet.offTrial, ['chicken'], 'a different food keeps its off-trial mark')
+  assert.deepEqual(snap.diet.trial!.proteinSet.offTrial, [], 'the trial row reads no contamination')
+  assert.deepEqual(row!.proteinSet.offTrial, snap.diet.trial!.proteinSet.offTrial, 'and the meal row reads the diet the same way')
+  const html = renderReport(snap)
+  const e = html.slice(html.indexOf('Appendix E — Meals &amp; intake'))
+  const rowsHtml = e.slice(e.indexOf('<tbody>'), e.indexOf('</tbody>'))
+  const trialRows = [...rowsHtml.matchAll(/<tr>([^]*?)<\/tr>/g)].map((m) => m[1]).filter((r) => r.includes('HydroChick'))
+  assert.equal(trialRows.length, 2)
+  for (const r of trialRows) assert.ok(!/\*/.test(r), 'no off-trial star on the trial diet\'s own rows')
+  assert.ok(/\*/.test([...rowsHtml.matchAll(/<tr>([^]*?)<\/tr>/g)].map((m) => m[1]).find((r) => r.includes('Chicken Stew'))!), 'the stew keeps its star')
+})
+
+Deno.test('CUL-1274 — a twin logged unrated and re-logged with a rating keeps the rating; conflicting twins keep the first one', () => {
+  // The collapse keeps the earliest twin, and merged severity and notes but not the intake
+  // rating, so a one-tap followed thirty seconds later by a "refused" re-log lost the refusal
+  // from every intake surface, and page 1's recency date then named an earlier day.
+  idSeq = 0
+  const twin = (time: string, rating: 'all' | 'refused' | null) =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: `2026-06-20T${time}Z`,
+      meal: { foodItemId: 'tiki', intakeRating: rating, quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'chicken', brand: 'Tiki', productName: 'Cat' },
+    })
+  const earlier = ['02', '03', '04', '05', '06'].map((d) =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: `2026-06-${d}T12:00:00Z`,
+      meal: { foodItemId: 'tiki', intakeRating: 'all', quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'chicken', brand: 'Tiki', productName: 'Cat' },
+    }),
+  )
+  const later = ['22', '24', '26'].map((d) =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: `2026-06-${d}T12:00:00Z`,
+      meal: { foodItemId: 'tiki', intakeRating: null, quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'chicken', brand: 'Tiki', productName: 'Cat' },
+    }),
+  )
+  const snap = assembleReport(baseInput({ events: [...earlier, twin('12:00:00', null), twin('12:00:30', 'refused'), ...later] }))
+  const item = snap.diet.mealItems[0]
+  assert.equal(item.count, 9, 'the twins are one meal')
+  assert.deepEqual(item.intakeBreakdown, [{ rating: 'all', count: 5 }, { rating: 'refused', count: 1 }], 'the refusal survives the collapse')
+  assert.equal(item.lastRatedDate, '2026-06-20')
+  assert.equal(snap.diet.mealCompletion?.ratedMeals, 6)
+  // Two CONFLICTING ratings keep the representative's, as before this fix: the merge fills a
+  // gap and never re-ranks (the conflict question is CUL-1328).
+  idSeq = 0
+  const both = assembleReport(baseInput({ events: [twin('12:00:00', 'all'), twin('12:00:20', 'refused')] }))
+  assert.deepEqual(both.diet.mealItems[0].intakeBreakdown, [{ rating: 'all', count: 1 }])
+  // A food whose only rating is on its first meal carries that day.
+  idSeq = 0
+  const firstOnly = assembleReport(baseInput({ events: [earlier[0], ...later] }))
+  assert.equal(firstOnly.diet.mealItems[0].lastRatedDate, '2026-06-02')
+})
+
+Deno.test('CUL-1274 — a conflicting twin in a food\'s history never lowers the baseline a refusal is read against', () => {
+  // The round-5 counterexample: keeping the LOWER of two conflicting ratings looked like
+  // escalate-on-presence, and for the relative detector it was the opposite. Kibble X was
+  // eaten on the 27th, 28th and 29th (the 29th logged twice, the re-log "refused"); refused
+  // on Jul 2. Lower-wins dropped the food's baseline to 2.67, under the normally-eaten floor,
+  // and the report stopped flagging the refusal of a food this dog normally eats.
+  idSeq = 0
+  const x = (date: string, time: string, rating: 'all' | 'refused') =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: `${date}T${time}Z`,
+      meal: { foodItemId: 'fx', intakeRating: rating, quantity: null, foodType: 'meal', format: 'dry_kibble', primaryProtein: 'chicken', brand: 'Kibble', productName: 'X' },
+    })
+  const snap = assembleReport(
+    baseInput({
+      pet: { id: 'pet-bo', name: 'Bo', species: 'dog', breed: 'Lab', sex: 'male', dateOfBirth: '2020-01-01', weightKg: 30 },
+      events: [
+        x('2026-06-27', '12:00:00', 'all'),
+        x('2026-06-28', '12:00:00', 'all'),
+        x('2026-06-29', '12:00:00', 'all'),
+        x('2026-06-29', '12:00:30', 'refused'),
+        x('2026-07-02', '10:00:00', 'refused'),
+      ],
+    }),
+  )
+  const flag = snap.safetyFlags.find((f) => f.kind === 'intake_decline')
+  assert.ok(flag, 'the refusal of a normally-eaten food still flags')
+  assert.equal(flag!.kind === 'intake_decline' && flag.trigger, 'refused_normal_food')
+})
+
+Deno.test('CUL-1274 — an unrated log followed by two CONFLICTING re-logs stays unrated, in either order', () => {
+  // The round-6 counterexample: a cat eating her usual food daily, then "ate some", "picked
+  // at it", "refused", and today one meal logged three times within a minute: unrated, "ate
+  // it all", "refused". Filling from the first rating made the meal "ate it all" and the
+  // report went quiet about a cat three days off full meals; filling from the last would do
+  // the mirror in the other order. The twins disagree, so the meal stays as it was logged
+  // first, exactly as before the fill existed, and the flag fires in both orders.
+  const t = (date: string, time: string, rating: 'all' | 'some' | 'picked' | 'refused' | null) =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: `${date}T${time}Z`,
+      meal: { foodItemId: 'ft', intakeRating: rating, quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'chicken', brand: 'Tiki', productName: 'Cat' },
+    })
+  const history = () => [
+    ...['20', '21', '22', '23', '24', '25', '26', '27', '28'].map((d) => t(`2026-06-${d}`, '16:00:00', 'all')),
+    t('2026-06-29', '16:00:00', 'some'),
+    t('2026-06-30', '16:00:00', 'picked'),
+    t('2026-07-01', '16:00:00', 'refused'),
+  ]
+  for (const [label, second, third] of [
+    ['"ate it all" first', 'all', 'refused'],
+    ['"refused" first', 'refused', 'all'],
+  ] as const) {
+    idSeq = 0
+    const snap = assembleReport(
+      baseInput({ events: [...history(), t('2026-07-02', '08:00:00', null), t('2026-07-02', '08:00:20', second), t('2026-07-02', '08:00:40', third)] }),
+    )
+    const today = snap.diet.mealItems[0]
+    assert.equal(today.count, 13, `${label}: the three logs are one meal`)
+    assert.equal(snap.diet.mealCompletion?.ratedMeals, 12, `${label}: the conflicting meal stays unrated`)
+    const flag = snap.safetyFlags.find((f) => f.kind === 'intake_decline')
+    assert.ok(flag, `${label}: the decline still flags`)
+  }
 })
