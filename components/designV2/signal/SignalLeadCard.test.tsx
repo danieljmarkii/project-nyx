@@ -21,7 +21,8 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { theme } from '../../../constants/theme';
 import { LEAD_CHART_INSETS, SignalLeadCard, leadChartWidth } from './SignalLeadCard';
-import { DOOR_A11Y_HINT, RAIL_WIDTH } from '../../home/InsightCard';
+import { RAIL_WIDTH } from '../../home/InsightCard';
+import { DOOR_A11Y_HINT } from './SignalRow';
 import { Card } from '../../ui/Card';
 import { abortFlight, getFlightState, landFlight, reverseFlight, setHeroReady, settleOutbound } from '../../motion/flightMotion';
 import * as fs from 'fs';
@@ -80,7 +81,7 @@ afterEach(() => abortFlight());
 describe('SignalLeadCard — a benign lead', () => {
   it('is a skeleton while the read is in flight, then the title, the bars and the line', async () => {
     const onOpen = jest.fn();
-    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" petName="Nyx" onOpen={onOpen} />);
+    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" onOpen={onOpen} />);
     expect(view.getByTestId('signal-lead-skeleton')).toBeTruthy();
     expect(view.queryByTestId('signal-lead-card')).toBeNull();
     await waitFor(() => expect(view.getByTestId('signal-lead-card')).toBeTruthy());
@@ -94,7 +95,7 @@ describe('SignalLeadCard — a benign lead', () => {
   it('the face is ONE door: it opens, never folds, never expands; the label is the title and the line', async () => {
     const onOpen = jest.fn();
     const onTouch = jest.fn();
-    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" petName="Nyx" onOpen={onOpen} onTouch={onTouch} />);
+    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" onOpen={onOpen} onTouch={onTouch} />);
     await waitFor(() => expect(view.getByTestId('signal-lead-face')).toBeTruthy());
     const face = view.getByTestId('signal-lead-face');
     expect(face.props.accessibilityHint).toBe(DOOR_A11Y_HINT);
@@ -112,7 +113,7 @@ describe('SignalLeadCard — a benign lead', () => {
     mockLoadSignalLead.mockRejectedValue(new Error('sqlite'));
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const onOpen = jest.fn();
-    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" petName="Nyx" onOpen={onOpen} />);
+    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" onOpen={onOpen} />);
     await waitFor(() => expect(view.getByTestId('signal-row')).toBeTruthy());
     expect(view.queryByTestId('weekly-bars')).toBeNull();
     fireEvent.press(view.getByTestId('signal-row'));
@@ -127,7 +128,7 @@ describe('SignalLeadCard — a safety lead is the plain Signal row (S1)', () => 
     'renders no chart, no read, the row as the door',
     async (cached) => {
       const onOpen = jest.fn();
-      const view = render(<SignalLeadCard cached={cached} petId="pet-1" petName="Nyx" onOpen={onOpen} />);
+      const view = render(<SignalLeadCard cached={cached} petId="pet-1" onOpen={onOpen} />);
       expect(view.getByTestId('signal-row')).toBeTruthy();
       expect(view.getByTestId('signal-row-ask')).toBeTruthy();
       expect(view.queryByTestId('signal-lead-skeleton')).toBeNull();
@@ -148,7 +149,7 @@ describe('SignalLeadCard — a safety lead is the plain Signal row (S1)', () => 
 describe('the flight’s door (D2-6 · CUL-1069)', () => {
   it('a press measures the chart, stages the flight with the chart’s own element and the title, then opens', async () => {
     const onOpen = jest.fn();
-    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" petName="Nyx" onOpen={onOpen} />);
+    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" onOpen={onOpen} />);
     await waitFor(() => expect(view.getByTestId('signal-lead-face')).toBeTruthy());
     expect(getFlightState().phase).toBe('idle');
     await act(async () => {
@@ -165,7 +166,7 @@ describe('the flight’s door (D2-6 · CUL-1069)', () => {
 
   it('the chart shows again once the flight is released, and hides again on the way back', async () => {
     const onOpen = jest.fn();
-    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" petName="Nyx" onOpen={onOpen} />);
+    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" onOpen={onOpen} />);
     await waitFor(() => expect(view.getByTestId('signal-lead-face')).toBeTruthy());
     await act(async () => {
       fireEvent.press(view.getByTestId('signal-lead-face'));
@@ -186,7 +187,7 @@ describe('the flight’s door (D2-6 · CUL-1069)', () => {
   it('on the way back the card re-measures and retargets the clone to where the chart is NOW; zeros are declined', async () => {
     jest.useFakeTimers();
     try {
-      const view = render(<SignalLeadCard cached={reflection} petId="pet-1" petName="Nyx" onOpen={jest.fn()} />);
+      const view = render(<SignalLeadCard cached={reflection} petId="pet-1" onOpen={jest.fn()} />);
       await act(async () => {
         await jest.advanceTimersByTimeAsync(0);
       });
@@ -216,7 +217,7 @@ describe('the flight’s door (D2-6 · CUL-1069)', () => {
   it('a measurement the platform declines → the plain door, nothing staged', async () => {
     mockRect = null;
     const onOpen = jest.fn();
-    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" petName="Nyx" onOpen={onOpen} />);
+    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" onOpen={onOpen} />);
     await waitFor(() => expect(view.getByTestId('signal-lead-face')).toBeTruthy());
     await act(async () => {
       fireEvent.press(view.getByTestId('signal-lead-face'));
@@ -234,7 +235,7 @@ describe('the flight’s door (D2-6 · CUL-1069)', () => {
   it('reduced motion → the plain door: nothing is measured or staged', async () => {
     mockReduced.mockReturnValue(true);
     const onOpen = jest.fn();
-    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" petName="Nyx" onOpen={onOpen} />);
+    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" onOpen={onOpen} />);
     await waitFor(() => expect(view.getByTestId('signal-lead-face')).toBeTruthy());
     await act(async () => {
       fireEvent.press(view.getByTestId('signal-lead-face'));
@@ -246,7 +247,7 @@ describe('the flight’s door (D2-6 · CUL-1069)', () => {
   it('a chartless lead (a finding that counts no symptom) opens plainly', async () => {
     mockLoadSignalLead.mockResolvedValue({ title: 'Rabbit trial, day 5 of 56', weekly: null, line: null, noun: null, trial: null });
     const onOpen = jest.fn();
-    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" petName="Nyx" onOpen={onOpen} />);
+    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" onOpen={onOpen} />);
     await waitFor(() => expect(view.getByTestId('signal-lead-face')).toBeTruthy());
     expect(view.queryByTestId('signal-lead-chart')).toBeNull();
     await act(async () => {
@@ -265,7 +266,7 @@ describe('the flight’s door (D2-6 · CUL-1069)', () => {
     const card = render(<Card testID="c">{null}</Card>);
     expect(StyleSheet.flatten(card.getByTestId('c').props.style).padding).toBe(LEAD_CHART_INSETS.cardPadding);
     // The rail and the row's gap, off the card's own rendered row.
-    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" petName="Nyx" onOpen={jest.fn()} />);
+    const view = render(<SignalLeadCard cached={reflection} petId="pet-1" onOpen={jest.fn()} />);
     await waitFor(() => expect(view.getByTestId('signal-lead-card')).toBeTruthy());
     const row = StyleSheet.flatten(view.getByTestId('signal-lead-card').props.style);
     expect(row.gap).toBe(LEAD_CHART_INSETS.rowGap);

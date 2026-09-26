@@ -960,9 +960,7 @@ function LiveStack({
               <SignalLeadCard
                 cached={f}
                 petId={petId}
-                petName={petName}
                 onOpen={onOpen}
-                trialRunning={trialRunning}
                 backBecause={fold.backBecauseOf(f.finding)}
                 onTouch={fold.touch}
               />

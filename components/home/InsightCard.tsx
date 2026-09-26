@@ -110,8 +110,6 @@ const RAIL_COLOR: Record<PriorityClass, string> = {
 // downward arithmetic above shows never crosses the hairline into the next face. The card
 // grows ~12pt for the control row's box; a real control costs its floor.
 const FACE_HITSLOP = { top: 8, left: 8, right: 8, bottom: 0 } as const;
-/** The Signal door's hint (the design_v2 lead card and rows), told apart from the shipped "Shows the evidence…". */
-export const DOOR_A11Y_HINT = 'Opens this signal';
 const CONTROL_HITSLOP = 8;
 const CONTROL_MIN_HEIGHT = 28;
 

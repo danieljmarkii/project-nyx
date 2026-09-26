@@ -222,7 +222,8 @@ describe('signalTitle — names the finding’s claim (D2, CUL-1270)', () => {
   });
 
   it('a correlation names its pairing as a sequence, never an attribution, and names every member', () => {
-    expect(signalTitle(everyType('itch')[7], null)).toBe('Itching after chicken and duck');
+    expect(signalTitle(everyType('itch')[7], null)).toBe('Itching after chicken and duck, an early pattern');
+    expect(signalTitle({ ...(everyType('itch')[7] as CorrelationFinding), tier: 'established' }, null)).toBe('Itching after chicken and duck');
   });
 
   it('the stand-down marker keeps the thing-and-window form (never a door)', () => {

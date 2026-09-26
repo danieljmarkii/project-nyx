@@ -10,8 +10,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { theme } from '../../../constants/theme';
 import type { CachedFinding, SignalFinding } from '../../../lib/signal';
-import { DOOR_A11Y_HINT } from '../../home/InsightCard';
-import { ROW_MIN_HEIGHT, SignalRow, weekPairOf } from './SignalRow';
+import { DOOR_A11Y_HINT, ROW_MIN_HEIGHT, SignalRow, weekPairOf } from './SignalRow';
 
 const cached = (finding: SignalFinding, rank = 1): CachedFinding => ({ rank, text: 'The server’s whole sentence. This is a read of your logs, not a diagnosis.', finding });
 
@@ -125,12 +124,18 @@ describe('the thumbnail — insight rows, drawn from the finding', () => {
     expect(view.queryByTestId('signal-row-ask')).toBeNull();
   });
 
-  it('the frequency comparison draws two bars, last week then this week, scaled to each other', () => {
+  it('the frequency comparison is the shipped Shape C pair, this week then last, both counts printed — and not printed twice', () => {
+    expect(weekPairOf(reflection as never)).toEqual([
+      { label: 'This week', count: 3, tone: 'concern' },
+      { label: 'Last week', count: 5, tone: 'muted' },
+    ]);
     const view = render(<SignalRow cached={cached(reflection)} petId="pet-1" onOpen={jest.fn()} />);
-    const prior = StyleSheet.flatten(view.getByTestId('signal-row-bar-prior').props.style).height as number;
-    const current = StyleSheet.flatten(view.getByTestId('signal-row-bar-current').props.style).height as number;
-    expect(prior).toBeGreaterThan(current);
-    expect(view.getByTestId('signal-row-sub').props.children).toBe('3 this week, 5 last week');
+    expect(view.getByTestId('signal-row-thumb-pair')).toBeTruthy();
+    expect(view.getByText('This week')).toBeTruthy();
+    expect(view.getByText('Last week')).toBeTruthy();
+    expect(view.queryByTestId('signal-row-sub')).toBeNull();
+    // The counts stay in what VoiceOver hears.
+    expect(view.getByTestId('signal-row').props.accessibilityLabel).toBe('Vomiting, week over week. 3 this week, 5 last week.');
   });
 
   it('S2: a withheld prior draws no pair — never a lone numerator bar', () => {
@@ -138,6 +143,8 @@ describe('the thumbnail — insight rows, drawn from the finding', () => {
     expect(weekPairOf(withheld as never)).toBeNull();
     const view = render(<SignalRow cached={cached(withheld)} petId="pet-1" onOpen={jest.fn()} />);
     expect(view.queryByTestId('signal-row-thumb-pair')).toBeNull();
+    // With no pair, the count line says what the sentence says: this week alone.
+    expect(view.getByTestId('signal-row-sub').props.children).toBe('3 this week');
   });
 
   it('every other type is words only; a folded insight row drops its picture', () => {

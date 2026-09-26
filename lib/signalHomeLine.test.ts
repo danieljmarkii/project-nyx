@@ -26,6 +26,7 @@ import type {
   TimingStoryFinding,
   TrialResponseFinding,
 } from './signal';
+import { signalTitle } from './signalTitle';
 import { hasTitleVerdictWord } from './signalTitle';
 import { askStandalone, signalHomeAsk, signalHomeLabel, signalHomeLine, type SignalHomeLine } from './signalHomeLine';
 
@@ -157,7 +158,20 @@ function timings(s: SignalSymptomType): SignalFinding[] {
     feedingFormsInEvidence: [],
     windowDays: 56,
   };
-  return [post, { ...post, rapidCount: 1, eligibleCount: 1, lastTwoEligibleRapid: false }, clock, { ...clock, clusterStartLocalHour: 4 }, empty];
+  const story: TimingStoryFinding = {
+    type: 'timing_story',
+    priorityClass: 'insight',
+    symptomType: s,
+    bandCounts: { rapid: 3, mid: 2, long: 4 },
+    eligibleCount: 9,
+    totalEpisodes: 11,
+    rapidWindowMinutes: 30,
+    longGapHours: 6,
+    windowDays: 56,
+    rapid: { count: 3, medianMinutesSinceFeeding: 10, lastTwoEligible: false, feedingFormsInEvidence: [] },
+    long: { count: 4, medianHoursSinceFeeding: 8, lastTwoEligible: false, feedingFormsInEvidence: [], clockBand: { startLocalHour: 4, windowHours: 4 }, clockCount: 3 },
+  };
+  return [post, { ...post, rapidCount: 1, eligibleCount: 1, lastTwoEligibleRapid: false }, clock, { ...clock, clusterStartLocalHour: 4 }, empty, story];
 }
 
 function correlations(s: SignalSymptomType): CorrelationFinding[] {
@@ -242,17 +256,22 @@ describe('PARITY: the Home row counts from the sentence’s own fields (the scre
     for (const f of everyFinding()) {
       const l = line(f);
       const said = new Set(numbersIn(sentence(f)));
-      // Two declared exceptions, each a number the SCREEN still shows beside the sentence:
-      // the trial card's title is the trial's own day-of-target (D2-3's rule, unchanged),
-      // and the timing story's sentence deliberately leaves its band counts to the receipt
-      // (S10) — the row's count line reads the receipt's fields.
+      // One declared exception: the trial card's title is the trial's own day-of-target
+      // (D2-3's rule, unchanged), which the screen's title prints too.
       const onRow = [
         ...(l.eyebrow ? numbersIn(l.eyebrow) : []),
         ...(f.type === 'trial_response' ? [] : numbersIn(l.headline)),
         ...(l.count ? numbersIn(l.count) : []),
       ];
+      // A MULTISET check: the row may say a number no more often than the sentence does, so
+      // a line that prints this week's count where last week's belongs (7 and 7 for a
+      // sentence's 7 and 2) cannot hide behind set membership.
+      const budget = new Map<string, number>();
+      for (const n of numbersIn(sentence(f))) budget.set(n, (budget.get(n) ?? 0) + 1);
       for (const n of onRow) {
-        if (!said.has(n)) throw new Error(`${f.type}: "${n}" is on the row (${JSON.stringify(l)}) but not in the sentence: ${sentence(f)}`);
+        const left = budget.get(n) ?? 0;
+        if (left === 0) throw new Error(`${f.type}: "${n}" is on the row (${JSON.stringify(l)}) more often than in the sentence: ${sentence(f)}`);
+        budget.set(n, left - 1);
       }
       checked += 1;
     }
@@ -280,6 +299,40 @@ describe('PARITY: the Home row counts from the sentence’s own fields (the scre
     const f = chronicities('vomit').find((c) => c.firstOnsetIso === '2026-08-31T23:50:00Z') as SymptomChronicityFinding;
     expect(line(f).count).toBe('1 episode since August');
     expect(sentence(f)).toContain('since August');
+  });
+});
+
+// ── Roles: every number in its place ──────────────────────────────────────────
+//
+// Membership cannot see a swap (a rise read as flat when the prior slot prints the current
+// count), so each type is also pinned with ALL-DISTINCT field values, where the only way to
+// print the right string is to read the right field.
+
+describe('ROLES: with every field distinct, each number comes from the field its words name', () => {
+  const W = { type: 'symptom_worsening', priorityClass: 'safety', symptomType: 'vomit', currentCount: 7, priorCount: 2, currentDays: 5, priorDays: 3, windowDays: 9 } as const;
+  const cases: [SignalFinding, string, string | null][] = [
+    [{ ...W, trigger: 'more_days', tier: 'firm' }, 'Vomiting on 5 of the last 9 days', '3 days the week before'],
+    [{ ...W, trigger: 'more_episodes', tier: 'firm' }, 'Vomiting on 5 of the last 9 days', '7 episodes, 2 the week before'],
+    [{ ...W, trigger: 'more_days', tier: 'soft' }, 'Vomiting on 5 separate days this week', '3 days last week'],
+    [{ ...W, trigger: 'more_episodes', tier: 'standard' }, 'Vomiting, 7 episodes this week', '2 last week'],
+    [
+      { type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'vomit', episodeCount: 14, spanDays: 40, activeWeeks: 5, symptomDays: 12, daysSinceLastEpisode: 1, firstOnsetIso: '2026-08-03T12:00:00Z', tier: 'firm', windowDays: 56 },
+      'Vomiting in 5 of the last 8 weeks',
+      '14 episodes since August',
+    ],
+    [{ type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 3, priorCount: 5, direction: 'improving', windowDays: 14 }, 'Vomiting, week over week', '3 this week, 5 last week'],
+    [timings('vomit')[0], 'Vomiting soon after meals', '9 of 10 timed episodes within 30 min of eating'],
+    [timings('vomit')[2], 'Vomiting between 11pm and 3am', '5 of 8 timed episodes'],
+    [timings('vomit')[4], 'Vomiting long after meals', '4 of 6 timed episodes, at least 6 hours after eating'],
+    [{ ...correlations('vomit')[1] }, 'Vomiting after chicken', 'A tendency, compared across 9 days of logs'],
+    [trialCard, 'Diet trial, day 21 of 56', '4 episodes of vomiting in the trial, 20 in the 49 days before, a longer stretch'],
+    [intakes()[0], 'Eating less than usual', 'The last three days'],
+  ];
+  it.each(cases.map(([f, h, c]) => [f.type, f, h, c] as const))('%s', (_t, f, headline, count) => {
+    const l = line(f);
+    expect(l.headline).toBe(headline);
+    expect(l.count).toBe(count);
+    expect(l.headline).toBe(signalTitle(f, null));
   });
 });
 

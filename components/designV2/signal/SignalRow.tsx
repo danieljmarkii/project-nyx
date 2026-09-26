@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../../constants/theme';
 import type { CachedFinding, PriorityClass, ReflectionFinding, SignalFinding } from '../../../lib/signal';
-import { backBecauseCopy, dotLaneModel, isTimingFinding, stripDayLocal, timingCompareRows, timingReceiptDegrades } from '../../../lib/signalCopy';
+import { backBecauseCopy, type CompareRow, dotLaneModel, isTimingFinding, stripDayLocal, timingCompareRows, timingReceiptDegrades } from '../../../lib/signalCopy';
 import type { BackBecauseReason } from '../../../lib/signalFold';
 import { askStandalone, signalHomeLabel, signalHomeLine } from '../../../lib/signalHomeLine';
 import { loadSignalRowTrial } from '../../../lib/signalLead';
 import type { SignalTrialWindow } from '../../../lib/signalWindows';
 import { DotLane, StackedCompare } from '../../home/SignalReceipts';
-import { DOOR_A11Y_HINT, RAIL_WIDTH } from '../../home/InsightCard';
+import { RAIL_WIDTH } from '../../home/InsightCard';
 import { ThemedText } from '../../ui/ThemedText';
 
 // SignalRow — one Signal finding on Home under Design v2 (CUL-1270 · D1 = B; design
@@ -38,9 +38,9 @@ import { ThemedText } from '../../ui/ThemedText';
 // THE THUMBNAIL IS DRAWN FROM THE FINDING, not from a second read of the record, so the
 // picture and the line beside it can never disagree (the PM's ruling on CUL-1270, build
 // call i): the timing lane from `dotLaneModel` (the shipped card-face receipt, degrading to
-// its compare above the legibility cap), and for the frequency comparison two bars from
-// `currentCount` / `priorCount` — absent when the density gate withholds the prior (S2:
-// never a numerator-only visual). Every other type is words only.
+// its compare above the legibility cap), and for the frequency comparison the shipped
+// Shape C pair from `currentCount` / `priorCount` — absent when the density gate withholds
+// the prior (S2: never a numerator-only visual). Every other type is words only.
 //
 // Touch geometry (C-5): rows are stacked between hairlines, so the row's own box — its
 // padding included — is the whole target and carries NO slop: two adjacent doors abut and
@@ -50,6 +50,10 @@ const RAIL_COLOR: Record<PriorityClass, string> = {
   safety: theme.colorEventSymptom,
   insight: theme.colorAccent,
 };
+
+/** A Signal door's hint (the rows and the lead card), told apart from the shipped card's
+ *  "Shows the evidence…". */
+export const DOOR_A11Y_HINT = 'Opens this signal';
 
 /** The row's floor: every door clears 44pt on its own box, with no slop to share. */
 export const ROW_MIN_HEIGHT = 44;
@@ -81,11 +85,10 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, folded = fals
   useEffect(() => {
     if (!namesTrial) return;
     let cancelled = false;
-    loadSignalRowTrial(petId)
-      .then((t) => {
-        if (!cancelled) setTrial(t);
-      })
-      .catch((e) => console.warn('[signal-row] trial read failed:', e));
+    // `loadSignalRowTrial` never rejects: a failed read resolves null and is logged there.
+    void loadSignalRowTrial(petId).then((t) => {
+      if (!cancelled) setTrial(t);
+    });
     return () => {
       cancelled = true;
     };
@@ -101,7 +104,9 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, folded = fals
   // owner coming back sees when it last happened, not only that it recurs.
   const lastDay = folded && safety && lastEpisodeIso ? stripDayLocal(lastEpisodeIso) : null;
   const showEyebrow = line.eyebrow != null && (!folded || safety);
-  const subCount = folded ? (lastDay ? `Last episode ${lastDay.short}` : null) : line.count;
+  // An open frequency row whose pair renders prints its counts in the pair, not twice (S10).
+  const pairDrawn = !folded && finding.type === 'reflection' && weekPairOf(finding) != null;
+  const subCount = folded ? (lastDay ? `Last episode ${lastDay.short}` : null) : pairDrawn ? null : line.count;
   let label = signalHomeLabel({ ...line, eyebrow: showEyebrow ? line.eyebrow : null }, folded, lastDay ? lastDay.spoken : null);
   if (backLine) label = `${backLine} ${label}`;
   const thumbnail = !safety && !folded ? <Thumbnail finding={finding} /> : null;
@@ -191,33 +196,29 @@ function Thumbnail({ finding }: { finding: SignalFinding }) {
   return null;
 }
 
-/** The frequency comparison's two bars — last week, then this week, in time order. */
-export function weekPairOf(finding: ReflectionFinding): { prior: number; current: number } | null {
-  // SR-4's density gate withholds the prior on a falling week logged more thinly; with no
-  // prior there is no pair, and a lone bar would be the numerator-only visual S2 forbids.
+/**
+ * The frequency comparison's pair, this week then last — the order its count line and its
+ * sentence read in. Null when SR-4's density gate withholds the prior: with no prior there
+ * is no pair, and a lone bar would be the numerator-only visual S2 forbids. A flat week
+ * prints the engine's own prior beside its current, as the shipped strip always has.
+ */
+export function weekPairOf(finding: ReflectionFinding): CompareRow[] | null {
   if (finding.direction === 'improving' && finding.density?.comparable === false) return null;
-  return { prior: finding.priorCount, current: finding.currentCount };
+  return [
+    { label: 'This week', count: finding.currentCount, tone: 'concern' },
+    { label: 'Last week', count: finding.priorCount, tone: 'muted' },
+  ];
 }
 
-const PAIR_PLOT_HEIGHT = 24;
-
+// The pair is the shipped Shape C stacked compare (§4 — Shapes A and C only; both counts
+// printed), not a new receipt shape. It prints the counts, so the row does not print them
+// again beside it (S10) — they stay in the row's spoken label.
 function WeekPair({ finding }: { finding: ReflectionFinding }) {
-  const pair = weekPairOf(finding);
-  if (!pair) return null;
-  const max = Math.max(1, pair.prior, pair.current);
-  const bar = (n: number) => (n === 0 ? 2 : Math.max(3, Math.round((n / max) * PAIR_PLOT_HEIGHT)));
+  const rows = weekPairOf(finding);
+  if (!rows) return null;
   return (
     <View style={styles.thumb} testID="signal-row-thumb-pair" accessible={false}>
-      <View style={styles.pairPlot}>
-        <View style={styles.pairCol}>
-          <View style={[styles.pairBar, styles.pairBarPrior, { height: bar(pair.prior) }]} testID="signal-row-bar-prior" />
-          <ThemedText style={styles.pairAxis}>Last week</ThemedText>
-        </View>
-        <View style={styles.pairCol}>
-          <View style={[styles.pairBar, styles.pairBarCurrent, { height: bar(pair.current) }]} testID="signal-row-bar-current" />
-          <ThemedText style={styles.pairAxis}>This week</ThemedText>
-        </View>
-      </View>
+      <StackedCompare rows={rows} />
     </View>
   );
 }
@@ -293,30 +294,6 @@ const styles = StyleSheet.create({
   thumb: {
     marginTop: theme.space0_5,
     marginBottom: 2,
-  },
-  pairPlot: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: theme.space2,
-  },
-  pairCol: {
-    alignItems: 'flex-start',
-    gap: 2,
-  },
-  pairBar: {
-    width: 28,
-    borderRadius: 2,
-  },
-  pairBarPrior: {
-    backgroundColor: theme.colorTextDisabled,
-  },
-  pairBarCurrent: {
-    backgroundColor: theme.colorEventSymptom,
-  },
-  pairAxis: {
-    fontSize: theme.textXS,
-    lineHeight: theme.lineHeightXS,
-    color: theme.colorTextTertiary,
   },
   chevronBox: {
     width: 22,

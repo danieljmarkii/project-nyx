@@ -48,7 +48,7 @@ import { StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { FOOT_LINK_HITSLOP, FOOT_MARGIN_TOP } from '../designV2/signal/SignalZoneFoot';
 import { SignalZone } from './SignalZone';
-import { DOOR_A11Y_HINT } from './InsightCard';
+import { DOOR_A11Y_HINT } from '../designV2/signal/SignalRow';
 import type { SignalState } from '../../hooks/useSignal';
 import type { CachedFinding } from '../../lib/signal';
 import { signalWeeks, weekLine } from '../../lib/signalWindows';

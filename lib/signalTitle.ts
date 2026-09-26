@@ -133,8 +133,9 @@ export function signalTitle(finding: SignalFinding, trial: SignalTrialWindow | n
       return `${symptomThing(finding.symptomType)} ${localHourBand(finding.clusterStartLocalHour, finding.clusterWindowHours)}`;
     case 'food_symptom_correlation':
       // The pairing is the claim: a sequence observed ("after"), never an attribution. A
-      // joint candidate names every member (the label already does).
-      return `${symptomThing(finding.symptomType)} after ${finding.protein}`;
+      // joint candidate names every member (the label already does). The early tier says it
+      // is early IN the title — the one line a folded row keeps (adversarial pass).
+      return `${symptomThing(finding.symptomType)} after ${finding.protein}${finding.tier === 'early' ? ', an early pattern' : ''}`;
     case 'stood_down':
       // Not a card and never a door: it keeps D2-3's thing-and-window form.
       return `${symptomThing(finding.symptomType)}, ${trial ? trialPhrase(trial) : windowPhrase(signalWindowDays(finding))}`;

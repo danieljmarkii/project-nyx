@@ -9,11 +9,11 @@ import { foldIdentity } from '../../../lib/signalFold';
 import { loadSignalLead, type SignalLeadModel } from '../../../lib/signalLead';
 import { WeeklyBars } from '../../charts/WeeklyBars';
 import type { BackBecauseReason } from '../../../lib/signalFold';
-import { DOOR_A11Y_HINT, RAIL_WIDTH } from '../../home/InsightCard';
+import { RAIL_WIDTH } from '../../home/InsightCard';
 import { FLIGHT_ENABLED, FLIGHT_MOTION, flightActiveFor, retargetSource, stageFlight, useFlightState } from '../../motion/flightMotion';
 import { Skeleton } from '../../ui/Skeleton';
 import { ThemedText } from '../../ui/ThemedText';
-import { SignalRow } from './SignalRow';
+import { DOOR_A11Y_HINT, SignalRow } from './SignalRow';
 
 // SignalLeadCard — the Signal card on Home under Design v2 (D2-3 · CUL-1065; design
 // authority `docs/culprit-design-v4-mockups.html` §01): a title, a chart and one line.
@@ -74,10 +74,7 @@ interface Props {
   cached: CachedFinding;
   /** The pet the findings belong to (C-9) — the zone's `petId`, never the store's active pet. */
   petId: string;
-  petName: string;
   onOpen: (finding: SignalFinding) => void;
-  /** Kept for the zone's call shape; the lead card itself reads the trial window. */
-  trialRunning?: boolean;
   backBecause?: BackBecauseReason | null;
   onTouch?: (finding: SignalFinding) => void;
 }

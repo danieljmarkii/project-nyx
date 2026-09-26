@@ -57,5 +57,8 @@ export async function loadSignalLead(petId: string, cached: CachedFinding, nowMs
 export async function loadSignalRowTrial(petId: string, nowMs: number = Date.now()): Promise<SignalTrialWindow | null> {
   const pet = usePetStore.getState().pets.find((p) => p.id === petId) ?? null;
   if (!pet) return null;
-  return readSignalTrial({ id: pet.id, name: pet.name, species: pet.species, sex: pet.sex }, nowMs).catch(() => null);
+  return readSignalTrial({ id: pet.id, name: pet.name, species: pet.species, sex: pet.sex }, nowMs).catch((e) => {
+    console.warn('[signal-row] trial read failed:', e);
+    return null;
+  });
 }

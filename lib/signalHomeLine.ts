@@ -115,18 +115,20 @@ function countLine(finding: SignalFinding): string | null {
     case 'timeofday_clustering':
       return `${finding.clusterCount} of ${finding.eligibleCount} timed episodes`;
     case 'timing_story':
-      // The one count line the sentence does not carry: the story's sentence names the shape
-      // and deliberately leaves the band counts to the receipt (S10), so the row states the
-      // receipt's own counts — the same fields the screen's face draws.
-      return `${finding.bandCounts.rapid} soon after eating, ${finding.bandCounts.mid} in between, ${finding.bandCounts.long} long after, of ${finding.eligibleCount} timed`;
+      // No count: the story's sentence names the shape and leaves its band counts to a
+      // receipt (S10) that the design_v2 screen does not draw, so any number here would be
+      // one the owner cannot find behind the door. The headline carries the claim.
+      return null;
     case 'food_symptom_correlation':
-      // "Seen after", a sequence observed, on the row as in the title: the sentence's own
-      // hedge ("has tended to follow") is on the screen, and a bare count under "after
-      // chicken" would read as the cause (pm-feature-review; the council's swap-the-treats
-      // risk). "Matched days" is the engine's word, not the owner's.
+      // `matchedPairs` is how many days the engine COMPARED (case/control pairs), never how
+      // many times the symptom followed the food — "seen after chicken on 20 days" would
+      // claim 20 chicken-then-vomit days where there were 14 (adversarial pass). So the row
+      // says what the number is, beside the sentence's own hedge ("has tended to follow"):
+      // a tendency, compared. "Matched days" is the engine's word, not the owner's. The
+      // early tier's hedge lives in its title, where a fold cannot drop it.
       return finding.tier === 'established'
-        ? `Seen after meals with ${finding.protein} on ${finding.matchedPairs} days of logs`
-        : `Within about ${Math.round(finding.correlationWindowHours)} hours of ${finding.protein}, an early pattern`;
+        ? `A tendency, compared across ${finding.matchedPairs} days of logs`
+        : `Within about ${Math.round(finding.correlationWindowHours)} hours of ${finding.protein}`;
     case 'trial_response': {
       // The sentence's B-775 guard, kept: the baseline is a fixed 49 days and the trial era
       // grows, so on a young trial a falling pair over-states the fall — always in the
