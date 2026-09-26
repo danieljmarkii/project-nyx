@@ -40,6 +40,7 @@ Shipped via #945. Step 1 of the Linear project **Diet trial — its own screen**
 - Day keys at 00:30 and 23:30 local in Honolulu, Chatham and Kiritimati. The suite also passes with the process run under each of those zones.
 - Mutation, each one red: head days counted, rows stopped at the target, today dropped from the count, dots only on meal days, the unusable-set gate removed, then each gate removed in turn (not eating, milestone, extension, shortened, parity check, lane withholding, current row on an ended trial, "so far" on an ended trial, `ended` from `endedAt`, today open on an ended trial).
 - Full suite: 11,975 passed. Guards: 525 passed.
+- Re-run after merging `main` at wrap. By then TS-0 (#941), TS-1 (#942) and CUL-1292 (#943) had landed, and TS-1 changed the trial reads the tests drive. The result: 12,041 passed, types clean, and TS-0's flag-off guard green over the new `components/trialScreen/` files.
 
 ## For the hosts
 
