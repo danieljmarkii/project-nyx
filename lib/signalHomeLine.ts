@@ -54,9 +54,11 @@ function numWord(n: number): string {
  * The ask, verbatim from each template's own vet clause. The server strings, for the
  * reviewer (and the parity test proves each is a substring of the rendered sentence):
  *   chronicity   firm "worth booking a vet visit" · else "worth a word with your vet"
- *   worsening    firm "worth booking a vet visit soon" · soft "a word with your vet if it
- *                carries on" · standard "worth a word with your vet"
- *   intake       "a word with your vet if it carries on" (both triggers)
+ *   worsening    firm "worth booking a vet visit soon" · soft "worth keeping an eye on, and a
+ *                word with your vet if it carries on" · standard "worth a word with your vet"
+ *   intake       "worth keeping an eye on, and a word with your vet if it carries on" (both)
+ * The conditional asks keep their lead-in: cut to "a word with your vet if it carries on"
+ * they read as a fragment with no verb (pm-feature-review).
  *   red flag     "worth a call to your vet"
  */
 export function signalHomeAsk(finding: SignalFinding): string | null {
@@ -67,10 +69,10 @@ export function signalHomeAsk(finding: SignalFinding): string | null {
       return finding.tier === 'firm'
         ? 'worth booking a vet visit soon'
         : finding.tier === 'soft'
-          ? 'a word with your vet if it carries on'
+          ? 'worth keeping an eye on, and a word with your vet if it carries on'
           : 'worth a word with your vet';
     case 'intake_decline':
-      return 'a word with your vet if it carries on';
+      return 'worth keeping an eye on, and a word with your vet if it carries on';
     case 'incident_red_flag':
       return 'worth a call to your vet';
     default:
@@ -90,7 +92,9 @@ function countLine(finding: SignalFinding): string | null {
         return `${plural(finding.priorDays, 'day', 'days')} the week before`;
       }
       if (finding.tier === 'firm') {
-        const prior = finding.priorCount === 0 ? 'none last week' : `${finding.priorCount} last week`;
+        // The headline counted "the last 7 days", so the prior is "the week before" — never
+        // "last week", which an owner reads as the same seven days (pm-feature-review).
+        const prior = finding.priorCount === 0 ? 'none the week before' : `${finding.priorCount} the week before`;
         return `${plural(finding.currentCount, 'episode', 'episodes')}, ${prior}`;
       }
       if (finding.tier === 'soft') return `${plural(finding.priorDays, 'day', 'days')} last week`;
@@ -114,15 +118,27 @@ function countLine(finding: SignalFinding): string | null {
       // The one count line the sentence does not carry: the story's sentence names the shape
       // and deliberately leaves the band counts to the receipt (S10), so the row states the
       // receipt's own counts — the same fields the screen's face draws.
-      return `${finding.bandCounts.rapid} soon after eating, ${finding.bandCounts.long} long after, of ${finding.eligibleCount} timed`;
+      return `${finding.bandCounts.rapid} soon after eating, ${finding.bandCounts.mid} in between, ${finding.bandCounts.long} long after, of ${finding.eligibleCount} timed`;
     case 'food_symptom_correlation':
+      // "Seen after", a sequence observed, on the row as in the title: the sentence's own
+      // hedge ("has tended to follow") is on the screen, and a bare count under "after
+      // chicken" would read as the cause (pm-feature-review; the council's swap-the-treats
+      // risk). "Matched days" is the engine's word, not the owner's.
       return finding.tier === 'established'
-        ? `Across ${finding.matchedPairs} matched days of logs`
-        : `Within about ${Math.round(finding.correlationWindowHours)} hours, an early pattern`;
-    case 'trial_response':
-      return `${plural(finding.pooledTrialCount, 'episode', 'episodes')} in the trial, ${finding.pooledBaselineCount} in the ${finding.baselineWindowDays} days before`;
+        ? `Seen after meals with ${finding.protein} on ${finding.matchedPairs} days of logs`
+        : `Within about ${Math.round(finding.correlationWindowHours)} hours of ${finding.protein}, an early pattern`;
+    case 'trial_response': {
+      // The sentence's B-775 guard, kept: the baseline is a fixed 49 days and the trial era
+      // grows, so on a young trial a falling pair over-states the fall — always in the
+      // reassuring direction. The same 1.5× presentation threshold, the same words. And the
+      // noun: the lane counts vomiting only, so the row says so.
+      const longer = finding.baselineWindowDays >= finding.trialDayNumber * 1.5 ? ', a longer stretch' : '';
+      return `${plural(finding.pooledTrialCount, 'episode', 'episodes')} of vomiting in the trial, ${finding.pooledBaselineCount} in the ${finding.baselineWindowDays} days before${longer}`;
+    }
     case 'intake_decline':
-      if (finding.trigger === 'refused_normal_food') return null;
+      // The sentence's own time anchor ("just turned down …"), with the food it names — said
+      // without "down", a word the row's verdict screen reads as a direction.
+      if (finding.trigger === 'refused_normal_food') return finding.refusedFoodLabel ? `${finding.refusedFoodLabel}, just now` : 'Just now';
       return finding.daysBelowBaseline <= 1 ? 'Today' : `The last ${numWord(finding.daysBelowBaseline)} days`;
     case 'incident_red_flag':
       // The headline and the eyebrow carry it: the phrase, the family and the date.
@@ -165,13 +181,15 @@ export function askStandalone(ask: string): string {
 /**
  * The row's spoken label — one sentence per line, the eyebrow's middle dot said as a
  * comma (VoiceOver reads "·" as nothing), and the ask always in it. A folded row speaks
- * its headline and its ask: the ask is never behind a tap, for a sighted owner or not.
+ * its headline, its date when it keeps one, and its ask: the ask is never behind a tap,
+ * for a sighted owner or not.
  */
-export function signalHomeLabel(line: SignalHomeLine, folded: boolean): string {
+export function signalHomeLabel(line: SignalHomeLine, folded: boolean, foldedDateSpoken: string | null = null): string {
   const parts: string[] = [];
-  if (!folded && line.eyebrow) parts.push(line.eyebrow.replace(' · ', ', '));
+  if (line.eyebrow) parts.push(line.eyebrow.replace(' · ', ', '));
   parts.push(line.headline);
   if (!folded && line.count) parts.push(line.count);
+  if (folded && foldedDateSpoken) parts.push(`Last episode ${foldedDateSpoken}`);
   if (line.ask) parts.push(askStandalone(line.ask));
   return `${parts.join('. ')}.`;
 }

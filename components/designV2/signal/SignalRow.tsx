@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../../constants/theme';
 import type { CachedFinding, PriorityClass, ReflectionFinding, SignalFinding } from '../../../lib/signal';
-import { backBecauseCopy, dotLaneModel, isTimingFinding, timingCompareRows, timingReceiptDegrades } from '../../../lib/signalCopy';
+import { backBecauseCopy, dotLaneModel, isTimingFinding, stripDayLocal, timingCompareRows, timingReceiptDegrades } from '../../../lib/signalCopy';
 import type { BackBecauseReason } from '../../../lib/signalFold';
 import { askStandalone, signalHomeLabel, signalHomeLine } from '../../../lib/signalHomeLine';
 import { loadSignalRowTrial } from '../../../lib/signalLead';
@@ -67,9 +67,12 @@ interface Props {
   backBecause?: BackBecauseReason | null;
   /** Any owner touch clears a Back-because line (fold spec §5.3). */
   onTouch?: (finding: SignalFinding) => void;
+  /** The record's most recent episode of this finding's symptom (fold spec §3.4) — a folded
+   *  STANDING safety row keeps its date, a DATE and never a counter. Null / absent: no date. */
+  lastEpisodeIso?: string | null;
 }
 
-export function SignalRow({ cached, petId, onOpen, isLead = false, folded = false, backBecause = null, onTouch }: Props) {
+export function SignalRow({ cached, petId, onOpen, isLead = false, folded = false, backBecause = null, onTouch, lastEpisodeIso = null }: Props) {
   const { finding } = cached;
   // The trial card names the local trial's identity and day, as its screen does; every
   // other claim is the same claim on a trial day, so no other row reads it.
@@ -93,7 +96,13 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, folded = fals
 
   const safety = finding.priorityClass === 'safety';
   const backLine = backBecause ? backBecauseCopy(backBecause) : null;
-  let label = signalHomeLabel(line, folded);
+  // Folded, a safety row keeps what the fold spec keeps on a safety strip: its ask, its date
+  // (the photo read's eyebrow; a standing concern's last episode, from the record). A worried
+  // owner coming back sees when it last happened, not only that it recurs.
+  const lastDay = folded && safety && lastEpisodeIso ? stripDayLocal(lastEpisodeIso) : null;
+  const showEyebrow = line.eyebrow != null && (!folded || safety);
+  const subCount = folded ? (lastDay ? `Last episode ${lastDay.short}` : null) : line.count;
+  let label = signalHomeLabel({ ...line, eyebrow: showEyebrow ? line.eyebrow : null }, folded, lastDay ? lastDay.spoken : null);
   if (backLine) label = `${backLine} ${label}`;
   const thumbnail = !safety && !folded ? <Thumbnail finding={finding} /> : null;
 
@@ -114,7 +123,7 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, folded = fals
       <View style={[styles.rail, { backgroundColor: RAIL_COLOR[finding.priorityClass] }]} />
       <View style={styles.body}>
         {backLine ? <ThemedText style={styles.backBecause}>{backLine}</ThemedText> : null}
-        {line.eyebrow && !folded ? (
+        {showEyebrow ? (
           <ThemedText style={styles.eyebrow} testID="signal-row-eyebrow">
             {line.eyebrow}
           </ThemedText>
@@ -123,7 +132,7 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, folded = fals
           {line.headline}
         </ThemedText>
         {thumbnail}
-        <SubLine count={folded ? null : line.count} ask={line.ask} />
+        <SubLine count={subCount} ask={line.ask} />
       </View>
       <View style={isLead && !folded ? styles.chevronLead : styles.chevronBox}>
         {/* geist-ok: Icon glyph, not copy — stays a raw <Text> (the strips' chevron). */}

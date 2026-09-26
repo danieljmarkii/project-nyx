@@ -341,6 +341,38 @@ describe('the row’s words', () => {
     }
   });
 
+  it('the trial row keeps the sentence’s B-775 guard and its noun (pm-feature-review)', () => {
+    // Day 21 against a 49-day baseline: ≥ 1.5×, so the fall is over-stated without the cue.
+    expect(line(trialCard).count).toBe('4 episodes of vomiting in the trial, 20 in the 49 days before, a longer stretch');
+    expect(sentence(trialCard)).toContain(', a longer stretch');
+    const older = { ...trialCard, trialDayNumber: 40, trialWindowDays: 40 };
+    expect(line(older).count).toBe('4 episodes of vomiting in the trial, 20 in the 49 days before');
+    expect(sentence(older)).not.toContain('a longer stretch');
+  });
+
+  it('the cue is on the row exactly when the sentence carries it, at every trial day', () => {
+    for (let day = 1; day <= 60; day++) {
+      const f = { ...trialCard, trialDayNumber: day, trialWindowDays: day };
+      expect((line(f).count as string).includes('a longer stretch')).toBe(sentence(f).includes('a longer stretch'));
+    }
+  });
+
+  it('a dense worsening says “the week before” under “the last 7 days”, never “last week”', () => {
+    for (const f of worsenings('vomit').filter((w) => w.tier === 'firm')) expect(line(f).count).not.toMatch(/last week/);
+  });
+
+  it('the conditional asks keep their verb', () => {
+    for (const f of [...intakes(), ...worsenings('vomit').filter((w) => w.tier === 'soft')]) {
+      expect(line(f).ask).toBe('worth keeping an eye on, and a word with your vet if it carries on');
+    }
+  });
+
+  it('the refusal carries the sentence’s time anchor and the food it names', () => {
+    const [, , , refused, unnamed] = intakes();
+    expect(line(refused).count).toBe('Kibble, just now');
+    expect(line(unnamed).count).toBe('Just now');
+  });
+
   it('the stand-down marker is not a row', () => {
     expect(
       signalHomeLine({
@@ -361,6 +393,11 @@ describe('the spoken label', () => {
   it('says every line, the eyebrow’s dot as a comma, and the ask with a capital', () => {
     const [redFlag] = redFlags();
     expect(signalHomeLabel(line(redFlag), false)).toBe('Photo read, Sep 22. Possible blood in a vomit photo. Worth a call to your vet.');
+  });
+
+  it('a folded row speaks the date it keeps', () => {
+    const f = chronicities('vomit')[0];
+    expect(signalHomeLabel(line(f), true, 'September 24')).toBe('Vomiting in 1 of the last 8 weeks. Last episode September 24. Worth a word with your vet.');
   });
 
   it('a folded row still speaks its ask — never behind a tap, for any reader', () => {

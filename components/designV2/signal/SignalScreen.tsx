@@ -81,7 +81,7 @@ import { leadChartWidth } from './SignalLeadCard';
 
 /** *Keep it compact on Home* — the fold control's words on the screen. */
 export const KEEP_COMPACT_LABEL = 'Keep it compact on Home';
-export const KEEP_COMPACT_HINT = 'Folds this signal to one line on Home. It reopens on its own when the picture changes.';
+export const KEEP_COMPACT_HINT = 'Folds this signal to its headline on Home. It reopens on its own when the picture changes.';
 /** The same control on a folded card: the way back to the full card on Home. */
 export const SHOW_FULL_LABEL = 'Show it in full on Home';
 export const SHOW_FULL_HINT = 'Shows this signal in full on Home again.';

@@ -89,6 +89,35 @@ describe('S1 — a safety row is words: the headline and the ask, never a chart'
   });
 });
 
+// The last episode is a LOCAL day (the record's, read by the device), so the instant is
+// built from local components — never a UTC literal (B-514; the non-UTC CI job).
+const SEP_24_LOCAL = new Date(2026, 8, 24, 12, 0).toISOString();
+
+describe('a folded safety row keeps its date (fold spec §3.4)', () => {
+  it('a standing concern: its last episode from the record, printed and spoken, with the ask', () => {
+    const view = render(<SignalRow cached={cached(SAFETY[0])} petId="pet-1" onOpen={jest.fn()} folded lastEpisodeIso={SEP_24_LOCAL} />);
+    expect(view.getByTestId('signal-row-sub').props.children[0]).toBe('Last episode Sep 24');
+    expect(view.getByTestId('signal-row').props.accessibilityLabel).toBe(
+      'Vomiting in 5 of the last 8 weeks. Last episode September 24. Worth booking a vet visit.',
+    );
+  });
+
+  it('the photo read keeps its dated eyebrow folded; an unread record prints no date rather than a guess', () => {
+    const red = render(<SignalRow cached={cached(SAFETY[4])} petId="pet-1" onOpen={jest.fn()} folded />);
+    expect(red.getByTestId('signal-row-eyebrow').props.children).toBe('Photo read · Sep 22');
+    const noDate = render(<SignalRow cached={cached(SAFETY[0])} petId="pet-1" onOpen={jest.fn()} folded lastEpisodeIso={null} />);
+    expect(noDate.queryByTestId('signal-row-sub')).toBeNull();
+    expect(noDate.getByTestId('signal-row-ask')).toBeTruthy();
+  });
+
+  it('an insight row keeps no date folded, and an open row prints its count, not the date', () => {
+    const open = render(<SignalRow cached={cached(SAFETY[0])} petId="pet-1" onOpen={jest.fn()} lastEpisodeIso={SEP_24_LOCAL} />);
+    expect(open.queryByText(/Last episode/)).toBeNull();
+    const insight = render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={jest.fn()} folded lastEpisodeIso={SEP_24_LOCAL} />);
+    expect(insight.queryByText(/Last episode/)).toBeNull();
+  });
+});
+
 describe('the thumbnail — insight rows, drawn from the finding', () => {
   it('a timing finding draws its lane', () => {
     const view = render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={jest.fn()} />);

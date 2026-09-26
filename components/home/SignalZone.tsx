@@ -979,6 +979,7 @@ function LiveStack({
                 folded={folded}
                 backBecause={fold.backBecauseOf(f.finding)}
                 onTouch={fold.touch}
+                lastEpisodeIso={lastEpisodeIso}
               />
             ) : (
               // CUL-788: the card renders its own strip when `folded` — one row, one rail,
