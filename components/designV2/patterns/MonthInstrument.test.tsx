@@ -31,6 +31,7 @@ import { theme } from '../../../constants/theme';
 import { dayKeyFromIndex, localDayIndexOf } from '../../../lib/utils';
 import { router } from 'expo-router';
 import { dayScopeFromParams } from '../../../lib/historyDateFilter';
+import { owningTouchable } from '../../../testUtils/tree';
 
 configure({ defaultIncludeHiddenElements: true });
 
@@ -339,6 +340,35 @@ describe('MonthInstrument', () => {
     expect(href).toEqual({ pathname: '/(tabs)/history', params: { day: '2026-09-02', ts: expect.any(String) } });
     // And History reads it back as the local day this card counted (never the UTC one).
     expect(dayScopeFromParams(href.params)).toEqual({ key: '2026-09-02', basis: 'local' });
+  });
+
+  it('every row of the open day is a door to its record (CUL-320)', async () => {
+    const push = router.push as jest.Mock;
+    push.mockClear();
+    const readDay = jest.fn(async (): Promise<never[]> => [
+      row('meal-1', 'meal', '2026-09-02T08:00:00Z'),
+      row('vomit-1', 'vomit', '2026-09-02T07:00:00Z'),
+    ]);
+    const { getAllByTestId, findByTestId, getByText } = mount(undefined, readDay);
+    await waitFor(() => expect(getAllByTestId('daymark').length).toBeGreaterThan(0));
+    fireEvent.press(getAllByTestId('daymark')[3]); // Sep 2
+
+    const vomitRow = await findByTestId('day-row-vomit-1');
+    const mealRow = await findByTestId('day-row-meal-1');
+    // Tappable by the tree, not by a press that can descend from an enclosing composite
+    // (C-6): the row's own label is owned by the row's responder, and the two rows are
+    // two different doors.
+    expect(owningTouchable(getByText('Vomit'))).toBe(owningTouchable(vomitRow));
+    expect(owningTouchable(vomitRow)).not.toBe(owningTouchable(mealRow));
+    expect(vomitRow.props.accessibilityRole).toBe('button');
+    // Rows stack flush, so the rendered box is the whole hit area: 44pt, no slop (C-5).
+    expect(flat(vomitRow.props.style).minHeight).toBe(44);
+    expect(vomitRow.props.hitSlop).toBeUndefined();
+
+    fireEvent.press(vomitRow);
+    // Counted, not matched: an identical second push is invisible to toHaveBeenCalledWith.
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenCalledWith({ pathname: '/event/[id]', params: { id: 'vomit-1' } });
   });
 
   it('no door on a day with nothing logged, while the rows load, or when they fail', async () => {

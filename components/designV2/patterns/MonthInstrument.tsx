@@ -19,7 +19,7 @@ import {
 import { readDayRows, readMonthFacts, type MonthFacts } from '../../../lib/monthReads';
 import { historyDayHref, historyDayLabel } from '../../../lib/historyDateFilter';
 import { TIMING_SYMPTOM_TYPE } from '../../../lib/patternsTiming';
-import { describeDayEvents, daySheetSubtitle } from '../../../lib/dayEvents';
+import { describeDayEventDoors, daySheetSubtitle } from '../../../lib/dayEvents';
 import type { EventTintCategory } from '../../../lib/dayEvents';
 import type { TimelineRow } from '../../../lib/db';
 import { WeeklyBars } from '../../charts/WeeklyBars';
@@ -244,6 +244,11 @@ export function MonthInstrument({
     router.push(historyDayHref(dayKey));
   }, []);
 
+  // CUL-320 — a row of the open day opens its record, the shipped screen every day list uses.
+  const openEvent = useCallback((eventId: string) => {
+    router.push({ pathname: '/event/[id]', params: { id: eventId } });
+  }, []);
+
   const toggleLayer = useCallback((key: keyof MonthLayers) => {
     setLayers((l) => ({ ...l, [key]: !l[key] }));
   }, []);
@@ -359,6 +364,7 @@ export function MonthInstrument({
                     load={openInRow ? (dayLoads.get(openDay as string) ?? null) : null}
                     onRetry={() => openDay && void openDayInPlace(openDay)}
                     onOpenInHistory={openInHistory}
+                    onOpenEvent={openEvent}
                   />
                 </View>
               );
@@ -439,12 +445,14 @@ function DaySlot({
   load,
   onRetry,
   onOpenInHistory,
+  onOpenEvent,
 }: {
   shown: boolean;
   dayKey: string | null;
   load: DayLoad;
   onRetry: () => void;
   onOpenInHistory: (dayKey: string) => void;
+  onOpenEvent: (eventId: string) => void;
 }) {
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
@@ -457,7 +465,7 @@ function DaySlot({
   if (!motion.slotMounted || aboutKey == null) return null;
   const onLayout = (e: LayoutChangeEvent) => motion.onSlotLayout(e.nativeEvent.layout.height);
   const railOut = motion.inFlight && motion.railHeight != null;
-  const items = load && 'rows' in load ? describeDayEvents(load.rows) : [];
+  const items = load && 'rows' in load ? describeDayEventDoors(load.rows) : [];
   // The fold's anatomy: idle, the shipped tree to the byte — a plain rail, plain rows, no
   // wrapper. In flight, the rail is an `Animated.View` out of the flow with an explicit
   // height, and the rows sit in an `Animated.View` that mounts only while they are
@@ -498,12 +506,18 @@ function DaySlot({
               <ThemedText style={styles.daySubtitle}>
                 {daySheetSubtitle(DRILL_LABEL, items.filter((it) => it.eventType === TIMING_SYMPTOM_TYPE).length, items.length)}
               </ThemedText>
-              {items.map((it, i) => (
-                <View
-                  key={i}
-                  style={styles.row}
-                  accessible
+              {/* CUL-320: every row is a door to its record, as on Home's spine and in
+                  History — the owner who spots the refused bowl taps it. Rows stack flush
+                  with no hitSlop, each at the 44pt floor, so no two share hit area (C-5). */}
+              {items.map((it) => (
+                <Pressable
+                  key={it.id}
+                  style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                  onPress={() => onOpenEvent(it.id)}
+                  accessibilityRole="button"
                   accessibilityLabel={`${it.title}${it.detail ? `, ${it.detail}` : ''}${it.formatTag ? `, ${it.formatTag.toLowerCase()}` : ''}, ${it.time}`}
+                  accessibilityHint="Opens this record"
+                  testID={`day-row-${it.id}`}
                 >
                   <View style={styles.rowIcon}>
                     <EventIcon type={it.eventType} size={16} color={CATEGORY_TINT[it.category]} />
@@ -520,7 +534,8 @@ function DaySlot({
                     {it.formatTag ? <ThemedText style={styles.rowFormatTag}>{it.formatTag}</ThemedText> : null}
                   </View>
                   <ThemedText style={styles.rowTime}>{it.time}</ThemedText>
-                </View>
+                  <ChevronRight size={14} color={theme.colorTextTertiary} strokeWidth={2} />
+                </Pressable>
               ))}
               {/* CUL-1073 — the door into History, landing on this same LOCAL day: History
                   reads `?day=` on the clock this read counted (`lib/historyDateFilter.ts`).
@@ -744,6 +759,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.space1,
     paddingVertical: theme.space0_5,
+    // A door's floor (CUL-320). Flush with its neighbours and no hitSlop, so the rendered
+    // box IS the hit area and two rows never overlap (C-5).
+    minHeight: 44,
+  },
+  // The press answers on the panel's own ground: the subtle grey lifts to the card's white.
+  rowPressed: {
+    backgroundColor: theme.colorSurface,
   },
   rowIcon: {
     width: 24,
