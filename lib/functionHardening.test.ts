@@ -119,6 +119,17 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     definer: false, pinned: true, execute: [],
     why: 'CUL-1051 (069) — INVOKER because it reads nothing and raises nothing; revoked to keep the trigger family uniform.',
   },
+
+  // ── CUL-694 (072): the displaced-weight keeper ────────────────────────────
+  // DEFINER for a different reason than the B-520 block: not so a lookup escapes
+  // RLS, but because the table it writes has NO client INSERT policy on purpose
+  // (the trigger is its only writer). Its one read is its own table scoped to
+  // OLD.id, and it raises nothing (C-31). Revoked, so the elevation is reachable
+  // only by firing, never by RPC.
+  preserve_displaced_pet_weight: {
+    definer: true, pinned: true, execute: [],
+    why: 'CUL-694 (072) — DEFINER because clients hold no INSERT policy on pet_weight_displacements; revoked so it is not RPC-callable.',
+  },
 };
 
 // ⚠ KNOWN GAP, stated because an undocumented blind spot reads as coverage
