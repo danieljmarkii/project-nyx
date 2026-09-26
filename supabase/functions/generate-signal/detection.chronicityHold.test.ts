@@ -27,13 +27,14 @@ import {
   replayInputAsOf,
   suppressWorseningWhenChronic,
   CHRONICITY_HOLD_MAX_DAYS,
-  CHRONICITY_HOLD_MAX_REPLAYS,
+  CHRONICITY_HOLD_MAX_STEPS,
   DEFAULT_CONFIG,
   type DetectionInput,
   type MealEvent,
   type PetContext,
   type SymptomChronicityFinding,
   type SymptomEvent,
+  type SymptomType,
 } from './detection.ts'
 
 const HOUR = 3_600_000
@@ -52,6 +53,8 @@ const evening = (month: number, day: number): number => Date.UTC(2026, month - 1
 
 const vomits = (onsetsMs: readonly number[]): SymptomEvent[] =>
   onsetsMs.map((ms) => ({ id: nextId(), type: 'vomit', occurredAt: iso(ms) }))
+const coughEvents = (onsetsMs: readonly number[]): SymptomEvent[] =>
+  onsetsMs.map((ms) => ({ id: nextId(), type: 'cough', occurredAt: iso(ms) }))
 
 /** Two protein-less meals a day: logging-eligible for ⑦ and ④, silent for the correlation lane. */
 function dailyMeals(fromMs: number, toMs: number): MealEvent[] {
@@ -212,6 +215,37 @@ Deno.test('CUL-1272 — a two-hour stand-down still ends the course: the relapse
   assert.deepEqual(shipped(after), { tier: 'standard', count: 12 })
 })
 
+// ── A cough before the meal that makes ④ eligible (adversarial D4) ─────────────
+//
+// Meals are logged on three days only, so ④'s logging floor is what decides whether it can speak.
+// The meal at 18:00 on day 27 makes the current week eligible, ④ fires, and the card earns firm.
+// A cough logged at 07:00 that day is not something ④'s floor counts; the first day bounds took
+// it as the day's first event anyway, dropped the 18:00 instant, and the card read "book" at 7
+// and then "a word" at 7.
+function coughBeforeMeal(): { symptomEvents: SymptomEvent[]; mealEvents: MealEvent[] } {
+  const symptomEvents = [
+    ...vomits([0, 4, 8, 12, 16, 24, 26].map((d) => D1 + d * DAY + 12 * HOUR)),
+    ...coughEvents([D1 + 27 * DAY + 7 * HOUR]),
+  ]
+  const mealEvents = dailyMeals(D1, D1 + 30 * DAY).filter((m) => {
+    const ms = Date.parse(m.occurredAt)
+    return ms === D1 + 27 * DAY + 18 * HOUR || ms === D1 + 14 * DAY + 18 * HOUR || ms === D1 + 18 * DAY + 18 * HOUR
+  })
+  return { symptomEvents, mealEvents }
+}
+
+Deno.test('CUL-1272 — a cough logged before the meal that makes ④ eligible does not hide that instant', () => {
+  const { symptomEvents, mealEvents } = coughBeforeMeal()
+  assert.equal(mealEvents.length, 3)
+  // The control: firm while ④ lasts, then standard at the same count.
+  assert.deepEqual(unheld(inputAt(D1 + 27 * DAY + 19 * HOUR, symptomEvents, mealEvents)), { tier: 'firm', count: 7 })
+  const lapsed = unheld(inputAt(D1 + 30 * DAY + 19 * HOUR, symptomEvents, mealEvents))
+  assert.deepEqual(lapsed, { tier: 'standard', count: 7 })
+  for (const t of [D1 + 27 * DAY + 19 * HOUR, D1 + 28 * DAY + 11 * HOUR, D1 + 28 * DAY + 19 * HOUR, D1 + 30 * DAY + 19 * HOUR]) {
+    assert.deepEqual(shipped(inputAt(t, symptomEvents, mealEvents)), { tier: 'firm', count: 7 }, iso(t))
+  }
+})
+
 // ── Any earned count in the course binds, not only the latest ─────────────────
 //
 // The span arm's edge (PM ruling (a)): a course firm on its own six-week span whose FIRST episode
@@ -328,7 +362,7 @@ Deno.test('CUL-1272 — the walk is bounded inside the 180-day fetch', () => {
     Math.max(DEFAULT_CONFIG.chronicity.windowDays, 2 * DEFAULT_CONFIG.reflection.windowDays) +
     DEFAULT_CONFIG.symptomEpisodeGapHours / 24
   assert.ok(reachDays <= 180, `a replayed instant must read only events generate-signal fetched (reach ${reachDays} days)`)
-  assert.ok(CHRONICITY_HOLD_MAX_REPLAYS > 0)
+  assert.ok(CHRONICITY_HOLD_MAX_STEPS > 0)
 })
 
 // ── The generator and the properties ──────────────────────────────────────────
@@ -356,6 +390,7 @@ function syntheticPet(
   patchyMeals = false,
 ): { symptomEvents: SymptomEvent[]; mealEvents: MealEvent[] } {
   const onsets: number[] = []
+  const coughs: number[] = []
   let day = 0
   while (day < days) {
     const len = 5 + Math.floor(rand() * 20)
@@ -369,11 +404,15 @@ function syntheticPet(
         // A re-log an hour or two later: one episode, chained (the 3h collapse).
         if (rand() < 0.3) onsets.push(ms + (1 + Math.floor(rand() * 2)) * HOUR)
       }
+      // A cough on about a third of days: a sign ⑦ counts and ④'s logging floor does NOT, the
+      // shape that hid a meal's instant from the first version of the day bounds (adversarial D4).
+      if (rand() < 0.35) coughs.push(GEN_START + d * DAY + Math.floor(rand() * 16) * HOUR)
     }
     day += len
   }
   const allMeals = dailyMeals(GEN_START - 20 * DAY, GEN_START + days * DAY)
-  if (!patchyMeals) return { symptomEvents: vomits(onsets), mealEvents: allMeals }
+  const symptomEvents = [...vomits(onsets), ...coughEvents(coughs)]
+  if (!patchyMeals) return { symptomEvents, mealEvents: allMeals }
   // Whole days kept or dropped together, in runs, so some weeks fall under the floor.
   const keptDays = new Set<number>()
   let keep = true
@@ -382,16 +421,27 @@ function syntheticPet(
     if (keep && rand() < 0.6) keptDays.add(d)
   }
   return {
-    symptomEvents: vomits(onsets),
+    symptomEvents,
     mealEvents: allMeals.filter((m) => keptDays.has(Math.floor(Date.parse(m.occurredAt) / DAY))),
   }
 }
 
-/** What the walk reads at an instant: the composed chronicity cards, as (sign, tier, count). */
-function composedState(inp: DetectionInput): string {
+/** What the walk reads at an instant for its pending cards: (sign, earned tier, count). */
+function composedState(inp: DetectionInput, pending: ReadonlySet<SymptomType>): string {
   return JSON.stringify(
     suppressWorseningWhenChronic([...detectChronicity(inp, DEFAULT_CONFIG), ...detectWorsening(inp, DEFAULT_CONFIG)])
-      .filter((f): f is SymptomChronicityFinding => f.type === 'symptom_chronicity')
+      .filter((f): f is SymptomChronicityFinding => f.type === 'symptom_chronicity' && pending.has(f.symptomType))
+      .map((f) => [f.symptomType, f.tier, f.episodeCount]),
+  )
+}
+
+/** ⑦ alone for the pending cards, as the walk reads what it carries across a ⑦ stretch: sign,
+ *  tier, count (a carried finding's `daysSinceLastEpisode` goes stale inside a stretch, and
+ *  nothing in the walk reads it). */
+function chronicityState(inp: DetectionInput, pending: ReadonlySet<SymptomType>): string {
+  return JSON.stringify(
+    detectChronicity(inp, DEFAULT_CONFIG)
+      .filter((f) => pending.has(f.symptomType))
       .map((f) => [f.symptomType, f.tier, f.episodeCount]),
   )
 }
@@ -406,11 +456,17 @@ Deno.test('CUL-1272 — the replay input is exact: cutting the record to what �
     // Random instants, plus one aimed at every re-log chain so that ⑦'s lookback edge falls
     // INSIDE the chain: the one place a cut without its gap margin reads the chain's second event
     // as a new episode inside the lookback.
-    const ms = symptomEvents.map((e) => Date.parse(e.occurredAt)).sort((a, b) => a - b)
+    const ms = symptomEvents
+      .filter((e) => e.type === 'vomit')
+      .map((e) => Date.parse(e.occurredAt))
+      .sort((a, b) => a - b)
     const aimed: number[] = []
     for (let k = 1; k < ms.length; k++) {
       if (ms[k] - ms[k - 1] <= DEFAULT_CONFIG.symptomEpisodeGapHours * HOUR) {
-        aimed.push(ms[k - 1] + DEFAULT_CONFIG.chronicity.windowDays * DAY + Math.floor((ms[k] - ms[k - 1]) / 2))
+        const inside = Math.floor((ms[k] - ms[k - 1]) / 2)
+        // ⑦'s lookback edge, and ④'s two-week edge, each falling inside the chain.
+        aimed.push(ms[k - 1] + DEFAULT_CONFIG.chronicity.windowDays * DAY + inside)
+        aimed.push(ms[k - 1] + 2 * DEFAULT_CONFIG.reflection.windowDays * DAY + inside)
       }
     }
     assert.ok(aimed.length >= 3, `non-vacuity: pet ${pet} has re-log chains to aim at`)
@@ -418,10 +474,12 @@ Deno.test('CUL-1272 — the replay input is exact: cutting the record to what �
     for (const t of probes) {
       // Any instant, not only whole hours: the cut must hold between change instants too.
       const whole = inputAt(t, symptomEvents, mealEvents)
-      const cut = asOf(t)
-      assert.ok(cut.symptomEvents.length <= whole.symptomEvents.length)
-      assert.deepEqual(detectChronicity(cut, DEFAULT_CONFIG), detectChronicity(whole, DEFAULT_CONFIG), `pet ${pet} t ${iso(t)}`)
-      assert.deepEqual(detectWorsening(cut, DEFAULT_CONFIG), detectWorsening(whole, DEFAULT_CONFIG), `pet ${pet} t ${iso(t)}`)
+      const cutL = asOf(t, 'chronicity')
+      const cutW = asOf(t, 'worsening')
+      assert.ok(cutW.symptomEvents.length <= cutL.symptomEvents.length)
+      assert.ok(cutL.symptomEvents.length <= whole.symptomEvents.length)
+      assert.deepEqual(detectChronicity(cutL, DEFAULT_CONFIG), detectChronicity(whole, DEFAULT_CONFIG), `⑦ pet ${pet} t ${iso(t)}`)
+      assert.deepEqual(detectWorsening(cutW, DEFAULT_CONFIG), detectWorsening(whole, DEFAULT_CONFIG), `④ pet ${pet} t ${iso(t)}`)
       compared++
     }
   }
@@ -432,27 +490,46 @@ Deno.test('CUL-1272 — the change instants are complete: between two of them, w
   const rand = mulberry32(12721)
   let stretches = 0
   let changed = 0
-  for (let pet = 0; pet < 14; pet++) {
+  let chronicityStretches = 0
+  const pendingSets: ReadonlySet<SymptomType>[] = [new Set(['vomit']), new Set(['cough']), new Set(['vomit', 'cough'])]
+  for (let pet = 0; pet < 12; pet++) {
     // Half the pets log meals patchily, so the logging floor's own instants carry state changes.
     const { symptomEvents, mealEvents } = syntheticPet(rand, 110, pet % 2 === 1)
     const now = GEN_START + 110 * DAY
-    const instants = holdChangeInstants(inputAt(now, symptomEvents, mealEvents), DEFAULT_CONFIG, now).sort((a, b) => a - b)
-    for (let i = 0; i + 1 < instants.length; i++) {
-      const lo = instants[i] + 1
-      const hi = instants[i + 1] - 1
+    const pending = pendingSets[pet % pendingSets.length]
+    const { all, chronicity } = holdChangeInstants(inputAt(now, symptomEvents, mealEvents), DEFAULT_CONFIG, now, pending)
+    const asc = [...all].sort((a, b) => a - b)
+    for (let i = 0; i + 1 < asc.length; i++) {
+      const lo = asc[i] + 1
+      const hi = asc[i + 1] - 1
       if (hi <= lo) continue
       const probe = lo + Math.floor(rand() * (hi - lo))
-      const a = composedState(inputAt(lo, symptomEvents, mealEvents))
-      const b = composedState(inputAt(probe, symptomEvents, mealEvents))
+      const a = composedState(inputAt(lo, symptomEvents, mealEvents), pending)
+      const b = composedState(inputAt(probe, symptomEvents, mealEvents), pending)
       assert.equal(b, a, `pet ${pet}: the state moved between ${iso(lo)} and ${iso(probe)} with no change instant between`)
       // Across an instant the state is allowed to move; count how often it does, so the walk is
       // known to be crossing real boundaries and not an empty set of them.
-      if (composedState(inputAt(instants[i + 1] + 1, symptomEvents, mealEvents)) !== a) changed++
+      if (composedState(inputAt(asc[i + 1] + 1, symptomEvents, mealEvents), pending) !== a) changed++
       stretches++
+    }
+    // The carry: between two ⑦ instants, ⑦ returns the same for the pending cards.
+    const ascC = [...chronicity].sort((a, b) => a - b)
+    for (let i = 0; i + 1 < ascC.length; i++) {
+      const lo = ascC[i] + 1
+      const hi = ascC[i + 1] - 1
+      if (hi <= lo) continue
+      const probe = lo + Math.floor(rand() * (hi - lo))
+      assert.equal(
+        chronicityState(inputAt(probe, symptomEvents, mealEvents), pending),
+        chronicityState(inputAt(lo, symptomEvents, mealEvents), pending),
+        `pet ${pet}: ⑦ moved between ${iso(lo)} and ${iso(probe)} with no ⑦ instant between`,
+      )
+      chronicityStretches++
     }
   }
   assert.ok(stretches >= 1000, `non-vacuity: ${stretches} stretches probed`)
   assert.ok(changed >= 20, `non-vacuity: the state changes across the instants (${changed})`)
+  assert.ok(chronicityStretches >= 200, `non-vacuity: ${chronicityStretches} ⑦ stretches probed`)
 })
 
 Deno.test('CUL-1272 — property: reads at any time of day; never softer, and never "a word" at a count it said "book" at', () => {
