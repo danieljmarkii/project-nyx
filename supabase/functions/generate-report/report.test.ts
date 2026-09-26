@@ -4352,7 +4352,7 @@ Deno.test('CUL-1274 — mealItems groups every logged meal, rated or not; mealCo
   // protein panel a vet scans for overlap.
   const html = renderReport(snap)
   const t = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ')
-  assert.ok(/8 meals logged, intake not recorded for 7; the 1 recorded \(owner-observed\) was not fully eaten/.test(t), 'page 1 states both numbers')
+  assert.ok(/8 meals logged, intake not recorded for 7; recorded for 1 meal of Wet Chicken \(Wet\): "refused" ×1, 0 of 1 fully eaten \(owner-observed\)/.test(t.replace(/&ldquo;|&rdquo;/g, '"').replace(/&times;/g, '×')), 'page 1 states both numbers, and whose rating it is')
   assert.ok(/8 logged meals across 2 foods/.test(t), 'appendix B and E count the same 8')
   assert.ok(/Wet Duck \(Wet\) \(fed as meals\)/.test(t), 'the never-rated food is in the protein panel')
 })
@@ -4395,7 +4395,7 @@ Deno.test('CUL-1274 — the trial diet\'s own meal row reads its proteins by the
       dietTrials: [
         {
           id: 'dt-h', foodItemId: 'f-hydro', startedAt: '2026-05-08', targetDurationDays: 56,
-          status: 'active', completedAt: null, vetName: null, foodLabel: 'HydroChick',
+          status: 'active', completedAt: null, vetName: null, foodLabel: 'Brand HydroChick (Dry)',
           primaryProtein: 'hydrolyzed chicken', proteins: ['hydrolyzed chicken', 'chicken'],
           ingredientsNotes: PANEL, extractionConfidence: { proteins: 0.9 },
           allowedFoods: [
@@ -4408,14 +4408,33 @@ Deno.test('CUL-1274 — the trial diet\'s own meal row reads its proteins by the
           ],
         },
       ],
-      events: [trialMeal('2026-06-10', null), trialMeal('2026-06-11', null), trialMeal('2026-06-12', 'all')],
+      events: [
+        trialMeal('2026-06-10', null),
+        trialMeal('2026-06-11', null),
+        trialMeal('2026-06-12', 'all'),
+        // The same product under a duplicate library row, matched by its label (B-009/B-018).
+        { ...trialMeal('2026-06-13', null), meal: { ...trialMeal('2026-06-13', null).meal!, foodItemId: 'f-hydro-dup' } },
+        { ...trialMeal('2026-06-14', null), meal: { ...trialMeal('2026-06-14', null).meal!, foodItemId: 'f-hydro-dup' } },
+        // An intact-chicken food fed under the hydrolysed trial: a real contaminant, which the
+        // trial rule must never absorb (lib/proteinRelation.ts: a broken trial read as clean).
+        proteinMeal({ occurredAt: at('2026-06-15'), foodItemId: 'f-stew', foodType: 'meal', format: 'wet_canned', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken, broth.', extractionConfidence: { proteins: 0.9 }, productName: 'Chicken Stew' }),
+      ],
     }),
   )
   const row = snap.diet.mealItems.find((i) => i.count === 3)
   assert.ok(row, 'the trial diet has its meal row')
+  const dup = snap.diet.mealItems.find((i) => i.count === 2)
+  assert.ok(dup, 'the duplicate library row groups on its own')
+  assert.deepEqual(dup!.proteinSet.offTrial, [], 'matched by label, it is the trial diet too')
+  const stew = snap.diet.mealItems.find((i) => i.foodLabel?.includes('Chicken Stew'))
+  assert.deepEqual(stew!.proteinSet.offTrial, ['chicken'], 'a different food keeps its off-trial mark')
   assert.deepEqual(snap.diet.trial!.proteinSet.offTrial, [], 'the trial row reads no contamination')
   assert.deepEqual(row!.proteinSet.offTrial, snap.diet.trial!.proteinSet.offTrial, 'and the meal row reads the diet the same way')
   const html = renderReport(snap)
   const e = html.slice(html.indexOf('Appendix E — Meals &amp; intake'))
-  assert.ok(!/\*/.test(e.slice(e.indexOf('<tbody>'), e.indexOf('</tbody>'))), 'no off-trial star on the trial diet\'s own row')
+  const rowsHtml = e.slice(e.indexOf('<tbody>'), e.indexOf('</tbody>'))
+  const trialRows = [...rowsHtml.matchAll(/<tr>([^]*?)<\/tr>/g)].map((m) => m[1]).filter((r) => r.includes('HydroChick'))
+  assert.equal(trialRows.length, 2)
+  for (const r of trialRows) assert.ok(!/\*/.test(r), 'no off-trial star on the trial diet\'s own rows')
+  assert.ok(/\*/.test([...rowsHtml.matchAll(/<tr>([^]*?)<\/tr>/g)].map((m) => m[1]).find((r) => r.includes('Chicken Stew'))!), 'the stew keeps its star')
 })

@@ -6044,73 +6044,61 @@ function dietMeds(snap: ReportSnapshot): string {
     // nobody recorded were never called unknown on page 1. So the count of the unrecorded comes
     // first, and "rated" (the app's word) becomes "intake recorded".
     //
-    // AND THE RATINGS NAME THEIR FOODS (adversarial review). The names beside "Also fed as
-    // meals" are capped at two and ranked by meals logged, while the ratings are pooled over
-    // every food, so ratings given only to a minor topper read as the two named staples being
-    // eaten (or refused). The recorded clause names the foods it pooled.
-    const { logged } = mealCounts(d)
-    const rated = mc ? mc.ratedMeals : 0
-    const partlyRated = rated > 0 && logged > rated
+    // AND THE RATINGS NAME THEIR FOODS (adversarial review, two rounds). The names beside
+    // "Also fed as meals" are capped at two and ranked by meals logged, while the ratings pool
+    // over every food, so ratings given only to a minor topper read as the staples being eaten
+    // (or refused). Where one food carries every rating, that food is named beside them; where
+    // several do, each gets its own ratings (`recordedByFood`) and no pooled ratio is printed.
+    // The legacy forms stand only where they cannot misattribute: every meal rated, one food.
+    const shape = mealIntakeShape(d)
     const intake = mc ? summariseIntake(mc.intakeBreakdown) : { kind: 'none' as const }
-    // EVERY rating, with its count — never a summary that deletes one. "Split between
-    // A and B" read as an exhaustive partition and dropped the untied ratings, which
-    // on a real spread meant two refusals vanished from page 1 under a sentence
-    // claiming to account for the set. This is the same list appendix E prints, so
-    // the two surfaces are now literally identical on a record of one food.
-    const ratingList = (ratings: DietSummary['mealItems'][number]['intakeBreakdown']): string =>
-      ratings
-        .map((t) => `&ldquo;${h(intakeLabel(t.rating).toLowerCase())}&rdquo; &times;${num(t.count)}`)
-        .join(' &middot; ')
     const modeBit = !mc
       ? ''
       : intake.kind === 'typical'
         ? `, typically &ldquo;${h(intakeLabel(intake.rating).toLowerCase())}&rdquo;`
         : intake.kind === 'itemised'
-          ? `, ratings: ${ratingList(intake.ratings)}`
+          ? `, ratings: ${intakeRatingList(intake.ratings)}`
           : ''
     const typically = mc ? `${modeBit} &mdash; ${num(mc.finishedMeals)} of ${num(mc.ratedMeals)} fully eaten` : ''
     // #8 — NAME the foods fed as meals (e.g. a wet diet) on page 1, not just a bare "N discrete
     // meals": the first real artifact left Nyx's wet food unnamed and cited a non-existent appendix.
     const mealNames = distinctLabels(d.mealItems.map((i) => ({ label: i.foodLabel })), 2)
-    // Only a named food can carry the attribution; an unlabeled group says nothing a vet can act on.
-    const ratedLabeled = d.mealItems.filter((i) => ratedCountOf(i) > 0 && i.foodLabel)
-    const ofRated = ratedLabeled.length > 0 ? ` of ${distinctLabels(ratedLabeled.map((i) => ({ label: i.foodLabel })), 2)}` : ''
-    const countBit = !mc
-      ? `${num(logged)} meal${logged === 1 ? '' : 's'} logged, ${unrecordedAll(logged)}`
-      : partlyRated
-        ? `${num(logged)} meals logged, intake not recorded for ${num(logged - rated)}; recorded for ${num(rated)} meal${
-            rated === 1 ? '' : 's'
-          }${ofRated}: ${ratingList(mc.intakeBreakdown)}, ${num(mc.finishedMeals)} of ${num(rated)} fully eaten`
-        : `${num(logged)} meal${logged === 1 ? '' : 's'}${typically}`
+    const pointer = mealsAppendixPointer(snap)
     const mealsBit =
-      logged > 0 ? ` Also fed as meals: ${mealNames} (${countBit}; ${mealsAppendixPointer(snap)}).` : ''
+      shape.kind === 'none'
+        ? ''
+        : shape.kind === 'legacy'
+          ? ` Also fed as meals: ${mealNames} (${num(shape.logged)} meal${shape.logged === 1 ? '' : 's'}${typically}; ${pointer}).`
+          : shape.kind === 'byFood'
+            ? ` Also fed as meals: ${mealNames} (${shape.head}; ${pointer}). Intake recorded, by food: ${shape.byFood}.`
+            : ` Also fed as meals: ${mealNames} (${shape.head}${shape.single ? `; ${shape.single}` : ''}; ${pointer}).`
     feedBits.push(`Primarily free-fed: ${freeFedLabels}. <b>Intake not directly observed.</b>${mealsBit}`)
   } else {
-    // The same two numbers (CUL-1274). This line was honest about its population, "N of M
-    // RATED meals", but silent about the meals beside it: a record with 60 meals and 4
-    // ratings read as a 4-meal record, and one with no ratings fell through to "No rated
-    // meals logged" over 60 meals fed. The unknown leads, in the vet's words, as above; the
-    // fully rated line keeps its own. "Treats + free-fed excluded" stays off the new forms:
-    // said of a dog with neither, the cold read took it to mean he had both.
-    const { logged } = mealCounts(d)
+    // The same two numbers and the same attribution (CUL-1274). This line was honest about
+    // its population, "N of M RATED meals", but silent about the meals beside it: a record
+    // with 60 meals and 4 ratings read as a 4-meal record, and one with no ratings fell
+    // through to "No rated meals logged" over 60 meals fed. And it pooled every food's
+    // ratings directly under the "Trial diet" row, so a topper refused four times read as the
+    // trial diet being left, on a record where the diet was eaten every time anyone looked.
+    // The shapes are the free-fed branch's; the fully rated one-food line keeps its words.
+    //
+    // "Treats + free-fed excluded" is said only of what exists: said of a dog with neither,
+    // the cold read took it to mean he had both.
     const mc = d.mealCompletion
+    const shape = mealIntakeShape(d)
     const pointer = `Meals are ${mealsAppendixPointer(snap)}.`
-    if (mc && logged > mc.ratedMeals) {
-      const recorded =
-        mc.ratedMeals === 1
-          ? `the 1 recorded (owner-observed) was ${mc.finishedMeals === 1 ? '' : 'not '}fully eaten`
-          : `of the ${num(mc.ratedMeals)} recorded (owner-observed), ${num(mc.finishedMeals)} fully eaten`
+    const excludedParts = [d.treats.count > 0 ? 'treats' : null, isFreeFed ? 'free-fed food' : null].filter(
+      (x): x is string => x !== null,
+    )
+    const excluded = excludedParts.length > 0 ? `; ${excludedParts.join(' and ')} excluded` : ''
+    if (shape.kind === 'legacy' && mc) {
       feedBits.push(
-        `${num(logged)} meals logged, intake not recorded for ${num(logged - mc.ratedMeals)}; ${recorded}. ${pointer}`,
+        `${num(mc.finishedMeals)} of ${num(mc.ratedMeals)} rated meals fully eaten (owner-observed${excluded}). ${pointer}`,
       )
-    } else if (mc) {
-      feedBits.push(
-        `${num(mc.finishedMeals)} of ${num(
-          mc.ratedMeals,
-        )} rated meals fully eaten (owner-observed; treats + free-fed excluded). ${pointer}`,
-      )
-    } else if (logged > 0) {
-      feedBits.push(`${num(logged)} meal${logged === 1 ? '' : 's'} logged, ${unrecordedAll(logged)}. ${pointer}`)
+    } else if (shape.kind === 'byFood') {
+      feedBits.push(`${shape.head}. Intake recorded (owner-observed), by food: ${shape.byFood}. ${pointer}`)
+    } else if (shape.kind === 'single') {
+      feedBits.push(`${shape.head}${shape.single ? `; ${shape.single} (owner-observed)` : ''}. ${pointer}`)
     }
     if (isFreeFed) {
       // §4 / B-040 — the verbatim string, non-negotiable.
@@ -6715,6 +6703,85 @@ function ratedCountOf(item: DietSummary['mealItems'][number]): number {
   return item.intakeBreakdown.reduce((a, b) => a + b.count, 0)
 }
 
+/** EVERY rating, with its count, along the intake scale — never a summary that deletes one
+ *  (B-532). The same list appendix E prints, so the two surfaces agree on a record of one food. */
+function intakeRatingList(ratings: DietSummary['mealItems'][number]['intakeBreakdown']): string {
+  return ratings
+    .map((t) => `&ldquo;${h(intakeLabel(t.rating).toLowerCase())}&rdquo; &times;${num(t.count)}`)
+    .join(' &middot; ')
+}
+
+/** A meal food's name on page 1; an unlabeled group is still a food, and is said to be one. */
+function mealFoodName(item: DietSummary['mealItems'][number]): string {
+  return item.foodLabel ? h(item.foodLabel) : 'an unnamed food'
+}
+
+const RATING_ORDER: readonly string[] = ['all', 'most', 'some', 'picked', 'refused']
+
+/**
+ * Each rated food's OWN ratings, named, when more than one food carries any (CUL-1274). Ordered
+ * by how many ratings each food carries, the order that keeps ratings beside their food, where
+ * ranking by meals logged let a staple's name stand over a topper's ratings. Three foods by
+ * name; any further ones pool as "N other foods" with every rating kept, never dropped.
+ */
+function recordedByFood(rated: DietSummary['mealItems']): string {
+  const sorted = [...rated].sort(
+    (a, b) => ratedCountOf(b) - ratedCountOf(a) || (a.foodLabel ?? '').localeCompare(b.foodLabel ?? ''),
+  )
+  const parts = sorted.slice(0, 3).map((i) => `${mealFoodName(i)} ${intakeRatingList(i.intakeBreakdown)}`)
+  const rest = sorted.slice(3)
+  if (rest.length > 0) {
+    const pooled = new Map<DietSummary['mealItems'][number]['intakeBreakdown'][number]['rating'], number>()
+    for (const i of rest) for (const b of i.intakeBreakdown) pooled.set(b.rating, (pooled.get(b.rating) ?? 0) + b.count)
+    const rank = (r: string): number => (RATING_ORDER.includes(r) ? RATING_ORDER.indexOf(r) : RATING_ORDER.length)
+    const breakdown = [...pooled.entries()]
+      .sort((a, b) => rank(a[0]) - rank(b[0]))
+      .map(([rating, count]) => ({ rating, count }))
+    parts.push(`${num(rest.length)} other food${rest.length === 1 ? '' : 's'} ${intakeRatingList(breakdown)}`)
+  }
+  return parts.join('; ')
+}
+
+/**
+ * Which form page 1's meal clause takes (CUL-1274), decided once for both Feeding branches.
+ *   none   — no meal logged.
+ *   legacy — every meal rated and all of them one food: the one shape pooled figures cannot
+ *            misattribute, so the long-standing wording stands.
+ *   byFood — more than one food carries a rating: each food's own ratings, no pooled ratio.
+ *   single — nothing rated (`single` null), or one food carries every rating that exists,
+ *            named beside them.
+ * `head` leads with the meals whose intake nobody recorded.
+ */
+function mealIntakeShape(
+  d: DietSummary,
+):
+  | { kind: 'none' }
+  | { kind: 'legacy'; logged: number }
+  | { kind: 'byFood'; head: string; byFood: string }
+  | { kind: 'single'; head: string; single: string | null } {
+  const { logged, rated } = mealCounts(d)
+  if (logged === 0) return { kind: 'none' }
+  const ratedFoods = d.mealItems.filter((i) => ratedCountOf(i) > 0)
+  if (rated === logged && ratedFoods.length === 1) return { kind: 'legacy', logged }
+  const head =
+    rated === 0
+      ? `${num(logged)} meal${logged === 1 ? '' : 's'} logged, ${unrecordedAll(logged)}`
+      : rated === logged
+        ? `${num(logged)} meals logged, intake recorded for all`
+        : `${num(logged)} meals logged, intake not recorded for ${num(logged - rated)}`
+  if (ratedFoods.length > 1) return { kind: 'byFood', head, byFood: recordedByFood(ratedFoods) }
+  if (ratedFoods.length === 0) return { kind: 'single', head, single: null }
+  const food = ratedFoods[0]
+  const finished = food.intakeBreakdown.find((b) => b.rating === 'all')?.count ?? 0
+  return {
+    kind: 'single',
+    head,
+    single: `recorded for ${num(rated)} meal${rated === 1 ? '' : 's'} of ${mealFoodName(food)}: ${intakeRatingList(
+      food.intakeBreakdown,
+    )}, ${num(finished)} of ${num(rated)} fully eaten`,
+  }
+}
+
 /** The clause for meals whose intake nobody recorded, in the vet's words rather than the app's. */
 function unrecordedAll(logged: number): string {
   return logged === 1 ? 'intake not recorded' : 'intake not recorded for any'
@@ -7171,7 +7238,7 @@ function mealsAppendix(snap: ReportSnapshot): string {
   return `
 <section class="page">
   <p class="appx-title serif">Appendix E — Meals &amp; intake</p>
-  <p class="appx-sub">The meals the owner logged in this window — the food fed as discrete meals, distinct from free-fed food and treats (which appear in appendix&nbsp;C). &ldquo;Intake&rdquo; is what the owner recorded after each meal; a declined or barely-touched meal is a possible health signal, never &ldquo;picky.&rdquo; A meal logged with no intake recorded is counted and shown as &ldquo;not recorded&rdquo;: its intake is unknown, neither eaten nor refused. Free-fed food is not directly observed and is not rated, so it does not appear here. Meals are grouped by food below; the time of each individual meal is in the Culprit app.</p>
+  <p class="appx-sub">The meals the owner logged in this window: the foods fed as discrete meals. Free-fed food is in appendix&nbsp;B and treats in appendix&nbsp;C; a food logged as a meal is listed here even where its format also counts it as a treat or as human food. &ldquo;Intake&rdquo; is what the owner recorded after each meal; a declined or barely-touched meal is a possible health signal, never &ldquo;picky.&rdquo; A meal logged with no intake recorded is counted and shown as &ldquo;not recorded&rdquo;: its intake is unknown, neither eaten nor refused. Free-fed food is not directly observed and is not rated, so it does not appear here. Meals are grouped by food below; the time of each individual meal is in the Culprit app.</p>
   ${
     // The intake table can be a sheet tall, so it is never the anchor: measured on the
     // `refused` fixture, wrapping it whole pushed it to a fresh sheet and cost a page. Its
