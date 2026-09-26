@@ -41,6 +41,7 @@ import type {
 import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
 import type { BackBecauseReason } from './signalFold';
 import { formatTimingBandLabel } from './timingBandLabels';
+import { careClaimReason } from './careClaimScreens';
 
 // A timing finding — the two types whose evidence renders as a receipt (SR-1, §4).
 type TimingFinding = PostprandialTimingFinding | TimeOfDayClusteringFinding;
@@ -136,7 +137,7 @@ const INCIDENT_FLAG_PHRASE: Record<IncidentFlagKind, string> = {
   blood: 'possible blood',
   foreign_material: 'possible foreign material',
 };
-function incidentFlagPhrase(flags: IncidentFlagKind[]): string {
+export function incidentFlagPhrase(flags: IncidentFlagKind[]): string {
   // The engine guarantees ≥1 flag (a finding is only emitted when deriveIncidentFlags is non-empty),
   // but this reads from the cache — defend a corrupt/empty array with a safe, still-escalating phrase
   // rather than rendering "undefined" on a safety card (never reassures either way).
@@ -158,7 +159,7 @@ function clockHourLabel(hour: number): string {
 
 // The cluster band in plain words (⑥): start 4 width 4 → "between 4am and 8am"; a
 // wrap-around start 23 width 4 → "between 11pm and 3am". Mirror of localHourBand in phrasing.ts.
-function localHourBand(startHour: number, windowHours: number): string {
+export function localHourBand(startHour: number, windowHours: number): string {
   const end = (startHour + windowHours) % 24;
   return `between ${clockHourLabel(startHour)} and ${clockHourLabel(end)}`;
 }
@@ -180,7 +181,7 @@ const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
-function onsetMonth(iso: string): string {
+export function onsetMonth(iso: string): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? 'then' : MONTH_NAMES[d.getUTCMonth()];
 }
@@ -2155,6 +2156,10 @@ export function validateBannerPhrasing(text: string): boolean {
   if (BANNER_DISMISSIVE_RE.test(t)) return false;
   if (BANNER_CAUSAL_RE.test(t)) return false;
   if (BANNER_ALARM_RE.test(t)) return false;
+  // CUL-1271 — never hand the concern off ("in the vet's hands") or credit a treatment
+  // ("the prednisone is helping"). Imported, not mirrored: the same module the server
+  // screens use, so this arm cannot drift out of sync with phrasing.ts.
+  if (careClaimReason(t)) return false;
   return true;
 }
 

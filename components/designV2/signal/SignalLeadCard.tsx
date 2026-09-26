@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../../constants/theme';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { measureNodeInWindow } from '../../../lib/measureNode';
@@ -8,10 +8,11 @@ import type { CachedFinding, PriorityClass, SignalFinding } from '../../../lib/s
 import { foldIdentity } from '../../../lib/signalFold';
 import { loadSignalLead, type SignalLeadModel } from '../../../lib/signalLead';
 import { WeeklyBars } from '../../charts/WeeklyBars';
-import { DOOR_A11Y_HINT, InsightCard, RAIL_WIDTH } from '../../home/InsightCard';
+import { RAIL_WIDTH } from '../../home/InsightCard';
 import { FLIGHT_ENABLED, FLIGHT_MOTION, flightActiveFor, retargetSource, stageFlight, useFlightState } from '../../motion/flightMotion';
 import { Skeleton } from '../../ui/Skeleton';
 import { ThemedText } from '../../ui/ThemedText';
+import { DOOR_A11Y_HINT, SignalRow } from './SignalRow';
 
 // SignalLeadCard — the Signal card on Home under Design v2 (D2-3 · CUL-1065; design
 // authority `docs/culprit-design-v4-mockups.html` §01): a title, a chart and one line.
@@ -21,19 +22,20 @@ import { ThemedText } from '../../ui/ThemedText';
 //   2 this week so far · 3 last week            ← `weekLine`, read off the same buckets
 //
 // THE FACE IS A DOOR. One `Pressable`, one verb: it opens the Signal's own screen and
-// never folds, never expands (the fold spec §3's face tap, amended on round 3 — the
-// control moved to the screen and the strip). No control row, no chevron in the words.
+// never expands. No control row; the chevron sits beside the title (CUL-1270). There is no
+// fold under Design v2 (CUL-1285).
 //
-// S1 HOLDS: a SAFETY finding does not take this canvas. It renders the shipped plain-text
-// `InsightCard` — sentence, rail, sample line — with the same door (`onOpen`), so as the
-// benign lead gains a chart, plainness stays the severity signal. The rail here is the
-// class colour as on every Signal row; this component never paints a verdict word.
+// S1 HOLDS: a SAFETY finding does not take this canvas. It renders the Signal row
+// (`SignalRow`, CUL-1270) — the headline and the ask in words, no chart — with the same
+// door, so as the benign lead gains a chart, plainness stays the severity signal. The rail
+// here is the class colour as on every Signal row; this component never paints a verdict
+// word. The zone routes a safety lead to the row directly; this branch is the backstop.
 //
 // THE READ IS THIS COMPONENT'S. It lives inside `components/designV2/`, so with the flag
 // off it is never mounted and the record is never read for it — the async half of the
 // flag-off guard, proven in `SignalLeadCard.test.tsx` by the zone's own suite. While the
 // read is in flight the card is a content-shaped skeleton (C-12: a read that has not
-// answered is never an empty chart); a read that fails falls back to the shipped card,
+// answered is never an empty chart); a read that fails falls back to the Signal row,
 // which draws from the cache alone — correct-but-plain over confidently blank.
 //
 // THE FLIGHT (D2-6 · CUL-1069, `components/motion/flightMotion.ts`): the door measures the
@@ -71,17 +73,12 @@ interface Props {
   cached: CachedFinding;
   /** The pet the findings belong to (C-9) — the zone's `petId`, never the store's active pet. */
   petId: string;
-  petName: string;
   onOpen: (finding: SignalFinding) => void;
-  /** The shipped card's props for the safety branch and the fallback. */
-  trialRunning?: boolean;
-  backBecause?: Parameters<typeof InsightCard>[0]['backBecause'];
-  onTouch?: (finding: SignalFinding) => void;
 }
 
 type Load = { status: 'loading' } | { status: 'ready'; model: SignalLeadModel } | { status: 'failed' };
 
-export function SignalLeadCard({ cached, petId, petName, onOpen, trialRunning = false, backBecause = null, onTouch }: Props) {
+export function SignalLeadCard({ cached, petId, onOpen }: Props) {
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
   const signalTick = useSyncStore((s) => s.signalTick);
   const identity = foldIdentity(cached.finding);
@@ -132,19 +129,9 @@ export function SignalLeadCard({ cached, petId, petName, onOpen, trialRunning = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [petId, identity, JSON.stringify(cached.finding), hydrationTick, signalTick, safety]);
 
-  // S1: a safety lead is the shipped plain card, with the door. The fallback is the same.
+  // S1: a safety lead is the plain row, with the door. The fallback is the same.
   if (safety || load.status === 'failed') {
-    return (
-      <InsightCard
-        cached={cached}
-        petName={petName}
-        isLead
-        trialRunning={trialRunning}
-        onOpen={onOpen}
-        backBecause={backBecause}
-        onTouch={onTouch}
-      />
-    );
+    return <SignalRow cached={cached} petId={petId} onOpen={onOpen} isLead />;
   }
 
   const rail = RAIL_COLOR[cached.finding.priorityClass];
@@ -165,10 +152,7 @@ export function SignalLeadCard({ cached, petId, petName, onOpen, trialRunning = 
   const { model } = load;
   const label = model.line ? `${model.title}. ${model.line}.` : `${model.title}.`;
   const chart = model.weekly && model.noun ? <WeeklyBars model={model.weekly} noun={model.noun} identity={identity} /> : null;
-  const open = () => {
-    onTouch?.(cached.finding);
-    onOpen(cached.finding);
-  };
+  const open = () => onOpen(cached.finding);
   const press = () => {
     if (!FLIGHT_ENABLED || reducedMotion || !chart) {
       open();
@@ -195,9 +179,17 @@ export function SignalLeadCard({ cached, petId, petName, onOpen, trialRunning = 
       >
         {/* The title in the display face: Newsreader at the Signal size, weight 400 (the only
             face loaded — never a fontWeight here; the explicit family wins in ThemedText). */}
-        <ThemedText style={styles.title} testID="signal-lead-title">
-          {model.title}
-        </ThemedText>
+        {/* The chevron sits beside the title (CUL-1270: every card looks like the door it
+            is), never beside the chart — the chart's width is the flight's contract. */}
+        <View style={styles.titleRow}>
+          <ThemedText style={styles.title} testID="signal-lead-title">
+            {model.title}
+          </ThemedText>
+          <View style={styles.chevronBox}>
+            {/* geist-ok: Icon glyph, not copy — stays a raw <Text> (the strips' chevron). */}
+            <Text style={styles.chevron}>›</Text>
+          </View>
+        </View>
         {chart ? (
           <View style={styles.chart}>
             {/* The measured node: the chart's own box, no margin — the same box the screen's
@@ -236,8 +228,28 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: theme.space1,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: theme.space1,
+  },
+  chevronBox: {
+    width: 28,
+    height: 28,
+    marginTop: (theme.lineHeightSignal - 28) / 2,
+    borderRadius: theme.radiusFull,
+    backgroundColor: theme.colorSurfaceSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chevron: {
+    fontSize: theme.textLG,
+    lineHeight: theme.textLG + 2,
+    color: theme.colorTextTertiary,
+  },
   // The shipped lead sentence's face (`InsightCard`'s `sentenceLead`), on the title now.
   title: {
+    flex: 1,
     fontFamily: theme.fontDisplay,
     fontSize: theme.textSignal,
     lineHeight: theme.lineHeightSignal,

@@ -184,21 +184,52 @@ function everyType(symptomType: SignalSymptomType): SignalFinding[] {
   return [chronicity, worsening, reflection, postprandial, clock, empty, story, correlation, stood, trialCard, intakeLow, intakeRefused, redFlag, stoolFlag];
 }
 
-describe('signalTitle — names the thing and the window', () => {
-  it('the mock’s title: “Vomiting, day 55 of the rabbit trial”', () => {
-    const [chronicity] = everyType('vomit');
-    expect(signalTitle(chronicity, trial())).toBe('Vomiting, day 55 of the rabbit trial');
+describe('signalTitle — names the finding’s claim (D2, CUL-1270)', () => {
+  it('the ruled titles: “Vomiting in 5 of the last 8 weeks”, “Vomiting soon after meals”', () => {
+    const all = everyType('vomit');
+    expect(signalTitle(all[0], null)).toBe('Vomiting in 5 of the last 8 weeks');
+    expect(signalTitle(all[3], null)).toBe('Vomiting soon after meals');
   });
 
-  it('without a trial, the lookback: “Vomiting, the last 8 weeks” / “the last 2 weeks”', () => {
-    const [chronicity, worsening] = everyType('vomit');
-    expect(signalTitle(chronicity, null)).toBe('Vomiting, the last 8 weeks');
-    expect(signalTitle(worsening, null)).toBe('Vomiting, the last 2 weeks');
+  it('the two vomiting findings that read as twins no longer share a title', () => {
+    const [chronicity, , , postprandial] = everyType('vomit');
+    expect(signalTitle(chronicity, null)).not.toBe(signalTitle(postprandial, null));
   });
 
-  it('a correlation names its pairing as a sequence, never an attribution', () => {
-    const correlation = everyType('itch')[7];
-    expect(signalTitle(correlation, null)).toBe('Itching after chicken and duck, the last 8 weeks');
+  it('a symptom finding’s claim is the same claim on a trial day — the trial’s day lives on its strip', () => {
+    for (const f of everyType('vomit').filter((x) => x.type !== 'trial_response' && x.type !== 'stood_down')) {
+      expect(signalTitle(f, trial())).toBe(signalTitle(f, null));
+    }
+  });
+
+  it('worsening: each tier on the axis its sentence leads with, never the strip’s “up”', () => {
+    const worsening = everyType('cough')[1] as SymptomWorseningFinding;
+    expect(signalTitle(worsening, null)).toBe('Coughing on 4 of the last 14 days');
+    expect(signalTitle({ ...worsening, tier: 'soft' }, null)).toBe('Coughing on 4 separate days this week');
+    expect(signalTitle({ ...worsening, tier: 'standard' }, null)).toBe('Coughing, 5 episodes this week');
+    expect(signalTitle({ ...worsening, tier: 'standard', currentCount: 1 }, null)).toBe('Coughing, 1 episode this week');
+  });
+
+  it('the frequency comparison stays count-free (its lead card prints the bars’ own line)', () => {
+    expect(signalTitle(everyType('vomit')[2], null)).toBe('Vomiting, week over week');
+  });
+
+  it('the timing claims', () => {
+    const all = everyType('vomit');
+    expect(signalTitle(all[4], null)).toBe('Vomiting between 2am and 6am');
+    expect(signalTitle(all[5], null)).toBe('Vomiting long after meals');
+    expect(signalTitle(all[6], null)).toBe('Vomiting soon or long after meals');
+  });
+
+  it('a correlation names its pairing as a sequence, never an attribution, and names every member', () => {
+    expect(signalTitle(everyType('itch')[7], null)).toBe('Itching after chicken and duck, an early pattern');
+    expect(signalTitle({ ...(everyType('itch')[7] as CorrelationFinding), tier: 'established' }, null)).toBe('Itching after chicken and duck');
+  });
+
+  it('the stand-down marker keeps the thing-and-window form (never a door)', () => {
+    const stood = everyType('vomit')[8];
+    expect(signalTitle(stood, null)).toBe('Vomiting, the last 8 weeks');
+    expect(signalTitle(stood, trial())).toBe('Vomiting, day 55 of the rabbit trial');
   });
 
   it('the trial card is the trial: identity + day; the day never renders completion language', () => {
@@ -210,29 +241,19 @@ describe('signalTitle — names the thing and the window', () => {
     expect(signalTitle(trialCard, null)).toBe('Diet trial, day 55 of 56');
   });
 
-  it('the safety types keep their shipped name — a fact, not an ask', () => {
+  it('the photo read says the sentence’s own “possible”, and its family noun', () => {
+    const all = everyType('vomit');
+    expect(signalTitle(all[12], null)).toBe('Possible blood and possible foreign material in a vomit photo');
+    expect(signalTitle(all[13], null)).toBe('Possible foreign material in a stool photo');
+    expect(signalTitle({ ...(all[13] as IncidentRedFlagFinding), flags: ['blood'], flaggedIncidentCount: 3 }, null)).toBe(
+      'Possible blood in stool photos',
+    );
+  });
+
+  it('intake keeps its shipped name — a fact about the record', () => {
     const all = everyType('vomit');
     expect(signalTitle(all[10], null)).toBe('Eating less than usual');
     expect(signalTitle(all[11], null)).toBe('Refused the usual food');
-    expect(signalTitle(all[12], null)).toBe('Blood in a vomit photo');
-    expect(signalTitle(all[13], null)).toBe('Something unusual in a stool photo');
-  });
-
-  it('worsening never takes the strip’s “up this week” — “up” is on the list', () => {
-    const worsening = everyType('cough')[1];
-    expect(signalTitle(worsening, null)).toBe('Coughing, the last 2 weeks');
-    expect(signalTitle(worsening, trial())).toBe('Coughing, day 55 of the rabbit trial');
-  });
-
-  it('an odd lookback is said in days, whole weeks in weeks', () => {
-    const chronicity = everyType('vomit')[0] as SymptomChronicityFinding;
-    expect(signalTitle({ ...chronicity, windowDays: 10 }, null)).toBe('Vomiting, the last 10 days');
-    expect(signalTitle({ ...chronicity, windowDays: 7 }, null)).toBe('Vomiting, the last 1 week');
-  });
-
-  it('a generic trial identity lower-cases into the sentence', () => {
-    const [chronicity] = everyType('vomit');
-    expect(signalTitle(chronicity, trial({ identity: 'Diet trial', dayCounter: 3 }))).toBe('Vomiting, day 3 of the diet trial');
   });
 });
 

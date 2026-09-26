@@ -30,6 +30,8 @@ import {
   historyNodesByDay,
   instantOnDay,
   itemsOnlyLineText,
+  landingStepFor,
+  LANDING_ITEM_INDEX,
   needsWholeDays,
   paintIdentityOf,
   priorOnsetsFor,
@@ -499,6 +501,33 @@ describe('showsRecordStart', () => {
   it('sectionFromDay: a card\'s day, a run\'s first day', () => {
     expect(sectionFromDay({ kind: 'day', day: '2026-09-17' } as HistorySection)).toBe('2026-09-17');
     expect(sectionFromDay({ kind: 'unlogged', fromDay: '2026-09-13', toDay: '2026-09-16', days: 4 } as HistorySection)).toBe('2026-09-13');
+  });
+});
+
+describe('the landing aim (CUL-1282)', () => {
+  it('aims at a section\'s first item, never its header (a sticky header measures at 0)', () => {
+    expect(LANDING_ITEM_INDEX).toBe(1);
+  });
+  // Every History section holds one item: header, item, footer, three cells a section.
+  const ones = [1, 1, 1, 1];
+  it('steps to the furthest measured cell whose offset is true', () => {
+    expect(landingStepFor(ones, 1)).toEqual({ sectionIndex: 0, itemIndex: 1 });
+    expect(landingStepFor(ones, 2)).toEqual({ sectionIndex: 0, itemIndex: 2 });
+    expect(landingStepFor(ones, 7)).toEqual({ sectionIndex: 2, itemIndex: 1 });
+    expect(landingStepFor(ones, 8)).toEqual({ sectionIndex: 2, itemIndex: 2 });
+  });
+  it('a header steps back to the footer before it, and the first header has nowhere true to go', () => {
+    expect(landingStepFor(ones, 6)).toEqual({ sectionIndex: 1, itemIndex: 2 });
+    expect(landingStepFor(ones, 3)).toEqual({ sectionIndex: 0, itemIndex: 2 });
+    expect(landingStepFor(ones, 0)).toBeNull();
+    expect(landingStepFor(ones, -1)).toBeNull();
+    expect(landingStepFor([], 4)).toBeNull();
+  });
+  it('counts each section by its own items, and holds past the last cell', () => {
+    // Cells: [h0 i i f0][h1 i f1]: index 4 is section 1's header, 5 its item.
+    expect(landingStepFor([2, 1], 4)).toEqual({ sectionIndex: 0, itemIndex: 3 });
+    expect(landingStepFor([2, 1], 5)).toEqual({ sectionIndex: 1, itemIndex: 1 });
+    expect(landingStepFor([2, 1], 40)).toEqual({ sectionIndex: 1, itemIndex: 2 });
   });
 });
 

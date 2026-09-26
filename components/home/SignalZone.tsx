@@ -38,7 +38,8 @@ import { insightArrival } from '../../lib/haptics';
 // consumer's delegation by that segment (guards/designV2FlagOff.test.tsx).
 import { useDesignV2 } from '../../hooks/useDesignV2';
 import { SignalLeadCard } from '../../components/designV2/signal/SignalLeadCard';
-import { SignalOpenLink } from '../../components/designV2/signal/SignalOpenLink';
+import { SignalRow } from '../../components/designV2/signal/SignalRow';
+import { SignalZoneFoot } from '../../components/designV2/signal/SignalZoneFoot';
 import { signalScreenHref } from '../../lib/signalRoute';
 import { foldIdentity } from '../../lib/signalFold';
 import { Skeleton } from '../ui/Skeleton';
@@ -536,8 +537,10 @@ export function SignalZone({
   // handed to the stack, which renders a strip, a re-opened face, or the face per entry.
   const fold = useSignalFold({ petId, findings, answered, lastEpisodes });
 
-  // D2-3 (CUL-1065) — Design v2: the lead insight card becomes a title + chart + line, every
-  // face becomes a DOOR to the Signal's own screen, and the section header gains "Open ›".
+  // D2-3 (CUL-1065) — Design v2: the lead insight card becomes a title + chart + line, and
+  // every other card a ROW — headline, ask, chevron (CUL-1270 · D1 = B) — each a DOOR to its
+  // own finding's screen. The header's "Open ›" retired with CUL-1270 (it always opened the
+  // lead; every card is its own door now), and "not a diagnosis" is said once, at the foot.
   // Flag-off, every branch below is the shipped one to the byte (the guard proves it
   // against the namespace being absent). The door is keyed on the finding's identity and
   // THIS zone's pet (C-9) — `useSignal` pairs the two by construction.
@@ -664,11 +667,6 @@ export function SignalZone({
     (f) => !isStoodDown(f.finding),
   ).length;
 
-  // The lead the header's door opens (D2-3): the first card that renders, in rank order —
-  // the same choice `LiveStack` makes for the canvas.
-  const leadFinding: SignalFinding | null =
-    visibleFindings(findings, suppressTrialResponse).find((f) => !isStoodDown(f.finding))?.finding ?? null;
-
   const { playing: arriving, moment } = useArrivalMoment({
     petId,
     petName,
@@ -716,19 +714,11 @@ export function SignalZone({
       {moment?.sweep ? <ArrivalWash sweep={moment.sweep} /> : null}
       {/* The style prop stays a SINGLE reference when the chrome isn't receded, so the
           shipped snapshot is byte-identical (an inline [style, false] array would drift it). */}
-      {designV2 && state === 'live' && leadFinding ? (
-        <SignalOpenLink
-          petName={petName}
-          onOpen={() => openSignal(leadFinding)}
-          labelStyle={labelReceded ? [styles.label, styles.labelReceded] : styles.label}
-        />
-      ) : (
       <SectionLabel
         label="Signal"
         header
         style={labelReceded ? [styles.label, styles.labelReceded] : styles.label}
       />
-      )}
 
       {/* SR-3 acknowledgment line (§5.3) — one quiet line ABOVE the still-readable FINDINGS
           while a fresh log's regen is in flight (never a spinner, never blanks the findings).
@@ -802,7 +792,12 @@ export function SignalZone({
 
       {/* §8 doorway into the Patterns dashboard — a quiet footer affordance, present in
           every Signal state so the deeper surface is discoverable from Home. Navigates
-          AWAY to a destination (Principle 3 — not a 4th Home zone, not a tab). */}
+          AWAY to a destination (Principle 3 — not a 4th Home zone, not a tab). Under
+          Design v2 it is the zone's foot: "not a diagnosis", said once, beside the door
+          (CUL-1270). */}
+      {designV2 ? (
+        <SignalZoneFoot petName={petName} showDisclaimer={state === 'live'} />
+      ) : (
       <Pressable
         onPress={() => router.push('/insights')}
         hitSlop={8}
@@ -816,6 +811,7 @@ export function SignalZone({
           See all of {petName}'s patterns →
         </ThemedText>
       </Pressable>
+      )}
     </Card>
   );
 }
@@ -946,6 +942,11 @@ function LiveStack({
         // finding HAS a strip — `stripRenderable`, the same predicate `FoldedStrip` refuses on —
         // so a finding is never dropped for want of a strip (FS-7), and a SAFETY finding folds
         // only when its strip can say its ask (FS-3): otherwise the open card renders.
+        //
+        // CUL-1285 (PM-ruled 2026-09-26): there is no fold under Design v2 — every card is
+        // already a row. The two design_v2 branches below take no fold state at all (their
+        // props have none, so the types hold it), and a stored fold only ever reaches the
+        // shipped `InsightCard`.
         const folded = fold.stateOf(f.finding) === 'folded' && stripRenderable(f.finding, { lastEpisodeIso });
         const row = (
           <>
@@ -959,24 +960,18 @@ function LiveStack({
                 The canvas goes to the first card (`leadIndex`, above). */}
             {isStoodDown(f.finding) ? (
               <StoodDownLine text={f.text} />
-            ) : designV2 && onOpen && petId && !folded && i === leadIndex && f.finding.priorityClass === 'insight' ? (
-              // D2-3: the lead insight card is the title + chart + line, and a door. A safety
-              // lead stays the shipped plain card below (S1), with the same door.
-              <SignalLeadCard
-                cached={f}
-                petId={petId}
-                petName={petName}
-                onOpen={onOpen}
-                trialRunning={trialRunning}
-                backBecause={fold.backBecauseOf(f.finding)}
-                onTouch={fold.touch}
-              />
+            ) : designV2 && onOpen && petId && i === leadIndex && f.finding.priorityClass === 'insight' ? (
+              // D2-3: the lead insight card is the title + chart + line, and a door.
+              <SignalLeadCard cached={f} petId={petId} onOpen={onOpen} />
+            ) : designV2 && onOpen && petId ? (
+              // CUL-1270 (D1 = B): every other card — a safety lead and every lower card — is
+              // a row: headline, the ask, a chevron, a door to its own screen. A safety row
+              // stays words (S1) and always carries its ask.
+              <SignalRow cached={f} petId={petId} onOpen={onOpen} isLead={i === leadIndex} />
             ) : (
               // CUL-788: the card renders its own strip when `folded` — one row, one rail,
               // so the fold motion has a single continuous node to hold (§12). The host
               // never swaps components; it only says which state the finding is in.
-              // D2-3: under the flag the face is a door (`onOpen`); folded, the strip is the
-              // shipped strip and re-opens on tap as before.
               <InsightCard
                 cached={f}
                 petName={petName}
@@ -989,7 +984,6 @@ function LiveStack({
                 lastEpisodeIso={lastEpisodeIso}
                 backBecause={fold.backBecauseOf(f.finding)}
                 onTouch={fold.touch}
-                onOpen={designV2 && !folded ? onOpen : undefined}
               />
             )}
           </>

@@ -387,6 +387,40 @@ Deno.test('phrasingPayload — carries the whole cluster, so a member can never 
   assert.equal(payload.protein, 'chicken and duck', 'even the scalar names both')
 })
 
+// ── CUL-1271: delegation / containment and treatment attribution ─────────────────
+// Neither class carries a wellness word, so the safety branch's reassurance lexicon passed
+// both at ffacb4e. The shared arms (lib/careClaimScreens.ts) now close them on every
+// model-phrasable branch that screens reassurance or cause.
+const CUL1271_SENTENCES = [
+  "Pixel's vomiting is in the vet's hands now, with 4 episodes since.",
+  "Pixel's vomiting is under control since the Sep 16 visit.",
+  'Your vet has it covered, so there is nothing more to do about the vomiting.',
+  "The prednisone seems to be helping Pixel's cough.",
+  "Pixel's cough has settled since the prednisone started.",
+  // The adversarial pass on the first push: any pet's name, the fronted clause, the intake
+  // comparison that passed the safety intake screen.
+  "It's in Pixel's vet's hands now.",
+  "Since the prednisone started, Pixel's cough has settled.",
+  "Pixel's appetite has come back since the visit.",
+]
+
+Deno.test('validatePhrasing — rejects delegation and treatment attribution on EVERY finding type (CUL-1271)', () => {
+  // The check runs before the per-type branches, so the insight-class lanes that skip the safety
+  // branch (trial_response — where "working" lives — gap_shortening, the timing lanes) hold too.
+  for (const f of [
+    intakeDecline(), worsening(), chronicity(), incidentRedFlag(), reflection(), correlation({ tier: 'early' }),
+    postprandial(), emptyStomach(), timingStory(), timeofday(), trialResponse(), gapShortening(),
+  ]) {
+    for (const t of CUL1271_SENTENCES) {
+      assert.equal(validatePhrasing(t, f), false, `${f.type}: ${t}`)
+    }
+  }
+})
+
+Deno.test('validatePhrasing — the honest dated count still passes a safety finding (CUL-1271)', () => {
+  assert.ok(validatePhrasing('Pixel has vomited 4 times since the Sep 16 visit — worth a word with your vet.', worsening()))
+})
+
 // ── templateIntakeDecline (safety — never reassure, never "picky") ──────────────
 
 Deno.test('templateIntakeDecline — consecutive-low never reassures, points to the vet', () => {

@@ -34,6 +34,7 @@ import type {
   RankedFinding,
   SymptomType,
 } from './detection.ts'
+import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 
 // §3.2 visible-card cap: governs the LOW/MEDIUM-priority insight set only.
 // Safety/concern findings are exempt — never withheld to honor the cap.
@@ -560,6 +561,12 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
   if (t.length < 8 || t.length > 320) return false
   if (t.includes('!')) return false // nyx-voice Pattern 4 — no manufactured enthusiasm
   if (hasBannedSignalVocabulary(t)) return false // §3.5 — no glyphs, no percentages, any type
+  // CUL-1271 — never hand a concern off ("under control", "in the vet's hands") or credit a
+  // treatment with an effect ("the prednisone is helping"), on ANY finding type. Neither class
+  // carries a wellness word, so the per-type lexicons below passed both; and neither depends on
+  // priority class (trial_response is insight-class and is exactly where "working" lives).
+  // Shared with Ask, the summary and the banner (lib/careClaimScreens.ts, one module).
+  if (careClaimReason(t)) return false
   if (finding.priorityClass === 'safety') {
     // Never reassure on a safety flag; never reframe a decline as fussiness.
     if (REASSURANCE_RE.test(t) || DISMISSIVE_RE.test(t)) return false

@@ -4,11 +4,9 @@ import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import { useAppActive } from '../../../hooks/useAppActive';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
-import { readLastEpisodeIso } from '../../../hooks/useLastEpisodeDates';
 import { focusAccessibility } from '../../../lib/a11yFocus';
 import { measureNodeInWindow, type WindowRect } from '../../../lib/measureNode';
-import { foldedEntry, readFoldEntries, writeFoldEntries, type RecordFacts } from '../../../lib/signalFold';
-import { loadSignalScreen, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
+import { loadSignalScreen, screenLeadsWithLanes, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
 import { WhorlSpinner } from '../../brand/WhorlSpinner';
 import { CompareBars } from '../../charts/CompareBars';
 import { TimingLanes } from '../../charts/TimingLanes';
@@ -34,14 +32,24 @@ import { leadChartWidth } from './SignalLeadCard';
 // SignalScreen — the Signal's own screen (D2-3 · CUL-1065; design authority
 // `docs/culprit-design-v4-mockups.html` §03, the sections in this order):
 //
-//   1. the title                       `signalTitle` — names the thing and the window
+//   1. the title                       `signalTitle` — names the finding's claim (CUL-1270)
 //   2. the weekly bars                 every week's count and its logged days
 //   3. the count-anchored sentence     the server's phrased sentence, the Change Contract's
 //   4. the compare                     two windows, logged days shown, nothing adjudicated
 //   5. the lanes                       timed from meals, before / in the trial, the untimed line
 //   6. the episodes                    a gallery, each tile its OWN read
 //   7. why this is a Signal            counts, not a verdict; the medication inside the window
-//   8. keep it compact on Home         folds the Home card for the owner's return
+//
+// There is no section 8 any more: *Keep it compact on Home* retired with the Signal fold
+// under Design v2 (CUL-1285, PM-ruled 2026-09-26 — every Home card is already a row, and
+// a fold had nothing left to compact and no mark on Home to say it had).
+//
+// A TIMING finding leads with its own evidence (CUL-1270 · D2 = a): the lanes move to
+// section 2 and the weekly bars follow the sentence, because minutes-from-a-meal is what
+// that finding claims and weeks are what the recurrence claims. Two vomiting findings
+// counted the same rows and drew the same first chart, so the PM read their screens as
+// one screen twice; the first chart is now the one only that finding has
+// (`screenLeadsWithLanes`).
 //
 // A safety finding gets the screen too (S1 lives on Home's card, not here): the same
 // sections over its record, plus the shipped phone script (`ExpandedReceipts`) after the
@@ -68,9 +76,6 @@ import { leadChartWidth } from './SignalLeadCard';
 // No haptic anywhere on this screen: it paints `worth_a_call` (the gallery, the phone
 // script), and it is named in `guards/haptics.test.ts`'s ALWAYS_SCANNED.
 
-/** *Keep it compact on Home* — the fold control's words on the screen. */
-export const KEEP_COMPACT_LABEL = 'Keep it compact on Home';
-export const KEEP_COMPACT_HINT = 'Folds this signal to one line on Home. It reopens on its own when the picture changes.';
 /** The Why block's title. */
 export const WHY_TITLE = 'Why this is a Signal';
 /** The phone script's title on a safety screen. */
@@ -163,11 +168,9 @@ export function SignalScreen({ petId, identity }: Props) {
       ) : (
         <Body
           model={load.model}
-          petId={petId}
           petName={load.petName}
           landStyle={landStyle}
           titleRef={titleRef}
-          onFolded={() => router.back()}
           flight={flight}
           flew={flew}
           windowWidth={windowWidth}
@@ -278,26 +281,21 @@ function Hero({
 
 function Body({
   model,
-  petId,
   petName,
   landStyle,
   titleRef,
-  onFolded,
   flight,
   flew,
   windowWidth,
 }: {
   model: SignalScreenModel;
-  petId: string;
   petName: string;
   landStyle: ReturnType<typeof useSignalOpen>;
   titleRef: React.RefObject<View | null>;
-  onFolded: () => void;
   flight: FlightRecord | null;
   flew: boolean;
   windowWidth: number;
 }) {
-  const [folding, setFolding] = useState(false);
   // The hero tells the flight where it is (a retarget if the slot guessed wrong) and that
   // it exists — the release, when the spring has already rested.
   const onHeroRect = useCallback(
@@ -308,27 +306,17 @@ function Body({
     [model.identity],
   );
 
-  // *Keep it compact on Home*: the same entry Home's control writes (`foldedEntry`, with
-  // the record's witness for a standing safety type), through the same store, then back
-  // to Home — where `useSignalFold` has heard the write (`subscribeFoldStore`) and draws
-  // the strip. The strip keeps its own re-open.
-  const keepCompact = async () => {
-    if (folding) return;
-    setFolding(true);
-    try {
-      const stored = (await readFoldEntries(petId)) ?? {};
-      const facts: RecordFacts =
-        model.finding.type === 'symptom_chronicity' || model.finding.type === 'symptom_worsening'
-          ? { lastEpisodeIso: readLastEpisodeIso(petId, model.finding.symptomType) }
-          : {};
-      await writeFoldEntries(petId, { ...stored, [model.identity]: foldedEntry(model.finding, new Date().toISOString(), facts) });
-    } finally {
-      setFolding(false);
-      onFolded();
-    }
-  };
-
   const drawIn = true;
+  const lanesLead = screenLeadsWithLanes(model);
+  const lanesSection = model.lanes ? (
+    <View style={styles.section} testID="signal-section-lanes">
+      <ThemedText style={styles.sectionTitle} accessibilityRole="header">
+        Timed from meals
+      </ThemedText>
+      <TimingLanes lanes={model.lanes.lanes} axis={model.lanes.axis} drawIn={drawIn} identity={model.identity} />
+    </View>
+  ) : null;
+  const hero = <Hero model={model} drawIn={drawIn && !flew} windowWidth={windowWidth} hidden={flight != null} onWindowRect={onHeroRect} />;
   return (
     <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} testID="signal-screen-body">
       {/* 1 · the title */}
@@ -336,8 +324,9 @@ function Body({
         <ThemedText style={styles.title}>{model.title}</ThemedText>
       </View>
 
-      {/* 2 · the weekly bars — the hero. A chart that flew in does not draw in again. */}
-      <Hero model={model} drawIn={drawIn && !flew} windowWidth={windowWidth} hidden={flight != null} onWindowRect={onHeroRect} />
+      {/* 2 · the finding's own evidence first: the lanes for a timing finding, else the
+          weekly bars — the hero. A chart that flew in does not draw in again. */}
+      {lanesLead ? lanesSection : hero}
 
       {/* 3 + 4 · the sentence and the compare land together */}
       <Animated.View style={[styles.section, landStyle]} testID="signal-section-sentence">
@@ -349,15 +338,8 @@ function Body({
         ) : null}
       </Animated.View>
 
-      {/* 5 · timed from meals */}
-      {model.lanes ? (
-        <View style={styles.section} testID="signal-section-lanes">
-          <ThemedText style={styles.sectionTitle} accessibilityRole="header">
-            Timed from meals
-          </ThemedText>
-          <TimingLanes lanes={model.lanes.lanes} axis={model.lanes.axis} drawIn={drawIn} identity={model.identity} />
-        </View>
-      ) : null}
+      {/* 5 · timed from meals — or, on a timing finding, the weekly bars below the sentence */}
+      {lanesLead ? hero : lanesSection}
 
       {/* 6 · the episodes */}
       {model.episodes ? (
@@ -388,23 +370,6 @@ function Body({
         </View>
       ) : null}
 
-      {/* 8 · keep it compact on Home */}
-      {model.foldable ? (
-        <View style={styles.section} testID="signal-section-fold">
-          <Pressable
-            onPress={() => void keepCompact()}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={KEEP_COMPACT_LABEL}
-            accessibilityHint={KEEP_COMPACT_HINT}
-            style={styles.foldControl}
-            testID="signal-keep-compact"
-          >
-            <ThemedText style={styles.foldLabel}>{KEEP_COMPACT_LABEL}</ThemedText>
-            <ThemedText style={styles.foldVerb}>Fold</ThemedText>
-          </Pressable>
-        </View>
-      ) : null}
     </ScrollView>
   );
 }
@@ -482,23 +447,5 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     lineHeight: theme.lineHeightSM,
     color: theme.colorTextSecondary,
-  },
-  foldControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 44,
-    paddingVertical: theme.space1,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorBorder,
-  },
-  foldLabel: {
-    fontSize: theme.textMD,
-    color: theme.colorTextPrimary,
-  },
-  foldVerb: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
   },
 });

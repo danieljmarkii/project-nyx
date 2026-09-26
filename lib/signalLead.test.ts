@@ -51,18 +51,19 @@ describe('loadSignalLead', () => {
     const model = await loadSignalLead('pet-1', reflection);
     expect(mockReadSignalTrial).toHaveBeenCalledWith(expect.objectContaining({ id: 'pet-1', name: 'Nyx', species: 'cat' }), expect.any(Number));
     expect(mockReadSignalEpisodes).toHaveBeenCalledWith('pet-1', 'vomit');
-    expect(model.title).toBe('Vomiting, the last 2 weeks');
+    expect(model.title).toBe('Vomiting, week over week');
     expect(model.noun).toBe('vomiting');
     expect(model.weekly?.total).toBe(2);
     const weeks = model.weekly?.weeks ?? [];
     expect(model.line).toBe(`${weeks[weeks.length - 1].count} this week${weeks[weeks.length - 1].partial ? ' so far' : ''} · ${weeks[weeks.length - 2].count} last week`);
   });
 
-  it('a running trial names the title and marks the chart', async () => {
+  it('a running trial marks the chart; the title is the claim, the same on a trial day (D2, CUL-1270)', async () => {
     mockReadSignalEpisodes.mockResolvedValue([]);
     mockReadSignalTrial.mockResolvedValue({ startDay: shift(today, -20), identity: 'Rabbit trial', dayCounter: 21, targetDays: 56, foodLabel: null });
     const model = await loadSignalLead('pet-1', reflection);
-    expect(model.title).toBe('Vomiting, day 21 of the rabbit trial');
+    expect(model.title).toBe('Vomiting, week over week');
+    expect(model.trial?.dayCounter).toBe(21);
     expect(model.weekly?.mark?.day).toBe(shift(today, -20));
   });
 
@@ -77,7 +78,7 @@ describe('loadSignalLead', () => {
     mockReadSignalTrial.mockRejectedValue(new Error('sqlite'));
     const model = await loadSignalLead('pet-1', reflection);
     expect(model.trial).toBeNull();
-    expect(model.title).toBe('Vomiting, the last 2 weeks');
+    expect(model.title).toBe('Vomiting, week over week');
     await loadSignalLead('pet-9', reflection);
     expect(mockReadSignalTrial).toHaveBeenCalledTimes(1);
   });
