@@ -278,8 +278,8 @@ export function FoodPicker({
     // start-a-trial modal and §2.3's mid-trial add, i.e. the screens that EDIT this
     // list; a pinned section of the list you are editing is circular.
     if (selecting) return [];
-    // D7 — the library is per-account, the trial is per-pet, and the hook resolves
-    // the ACTIVE pet's trial. Logging for a different pet than the one selected is
+    // D7 — the library is per-account, the trial is per-pet, and the hook is handed
+    // the ACTIVE pet's id (above), so it resolves the active pet's trial. Logging for a different pet than the one selected is
     // reachable, and marking pet A's allowed foods on pet B's log screen is the
     // precise cross-pet leak D7 forbids. No match, no section.
     if (activePetId !== petId) return [];
