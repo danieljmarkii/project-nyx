@@ -46,6 +46,8 @@ The schema description handed to the model spells out the asymmetry explicitly (
 
 **ANTI-PATTERN:** Adding a `looks_normal`, `no_concern`, `all_clear`, or `healthy` value — even with "softened" copy. Absence of a visible flag does not equal wellness; conflating them is the hepatic-lipidosis miss.
 
+**A VALUE A BUILD DOES NOT KNOW (CUL-1277).** Installed builds outlive any server flag, so every reader sorts a verdict with ONE allowlist of the QUIET values, `QUIET_VERDICTS` in `lib/incidentVerdict.ts` (phone and server import it): off the list is an escalation (the rose, the words "Worth a call", never blank, never folded, rescued through a failed re-read). A guard that PROTECTS an escalation already in the record asks `isEscalationVerdict`, never `=== 'worth_a_call'`; a gate that RELEASES model words (Pattern 10) stays on the literal, because it must fail toward withholding. A quiet verdict stands only on a finished read (`FINISHED_READ_STATUSES`). Adding a value to the quiet list makes it calm everywhere at once, so a wellness value never joins it. `guards/unknownVerdict.test.tsx` and the `CUL-1277` Deno cases pin both halves.
+
 ---
 
 ## PATTERN 2: Deterministic Escalation Floor — Model Cannot Downgrade

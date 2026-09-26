@@ -25,7 +25,10 @@
 // denylist, so a quiet verdict on a status nobody has defined yet stood as a calm read
 // while History said the photo was not read. A quiet verdict now stands only on a
 // finished read (`FINISHED_READ_STATUSES`, `lib/incidentReadState.ts`), the list
-// `lib/readState.ts` reads too; an escalation stands at any status.
+// `lib/readState.ts` reads too. An escalation on a status the build does not know still
+// stands in the rose. (On the record, `capped` and `read_disabled` keep their own frames
+// even over an escalation; the shipped server never writes either over one, and the
+// one-line hardening is CUL-1326's.)
 //
 // THE FIXTURES. `call_now` is the likeliest real name (the critique's tier). The other
 // can never be one, so a future PR that ships `call_now` for real leaves this file still
@@ -253,9 +256,10 @@ describe.each(SECTIONS)('$file — a status this build does not know', (section)
 
     mockRow = rowFor(section, { status, recommendation: 'monitor', read_text: 'The read the server wrote.' });
     const { toJSON } = render(<Section eventId="e2" petId="pet-1" petName="Rex" hasPhoto={false} />);
-    // The row arrives on a resolved promise inside an effect. Flush it (the finished render
-    // above shows one tick is enough for it to land) before asserting the absence, or an
-    // empty first frame would pass this for free.
+    // The row arrives on a resolved promise inside an effect. Flush it before asserting the
+    // absence, or an empty first frame would pass this for free. The finished half above
+    // does NOT prove the flush is long enough (`findByText` polls for a second); dropping
+    // the status rule from the photoless branch reds this case, which is what proves it.
     await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
     expect(toJSON()).toBeNull();
   });
