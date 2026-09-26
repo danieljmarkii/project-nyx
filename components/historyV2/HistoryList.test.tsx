@@ -144,7 +144,7 @@ import { MEDICATION_SCHEMA_SQL } from '../../lib/medications';
 import { DIET_TRIAL_SCHEMA_SQL } from '../../lib/dietTrialMirror';
 import { FAB_SCROLL_INSET_FLOOR, HISTORY_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 import { shiftDay } from '../../lib/historyDays';
-import { LANDING_RETRIES, LANDING_RETRY_MS } from '../../lib/historyScreen';
+import { LANDING_ITEM_INDEX } from '../../lib/historyScreen';
 import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
 import { analysisChainOutstanding, claimAnalysisChain } from '../../lib/analysis';
 import { syncNow } from '../../lib/sync';
@@ -282,9 +282,9 @@ async function waitOut(ms: number): Promise<void> {
   });
 }
 
-/** A landing's scroll re-aims on timers (the list's own retry chain), and each jump asks the
- *  list for a cell batch: past both, whatever the landing set in motion has landed. */
-const LANDING_TAIL_MS = LANDING_RETRIES * LANDING_RETRY_MS + LIST_BATCH_MS + 5;
+/** A landing's jump asks the list for a cell batch (its re-aim runs on cell layouts, never a
+ *  timer, CUL-1282): past the batch, whatever the landing set in motion has landed. */
+const LANDING_TAIL_MS = LIST_BATCH_MS + 5;
 
 /** The rose's arrival beats (`useNodeArrival`): the rail's lag, the slot's open, the settle. */
 const ARRIVAL_TAIL_MS = FOLD_MOTION.railLagMs + FOLD_MOTION.openMs + FOLD_MOTION.settleSlackMs * 2 + 5;
@@ -785,7 +785,7 @@ describe('the landed day (§3.1, C-22)', () => {
     await settle();
     // Every day is logged, newest first, so the day ten back is section ten. A jump, never a
     // glide (§4: a landing is a state).
-    expect(aim).toHaveBeenLastCalledWith({ sectionIndex: 10, itemIndex: 0, viewOffset: 0, animated: false });
+    expect(aim).toHaveBeenLastCalledWith({ sectionIndex: 10, itemIndex: LANDING_ITEM_INDEX, viewOffset: 0, animated: false });
     // The pages reached it: the store holds the day the list jumped to.
     expect(useHistoryListStore.getState().snapshot!.pages.span!.fromDay <= dayAgo(10)).toBe(true);
     aim.mockRestore();
@@ -818,6 +818,173 @@ describe('the landed day (§3.1, C-22)', () => {
     const gap = screen.getByTestId(`history-gap-${dayAgo(3)}`);
     expect(StyleSheet.flatten(gap.props.style).borderColor).toBe('#0B7B6C');
     await waitOut(LANDING_TAIL_MS);
+  });
+});
+
+// ── §3.1 where a landing actually puts the list (CUL-1282) ──────────────────────
+//
+// The tests above assert the CALL; these drive the real VirtualizedList and assert the
+// OFFSET it scrolls to, over the layout a phone reports. jest lays nothing out, so the
+// harness feeds each mounted cell its layout through the cell's own host `onLayout`, as the
+// native side would, in the one shape that matters here: ScrollView wraps every sticky
+// section header in `ScrollViewStickyHeader`, and a layout is relative to its parent, so a
+// day header's cell reports y = 0 while every other cell reports its place in the content.
+
+const VIEWPORT = 800;
+const LIST_HEADER = 400;
+const DAY_HEADER = 50;
+const DAY_BODY = 250;
+/** Where a day's card starts in the content: the list header, then three cells a day. */
+const dayTop = (daysBack: number) => LIST_HEADER + daysBack * (DAY_HEADER + DAY_BODY);
+const cellHeight = (cellKey: string) =>
+  cellKey.endsWith(':header') ? DAY_HEADER : cellKey.endsWith(':footer') ? 0 : DAY_BODY;
+
+type AnyNode = {
+  type: unknown;
+  props: Record<string, any>;
+  instance: any;
+  children: (AnyNode | string)[];
+  findAll: (p: (n: AnyNode) => boolean) => AnyNode[];
+};
+const VirtualizedListClass = jest.requireActual('@react-native/virtualized-lists/Lists/VirtualizedList').default;
+const layoutEvent = (y: number, height: number) => ({
+  nativeEvent: { layout: { x: 0, y, width: 400, height } },
+});
+function outerList(): AnyNode {
+  const root = (screen as unknown as { UNSAFE_root: AnyNode }).UNSAFE_root;
+  return root.findAll((n) => n.type === VirtualizedListClass && !n.props.horizontal)[0];
+}
+function firstHost(node: AnyNode): AnyNode | null {
+  for (const c of node.children) {
+    if (typeof c === 'string') continue;
+    if (typeof c.type === 'string') return c;
+    const h = firstHost(c);
+    if (h) return h;
+  }
+  return null;
+}
+/** Lay out every mounted cell of the day list, as the device reports it. */
+function layOut(viewport = VIEWPORT): void {
+  const vl = outerList();
+  act(() => {
+    vl.instance._onLayout(layoutEvent(0, viewport));
+    vl.instance._onLayoutHeader(layoutEvent(0, LIST_HEADER));
+  });
+  // Read every mounted cell first: a layout can move the list, and the list then unmounts
+  // cells the loop has not reached. A cell's place comes from its index (every seeded day is
+  // logged, so every section is a day: header, body, footer), never a running total, since
+  // a windowed list does not draw from its first cell.
+  const cells = vl
+    .findAll((n) => (n.type as { name?: string })?.name === 'CellRenderer' && !n.props.horizontal)
+    .map((cell) => ({ key: cell.props.cellKey as string, index: cell.props.index as number, onLayout: firstHost(cell)?.props.onLayout }));
+  let end = LIST_HEADER;
+  for (const { key, index, onLayout } of cells) {
+    const top = dayTop(Math.floor(index / 3)) + [0, DAY_HEADER, DAY_HEADER + DAY_BODY][index % 3];
+    end = Math.max(end, top + cellHeight(key));
+    // The sticky wrapper is the header cell's parent: its layout is at the wrapper's origin.
+    if (onLayout) act(() => onLayout(layoutEvent(key.endsWith(':header') ? 0 : top, cellHeight(key))));
+  }
+  act(() => vl.instance._onContentSizeChange(400, end));
+}
+
+describe('where a landing puts the list (§3.1, CUL-1282)', () => {
+  let toOffset: jest.SpyInstance;
+  beforeEach(() => {
+    toOffset = jest.spyOn(VirtualizedListClass.prototype, 'scrollToOffset');
+  });
+  afterEach(() => toOffset.mockRestore());
+  const lastOffset = () => (toOffset.mock.calls.at(-1)?.[0] as { offset: number } | undefined)?.offset;
+
+  it('a day already drawn: the list jumps so its card starts at the top, never to the top of the list', async () => {
+    seedDays(14, 3);
+    await renderList();
+    for (let i = 0; i < 3; i++) {
+      layOut();
+      await settle();
+    }
+    act(() => {
+      useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(3));
+    });
+    await settle();
+    expect(lastOffset()).toBe(dayTop(3));
+    expect(toOffset.mock.calls.at(-1)?.[0]).toMatchObject({ animated: false });
+  });
+
+  it('a day on older pages: the list pages back, draws the day, then lands on it', async () => {
+    seedDays(40, 3);
+    await renderList();
+    for (let i = 0; i < 3; i++) {
+      layOut();
+      await settle();
+    }
+    const spanBefore = useHistoryListStore.getState().snapshot!.pages.span!;
+    // A page is 50 rows, whole days: seventeen days here, so day 25 is on the next page.
+    expect(spanBefore.fromDay > dayAgo(25)).toBe(true);
+    act(() => {
+      useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(25));
+    });
+    // The device lays the new cells out a batch at a time, and later than any fixed budget.
+    for (let i = 0; i < 6; i++) {
+      await settle();
+      await waitOut(200);
+      layOut();
+    }
+    await settle();
+    expect(useHistoryListStore.getState().snapshot!.pages.span!.fromDay <= dayAgo(25)).toBe(true);
+    expect(lastOffset()).toBe(dayTop(25));
+    expect(useHistoryScopeStore.getState().landedDay).toBe(dayAgo(25));
+  });
+
+  it('a landing the pages cannot reach says so, and moves nothing', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    seedDays(5, 3);
+    await renderList();
+    layOut();
+    await settle();
+    // A day before the record: every page is read, and none holds it.
+    act(() => {
+      useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(30));
+    });
+    await settle();
+    expect(warn).toHaveBeenCalledWith(`[history] landing on ${dayAgo(30)} dropped: the pages never reached it`);
+    expect(toOffset).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('a day past what the list has drawn: it steps to the furthest measured cell until the day is drawn', async () => {
+    // A short viewport keeps the drawn window well short of the day, so the list draws it
+    // only once the landing's steps move the viewport; a scroll reports back as on a phone.
+    const SHORT = 100;
+    toOffset.mockImplementation(function (this: any, params: { offset: number; animated?: boolean }) {
+      this._onScroll({
+        timeStamp: Date.now(),
+        nativeEvent: {
+          contentOffset: { x: 0, y: params.offset },
+          contentSize: { width: 400, height: dayTop(60) },
+          layoutMeasurement: { width: 400, height: SHORT },
+          zoomScale: 1,
+        },
+      });
+    });
+    seedDays(40, 3);
+    await renderList();
+    for (let i = 0; i < 3; i++) {
+      layOut(SHORT);
+      await settle();
+    }
+    act(() => {
+      useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(30));
+    });
+    for (let i = 0; i < 20 && lastOffset() !== dayTop(30); i++) {
+      await settle();
+      layOut(SHORT);
+    }
+    await settle();
+    // Steps first (each a measured cell short of the day), the day last.
+    const offsets = toOffset.mock.calls.map((c) => (c[0] as { offset: number }).offset);
+    expect(offsets.length).toBeGreaterThan(1);
+    expect(offsets.slice(0, -1).every((o) => o < dayTop(30))).toBe(true);
+    expect(lastOffset()).toBe(dayTop(30));
   });
 });
 

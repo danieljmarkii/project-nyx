@@ -178,11 +178,49 @@ export function visibleNodesOf(nodes: readonly DayNode[], shown: ReadonlySet<str
 
 // ── The timing lane's inputs, per day ──────────────────────────────────────────
 
-/** How many times a landing re-aims at a section the list had not measured yet, and how
- *  long it waits for the jump near it to be measured before each re-aim. Here rather than
- *  in the list so a test can wait out the whole chain from the numbers the list uses. */
-export const LANDING_RETRIES = 3;
-export const LANDING_RETRY_MS = 50;
+// ── The landing's aim (§3.1; CUL-1282) ─────────────────────────────────────────
+//
+// A SectionList lays each section out as cells: the header, the items, the footer. A
+// landing never aims at the header cell. ScrollView wraps every sticky header in
+// `ScrollViewStickyHeader`, and a layout is relative to its parent, so the list records
+// every day header at offset 0: a jump aimed at one lands on the top of the list, which
+// is what shipped. An item's offset is real, and `scrollToLocation` lifts a jump to an
+// item by its section header's height (a height the list does measure right), so the day's
+// header still lands at the top.
+
+/** The section cell a landing aims at: the first item, never the header (above). */
+export const LANDING_ITEM_INDEX = 1;
+
+/** Cell layouts in a row that may pass without the list measuring further, while a landing
+ *  waits for its day to be drawn, before it gives up and says so. The re-aim runs on each
+ *  cell's layout, never on a timer (a slow phone draws later than any fixed budget). */
+export const LANDING_STALLS = 40;
+
+/**
+ * Where a landing jumps while its day is not measured yet: the furthest cell the list has
+ * measured whose offset is true, as a `scrollToLocation` target. From there the list draws
+ * the cells past it, whose layouts re-aim the landing. A header cell's offset is the
+ * sticky wrapper's zero (above), so a header steps back to the section before it, and the
+ * first section's header gives null: nothing measured has a true offset yet.
+ */
+export function landingStepFor(
+  dataLengths: readonly number[],
+  highestMeasuredCell: number,
+): { sectionIndex: number; itemIndex: number } | null {
+  if (highestMeasuredCell < 0 || dataLengths.length === 0) return null;
+  let start = 0;
+  for (let i = 0; i < dataLengths.length; i++) {
+    const size = dataLengths[i] + 2;
+    if (highestMeasuredCell < start + size) {
+      const itemIndex = highestMeasuredCell - start;
+      if (itemIndex > 0) return { sectionIndex: i, itemIndex };
+      return i === 0 ? null : { sectionIndex: i - 1, itemIndex: dataLengths[i - 1] + 1 };
+    }
+    start += size;
+  }
+  const last = dataLengths.length - 1;
+  return { sectionIndex: last, itemIndex: dataLengths[last] + 1 };
+}
 
 /** A local day key's midnight, in epoch ms, or null for a malformed key. */
 export function dayStartMs(day: string): number | null {

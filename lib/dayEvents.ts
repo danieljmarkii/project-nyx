@@ -288,6 +288,19 @@ export function describeDayEvents(rows: TimelineRow[]): DayEventDisplay[] {
   return rows.map(describeDayEvent).sort((a, b) => a.timeMs - b.timeMs);
 }
 
+/** A drill-in row that is also a door: the display plus the id it opens (`/event/[id]`).
+ *  The Design v2 month's day panel makes every row a door (CUL-320) — the refused bowl an
+ *  owner spots is the row they tap — as every other day list in the app already does.
+ *  The flag-off sheet keeps `describeDayEvents`, display-only, to the byte. */
+export interface DayEventDoor extends DayEventDisplay {
+  id: string;
+}
+
+/** Pure: `describeDayEvents`, carrying each row's id. Same order, same words. */
+export function describeDayEventDoors(rows: TimelineRow[]): DayEventDoor[] {
+  return rows.map((r) => ({ ...describeDayEvent(r), id: r.id })).sort((a, b) => a.timeMs - b.timeMs);
+}
+
 /** The sheet's subtitle. Names the charted symptom's count for the day, then leads into
  *  the full log. Never an all-clear: a symptom-free day reads "No vomiting logged", a
  *  factual statement about the log, paired with the events actually present (§11 #2). */

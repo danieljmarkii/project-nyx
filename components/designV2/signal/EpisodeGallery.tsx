@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import type { GalleryTile, SignalScreenEpisodes } from '../../../lib/signalScreen';
 import { EVENT_ATTACHMENT_BUCKET } from '../../../lib/attachments';
 import { getSignedUrl } from '../../../lib/storage';
+import { localFileExists } from '../../../lib/localFile';
+import { resolveTilePhoto, tileNeedsRemote, TILE_PHOTO_FAILED_LABEL, type TileSource } from '../../../lib/tilePhoto';
 import { INCIDENT_REC_LABEL, type IncidentRecommendation } from '../../../lib/incidentReadState';
 import type { EpisodeVerdict } from '../../../lib/signalScreen';
 import { ThemedText } from '../../ui/ThemedText';
@@ -25,8 +27,9 @@ import { ThemedText } from '../../ui/ThemedText';
 //
 // The photos are the owner's own record, served exactly as the record screen serves
 // them: the on-device file when it is still there, else a signed URL from the private
-// bucket (RLS-scoped, one-hour TTL), transformed to a tile — never a public URL, never
-// cached anywhere new (T&S).
+// bucket (RLS-scoped, one-hour TTL), transformed to a tile, else the raw original when the
+// transform cannot load — never a public URL, never cached anywhere new (T&S). The order
+// lives in `lib/tilePhoto.ts`; a tile whose every source fails says so (CUL-1269).
 //
 // The spoken label is the whole tile in one sentence — "Sep 17, 5:11 PM, photographed,
 // read as Keep an eye out" — so VoiceOver hears the date, the time and the read (§06,
@@ -91,34 +94,72 @@ export function EpisodeGallery({ episodes }: Props) {
 }
 
 function Tile({ tile }: { tile: GalleryTile }) {
-  const [uri, setUri] = useState<string | null>(tile.photo.localUri);
+  const { localUri, storagePath } = tile.photo;
+  // A stale cache path is no local file at all (CUL-1269): asked once per path, the way
+  // the record screen asks before it trusts the same column.
+  const local = useMemo(() => (localUri && localFileExists(localUri) ? localUri : null), [localUri]);
+  const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
+  const [transform, setTransform] = useState<TileSource>(undefined);
+  const [raw, setRaw] = useState<TileSource>(undefined);
+  const needsRemote = tileNeedsRemote(local, failed);
+
+  // A new photo on the same tile starts its chain over. Skipped on mount, where the
+  // initial state already is the fresh chain (no wasted render per tile).
+  const sourceKey = `${local ?? ''}|${storagePath}`;
+  const lastSourceKey = useRef(sourceKey);
   useEffect(() => {
-    if (tile.photo.localUri) {
-      setUri(tile.photo.localUri);
-      return;
-    }
+    if (lastSourceKey.current === sourceKey) return;
+    lastSourceKey.current = sourceKey;
+    setFailed(new Set());
+    setTransform(undefined);
+    setRaw(undefined);
+  }, [sourceKey]);
+
+  useEffect(() => {
+    if (!needsRemote) return;
     let cancelled = false;
-    getSignedUrl(BUCKET, tile.photo.storagePath, SIGNED_URL_TTL_SEC, TILE_TRANSFORM)
-      .then((url) => {
-        if (!cancelled) setUri(url);
-      })
-      .catch(() => {});
+    // Both signed together, as the record screen does: only the chosen URL is ever
+    // downloaded, and a failed transform swaps to the raw original without a second wait.
+    // A signing failure is an unavailable source, never a silent forever-grey tile.
+    getSignedUrl(BUCKET, storagePath, SIGNED_URL_TTL_SEC, TILE_TRANSFORM)
+      .then((url) => !cancelled && setTransform(url))
+      .catch(() => !cancelled && setTransform(null));
+    getSignedUrl(BUCKET, storagePath, SIGNED_URL_TTL_SEC)
+      .then((url) => !cancelled && setRaw(url))
+      .catch(() => !cancelled && setRaw(null));
     return () => {
       cancelled = true;
     };
-  }, [tile.photo.localUri, tile.photo.storagePath]);
+  }, [needsRemote, storagePath]);
+
+  const photo = resolveTilePhoto({ local, transform, raw }, failed);
+  const markFailed = (uri: string) => setFailed((prev) => (prev.has(uri) ? prev : new Set(prev).add(uri)));
 
   return (
     <Pressable
       onPress={() => router.push(`/event/${tile.eventId}`)}
       accessibilityRole="button"
-      accessibilityLabel={tileA11yLabel(tile)}
+      accessibilityLabel={photo.kind === 'failed' ? `${tileA11yLabel(tile)}, ${TILE_PHOTO_FAILED_LABEL.toLowerCase()}` : tileA11yLabel(tile)}
       accessibilityHint="Opens this episode's record"
       style={styles.tile}
       testID={`episode-tile-${tile.eventId}`}
     >
       <View style={styles.photoWell}>
-        {uri ? <Image source={{ uri }} style={styles.photo} accessibilityIgnoresInvertColors /> : null}
+        {photo.kind === 'photo' ? (
+          <Image
+            key={photo.uri}
+            source={{ uri: photo.uri }}
+            style={styles.photo}
+            accessibilityIgnoresInvertColors
+            onError={() => markFailed(photo.uri)}
+            testID={`episode-photo-${tile.eventId}`}
+          />
+        ) : photo.kind === 'failed' ? (
+          // Said, never a blank square: an empty well under a date reads as "nothing here".
+          <ThemedText style={styles.photoFailed} testID={`episode-photo-failed-${tile.eventId}`}>
+            {TILE_PHOTO_FAILED_LABEL}
+          </ThemedText>
+        ) : null}
       </View>
       <ThemedText style={styles.date} numberOfLines={1}>
         {tile.dateWord}
@@ -177,6 +218,16 @@ const styles = StyleSheet.create({
   photo: {
     width: '100%',
     height: '100%',
+  },
+  photoFailed: {
+    flex: 1,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    paddingTop: theme.space3,
+    paddingHorizontal: theme.space1,
+    fontSize: theme.textXS,
+    lineHeight: theme.lineHeightXS,
+    color: theme.colorTextSecondary,
   },
   date: {
     marginTop: theme.space0_5,

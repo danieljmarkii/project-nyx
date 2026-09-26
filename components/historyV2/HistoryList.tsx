@@ -32,6 +32,8 @@
 //   • A landing (a strip tap, a doorway) is consumed from the scope store in ONE step and
 //     held in a ref (C-22), waits for the snapshot, pages back until the day is loaded, then
 //     JUMPS to the day's card or the gap line that holds it: a state, not an animation. The
+//     jump aims at the section's item, never its sticky header (whose measured offset is
+//     0, CUL-1282), and a day not measured yet is re-aimed on each cell layout. The
 //     outline stays until the owner's own scroll (`onScrollBeginDrag`), which a scroll the
 //     app makes never fires.
 //   • A second tap on the History tab returns to today: the strip back to this week, the
@@ -62,7 +64,7 @@
 //     mount fulfils when the list has not drawn it yet. The owner's own scroll cancels it.
 //   • Reduce Motion is read at the moment of each move (`reducedMotionNow()`), and is known
 //     before the first frame (CUL-1123), so nothing starts and then snaps.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AppState,
   LayoutAnimation,
@@ -71,6 +73,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   View,
+  type CellRendererProps,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -96,8 +99,8 @@ import {
 import { SEARCH_READS_NOTES, type HistoryRow } from '../../lib/historyQueries';
 import {
   BOWL_LINE_LEAD,
-  LANDING_RETRIES,
-  LANDING_RETRY_MS,
+  LANDING_ITEM_INDEX,
+  LANDING_STALLS,
   bowlLineText,
   countLineWindowOf,
   filterQuietStateOf,
@@ -105,6 +108,7 @@ import {
   historyDatesFor,
   itemsOnlyLineText,
   historyNodesByDay,
+  landingStepFor,
   paintIdentityOf,
   rePressFocusDay,
   scrollAnimates,
@@ -623,26 +627,76 @@ export function HistoryList() {
         // Scroll only to a day the pages now hold, and only while it is still the landed
         // day: the owner's own scroll or a pet switch while older pages read ends it, and
         // the app never yanks a list the owner has taken back.
-        if (reached && useHistoryScopeStore.getState().landedDay === day) setScrollTarget(day);
+        if (useHistoryScopeStore.getState().landedDay !== day) return;
+        if (reached) setScrollTarget(day);
+        else console.warn(`[history] landing on ${day} dropped: the pages never reached it`);
       });
   }, [landingSeq, snapshotReady]);
 
-  const retries = useRef(0);
-  const aim = useCallback((sectionIndex: number) => {
-    // A landing is a state, not an animation (§4 "Land on a day"; the mock's caption): it
-    // jumps, with or without Reduce Motion, and the outline says where it landed.
-    listRef.current?.scrollToLocation({ sectionIndex, itemIndex: 0, viewOffset: 0, animated: false });
+  // ── The jump (§3.1; CUL-1282) ──
+  // A landing is a state, not an animation (§4 "Land on a day"; the mock's caption): it
+  // jumps, with or without Reduce Motion, and the outline says where it landed. It aims at
+  // the day's first item, never its header (`LANDING_ITEM_INDEX`: the list records every
+  // sticky header at offset 0). A day the list has not measured yet (one the landing just
+  // paged in) is aimed at again on every cell layout until it is, stepping to the furthest
+  // true offset in between; never on a timer, which a slow phone outlasts.
+  const listSections = useRef<ListSection[]>([]);
+  listSections.current = sections;
+  const aiming = useRef<{ day: string; highest: number; stalls: number } | null>(null);
+  const aimMissed = useRef<number | null>(null);
+  const tryAim = useCallback(() => {
+    const aim = aiming.current;
+    if (aim === null) return;
+    // The owner's scroll, the re-press or a new landing ended this one.
+    if (useHistoryScopeStore.getState().landedDay !== aim.day) {
+      aiming.current = null;
+      return;
+    }
+    const models = listSections.current;
+    const sectionIndex = sectionIndexFor(
+      models.map((s) => s.model),
+      aim.day,
+    );
+    if (sectionIndex < 0) {
+      aiming.current = null;
+      console.warn(`[history] landing on ${aim.day} dropped: no section holds it`);
+      return;
+    }
+    aimMissed.current = null;
+    listRef.current?.scrollToLocation({ sectionIndex, itemIndex: LANDING_ITEM_INDEX, viewOffset: 0, animated: false });
+    // Set by `onScrollToIndexFailed` during the call above, which the narrowing cannot see.
+    const missed = aimMissed.current as number | null;
+    if (missed === null) {
+      aiming.current = null;
+      return;
+    }
+    // Not measured yet: step to the furthest true offset, so the list draws past it.
+    if (missed > aim.highest) {
+      aim.highest = missed;
+      aim.stalls = 0;
+      const step = landingStepFor(
+        models.map((s) => s.data.length),
+        missed,
+      );
+      if (step) listRef.current?.scrollToLocation({ ...step, viewOffset: 0, animated: false });
+    } else if (++aim.stalls >= LANDING_STALLS) {
+      aiming.current = null;
+      console.warn(`[history] landing on ${aim.day} dropped: the list never drew it`);
+    }
   }, []);
+  const onScrollToIndexFailed = useCallback((info: { highestMeasuredFrameIndex: number }) => {
+    aimMissed.current = info.highestMeasuredFrameIndex;
+  }, []);
+  // Every cell's layout, while a landing waits for its day to be measured.
+  const onCellLaidOut = useCallback(() => {
+    if (aiming.current !== null) tryAim();
+  }, [tryAim]);
+
   useEffect(() => {
     if (scrollTarget === null) return;
     setScrollTarget(null);
-    const index = sectionIndexFor(
-      sections.map((s) => s.model),
-      scrollTarget,
-    );
-    if (index < 0) return;
-    retries.current = 0;
-    aim(index);
+    aiming.current = { day: scrollTarget, highest: -1, stalls: 0 };
+    tryAim();
     // §4 "Land on a day": with motion on, the day draws once more where it landed; with
     // Reduce Motion, the jump and the outline are the whole landing. VoiceOver goes to the
     // day's header, or the line holding it, either way.
@@ -651,37 +705,7 @@ export function HistoryList() {
       setLandDraw((n) => n + 1);
     }
     requestFocus(scrollTarget);
-  }, [scrollTarget, sections, aim, ledger, requestFocus]);
-
-  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (retryTimer.current !== null) clearTimeout(retryTimer.current);
-    },
-    [],
-  );
-  const onScrollToIndexFailed = useCallback(
-    (info: { index: number; averageItemLength: number }) => {
-      // The section is past what the list has measured: jump near it, then aim again (the
-      // landing's own jump, above, in two steps).
-      listRef.current?.getScrollResponder()?.scrollTo({ y: info.averageItemLength * info.index, animated: false });
-      if (retries.current >= LANDING_RETRIES) return;
-      retries.current += 1;
-      const target = useHistoryScopeStore.getState().landedDay;
-      if (retryTimer.current !== null) clearTimeout(retryTimer.current);
-      retryTimer.current = setTimeout(() => {
-        retryTimer.current = null;
-        // Still the landed day: the owner's scroll in between ends the landing.
-        if (target === null || useHistoryScopeStore.getState().landedDay !== target) return;
-        const index = sectionIndexFor(
-          sections.map((s) => s.model),
-          target,
-        );
-        if (index >= 0) aim(index);
-      }, LANDING_RETRY_MS);
-    },
-    [sections, aim],
-  );
+  }, [scrollTarget, tryAim, ledger, requestFocus]);
 
   // The owner's own scroll clears the landed state; a scroll the app makes never does. It
   // also ends a landing's draw and a focus request that have not happened yet: the owner has
@@ -691,6 +715,7 @@ export function HistoryList() {
     if (s.landedDay !== null && s.petId !== null) s.clearLanded(s.petId);
     ledger.seal();
     ledger.dropLanding();
+    aiming.current = null;
     pendingFocus.current = null;
   }, [ledger]);
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -713,6 +738,7 @@ export function HistoryList() {
         const s = useHistoryScopeStore.getState();
         if (s.petId !== null) s.returnToToday(s.petId);
         ledger.dropLanding();
+        aiming.current = null;
         listRef.current?.getScrollResponder()?.scrollTo({
           y: 0,
           animated: scrollAnimates({ reducedMotion: reducedMotionNow(), distance: scrollY.current, viewport: viewport.current }),
@@ -874,37 +900,67 @@ export function HistoryList() {
   ) : null;
 
   return (
-    <SectionList<HistorySection, ListSection>
-      ref={listRef}
-      style={styles.list}
-      sections={sections}
-      keyExtractor={(m) => `body:${sectionKeyOf(m)}`}
-      renderSectionHeader={renderSectionHeader}
-      renderItem={renderItem}
-      stickySectionHeadersEnabled
-      // A drag through search results puts the keyboard away, as the platform's own lists do.
-      keyboardDismissMode="on-drag"
-      // A week of days on the first paint (a day is three cells: its header, its body, its
-      // footer): the strip shows this week, so a landing from it never waits on a measure.
-      initialNumToRender={INITIAL_CELLS}
-      ListHeaderComponent={header}
-      ListEmptyComponent={empty}
-      ListFooterComponent={footer}
-      onEndReached={() => {
-        if (snapshot?.pages.next) void useHistoryListStore.getState().loadMore();
-      }}
-      onEndReachedThreshold={0.5}
-      onScrollBeginDrag={onScrollBeginDrag}
-      onScroll={onScroll}
-      scrollEventThrottle={16}
-      onLayout={onLayout}
-      onScrollToIndexFailed={onScrollToIndexFailed}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colorTextSecondary} />
-      }
-      contentContainerStyle={[styles.content, sections.length === 0 && styles.contentEmpty]}
-      testID="history-list"
-    />
+    <CellLaidOut.Provider value={onCellLaidOut}>
+      <SectionList<HistorySection, ListSection>
+        ref={listRef}
+        style={styles.list}
+        sections={sections}
+        keyExtractor={(m) => `body:${sectionKeyOf(m)}`}
+        renderSectionHeader={renderSectionHeader}
+        renderItem={renderItem}
+        stickySectionHeadersEnabled
+        // A drag through search results puts the keyboard away, as the platform's own lists do.
+        keyboardDismissMode="on-drag"
+        // A week of days on the first paint (a day is three cells: its header, its body, its
+        // footer): the strip shows this week, so a landing from it never waits on a measure.
+        initialNumToRender={INITIAL_CELLS}
+        ListHeaderComponent={header}
+        ListEmptyComponent={empty}
+        ListFooterComponent={footer}
+        onEndReached={() => {
+          if (snapshot?.pages.next) void useHistoryListStore.getState().loadMore();
+        }}
+        onEndReachedThreshold={0.5}
+        onScrollBeginDrag={onScrollBeginDrag}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        onLayout={onLayout}
+        onScrollToIndexFailed={onScrollToIndexFailed}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colorTextSecondary} />
+        }
+        contentContainerStyle={[styles.content, sections.length === 0 && styles.contentEmpty]}
+        CellRendererComponent={HistoryCell}
+        testID="history-list"
+      />
+    </CellLaidOut.Provider>
+  );
+}
+
+/** Told on every cell's layout, so a waiting landing re-aims (CUL-1282). */
+const CellLaidOut = createContext<() => void>(() => {});
+
+/**
+ * The list's cell: the default one (a View carrying the list's own layout handler, which
+ * records the cell's offset), which then tells a waiting landing the list measured
+ * something. The list's handler runs first, so the re-aim reads the new measure.
+ */
+function HistoryCell({ style, onLayout, onFocusCapture, children }: CellRendererProps<HistorySection>) {
+  const laidOut = useContext(CellLaidOut);
+  const handleLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      onLayout?.(e);
+      laidOut();
+    },
+    [onLayout, laidOut],
+  );
+  // `onFocusCapture` is the host prop RN's own cell passes (the list keeps a focused cell
+  // drawn); the View types do not declare it, so it rides a spread as it does there.
+  const focus = { onFocusCapture };
+  return (
+    <View style={style} onLayout={handleLayout} {...focus}>
+      {children}
+    </View>
   );
 }
 
