@@ -293,17 +293,26 @@ export function StoolAnalysisSection(
       // `error` is the raw functions.invoke message (lib/analysis.ts) — a
       // transport string, not owner copy. Log it, show the calm retry line.
       console.warn('[stool-analysis] retry failed:', error);
-      // The re-run never started, so the pending mark comes off — before CUL-1275 it
-      // stayed, parking the section on "Reading the photo…" with nothing watching and a
-      // stored Worth a call out of sight for the rest of the visit. Back onto the SERVER's
-      // copy when there is one — including from the not-enough frame, whose "Not enough to
-      // say" is not a read (CUL-820) — keeping the owner's own latest Hide / Show, which
-      // may not have reached the server yet. A read the owner has not been shown is a
-      // landing, and is told to the announcer outright rather than left to the pending
-      // write and this one committing apart (adversarial round 4, F1).
-      const back = fresh ? { ...fresh, dismissed_at: shown ? shown.dismissed_at : fresh.dismissed_at } : base;
+      // The pending mark comes off — before CUL-1275 it stayed, parking the section on
+      // "Reading the photo…" with nothing watching and a stored Worth a call out of sight
+      // for the rest of the visit. Back onto the server's row AS IT IS NOW: an error is
+      // usually the function's own 500, which has already written the attempt's failure
+      // (`buildFailureWrite` records `failed` over any row that is not a Worth a call), so
+      // the copy read BEFORE the trigger would put a calm verdict back in front of a read
+      // that just failed — the pairing `escalationSurvivesFailure` exists to refuse
+      // (adversarial round 5). Re-read, and let the render's own rules decide. From the
+      // not-enough frame too, whose "Not enough to say" is not a read (CUL-820). The
+      // owner's own latest Hide / Show is kept (it may not have reached the server yet).
+      // A read the owner has not been shown is a landing, told to the announcer outright
+      // rather than left to the pending write and this one committing apart (round 4, F1).
+      const after = await fetchRow();
+      if (cancelled.current) return;
+      const server = after ?? fresh;
+      const back = server
+        ? { ...server, dismissed_at: shown ? shown.dismissed_at : server.dismissed_at }
+        : base;
       if (back) {
-        if (fresh && !(shown && showsSameRead(fresh, shown))) announcer.expectLanding();
+        if (server && !(shown && showsSameRead(server, shown))) announcer.expectLanding();
         setRow(back);
       }
       Alert.alert('Could not start analysis', 'Try again in a moment.');

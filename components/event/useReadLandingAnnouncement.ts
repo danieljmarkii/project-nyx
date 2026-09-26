@@ -131,6 +131,9 @@ export function useReadLandingAnnouncement({
   // verdict lands silently through a skipped re-run (M4 — the audio never carries
   // observations, only the verdict line); and a legacy `status: 'pending'` row as the
   // re-base read could re-park a failed re-run (M5 — the server never writes `pending`).
+  // And from round 5: a failed re-run's restore keeps THIS screen's Hide / Show state over
+  // the server's, so a Show made on ANOTHER device while this screen held a hidden copy is
+  // undone on screen until the next read (P6 — two devices plus a failed trigger).
   //
   // A QUIET END STAYS ARMED. The watch's give-up can race one last in-flight re-read: the
   // wait has already ended silently when that read commits a Worth a call, and a one-shot

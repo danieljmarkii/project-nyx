@@ -636,6 +636,22 @@ describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
     alert.mockRestore();
   });
 
+  it('a failed attempt restores the row AS THE FUNCTION LEFT IT — the failure, not the calm read it replaced (round 5)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<StoolAnalysisSection eventId="as-8" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    mockRow = row({ recommendation: 'monitor', read_text: 'Formed.', updated_at: '2026-09-26T11:00:00.000Z' });
+    (triggerStoolAnalysis as jest.Mock).mockImplementationOnce(async () => {
+      mockRow = row({ status: 'failed', recommendation: 'monitor', read_text: 'Formed.', updated_at: '2026-09-26T12:00:09.000Z' });
+      return { error: 'FunctionsHttpError: 500' };
+    });
+    await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
+    expect(await view.findByText("Couldn't finish reading this one.")).toBeTruthy();
+    expect(announce).not.toHaveBeenCalledWith(readLandedCopy('Keep an eye out'));
+    alert.mockRestore();
+  });
+
   it('a read already in the record on open says nothing', async () => {
     mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.' });
     const view = render(<StoolAnalysisSection eventId="as-3" petId="pet-1" petName="Rex" hasPhoto />);

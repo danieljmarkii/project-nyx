@@ -1081,6 +1081,48 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     alert.mockRestore();
   });
 
+  // ── The fifth adversarial pass (CUL-1275) ───────────────────────────────────
+  // The function's own 500 has usually WRITTEN the attempt's failure first
+  // (`buildFailureWrite`: `failed` over any row that is not a Worth a call). A restore from
+  // the pre-trigger read would put a calm verdict back in front of a read that just failed.
+  function failWritingFailure(written: Record<string, unknown>) {
+    (triggerVomitAnalysis as jest.Mock).mockImplementationOnce(async () => {
+      mockRow = written;
+      return { error: 'FunctionsHttpError: 500' };
+    });
+  }
+
+  it('from the not-enough frame, a failed attempt shows and speaks the FAILURE, not the calm read it replaced (P1)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockRow = null;
+    const view = render(<VomitAnalysisSection eventId="an-22" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    const onGiveUp = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![2] as () => void;
+    await act(async () => { onGiveUp(); });
+    mockRow = row({ recommendation: 'monitor', read_text: 'Yellow.', updated_at: '2026-09-26T10:00:00.000Z' });
+    failWritingFailure(row({ status: 'failed', recommendation: 'monitor', read_text: 'Yellow.', updated_at: '2026-09-26T12:00:09.000Z' }));
+    const tryIt = await view.findByText('Try analysis');
+    await act(async () => { fireEvent.press(tryIt); });
+    expect(await view.findByText("Couldn't finish reading this one.")).toBeTruthy();
+    expect(view.queryByText('Keep an eye out')).toBeNull();
+    expect(announce).not.toHaveBeenCalledWith(readLandedCopy('Keep an eye out'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy("Couldn't finish reading this one."));
+    alert.mockRestore();
+  });
+
+  it('on the card path, a failed attempt over an unseen downgrade shows the failure too (P3)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<VomitAnalysisSection eventId="an-23" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    mockRow = row({ recommendation: 'monitor', read_text: 'Yellow.', updated_at: '2026-09-26T11:00:00.000Z' });
+    failWritingFailure(row({ status: 'failed', recommendation: 'monitor', read_text: 'Yellow.', updated_at: '2026-09-26T12:00:09.000Z' }));
+    await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
+    expect(await view.findByText("Couldn't finish reading this one.")).toBeTruthy();
+    expect(announce).not.toHaveBeenCalledWith(readLandedCopy('Keep an eye out'));
+    alert.mockRestore();
+  });
+
   it('is spoken on ANDROID too — the section carries no live region to cover it', async () => {
     Platform.OS = 'android';
     mockRow = row({ status: 'pending', recommendation: null });
