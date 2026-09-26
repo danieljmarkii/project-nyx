@@ -21,6 +21,7 @@
 // reported as stored, beside whether the owner later edited the fields they rest on.
 import { computeContextualFlags } from '../../supabase/functions/analyze-vomit/index.ts'
 import { argValue, loadRecord, visibleAt, type PetRecord, type RecordEvent } from './record.deno.ts'
+import { emptyReplayProblem } from './subject.ts'
 
 const H = 3_600_000
 const SETTLE = 5 * 60_000 // see record.deno.ts visibleAt
@@ -114,4 +115,10 @@ if (import.meta.main) {
     }
   }
   console.log(`\n${reads} live vomit reads · ${storedCalls} stored worth_a_call · shipped-rule mismatches: ${mismatches}`)
+  // A mismatch count over zero reads is not a fidelity pass (CUL-1276).
+  const empty = emptyReplayProblem('live vomit reads', reads)
+  if (empty) {
+    console.error(`FAIL: ${empty}`)
+    Deno.exit(1)
+  }
 }

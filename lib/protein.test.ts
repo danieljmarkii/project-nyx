@@ -207,26 +207,47 @@ describe('canonicalizeProtein — Class-A convergence (B-414)', () => {
               yield pre + casing(head + qual) + suf;
   }
 
+  // Both walks below check each key in plain JS and assert ONCE over what they
+  // collected (CUL-1156, the CUL-1155 precedent): an `expect()` per key built the
+  // matcher and its error object ~50,000 times, which was most of this block's
+  // runtime. Every key is still checked; a failure names the raw inputs that broke
+  // it (the first five whole, all of them counted).
   it('converges on every generated variant — canonicalize(canonicalize(x)) === canonicalize(x)', () => {
     let checked = 0;
+    let failCount = 0;
+    const fails: { raw: string; once: string | null; twice: string | null }[] = [];
     for (const raw of corpus()) {
       const once = canonicalizeProtein(raw);
       // The second pass is the whole test: it is what a second READ path does.
-      expect(canonicalizeProtein(once)).toBe(once);
+      const twice = canonicalizeProtein(once);
+      if (twice !== once) {
+        failCount++;
+        if (fails.length < 5) fails.push({ raw, once, twice });
+      }
       checked++;
     }
+    expect({ failCount, fails }).toEqual({ failCount: 0, fails: [] });
     // Guards the generator itself — a refactor that empties it must not read as a pass.
     expect(checked).toBeGreaterThan(4000);
   });
 
   it('never returns a key carrying boundary punctuation', () => {
+    let checked = 0;
+    let failCount = 0;
+    const fails: { raw: string; key: string }[] = [];
     for (const raw of corpus()) {
       const key = canonicalizeProtein(raw);
       if (key === null) continue;
-      expect(key).toBe(key.trim());
-      expect(/^[\p{L}\p{N}]/u.test(key)).toBe(true);
-      expect(/[\p{L}\p{N}]$/u.test(key)).toBe(true);
+      checked++;
+      const clean = key === key.trim() && /^[\p{L}\p{N}]/u.test(key) && /[\p{L}\p{N}]$/u.test(key);
+      if (!clean) {
+        failCount++;
+        if (fails.length < 5) fails.push({ raw, key });
+      }
     }
+    expect({ failCount, fails }).toEqual({ failCount: 0, fails: [] });
+    // A corpus that canonicalized everything to null would check nothing and pass.
+    expect(checked).toBeGreaterThan(4000);
   });
 
   it('pools every chicken variant onto exactly one key', () => {

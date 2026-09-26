@@ -30,6 +30,7 @@ import {
 import { curateFindings, templateForFinding } from '../../supabase/functions/generate-signal/phrasing.ts'
 import { isTrialRunning } from '../../lib/dietTrial.ts'
 import { argValue, flagsAsOf, loadRecord, localToUtc, visibleAt, type PetRecord } from './record.deno.ts'
+import { emptyReplayProblem } from './subject.ts'
 
 const DAY = 86_400_000
 const LOOKBACK_DAYS = 180 // generate-signal/index.ts LOOKBACK_DAYS
@@ -130,6 +131,13 @@ if (import.meta.main) {
         }
       }),
     })
+  }
+  // A --from after --to (or a date that does not parse) runs the loop zero times, and an
+  // empty ledger would print zero safety evenings as if it had looked (CUL-1276).
+  const empty = emptyReplayProblem('evenings', ledger.length)
+  if (empty) {
+    console.error(`FAIL: ${empty} (check --from ${from} and --to ${to})`)
+    Deno.exit(1)
   }
   const out = argValue('out', '')
   if (out) Deno.writeTextFileSync(out, JSON.stringify(ledger, null, 1))
