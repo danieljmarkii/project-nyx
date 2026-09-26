@@ -124,6 +124,15 @@ class FakeQuery {
       Object.assign(w.row!, this.values)
       return { data: [{ id: w.row!.id }], error: null }
     }
+    // Migration 074: a row's pet is frozen on update, and an insert must be the event's
+    // own pet. The fake refuses both as production does, so nothing here is green over a
+    // cross-pet write the database would reject.
+    if (w.row && this.values.pet_id !== undefined && this.values.pet_id !== w.row.pet_id) {
+      return { data: null, error: { message: '23514: pet_id is frozen' } }
+    }
+    if (!w.row && this.values.pet_id !== OWN.pet_id) {
+      return { data: null, error: { message: '23514: analysis row must be the event\'s pet' } }
+    }
     w.writes.push({ mode: this.mode, values: structuredClone(this.values) })
     if (w.row) {
       Object.assign(w.row, this.values) // PostgREST: only the sent columns change on conflict
@@ -342,6 +351,17 @@ Deno.test('pipeline CUL-1201 — a rescued contextual escalation is held after t
   assertStrictEquals(w.row?.read_text, 'CONTEXTUAL:Mochi:ctx_flag')
 })
 
+Deno.test('pipeline CUL-1201 × CUL-1277 — a stored verdict this build does not know is held too', async () => {
+  const w = makeWorld({
+    row: { recommendation: 'call_now', status: 'completed', blood_col: 'no' },
+    vision: () => CLEAN,
+  })
+  const r = await run(w)
+  assertStrictEquals(r.body.held, true)
+  assertStrictEquals(w.aiWriteAttempts, 0)
+  assertStrictEquals(w.row?.recommendation, 'call_now')
+})
+
 Deno.test('pipeline CUL-1201 — the frozen-payload chain is held (no owner-correction exception)', async () => {
   // The owner cleared a false flag on photo 1; photo 2 re-escalated on real blood through read
   // fields only; photo 3 reads clean. The stored verdict is photo 2's and must stand.
@@ -421,10 +441,39 @@ Deno.test('pipeline CUL-1203 — a stored row filed under another pet is refused
   assertStrictEquals(r.status, 409)
   assertStrictEquals(w.rpcCalls, 0)
   assertStrictEquals(w.visionCalls, 0)
-  assertEquals(w.writes, [])
+  assertStrictEquals(w.aiWriteAttempts, 0)
 })
 
-Deno.test('pipeline CUL-1203 — the pet-keyed update lands on the event\'s own row (the harness honours the key)', async () => {
+Deno.test('pipeline CUL-1203 — the catch writes nothing to a row filed under another pet, rescue or not', async () => {
+  // The step-3b read fails, so the refusal never ran; the catch's own read must refuse it.
+  const w = makeWorld({
+    row: { pet_id: 'someone-elses-pet', recommendation: 'monitor', status: 'completed', blood_col: 'no' },
+    contextFlags: ['ctx_flag'],
+    vision: () => CLEAN,
+    aiReadError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.aiWriteAttempts, 0)
+  assertStrictEquals(w.row?.pet_id, 'someone-elses-pet')
+  assertStrictEquals(w.row?.recommendation, 'monitor')
+})
+
+Deno.test('pipeline CUL-1203 — a row that turns into another pet\'s mid-run steers nothing at step 9', async () => {
+  // The event moved between one owner's pets during the vision call (CUL-882), and a
+  // sibling wrote under the new pet. No hold answers for it and no write is attempted.
+  const w = makeWorld({
+    vision: () => CLEAN,
+    duringVision: (world) => {
+      world.row = { ...OWN, pet_id: 'someone-elses-pet', recommendation: 'worth_a_call', status: 'failed' }
+    },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertStrictEquals(w.aiWriteAttempts, 0)
+  assertStrictEquals(w.row?.status, 'failed')
+})
+
+Deno.test('pipeline CUL-1203 — an edited row takes the read-fields update on the event\'s own row', async () => {
   // An edited row takes the read-fields update, keyed on event and pet.
   const w = makeWorld({
     row: { recommendation: 'monitor', status: 'completed', edited_at: '2026-09-20T00:00:00Z', colour: 'green', blood_col: 'no' },

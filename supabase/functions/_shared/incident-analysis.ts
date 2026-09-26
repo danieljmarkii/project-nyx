@@ -1424,7 +1424,15 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     }
 
     const structuredValues = descriptor.buildStructuredValues(analysis)
-    const stored = snapshotStoredAnalysis(descriptor, await readStoredRow())
+    const freshRow = await readStoredRow()
+    // CUL-1203 again, on the fresh read: a row that is not this event's must not steer
+    // a hold or a write. It can only appear mid-run if the event moved between one
+    // owner's pets (CUL-882); throwing lands in the catch, which folds the mismatch into
+    // "could not read" and writes nothing.
+    if (!analysisRowMatchesEvent(freshRow, petId)) {
+      throw new Error('Analysis row does not belong to this event')
+    }
+    const stored = snapshotStoredAnalysis(descriptor, freshRow)
     const writeBack = resolveReanalysisWrite({
       stored,
       eventId,

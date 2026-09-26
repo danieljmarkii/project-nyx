@@ -690,6 +690,15 @@ Deno.test('CUL-1277 buildFailureWrite — an unknown verdict in the record survi
   }
 })
 
+Deno.test('CUL-1277 × CUL-1201 resolveReanalysisWrite — a stored unknown verdict is held over a calmer re-read', () => {
+  // A rolled-back EN-3 tier left in the record must not come down to monitor: the hold asks
+  // the quiet list, not the literal.
+  for (const verdict of UNKNOWN_VERDICTS) {
+    assertEquals(resolve(stored({ recommendation: verdict }), readOf('monitor')), { mode: 'hold', values: null }, verdict)
+    assertEquals(resolve(stored({ recommendation: verdict }), readOf('not_enough_to_say')), { mode: 'hold', values: null }, verdict)
+  }
+})
+
 Deno.test('CUL-1277 isRealAnalysis — a failed or pending row holding an unknown verdict is never buried by a cap', () => {
   for (const verdict of UNKNOWN_VERDICTS) {
     assertStrictEquals(isRealAnalysis({ status: 'failed', recommendation: verdict }), true, verdict)
