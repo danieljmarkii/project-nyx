@@ -235,10 +235,14 @@ export function parseAnalysisToolResult(response: ClaudeResponse): VomitAnalysis
   // blood_present = fresh_red / coffee_ground, or foreign_material_present = yes, but
   // drops the flag from visual_flags AND self-selects monitor would otherwise get
   // "Keep an eye out" beside its own "Blood: Coffee-ground" row. Deriving here makes the
-  // floor escalate on the PRESENCE of the recorded finding, and agrees with every reader
-  // that already derives from these fields (generate-signal deriveIncidentFlags,
-  // generate-report unionPresentFlags, ask derivePresentFlags — clinical-guardrails
-  // Pattern 9). Present-only: 'unsure' and 'none_visible' derive nothing (an unsure
+  // floor escalate on the PRESENCE of the recorded finding, so a fresh read's card agrees
+  // with the readers that already derive from these fields (generate-signal
+  // deriveIncidentFlags, generate-report unionPresentFlags, ask derivePresentFlags —
+  // clinical-guardrails Pattern 9). It derives from the MODEL's fields, not an owner's
+  // edited ones: a re-run over an edited row still takes its verdict from the fresh read
+  // (CUL-409). It deliberately derives even when appears_to_show_vomit is false: every
+  // reader escalates on these fields without checking it, as stool's floor does, and a
+  // wrong call costs a phone call where a missed haematemesis does not. Present-only: 'unsure' and 'none_visible' derive nothing (an unsure
   // blood read is CUL-240's soft trigger, never a floor-forcing flag), so this can only
   // ADD escalations. The model's own read_text / description stay gated on the model's
   // self-escalation below, so a derived escalation surfaces the deterministic

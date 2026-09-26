@@ -27,6 +27,7 @@ import {
   type VomitAnalysis,
   type FunctionCaps,
 } from './index.ts'
+import { shouldCollapsePartialRead } from '../_shared/incident-analysis.ts'
 
 // ── Cap + flag gate (T2-3) ────────────────────────────────────────────────────
 // analyze-vomit free caps are daily 10 / monthly 200, identical across tiers (D-M2).
@@ -458,6 +459,37 @@ Deno.test('parseAnalysisToolResult — present-only: unsure / none_visible / no 
     assertEquals(r.visual_flags, [], `${blood} / ${foreign}`)
     assertStrictEquals(floorAndRead(r).rec, 'monitor', `${blood} / ${foreign}`)
   }
+})
+
+Deno.test('parseAnalysisToolResult — derives even when appears_to_show_vomit is false: a recorded finding escalates over "not vomit" (CUL-534)', () => {
+  // Deliberate, and pinned so a later "only derive on a vomit photo" gate cannot slip in:
+  // every reader (deriveIncidentFlags, unionPresentFlags, derivePresentFlags) escalates on
+  // these fields without checking appears, as stool's floor does. Gating here would bring
+  // back the split this issue closes: "Not enough to say" on the card, "call" on Home.
+  // Dr. Chen: a wrong call costs a phone call; a haematemesis misread as "not vomit" does not.
+  for (const fields of [
+    { blood_present: 'fresh_red' },
+    { foreign_material_present: 'yes' },
+  ]) {
+    const r = parseAnalysisToolResult(makeToolUse({
+      appears_to_show_vomit: false, ...fields, visual_flags: [], recommendation: 'not_enough_to_say',
+    }))!
+    assertEquals(r.visual_flags.length, 1, JSON.stringify(fields))
+    assertStrictEquals(floorAndRead(r).rec, 'worth_a_call', JSON.stringify(fields))
+  }
+})
+
+Deno.test('parseAnalysisToolResult — a partial read whose readable photo records blood escalates instead of collapsing (CUL-534)', () => {
+  // Pipeline step 7b: a benign partial read collapses to not_enough_to_say and drops the
+  // structured fields. Before CUL-534 a coffee_ground-with-no-flag partial read collapsed,
+  // erasing the finding from the card AND from every reader of the fields. The derived flag
+  // escalates at step 7, which runs first, so the collapse never fires.
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true, blood_present: 'coffee_ground', visual_flags: [], recommendation: 'monitor',
+  }))!
+  const { rec } = floorAndRead(r)
+  assertStrictEquals(rec, 'worth_a_call')
+  assertStrictEquals(shouldCollapsePartialRead({ usableCount: 1, totalCount: 2, recommendation: rec }), false)
 })
 
 // ── selectDescription: the POST-FLOOR gate that gives `description` the same
