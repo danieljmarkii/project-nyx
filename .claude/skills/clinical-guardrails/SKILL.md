@@ -252,13 +252,14 @@ export function buildAnalysisWriteBack(params): AnalysisWriteBack {
 **CANONICAL EXAMPLE** (`supabase/functions/analyze-vomit/index.test.ts:545–554`; the regex is now the shared `REASSURE_VOCAB`):
 
 ```ts
+// :542 — const REASSURE_VOCAB = /\b(fine|okay|ok|healthy|normal|unremarkable|all clear|nothing (?:to worry|concerning|alarming))\b/i
 Deno.test('buildContextualReadText — never reassures', () => {
   for (const t of [
     buildContextualReadText('Mochi', ['feline_reduced_intake']),
     buildContextualReadText('Mochi', ['repeated_vomiting']),
     buildContextualReadText('Mochi', ['concurrent_lethargy']),
   ]) {
-    assertEquals(/\b(fine|okay|ok|healthy|nothing to worry)\b/i.test(t), false)
+    assertEquals(REASSURE_VOCAB.test(t), false)
     assertEquals(t.includes('!'), false)
   }
 })

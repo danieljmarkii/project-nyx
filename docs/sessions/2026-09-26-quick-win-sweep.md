@@ -1,6 +1,6 @@
 # Quick Win sweep: a removed photo is not read, the Pet tab's visits gate pinned, a faster protein property test, doc drift, an engine replay that refuses nothing
 
-**Date:** 2026-09-26 · **Branch:** `claude/dazzling-dirac-wgjof0` · shipped via #933 · five picks, one commit each, one `code-reviewer` pass
+**Date:** 2026-09-26 · **Branch:** `claude/dazzling-dirac-wgjof0` · shipped via #933 · five picks, one commit each, one `code-reviewer` pass (ship-ready; its one finding, a stale Pattern 8 snippet, fixed on the branch)
 
 | Issue | Outcome | Proof |
 |---|---|---|
