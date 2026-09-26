@@ -7,7 +7,6 @@ import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { EventSilhouette } from '../../components/designV2/waits/EventSilhouette';
 import { useDesignV2 } from '../../hooks/useDesignV2';
 import * as ImagePicker from 'expo-image-picker';
-import { File } from 'expo-file-system';
 import { theme } from '../../constants/theme';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import {
@@ -24,6 +23,7 @@ import {
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
 import { detachEventAttachment, detachOtherEventAttachments } from '../../lib/attachments';
 import { resolveEventPhotoDisplay, addPhotoHeroCopy, EVENT_HERO_HEIGHT } from '../../lib/eventPhoto';
+import { localFileExists } from '../../lib/localFile';
 import { foodFormatTag } from '../../lib/food';
 import { kgToLbs } from '../../lib/weight';
 import { supabase } from '../../lib/supabase';
@@ -78,22 +78,6 @@ function formatRelative(iso: string): string {
   const diffDay = Math.round(diffHr / 24);
   if (diffDay < 7) return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
   return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
-}
-
-// A captured photo's `local_uri` points into the OS cache directory (where
-// expo-image-picker drops its output) and is never copied to persistent
-// storage. iOS reclaims that directory under storage pressure, leaving a stale
-// path whose file no longer exists — which would render the hero <Image> blank.
-// Treat a missing local file the same as a hydrated row (no on-device file) so
-// rendering falls back to the signed Storage URL, which is always uploaded.
-function localFileExists(uri: string): boolean {
-  try {
-    return new File(uri).exists;
-  } catch {
-    // Not a managed path (e.g. content:// URI) — assume unavailable and let the
-    // signed-URL fallback take over.
-    return false;
-  }
 }
 
 function formatDate(iso: string): string {
