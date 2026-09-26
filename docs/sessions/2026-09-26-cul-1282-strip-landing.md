@@ -47,4 +47,6 @@ Engineer ✓ (root cause traced to RN source, tests over the real list, mutation
 
 ## Open
 
-- The on-device pass is still owed. It is part of HV-13 (CUL-1171).
+- **Merged before the device pass, at the PM's call at `/wrap`.** CI was green on the current `main` (typecheck + jest, non-UTC zones, deno). The on-device check of the six-step QA script moves to HV-13 (CUL-1171), and a comment there carries it.
+- If the device shows a `[history] landing … dropped` warning, it names the failed step. Re-open CUL-1282 with that line.
+- Not done here: a `code-reviewer` subagent pass. Not required for a non-clinical fix, but the harness (`layOut` feeding `onLayout` by cell index) is new test machinery a reviewer could still challenge.
