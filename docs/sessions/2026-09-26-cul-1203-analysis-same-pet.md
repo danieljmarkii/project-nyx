@@ -1,8 +1,8 @@
-# CUL-1203 — a per-incident read can only sit on an incident of its own pet (migration 073 + the analyze-* write-back)
+# CUL-1203 — a per-incident read can only sit on an incident of its own pet (migration 074 + the analyze-* write-back)
 
 **Date:** 2026-09-26
 **Mode:** BUILD · **Issue:** CUL-1203 (Engines v3 · Wave 0 · Live fixes) · **Also touched:** CUL-882, CUL-881, CUL-736 (comments), CUL-1325 (filed)
-**Outcome:** shipped via #939. Migration 073 is **applied to production** (version `20260926212721`). The Edge Function half deploys `analyze-vomit` and `analyze-stool` on merge (`ask` only mentions the shared module in comments and is not in the closure).
+**Outcome:** shipped via #939. Migration 074 is **applied to production** (version `20260926212721`; written and applied as 073, renumbered 074 at merge because `073_trial_screen_config` reached `main` first, SQL byte-identical to what ran). The Edge Function half deploys `analyze-vomit` and `analyze-stool` on merge (`ask` only mentions the shared module in comments and is not in the closure).
 **`STATUS.md`: untouched.** No track started or ended, no standing hold changed, no pointer went stale. This is a Wave 0 fix inside a live project.
 
 ---
@@ -15,7 +15,7 @@ One probe, a DO block that creates three synthetic accounts and RAISEs at the en
 
 ## What shipped
 
-1. **Migration 073.** `enforce_event_ai_analysis_same_pet()`, `BEFORE INSERT OR UPDATE`:
+1. **Migration 074.** `enforce_event_ai_analysis_same_pet()`, `BEFORE INSERT OR UPDATE`:
    - INSERT requires the event to be an event of the row's pet.
    - UPDATE freezes `event_id` and `pet_id`.
    - `SECURITY DEFINER`, `search_path = pg_catalog, pg_temp`, EXECUTE revoked from all three client roles, one RAISE naming only `NEW.*` (C-31). Registered in `lib/functionHardening.test.ts`.
@@ -74,11 +74,11 @@ One more departure, taken without a ruling because it is the newest house form r
   - the guard cannot be called over RPC;
   - a service upsert over a planted row is refused;
   - Realtime INSERT/UPDATE held, traced rather than run.
-- **H1.** A row planted before the apply would outlive the trigger and, under the new 409, **permanently suppress that victim's read, including the deterministic "Worth a call"**. Fixed with 073 §3, which counts mismatches after `CREATE TRIGGER` so the table lock closes the gap. Proven: applied over a planted row, the whole migration rolled back (no trigger, INSERT still granted).
+- **H1.** A row planted before the apply would outlive the trigger and, under the new 409, **permanently suppress that victim's read, including the deterministic "Worth a call"**. Fixed with §3, which counts mismatches after `CREATE TRIGGER` so the table lock closes the gap. Proven: applied over a planted row, the whole migration rolled back (no trigger, INSERT still granted).
 - **H2.** A log-only refusal survived the wiring test. It now asserts the branch returns a 409.
 - **H3.** An unrelated `.eq('pet_id')` on the next line laundered an unkeyed update past the scan. The chain now ends at the next statement or `.from(`.
 - **H4.** A moved event's read can no longer refresh: the freeze removed the upsert's self-heal. Same account only; recorded in the header and on **CUL-882**.
-- Informational: O1 (anon/authenticated keep TRUNCATE / REFERENCES / TRIGGER; unreachable through PostgREST); O2 (filed as CUL-1325, below); O3 (the service role's EXECUTE is by design); O4 (the export script's `event_id` join, now sound because of 073, noted on CUL-736); O5 (`ask` is not in the redeploy closure, which corrected my plan).
+- Informational: O1 (anon/authenticated keep TRUNCATE / REFERENCES / TRIGGER; unreachable through PostgREST); O2 (filed as CUL-1325, below); O3 (the service role's EXECUTE is by design); O4 (the export script's `event_id` join, now sound because of 074, noted on CUL-736); O5 (`ask` is not in the redeploy closure, which corrected my plan).
 
 **`code-reviewer`: fix-before-merge on one item, all three taken.**
 

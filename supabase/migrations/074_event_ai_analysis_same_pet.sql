@@ -1,8 +1,13 @@
 -- ============================================================
--- Migration 073: a per-incident read can only sit on an incident of its own
+-- Migration 074: a per-incident read can only sit on an incident of its own
 -- pet (CUL-1203; found by rls-privacy-reviewer on HV-5 / CUL-1162, sequenced
 -- ahead of every Engines v3 change to this table by CUL-1268 BRK-1)
 -- ============================================================
+--
+-- NUMBERING: written and applied to production as 073 on 2026-09-26 (live
+-- version 20260926212721, name event_ai_analysis_same_pet). 073_trial_screen_
+-- config merged to main first, so the repo file is 074. The SQL below is
+-- byte-identical to what ran, which is why §3's RAISE text still says '073:'.
 --
 -- ------------------------------------------------------------
 -- THE HOLE
@@ -124,7 +129,7 @@
 --     (lib/db.ts updateEvent sets no pet_id). If one happens by hand, the
 --     analyze-* refusal (the PR's server half) stops a re-read from writing
 --     into the stale row, and §1 leaves it editable. THE COST, a behaviour
---     change and not only a guard: before 073 an un-edited re-read's upsert
+--     change and not only a guard: before this an un-edited re-read's upsert
 --     re-pointed pet_id and healed such a row; now the upsert is refused (the
 --     freeze) and so is the keyed update, so the moved event's read cannot
 --     refresh until the stale row is deleted, which has no UI. Same account

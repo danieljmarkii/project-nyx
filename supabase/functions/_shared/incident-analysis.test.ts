@@ -483,7 +483,7 @@ const VICTIM_READ: AnalysisReadFields<'blood'> = {
 }
 
 Deno.test('CUL-1203 — the plant: a humanEdited write-back cannot reach a row filed under another pet', async () => {
-  // The attack as it ran before 073: a row on the victim's event, filed under the
+  // The attack as it ran before 074: a row on the victim's event, filed under the
   // attacker's pet, with edited_at set so the read takes the update branch.
   const planted: Row = { id: 'r1', event_id: 'E', pet_id: 'attacker-pet', edited_at: 't', read_text: null, recommendation: null }
   const { client } = memoryTable([planted])
@@ -561,7 +561,7 @@ Deno.test('CUL-1203 — analysisRowMatchesEvent: no row, or the event\'s own pet
 // that follows an unkeyed update on the same line or inside an expression the
 // heuristic does not split can still launder it; and the comment blanker does
 // not parse regex literals, so a `//` inside one reads as a comment start. The invariant itself is
-// migration 073's trigger; this pins the write-back's keying.
+// migration 074's trigger; this pins the write-back's keying.
 
 async function* sourceFiles(dir: URL): AsyncGenerator<URL> {
   for await (const entry of Deno.readDir(dir)) {
@@ -678,7 +678,7 @@ Deno.test('CUL-1203 — the scan sees an unkeyed update when there is one (the g
   // before the update (which would drop it from the scan unseen), nor may a
   // block comment spanning lines.
   const commented =
-    "await c\n  .from('event_ai_analysis')\n  // the owner's row; never another pet's\n  /* see CUL-1203;\n     073 */\n  .update(v)\n  .eq('event_id', e)\n"
+    "await c\n  .from('event_ai_analysis')\n  // the owner's row; never another pet's\n  /* see CUL-1203;\n     074 */\n  .update(v)\n  .eq('event_id', e)\n"
   const [throughComment] = analysisChains(commented)
   assertStrictEquals(/\.update\(/.test(throughComment), true)
   // And a `//` inside a string is not a comment.

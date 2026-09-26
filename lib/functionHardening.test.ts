@@ -89,12 +89,12 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     definer: true, pinned: true, execute: [],
     why: 'CUL-867 (Noticed N-1) — DEFINER so the parent lookup is not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
   },
-  // 073 (CUL-1203): a per-incident read may only sit on an event of its own pet.
+  // 074 (CUL-1203): a per-incident read may only sit on an event of its own pet.
   // The INSERT arm is the lookup (so DEFINER, the B-520 class); the UPDATE arm
   // freezes event_id / pet_id and reads nothing.
   enforce_event_ai_analysis_same_pet: {
     definer: true, pinned: true, execute: [],
-    why: 'CUL-1203 (073) — DEFINER so the insert lookup is not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
+    why: 'CUL-1203 (074) — DEFINER so the insert lookup is not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
   },
 
   // ── B-403: the auth/utility functions ─────────────────────────────────────

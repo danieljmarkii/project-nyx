@@ -282,13 +282,13 @@ export function buildAnalysisWriteBack<TFlag extends string>(params: {
 // another account's event id could plant a row {victim's event, own pet,
 // edited_at}, and the humanEdited branch's update — keyed on event_id alone —
 // wrote the victim pet's read (its name in read_text) into the attacker's row.
-// Migration 073 makes that row unwritable (same-pet on insert, both columns
+// Migration 074 makes that row unwritable (same-pet on insert, both columns
 // frozen on update, no client INSERT). This half makes the write-back unable to
 // reach a row that is not the event's, whatever the database lets in:
 //
 //   · analysisRowMatchesEvent — the row read at step 3b must carry the EVENT's
 //     pet. A row that does not is refused before any write, the usage counter
-//     included. 073 makes such a row unmakeable and its apply refuses if one
+//     included. 074 makes such a row unmakeable and its apply refuses if one
 //     already exists, so the one live source is an event moved between an
 //     owner's own pets by hand (CUL-882). For a row mismatched at rest this is
 //     the fix, not a tripwire: without it a re-read's upsert or an unkeyed
@@ -299,7 +299,7 @@ export function buildAnalysisWriteBack<TFlag extends string>(params: {
 //     nothing is said, never swallowed).
 //
 // The upserts need neither: they already carry the event's pet_id as a value,
-// and 073 refuses the conflict update that would move a row's pet_id.
+// and 074 refuses the conflict update that would move a row's pet_id.
 
 // Fails CLOSED: a row whose pet_id did not come back (a select that forgot the
 // column) is treated as another pet's, never as a match.
