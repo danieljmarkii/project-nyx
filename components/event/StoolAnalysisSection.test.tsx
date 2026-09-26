@@ -39,7 +39,7 @@ jest.mock('./StoolFieldsEditor', () => ({ StoolFieldsEditor: () => null }));
 jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
 import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
-import { LayoutAnimation } from 'react-native';
+import { Alert, LayoutAnimation } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { StoolAnalysisSection } from './StoolAnalysisSection';
 import { readLandedCopy } from './useReadLandingAnnouncement';
@@ -577,6 +577,31 @@ describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
     await land(afterShow);
     expect(await view.findByText('Keep an eye out')).toBeTruthy();
     expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('an UNSEEN Worth a call surfaced by a skipped re-run is spoken (R1)', async () => {
+    mockRow = row({ recommendation: 'monitor', read_text: 'Formed.', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<StoolAnalysisSection eventId="as-5" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    const unseen = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T11:00:00.000Z' });
+    mockRow = unseen;
+    fireEvent.press(view.getByText('Re-run analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(unseen);
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
+  it('a FAILED re-run trigger never parks the section on "Reading the photo…" (R3)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    (triggerStoolAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'FunctionsHttpError: 500' });
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<StoolAnalysisSection eventId="as-6" petId="pet-1" petName="Rex" hasPhoto />);
+    const rerun = await view.findByText('Re-run analysis');
+    await act(async () => { fireEvent.press(rerun); });
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(view.queryByText('Reading the photo…')).toBeNull();
+    alert.mockRestore();
   });
 
   it('a read already in the record on open says nothing', async () => {

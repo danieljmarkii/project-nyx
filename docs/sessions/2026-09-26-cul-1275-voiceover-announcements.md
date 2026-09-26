@@ -52,7 +52,13 @@ Each card speaks its summary node's own label, only while shown, keyed on the ev
   * **Q3:** after a silent give-up, a late in-flight re-read committed a Worth a call that was shown but never spoken. **Fix:** a quiet end stays armed, and the next movement of the row before another wait is the landing.
   * Each fix proven by mutation in both sections and in the hook.
   * **Residual Q4:** a failed first fetch is treated as "no row", so an old read can be spoken as a landing. It is harmful only after an unread photo swap; noted on CUL-1324 (the CUL-575 class).
-* **`adversarial-reviewer`, round 3** (on the round-2 correction): see the CUL-1275 outcome comment.
+* **`adversarial-reviewer`, round 3** (on the round-2 correction): **BREAKS, in the opposite direction.**
+  * **R1/R2:** re-basing on the server's row treated "the server already had it" as "the owner already saw it". A Worth a call written by a path the section was not watching (the photo-add re-read, another device), or held all along behind a failed first fetch, arrived through a skipped re-run unspoken. **Fix:** re-base only when the server's row shows the same read as the screen (`showsSameRead`: state, verdict, words, hidden-ness).
+  * **R3/R4:** a failed trigger left the local row `pending`, parking the section on "Reading the photo…" with nothing watching and a stored Worth a call hidden for the visit. This predates the PR, but the round-2 fix made it reachable from the not-enough frame too. **Fix:** a failed trigger restores the server's row, and the wait's fall speaks it if it is new. From the not-enough frame nothing is marked pending, which is `main`'s behaviour.
+  * Each rule proven by mutation in both sections.
+  * **Residuals** (stated in the hook):
+    * R5: a failed re-base read plus a succeeding, skipped trigger can re-speak the current verdict (same root as CUL-1324).
+    * R7: an armed quiet end, then the owner's own writes, then one late tick re-speaks the CURRENT verdict once. Never a stale or unseen one.
 * **`code-reviewer`: ship-ready.** One cleanup, taken: a `new Date(x ?? 0)` epoch fallback left by hoisting the header's words above the early return. It was inert, but one refactor away from a 1970 time on screen.
 
 ## Residuals and follow-ups

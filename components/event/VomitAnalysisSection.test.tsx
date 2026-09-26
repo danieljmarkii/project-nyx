@@ -38,7 +38,7 @@ jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { readObservationFold, setObservationFold } from '../../lib/observationFold';
 import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
-import { LayoutAnimation, StyleSheet } from 'react-native';
+import { Alert, LayoutAnimation, StyleSheet } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { VomitAnalysisSection } from './VomitAnalysisSection';
 import { readLandedCopy } from './useReadLandingAnnouncement';
@@ -955,6 +955,83 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await act(async () => { await check(); });
     expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
+  // ── The third adversarial pass (CUL-1275) ───────────────────────────────────
+  it('a Worth a call written where the section was NOT watching is spoken when a skipped re-run surfaces it (R1)', async () => {
+    // The screen says "Keep an eye out"; a write it never observed (the photo-add re-read,
+    // another device) made the server's row a Worth a call. A capped re-run writes nothing,
+    // so the only change is the one the owner has never been shown — and that is a landing.
+    mockRow = row({ recommendation: 'monitor', read_text: 'Yellow, foamy.', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<VomitAnalysisSection eventId="an-16" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    const unseen = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T11:00:00.000Z' });
+    mockRow = unseen;
+    fireEvent.press(view.getByText('Re-run analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(unseen); // skipped: nothing new written
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
+  it('…and from the not-enough frame after a give-up (R2)', async () => {
+    mockRow = null;
+    const view = render(<VomitAnalysisSection eventId="an-17" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    const onGiveUp = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![2] as () => void;
+    await act(async () => { onGiveUp(); });
+    const held = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T10:00:00.000Z' });
+    mockRow = held; // the server had it all along; the client never heard
+    fireEvent.press(await view.findByText('Try analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(2));
+    await land(held);
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
+  it('a FAILED re-run trigger never parks the section on "Reading the photo…" over a stored Worth a call (R3)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    (triggerVomitAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'FunctionsHttpError: 500' });
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<VomitAnalysisSection eventId="an-18" petId="pet-1" petName="Rex" hasPhoto />);
+    const rerun = await view.findByText('Re-run analysis');
+    await act(async () => { fireEvent.press(rerun); });
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('Could not start analysis', 'Try again in a moment.'));
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(view.queryByText('Reading the photo…')).toBeNull();
+    expect(announce).not.toHaveBeenCalled(); // nothing new: back to what the owner saw
+    alert.mockRestore();
+  });
+
+  it('a failed trigger that uncovers an UNSEEN Worth a call shows it and speaks it', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    (triggerVomitAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'FunctionsHttpError: 500' });
+    mockRow = row({ recommendation: 'monitor', read_text: 'Yellow, foamy.', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<VomitAnalysisSection eventId="an-19" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T11:00:00.000Z' });
+    await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    alert.mockRestore();
+  });
+
+  it('a failed trigger from the not-enough frame keeps the frame and its retry (R4)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockRow = null;
+    const view = render(<VomitAnalysisSection eventId="an-20" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    const onGiveUp = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![2] as () => void;
+    await act(async () => { onGiveUp(); });
+    mockRow = row({ recommendation: 'monitor', read_text: 'Yellow.', updated_at: '2026-09-26T10:00:00.000Z' });
+    (triggerVomitAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'offline' });
+    const tryIt = await view.findByText('Try analysis');
+    await act(async () => { fireEvent.press(tryIt); });
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('Could not start analysis', 'Try again in a moment.'));
+    expect(await view.findByText('Try analysis')).toBeTruthy();
+    expect(view.queryByText('Reading the photo…')).toBeNull();
+    alert.mockRestore();
   });
 
   it('is spoken on ANDROID too — the section carries no live region to cover it', async () => {

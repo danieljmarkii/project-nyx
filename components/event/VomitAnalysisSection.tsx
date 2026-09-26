@@ -82,6 +82,18 @@ interface AnalysisRow {
   error: string | null;
 }
 
+/** Two copies of the row SHOW the same read: the same state, verdict, words and
+ *  hidden-ness. Decides whether a re-run's wait may re-base on the server's copy
+ *  (CUL-1275 — see `handleRetry`). */
+function showsSameRead(a: AnalysisRow, b: AnalysisRow): boolean {
+  return (
+    a.status === b.status &&
+    a.recommendation === b.recommendation &&
+    a.read_text === b.read_text &&
+    !!a.dismissed_at === !!b.dismissed_at
+  );
+}
+
 /** The hidden note's line: rendered, and spoken when a read lands behind it. */
 const DISMISSED_LINE = 'AI note hidden';
 
@@ -243,19 +255,25 @@ export function VomitAnalysisSection(
   async function handleRetry() {
     setRetrying(true);
     cancelled.current = false;
-    // CUL-1275 — the wait starts from the SERVER's row, not the local copy. The landing
-    // announcement compares the row's `updated_at` from the start of the wait to its end,
-    // and the owner's own writes on this screen (Hide / Show, a field edit) move the
-    // server's marker while the optimistic local copy keeps the old one — so a re-run the
-    // server then SKIPS (capped, nothing written) would read as moved and be spoken as a
-    // fresh read. One read before the flag rises re-bases it. A failed read (offline)
-    // falls back to the local copy; the trigger below fails the same way then.
+    // What the owner is looking at when they tap — the render this handler came from.
+    const shown = row ?? null;
+    // CUL-1275 — WHERE THE WAIT STARTS. The landing announcement compares the row's
+    // `updated_at` from the start of the wait to its end, so the row the pending mark is
+    // written over decides the baseline. Two failures bound the choice (the adversarial
+    // pass, rounds 2 and 3):
+    //   · the LOCAL copy alone is stale after the owner's own writes (Hide / Show, a field
+    //     edit move the server's marker, not this copy's), so a re-run the server then
+    //     SKIPS read as written and re-spoke the old verdict;
+    //   · the SERVER copy alone treats "the server already had it" as "the owner already
+    //     saw it" — a Worth a call written by a path this section was not watching (the
+    //     photo-add re-read, another device) then arrives on screen through a skipped
+    //     re-run and is never spoken.
+    // So the wait re-bases on the server's row only when it SHOWS what the screen already
+    // shows; otherwise the local baseline stands and anything new counts as a landing.
     const fresh = await fetchRow();
     if (cancelled.current) return;
-    setRow((r) => {
-      const base = fresh ?? r;
-      return base ? { ...base, status: 'pending', error: null } : base;
-    });
+    const base = fresh && shown && showsSameRead(fresh, shown) ? fresh : shown;
+    if (base) setRow({ ...base, status: 'pending', error: null });
     const { error } = await triggerVomitAnalysis(eventId);
     // Navigated away mid-trigger — don't setState or open a watch on an
     // unmounted instance (mirrors start()'s guard after the same await).
@@ -265,6 +283,12 @@ export function VomitAnalysisSection(
       // `error` is the raw functions.invoke message (lib/analysis.ts) — a
       // transport string, not owner copy. Log it, show the calm retry line.
       console.warn('[vomit-analysis] retry failed:', error);
+      // The re-run never started, so the pending mark comes off — before CUL-1275 it
+      // stayed, parking the section on "Reading the photo…" with nothing watching and a
+      // stored Worth a call out of sight for the rest of the visit. Back onto the SERVER's
+      // copy when there is one: if it says something the owner has not seen, the screen
+      // shows it, and the wait's fall speaks it.
+      if (base) setRow(fresh ?? base);
       Alert.alert('Could not start analysis', 'Try again in a moment.');
       return;
     }

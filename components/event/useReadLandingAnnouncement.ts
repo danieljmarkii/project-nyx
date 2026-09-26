@@ -109,8 +109,18 @@ export function useReadLandingAnnouncement({
   //
   // THE ROW MUST HAVE MOVED. `waitVersion` is what the record held when the wait began —
   // captured on the rising edge, in the same commit that raised it (`start()` writes the
-  // server's first read and the flag together; `handleRetry` re-reads the server first) —
+  // server's first read and the flag together; `handleRetry` re-bases on the server's row
+  // only when it shows the same read as the screen, so an unseen verdict still counts) —
   // and a fall that finds it unmoved is a give-up or a skipped re-run, never a landing.
+  //
+  // KNOWN RESIDUALS (adversarial round 3, stated so they do not read as coverage):
+  //   · a re-run whose re-base READ fails (`fetchRow` swallows the error) but whose trigger
+  //     succeeds and is skipped falls back to the local baseline, so after an owner's own
+  //     write the unchanged verdict can be spoken again (the CUL-1324 root: a failed read
+  //     is not "no row");
+  //   · an armed quiet end, then the owner's own writes, then one more in-flight tick that
+  //     reads the row those writes bumped, re-speaks the CURRENT verdict once. Never a
+  //     stale or unseen one — the line is what the screen shows.
   //
   // A QUIET END STAYS ARMED. The watch's give-up can race one last in-flight re-read: the
   // wait has already ended silently when that read commits a Worth a call, and a one-shot
