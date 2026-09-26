@@ -397,6 +397,11 @@ const CUL1271_SENTENCES = [
   'Your vet has it covered, so there is nothing more to do about the vomiting.',
   "The prednisone seems to be helping Pixel's cough.",
   "Pixel's cough has settled since the prednisone started.",
+  // The adversarial pass on the first push: any pet's name, the fronted clause, the intake
+  // comparison that passed the safety intake screen.
+  "It's in Pixel's vet's hands now.",
+  "Since the prednisone started, Pixel's cough has settled.",
+  "Pixel's appetite has come back since the visit.",
 ]
 
 Deno.test('validatePhrasing — rejects delegation and treatment attribution on EVERY finding type (CUL-1271)', () => {

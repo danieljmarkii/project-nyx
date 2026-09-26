@@ -44,6 +44,7 @@ import {
   mentionsPhotoAppearance,
   SCRUBBED_READ_HEADLINE,
   SYSTEM_PROMPT,
+  screenedClarifier,
   photoReadIncidentType,
   PHOTO_READ_EVENT_TYPES,
   MAX_LIVE_PHOTO_READS_PER_MESSAGE,
@@ -590,10 +591,25 @@ Deno.test('sanitizeFollowups: drops a chip asserting containment or effect, keep
   assert.deepEqual(out, ['Is the prednisone working?'])
 })
 
+Deno.test('buildDeflection: a model clarifier passes the phrasing gate or falls back (CUL-1271)', () => {
+  // The clarifier was the one model channel no screen read.
+  const leak = 'Did you mean the cough since the prednisone started, which seems to be helping?'
+  assert.equal(screenedClarifier(leak), null)
+  assert.doesNotMatch(buildDeflection('ambiguous', 'Nyx', leak).detail, /helping/)
+  assert.equal(buildDeflection('ambiguous', 'Nyx', leak).detail, 'Which symptom did you mean, and over what stretch of time?')
+  // Reassurance and shouting fall back too; an honest clarifier passes through untouched.
+  assert.equal(screenedClarifier("Did you mean her cough? She's fine otherwise."), null)
+  assert.equal(screenedClarifier('Did you mean this week!'), null)
+  assert.equal(screenedClarifier('Did you mean her cough or her sneezing?'), 'Did you mean her cough or her sneezing?')
+  assert.equal(screenedClarifier(null), null)
+})
+
 Deno.test('SYSTEM_PROMPT: carries the care-state / treatment rule (CUL-1271)', () => {
   assert.match(SYSTEM_PROMPT, /\(10\) VISITS, CARE AND TREATMENTS/)
   assert.match(SYSTEM_PROMPT, /DATED FACT beside a COUNT/)
   assert.match(SYSTEM_PROMPT, /NEVER credit a treatment with an effect/)
+  // The deferral rule 10 invites must not itself trip the screen it feeds.
+  assert.match(SYSTEM_PROMPT, /WITHOUT repeating the owner's effect or containment words/)
 })
 
 Deno.test('sanitizeFollowups: caps at max and handles non-arrays', () => {
