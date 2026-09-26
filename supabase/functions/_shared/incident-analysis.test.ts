@@ -556,8 +556,12 @@ Deno.test('CUL-1203 — analysisRowMatchesEvent: no row, or the event\'s own pet
 //
 // BLIND SPOTS, stated so a green run is not read as more (C-38): a chain split
 // across variables (`const t = c.from('event_ai_analysis'); t.update(…)`), a raw
-// SQL or RPC writer, and a table name built at runtime are all invisible. The
-// invariant itself is migration 073's trigger; this pins the write-back's keying.
+// SQL or RPC writer, and a table name built at runtime are all invisible; and the
+// chain's END is a text heuristic (see analysisChains), so a `.eq('pet_id', …)`
+// that follows an unkeyed update on the same line or inside an expression the
+// heuristic does not split can still launder it; and the comment blanker does
+// not parse regex literals, so a `//` inside one reads as a comment start. The invariant itself is
+// migration 073's trigger; this pins the write-back's keying.
 
 async function* sourceFiles(dir: URL): AsyncGenerator<URL> {
   for await (const entry of Deno.readDir(dir)) {
@@ -567,14 +571,61 @@ async function* sourceFiles(dir: URL): AsyncGenerator<URL> {
   }
 }
 
-// The chain runs from `.from('event_ai_analysis')` to the statement's end: the
-// first `;`, or the first blank line (the house style omits semicolons).
-function analysisChains(src: string): string[] {
+// The chain runs from `.from('event_ai_analysis')` to the statement's end. The
+// house style omits semicolons, so the end is the FIRST of: a `;`, a blank line,
+// the next `.from(` (the next query, e.g. inside a Promise.all array), or a line
+// opening a new statement. Without the last two, an unkeyed update followed on
+// the very next line by an unrelated query's `.eq('pet_id', …)` read as keyed
+// (rls-privacy-reviewer H3, measured as a surviving mutant).
+const NEXT_STATEMENT = /\n\s*(?:await|const|let|return|if|for|throw|try)\b/
+
+// Comments are blanked first (newlines kept), so a `;` or a blank line inside
+// prose cannot end a chain early — which would drop an unkeyed update from the
+// scan entirely (code-reviewer finding on this PR; this file's house style is
+// semicolon-rich prose). One left-to-right pass that tracks string literals, so
+// a `//` inside a string is not a comment (C-18's single-pass rule). Strings are
+// KEPT: the table name the scan looks for is one.
+function blankComments(src: string): string {
+  let out = ''
+  let i = 0
+  let quote: string | null = null
+  while (i < src.length) {
+    const c = src[i]
+    if (quote) {
+      out += c
+      if (c === '\\') { out += src[i + 1] ?? ''; i += 2; continue }
+      if (c === quote) quote = null
+      i++
+      continue
+    }
+    if (c === "'" || c === '"' || c === '`') { quote = c; out += c; i++; continue }
+    if (c === '/' && src[i + 1] === '/') {
+      while (i < src.length && src[i] !== '\n') { out += ' '; i++ }
+      continue
+    }
+    if (c === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2)
+      const stop = end < 0 ? src.length : end + 2
+      for (; i < stop; i++) out += src[i] === '\n' ? '\n' : ' '
+      continue
+    }
+    out += c
+    i++
+  }
+  return out
+}
+
+function analysisChains(raw: string): string[] {
+  const src = blankComments(raw)
   const out: string[] = []
   for (const m of src.matchAll(/\.from\(\s*['"]event_ai_analysis['"]\s*\)/g)) {
     const rest = src.slice(m.index!)
-    const ends = [rest.indexOf(';'), rest.indexOf('\n\n'), rest.indexOf('\n    const '), rest.indexOf('\n  const ')]
-      .filter((i) => i > 0)
+    const ends = [
+      rest.indexOf(';'),
+      rest.indexOf('\n\n'),
+      rest.indexOf('.from(', m[0].length),
+      rest.search(NEXT_STATEMENT),
+    ].filter((i) => i > 0)
     out.push(rest.slice(0, ends.length ? Math.min(...ends) : rest.length))
   }
   return out
@@ -589,8 +640,11 @@ Deno.test('CUL-1203 — every event_ai_analysis UPDATE under supabase/functions 
       if (/\.update\(/.test(chain)) updates.push({ file: file.pathname, chain })
     }
   }
-  // Floor: the helper's own chain must be found, or the scan is matching nothing.
-  assertStrictEquals(updates.length >= 1, true, 'the scan found no event_ai_analysis update at all')
+  // Floor: the helper's OWN chain must be among them, keyed — not merely "some
+  // update was found", which a scan dropping every other chain would still pass.
+  const helper = updates.filter((u) =>
+    u.file.endsWith('/_shared/incident-analysis.ts') && /\.update\(values\)/.test(u.chain))
+  assertStrictEquals(helper.length, 1, 'the scan did not find updateAnalysisRow\'s own chain')
   for (const { file, chain } of updates) {
     assertStrictEquals(
       /\.eq\(\s*['"]pet_id['"]/.test(chain), true,
@@ -607,9 +661,28 @@ Deno.test('CUL-1203 — the scan sees an unkeyed update when there is one (the g
   assertStrictEquals(/\.update\(/.test(u) && !/\.eq\(\s*['"]pet_id['"]/.test(u), true)
   assertStrictEquals(/\.eq\(\s*['"]pet_id['"]/.test(k), true)
   // And the chain stops at the statement: a later pet_id filter on ANOTHER query
-  // must not launder this one.
+  // must not launder this one — after a blank line, on the very next line
+  // (H3's surviving mutant), or as the next element of a Promise.all array.
   const [laundered] = analysisChains(unkeyed + "\nawait c.from('events').select('id').eq('pet_id', p)")
   assertStrictEquals(/\.eq\(\s*['"]pet_id['"]/.test(laundered), false)
+  const adjacent =
+    "await adminClient\n  .from('event_ai_analysis')\n  .update(values)\n  .eq('event_id', eventId)\n" +
+    "await adminClient.from('events').select('id').eq('pet_id', petId)\n"
+  const [nextLine] = analysisChains(adjacent)
+  assertStrictEquals(/\.update\(/.test(nextLine) && !/\.eq\(\s*['"]pet_id['"]/.test(nextLine), true)
+  const inArray =
+    "await Promise.all([\n  c.from('event_ai_analysis').update(v).eq('event_id', e),\n  c.from('events').select('id').eq('pet_id', p),\n])"
+  const [arrayElem] = analysisChains(inArray)
+  assertStrictEquals(/\.update\(/.test(arrayElem) && !/\.eq\(\s*['"]pet_id['"]/.test(arrayElem), true)
+  // A `;` inside a comment between .from and .update must not end the chain
+  // before the update (which would drop it from the scan unseen), nor may a
+  // block comment spanning lines.
+  const commented =
+    "await c\n  .from('event_ai_analysis')\n  // the owner's row; never another pet's\n  /* see CUL-1203;\n     073 */\n  .update(v)\n  .eq('event_id', e)\n"
+  const [throughComment] = analysisChains(commented)
+  assertStrictEquals(/\.update\(/.test(throughComment), true)
+  // And a `//` inside a string is not a comment.
+  assertStrictEquals(blankComments("const u = 'https://x'; // gone"), "const u = 'https://x';        ")
 })
 
 Deno.test('CUL-1203 — step 3b reads pet_id and refuses on it before any write (wiring, static)', async () => {
@@ -625,4 +698,14 @@ Deno.test('CUL-1203 — step 3b reads pet_id and refuses on it before any write 
   const refuse = handler.indexOf('if (!analysisRowMatchesEvent(existing, petId))')
   const firstWrite = handler.search(/applyAnalysisWriteBack\(|\.upsert\(|recordUsage\(/)
   assertStrictEquals(refuse > 0 && refuse < firstWrite, true, 'the refusal must run before the usage counter and every write')
+  // And the branch must LEAVE: an `if` that only logs would fall through to the
+  // writes (rls-privacy-reviewer H2 — a log-only mutant survived the check above).
+  const branch = handler.slice(refuse, handler.indexOf('\n    }\n', refuse))
+  assertStrictEquals(/\n\s*return Response\.json\(/.test(branch), true, 'the refusal branch must return')
+  assertStrictEquals(/status:\s*409/.test(branch), true, 'the refusal must answer 409')
+  // The catch's re-read decides the failure write off a row, so it asks the same
+  // question of that row (code-reviewer finding on this PR).
+  const catchRead = handler.slice(handler.indexOf('let latestReadFailed'))
+  assertStrictEquals(/\.select\('recommendation, pet_id'\)/.test(catchRead), true)
+  assertStrictEquals(/analysisRowMatchesEvent\(latestRow \?\? null, petIdForFailure\)/.test(catchRead), true)
 })

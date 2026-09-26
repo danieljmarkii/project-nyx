@@ -56,11 +56,18 @@
 --      upsert), so this removes the attack's entry verb at the privilege layer,
 --      ahead of RLS and ahead of the trigger. UPDATE and DELETE stay: the app
 --      uses UPDATE, and DELETE is out of this issue's scope.
+--   §3 The apply refuses if any row is ALREADY mismatched, because §1 only
+--      judges writes and a row planted before this runs would outlive it.
 --
 -- The server half ships in the same PR (PM ruling, 2026-09-26, option A): the
 -- analyze-* functions refuse an existing row whose pet differs from its event's
 -- and key every update on event_id AND the event's pet_id, with a zero-row
--- check. With §1 live that refusal is a tripwire, not the fix.
+-- check. That refusal is not decoration: for a row that IS mismatched at rest,
+-- it is the only thing standing between a re-read and that row (the reviewer
+-- showed an upsert whose SET omits pet_id, or the old unkeyed update, still
+-- writing the victim's read into a row planted with this trigger disabled).
+-- §3 guarantees no such row exists at apply time and §1 that none can be made
+-- after, except by the events-side move below.
 --
 -- ------------------------------------------------------------
 -- WHERE THIS DEPARTS FROM THE ISSUE'S LITERAL SHAPE, and why
@@ -116,7 +123,12 @@
 --     cross-account; the app has no path that moves an event between pets
 --     (lib/db.ts updateEvent sets no pet_id). If one happens by hand, the
 --     analyze-* refusal (the PR's server half) stops a re-read from writing
---     into the stale row, and §1 leaves it editable.
+--     into the stale row, and §1 leaves it editable. THE COST, a behaviour
+--     change and not only a guard: before 073 an un-edited re-read's upsert
+--     re-pointed pet_id and healed such a row; now the upsert is refused (the
+--     freeze) and so is the keyed update, so the moved event's read cannot
+--     refresh until the stale row is deleted, which has no UI. Same account
+--     only; recorded on CUL-882, where the events-side move is decided.
 --   * `incident_type` is denormalised from `events.event_type` and an owner can
 --     change it on their own row. Same account, same pet, no cross-account
 --     reach; 0 rows differ today. Not this issue.
@@ -126,10 +138,10 @@
 -- ------------------------------------------------------------
 -- Migration Safety Pre-flight
 -- ------------------------------------------------------------
---   Destructive y/n:  n. One new function, one new trigger, and INSERT revoked
---                     from two client roles that no client path uses. No
---                     column, table, type, policy or row is created, altered or
---                     dropped.
+--   Destructive y/n:  n. One new function, one new trigger, INSERT revoked
+--                     from two client roles that no client path uses, and a
+--                     read-only assertion. No column, table, type, policy or
+--                     row is created, altered or dropped.
 --   Affected tables:  public.event_ai_analysis (one BEFORE INSERT OR UPDATE
 --                     trigger; a privilege change). Row-count checks to run
 --                     BEFORE applying — verified live 2026-09-26:
@@ -138,8 +150,8 @@
 --                         join public.events e on e.id = a.event_id
 --                        where e.pet_id is distinct from a.pet_id;            -> 0
 --                     A non-zero second result means a row is already planted or
---                     stale; the trigger would not reject it (it validates writes,
---                     not rows at rest) and it must be investigated before merge.
+--                     stale. §3 now makes the apply itself fail on it (a count
+--                     only), so this check is no longer the only line.
 --   Backfill:         N/A — no data change.
 --   Rollback plan:    reversible:
 --                       DROP TRIGGER IF EXISTS trg_event_ai_analysis_same_pet
@@ -213,3 +225,40 @@ COMMENT ON FUNCTION public.enforce_event_ai_analysis_same_pet() IS
 -- make — and §1 still binds it when it does.
 REVOKE INSERT ON TABLE public.event_ai_analysis FROM anon;
 REVOKE INSERT ON TABLE public.event_ai_analysis FROM authenticated;
+
+
+-- ============================================================
+-- 3. No row is already mismatched (rls-privacy-reviewer H1)
+-- ============================================================
+-- §1 validates WRITES, never rows at rest. A row planted before this file runs
+-- (the pre-flight count above was taken by hand, earlier) would survive it: the
+-- victim cannot see or delete it, the attacker can still edit it, and the
+-- analyze-* refusal then blocks every future read of that event — its
+-- deterministic "Worth a call" included. A permanent, silent escalation
+-- suppression, so the apply refuses rather than trusting a count taken earlier.
+--
+-- WHY HERE, at the end: CREATE TRIGGER took SHARE ROW EXCLUSIVE on the table,
+-- which every INSERT / UPDATE / DELETE conflicts with, and holds it to commit.
+-- So this statement sees every row committed before the lock and no write can
+-- land after it until the guard is live — there is no gap between the check and
+-- the trigger. (Applied statement-by-statement instead, the trigger is already
+-- live by the time this runs, so the conclusion holds either way.)
+--
+-- A count only, never an id or a pet (C-31): this reads every tenant's rows.
+DO $$
+DECLARE
+  mismatched BIGINT;
+BEGIN
+  SELECT count(*)
+    INTO mismatched
+    FROM public.event_ai_analysis a
+    JOIN public.events e ON e.id = a.event_id
+   WHERE e.pet_id IS DISTINCT FROM a.pet_id;
+
+  IF mismatched > 0 THEN
+    RAISE EXCEPTION
+      '073: % event_ai_analysis row(s) are filed under a pet other than their event''s; investigate before applying (CUL-1203)',
+      mismatched;
+  END IF;
+END
+$$;

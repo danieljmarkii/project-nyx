@@ -288,8 +288,11 @@ export function buildAnalysisWriteBack<TFlag extends string>(params: {
 //
 //   · analysisRowMatchesEvent — the row read at step 3b must carry the EVENT's
 //     pet. A row that does not is refused before any write, the usage counter
-//     included. With 073 live that is a tripwire; without it (a regression, a
-//     hand edit) it is the fix.
+//     included. 073 makes such a row unmakeable and its apply refuses if one
+//     already exists, so the one live source is an event moved between an
+//     owner's own pets by hand (CUL-882). For a row mismatched at rest this is
+//     the fix, not a tripwire: without it a re-read's upsert or an unkeyed
+//     update would still write into that row.
 //   · updateAnalysisRow — every UPDATE keys on event_id AND the event's pet_id.
 //     Adding a filter that can match nothing turns a wrong row into a silent
 //     no-op, so the zero-row case is an error here (C-39: a write that matches
@@ -326,7 +329,10 @@ export async function updateAnalysisRow(
   return { error: null }
 }
 
-// The one place a write-back reaches the table, both modes.
+// The one place an AnalysisWriteBack reaches the table, both modes. Two other
+// writes keep their own shapes — the cap / disabled state upsert and the
+// failure write — and each carries the event's pet_id as a value (the upsert)
+// or goes through updateAnalysisRow (the error-only update).
 export async function applyAnalysisWriteBack(
   client: SupabaseClient,
   key: { eventId: string; petId: string },
@@ -1138,11 +1144,15 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     if (petIdForFailure && incidentTypeForFailure) {
       const { data: latestRow, error: latestErr } = await adminClient
         .from('event_ai_analysis')
-        .select('recommendation')
+        .select('recommendation, pet_id')
         .eq('event_id', eventId)
         .maybeSingle()
       latest = latestRow ?? null
-      latestReadFailed = !!latestErr
+      // CUL-1203, the same rule as step 3b: a row filed under another pet is not
+      // this event's, so its recommendation must not steer the failure write. It
+      // folds into "could not read" on purpose — buildFailureWrite then writes
+      // nothing, which is the fail-closed answer for a row we will not touch.
+      latestReadFailed = !!latestErr || !analysisRowMatchesEvent(latestRow ?? null, petIdForFailure)
     }
 
     const failureWrite = buildFailureWrite({
