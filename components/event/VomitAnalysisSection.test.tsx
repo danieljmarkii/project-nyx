@@ -1123,6 +1123,46 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     alert.mockRestore();
   });
 
+  // ── The sixth adversarial pass (CUL-1275) ───────────────────────────────────
+  // The post-error re-read can fail too (`fetchRow` swallows the error and returns null).
+  // Then the pre-trigger copy may stand in only where the asymmetry says it is still true.
+  it('when the post-error re-read FAILS, a calm pre-attempt copy is never put back or spoken', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockRow = null;
+    const view = render(<VomitAnalysisSection eventId="an-24" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    const onGiveUp = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![2] as () => void;
+    await act(async () => { onGiveUp(); });
+    mockRow = row({ recommendation: 'monitor', read_text: 'Yellow.', updated_at: '2026-09-26T10:00:00.000Z' });
+    (triggerVomitAnalysis as jest.Mock).mockImplementationOnce(async () => {
+      mockRow = null; // the function wrote `failed`, and the read after it fails
+      return { error: 'FunctionsHttpError: 500' };
+    });
+    const tryIt = await view.findByText('Try analysis');
+    await act(async () => { fireEvent.press(tryIt); });
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(await view.findByText('Try analysis')).toBeTruthy();
+    expect(view.queryByText('Keep an eye out')).toBeNull();
+    expect(announce).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
+
+  it('…but a pre-attempt Worth a call still stands in, and is spoken — a failure never overwrites one', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockRow = row({ recommendation: 'monitor', read_text: 'Yellow.', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<VomitAnalysisSection eventId="an-25" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T11:00:00.000Z' });
+    (triggerVomitAnalysis as jest.Mock).mockImplementationOnce(async () => {
+      mockRow = null;
+      return { error: 'FunctionsHttpError: 500' };
+    });
+    await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    alert.mockRestore();
+  });
+
   it('is spoken on ANDROID too — the section carries no live region to cover it', async () => {
     Platform.OS = 'android';
     mockRow = row({ status: 'pending', recommendation: null });

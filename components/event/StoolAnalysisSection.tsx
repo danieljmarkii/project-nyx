@@ -288,11 +288,12 @@ export function StoolAnalysisSection(
     // Navigated away mid-trigger — don't setState or open a watch on an
     // unmounted instance (mirrors start()'s guard after the same await).
     if (cancelled.current) return;
-    setRetrying(false);
     if (error) {
       // `error` is the raw functions.invoke message (lib/analysis.ts) — a
-      // transport string, not owner copy. Log it, show the calm retry line.
+      // transport string, not owner copy. Log it, show the calm retry line — at once,
+      // not behind the re-read below (which can hang for a fetch timeout).
       console.warn('[stool-analysis] retry failed:', error);
+      Alert.alert('Could not start analysis', 'Try again in a moment.');
       // The pending mark comes off — before CUL-1275 it stayed, parking the section on
       // "Reading the photo…" with nothing watching and a stored Worth a call out of sight
       // for the rest of the visit. Back onto the server's row AS IT IS NOW: an error is
@@ -301,13 +302,20 @@ export function StoolAnalysisSection(
       // the copy read BEFORE the trigger would put a calm verdict back in front of a read
       // that just failed — the pairing `escalationSurvivesFailure` exists to refuse
       // (adversarial round 5). Re-read, and let the render's own rules decide. From the
-      // not-enough frame too, whose "Not enough to say" is not a read (CUL-820). The
-      // owner's own latest Hide / Show is kept (it may not have reached the server yet).
-      // A read the owner has not been shown is a landing, told to the announcer outright
-      // rather than left to the pending write and this one committing apart (round 4, F1).
+      // not-enough frame too, whose "Not enough to say" is not a read (CUL-820).
+      //
+      // If the re-read ITSELF fails, the pre-trigger copy may stand in only where the
+      // asymmetry says it is still true — a Worth a call, which a failure never
+      // overwrites. A calm copy is never put back after a failure the client could not
+      // confirm (round 6); the owner keeps what they already saw, and nothing is spoken.
+      //
+      // The owner's own latest Hide / Show is kept (it may not have reached the server
+      // yet). A read the owner has not been shown is a landing, told to the announcer
+      // outright rather than left to the pending write and this one committing apart
+      // (round 4, F1).
       const after = await fetchRow();
       if (cancelled.current) return;
-      const server = after ?? fresh;
+      const server = after ?? (escalationSurvivesFailure(fresh) ? fresh : null);
       const back = server
         ? { ...server, dismissed_at: shown ? shown.dismissed_at : server.dismissed_at }
         : base;
@@ -315,9 +323,12 @@ export function StoolAnalysisSection(
         if (server && !(shown && showsSameRead(server, shown))) announcer.expectLanding();
         setRow(back);
       }
-      Alert.alert('Could not start analysis', 'Try again in a moment.');
+      // Held until the row is back, so Re-run cannot be pressed into a second retry
+      // while the first is still restoring.
+      setRetrying(false);
       return;
     }
+    setRetrying(false);
     setWorking(true);
     beginWatch();
   }

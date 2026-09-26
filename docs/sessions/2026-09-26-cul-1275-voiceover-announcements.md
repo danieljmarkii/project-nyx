@@ -71,7 +71,8 @@ Each card speaks its summary node's own label, only while shown, keyed on the ev
 * **`adversarial-reviewer`, round 5** (on the round-4 correction): **BREAKS, narrowly.**
   * **P1/P3:** a failed re-run restored the row read BEFORE the trigger. A function's 500 has usually already written `failed`, so a calm verdict was restored in front of a read that just failed, and spoken. The pass also corrected its own round-4 "holds" on this path. **Fix:** re-read after the error and restore that. Proven by mutation in both sections.
   * **Residual P6:** a Show from another device can be undone on screen by a failed re-run (two devices plus a failed trigger).
-* **`adversarial-reviewer`, round 6** (on the round-5 correction): see the CUL-1275 outcome comment.
+* **`adversarial-reviewer`, round 6** (on the round-5 correction): every failure shape correct when the re-read answers. **BREAKS in one window:** if the re-read itself fails, `after ?? fresh` restored the pre-attempt calm copy. **Fix:** fall back only where `escalationSurvivesFailure` says the copy is still true; otherwise keep what the owner saw, silently. Both directions proven by mutation. Also the Alert now shows at once, and Re-run is held disabled until the restore lands.
+* **`adversarial-reviewer`, round 7** (on the round-6 correction): see the CUL-1275 outcome comment.
 * **`code-reviewer`: ship-ready.** One cleanup, taken: a `new Date(x ?? 0)` epoch fallback left by hoisting the header's words above the early return. It was inert, but one refactor away from a 1970 time on screen.
 
 ## Residuals and follow-ups
