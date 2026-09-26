@@ -242,6 +242,7 @@ export function FAB() {
     Animated.spring(pressScale, { toValue: PRESS_SCALE, useNativeDriver: true, tension: 300, friction: 20 }).start();
   }, [pressScale]);
   const pressOut = useCallback(() => {
+    if (reducedMotionNow()) return;
     Animated.spring(pressScale, { toValue: 1, useNativeDriver: true, tension: 200, friction: 10 }).start();
   }, [pressScale]);
 
@@ -251,6 +252,21 @@ export function FAB() {
     setFabMenuOpen(open);
   }, [open, setFabMenuOpen]);
   useEffect(() => () => setFabMenuOpen(false), [setFabMenuOpen]);
+
+  // The stand-down below un-renders the FAB but keeps this instance mounted, so an
+  // open menu would leave `fabMenuOpen` true — Home hidden from assistive tech, with no
+  // disc left to close it. Today no overlay can open under the menu (its scrim eats
+  // the tap first), but a future non-tap caller of `setCaptureOverlay` (a deep link, a
+  // timer) should not be what discovers that; the menu simply closes.
+  useEffect(() => {
+    if (!captureOverlayOpen) return;
+    closing.current = false;
+    setOpen(false);
+    setSwitcherVisible(false);
+    turn.setValue(0);
+    fade.setValue(0);
+    slots.forEach((v) => v.setValue(0));
+  }, [captureOverlayOpen, turn, fade, slots]);
 
   // A modal menu answers Android's back the way it answers the scrim: it closes.
   useEffect(() => {

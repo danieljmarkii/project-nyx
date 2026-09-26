@@ -458,6 +458,27 @@ describe('FAB — BRK-37, the accessibility contract', () => {
     }
   });
 
+  it('a capture overlay opening under the menu closes it, so Home is never left hidden', async () => {
+    // Unreachable by today's callers (the scrim eats the Home tap that opens one); the
+    // guard is for the first caller that is not a tap. The stand-down keeps this
+    // instance mounted, so without the close `fabMenuOpen` stays true with no disc left.
+    const view = render(<FAB />);
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    expect(useUiStore.getState().fabMenuOpen).toBe(true);
+
+    act(() => {
+      useUiStore.setState({
+        captureOverlay: { summary: null, inViewport: true, busy: false, onBack: jest.fn(), onDone: null },
+      });
+    });
+    expect(useUiStore.getState().fabMenuOpen).toBe(false);
+
+    act(() => { useUiStore.setState({ captureOverlay: null }); });
+    // It comes back closed, not mid-menu.
+    expect(view.getByLabelText('Log event')).toBeTruthy();
+  });
+
   it('never outlives the FAB — an unmount with the menu open releases the host', async () => {
     const view = render(<FAB />);
     fireEvent.press(view.getByLabelText('Log event'));
