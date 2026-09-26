@@ -58,6 +58,12 @@ PR-01 (#936) and PR-04 (#939) merged while this was in review, so `main` was mer
 - The literals this PR added switch to PR-01's `isEscalationVerdict`, so a verdict this build doesn't know is held like `worth_a_call`.
 - PR-04's static wiring guard follows the new read shape, with every check kept. Its behavior half is now in the pipeline tests (a row under another pet is refused before the cap, the model and any write).
 - 14 wiring mutations each turn a test red on the merged code.
+- **The scoped adversarial pass on the merge** found nothing broken, and confirmed the merge closed two regressions from PR-04b's pre-merge head: a cross-pet settle write, and a cap-branch escalation silently lost to an unkeyed update. It also found two unpinned rules, both now tested and mutation-proven: the hold on an unknown verdict (reverting it to the literal left every test green) and the catch's pet fold (text-only guard). Step 9 now re-checks the pet on its fresh read, and the fake database models migration 074.
+- **Residuals, each recorded where it belongs:**
+  - EN-3's tier order (CUL-1133): `call_now` is overwritten by `worth_a_call`.
+  - The refused cross-pet row loses its contextual escalation (CUL-882).
+  - Ask relays a failed escalation as "unavailable": filed as CUL-1333.
+  - The cap branch decides on the step-3b row, so a sibling's red flag landing in the gap before the cap write is nulled. Same class as CUL-1321.
 
 ## Next
 
