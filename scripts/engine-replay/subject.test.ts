@@ -1,6 +1,6 @@
 // CUL-1276 — the replay refuses an export that names no pet, or not the same one twice.
 // CUL-1314 — and a pet that is not an evaluation subject (PMD-12). That export.sql itself
-// matches only the listed pets is exportShape.test.ts.
+// matches only the listed pets is exportPin.test.ts.
 import { EVALUATION_SUBJECTS } from './evaluationSubjects'
 import { emptyReplayProblem, subjectProblem } from './subject'
 

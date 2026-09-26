@@ -17,9 +17,10 @@
 -- synthetic records are evaluation subjects. Each CTE matches only the pets listed in
 -- evaluationSubjects.ts, so run as written, any other pair comes back as `subjects: 0`
 -- and none of its rows leave the database; the loader refuses any other pet id as well.
--- exportShape.test.ts fails the build when this file stops matching only those ids. That
--- binds the committed file, not an edited copy: the rule is followed, never enforced.
--- Run it unchanged. To add a pet, add it there and here in one reviewed PR.
+-- The query is pinned (exportPin.ts): changing anything Postgres would execute here reds
+-- the build until a privacy review re-pins it; editing a comment line does not. That binds
+-- the committed file, not an edited copy: the rule is followed, never enforced. Run it
+-- unchanged. To add a pet, add it there and to both lists here in one reviewed PR.
 -- Not yet tied to the pet's owner: the food rows (Query 1's `arr` join, Query 2's
 -- `foods`), which are read by id alone. CUL-1316.
 --

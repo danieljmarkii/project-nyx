@@ -12,7 +12,8 @@
 //   · export.sql's CTEs match only these ids, so run as committed, an unlisted pet comes
 //     back as `subjects: 0` and none of its rows leave the database;
 //   · subject.ts refuses to replay any other pet id.
-// exportShape.test.ts fails the build when export.sql stops matching only these ids.
+// exportPin.test.ts pins export.sql's query and fails the build when either CTE stops
+// naming exactly these ids, in this order.
 //
 // What neither can do, stated so it does not read as coverage (C-38): `execute_sql` runs
 // whatever text a session sends, so a session that edits the query before running it has
