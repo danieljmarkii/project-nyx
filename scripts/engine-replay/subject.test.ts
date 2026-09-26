@@ -1,8 +1,6 @@
 // CUL-1276 — the replay refuses an export that names no pet, or not the same one twice.
-// CUL-1314 — and a pet that is not an evaluation subject (PMD-12).
-import { readFileSync } from 'fs'
-import { join } from 'path'
-
+// CUL-1314 — and a pet that is not an evaluation subject (PMD-12). That export.sql itself
+// matches only the listed pets is exportShape.test.ts.
 import { EVALUATION_SUBJECTS } from './evaluationSubjects'
 import { emptyReplayProblem, subjectProblem } from './subject'
 
@@ -76,28 +74,6 @@ describe('subjectProblem: whose pet (CUL-1314, PMD-12)', () => {
     // has to mention the list as well as the pair.
     expect(subjectProblem({ ...good.record, subjects: 0 }, { ...good.meals, subjects: 0 }))
       .toMatch(/owner email pair in both CTEs, and that the pet is in evaluationSubjects\.ts/)
-  })
-})
-
-describe('export.sql matches only the evaluation subjects', () => {
-  // Comments blanked first, so the rule stated in the header can never satisfy the scan.
-  const sql = readFileSync(join(__dirname, 'export.sql'), 'utf8')
-    .split('\n').map((line) => line.replace(/--.*$/, '')).join('\n')
-  const ctes = [...sql.matchAll(/with subj as \(([\s\S]*?)\n\)/g)].map((m) => m[1])
-  const listed = [...EVALUATION_SUBJECTS.map((s) => s.petId)].sort()
-
-  it('has the two queries it documents', () => {
-    // Floor: a scan that found no CTE would pass every assertion below.
-    expect(ctes).toHaveLength(2)
-  })
-
-  it('restricts each CTE to exactly the listed pet ids', () => {
-    for (const cte of ctes) {
-      const clauses = [...cte.matchAll(/\band p\.id in \(([^)]*)\)/g)]
-      expect(clauses).toHaveLength(1)
-      const ids = [...clauses[0][1].matchAll(/'([^']*)'/g)].map((m) => m[1]).sort()
-      expect(ids).toEqual(listed)
-    }
   })
 })
 

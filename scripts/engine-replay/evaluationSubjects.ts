@@ -8,15 +8,23 @@
 //
 // The rule, until the privacy policy and the App Store label name an evaluation purpose
 // (PMD-12, CUL-1313): every evaluation input is the PM's own pet or a synthetic record.
-// This list is that rule, and it is enforced twice:
-//   · export.sql's CTEs match only these ids, so an unlisted pet comes back as
-//     `subjects: 0` and none of its rows leave the database;
-//   · subject.ts refuses to replay any other pet id, so a hand-edited query still stops
-//     at the loader.
-// subject.test.ts fails the build when the two CTEs and this list disagree.
+// This list is that rule, written down twice:
+//   · export.sql's CTEs match only these ids, so run as committed, an unlisted pet comes
+//     back as `subjects: 0` and none of its rows leave the database;
+//   · subject.ts refuses to replay any other pet id.
+// exportShape.test.ts fails the build when export.sql stops matching only these ids.
 //
-// Adding a pet is a reviewed PR. Another owner's pet waits for CUL-1313's notice; a
-// consent "no" outranks the list.
+// What neither can do, stated so it does not read as coverage (C-38): `execute_sql` runs
+// whatever text a session sends, so a session that edits the query before running it has
+// read the rows before anything here runs. The loader checks the export's own `pet_id`
+// label, after the read. This binds a session that runs export.sql as written: the rule
+// is followed, never enforced.
+//
+// Both ids came back from an owner-scoped read of the PM's account (pets whose user_id is
+// the PM's), 2026-09-26. Adding a pet is a reviewed PR that changes this file and both
+// CTEs together. A synthetic record that lives in the database joins the list the same
+// way; loosening subject.ts to admit one is the wrong fix. Another owner's pet waits for
+// CUL-1313's notice, and a consent "no" outranks the list.
 
 export interface EvaluationSubject {
   petId: string

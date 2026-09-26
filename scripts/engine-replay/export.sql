@@ -15,10 +15,13 @@
 -- correct id and owner pair proves only that the two agree, not that a session may read
 -- them. Until the privacy policy names an evaluation purpose, only the PM's own pets and
 -- synthetic records are evaluation subjects. Each CTE matches only the pets listed in
--- evaluationSubjects.ts, so any other pair comes back as `subjects: 0` and none of its
--- rows leave the database; the loader refuses any other pet id as well.
--- subject.test.ts fails the build when either CTE's list and evaluationSubjects.ts
--- disagree. To add a pet, add it there and here in one reviewed PR.
+-- evaluationSubjects.ts, so run as written, any other pair comes back as `subjects: 0`
+-- and none of its rows leave the database; the loader refuses any other pet id as well.
+-- exportShape.test.ts fails the build when this file stops matching only those ids. That
+-- binds the committed file, not an edited copy: the rule is followed, never enforced.
+-- Run it unchanged. To add a pet, add it there and here in one reviewed PR.
+-- Not yet tied to the pet's owner: the food rows (Query 1's `arr` join, Query 2's
+-- `foods`), which are read by id alone. CUL-1316.
 --
 -- Deliberately NOT exported: diet_trials.target_duration_days_initial,
 -- target_duration_set_at and target_duration_vet_directed. They carry a treatment-response
