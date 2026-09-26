@@ -473,12 +473,13 @@ function buildObservations(row: AnalysisRow): Observation[] {
   // observation feeding the report, distinct from the n=1 read's reassurance ban).
   const blood = labelFor(BLOOD_OPTIONS, row.blood_present);
   if (blood) out.push({ field: 'blood_present', label: 'Blood', value: blood });
-  // Foreign material. The 'yes' path shows the model's own note, UNCHANGED by this change:
-  // the model is prompted to set the suspected_foreign_material visual flag on 'yes', so a
-  // 'yes' note normally rides a worth_a_call card (Pattern-10-compliant). That coupling is
-  // not structurally enforced at the floor (which trusts the model's visual_flags array,
-  // not a flag derived from the enum — CUL-534), but closing it is out of scope here. On
-  // 'unsure' the card is
+  // Foreign material. The 'yes' path shows the model's own note: since CUL-534 (the
+  // analyze-stool parity) analyze-vomit's parse DERIVES the suspected_foreign_material
+  // visual flag from foreign_material_present === 'yes', so a 'yes' the model wrote reaches
+  // this row on a worth_a_call card (Pattern-10-compliant). Two rows sit outside that
+  // guarantee: one analysed before CUL-534 deployed, and one where the OWNER edited the
+  // field to 'yes' (an edit refreshes the field, never the cached recommendation — Pattern
+  // 7 — and the editor shows the owner the note they keep). On 'unsure' the card is
   // 'monitor', and CUL-240 (B-042) surfaces the previously-hidden finding there — but the
   // note is model-authored FREE TEXT with no schema constraint, no parse gate, and no
   // post-floor gate, so the RAW note must NOT reach a non-worth_a_call card

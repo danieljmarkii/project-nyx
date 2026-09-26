@@ -11,8 +11,10 @@
 // on the ABSENCE of one. The recommendation enum has no reassuring value.
 //
 // Escalation = context-assembled floor (PM 2026-05-24):
-//   - the vision model raises VISUAL flags (blood, suspected foreign
-//     material) from the photo;
+//   - VISUAL flags (blood, suspected foreign material) come from the photo:
+//     derived from the model's structured fields (blood_present,
+//     foreign_material_present) and unioned with the model's own array, so
+//     a flag the model drops still escalates (CUL-534, stool parity);
 //   - this function computes CONTEXTUAL flags (repeated vomiting, feline
 //     reduced intake, concurrent lethargy) deterministically from
 //     events+meals, and they FORCE 'worth_a_call' regardless of the photo
@@ -222,9 +224,32 @@ export function parseAnalysisToolResult(response: ClaudeResponse): VomitAnalysis
 
   const appears = input.appears_to_show_vomit === true
   const contents = sanitizeEnumArray(input.contents, CONTENTS)
-  const visualFlags = sanitizeEnumArray(input.visual_flags, VISUAL_FLAGS)
   const modelRecommendation = sanitizeEnum(input.recommendation, RECOMMENDATIONS) as Recommendation | null
   const recommendation = (modelRecommendation ?? 'not_enough_to_say') as Recommendation
+  const bloodPresent = sanitizeEnum(input.blood_present, BLOOD)
+  const foreignPresent = sanitizeEnum(input.foreign_material_present, TRISTATE)
+
+  // Escalating visual flags are DERIVED from the structured clinical fields, then
+  // unioned with any the model set — NEVER the model's array alone (CUL-534; the
+  // analyze-stool template, its adversarial ①, 2026-07-17). A model that records
+  // blood_present = fresh_red / coffee_ground, or foreign_material_present = yes, but
+  // drops the flag from visual_flags AND self-selects monitor would otherwise get
+  // "Keep an eye out" beside its own "Blood: Coffee-ground" row. Deriving here makes the
+  // floor escalate on the PRESENCE of the recorded finding, and agrees with every reader
+  // that already derives from these fields (generate-signal deriveIncidentFlags,
+  // generate-report unionPresentFlags, ask derivePresentFlags — clinical-guardrails
+  // Pattern 9). Present-only: 'unsure' and 'none_visible' derive nothing (an unsure
+  // blood read is CUL-240's soft trigger, never a floor-forcing flag), so this can only
+  // ADD escalations. The model's own read_text / description stay gated on the model's
+  // self-escalation below, so a derived escalation surfaces the deterministic
+  // visualFlagFallback, never prose the model wrote for a monitor read.
+  const visualFlags = Array.from(new Set(sanitizeEnumArray(input.visual_flags, VISUAL_FLAGS)))
+  if ((bloodPresent === 'fresh_red' || bloodPresent === 'coffee_ground') && !visualFlags.includes('blood')) {
+    visualFlags.push('blood')
+  }
+  if (foreignPresent === 'yes' && !visualFlags.includes('suspected_foreign_material')) {
+    visualFlags.push('suspected_foreign_material')
+  }
 
   // B-060 / clinical-guardrails Ambiguity #2 (CUL-152 / B-179): the model emits TWO
   // free-text fields — read_text AND description — and both reach the owner (the
@@ -251,9 +276,9 @@ export function parseAnalysisToolResult(response: ClaudeResponse): VomitAnalysis
     colour: sanitizeEnum(input.colour, COLOURS),
     contents: contents.length > 0 ? contents : null,
     consistency: sanitizeEnum(input.consistency, CONSISTENCIES),
-    blood_present: sanitizeEnum(input.blood_present, BLOOD),
+    blood_present: bloodPresent,
     bile_present: sanitizeEnum(input.bile_present, TRISTATE),
-    foreign_material_present: sanitizeEnum(input.foreign_material_present, TRISTATE),
+    foreign_material_present: foreignPresent,
     // foreign_material_note is model-authored free text, left ungated at parse: it is a
     // short factual fragment description consumed by the structured-fields path (the owner
     // editor and the 'yes'-tier detail/report render), not an n=1 "read". It is NOT true
@@ -383,8 +408,9 @@ function buildMonitorReadText(petName: string): string {
   return `A single photo on its own can't tell you how ${p} is doing. Keep an eye on ${p} — if it happens again, or ${p} seems unwell or goes off food, your vet is the best call.`
 }
 
-// Escalation on a model-raised visual flag, used when the model didn't write its own
-// read. Names the present concern plainly (the safe direction) and routes to the vet.
+// Escalation on a visual flag (model-raised or derived from the structured fields,
+// CUL-534), used when the model didn't write its own escalation read. Names the present
+// concern plainly (the safe direction) and routes to the vet.
 function buildVisualFlagReadText(petName: string, visualFlags: string[]): string {
   const p = petName || 'your pet'
   const hasBlood = visualFlags.includes('blood')

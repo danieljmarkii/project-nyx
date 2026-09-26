@@ -334,6 +334,132 @@ Deno.test('parseAnalysisToolResult — model sets a visual flag but self-selects
   assertEquals(/\b(worry|normal|typical|fine)\b/i.test(read), false) // never the soft model line
 })
 
+// ── CUL-534: the floor escalates on the STRUCTURED red flag, not the model's
+// (droppable) visual_flags array — analyze-stool's adversarial ① (2026-07-17), brought
+// to vomit. A model that records blood / foreign material but omits the flag AND
+// self-selects monitor must still escalate, and must surface the deterministic
+// flag-named read, never the prose it wrote for a monitor read. ──
+
+// The shared pipeline's steps 7–8b over one parse, so each case below asserts what the
+// owner would actually see, not only the array.
+function floorAndRead(r: VomitAnalysis) {
+  const rec = applyEscalationFloor({
+    modelRecommendation: r.recommendation,
+    appearsToShowVomit: r.appears_to_show_vomit,
+    hasPhoto: true,
+    visualFlags: r.visual_flags,
+    contextualFlags: [],
+  })
+  const read = selectReadText({
+    petName: 'Mochi', recommendation: rec, contextualFlags: [],
+    visualFlags: r.visual_flags, modelReadText: r.read_text, photoUnreadable: false, hasPhoto: true,
+  })
+  const description = selectDescription({
+    modelDescription: r.description, recommendation: rec, contextualFlags: [], photoUnreadable: false,
+  })
+  return { rec, read, description }
+}
+
+Deno.test('parseAnalysisToolResult — derives "blood" from blood_present=coffee_ground when the model omits the flag and says monitor (CUL-534)', () => {
+  // The Engines v3 critique's case (CUL-1268 MFU-9): pre-fix this read "Keep an eye out"
+  // beside its own "Blood: Coffee-ground" row while Home's card, deriving from the
+  // field, said to call.
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true,
+    blood_present: 'coffee_ground',
+    visual_flags: [],          // the model dropped the flag...
+    recommendation: 'monitor', // ...and under-called the recommendation
+    description: 'Some dark flecks in brown liquid, nothing unusual after a meal.', // must NOT surface
+    read_text: 'Keep an eye out, this looks fairly typical.',                     // must NOT surface
+  }))!
+  assertEquals(r.visual_flags, ['blood']) // derived from the structured field
+  assertStrictEquals(r.read_text, null)
+  assertStrictEquals(r.description, null)
+  const { rec, read, description } = floorAndRead(r)
+  assertStrictEquals(rec, 'worth_a_call')
+  assertEquals(read.toLowerCase().includes('blood'), true)
+  assertEquals(/keep an eye|typical|unusual|fine|normal/i.test(read), false)
+  assertStrictEquals(description, null)
+})
+
+Deno.test('parseAnalysisToolResult — derives "blood" from blood_present=fresh_red when the flag is omitted (CUL-534)', () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true, blood_present: 'fresh_red', visual_flags: [], recommendation: 'monitor',
+  }))!
+  assertEquals(r.visual_flags, ['blood'])
+  assertStrictEquals(floorAndRead(r).rec, 'worth_a_call')
+})
+
+Deno.test('parseAnalysisToolResult — derives "suspected_foreign_material" from foreign_material_present=yes when the flag is omitted (CUL-534)', () => {
+  // The CUL-240 round-2 residual: a 'yes' + 'monitor' row put the model's raw note on a
+  // monitor card through VomitAnalysisSection's 'yes' path. With the flag derived, a
+  // 'yes' foreign read cannot leave the floor as anything but worth_a_call.
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true,
+    foreign_material_present: 'yes',
+    foreign_material_note: 'looks like a piece of string, usually passes',
+    visual_flags: [],
+    recommendation: 'monitor',
+  }))!
+  assertEquals(r.visual_flags, ['suspected_foreign_material'])
+  const { rec, read } = floorAndRead(r)
+  assertStrictEquals(rec, 'worth_a_call')
+  assertEquals(read.includes("doesn't look like food"), true)
+  assertEquals(read.includes('string'), false) // the note never reaches the read
+})
+
+Deno.test('parseAnalysisToolResult — derives both flags when both fields are present; the fallback names both (CUL-534)', () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true, blood_present: 'fresh_red', foreign_material_present: 'yes',
+    visual_flags: [], recommendation: 'not_enough_to_say',
+  }))!
+  assertEquals([...r.visual_flags].sort(), ['blood', 'suspected_foreign_material'])
+  const { rec, read } = floorAndRead(r)
+  assertStrictEquals(rec, 'worth_a_call')
+  assertEquals(read.includes('blood') && read.includes("doesn't look like food"), true)
+})
+
+Deno.test('parseAnalysisToolResult — no double-count when the model sets both the field and the flag (CUL-534)', () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true,
+    blood_present: 'fresh_red',
+    foreign_material_present: 'yes',
+    visual_flags: ['blood', 'suspected_foreign_material', 'blood'], // a repeat is collapsed too
+    recommendation: 'worth_a_call',
+  }))!
+  assertEquals(r.visual_flags, ['blood', 'suspected_foreign_material']) // union, exactly one each
+})
+
+Deno.test("parseAnalysisToolResult — a model-set flag with no supporting field is kept (the union only ADDS) (CUL-534)", () => {
+  // The derivation never removes a flag the model raised: escalate on presence in
+  // either signal, never the weaker of the two.
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true, blood_present: 'unsure', visual_flags: ['blood'], recommendation: 'monitor',
+  }))!
+  assertEquals(r.visual_flags, ['blood'])
+  assertStrictEquals(floorAndRead(r).rec, 'worth_a_call')
+})
+
+Deno.test('parseAnalysisToolResult — present-only: unsure / none_visible / no / a hallucinated value derive NO flag (CUL-534)', () => {
+  // Pattern 9's derivation is present-only. An 'unsure' blood read is CUL-240's soft
+  // trigger (a label on the card), never a floor-forcing flag; deriving one here would
+  // put every hard-to-read photo on "Worth a call".
+  for (const [blood, foreign] of [
+    ['none_visible', 'no'],
+    ['unsure', 'unsure'],
+    ['none_visible', 'unsure'],
+    ['unsure', 'no'],
+    ['bright_red', 'maybe'], // invalid enums sanitize to null, then derive nothing
+  ]) {
+    const r = parseAnalysisToolResult(makeToolUse({
+      appears_to_show_vomit: true, blood_present: blood, foreign_material_present: foreign,
+      visual_flags: [], recommendation: 'monitor',
+    }))!
+    assertEquals(r.visual_flags, [], `${blood} / ${foreign}`)
+    assertStrictEquals(floorAndRead(r).rec, 'monitor', `${blood} / ${foreign}`)
+  }
+})
+
 // ── selectDescription: the POST-FLOOR gate that gives `description` the same
 // guarantee read_text gets from selectReadText (CUL-152 / B-179). ──
 
