@@ -51,7 +51,7 @@ describe('BETA_REGISTRY', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('ships the widget + Noticed + Design v2 + History v2 betas, all client-only (no server cost)', () => {
+  it('ships the widget + Noticed + Design v2 + History v2 + trial screen betas, all client-only (no server cost)', () => {
     // The two Signal betas (signal_design_v2 / signals_v2) graduated to GA and were
     // retired from the shelf (CUL-547 + CUL-548), the two capture betas (the log
     // screen redesign, B-745, and more event types, B-756) followed (CUL-962), and
@@ -87,10 +87,21 @@ describe('BETA_REGISTRY', () => {
     expect((historyV2 as BetaFeature).serverCost).toBe(false);
     expect((historyV2 as BetaFeature).blurb).toMatch(/Switch it off and History is exactly as it was\.$/);
 
+    // The trial screen (CUL-1296 / TS-0) joined the shelf seed-first, before any
+    // screen reads its gate. Client-render only — the screen reads the local record
+    // and no Edge Function reads the key — so no server gate is owed. The blurb's
+    // second sentence is the flag-off promise guards/trialScreenFlagOff.test.tsx keeps.
+    const trialScreen = BETA_REGISTRY.find((b) => b.key === 'trial_screen');
+    expect(trialScreen).toBeDefined();
+    expect((trialScreen as BetaFeature).serverCost).toBe(false);
+    expect((trialScreen as BetaFeature).blurb).toMatch(
+      /Switch it off and the trial stays on the Pet tab, exactly as it was\.$/,
+    );
+
     // The five graduated keys are no longer in the AllowlistFlagKey union, so a
     // `.key === '…'` check for them won't type-check — the length assertion + the
     // missing shelf cards are what pin their removal.
-    expect(BETA_REGISTRY).toHaveLength(4);
+    expect(BETA_REGISTRY).toHaveLength(5);
   });
 });
 
@@ -163,6 +174,19 @@ describe('deriveBetaShelf (B-747)', () => {
     expect(deriveBetaShelf(allow({ history_v2: dark }), 'pm-uid', {}).eligible).toEqual([]);
   });
 
+  it('the trial screen is on the shelf for its allowlisted account only (TS-0 acceptance)', () => {
+    // The dark seed (073) lists nobody, so the card is hidden from every account; a
+    // cohort UPDATE lists the PM, only that uid sees the card, and eligibility alone
+    // turns nothing on.
+    expect(deriveBetaShelf(allow({ trial_screen: dark }), 'pm-uid', {}).eligible).toEqual([]);
+    expect(deriveBetaShelf(allow({ trial_screen: dark }), 'pm-uid', { trial_screen: true }).activeCount).toBe(0);
+    const allowlist = allow({ trial_screen: gatedTo('pm-uid') });
+    expect(deriveBetaShelf(allowlist, 'pm-uid', {}).eligible.map((b) => b.key)).toEqual(['trial_screen']);
+    expect(deriveBetaShelf(allowlist, 'pm-uid', {}).activeCount).toBe(0);
+    expect(deriveBetaShelf(allowlist, 'someone-else', {}).eligible).toEqual([]);
+    expect(deriveBetaShelf(allowlist, null, {}).eligible).toEqual([]);
+  });
+
   it('enabled:true (a GA’d flag) is eligible for everyone, allowlist ignored', () => {
     const shelf = deriveBetaShelf(
       allow({ design_v2: { enabled: true, allowlist: [] } }),
@@ -178,6 +202,7 @@ describe('deriveBetaShelf (B-747)', () => {
       daily_look: gatedTo('uid-1'),
       design_v2: gatedTo('uid-1'),
       history_v2: gatedTo('uid-1'),
+      trial_screen: gatedTo('uid-1'),
     });
     expect(deriveBetaShelf(everything, 'uid-1', {}).eligible.map((b) => b.key)).toEqual(
       BETA_REGISTRY.map((b) => b.key),
