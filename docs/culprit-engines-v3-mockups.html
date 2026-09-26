@@ -1,11 +1,11 @@
 <title>Engines v3 on Home</title>
-<meta name="description" content="Engines v3 mock round 1: the proposed Home redrawn the way the rules would render it, with TD-4 and E-3 drawn both ways.">
+<meta name="description" content="Engines v3 mock round 2: the Sep 23 Home redrawn on Design v2, answers one tap away, and the Signal and vet visits drawn as one loop.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <style>
   /* ============================================================
-     Engines v3 on Home, mock round 1 (CUL-1288, 2026-09-26).
+     Engines v3 on Home, mock round 2 (CUL-1288, 2026-09-26; round 1 at e6fb38f).
      The Engines v3 strategy page (docs/culprit-engines-step-change.html)
      drew a Home the rules cannot produce; the design critique
      (docs/engines-v3-critique-2026-09.md, CUL-1268) asked for it to be
@@ -193,30 +193,75 @@
   .conflict { border-left: 3px solid var(--rose-ink); padding-left: 12px; }
   .next-list { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); font-size: 14.5px; max-width: 72ch; }
   footer { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13.5px; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 8px 18px; }
+
+  /* Round 2: the loop diagram and the new screen parts */
+  .archive { margin-top: 18px; font-size: 14px; color: var(--ink-2); }
+  .archive summary { cursor: pointer; color: var(--ink-2); font-size: 13.5px; }
+  .archive summary:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 3px; border-radius: 3px; }
+  .ledger q { font-style: italic; quotes: "\201C" "\201D"; }
+  .diagram { margin: 28px 0 0; max-width: 980px; }
+  .diagram-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; color: var(--ink); }
+  .diagram-scroll svg { display: block; width: 100%; min-width: 760px; height: auto; }
+  .diagram figcaption { font-size: 13.5px; color: var(--ink-2); margin-top: 10px; max-width: 72ch; }
+  .d-lane { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; fill: var(--ink-3); }
+  .d-label { font-family: var(--sans); font-size: 13px; font-weight: 500; fill: var(--ink); }
+  .d-small { font-family: var(--sans); font-size: 11.5px; fill: var(--ink-2); }
+  .d-node { fill: var(--paper-2); stroke: var(--rule); stroke-width: 1.2; }
+  .d-node-raised { stroke: var(--rose-ink); }
+  .d-node-new { stroke: var(--teal-ink); stroke-dasharray: 4 3; }
+  .d-shipped { stroke: var(--ink-3); stroke-width: 1.4; fill: none; }
+  .d-shipped-fill { fill: var(--ink-3); }
+  .d-new { stroke: var(--teal-ink); stroke-width: 2; fill: none; }
+  .d-new-fill { fill: var(--teal-ink); }
+  .d-new-text { fill: var(--teal-ink); font-weight: 500; }
+  .d-boundary { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 2 4; }
+  .links { display: flex; gap: 20px; margin-top: 8px; font-size: 12px; font-weight: 500; color: var(--app-teal-ink); }
+  .links span { min-height: 30px; display: inline-flex; align-items: center; }
+  .field { margin-top: 10px; border: 1px solid var(--app-rule); border-radius: 10px; padding: 10px; font-size: 12.5px; line-height: 1.45; min-height: 74px; color: var(--app-ink); }
+  .field.slim { min-height: 36px; color: var(--app-ink-3); }
+  .save { margin-top: 12px; background: var(--app-ink); color: #fff; border-radius: 12px; text-align: center; font-weight: 600; font-size: 13px; padding: 10px; }
+  .tick-row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; min-height: 36px; border-top: 1px solid var(--app-rule); }
+  .tick-row i { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--app-ink-3); flex-shrink: 0; position: relative; }
+  .tick-row.on i { background: var(--app-teal-ink); border-color: var(--app-teal-ink); }
+  .tick-row.on i::after { content: ""; position: absolute; left: 5px; top: 1px; width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .choice { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 44px; border-top: 1px solid var(--app-rule); font-size: 13px; font-weight: 500; }
+  .choice em { font-style: normal; font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; }
+  .vv-row { display: flex; flex-direction: column; gap: 2px; padding: 9px 0; border-top: 1px solid var(--app-rule); font-size: 12px; color: var(--app-ink-2); }
+  .vv-row b { font-size: 13px; color: var(--app-ink); font-weight: 600; }
+  .vv-note { font-style: italic; color: var(--app-ink-2); }
+  .frame-cap code, .brief code, .col code { font-family: var(--mono); font-size: 0.86em; }
 </style>
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 1 · 2026-09-26</span><span>Engines v3 · CUL-1288</span><span>for E-2, E-3 and TD-4</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 2 · 2026-09-26</span><span>Engines v3 · CUL-1288</span><span>supersedes round 1 at this URL</span></p>
     <h1>Engines v3 on Home, drawn the way the rules would render it</h1>
-    <p class="standfirst">The strategy page showed a Home that heard about Nyx's Sep 16 visit and went quiet. The design critique found that frame can't be built: it rests on a record the app never keeps, and it puts buttons on a Home that Design v2 replaced. This round redraws Nyx's Sep 23 evening on the real Design v2 Home, with CUL-1270's rows as ruled. It also draws both sides of the two choices still open: where an owner says "I've called", and whether a watched concern ever asks again because time has passed.</p>
+    <p class="standfirst">Round 1 redrew Nyx's Sep 23 evening on the real Design v2 Home and drew the open choices both ways. You ruled that an owner answers one tap away, not on Home. You also asked for two new things: somewhere for a note after "I've called", and tight links between the Signal and the vet visit feature. This round is one proposal. The option you didn't pick has left the page (git keeps it at e6fb38f). The one choice still open sits in a labelled box beside the frame it competes with.</p>
 
-    <div class="ledger" aria-label="What each critique finding changed on this page">
-      <div><b>"Seen by your vet Sep 16" rests on nothing (E-2)</b><span>No visit stores what it covered, and the engine may not read visits (AC 10). At GA every concern starts raised. §01 draws that evening first, then the evening after the owner answers. <span class="pill">§01 · §03</span></span></div>
-      <div><b>The frame drew the Home Design v2 is replacing (GAP-18)</b><span>Every frame here is Design v2: CUL-1270's row per finding, the zone's one disclaimer, the appointment and trial strips, Today below. <span class="pill">every frame</span></span></div>
-      <div><b>"I've called" was a fourth Home write (TD-4)</b><span>Drawn both ways in labelled boxes: on the Home row, or one tap away on the finding's screen. <span class="pill open">decide · §02</span></span></div>
-      <div><b>Does a watched concern ask again on a calendar? (E-3)</b><span>Drawn both ways at week 8 with no recheck on record, beside the booked recheck case both sides agree on. <span class="pill open">decide · §04</span></span></div>
-      <div><b>The cough and vomiting disclosure was dropped</b><span>Kept. Under CUL-1270 it lives on each finding's screen; §03 draws it there. Answering for one concern never quiets it on the other. <span class="pill">§03</span></span></div>
-      <div><b>The weight card anchored on a June value no table holds</b><span>Drawn only with its dependencies named: June's 4.4 kg re-entered as a back-dated weigh-in, D7's cutoffs on the ruling sheet, EN-8 built. Pounds, not a percentage (S3). <span class="pill needs">illustrative · §01</span></span></div>
-      <div><b>"Too soon to read anything from that" promised a verdict</b><span>Removed. The coughing row states the course start and a count. It says nothing about whether the prednisone is working. <span class="pill">§01</span></span></div>
-      <div><b>The timing line lost its vet clause</b><span>It's kept, and it lives on the timing screen. Benign rows carry no ask on Home (CUL-1270, build call ii). The row keeps its lane thumbnail. <span class="pill">§01</span></span></div>
-      <div><b>The Sep 4 "after" read showed a stored row changing</b><span>Stored reads keep their verdict. §05 draws the stored read with a dated correction beside it, and labels the new read as a vomit like Sep 4's, logged after the change. <span class="pill">§05</span></span></div>
+    <div class="ledger" aria-label="Your round 1 reactions and what each one moved">
+      <div><b><q>One tap away… keep Home clean and less text heavy</q></b><span>TD-4 ruled D. Home rows stay doors, and the answer lives on the finding's screen. The Home-row option has left the page. <span class="pill">ruled · §02</span></span></div>
+      <div><b><q>What happens after "I've called"… notes? Where do they live?</q></b><span>Proposed: an optional note after the tap, kept on the call's own record in the pet's Vet visits, beside the visits. It's never read by a model and never enters a count. <span class="pill">current · §02</span> <span class="pill open">N-1 · decide</span></span></div>
+      <div><b><q>Week 8: if we can nail it, do it. Otherwise secondary</q></b><span>Split in two. The part we can nail keys on the vet's own recheck date from "How did it go?", and ships with EN-9. The bare eight-week question can't be proven without the harness, so it becomes a secondary issue. <span class="pill">current · §04</span> <span class="pill open">confirm</span></span></div>
+      <div><b><q>Tight connectivity between the Signal and vet visits</q></b><span>A new section draws the whole loop: from a raised concern to booking, Get ready, the room, "How did it go?", the recheck, and back to the Signal. It marks which links ship today and which are new. It needs one rule amended (AC 10), briefed below. <span class="pill">current · §03</span> <span class="pill open">AC 10 · decide</span></span></div>
+      <div><b>E-2, which you didn't react to</b><span>The loop is built on the recommended option (A restated: the owner's answer). Confirm it, or pick another, in §06. <span class="pill open">confirm</span></span></div>
     </div>
     <div class="rule-key">
       <span><span class="pill">current</span> the proposal</span>
-      <span><span class="pill open">decide</span> drawn both ways for a ruling</span>
+      <span><span class="pill open">decide</span> still yours to rule</span>
       <span><span class="pill needs">needs X</span> a row the rules can't draw until X lands</span>
     </div>
+    <details class="archive">
+      <summary>Round 1's ledger: what each critique finding changed</summary>
+      <div class="ledger">
+        <div><b>"Seen by your vet Sep 16" rests on nothing</b><span>At GA every concern starts raised. §01 draws that evening first, then the evening after the owner answers.</span></div>
+        <div><b>The frame drew the Home Design v2 is replacing</b><span>Every frame is Design v2: CUL-1270's row per finding, the zone's one disclaimer, the real strips.</span></div>
+        <div><b>The cough and vomiting disclosure was dropped</b><span>Kept, on each finding's screen (CUL-1270). Answering for one concern never quiets it on the other.</span></div>
+        <div><b>The weight card anchored on a June value no table holds</b><span>Drawn only with its dependencies named. Pounds, not a percentage (S3).</span></div>
+        <div><b>"Too soon to read anything from that" promised a verdict</b><span>Removed. The coughing row states the course start and a count.</span></div>
+        <div><b>The timing line lost its vet clause</b><span>Kept on the timing screen. Benign rows carry no ask on Home (CUL-1270).</span></div>
+        <div><b>The Sep 4 "after" read showed a stored row changing</b><span>Stored reads keep their verdict and gain a dated correction (§05).</span></div>
+      </div>
+    </details>
   </header>
 
   <!-- §01 -->
@@ -321,118 +366,265 @@
 
   <!-- §02 -->
   <section id="answer">
-    <div class="sec-head"><span class="sec-num">02</span><h2>Where the owner says "I've called" <span class="pill open">TD-4 · decide</span></h2></div>
+    <div class="sec-head"><span class="sec-num">02</span><h2>"I've called", one tap away, and the note after it <span class="pill">TD-4 ruled D</span></h2></div>
     <div class="col">
-      <p>Both sides agree that the photo row's ask stays on Home in words, that "Not yet" is always an honest answer, and that the answer is attached to the escalation, not the read. They disagree on where the tap lives. Jordan wants it on the Home row. That makes it a fourth kind of write on Home, which needs a Tier-2 change to the med-strip spec §0.1. The Designer wants the card face to stay a door, with the answer one tap away where Design v2 already keeps controls. Your CUL-1270 reaction ("SO text heavy") is new evidence for the second, and an owner who has just called their vet is the case for the first.</p>
+      <p>Home rows stay doors. The ask stays on the Home row in words, and the answer sits on the finding's screen, beside the evidence it's about. The same answers appear on the incident screen for a photo read.</p>
+      <p>After "I've called", nothing asks for more. The screen confirms what was recorded and offers an optional note. The note is written after the save, the way the daily look's note is. It's kept on the call's own record, which lives in the pet's Vet visits beside the visits (§03). Two days later there's one follow-up, "What did the vet say?", and its answer can be added to the same note.</p>
     </div>
-    <div class="side">
-      <div class="option">
-        <div class="option-head"><b>J · On the Home row (Jordan)</b><span>One tap from Home. The chips sit under the ask. The gap between them is sized from their hit areas (C-5).</span></div>
-        <div class="frames">
-          <div class="frame">
-            <div class="phone short" aria-label="Option J: answer chips on the Home row">
-              <div class="card">
-                <div class="zone-label">Signal</div>
-                <div class="railed door"><div class="body"><div class="eyebrow-s">Photo read · Sep 22</div><div class="head serif">Possible foreign material in a vomit photo</div><div class="asktxt">Worth a call to your vet</div>
-                  <div class="answers"><span class="pri">I've called</span><span>Not yet</span></div></div><span class="chev big"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
-                <div class="row-divider"></div>
-                <div class="railed door"><div class="body"><div class="head">Vomiting in 5 of the last 8 weeks</div><div class="sub">13 episodes since August · <span class="ask-in">worth booking a vet visit</span></div>
-                  <div class="answers"><span class="pri">My vet knows</span><span>Not yet</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
-              </div>
-            </div>
-            <div class="frame-cap"><b>Two chips on every raised row</b><span>On a sick day with three raised rows, that's six controls in the Signal zone.</span></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="option">
-        <div class="option-head"><b>D · One tap away, on the finding's screen (Designer)</b><span>Home is unchanged: every row is a door. The answer sits under the evidence, on the screen the row opens. The same answers appear on the incident screen for a photo read.</span></div>
-        <div class="frames">
-          <div class="frame">
-            <div class="phone short" aria-label="Option D: the photo read's Signal screen with the answer block">
-              <div class="screen-head">
-                <div class="back">‹</div>
-                <div class="screen-title">Possible foreign material in a vomit photo</div>
-                <div class="screen-sent">A photo you logged of Nyx's vomiting showed possible foreign material, on September 22. Worth a call to your vet.</div>
-                <div class="mini-label">The photo · Sep 22, 1:30 AM</div>
-                <div class="photo" role="img" aria-label="The vomit photo, with a dark grey piece"></div>
-                <div class="qblock">
-                  <div class="q">Have you called your vet about this?</div>
-                  <div class="answers"><span class="pri">I've called</span><span>Not yet</span></div>
-                </div>
-              </div>
-            </div>
-            <div class="frame-cap"><b>The answer beside the photo it's about</b><span>An owner who never opens the screen is never asked. The Home ask stays in words either way.</span></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <h3>After either answer, Home looks the same <span class="pill">current</span></h3>
     <div class="frames">
       <div class="frame">
-        <div class="phone short" aria-label="The photo row after the owner tapped I've called">
+        <div class="phone short" aria-label="The photo read's Signal screen with the answer block">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Possible foreign material in a vomit photo</div>
+            <div class="screen-sent">A photo you logged of Nyx's vomiting showed possible foreign material, on September 22. Worth a call to your vet.</div>
+            <div class="mini-label">The photo · Sep 22, 1:30 AM</div>
+            <div class="photo" role="img" aria-label="The vomit photo, with a dark grey piece"></div>
+            <div class="qblock">
+              <div class="q">Have you called your vet about this?</div>
+              <div class="answers"><span class="pri">I've called</span><span>Not yet</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>1 · The answer beside the photo <span class="pill">current</span></b><span>An owner who never opens the screen is never asked, and the Home ask stays in words regardless.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="The same screen after I've called, with an optional note">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Possible foreign material in a vomit photo</div>
+            <div class="screen-sent">A photo you logged of Nyx's vomiting showed possible foreign material, on September 22. Worth a call to your vet.</div>
+            <div class="qblock">
+              <div class="q">You called on Sep 23.</div>
+              <div class="qs">We'll ask what the vet said on Friday. It's kept in Nyx's vet visits.</div>
+              <div class="links"><span>Add a note</span><span>Undo</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>2 · Recorded, with a note on offer <span class="pill">current</span></b><span>Zero decisions at the moment of the call. The note is a door, never a required field. Undo reverses the answer, with the one confirm-or-reversal net (C-21).</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="The note about the call">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">A note about the call</div>
+            <div class="screen-sent">Sep 23 · about the photo from Sep 22</div>
+            <div class="field">Spoke to the front desk. Dr. Ruiz says bring her in if she vomits again or stops eating.</div>
+            <div class="qs" style="margin-top:8px">Kept with Nyx's vet visits. The app's AI never reads it.</div>
+            <div class="save">Save</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>3 · The note <span class="pill">current</span></b><span>Free text the owner writes about their own call. It syncs like any other note. It's never read by a model, and never counted. It goes in the export and the deletion lists, like every health record.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="The photo row on Home after the owner tapped I've called">
           <div class="card">
             <div class="zone-label">Signal</div>
             <div class="railed door"><div class="body"><div class="eyebrow-s">Photo read · Sep 22</div><div class="head serif">Possible foreign material in a vomit photo</div><div class="asktxt">Worth a call to your vet</div><div class="sub">You said you called on Sep 23.</div></div><span class="chev big"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
           </div>
         </div>
-        <div class="frame-cap"><b>"I've called"</b><span>The ask survives word for word, because a tap is not a vet (R-2). The row gains one dated line. Two or three days later comes one follow-up, "What did the vet say?" (EN-14).</span></div>
-      </div>
-      <div class="frame">
-        <div class="phone short" aria-label="The photo row after the owner tapped Not yet">
-          <div class="card">
-            <div class="zone-label">Signal</div>
-            <div class="railed door"><div class="body"><div class="eyebrow-s">Photo read · Sep 22</div><div class="head serif">Possible foreign material in a vomit photo</div><div class="asktxt">Worth a call to your vet</div></div><span class="chev big"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
-          </div>
-        </div>
-        <div class="frame-cap"><b>"Not yet"</b><span>Nothing changes, and nothing scolds. Whether a "Not yet" on a call-now tier gets asked once more that evening is TD-5, decided with EN-14.</span></div>
+        <div class="frame-cap"><b>4 · Home afterwards <span class="pill">current</span></b><span>The ask survives word for word, because a tap is not a vet (R-2). The row gains one dated line and never shows the note.</span></div>
       </div>
     </div>
   </section>
 
+
   <!-- §03 -->
-  <section id="source">
-    <div class="sec-head"><span class="sec-num">03</span><h2>What tells Home the vet has seen it <span class="pill open">E-2 · decide</span></h2></div>
+  <section id="loop">
+    <div class="sec-head"><span class="sec-num">03</span><h2>The Signal and vet visits, as one loop</h2></div>
     <div class="col">
-      <p>The critique's restated option A: only the owner can say a concern was discussed. The answer is stored as a dated fact per sign, so cough and vomiting stay two concerns. It's asked in two places. For a visit logged from now on, it's in "How did it go?", beside the plan rows that screen already has. For a visit already in the record, like Sep 16, it's one question on the finding's screen, at most one a day, and never on Home.</p>
+      <p>Today the two features barely touch. Get ready quotes the Signal's findings, and that's the only link. The Signal never hears that a visit happened, what was discussed, or when the vet wants to see her again. So it keeps asking.</p>
+      <p>The proposal connects them at every step, in both directions. Going down, the Signal opens doors into vet visits: book a visit, record a call. Going up, only owner answers and dates cross back: "Talked about it", "I've called", a recheck date. A visit never becomes a number in the engine. That line is AC 10 in the vet visits spec, and letting owner answers and dates cross it is the one amendment this needs (§06).</p>
     </div>
+
+    <figure class="diagram">
+      <div class="diagram-scroll">
+        <svg viewBox="0 0 940 360" role="img" aria-label="The loop: a raised Signal concern opens doors into vet visits (record a call, book a visit), Get ready quotes it, the room and How did it go? record the owner's answer and the recheck date, and those answers flow back up to put the concern in a watching state until a tested change raises it again.">
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-shipped-fill"/></marker>
+            <marker id="ahn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-new-fill"/></marker>
+          </defs>
+          <text x="10" y="26" class="d-lane">THE SIGNAL</text>
+          <text x="935" y="246" text-anchor="end" class="d-lane">VET VISITS</text>
+
+          <!-- the AC 10 line -->
+          <line x1="0" y1="200" x2="940" y2="200" class="d-boundary"/>
+          <text x="935" y="193" text-anchor="end" class="d-small">AC 10 line</text>
+
+          <!-- Signal nodes -->
+          <rect x="90" y="40" width="120" height="56" rx="10" class="d-node d-node-raised"/>
+          <text x="150" y="73" text-anchor="middle" class="d-label">Raised</text>
+          <rect x="570" y="40" width="120" height="56" rx="10" class="d-node"/>
+          <text x="630" y="73" text-anchor="middle" class="d-label">Watching</text>
+          <rect x="810" y="40" width="120" height="56" rx="10" class="d-node d-node-raised"/>
+          <text x="870" y="73" text-anchor="middle" class="d-label">Raised again</text>
+
+          <!-- Vet visit nodes -->
+          <rect x="10" y="260" width="120" height="56" rx="10" class="d-node d-node-new"/>
+          <text x="70" y="293" text-anchor="middle" class="d-label">Phone call</text>
+          <rect x="170" y="260" width="120" height="56" rx="10" class="d-node"/>
+          <text x="230" y="293" text-anchor="middle" class="d-label">Appointment</text>
+          <rect x="330" y="260" width="120" height="56" rx="10" class="d-node"/>
+          <text x="390" y="293" text-anchor="middle" class="d-label">Get ready</text>
+          <rect x="490" y="260" width="120" height="56" rx="10" class="d-node"/>
+          <text x="550" y="293" text-anchor="middle" class="d-label">At the vet</text>
+          <rect x="650" y="260" width="120" height="56" rx="10" class="d-node"/>
+          <text x="710" y="293" text-anchor="middle" class="d-label">How did it go?</text>
+          <rect x="810" y="260" width="120" height="56" rx="10" class="d-node"/>
+          <text x="870" y="293" text-anchor="middle" class="d-label">Recheck booked</text>
+
+          <!-- shipped: the visit's own path -->
+          <line x1="290" y1="288" x2="328" y2="288" class="d-shipped" marker-end="url(#ah)"/>
+          <line x1="450" y1="288" x2="488" y2="288" class="d-shipped" marker-end="url(#ah)"/>
+          <line x1="610" y1="288" x2="648" y2="288" class="d-shipped" marker-end="url(#ah)"/>
+          <line x1="770" y1="288" x2="808" y2="288" class="d-shipped" marker-end="url(#ah)"/>
+          <text x="310" y="340" text-anchor="middle" class="d-small">5 days out</text>
+          <text x="470" y="340" text-anchor="middle" class="d-small">on the day</text>
+          <text x="630" y="340" text-anchor="middle" class="d-small">after</text>
+          <text x="790" y="340" text-anchor="middle" class="d-small">next visit</text>
+
+          <!-- shipped: Worth raising quotes the finding -->
+          <line x1="205" y1="96" x2="378" y2="257" class="d-shipped" marker-end="url(#ah)"/>
+          <text x="300" y="150" class="d-small">quoted in Worth raising</text>
+
+          <!-- shipped: the engine re-raises on a change -->
+          <line x1="690" y1="68" x2="807" y2="68" class="d-shipped" marker-end="url(#ah)"/>
+          <text x="749" y="58" text-anchor="middle" class="d-small">a tested change</text>
+
+          <!-- new: doors down -->
+          <line x1="125" y1="96" x2="82" y2="257" class="d-new" marker-end="url(#ahn)"/>
+          <text x="96" y="140" text-anchor="end" class="d-small d-new-text">I've called</text>
+          <line x1="170" y1="96" x2="214" y2="257" class="d-new" marker-end="url(#ahn)"/>
+          <text x="196" y="182" text-anchor="start" class="d-small d-new-text">Book a visit</text>
+          <line x1="130" y1="300" x2="168" y2="300" class="d-new" marker-end="url(#ahn)"/>
+          <text x="150" y="340" text-anchor="middle" class="d-small d-new-text">wants to see her</text>
+
+          <!-- new: answers and dates up -->
+          <line x1="705" y1="258" x2="642" y2="99" class="d-new" marker-end="url(#ahn)"/>
+          <text x="646" y="140" text-anchor="end" class="d-small d-new-text">talked about it</text>
+          <line x1="845" y1="258" x2="694" y2="92" class="d-new" marker-end="url(#ahn)"/>
+          <text x="748" y="140" text-anchor="start" class="d-small d-new-text">recheck date</text>
+        </svg>
+      </div>
+      <figcaption>Teal is new in Engines v3; grey ships today. Doors go down freely, because they are navigation. Only owner answers and dates cross back up, and no visit ever enters a count. When the concern comes back, the next Get ready leads with it, which is how the loop closes.</figcaption>
+    </figure>
+
     <div class="frames">
       <div class="frame">
-        <div class="phone short" aria-label="How did it go, with a new section listing what Home was raising">
+        <div class="phone short" aria-label="The vomiting Signal screen with Book a visit, My vet knows and Not yet">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Vomiting in 5 of the last 8 weeks</div>
+            <div class="screen-sent">13 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too. A cough can look like retching or end in vomiting. Mention both.</div>
+            <div class="qblock">
+              <div class="q">Worth booking a vet visit</div>
+              <div class="answers"><span class="pri">Book a visit</span><span>My vet knows</span><span>Not yet</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>1 · The finding opens the door <span class="pill">current</span></b><span>On a visit-level ask, the first answer is a door into vet visits. "My vet knows" is the plain tap (E-2's option C), kept for an owner who already sorted it outside the app.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="A new appointment with the reason filled in from the finding">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Book a vet visit</div>
+            <div class="form-row"><span class="fr-s">Reason</span><span class="fr-h">Vomiting in 5 of the last 8 weeks</span></div>
+            <div class="form-row"><span class="fr-s">When</span><span class="fr-h">Choose a day</span></div>
+            <div class="form-row"><span class="fr-s">Clinic</span><span class="fr-h">Riverside Animal Clinic</span></div>
+            <div class="qs" style="margin-top:6px">It'll be first on Get ready.</div>
+            <div class="save">Save</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>2 · Booked from the finding <span class="pill">current</span></b><span>The vet visits booking form that ships today, with the reason carried in from the finding's title. The appointment strip, Get ready and "Worth raising" all run as shipped from here.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="At the vet, with Worth raising rows the owner can tick">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">At the vet</div>
+            <div class="mini-label">Worth raising</div>
+            <div class="tick-row on"><i></i><span>Vomiting in 5 of the last 8 weeks</span></div>
+            <div class="tick-row on"><i></i><span>Coughing in 7 of the last 8 weeks</span></div>
+            <div class="tick-row"><i></i><span>Rabbit trial · day 53 of 84</span></div>
+            <div class="mini-label">Your questions</div>
+            <div class="tick-row"><i></i><span>Could the cough be asthma?</span></div>
+            <div class="field slim">Notes</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>3 · Ticked in the room <span class="pill">current</span></b><span>The owner's questions can already be ticked. Worth raising rows become tickable too. A tick records the owner's answer, not the list that was shown, so this is still option A, not the snapshot.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="How did it go, pre-filled from the ticks, with a recheck booked">
           <div class="screen-head">
             <div class="back">‹</div>
             <div class="screen-title">How did it go?</div>
             <div class="screen-sent">Nyx's visit, Wed Sep 16</div>
             <div class="mini-label">What Home was raising</div>
-            <div class="form-row"><span class="fr-h">Vomiting in 5 of the last 8 weeks</span><span class="fr-s">Did the vet talk about it?</span><div class="seg" role="radiogroup" aria-label="Vomiting"><span class="on">Talked about it</span><span>Not this time</span><span>Later</span></div></div>
-            <div class="form-row"><span class="fr-h">Coughing in 7 of the last 8 weeks</span><span class="fr-s">Did the vet talk about it?</span><div class="seg" role="radiogroup" aria-label="Coughing"><span class="on">Talked about it</span><span>Not this time</span><span>Later</span></div></div>
+            <div class="form-row"><span class="fr-h">Vomiting in 5 of the last 8 weeks</span><div class="seg" role="radiogroup" aria-label="Vomiting"><span class="on">Talked about it</span><span>Not this time</span><span>Later</span></div></div>
+            <div class="form-row"><span class="fr-h">Coughing in 7 of the last 8 weeks</span><div class="seg" role="radiogroup" aria-label="Coughing"><span class="on">Talked about it</span><span>Not this time</span><span>Later</span></div></div>
             <div class="mini-label">The plan</div>
-            <div class="form-row"><span class="fr-h">Recheck</span><span class="fr-s">Set a date if the vet wants to see her again</span></div>
+            <div class="form-row"><span class="fr-h">Prednisone</span><span class="fr-s">New · started Sep 21</span></div>
+            <div class="form-row"><span class="fr-h">Next visit</span><span class="fr-s">Wed Oct 14 · recheck</span></div>
           </div>
         </div>
-        <div class="frame-cap"><b>A visit logged from now on <span class="pill">current</span></b><span>The rows are whatever the Signal was raising when the form opened. "Recheck" is the plan row the form already has, and it's what E-3's booked case reads.</span></div>
+        <div class="frame-cap"><b>4 · The answers go back up <span class="pill">current</span></b><span>The ticks arrive pre-selected, and "Later" is on every row, as today. "Talked about it" moves the concern to Watching. The recheck row, which ships today and books an appointment, gives the watched row its date. The new course becomes EN-10's context line.</span></div>
       </div>
 
       <div class="frame">
-        <div class="phone short" aria-label="The vomiting Signal screen with one question about the September 16 visit">
+        <div class="phone short" aria-label="A visit already in the record: one question on the finding's screen">
           <div class="screen-head">
             <div class="back">‹</div>
             <div class="screen-title">Vomiting in 5 of the last 8 weeks</div>
-            <div class="screen-sent">13 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too. A cough can look like retching or end in vomiting. Mention both.</div>
-            <div class="mini-label">Weeks with vomiting · 5 of 8</div>
-            <svg viewBox="0 0 280 50" width="100%" height="50" role="img" aria-label="Weekly vomiting bars over the last eight weeks"><g fill="#F43F5E"><rect x="4" y="34" width="26" height="12" rx="2"/><rect x="38" y="20" width="26" height="26" rx="2"/><rect x="106" y="28" width="26" height="18" rx="2"/><rect x="140" y="10" width="26" height="36" rx="2"/><rect x="208" y="34" width="26" height="12" rx="2"/><rect x="242" y="22" width="26" height="24" rx="2"/></g><line x1="0" y1="46.5" x2="280" y2="46.5" stroke="#E7E5E4"/></svg>
+            <div class="screen-sent">13 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit.</div>
             <div class="qblock">
               <div class="q">Nyx saw the vet on Sep 16. Did you talk about her vomiting?</div>
               <div class="answers"><span class="pri">Talked about it</span><span>Not this time</span><span>Later</span></div>
             </div>
           </div>
         </div>
-        <div class="frame-cap"><b>A visit already in the record <span class="pill">current</span></b><span>This is how Sep 16 can acknowledge anything at all. It's one question a day across all concerns. The cough and vomiting clause stays in the sentence above it.</span></div>
+        <div class="frame-cap"><b>5 · For a visit already on record <span class="pill">current</span></b><span>Sep 16 had no Get ready, so it gets one question on the finding's screen. That's at most one question a day across all concerns, and never on Home. It's how Nyx's record reaches §01's third frame.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="What did the vet say, two days after I've called">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">What did the vet say?</div>
+            <div class="screen-sent">About the photo from Sep 22. You called on Sep 23.</div>
+            <div class="choice">Wants to see her <em>Book the visit ›</em></div>
+            <div class="choice">Started a treatment <em>Add it ›</em></div>
+            <div class="choice">Keep watching</div>
+            <div class="choice">Couldn't reach them</div>
+            <div class="links" style="margin-top:10px"><span>Add to your note</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>6 · The follow-up routes into vet visits <span class="pill">current</span></b><span>Asked once, 48 to 72 hours after the call, inside the one-a-day budget. Each answer opens the door it implies: the booking form, or the medication form with its local-first write. That amends EN-14's answer set. No answer reads as "she's fine", and "Keep watching" acknowledges the concern without standing it down.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="The pet's Vet visits list with the call and its note">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Vet visits</div>
+            <div class="mini-label">Coming up</div>
+            <div class="vv-row"><b>Wed Oct 14</b><span>Recheck · vomiting</span></div>
+            <div class="mini-label">Past</div>
+            <div class="vv-row"><b>Wed Sep 23 · call</b><span>About the photo from Sep 22</span><span class="vv-note">Dr. Ruiz says bring her in if she vomits again or stops eating.</span></div>
+            <div class="vv-row"><b>Wed Sep 16 · visit</b><span>Riverside Animal Clinic · Talked about vomiting, coughing</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>7 · Where the note lives <span class="pill">current</span> <span class="pill open">N-1</span></b><span>A call is its own small record, listed beside the visits. It is not a visit, because every reader of <code>vet_visits</code> keeps meaning "a visit that happened" (G3). It shows in History too, and never in a count.</span></div>
       </div>
 
       <div class="option">
-        <div class="option-head"><b>A with a snapshot (Data Scientist, the Designer's rule-change follow-up)</b><span>The rows Get ready showed before a visit are stored and count as acknowledgement, with no question asked. Jordan, Trust &amp; Safety and Dr. Chen object: a row that was displayed is not a row that was discussed.</span></div>
+        <div class="option-head"><b>A with a snapshot (still open under E-2)</b><span>The rows Get ready showed are stored and count as acknowledgement, with nothing asked. Jordan, Trust &amp; Safety and Dr. Chen object: a row that was displayed is not one that was discussed. Frame 3's tick gives most of the snapshot's convenience without that problem.</span></div>
         <div class="frames">
           <div class="frame">
             <div class="phone short" aria-label="Snapshot option: the watched row cites the Get ready list">
@@ -441,7 +633,7 @@
                 <div class="railed watch door"><div class="body"><div class="head"><span class="state">Watching</span>Vomiting</div><div class="sub">On your Get ready list for the Sep 16 visit. 4 episodes since, with something logged every day.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
               </div>
             </div>
-            <div class="frame-cap"><b>What the row can honestly say</b><span>Only that the concern was on a list. It still can't reach Sep 16, which had no Get ready, so Nyx's record still needs the question in the frame beside it.</span></div>
+            <div class="frame-cap"><b>What the row can honestly say</b><span>Only that the concern was on a list, and Sep 16 had no list.</span></div>
           </div>
         </div>
       </div>
@@ -450,43 +642,11 @@
 
   <!-- §04 -->
   <section id="timer">
-    <div class="sec-head"><span class="sec-num">04</span><h2>Week 8, no recheck on record: does it ask again? <span class="pill open">E-3 · decide</span></h2></div>
+    <div class="sec-head"><span class="sec-num">04</span><h2>When a watched concern asks again <span class="pill open">E-3 restated · confirm</span></h2></div>
     <div class="col">
-      <p>Both sides drop the drafted eight-week re-raise of the old ask. Both agree a booked recheck hands the one ask to the appointment strip. The question is what happens when no recheck was set and nothing has changed enough to bring the concern back. Dr. Chen, Sam and Jordan want one question keyed to the vet. The Designer, the Data Scientist and Engineering want no clock at all. There is no recommendation: this is a persona conflict. The counts below are example numbers for an ordinary Nov 11.</p>
+      <p>You said to build it if we can nail it, and otherwise make it secondary. It splits cleanly. The part we can nail keys on the vet's own recheck date, which "How did it go?" already records. The app only repeats a date the owner entered, and the appointment strip already knows how to ask once. That ships with EN-9.</p>
+      <p>The part we can't nail yet is the bare eight-week question when no recheck was set. Nobody can say today how often it would ask a stable cat's owner for nothing. The drafted 1.5× trigger re-raised 64 to 81% of stable cats in simulation. So it becomes a secondary issue that waits for the harness (EN-1 and the synthetic pets) to measure it. Until then, a concern with no recheck stays quiet unless the record moves. The example counts below are for an ordinary Nov 11.</p>
     </div>
-    <div class="side">
-      <div class="option">
-        <div class="option-head"><b>V · One vet-keyed question (Dr. Chen, Sam, Jordan)</b><span>At eight weeks with no recheck recorded, the watched row asks once whether the vet wanted to see her again. It states the count since the visit and never repeats the old ask. The row is a door; the answer is on the screen.</span></div>
-        <div class="frames">
-          <div class="frame">
-            <div class="phone short" aria-label="Option V: the watched vomiting row at week eight asks whether the vet wanted a recheck">
-              <div class="card">
-                <div class="zone-label">Signal</div>
-                <div class="railed watch door"><div class="body"><div class="head"><span class="state">Watching</span>Vomiting</div><div class="sub">You said the vet talked about it on Sep 16. 9 episodes since, with something logged on 53 of 56 days.</div><div class="asktxt">Did your vet want to see her again?</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
-              </div>
-            </div>
-            <div class="frame-cap"><b>Asked once, then quiet again</b><span>This needs a better-than-the-rule brief against the fold spec's DF-5 (no timers). Its protection: a pet who never improves still gets back to the vet.</span></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="option">
-        <div class="option-head"><b>N · No calendar (Designer, Data Scientist, Engineering)</b><span>Only tested record facts bring the concern back. Stale evidence gets its own quiet prompt: no weigh-in, or no logging, since the answer. A timer could only ever say that time passed.</span></div>
-        <div class="frames">
-          <div class="frame">
-            <div class="phone short" aria-label="Option N: the watched vomiting row at week eight with a stale weight prompt">
-              <div class="card">
-                <div class="zone-label">Signal</div>
-                <div class="railed watch door"><div class="body"><div class="head"><span class="state">Watching</span>Vomiting</div><div class="sub">You said the vet talked about it on Sep 16. 9 episodes since, with something logged on 53 of 56 days. No weight logged since Sep 16.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
-              </div>
-            </div>
-            <div class="frame-cap"><b>Quiet until the record moves</b><span>A pet who stays exactly the same stays quiet, however long that lasts. The weight line is the one thing that nudges.</span></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <h3>Both sides agree on these two <span class="pill">current</span></h3>
     <div class="frames">
       <div class="frame">
         <div class="phone short" aria-label="A booked recheck: the appointment strip carries the ask and the watched row defers">
@@ -496,8 +656,19 @@
           </div>
           <div class="strip"><div class="sh">Vet visit · Wed Oct 14 <i>›</i></div><div class="sl">Recheck · vomiting</div><div class="doors"><span>Get ready</span><span>Add a question</span></div></div>
         </div>
-        <div class="frame-cap"><b>A recheck is booked</b><span>The appointment strip holds the one ask, in its own register, with no urgency. The watched row names the date and asks nothing. Reading that date needs the same AC 10 amendment as E-2.</span></div>
+        <div class="frame-cap"><b>A recheck is booked <span class="pill">current · with EN-9</span></b><span>The appointment strip holds the one ask, in its own register, with no urgency. The watched row names the date and asks nothing. The day after, the strip asks "Did Wednesday's visit happen?" as it does today, and "How did it go?" starts the loop again.</span></div>
       </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="No recheck on record at week eight: the watched row stays quiet with a stale weight line">
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed watch door"><div class="body"><div class="head"><span class="state">Watching</span>Vomiting</div><div class="sub">You said the vet talked about it on Sep 16. 9 episodes since, with something logged on 53 of 56 days. No weight logged since Sep 16.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>No recheck on record <span class="pill">current · with EN-9</span></b><span>Quiet until the record moves. The one nudge is stale evidence, like no weigh-in since the visit, which a record can honestly say.</span></div>
+      </div>
+
       <div class="frame">
         <div class="phone short" aria-label="The concern comes back on a tested change">
           <div class="card">
@@ -505,7 +676,22 @@
             <div class="railed door needs-box"><div class="body"><span class="needs-tag">trigger needs EN-9's test (BRK-4)</span><div class="head">Vomiting is coming more often</div><div class="sub">6 in the last 2 weeks, 3 in the 2 before. You said the vet talked about it on Sep 16. <span class="ask-in">Worth a word with your vet</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
           </div>
         </div>
-        <div class="frame-cap"><b>It comes back on a change</b><span>It's raised again, and it moves above the watched rows. The row states the pair of counts its test compared, and keeps the earlier answer as a fact. The drafted 1.5× trigger re-raised 64 to 81% of stable cats in simulation, so the test itself belongs to EN-9.</span></div>
+        <div class="frame-cap"><b>It comes back on a change <span class="pill">current · with EN-9</span></b><span>Raised again, and above the watched rows. It states the pair of counts its test compared and keeps the earlier answer as a fact. The next Get ready leads with it.</span></div>
+      </div>
+
+      <div class="option">
+        <div class="option-head"><b>Secondary · the vet-keyed fallback, after the harness measures it</b><span>At eight weeks with no recheck recorded, the watched row asks once whether the vet wanted to see her again. It states the count and never repeats the old ask. It ships only if EN-1 shows it rarely asks a stable pet's owner for nothing. It needs a better-than-the-rule brief against the fold spec's DF-5 (no timers).</span></div>
+        <div class="frames">
+          <div class="frame">
+            <div class="phone short" aria-label="The secondary fallback: the watched row asks whether the vet wanted a recheck">
+              <div class="card">
+                <div class="zone-label">Signal</div>
+                <div class="railed watch door"><div class="body"><div class="head"><span class="state">Watching</span>Vomiting</div><div class="sub">You said the vet talked about it on Sep 16. 9 episodes since, with something logged on 53 of 56 days.</div><div class="asktxt">Did your vet want to see her again?</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+              </div>
+            </div>
+            <div class="frame-cap"><b>Asked once, then quiet</b><span>The answer opens the booking form (§03, frame 2), so even this lands in vet visits.</span></div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -514,7 +700,7 @@
   <section id="read">
     <div class="sec-head"><span class="sec-num">05</span><h2>The Sep 4 read, stored and new</h2></div>
     <div class="col">
-      <p>The strategy page's "after" frame showed the stored Sep 4 read turning into a calm one. No change in the plan does that. A stored read keeps its verdict, a recompute never lowers a tier the owner was shown, and a false sentence already stored gets a dated correction beside it, never a silent rewrite (R-3). The second frame is a vomit like Sep 4's logged after EN-0 and EN-3. It's a placeholder for round 2, which draws the tiers on every surface.</p>
+      <p>The strategy page's "after" frame showed the stored Sep 4 read turning into a calm one. No change in the plan does that. A stored read keeps its verdict, a recompute never lowers a tier the owner was shown, and a false sentence already stored gets a dated correction beside it, never a silent rewrite (R-3). The second frame is a vomit like Sep 4's logged after EN-0 and EN-3. It's a placeholder for round 3, which draws the tiers on every surface.</p>
     </div>
     <div class="frames">
       <div class="frame">
@@ -533,7 +719,7 @@
       <div class="frame">
         <div class="phone short" aria-label="A vomit like September 4's logged after the change">
           <div class="screen-head needs-box">
-            <span class="needs-tag">round 2 · sign-to-tier table · CUL-583</span>
+            <span class="needs-tag">round 3 · sign-to-tier table · CUL-583</span>
             <div class="back">‹</div>
             <div class="mini-label" style="margin-top:0">A vomit like Sep 4's, logged after the change</div>
             <span class="read-pill watchfor">Keep an eye out</span>
@@ -549,51 +735,58 @@
 
   <!-- §06 -->
   <section id="decide">
-    <div class="sec-head"><span class="sec-num">06</span><h2>The three rulings this round is for</h2></div>
-    <div class="col"><p>Rule on CUL-1146 by letter, for example "E-2 A restated, E-3 V, TD-4 D". The full briefs are in <a href="https://github.com/danieljmarkii/project-nyx/blob/main/docs/engines-v3-critique-2026-09.md">the critique</a>.</p></div>
+    <div class="sec-head"><span class="sec-num">06</span><h2>What's ruled, and the four calls left</h2></div>
+    <div class="col"><p><b>Ruled 2026-09-26:</b> TD-4 D. Owners answer one tap away, on the finding's screen, and Home keeps its three write classes. Rule the rest on CUL-1146, for example "E-2 A, E-3 as restated, N-1 A, AC 10 amend".</p></div>
     <div class="briefs">
       <div class="brief">
-        <h4>E-2 · What makes Home stop asking <span class="pill open">§01 · §03</span></h4>
+        <h4>E-2 · What makes Home stop asking <span class="pill open">confirm · §03</span></h4>
         <p><b>Deciding:</b> what acknowledges a concern, given that no visit records what it covered.</p>
         <ul>
-          <li><b>A restated (recommended):</b> the owner's answer, per sign, in "How did it go?" or once on the finding's screen for a past visit. <i>Why:</i> only the owner knows, and no visit enters a count.</li>
-          <li><b>A with a snapshot:</b> also count the Get ready rows a visit displayed (dissent above).</li>
+          <li><b>A restated (recommended):</b> the owner's answer, per sign: a tick in the room, "How did it go?", or one question for a past visit. <i>Why:</i> only the owner knows what was discussed, and it's the loop you asked for.</li>
+          <li><b>A with a snapshot:</b> also count the Get ready rows a visit displayed (dissent in §03).</li>
           <li><b>C:</b> the "My vet knows" tap only.</li>
         </ul>
-        <p><b>Consequence:</b> unblocks EN-9's spec. It needs an AC 10 brief: the engine's shell may read owner-entered facts. At GA, Nyx's Home looks like §01's middle frame until the owner answers.</p>
+        <p><b>Consequence:</b> unblocks EN-9's spec on a buildable source.</p>
       </div>
       <div class="brief">
-        <h4>E-3 · A calendar question when no recheck is set <span class="pill open">§04</span></h4>
-        <p><b>Deciding:</b> whether a watched concern with no recheck on record ever asks again on a calendar.</p>
-        <div class="conflict">
-          <p><b>Dr. Chen, Sam, Jordan:</b> V, one "Did your vet want to see her again?" at eight weeks, stating the count.</p>
-          <p><b>Designer, Data Scientist, Engineering:</b> N, no clock; only tested record facts and stale-evidence prompts.</p>
-          <p><b>PM decision needed:</b> does a calendar question exist when no recheck is recorded?</p>
-        </div>
-        <p><b>Consequence:</b> either way the drafted re-raise of the old ask is dropped. V needs a better-than-the-rule brief against DF-5.</p>
+        <h4>E-3 restated · Recheck-keyed now, calendar later <span class="pill open">confirm · §04</span></h4>
+        <p><b>Deciding:</b> how your "nail it or make it secondary" lands.</p>
+        <ul>
+          <li><b>As restated (recommended):</b> the vet's recheck date defers the concern to the appointment strip, with EN-9. The bare eight-week question becomes a secondary issue gated on EN-1's measurement. <i>Why:</i> the first repeats a date the owner entered, and the second has a measured noise problem.</li>
+          <li><b>Both now:</b> ship the fallback with EN-9, unmeasured.</li>
+          <li><b>Neither:</b> no recheck link either.</li>
+        </ul>
+        <p><b>Consequence:</b> drops the drafted eight-week re-raise of the old ask, and files the fallback as its own Low issue.</p>
       </div>
       <div class="brief">
-        <h4>TD-4 · Where the answer lives <span class="pill open">§02</span></h4>
-        <p><b>Deciding:</b> whether Home gains a fourth write class for answers to its asks.</p>
-        <div class="conflict">
-          <p><b>Jordan:</b> J, "I've called · Not yet" on the Home row, one tap, through a Tier-2 amendment.</p>
-          <p><b>Designer:</b> D, the card face stays a door; answers on the Signal and incident screens and in "How did it go?".</p>
-          <p><b>PM decision needed:</b> amend Home's write classes, or keep answers one tap away.</p>
-        </div>
-        <p><b>Consequence:</b> J adds a guarded write class and six controls to a sick day's Home. D leaves the answer unasked for owners who never open a screen. Either way the Home row after an answer looks the same.</p>
+        <h4>N-1 · Where a call's note lives <span class="pill open">decide · §02 · §03</span></h4>
+        <p><b>Deciding:</b> the home for an owner's note about a call to the vet.</p>
+        <ul>
+          <li><b>A, in Vet visits (recommended):</b> a call is its own small record, listed beside the visits and in History, with the note on it. <i>Why:</i> it's where an owner looks for "what did the vet say", it keeps <code>vet_visits</code> meaning a visit, and it's the connectivity you asked for.</li>
+          <li><b>B, on the finding's screen only:</b> no new record, and the note is lost once the concern stands down.</li>
+          <li><b>C, no notes on calls:</b> words only in a full visit's "How did it go?".</li>
+        </ul>
+        <p><b>Consequence:</b> A adds one small table, with RLS, the wipe list, export and deletion (R-5), in EN-14's schema PR. The note is never read by a model and never counted.</p>
+      </div>
+      <div class="brief">
+        <h4>AC 10 · Better than the rule <span class="pill open">decide · §03</span></h4>
+        <p><b>The rule:</b> AC 10 in the vet visits spec (2026-09-10) says a visit is provenance, never a source of numbers, and a guard pins which files may read the visit tables. It protects every count from a visit silently becoming data.</p>
+        <p><b>The better thing:</b> let the engine's shell, never <code>detection.ts</code>, read owner answers ("Talked about it", "I've called") and appointment dates, to set the care state. No visit enters a count, a floor or a window.</p>
+        <p><b>Does the protection hold?</b> Yes. Nothing numeric crosses, and the guard gains the shell as one named reader.</p>
+        <p><b>Recommend:</b> amend it, as a Tier-2 edit to the vet visits spec in EN-9's PR. Without it the loop can't close.</p>
       </div>
     </div>
 
-    <h3>What round 2 draws, after these rulings</h3>
+    <h3>What round 3 draws, after these</h3>
     <ol class="next-list">
-      <li>EN-9's care states from day 30 of a GI trial (PMD-4): raised, acknowledged, watching and raised again, plus the zero case with its coverage condition, no weight, a dog, offline, and flag-off with a state already written. Each state's spoken label goes in an accessibility section in the fold spec's §7 shape.</li>
-      <li>EN-3's four tiers on every surface that shows a read: the record, the incident screen, the gallery tiles, History and the month. One word map feeds every visible and spoken frame.</li>
-      <li>The watched row's final register (rail, state tag, where its ask survives), checked against Ask and the cross-pet banner, which read the same safety finding.</li>
+      <li>EN-9's care states from day 30 of a GI trial: raised, watching, raised again, plus the zero case with its coverage condition, no weight, a dog, offline, and flag-off with a state already written. Each state's spoken label goes in an accessibility section in the fold spec's §7 shape.</li>
+      <li>EN-3's four tiers on every surface that shows a read: the record, the incident screen, the gallery tiles, History and the month.</li>
+      <li>The call record in History and on the vet report's side of the line. The report carries dated facts only, never a tap, a note or a care state.</li>
     </ol>
   </section>
 
   <footer>
-    <span>Round 1 of one page; round 2 replaces these frames at the same URL.</span>
+    <span>Round 2 of one page. Round 1 is in git at e6fb38f; round 3 replaces these frames at the same URL.</span>
     <a href="https://linear.app/projectnyx/issue/CUL-1288">CUL-1288</a>
     <a href="https://linear.app/projectnyx/issue/CUL-1146">CUL-1146 rulings</a>
     <a href="https://github.com/danieljmarkii/project-nyx/blob/main/docs/engines-v3-critique-2026-09.md">The critique</a>

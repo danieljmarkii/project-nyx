@@ -48,3 +48,30 @@ A ledger at the top maps each critique finding to what moved on the page. Every 
 ## Next
 
 The PM reacts to round 1 and rules E-2, E-3 and TD-4 on CUL-1146. Round 2 then draws EN-9's care states from day 30 of a GI trial and EN-3's tiers on every surface, republished to the same URL.
+
+## Round 2, the same session (the PM's reactions)
+
+The PM reacted to round 1:
+- **TD-4:** "I like this being one tap away. That way we keep 'home' clean and less text heavy." This is a ruling, D.
+- **Notes:** "What happens after selecting 'I called'… should we allow a pet owner to add notes? If so, where should those notes live?"
+- **E-3:** "If we think we can nail this experience, let's do it. Otherwise, let's make this a secondary priority."
+- **Connectivity:** "Let's ensure that there's tight feature connectivity between this revamped signal engine and the vet visit feature."
+
+Round 2 republished to the same URL as one proposal. J left the page; round 1 stays in git at e6fb38f.
+- **§02:** the answer on the finding's screen. After "I've called" the screen confirms, offers an optional note (written after the save, never read by a model) and Undo. Home gains one dated line.
+- **§03 (new), the Signal and vet visits as one loop.** A diagram marks which links are new and which ship today. It draws the AC 10 line: doors go down, only owner answers and dates come up. Seven frames:
+  - the finding's "Book a visit" door into the shipped booking form;
+  - Worth raising rows tickable "At the vet" (a tick records an answer, so it stays option A);
+  - "How did it go?" pre-filled from the ticks, with the recheck row giving the watched row its date;
+  - the one question for a past visit;
+  - the "What did the vet say?" follow-up, whose answers open the booking or medication form (amends EN-14's answer set; "Nothing needed" dropped as a reassurance about the pet);
+  - the pet's Vet visits list holding the call and its note.
+  - The snapshot variant stays in an option box.
+- **§04, E-3 restated:** the recheck-keyed part ships with EN-9. The eight-week fallback becomes a secondary box and a Low issue, CUL-1290, blocked by EN-1 and EN-9.
+- **§06:** TD-4 recorded as ruled. Four briefs: E-2 (confirm A restated), E-3 as restated (confirm), N-1 (where a call's note lives; recommend A, a small call record in Vet visits), and AC 10 (a better-than-the-rule brief; recommend amending so the engine's shell reads owner answers and appointment dates, with no visit in any count).
+
+**Linear:**
+- CUL-1146 records the TD-4 ruling and the four open calls.
+- Comments on CUL-1288, CUL-1144 (the note, the answer set) and CUL-1139 (what EN-9 inherits).
+- Filed CUL-1290.
+- The project description gains the connectivity guardrail.
