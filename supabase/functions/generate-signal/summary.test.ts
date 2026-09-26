@@ -458,6 +458,20 @@ Deno.test('validateSummary — rejects reassurance (incl. on absence)', () => {
   assert.equal(validateSummary('Everything looks fine for Pixel. Keep logging for Pixel.', p), false)
 })
 
+Deno.test('validateSummary — rejects delegation and treatment attribution (CUL-1271)', () => {
+  // Two sentences each (the summary's sentence floor) with "vet" present, so neither the
+  // sentence count nor the vet-routing check is what rejects them — the shared arms must be.
+  const q = quietPacket()
+  const s = safetyPacket()
+  for (const p of [q, s]) {
+    assert.equal(validateSummary("Pixel's vomiting is in the vet's hands now. Keep logging for Pixel and the vet.", p), false)
+    assert.equal(validateSummary('Your vet has it covered. Keep logging for Pixel and the vet.', p), false)
+    assert.equal(validateSummary('There is nothing more to do for Pixel. Keep logging for the vet.', p), false)
+    assert.equal(validateSummary("The prednisone is working for Pixel. Keep logging for the vet.", p), false)
+    assert.equal(validateSummary("Pixel's cough has settled since the prednisone started. Keep logging for the vet.", p), false)
+  }
+})
+
 Deno.test('validateSummary — rejects preference framing', () => {
   const p = quietPacket()
   assert.equal(validateSummary('Chicken is clearly Pixel\'s favourite this month. Keep logging for Pixel.', p), false)
