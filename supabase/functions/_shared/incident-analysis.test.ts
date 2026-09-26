@@ -19,6 +19,8 @@ import {
   selectReadText,
   buildAnalysisWriteBack,
   buildFailureWrite,
+  isRealAnalysis,
+  selectDescription,
   analysisRowMatchesEvent,
   updateAnalysisRow,
   applyAnalysisWriteBack,
@@ -28,6 +30,7 @@ import {
   sanitizeEnumArray,
   type IncidentCopy,
   type AnalysisReadFields,
+  type Recommendation,
 } from './incident-analysis.ts'
 
 // ── fetchUsableImageBlob — the transform-only opt-in (B-228 A8, §6.2.4 / AC-13) ─────
@@ -427,6 +430,72 @@ Deno.test('buildFailureWrite — an UNREADABLE row fails closed: write nothing r
     buildFailureWrite({ ...FAILURE_BASE, existing: { recommendation: 'monitor' }, existingReadFailed: true }).mode,
     'skip',
   )
+})
+
+// ── A verdict this code does not know yet (CUL-1277) ──────────────────────────
+// EN-3 (CUL-1133) will write verdicts the shipped code cannot name, and a flag rolled
+// back leaves them in the record for THIS code to meet. Every guard that PROTECTS an
+// escalation already in the record asks the shared quiet list (lib/incidentVerdict.ts),
+// so the unknown value is protected exactly like worth_a_call. The two gates that
+// RELEASE the model's own words stay on the literal (Pattern 10), and are pinned here
+// too, so nobody moves them onto the list by symmetry. `call_now` is the fixture because
+// it is the likeliest real name; `a_verdict_from_the_future` because it can never be one.
+
+const UNKNOWN_VERDICTS = ['call_now', 'a_verdict_from_the_future'] as const
+
+Deno.test('CUL-1277 buildFailureWrite — an unknown verdict in the record survives a failed re-read (the CUL-812 shape)', () => {
+  for (const verdict of UNKNOWN_VERDICTS) {
+    const write = buildFailureWrite({ ...FAILURE_BASE, existing: { recommendation: verdict } })
+    assertStrictEquals(write.mode, 'error-only', verdict)
+    assertEquals(write.mode === 'error-only' ? Object.keys(write.values) : [], ['error'])
+  }
+})
+
+Deno.test('CUL-1277 isRealAnalysis — a failed or pending row holding an unknown verdict is never buried by a cap', () => {
+  for (const verdict of UNKNOWN_VERDICTS) {
+    assertStrictEquals(isRealAnalysis({ status: 'failed', recommendation: verdict }), true, verdict)
+    assertStrictEquals(isRealAnalysis({ status: 'pending', recommendation: verdict }), true, verdict)
+  }
+  // The shipped shape, unchanged: the literal escalation, and the status half.
+  assertStrictEquals(isRealAnalysis({ status: 'failed', recommendation: 'worth_a_call' }), true)
+  assertStrictEquals(isRealAnalysis({ status: 'completed', recommendation: 'monitor' }), true)
+  assertStrictEquals(isRealAnalysis({ status: 'uncertain', recommendation: 'not_enough_to_say' }), true)
+  // A quiet verdict on a failed or pending row is NOT protected: nothing a cap band buries.
+  assertStrictEquals(isRealAnalysis({ status: 'failed', recommendation: 'monitor' }), false)
+  assertStrictEquals(isRealAnalysis({ status: 'failed', recommendation: 'not_enough_to_say' }), false)
+  assertStrictEquals(isRealAnalysis({ status: 'pending', recommendation: null }), false)
+  assertStrictEquals(isRealAnalysis(null), false)
+})
+
+Deno.test('CUL-1277 shouldCollapsePartialRead — an unknown verdict on a partial read is never collapsed', () => {
+  for (const verdict of UNKNOWN_VERDICTS) {
+    assertStrictEquals(shouldCollapsePartialRead({ usableCount: 1, totalCount: 2, recommendation: verdict }), false, verdict)
+  }
+})
+
+Deno.test('CUL-1277 the free-text gates stay on the literal: an unknown verdict never releases model words (Pattern 10)', () => {
+  const copy: IncidentCopy = {
+    contextual: () => 'CONTEXTUAL',
+    photoUnreadable: () => 'UNREADABLE',
+    monitor: () => 'MONITOR',
+    visualFlagFallback: () => 'VISUAL',
+    noFlag: () => 'NOFLAG',
+  }
+  for (const verdict of UNKNOWN_VERDICTS) {
+    // The cast is the point: these gates are typed to the shipped three, and a value
+    // outside them must still take a deterministic template, never the model's prose.
+    const recommendation = verdict as unknown as Recommendation
+    const readText = selectReadText(copy, {
+      petName: 'Rex', recommendation, contextualFlags: [], visualFlags: [],
+      modelReadText: 'MODEL PROSE', photoUnreadable: false, hasPhoto: true,
+    })
+    assertStrictEquals(readText === 'MODEL PROSE', false, verdict)
+    assertStrictEquals(
+      selectDescription({ modelDescription: 'MODEL PROSE', recommendation, contextualFlags: [], photoUnreadable: false }),
+      null,
+      verdict,
+    )
+  }
 })
 
 // ── Whose row is it (CUL-1203) ────────────────────────────────────────────────

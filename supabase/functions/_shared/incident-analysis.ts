@@ -46,6 +46,11 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { fetchWithTimeout } from './http.ts'
+// The ONE quiet-verdict list, shared with the phone (CUL-1277). Every guard below that
+// protects an escalation already in the RECORD reads it, so a verdict a later rule wrote
+// (EN-3's tiers, a flag rolled back) is protected like `worth_a_call`. The free-text gates
+// (Pattern 10) deliberately do NOT: see `selectReadText`.
+import { isEscalationVerdict, isQuietVerdict } from '../../../lib/incidentVerdict.ts'
 
 export type { SupabaseClient }
 
@@ -129,16 +134,21 @@ export function applyEscalationFloor(params: {
 // contextual flag computed from the record) is NEVER collapsed: presence always
 // escalates (Pattern 2). The caller relies on the floor running FIRST, so every such
 // escalation is already `worth_a_call` before this guard inspects the verdict.
+// ONLY A QUIET VERDICT COLLAPSES (CUL-1277): the question is "is this benign enough that an
+// unseen frame could hide the flag?", so it asks the quiet list rather than excusing the
+// one literal escalation. A verdict the floor learns to emit later (EN-3) is never
+// collapsed until someone decides it is quiet.
 // usable === 0 is the fully-unreadable case (photoUnreadable), handled separately,
 // not here. Pure + exported so this count boundary is unit-tested rather than
 // asserted inline in the un-tested pipeline.
 export function shouldCollapsePartialRead(params: {
   usableCount: number
   totalCount: number
-  recommendation: Recommendation
+  // Text, so the guard is testable (and safe) over a verdict this code cannot name.
+  recommendation: string
 }): boolean {
   const partial = params.usableCount > 0 && params.usableCount < params.totalCount
-  return partial && params.recommendation !== 'worth_a_call'
+  return partial && isQuietVerdict(params.recommendation)
 }
 
 // ── Read-text selection (B-060 — the mechanism, framework-owned) ──────────────
@@ -151,6 +161,14 @@ export function shouldCollapsePartialRead(params: {
 // denylist was tried and rejected: it missed ~86% of plausible model
 // reassurance phrasings — adversarial review 2026-06-24. The guarantee is
 // structural, not lexical.)
+//
+// THE LITERAL STAYS HERE, ON PURPOSE (CUL-1277). The escalation guards in this file
+// ask the shared quiet list (`isEscalationVerdict`), because they PROTECT a verdict
+// already in the record and must fail toward keeping it. This gate and
+// `selectDescription` below do the opposite job: they RELEASE the model's own words,
+// so they must fail toward withholding them (Pattern 10). On "not quiet", a verdict
+// nobody has defined yet would carry model prose. A new escalating value earns free
+// text only when its own change (EN-3) says so, here, in words.
 
 export interface IncidentCopy<TFlag extends string = string> {
   // Floor escalated on CONTEXT — names the contextual reason (highest-acuity
@@ -374,10 +392,13 @@ export async function applyAnalysisWriteBack(
 // only hidden behind the retry frame until the read succeeds. Widening on
 // edited_at would re-admit the stale-benign-read hazard above for no data gain.
 //
-// The client half of this rule is `escalationSurvivesFailure` in lib/analysis.ts
-// — defence in depth, and the half that reaches owners first (this function's
-// deploy rides the held CUL-557 chain, and it cannot repair rows already flipped).
-// The two must move together.
+// The client half of this rule is `escalationSurvivesFailure` in
+// lib/incidentReadState.ts — defence in depth, and the half that can repair rows
+// already flipped. The two must move together, and since CUL-1277 they cannot drift:
+// both ask `isEscalationVerdict` (lib/incidentVerdict.ts), so ANY verdict off the quiet
+// list survives, not only the literal. A row holding a verdict a later rule wrote
+// (EN-3's `call_now`, then a flag rollback to this code) is an escalation the record
+// already earned; this function must not flip it to 'failed' because it cannot name it.
 
 export type FailureWrite =
   | { mode: 'upsert'; values: Record<string, unknown> }
@@ -405,7 +426,7 @@ export function buildFailureWrite(params: {
   // guard exists to stop, so write nothing: the row keeps whatever it holds.
   if (params.existingReadFailed) return { mode: 'skip' }
 
-  if (params.existing?.recommendation === 'worth_a_call') {
+  if (isEscalationVerdict(params.existing?.recommendation)) {
     // Record the error alongside for observability; leave status, recommendation
     // and read_text exactly as the record earned them. A later successful read
     // clears `error` via readFields (error: null).
@@ -422,6 +443,23 @@ export function buildFailureWrite(params: {
       error: params.message,
     },
   }
+}
+
+// ── Is the existing row a real analysis? (the cap path's never-bury guard) ─────
+// A row holding an escalation is a real analysis whatever its STATUS says (CUL-812):
+// the pre-guard failure write flipped only status + error, so a 'failed' row can still
+// carry the escalation a previous read earned, and the client renders it as one. The
+// cap / disabled branch of runIncidentAnalysis reads this to decide whether a cap STATE
+// may be written; without the escalation clause it would write 'capped' over a live
+// "Worth a call". ANY escalation, not the literal (CUL-1277): a verdict a later rule wrote
+// (EN-3's tiers, then a flag rollback) is protected the same way. Pure + exported so the
+// clause is tested rather than asserted inline in the untested pipeline.
+export function isRealAnalysis(
+  existing: { status?: string | null; recommendation?: string | null } | null | undefined,
+): boolean {
+  if (!existing) return false
+  if (existing.status !== 'pending' && existing.status !== 'failed') return true
+  return isEscalationVerdict(existing.recommendation)
 }
 
 // ── Cap + flag gate (Monetization Track 2, T2-3 / B-329 + B-001) ──────────────
@@ -879,18 +917,9 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       )
     }
     const humanEdited = !!existing?.edited_at
-    // A row holding a `worth_a_call` is a real analysis whatever its STATUS says
-    // (CUL-812). A 'failed' row can still carry the escalation a previous read
-    // earned — the pre-guard failure write flipped only status + error, and the
-    // client now renders those rows as the escalations they are. Without this
-    // clause the cap / disabled branch below treats them as "nothing to protect"
-    // and writes 'capped' over one, which the client checks BEFORE the card: the
-    // owner taps re-run on a live "Worth a call" and watches it become a cap band.
-    const existingRealAnalysis =
-      !!existing && (
-        (existing.status !== 'pending' && existing.status !== 'failed') ||
-        existing.recommendation === 'worth_a_call'
-      )
+    // A row holding an escalation is a real analysis whatever its STATUS says
+    // (CUL-812; any escalation since CUL-1277) — `isRealAnalysis` carries the why.
+    const existingRealAnalysis = isRealAnalysis(existing)
 
     // 4. Flag + cap gate (§5.4 step 3) — immediately before the vision call, AFTER
     //    the escalation-flag computation above. The cap/flag gate the MODEL CALL, so
