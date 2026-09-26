@@ -1814,6 +1814,13 @@ export interface DietSummary {
     firstDate: string | null
     lastDate: string | null
     /**
+     * The last local day this food's intake was RECORDED (CUL-1274), null when never. Beside
+     * `lastDate` it says whether the ratings are current: rating lapses, so on a real record
+     * seven "ate it all" taps from the trial's first week can sit under three more weeks of
+     * the same food fed unrated, and page 1 printed them as if they described today.
+     */
+    lastRatedDate: string | null
+    /**
      * EVERY rating this food was given, with its count — not the mode (B-532).
      *
      * The mode field this note was written against is GONE (CUL-497); the warning is why.
@@ -3856,6 +3863,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       count: number
       firstDate: string | null
       lastDate: string | null
+      lastRatedDate: string | null
       intakes: IntakeRating[]
       proteinSet: ProteinSetView
     }
@@ -3881,7 +3889,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       g.count++
       if (dayKey && (g.firstDate === null || dayKey < g.firstDate)) g.firstDate = dayKey
       if (dayKey && (g.lastDate === null || dayKey > g.lastDate)) g.lastDate = dayKey
-      if (m.intakeRating != null) g.intakes.push(m.intakeRating)
+      if (m.intakeRating != null) {
+        g.intakes.push(m.intakeRating)
+        if (dayKey && (g.lastRatedDate === null || dayKey > g.lastRatedDate)) g.lastRatedDate = dayKey
+      }
     } else {
       mealGroups.set(key, {
         foodLabel: mealFoodLabel(m),
@@ -3898,6 +3909,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         count: 1,
         firstDate: dayKey,
         lastDate: dayKey,
+        lastRatedDate: m.intakeRating != null ? dayKey : null,
         // Ratings only: an unrated meal is counted above and adds nothing here, so the
         // breakdown never reads a missing rating as a rating (CUL-1274, CUL-1118).
         intakes: m.intakeRating != null ? [m.intakeRating] : [],
@@ -3926,6 +3938,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       count: g.count,
       firstDate: g.firstDate,
       lastDate: g.lastDate,
+      lastRatedDate: g.lastRatedDate,
       intakeBreakdown: intakeBreakdownOf(g.intakes),
       proteinSet: g.proteinSet,
     }))

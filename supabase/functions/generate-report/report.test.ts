@@ -4341,6 +4341,8 @@ Deno.test('CUL-1274 — mealItems groups every logged meal, rated or not; mealCo
   // The date span is the food's meals, rated or not; the one rating was on Jun 12.
   assert.deepEqual([items[0].firstDate, items[0].lastDate], ['2026-06-10', '2026-06-15'])
   assert.deepEqual([items[1].firstDate, items[1].lastDate], ['2026-06-16', '2026-06-17'], 'a never-rated food keeps its dates')
+  assert.equal(items[0].lastRatedDate, '2026-06-12', 'the last day intake was recorded, not the last day fed')
+  assert.equal(items[1].lastRatedDate, null, 'never rated')
   assert.deepEqual(items[1].intakeBreakdown, [], 'an unrated meal adds nothing to the breakdown')
   assert.equal(items.reduce((a, i) => a + i.count, 0), 8, 'meals logged; the treat is not one')
   const ratedInItems = items.reduce((a, i) => a + i.intakeBreakdown.reduce((b, x) => b + x.count, 0), 0)
@@ -4352,7 +4354,7 @@ Deno.test('CUL-1274 — mealItems groups every logged meal, rated or not; mealCo
   // protein panel a vet scans for overlap.
   const html = renderReport(snap)
   const t = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ')
-  assert.ok(/8 meals logged, intake not recorded for 7; recorded for 1 meal of Wet Chicken \(Wet\): "refused" ×1, 0 of 1 fully eaten \(owner-observed\)/.test(t.replace(/&ldquo;|&rdquo;/g, '"').replace(/&times;/g, '×')), 'page 1 states both numbers, and whose rating it is')
+  assert.ok(/8 meals logged, intake not recorded for 7; recorded for 1 of the 6 meals of Wet Chicken \(Wet\), the last on Jun 12: "refused" ×1, 0 of 1 fully eaten \(owner-observed\)/.test(t.replace(/&ldquo;|&rdquo;/g, '"').replace(/&times;/g, '×')), 'page 1 states both numbers, and whose rating it is')
   assert.ok(/8 logged meals across 2 foods/.test(t), 'appendix B and E count the same 8')
   assert.ok(/Wet Duck \(Wet\) \(fed as meals\)/.test(t), 'the never-rated food is in the protein panel')
 })

@@ -6087,7 +6087,11 @@ function dietMeds(snap: ReportSnapshot): string {
     const mc = d.mealCompletion
     const shape = mealIntakeShape(d)
     const pointer = `Meals are ${mealsAppendixPointer(snap)}.`
-    const excludedParts = [d.treats.count > 0 ? 'treats' : null, isFreeFed ? 'free-fed food' : null].filter(
+    // A treat-format food logged as a meal is in both counts (CUL-1322 item 8), so only the
+    // treats NOT among the meals are excluded from them.
+    const treatsOutsideMeals =
+      d.treats.count - d.mealItems.filter((i) => i.format === 'treat').reduce((a, i) => a + i.count, 0)
+    const excludedParts = [treatsOutsideMeals > 0 ? 'treats' : null, isFreeFed ? 'free-fed food' : null].filter(
       (x): x is string => x !== null,
     )
     const excluded = excludedParts.length > 0 ? `; ${excludedParts.join(' and ')} excluded` : ''
@@ -6718,17 +6722,57 @@ function mealFoodName(item: DietSummary['mealItems'][number]): string {
 
 const RATING_ORDER: readonly string[] = ['all', 'most', 'some', 'picked', 'refused']
 
+/** A rating below "ate most": the ratings appendix E bolds, and the ones page 1 must never lose. */
+function isBelowBaseline(rating: string): boolean {
+  return rating !== 'all' && rating !== 'most'
+}
+
 /**
- * Each rated food's OWN ratings, named, when more than one food carries any (CUL-1274). Ordered
- * by how many ratings each food carries, the order that keeps ratings beside their food, where
- * ranking by meals logged let a staple's name stand over a topper's ratings. Three foods by
- * name; any further ones pool as "N other foods" with every rating kept, never dropped.
+ * The day this food's intake was last recorded, when the food went on being logged after it
+ * (CUL-1274, cold read). Rating lapses, so a first week of "ate it all" can sit under three
+ * more weeks of the same food fed unrated, and undated it read as describing today. A DATE,
+ * record-anchored and free (C-19); the window's counts stay the window's. Day keys are fixed
+ * width, so the comparison is chronological (C-40's safe half).
+ */
+function staleRatingBit(item: DietSummary['mealItems'][number]): string {
+  const stale = item.lastRatedDate !== null && item.lastDate !== null && item.lastRatedDate < item.lastDate
+  return stale ? `, the last on ${h(fmtDay(item.lastRatedDate))}` : ''
+}
+
+/** One food named with its own denominator: "recorded for 7 of the 60 meals of X, the last on Jun 8". */
+function recordedOf(item: DietSummary['mealItems'][number]): string {
+  const rated = ratedCountOf(item)
+  const share =
+    rated === item.count
+      ? item.count === 1
+        ? 'the 1 meal'
+        : `all ${num(item.count)} meals`
+      : `${num(rated)} of the ${num(item.count)} meals`
+  return `${share} of ${mealFoodName(item)}${staleRatingBit(item)}`
+}
+
+/**
+ * Each rated food's OWN ratings, named, when more than one food carries any (CUL-1274).
+ * A food with a rating below "ate most" is named first, then by how many ratings each food
+ * carries: ranking by meals logged let a staple's name stand over a topper's ratings, and
+ * ranking by ratings alone could send the one refusing food into the anonymous tail. Three
+ * foods by name; any further ones pool as "N other foods" with every rating kept.
  */
 function recordedByFood(rated: DietSummary['mealItems']): string {
+  const declines = (i: DietSummary['mealItems'][number]): number =>
+    i.intakeBreakdown.some((b) => isBelowBaseline(b.rating)) ? 1 : 0
   const sorted = [...rated].sort(
-    (a, b) => ratedCountOf(b) - ratedCountOf(a) || (a.foodLabel ?? '').localeCompare(b.foodLabel ?? ''),
+    (a, b) =>
+      declines(b) - declines(a) ||
+      ratedCountOf(b) - ratedCountOf(a) ||
+      (a.foodLabel ?? '').localeCompare(b.foodLabel ?? ''),
   )
-  const parts = sorted.slice(0, 3).map((i) => `${mealFoodName(i)} ${intakeRatingList(i.intakeBreakdown)}`)
+  const parts = sorted
+    .slice(0, 3)
+    .map(
+      (i) =>
+        `${mealFoodName(i)} (${num(ratedCountOf(i))} of ${num(i.count)}${staleRatingBit(i)}): ${intakeRatingList(i.intakeBreakdown)}`,
+    )
   const rest = sorted.slice(3)
   if (rest.length > 0) {
     const pooled = new Map<DietSummary['mealItems'][number]['intakeBreakdown'][number]['rating'], number>()
@@ -6737,7 +6781,11 @@ function recordedByFood(rated: DietSummary['mealItems']): string {
     const breakdown = [...pooled.entries()]
       .sort((a, b) => rank(a[0]) - rank(b[0]))
       .map(([rating, count]) => ({ rating, count }))
-    parts.push(`${num(rest.length)} other food${rest.length === 1 ? '' : 's'} ${intakeRatingList(breakdown)}`)
+    const restRated = rest.reduce((a, i) => a + ratedCountOf(i), 0)
+    const restLogged = rest.reduce((a, i) => a + i.count, 0)
+    parts.push(
+      `${num(rest.length)} other food${rest.length === 1 ? '' : 's'} (${num(restRated)} of ${num(restLogged)}): ${intakeRatingList(breakdown)}`,
+    )
   }
   return parts.join('; ')
 }
@@ -6776,9 +6824,9 @@ function mealIntakeShape(
   return {
     kind: 'single',
     head,
-    single: `recorded for ${num(rated)} meal${rated === 1 ? '' : 's'} of ${mealFoodName(food)}: ${intakeRatingList(
-      food.intakeBreakdown,
-    )}, ${num(finished)} of ${num(rated)} fully eaten`,
+    single: `recorded for ${recordedOf(food)}: ${intakeRatingList(food.intakeBreakdown)}, ${num(finished)} of ${num(
+      rated,
+    )} fully eaten`,
   }
 }
 
