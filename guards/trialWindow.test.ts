@@ -468,16 +468,44 @@ describe('G1 — no mid-trial route to trial_extend, in any state (CUL-156 §0.1
     // straight to `onExtend()` with no window check of its own, so the entry point
     // IS the gate. A second caller — a mid-trial door being the obvious one — reds
     // this and has to come here and say what it did about the window.
-    const src = blankComments(
-      fs.readFileSync(path.join(REPO_ROOT, 'app/(tabs)/profile.tsx'), 'utf8'),
-    );
-    const callSites = [...src.matchAll(/setCompletionEntry\(\s*['"]decision['"]\s*\)/g)];
-    expect(callSites).toHaveLength(1);
+    //
+    // CUL-1299 (TS-3) MOVED THE STATE, NOT THE RULE. The sheet's state lives in
+    // `hooks/useTrialLifecycle.ts` now, opened through `openCompletion(entry)`, so a
+    // scan of the Pet tab alone would go green the day the trial screen (TS-4) grows
+    // a second opener. The scan is therefore every non-test source under the four
+    // app directories, DERIVED from the repository (C-38), for either spelling of
+    // the literal open. STATED BLIND SPOT (C-38): an opener that passes the entry
+    // through a variable (`openCompletion(step)`) is invisible to a literal scan; the
+    // hook's own `setCompletionEntry(entry)` is that shape, and is why the opener
+    // with the literal is what this counts.
+    const OPEN_DECISION =
+      /(?:setCompletionEntry|openCompletion)\(\s*['"]decision['"]\s*\)/g;
+    const walk = (dir: string, out: string[]): string[] => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const abs = path.join(dir, e.name);
+        if (e.isDirectory()) walk(abs, out);
+        else if (/\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name)) out.push(abs);
+      }
+      return out;
+    };
+    const files = ['app', 'components', 'hooks', 'lib']
+      .flatMap((d) => walk(path.join(REPO_ROOT, d), []));
+    // Non-vacuity: the walk reaches the host and the lifecycle hook it is about.
+    const rels = files.map((f) => path.relative(REPO_ROOT, f));
+    expect(rels).toContain('app/(tabs)/profile.tsx');
+    expect(rels).toContain('hooks/useTrialLifecycle.ts');
+    const callSites = files.flatMap((f) => {
+      const src = blankComments(fs.readFileSync(f, 'utf8'));
+      return [...src.matchAll(OPEN_DECISION)].map((m) => ({
+        rel: path.relative(REPO_ROOT, f),
+        line: src.split('\n')[src.slice(0, m.index).split('\n').length - 1],
+      }));
+    });
+    expect(callSites.map((c) => c.rel)).toEqual(['app/(tabs)/profile.tsx']);
     // …and it is the card's `milestone` action, not something else that grew into
     // the same call. Asserted on the line, because "there is one caller" is only
     // reassuring if it is the caller this rule is about.
-    const line = src.slice(0, callSites[0].index).split('\n').length;
-    expect(src.split('\n')[line - 1]).toMatch(/milestone:/);
+    expect(callSites[0].line).toMatch(/milestone:/);
 
     // The ungated branch this is standing in for. If the sheet ever grows its own
     // window gate, this reds — which is a good outcome and means half (c) can relax.
@@ -577,7 +605,7 @@ describe('G1 — no mid-trial route to trial_extend, in any state (CUL-156 §0.1
 // production rule to check it is a tautology with fixtures.
 //
 // C-35: the ranges below are the caller's, read from the shipped code rather than
-// invented. `handleExtendTrial` (app/(tabs)/profile.tsx:431) passes
+// invented. `handleExtendTrial` (hooks/useTrialLifecycle.ts, moved from the Pet tab by CUL-1299) passes
 // `progress.dayCounter` — `lib/utils.trialDayCounter` is `Math.max(1, …)`, so it is
 // an integer >= 1 and never zero, negative or fractional — alongside the row's
 // `target_duration_days` and `extensionDays(indication)`.
