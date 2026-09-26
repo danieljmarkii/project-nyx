@@ -41,7 +41,7 @@ jest.mock('../../hooks/useDietTrial', () => ({
     input: { trial: { status: 'active', startedAt: '2026-07-25', targetDurationDays: 56 }, nowMs: 0, petName: 'Nyx' },
     isLoading: false,
     reload: jest.fn(),
-    inputIsForActivePet: true,
+    inputIsForPet: true,
   }),
 }));
 jest.mock('../../lib/looks', () => ({ loadLookDays: jest.fn(async () => []), loadVomitLocalDays: jest.fn(async () => []) }));

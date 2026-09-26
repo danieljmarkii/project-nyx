@@ -145,7 +145,7 @@ export default function FoodDetailScreen() {
   // list membership. C2 forbids the two combining into a per-food verdict, and
   // keeping them as two reads with two renderers is how that stays true by
   // construction rather than by discipline.
-  const trialSet = useTrialAllowedSet();
+  const trialSet = useTrialAllowedSet(activePet?.id ?? null);
   // The mid-trial add's confirm sheet (FR-11), reused verbatim from PR 2 — the
   // food is already known here, so this screen skips the picker step and opens
   // the same sheet directly. Null = closed.

@@ -52,6 +52,11 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { fetchWithTimeout } from './http.ts'
+// The ONE quiet-verdict list, shared with the phone (CUL-1277). Every guard below that
+// protects an escalation already in the RECORD reads it, so a verdict a later rule wrote
+// (EN-3's tiers, a flag rolled back) is protected like `worth_a_call`. The free-text gates
+// (Pattern 10) deliberately do NOT: see `selectReadText`.
+import { isEscalationVerdict, isQuietVerdict } from '../../../lib/incidentVerdict.ts'
 
 export type { SupabaseClient }
 
@@ -135,16 +140,21 @@ export function applyEscalationFloor(params: {
 // contextual flag computed from the record) is NEVER collapsed: presence always
 // escalates (Pattern 2). The caller relies on the floor running FIRST, so every such
 // escalation is already `worth_a_call` before this guard inspects the verdict.
+// ONLY A QUIET VERDICT COLLAPSES (CUL-1277): the question is "is this benign enough that an
+// unseen frame could hide the flag?", so it asks the quiet list rather than excusing the
+// one literal escalation. A verdict the floor learns to emit later (EN-3) is never
+// collapsed until someone decides it is quiet.
 // usable === 0 is the fully-unreadable case (photoUnreadable), handled separately,
 // not here. Pure + exported so this count boundary is unit-tested rather than
 // asserted inline in the un-tested pipeline.
 export function shouldCollapsePartialRead(params: {
   usableCount: number
   totalCount: number
-  recommendation: Recommendation
+  // Text, so the guard is testable (and safe) over a verdict this code cannot name.
+  recommendation: string
 }): boolean {
   const partial = params.usableCount > 0 && params.usableCount < params.totalCount
-  return partial && params.recommendation !== 'worth_a_call'
+  return partial && isQuietVerdict(params.recommendation)
 }
 
 // ── Read-text selection (B-060 — the mechanism, framework-owned) ──────────────
@@ -157,6 +167,14 @@ export function shouldCollapsePartialRead(params: {
 // denylist was tried and rejected: it missed ~86% of plausible model
 // reassurance phrasings — adversarial review 2026-06-24. The guarantee is
 // structural, not lexical.)
+//
+// THE LITERAL STAYS HERE, ON PURPOSE (CUL-1277). The escalation guards in this file
+// ask the shared quiet list (`isEscalationVerdict`), because they PROTECT a verdict
+// already in the record and must fail toward keeping it. This gate and
+// `selectDescription` below do the opposite job: they RELEASE the model's own words,
+// so they must fail toward withholding them (Pattern 10). On "not quiet", a verdict
+// nobody has defined yet would carry model prose. A new escalating value earns free
+// text only when its own change (EN-3) says so, here, in words.
 
 export interface IncidentCopy<TFlag extends string = string> {
   // Floor escalated on CONTEXT — names the contextual reason (highest-acuity
@@ -295,6 +313,15 @@ export function existingRowOrThrow<T>(
   return result.data ?? null
 }
 
+// The stored row as the pipeline selects it (readStoredRow): the typed columns every
+// decision reads, plus the descriptor's red-flag columns by name.
+export type StoredRow = Record<string, unknown> & {
+  pet_id?: string | null
+  edited_at?: string | null
+  status?: string | null
+  recommendation?: string | null
+}
+
 // What a re-analysis learns about the row already on file: every field a write
 // decision below switches on, and nothing else.
 export interface StoredAnalysis {
@@ -376,7 +403,9 @@ export function resolveReanalysisWrite<TFlag extends string>(params: {
   readFields: AnalysisReadFields<TFlag>
 }): ReanalysisWrite {
   const { stored, readFields } = params
-  if (stored && stored.recommendation === 'worth_a_call' && readFields.recommendation !== 'worth_a_call') {
+  // The allowlist (CUL-1277): a stored verdict this build does not know is an escalation
+  // too, and is held.
+  if (stored && isEscalationVerdict(stored.recommendation) && !isEscalationVerdict(readFields.recommendation)) {
     const settle = stored.status !== 'completed' && stored.status !== 'uncertain'
     return { mode: 'hold', values: settle ? { status: readFields.status, error: null } : null }
   }
@@ -390,6 +419,77 @@ export function resolveReanalysisWrite<TFlag extends string>(params: {
     structuredValues: params.structuredValues,
     readFields,
   })
+}
+
+// ── Whose row is it (CUL-1203) ────────────────────────────────────────────────
+//
+// The analysis row is looked up by event_id, and before CUL-1203 nothing tied a
+// row's event_id to its pet_id: RLS checked only that the pet was the writer's,
+// and the events(id) FK is checked without RLS. So any signed-in account holding
+// another account's event id could plant a row {victim's event, own pet,
+// edited_at}, and the humanEdited branch's update — keyed on event_id alone —
+// wrote the victim pet's read (its name in read_text) into the attacker's row.
+// Migration 074 makes that row unwritable (same-pet on insert, both columns
+// frozen on update, no client INSERT). This half makes the write-back unable to
+// reach a row that is not the event's, whatever the database lets in:
+//
+//   · analysisRowMatchesEvent — the row read at step 3b must carry the EVENT's
+//     pet. A row that does not is refused before any write, the usage counter
+//     included. 074 makes such a row unmakeable and its apply refuses if one
+//     already exists, so the one live source is an event moved between an
+//     owner's own pets by hand (CUL-882). For a row mismatched at rest this is
+//     the fix, not a tripwire: without it a re-read's upsert or an unkeyed
+//     update would still write into that row.
+//   · updateAnalysisRow — every UPDATE keys on event_id AND the event's pet_id.
+//     Adding a filter that can match nothing turns a wrong row into a silent
+//     no-op, so the zero-row case is an error here (C-39: a write that matches
+//     nothing is said, never swallowed).
+//
+// The upserts need neither: they already carry the event's pet_id as a value,
+// and 074 refuses the conflict update that would move a row's pet_id.
+
+// Fails CLOSED: a row whose pet_id did not come back (a select that forgot the
+// column) is treated as another pet's, never as a match.
+export function analysisRowMatchesEvent(
+  existing: { pet_id?: string | null } | null,
+  eventPetId: string,
+): boolean {
+  if (!existing) return true
+  return existing.pet_id === eventPetId
+}
+
+export async function updateAnalysisRow(
+  client: SupabaseClient,
+  key: { eventId: string; petId: string },
+  values: Record<string, unknown>,
+): Promise<{ error: string | null }> {
+  const { data, error } = await client
+    .from('event_ai_analysis')
+    .update(values)
+    .eq('event_id', key.eventId)
+    .eq('pet_id', key.petId)
+    .select('id')
+  if (error) return { error: error.message }
+  if (!data || data.length === 0) {
+    return { error: 'no event_ai_analysis row for this event and pet' }
+  }
+  return { error: null }
+}
+
+// The one place an AnalysisWriteBack reaches the table, both modes. Two other
+// writes keep their own shapes — the cap / disabled state upsert and the
+// failure write — and each carries the event's pet_id as a value (the upsert)
+// or goes through updateAnalysisRow (the error-only update).
+export async function applyAnalysisWriteBack(
+  client: SupabaseClient,
+  key: { eventId: string; petId: string },
+  writeBack: AnalysisWriteBack,
+): Promise<{ error: string | null }> {
+  if (writeBack.mode === 'update') return updateAnalysisRow(client, key, writeBack.values)
+  const { error } = await client
+    .from('event_ai_analysis')
+    .upsert(writeBack.values, { onConflict: 'event_id' })
+  return { error: error ? error.message : null }
 }
 
 // ── The failure write (CUL-812 / CUL-539) ────────────────────────────────────
@@ -421,10 +521,13 @@ export function resolveReanalysisWrite<TFlag extends string>(params: {
 // only hidden behind the retry frame until the read succeeds. Widening on
 // edited_at would re-admit the stale-benign-read hazard above for no data gain.
 //
-// The client half of this rule is `escalationSurvivesFailure` in lib/analysis.ts
-// — defence in depth, and the half that reaches owners first (this function's
-// deploy rides the held CUL-557 chain, and it cannot repair rows already flipped).
-// The two must move together.
+// The client half of this rule is `escalationSurvivesFailure` in
+// lib/incidentReadState.ts — defence in depth, and the half that can repair rows
+// already flipped. The two must move together, and since CUL-1277 they cannot drift:
+// both ask `isEscalationVerdict` (lib/incidentVerdict.ts), so ANY verdict off the quiet
+// list survives, not only the literal. A row holding a verdict a later rule wrote
+// (EN-3's `call_now`, then a flag rollback to this code) is an escalation the record
+// already earned; this function must not flip it to 'failed' because it cannot name it.
 
 export type FailureWrite =
   | { mode: 'upsert'; values: Record<string, unknown> }
@@ -468,7 +571,7 @@ export function buildRescueRead<TFlag extends string>(
     hasPhoto: boolean
   },
 ): RescueRead<TFlag> | null {
-  if (params.computed?.recommendation === 'worth_a_call') return params.computed
+  if (params.computed && isEscalationVerdict(params.computed.recommendation)) return params.computed
   if (params.contextualFlags.length === 0) return null
   return {
     recommendation: 'worth_a_call',
@@ -511,7 +614,7 @@ export function buildFailureWrite(params: {
   // outcome that is safe whatever the row holds.
   if (params.existingReadFailed) return { mode: 'skip' }
 
-  if (params.existing?.recommendation === 'worth_a_call') {
+  if (isEscalationVerdict(params.existing?.recommendation)) {
     // Record the error alongside for observability; leave status, recommendation
     // and read_text exactly as the record earned them. A later successful read
     // clears `error` via readFields (error: null). A rescue would only swap one
@@ -558,6 +661,23 @@ export function buildFailureWrite(params: {
       error: params.message,
     },
   }
+}
+
+// ── Is the existing row a real analysis? (the cap path's never-bury guard) ─────
+// A row holding an escalation is a real analysis whatever its STATUS says (CUL-812):
+// the pre-guard failure write flipped only status + error, so a 'failed' row can still
+// carry the escalation a previous read earned, and the client renders it as one. The
+// cap / disabled branch of runIncidentAnalysis reads this to decide whether a cap STATE
+// may be written; without the escalation clause it would write 'capped' over a live
+// "Worth a call". ANY escalation, not the literal (CUL-1277): a verdict a later rule wrote
+// (EN-3's tiers, then a flag rollback) is protected the same way. Pure + exported so the
+// clause is tested rather than asserted inline in the untested pipeline.
+export function isRealAnalysis(
+  existing: { status?: string | null; recommendation?: string | null } | null | undefined,
+): boolean {
+  if (!existing) return false
+  if (existing.status !== 'pending' && existing.status !== 'failed') return true
+  return isEscalationVerdict(existing.recommendation)
 }
 
 // ── Cap + flag gate (Monetization Track 2, T2-3 / B-329 + B-001) ──────────────
@@ -986,14 +1106,15 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // at step 3b for the cap branch, and again at step 9, because the vision call
   // between them takes 10-60s and a sibling run (Ask's A8 read holds no analysis-
   // chain claim) or an owner edit can land inside it. A read error throws (CUL-817).
-  const storedColumns = ['id', 'edited_at', 'status', 'recommendation', ...descriptor.redFlagColumns].join(', ')
-  const readStoredRow = async (): Promise<Record<string, unknown> | null> =>
+  // pet_id: every decision on the row first checks it is this event's (CUL-1203).
+  const storedColumns = ['id', 'pet_id', 'edited_at', 'status', 'recommendation', ...descriptor.redFlagColumns].join(', ')
+  const readStoredRow = async (): Promise<StoredRow | null> =>
     existingRowOrThrow(
       await adminClient
         .from('event_ai_analysis')
         .select(storedColumns)
         .eq('event_id', eventId)
-        .maybeSingle<Record<string, unknown>>(),
+        .maybeSingle<StoredRow>(),
     )
 
   try {
@@ -1060,19 +1181,22 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //     unanswered read throws here, before the gate spends a unit (CUL-817); the
     //     catch then keeps the contextual flags just computed (CUL-815).
     const existing = await readStoredRow()
-    const humanEdited = !!existing?.edited_at
-    // A row holding a `worth_a_call` is a real analysis whatever its STATUS says
-    // (CUL-812). A 'failed' row can still carry the escalation a previous read
-    // earned — the pre-guard failure write flipped only status + error, and the
-    // client now renders those rows as the escalations they are. Without this
-    // clause the cap / disabled branch below treats them as "nothing to protect"
-    // and writes 'capped' over one, which the client checks BEFORE the card: the
-    // owner taps re-run on a live "Worth a call" and watches it become a cap band.
-    const existingRealAnalysis =
-      !!existing && (
-        (existing.status !== 'pending' && existing.status !== 'failed') ||
-        existing.recommendation === 'worth_a_call'
+    // CUL-1203: a row filed under another pet is not this event's read, and every
+    // decision below (humanEdited, existingRealAnalysis) would otherwise be taken
+    // on a stranger's row. Refused here, before the usage counter and before any
+    // write — a direct return, so the catch's failure write never runs over it.
+    // The client maps any non-2xx to its calm retry line; nothing new is shown.
+    if (!analysisRowMatchesEvent(existing, petId)) {
+      console.error(`${descriptor.functionName}: analysis row for event ${eventId} is filed under another pet; refusing to write`)
+      return Response.json(
+        { error: 'Analysis row does not belong to this event' },
+        { status: 409, headers: CORS_HEADERS },
       )
+    }
+    const humanEdited = !!existing?.edited_at
+    // A row holding an escalation is a real analysis whatever its STATUS says
+    // (CUL-812; any escalation since CUL-1277) — `isRealAnalysis` carries the why.
+    const existingRealAnalysis = isRealAnalysis(existing)
 
     // 4. Flag + cap gate (§5.4 step 3) — immediately before the vision call, AFTER
     //    the escalation-flag computation above. The cap/flag gate the MODEL CALL, so
@@ -1143,10 +1267,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           structuredValues: descriptor.buildStructuredValues(null),
           readFields,
         })
-        const { error: writeError } = writeBack.mode === 'update'
-          ? await adminClient.from('event_ai_analysis').update(writeBack.values).eq('event_id', eventId)
-          : await adminClient.from('event_ai_analysis').upsert(writeBack.values, { onConflict: 'event_id' })
-        if (writeError) throw new Error(`DB write failed: ${writeError.message}`)
+        const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack)
+        if (writeError) throw new Error(`DB write failed: ${writeError}`)
       } else if (!existingRealAnalysis) {
         // No escalation AND no prior real analysis to protect → record the cap /
         // disabled STATE (§4.5) so the client renders its designed state (T2-4).
@@ -1302,8 +1424,9 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     }
 
     const structuredValues = descriptor.buildStructuredValues(analysis)
+    const stored = snapshotStoredAnalysis(descriptor, await readStoredRow())
     const writeBack = resolveReanalysisWrite({
-      stored: snapshotStoredAnalysis(descriptor, await readStoredRow()),
+      stored,
       eventId,
       petId,
       incidentType,
@@ -1315,34 +1438,20 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     if (writeBack.mode === 'hold') {
       console.info(`${descriptor.functionName}: held a stored escalation over a calmer read (CUL-1201)`)
       if (writeBack.values) {
-        const { error: settleError } = await adminClient
-          .from('event_ai_analysis')
-          .update(writeBack.values)
-          .eq('event_id', eventId)
-        if (settleError) throw new Error(`DB write failed: ${settleError.message}`)
+        const { error: settleError } = await updateAnalysisRow(adminClient, { eventId, petId }, writeBack.values)
+        if (settleError) throw new Error(`DB write failed: ${settleError}`)
       }
       // No flags in the body: this run's are what it saw, not what the row holds, and
       // every caller re-reads the row rather than trusting a response (lib/analysis.ts,
       // ask/index.ts runLivePhotoRead).
       return Response.json(
-        { success: true, held: true, recommendation: 'worth_a_call' },
+        { success: true, held: true, recommendation: stored?.recommendation ?? null },
         { headers: CORS_HEADERS },
       )
     }
 
-    let writeError
-    if (writeBack.mode === 'update') {
-      ;({ error: writeError } = await adminClient
-        .from('event_ai_analysis')
-        .update(writeBack.values)
-        .eq('event_id', eventId))
-    } else {
-      ;({ error: writeError } = await adminClient
-        .from('event_ai_analysis')
-        .upsert(writeBack.values, { onConflict: 'event_id' }))
-    }
-
-    if (writeError) throw new Error(`DB write failed: ${writeError.message}`)
+    const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack)
+    if (writeError) throw new Error(`DB write failed: ${writeError}`)
 
     return Response.json(
       { success: true, recommendation, contextual_flags: contextualFlags, visual_flags: visualFlags },
@@ -1373,9 +1482,13 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         .from('event_ai_analysis')
         .select(storedColumns)
         .eq('event_id', eventId)
-        .maybeSingle<Record<string, unknown>>()
+        .maybeSingle<StoredRow>()
       latest = snapshotStoredAnalysis(descriptor, latestRow ?? null)
-      latestReadFailed = !!latestErr
+      // CUL-1203, the same rule as step 3b: a row filed under another pet is not
+      // this event's, so its recommendation must not steer the failure write. It
+      // folds into "could not read" on purpose — buildFailureWrite then writes
+      // nothing, which is the fail-closed answer for a row we will not touch.
+      latestReadFailed = !!latestErr || !analysisRowMatchesEvent(latestRow ?? null, petIdForFailure)
     }
 
     const failureWrite = buildFailureWrite({
@@ -1392,12 +1505,12 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         hasPhoto: hasPhotoForFailure,
       }),
     })
-    if (failureWrite.mode === 'error-only') {
-      await adminClient
-        .from('event_ai_analysis')
-        .update(failureWrite.values)
-        .eq('event_id', eventId)
-        .then(() => undefined)
+    // Best-effort, as before: a failure write that fails is not re-reported. It is
+    // keyed on the event's pet like every other update (CUL-1203); buildFailureWrite
+    // returns 'skip' whenever petIdForFailure is null, so the guard below is a
+    // narrowing for the type checker, never a second decision.
+    if (failureWrite.mode === 'error-only' && petIdForFailure) {
+      await updateAnalysisRow(adminClient, { eventId, petId: petIdForFailure }, failureWrite.values)
     } else if (failureWrite.mode === 'upsert' || failureWrite.mode === 'rescue') {
       await adminClient
         .from('event_ai_analysis')

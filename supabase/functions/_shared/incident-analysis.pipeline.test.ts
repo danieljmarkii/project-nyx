@@ -53,9 +53,11 @@ interface World {
   writes: Array<{ mode: 'update' | 'upsert'; values: Row }>
 }
 
+// A stored row is this event's own unless a test says otherwise (CUL-1203).
+const OWN = { id: 'a1', event_id: 'evt-1', pet_id: 'pet-1' }
+
 function makeWorld(o: Partial<World> & Pick<World, 'vision'>): World {
   return {
-    row: null,
     contextFlags: [],
     dayCount: 1,
     aiReads: 0,
@@ -64,6 +66,7 @@ function makeWorld(o: Partial<World> & Pick<World, 'vision'>): World {
     visionCalls: 0,
     writes: [],
     ...o,
+    row: o.row ? { ...OWN, ...o.row } : null,
   }
 }
 
@@ -73,9 +76,10 @@ class FakeQuery {
   private mode: 'select' | 'update' | 'upsert' = 'select'
   private cols = '*'
   private values: Row = {}
+  private filters: Row = {}
   constructor(private w: World, private table: string) {}
   select(cols = '*') { if (this.mode === 'select') this.cols = cols; return this }
-  eq() { return this }
+  eq(column: string, value: unknown) { this.filters[column] = value; return this }
   is() { return this }
   in() { return this }
   order() { return this }
@@ -111,10 +115,17 @@ class FakeQuery {
     }
     w.aiWriteAttempts++
     if (w.aiWriteError?.(w.aiWriteAttempts)) return { data: null, error: { message: `write failed #${w.aiWriteAttempts}` } }
-    w.writes.push({ mode: this.mode, values: structuredClone(this.values) })
     if (this.mode === 'update') {
-      if (w.row) Object.assign(w.row, this.values)
-    } else if (w.row) {
+      // PostgREST: an UPDATE touches only rows matching every filter, and returns them
+      // (updateAnalysisRow keys on the event's pet and reads the count back, CUL-1203).
+      const matches = !!w.row && Object.entries(this.filters).every(([k, v]) => w.row?.[k] === v)
+      if (!matches) return { data: [], error: null }
+      w.writes.push({ mode: this.mode, values: structuredClone(this.values) })
+      Object.assign(w.row!, this.values)
+      return { data: [{ id: w.row!.id }], error: null }
+    }
+    w.writes.push({ mode: this.mode, values: structuredClone(this.values) })
+    if (w.row) {
       Object.assign(w.row, this.values) // PostgREST: only the sent columns change on conflict
     } else {
       w.row = { edited_at: null, ...this.values }
@@ -351,7 +362,7 @@ Deno.test('pipeline CUL-1201 — the step-9 decision uses a FRESH read, not step
   const w = makeWorld({
     vision: () => CLEAN,
     duringVision: (world) => {
-      world.row = { id: 'a1', recommendation: 'worth_a_call', status: 'completed', visual_flags: ['blood'], blood_col: 'yes' }
+      world.row = { ...OWN, recommendation: 'worth_a_call', status: 'completed', visual_flags: ['blood'], blood_col: 'yes' }
     },
   })
   await run(w)
@@ -396,4 +407,31 @@ Deno.test('pipeline CUL-532 — a failed run over a stored red flag leaves the c
   assertEquals(w.writes.map((x) => x.mode), ['update'])
   assertEquals(Object.keys(w.writes[0].values), ['error'])
   assertStrictEquals(w.row?.status, 'completed')
+})
+
+// ── CUL-1203: a row filed under another pet is never read or written ─────────────────
+
+Deno.test('pipeline CUL-1203 — a stored row filed under another pet is refused before the cap, the model and any write', async () => {
+  const w = makeWorld({
+    row: { pet_id: 'someone-elses-pet', recommendation: 'monitor', status: 'completed', blood_col: 'no' },
+    contextFlags: ['ctx_flag'],
+    vision: () => BLOODY,
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 409)
+  assertStrictEquals(w.rpcCalls, 0)
+  assertStrictEquals(w.visionCalls, 0)
+  assertEquals(w.writes, [])
+})
+
+Deno.test('pipeline CUL-1203 — the pet-keyed update lands on the event\'s own row (the harness honours the key)', async () => {
+  // An edited row takes the read-fields update, keyed on event and pet.
+  const w = makeWorld({
+    row: { recommendation: 'monitor', status: 'completed', edited_at: '2026-09-20T00:00:00Z', colour: 'green', blood_col: 'no' },
+    vision: () => BLOODY,
+  })
+  await run(w)
+  assertEquals(w.writes.map((x) => x.mode), ['update'])
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.colour, 'green')
 })

@@ -51,6 +51,14 @@ All in `supabase/functions/_shared/incident-analysis.ts`, the pipeline both `ana
 > **Designer / Sam:** It makes two existing context defects permanent. One vomit logged twice fires "thrown up more than once", and deleting the duplicate and re-running no longer clears it. Re-running a three-week-old read while the cat is tired today attaches today's lethargy, and it can never come off. A false sentence that won't go away is the nagging-engine failure Engines v3 exists to fix.
 > **PM decision needed:** keep the hold (built) until CUL-131 anchors the windows to the incident, or let a contextual-only escalation be lowered by a re-read now and accept the clock-lapse lowering?
 
+## The rebase
+
+PR-01 (#936) and PR-04 (#939) merged while this was in review, so `main` was merged into the branch.
+- The pipeline keeps PR-04's pet-keyed writes. Step 3b is PR-04b's fail-closed `readStoredRow`, which now selects `pet_id`, followed by PR-04's refusal. The hold's status write and the failure write go through `updateAnalysisRow`.
+- The literals this PR added switch to PR-01's `isEscalationVerdict`, so a verdict this build doesn't know is held like `worth_a_call`.
+- PR-04's static wiring guard follows the new read shape, with every check kept. Its behavior half is now in the pipeline tests (a row under another pet is refused before the cap, the model and any write).
+- 14 wiring mutations each turn a test red on the merged code.
+
 ## Next
 
 Rebase onto `main` after PR-04 (CUL-1203 part 2) and PR-01 (CUL-1277) merge. At the rebase:
