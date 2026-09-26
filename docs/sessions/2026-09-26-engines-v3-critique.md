@@ -1,6 +1,6 @@
 # Engines v3: a design critique of the proposal before the greenlight
 
-**Date:** 2026-09-26 · **Issue:** CUL-1268 · **Mode:** DISCOVERY · **Branch:** `claude/beautiful-lovelace-9axaj7` · **Artifact:** `docs/engines-v3-critique-2026-09.md`
+**Date:** 2026-09-26 · **Issue:** CUL-1268 · **Mode:** DISCOVERY · **Branch:** `claude/beautiful-lovelace-9axaj7` · **Artifact:** `docs/engines-v3-critique-2026-09.md` · **Shipped via #923** (docs only)
 
 **PM prompt:** "We've recently worked on a project to improve the signals engine … Engines v3: the accountable engine. I'm impressed w what I've seen so far. But I'd like a /design-critique session run on it before we do anything else." Asked light or full, the PM chose full (seven lenses).
 
@@ -19,9 +19,9 @@
 
 ## The lead's pass
 
-`main` did not move during the run (`ffacb4e` at both ends). Reproduced by running: Ask's validator on seven sentences; the Engineering lens's null sweep on the shipped engine (68 of 100 synthetic healthy cats saw a worsening safety card in 180 evenings, 93 a food culprit card); the adjacency leader swapping 7 times in 54 co-chronic evenings; the chronicity softening on 6/16 to 6/23; 4 of 14 worsening evenings at 2 against 0; 2026-09-23 a Wednesday. Every other claim filed or cited in a brief was read at file:line. Deduplicated against every issue filed on these surfaces since 9/24, including two filed during the run. Audit: no repository change and no Linear comment by any agent.
+`main` did not move during the run (`ffacb4e` at both ends). Reproduced by running: Ask's validator on seven sentences; the Engineering lens's null sweep on the shipped engine in both variants (six rotating proteins: of 100 synthetic healthy cats over 180 evenings, 68 saw a worsening safety card, 93 a food culprit card, 93 any insight card; a 90% staple food: 63, 30 and 43), so the verdict flips with the null, which is why E-4 names a null set; the adjacency leader swapping 7 times in 54 co-chronic evenings; the chronicity softening on 6/16 to 6/23; 4 of 14 worsening evenings at 2 against 0; 2026-09-23 a Wednesday. Every other claim filed or cited in a brief was read at file:line. Deduplicated against every issue filed on these surfaces since 9/24, including two filed during the run. Audit: no repository change and no Linear comment by any agent.
 
-## What shipped (this PR)
+## What shipped (#923)
 
 - `docs/engines-v3-critique-2026-09.md` (🧊): TL;DR, the verdict by lens, six briefs (E-1 D8 restated; E-2 D3 restated; E-3 D3's timer, a persona conflict; E-4 D4 restated; E-5 D5, recommend B; E-6 how thresholds get ratified), five narrower rulings, five team defaults, five rules, sequencing, the carried items, what the lead verified, the full taxonomy, what held, what was refuted, the device checklist, the method.
 - `docs/research/2026-09-engines-step-change.md`: an additive §V (R4's "two against zero" held on 4 of 14 evenings; the replay ledger predates HV-2 with no engine commit) with ⚠ pointers at both claims; `docs/research/README.md`'s row notes it.
@@ -35,3 +35,9 @@
 ## Next
 
 The PM rules E-1 to E-6 on CUL-1268 (or vetoes a team default). The team defaults' four live fixes (TD-1) and the other filed defects can start at once, whatever the rulings. The offered next step is a mock round: the strategy page republished as the rules would render it (the ledger of what was ruled in place of the stale decisions grid, the Sep 23 frames as the plan can produce them, readable at 390), with the answer placement (TD-4) drawn both ways, sequenced after CUL-1270's Design v2 round.
+
+## Close-out
+
+- **Definition of Done:** acceptance criteria from CUL-1268 pass (the review, the briefs on the issue, issues only for verified defects or gates, the agent audit); the offered mock round waits on the PM, as the issue says. No code, schema, secret or test change, so typecheck and tests are N/A beyond the pre-push hook (green on both pushes) and CI (green on both heads). Persona sign-off: all seven lenses ran isolated and each returned *ready with conditions*; the Data Scientist lens ran as the `adversarial-reviewer` and Trust & Safety as the `rls-privacy-reviewer`. The adversarial line is met by reproduction, not assertion: the lead reran the null sweep in both variants, Ask's validator on seven sentences, the adjacency swap count and the chronicity softening before citing any of them.
+- **Linear:** CUL-1268 closes on this PR's merge (its attachment). The rulings now route through CUL-1146, which keeps the `Waiting on PM` label and gained a ⚠ line in its TL;DR pointing at E-1 to E-6. `STATUS.md` and `CLAUDE.md` are untouched: no track started or ended, no hold moved, no convention changed.
+
