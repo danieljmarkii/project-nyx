@@ -7,6 +7,7 @@ jest.mock('./feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn
 import {
   describeDayEvent,
   describeDayEvents,
+  describeDayEventDoors,
   daySheetSubtitle,
   eventTintCategory,
   assertNeverCategory,
@@ -183,6 +184,18 @@ describe('describeDayEvents (chronological order)', () => {
     const out = describeDayEvents(rows);
     expect(out.map((e) => e.timeMs)).toEqual([...out.map((e) => e.timeMs)].sort((a, b) => a - b));
     expect(out[0].eventType).toBe('vomit'); // 06:00 leads
+  });
+});
+
+describe('describeDayEventDoors (CUL-320 — the month\'s rows are doors)', () => {
+  it('is describeDayEvents, same order and words, with each row carrying the id it opens', () => {
+    const rows = [
+      row({ id: 'm', event_type: 'meal', occurred_at: '2026-06-24T18:00:00.000Z' } as Partial<TimelineRow>),
+      row({ id: 'v', event_type: 'vomit', occurred_at: '2026-06-24T06:00:00.000Z' } as Partial<TimelineRow>),
+    ];
+    const doors = describeDayEventDoors(rows);
+    expect(doors.map((d) => d.id)).toEqual(['v', 'm']);
+    expect(doors.map(({ id: _id, ...display }) => display)).toEqual(describeDayEvents(rows));
   });
 });
 

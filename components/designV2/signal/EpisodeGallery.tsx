@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
@@ -103,11 +103,17 @@ function Tile({ tile }: { tile: GalleryTile }) {
   const [raw, setRaw] = useState<TileSource>(undefined);
   const needsRemote = tileNeedsRemote(local, failed);
 
+  // A new photo on the same tile starts its chain over. Skipped on mount, where the
+  // initial state already is the fresh chain (no wasted render per tile).
+  const sourceKey = `${local ?? ''}|${storagePath}`;
+  const lastSourceKey = useRef(sourceKey);
   useEffect(() => {
+    if (lastSourceKey.current === sourceKey) return;
+    lastSourceKey.current = sourceKey;
     setFailed(new Set());
     setTransform(undefined);
     setRaw(undefined);
-  }, [local, storagePath]);
+  }, [sourceKey]);
 
   useEffect(() => {
     if (!needsRemote) return;
