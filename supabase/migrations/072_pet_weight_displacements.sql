@@ -81,8 +81,22 @@
 -- reason the table carries no CHECK a computed value could fail.
 --
 -- The WHEN clause means the function runs only when there is something to keep:
--- the old value is non-NULL and the new one differs. EditPetModal re-sends the
--- unchanged weight on every save (a name edit included), and that writes no row.
+-- the old value is non-NULL and the new one differs. A save that sends the same
+-- stored value writes no row.
+--
+-- KNOWN NOISE, not a defect of this file: EditPetModal does NOT send the same
+-- value. It re-saves the weight through a 0.1 lb display round trip on every save,
+-- and 78% of stored values come back different (3.73 kg -> 8.2 lb -> 3.72 kg), so
+-- a name edit moves the weight and writes a row whose only content is rounding.
+-- Measured by code-reviewer on this PR; that client bug is CUL-1283. The reader
+-- (EN-8) must treat a displacement whose replaced_by_kg is within a rounding step
+-- of weight_kg as noise until CUL-1283 ships.
+--
+-- WHAT BYPASSES IT. Anything that disables user triggers on pets (a bulk backfill
+-- under session_replication_role = replica, or ALTER TABLE ... DISABLE TRIGGER,
+-- the 052 shape) writes pets.weight_kg without preserving. A future migration
+-- that touches this column in bulk must keep the trigger enabled or preserve by
+-- hand.
 --
 -- ── RLS / PRIVACY (T&S) ─────────────────────────────────────────────────────
 -- Body weight is pet health data, the same class as weight_checks.

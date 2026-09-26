@@ -49,6 +49,7 @@ import * as path from 'path';
 
 import { blankComments } from './blankComments';
 import { createFixtureRoot, removeFixtureRoot, writeFixture } from './fixtureRoot';
+import { stripSqlComments } from './sqlComments';
 
 const ROOT = path.resolve(__dirname, '..');
 const TABLE = 'pet_weight_displacements';
@@ -100,7 +101,7 @@ function readersUnder(root: string): string[] {
     .filter((abs) => {
       const src = fs.readFileSync(abs, 'utf8');
       // SQL files keep `--` comments, which blankComments does not know, so strip them.
-      const code = abs.endsWith('.sql') ? src.replace(/--[^\n]*/g, '') : blankComments(src);
+      const code = abs.endsWith('.sql') ? stripSqlComments(src) : blankComments(src);
       return NAME_RE.test(code);
     })
     .map((abs) => path.relative(root, abs).split(path.sep).join('/'))
@@ -158,9 +159,9 @@ describe('nothing reads pet_weight_displacements yet (EN-8, CUL-1135, is the fir
 
 // ── The migration's structure ────────────────────────────────────────────────
 
-function stripSql(sql: string): string {
-  return sql.replace(/--[^\n]*/g, '');
-}
+// String- and dollar-quote-aware, shared with lib/functionHardening.test.ts: a naive
+// `--` strip truncates a statement at a `--` inside a string literal (code-reviewer).
+const stripSql = stripSqlComments;
 
 const migrationSql = stripSql(fs.readFileSync(path.join(MIGRATIONS_DIR, MIGRATION), 'utf8'));
 
