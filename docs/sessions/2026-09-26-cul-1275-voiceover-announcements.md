@@ -72,7 +72,12 @@ Each card speaks its summary node's own label, only while shown, keyed on the ev
   * **P1/P3:** a failed re-run restored the row read BEFORE the trigger. A function's 500 has usually already written `failed`, so a calm verdict was restored in front of a read that just failed, and spoken. The pass also corrected its own round-4 "holds" on this path. **Fix:** re-read after the error and restore that. Proven by mutation in both sections.
   * **Residual P6:** a Show from another device can be undone on screen by a failed re-run (two devices plus a failed trigger).
 * **`adversarial-reviewer`, round 6** (on the round-5 correction): every failure shape correct when the re-read answers. **BREAKS in one window:** if the re-read itself fails, `after ?? fresh` restored the pre-attempt calm copy. **Fix:** fall back only where `escalationSurvivesFailure` says the copy is still true; otherwise keep what the owner saw, silently. Both directions proven by mutation. Also the Alert now shows at once, and Re-run is held disabled until the restore lands.
-* **`adversarial-reviewer`, round 7** (on the round-6 correction): see the CUL-1275 outcome comment.
+* **`adversarial-reviewer`, round 7** (on the round-6 correction): **HOLDS.** A failed re-run whose re-read also fails restores only what the owner was already shown, silently. A stored Worth a call still stands in. Every Alert-gated test asserts after the restore. `retrying` covers the whole error path.
+  * **Latent** (unreachable today, stated in the hook): a microtask-fast trigger and re-read failure could re-speak the shown read against a lingering arm.
+  * **Device:** is "AI read: Worth a call" audible over the "Could not start analysis" Alert? Added to CUL-556.
+  * **Copy:** the Alert's "Could not start analysis" now sits beside the failed frame's "Couldn't finish reading this one." for one attempt. Filed as CUL-1332 for the voice pass (C-28).
+
+**Seven rounds in all, five BREAKS, every one fixed and proven by mutation.** Every break sat in the join between the local copy of the analysis row and the server's, and the audio made that join audible. The lesson is in `docs/engineering-lessons.md` §C-44.
 * **`code-reviewer`: ship-ready.** One cleanup, taken: a `new Date(x ?? 0)` epoch fallback left by hoisting the header's words above the early return. It was inert, but one refactor away from a 1970 time on screen.
 
 ## Residuals and follow-ups
@@ -80,6 +85,8 @@ Each card speaks its summary node's own label, only while shown, keyed on the ev
 * **CUL-1319:** the meal trial heads-up, the combo dose's in-doubt prompt and the double-dose note are spoken on neither platform.
 * **CUL-1320:** the Design v2 day row may double-speak on Android. The addendum notes a possible third voice with Home mounted under the record, and a verdict-correlated form.
 * **CUL-1323** and **CUL-1324:** the screen halves above. **CUL-820:** commented.
+* **CUL-1332:** the failed re-run's Alert and card tell two stories about one attempt (voice pass).
+* **Scope note:** fixing the announcement required fixing the retry path it rides on. #938 therefore also stops a failed re-run from parking the section on "Reading the photo…" (a pre-existing wedge that hid a stored Worth a call), and shows the server's row instead of CUL-820's false "Not enough to say" when a retry from that frame fails.
 * **Device questions (CUL-556):**
   * An utterance posted as the pending box unmounts may be cut off when VoiceOver's focus moves.
   * A landing while backgrounded fires its one edge into an utterance iOS may drop, and nothing replays it.
@@ -88,4 +95,4 @@ Each card speaks its summary node's own label, only while shown, keyed on the ev
 
 ## Checks
 
-`tsc --noEmit` is clean. Full jest: 531 suites, 12,010 passed, 6 skipped. The touched suites also pass under `TZ=Pacific/Kiritimati` and `TZ=Pacific/Honolulu`. The `guards/` suite and the CLAUDE.md budget guard are green.
+`tsc --noEmit` is clean. Full jest at the final head: 531 suites, 12,034 passed, 6 skipped. The event suites also pass under `TZ=Pacific/Kiritimati` (and the touched card suites under `Pacific/Honolulu`). The `guards/` suite and the CLAUDE.md budget guard are green. CI is green on every pushed head so far.

@@ -134,6 +134,11 @@ export function useReadLandingAnnouncement({
   // And from round 5: a failed re-run's restore keeps THIS screen's Hide / Show state over
   // the server's, so a Show made on ANOTHER device while this screen held a hidden copy is
   // undone on screen until the next read (P6 — two devices plus a failed trigger).
+  // And from round 7, LATENT (unreachable while the trigger and the re-read both cross
+  // native I/O): if both ever failed within microtasks, the pending write and a silent
+  // restore could commit together against a lingering arm and re-speak the read the owner
+  // was already shown (the R7 class). Close it with a quiet-settle on the restore if the
+  // trigger ever gains a client-side fast-fail.
   //
   // A QUIET END STAYS ARMED. The watch's give-up can race one last in-flight re-read: the
   // wait has already ended silently when that read commits a Worth a call, and a one-shot
