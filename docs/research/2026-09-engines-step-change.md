@@ -7,7 +7,7 @@
 
 **Method.** Six isolated research lanes (a source map of `generate-signal`; a source map of every path from a logged vomit to an owner-facing escalation; a ledger of what the four prior dogfood briefs recommended and what became of it; the statistical methods frontier; the veterinary vomiting evidence; AI triage calibration and alarm fatigue), plus two things no prior brief did:
 
-1. **A replay of the shipped Signal engine over the real record, one evening at a time.** The record is reconstructed as it stood at 21:00 each evening (rows created by then and not yet deleted; photo fields as they were before any later owner edit), and fed to the unmodified `detectSignals` → `curateFindings` → template phrasing path. 129 evenings, 2026-05-19 to 2026-09-24. The replay of 9/23 matches the live `ai_signals` row card for card and word for word.
+1. **A replay of the shipped Signal engine over the real record, one evening at a time.** The record is reconstructed as it stood at 21:00 each evening (rows created by then and not yet deleted; photo fields as they were before any later owner edit), and fed to the unmodified `detectSignals` → `curateFindings` → template phrasing path. 129 evenings, 2026-05-19 to 2026-09-24. The replay of 9/23 matches the live `ai_signals` row card for card and word for word. ⚠ *The ledger records no engine commit, and HV-2 changed the timing lane the same day; see §V.2.*
 2. **A replay of the per-incident escalation floor.** The shipped `computeContextualFlags`, fed the way `analyze-vomit` feeds it, reproduces all 43 stored contextual flag sets on the record's live vomit reads. A proposed recalibration is then run over the same reads.
 
 Then an isolated adversarial pass tried to break the proposals and the evidence claims (§8). It failed two proposals as first written and downgraded three claims; both corrections are folded in below, and §8 keeps the record.
@@ -65,7 +65,7 @@ The card-set timeline, compressed: first-week food cards (5/19 to 6/8); photo re
 
 **R3. The first week produced culprit cards from noise.** 5/19: "Nyx's vomiting has tended to follow meals with turkey within about 12 hours"; 5/20: the same for beef. Evidence: 3 and 4 matched pairs, 2 discordant case-only pairs, exact McNemar **p = 0.25**, against a corrected alpha of 0.007 across a 7 to 9 protein family. The Early tier fires on hand-set pair counts with no test (lane A, `detection.ts:3502-3533`). This is the multiplicity trap the August brief cited (an IBS pilot found a "strong association" in 8 of 11 people in two weeks), shipped. It ran 16 evenings.
 
-**R4. A safety card on two episodes.** "Nyx has had 2 episodes of itching this week, after none last week — worth a word with your vet" (7/16 to 7/22, during a treated ear infection, and again 9/11 to 9/17). `worseningMinEpisodes` is 2. Two against zero is not evidence of worsening (an exact test cannot reject at any conventional level); it is a safety-class ask on noise.
+**R4. A safety card on two episodes.** "Nyx has had 2 episodes of itching this week, after none last week — worth a word with your vet" (7/16 to 7/22, during a treated ear infection, and again 9/11 to 9/17). `worseningMinEpisodes` is 2. Two against zero is not evidence of worsening (an exact test cannot reject at any conventional level); it is a safety-class ask on noise. ⚠ *Two against zero was the count on 4 of the 14 worsening evenings, not all of them; see §V.1.*
 
 **R5. The trial's real story appeared on two evenings.** "6 episodes of vomiting in the trial's 39 days, compared with 19 in the 49 days before it" rendered on three evenings (9/2, 9/3 and 9/6), flickering with recency gates. That comparison, stated with its uncertainty and its confounders, is the single most useful thing the record says about the trial, and it was the least visible card.
 
@@ -271,3 +271,13 @@ deno run --no-check --allow-read --allow-net --allow-env scripts/engine-replay/i
 ```
 
 Before trusting either output, check the fidelity lines: the Signal ledger's last evening against the live `ai_signals` row, and the incident replay's "shipped-rule mismatches: 0".
+
+---
+
+## §V Verification pass (2026-09-26, the CUL-1268 design critique)
+
+Additive corrections, per the frozen-brief rule; the claims above keep their published wording and carry a ⚠ pointer here. Source: `docs/engines-v3-critique-2026-09.md`, where each correction was checked by the critique's lead against the strategy page's replay data (the `DAYS` array in `docs/culprit-engines-step-change.html`) and against `main` at `ffacb4e`.
+
+**V.1 R4's "two against zero" (§2).** The 14 worsening evenings were: vomiting 4 against 2 (5/23 to 5/24); itching 2 against 0 (7/16 to 7/18, and 9/11), 3 against 0 (7/19 to 7/22), and 2 against 1 (9/14 to 9/17). Two against zero describes 4 of the 14. R4's conclusion holds at every one of these counts (a one-sided exact conditional test gives p = 0.125 at 3 against 0, 0.25 at 2 against 0, 0.34 at 4 against 2 and 0.5 at 2 against 1; none rejects at a conventional level), and the critique measured the lane's chance rate directly: on the shipped engine, 68 of 100 synthetic healthy cats vomiting once a month saw a worsening card within 180 evenings. EN-11's evidence line on CUL-1141 ("2 vs 0 on 14 evenings") repeats the miscount.
+
+**V.2 The replay's fidelity (§0 Method, §2).** The 9/23 match stands as a historical fact, but the ledger records no engine commit or closure fingerprint, and HV-2 (#910, merged 2026-09-24) changed `lib/mealTiming.ts`, which `generate-signal/detection.ts` imports: a refused bowl stopped counting as eating for the timing lane. The timing cards the replay prints (for example "8 of the 9 vomiting episodes we could time … within 30 minutes of eating") are therefore the engine of 2026-09-23 and may not be what `main` says on the same record. EN-1 (CUL-1131) re-captures its baseline on `main` after HV-2 and after CUL-1190, stamped with the closure fingerprint and export time; and a wrong subject currently passes the incident replay's fidelity line over an empty export (CUL-1276).
