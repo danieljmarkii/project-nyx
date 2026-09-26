@@ -4512,3 +4512,38 @@ Deno.test('CUL-1274 — a conflicting twin in a food\'s history never lowers the
   assert.ok(flag, 'the refusal of a normally-eaten food still flags')
   assert.equal(flag!.kind === 'intake_decline' && flag.trigger, 'refused_normal_food')
 })
+
+Deno.test('CUL-1274 — an unrated log followed by two CONFLICTING re-logs stays unrated, in either order', () => {
+  // The round-6 counterexample: a cat eating her usual food daily, then "ate some", "picked
+  // at it", "refused", and today one meal logged three times within a minute: unrated, "ate
+  // it all", "refused". Filling from the first rating made the meal "ate it all" and the
+  // report went quiet about a cat three days off full meals; filling from the last would do
+  // the mirror in the other order. The twins disagree, so the meal stays as it was logged
+  // first, exactly as before the fill existed, and the flag fires in both orders.
+  const t = (date: string, time: string, rating: 'all' | 'some' | 'picked' | 'refused' | null) =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: `${date}T${time}Z`,
+      meal: { foodItemId: 'ft', intakeRating: rating, quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'chicken', brand: 'Tiki', productName: 'Cat' },
+    })
+  const history = () => [
+    ...['20', '21', '22', '23', '24', '25', '26', '27', '28'].map((d) => t(`2026-06-${d}`, '16:00:00', 'all')),
+    t('2026-06-29', '16:00:00', 'some'),
+    t('2026-06-30', '16:00:00', 'picked'),
+    t('2026-07-01', '16:00:00', 'refused'),
+  ]
+  for (const [label, second, third] of [
+    ['"ate it all" first', 'all', 'refused'],
+    ['"refused" first', 'refused', 'all'],
+  ] as const) {
+    idSeq = 0
+    const snap = assembleReport(
+      baseInput({ events: [...history(), t('2026-07-02', '08:00:00', null), t('2026-07-02', '08:00:20', second), t('2026-07-02', '08:00:40', third)] }),
+    )
+    const today = snap.diet.mealItems[0]
+    assert.equal(today.count, 13, `${label}: the three logs are one meal`)
+    assert.equal(snap.diet.mealCompletion?.ratedMeals, 12, `${label}: the conflicting meal stays unrated`)
+    const flag = snap.safetyFlags.find((f) => f.kind === 'intake_decline')
+    assert.ok(flag, `${label}: the decline still flags`)
+  }
+})

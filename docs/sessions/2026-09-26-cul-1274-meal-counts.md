@@ -13,7 +13,7 @@ The Engines v3 critique (CUL-1268, BRK-9) found page 1 of the vet report printin
 - **Scope, PM option A at the plan gate:** the rated-only population was upstream of page 1. `diet.mealItems` grouped rated meals only, and it also fed appendix B's "Meals logged" row, appendix B's protein panel and appendix E. So a food fed only in unrated meals was missing from the protein-overlap scan, and fixing page 1 alone would have printed "60 meals logged" beside an appendix saying "4 logged meals" (C-3). The fix groups every logged discrete meal (`foodType === 'meal'`); `mealCompletion` stays the rated subset.
 - **One meal predicate kept.** A format-treat food typed `meal` is counted as both a meal and a treat. `foodType === 'meal'` stays the report's one meal predicate, because the intake log, Noticed's `mealLeftByDay` and the previous-diet row read it too (moving one surface is the C-4 disagreement). The copy stopped claiming what it cannot; the precedence question is CUL-1322 item 8. The adversarial reviewer agreed with the trade.
 - **CUL-1118 unruled, so the ratio stays** wherever one food carries the ratings.
-- **A twin's rating fills a gap, never re-ranks.** `dedupeEvents` now fills a missing intake rating from a same-food twin logged within the minute; two conflicting ratings keep the representative's, as before. Whether a conflicting pair should collapse at all is CUL-1328.
+- **A twin's rating fills a gap only when the twins agree.** `dedupeEvents` now fills a missing intake rating from same-food twins logged within the minute when they all carry the same rating; where they conflict, the representative's own rating stands, rated or not, as before this PR. Every choice between conflicting ratings had an unsafe side (see adversarial 5 and 6). Whether a conflicting pair should collapse at all is CUL-1328.
 
 ## What the page says now
 
@@ -28,7 +28,7 @@ Recency is judged against the record's last logged meal, not the food's own, so 
 
 ## What the reviews found, and what changed because of them
 
-Five rounds of `adversarial-reviewer`, four of `vet-report-cold-read`, one `code-reviewer`. Each round's findings were fixed, pinned by a test proven by mutation, and handed back.
+Six rounds of `adversarial-reviewer`, four of `vet-report-cold-read`, one `code-reviewer`. Each round's findings were fixed, pinned by a test proven by mutation, and handed back.
 
 - **Cold read 1 (NOT READY):** page 1 never called the 62 unrated meals unknown, so "66 logged; 4 rated … 0 of 4" scanned as a cat who eats fine; "rated" is the app's word; "(treats + free-fed excluded)" on a dog with neither read as if he had both. Fixed: the unknown leads, in "intake recorded / not recorded".
 - **Adversarial 1 (FAIL):** the trial diet's own meal row skipped the kin-absorbing protein rule, so a hydrolysed-chicken diet was starred as contaminated by its own chicken in appendix E, with a dangling footnote under appendix B. Pre-existing, but it needed a rated trial meal; with every logged meal grouped it would have fired on nearly every trial report. Fixed with one shared trial-food predicate (`isReportTrialFood`). Also: ratings pooled beside names ranked by meals logged, and four surviving mutants.
@@ -39,12 +39,13 @@ Five rounds of `adversarial-reviewer`, four of `vet-report-cold-read`, one `code
 - **Cold read 4 (READY, all three):** "the last on Jun 8" read as the diet's last feeding. Worded "intake last recorded Jun 8".
 - **Adversarial 4:** recency judged against the food's own last meal missed a food switch; `dedupeEvents` dropped a re-logged "refused" twin, and the new date then named an earlier day. Fixed: recency against the record; the dedupe merged the twin's rating.
 - **Adversarial 5:** keeping the LOWER of two conflicting twin ratings lowered the relative detector's baseline, and a dog's refusal of its usual kibble stopped flagging on the report while Home flagged it. Fixed: the merge only fills a gap. Filed CUL-1328.
+- **Adversarial 6:** filling from the FIRST rating of an unrated log's twins turned "unrated, then 'ate it all', then 'refused'" into "ate it all", and a cat three days off full meals went quiet; filling from the last would do the mirror. Fixed: fill only when the twins agree, both orders pinned.
 - **Code review:** ship-ready; one comment nit taken ("eaten" → "fed").
 
 ## Proof
 
-- 809 Deno tests in `generate-report`, type check clean; the jest guards (525) and the pre-push suite green on every push; the `lib/sameMinuteDuplicates` parity test green (clustering unchanged).
-- Mutation, each red (≈40 across five rounds): the population (grouping over rated only, rated drawn from the window), every page-1 shape and its threshold, "typically" over a partial record, the per-food order, cap, pooled tail and each food's second rating, the unnamed food, the exclusion clause, the trial rule on every food and the label path dropped, recency on the report and render sides (creation, update, per-food vs record, pooled tail, `<` vs `<=`), and the twin merge (no fill, latest wins).
+- 810 Deno tests in `generate-report`, type check clean; the jest guards (525) and the pre-push suite green on every push; the `lib/sameMinuteDuplicates` parity test green (clustering unchanged).
+- Mutation, each red (≈40 across five rounds): the population (grouping over rated only, rated drawn from the window), every page-1 shape and its threshold, "typically" over a partial record, the per-food order, cap, pooled tail and each food's second rating, the unnamed food, the exclusion clause, the trial rule on every food and the label path dropped, recency on the report and render sides (creation, update, per-food vs record, pooled tail, `<` vs `<=`), and the twin merge (no fill, first fills, last fills, lower wins).
 - Rendered fixtures (scratchpad, not committed): a grazing cat with 66 meals and 4 rated, a dog with 60 unrated meals, a dog on a hydrolysed trial with a refused topper.
 
 ## Residuals

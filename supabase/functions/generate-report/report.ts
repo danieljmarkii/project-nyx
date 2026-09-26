@@ -1112,18 +1112,19 @@ export function dedupeEvents(
         if (e.severity != null && (severity == null || e.severity > severity)) severity = e.severity
       }
       const note = rep.notes ?? cluster.find((e) => e.notes != null)?.notes ?? null
-      // And the intake rating, FILLED, never re-ranked (CUL-1274 adversarial review, two
-      // rounds). The earliest twin wins the collapse, so a one-tap logged unrated and
+      // And the intake rating, FILLED only when the twins agree (CUL-1274 adversarial review,
+      // three rounds). The earliest twin wins the collapse, so a one-tap logged unrated and
       // re-logged "refused" thirty seconds later lost the refusal from every intake surface,
       // and page 1's "intake last recorded" date then named a day before it. A missing rating
-      // now takes the first rating in the cluster. Two CONFLICTING ratings keep the
-      // representative's, exactly as before: keeping the lower one looked like
-      // escalate-on-presence and was the opposite for the relative intake detector, where a
-      // lower HISTORICAL meal lowers the baseline a real decline is measured against, and the
-      // report went quiet on a refusal Home still flagged. Whether a conflicting pair should
-      // collapse at all is CUL-1328.
-      const intakeRating =
-        rep.meal?.intakeRating ?? cluster.find((e) => e.meal?.intakeRating != null)?.meal?.intakeRating ?? null
+      // now takes the twins' rating when they all carry the same one. Where they CONFLICT the
+      // representative's own rating stands, rated or not, exactly as before: choosing between
+      // them had no safe side. The lower one lowered the relative detector's baseline when
+      // the pair sat in a food's history (a refusal of the usual food stopped flagging); the
+      // earlier one let "ate it all" logged twenty seconds before a "refused" become the
+      // meal, and a cat three days off full meals went quiet. Home counts both; whether a
+      // conflicting pair should collapse at all is CUL-1328.
+      const twinRatings = new Set(cluster.map((e) => e.meal?.intakeRating).filter((r): r is IntakeRating => r != null))
+      const intakeRating = rep.meal?.intakeRating ?? (twinRatings.size === 1 ? [...twinRatings][0] : null)
       const meal = rep.meal ? { ...rep.meal, intakeRating } : rep.meal
       // Every raw member id (sorted, deterministic). assembleReport reads the phenotype
       // across ALL of them — best-status member for the four-state/assessed aggregate, and
