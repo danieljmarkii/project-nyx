@@ -28,7 +28,7 @@ Recency is judged against the record's last logged meal, not the food's own, so 
 
 ## What the reviews found, and what changed because of them
 
-Six rounds of `adversarial-reviewer`, four of `vet-report-cold-read`, one `code-reviewer`. Each round's findings were fixed, pinned by a test proven by mutation, and handed back.
+Seven rounds of `adversarial-reviewer` (the last a confirm), four of `vet-report-cold-read`, one `code-reviewer`. Each round's findings were fixed, pinned by a test proven by mutation, and handed back.
 
 - **Cold read 1 (NOT READY):** page 1 never called the 62 unrated meals unknown, so "66 logged; 4 rated … 0 of 4" scanned as a cat who eats fine; "rated" is the app's word; "(treats + free-fed excluded)" on a dog with neither read as if he had both. Fixed: the unknown leads, in "intake recorded / not recorded".
 - **Adversarial 1 (FAIL):** the trial diet's own meal row skipped the kin-absorbing protein rule, so a hydrolysed-chicken diet was starred as contaminated by its own chicken in appendix E, with a dangling footnote under appendix B. Pre-existing, but it needed a rated trial meal; with every logged meal grouped it would have fired on nearly every trial report. Fixed with one shared trial-food predicate (`isReportTrialFood`). Also: ratings pooled beside names ranked by meals logged, and four surviving mutants.
@@ -40,6 +40,7 @@ Six rounds of `adversarial-reviewer`, four of `vet-report-cold-read`, one `code-
 - **Adversarial 4:** recency judged against the food's own last meal missed a food switch; `dedupeEvents` dropped a re-logged "refused" twin, and the new date then named an earlier day. Fixed: recency against the record; the dedupe merged the twin's rating.
 - **Adversarial 5:** keeping the LOWER of two conflicting twin ratings lowered the relative detector's baseline, and a dog's refusal of its usual kibble stopped flagging on the report while Home flagged it. Fixed: the merge only fills a gap. Filed CUL-1328.
 - **Adversarial 6:** filling from the FIRST rating of an unrated log's twins turned "unrated, then 'ate it all', then 'refused'" into "ate it all", and a cat three days off full meals went quiet; filling from the last would do the mirror. Fixed: fill only when the twins agree, both orders pinned.
+- **Adversarial 7 (final confirm): HOLDS.** Every scenario fires; the fill adds only a rating every twin agrees on; no calm path left. The conflicting pair behind a RATED first log is the pre-existing CUL-1328.
 - **Code review:** ship-ready; one comment nit taken ("eaten" → "fed").
 
 ## Proof

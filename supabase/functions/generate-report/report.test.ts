@@ -4441,7 +4441,7 @@ Deno.test('CUL-1274 — the trial diet\'s own meal row reads its proteins by the
   assert.ok(/\*/.test([...rowsHtml.matchAll(/<tr>([^]*?)<\/tr>/g)].map((m) => m[1]).find((r) => r.includes('Chicken Stew'))!), 'the stew keeps its star')
 })
 
-Deno.test('CUL-1274 — a twin logged unrated and re-logged with a rating keeps the rating; of two, the lower', () => {
+Deno.test('CUL-1274 — a twin logged unrated and re-logged with a rating keeps the rating; conflicting twins keep the first one', () => {
   // The collapse keeps the earliest twin, and merged severity and notes but not the intake
   // rating, so a one-tap followed thirty seconds later by a "refused" re-log lost the refusal
   // from every intake surface, and page 1's recency date then named an earlier day.
