@@ -1305,8 +1305,11 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           .eq('event_id', eventId)
         if (settleError) throw new Error(`DB write failed: ${settleError.message}`)
       }
+      // No flags in the body: this run's are what it saw, not what the row holds, and
+      // every caller re-reads the row rather than trusting a response (lib/analysis.ts,
+      // ask/index.ts runLivePhotoRead).
       return Response.json(
-        { success: true, held: true, recommendation: 'worth_a_call', contextual_flags: contextualFlags, visual_flags: visualFlags },
+        { success: true, held: true, recommendation: 'worth_a_call' },
         { headers: CORS_HEADERS },
       )
     }
