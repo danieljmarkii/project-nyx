@@ -4326,8 +4326,8 @@ Deno.test('CUL-1274 — mealItems groups every logged meal, rated or not; mealCo
         // A second food, fed as meals and never rated.
         mealEvent('2026-06-16', { format: 'wet_canned', protein: 'duck', label: 'Wet Duck' }),
         mealEvent('2026-06-17', { format: 'wet_canned', protein: 'duck', label: 'Wet Duck' }),
-        // A treat is not a meal, rated or not.
-        mealEvent('2026-06-18', { foodType: 'treat', format: 'treat', protein: 'salmon', label: 'Salmon Treat' }),
+        // A treat is not a meal, rated or not: it joins neither the meals logged nor the rated.
+        mealEvent('2026-06-18', { foodType: 'treat', format: 'treat', protein: 'salmon', label: 'Salmon Treat', rating: 'all' }),
       ],
     }),
   )
@@ -4338,18 +4338,21 @@ Deno.test('CUL-1274 — mealItems groups every logged meal, rated or not; mealCo
     'every logged meal is counted, and the never-rated food has a row',
   )
   assert.deepEqual(items[0].intakeBreakdown, [{ rating: 'refused', count: 1 }], 'the ratings that exist, and only those')
+  // The date span is the food's meals, rated or not; the one rating was on Jun 12.
+  assert.deepEqual([items[0].firstDate, items[0].lastDate], ['2026-06-10', '2026-06-15'])
+  assert.deepEqual([items[1].firstDate, items[1].lastDate], ['2026-06-16', '2026-06-17'], 'a never-rated food keeps its dates')
   assert.deepEqual(items[1].intakeBreakdown, [], 'an unrated meal adds nothing to the breakdown')
   assert.equal(items.reduce((a, i) => a + i.count, 0), 8, 'meals logged; the treat is not one')
   const ratedInItems = items.reduce((a, i) => a + i.intakeBreakdown.reduce((b, x) => b + x.count, 0), 0)
   assert.equal(ratedInItems, snap.diet.mealCompletion?.ratedMeals, 'the per-food ratings ARE the rated subset')
-  assert.equal(snap.diet.mealCompletion?.ratedMeals, 1)
+  assert.equal(snap.diet.mealCompletion?.ratedMeals, 1, 'the rated treat is not a rated meal')
   assert.equal(snap.diet.mealCompletion?.finishedMeals, 0)
 
   // Through the render: page 1 and both appendices count the 8, and the duck reaches the
   // protein panel a vet scans for overlap.
   const html = renderReport(snap)
   const t = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ')
-  assert.ok(/8 meals logged; 1 rated, 0 of 1 fully eaten/.test(t), 'page 1 states both numbers')
+  assert.ok(/8 meals logged, intake not recorded for 7; the 1 recorded \(owner-observed\) was not fully eaten/.test(t), 'page 1 states both numbers')
   assert.ok(/8 logged meals across 2 foods/.test(t), 'appendix B and E count the same 8')
   assert.ok(/Wet Duck \(Wet\) \(fed as meals\)/.test(t), 'the never-rated food is in the protein panel')
 })
@@ -4370,6 +4373,49 @@ Deno.test('CUL-1274 — a record with meals and NO rating keeps its meals; the c
   assert.equal(snap.diet.mealItems[0].count, 3)
   assert.deepEqual(snap.diet.mealItems[0].intakeBreakdown, [])
   const t = renderReport(snap).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ')
-  assert.ok(/3 meals logged, none rated for intake/.test(t), 'page 1 says the meals were fed')
+  assert.ok(/3 meals logged, intake not recorded for any/.test(t), 'page 1 says the meals were fed')
   assert.ok(!/No rated meals logged in this window/.test(t))
+})
+
+Deno.test('CUL-1274 — the trial diet\'s own meal row reads its proteins by the trial rule, rated or not', () => {
+  // A hydrolysed-chicken diet whose label also names chicken: the trial row, the diet-trial
+  // block and appendix B read that as the diet itself (B-529's kin-absorbing comparison).
+  // The meal row did not, so appendix E starred the diet's own chicken as off-trial. It took
+  // a RATED trial meal to reach before CUL-1274; every logged meal reaches it now.
+  idSeq = 0
+  const PANEL = 'Hydrolyzed chicken liver, rice starch, chicken fat.'
+  const trialMeal = (day: string, intakeRating: 'all' | null) =>
+    proteinMeal({
+      occurredAt: at(day), foodItemId: 'f-hydro', foodType: 'meal', format: 'dry_kibble',
+      primaryProtein: 'hydrolyzed chicken', proteins: ['hydrolyzed chicken', 'chicken'],
+      ingredientsNotes: PANEL, extractionConfidence: { proteins: 0.9 }, productName: 'HydroChick', intakeRating,
+    })
+  const snap = assembleReport(
+    baseInput({
+      dietTrials: [
+        {
+          id: 'dt-h', foodItemId: 'f-hydro', startedAt: '2026-05-08', targetDurationDays: 56,
+          status: 'active', completedAt: null, vetName: null, foodLabel: 'HydroChick',
+          primaryProtein: 'hydrolyzed chicken', proteins: ['hydrolyzed chicken', 'chicken'],
+          ingredientsNotes: PANEL, extractionConfidence: { proteins: 0.9 },
+          allowedFoods: [
+            {
+              foodItemId: 'f-hydro', foodLabel: 'HydroChick', role: 'primary_diet',
+              allowedFrom: '2026-05-08', allowedUntil: null, primaryProtein: 'hydrolyzed chicken',
+              brand: 'Brand', productName: 'HydroChick', proteins: ['hydrolyzed chicken', 'chicken'],
+              ingredientsNotes: PANEL, extractionConfidence: { proteins: 0.9 },
+            },
+          ],
+        },
+      ],
+      events: [trialMeal('2026-06-10', null), trialMeal('2026-06-11', null), trialMeal('2026-06-12', 'all')],
+    }),
+  )
+  const row = snap.diet.mealItems.find((i) => i.count === 3)
+  assert.ok(row, 'the trial diet has its meal row')
+  assert.deepEqual(snap.diet.trial!.proteinSet.offTrial, [], 'the trial row reads no contamination')
+  assert.deepEqual(row!.proteinSet.offTrial, snap.diet.trial!.proteinSet.offTrial, 'and the meal row reads the diet the same way')
+  const html = renderReport(snap)
+  const e = html.slice(html.indexOf('Appendix E — Meals &amp; intake'))
+  assert.ok(!/\*/.test(e.slice(e.indexOf('<tbody>'), e.indexOf('</tbody>'))), 'no off-trial star on the trial diet\'s own row')
 })

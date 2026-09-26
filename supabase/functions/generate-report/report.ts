@@ -3791,6 +3791,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     }
   }
 
+  // Is this meal the selected trial's own food? By item id, else by its label. ONE predicate
+  // for every consumer that has to treat the trial diet differently from other foods: the
+  // meal rows' protein view below, and the previous-diet derivation that must never name it.
+  const trialFoodId = reportTrialInput?.foodItemId ?? null
+  const trialFoodLabel = reportTrialInput?.foodLabel?.trim().toLowerCase() ?? null
+  const isReportTrialFood = (m: NonNullable<ReportEventInput['meal']>): boolean => {
+    if (trialFoodId && m.foodItemId === trialFoodId) return true
+    const label = mealFoodLabel(m)?.trim().toLowerCase()
+    return !!trialFoodLabel && !!label && label === trialFoodLabel
+  }
+
   const freeFed = input.feedingArrangements
     .filter((a) => a.method === 'free_choice')
     .filter((a) => {
@@ -3895,7 +3906,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         // across foods, which would invent an exposure no single food carried. The one
         // exception is the fixed `__unlabeled__` bucket, whose members have no food
         // join at all and therefore all derive the same empty, incomplete set.
-        proteinSet: proteinView(m),
+        //
+        // THE TRIAL FOOD'S OWN ROW TAKES THE TRIAL RULE (CUL-1274 adversarial review). The
+        // trial row, the diet-trial block and appendix B all read the trial diet through the
+        // kin-absorbing comparison (a hydrolysed-chicken label naming chicken is not a
+        // contamination, B-529). This row did not, so appendix E starred the trial diet's own
+        // chicken as off-trial and put a footnote under appendix B's panel, which has no star.
+        // It needed a RATED trial meal to fire; once every logged meal groups here it fires on
+        // nearly every trial report, so the rule comes with the wider population.
+        proteinSet: proteinView(m, { isTrialDiet: isReportTrialFood(m) }),
       })
     }
   }
@@ -4021,20 +4040,13 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // tells a vet the animal was NOT naive to the trial protein before the trial, which
     // invalidates the elimination's premise. The row's completeness caveat does not touch it:
     // that caveat is about how far back the log reaches, not about which food is which.
-    const trialFoodId = reportTrialInput?.foodItemId ?? null
-    const trialFoodLabel = reportTrialInput?.foodLabel?.trim().toLowerCase() ?? null
-    const isTrialFood = (m: NonNullable<ReportEventInput['meal']>): boolean => {
-      if (trialFoodId && m.foodItemId === trialFoodId) return true
-      const label = mealFoodLabel(m)?.trim().toLowerCase()
-      return !!trialFoodLabel && !!label && label === trialFoodLabel
-    }
     const counts = new Map<string, number>()
     let feedings = 0
     let firstDay: string | null = null
     let lastDay: string | null = null
     for (const e of dedupedAll) {
       if (e.type !== 'meal' || !e.meal || e.meal.foodType !== 'meal') continue
-      if (isTrialFood(e.meal)) continue
+      if (isReportTrialFood(e.meal)) continue
       const key = localDayKey(e.occurredAt, tz)
       if (key === null) continue
       // The BOUND is numeric, on day numbers parsed from both sides — never a text compare

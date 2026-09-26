@@ -6806,7 +6806,7 @@ Deno.test('R-13 item 5 — the dash is reserved for genuinely no data, on both s
     base({ diet: { ...b.diet, mealItems: [mealItem({ count: 4, intakeBreakdown: [] })], mealCompletion: null } }),
   )
   const cells = appendixEMealRows(noData)
-  assert.equal(cells[0][4], 'Not rated ×4', 'an unrated food says so, with its count')
+  assert.equal(cells[0][4], 'Not recorded ×4', 'an unrated food says so, with its count')
 
   // A tie over the SAME surface must not.
   const tie = renderReport(
@@ -7477,28 +7477,34 @@ Deno.test('CUL-1041 — no provenance means no sentence, and the page is otherwi
 // logged) and dropped the clause when nothing was rated; appendix B's "Meals logged" row and
 // appendix E's caption counted the same rated-only list. Every fixture here is shaped the way
 // `assembleReport` now builds it: `mealItems` counts every logged meal, `intakeBreakdown` and
-// `mealCompletion` hold the ratings that exist.
+// `mealCompletion` hold the ratings that exist. The cold read then asked that the unknown lead,
+// in the vet's words ("intake not recorded"), and the adversarial pass that the ratings name
+// the foods they came from.
 
 const DRY_BOWL = [{ foodLabel: 'Dry bowl', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-04-03', activeUntil: null, isShared: false }]
 
-function mealsSnap(o: {
-  logged: number
-  breakdown: Array<{ rating: IntakeRating; count: number }>
-  freeFed: boolean
-}): ReportSnapshot {
+/** A diet over the given foods, with `mealCompletion` pooled from their ratings exactly as report.ts pools them. */
+function mealsSnapOf(items: DietSummary['mealItems'], freeFed: boolean): ReportSnapshot {
   const b = base()
-  const rated = o.breakdown.reduce((a, x) => a + x.count, 0)
-  const finished = o.breakdown.find((x) => x.rating === 'all')?.count ?? 0
+  const pooled = new Map<IntakeRating, number>()
+  for (const i of items) for (const x of i.intakeBreakdown) pooled.set(x.rating, (pooled.get(x.rating) ?? 0) + x.count)
+  const order: IntakeRating[] = ['all', 'most', 'some', 'picked', 'refused']
+  const breakdown = order.filter((r) => pooled.has(r)).map((r) => ({ rating: r, count: pooled.get(r)! }))
+  const rated = breakdown.reduce((a, x) => a + x.count, 0)
+  const finished = pooled.get('all') ?? 0
   return base({
     diet: {
       ...b.diet,
-      freeFed: o.freeFed ? DRY_BOWL : [],
-      intakeNotDirectlyObserved: o.freeFed,
-      mealItems: [mealItem({ foodLabel: 'Wet pouch', count: o.logged, intakeBreakdown: o.breakdown })],
-      mealCompletion:
-        rated > 0 ? { ratedMeals: rated, finishedMeals: finished, rate: finished / rated, intakeBreakdown: o.breakdown } : null,
+      freeFed: freeFed ? DRY_BOWL : [],
+      intakeNotDirectlyObserved: freeFed,
+      mealItems: items,
+      mealCompletion: rated > 0 ? { ratedMeals: rated, finishedMeals: finished, rate: finished / rated, intakeBreakdown: breakdown } : null,
     },
   })
+}
+
+function mealsSnap(o: { logged: number; breakdown: Array<{ rating: IntakeRating; count: number }>; freeFed: boolean }): ReportSnapshot {
+  return mealsSnapOf([mealItem({ foodLabel: 'Wet pouch', count: o.logged, intakeBreakdown: o.breakdown })], o.freeFed)
 }
 
 /** Page 1's Feeding row, as the vet reads it. */
@@ -7521,78 +7527,117 @@ const SELECTIVE: Array<{ rating: IntakeRating; count: number }> = [
   { rating: 'refused', count: 3 },
 ]
 
-Deno.test('CUL-1274 — free-fed page 1 states the meals logged AND the rated subset, never the subset as the meals fed', () => {
+Deno.test('CUL-1274 — free-fed page 1 leads with the meals whose intake is unknown, then the recorded subset', () => {
   const row = feedingRow(renderReport(mealsSnap({ logged: 60, breakdown: SELECTIVE, freeFed: true })))
-  assert.ok(/Also fed as meals: Wet pouch \(60 meals logged; 4 rated/.test(row), `the logged count leads, the rated subset follows: ${row}`)
-  assert.ok(/0 of 4 fully eaten/.test(row), 'the ratio keeps its own denominator')
-  assert.ok(!/\(4 meals/.test(row), 'the rated count is never printed as the meals fed')
+  assert.ok(
+    /Also fed as meals: Wet pouch \(60 meals logged, intake not recorded for 56; recorded for 4 meals of Wet pouch: "picked at it" ×1 · "refused" ×3, 0 of 4 fully eaten; grouped by food in appendix E\)\./.test(row),
+    row,
+  )
+  assert.ok(!/\(4 meals/.test(row), 'the recorded count is never printed as the meals fed')
+  assert.ok(!/\brated\b/.test(row), 'the vet reads "intake recorded", not the app\'s word')
   assert.ok(/Primarily free-fed: Dry bowl\. Intake not directly observed\./.test(row), 'the B-040 framing still leads')
 })
 
-Deno.test('CUL-1274 — a partly rated record is itemised, never "typically", in EITHER direction', () => {
+Deno.test('CUL-1274 — a partly recorded record is itemised, never "typically", in EITHER direction, down to one meal', () => {
   // The dangerous direction is the calm one: 4 of 60 meals rated "ate it all" must not read
   // as a habit of the pet. The adverb is withheld and the ratings go with their counts.
-  const calm = feedingRow(
-    renderReport(mealsSnap({ logged: 60, breakdown: [{ rating: 'all', count: 4 }], freeFed: true })),
-  )
+  const calm = feedingRow(renderReport(mealsSnap({ logged: 60, breakdown: [{ rating: 'all', count: 4 }], freeFed: true })))
   assert.ok(!/typically/.test(calm), `no habit claimed over 4 of 60: ${calm}`)
-  assert.ok(/4 rated, ratings: "ate it all" ×4 — 4 of 4 fully eaten/.test(calm), calm)
+  assert.ok(/recorded for 4 meals of Wet pouch: "ate it all" ×4, 4 of 4 fully eaten/.test(calm), calm)
   const alarming = feedingRow(renderReport(mealsSnap({ logged: 60, breakdown: SELECTIVE, freeFed: true })))
   assert.ok(!/typically/.test(alarming), alarming)
-  assert.ok(/ratings: "picked at it" ×1 · "refused" ×3/.test(alarming), 'every rating, with its count')
+  // ONE recorded meal of sixty keeps both numbers: the distinction does not vanish at n=1.
+  const one = feedingRow(renderReport(mealsSnap({ logged: 60, breakdown: [{ rating: 'all', count: 1 }], freeFed: true })))
+  assert.ok(/\(60 meals logged, intake not recorded for 59; recorded for 1 meal of Wet pouch: "ate it all" ×1, 1 of 1 fully eaten;/.test(one), one)
 })
 
-Deno.test('CUL-1274 — free-fed page 1 keeps the clause when NO meal was rated', () => {
+Deno.test('CUL-1274 — the recorded clause names the foods its ratings came from, not the foods listed first', () => {
+  // Two unrated staples lead the names (ranked by meals logged); the only ratings belong to a
+  // minor topper the two-name cap cuts off. Pinned beside the staples, "ate it all" ×6 would
+  // read as the staples being eaten.
+  const topper = feedingRow(
+    renderReport(
+      mealsSnapOf(
+        [
+          mealItem({ foodLabel: 'Staple A', count: 30, intakeBreakdown: [] }),
+          mealItem({ foodLabel: 'Staple B', count: 20, intakeBreakdown: [] }),
+          mealItem({ foodLabel: 'Topper C', count: 6, intakeBreakdown: [{ rating: 'all', count: 6 }] }),
+        ],
+        true,
+      ),
+    ),
+  )
+  assert.ok(/Also fed as meals: Staple A, Staple B \+1 more \(56 meals logged, intake not recorded for 50; recorded for 6 meals of Topper C: "ate it all" ×6, 6 of 6 fully eaten;/.test(topper), topper)
+  // Ratings on two foods are pooled, and every one survives the pooling (B-532).
+  const two = feedingRow(
+    renderReport(
+      mealsSnapOf(
+        [
+          mealItem({ foodLabel: 'Food A', count: 10, intakeBreakdown: [{ rating: 'all', count: 2 }] }),
+          mealItem({ foodLabel: 'Food B', count: 10, intakeBreakdown: [{ rating: 'refused', count: 3 }] }),
+        ],
+        true,
+      ),
+    ),
+  )
+  assert.ok(/recorded for 5 meals of Food A, Food B: "ate it all" ×2 · "refused" ×3, 2 of 5 fully eaten/.test(two), two)
+})
+
+Deno.test('CUL-1274 — free-fed page 1 keeps the clause when no intake was recorded', () => {
   const row = feedingRow(renderReport(mealsSnap({ logged: 60, breakdown: [], freeFed: true })))
-  assert.ok(/Also fed as meals: Wet pouch \(60 meals logged, none rated for intake; grouped by food in appendix E\)\./.test(row), row)
+  assert.ok(/Also fed as meals: Wet pouch \(60 meals logged, intake not recorded for any; grouped by food in appendix E\)\./.test(row), row)
   assert.ok(!/fully eaten/.test(row), 'no ratio over a population of zero')
   const one = feedingRow(renderReport(mealsSnap({ logged: 1, breakdown: [], freeFed: true })))
-  assert.ok(/\(1 meal logged, none rated/.test(one), `singular: ${one}`)
+  assert.ok(/\(1 meal logged, intake not recorded;/.test(one), `singular: ${one}`)
 })
 
 Deno.test('CUL-1274 — a fully rated free-fed record reads exactly as it did', () => {
   const row = feedingRow(
-    renderReport(
-      mealsSnap({ logged: 12, breakdown: [{ rating: 'all', count: 9 }, { rating: 'some', count: 3 }], freeFed: true }),
-    ),
+    renderReport(mealsSnap({ logged: 12, breakdown: [{ rating: 'all', count: 9 }, { rating: 'some', count: 3 }], freeFed: true })),
   )
   assert.ok(/Also fed as meals: Wet pouch \(12 meals, typically "ate it all" — 9 of 12 fully eaten;/.test(row), row)
-  assert.ok(!/logged|rated/.test(row), 'no second number where there is only one')
+  assert.ok(!/logged|recorded/.test(row), 'no second number where there is only one')
 })
 
-Deno.test('CUL-1274 — the scored branch states both numbers, and never "No rated meals logged" over meals fed', () => {
+Deno.test('CUL-1274 — the scored branch leads with the unknown too, and never says "No rated meals logged" over meals fed', () => {
   const partly = feedingRow(renderReport(mealsSnap({ logged: 60, breakdown: SELECTIVE, freeFed: false })))
   assert.ok(
-    /^60 meals logged; 4 rated, 0 of 4 fully eaten \(owner-observed; treats \+ free-fed excluded\)\. Meals are grouped by food in appendix E/.test(partly),
+    /^60 meals logged, intake not recorded for 56; of the 4 recorded \(owner-observed\), 0 fully eaten\. Meals are grouped by food in appendix E/.test(partly),
     partly,
   )
+  const one = feedingRow(renderReport(mealsSnap({ logged: 60, breakdown: [{ rating: 'refused', count: 1 }], freeFed: false })))
+  assert.ok(/^60 meals logged, intake not recorded for 59; the 1 recorded \(owner-observed\) was not fully eaten\./.test(one), one)
   const none = feedingRow(renderReport(mealsSnap({ logged: 60, breakdown: [], freeFed: false })))
-  assert.ok(/^60 meals logged, none rated for intake \(treats \+ free-fed excluded\)\./.test(none), none)
-  assert.ok(!/No rated meals logged/.test(none), 'a record of 60 meals is not a record of none')
+  assert.ok(/^60 meals logged, intake not recorded for any\. Meals are grouped by food in appendix E/.test(none), none)
+  for (const r of [partly, one, none]) {
+    assert.ok(!/No rated meals logged/.test(r), 'a record of 60 meals is not a record of none')
+    // Said of a pet with neither, the cold read took it to mean he had both.
+    assert.ok(!/treats \+ free-fed excluded/.test(r), r)
+  }
   const all = feedingRow(
     renderReport(mealsSnap({ logged: 12, breakdown: [{ rating: 'all', count: 10 }, { rating: 'some', count: 2 }], freeFed: false })),
   )
   assert.ok(/^10 of 12 rated meals fully eaten \(owner-observed; treats \+ free-fed excluded\)\./.test(all), `unchanged when fully rated: ${all}`)
-  const empty = feedingRow(renderReport(base()))
-  assert.equal(empty, 'No rated meals logged in this window.', 'no meals at all still reads as it did')
+  assert.equal(feedingRow(renderReport(base())), 'No rated meals logged in this window.', 'no meals at all still reads as it did')
 })
 
 Deno.test('CUL-1274 — page 1, appendix B and appendix E count ONE population', () => {
   const html = renderReport(mealsSnap({ logged: 60, breakdown: SELECTIVE, freeFed: true }))
   assert.ok(/60 meals logged/.test(feedingRow(html)))
   assert.ok(/^60 logged meals across 1 food: Wet pouch\./.test(plain(appendixBRow(html, 'Meals logged')).trim()), 'appendix B')
-  assert.ok(/^60 logged meals across 1 food, 4 of them rated for intake ·/.test(appendixECaption(html)), appendixECaption(html))
+  assert.ok(/^60 logged meals across 1 food · intake recorded for 4 of the 60 ·/.test(appendixECaption(html)), appendixECaption(html))
   // The row says what the ratings leave out, rather than a partial list beside a total.
   const cells = appendixEMealRows(html)[0]
   assert.equal(cells[2], '×60')
-  assert.equal(cells[4], 'Picked at it ×1 · Refused ×3 · Not rated ×56')
+  assert.equal(cells[4], 'Picked at it ×1 · Refused ×3 · Not recorded ×56')
 })
 
-Deno.test('CUL-1274 — appendix E states the unrated remainder, and a fully rated table is unchanged', () => {
+Deno.test('CUL-1274 — appendix E states the unrecorded remainder, and a fully rated table is unchanged', () => {
   const none = renderReport(mealsSnap({ logged: 7, breakdown: [], freeFed: false }))
-  assert.ok(/^7 logged meals across 1 food, none rated for intake ·/.test(appendixECaption(none)), appendixECaption(none))
-  assert.ok(/logged without a rating is counted and shown as "not rated": its intake is unknown, neither eaten nor refused/.test(plain(none)))
+  assert.ok(/^7 logged meals across 1 food · intake not recorded for any ·/.test(appendixECaption(none)), appendixECaption(none))
+  assert.ok(/logged with no intake recorded is counted and shown as "not recorded": its intake is unknown, neither eaten nor refused/.test(plain(none)))
   const all = renderReport(mealsSnap({ logged: 12, breakdown: [{ rating: 'all', count: 12 }], freeFed: false }))
   assert.ok(/^12 logged meals across 1 food ·/.test(appendixECaption(all)), appendixECaption(all))
-  assert.equal(appendixEMealRows(all)[0][4], 'Ate it all ×12', 'no "not rated" cell when there is none')
+  assert.ok(!/recorded/.test(appendixECaption(all)))
+  assert.equal(appendixEMealRows(all)[0][4], 'Ate it all ×12', 'no "not recorded" cell when there is none')
 })
