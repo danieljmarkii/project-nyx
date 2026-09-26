@@ -105,7 +105,6 @@ export interface ReadStateInput {
 // list the record screen and the server's escalation guards read (CUL-1277), so no surface
 // can call a verdict quiet that another calls an escalation. Two of them, and only one is
 // calm (`CalmVerdict`).
-export type { QuietVerdict };
 
 /** The one verdict that stands as a calm read: the read looked and said to keep an eye out.
  *  `not_enough_to_say` is quiet (never the rose) but never calm (the PM's 2026-09-25 ruling). */
