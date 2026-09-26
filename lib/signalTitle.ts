@@ -1,23 +1,29 @@
-// The Signal's title (Design v2 — the whole day, D2-3 · CUL-1065; design authority
-// `docs/culprit-design-v4-mockups.html` §01 / §03: "Vomiting, day 55 of the rabbit trial").
+// The Signal's title (Design v2 — the whole day, D2-3 · CUL-1065; the claim rule is D2 on
+// CUL-1270, design authority `docs/culprit-design-v2-device-mockups.html` §02).
 //
-// The title names THE THING and THE WINDOW, and never verdicts. On the card it takes the
-// place the count-anchored sentence held (the sentence moves to the screen — the Change
-// Contract v1.1's Tier-2 edit is written in D2-8), so it is read more often than any
-// other Signal string and carries the least: a symptom word, a window, and on a trial
-// the trial's identity and its day. No direction word, no glyph, no percentage, no
+// The title NAMES THE FINDING'S CLAIM, and never verdicts. D2-3 first built it as "the thing
+// and the window" ("Vomiting, the last 8 weeks"); on device the PM met two vomiting findings
+// whose screens differed only in that window ("the last 8 weeks", "the last 60 days") and
+// read them as one screen twice. So the title now says what THIS finding asserts —
+// "Vomiting in 5 of the last 8 weeks", "Vomiting soon after meals" — and the same string is
+// the Signal row's headline on Home (`lib/signalHomeLine.ts`), so a tap lands on a screen
+// with the name the owner tapped.
+//
+// A title that carries a count takes it from the fields the server's sentence is composed
+// from, in the sentence's own form (`generate-signal/phrasing.ts`), so the title can never
+// state a number the sentence under it does not: `signalHomeLine.test.ts` renders the
+// server template and checks every number. No direction word, no glyph, no percentage, no
 // "better" or "worse" — the list below is what `signalTitle.test.ts` greps every title
 // against, across every finding type, every symptom word and both trial states.
 //
-// The safety types keep the shipped strip's NAME (fold spec §4) where that name is a fact
-// about the record ("Eating less than usual", "Blood in a vomit photo"); the one strip
-// name that carries a direction word — `symptom_worsening`'s "up this week" — is not used
-// here, because "up" is on the list. The ask stays in the sentence, where it has always
-// lived (S1: plainness is the severity signal, and a title that shouted would be the
-// opposite of plain).
+// A frequency comparison (`reflection`) keeps a count-free claim, "Vomiting, week over
+// week": its lead card prints the weekly bars' own line under the title, and a rolling-week
+// count in the title over a calendar-week line would put two "this week" numbers one line
+// apart (CUL-1217 BRK-3). The ask stays out of the title (S1: a title that shouted would be
+// the opposite of plain); it is the Home row's second line and the sentence's.
 
 import type { SignalFinding } from './signal';
-import { stripNameLine, symptomWord } from './signalCopy';
+import { incidentFlagPhrase, localHourBand, stripNameLine, symptomWord } from './signalCopy';
 import type { SignalTrialWindow } from './signalWindows';
 import { signalWindowDays } from './signalWindows';
 
@@ -85,33 +91,53 @@ function trialPhrase(trial: SignalTrialWindow): string {
   return `day ${trial.dayCounter} of the ${lowerFirst(trial.identity)}`;
 }
 
+function symptomThing(symptomType: Parameters<typeof symptomWord>[0]): string {
+  return capitalize(symptomWord(symptomType));
+}
+
 /**
- * The title for one finding, on a day with or without a running trial.
+ * The title for one finding: its claim.
  *
- *   Vomiting, day 55 of the rabbit trial       (a symptom finding, trial running)
- *   Vomiting, the last 8 weeks                  (a symptom finding, no trial)
- *   Vomiting after chicken, the last 8 weeks    (a correlation names its pairing)
- *   Rabbit trial, day 55 of 56                  (the trial card itself)
- *   Eating less than usual · Blood in a vomit photo   (the safety types keep their name)
+ *   Vomiting in 5 of the last 8 weeks            (recurrence — the chronicity finding)
+ *   Vomiting on 5 of the last 14 days            (a dense worsening; the sentence's own days)
+ *   Vomiting soon after meals                    (postprandial timing)
+ *   Vomiting after chicken                       (a correlation names its pairing, a sequence)
+ *   Vomiting, week over week                     (the frequency comparison — no count, see above)
+ *   Rabbit trial, day 55 of 56                   (the trial card itself)
+ *   Possible blood in a vomit photo              (the photo read, in the sentence's words)
+ *
+ * `trial` is read only by the trial card: every other claim is the same claim on a trial
+ * day, and the trial's own day lives on the trial strip.
  */
 export function signalTitle(finding: SignalFinding, trial: SignalTrialWindow | null): string {
   switch (finding.type) {
     case 'symptom_chronicity':
-    case 'symptom_worsening':
+      // templateChronicity: "across {activeWeeks} of the last {round(windowDays / 7)} weeks".
+      return `${symptomThing(finding.symptomType)} in ${finding.activeWeeks} of the last ${Math.round(finding.windowDays / 7)} weeks`;
+    case 'symptom_worsening': {
+      // templateWorsening's three tiers, each on the axis its sentence leads with.
+      const thing = symptomThing(finding.symptomType);
+      if (finding.tier === 'firm') return `${thing} on ${finding.currentDays} of the last ${finding.windowDays} days`;
+      if (finding.tier === 'soft') return `${thing} on ${finding.currentDays} separate days this week`;
+      return `${thing}, ${finding.currentCount} ${finding.currentCount === 1 ? 'episode' : 'episodes'} this week`;
+    }
     case 'reflection':
+      return `${symptomThing(finding.symptomType)}, week over week`;
     case 'postprandial_timing':
+      return `${symptomThing(finding.symptomType)} soon after meals`;
     case 'empty_stomach_timing':
+      return `${symptomThing(finding.symptomType)} long after meals`;
     case 'timing_story':
+      return `${symptomThing(finding.symptomType)} soon or long after meals`;
     case 'timeofday_clustering':
-    case 'stood_down': {
-      const thing = capitalize(symptomWord(finding.symptomType));
-      return `${thing}, ${trial ? trialPhrase(trial) : windowPhrase(signalWindowDays(finding))}`;
-    }
-    case 'food_symptom_correlation': {
-      // The pairing is the thing: a sequence observed ("after"), never an attribution.
-      const thing = `${capitalize(symptomWord(finding.symptomType))} after ${finding.protein}`;
-      return `${thing}, ${trial ? trialPhrase(trial) : windowPhrase(signalWindowDays(finding))}`;
-    }
+      return `${symptomThing(finding.symptomType)} ${localHourBand(finding.clusterStartLocalHour, finding.clusterWindowHours)}`;
+    case 'food_symptom_correlation':
+      // The pairing is the claim: a sequence observed ("after"), never an attribution. A
+      // joint candidate names every member (the label already does).
+      return `${symptomThing(finding.symptomType)} after ${finding.protein}`;
+    case 'stood_down':
+      // Not a card and never a door: it keeps D2-3's thing-and-window form.
+      return `${symptomThing(finding.symptomType)}, ${trial ? trialPhrase(trial) : windowPhrase(signalWindowDays(finding))}`;
     case 'trial_response': {
       // The trial IS the thing. The cache carries its own day count, so the title holds
       // without the local trial read; with it, the identity names the protein.
@@ -120,9 +146,13 @@ export function signalTitle(finding: SignalFinding, trial: SignalTrialWindow | n
       const target = trial ? trial.targetDays : finding.targetDurationDays;
       return target != null && target > 0 ? `${identity}, day ${day} of ${target}` : `${identity}, day ${day}`;
     }
-    case 'intake_decline':
     case 'incident_red_flag':
-      // The shipped name, a fact about the record; the ask is the sentence's.
+      // templateIncidentRedFlag's own phrase ("possible blood", "possible foreign material")
+      // — "possible" keeps it an unconfirmed read — and its family noun, never a consistency
+      // the photo did not measure.
+      return `${capitalize(incidentFlagPhrase(finding.flags))} in ${finding.flaggedIncidentCount === 1 ? `a ${finding.incidentType} photo` : `${finding.incidentType} photos`}`;
+    case 'intake_decline':
+      // The shipped name, a fact about the record.
       return stripNameLine(finding) ?? 'Signal';
     default:
       return 'Signal';

@@ -160,7 +160,8 @@ describe('buildSignalScreenModel — the mock’s Thursday', () => {
   const model = buildSignalScreenModel(mockInput());
 
   it('the title, the sentence, the noun', () => {
-    expect(model.title).toBe('Vomiting, day 55 of the rabbit trial');
+    // D2 (CUL-1270): the title names the claim, from the fields the sentence is built from.
+    expect(model.title).toBe('Vomiting in 7 of the last 8 weeks');
     expect(model.sentence).toMatch(/^Nyx has vomited 21 times/);
     expect(model.noun).toBe('vomiting');
     expect(model.safety).toBe(true);
@@ -327,7 +328,7 @@ describe('the diet line', () => {
   it('a trial under the floor: no compare, one lane, and the floor said in Why (B1 — never two one-day bars)', () => {
     const young = trial({ dayCounter: 1, startDay: THURSDAY });
     const model = buildSignalScreenModel(mockInput({ trial: young }));
-    expect(model.title).toBe('Vomiting, day 1 of the rabbit trial');
+    expect(model.title).toBe('Vomiting in 7 of the last 8 weeks');
     expect(model.compare).toBeNull();
     expect(model.lanes?.lanes.map((l) => l.label)).toEqual(['The last 56 days']);
     expect(model.why).toContain('Day 1 of the rabbit trial — fewer than 7 days in, so there is no before-and-during compare yet.');
@@ -346,7 +347,8 @@ describe('the diet line', () => {
 
   it('is absent without a trial, and so is the diet-change sentence; the compare is the two halves', () => {
     const model = buildSignalScreenModel(mockInput({ trial: null }));
-    expect(model.title).toBe('Vomiting, the last 8 weeks');
+    expect(model.title).toBe('Vomiting in 7 of the last 8 weeks');
+    expect(model.weekly?.mark ?? null).toBeNull();
     expect(model.why.join(' ')).not.toMatch(/Day \d+|diet change/);
     expect(model.compare?.windows.map((w) => w.label)).toEqual(['The 28 days before', 'The recent 28 days']);
     expect(model.lanes?.lanes.map((l) => l.label)).toEqual(['The last 56 days']);
@@ -705,7 +707,9 @@ describe('loadSignalScreen', () => {
     expect(out.status).toBe('ready');
     if (out.status !== 'ready') return;
     expect(out.petName).toBe('Nyx');
-    expect(out.model.title).toMatch(/^Vomiting, day \d+ of the rabbit trial$/);
+    expect(out.model.title).toBe('Vomiting in 7 of the last 8 weeks');
+    // The running trial reached the model (the title no longer names it — D2): its start marks the bars.
+    expect(out.model.weekly?.mark).toBeTruthy();
     expect(out.model.episodes?.tiles[0]).toMatchObject({ eventId: 'v1', verdict: 'monitor' });
     // The verdict came off the phone: the screen made no server read at all (HV-5).
     expect(mockFrom).not.toHaveBeenCalled();
@@ -757,7 +761,8 @@ describe('loadSignalScreen', () => {
     });
     mockGetAllAsync.mockResolvedValue([]);
     const ended = await loadSignalScreen('pet-1', 'symptom_chronicity:vomit');
-    expect(ended.status === 'ready' && ended.model.title).toBe('Vomiting, the last 8 weeks');
+    expect(ended.status === 'ready' && ended.model.title).toBe('Vomiting in 7 of the last 8 weeks');
+    expect(ended.status === 'ready' && (ended.model.weekly?.mark ?? null)).toBeNull();
 
     mockLoadTrialPredicateFacts.mockRejectedValue(new Error('sqlite'));
     const failed = await loadSignalScreen('pet-1', 'symptom_chronicity:vomit');

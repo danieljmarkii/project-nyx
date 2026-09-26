@@ -7,7 +7,10 @@ const mockReduced = jest.fn(() => false);
 jest.mock('../../../hooks/useReducedMotion', () => ({ useReducedMotion: () => mockReduced() }));
 jest.mock('../../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 const mockLoadSignalLead = jest.fn();
-jest.mock('../../../lib/signalLead', () => ({ loadSignalLead: (...a: unknown[]) => mockLoadSignalLead(...a) }));
+jest.mock('../../../lib/signalLead', () => ({
+  loadSignalLead: (...a: unknown[]) => mockLoadSignalLead(...a),
+  loadSignalRowTrial: async () => null,
+}));
 // The measurement is the platform's; the suite plays it (D2-6). Default: a real rect.
 let mockRect: { x: number; y: number; width: number; height: number } | null = { x: 67, y: 300, width: 278, height: 130 };
 jest.mock('../../../lib/measureNode', () => ({
@@ -105,33 +108,34 @@ describe('SignalLeadCard — a benign lead', () => {
     expect(view.queryByTestId('insight-folded-strip')).toBeNull();
   });
 
-  it('a read that fails falls back to the shipped card, with the same door', async () => {
+  it('a read that fails falls back to the Signal row (CUL-1270), with the same door', async () => {
     mockLoadSignalLead.mockRejectedValue(new Error('sqlite'));
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const onOpen = jest.fn();
     const view = render(<SignalLeadCard cached={reflection} petId="pet-1" petName="Nyx" onOpen={onOpen} />);
-    await waitFor(() => expect(view.getByTestId('insight-face')).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId('signal-row')).toBeTruthy());
     expect(view.queryByTestId('weekly-bars')).toBeNull();
-    fireEvent.press(view.getByTestId('insight-face'));
+    fireEvent.press(view.getByTestId('signal-row'));
     expect(onOpen).toHaveBeenCalledWith(reflection.finding);
     expect(view.queryByTestId('insight-fold-control')).toBeNull();
     warn.mockRestore();
   });
 });
 
-describe('SignalLeadCard — a safety lead keeps the shipped plain card (S1)', () => {
+describe('SignalLeadCard — a safety lead is the plain Signal row (S1)', () => {
   it.each([safety, { rank: 0, text: 'Nyx has eaten less than usual for 3 days. Call your vet today.', finding: intake }])(
-    'renders no chart, no read, the shipped face as the door',
+    'renders no chart, no read, the row as the door',
     async (cached) => {
       const onOpen = jest.fn();
       const view = render(<SignalLeadCard cached={cached} petId="pet-1" petName="Nyx" onOpen={onOpen} />);
-      expect(view.getByTestId('insight-face')).toBeTruthy();
+      expect(view.getByTestId('signal-row')).toBeTruthy();
+      expect(view.getByTestId('signal-row-ask')).toBeTruthy();
       expect(view.queryByTestId('signal-lead-skeleton')).toBeNull();
       expect(view.queryByTestId('weekly-bars')).toBeNull();
       expect(mockLoadSignalLead).not.toHaveBeenCalled();
-      expect(view.getByTestId('insight-face').props.accessibilityHint).toBe(DOOR_A11Y_HINT);
+      expect(view.getByTestId('signal-row').props.accessibilityHint).toBe(DOOR_A11Y_HINT);
       await act(async () => {
-        fireEvent.press(view.getByTestId('insight-face'));
+        fireEvent.press(view.getByTestId('signal-row'));
       });
       expect(onOpen).toHaveBeenCalledWith(cached.finding);
       // No control row on a door — the fold control moved to the screen and the strip.

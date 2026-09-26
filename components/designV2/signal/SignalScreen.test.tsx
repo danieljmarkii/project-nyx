@@ -63,11 +63,11 @@ jest.mock('../../../lib/measureNode', () => ({
 
 import { act, configure, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Animated, Dimensions, StyleSheet } from 'react-native';
-import { SignalScreen, KEEP_COMPACT_LABEL, SCRIPT_TITLE, WHY_TITLE } from './SignalScreen';
+import { SignalScreen, KEEP_COMPACT_LABEL, SCRIPT_TITLE, SHOW_FULL_LABEL, WHY_TITLE } from './SignalScreen';
 import { NO_READ_LABEL } from './EpisodeGallery';
 import SignalRoute, { OFF_TITLE } from '../../../app/signal/[id]';
 import { INCIDENT_REC_LABEL as REC_LABEL } from '../../../lib/incidentReadState';
-import { buildSignalScreenModel, type SignalScreenEpisode, type SignalScreenInput } from '../../../lib/signalScreen';
+import { buildSignalScreenModel, screenLeadsWithLanes, type SignalScreenEpisode, type SignalScreenInput } from '../../../lib/signalScreen';
 import type { CachedFinding, IntakeDeclineFinding, SymptomChronicityFinding } from '../../../lib/signal';
 import { SIGNAL_OPEN_MOTION } from '../../motion/signalOpenMotion';
 import { FLIGHT_MOTION, abortFlight, getFlightState, landFlight, setHeroReady, settleOutbound, stageFlight } from '../../motion/flightMotion';
@@ -97,6 +97,23 @@ const benign: CachedFinding = {
   finding: { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 2, priorCount: 3, direction: 'flat', windowDays: 14 },
 };
 const safety: CachedFinding = { rank: 0, text: 'Nyx has vomited 21 times across 7 of the last 8 weeks. Worth a vet visit.', finding: chronicity };
+const timingCached: CachedFinding = {
+  rank: 1,
+  text: '9 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating — a timing pattern worth mentioning to your vet.',
+  finding: {
+    type: 'postprandial_timing',
+    priorityClass: 'insight',
+    symptomType: 'vomit',
+    rapidCount: 9,
+    eligibleCount: 10,
+    totalEpisodes: 21,
+    rapidWindowMinutes: 30,
+    lastTwoEligibleRapid: false,
+    medianMinutesSinceFeeding: 12,
+    feedingFormsInEvidence: [],
+    windowDays: 56,
+  },
+};
 
 function episode(dayKey: string, hour: number, over: Partial<SignalScreenEpisode> = {}): SignalScreenEpisode {
   const [y, m, d] = dayKey.split('-').map(Number);
@@ -201,6 +218,38 @@ describe('SignalScreen — the sections, in the ruled order', () => {
     expect(mockLoadSignalScreen).toHaveBeenCalledWith('pet-1', 'reflection:vomit');
   });
 
+  it('a TIMING finding leads with its own evidence: title · lanes · sentence · compare · bars (D2 = a, CUL-1270)', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(timingCached));
+    const view = render(<SignalScreen petId="pet-1" identity="postprandial_timing:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    expect(view.getByTestId('signal-screen-title').props.children.props.children).toBe('Vomiting soon after meals');
+    const ids = testIds(view.toJSON());
+    const order = [
+      'signal-screen-title',
+      'signal-section-lanes',
+      'signal-section-sentence',
+      'signal-section-compare',
+      'signal-section-weekly',
+      'signal-section-episodes',
+      'signal-section-why',
+    ].map((id) => ids.indexOf(id));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('which finding leads with the lanes: the three that claim time-from-a-meal, and only when there are lanes', () => {
+    const lanes = buildSignalScreenModel(input(timingCached)).lanes;
+    expect(lanes).not.toBeNull();
+    const as = (type: string) => ({ finding: { ...timingCached.finding, type } as never, lanes });
+    expect(screenLeadsWithLanes(as('postprandial_timing'))).toBe(true);
+    expect(screenLeadsWithLanes(as('empty_stomach_timing'))).toBe(true);
+    expect(screenLeadsWithLanes(as('timing_story'))).toBe(true);
+    for (const t of ['symptom_chronicity', 'reflection', 'timeofday_clustering', 'symptom_worsening', 'food_symptom_correlation']) {
+      expect(screenLeadsWithLanes(as(t))).toBe(false);
+    }
+    expect(screenLeadsWithLanes({ finding: timingCached.finding, lanes: null })).toBe(false);
+  });
+
   it('the compare says "logged N of M days" for both windows and adjudicates nothing; the lanes carry the untimed line', async () => {
     mockLoadSignalScreen.mockResolvedValue(ready(benign));
     const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
@@ -298,6 +347,36 @@ describe('SignalScreen — the sections, in the ruled order', () => {
     // The standing safety type carries the record's witness (CUL-785).
     expect(entries['symptom_chronicity:vomit'].fingerprint['record.lastEpisodeIso']).toBe('2026-09-17T22:11:00.000Z');
     expect(mockRouter.back).toHaveBeenCalledTimes(1);
+  });
+
+  it('on a FOLDED card the control is "Show it in full on Home": it removes the fold entry, for the route’s pet, then goes back', async () => {
+    mockReadFoldEntries.mockResolvedValue({
+      'symptom_chronicity:vomit': { state: 'folded', fingerprint: {}, foldedAtIso: '2026-09-20T10:00:00.000Z' },
+      'reflection:vomit': { state: 'folded', fingerprint: {}, foldedAtIso: '2026-09-20T10:00:00.000Z' },
+    } as never);
+    mockLoadSignalScreen.mockResolvedValue(ready(safety));
+    const view = render(<SignalScreen petId="pet-1" identity="symptom_chronicity:vomit" />);
+    await waitFor(() => expect(view.getByText(SHOW_FULL_LABEL)).toBeTruthy());
+    expect(view.queryByTestId('signal-keep-compact')).toBeNull();
+    await act(async () => {
+      fireEvent.press(view.getByTestId('signal-show-full'));
+    });
+    await waitFor(() => expect(mockWriteFoldEntries).toHaveBeenCalledTimes(1));
+    const [petId, entries] = mockWriteFoldEntries.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(petId).toBe('pet-1');
+    // Only this card's entry goes; another card's fold is untouched.
+    expect(Object.keys(entries)).toEqual(['reflection:vomit']);
+    expect(mockRouter.back).toHaveBeenCalledTimes(1);
+    mockReadFoldEntries.mockResolvedValue({});
+  });
+
+  it('an unreadable fold store shows the shipped "Keep it compact" form (C-12: never assume folded)', async () => {
+    mockReadFoldEntries.mockResolvedValue(null as never);
+    mockLoadSignalScreen.mockResolvedValue(ready(safety));
+    const view = render(<SignalScreen petId="pet-1" identity="symptom_chronicity:vomit" />);
+    await waitFor(() => expect(view.getByText(KEEP_COMPACT_LABEL)).toBeTruthy());
+    expect(view.queryByTestId('signal-show-full')).toBeNull();
+    mockReadFoldEntries.mockResolvedValue({});
   });
 
   it('the missing state names the route’s pet, never the active one (C-9)', async () => {

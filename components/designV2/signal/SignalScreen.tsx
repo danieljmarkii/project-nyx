@@ -8,7 +8,7 @@ import { readLastEpisodeIso } from '../../../hooks/useLastEpisodeDates';
 import { focusAccessibility } from '../../../lib/a11yFocus';
 import { measureNodeInWindow, type WindowRect } from '../../../lib/measureNode';
 import { foldedEntry, readFoldEntries, writeFoldEntries, type RecordFacts } from '../../../lib/signalFold';
-import { loadSignalScreen, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
+import { loadSignalScreen, screenLeadsWithLanes, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
 import { WhorlSpinner } from '../../brand/WhorlSpinner';
 import { CompareBars } from '../../charts/CompareBars';
 import { TimingLanes } from '../../charts/TimingLanes';
@@ -34,7 +34,7 @@ import { leadChartWidth } from './SignalLeadCard';
 // SignalScreen — the Signal's own screen (D2-3 · CUL-1065; design authority
 // `docs/culprit-design-v4-mockups.html` §03, the sections in this order):
 //
-//   1. the title                       `signalTitle` — names the thing and the window
+//   1. the title                       `signalTitle` — names the finding's claim (CUL-1270)
 //   2. the weekly bars                 every week's count and its logged days
 //   3. the count-anchored sentence     the server's phrased sentence, the Change Contract's
 //   4. the compare                     two windows, logged days shown, nothing adjudicated
@@ -42,6 +42,17 @@ import { leadChartWidth } from './SignalLeadCard';
 //   6. the episodes                    a gallery, each tile its OWN read
 //   7. why this is a Signal            counts, not a verdict; the medication inside the window
 //   8. keep it compact on Home         folds the Home card for the owner's return
+//
+// A TIMING finding leads with its own evidence (CUL-1270 · D2 = a): the lanes move to
+// section 2 and the weekly bars follow the sentence, because minutes-from-a-meal is what
+// that finding claims and weeks are what the recurrence claims. Two vomiting findings
+// counted the same rows and drew the same first chart, so the PM read their screens as
+// one screen twice; the first chart is now the one only that finding has
+// (`screenLeadsWithLanes`).
+//
+// Section 8 is two-way since CUL-1270: a folded Home card is a door to this screen (the
+// face tap never unfolds), so the way back to the full card lives here too — *Show it in
+// full on Home* when the card is folded, *Keep it compact on Home* when it is not.
 //
 // A safety finding gets the screen too (S1 lives on Home's card, not here): the same
 // sections over its record, plus the shipped phone script (`ExpandedReceipts`) after the
@@ -71,6 +82,9 @@ import { leadChartWidth } from './SignalLeadCard';
 /** *Keep it compact on Home* — the fold control's words on the screen. */
 export const KEEP_COMPACT_LABEL = 'Keep it compact on Home';
 export const KEEP_COMPACT_HINT = 'Folds this signal to one line on Home. It reopens on its own when the picture changes.';
+/** The same control on a folded card: the way back to the full card on Home. */
+export const SHOW_FULL_LABEL = 'Show it in full on Home';
+export const SHOW_FULL_HINT = 'Shows this signal in full on Home again.';
 /** The Why block's title. */
 export const WHY_TITLE = 'Why this is a Signal';
 /** The phone script's title on a safety screen. */
@@ -298,6 +312,21 @@ function Body({
   windowWidth: number;
 }) {
   const [folding, setFolding] = useState(false);
+  // Whether the Home card is folded now — read from the one store, never assumed. Null until
+  // the read answers (C-12): the control then shows its shipped *Keep it compact* form, the
+  // one that can never hide a card the owner has not folded.
+  const [foldedNow, setFoldedNow] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    readFoldEntries(petId)
+      .then((entries) => {
+        if (!cancelled && entries) setFoldedNow(entries[model.identity]?.state === 'folded');
+      })
+      .catch((e) => console.warn('[signal-screen] fold read failed:', e));
+    return () => {
+      cancelled = true;
+    };
+  }, [petId, model.identity]);
   // The hero tells the flight where it is (a retarget if the slot guessed wrong) and that
   // it exists — the release, when the spring has already rested.
   const onHeroRect = useCallback(
@@ -328,7 +357,35 @@ function Body({
     }
   };
 
+  // *Show it in full on Home*: the same removal Home's strip tap made (`useSignalFold.unfold`
+  // — the entry goes, the card is open), through the same store, then back to Home.
+  const showInFull = async () => {
+    if (folding) return;
+    setFolding(true);
+    try {
+      const stored = await readFoldEntries(petId);
+      if (stored && stored[model.identity]?.state === 'folded') {
+        const next = { ...stored };
+        delete next[model.identity];
+        await writeFoldEntries(petId, next);
+      }
+    } finally {
+      setFolding(false);
+      onFolded();
+    }
+  };
+
   const drawIn = true;
+  const lanesLead = screenLeadsWithLanes(model);
+  const lanesSection = model.lanes ? (
+    <View style={styles.section} testID="signal-section-lanes">
+      <ThemedText style={styles.sectionTitle} accessibilityRole="header">
+        Timed from meals
+      </ThemedText>
+      <TimingLanes lanes={model.lanes.lanes} axis={model.lanes.axis} drawIn={drawIn} identity={model.identity} />
+    </View>
+  ) : null;
+  const hero = <Hero model={model} drawIn={drawIn && !flew} windowWidth={windowWidth} hidden={flight != null} onWindowRect={onHeroRect} />;
   return (
     <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} testID="signal-screen-body">
       {/* 1 · the title */}
@@ -336,8 +393,9 @@ function Body({
         <ThemedText style={styles.title}>{model.title}</ThemedText>
       </View>
 
-      {/* 2 · the weekly bars — the hero. A chart that flew in does not draw in again. */}
-      <Hero model={model} drawIn={drawIn && !flew} windowWidth={windowWidth} hidden={flight != null} onWindowRect={onHeroRect} />
+      {/* 2 · the finding's own evidence first: the lanes for a timing finding, else the
+          weekly bars — the hero. A chart that flew in does not draw in again. */}
+      {lanesLead ? lanesSection : hero}
 
       {/* 3 + 4 · the sentence and the compare land together */}
       <Animated.View style={[styles.section, landStyle]} testID="signal-section-sentence">
@@ -349,15 +407,8 @@ function Body({
         ) : null}
       </Animated.View>
 
-      {/* 5 · timed from meals */}
-      {model.lanes ? (
-        <View style={styles.section} testID="signal-section-lanes">
-          <ThemedText style={styles.sectionTitle} accessibilityRole="header">
-            Timed from meals
-          </ThemedText>
-          <TimingLanes lanes={model.lanes.lanes} axis={model.lanes.axis} drawIn={drawIn} identity={model.identity} />
-        </View>
-      ) : null}
+      {/* 5 · timed from meals — or, on a timing finding, the weekly bars below the sentence */}
+      {lanesLead ? hero : lanesSection}
 
       {/* 6 · the episodes */}
       {model.episodes ? (
@@ -388,21 +439,36 @@ function Body({
         </View>
       ) : null}
 
-      {/* 8 · keep it compact on Home */}
+      {/* 8 · keep it compact on Home — or, on a folded card, show it in full again */}
       {model.foldable ? (
         <View style={styles.section} testID="signal-section-fold">
-          <Pressable
-            onPress={() => void keepCompact()}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={KEEP_COMPACT_LABEL}
-            accessibilityHint={KEEP_COMPACT_HINT}
-            style={styles.foldControl}
-            testID="signal-keep-compact"
-          >
-            <ThemedText style={styles.foldLabel}>{KEEP_COMPACT_LABEL}</ThemedText>
-            <ThemedText style={styles.foldVerb}>Fold</ThemedText>
-          </Pressable>
+          {foldedNow ? (
+            <Pressable
+              onPress={() => void showInFull()}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={SHOW_FULL_LABEL}
+              accessibilityHint={SHOW_FULL_HINT}
+              style={styles.foldControl}
+              testID="signal-show-full"
+            >
+              <ThemedText style={styles.foldLabel}>{SHOW_FULL_LABEL}</ThemedText>
+              <ThemedText style={styles.foldVerb}>Unfold</ThemedText>
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() => void keepCompact()}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={KEEP_COMPACT_LABEL}
+              accessibilityHint={KEEP_COMPACT_HINT}
+              style={styles.foldControl}
+              testID="signal-keep-compact"
+            >
+              <ThemedText style={styles.foldLabel}>{KEEP_COMPACT_LABEL}</ThemedText>
+              <ThemedText style={styles.foldVerb}>Fold</ThemedText>
+            </Pressable>
+          )}
         </View>
       ) : null}
     </ScrollView>

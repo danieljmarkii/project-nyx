@@ -47,3 +47,15 @@ export async function loadSignalLead(petId: string, cached: CachedFinding, nowMs
   });
   return { title, weekly, line: weekLine(weekly), noun: symptomWord(symptom), trial };
 }
+
+/**
+ * The running trial alone, for a Signal row that names it (CUL-1270): the trial card's
+ * title reads the local trial's identity and day, exactly as the lead card and the screen
+ * do, so the row and the screen it opens print the same day. Null when there is no pet,
+ * no trial, or the read failed — the title then falls back to the cache's own day.
+ */
+export async function loadSignalRowTrial(petId: string, nowMs: number = Date.now()): Promise<SignalTrialWindow | null> {
+  const pet = usePetStore.getState().pets.find((p) => p.id === petId) ?? null;
+  if (!pet) return null;
+  return readSignalTrial({ id: pet.id, name: pet.name, species: pet.species, sex: pet.sex }, nowMs).catch(() => null);
+}

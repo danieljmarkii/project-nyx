@@ -341,6 +341,19 @@ function trialDayWord(trial: SignalTrialWindow): string {
   return `Day ${trial.dayCounter} of the ${lowerFirst(trial.identity)}`;
 }
 
+/**
+ * Whether the screen's first chart is the timing lanes (CUL-1270 · D2 = a): the finding
+ * CLAIMS a time-from-a-meal, so the lanes are its evidence and lead; the weekly bars move
+ * below the sentence. A recurrence or a frequency finding claims weeks, so its bars lead.
+ * The clock-band finding claims an hour of the day, which the lanes do not draw, so it keeps
+ * the bars first. No lanes to draw (a symptom the engine does not time) — the bars lead.
+ */
+export function screenLeadsWithLanes(model: Pick<SignalScreenModel, 'finding' | 'lanes'>): boolean {
+  if (!model.lanes) return false;
+  const t = model.finding.type;
+  return t === 'postprandial_timing' || t === 'empty_stomach_timing' || t === 'timing_story';
+}
+
 // ── The builder (pure) ────────────────────────────────────────────────────────
 
 export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenModel {
