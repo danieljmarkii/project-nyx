@@ -1608,9 +1608,10 @@ Deno.test('#7/#8 mealItems — rated meals grouped by food (label · protein · 
   assert.deepEqual(summariseIntake(items[0].intakeBreakdown), { kind: 'typical', rating: 'some', count: 2 }, 'strict-plurality intake (2 some vs 1 all)')
   assert.equal(items[1].foodLabel, 'Instinct Turkey (Wet)') // B-568 — same rule on every appendix row
   assert.equal(items[1].count, 1)
-  // The grouped total reconciles with mealCompletion (same ratedMeals set).
+  // Every meal in this fixture is rated, so the meals logged and the meals rated are one
+  // number here; CUL-1274's test below is the record where they are not.
   const grouped = items.reduce((s, i) => s + i.count, 0)
-  assert.equal(grouped, snap.diet.mealCompletion?.ratedMeals, 'grouped meal count === ratedMeals')
+  assert.equal(grouped, snap.diet.mealCompletion?.ratedMeals, 'fully rated: logged === rated')
   assert.equal(grouped, 4)
 })
 
@@ -2075,7 +2076,8 @@ Deno.test('#7/#8 — mealItems groups rated meals by food (label · protein · c
   assert.equal(items[1].primaryProtein, 'turkey')
   // One meal of this food: a fact, never a habit (the n floor).
   assert.deepEqual(summariseIntake(items[1].intakeBreakdown), { kind: 'itemised', ratings: [{ rating: 'picked', count: 1 }] })
-  // Reconciles with mealCompletion.ratedMeals — the SAME underlying set, never a double count.
+  // Fully rated, so the meals logged reconcile with mealCompletion.ratedMeals — never a double
+  // count. A partly rated record is CUL-1274's test below.
   assert.equal(items.reduce((a, i) => a + i.count, 0), snap.diet.mealCompletion?.ratedMeals)
 })
 
@@ -4302,4 +4304,72 @@ Deno.test('CUL-981 — no photographed incident means no colour distribution, no
   const snap = assembleReport(baseInput({ now: '2026-06-27T12:00:00Z', events, aiAnalyses: [] }))
   assert.deepEqual(snap.vomitPhenotype!.colourDistribution, {})
   assert.equal(snap.vomitPhenotype!.assessedCount, 0)
+})
+
+// ── CUL-1274 — mealItems counts every LOGGED meal; the ratings are the subset that exists ──
+// The list was built from the rated meals alone, so a selectively rated record printed its
+// rated subset as the meals fed on page 1, in appendix B's "Meals logged" row and in appendix
+// E, and a food fed only in unrated meals was missing from the protein panel.
+
+Deno.test('CUL-1274 — mealItems groups every logged meal, rated or not; mealCompletion stays the rated subset', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        // Six meals of the wet food, one of them rated (the one that went wrong).
+        mealEvent('2026-06-10', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+        mealEvent('2026-06-11', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+        mealEvent('2026-06-12', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken', rating: 'refused' }),
+        mealEvent('2026-06-13', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+        mealEvent('2026-06-14', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+        mealEvent('2026-06-15', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+        // A second food, fed as meals and never rated.
+        mealEvent('2026-06-16', { format: 'wet_canned', protein: 'duck', label: 'Wet Duck' }),
+        mealEvent('2026-06-17', { format: 'wet_canned', protein: 'duck', label: 'Wet Duck' }),
+        // A treat is not a meal, rated or not.
+        mealEvent('2026-06-18', { foodType: 'treat', format: 'treat', protein: 'salmon', label: 'Salmon Treat' }),
+      ],
+    }),
+  )
+  const items = snap.diet.mealItems
+  assert.deepEqual(
+    items.map((i) => [i.foodLabel, i.count]),
+    [['Wet Chicken (Wet)', 6], ['Wet Duck (Wet)', 2]],
+    'every logged meal is counted, and the never-rated food has a row',
+  )
+  assert.deepEqual(items[0].intakeBreakdown, [{ rating: 'refused', count: 1 }], 'the ratings that exist, and only those')
+  assert.deepEqual(items[1].intakeBreakdown, [], 'an unrated meal adds nothing to the breakdown')
+  assert.equal(items.reduce((a, i) => a + i.count, 0), 8, 'meals logged; the treat is not one')
+  const ratedInItems = items.reduce((a, i) => a + i.intakeBreakdown.reduce((b, x) => b + x.count, 0), 0)
+  assert.equal(ratedInItems, snap.diet.mealCompletion?.ratedMeals, 'the per-food ratings ARE the rated subset')
+  assert.equal(snap.diet.mealCompletion?.ratedMeals, 1)
+  assert.equal(snap.diet.mealCompletion?.finishedMeals, 0)
+
+  // Through the render: page 1 and both appendices count the 8, and the duck reaches the
+  // protein panel a vet scans for overlap.
+  const html = renderReport(snap)
+  const t = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ')
+  assert.ok(/8 meals logged; 1 rated, 0 of 1 fully eaten/.test(t), 'page 1 states both numbers')
+  assert.ok(/8 logged meals across 2 foods/.test(t), 'appendix B and E count the same 8')
+  assert.ok(/Wet Duck \(Wet\) \(fed as meals\)/.test(t), 'the never-rated food is in the protein panel')
+})
+
+Deno.test('CUL-1274 — a record with meals and NO rating keeps its meals; the completion figure stays null', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        mealEvent('2026-06-10', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+        mealEvent('2026-06-11', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+        mealEvent('2026-06-12', { format: 'wet_canned', protein: 'chicken', label: 'Wet Chicken' }),
+      ],
+    }),
+  )
+  assert.equal(snap.diet.mealCompletion, null, 'no rated meal, no completion figure')
+  assert.equal(snap.diet.mealItems.length, 1)
+  assert.equal(snap.diet.mealItems[0].count, 3)
+  assert.deepEqual(snap.diet.mealItems[0].intakeBreakdown, [])
+  const t = renderReport(snap).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ')
+  assert.ok(/3 meals logged, none rated for intake/.test(t), 'page 1 says the meals were fed')
+  assert.ok(!/No rated meals logged in this window/.test(t))
 })

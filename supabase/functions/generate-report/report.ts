@@ -1777,6 +1777,10 @@ export interface DietSummary {
    * The ratings feed the render's descriptive free-fed feeding line (R2-3), so a grazing cat's
    * discrete meals read "typically ate some" rather than a scary bare "0 of N fully eaten."
    * Descriptive texture, never a scored completion figure and never reassurance.
+   *
+   * RATED ONLY, and never the number of meals fed (CUL-1274). The meals logged are
+   * `mealItems`' counts; this is the subset an owner rated, which on a record where rating
+   * has lapsed is a handful of meals chosen because something went wrong.
    */
   mealCompletion: {
     ratedMeals: number
@@ -1788,12 +1792,20 @@ export interface DietSummary {
     intakeBreakdown: Array<{ rating: IntakeRating; count: number }>
   } | null
   /**
-   * Grouped rated-meal items (#7/#8) — the actual foods eaten AS MEALS (e.g. a wet diet),
+   * Grouped meal items (#7/#8) — the actual foods fed AS MEALS (e.g. a wet diet),
    * grouped by food item like Appendix B treats: label · protein · feeding count · date span ·
    * typical intake. Previously the rated meals were reduced to a bare count and their food
    * identity discarded before render, so a substantial wet diet was invisible in the diet picture
    * and the feeding line cited a non-existent appendix. Named in the diet history + itemised in
    * the meals appendix (E). Descriptive only — this does NOT touch the intake-decline engine.
+   *
+   * EVERY LOGGED MEAL, RATED OR NOT (CUL-1274). This list was built from the rated meals
+   * alone, which was a small bias when owners rated three meals in four and became the
+   * whole picture once rating lapsed: page 1, the diet history's "Meals logged" row and
+   * appendix E each printed the rated subset as the meals fed, and a food fed only in
+   * unrated meals was missing from the protein panel a vet scans for overlap. `count` is
+   * the meals logged; `intakeBreakdown` holds the ratings that exist, so the unrated
+   * remainder is `count` minus its sum, and is never read as eaten or as refused.
    */
   mealItems: Array<{
     foodLabel: string | null
@@ -1816,6 +1828,9 @@ export interface DietSummary {
      * Ordered along the intake scale (all → most → some → picked → refused), which is
      * how a clinician reads it, never by count — a count sort puts the modal rating
      * first and re-creates the impression the mode column gave.
+     *
+     * Its sum is the RATED meals of this food, which may be fewer than `count` or zero
+     * (CUL-1274); an unrated meal adds nothing here.
      */
     intakeBreakdown: Array<{ rating: IntakeRating; count: number }>
     proteinSet: ProteinSetView
@@ -2301,7 +2316,7 @@ export interface Provenance {
    * "no meal dump when there's no intake concern" — and that rationale is right about a
    * calm record and wrong about the one the cold read failed on. Three separate strings
    * send the reader here for the ratings (the `trial_diet_refusal` safety row, the trial
-   * block's refusal sentence, and the legend's own "read the logged ratings in appendix E"),
+   * block's refusal sentence, and the legend's own "read the intake recorded against each food in appendix E"),
    * and NONE of them is gated on `intake_decline` — `detectIntakeDecline` is a RELATIVE
    * detector, so a diet refused from day 1 is uniformly low and never fires it. The result
    * was a circular dead end on a chronically vomiting cat: page 1 pointed at an appendix
@@ -3793,7 +3808,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     }))
 
   const windowMeals = windowEvents.filter((e) => e.type === 'meal' && e.meal)
-  const ratedMeals = windowMeals.filter((e) => e.meal!.foodType === 'meal' && e.meal!.intakeRating != null)
+  // The meals LOGGED and the meals RATED are two populations and every surface names which
+  // it speaks (CUL-1274): the grouping below is the first, `mealCompletion` the second.
+  const loggedMeals = windowMeals.filter((e) => e.meal!.foodType === 'meal')
+  const ratedMeals = loggedMeals.filter((e) => e.meal!.intakeRating != null)
   const finishedMeals = ratedMeals.filter((e) => e.meal!.intakeRating === 'all').length
   // R2-3 — the descriptive intake MODE (strict plurality only): "typically <mode>" texture for the
   // free-fed grazer's discrete meals, never a scored figure. A tie yields null (no honest "typical").
@@ -3812,10 +3830,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         }
       : null
 
-  // Grouped rated-meal items (#7/#8) — surface the ACTUAL foods eaten as meals (e.g. a wet diet),
+  // Grouped meal items (#7/#8) — surface the ACTUAL foods fed as meals (e.g. a wet diet),
   // which the pipeline previously reduced to a bare count and discarded. Grouped by food item so
   // the diet history can name them and the meals appendix (E) can itemise them, mirroring the
   // Appendix B treat grouping. Descriptive only — orthogonal to the intake-decline engine.
+  // Every LOGGED meal, rated or not (CUL-1274): an unrated meal is a meal fed, and its food
+  // belongs in the diet picture and the protein panel whether or not anyone tapped a rating.
   const mealGroups = new Map<
     string,
     {
@@ -3829,7 +3849,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       proteinSet: ProteinSetView
     }
   >()
-  for (const e of ratedMeals) {
+  for (const e of loggedMeals) {
     const m = e.meal!
     // Group by food identity: the library item id when present, else the brand/product label.
     // A meal with NEITHER collapses into ONE "unlabeled" bucket (a fixed key, not the unique
@@ -3850,7 +3870,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       g.count++
       if (dayKey && (g.firstDate === null || dayKey < g.firstDate)) g.firstDate = dayKey
       if (dayKey && (g.lastDate === null || dayKey > g.lastDate)) g.lastDate = dayKey
-      g.intakes.push(m.intakeRating as IntakeRating)
+      if (m.intakeRating != null) g.intakes.push(m.intakeRating)
     } else {
       mealGroups.set(key, {
         foodLabel: mealFoodLabel(m),
@@ -3867,7 +3887,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         count: 1,
         firstDate: dayKey,
         lastDate: dayKey,
-        intakes: [m.intakeRating as IntakeRating],
+        // Ratings only: an unrated meal is counted above and adds nothing here, so the
+        // breakdown never reads a missing rating as a rating (CUL-1274, CUL-1118).
+        intakes: m.intakeRating != null ? [m.intakeRating] : [],
         // The group key IS food identity (item id, else label), so every member is the
         // same food and the first member's set is the group's set — never a merge
         // across foods, which would invent an exposure no single food carried. The one

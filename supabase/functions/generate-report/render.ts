@@ -6026,38 +6026,76 @@ function dietMeds(snap: ReportSnapshot): string {
     // a vet reads for texture. `summariseIntake` separates the two, and the tie renders as
     // the split: it picks no side (breaking it toward the calmer rating would manufacture
     // reassurance the intake floor forbids) and it carries more than the adverb could.
+    //
+    // THE MEALS LOGGED AND THE MEALS RATED ARE TWO NUMBERS (CUL-1274). This clause printed
+    // the rated count as "N meals" and vanished when nothing was rated, so an owner who
+    // rated only the meals that went wrong showed a vet 4 meals out of 60, and one who rated
+    // none showed no meals at all. Where every meal was rated the two are one number and
+    // the clause reads as it always did.
+    //
+    // A PARTLY RATED RECORD IS ITEMISED, NEVER "TYPICALLY". The adverb states a habit of the
+    // pet, and the rated meals are a subset nobody chose at random: rating lapses, and the
+    // meals that still get a tap are the ones where something looked off (or, for another
+    // owner, the ones that went well). "Typically ate it all" over 4 of 60 is a reassurance
+    // the other 56 cannot support, so the ratings go with their counts, which are checkable.
+    const { logged } = mealCounts(d)
+    const rated = mc ? mc.ratedMeals : 0
+    const partlyRated = rated > 0 && logged > rated
     const intake = mc ? summariseIntake(mc.intakeBreakdown) : { kind: 'none' as const }
-    const modeBit =
-      intake.kind === 'typical'
-        ? `, typically &ldquo;${h(intakeLabel(intake.rating).toLowerCase())}&rdquo;`
-        : intake.kind === 'itemised'
-          ? // EVERY rating, with its count — never a summary that deletes one. "Split between
-            // A and B" read as an exhaustive partition and dropped the untied ratings, which
-            // on a real spread meant two refusals vanished from page 1 under a sentence
-            // claiming to account for the set. This is the same list appendix E prints, so
-            // the two surfaces are now literally identical on a record of one food.
-            `, ratings: ${intake.ratings
-              .map((t) => `&ldquo;${h(intakeLabel(t.rating).toLowerCase())}&rdquo; &times;${num(t.count)}`)
-              .join(' &middot; ')}`
-          : ''
+    const itemised = (ratings: DietSummary['mealItems'][number]['intakeBreakdown']): string =>
+      // EVERY rating, with its count — never a summary that deletes one. "Split between
+      // A and B" read as an exhaustive partition and dropped the untied ratings, which
+      // on a real spread meant two refusals vanished from page 1 under a sentence
+      // claiming to account for the set. This is the same list appendix E prints, so
+      // the two surfaces are now literally identical on a record of one food.
+      `, ratings: ${ratings
+        .map((t) => `&ldquo;${h(intakeLabel(t.rating).toLowerCase())}&rdquo; &times;${num(t.count)}`)
+        .join(' &middot; ')}`
+    const modeBit = !mc
+      ? ''
+      : partlyRated
+        ? itemised(mc.intakeBreakdown)
+        : intake.kind === 'typical'
+          ? `, typically &ldquo;${h(intakeLabel(intake.rating).toLowerCase())}&rdquo;`
+          : intake.kind === 'itemised'
+            ? itemised(intake.ratings)
+            : ''
     const typically = mc ? `${modeBit} &mdash; ${num(mc.finishedMeals)} of ${num(mc.ratedMeals)} fully eaten` : ''
     // #8 — NAME the foods fed as meals (e.g. a wet diet) on page 1, not just a bare "N discrete
     // meals": the first real artifact left Nyx's wet food unnamed and cited a non-existent appendix.
     const mealNames = distinctLabels(d.mealItems.map((i) => ({ label: i.foodLabel })), 2)
-    const mealsBit = mc
-      ? ` Also fed as meals: ${mealNames} (${num(mc.ratedMeals)} meal${
-          mc.ratedMeals === 1 ? '' : 's'
-        }${typically}; ${mealsAppendixPointer(snap)}).`
-      : ''
+    const countBit =
+      rated === 0
+        ? `${num(logged)} meal${logged === 1 ? '' : 's'} logged, none rated for intake`
+        : partlyRated
+          ? `${num(logged)} meals logged; ${num(rated)} rated${typically}`
+          : `${num(logged)} meal${logged === 1 ? '' : 's'}${typically}`
+    const mealsBit =
+      logged > 0 ? ` Also fed as meals: ${mealNames} (${countBit}; ${mealsAppendixPointer(snap)}).` : ''
     feedBits.push(`Primarily free-fed: ${freeFedLabels}. <b>Intake not directly observed.</b>${mealsBit}`)
   } else {
-    if (d.mealCompletion) {
+    // The same two numbers (CUL-1274). This line was honest about its population, "N of M
+    // RATED meals", but silent about the meals beside it: a record with 60 meals and 4
+    // ratings read as a 4-meal record, and one with no ratings fell through to "No rated
+    // meals logged" over 60 meals fed. The ratio keeps its own words either way.
+    const { logged } = mealCounts(d)
+    const mc = d.mealCompletion
+    const pointer = `Meals are ${mealsAppendixPointer(snap)}.`
+    if (mc && logged > mc.ratedMeals) {
       feedBits.push(
-        `${num(d.mealCompletion.finishedMeals)} of ${num(
-          d.mealCompletion.ratedMeals,
-        )} rated meals fully eaten (owner-observed; treats + free-fed excluded). Meals are ${mealsAppendixPointer(
-          snap,
-        )}.`,
+        `${num(logged)} meals logged; ${num(mc.ratedMeals)} rated, ${num(mc.finishedMeals)} of ${num(
+          mc.ratedMeals,
+        )} fully eaten (owner-observed; treats + free-fed excluded). ${pointer}`,
+      )
+    } else if (mc) {
+      feedBits.push(
+        `${num(mc.finishedMeals)} of ${num(
+          mc.ratedMeals,
+        )} rated meals fully eaten (owner-observed; treats + free-fed excluded). ${pointer}`,
+      )
+    } else if (logged > 0) {
+      feedBits.push(
+        `${num(logged)} meal${logged === 1 ? '' : 's'} logged, none rated for intake (treats + free-fed excluded). ${pointer}`,
       )
     }
     if (isFreeFed) {
@@ -6658,6 +6696,29 @@ function mealsAppendixVisible(snap: ReportSnapshot): boolean {
   return snap.diet.mealItems.length > 0 || snap.provenance.intakeLog.length > 0
 }
 
+/** The rated meals of one food: the sum of its ratings, which an unrated meal adds nothing to. */
+function ratedCountOf(item: DietSummary['mealItems'][number]): number {
+  return item.intakeBreakdown.reduce((a, b) => a + b.count, 0)
+}
+
+/**
+ * The meals LOGGED in this window, and how many of them were RATED, off the one list every
+ * meal surface renders (CUL-1274). Page 1, the diet history's "Meals logged" row and appendix
+ * E's caption each print a meal count, and they printed the rated subset as the meals fed
+ * because the list behind them held nothing else. Derived from `mealItems` rather than read
+ * off a second field so the three can never count two populations: a number that labels a
+ * destination counts what the destination holds (C-3).
+ */
+function mealCounts(d: DietSummary): { logged: number; rated: number } {
+  let logged = 0
+  let rated = 0
+  for (const i of d.mealItems) {
+    logged += i.count
+    rated += ratedCountOf(i)
+  }
+  return { logged, rated }
+}
+
 /**
  * What appendix E actually holds, in the ONE phrase every pointer to it uses (CUL-643).
  *
@@ -7091,7 +7152,7 @@ function mealsAppendix(snap: ReportSnapshot): string {
   return `
 <section class="page">
   <p class="appx-title serif">Appendix E — Meals &amp; intake</p>
-  <p class="appx-sub">The meals the owner logged in this window — the food fed as discrete meals, distinct from free-fed food and treats (which appear in appendix&nbsp;C). &ldquo;Intake&rdquo; is what the owner recorded after each meal; a declined or barely-touched meal is a possible health signal, never &ldquo;picky.&rdquo; Free-fed food is not directly observed and is not rated, so it does not appear here. Meals are grouped by food below; the time of each individual meal is in the Culprit app.</p>
+  <p class="appx-sub">The meals the owner logged in this window — the food fed as discrete meals, distinct from free-fed food and treats (which appear in appendix&nbsp;C). &ldquo;Intake&rdquo; is what the owner recorded after each meal; a declined or barely-touched meal is a possible health signal, never &ldquo;picky.&rdquo; A meal logged without a rating is counted and shown as &ldquo;not rated&rdquo;: its intake is unknown, neither eaten nor refused. Free-fed food is not directly observed and is not rated, so it does not appear here. Meals are grouped by food below; the time of each individual meal is in the Culprit app.</p>
   ${
     // The intake table can be a sheet tall, so it is never the anchor: measured on the
     // `refused` fixture, wrapping it whole pushed it to a fresh sheet and cost a page. Its
@@ -7105,7 +7166,7 @@ function mealsAppendix(snap: ReportSnapshot): string {
 
 /** The grouped meal-item summary — one row per food (label · protein · feedings · span · typical intake). */
 function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): string {
-  const total = items.reduce((a, i) => a + i.count, 0)
+  const { logged: total, rated } = mealCounts(snap.diet)
   const markOffTrial = snap.diet.trialTargetProtein != null
   const rows = items
     .map((i) => {
@@ -7126,15 +7187,21 @@ function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): 
       // THE DASH IS THE PREDICATE'S `none` AND NOTHING ELSE (CUL-497). Written as a length
       // check it was correct today and one refactor away from meaning "no honest typical"
       // again, which is how this cell came to stand for ninety rated meals.
-      const typical =
+      //
+      // THE UNRATED MEALS ARE A CELL OF THEIR OWN (CUL-1274). The row counts every meal
+      // logged, so ratings alone would be a partial list beside a total: "Ate it all ×3" on
+      // a ×60 row reads as the whole row. "Not rated" is stated, plain, and never folded
+      // into a rating either way — its intake is unknown, not eaten and not refused.
+      const unrated = i.count - ratedCountOf(i)
+      const cells =
         summariseIntake(i.intakeBreakdown).kind !== 'none'
-          ? i.intakeBreakdown
-              .map((b) => {
-                const cell = `${h(intakeLabel(b.rating))} &times;${num(b.count)}`
-                return b.rating === 'all' || b.rating === 'most' ? cell : `<b>${cell}</b>`
-              })
-              .join(' &middot; ')
-          : '&mdash;'
+          ? i.intakeBreakdown.map((b) => {
+              const cell = `${h(intakeLabel(b.rating))} &times;${num(b.count)}`
+              return b.rating === 'all' || b.rating === 'most' ? cell : `<b>${cell}</b>`
+            })
+          : []
+      if (unrated > 0) cells.push(`Not rated &times;${num(unrated)}`)
+      const typical = cells.length > 0 ? cells.join(' &middot; ') : '&mdash;'
       // The FULL captured set, not the primary (cold-read blocker, B-351 slice 5). This is the
       // table a vet checks to answer "what did she actually eat" — it itemises the bulk of the
       // intake — so rendering a bare `duck` here for a food whose label also lists chicken was
@@ -7151,6 +7218,9 @@ function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): 
   <table>
     <caption>${num(total)} logged meal${total === 1 ? '' : 's'} across ${num(items.length)} food${
     items.length === 1 ? '' : 's'
+  }${
+    // The rated subset, where it is a subset (CUL-1274) — the total above is meals logged.
+    rated === total ? '' : rated === 0 ? ', none rated for intake' : `, ${num(rated)} of them rated for intake`
   } &middot; ${h(fmtRange(snap.scope.startDate, snap.scope.endDate))}</caption>
     <thead><tr><th>Food</th><th style="width:104px">Protein</th><th class="c" style="width:64px">Meals</th><th style="width:118px">Dates</th><th style="width:150px">Intake recorded</th></tr></thead>
     <tbody>${rows}</tbody>
@@ -8154,7 +8224,8 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
   // Meals (#7/#8) — the foods the owner logs AS MEALS (e.g. a wet diet). Previously discarded
   // before render, so a substantial part of the diet was invisible. Name the distinct foods here
   // and itemise them in appendix E; a free-fed-only pet with no logged meals reads "None recorded."
-  const mealTotal = d.mealItems.reduce((a, i) => a + i.count, 0)
+  // Every logged meal, rated or not (CUL-1274): the same count page 1 speaks.
+  const mealTotal = mealCounts(d).logged
   const mealsBit = d.mealItems.length
     ? `${num(mealTotal)} logged meal${mealTotal === 1 ? '' : 's'} across ${num(d.mealItems.length)} food${
         d.mealItems.length === 1 ? '' : 's'
@@ -8661,7 +8732,7 @@ function appendixF(snap: ReportSnapshot): string {
             // examined intake and found nothing, on a cat refusing nearly every bowl.
             // Intake is not preference — refusal is frequently a disease signal — so the
             // legend may state what the line DEPENDS ON and must not certify its absence.
-            ` The meals the owner logged are ${mealsAppendixPointer(snap)} (meals &amp; intake). A page-1 &ldquo;time since the last <b>fully-eaten</b> meal&rdquo; line appears only when a reduced-intake flag fired; its absence means no flag fired, not that intake was normal &mdash; read the logged ratings in appendix&nbsp;E.`
+            ` The meals the owner logged are ${mealsAppendixPointer(snap)} (meals &amp; intake). A page-1 &ldquo;time since the last <b>fully-eaten</b> meal&rdquo; line appears only when a reduced-intake flag fired; its absence means no flag fired, not that intake was normal &mdash; read the intake recorded against each food in appendix&nbsp;E.`
           : ' When a reduced-intake flag is raised, page&nbsp;1 adds the time since the last <b>fully-eaten</b> meal and a meals appendix lists the rated meals behind it; no meals were logged in this window.'
     } For free-fed food, intake is <b>not directly observed</b>; absence of a meal log is not read as &ldquo;didn't eat.&rdquo;</dd>
     <dt>Associations</dt><dd>Any timing relationship is reported as co-occurrence with counts for the clinician to weigh. Nothing in this report asserts that a food caused a symptom.</dd>
