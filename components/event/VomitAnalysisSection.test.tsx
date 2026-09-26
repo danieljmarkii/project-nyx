@@ -925,6 +925,38 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     expect(announce).toHaveBeenCalledWith(readLandedCopy('AI note hidden'));
   });
 
+  // ── The second adversarial pass (CUL-1275) ──────────────────────────────────
+  it('Show, then a SKIPPED re-run, says nothing — the owner’s own write moved the server’s marker (Q1)', async () => {
+    // The local copy keeps the marker it was read with; the server's trigger moves it on
+    // Show. Without the re-base, the wait began from the stale local marker and the
+    // unchanged row read as written.
+    mockRow = row({ recommendation: 'monitor', read_text: 'Yellow, foamy.', dismissed_at: '2026-09-19T08:00:00.000Z', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<VomitAnalysisSection eventId="an-14" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Show'));
+    // What the server now holds after the owner's Show (013's trigger bumped it).
+    const afterShow = row({ recommendation: 'monitor', read_text: 'Yellow, foamy.', dismissed_at: null, updated_at: '2026-09-26T12:00:01.000Z' });
+    mockRow = afterShow;
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(afterShow); // capped: the server wrote nothing
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('a Worth a call that lands just AFTER a silent give-up is still spoken (Q3)', async () => {
+    mockRow = null;
+    const view = render(<VomitAnalysisSection eventId="an-15" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    const [, check, onGiveUp] = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)! as [unknown, () => Promise<boolean>, () => void];
+    await act(async () => { onGiveUp(); });
+    expect(announce).not.toHaveBeenCalled();
+    // The tick that was already inside its re-read when the schedule ran out.
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T12:00:40.000Z' });
+    await act(async () => { await check(); });
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
   it('is spoken on ANDROID too — the section carries no live region to cover it', async () => {
     Platform.OS = 'android';
     mockRow = row({ status: 'pending', recommendation: null });

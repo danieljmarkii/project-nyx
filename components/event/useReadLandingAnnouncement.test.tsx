@@ -120,4 +120,34 @@ describe('useReadLandingAnnouncement', () => {
     view.rerender(<Host awaiting={false} id="e1" line="Worth a call" v="t-done" />);
     expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
   });
+
+  // ── The second adversarial pass (CUL-1275) ─────────────────────────────────
+  it('a QUIET end stays armed: a late write before the next wait is the landing (Q3)', () => {
+    // The give-up ended the wait with nothing written; one in-flight re-read then commits
+    // a Worth a call. A one-shot edge would have shown it and said nothing.
+    const view = render(<Host awaiting id="e1" line={null} v={null} />);
+    view.rerender(<Host awaiting={false} id="e1" line="Not enough to say about this one yet." v={null} />);
+    expect(announce).not.toHaveBeenCalled();
+    view.rerender(<Host awaiting={false} id="e1" line="Worth a call" v="t-late" />);
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    // …and only once: the arm is spent.
+    view.rerender(<Host awaiting={false} id="e1" line="Worth a call" v="t-later" />);
+    expect(announce).toHaveBeenCalledTimes(1);
+  });
+
+  it('a new wait disarms a quiet end — its own rising edge is never a landing', () => {
+    const view = render(<Host awaiting id="e1" line={null} v="t0" />);
+    view.rerender(<Host awaiting={false} id="e1" line="Keep an eye out" v="t0" />); // skipped: armed
+    view.rerender(<Host awaiting id="e1" line={null} v="t1" />); // the re-run re-bases on the server's row
+    view.rerender(<Host awaiting={false} id="e1" line="Keep an eye out" v="t1" />); // skipped again
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('with no read ever reached, the armed edge says nothing (outside a wait, only a server read moves the marker)', () => {
+    const view = render(<Host awaiting id="e1" line={null} v={null} />);
+    view.rerender(<Host awaiting={false} id="e1" line={null} v={null} />);
+    view.rerender(<Host awaiting={false} id="e1" line={null} v={null} />);
+    expect(announce).not.toHaveBeenCalled();
+  });
 });

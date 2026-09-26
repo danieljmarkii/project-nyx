@@ -38,7 +38,7 @@ jest.mock('../../lib/analysis', () => ({
 jest.mock('./StoolFieldsEditor', () => ({ StoolFieldsEditor: () => null }));
 jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
-import { render, waitFor, act } from '@testing-library/react-native';
+import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
 import { LayoutAnimation } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { StoolAnalysisSection } from './StoolAnalysisSection';
@@ -564,6 +564,19 @@ describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
     expect(view.toJSON()).toBeNull();
     await land(row({ recommendation: 'worth_a_call', read_text: 'Worth a call.' }));
     expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
+  it('Show, then a SKIPPED re-run, says nothing — the re-run re-bases on the server’s row', async () => {
+    mockRow = row({ recommendation: 'monitor', read_text: 'Formed.', dismissed_at: '2026-09-19T08:00:00.000Z', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<StoolAnalysisSection eventId="as-4" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Show'));
+    const afterShow = row({ recommendation: 'monitor', read_text: 'Formed.', dismissed_at: null, updated_at: '2026-09-26T12:00:01.000Z' });
+    mockRow = afterShow;
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(afterShow);
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    expect(announce).not.toHaveBeenCalled();
   });
 
   it('a read already in the record on open says nothing', async () => {

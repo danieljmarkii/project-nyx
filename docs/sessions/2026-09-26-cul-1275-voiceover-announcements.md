@@ -47,7 +47,12 @@ Each card speaks its summary node's own label, only while shown, keyed on the ev
     * A landing behind a dismissal speaks what the screen shows ("AI note hidden").
     * The hook's pager-safety claim is narrowed to what it guards.
   * The removal of the version check and the silencing of the hidden-note line were each proven by mutation.
-* **`adversarial-reviewer`, round 2** (on the correction): see the PR and the CUL-1275 outcome comment.
+* **`adversarial-reviewer`, round 2** (on the correction): **BREAKS.**
+  * **Q1/Q2:** the wait's starting marker was the local copy's `updated_at`, which the owner's own Show or edit leaves stale while the server's moves. So "Show (or an edit), then a capped Re-run" still re-spoke the old verdict. **Fix:** Re-run re-reads the server's row before the wait flag rises.
+  * **Q3:** after a silent give-up, a late in-flight re-read committed a Worth a call that was shown but never spoken. **Fix:** a quiet end stays armed, and the next movement of the row before another wait is the landing.
+  * Each fix proven by mutation in both sections and in the hook.
+  * **Residual Q4:** a failed first fetch is treated as "no row", so an old read can be spoken as a landing. It is harmful only after an unread photo swap; noted on CUL-1324 (the CUL-575 class).
+* **`adversarial-reviewer`, round 3** (on the round-2 correction): see the CUL-1275 outcome comment.
 * **`code-reviewer`: ship-ready.** One cleanup, taken: a `new Date(x ?? 0)` epoch fallback left by hoisting the header's words above the early return. It was inert, but one refactor away from a 1970 time on screen.
 
 ## Residuals and follow-ups

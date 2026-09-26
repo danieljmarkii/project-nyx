@@ -97,10 +97,6 @@ export function useReadLandingAnnouncement({
     line.current = next;
   }, []);
 
-  // Read at the edge, never closed over per render.
-  const versionRef = useRef(version);
-  versionRef.current = version;
-
   // Seeded from the first render, so a read already in the record on open is never a
   // landing. A LAYOUT effect so it runs in the commit the row lands in, after the stage's
   // own layout effect has reported what that commit shows.
@@ -112,28 +108,48 @@ export function useReadLandingAnnouncement({
   // frame paints; an utterance cannot be taken back.
   //
   // THE ROW MUST HAVE MOVED. `waitVersion` is what the record held when the wait began —
-  // captured on the rising edge, in the same commit that raised it (`start()` and
-  // `handleRetry` write the row and the flag together) — and a fall that finds it unmoved
-  // is a give-up or a skipped re-run, never a landing (see the header).
+  // captured on the rising edge, in the same commit that raised it (`start()` writes the
+  // server's first read and the flag together; `handleRetry` re-reads the server first) —
+  // and a fall that finds it unmoved is a give-up or a skipped re-run, never a landing.
+  //
+  // A QUIET END STAYS ARMED. The watch's give-up can race one last in-flight re-read: the
+  // wait has already ended silently when that read commits a Worth a call, and a one-shot
+  // edge would never see it — on screen, unspoken (the second adversarial pass, Q3). So a
+  // wait that ends with nothing written leaves the edge armed, and the next movement of the
+  // row before another wait begins IS the landing. Nothing else moves the local marker
+  // outside a wait: the owner's own writes are optimistic and keep it, and only a read from
+  // the server (the watch, the first fetch, the re-run's re-base) changes it. The same arm
+  // also covers a future `checkResolved` that lets `working` fall a commit before the row.
   const seen = useRef({
     identity,
     awaiting: awaitingRead,
     waitVersion: awaitingRead ? version : null,
+    armed: false,
   });
   useLayoutEffect(() => {
     const prev = seen.current;
-    const now = versionRef.current;
-    const rose = !prev.awaiting && awaitingRead;
-    seen.current = {
-      identity,
-      awaiting: awaitingRead,
-      waitVersion: rose || prev.identity !== identity ? (awaitingRead ? now : null) : prev.waitVersion,
-    };
-    if (prev.identity !== identity) return;
-    if (!prev.awaiting || awaitingRead) return;
-    if (now === prev.waitVersion) return;
+    if (prev.identity !== identity) {
+      seen.current = { identity, awaiting: awaitingRead, waitVersion: awaitingRead ? version : null, armed: false };
+      return;
+    }
+    if (awaitingRead) {
+      // A wait begins (re-based on the row it began over), or continues (the baseline
+      // holds, whatever the row does mid-wait).
+      seen.current = prev.awaiting ? prev : { identity, awaiting: true, waitVersion: version, armed: false };
+      return;
+    }
+    if (!prev.awaiting && !prev.armed) {
+      seen.current = prev;
+      return;
+    }
+    if (version === prev.waitVersion) {
+      // Ended with nothing written: silent, and armed for a late write.
+      seen.current = { identity, awaiting: false, waitVersion: prev.waitVersion, armed: true };
+      return;
+    }
+    seen.current = { identity, awaiting: false, waitVersion: version, armed: false };
     if (line.current) AccessibilityInfo.announceForAccessibility(readLandedCopy(line.current));
-  }, [awaitingRead, identity]);
+  }, [awaitingRead, identity, version]);
 
   // Stable across renders: the stage keys its report effects on this object, and a fresh
   // one every render would run the unmount report (null) and the current one on every

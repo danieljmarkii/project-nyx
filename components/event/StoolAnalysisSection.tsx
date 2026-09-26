@@ -253,7 +253,19 @@ export function StoolAnalysisSection(
   async function handleRetry() {
     setRetrying(true);
     cancelled.current = false;
-    setRow((r) => (r ? { ...r, status: 'pending', error: null } : r));
+    // CUL-1275 — the wait starts from the SERVER's row, not the local copy. The landing
+    // announcement compares the row's `updated_at` from the start of the wait to its end,
+    // and the owner's own writes on this screen (Hide / Show, a field edit) move the
+    // server's marker while the optimistic local copy keeps the old one — so a re-run the
+    // server then SKIPS (capped, nothing written) would read as moved and be spoken as a
+    // fresh read. One read before the flag rises re-bases it. A failed read (offline)
+    // falls back to the local copy; the trigger below fails the same way then.
+    const fresh = await fetchRow();
+    if (cancelled.current) return;
+    setRow((r) => {
+      const base = fresh ?? r;
+      return base ? { ...base, status: 'pending', error: null } : base;
+    });
     const { error } = await triggerStoolAnalysis(eventId);
     // Navigated away mid-trigger — don't setState or open a watch on an
     // unmounted instance (mirrors start()'s guard after the same await).
