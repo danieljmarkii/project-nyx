@@ -63,6 +63,8 @@ function chronicities(s: SignalSymptomType): SymptomChronicityFinding[] {
       [14, 5, 56],
       [23, 7, 56],
       [120, 12, 84],
+      // Not a whole number of weeks: round (the template) and ceil part ways at 57.
+      [9, 4, 57],
     ])
       for (const firstOnsetIso of ONSETS)
         out.push({
@@ -226,6 +228,9 @@ function intakes(): IntakeDeclineFinding[] {
   return [
     low,
     { ...low, daysBelowBaseline: 1 },
+    { ...low, daysBelowBaseline: 2 },
+    { ...low, daysBelowBaseline: 7 },
+    { ...low, daysBelowBaseline: 8 },
     { ...low, daysBelowBaseline: 9 },
     { ...low, trigger: 'refused_normal_food', refusedFoodLabel: 'Kibble' },
     { ...low, trigger: 'refused_normal_food', refusedFoodLabel: null },
@@ -295,6 +300,12 @@ describe('PARITY: the Home row counts from the sentence’s own fields (the scre
     }
   });
 
+  it('intake’s span is the sentence’s own words — it spells small counts out, so digits cannot check it', () => {
+    for (const f of intakes().filter((i) => i.trigger === 'consecutive_low')) {
+      expect(sentence(f)).toContain((line(f).count as string).toLowerCase());
+    }
+  });
+
   it('the recurrence names the sentence’s UTC onset month, in every zone the suite runs in', () => {
     const f = chronicities('vomit').find((c) => c.firstOnsetIso === '2026-08-31T23:50:00Z') as SymptomChronicityFinding;
     expect(line(f).count).toBe('1 episode since August');
@@ -327,6 +338,8 @@ describe('ROLES: with every field distinct, each number comes from the field its
     [{ ...correlations('vomit')[1] }, 'Vomiting after chicken', 'A tendency, compared across 9 days of logs'],
     [trialCard, 'Diet trial, day 21 of 56', '4 episodes of vomiting in the trial, 20 in the 49 days before, a longer stretch'],
     [intakes()[0], 'Eating less than usual', 'The last three days'],
+    [{ ...intakes()[0], daysBelowBaseline: 2 }, 'Eating less than usual', 'The last two days'],
+    [{ ...intakes()[0], daysBelowBaseline: 1 }, 'Eating less than usual', 'Today'],
   ];
   it.each(cases.map(([f, h, c]) => [f.type, f, h, c] as const))('%s', (_t, f, headline, count) => {
     const l = line(f);
@@ -421,7 +434,7 @@ describe('the row’s words', () => {
   });
 
   it('the refusal carries the sentence’s time anchor and the food it names', () => {
-    const [, , , refused, unnamed] = intakes();
+    const [refused, unnamed] = intakes().filter((i) => i.trigger === 'refused_normal_food');
     expect(line(refused).count).toBe('Kibble, just now');
     expect(line(unnamed).count).toBe('Just now');
   });
