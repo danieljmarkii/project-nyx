@@ -1,6 +1,6 @@
 # Engines v3 mock round 1: the proposed Home redrawn the way the rules would render it
 
-**Date:** 2026-09-26 · **Issue:** CUL-1288 · **Mode:** DISCOVERY · **Branch:** `claude/jolly-goldberg-o1ursv` · **Artifact:** `docs/culprit-engines-v3-mockups.html`, published at https://claude.ai/artifact/XrAawavFSUgbBKdWdxFsdY · **Shipped via #930** (docs only)
+**Date:** 2026-09-26 · **Issue:** CUL-1288 · **Mode:** DISCOVERY · **Branch:** `claude/jolly-goldberg-o1ursv` · **Artifact:** `docs/culprit-engines-v3-mockups.html`, published at https://claude.ai/artifact/XrAawavFSUgbBKdWdxFsdY · **Shipped via #931** (docs only)
 
 **PM prompt:** "Would we benefit from a design / mockup round ahead of building this project?" I recommended a targeted round, not a whole-project one, because Phases 0 and 1 have nothing an owner sees. The PM said "yes, file round 1 and run it."
 
