@@ -99,7 +99,11 @@ Exit codes, so an unattended caller can say *which* assertion failed: `0` sound 
 
 8. **Re-evaluate aged priorities.** Any Urgent/High issue open across multiple sessions without progress is one of: (a) genuinely blocked — state the blocker in a comment; (b) mis-prioritized — lower its `priority` with a one-line why; (c) effectively dead — flag to the PM, don't silently cancel. Watch for a cluster that shares **one** blocker: most of the Urgent tier waits on the single Dr. Chen sitting CUL-583 exists to schedule.
 
-9. **Enforce the issue contract.** Every issue needs: a title, a plain-English `TL;DR` opener (PM directive 2026-08-26), a description that leads with **Why:** and names **Blocks:** (or `—`), a `priority`, a `project`, and a current `state`. Flag any issue missing the *why*.
+9. **Enforce the issue contract.** Every issue needs: a title, a plain-English `TL;DR` opener (PM directive 2026-08-26), a description that leads with **Why:** and names **Blocks:** (or `—`), a `priority`, an `Area: *` label, and a current `state`. Flag any issue missing the *why*.
+
+   **A project is NOT part of the contract** (PM, 2026-09-26, CUL-1284). An issue joins a live project only when it extends that project's work; a standalone issue takes no project, and that is correct, not a gap. Requiring one is what turned Legacy Backlog into a dumping ground: 153 issues filed natively after the cutover landed there because it was the only "neutral" home. The `Area: *` label is what keeps a project-less issue findable, so that is the field to enforce.
+
+   **Legacy Backlog is closed to new issues.** It holds the rows migrated from `docs/backlog.md` (CUL-28 → CUL-514, label `Legacy`) and nothing else. Every pass lists open issues in that project created after 2026-08-16 (`list_issues` with `project: "Legacy Backlog"` and `createdAt: "2026-08-16"`) and moves each to the live project it extends, or to no project with an `Area: *` label. Closed ones stay where they are. A non-empty list means a session broke the rule, so name the issues in the report.
 
 10. **De-duplicate.** Linear assigns IDs server-side, so there are no duplicate IDs to chase — the pass is *semantic*. If an issue restates an existing one, prefer linking them (`relatedTo`) or folding one into the other over leaving two live. Flag near-duplicates to the PM with a recommendation on which framing to keep; mark a true duplicate with the `Duplicate` state (or `duplicateOf`). Two deploy issues asking for the identical command is the common shape here.
 

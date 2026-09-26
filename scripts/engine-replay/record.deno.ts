@@ -22,8 +22,14 @@
 //   · medication doses are loaded, but the live engine has read zero of them since
 //     2026-06-23 (CUL-1099), so the Signal replay leaves them out unless asked.
 //
+// It refuses an export that does not name exactly one pet (subject.ts, CUL-1276): a
+// mistyped id or owner email comes back as one row of nulls, which used to load as an
+// empty record and replay as a clean pass.
+//
 // DATA NEVER ENTERS THE REPO. export.sql is run through the Supabase MCP by a session;
 // the result lands in the session's scratchpad and is read from there.
+
+import { subjectProblem } from './subject.ts'
 
 export type Iso = string
 
@@ -131,6 +137,8 @@ type MealRow = [string, Iso, string | null, Iso, Iso | null, string | null, stri
 type FoodRow = [string, string | null, string[] | null, string | null, string | null, string | null, string | null]
 
 interface RecordDump {
+  subjects?: number
+  pet_id?: string | null
   tz: string
   pet: PetRecord['pet']
   events: RecordEvent[] | null
@@ -140,11 +148,13 @@ interface RecordDump {
   admins: PetRecord['administrations'] | null
   ana: RecordAnalysis[] | null
 }
-interface MealsDump { meals: MealRow[] | null; foods: FoodRow[] | null }
+interface MealsDump { subjects?: number; pet_id?: string | null; meals: MealRow[] | null; foods: FoodRow[] | null }
 
 export function loadRecord(recordPath: string, mealsPath: string): PetRecord {
   const r = unwrap(recordPath) as unknown as RecordDump
   const m = unwrap(mealsPath) as unknown as MealsDump
+  const problem = subjectProblem(r, m)
+  if (problem) throw new Error(`refusing to replay ${recordPath} + ${mealsPath}: ${problem}`)
   const foods = new Map<string, RecordFood>()
   for (const f of m.foods ?? []) {
     foods.set(f[0], { id: f[0], primaryProtein: f[1], proteins: f[2], foodType: f[3], format: f[4], brand: f[5] ?? '', productName: f[6] ?? '' })
