@@ -34,6 +34,7 @@ import type {
   RankedFinding,
   SymptomType,
 } from './detection.ts'
+import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 
 // §3.2 visible-card cap: governs the LOW/MEDIUM-priority insight set only.
 // Safety/concern findings are exempt — never withheld to honor the cap.
@@ -563,16 +564,22 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
   if (finding.priorityClass === 'safety') {
     // Never reassure on a safety flag; never reframe a decline as fussiness.
     if (REASSURANCE_RE.test(t) || DISMISSIVE_RE.test(t)) return false
+    // CUL-1271 — nor hand the concern off ("under control", "in the vet's hands") or credit a
+    // treatment with an effect ("the prednisone is helping"). Neither class carries a wellness
+    // word, so the lexicon above passed both. Shared with Ask and the banner (one module).
+    if (careClaimReason(t)) return false
   }
   if (finding.type === 'food_symptom_correlation') {
-    // Associational only — the model may not assert causation.
-    if (CAUSAL_RE.test(t)) return false
+    // Associational only — the model may not assert causation, nor its treatment-shaped
+    // twin ("the new food is helping", "settled since the switch") — CUL-1271.
+    if (CAUSAL_RE.test(t) || careClaimReason(t)) return false
   }
   if (finding.type === 'reflection') {
     // A reflection is a descriptive count (B-051): it may not assert a cause, and
     // — crucially — may not reassure. "Same as last week" is a count, not an
-    // all-clear; the reduction of a symptom is never a wellness verdict (§9).
-    if (CAUSAL_RE.test(t) || REASSURANCE_RE.test(t)) return false
+    // all-clear; the reduction of a symptom is never a wellness verdict (§9). Nor is a
+    // quieter week "under control" or "thanks to" anything (CUL-1271).
+    if (CAUSAL_RE.test(t) || REASSURANCE_RE.test(t) || careClaimReason(t)) return false
   }
   if (finding.type === 'symptom_worsening') {
     // Detector ④ is a descriptive frequency rise routed to concern. Reassurance/

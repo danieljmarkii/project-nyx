@@ -81,6 +81,7 @@ import {
   type AskCachedReadRow,
   type ProjectedRead,
 } from './tools.ts'
+import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 
 // ── Model & loop bounds ─────────────────────────────────────────────────────────
 
@@ -915,6 +916,12 @@ export function validateAnswer(params: ValidateAnswerParams): ValidateResult {
   if (DISMISSIVE_RE.test(t)) return { ok: false, reason: 'picky' }
   // Never diagnose (G1) — unconditional defense-in-depth (the question was deflected upstream).
   if (DIAGNOSIS_RE.test(t)) return { ok: false, reason: 'diagnosis' }
+  // Never delegate or attribute (CUL-1271) — unconditional, like never-reassure. "Under
+  // control" / "your vet has it covered" / "in the vet's hands" hand the concern off and read
+  // as an all-clear; "the prednisone is helping" credits a treatment with an n=1 effect. The
+  // honest form is a dated fact beside a count ("prednisone started Sep 10; 3 logged since").
+  const careClaim = careClaimReason(t)
+  if (careClaim) return { ok: false, reason: careClaim }
   if (params.mode === 'data') {
     // Associational only (G4/§7.2): the model may not assert causation from the log.
     if (CAUSAL_RE.test(t)) return { ok: false, reason: 'causal' }
@@ -985,6 +992,10 @@ export function sanitizeFollowups(followups: unknown, max = 3): string[] {
     if (t.length < 3 || t.length > 120) continue
     if (t.includes('!')) continue
     if (REASSURANCE_RE.test(t) || DISMISSIVE_RE.test(t)) continue
+    // CUL-1271: a chip may not assert containment or a treatment effect either ("Since the
+    // vet has it covered, what else…"). A QUESTION about effect ("Is the prednisone working?")
+    // passes — the arms need the auxiliary before the effect word, which a question inverts.
+    if (careClaimReason(t)) continue
     out.push(t)
     if (out.length >= max) break
   }
@@ -1341,7 +1352,8 @@ export const SYSTEM_PROMPT =
   "(6) If engine_findings returns a SAFETY finding relevant to the question, lead with it — relay it verbatim, never soften it. " +
   "(7) Plain, warm language; address the owner as 'you'; use the pet's name; no exclamation marks; never cute. One or two sentences of detail. " +
   "(8) For a diagnosis-shaped or interpretive question ('does she have X', 'is that a lot', 'should I worry'), or a fishing-for-reassurance question ('so she's fine, right'), call decline — those are the vet's call, and declining still offers to line up the evidence. " +
-  "(9) PHOTOS: to answer what a vomit or stool incident LOOKED like, first recall the event, then — only if it HAS a photo but no read yet — call read_photo with its id. read_photo does NOT return the photo's appearance to you: the factual read summary is rendered for the owner DIRECTLY, separately from your text. You get only the read STATUS and any PRESENT red flags. So: if it reports a red flag, lead by naming that concern plainly and route to the vet. Otherwise DO NOT describe, interpret, or comment on how the photo looked — do NOT say it looked fine/clear/normal, that nothing was wrong or concerning, that it's a good sign, or that the read came back clear — give ONLY the recall context (when it happened, how often). If it reports no_photo / capped / unavailable, say so plainly and point to the event. Never fill any gap with reassurance. Do NOT call read_photo for a non-vomit/stool event or speculatively — only when the owner asked what an incident looked like."
+  "(9) PHOTOS: to answer what a vomit or stool incident LOOKED like, first recall the event, then — only if it HAS a photo but no read yet — call read_photo with its id. read_photo does NOT return the photo's appearance to you: the factual read summary is rendered for the owner DIRECTLY, separately from your text. You get only the read STATUS and any PRESENT red flags. So: if it reports a red flag, lead by naming that concern plainly and route to the vet. Otherwise DO NOT describe, interpret, or comment on how the photo looked — do NOT say it looked fine/clear/normal, that nothing was wrong or concerning, that it's a good sign, or that the read came back clear — give ONLY the recall context (when it happened, how often). If it reports no_photo / capped / unavailable, say so plainly and point to the event. Never fill any gap with reassurance. Do NOT call read_photo for a non-vomit/stool event or speculatively — only when the owner asked what an incident looked like. " +
+  "(10) VISITS, CARE AND TREATMENTS: relay a vet visit, a medication or a diet only as a DATED FACT beside a COUNT from a tool (e.g. 'Your vet saw Nyx on Sep 16; 4 vomiting episodes are logged since.' or 'Prednisone started Sep 10; 3 coughing episodes are logged since.'). NEVER describe a concern as handled or held — do not say it is under control, covered, in the vet's hands, taken care of, dealt with, resolved, or that there is nothing more to do. NEVER credit a treatment with an effect — do not say a medication, diet or visit is helping, working, doing the trick, or that a symptom settled, eased or calmed since it started. The vet judges whether a treatment works; you only report what is logged."
 
 export const GENERAL_SYSTEM_PROMPT =
   SYSTEM_PROMPT +
