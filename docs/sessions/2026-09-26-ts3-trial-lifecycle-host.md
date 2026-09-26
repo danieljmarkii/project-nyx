@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-26
 
-Shipped via #PR (CUL-1299). Step 1b of the Linear project **Diet trial — its own screen**, after TS-1 (#942). Blocks TS-4 (CUL-1300).
+Shipped via #946 (CUL-1299). Step 1b of the Linear project **Diet trial — its own screen**, after TS-1 (#942). Blocks TS-4 (CUL-1300).
 
 ## The ask
 
