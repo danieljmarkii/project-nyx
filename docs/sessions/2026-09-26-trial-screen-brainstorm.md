@@ -1,6 +1,6 @@
 # Should the diet trial get its own screen? The brainstorm
 
-**Date:** 2026-09-26 · **Issue:** CUL-1291 (DISCOVERY) · **Outcome:** round-1 mock and six decision briefs, shipped via #932
+**Date:** 2026-09-26 · **Issue:** CUL-1291 (DISCOVERY) · **Outcome:** round-1 mock and six briefs, then the PM's rulings, the v1.1 spec, round 2 of the mock and the Linear project, shipped via #932
 
 ## The idea
 
@@ -98,3 +98,43 @@ After that, one PR per section. QA's standing risk is C-12: a read that hasn't a
 Designer ✓ (Principles 3 and 5; the S1 plainness of the safety face) · Mobile IA ✓ · Data Viz ✓ · Engineering ✓ · QA ✓ · Product Owner ✓ · T&S ✓ (no new data exposure, ids only in the route, no share in v1) · Dr. Chen ✓ · Data Scientist ✓ · Jordan ✓ · Sam ✓.
 
 The adversarial line is N/A: no logic changed. The clinical counterexamples each lens tried are recorded on CUL-1216 and in §07 of the mock.
+
+## The PM's reactions and the finalization (same day)
+
+**The PM ruled three things on round 1:**
+
+- **R-1:** option A. The trial leads, with its day ledger; "the card promoted feels a bit redundant to show the card twice".
+- **R-2:** the strip becomes the door, "especially the this week's lane data vis".
+- **R-3:** the Pet tab keeps "just a door to a diet trial".
+
+The PM deferred the rest to the team, so the team settled it on the record (spec §0.2):
+
+- **T-1:** vomiting in v1 is Home's sentence only. The Dr. Chen / Data Scientist dissent moves to CUL-1308.
+- **T-2:** its own `trial_screen` flag and project, with the owner-visible steps after the App Store submission cut.
+- **T-3:** Get ready is the recheck's home.
+- **T-4:** a presence-only vomiting count on the refusal face.
+- **T-5:** the parent spec's §4.2 routing is amended, and §4.1 is kept.
+- **T-6:** the ledger counts trial weeks.
+
+**The spec:** `docs/nyx-trial-screen-requirements.md` was written as v1.0 and sent to the `adversarial-reviewer` before any build. **It failed on seven findings**, and every one was verified on `main` and fixed in v1.1 (spec §12). The two that mattered most:
+
+- **This week's lane would have drawn seven filled marks over a cat refusing her diet from day 1.** On a refusal the strip still prints its line; only an intake decline makes it header-only.
+- ***Stopped early* on the refusal face would have dropped the feline "needs a call today" while she still wasn't eating.** Its "wouldn't eat it" reason moves the trial to `abandoned`.
+
+The other five:
+
+- the screen printed a coverage ratio the strip withholds after a stood-down refusal
+- the ledger missed treat-only exposures
+- *For the call* restated "refused", "meals" and a date the fact doesn't hold, in banned volitional wording
+- the milestone drew a full grid beside the stop decision
+- the vomiting line gained a heading it hadn't earned
+
+**A correction to this record's round-1 half.** Frame §01c and the "sharpest arguments" above say the strip drops to its header on a refusal. It drops its coverage and vomiting lines; only an intake decline leaves the header alone. Round 2's §01c is redrawn accordingly.
+
+**What changed in the repo and in Linear:**
+
+- **Mock:** round 2 republished to the same URL as one proposal. Frame B, vomiting options (b) and (c), and the full-card Pet tab left the page (commit 5ad2cfb keeps them). The masthead maps each reaction to what moved.
+- **Parent spec:** `docs/nyx-diet-trial-requirements.md` §4.2 carries two ⚠ RULED 2026-09-26 pointers.
+- **CLAUDE.md:** the diet-trial Read-These row routes to the new spec. It was paid for inside the size budget by removing the check-in measurement sentence, whose account lives in `docs/sessions/README.md`.
+- **Linear:** the project **Diet trial — its own screen** has four milestones and twelve run-order issues, CUL-1296 → CUL-1307, each with a paste-ready kickoff prompt. There are three follow-ups: CUL-1308 (F1, vomiting beyond Home's sentence), CUL-1309 (F2, fold "The trial so far" in) and CUL-1310 (F3, the free-fed pair). CUL-1291, CUL-1292, CUL-1293, CUL-380 and CUL-335 moved in.
+
