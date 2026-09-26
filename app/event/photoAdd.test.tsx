@@ -192,6 +192,20 @@ describe('event detail — adding a photo to a record', () => {
     expect(mockSettle).toHaveBeenCalledWith(false);
   });
 
+  it('a photo detached while it uploaded is not read: the synced write matches no row, claim settled false (CUL-1098)', async () => {
+    // The real expo-sqlite resolves `{ changes: 0 }` for an UPDATE that matches nothing,
+    // which is what the synced write meets once Remove photo (or a later capture's
+    // replace) has hard-deleted the local row mid-upload. Only that write sees zero.
+    mockRunAsync.mockImplementation((sql: unknown) =>
+      Promise.resolve({ changes: MARK_SYNCED.test(String(sql).trim()) ? 0 : 1 }));
+    await addPhotoFromLibrary();
+    await waitFor(() => expect(mockSettle).toHaveBeenCalled());
+
+    expect(runCalls(MARK_SYNCED)).toHaveLength(1);
+    expect(mockTriggerVomit).not.toHaveBeenCalled();
+    expect(mockSettle).toHaveBeenCalledWith(false);
+  });
+
   it('a live chain owning the read is AWAITED, then the photo is read anyway — never raced, never skipped', async () => {
     // Another chain already owns this event's read (typically the section's own mount
     // trigger on the photoless incident this photo is being added to).

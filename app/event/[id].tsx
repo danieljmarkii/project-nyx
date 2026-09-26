@@ -626,7 +626,12 @@ export default function EventDetailScreen() {
           // supabase-js returns the error rather than throwing — only flag
           // synced when the row truly landed, else leave it for the retry queue.
           if (error) { console.warn('[event-detail] attachment upsert failed:', error.message); return; }
-          await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
+          const { changes } = await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
+          // CUL-1098 — zero rows means the photo was detached while it uploaded
+          // (Remove photo, or a later capture's replace). There is nothing left to
+          // read, so stop like the upsert-error branch: no re-read, and the claim
+          // settles FALSE so a waiting section makes its own read of what remains.
+          if (changes === 0) return;
           // Re-analyze a vomit / stool event whose photo just changed (e.g. adding a
           // photo to a photoless event, or replacing an oversized historic photo
           // with a compressed one) — the per-incident section triggers on mount, but
