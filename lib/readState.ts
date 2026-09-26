@@ -59,6 +59,7 @@
 
 import { hasPerIncidentRead } from '../constants/eventTypes';
 import { escalationSurvivesFailure, type IncidentRecommendation } from './incidentReadState';
+import { isQuietVerdict, type QuietVerdict } from './incidentVerdict';
 
 /**
  * What the phone's copy holds for one event's read that can decide a state: two of
@@ -99,11 +100,12 @@ export interface ReadStateInput {
   readingOff: boolean;
 }
 
-/** The verdicts that are NOT the rose, as an ALLOWLIST: any other non-null value fails
- *  toward the rose. Two of them, and only one is calm (`CalmVerdict`). */
-export type QuietVerdict = 'monitor' | 'not_enough_to_say';
-const QUIET_VERDICT_LIST: readonly QuietVerdict[] = ['monitor', 'not_enough_to_say'];
-const QUIET_VERDICTS: readonly string[] = QUIET_VERDICT_LIST;
+// The verdicts that are NOT the rose are an ALLOWLIST, `QUIET_VERDICTS` in
+// `lib/incidentVerdict.ts`: any other non-null value fails toward the rose. It is the same
+// list the record screen and the server's escalation guards read (CUL-1277), so no surface
+// can call a verdict quiet that another calls an escalation. Two of them, and only one is
+// calm (`CalmVerdict`).
+export type { QuietVerdict };
 
 /** The one verdict that stands as a calm read: the read looked and said to keep an eye out.
  *  `not_enough_to_say` is quiet (never the rose) but never calm (the PM's 2026-09-25 ruling). */
@@ -112,10 +114,6 @@ export type CalmVerdict = 'monitor';
 /** The statuses under which a finished verdict STANDS: a read that finished. */
 const FINISHED_STATUSES: readonly string[] = ['completed', 'uncertain'];
 
-function isQuietVerdict(value: string): value is QuietVerdict {
-  return QUIET_VERDICTS.includes(value);
-}
-
 /**
  * The rose, decided on the copy alone. Exported because it is the whole of the month's
  * question (is this photographed day worth a call?), and `readStateOf` is built on it,
@@ -123,12 +121,11 @@ function isQuietVerdict(value: string): value is QuietVerdict {
  * input it can build).
  */
 export function isWorthACall(copy: ReadCopy | null | undefined): boolean {
-  const verdict = copy?.recommendation;
-  if (verdict === null || verdict === undefined) return false;
-  // The shipped escalation survives whatever the status says (CUL-812)...
-  if (escalationSurvivesFailure(copy)) return true;
-  // ...and a verdict this build does not recognise is not calm until someone says it is.
-  return !isQuietVerdict(verdict);
+  // An escalation survives whatever the status says (CUL-812), and a verdict this build
+  // does not recognise is one: not calm until someone puts it on the quiet list. Since
+  // CUL-1277 that is the SAME rule the record screen's rescue runs, so the record and
+  // every surface built on this predicate cannot disagree about a failed re-read.
+  return escalationSurvivesFailure(copy);
 }
 
 /** The quiet verdict a FINISHED read stands on, or null (no read, a read in flight, a

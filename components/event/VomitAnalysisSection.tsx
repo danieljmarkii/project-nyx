@@ -30,7 +30,8 @@ import {
   VomitEditableFields,
   EditableVomitField,
 } from '../../lib/analysis';
-import { escalationSurvivesFailure, INCIDENT_REC_LABEL } from '../../lib/incidentReadState';
+import { escalationSurvivesFailure, incidentVerdictLabel } from '../../lib/incidentReadState';
+import { isEscalationVerdict } from '../../lib/incidentVerdict';
 import { VomitFieldsEditor } from './VomitFieldsEditor';
 import { vomitCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -56,11 +57,13 @@ import { useObservationFold } from './useObservationFold';
 // the never-reassure invariant survives the cap by construction (there is no path
 // from either to a reassuring verdict).
 type Status = 'pending' | 'completed' | 'failed' | 'uncertain' | 'capped' | 'read_disabled';
-export type Recommendation = 'worth_a_call' | 'monitor' | 'not_enough_to_say';
 
 interface AnalysisRow {
   status: Status;
-  recommendation: Recommendation | null;
+  // Text, not the shipped three-value union (CUL-1277): the server can hold a verdict this
+  // build has never seen, and a type that says otherwise is what let `REC_LABEL[rec]`
+  // render a blank label. Every read of it goes through `lib/incidentVerdict.ts`.
+  recommendation: string | null;
   read_text: string | null;
   description: string | null;
   colour: string | null;
@@ -80,10 +83,6 @@ const SELECT_COLS =
   'status, recommendation, read_text, description, colour, contents, consistency, ' +
   'blood_present, bile_present, foreign_material_present, foreign_material_note, ' +
   'ai_raw_payload, edited_at, dismissed_at, error';
-
-// The words live in lib/incidentReadState.ts (INCIDENT_REC_LABEL) since D2-4 (CUL-1066),
-// so Home's spine node and this card cannot name one verdict two ways.
-const REC_LABEL: Record<Recommendation, string> = INCIDENT_REC_LABEL;
 
 export function VomitAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
@@ -399,7 +398,10 @@ export function VomitAnalysisSection(
       ) : (
         <IncidentReadCard
           verdict={rec}
-          label={REC_LABEL[rec]}
+          // The words live in lib/incidentReadState.ts since D2-4 (CUL-1066), so Home's spine
+          // node and this card cannot name one verdict two ways; a verdict this build does
+          // not know is spoken as the escalation, never blank (CUL-1277).
+          label={incidentVerdictLabel(rec)}
           readText={row.read_text}
           onHide={() => setDismissed(true)}
           arrival={arrival.rail}
@@ -428,7 +430,9 @@ export function VomitAnalysisSection(
               onCancel={() => setEditing(false)}
             />
           ) : undefined}
-          escalating={rec === 'worth_a_call'}
+          // Any verdict off the quiet list, one this build does not know included: its
+          // facts never fold (CUL-1277).
+          escalating={isEscalationVerdict(rec)}
           folded={folded}
           onToggleFold={setFolded}
         />
