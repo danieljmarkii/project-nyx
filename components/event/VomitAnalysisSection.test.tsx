@@ -789,8 +789,10 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     act(() => __resetReducedMotionForTest());
   });
 
+  // A landed row carries the change marker the server's write bumps (013's trigger), so
+  // it reads as WRITTEN; a case about a wait that wrote nothing passes the old marker.
   async function land(next: Record<string, unknown>) {
-    mockRow = next;
+    mockRow = { updated_at: '2026-09-26T12:00:05.000Z', ...next };
     const check = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![1] as () => Promise<boolean>;
     await act(async () => { await check(); });
   }
@@ -880,6 +882,47 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await land(row({ recommendation: 'not_enough_to_say' }));
     expect(view.toJSON()).toBeNull();
     expect(announce).not.toHaveBeenCalled();
+  });
+
+  // ── The adversarial pass's three breaks (CUL-1275) ──────────────────────────
+  it('the GIVE-UP says nothing — the watch stopped listening, no read landed', async () => {
+    // Offline open: no row, the watch exhausts its schedule, the section falls to the
+    // not-enough card. Spoken, that is a not_enough_to_say over a record that may hold a
+    // Worth a call the client never heard about.
+    mockRow = null;
+    const view = render(<VomitAnalysisSection eventId="an-11" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    const onGiveUp = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![2] as () => void;
+    await act(async () => { onGiveUp(); });
+    expect(await view.findByText(/Not enough to say about this one yet/)).toBeTruthy();
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('a re-run the server SKIPPED says nothing — the unchanged row is not a new read', async () => {
+    // Capped (or flag-off) with a real analysis stored: the server writes nothing, the
+    // watch re-reads the same row, and the old verdict must not be announced as fresh.
+    const stored = row({ recommendation: 'monitor', read_text: 'Yellow, foamy.', updated_at: '2026-09-20T09:00:00.000Z' });
+    mockRow = stored;
+    const view = render(<VomitAnalysisSection eventId="an-12" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(stored);
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('a read that lands behind an old dismissal is spoken as what the screen shows — never silence', async () => {
+    // The owner hid a calm read; a later re-read failed (`dismissed_at` survives a failure
+    // write); they tap Try again and a Worth a call lands. The screen says only that the
+    // note is hidden, so that is what is spoken: the owner learns a read landed and where
+    // it is, without the app speaking what they chose to hide.
+    mockRow = row({ status: 'failed', recommendation: 'monitor', dismissed_at: '2026-09-19T08:00:00.000Z' });
+    const view = render(<VomitAnalysisSection eventId="an-13" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Try again'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', dismissed_at: '2026-09-19T08:00:00.000Z' }));
+    expect(await view.findByText('AI note hidden')).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('AI note hidden'));
   });
 
   it('is spoken on ANDROID too — the section carries no live region to cover it', async () => {

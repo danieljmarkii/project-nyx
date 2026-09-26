@@ -540,8 +540,10 @@ describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
     mockRow = null;
   });
 
+  // A landed row carries the change marker the server's write bumps (013's trigger), so
+  // it reads as WRITTEN; a case about a wait that wrote nothing passes the old marker.
   async function land(next: Record<string, unknown>) {
-    mockRow = next;
+    mockRow = { updated_at: '2026-09-26T12:00:05.000Z', ...next };
     const check = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![1] as () => Promise<boolean>;
     await act(async () => { await check(); });
   }

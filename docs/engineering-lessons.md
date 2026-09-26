@@ -651,3 +651,9 @@ Riding the arrival would have left exactly that escalation unspoken. So the anno
 * **A behaviour-neutral mutant.** The edge's `!was` check survived too, because every current host's first frame is pending or empty. That one is pinned by a direct hook test with a host whose first frame already shows a read (C-35: a survived mutant is not always a test gap, but check).
 
 **The same pass moved the incident identity check INTO the edge's layout effect.** The arrival's passive reset runs after it, so a host that re-keys in place could speak one incident's read over another. The arrival self-heals before a frame paints; an utterance cannot be taken back.
+
+**A fall of the flag is not a write, and the adversarial pass (FAIL, three breaks) is what showed it.** "A read was being produced, and now is not" was the header's claim, and on two paths it was false:
+* **The watch gave up** (offline, a dropped socket). The client stopped listening; the read did not stop being produced. The section fell to "Not enough to say about this one yet", and the first draft would have spoken that verdict over a record that may hold a Worth a call.
+* **The server skipped a capped re-run** and wrote nothing, and the unchanged row would have been announced as a fresh read.
+
+The rule is now **the row must have moved**: the edge compares `updated_at` (trigger-bumped, 013) at the start of the wait and at its end, captured on the rising edge in the same commit that raised it. The third break was a dismissal that outlives its read (CUL-1323). There the audio now speaks what the screen shows ("AI note hidden"), never silence. The generalisable half: **an audio channel inherits every lie the screen already tells, and then says it at the moment the owner is listening hardest.** The screen halves are CUL-820, CUL-1323 and CUL-1324, and the reviewer found all three by probing the audio.

@@ -76,13 +76,19 @@ interface AnalysisRow {
   ai_raw_payload: Record<string, unknown> | null;
   edited_at: string | null;
   dismissed_at: string | null;
+  /** Bumped by trigger on every write (013). The landing announcement reads it to tell a
+   *  read that was written from a wait that ended with nothing written (CUL-1275). */
+  updated_at?: string | null;
   error: string | null;
 }
+
+/** The hidden note's line: rendered, and spoken when a read lands behind it. */
+const DISMISSED_LINE = 'AI note hidden';
 
 const SELECT_COLS =
   'status, recommendation, read_text, description, colour, contents, consistency, ' +
   'blood_present, bile_present, foreign_material_present, foreign_material_note, ' +
-  'ai_raw_payload, edited_at, dismissed_at, error';
+  'ai_raw_payload, edited_at, dismissed_at, updated_at, error';
 
 // The words live in lib/incidentReadState.ts (INCIDENT_REC_LABEL) since D2-4 (CUL-1066),
 // so Home's spine node and this card cannot name one verdict two ways.
@@ -143,7 +149,11 @@ export function VomitAnalysisSection(
   // CUL-1275 — the landing's screen-reader half. The same FACT as the arrival
   // (`awaitingRead`) but not its gates: it speaks a re-read over an owner edit, and a
   // photoless contextual escalation that never showed a pending box — see the hook.
-  const announcer = useReadLandingAnnouncement({ awaitingRead, identity: eventId });
+  const announcer = useReadLandingAnnouncement({
+    awaitingRead,
+    identity: eventId,
+    version: row?.updated_at ?? null,
+  });
 
   const fetchRow = useCallback(async (): Promise<AnalysisRow | null> => {
     const { data } = await supabase
@@ -161,6 +171,9 @@ export function VomitAnalysisSection(
     const next = await fetchRow();
     if (cancelled.current) return true; // unmounted — stop the watch
     if (next && next.status !== 'pending') {
+      // ONE commit, row first (React batches the two). The landing announcement reads the
+      // row at the instant `working` falls: a fall that lands before the row would find the
+      // change marker unmoved and say nothing about the read that follows it (CUL-1275).
       setRow(next);
       setWorking(false);
       return true;
@@ -413,14 +426,17 @@ export function VomitAnalysisSection(
     <IncidentReadSection
       arrival={arrival}
       announcer={announcer}
-      // The verdict, in the enum's own words. Nothing for a hidden note: the owner chose
-      // not to see it, and the screen shows only that it is hidden.
-      announcement={dismissed ? null : REC_LABEL[rec]}
+      // The verdict, in the enum's own words — or, over a hidden note, what the screen
+      // says: that it is hidden. NOT silence. A dismissal outlives the read it was made on
+      // (a failed re-read keeps `dismissed_at`), so a Worth a call the owner asked for can
+      // land behind one; the screen's half of that is its own issue, and saying "hidden"
+      // tells the owner a read landed and where to find it without speaking what they hid.
+      announcement={dismissed ? DISMISSED_LINE : REC_LABEL[rec]}
       pending={false}
     >
       {dismissed ? (
         <View style={styles.dismissedRow}>
-          <ThemedText style={styles.dismissedText}>AI note hidden</ThemedText>
+          <ThemedText style={styles.dismissedText}>{DISMISSED_LINE}</ThemedText>
           <TouchableOpacity onPress={() => setDismissed(false)} hitSlop={16}>
             <ThemedText style={styles.linkText}>Show</ThemedText>
           </TouchableOpacity>

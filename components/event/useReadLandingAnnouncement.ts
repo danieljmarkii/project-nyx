@@ -15,25 +15,50 @@
 //     "pops in clean". Riding the arrival would leave exactly that Worth a call unspoken.
 //
 // So the edge here is the FACT alone: a read was being produced on this mount, and now is
-// not. What is spoken is what the stage is SHOWING at that instant, reported by the stage
-// itself from a layout effect (the arrival's `noteStage` shape, and for the same reason: a
-// child's layout effects run before its parent's, so the edge below reads the current
-// line). A landing whose branch renders nothing (`read_disabled`, a photoless
-// `not_enough_to_say`) mounts no stage, reports nothing, and says nothing — there is
-// nothing on screen to describe.
+// not — AND THE ROW MOVED. The second half is the adversarial pass's (CUL-1275): the wait
+// can end without anything being written, and two of those endings would otherwise be
+// spoken as landings:
 //
-// EVERY VERDICT, ONE FORM. "AI read: Worth a call" and "AI read: Keep an eye out" are
-// spoken on the same edge in the same shape. G4 holds a Worth a call to the same physics
-// as every other read; on the audio channel the same rule has a clinical edge too: if
-// only escalations were spoken, a screen-reader owner would learn that silence means the
-// read was calm — reassurance by absence, which n=1 never gives (clinical-guardrails).
+//   · the GIVE-UP — the realtime watch exhausts its fallback schedule (offline, a dropped
+//     socket) with no row, and the section falls to "Not enough to say about this one
+//     yet". Spoken, that is a not_enough_to_say verdict over a record that may hold a
+//     Worth a call the client simply never heard about;
+//   · a re-run the server SKIPS — capped or flag-off with a real analysis already stored,
+//     it writes nothing (`_shared/incident-analysis.ts`, "leave it exactly as-is"), the
+//     watch re-reads the unchanged row, and the old verdict would be announced as a fresh
+//     read — after a photo replacement, a verdict about an image no model has read.
+//
+// So the row's own change marker (`updated_at`, bumped by trigger on every write — 013) is
+// captured when the wait begins, and a fall with the marker unmoved says nothing. What IS
+// spoken is what the stage is SHOWING at that instant, reported by the stage itself from a
+// layout effect (the arrival's `noteStage` shape, and for the same reason: a child's layout
+// effects run before its parent's, so the edge below reads the current line). A landing
+// whose branch renders nothing (`read_disabled`, a photoless `not_enough_to_say`) mounts no
+// stage, reports nothing, and says nothing — there is nothing on screen to describe.
+//
+// EVERY RENDERED VERDICT, ONE FORM. "AI read: Worth a call" and "AI read: Keep an eye out"
+// are spoken on the same edge in the same shape. G4 holds a Worth a call to the same
+// physics as every other read; on the audio channel the same rule has a clinical edge too:
+// if only escalations were spoken, a screen-reader owner would learn that silence means the
+// read was calm — reassurance by absence, which n=1 never gives (clinical-guardrails). The
+// audio follows the SCREEN, though, and one lane is verdict-correlated on screen already: a
+// photoless incident renders no section unless it escalates (B-363), so there a
+// not_enough_to_say is silent in both channels. That is B-363's rule, not this hook's.
 //
 // WHAT NEVER SPEAKS: a read that was already in the record when the screen opened (the
-// first render seeds `wasAwaiting`, so the edge cannot open), and a read that lands after
-// the owner has left (the section is unmounted). BOTH PLATFORMS: nothing here pairs with an
-// `accessibilityLiveRegion` (the stage is not one — it would re-speak on every edit and
-// fold), so an iOS gate copied from `useLiveRegionAnnouncement` would ship this exact
-// defect to TalkBack. SignalZone's arrival makes the same call for the same reason.
+// first render seeds the edge closed), and a read that lands while the section is
+// unmounted (the owner went back). A screen pushed OVER the record (edit-event) keeps the
+// section mounted, so a landing there is still spoken — the same incident, which is right.
+// BOTH PLATFORMS: nothing here pairs with an `accessibilityLiveRegion` (the stage is not
+// one — it would re-speak on every edit and fold), so an iOS gate copied from
+// `useLiveRegionAnnouncement` would ship this exact defect to TalkBack. SignalZone's
+// arrival makes the same call for the same reason.
+//
+// DEVICE QUESTIONS, not settled here: an utterance posted while VoiceOver's focus is on the
+// pending box that unmounts in the same commit may be cut off by the focus move; and there
+// is no `appActive` gate, so a landing while the app is backgrounded fires its one edge
+// into an utterance iOS may drop and nothing replays. Both are for the device pass
+// (CUL-556); `announceForAccessibilityWithOptions` is the knob if the first one bites.
 
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import { AccessibilityInfo } from 'react-native';
@@ -51,35 +76,62 @@ export function readLandedCopy(line: string): string {
 export function useReadLandingAnnouncement({
   awaitingRead,
   identity,
+  version,
 }: {
   /** A read is being PRODUCED — the section's `working || status === 'pending'`, the same
    *  fact the arrival reads (never "the pending box is on screen", which is also true
    *  while a local row is merely being read). */
   awaitingRead: boolean;
-  /** The incident's identity — a change re-seeds the edge, so a landing for one incident
-   *  is never spoken over another. */
+  /** The incident's identity. A change re-seeds the edge IN THE SAME COMMIT, so a re-key
+   *  that lands one incident's read with another's identity is never spoken. That is all
+   *  it guards: the sections' async `start()` shares one `cancelled` ref across a re-key,
+   *  so they are not pager-safe, and neither is this — every route into the record pushes
+   *  a fresh screen today. */
   identity: string;
+  /** The row's change marker (`updated_at`), or null with no row. A wait that ends with it
+   *  unmoved wrote nothing, and says nothing. */
+  version: string | null;
 }): ReadLandingAnnouncer {
   const line = useRef<string | null>(null);
   const note = useCallback((next: string | null) => {
     line.current = next;
   }, []);
 
+  // Read at the edge, never closed over per render.
+  const versionRef = useRef(version);
+  versionRef.current = version;
+
   // Seeded from the first render, so a read already in the record on open is never a
   // landing. A LAYOUT effect so it runs in the commit the row lands in, after the stage's
   // own layout effect has reported what that commit shows.
   //
   // The incident's identity is read in the SAME effect, not a sibling one. A passive reset
-  // (the arrival's shape) runs after this layout effect, so a host that re-keyed the hook in
-  // place — an incident pager — could land one incident's fall and the next incident's line
-  // in one commit, and speak the wrong read before any reset ran. The arrival can afford
-  // that because it self-heals before a frame paints; an utterance cannot be taken back.
-  const seen = useRef({ identity, awaiting: awaitingRead });
+  // (the arrival's shape) runs after this layout effect, so a re-key in place could land
+  // one incident's fall and the next incident's line in one commit, and speak the wrong
+  // read before any reset ran. The arrival can afford that because it self-heals before a
+  // frame paints; an utterance cannot be taken back.
+  //
+  // THE ROW MUST HAVE MOVED. `waitVersion` is what the record held when the wait began —
+  // captured on the rising edge, in the same commit that raised it (`start()` and
+  // `handleRetry` write the row and the flag together) — and a fall that finds it unmoved
+  // is a give-up or a skipped re-run, never a landing (see the header).
+  const seen = useRef({
+    identity,
+    awaiting: awaitingRead,
+    waitVersion: awaitingRead ? version : null,
+  });
   useLayoutEffect(() => {
     const prev = seen.current;
-    seen.current = { identity, awaiting: awaitingRead };
+    const now = versionRef.current;
+    const rose = !prev.awaiting && awaitingRead;
+    seen.current = {
+      identity,
+      awaiting: awaitingRead,
+      waitVersion: rose || prev.identity !== identity ? (awaitingRead ? now : null) : prev.waitVersion,
+    };
     if (prev.identity !== identity) return;
     if (!prev.awaiting || awaitingRead) return;
+    if (now === prev.waitVersion) return;
     if (line.current) AccessibilityInfo.announceForAccessibility(readLandedCopy(line.current));
   }, [awaitingRead, identity]);
 
