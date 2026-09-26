@@ -29,6 +29,7 @@ const LIST = `and p.id in ('${A}', '${B}')`
 const VICTIM = '11111111-2222-4333-8444-555555555555'
 const EV = "from events e where e.pet_id = (select id from subj) and e.event_type <> 'meal'),"
 const PET_ID = "'pet_id', (select id from subj),"
+const KEPT = "  'subjects', (select count(*) from subj),"
 
 function mutate(from: string, to: string, occurrence: 'only' | 'first' | 'last' = 'only'): string {
   const count = SQL.split(from).length - 1
@@ -125,6 +126,15 @@ describe('every edit the reviewer passes got past earlier checks, each red', () 
     // outright, not only because it moves the hash today: once a pin blessed one, an edit to
     // the dropped line inside it would not move the hash at all.
     ['a lone CR inside a whole-line comment (the hash cannot see this one)', mutate(`    ${LIST}`, `    -- a note\r or p.id = '${VICTIM}'\n    ${LIST}`, 'first'), /carriage return/],
+    // Pass 3, against the first version of this pin: characters JS `trim()` drops and
+    // Postgres reads as part of a token, and spaces collapsed inside a string literal.
+    ['a vertical tab before a comment line', mutate(KEPT, `\u000b-- a note\n${KEPT}`, 'first'), /outside printable ASCII/],
+    ['an NBSP before a comment line', mutate(KEPT, `\u00a0-- a note\n${KEPT}`, 'first'), /outside printable ASCII/],
+    ['a trailing NBSP on a kept line', mutate(KEPT, `${KEPT}\u00a0`, 'first'), /outside printable ASCII/],
+    ['a trailing U+2028 on a kept line', mutate(KEPT, `${KEPT}\u2028`, 'first'), /outside printable ASCII/],
+    ['a trailing BOM on a kept line', mutate(KEPT, `${KEPT}\ufeff`, 'first'), /outside printable ASCII/],
+    ['a form feed before a comment line', mutate(KEPT, `\f-- a note\n${KEPT}`, 'first'), /outside printable ASCII/],
+    ['spaces changed inside a string literal', mutate("where p.id = '<pet uuid>'", "where p.id = '<pet  uuid>'", 'first'), changed],
     ['a string left open across a comment line', mutate(PET_ID, `${PET_ID}\n  'x', 'open\n-- or true\n',`, 'first'), /string left open/],
     ['a dollar quote', mutate(PET_ID, `${PET_ID}\n  'x', $$\n-- or true\n$$,`, 'first'), /dollar quote/],
     ['an E-string escape', mutate(PET_ID, `${PET_ID}\n  'x', E'it\\'s`, 'first'), /backslash/],

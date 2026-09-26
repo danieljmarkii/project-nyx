@@ -12,11 +12,15 @@
 //
 // So the query is pinned instead: this reduces export.sql to what Postgres would execute,
 // the test hashes it, and any change reds the build until a reviewed edit updates the pin
-// and names its privacy review. The reduction drops only whole-line `--` comments and
-// whitespace, and refuses every construct that could make Postgres read a dropped line as
-// code: a carriage return (Postgres ends a `--` comment at one), a string left open at the
-// end of a line, a dollar quote, a quoted identifier, a backslash (E'' escapes), a block
-// comment. The listed pet ids are swapped for a token by exact string, so export.sql and
+// and names its privacy review. The reduction drops only blank lines, whole-line `--`
+// comments and the spaces and tabs at either end of a line, and refuses everything that
+// could make Postgres read a dropped character as code: a carriage return (Postgres ends a
+// `--` comment at one), any character on a kept line outside printable ASCII and tab (JS
+// `trim()` eats NBSP, a BOM, U+2028 and a vertical tab, and Postgres reads each as part of
+// a token: the third reviewer pass), a string left open at the end of a line, a dollar
+// quote, a quoted identifier, a backslash (E'' escapes), a block comment. Nothing inside a
+// line is rewritten, because collapsing spaces inside a string literal would hide a change
+// to it. The listed pet ids are swapped for a token by exact string, so export.sql and
 // evaluationSubjects.ts cannot drift apart without changing the hash.
 //
 // What it cannot do, stated so it does not read as coverage (C-38): an edit that changes
@@ -42,13 +46,15 @@ export function reduceExportQuery(sql: string, listedPetIds: readonly string[]):
   const inList = listedPetIds.map((id) => `'${id}'`).join(', ')
   const kept: string[] = []
   sql.split('\n').forEach((line, i) => {
-    const trimmed = line.trim()
-    if (trimmed === '' || trimmed.startsWith('--')) return
+    // Only a space or a tab counts as leading whitespace: anything else before `--` may be a
+    // token to Postgres, so that line is kept and then refused below.
+    if (/^[ \t]*(?:--.*)?$/.test(line)) return
     const where = `line ${i + 1}`
+    if (/[^\t\x20-\x7e]/.test(line)) problems.push(`${where}: a character outside printable ASCII and tab, which Postgres may read as part of a token`)
     if (/[$"\\]/.test(line)) problems.push(`${where}: a dollar quote, quoted identifier or backslash, which the reduction cannot read`)
     if (line.includes('/*') || line.includes('*/')) problems.push(`${where}: a block comment, which could hide a line from the reduction`)
     if ((line.match(/'/g) ?? []).length % 2 !== 0) problems.push(`${where}: a string left open at the end of the line`)
-    kept.push(trimmed.replace(/[ \t]+/g, ' ').split(`p.id in (${inList})`).join(`p.id in (${SUBJECTS_TOKEN})`))
+    kept.push(line.replace(/^[ \t]+|[ \t]+$/g, '').split(`p.id in (${inList})`).join(`p.id in (${SUBJECTS_TOKEN})`))
   })
   const text = kept.join('\n')
   if (!text.includes(`p.id in (${SUBJECTS_TOKEN})`)) {
