@@ -487,11 +487,17 @@ function buildObservations(row: AnalysisRow): Observation[] {
   // observation feeding the report, distinct from the n=1 read's reassurance ban).
   const blood = labelFor(BLOOD_OPTIONS, row.blood_present);
   if (blood) out.push({ field: 'blood_present', label: 'Blood', value: blood });
-  // Foreign material. The 'yes' path shows the model's own note, UNCHANGED by this change:
-  // the model is prompted to set the suspected_foreign_material visual flag on 'yes', so a
-  // 'yes' note normally rides a worth_a_call card (Pattern-10-compliant). That coupling is
-  // not structurally enforced at the floor (which trusts the model's visual_flags array,
-  // not a flag derived from the enum — CUL-534), but closing it is out of scope here. On
+  // Foreign material. The 'yes' path shows the model's own note. Since CUL-534 (the
+  // analyze-stool parity) analyze-vomit's parse DERIVES the suspected_foreign_material
+  // visual flag from foreign_material_present === 'yes', so a 'yes' the model wrote reaches
+  // this row on a worth_a_call card. That is NOT full Pattern-10 compliance: the note is not
+  // gated on the model's OWN escalation, so when the floor escalated on the derived flag
+  // over a model 'monitor', the note is text the model wrote for a monitor call and can
+  // minimise ("a piece of string, usually passes"). Gating it is CUL-1318. Three rows can
+  // also show 'yes' beside a non-escalated verdict: one analysed before CUL-534 deployed;
+  // one the OWNER edited to 'yes' (an edit refreshes the field, never the cached
+  // recommendation — Pattern 7); and one re-run after any owner edit, where the verdict
+  // comes from the fresh read while this row shows the frozen fields (CUL-409). On
   // 'unsure' the card is
   // 'monitor', and CUL-240 (B-042) surfaces the previously-hidden finding there — but the
   // note is model-authored FREE TEXT with no schema constraint, no parse gate, and no

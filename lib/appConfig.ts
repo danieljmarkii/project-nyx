@@ -87,6 +87,18 @@ export type AppConfigKey = keyof AppConfigValues;
 // reads the local record the app already holds, no Edge Function reads the key,
 // so there is no server-side registration of it.
 //
+// `trial_screen` is the rollout flag for the diet trial's own screen (Diet trial —
+// its own screen, migration 073 — TS-0 / CUL-1296; spec §0.2 T-2, §7) — same shape,
+// same fail-closed resolution. It gates the screen (`/trial/[pet]`) and its doors
+// (Home's strip, the Pet tab, the Day Summary) AND-ed with the beta-shelf opt-in,
+// through ONE hook, `hooks/useTrialScreen.ts`, the only file that reads this key
+// directly (pinned by guards/trialScreenFlagOff.test.tsx). A ROLLOUT gate only: GA
+// is every account and TS-GA retires the key with the flag-off paths.
+// Client-render-only — the screen reads the local record through the modules that
+// already write its strings, no Edge Function reads the key, so there is no
+// server-side registration of it. Nothing consumes it yet (TS-0; TS-4 lands the
+// first consumer).
+//
 // Five keys that once lived here have GRADUATED to GA and been retired client-side.
 // `signal_design_v2` (the Signal/Home design uplift, migration 055) and `signals_v2`
 // (the Signals-v2 lanes, migration 057) went first (CUL-546 Phase 1 / CUL-547 +
@@ -111,6 +123,7 @@ export const ALLOWLIST_FLAG_KEYS = [
   'daily_look',
   'design_v2',
   'history_v2',
+  'trial_screen',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -129,6 +142,7 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   daily_look: undefined,
   design_v2: undefined,
   history_v2: undefined,
+  trial_screen: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

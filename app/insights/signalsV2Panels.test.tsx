@@ -24,7 +24,7 @@ jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet:
 jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
 jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
 jest.mock('../../hooks/useDietTrial', () => ({
-  useDietTrial: () => ({ input: null, isLoading: false, reload: jest.fn(), inputIsForActivePet: false }),
+  useDietTrial: () => ({ input: null, isLoading: false, reload: jest.fn(), inputIsForPet: false }),
 }));
 jest.mock('../../lib/looks', () => ({
   loadLookDays: jest.fn(async () => []),

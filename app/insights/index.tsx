@@ -150,7 +150,7 @@ export default function PatternsScreen() {
   // not proof it belongs to this pet, and an unconfirmed record is `null` — ignorance, which
   // `lookWithheldState` resolves to 'unknown' and `lookWithheld` then fails CLOSED on. A
   // quiet run drawn during the switch window is the one direction that cannot be taken back.
-  const { input: trialInput, inputIsForActivePet: trialFactsFresh } = useDietTrial();
+  const { input: trialInput, inputIsForPet: trialFactsFresh } = useDietTrial(activePet?.id ?? null);
   const trialNotEating = trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : null;
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');

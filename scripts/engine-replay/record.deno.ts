@@ -24,7 +24,10 @@
 //
 // It refuses an export that does not name exactly one pet (subject.ts, CUL-1276): a
 // mistyped id or owner email comes back as one row of nulls, which used to load as an
-// empty record and replay as a clean pass.
+// empty record and replay as a clean pass. And it refuses a pet that is not in
+// evaluationSubjects.ts (CUL-1314, PMD-12): the export skips RLS, so one pet is not yet
+// a pet a session may read. That refusal reads the export's own `pet_id` label, after the
+// rows have reached the session; the query's CTE is what keeps them in the database.
 //
 // DATA NEVER ENTERS THE REPO. export.sql is run through the Supabase MCP by a session;
 // the result lands in the session's scratchpad and is read from there.

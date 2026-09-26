@@ -292,6 +292,77 @@ export function buildAnalysisWriteBack<TFlag extends string>(params: {
   }
 }
 
+// ── Whose row is it (CUL-1203) ────────────────────────────────────────────────
+//
+// The analysis row is looked up by event_id, and before CUL-1203 nothing tied a
+// row's event_id to its pet_id: RLS checked only that the pet was the writer's,
+// and the events(id) FK is checked without RLS. So any signed-in account holding
+// another account's event id could plant a row {victim's event, own pet,
+// edited_at}, and the humanEdited branch's update — keyed on event_id alone —
+// wrote the victim pet's read (its name in read_text) into the attacker's row.
+// Migration 074 makes that row unwritable (same-pet on insert, both columns
+// frozen on update, no client INSERT). This half makes the write-back unable to
+// reach a row that is not the event's, whatever the database lets in:
+//
+//   · analysisRowMatchesEvent — the row read at step 3b must carry the EVENT's
+//     pet. A row that does not is refused before any write, the usage counter
+//     included. 074 makes such a row unmakeable and its apply refuses if one
+//     already exists, so the one live source is an event moved between an
+//     owner's own pets by hand (CUL-882). For a row mismatched at rest this is
+//     the fix, not a tripwire: without it a re-read's upsert or an unkeyed
+//     update would still write into that row.
+//   · updateAnalysisRow — every UPDATE keys on event_id AND the event's pet_id.
+//     Adding a filter that can match nothing turns a wrong row into a silent
+//     no-op, so the zero-row case is an error here (C-39: a write that matches
+//     nothing is said, never swallowed).
+//
+// The upserts need neither: they already carry the event's pet_id as a value,
+// and 074 refuses the conflict update that would move a row's pet_id.
+
+// Fails CLOSED: a row whose pet_id did not come back (a select that forgot the
+// column) is treated as another pet's, never as a match.
+export function analysisRowMatchesEvent(
+  existing: { pet_id?: string | null } | null,
+  eventPetId: string,
+): boolean {
+  if (!existing) return true
+  return existing.pet_id === eventPetId
+}
+
+export async function updateAnalysisRow(
+  client: SupabaseClient,
+  key: { eventId: string; petId: string },
+  values: Record<string, unknown>,
+): Promise<{ error: string | null }> {
+  const { data, error } = await client
+    .from('event_ai_analysis')
+    .update(values)
+    .eq('event_id', key.eventId)
+    .eq('pet_id', key.petId)
+    .select('id')
+  if (error) return { error: error.message }
+  if (!data || data.length === 0) {
+    return { error: 'no event_ai_analysis row for this event and pet' }
+  }
+  return { error: null }
+}
+
+// The one place an AnalysisWriteBack reaches the table, both modes. Two other
+// writes keep their own shapes — the cap / disabled state upsert and the
+// failure write — and each carries the event's pet_id as a value (the upsert)
+// or goes through updateAnalysisRow (the error-only update).
+export async function applyAnalysisWriteBack(
+  client: SupabaseClient,
+  key: { eventId: string; petId: string },
+  writeBack: AnalysisWriteBack,
+): Promise<{ error: string | null }> {
+  if (writeBack.mode === 'update') return updateAnalysisRow(client, key, writeBack.values)
+  const { error } = await client
+    .from('event_ai_analysis')
+    .upsert(writeBack.values, { onConflict: 'event_id' })
+  return { error: error ? error.message : null }
+}
+
 // ── The failure write (CUL-812 / CUL-539) ────────────────────────────────────
 //
 // THE RULE, stated once: an ESCALATION already in the record survives a failed
@@ -830,9 +901,21 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //     (it must never bury an already-completed or owner-edited read).
     const { data: existing } = await adminClient
       .from('event_ai_analysis')
-      .select('id, edited_at, status, recommendation')
+      .select('id, pet_id, edited_at, status, recommendation')
       .eq('event_id', eventId)
       .maybeSingle()
+    // CUL-1203: a row filed under another pet is not this event's read, and every
+    // decision below (humanEdited, existingRealAnalysis) would otherwise be taken
+    // on a stranger's row. Refused here, before the usage counter and before any
+    // write — a direct return, so the catch's failure write never runs over it.
+    // The client maps any non-2xx to its calm retry line; nothing new is shown.
+    if (!analysisRowMatchesEvent(existing, petId)) {
+      console.error(`${descriptor.functionName}: analysis row for event ${eventId} is filed under another pet; refusing to write`)
+      return Response.json(
+        { error: 'Analysis row does not belong to this event' },
+        { status: 409, headers: CORS_HEADERS },
+      )
+    }
     const humanEdited = !!existing?.edited_at
     // A row holding an escalation is a real analysis whatever its STATUS says
     // (CUL-812; any escalation since CUL-1277) — `isRealAnalysis` carries the why.
@@ -902,10 +985,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           structuredValues: descriptor.buildStructuredValues(null),
           readFields,
         })
-        const { error: writeError } = writeBack.mode === 'update'
-          ? await adminClient.from('event_ai_analysis').update(writeBack.values).eq('event_id', eventId)
-          : await adminClient.from('event_ai_analysis').upsert(writeBack.values, { onConflict: 'event_id' })
-        if (writeError) throw new Error(`DB write failed: ${writeError.message}`)
+        const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack)
+        if (writeError) throw new Error(`DB write failed: ${writeError}`)
       } else if (!existingRealAnalysis) {
         // No escalation AND no prior real analysis to protect → record the cap /
         // disabled STATE (§4.5) so the client renders its designed state (T2-4).
@@ -1064,19 +1145,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       readFields,
     })
 
-    let writeError
-    if (writeBack.mode === 'update') {
-      ;({ error: writeError } = await adminClient
-        .from('event_ai_analysis')
-        .update(writeBack.values)
-        .eq('event_id', eventId))
-    } else {
-      ;({ error: writeError } = await adminClient
-        .from('event_ai_analysis')
-        .upsert(writeBack.values, { onConflict: 'event_id' }))
-    }
-
-    if (writeError) throw new Error(`DB write failed: ${writeError.message}`)
+    const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack)
+    if (writeError) throw new Error(`DB write failed: ${writeError}`)
 
     return Response.json(
       { success: true, recommendation, contextual_flags: contextualFlags, visual_flags: visualFlags },
@@ -1103,11 +1173,15 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     if (petIdForFailure && incidentTypeForFailure) {
       const { data: latestRow, error: latestErr } = await adminClient
         .from('event_ai_analysis')
-        .select('recommendation')
+        .select('recommendation, pet_id')
         .eq('event_id', eventId)
         .maybeSingle()
       latest = latestRow ?? null
-      latestReadFailed = !!latestErr
+      // CUL-1203, the same rule as step 3b: a row filed under another pet is not
+      // this event's, so its recommendation must not steer the failure write. It
+      // folds into "could not read" on purpose — buildFailureWrite then writes
+      // nothing, which is the fail-closed answer for a row we will not touch.
+      latestReadFailed = !!latestErr || !analysisRowMatchesEvent(latestRow ?? null, petIdForFailure)
     }
 
     const failureWrite = buildFailureWrite({
@@ -1118,12 +1192,12 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       incidentType: incidentTypeForFailure,
       message,
     })
-    if (failureWrite.mode === 'error-only') {
-      await adminClient
-        .from('event_ai_analysis')
-        .update(failureWrite.values)
-        .eq('event_id', eventId)
-        .then(() => undefined)
+    // Best-effort, as before: a failure write that fails is not re-reported. It is
+    // keyed on the event's pet like every other update (CUL-1203); buildFailureWrite
+    // returns 'skip' whenever petIdForFailure is null, so the guard below is a
+    // narrowing for the type checker, never a second decision.
+    if (failureWrite.mode === 'error-only' && petIdForFailure) {
+      await updateAnalysisRow(adminClient, { eventId, petId: petIdForFailure }, failureWrite.values)
     } else if (failureWrite.mode === 'upsert') {
       await adminClient
         .from('event_ai_analysis')
