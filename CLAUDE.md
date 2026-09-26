@@ -528,7 +528,7 @@ Claude Code cannot edit this directly. Flag when it needs updating in the sessio
 | Title | Short, scannable. Keep any legacy `B-NNN` reference in the title only if the item extends/supersedes an already-migrated row. |
 | Description | **Open with a `TL;DR — plain English:` section (PM directive, 2026-08-26): 2–4 sentences a non-engineer can read cold** — what this is, why it matters, what done looks like, and (when there is one) the single thing the PM must do, bolded. No file paths, no enum/lane/§ jargon, no internal codenames in the TL;DR; the technical detail follows below a `---` rule. Instituted because "sometimes your tasks are too technical for me to truly understand" — the TL;DR is for the PM; the body is for the build session. Then **Why:** one paragraph, enough context that future-you can re-evaluate without re-deriving. Add **Blocks:** the milestone, phase, or condition that should trigger this — `—` if none. |
 | Priority | Map `Now`→Urgent/High, `Next`→Medium, `Later`→Low (Linear's native field, no separate label needed). |
-| Project | The active build-track project if the item extends one (Signals v2, Daily Recap, or a future track); **Legacy Backlog** — or a new project, PM's call — otherwise. |
+| Project | A live project only if the issue extends its work; else **none** (standalone is fine) plus an `Area: *` label. **Never Legacy Backlog** — migrated rows only (PM, 2026-09-26, CUL-1284). |
 | Team | `Culprit` |
 | State | `Todo` for new items; `In Progress` / `Done` only for items filed retroactively about already-started work. |
 
