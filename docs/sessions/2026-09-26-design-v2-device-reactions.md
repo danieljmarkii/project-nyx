@@ -54,3 +54,11 @@ The `code-reviewer` found no bugs. Its three cleanups rode the PR: a direct test
 ## Validation
 
 `tsc --noEmit` clean. Full jest before review: 519 suites, 11,695 passed. After the review fixes, the affected suites (353 tests) and the guard and constants suites (668 tests) passed.
+
+## The rulings (same day)
+
+The PM ruled D1 B, D2 (a), D3 C, D4 park and D5 (a). The mock was republished as the single ruled proposal: the options not chosen left the page, and commit 2460a58 keeps them. The build issues:
+- **CUL-1270:** the Signal on Home and the claim titles, under `design_v2`. The S1 wording edit rides its PR.
+- **CUL-322:** the indigo FAB with the teal plus, and the fan choreography, closing BRK-37. The brand rule-3 exception rides its PR.
+- **CUL-1278:** hold-and-slide, after CUL-322 and a device test.
+- **CUL-1279:** indigo as the app-wide action colour, parked until the FAB has been judged on a phone.

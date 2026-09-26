@@ -228,17 +228,17 @@
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 1 · current proposal</span><span>Design v2 · device reactions</span><span>2026-09-26</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 1 · ruled 2026-09-26</span><span>Design v2 · device reactions</span><span>2026-09-26</span></p>
     <h1>Design v2, on the phone</h1>
-    <p class="standfirst">Six reactions from the first real day with the Design v2 build, drawn against Nyx's actual record. Two are fixed in this PR. The other four need a ruling, and every option is drawn here next to the build it would replace.</p>
+    <p class="standfirst">Six reactions from the first real day with the Design v2 build, drawn against Nyx's actual record. Two are fixed in #922. The PM ruled the other four on 2026-09-26 (D1 B, D2 a, D3 C, D4 park, D5 a); the options not chosen have left the page, and git keeps them at commit 2460a58. What remains is the proposal each build issue builds.</p>
     <div class="ledger">
-      <div><b>1 · The Signal's screens</b><span><q>Beautiful. Make navigation way easier… less Signal on Home, more affordances directing to the screens.</q> <span class="pill dir">§01 · decision D1</span></span></div>
+      <div><b>1 · The Signal's screens</b><span><q>Beautiful. Make navigation way easier… less Signal on Home, more affordances directing to the screens.</q> <span class="pill">ruled B · CUL-1270</span></span></div>
       <div><b>1a · Grey photo boxes</b><span>A stale on-device path was trusted, and a failed thumbnail never fell back to the full photo. <span class="pill">built · §04</span></span></div>
       <div><b>2 · Tapping a day's event</b><span>The month's day rows were dead. Each row is now a door to its record. <span class="pill">built · §03</span></span></div>
-      <div><b>3 · Two signals, one screen</b><span>Routing was correct. Two vomiting findings produce twin screens with the same title shape, bars and gallery. <span class="pill dir">§02 · decision D2</span></span></div>
-      <div><b>4 · Text heavy</b><span><q>Signals is SO text heavy. It's overwhelming.</q> This is the same fix as #1. <span class="pill dir">§01 · D1</span></span></div>
-      <div><b>5 · FAB teal</b><span><q>Drab… maybe the Culprit dark blue/purple.</q> <span class="pill open">§05 · D3, D4 (a better-than-the-rule brief)</span></span></div>
-      <div><b>6 · FAB interaction</b><span><q>What can we do to make this world class?</q> <span class="pill dir">§06 · live demo · D5</span></span></div>
+      <div><b>3 · Two signals, one screen</b><span>Routing was correct. Two vomiting findings produce twin screens with the same title shape, bars and gallery. <span class="pill">ruled (a) · CUL-1270</span></span></div>
+      <div><b>4 · Text heavy</b><span><q>Signals is SO text heavy. It's overwhelming.</q> This is the same fix as #1. <span class="pill">ruled B · CUL-1270</span></span></div>
+      <div><b>5 · FAB teal</b><span><q>Drab… maybe the Culprit dark blue/purple.</q> <span class="pill">D3 ruled C · CUL-322</span> <span class="pill dir">D4 parked · CUL-1279</span></span></div>
+      <div><b>6 · FAB interaction</b><span><q>What can we do to make this world class?</q> <span class="pill">ruled (a) · CUL-322, then CUL-1278</span></span></div>
     </div>
   </header>
 
@@ -247,7 +247,7 @@
     <div class="sec-head"><span class="sec-num">01</span><h2>The Signal on Home: a door per finding, and far fewer words</h2></div>
     <div class="col">
       <p>Nyx's Signal today holds four findings: a foreign-material photo read, vomiting in 5 of 8 weeks, coughing in 7 of 8 weeks, and vomiting soon after meals. As built, the first three are full paragraphs, each ending with the same disclaimer. Only "Open ›" in the header looks like a door, and it always opens the top card.</p>
-      <p>Every option keeps the three things safety requires. The ask stays on Home, in words, and never moves behind a tap. Safety findings lead. A safety card never gains a chart (S1). What moves to the screen is the explanation, the receipts and the cross-mentions. The disclaimer is said once for the whole zone.</p>
+      <p>The ruled design keeps the three things safety requires. The ask stays on Home, in words, and never moves behind a tap. Safety findings lead. A safety card never gains a chart (S1). What moves to the screen is the explanation, the receipts and the cross-mentions. The disclaimer is said once for the whole zone.</p>
     </div>
     <div class="frames">
       <div class="frame">
@@ -266,23 +266,6 @@
         <div class="frame-cap"><b>As built</b><span>About 150 words before the fourth finding. No card looks tappable.</span></div>
       </div>
 
-      <div class="frame">
-        <div class="phone">
-          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="ask"><i></i>Ask</span></div>
-          <div class="card">
-            <div class="zone-label"><span>Signal</span></div>
-            <div class="railed door"><div class="body"><div class="eyebrow-s">Photo read · Sep 22</div><div class="head serif">Possible foreign material in a vomit photo</div><div class="asktxt">Worth a call to your vet</div></div><span class="chev big"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
-            <div class="row-divider"></div>
-            <div class="railed door"><div class="body"><div class="head">Vomiting in 5 of the last 8 weeks</div><div class="sub">14 episodes since August · <span style="color:#B4123B">worth booking a visit</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
-            <div class="row-divider"></div>
-            <div class="railed door"><div class="body"><div class="head">Coughing in 7 of the last 8 weeks</div><div class="sub">23 episodes since August · <span style="color:#B4123B">worth booking a visit</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
-            <div class="row-divider"></div>
-            <div class="door" style="padding-left:13px"><div class="body"><div class="head">Vomiting soon after meals</div><div class="sub">9 of 10 timed episodes within 30 minutes of eating</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
-            <div class="zone-foot"><span>A read of Nyx's logs, not a diagnosis.</span><a>All patterns ›</a></div>
-          </div>
-        </div>
-        <div class="frame-cap"><b>A · Words, shorter, each a door</b><span>A headline and the ask on every card, with a chevron. All four findings fit above the fold.</span></div>
-      </div>
 
       <div class="frame">
         <div class="phone">
@@ -308,28 +291,12 @@
             <div class="zone-foot"><span>A read of Nyx's logs, not a diagnosis.</span><a>All patterns ›</a></div>
           </div>
         </div>
-        <div class="frame-cap"><b>B · A, plus a small chart on insight cards <span class="pill">recommended</span></b><span>Insight cards show a thumbnail of the evidence their screen draws, which invites the tap. Safety cards stay words.</span></div>
+        <div class="frame-cap"><b>The ruled design (B) <span class="pill">current · CUL-1270</span></b><span>Insight cards show a thumbnail of the evidence their screen draws, which invites the tap. Safety cards stay words.</span></div>
       </div>
 
-      <div class="frame option">
-        <div class="phone">
-          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="ask"><i></i>Ask</span></div>
-          <div class="card">
-            <div class="zone-label"><span>Signal</span></div>
-            <div class="railed door"><div class="body"><div class="eyebrow-s">Photo read · Sep 22</div><div class="head serif">Possible foreign material in a vomit photo</div><div class="asktxt">Worth a call to your vet</div></div><span class="chev big"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
-            <div style="margin-top:12px">
-              <div class="compact-row"><i class="dot"></i><span class="t"><b>Vomiting</b>, 5 of 8 weeks · <span>visit</span></span><span class="chev"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
-              <div class="compact-row"><i class="dot"></i><span class="t"><b>Coughing</b>, 7 of 8 weeks · <span>visit</span></span><span class="chev"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
-              <div class="compact-row"><i class="dot ins"></i><span class="t"><b>Vomiting</b> soon after meals</span><span class="chev"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
-            </div>
-            <div class="zone-foot"><span>A read of Nyx's logs, not a diagnosis.</span><a>All patterns ›</a></div>
-          </div>
-        </div>
-        <div class="frame-cap"><b>C · The lead in full, the rest as rows</b><span>The quietest option. The cost is that the second and third safety asks shrink to a single word.</span></div>
-      </div>
     </div>
     <div class="col" style="margin-top:28px">
-      <p><b>How B is built.</b> The Home line is composed from the finding's own fields, the way the lead card's title is today. It never truncates the server's sentence, so the count on Home and the count on the screen come from one source (CUL-1217). The fold still works: a folded card collapses to its headline row, and its chevron still opens the screen. "Open ›" leaves the header, because every card now carries its own door.</p>
+      <p><b>How it is built (CUL-1270).</b> The Home line is composed from the finding's own fields, the way the lead card's title is today. It never truncates the server's sentence, so the count on Home and the count on the screen come from one source (CUL-1217). The fold still works: a folded card collapses to its headline row, and its chevron still opens the screen. "Open ›" leaves the header, because every card now carries its own door.</p>
     </div>
   </section>
 
@@ -368,7 +335,7 @@
           <div class="mini-label">Weeks with vomiting · 5 of 8</div>
           <svg viewBox="0 0 280 60" width="100%" height="60" role="img" aria-label="Weekly vomiting bars"><g fill="#F43F5E"><rect x="4" y="44" width="22" height="12" rx="2"/><rect x="34" y="30" width="22" height="26" rx="2"/><rect x="94" y="38" width="22" height="18" rx="2"/><rect x="124" y="20" width="22" height="36" rx="2"/><rect x="184" y="44" width="22" height="12" rx="2"/><rect x="214" y="32" width="22" height="24" rx="2"/><rect x="244" y="50" width="22" height="6" rx="2"/></g><line x1="0" y1="56.5" x2="280" y2="56.5" stroke="#E7E5E4"/></svg>
         </div>
-        <div class="frame-cap"><b>Proposed · the recurrence</b><span>The title states the claim. The bars lead because weeks are the evidence.</span></div>
+        <div class="frame-cap"><b>Ruled (a) · the recurrence <span class="pill">current</span></b><span>The title states the claim. The bars lead because weeks are the evidence.</span></div>
       </div>
       <div class="frame">
         <div class="screen-head">
@@ -385,7 +352,7 @@
             <text x="256" y="40" font-size="9" fill="#737373" font-family="Geist, sans-serif">4 h</text>
           </svg>
         </div>
-        <div class="frame-cap"><b>Proposed · the timing</b><span>The lane leads, because timing is this finding's evidence. The bars move below it.</span></div>
+        <div class="frame-cap"><b>Ruled (a) · the timing <span class="pill">current</span></b><span>The lane leads, because timing is this finding's evidence. The bars move below it.</span></div>
       </div>
     </div>
   </section>
@@ -436,7 +403,7 @@
   <section id="colour">
     <div class="sec-head"><span class="sec-num">05</span><h2>The FAB's colour, and whether teal stays the app's accent</h2></div>
     <div class="col">
-      <p>The FAB shipped in the darker teal because the bright teal failed contrast: a white plus on #00C2A8 measures 2.17:1 against the 3:1 minimum. The darker teal passes but reads muddy, which is the drab you saw. The Culprit indigo clears contrast by a wide margin. The in-app brand spec (2026-07-10, rule 3) says indigo is only ever a ground and teal is the sole interactive accent. Options C and D keep the brand's teal as the live spark and put indigo behind it.</p>
+      <p>The FAB shipped in the darker teal because the bright teal failed contrast: a white plus on #00C2A8 measures 2.17:1 against the 3:1 minimum. The darker teal passes but reads muddy, which is the drab you saw. The Culprit indigo clears contrast by a wide margin. The in-app brand spec (2026-07-10, rule 3) says indigo is only ever a ground and teal is the sole interactive accent. The ruling keeps the brand's teal as the live spark on the plus and puts indigo behind it, with the FAB named as rule 3's one exception.</p>
     </div>
     <div class="frames">
       <div class="frame">
@@ -444,16 +411,8 @@
         <div class="frame-cap"><b>A · As built, teal ink #0B7B6C</b><span class="contrast"><span class="ok">plus 5.17:1</span><span class="ok">disc 4.95:1</span></span></div>
       </div>
       <div class="frame">
-        <div class="phone" style="padding:0;border-radius:24px"><div class="fab-stage"><div class="ghost"><i></i><i></i><i></i></div><div class="fabdisc" style="background:#251F57"><svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div></div></div>
-        <div class="frame-cap"><b>B · Culprit indigo, white plus</b><span class="contrast"><span class="ok">plus 14.9:1</span><span class="ok">disc 14.3:1</span></span></div>
-      </div>
-      <div class="frame">
         <div class="phone" style="padding:0;border-radius:24px"><div class="fab-stage"><div class="ghost"><i></i><i></i><i></i></div><div class="fabdisc" style="background:#251F57"><svg viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="2.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div></div></div>
-        <div class="frame-cap"><b>C · Indigo disc, bright teal plus <span class="pill">recommended</span></b><span class="contrast"><span class="ok">plus 6.57:1</span><span class="ok">disc 14.3:1</span></span><span>The Culprit mark in miniature: the night ground with the signal on it. Bright teal finally gets used, in the one place it passes.</span></div>
-      </div>
-      <div class="frame option">
-        <div class="phone" style="padding:0;border-radius:24px"><div class="fab-stage"><div class="ghost"><i></i><i></i><i></i></div><div class="fabdisc" style="background:#00C2A8"><svg viewBox="0 0 24 24" fill="none" stroke="#13112E" stroke-width="2.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div></div></div>
-        <div class="frame-cap"><b>D · Bright teal disc, indigo plus</b><span class="contrast"><span class="ok">plus 8.09:1</span><span class="no">disc 2.17:1</span></span><span>The most vivid option. The disc's edge fails 3:1, and it is the pair CUL-1063 already measured and rejected.</span></div>
+        <div class="frame-cap"><b>Ruled (C): indigo disc, bright teal plus <span class="pill">current · CUL-322</span></b><span class="contrast"><span class="ok">plus 6.57:1</span><span class="ok">disc 14.3:1</span></span><span>The Culprit mark in miniature: the night ground with the signal on it. Bright teal finally gets used, in the one place it passes.</span></div>
       </div>
     </div>
 
@@ -470,7 +429,7 @@
         </div>
         <div class="frame-cap"><b>Today · one accent</b></div>
       </div>
-      <div class="frame option">
+      <div class="frame">
         <div class="kit">
           <div class="btn" style="background:#251F57;color:#fff">Send the vet report</div>
           <div class="chips"><span class="chip" style="background:#251F57;border-color:#251F57;color:#fff;font-weight:600">Ate all</span><span class="chip">Left some</span><span class="chip">Refused</span></div>
@@ -478,7 +437,7 @@
           <div class="bars"><i style="height:40%;background:#00C2A8"></i><i style="height:70%;background:#00C2A8"></i><i style="height:55%;background:#00C2A8"></i><i style="height:90%;background:#00C2A8"></i><i style="height:65%;background:#00C2A8"></i></div>
           <div class="note">Indigo means "tap me"; teal means data</div>
         </div>
-        <div class="frame-cap"><b>Indigo actions, teal data</b><span>This touches every screen and rewrites brand rule 3. It needs its own round and the contrast guard's full walk.</span></div>
+        <div class="frame-cap"><b>Indigo actions, teal data <span class="pill dir">parked · CUL-1279</span></b><span>This touches every screen and rewrites brand rule 3. It needs its own round and the contrast guard's full walk.</span></div>
       </div>
     </div>
   </section>
@@ -523,7 +482,7 @@
           <li><b>The plus turns with weight.</b> A 135° spring with a small overshoot lands on ×, replacing today's 45° linear turn.</li>
           <li><b>Home steps back.</b> A soft indigo scrim with a light blur, and Home settles to 97%. The menu reads as in front of Home, not stuck on top of it.</li>
           <li><b>The menu grows out of the button.</b> Items fan up from the disc's corner, nearest first, 35–40ms apart. Recent foods sit closest to the thumb, and each names the time it is usually fed.</li>
-          <li><b>Hold, slide, release.</b> Hold for 250ms and a teal ring closes around the disc. Slide over an item and it lifts, with a selection tick each time you cross into a new one. Let go on it and it logs. One gesture, no decisions at the moment of the event (Principle 1).</li>
+          <li><b>Hold, slide, release</b> <span class="pill dir">later · CUL-1278</span> Hold for 250ms and a teal ring closes around the disc. Slide over an item and it lifts, with a selection tick each time you cross into a new one. Let go on it and it logs. One gesture, no decisions at the moment of the event (Principle 1).</li>
           <li><b>The completion beat names the record.</b> "Vomit, 3:12 PM · Logged for Nyx · Undo" routes through the existing completion card (C-17), so this surface never invents its own confirmation.</li>
           <li><b>Close is faster than open.</b> Items retract in reverse order in about 180ms. Open is a moment; close is getting out of the way.</li>
           <li><b>Reduce Motion is a crossfade.</b> No turn, no fan, no scale. It is the frame BRK-37 found missing, and the button gains its role and a modal menu at the same time.</li>
@@ -532,39 +491,29 @@
     </div>
   </section>
 
-  <!-- Briefs -->
+  <!-- Rulings -->
   <section id="decide">
-    <div class="sec-head"><span class="sec-num">07</span><h2>What needs your call</h2></div>
+    <div class="sec-head"><span class="sec-num">07</span><h2>The rulings, and what each one builds</h2></div>
     <div class="briefs">
       <div class="brief">
-        <h4>D1 · The Signal on Home <span class="pill dir">§01</span></h4>
-        <p><b>Deciding:</b> how much of each finding lives on Home, and how each one says it is a door.</p>
-        <p><b>Options:</b> <b>(B) headline + ask + chevron on every card, a small chart on insight cards, the disclaimer once per zone. Recommended:</b> the smallest change that makes every finding visibly tappable and cuts about 150 words to about 60, while every safety ask stays in words on Home. (A) the same without the chart. (C) the lead in full, the rest as rows (the quietest, but the later safety asks shrink to one word).</p>
-        <p><b>Consequence:</b> B needs a Home-line composer built from finding fields (never truncating the server sentence), retires the header's "Open ›", and pairs with CUL-1217's one-count rule. It is a Tier-2 edit to the Signal/Home spec §S1 wording ("plain" is not "long").</p>
+        <h4>D1 · The Signal on Home <span class="pill">ruled B</span></h4>
+        <p>Every card becomes a headline, the ask and a chevron. Insight cards carry a small chart; safety cards stay words, with every ask on Home. The disclaimer is said once per zone, and the header's "Open ›" retires. The S1 wording edit ("plain" is not "long") is written in the build PR. <b>Build:</b> CUL-1270.</p>
       </div>
       <div class="brief">
-        <h4>D2 · Twin screens <span class="pill dir">§02</span></h4>
-        <p><b>Deciding:</b> whether a screen's title and first chart come from the finding's claim or from its symptom.</p>
-        <p><b>Options:</b> <b>(a) Title names the claim; the first chart is the finding's own evidence. Recommended:</b> two findings about one symptom stop reading as one screen. (b) Keep the symptom titles and add a subtitle naming the claim.</p>
-        <p><b>Consequence:</b> (a) is a <code>signalTitle</code> rule change plus a section order per finding type on the screen, and it lands with D1's Home headlines, since they are the same words.</p>
+        <h4>D2 · Twin screens <span class="pill">ruled (a)</span></h4>
+        <p>The title names the finding's claim, and the screen opens on the finding's own evidence. It lands with D1, since the Home headline and the screen title are the same words. <b>Build:</b> CUL-1270.</p>
       </div>
       <div class="brief">
-        <h4>D3 · The FAB's colour <span class="pill open">§05 · better than the rule</span></h4>
-        <p><b>The rule:</b> in-app brand spec rule 3 (2026-07-10). Indigo is a ground, never an interactive fill, so a colour never means two things. <b>The better thing:</b> option C, an indigo disc with the bright teal plus. It passes everywhere (6.57:1 and 14.3:1), is the brand mark in miniature, and teal still carries the "live" meaning on the glyph. <b>Does the protection hold?</b> Yes, for one control: nothing else is indigo and tappable, so indigo never means two things.</p>
-        <p><b>Options:</b> <b>(C) Indigo disc, teal plus. Recommended.</b> (B) Indigo disc, white plus (calmer, no brand spark). (A) Keep the teal ink.</p>
-        <p><b>Consequence:</b> C is a one-component change plus an amendment to rule 3 naming the FAB as its one exception. The contrast guard gains the new pair.</p>
+        <h4>D3 · The FAB's colour <span class="pill">ruled C</span></h4>
+        <p>An indigo #251F57 disc with a bright teal #00C2A8 plus. In-app brand rule 3 gains one exception, the FAB, written in the build PR. <b>Build:</b> CUL-322.</p>
       </div>
       <div class="brief">
-        <h4>D4 · Indigo as the app's action colour <span class="pill dir">§05</span></h4>
-        <p><b>Deciding:</b> whether "tap me" moves from teal to indigo app-wide, with teal kept for data.</p>
-        <p><b>Options:</b> <b>(a) Park it until after D3 ships, and judge the FAB on device first. Recommended:</b> the FAB is the cheapest test of whether indigo reads as "act", and a full swap touches every screen and the brand spec. (b) Open a design round for the full swap now.</p>
-        <p><b>Consequence:</b> (a) files a follow-up issue and costs nothing now. (b) competes with the App Store track for design time.</p>
+        <h4>D4 · Indigo as the app's action colour <span class="pill dir">parked</span></h4>
+        <p>Judged after the indigo FAB has been on a phone. <b>Parked as:</b> CUL-1279.</p>
       </div>
       <div class="brief">
-        <h4>D5 · The FAB choreography <span class="pill dir">§06</span></h4>
-        <p><b>Deciding:</b> which beats ship first.</p>
-        <p><b>Options:</b> <b>(a) Beats 1–4, 6–8 now; hold-and-slide (5) as its own PR after a device test. Recommended:</b> the fan and the springs are safe, low-risk polish, and hold-and-slide is a new gesture that needs a VoiceOver path and a real thumb before it ships. (b) Everything at once. (c) Colour only; keep today's motion.</p>
-        <p><b>Consequence:</b> (a) needs no new dependency (RN <code>Animated</code>, the existing haptic verbs, the completion register) and closes BRK-37 in the same PR.</p>
+        <h4>D5 · The FAB choreography <span class="pill">ruled (a)</span></h4>
+        <p>Press-down, the spring turn, the scrim, the fan, the completion card, the faster close and the Reduce Motion frame ship with the colour, closing BRK-37. Hold-and-slide follows after a device test. <b>Build:</b> CUL-322, then CUL-1278.</p>
       </div>
     </div>
   </section>
