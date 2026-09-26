@@ -6722,12 +6722,132 @@ export function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
 }
 
 /**
- * The furthest back `holdChronicityTier` walks. With `windowDays` 56, a replay 120 days back
- * reads events 176 days back — inside `generate-signal`'s 180-day fetch, so every day it
- * replays is replayed over the same record the live run reads. A firm tier earned further
- * back than this no longer anchors a hold (the stated blind spot below).
+ * The furthest back `holdChronicityTier` replays. A replay at `t` reads events back to
+ * `t − windowDays − symptomEpisodeGapHours` (see `replayInputAsOf`), so 120 days back reads
+ * about 176 days back: inside `generate-signal`'s 180-day fetch, so every instant it replays is
+ * replayed over the record the live run reads. A firm tier earned further back than this no
+ * longer anchors a hold (a stated blind spot of `holdChronicityTier`).
  */
 export const CHRONICITY_HOLD_MAX_DAYS = 120
+
+/**
+ * The most replays one `holdChronicityTier` call makes, across all its cards. Measured
+ * 2026-09-26: the dogfood record has ~6.5 change instants a day at ~0.3 ms a replay, so a walk
+ * over the whole 120 days is ~0.25 s and never meets this cap; a synthetic extreme logger (16
+ * symptom logs a day across five signs) meets it at ~1.3 s. Hitting it ends the walk with no
+ * hold: today's behaviour, never below it (a stated blind spot). Most calls walk nothing: the
+ * walk runs only for a chronicity card both arms left at 'standard'.
+ */
+export const CHRONICITY_HOLD_MAX_REPLAYS = 1200
+
+/**
+ * The instants in `(now − CHRONICITY_HOLD_MAX_DAYS, now)` at which what ⑦ and ④ return can
+ * change, newest first. Between two consecutive instants both detectors return the same thing,
+ * so replaying just after each one reads every state the card was in, at ANY time of day.
+ *
+ * Why this and not a daily grid (adversarial pass, 2026-09-26): Home regenerates seconds after
+ * each log and whenever its 24h cache lapses, so one day holds reads at several times. A grid
+ * 24h apart from `now` saw a five-hour ④ blip from a morning read and never from an evening
+ * one, and the card flipped firm/standard twice a day at an unchanged count.
+ *
+ * Every `now`-dependence in the two detectors, and the instant it turns at:
+ *   - an onset enters ④'s current week (`e`), crosses into its prior week (`e + W`), leaves it
+ *     (`e + 2W`); enters ⑦'s lookback (`e`) and leaves it (`e + windowDays`);
+ *   - ⑦'s recency floor lapses at `last + (ongoingRecencyDays + 1)` days (it compares a floored
+ *     day count, so it fails exactly when a whole extra day has passed);
+ *   - the logging floors count distinct UTC days, and a day is inside ④'s current week from its
+ *     first event until its last event + W, and inside the prior week a week later.
+ * Every symptom event is taken as a possible onset (a superset: an extra replay is harmless).
+ * Nothing else in either detector reads `now`: span, active weeks, the span-halves logging guard
+ * and the tier's span arm read only the onsets inside the lookback.
+ */
+export function holdChangeInstants(input: DetectionInput, config: DetectionConfig, nowMs: number): number[] {
+  const W = config.reflection.windowDays * MS_PER_DAY
+  const L = config.chronicity.windowDays * MS_PER_DAY
+  const floorMs = nowMs - CHRONICITY_HOLD_MAX_DAYS * MS_PER_DAY
+  const out = new Set<number>()
+  const add = (ms: number): void => {
+    if (ms > floorMs && ms < nowMs) out.add(ms)
+  }
+  const dayBounds = new Map<number, [number, number]>()
+  const noteDay = (ms: number): void => {
+    const day = Math.floor(ms / MS_PER_DAY)
+    const b = dayBounds.get(day)
+    if (!b) dayBounds.set(day, [ms, ms])
+    else {
+      if (ms < b[0]) b[0] = ms
+      if (ms > b[1]) b[1] = ms
+    }
+  }
+  for (const e of input.symptomEvents) {
+    const ms = Date.parse(e.occurredAt)
+    if (!Number.isFinite(ms)) continue
+    const recency =
+      (chronicityFloorsFor(e.type, input.pet.species, config.chronicity).ongoingRecencyDays + 1) * MS_PER_DAY
+    add(ms)
+    add(ms + W)
+    add(ms + 2 * W)
+    add(ms + L)
+    add(ms + recency)
+    noteDay(ms)
+  }
+  for (const m of input.mealEvents) {
+    const ms = Date.parse(m.occurredAt)
+    if (Number.isFinite(ms)) noteDay(ms)
+  }
+  for (const [first, last] of dayBounds.values()) {
+    add(first)
+    add(last + W)
+    add(first + W)
+    add(last + 2 * W)
+  }
+  return [...out].sort((a, b) => b - a)
+}
+
+/**
+ * The record as ⑦ and ④ would read it at an earlier instant `t`, cut to what they can see:
+ * symptoms and meals from `t − max(windowDays, 2W) − one episode gap` up to `t`. The cut is a
+ * cost measure, and it is EXACT for both detectors (pinned by an equivalence property in
+ * `detection.chronicityHold.test.ts`):
+ *   - nothing either detector counts reaches before `t − windowDays` (⑦'s lookback) or
+ *     `t − 2W` (④'s two weeks), or at or after `t`;
+ *   - episodes collapse by CHAINING each event to its predecessor of the same type, so only
+ *     the first event of a type inside the cut can be read differently from the full record,
+ *     and one gap of margin puts it either outside every window or genuinely an onset.
+ * Sorted once; each call is two binary searches.
+ */
+export function replayInputAsOf(input: DetectionInput, config: DetectionConfig): (t: number) => DetectionInput {
+  const reachMs =
+    Math.max(config.chronicity.windowDays, 2 * config.reflection.windowDays) * MS_PER_DAY +
+    config.symptomEpisodeGapHours * MS_PER_HOUR +
+    1
+  const byTime = <T extends { occurredAt: string }>(rows: readonly T[]): { ms: number[]; rows: T[] } => {
+    const kept = rows
+      .map((row) => ({ row, ms: Date.parse(row.occurredAt) }))
+      .filter((x) => Number.isFinite(x.ms))
+      .sort((a, b) => a.ms - b.ms)
+    return { ms: kept.map((x) => x.ms), rows: kept.map((x) => x.row) }
+  }
+  // First index whose instant is ≥ `ms`.
+  const lowerBound = (arr: number[], ms: number): number => {
+    let lo = 0
+    let hi = arr.length
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1
+      if (arr[mid] < ms) lo = mid + 1
+      else hi = mid
+    }
+    return lo
+  }
+  const symptoms = byTime(input.symptomEvents)
+  const meals = byTime(input.mealEvents)
+  return (t: number): DetectionInput => ({
+    ...input,
+    now: new Date(t).toISOString(),
+    symptomEvents: symptoms.rows.slice(lowerBound(symptoms.ms, t - reachMs), lowerBound(symptoms.ms, t)),
+    mealEvents: meals.rows.slice(lowerBound(meals.ms, t - reachMs), lowerBound(meals.ms, t)),
+  })
+}
 
 /**
  * CUL-1272 (BRK-10) — a chronicity card's FIRM ask holds until the course's count FALLS or
@@ -6741,31 +6861,45 @@ export const CHRONICITY_HOLD_MAX_DAYS = 120
  * has the same shape at its edge (PM ruling (a), 2026-09-26): a six-week course whose first
  * episode ages out of the 8-week lookback drops below `firmSpanDays` while still going.
  *
- * The rule: a card resolving to 'standard' today is held 'firm' when, walking back one day at
- * a time, the course fired on EVERY day until one on which it EARNED firm (the span arm or the
- * inheritance arm, exactly as `suppressWorseningWhenChronic` composes them on that day), and
- * today's `episodeCount` is at least that day's. The anchor is an EARNED day, never a held
- * one: an owner told "book a visit" at 16 is not told "a word" at 18, and a hold that
- * re-anchored on itself would soften on any one-episode dip below yesterday, flapping on noise.
+ * The rule: a card resolving to 'standard' now is held 'firm' when, in the SAME course (it
+ * fired at every instant in between), there is an earlier instant at which it EARNED firm (the
+ * span arm or the inheritance arm, exactly as `suppressWorseningWhenChronic` composes them then)
+ * at a count at or below its `episodeCount` now. That is the one rule under which the promise
+ * holds for any reads an owner makes: an owner told "book a visit" at 12 is never told "a word"
+ * at 12 or more later in the course. Anchoring on the MOST RECENT earned instant instead broke it
+ * (adversarial pass, 2026-09-26): an episode at 17:00 took the count to 13 while firm, an old one
+ * aged out at 18:00, and the card read "book" at 12 in the afternoon and "a word" at 12 that
+ * evening. Only EARNED instants anchor (a held instant is firm because of an earned one at a
+ * count no higher, so counting it changes nothing). The count is the one the card prints, over
+ * its own 8-week lookback, so a release is that number falling below every count the course
+ * was judged firm at; without a deletion, that is old episodes aging out.
  *
- * Why a replay and not memory: the engine is stateless, and a hold kept in the Signal cache
- * would be lost on a cache miss and would never reach the vet report, which runs this same
- * `detectSignals` over its own window. Replaying the SHIPPED detectors at an earlier `now` is
- * sound because both read only onsets strictly before their `now` (`computeChronicityStats`,
- * `computeWindowedStats`) and `toEpisodeOnsets` chains forward, so a later event never moves
- * an earlier onset. Nothing here restates a floor.
+ * How: replay the SHIPPED detectors just after each instant at which their answer can change
+ * (`holdChangeInstants`), newest first, over the record cut to what they can see
+ * (`replayInputAsOf`). Between two such instants nothing changes, so this reads every state the
+ * course was in, whatever time of day `now` is, including a stand-down of any length. Sound
+ * because both detectors read only onsets strictly before their `now` and episodes chain
+ * forward, so a later event never moves an earlier onset. The anchor is what the record, as
+ * known now, says about the earlier instant: a back-filled episode can make an earlier instant
+ * earn firm that the owner was never shown, and the ask rising on that new fact is escalation.
+ * Nothing here restates a floor. Stateless on purpose: a hold kept in the Signal cache would be
+ * lost on a cache miss and would never reach the vet report, which runs this same
+ * `detectSignals`.
  *
  * What it guarantees, and what the tests pin:
- *   - It only ever RAISES a tier (an OR on top of both arms), so it can never lose a warning.
- *   - Between two consecutive days of a course, the ask never softens unless the count fell:
- *     yesterday is exactly the first day this walk replays.
+ *   - It only ever RAISES a tier (an OR on top of both arms): it never loses a warning, and it
+ *     never changes whether a card fires or the order of the cards.
+ *   - Between any two reads of a course that fired throughout, at any times of day, a firm read
+ *     is never followed by a standard one at the same or a higher count.
  * Stated blind spots (not coverage):
- *   - Days are sampled 24h apart from `now`, so an earned firm that lasted under a day between
- *     two samples may not anchor a hold. That errs toward today's behaviour, never below it.
- *   - The walk stops at CHRONICITY_HOLD_MAX_DAYS. A course firing continuously for longer with
- *     no earned firm day inside that reach is not held.
- *   - The vet report hands the engine only its own window's events, so its replay can see less
- *     of the course than Home's and hold less often. Never less than it held before this.
+ *   - The walk reaches back CHRONICITY_HOLD_MAX_DAYS and makes at most
+ *     CHRONICITY_HOLD_MAX_REPLAYS replays. Past either, no hold: today's behaviour.
+ *   - It replays whatever the live read returned; a read the database capped (CUL-989) is
+ *     replayed capped.
+ *   - The vet report hands the engine only its own window's events, and its window START is
+ *     fixed, so it can hold MORE often than Home: for a window of 56 days or less nothing ages
+ *     out of it, the count cannot fall, and a hold there ends only when the course stands down.
+ *     Nothing renders the report's tier today (render.ts prints no chronicity tier).
  */
 export function holdChronicityTier(
   findings: Finding[],
@@ -6774,33 +6908,43 @@ export function holdChronicityTier(
 ): Finding[] {
   const nowMs = Date.parse(input.now)
   if (!Number.isFinite(nowMs)) return findings
-  // symptomType → today's count, for every card the two arms left at 'standard'.
+  // symptomType → the count now, for every card the two arms left at 'standard'. The walk stops
+  // early for a card at its first qualifying anchor, and otherwise runs to the start of its
+  // course (or a cap).
   const pending = new Map<SymptomType, number>()
   for (const f of findings) {
     if (f.type === 'symptom_chronicity' && f.tier !== 'firm') pending.set(f.symptomType, f.episodeCount)
   }
   if (pending.size === 0) return findings
 
+  const asOf = replayInputAsOf(input, config)
   const held = new Set<SymptomType>()
-  for (let k = 1; k <= CHRONICITY_HOLD_MAX_DAYS && pending.size > 0; k++) {
-    const at: DetectionInput = { ...input, now: new Date(nowMs - k * MS_PER_DAY).toISOString() }
-    // The tier the card EARNED that day: both arms, composed by the shipped rule.
+  let replays = 0
+  for (const instant of holdChangeInstants(input, config, nowMs)) {
+    if (pending.size === 0 || replays >= CHRONICITY_HOLD_MAX_REPLAYS) break
+    // Just after the instant: every window boundary is closed on one side, and 1ms inside the
+    // next stretch reads the state that holds until the following instant.
+    const at = asOf(instant + 1)
+    replays++
+    // The tier the card EARNED then: both arms, composed by the shipped rule.
     const earned = suppressWorseningWhenChronic([
       ...detectChronicity(at, config),
       ...detectWorsening(at, config),
     ])
-    for (const [symptomType, countToday] of pending) {
+    for (const [symptomType, countNow] of pending) {
       const then = earned.find(
         (f): f is SymptomChronicityFinding => f.type === 'symptom_chronicity' && f.symptomType === symptomType,
       )
       if (!then) {
-        // The course was not firing that day: it stood down, and whatever it earned before
+        // The course was not firing then: it stood down, and whatever it earned before
         // belongs to an earlier course. No hold.
         pending.delete(symptomType)
-      } else if (then.tier === 'firm') {
-        if (countToday >= then.episodeCount) held.add(symptomType)
+      } else if (then.tier === 'firm' && countNow >= then.episodeCount) {
+        held.add(symptomType)
         pending.delete(symptomType)
       }
+      // Firm at a HIGHER count than now, or standard: keep walking. An earlier firm instant at a
+      // count no higher than now still binds, and only the start of the course ends the walk.
     }
   }
   if (held.size === 0) return findings

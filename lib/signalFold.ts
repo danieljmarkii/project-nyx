@@ -147,10 +147,11 @@ export interface SetFacts {
 }
 
 /** The set's facts for one finding: the pair fact on a cough or vomiting chronicity card, and
- *  nothing on any other card. */
-export function setFactsFor(finding: SignalFinding, findings: readonly SignalFinding[]): SetFacts {
-  if (finding.type !== 'symptom_chronicity') return {};
-  if (finding.symptomType !== 'cough' && finding.symptomType !== 'vomit') return {};
+ *  `undefined` on every other card, so no other card's fingerprint gains a key (a stored
+ *  fingerprint that gains one reads as changed, which clears a Back-because line). */
+export function setFactsFor(finding: SignalFinding, findings: readonly SignalFinding[]): SetFacts | undefined {
+  if (finding.type !== 'symptom_chronicity') return undefined;
+  if (finding.symptomType !== 'cough' && finding.symptomType !== 'vomit') return undefined;
   return {
     coughVomitPair: findings.some((f) => f.type === 'symptom_chronicity' && f.coughVomitAdjacent === true),
   };

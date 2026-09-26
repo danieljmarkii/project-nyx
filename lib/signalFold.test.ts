@@ -732,8 +732,31 @@ describe('CUL-1273 — the cough↔vomit note re-opens on the pair forming, neve
     expect(setFactsFor(vomitLeads[1], vomitLeads)).toEqual({ coughVomitPair: true });
     expect(setFactsFor(vomitCard, [vomitCard])).toEqual({ coughVomitPair: false });
     const diarrhea: SymptomChronicityFinding = { ...chronicity, symptomType: 'diarrhea' };
-    expect(setFactsFor(diarrhea, [...vomitLeads, diarrhea])).toEqual({});
-    expect(setFactsFor(postprandial, vomitLeads)).toEqual({});
+    expect(setFactsFor(diarrhea, [...vomitLeads, diarrhea])).toBeUndefined();
+    expect(setFactsFor(postprandial, vomitLeads)).toBeUndefined();
+    // …so no other card's fingerprint gains the key.
+    const k = foldIdentity(diarrhea);
+    const r = reconcileFolds({ [k]: foldedEntry(diarrhea, NOW) }, [...vomitLeads, diarrhea], NOW);
+    expect(r.entries[k].fingerprint).not.toHaveProperty('set.coughVomitPair');
+    expect(r.changed).toBe(false);
+  });
+
+  it('the upgrade’s one visible cost: a cough or vomiting card showing its Back-because line loses it once; no other card does', () => {
+    // An older build's REOPENED entry has no pair key. Its first reconcile writes one, and a
+    // reopened entry clears on any fingerprint change (release rule 4). Cosmetic, once, and
+    // bounded to the pair's two cards; stated in the fold spec's §5.3 note.
+    const vomitReopened: PetFoldEntries = {
+      [vk]: { state: 'reopened', reason: 'new_episode', fingerprint: foldFingerprint(vomitLeads[0]), atIso: NOW },
+    };
+    expect(reconcileFolds(vomitReopened, vomitLeads, NOW).entries[vk]).toBeUndefined();
+    const diarrhea: SymptomChronicityFinding = { ...chronicity, symptomType: 'diarrhea' };
+    const dk = foldIdentity(diarrhea);
+    const diarrheaReopened: PetFoldEntries = {
+      [dk]: { state: 'reopened', reason: 'new_episode', fingerprint: foldFingerprint(diarrhea), atIso: NOW },
+    };
+    const r = reconcileFolds(diarrheaReopened, [...vomitLeads, diarrhea], NOW);
+    expect(r.changed).toBe(false);
+    expect(r.entries[dk].state).toBe('reopened');
   });
 
   it('a net-zero day that swaps the leader re-opens NEITHER folded card', () => {
