@@ -174,7 +174,7 @@ export function intakeArm(meals: readonly AnalyticsMeal[]): boolean {
  *
  * `pet` is not decoration: the facts must describe the animal being asked about, and a
  * mismatch is 'unknown' rather than a guess. That is the same fail-closed shape Home
- * already applies to the trial input (`inputIsForActivePet`), stated here so a consumer
+ * already applies to the trial input (`inputIsForPet`), stated here so a consumer
  * cannot forget it.
  */
 export function lookWithheldState(

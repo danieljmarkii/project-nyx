@@ -155,6 +155,9 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
         // history_v2 (History v2, HV-1 / CUL-1158) — same allowlist shape, account
         // UUIDs wiped too.
         history_v2: { enabled: false, allowlist: ['17171717-8989-0101-2323-454545454545'] },
+        // trial_screen (the trial's own screen, TS-0 / CUL-1296) — same allowlist
+        // shape, account UUIDs wiped too.
+        trial_screen: { enabled: false, allowlist: ['19191919-0101-2323-4545-676767676767'] },
       },
     });
     expect(await loadCachedAppConfig()).not.toBeNull();

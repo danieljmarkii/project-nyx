@@ -157,6 +157,38 @@ export const BETA_REGISTRY: BetaFeature[] = [
     // no server gate is owed. The B-712 rule is checked and does not bite.
     serverCost: false,
   },
+  {
+    // The diet trial's own screen (Diet trial — its own screen, TS-0 / CUL-1296; spec
+    // §0.2 T-2, §7). Joins the shelf seed-first: TS-0 registers the flag, the shelf
+    // card and the flag-off guard; TS-4 (the route and the screen) and the doors
+    // after it (TS-5 Home's strip, TS-6 the Pet tab) render behind
+    // `live = eligible && optedIn` through hooks/useTrialScreen.ts, so being in the
+    // cohort turns nothing on by itself. A rollout gate only — GA is every account,
+    // and TS-GA retires the row with the flag-off paths.
+    key: 'trial_screen',
+    title: 'Diet trial screen',
+    // nyx-voice: concrete about what the owner will see (what they can eat, the
+    // trial week by week, the facts together — spec §3), no exclamation, no insight
+    // promised: the screen adds layout, never meaning (S2). The second sentence is
+    // the flag-off guarantee said to the owner, the promise
+    // guards/trialScreenFlagOff.test.tsx keeps; it names where the trial lives today
+    // so the owner knows where to find it with the switch off.
+    blurb:
+      'The diet trial on a screen of its own: what they can eat, the trial week by week, and its facts in one place. Switch it off and the trial stays on the Pet tab, exactly as it was.',
+    owner: 'Diet trial — its own screen / Eng',
+    addedDate: '2026-09-26',
+    // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a
+    // timer. Graduation is TS-GA, which waits on the PM's device pass (TS-DP), and
+    // the screen itself waits on the App Store submission cut (T-2), so the call on
+    // this row may legitimately be "extend".
+    reviewBy: '2026-12-26',
+    // Client-render-only: the screen reads the local record through the modules
+    // that already write its strings, its only writes are the lifecycle actions the
+    // Pet tab's card already carries, and no Edge Function reads the key — so no
+    // server resource is spent per opt-in and no server gate is owed. The B-712
+    // rule is checked and does not bite.
+    serverCost: false,
+  },
   // Five betas graduated to GA and were retired from the shelf. Two Signal betas first
   // (CUL-546 Phase 1 / CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design
   // uplift, B-721) and `signals_v2` (the "deeper signals" lanes, B-755); `signals_v2`'s
