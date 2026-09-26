@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-26
 
-Step 1 of the Linear project **Diet trial — its own screen**, one of four parallel step-1 sessions (TS-0 CUL-1296, TS-2 CUL-1298, CUL-1292). Shipped via #PR (draft). Nothing an owner sees changes except CUL-400's line.
+Step 1 of the Linear project **Diet trial — its own screen**, one of four parallel step-1 sessions (TS-0 CUL-1296, TS-2 CUL-1298, CUL-1292). Shipped via #942. Nothing an owner sees changes except CUL-400's line.
 
 ## What shipped
 
