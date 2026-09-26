@@ -47,6 +47,7 @@ import type { Finding, MealEvent, SymptomEvent } from './detection.ts'
 import { intakeScore } from './detection.ts'
 import { SYMPTOM_LABEL, templateForFinding } from './phrasing.ts'
 import { readProteinSet } from './protein.ts'
+import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 
 const MS_PER_DAY = 86_400_000
 
@@ -598,6 +599,10 @@ export function validateSummary(text: string, packet: SummaryFactPacket): boolea
   if (PREFERENCE_RE.test(t)) return false
   if (CAUSAL_RE.test(t)) return false
   if (DISEASE_RE.test(t)) return false
+  // CUL-1271 — the shared delegation / treatment-attribution arms. This list already bans
+  // "under control", "help*" and "thanks to"; the shared arms add "has it covered", "in the
+  // vet's hands", "nothing more to do", "is working", "settled since" and kin.
+  if (careClaimReason(t)) return false
 
   // A safety summary must keep routing the owner to the vet — the model may not smooth the
   // concern into a bare observation. The template always says "vet" on a safety summary.

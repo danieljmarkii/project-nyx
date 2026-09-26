@@ -2001,6 +2001,16 @@ describe('validateBannerPhrasing', () => {
     expect(validateBannerPhrasing('hi')).toBe(false);
     expect(validateBannerPhrasing('a'.repeat(201))).toBe(false);
   });
+
+  // CUL-1271 — the strategy page's own caption passed this screen at ffacb4e.
+  it('rejects delegation / containment and treatment attribution (CUL-1271)', () => {
+    expect(validateBannerPhrasing("Juniper's vomiting is in the vet's hands now, with 4 episodes since.")).toBe(false);
+    expect(validateBannerPhrasing("Juniper's vomiting is under control since the Sep 16 visit.")).toBe(false);
+    expect(validateBannerPhrasing("The prednisone seems to be helping Juniper's cough.")).toBe(false);
+    expect(validateBannerPhrasing("Juniper's cough has settled since the prednisone started.")).toBe(false);
+    // The honest form of the same fact still passes.
+    expect(validateBannerPhrasing('Juniper has vomited 4 times since the Sep 16 visit — worth a look.')).toBe(true);
+  });
 });
 
 // ══════════════════════════════════════════════════════════════════════════════

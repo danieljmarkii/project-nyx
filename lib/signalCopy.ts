@@ -41,6 +41,7 @@ import type {
 import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
 import type { BackBecauseReason } from './signalFold';
 import { formatTimingBandLabel } from './timingBandLabels';
+import { careClaimReason } from './careClaimScreens';
 
 // A timing finding — the two types whose evidence renders as a receipt (SR-1, §4).
 type TimingFinding = PostprandialTimingFinding | TimeOfDayClusteringFinding;
@@ -2155,6 +2156,10 @@ export function validateBannerPhrasing(text: string): boolean {
   if (BANNER_DISMISSIVE_RE.test(t)) return false;
   if (BANNER_CAUSAL_RE.test(t)) return false;
   if (BANNER_ALARM_RE.test(t)) return false;
+  // CUL-1271 — never hand the concern off ("in the vet's hands") or credit a treatment
+  // ("the prednisone is helping"). Imported, not mirrored: the same module the server
+  // screens use, so this arm cannot drift out of sync with phrasing.ts.
+  if (careClaimReason(t)) return false;
   return true;
 }
 
