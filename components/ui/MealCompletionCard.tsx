@@ -363,7 +363,9 @@ export function MealCompletionCard() {
   // another card's payload, so nothing here is computed for a payload this card never
   // paints.
   const meal = payload?.kind === 'meal' ? payload : null;
-  const occurredDate = new Date(meal?.occurredAt ?? 0);
+  // A string, never a Date: for another card's payload there is no time to state, and a
+  // `new Date(0)` fallback would be a real (wrong) instant one refactor away from the screen.
+  const occurredTime = meal ? formatTime(new Date(meal.occurredAt)) : '';
   // One-glance reminder of what was just logged. Brand + product, trimmed so a
   // missing brand/product doesn't leave a stray space.
   // B-568 — the variant rides INSIDE the name here (unlike the timeline rows). This
@@ -399,7 +401,7 @@ export function MealCompletionCard() {
   // The removal line names the MEAL's pet for the same reason the flag copy does.
   const notice = meal && removed ? removedNoticeCopy(mealPetName) : null;
   // ONE string per state: the header's summary label and what VoiceOver is told.
-  const summaryLabel = notice ? notice.a11yLabel : `${headline}. ${formatTime(occurredDate)}`;
+  const summaryLabel = notice ? notice.a11yLabel : `${headline}. ${occurredTime}`;
 
   // CUL-1275 — the removal line's `accessibilityLiveRegion` is Android-only, and the
   // header had no live region at all, so this card confirmed a meal on NEITHER platform
@@ -562,7 +564,7 @@ export function MealCompletionCard() {
               <ThemedText style={styles.title} numberOfLines={1}>
                 {headline}
               </ThemedText>
-              <ThemedText style={styles.subLabel}>{formatTime(occurredDate)}</ThemedText>
+              <ThemedText style={styles.subLabel}>{occurredTime}</ThemedText>
             </View>
             {/* Undo sits LEFT of Change time (round-2 mock's R1 pairing). It is in
                 the header row rather than a footer of its own because everything

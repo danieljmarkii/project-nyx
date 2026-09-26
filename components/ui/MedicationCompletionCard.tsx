@@ -235,7 +235,9 @@ export function MedicationCompletionCard() {
   // another card's payload, so nothing here is computed for a payload this card never
   // paints.
   const dose = payload?.kind === 'medication' ? payload : null;
-  const occurredDate = new Date(dose?.occurredAt ?? 0);
+  // A string, never a Date: for another card's payload there is no time to state, and a
+  // `new Date(0)` fallback would be a real (wrong) instant one refactor away from the screen.
+  const occurredTime = dose ? formatTime(new Date(dose.occurredAt)) : '';
   // B-156 PR B2b — a COMBO dose (logged WITH a meal/treat) frames the card as "Logged
   // together" with a subline naming the drug + the food it rode in, so the one-act link
   // is legible; a STANDALONE dose keeps "Logged · {drug}" + the logged time. Neutral
@@ -254,7 +256,7 @@ export function MedicationCompletionCard() {
     : (dose?.drugName ? `Logged · ${dose.drugName}` : 'Dose logged');
   const subLabel = isCombo
     ? `${dose?.drugName} · with ${dose?.pairedFoodName}`
-    : formatTime(occurredDate);
+    : occurredTime;
   // ONE name on this card, and it is the DOSE's (CUL-626). The card outlives a pet
   // switch — it is queued against the pet captured at write time and the store can
   // move under it — so reading `activePet` here asked whether the OTHER cat still
