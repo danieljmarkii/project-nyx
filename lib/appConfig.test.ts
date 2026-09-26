@@ -488,3 +488,40 @@ describe('history_v2 — History v2 eligibility (HV-1)', () => {
     expect(coerceAllowlistFlags({ design_v2: true }).history_v2).toBeUndefined();
   });
 });
+
+// ── trial_screen — the trial screen's rollout flag (TS-0 / CUL-1296) ──────────────
+// Migration 073 seeds it dark ({"enabled": false, "allowlist": []}); the screen and
+// its doors gate on `useTrialScreen()` = eligible && optedIn from TS-4 on. Same
+// primitive as every allowlist key above, so the resolver's own cases are not
+// re-tested — what is pinned is the registration: trial_screen is IN the client union
+// (extracted off a SELECT, carried through the cache) and fails closed while the row
+// is unreached. These back the flag-off promise (guards/trialScreenFlagOff.test.tsx).
+describe('trial_screen — trial screen eligibility (TS-0)', () => {
+  it('is registered in the key list and part of the unset baseline', () => {
+    expect(ALLOWLIST_FLAG_KEYS).toContain('trial_screen');
+    expect('trial_screen' in ALLOWLIST_FLAGS_UNSET).toBe(true);
+    expect(ALLOWLIST_FLAGS_UNSET.trial_screen).toBeUndefined();
+  });
+
+  it('extracts raw off an app_config SELECT, alongside the other allowlist keys', () => {
+    const flags = extractAllowlistFlags([
+      { key: 'history_v2', value: { enabled: false, allowlist: ['h-uid'] } },
+      { key: 'trial_screen', value: { enabled: false, allowlist: ['pm-uid'] } },
+    ]);
+    expect(flags.trial_screen).toEqual({ enabled: false, allowlist: ['pm-uid'] });
+    expect(flags.history_v2).toEqual({ enabled: false, allowlist: ['h-uid'] });
+  });
+
+  it('resolves fail-closed (off) while the row is unreached, and off for everyone on the dark seed', () => {
+    const unset = extractAllowlistFlags([{ key: 'ask_enabled', value: false }]).trial_screen;
+    expect(unset).toBeUndefined();
+    expect(resolveAllowlistFlag(unset, 'pm-uid', false)).toBe(false);
+    expect(resolveAllowlistFlag({ enabled: false, allowlist: [] }, 'pm-uid', false)).toBe(false);
+  });
+
+  it('survives the cache round-trip; a cache lacking it decodes to undefined', () => {
+    const stored = { trial_screen: { enabled: false, allowlist: ['pm-uid'] } };
+    expect(coerceAllowlistFlags(stored).trial_screen).toEqual({ enabled: false, allowlist: ['pm-uid'] });
+    expect(coerceAllowlistFlags({ history_v2: true }).trial_screen).toBeUndefined();
+  });
+});

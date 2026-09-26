@@ -1,0 +1,89 @@
+-- ============================================================
+-- trial_screen — seed the trial screen's rollout flag
+-- (Diet trial — its own screen, TS-0 / CUL-1296)
+-- See: docs/nyx-trial-screen-requirements.md v1.1 §0.2 T-2 (its own flag),
+--      §2 S10 (flag-off byte-identical) and §7 (Engineering), and the
+--      history_v2 template (071) it mirrors verbatim: a dark allowlist flag,
+--      flag-off byte-identical, seed-first, a beta shelf before GA, retire on a
+--      PM GA call only.
+-- ============================================================
+-- The diet trial gets a screen of its own (`/trial/[pet]`: the title, what the
+-- pet can eat, the day ledger, the facts, the lifecycle actions), and Home's
+-- trial strip and the Pet tab become its doors. All of it ships DARK behind one
+-- allowlist flag, so every client PR in the project (TS-4 the route and the
+-- screen, TS-5 Home's strip, TS-6 the Pet tab and the senders, TS-7 For the
+-- call) lands invisible, and the screen bakes on a hand-picked cohort before it
+-- reaches anyone else. Seed-first: the seed, the client registration, the shelf
+-- row, the hook and the flag-off guard land together (TS-0), before any screen
+-- reads the gate.
+--
+--   trial_screen   Eligibility for the trial screen and its doors. Resolved
+--                  client-side by resolveAllowlistFlag (lib/appConfig.ts)
+--                  against the caller's uid, then AND-ed with the beta-shelf
+--                  opt-in (the B-712 two-gate shape) in hooks/useTrialScreen.ts,
+--                  the one hook every gated surface reads. Flag-off => Home's
+--                  strip, the Pet tab and the Day Summary are byte-identical to
+--                  today; flag-on + opted-in => the screen (components/
+--                  trialScreen/) and its doors render.
+--
+-- T-2 (team ruling, 2026-09-26, spec §0.2): its own flag and its own project,
+-- never riding design_v2 (that would either add a surface to design_v2's GA or
+-- ship this one unreviewed). A ROLLOUT GATE ONLY, never a Premium gate: the
+-- trial is the record and its care, not convenience (Principle 7). GA (TS-GA)
+-- flips it for every account, and the removal PR deletes the key, the shelf
+-- row, the hook, the guard and the flag-off paths.
+--
+-- CLIENT-RENDER-ONLY (`serverCost: false`): the screen reads the local record
+-- the app already holds through the modules that already write every string
+-- (spec §2 S2), and its only writes are the lifecycle actions the Pet tab's
+-- card already carries (S6). No Edge Function reads the key, so there is
+-- deliberately NO server-side registration of it (supabase/functions/_shared/
+-- flags.ts is a generic resolver), and the B-712 "server-cost betas must gate
+-- server-side" rule is checked and does not bite. Nothing deploys (§7).
+--
+-- THE ALLOWLIST SHAPE (B-712): the experimental-flag primitive seeded for Ask
+-- (037) and reused by 054/055/056/061/063/065/070/071, verbatim —
+--   {"enabled": bool, "allowlist": ["<user-uuid>", …]}
+-- enabled=true => on for everyone (the GA end state); else on iff the caller's
+-- uid is in allowlist; malformed/absent => fail CLOSED (off). No new mechanism,
+-- table, column or policy: app_config (030) and its read-only-to-authenticated
+-- RLS are inherited unchanged.
+--
+-- SHIP-DARK (default nobody): {"enabled": false, "allowlist": []} is eligible
+-- for no one, so creating this row changes nothing an owner can see. Cohort
+-- enablement (the PM's uid, TS-DP's device pass) is a later, recorded config
+-- UPDATE, deliberately NOT baked into this seed: a re-applied seed must never
+-- reset a live allowlist. The App Review demo account (CUL-188) is NOT
+-- allowlisted: allowlist values are readable by every authenticated client
+-- (B-744), so listing it would leak its UUID. T-2 also holds the screen and its
+-- doors until the App Store submission build is cut, so the submission binary
+-- never carries a half-built screen; this seed is inert either way.
+--
+-- Scope: one app_config row — a config seed, not DDL. It rides the same PR as
+-- the client registration (lib/appConfig.ts, lib/betaFeatures.ts), the hook
+-- and the flag-off guard, the 055/056/061/063/065/070/071 composition, and for
+-- the same reason: the seed is inert without the registration
+-- (extractAllowlistFlags picks only known keys) and the shelf card self-gates
+-- on an eligibility that is false for every account under this seed.
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (purely additive — 1 new seed row in an existing table;
+--                     no column, type, table, row, or policy is dropped,
+--                     renamed, retyped, or altered.)
+--   Rollback:     DELETE FROM app_config WHERE key = 'trial_screen';
+--   Backfill:     N/A — one brand-new config row; no existing data is read or
+--                 written.
+--   Affected tables: app_config (INSERT only). Row-count sanity check before
+--                 applying:
+--                   SELECT key FROM app_config WHERE key = 'trial_screen';
+--                   -- expect: 0 rows (the key does not exist yet)
+-- ============================================================
+
+-- ON CONFLICT DO NOTHING makes the seed idempotent AND safe: if this migration is
+-- ever re-applied after the flag has been flipped/allowlisted in prod, it
+-- preserves the live value rather than resetting it to the shipped-dark seed.
+-- (Same discipline as the 030/037/054/055/056/061/063/065/070/071 seeds.)
+
+INSERT INTO app_config (key, value) VALUES
+  ('trial_screen', '{"enabled": false, "allowlist": []}'::jsonb)
+ON CONFLICT (key) DO NOTHING;

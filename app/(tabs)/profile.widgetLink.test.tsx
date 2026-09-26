@@ -92,7 +92,7 @@ jest.mock('../../components/profile/DietTrialCard', () => {
 });
 jest.mock('../../lib/dietTrialCard', () => ({ resolveTrialCard: () => ({ kicker: 'Diet trial' }) }));
 
-// Keyed by pet like the real loader (B-789): `inputIsForActivePet` is true only once the
+// Keyed by pet like the real loader (B-789): `inputIsForPet` is true only once the
 // read for the pet on screen has answered. The test says which pet that is.
 let mockTrialLoadedFor: string | null = null;
 jest.mock('../../hooks/useDietTrial', () => {
@@ -106,7 +106,7 @@ jest.mock('../../hooks/useDietTrial', () => {
         input: { trial: null },
         isLoading: false,
         reload,
-        inputIsForActivePet: activeId !== null && activeId === mockTrialLoadedFor,
+        inputIsForPet: activeId !== null && activeId === mockTrialLoadedFor,
       };
     },
   };

@@ -42,7 +42,7 @@ jest.mock('../../components/home/LookExits', () => ({ LookExits: marker('look-ex
 jest.mock('../../components/home/TodayZone', () => ({ TodayZone: marker('today') }));
 jest.mock('../../components/home/TrendZone', () => ({ TrendZone: marker('trend') }));
 jest.mock('../../components/designV2/home/LookHeader', () => ({ LookHeader: marker('look-header') }));
-jest.mock('../../hooks/useDietTrial', () => ({ useDietTrial: () => ({ input: null, inputIsForActivePet: true }) }));
+jest.mock('../../hooks/useDietTrial', () => ({ useDietTrial: () => ({ input: null, inputIsForPet: true }) }));
 jest.mock('../../hooks/useMedStrips', () => ({ useMedStrips: () => ({ input: null }) }));
 // The sync layer as the analysis chain meets it: the landed read's save puts the
 // server's current verdict into the phone's copy and says whether it moved.

@@ -256,13 +256,13 @@ export default function ProfileScreen() {
   // lie told by a failed network read.
   const {
     input: trialInput, isLoading: trialLoading, reload: reloadTrial,
-    inputIsForActivePet: trialInputIsForActivePet,
-  } = useDietTrial();
+    inputIsForPet: trialInputIsForActivePet,
+  } = useDietTrial(activePet?.id ?? null);
   // B-616 FR-5 — the card's door into "What {pet} can eat". Read here rather than
   // inside the screen so R2 is enforced at the ENTRY: an allowed set that has not
   // hydrated draws no action at all (`DietTrialCard` renders an action only when a
   // handler exists), instead of a link that opens a screen with nothing to say.
-  const trialAllowedSet = useTrialAllowedSet();
+  const trialAllowedSet = useTrialAllowedSet(activePet?.id ?? null);
   const [startTrialVisible, setStartTrialVisible] = useState(false);
   // B-535 — the start-modal → food-capture round trip. "Snap a new food" closes
   // the modal and routes out; the modal stays mounted so the half-filled form
@@ -378,7 +378,7 @@ export default function ProfileScreen() {
   // content belongs to, and a widget door compares it with the pet it asked for:
   //   • in the arrival flush this closure's render is still the previous pet's;
   //   • in the next render the closure has the new pet while the three flags still hold
-  //     the previous pet's "loaded" — and the trial's `inputIsForActivePet` is false there
+  //     the previous pet's "loaded" — and the trial's `inputIsForPet` is false there
   //     (B-789: it holds until the new pet's read answers). By the time it answers, the
   //     conditions and medications loaders have flipped their flags to loading in the
   //     switch's own commit, so the trial's marker alone closes the window. (Per-pet

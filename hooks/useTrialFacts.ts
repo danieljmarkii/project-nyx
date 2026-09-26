@@ -33,8 +33,11 @@ export type TrialFactsState =
    *  which is still not an empty record, and the screen says so. */
   | { status: 'ready'; facts: TrialFacts | null };
 
-export function useTrialFacts(): TrialFactsState {
-  const activePet = usePetStore((s) => s.activePet);
+// CUL-1297 — reads the pet it is HANDED (C-9), never `activePet`; the exposures
+// screen passes its `?pet=` param, falling back to the active pet.
+export function useTrialFacts(petId: string | null): TrialFactsState {
+  const pets = usePetStore((s) => s.pets);
+  const pet = petId ? pets.find((p) => p.id === petId) : undefined;
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
   // The answer is stored with the pet it is an answer for, for the reason
   // `useTrialAllowedSet` spells out: the read is async, so switching pets would
@@ -45,22 +48,22 @@ export function useTrialFacts(): TrialFactsState {
     value: { status: 'unknown' },
   });
 
-  const petId = activePet?.id ?? null;
-  const petName = activePet?.name;
-  const species = activePet?.species;
-  const sex = activePet?.sex;
+  const resolvedId = pet?.id ?? null;
+  const petName = pet?.name;
+  const species = pet?.species;
+  const sex = pet?.sex;
 
   useEffect(() => {
-    if (!petId || !petName || !species) {
+    if (!resolvedId || !petName || !species) {
       setState({ petId: null, value: { status: 'unknown' } });
       return;
     }
     let cancelled = false;
-    loadTrialPredicateFacts({ id: petId, name: petName, species, sex })
+    loadTrialPredicateFacts({ id: resolvedId, name: petName, species, sex })
       .then((core) => {
         if (cancelled) return;
         setState({
-          petId,
+          petId: resolvedId,
           value: core === null ? { status: 'no_trial' } : { status: 'ready', facts: core.facts },
         });
       })
@@ -70,12 +73,12 @@ export function useTrialFacts(): TrialFactsState {
         // silent return to `unknown` either — that is the spinner, and a spinner
         // over a permanent failure is a screen that never answers.
         console.error('[useTrialFacts] load failed:', e);
-        if (!cancelled) setState({ petId, value: { status: 'unreadable' } });
+        if (!cancelled) setState({ petId: resolvedId, value: { status: 'unreadable' } });
       });
     return () => {
       cancelled = true;
     };
-  }, [petId, petName, species, sex, hydrationTick]);
+  }, [resolvedId, petName, species, sex, hydrationTick]);
 
-  return state.petId === petId ? state.value : { status: 'unknown' };
+  return state.petId === resolvedId ? state.value : { status: 'unknown' };
 }

@@ -422,6 +422,12 @@ export async function loadDietTrialFacts(args: {
    *  Off (default) the extra read is skipped entirely and `trialResponse` stays absent, so the strip
    *  is byte-identical (§5 / FR-FLAG-2). The caller (`useDietTrial`) resolves the two-gate flag. */
   signalsV2?: boolean;
+  /** CUL-1297 — when true, a failed TRIAL-ROW read rejects instead of resolving to the
+   *  trial-less base input. The base input is the card's state 0 ("no trial"), so without
+   *  this a caller cannot tell "no trial" from "couldn't read". Opt-in so the rundown keeps
+   *  drawing the trial-less card it always has; `useDietTrial` passes it and maps the
+   *  rejection to its `unreadable` status. */
+  rethrowUnreadable?: boolean;
 }): Promise<TrialCardInput> {
   const { pet } = args;
   const nowMs = args.nowMs ?? Date.now();
@@ -440,7 +446,8 @@ export async function loadDietTrialFacts(args: {
   let core: TrialPredicateFacts | null;
   try {
     core = await loadTrialPredicateFacts(pet, nowMs);
-  } catch {
+  } catch (e) {
+    if (args.rethrowUnreadable) throw e;
     return base;
   }
   if (!core) return base;
