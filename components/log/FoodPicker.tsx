@@ -271,8 +271,8 @@ export function FoodPicker({
   // FILTERING the shelves, and "{Pet}'s rotation" means what this pet was actually
   // fed, not what the trial permits. The picker already repeats itself this way
   // (the rotation shelf is a recency view of the same library grouped below).
-  const trialSet = useTrialAllowedSet();
   const activePetId = usePetStore((s) => s.activePet?.id) ?? null;
+  const trialSet = useTrialAllowedSet(activePetId);
   const trialFoods = useMemo(() => {
     // FR-18 — never in SELECTION mode. The two selection-mode callers are the
     // start-a-trial modal and §2.3's mid-trial add, i.e. the screens that EDIT this

@@ -32,7 +32,7 @@ let mockOptedIn = true;
 jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => mockFlagOn }));
 jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => mockOptedIn }));
 jest.mock('../../hooks/useDietTrial', () => ({
-  useDietTrial: () => ({ input: null, isLoading: false, reload: jest.fn(), inputIsForActivePet: false }),
+  useDietTrial: () => ({ input: null, isLoading: false, reload: jest.fn(), inputIsForPet: false }),
 }));
 
 const mockLoadLookDays = jest.fn();

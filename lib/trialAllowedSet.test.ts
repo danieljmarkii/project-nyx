@@ -226,9 +226,11 @@ describe('loadTrialAllowedSet', () => {
     expect(set).toEqual({ status: 'unknown' });
   });
 
-  it('is `unknown` when the read throws', async () => {
+  // CUL-400 — a throw is `unreadable`, never `unknown` (the spinner that never
+  // resolves) and never `no_trial` (a fabricated fact).
+  it('is `unreadable` when the read throws', async () => {
     mockGetFirstAsync.mockRejectedValue(new Error('database is locked'));
-    await expect(loadTrialAllowedSet('pet-1', NOW)).resolves.toEqual({ status: 'unknown' });
+    await expect(loadTrialAllowedSet('pet-1', NOW)).resolves.toEqual({ status: 'unreadable' });
   });
 });
 
@@ -314,7 +316,11 @@ describe('membership lookups', () => {
   });
 
   it('AC5 — an unknown or absent set marks nothing and lists nothing', async () => {
-    for (const set of [{ status: 'unknown' } as const, { status: 'no_trial' } as const]) {
+    for (const set of [
+      { status: 'unknown' } as const,
+      { status: 'unreadable' } as const,
+      { status: 'no_trial' } as const,
+    ]) {
       expect(trialListMembership(set, DRY, NOW)).toBeNull();
       expect(isOnTrialList(set, DRY, NOW)).toBe(false);
       expect(trialListFoodsOn(set, NOW)).toEqual([]);
