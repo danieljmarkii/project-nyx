@@ -13,8 +13,12 @@
 // through `readVerdictOf` / `isWorthACall`. So the surfaces are exactly the files whose
 // code names `recommendation`, and the discovery half below scans for them: a new
 // reader fails this suite until it is classified here, with a case, or excused with a
-// reason. The scan and the behaviour cases are one file on purpose, so a new surface
-// cannot be registered without a test of it sitting next to the registration.
+// reason. The scan and the behaviour cases are one file on purpose, so a registration
+// sits next to its test. What the build ENFORCES is narrower than that, and stated so it
+// does not read as coverage (C-38): a `components/` surface must have a row in the
+// section table (the last test below), but a `lib/` entry in `SURFACES` and every
+// `NOT_A_SURFACE` entry are exemptions a reviewer reads, with no structural check that a
+// `describe` exercises them (C-32: the registry is an exemption, so each entry earns it).
 //
 // THE FIXTURES. `call_now` is the likeliest real name (the critique's tier). The other
 // can never be one, so a future PR that ships `call_now` for real leaves this file still
@@ -25,7 +29,9 @@
 //
 // STATED BLIND SPOTS (C-38): the scan is by name, so a verdict read through a computed
 // key (`row['recommend' + 'ation']`) is invisible to it, as it is to the readState guard;
-// and `blankComments` does not understand JSX text, which fails toward a FALSE hit.
+// `blankComments` does not understand JSX text, which fails toward a FALSE hit; and the
+// scan is client-only, so a SERVER reader (Ask relays the value as-is, `ask/tools.ts`) is
+// not here at all. The server's readers of a new value are EN-3's to enumerate (CUL-1133).
 
 let mockRow: Record<string, unknown> | null = null;
 jest.mock('../lib/supabase', () => ({
