@@ -36,7 +36,11 @@
 //   • the Pet tab, `app/(tabs)/profile.tsx` — TS-6 (CUL-1302)
 //   • the Day Summary, a sender — TS-6 (CUL-1302)
 // The route/decider rule below is what forces each registration: a route under `app/`
-// that reads the gate and is not a listed surface reds.
+// that reads the gate and is not a listed surface reds. STATED BLIND SPOT: a consumer
+// under `components/` (Home's strip at TS-5 is one) is held to the delegation rule and the
+// pinned consumer list, but nothing forces its HOST SCREEN into this list. The pinned list
+// is what catches it: the PR that adds the consumer edits that list, and its reviewer
+// checks that the host screen joined SURFACES in the same diff.
 //
 // ── THE LIMIT, STATED (C-38 / C-41: an undocumented blind spot reads as coverage) ─
 //

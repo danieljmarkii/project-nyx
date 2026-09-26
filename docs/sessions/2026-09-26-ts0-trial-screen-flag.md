@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-26
 
-Shipped via #PR_NUMBER (CUL-1296). Step 1 of the Linear project **Diet trial — its own screen**, one of four parallel sessions (TS-1 CUL-1297, TS-2 CUL-1298, the widget's pet CUL-1292).
+Shipped via #941 (CUL-1296). Step 1 of the Linear project **Diet trial — its own screen**, one of four parallel sessions (TS-1 CUL-1297, TS-2 CUL-1298, the widget's pet CUL-1292).
 
 ## The ask
 
@@ -27,6 +27,10 @@ By hand against the real tree, each reverted:
 - M2, a second `useAllowlistFlag('trial_screen')` in `hooks/`: the one-reader test red.
 - M3, `useTrialScreen as useT`: the alias test red.
 - M4, a route that imports the namespace correctly: delegation green, the pinned list and the route rule red, which is what forces TS-4 to register its surface.
+
+## Review
+
+`code-reviewer`: ship-ready. Its one nit (a `components/` consumer is not forced to register its host screen) is now a stated blind spot in the guard header.
 
 ## Checks
 
