@@ -86,3 +86,15 @@ The PM on round 2: "Loving the signal section on home. It feels FAR less wordy."
 - Ready now, needing no ruling: CUL-1277 (the pre-1.2.0 unknown-verdict fallback, time-boxed by the cut), CUL-1203 (the analysis-row capture, before any EN writer touches `event_ai_analysis`), CUL-534, CUL-1276, and CUL-1272 to CUL-1275.
 - Phase 0 (EN-F, then EN-0) is one ruling away: E-1.
 - EN-9 needs AC 10, round 3 of the mock and a spec.
+
+## The project plan (the same session)
+
+The PM asked for the Linear project to carry the latest thinking and a PR-by-PR plan, with parallel runs and combined sessions called out. Two read-only digests covered every issue (scope as amended, files, schema, dependencies, collisions). The project description was rewritten from them and now holds:
+- the latest thinking;
+- the rulings ledger;
+- the PR plan: PR-01 to PR-39 across seven waves, with parallel lanes per wave;
+- six combined sessions, each with a paste-ready prompt: PR-06, PR-10, PR-20, PR-21, PR-26, PR-31;
+- the external gates: CUL-559, the 1.2.0 cut; CUL-1071, Design v2 GA;
+- the PM actions.
+
+Wave 0 (PR-01 to PR-08) needs no ruling. E-1 unblocks Wave 1 and AC 10 unblocks Wave 3's build.
