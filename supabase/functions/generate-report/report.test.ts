@@ -4354,7 +4354,7 @@ Deno.test('CUL-1274 — mealItems groups every logged meal, rated or not; mealCo
   // protein panel a vet scans for overlap.
   const html = renderReport(snap)
   const t = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ')
-  assert.ok(/8 meals logged, intake not recorded for 7; recorded for 1 of the 6 meals of Wet Chicken \(Wet\), the last on Jun 12: "refused" ×1, 0 of 1 fully eaten \(owner-observed\)/.test(t.replace(/&ldquo;|&rdquo;/g, '"').replace(/&times;/g, '×')), 'page 1 states both numbers, and whose rating it is')
+  assert.ok(/8 meals logged, intake not recorded for 7; recorded for 1 of the 6 meals of Wet Chicken \(Wet\), intake last recorded Jun 12: "refused" ×1, 0 of 1 fully eaten \(owner-observed\)/.test(t.replace(/&ldquo;|&rdquo;/g, '"').replace(/&times;/g, '×')), 'page 1 states both numbers, and whose rating it is')
   assert.ok(/8 logged meals across 2 foods/.test(t), 'appendix B and E count the same 8')
   assert.ok(/Wet Duck \(Wet\) \(fed as meals\)/.test(t), 'the never-rated food is in the protein panel')
 })
@@ -4439,4 +4439,45 @@ Deno.test('CUL-1274 — the trial diet\'s own meal row reads its proteins by the
   assert.equal(trialRows.length, 2)
   for (const r of trialRows) assert.ok(!/\*/.test(r), 'no off-trial star on the trial diet\'s own rows')
   assert.ok(/\*/.test([...rowsHtml.matchAll(/<tr>([^]*?)<\/tr>/g)].map((m) => m[1]).find((r) => r.includes('Chicken Stew'))!), 'the stew keeps its star')
+})
+
+Deno.test('CUL-1274 — a twin logged unrated and re-logged with a rating keeps the rating; of two, the lower', () => {
+  // The collapse keeps the earliest twin, and merged severity and notes but not the intake
+  // rating, so a one-tap followed thirty seconds later by a "refused" re-log lost the refusal
+  // from every intake surface, and page 1's recency date then named an earlier day.
+  idSeq = 0
+  const twin = (time: string, rating: 'all' | 'refused' | null) =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: `2026-06-20T${time}Z`,
+      meal: { foodItemId: 'tiki', intakeRating: rating, quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'chicken', brand: 'Tiki', productName: 'Cat' },
+    })
+  const earlier = ['02', '03', '04', '05', '06'].map((d) =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: `2026-06-${d}T12:00:00Z`,
+      meal: { foodItemId: 'tiki', intakeRating: 'all', quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'chicken', brand: 'Tiki', productName: 'Cat' },
+    }),
+  )
+  const later = ['22', '24', '26'].map((d) =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: `2026-06-${d}T12:00:00Z`,
+      meal: { foodItemId: 'tiki', intakeRating: null, quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'chicken', brand: 'Tiki', productName: 'Cat' },
+    }),
+  )
+  const snap = assembleReport(baseInput({ events: [...earlier, twin('12:00:00', null), twin('12:00:30', 'refused'), ...later] }))
+  const item = snap.diet.mealItems[0]
+  assert.equal(item.count, 9, 'the twins are one meal')
+  assert.deepEqual(item.intakeBreakdown, [{ rating: 'all', count: 5 }, { rating: 'refused', count: 1 }], 'the refusal survives the collapse')
+  assert.equal(item.lastRatedDate, '2026-06-20')
+  assert.equal(snap.diet.mealCompletion?.ratedMeals, 6)
+  // Two ratings on one pair of twins: the lower stands, as the higher severity does.
+  idSeq = 0
+  const both = assembleReport(baseInput({ events: [twin('12:00:00', 'all'), twin('12:00:20', 'refused')] }))
+  assert.deepEqual(both.diet.mealItems[0].intakeBreakdown, [{ rating: 'refused', count: 1 }])
+  // A food whose only rating is on its first meal carries that day.
+  idSeq = 0
+  const firstOnly = assembleReport(baseInput({ events: [earlier[0], ...later] }))
+  assert.equal(firstOnly.diet.mealItems[0].lastRatedDate, '2026-06-02')
 })

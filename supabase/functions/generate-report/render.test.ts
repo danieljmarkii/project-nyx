@@ -7631,8 +7631,9 @@ Deno.test('CUL-1274 — ratings on more than one food are stated per food, and n
         [
           mealItem({ foodLabel: 'F1', count: 9, intakeBreakdown: [{ rating: 'all', count: 4 }] }),
           // Two ratings on a food that lands in the pooled tail: both survive the pooling.
-          mealItem({ foodLabel: 'F2', count: 9, intakeBreakdown: [{ rating: 'all', count: 3 }, { rating: 'most', count: 1 }] }),
-          mealItem({ foodLabel: 'F3', count: 9, intakeBreakdown: [{ rating: 'most', count: 2 }] }),
+          mealItem({ foodLabel: 'F2', count: 9, lastRatedDate: '2026-06-10', intakeBreakdown: [{ rating: 'all', count: 3 }, { rating: 'most', count: 1 }] }),
+          // The pooled tail is dated by its latest rating, when the record ran past it.
+          mealItem({ foodLabel: 'F3', count: 9, lastRatedDate: '2026-06-12', intakeBreakdown: [{ rating: 'most', count: 2 }] }),
           mealItem({ foodLabel: 'F4', count: 9, intakeBreakdown: [{ rating: 'refused', count: 1 }] }),
           { ...mealItem({ count: 9, intakeBreakdown: [{ rating: 'picked', count: 1 }] }), foodLabel: null },
         ],
@@ -7642,7 +7643,7 @@ Deno.test('CUL-1274 — ratings on more than one food are stated per food, and n
   )
   // Declines first: the unnamed food and F4 are named ahead of F1, however few their ratings.
   assert.ok(
-    /by food: an unnamed food \(1 of 9\): "picked at it" ×1; F4 \(1 of 9\): "refused" ×1; F1 \(4 of 9\): "ate it all" ×4; 2 other foods \(6 of 18\): "ate it all" ×3 · "ate most" ×3\./.test(four),
+    /by food: an unnamed food \(1 of 9\): "picked at it" ×1; F4 \(1 of 9\): "refused" ×1; F1 \(4 of 9\): "ate it all" ×4; 2 other foods \(6 of 18, intake last recorded Jun 12\): "ate it all" ×3 · "ate most" ×3\./.test(four),
     four,
   )
 })
@@ -7693,7 +7694,7 @@ Deno.test('CUL-1274 — under a trial the scored branch never pools a topper\'s 
   ]
   const partly = feedingRow(renderReport(mealsSnapOf(items, false)))
   assert.ok(
-    /^64 meals logged, intake not recorded for 53\. Intake recorded \(owner-observed\), by food: Farmer Pumpkin Topper \(4 of 4\): "refused" ×4; Vetdiet HydroChick \(7 of 60, the last on Jun 8\): "ate it all" ×7\. Meals are grouped by food in appendix E/.test(partly),
+    /^64 meals logged, intake not recorded for 53\. Intake recorded \(owner-observed\), by food: Farmer Pumpkin Topper \(4 of 4\): "refused" ×4; Vetdiet HydroChick \(7 of 60, intake last recorded Jun 8\): "ate it all" ×7\. Meals are grouped by food in appendix E/.test(partly),
     partly,
   )
   assert.ok(!/fully eaten/.test(partly), 'no pooled ratio')
@@ -7755,7 +7756,7 @@ Deno.test('CUL-1274 — a food\'s ratings carry the day they stopped, when the f
       ),
     ),
   )
-  assert.ok(/recorded for 7 of the 60 meals of Wet pouch, the last on Jun 8: "ate it all" ×7, 7 of 7 fully eaten;/.test(stale), stale)
+  assert.ok(/recorded for 7 of the 60 meals of Wet pouch, intake last recorded Jun 8: "ate it all" ×7, 7 of 7 fully eaten;/.test(stale), stale)
   const current = feedingRow(
     renderReport(
       mealsSnapOf(
@@ -7765,6 +7766,49 @@ Deno.test('CUL-1274 — a food\'s ratings carry the day they stopped, when the f
     ),
   )
   assert.ok(/recorded for 7 of the 60 meals of Wet pouch: "ate it all" ×7/.test(current), `no date when the ratings run to the last meal: ${current}`)
+  // One rating, on the food's first meal: dated as well.
+  const first = feedingRow(
+    renderReport(
+      mealsSnapOf(
+        [mealItem({ foodLabel: 'Wet pouch', count: 60, firstDate: '2026-06-02', lastDate: '2026-07-01', lastRatedDate: '2026-06-02', intakeBreakdown: [{ rating: 'all', count: 1 }] })],
+        false,
+      ),
+    ),
+  )
+  assert.ok(/recorded for 1 of the 60 meals of Wet pouch, intake last recorded Jun 2:/.test(first), first)
+})
+
+Deno.test('CUL-1274 — ratings that stop because the FOOD stopped are dated against the record, not the food', () => {
+  // The owner rated a week of Food A, then switched to Food B and rated nothing. Judged against
+  // Food A's own last meal the ratings looked current; the record went on three more weeks.
+  const switched = feedingRow(
+    renderReport(
+      mealsSnapOf(
+        [
+          mealItem({ foodLabel: 'Food B', count: 23, firstDate: '2026-06-09', lastDate: '2026-07-01', intakeBreakdown: [] }),
+          mealItem({ foodLabel: 'Food A', count: 7, firstDate: '2026-06-02', lastDate: '2026-06-08', lastRatedDate: '2026-06-08', intakeBreakdown: [{ rating: 'all', count: 7 }] }),
+        ],
+        false,
+      ),
+    ),
+  )
+  assert.ok(/recorded for all 7 meals of Food A, intake last recorded Jun 8: "ate it all" ×7/.test(switched), switched)
+  // The calm half is dated as well as the refusals, so neither reads as the current one.
+  const both = feedingRow(
+    renderReport(
+      mealsSnapOf(
+        [
+          mealItem({ foodLabel: 'Food B', count: 30, firstDate: '2026-06-02', lastDate: '2026-07-01', lastRatedDate: '2026-06-04', intakeBreakdown: [{ rating: 'refused', count: 3 }] }),
+          mealItem({ foodLabel: 'Food A', count: 7, firstDate: '2026-06-02', lastDate: '2026-06-08', lastRatedDate: '2026-06-08', intakeBreakdown: [{ rating: 'all', count: 7 }] }),
+        ],
+        false,
+      ),
+    ),
+  )
+  assert.ok(
+    /by food: Food B \(3 of 30, intake last recorded Jun 4\): "refused" ×3; Food A \(7 of 7, intake last recorded Jun 8\): "ate it all" ×7\./.test(both),
+    both,
+  )
 })
 
 Deno.test('CUL-1274 — page 1, appendix B and appendix E count ONE population', () => {

@@ -1112,11 +1112,24 @@ export function dedupeEvents(
         if (e.severity != null && (severity == null || e.severity > severity)) severity = e.severity
       }
       const note = rep.notes ?? cluster.find((e) => e.notes != null)?.notes ?? null
+      // And the intake rating, on the same rule (CUL-1274 adversarial review). The earliest twin
+      // wins the collapse, so a one-tap logged unrated and re-logged "refused" thirty seconds
+      // later lost the refusal from every intake surface, and page 1's "intake last recorded"
+      // date then named a day before it. A rating fills a missing one; of two ratings the LOWER
+      // stands, escalate-on-presence as severity above. A value outside the known scale fills
+      // a gap but never displaces a known rating.
+      const intakeRank = (r: IntakeRating): number => INTAKE_SCALE.indexOf(r)
+      let intakeRating = rep.meal?.intakeRating ?? null
+      for (const e of cluster) {
+        const r = e.meal?.intakeRating ?? null
+        if (r !== null && (intakeRating === null || intakeRank(r) > intakeRank(intakeRating))) intakeRating = r
+      }
+      const meal = rep.meal ? { ...rep.meal, intakeRating } : rep.meal
       // Every raw member id (sorted, deterministic). assembleReport reads the phenotype
       // across ALL of them — best-status member for the four-state/assessed aggregate, and
       // present blood/foreign unioned over any member (§5.9 escalate-on-presence).
       const memberEventIds = cluster.map((e) => e.id).sort()
-      survivors.push({ ...rep, severity, notes: note, dupCount: cluster.length, memberEventIds })
+      survivors.push({ ...rep, severity, notes: note, meal, dupCount: cluster.length, memberEventIds })
       cluster = []
     }
     let clusterAnchorMs: number | null = null
