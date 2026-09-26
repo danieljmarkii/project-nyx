@@ -11,6 +11,7 @@ import {
   coerceProfileFocus,
   focusScrollY,
   medFocusScrollY,
+  profileFocusFromParams,
   profileFocusHref,
   resolveMedAnchorRegimenId,
   type FocusableRegimen,
@@ -33,6 +34,30 @@ describe('coerceProfileFocus', () => {
     // expo-router hands back string[] for a repeated param.
     expect(coerceProfileFocus(['trial'])).toBeNull();
     expect(coerceProfileFocus(7)).toBeNull();
+  });
+});
+
+describe('profileFocusFromParams (CUL-1292)', () => {
+  it('reads the widget’s trial link, which carries no focus, as a trial tap on its pet', () => {
+    // The widget is frozen (H-7): `petLink('profile')` sends `pet` and `src=widget` only.
+    expect(profileFocusFromParams({ pet: 'pet-mochi', src: 'widget' })).toEqual({ focus: 'trial', petId: 'pet-mochi' });
+  });
+
+  it('keeps an in-app door on the pet on screen', () => {
+    expect(profileFocusFromParams({ focus: 'trial' })).toEqual({ focus: 'trial', petId: null });
+    expect(profileFocusFromParams({ focus: 'medications', pet: 'pet-mochi' })).toEqual({ focus: 'medications', petId: null });
+  });
+
+  it('lets an explicit focus win, still on the widget’s pet', () => {
+    expect(profileFocusFromParams({ focus: 'weight', src: 'widget', pet: 'pet-mochi' })).toEqual({ focus: 'weight', petId: 'pet-mochi' });
+  });
+
+  it('is nothing for a plain visit, another sender, or a widget link naming no pet', () => {
+    expect(profileFocusFromParams({})).toBeNull();
+    expect(profileFocusFromParams({ pet: 'pet-mochi' })).toBeNull();
+    expect(profileFocusFromParams({ src: 'widget' })).toBeNull();
+    expect(profileFocusFromParams({ src: 'widget', pet: '' })).toBeNull();
+    expect(profileFocusFromParams({ src: 'widget', pet: ['pet-mochi'] })).toBeNull();
   });
 });
 
