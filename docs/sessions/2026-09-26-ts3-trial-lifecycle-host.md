@@ -22,6 +22,10 @@ Move the trial card's lifecycle wiring out of `app/(tabs)/profile.tsx` so the tr
 - **C-9.** `hooks/useTrialLifecycle.test.ts`, a two-pet fixture with Luna active and Mochi's trial handed in: the sheets and the refusal line name Mochi; a pet the account does not hold draws nothing. Mutating the hook to read `activePet` reds all three.
 - **Guard mutation.** A second `openCompletion('decision')` planted in the host reds half (c).
 
+## Review
+
+`code-reviewer`: ship-ready, nothing blocking. It checked the diff line by line against the inline code, the hook order against the screen's early return, C-14 / C-22, and whether either guard rewrite was weaker (half (c) widened; the provenance entry moved with its field). Two nits left as they are: the sheet host has no standalone test (it is covered end to end through the Pet tab), and `any` in test-only prop spies. Adversarial review N/A: no detection, AI read or escalation logic changed. CI green on #946 (typecheck + jest, non-UTC timezones, Edge Functions).
+
 ## Found, filed, not folded in
 
 **CUL-1329.** `endActiveTrial` has no `status = 'active'` predicate and no `changes === 0` check, so *This trial is done* or *Stopped early* tapped on a stale card rewrites the ending of a trial another device already ended. The extend and window writes refuse in that case since CUL-1039; the ending path never got the clamp. TS-3 keeps the ending path byte-identical; better landed before TS-4 puts these buttons on a second surface.
