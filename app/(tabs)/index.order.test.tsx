@@ -64,7 +64,7 @@ jest.mock('../../hooks/useEvents', () => ({
   useEvents: () => ({ todayEvents: [], loadTodayEvents: jest.fn() }),
 }));
 jest.mock('../../hooks/useDietTrial', () => ({
-  useDietTrial: () => ({ input: null, inputIsForActivePet: true }),
+  useDietTrial: () => ({ input: null, inputIsForPet: true }),
 }));
 // One med strip, so the order below exercises the real sequence rather than a Home
 // with a hole in it: `resolveMedStrips` returns an empty array for a pet with no

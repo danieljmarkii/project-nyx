@@ -63,8 +63,9 @@ import { profileFocusHref } from '../lib/profileFocus';
 // ── THE PET IS THE APPOINTMENT'S ────────────────────────────────────────────────
 // In Get-ready mode every read is scoped to `appointment.pet_id`, never to
 // `activePet` (CUL-574 / AC 11), including the trial facts — which is why this
-// screen calls `loadDietTrialFacts` itself instead of `useDietTrial()`, whose whole
-// contract is "the active pet".
+// screen calls `loadDietTrialFacts` itself. (Written when `useDietTrial` read only the
+// active pet; since CUL-1297 it takes a pet, so moving this read onto the hook is open
+// to TS-8, which owns Get ready's trial row.)
 
 type Status = 'loading' | 'ready' | 'error';
 
