@@ -41,6 +41,30 @@ export function coerceProfileFocus(raw: unknown): ProfileFocus | null {
   return PROFILE_FOCUS_VALUES.includes(raw as ProfileFocus) ? (raw as ProfileFocus) : null;
 }
 
+/**
+ * The focus a link into the Pet tab asks for, and the pet it asks for it on (CUL-1292).
+ *
+ * An explicit `focus` wins: that is every in-app door (`profileFocusHref`). Otherwise a
+ * link from the Home Screen widget that names its pet is a TRIAL tap. The widget is
+ * frozen (H-7) and its only links to this tab are the trial dot band and the trial fact
+ * tile (`widgets/CulpritWidget.tsx`, `petLink('profile')`), neither of which carries a
+ * `focus`, so the app reads the sender instead of the parameter it cannot add.
+ *
+ * `petId` is the pet the widget named, or `null` for an in-app door (which always means
+ * the pet on screen). The screen lands a named request only on that pet.
+ */
+export function profileFocusFromParams(params: {
+  focus?: unknown;
+  src?: unknown;
+  pet?: unknown;
+}): { focus: ProfileFocus; petId: string | null } | null {
+  const pet = typeof params.pet === 'string' && params.pet !== '' ? params.pet : null;
+  const explicit = coerceProfileFocus(params.focus);
+  if (explicit !== null) return { focus: explicit, petId: params.src === 'widget' ? pet : null };
+  if (params.src === 'widget' && pet !== null) return { focus: 'trial', petId: pet };
+  return null;
+}
+
 export interface ProfileFocusHref {
   pathname: typeof PROFILE_ROUTE;
   params: { focus: ProfileFocus; med?: string; ts: string };

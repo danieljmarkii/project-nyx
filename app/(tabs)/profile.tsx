@@ -52,6 +52,7 @@ import { TrialManageSheet } from '../../components/profile/TrialManageSheet';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { useWidgetSlotLabel } from '../../hooks/useWidgetSlotLabel';
+import { useWidgetPetLink } from '../../hooks/useWidgetPetLink';
 import { resolveTrialCard, trialManageTarget } from '../../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
 import { changeTrialWindow, extendTrial, TrialWindowRefused } from '../../lib/dietTrialSetup';
@@ -72,7 +73,7 @@ import {
 import { deriveMedicationCourses, type MedicationHistoryRegimen } from '../../lib/medicationHistory';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import {
-  coerceProfileFocus, focusScrollY, medFocusScrollY, resolveMedAnchorRegimenId,
+  focusScrollY, medFocusScrollY, profileFocusFromParams, resolveMedAnchorRegimenId,
   type ProfileFocus,
 } from '../../lib/profileFocus';
 import {
@@ -253,7 +254,10 @@ export default function ProfileScreen() {
   // rather than a guard: an offline trial, or one started offline and not yet
   // flushed, is still a row the card can see, so "No trial running." cannot be a
   // lie told by a failed network read.
-  const { input: trialInput, isLoading: trialLoading, reload: reloadTrial } = useDietTrial();
+  const {
+    input: trialInput, isLoading: trialLoading, reload: reloadTrial,
+    inputIsForActivePet: trialInputIsForActivePet,
+  } = useDietTrial();
   // B-616 FR-5 — the card's door into "What {pet} can eat". Read here rather than
   // inside the screen so R2 is enforced at the ENTRY: an allowed set that has not
   // hydrated draws no action at all (`DietTrialCard` renders an action only when a
@@ -290,7 +294,21 @@ export default function ProfileScreen() {
   // Params + a `ts` nonce, the shipped doorway shape from `app/(tabs)/history.tsx`:
   // a tab persists across switches, so without the nonce a second tap on the same
   // strip re-pushes identical params and the door works exactly once per session.
-  const params = useLocalSearchParams<{ focus?: string; med?: string; ts?: string }>();
+  //
+  // CUL-1292 — the Home Screen widget's trial taps land here too, as
+  // `nyx:///profile?pet=<id>&src=widget` (frozen, H-7: no `focus`, no `ts`). The widget is
+  // bound to ONE pet, so its pet is switched to first, exactly as History and the log sheet
+  // do, and `profileFocusFromParams` reads the sender as a trial tap. The switch's hook runs
+  // ABOVE the focus effect so it has already switched when that effect reads the store.
+  //
+  // STATED BLIND SPOT (C-41): the widget's link carries no nonce, so a tap is once per MOUNT,
+  // and this tab stays mounted. Tap Mochi's widget, switch to Pixel in the app, tap the same
+  // widget again: neither the pet nor the focus re-applies. The fix is the app-side per-tap
+  // signal, CUL-1177; CUL-1302 re-points this sender at the trial screen.
+  const params = useLocalSearchParams<{
+    focus?: string; med?: string; ts?: string; pet?: string; src?: string;
+  }>();
+  useWidgetPetLink(params.pet, params.ts);
   const scrollRef = useRef<ScrollView>(null);
   const focusReducedMotion = useReducedMotion();
 
@@ -298,6 +316,11 @@ export default function ProfileScreen() {
   // reports a child's y in its parent's box); `medFocusScrollY` composes the two,
   // so no layout callback ever has to add them while one of them may still be null.
   const trialAnchorY = useRef<number | null>(null);
+  // CUL-1292 — the pet the trial card was on screen for when it last reported its top. A
+  // widget door switches pets on a mounted tab, and the settled gate opens in a commit
+  // whose passive effect can run before the new card reports its layout; the y it would
+  // read is the previous pet's. Read live from the store, like every widget-door check.
+  const trialAnchorPetId = useRef<string | null>(null);
   const weightAnchorY = useRef<number | null>(null);
   const medSectionY = useRef<number | null>(null);
   const medRowOffsetY = useRef<Map<string, number>>(new Map());
@@ -314,7 +337,11 @@ export default function ProfileScreen() {
   // is harmless at the same offset and is not harmless once the content underneath
   // has moved. `focusRequestTick` exists only to make a new request re-run the
   // effect below; the request itself is never read out of state.
-  const pendingFocusRef = useRef<{ focus: ProfileFocus; med: string | null } | null>(null);
+  //
+  // `petId` is the pet a widget door named (CUL-1292), `null` for an in-app door, which
+  // always means the pet on screen. A named request lands only on that pet, only once the
+  // screen's content has been read FOR it.
+  const pendingFocusRef = useRef<{ focus: ProfileFocus; med: string | null; petId: string | null } | null>(null);
   const [focusRequestTick, setFocusRequestTick] = useState(0);
   // `undefined` = nothing applied yet, which is deliberately distinct from a link
   // that carried no nonce at all (`null`): seeding this to `null` would make the
@@ -322,14 +349,18 @@ export default function ProfileScreen() {
   const appliedFocusTsRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
-    const focus = coerceProfileFocus(params.focus);
-    if (focus === null) return;
+    const request = profileFocusFromParams({ focus: params.focus, src: params.src, pet: params.pet });
+    if (request === null) return;
     const ts = typeof params.ts === 'string' ? params.ts : null;
     if (ts === appliedFocusTsRef.current) return;
     appliedFocusTsRef.current = ts;
-    pendingFocusRef.current = { focus, med: typeof params.med === 'string' ? params.med : null };
+    pendingFocusRef.current = {
+      focus: request.focus,
+      med: typeof params.med === 'string' ? params.med : null,
+      petId: request.petId,
+    };
     setFocusRequestTick((n) => n + 1);
-  }, [params.focus, params.med, params.ts]);
+  }, [params.focus, params.med, params.ts, params.src, params.pet]);
 
   useFocusEffect(
     useCallback(() => () => {
@@ -341,10 +372,42 @@ export default function ProfileScreen() {
   // one this screen is about to invalidate. Gating on all three is what makes the
   // arrival land on the card rather than near where the card used to be.
   const focusContentSettled = !conditionsLoading && !medicationsLoading && !trialLoading;
+  // CUL-1292 — the same, read FOR one pet. A widget door switches pets in the flush it
+  // arrives in, and every loader flips its flag in its own effect, so the gate above is
+  // true for a render over the PREVIOUS pet's content. So this names the pet the rendered
+  // content belongs to, and a widget door compares it with the pet it asked for:
+  //   • in the arrival flush this closure's render is still the previous pet's;
+  //   • in the next render the closure has the new pet while the three flags still hold
+  //     the previous pet's "loaded" — and the trial's `inputIsForActivePet` is false there
+  //     (B-789: it holds until the new pet's read answers). By the time it answers, the
+  //     conditions and medications loaders have flipped their flags to loading in the
+  //     switch's own commit, so the trial's marker alone closes the window. (Per-pet
+  //     markers for those two were tried and removed: no mutation could red them.)
+  const activePetId = activePet?.id ?? null;
+  const focusContentSettledFor =
+    focusContentSettled && activePetId !== null && trialInputIsForActivePet ? activePetId : null;
 
   const tryFocusScroll = useCallback(() => {
     const pendingFocus = pendingFocusRef.current;
     if (pendingFocus === null) return;
+    if (pendingFocus.petId !== null) {
+      // Read live, never from this closure: the widget hook's switch lands in the same
+      // flush, and an owner's later switch must be seen the moment it happens.
+      const live = usePetStore.getState();
+      // A cold start from the widget: the pet list has not loaded, so the switch is still
+      // to come. Wait for it.
+      if (live.pets.length === 0) return;
+      // A pet the account no longer has (a stale widget, an archived pet): the widget hook
+      // ignores it and stays on the pet on screen, so there is no trial of THAT pet here to
+      // land on. Landing on the active pet's card would be the wrong animal's (C-9).
+      // A switch that has happened and the owner has left that pet since: the link is over.
+      // Either way it is dropped, never landed late.
+      if (!live.pets.some((p) => p.id === pendingFocus.petId) || live.activePet?.id !== pendingFocus.petId) {
+        pendingFocusRef.current = null;
+        return;
+      }
+      if (focusContentSettledFor !== pendingFocus.petId) return;
+    }
     let y: number | null;
     if (pendingFocus.focus === 'weight') {
       // CUL-753 — the rundown's weight tile. A single anchor like the trial card,
@@ -355,6 +418,8 @@ export default function ProfileScreen() {
     } else if (!focusContentSettled) {
       return;
     } else if (pendingFocus.focus === 'trial') {
+      // A widget door waits for its own pet's card to report where it is (see above).
+      if (pendingFocus.petId !== null && trialAnchorPetId.current !== pendingFocus.petId) return;
       y = focusScrollY(trialAnchorY.current);
     } else {
       const regimenId = resolveMedAnchorRegimenId(medications, pendingFocus.med);
@@ -375,7 +440,7 @@ export default function ProfileScreen() {
     // Consumed BEFORE the scroll, so a re-entrant call cannot see a live request.
     pendingFocusRef.current = null;
     scrollRef.current?.scrollTo({ y, animated: !focusReducedMotion });
-  }, [focusContentSettled, medications, focusReducedMotion]);
+  }, [focusContentSettled, focusContentSettledFor, medications, focusReducedMotion]);
 
   // Covers the already-mounted tab, where the content has long since laid out and
   // no `onLayout` will fire again; the handlers below cover the cold arrival.
@@ -386,6 +451,7 @@ export default function ProfileScreen() {
   const handleTrialAnchorLayout = useCallback(
     (e: LayoutChangeEvent) => {
       trialAnchorY.current = e.nativeEvent.layout.y;
+      trialAnchorPetId.current = usePetStore.getState().activePet?.id ?? null;
       tryFocusScroll();
     },
     [tryFocusScroll],
