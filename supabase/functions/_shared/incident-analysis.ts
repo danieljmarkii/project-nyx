@@ -31,7 +31,9 @@
 //   - Re-analysis never lowers a stored escalation; only the owner's own
 //     correction does (CUL-1201 part 2, resolveReanalysisWrite).
 //   - A run that fails keeps the escalation it had already computed (CUL-815,
-//     buildRescueRead), and no write is decided on an unanswered read (CUL-817).
+//     buildRescueRead), and no write is decided on an unanswered read of the
+//     STORED ROW (CUL-817). The context and attachment reads still fail open
+//     (CUL-119, CUL-1327); this contract does not cover them yet.
 //   - Unreadable input degrades honestly — never 500s, never reassures (Pattern 5).
 // A descriptor cannot weaken any of the above: it controls which findings
 // become flags, never what flags do. If a future incident type genuinely needs
@@ -300,73 +302,56 @@ export interface StoredAnalysis {
   status: string | null
   // edited_at is set: the owner has corrected a structured field (Pattern 7).
   edited: boolean
-  contextualFlags: string[]
   // The red flags the stored structured columns assert now: the owner's word once
   // edited. The descriptor's present-only derivation (Pattern 9), never the cached
   // visual_flags, which an owner edit deliberately leaves stale.
   presentFlags: string[]
-  // The red flags the model's original read asserted: ai_raw_payload mapped onto the
-  // same columns and read by the same derivation. Differs from presentFlags only on
-  // an edited row, and the difference is what the owner corrected.
-  modelPresentFlags: string[]
 }
 
 export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
-  descriptor: Pick<IncidentDescriptor<TAnalysis, TFlag>, 'presentFlagsFromStructured' | 'buildStructuredValues'>,
+  descriptor: Pick<IncidentDescriptor<TAnalysis, TFlag>, 'presentFlagsFromStructured'>,
   row: Record<string, unknown> | null,
 ): StoredAnalysis | null {
   if (!row) return null
-  const payload = row.ai_raw_payload
-  // buildStructuredValues only reads optional fields off the analysis, so a stored
-  // payload from an older schema maps its missing keys to null: no flag, never an error.
-  const modelColumns = payload !== null && typeof payload === 'object'
-    ? descriptor.buildStructuredValues(payload as TAnalysis)
-    : null
-  const contextual = Array.isArray(row.contextual_flags) ? row.contextual_flags : []
   return {
     recommendation: typeof row.recommendation === 'string' ? row.recommendation : null,
     status: typeof row.status === 'string' ? row.status : null,
     edited: !!row.edited_at,
-    contextualFlags: contextual.filter((f): f is string => typeof f === 'string'),
     presentFlags: descriptor.presentFlagsFromStructured(row),
-    modelPresentFlags: modelColumns ? descriptor.presentFlagsFromStructured(modelColumns) : [],
   }
 }
 
-// The one path by which a stored escalation may come down: the owner corrected it. On
-// an edited row, the owner has cleared every red flag the model's read asserted, and
-// nothing from the record (a contextual flag) stands behind the escalation. That is
-// the owner's own act (CUL-1201 part 2's exception), and it is the only path an
-// owner's correction has to the card's verdict until CUL-409 lands.
-//
-// Deliberately narrow. An edit that leaves a red flag standing, an escalation the
-// model called with no structured flag behind it, and every contextual escalation are
-// all held: contextual flags are counted back from the moment of the run (both
-// descriptors anchor their windows to Date.now()), so a context that lapsed because a
-// day passed cannot be told apart from one the owner corrected by deleting a
-// duplicate, and lowering on the first would be lowering automatically.
-export function ownerCorrectedEscalation(stored: StoredAnalysis): boolean {
-  return stored.edited &&
-    stored.contextualFlags.length === 0 &&
-    stored.presentFlags.length === 0 &&
-    stored.modelPresentFlags.length > 0
-}
-
-// A hold keeps the stored verdict, read text and flags exactly as they are. When the
-// stored escalation sits on a row the last run left 'failed' (a CUL-812 or CUL-815
-// rescue) and THIS run's read did complete, the status is settled to 'completed': the
-// latest read finished, it just saw less. Otherwise nothing is written.
+// A hold keeps the stored verdict, read text, flags and structured columns exactly as
+// they are. The one thing it may write is the STATUS, when the stored row is not a
+// finished read (a CUL-812 or CUL-815 rescue left it 'failed'): this run did finish,
+// so the row takes this run's status ('completed', or 'uncertain' for a read that
+// could not say) and drops the stale error. Left 'failed', the row would disable Edit,
+// and Ask's A8 would re-run a live read, and spend a unit, on every question about it.
 export type ReanalysisWrite =
   | AnalysisWriteBack
-  | { mode: 'hold'; values: { status: 'completed'; error: null } | null }
+  | { mode: 'hold'; values: { status: string; error: null } | null }
 
 // The step-9 write decision. Two rules on top of Pattern 7's never-clobber:
 //
 // 1. NEVER LOWER A STORED ESCALATION (CUL-1201 part 2, ruled 2026-09-26). A second
 //    run of one incident that sees less is absence, and absence is not wellness. The
-//    escalation stands across re-reads and photo swaps until the owner corrects it
-//    (ownerCorrectedEscalation). An escalation replacing an escalation is not a
+//    escalation stands across re-reads and photo swaps, contextual ones included:
+//    both descriptors count their context windows back from Date.now() (CUL-131), so
+//    a context that lapsed because a day passed cannot be told from one the owner
+//    corrected by deleting a duplicate. An escalation replacing an escalation is not a
 //    lowering and writes as before.
+//
+//    There is deliberately NO owner-correction exception here yet. The obvious one
+//    ("an edited row whose red-flag columns the owner cleared") was built and broken
+//    by the adversarial pass: ai_raw_payload is frozen at the read the owner edited
+//    (Pattern 7), so it cannot say whether the STORED verdict came from that read or
+//    from a later re-escalation the owner never saw (owner clears a false flag on
+//    photo 1, photo 2 re-escalates on real blood, photo 3 reads clean: the exception
+//    fired and lowered photo 2's escalation). An owner-lowers path needs a read-time
+//    stamp to compare edited_at against (CUL-1201 part 1, PR-10) or an explicit
+//    owner act on the verdict itself (CUL-1107 / CUL-409). Until then the verdict
+//    errs loud; Home and the vet report already honour the owner's cleared field,
+//    because they derive from the structured columns (Pattern 9).
 //
 // 2. A STORED RED FLAG CARRIES; A STORED ABSENCE DOES NOT (CUL-532). When the stored
 //    structured columns assert a red flag this run's columns don't, the write refreshes
@@ -391,14 +376,9 @@ export function resolveReanalysisWrite<TFlag extends string>(params: {
   readFields: AnalysisReadFields<TFlag>
 }): ReanalysisWrite {
   const { stored, readFields } = params
-  if (
-    stored &&
-    stored.recommendation === 'worth_a_call' &&
-    readFields.recommendation !== 'worth_a_call' &&
-    !ownerCorrectedEscalation(stored)
-  ) {
-    const settle = readFields.status === 'completed' && stored.status !== 'completed'
-    return { mode: 'hold', values: settle ? { status: 'completed', error: null } : null }
+  if (stored && stored.recommendation === 'worth_a_call' && readFields.recommendation !== 'worth_a_call') {
+    const settle = stored.status !== 'completed' && stored.status !== 'uncertain'
+    return { mode: 'hold', values: settle ? { status: readFields.status, error: null } : null }
   }
   const dropsStoredFlag = !!stored &&
     stored.presentFlags.some((flag) => !params.nextPresentFlags.includes(flag))
@@ -513,7 +493,7 @@ export function buildRescueRead<TFlag extends string>(
 // a missing retry button, so it fails CLOSED. `rescue` is required, not defaulted: a
 // default on a safety decision is that decision (C-37), and "no rescue" must be said.
 export function buildFailureWrite(params: {
-  existing: { recommendation?: string | null } | null
+  existing: Pick<StoredAnalysis, 'recommendation' | 'presentFlags'> | null
   existingReadFailed: boolean
   eventId: string
   petId: string | null
@@ -557,6 +537,15 @@ export function buildFailureWrite(params: {
         error: params.message,
       },
     }
+  }
+
+  if (params.existing && params.existing.presentFlags.length > 0) {
+    // A stored red flag with a calm verdict beside it (vomit rows whose model left
+    // visual_flags empty, CUL-534). The failure frame renders ahead of the card and
+    // hides the observation grid, so "Couldn't finish reading this one" would stand
+    // over "Blood: fresh red" on the record. Presence carries: keep the row, note the
+    // error (CUL-532's class, on this write path).
+    return { mode: 'error-only', values: { error: params.message } }
   }
 
   return {
@@ -688,7 +677,7 @@ const MAX_PHOTOS_PER_ANALYSIS = 3
 const VISION_MAX_TOKENS = 1024
 
 type ClaudeMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
-interface ImagePart { data: string; mediaType: ClaudeMediaType }
+export interface ImagePart { data: string; mediaType: ClaudeMediaType }
 
 // Claude rejects a request whose declared media_type doesn't match the actual
 // bytes. Photos are uploaded with a hardcoded .jpg name + image/jpeg
@@ -917,9 +906,43 @@ interface RequestBody {
   transform_only?: boolean
 }
 
+// The pipeline's three outside dependencies, injectable so a test can drive the REAL
+// pipeline (every branch, every write, in order) through a fake database and a fake
+// model: the pure helpers above are only as good as the wiring that calls them, and a
+// source scan of that wiring was shown to pass five realistic broken rebases
+// (adversarial pass, PR-04b). The two deployed functions pass nothing and get
+// LIVE_PIPELINE_DEPS; nothing else is swapped, so the auth, RLS and service-role
+// boundaries are the production ones.
+export interface PipelineDeps {
+  // User-scoped client: RLS enforces that the caller owns the event's pet.
+  userClient(authHeader: string): SupabaseClient
+  // Service-role client: storage download + trusted write-back.
+  adminClient(): SupabaseClient
+  vision<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
+    descriptor: IncidentDescriptor<TAnalysis, TFlag>,
+    images: ImagePart[],
+  ): Promise<TAnalysis | null>
+}
+
+export const LIVE_PIPELINE_DEPS: PipelineDeps = {
+  userClient: (authHeader) =>
+    createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: authHeader } } },
+    ),
+  adminClient: () =>
+    createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    ),
+  vision: runVisionCall,
+}
+
 export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
   descriptor: IncidentDescriptor<TAnalysis, TFlag>,
   req: Request,
+  deps: PipelineDeps = LIVE_PIPELINE_DEPS,
 ): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS })
@@ -944,17 +967,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // fetch — so an untrusted/garbled body can only ever tighten the fetch, never loosen it.
   const forceTransform = body.transform_only === true
 
-  // User-scoped client: RLS enforces that the caller owns the event's pet.
-  const userClient = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_ANON_KEY')!,
-    { global: { headers: { Authorization: authHeader } } },
-  )
-  // Service-role client: storage download + trusted write-back.
-  const adminClient = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  )
+  const userClient = deps.userClient(authHeader)
+  const adminClient = deps.adminClient()
 
   // Known once the event loads; needed to write a valid failure row (the
   // table requires pet_id + incident_type NOT NULL).
@@ -972,10 +986,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // at step 3b for the cap branch, and again at step 9, because the vision call
   // between them takes 10-60s and a sibling run (Ask's A8 read holds no analysis-
   // chain claim) or an owner edit can land inside it. A read error throws (CUL-817).
-  const storedColumns = [
-    'id', 'edited_at', 'status', 'recommendation', 'contextual_flags', 'ai_raw_payload',
-    ...descriptor.redFlagColumns,
-  ].join(', ')
+  const storedColumns = ['id', 'edited_at', 'status', 'recommendation', ...descriptor.redFlagColumns].join(', ')
   const readStoredRow = async (): Promise<Record<string, unknown> | null> =>
     existingRowOrThrow(
       await adminClient
@@ -1101,7 +1112,12 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         // Only a truly-fresh row (no prior real analysis) takes the full upsert, where
         // null structured fields are correct (there is nothing to preserve — same as a
         // photo-less escalation).
-        const preserveStructured = humanEdited || existingRealAnalysis
+        // Widened to ANY existing row (CUL-532's class, adversarial pass on PR-04b): a
+        // 'failed' or 'pending' row is not a "real analysis" but can still hold a prior
+        // read's fresh red blood (a 529 flips status and nothing else). This write has
+        // no structured data of its own to contribute, so an existing row has nothing
+        // for it to overwrite and everything for it to lose.
+        const preserveStructured = humanEdited || existingRealAnalysis || existing !== null
         const readText = selectReadText(descriptor.copy, {
           petName,
           recommendation: cappedRec, // worth_a_call
@@ -1187,7 +1203,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       } else {
         const imageParts = await Promise.all(usableBlobs.map(blobToImagePart))
         try {
-          analysis = await runVisionCall(descriptor, imageParts)
+          analysis = await deps.vision(descriptor, imageParts)
           if (!analysis) throw new Error('Vision model did not return an analysis')
         } catch (visionErr) {
           const msg = visionErr instanceof Error ? visionErr.message : String(visionErr)
@@ -1348,15 +1364,17 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // serialize it). Reading at the moment of the write decision is the only version
     // of this check whose window is worth nothing. A read error is not "no row" — it
     // fails closed in buildFailureWrite.
-    let latest: { recommendation?: string | null } | null = null
+    // It reads the red-flag columns too, so a stored red flag under a calm verdict is
+    // kept visible rather than hidden behind the retry frame (buildFailureWrite).
+    let latest: StoredAnalysis | null = null
     let latestReadFailed = false
     if (petIdForFailure && incidentTypeForFailure) {
       const { data: latestRow, error: latestErr } = await adminClient
         .from('event_ai_analysis')
-        .select('recommendation')
+        .select(storedColumns)
         .eq('event_id', eventId)
-        .maybeSingle()
-      latest = latestRow ?? null
+        .maybeSingle<Record<string, unknown>>()
+      latest = snapshotStoredAnalysis(descriptor, latestRow ?? null)
       latestReadFailed = !!latestErr
     }
 
