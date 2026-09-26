@@ -486,6 +486,20 @@ export const STRUCTURED_FIELD_KEYS = [
   'description',
 ] as const
 
+// The columns a vomit red flag lives in, and the present-only read of them (Pattern 9).
+// The shared pipeline runs it on the stored row, the stored ai_raw_payload and this
+// run's columns, so a re-read never takes a stored red flag off the record
+// (CUL-532, CUL-1201). Answers the same question as generate-signal's
+// deriveIncidentFlags for the vomit family; the parity test imports it (C-34).
+export const RED_FLAG_COLUMNS = ['blood_present', 'foreign_material_present'] as const
+
+export function presentFlagsFromStructured(row: Record<string, unknown>): string[] {
+  const flags: string[] = []
+  if (row.blood_present === 'fresh_red' || row.blood_present === 'coffee_ground') flags.push('blood')
+  if (row.foreign_material_present === 'yes') flags.push('foreign_material')
+  return flags
+}
+
 // ── Context assembly (DB reads, ownership-scoped via the caller JWT) ───────────
 
 async function assembleContext(
@@ -584,6 +598,8 @@ const VOMIT_DESCRIPTOR: IncidentDescriptor<VomitAnalysis, ContextualFlag> = {
     computeContextualFlags(await assembleContext(userClient, petId, occurredAt, species)),
   copy: VOMIT_COPY,
   buildStructuredValues: buildVomitStructuredValues,
+  redFlagColumns: RED_FLAG_COLUMNS,
+  presentFlagsFromStructured,
 }
 
 const handler = (req: Request): Promise<Response> => runIncidentAnalysis(VOMIT_DESCRIPTOR, req)

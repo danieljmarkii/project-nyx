@@ -12,13 +12,20 @@
 // Per-type copy content (reassurance-regex, Pattern 8) stays in each
 // function's own suite — it is per-descriptor by design, never inherited.
 
-import { assertEquals, assertStrictEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
+import { assertEquals, assertStrictEquals, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   applyEscalationFloor,
   shouldCollapsePartialRead,
   selectReadText,
   buildAnalysisWriteBack,
   buildFailureWrite,
+  buildRescueRead,
+  existingRowOrThrow,
+  snapshotStoredAnalysis,
+  ownerCorrectedEscalation,
+  resolveReanalysisWrite,
+  type StoredAnalysis,
+  type RescueRead,
   fetchUsableImageBlob,
   getToolUseInput,
   sanitizeEnum,
@@ -365,6 +372,7 @@ const FAILURE_BASE = {
   incidentType: 'vomit',
   message: 'Claude API error 529',
   existingReadFailed: false,
+  rescue: null,
 }
 
 Deno.test('buildFailureWrite — a worth_a_call already in the record is NEVER overwritten by a failure', () => {
@@ -424,4 +432,348 @@ Deno.test('buildFailureWrite — an UNREADABLE row fails closed: write nothing r
     buildFailureWrite({ ...FAILURE_BASE, existing: { recommendation: 'monitor' }, existingReadFailed: true }).mode,
     'skip',
   )
+})
+
+// ── existingRowOrThrow — a read that has not answered is never an empty record (CUL-817) ──
+// Step 3b used to drop the error half, so an unreachable table read as "no row" and
+// every never-clobber guard derived from it failed OPEN. Each case is one half of
+// "the error decides, the data never does".
+
+Deno.test('existingRowOrThrow — a read error THROWS, even when data came back alongside it', () => {
+  assertThrows(() => existingRowOrThrow({ data: null, error: { message: 'connection reset' } }), Error, 'connection reset')
+  // A stale or partial row next to an error is still an unanswered read.
+  assertThrows(() => existingRowOrThrow({ data: { edited_at: null }, error: { message: 'timeout' } }))
+})
+
+Deno.test('existingRowOrThrow — an answered read with no row is null; a row is the row', () => {
+  assertStrictEquals(existingRowOrThrow({ data: null, error: null }), null)
+  const row = { edited_at: '2026-09-01T00:00:00Z' }
+  assertStrictEquals(existingRowOrThrow({ data: row, error: null }), row)
+})
+
+// ── buildRescueRead — the escalation a failing run keeps (CUL-815) ───────────────
+
+const RESCUE_BASE = { petName: 'Pet', hasPhoto: true }
+
+Deno.test('buildRescueRead — a computed escalation (the CUL-815 variant) is kept exactly as computed', () => {
+  const computed: RescueRead = {
+    recommendation: 'worth_a_call',
+    read_text: 'I can see what looks like blood.',
+    visual_flags: ['blood'],
+    contextual_flags: [],
+  }
+  assertStrictEquals(
+    buildRescueRead(SENTINEL_COPY, { ...RESCUE_BASE, computed, contextualFlags: [] }),
+    computed,
+  )
+})
+
+Deno.test('buildRescueRead — contextual flags alone rescue as the contextual escalation (the canonical case)', () => {
+  // The run failed before the floor (a storage error, a 529): only step 3's flags exist.
+  const rescue = buildRescueRead(SENTINEL_COPY, { ...RESCUE_BASE, computed: null, contextualFlags: ['feline_reduced_intake'] })
+  assertEquals(rescue, {
+    recommendation: 'worth_a_call',
+    read_text: 'CONTEXTUAL:Pet:feline_reduced_intake',
+    visual_flags: [],
+    contextual_flags: ['feline_reduced_intake'],
+  })
+})
+
+Deno.test('buildRescueRead — nothing escalated: no rescue (absence is never carried into the record)', () => {
+  assertStrictEquals(buildRescueRead(SENTINEL_COPY, { ...RESCUE_BASE, computed: null, contextualFlags: [] }), null)
+  const calm: RescueRead = { recommendation: 'monitor', read_text: 'MONITOR:Pet', visual_flags: [], contextual_flags: [] }
+  assertStrictEquals(buildRescueRead(SENTINEL_COPY, { ...RESCUE_BASE, computed: calm, contextualFlags: [] }), null)
+})
+
+// ── buildFailureWrite + a rescue ──────────────────────────────────────────────────
+
+const RESCUE: RescueRead = {
+  recommendation: 'worth_a_call',
+  read_text: 'CONTEXTUAL:Pet:repeated_vomiting',
+  visual_flags: [],
+  contextual_flags: ['repeated_vomiting'],
+}
+
+Deno.test('buildFailureWrite — rescue over no row: the escalation lands as failed, read fields ONLY', () => {
+  const write = buildFailureWrite({ ...FAILURE_BASE, existing: null, rescue: RESCUE })
+  assertStrictEquals(write.mode, 'rescue')
+  assertEquals(write.mode === 'rescue' ? write.values : {}, {
+    event_id: 'evt-1',
+    pet_id: 'pet-1',
+    incident_type: 'vomit',
+    recommendation: 'worth_a_call',
+    read_text: 'CONTEXTUAL:Pet:repeated_vomiting',
+    visual_flags: [],
+    contextual_flags: ['repeated_vomiting'],
+    // True: the photo read did not finish. The client renders a failed escalation as the escalation.
+    status: 'failed',
+    error: 'Claude API error 529',
+  })
+})
+
+Deno.test('buildFailureWrite — rescue over a stored benign read replaces the retry frame with the warning', () => {
+  // The CUL-815 variant: the previous read was monitor, this run found an escalation, the write failed.
+  const write = buildFailureWrite({ ...FAILURE_BASE, existing: { recommendation: 'monitor' }, rescue: RESCUE })
+  assertStrictEquals(write.mode, 'rescue')
+})
+
+Deno.test('buildFailureWrite — a stored escalation outranks a rescue: error-only, the record keeps its words', () => {
+  const write = buildFailureWrite({ ...FAILURE_BASE, existing: { recommendation: 'worth_a_call' }, rescue: RESCUE })
+  assertStrictEquals(write.mode, 'error-only')
+})
+
+Deno.test('buildFailureWrite — a rescue never overrides failing closed or the NOT NULL skip', () => {
+  assertStrictEquals(buildFailureWrite({ ...FAILURE_BASE, existing: null, existingReadFailed: true, rescue: RESCUE }).mode, 'skip')
+  assertStrictEquals(buildFailureWrite({ ...FAILURE_BASE, petId: null, existing: null, rescue: RESCUE }).mode, 'skip')
+})
+
+// ── snapshotStoredAnalysis — what a re-analysis reads off the stored row ──────────
+// A fake descriptor whose payload key differs from its column (stool's shape:
+// ai_raw_payload.blood_present → stool_blood_present), so the test proves the model's
+// flags are read THROUGH buildStructuredValues, not off the payload's own keys.
+
+const FAKE_DESCRIPTOR = {
+  presentFlagsFromStructured: (row: Record<string, unknown>) => (row.blood_col === 'yes' ? ['blood'] : []),
+  // deno-lint-ignore no-explicit-any
+  buildStructuredValues: (a: any) => ({ blood_col: a?.model_blood ?? null }),
+}
+
+Deno.test('snapshotStoredAnalysis — no row is null', () => {
+  assertStrictEquals(snapshotStoredAnalysis(FAKE_DESCRIPTOR, null), null)
+})
+
+Deno.test('snapshotStoredAnalysis — an edited row: the owner cleared what the model saw', () => {
+  const s = snapshotStoredAnalysis(FAKE_DESCRIPTOR, {
+    recommendation: 'worth_a_call',
+    status: 'completed',
+    edited_at: '2026-09-20T10:00:00Z',
+    contextual_flags: ['repeated_vomiting', 7],
+    blood_col: 'no',
+    ai_raw_payload: { model_blood: 'yes' },
+  })
+  assertEquals(s, {
+    recommendation: 'worth_a_call',
+    status: 'completed',
+    edited: true,
+    contextualFlags: ['repeated_vomiting'],
+    presentFlags: [],
+    modelPresentFlags: ['blood'],
+  })
+})
+
+Deno.test('snapshotStoredAnalysis — a null or non-object payload asserts no model flag', () => {
+  for (const payload of [null, 'garbled', 3]) {
+    const s = snapshotStoredAnalysis(FAKE_DESCRIPTOR, { recommendation: null, status: 'capped', blood_col: 'yes', ai_raw_payload: payload })
+    assertEquals(s?.modelPresentFlags, [])
+    assertEquals(s?.presentFlags, ['blood'])
+    assertStrictEquals(s?.edited, false)
+  }
+})
+
+// ── resolveReanalysisWrite — never lower a stored escalation; a stored red flag carries ──
+
+const stored = (o: Partial<StoredAnalysis> = {}): StoredAnalysis => ({
+  recommendation: 'worth_a_call',
+  status: 'completed',
+  edited: false,
+  contextualFlags: [],
+  presentFlags: [],
+  modelPresentFlags: [],
+  ...o,
+})
+
+const readOf = (recommendation: 'worth_a_call' | 'monitor' | 'not_enough_to_say'): AnalysisReadFields => ({
+  recommendation,
+  read_text: recommendation,
+  visual_flags: recommendation === 'worth_a_call' ? ['blood'] : [],
+  contextual_flags: [],
+  status: recommendation === 'not_enough_to_say' ? 'uncertain' : 'completed',
+  error: null,
+})
+
+const resolve = (s: StoredAnalysis | null, next: AnalysisReadFields, nextPresentFlags: string[] = []) =>
+  resolveReanalysisWrite({
+    stored: s,
+    eventId: 'evt',
+    petId: 'pet',
+    incidentType: 'vomit',
+    structuredValues: { blood_present: 'none_visible', ai_raw_payload: { new: 'read' } },
+    nextPresentFlags,
+    readFields: next,
+  })
+
+Deno.test('resolveReanalysisWrite — a photo escalation is HELD over a calmer re-read (Dr. Chen\'s confirmed case)', () => {
+  // A row-read error on the incident screen re-triggers the read; the second run sees less.
+  const w = resolve(stored({ presentFlags: ['blood'], modelPresentFlags: ['blood'] }), readOf('monitor'))
+  assertEquals(w, { mode: 'hold', values: null })
+})
+
+Deno.test('resolveReanalysisWrite — the model\'s own call, with no flag behind it, is held too', () => {
+  assertStrictEquals(resolve(stored(), readOf('monitor')).mode, 'hold')
+  assertStrictEquals(resolve(stored(), readOf('not_enough_to_say')).mode, 'hold')
+})
+
+Deno.test('resolveReanalysisWrite — a CONTEXTUAL escalation is held: a lapsed window is the clock, not the owner', () => {
+  // Both descriptors count their windows back from Date.now(), so a re-read two days
+  // later loses the context by time alone. Lowering on that is lowering automatically.
+  const w = resolve(stored({ status: 'failed', contextualFlags: ['repeated_vomiting'] }), readOf('monitor'))
+  assertStrictEquals(w.mode, 'hold')
+})
+
+Deno.test('resolveReanalysisWrite — a held rescue whose new read completed settles to completed; nothing else moves', () => {
+  const w = resolve(stored({ status: 'failed', contextualFlags: ['feline_reduced_intake'] }), readOf('monitor'))
+  // Only status + error: the verdict, the words and the flags are not in the write.
+  assertEquals(w, { mode: 'hold', values: { status: 'completed', error: null } })
+  // A re-read that could not see (uncertain) did not finish either: the row stays as it is.
+  assertEquals(resolve(stored({ status: 'failed' }), readOf('not_enough_to_say')), { mode: 'hold', values: null })
+})
+
+Deno.test('resolveReanalysisWrite — the OWNER\'S correction lowers: every model flag cleared, no context', () => {
+  const corrected = stored({ edited: true, presentFlags: [], modelPresentFlags: ['blood'] })
+  assertStrictEquals(ownerCorrectedEscalation(corrected), true)
+  const w = resolve(corrected, readOf('monitor'))
+  // Pattern 7 still applies: an edited row refreshes the read fields only.
+  assertStrictEquals(w.mode, 'update')
+  assertStrictEquals(w.mode === 'update' ? w.values.recommendation : null, 'monitor')
+})
+
+Deno.test('resolveReanalysisWrite — a partial correction, or a correction under a live context, is still held', () => {
+  // The owner cleared blood but foreign material still stands on their record.
+  assertStrictEquals(resolve(stored({ edited: true, presentFlags: ['foreign_material'], modelPresentFlags: ['blood', 'foreign_material'] }), readOf('monitor')).mode, 'hold')
+  // The owner cleared blood, but the record also escalated this incident.
+  assertStrictEquals(resolve(stored({ edited: true, contextualFlags: ['repeated_vomiting'], modelPresentFlags: ['blood'] }), readOf('monitor')).mode, 'hold')
+  // An edit (a colour fix) on a row whose escalation had no structured flag to clear.
+  assertStrictEquals(resolve(stored({ edited: true }), readOf('monitor')).mode, 'hold')
+})
+
+Deno.test('resolveReanalysisWrite — an escalation replacing an escalation is not a lowering: it writes', () => {
+  const w = resolve(stored({ presentFlags: ['blood'], modelPresentFlags: ['blood'] }), readOf('worth_a_call'), ['blood'])
+  assertStrictEquals(w.mode, 'upsert')
+})
+
+Deno.test('resolveReanalysisWrite — CUL-532: a re-read that cannot see keeps a stored red flag (read fields only)', () => {
+  // A vomit row read 'monitor' beside fresh red blood (the model left visual_flags empty,
+  // CUL-534); the photo then reads fully unreadable, so this run's columns are all null.
+  const w = resolve(stored({ recommendation: 'monitor', presentFlags: ['blood'], modelPresentFlags: ['blood'] }), readOf('not_enough_to_say'), [])
+  assertStrictEquals(w.mode, 'update')
+  assertEquals(w.mode === 'update' ? Object.keys(w.values).sort() : [], ['contextual_flags', 'error', 'read_text', 'recommendation', 'status', 'visual_flags'])
+})
+
+Deno.test('resolveReanalysisWrite — a stored ABSENCE does not carry: the full write lands (no stale "none visible")', () => {
+  const w = resolve(stored({ recommendation: 'monitor' }), readOf('not_enough_to_say'), [])
+  assertStrictEquals(w.mode, 'upsert')
+})
+
+Deno.test('resolveReanalysisWrite — new findings that re-assert every stored flag land in full (CUL-1110 not widened)', () => {
+  const w = resolve(stored({ recommendation: 'monitor', presentFlags: ['blood'] }), readOf('worth_a_call'), ['blood', 'foreign_material'])
+  assertStrictEquals(w.mode, 'upsert')
+  assertStrictEquals(w.mode === 'upsert' ? w.values.blood_present : null, 'none_visible') // this run's columns
+})
+
+Deno.test('resolveReanalysisWrite — the stated residual: a different new flag keeps the stored columns (CUL-1110)', () => {
+  // Stored blood, new read sees only foreign material. The card escalates on the new read;
+  // the columns keep the stored blood, and the new flag waits on CUL-1110's per-field union.
+  const w = resolve(stored({ presentFlags: ['blood'] }), readOf('worth_a_call'), ['foreign_material'])
+  assertStrictEquals(w.mode, 'update')
+  assertStrictEquals(w.mode === 'update' ? w.values.recommendation : null, 'worth_a_call')
+})
+
+Deno.test('resolveReanalysisWrite — Pattern 7 unchanged: no row upserts in full, an edited row updates read fields', () => {
+  assertStrictEquals(resolve(null, readOf('monitor')).mode, 'upsert')
+  assertStrictEquals(resolve(stored({ recommendation: 'monitor', edited: true }), readOf('monitor')).mode, 'update')
+  // A capped / pending row (no verdict, no flags) takes the full write.
+  assertStrictEquals(resolve(stored({ recommendation: null, status: 'capped' }), readOf('monitor')).mode, 'upsert')
+})
+
+// ── The pipeline's wiring (CUL-815 / CUL-817 / CUL-1201) — a source guard ─────────
+// runIncidentAnalysis builds its own Supabase clients, so no unit test drives it; the
+// rules above are pure and tested, and this guard pins that the pipeline still CALLS
+// them. It exists for the rebase onto CUL-1203 part 2, which rewrites these same call
+// sites: a merge that keeps the helpers and drops a call leaves every test above green.
+// Comments are blanked first, in one left-to-right pass that steps over strings so a
+// `//` inside a URL is not read as a comment (C-18), and a comment naming a helper can
+// never satisfy the guard. Strings are kept: the table names are what the guard reads.
+
+function blankComments(src: string): string {
+  let out = ''
+  let i = 0
+  while (i < src.length) {
+    const c = src[i]
+    const next = src[i + 1]
+    if (c === '/' && next === '/') {
+      while (i < src.length && src[i] !== '\n') { out += ' '; i++ }
+    } else if (c === '/' && next === '*') {
+      while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) { out += src[i] === '\n' ? '\n' : ' '; i++ }
+      out += '  '
+      i += 2
+    } else if (c === "'" || c === '"' || c === '`') {
+      out += c
+      i++
+      while (i < src.length && src[i] !== c) {
+        if (src[i] === '\\') { out += src.slice(i, i + 2); i += 2; continue }
+        out += src[i]
+        i++
+      }
+      out += c
+      i++
+    } else {
+      out += c
+      i++
+    }
+  }
+  return out
+}
+
+async function pipelineSource(): Promise<{ preamble: string; tryBody: string; catchBody: string; step9: string }> {
+  const raw = await Deno.readTextFile(new URL('./incident-analysis.ts', import.meta.url))
+  const start = raw.indexOf('export async function runIncidentAnalysis')
+  assertStrictEquals(start > 0, true, 'runIncidentAnalysis not found')
+  // Anchored on the raw text (the anchors are comments), then blanked.
+  const fn = raw.slice(start)
+  // The pipeline's own try (the body-parse try above it is not it).
+  const tryAt = fn.indexOf('\n  try {\n    // 0. Verify the caller uid')
+  const catchAt = fn.indexOf('\n  } catch (err) {\n')
+  const step9At = fn.indexOf('// 9. Write-back.')
+  for (const [name, at] of [['try', tryAt], ['catch', catchAt], ['step 9', step9At]] as const) {
+    assertStrictEquals(at > 0, true, `anchor "${name}" not found: the guard must be re-anchored, never deleted`)
+  }
+  const code = blankComments(fn)
+  return {
+    preamble: code.slice(0, tryAt),
+    tryBody: code.slice(tryAt, catchAt),
+    catchBody: code.slice(catchAt),
+    step9: code.slice(step9At, catchAt),
+  }
+}
+
+Deno.test('pipeline wiring — the stored row is only ever read through existingRowOrThrow (CUL-817)', async () => {
+  const { preamble, tryBody } = await pipelineSource()
+  assertStrictEquals(/existingRowOrThrow\(/.test(preamble), true, 'readStoredRow must route through existingRowOrThrow')
+  // No direct event_ai_analysis select inside the try: a `{ data }` destructure there is
+  // the swallowed-error shape this issue removed.
+  const directSelects = tryBody.match(/\.from\('event_ai_analysis'\)\s*\.select\(/g) ?? []
+  assertEquals(directSelects, [], 'a select inside the try bypasses the fail-closed read')
+  // Step 3b and step 9 both read through it.
+  assertStrictEquals((tryBody.match(/await readStoredRow\(\)/g) ?? []).length, 2)
+})
+
+Deno.test('pipeline wiring — step 9 decides through resolveReanalysisWrite and honours a hold (CUL-1201, CUL-532)', async () => {
+  const { step9 } = await pipelineSource()
+  assertStrictEquals(/resolveReanalysisWrite\(/.test(step9), true)
+  assertStrictEquals(/snapshotStoredAnalysis\(descriptor,\s*await readStoredRow\(\)\)/.test(step9), true, 'the decision must use a FRESH read')
+  assertStrictEquals(/buildAnalysisWriteBack\(/.test(step9), false, 'step 9 must not bypass the resolver')
+  assertStrictEquals(/writeBack\.mode === 'hold'/.test(step9), true)
+  assertStrictEquals(/nextPresentFlags:\s*descriptor\.presentFlagsFromStructured\(structuredValues\)/.test(step9), true)
+})
+
+Deno.test('pipeline wiring — the catch passes a rescue and writes it (CUL-815)', async () => {
+  const { tryBody, catchBody } = await pipelineSource()
+  assertStrictEquals(/rescue:\s*buildRescueRead\(descriptor\.copy,/.test(catchBody), true)
+  assertStrictEquals(/computed:\s*computedRead/.test(catchBody), true)
+  assertStrictEquals(/contextualFlags:\s*contextualFlagsForFailure/.test(catchBody), true)
+  // The try must actually populate what the catch reads.
+  assertStrictEquals(/contextualFlagsForFailure = contextualFlags/.test(tryBody), true)
+  assertStrictEquals(/computedRead = \{/.test(tryBody), true)
+  // Both upsert-shaped modes reach the upsert.
+  assertStrictEquals(/failureWrite\.mode === 'upsert' \|\| failureWrite\.mode === 'rescue'/.test(catchBody), true)
 })

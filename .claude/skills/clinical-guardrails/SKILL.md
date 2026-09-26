@@ -176,6 +176,8 @@ if (usableBlobs.length === 0) {
 
 **ANTI-PATTERN:** Returning a 500 on an unreadable image (the user sees a generic failure and loses the read entirely). Or, worse, returning a `monitor` recommendation with a "couldn't see the photo so probably fine" read — that's reassurance on absence, the exact rule violation Pattern 1 forbids.
 
+**A run that FAILS keeps the escalation it already computed (CUL-815).** A transient failure (a storage error, a 529, a failed write-back) still ends in the outer catch, but the catch no longer throws away the escalation the run worked out first: `buildRescueRead` takes the run's own post-floor escalation, or the contextual flags alone, and `buildFailureWrite` writes it as `status: 'failed'` with the read fields only (never a structured column). A stored escalation still outranks it (CUL-812, error-only), and an unreadable row still skips (fail closed). And no write is decided on an unanswered read: the step-3b existing-row read throws on error (`existingRowOrThrow`, CUL-817), before the cap gate spends a unit.
+
 ---
 
 ## PATTERN 6: Tracking-Dependent Flags Need an Absence-of-Log Guard
@@ -217,14 +219,10 @@ Deno.test('computeContextualFlags — feline flag suppressed when owner does not
 
 **RULE:** When re-analysing an event whose structured observations have been edited by the owner (`edited_at` is set), the write-back must preserve all editable facts and the cached original AI payload. Only the read (`read_text`, `recommendation`, `visual_flags`, `contextual_flags`, `status`) refreshes — because the deterministic floor must remain free to re-escalate on worsening context, but the owner's clinical observations are now load-bearing for the vet report and must not be silently overwritten.
 
-**CANONICAL EXAMPLE** (`supabase/functions/_shared/incident-analysis.ts` — `buildAnalysisWriteBack` ~252, fed by the `edited_at` read in `runIncidentAnalysis` ~795; both incident types run through it):
+**CANONICAL EXAMPLE** (`supabase/functions/_shared/incident-analysis.ts` — `buildAnalysisWriteBack`, reached through `resolveReanalysisWrite`, fed by `readStoredRow` in `runIncidentAnalysis`, which throws on a read error; both incident types run through it):
 
 ```ts
-const { data: existing } = await adminClient
-  .from('event_ai_analysis')
-  .select('id, edited_at, status, recommendation')
-  .eq('event_id', eventId)
-  .maybeSingle()
+const existing = await readStoredRow() // existingRowOrThrow: an unanswered read is never "no row"
 const humanEdited = !!existing?.edited_at
 
 export function buildAnalysisWriteBack(params): AnalysisWriteBack {
@@ -242,6 +240,11 @@ export function buildAnalysisWriteBack(params): AnalysisWriteBack {
 ```
 
 **ANTI-PATTERN:** Unconditionally upserting the full AI payload on every re-analysis. The owner's edits — which the vet will rely on — are silently lost on the next trigger.
+
+**Two rules on top, both in `resolveReanalysisWrite` (`_shared/incident-analysis.ts`), decided on a fresh read of the row taken after the vision call:**
+
+- **A re-analysis never LOWERS a stored escalation (CUL-1201 part 2, PM 2026-09-26).** A second run of one incident that sees less is absence, and absence is not wellness. A stored `worth_a_call` is held (nothing written but, on a `failed` rescue row whose new read completed, `status: 'completed'`) whatever the calmer run says, across re-reads and photo swaps, contextual escalations included: both descriptors count their context windows back from `Date.now()`, so a lapsed window cannot be told from an owner's correction. The one exception is the owner's own act, `ownerCorrectedEscalation`: an edited row where the owner has cleared every red flag the model asserted and no contextual flag stands. So "a re-analysis refreshes the verdict" above holds only upward or sideways.
+- **A stored red flag carries; a stored absence does not (CUL-532).** When the stored structured columns assert a flag (per the descriptor's `presentFlagsFromStructured`, the Pattern 9 derivation) that this run's columns don't, the write refreshes the read fields only. A stored "none visible" is never kept over a read that saw nothing. The per-field union of a stored flag and a DIFFERENT new one is CUL-1110's.
 
 ---
 
