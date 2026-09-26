@@ -24,14 +24,12 @@
 // half, and the consumer scans below red a reader of the gate that does not import from
 // the namespace.
 //
-// ── THE SURFACES, AND WHY THE LIST IS EMPTY (C-32) ────────────────────────────────
+// ── THE SURFACES (C-32) ───────────────────────────────────────────────────────────
 //
-// At TS-0 nothing reads the gate, so there is no flag-off tree to compare. The list is
-// not left empty by omission: it is ASSERTED empty, naming the PR that lands the first
-// surface, so TS-4's first consumer reds this file until it registers itself (a rule
-// added after the first caller is a rule added after the bug). Spec §7 names the four
-// the project will register, each in the PR that makes it a consumer:
-//   • the route, `app/trial/[pet].tsx` — TS-4 (CUL-1300)
+// TS-0 shipped the list ASSERTED empty, naming TS-4, so the first consumer red this file
+// until it registered itself (a rule added after the first caller is a rule added after
+// the bug). TS-4 (CUL-1300) registered the route, `app/trial/[pet].tsx`. Spec §7 names
+// the three still to come, each in the PR that makes it a consumer:
 //   • Home, for the strip as the door — TS-5 (CUL-1301)
 //   • the Pet tab, `app/(tabs)/profile.tsx` — TS-6 (CUL-1302)
 //   • the Day Summary, a sender — TS-6 (CUL-1302)
@@ -63,6 +61,19 @@
 // namespace.
 
 jest.mock('../lib/supabase', () => ({ supabase: {} }));
+// TS-4: the route mounts under jest with its own pet in the link.
+jest.mock('react-native-safe-area-context', () => {
+  const { View } = require('react-native');
+  return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
+});
+jest.mock('expo-router', () => ({
+  router: { push: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: () => true },
+  Stack: { Screen: () => null },
+  useLocalSearchParams: () => ({ pet: 'pet-2' }),
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    require('react').useEffect(() => cb(), []);
+  },
+}));
 jest.mock('../store/authStore', () => {
   const state = { user: { id: 'u1' } };
   const hook = (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state);
@@ -229,13 +240,26 @@ interface Surface {
 /**
  * The guard's SCOPE: a surface absent from this list has its flag-off tree checked by
  * nothing (C-41). Each is loaded through `require` inside the test, never imported at
- * the top — a top-level import would bind one cached instance. EMPTY until TS-4, and
- * asserted so below (C-32).
+ * the top — a top-level import would bind one cached instance. PINNED below: the next
+ * surfaces are Home (TS-5), the Pet tab and the Day Summary (TS-6), each added in the
+ * PR that makes it a consumer.
+ *
+ * The route (TS-4, CUL-1300): flag-off it draws its small screen and NO trial read. The
+ * async half (no read issued over reads that would answer) is proven in the screen's own
+ * suite, `components/trialScreen/TrialScreen.test.tsx` (the limit stated above).
  */
-const SURFACES: ReadonlyArray<Surface> = [];
+const SURFACES: ReadonlyArray<Surface> = [
+  {
+    name: 'the trial screen route',
+    rel: 'app/trial/[pet].tsx',
+    load: () => require('../app/trial/[pet]').default,
+    arrange: () => arrangeOthers([]),
+    mustContain: '"Nothing to show here"',
+  },
+];
 
-/** The PR that lands the first surface — named so the empty list is a claim, not a gap. */
-const FIRST_SURFACE_LANDS = 'TS-4 (CUL-1300)';
+/** The surfaces this PR registers, in order — pinned so a new one edits this line. */
+const PINNED_SURFACES = ['the trial screen route'];
 
 /** Arrange the OTHER betas through the real stores; `trial_screen` stays unset. */
 function arrangeOthers(keys: readonly AllowlistFlagKey[]): void {
@@ -270,11 +294,11 @@ describe('TS-0 — flag-off is byte-identical to an app without the trial screen
     }
   });
 
-  it(`the surface list is empty until ${FIRST_SURFACE_LANDS} lands the first consumer (C-32)`, () => {
-    // The empty set as an ASSERTION: the first surface edits this line, and the route
-    // rule below reds a consumer that forgets to. Every listed surface must exist on disk
-    // (C-38: the scope is checked against the repo, not read off this constant).
-    expect(SURFACES.map((s) => s.name)).toEqual([]);
+  it('the surface list is pinned, and every listed surface exists (C-32, C-38)', () => {
+    // Pinned, not floored: a new surface edits this line, and the route rule below reds a
+    // consumer that forgets to. Every listed surface must exist on disk (C-38: the scope
+    // is checked against the repo, not read off this constant).
+    expect(SURFACES.map((s) => s.name)).toEqual(PINNED_SURFACES);
     for (const s of SURFACES) expect(fs.existsSync(path.join(REPO_ROOT, s.rel))).toBe(true);
   });
 
@@ -459,10 +483,10 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('the trial screen has one gate, and its consumers stay inside the namespace', () => {
-  it(`nothing consumes the gate yet: the consumer list is empty until ${FIRST_SURFACE_LANDS}`, () => {
+  it('the consumers of the gate are pinned: the route alone, until TS-5 and TS-6', () => {
     // PINNED, not floored: a new consumer is a new surface, and it joins this list —
     // with its SURFACES entry and its async flag-off proof — in the diff that adds it.
-    expect(gateConsumers()).toEqual([]);
+    expect(gateConsumers()).toEqual(['app/trial/[pet].tsx']);
   });
 
   it('the key is read directly in exactly one file — the hook — for both gates', () => {
@@ -570,7 +594,7 @@ describe('the consumer scans bite (proven by mutation, not by reading)', () => {
     // A route that reads the gate and draws its own UI inline: the leak the rule forbids.
     writeFixture(
       root,
-      'app/trial/[pet].tsx',
+      'app/trial-rogue.tsx',
       `import { Text } from 'react-native';\n` +
         `import { useTrialScreen } from '../../hooks/useTrialScreen';\n` +
         `export default function TrialRoute() {\n` +
@@ -604,9 +628,9 @@ describe('the consumer scans bite (proven by mutation, not by reading)', () => {
   });
 
   it('a route reading the gate outside the namespace reds the delegation rule and the route rule', () => {
-    expect(gateConsumers(root)).toEqual(['app/trial/[pet].tsx', 'components/pet/TrialDoorRow.tsx']);
-    expect(consumersDrawingElsewhere(root)).toEqual(['app/trial/[pet].tsx']);
-    expect(unlistedRoutes(root)).toEqual(['app/trial/[pet].tsx']);
+    expect(gateConsumers(root)).toEqual(['app/trial-rogue.tsx', 'components/pet/TrialDoorRow.tsx']);
+    expect(consumersDrawingElsewhere(root)).toEqual(['app/trial-rogue.tsx']);
+    expect(unlistedRoutes(root)).toEqual(['app/trial-rogue.tsx']);
   });
 
   it('a second direct read of the key reds the one-reader rule', () => {

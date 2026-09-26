@@ -75,7 +75,16 @@ jest.mock('../../components/profile/WeightTrendCard', () => {
 jest.mock('../../components/profile/EditPetModal', () => ({ EditPetModal: () => null }));
 jest.mock('../../components/profile/AddConditionModal', () => ({ AddConditionModal: () => null }));
 jest.mock('../../components/profile/AddMedicationModal', () => ({ AddMedicationModal: () => null }));
-jest.mock('../../components/profile/StartTrialModal', () => ({ StartTrialModal: () => null }));
+// Records each render's `visible`, so the start-form hand-off (TS-4) can count opens.
+const mockStartTrialVisible: boolean[] = [];
+let mockCloseStartTrial: (() => void) | null = null;
+jest.mock('../../components/profile/StartTrialModal', () => ({
+  StartTrialModal: ({ visible, onClose }: { visible: boolean; onClose: () => void }) => {
+    mockStartTrialVisible.push(visible);
+    mockCloseStartTrial = onClose;
+    return null;
+  },
+}));
 jest.mock('../../components/profile/ArchivePetSheet', () => ({ ArchivePetSheet: () => null }));
 jest.mock('../../components/profile/TrialCompletionSheet', () => ({ TrialCompletionSheet: () => null }));
 jest.mock('../../components/profile/PastMedicationsSection', () => ({ PastMedicationsSection: () => null }));
@@ -144,7 +153,7 @@ jest.mock('../../store/authStore', () => {
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { ScrollView } from 'react-native';
 import ProfileScreen from './profile';
-import { PROFILE_FOCUS_INSET } from '../../lib/profileFocus';
+import { PROFILE_FOCUS_INSET, profileStartTrialHref } from '../../lib/profileFocus';
 import { usePetStore, type Pet } from '../../store/petStore';
 import { clearSpentTaps } from '../../lib/spentTaps';
 
@@ -206,6 +215,7 @@ async function mochiTrialLands(tree: { rerender: (el: ReactElement) => void; get
 beforeEach(() => {
   jest.clearAllMocks();
   clearSpentTaps();
+  mockStartTrialVisible.length = 0;
   mockTrialLoadedFor = null;
   mockReducedMotion = false;
   mockTables.medications = [];
@@ -337,5 +347,64 @@ describe('what it leaves alone', () => {
     const tree = await mountSettledOnPixel();
     expect(active()).toBe(PIXEL.id);
     expect(tree.scrollTo).not.toHaveBeenCalled();
+  });
+});
+
+// ── TS-4 (CUL-1300) — the trial screen's Replace / Start hand-off ─────────────────────
+//
+// The trial screen cannot present `StartTrialModal` (it stays mounted here, B-535), so it
+// sends `?pet=<id>&open=start_trial&ts=<nonce>` (`profileStartTrialHref`). The form must
+// open once, over the NAMED pet, and only once that pet's trial read has answered here.
+describe('the trial screen’s start-form hand-off (TS-4)', () => {
+  /** Rising edges of the form's `visible`: how many times it opened. */
+  const opens = () =>
+    mockStartTrialVisible.filter((v, i) => v && !(mockStartTrialVisible[i - 1] ?? false)).length;
+
+  async function handOff(tree: { rerender: (el: ReactElement) => void }, petId: string, ts = '1') {
+    setParams(profileStartTrialHref({ petId, nowMs: Number(ts) }).params);
+    tree.rerender(<ProfileScreen />);
+    await act(async () => {});
+  }
+
+  it('switches to the named pet and opens the form once, after that pet’s read has answered', async () => {
+    const tree = await mountSettledOnPixel();
+    await handOff(tree, MOCHI.id);
+    expect(active()).toBe(MOCHI.id);
+    // Mochi's trial read has not answered: the form would open over Pixel's card.
+    expect(opens()).toBe(0);
+    await mochiTrialLands(tree);
+    expect(opens()).toBe(1);
+    // A re-render with the same link is not a second request.
+    tree.rerender(<ProfileScreen />);
+    await act(async () => {});
+    expect(opens()).toBe(1);
+  });
+
+  it('opens once for the pet already on screen', async () => {
+    const tree = await mountSettledOnPixel();
+    await handOff(tree, PIXEL.id);
+    expect(active()).toBe(PIXEL.id);
+    expect(opens()).toBe(1);
+  });
+
+  it('drops a request for a pet the account no longer has', async () => {
+    const tree = await mountSettledOnPixel();
+    await handOff(tree, 'pet-gone');
+    expect(active()).toBe(PIXEL.id);
+    expect(opens()).toBe(0);
+  });
+
+  it('a closed form stays closed; a second tap is a second request', async () => {
+    const tree = await mountSettledOnPixel();
+    await handOff(tree, PIXEL.id, '1');
+    expect(opens()).toBe(1);
+    act(() => mockCloseStartTrial!());
+    expect(mockStartTrialVisible.at(-1)).toBe(false);
+    // The same link re-rendered is not a request (the nonce was spent).
+    tree.rerender(<ProfileScreen />);
+    await act(async () => {});
+    expect(opens()).toBe(1);
+    await handOff(tree, PIXEL.id, '2');
+    expect(opens()).toBe(2);
   });
 });

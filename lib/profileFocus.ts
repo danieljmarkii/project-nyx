@@ -173,3 +173,45 @@ export function focusScrollY(anchorY: number | null): number | null {
   if (anchorY === null) return null;
   return Math.max(0, anchorY - PROFILE_FOCUS_INSET);
 }
+
+// ── The trial screen's hand-off to the start form (TS-4 · CUL-1300, spec §3.9) ──────
+//
+// *Replace the trial* and *Start a new trial* on the trial's own screen open
+// `StartTrialModal`, which must stay mounted on the Pet tab: `food-capture` exits with
+// `router.dismissAll()` (which would pop a pushed screen and lose a half-filled form) and
+// B-535's resume hangs off the Pet tab's focus effect. So the screen asks the Pet tab to
+// open it, once.
+//
+// The link names the trial's pet (`pet`), because the screen's pet comes from its route
+// and may not be the active one (C-9). The Pet tab's `useWidgetPetLink` honours `pet` +
+// `ts` exactly as it does a widget's, so the start form opens over the pet whose trial
+// the owner was reading. The screen itself never switches the active pet (S1); the Pet
+// tab does, as the direct consequence of a tap on a screen that named the pet.
+//
+// `open` is its own parameter rather than a fourth `focus`: a focus is a SCROLL target,
+// and this is a one-shot request to present a sheet. `ts` is the nonce every doorway here
+// carries, so a second tap is a second request.
+
+export const PROFILE_OPEN_START_TRIAL = 'start_trial' as const;
+
+export interface ProfileStartTrialHref {
+  pathname: typeof PROFILE_ROUTE;
+  params: { pet: string; open: typeof PROFILE_OPEN_START_TRIAL; ts: string };
+}
+
+/** The push argument for the trial screen's Replace / Start hand-off. */
+export function profileStartTrialHref(input: { petId: string; nowMs: number }): ProfileStartTrialHref {
+  return {
+    pathname: PROFILE_ROUTE,
+    params: { pet: input.petId, open: PROFILE_OPEN_START_TRIAL, ts: String(input.nowMs) },
+  };
+}
+
+/** Read the hand-off back: the pet whose start form to open, or null for any other link. */
+export function profileStartTrialFromParams(params: {
+  open?: unknown;
+  pet?: unknown;
+}): { petId: string } | null {
+  if (params.open !== PROFILE_OPEN_START_TRIAL) return null;
+  return typeof params.pet === 'string' && params.pet !== '' ? { petId: params.pet } : null;
+}

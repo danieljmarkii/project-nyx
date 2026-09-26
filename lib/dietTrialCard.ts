@@ -572,8 +572,12 @@ function joinNames(names: string[]): string {
  *  about DAYS WITH MEALS and may never carry the feeding count: a treat-only day
  *  is excluded from this numerator and included in the exposure denominator, and
  *  15.7% of live covered days are treat-only, so a welded sentence is false in a
- *  common case (the v0.97 correction). */
-function coverageLine(coverage: TrialCoverageFacts): string {
+ *  common case (the v0.97 correction).
+ *
+ *  Exported for the trial's own screen (TS-4, spec S7), which withholds THIS line
+ *  whenever the pet may not be eating. It identifies the line by the sentence the
+ *  card itself wrote, never by re-deriving a pattern. */
+export function coverageLine(coverage: TrialCoverageFacts): string {
   return `Meals logged on ${coverage.daysLogged} of ${coverage.daysElapsed} days.`;
 }
 
