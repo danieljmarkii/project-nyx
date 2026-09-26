@@ -75,3 +75,14 @@ Round 2 republished to the same URL as one proposal. J left the page; round 1 st
 - Comments on CUL-1288, CUL-1144 (the note, the answer set) and CUL-1139 (what EN-9 inherits).
 - Filed CUL-1290.
 - The project description gains the connectivity guardrail.
+
+## Rulings on round 2 (the same session)
+
+The PM on round 2: "Loving the signal section on home. It feels FAR less wordy." He ruled **E-2 A restated**, **E-3 as restated** and **N-1 A** ("love that idea of storing these notes in the vet visit feature"). AC 10 was not addressed and stays open. The page's pills now say ruled, and it's republished at the same URL.
+
+**Reconciliation:** EN-9 (CUL-1139) and EN-10 (CUL-1140) had been closed at 15:49Z. PR #924 (CUL-1271) mentioned both, got linked to both, and closed both when it merged, with nothing built. Both are reopened to Backlog with a comment. This is the attachment-closes-on-merge hazard CLAUDE.md already documents.
+
+**Build readiness, as answered to the PM:**
+- Ready now, needing no ruling: CUL-1277 (the pre-1.2.0 unknown-verdict fallback, time-boxed by the cut), CUL-1203 (the analysis-row capture, before any EN writer touches `event_ai_analysis`), CUL-534, CUL-1276, and CUL-1272 to CUL-1275.
+- Phase 0 (EN-F, then EN-0) is one ruling away: E-1.
+- EN-9 needs AC 10, round 3 of the mock and a spec.
