@@ -74,6 +74,7 @@ function readySet(foods: AllowedFood[]): TrialAllowedSet {
 
 const NO_TRIAL: TrialAllowedSet = { status: 'no_trial' };
 const UNKNOWN: TrialAllowedSet = { status: 'unknown' };
+const UNREADABLE: TrialAllowedSet = { status: 'unreadable' };
 
 describe('with no trial running', () => {
   it('offers the most recent MEAL-type food', () => {
@@ -160,6 +161,12 @@ describe('the uncertain answers — all of them are the food step', () => {
     // hydrated and `diet_trial_foods` has not. Treating it as "no trial" is precisely
     // how a topper becomes the pre-fill on a trial pet.
     expect(decideIntakePrefill([food({ id: 'topper' })], UNKNOWN, NOW)).toEqual({ kind: 'none' });
+  });
+
+  // CUL-1297 review — the allowed-set read that THREW (CUL-400's own arm) is the same
+  // ignorance, and must not fall through to the recent-meal pre-fill either.
+  it('a read that threw does NOT read as "no trial"', () => {
+    expect(decideIntakePrefill([food({ id: 'topper' })], UNREADABLE, NOW)).toEqual({ kind: 'none' });
   });
 
   it('a running trial with no primary diet in force today asks instead of guessing', () => {
@@ -282,6 +289,7 @@ describe('naming a food the owner picked herself', () => {
 
   it('makes no trial claim while the trial set is unknown', () => {
     expect(pickedFoodSource(UNKNOWN, food({ id: 'diet' }), NOW)).toBe('picked');
+    expect(pickedFoodSource(UNREADABLE, food({ id: 'diet' }), NOW)).toBe('picked');
   });
 
   it('does not call a permitted TREAT on the list the trial diet', () => {

@@ -1056,6 +1056,16 @@ describe('loadTrialPredicateFacts — three answers, held apart', () => {
     expect(input.exposures).toBeUndefined();
   });
 
+  // CUL-1297 — `useDietTrial`'s `unreadable` status rests on this: opted in, the same
+  // failure rejects instead of resolving to the trial-less input it cannot be told from.
+  it('rejects instead, when the caller opts into rethrowUnreadable', async () => {
+    const boom = jest.fn().mockRejectedValue(new Error('database is locked'));
+    const mod = await loadWith({ getFirstAsync: boom, getAllAsync: jest.fn() });
+    await expect(mod.loadDietTrialFacts({ pet: PET_ARG, rethrowUnreadable: true })).rejects.toThrow(
+      'database is locked',
+    );
+  });
+
   // The trial exists and one of the four predicate inputs did not read. Facts go
   // null ENTIRELY rather than computing over a partial record — an empty allowed
   // set would classify every feeding of the prescribed diet as off-diet.

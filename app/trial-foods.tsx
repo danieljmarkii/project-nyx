@@ -26,7 +26,15 @@
 // fact we actually know, so it says so plainly and offers the way back; the screen
 // is only reachable while a trial runs, so this is the trial ending underneath the
 // owner (FR-4's clean disappearance, arriving here as a state rather than a stale
-// list).
+// list). `unreadable` (CUL-400) is the read that threw: it says so, rather than
+// spinning over a failure that will not resolve on its own.
+//
+// ── WHOSE TRIAL (CUL-1297) ──────────────────────────────────────────────────
+//
+// The pet comes from `?pet=`, falling back to the active pet when a door sends
+// none (every door today). Every read, write and door here takes THAT pet, never
+// the active one (C-9), and the screen says so when the pet is no longer in the
+// account rather than showing another pet's trial.
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -43,7 +51,7 @@ import { TrialProteinCorrectionSheet } from '../components/profile/TrialProteinC
 import { TrialContaminantNote } from '../components/food/TrialContaminantNote';
 import { useTrialAllowedSet } from '../hooks/useTrialAllowedSet';
 import { useDietTrial } from '../hooks/useDietTrial';
-import { usePetStore } from '../store/petStore';
+import { useTrialRoutePet } from '../hooks/useTrialRoutePet';
 import { addTrialFood, foodLabel, setTrialTargetProtein } from '../lib/dietTrialSetup';
 import { isOnTrialList, trialListFoodsOn } from '../lib/trialAllowedSet';
 import { trialTargetProtein } from '../lib/trialProtein';
@@ -65,14 +73,17 @@ import {
   buildTrialFoodsScreen,
   noTrialLine,
   trialFoodsTitle,
+  TRIAL_FOODS_UNREADABLE,
+  TRIAL_ROUTE_PET_GONE,
 } from '../lib/trialFoodsScreen';
 import type { PickerFood } from '../lib/db';
 import { ThemedText } from '../components/ui/ThemedText';
 
 export default function TrialFoodsScreen() {
-  const activePet = usePetStore((s) => s.activePet);
-  const petName = activePet?.name ?? 'your pet';
-  const set = useTrialAllowedSet();
+  const { petId: routePetId, petName, known } = useTrialRoutePet();
+  // A pet the account does not hold reads nothing (and renders the pet-gone line).
+  const petId = known ? routePetId : null;
+  const set = useTrialAllowedSet(petId);
 
   // 'list' → 'picking' → 'confirming'. The picked food is held rather than
   // written on selection: FR-11's sheet is a confirm step, and a tap that wrote
@@ -85,7 +96,8 @@ export default function TrialFoodsScreen() {
   // scolding — and transient, so it never becomes a permanent line of chrome.
   const [note, setNote] = useState<string | null>(null);
 
-  const model = buildTrialFoodsScreen(petName, set);
+  // A pet the account does not hold draws nothing but the pet-gone line.
+  const model = known ? buildTrialFoodsScreen(petName, set) : null;
 
   // The foods already on the list, marked as selected in the picker. This is the
   // honest signal: `selectedFoodIds` is the picker's existing selection mode, and
@@ -119,13 +131,13 @@ export default function TrialFoodsScreen() {
   );
 
   const handleConfirm = useCallback(async () => {
-    if (set.status !== 'ready' || !pending || !activePet) return;
+    if (set.status !== 'ready' || !pending || !petId) return;
     setSaving(true);
     setAddError(null);
     try {
       await addTrialFood({
         trialId: set.trial.id,
-        petId: activePet.id,
+        petId,
         food: {
           id: pending.id,
           brand: pending.brand,
@@ -146,7 +158,7 @@ export default function TrialFoodsScreen() {
     } finally {
       setSaving(false);
     }
-  }, [set, pending, activePet]);
+  }, [set, pending, petId]);
 
   // ── B-704 §7.3 — the trial protein: the "Trial protein" row + PR 3's shared picker ─
   // PR 3 shipped the shared `TrialProteinPicker` (setup + this screen); PR 4 mounts
@@ -167,7 +179,7 @@ export default function TrialFoodsScreen() {
   // shared predicate exists for). It carries the antigen-pause disclosure the
   // card's loader wires; an opts-less re-derivation here would diverge on exactly
   // that edge.
-  const { input: trialInput } = useDietTrial();
+  const { input: trialInput, inputIsForPet } = useDietTrial(petId);
 
   const readyTrial = set.status === 'ready' ? set.trial : null;
   const trialId = readyTrial?.id ?? null;
@@ -285,8 +297,8 @@ export default function TrialFoodsScreen() {
           </ThemedText>
         )}
         <FoodPicker
-          petId={activePet?.id ?? ''}
-          petName={activePet?.name}
+          petId={petId ?? ''}
+          petName={petName}
           selectedFoodIds={onListIds}
           onPickFood={handlePick}
           // The vet-sanctioned extra is often something the library has never
@@ -312,9 +324,17 @@ export default function TrialFoodsScreen() {
 
       {model === null ? (
         <View style={styles.centered}>
-          {set.status === 'no_trial' ? (
+          {!known ? (
+            <ThemedText testID="trial-foods-pet-gone" style={styles.quiet}>
+              {TRIAL_ROUTE_PET_GONE}
+            </ThemedText>
+          ) : set.status === 'no_trial' ? (
             <ThemedText testID="trial-foods-no-trial" style={styles.quiet}>
               {noTrialLine(petName)}
+            </ThemedText>
+          ) : set.status === 'unreadable' ? (
+            <ThemedText testID="trial-foods-unreadable" style={styles.quiet}>
+              {TRIAL_FOODS_UNREADABLE}
             </ThemedText>
           ) : (
             // R2: not an empty list. See the header note.
@@ -388,8 +408,11 @@ export default function TrialFoodsScreen() {
               trial-contaminant tension (TG-3: trial-level, never per-feeding). It
               is the SAME note the Pet-tab card renders (read via `useDietTrial`),
               so a food on the list carrying an off-trial protein reads identically
-              on both surfaces. Presence-only — its absence is never an all-clear. */}
-          {trialInput?.standingNote && (
+              on both surfaces. Presence-only — its absence is never an all-clear.
+              Gated on `inputIsForPet` (CUL-1297): the hook keeps the previous
+              pet's input until the new read lands, and that pet's note must not
+              render under this pet's list. */}
+          {inputIsForPet && trialInput?.standingNote && (
             <View style={styles.noteWrap}>
               <TrialContaminantNote
                 title={trialInput.standingNote.title}
@@ -425,7 +448,9 @@ export default function TrialFoodsScreen() {
               by construction. Quiet register: a doorway, not a call to action. */}
           <TouchableOpacity
             testID="trial-foods-exposures-door"
-            onPress={() => router.push('/trial-exposures')}
+            onPress={() =>
+              router.push(petId ? { pathname: '/trial-exposures', params: { pet: petId } } : '/trial-exposures')
+            }
             style={styles.exposuresDoor}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"

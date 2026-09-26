@@ -19,23 +19,33 @@ import type { TrialExposuresScreenModel } from '../lib/trialExposuresScreen';
 // disabled touchable is silent either way and cannot tell "inert" from "inert
 // and announced as unavailable" (CUL-579).
 
+let mockParams: Record<string, string> = {};
 jest.mock('expo-router', () => ({
   router: { back: jest.fn(), push: jest.fn(), canGoBack: jest.fn(() => true) },
+  useLocalSearchParams: () => mockParams,
 }));
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
 });
+jest.mock('../lib/supabase', () => ({ supabase: {} }));
+// Two pets, Biscuit active. `resolveRecordPetName` is the real one (C-9).
+const PETS = [
+  { id: 'p1', name: 'Biscuit' },
+  { id: 'p2', name: 'Mochi' },
+];
 jest.mock('../store/petStore', () => ({
-  usePetStore: (sel: (s: { activePet: { id: string; name: string } }) => unknown) =>
-    sel({ activePet: { id: 'p1', name: 'Biscuit' } }),
+  ...jest.requireActual('../store/petStore'),
+  usePetStore: (sel: (s: { activePet: { id: string; name: string }; pets: typeof PETS }) => unknown) =>
+    sel({ activePet: PETS[0], pets: PETS }),
 }));
 // A trial exists and its facts read cleanly; the model below is what this test
 // drives. The builder is contract-tested in lib/trialExposuresScreen.test.ts —
 // what is pinned HERE is the screen's own wiring, which is where the bug lived
 // (the CUL-613 lesson: pin the tree the guard was written for).
+const mockUseTrialFacts = jest.fn((_petId: string | null) => ({ status: 'ready', facts: {} }));
 jest.mock('../hooks/useTrialFacts', () => ({
-  useTrialFacts: () => ({ status: 'ready', facts: {} }),
+  useTrialFacts: (petId: string | null) => mockUseTrialFacts(petId),
 }));
 
 const model: TrialExposuresScreenModel = {
@@ -110,5 +120,37 @@ describe('trial exposures rows', () => {
     expect(explained.props.accessibilityRole).toBe('button');
     expect(explained.props.accessibilityState?.disabled).toBeFalsy();
     expect(explained.props.accessibilityLabel).toContain('Dental chew');
+  });
+});
+
+// ── CUL-1297 — the pet comes from the route ─────────────────────────────────
+describe('whose trial', () => {
+  afterEach(() => {
+    mockParams = {};
+  });
+
+  it('with no ?pet= it reads the active pet, as every current door expects', () => {
+    render(<TrialExposuresScreen />);
+    expect(mockUseTrialFacts).toHaveBeenLastCalledWith('p1');
+  });
+
+  // The two-pet fixture: Biscuit is active, the link names Mochi.
+  it('with ?pet= it reads and names THAT pet, not the active one', () => {
+    mockParams = { pet: 'p2' };
+    const { buildTrialExposuresScreen } = jest.requireMock('../lib/trialExposuresScreen');
+    render(<TrialExposuresScreen />);
+    expect(mockUseTrialFacts).toHaveBeenLastCalledWith('p2');
+    expect(buildTrialExposuresScreen).toHaveBeenLastCalledWith('Mochi', {});
+  });
+
+  // Never another pet's trial under a stale link, and never a spinner that waits
+  // for a pet that is gone (C-12).
+  it('a ?pet= the account does not hold reads nothing and says the pet is gone', () => {
+    mockParams = { pet: 'p-archived' };
+    const view = render(<TrialExposuresScreen />);
+    expect(mockUseTrialFacts).toHaveBeenLastCalledWith(null);
+    // (the mocked hook still answers `ready` — the pet-gone line must win regardless)
+    expect(view.queryByTestId('trial-exposure-row')).toBeNull();
+    expect(view.getByTestId('trial-exposures-pet-gone')).toBeTruthy();
   });
 });
