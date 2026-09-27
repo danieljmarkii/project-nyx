@@ -28,7 +28,9 @@ import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import {
   writeAnalysisDismissal,
-  sameWords,
+  shownRead,
+  sameShown,
+  STOOL_DISMISSAL_COLUMNS,
   READ_CHANGED_TITLE,
   READ_CHANGED_BODY,
 } from '../../lib/analysisDismissal';
@@ -258,18 +260,20 @@ export function StoolAnalysisSection(
     beginWatch();
   }
 
-  // CUL-1323 — Hide and Show write only over the words on screen
-  // (lib/analysisDismissal). When the read changed underneath (a replaced photo, a
-  // second device), the record is shown and said, never hidden unseen.
+  // CUL-1323 — Hide and Show write only over the read on screen, its words and its
+  // red-flag observations (lib/analysisDismissal). When the read changed underneath
+  // (a replaced photo, a second device), the record is shown and said, never hidden
+  // unseen.
   async function setDismissed(dismiss: boolean) {
     if (!row) return;
     const shown = row;
     const nextIso = dismiss ? new Date().toISOString() : null;
     setRow({ ...shown, dismissed_at: nextIso }); // optimistic
-    const outcome = await writeAnalysisDismissal(eventId, shown, nextIso);
+    const seen = shownRead(shown, STOOL_DISMISSAL_COLUMNS);
+    const outcome = await writeAnalysisDismissal(eventId, seen, nextIso);
     if (outcome === 'written') return;
     const latest = outcome === 'read_changed' ? await fetchRow() : null;
-    if (latest && !sameWords(latest, shown)) {
+    if (latest && !sameShown(latest, seen)) {
       setRow(latest);
       Alert.alert(READ_CHANGED_TITLE, READ_CHANGED_BODY);
       return;

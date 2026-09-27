@@ -291,8 +291,9 @@ export type AnalysisWriteBack =
 //   · the failure write (`buildFailureWrite`) records no new read and leaves the
 //     hide alone, EXCEPT its rescue, which writes an escalation's words and clears
 //     it for the same reason this builder does;
-//   · a HOLD (`resolveReanalysisWrite`) keeps the stored escalation's words, so a
-//     hide the owner made on exactly those words stands.
+//   · a HOLD (`resolveReanalysisWrite`) keeps the stored escalation's words and
+//     clears the hide too: it is a new read, and a hide on file may predate the client
+//     that asks which words it was made on (see ReanalysisWrite).
 // The sink scan in incident-analysis.test.ts fails the build on a write of read
 // words that comes from none of these. The ORDER half is the client's: a Hide
 // writes only over the words on screen (lib/analysisDismissal.ts), so a read
@@ -358,6 +359,8 @@ export interface StoredAnalysis {
   // edited. The descriptor's present-only derivation (Pattern 9), never the cached
   // visual_flags, which an owner edit deliberately leaves stale.
   presentFlags: string[]
+  // dismissed_at is set: the owner's hide is on the row (CUL-1323). A hold clears it.
+  hidden: boolean
 }
 
 export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
@@ -370,6 +373,7 @@ export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, T
     status: typeof row.status === 'string' ? row.status : null,
     edited: !!row.edited_at,
     presentFlags: descriptor.presentFlagsFromStructured(row),
+    hidden: !!row.dismissed_at,
   }
 }
 
@@ -379,9 +383,17 @@ export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, T
 // so the row takes this run's status ('completed', or 'uncertain' for a read that
 // could not say) and drops the stale error. Left 'failed', the row would disable Edit,
 // and Ask's A8 would re-run a live read, and spend a unit, on every question about it.
+//
+// And it clears the owner's hide (CUL-1323): a hold is a new read, and the ruling is
+// that every new read clears it. "Those are the words the owner hid" is true only of a
+// hide made through the compare-and-set client (lib/analysisDismissal.ts). Builds
+// already on phones send an unconditional Hide, so a stale screen can hide a Worth a
+// call that landed unseen, and rows the pre-CUL-1323 bug left hidden are on file now.
+// Kept, that hide would stand over the escalation across every calmer read after it
+// (adversarial round 2). Cleared, the escalation shows, and the owner can hide it again.
 export type ReanalysisWrite =
   | AnalysisWriteBack
-  | { mode: 'hold'; values: { status: string; error: null } | null }
+  | { mode: 'hold'; values: { status?: string; error?: null; dismissed_at?: null } | null }
 
 // The step-9 write decision. Two rules on top of Pattern 7's never-clobber:
 //
@@ -432,7 +444,14 @@ export function resolveReanalysisWrite<TFlag extends string>(params: {
   // too, and is held.
   if (stored && isEscalationVerdict(stored.recommendation) && !isEscalationVerdict(readFields.recommendation)) {
     const settle = stored.status !== 'completed' && stored.status !== 'uncertain'
-    return { mode: 'hold', values: settle ? { status: readFields.status, error: null } : null }
+    if (!settle && !stored.hidden) return { mode: 'hold', values: null }
+    return {
+      mode: 'hold',
+      values: {
+        ...(settle ? { status: readFields.status, error: null } : {}),
+        ...(stored.hidden ? { dismissed_at: null } : {}),
+      },
+    }
   }
   const dropsStoredFlag = !!stored &&
     stored.presentFlags.some((flag) => !params.nextPresentFlags.includes(flag))
@@ -1138,7 +1157,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // between them takes 10-60s and a sibling run (Ask's A8 read holds no analysis-
   // chain claim) or an owner edit can land inside it. A read error throws (CUL-817).
   // pet_id: every decision on the row first checks it is this event's (CUL-1203).
-  const storedColumns = ['id', 'pet_id', 'edited_at', 'status', 'recommendation', ...descriptor.redFlagColumns].join(', ')
+  // dismissed_at: a hold clears the owner's hide, so it has to know one is there (CUL-1323).
+  const storedColumns = ['id', 'pet_id', 'edited_at', 'status', 'recommendation', 'dismissed_at', ...descriptor.redFlagColumns].join(', ')
   const readStoredRow = async (): Promise<StoredRow | null> =>
     existingRowOrThrow(
       await adminClient

@@ -56,6 +56,7 @@ const SECTIONS = [
   {
     name: 'VomitAnalysisSection',
     Section: VomitAnalysisSection,
+    newFinding: { blood_present: 'fresh_red' },
     base: {
       description: null, colour: null, contents: null, consistency: null, blood_present: null,
       bile_present: null, foreign_material_present: null, foreign_material_note: null,
@@ -64,6 +65,7 @@ const SECTIONS = [
   {
     name: 'StoolAnalysisSection',
     Section: StoolAnalysisSection,
+    newFinding: { stool_blood_present: 'yes' },
     base: {
       description: null, stool_consistency: null, stool_colour: null, stool_content: null,
       stool_blood_present: null, stool_blood_type: null, stool_mucus_present: null,
@@ -72,7 +74,7 @@ const SECTIONS = [
   },
 ] as const;
 
-describe.each(SECTIONS)('$name — Hide and Show write only over the words on screen (CUL-1323)', ({ Section, base }) => {
+describe.each(SECTIONS)('$name — Hide and Show write only over the read on screen (CUL-1323)', ({ Section, base, newFinding }) => {
   const row = (over: Record<string, unknown>) => ({
     status: 'completed', ai_raw_payload: null, edited_at: null, dismissed_at: null, error: null,
     ...base, ...over,
@@ -153,6 +155,25 @@ describe.each(SECTIONS)('$name — Hide and Show write only over the words on sc
     expect(await findByText('Worth a call')).toBeTruthy();
     expect(queryByText(CALM.read_text)).toBeNull();
     expect(alert).toHaveBeenCalledWith(READ_CHANGED_TITLE, READ_CHANGED_BODY);
+  });
+
+  it('the same words over a NEW red flag is a changed read: the stale Hide hides nothing (adversarial round 2)', async () => {
+    // The contextual template leads the read text, so a replaced photo can add fresh
+    // blood under byte-identical words, and Hide takes the observation grid off too.
+    mockRow = row(CALL);
+    const { findByText, queryByText, getByText } = render(<Section eventId="e6" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText(INCIDENT_READ_HIDE_LABEL);
+    mockRow = row({ ...CALL, ...newFinding });
+    writer.mockResolvedValue('read_changed');
+    await act(async () => { fireEvent.press(getByText(INCIDENT_READ_HIDE_LABEL)); });
+    await act(async () => {});
+
+    const [, shown] = writer.mock.calls[0];
+    const [column] = Object.keys(newFinding);
+    expect(shown).toHaveProperty(column, null); // the compare carried the grid's red flag
+    expect(queryByText('AI note hidden')).toBeNull();
+    expect(alert).toHaveBeenCalledWith(READ_CHANGED_TITLE, READ_CHANGED_BODY);
+    expect(alert).not.toHaveBeenCalledWith('Could not update', 'Try again in a moment.');
   });
 
   it('a failed write rolls back to what was on screen and says so', async () => {

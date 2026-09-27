@@ -363,22 +363,29 @@ Deno.test('CUL-1323 — the failure write touches the hide ONLY when its rescue 
   assertStrictEquals(rescued.values.dismissed_at, null)
 })
 
-Deno.test('CUL-1323 — a HOLD writes no words and no hide; every other re-read clears it', () => {
-  // A hold keeps the stored escalation's words, so the owner's hide on exactly those
-  // words stands. Anything resolveReanalysisWrite does not hold is the builder's.
+Deno.test('CUL-1323 — a HOLD writes no words, clears a hide it finds, and writes nothing otherwise', () => {
+  // A hold is a new read, so it clears the hide like every other; it keeps the stored
+  // escalation's words, so it writes none. A hide on file may predate the compare-and-set
+  // client (old builds hide unconditionally), which is why "the owner hid these words" is
+  // not enough to keep it (adversarial round 2, Break 1).
   const stored = (over: Partial<StoredAnalysis>): StoredAnalysis => ({
-    recommendation: 'worth_a_call', status: 'completed', edited: false, presentFlags: [], ...over,
-  } as StoredAnalysis)
+    recommendation: 'worth_a_call', status: 'completed', edited: false, presentFlags: [], hidden: false, ...over,
+  })
   const call = (s: StoredAnalysis | null, recommendation: 'worth_a_call' | 'monitor') =>
     resolveReanalysisWrite({
       stored: s, eventId: 'evt', petId: 'pet', incidentType: 'vomit',
       structuredValues: {}, nextPresentFlags: [], readFields: { ...READ_FIELDS, recommendation },
     })
-  for (const s of [stored({}), stored({ status: 'failed' })]) {
+  assertEquals(call(stored({ hidden: true }), 'monitor'), { mode: 'hold', values: { dismissed_at: null } })
+  assertEquals(
+    call(stored({ hidden: true, status: 'failed' }), 'monitor'),
+    { mode: 'hold', values: { status: 'completed', error: null, dismissed_at: null } },
+  )
+  assertEquals(call(stored({}), 'monitor'), { mode: 'hold', values: null })
+  for (const s of [stored({ hidden: true }), stored({ hidden: true, status: 'failed' })]) {
     const held = call(s, 'monitor')
-    assertStrictEquals(held.mode, 'hold')
     const values = held.mode === 'hold' ? held.values ?? {} : {}
-    for (const key of ['dismissed_at', 'recommendation', 'read_text']) {
+    for (const key of ['recommendation', 'read_text', 'visual_flags', 'contextual_flags']) {
       assertStrictEquals(Object.prototype.hasOwnProperty.call(values, key), false, key)
     }
   }
@@ -667,13 +674,14 @@ Deno.test('snapshotStoredAnalysis — reads the verdict, the status, the edit an
       status: 'failed',
       edited_at: '2026-09-20T10:00:00Z',
       blood_col: 'yes',
+      dismissed_at: '2026-09-21T10:00:00Z',
     }),
-    { recommendation: 'monitor', status: 'failed', edited: true, presentFlags: ['blood'] },
+    { recommendation: 'monitor', status: 'failed', edited: true, presentFlags: ['blood'], hidden: true },
   )
   // Garbage in the typed columns reads as absent, never as a verdict.
   assertEquals(
     snapshotStoredAnalysis(FAKE_DESCRIPTOR, { recommendation: 7, status: null, edited_at: null, blood_col: 'no' }),
-    { recommendation: null, status: null, edited: false, presentFlags: [] },
+    { recommendation: null, status: null, edited: false, presentFlags: [], hidden: false },
   )
 })
 
@@ -684,6 +692,7 @@ const stored = (o: Partial<StoredAnalysis> = {}): StoredAnalysis => ({
   status: 'completed',
   edited: false,
   presentFlags: [],
+  hidden: false,
   ...o,
 })
 
@@ -1156,10 +1165,18 @@ Deno.test('CUL-1203 — step 3b reads pet_id and refuses on it before any write 
 // resolveReanalysisWrite's hold above, the failure write's rescue too, and all of it
 // end to end in incident-analysis.pipeline.test.ts. The scan's job is the NEXT write:
 // one that comes from none of them.
-// Blind spots, stated: the binding is read off the nearest `const|let` of that name
-// before the call, so a reassignment between them is not followed; a helper that
-// wraps the table write under another name is caught by rule 1 only if its
-// argument is not one of the three sanctioned names.
+//   4. nothing outside the three writers touches the hide: no `dismissed_at:` key, no
+//      `.dismissed_at =`, no `delete ….dismissed_at`, and no `.values =` or
+//      `Object.assign(….values` over a builder's result.
+// Rule 1 also follows the table name through a `const` and a query through a
+// variable (`const t = c.from(TABLE)` … `t.upsert(…)`), and bindings are read inside
+// the enclosing named function only (adversarial round 2: a split builder, a table
+// constant, a mutated result and a same-named parameter each passed the first cut).
+// Blind spots, stated: `.rpc()` and SQL functions in migrations; a table name
+// assembled at runtime or passed in as a parameter (`delete-account`'s `.from(table)`,
+// which writes no words); computed keys (`values[k] = …`); a reassignment between a
+// binding and its use; arrow functions share the scope of the nearest named
+// `function`; a write in a module outside supabase/functions.
 
 type Sink = { kind: string; at: number }
 
@@ -1193,18 +1210,27 @@ function callArgs(src: string, open: number): string[] {
   return args
 }
 
-function enclosingFunction(src: string, at: number): string | null {
+function enclosingFunctionMatch(src: string, at: number): RegExpMatchArray | null {
   const all = [...src.slice(0, at).matchAll(/\bfunction\s+(\w+)/g)]
-  return all.length ? all[all.length - 1][1] : null
+  return all.length ? all[all.length - 1] : null
 }
 
-// What `name` was last bound to before `at` (the rest of that line).
+function enclosingFunction(src: string, at: number): string | null {
+  return enclosingFunctionMatch(src, at)?.[1] ?? null
+}
+
+// What `name` was last bound to before `at` (the rest of that line), inside the
+// enclosing named function only: a parameter that shares a name with another
+// function's `const` is not that `const`.
 function boundTo(src: string, name: string, at: number): string {
-  const all = [...src.slice(0, at).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${name}\\s*=\\s*([^\\n]*)`, 'g'))]
+  const from = enclosingFunctionMatch(src, at)?.index ?? 0
+  const scope = src.slice(from, at)
+  const all = [...scope.matchAll(new RegExp(`\\b(?:const|let|var)\\s+${name}\\s*=\\s*([^\\n]*)`, 'g'))]
   return all.length ? all[all.length - 1][1].trim() : ''
 }
 
 const BUILT = /^(buildAnalysisWriteBack|resolveReanalysisWrite|buildFailureWrite)\(/
+const HIDE_WRITERS = new Set(['buildAnalysisWriteBack', 'buildFailureWrite', 'resolveReanalysisWrite'])
 
 function readWordSinks(raw: string): { sanctioned: Sink[]; violations: string[] } {
   const src = blankComments(raw)
@@ -1212,20 +1238,41 @@ function readWordSinks(raw: string): { sanctioned: Sink[]; violations: string[] 
   const violations: string[] = []
   const lineOf = (i: number) => src.slice(0, i).split('\n').length
 
-  // 1. Direct writes to the table.
-  for (const m of src.matchAll(/\.from\(\s*['"]event_ai_analysis['"]\s*\)/g)) {
-    const chain = analysisChains(src.slice(m.index!))[0] ?? ''
+  // 1. Writes to the table: a chain off `.from(<the table>)`, where the table is the
+  //    literal or a `const` bound to it, and a write through a variable holding such
+  //    a query.
+  const tableNames = [...src.matchAll(/\b(?:const|let|var)\s+(\w+)\s*=\s*['"`]event_ai_analysis['"`]/g)].map((m) => m[1])
+  const tableRef = `(?:['"\`]event_ai_analysis['"\`]${tableNames.map((n) => `|\\b${n}\\b`).join('')})`
+  const writes: { open: number; method: string; site: number }[] = []
+  for (const m of src.matchAll(new RegExp(`\\.from\\(\\s*${tableRef}\\s*\\)`, 'g'))) {
+    const chain = analysisChains(src.slice(m.index!).replace(/^\.from\([^)]*\)/, ".from('event_ai_analysis')"))[0] ?? ''
     const w = /\.(update|upsert|insert)\(/.exec(chain)
-    if (!w) continue
-    const open = m.index! + w.index + w[0].length - 1
+    if (w) {
+      // The chain was re-spelt with the literal table name; map the offset back.
+      const shift = m[0].length - ".from('event_ai_analysis')".length
+      writes.push({ open: m.index! + w.index + shift + w[0].length - 1, method: w[1], site: m.index! })
+      continue
+    }
+    const bound = /\b(?:const|let|var)\s+(\w+)\s*=\s*[^;\n]*$/.exec(src.slice(0, m.index!).split('\n').pop()!)
+    if (!bound) continue
+    const fnStart = enclosingFunctionMatch(src, m.index!)?.index ?? 0
+    const fnEnd = (() => {
+      const next = src.slice(m.index!).search(/\n(?:export\s+)?(?:async\s+)?function\s/)
+      return next < 0 ? src.length : m.index! + next
+    })()
+    for (const u of src.slice(fnStart, fnEnd).matchAll(new RegExp(`\\b${bound[1]}\\s*\\.\\s*(update|upsert|insert)\\(`, 'g'))) {
+      writes.push({ open: fnStart + u.index! + u[0].length - 1, method: u[1], site: fnStart + u.index! })
+    }
+  }
+  for (const { open, method, site } of writes) {
     const arg = callArgs(src, open)[0] ?? ''
-    const fn = enclosingFunction(src, m.index!)
+    const fn = enclosingFunction(src, site)
     const owner = /^(\w+)\.values$/.exec(arg)
     if (arg === 'values' && fn === 'updateAnalysisRow') sanctioned.push({ kind: 'updateAnalysisRow', at: open })
     else if (arg === 'writeBack.values' && fn === 'applyAnalysisWriteBack') sanctioned.push({ kind: 'applyAnalysisWriteBack', at: open })
     else if (owner && /^buildFailureWrite\(/.test(boundTo(src, owner[1], open))) sanctioned.push({ kind: 'failure write', at: open })
     else if (arg.startsWith('{') && !/\b(?:read_text|recommendation)\b|\.\.\./.test(arg)) sanctioned.push({ kind: 'state literal', at: open })
-    else violations.push(`line ${lineOf(open)} (${fn}): event_ai_analysis .${w[1]}(${arg.slice(0, 60)})`)
+    else violations.push(`line ${lineOf(open)} (${fn}): event_ai_analysis .${method}(${arg.slice(0, 60)})`)
   }
 
   // 2. applyAnalysisWriteBack is handed a builder's result.
@@ -1246,6 +1293,17 @@ function readWordSinks(raw: string): { sanctioned: Sink[]; violations: string[] 
     if (owner && BUILT.test(boundTo(src, owner[1], open))) sanctioned.push({ kind: 'builder → update', at: open })
     else violations.push(`line ${lineOf(open)}: updateAnalysisRow(…, ${arg.slice(0, 60)})`)
   }
+
+  // 4. Only the three writers touch the hide, and nobody rewrites a result's values.
+  for (const m of src.matchAll(/\bdismissed_at\s*:/g)) {
+    const fn = enclosingFunction(src, m.index!)
+    if (fn && HIDE_WRITERS.has(fn)) sanctioned.push({ kind: `hide clear in ${fn}`, at: m.index! })
+    else violations.push(`line ${lineOf(m.index!)} (${fn}): a dismissed_at key outside the three writers`)
+  }
+  const tamper = /\bdelete\s+[\w.$[\]'"]*\bdismissed_at\b|\.\s*dismissed_at\s*=(?!=)|\[\s*['"]dismissed_at['"]\s*\]\s*=(?!=)|\.values\s*=(?!=)|Object\.assign\(\s*[\w.$]+\.values\b/g
+  for (const m of src.matchAll(tamper)) {
+    violations.push(`line ${lineOf(m.index!)} (${enclosingFunction(src, m.index!)}): ${m[0].trim()}`)
+  }
   return { sanctioned, violations }
 }
 
@@ -1265,6 +1323,10 @@ Deno.test('CUL-1323 — every write of read words under supabase/functions goes 
   const kinds = new Set(sanctioned.map((s) => s.kind))
   for (const k of ['updateAnalysisRow', 'applyAnalysisWriteBack', 'failure write', 'state literal', 'builder → apply', 'builder → update']) {
     assertStrictEquals(kinds.has(k), true, `the scan never saw a "${k}" sink`)
+  }
+  // Each writer still spells its clear (their values are pinned by the tests above).
+  for (const fn of HIDE_WRITERS) {
+    assertStrictEquals(kinds.has(`hide clear in ${fn}`), true, `${fn} no longer clears the hide`)
   }
   const src = blankComments(raw)
   const capStart = src.indexOf('if (!gate.allow) {')
@@ -1290,6 +1352,17 @@ Deno.test('CUL-1323 — the builder scan sees a bypass when there is one (the gu
     "async function runIncidentAnalysis() {\n  await c.from('event_ai_analysis').upsert(readFields, { onConflict: 'event_id' })\n}",
     // `values` outside the generic helper is not the helper's parameter.
     "async function runIncidentAnalysis() {\n  await c.from('event_ai_analysis').update(values).eq('event_id', e).eq('pet_id', p)\n}",
+    // Round 2's evasions: a split builder, a table constant, both together, a mutated
+    // result three ways, a hand-set hide, and a parameter sharing a builder's name.
+    "async function persistLiveRead() {\n  const analysisTable = adminClient.from('event_ai_analysis')\n  await analysisTable.upsert({ ...readFields }, { onConflict: 'event_id' })\n}",
+    "const ANALYSIS_TABLE = 'event_ai_analysis'\nasync function persistLiveRead() {\n  await adminClient.from(ANALYSIS_TABLE).upsert(readFields, { onConflict: 'event_id' })\n}",
+    "const T = `event_ai_analysis`\nasync function persistLiveRead() {\n  const q = adminClient.from(T)\n  await q.update(readFields).eq('event_id', e).eq('pet_id', p)\n}",
+    'async function runIncidentAnalysis() {\n  const writeBack = buildAnalysisWriteBack({})\n  delete writeBack.values.dismissed_at\n}',
+    "async function runIncidentAnalysis() {\n  const writeBack = buildAnalysisWriteBack({})\n  writeBack.values['dismissed_at'] = stale\n}",
+    'async function runIncidentAnalysis() {\n  const writeBack = buildAnalysisWriteBack({})\n  writeBack.values = { ...readFields }\n}',
+    'async function runIncidentAnalysis() {\n  const writeBack = buildAnalysisWriteBack({})\n  Object.assign(writeBack.values, patch)\n}',
+    'async function runIncidentAnalysis() {\n  const failureWrite = buildFailureWrite({})\n  const kept = { ...failureWrite.values, dismissed_at: stale }\n}',
+    'function a() {\n  const writeBack = buildAnalysisWriteBack({})\n}\nasync function b(writeBack) {\n  await applyAnalysisWriteBack(c, k, writeBack)\n}',
   ]
   for (const src of bypasses) {
     assertStrictEquals(readWordSinks(src).violations.length, 1, src)
@@ -1302,6 +1375,10 @@ Deno.test('CUL-1323 — the builder scan sees a bypass when there is one (the gu
     "  await adminClient.from('event_ai_analysis').upsert({ event_id: eventId, pet_id: petId, incident_type: incidentType, status, error: null }, { onConflict: 'event_id' })\n" +
     '  const failureWrite = buildFailureWrite({ existing, eventId, petId, incidentType, message })\n' +
     '  await updateAnalysisRow(adminClient, { eventId, petId }, failureWrite.values)\n' +
-    '}'
+    '}\n' +
+    // A reader naming the column is not a writer (ask's select and its row mapping).
+    "const COLS = 'event_id, status, dismissed_at, read_text'\n" +
+    'function toRead(r) {\n  return { dismissedAt: (r.dismissed_at as string) ?? null, hidden: r.dismissed_at === null }\n}\n' +
+    "async function readOnly() {\n  const t = c.from('event_ai_analysis')\n  return await t.select(COLS).eq('event_id', e)\n}"
   assertEquals(readWordSinks(allowed).violations, [])
 })
