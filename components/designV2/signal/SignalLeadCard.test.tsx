@@ -121,6 +121,20 @@ describe('SignalLeadCard — a benign lead', () => {
   });
 });
 
+// CUL-1218 (G10 extended): the engine emits `gap_shortening`; this build has no title for it.
+describe('SignalLeadCard — a type with no title rule is refused', () => {
+  it('renders nothing — no blank "Signal" card, no row, no door — and reads nothing', () => {
+    const gap = {
+      rank: 0,
+      text: 'Gaps between vomiting episodes are getting shorter — 6 days, then 3, then 2, then 1.',
+      finding: { type: 'gap_shortening', priorityClass: 'insight', symptomType: 'vomit' },
+    } as unknown as CachedFinding;
+    const view = render(<SignalLeadCard cached={gap} petId="pet-1" onOpen={jest.fn()} withholdFallingVomit={false} generatedAt={null} />);
+    expect(view.toJSON()).toBeNull();
+    expect(mockLoadSignalLead).not.toHaveBeenCalled();
+  });
+});
+
 describe('SignalLeadCard — a safety lead is the plain Signal row (S1)', () => {
   it.each([safety, { rank: 0, text: 'Nyx has eaten less than usual for 3 days. Call your vet today.', finding: intake }])(
     'renders no chart, no read, the row as the door',

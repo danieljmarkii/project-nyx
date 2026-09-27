@@ -32,7 +32,7 @@
 //   • `thin` — a window holds fewer logged days than the engine's reflection floor.
 //
 // ── THE DENOMINATOR IS THE ENGINE'S, NOT THE CHART'S (adversarial pass, F3) ──────
-// The ticks under the bars count every logged day (`readLoggedDays`: any event, and a look);
+// The ticks under the bars count every logged day (`readLoggedDays`: any event but a look, CUL-1212);
 // that is COVERAGE, and it stays on the chart. A GATE on a falling symptom pair asks a
 // narrower question — could these days have shown this sign — so it counts what the engine's
 // gate counts (`loggingDaysInWindow`, detection.ts): the comparison-gate symptom set

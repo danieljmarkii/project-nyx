@@ -49,6 +49,8 @@ import {
   medicationLines,
   medicationWindowSpec,
   readLoggedDays,
+  correlationWindowLine,
+  UNSUPPORTED_LINE,
   readSignalEpisodes,
   readTileVerdicts,
   readVerdicts,
@@ -64,6 +66,7 @@ import type { CachedFinding, IntakeDeclineFinding, SymptomChronicityFinding, Tri
 import { hasTitleVerdictWord } from './signalTitle';
 import type { SignalTrialWindow } from './signalWindows';
 import { signalCompareSpec } from './signalWindows';
+import { LOOK_EVENT_TYPE } from './monthReads';
 import { dayKeyFromIndex, formatCalendarDate, localDayIndexOf, toLocalDayKey } from './utils';
 import { usePetStore } from '../store/petStore';
 import { isAnimalNotEating, type TrialCardInput } from './dietTrialCard';
@@ -453,6 +456,74 @@ describe('other findings', () => {
   });
 });
 
+// CUL-1218: a correlation's population is its matched episodes. The screen used to draw every
+// vomit's bars, a compare, lanes and a gallery under "Vomiting after chicken" (20 bars under
+// 4 matched pairs); now it draws no count at all and says where the matched days came from.
+describe('CUL-1218 — a correlation screen counts nothing its finding did not', () => {
+  const correlation: CachedFinding['finding'] = {
+    type: 'food_symptom_correlation',
+    priorityClass: 'insight',
+    tier: 'established',
+    symptomType: 'vomit',
+    protein: 'chicken',
+    matchedPairs: 4,
+    symptomEventCount: 20,
+    correlationWindowHours: 12,
+  };
+
+  it('no bars, no line, no compare, no lanes, no gallery — the title, the sentence and the why', () => {
+    const m = buildSignalScreenModel(mockInput({ cached: cachedOf(correlation), trial: null }));
+    expect(m.title).toBe('Vomiting after chicken');
+    expect(m.weekly).toBeNull();
+    expect(m.weekLine).toBeNull();
+    expect(m.compare).toBeNull();
+    expect(m.lanes).toBeNull();
+    expect(m.episodes).toBeNull();
+    expect(m.why).toContain(correlationWindowLine('Nyx'));
+    expect(correlationWindowLine('Nyx')).toBe("The pattern comes from the last 180 days of Nyx's logs.");
+  });
+
+  // Adversarial pass: its medication lines named "the recent 28 days", a window the finding
+  // never counted, and missed a dose on a matched day months back.
+  it('names no medication window — the screen’s windows are not the finding’s', () => {
+    const doses = [{ drugLabel: 'Cerenia', dayKey: shift(THURSDAY, -3) }];
+    const m = buildSignalScreenModel(mockInput({ cached: cachedOf(correlation), trial: null, doses }));
+    expect(m.why.some((l) => /was given/.test(l))).toBe(false);
+    // The same doses DO reach a non-correlation's why, so the absence above is the rule.
+    const other = buildSignalScreenModel(mockInput({ cached: cachedOf(postprandial()), trial: null, doses }));
+    expect(other.why.some((l) => /was given/.test(l))).toBe(true);
+  });
+
+  it('the window line is a correlation’s alone', () => {
+    const m = buildSignalScreenModel(mockInput({ cached: cachedOf(postprandial()), trial: null }));
+    expect(m.why).not.toContain(correlationWindowLine('Nyx'));
+  });
+});
+
+// CUL-1217 (GC-3): a worsening never draws a fall. It is safety-class, so the screen draws no
+// local compare at all (its one compare is the engine's), and on a 7-day window there are no
+// 3-day halves to draw.
+describe('CUL-1217 — a worsening draws no compare', () => {
+  it('a 7-day worsening, with more in its earlier half than its later one, draws nothing to fall', () => {
+    const worsening: CachedFinding['finding'] = {
+      type: 'symptom_worsening',
+      priorityClass: 'safety',
+      symptomType: 'vomit',
+      currentCount: 5,
+      priorCount: 2,
+      currentDays: 4,
+      priorDays: 2,
+      trigger: 'more_episodes',
+      tier: 'standard',
+      windowDays: 7,
+    };
+    const eps = [-6, -5, -5, -4].map((d) => episode(shift(THURSDAY, d), 9)).concat([episode(shift(THURSDAY, -1), 9)]);
+    const m = buildSignalScreenModel(mockInput({ cached: cachedOf(worsening), trial: null, episodes: eps }));
+    expect(m.compare).toBeNull();
+    expect(m.compareWithheld).toBeNull();
+  });
+});
+
 describe('what the screen may never say', () => {
   const variants: SignalScreenInput[] = [
     mockInput(),
@@ -682,18 +753,41 @@ describe('the local reads', () => {
     expect(mockReadFeedingRows).not.toHaveBeenCalled();
   });
 
-  it('readLoggedDays: an event day or an answered look is a logged day; the first is the record’s start', async () => {
-    mockGetAllAsync
-      .mockResolvedValueOnce([{ occurred_at: noon(2026, 9, 17) }, { occurred_at: noon(2026, 9, 17, 20) }, { occurred_at: noon(2026, 9, 10) }])
-      .mockResolvedValueOnce([{ local_day: '2026-09-12' }, { local_day: 'nope' }]);
+  // CUL-1212 (inverted): a look is NOT a logged day. It joins no other surface's coverage
+  // line (the daily-look spec §5.6, floor 5); the month and the vet report exclude it, and
+  // the Signal counted it, so a look-every-day owner saw 17 of 17 above "logged 3 of 17".
+  it('readLoggedDays: a look is never a logged day, and never the record’s start (CUL-1212)', async () => {
+    mockGetAllAsync.mockResolvedValueOnce([{ occurred_at: noon(2026, 9, 17) }, { occurred_at: noon(2026, 9, 17, 20) }, { occurred_at: noon(2026, 9, 10) }]);
     const out = await readLoggedDays('pet-1');
-    expect(out.loggedDays).toEqual(['2026-09-10', '2026-09-12', '2026-09-17']);
+    expect(out.loggedDays).toEqual(['2026-09-10', '2026-09-17']);
     expect(out.recordStart).toBe('2026-09-10');
-    // An UNDONE look is not a logged day (M20): the looks read joins the parent event and
-    // keeps only live ones — a string literal nothing else red-flags, pinned here (C-37).
-    const [, looksSql] = mockGetAllAsync.mock.calls.map((c) => c[0] as string);
-    expect(looksSql).toMatch(/JOIN events e ON e\.id = l\.event_id/);
-    expect(looksSql).toMatch(/e\.deleted_at IS NULL/);
+    // ONE read, over events alone — the looks table is never joined in.
+    expect(mockGetAllAsync).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockGetAllAsync.mock.calls[0] as [string, unknown[]];
+    expect(sql).not.toMatch(/\blooks\b/);
+    // The look's own `check_in` row is excluded by type, and an undone row by `deleted_at`.
+    expect(sql).toMatch(/deleted_at IS NULL/);
+    expect(sql).toMatch(/event_type != \?/);
+    expect(params).toEqual(['pet-1', LOOK_EVENT_TYPE]);
+  });
+
+  // Sam's counterexample, end to end through the builder: a look answered every day of
+  // Sep 1–17, meals on three of them. The rows the read returns are the meals; the bars'
+  // ticks and the record's start follow them, never the looks.
+  it('CUL-1212: a look-every-day record reads as logged on its meal days only', async () => {
+    const mealDays = [3, 9, 15];
+    mockGetAllAsync.mockImplementationOnce((sql: string, params: unknown[]) => {
+      const rows = [
+        ...Array.from({ length: 17 }, (_, i) => ({ occurred_at: noon(2026, 9, i + 1), event_type: LOOK_EVENT_TYPE })),
+        ...mealDays.map((d) => ({ occurred_at: noon(2026, 9, d, 8), event_type: 'meal' })),
+      ];
+      // The SQL's own filter, applied as SQLite would: the excluded type is the second param.
+      const excluded = /event_type != \?/.test(sql) ? params[1] : null;
+      return Promise.resolve(rows.filter((r) => r.event_type !== excluded));
+    });
+    const out = await readLoggedDays('pet-1');
+    expect(out.loggedDays).toEqual(mealDays.map((d) => `2026-09-${String(d).padStart(2, '0')}`));
+    expect(out.recordStart).toBe('2026-09-03');
   });
 });
 
@@ -713,6 +807,18 @@ describe('loadSignalScreen', () => {
     mockReadFreeFedSpans.mockResolvedValue([]);
     // C-9: the ACTIVE pet is the other one; the screen must name the route's pet.
     usePetStore.setState({ pets: pets as never, activePet: pets[1] as never });
+  });
+
+  // CUL-1218 (G10 extended): a finding this build cannot title is refused, never a blank
+  // screen titled "Signal" — and never "missing", because it has not gone anywhere.
+  it('unsupported when the finding’s type has no title rule, and nothing is read', async () => {
+    mockReadSignalCache.mockResolvedValue({
+      findings: [{ rank: 0, text: 'Gaps between vomiting episodes are getting shorter.', finding: { type: 'gap_shortening', priorityClass: 'insight', symptomType: 'vomit' } }],
+    });
+    const out = await loadSignalScreen('pet-1', 'gap_shortening:vomit');
+    expect(out).toEqual({ status: 'unsupported', petName: 'Nyx' });
+    expect(mockGetAllAsync).not.toHaveBeenCalled();
+    expect(UNSUPPORTED_LINE).toBe("I can't show this kind of signal yet.");
   });
 
   it('missing when the cache holds no such finding', async () => {
@@ -830,7 +936,38 @@ describe('CUL-1216 — a falling pair on the screen carries its gates', () => {
     const m = buildSignalScreenModel(benign());
     expect(m.compareWithheld).toBeNull();
     expect(m.compare?.windows.map((w) => w.count)).toEqual([8, 2]);
-    expect(m.why).toContain('Two windows of 28 days, logged on 28 and 28 of them. Compared as counts, not a verdict on how Nyx is doing.');
+    expect(m.why).toContain('Two windows of 28 days, with symptoms or meals logged on 28 and 28 of them. Compared as counts, not a verdict on how Nyx is doing.');
+  });
+
+  // Adversarial pass on CUL-1212 (C-12): the strips now PRINT the gate's days, so a failed
+  // gate read is unanswered, never "logged on 0 and 0" beside real episodes — no compare.
+  it('a failed gate read draws no compare and prints no zero-logged windows line', () => {
+    // A RISING pair: no falling-pair gate withholds it, so only the flag can.
+    const rising = [-20, -3, -2, -1].map((d) => episode(shift(THURSDAY, d), 9));
+    const m = buildSignalScreenModel(benign({ episodes: rising, gateLoggedDays: [], gateUnanswered: true }));
+    expect(m.compare).toBeNull();
+    expect(m.why.join(' ')).not.toMatch(/logged on 0 and 0/);
+    // The same record with the gate unanswered-but-unflagged would print exactly that line.
+    const unflagged = buildSignalScreenModel(benign({ episodes: rising, gateLoggedDays: [] }));
+    expect(unflagged.compare).not.toBeNull();
+    expect(unflagged.why.join(' ')).toMatch(/logged on 0 and 0/);
+  });
+
+  // CUL-1212: the compare's strips answer the comparison-gate question, not coverage. A record
+  // logged every day (doses, weights) but with symptoms or meals on only some days must not
+  // read "logged 28 of 28" beside a count the gate could not vouch for.
+  it('CUL-1212: the compare strips and the why count the gate’s days, never the coverage days', () => {
+    const gate = everyDay(-55, 0).filter((_, i) => i % 4 !== 0);
+    const m = buildSignalScreenModel(benign({ gateLoggedDays: gate }));
+    expect(m.compareWithheld).toBeNull();
+    expect(m.compare).not.toBeNull();
+    const [a, b] = m.compare!.windows;
+    expect(a.loggedCount).toBe(21);
+    expect(b.loggedCount).toBe(21);
+    expect(a.coverageLine).toBe('logged 21 of 28 days');
+    expect(m.why).toContain('Two windows of 28 days, with symptoms or meals logged on 21 and 21 of them. Compared as counts, not a verdict on how Nyx is doing.');
+    // The bars' ticks still read coverage: every day.
+    expect(m.weekly?.weeks.every((w) => w.days.every((d) => d !== 'unlogged'))).toBe(true);
   });
 
   it('BRK-6: a falling vomit pair beside a not-eating record is not drawn, and the screen says why', () => {
@@ -880,29 +1017,30 @@ describe('CUL-1216 — a falling pair on the screen carries its gates', () => {
     expect(m.why.join(' ')).toContain("with symptoms or meals logged on 28 and 1 of them. That's too few logged days to compare their counts.");
   });
 
-  // Adversarial pass F4: the engine's COMPARABLE disclosure is not a reason; a compare the
-  // screen withholds beside it still says why.
-  it('F4: beside the engine’s comparable disclosure, a withheld compare still states its own reason', () => {
-    const reflection: CachedFinding['finding'] = {
-      type: 'reflection',
-      priorityClass: 'insight',
-      symptomType: 'vomit',
-      currentCount: 1,
-      priorCount: 4,
-      direction: 'improving',
-      windowDays: 14,
-      density: { comparable: true, currentLoggingDays: 7, priorLoggingDays: 6 },
-    };
-    // The reflection's halves are THU-13..THU-7 and THU-6..THU: 4 episodes, then 1. The
-    // gate's days: the earlier half every day, the recent half on 3 of 7 (above the floor,
-    // below the ratio) — so the screen withholds on DENSITY while the engine said comparable.
-    const eps = [-12, -11, -9, -8].map((d) => episode(shift(THURSDAY, d), 9)).concat([episode(shift(THURSDAY, -2), 9)]);
-    const gate = [...everyDay(-70, -7), shift(THURSDAY, -6), shift(THURSDAY, -4), shift(THURSDAY, -2)];
-    const m = buildSignalScreenModel(benign({ cached: cachedOf(reflection), episodes: eps, gateLoggedDays: gate }));
-    expect(m.compareWithheld).toBe('density');
-    const why = m.why.join(' ');
-    expect(why).toContain('Counted from days you logged: 7 this week, 6 last.');
-    expect(why).toContain("The recent one was logged on fewer days, so their counts aren't compared here");
+  // CUL-1359 (supersedes F4's reflection compare): a reflection draws NO compare. Its claim is
+  // the engine's week pair, already in the sentence; the screen used to halve its window into
+  // two 3-day strips beside "down from N the week before" — one population counted twice. The
+  // engine's own density disclosure still reaches the why; no second windows line does.
+  it('CUL-1359: a reflection draws no compare and states no second windows line, whatever its window', () => {
+    for (const windowDays of [7, 14]) {
+      const reflection: CachedFinding['finding'] = {
+        type: 'reflection',
+        priorityClass: 'insight',
+        symptomType: 'vomit',
+        currentCount: 1,
+        priorCount: 4,
+        direction: 'improving',
+        windowDays,
+        density: { comparable: true, currentLoggingDays: 7, priorLoggingDays: 6 },
+      };
+      const eps = [-12, -11, -9, -8].map((d) => episode(shift(THURSDAY, d), 9)).concat([episode(shift(THURSDAY, -2), 9)]);
+      const m = buildSignalScreenModel(benign({ cached: cachedOf(reflection), episodes: eps }));
+      expect(m.compare).toBeNull();
+      expect(m.compareWithheld).toBeNull();
+      const why = m.why.join(' ');
+      expect(why).toContain('Counted from days you logged: 7 this week, 6 last.');
+      expect(why).not.toMatch(/Two windows of/);
+    }
   });
 
   // Adversarial pass F2: the trial lanes are a before/during pair; a falling split is one lane.

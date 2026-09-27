@@ -6,7 +6,7 @@ import { useAppActive } from '../../../hooks/useAppActive';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { focusAccessibility } from '../../../lib/a11yFocus';
 import { measureNodeInWindow, type WindowRect } from '../../../lib/measureNode';
-import { loadSignalScreen, screenLeadsWithLanes, withheldLines, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
+import { loadSignalScreen, screenLeadsWithLanes, UNSUPPORTED_LINE, withheldLines, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
 import { usePetStore } from '../../../store/petStore';
 import { WhorlSpinner } from '../../brand/WhorlSpinner';
 import { CompareBars } from '../../charts/CompareBars';
@@ -183,6 +183,10 @@ export function SignalScreen({ petId, identity }: Props) {
           {withheldLines(load.petName).map((line, i) => (
             <ThemedText key={i} style={styles.stateText}>{line}</ThemedText>
           ))}
+        </View>
+      ) : load.status === 'unsupported' ? (
+        <View style={styles.centered} testID="signal-screen-unsupported">
+          <ThemedText style={styles.stateText}>{UNSUPPORTED_LINE}</ThemedText>
         </View>
       ) : load.status === 'missing' ? (
         <View style={styles.centered} testID="signal-screen-missing">
