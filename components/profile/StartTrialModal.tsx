@@ -62,7 +62,7 @@ import {
   getFoodPrimaryProteins,
   permittedRoleForFood, permittedRoleLabel, secondTrialIntro, startDateHelper,
   startDietTrial, startSheetIntro, stopReasonOptions, describeActiveTrial,
-  trialEndDayKey, trialSetupLines,
+  trialEndDayKey, trialSetupLines, TrialEndRefused,
   type ActiveTrialSummary, type TrialFoodSelection, type TrialIndication,
 } from '../../lib/dietTrialSetup';
 
@@ -321,7 +321,29 @@ export function StartTrialModal({
       // only on the same action that creates the new one. The wire ordering is a
       // separate problem, owned by syncPendingDietTrials' gated two-pass push.
       if (pendingEnd) {
-        await endActiveTrial(pendingEnd);
+        try {
+          await endActiveTrial(pendingEnd);
+        } catch (e) {
+          if (!(e instanceof TrialEndRefused)) throw e;
+          // CUL-1329 — the trial this sheet offered to end was already ended (on
+          // another device, or the other host) while the form was open. That first
+          // ending is the record and is left alone; the owner's reason here is
+          // dropped rather than written over it. What the refusal does NOT settle is
+          // whether the slot is free: the other device may have started a trial of
+          // its own. So ask the record again, exactly as the sheet did on open —
+          // starting on top of another running trial is the terminal 23505 the
+          // pre-flight exists to prevent.
+          const running = await getActiveTrialForPet(petId);
+          if (running) {
+            setPendingEnd(null);
+            setStopReason(null);
+            setExisting(running);
+            setStep('blocked');
+            return;
+          }
+          // Nothing is running: the owner asked for the old trial to end and a new
+          // one to start, and the first half is already true. Carry on.
+        }
         setPendingEnd(null);
         setExisting(null);
       }
