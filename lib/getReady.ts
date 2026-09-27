@@ -1,4 +1,6 @@
 import { visibleFindings } from './signalVisible';
+import { countedAnotherTrial, signalTrialWindowFor, type SignalTrialAnchor } from './signalTrialAnchor';
+import { signalTitle } from './signalTitle';
 import { isStoodDown } from './signalCopy';
 import {
   splitPastCourses,
@@ -130,6 +132,15 @@ export interface WorthRaisingInput {
   findings: CachedFinding[] | null;
   /** Home's B-789 suppression, passed through so the two surfaces cannot disagree. */
   withholdFallingVomit: boolean;
+  /**
+   * The Signal's trial anchor (CUL-1360 / CUL-1364): the cache row's `generated_at` and
+   * the trial running for the APPOINTMENT's pet (`signalTrialWindowOf`). The same anchor
+   * Home's stack reads, so a trial finding counted over a trial since replaced gets Home's
+   * answer here: a falling pair is not quoted, a rising one is quoted with its own day
+   * named. REQUIRED, never defaulted (C-37): a default would quote an older trial's
+   * reassurance under the new trial's row by writing nothing.
+   */
+  signalAnchor: SignalTrialAnchor;
   /** `resolveTrialStrip`'s model for this pet, or null when no trial is running. */
   trialStrip: TrialStripModel | null;
   /**
@@ -356,7 +367,7 @@ function buildSignalRows(input: WorthRaisingInput): SignalEntry[] {
   // where it appears nowhere else. The rundown block has a tile for timing and none for
   // a correlation; the correlation is the row with no second home.
   let standDowns = 0;
-  return visibleFindings(input.findings, input.withholdFallingVomit, input.nowMs)
+  return visibleFindings(input.findings, input.withholdFallingVomit, input.nowMs, input.signalAnchor)
     .filter((f) => !isStoodDown(f.finding) || ++standDowns <= 1)
     .map((f, i) => ({
       finding: f.finding,
@@ -364,7 +375,12 @@ function buildSignalRows(input: WorthRaisingInput): SignalEntry[] {
         id: `signal-${i}`,
         // VERBATIM. The Change Contract's phrased, count-anchored sentence is the unit.
         text: f.text,
-        detail: null,
+        // CUL-1364: a rising trial pair counted over a trial since replaced says "in the
+        // trial's 22 days" under a trial row reading day 1. It is named by its own day, the
+        // title Home gives it ("Diet trial, day 22 of 56"); every other row has no detail.
+        detail: countedAnotherTrial(f.finding, input.signalAnchor)
+          ? signalTitle(f.finding, signalTrialWindowFor(f.finding, input.signalAnchor))
+          : null,
         source: 'signal' as const,
         sourceLabel: 'from the Signal',
         isSafety: f.finding.priorityClass === 'safety',

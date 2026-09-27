@@ -27,7 +27,9 @@ import {
 import { visibleFindings } from './signalVisible';
 import type { SignalTrialWindow } from './signalWindows';
 import { trialSignalDoor } from './trialSignalDoor';
-import { dayKeyFromIndex, localDayIndexOf } from './utils';
+import { dayKeyFromIndex, localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const TODAY = '2026-09-27';
 const shift = (key: string, days: number): string => dayKeyFromIndex((localDayIndexOf(key) as number) + days);
@@ -252,5 +254,34 @@ describe('(5) a finding the anchor cannot read changes nothing', () => {
     expect(countedAnotherTrial(f, a)).toBe(false);
     expect(visibleFindings([cachedOf(f)], false, NOW, a)).toHaveLength(1);
     expect(signalTrialWindowFor(f, a)).toBe(a.trial);
+  });
+});
+
+// The anchor inverts the ENGINE's day number, so it is tied to the engine's expression, not
+// to this suite's `findingFor` (the adversarial pass: a fixture built through the client's
+// builder is partly circular). `detectTrialResponse` computes
+//   trialDayCounter(localDayIndexOf(trial.startedAt, tz), localDayIndex(nowMs, tz))
+// from `lib/utils.ts` — the SAME module jest imports here, so no Deno code is loaded. The
+// source pin below reds if the engine stops computing it that way.
+describe('the anchor inverts the engine’s own day number', () => {
+  const ENGINE = fs.readFileSync(path.join(__dirname, '../supabase/functions/generate-signal/detection.ts'), 'utf8');
+
+  it('the engine still counts its day number with the shared helpers this suite drives', () => {
+    expect(ENGINE).toMatch(/import \{[^}]*\blocalDayIndex\b[^}]*\blocalDayIndexOf\b[^}]*\btrialDayCounter\b[^}]*\} from '\.\.\/\.\.\/\.\.\/lib\/utils\.ts'/);
+    expect(ENGINE).toMatch(/const startIndex = localDayIndexOf\(trial\.startedAt, input\.timezone\)/);
+    expect(ENGINE).toMatch(/const todayIndex = localDayIndex\(nowMs, input\.timezone\)/);
+    expect(ENGINE).toMatch(/const trialDayNumber = trialDayCounter\(startIndex, todayIndex\)/);
+  });
+
+  it('for every start and every counting hour, the recovered start day is the trial’s', () => {
+    for (let back = 0; back <= 60; back += 1) {
+      const startedAt = shift(TODAY, -back);
+      for (const hour of [0, 1, 11, 23]) {
+        const countedMs = at(TODAY, hour, hour === 0 ? 5 : 0);
+        const day = trialDayCounter(localDayIndexOf(startedAt) as number, localDayIndex(countedMs));
+        const finding = { ...findingFor(RABBIT, GENERATED, 'fewer_during_trial'), trialDayNumber: day };
+        expect(countedStartDays(finding, iso(countedMs))).toContain(localDayIndexOf(startedAt));
+      }
+    }
   });
 });

@@ -730,3 +730,94 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
     expect(r.queryByText(/Rimadyl/)).toBeNull();
   });
 });
+
+// ── CUL-1364 — Worth raising reads the Signal's trial anchor ─────────────────────
+//
+// `buildWorthRaising`'s rule is `lib/getReady.trialAnchor.test.ts`'s; this is the WIRING:
+// the cache row's `generated_at` and the appointment pet's running trial must both reach it.
+// Rabbit's pair was counted yesterday afternoon on its day 21; the loader now returns the
+// trial the owner replaced it with (chicken, today) — or, as the control, rabbit itself.
+describe('CUL-1364 — an older trial’s pair on Get ready', () => {
+  const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1, 16);
+  const rabbitStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 21);
+  const trialInput = (startedAt: string) => ({
+    trial: { id: 't1', status: 'active', startedAt, targetDurationDays: 56, foodLabel: null },
+    nowMs: Date.now(),
+    petName: 'Mochi',
+    species: 'dog',
+  });
+  const sentence = (n: number, m: number) =>
+    `We've logged ${n} episodes of vomiting for Mochi in the trial's 21 days, compared with ${m} in the 49 days before it — worth reviewing with your vet.`;
+  const cacheWith = (dir: 'fewer_during_trial' | 'more_during_trial') => {
+    const [n, m] = dir === 'fewer_during_trial' ? [2, 11] : [11, 2];
+    const { supabase: client } = jest.requireMock('../lib/supabase') as { supabase: { from: jest.Mock } };
+    const chain = client.from('ai_signals') as unknown as { maybeSingle: jest.Mock };
+    chain.maybeSingle.mockResolvedValueOnce({
+      data: {
+        signal_text: null,
+        is_building: false,
+        coverage: [],
+        generated_at: yesterday.toISOString(),
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+        findings: [
+          {
+            rank: 1,
+            text: sentence(n, m),
+            finding: {
+              type: 'trial_response',
+              priorityClass: 'insight',
+              trialDayNumber: 21,
+              targetDurationDays: 56,
+              trialLoggedDays: 21,
+              baselineLoggedDays: 45,
+              baselineWindowDays: 49,
+              pooledTrialCount: n,
+              pooledBaselineCount: m,
+              rapid: { trial: 1, baseline: 1 },
+              long: { trial: 0, baseline: 0 },
+              rapidWindowMinutes: 30,
+              longGapHours: 6,
+              treatShare: { trial: null, baseline: null },
+              mealsPerDay: { trial: null, baseline: null },
+              comparisonDirection: dir,
+              trialWindowDays: 21,
+            },
+          },
+        ],
+      },
+      error: null,
+    });
+    return sentence(n, m);
+  };
+  const open = async () => {
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText('Worth raising')).toBeTruthy());
+    return r;
+  };
+
+  it('control: over the trial it counted, the falling pair is quoted', async () => {
+    const text = cacheWith('fewer_during_trial');
+    mockTrialInput.current = trialInput(dayKey(rabbitStart));
+    const r = await open();
+    expect(r.getByText(text)).toBeTruthy();
+  });
+
+  it('after the replace, the falling pair is not quoted', async () => {
+    const text = cacheWith('fewer_during_trial');
+    mockTrialInput.current = trialInput(dayKey(today));
+    const r = await open();
+    expect(r.queryByText(text)).toBeNull();
+  });
+
+  it('after the replace, the rising pair is quoted and named by its own day', async () => {
+    const text = cacheWith('more_during_trial');
+    mockTrialInput.current = trialInput(dayKey(today));
+    const r = await open();
+    expect(r.getByText(text)).toBeTruthy();
+    expect(r.getByText('Diet trial, day 21 of 56')).toBeTruthy();
+  });
+});

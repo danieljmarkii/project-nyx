@@ -30,6 +30,7 @@ import {
 } from '../lib/dietTrialFacts';
 import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
 import { readSignalCache } from '../lib/signal';
+import { signalTrialWindowOf } from '../lib/signalScreen';
 import { syncPendingVetAppointments } from '../lib/sync';
 import {
   buildAppointmentView,
@@ -506,7 +507,7 @@ async function buildForAppointment(
 
   // One clock for every read and the build, so the two trial reads bound the same window.
   const nowMs = Date.now();
-  const [findings, trialInput, recheckRead] = await Promise.all([
+  const [signalRow, trialInput, recheckRead] = await Promise.all([
     readSignalCache(subjectId)
       // `row ? row.findings : null` — NOT `row?.findings ?? []`, and the difference is
       // the whole point of the two states.
@@ -520,8 +521,9 @@ async function buildForAppointment(
       // have never succeeded. Absence of a computed finding is not absence of a finding.
       //
       // `row.findings` is already `[]` when the engine ran and found nothing, so the
-      // genuinely-quiet record still renders mock B1b.
-      .then((row) => (row ? row.findings : null))
+      // genuinely-quiet record still renders mock B1b. The row's `generated_at` rides with
+      // them: it is half the trial anchor (CUL-1364).
+      .then((row) => (row ? { findings: row.findings, generatedAt: row.generatedAt } : null))
       // A throw is the other unreadable case (offline, or a failed request).
       .catch(() => null),
     pet
@@ -560,7 +562,12 @@ async function buildForAppointment(
       : null;
 
   return buildWorthRaising({
-    findings,
+    findings: signalRow ? signalRow.findings : null,
+    // CUL-1364: Home's trial anchor, for THIS pet's running trial (C-9), on the build's clock.
+    signalAnchor: {
+      generatedAt: signalRow ? signalRow.generatedAt : null,
+      trial: trialInput?.trial ? signalTrialWindowOf(trialInput.trial, nowMs) : null,
+    },
     // The same fail-closed rule Home applies (B-789): absence of a refusal fact
     // during a failed load is not evidence of eating, so an unloadable trial
     // suppresses the reassuring trial_response row rather than letting it through.
