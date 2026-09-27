@@ -463,7 +463,7 @@ describe('G1 — no mid-trial route to trial_extend, in any state (CUL-156 §0.1
   // returned value — and the wiring is what PR 3 changes. Comments are blanked in
   // one left-to-right pass (C-18) so a mention inside a comment cannot pass for a
   // call site, and so the reported counts describe code.
-  it('half (c) — the decision sheet is reachable from exactly ONE place', () => {
+  it('half (c) — the decision sheet is reachable only through the card’s milestone action, per host', () => {
     // C-32's `firstCallerLands` shape. `TrialCompletionSheet:246` routes `extend`
     // straight to `onExtend()` with no window check of its own, so the entry point
     // IS the gate. A second caller — a mid-trial door being the obvious one — reds
@@ -501,11 +501,19 @@ describe('G1 — no mid-trial route to trial_extend, in any state (CUL-156 §0.1
         line: src.split('\n')[src.slice(0, m.index).split('\n').length - 1],
       }));
     });
-    expect(callSites.map((c) => c.rel)).toEqual(['app/(tabs)/profile.tsx']);
-    // …and it is the card's `milestone` action, not something else that grew into
+    // TS-4 (CUL-1300) ADDED THE SECOND HOST, NOT A SECOND DOOR. The trial's own screen
+    // carries the card's actions (spec S8), and it opens the sheet from the SAME place
+    // the Pet tab does: the handler for the card's `milestone` action, which the
+    // resolver declares only at or past the window (overrun, and a safety state at the
+    // window). No mid-trial route is added; the rule this counts still holds per host.
+    expect(callSites.map((c) => c.rel)).toEqual([
+      'app/(tabs)/profile.tsx',
+      'components/trialScreen/TrialScreen.tsx',
+    ]);
+    // …and each is the card's `milestone` action, not something else that grew into
     // the same call. Asserted on the line, because "there is one caller" is only
     // reassuring if it is the caller this rule is about.
-    expect(callSites[0].line).toMatch(/milestone:/);
+    for (const site of callSites) expect(site.line).toMatch(/milestone:/);
 
     // The ungated branch this is standing in for. If the sheet ever grows its own
     // window gate, this reds — which is a good outcome and means half (c) can relax.

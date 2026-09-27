@@ -66,7 +66,8 @@ import {
 import { deriveMedicationCourses, type MedicationHistoryRegimen } from '../../lib/medicationHistory';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import {
-  focusScrollY, medFocusScrollY, profileFocusFromParams, resolveMedAnchorRegimenId,
+  focusScrollY, medFocusScrollY, profileFocusFromParams, profileStartTrialFromParams,
+  resolveMedAnchorRegimenId,
   type ProfileFocus,
 } from '../../lib/profileFocus';
 import {
@@ -299,7 +300,7 @@ export default function ProfileScreen() {
   // widget again: neither the pet nor the focus re-applies. The fix is the app-side per-tap
   // signal, CUL-1177; CUL-1302 re-points this sender at the trial screen.
   const params = useLocalSearchParams<{
-    focus?: string; med?: string; ts?: string; pet?: string; src?: string;
+    focus?: string; med?: string; ts?: string; pet?: string; src?: string; open?: string;
   }>();
   useWidgetPetLink(params.pet, params.ts);
   const scrollRef = useRef<ScrollView>(null);
@@ -358,6 +359,7 @@ export default function ProfileScreen() {
   useFocusEffect(
     useCallback(() => () => {
       pendingFocusRef.current = null;
+      pendingStartTrialRef.current = null;
     }, []),
   );
 
@@ -465,6 +467,45 @@ export default function ProfileScreen() {
     },
     [tryFocusScroll],
   );
+
+  // ── TS-4 (CUL-1300) — the trial screen's Replace / Start hand-off ─────────────
+  //
+  // The trial's own screen cannot present `StartTrialModal` (it stays mounted here,
+  // B-535), so its *Replace the trial* and *Start a new trial* ask this tab to open it:
+  // `?open=start_trial&pet=<id>&ts=<nonce>` (`lib/profileFocus`). `useWidgetPetLink`
+  // above has already switched to the named pet in the flush the link arrives in.
+  //
+  // A REF, NEVER STATE (C-22): a one-shot request consumed by a side effect, cleared
+  // BEFORE the side effect so a re-entrant effect cannot present the form twice. The tick
+  // only re-runs the effect. It opens once THIS tab's trial read has answered for the
+  // named pet, so the form never opens over the previous pet's card, and it is dropped,
+  // never landed late, when that pet is gone or the owner has since switched away.
+  const pendingStartTrialRef = useRef<{ petId: string } | null>(null);
+  const appliedStartTrialTsRef = useRef<string | null | undefined>(undefined);
+  const [startTrialRequestTick, setStartTrialRequestTick] = useState(0);
+  useEffect(() => {
+    const request = profileStartTrialFromParams({ open: params.open, pet: params.pet });
+    if (request === null) return;
+    const ts = typeof params.ts === 'string' ? params.ts : null;
+    if (ts === appliedStartTrialTsRef.current) return;
+    appliedStartTrialTsRef.current = ts;
+    pendingStartTrialRef.current = request;
+    setStartTrialRequestTick((n) => n + 1);
+  }, [params.open, params.pet, params.ts]);
+  useEffect(() => {
+    const request = pendingStartTrialRef.current;
+    if (request === null) return;
+    // Read live, never from this closure (the same rule the widget door keeps above).
+    const live = usePetStore.getState();
+    if (live.pets.length === 0) return;
+    if (!live.pets.some((p) => p.id === request.petId) || live.activePet?.id !== request.petId) {
+      pendingStartTrialRef.current = null;
+      return;
+    }
+    if (activePetId !== request.petId || !trialInputIsForActivePet || trialLoading) return;
+    pendingStartTrialRef.current = null;
+    setStartTrialVisible(true);
+  }, [startTrialRequestTick, activePetId, trialInputIsForActivePet, trialLoading]);
 
   // CUL-1299 (TS-3) — the card's lifecycle writes (Keep going, change the window,
   // This trial is done, Stopped early), the two sheets' state and the Replace hand-off.

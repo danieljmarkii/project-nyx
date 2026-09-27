@@ -228,7 +228,7 @@ describe('CUL-1041 — the window-provenance columns are the vet report’s, and
     }
   });
 
-  it('exactly ONE importer of the card model NAMES its lines — the Pet-tab card (CUL-1040)', () => {
+  it('only the two in-app hosts of the card model NAME its lines — the Pet-tab card and the trial screen (CUL-1040, CUL-1300)', () => {
     // `withWindowMovedLine` appends to the SHARED `TrialCardModel.lines`, and a line
     // appended to a shared model travels wherever the model travels. Six modules import
     // `lib/dietTrialCard.ts`; only the card component reads the lines, and the rest take
@@ -255,7 +255,11 @@ describe('CUL-1041 — the window-provenance columns are the vet report’s, and
       const src = code(rel);
       return importsCard(src) && READS_LINES.test(src);
     });
-    expect(readers).toEqual(['components/profile/DietTrialCard.tsx']);
+    // TS-4 (CUL-1300): the trial's own screen is the card's successor surface (spec S2:
+    // "one resolver, a new layout"). Its model reads the lines to place them, verbatim, in
+    // the app, next to the same pet's trial; the window-moved line travelling there is the
+    // point, not a leak. It crosses no process boundary and feeds no notification.
+    expect(readers).toEqual(['components/profile/DietTrialCard.tsx', 'lib/trialScreenModel.ts']);
     // Non-vacuity: the importer set is real and larger than the reader set, so the
     // filter above is discriminating rather than matching nothing.
     const importers = sources().filter((rel) => importsCard(code(rel)));
