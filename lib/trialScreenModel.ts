@@ -36,6 +36,7 @@ import {
   type TrialCardAction,
   type TrialCardInput,
   type TrialCardLine,
+  type TrialCardModel,
   type TrialCardState,
 } from './dietTrialCard';
 import { buildForTheCall, type ForTheCall } from './trialForTheCall';
@@ -127,7 +128,8 @@ export interface TrialScreenTrial {
   /** §3.9 — the state's own actions: after the doors on a safety face, at the bottom
    *  otherwise. Never the decision block's (those are in `decision`). */
   actions: TrialCardAction[];
-  /** §3.9 — "Manage the trial" at the bottom of a running, non-safety trial. */
+  /** §3.9 — "Manage the trial" at the bottom of a running, non-safety trial, and after
+   *  the doors on the intake-decline face (CUL-1339 #2). */
   manage: string | null;
 }
 
@@ -168,6 +170,11 @@ const DECISION_STATES: ReadonlySet<TrialCardState> = new Set(['milestone', 'over
 const RUNNING_STATES: ReadonlySet<TrialCardState> = new Set([
   'day_one', 'clean', 'exposures', 'below_floor', 'free_fed', 'overrun',
 ]);
+// CUL-1339 #2 (PM, 2026-09-27, option (a)): the intake-decline face carries it too, after
+// the doors. Neither of its two acts (change the window, replace the trial) ends anything
+// the call-today depends on (the ask is the intake flag's, not the trial's), and with TS-6's
+// Pet tab door this face is the only place left to change the trial from. `trial_refusal`
+// keeps its own *Change or end the trial*; the milestone keeps its three choices only.
 
 export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenModel {
   const { trial, facts } = args;
@@ -213,9 +220,7 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
   const notEating = isAnimalNotEating(input);
   const running = input.trial.status === 'active';
   const projected = notEating && running;
-  const card = resolveTrialCard(
-    projected ? { ...input, coverage: null, untrackedDaysBeforeFirstLog: 0 } : input,
-  );
+  const card = trialScreenCard(input);
   const unclassifiedRecord =
     projected && (input.coverage?.daysLogged ?? 0) > 0 && (input.exposures?.totalFeedings ?? 0) === 0;
   const strip = resolveTrialStrip(input);
@@ -325,8 +330,28 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
       : null,
     report,
     actions,
-    manage: RUNNING_STATES.has(state) ? MANAGE_THE_TRIAL : null,
+    manage: RUNNING_STATES.has(state) || state === 'intake_decline' ? MANAGE_THE_TRIAL : null,
   };
+}
+
+/**
+ * The card the screen draws from: `resolveTrialCard` over the input, with coverage
+ * projected away while a running trial's pet may not be eating (S7; the reasoning is in
+ * `buildTrialScreenModel`). Exported so the Pet tab's door (`lib/trialDoorRow.ts`, TS-6)
+ * reads the SAME register the screen leads with, and the two cannot disagree about
+ * whether something is wrong.
+ */
+export function trialScreenCard(input: TrialCardInput): TrialCardModel {
+  const projected = isAnimalNotEating(input) && input.trial?.status === 'active';
+  return resolveTrialCard(
+    projected ? { ...input, coverage: null, untrackedDaysBeforeFirstLog: 0 } : input,
+  );
+}
+
+/** The card's register lines (role `flag`), in the card's order: the screen's safety face
+ *  (§3.2), keyed on the lines and never on the state (S4). Empty when nothing is wrong. */
+export function trialSafetyLines(card: TrialCardModel): string[] {
+  return card.lines.filter((l) => l.role === 'flag').map((l) => l.text);
 }
 
 /**
@@ -358,9 +383,28 @@ function sublineFor(
   if (startIndex === null || !progress) return parts.length > 0 ? parts.join(' · ') : null;
   const today = toLocalDayKey(new Date(input.nowMs));
   parts.push(`since ${formatTrialDate(startIndex, today)}`);
-  if (!SAFETY_STATES.has(state) && state !== 'milestone') {
-    const end = formatTrialDate(trialEndDayIndex(startIndex, trial.targetDurationDays), today);
-    parts.push(progress.dayCounter > progress.targetDays ? `window ended ${end}` : `ends ${end}`);
-  }
+  const end = trialEndPart(input, state);
+  if (end !== null) parts.push(end);
   return parts.join(' · ');
+}
+
+/**
+ * The running trial's end clause (`ends Oct 29` / `window ended Oct 29`), or null where the
+ * screen drops it: the two safety faces, the milestone, an ended trial, or no day math.
+ * Shared with the Pet tab's door (`lib/trialDoorRow.ts`, TS-6) so the two cannot disagree
+ * about when a trial ends or when to stop saying so.
+ */
+export function trialEndPart(input: TrialCardInput, state: TrialCardState): string | null {
+  const trial = input.trial;
+  if (!trial || state === 'completed' || state === 'abandoned') return null;
+  if (SAFETY_STATES.has(state) || state === 'milestone') return null;
+  const startIndex = localDayIndexOf(trial.startedAt);
+  const progress = getDietTrialProgress(
+    { startedAt: trial.startedAt, targetDurationDays: trial.targetDurationDays },
+    input.nowMs,
+  );
+  if (startIndex === null || !progress) return null;
+  const today = toLocalDayKey(new Date(input.nowMs));
+  const end = formatTrialDate(trialEndDayIndex(startIndex, trial.targetDurationDays), today);
+  return progress.dayCounter > progress.targetDays ? `window ended ${end}` : `ends ${end}`;
 }

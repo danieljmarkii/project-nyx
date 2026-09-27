@@ -226,6 +226,21 @@ function TrialBody({ model, petId, titleRef, handlers, busyAction, onManage }: T
     </View>
   );
 
+  // §3.9: the running trial's bottom action, and the intake-decline face's after its doors
+  // (CUL-1339 #2). Null wherever the model withholds it.
+  const manageLink =
+    model.manage !== null ? (
+      <Pressable
+        onPress={onManage}
+        accessibilityRole="button"
+        accessibilityLabel={model.manage}
+        testID="trial-manage"
+        style={styles.linkAction}
+      >
+        <ThemedText style={styles.linkActionText}>{model.manage}</ThemedText>
+      </Pressable>
+    ) : null;
+
   return (
     <ScrollView contentContainerStyle={styles.scroll} testID="trial-screen-body">
       {/* One element for the title and its sub-line (§6): VoiceOver lands here, and on a
@@ -284,6 +299,8 @@ function TrialBody({ model, petId, titleRef, handlers, busyAction, onManage }: T
           ) : null}
           {doors}
           <ActionList actions={model.actions} handlers={handlers} busyAction={busyAction} />
+          {/* CUL-1339 #2: the intake-decline face carries Manage, after the doors. */}
+          {manageLink}
         </>
       ) : (
         <>
@@ -321,17 +338,7 @@ function TrialBody({ model, petId, titleRef, handlers, busyAction, onManage }: T
           ) : null}
           {doors}
           <ActionList actions={model.actions} handlers={handlers} busyAction={busyAction} />
-          {model.manage !== null ? (
-            <Pressable
-              onPress={onManage}
-              accessibilityRole="button"
-              accessibilityLabel={model.manage}
-              testID="trial-manage"
-              style={styles.linkAction}
-            >
-              <ThemedText style={styles.linkActionText}>{model.manage}</ThemedText>
-            </Pressable>
-          ) : null}
+          {manageLink}
         </>
       )}
     </ScrollView>

@@ -34,6 +34,8 @@ import { useDaySummary } from '../hooks/useDaySummary';
 import { useDailyRecapOffer } from '../hooks/useDailyRecapOffer';
 import { isNotificationArrival } from '../lib/dailyRecapOffer';
 import { profileFocusHref } from '../lib/profileFocus';
+import { trialScreenHref } from '../lib/trialRoute';
+import { useTrialScreen } from '../hooks/useTrialScreen';
 import { useSyncStore } from '../store/syncStore';
 import { useUiStore } from '../store/uiStore';
 import {
@@ -111,9 +113,20 @@ export default function DaySummaryScreen() {
   // CUL-170 — each strip opens ON its own card, not at the top of the Pet tab.
   // Same doorway the Home strips use, from the same builder, so the two surfaces
   // cannot drift into naming different targets for the same strip.
+  //
+  // TS-6 (CUL-1302, spec §5.3) — under `trial_screen` the trial strip opens the trial's own
+  // screen for the RECAP's pet, carried in the href (the recap's rich strips render for a
+  // single-pet account only, so that pet is the one section). A decider, not a drawer: it
+  // changes where the link lands and draws nothing, so flag-off the push is today's.
+  const trialScreenLive = useTrialScreen();
   const openTrial = useCallback(
-    () => router.push(profileFocusHref({ focus: 'trial', nowMs: Date.now() })),
-    [],
+    (petId: string) =>
+      router.push(
+        trialScreenLive
+          ? trialScreenHref(petId)
+          : profileFocusHref({ focus: 'trial', nowMs: Date.now() }),
+      ),
+    [trialScreenLive],
   );
   const openMed = useCallback(
     (medKey: string) =>
@@ -189,7 +202,8 @@ function SinglePetRecap({
   onOpenMed,
 }: {
   model: DaySummaryModel;
-  onOpenTrial: () => void;
+  /** Takes the recap's pet, which the trial screen's route names (TS-6). */
+  onOpenTrial: (petId: string) => void;
   /** Takes the tapped strip's key so the Pet tab can land on THAT med's row. */
   onOpenMed: (medKey: string) => void;
 }) {
@@ -206,7 +220,7 @@ function SinglePetRecap({
           tint={theme.colorAccent}
           title={model.trialStrip.title}
           fact={model.trialStrip.fact}
-          onPress={onOpenTrial}
+          onPress={() => onOpenTrial(section.petId)}
           accessibilityLabel={`${model.trialStrip.title}. ${model.trialStrip.fact}. Open the diet trial.`}
         />
       ) : null}
