@@ -22,7 +22,7 @@ jest.mock('../../../lib/sync', () => ({
 jest.mock('../../../lib/db', () => ({ getDb: () => ({}), getTimeline: jest.fn() }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
-import { act, configure, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, configure, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { LayoutAnimation, StyleSheet } from 'react-native';
 import { MonthInstrument } from './MonthInstrument';
 import { monthReadRange } from '../../../lib/monthModel';
@@ -48,6 +48,7 @@ const TODAY = '2026-09-17';
 function facts(over: Partial<MonthFacts> = {}): MonthFacts {
   return {
     episodeDays: ['2026-09-02', '2026-09-02', '2026-09-05', '2026-09-11', '2026-09-11', '2026-09-16'],
+    continuationDays: [],
     loggedDays: range('2026-07-01', TODAY).filter((k) => k !== '2026-09-08' && k !== '2026-09-09'),
     leftSomeDays: ['2026-09-04'],
     dosedDays: ['2026-09-03'],
@@ -91,9 +92,9 @@ describe('MonthInstrument', () => {
     // fill the edge rows, drawn dim so each row is the seven days its bar counts.
     expect(getAllByTestId('daymark')).toHaveLength(35);
     expect(getAllByTestId('month-outside-day')).toHaveLength(2 + 3);
-    // One read, over the nine weeks' first Sunday through the month's last day.
+    // One read, over the nine weeks' first Sunday through the grid's last Saturday.
     expect(readFacts).toHaveBeenCalledTimes(1);
-    expect(readFacts).toHaveBeenCalledWith('p1', { fromKey: '2026-07-19', toKey: '2026-09-30' });
+    expect(readFacts).toHaveBeenCalledWith('p1', { fromKey: '2026-07-19', toKey: '2026-10-03' });
   });
 
   it('a failed read is an error with a retry, never a computed "nothing logged"', async () => {
@@ -219,7 +220,7 @@ describe('MonthInstrument', () => {
     fireEvent.press(getByTestId('month-prev'));
     await waitFor(() => expect(getByTestId('month-label').props.children).toBe('August 2026'));
     // August's own nine weeks end with its last row (Aug 30), and a fresh read was issued.
-    expect(readFacts).toHaveBeenLastCalledWith('p1', { fromKey: '2026-07-05', toKey: '2026-08-31' });
+    expect(readFacts).toHaveBeenLastCalledWith('p1', { fromKey: '2026-07-05', toKey: '2026-09-05' });
     expect(getByTestId('weekly-date-8').props.children).toBe('Aug 30');
     expect(getByTestId('month-next').props.accessibilityState.disabled).toBe(false);
     // Back to September: cached, no second read.
@@ -253,7 +254,7 @@ describe('MonthInstrument', () => {
     const { getByTestId, rerender } = render(
       <MonthInstrument petId="p1" today={TODAY} readFacts={readFacts} readDay={jest.fn(async () => [])} refreshTick={0} />,
     );
-    await act(async () => pending.get('2026-09-30')!(facts()));
+    await act(async () => pending.get('2026-10-03')!(facts()));
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
     fireEvent.press(getByTestId('month-prev'));
     await waitFor(() => expect(getByTestId('month-skeleton')).toBeTruthy());
@@ -261,12 +262,12 @@ describe('MonthInstrument', () => {
     rerender(<MonthInstrument petId="p1" today={TODAY} readFacts={readFacts} readDay={jest.fn(async () => [])} refreshTick={1} />);
     await waitFor(() => expect(readFacts).toHaveBeenCalledTimes(3));
     // August resolves AFTER the refresh was issued: it must still land.
-    await act(async () => pending.get('2026-08-31')!(facts({ episodeDays: ['2026-08-03'] })));
+    await act(async () => pending.get('2026-09-05')!(facts({ episodeDays: ['2026-08-03'] })));
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
     expect(getByTestId('month-label').props.children).toBe('August 2026');
     expect(getByTestId('month-line').props.children).toMatch(/^Vomiting 1 time on 1 day · through Aug 31/);
     // And the refreshed September lands too, without touching August's slot.
-    await act(async () => pending.get('2026-09-30')!(facts()));
+    await act(async () => pending.get('2026-10-03')!(facts()));
     fireEvent.press(getByTestId('month-next'));
     await waitFor(() => expect(getByTestId('month-label').props.children).toBe('September 2026'));
     expect(getByTestId('month-grid')).toBeTruthy();
@@ -430,6 +431,19 @@ describe('MonthInstrument', () => {
     await waitFor(() => expect(getByText('Vomit logged 3 times · everything this day:')).toBeTruthy(), { timeout: 4000 });
   });
 
+  it('a day a bout continues into is spoken as holding vomiting, and keeps the episode\'s box (CUL-1226)', async () => {
+    const { getByTestId, getAllByTestId } = mount(jest.fn(async () => facts({ continuationDays: [{ day: '2026-09-06', from: '2026-09-05' }] })));
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    const sep6 = getAllByTestId('daymark')[7];
+    expect(sep6.props.accessibilityLabel).toContain('September 6');
+    expect(sep6.props.accessibilityLabel).toContain('vomiting logged, part of the bout that began');
+    expect(sep6.props.accessibilityLabel).not.toContain('no vomiting');
+    // The rose and the corner stay the episode's: Sep 6 draws no count.
+    expect(within(sep6).queryByTestId('daymark-count')).toBeNull();
+    // And the neighbour with no continuation still reads as it did.
+    expect(getAllByTestId('daymark')[5].props.accessibilityLabel).toContain('logged, no vomiting'); // Sep 4
+  });
+
   it('a pet with no record: every day says "nothing logged yet", the line invites the first entry', async () => {
     const { getByTestId, getAllByLabelText } = mount(jest.fn(async () => facts({ recordStart: null, episodeDays: [], loggedDays: [], leftSomeDays: [], dosedDays: [], photoDays: [] })));
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
@@ -440,8 +454,11 @@ describe('MonthInstrument', () => {
     expect(getByTestId('month-prev').props.accessibilityState.disabled).toBe(true);
   });
 
-  it('monthReadRange: the nine weeks\' first Sunday through the month\'s last day, and never after the month', () => {
-    expect(monthReadRange({ year: 2026, month: 8 }, TODAY)).toEqual({ fromKey: '2026-07-19', toKey: '2026-09-30' });
-    expect(monthReadRange({ year: 2026, month: 7 }, TODAY)).toEqual({ fromKey: '2026-07-05', toKey: '2026-08-31' });
+  it('monthReadRange: the nine weeks\' first Sunday through the grid\'s last Saturday — every drawn day is a read day (CUL-1226)', () => {
+    // Sep 30 2026 is a Wednesday: the last row draws Oct 1–3. Aug 31 is a Monday: Sep 1–5.
+    expect(monthReadRange({ year: 2026, month: 8 }, TODAY)).toEqual({ fromKey: '2026-07-19', toKey: '2026-10-03' });
+    expect(monthReadRange({ year: 2026, month: 7 }, TODAY)).toEqual({ fromKey: '2026-07-05', toKey: '2026-09-05' });
+    // A month ending on a Saturday draws no next-month days, and reads none (Oct 31 2026).
+    expect(monthReadRange({ year: 2026, month: 9 }, '2026-11-20').toKey).toBe('2026-10-31');
   });
 });

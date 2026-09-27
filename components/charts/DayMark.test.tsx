@@ -48,6 +48,15 @@ describe('DayMark — the §05 row', () => {
     expect(getByTestId('daymark').props.accessibilityLabel).not.toContain('no vomiting');
   });
 
+  it('a day a bout continues into: SAID as holding vomiting, drawn as the episode\'s day — no rose, no count (CUL-1226)', () => {
+    const { getByTestId, queryByTestId } = render(<DayMark {...base} count={0} coverage="logged" continuesFrom="2026-09-18" />);
+    const label = String(getByTestId('daymark').props.accessibilityLabel);
+    expect(label).toContain('part of the bout that began');
+    expect(label).not.toContain('no ');
+    expect(queryByTestId('daymark-count')).toBeNull();
+    expect(getByTestId('daymark-line-solid')).toBeTruthy();
+  });
+
   it('the coverage line: whole when logged, BROKEN for a meal left unfinished, none on an unlogged day', () => {
     expect(render(<DayMark {...base} count={0} coverage="logged" />).getByTestId('daymark-line-solid')).toBeTruthy();
     expect(render(<DayMark {...base} count={0} coverage="left_some" />).getByTestId('daymark-line-broken')).toBeTruthy();
