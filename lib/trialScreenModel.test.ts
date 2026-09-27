@@ -769,4 +769,38 @@ describe('Manage on the intake-decline face never drops the call-today (CUL-1339
     expect(rewindowed.title).not.toBe(before.title);
     expect(replaced.title).not.toBe(before.title);
   });
+
+  it('through the loader: the decline read takes the pet, never the trial, so a replaced trial inherits it', async () => {
+    // The case above injects the headline. This one lets the REAL loader produce it, before
+    // and after each act, over a detector that is watching (adversarial pass on TS-6, note 6).
+    // Its limit, stated: the detector's own trial-independence (it reads every meal in its
+    // lookback, `lib/analytics.ts` `getIntakeDecline`) is that module's contract; what this
+    // pins is that nothing about the trial reaches the call.
+    const { getIntakeDecline } = jest.requireMock('./analytics') as { getIntakeDecline: jest.Mock };
+    const flag = {
+      trigger: 'consecutive_low', class: 'health_watch', species: 'dog', baselineScore: 3,
+      recentScore: 1, daysBelowBaseline: 2, refusedFoodLabel: null, ratedMealsConsidered: 12,
+    };
+    getIntakeDecline.mockResolvedValue({ status: 'watch', flags: [flag] });
+    try {
+      const records = [MOCHI_DAY_23, { ...MOCHI_DAY_23, target: 84 }, { target: 56, mealDays: [1], nowDay: 1 }];
+      const faces: TrialScreenTrial[] = [];
+      for (const rec of records) {
+        getIntakeDecline.mockClear();
+        const l = await load(rec);
+        expect(l.input.intakeDeclineHeadline).toBeTruthy();
+        // The read's whole argument list: the pet, its species, the clock. No trial.
+        expect(getIntakeDecline.mock.calls).toEqual([[PET.id, PET.species, expect.any(Number)]]);
+        faces.push(trialModel(buildTrialScreenModel(argsFor(l))));
+      }
+      for (const f of faces) {
+        expect(f.state).toBe('intake_decline');
+        expect(f.safety).toEqual(faces[0].safety);
+        expect(f.manage).toBe('Manage the trial');
+      }
+      expect(faces[0].safety?.[1]).toMatch(/needs a call/);
+    } finally {
+      getIntakeDecline.mockResolvedValue({ status: 'none', flags: [] });
+    }
+  });
 });

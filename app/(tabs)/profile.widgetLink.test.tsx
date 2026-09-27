@@ -117,6 +117,7 @@ const mockBuildTrialDoorRow = jest.fn((input: { trial: unknown } | null) =>
     ? {
         eyebrow: 'Diet trial',
         title: 'Rabbit trial · day 23 of 56',
+        alert: null,
         progressFraction: 0.4,
         subline: 'Royal Canin Rabbit · ends Oct 29',
         accessibilityLabel: 'Rabbit trial · day 23 of 56. Royal Canin Rabbit · ends Oct 29. Open the diet trial.',

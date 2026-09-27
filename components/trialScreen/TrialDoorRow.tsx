@@ -11,6 +11,9 @@ import type { TrialDoorRowModel } from '../../lib/trialDoorRow';
 // In the namespace so the flag-off guard can stub it: flag-off, the Pet tab's tree must equal
 // the tree with this file absent (`guards/trialScreenFlagOff.test.tsx`, C-36).
 //
+// On a safety face (ruling (a′)) the row carries the screen's first safety sentence on a
+// rose rail, and no bar and no end date.
+//
 // The whole row is ONE accessible button carrying the model's sentence, so the bar is never
 // the only place the day lives and VoiceOver reads the door once, not as five fragments.
 
@@ -38,6 +41,13 @@ export function TrialDoorRow({
       <View style={styles.body}>
         <ThemedText style={styles.eyebrow}>{model.eyebrow}</ThemedText>
         <ThemedText style={styles.title}>{model.title}</ThemedText>
+        {model.alert ? (
+          // Ruling (a′): the screen's first safety sentence, on the screen's own rose rail.
+          // Plain text and no chart (S4); the row still draws no bar on this face.
+          <View style={styles.alert} testID="trial-door-row-alert">
+            <ThemedText style={styles.alertText}>{model.alert}</ThemedText>
+          </View>
+        ) : null}
         {model.progressFraction !== null ? (
           <View style={styles.track} testID="trial-door-row-track">
             <View style={[styles.fill, { width: `${model.progressFraction * 100}%` }]} />
@@ -83,6 +93,19 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
     marginTop: theme.space0_5,
+  },
+  // The screen's safety rail (`TrialScreen.tsx` `safety`), at the row's scale.
+  alert: {
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colorEventSymptom,
+    paddingLeft: theme.space1,
+    marginTop: theme.space1,
+  },
+  alertText: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextPrimary,
   },
   // The card's own bar (`components/profile/DietTrialCard`), so the door reads as the
   // card's summary rather than a new chart.

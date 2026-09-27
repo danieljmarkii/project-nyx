@@ -13,22 +13,32 @@
 // clause is the screen's (`trialEndPart`), so the door and the screen agree on when a trial
 // ends and on when to stop saying so.
 //
-// THE SAFETY FACES (PM ruling on CUL-1302, 2026-09-27, option (a)). On an intake decline or
-// a trial refusal the row draws NO BAR and NO END DATE: a tidy "day 23 of 56 · ends Oct 29"
-// with a filling bar over a pet that may not be eating is the chart-under-a-safety-row the
-// Signal/Home spine forbids (S4). The ask itself stays on Home's Signal card and on the
-// screen, one tap away; the row adds no string of its own.
+// THE SAFETY FACES (PM rulings on CUL-1302, 2026-09-27: (a), then (a′) after the adversarial
+// pass). Wherever the screen leads with its safety block, the row:
+//   • draws NO BAR and NO END DATE (a) — a tidy "day 23 of 56 · ends Oct 29" with a filling
+//     bar over a pet that may not be eating is the chart-under-a-safety-row the Signal/Home
+//     spine forbids (S4);
+//   • carries the screen's FIRST safety sentence, verbatim, as plain text on a rose rail (a′).
+//     (a) assumed the ask stays on Home's Signal card. It does for an intake decline and does
+//     NOT for a trial refusal: the Signal's detector cannot see a cat that refuses from day 1
+//     (B-789), and Home's strip is silent on a refusal because the register lived on the Pet
+//     tab's card (`resolveTrialStrip`). Without this line the trial screen would be the only
+//     place outside Home's quiet strip that says anything is wrong.
+// "Wherever the screen leads with its safety block" is decided the SCREEN's way, by the
+// card's register lines (`trialSafetyLines(trialScreenCard(input))`), never by the state: an
+// ended trial with a live decline carries them too, and so does its door. The sentence is the
+// resolver's own (S2: layout, never meaning); the row writes no string about the record.
 //
 // Lives in `lib/` rather than the namespace: the flag-off guard wraps every namespace export
 // into a component.
 
+import { resolveTrialStrip, type TrialCardInput } from './dietTrialCard';
 import {
-  resolveTrialCard,
-  resolveTrialStrip,
-  type TrialCardInput,
-  type TrialCardState,
-} from './dietTrialCard';
-import { TRIAL_SCREEN_HEADER, trialEndPart } from './trialScreenModel';
+  TRIAL_SCREEN_HEADER,
+  trialEndPart,
+  trialSafetyLines,
+  trialScreenCard,
+} from './trialScreenModel';
 
 export interface TrialDoorRowModel {
   /** The eyebrow, "Diet trial". */
@@ -36,6 +46,8 @@ export interface TrialDoorRowModel {
   /** The strip's header while active ("Rabbit trial · day 23 of 56"); the card's kicker on
    *  an ended trial ("Diet trial · finished"). */
   title: string;
+  /** The screen's first safety sentence, verbatim, or null when the screen shows none. */
+  alert: string | null;
   /** DAY progress in [0, 1], or null where the row draws no bar. */
   progressFraction: number | null;
   /** `{food} · ends {date}`, the food alone where the end is dropped, or null. */
@@ -44,15 +56,18 @@ export interface TrialDoorRowModel {
   accessibilityLabel: string;
 }
 
-const SAFETY_STATES: ReadonlySet<TrialCardState> = new Set(['intake_decline', 'trial_refusal']);
+/** How many of the screen's safety sentences the row carries (ruling (a′): the first). */
+const DOOR_ALERT_LINES = 1;
 
 /** Null when there is no trial to open (the start card stays), else the one row. */
 export function buildTrialDoorRow(input: TrialCardInput | null): TrialDoorRowModel | null {
   if (!input?.trial) return null;
-  const card = resolveTrialCard(input);
+  const card = trialScreenCard(input);
   if (card.state === 'no_trial') return null;
   const strip = resolveTrialStrip(input);
-  const safety = SAFETY_STATES.has(card.state);
+  const safetyLines = trialSafetyLines(card);
+  const safety = safetyLines.length > 0;
+  const alert = safety ? safetyLines.slice(0, DOOR_ALERT_LINES).join(' ') : null;
 
   const title = strip?.header ?? card.kicker;
   const progressFraction = safety ? null : card.progressFraction;
@@ -61,15 +76,19 @@ export function buildTrialDoorRow(input: TrialCardInput | null): TrialDoorRowMod
   if (card.foodLabel) parts.push(card.foodLabel);
   // An ended trial carries its date range instead (the screen's sub-line, §3.1).
   if ((card.state === 'completed' || card.state === 'abandoned') && card.dayLine) parts.push(card.dayLine);
-  const end = trialEndPart(input, card.state);
+  const end = safety ? null : trialEndPart(input, card.state);
   if (end !== null) parts.push(end);
   const subline = parts.length > 0 ? parts.join(' · ') : null;
 
   return {
     eyebrow: TRIAL_SCREEN_HEADER,
     title,
+    alert,
     progressFraction,
     subline,
-    accessibilityLabel: [title, subline, 'Open the diet trial.'].filter(Boolean).join('. '),
+    // The alert is its own sentence and already ends in a full stop.
+    accessibilityLabel: [title, alert?.replace(/\.$/, ''), subline, 'Open the diet trial.']
+      .filter(Boolean)
+      .join('. '),
   };
 }

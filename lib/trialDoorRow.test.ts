@@ -4,7 +4,7 @@
 
 jest.mock('./supabase', () => ({ supabase: {} }));
 
-import { resolveTrialCard, resolveTrialStrip, type TrialCardInput } from './dietTrialCard';
+import { isAnimalNotEating, resolveTrialCard, resolveTrialStrip, type TrialCardInput } from './dietTrialCard';
 import { buildTrialDoorRow, type TrialDoorRowModel } from './trialDoorRow';
 import { buildTrialScreenModel } from './trialScreenModel';
 
@@ -43,6 +43,7 @@ describe('the Pet tab door (§5.2)', () => {
     expect(r).toEqual({
       eyebrow: 'Diet trial',
       title: 'Diet trial · day 23 of 56',
+      alert: null,
       progressFraction: resolveTrialCard(input()).progressFraction,
       subline: 'Royal Canin Rabbit · ends Aug 27',
       accessibilityLabel: 'Diet trial · day 23 of 56. Royal Canin Rabbit · ends Aug 27. Open the diet trial.',
@@ -90,29 +91,72 @@ describe('the Pet tab door (§5.2)', () => {
   });
 });
 
-describe('the safety faces draw no bar and no end date (PM ruling, 2026-09-27, (a))', () => {
+// Ruling (a), then (a′) after the adversarial pass (PM, 2026-09-27): wherever the screen
+// leads with its safety block, the row draws no bar and no end date, and carries the
+// screen's first safety sentence verbatim. "Wherever" is the screen's own test (the card's
+// register lines), so the two cannot disagree about whether something is wrong.
+
+function screenFor(i: TrialCardInput) {
+  const m = buildTrialScreenModel({
+    petId: 'p', pet: { id: 'p', name: 'Mochi' }, petsLoaded: true, petName: 'Mochi', isActivePet: true,
+    trial: { status: 'loaded', input: i, inputIsForPet: true },
+    facts: { status: 'ready', facts: null },
+    allowedSet: { status: 'unknown' },
+    appointment: null,
+  });
+  if (m.kind !== 'trial') throw new Error('expected a trial');
+  return m;
+}
+
+const REFUSAL = { refusedFeedings: 4, ratedFeedings: 5, days: 2, population: 'trial_diet' as const };
+const DECLINE = 'Mochi has eaten less than usual for 2 days.';
+
+describe('the safety faces: the screen’s first sentence, no bar, no end date (rulings (a), (a′))', () => {
+  it('a trial refusal on a cat — the case the Signal cannot see (B-789)', () => {
+    const i = input({ species: 'cat', trialDietRefusal: REFUSAL });
+    expect(resolveTrialCard(i).state).toBe('trial_refusal');
+    const r = row(i);
+    expect(r.alert).toBe('4 feedings of the 5 trial-diet feedings you’ve rated were left unfinished, across 2 days.');
+    expect(r.alert).toBe(screenFor(i).safety![0]);
+    expect(r.progressFraction).toBeNull();
+    expect(r.subline).toBe('Royal Canin Rabbit');
+    expect(r.accessibilityLabel).toBe(
+      'Diet trial · day 23 of 56. 4 feedings of the 5 trial-diet feedings you’ve rated were left unfinished, across 2 days. Royal Canin Rabbit. Open the diet trial.',
+    );
+  });
+
   it('an intake decline', () => {
-    const i = input({ intakeDeclineHeadline: 'Mochi has eaten less than usual for 2 days.' });
+    const i = input({ intakeDeclineHeadline: DECLINE });
     expect(resolveTrialCard(i).state).toBe('intake_decline');
     const r = row(i);
     expect(r.title).toBe('Diet trial · day 23 of 56');
+    expect(r.alert).toBe(DECLINE);
+    expect(r.alert).toBe(screenFor(i).safety![0]);
     expect(r.progressFraction).toBeNull();
     expect(r.subline).toBe('Royal Canin Rabbit');
-    // Non-vacuity: the same trial without the flag has both to leak.
+    // Non-vacuity: the same trial without the flag has a bar and an end date to leak.
     expect(row(input()).progressFraction).not.toBeNull();
     expect(row(input()).subline).toMatch(/ends Aug 27$/);
+    expect(row(input()).alert).toBeNull();
   });
 
-  it('a trial refusal', () => {
-    const i = input({
-      species: 'cat',
-      trialDietRefusal: { refusedFeedings: 4, ratedFeedings: 5, days: 2, population: 'trial_diet' },
-    });
-    expect(resolveTrialCard(i).state).toBe('trial_refusal');
+  it('an ended trial with a live decline: the screen leads with the warning, so the door carries it', () => {
+    // Keyed on the lines, never the state: the state here is `completed`.
+    const i = input({ species: 'cat', intakeDeclineHeadline: DECLINE }, { status: 'completed', endedAt: '2026-07-20', targetDurationDays: 17 });
+    expect(resolveTrialCard(i).state).toBe('completed');
+    expect(screenFor(i).safety).not.toBeNull();
     const r = row(i);
+    expect(r.alert).toBe(DECLINE);
     expect(r.progressFraction).toBeNull();
-    expect(r.subline).toBe('Royal Canin Rabbit');
-    // The row never carries a register line of its own.
-    expect(JSON.stringify(r)).not.toMatch(/call|unfinished|refus/i);
+  });
+
+  it('a refusal the register has stood down: no warning on the screen, so none on the door', () => {
+    // The screen withholds coverage over it (S7) but shows no safety block, and neither does
+    // the door: the two agree, and neither says more than Home's strip in either direction.
+    const i = input({ rangeRefusal: { refusedFeedings: 3, ratedFeedings: 6, days: 3, population: 'trial_diet' } });
+    // Non-vacuity: the record does say the pet may not be eating.
+    expect(isAnimalNotEating(i)).toBe(true);
+    expect(screenFor(i).safety).toBeNull();
+    expect(row(i).alert).toBeNull();
   });
 });

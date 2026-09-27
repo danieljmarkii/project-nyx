@@ -36,6 +36,7 @@ import {
   type TrialCardAction,
   type TrialCardInput,
   type TrialCardLine,
+  type TrialCardModel,
   type TrialCardState,
 } from './dietTrialCard';
 import { buildTrialLedger, type TrialLedger } from './trialLedger';
@@ -216,9 +217,7 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
   const notEating = isAnimalNotEating(input);
   const running = input.trial.status === 'active';
   const projected = notEating && running;
-  const card = resolveTrialCard(
-    projected ? { ...input, coverage: null, untrackedDaysBeforeFirstLog: 0 } : input,
-  );
+  const card = trialScreenCard(input);
   const unclassifiedRecord =
     projected && (input.coverage?.daysLogged ?? 0) > 0 && (input.exposures?.totalFeedings ?? 0) === 0;
   const strip = resolveTrialStrip(input);
@@ -329,6 +328,26 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
     actions,
     manage: RUNNING_STATES.has(state) || state === 'intake_decline' ? MANAGE_THE_TRIAL : null,
   };
+}
+
+/**
+ * The card the screen draws from: `resolveTrialCard` over the input, with coverage
+ * projected away while a running trial's pet may not be eating (S7; the reasoning is in
+ * `buildTrialScreenModel`). Exported so the Pet tab's door (`lib/trialDoorRow.ts`, TS-6)
+ * reads the SAME register the screen leads with, and the two cannot disagree about
+ * whether something is wrong.
+ */
+export function trialScreenCard(input: TrialCardInput): TrialCardModel {
+  const projected = isAnimalNotEating(input) && input.trial?.status === 'active';
+  return resolveTrialCard(
+    projected ? { ...input, coverage: null, untrackedDaysBeforeFirstLog: 0 } : input,
+  );
+}
+
+/** The card's register lines (role `flag`), in the card's order: the screen's safety face
+ *  (§3.2), keyed on the lines and never on the state (S4). Empty when nothing is wrong. */
+export function trialSafetyLines(card: TrialCardModel): string[] {
+  return card.lines.filter((l) => l.role === 'flag').map((l) => l.text);
 }
 
 /**
