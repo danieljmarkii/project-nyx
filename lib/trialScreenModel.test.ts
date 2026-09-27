@@ -45,6 +45,7 @@ import type { TrialFacts } from './dietTrial';
 import { loadDietTrialFacts, loadTrialPredicateFacts } from './dietTrialFacts';
 import {
   BLIND_SPOT_QUALIFIER,
+  isAnimalNotEating,
   resolveTrialCard,
   resolveTrialStrip,
   type TrialCardInput,
@@ -85,6 +86,10 @@ interface Rec {
   hours?: Record<number, number>;
   /** Second meals of the trial diet on a day, each with its own hour and rating. */
   extraMeals?: Array<{ day: number; hour: number; rating: string | null }>;
+  /** Meals that name no food (`food_item_id` null), each with its rating. */
+  noFoodMeals?: Array<{ day: number; rating: string | null }>;
+  /** No trial diet on the allowed list. */
+  noPrimary?: boolean;
   status?: 'active' | 'completed' | 'abandoned';
   endedDay?: number | null;
   stoppedReason?: string | null;
@@ -114,11 +119,11 @@ function seed(rec: Rec) {
     target_protein: null,
   };
   mockDb.allowed = [
-    {
+    ...(rec.noPrimary ? [] : [{
       food_item_id: 'f1', role: 'primary_diet', food_label: 'Royal Canin Rabbit',
       allowed_from: START_KEY, allowed_until: null,
       brand: 'Royal Canin', product_name: 'Rabbit', primary_protein: 'rabbit', proteins: '["rabbit"]',
-    },
+    }]),
     ...Array.from({ length: rec.extras ?? 0 }, (_, i) => ({
       food_item_id: `x${i}`, role: 'permitted_treat', food_label: `Rabbit Treat ${i}`,
       allowed_from: START_KEY, allowed_until: null,
@@ -131,6 +136,12 @@ function seed(rec: Rec) {
       event_id: `m${d}`, occurred_at: onDay(d, rec.hours?.[d] ?? 8).toISOString(), food_item_id: 'f1',
       brand: 'Royal Canin', product_name: 'Rabbit', food_type: 'meal', proteins: '["rabbit"]',
       intake_rating: rec.ratings?.[d] ?? (rec.rating === undefined ? 'all' : rec.rating),
+    });
+  }
+  for (const x of rec.noFoodMeals ?? []) {
+    feedings.push({
+      event_id: `n${x.day}`, occurred_at: onDay(x.day, 8).toISOString(), food_item_id: null,
+      brand: null, product_name: null, food_type: null, proteins: null, intake_rating: x.rating,
     });
   }
   for (const x of rec.extraMeals ?? []) {
@@ -665,5 +676,58 @@ describe('ended trials keep the exposures door (§3.6)', () => {
     const l = await load({ target: 56, status: 'completed', endedDay: 56, mealDays: all, treatDays: [30], nowDay: 60 });
     const m = trialModel(buildTrialScreenModel(argsFor(l)));
     expect(m.exposures).toEqual({ label: 'Outside the trial diet', sub: null });
+  });
+});
+
+// ── The adversarial re-run's two findings (TS-4) ──────────────────────────────────
+
+describe('the coverage-null projection never reads a logged record as empty, nor keeps a referent-less line', () => {
+  it('meals that name no food, no trial diet on the list, a stood-down refusal: no "nothing on the record"', async () => {
+    const l = await load({
+      target: 56, nowDay: 20, noPrimary: true, mealDays: [],
+      noFoodMeals: [
+        ...[1, 2, 3].map((day) => ({ day, rating: 'refused' })),
+        ...[18, 19, 20].map((day) => ({ day, rating: 'all' })),
+      ],
+    });
+    expect(isAnimalNotEating(l.input)).toBe(true);
+    expect(l.input.coverage!.daysLogged).toBe(6);
+    expect(l.input.exposures!.totalFeedings).toBe(0);
+    // Non-vacuity: resolved without coverage, the card WOULD say the record is empty.
+    const projectedCard = resolveTrialCard({ ...l.input, coverage: null });
+    expect(projectedCard.lines.map((x) => x.text)).toContain('Nothing is on the record for this trial yet.');
+
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(texts(m)).not.toContain('Nothing is on the record for this trial yet.');
+    expect(texts(m).some((t) => /\d+ of \d+ days/.test(t))).toBe(false);
+    expect(m.facts.filter((x) => x.role === 'fact')).toEqual([]);
+  });
+
+  it('the same shape above the floor: no "Nothing logged against the trial yet."', async () => {
+    const l = await load({
+      target: 56, nowDay: 20, noPrimary: true, mealDays: [],
+      noFoodMeals: Array.from({ length: 20 }, (_, i) => ({ day: i + 1, rating: i < 10 ? 'refused' : 'all' })),
+    });
+    expect(isAnimalNotEating(l.input)).toBe(true);
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(texts(m)).not.toContain('Nothing logged against the trial yet.');
+    expect(texts(m).some((t) => /\d+ of \d+ days/.test(t))).toBe(false);
+  });
+
+  it('an untracked head with head-period treats: no "aren’t counted here" under a total that counts them', async () => {
+    const l = await load({
+      target: 56, nowDay: 30,
+      treatDays: [2, 3, 4, 5, 6, 7, 8, 9],
+      mealDays: Array.from({ length: 21 }, (_, i) => i + 10),
+      ratings: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [i + 10, 'refused'])),
+    });
+    expect(isAnimalNotEating(l.input)).toBe(true);
+    expect(l.input.untrackedDaysBeforeFirstLog).toBe(9);
+    // Non-vacuity: the coverage-null card alone still prints the head line.
+    expect(resolveTrialCard({ ...l.input, coverage: null }).lines.some((x) => /aren’t counted here/.test(x.text))).toBe(true);
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(texts(m).some((t) => /aren’t counted here/.test(t))).toBe(false);
+    // The floor survives: 8 treats did not match.
+    expect(texts(m).some((t) => /8 did not/.test(t))).toBe(true);
   });
 });

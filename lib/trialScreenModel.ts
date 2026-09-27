@@ -196,9 +196,25 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
   // sentence states "meals OFFERED on X of Y days" beside "what your vet needs from it is
   // the refusal" — the same clause the report prints, which a coverage-null read would
   // strip of its feeding count as well.
+  //
+  // The untracked head is projected away with it: its disclosure ("the first N days aren't
+  // counted here") qualifies a coverage RATIO, and with the ratio gone "here" could only
+  // mean the feeding count, which does count those days' feedings (the card's own ruling
+  // for the `trial_refusal` and `free_fed` registers, which render no ratio either).
+  //
+  // And where days are logged but no feeding could be classified (meals naming no food,
+  // a list with no trial diet), the coverage-null register would read the record as EMPTY
+  // ("Nothing is on the record for this trial yet.") over logged, refused meals. There its
+  // fact lines are dropped: zero feedings means zero off-diet, so no floor is lost, and
+  // saying nothing beats saying "nothing" (adversarial re-run, TS-4).
   const notEating = isAnimalNotEating(input);
   const running = input.trial.status === 'active';
-  const card = resolveTrialCard(notEating && running ? { ...input, coverage: null } : input);
+  const projected = notEating && running;
+  const card = resolveTrialCard(
+    projected ? { ...input, coverage: null, untrackedDaysBeforeFirstLog: 0 } : input,
+  );
+  const unclassifiedRecord =
+    projected && (input.coverage?.daysLogged ?? 0) > 0 && (input.exposures?.totalFeedings ?? 0) === 0;
   const strip = resolveTrialStrip(input);
   const state = card.state;
   const decisionState = DECISION_STATES.has(state);
@@ -220,6 +236,8 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
       qualifier = BLIND_SPOT_QUALIFIER;
       const suffix = line.text.slice(BLIND_SPOT_QUALIFIER.length).trim();
       if (suffix.length > 0) factLines.push({ role: 'qualifier', text: suffix });
+    } else if (unclassifiedRecord && line.role === 'fact') {
+      continue;
     } else {
       factLines.push(line);
     }
