@@ -15,17 +15,18 @@ import { LANE_CELL_SIZE, LedgerCell } from './TrialLedger';
 
 export interface ThisWeekLaneProps {
   lane: TrialLane;
+  /** Drawn inside a control whose own label already speaks `lane.accessibilityLabel`
+   *  (Home's door, TS-5): the lane is then hidden from assistive tech rather than a
+   *  second stop that reads the same sentence again. */
+  insideLabelledControl?: boolean;
 }
 
-export function ThisWeekLane({ lane }: ThisWeekLaneProps) {
+export function ThisWeekLane({ lane, insideLabelledControl = false }: ThisWeekLaneProps) {
+  const a11y = insideLabelledControl
+    ? ({ accessible: false, accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' } as const)
+    : ({ accessible: true, accessibilityRole: 'image', accessibilityLabel: lane.accessibilityLabel } as const);
   return (
-    <View
-      testID="trial-lane"
-      accessible
-      accessibilityRole="image"
-      accessibilityLabel={lane.accessibilityLabel}
-      style={styles.lane}
-    >
+    <View testID="trial-lane" {...a11y} style={styles.lane}>
       {lane.row.days.map((d) => (
         <LedgerCell
           key={d.dayIndex}
