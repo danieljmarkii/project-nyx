@@ -41,6 +41,10 @@ export function useDietTrial(petId: string | null): {
   isLoading: boolean;
   reload: () => void;
   inputIsForPet: boolean;
+  /** TS-5 (CUL-1301) — the pet `input` was last loaded FOR (null before the first load). Home's
+   *  strip opens THIS pet's trial screen: during a switch the strip still shows the previous
+   *  pet's trial, and a tap must open the trial it shows (spec §5.1). */
+  loadedPetId: string | null;
 } {
   const pets = usePetStore((s) => s.pets);
   // Recompute after a sync cycle hydrates new events, the same trigger the Trend
@@ -141,5 +145,6 @@ export function useDietTrial(petId: string | null): {
     // (Named `inputIsForActivePet` until CUL-1297, when the caller began naming the pet; Home
     // names the active pet, so its semantics are unchanged.)
     inputIsForPet,
+    loadedPetId,
   };
 }

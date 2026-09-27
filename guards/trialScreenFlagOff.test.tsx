@@ -30,8 +30,8 @@
 // until it registered itself (a rule added after the first caller is a rule added after
 // the bug). TS-4 (CUL-1300) registered the route, `app/trial/[pet].tsx`; TS-6 (CUL-1302)
 // registered the Pet tab (`app/(tabs)/profile.tsx`) and the Day Summary (a sender, so also
-// a decider). Spec §7 names the one still to come, in the PR that makes it a consumer:
-//   • Home, for the strip as the door — TS-5 (CUL-1301)
+// a decider); TS-5 (CUL-1301) registered Home, for the strip as the door. That is every
+// surface spec §7 names; a later sender registers the same way, in the PR that adds it.
 // The route/decider rule below is what forces each registration: a route under `app/`
 // that reads the gate and is not a listed surface reds. STATED BLIND SPOT: a consumer
 // under `components/` (Home's strip at TS-5 is one) is held to the delegation rule and the
@@ -150,6 +150,52 @@ jest.mock('expo-router', () => ({
   useFocusEffect: (cb: () => void | (() => void)) => {
     require('react').useEffect(() => cb(), []);
   },
+  // TS-5: Home listens for a tab re-tap.
+  useNavigation: () => ({ isFocused: () => true, addListener: () => () => {} }),
+}));
+
+// TS-5 (CUL-1301): Home mounts with every zone but the trial strip replaced by a marker —
+// the strip is the surface's only consumer of the gate, and the other zones' reads cannot
+// mount under jest here. A marker costs coverage and never a false pass (the header
+// below), and the mocked-closure check proves none of them reaches the namespace.
+function mockMarker(name: string) {
+  const { View } = require('react-native');
+  const React = require('react');
+  return () => React.createElement(View, { testID: `zone-${name}` });
+}
+jest.mock('../components/home/HomeHeader', () => ({ HomeHeader: mockMarker('header') }));
+jest.mock('../components/home/PullToRefreshSky', () => ({ PullToRefreshSky: mockMarker('sky') }));
+jest.mock('../components/home/CrossPetSafetyBanner', () => ({
+  CrossPetSafetyBanner: mockMarker('cross-pet-safety'),
+}));
+jest.mock('../components/home/SignalZone', () => ({ SignalZone: mockMarker('signal') }));
+jest.mock('../components/vetvisits/AppointmentStrip', () => ({ AppointmentStrip: mockMarker('appointment') }));
+jest.mock('../components/home/MedStrip', () => ({ MedStrip: mockMarker('med') }));
+jest.mock('../components/home/LookCard', () => ({ LookCard: mockMarker('look') }));
+jest.mock('../components/home/LookExits', () => ({ LookExits: mockMarker('look-exits'), exitVisibility: () => ({}) }));
+jest.mock('../components/home/TodayZone', () => ({ TodayZone: mockMarker('today') }));
+jest.mock('../components/home/TrendZone', () => ({ TrendZone: mockMarker('trend') }));
+jest.mock('../hooks/useEvents', () => ({ useEvents: () => ({ todayEvents: [], loadTodayEvents: jest.fn() }) }));
+jest.mock('../hooks/useMedStrips', () => ({ useMedStrips: () => ({ input: null }) }));
+jest.mock('../lib/sync', () => ({ syncNow: jest.fn() }));
+jest.mock('../lib/signal', () => ({ regenerateSignal: jest.fn() }));
+// A running trial, loaded for the pet Home names: the strip DRAWS, so the comparison is
+// over the thing the flag changes rather than over an empty slot. The same fixture for
+// the route is harmless — flag-off the route issues no trial read.
+jest.mock('../hooks/useDietTrial', () => ({
+  useDietTrial: () => ({
+    input: {
+      trial: { status: 'active', startedAt: '2026-07-03', targetDurationDays: 56, foodLabel: 'Royal Canin Rabbit' },
+      nowMs: new Date(2026, 6, 25, 12).getTime(),
+      petName: 'Mochi',
+      coverage: { daysLogged: 22, daysElapsed: 23 },
+    },
+    status: 'loaded',
+    isLoading: false,
+    reload: () => {},
+    inputIsForPet: true,
+    loadedPetId: 'pet-1',
+  }),
 }));
 jest.mock('../store/authStore', () => {
   const state = { user: { id: 'u1' } };
@@ -324,8 +370,8 @@ interface Surface {
 /**
  * The guard's SCOPE: a surface absent from this list has its flag-off tree checked by
  * nothing (C-41). Each is loaded through `require` inside the test, never imported at
- * the top — a top-level import would bind one cached instance. PINNED below: the next
- * surface is Home (TS-5), added in the PR that makes it a consumer.
+ * the top — a top-level import would bind one cached instance. PINNED below: every surface spec §7
+ * names is registered; a new one edits the pinned line in the PR that makes it a consumer.
  *
  * The route (TS-4, CUL-1300): flag-off it draws its small screen and NO trial read. The
  * async half (no read issued over reads that would answer) is proven in the screen's own
@@ -364,10 +410,20 @@ const SURFACES: ReadonlyArray<Surface> = [
     arrange: () => arrangeOthers([]),
     mustContain: '"Whitefish trial"',
   },
+  // TS-5 (CUL-1301): Home, for the strip as the door. The strip draws from the mocked
+  // trial read above; its async half (flag-off issues no ledger read over a read that
+  // would answer) is proven in `components/home/TrialStrip.test.tsx`.
+  {
+    name: 'Home',
+    rel: 'app/(tabs)/index.tsx',
+    load: () => require('../app/(tabs)/index').default,
+    arrange: () => arrangeOthers([]),
+    mustContain: '"Diet trial · day 23 of 56"',
+  },
 ];
 
 /** The surfaces this PR registers, in order — pinned so a new one edits this line. */
-const PINNED_SURFACES = ['the trial screen route', 'the Pet tab', 'the Day Summary'];
+const PINNED_SURFACES = ['the trial screen route', 'the Pet tab', 'the Day Summary', 'Home'];
 
 /** Arrange the OTHER betas through the real stores; `trial_screen` stays unset. */
 function arrangeOthers(keys: readonly AllowlistFlagKey[]): void {
@@ -599,10 +655,17 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('the trial screen has one gate, and its consumers stay inside the namespace', () => {
-  it('the consumers of the gate are pinned: the route, the Pet tab and the Day Summary, until TS-5', () => {
+  it('the consumers of the gate are pinned: the route, the Pet tab, the Day Summary and Home strip', () => {
     // PINNED, not floored: a new consumer is a new surface, and it joins this list —
     // with its SURFACES entry and its async flag-off proof — in the diff that adds it.
-    expect(gateConsumers()).toEqual(['app/(tabs)/profile.tsx', 'app/day-summary.tsx', 'app/trial/[pet].tsx']);
+    // TS-5: the strip is a consumer under `components/`, so its HOST (Home) joined
+    // SURFACES in the same diff (the blind spot the header states).
+    expect(gateConsumers()).toEqual([
+      'app/(tabs)/profile.tsx',
+      'app/day-summary.tsx',
+      'app/trial/[pet].tsx',
+      'components/home/TrialStrip.tsx',
+    ]);
   });
 
   it('the key is read directly in exactly one file — the hook — for both gates', () => {

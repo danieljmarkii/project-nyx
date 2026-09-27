@@ -1700,6 +1700,27 @@ export interface TrialFacts {
    */
   rangeRefusalSpansEpisodes: boolean;
   /**
+   * The local-day indices carrying a RATED feeding of the refusal lane's population
+   * that was left UNFINISHED (`feedingWasFinished === false`), over the same rows the
+   * range fact counts, ascending. Exactly `rangeRefusal`'s day set, BELOW its floors.
+   *
+   * BOUNDED BY THE EVIDENCE WINDOW, NOT BY `range`: on an overrun it holds days past
+   * `range.endDayIndex` (the §R-5 rule: `range*` is coverage's window only). A consumer
+   * that needs coverage days intersects with `range` itself; the ledger does, by only
+   * asking inside the current row.
+   *
+   * WHY IT EXISTS (CUL-1344, PM ruling 2026-09-27). The refusal fact needs three
+   * rated bowls over two days, so a day-1 cat with two refused bowls clears no floor
+   * and a day-painting surface (the trial ledger, Home's week lane) would fill that
+   * day like a good one. Those surfaces WITHHOLD on it; they never speak it. Same
+   * predicate, same population, same counters as the refusal fact, so the ledger
+   * cannot disagree with the register about what "not eaten" means (§5.3).
+   *
+   * PRESENCE-ONLY: an empty list says nothing about eating (an unrated bowl is
+   * unknown, not finished).
+   */
+  unfinishedDayIndices: number[];
+  /**
    * Feedings inside the RECENCY window that were actually FINISHED — direct
    * evidence the diet is being eaten now.
    *
@@ -2236,6 +2257,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     trialDietRefusal: null,
     rangeRefusal: null,
     rangeRefusalSpansEpisodes: false,
+    unfinishedDayIndices: [],
     recentFinishedFeedings: 0,
     recentRatedFeedings: 0,
     // Null, not a zeroed object — "nothing in range to have rated" and "nothing
@@ -2889,6 +2911,8 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // register reads `rangeRefusal` on the stand-down path, so the span guard has
     // to be about the same refusals it would speak from.
     rangeRefusalSpansEpisodes: spanMsOf(pop.rangeStamps) >= REFUSAL_MIN_SPAN_MS,
+    // The range fact's own day set, below its floors (CUL-1344): withheld on, never spoken.
+    unfinishedDayIndices: [...pop.rangeDays].sort((a, b) => a - b),
     recentFinishedFeedings: pop.recentFinished,
     // The same window and the same rows as `recentFinishedFeedings` — they are a
     // ratio, so a denominator drawn from anywhere else would be a silent lie.

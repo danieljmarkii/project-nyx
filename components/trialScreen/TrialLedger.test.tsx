@@ -134,9 +134,9 @@ describe('ThisWeekLane', () => {
     const lane = thisWeekLane(ledger, input)!;
     expect(lane.row).toBe(ledger.rows[ledger.currentRowIndex!]);
     render(<ThisWeekLane lane={lane} />);
-    expect(screen.getByText('Week 4 · 1 of 2 so far')).toBeTruthy();
+    expect(screen.getByText('Week 4 · meals logged 1 of 2 so far')).toBeTruthy();
     const image = screen.getByRole('image');
-    expect(image.props.accessibilityLabel).toBe('This trial week, week 4: meals logged on 1 of 2 days so far');
+    expect(image.props.accessibilityLabel).toBe('Week 4 of the trial: meals logged on 1 of 2 days so far');
     // Days 22–28: logged, today open, then five not reached.
     const fills = lane.row.days.map((d) => flat(screen.getByTestId(`trial-lane-day-${d.trialDay}`)));
     expect(fills).toHaveLength(7);

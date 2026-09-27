@@ -17,6 +17,18 @@ jest.mock('../../lib/feedingArrangements', () => ({
 // assertion in this file injects `onPress`, which is exactly how the bare
 // `/(tabs)/profile` push survived: the door was never the thing being tested.
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
+// TS-5 (CUL-1301) — the strip now holds the `trial_screen` gate. The gate hook reaches
+// `lib/supabase` through the app-config read, so the client is stubbed; the gate itself
+// is stubbed to a switch, off unless a test turns it on (the trial screen suite's shape).
+jest.mock('../../lib/supabase', () => ({ supabase: {} }));
+let mockTrialScreen = false;
+jest.mock('../../hooks/useTrialScreen', () => ({ useTrialScreen: () => mockTrialScreen }));
+// The door's one read. A fixture that WOULD answer, so an absence off the flag proves the
+// gate rather than an empty record (C-41).
+const mockUseTrialFacts = jest.fn((_petId: string | null) => ({ status: 'ready' as const, facts: null }));
+jest.mock('../../hooks/useTrialFacts', () => ({
+  useTrialFacts: (petId: string | null) => mockUseTrialFacts(petId),
+}));
 
 import { fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
@@ -134,7 +146,8 @@ describe('TrialStrip', () => {
     // `<SignalZone` (not `<SignalZone />`) — SR-5 passes it a `trialRunning` prop, so the
     // element is no longer self-closing on one token; the layout-order assertion is unchanged.
     const signal = home.indexOf('<SignalZone');
-    const strip = home.indexOf('<TrialStrip');
+    // `\b` so a type argument (`useState<TrialStripSafety …>`, TS-5) is not the element.
+    const strip = home.search(/<TrialStrip\b/);
     const today = home.indexOf('<TodayZone />');
     // Assert the anchors exist first — `-1 < -1 < -1` would otherwise pass.
     expect(signal).toBeGreaterThan(-1);
@@ -172,3 +185,51 @@ describe('TrialStrip', () => {
     expect(href.params.ts).toEqual(expect.any(String));
   });
 });
+
+// ── TS-5 (CUL-1301): the strip as the door, behind `trial_screen` ───────────────────
+describe('TrialStrip: the trial_screen gate', () => {
+  const door = { petId: 'pet-1', inputFresh: true, safety: { petId: 'pet-1', live: false } };
+
+  beforeEach(() => {
+    mockTrialScreen = false;
+    mockUseTrialFacts.mockClear();
+    (router.push as jest.Mock).mockClear();
+  });
+
+  it('flag off: the shipped strip, still the Pet tab door, and no ledger read (C-41)', () => {
+    const i = input();
+    const tree = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} />);
+    expect(tree.getByTestId('trial-strip')).toBeTruthy();
+    expect(tree.queryByTestId('trial-strip-door')).toBeNull();
+    expect(tree.queryByTestId('trial-lane', { includeHiddenElements: true })).toBeNull();
+    expect(mockUseTrialFacts).not.toHaveBeenCalled();
+    fireEvent.press(tree.getByTestId('trial-strip'));
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect((router.push as jest.Mock).mock.calls[0][0].pathname).toBe('/(tabs)/profile');
+  });
+
+  it('flag off: the new props change nothing (the tree equals the shipped call)', () => {
+    const i = input();
+    const shipped = render(<TrialStrip model={resolveTrialStrip(i)} />).toJSON();
+    const withProps = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} />).toJSON();
+    // Serialized: a fresh handler closure per render is not a difference an owner sees.
+    expect(JSON.stringify(withProps)).toBe(JSON.stringify(shipped));
+  });
+
+  it('flag on: the door, opening the strip pet trial screen once', () => {
+    mockTrialScreen = true;
+    const i = input();
+    const tree = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} />);
+    expect(tree.queryByTestId('trial-strip')).toBeNull();
+    fireEvent.press(tree.getByTestId('trial-strip-door'));
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith('/trial/pet-1');
+    expect(mockUseTrialFacts).toHaveBeenCalledWith('pet-1');
+  });
+
+  it('flag on: still nothing at all when no trial is active', () => {
+    mockTrialScreen = true;
+    expect(render(<TrialStrip model={null} {...door} />).toJSON()).toBeNull();
+  });
+});
+
