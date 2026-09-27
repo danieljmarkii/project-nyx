@@ -15,7 +15,19 @@ jest.mock('../../lib/supabase', () => ({
   supabase: {
     from: () => ({
       select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: mockRow, error: null }) }) }),
-      update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+      // Answers both write shapes Hide / Show has had: `await .update().eq()`, and
+      // CUL-1323's compare-and-set, `.eq().eq|is|filter().select()` (lib/analysisDismissal),
+      // which reads one written row back as "the words on screen were still the record's".
+      update: () => {
+        const chain: Record<string, unknown> = {
+          eq: () => chain,
+          is: () => chain,
+          filter: () => chain,
+          select: () => Promise.resolve({ data: [{ event_id: 'e' }], error: null }),
+          then: (resolve: (r: { error: null }) => unknown) => resolve({ error: null }),
+        };
+        return chain;
+      },
     }),
   },
 }));
@@ -36,12 +48,30 @@ jest.mock('../../lib/analysis', () => ({
   normalizeStoolEdits: jest.fn((x: unknown) => x),
 }));
 jest.mock('./StoolFieldsEditor', () => ({ StoolFieldsEditor: () => null }));
+// CUL-1275 (F1) — the real announcer, `expectLanding` recorded on the way through (see the
+// vomit suite for why the call itself is what an act-driven test can pin).
+const mockExpectLanding = jest.fn();
+jest.mock('./useReadLandingAnnouncement', () => {
+  const actual = jest.requireActual('./useReadLandingAnnouncement');
+  const { useMemo } = jest.requireActual('react');
+  return {
+    ...actual,
+    useReadLandingAnnouncement: (args: unknown) => {
+      const real = actual.useReadLandingAnnouncement(args);
+      return useMemo(
+        () => ({ note: real.note, expectLanding: () => { mockExpectLanding(); real.expectLanding(); } }),
+        [real],
+      );
+    },
+  };
+});
 jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
-import { render, waitFor, act } from '@testing-library/react-native';
-import { LayoutAnimation } from 'react-native';
+import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
+import { Alert, LayoutAnimation } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { StoolAnalysisSection } from './StoolAnalysisSection';
+import { readLandedCopy } from './useReadLandingAnnouncement';
 import { watchAnalysisRow, awaitAnalysisChain, triggerStoolAnalysis } from '../../lib/analysis';
 import { __resetReducedMotionForTest, useReducedMotionStore } from '../../store/reducedMotionStore';
 
@@ -513,5 +543,183 @@ describe('StoolAnalysisSection — the arrival fires only for a read the screen 
 
     await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
     expect(configureNext).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── CUL-1275 — the landing is SPOKEN ──────────────────────────────────────────
+// The vomit suite carries the full matrix (every verdict, the edit re-read, failed,
+// Android); this pins that the stool section is wired to the same announcer, on the two
+// cases that matter most: a landing on an open record, and the photoless escalation that
+// never shows a pending box.
+describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
+  const { AccessibilityInfo } = jest.requireActual<typeof import('react-native')>('react-native');
+  let announce: jest.SpyInstance;
+
+  beforeEach(() => {
+    mockRow = null;
+    (watchAnalysisRow as jest.Mock).mockClear();
+    (awaitAnalysisChain as jest.Mock).mockReset().mockResolvedValue(false);
+    // RN's jest preset already makes this a `jest.fn`, and `spyOn` over a mock returns
+    // THAT mock, calls and all — so every earlier render in the file is still on it.
+    announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    announce.mockClear();
+  });
+  afterEach(() => {
+    announce.mockRestore();
+    mockRow = null;
+  });
+
+  // A landed row carries the change marker the server's write bumps (013's trigger), so
+  // it reads as WRITTEN; a case about a wait that wrote nothing passes the old marker.
+  async function land(next: Record<string, unknown>) {
+    mockRow = { updated_at: '2026-09-26T12:00:05.000Z', ...next };
+    const check = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![1] as () => Promise<boolean>;
+    await act(async () => { await check(); });
+  }
+
+  it('a Worth a call that lands while the record is open is spoken, once', async () => {
+    mockRow = row({ status: 'pending', recommendation: null });
+    const view = render(<StoolAnalysisSection eventId="as-1" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(row({ recommendation: 'worth_a_call', read_text: 'Black, tarry stool is worth a call today.' }));
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
+  it('a PHOTOLESS contextual escalation is spoken', async () => {
+    const view = render(<StoolAnalysisSection eventId="as-2" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    expect(view.toJSON()).toBeNull();
+    await land(row({ recommendation: 'worth_a_call', read_text: 'Worth a call.' }));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
+  it('Show, then a SKIPPED re-run, says nothing — the re-run re-bases on the server’s row', async () => {
+    mockRow = row({ recommendation: 'monitor', read_text: 'Formed.', dismissed_at: '2026-09-19T08:00:00.000Z', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<StoolAnalysisSection eventId="as-4" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Show'));
+    const afterShow = row({ recommendation: 'monitor', read_text: 'Formed.', dismissed_at: null, updated_at: '2026-09-26T12:00:01.000Z' });
+    mockRow = afterShow;
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(afterShow);
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('an UNSEEN Worth a call surfaced by a skipped re-run is spoken (R1)', async () => {
+    mockRow = row({ recommendation: 'monitor', read_text: 'Formed.', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<StoolAnalysisSection eventId="as-5" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    const unseen = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T11:00:00.000Z' });
+    mockRow = unseen;
+    fireEvent.press(view.getByText('Re-run analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(unseen);
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
+  it('a FAILED re-run trigger never parks the section on "Reading the photo…" (R3)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    (triggerStoolAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'FunctionsHttpError: 500' });
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<StoolAnalysisSection eventId="as-6" petId="pet-1" petName="Rex" hasPhoto />);
+    const rerun = await view.findByText('Re-run analysis');
+    await act(async () => { fireEvent.press(rerun); });
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(view.queryByText('Reading the photo…')).toBeNull();
+    alert.mockRestore();
+  });
+
+  it('a failed trigger that uncovers an UNSEEN Worth a call shows it, speaks it, and says so outright (F1)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockExpectLanding.mockClear();
+    (triggerStoolAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'FunctionsHttpError: 500' });
+    mockRow = row({ recommendation: 'monitor', read_text: 'Formed.', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<StoolAnalysisSection eventId="as-7" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T11:00:00.000Z' });
+    await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(mockExpectLanding).toHaveBeenCalledTimes(1);
+    alert.mockRestore();
+  });
+
+  it('a failed attempt restores the row AS THE FUNCTION LEFT IT — the failure, not the calm read it replaced (round 5)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<StoolAnalysisSection eventId="as-8" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    mockRow = row({ recommendation: 'monitor', read_text: 'Formed.', updated_at: '2026-09-26T11:00:00.000Z' });
+    (triggerStoolAnalysis as jest.Mock).mockImplementationOnce(async () => {
+      mockRow = row({ status: 'failed', recommendation: 'monitor', read_text: 'Formed.', updated_at: '2026-09-26T12:00:09.000Z' });
+      return { error: 'FunctionsHttpError: 500' };
+    });
+    await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
+    expect(await view.findByText("Couldn't finish reading this one.")).toBeTruthy();
+    expect(announce).not.toHaveBeenCalledWith(readLandedCopy('Keep an eye out'));
+    alert.mockRestore();
+  });
+
+  it('when the post-error re-read FAILS, a calm pre-attempt copy is never put back or spoken (round 6)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<StoolAnalysisSection eventId="as-9" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    mockRow = row({ recommendation: 'monitor', read_text: 'Formed.', updated_at: '2026-09-26T11:00:00.000Z' });
+    (triggerStoolAnalysis as jest.Mock).mockImplementationOnce(async () => {
+      mockRow = null;
+      return { error: 'FunctionsHttpError: 500' };
+    });
+    await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    // What the owner already saw stays: the Worth a call, silently.
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(view.queryByText('Keep an eye out')).toBeNull();
+    expect(announce).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
+
+  it('a failed Try again behind an old hide does not re-hide a NEW read the server has un-hidden (CUL-1323)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockRow = row({ status: 'failed', recommendation: 'monitor', read_text: 'Formed.', dismissed_at: '2026-09-19T08:00:00.000Z', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<StoolAnalysisSection eventId="as-10" petId="pet-1" petName="Rex" hasPhoto />);
+    const tryAgain = await view.findByText('Try again');
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', dismissed_at: null, updated_at: '2026-09-26T11:00:00.000Z' });
+    (triggerStoolAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'FunctionsHttpError: 500' });
+    await act(async () => { fireEvent.press(tryAgain); });
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(view.queryByText('AI note hidden')).toBeNull();
+    alert.mockRestore();
+  });
+
+  it('the owner’s own in-flight Show survives a failed trigger’s restore (M3)', async () => {
+    // The vomit twin's M3, which the round-7 pass found missing here (mutating this
+    // file's restore left every stool test green). Show, then Re-run before the Show
+    // reached the server: the server's copy still says hidden, and the restore must not
+    // put the note back behind "AI note hidden".
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const hidden = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', dismissed_at: '2026-09-19T08:00:00.000Z', updated_at: '2026-09-20T09:00:00.000Z' });
+    mockRow = hidden;
+    const view = render(<StoolAnalysisSection eventId="as-11" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Show'));
+    mockRow = hidden; // the Show's write has not landed server-side yet
+    (triggerStoolAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'FunctionsHttpError: 500' });
+    const rerun = await view.findByText('Re-run analysis');
+    await act(async () => { fireEvent.press(rerun); });
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(view.queryByText('AI note hidden')).toBeNull();
+    alert.mockRestore();
+  });
+
+  it('a read already in the record on open says nothing', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.' });
+    const view = render(<StoolAnalysisSection eventId="as-3" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(announce).not.toHaveBeenCalled();
   });
 });
