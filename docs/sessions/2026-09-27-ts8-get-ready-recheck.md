@@ -36,8 +36,8 @@
   - D2: the weight is said once.
   - D3: active trials only; the finished-trial recheck is CUL-1340.
   - D4: gated behind `trial_screen`.
-- **Build reading of D1, flagged to the PM:** the rundown's own record statements ("None active", "No weigh-ins logged") are quoted as answers. The ruling governs withheld or unrecorded answers.
-- **Heading changed from the issue text:** "…chewable medicine included" was dropped, because the answer counts feedings only. The chewable lane is CUL-1342.
+- **Build reading of D1 (PM agreed, 2026-09-27):** the rundown's own record statements ("None active", "No weigh-ins logged") are quoted as answers. The ruling governs withheld or unrecorded answers.
+- **Heading changed from the issue text (PM agreed, 2026-09-27):** "…chewable medicine included" was dropped, because the answer counts feedings only. The chewable lane is CUL-1342.
 
 ## What broke, and how
 
