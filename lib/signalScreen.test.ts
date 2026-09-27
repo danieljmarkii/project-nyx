@@ -58,6 +58,7 @@ import {
   type SignalScreenEpisode,
   type SignalScreenInput,
   type SignalScreenModel,
+  withheldLines,
 } from './signalScreen';
 import type { CachedFinding, IntakeDeclineFinding, SymptomChronicityFinding, TrialResponseFinding } from './signal';
 import { hasTitleVerdictWord } from './signalTitle';
@@ -1116,10 +1117,10 @@ describe('CUL-1216 — the loader reads the not-eating register for the ROUTE’
       expect(isAnimalNotEating(eating())).toBe(false);
     });
 
-    it('a falling trial pair over a refusing cat answers missing; the same pair over an eating one is ready', async () => {
+    it('a falling trial pair over a refusing cat is WITHHELD (never "missing"); the same pair over an eating one is ready', async () => {
       mockReadSignalCache.mockResolvedValue({ findings: [trialPair('fewer_during_trial')] });
       mockLoadDietTrialFacts.mockResolvedValue(refusing());
-      expect(await loadSignalScreen('pet-1', 'trial_response')).toEqual({ status: 'missing', petName: 'Nyx' });
+      expect(await loadSignalScreen('pet-1', 'trial_response')).toEqual({ status: 'withheld', petName: 'Nyx' });
       mockLoadDietTrialFacts.mockResolvedValue(eating());
       expect((await loadSignalScreen('pet-1', 'trial_response')).status).toBe('ready');
     });
@@ -1137,13 +1138,36 @@ describe('CUL-1216 — the loader reads the not-eating register for the ROUTE’
       );
       mockReadSignalCache.mockResolvedValue({ findings: [decline, { ...trialPair('fewer_during_trial'), rank: 1 }] });
       mockLoadDietTrialFacts.mockResolvedValue(eating());
-      expect((await loadSignalScreen('pet-1', 'trial_response')).status).toBe('missing');
+      expect((await loadSignalScreen('pet-1', 'trial_response')).status).toBe('withheld');
     });
 
-    it('a trial facts read that fails withholds the falling pair (fail closed, as Home does)', async () => {
+    // Fail closed, but never as a permanent-sounding "gone": an unanswered register is a failed
+    // read, which the screen shows with Try again (C-37: return the reason).
+    it('a trial facts read that fails never draws the falling pair and never calls it gone: the load rejects', async () => {
       mockReadSignalCache.mockResolvedValue({ findings: [trialPair('fewer_during_trial')] });
       mockLoadDietTrialFacts.mockRejectedValue(new Error('sqlite'));
-      expect((await loadSignalScreen('pet-1', 'trial_response')).status).toBe('missing');
+      await expect(loadSignalScreen('pet-1', 'trial_response')).rejects.toThrow(/not answered/);
+    });
+
+    it('a cold start before the pet list loads rejects the same way (the screen re-runs when pets arrive)', async () => {
+      usePetStore.setState({ pets: [] as never, activePet: null as never });
+      mockReadSignalCache.mockResolvedValue({ findings: [trialPair('fewer_during_trial')] });
+      await expect(loadSignalScreen('pet-1', 'trial_response')).rejects.toThrow(/not answered/);
+    });
+
+    it('findings Home keeps over a refusing cat still render; only an expired stood-down line is missing', async () => {
+      mockLoadDietTrialFacts.mockResolvedValue(refusing());
+      mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(postprandial())] });
+      expect((await loadSignalScreen('pet-1', 'postprandial_timing:vomit')).status).toBe('ready');
+    });
+
+    it('the withheld copy explains, points to the vet, and never reassures', () => {
+      const lines = withheldLines('Nyx');
+      expect(lines).toEqual([
+        "This one is set aside while Nyx may not be eating. Fewer vomits from an empty stomach isn't a sign of getting better.",
+        "If you're worried about Nyx, your vet is the best call.",
+      ]);
+      expect(lines.join(' ')).not.toMatch(/!|\d/);
     });
   });
 

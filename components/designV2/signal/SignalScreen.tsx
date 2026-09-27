@@ -6,7 +6,8 @@ import { useAppActive } from '../../../hooks/useAppActive';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { focusAccessibility } from '../../../lib/a11yFocus';
 import { measureNodeInWindow, type WindowRect } from '../../../lib/measureNode';
-import { loadSignalScreen, screenLeadsWithLanes, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
+import { loadSignalScreen, screenLeadsWithLanes, withheldLines, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
+import { usePetStore } from '../../../store/petStore';
 import { WhorlSpinner } from '../../brand/WhorlSpinner';
 import { CompareBars } from '../../charts/CompareBars';
 import { TimingLanes } from '../../charts/TimingLanes';
@@ -113,6 +114,10 @@ export function SignalScreen({ petId, identity }: Props) {
     [identity],
   );
 
+  // A cold start from a link reads before the pet list has loaded, when the not-eating
+  // register cannot answer; the load re-runs once the pets arrive (TS-9 · CUL-1305).
+  const petsLoaded = usePetStore((s) => s.pets.length > 0);
+
   const run = useCallback(async () => {
     const my = ++loadId.current;
     setLoad({ status: 'loading' });
@@ -123,11 +128,19 @@ export function SignalScreen({ petId, identity }: Props) {
       console.warn('[signal-screen] load failed:', e);
       if (loadId.current === my) setLoad({ status: 'failed' });
     }
-  }, [petId, identity]);
+  }, [petId, identity, petsLoaded]);
 
   useEffect(() => {
     void run();
   }, [run]);
+
+  // A load that settles to anything but the finding abandons a flown-in chart, so a card's
+  // clone never stays painted over a withheld, missing or failed answer (TS-9 · CUL-1305).
+  useEffect(() => {
+    if (load.status === 'loading' || load.status === 'ready') return;
+    const s = getFlightState();
+    if (s.flight?.identity === identity) abortFlight();
+  }, [load.status, identity]);
 
   const model = load.status === 'ready' ? load.model : null;
   const arrived = model != null;
@@ -164,6 +177,12 @@ export function SignalScreen({ petId, identity }: Props) {
           <Pressable onPress={() => void run()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Try again" style={styles.retry}>
             <ThemedText style={styles.retryText}>Try again</ThemedText>
           </Pressable>
+        </View>
+      ) : load.status === 'withheld' ? (
+        <View style={styles.centered} testID="signal-screen-withheld">
+          {withheldLines(load.petName).map((line, i) => (
+            <ThemedText key={i} style={styles.stateText}>{line}</ThemedText>
+          ))}
         </View>
       ) : load.status === 'missing' ? (
         <View style={styles.centered} testID="signal-screen-missing">

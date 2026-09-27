@@ -49,7 +49,7 @@ import { drugDisplayName } from './medications';
 import { CORRELATION_SYMPTOM_TYPES, readFeedingRows, readFreeFedSpans, TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import { readSignalCache, type CachedFinding, type SignalFinding } from './signal';
 import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, reflectionExpandedExtras, symptomWord } from './signalCopy';
-import { signalSaysNotEating, visibleFindings } from './signalVisible';
+import { isFallingVomitPair, signalSaysNotEating, visibleFindings } from './signalVisible';
 import {
   compareGateCounts,
   compareWithheld,
@@ -583,7 +583,19 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
 export type SignalScreenLoad =
   | { status: 'ready'; model: SignalScreenModel; petName: string }
   /** No cache row for this pet, or the finding is no longer in it. */
-  | { status: 'missing'; petName: string };
+  | { status: 'missing'; petName: string }
+  /** The finding is in the cache and Home withholds it: a falling vomit pair over a pet that
+   *  may not be eating (TS-9 · CUL-1305). Never "missing": that would read as "it stopped". */
+  | { status: 'withheld'; petName: string };
+
+/** The withheld state's copy (TS-9 · CUL-1305). Why it is set aside, in plain words, and the
+ *  shipped health backstop as the next step; never a count, never a direction as good news. */
+export function withheldLines(petName: string): string[] {
+  return [
+    `This one is set aside while ${petName} may not be eating. Fewer vomits from an empty stomach isn't a sign of getting better.`,
+    `If you're worried about ${petName}, your vet is the best call.`,
+  ];
+}
 
 interface EpisodeRow {
   id: string;
@@ -916,8 +928,15 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   // would print its counts here while Home withholds the card (B-789, §5.2). Same predicate,
   // same register, failing closed (`notEating` null withholds, as Home does): a finding the
   // stack drops is not in the picture, and the screen says so.
+  //
+  // Three causes, three answers (C-37: return the REASON): a register that has not answered is
+  // a failed read with Try again, never a permanent-sounding "gone" (the screen re-runs when the
+  // pet list arrives); a withheld pair says why it is set aside; only the stood-down line's
+  // offline expiry, the one other thing `visibleFindings` drops, is "not in the picture".
   if (!visibleFindings(row?.findings ?? [], notEating !== false, nowMs).includes(cached)) {
-    return { status: 'missing', petName };
+    if (!isFallingVomitPair(cached.finding)) return { status: 'missing', petName };
+    if (notEating === null) throw new Error('the not-eating register has not answered');
+    return { status: 'withheld', petName };
   }
   const trialVomitingLine = trialFacts ? (resolveTrialStrip(trialFacts)?.trialResponseLine ?? null) : null;
 
