@@ -80,11 +80,13 @@ interface Props {
    * withholds a falling vomit week pair from the line. Required, so no caller can forget it.
    */
   withholdFallingVomit: boolean;
+  /** The cache row's `generated_at` (CUL-1360), for the trial anchor the title reads. */
+  generatedAt: string | null;
 }
 
 type Load = { status: 'loading' } | { status: 'ready'; model: SignalLeadModel } | { status: 'failed' };
 
-export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit }: Props) {
+export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit, generatedAt }: Props) {
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
   const signalTick = useSyncStore((s) => s.signalTick);
   const identity = foldIdentity(cached.finding);
@@ -119,7 +121,7 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit }: 
     if (safety) return;
     let cancelled = false;
     setLoad({ status: 'loading' });
-    loadSignalLead(petId, cached, withholdFallingVomit)
+    loadSignalLead(petId, cached, withholdFallingVomit, generatedAt)
       .then((model) => {
         if (!cancelled) setLoad({ status: 'ready', model });
       })
@@ -133,11 +135,11 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit }: 
     // The finding's content, not the cached object's identity: a re-read that produced
     // the same payload must not redraw the chart under the owner's eyes (C-30).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [petId, identity, JSON.stringify(cached.finding), hydrationTick, signalTick, safety, withholdFallingVomit]);
+  }, [petId, identity, JSON.stringify(cached.finding), hydrationTick, signalTick, safety, withholdFallingVomit, generatedAt]);
 
   // S1: a safety lead is the plain row, with the door. The fallback is the same.
   if (safety || load.status === 'failed') {
-    return <SignalRow cached={cached} petId={petId} onOpen={onOpen} isLead />;
+    return <SignalRow cached={cached} petId={petId} onOpen={onOpen} isLead generatedAt={generatedAt} />;
   }
 
   const rail = RAIL_COLOR[cached.finding.priorityClass];

@@ -1,5 +1,6 @@
 import { isStoodDown, isTrialResponse, stoodDownExpired } from './signalCopy';
 import type { CachedFinding, SignalFinding } from './signal';
+import { isOtherTrialReassurance, type SignalTrialAnchor } from './signalTrialAnchor';
 
 /**
  * A finding whose whole claim is a FALLING VOMIT PAIR — fewer vomits now than before (CUL-1216,
@@ -56,15 +57,23 @@ export function signalSaysNotEating(findings: readonly CachedFinding[]): boolean
  *
  * `nowMs` is the one clock read, and it can only ever REMOVE a line — never
  * re-open a card (the fold spec's DF-5 forbids that direction).
+ *
+ * `trialAnchor` (CUL-1360): when the cache counted, and which trial runs on this device. A
+ * falling trial pair the engine counted over ANOTHER trial's days (a trial replaced or
+ * restarted since the cache was written) is dropped, since every titling surface would name
+ * it with the new trial. A rising one stays, titled by its own day (`signalTrialWindowFor`).
+ * The rule is `lib/signalTrialAnchor.ts`; null (a caller with no trial read) drops nothing.
  */
 export function visibleFindings(
   findings: CachedFinding[],
   withholdFallingVomit: boolean,
   nowMs: number = Date.now(),
+  trialAnchor: SignalTrialAnchor | null = null,
 ): CachedFinding[] {
   const withhold = withholdFallingVomit || signalSaysNotEating(findings);
   return [...findings]
     .filter((f) => !(withhold && isFallingVomitPair(f.finding)))
+    .filter((f) => !(trialAnchor != null && isOtherTrialReassurance(f.finding, trialAnchor)))
     // CUL-786: a stood-down line expires seven days after it was minted, even if the cache never
     // regenerates (spec §8: "until … seven days pass"). The engine drops it on its own regen; this
     // is the offline bound.

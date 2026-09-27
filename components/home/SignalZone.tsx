@@ -17,6 +17,9 @@ import { SectionLabel } from '../ui/SectionLabel';
 import { InsightCard, RAIL_WIDTH, stripRenderable } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
 import { signalSaysNotEating, visibleFindings } from '../../lib/signalVisible';
+import type { SignalTrialAnchor } from '../../lib/signalTrialAnchor';
+import { signalTrialWindowOf } from '../../lib/signalScreen';
+import type { TrialCardTrial } from '../../lib/dietTrialCard';
 import { useSignalFold, type SignalFoldApi } from '../../hooks/useSignalFold';
 import { useLastEpisodeDates, type LastEpisodeDates } from '../../hooks/useLastEpisodeDates';
 import { useWatchingRowsRead } from '../../hooks/useWatchingRows';
@@ -510,12 +513,23 @@ interface SignalZoneProps {
   // reads the FULL set, like `hasSafetyFinding`'s other reader, so no suppression or fold
   // can unhide a lane. Draws nothing; absent, the zone is unchanged.
   onSafetyLive?: (report: { petId: string | null; live: boolean | null }) => void;
+  // CUL-1360 — the pet's trial row and the clock it was read on, with the pet it was read
+  // for. Home hands over the SAME `trialInput` as the two props above, and only once those
+  // facts are confirmed for the active pet; the zone windows it (`signalTrialWindowOf`, the
+  // one builder every Signal surface titles with). With the cache's `generated_at` it is the
+  // anchor that tells a trial finding counted over THIS trial from one counted over a trial
+  // since replaced (`lib/signalTrialAnchor.ts`): the stack drops the older trial's falling
+  // pair (it would be titled with the new trial), and the rows title a rising one by its own
+  // day. A report for another pet, or none, anchors nothing. It reaches both the Design v2
+  // stack and the shipped one: a stale reassuring pair has no place on either.
+  signalTrial?: { petId: string; trial: TrialCardTrial | null; nowMs: number } | null;
 }
 
 export function SignalZone({
   trialRunning = false,
   withholdFallingVomit = false,
   onSafetyLive,
+  signalTrial = null,
 }: SignalZoneProps = {}) {
   const {
     petId,
@@ -674,7 +688,11 @@ export function SignalZone({
   // spending it, so without this exclusion the card standing down would hand the arrival a
   // count of 1 with no safety finding in the set, and the once-ever celebration would play
   // over a sentence about absence.
-  const renderableCount = visibleFindings(findings, withholdFallingVomit).filter(
+  const trialAnchor: SignalTrialAnchor | null =
+    signalTrial && petId && signalTrial.petId === petId
+      ? { generatedAt, trial: signalTrial.trial ? signalTrialWindowOf(signalTrial.trial, signalTrial.nowMs) : null }
+      : null;
+  const renderableCount = visibleFindings(findings, withholdFallingVomit, Date.now(), trialAnchor).filter(
     (f) => !isStoodDown(f.finding),
   ).length;
 
@@ -768,6 +786,7 @@ export function SignalZone({
                 fold={fold}
                 lastEpisodes={lastEpisodes}
                 generatedAt={generatedAt}
+                trialAnchor={trialAnchor}
                 designV2={designV2}
                 petId={petId}
                 onOpen={openSignal}
@@ -783,6 +802,7 @@ export function SignalZone({
             fold={fold}
             lastEpisodes={lastEpisodes}
             generatedAt={generatedAt}
+            trialAnchor={trialAnchor}
             designV2={designV2}
             petId={petId}
             onOpen={openSignal}
@@ -891,6 +911,7 @@ function LiveStack({
   fold,
   lastEpisodes = {},
   generatedAt = null,
+  trialAnchor = null,
   designV2 = false,
   petId = null,
   onOpen,
@@ -916,6 +937,8 @@ function LiveStack({
   lastEpisodes?: LastEpisodeDates;
   /** When the engine counted (the cache row's `generated_at`), for the chronicity strip's fallback date when the record could not be read. */
   generatedAt?: string | null;
+  /** CUL-1360 — the cache's `generated_at` with this pet's running trial; null anchors nothing. */
+  trialAnchor?: SignalTrialAnchor | null;
 }) {
   // B-789 (§5.2) — drop the trial_response card when the record shows the animal isn't eating
   // (`withholdFallingVomit`, computed by Home from the same `trialInput` the strip withholds its
@@ -937,7 +960,8 @@ function LiveStack({
   // displayState fix rides CUL-527. The finding stays in the cache; nothing consumes it but this stack.
   // CUL-601: the arrival moment reads `visibleFindings` too, so that empty frame no longer
   // gets a celebration drawn over it — but the empty frame itself is still CUL-527's.
-  const ordered = visibleFindings(findings, withholdFallingVomit);
+  // CUL-1360: and a falling trial pair counted over a trial since replaced (`trialAnchor`).
+  const ordered = visibleFindings(findings, withholdFallingVomit, Date.now(), trialAnchor);
   // CUL-1216 (BRK-6): the SAME register for the pairs a card carries inside it — the Design v2
   // lead card's week line and a vomit chronicity card's compare — with the Signal's own
   // `intake_decline` OR'd in, exactly as `visibleFindings` reads it, so the card a stack drops
@@ -988,12 +1012,18 @@ function LiveStack({
               <StoodDownLine text={f.text} />
             ) : designV2 && onOpen && petId && i === leadIndex && f.finding.priorityClass === 'insight' ? (
               // D2-3: the lead insight card is the title + chart + line, and a door.
-              <SignalLeadCard cached={f} petId={petId} onOpen={onOpen} withholdFallingVomit={withholdPairs} />
+              <SignalLeadCard
+                cached={f}
+                petId={petId}
+                onOpen={onOpen}
+                withholdFallingVomit={withholdPairs}
+                generatedAt={generatedAt}
+              />
             ) : designV2 && onOpen && petId ? (
               // CUL-1270 (D1 = B): every other card — a safety lead and every lower card — is
               // a row: headline, the ask, a chevron, a door to its own screen. A safety row
               // stays words (S1) and always carries its ask.
-              <SignalRow cached={f} petId={petId} onOpen={onOpen} isLead={i === leadIndex} />
+              <SignalRow cached={f} petId={petId} onOpen={onOpen} isLead={i === leadIndex} generatedAt={generatedAt} />
             ) : (
               // CUL-788: the card renders its own strip when `folded` — one row, one rail,
               // so the fold motion has a single continuous node to hold (§12). The host
