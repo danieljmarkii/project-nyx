@@ -2649,10 +2649,12 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   // forbids on the card for the same reason.
   //
   // R1 puts the refusal fact on the same footing. The strip has no room for the
-  // register itself — that lives on the Pet tab's card — but it must not do the
-  // one thing it could do wrong here, which is render a tidy coverage line as if
-  // the trial were proceeding normally. Silence on Home, the register one tap
-  // away; never a reassuring summary of a trial the record says isn't running.
+  // register itself — that lives on the Pet tab's card (under `trial_screen`: on the
+  // trial's own screen, with its first sentence on the Pet tab's door, TS-6 ruling
+  // (a′)) — but it must not do the one thing it could do wrong here, which is render
+  // a tidy coverage line as if the trial were proceeding normally. Silence on Home,
+  // the register one tap away; never a reassuring summary of a trial the record says
+  // isn't running.
   if (input.intakeDeclineHeadline) {
     // A live safety flag suppresses the strip's record lines — the vomit-count line included (CUL-13):
     // a two-sided count next to "the pet stopped eating" is exactly the reassuring-summary composition

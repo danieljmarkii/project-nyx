@@ -398,6 +398,36 @@ describe('a trial refusal (§3.2, S4)', () => {
   });
 });
 
+describe('an intake decline (§3.2, CUL-1339 #2)', () => {
+  it('draws the safety block first, then the doors, then Manage the trial', async () => {
+    mockParams = { pet: 'pet-1' };
+    mockTrial = {
+      input: running({ petName: 'Biscuit', intakeDeclineHeadline: 'Biscuit has eaten less than usual for 2 days.' }),
+      status: 'loaded',
+      inputIsForPet: true,
+    };
+    const view = await renderRoute();
+    const order = ['trial-screen-title', 'trial-safety', 'trial-door-report', 'trial-manage'];
+    const all: ReactTestInstance[] = view.UNSAFE_root.findAll(
+      (n: ReactTestInstance) => typeof n.props.testID === 'string' && typeof n.type !== 'string',
+    );
+    const ids: string[] = all.map((n) => n.props.testID as string);
+    const seen = ids.filter((id, i) => ids.indexOf(id) === i);
+    const positions = order.map((id) => seen.indexOf(id));
+    expect(positions.every((p) => p >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+    expect(within(view.getByTestId('trial-safety')).getAllByTestId('trial-safety-line')[0].props.children).toBe(
+      'Biscuit has eaten less than usual for 2 days.',
+    );
+    expect(view.queryByTestId('trial-ledger')).toBeNull();
+    expect(view.queryByTestId('trial-action-trial_stopped_early')).toBeNull();
+    // It opens the same two-row door (change the window · replace the trial), nothing else.
+    expect(lastSheetsProps!.lifecycle.manageVisible).toBe(false);
+    fireEvent.press(view.getByTestId('trial-manage'));
+    expect(lastSheetsProps!.lifecycle.manageVisible).toBe(true);
+  });
+});
+
 describe('the milestone (§3.9)', () => {
   it('draws the three choices inline; Keep going writes once through the shared host', async () => {
     mockTrial = { input: running({}, 56, 56), status: 'loaded', inputIsForPet: true };

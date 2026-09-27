@@ -1,6 +1,6 @@
 # The trial's own screen — Requirements
 
-**Version:** 1.1 · BUILD-READY (v1.0 failed its adversarial pass; v1.1 carries the fixes, §12) | **Last Updated:** 2026-09-27 (§5.1 ruling inline) | **Issue:** CUL-1291 (discovery) · the Linear project **Diet trial — its own screen**
+**Version:** 1.1 · BUILD-READY (v1.0 failed its adversarial pass; v1.1 carries the fixes, §12) | **Last Updated:** 2026-09-27 (§5.1, §0.3, §3.9, §5.2 rulings inline) | **Issue:** CUL-1291 (discovery) · the Linear project **Diet trial — its own screen**
 **Design authority:** `docs/culprit-trial-screen-mockups.html` round 2 (one proposal), published at https://claude.ai/artifact/5AHCdRG9jXj2q48vC2o6cA
 **Evidence:** `docs/sessions/2026-09-26-trial-screen-brainstorm.md` (five isolated reads). The August pass at the same idea is draft PR #631 (T2, the `/trial` room); this spec supersedes its T2 and T3.
 **Parent spec:** `docs/nyx-diet-trial-requirements.md`. Every trial rule in it binds here (§5.2 the permitted statements, §5.3 one predicate, B-422 belief versus evidence). This spec adds a host, not a meaning.
@@ -30,7 +30,7 @@
 
 ### 0.3 Calls the team made from the reads (build to these; no brief needed)
 
-- **The safety face carries the card's own actions for that state, and only those** (§12 finding 2). For a trial refusal that is *Change or end the trial* and the exposures link. There is no *Stopped early* and no Keep going there: choosing "wouldn't eat it" from *Stopped early* moves the trial to `abandoned`, which drops the cat's "needs a call today" while she is still not eating. The actions sit after the call block (Sam: "In a panic I'd press it first").
+- **The safety face carries the card's own actions for that state, and only those** (§12 finding 2). For a trial refusal that is *Change or end the trial* and the exposures link. There is no *Stopped early* and no Keep going there: choosing "wouldn't eat it" from *Stopped early* moves the trial to `abandoned`, which drops the cat's "needs a call today" while she is still not eating. The actions sit after the call block (Sam: "In a panic I'd press it first"). ⚠ **RULED 2026-09-27 (PM, CUL-1339 #2, option (a)):** the **intake-decline** face also carries *Manage the trial*, after the doors. Neither of its acts (change the window, replace the trial) drops the call-today: the decline read takes the pet, never the trial (`getIntakeDecline(pet.id, species, nowMs)`), and an ended trial's `decline` register outranks its refusal one. Without it, TS-6's Pet tab door would leave that face no way to change the trial. `trial_refusal` keeps its own *Change or end the trial* only. Built in TS-6 (CUL-1302), with a loader-level test.
 - **The ledger is absent whenever `isAnimalNotEating(input)` is true**, on the raw withholding reasons, so a refusal the register has stood down still hides it. A refused bowl counts as a logged day (`lib/dietTrial.ts`), so a filled mark there would paint a day she didn't eat like a good one (Sam; §12 finding 3). ⚠ **RULED 2026-09-27 (PM, on CUL-1344):** the ledger (and so Home's lane) is also absent while the **current trial week** holds a rated, unfinished bowl of the refusal lane's population, **below** the refusal fact's floors (`TrialFacts.unfinishedDayIndices`, `feedingWasFinished`). The executed case: a day-1 cat with 2 of 2 rated bowls refused cleared no floor and drew *1 of 1 so far*. The whole ledger, not only the current row (PM confirmed 2026-09-27): a grid missing its row breaks S5 (every row carries its count) and the rows' partition of the caption (C-3). The same issue's second call (a late-started trial) kept the untracked head withholding the lane for the whole trial.
 - **The ledger is absent at the milestone.** The card draws no bar and no coverage beside the stop decision (parent §4.3; `lib/dietTrialCard.ts`, the milestone branch), and a filled 56-of-56 grid is the same completion vocabulary in pixels. It returns on the next state (Keep going, completed).
 - **No refused-meal mark** in v1 (the Data Scientist over Dr. Chen): intake is rated on only some meals, so a missing refusal mark would read as "ate it". The legend says *meals logged*, never *ate*.
@@ -137,7 +137,7 @@ The strip's line, verbatim, when the strip renders it: the same `trialResponseLi
 | Overrun | inline, above the ledger | the card's *Tell Culprit what's next* |
 | Completed (the 30-day grace) | the bottom | *Open vet report* |
 | Abandoned | the bottom | *Start a new trial* → the Pet tab's start sheet (S6) |
-| Refusal / decline | after *For the call* and the doors | the card's own actions for the state only (a trial refusal: *Change or end the trial* and the exposures link). No *Stopped early*, no Keep going |
+| Refusal / decline | after *For the call* and the doors | the card's own actions for the state only (a trial refusal: *Change or end the trial* and the exposures link). No *Stopped early*, no Keep going. ⚠ **RULED 2026-09-27 (CUL-1339 #2):** an intake decline adds *Manage the trial* (§0.3) |
 
 *Replace the trial* and *Start a new trial* navigate to the Pet tab with a one-shot request (C-22: a ref cleared before the side effect) that opens `StartTrialModal` there, because the modal must stay mounted on the Pet tab (`food-capture` exits with `router.dismissAll()`, which would pop a pushed screen and lose a half-filled form; B-535's resume depends on the Pet tab's focus effect).
 
@@ -176,6 +176,8 @@ Flag-off, the strip is byte-identical and still opens the Pet tab (CUL-170's `fo
 ### 5.2 The Pet tab's door (TS-6)
 
 Under the flag, while a trial is active or inside its 30-day grace, the Pet tab's trial slot renders one row: *Diet trial* eyebrow, the strip's header, the day bar, `{food} · ends {date}`, a chevron, no buttons. It opens `/trial/{pet}`. With no trial, the start card and `StartTrialModal` are unchanged. Flag-off, the full card is byte-identical.
+
+⚠ **RULED 2026-09-27 (PM, on CUL-1302: (a), then (a′), then "both"):** wherever the screen leads with its safety block, decided the screen's way (the card's register lines, `trialSafetyLines(trialScreenCard(input))`, never the state), the row draws **no bar and no end date**, and carries the screen's **two** safety sentences verbatim on its rose rail: the fact, then the ask in the screen's ask ink. (a) alone rested on "the ask stays on Home's Signal card", which the adversarial pass falsified for a trial refusal: the Signal cannot see a cat refusing from day 1 (B-789), and Home's strip is silent on a refusal because the Pet tab's card held the register. The first sentence alone escalated without saying to call; the call lives in the second. An ended trial with a live decline carries them too. Built in `lib/trialDoorRow.ts` (TS-6); the frame is in the round-2 mock, §06.
 
 ### 5.3 The other senders (TS-6)
 
