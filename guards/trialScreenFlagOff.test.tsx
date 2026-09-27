@@ -260,9 +260,12 @@ const SURFACES: ReadonlyArray<Surface> = [
   },
   {
     // Get ready (TS-8, CUL-1304). Its trial row draws the recheck through
-    // `components/trialScreen/RecheckQuestions`, and only after the page's load answers,
-    // so the first frame here is the page's own loading or error state: this entry checks
-    // what the gate can leak synchronously. The async half (flag-off, over a running trial
+    // `components/trialScreen/RecheckQuestions`, and only after the page's load answers.
+    // WHAT THIS ENTRY PROVES, NARROWLY: this file's router mock hands every surface
+    // `{ pet }` and no `appointmentId`, so `app/rundown.tsx` mounts in its PLAIN rundown mode
+    // here, and the comparison is its first frame: that the route's module graph draws no
+    // namespace node synchronously, whatever mode it is in. It does not render Get-ready
+    // mode. The async half (flag-off, over a running trial
     // that would answer, no recheck node and the strip's row unchanged) is proven in
     // `app/rundown.getready.test.tsx`.
     name: 'Get ready',

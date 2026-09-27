@@ -145,6 +145,12 @@ export default function RundownScreen() {
   const [rundownPetId, setRundownPetId] = useState<string | null>(null);
   const historyV2 = useHistoryV2();
   const trialScreen = useTrialScreen();
+  // Read by `load` through a ref, never as a dependency: the gate hydrates asynchronously
+  // (app config on foreground and sign-in, the opt-in from storage), and a dependency would
+  // reload the whole page, spinner and all, the moment it flipped under an owner already
+  // reading it. A flip lands on the next focus; until then the row is today's (fail closed).
+  const trialScreenRef = useRef(trialScreen);
+  trialScreenRef.current = trialScreen;
   const [getReady, setGetReady] = useState<GetReadyState | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -200,7 +206,13 @@ export default function RundownScreen() {
       // slow load for pet A could commit A's appointment and A's name over a render
       // already showing B. `buildForAppointment` bails out on a stale id, so the rows
       // were safe; the appointment and the pet NAME were not.
-      const worthRaising = await buildForAppointment(built, subjectId, myId, loadIdRef, trialScreen);
+      const worthRaising = await buildForAppointment(
+        built,
+        subjectId,
+        myId,
+        loadIdRef,
+        trialScreenRef.current,
+      );
       if (loadIdRef.current !== myId) return;
       setGetReady({
         appointment,
@@ -216,7 +228,7 @@ export default function RundownScreen() {
       setStatus('error');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- petId is the intended trigger; the subject is read fresh inside
-  }, [petId, wantsGetReady, appointmentId, trialScreen]);
+  }, [petId, wantsGetReady, appointmentId]);
 
   // ON FOCUS, not on mount (CUL-952). `load`'s deps are `[petId, wantsGetReady,
   // appointmentId]`, and none of them change when a screen pushed FROM here pops —
@@ -519,6 +531,7 @@ async function buildForAppointment(
     suppressTrialResponse: trialInput ? isAnimalNotEating(trialInput) : true,
     trialStrip: trialInput ? resolveTrialStrip(trialInput) : null,
     trialScreen,
+    trialResponseCounts: trialInput?.trialResponse ?? null,
     // REQUIRED on the input type, never defaulted. `resolveTrialStrip` discards the
     // device's declines because on Home the Signal card above the strip owns the
     // statement — and Get ready has no Signal card above it, so passing only the strip

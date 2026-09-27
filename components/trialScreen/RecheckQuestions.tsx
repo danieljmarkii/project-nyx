@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextTertiary,
   },
   question: {
-    gap: 2,
+    gap: theme.spaceMicro,
   },
   heading: {
     fontSize: theme.textSM,

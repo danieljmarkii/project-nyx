@@ -221,6 +221,7 @@ function input(over: Partial<WorthRaisingInput> = {}): WorthRaisingInput {
     suppressTrialResponse: false,
     trialStrip: null,
     trialScreen: null,
+    trialResponseCounts: null,
     intakeDecline: [],
     rundown: rundown(),
     nowMs: NOW,
@@ -1477,39 +1478,72 @@ describe('TS-8 — the trial row asks the recheck questions (behind trial_screen
   });
 });
 
-describe('TS-8 — one vomiting comparison per page (adversarial pass: G6 / CUL-746)', () => {
-  const TRIAL_RESPONSE = {
-    type: 'trial_response',
-    priorityClass: 'insight',
-    comparisonDirection: 'fewer_during_trial',
-  } as unknown as SignalFinding;
-  const signalTrial = finding({
-    text: 'Vomiting: 1 in the trial’s 37 days · 18 in the 70 days before.',
-    rank: 1,
-    finding: TRIAL_RESPONSE,
-  });
+describe('TS-8 — one vomiting comparison per page, only when they are one (adversarial passes: G6, S7)', () => {
+  const DEVICE = {
+    trialDayNumber: 37,
+    trialCount: 1,
+    baselineCount: 18,
+    trialLoggedDays: 30,
+    baselineLoggedDays: 40,
+    baselineWindowDays: 70,
+    densityComparable: true,
+  };
+  function signalTrial(day: number, trialCount: number, baselineCount: number, rank = 1) {
+    return finding({
+      text: `Vomiting: ${trialCount} in the trial’s ${day} days · ${baselineCount} in the 70 days before.`,
+      rank,
+      finding: {
+        type: 'trial_response',
+        priorityClass: 'insight',
+        trialDayNumber: day,
+        pooledTrialCount: trialCount,
+        pooledBaselineCount: baselineCount,
+      } as unknown as SignalFinding,
+    });
+  }
+  const symptomsAsked = (rows: ReturnType<typeof buildWorthRaising>['rows']) =>
+    rows.find((r) => r.recheck)!.recheck!.questions.map((q) => q.key).includes('symptoms');
 
-  it('drops the recheck’s symptoms answer when the Signal’s trial-response row is printed, and keeps the Signal’s', () => {
-    // Non-vacuity: without the Signal row, the recheck states the strip's sentence.
-    const alone = buildWorthRaising(input({ trialStrip: RUNNING_STRIP, trialScreen: screenTrial() }));
-    expect(alone.rows[0].recheck!.questions.map((q) => q.key)).toContain('symptoms');
+  it('the same snapshot prints once: the recheck’s question goes, the Signal’s row stays', () => {
+    const same = signalTrial(37, 1, 18);
+    // Non-vacuity: without the Signal row, the recheck asks it.
+    const alone = buildWorthRaising(
+      input({ trialStrip: RUNNING_STRIP, trialScreen: screenTrial(), trialResponseCounts: DEVICE }),
+    );
+    expect(symptomsAsked(alone.rows)).toBe(true);
 
     const { rows } = buildWorthRaising(
-      input({ findings: [signalTrial], trialStrip: RUNNING_STRIP, trialScreen: screenTrial() }),
+      input({ findings: [same], trialStrip: RUNNING_STRIP, trialScreen: screenTrial(), trialResponseCounts: DEVICE }),
     );
-    expect(rows[0].recheck!.questions.map((q) => q.key)).not.toContain('symptoms');
-    expect(rows.map((r) => r.text)).toContain(signalTrial.text);
-    const vomitingLines = JSON.stringify(rows).match(/Vomiting: \d+ in the trial/g) ?? [];
-    expect(vomitingLines).toHaveLength(1);
+    expect(symptomsAsked(rows)).toBe(false);
+    expect(rows.map((r) => r.text)).toContain(same.text);
+  });
+
+  it('a stale cache that says less keeps the device’s fresh rise on the page (the re-run’s break)', () => {
+    // Cache from day 30 says 2; the device on day 33 knows 14.
+    const stale = signalTrial(30, 2, 10);
+    const device = { ...DEVICE, trialDayNumber: 33, trialCount: 14, baselineCount: 10 };
+    const { rows } = buildWorthRaising(
+      input({ findings: [stale], trialStrip: RUNNING_STRIP, trialScreen: screenTrial(), trialResponseCounts: device }),
+    );
+    expect(symptomsAsked(rows)).toBe(true);
+    expect(rows.map((r) => r.text)).toContain(stale.text);
+  });
+
+  it('no device counts is never "the same"', () => {
+    const { rows } = buildWorthRaising(
+      input({ findings: [signalTrial(37, 1, 18)], trialStrip: RUNNING_STRIP, trialScreen: screenTrial() }),
+    );
+    expect(symptomsAsked(rows)).toBe(true);
   });
 
   it('keeps the strip’s sentence when the Signal’s row is capped away', () => {
     const benign = [2, 3, 4, 5].map((i) => finding({ text: `Benign finding ${i}.`, rank: i }));
-    const capped = { ...signalTrial, rank: 9 };
+    const capped = signalTrial(37, 1, 18, 9);
     const { rows } = buildWorthRaising(
-      input({ findings: [...benign, capped], trialStrip: RUNNING_STRIP, trialScreen: screenTrial() }),
+      input({ findings: [...benign, capped], trialStrip: RUNNING_STRIP, trialScreen: screenTrial(), trialResponseCounts: DEVICE }),
     );
-    expect(rows.map((r) => r.text)).not.toContain(signalTrial.text);
-    expect(rows[0].recheck!.questions.map((q) => q.key)).toContain('symptoms');
+    expect(rows.map((r) => r.text)).not.toContain(capped.text);
+    expect(symptomsAsked(rows)).toBe(true);
   });
 });

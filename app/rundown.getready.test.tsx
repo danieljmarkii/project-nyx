@@ -594,6 +594,16 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
     expect(loadDietTrialFacts).toHaveBeenCalledTimes(1);
   });
 
+  it('a gate that flips after mount does not reload the page under the owner (code review)', async () => {
+    const r = await getReadyWith(false);
+    const reads = (buildRundown as jest.Mock).mock.calls.length;
+    mockTrialScreen.on = true;
+    r.rerender(<RundownScreen />);
+    await act(async () => {});
+    expect((buildRundown as jest.Mock).mock.calls.length).toBe(reads);
+    expect(r.getByText('Worth raising')).toBeTruthy();
+  });
+
   it('flag-on: the same fixture draws the vet’s questions, with the same single read', async () => {
     const r = await getReadyWith(true);
     await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());

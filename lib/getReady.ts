@@ -16,6 +16,7 @@ import type { TrialCardInput, TrialStripModel } from './dietTrialCard';
 import type { MedicationCourse } from './medicationHistory';
 import type { MedItemName } from './rundown';
 import type { TrialScreenModel } from './trialScreenModel';
+import type { TrialResponseCounts } from './trialResponseCounts';
 import { buildTrialRecheck, withoutSymptoms, type TrialRecheck } from './trialRecheck';
 
 // "Worth raising" — the Get-ready block (CUL-903 VV-5; spec §4.1 B1, §7 AC 5, mock B1).
@@ -137,6 +138,14 @@ export interface WorthRaisingInput {
    * refusal onto the page, and a default would drop it by writing nothing.
    */
   trialScreen: TrialScreenModel | null;
+  /**
+   * The device's own vomiting counts behind the recheck's symptoms sentence
+   * (`TrialCardInput.trialResponse`), or null. Read only to decide whether the Signal's
+   * trial-response row says the SAME thing (see `sameVomitingSnapshot`). REQUIRED, never
+   * defaulted (C-37): a default would read as "not the same", which is the safe answer,
+   * but a caller that forgets it should be told so by the compiler.
+   */
+  trialResponseCounts: TrialResponseCounts | null;
   /**
    * The DEVICE-LOCAL intake declines (`localIntakeDeclines`), every flag the device
    * holds, empty when it holds none. Separate from `trialStrip` because
@@ -269,20 +278,28 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
   if (trial?.isSafety) safety.push(trial);
   const rows = [...safety, ...optional.slice(0, WORTH_RAISING_CAP)];
 
-  // ONE VOMITING COMPARISON PER PAGE (adversarial pass, TS-8; G6 / CUL-746). The recheck's
-  // *symptoms* answer is the Home strip's sentence, computed on the device; a Signal
-  // `trial_response` row is the engine's, from a cache this page never refreshes. Both on
-  // one page read two counts for one population aloud ("2 in the trial's 40 days" beside
-  // "1 in the trial's 37 days"). The Signal's row is the one kept, because it is the engine-
-  // gated finding and may be the escalating one, and dropping an escalation is the one move
-  // this list may not make; the question goes, the same way D1 drops any question the page
-  // does not answer in the trial row. Asked of the rows actually PRINTED, so a Signal row
-  // capped away leaves the strip's sentence in place.
-  const printedTrialResponse = signal.some(
-    (s) => s.finding.type === 'trial_response' && rows.includes(s.row),
+  // ONE VOMITING COMPARISON PER PAGE, ONLY WHEN THEY ARE ONE (adversarial passes, TS-8;
+  // G6 / CUL-746). The recheck's *symptoms* answer is the Home strip's sentence, computed
+  // on the device now; a Signal `trial_response` row is the engine's, from a cache this page
+  // never refreshes (AC 4). When both describe the same snapshot (same trial day, same two
+  // counts) printing both reads one fact twice, so the recheck's question goes and the
+  // Signal's phrased row stays.
+  //
+  // When they DIFFER, both stay. The first cut dropped the device's line whenever a Signal
+  // row was printed, and the re-run broke it: a cache written on day 30 ("2 in the trial's
+  // 30 days · 10 before") replaced the device's day-33 rise ("14 in the trial's 33 days"),
+  // so Get ready showed only the stale fall while Home showed the rise (S7). Two sentences
+  // that each carry their own day count are a duplication the reader can resolve; a dropped
+  // escalation is not. Asked of the rows actually PRINTED, so a Signal row capped away
+  // leaves the strip's sentence in place.
+  const duplicateTrialResponse = signal.some(
+    (s) =>
+      s.finding.type === 'trial_response' &&
+      rows.includes(s.row) &&
+      sameVomitingSnapshot(s.finding, input.trialResponseCounts),
   );
   const at = rows.findIndex((r) => r.recheck);
-  if (printedTrialResponse && at !== -1) {
+  if (duplicateTrialResponse && at !== -1) {
     const row = rows[at];
     rows[at] = { ...row, recheck: withoutSymptoms(row.recheck as TrialRecheck) };
   }
@@ -342,6 +359,20 @@ function buildSignalRows(input: WorthRaisingInput): SignalEntry[] {
         isSafety: f.finding.priorityClass === 'safety',
       },
     }));
+}
+
+/**
+ * Whether the Signal's trial-response finding and the device's counts are one snapshot:
+ * the same trial day and the same pooled trial and baseline counts. Anything less (a stale
+ * cache, a different trial, a missing count) is "not the same", and both sentences print.
+ */
+function sameVomitingSnapshot(finding: SignalFinding, counts: TrialResponseCounts | null): boolean {
+  if (finding.type !== 'trial_response' || !counts) return false;
+  return (
+    finding.trialDayNumber === counts.trialDayNumber &&
+    finding.pooledTrialCount === counts.trialCount &&
+    finding.pooledBaselineCount === counts.baselineCount
+  );
 }
 
 /** A Signal row and the finding it quotes. Never leaves this module. */
