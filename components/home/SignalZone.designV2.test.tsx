@@ -114,7 +114,7 @@ function state(findings: CachedFinding[]): SignalState {
 function leadModel() {
   const today = toLocalDayKey(new Date());
   const weekly = signalWeeks({ finding: benignLead.finding, today, trial: null, episodeDays: [today], loggedDays: [today] });
-  return { title: 'Vomiting, week over week', weekly, line: weekLine(weekly), noun: 'vomiting', trial: null };
+  return { title: 'Vomiting, week over week', weekly, line: weekLine(weekly), lineWithheld: null, noun: 'vomiting', trial: null };
 }
 
 const redFlag: CachedFinding = {
@@ -162,7 +162,7 @@ describe('flag-on', () => {
     mockUseSignal.mockReturnValue(state([benignLead, secondary]));
     const view = render(<SignalZone />);
     await waitFor(() => expect(view.getByTestId('signal-lead-card')).toBeTruthy());
-    expect(mockLoadSignalLead).toHaveBeenCalledWith('pet-1', benignLead);
+    expect(mockLoadSignalLead).toHaveBeenCalledWith('pet-1', benignLead, false);
     expect(view.getByTestId('signal-lead-title').props.children).toBe('Vomiting, week over week');
     fireEvent.press(view.getByTestId('signal-lead-face'));
     // The door measures first (declined here, see the mock above), then pushes.
@@ -170,6 +170,27 @@ describe('flag-on', () => {
     // The face never folds: no fold control on the lead, and the strip is not drawn.
     expect(view.queryByTestId('insight-fold-control')).toBeNull();
     expect(view.queryByTestId('insight-folded-strip')).toBeNull();
+  });
+
+  // CUL-1216 (BRK-6): the lead card's week line reads the zone's not-eating register — Home's
+  // fail-closed prop, and the Signal's own intake_decline — the same one the stack drops on.
+  it('the lead card is handed the not-eating register: Home’s prop, or an intake decline in the Signal', async () => {
+    mockUseSignal.mockReturnValue(state([benignLead, secondary]));
+    const view = render(<SignalZone withholdFallingVomit />);
+    await waitFor(() => expect(view.getByTestId('signal-lead-card')).toBeTruthy());
+    expect(mockLoadSignalLead).toHaveBeenLastCalledWith('pet-1', benignLead, true);
+    view.unmount();
+
+    mockLoadSignalLead.mockClear();
+    const decline: CachedFinding = {
+      rank: 5,
+      text: 'Nyx has eaten less than usual for 3 days.',
+      finding: { type: 'intake_decline', priorityClass: 'safety', trigger: 'consecutive_low', species: 'cat', daysBelowBaseline: 3, refusedFoodLabel: null, ratedMealsConsidered: 9 },
+    };
+    mockUseSignal.mockReturnValue(state([benignLead, decline]));
+    const second = render(<SignalZone withholdFallingVomit={false} />);
+    await waitFor(() => expect(second.getByTestId('signal-lead-card')).toBeTruthy());
+    expect(mockLoadSignalLead).toHaveBeenLastCalledWith('pet-1', benignLead, true);
   });
 
   it('the header’s "Open ›" is gone: every card is its own door', async () => {

@@ -128,7 +128,7 @@ export interface WorthRaisingInput {
   /** The cached findings, or null when the cache could not be read (see above). */
   findings: CachedFinding[] | null;
   /** Home's B-789 suppression, passed through so the two surfaces cannot disagree. */
-  suppressTrialResponse: boolean;
+  withholdFallingVomit: boolean;
   /** `resolveTrialStrip`'s model for this pet, or null when no trial is running. */
   trialStrip: TrialStripModel | null;
   /**
@@ -345,7 +345,7 @@ function buildSignalRows(input: WorthRaisingInput): SignalEntry[] {
   // where it appears nowhere else. The rundown block has a tile for timing and none for
   // a correlation; the correlation is the row with no second home.
   let standDowns = 0;
-  return visibleFindings(input.findings, input.suppressTrialResponse, input.nowMs)
+  return visibleFindings(input.findings, input.withholdFallingVomit, input.nowMs)
     .filter((f) => !isStoodDown(f.finding) || ++standDowns <= 1)
     .map((f, i) => ({
       finding: f.finding,

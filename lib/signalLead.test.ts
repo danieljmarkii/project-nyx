@@ -14,6 +14,7 @@ import { loadSignalLead } from './signalLead';
 import type { CachedFinding } from './signal';
 import { usePetStore } from '../store/petStore';
 import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
+import { weekStartIndex } from './chartModels';
 
 const shift = (key: string, d: number) => dayKeyFromIndex((localDayIndexOf(key) as number) + d);
 const today = toLocalDayKey(new Date());
@@ -48,7 +49,7 @@ describe('loadSignalLead', () => {
       { eventId: 'a', occurredAt: '', dayKey: today, minutesSinceMeal: null, photo: null },
       { eventId: 'b', occurredAt: '', dayKey: shift(today, -8), minutesSinceMeal: null, photo: null },
     ]);
-    const model = await loadSignalLead('pet-1', reflection);
+    const model = await loadSignalLead('pet-1', reflection, false);
     expect(mockReadSignalTrial).toHaveBeenCalledWith(expect.objectContaining({ id: 'pet-1', name: 'Nyx', species: 'cat' }), expect.any(Number));
     expect(mockReadSignalEpisodes).toHaveBeenCalledWith('pet-1', 'vomit');
     expect(model.title).toBe('Vomiting, week over week');
@@ -61,14 +62,14 @@ describe('loadSignalLead', () => {
   it('a running trial marks the chart; the title is the claim, the same on a trial day (D2, CUL-1270)', async () => {
     mockReadSignalEpisodes.mockResolvedValue([]);
     mockReadSignalTrial.mockResolvedValue({ startDay: shift(today, -20), identity: 'Rabbit trial', dayCounter: 21, targetDays: 56, foodLabel: null });
-    const model = await loadSignalLead('pet-1', reflection);
+    const model = await loadSignalLead('pet-1', reflection, false);
     expect(model.title).toBe('Vomiting, week over week');
     expect(model.trial?.dayCounter).toBe(21);
     expect(model.weekly?.mark?.day).toBe(shift(today, -20));
   });
 
   it('a finding that counts no symptom carries the title alone, and issues no episode read', async () => {
-    const model = await loadSignalLead('pet-1', intake);
+    const model = await loadSignalLead('pet-1', intake, false);
     expect(model).toMatchObject({ title: 'Eating less than usual', weekly: null, line: null, noun: null });
     expect(mockReadSignalEpisodes).not.toHaveBeenCalled();
   });
@@ -76,10 +77,76 @@ describe('loadSignalLead', () => {
   it('a failed trial read still draws the card without the trial; an unknown pet reads no trial', async () => {
     mockReadSignalEpisodes.mockResolvedValue([]);
     mockReadSignalTrial.mockRejectedValue(new Error('sqlite'));
-    const model = await loadSignalLead('pet-1', reflection);
+    const model = await loadSignalLead('pet-1', reflection, false);
     expect(model.trial).toBeNull();
     expect(model.title).toBe('Vomiting, week over week');
-    await loadSignalLead('pet-9', reflection);
+    await loadSignalLead('pet-9', reflection, false);
     expect(mockReadSignalTrial).toHaveBeenCalledTimes(1);
+  });
+});
+
+// CUL-1216 (BRK-4 / BRK-6): the lead line's falling pair carries its gates — the zone's
+// not-eating register, the engine's density verdict, and the two drawn weeks' logging.
+describe('loadSignalLead — the falling week pair is withheld where the shipped card withheld it', () => {
+  const todayIdx = localDayIndexOf(today) as number;
+  const thisSunday = weekStartIndex(todayIdx);
+  const lastWeekDays = [1, 2, 3, 4, 5, 6, 7].map((d) => dayKeyFromIndex(thisSunday - d));
+  const thisWeekDays = Array.from({ length: todayIdx - thisSunday + 1 }, (_, i) => dayKeyFromIndex(thisSunday + i));
+  const episodesLastWeek = [1, 3, 5].map((d) => ({
+    eventId: `e${d}`,
+    occurredAt: '',
+    dayKey: dayKeyFromIndex(thisSunday - d),
+    minutesSinceMeal: null,
+    photo: null,
+  }));
+  const falling: CachedFinding = {
+    ...reflection,
+    finding: { ...reflection.finding, direction: 'improving', currentCount: 0, priorCount: 3 } as CachedFinding['finding'],
+  };
+
+  it('a falling vomit pair beside a not-eating record prints this week alone', async () => {
+    mockReadSignalEpisodes.mockResolvedValue(episodesLastWeek);
+    mockReadLoggedDays.mockResolvedValue({ loggedDays: [...lastWeekDays, ...thisWeekDays], recordStart: shift(today, -100) });
+    const model = await loadSignalLead('pet-1', falling, true);
+    expect(model.lineWithheld).toBe('not_eating');
+    expect(model.line).not.toMatch(/last week/);
+    expect(model.line).toMatch(/^0 this week/);
+  });
+
+  it('the same record with the pet eating prints the pair (the gate withholds only what it must)', async () => {
+    mockReadSignalEpisodes.mockResolvedValue(episodesLastWeek);
+    mockReadLoggedDays.mockResolvedValue({ loggedDays: [...lastWeekDays, ...thisWeekDays], recordStart: shift(today, -100) });
+    const model = await loadSignalLead('pet-1', falling, false);
+    expect(model.lineWithheld).toBeNull();
+    expect(model.line).toMatch(/· 3 last week$/);
+  });
+
+  it('a falling pair whose drawn weeks were not logged alike prints this week alone (the counterexample: 4 of 7 days)', async () => {
+    mockReadSignalEpisodes.mockResolvedValue(episodesLastWeek);
+    // Last week fully logged; nothing logged this week so far.
+    mockReadLoggedDays.mockResolvedValue({ loggedDays: lastWeekDays, recordStart: shift(today, -100) });
+    const model = await loadSignalLead('pet-1', falling, false);
+    expect(model.lineWithheld).toBe('density');
+    expect(model.line).not.toMatch(/last week/);
+  });
+
+  it('the engine’s own density verdict withholds the pair even where the drawn weeks look alike', async () => {
+    mockReadSignalEpisodes.mockResolvedValue(episodesLastWeek);
+    mockReadLoggedDays.mockResolvedValue({ loggedDays: [...lastWeekDays, ...thisWeekDays], recordStart: shift(today, -100) });
+    const engineWithheld: CachedFinding = {
+      ...falling,
+      finding: { ...falling.finding, density: { comparable: false, currentLoggingDays: 4, priorLoggingDays: 7 } } as CachedFinding['finding'],
+    };
+    const model = await loadSignalLead('pet-1', engineWithheld, false);
+    expect(model.lineWithheld).toBe('density');
+    expect(model.line).not.toMatch(/last week/);
+  });
+
+  it('a RISE is never withheld, not even beside a not-eating record', async () => {
+    mockReadSignalEpisodes.mockResolvedValue([{ eventId: 't', occurredAt: '', dayKey: today, minutesSinceMeal: null, photo: null }]);
+    mockReadLoggedDays.mockResolvedValue({ loggedDays: thisWeekDays, recordStart: shift(today, -100) });
+    const model = await loadSignalLead('pet-1', reflection, true);
+    expect(model.lineWithheld).toBeNull();
+    expect(model.line).toMatch(/· 0 last week$/);
   });
 });

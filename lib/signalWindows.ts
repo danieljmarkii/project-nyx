@@ -195,11 +195,13 @@ export function weekLineNumbers(model: WeeklyBucketsModel): { thisWeek: number; 
 }
 
 /** "2 this week so far · 3 last week" — the card's one line. "So far" only while the week
- *  is not over; a count, never a direction word. */
-export function weekLine(model: WeeklyBucketsModel): string {
+ *  is not over; a count, never a direction word. `withholdPrior` drops last week's count
+ *  when the pair may not be printed (`lib/signalWithhold.ts`, CUL-1216) — this week's
+ *  count alone, the shipped face's density swap. */
+export function weekLine(model: WeeklyBucketsModel, withholdPrior: boolean = false): string {
   const { thisWeek, lastWeek, soFar } = weekLineNumbers(model);
   const head = `${thisWeek} this week${soFar ? ' so far' : ''}`;
-  return lastWeek == null ? head : `${head} · ${lastWeek} last week`;
+  return lastWeek == null || withholdPrior ? head : `${head} · ${lastWeek} last week`;
 }
 
 /** One compare window, before its episodes are counted. */

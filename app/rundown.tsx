@@ -530,7 +530,7 @@ async function buildForAppointment(
     // The same fail-closed rule Home applies (B-789): absence of a refusal fact
     // during a failed load is not evidence of eating, so an unloadable trial
     // suppresses the reassuring trial_response row rather than letting it through.
-    suppressTrialResponse: trialInput ? isAnimalNotEating(trialInput) : true,
+    withholdFallingVomit: trialInput ? isAnimalNotEating(trialInput) : true,
     trialStrip: trialInput ? resolveTrialStrip(trialInput) : null,
     trialScreen,
     trialResponseCounts: trialInput?.trialResponse ?? null,

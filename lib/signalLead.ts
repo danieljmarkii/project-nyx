@@ -12,6 +12,7 @@ import type { CachedFinding } from './signal';
 import { symptomWord } from './signalCopy';
 import { signalTitle } from './signalTitle';
 import { signalSymptomOf, signalWeeks, weekLine, type SignalTrialWindow } from './signalWindows';
+import { weekLineWithheld, type FallingPairWithheld, type NotEatingFact } from './signalWithhold';
 import type { WeeklyBucketsModel } from './chartModels';
 import { toLocalDayKey } from './utils';
 import { usePetStore } from '../store/petStore';
@@ -21,12 +22,24 @@ export interface SignalLeadModel {
   /** Null for a finding that counts no symptom (the card then carries the title alone). */
   weekly: WeeklyBucketsModel | null;
   line: string | null;
+  /** Why the line dropped last week's count, or null when it prints the pair (CUL-1216). */
+  lineWithheld: FallingPairWithheld | null;
   noun: string | null;
   trial: SignalTrialWindow | null;
 }
 
-/** Everything the lead card draws for one finding of one pet. */
-export async function loadSignalLead(petId: string, cached: CachedFinding, nowMs: number = Date.now()): Promise<SignalLeadModel> {
+/**
+ * Everything the lead card draws for one finding of one pet. `notEating` is the pet's
+ * not-eating register as the zone holds it (Home's fail-closed reading, OR'd with an
+ * `intake_decline` in the Signal): a falling vomit week pair is never printed beside it, and
+ * neither is a falling pair the density gate withholds (CUL-1216, BRK-4 / BRK-6).
+ */
+export async function loadSignalLead(
+  petId: string,
+  cached: CachedFinding,
+  notEating: NotEatingFact,
+  nowMs: number = Date.now(),
+): Promise<SignalLeadModel> {
   const today = toLocalDayKey(new Date(nowMs));
   const pet = usePetStore.getState().pets.find((p) => p.id === petId) ?? null;
   const symptom = signalSymptomOf(cached.finding);
@@ -36,7 +49,7 @@ export async function loadSignalLead(petId: string, cached: CachedFinding, nowMs
     readLoggedDays(petId),
   ]);
   const title = signalTitle(cached.finding, trial);
-  if (!symptom) return { title, weekly: null, line: null, noun: null, trial };
+  if (!symptom) return { title, weekly: null, line: null, lineWithheld: null, noun: null, trial };
   const weekly = signalWeeks({
     finding: cached.finding,
     today,
@@ -45,7 +58,8 @@ export async function loadSignalLead(petId: string, cached: CachedFinding, nowMs
     loggedDays: logged.loggedDays,
     recordStart: logged.recordStart,
   });
-  return { title, weekly, line: weekLine(weekly), noun: symptomWord(symptom), trial };
+  const lineWithheld = weekLineWithheld(weekly, { finding: cached.finding, symptom, notEating });
+  return { title, weekly, line: weekLine(weekly, lineWithheld != null), lineWithheld, noun: symptomWord(symptom), trial };
 }
 
 /**

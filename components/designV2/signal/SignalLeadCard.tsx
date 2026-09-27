@@ -74,11 +74,17 @@ interface Props {
   /** The pet the findings belong to (C-9) — the zone's `petId`, never the store's active pet. */
   petId: string;
   onOpen: (finding: SignalFinding) => void;
+  /**
+   * The zone's not-eating register for this pet (CUL-1216, BRK-6): Home's fail-closed
+   * reading of `isAnimalNotEating`, OR'd with an `intake_decline` in the Signal. True
+   * withholds a falling vomit week pair from the line. Required, so no caller can forget it.
+   */
+  withholdFallingVomit: boolean;
 }
 
 type Load = { status: 'loading' } | { status: 'ready'; model: SignalLeadModel } | { status: 'failed' };
 
-export function SignalLeadCard({ cached, petId, onOpen }: Props) {
+export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit }: Props) {
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
   const signalTick = useSyncStore((s) => s.signalTick);
   const identity = foldIdentity(cached.finding);
@@ -113,7 +119,7 @@ export function SignalLeadCard({ cached, petId, onOpen }: Props) {
     if (safety) return;
     let cancelled = false;
     setLoad({ status: 'loading' });
-    loadSignalLead(petId, cached)
+    loadSignalLead(petId, cached, withholdFallingVomit)
       .then((model) => {
         if (!cancelled) setLoad({ status: 'ready', model });
       })
@@ -127,7 +133,7 @@ export function SignalLeadCard({ cached, petId, onOpen }: Props) {
     // The finding's content, not the cached object's identity: a re-read that produced
     // the same payload must not redraw the chart under the owner's eyes (C-30).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [petId, identity, JSON.stringify(cached.finding), hydrationTick, signalTick, safety]);
+  }, [petId, identity, JSON.stringify(cached.finding), hydrationTick, signalTick, safety, withholdFallingVomit]);
 
   // S1: a safety lead is the plain row, with the door. The fallback is the same.
   if (safety || load.status === 'failed') {
