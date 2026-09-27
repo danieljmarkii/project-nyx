@@ -96,6 +96,34 @@ function symptomThing(symptomType: Parameters<typeof symptomWord>[0]): string {
 }
 
 /**
+ * The finding types that have a title rule (CUL-1218, G10 extended). A payload can carry a
+ * type this build has no words for — `gap_shortening` is emitted by the engine and is not in
+ * the client's union — and such a finding is REFUSED on every Design v2 surface (the lead
+ * card, the row, the screen), never drawn as a blank card titled "Signal". The shipped face
+ * already skips an unknown type (`InsightCard`'s registry guard), so refusing here is the
+ * shipped behaviour, not a new one. A new type joins this set and `signalTitle` together.
+ */
+const TITLED_TYPES: ReadonlySet<string> = new Set<SignalFinding['type']>([
+  'symptom_chronicity',
+  'symptom_worsening',
+  'reflection',
+  'postprandial_timing',
+  'empty_stomach_timing',
+  'timing_story',
+  'timeofday_clustering',
+  'food_symptom_correlation',
+  'stood_down',
+  'trial_response',
+  'incident_red_flag',
+  'intake_decline',
+]);
+
+/** True when this build can title the finding (`TITLED_TYPES`); false refuses it. */
+export function hasSignalTitleRule(finding: SignalFinding): boolean {
+  return TITLED_TYPES.has((finding as { type: string }).type);
+}
+
+/**
  * The title for one finding: its claim.
  *
  *   Vomiting in 5 of the last 8 weeks            (recurrence — the chronicity finding)
