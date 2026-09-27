@@ -453,6 +453,12 @@ describe('the row’s words', () => {
       }),
     ).toBeNull();
   });
+
+  // CUL-1218 (G10 extended): the engine emits `gap_shortening`; this build has no title for
+  // it, so there is no row — never a door headlined "Signal".
+  it('a type with no title rule is not a row', () => {
+    expect(signalHomeLine({ type: 'gap_shortening', priorityClass: 'insight', symptomType: 'vomit' } as never)).toBeNull();
+  });
 });
 
 describe('the spoken label', () => {

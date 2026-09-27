@@ -7,6 +7,7 @@ import { useSyncStore } from '../../../store/syncStore';
 import type { CachedFinding, PriorityClass, SignalFinding } from '../../../lib/signal';
 import { foldIdentity } from '../../../lib/signalFold';
 import { loadSignalLead, type SignalLeadModel } from '../../../lib/signalLead';
+import { hasSignalTitleRule } from '../../../lib/signalTitle';
 import { WeeklyBars } from '../../charts/WeeklyBars';
 import { RAIL_WIDTH } from '../../home/InsightCard';
 import { useColdStartDrawFact } from '../../motion/coldStartDraw';
@@ -92,6 +93,7 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit, ge
   const signalTick = useSyncStore((s) => s.signalTick);
   const identity = foldIdentity(cached.finding);
   const safety = cached.finding.priorityClass === 'safety';
+  const titled = hasSignalTitleRule(cached.finding);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const reducedMotion = useReducedMotion();
   const flightState = useFlightState();
@@ -120,7 +122,7 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit, ge
   }, [inbound, identity]);
 
   useEffect(() => {
-    if (safety) return;
+    if (safety || !titled) return;
     let cancelled = false;
     // A re-read of the SAME finding keeps the chart on screen while it runs (CUL-1223): a
     // skeleton on every sync tick unmounted the chart, and a remounted chart draws in
@@ -142,7 +144,12 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit, ge
     // The finding's content, not the cached object's identity: a re-read that produced
     // the same payload must not redraw the chart under the owner's eyes (C-30).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [petId, identity, JSON.stringify(cached.finding), hydrationTick, signalTick, safety, withholdFallingVomit, generatedAt]);
+  }, [petId, identity, JSON.stringify(cached.finding), hydrationTick, signalTick, safety, titled, withholdFallingVomit, generatedAt]);
+
+  // CUL-1218 (G10 extended): a type this build cannot title is refused — no blank card
+  // titled "Signal", no door to a screen that would refuse it too. The shipped face skips an
+  // unknown type the same way (`InsightCard`'s registry guard).
+  if (!titled) return null;
 
   // S1: a safety lead is the plain row, with the door. The fallback is the same.
   if (safety || load.status === 'failed') {

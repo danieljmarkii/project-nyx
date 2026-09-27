@@ -79,6 +79,29 @@ describe('loadSignalLead', () => {
     expect(mockReadSignalEpisodes).not.toHaveBeenCalled();
   });
 
+  // CUL-1218: a correlation's population is its matched episodes, which no local read counts;
+  // bars of every vomit under "Vomiting after chicken" counted what the finding never did.
+  it('a correlation carries its title alone: no bars, no line, no episode or gate read', async () => {
+    const correlation: CachedFinding = {
+      rank: 0,
+      text: "Nyx's vomiting has tended to follow meals with chicken, across 4 matched days of logs.",
+      finding: {
+        type: 'food_symptom_correlation',
+        priorityClass: 'insight',
+        tier: 'established',
+        symptomType: 'vomit',
+        protein: 'chicken',
+        matchedPairs: 4,
+        symptomEventCount: 20,
+        correlationWindowHours: 12,
+      },
+    };
+    const model = await loadSignalLead('pet-1', correlation, false, null);
+    expect(model).toMatchObject({ title: 'Vomiting after chicken', weekly: null, line: null, noun: null });
+    expect(mockReadSignalEpisodes).not.toHaveBeenCalled();
+    expect(mockReadGateLoggedDays).not.toHaveBeenCalled();
+  });
+
   it('a failed trial read still draws the card without the trial; an unknown pet reads no trial', async () => {
     mockReadSignalEpisodes.mockResolvedValue([]);
     mockReadSignalTrial.mockRejectedValue(new Error('sqlite'));

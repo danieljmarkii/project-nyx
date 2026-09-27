@@ -260,6 +260,21 @@ describe('flag-on', () => {
     });
   });
 
+  // CUL-1218 (G10 extended; adversarial pass): a type this build cannot title leaves the
+  // stack before the lead is chosen — the next card takes the lead canvas, no empty slot.
+  it('an untitled type at rank 0 is dropped and the next insight takes the lead card', async () => {
+    const gap = {
+      rank: 0,
+      text: 'Gaps between vomiting episodes are getting shorter.',
+      finding: { type: 'gap_shortening', priorityClass: 'insight', symptomType: 'vomit' },
+    } as unknown as CachedFinding;
+    mockUseSignal.mockReturnValue(state([gap, benignLead]));
+    const view = render(<SignalZone />);
+    await waitFor(() => expect(view.getByTestId('signal-lead-card')).toBeTruthy());
+    expect(mockLoadSignalLead).toHaveBeenCalledWith('pet-1', benignLead, false, null);
+    expect(view.queryAllByTestId('signal-row')).toHaveLength(0);
+  });
+
   it('the header’s "Open ›" is gone: every card is its own door', async () => {
     mockUseSignal.mockReturnValue(state([benignLead, secondary]));
     const view = render(<SignalZone />);

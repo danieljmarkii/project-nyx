@@ -20,6 +20,7 @@ import { signalSaysNotEating, visibleFindings } from '../../lib/signalVisible';
 import type { SignalTrialAnchor } from '../../lib/signalTrialAnchor';
 import { signalTrialWindowOf } from '../../lib/signalScreen';
 import type { TrialCardTrial } from '../../lib/dietTrialCard';
+import { hasSignalTitleRule } from '../../lib/signalTitle';
 import { useSignalFold, type SignalFoldApi } from '../../hooks/useSignalFold';
 import { useLastEpisodeDates, type LastEpisodeDates } from '../../hooks/useLastEpisodeDates';
 import { useWatchingRowsRead } from '../../hooks/useWatchingRows';
@@ -993,7 +994,12 @@ function LiveStack({
   // CUL-601: the arrival moment reads `visibleFindings` too, so that empty frame no longer
   // gets a celebration drawn over it — but the empty frame itself is still CUL-527's.
   // CUL-1360: and a falling trial pair counted over a trial since replaced (`trialAnchor`).
-  const ordered = visibleFindings(findings, withholdFallingVomit, Date.now(), trialAnchor);
+  // CUL-1218 (G10 extended): under Design v2 a type this build cannot title is not in the
+  // stack at all — dropped BEFORE the lead is chosen, so the next card takes the lead canvas
+  // and no divider is left above an empty slot (adversarial pass). Flag-off is untouched:
+  // the shipped `InsightCard` skips an unknown type itself.
+  const visible = visibleFindings(findings, withholdFallingVomit, Date.now(), trialAnchor);
+  const ordered = designV2 && onOpen && petId ? visible.filter((f) => hasSignalTitleRule(f.finding)) : visible;
   // CUL-1216 (BRK-6): the SAME register for the pairs a card carries inside it — the Design v2
   // lead card's week line and a vomit chronicity card's compare — with the Signal's own
   // `intake_decline` OR'd in, exactly as `visibleFindings` reads it, so the card a stack drops

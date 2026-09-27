@@ -12,7 +12,7 @@ import type { CachedFinding } from './signal';
 import { symptomWord } from './signalCopy';
 import { signalTitle } from './signalTitle';
 import { signalTrialWindowFor } from './signalTrialAnchor';
-import { signalSymptomOf, signalWeeks, weekLine, type SignalTrialWindow } from './signalWindows';
+import { signalChartSymptomOf, signalWeeks, weekLine, type SignalTrialWindow } from './signalWindows';
 import { weekLineWithheld, type NotEatingFact, type WeekLineWithheld } from './signalWithhold';
 import type { WeeklyBucketsModel } from './chartModels';
 import { toLocalDayKey } from './utils';
@@ -48,7 +48,7 @@ export async function loadSignalLead(
 ): Promise<SignalLeadModel> {
   const today = toLocalDayKey(new Date(nowMs));
   const pet = usePetStore.getState().pets.find((p) => p.id === petId) ?? null;
-  const symptom = signalSymptomOf(cached.finding);
+  const symptom = signalChartSymptomOf(cached.finding);
   const [trialRead, episodes, logged, gateLoggedDays] = await Promise.all([
     // A failed trial read is UNANSWERED, not "no trial" (C-12): the card still draws, and a
     // falling line withholds (CUL-1216 re-review, N1). No pet means no trial to ask about.
