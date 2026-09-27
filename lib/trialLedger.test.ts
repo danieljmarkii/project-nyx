@@ -72,6 +72,8 @@ interface Rec {
   rating?: string | null;
   noAllowedSet?: boolean;
   freeChoice?: boolean;
+  /** Extra trial-diet bowls, each with its own day, hour and rating (CUL-1344). */
+  extraMeals?: Array<{ day: number; hour: number; rating: string | null }>;
   nowDay: number;
   nowHour?: number;
 }
@@ -114,6 +116,13 @@ function seed(rec: Rec) {
       event_id: `m${d}`, occurred_at: onDay(d, 8).toISOString(), food_item_id: 'f1',
       brand: 'Royal Canin', product_name: 'Rabbit', food_type: 'meal', proteins: '["rabbit"]',
       intake_rating: rec.rating === undefined ? 'all' : rec.rating,
+    });
+  }
+  for (const m of rec.extraMeals ?? []) {
+    feedings.push({
+      event_id: `x${m.day}-${m.hour}`, occurred_at: onDay(m.day, m.hour).toISOString(), food_item_id: 'f1',
+      brand: 'Royal Canin', product_name: 'Rabbit', food_type: 'meal', proteins: '["rabbit"]',
+      intake_rating: m.rating,
     });
   }
   for (const d of rec.treatDays ?? []) {
@@ -594,3 +603,66 @@ describe('day keys at 00:30 and 23:30 local, in UTC−10, UTC+12:45 and UTC+14',
     expect(l.currentRowIndex).toBe(1);
   });
 });
+
+// CUL-1344 (PM ruling 2026-09-27): a rated, unfinished trial-diet bowl in the current
+// trial week withholds the ledger (and so the lane) BELOW the refusal fact's floors.
+// The adversarial pass on TS-5 executed the case this closes: a day-1 cat with two
+// refused bowls cleared no floor, and the lane drew "1 of 1 so far".
+describe('an unfinished bowl in the current trial week, below the refusal floor', () => {
+  const clean: Rec = { target: 56, mealDays: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], nowDay: 10 };
+
+  it('the day-1 cat with 2 of 2 rated bowls refused: no fact fires, and no ledger or lane draws', async () => {
+    const { input, facts, ledger } = await load({
+      target: 56,
+      mealDays: [],
+      extraMeals: [
+        { day: 1, hour: 8, rating: 'refused' },
+        { day: 1, hour: 18, rating: 'refused' },
+      ],
+      nowDay: 1,
+      nowHour: 20,
+    });
+    // The premise, asserted: nothing the strip withholds on has fired.
+    expect(facts!.trialDietRefusal).toBeNull();
+    expect(facts!.rangeRefusal).toBeNull();
+    expect(withholdingReasons(input)).toEqual([]);
+    expect(facts!.coveredDayIndices).toEqual([idx(1)]); // the day WOULD draw filled
+    expect(facts!.unfinishedDayIndices).toEqual([idx(1)]);
+    expect(ledger).toBeNull();
+    expect(thisWeekLane(ledger, input)).toBeNull();
+  });
+
+  it('"some" and "picked" are unfinished too; "most" is finished (the one predicate, feedingWasFinished)', async () => {
+    for (const rating of ['some', 'picked']) {
+      const r = await load({ ...clean, extraMeals: [{ day: 10, hour: 13, rating }] });
+      expect(r.facts!.unfinishedDayIndices).toEqual([idx(10)]);
+      expect(r.ledger).toBeNull();
+    }
+    const most = await load({ ...clean, extraMeals: [{ day: 10, hour: 13, rating: 'most' }] });
+    expect(most.facts!.unfinishedDayIndices).toEqual([]);
+    expect(most.ledger).not.toBeNull();
+  });
+
+  it('an unrated bowl is unknown, never unfinished: the ledger still draws', async () => {
+    const r = await load({ ...clean, rating: null });
+    expect(r.facts!.unfinishedDayIndices).toEqual([]);
+    expect(r.ledger).not.toBeNull();
+  });
+
+  it('an unfinished bowl in an EARLIER trial week does not withhold this week', async () => {
+    // Day 3 is week 1; today (day 10) is week 2.
+    const r = await load({ ...clean, extraMeals: [{ day: 3, hour: 13, rating: 'refused' }] });
+    expect(r.facts!.trialDietRefusal).toBeNull();
+    expect(r.facts!.unfinishedDayIndices).toEqual([idx(3)]);
+    expect(r.ledger).not.toBeNull();
+    assertInvariants(r.ledger!, r.facts!, r.input);
+  });
+
+  it('the week boundary: day 8 is the current week on day 10, day 7 is not', async () => {
+    const inWeek = await load({ ...clean, extraMeals: [{ day: 8, hour: 13, rating: 'refused' }] });
+    expect(inWeek.ledger).toBeNull();
+    const before = await load({ ...clean, extraMeals: [{ day: 7, hour: 13, rating: 'refused' }] });
+    expect(before.ledger).not.toBeNull();
+  });
+});
+

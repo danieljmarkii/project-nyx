@@ -144,7 +144,9 @@ export interface BuildTrialLedgerArgs {
  *    end line, and drawing it would put counted rows under "the end you set",
  *    which §0.3 forbids. Same ruling, the mirror case, found by the adversarial
  *    pass;
- *  • the two reads disagree about coverage.
+ *  • the two reads disagree about coverage;
+ *  • a rated, unfinished bowl of the refusal lane's population sits in the current
+ *    trial week, below the refusal fact's floors (CUL-1344).
  */
 export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null {
   const { input, facts, timeZone } = args;
@@ -256,6 +258,18 @@ export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null
     !ended && todayIndex >= range.startDayIndex && todayIndex <= range.endDayIndex
       ? rowOf(todayIndex)
       : null;
+
+  // CUL-1344 (PM ruling 2026-09-27): a rated, UNFINISHED bowl of the refusal lane's
+  // population anywhere in the current trial week withholds the ledger, BELOW the
+  // refusal fact's floors. A refused bowl still counts as a logged day, so the day
+  // would draw filled; the floors exist to decide when to SPEAK a refusal, and this
+  // only withholds (S3). The WHOLE ledger, not the one row: a grid missing its current
+  // row breaks S5 (every row carries its count) and the rows' partition of the caption
+  // (C-3). Home's lane is this row, so it goes with it.
+  if (currentRowIndex !== null) {
+    const weekStart = startIndex + currentRowIndex * 7;
+    if (facts.unfinishedDayIndices.some((d) => d >= weekStart && d <= todayIndex)) return null;
+  }
 
   const drawn = rows.flatMap((r) => r.days);
   const legend: TrialLedgerLegendKey[] = ['meals_logged', 'none_logged', 'off_diet'];

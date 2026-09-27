@@ -130,6 +130,15 @@ describe('trialStripLane: the strip withholds its ratio, so no lane', () => {
     expect(trialStripLane(open(input, facts))).toBeNull();
   });
 
+  it('a refused bowl below the refusal floor (CUL-1344): day 1, one bowl, rated refused', async () => {
+    const { input, facts } = await load({ mealDays: [1], rating: 'refused', nowDay: 1 });
+    // Below every floor: the strip withholds nothing, and the day counts as logged.
+    expect(facts!.trialDietRefusal).toBeNull();
+    expect(withholdingReasons(input)).toEqual([]);
+    expect(facts!.coverage!.daysLogged).toBe(1);
+    expect(trialStripLane(open(input, facts))).toBeNull();
+  });
+
   it('a live intake decline on the card input', async () => {
     const { input, facts } = await load(CLEAN);
     expect(trialStripLane(open({ ...input, intakeDeclineHeadline: 'Mochi ate less' }, facts))).toBeNull();
