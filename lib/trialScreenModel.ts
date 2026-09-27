@@ -124,7 +124,8 @@ export interface TrialScreenTrial {
   /** §3.9 — the state's own actions: after the doors on a safety face, at the bottom
    *  otherwise. Never the decision block's (those are in `decision`). */
   actions: TrialCardAction[];
-  /** §3.9 — "Manage the trial" at the bottom of a running, non-safety trial. */
+  /** §3.9 — "Manage the trial" at the bottom of a running, non-safety trial, and after
+   *  the doors on the intake-decline face (CUL-1339 #2). */
   manage: string | null;
 }
 
@@ -165,6 +166,11 @@ const DECISION_STATES: ReadonlySet<TrialCardState> = new Set(['milestone', 'over
 const RUNNING_STATES: ReadonlySet<TrialCardState> = new Set([
   'day_one', 'clean', 'exposures', 'below_floor', 'free_fed', 'overrun',
 ]);
+// CUL-1339 #2 (PM, 2026-09-27, option (a)): the intake-decline face carries it too, after
+// the doors. Neither of its two acts (change the window, replace the trial) ends anything
+// the call-today depends on (the ask is the intake flag's, not the trial's), and with TS-6's
+// Pet tab door this face is the only place left to change the trial from. `trial_refusal`
+// keeps its own *Change or end the trial*; the milestone keeps its three choices only.
 
 export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenModel {
   const { trial, facts } = args;
@@ -321,7 +327,7 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
       : null,
     report,
     actions,
-    manage: RUNNING_STATES.has(state) ? MANAGE_THE_TRIAL : null,
+    manage: RUNNING_STATES.has(state) || state === 'intake_decline' ? MANAGE_THE_TRIAL : null,
   };
 }
 

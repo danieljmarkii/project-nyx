@@ -399,7 +399,7 @@ describe('a trial refusal (§3.2, §0.3, §12 findings 2 and 3)', () => {
 });
 
 describe('an intake decline (§3.2)', () => {
-  it('leads with the decline and its ask, draws no ledger and no manage', async () => {
+  it('leads with the decline and its ask, draws no ledger, and offers Manage after the doors', async () => {
     const l = await load(MOCHI_DAY_23);
     const input = {
       ...l.input,
@@ -416,7 +416,8 @@ describe('an intake decline (§3.2)', () => {
     expect(m.ledger).toBeNull();
     expect(m.vomiting).toBeNull();
     expect(m.actions).toEqual([]);
-    expect(m.manage).toBeNull();
+    // CUL-1339 #2 (a): the one way to change the trial once TS-6 makes the Pet tab a door.
+    expect(m.manage).toBe('Manage the trial');
     expect(m.allowedFoods).toBeNull();
     // The off-diet floor survives the sickest card (the card's own rule), with its door.
     expect(m.exposures).not.toBeNull();
@@ -729,5 +730,43 @@ describe('the coverage-null projection never reads a logged record as empty, nor
     expect(texts(m).some((t) => /aren’t counted here/.test(t))).toBe(false);
     // The floor survives: 8 treats did not match.
     expect(texts(m).some((t) => /8 did not/.test(t))).toBe(true);
+  });
+});
+
+// ── CUL-1339 #2 (PM, 2026-09-27, option (a)) ─────────────────────────────────────────
+//
+// *Manage the trial* sits on the intake-decline face. Its two acts are "change the window"
+// (a new `target_duration_days` on the same trial) and "replace the trial" (the running one
+// ends, a new one starts today). The ruling's premise is that neither drops the call-today:
+// the ask comes from the intake flag, not from the trial. Asserted by building the face
+// over the record each act leaves behind, with the decline still live, and requiring the
+// same register lines, word for word, on a cat (the "needs a call today" register).
+
+describe('Manage on the intake-decline face never drops the call-today (CUL-1339 #2)', () => {
+  const DECLINE = 'Mochi has eaten less than usual for 2 days.';
+  const asCat = (l: Loaded) => ({ ...l, input: { ...l.input, species: 'cat' as const, intakeDeclineHeadline: DECLINE } });
+
+  it('before, after changing the window, and after replacing the trial', async () => {
+    const before = trialModel(buildTrialScreenModel(argsFor(asCat(await load(MOCHI_DAY_23)))));
+    expect(before.state).toBe('intake_decline');
+    expect(before.manage).toBe('Manage the trial');
+    // Non-vacuity: the face carries the call-today to lose.
+    expect(before.safety?.[0]).toBe(DECLINE);
+    expect(before.safety?.[1]).toMatch(/^A cat that stops eating needs a call today/);
+
+    const rewindowed = trialModel(
+      buildTrialScreenModel(argsFor(asCat(await load({ ...MOCHI_DAY_23, target: 84 })))),
+    );
+    const replaced = trialModel(
+      buildTrialScreenModel(argsFor(asCat(await load({ target: 56, mealDays: [1], nowDay: 1 })))),
+    );
+    for (const after of [rewindowed, replaced]) {
+      expect(after.state).toBe('intake_decline');
+      expect(after.safety).toEqual(before.safety);
+      expect(after.manage).toBe('Manage the trial');
+    }
+    // Non-vacuity: the two acts really did change the trial the face is drawn over.
+    expect(rewindowed.title).not.toBe(before.title);
+    expect(replaced.title).not.toBe(before.title);
   });
 });
