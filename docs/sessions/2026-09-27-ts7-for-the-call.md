@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-27
 
-Shipped via #949. CUL-1303, project **Diet trial — its own screen**, milestone C · The doors, the safety face, the recheck. One of four parallel step-3 lanes (TS-5 CUL-1301, TS-6 CUL-1302, TS-8 CUL-1304, this one). TS-6 edits the same two screen files and had not landed when this session ended.
+Shipped via #949. CUL-1303, project **Diet trial — its own screen**, milestone C · The doors, the safety face, the recheck. One of four parallel step-3 lanes (TS-5 CUL-1301, TS-6 CUL-1302, TS-8 CUL-1304, this one). TS-6 edits the same two screen files; it landed first, and `main` was merged in before this PR.
 
 ## What shipped
 
@@ -49,5 +49,5 @@ The prescription-only narrowing of the swap line ("usually guaranteed" is false 
 ## Residuals
 
 - There has been no device pass; that is TS-DP (CUL-1306).
-- The merge with TS-6 is pending. One check-in is armed for 11:08 UTC to merge `main` in if TS-6 has landed.
+- TS-5 (#948) and TS-6 (#950) landed while this PR was open. Each conflicted only on the spec's header line, where both branches noted their rulings, so each was merged in. The code merged cleanly (TS-6's decline-face edit and this PR's refusal box don't overlap), and the full suite passed on both merge commits.
 - A mistake: a `git checkout` used to undo a mutation test reverted an uncommitted edit, and it was restored from a backup. Mutations are now run against a `cp` backup, never undone with `git checkout` over uncommitted work.
