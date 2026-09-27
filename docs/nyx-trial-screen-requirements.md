@@ -1,6 +1,6 @@
 # The trial's own screen — Requirements
 
-**Version:** 1.1 · BUILD-READY (v1.0 failed its adversarial pass; v1.1 carries the fixes, §12) | **Last Updated:** 2026-09-27 (§0.3, §3.3, §3.9, §5.1, §5.2 rulings inline) | **Issue:** CUL-1291 (discovery) · the Linear project **Diet trial — its own screen**
+**Version:** 1.1 · BUILD-READY (v1.0 failed its adversarial pass; v1.1 carries the fixes, §12) | **Last Updated:** 2026-09-27 (§0.3, §3.3, §3.7, §3.9, §5.1, §5.2 rulings inline) | **Issue:** CUL-1291 (discovery) · the Linear project **Diet trial — its own screen**
 **Design authority:** `docs/culprit-trial-screen-mockups.html` round 2 (one proposal), published at https://claude.ai/artifact/5AHCdRG9jXj2q48vC2o6cA
 **Evidence:** `docs/sessions/2026-09-26-trial-screen-brainstorm.md` (five isolated reads). The August pass at the same idea is draft PR #631 (T2, the `/trial` room); this spec supersedes its T2 and T3.
 **Parent spec:** `docs/nyx-diet-trial-requirements.md`. Every trial rule in it binds here (§5.2 the permitted statements, §5.3 one predicate, B-422 belief versus evidence). This spec adds a host, not a meaning.
@@ -123,7 +123,7 @@ The same card as the ledger (§3.5), continuing below its caption: the resolver'
 
 ### 3.7 Vomiting
 
-The strip's line, verbatim, when the strip renders it: the same `trialResponseLine`, withheld exactly when the strip withholds it (S3, T-1). **It sits inside the facts card (§3.6) as its last line, at the strip's type size, with no heading of its own**: a dedicated section would lend it a prominence the density guard under it has not earned (the antiemetic counterexample on CUL-1216 passes that guard). With no line, nothing renders. TS-9 adds a door row under it to the Signal screen of a live `trial_response` finding, only when CUL-1216 has merged **and** `design_v2` is live for the account (otherwise that route answers with its flag-off screen).
+The strip's line, verbatim, when the strip renders it: the same `trialResponseLine`, withheld exactly when the strip withholds it (S3, T-1). **It sits inside the facts card (§3.6) as its last line, at the strip's type size, with no heading of its own**: a dedicated section would lend it a prominence the density guard under it has not earned (the antiemetic counterexample on CUL-1216 passes that guard). With no line, nothing renders. TS-9 adds a door row under it to the Signal screen of a live `trial_response` finding, only when CUL-1216 has merged **and** `design_v2` is live for the account (otherwise that route answers with its flag-off screen). ⚠ **RULED 2026-09-27 (PM, CUL-1305 option (a)):** the row's head is the Signal screen's own title (`signalTitle`, over the same trial window) and its sub-line is *Vomiting, from the Signal*. Since CUL-1270 that title reads "Rabbit trial, day 23 of 56", nearly the screen's own title, so a head alone read as a door to the screen already open. "Live" is Home's own predicate (`visibleFindings` with Home's not-eating register), so the row exists exactly when Home draws the card: no row for a falling pair over a pet that may not be eating, a row for a rising one on the safety face too (S7). Built in `lib/trialSignalDoor.ts`.
 
 ### 3.8 Doors out
 
@@ -279,7 +279,7 @@ Step 1 changes nothing an owner can see and may start now. Steps 2 onward wait f
 
 **TS-8.** Get ready's trial row asks Dr. Chen's questions as its headings, in his order, and every number equals the trial screen's for the same fixture. The vet-visits spec edit is in the PR.
 
-**TS-9.** The door renders only with a live `trial_response` finding, CUL-1216 merged and `design_v2` live. It opens that finding's screen for this pet.
+**TS-9.** The door renders only with a live `trial_response` finding, CUL-1216 merged and `design_v2` live. It opens that finding's screen for this pet. Its head equals the Signal screen's title for the same finding and window, its sub is *Vomiting, from the Signal*, and with `design_v2` off the Signal cache is never read.
 
 **TS-GA.** Every flag-off path named in §10 is deleted, the guard is retired with its flag, and the parent spec's §4.2 reads the new routing.
 

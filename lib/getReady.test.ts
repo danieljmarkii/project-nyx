@@ -1385,6 +1385,7 @@ function screenTrial(over: Partial<TrialScreenTrial> = {}): TrialScreenTrial {
       { role: 'fact', text: '22 feedings in total, all the trial diet.' },
     ],
     vomiting: "Vomiting: 3 in the trial's 23 days · 11 in the 49 days before, a longer stretch.",
+    notEating: false,
     qualifier: null,
     standingMeta: null,
     standingNote: null,

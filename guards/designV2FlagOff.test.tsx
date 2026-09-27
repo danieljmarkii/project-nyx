@@ -623,7 +623,15 @@ function drawsThroughNamespace(rel: string, src: string): boolean {
  * the gate to DECIDE something without drawing anything. Declared with no members
  * rather than left implicit (C-32); the staleness check below keeps it honest.
  */
-const DRAWS_ELSEWHERE_OK: Record<string, string> = {};
+const DRAWS_ELSEWHERE_OK: Record<string, string> = {
+  // TS-9 (CUL-1305): the trial screen's door to the Signal's trial finding. It reads the
+  // gate to decide whether a door to `app/signal/[id]` may exist (and whether to read the
+  // Signal cache at all); the row it feeds is the trial screen's own `DoorRow`, drawn under
+  // the `trial_screen` flag and its own guard (`guards/trialScreenFlagOff.test.tsx`). Nothing
+  // of the redesign renders from it, and the no-read-when-off half is proved in
+  // `components/trialScreen/TrialScreen.test.tsx`.
+  'hooks/useTrialSignalDoor.ts': 'decides a door on a non-redesign screen; draws nothing of the redesign',
+};
 
 /** The directories both detectors read. Checked against the repository below. */
 const SCAN_DIRS = ['app', 'components', 'hooks', 'lib', 'store'];
@@ -712,7 +720,7 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('the redesign has one gate, and its consumers stay inside the namespace', () => {
-  it('Home, Patterns, the Signal zone, the Signal route and the four wait hosts consume the gate (D2-4, D2-5, D2-3, D2-7), and every consumer is a known one', () => {
+  it('Home, Patterns, the Signal zone, the Signal route, the four wait hosts and the trial screen\'s Signal door consume the gate (D2-4, D2-5, D2-3, D2-7, TS-9), and every consumer is a known one', () => {
     // The set is PINNED, not floored: a new consumer is a new surface or a new card,
     // and it joins this list in the diff that adds it — with its flag-off proof.
     expect(gateConsumers()).toEqual([
@@ -724,6 +732,7 @@ describe('the redesign has one gate, and its consumers stay inside the namespace
       'components/ColdStartOverlay.tsx',
       'components/event/IncidentReadCard.tsx',
       'components/home/SignalZone.tsx',
+      'hooks/useTrialSignalDoor.ts',
     ]);
   });
 
