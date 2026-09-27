@@ -1184,6 +1184,18 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     alert.mockRestore();
   });
 
+  it('a verdict this build does not know lands spoken as an escalation — the words the card renders (CUL-1277)', async () => {
+    // Installed builds outlive the server: off the quiet list is an escalation, on the
+    // card and in the ear alike. The announcement reads the same label function the card
+    // does, so it can never be quieter than the pixels.
+    mockRow = row({ status: 'pending', recommendation: null });
+    const view = render(<VomitAnalysisSection eventId="an-27" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await land(row({ recommendation: 'call_today', read_text: 'Call your vet today.' }));
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+  });
+
   it('is spoken on ANDROID too — the section carries no live region to cover it', async () => {
     Platform.OS = 'android';
     mockRow = row({ status: 'pending', recommendation: null });

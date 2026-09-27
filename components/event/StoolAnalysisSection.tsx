@@ -523,7 +523,7 @@ export function StoolAnalysisSection(
       // error-only write over a hidden Worth a call — or before that server change is
       // live. Saying "hidden" tells the owner something landed and where to find it,
       // without speaking what they chose to hide.
-      announcement={dismissed ? DISMISSED_LINE : REC_LABEL[rec]}
+      announcement={dismissed ? DISMISSED_LINE : incidentVerdictLabel(rec)}
       pending={false}
     >
       {dismissed ? (
