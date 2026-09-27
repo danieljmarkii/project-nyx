@@ -45,6 +45,8 @@ import {
   writeAnalysisDismissal,
   READ_CHANGED_TITLE,
   READ_CHANGED_BODY,
+  VOMIT_DISMISSAL_COLUMNS,
+  STOOL_DISMISSAL_COLUMNS,
 } from '../../lib/analysisDismissal';
 
 const writer = writeAnalysisDismissal as jest.MockedFunction<typeof writeAnalysisDismissal>;
@@ -187,5 +189,87 @@ describe.each(SECTIONS)('$name — Hide and Show write only over the read on scr
     expect(queryByText('AI note hidden')).toBeNull();
     expect(queryByText(CALM.read_text)).toBeTruthy();
     expect(alert).toHaveBeenCalledWith('Could not update', 'Try again in a moment.');
+  });
+});
+
+// ── What the section READS is compared, or excluded with a reason (C-34) ─────────
+// The dismissal lists claim to be everything Hide takes off the screen. The honest
+// source for that is the render itself, so each section is rendered over a row that
+// records every column it reads, across fixtures reaching each branch (every red flag
+// present, an 'unsure' foreign-material note, the hidden state). A regex over the grid's
+// source was green over a destructured read and a column the card draws outside the
+// grid (round 4 of the adversarial pass).
+const NOT_ON_SCREEN: Record<string, string> = {
+  status: 'decides which frame renders; a status move under the same read hides nothing new',
+  error: 'never rendered (the owner-facing copy guard)',
+  edited_at: "the owner's own edit stamp; an edit elsewhere that changes a drawn column is compared through that column",
+  ai_raw_payload: 'the edit-diff baseline behind the per-field "edited" marks',
+  dismissed_at: 'the hide itself',
+  updated_at: "the landing announcer's change marker (#938), never drawn",
+};
+
+const RECORDED = [
+  {
+    name: 'VomitAnalysisSection',
+    Section: VomitAnalysisSection,
+    columns: VOMIT_DISMISSAL_COLUMNS as readonly string[],
+    floor: ['recommendation', 'read_text', 'blood_present', 'foreign_material_note'],
+    rows: [
+      {
+        recommendation: 'worth_a_call', read_text: 'Worth a call.', description: 'Red flecks.', colour: 'yellow',
+        consistency: 'foamy', contents: ['foam'], blood_present: 'fresh_red', bile_present: 'yes',
+        foreign_material_present: 'yes', foreign_material_note: 'a length of string',
+      },
+      {
+        recommendation: 'monitor', read_text: 'Nothing obviously concerning on its own.', description: null,
+        colour: 'clear', consistency: 'liquid', contents: null, blood_present: 'none_visible', bile_present: 'no',
+        foreign_material_present: 'unsure', foreign_material_note: 'a small fragment',
+      },
+    ],
+  },
+  {
+    name: 'StoolAnalysisSection',
+    Section: StoolAnalysisSection,
+    columns: STOOL_DISMISSAL_COLUMNS as readonly string[],
+    floor: ['recommendation', 'read_text', 'stool_blood_present', 'stool_blood_type', 'foreign_material_note'],
+    rows: [
+      {
+        recommendation: 'worth_a_call', read_text: 'Worth a call.', description: 'Dark.', stool_consistency: 'loose',
+        stool_colour: 'black_tarry', stool_content: ['mucus'], stool_blood_present: 'yes', stool_blood_type: 'dark_tarry',
+        stool_mucus_present: 'yes', foreign_material_present: 'yes', foreign_material_note: 'a sock fibre',
+      },
+      {
+        recommendation: 'monitor', read_text: 'Nothing obviously concerning on its own.', description: null,
+        stool_consistency: 'formed', stool_colour: 'brown', stool_content: null, stool_blood_present: 'no',
+        stool_blood_type: null, stool_mucus_present: 'no', foreign_material_present: 'unsure', foreign_material_note: 'a fragment',
+      },
+    ],
+  },
+];
+
+describe.each(RECORDED)('$name — every column it reads is compared, or excluded with a reason', ({ Section, columns, floor, rows }) => {
+  const recorded = new Set<string>();
+  const recording = (r: Record<string, unknown>) => new Proxy(r, {
+    get(target, key, receiver) {
+      // `then` is the Promise machinery asking whether the fetched row is thenable
+      // (fetchRow is async), not the section reading a column.
+      if (typeof key === 'string' && key !== 'then') recorded.add(key);
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  afterEach(() => { mockRow = null; });
+
+  it('over the escalation, the calm read and the hidden state', async () => {
+    const base = { status: 'completed', ai_raw_payload: null, edited_at: null, dismissed_at: null, error: null };
+    const states = [...rows.map((r) => ({ ...base, ...r })), { ...base, ...rows[0], dismissed_at: '2026-09-26T10:00:00.000Z' }];
+    for (const [i, state] of states.entries()) {
+      mockRow = recording(state);
+      const view = render(<Section eventId={`rec-${i}`} petId="pet-1" petName="Rex" hasPhoto />);
+      await view.findByText(state.dismissed_at ? 'AI note hidden' : INCIDENT_READ_HIDE_LABEL);
+      view.unmount();
+    }
+    for (const column of floor) expect(recorded).toContain(column); // the recorder saw the card, not nothing
+    const unaccounted = [...recorded].filter((c) => !columns.includes(c) && !(c in NOT_ON_SCREEN));
+    expect(unaccounted).toEqual([]);
   });
 });

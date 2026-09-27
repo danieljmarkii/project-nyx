@@ -16,16 +16,16 @@
 // words it would put an old read on screen over a newer one without a word.
 //
 // What the owner saw is everything Hide takes off the screen: the verdict, the read
-// text AND every observation the grid draws. The read text leads with the contextual
-// template, so a replaced photo can add fresh red blood under byte-identical words
-// (adversarial round 2), or turn "Fresh red" into "Dark / tarry" through a column
-// that is not a red flag on its own (stool_blood_type, round 3). So the lists are the
-// grid's columns, not the descriptors' RED_FLAG_COLUMNS: lib/analysisDismissal.test.ts
-// reads each section's buildObservations and fails on a column it draws that is not
-// here, and on a server red-flag column that is not here (C-34: the question is "what
-// did the owner see", which is wider than "which columns carry a red flag"). The
-// contents arrays are left out: they carry no red flag, and PostgREST compares an
-// array only through its literal syntax.
+// text, the description AND every observation the grid draws. The read text leads with
+// the contextual template, so a replaced photo can add fresh red blood under
+// byte-identical words (adversarial round 2), turn "Fresh red" into "Dark / tarry"
+// through a column that is not a red flag on its own (stool_blood_type, round 3), or
+// change only the description or the contents (round 4). So the lists are every column
+// the section reads, not the descriptors' RED_FLAG_COLUMNS: the section suites render
+// each section over a row that records what it reads and fail on a column that is
+// neither here nor excluded with a reason (C-34: the question is "what did the owner
+// see", which is wider than "which columns carry a red flag"). An array compares
+// through the Postgres array literal, every element quoted.
 //
 // Not `status` and not `updated_at`: a status move that keeps the words (a failed
 // re-run over a calm read) leaves the owner hiding exactly what they read, and
@@ -44,23 +44,38 @@
 import { supabase } from './supabase';
 
 export const VOMIT_DISMISSAL_COLUMNS = [
-  'recommendation', 'read_text',
-  'colour', 'consistency', 'blood_present', 'foreign_material_present', 'foreign_material_note',
+  'recommendation', 'read_text', 'description',
+  'colour', 'consistency', 'contents', 'blood_present', 'foreign_material_present', 'foreign_material_note',
 ] as const;
 export const STOOL_DISMISSAL_COLUMNS = [
-  'recommendation', 'read_text',
-  'stool_consistency', 'stool_colour', 'stool_blood_present', 'stool_blood_type', 'stool_mucus_present',
-  'foreign_material_present', 'foreign_material_note',
+  'recommendation', 'read_text', 'description',
+  'stool_consistency', 'stool_colour', 'stool_content', 'stool_blood_present', 'stool_blood_type',
+  'stool_mucus_present', 'foreign_material_present', 'foreign_material_note',
 ] as const;
 
+type ShownValue = string | null | readonly string[];
+
 /** The columns a Hide or Show was made on, as the screen held them. */
-export type ShownRead = Record<string, string | null>;
+export type ShownRead = Record<string, ShownValue>;
 
 export type DismissalOutcome = 'written' | 'read_changed' | 'failed';
 
-function columnValue(row: object, column: string): string | null {
+function columnValue(row: object, column: string): ShownValue {
   const value = (row as Record<string, unknown>)[column];
-  return typeof value === 'string' ? value : null;
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && value.every((v) => typeof v === 'string')) return value as string[];
+  return null;
+}
+
+function sameValue(a: ShownValue, b: ShownValue): boolean {
+  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((v, i) => v === b[i]);
+  return a === b;
+}
+
+// A Postgres text[] literal with every element quoted, so a comma, a brace, a quote or
+// a space inside a value can never split the array or end it.
+export function pgTextArray(values: readonly string[]): string {
+  return `{${values.map((v) => `"${v.replace(/[\\"]/g, (c) => `\\${c}`)}"`).join(',')}}`;
 }
 
 export function shownRead<T extends object, K extends keyof T & string>(row: T, columns: readonly K[]): ShownRead {
@@ -70,7 +85,7 @@ export function shownRead<T extends object, K extends keyof T & string>(row: T, 
 }
 
 export function sameShown(row: object, shown: ShownRead): boolean {
-  return Object.entries(shown).every(([column, value]) => columnValue(row, column) === value);
+  return Object.entries(shown).every(([column, value]) => sameValue(columnValue(row, column), value));
 }
 
 export async function writeAnalysisDismissal(
@@ -85,7 +100,9 @@ export async function writeAnalysisDismissal(
   // `eq` never matches NULL in SQL, so a null column needs `is` or the compare
   // could never pass on a row whose read is still blank.
   for (const [column, value] of Object.entries(shown)) {
-    query = value === null ? query.is(column, null) : query.eq(column, value);
+    if (value === null) query = query.is(column, null);
+    else if (typeof value === 'string') query = query.eq(column, value);
+    else query = query.filter(column, 'eq', pgTextArray(value));
   }
   const { data, error } = await query.select('event_id');
   if (error) return 'failed';

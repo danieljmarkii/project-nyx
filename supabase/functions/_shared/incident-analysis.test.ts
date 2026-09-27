@@ -1177,11 +1177,13 @@ Deno.test('CUL-1203 — step 3b reads pet_id and refuses on it before any write 
 // and bindings are read inside the enclosing named function only (adversarial rounds
 // 2 and 3: a split builder, typed and imported table constants, an object-member
 // table, a mutated result and a same-named parameter each passed an earlier cut).
-// Blind spots, stated: `.rpc()` and SQL functions in migrations (CUL-1357 carries a
-// database-side rule); computed keys (`values[k] = …`); a reassignment between a
-// binding and its use; arrow functions share the scope of the nearest named
-// `function`; a `.from(` directly after `Array` / `Buffer` / `Object` / `storage` is
-// taken as not a table; a write in a module outside supabase/functions.
+// Tables are resolved per site, never through a file-wide map (round 4). Blind spots,
+// stated: `.rpc()` and SQL functions in migrations (CUL-1357 carries a database-side
+// rule); computed keys (`values[k] = …`); a reassignment between a binding and its
+// use; a query bound to a variable and then returned or passed along; arrow functions
+// share the scope of the nearest named `function`; a `.from(` on a receiver named with
+// a capital (a static constructor) or on `storage` is taken as not a table; a write in
+// a module outside supabase/functions.
 
 type Sink = { kind: string; at: number }
 
@@ -1248,48 +1250,89 @@ const NON_LITERAL_FROM: Record<string, { arg: string; why: string }> = {
   },
 }
 
+const FROM_CALL = /\.from\s*(?:<[^>()]*>)?\s*\(/g
+
+// The names in the parameter list of the named function enclosing `at`.
+function paramsAt(src: string, at: number): string[] {
+  const fn = enclosingFunctionMatch(src, at)
+  if (!fn) return []
+  const open = src.indexOf('(', fn.index! + fn[0].length)
+  return callArgs(src, open).map((p) => /^(?:\.\.\.)?(\w+)/.exec(p)?.[1] ?? '').filter(Boolean)
+}
+
+// The table `ident` names at `at`, or null when the scan cannot say: a parameter, a
+// binding to anything but a string literal, an import, nothing at all.
+function resolveTable(src: string, ident: string, at: number): string | null {
+  if (paramsAt(src, at).includes(ident)) return null
+  const local = boundTo(src, ident, at)
+  if (local) return /^(['"`])([\w.-]+)\1/.exec(local)?.[2] ?? null
+  const top = new RegExp(String.raw`^(?:export\s+)?(?:const|let|var)\s+${ident}(?:\s*:[^=\n]+)?\s*=\s*(['"\`])([\w.-]+)\1`, 'm').exec(src)
+  return top?.[2] ?? null
+}
+
 function readWordSinks(raw: string, file?: string): { sanctioned: Sink[]; violations: string[] } {
   const src = blankComments(raw)
   const sanctioned: Sink[] = []
   const violations: string[] = []
   const lineOf = (i: number) => src.slice(0, i).split('\n').length
 
-  // 0. Fail closed on a table the scan cannot name.
-  const literalBindings = new Map<string, string>()
-  for (const m of src.matchAll(new RegExp(BINDING + String.raw`['"\`]([\w.-]+)['"\`]`, 'g'))) literalBindings.set(m[1], m[2])
-  for (const m of src.matchAll(/\.from\(/g)) {
-    const before = /([\w$]+)\s*$/.exec(src.slice(0, m.index!))?.[1] ?? ''
-    if (/(?:Array|^Buffer|^Object|^storage)$/.test(before)) continue
-    const arg = callArgs(src, m.index! + m[0].length - 1)[0] ?? ''
-    if (/^(['"])[\w.-]+\1$/.test(arg) || /^`[\w.-]+`$/.test(arg) || literalBindings.has(arg)) continue
+  // 0. Fail closed on a table the scan cannot name. Each `.from(IDENT)` is resolved AT
+  //    ITS SITE (round 4: a file-wide map let a same-named `const table` in another
+  //    function launder a write): a parameter is never resolved; otherwise the nearest
+  //    binding inside the enclosing function, then a module-level one. A receiver whose
+  //    name starts with a capital (`Array.from`, `ReadableStream.from`) is a static
+  //    constructor, and `storage.from` is a bucket.
+  const tableAt = (m: RegExpMatchArray): { table: string | null; arg: string } => {
+    const open = m.index! + m[0].length - 1
+    const arg = callArgs(src, open)[0] ?? ''
+    const literal = /^(['"`])([\w.-]+)\1$/.exec(arg)
+    if (literal) return { table: literal[2], arg }
+    if (!/^\w+$/.test(arg)) return { table: null, arg }
+    return { table: resolveTable(src, arg, m.index!), arg }
+  }
+  const sites: { m: RegExpMatchArray; table: string | null; arg: string }[] = []
+  for (const m of src.matchAll(FROM_CALL)) {
+    const receiver = /([\w$]+)\s*$/.exec(src.slice(0, m.index!))?.[1] ?? ''
+    if (/^[A-Z]/.test(receiver) || receiver === 'storage') continue
+    const { table, arg } = tableAt(m)
+    sites.push({ m, table, arg })
+    if (table !== null) continue
     if (file && NON_LITERAL_FROM[file]?.arg === arg) {
       sanctioned.push({ kind: 'non-literal from, exempt', at: m.index! })
       continue
     }
     violations.push(`line ${lineOf(m.index!)} (${enclosingFunction(src, m.index!)}): .from(${arg.slice(0, 40)}), a table the scan cannot name`)
   }
+  // A raw REST call is the table by URL.
+  for (const m of src.matchAll(/rest\/v1\/event_ai_analysis/g)) {
+    violations.push(`line ${lineOf(m.index!)} (${enclosingFunction(src, m.index!)}): a raw REST call to event_ai_analysis`)
+  }
 
-  // 1. Writes to the table: a chain off `.from(<the table>)`, where the table is the
-  //    literal or a `const` bound to it, and a write through a variable holding such
-  //    a query.
-  const tableNames = [...literalBindings].filter(([, table]) => table === 'event_ai_analysis').map(([name]) => name)
-  const tableRef = `(?:['"\`]event_ai_analysis['"\`]${tableNames.map((n) => `|\\b${n}\\b`).join('')})`
+  // 1. Writes to the table: a chain off its `.from(…)`, a write through a variable
+  //    holding such a query (the binding possibly on an earlier line), and no helper
+  //    that hands an unfinished query out for someone else to write through.
   const writes: { open: number; method: string; site: number }[] = []
-  for (const m of src.matchAll(new RegExp(`\\.from\\(\\s*${tableRef}\\s*\\)`, 'g'))) {
-    const chain = analysisChains(src.slice(m.index!).replace(/^\.from\([^)]*\)/, ".from('event_ai_analysis')"))[0] ?? ''
+  for (const { m, table } of sites) {
+    if (table !== 'event_ai_analysis') continue
+    const head = /^\.from\s*(?:<[^>()]*>)?\s*\([^)]*\)/.exec(src.slice(m.index!))![0]
+    const chain = analysisChains(".from('event_ai_analysis')" + src.slice(m.index! + head.length))[0] ?? ''
     const w = /\.(update|upsert|insert)\(/.exec(chain)
     if (w) {
       // The chain was re-spelt with the literal table name; map the offset back.
-      const shift = m[0].length - ".from('event_ai_analysis')".length
+      const shift = head.length - ".from('event_ai_analysis')".length
       writes.push({ open: m.index! + w.index + shift + w[0].length - 1, method: w[1], site: m.index! })
       continue
     }
-    // The query held in a variable, the binding possibly on an earlier line:
-    // `const q = adminClient\n  .from(T)`. Walk back over the receiver, then ask
-    // whether a binding ends right there.
     const before = src.slice(0, m.index!)
     const receiver = /[\w$.\s]*$/.exec(before)![0]
-    const bound = new RegExp(BINDING + '$').exec(before.slice(0, before.length - receiver.length))
+    const lead = before.slice(0, before.length - receiver.length)
+    if (/\breturn\s+[\w$.\s]*$/.test(before)) {
+      if (!/\.(select|delete)\(/.test(chain)) {
+        violations.push(`line ${lineOf(m.index!)} (${enclosingFunction(src, m.index!)}): an event_ai_analysis query handed out unfinished`)
+      }
+      continue
+    }
+    const bound = new RegExp(BINDING + '$').exec(lead)
     if (!bound) continue
     const fnStart = enclosingFunctionMatch(src, m.index!)?.index ?? 0
     const fnEnd = (() => {
@@ -1417,6 +1460,15 @@ Deno.test('CUL-1323 — the builder scan sees a bypass when there is one (the gu
     "import { ANALYSIS_TABLE } from './tables.ts'\nasync function persistLiveRead() {\n  await adminClient.from(ANALYSIS_TABLE).select('id')\n}",
     "async function persistLiveRead() {\n  await adminClient.from(TABLES.analysis).select('id')\n}",
     'async function runIncidentAnalysis() {\n  const writeBack = buildAnalysisWriteBack({})\n  Object.assign(writeBack, { values: { ...readFields } })\n}',
+    // Round 4's: the same name bound to two tables in two functions (order-independent),
+    // a generic helper whose parameter shadows a module const, a typed `.from<T>(`, a
+    // helper handing out an unfinished query, and a raw REST call.
+    "async function a() {\n  const table = 'event_ai_analysis'\n  await c.from(table).update({ ...readFields }).eq('event_id', e).eq('pet_id', p)\n}\nasync function b() {\n  const table = 'events'\n  await c.from(table).select('id')\n}",
+    "async function b() {\n  const table = 'events'\n  await c.from(table).select('id')\n}\nasync function a() {\n  const table = 'event_ai_analysis'\n  await c.from(table).update({ ...readFields }).eq('event_id', e).eq('pet_id', p)\n}",
+    "const table = 'events'\nasync function writeRow(c, table, values) {\n  await c.from(table).upsert(values)\n}",
+    "async function persistLiveRead() {\n  await adminClient.from<Row>('event_ai_analysis').upsert({ ...readFields })\n}",
+    "function analysisTable(c) {\n  return c\n    .from('event_ai_analysis')\n}",
+    "async function persistLiveRead() {\n  await fetch(`${url}/rest/v1/event_ai_analysis?event_id=eq.${e}`, { method: 'PATCH', body })\n}",
   ]
   for (const src of bypasses) {
     assertStrictEquals(readWordSinks(src).violations.length, 1, src)
@@ -1436,7 +1488,10 @@ Deno.test('CUL-1323 — the builder scan sees a bypass when there is one (the gu
     "async function readOnly() {\n  const t = c.from('event_ai_analysis')\n  return await t.select(COLS).eq('event_id', e)\n}\n" +
     // Tables the scan can name, storage buckets, and Array.from are not rule 0's business.
     "const EVENTS: string = 'events'\nasync function other() {\n  await c.from(EVENTS).update({ read_text: 'x' })\n" +
-    '  await adminClient.storage\n    .from(BUCKET)\n    .download(p)\n  return Array.from(new Set(xs))\n}'
+    '  await adminClient.storage\n    .from(BUCKET)\n    .download(p)\n  return Array.from(new Set(xs))\n}\n' +
+    "function readRow(c, e) {\n  return c.from('event_ai_analysis').select('status').eq('event_id', e)\n}\n" +
+    'async function stream(gen) {\n  return ReadableStream.from(gen)\n}\n' +
+    "const BUCKET_TABLE = 'medication_items'\nasync function items(c) {\n  return await c.from(BUCKET_TABLE).select('id')\n}"
   assertEquals(readWordSinks(allowed).violations, [])
   // The exemption is per file AND argument: the same shape elsewhere is not excused.
   const exempt = 'async function listPaths(adminClient, table) {\n  await adminClient\n    .from(table)\n    .select(\'storage_path\')\n}'

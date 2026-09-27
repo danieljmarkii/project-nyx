@@ -6,7 +6,7 @@ let mockResult: { data: unknown[] | null; error: unknown } = { data: [{ event_id
 
 jest.mock('./supabase', () => {
   const builder: Record<string, unknown> = {};
-  for (const method of ['update', 'eq', 'is']) {
+  for (const method of ['update', 'eq', 'is', 'filter']) {
     builder[method] = (...args: unknown[]) => {
       mockCalls.push([method, ...args]);
       return builder;
@@ -29,6 +29,7 @@ jest.mock('./supabase', () => {
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  pgTextArray,
   sameShown,
   shownRead,
   writeAnalysisDismissal,
@@ -39,8 +40,10 @@ import {
 const CALM = {
   recommendation: 'monitor',
   read_text: 'Nothing obviously concerning on its own.',
+  description: 'Yellow foam.',
   colour: 'yellow',
   consistency: 'foamy',
+  contents: ['foam'] as string[] | null,
   blood_present: 'none_visible',
   foreign_material_present: null,
   foreign_material_note: null,
@@ -61,8 +64,10 @@ describe('writeAnalysisDismissal', () => {
       ['eq', 'event_id', 'e1'],
       ['eq', 'recommendation', 'monitor'],
       ['eq', 'read_text', CALM.read_text],
+      ['eq', 'description', 'Yellow foam.'],
       ['eq', 'colour', 'yellow'],
       ['eq', 'consistency', 'foamy'],
+      ['filter', 'contents', 'eq', '{"foam"}'],
       ['eq', 'blood_present', 'none_visible'],
       ['is', 'foreign_material_present', null],
       ['is', 'foreign_material_note', null],
@@ -90,6 +95,16 @@ describe('writeAnalysisDismissal', () => {
     expect(await writeAnalysisDismissal('e1', shownRead(CALM, VOMIT_DISMISSAL_COLUMNS), '2026-09-27T12:00:00.000Z')).toBe('read_changed');
   });
 
+  it('an array compares as a quoted Postgres literal; an empty one as {}', async () => {
+    await writeAnalysisDismissal('e1', shownRead({ ...CALM, contents: [] }, VOMIT_DISMISSAL_COLUMNS), null);
+    expect(mockCalls).toContainEqual(['filter', 'contents', 'eq', '{}']);
+    expect(pgTextArray(['undigested_food', 'hair'])).toBe('{"undigested_food","hair"}');
+    // Nothing a value holds can split the array or end it.
+    expect(pgTextArray(['a,b', 'c}', 'say "hi"', 'back\\slash', 'two words'])).toBe(
+      '{"a,b","c}","say \\"hi\\"","back\\\\slash","two words"}',
+    );
+  });
+
   it('an error is a failure', async () => {
     mockResult = { data: null, error: { message: 'network' } };
     expect(await writeAnalysisDismissal('e1', shownRead(CALM, VOMIT_DISMISSAL_COLUMNS), null)).toBe('failed');
@@ -112,9 +127,9 @@ describe('sameShown', () => {
   it('so is a change the grid draws through a column that is not a red flag on its own (round 3)', () => {
     // Stool "Blood: Fresh red" becoming "Dark / tarry" moves stool_blood_type only.
     const stool = {
-      recommendation: 'worth_a_call', read_text: 'Worth a call.', stool_consistency: 'loose', stool_colour: 'brown',
-      stool_blood_present: 'yes', stool_blood_type: 'fresh_red', stool_mucus_present: 'no',
-      foreign_material_present: 'unsure', foreign_material_note: null,
+      recommendation: 'worth_a_call', read_text: 'Worth a call.', description: null, stool_consistency: 'loose',
+      stool_colour: 'brown', stool_content: null, stool_blood_present: 'yes', stool_blood_type: 'fresh_red',
+      stool_mucus_present: 'no', foreign_material_present: 'unsure', foreign_material_note: null,
     };
     const seenStool = shownRead(stool, STOOL_DISMISSAL_COLUMNS);
     expect(sameShown({ ...stool, stool_blood_type: 'dark_tarry' }, seenStool)).toBe(false);
@@ -125,37 +140,42 @@ describe('sameShown', () => {
   it('a column that is not a string reads as null, the way the screen held it', () => {
     expect(shownRead({ ...CALM, blood_present: undefined }, VOMIT_DISMISSAL_COLUMNS).blood_present).toBeNull();
   });
+
+  it('a changed description or contents under the same words is a different read (round 4)', () => {
+    expect(sameShown({ ...CALM, description: 'Yellow foam with grass.' }, seen)).toBe(false);
+    expect(sameShown({ ...CALM, contents: ['undigested_food', 'hair'] }, seen)).toBe(false);
+    expect(sameShown({ ...CALM, contents: ['foam'] }, seen)).toBe(true); // equal by value, not identity
+    expect(sameShown({ ...CALM, contents: null }, seen)).toBe(false);
+  });
 });
 
-describe('the columns cover everything Hide takes off the screen (C-34)', () => {
-  // The question is "what did the owner see", so the source of truth is each section's
-  // observation grid, not the descriptors' red-flag list (round 3: stool_blood_type and
-  // foreign_material_note draw red-flag rows without being red-flag columns). The
-  // contents arrays are the one stated exclusion: no red flag, and PostgREST compares an
-  // array only through its literal syntax.
-  const ARRAY_COLUMNS = new Set(['contents', 'stool_content']);
-  const gridColumns = (file: string): string[] => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'components', 'event', file), 'utf8');
-    const start = src.indexOf('function buildObservations(');
-    if (start < 0) throw new Error(`${file}: buildObservations moved`);
-    const body = src.slice(start, src.indexOf('\n}\n', start));
-    return [...new Set([...body.matchAll(/\brow\.(\w+)/g)].map((m) => m[1]))].filter((c) => !ARRAY_COLUMNS.has(c));
-  };
+describe('the column lists against the sections and the descriptors (C-34)', () => {
+  // WHICH columns the section reads is pinned by rendering it (components/event/
+  // analysisHide.test.tsx, the read recorder). These two are the file-level halves: a
+  // server red-flag column is always compared, and a compared column is always selected
+  // (one that is not reads as null locally, so every Hide on a row with a value there
+  // would fail as "changed" for good).
   const serverColumns = (fn: string): string[] => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', fn, 'index.ts'), 'utf8');
     const m = /export const RED_FLAG_COLUMNS = \[([^\]]*)\]/.exec(src);
     if (!m) throw new Error(`${fn}: RED_FLAG_COLUMNS moved`);
     return [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
   };
+  const selected = (file: string): string[] => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'components', 'event', file), 'utf8');
+    const m = /const SELECT_COLS =([\s\S]*?);/.exec(src);
+    if (!m) throw new Error(`${file}: SELECT_COLS moved`);
+    return [...m[1].matchAll(/'([^']*)'/g)].flatMap((x) => x[1].split(',')).map((c) => c.trim()).filter(Boolean);
+  };
   it.each([
     ['VomitAnalysisSection.tsx', 'analyze-vomit', VOMIT_DISMISSAL_COLUMNS],
     ['StoolAnalysisSection.tsx', 'analyze-stool', STOOL_DISMISSAL_COLUMNS],
   ] as const)('%s', (file, fn, columns) => {
-    const grid = gridColumns(file);
-    expect(grid.length).toBeGreaterThanOrEqual(5); // the scan found the grid, not nothing
     const listed: readonly string[] = columns;
-    expect(grid.filter((c) => !listed.includes(c))).toEqual([]);
     expect(serverColumns(fn).filter((c) => !listed.includes(c))).toEqual([]);
+    const cols = selected(file);
+    expect(cols.length).toBeGreaterThanOrEqual(10); // the parse found the list, not nothing
+    expect(listed.filter((c) => !cols.includes(c))).toEqual([]);
     expect(listed.slice(0, 2)).toEqual(['recommendation', 'read_text']);
   });
 });
