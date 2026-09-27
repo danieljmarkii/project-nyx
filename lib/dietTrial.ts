@@ -1704,6 +1704,11 @@ export interface TrialFacts {
    * that was left UNFINISHED (`feedingWasFinished === false`), over the same rows the
    * range fact counts, ascending. Exactly `rangeRefusal`'s day set, BELOW its floors.
    *
+   * BOUNDED BY THE EVIDENCE WINDOW, NOT BY `range`: on an overrun it holds days past
+   * `range.endDayIndex` (the §R-5 rule: `range*` is coverage's window only). A consumer
+   * that needs coverage days intersects with `range` itself; the ledger does, by only
+   * asking inside the current row.
+   *
    * WHY IT EXISTS (CUL-1344, PM ruling 2026-09-27). The refusal fact needs three
    * rated bowls over two days, so a day-1 cat with two refused bowls clears no floor
    * and a day-painting surface (the trial ledger, Home's week lane) would fill that
