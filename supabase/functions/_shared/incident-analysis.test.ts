@@ -336,20 +336,58 @@ Deno.test('CUL-1323 — no caller can carry an old hide forward through the buil
   assertStrictEquals(edited.values.dismissed_at, null)
 })
 
-Deno.test('CUL-1323 — the failure write NEVER touches the hide: a failed attempt is not a new read', () => {
-  // Every shape the failure write can take — error-only over a Worth a call, the
-  // failed upsert over anything else, and the skip — leaves `dismissed_at` out, so
-  // the owner's hide stands until a read they have not seen actually lands.
+Deno.test('CUL-1323 — the failure write touches the hide ONLY when its rescue writes words', () => {
+  // Every shape that writes no words (error-only over a Worth a call, the failed upsert
+  // over anything else, the skip) leaves `dismissed_at` out, so the owner's hide stands
+  // until a read they have not seen lands. The rescue IS such a read: an escalation's
+  // words over a row that held none, so it clears.
   const base = {
     eventId: 'evt-1', petId: 'pet-1', incidentType: 'vomit',
-    message: 'Claude API error 529', existingReadFailed: false,
+    message: 'Claude API error 529', existingReadFailed: false, rescue: null,
   }
-  for (const existing of [{ recommendation: 'worth_a_call' }, { recommendation: 'monitor' }, null]) {
+  for (const existing of [{ recommendation: 'worth_a_call', presentFlags: [] }, { recommendation: 'monitor', presentFlags: [] }, null]) {
     const write = buildFailureWrite({ ...base, existing })
+    assertStrictEquals(write.mode === 'rescue', false)
     const values = write.mode === 'skip' ? {} : write.values
     assertStrictEquals(Object.prototype.hasOwnProperty.call(values, 'dismissed_at'), false)
   }
   assertStrictEquals(buildFailureWrite({ ...base, existing: null, petId: null }).mode, 'skip')
+  const rescued = buildFailureWrite({
+    ...base,
+    existing: { recommendation: 'monitor', presentFlags: [] },
+    rescue: { recommendation: 'worth_a_call', read_text: 'Worth a call.', visual_flags: [], contextual_flags: ['repeated_vomiting'] },
+  })
+  assertStrictEquals(rescued.mode, 'rescue')
+  if (rescued.mode !== 'rescue') return
+  assertStrictEquals(Object.prototype.hasOwnProperty.call(rescued.values, 'dismissed_at'), true)
+  assertStrictEquals(rescued.values.dismissed_at, null)
+})
+
+Deno.test('CUL-1323 — a HOLD writes no words and no hide; every other re-read clears it', () => {
+  // A hold keeps the stored escalation's words, so the owner's hide on exactly those
+  // words stands. Anything resolveReanalysisWrite does not hold is the builder's.
+  const stored = (over: Partial<StoredAnalysis>): StoredAnalysis => ({
+    recommendation: 'worth_a_call', status: 'completed', edited: false, presentFlags: [], ...over,
+  } as StoredAnalysis)
+  const call = (s: StoredAnalysis | null, recommendation: 'worth_a_call' | 'monitor') =>
+    resolveReanalysisWrite({
+      stored: s, eventId: 'evt', petId: 'pet', incidentType: 'vomit',
+      structuredValues: {}, nextPresentFlags: [], readFields: { ...READ_FIELDS, recommendation },
+    })
+  for (const s of [stored({}), stored({ status: 'failed' })]) {
+    const held = call(s, 'monitor')
+    assertStrictEquals(held.mode, 'hold')
+    const values = held.mode === 'hold' ? held.values ?? {} : {}
+    for (const key of ['dismissed_at', 'recommendation', 'read_text']) {
+      assertStrictEquals(Object.prototype.hasOwnProperty.call(values, key), false, key)
+    }
+  }
+  for (const [s, rec] of [[null, 'monitor'], [stored({ recommendation: 'monitor' }), 'monitor'], [stored({}), 'worth_a_call']] as const) {
+    const w = call(s, rec)
+    assertStrictEquals(w.mode === 'hold', false)
+    if (w.mode === 'hold') return
+    assertStrictEquals(w.values.dismissed_at, null)
+  }
 })
 
 Deno.test('write-back — un-edited upsert composes identity + structured + read fields', () => {
@@ -578,6 +616,8 @@ Deno.test('buildFailureWrite — rescue over no row: the escalation lands as fai
     // True: the photo read did not finish. The client renders a failed escalation as the escalation.
     status: 'failed',
     error: 'Claude API error 529',
+    // Words the owner has not seen: their hide on the calm read before goes (CUL-1323).
+    dismissed_at: null,
   })
 })
 
@@ -709,7 +749,8 @@ Deno.test('resolveReanalysisWrite — CUL-532: a re-read that cannot see keeps a
   // CUL-534); the photo then reads fully unreadable, so this run's columns are all null.
   const w = resolve(stored({ recommendation: 'monitor', presentFlags: ['blood'] }), readOf('not_enough_to_say'), [])
   assertStrictEquals(w.mode, 'update')
-  assertEquals(w.mode === 'update' ? Object.keys(w.values).sort() : [], ['contextual_flags', 'error', 'read_text', 'recommendation', 'status', 'visual_flags'])
+  // `dismissed_at` is the builder's (CUL-1323): new words clear the owner's hide.
+  assertEquals(w.mode === 'update' ? Object.keys(w.values).sort() : [], ['contextual_flags', 'dismissed_at', 'error', 'read_text', 'recommendation', 'status', 'visual_flags'])
 })
 
 Deno.test('resolveReanalysisWrite — a stored ABSENCE does not carry: the full write lands (no stale "none visible")', () => {
@@ -1107,9 +1148,14 @@ Deno.test('CUL-1203 — step 3b reads pet_id and refuses on it before any write 
 //      helper's own parameter, the failure write's values, or a literal naming
 //      neither `read_text` nor `recommendation` and spreading nothing;
 //   2. every applyAnalysisWriteBack call is handed a value bound to
-//      buildAnalysisWriteBack(…);
-//   3. every other updateAnalysisRow call is handed `.values` of a builder's
-//      result (the failure write's, or the analysis builder's).
+//      buildAnalysisWriteBack(…) or resolveReanalysisWrite(…) (which returns the
+//      builder's result or a hold);
+//   3. every other updateAnalysisRow call is handed `.values` of one of those or of
+//      buildFailureWrite(…).
+// What each source does with the hide is pinned by value: the builder's two modes and
+// resolveReanalysisWrite's hold above, the failure write's rescue too, and all of it
+// end to end in incident-analysis.pipeline.test.ts. The scan's job is the NEXT write:
+// one that comes from none of them.
 // Blind spots, stated: the binding is read off the nearest `const|let` of that name
 // before the call, so a reassignment between them is not followed; a helper that
 // wraps the table write under another name is caught by rule 1 only if its
@@ -1158,7 +1204,7 @@ function boundTo(src: string, name: string, at: number): string {
   return all.length ? all[all.length - 1][1].trim() : ''
 }
 
-const BUILT = /^(buildAnalysisWriteBack|buildFailureWrite)\(/
+const BUILT = /^(buildAnalysisWriteBack|resolveReanalysisWrite|buildFailureWrite)\(/
 
 function readWordSinks(raw: string): { sanctioned: Sink[]; violations: string[] } {
   const src = blankComments(raw)
@@ -1186,7 +1232,7 @@ function readWordSinks(raw: string): { sanctioned: Sink[]; violations: string[] 
   for (const m of src.matchAll(/(?<!function\s)\bapplyAnalysisWriteBack\(/g)) {
     const open = m.index! + m[0].length - 1
     const arg = callArgs(src, open)[2] ?? ''
-    if (/^\w+$/.test(arg) && /^buildAnalysisWriteBack\(/.test(boundTo(src, arg, open))) {
+    if (/^\w+$/.test(arg) && /^(buildAnalysisWriteBack|resolveReanalysisWrite)\(/.test(boundTo(src, arg, open))) {
       sanctioned.push({ kind: 'builder → apply', at: open })
     } else violations.push(`line ${lineOf(open)}: applyAnalysisWriteBack(…, ${arg.slice(0, 60)})`)
   }

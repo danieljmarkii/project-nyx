@@ -283,14 +283,20 @@ export type AnalysisWriteBack =
 // replaced photo, Ask's live read) got a Worth a call rendered as "AI note
 // hidden", with the escalation on the record and off the screen. It is set here,
 // in the one builder every read goes through (both modes, and the capped path's
-// contextual escalation; the sink scan in incident-analysis.test.ts fails the
-// build on a write of read words that bypasses it), and AFTER the read fields so
-// no caller can carry an old dismissal forward. It is a presentation state, not a
-// clinical field, so the never-clobber guarantee below is untouched. The failure
-// write (`buildFailureWrite`) records no new read and deliberately leaves it
-// alone. The ORDER half is the client's: a Hide writes only over the words on
-// screen (lib/analysisDismissal.ts), so a read landing first is never hidden
-// unseen.
+// contextual escalation), and AFTER the read fields so no caller can carry an old
+// dismissal forward. It is a presentation state, not a clinical field, so the
+// never-clobber guarantee below is untouched.
+//
+// The other writes, each pinned end to end in incident-analysis.pipeline.test.ts:
+//   · the failure write (`buildFailureWrite`) records no new read and leaves the
+//     hide alone, EXCEPT its rescue, which writes an escalation's words and clears
+//     it for the same reason this builder does;
+//   · a HOLD (`resolveReanalysisWrite`) keeps the stored escalation's words, so a
+//     hide the owner made on exactly those words stands.
+// The sink scan in incident-analysis.test.ts fails the build on a write of read
+// words that comes from none of these. The ORDER half is the client's: a Hide
+// writes only over the words on screen (lib/analysisDismissal.ts), so a read
+// landing first is never hidden unseen.
 export function buildAnalysisWriteBack<TFlag extends string>(params: {
   humanEdited: boolean
   eventId: string
@@ -645,6 +651,11 @@ export function buildFailureWrite(params: {
     // Identity + read fields only. PostgREST's upsert updates exactly the columns it
     // is sent, so an existing row's structured fields and edited_at are untouched and
     // a fresh row's are null, which is right for a read that never finished.
+    //
+    // And the owner's hide goes (CUL-1323). This is the one failure shape that writes
+    // WORDS: an escalation over a row that held none, so words the owner has not seen.
+    // A hide they made on the calm read before it would otherwise stand over them, and
+    // "AI note hidden" would sit where the warning belongs.
     return {
       mode: 'rescue',
       values: {
@@ -657,6 +668,7 @@ export function buildFailureWrite(params: {
         contextual_flags: params.rescue.contextual_flags,
         status: 'failed',
         error: params.message,
+        dismissed_at: null,
       },
     }
   }

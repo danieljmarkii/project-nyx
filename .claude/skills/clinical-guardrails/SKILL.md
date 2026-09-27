@@ -250,6 +250,8 @@ export function buildAnalysisWriteBack(params): AnalysisWriteBack {
 
 **These are proven through the pipeline, not only the helpers:** `_shared/incident-analysis.pipeline.test.ts` drives the real `runIncidentAnalysis` through a fake client and model (`PipelineDeps`). A new write path or a rebase of this one adds its case there.
 
+**THE OWNER'S HIDE (CUL-1323, PM 2026-09-27).** `dismissed_at` is a statement about the words the owner read, never about the incident. Every write that puts words there they have not seen clears it: both builder modes, the capped escalation, the failure write's rescue. A write that keeps the words keeps it: a hold, an error-only failure, a failed upsert. A new write path that writes `read_text` or `recommendation` takes its values from `buildAnalysisWriteBack` / `resolveReanalysisWrite` / `buildFailureWrite`, or the sink scan in `incident-analysis.test.ts` fails the build. The client half is the order: Hide and Show write only over the words on screen (`lib/analysisDismissal.ts`), so a read that lands first is never hidden unseen.
+
 ---
 
 ## PATTERN 8: The Never-Reassure Invariant Is a Test Assertion, Not Just a Comment
