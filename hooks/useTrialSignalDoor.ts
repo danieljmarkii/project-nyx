@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { useDesignV2 } from './useDesignV2';
 import { readSignalCache, type CachedFinding } from '../lib/signal';
 import { signalTrialWindowOf } from '../lib/signalScreen';
@@ -17,9 +18,13 @@ import { useSyncStore } from '../store/syncStore';
 // `guards/designV2FlagOff.test.tsx`'s `DRAWS_ELSEWHERE_OK`.
 //
 // THE READ is the route's pet's cache (C-9), stored with the pet it answers for, so a pet
-// switch never shows the previous pet's door for a frame (`useTrialFacts`' shape). A read
-// that fails draws no door: the door is a convenience, never a claim about the record, and
-// the trial screen's own vomiting line does not depend on it.
+// switch never shows the previous pet's door for a frame (`useTrialFacts`' shape). It re-reads
+// when a regen lands (`signalTick`) and on every focus, as Home's `useSignal` does: a snapshot
+// held across a regen that flipped the pair's direction would keep a door Home had dropped, or
+// miss one Home had added (adversarial pass). A read that fails draws no door: the door is a
+// convenience, never a claim about the record, and the trial screen's own vomiting line does
+// not depend on it. The destination re-checks on its own (`loadSignalScreen` answers only for
+// a finding Home would draw), so a door a beat stale can never open onto a withheld pair.
 
 export interface TrialSignalDoorInput {
   /** The route's pet. */
@@ -35,26 +40,29 @@ export interface TrialSignalDoorInput {
 export function useTrialSignalDoor({ petId, trial, notEating, nowMs }: TrialSignalDoorInput): TrialSignalDoor | null {
   const live = useDesignV2();
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
+  const signalTick = useSyncStore((s) => s.signalTick);
   const [state, setState] = useState<{ petId: string; findings: readonly CachedFinding[] } | null>(null);
 
-  useEffect(() => {
-    if (!live) {
-      setState(null);
-      return;
-    }
-    let cancelled = false;
-    readSignalCache(petId)
-      .then((row) => {
-        if (!cancelled) setState({ petId, findings: row?.findings ?? [] });
-      })
-      .catch((e) => {
-        console.warn('[useTrialSignalDoor] signal cache read failed:', e);
-        if (!cancelled) setState({ petId, findings: [] });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [live, petId, hydrationTick]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!live) {
+        setState(null);
+        return;
+      }
+      let cancelled = false;
+      readSignalCache(petId)
+        .then((row) => {
+          if (!cancelled) setState({ petId, findings: row?.findings ?? [] });
+        })
+        .catch((e) => {
+          console.warn('[useTrialSignalDoor] signal cache read failed:', e);
+          if (!cancelled) setState({ petId, findings: [] });
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [live, petId, hydrationTick, signalTick]),
+  );
 
   if (!live || !state || state.petId !== petId) return null;
   return trialSignalDoor({

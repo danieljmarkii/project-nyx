@@ -111,7 +111,9 @@ export function TrialScreen({ petId }: { petId: string }) {
     petId,
     trial: dietTrial.inputIsForPet ? (dietTrial.input?.trial ?? null) : null,
     notEating: model.kind === 'trial' ? model.notEating : null,
-    nowMs: dietTrial.input?.nowMs ?? Date.now(),
+    // The clock the Signal screen titles with at its own load, so the door's day and the
+    // screen's day agree even across a midnight with this screen open.
+    nowMs: Date.now(),
   });
 
   // The lifecycle writes against the input on screen, and only when it is this pet's.

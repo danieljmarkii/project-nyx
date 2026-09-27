@@ -123,6 +123,7 @@ jest.mock('../trial/TrialLifecycleSheets', () => ({
 
 import TrialRoute, { BAD_LINK_BODY, OFF_BODY, OFF_TITLE } from '../../app/trial/[pet]';
 import { SIGNAL_OPEN_MOTION } from '../motion/signalOpenMotion';
+import { useSyncStore } from '../../store/syncStore';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -583,6 +584,33 @@ describe('the Signal door (TS-9)', () => {
     const rising = await renderRoute();
     expect(rising.getByTestId('trial-safety')).toBeTruthy();
     expect(rising.getByTestId('trial-door-signal')).toBeTruthy();
+    mockDesignV2.mockReturnValue(false);
+  });
+
+  // The adversarial pass's counterexample: a regen that flips the pair's direction while this
+  // screen is open must move the door with Home, which re-reads on the signal tick.
+  it('a regen that lands while the screen is open re-reads: a door Home drops goes, one it adds comes', async () => {
+    mockDesignV2.mockReturnValue(true);
+    mockTrial = {
+      input: running({ petName: 'Biscuit', trialDietRefusal: REFUSAL, trialResponse: VOMITING }),
+      status: 'loaded',
+      inputIsForPet: true,
+    };
+    mockReadSignalCache.mockImplementation(async () => cacheWith('more_during_trial'));
+    const view = await renderRoute();
+    expect(view.getByTestId('trial-door-signal')).toBeTruthy();
+
+    mockReadSignalCache.mockImplementation(async () => cacheWith('fewer_during_trial'));
+    await act(async () => {
+      useSyncStore.getState().bumpSignalTick();
+    });
+    expect(view.queryByTestId('trial-door-signal')).toBeNull();
+
+    mockReadSignalCache.mockImplementation(async () => cacheWith('more_during_trial'));
+    await act(async () => {
+      useSyncStore.getState().bumpSignalTick();
+    });
+    expect(view.getByTestId('trial-door-signal')).toBeTruthy();
     mockDesignV2.mockReturnValue(false);
   });
 

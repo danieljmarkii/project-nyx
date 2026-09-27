@@ -49,7 +49,7 @@ import { drugDisplayName } from './medications';
 import { CORRELATION_SYMPTOM_TYPES, readFeedingRows, readFreeFedSpans, TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import { readSignalCache, type CachedFinding, type SignalFinding } from './signal';
 import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, reflectionExpandedExtras, symptomWord } from './signalCopy';
-import { signalSaysNotEating } from './signalVisible';
+import { signalSaysNotEating, visibleFindings } from './signalVisible';
 import {
   compareGateCounts,
   compareWithheld,
@@ -909,6 +909,16 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     : trialFacts
       ? isAnimalNotEating(trialFacts)
       : null;
+  // THE SCREEN ANSWERS ONLY FOR A FINDING HOME WOULD DRAW (TS-9 · CUL-1305, adversarial pass).
+  // The route is reachable without Home's stack in between: a stale door (the trial screen's
+  // Signal row, a card tapped a beat before a regen landed), a deep link. The sentence is the
+  // server's own and is drawn whole, so a falling vomit pair over a pet that may not be eating
+  // would print its counts here while Home withholds the card (B-789, §5.2). Same predicate,
+  // same register, failing closed (`notEating` null withholds, as Home does): a finding the
+  // stack drops is not in the picture, and the screen says so.
+  if (!visibleFindings(row?.findings ?? [], notEating !== false, nowMs).includes(cached)) {
+    return { status: 'missing', petName };
+  }
   const trialVomitingLine = trialFacts ? (resolveTrialStrip(trialFacts)?.trialResponseLine ?? null) : null;
 
   // The doses that could fall inside either window the lines name: read from the earlier

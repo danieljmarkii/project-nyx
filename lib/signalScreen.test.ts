@@ -65,6 +65,7 @@ import type { SignalTrialWindow } from './signalWindows';
 import { signalCompareSpec } from './signalWindows';
 import { dayKeyFromIndex, formatCalendarDate, localDayIndexOf, toLocalDayKey } from './utils';
 import { usePetStore } from '../store/petStore';
+import { isAnimalNotEating, type TrialCardInput } from './dietTrialCard';
 import { claimAnalysisChain } from './analysisChain';
 
 const idx = (key: string): number => {
@@ -1071,6 +1072,79 @@ describe('CUL-1216 — the loader reads the not-eating register for the ROUTE’
     if (out.status !== 'ready') throw new Error(out.status);
     expect(out.model.compare).toBeNull();
     expect(out.model.why).toContain("Vomiting: 3 in the trial's 21 days · 11 in the 49 days before, a longer stretch.");
+  });
+
+  // TS-9 (CUL-1305, adversarial pass): the route is reachable without Home's stack in between
+  // (the trial screen's Signal door a beat stale, a card tapped as a regen lands, a deep link),
+  // and the sentence is the server's, drawn whole. So the loader answers only for a finding
+  // Home would draw: the same predicate (`visibleFindings`), the same register, failing closed.
+  describe('a finding Home withholds is not in the picture here either', () => {
+    const trialPair = (dir: 'fewer_during_trial' | 'more_during_trial'): CachedFinding =>
+      cachedOf({
+        type: 'trial_response',
+        priorityClass: 'insight',
+        trialDayNumber: 21,
+        targetDurationDays: 56,
+        trialLoggedDays: 21,
+        baselineLoggedDays: 49,
+        baselineWindowDays: 49,
+        pooledTrialCount: 1,
+        pooledBaselineCount: 11,
+        rapid: { trial: 0, baseline: 4 },
+        long: { trial: 0, baseline: 0 },
+        rapidWindowMinutes: 30,
+        longGapHours: 6,
+        treatShare: { trial: null, baseline: null },
+        mealsPerDay: { trial: null, baseline: null },
+        comparisonDirection: dir,
+        trialWindowDays: 21,
+      } as TrialResponseFinding);
+    const refusing = (): TrialCardInput => {
+      const today = toLocalDayKey(new Date());
+      return {
+        ...trialLessFacts,
+        species: 'cat',
+        nowMs: Date.now(),
+        trial: { id: 't', status: 'active', startedAt: shift(today, -20), endedAt: null, targetDurationDays: 56, foodLabel: null },
+        trialDietRefusal: { refusedFeedings: 4, ratedFeedings: 5, days: 2, population: 'trial_diet' },
+      } as TrialCardInput;
+    };
+    const eating = (): TrialCardInput => ({ ...refusing(), trialDietRefusal: null }) as TrialCardInput;
+
+    it('the fixtures are the two registers they claim to be', () => {
+      expect(isAnimalNotEating(refusing())).toBe(true);
+      expect(isAnimalNotEating(eating())).toBe(false);
+    });
+
+    it('a falling trial pair over a refusing cat answers missing; the same pair over an eating one is ready', async () => {
+      mockReadSignalCache.mockResolvedValue({ findings: [trialPair('fewer_during_trial')] });
+      mockLoadDietTrialFacts.mockResolvedValue(refusing());
+      expect(await loadSignalScreen('pet-1', 'trial_response')).toEqual({ status: 'missing', petName: 'Nyx' });
+      mockLoadDietTrialFacts.mockResolvedValue(eating());
+      expect((await loadSignalScreen('pet-1', 'trial_response')).status).toBe('ready');
+    });
+
+    it('a rising pair over a refusing cat stays (escalation is never withheld)', async () => {
+      mockReadSignalCache.mockResolvedValue({ findings: [trialPair('more_during_trial')] });
+      mockLoadDietTrialFacts.mockResolvedValue(refusing());
+      expect((await loadSignalScreen('pet-1', 'trial_response')).status).toBe('ready');
+    });
+
+    it('the Signal’s own intake decline withholds the falling pair, whatever the trial facts said', async () => {
+      const decline = cachedOf(
+        { type: 'intake_decline', priorityClass: 'safety', trigger: 'consecutive_low', species: 'cat', daysBelowBaseline: 3, refusedFoodLabel: null, ratedMealsConsidered: 9 },
+        'Nyx has eaten less than usual for 3 days.',
+      );
+      mockReadSignalCache.mockResolvedValue({ findings: [decline, { ...trialPair('fewer_during_trial'), rank: 1 }] });
+      mockLoadDietTrialFacts.mockResolvedValue(eating());
+      expect((await loadSignalScreen('pet-1', 'trial_response')).status).toBe('missing');
+    });
+
+    it('a trial facts read that fails withholds the falling pair (fail closed, as Home does)', async () => {
+      mockReadSignalCache.mockResolvedValue({ findings: [trialPair('fewer_during_trial')] });
+      mockLoadDietTrialFacts.mockRejectedValue(new Error('sqlite'));
+      expect((await loadSignalScreen('pet-1', 'trial_response')).status).toBe('missing');
+    });
   });
 
   it('an intake decline in the pet’s Signal withholds, whatever the trial facts said', async () => {
