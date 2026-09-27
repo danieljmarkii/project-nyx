@@ -44,8 +44,8 @@ Two findings:
 - **Staleness after an edit or delete of an older row. Fixed:** the door now re-reads on
   focus, and a test pins it.
 - **Patterns now disagrees with the door on a fully logged morning.** The door says
-  "26 of 26" and Patterns says "1 day unlogged". The door is right. The fix is CUL-1194,
-  which should land before owners see design_v2.
+  "26 of 26" and Patterns says "1 day unlogged". The door is right. #959 (CUL-1194) fixed
+  the look half; the today half is CUL-1380, which should land before owners see design_v2.
 
 Mutation proofs:
 - The look exclusion, the soft-delete filter, the yesterday bound, the record-start max,
@@ -58,6 +58,8 @@ Mutation proofs:
 
 ## Residuals
 
-- **CUL-1194:** Patterns adopts `coverageWindow`.
+- **CUL-1380:** Patterns still counts today as unlogged, so on a fully logged morning it
+  says "1 day unlogged" beside the door's "26 of 26". #959 (CUL-1194) already moved
+  Patterns' record start to the first non-look event; today is the half that remains.
 - **Record start, ruled by the PM on 2026-09-27:** the record starts at the pet's first
   entry, not at its creation. That is option (a), the definition both surfaces already use.
