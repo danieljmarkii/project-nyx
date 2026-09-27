@@ -190,6 +190,7 @@ export function MonthInstrument({
             recordStart: facts.recordStart,
             recordEmpty: facts.recordStart == null,
             episodeDays: facts.episodeDays,
+            continuationDays: facts.continuationDays,
             loggedDays: facts.loggedDays,
             leftSomeDays: facts.leftSomeDays,
             dosedDays: facts.dosedDays,
@@ -211,7 +212,8 @@ export function MonthInstrument({
   const goTo = useCallback((m: Month) => {
     setShown(m);
     setOpenDay(null);
-    // The chart draws in on a page turn — the FACT (C-30); a re-render never replays it.
+    // The chart draws in on first show and on a page turn — the FACT (C-30); a re-render
+    // never replays it. The tick re-arms a return to a month already drawn.
     setDrawTick((t) => t + 1);
   }, []);
 
@@ -310,9 +312,11 @@ export function MonthInstrument({
         <>
           {/* The symptom layer is the whole vomiting drawing — the bars, the corners AND the
               sentence — so switching it off takes all three, and leaves the coverage: the
-              product read found a chip that reached only the grid read as broken. */}
+              product read found a chip that reached only the grid read as broken. The chart
+              draws on first show and on every page turn (CUL-1223, BRK-12); a refresh keeps
+              the cached month mounted, so it never replays. */}
           {layers.vomit && (
-            <WeeklyBars model={model.weekly} noun={NOUN} drawIn={drawTick > 0} identity={`${shownKey}:${drawTick}`} />
+            <WeeklyBars model={model.weekly} noun={NOUN} drawIn identity={`${shownKey}:${drawTick}`} />
           )}
 
           {/* The layers: four independent toggles, wrapping, each announcing its checked state. */}
@@ -415,6 +419,7 @@ function GridDay({
       dayKey={day.key}
       dayOfMonth={day.dayOfMonth}
       count={day.count}
+      continuesFrom={day.continuesFrom}
       coverage={coverage}
       symptomLayer={layers.vomit}
       medication={layers.meds && day.medication}

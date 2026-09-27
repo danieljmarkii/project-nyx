@@ -25,7 +25,7 @@
 
 import type { SignalFinding } from './signal';
 import { onsetMonth, stripDayUTC } from './signalCopy';
-import { signalTitle } from './signalTitle';
+import { hasSignalTitleRule, signalTitle } from './signalTitle';
 import type { SignalTrialWindow } from './signalWindows';
 
 export interface SignalHomeLine {
@@ -164,9 +164,8 @@ function eyebrow(finding: SignalFinding): string | null {
  * marker keeps its own line), so a caller can never draw a blank door.
  */
 export function signalHomeLine(finding: SignalFinding, trial: SignalTrialWindow | null = null): SignalHomeLine | null {
-  if (finding.type === 'stood_down') return null;
+  if (finding.type === 'stood_down' || !hasSignalTitleRule(finding)) return null;
   const headline = signalTitle(finding, trial);
-  if (headline === 'Signal') return null;
   return {
     eyebrow: eyebrow(finding),
     headline,

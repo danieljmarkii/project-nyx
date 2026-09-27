@@ -26,7 +26,8 @@
 //
 // THE TRIGGER IS A FACT, NEVER THE PRESENTATION (C-30). `drawIn` means "this chart just
 // arrived on screen for this reader" — the caller switches it on for the Signal screen's
-// first frame, the month's chart after a page turn, a card's first mount — and it re-arms
+// first frame, the month on first show and on a page turn, a card's first mount (Home
+// through `useColdStartDrawFact`, so never under the cold-start silhouette) — and it re-arms
 // on an `identity` change (a new month, a new finding). A re-render for any other reason
 // (a sync tick, a store update, a rotation) does not replay: a chart the owner is reading
 // must not redraw itself under their eyes.
@@ -51,8 +52,9 @@ export const DRAW_IN_MOTION = {
   barStaggerMs: 40,
   /** The bar's seed scale — a hairline at the baseline, never a hidden bar. */
   barFromScale: 0.02,
-  /** The counts and dates land this long after the first bar starts. */
-  barLabelDelayMs: 480,
+  /** The counts and dates land this long after the first bar starts (the mock's 480,
+   *  pulled to 400 so the labels end inside `budgetMs` — CUL-1223, PM option a). */
+  barLabelDelayMs: 400,
   /** A compare bar extends from its left edge. */
   compareMs: 420,
   compareStaggerMs: 120,
@@ -63,9 +65,21 @@ export const DRAW_IN_MOTION = {
   dotFadeMs: 200,
   dotStaggerMs: 28,
   dotFromScale: 0.1,
-  dotLabelDelayMs: 420,
+  dotLabelDelayMs: 400,
   /** Every label lands over the fold's own `landMs`, on the fold's curve. */
   labelMs: FOLD_MOTION.landMs,
+  /**
+   * THE CEILING (CUL-1223, WBC-4). Every draw ends inside this — its delay, the last
+   * mark's full beat and the labels' landing included — whatever the mark count. The
+   * durations stay the mock's; what yields is the STAGGER (a total span ceiling, never a
+   * per-mark one) and, where a delay eats the room, the label's start. See `drawInPlan`.
+   */
+  budgetMs: 700,
+  /** How long a mark must have been drawing before its label may land: a bar or a compare
+   *  bar is visibly up by here on `MARK_EASE`; a dot is fully faded in (`dotFadeMs`). */
+  barLeadMs: 120,
+  compareLeadMs: 120,
+  dotLeadMs: 200,
 } as const;
 
 /** A mark's kind decides which transform draws it and where its origin is. */
@@ -107,6 +121,15 @@ interface Params {
   kind: DrawInKind;
   /** How many marks the chart draws. The hook keeps a value per mark. */
   count: number;
+  /**
+   * Marks drawn as independent runs (the timing lanes, one run per lane — CUL-1223). A
+   * mark's stagger is its index WITHIN its run, so every run starts at 0 and its dots are
+   * up before the one label beat lands. Sums to `count`; absent, one run of `count`.
+   */
+  groups?: readonly number[];
+  /** Hold the whole draw this long (a chart inside a view that lands later — the Signal
+   *  screen's compare, which lands at `SIGNAL_OPEN_MOTION.landDelayMs`). Default 0. */
+  delayMs?: number;
   /** The FACT: this chart just arrived for this reader. */
   drawIn: boolean;
   /** What the chart is drawing — a change re-arms the draw while `drawIn` holds. */
@@ -115,8 +138,16 @@ interface Params {
   appActive: boolean;
 }
 
+interface Beats {
+  fromScale: number;
+  ms: number;
+  stagger: number;
+  labelDelay: number;
+  lead: number;
+}
+
 /** Per-kind seed and beats, so the effect below is one loop rather than three. */
-function beatsFor(kind: DrawInKind): { fromScale: number; ms: number; stagger: number; labelDelay: number } {
+function beatsFor(kind: DrawInKind): Beats {
   switch (kind) {
     case 'bars':
       return {
@@ -124,6 +155,7 @@ function beatsFor(kind: DrawInKind): { fromScale: number; ms: number; stagger: n
         ms: DRAW_IN_MOTION.barMs,
         stagger: DRAW_IN_MOTION.barStaggerMs,
         labelDelay: DRAW_IN_MOTION.barLabelDelayMs,
+        lead: DRAW_IN_MOTION.barLeadMs,
       };
     case 'compare':
       return {
@@ -131,6 +163,7 @@ function beatsFor(kind: DrawInKind): { fromScale: number; ms: number; stagger: n
         ms: DRAW_IN_MOTION.compareMs,
         stagger: DRAW_IN_MOTION.compareStaggerMs,
         labelDelay: DRAW_IN_MOTION.compareLabelDelayMs,
+        lead: DRAW_IN_MOTION.compareLeadMs,
       };
     case 'dots':
       return {
@@ -138,11 +171,53 @@ function beatsFor(kind: DrawInKind): { fromScale: number; ms: number; stagger: n
         ms: DRAW_IN_MOTION.dotMs,
         stagger: DRAW_IN_MOTION.dotStaggerMs,
         labelDelay: DRAW_IN_MOTION.dotLabelDelayMs,
+        lead: DRAW_IN_MOTION.dotLeadMs,
       };
   }
 }
 
-export function useDrawIn({ kind, count, drawIn, identity, reducedMotion, appActive }: Params): DrawIn {
+/** The timing of one draw, every value absolute from the moment it is armed. */
+export interface DrawInPlan {
+  /** Mark `i`'s start. */
+  markDelay: (i: number) => number;
+  /** The per-mark stagger actually used (the kind's, or less when the ceiling bites). */
+  stagger: number;
+  markMs: number;
+  labelDelay: number;
+  labelMs: number;
+}
+
+/**
+ * THE CEILING, as arithmetic (CUL-1223). Pure, so the property test drives the shipped
+ * function over every kind, count and delay rather than re-deriving the rule (C-34):
+ *
+ *   labelDelay = min(kind's label delay, budget − delay − labelMs)      the labels end in budget
+ *   span       = min(budget − delay − markMs, labelDelay − lead)        the last mark ends in budget,
+ *                                                                       and is `lead` in before the label
+ *   stagger    = min(kind's stagger, span / (longest run − 1))          a TOTAL ceiling, not per mark
+ *
+ * A short chart keeps the mock's stagger untouched; only a long one compresses.
+ */
+export function drawInPlan(kind: DrawInKind, groups: readonly number[], delayMs = 0): DrawInPlan {
+  const b = beatsFor(kind);
+  const budget = DRAW_IN_MOTION.budgetMs;
+  const labelDelay = Math.max(0, Math.min(b.labelDelay, budget - delayMs - DRAW_IN_MOTION.labelMs));
+  const span = Math.max(0, Math.min(budget - delayMs - b.ms, labelDelay - b.lead));
+  const longest = groups.reduce((a, n) => Math.max(a, n), 0);
+  const stagger = longest > 1 ? Math.min(b.stagger, span / (longest - 1)) : 0;
+  // A mark's index within its own run.
+  const within: number[] = [];
+  for (const n of groups) for (let j = 0; j < n; j++) within.push(j);
+  return {
+    markDelay: (i) => delayMs + (within[i] ?? 0) * stagger,
+    stagger,
+    markMs: b.ms,
+    labelDelay: delayMs + labelDelay,
+    labelMs: DRAW_IN_MOTION.labelMs,
+  };
+}
+
+export function useDrawIn({ kind, count, groups, delayMs = 0, drawIn, identity, reducedMotion, appActive }: Params): DrawIn {
   // One (scale, opacity) pair per mark, grown on demand and never shrunk: a mark that
   // leaves the chart just stops being read. Kept in a ref so a mark's style object is
   // the same object across renders (a new `Animated.Value` per render would detach the
@@ -155,6 +230,16 @@ export function useDrawIn({ kind, count, drawIn, identity, reducedMotion, appAct
   const drawn = useRef<string | null>(null);
   const reduced = useRef(reducedMotion);
   reduced.current = reducedMotion;
+  // Read at arm time only: a new array each render must not re-arm (the identity does).
+  const groupsRef = useRef(groups);
+  groupsRef.current = groups;
+  const delayRef = useRef(delayMs);
+  delayRef.current = delayMs;
+  // The count too: a re-read of the SAME identity whose mark count moved (a week bucket
+  // added at midnight) must neither restart the draw nor snap it to its end (the
+  // code-reviewer on CUL-1223). A mark past the armed count simply sits at rest.
+  const countRef = useRef(count);
+  countRef.current = count;
 
   const ensure = useCallback((n: number) => {
     while (scales.current.length < n) {
@@ -184,16 +269,17 @@ export function useDrawIn({ kind, count, drawIn, identity, reducedMotion, appAct
       return;
     }
     running.current?.stop();
-    const { fromScale, ms, stagger, labelDelay } = beatsFor(kind);
-    const n = Math.min(count, scales.current.length);
+    const { fromScale } = beatsFor(kind);
+    const n = Math.min(countRef.current, scales.current.length);
+    const plan = drawInPlan(kind, groupsRef.current ?? [n], delayRef.current);
     const marks: Animated.CompositeAnimation[] = [];
     for (let i = 0; i < n; i++) {
       scales.current[i].setValue(fromScale);
       const beats: Animated.CompositeAnimation[] = [
         Animated.timing(scales.current[i], {
           toValue: 1,
-          duration: ms,
-          delay: i * stagger,
+          duration: plan.markMs,
+          delay: plan.markDelay(i),
           easing: kind === 'dots' ? DOT_EASE : MARK_EASE,
           useNativeDriver: true,
         }),
@@ -206,7 +292,7 @@ export function useDrawIn({ kind, count, drawIn, identity, reducedMotion, appAct
           Animated.timing(opacities.current[i], {
             toValue: 1,
             duration: DRAW_IN_MOTION.dotFadeMs,
-            delay: i * stagger,
+            delay: plan.markDelay(i),
             easing: Easing.out(Easing.quad),
             useNativeDriver: true,
           }),
@@ -219,8 +305,8 @@ export function useDrawIn({ kind, count, drawIn, identity, reducedMotion, appAct
       ...marks,
       Animated.timing(labelOpacity, {
         toValue: 1,
-        duration: DRAW_IN_MOTION.labelMs,
-        delay: labelDelay,
+        duration: plan.labelMs,
+        delay: plan.labelDelay,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }),
@@ -232,12 +318,11 @@ export function useDrawIn({ kind, count, drawIn, identity, reducedMotion, appAct
       // end state. A finished draw pins every value (the native driver never writes back).
       if (finished) settle();
     });
-    return () => {
-      running.current?.stop();
-      running.current = null;
-      flying.current = false;
-    };
-  }, [drawIn, identity, kind, count, labelOpacity, settle]);
+    // Any cleanup PINS the end state (CUL-1223): an effect re-run that does not re-arm (the
+    // fact switching off) would otherwise stop a draw mid-flight and leave the chart frozen
+    // half-drawn. A re-arm reseeds right after, so pinning first costs nothing there.
+    return settle;
+  }, [drawIn, identity, kind, labelOpacity, settle]);
 
   // Blur FINISHES: the chart is where it was going, committed un-animated.
   useEffect(() => {

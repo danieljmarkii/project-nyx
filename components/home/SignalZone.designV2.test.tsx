@@ -54,6 +54,7 @@ import { SignalZone } from './SignalZone';
 import { DOOR_A11Y_HINT } from '../designV2/signal/SignalRow';
 import type { SignalState } from '../../hooks/useSignal';
 import type { CachedFinding } from '../../lib/signal';
+import type { TrialCardTrial } from '../../lib/dietTrialCard';
 import { signalWeeks, weekLine } from '../../lib/signalWindows';
 import { toLocalDayKey } from '../../lib/utils';
 
@@ -162,7 +163,7 @@ describe('flag-on', () => {
     mockUseSignal.mockReturnValue(state([benignLead, secondary]));
     const view = render(<SignalZone />);
     await waitFor(() => expect(view.getByTestId('signal-lead-card')).toBeTruthy());
-    expect(mockLoadSignalLead).toHaveBeenCalledWith('pet-1', benignLead, false);
+    expect(mockLoadSignalLead).toHaveBeenCalledWith('pet-1', benignLead, false, null);
     expect(view.getByTestId('signal-lead-title').props.children).toBe('Vomiting, week over week');
     fireEvent.press(view.getByTestId('signal-lead-face'));
     // The door measures first (declined here, see the mock above), then pushes.
@@ -178,7 +179,7 @@ describe('flag-on', () => {
     mockUseSignal.mockReturnValue(state([benignLead, secondary]));
     const view = render(<SignalZone withholdFallingVomit />);
     await waitFor(() => expect(view.getByTestId('signal-lead-card')).toBeTruthy());
-    expect(mockLoadSignalLead).toHaveBeenLastCalledWith('pet-1', benignLead, true);
+    expect(mockLoadSignalLead).toHaveBeenLastCalledWith('pet-1', benignLead, true, null);
     view.unmount();
 
     mockLoadSignalLead.mockClear();
@@ -190,7 +191,88 @@ describe('flag-on', () => {
     mockUseSignal.mockReturnValue(state([benignLead, decline]));
     const second = render(<SignalZone withholdFallingVomit={false} />);
     await waitFor(() => expect(second.getByTestId('signal-lead-card')).toBeTruthy());
-    expect(mockLoadSignalLead).toHaveBeenLastCalledWith('pet-1', benignLead, true);
+    expect(mockLoadSignalLead).toHaveBeenLastCalledWith('pet-1', benignLead, true, null);
+  });
+
+  // CUL-1360: the cache counted rabbit (day 20, just after midnight today) and Home's trial
+  // facts now say chicken, started today. The stack drops the older trial's falling pair,
+  // for THIS pet only, and hands every card the row's `generated_at` for its title.
+  describe('a trial finding counted over a trial since replaced', () => {
+    const today = toLocalDayKey(new Date());
+    const [y, m, d] = today.split('-').map(Number);
+    const counted = new Date(y, m - 1, d, 0, 30).toISOString();
+    const rabbitPair = (dir: 'fewer_during_trial' | 'more_during_trial'): CachedFinding => ({
+      rank: 1,
+      text: "We've logged 2 episodes of vomiting for Nyx in the trial's 20 days, compared with 11 in the 49 days before it — worth reviewing with your vet.",
+      finding: {
+        type: 'trial_response',
+        priorityClass: 'insight',
+        trialDayNumber: 20,
+        targetDurationDays: 56,
+        trialLoggedDays: 20,
+        baselineLoggedDays: 45,
+        baselineWindowDays: 49,
+        pooledTrialCount: 2,
+        pooledBaselineCount: 11,
+        rapid: { trial: 1, baseline: 4 },
+        long: { trial: 0, baseline: 1 },
+        rapidWindowMinutes: 30,
+        longGapHours: 6,
+        treatShare: { trial: null, baseline: null },
+        mealsPerDay: { trial: null, baseline: null },
+        comparisonDirection: dir,
+        trialWindowDays: 20,
+      },
+    });
+    const chicken: TrialCardTrial = {
+      id: 'trial-chicken',
+      status: 'active',
+      startedAt: today,
+      endedAt: null,
+      targetDurationDays: 56,
+      foodLabel: null,
+      trialProtein: { protein: 'chicken', source: 'owner' },
+    } as TrialCardTrial;
+    const trialFor = (petId: string) => ({ petId, trial: chicken, nowMs: Date.now() });
+    const withStamp = (findings: CachedFinding[]) => ({ ...state(findings), generatedAt: counted });
+
+    it('drops the falling pair; keeps it with no anchor, or an anchor for another pet', async () => {
+      mockUseSignal.mockReturnValue(withStamp([benignLead, rabbitPair('fewer_during_trial')]));
+      const view = render(<SignalZone signalTrial={trialFor('pet-1')} />);
+      await waitFor(() => expect(view.getByTestId('signal-lead-card')).toBeTruthy());
+      expect(view.queryAllByTestId('signal-row')).toHaveLength(0);
+      view.unmount();
+
+      for (const signalTrial of [null, trialFor('pet-2')]) {
+        const other = render(<SignalZone signalTrial={signalTrial} />);
+        await waitFor(() => expect(other.getByTestId('signal-lead-card')).toBeTruthy());
+        expect(other.getAllByTestId('signal-row')).toHaveLength(1);
+        other.unmount();
+      }
+    });
+
+    it('keeps the rising pair, titled by its own day, and hands the lead card the stamp', async () => {
+      mockUseSignal.mockReturnValue(withStamp([benignLead, rabbitPair('more_during_trial')]));
+      const view = render(<SignalZone signalTrial={trialFor('pet-1')} />);
+      await waitFor(() => expect(view.getByTestId('signal-lead-card')).toBeTruthy());
+      expect(view.getByTestId('signal-row-headline').props.children).toBe('Diet trial, day 20 of 56');
+      expect(mockLoadSignalLead).toHaveBeenCalledWith('pet-1', benignLead, false, counted);
+    });
+  });
+
+  // CUL-1218 (G10 extended; adversarial pass): a type this build cannot title leaves the
+  // stack before the lead is chosen — the next card takes the lead canvas, no empty slot.
+  it('an untitled type at rank 0 is dropped and the next insight takes the lead card', async () => {
+    const gap = {
+      rank: 0,
+      text: 'Gaps between vomiting episodes are getting shorter.',
+      finding: { type: 'gap_shortening', priorityClass: 'insight', symptomType: 'vomit' },
+    } as unknown as CachedFinding;
+    mockUseSignal.mockReturnValue(state([gap, benignLead]));
+    const view = render(<SignalZone />);
+    await waitFor(() => expect(view.getByTestId('signal-lead-card')).toBeTruthy());
+    expect(mockLoadSignalLead).toHaveBeenCalledWith('pet-1', benignLead, false, null);
+    expect(view.queryAllByTestId('signal-row')).toHaveLength(0);
   });
 
   it('the header’s "Open ›" is gone: every card is its own door', async () => {

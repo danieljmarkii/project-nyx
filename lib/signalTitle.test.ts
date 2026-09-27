@@ -18,7 +18,7 @@ import type {
   TimingStoryFinding,
   TrialResponseFinding,
 } from './signal';
-import { hasTitleVerdictWord, signalTitle, TITLE_VERDICT_WORDS } from './signalTitle';
+import { hasSignalTitleRule, hasTitleVerdictWord, signalTitle, TITLE_VERDICT_WORDS } from './signalTitle';
 import type { SignalTrialWindow } from './signalWindows';
 
 const SYMPTOMS: SignalSymptomType[] = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough', 'sneeze'];
@@ -292,5 +292,34 @@ describe('PROPERTY: no title carries a verdict word — every type × every symp
     // A whole-word screen: "update" and "upset" are not "up".
     expect(hasTitleVerdictWord('An update on an upset stomach')).toBe(false);
     expect(hasTitleVerdictWord('Vomiting, day 55 of the rabbit trial')).toBe(false);
+  });
+});
+
+// CUL-1218 (G10 extended): a type this build cannot title is refused on every Design v2
+// surface, never drawn as a blank card titled "Signal".
+describe('hasSignalTitleRule — a type with no title rule is refused', () => {
+  it('every type the client knows has a rule, and its title is never the bare fallback', () => {
+    const all = everyType('vomit');
+    // The fixture covers the whole union: twelve types, every one of them distinct.
+    expect(new Set(all.map((f) => f.type)).size).toBe(12);
+    for (const f of all) {
+      expect(hasSignalTitleRule(f)).toBe(true);
+      expect(signalTitle(f, null)).not.toBe('Signal');
+    }
+  });
+
+  it('refuses gap_shortening (emitted by the engine, absent from the client union) and any future type', () => {
+    const gap = {
+      type: 'gap_shortening',
+      priorityClass: 'insight',
+      symptomType: 'vomit',
+      recentGapsHours: [144, 72, 48, 24],
+      medianGapHours: 120,
+      latestGapHours: 24,
+      gapCount: 6,
+      episodeCount: 7,
+    } as unknown as SignalFinding;
+    expect(hasSignalTitleRule(gap)).toBe(false);
+    expect(hasSignalTitleRule({ type: 'not_yet_invented', priorityClass: 'safety' } as unknown as SignalFinding)).toBe(false);
   });
 });

@@ -67,6 +67,9 @@ jest.mock('../../../store/syncStore', () => ({
 // The gate, as the flag-off guard proves it is read (the one hook).
 let mockHistoryV2 = false;
 jest.mock('../../../hooks/useHistoryV2', () => ({ useHistoryV2: () => mockHistoryV2 }));
+// The app in the foreground: jest's AppState is not `active`, and a card never draws its
+// first paint while the app is not active (CUL-1375).
+jest.mock('../../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 // The paint ledger is the real one; every claim it grants is recorded (a draw's opacity
 // cannot be caught mid-flight under the mocked native driver). A claim is the trigger.
 const mockClaims: string[] = [];

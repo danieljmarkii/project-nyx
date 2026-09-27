@@ -27,6 +27,7 @@ import type { CachedFinding } from './signal';
 import { foldIdentity } from './signalFold';
 import { signalScreenHref } from './signalRoute';
 import { signalTitle } from './signalTitle';
+import { signalTrialWindowFor } from './signalTrialAnchor';
 import { visibleFindings } from './signalVisible';
 import type { SignalTrialWindow } from './signalWindows';
 
@@ -48,16 +49,24 @@ export interface TrialSignalDoorArgs {
   withholdFallingVomit: boolean;
   /** `signalTrialWindowOf(trial, nowMs)`, the window the Signal screen titles with. */
   trialWindow: SignalTrialWindow | null;
+  /** The cache row's `generated_at` (CUL-1360): with the window, it says whether the cached
+   *  finding counted THIS trial. Required, so no caller can title an older trial's finding
+   *  with this one by leaving it out; null only when the row carried none. */
+  generatedAt: string | null;
   nowMs: number;
 }
 
 export function trialSignalDoor(args: TrialSignalDoorArgs): TrialSignalDoor | null {
-  const live = visibleFindings([...args.findings], args.withholdFallingVomit, args.nowMs).find(
+  // CUL-1360: the same anchor Home's stack and the Signal screen read, so a finding counted
+  // over a replaced trial has the door Home gives it (a falling pair none, a rising pair one
+  // titled by its own day), never a door named for the trial on screen.
+  const anchor = { generatedAt: args.generatedAt, trial: args.trialWindow };
+  const live = visibleFindings([...args.findings], args.withholdFallingVomit, args.nowMs, anchor).find(
     (f) => f.finding.type === 'trial_response',
   );
   if (!live) return null;
   return {
-    label: signalTitle(live.finding, args.trialWindow),
+    label: signalTitle(live.finding, signalTrialWindowFor(live.finding, anchor)),
     sub: SIGNAL_DOOR_SUB,
     href: signalScreenHref(args.petId, foldIdentity(live.finding)),
   };

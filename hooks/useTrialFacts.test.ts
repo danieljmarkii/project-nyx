@@ -18,7 +18,7 @@ jest.mock('../lib/dietTrialFacts', () => ({
 }));
 
 import { act, renderHook, waitFor } from '@testing-library/react-native';
-import { useTrialFacts } from './useTrialFacts';
+import { useTrialFacts, type TrialFactsRead, type TrialFactsState } from './useTrialFacts';
 
 // CUL-1297 — the hook takes a pet. The pre-existing cases drive it the way the
 // Foods tab / Pet tab do: a caller that hands it the ACTIVE pet on every render.
@@ -30,6 +30,12 @@ import { useSyncStore } from '../store/syncStore';
 import type { TrialFacts } from '../lib/dietTrial';
 
 const FACTS = { range: { startDayIndex: 1 } } as unknown as TrialFacts;
+
+/** The state without the hook's `reload` (CUL-1336), so an answer is compared exactly. */
+function stateOf(read: TrialFactsRead): TrialFactsState {
+  const { reload: _reload, ...state } = read;
+  return state as TrialFactsState;
+}
 
 function selectPet(id: string | null): void {
   act(() => {
@@ -74,7 +80,7 @@ describe('useTrialFacts', () => {
     mockLoad.mockResolvedValue({ trial: {}, stoppedForRefusal: false, facts: null });
     selectPet('pet-1');
     const { result } = renderHook(() => useActivePetTrialFacts());
-    await waitFor(() => expect(result.current).toEqual({ status: 'ready', facts: null }));
+    await waitFor(() => expect(stateOf(result.current)).toEqual({ status: 'ready', facts: null }));
   });
 
   it('never fabricates a no-trial answer out of a failed read', async () => {
@@ -82,7 +88,7 @@ describe('useTrialFacts', () => {
     selectPet('pet-1');
     const { result } = renderHook(() => useActivePetTrialFacts());
     await waitFor(() => expect(mockLoad).toHaveBeenCalled());
-    expect(result.current).toEqual({ status: 'unknown' });
+    expect(stateOf(result.current)).toEqual({ status: 'unknown' });
   });
 
   it('withholds the previous pet’s answer the instant the pet changes', async () => {
@@ -94,7 +100,7 @@ describe('useTrialFacts', () => {
     // must not carry pet-1's exposures into pet-2's context.
     mockLoad.mockReturnValue(new Promise(() => {}));
     selectPet('pet-2');
-    expect(result.current).toEqual({ status: 'unknown' });
+    expect(stateOf(result.current)).toEqual({ status: 'unknown' });
   });
 
   it('re-reads when a sync cycle hydrates new events', async () => {
@@ -109,7 +115,7 @@ describe('useTrialFacts', () => {
   it('reads nothing when there is no active pet', () => {
     selectPet(null);
     const { result } = renderHook(() => useActivePetTrialFacts());
-    expect(result.current).toEqual({ status: 'unknown' });
+    expect(stateOf(result.current)).toEqual({ status: 'unknown' });
     expect(mockLoad).not.toHaveBeenCalled();
   });
 
@@ -125,8 +131,53 @@ describe('useTrialFacts', () => {
 
     const { result } = renderHook(() => useTrialFacts('pet-b'));
     await waitFor(() => expect(result.current.status).toBe('ready'));
-    expect(result.current).toEqual({ status: 'ready', facts: FACTS_B });
+    expect(stateOf(result.current)).toEqual({ status: 'ready', facts: FACTS_B });
     expect(mockLoad).toHaveBeenCalledWith(expect.objectContaining({ id: 'pet-b', name: 'Mochi', species: 'cat' }));
     expect(mockLoad).not.toHaveBeenCalledWith(expect.objectContaining({ id: 'pet-a' }));
+  });
+
+  // CUL-1336 — the trial screen's *Try again* over a failed read, and its re-read on coming
+  // back from a list edit.
+  describe('reload', () => {
+    it('re-reads on demand, and a retry that answers replaces the failure', async () => {
+      mockLoad.mockRejectedValueOnce(new Error('db closed'));
+      selectPet('pet-1');
+      const { result } = renderHook(() => useActivePetTrialFacts());
+      await waitFor(() => expect(result.current.status).toBe('unreadable'));
+      expect(mockLoad).toHaveBeenCalledTimes(1);
+
+      act(() => result.current.reload());
+      await waitFor(() => expect(result.current.status).toBe('ready'));
+      expect(mockLoad).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the last answer on screen while the re-read runs', async () => {
+      selectPet('pet-1');
+      const { result } = renderHook(() => useActivePetTrialFacts());
+      await waitFor(() => expect(result.current.status).toBe('ready'));
+      mockLoad.mockReturnValue(new Promise(() => {}));
+      act(() => result.current.reload());
+      expect(mockLoad).toHaveBeenCalledTimes(2);
+      expect(result.current.status).toBe('ready');
+    });
+
+    it('is stable across renders, so a focus callback keyed on it does not re-fire', async () => {
+      selectPet('pet-1');
+      const { result, rerender } = renderHook(() => useActivePetTrialFacts());
+      const first = result.current.reload;
+      await waitFor(() => expect(result.current.status).toBe('ready'));
+      rerender({});
+      expect(result.current.reload).toBe(first);
+    });
+  });
+
+  // CUL-1336 — the facts say which trial they are for, so a consumer pairing them with
+  // another read's trial can refuse a mismatch instead of trusting the pet key.
+  it('labels a ready answer with the trial it was computed for', async () => {
+    mockLoad.mockResolvedValue({ trial: { id: 'trial-9' }, stoppedForRefusal: false, facts: FACTS });
+    selectPet('pet-1');
+    const { result } = renderHook(() => useActivePetTrialFacts());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(stateOf(result.current)).toEqual({ status: 'ready', trialId: 'trial-9', facts: FACTS });
   });
 });

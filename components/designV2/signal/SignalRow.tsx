@@ -5,6 +5,7 @@ import type { CachedFinding, PriorityClass, ReflectionFinding, SignalFinding } f
 import { type CompareRow, dotLaneModel, isTimingFinding, timingCompareRows, timingReceiptDegrades } from '../../../lib/signalCopy';
 import { askStandalone, signalHomeLabel, signalHomeLine } from '../../../lib/signalHomeLine';
 import { loadSignalRowTrial } from '../../../lib/signalLead';
+import { signalTrialWindowFor } from '../../../lib/signalTrialAnchor';
 import type { SignalTrialWindow } from '../../../lib/signalWindows';
 import { DotLane, StackedCompare } from '../../home/SignalReceipts';
 import { RAIL_WIDTH } from '../../home/InsightCard';
@@ -68,9 +69,13 @@ interface Props {
   onOpen: (finding: SignalFinding) => void;
   /** The top card of the zone: the headline takes the display face. */
   isLead?: boolean;
+  /** The cache row's `generated_at` (CUL-1360): with the local trial, it says whether a trial
+   *  finding counted THIS trial. Required, so a row can never title an older trial's finding
+   *  with the running trial's name by leaving it out; null only when the row carried none. */
+  generatedAt: string | null;
 }
 
-export function SignalRow({ cached, petId, onOpen, isLead = false }: Props) {
+export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }: Props) {
   const { finding } = cached;
   // The trial card names the local trial's identity and day, as its screen does; every
   // other claim is the same claim on a trial day, so no other row reads it.
@@ -88,7 +93,8 @@ export function SignalRow({ cached, petId, onOpen, isLead = false }: Props) {
     };
   }, [namesTrial, petId]);
 
-  const line = signalHomeLine(finding, trial);
+  // A trial finding counted over a trial since replaced speaks in its own day (CUL-1360).
+  const line = signalHomeLine(finding, signalTrialWindowFor(finding, { generatedAt, trial }));
   if (!line) return null;
 
   const safety = finding.priorityClass === 'safety';

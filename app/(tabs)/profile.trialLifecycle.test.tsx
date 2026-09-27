@@ -138,8 +138,18 @@ jest.mock('../../lib/dietTrialSetup', () => {
       this.dayCounter = args.dayCounter ?? null;
     }
   }
+  // CUL-1329 — the ending's refusal, a stand-in on the same terms: the real
+  // `TrialCompletionSheet` switches on this export with `instanceof`.
+  class TrialEndRefused extends Error {
+    reason: string;
+    constructor(args: { reason: string }) {
+      super(`end refused: ${args.reason}`);
+      this.reason = args.reason;
+    }
+  }
   return {
     TrialWindowRefused,
+    TrialEndRefused,
     extendTrial: jest.fn(() => Promise.resolve()),
     changeTrialWindow: jest.fn(() => Promise.resolve()),
     endActiveTrial: jest.fn(() => Promise.resolve()),
@@ -216,7 +226,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Alert, Modal } from 'react-native';
 import ProfileScreen from './profile';
 import {
-  changeTrialWindow, endActiveTrial, extendTrial, TrialWindowRefused,
+  changeTrialWindow, endActiveTrial, extendTrial, TrialEndRefused, TrialWindowRefused,
 } from '../../lib/dietTrialSetup';
 
 const mockExtend = extendTrial as jest.Mock;
@@ -338,6 +348,23 @@ describe('the completion sheets (This trial is done, Stopped early, the mileston
       mockSheetProps.completion.onClose();
     });
     expect(mockReload).toHaveBeenCalledTimes(1);
+    expect(mockSheetProps.completion.entry).toBeNull();
+    expect(visibleModals(r)).toBe(0);
+  });
+
+  it('a trial ended elsewhere: the sheet’s refused end re-reads the HOST and closes, with no alert (CUL-1329)', async () => {
+    // Driven through the REAL sheet's Save, so the path under test is the sheet's own
+    // catch → the host's `onChanged` (this host's `reload`) → `onClose`.
+    mockEnd.mockImplementation(() =>
+      Promise.reject(new TrialEndRefused({ reason: 'not_running' } as never)));
+    const r = await renderSettled();
+    fireEvent.press(r.getByTestId('action-trial_stopped_early'));
+    fireEvent.press(r.getByTestId('trial-stop-refused'));
+    await act(async () => { fireEvent.press(r.getByText('Save')); });
+
+    expect(mockEnd).toHaveBeenCalledTimes(1);
+    expect(mockReload).toHaveBeenCalledTimes(1);
+    expect(alertSpy).not.toHaveBeenCalled();
     expect(mockSheetProps.completion.entry).toBeNull();
     expect(visibleModals(r)).toBe(0);
   });

@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 // The Signal's one window predicate (D2-3 · CUL-1065): the card's bars and its line read
 // the same weeks (C-4, property-tested), the compare's windows are equal and never
 // overlap, the lanes carry every episode timed or not, and the trial mark sits on its day.
@@ -13,6 +15,10 @@ import {
   MAX_COMPARE_DAYS,
   MAX_WEEKS,
   MIN_COMPARE_DAYS,
+  MIN_COMPARE_HALF_DAYS,
+  CORRELATION_LOOKBACK_DAYS,
+  signalChartSymptomOf,
+  signalCompareDrawable,
   MIN_WEEKS,
   signalCompare,
   signalCompareSpec,
@@ -329,7 +335,7 @@ describe('the compare — two equal windows, adjacent, never overlapping', () =>
       episodeDays: [THURSDAY],
       loggedDays: [THURSDAY],
       recordStart: shift(THURSDAY, -60),
-    });
+    })!;
     expect(m.windows[0].coverageLine).toBe('logged 0 of 55 days · 49 before the record began');
     expect(m.windows[0].strip.filter((d) => d === 'before_record')).toHaveLength(49);
   });
@@ -348,7 +354,9 @@ describe('the compare — two equal windows, adjacent, never overlapping', () =>
       if (capped) expect(idx(before.startDay) + before.days).toBeLessThan(idx(during.startDay));
       else expect(idx(before.startDay) + before.days).toBe(idx(during.startDay));
       expect(idx(during.startDay) + during.days - 1).toBe(idx(today));
-      const m = signalCompare({ finding, today, trial, episodeDays: [today, shift(today, -3)], loggedDays: [today] });
+      // CUL-1217 (GC-3): off a trial, never a window under a week — no 3-day halves.
+      if (!trial || trialTooYoungToCompare(trial)) expect(before.days).toBeGreaterThanOrEqual(MIN_COMPARE_HALF_DAYS);
+      const m = signalCompare({ finding, today, trial, episodeDays: [today, shift(today, -3)], loggedDays: [today] })!;
       expect(m.windows[0].days).toBe(before.days);
       expect(m.windows[1].coverageLine).toMatch(/^logged \d+ of \d+ days?$/);
     }
@@ -356,7 +364,7 @@ describe('the compare — two equal windows, adjacent, never overlapping', () =>
 
   it('carries no adjudicating word anywhere in its labels', () => {
     for (const trial of [null, trialFor(THURSDAY)]) {
-      const m = signalCompare({ finding: chronicity(), today: THURSDAY, trial, episodeDays: [], loggedDays: [] });
+      const m = signalCompare({ finding: chronicity(), today: THURSDAY, trial, episodeDays: [], loggedDays: [] })!;
       for (const w of m.windows) {
         expect(`${w.label} ${w.coverageLine}`).not.toMatch(/\b(?:fair|fairly|comparable|even|equal|enough)\b/i);
       }
@@ -418,5 +426,46 @@ describe('what the caller owes', () => {
     expect(() => signalWeeks({ finding: f, today: THURSDAY, trial: { ...trialFor(THURSDAY), startDay: 'not-a-day' }, episodeDays: [], loggedDays: [] })).toThrow(
       /day key/,
     );
+  });
+});
+
+describe('CUL-1217 GC-3 · CUL-1359 · CUL-1218 — what the compare and the charts may count', () => {
+  it('a 7-day finding compares its own week pair, never two 3-day halves', () => {
+    for (const finding of [worsening({ windowDays: 7 }), chronicity({ windowDays: 7 })]) {
+      const [before, recent] = signalCompareSpec(finding, THURSDAY, null);
+      expect(before.days).toBe(7);
+      expect(recent.days).toBe(7);
+      // The recent window is the last 7 days ending today: the seventh day is in it.
+      expect(recent.startDay).toBe(shift(THURSDAY, -6));
+      expect(before.startDay).toBe(shift(THURSDAY, -13));
+    }
+    // A long lookback still halves, as before.
+    expect(signalCompareSpec(chronicity(), THURSDAY, null)[0].days).toBe(28);
+    expect(MIN_COMPARE_HALF_DAYS).toBe(7);
+  });
+
+  it('a reflection and a correlation draw no compare; every other benign type still does', () => {
+    const reflection = { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 1, priorCount: 3, direction: 'improving', windowDays: 7 } as const;
+    expect(signalCompareDrawable(reflection)).toBe(false);
+    expect(signalCompareDrawable(correlation())).toBe(false);
+    expect(signalCompare({ finding: reflection, today: THURSDAY, trial: null, episodeDays: [THURSDAY], loggedDays: [THURSDAY] })).toBeNull();
+    expect(signalCompare({ finding: correlation(), today: THURSDAY, trial: null, episodeDays: [THURSDAY], loggedDays: [THURSDAY] })).toBeNull();
+    expect(signalCompare({ finding: chronicity(), today: THURSDAY, trial: null, episodeDays: [THURSDAY], loggedDays: [THURSDAY] })).not.toBeNull();
+  });
+
+  it('a correlation counts nothing on a chart: its population is its matched episodes', () => {
+    expect(signalChartSymptomOf(correlation())).toBeNull();
+    // Its own symptom is still known, for everything that is not a chart.
+    expect(signalSymptomOf(correlation())).toBe('vomit');
+    expect(signalChartSymptomOf(chronicity())).toBe('vomit');
+  });
+
+  // C-34: a mirrored constant names its source and is held to it. The engine's fetch is the
+  // window a correlation's matched days can come from.
+  it('CORRELATION_LOOKBACK_DAYS mirrors the engine’s LOOKBACK_DAYS', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'generate-signal', 'index.ts'), 'utf8');
+    const m = src.match(/^const LOOKBACK_DAYS = (\d+)$/m);
+    expect(m).not.toBeNull();
+    expect(CORRELATION_LOOKBACK_DAYS).toBe(Number(m?.[1]));
   });
 });

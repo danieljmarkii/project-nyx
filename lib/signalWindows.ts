@@ -23,8 +23,14 @@
 // THE COMPARE. Two windows of EQUAL length that never overlap. On a running trial they are
 // the trial's own days (day 1 through today — the day counter) and the same number of
 // days immediately before it; without a trial, the two halves of the finding's lookback,
-// ending today. No word about whether the two are comparable lives here or anywhere
-// downstream — the strips under the bars carry the logged days, and the reader decides.
+// ending today — never shorter than a week each (CUL-1217, GC-3): a 7-day finding's halves
+// were two 3-day windows that left its seventh day in neither, so a finding whose lookback
+// is under two weeks compares its own week pair (the last 7 days · the 7 before), the pair
+// the engine's sentence counts. A REFLECTION draws no compare at all (CUL-1359): its claim
+// IS that week pair, already in the sentence, and a local redraw over it counts one
+// population twice (BRK-39's class) — the windows still exist, for the lines that name
+// them. No word about whether the two are comparable lives here or anywhere downstream —
+// the strips under the bars carry the logged days, and the reader decides.
 //
 // THE LANES. The same two windows as the compare on a trial (before it · in it); one lane
 // over the lookback otherwise. A lane takes one entry per episode with `null` where the
@@ -46,9 +52,22 @@ import type { SignalFinding, SignalSymptomType } from './signal';
 import { MIN_INTERPRETABLE_DAYS } from './dietTrial';
 import { dayKeyFromIndex, localDayIndexOf } from './utils';
 
-/** The engine's default lookback, for the finding types whose payload carries none
- *  (`food_symptom_correlation` reads the same 56-day window `symptom_chronicity` states). */
+/** The chart's default lookback, for a finding type whose payload carries none. It is the
+ *  chart's choice, NOT a window any such finding counted: a correlation reads the engine's
+ *  whole 180-day fetch (`CORRELATION_LOOKBACK_DAYS`), which is why a correlation draws no
+ *  chart at all (CUL-1218, C-34). */
 export const DEFAULT_WINDOW_DAYS = 56;
+/**
+ * The window a `food_symptom_correlation` counted over: the engine reads every event of the
+ * last 180 days (`LOOKBACK_DAYS`, `supabase/functions/generate-signal/index.ts`) and the
+ * payload carries no window of its own. MIRRORED — same value, same question ("which days
+ * could the matched pairs have come from") — so the screen's *Why* names it (CUL-1218, C-34;
+ * the title stays count-free, as every title's number must be the sentence's). If the
+ * engine's fetch changes, this changes with it.
+ */
+export const CORRELATION_LOOKBACK_DAYS = 180;
+/** The shortest compare window without a trial: a week (CUL-1217, GC-3). */
+export const MIN_COMPARE_HALF_DAYS = 7;
 /** The most weeks the chart draws; a longer trial's mark is placed in words (C-37). */
 export const MAX_WEEKS = 12;
 /** The fewest: a two-week finding still gets "this week · last week". */
@@ -113,6 +132,19 @@ export function signalSymptomOf(finding: SignalFinding): SignalSymptomType | nul
     default:
       return null;
   }
+}
+
+/**
+ * The symptom the card's and the screen's CHARTS may count for this finding, or null when
+ * they may count nothing (CUL-1218). Every chart here counts every episode of a symptom; a
+ * correlation's claim is about its MATCHED episodes over a 180-day read, so bars of every
+ * vomit under "Vomiting after chicken" count what the finding never did — 20 bars under 4
+ * matched pairs. Until the Home face for a correlation is ruled (GC-5 on CUL-1225) it draws
+ * its title, its sentence and its why, and no count. `signalSymptomOf` still answers the
+ * finding's own symptom for everything that is not a chart.
+ */
+export function signalChartSymptomOf(finding: SignalFinding): SignalSymptomType | null {
+  return finding.type === 'food_symptom_correlation' ? null : signalSymptomOf(finding);
 }
 
 /** The finding's own lookback in days — the window its sentence counted over. */
@@ -254,7 +286,7 @@ export function signalCompareSpec(
       },
     ];
   }
-  const half = Math.max(1, Math.floor(signalWindowDays(finding) / 2));
+  const half = Math.max(MIN_COMPARE_HALF_DAYS, Math.floor(signalWindowDays(finding) / 2));
   const duringStart = todayIdx - half + 1;
   return [
     { label: `The ${half} ${plural(half, 'day')} before`, startDay: dayKeyFromIndex(duringStart - half), days: half },
@@ -264,8 +296,20 @@ export function signalCompareSpec(
 
 export interface SignalCompareInput extends SignalWeeksInput {}
 
-/** The compare bars' model — logged days shown, no adjudication (the chart's own rule). */
-export function signalCompare(input: SignalCompareInput): CompareWindowsModel {
+/**
+ * Whether the screen may draw its own compare for this finding at all (CUL-1359, CUL-1218).
+ * A reflection's claim is the engine's week pair, already stated; a correlation's population
+ * is its matched episodes, which nothing on the phone can count. The caller's other refusals
+ * (a safety finding, a trial) are its own.
+ */
+export function signalCompareDrawable(finding: SignalFinding): boolean {
+  return finding.type !== 'reflection' && finding.type !== 'food_symptom_correlation';
+}
+
+/** The compare bars' model — logged days shown, no adjudication (the chart's own rule); null
+ *  where the finding draws no compare (`signalCompareDrawable`). */
+export function signalCompare(input: SignalCompareInput): CompareWindowsModel | null {
+  if (!signalCompareDrawable(input.finding)) return null;
   const [before, during] = signalCompareSpec(input.finding, input.today, input.trial);
   const shared = { episodeDays: input.episodeDays, loggedDays: input.loggedDays, recordStart: input.recordStart ?? undefined };
   return compareWindows({ ...before, ...shared }, { ...during, ...shared });

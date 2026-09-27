@@ -13,8 +13,11 @@
 // THE WRAPPERS ARE ALWAYS MOUNTED, at rest bound to an opacity of 1 and a translate of 0.
 // Swapping a plain View for an animated one when a draw starts would REMOUNT the row, and a
 // row can be mid-arrival (a read landing on its node, `useNodeArrival`): a remount drops
-// the arrival and its one announcement. Each wrapper is bound to the same values for its
-// whole life, so no node is ever re-attached mid-flight.
+// the arrival and its one announcement. Each wrapper is bound to the same values for the
+// whole of a draw, so no node is ever re-attached mid-flight; a draw that is CUT (a blur,
+// the valve) rebinds them once, at rest, to fresh values, because the native side answers
+// the stop with a stale value that would otherwise be committed (`threadMotion.ts`'s
+// header). A rebind is a new props node on the same view, never a remount.
 //
 // A REMOVAL folds the row the fold's way (the Signal fold's `leaveMs`, then its box): the
 // row fades out here, over 180ms, while `leaving` names it; the host then takes it out of

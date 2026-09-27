@@ -41,7 +41,7 @@ export function useTrialSignalDoor({ petId, trial, notEating, nowMs }: TrialSign
   const live = useDesignV2();
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
   const signalTick = useSyncStore((s) => s.signalTick);
-  const [state, setState] = useState<{ petId: string; findings: readonly CachedFinding[] } | null>(null);
+  const [state, setState] = useState<{ petId: string; findings: readonly CachedFinding[]; generatedAt: string | null } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -52,11 +52,11 @@ export function useTrialSignalDoor({ petId, trial, notEating, nowMs }: TrialSign
       let cancelled = false;
       readSignalCache(petId)
         .then((row) => {
-          if (!cancelled) setState({ petId, findings: row?.findings ?? [] });
+          if (!cancelled) setState({ petId, findings: row?.findings ?? [], generatedAt: row?.generatedAt ?? null });
         })
         .catch((e) => {
           console.warn('[useTrialSignalDoor] signal cache read failed:', e);
-          if (!cancelled) setState({ petId, findings: [] });
+          if (!cancelled) setState({ petId, findings: [], generatedAt: null });
         });
       return () => {
         cancelled = true;
@@ -70,6 +70,7 @@ export function useTrialSignalDoor({ petId, trial, notEating, nowMs }: TrialSign
     findings: state.findings,
     withholdFallingVomit: notEating !== false,
     trialWindow: trial ? signalTrialWindowOf(trial, nowMs) : null,
+    generatedAt: state.generatedAt,
     nowMs,
   });
 }

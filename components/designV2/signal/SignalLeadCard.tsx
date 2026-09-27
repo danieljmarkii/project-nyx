@@ -7,8 +7,10 @@ import { useSyncStore } from '../../../store/syncStore';
 import type { CachedFinding, PriorityClass, SignalFinding } from '../../../lib/signal';
 import { foldIdentity } from '../../../lib/signalFold';
 import { loadSignalLead, type SignalLeadModel } from '../../../lib/signalLead';
+import { hasSignalTitleRule } from '../../../lib/signalTitle';
 import { WeeklyBars } from '../../charts/WeeklyBars';
 import { RAIL_WIDTH } from '../../home/InsightCard';
+import { useColdStartDrawFact } from '../../motion/coldStartDraw';
 import { FLIGHT_ENABLED, FLIGHT_MOTION, flightActiveFor, retargetSource, stageFlight, useFlightState } from '../../motion/flightMotion';
 import { Skeleton } from '../../ui/Skeleton';
 import { ThemedText } from '../../ui/ThemedText';
@@ -80,20 +82,24 @@ interface Props {
    * withholds a falling vomit week pair from the line. Required, so no caller can forget it.
    */
   withholdFallingVomit: boolean;
+  /** The cache row's `generated_at` (CUL-1360), for the trial anchor the title reads. */
+  generatedAt: string | null;
 }
 
-type Load = { status: 'loading' } | { status: 'ready'; model: SignalLeadModel } | { status: 'failed' };
+type Load = { status: 'loading' } | { status: 'ready'; model: SignalLeadModel; key: string } | { status: 'failed' };
 
-export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit }: Props) {
+export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit, generatedAt }: Props) {
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
   const signalTick = useSyncStore((s) => s.signalTick);
   const identity = foldIdentity(cached.finding);
   const safety = cached.finding.priorityClass === 'safety';
+  const titled = hasSignalTitleRule(cached.finding);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const reducedMotion = useReducedMotion();
   const flightState = useFlightState();
   const flightLive = flightActiveFor(flightState, identity);
   const chartRef = useRef<View>(null);
+  const drawFact = useColdStartDrawFact();
 
   // On the way back the chart may not be where it was (a re-ranked Home, a scroll): tell
   // the inbound clone where to land. Twice — once now, once after the ground has faded in,
@@ -116,12 +122,17 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit }: 
   }, [inbound, identity]);
 
   useEffect(() => {
-    if (safety) return;
+    if (safety || !titled) return;
     let cancelled = false;
-    setLoad({ status: 'loading' });
-    loadSignalLead(petId, cached, withholdFallingVomit)
+    // A re-read of the SAME finding keeps the chart on screen while it runs (CUL-1223): a
+    // skeleton on every sync tick unmounted the chart, and a remounted chart draws in
+    // again — the redraw under the owner's eyes C-30 forbids. A new finding or pet is a
+    // new read and shows the skeleton (C-12).
+    const key = `${petId}:${identity}`;
+    setLoad((prev) => (prev.status === 'ready' && prev.key === key ? prev : { status: 'loading' }));
+    loadSignalLead(petId, cached, withholdFallingVomit, generatedAt)
       .then((model) => {
-        if (!cancelled) setLoad({ status: 'ready', model });
+        if (!cancelled) setLoad({ status: 'ready', model, key });
       })
       .catch((e) => {
         console.warn('[signal-lead] load failed:', e);
@@ -133,11 +144,16 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit }: 
     // The finding's content, not the cached object's identity: a re-read that produced
     // the same payload must not redraw the chart under the owner's eyes (C-30).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [petId, identity, JSON.stringify(cached.finding), hydrationTick, signalTick, safety, withholdFallingVomit]);
+  }, [petId, identity, JSON.stringify(cached.finding), hydrationTick, signalTick, safety, titled, withholdFallingVomit, generatedAt]);
+
+  // CUL-1218 (G10 extended): a type this build cannot title is refused — no blank card
+  // titled "Signal", no door to a screen that would refuse it too. The shipped face skips an
+  // unknown type the same way (`InsightCard`'s registry guard).
+  if (!titled) return null;
 
   // S1: a safety lead is the plain row, with the door. The fallback is the same.
   if (safety || load.status === 'failed') {
-    return <SignalRow cached={cached} petId={petId} onOpen={onOpen} isLead />;
+    return <SignalRow cached={cached} petId={petId} onOpen={onOpen} isLead generatedAt={generatedAt} />;
   }
 
   const rail = RAIL_COLOR[cached.finding.priorityClass];
@@ -157,16 +173,24 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit }: 
 
   const { model } = load;
   const label = model.line ? `${model.title}. ${model.line}.` : `${model.title}.`;
-  const chart = model.weekly && model.noun ? <WeeklyBars model={model.weekly} noun={model.noun} identity={identity} /> : null;
+  // The draw in (CUL-1223, BRK-12): on the chart's first mount, or — on a cold start — as
+  // the silhouette gives way (`useColdStartDrawFact`). The flight's clone is its own mount
+  // and must not draw in (it IS the chart already drawn), so it is staged with the static
+  // element.
+  const chart =
+    model.weekly && model.noun ? (
+      <WeeklyBars model={model.weekly} noun={model.noun} drawIn={drawFact.armed} identity={`${identity}:${drawFact.key}`} />
+    ) : null;
+  const flightChart = model.weekly && model.noun ? <WeeklyBars model={model.weekly} noun={model.noun} identity={identity} /> : null;
   const open = () => onOpen(cached.finding);
   const press = () => {
-    if (!FLIGHT_ENABLED || reducedMotion || !chart) {
+    if (!FLIGHT_ENABLED || reducedMotion || !chart || !flightChart) {
       open();
       return;
     }
     measureNodeInWindow(chartRef.current, (rect) => {
       if (rect && rect.width > 0 && rect.height > 0) {
-        stageFlight({ identity, title: model.title, source: rect, element: chart });
+        stageFlight({ identity, title: model.title, source: rect, element: flightChart });
       }
       open();
     });

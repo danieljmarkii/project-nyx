@@ -41,6 +41,7 @@
 import { getDietTrialProgress } from './analytics';
 import { episodeDaysOf, type CompareWindowsModel, type WeeklyBucketsModel } from './chartModels';
 import { getDb } from './db';
+import { LOOK_EVENT_TYPE } from './monthReads';
 import { isAnimalNotEating, resolveTrialStrip, trialIdentityLabel, type TrialCardTrial } from './dietTrialCard';
 import { isTrialRunning } from './dietTrial';
 import { loadDietTrialFacts, loadTrialPredicateFacts } from './dietTrialFacts';
@@ -59,11 +60,14 @@ import {
 } from './signalWithhold';
 import { TRIAL_RESPONSE_COUNTS_DEFAULTS } from './trialResponseCounts';
 import { foldIdentity } from './signalFold';
-import { signalTitle } from './signalTitle';
+import { hasSignalTitleRule, signalTitle } from './signalTitle';
+import { isOtherTrialReassurance, signalTrialWindowFor } from './signalTrialAnchor';
 import {
   signalCompare,
   signalCompareSpec,
   signalLanes,
+  CORRELATION_LOOKBACK_DAYS,
+  signalChartSymptomOf,
   signalSymptomOf,
   signalWeeks,
   trialTooYoungToCompare,
@@ -125,6 +129,10 @@ export interface SignalScreenInput {
   /** The days a falling-pair GATE counts (`readGateLoggedDays`: the engine's comparison-gate
    *  symptoms, a meal, the finding's own sign) — never the coverage days (CUL-1216, F3). */
   gateLoggedDays: readonly string[];
+  /** The gate's read failed (C-12): its days are unknown, not none. The gates fail closed on
+   *  the empty set as before, and no compare is drawn at all — its strips and its why would
+   *  print "logged on 0 and 0" beside real episodes (adversarial pass on CUL-1212). */
+  gateUnanswered?: boolean;
   recordStart: string | null;
   /** Verdict by event id; an absent key is "no read yet". */
   verdicts: Readonly<Record<string, EpisodeVerdict | null>>;
@@ -299,6 +307,10 @@ export function safeLabel(label: string | null | undefined): string | null {
  * med-context line's precedent, B-733) is dropped, never rendered.
  */
 export function medicationLines(input: SignalScreenInput): string[] {
+  // A correlation names no window of the screen's (CUL-1218): its matched days span the
+  // engine's 180-day read, so "inside the recent 28 days" would name a window the finding
+  // never counted and miss a dose on a matched day months back. No lines, never wrong ones.
+  if (input.cached.finding.type === 'food_symptom_correlation') return [];
   const [before, during] = medicationWindowSpec(input);
   const beforeStart = indexOf(before.startDay);
   const beforeEnd = beforeStart + before.days - 1;
@@ -418,6 +430,10 @@ export function whyLines(
 ): string[] {
   const { finding } = input.cached;
   const lines: string[] = [evidenceText(finding, input.petName)];
+  // A correlation's own window (CUL-1218): the matched days above come from the engine's
+  // whole read, which the payload does not carry and nothing else on the screen states. No
+  // chart sits under it to disagree — a correlation draws none (`signalChartSymptomOf`).
+  if (finding.type === 'food_symptom_correlation') lines.push(correlationWindowLine(input.petName));
   // A falling reflection's own extras (SR-5), which the shipped card draws in its expand and
   // this screen had dropped: the engine's density line (disclosure or withheld) and, on a
   // running trial, the adjacency line. Falling-only, as on the card.
@@ -440,7 +456,7 @@ export function whyLines(
     // improvement from the bars alone; the sentence is where the reader learns why not
     // (adversarial pass, B3). Naming the asymmetry is not the word "fairly".
     lines.push(
-      `Two windows of ${n} ${plural(n, 'day')}, logged on ${a.loggedCount} and ${b.loggedCount} of them. Compared as counts, not a verdict on how ${input.petName} is doing.`,
+      `Two windows of ${n} ${plural(n, 'day')}, with symptoms or meals logged on ${a.loggedCount} and ${b.loggedCount} of them. Compared as counts, not a verdict on how ${input.petName} is doing.`,
     );
   } else if (trialTooYoungToCompare(input.trial)) {
     // The floor, said (B1): no compare below `MIN_COMPARE_DAYS` days on the diet.
@@ -468,6 +484,11 @@ export function whyLines(
   return lines.filter((l) => l.trim().length > 0 && !hasBannedSignalVocabulary(l));
 }
 
+/** Where a correlation's matched days come from: the engine's read (`CORRELATION_LOOKBACK_DAYS`). */
+export function correlationWindowLine(petName: string): string {
+  return `The pattern comes from the last ${CORRELATION_LOOKBACK_DAYS} days of ${petName}'s logs.`;
+}
+
 /** "Day 2 of the trial" — the floor line's opening. */
 function trialDayWord(trial: SignalTrialWindow): string {
   return `Day ${trial.dayCounter} of the ${lowerFirst(trial.identity)}`;
@@ -490,7 +511,7 @@ export function screenLeadsWithLanes(model: Pick<SignalScreenModel, 'finding' | 
 
 export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenModel {
   const { finding } = input.cached;
-  const symptom = signalSymptomOf(finding);
+  const symptom = signalChartSymptomOf(finding);
   const noun = symptom ? symptomWord(symptom) : null;
   const identity = foldIdentity(finding);
   const safety = finding.priorityClass === 'safety';
@@ -534,7 +555,14 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
   // ruling (a)); a drawn trial compare is CUL-1308's question. Otherwise the halves of the
   // lookback, withheld when the pair falls and may not be read (BRK-4 / BRK-6).
   const trialCompares = input.trial != null && !trialTooYoungToCompare(input.trial);
-  const drawable = safety || trialCompares || trialTooYoungToCompare(input.trial) ? null : signalCompare(windows);
+  // The compare's strips count the GATE's days (CUL-1212): a window's "logged" beside a
+  // comparison is the comparison-gate question ("could this window have caught the sign"),
+  // the set its withheld line already names — never the bars' coverage ticks, where a dose
+  // or a weight counts. `signalCompare` returns null where no compare is drawn at all.
+  const drawable =
+    safety || trialCompares || trialTooYoungToCompare(input.trial) || input.gateUnanswered
+      ? null
+      : signalCompare({ ...windows, loggedDays: input.gateLoggedDays });
   const specs = signalCompareSpec(finding, input.today, input.trial);
   const withheldReason = drawable ? compareWithheld(drawable, specs, gate) : null;
   const compare = withheldReason ? null : drawable;
@@ -584,9 +612,16 @@ export type SignalScreenLoad =
   | { status: 'ready'; model: SignalScreenModel; petName: string }
   /** No cache row for this pet, or the finding is no longer in it. */
   | { status: 'missing'; petName: string }
+  /** The finding is in the cache and this build has no title rule for its type (CUL-1218,
+   *  G10 extended): refused, never a blank screen titled "Signal". Never "missing" — the
+   *  finding has not gone anywhere. */
+  | { status: 'unsupported'; petName: string }
   /** The finding is in the cache and Home withholds it: a falling vomit pair over a pet that
    *  may not be eating (TS-9 · CUL-1305). Never "missing": that would read as "it stopped". */
   | { status: 'withheld'; petName: string };
+
+/** The unsupported state's copy (CUL-1218): true, and no promise the app cannot keep. */
+export const UNSUPPORTED_LINE = "I can't show this kind of signal yet.";
 
 /** The withheld state's copy (TS-9 · CUL-1305). Why it is set aside, in plain words, and the
  *  shipped health backstop as the next step; never a count, never a direction as good news. */
@@ -708,23 +743,27 @@ export function boutMembers<T extends { id: string; ms: number }>(
   return out;
 }
 
-/** Every local day with any log: an event of any type, or an answered look (a look is a
- *  logged day — the daily-look spec §5.6, the report's own denominator). */
+/**
+ * The COVERAGE days (CUL-1212): every local day with a surviving event that is not a look,
+ * and the record's start from the same rows. A look joins no other surface's coverage line
+ * (the daily-look spec §5.6, floor 5) — the month (`lib/monthReads.ts`) and the vet report
+ * (CUL-891) already exclude it — so a day with only a look on it is an UNLOGGED day here too,
+ * and a record whose first entry is a look starts at its first real log (CUL-1194's class).
+ *
+ * Two questions, two sets (C-34). This answers "was anything logged that day" and feeds the
+ * weekly bars' ticks. "Can this window vouch for a comparison" is `readGateLoggedDays`, which
+ * the compare's strips and *Why* read instead.
+ */
 export async function readLoggedDays(petId: string): Promise<{ loggedDays: string[]; recordStart: string | null }> {
-  const db = getDb();
-  const [events, looks] = await Promise.all([
-    db.getAllAsync<{ occurred_at: string }>(`SELECT occurred_at FROM events WHERE pet_id = ? AND deleted_at IS NULL`, [petId]),
-    db.getAllAsync<{ local_day: string }>(
-      `SELECT l.local_day FROM looks l JOIN events e ON e.id = l.event_id WHERE l.pet_id = ? AND e.deleted_at IS NULL`,
-      [petId],
-    ),
-  ]);
+  const rows = await getDb().getAllAsync<{ occurred_at: string }>(
+    `SELECT occurred_at FROM events WHERE pet_id = ? AND deleted_at IS NULL AND event_type != ?`,
+    [petId, LOOK_EVENT_TYPE],
+  );
   const days = new Set<string>();
-  for (const r of events) {
+  for (const r of rows) {
     const ms = Date.parse(r.occurred_at);
     if (Number.isFinite(ms)) days.add(toLocalDayKey(new Date(ms)));
   }
-  for (const r of looks) if (localDayIndexOf(r.local_day) != null) days.add(r.local_day);
   const loggedDays = [...days].sort();
   return { loggedDays, recordStart: loggedDays[0] ?? null };
 }
@@ -885,17 +924,18 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   const row = await readSignalCache(petId);
   const cached = row?.findings.find((f) => foldIdentity(f.finding) === identity) ?? null;
   if (!cached) return { status: 'missing', petName };
+  if (!hasSignalTitleRule(cached.finding)) return { status: 'unsupported', petName };
 
   const today = toLocalDayKey(new Date(nowMs));
   const pet = pets.find((p) => p.id === petId) ?? null;
-  const symptom = signalSymptomOf(cached.finding);
+  const symptom = signalChartSymptomOf(cached.finding);
 
-  const [episodes, logged, gateLoggedDays, trialFacts] = await Promise.all([
+  const [episodes, logged, gateRead, trialFacts] = await Promise.all([
     symptom ? readSignalEpisodes(petId, symptom) : Promise.resolve([]),
     readLoggedDays(petId),
-    // A gate that cannot read its days has none: every falling pair is then 'thin' and
-    // withheld, never printed on the chart's wider count.
-    symptom ? readGateLoggedDays(petId, symptom).catch(() => [] as string[]) : Promise.resolve([] as string[]),
+    // A gate that cannot read its days is UNANSWERED (C-12): no compare is drawn, and the
+    // falling-pair gates see no days, so they withhold rather than print.
+    symptom ? readGateLoggedDays(petId, symptom).catch(() => null) : Promise.resolve([] as string[]),
     // The route's pet's trial facts (C-9), the strip's own loader: the trial window, the
     // not-eating register and the strip's vomiting sentence all come from this ONE read of
     // the trial row. A failed read is null: no trial window (as a failed trial read always
@@ -913,7 +953,15 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
         })
       : Promise.resolve(null),
   ]);
-  const trial = trialFacts?.trial ? signalTrialWindowOf(trialFacts.trial, nowMs) : null;
+  // CUL-1360: which trial the cached finding counted. A trial finding from a trial since
+  // replaced or restarted is not this trial's: the screen draws a rising one in its own day
+  // (no trial window — the title, the compare and the lanes all speak in the finding's own
+  // span) and answers a falling one as Home does, not in the picture.
+  const trialAnchor = {
+    generatedAt: row?.generatedAt ?? null,
+    trial: trialFacts?.trial ? signalTrialWindowOf(trialFacts.trial, nowMs) : null,
+  };
+  const trial = signalTrialWindowFor(cached.finding, trialAnchor);
   // Either fact withholds: the Signal's own intake decline answers on its own, whatever the
   // trial read did (a positive fact in hand is never downgraded to "unknown").
   const notEating: NotEatingFact = signalSaysNotEating(row?.findings ?? [])
@@ -931,9 +979,13 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   //
   // Three causes, three answers (C-37: return the REASON): a register that has not answered is
   // a failed read with Try again, never a permanent-sounding "gone" (the screen re-runs when the
-  // pet list arrives); a withheld pair says why it is set aside; only the stood-down line's
-  // offline expiry, the one other thing `visibleFindings` drops, is "not in the picture".
-  if (!visibleFindings(row?.findings ?? [], notEating !== false, nowMs).includes(cached)) {
+  // pet list arrives); a withheld pair says why it is set aside; the stood-down line's offline
+  // expiry and an older trial's falling pair (CUL-1360), the other things `visibleFindings`
+  // drops, are "not in the picture".
+  if (!visibleFindings(row?.findings ?? [], notEating !== false, nowMs, trialAnchor).includes(cached)) {
+    // An older trial's falling pair is dropped by the anchor, not withheld by the register:
+    // no retry and no reason about eating would be true of it.
+    if (isOtherTrialReassurance(cached.finding, trialAnchor)) return { status: 'missing', petName };
     if (!isFallingVomitPair(cached.finding)) return { status: 'missing', petName };
     // A pet the loaded list does not hold (archived, or gone) can never answer: a retry would
     // be a dead button, so it is not in the picture (a raw deep link is the only way here).
@@ -962,7 +1014,8 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     trial,
     episodes,
     loggedDays: logged.loggedDays,
-    gateLoggedDays,
+    gateLoggedDays: gateRead ?? [],
+    gateUnanswered: gateRead == null,
     recordStart: logged.recordStart,
     verdicts,
     doses,

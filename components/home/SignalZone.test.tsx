@@ -78,6 +78,7 @@ import {
   watchingGapRow,
 } from '../../lib/signalCopy';
 import type { WatchingRow } from '../../lib/signalWatching';
+import type { TrialCardTrial } from '../../lib/dietTrialCard';
 
 // A minimal live finding so the register (live state) renders a stack.
 const liveFinding: CachedFinding = {
@@ -875,6 +876,59 @@ describe('SignalZone — the arrival moment', () => {
     expect(mockInsightArrival).not.toHaveBeenCalled();
     // And the marker is NOT spent — this pet's real first insight still gets its moment.
     expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
+  });
+
+  // CUL-1360: the arrival counts what RENDERS, and the trial anchor is part of that. The
+  // sole card is a falling trial pair the engine counted over rabbit (its day 20, counted
+  // just after midnight today, so rabbit started nineteen days ago); Home's trial facts say
+  // chicken, started today. The stack drops it, so the arrival has nothing to celebrate.
+  describe('a sole card counted over a trial since replaced', () => {
+    const today = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const todayKey = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+    const counted = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 30).toISOString();
+    const chicken = {
+      petId: 'pet-1',
+      nowMs: Date.now(),
+      trial: {
+        id: 'trial-chicken',
+        status: 'active',
+        startedAt: todayKey,
+        endedAt: null,
+        targetDurationDays: 56,
+        foodLabel: null,
+        trialProtein: { protein: 'chicken', source: 'owner' },
+      } as TrialCardTrial,
+    };
+    async function arriveAnchored(signalTrial: typeof chicken | null) {
+      const sole: CachedFinding = { ...trialResponseFinding, rank: 0 };
+      mockUseSignal.mockReturnValue(signalState({ petId: 'pet-1', displayState: 'building' }));
+      const view = render(<SignalZone signalTrial={signalTrial} />);
+      await flush();
+      mockUseSignal.mockReturnValue(
+        signalState({ petId: 'pet-1', displayState: 'live', findings: [sole], generatedAt: counted }),
+      );
+      await act(async () => {
+        view.rerender(<SignalZone signalTrial={signalTrial} />);
+      });
+      await flush();
+      return view;
+    }
+
+    it('control: with no anchor the same sole card arrives (it was available to leak)', async () => {
+      const view = await arriveAnchored(null);
+      expect(view.queryByTestId('signal-arrival-wash')).toBeTruthy();
+    });
+
+    it('with the anchor there is no arrival and the marker is not spent', async () => {
+      const view = await arriveAnchored(chicken);
+      expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+      act(() => {
+        jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+      });
+      expect(mockInsightArrival).not.toHaveBeenCalled();
+      expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
+    });
   });
 
   it('still celebrates when the suppressed card is not the only one', async () => {

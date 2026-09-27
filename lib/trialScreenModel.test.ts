@@ -17,6 +17,7 @@ const mockDb = {
   allowed: [] as Array<Record<string, unknown>>,
   feedings: [] as Array<Record<string, unknown>>,
   arrangements: [] as Array<Record<string, unknown>>,
+  doses: [] as Array<Record<string, unknown>>,
 };
 jest.mock('./db', () => ({
   getDb: () => ({
@@ -24,7 +25,7 @@ jest.mock('./db', () => ({
     getAllAsync: jest.fn(async (sql: string) => {
       if (sql.includes('diet_trial_foods')) return mockDb.allowed;
       if (sql.includes('FROM meals m')) return mockDb.feedings;
-      if (sql.includes('medication_administrations')) return [];
+      if (sql.includes('medication_administrations')) return mockDb.doses;
       if (sql.includes('feeding_arrangements')) return mockDb.arrangements;
       return [];
     }),
@@ -52,8 +53,10 @@ import {
 } from './dietTrialCard';
 import { loadTrialAllowedSet, type TrialAllowedSet } from './trialAllowedSet';
 import type { TrialResponseCounts } from './trialResponseCounts';
+import { TRIAL_EXPOSURES_GROUP_ORAL, buildTrialExposuresScreen } from './trialExposuresScreen';
 import {
   buildTrialScreenModel,
+  ledgerUnreadableLine,
   noTrialLine,
   unreadableLine,
   type TrialScreenModel,
@@ -99,6 +102,8 @@ interface Rec {
   freeChoice?: boolean;
   /** Extra permitted foods on the allowed list. */
   extras?: number;
+  /** Logged doses (CUL-1363), in `readDoses`' row shape: a chewable form, or a food vehicle. */
+  doses?: Array<{ day: number; drug: string; form: string | null; adherence?: string }>;
   nowDay: number;
 }
 
@@ -159,6 +164,12 @@ function seed(rec: Rec) {
     });
   }
   mockDb.feedings = feedings;
+  mockDb.doses = (rec.doses ?? []).map((d, i) => ({
+    event_id: `d${d.day}-${i}`, occurred_at: onDay(d.day, 7).toISOString(),
+    adherence: d.adherence ?? 'given', paired_event_id: null,
+    generic_name: null, brand_name: d.drug, form: d.form,
+    vehicle_food_item_id: null, vehicle_brand: null, vehicle_product_name: null,
+  }));
   mockDb.arrangements = rec.freeChoice
     ? [{ food_item_id: 'f1', active_from: START_KEY, active_until: null, brand: 'Royal Canin', product_name: 'Rabbit' }]
     : [];
@@ -187,7 +198,6 @@ function argsFor(l: Loaded, over: Partial<TrialScreenModelArgs> = {}): TrialScre
     pet: { id: PET.id, name: PET.name },
     petsLoaded: true,
     petName: PET.name,
-    isActivePet: true,
     trial: { status: 'loaded', input: l.input, inputIsForPet: true },
     facts: { status: 'ready', facts: l.facts },
     allowedSet: l.allowedSet,
@@ -306,12 +316,15 @@ describe('a running trial (§3, round 2 §03)', () => {
     }
   });
 
-  it('names the route’s pet, not the active one, and withholds /report for another pet (C-9)', async () => {
+  it('names the route’s pet, and draws the report door whichever pet is active (C-9, CUL-1334)', async () => {
+    // The model takes no active-pet input: `/report?pet=` builds the route's pet's
+    // report, so the door is the same on every pet's screen. That it carries the pet is
+    // the screen's (components/trialScreen/TrialScreen.test.tsx).
     const l = await load(MOCHI_DAY_23);
-    const m = trialModel(buildTrialScreenModel(argsFor(l, { isActivePet: false })));
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
     expect(m.petName).toBe('Mochi');
     expect(m.allowedFoods?.label).toBe('What Mochi can eat');
-    expect(m.report).toBeNull();
+    expect(m.report).toEqual({ label: 'Vet report', sub: null });
   });
 });
 
@@ -504,14 +517,6 @@ describe('ended trials (the 30-day grace)', () => {
     expect(m.vomiting).toBeNull();
   });
 
-  it('completed, for a pet that is not the active one: no door to the wrong pet’s report', async () => {
-    const all = Array.from({ length: 56 }, (_, i) => i + 1);
-    const l = await load({ target: 56, status: 'completed', endedDay: 56, mealDays: all, nowDay: 60 });
-    const m = trialModel(buildTrialScreenModel(argsFor(l, { isActivePet: false })));
-    expect(m.actions).toEqual([]);
-    expect(m.report).toBeNull();
-  });
-
   it('abandoned: Start a new trial at the bottom', async () => {
     const l = await load({
       target: 56, status: 'abandoned', endedDay: 12, stoppedReason: 'other',
@@ -672,6 +677,45 @@ describe('a refusal at the window (spec conflict, awaiting a ruling)', () => {
   });
 });
 
+describe('a logged chewable opens the exposures door (CUL-1363)', () => {
+  // A clean record: no off-diet feeding, so before CUL-1363 there was no door at all.
+  const CLEAN: Rec = { target: 56, mealDays: Array.from({ length: 22 }, (_, i) => i + 1), nowDay: 23 };
+
+  it('a chewable alone opens it, onto a list that holds the dose', async () => {
+    const l = await load({ ...CLEAN, doses: [{ day: 12, drug: 'Rimadyl', form: 'chewable' }] });
+    expect(l.input.exposures!.offDiet).toBe(0);
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(m.exposures).toEqual({ label: 'Outside the trial diet', sub: null });
+    // The door never opens onto an empty screen: the list it opens draws the dose.
+    const list = buildTrialExposuresScreen(PET.name, l.facts, onDay(23, 20).getTime())!;
+    expect(list.empty).toBeNull();
+    expect(list.title).toBe(m.exposures!.label);
+    expect(list.groups.map((g) => g.title)).toEqual([TRIAL_EXPOSURES_GROUP_ORAL]);
+  });
+
+  it('no dose that went in, no door: a plain tablet and a missed chewable', async () => {
+    const l = await load({
+      ...CLEAN,
+      doses: [
+        { day: 12, drug: 'Apoquel', form: 'tablet' },
+        { day: 13, drug: 'Rimadyl', form: 'chewable', adherence: 'missed' },
+      ],
+    });
+    expect(trialModel(buildTrialScreenModel(argsFor(l))).exposures).toBeNull();
+  });
+
+  it('only over a facts read that answered with a readable range', async () => {
+    const l = await load({ ...CLEAN, doses: [{ day: 12, drug: 'Rimadyl', form: 'chewable' }] });
+    for (const facts of [
+      { status: 'unreadable' as const },
+      { status: 'ready' as const, facts: null },
+      { status: 'ready' as const, facts: { ...l.facts!, range: null } },
+    ]) {
+      expect(trialModel(buildTrialScreenModel(argsFor(l, { facts }))).exposures).toBeNull();
+    }
+  });
+});
+
 describe('ended trials keep the exposures door (§3.6)', () => {
   it('completed with one treat', async () => {
     const all = Array.from({ length: 56 }, (_, i) => i + 1);
@@ -695,14 +739,58 @@ describe('the coverage-null projection never reads a logged record as empty, nor
     expect(isAnimalNotEating(l.input)).toBe(true);
     expect(l.input.coverage!.daysLogged).toBe(6);
     expect(l.input.exposures!.totalFeedings).toBe(0);
-    // Non-vacuity: resolved without coverage, the card WOULD say the record is empty.
-    const projectedCard = resolveTrialCard({ ...l.input, coverage: null });
-    expect(projectedCard.lines.map((x) => x.text)).toContain('Nothing is on the record for this trial yet.');
+    // The loader carries the count the card discloses (CUL-1338).
+    expect(l.input.exposures!.unclassifiable).toBe(6);
 
+    // CUL-1338: the screen no longer drops the facts here, because the card no longer
+    // says "nothing" — it says what the record holds, and that is a limit, not a reading.
     const m = trialModel(buildTrialScreenModel(argsFor(l)));
     expect(texts(m)).not.toContain('Nothing is on the record for this trial yet.');
     expect(texts(m).some((t) => /\d+ of \d+ days/.test(t))).toBe(false);
+    expect(m.facts.filter((x) => x.role === 'fact').map((x) => x.text)).toEqual([
+      '6 logged feedings don’t name a food, so they can’t be checked against the trial diet.',
+    ]);
+    // Over a pet that may not be eating, nothing may read as a clean record.
+    expect(texts(m).some((t) => /\bmatched\b|in total/.test(t))).toBe(false);
+  });
+
+  it('the residual drop still holds where nothing is unnamed to explain the zero', async () => {
+    // A fixture the loader cannot produce today (days logged, no feeding classified, none
+    // unnamed): the drop is the defensive half and is asserted on its own.
+    const l = await load({
+      target: 56, nowDay: 20, noPrimary: true, mealDays: [],
+      noFoodMeals: [
+        ...[1, 2, 3].map((day) => ({ day, rating: 'refused' })),
+        ...[18, 19, 20].map((day) => ({ day, rating: 'all' })),
+      ],
+    });
+    const residual: Loaded = {
+      ...l,
+      input: { ...l.input, exposures: { ...l.input.exposures!, unclassifiable: 0 } },
+    };
+    // Non-vacuity: resolved without coverage, the card WOULD say the record is empty.
+    const projectedCard = resolveTrialCard({ ...residual.input, coverage: null });
+    expect(projectedCard.lines.map((x) => x.text)).toContain('Nothing is on the record for this trial yet.');
+    const m = trialModel(buildTrialScreenModel(argsFor(residual)));
+    expect(texts(m)).not.toContain('Nothing is on the record for this trial yet.');
     expect(m.facts.filter((x) => x.role === 'fact')).toEqual([]);
+  });
+
+  it('the Pet tab card over meals that name no food: the day count, then why nothing is counted (CUL-1338)', async () => {
+    // Twenty eaten meals, none naming a food (the food deleted out from under them). Driven
+    // through the real loader, so the wiring from the facts to the card is what is tested.
+    const l = await load({
+      target: 56, nowDay: 20, mealDays: [],
+      noFoodMeals: Array.from({ length: 20 }, (_, i) => ({ day: i + 1, rating: 'all' })),
+    });
+    expect(isAnimalNotEating(l.input)).toBe(false);
+    const card = resolveTrialCard(l.input);
+    const facts = card.lines.filter((x) => x.role === 'fact').map((x) => x.text);
+    expect(facts).toEqual([
+      'Meals logged on 20 of 20 days.',
+      '20 logged feedings don’t name a food, so they can’t be checked against the trial diet.',
+    ]);
+    expect(card.lines.map((x) => x.text)).not.toContain('Nothing logged against the trial yet.');
   });
 
   it('the same shape above the floor: no "Nothing logged against the trial yet."', async () => {
@@ -803,5 +891,50 @@ describe('Manage on the intake-decline face never drops the call-today (CUL-1339
     } finally {
       getIntakeDecline.mockResolvedValue({ status: 'none', flags: [] });
     }
+  });
+});
+
+// ── CUL-1336: the facts read's own answers ─────────────────────────────────────────
+
+describe('a facts read that failed, or answered for another trial (S9, CUL-1336)', () => {
+  const UNREADABLE: TrialFactsState = { status: 'unreadable' };
+
+  it('unreadable facts say so where the ledger would be, and keep the card’s own facts', async () => {
+    const l = await load(MOCHI_DAY_23);
+    // Non-vacuity: the same record draws a ledger when the read answers.
+    const answered = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(answered.ledger).not.toBeNull();
+    expect(answered.ledgerUnreadable).toBeNull();
+
+    const m = trialModel(buildTrialScreenModel(argsFor(l, { facts: UNREADABLE })));
+    expect(m.ledger).toBeNull();
+    expect(m.ledgerUnreadable).toBe('I couldn’t pull Mochi’s week-by-week record just now.');
+    expect(ledgerUnreadableLine('your pet')).toBe('I couldn’t pull your pet’s week-by-week record just now.');
+    // The card's facts come from the trial read, which answered: they stay.
+    expect(texts(m)).toEqual(texts(answered));
+  });
+
+  it('says nothing more on a state that draws no ledger anyway', async () => {
+    const all = Array.from({ length: 56 }, (_, i) => i + 1);
+    const cases: [Rec, string][] = [
+      [{ target: 56, mealDays: all, treatDays: [30], nowDay: 56 }, 'milestone'],
+      [{ target: 56, mealDays: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], rating: 'refused', nowDay: 10 }, 'trial_refusal'],
+      [{ target: 56, mealDays: [1, 2, 3], freeChoice: true, nowDay: 10 }, 'free_fed'],
+    ];
+    for (const [rec, state] of cases) {
+      const l = await load(rec);
+      const m = trialModel(buildTrialScreenModel(argsFor(l, { facts: UNREADABLE })));
+      expect([m.state, m.ledgerUnreadable]).toEqual([state, null]);
+    }
+  });
+
+  it('facts computed for a different trial are "not yet", never that trial’s facts', async () => {
+    const l = await load(MOCHI_DAY_23);
+    const id = l.input.trial!.id;
+    const other: TrialFactsState = { status: 'ready', trialId: `${id}-replaced`, facts: l.facts };
+    expect(buildTrialScreenModel(argsFor(l, { facts: other }))).toEqual({ kind: 'loading' });
+    // The same facts, labelled for this trial, draw it.
+    const mine: TrialFactsState = { status: 'ready', trialId: id, facts: l.facts };
+    expect(trialModel(buildTrialScreenModel(argsFor(l, { facts: mine }))).ledger).not.toBeNull();
   });
 });

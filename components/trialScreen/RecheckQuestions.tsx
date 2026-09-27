@@ -1,4 +1,5 @@
-import { StyleSheet, View } from 'react-native';
+import { Fragment } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { RECHECK_EYEBROW, type RecheckAnswer, type TrialRecheck } from '../../lib/trialRecheck';
@@ -17,26 +18,50 @@ import { RECHECK_EYEBROW, type RecheckAnswer, type TrialRecheck } from '../../li
 // heading (spec §3.7: the density guard under it has not earned more prominence), so the
 // question is what is prominent, never the count.
 
-export function RecheckQuestions({ recheck }: { recheck: TrialRecheck }) {
+// The capped dose rows' door (CUL-1342) sits AFTER its question's element, never inside it:
+// the question is one `accessible` element, and a control inside one is not separately
+// focusable on iOS. The trial screen's link register (accent ink, 44pt, no slop), so there is
+// no reach to add into its neighbours' gaps (C-5).
+
+export function RecheckQuestions({
+  recheck,
+  onOpenDoses,
+}: {
+  recheck: TrialRecheck;
+  /** Opens the appointment's pet's "Outside the trial diet" list. */
+  onOpenDoses: () => void;
+}) {
   if (recheck.questions.length === 0) return null;
   return (
     <View style={styles.block} testID="recheck-questions">
       <ThemedText style={styles.eyebrow}>{RECHECK_EYEBROW}</ThemedText>
       {recheck.questions.map((q) => (
-        <View
-          key={q.key}
-          style={styles.question}
-          accessible
-          accessibilityLabel={[q.question, ...q.answers.map(spoken)].join(' ')}
-          testID={`recheck-${q.key}`}
-        >
-          <ThemedText style={styles.heading}>{q.question}</ThemedText>
-          {q.answers.map((a, i) => (
-            <ThemedText key={i} style={answerStyle(q.key, a)}>
-              {a.label ? `${a.label} · ${a.text}` : a.text}
-            </ThemedText>
-          ))}
-        </View>
+        <Fragment key={q.key}>
+          <View
+            style={styles.question}
+            accessible
+            accessibilityLabel={[q.question, ...q.answers.map(spoken)].join(' ')}
+            testID={`recheck-${q.key}`}
+          >
+            <ThemedText style={styles.heading}>{q.question}</ThemedText>
+            {q.answers.map((a, i) => (
+              <ThemedText key={i} style={answerStyle(q.key, a)}>
+                {a.label ? `${a.label} · ${a.text}` : a.text}
+              </ThemedText>
+            ))}
+          </View>
+          {q.doseList ? (
+            <Pressable
+              onPress={onOpenDoses}
+              accessibilityRole="button"
+              accessibilityLabel={q.doseList.label}
+              testID="recheck-dose-list"
+              style={styles.link}
+            >
+              <ThemedText style={styles.linkText}>{q.doseList.label}</ThemedText>
+            </Pressable>
+          ) : null}
+        </Fragment>
       ))}
     </View>
   );
@@ -64,6 +89,15 @@ const styles = StyleSheet.create({
   },
   question: {
     gap: theme.spaceMicro,
+  },
+  link: {
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  linkText: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccentInk,
   },
   heading: {
     fontSize: theme.textSM,
