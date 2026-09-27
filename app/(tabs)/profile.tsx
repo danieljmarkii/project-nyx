@@ -1545,7 +1545,11 @@ export default function ProfileScreen() {
             second path). PR 3 landed that entry and its own state-0 markup; this
             keeps the entry and folds the markup into the one card, so the eleven
             states stay a switch over one layout rather than three Card blocks
-            that can drift. `onManage` is PR 3's header affordance, unchanged. */}
+            that can drift. `onManage` is PR 3's header affordance, unchanged.
+
+            TS-6 (CUL-1302): under `trial_screen` the slot is `TrialDoorRow` instead,
+            while a trial runs or is in its grace, and every action above lives on the
+            trial's own screen (S8). With no trial the card, and the start entry, stay. */}
         {!trialLoading && trialDoor ? (
           <TrialDoorRow
             model={trialDoor}
