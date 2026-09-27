@@ -126,6 +126,38 @@ export async function readAnalysisCopy(
   }
 }
 
+/** The daily look's event type. A look is not where a record begins (floor 5, §5.6);
+ *  `lib/monthCoverage.ts`'s `isLook` is the same rule over `eventTintCategory`, and
+ *  `spineReads.recordStart.test.ts` pins the two together. */
+export const RECORD_START_EXCLUDED_TYPE = 'check_in';
+
+/** How many of the earliest rows to look at before giving up on a parseable instant. */
+const RECORD_START_PROBE = 5;
+
+/**
+ * The instant of the pet's earliest surviving NON-LOOK event, over the whole record, or
+ * null when there is none — where the coverage door's window starts (CUL-1221). UNBOUNDED
+ * on purpose: a predicate about the record takes the record (C-35); the month's own read
+ * cannot say whether the record began before the month.
+ *
+ * C-40: the ORDER BY is on text, which is safe here and only here: the two ISO spellings
+ * agree through the seconds (`…T08:00:04` in both), so they can only swap two rows inside
+ * ONE second, and that cannot move the day. It is an ORDER, never a BOUND; the caller
+ * parses the instant and decides the day. A few rows are read so one unparseable value
+ * cannot pass for "no record".
+ */
+export async function readRecordStart(petId: string): Promise<string | null> {
+  const rows = await getDb().getAllAsync<{ occurred_at: string }>(
+    `SELECT occurred_at FROM events
+      WHERE pet_id = ? AND deleted_at IS NULL AND event_type != ?
+      ORDER BY occurred_at ASC
+      LIMIT ${RECORD_START_PROBE}`,
+    [petId, RECORD_START_EXCLUDED_TYPE],
+  );
+  const first = rows.find((r) => Number.isFinite(Date.parse(r.occurred_at)));
+  return first ? first.occurred_at : null;
+}
+
 /** Every non-deleted row's instant AND type for this pet since `sinceIso` — the month
  *  door's population. The type rides along so `monthCoverage` can refuse a look (floor
  *  5) where a test can see it; the caller derives the day keys in the owner's zone. */

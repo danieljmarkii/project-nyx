@@ -6,8 +6,10 @@ jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 // reaches `lib/supabase`; stubbed at the boundary as every sibling suite does.
 jest.mock('../../../lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 const mockReadMonth = jest.fn();
+const mockReadRecordStart = jest.fn();
 jest.mock('../../../lib/spineReads', () => ({
   readMonthRows: (...a: unknown[]) => mockReadMonth(...a),
+  readRecordStart: (...a: unknown[]) => mockReadRecordStart(...a),
 }));
 jest.mock('../../../store/petStore', () => ({
   usePetStore: (sel: (s: { activePet: { id: string } }) => unknown) => sel({ activePet: { id: 'p1' } }),
@@ -28,30 +30,58 @@ function local(day: number, hour: number, eventType = 'meal'): { occurredAt: str
   const now = new Date();
   return { occurredAt: new Date(now.getFullYear(), now.getMonth(), day, hour).toISOString(), eventType };
 }
+/** A record older than the month: the window opens on the 1st. */
+const OLD_RECORD = new Date(2020, 0, 1, 9).toISOString();
 
 beforeEach(() => {
   mockReadMonth.mockReset();
+  mockReadRecordStart.mockReset();
+  mockReadRecordStart.mockResolvedValue(OLD_RECORD);
   (router.push as jest.Mock).mockReset();
 });
 
+// The day of the month decides which line is honest (the 1st has no finished day), so
+// each case states the line it expects for BOTH shapes of today rather than skipping one.
+const today = new Date().getDate();
+const finished = today - 1; // days in the window over an old record
+
 describe('CoverageDoor', () => {
-  it('speaks the month’s coverage once the record has answered, and opens Patterns', async () => {
-    const today = new Date().getDate();
+  it('speaks the month’s coverage through YESTERDAY once the record has answered, and opens Patterns', async () => {
+    // Two rows on the 1st and one today: today is in neither number (CUL-1221).
     mockReadMonth.mockResolvedValue([local(1, 9), local(1, 21), local(today, 8)]);
     const t = render(<CoverageDoor />);
     // Before the read answers: the door, with no number (C-12).
     expect(t.getByText(COVERAGE_DOOR_LABEL)).toBeTruthy();
-    await waitFor(() => expect(t.getByText(/logged/)).toBeTruthy());
-    const logged = today === 1 ? 1 : 2;
-    expect(t.getByText(new RegExp(`logged ${logged} of ${today} day`))).toBeTruthy();
+    const expected =
+      today === 1
+        ? 'the month starts today'
+        : `logged 1 of ${finished} ${finished === 1 ? 'day' : 'days'}`;
+    await waitFor(() => expect(t.getByText(new RegExp(expected))).toBeTruthy());
+    expect(mockReadRecordStart).toHaveBeenCalledWith('p1');
     fireEvent.press(t.getByTestId('coverage-door'));
     expect(router.push).toHaveBeenCalledWith('/insights');
+  });
+
+  it('a pet whose record starts today is told so — never "logged 1 of N" (BRK-22)', async () => {
+    mockReadRecordStart.mockResolvedValue(local(today, 8).occurredAt);
+    mockReadMonth.mockResolvedValue([local(today, 8)]);
+    const t = render(<CoverageDoor />);
+    await waitFor(() => expect(t.getByText(/the record starts today/)).toBeTruthy());
+    expect(t.queryByText(/logged/)).toBeNull();
+  });
+
+  it('an empty record gets the month’s invitation, never a ratio', async () => {
+    mockReadRecordStart.mockResolvedValue(null);
+    mockReadMonth.mockResolvedValue([]);
+    const t = render(<CoverageDoor />);
+    await waitFor(() => expect(t.getByText(/the month fills in from the first entry/)).toBeTruthy());
+    expect(t.queryByText(/logged/)).toBeNull();
   });
 
   it('the row hugs its content on the left — nothing sits at the right edge under the FAB (C-5)', async () => {
     mockReadMonth.mockResolvedValue([]);
     const t = render(<CoverageDoor />);
-    await waitFor(() => expect(t.getByText(/logged/)).toBeTruthy());
+    await waitFor(() => expect(t.getByText(/September|January|February|March|April|May|June|July|August|October|November|December/)).toBeTruthy());
     const row = t.getByTestId('coverage-door-row');
     const style = StyleSheet.flatten(row.props.style) as { alignSelf?: string; flexDirection?: string };
     expect(style.alignSelf).toBe('flex-start');
@@ -59,18 +89,18 @@ describe('CoverageDoor', () => {
   });
 
   it('a month of looks alone is a month with nothing logged (floor 5)', async () => {
-    const today = new Date().getDate();
-    mockReadMonth.mockResolvedValue([local(today, 8, 'check_in'), local(1, 8, 'check_in')]);
+    mockReadMonth.mockResolvedValue([local(1, 8, 'check_in'), local(Math.max(1, finished), 8, 'check_in')]);
     const t = render(<CoverageDoor />);
-    await waitFor(() => expect(t.getByText(new RegExp(`logged 0 of ${today} day`))).toBeTruthy());
+    // On the 1st there is no finished day for a look to be counted in at all.
+    const expected = today === 1 ? 'the month starts today' : `logged 0 of ${finished} day`;
+    await waitFor(() => expect(t.getByText(new RegExp(expected))).toBeTruthy());
   });
 
   it('is one control with one label that carries the line', async () => {
-    const today = new Date().getDate();
     mockReadMonth.mockResolvedValue([local(today, 8)]);
     const t = render(<CoverageDoor />);
     await waitFor(() =>
-      expect(t.getByTestId('coverage-door').props.accessibilityLabel).toMatch(/logged 1 of \d+ days?\. Open Patterns$/),
+      expect(t.getByTestId('coverage-door').props.accessibilityLabel).toMatch(/ · .+\. Open Patterns$/),
     );
     expect(t.getAllByRole('button')).toHaveLength(1);
   });

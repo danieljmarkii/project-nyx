@@ -2,7 +2,10 @@ import { theme } from '../constants/theme';
 import { ESTIMATE_HEADROOM, estimateTextWidth } from './textWidth';
 import {
   HEADER_NAME_RUNGS,
+  HEADER_RIGHT_GAP,
   askPillWidth,
+  headerDateLabel,
+  headerDateWidth,
   headerNameBudget,
   headerSwitcherLabel,
   resolveHeaderName,
@@ -188,5 +191,28 @@ describe('headerSwitcherLabel — the name is never lost, only unrendered', () =
   it('degrades to a generic label when there is no name to speak', () => {
     expect(headerSwitcherLabel(null, true)).toBe('Your pets');
     expect(headerSwitcherLabel('  ', false)).toBe('Your pets');
+  });
+});
+
+describe('the day, named (Design v2, CUL-1221)', () => {
+  it('reads "Thu, Sep 17" off the key, zone-free', () => {
+    expect(headerDateLabel('2026-09-17')).toBe('Thu, Sep 17');
+    expect(headerDateLabel('2026-09-27')).toBe('Sun, Sep 27');
+    expect(headerDateLabel('2024-02-29')).toBe('Thu, Feb 29'); // a leap day
+    expect(headerDateLabel('2026-01-01')).toBe('Thu, Jan 1'); // no padded day
+  });
+
+  it('draws nothing rather than a wrong day for a malformed or rolled-over key', () => {
+    expect(headerDateLabel('2026-02-30')).toBeNull();
+    expect(headerDateLabel('2026-13-01')).toBeNull();
+    expect(headerDateLabel('Sep 17')).toBeNull();
+  });
+
+  it('the date’s width comes out of the name’s budget, and nothing else changes without it', () => {
+    const base = { windowWidth: 375, multiPet: true, askEnabled: true };
+    expect(headerNameBudget({ ...base, dateLabel: null })).toBe(headerNameBudget(base));
+    expect(headerNameBudget(base) - headerNameBudget({ ...base, dateLabel: 'Wed, Sep 30' })).toBe(
+      headerDateWidth('Wed, Sep 30') + HEADER_RIGHT_GAP,
+    );
   });
 });

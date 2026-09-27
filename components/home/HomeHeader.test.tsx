@@ -12,6 +12,8 @@ import {
   ASK_PILL_LABEL,
   HEADER_AVATAR_SIZE,
   HEADER_NAME_RUNGS,
+  headerNameBudget,
+  resolveHeaderName,
 } from '../../lib/headerName';
 
 // The Home header, H2a (CUL-600 / app-polish spec §2 DP-2, rulings D3 + D4).
@@ -47,6 +49,12 @@ let mockAskEnabled = true;
 jest.mock('../../hooks/useAppConfig', () => ({
   useAllowlistFlag: () => mockAskEnabled,
 }));
+
+// Design v2's gate and the day. Off by default, so every suite above the date's own
+// describe pins the FLAG-OFF row exactly as it shipped; the date's describe turns it on.
+let mockDesignV2 = false;
+jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockDesignV2 }));
+jest.mock('../../hooks/useTodayKey', () => ({ useTodayKey: () => '2026-09-17' }));
 
 // jest-expo's default window is 750pt — a frame no supported phone has, on which
 // every name fits at the top rung and the ladder never engages. Every assertion that
@@ -87,6 +95,7 @@ function allText(node: any): string[] {
 }
 
 beforeEach(() => {
+  mockDesignV2 = false;
   mockAskEnabled = true;
   setWindowWidth(NARROWEST);
   useAuthStore.setState({ user: { email: 'dan@example.test' } } as never);
@@ -321,5 +330,48 @@ describe('the right cluster is unchanged (B-228 D5 placement)', () => {
 
     // The label too: its width is estimated from this exact string.
     expect(allText(toJSON())).toContain(ASK_PILL_LABEL);
+  });
+});
+
+describe('the day, named — Design v2 only (CUL-1221, the critique’s BRK-26)', () => {
+  it('flag-off draws no date: the row is the four strings it shipped with', () => {
+    const { queryByTestId, toJSON } = render(<HomeHeader />);
+    expect(queryByTestId('home-header-date')).toBeNull();
+    expect(allText(toJSON())).toEqual(['B', 'Biscuit', 'Ask', 'D']);
+  });
+
+  it('flag-on dates the day at the head of the right cluster, as the round-4 frame draws it', () => {
+    mockDesignV2 = true;
+    const { getByTestId, toJSON } = render(<HomeHeader />);
+    expect(getByTestId('home-header-date').props.children).toBe('Thu, Sep 17');
+    // Still one row: the date sits between the name and the Ask pill, and adds no line.
+    expect(allText(toJSON())).toEqual(['B', 'Biscuit', 'Thu, Sep 17', 'Ask', 'D']);
+    expect(HOME_HEADER_CONTENT_HEIGHT).toBe(56);
+  });
+
+  it('is metadata, not a control: no ancestor responds to a press (C-6: walk UP, never press)', () => {
+    mockDesignV2 = true;
+    const date = render(<HomeHeader />).getByTestId('home-header-date');
+    for (let n: any = date.parent; n; n = n.parent) {
+      expect(n.props?.onPress).toBeUndefined();
+      expect(n.props?.onClick).toBeUndefined();
+    }
+  });
+
+  it('the name is sized against the row WITH the date on it', () => {
+    mockDesignV2 = true;
+    // A name that fits the top rung without the date and not with it, on the narrowest
+    // frame — so the assertion would red if the budget ignored the date.
+    const withDate = headerNameBudget({ windowWidth: NARROWEST, multiPet: false, askEnabled: true, dateLabel: 'Thu, Sep 17' });
+    const without = headerNameBudget({ windowWidth: NARROWEST, multiPet: false, askEnabled: true });
+    expect(withDate).toBeLessThan(without);
+    const name = ['Montgomery', 'Clementine Rose', 'Bartholomew', 'Persephone Jane'].find(
+      (n) => resolveHeaderName(n, without).fontSize !== resolveHeaderName(n, withDate).fontSize,
+    );
+    expect(name).toBeDefined();
+    usePetStore.setState({ pets: [pet({ name: name! })], activePet: pet({ name: name! }) } as never);
+    const node = collect(render(<HomeHeader />).toJSON(), 'Text').find((t) => (t.children ?? []).includes(name));
+    const style = Object.assign({}, ...[node.props.style].flat(2).filter(Boolean));
+    expect(style.fontSize).toBe(resolveHeaderName(name!, withDate).fontSize);
   });
 });

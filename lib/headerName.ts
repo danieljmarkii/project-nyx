@@ -111,6 +111,43 @@ export function askPillWidth(): number {
   );
 }
 
+// ── The day, named (Design v2 — CUL-1221; the critique's BRK-26) ──────────────
+//
+// The round-4 frame dates the header ("Thu, Sep 17") and §05 names the spine's window
+// as "today, dated in the header". It sits at the head of the right cluster, muted and
+// small, so the row stays ONE row (DP-2) and the name keeps its ladder: the date's width
+// is subtracted from the name's budget like every other part of the row, so the name is
+// never sized against a row that does not have the date on it.
+
+/** The date's type size. Metadata, not a heading: it must never compete with the name. */
+export const HEADER_DATE_FONT_SIZE = theme.textXS;
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+const MONTHS_SHORT = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+] as const;
+
+/**
+ * "Thu, Sep 17" for a local day key. Built from the key's own parts rather than
+ * `toLocaleDateString`, so it names the SAME day every other surface keys (the owner's
+ * local midnight, C-29) and cannot drift with the device's locale tables. The weekday is
+ * read off the key as a UTC calendar date, which is zone-free by construction. Null for a
+ * malformed key: the header then draws no date rather than a wrong one.
+ */
+export function headerDateLabel(dayKey: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const utc = new Date(Date.UTC(y, mo - 1, d));
+  if (utc.getUTCFullYear() !== y || utc.getUTCMonth() !== mo - 1 || utc.getUTCDate() !== d) return null;
+  return `${WEEKDAYS[utc.getUTCDay()]}, ${MONTHS_SHORT[mo - 1]} ${d}`;
+}
+
+/** The date's rendered width, from the same table the name's ladder uses. */
+export function headerDateWidth(label: string): number {
+  return estimateTextWidth(label, HEADER_DATE_FONT_SIZE, 0);
+}
+
 /**
  * The horizontal space the pet's name may occupy, in points.
  *
@@ -123,13 +160,18 @@ export function headerNameBudget({
   windowWidth,
   multiPet,
   askEnabled,
+  dateLabel = null,
 }: {
   windowWidth: number;
   multiPet: boolean;
   askEnabled: boolean;
+  /** The day's label when the row draws one (Design v2 only, CUL-1221); absent → no date. */
+  dateLabel?: string | null;
 }): number {
   const rightCluster =
-    HEADER_OWNER_AVATAR_SIZE + (askEnabled ? askPillWidth() + HEADER_RIGHT_GAP : 0);
+    HEADER_OWNER_AVATAR_SIZE +
+    (askEnabled ? askPillWidth() + HEADER_RIGHT_GAP : 0) +
+    (dateLabel ? headerDateWidth(dateLabel) + HEADER_RIGHT_GAP : 0);
   const chevron = multiPet ? HEADER_CHEVRON_SIZE + HEADER_CHEVRON_GAP : 0;
 
   return Math.max(

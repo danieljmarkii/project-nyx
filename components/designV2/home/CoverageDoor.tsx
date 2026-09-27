@@ -2,8 +2,9 @@
 // whole day, D2-4 / CUL-1066; the round-4 page §01).
 //
 // The last row on Home, and the only door to Patterns on it. It speaks COVERAGE — how
-// many of the month's days so far hold an event (a look-only day does not count, floor
-// 5; `lib/monthCoverage.ts`) — never a count of episodes, so it
+// many of the month's finished days since the record began hold an event (a look-only
+// day does not count, floor 5; the window, CUL-1221: `lib/monthCoverage.ts`) — never a
+// count of episodes, so it
 // cannot rhyme with the Signal's line above it or the day's count line (three populations,
 // `lib/monthCoverage.ts`). LEFT-ALIGNED, with nothing tappable at the row's right edge:
 // the FAB floats over that corner at scroll end, and an inset clears the disc only at the
@@ -17,10 +18,11 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import { monthCoverage, monthCoverageLine } from '../../../lib/monthCoverage';
-import { readMonthRows } from '../../../lib/spineReads';
+import { readMonthRows, readRecordStart } from '../../../lib/spineReads';
 import { useEventStore } from '../../../store/eventStore';
 import { usePetStore } from '../../../store/petStore';
 import { useSyncStore } from '../../../store/syncStore';
+import { useTodayKey } from '../../../hooks/useTodayKey';
 import { Card } from '../../ui/Card';
 import { ThemedText } from '../../ui/ThemedText';
 
@@ -30,6 +32,8 @@ export function CoverageDoor({ onPress }: { onPress?: () => void }) {
   const petId = usePetStore((s) => s.activePet?.id ?? null);
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
   const todayCount = useEventStore((s) => s.todayEvents.length);
+  // The window ends YESTERDAY, so it moves at midnight even when nothing is logged.
+  const todayKey = useTodayKey();
   const [line, setLine] = useState<{ petId: string; text: string } | null>(null);
 
   useEffect(() => {
@@ -42,16 +46,18 @@ export function CoverageDoor({ onPress }: { onPress?: () => void }) {
     start.setDate(1);
     start.setHours(0, 0, 0, 0);
     const since = new Date(start.getTime() - 24 * 3_600_000).toISOString();
-    readMonthRows(petId, since)
-      .then((rows) => {
+    // The record's start is read over the whole record, not the month (C-35): only it can
+    // say whether the window opens on the 1st or on the pet's first entry.
+    Promise.all([readMonthRows(petId, since), readRecordStart(petId)])
+      .then(([rows, recordStart]) => {
         if (cancelled) return;
-        setLine({ petId, text: monthCoverageLine(monthCoverage(rows, now)) });
+        setLine({ petId, text: monthCoverageLine(monthCoverage(rows, recordStart, now)) });
       })
       .catch((e) => console.warn('[CoverageDoor] month read failed:', e));
     return () => {
       cancelled = true;
     };
-  }, [petId, hydrationTick, todayCount]);
+  }, [petId, hydrationTick, todayCount, todayKey]);
 
   // A read that hasn't answered is never a number (C-12): the door still opens, and the
   // line arrives when the record has answered for THIS pet.
