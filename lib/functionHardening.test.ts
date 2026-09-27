@@ -103,6 +103,13 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     definer: false, pinned: true, execute: [],
     why: 'CUL-1201 (075) — reads no table, so INVOKER; search_path pinned and revoked so it is not RPC-callable.',
   },
+  // 075 (CUL-1267): a client UPDATE may not move a read's stamps. INVOKER is the
+  // point, not a default: it judges `current_user`, which under DEFINER would be
+  // the owner, and the freeze would stop nothing.
+  freeze_event_ai_analysis_stamps: {
+    definer: false, pinned: true, execute: [],
+    why: 'CUL-1267 (075) — must stay INVOKER (it tests current_user; DEFINER would freeze nothing); pinned and revoked so it is not RPC-callable.',
+  },
 
   // ── B-403: the auth/utility functions ─────────────────────────────────────
   handle_new_user: {
