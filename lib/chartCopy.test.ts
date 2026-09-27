@@ -127,6 +127,18 @@ describe('dayMarkA11yLabel', () => {
     expect(dayMarkA11yLabel(facts({}), 'vomiting')).toBe(`${date}, logged, no vomiting`);
   });
 
+  it('a day a bout continues into is never "no <noun>": it names the day the bout began (CUL-1226)', () => {
+    const cont = facts({ continuesFrom: '2026-09-18' });
+    expect(dayMarkA11yLabel(cont, 'vomiting')).toBe(`${date}, vomiting logged, part of the bout that began ${dateWord('2026-09-18')}`);
+    expect(dayMarkA11yLabel(cont, 'vomiting')).not.toMatch(/\bno vomiting\b/);
+    expect(dayMarkA11yLabel(cont, 'vomiting')).not.toMatch(NO_VERDICT);
+    // A day with its own count speaks the count; the layer off hides both.
+    expect(dayMarkA11yLabel(facts({ count: 1, continuesFrom: '2026-09-18' }), 'vomiting')).toBe(`${date}, vomiting logged 1 time`);
+    expect(dayMarkA11yLabel(facts({ continuesFrom: '2026-09-18', symptomLayer: false }), 'vomiting')).toBe(`${date}, logged`);
+    // No continuation: the old sentence, unchanged.
+    expect(dayMarkA11yLabel(facts({ continuesFrom: null }), 'vomiting')).toBe(`${date}, logged, no vomiting`);
+  });
+
   it('the layer off says "logged" and nothing about what it hid', () => {
     expect(dayMarkA11yLabel(facts({ count: 2, symptomLayer: false }), 'vomiting')).toBe(`${date}, logged`);
   });

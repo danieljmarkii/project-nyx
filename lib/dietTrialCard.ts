@@ -234,6 +234,23 @@ export interface TrialExposureFacts {
    * how the last two attempts at this wiring deleted real findings.
    */
   mayStateRecordClean: boolean;
+  /**
+   * Feedings naming no food (`meals.food_item_id` null and no usable food key —
+   * most often a food deleted out from under its meals). `computeTrialFacts`
+   * excludes them from BOTH sides of `totalFeedings` / `offDiet` while coverage
+   * still counts their days, so without this the card read "Meals logged on 20 of
+   * 20 days." above "Nothing logged against the trial yet." — both true, read as a
+   * contradiction, and never explained (CUL-1338). It only ever ADDS a disclosure;
+   * no line reads it to decide a claim (`mayStateRecordClean` already withholds on
+   * it upstream).
+   *
+   * OPTIONAL, and that is the opposite call from `mayStateRecordClean`'s, made on
+   * the direction of the default: absent reads as 0, which is the pre-CUL-1338
+   * card exactly — a missed construction site loses a disclosure it never had, and
+   * can surface no claim. The one production writer (`lib/dietTrialFacts.ts`) sets
+   * it, and `trialScreenModel.test.ts` drives that loader end to end.
+   */
+  unclassifiable?: number;
 }
 
 /**
@@ -590,7 +607,13 @@ function exposureLine(ex: TrialExposureFacts): string {
   // record that is simply empty. The count alone is the honest line here: it
   // makes no claim in either direction, which is the same reason the
   // pre-classifier path renders it bare.
-  if (total <= 0) return 'Nothing logged against the trial yet.';
+  //
+  // …UNLESS THE RECORD IS NOT EMPTY (CUL-1338). Feedings that name no food are on
+  // the record and counted by coverage, but on neither side of this sentence, so
+  // "Nothing logged" printed under "Meals logged on 20 of 20 days" with nothing
+  // saying why. The disclosure replaces it: a count of what could not be checked,
+  // which claims nothing about what the pet ate in either direction.
+  if (total <= 0) return unclassifiableLine(ex, false) ?? 'Nothing logged against the trial yet.';
   if (ex.offDiet <= 0) {
     // THE COUNT STAYS, THE CLAIM GOES (round 5 ①) — AND THE WITHHOLDING IS NAMED.
     //
@@ -615,6 +638,31 @@ function exposureLine(ex: TrialExposureFacts): string {
         'diet on this record.';
   }
   return `${total} ${noun} in total — ${total - ex.offDiet} matched, ${ex.offDiet} did not.`;
+}
+
+/**
+ * CUL-1338 — the feedings the exposure sentence cannot hold, said as a count.
+ *
+ * A LIMIT OF THE RECORD, NEVER A READING OF IT. It names what could not be checked
+ * and stops: no "the rest matched", no "so far so good", nothing an owner of a pet
+ * that may not be eating could take as an all-clear (§5.2, n=1). `more` when a
+ * feeding total renders beside it, because these are NOT inside that total —
+ * without the word, "30 feedings in total" and "2 logged feedings don't name a
+ * food" read as the 2 being among the 30. The noun is `feedings`, the exposure
+ * sentence's own treat-inclusive population, because that is what is counted
+ * (C-3: the neighbouring sentence's predicate). The caller says whether a total
+ * renders beside it, rather than this function guessing from `totalFeedings`: a
+ * "more" with no total on the line has no referent.
+ */
+function unclassifiableLine(ex: TrialExposureFacts, besideTotal: boolean): string | null {
+  const n = ex.unclassifiable ?? 0;
+  if (n <= 0) return null;
+  const more = besideTotal ? ' more' : '';
+  return n === 1
+    ? `1${more} logged feeding doesn’t name a food, so it can’t be checked against the ` +
+        'trial diet.'
+    : `${n}${more} logged feedings don’t name a food, so they can’t be checked against ` +
+        'the trial diet.';
 }
 
 /** Below this many wholly-unmatched feedings, "nothing matched" is not yet a
@@ -1519,7 +1567,8 @@ function pushRegisterBody(
         role: 'fact',
         text:
           ex && ex.offDiet > 0
-            ? `${n} ${noun} logged so far; ${ex.offDiet} were not the trial diet.`
+            ? `${n} ${noun} logged so far; ${ex.offDiet} ${ex.offDiet === 1 ? 'was' : 'were'} not ` +
+              'the trial diet.'
             : `${n} ${noun} logged so far.`,
       });
       lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
@@ -1566,6 +1615,14 @@ function pushRegisterBody(
       if (!ex) return;
       if (input.coverage) lines.push({ role: 'fact', text: coverageLine(input.coverage) });
       lines.push({ role: 'fact', text: exposureLine(ex) });
+      // THE MIXED CASE (CUL-1338): some feedings classified, some naming no food.
+      // `exposureLine` already carries the disclosure when the total is zero; here
+      // it follows the total it is outside of, and it is also the reason the
+      // withheld variant ("Culprit isn't saying how many matched…") never stated.
+      if (ex.totalFeedings > 0) {
+        const unnamed = unclassifiableLine(ex, true);
+        if (unnamed) lines.push({ role: 'fact', text: unnamed });
+      }
       lines.push({
         role: 'qualifier',
         text: BLIND_SPOT_QUALIFIER + (ex.offDiet > 0 && !caveat ? floorSuffix(ex.offDiet) : ''),
@@ -1807,7 +1864,14 @@ function activeCard(
     // directly above "2 logged feedings were outside the trial diet" — a flat
     // self-contradiction on the card whose whole job is being true about the
     // record. Something WAS logged; only a meal wasn't.
-    if ((input.coverage?.daysLogged ?? 0) === 0 && (input.exposures?.totalFeedings ?? 0) === 0) {
+    //
+    // Same for a feeding that names no food (CUL-1338): it is on the record and in
+    // neither count. Day 1 takes no reading, so the line is simply not said.
+    if (
+      (input.coverage?.daysLogged ?? 0) === 0 &&
+      (input.exposures?.totalFeedings ?? 0) === 0 &&
+      (input.exposures?.unclassifiable ?? 0) === 0
+    ) {
       lines.push({ role: 'fact', text: 'Nothing logged yet today.' });
     }
     lines.push({
@@ -2022,11 +2086,13 @@ function pushFloorSentence(
 ): void {
   const ex = input.exposures;
   if (!ex || ex.offDiet <= 0) return;
-  const noun = ex.offDiet === 1 ? 'feeding' : 'feedings';
+  // THE VERB AGREES WITH THE COUNT, NOT ONLY THE NOUN (CUL-1335): "1 logged
+  // feeding were" shipped because the noun was singularised and the verb was not.
+  const noun = ex.offDiet === 1 ? 'feeding was' : 'feedings were';
   const stem =
     lead === 'separately'
-      ? `Separately, ${ex.offDiet} logged ${noun} were outside the trial diet.`
-      : `${ex.offDiet} logged ${noun} were outside the trial diet.`;
+      ? `Separately, ${ex.offDiet} logged ${noun} outside the trial diet.`
+      : `${ex.offDiet} logged ${noun} outside the trial diet.`;
   lines.push({
     role: 'fact',
     text: stem + (caveat ? '' : floorSuffix(ex.offDiet)),
@@ -2245,16 +2311,24 @@ function soFarLine(input: TrialCardInput): string {
   // "Of what's on the record so far: meals on 0 of 12 days, 0 feedings in total."
   // — a Principle-5 empty state, written and shipped, on the one state that most
   // needs it, unreachable. The emptiness test is the CONTENT, not the shape.
+  //
+  // AND FEEDINGS THAT NAME NO FOOD ARE CONTENT (CUL-1338): they are on the record
+  // but in neither the day count's projection on the trial screen nor the feeding
+  // total, so without this the empty state printed over a logged record.
+  const ex = input.exposures;
+  const namesTotal = !!ex && ex.totalFeedings > 0;
+  const unnamed = ex ? unclassifiableLine(ex, namesTotal) : null;
   const nothingLogged =
-    (input.coverage?.daysLogged ?? 0) === 0 && (input.exposures?.totalFeedings ?? 0) === 0;
+    (input.coverage?.daysLogged ?? 0) === 0 && (ex?.totalFeedings ?? 0) === 0 && !unnamed;
   if (nothingLogged) return 'Nothing is on the record for this trial yet.';
 
   const parts: string[] = [];
   if (input.coverage) {
     parts.push(`meals on ${input.coverage.daysLogged} of ${input.coverage.daysElapsed} days`);
   }
-  const ex = input.exposures;
-  if (ex) {
+  // "0 feedings in total" beside a disclosure of unnamed feedings is the same
+  // contradiction one register over; the disclosure alone carries the count.
+  if (ex && !(ex.totalFeedings === 0 && unnamed)) {
     const noun = ex.totalFeedings === 1 ? 'feeding' : 'feedings';
     parts.push(`${ex.totalFeedings} ${noun} in total`);
     // Same gate as `exposureLine`. This sentence carried its own copy of the
@@ -2266,11 +2340,11 @@ function soFarLine(input: TrialCardInput): string {
       parts.push(`all ${ex.totalFeedings} matched the trial diet or a permitted food`);
     }
   }
-  if (parts.length === 0) return 'Nothing is on the record for this trial yet.';
+  if (parts.length === 0) return unnamed ?? 'Nothing is on the record for this trial yet.';
   const joined = parts.length === 1
     ? parts[0]
     : `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
-  return `Of what’s on the record so far: ${joined}.`;
+  return `Of what’s on the record so far: ${joined}.` + (unnamed ? ` ${unnamed}` : '');
 }
 
 /** §5.6 multi-pet. Gates the CLAIM, in the household where it is most likely
@@ -2465,15 +2539,33 @@ function terminalDayCount(trial: TrialCardTrial, startIndex: number, today: stri
  * the feeding total but never the off-diet count, so an owner who rated three of
  * 124 meals lost twelve genuine exposures from the card.
  */
+/** "these 56 days were" / "this day was" — `terminalDayCount` can return "1 day",
+ *  and "these 1 day were" shipped alongside the CUL-1335 agreement bugs. */
+function withheldDaysPhrase(dayCount: string): string {
+  if (dayCount === 'these days') return 'these days were';
+  if (dayCount === '1 day') return 'this day was';
+  return `these ${dayCount} were`;
+}
+
 function refusalWithheldLine(input: TrialCardInput, dayCount: string): string {
+  const ex = input.exposures;
+  // CUL-1338, the terminal half: "meals offered on 18 of 19 days, 0 feedings in
+  // total" over meals that name no food is the same contradiction as the live
+  // card's. The zero total yields to the disclosure, which follows the sentence.
+  const namesTotal = !!ex && !!input.coverage && ex.totalFeedings > 0;
+  const unnamed = ex ? unclassifiableLine(ex, namesTotal) : null;
+  const total = ex && !(ex.totalFeedings === 0 && unnamed)
+    ? `, ${ex.totalFeedings} ${ex.totalFeedings === 1 ? 'feeding' : 'feedings'} in total`
+    : '';
   return (
-    `Culprit isn’t showing how clean ${dayCount === 'these days' ? 'these days' : `these ${dayCount}`} were. ` +
+    `Culprit isn’t showing how clean ${withheldDaysPhrase(dayCount)}. ` +
     'A diet that wasn’t eaten can’t be read as one that was followed' +
     (input.coverage
       ? ` — the record is meals offered on ${input.coverage.daysLogged} of ${input.coverage.daysElapsed} days` +
-        (input.exposures ? `, ${input.exposures.totalFeedings} feedings in total` : '') +
+        total +
         ', and what your vet needs from it is the refusal.'
-      : ', and what your vet needs from it is the refusal.')
+      : ', and what your vet needs from it is the refusal.') +
+    (unnamed ? ` ${unnamed}` : '')
   );
 }
 

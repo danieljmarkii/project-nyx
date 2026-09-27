@@ -44,7 +44,7 @@ import {
 } from '../../lib/dietTrialCompletion';
 import { destructiveConfirm } from '../../lib/haptics';
 import { loadTrialOutcomeFacts } from '../../lib/dietTrialOutcomeFacts';
-import { endActiveTrial, type TrialIndication } from '../../lib/dietTrialSetup';
+import { endActiveTrial, TrialEndRefused, type TrialIndication } from '../../lib/dietTrialSetup';
 
 /** Which screen the host wants. `decision` is the overrun card's entry; the
  *  milestone card's three buttons land on the last two directly (its `Keep going`
@@ -161,6 +161,20 @@ export function TrialCompletionSheet({
         onChanged();
         onClose();
       } catch (e) {
+        // A REFUSAL IS NOT A FAILURE — IT MEANS THIS SHEET IS STALE (CUL-1329).
+        // The trial was already ended (here, on the other host, or on another
+        // device), and that first ending is the record. The host's `handleExtendTrial`
+        // rule, for the same reason: re-read, close, no alert. "The trial is
+        // unchanged. Have another go" would be false twice — it is not running, and
+        // another go cannot succeed (C-28).
+        if (e instanceof TrialEndRefused) {
+          setOutcome(null);
+          setNotes('');
+          setStopReason(null);
+          onChanged();
+          onClose();
+          return;
+        }
         console.error('[DietTrial] end-trial failed:', e);
         Alert.alert('That didn’t save', 'The trial is unchanged. Have another go in a moment.');
       } finally {

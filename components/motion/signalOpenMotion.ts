@@ -15,7 +15,10 @@
 //      the chart family's own stagger.
 //   3. THE LANDING is this file: one native-driver value that carries the sentence and
 //      the compare's block together — opacity 0 → 1 and the fold's 8pt drift, over the
-//      fold's own `landMs`, starting at 200ms so it lands as the rise settles.
+//      fold's own `landMs`, starting at 200ms so it lands as the rise settles. It settles
+//      DOWN from 8pt above, the house's direction (`foldMotion`, `arrivalMotion`,
+//      `lookMotion`, `openInPlaceMotion` all seed `-driftPt`; CUL-1223 WBC-3). The
+//      compare draws on this landing, not before it (`delayMs`, CUL-1223 BRK-12).
 //
 // Reduced motion: the route's transition is `none`, the charts are their static frames,
 // and the landing value sits at its end state — the screen is simply there. App blur
@@ -23,6 +26,7 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import { Animated, Easing } from 'react-native';
+import { DRAW_IN_MOTION } from './drawInMotion';
 import { FOLD_MOTION } from './foldMotion';
 
 /** The beats, in ms and pt. */
@@ -36,8 +40,10 @@ export const SIGNAL_OPEN_MOTION = {
   landMs: FOLD_MOTION.landMs,
   /** The landing's drift, the fold's 8pt. */
   driftPt: FOLD_MOTION.driftPt,
-  /** The whole opening, end to end. `signalOpenMotion.test.ts` pins every beat inside it. */
-  budgetMs: 700,
+  /** The whole opening, end to end — the chart family's own ceiling, so a draw on this
+   *  screen and the screen's beats answer one number. `signalOpenMotion.test.ts` and the
+   *  draw-in's property test pin every beat inside it. */
+  budgetMs: DRAW_IN_MOTION.budgetMs,
 } as const;
 
 export interface SignalOpenStyle {
@@ -78,7 +84,7 @@ export function useSignalOpen({ arrived, identity, reducedMotion, appActive }: P
     }
     running.current?.stop();
     opacity.setValue(0);
-    translateY.setValue(SIGNAL_OPEN_MOTION.driftPt);
+    translateY.setValue(-SIGNAL_OPEN_MOTION.driftPt);
     const anim = Animated.parallel([
       Animated.timing(opacity, {
         toValue: 1,
@@ -100,10 +106,9 @@ export function useSignalOpen({ arrived, identity, reducedMotion, appActive }: P
       // A native-driver animation never writes its end value back; a finished landing pins it.
       if (finished) settle();
     });
-    return () => {
-      running.current?.stop();
-      running.current = null;
-    };
+    // Cleanup PINS the end state, the draw-in's rule (CUL-1223): a stop alone leaves the
+    // block wherever the native driver was, and a re-arm reseeds right after anyway.
+    return settle;
   }, [arrived, identity, reducedMotion, opacity, translateY, settle]);
 
   useEffect(() => {

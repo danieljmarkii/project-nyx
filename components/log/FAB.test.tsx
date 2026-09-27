@@ -351,6 +351,7 @@ describe('FAB — the Home capture overlay', () => {
         busy: false,
         onBack: jest.fn(),
         onDone: jest.fn(),
+        drawsDoneBar: true,
       },
     });
     const during = render(<FAB />);
@@ -362,7 +363,7 @@ describe('FAB — the Home capture overlay', () => {
 
   it('comes back the moment the corner is released', () => {
     useUiStore.setState({
-      captureOverlay: { summary: null, inViewport: true, busy: false, onBack: jest.fn(), onDone: null },
+      captureOverlay: { summary: null, inViewport: true, busy: false, onBack: jest.fn(), onDone: null, drawsDoneBar: true },
     });
     const view = render(<FAB />);
     expect(view.queryByLabelText('Log event')).toBeNull();
@@ -372,6 +373,30 @@ describe('FAB — the Home capture overlay', () => {
     // The store fails OPEN by design: losing the app's primary control is a worse
     // failure than a Done bar sharing a corner for a frame.
     expect(view.queryByLabelText('Log event')).toBeTruthy();
+  });
+
+  // CUL-1220 / BRK-18 — the design_v2 look header publishes an overlay for its pinned way
+  // back and never draws a Done bar. The + stays, and the FAB is mounted outside the tabs,
+  // so this is also the "after a tab switch" case: nothing about the overlay hides it.
+  it('stays for an overlay that draws no Done bar (the look header’s More…)', () => {
+    useUiStore.setState({
+      captureOverlay: { summary: null, inViewport: true, busy: false, onBack: jest.fn(), onDone: null, drawsDoneBar: false },
+    });
+    const view = render(<FAB />);
+    expect(view.queryByLabelText('Log event')).toBeTruthy();
+  });
+
+  it('an overlay with no Done bar does not close an open menu either', async () => {
+    const view = render(<FAB />);
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    expect(useUiStore.getState().fabMenuOpen).toBe(true);
+    act(() => {
+      useUiStore.setState({
+        captureOverlay: { summary: null, inViewport: true, busy: false, onBack: jest.fn(), onDone: null, drawsDoneBar: false },
+      });
+    });
+    expect(useUiStore.getState().fabMenuOpen).toBe(true);
   });
 });
 
@@ -469,7 +494,7 @@ describe('FAB — BRK-37, the accessibility contract', () => {
 
     act(() => {
       useUiStore.setState({
-        captureOverlay: { summary: null, inViewport: true, busy: false, onBack: jest.fn(), onDone: null },
+        captureOverlay: { summary: null, inViewport: true, busy: false, onBack: jest.fn(), onDone: null, drawsDoneBar: true },
       });
     });
     expect(useUiStore.getState().fabMenuOpen).toBe(false);

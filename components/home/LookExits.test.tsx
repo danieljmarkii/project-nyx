@@ -7,7 +7,7 @@
 
 import { render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
-import { DONE_BAR_BOTTOM, DONE_BAR_MIN_HEIGHT, LookExits, exitVisibility } from './LookExits';
+import { DONE_BAR_BOTTOM, DONE_BAR_MIN_HEIGHT, LookExits, exitVisibility, lookRectInPage } from './LookExits';
 import { useUiStore } from '../../store/uiStore';
 import { theme } from '../../constants/theme';
 
@@ -51,6 +51,40 @@ describe('exitVisibility — an exit appears only once its own row is out of rea
   });
 });
 
+// CUL-1220 / BRK-16 — the design_v2 header reports a CARD-LOCAL y; the pin compares with
+// the page's scrollY. Composed at both boundaries, through the real `exitVisibility`.
+describe('lookRectInPage — the header’s rect in page coordinates', () => {
+  const card = { y: 620, height: 900 };
+  const header = { y: 39, height: 400 };
+
+  it('adds the card’s page y to the header’s card-local y', () => {
+    expect(lookRectInPage(card, header)).toEqual({ top: 659, height: 400 });
+  });
+
+  it('is null until BOTH halves are measured — never a card-local guess', () => {
+    expect(lookRectInPage(null, header)).toBeNull();
+    expect(lookRectInPage(card, null)).toBeNull();
+  });
+
+  it('the way back pins exactly when the header’s PAGE top passes the viewport top', () => {
+    const rect = lookRectInPage(card, header)!;
+    const at = (scrollY: number) =>
+      exitVisibility({ cardTop: rect.top, cardHeight: rect.height, scrollY, viewportHeight: VIEWPORT }).backPinned;
+    expect(at(659)).toBe(false);
+    expect(at(660)).toBe(true);
+    // The card-local reading pinned 620pt early, over the Signal card above Today.
+    expect(at(40)).toBe(false);
+  });
+
+  it('pins nothing once the header’s page bottom has scrolled above the viewport', () => {
+    const rect = lookRectInPage(card, header)!;
+    const at = (scrollY: number) =>
+      exitVisibility({ cardTop: rect.top, cardHeight: rect.height, scrollY, viewportHeight: VIEWPORT }).backPinned;
+    expect(at(1058)).toBe(true);
+    expect(at(1059)).toBe(false);
+  });
+});
+
 describe('the layer', () => {
   const overlay = (summary: string | null) => ({
     summary,
@@ -58,6 +92,7 @@ describe('the layer', () => {
     busy: false,
     onBack: jest.fn(),
     onDone: summary ? jest.fn() : null,
+    drawsDoneBar: true,
   });
 
   it('draws nothing at all when no card owns the corner', () => {
@@ -101,7 +136,7 @@ describe('the geometry the FAB has to step aside for (C-5)', () => {
 
   it('the way back clears the card’s own left gutter rather than sitting over it', () => {
     useUiStore.setState({
-      captureOverlay: { summary: null, inViewport: true, busy: false, onBack: jest.fn(), onDone: null },
+      captureOverlay: { summary: null, inViewport: true, busy: false, onBack: jest.fn(), onDone: null, drawsDoneBar: false },
     });
     const t = render(<LookExits backPinned donePinned={false} />);
     const style = StyleSheet.flatten(t.getByTestId('look-exit-back').props.style) as Record<string, unknown>;

@@ -76,6 +76,29 @@ export function exitVisibility(params: {
   };
 }
 
+/** A layout box as `onLayout` reports it: `y` is relative to the PARENT. */
+export interface LayoutBox {
+  y: number;
+  height: number;
+}
+
+/**
+ * The design_v2 look header's rect in the SCROLL CONTENT's coordinates (CUL-1220, BRK-16;
+ * C-22: anchors in different coordinate spaces compose in one tested helper).
+ *
+ * The header is a child of the Today card, so its `onLayout` y is card-local (about 39pt);
+ * `exitVisibility` compares against the page's `scrollY`. The page y is the card's own y
+ * in the scroll content plus the header's y inside the card. Either half unmeasured →
+ * `null`, which `exitVisibility` reads as "pin nothing" (never a guess).
+ */
+export function lookRectInPage(
+  card: LayoutBox | null,
+  header: LayoutBox | null,
+): { top: number; height: number } | null {
+  if (!card || !header) return null;
+  return { top: card.y + header.y, height: header.height };
+}
+
 export function LookExits({ backPinned, donePinned }: ExitVisibility) {
   const overlay = useUiStore((s) => s.captureOverlay);
   if (!overlay || !overlay.inViewport) return null;

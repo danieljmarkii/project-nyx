@@ -6,7 +6,7 @@ import { useAppActive } from '../../../hooks/useAppActive';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { focusAccessibility } from '../../../lib/a11yFocus';
 import { measureNodeInWindow, type WindowRect } from '../../../lib/measureNode';
-import { loadSignalScreen, screenLeadsWithLanes, withheldLines, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
+import { loadSignalScreen, screenLeadsWithLanes, UNSUPPORTED_LINE, withheldLines, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
 import { usePetStore } from '../../../store/petStore';
 import { WhorlSpinner } from '../../brand/WhorlSpinner';
 import { CompareBars } from '../../charts/CompareBars';
@@ -184,6 +184,10 @@ export function SignalScreen({ petId, identity }: Props) {
             <ThemedText key={i} style={styles.stateText}>{line}</ThemedText>
           ))}
         </View>
+      ) : load.status === 'unsupported' ? (
+        <View style={styles.centered} testID="signal-screen-unsupported">
+          <ThemedText style={styles.stateText}>{UNSUPPORTED_LINE}</ThemedText>
+        </View>
       ) : load.status === 'missing' ? (
         <View style={styles.centered} testID="signal-screen-missing">
           <ThemedText style={styles.stateText}>This signal isn't in {load.petName}'s picture any more.</ThemedText>
@@ -357,7 +361,15 @@ function Body({
         <ThemedText style={styles.sentence}>{model.sentence}</ThemedText>
         {model.compare && model.noun ? (
           <View style={styles.compare} testID="signal-section-compare">
-            <CompareBars model={model.compare} noun={model.noun} drawIn={drawIn} identity={model.identity} />
+            {/* The compare draws on its own landing (CUL-1223): it sits inside the view
+                `useSignalOpen` holds at opacity 0 until 200ms. */}
+            <CompareBars
+              model={model.compare}
+              noun={model.noun}
+              drawIn={drawIn}
+              identity={model.identity}
+              drawDelayMs={SIGNAL_OPEN_MOTION.landDelayMs}
+            />
           </View>
         ) : null}
       </Animated.View>

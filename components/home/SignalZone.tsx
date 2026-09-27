@@ -17,6 +17,10 @@ import { SectionLabel } from '../ui/SectionLabel';
 import { InsightCard, RAIL_WIDTH, stripRenderable } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
 import { signalSaysNotEating, visibleFindings } from '../../lib/signalVisible';
+import type { SignalTrialAnchor } from '../../lib/signalTrialAnchor';
+import { signalTrialWindowOf } from '../../lib/signalScreen';
+import type { TrialCardTrial } from '../../lib/dietTrialCard';
+import { hasSignalTitleRule } from '../../lib/signalTitle';
 import { useSignalFold, type SignalFoldApi } from '../../hooks/useSignalFold';
 import { useLastEpisodeDates, type LastEpisodeDates } from '../../hooks/useLastEpisodeDates';
 import { useWatchingRowsRead } from '../../hooks/useWatchingRows';
@@ -449,20 +453,29 @@ function ArrivalStage({
   moment,
   outgoingFrame,
   stack,
+  active = true,
 }: {
   moment: ArrivalMoment | null;
   outgoingFrame: ReactNode;
   stack: ReactNode;
+  /**
+   * Design v2 keeps the stage mounted on every render and switches it (CUL-1223, BRK-49):
+   * swapping `<ArrivalStage>` for a bare `<LiveStack>` at the moment's edges changed the
+   * component in that slot, so every card remounted — the lead three times, each at its
+   * skeleton — and VoiceOver's focus was reset under "first pattern is ready". Inactive,
+   * the stage clips nothing and blocks no tap. Flag-off keeps the shipped swap.
+   */
+  active?: boolean;
 }) {
   return (
     <View
-      style={styles.arrivalStage}
+      style={active ? styles.arrivalStage : undefined}
       // The lead sits at opacity 0 for the crossfade's first 400ms, beneath a still-
       // opaque outgoing frame — so without this, a tap on what LOOKS like a ghost
       // watching row lands on the invisible InsightCard underneath and expands it. The
       // card is inert for the moment; a tap that does nothing beats a tap that does
       // something the owner cannot see they asked for.
-      pointerEvents="none"
+      pointerEvents={active ? 'none' : 'auto'}
     >
       {stack}
       {outgoingFrame ? (
@@ -510,12 +523,23 @@ interface SignalZoneProps {
   // reads the FULL set, like `hasSafetyFinding`'s other reader, so no suppression or fold
   // can unhide a lane. Draws nothing; absent, the zone is unchanged.
   onSafetyLive?: (report: { petId: string | null; live: boolean | null }) => void;
+  // CUL-1360 — the pet's trial row and the clock it was read on, with the pet it was read
+  // for. Home hands over the SAME `trialInput` as the two props above, and only once those
+  // facts are confirmed for the active pet; the zone windows it (`signalTrialWindowOf`, the
+  // one builder every Signal surface titles with). With the cache's `generated_at` it is the
+  // anchor that tells a trial finding counted over THIS trial from one counted over a trial
+  // since replaced (`lib/signalTrialAnchor.ts`): the stack drops the older trial's falling
+  // pair (it would be titled with the new trial), and the rows title a rising one by its own
+  // day. A report for another pet, or none, anchors nothing. It reaches both the Design v2
+  // stack and the shipped one: a stale reassuring pair has no place on either.
+  signalTrial?: { petId: string; trial: TrialCardTrial | null; nowMs: number } | null;
 }
 
 export function SignalZone({
   trialRunning = false,
   withholdFallingVomit = false,
   onSafetyLive,
+  signalTrial = null,
 }: SignalZoneProps = {}) {
   const {
     petId,
@@ -674,7 +698,11 @@ export function SignalZone({
   // spending it, so without this exclusion the card standing down would hand the arrival a
   // count of 1 with no safety finding in the set, and the once-ever celebration would play
   // over a sentence about absence.
-  const renderableCount = visibleFindings(findings, withholdFallingVomit).filter(
+  const trialAnchor: SignalTrialAnchor | null =
+    signalTrial && petId && signalTrial.petId === petId
+      ? { generatedAt, trial: signalTrial.trial ? signalTrialWindowOf(signalTrial.trial, signalTrial.nowMs) : null }
+      : null;
+  const renderableCount = visibleFindings(findings, withholdFallingVomit, Date.now(), trialAnchor).filter(
     (f) => !isStoodDown(f.finding),
   ).length;
 
@@ -750,11 +778,34 @@ export function SignalZone({
       {showAck ? <AckLine petName={petName} /> : null}
 
       {state === 'live' ? (
-        // The stage exists ONLY while the moment plays. On every ordinary render the
+        // Design v2 keeps the stage mounted and switches it (CUL-1223). Flag-off: the
+        // stage exists ONLY while the moment plays. On every ordinary render the
         // stack is returned bare, exactly as it shipped — no wrapper node, no clip, no
         // opacity node (the same byte-identical-when-inert rule the section label's
         // single style reference follows above).
-        arriving ? (
+        designV2 ? (
+          <ArrivalStage
+            active={arriving}
+            moment={moment}
+            outgoingFrame={outgoingFrame}
+            stack={
+              <LiveStack
+                findings={findings}
+                petName={petName}
+                trialRunning={trialRunning}
+                withholdFallingVomit={withholdFallingVomit}
+                arrival={moment}
+                fold={fold}
+                lastEpisodes={lastEpisodes}
+                generatedAt={generatedAt}
+                trialAnchor={trialAnchor}
+                designV2={designV2}
+                petId={petId}
+                onOpen={openSignal}
+              />
+            }
+          />
+        ) : arriving ? (
           <ArrivalStage
             moment={moment}
             outgoingFrame={outgoingFrame}
@@ -768,6 +819,7 @@ export function SignalZone({
                 fold={fold}
                 lastEpisodes={lastEpisodes}
                 generatedAt={generatedAt}
+                trialAnchor={trialAnchor}
                 designV2={designV2}
                 petId={petId}
                 onOpen={openSignal}
@@ -783,6 +835,7 @@ export function SignalZone({
             fold={fold}
             lastEpisodes={lastEpisodes}
             generatedAt={generatedAt}
+            trialAnchor={trialAnchor}
             designV2={designV2}
             petId={petId}
             onOpen={openSignal}
@@ -891,6 +944,7 @@ function LiveStack({
   fold,
   lastEpisodes = {},
   generatedAt = null,
+  trialAnchor = null,
   designV2 = false,
   petId = null,
   onOpen,
@@ -916,6 +970,8 @@ function LiveStack({
   lastEpisodes?: LastEpisodeDates;
   /** When the engine counted (the cache row's `generated_at`), for the chronicity strip's fallback date when the record could not be read. */
   generatedAt?: string | null;
+  /** CUL-1360 — the cache's `generated_at` with this pet's running trial; null anchors nothing. */
+  trialAnchor?: SignalTrialAnchor | null;
 }) {
   // B-789 (§5.2) — drop the trial_response card when the record shows the animal isn't eating
   // (`withholdFallingVomit`, computed by Home from the same `trialInput` the strip withholds its
@@ -937,7 +993,13 @@ function LiveStack({
   // displayState fix rides CUL-527. The finding stays in the cache; nothing consumes it but this stack.
   // CUL-601: the arrival moment reads `visibleFindings` too, so that empty frame no longer
   // gets a celebration drawn over it — but the empty frame itself is still CUL-527's.
-  const ordered = visibleFindings(findings, withholdFallingVomit);
+  // CUL-1360: and a falling trial pair counted over a trial since replaced (`trialAnchor`).
+  // CUL-1218 (G10 extended): under Design v2 a type this build cannot title is not in the
+  // stack at all — dropped BEFORE the lead is chosen, so the next card takes the lead canvas
+  // and no divider is left above an empty slot (adversarial pass). Flag-off is untouched:
+  // the shipped `InsightCard` skips an unknown type itself.
+  const visible = visibleFindings(findings, withholdFallingVomit, Date.now(), trialAnchor);
+  const ordered = designV2 && onOpen && petId ? visible.filter((f) => hasSignalTitleRule(f.finding)) : visible;
   // CUL-1216 (BRK-6): the SAME register for the pairs a card carries inside it — the Design v2
   // lead card's week line and a vomit chronicity card's compare — with the Signal's own
   // `intake_decline` OR'd in, exactly as `visibleFindings` reads it, so the card a stack drops
@@ -988,12 +1050,18 @@ function LiveStack({
               <StoodDownLine text={f.text} />
             ) : designV2 && onOpen && petId && i === leadIndex && f.finding.priorityClass === 'insight' ? (
               // D2-3: the lead insight card is the title + chart + line, and a door.
-              <SignalLeadCard cached={f} petId={petId} onOpen={onOpen} withholdFallingVomit={withholdPairs} />
+              <SignalLeadCard
+                cached={f}
+                petId={petId}
+                onOpen={onOpen}
+                withholdFallingVomit={withholdPairs}
+                generatedAt={generatedAt}
+              />
             ) : designV2 && onOpen && petId ? (
               // CUL-1270 (D1 = B): every other card — a safety lead and every lower card — is
               // a row: headline, the ask, a chevron, a door to its own screen. A safety row
               // stays words (S1) and always carries its ask.
-              <SignalRow cached={f} petId={petId} onOpen={onOpen} isLead={i === leadIndex} />
+              <SignalRow cached={f} petId={petId} onOpen={onOpen} isLead={i === leadIndex} generatedAt={generatedAt} />
             ) : (
               // CUL-788: the card renders its own strip when `folded` — one row, one rail,
               // so the fold motion has a single continuous node to hold (§12). The host
@@ -1016,9 +1084,11 @@ function LiveStack({
           </>
         );
         const key = `${f.finding.type}-${f.rank}`;
-        if (!arrival) return <View key={key}>{row}</View>;
+        // Design v2 keeps ONE host type per row across the moment's edges (CUL-1223): a
+        // `View` → `Animated.View` swap is a remount of the row, and of its card's read.
+        if (!arrival && !designV2) return <View key={key}>{row}</View>;
         return (
-          <Animated.View key={key} style={{ opacity: i === 0 ? arrival.crossfade : arrival.tail }}>
+          <Animated.View key={key} style={arrival ? { opacity: i === 0 ? arrival.crossfade : arrival.tail } : undefined}>
             {row}
           </Animated.View>
         );

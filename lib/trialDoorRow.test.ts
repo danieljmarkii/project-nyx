@@ -56,7 +56,7 @@ describe('the Pet tab door (§5.2)', () => {
   it('agrees with the screen on when the trial ends', () => {
     const i = input();
     const screen = buildTrialScreenModel({
-      petId: 'p', pet: { id: 'p', name: 'Mochi' }, petsLoaded: true, petName: 'Mochi', isActivePet: true,
+      petId: 'p', pet: { id: 'p', name: 'Mochi' }, petsLoaded: true, petName: 'Mochi',
       trial: { status: 'loaded', input: i, inputIsForPet: true },
       facts: { status: 'ready', facts: null },
       allowedSet: { status: 'unknown' },
@@ -98,7 +98,7 @@ describe('the Pet tab door (§5.2)', () => {
 
 function screenFor(i: TrialCardInput) {
   const m = buildTrialScreenModel({
-    petId: 'p', pet: { id: 'p', name: 'Mochi' }, petsLoaded: true, petName: 'Mochi', isActivePet: true,
+    petId: 'p', pet: { id: 'p', name: 'Mochi' }, petsLoaded: true, petName: 'Mochi',
     trial: { status: 'loaded', input: i, inputIsForPet: true },
     facts: { status: 'ready', facts: null },
     allowedSet: { status: 'unknown' },

@@ -6,6 +6,16 @@
 // ── ONE PREDICATE PER FACT, EACH THE NEIGHBOUR'S ──────────────────────────────
 //   • An EPISODE is a vomit row after the engine's re-log collapse (`episodeDaysOf`,
 //     D2-1) — four rows of one bout are one mark.
+//   • A CONTINUATION day holds a vomit row but no episode start: a bout that began the
+//     night before and went on past midnight (CUL-1226). The rose stays the episode's,
+//     but the day's WORDS follow its rows, so it is never spoken as "no vomiting" — the
+//     History strip's rule (`lib/stripMarks.ts`, NEVER A FALSE ABSENCE). The bout each
+//     row belongs to is read off the engine's own collapse (`collapseEpisodes`, the same
+//     gap `episodeDaysOf` uses), never a restated gap (C-34).
+//   • The RECORD'S START is the first surviving event that is not a look, by its parsed
+//     instant — History's definition (`TYPE_FIRSTS_SQL` → `readRecordStartDay`,
+//     `lib/historyQueries.ts`), mirrored here because that module imports this one
+//     (CUL-1194; GAP-24's one start, held equal by `lib/monthReads.test.ts`).
 //   • A LOGGED day is a day the owner logged ANYTHING about the pet — every event type
 //     except a look (`check_in`: a look never enters another surface's coverage line,
 //     `docs/nyx-daily-look-requirements.md`). This is the COVERAGE question, and the
@@ -39,16 +49,19 @@
 
 import { getDb, getTimeline, type TimelineRow } from './db';
 import { episodeDaysOf } from './chartModels';
+import { collapseEpisodes, DEFAULT_MEAL_TIMING_CONFIG, type MealTimingConfig } from './mealTiming';
 import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import { isFinishedMeal, qualifyingIntakeMeals, type AnalyticsMeal } from './analytics';
 import { getActiveArrangementsForPet } from './feedingArrangements';
 import { readCopies } from './readCopy';
 import { isWorthACall } from './readState';
 import { dayKeyToLocalDate, toLocalDayKey } from './utils';
-import type { MonthPhotoDay } from './monthModel';
+import type { MonthContinuationDay, MonthPhotoDay } from './monthModel';
 
 export interface MonthFacts {
   episodeDays: string[];
+  /** Days holding a vomit row but no episode start, each with the day its bout began. */
+  continuationDays: MonthContinuationDay[];
   loggedDays: string[];
   leftSomeDays: string[];
   dosedDays: string[];
@@ -65,6 +78,8 @@ export interface MonthReadRange {
 }
 
 const MS_PER_DAY = 86_400_000;
+/** The Julian day of 1970-01-01T00:00Z — `julianday()`'s answer mapped back to an instant. */
+const UNIX_EPOCH_JULIAN_DAY = 2_440_587.5;
 /** The daily look's event type — the one row that is never coverage (§5.6, T-5). */
 export const LOOK_EVENT_TYPE = 'check_in';
 /** Delivered doses — B-618 D1's therapy-delivered count. */
@@ -86,6 +101,47 @@ function slackBounds(range: MonthReadRange): { after: string; before: string } |
 function keyOfIso(iso: string): string | null {
   const ms = Date.parse(iso);
   return Number.isFinite(ms) ? toLocalDayKey(new Date(ms)) : null;
+}
+
+/** A `julianday()` answer as an instant, or null. Rounded to the ms as History rounds it
+ *  (`msOfJulianDay`, `lib/historyQueries.ts`): a double carries a Julian day to ~50µs,
+ *  and a row at exactly local midnight must not come back a hair before it, on the
+ *  previous day. */
+function msOfJulianDay(jd: number | null | undefined): number | null {
+  return jd == null || !Number.isFinite(jd) ? null : Math.round((jd - UNIX_EPOCH_JULIAN_DAY) * MS_PER_DAY);
+}
+
+/**
+ * The days a bout CONTINUES into: a day holding a vomit row whose bout began on an
+ * earlier day, and on which no bout begins. Each row's bout is the latest episode start
+ * at or before it, from the engine's own collapse — bouts are disjoint in time, so at
+ * most one can cross into a day. A day on which a new bout begins is an episode day and
+ * speaks its own count; it is not listed here. Ordered by day.
+ *
+ * STATED BLIND SPOT (C-41): a bout is read only as far back as the rows the caller hands
+ * over. The month's read reaches a day of slack before its first day, so a bout running
+ * longer than that is dated from its first row in the slack. The read's first day is at
+ * least three weeks before the grid's first row (nine weeks of bars over at most six
+ * rows), so no drawn day is reached.
+ */
+export function continuationDaysOf(
+  rows: readonly { ms: number }[],
+  keyOf: (ms: number) => string,
+  config: MealTimingConfig = DEFAULT_MEAL_TIMING_CONFIG,
+): MonthContinuationDay[] {
+  const valid = rows.filter((r) => Number.isFinite(r.ms));
+  const starts = collapseEpisodes(valid, config.episodeGapHours).map((r) => r.ms);
+  const startDays = new Set(starts.map(keyOf));
+  const byDay = new Map<string, string>();
+  const sorted = [...valid].sort((a, b) => a.ms - b.ms);
+  let s = 0;
+  for (const r of sorted) {
+    while (s + 1 < starts.length && starts[s + 1] <= r.ms) s += 1;
+    const day = keyOf(r.ms);
+    const from = keyOf(starts[s]);
+    if (from !== day && !startDays.has(day) && !byDay.has(day)) byDay.set(day, from);
+  }
+  return [...byDay].map(([day, from]) => ({ day, from })).sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
 }
 
 function inRange(key: string, range: MonthReadRange): boolean {
@@ -134,11 +190,18 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
           AND e.occurred_at >= ? AND e.occurred_at < ?`,
       [petId, bounds.after, bounds.before],
     ),
-    db.getFirstAsync<{ occurred_at: string }>(
-      `SELECT occurred_at FROM events
-        WHERE pet_id = ? AND deleted_at IS NULL
-        ORDER BY occurred_at ASC LIMIT 1`,
-      [petId],
+    // The record's start: never a look (§5.6), and the earliest by the PARSED instant —
+    // a text ORDER BY sorts `…+00:00` before `…Z` whatever the instants (C-40), and
+    // `MIN(julianday())` skips a row whose instant does not parse (CUL-1194).
+    // STATED BLIND SPOT (C-41): the start is parsed by SQLite, a row's day by `Date.parse`.
+    // They agree on every spelling the app writes (`…Z`, `…+00:00`); a zoneless
+    // `YYYY-MM-DD HH:MM:SS` would read as UTC here and local there, and could date a row
+    // before the start. No writer produces it (`events.occurred_at` has no SQL default),
+    // and History's `readRecordStartDay` shares the exposure, so the parity test cannot see it.
+    db.getFirstAsync<{ first_jd: number | null }>(
+      `SELECT MIN(julianday(occurred_at)) AS first_jd FROM events
+        WHERE pet_id = ? AND deleted_at IS NULL AND event_type <> ?`,
+      [petId, LOOK_EVENT_TYPE],
     ),
     getActiveArrangementsForPet(petId),
   ]);
@@ -149,6 +212,7 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     .map((r) => ({ ms: Date.parse(r.occurred_at) }))
     .filter((r) => Number.isFinite(r.ms));
   const episodeDays = episodeDaysOf(vomitRows, keyOf).filter((k) => inRange(k, range));
+  const continuationDays = continuationDaysOf(vomitRows, keyOf).filter((c) => inRange(c.day, range));
 
   // Logged: any surviving event that is not a look (the coverage question, see the header).
   const loggedSet = new Set<string>();
@@ -195,13 +259,15 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     // Ordered by day, then the escalation first: a DISTINCT read has no order of its own.
     .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : a.verdict === b.verdict ? 0 : a.verdict === 'worth_a_call' ? -1 : 1));
 
+  const firstMs = msOfJulianDay(firstRow?.first_jd);
   return {
     episodeDays,
+    continuationDays,
     loggedDays: [...loggedSet].sort(),
     leftSomeDays: [...leftSomeSet].sort(),
     dosedDays: [...dosedSet].sort(),
     photoDays,
-    recordStart: firstRow ? keyOfIso(firstRow.occurred_at) : null,
+    recordStart: firstMs === null ? null : keyOf(firstMs),
   };
 }
 

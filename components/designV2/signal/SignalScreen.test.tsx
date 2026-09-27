@@ -210,7 +210,7 @@ beforeEach(() => {
 });
 
 describe('SignalScreen — the sections, in the ruled order', () => {
-  it('title · bars · sentence · compare · lanes · episodes · why', async () => {
+  it('title · bars · sentence · lanes · episodes · why — and a reflection draws no compare (CUL-1359)', async () => {
     mockLoadSignalScreen.mockResolvedValue(ready(benign, noTrial));
     const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
     await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
@@ -219,13 +219,15 @@ describe('SignalScreen — the sections, in the ruled order', () => {
       'signal-screen-title',
       'signal-section-weekly',
       'signal-section-sentence',
-      'signal-section-compare',
       'signal-section-lanes',
       'signal-section-episodes',
       'signal-section-why',
     ].map((id) => ids.indexOf(id));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // The reflection's claim IS the engine's week pair, in its sentence: no local redraw of it.
+    expect(view.queryByTestId('signal-section-compare')).toBeNull();
+    expect(view.queryByTestId('compare-bars')).toBeNull();
     expect(view.queryByTestId('signal-section-script')).toBeNull();
     expect(mockLoadSignalScreen).toHaveBeenCalledWith('pet-1', 'reflection:vomit');
   });
@@ -263,11 +265,11 @@ describe('SignalScreen — the sections, in the ruled order', () => {
   });
 
   it('the compare says "logged N of M days" for both windows and adjudicates nothing; the lanes carry the untimed line', async () => {
-    mockLoadSignalScreen.mockResolvedValue(ready(benign, noTrial));
-    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    mockLoadSignalScreen.mockResolvedValue(ready(timingCached, noTrial));
+    const view = render(<SignalScreen petId="pet-1" identity="postprandial_timing:vomit" />);
     await waitFor(() => expect(view.getByTestId('compare-bars')).toBeTruthy());
-    expect(view.getByTestId('compare-coverage-0').props.children).toMatch(/^logged \d+ of 7 days$/);
-    expect(view.getByTestId('compare-coverage-1').props.children).toMatch(/^logged \d+ of 7 days$/);
+    expect(view.getByTestId('compare-coverage-0').props.children).toMatch(/^logged \d+ of 28 days$/);
+    expect(view.getByTestId('compare-coverage-1').props.children).toMatch(/^logged \d+ of 28 days$/);
     expect(view.getByTestId('timing-untimed-line').props.children).toMatch(/couldn't be timed against a meal/);
     const text = allText(view.toJSON()).join(' ').toLowerCase();
     expect(text).not.toMatch(/\bfair/);
@@ -380,6 +382,16 @@ describe('SignalScreen — the sections, in the ruled order', () => {
 
   // TS-9 (CUL-1305): a finding Home withholds says WHY, never "not in the picture", which over
   // a vomiting finding could read as "it stopped" (C-37: return the reason).
+  // CUL-1218: a type this build cannot title — honest, and never "gone".
+  it('the unsupported state says the app cannot show it yet; it never says the signal is gone', async () => {
+    mockLoadSignalScreen.mockResolvedValue({ status: 'unsupported', petName: 'Nyx' });
+    const view = render(<SignalScreen petId="pet-1" identity="gap_shortening:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-unsupported')).toBeTruthy());
+    expect(view.getByText("I can't show this kind of signal yet.")).toBeTruthy();
+    expect(view.queryByTestId('signal-screen-missing')).toBeNull();
+    expect(view.queryByTestId('signal-screen-title')).toBeNull();
+  });
+
   it('the withheld state explains and points to the vet; it never says the signal is gone', async () => {
     mockLoadSignalScreen.mockResolvedValue({ status: 'withheld', petName: 'Nyx' });
     const view = render(<SignalScreen petId="pet-1" identity="trial_response" />);

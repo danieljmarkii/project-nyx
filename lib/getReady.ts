@@ -1,4 +1,6 @@
 import { visibleFindings } from './signalVisible';
+import { countedAnotherTrial, signalTrialWindowFor, type SignalTrialAnchor } from './signalTrialAnchor';
+import { signalTitle } from './signalTitle';
 import { isStoodDown } from './signalCopy';
 import {
   splitPastCourses,
@@ -18,6 +20,7 @@ import type { MedItemName } from './rundown';
 import type { TrialScreenModel } from './trialScreenModel';
 import type { TrialResponseCounts } from './trialResponseCounts';
 import { buildTrialRecheck, withoutSymptoms, type TrialRecheck } from './trialRecheck';
+import type { TrialFactsState } from '../hooks/useTrialFacts';
 
 // "Worth raising" — the Get-ready block (CUL-903 VV-5; spec §4.1 B1, §7 AC 5, mock B1).
 //
@@ -129,6 +132,15 @@ export interface WorthRaisingInput {
   findings: CachedFinding[] | null;
   /** Home's B-789 suppression, passed through so the two surfaces cannot disagree. */
   withholdFallingVomit: boolean;
+  /**
+   * The Signal's trial anchor (CUL-1360 / CUL-1364): the cache row's `generated_at` and
+   * the trial running for the APPOINTMENT's pet (`signalTrialWindowOf`). The same anchor
+   * Home's stack reads, so a trial finding counted over a trial since replaced gets Home's
+   * answer here: a falling pair is not quoted, a rising one is quoted with its own day
+   * named. REQUIRED, never defaulted (C-37): a default would quote an older trial's
+   * reassurance under the new trial's row by writing nothing.
+   */
+  signalAnchor: SignalTrialAnchor;
   /** `resolveTrialStrip`'s model for this pet, or null when no trial is running. */
   trialStrip: TrialStripModel | null;
   /**
@@ -138,6 +150,14 @@ export interface WorthRaisingInput {
    * refusal onto the page, and a default would drop it by writing nothing.
    */
   trialScreen: TrialScreenModel | null;
+  /**
+   * The trial's predicate facts, read for the recheck's oral-route lane (CUL-1342: the
+   * chewable and food-paired doses `buildTrialRecheck` quotes under *anything besides the
+   * trial diet*). Built with `recheckFactsState`, so a read that failed or answered for a
+   * different trial is `unreadable`. REQUIRED, never defaulted (C-37): a default would
+   * leave a logged chewable off the page by writing nothing. Read only with `trialScreen`.
+   */
+  trialFacts: TrialFactsState;
   /**
    * The device's own vomiting counts behind the recheck's symptoms sentence
    * (`TrialCardInput.trialResponse`), or null. Read only to decide whether the Signal's
@@ -221,6 +241,8 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
         rundown: input.rundown,
         weight: weight && weight.id === 'weight-stale' ? { text: weight.text, detail: weight.detail } : null,
         statedDeclines: input.intakeDecline.map((d) => d.headline),
+        facts: input.trialFacts,
+        nowMs: input.nowMs,
       })
     : null;
   const trial = recheck ? recheckRow(recheck) : trialRow(input.trialStrip);
@@ -345,7 +367,7 @@ function buildSignalRows(input: WorthRaisingInput): SignalEntry[] {
   // where it appears nowhere else. The rundown block has a tile for timing and none for
   // a correlation; the correlation is the row with no second home.
   let standDowns = 0;
-  return visibleFindings(input.findings, input.withholdFallingVomit, input.nowMs)
+  return visibleFindings(input.findings, input.withholdFallingVomit, input.nowMs, input.signalAnchor)
     .filter((f) => !isStoodDown(f.finding) || ++standDowns <= 1)
     .map((f, i) => ({
       finding: f.finding,
@@ -353,7 +375,12 @@ function buildSignalRows(input: WorthRaisingInput): SignalEntry[] {
         id: `signal-${i}`,
         // VERBATIM. The Change Contract's phrased, count-anchored sentence is the unit.
         text: f.text,
-        detail: null,
+        // CUL-1364: a rising trial pair counted over a trial since replaced says "in the
+        // trial's 22 days" under a trial row reading day 1. It is named by its own day, the
+        // title Home gives it ("Diet trial, day 22 of 56"); every other row has no detail.
+        detail: countedAnotherTrial(f.finding, input.signalAnchor)
+          ? signalTitle(f.finding, signalTrialWindowFor(f.finding, input.signalAnchor))
+          : null,
         source: 'signal' as const,
         sourceLabel: 'from the Signal',
         isSafety: f.finding.priorityClass === 'safety',

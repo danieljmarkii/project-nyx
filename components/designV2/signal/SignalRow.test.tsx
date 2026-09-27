@@ -6,7 +6,8 @@
 const mockLoadSignalRowTrial = jest.fn(async (..._a: unknown[]) => null as unknown);
 jest.mock('../../../lib/signalLead', () => ({ loadSignalRowTrial: (...a: unknown[]) => mockLoadSignalRowTrial(...a) }));
 
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from '../../../lib/utils';
 import { StyleSheet } from 'react-native';
 import { theme } from '../../../constants/theme';
 import type { CachedFinding, SignalFinding } from '../../../lib/signal';
@@ -65,14 +66,14 @@ beforeEach(() => jest.clearAllMocks());
 
 describe('S1 — a safety row is words: the headline and the ask, never a chart', () => {
   it.each(SAFETY.map((f) => [f.type, f] as const))('%s: no chart, the ask printed, the server sentence never on Home', (_t, f) => {
-    const view = render(<SignalRow cached={cached(f)} petId="pet-1" onOpen={jest.fn()} />);
+    const view = render(<SignalRow cached={cached(f)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
     for (const id of CHART_IDS) expect(view.queryByTestId(id)).toBeNull();
     expect(view.getByTestId('signal-row-ask')).toBeTruthy();
     expect(view.queryByText(/not a diagnosis/)).toBeNull();
   });
 
   it('the ask is the symptom INK, never the bright rose on white (C-1)', () => {
-    const view = render(<SignalRow cached={cached(SAFETY[4])} petId="pet-1" onOpen={jest.fn()} />);
+    const view = render(<SignalRow cached={cached(SAFETY[4])} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
     expect(StyleSheet.flatten(view.getByTestId('signal-row-ask').props.style).color).toBe(theme.colorEventSymptomInk);
     expect(view.getByTestId('signal-row-ask').props.children).toBe('Worth a call to your vet');
     expect(view.getByTestId('signal-row-eyebrow').props.children).toBe('Photo read · Sep 22');
@@ -81,7 +82,7 @@ describe('S1 — a safety row is words: the headline and the ask, never a chart'
 
 describe('the thumbnail — insight rows, drawn from the finding', () => {
   it('a timing finding draws its lane', () => {
-    const view = render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={jest.fn()} />);
+    const view = render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
     expect(view.getByTestId('signal-row-thumb-lane')).toBeTruthy();
     expect(view.queryByTestId('signal-row-ask')).toBeNull();
   });
@@ -91,7 +92,7 @@ describe('the thumbnail — insight rows, drawn from the finding', () => {
       { label: 'This week', count: 3, tone: 'concern' },
       { label: 'Last week', count: 5, tone: 'muted' },
     ]);
-    const view = render(<SignalRow cached={cached(reflection)} petId="pet-1" onOpen={jest.fn()} />);
+    const view = render(<SignalRow cached={cached(reflection)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
     expect(view.getByTestId('signal-row-thumb-pair')).toBeTruthy();
     expect(view.getByText('This week')).toBeTruthy();
     expect(view.getByText('Last week')).toBeTruthy();
@@ -103,14 +104,14 @@ describe('the thumbnail — insight rows, drawn from the finding', () => {
   it('S2: a withheld prior draws no pair — never a lone numerator bar', () => {
     const withheld = { ...reflection, density: { comparable: false, currentLoggingDays: 2, priorLoggingDays: 6 } } as SignalFinding;
     expect(weekPairOf(withheld as never)).toBeNull();
-    const view = render(<SignalRow cached={cached(withheld)} petId="pet-1" onOpen={jest.fn()} />);
+    const view = render(<SignalRow cached={cached(withheld)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
     expect(view.queryByTestId('signal-row-thumb-pair')).toBeNull();
     // With no pair, the count line says what the sentence says: this week alone.
     expect(view.getByTestId('signal-row-sub').props.children).toBe('3 this week');
   });
 
   it('every other type is words only', () => {
-    const view = render(<SignalRow cached={cached(correlation)} petId="pet-1" onOpen={jest.fn()} />);
+    const view = render(<SignalRow cached={cached(correlation)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
     for (const id of CHART_IDS) expect(view.queryByTestId(id)).toBeNull();
   });
 });
@@ -118,13 +119,13 @@ describe('the thumbnail — insight rows, drawn from the finding', () => {
 describe('the door', () => {
   it('opens its own finding', () => {
     const onOpen = jest.fn();
-    const view = render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={onOpen} />);
+    const view = render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={onOpen} generatedAt={null} />);
     fireEvent.press(view.getByTestId('signal-row'));
     expect(onOpen).toHaveBeenCalledWith(timing);
   });
 
   it('is one button: role, the door hint, a label that says every line', () => {
-    const view = render(<SignalRow cached={cached(SAFETY[0])} petId="pet-1" onOpen={jest.fn()} />);
+    const view = render(<SignalRow cached={cached(SAFETY[0])} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
     const row = view.getByTestId('signal-row');
     expect(row.props.accessibilityRole).toBe('button');
     expect(row.props.accessibilityHint).toBe(DOOR_A11Y_HINT);
@@ -132,7 +133,7 @@ describe('the door', () => {
   });
 
   it('C-5: the row’s own box is the target — no slop to share with its neighbours, and a 44pt floor', () => {
-    const view = render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={jest.fn()} />);
+    const view = render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
     const row = view.getByTestId('signal-row');
     expect(row.props.hitSlop).toBeUndefined();
     expect(StyleSheet.flatten(row.props.style).minHeight).toBe(ROW_MIN_HEIGHT);
@@ -163,14 +164,40 @@ describe('the trial card names the local trial, as its screen does', () => {
 
   it('reads the trial for the ROW’s pet and re-titles; before it answers, the cache’s own day', async () => {
     mockLoadSignalRowTrial.mockResolvedValue({ startDay: '2026-09-01', identity: 'Rabbit trial', dayCounter: 21, targetDays: 56, foodLabel: null });
-    const view = render(<SignalRow cached={cached(trialCard)} petId="pet-9" onOpen={jest.fn()} />);
+    const view = render(<SignalRow cached={cached(trialCard)} petId="pet-9" onOpen={jest.fn()} generatedAt={null} />);
     expect(view.getByTestId('signal-row-headline').props.children).toBe('Diet trial, day 20 of 56');
     await waitFor(() => expect(view.getByTestId('signal-row-headline').props.children).toBe('Rabbit trial, day 21 of 56'));
     expect(mockLoadSignalRowTrial).toHaveBeenCalledWith('pet-9');
   });
 
+  // CUL-1360: the cache counted rabbit (day 20, just after midnight today, so rabbit started
+  // nineteen days ago); the phone now runs chicken, started today. The row reads the anchor.
+  describe('a trial card counted over a trial since replaced', () => {
+    const today = toLocalDayKey(new Date());
+    const [y, m, d] = today.split('-').map(Number);
+    const counted = new Date(y, m - 1, d, 0, 30).toISOString();
+    const settle = async (view: ReturnType<typeof render>) => {
+      await waitFor(() => expect(mockLoadSignalRowTrial).toHaveBeenCalled());
+      await act(async () => {});
+      return view.getByTestId('signal-row-headline').props.children;
+    };
+
+    it('keeps its own day, never the running trial’s name and day', async () => {
+      mockLoadSignalRowTrial.mockResolvedValue({ startDay: today, identity: 'Chicken trial', dayCounter: 1, targetDays: 56, foodLabel: null });
+      const view = render(<SignalRow cached={cached(trialCard)} petId="pet-9" onOpen={jest.fn()} generatedAt={counted} />);
+      expect(await settle(view)).toBe('Diet trial, day 20 of 56');
+    });
+
+    it('the trial it DID count still names it', async () => {
+      const start = dayKeyFromIndex((localDayIndexOf(today) as number) - 19);
+      mockLoadSignalRowTrial.mockResolvedValue({ startDay: start, identity: 'Rabbit trial', dayCounter: 20, targetDays: 56, foodLabel: null });
+      const view = render(<SignalRow cached={cached(trialCard)} petId="pet-9" onOpen={jest.fn()} generatedAt={counted} />);
+      expect(await settle(view)).toBe('Rabbit trial, day 20 of 56');
+    });
+  });
+
   it('no other row reads the trial', () => {
-    render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={jest.fn()} />);
+    render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
     expect(mockLoadSignalRowTrial).not.toHaveBeenCalled();
   });
 });

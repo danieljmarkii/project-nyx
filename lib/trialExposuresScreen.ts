@@ -238,6 +238,26 @@ function doseRow(exposure: OralRouteExposure, today: string): TrialExposureRow {
 }
 
 /**
+ * The "Given by mouth" group's rows, newest first — exported so Get ready's recheck
+ * (CUL-1342, `lib/trialRecheck.ts`) quotes THIS list's rows rather than a second
+ * wording of them: the same `oralRouteCopy` reason, the same "flavoured chewable" /
+ * "given inside food" tag, the same dates.
+ *
+ * Null exactly when `buildTrialExposuresScreen` is null (no readable record, or no
+ * range), so a caller can never list doses over a record this screen would refuse to
+ * describe. An empty array is "the record answered and holds no oral-route dose", which
+ * is still NOT a claim that none was given (G2): this screen renders no group for it,
+ * and a quoting surface renders nothing either.
+ */
+export function oralRouteRows(facts: TrialFacts | null, nowMs: number): TrialExposureRow[] | null {
+  if (!facts || !facts.range) return null;
+  const today = toLocalDayKey(new Date(nowMs));
+  return [...facts.oralRoute]
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+    .map((exposure) => doseRow(exposure, today));
+}
+
+/**
  * THE WINDOW THE LIST WAS DRAWN OVER — `exposureRange`, never `range`.
  *
  * This is the rule that cost three adversarial rounds elsewhere in this feature,
@@ -287,9 +307,7 @@ export function buildTrialExposuresScreen(
   const feedings = [...facts.exposures.items]
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
     .map((item) => feedingRow(item, today));
-  const doses = [...facts.oralRoute]
-    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
-    .map((exposure) => doseRow(exposure, today));
+  const doses = oralRouteRows(facts, nowMs) ?? [];
 
   const groups: TrialExposureGroup[] = [];
   const bothPresent = feedings.length > 0 && doses.length > 0;
@@ -303,9 +321,9 @@ export function buildTrialExposuresScreen(
     // than symmetry. Dropping it in the doses-only case leaves a prescribed
     // medication sitting bare under the words "Outside the trial diet" — which
     // reads as the app calling a dose the owner was told to give a transgression,
-    // on the record their vet reads. It is unreachable today (the card draws the
-    // link only over a non-zero FEEDING count), and that is a reachability
-    // accident rather than a decision, so the rule holds here instead.
+    // on the record their vet reads. The doses-only case is REACHABLE: the trial
+    // screen's door opens over a dose alone (CUL-1363), and Get ready's recheck
+    // points here when it caps its dose rows (CUL-1342).
     groups.push({ title: TRIAL_EXPOSURES_GROUP_ORAL, rows: doses });
   }
 

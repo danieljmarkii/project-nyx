@@ -51,15 +51,25 @@ jest.mock('../../../hooks/useEvents', () => ({
     loadTodayEvents: () => mockLoad(),
   }),
 }));
+let mockSpecies = 'cat';
 jest.mock('../../../store/petStore', () => ({
-  usePetStore: (sel: (s: any) => unknown) => sel({ activePet: { id: 'p1', name: 'Nyx', species: 'cat' } }),
+  usePetStore: (sel: (s: any) => unknown) => sel({ activePet: { id: 'p1', name: 'Nyx', species: mockSpecies } }),
 }));
+// The look header's two flag reads, driven so the quiet line meets the REAL gate
+// (`lookCardLive`, BRK-21) rather than a species check.
+let mockLookEligible = true;
+let mockLookOptedIn = true;
+jest.mock('../../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => mockLookEligible }));
+jest.mock('../../../lib/betaFeatures', () => ({ useBetaOptIn: () => mockLookOptedIn }));
 jest.mock('../../../store/syncStore', () => ({
   useSyncStore: (sel: (s: { hydrationTick: number }) => unknown) => sel({ hydrationTick: 0 }),
 }));
 // The gate, as the flag-off guard proves it is read (the one hook).
 let mockHistoryV2 = false;
 jest.mock('../../../hooks/useHistoryV2', () => ({ useHistoryV2: () => mockHistoryV2 }));
+// The app in the foreground: jest's AppState is not `active`, and a card never draws its
+// first paint while the app is not active (CUL-1375).
+jest.mock('../../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 // The paint ledger is the real one; every claim it grants is recorded (a draw's opacity
 // cannot be caught mid-flight under the mocked native driver). A claim is the trigger.
 const mockClaims: string[] = [];
@@ -85,7 +95,8 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { AccessibilityInfo, LayoutAnimation } from 'react-native';
 import { useEventStore } from '../../../store/eventStore';
 import { useReducedMotionStore } from '../../../store/reducedMotionStore';
-import { TODAY_EMPTY_LINE, TODAY_EMPTY_LOOK_LINE, TODAY_FAILED_LINE, TodayCard } from './TodayCard';
+import { TODAY_EMPTY_LINE, TODAY_EMPTY_LOOK_LINE, TODAY_FAILED_LINE, TODAY_MEAL_TAIL, TodayCard } from './TodayCard';
+import { todayMealNudge } from '../../../lib/lookCard';
 
 const at = (h: number, m: number): string => {
   const d = new Date();
@@ -105,6 +116,9 @@ const SEP_17 = [
 beforeEach(() => {
   jest.clearAllMocks();
   mockHistoryV2 = false;
+  mockSpecies = 'cat';
+  mockLookEligible = true;
+  mockLookOptedIn = true;
   mockClaims.length = 0;
   settleChain = null;
   mockOutstanding.mockReturnValue(false);
@@ -159,13 +173,37 @@ describe('the three states below "has rows" (C-12)', () => {
     expect(TODAY_EMPTY_LINE + TODAY_EMPTY_LOOK_LINE).not.toMatch(/!/);
   });
 
-  it('a day holding only a look is still the quiet day', () => {
+  // BRK-21 — the look-only day was pinned as "Nothing logged yet"; inverted. The day is
+  // not empty, she answered: the line asks about the bowl instead.
+  it('a day holding only a look never says "Nothing logged yet" — it asks about the bowl', () => {
     useEventStore.setState({
       todayRead: { petId: 'p1', state: 'ready' },
       todayEvents: [row('lk', 'check_in', 9, 0, { look_outcome: 'observed', look_words: 'subdued' }) as never],
     });
     const t = render(<TodayCard />);
-    expect(t.getByTestId('today-empty')).toBeTruthy();
+    const empty = t.getByTestId('today-empty');
+    expect(t.queryByText(TODAY_EMPTY_LINE, { exact: false })).toBeNull();
+    expect(t.queryByText(TODAY_EMPTY_LOOK_LINE, { exact: false })).toBeNull();
+    expect(empty.props.children).toBe(`${todayMealNudge('Nyx')} ${TODAY_MEAL_TAIL}`);
+    expect(empty.props.children).not.toMatch(/!/);
+  });
+
+  it('off the daily_look rollout the quiet line never points at a header that is not there', () => {
+    useEventStore.setState({ todayRead: { petId: 'p1', state: 'ready' } });
+    for (const [eligible, optedIn] of [[false, true], [true, false]]) {
+      mockLookEligible = eligible;
+      mockLookOptedIn = optedIn;
+      const t = render(<TodayCard />);
+      expect(t.getByTestId('today-empty').props.children).toBe(TODAY_EMPTY_LINE);
+      t.unmount();
+    }
+  });
+
+  it('a pet of species other has no look, so no pointer to one', () => {
+    mockSpecies = 'other';
+    useEventStore.setState({ todayRead: { petId: 'p1', state: 'ready' } });
+    const t = render(<TodayCard />);
+    expect(t.getByTestId('today-empty').props.children).toBe(TODAY_EMPTY_LINE);
   });
 });
 

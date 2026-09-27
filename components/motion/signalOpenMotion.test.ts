@@ -3,7 +3,7 @@
 
 import { Animated } from 'react-native';
 import { renderHook } from '@testing-library/react-native';
-import { DRAW_IN_MOTION } from './drawInMotion';
+import { DRAW_IN_MOTION, drawInPlan } from './drawInMotion';
 import { FOLD_MOTION } from './foldMotion';
 import { SIGNAL_OPEN_MOTION, useSignalOpen } from './signalOpenMotion';
 
@@ -31,17 +31,19 @@ describe('the three beats fit the budget, and are the fold’s own physics', () 
     expect(DRAW_IN_MOTION.dotStaggerMs + DRAW_IN_MOTION.dotMs).toBeLessThanOrEqual(budget);
   });
 
-  it('what trails the budget, measured and stated: a chart’s own label tail (D2-1’s numbers, the mock’s CSS)', () => {
-    // The counts and dates on the weekly bars land 480ms after the first bar starts and take
-    // the fold's 300ms — 780ms, eighty past the screen's budget. That tail is the chart
-    // family's vocabulary (`docs/culprit-design-v4-mockups.html` §03, `.drawin` verbatim),
-    // owned by D2-1 and drawn identically wherever the chart is; the screen's three beats
-    // are inside 700. Pinned here so a change to either number is a decision, not a drift.
-    expect(DRAW_IN_MOTION.barLabelDelayMs + DRAW_IN_MOTION.labelMs).toBe(780);
-    expect(DRAW_IN_MOTION.compareLabelDelayMs + DRAW_IN_MOTION.labelMs).toBeLessThanOrEqual(SIGNAL_OPEN_MOTION.budgetMs);
-    // A lane of n dots staggers 28ms a dot: fourteen dots after the first can still pop
-    // fully inside the budget; a longer lane's tail is the lane's, as on Patterns.
-    expect(Math.floor((SIGNAL_OPEN_MOTION.budgetMs - DRAW_IN_MOTION.dotMs) / DRAW_IN_MOTION.dotStaggerMs)).toBe(14);
+  it('nothing trails the budget any more: the chart family ends inside it (CUL-1223, PM option a)', () => {
+    // The screen's budget IS the draw-in's ceiling — one number, so a chart on this screen
+    // and the screen's beats cannot drift apart. `drawInPlan`'s property test pins every
+    // kind and count inside it; here, the two consumers this screen owns.
+    expect(SIGNAL_OPEN_MOTION.budgetMs).toBe(DRAW_IN_MOTION.budgetMs);
+    const weekly = drawInPlan('bars', [9]);
+    expect(weekly.markDelay(8) + weekly.markMs).toBeLessThanOrEqual(SIGNAL_OPEN_MOTION.budgetMs);
+    expect(weekly.labelDelay + weekly.labelMs).toBeLessThanOrEqual(SIGNAL_OPEN_MOTION.budgetMs);
+    // The compare draws on the landing, not under an opacity-0 view.
+    const compare = drawInPlan('compare', [2], SIGNAL_OPEN_MOTION.landDelayMs);
+    expect(compare.markDelay(0)).toBe(SIGNAL_OPEN_MOTION.landDelayMs);
+    expect(compare.markDelay(1) + compare.markMs).toBeLessThanOrEqual(SIGNAL_OPEN_MOTION.budgetMs);
+    expect(compare.labelDelay + compare.labelMs).toBeLessThanOrEqual(SIGNAL_OPEN_MOTION.budgetMs);
   });
 
   it('no beat is under 150ms or over 500ms without a reason written down (the Motion Designer’s floor)', () => {
@@ -73,6 +75,19 @@ describe('useSignalOpen — the landing value', () => {
     rerender({ arrived: true, identity: 'k2', reducedMotion: false, appActive: true });
     expect(timingSpy).toHaveBeenCalledTimes(4);
     expect(result.current.transform).toHaveLength(1);
+  });
+
+  it('the words settle DOWN, the house direction: the drift seeds at −driftPt (CUL-1223, WBC-3)', () => {
+    // Hold the animation so the seed is observable (a mocked driver may otherwise finish
+    // synchronously and pin the end state).
+    const parallel = jest
+      .spyOn(Animated, 'parallel')
+      .mockReturnValue({ start: jest.fn(), stop: jest.fn(), reset: jest.fn() } as unknown as Animated.CompositeAnimation);
+    const { result } = renderHook(() => useSignalOpen({ arrived: true, identity: 'k', reducedMotion: false, appActive: true }));
+    const y = (result.current.transform[0].translateY as unknown as { __getValue: () => number }).__getValue();
+    expect(y).toBe(-SIGNAL_OPEN_MOTION.driftPt);
+    expect(y).toBeLessThan(0);
+    parallel.mockRestore();
   });
 
   it('reduced motion: instant — nothing is started, the value sits at its end state', () => {

@@ -41,6 +41,7 @@ import {
 } from './dietTrialCard';
 import { buildForTheCall, type ForTheCall } from './trialForTheCall';
 import { buildTrialLedger, type TrialLedger } from './trialLedger';
+import { oralRouteRows } from './trialExposuresScreen';
 import type { TrialAllowedSet } from './trialAllowedSet';
 import { localDayIndex, localDayIndexOf, toLocalDayKey } from './utils';
 import { getDietTrialProgress } from './analytics';
@@ -65,6 +66,12 @@ export const TO_HOME = 'Go Home';
 
 export function unreadableLine(petName: string): string {
   return `I couldn’t pull ${petName}’s trial just now.`;
+}
+
+/** §3.5 / S9 (CUL-1336) — the ledger's read failed while the trial's did not. Said where the
+ *  ledger would be, beside *Try again*, so the facts below it are not mistaken for all there is. */
+export function ledgerUnreadableLine(petName: string): string {
+  return `I couldn’t pull ${petName}’s week-by-week record just now.`;
 }
 
 export function noTrialLine(petName: string): string {
@@ -111,6 +118,10 @@ export interface TrialScreenTrial {
   allowedFoods: TrialScreenDoor | null;
   /** §3.5 — null on every state that withholds it. */
   ledger: TrialLedger | null;
+  /** §3.5, S9 (CUL-1336) — `ledgerUnreadableLine`, where the ledger would be, when its read
+   *  FAILED on a state that would draw one. Null on every state that withholds the ledger
+   *  anyway: a failed read is never a reason to say more than the answered one would. */
+  ledgerUnreadable: string | null;
   /** §3.6 — the card's record region, in its order, with the qualifier lifted to `qualifier`. */
   facts: TrialCardLine[];
   /** §3.7 — `resolveTrialStrip(input).trialResponseLine`, verbatim. */
@@ -152,8 +163,6 @@ export interface TrialScreenModelArgs {
   petsLoaded: boolean;
   /** The record's pet name for copy (`resolveRecordPetName`, C-9). */
   petName: string;
-  /** Whether the route's pet is the active one — `/report` reads the active pet. */
-  isActivePet: boolean;
   trial: { status: DietTrialStatus; input: TrialCardInput | null; inputIsForPet: boolean };
   facts: TrialFactsState;
   allowedSet: TrialAllowedSet;
@@ -197,6 +206,11 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
   // this pet the screen draws nothing that counts, so a grid can never pop in under a
   // caption from a different read.
   if (facts.status === 'unknown') return { kind: 'loading' };
+  // …and for THIS TRIAL (CUL-1336). The facts hook is keyed by pet, so a replaced trial's
+  // facts can sit beside the new trial's card until both reads land: not yet, never theirs.
+  if (facts.status === 'ready' && facts.trialId !== undefined && facts.trialId !== input.trial.id) {
+    return { kind: 'loading' };
+  }
 
   // S7 — WHERE HOME WITHHOLDS ITS RATIO, SO DOES THIS. Over a pet that may not be eating
   // (`isAnimalNotEating`, the raw refusal facts, so a refusal the register has stood down
@@ -220,12 +234,27 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
   // ("Nothing is on the record for this trial yet.") over logged, refused meals. There its
   // fact lines are dropped: zero feedings means zero off-diet, so no floor is lost, and
   // saying nothing beats saying "nothing" (adversarial re-run, TS-4).
+  //
+  // EXCEPT WHERE THE CARD CAN NOW SAY WHY (CUL-1338). When those days hold feedings that
+  // name no food, every register that reached "nothing" speaks a count of them instead
+  // ("20 logged feedings don't name a food, so they can't be checked against the trial
+  // diet."), so the drop would now hide the one true line. Walked for this projection
+  // (coverage null, zero feedings, zero off-diet) register by register: the sentence and
+  // the "so far" paragraph become that disclosure alone; day 1's "Nothing logged yet
+  // today." is withheld by the card itself; the floor sentence needs an off-diet count
+  // there is none of; the free-fed count is the Pet tab's own line. No line states or
+  // implies that anything matched, so nothing reassuring reaches a pet that may not be
+  // eating. The drop stays for the residual (days logged, nothing classified, nothing
+  // unnamed), which no register can yet explain.
   const notEating = isAnimalNotEating(input);
   const running = input.trial.status === 'active';
   const projected = notEating && running;
   const card = trialScreenCard(input);
   const unclassifiedRecord =
-    projected && (input.coverage?.daysLogged ?? 0) > 0 && (input.exposures?.totalFeedings ?? 0) === 0;
+    projected &&
+    (input.coverage?.daysLogged ?? 0) > 0 &&
+    (input.exposures?.totalFeedings ?? 0) === 0 &&
+    (input.exposures?.unclassifiable ?? 0) === 0;
   const strip = resolveTrialStrip(input);
   const state = card.state;
   const decisionState = DECISION_STATES.has(state);
@@ -265,6 +294,17 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
     safety || state === 'milestone' || notEating || facts.status !== 'ready'
       ? null
       : buildTrialLedger({ input, facts: facts.facts, timeZone: args.timeZone });
+  // S9 (CUL-1336): a failed ledger read is said where the ledger would be, never a silent
+  // gap. Only on a state that would draw one: `buildTrialLedger`'s input-side gates.
+  const ledgerUnreadable =
+    facts.status === 'unreadable' &&
+    !safety &&
+    state !== 'milestone' &&
+    !notEating &&
+    !input.freeFed &&
+    !input.freeFedOverlap
+      ? ledgerUnreadableLine(args.petName)
+      : null;
 
   const hasAction = (id: TrialCardAction['id']) => card.actions.some((a) => a.id === id);
   // §3.4: the head alone until the set has hydrated. The door is Jordan's first moment,
@@ -286,29 +326,28 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
     : null;
 
   const offDiet = input.exposures?.offDiet ?? 0;
+  // CUL-1363: a chewable or food-paired dose opens the door too. The list holds them in
+  // its "Given by mouth" group, and until this the only way to reach that group was an
+  // off-diet FEEDING, so a trial whose only exposure was a chewable had no door to it
+  // anywhere. Asked of `oralRouteRows`, the list's own builder, so the door opens exactly
+  // when the list would draw a dose row: never onto an empty screen, never over facts the
+  // list would refuse to read (no range), and never before the facts read answered.
+  const doseRows = facts.status === 'ready' ? oralRouteRows(facts.facts, input.nowMs) : null;
   // §3.6, every state: on an ended trial the list is what the recheck asks about.
-  const exposures = offDiet > 0 ? { label: EXPOSURES_DOOR, sub: null } : null;
+  const exposures =
+    offDiet > 0 || (doseRows?.length ?? 0) > 0 ? { label: EXPOSURES_DOOR, sub: null } : null;
 
   // The state's own actions. The doors carry the card's two references (the allowed list
   // and the exposures list), so neither is repeated as an action; the decision block
-  // carries the milestone's and the overrun's.
-  //
-  // `/report` builds the ACTIVE pet's report, so from another pet's screen either door to
-  // it would build the wrong animal's (C-9). Both are withheld there until the report
-  // takes a pet (CUL-1334). Correct-but-absent beats confidently wrong.
+  // carries the milestone's and the overrun's. Both report doors open the route's pet's
+  // report (`/report?pet=`, CUL-1334), so neither depends on which pet is active.
   const actions = decisionState
     ? []
-    : card.actions.filter(
-        (a) =>
-          a.id !== 'view_allowed_foods' &&
-          a.id !== 'view_exposures' &&
-          (a.id !== 'open_report' || args.isActivePet),
-      );
+    : card.actions.filter((a) => a.id !== 'view_allowed_foods' && a.id !== 'view_exposures');
 
   // The vet report door, unless the state's own action already is that door (S8: one door
   // per action).
-  const report =
-    args.isActivePet && !hasAction('open_report') ? { label: VET_REPORT_DOOR, sub: null } : null;
+  const report = !hasAction('open_report') ? { label: VET_REPORT_DOOR, sub: null } : null;
 
   return {
     kind: 'trial',
@@ -322,6 +361,7 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
     decision: decisionState ? { notes: decisionNotes, actions: card.actions } : null,
     allowedFoods,
     ledger,
+    ledgerUnreadable,
     facts: factLines,
     vomiting: strip?.trialResponseLine ?? null,
     notEating,

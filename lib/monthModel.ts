@@ -87,8 +87,12 @@ export interface MonthDay {
    *  of 3 over a row that showed 1 (the adversarial pass on CUL-1067). It is never in
    *  the month's own counts or its line. */
   outsideMonth: boolean;
-  /** Episodes on the day. Zero is a day with none, not a missing number. */
+  /** Episodes on the day. Zero is a day with no episode START — not a day with no vomit:
+   *  see `continuesFrom`. */
   count: number;
+  /** The day a bout began, when this day holds that bout's rows and no bout of its own
+   *  (CUL-1226): a count of zero here is not "no vomiting". Null otherwise. */
+  continuesFrom: string | null;
   coverage: MonthCoverage;
   /** A medication dose the record says was delivered (given or partial — B-618 D1). */
   medication: boolean;
@@ -99,6 +103,12 @@ export interface MonthDay {
 /** One grid row, Sunday → Saturday. Every slot is a day: the neighbouring months' days
  *  in the first and last row are `outsideMonth`. */
 export type MonthRow = [MonthDay, MonthDay, MonthDay, MonthDay, MonthDay, MonthDay, MonthDay];
+
+/** A day holding a vomit row but no episode start, and the day its bout began. */
+export interface MonthContinuationDay {
+  day: string;
+  from: string;
+}
 
 export interface MonthPhotoDay {
   day: string;
@@ -121,6 +131,9 @@ export interface MonthModelInput {
   recordEmpty?: boolean;
   /** One entry PER EPISODE, after the engine's re-log collapse (`episodeDaysOf`). */
   episodeDays: readonly string[];
+  /** Days a bout continues into from an earlier day (`continuationDaysOf`). They add no
+   *  count and no rose: they only keep the day's words from claiming an absence. */
+  continuationDays?: readonly MonthContinuationDay[];
   /** Days with any logging under the caller's predicate. Duplicates are fine. */
   loggedDays: readonly string[];
   /** Days on which a rated meal was left unfinished. A subset of `loggedDays` in any
@@ -214,15 +227,21 @@ export function compareMonths(a: { year: number; month: number }, b: { year: num
   return a.year - b.year || a.month - b.month;
 }
 
-/** The days a month's read must cover: the nine weeks' first Sunday through the month's
- *  last day — the same span the model draws, so one read feeds both drawings. `today`
- *  decides the last DRAWN day (the current month's weeks end with today's row). */
+/** The days a month's read must cover: the nine weeks' first Sunday through the grid's
+ *  last Saturday — the same span the model draws, so one read feeds both drawings. `today`
+ *  decides the last DRAWN day (the current month's weeks end with today's row).
+ *
+ *  The read runs past the month's last day because the last row DRAWS the next month's
+ *  first days (`outsideMonth`). Stopping at the month's end left them unread, so a past
+ *  month spoke "nothing logged" over Oct 1's vomit, the tail of a Sep 30 bout included
+ *  (the adversarial pass on CUL-1226). The month's own counts still stop at its last day. */
 export function monthReadRange(m: { year: number; month: number }, today: string): { fromKey: string; toKey: string } {
   const first = indexOfKey(keyOf(m.year, m.month, 1), 'firstKey');
   const lastOfMonth = first + daysInMonth(m.year, m.month) - 1;
   const lastDrawn = Math.min(lastOfMonth, indexOfKey(today, 'today'));
   const fromIdx = weekStartIndex(lastDrawn) - 7 * (MONTH_WEEKS - 1);
-  return { fromKey: dayKeyFromIndex(Math.min(fromIdx, first)), toKey: dayKeyFromIndex(lastOfMonth) };
+  const lastCell = lastOfMonth + (6 - weekdayOfIndex(lastOfMonth));
+  return { fromKey: dayKeyFromIndex(Math.min(fromIdx, first)), toKey: dayKeyFromIndex(lastCell) };
 }
 
 export function buildMonthModel(input: MonthModelInput): MonthModel {
@@ -258,6 +277,11 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
     // The worse verdict wins: a day with one read worth a call is a day worth a call.
     photos.set(i, prev === 'worth_a_call' ? prev : p.verdict);
   }
+  const continues = new Map<number, string>();
+  for (const c of input.continuationDays ?? []) {
+    indexOfKey(c.from, 'continuationDays[].from');
+    continues.set(indexOfKey(c.day, 'continuationDays[].day'), c.from);
+  }
   const counts = new Map<number, number>();
   let aheadCount = 0;
   for (const k of input.episodeDays) {
@@ -273,6 +297,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
 
   const dayAt = (i: number, outsideMonth: boolean): MonthDay => {
     let coverage: MonthCoverage;
+    const count = counts.get(i) ?? 0;
     if (i > todayIdx) coverage = 'ahead';
     else if (recordEmpty || (recordIdx != null && i < recordIdx)) coverage = 'before_record';
     else if (leftSome.has(i)) coverage = 'left_some';
@@ -282,7 +307,10 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
       key: dayKeyFromIndex(i),
       dayOfMonth: Number(dayKeyFromIndex(i).slice(8, 10)),
       outsideMonth,
-      count: coverage === 'ahead' ? 0 : (counts.get(i) ?? 0),
+      count: coverage === 'ahead' ? 0 : count,
+      // Only on a day with no count of its own: a day on which a bout begins speaks
+      // that count, which already says the day was not free of vomiting.
+      continuesFrom: coverage === 'ahead' || count > 0 ? null : (continues.get(i) ?? null),
       coverage,
       medication: coverage !== 'ahead' && dosed.has(i),
       photo: coverage === 'ahead' ? 'none' : (photos.get(i) ?? 'none'),

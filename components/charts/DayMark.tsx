@@ -224,6 +224,9 @@ export interface DayMarkProps {
   dayOfMonth: number;
   /** Episodes on the day. A zero is a day with none, not a missing number. */
   count: number;
+  /** The day a bout began, when this day holds its rows and no bout of its own — spoken
+   *  only (CUL-1226): the box stays the episode's. */
+  continuesFrom?: string | null;
   coverage: DayMarkCoverage;
   /** The symptom layer is showing (default on). */
   symptomLayer?: boolean;
@@ -242,6 +245,7 @@ export function DayMark({
   dayKey,
   dayOfMonth,
   count,
+  continuesFrom = null,
   coverage,
   symptomLayer = true,
   medication = false,
@@ -254,7 +258,7 @@ export function DayMark({
   const ahead = coverage === 'ahead';
   const unlogged = coverage === 'unlogged';
   const symptomDay = symptomLayer && count > 0 && !ahead && !unlogged;
-  const label = dayMarkA11yLabel({ dayKey, count, coverage, medication, photo, symptomLayer, today, selected }, noun);
+  const label = dayMarkA11yLabel({ dayKey, count, continuesFrom, coverage, medication, photo, symptomLayer, today, selected }, noun);
   const box: DayMarkBox = ahead ? 'outlined' : unlogged ? 'grey' : symptomDay ? 'rose' : 'white';
   const line: DayMarkLineKind = coverage === 'logged' ? 'solid' : coverage === 'left_some' ? 'broken' : 'none';
   const opens = onPress !== undefined && !ahead;

@@ -62,7 +62,7 @@ const window: SignalTrialWindow = {
 };
 
 const door = (findings: CachedFinding[], withhold: boolean, trialWindow: SignalTrialWindow | null = window) =>
-  trialSignalDoor({ petId: 'pet-1', findings, withholdFallingVomit: withhold, trialWindow, nowMs: NOW });
+  trialSignalDoor({ petId: 'pet-1', findings, withholdFallingVomit: withhold, trialWindow, generatedAt: null, nowMs: NOW });
 
 describe('trialSignalDoor — the door exists exactly when Home draws the card', () => {
   it('names the Signal screen it opens, with the ruled sub-line, and pushes Home’s own href', () => {
@@ -116,6 +116,7 @@ describe('trialSignalDoor — the door exists exactly when Home draws the card',
       findings: [at(0, trialResponse('more_during_trial'))],
       withholdFallingVomit: false,
       trialWindow: window,
+      generatedAt: null,
       nowMs: NOW,
     });
     expect(d?.href).toBe('/signal/trial_response?pet=a%20b%2Fc');
