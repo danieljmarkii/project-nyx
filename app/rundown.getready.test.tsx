@@ -597,7 +597,7 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
   it('flag-on: the same fixture draws the vet’s questions, with the same single read', async () => {
     const r = await getReadyWith(true);
     await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
-    expect(r.getByText('Has Mochi had anything besides the trial diet, chewable medicine included?')).toBeTruthy();
+    expect(r.getByText('Has Mochi had anything besides the trial diet?')).toBeTruthy();
     expect(r.getByText('Meals logged on 21 of 23 days.')).toBeTruthy();
     const { loadDietTrialFacts } = require('../lib/dietTrialFacts');
     expect(loadDietTrialFacts).toHaveBeenCalledTimes(1);

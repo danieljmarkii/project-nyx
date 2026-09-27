@@ -356,7 +356,7 @@ describe('the questions are the vet’s, in his order', () => {
       'by_mouth', 'eating', 'symptoms', 'other_meds', 'weight',
     ]);
     expect(recheck!.questions.map((q) => q.question)).toEqual([
-      'Has Mochi had anything besides the trial diet, chewable medicine included?',
+      'Has Mochi had anything besides the trial diet?',
       'Is Mochi eating the trial diet?',
       'What have Mochi’s symptoms done?',
       'What else is Mochi on?',
@@ -386,6 +386,27 @@ describe('the questions are the vet’s, in his order', () => {
       { text: 'As needed · last dose Jul 20', label: 'Cerenia', role: 'fact' },
     ]);
     expect(answersOf(recheck!, 'weight')).toEqual(['41.2–42.0 lb', '3 weigh-ins']);
+  });
+
+  it('quotes the past courses with their dates: the antiemetic the trial’s vomiting count cannot see past', async () => {
+    // Adversarial pass: a dose-derived Cerenia course through the trial is never an active
+    // regimen, so the first cut answered "None active" under a falling vomiting count.
+    const l = await load(MOCHI_DAY_23);
+    const r = rundown([
+      { key: 'meds', label: 'Current meds', value: 'None active', tap: { kind: 'meds' }, empty: true },
+    ]);
+    const withPast = {
+      ...r,
+      pastMedications: [
+        { key: 'meds_past', label: 'Cerenia', value: '9 doses · Jul 8 – Jul 22', detail: 'No end recorded', tap: null },
+      ],
+    } as unknown as Rundown;
+    const { recheck } = recheckFor(l, { ...l.input, trialResponse: VOMITING }, { rundown: withPast });
+    expect(recheck!.questions.find((q) => q.key === 'other_meds')!.answers).toEqual([
+      { text: 'None active', label: null, role: 'fact' },
+      { text: '9 doses · Jul 8 – Jul 22', label: 'Cerenia', role: 'fact' },
+      { text: 'No end recorded', label: null, role: 'quiet' },
+    ]);
   });
 
   it('quotes the rundown’s empty states as the rundown prints them', async () => {

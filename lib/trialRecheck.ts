@@ -9,6 +9,13 @@
 // what else is she on · weight. Those five headings, in his order, are the only copy this
 // module writes, and none of them states a record fact.
 //
+// THE HEADING NEVER PROMISES MORE THAN ITS ANSWER HOLDS (adversarial pass, TS-8). The first
+// cut asked "…chewable medicine included?" over an answer that counts FEEDINGS only: the
+// oral-route lane (a chewable or food-paired dose, `TrialFacts.oralRoute`) is never folded
+// into the card's feeding counts, so a logged chewable went unnamed under the question that
+// asked for it. The heading asks what the answer answers; bringing the chewable lane in is
+// CUL-1342.
+//
 // Every answer is QUOTED from a module that already renders it:
 //   • the trial's answers come from `buildTrialScreenModel`, the trial screen's own model,
 //     so every number here IS the screen's number for the same record, by construction
@@ -65,7 +72,7 @@ export const RECHECK_EYEBROW = 'What the vet will ask';
 export function recheckQuestion(key: RecheckQuestionKey, petName: string): string {
   switch (key) {
     case 'by_mouth':
-      return `Has ${petName} had anything besides the trial diet, chewable medicine included?`;
+      return `Has ${petName} had anything besides the trial diet?`;
     case 'eating':
       return `Is ${petName} eating the trial diet?`;
     case 'symptoms':
@@ -206,18 +213,37 @@ function isRunning(screen: TrialScreenTrial): boolean {
 }
 
 /**
- * The rundown's Current meds tiles, quoted. One tile per active regimen ("Cerenia" · "As
- * needed · last dose Sep 20"), or its own "None active" — a record statement the rundown
- * already prints under this list, over the same regimens, so quoting it adds no claim.
+ * The rundown's medication tiles, quoted: the Current meds tiles (one per active regimen,
+ * or "None active"), THEN the past-12-months courses block, each with its dates and its end
+ * register.
+ *
+ * WHY THE PAST COURSES ARE HERE (adversarial pass, TS-8). The vet's question is about the
+ * trial, not about this morning, and the confounder it exists to catch is a drug that quiets
+ * the symptom: an antiemetic dose-logged through weeks 2–6 is a dose-derived course, never an
+ * active regimen, so the first cut answered *What else is Rex on?* with "None active" under a
+ * falling vomiting count and a clean diet: the page read as "the trial worked". The courses
+ * are quoted with their own dates rather than filtered to the trial's window, because a
+ * filter would be a second window over the population the block below already split (G6);
+ * the dates let the vet see the overlap, which is Dr. Chen's call to make, not this page's.
  */
 function medAnswers(rundown: Rundown): RecheckAnswer[] {
-  return rundown.tiles
-    .filter((t) => t.key === 'meds')
-    .map((t) =>
-      t.empty
-        ? { text: t.value, label: null, role: 'fact' as const }
-        : { text: t.value, label: t.label, role: 'fact' as const },
-    );
+  const out: RecheckAnswer[] = [];
+  for (const t of rundown.tiles.filter((x) => x.key === 'meds')) {
+    out.push({ text: t.value, label: t.empty ? null : t.label, role: 'fact' });
+  }
+  for (const t of rundown.pastMedications ?? []) {
+    out.push({ text: t.value, label: t.label, role: 'fact' });
+    if (t.detail) out.push({ text: t.detail, label: null, role: 'quiet' });
+  }
+  return out;
+}
+
+/**
+ * The same trial row with *What have {pet}'s symptoms done?* removed — for a page that
+ * already prints the Signal's own trial-response sentence (see `buildWorthRaising`).
+ */
+export function withoutSymptoms(recheck: TrialRecheck): TrialRecheck {
+  return { ...recheck, questions: recheck.questions.filter((q) => q.key !== 'symptoms') };
 }
 
 /**

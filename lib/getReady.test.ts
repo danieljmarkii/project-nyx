@@ -1476,3 +1476,40 @@ describe('TS-8 — the trial row asks the recheck questions (behind trial_screen
     expect(all.filter((t) => t === headline)).toHaveLength(1);
   });
 });
+
+describe('TS-8 — one vomiting comparison per page (adversarial pass: G6 / CUL-746)', () => {
+  const TRIAL_RESPONSE = {
+    type: 'trial_response',
+    priorityClass: 'insight',
+    comparisonDirection: 'fewer_during_trial',
+  } as unknown as SignalFinding;
+  const signalTrial = finding({
+    text: 'Vomiting: 1 in the trial’s 37 days · 18 in the 70 days before.',
+    rank: 1,
+    finding: TRIAL_RESPONSE,
+  });
+
+  it('drops the recheck’s symptoms answer when the Signal’s trial-response row is printed, and keeps the Signal’s', () => {
+    // Non-vacuity: without the Signal row, the recheck states the strip's sentence.
+    const alone = buildWorthRaising(input({ trialStrip: RUNNING_STRIP, trialScreen: screenTrial() }));
+    expect(alone.rows[0].recheck!.questions.map((q) => q.key)).toContain('symptoms');
+
+    const { rows } = buildWorthRaising(
+      input({ findings: [signalTrial], trialStrip: RUNNING_STRIP, trialScreen: screenTrial() }),
+    );
+    expect(rows[0].recheck!.questions.map((q) => q.key)).not.toContain('symptoms');
+    expect(rows.map((r) => r.text)).toContain(signalTrial.text);
+    const vomitingLines = JSON.stringify(rows).match(/Vomiting: \d+ in the trial/g) ?? [];
+    expect(vomitingLines).toHaveLength(1);
+  });
+
+  it('keeps the strip’s sentence when the Signal’s row is capped away', () => {
+    const benign = [2, 3, 4, 5].map((i) => finding({ text: `Benign finding ${i}.`, rank: i }));
+    const capped = { ...signalTrial, rank: 9 };
+    const { rows } = buildWorthRaising(
+      input({ findings: [...benign, capped], trialStrip: RUNNING_STRIP, trialScreen: screenTrial() }),
+    );
+    expect(rows.map((r) => r.text)).not.toContain(signalTrial.text);
+    expect(rows[0].recheck!.questions.map((q) => q.key)).toContain('symptoms');
+  });
+});
