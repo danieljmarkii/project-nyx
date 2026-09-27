@@ -193,6 +193,11 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     // The record's start: never a look (§5.6), and the earliest by the PARSED instant —
     // a text ORDER BY sorts `…+00:00` before `…Z` whatever the instants (C-40), and
     // `MIN(julianday())` skips a row whose instant does not parse (CUL-1194).
+    // STATED BLIND SPOT (C-41): the start is parsed by SQLite, a row's day by `Date.parse`.
+    // They agree on every spelling the app writes (`…Z`, `…+00:00`); a zoneless
+    // `YYYY-MM-DD HH:MM:SS` would read as UTC here and local there, and could date a row
+    // before the start. No writer produces it (`events.occurred_at` has no SQL default),
+    // and History's `readRecordStartDay` shares the exposure, so the parity test cannot see it.
     db.getFirstAsync<{ first_jd: number | null }>(
       `SELECT MIN(julianday(occurred_at)) AS first_jd FROM events
         WHERE pet_id = ? AND deleted_at IS NULL AND event_type <> ?`,

@@ -227,15 +227,21 @@ export function compareMonths(a: { year: number; month: number }, b: { year: num
   return a.year - b.year || a.month - b.month;
 }
 
-/** The days a month's read must cover: the nine weeks' first Sunday through the month's
- *  last day — the same span the model draws, so one read feeds both drawings. `today`
- *  decides the last DRAWN day (the current month's weeks end with today's row). */
+/** The days a month's read must cover: the nine weeks' first Sunday through the grid's
+ *  last Saturday — the same span the model draws, so one read feeds both drawings. `today`
+ *  decides the last DRAWN day (the current month's weeks end with today's row).
+ *
+ *  The read runs past the month's last day because the last row DRAWS the next month's
+ *  first days (`outsideMonth`). Stopping at the month's end left them unread, so a past
+ *  month spoke "nothing logged" over Oct 1's vomit, the tail of a Sep 30 bout included
+ *  (the adversarial pass on CUL-1226). The month's own counts still stop at its last day. */
 export function monthReadRange(m: { year: number; month: number }, today: string): { fromKey: string; toKey: string } {
   const first = indexOfKey(keyOf(m.year, m.month, 1), 'firstKey');
   const lastOfMonth = first + daysInMonth(m.year, m.month) - 1;
   const lastDrawn = Math.min(lastOfMonth, indexOfKey(today, 'today'));
   const fromIdx = weekStartIndex(lastDrawn) - 7 * (MONTH_WEEKS - 1);
-  return { fromKey: dayKeyFromIndex(Math.min(fromIdx, first)), toKey: dayKeyFromIndex(lastOfMonth) };
+  const lastCell = lastOfMonth + (6 - weekdayOfIndex(lastOfMonth));
+  return { fromKey: dayKeyFromIndex(Math.min(fromIdx, first)), toKey: dayKeyFromIndex(lastCell) };
 }
 
 export function buildMonthModel(input: MonthModelInput): MonthModel {
