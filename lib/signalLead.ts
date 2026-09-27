@@ -43,14 +43,23 @@ export async function loadSignalLead(
   const today = toLocalDayKey(new Date(nowMs));
   const pet = usePetStore.getState().pets.find((p) => p.id === petId) ?? null;
   const symptom = signalSymptomOf(cached.finding);
-  const [trial, episodes, logged, gateLoggedDays] = await Promise.all([
-    pet ? readSignalTrial({ id: pet.id, name: pet.name, species: pet.species, sex: pet.sex }, nowMs).catch(() => null) : Promise.resolve(null),
+  const [trialRead, episodes, logged, gateLoggedDays] = await Promise.all([
+    // A failed trial read is UNANSWERED, not "no trial" (C-12): the card still draws, and a
+    // falling line withholds (CUL-1216 re-review, N1). No pet means no trial to ask about.
+    pet
+      ? readSignalTrial({ id: pet.id, name: pet.name, species: pet.species, sex: pet.sex }, nowMs).catch((e) => {
+          console.warn('[signal-lead] trial read failed:', e);
+          return 'unanswered' as const;
+        })
+      : Promise.resolve(null),
     symptom ? readSignalEpisodes(petId, symptom) : Promise.resolve([]),
     readLoggedDays(petId),
     // The gate's own days (the engine's set, never the chart's coverage — CUL-1216 F3); a
     // failed read is none, which withholds a falling line rather than printing it.
     symptom ? readGateLoggedDays(petId, symptom).catch(() => [] as string[]) : Promise.resolve([] as string[]),
   ]);
+  const trialUnanswered = trialRead === 'unanswered';
+  const trial = trialRead === 'unanswered' ? null : trialRead;
   const title = signalTitle(cached.finding, trial);
   if (!symptom) return { title, weekly: null, line: null, lineWithheld: null, noun: null, trial };
   const weekly = signalWeeks({
@@ -61,7 +70,7 @@ export async function loadSignalLead(
     loggedDays: logged.loggedDays,
     recordStart: logged.recordStart,
   });
-  const lineWithheld = weekLineWithheld(weekly, { finding: cached.finding, symptom, notEating, gateLoggedDays, trial });
+  const lineWithheld = weekLineWithheld(weekly, { finding: cached.finding, symptom, notEating, gateLoggedDays, trial, trialUnanswered });
   return { title, weekly, line: weekLine(weekly, lineWithheld != null), lineWithheld, noun: symptomWord(symptom), trial };
 }
 

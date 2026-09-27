@@ -185,4 +185,17 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
     const inside = await loadSignalLead('pet-1', falling, false, NOW);
     expect(inside.lineWithheld).toBeNull();
   });
+
+  // Re-review N1: a failed trial read is unanswered, not "no trial" — a falling line across
+  // an unknown start withholds, for any symptom (the vomit gate alone would miss a cough).
+  it('a failed trial read withholds a falling line, even a non-vomit one', async () => {
+    mockReadSignalEpisodes.mockResolvedValue(episodesLastWeek);
+    mockReadLoggedDays.mockResolvedValue({ loggedDays: [...lastWeekDays, ...thisWeekDays], recordStart: shift(today, -100) });
+    mockReadSignalTrial.mockRejectedValue(new Error('sqlite'));
+    const cough: CachedFinding = { ...falling, finding: { ...falling.finding, symptomType: 'cough' } as CachedFinding['finding'] };
+    const model = await loadSignalLead('pet-1', cough, false, NOW);
+    expect(model.trial).toBeNull();
+    expect(model.lineWithheld).toBe('trial_start');
+    expect(model.line).not.toMatch(/last week/);
+  });
 });

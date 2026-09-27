@@ -141,7 +141,12 @@ function loggingReason(
  */
 export function weekLineWithheld(
   weekly: WeeklyBucketsModel,
-  input: FallingPairInput & { trial: SignalTrialWindow | null },
+  input: FallingPairInput & {
+    trial: SignalTrialWindow | null;
+    /** The trial read failed: whether a trial started inside these weeks is unknown, so a
+     *  falling line is withheld as if one did (fail closed — the F3 rule for a failed read). */
+    trialUnanswered: boolean;
+  },
 ): WeekLineWithheld | null {
   const { thisWeek, lastWeek } = weekLineNumbers(weekly);
   if (lastWeek == null || thisWeek >= lastWeek) return null;
@@ -151,6 +156,7 @@ export function weekLineWithheld(
   const cur = weekly.weeks[n - 1];
   const prev = weekly.weeks[n - 2];
   const prevStart = localDayIndexOf(prev.startKey) as number;
+  if (input.trialUnanswered) return 'trial_start';
   if (input.trial) {
     const trialStart = localDayIndexOf(input.trial.startDay);
     if (trialStart != null && trialStart > prevStart) return 'trial_start';

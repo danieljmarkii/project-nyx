@@ -172,6 +172,7 @@ function mockInput(over: Partial<SignalScreenInput> = {}): SignalScreenInput {
     gateLoggedDays: over.loggedDays ?? loggedDays,
     notEating: false,
     trialVomitingLine: null,
+    trialUnanswered: false,
     ...over,
   };
 }
@@ -1014,6 +1015,29 @@ describe('CUL-1216 — the loader reads the not-eating register for the ROUTE’
     expect(mockLoadDietTrialFacts).toHaveBeenCalledWith(expect.objectContaining({ pet: expect.objectContaining({ id: 'pet-1' }) }));
     if (out.status !== 'ready') throw new Error(out.status);
     expect(out.model.withholdFallingVomit).toBe(false);
+  });
+
+  it('a failed facts read is unanswered for the trial too: the model is told, so a falling line withholds (N1)', async () => {
+    // A COUGH finding: the not-eating gate is vomit-only, so only the unanswered trial can withhold.
+    mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(chronicity({ symptomType: 'cough' }))] });
+    mockLoadDietTrialFacts.mockRejectedValue(new Error('sqlite'));
+    // A pinned Thursday (C-29): five arrived days this week clear the gate's floor, so the
+    // only thing that can withhold the falling cough line is the unanswered trial.
+    const NOW = new Date(2026, 8, 17, 12).getTime();
+    const today = toLocalDayKey(new Date(NOW));
+    const dow = new Date(NOW).getDay();
+    mockGetAllAsync.mockImplementation((sql: string) => {
+      // Three coughs last week, none this week, every day a meal: a falling week pair.
+      if (/FROM events\s+WHERE pet_id = \? AND event_type = \?/.test(sql))
+        return Promise.resolve([1, 2, 3].map((d) => ({ id: `v${d}`, occurred_at: new Date(NOW - (dow + d) * 86_400_000).toISOString(), occurred_at_confidence: null })));
+      if (/event_type IN/.test(sql) || /SELECT occurred_at FROM events WHERE pet_id = \? AND deleted_at IS NULL$/.test(sql))
+        return Promise.resolve(Array.from({ length: 30 }, (_, i) => ({ occurred_at: new Date(NOW - i * 86_400_000).toISOString() })));
+      return Promise.resolve([]);
+    });
+    const out = await loadSignalScreen('pet-1', 'symptom_chronicity:cough', NOW);
+    if (out.status !== 'ready') throw new Error(out.status);
+    expect(today).toBe('2026-09-17');
+    expect(out.model.weekLine).toMatch(/^0 this week so far$/);
   });
 
   it('a failed facts read is "not answered": the register withholds', async () => {

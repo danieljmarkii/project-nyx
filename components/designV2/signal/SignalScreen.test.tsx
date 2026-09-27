@@ -154,6 +154,7 @@ function input(cached: CachedFinding, over: Partial<SignalScreenInput> = {}): Si
     gateLoggedDays: over.loggedDays ?? loggedDays,
     notEating: false,
     trialVomitingLine: null,
+    trialUnanswered: false,
     ...over,
   };
 }

@@ -144,6 +144,9 @@ export interface SignalScreenInput {
    * the one module that writes it — never a second trial compare over the screen's windows.
    */
   trialVomitingLine: string | null;
+  /** The trial read failed, so `trial` is null by ignorance, not by fact (C-12): a falling
+   *  week line then withholds (CUL-1216 re-review, N1). */
+  trialUnanswered: boolean;
 }
 
 export interface GalleryTile {
@@ -539,7 +542,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     withheldReason && drawable
       ? { reason: withheldReason, compare: drawable, gateLogged: compareGateCounts(specs, input.gateLoggedDays) }
       : null;
-  const lineWithheld = weekLineWithheld(weekly, { ...gate, trial: input.trial });
+  const lineWithheld = weekLineWithheld(weekly, { ...gate, trial: input.trial, trialUnanswered: input.trialUnanswered });
   // The lanes time against meals, which the engine does for vomiting only (the shipped
   // panel's symptom); a cough has no "minutes after eating".
   const laneEpisodes = input.episodes.map((e) => ({ dayKey: e.dayKey, minutesSinceMeal: e.minutesSinceMeal }));
@@ -933,6 +936,8 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     doses,
     notEating,
     trialVomitingLine,
+    // `trialFacts` is null only when the read threw (a trial-less pet answers the base input).
+    trialUnanswered: pet != null && trialFacts == null,
   });
   return { status: 'ready', model, petName };
 }
