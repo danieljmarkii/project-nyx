@@ -207,6 +207,7 @@ const texts = (m: TrialScreenTrial) => m.facts.map((l) => l.text);
 const VOMITING: TrialResponseCounts = {
   trialDayNumber: 23,
   trialCount: 3,
+  trialLastEpisodeDayIndex: null,
   baselineCount: 11,
   trialLoggedDays: 21,
   baselineLoggedDays: 30,

@@ -841,7 +841,7 @@ export function isAnimalNotEating(input: TrialCardInput): boolean {
  * firing on a day-2 some/all/some dog. Both are OVER-fire, the survivable
  * direction, which is why they are filed rather than guessed at here.
  */
-function liveRefusal(input: TrialCardInput): TrialDietRefusal | null {
+export function liveRefusal(input: TrialCardInput): TrialDietRefusal | null {
   if (input.trialDietRefusal) return input.trialDietRefusal;
   if (input.rangeRefusal && input.rangeRefusalSpansEpisodes === true && !isEatingNow(input)) {
     return input.rangeRefusal;

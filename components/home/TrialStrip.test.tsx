@@ -93,6 +93,7 @@ describe('TrialStrip', () => {
   const trialResponseCounts = {
     trialDayNumber: 23,
     trialCount: 4,
+    trialLastEpisodeDayIndex: null,
     baselineCount: 20,
     trialLoggedDays: 18,
     baselineLoggedDays: 40,
