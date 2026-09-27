@@ -29,6 +29,8 @@ import { ThemedText } from '../../components/ui/ThemedText';
 
 export const OFF_TITLE = 'Nothing to show here';
 export const OFF_BODY = "This screen isn't on for this account yet. The trial is on the Pet tab.";
+/** The flag is on but the link names no pet (a corrupted deep link): not "not on yet". */
+export const BAD_LINK_BODY = "This link doesn't name a pet. The trial is on the Pet tab.";
 export const OFF_ACTION = 'Open the Pet tab';
 
 export default function TrialRoute() {
@@ -55,7 +57,7 @@ export default function TrialRoute() {
           <Header title="Diet trial" leading="back" onLeadingPress={() => router.back()} />
           <View style={styles.offBody}>
             <ThemedText style={styles.offTitle}>{OFF_TITLE}</ThemedText>
-            <ThemedText style={styles.offText}>{OFF_BODY}</ThemedText>
+            <ThemedText style={styles.offText}>{live ? BAD_LINK_BODY : OFF_BODY}</ThemedText>
             <PrimaryButton
               label={OFF_ACTION}
               variant="secondary"

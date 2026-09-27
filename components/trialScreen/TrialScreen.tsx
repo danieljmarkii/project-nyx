@@ -121,8 +121,8 @@ export function TrialScreen({ petId }: { petId: string }) {
     }, [reload]),
   );
 
-  // VoiceOver lands on the title when the model arrives (§6). On a safety face the title
-  // is followed directly by the safety block, so the block is the next thing read.
+  // VoiceOver lands on the title when the model arrives (§6). The title element carries
+  // the sub-line, so on a safety face the safety block is the next thing read.
   const titleRef = useRef<View>(null);
   const arrived = model.kind === 'trial';
   useEffect(() => {
@@ -228,12 +228,14 @@ function TrialBody({ model, petId, titleRef, handlers, busyAction, onManage }: T
 
   return (
     <ScrollView contentContainerStyle={styles.scroll} testID="trial-screen-body">
-      <View ref={titleRef} accessible accessibilityRole="header" testID="trial-screen-title">
+      {/* One element for the title and its sub-line (§6): VoiceOver lands here, and on a
+          safety face the safety block is the very next thing read. */}
+      <View ref={titleRef} accessible accessibilityRole="header" testID="trial-screen-title" style={styles.titleBlock}>
         <ThemedText style={styles.title}>{model.title}</ThemedText>
+        {model.subline !== null ? (
+          <ThemedText style={styles.subline} testID="trial-screen-subline">{model.subline}</ThemedText>
+        ) : null}
       </View>
-      {model.subline !== null ? (
-        <ThemedText style={styles.subline} testID="trial-screen-subline">{model.subline}</ThemedText>
-      ) : null}
 
       {safety ? (
         <>
@@ -492,6 +494,9 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightSignal,
     letterSpacing: theme.trackingTight,
     color: theme.colorTextPrimary,
+  },
+  titleBlock: {
+    gap: theme.space1,
   },
   subline: {
     fontSize: theme.textSM,

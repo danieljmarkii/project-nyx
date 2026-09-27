@@ -19,6 +19,7 @@ type ReactTestInstance = ReturnType<typeof render>['UNSAFE_root'];
 
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 
+let mockLastFocus: (() => void) | null = null;
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
 const mockBack = jest.fn();
@@ -33,8 +34,12 @@ jest.mock('expo-router', () => {
       back: (...a: unknown[]) => mockBack(...a),
     },
     useLocalSearchParams: () => mockParams,
-    // The arrival focus runs once; a later focus re-reads (the Pet tab's rule).
-    useFocusEffect: (cb: () => void) => ReactActual.useEffect(() => cb(), [cb]),
+    // The arrival focus runs once; a later focus re-reads (the Pet tab's rule). The latest
+    // callback is kept so a test can deliver a second focus.
+    useFocusEffect: (cb: () => void) => {
+      mockLastFocus = cb;
+      ReactActual.useEffect(() => cb(), [cb]);
+    },
     Stack: { Screen: (props: { options: Record<string, unknown> }) => mockStackScreen(props) },
   };
 });
@@ -106,7 +111,7 @@ jest.mock('../trial/TrialLifecycleSheets', () => ({
   },
 }));
 
-import TrialRoute, { OFF_TITLE } from '../../app/trial/[pet]';
+import TrialRoute, { BAD_LINK_BODY, OFF_BODY, OFF_TITLE } from '../../app/trial/[pet]';
 import { SIGNAL_OPEN_MOTION } from '../motion/signalOpenMotion';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -210,11 +215,20 @@ describe('the route, app/trial/[pet]', () => {
     expect(mockPush.mock.calls[0][0]).toMatchObject({ pathname: '/(tabs)/profile', params: { focus: 'trial' } });
   });
 
-  it('a malformed link answers with the small screen and reads nothing', async () => {
+  it('a malformed link answers with the small screen and reads nothing, and says the link is the problem', async () => {
     mockParams = {};
     const view = await renderRoute();
     expect(view.getByTestId('trial-route-off')).toBeTruthy();
+    expect(view.getByText(BAD_LINK_BODY)).toBeTruthy();
+    expect(view.queryByText(OFF_BODY)).toBeNull();
     expect(mockUseDietTrial).not.toHaveBeenCalled();
+  });
+
+  it('coming back to the screen re-reads the trial; arriving does not read twice', async () => {
+    await renderRoute();
+    expect(mockReload).not.toHaveBeenCalled();
+    act(() => mockLastFocus!());
+    expect(mockReload).toHaveBeenCalledTimes(1);
   });
 
   it('rises with the Signal screen’s physics; reduced motion turns the transition off', async () => {

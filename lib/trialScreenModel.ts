@@ -28,7 +28,6 @@ import type { TrialFactsState } from '../hooks/useTrialFacts';
 import { allowedFoodsOn } from './dietTrial';
 import {
   BLIND_SPOT_QUALIFIER,
-  coverageLine,
   formatTrialDate,
   isAnimalNotEating,
   resolveTrialCard,
@@ -159,8 +158,12 @@ export interface TrialScreenModelArgs {
 const SAFETY_STATES: ReadonlySet<TrialCardState> = new Set(['intake_decline', 'trial_refusal']);
 /** The states whose note and actions draw as an inline decision block (§3.9). */
 const DECISION_STATES: ReadonlySet<TrialCardState> = new Set(['milestone', 'overrun']);
+/** §3.9: the states with "Manage the trial" at the bottom. Not the milestone: its three
+ *  choices are the whole decision, and a fourth control beside them is the pressure the
+ *  inline row exists to avoid (round 2 draws none). Overrun keeps it: the trial may run
+ *  on for weeks on the vet's say-so, and the window must stay changeable. */
 const RUNNING_STATES: ReadonlySet<TrialCardState> = new Set([
-  'day_one', 'clean', 'exposures', 'below_floor', 'free_fed', 'milestone', 'overrun',
+  'day_one', 'clean', 'exposures', 'below_floor', 'free_fed', 'overrun',
 ]);
 
 export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenModel {
@@ -182,13 +185,23 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
   // caption from a different read.
   if (facts.status === 'unknown') return { kind: 'loading' };
 
-  const card = resolveTrialCard(input);
+  // S7 — WHERE HOME WITHHOLDS ITS RATIO, SO DOES THIS. Over a pet that may not be eating
+  // (`isAnimalNotEating`, the raw refusal facts, so a refusal the register has stood down
+  // still counts) the card's record region is resolved WITHOUT coverage: every register
+  // that states it (the plain sentence, the "so far" paragraph) then speaks its own
+  // no-coverage form, with the off-diet floor intact. No string is matched or invented,
+  // and neither the state nor the register reads coverage (adversarial pass, TS-4).
+  //
+  // NOT ON AN ENDED TRIAL: Home has no strip for one, and the ended card's refusal
+  // sentence states "meals OFFERED on X of Y days" beside "what your vet needs from it is
+  // the refusal" — the same clause the report prints, which a coverage-null read would
+  // strip of its feeding count as well.
+  const notEating = isAnimalNotEating(input);
+  const running = input.trial.status === 'active';
+  const card = resolveTrialCard(notEating && running ? { ...input, coverage: null } : input);
   const strip = resolveTrialStrip(input);
   const state = card.state;
-  const safety = SAFETY_STATES.has(state);
   const decisionState = DECISION_STATES.has(state);
-  const notEating = isAnimalNotEating(input);
-  const withheldCoverage = notEating && input.coverage ? coverageLine(input.coverage) : null;
 
   const safetyLines: string[] = [];
   const decisionNotes: string[] = [];
@@ -200,15 +213,24 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
     } else if (decisionState && line.role === 'note') {
       decisionNotes.push(line.text);
     } else if (line.text.startsWith(BLIND_SPOT_QUALIFIER)) {
-      // Lifted to the card's foot, verbatim (a floor suffix rides with it). Once.
-      if (qualifier === null) qualifier = line.text;
-    } else if (withheldCoverage !== null && line.role === 'fact' && line.text === withheldCoverage) {
-      // S7: the strip withholds its ratio over a pet that may not be eating; so does this.
-      continue;
+      // The LOCKED qualifier is lifted to the card's foot, once. A floor suffix the card
+      // welded onto it ("That 1 is what's been logged, not a total.") stays HERE, beside
+      // the exposure count it qualifies: at the foot it would sit under the vomiting line
+      // and read as a claim about those counts (S2: layout may never change meaning).
+      qualifier = BLIND_SPOT_QUALIFIER;
+      const suffix = line.text.slice(BLIND_SPOT_QUALIFIER.length).trim();
+      if (suffix.length > 0) factLines.push({ role: 'qualifier', text: suffix });
     } else {
       factLines.push(line);
     }
   }
+
+  // S4 — THE SAFETY FACE IS KEYED ON THE CARD'S REGISTER LINES, NEVER ON THE STATE. An
+  // ended trial with a live intake decline carries them too (the terminal `decline`
+  // register), and keying on `intake_decline` / `trial_refusal` dropped "needs a call
+  // today" from exactly that screen (adversarial pass, TS-4: one tap from a live one,
+  // through Stopped early).
+  const safety = safetyLines.length > 0;
 
   const ledger =
     safety || state === 'milestone' || notEating || facts.status !== 'ready'
@@ -216,26 +238,27 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
       : buildTrialLedger({ input, facts: facts.facts, timeZone: args.timeZone });
 
   const hasAction = (id: TrialCardAction['id']) => card.actions.some((a) => a.id === id);
+  // §3.4: the head alone until the set has hydrated. The door is Jordan's first moment,
+  // so it never waits on the list read; `/trial-foods` answers its own read states.
   const allowedAction = card.actions.find((a) => a.id === 'view_allowed_foods');
-  const allowedFoods =
-    allowedAction && args.allowedSet.status === 'ready'
-      ? {
-          label: allowedAction.label,
-          sub: allowedFoodsSubline(
-            allowedFoodsOn(
-              args.allowedSet.ctx,
-              localDayIndex(input.nowMs, args.timeZone),
-            ).filter((f) => f.role !== 'primary_diet').length,
-          ),
-        }
-      : null;
+  const allowedFoods = allowedAction
+    ? {
+        label: allowedAction.label,
+        sub:
+          args.allowedSet.status === 'ready'
+            ? allowedFoodsSubline(
+                allowedFoodsOn(
+                  args.allowedSet.ctx,
+                  localDayIndex(input.nowMs, args.timeZone),
+                ).filter((f) => f.role !== 'primary_diet').length,
+              )
+            : null,
+      }
+    : null;
 
   const offDiet = input.exposures?.offDiet ?? 0;
-  const terminal = state === 'completed' || state === 'abandoned';
-  const exposures =
-    !terminal && offDiet > 0
-      ? { label: EXPOSURES_DOOR, sub: null }
-      : null;
+  // §3.6, every state: on an ended trial the list is what the recheck asks about.
+  const exposures = offDiet > 0 ? { label: EXPOSURES_DOOR, sub: null } : null;
 
   // The state's own actions. The doors carry the card's two references (the allowed list
   // and the exposures list), so neither is repeated as an action; the decision block
@@ -264,7 +287,7 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
     petName: args.petName,
     title: strip?.header ?? card.kicker,
     subline: sublineFor(input, card.foodLabel, card.dayLine, state),
-    safety: safety && safetyLines.length > 0 ? safetyLines : null,
+    safety: safety ? safetyLines : null,
     headline: card.dayLineRole === 'headline' ? card.dayLine : null,
     decision: decisionState ? { notes: decisionNotes, actions: card.actions } : null,
     allowedFoods,

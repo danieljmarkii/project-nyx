@@ -77,6 +77,14 @@ function dayKey(n: number): string {
 
 interface Rec {
   target: number;
+  /** The designed window, when the trial was extended past it (CUL-1038). */
+  targetInitial?: number | null;
+  /** Per-day rating overrides on the trial meals. */
+  ratings?: Record<number, string>;
+  /** Per-day meal hour overrides (default 08:00). */
+  hours?: Record<number, number>;
+  /** Second meals of the trial diet on a day, each with its own hour and rating. */
+  extraMeals?: Array<{ day: number; hour: number; rating: string | null }>;
   status?: 'active' | 'completed' | 'abandoned';
   endedDay?: number | null;
   stoppedReason?: string | null;
@@ -94,7 +102,7 @@ function seed(rec: Rec) {
     id: 't1',
     started_at: START_KEY,
     target_duration_days: rec.target,
-    target_duration_days_initial: null,
+    target_duration_days_initial: rec.targetInitial ?? null,
     target_duration_set_at: null,
     status: rec.status ?? 'active',
     ended_at: rec.endedDay != null ? dayKey(rec.endedDay) : null,
@@ -120,9 +128,16 @@ function seed(rec: Rec) {
   const feedings: Array<Record<string, unknown>> = [];
   for (const d of rec.mealDays) {
     feedings.push({
-      event_id: `m${d}`, occurred_at: onDay(d, 8).toISOString(), food_item_id: 'f1',
+      event_id: `m${d}`, occurred_at: onDay(d, rec.hours?.[d] ?? 8).toISOString(), food_item_id: 'f1',
       brand: 'Royal Canin', product_name: 'Rabbit', food_type: 'meal', proteins: '["rabbit"]',
-      intake_rating: rec.rating === undefined ? 'all' : rec.rating,
+      intake_rating: rec.ratings?.[d] ?? (rec.rating === undefined ? 'all' : rec.rating),
+    });
+  }
+  for (const x of rec.extraMeals ?? []) {
+    feedings.push({
+      event_id: `m${x.day}-${x.hour}`, occurred_at: onDay(x.day, x.hour).toISOString(), food_item_id: 'f1',
+      brand: 'Royal Canin', product_name: 'Rabbit', food_type: 'meal', proteins: '["rabbit"]',
+      intake_rating: x.rating,
     });
   }
   for (const d of rec.treatDays ?? []) {
@@ -222,13 +237,15 @@ describe('a running trial (§3, round 2 §03)', () => {
     ]);
     // The facts in the card's order; the coverage sentence is the ledger's caption.
     expect(texts(m)[0]).toBe('Meals logged on 21 of 23 days.');
+    // The floor suffix stays beside the exposure count it qualifies; only the LOCKED
+    // qualifier moves to the foot (at the foot it would sit under the vomiting line).
     expect(texts(m)).toEqual([
       'Meals logged on 21 of 23 days.',
       '22 feedings in total — 21 matched, 1 did not.',
+      'That 1 is what’s been logged, not a total.',
       '6 days ago — Acme Chicken Jerky. Keep going with the trial diet. Your vet will want to see this at the recheck.',
     ]);
-    // One qualifier, lifted to the foot, never repeated among the facts.
-    expect(m.qualifier?.startsWith(BLIND_SPOT_QUALIFIER)).toBe(true);
+    expect(m.qualifier).toBe(BLIND_SPOT_QUALIFIER);
     expect(texts(m).some((t) => t.startsWith(BLIND_SPOT_QUALIFIER))).toBe(false);
     // Home's vomiting sentence, verbatim.
     expect(m.vomiting).toBe(
@@ -250,9 +267,14 @@ describe('a running trial (§3, round 2 §03)', () => {
     const l = await load(MOCHI_DAY_23);
     const m = trialModel(buildTrialScreenModel(argsFor(l)));
     const card = resolveTrialCard(l.input);
-    const expected = card.lines.filter((x) => !x.text.startsWith(BLIND_SPOT_QUALIFIER));
-    expect(m.facts).toEqual(expected);
-    expect(m.qualifier).toBe(card.lines.find((x) => x.text.startsWith(BLIND_SPOT_QUALIFIER))!.text);
+    // Every card line, in order, with the qualifier split at its LOCKED prefix: the words
+    // on the screen are exactly the card's words.
+    const rejoined = [...m.facts.map((x) => x.text), m.qualifier].join(' ');
+    const original = card.lines.map((x) => x.text).join(' ');
+    expect(rejoined.split(' ').sort()).toEqual(original.split(' ').sort());
+    const qualifierLine = card.lines.find((x) => x.text.startsWith(BLIND_SPOT_QUALIFIER))!;
+    expect(qualifierLine.text).toBe(`${BLIND_SPOT_QUALIFIER} That 1 is what’s been logged, not a total.`);
+    expect(m.facts.filter((x) => x.text.startsWith(BLIND_SPOT_QUALIFIER))).toEqual([]);
   });
 
   it('words the list door for one extra and for none', async () => {
@@ -264,10 +286,12 @@ describe('a running trial (§3, round 2 §03)', () => {
     expect(trialModel(buildTrialScreenModel(argsFor(none))).allowedFoods?.sub).toBe('The trial diet only');
   });
 
-  it('draws no list door while the allowed set has not hydrated (R2)', async () => {
+  it('draws the list door’s head alone while the allowed set has not hydrated (§3.4)', async () => {
     const l = await load(MOCHI_DAY_23);
-    const m = trialModel(buildTrialScreenModel(argsFor(l, { allowedSet: { status: 'unknown' } })));
-    expect(m.allowedFoods).toBeNull();
+    for (const allowedSet of [{ status: 'unknown' }, { status: 'unreadable' }] as const) {
+      const m = trialModel(buildTrialScreenModel(argsFor(l, { allowedSet })));
+      expect(m.allowedFoods).toEqual({ label: 'What Mochi can eat', sub: null });
+    }
   });
 
   it('names the route’s pet, not the active one, and withholds /report for another pet (C-9)', async () => {
@@ -413,6 +437,8 @@ describe('the milestone (§0.3, §3.9, §12 finding 6)', () => {
     // The off-diet floor stays, with its door.
     expect(m.exposures).not.toBeNull();
     expect(m.subline).toBe('Royal Canin Rabbit · since Jul 3');
+    // No fourth control beside the decision (§3.9, round 2).
+    expect(m.manage).toBeNull();
   });
 });
 
@@ -531,5 +557,113 @@ describe('loading, unreadable, no trial and an unknown pet are four screens (S9,
     expect(
       buildTrialScreenModel(argsFor(l, { pet: null, trial: { status: 'no_pet', input: null, inputIsForPet: false } })),
     ).toEqual({ kind: 'unknown_pet' });
+  });
+});
+
+// ── The adversarial pass on the built code (TS-4, spec §12's owed pass) ──────────────
+
+describe('an ended trial with a live intake decline keeps the warning (S4, S7)', () => {
+  const DECLINE = 'Mochi has eaten less than usual for 2 days.';
+  const all = Array.from({ length: 56 }, (_, i) => i + 1);
+
+  it('completed: the card’s register lines lead, with no ledger', async () => {
+    const l = await load({ target: 56, status: 'completed', endedDay: 56, mealDays: all, treatDays: [30], nowDay: 60 });
+    const input = { ...l.input, species: 'cat' as const, intakeDeclineHeadline: DECLINE };
+    const card = resolveTrialCard(input);
+    const flags = card.lines.filter((x) => x.role === 'flag').map((x) => x.text);
+    // Non-vacuity: the ended card carries the warning.
+    expect(flags[0]).toBe(DECLINE);
+    expect(flags[1]).toMatch(/^A cat that stops eating needs a call today/);
+    const m = trialModel(buildTrialScreenModel(argsFor({ ...l, input })));
+    expect(m.state).toBe('completed');
+    expect(m.safety).toEqual(flags);
+    expect(m.ledger).toBeNull();
+    expect(texts(m).some((t) => t === DECLINE)).toBe(false);
+  });
+
+  it('abandoned: the same', async () => {
+    const l = await load({
+      target: 56, status: 'abandoned', endedDay: 12, stoppedReason: 'other',
+      mealDays: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], nowDay: 20,
+    });
+    const input = { ...l.input, species: 'cat' as const, intakeDeclineHeadline: DECLINE };
+    const m = trialModel(buildTrialScreenModel(argsFor({ ...l, input })));
+    expect(m.state).toBe('abandoned');
+    expect(m.safety?.[0]).toBe(DECLINE);
+    expect(m.ledger).toBeNull();
+  });
+});
+
+describe('a stood-down refusal below the floor: the "so far" paragraph loses its ratio, never the floor (S7)', () => {
+  it('refused early, then eaten (the ordinary cat)', async () => {
+    // Days 1–3 refused, days 18–20 eaten, a treat on day 19; read on day 20.
+    const l = await load({
+      target: 56,
+      mealDays: [1, 2, 3, 18, 19, 20],
+      ratings: { 1: 'refused', 2: 'refused', 3: 'refused' },
+      treatDays: [19],
+      nowDay: 20,
+    });
+    expect(l.facts!.rangeRefusal).not.toBeNull();
+    expect(l.input.trialDietRefusal ?? null).toBeNull();
+    const card = resolveTrialCard(l.input);
+    expect(card.state).toBe('below_floor');
+    // Non-vacuity: the card prints the ratio inside the paragraph; Home does not.
+    expect(card.lines.some((x) => /meals on 6 of 20 days/.test(x.text))).toBe(true);
+    expect(resolveTrialStrip(l.input)!.line).not.toMatch(/meals logged/);
+
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(m.state).toBe('below_floor');
+    expect(texts(m).some((t) => /meals (logged )?on \d+ of \d+ days/i.test(t))).toBe(false);
+    // The floor stays: the feeding counts and the one that did not match.
+    expect(texts(m)).toContain(
+      'Of what’s on the record so far: 7 feedings in total, and 6 matched and 1 did not.',
+    );
+    expect(m.ledger).toBeNull();
+  });
+
+  it('a 28-day window extended to 84, one refusing bout straddling midnight, read on day 60', async () => {
+    const days = Array.from({ length: 28 }, (_, i) => i + 1);
+    const l = await load({
+      target: 84,
+      targetInitial: 28,
+      mealDays: days,
+      // Three rated bowls, two refused across the midnight: the refusal floor is met.
+      rating: null,
+      ratings: { 1: 'refused', 2: 'refused' },
+      hours: { 1: 23, 2: 1 },
+      extraMeals: [{ day: 2, hour: 8, rating: 'all' }],
+      nowDay: 60,
+    });
+    expect(l.facts!.rangeRefusal).not.toBeNull();
+    const card = resolveTrialCard(l.input);
+    expect(card.state).toBe('below_floor');
+    expect(card.lines.some((x) => /meals on 28 of 28 days/.test(x.text))).toBe(true);
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(texts(m).some((t) => /\d+ of \d+ days/.test(t))).toBe(false);
+    expect(texts(m).some((t) => /feedings in total/.test(t))).toBe(true);
+  });
+});
+
+describe('a refusal at the window (spec conflict, awaiting a ruling)', () => {
+  it('carries the card’s own actions, including the milestone link', async () => {
+    const all = Array.from({ length: 56 }, (_, i) => i + 1);
+    const l = await load({ target: 56, mealDays: all, rating: 'refused', nowDay: 56 });
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(m.state).toBe('trial_refusal');
+    // Pinned as built: the card's own actions (TS-4 AC). The link opens the decision
+    // sheet, which holds Stopped early; the ruling is on CUL-1300.
+    expect(m.actions.map((a) => a.id)).toEqual(['trial_manage', 'milestone']);
+    expect(m.decision).toBeNull();
+    expect(m.ledger).toBeNull();
+  });
+});
+
+describe('ended trials keep the exposures door (§3.6)', () => {
+  it('completed with one treat', async () => {
+    const all = Array.from({ length: 56 }, (_, i) => i + 1);
+    const l = await load({ target: 56, status: 'completed', endedDay: 56, mealDays: all, treatDays: [30], nowDay: 60 });
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(m.exposures).toEqual({ label: 'Outside the trial diet', sub: null });
   });
 });
