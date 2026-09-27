@@ -84,6 +84,9 @@ import { Spine } from './Spine';
 export const TODAY_PLUS_LINE = 'Meals, symptoms and medication go in with the + button.';
 export const TODAY_EMPTY_LINE = `Nothing logged yet today. ${TODAY_PLUS_LINE}`;
 export const TODAY_EMPTY_LOOK_LINE = 'The look above is enough to start.';
+/** After the meal nudge: a bowl left alone is logged too (intake is not preference), so
+ *  the sentence invites the refusal as plainly as the meal. `nyx-voice`, CUL-1220. */
+export const TODAY_MEAL_TAIL = 'Eaten or not, it goes in with the + button.';
 
 /**
  * The quiet day's sentence (CUL-1220, BRK-21). A look is not a spine node, so a day with
@@ -96,7 +99,7 @@ export const TODAY_EMPTY_LOOK_LINE = 'The look above is enough to start.';
  */
 export function todayQuietLine(params: { lookLive: boolean; hasLookToday: boolean; petName: string }): string {
   const kind = todayNudgeKind({ hasNonLookEvents: false, lookLive: params.lookLive, hasLookToday: params.hasLookToday });
-  if (kind === 'meal') return `${todayMealNudge(params.petName)} ${TODAY_PLUS_LINE}`;
+  if (kind === 'meal') return `${todayMealNudge(params.petName)} ${TODAY_MEAL_TAIL}`;
   if (kind === 'none') return `${TODAY_EMPTY_LINE} ${TODAY_EMPTY_LOOK_LINE}`;
   return TODAY_EMPTY_LINE;
 }

@@ -92,7 +92,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { AccessibilityInfo, LayoutAnimation } from 'react-native';
 import { useEventStore } from '../../../store/eventStore';
 import { useReducedMotionStore } from '../../../store/reducedMotionStore';
-import { TODAY_EMPTY_LINE, TODAY_EMPTY_LOOK_LINE, TODAY_FAILED_LINE, TODAY_PLUS_LINE, TodayCard } from './TodayCard';
+import { TODAY_EMPTY_LINE, TODAY_EMPTY_LOOK_LINE, TODAY_FAILED_LINE, TODAY_MEAL_TAIL, TodayCard } from './TodayCard';
 import { todayMealNudge } from '../../../lib/lookCard';
 
 const at = (h: number, m: number): string => {
@@ -181,7 +181,8 @@ describe('the three states below "has rows" (C-12)', () => {
     const empty = t.getByTestId('today-empty');
     expect(t.queryByText(TODAY_EMPTY_LINE, { exact: false })).toBeNull();
     expect(t.queryByText(TODAY_EMPTY_LOOK_LINE, { exact: false })).toBeNull();
-    expect(empty.props.children).toBe(`${todayMealNudge('Nyx')} ${TODAY_PLUS_LINE}`);
+    expect(empty.props.children).toBe(`${todayMealNudge('Nyx')} ${TODAY_MEAL_TAIL}`);
+    expect(empty.props.children).not.toMatch(/!/);
   });
 
   it('off the daily_look rollout the quiet line never points at a header that is not there', () => {
