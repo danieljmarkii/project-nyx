@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
+import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { TimeEditSheet } from './TimeEditSheet';
 import { useMomentStore } from '../../store/momentStore';
@@ -357,28 +358,34 @@ export function MealCompletionCard() {
     }
   }
 
-  // Keep rendering through the dismiss fade (payload is preserved by hide()),
-  // but never mount for a beat payload.
-  if (!payload || payload.kind !== 'meal') return null;
-
-  const occurredDate = new Date(payload.occurredAt);
+  // The header's words, derived ABOVE the early return below because the announcement
+  // is a hook and must run on every render (the rules of hooks). `meal` is null for
+  // another card's payload, so nothing here is computed for a payload this card never
+  // paints.
+  const meal = payload?.kind === 'meal' ? payload : null;
+  // A string, never a Date: for another card's payload there is no time to state, and a
+  // `new Date(0)` fallback would be a real (wrong) instant one refactor away from the screen.
+  const occurredTime = meal ? formatTime(new Date(meal.occurredAt)) : '';
   // One-glance reminder of what was just logged. Brand + product, trimmed so a
   // missing brand/product doesn't leave a stray space.
   // B-568 — the variant rides INSIDE the name here (unlike the timeline rows). This
   // line has no truncating-name-plus-badge layout to protect, and the card is a
   // sentence ("Logged · …"), so a parenthetical reads better than a caps tag.
-  const formatTag = foodFormatTag(payload.foodFormat);
+  const formatTag = foodFormatTag(meal?.foodFormat);
   const foodName = [
-    [payload.foodBrand, payload.foodProductName].filter(Boolean).join(' ').trim(),
+    [meal?.foodBrand, meal?.foodProductName].filter(Boolean).join(' ').trim(),
     formatTag ? `(${formatTag.charAt(0)}${formatTag.slice(1).toLowerCase()})` : '',
   ]
     .filter(Boolean)
     .join(' ')
     .trim();
-  // Intake capture renders for meals and treats. Treats opt in (PM call
-  // 2026-05-23) because treat refusal is itself a clinical signal. Default stays
-  // null; never pre-stamped. 'other' and unclassified foods stay opted out.
-  const showIntake = payload.foodType === 'meal' || payload.foodType === 'treat';
+  // CUL-614 — the nameless-food fallback says "Food logged", never a bare "Logged":
+  // §5's sentence rule is that a beat names the record, and a card that has lost the
+  // food's name still knows it wrote food. Deliberately NOT "Meal logged" / "Treat
+  // logged" — that rule already has two implementations (EventRow, lib/dayEvents) and
+  // this is not the place to mint a third; "Food" is true for all four foodType values,
+  // including the 'other' and null ones neither of those covers.
+  const headline = foodName ? `Logged · ${foodName}` : 'Food logged';
   // Name the MEAL's pet, not the active one. The flag is already targeted
   // correctly either way (evaluateMealLogTimeFlag runs against payload.petId, the
   // pet captured at log time), but a queue-then-switch would otherwise print
@@ -390,10 +397,29 @@ export function MealCompletionCard() {
   // wrong animal, which is the failure the rest of this comment describes. There is
   // one name on this card now — the sites below used to read the ACTIVE pet's while
   // the flag copy two lines up read the meal's, so one card could name two cats.
-  const mealPetName = resolveRecordPetName(pets, payload.petId);
-  const trialFlag = payload.trialFlag ?? null;
+  const mealPetName = meal ? resolveRecordPetName(pets, meal.petId) : '';
   // The removal line names the MEAL's pet for the same reason the flag copy does.
-  const notice = removed ? removedNoticeCopy(mealPetName) : null;
+  const notice = meal && removed ? removedNoticeCopy(mealPetName) : null;
+  // ONE string per state: the header's summary label and what VoiceOver is told.
+  const summaryLabel = notice ? notice.a11yLabel : `${headline}. ${occurredTime}`;
+
+  // CUL-1275 — the removal line's `accessibilityLiveRegion` is Android-only, and the
+  // header had no live region at all, so this card confirmed a meal on NEITHER platform
+  // and an Undo on Android only. The header now carries the live region too, and this
+  // is its iOS half: spoken while the card is SHOWN, keyed on the meal so a second
+  // identical log still speaks. It says the header and only the header — the trial
+  // heads-up and the follow-ups below it are their own nodes.
+  useLiveRegionAnnouncement(shown && meal ? summaryLabel : null, meal?.eventId);
+
+  // Keep rendering through the dismiss fade (payload is preserved by hide()),
+  // but never mount for a beat payload.
+  if (!payload || payload.kind !== 'meal') return null;
+
+  // Intake capture renders for meals and treats. Treats opt in (PM call
+  // 2026-05-23) because treat refusal is itself a clinical signal. Default stays
+  // null; never pre-stamped. 'other' and unclassified foods stay opted out.
+  const showIntake = payload.foodType === 'meal' || payload.foodType === 'treat';
+  const trialFlag = payload.trialFlag ?? null;
   // Two registers, one per kind (B-693). CONTENTS (rung 2) → the calm passive
   // prose it has always been; MEMBERSHIP (rung 3) → the amber panel copy + the
   // "+ Add to the trial list" hatch. mealFlagCopy names a protein, so it may only
@@ -507,9 +533,12 @@ export function MealCompletionCard() {
                confirmation for a screen-reader owner. */
             <View
               style={styles.labelCol}
+              // `accessible` is load-bearing: without it the label never applies and
+              // the two lines stay two separate stops (SheetLogBeat, CUL-682).
+              accessible
               accessibilityRole="summary"
               accessibilityLiveRegion="polite"
-              accessibilityLabel={notice.a11yLabel}
+              accessibilityLabel={summaryLabel}
             >
               <ThemedText style={styles.title}>{notice.title}</ThemedText>
               <ThemedText style={styles.subLabel}>{notice.detail}</ThemedText>
@@ -522,18 +551,20 @@ export function MealCompletionCard() {
             <Animated.View style={[styles.checkBadge, { transform: [{ scale: checkScale }] }]}>
               <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
             </Animated.View>
-            <View style={styles.labelCol}>
-              {/* CUL-614 — the nameless-food fallback says "Food logged", never a bare
-                  "Logged": §5's sentence rule is that a beat names the record, and a
-                  card that has lost the food's name still knows it wrote food.
-                  Deliberately NOT "Meal logged" / "Treat logged" — that rule already
-                  has two implementations (EventRow, lib/dayEvents) and this is not the
-                  place to mint a third; "Food" is true for all four foodType values,
-                  including the 'other' and null ones neither of those covers. */}
+            {/* One summary node, as on the named card: the food and the time are one
+                announcement, not two orphan lines. The headline's fallback rule lives
+                with `headline` above. */}
+            <View
+              style={styles.labelCol}
+              accessible
+              accessibilityRole="summary"
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={summaryLabel}
+            >
               <ThemedText style={styles.title} numberOfLines={1}>
-                {foodName ? `Logged · ${foodName}` : 'Food logged'}
+                {headline}
               </ThemedText>
-              <ThemedText style={styles.subLabel}>{formatTime(occurredDate)}</ThemedText>
+              <ThemedText style={styles.subLabel}>{occurredTime}</ThemedText>
             </View>
             {/* Undo sits LEFT of Change time (round-2 mock's R1 pairing). It is in
                 the header row rather than a footer of its own because everything

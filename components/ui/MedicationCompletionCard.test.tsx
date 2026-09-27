@@ -48,6 +48,7 @@ import { useMomentStore } from '../../store/momentStore';
 import { updateEvent, getEventSource } from '../../lib/db';
 import { usePetStore } from '../../store/petStore';
 import { useSyncStore } from '../../store/syncStore';
+import { formatTime } from '../../lib/utils';
 
 const CONFLICT = { conflict: true, otherEventId: 'm0', gapMinutes: 95 };
 const NO_CONFLICT = { conflict: false, otherEventId: null, gapMinutes: null };
@@ -497,5 +498,62 @@ describe('MedicationCompletionCard — one card, one pet (CUL-626)', () => {
     const view = render(<MedicationCompletionCard />);
     await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this dose')); });
     view.getByText('Taken out of Mochi’s record');
+  });
+});
+
+// ── CUL-1275 — the card SPEAKS ────────────────────────────────────────────────
+//
+// The header had no live region and the removal line's was Android-only, so a dose was
+// confirmed to NEITHER screen reader and an Undo to TalkBack alone. The header is now
+// one summary node with a live region (Android), and `useLiveRegionAnnouncement` is its
+// iOS half.
+describe('MedicationCompletionCard — the VoiceOver announcement (CUL-1275)', () => {
+  const { AccessibilityInfo, Platform } = jest.requireActual<typeof import('react-native')>('react-native');
+  const HEADER = `Logged · Prednisolone. ${formatTime(new Date('2026-06-07T14:00:00.000Z'))}`;
+  let announce: jest.SpyInstance;
+  const prevOS = Platform.OS;
+
+  beforeEach(() => {
+    Platform.OS = 'ios';
+    // RN's jest preset already makes this a `jest.fn`, and `spyOn` over a mock returns
+    // THAT mock, calls and all — so every earlier render in the file is still on it.
+    announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    announce.mockClear();
+  });
+  afterEach(() => {
+    announce.mockRestore();
+    Platform.OS = prevOS;
+  });
+
+  it('speaks the drug and the time when the card appears — one summary node', () => {
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith(HEADER);
+    const node = view.getByLabelText(HEADER);
+    expect(node.props.accessible).toBe(true);
+    expect(node.props.accessibilityLiveRegion).toBe('polite');
+  });
+
+  it('speaks a combo dose as the pairing its subline shows, not a time it does not show', () => {
+    seedDose({ pairedFoodName: 'Chicken Pate' });
+    render(<MedicationCompletionCard />);
+    expect(announce).toHaveBeenCalledWith('Logged together. Prednisolone · with Chicken Pate');
+  });
+
+  it('speaks the reversal when Undo lands, naming the DOSE’s pet', async () => {
+    seedDose({}, 'p2'); // logged for Mochi while Biscuit is active
+    const view = render(<MedicationCompletionCard />);
+    announce.mockClear();
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this dose')); });
+    expect(announce).toHaveBeenCalledWith('Removed. Taken out of Mochi’s record');
+    expect(view.getByLabelText('Removed. Taken out of Mochi’s record').props.accessible).toBe(true);
+  });
+
+  it('is silent on Android — the live region already speaks there', () => {
+    Platform.OS = 'android';
+    seedDose();
+    render(<MedicationCompletionCard />);
+    expect(announce).not.toHaveBeenCalled();
   });
 });

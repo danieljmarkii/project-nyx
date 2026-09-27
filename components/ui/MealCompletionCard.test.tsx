@@ -77,6 +77,7 @@ import type { LogTimeTrialFlag } from '../../lib/trialContaminant';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { updateEvent, updateMealIntake, getEventSource } from '../../lib/db';
 import { triggerSignalRegenDebounced } from '../../lib/signal';
+import { formatTime } from '../../lib/utils';
 
 const MEMBERSHIP_FLAG: LogTimeTrialFlag = {
   kind: 'off_trial_list',
@@ -598,5 +599,81 @@ describe('MealCompletionCard — Change time', () => {
     openPicker(view);
     view.getByRole('button', { name: 'Cancel' });
     view.getByRole('button', { name: 'Save' });
+  });
+});
+
+// ── CUL-1275 — the card SPEAKS ────────────────────────────────────────────────
+//
+// The header had no live region at all and the removal line's was Android-only, so a
+// meal was confirmed to NEITHER screen reader and an Undo to TalkBack alone. The header
+// is now one summary node with a live region (Android), and `useLiveRegionAnnouncement`
+// is its iOS half. These cases pin the string both halves are handed.
+describe('MealCompletionCard — the VoiceOver announcement (CUL-1275)', () => {
+  const { AccessibilityInfo, Platform } = jest.requireActual<typeof import('react-native')>('react-native');
+  const HEADER = `Logged · PetCo Dental Treats. ${formatTime(new Date('2026-06-07T14:00:00.000Z'))}`;
+  let announce: jest.SpyInstance;
+  const prevOS = Platform.OS;
+
+  beforeEach(() => {
+    Platform.OS = 'ios';
+    // RN's jest preset already makes this a `jest.fn`, and `spyOn` over a mock returns
+    // THAT mock, calls and all — so every earlier render in the file is still on it.
+    announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    announce.mockClear();
+  });
+  afterEach(() => {
+    announce.mockRestore();
+    Platform.OS = prevOS;
+  });
+
+  it('speaks the food and the time when the card appears — the header is one summary node', () => {
+    seedMeal();
+    const view = render(<MealCompletionCard />);
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith(HEADER);
+    const node = view.getByLabelText(HEADER);
+    expect(node.props.accessible).toBe(true);
+    // The Android half, on the same node: before CUL-1275 the header had none.
+    expect(node.props.accessibilityLiveRegion).toBe('polite');
+  });
+
+  it('keeps the nameless-food fallback in what it speaks — never a bare "Logged"', () => {
+    seedMeal({ foodBrand: null, foodProductName: null });
+    render(<MealCompletionCard />);
+    expect(announce.mock.calls[0][0]).toMatch(/^Food logged\. /);
+  });
+
+  it('speaks the reversal when Undo lands', async () => {
+    seedMeal();
+    const view = render(<MealCompletionCard />);
+    announce.mockClear();
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+    expect(announce).toHaveBeenCalledWith('Removed. Taken out of Biscuit’s record');
+    expect(view.getByLabelText('Removed. Taken out of Biscuit’s record').props.accessible).toBe(true);
+  });
+
+  it('names the MEAL’s pet in the reversal, not a since-switched active one', async () => {
+    seedMeal({}, 'p2');
+    const view = render(<MealCompletionCard />);
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+    expect(announce).toHaveBeenLastCalledWith('Removed. Taken out of Biscuit’s record');
+  });
+
+  it('says nothing for a payload it does not paint (the named card’s)', () => {
+    render(<MealCompletionCard />);
+    act(() => {
+      useMomentStore.getState().showNamed({
+        tone: 'calm', eventId: 'n1', petId: 'p1', occurredAt: '2026-06-07T14:00:00.000Z',
+        record: { kind: 'event', typeLabel: 'Vomit', confidence: 'witnessed', earliest: null, latest: null },
+      });
+    });
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('is silent on Android — the live region already speaks there', () => {
+    Platform.OS = 'android';
+    seedMeal();
+    render(<MealCompletionCard />);
+    expect(announce).not.toHaveBeenCalled();
   });
 });

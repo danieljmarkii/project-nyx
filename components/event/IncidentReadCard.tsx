@@ -37,6 +37,12 @@ export const INCIDENT_READ_DISCLAIMER =
 export const INCIDENT_READ_HIDE_LABEL = 'Hide this note';
 /** §5.5 — "Reading the photo…" on the photographed path (was "Reading this one…"). */
 export const INCIDENT_READ_PENDING_LABEL = 'Reading the photo…';
+/** The failed read's line, and the no-recommendation read's. Named here (CUL-1275) because
+ *  each is now said twice — on screen, and to a screen reader when it lands — and both
+ *  sections say them, so one string per line keeps the two channels and the two surfaces
+ *  from drifting apart. */
+export const INCIDENT_READ_FAILED_LINE = "Couldn't finish reading this one.";
+export const INCIDENT_READ_NOT_ENOUGH_LINE = 'Not enough to say about this one yet.';
 
 /** The rail's width, and the height of its pending TICK (§5.2). Exported because PR 3's
  *  arrival animates the tick to the card's height and needs the same two numbers. */

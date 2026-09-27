@@ -109,6 +109,13 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
   },
 
   // ── The write side of the read ──
+  'lib/analysisDismissal.ts': {
+    kinds: ['server', 'field'],
+    why:
+      'Hide / Show on the record screen (CUL-1323): an UPDATE of `dismissed_at` that ' +
+      'matches the verdict and read text the owner saw, as opaque values, so a read ' +
+      'that landed first is never hidden unseen. Decides nothing from the verdict.',
+  },
   'lib/analysis.ts': {
     kinds: ['server'],
     why:

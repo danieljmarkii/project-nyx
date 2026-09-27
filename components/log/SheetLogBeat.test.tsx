@@ -440,3 +440,59 @@ describe('the dwell — the register owns the clock, the beat only reports the e
     }
   });
 });
+
+// ── CUL-1275 — the beat SPEAKS on iOS ─────────────────────────────────────────
+//
+// The label node's `accessibilityLiveRegion` is Android-only: inside the sheet on an
+// iPhone the beat confirmed every save, and every Undo, in silence. These cases pin the
+// iOS half — handed the node's own label, off on Android, and quiet once the register
+// has moved on to another log.
+describe('the VoiceOver announcement (CUL-1275)', () => {
+  const { AccessibilityInfo, Platform } = jest.requireActual<typeof import('react-native')>('react-native');
+  let announce: jest.SpyInstance;
+  const prevOS = Platform.OS;
+
+  beforeEach(() => {
+    Platform.OS = 'ios';
+    // RN's jest preset already makes this a `jest.fn`, and `spyOn` over a mock returns
+    // THAT mock, calls and all — so every earlier render in the file is still on it.
+    announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    announce.mockClear();
+  });
+  afterEach(() => {
+    announce.mockRestore();
+    Platform.OS = prevOS;
+  });
+
+  it('speaks the sentence and the pet the moment the beat lands — the node’s own label', () => {
+    const { getByLabelText } = showAndRender();
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith(`${SENTENCE}. Saved to Nyx’s record`);
+    expect(getByLabelText(`${SENTENCE}. Saved to Nyx’s record`).props.accessibilityLiveRegion).toBe('polite');
+  });
+
+  it('speaks the reversal when Undo lands', async () => {
+    const view = showAndRender();
+    announce.mockClear();
+    await act(async () => { fireEvent.press(view.getByLabelText(UNDO_LABEL)); });
+    expect(announce).toHaveBeenCalledWith('Removed. Taken out of Nyx’s record');
+  });
+
+  it('says nothing for a beat the register is not speaking for', () => {
+    // The payload belongs to another log: this beat must not describe the row that
+    // replaced it, on screen or out loud.
+    act(() => {
+      useMomentStore.getState().showSheetBeat({ tone: 'calm', eventId: 'other', occurredAt: '2026-09-14T17:33:00.000Z' });
+    });
+    render(
+      <SheetLogBeat tone="calm" title={SENTENCE} petName="Nyx" eventId="e1" onDone={jest.fn()} />,
+    );
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('is silent on Android — the live region already speaks there', () => {
+    Platform.OS = 'android';
+    showAndRender();
+    expect(announce).not.toHaveBeenCalled();
+  });
+});

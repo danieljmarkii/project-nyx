@@ -121,6 +121,7 @@ const SURFACES: Record<string, string> = {
 const NOT_A_SURFACE: Record<string, string> = {
   'lib/readCopy.ts': 'the phone’s copy: stores and syncs the value verbatim, reads it through lib/readState.ts',
   'lib/localSchema.ts': 'DDL: declares the copy’s column',
+  'lib/analysisDismissal.ts': 'the Hide / Show compare-and-set (CUL-1323): matches the verdict on screen as an opaque value, never sorts or renders it',
 };
 
 // ── The two record sections ───────────────────────────────────────────────────
