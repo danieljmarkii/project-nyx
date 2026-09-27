@@ -1168,15 +1168,20 @@ Deno.test('CUL-1203 — step 3b reads pet_id and refuses on it before any write 
 //   4. nothing outside the three writers touches the hide: no `dismissed_at:` key, no
 //      `.dismissed_at =`, no `delete ….dismissed_at`, and no `.values =` or
 //      `Object.assign(….values` over a builder's result.
-// Rule 1 also follows the table name through a `const` and a query through a
-// variable (`const t = c.from(TABLE)` … `t.upsert(…)`), and bindings are read inside
-// the enclosing named function only (adversarial round 2: a split builder, a table
-// constant, a mutated result and a same-named parameter each passed the first cut).
-// Blind spots, stated: `.rpc()` and SQL functions in migrations; a table name
-// assembled at runtime or passed in as a parameter (`delete-account`'s `.from(table)`,
-// which writes no words); computed keys (`values[k] = …`); a reassignment between a
+//   0. and it fails CLOSED on the table: a `.from(…)` whose argument is neither a
+//      string literal nor a same-file `const` bound to one is a violation, whatever
+//      table it turns out to be (an imported constant, `TABLES.analysis`, a
+//      parameter), unless NON_LITERAL_FROM names that site and why.
+// Rule 1 follows the table through such a `const` (type annotation or not) and a
+// query through a variable, across lines (`const q = c\n  .from(T)` … `q.upsert(…)`),
+// and bindings are read inside the enclosing named function only (adversarial rounds
+// 2 and 3: a split builder, typed and imported table constants, an object-member
+// table, a mutated result and a same-named parameter each passed an earlier cut).
+// Blind spots, stated: `.rpc()` and SQL functions in migrations (CUL-1357 carries a
+// database-side rule); computed keys (`values[k] = …`); a reassignment between a
 // binding and its use; arrow functions share the scope of the nearest named
-// `function`; a write in a module outside supabase/functions.
+// `function`; a `.from(` directly after `Array` / `Buffer` / `Object` / `storage` is
+// taken as not a table; a write in a module outside supabase/functions.
 
 type Sink = { kind: string; at: number }
 
@@ -1231,17 +1236,43 @@ function boundTo(src: string, name: string, at: number): string {
 
 const BUILT = /^(buildAnalysisWriteBack|resolveReanalysisWrite|buildFailureWrite)\(/
 const HIDE_WRITERS = new Set(['buildAnalysisWriteBack', 'buildFailureWrite', 'resolveReanalysisWrite'])
+// A binding, with an optional type annotation: `const q = ` / `const q: Q = `.
+const BINDING = String.raw`\b(?:const|let|var)\s+(\w+)(?:\s*:[^=\n]+)?\s*=\s*`
 
-function readWordSinks(raw: string): { sanctioned: Sink[]; violations: string[] } {
+// Rule 0's exemptions: file (relative to supabase/functions) → the argument it passes.
+// Each entry earns its place (C-32) and must still be seen (the live test checks).
+const NON_LITERAL_FROM: Record<string, { arg: string; why: string }> = {
+  'delete-account/index.ts': {
+    arg: 'table',
+    why: 'pages storage paths out of each attachment table by name during account erasure; a read, never a write',
+  },
+}
+
+function readWordSinks(raw: string, file?: string): { sanctioned: Sink[]; violations: string[] } {
   const src = blankComments(raw)
   const sanctioned: Sink[] = []
   const violations: string[] = []
   const lineOf = (i: number) => src.slice(0, i).split('\n').length
 
+  // 0. Fail closed on a table the scan cannot name.
+  const literalBindings = new Map<string, string>()
+  for (const m of src.matchAll(new RegExp(BINDING + String.raw`['"\`]([\w.-]+)['"\`]`, 'g'))) literalBindings.set(m[1], m[2])
+  for (const m of src.matchAll(/\.from\(/g)) {
+    const before = /([\w$]+)\s*$/.exec(src.slice(0, m.index!))?.[1] ?? ''
+    if (/(?:Array|^Buffer|^Object|^storage)$/.test(before)) continue
+    const arg = callArgs(src, m.index! + m[0].length - 1)[0] ?? ''
+    if (/^(['"])[\w.-]+\1$/.test(arg) || /^`[\w.-]+`$/.test(arg) || literalBindings.has(arg)) continue
+    if (file && NON_LITERAL_FROM[file]?.arg === arg) {
+      sanctioned.push({ kind: 'non-literal from, exempt', at: m.index! })
+      continue
+    }
+    violations.push(`line ${lineOf(m.index!)} (${enclosingFunction(src, m.index!)}): .from(${arg.slice(0, 40)}), a table the scan cannot name`)
+  }
+
   // 1. Writes to the table: a chain off `.from(<the table>)`, where the table is the
   //    literal or a `const` bound to it, and a write through a variable holding such
   //    a query.
-  const tableNames = [...src.matchAll(/\b(?:const|let|var)\s+(\w+)\s*=\s*['"`]event_ai_analysis['"`]/g)].map((m) => m[1])
+  const tableNames = [...literalBindings].filter(([, table]) => table === 'event_ai_analysis').map(([name]) => name)
   const tableRef = `(?:['"\`]event_ai_analysis['"\`]${tableNames.map((n) => `|\\b${n}\\b`).join('')})`
   const writes: { open: number; method: string; site: number }[] = []
   for (const m of src.matchAll(new RegExp(`\\.from\\(\\s*${tableRef}\\s*\\)`, 'g'))) {
@@ -1253,7 +1284,12 @@ function readWordSinks(raw: string): { sanctioned: Sink[]; violations: string[] 
       writes.push({ open: m.index! + w.index + shift + w[0].length - 1, method: w[1], site: m.index! })
       continue
     }
-    const bound = /\b(?:const|let|var)\s+(\w+)\s*=\s*[^;\n]*$/.exec(src.slice(0, m.index!).split('\n').pop()!)
+    // The query held in a variable, the binding possibly on an earlier line:
+    // `const q = adminClient\n  .from(T)`. Walk back over the receiver, then ask
+    // whether a binding ends right there.
+    const before = src.slice(0, m.index!)
+    const receiver = /[\w$.\s]*$/.exec(before)![0]
+    const bound = new RegExp(BINDING + '$').exec(before.slice(0, before.length - receiver.length))
     if (!bound) continue
     const fnStart = enclosingFunctionMatch(src, m.index!)?.index ?? 0
     const fnEnd = (() => {
@@ -1304,17 +1340,28 @@ function readWordSinks(raw: string): { sanctioned: Sink[]; violations: string[] 
   for (const m of src.matchAll(tamper)) {
     violations.push(`line ${lineOf(m.index!)} (${enclosingFunction(src, m.index!)}): ${m[0].trim()}`)
   }
+  // …and `Object.assign(<a builder's result>, …)`, which replaces `values` wholesale.
+  for (const m of src.matchAll(/Object\.assign\(\s*(\w+)\s*,/g)) {
+    if (BUILT.test(boundTo(src, m[1], m.index!))) {
+      violations.push(`line ${lineOf(m.index!)} (${enclosingFunction(src, m.index!)}): Object.assign(${m[1]}, …) over a builder's result`)
+    }
+  }
   return { sanctioned, violations }
 }
 
 Deno.test('CUL-1323 — every write of read words under supabase/functions goes through buildAnalysisWriteBack', async () => {
   const root = new URL('../', import.meta.url)
   const violations: string[] = []
+  const exemptSeen = new Set<string>()
   for await (const file of sourceFiles(root)) {
-    const { violations: v } = readWordSinks(await Deno.readTextFile(file))
+    const rel = file.pathname.slice(root.pathname.length)
+    const { violations: v, sanctioned } = readWordSinks(await Deno.readTextFile(file), rel)
     violations.push(...v.map((x) => `${file.pathname}: ${x}`))
+    if (sanctioned.some((s) => s.kind === 'non-literal from, exempt')) exemptSeen.add(rel)
   }
   assertEquals(violations, [])
+  // Every exemption is still a live site; a stale one would excuse whatever lands next (C-32).
+  assertEquals([...exemptSeen].sort(), Object.keys(NON_LITERAL_FROM).sort())
 
   // Floor, from the pipeline's own text: each sanctioned shape was actually SEEN,
   // and the capped branch's escalation is one of the builder → apply calls.
@@ -1363,6 +1410,13 @@ Deno.test('CUL-1323 — the builder scan sees a bypass when there is one (the gu
     'async function runIncidentAnalysis() {\n  const writeBack = buildAnalysisWriteBack({})\n  Object.assign(writeBack.values, patch)\n}',
     'async function runIncidentAnalysis() {\n  const failureWrite = buildFailureWrite({})\n  const kept = { ...failureWrite.values, dismissed_at: stale }\n}',
     'function a() {\n  const writeBack = buildAnalysisWriteBack({})\n}\nasync function b(writeBack) {\n  await applyAnalysisWriteBack(c, k, writeBack)\n}',
+    // Round 3's: a query bound across lines, a typed table constant, an imported one,
+    // an object-member table, and Object.assign over the whole result.
+    "async function persistLiveRead() {\n  const q = adminClient\n    .from('event_ai_analysis')\n  await q.upsert({ ...readFields }, { onConflict: 'event_id' })\n}",
+    "const ANALYSIS_TABLE: string = 'event_ai_analysis'\nasync function persistLiveRead() {\n  await adminClient.from(ANALYSIS_TABLE).upsert(readFields, { onConflict: 'event_id' })\n}",
+    "import { ANALYSIS_TABLE } from './tables.ts'\nasync function persistLiveRead() {\n  await adminClient.from(ANALYSIS_TABLE).select('id')\n}",
+    "async function persistLiveRead() {\n  await adminClient.from(TABLES.analysis).select('id')\n}",
+    'async function runIncidentAnalysis() {\n  const writeBack = buildAnalysisWriteBack({})\n  Object.assign(writeBack, { values: { ...readFields } })\n}',
   ]
   for (const src of bypasses) {
     assertStrictEquals(readWordSinks(src).violations.length, 1, src)
@@ -1379,6 +1433,13 @@ Deno.test('CUL-1323 — the builder scan sees a bypass when there is one (the gu
     // A reader naming the column is not a writer (ask's select and its row mapping).
     "const COLS = 'event_id, status, dismissed_at, read_text'\n" +
     'function toRead(r) {\n  return { dismissedAt: (r.dismissed_at as string) ?? null, hidden: r.dismissed_at === null }\n}\n' +
-    "async function readOnly() {\n  const t = c.from('event_ai_analysis')\n  return await t.select(COLS).eq('event_id', e)\n}"
+    "async function readOnly() {\n  const t = c.from('event_ai_analysis')\n  return await t.select(COLS).eq('event_id', e)\n}\n" +
+    // Tables the scan can name, storage buckets, and Array.from are not rule 0's business.
+    "const EVENTS: string = 'events'\nasync function other() {\n  await c.from(EVENTS).update({ read_text: 'x' })\n" +
+    '  await adminClient.storage\n    .from(BUCKET)\n    .download(p)\n  return Array.from(new Set(xs))\n}'
   assertEquals(readWordSinks(allowed).violations, [])
+  // The exemption is per file AND argument: the same shape elsewhere is not excused.
+  const exempt = 'async function listPaths(adminClient, table) {\n  await adminClient\n    .from(table)\n    .select(\'storage_path\')\n}'
+  assertEquals(readWordSinks(exempt, 'delete-account/index.ts').violations, [])
+  assertStrictEquals(readWordSinks(exempt, 'ask/index.ts').violations.length, 1)
 })

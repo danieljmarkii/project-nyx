@@ -296,8 +296,10 @@ export type AnalysisWriteBack =
 //     that asks which words it was made on (see ReanalysisWrite).
 // The sink scan in incident-analysis.test.ts fails the build on a write of read
 // words that comes from none of these. The ORDER half is the client's: a Hide
-// writes only over the words on screen (lib/analysisDismissal.ts), so a read
-// landing first is never hidden unseen.
+// writes only over the read on screen (lib/analysisDismissal.ts), so on that client
+// a read landing first is never hidden unseen. A build already on a phone hides
+// unconditionally, and nothing here can refuse it; that residual, and the rows the
+// old bug left hidden, are CUL-1357.
 export function buildAnalysisWriteBack<TFlag extends string>(params: {
   humanEdited: boolean
   eventId: string
@@ -391,6 +393,8 @@ export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, T
 // call that landed unseen, and rows the pre-CUL-1323 bug left hidden are on file now.
 // Kept, that hide would stand over the escalation across every calmer read after it
 // (adversarial round 2). Cleared, the escalation shows, and the owner can hide it again.
+// This repairs such a row only when another read runs, and a hidden row offers no
+// Re-run, so it is a mitigation, not the fix: CUL-1357 carries the server-side one.
 export type ReanalysisWrite =
   | AnalysisWriteBack
   | { mode: 'hold'; values: { status?: string; error?: null; dismissed_at?: null } | null }
