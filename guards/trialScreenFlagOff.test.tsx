@@ -60,7 +60,85 @@
 // a false pass — and the mocked-module closure test below asserts none of them reach the
 // namespace.
 
-jest.mock('../lib/supabase', () => ({ supabase: {} }));
+// TS-6: a chain that answers empty, so the Pet tab's remote reads resolve quietly.
+jest.mock('../lib/supabase', () => {
+  const result = Promise.resolve({ data: [], error: null });
+  const chain: Record<string, unknown> = {};
+  for (const m of ['select', 'eq', 'is', 'in', 'or', 'order', 'limit', 'gte', 'lte', 'neq']) {
+    chain[m] = jest.fn(() => chain);
+  }
+  Object.assign(chain, { then: result.then.bind(result), catch: result.catch.bind(result) });
+  return {
+    supabase: {
+      from: jest.fn(() => chain),
+      auth: { getUser: jest.fn(async () => ({ data: { user: { id: 'u1' } } })) },
+    },
+  };
+});
+// TS-6 — the Pet tab's native leaves (the set `app/(tabs)/profile.widgetLink.test.tsx`
+// stands up). None of them reaches the namespace; the closure test below walks them.
+jest.mock('expo-image-picker', () => ({
+  launchImageLibraryAsync: jest.fn(),
+  requestMediaLibraryPermissionsAsync: jest.fn(async () => ({ granted: true })),
+  MediaTypeOptions: { Images: 'Images' },
+}));
+jest.mock('../lib/storage', () => ({
+  uploadPhoto: jest.fn(),
+  compressForUpload: jest.fn(),
+  getPublicUrl: () => 'https://example.test/photo.jpg',
+  getSignedUrls: jest.fn(async () => new Map()),
+}));
+// One local DB answering empty (the designV2 guard's shape): the Pet tab's local reads
+// resolve quietly after the first frame, which is all this comparison reads.
+jest.mock('../lib/db', () => {
+  const db = {
+    getAllAsync: jest.fn(async () => []),
+    getAllSync: jest.fn(() => []),
+    getFirstAsync: jest.fn(async () => null),
+    getFirstSync: jest.fn(() => null),
+    runAsync: jest.fn(async () => ({ changes: 0 })),
+    runSync: jest.fn(() => ({ changes: 0 })),
+    execAsync: jest.fn(async () => undefined),
+    execSync: jest.fn(() => undefined),
+    withTransactionAsync: jest.fn(async (f: () => Promise<void>) => {
+      await f();
+    }),
+  };
+  return { ...jest.requireActual('../lib/db'), getDb: () => db };
+});
+// The weight card's chart library ships untranspiled ESM (the set designV2's guard mocks).
+jest.mock('react-native-gifted-charts', () => ({ LineChart: () => null, BarChart: () => null }));
+jest.mock('../lib/vetDocumentLibrary', () => ({
+  readVetLibrary: jest.fn(async () => []),
+  buildVetFilesCardModel: () => ({}),
+  VET_DOCUMENT_SIGNED_URL_TTL_SEC: 60,
+}));
+// TS-6 — the Day Summary's read, answered as a single-pet day with a trial strip: the one
+// state in which the recap links to the trial at all. The offer and its primer are stubbed
+// off, as the screen's own suite does (they pull in expo-notifications).
+jest.mock('../hooks/useDaySummary', () => ({
+  useDaySummary: () => ({
+    status: 'ready',
+    anchorMs: Date.parse('2026-08-15T21:00:00Z'),
+    model: {
+      sections: [{ petId: 'pet-1', petName: 'Biscuit', species: 'dog', rows: [], isZeroLog: false }],
+      isEmpty: false,
+      petCount: 1,
+      lead: null,
+      chips: [],
+      trialStrip: { title: 'Whitefish trial', fact: 'Day 12 of 28' },
+      medStrips: [],
+      forward: null,
+    },
+  }),
+}));
+jest.mock('../hooks/useDailyRecapOffer', () => ({
+  useDailyRecapOffer: () => ({
+    show: false, primerVisible: false, requesting: false, primerPetName: null,
+    onTurnOn: jest.fn(), onNotNow: jest.fn(), onPrimerConfirm: jest.fn(), onPrimerDismiss: jest.fn(),
+  }),
+}));
+jest.mock('../components/notifications/NotificationPrimer', () => ({ NotificationPrimer: () => null }));
 // TS-4: the route mounts under jest with its own pet in the link.
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
@@ -90,6 +168,13 @@ import { createFixtureRoot, writeFixture, removeFixtureRoot } from './fixtureRoo
 import { __resetAppConfigForTest } from '../hooks/useAppConfig';
 import { ALLOWLIST_FLAGS_UNSET, APP_CONFIG_DEFAULTS, type AllowlistFlagKey } from '../lib/appConfig';
 import { useBetaOptInStore } from '../lib/betaFeatures';
+import { usePetStore, type Pet } from '../store/petStore';
+
+/** TS-6: the Pet tab needs a pet on screen to draw anything past its empty state. */
+const PET_ONE: Pet = {
+  id: 'pet-1', name: 'Biscuit', species: 'dog', breed: null, date_of_birth: null,
+  date_of_birth_precision: 'exact', sex: 'unknown', weight_kg: null, photo_path: null,
+};
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 
@@ -256,10 +341,35 @@ const SURFACES: ReadonlyArray<Surface> = [
     arrange: () => arrangeOthers([]),
     mustContain: '"Nothing to show here"',
   },
+  // TS-6 (CUL-1302). The Pet tab draws the door (`TrialDoorRow`) in the trial card's slot.
+  // FIRST FRAME ONLY: the door waits on the trial read, so this equality catches a door drawn
+  // ungated straight from the tree; the async half (flag off, a trial read that answers, no
+  // door and the door's model never built) is proven in `app/(tabs)/profile.widgetLink.test.tsx`.
+  {
+    name: 'the Pet tab',
+    rel: 'app/(tabs)/profile.tsx',
+    load: () => require('../app/(tabs)/profile').default,
+    arrange: () => {
+      arrangeOthers([]);
+      usePetStore.setState({ pets: [PET_ONE], activePet: PET_ONE });
+    },
+    mustContain: '"Biscuit"',
+  },
+  // TS-6. A decider (it changes where the trial strip links and draws nothing), registered
+  // here as well because it is a route under `app/` that reads the gate: its flag-off tree
+  // must still equal the namespace-absent one, and its flag-off LINK is pinned in its own
+  // suite (the `DRAWS_ELSEWHERE_OK` entry below).
+  {
+    name: 'the Day Summary',
+    rel: 'app/day-summary.tsx',
+    load: () => require('../app/day-summary').default,
+    arrange: () => arrangeOthers([]),
+    mustContain: '"Whitefish trial"',
+  },
 ];
 
 /** The surfaces this PR registers, in order — pinned so a new one edits this line. */
-const PINNED_SURFACES = ['the trial screen route'];
+const PINNED_SURFACES = ['the trial screen route', 'the Pet tab', 'the Day Summary'];
 
 /** Arrange the OTHER betas through the real stores; `trial_screen` stays unset. */
 function arrangeOthers(keys: readonly AllowlistFlagKey[]): void {
@@ -376,7 +486,15 @@ function drawsThroughNamespace(relPath: string, src: string): boolean {
  * Empty at TS-0. An entry names a behaviour proof that flag off it links exactly as it did
  * before; the checks below require the proof to exist and the entry to have a consumer.
  */
-const DRAWS_ELSEWHERE_OK: Record<string, { reason: string; proof: string; mentions: string }> = {};
+const DRAWS_ELSEWHERE_OK: Record<string, { reason: string; proof: string; mentions: string }> = {
+  // TS-6 (CUL-1302, spec §5.3): the recap's trial strip opens `/trial/{pet}` under the flag
+  // and the Pet tab's trial card without it. It draws nothing of the feature.
+  'app/day-summary.tsx': {
+    reason: 'a sender: the gate picks the trial strip’s href, and nothing is drawn',
+    proof: 'app/day-summary.test.tsx',
+    mentions: "expect(href.params.focus).toBe('trial');",
+  },
+};
 
 /** The directories every detector reads. Checked against the repository below. */
 const SCAN_DIRS = ['app', 'components', 'hooks', 'lib', 'store'];
@@ -483,10 +601,10 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('the trial screen has one gate, and its consumers stay inside the namespace', () => {
-  it('the consumers of the gate are pinned: the route alone, until TS-5 and TS-6', () => {
+  it('the consumers of the gate are pinned: the route, the Pet tab and the Day Summary, until TS-5', () => {
     // PINNED, not floored: a new consumer is a new surface, and it joins this list —
     // with its SURFACES entry and its async flag-off proof — in the diff that adds it.
-    expect(gateConsumers()).toEqual(['app/trial/[pet].tsx']);
+    expect(gateConsumers()).toEqual(['app/(tabs)/profile.tsx', 'app/day-summary.tsx', 'app/trial/[pet].tsx']);
   });
 
   it('the key is read directly in exactly one file — the hook — for both gates', () => {

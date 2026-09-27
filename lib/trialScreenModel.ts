@@ -360,9 +360,28 @@ function sublineFor(
   if (startIndex === null || !progress) return parts.length > 0 ? parts.join(' · ') : null;
   const today = toLocalDayKey(new Date(input.nowMs));
   parts.push(`since ${formatTrialDate(startIndex, today)}`);
-  if (!SAFETY_STATES.has(state) && state !== 'milestone') {
-    const end = formatTrialDate(trialEndDayIndex(startIndex, trial.targetDurationDays), today);
-    parts.push(progress.dayCounter > progress.targetDays ? `window ended ${end}` : `ends ${end}`);
-  }
+  const end = trialEndPart(input, state);
+  if (end !== null) parts.push(end);
   return parts.join(' · ');
+}
+
+/**
+ * The running trial's end clause (`ends Oct 29` / `window ended Oct 29`), or null where the
+ * screen drops it: the two safety faces, the milestone, an ended trial, or no day math.
+ * Shared with the Pet tab's door (`lib/trialDoorRow.ts`, TS-6) so the two cannot disagree
+ * about when a trial ends or when to stop saying so.
+ */
+export function trialEndPart(input: TrialCardInput, state: TrialCardState): string | null {
+  const trial = input.trial;
+  if (!trial || state === 'completed' || state === 'abandoned') return null;
+  if (SAFETY_STATES.has(state) || state === 'milestone') return null;
+  const startIndex = localDayIndexOf(trial.startedAt);
+  const progress = getDietTrialProgress(
+    { startedAt: trial.startedAt, targetDurationDays: trial.targetDurationDays },
+    input.nowMs,
+  );
+  if (startIndex === null || !progress) return null;
+  const today = toLocalDayKey(new Date(input.nowMs));
+  const end = formatTrialDate(trialEndDayIndex(startIndex, trial.targetDurationDays), today);
+  return progress.dayCounter > progress.targetDays ? `window ended ${end}` : `ends ${end}`;
 }
