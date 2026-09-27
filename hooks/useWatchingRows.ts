@@ -16,12 +16,28 @@ import { getWatchingRows, type WatchingRow } from '../lib/signalWatching';
 // argument, never a conditional call. `dayNumber` comes from useSignal's local-day read
 // (not re-read here), so the Change row's week count matches the E1 headline's.
 export function useWatchingRows(enabled: boolean, dayNumber: number): WatchingRow[] {
+  return useWatchingRowsRead(enabled, dayNumber).rows;
+}
+
+/**
+ * TS-5 (CUL-1301) — the rows AND whether the read behind them has answered. `answered` is
+ * true when the surface is not enabled (no read is owed, and no row can render) or once the
+ * read for the current pet has resolved; false while it is in flight. The trial strip's
+ * week lane waits on it, because the escalate-only gap row arrives from this read and an
+ * unanswered read is never "no gap row" (C-12). `getWatchingRows` is fail-quiet, so a
+ * failed read resolves as answered with no rows, the same thing the zone draws.
+ */
+export function useWatchingRowsRead(
+  enabled: boolean,
+  dayNumber: number,
+): { rows: WatchingRow[]; answered: boolean } {
   const { activePet } = usePetStore();
   const petId = activePet?.id ?? null;
   // Re-read on a completed regen too (a fresh log changes the local episode/gap counts),
   // mirroring useSignal — so the watching rows refresh after logging without a re-focus.
   const signalTick = useSyncStore((s) => s.signalTick);
   const [rows, setRows] = useState<WatchingRow[]>([]);
+  const [answeredKey, setAnsweredKey] = useState<string | null>(null);
 
   // Synchronous clear on a pet switch OR a disable (React's adjust-state-while-rendering
   // pattern, as useSignal does): the previous pet's rows must never flash under the new
@@ -32,6 +48,7 @@ export function useWatchingRows(enabled: boolean, dayNumber: number): WatchingRo
   if (key !== keyRef.current) {
     keyRef.current = key;
     setRows([]);
+    setAnsweredKey(null);
   }
 
   useFocusEffect(
@@ -50,6 +67,7 @@ export function useWatchingRows(enabled: boolean, dayNumber: number): WatchingRo
         } catch {
           if (!cancelled) setRows([]);
         }
+        if (!cancelled) setAnsweredKey(petId);
       })();
       return () => {
         cancelled = true;
@@ -57,5 +75,5 @@ export function useWatchingRows(enabled: boolean, dayNumber: number): WatchingRo
     }, [enabled, petId, dayNumber, signalTick]),
   );
 
-  return rows;
+  return { rows, answered: key === null || answeredKey === key };
 }

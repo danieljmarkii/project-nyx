@@ -13,6 +13,8 @@ import {
   medFocusScrollY,
   profileFocusFromParams,
   profileFocusHref,
+  profileStartTrialFromParams,
+  profileStartTrialHref,
   resolveMedAnchorRegimenId,
   type FocusableRegimen,
 } from './profileFocus';
@@ -212,5 +214,30 @@ describe('the scroll offset', () => {
   it('never asks for a negative offset', () => {
     expect(medFocusScrollY({ sectionY: 4, rowOffsetY: null, isFirstRow: true })).toBe(0);
     expect(focusScrollY(0)).toBe(0);
+  });
+});
+
+// ── TS-4 (CUL-1300) — the trial screen's hand-off to the start form ──────────────
+describe('profileStartTrialHref / profileStartTrialFromParams', () => {
+  it('names the trial’s pet, asks for the start form, and carries a nonce', () => {
+    expect(profileStartTrialHref({ petId: 'pet-2', nowMs: 1234 })).toEqual({
+      pathname: PROFILE_ROUTE,
+      params: { pet: 'pet-2', open: 'start_trial', ts: '1234' },
+    });
+  });
+
+  it('round-trips, and reads nothing else as a request', () => {
+    const { params } = profileStartTrialHref({ petId: 'pet-2', nowMs: 1 });
+    expect(profileStartTrialFromParams(params)).toEqual({ petId: 'pet-2' });
+    expect(profileStartTrialFromParams({ pet: 'pet-2' })).toBeNull();
+    expect(profileStartTrialFromParams({ open: 'start_trial' })).toBeNull();
+    expect(profileStartTrialFromParams({ open: 'start_trial', pet: '' })).toBeNull();
+    expect(profileStartTrialFromParams({ open: ['start_trial'], pet: 'pet-2' })).toBeNull();
+    expect(profileStartTrialFromParams({ open: 'trial', pet: 'pet-2' })).toBeNull();
+  });
+
+  it('is not a scroll focus: the Pet tab’s focus reader ignores it', () => {
+    const { params } = profileStartTrialHref({ petId: 'pet-2', nowMs: 1 });
+    expect(profileFocusFromParams(params)).toBeNull();
   });
 });

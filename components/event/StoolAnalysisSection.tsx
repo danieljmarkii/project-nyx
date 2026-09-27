@@ -37,7 +37,12 @@ import {
   StoolEditableFields,
   EditableStoolField,
 } from '../../lib/analysis';
-import { escalationSurvivesFailure, INCIDENT_REC_LABEL } from '../../lib/incidentReadState';
+import {
+  escalationSurvivesFailure,
+  incidentVerdictLabel,
+  quietVerdictUnfinished,
+} from '../../lib/incidentReadState';
+import { isEscalationVerdict } from '../../lib/incidentVerdict';
 import { StoolFieldsEditor } from './StoolFieldsEditor';
 import { stoolCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -67,11 +72,13 @@ import { useObservationFold } from './useObservationFold';
 // the never-reassure invariant survives the cap by construction (there is no path
 // from either to a reassuring verdict).
 type Status = 'pending' | 'completed' | 'failed' | 'uncertain' | 'capped' | 'read_disabled';
-type Recommendation = 'worth_a_call' | 'monitor' | 'not_enough_to_say';
 
 interface AnalysisRow {
   status: Status;
-  recommendation: Recommendation | null;
+  // Text, not the shipped three-value union (CUL-1277): the server can hold a verdict this
+  // build has never seen, and a type that says otherwise is what let `REC_LABEL[rec]`
+  // render a blank label. Every read of it goes through `lib/incidentVerdict.ts`.
+  recommendation: string | null;
   read_text: string | null;
   description: string | null;
   stool_consistency: string | null;
@@ -117,10 +124,6 @@ const SELECT_COLS =
   'stool_content, stool_blood_present, stool_blood_type, stool_mucus_present, ' +
   'foreign_material_present, foreign_material_note, ai_raw_payload, edited_at, dismissed_at, ' +
   'updated_at, error';
-
-// The words live in lib/incidentReadState.ts (INCIDENT_REC_LABEL) since D2-4 (CUL-1066),
-// so Home's spine node and this card cannot name one verdict two ways.
-const REC_LABEL: Record<Recommendation, string> = INCIDENT_REC_LABEL;
 
 export function StoolAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
@@ -470,14 +473,20 @@ export function StoolAnalysisSection(
   // photoless contextual escalation is never hidden. Auto-refreshing the section the
   // instant a photo lands is a tracked follow-up (B-370). Matches the read_disabled
   // branch: no dead affordance, no empty frame (B-363).
-  if (!hasPhoto && (!row?.recommendation || row.recommendation === 'not_enough_to_say')) {
+  //
+  // A QUIET verdict stands only on a read that FINISHED (CUL-1277): on a status this
+  // build does not know, it is no read at all, which is the same frame a row with no
+  // verdict takes (here, nothing; below, the honest retry). An escalation is never held
+  // to this: presence escalates at any status.
+  const unfinishedQuiet = quietVerdictUnfinished(row);
+  if (!hasPhoto && (!row?.recommendation || row.recommendation === 'not_enough_to_say' || unfinishedQuiet)) {
     return null;
   }
 
   // No analysis and not working (e.g. gave up, or an unclear/unsynced photo). Only
   // reached WITH a photo now — the retry is legitimate (the photo may not have
   // synced yet, the documented race triggerStoolAnalysis guards against).
-  if (!row || !row.recommendation) {
+  if (!row || !row.recommendation || unfinishedQuiet) {
     return (
       <IncidentReadSection
         arrival={arrival}
@@ -527,7 +536,10 @@ export function StoolAnalysisSection(
       ) : (
         <IncidentReadCard
           verdict={rec}
-          label={REC_LABEL[rec]}
+          // The words live in lib/incidentReadState.ts since D2-4 (CUL-1066), so Home's spine
+          // node and this card cannot name one verdict two ways; a verdict this build does
+          // not know is spoken as the escalation, never blank (CUL-1277).
+          label={incidentVerdictLabel(rec)}
           readText={row.read_text}
           onHide={() => setDismissed(true)}
           arrival={arrival.rail}
@@ -557,7 +569,9 @@ export function StoolAnalysisSection(
               onCancel={() => setEditing(false)}
             />
           ) : undefined}
-          escalating={rec === 'worth_a_call'}
+          // Any verdict off the quiet list, one this build does not know included: its
+          // facts never fold (CUL-1277).
+          escalating={isEscalationVerdict(rec)}
           folded={folded}
           onToggleFold={setFolded}
         />

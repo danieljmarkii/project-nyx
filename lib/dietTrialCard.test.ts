@@ -1445,6 +1445,7 @@ describe('the Home strip', () => {
 const counts = (over: Partial<TrialResponseCounts> = {}): TrialResponseCounts => ({
   trialDayNumber: 20,
   trialCount: 4,
+  trialLastEpisodeDayIndex: null,
   baselineCount: 20,
   trialLoggedDays: 18,
   baselineLoggedDays: 40,

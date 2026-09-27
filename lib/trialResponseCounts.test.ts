@@ -130,6 +130,7 @@ describe('computeTrialResponseCounts — degenerate inputs', () => {
     expect(r).toEqual({
       trialDayNumber: 20,
       trialCount: 0,
+      trialLastEpisodeDayIndex: null,
       baselineCount: 0,
       trialLoggedDays: 0,
       baselineLoggedDays: 0,
@@ -214,5 +215,42 @@ describe('computeTrialResponseCounts — properties', () => {
       episodeGapHours: 3,
       densityComparableMinRatio: 0.7,
     });
+  });
+});
+
+// TS-7 (CUL-1303) — the date of the last trial-era episode, for For the call's "the last on
+// {date}". It must come off the SAME collapsed set the count does, so the pair can never
+// describe two different episode sets.
+describe('computeTrialResponseCounts — the last trial-era episode', () => {
+  const dayOf = (y: number, m: number, d: number) => Math.floor(Date.UTC(y, m - 1, d) / D);
+
+  it('is the latest trial-era onset, whatever order the onsets arrive in', () => {
+    const r = computeTrialResponseCounts(
+      base({ vomitOnsetsMs: [at(2026, 6, 18), at(2026, 6, 5), at(2026, 6, 10)] }),
+    );
+    expect(r!.trialCount).toBe(3);
+    expect(r!.trialLastEpisodeDayIndex).toBe(dayOf(2026, 6, 18));
+  });
+
+  it('is null with no trial-era episode, however many the baseline holds', () => {
+    const r = computeTrialResponseCounts(base({ vomitOnsetsMs: [at(2026, 5, 20), at(2026, 5, 28)] }));
+    expect(r!.trialCount).toBe(0);
+    expect(r!.baselineCount).toBe(2);
+    expect(r!.trialLastEpisodeDayIndex).toBeNull();
+  });
+
+  it('ignores an onset after now, as the count does', () => {
+    const r = computeTrialResponseCounts(base({ vomitOnsetsMs: [at(2026, 6, 8), at(2026, 6, 25)] }));
+    expect(r!.trialCount).toBe(1);
+    expect(r!.trialLastEpisodeDayIndex).toBe(dayOf(2026, 6, 8));
+  });
+
+  it('places a re-logged bout by its onset, the way the count does', () => {
+    // 23:30 → 01:30 is one 3h-collapsed episode with its onset on Jun 12.
+    const r = computeTrialResponseCounts(
+      base({ vomitOnsetsMs: [at(2026, 6, 12, 23) + 0.5 * H, at(2026, 6, 13, 1) + 0.5 * H] }),
+    );
+    expect(r!.trialCount).toBe(1);
+    expect(r!.trialLastEpisodeDayIndex).toBe(dayOf(2026, 6, 12));
   });
 });

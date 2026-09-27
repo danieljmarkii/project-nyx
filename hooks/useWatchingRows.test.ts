@@ -1,5 +1,5 @@
 import { renderHook, waitFor } from '@testing-library/react-native';
-import { useWatchingRows } from './useWatchingRows';
+import { useWatchingRows, useWatchingRowsRead } from './useWatchingRows';
 import { usePetStore } from '../store/petStore';
 import { getWatchingRows } from '../lib/signalWatching';
 
@@ -51,5 +51,37 @@ describe('useWatchingRows — the enablement gate (flag-off does ZERO read)', ()
     const { result } = renderHook(() => useWatchingRows(true, 12));
     await waitFor(() => expect(mockGet).toHaveBeenCalled());
     expect(result.current).toEqual([]);
+  });
+});
+
+// TS-5 (CUL-1301): the trial strip's week lane waits on this read, because the gap row
+// arrives from it and an unanswered read is never "no gap row" (C-12).
+describe('useWatchingRowsRead — answered', () => {
+  it('is answered with no read owed when disabled', () => {
+    const { result } = renderHook(() => useWatchingRowsRead(false, 12));
+    expect(result.current).toEqual({ rows: [], answered: true });
+  });
+
+  it('is unanswered while the read is in flight, answered once it resolves', async () => {
+    let resolve: (v: typeof rows) => void = () => {};
+    mockGet.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    const { result } = renderHook(() => useWatchingRowsRead(true, 12));
+    expect(result.current.answered).toBe(false);
+    resolve(rows);
+    await waitFor(() => expect(result.current.answered).toBe(true));
+    expect(result.current.rows).toEqual(rows);
+  });
+
+  it('a pet switch is unanswered again until the new pet read resolves', async () => {
+    const { result, rerender } = renderHook(() => useWatchingRowsRead(true, 12));
+    await waitFor(() => expect(result.current.answered).toBe(true));
+    let resolve: (v: typeof rows) => void = () => {};
+    mockGet.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    const other = { id: 'pet-b', name: 'Mochi' } as any;
+    usePetStore.setState({ pets: [PET, other], activePet: other } as any);
+    rerender({});
+    expect(result.current.answered).toBe(false);
+    resolve([]);
+    await waitFor(() => expect(result.current.answered).toBe(true));
   });
 });

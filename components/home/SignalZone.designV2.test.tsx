@@ -34,7 +34,10 @@ jest.mock('../../hooks/useSignalFold', () => {
 });
 const mockUseSignal = jest.fn();
 jest.mock('../../hooks/useSignal', () => ({ useSignal: () => mockUseSignal() }));
-jest.mock('../../hooks/useWatchingRows', () => ({ useWatchingRows: () => [] }));
+jest.mock('../../hooks/useWatchingRows', () => ({
+  useWatchingRows: () => [],
+  useWatchingRowsRead: () => ({ rows: [], answered: true }),
+}));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 jest.mock('../../lib/signalArrival', () => ({ hasPlayedArrival: async () => true, markArrivalPlayed: async () => {} }));

@@ -12,22 +12,55 @@
 //
 // The Pet tab is not a surface the wedge owner visits daily; the trial is the
 // thing they live with for eight weeks. That gap is the whole reason this exists.
+//
+// ── TS-5 (CUL-1301): THE STRIP AS THE DOOR, behind `trial_screen` ─────────────────
+// This file holds the gate and draws nothing of the feature (C-36): with the flag on,
+// the drawing is `components/trialScreen/TrialStripDoor` (the Signal row's grammar, this
+// week's lane, the tap into `/trial/{pet}`). With it off, everything below the gate is
+// the shipped strip to the byte, still opening the Pet tab (CUL-170). The three props
+// the door needs are ignored off the flag.
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
+import { useTrialScreen } from '../../hooks/useTrialScreen';
 import { profileFocusHref } from '../../lib/profileFocus';
+import type { TrialStripSafety } from '../../lib/trialStripDoor';
 import { Card } from '../ui/Card';
 import { ThemedText } from '../ui/ThemedText';
-import type { TrialStripModel } from '../../lib/dietTrialCard';
+import { TrialStripDoor } from '../trialScreen/TrialStripDoor';
+import type { TrialCardInput, TrialStripModel } from '../../lib/dietTrialCard';
 
 interface Props {
   model: TrialStripModel | null;
   /** Overridable so the test drives navigation without a router mock. */
   onPress?: () => void;
+  /** TS-5 — the pet the strip's card input was loaded for (`useDietTrial().loadedPetId`). */
+  petId?: string | null;
+  /** TS-5 — the card input the model was resolved from, for this week's lane. */
+  input?: TrialCardInput | null;
+  /** TS-5 — whether `input` is loaded for the pet Home names. */
+  inputFresh?: boolean;
+  /** TS-5 — what the Signal zone reports about safety-class cards for its pet. */
+  safety?: TrialStripSafety | null;
 }
 
-export function TrialStrip({ model, onPress }: Props) {
+export function TrialStrip({ model, onPress, petId = null, input = null, inputFresh = false, safety = null }: Props) {
+  const trialScreen = useTrialScreen();
   if (!model) return null;
+
+  // No pet to open means no door: the shipped strip, rather than a door to nowhere.
+  if (trialScreen && petId) {
+    return (
+      <TrialStripDoor
+        model={model}
+        petId={petId}
+        input={input}
+        inputFresh={inputFresh}
+        safety={safety}
+        onPress={onPress}
+      />
+    );
+  }
 
   return (
     <Pressable

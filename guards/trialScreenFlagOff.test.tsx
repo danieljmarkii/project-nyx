@@ -24,17 +24,14 @@
 // half, and the consumer scans below red a reader of the gate that does not import from
 // the namespace.
 //
-// ── THE SURFACES, AND WHY THE LIST IS EMPTY (C-32) ────────────────────────────────
+// ── THE SURFACES (C-32) ───────────────────────────────────────────────────────────
 //
-// At TS-0 nothing reads the gate, so there is no flag-off tree to compare. The list is
-// not left empty by omission: it is ASSERTED empty, naming the PR that lands the first
-// surface, so TS-4's first consumer reds this file until it registers itself (a rule
-// added after the first caller is a rule added after the bug). Spec §7 names the four
-// the project will register, each in the PR that makes it a consumer:
-//   • the route, `app/trial/[pet].tsx` — TS-4 (CUL-1300)
-//   • Home, for the strip as the door — TS-5 (CUL-1301)
-//   • the Pet tab, `app/(tabs)/profile.tsx` — TS-6 (CUL-1302)
-//   • the Day Summary, a sender — TS-6 (CUL-1302)
+// TS-0 shipped the list ASSERTED empty, naming TS-4, so the first consumer red this file
+// until it registered itself (a rule added after the first caller is a rule added after
+// the bug). TS-4 (CUL-1300) registered the route, `app/trial/[pet].tsx`; TS-6 (CUL-1302)
+// registered the Pet tab (`app/(tabs)/profile.tsx`) and the Day Summary (a sender, so also
+// a decider); TS-5 (CUL-1301) registered Home, for the strip as the door. That is every
+// surface spec §7 names; a later sender registers the same way, in the PR that adds it.
 // The route/decider rule below is what forces each registration: a route under `app/`
 // that reads the gate and is not a listed surface reds. STATED BLIND SPOT: a consumer
 // under `components/` (Home's strip at TS-5 is one) is held to the delegation rule and the
@@ -62,7 +59,144 @@
 // a false pass — and the mocked-module closure test below asserts none of them reach the
 // namespace.
 
-jest.mock('../lib/supabase', () => ({ supabase: {} }));
+// TS-6: a chain that answers empty, so the Pet tab's remote reads resolve quietly.
+jest.mock('../lib/supabase', () => {
+  const result = Promise.resolve({ data: [], error: null });
+  const chain: Record<string, unknown> = {};
+  for (const m of ['select', 'eq', 'is', 'in', 'or', 'order', 'limit', 'gte', 'lte', 'neq']) {
+    chain[m] = jest.fn(() => chain);
+  }
+  Object.assign(chain, { then: result.then.bind(result), catch: result.catch.bind(result) });
+  return {
+    supabase: {
+      from: jest.fn(() => chain),
+      auth: { getUser: jest.fn(async () => ({ data: { user: { id: 'u1' } } })) },
+    },
+  };
+});
+// TS-6 — the Pet tab's native leaves (the set `app/(tabs)/profile.widgetLink.test.tsx`
+// stands up). None of them reaches the namespace; the closure test below walks them.
+jest.mock('expo-image-picker', () => ({
+  launchImageLibraryAsync: jest.fn(),
+  requestMediaLibraryPermissionsAsync: jest.fn(async () => ({ granted: true })),
+  MediaTypeOptions: { Images: 'Images' },
+}));
+jest.mock('../lib/storage', () => ({
+  uploadPhoto: jest.fn(),
+  compressForUpload: jest.fn(),
+  getPublicUrl: () => 'https://example.test/photo.jpg',
+  getSignedUrls: jest.fn(async () => new Map()),
+}));
+// One local DB answering empty (the designV2 guard's shape): the Pet tab's local reads
+// resolve quietly after the first frame, which is all this comparison reads.
+jest.mock('../lib/db', () => {
+  const db = {
+    getAllAsync: jest.fn(async () => []),
+    getAllSync: jest.fn(() => []),
+    getFirstAsync: jest.fn(async () => null),
+    getFirstSync: jest.fn(() => null),
+    runAsync: jest.fn(async () => ({ changes: 0 })),
+    runSync: jest.fn(() => ({ changes: 0 })),
+    execAsync: jest.fn(async () => undefined),
+    execSync: jest.fn(() => undefined),
+    withTransactionAsync: jest.fn(async (f: () => Promise<void>) => {
+      await f();
+    }),
+  };
+  return { ...jest.requireActual('../lib/db'), getDb: () => db };
+});
+// The weight card's chart library ships untranspiled ESM (the set designV2's guard mocks).
+jest.mock('react-native-gifted-charts', () => ({ LineChart: () => null, BarChart: () => null }));
+jest.mock('../lib/vetDocumentLibrary', () => ({
+  readVetLibrary: jest.fn(async () => []),
+  buildVetFilesCardModel: () => ({}),
+  VET_DOCUMENT_SIGNED_URL_TTL_SEC: 60,
+}));
+// TS-6 — the Day Summary's read, answered as a single-pet day with a trial strip: the one
+// state in which the recap links to the trial at all. The offer and its primer are stubbed
+// off, as the screen's own suite does (they pull in expo-notifications).
+jest.mock('../hooks/useDaySummary', () => ({
+  useDaySummary: () => ({
+    status: 'ready',
+    anchorMs: Date.parse('2026-08-15T21:00:00Z'),
+    model: {
+      sections: [{ petId: 'pet-1', petName: 'Biscuit', species: 'dog', rows: [], isZeroLog: false }],
+      isEmpty: false,
+      petCount: 1,
+      lead: null,
+      chips: [],
+      trialStrip: { title: 'Whitefish trial', fact: 'Day 12 of 28' },
+      medStrips: [],
+      forward: null,
+    },
+  }),
+}));
+jest.mock('../hooks/useDailyRecapOffer', () => ({
+  useDailyRecapOffer: () => ({
+    show: false, primerVisible: false, requesting: false, primerPetName: null,
+    onTurnOn: jest.fn(), onNotNow: jest.fn(), onPrimerConfirm: jest.fn(), onPrimerDismiss: jest.fn(),
+  }),
+}));
+jest.mock('../components/notifications/NotificationPrimer', () => ({ NotificationPrimer: () => null }));
+// TS-4: the route mounts under jest with its own pet in the link.
+jest.mock('react-native-safe-area-context', () => {
+  const { View } = require('react-native');
+  return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
+});
+jest.mock('expo-router', () => ({
+  router: { push: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: () => true },
+  Stack: { Screen: () => null },
+  useLocalSearchParams: () => ({ pet: 'pet-2' }),
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    require('react').useEffect(() => cb(), []);
+  },
+  // TS-5: Home listens for a tab re-tap.
+  useNavigation: () => ({ isFocused: () => true, addListener: () => () => {} }),
+}));
+
+// TS-5 (CUL-1301): Home mounts with every zone but the trial strip replaced by a marker —
+// the strip is the surface's only consumer of the gate, and the other zones' reads cannot
+// mount under jest here. A marker costs coverage and never a false pass (the header
+// below), and the mocked-closure check proves none of them reaches the namespace.
+function mockMarker(name: string) {
+  const { View } = require('react-native');
+  const React = require('react');
+  return () => React.createElement(View, { testID: `zone-${name}` });
+}
+jest.mock('../components/home/HomeHeader', () => ({ HomeHeader: mockMarker('header') }));
+jest.mock('../components/home/PullToRefreshSky', () => ({ PullToRefreshSky: mockMarker('sky') }));
+jest.mock('../components/home/CrossPetSafetyBanner', () => ({
+  CrossPetSafetyBanner: mockMarker('cross-pet-safety'),
+}));
+jest.mock('../components/home/SignalZone', () => ({ SignalZone: mockMarker('signal') }));
+jest.mock('../components/vetvisits/AppointmentStrip', () => ({ AppointmentStrip: mockMarker('appointment') }));
+jest.mock('../components/home/MedStrip', () => ({ MedStrip: mockMarker('med') }));
+jest.mock('../components/home/LookCard', () => ({ LookCard: mockMarker('look') }));
+jest.mock('../components/home/LookExits', () => ({ LookExits: mockMarker('look-exits'), exitVisibility: () => ({}) }));
+jest.mock('../components/home/TodayZone', () => ({ TodayZone: mockMarker('today') }));
+jest.mock('../components/home/TrendZone', () => ({ TrendZone: mockMarker('trend') }));
+jest.mock('../hooks/useEvents', () => ({ useEvents: () => ({ todayEvents: [], loadTodayEvents: jest.fn() }) }));
+jest.mock('../hooks/useMedStrips', () => ({ useMedStrips: () => ({ input: null }) }));
+jest.mock('../lib/sync', () => ({ syncNow: jest.fn() }));
+jest.mock('../lib/signal', () => ({ regenerateSignal: jest.fn() }));
+// A running trial, loaded for the pet Home names: the strip DRAWS, so the comparison is
+// over the thing the flag changes rather than over an empty slot. The same fixture for
+// the route is harmless — flag-off the route issues no trial read.
+jest.mock('../hooks/useDietTrial', () => ({
+  useDietTrial: () => ({
+    input: {
+      trial: { status: 'active', startedAt: '2026-07-03', targetDurationDays: 56, foodLabel: 'Royal Canin Rabbit' },
+      nowMs: new Date(2026, 6, 25, 12).getTime(),
+      petName: 'Mochi',
+      coverage: { daysLogged: 22, daysElapsed: 23 },
+    },
+    status: 'loaded',
+    isLoading: false,
+    reload: () => {},
+    inputIsForPet: true,
+    loadedPetId: 'pet-1',
+  }),
+}));
 jest.mock('../store/authStore', () => {
   const state = { user: { id: 'u1' } };
   const hook = (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state);
@@ -79,6 +213,13 @@ import { createFixtureRoot, writeFixture, removeFixtureRoot } from './fixtureRoo
 import { __resetAppConfigForTest } from '../hooks/useAppConfig';
 import { ALLOWLIST_FLAGS_UNSET, APP_CONFIG_DEFAULTS, type AllowlistFlagKey } from '../lib/appConfig';
 import { useBetaOptInStore } from '../lib/betaFeatures';
+import { usePetStore, type Pet } from '../store/petStore';
+
+/** TS-6: the Pet tab needs a pet on screen to draw anything past its empty state. */
+const PET_ONE: Pet = {
+  id: 'pet-1', name: 'Biscuit', species: 'dog', breed: null, date_of_birth: null,
+  date_of_birth_precision: 'exact', sex: 'unknown', weight_kg: null, photo_path: null,
+};
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 
@@ -229,13 +370,60 @@ interface Surface {
 /**
  * The guard's SCOPE: a surface absent from this list has its flag-off tree checked by
  * nothing (C-41). Each is loaded through `require` inside the test, never imported at
- * the top — a top-level import would bind one cached instance. EMPTY until TS-4, and
- * asserted so below (C-32).
+ * the top — a top-level import would bind one cached instance. PINNED below: every surface spec §7
+ * names is registered; a new one edits the pinned line in the PR that makes it a consumer.
+ *
+ * The route (TS-4, CUL-1300): flag-off it draws its small screen and NO trial read. The
+ * async half (no read issued over reads that would answer) is proven in the screen's own
+ * suite, `components/trialScreen/TrialScreen.test.tsx` (the limit stated above).
  */
-const SURFACES: ReadonlyArray<Surface> = [];
+const SURFACES: ReadonlyArray<Surface> = [
+  {
+    name: 'the trial screen route',
+    rel: 'app/trial/[pet].tsx',
+    load: () => require('../app/trial/[pet]').default,
+    arrange: () => arrangeOthers([]),
+    mustContain: '"Nothing to show here"',
+  },
+  // TS-6 (CUL-1302). The Pet tab draws the door (`TrialDoorRow`) in the trial card's slot.
+  // FIRST FRAME ONLY: the door waits on the trial read, so this equality catches a door drawn
+  // ungated straight from the tree; the async half (flag off, a trial read that answers, no
+  // door and the door's model never built) is proven in `app/(tabs)/profile.widgetLink.test.tsx`.
+  {
+    name: 'the Pet tab',
+    rel: 'app/(tabs)/profile.tsx',
+    load: () => require('../app/(tabs)/profile').default,
+    arrange: () => {
+      arrangeOthers([]);
+      usePetStore.setState({ pets: [PET_ONE], activePet: PET_ONE });
+    },
+    mustContain: '"Biscuit"',
+  },
+  // TS-6. A decider (it changes where the trial strip links and draws nothing), registered
+  // here as well because it is a route under `app/` that reads the gate: its flag-off tree
+  // must still equal the namespace-absent one, and its flag-off LINK is pinned in its own
+  // suite (the `DRAWS_ELSEWHERE_OK` entry below).
+  {
+    name: 'the Day Summary',
+    rel: 'app/day-summary.tsx',
+    load: () => require('../app/day-summary').default,
+    arrange: () => arrangeOthers([]),
+    mustContain: '"Whitefish trial"',
+  },
+  // TS-5 (CUL-1301): Home, for the strip as the door. The strip draws from the mocked
+  // trial read above; its async half (flag-off issues no ledger read over a read that
+  // would answer) is proven in `components/home/TrialStrip.test.tsx`.
+  {
+    name: 'Home',
+    rel: 'app/(tabs)/index.tsx',
+    load: () => require('../app/(tabs)/index').default,
+    arrange: () => arrangeOthers([]),
+    mustContain: '"Diet trial · day 23 of 56"',
+  },
+];
 
-/** The PR that lands the first surface — named so the empty list is a claim, not a gap. */
-const FIRST_SURFACE_LANDS = 'TS-4 (CUL-1300)';
+/** The surfaces this PR registers, in order — pinned so a new one edits this line. */
+const PINNED_SURFACES = ['the trial screen route', 'the Pet tab', 'the Day Summary', 'Home'];
 
 /** Arrange the OTHER betas through the real stores; `trial_screen` stays unset. */
 function arrangeOthers(keys: readonly AllowlistFlagKey[]): void {
@@ -270,11 +458,11 @@ describe('TS-0 — flag-off is byte-identical to an app without the trial screen
     }
   });
 
-  it(`the surface list is empty until ${FIRST_SURFACE_LANDS} lands the first consumer (C-32)`, () => {
-    // The empty set as an ASSERTION: the first surface edits this line, and the route
-    // rule below reds a consumer that forgets to. Every listed surface must exist on disk
-    // (C-38: the scope is checked against the repo, not read off this constant).
-    expect(SURFACES.map((s) => s.name)).toEqual([]);
+  it('the surface list is pinned, and every listed surface exists (C-32, C-38)', () => {
+    // Pinned, not floored: a new surface edits this line, and the route rule below reds a
+    // consumer that forgets to. Every listed surface must exist on disk (C-38: the scope
+    // is checked against the repo, not read off this constant).
+    expect(SURFACES.map((s) => s.name)).toEqual(PINNED_SURFACES);
     for (const s of SURFACES) expect(fs.existsSync(path.join(REPO_ROOT, s.rel))).toBe(true);
   });
 
@@ -352,7 +540,15 @@ function drawsThroughNamespace(relPath: string, src: string): boolean {
  * Empty at TS-0. An entry names a behaviour proof that flag off it links exactly as it did
  * before; the checks below require the proof to exist and the entry to have a consumer.
  */
-const DRAWS_ELSEWHERE_OK: Record<string, { reason: string; proof: string; mentions: string }> = {};
+const DRAWS_ELSEWHERE_OK: Record<string, { reason: string; proof: string; mentions: string }> = {
+  // TS-6 (CUL-1302, spec §5.3): the recap's trial strip opens `/trial/{pet}` under the flag
+  // and the Pet tab's trial card without it. It draws nothing of the feature.
+  'app/day-summary.tsx': {
+    reason: 'a sender: the gate picks the trial strip’s href, and nothing is drawn',
+    proof: 'app/day-summary.test.tsx',
+    mentions: "expect(href.params.focus).toBe('trial');",
+  },
+};
 
 /** The directories every detector reads. Checked against the repository below. */
 const SCAN_DIRS = ['app', 'components', 'hooks', 'lib', 'store'];
@@ -459,10 +655,17 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('the trial screen has one gate, and its consumers stay inside the namespace', () => {
-  it(`nothing consumes the gate yet: the consumer list is empty until ${FIRST_SURFACE_LANDS}`, () => {
+  it('the consumers of the gate are pinned: the route, the Pet tab, the Day Summary and Home strip', () => {
     // PINNED, not floored: a new consumer is a new surface, and it joins this list —
     // with its SURFACES entry and its async flag-off proof — in the diff that adds it.
-    expect(gateConsumers()).toEqual([]);
+    // TS-5: the strip is a consumer under `components/`, so its HOST (Home) joined
+    // SURFACES in the same diff (the blind spot the header states).
+    expect(gateConsumers()).toEqual([
+      'app/(tabs)/profile.tsx',
+      'app/day-summary.tsx',
+      'app/trial/[pet].tsx',
+      'components/home/TrialStrip.tsx',
+    ]);
   });
 
   it('the key is read directly in exactly one file — the hook — for both gates', () => {
@@ -570,7 +773,7 @@ describe('the consumer scans bite (proven by mutation, not by reading)', () => {
     // A route that reads the gate and draws its own UI inline: the leak the rule forbids.
     writeFixture(
       root,
-      'app/trial/[pet].tsx',
+      'app/trial-rogue.tsx',
       `import { Text } from 'react-native';\n` +
         `import { useTrialScreen } from '../../hooks/useTrialScreen';\n` +
         `export default function TrialRoute() {\n` +
@@ -604,9 +807,9 @@ describe('the consumer scans bite (proven by mutation, not by reading)', () => {
   });
 
   it('a route reading the gate outside the namespace reds the delegation rule and the route rule', () => {
-    expect(gateConsumers(root)).toEqual(['app/trial/[pet].tsx', 'components/pet/TrialDoorRow.tsx']);
-    expect(consumersDrawingElsewhere(root)).toEqual(['app/trial/[pet].tsx']);
-    expect(unlistedRoutes(root)).toEqual(['app/trial/[pet].tsx']);
+    expect(gateConsumers(root)).toEqual(['app/trial-rogue.tsx', 'components/pet/TrialDoorRow.tsx']);
+    expect(consumersDrawingElsewhere(root)).toEqual(['app/trial-rogue.tsx']);
+    expect(unlistedRoutes(root)).toEqual(['app/trial-rogue.tsx']);
   });
 
   it('a second direct read of the key reds the one-reader rule', () => {

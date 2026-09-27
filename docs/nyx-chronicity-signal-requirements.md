@@ -1,6 +1,7 @@
 # Nyx — Chronicity / Persistence Signal Lane Requirements (Detector ⑦)
 
 **Status:** Build-ready spec, pending PM greenlight to promote to active build.
+**Last updated:** 2026-09-26 — §4.6 gains the firm-tier hold (CUL-1272, PM-approved; stickiness ruled on CUL-1330).
 **Backlog:** B-182 (Next). **Build step:** Step 10 evolution — the deterministic Signal engine (`supabase/functions/generate-signal/detection.ts`).
 **Origin:** `docs/research/2026-06-vet-council-nyx-deep-dive.md` §9 #1, Findings 2/3, Consensus §5.1 #3.
 **Author:** Data Scientist + Dr. Chen lenses, this session. **Reviewers required before merge:** `adversarial-reviewer` (MANDATORY — clinically load-bearing, never-reassure), `code-reviewer`.
@@ -122,10 +123,12 @@ Anchored on **duration** (chronicity's natural urgency axis), not the week-over-
 
 | Tier | Condition | Register |
 |---|---|---|
-| `firm` | `spanDays ≥ firmSpanDays` (≥6 weeks) **OR** the same symptom is also worsening (§4.5 inheritance) | "...worth **booking a vet visit**." |
+| `firm` | `spanDays ≥ firmSpanDays` (≥6 weeks) **OR** the same symptom is also worsening (§4.5 inheritance) **OR** the course said `firm` on an earlier day, its count has not fallen below that day's count, and it fired on every day in between (the hold, CUL-1272) | "...worth **booking a vet visit**." |
 | `standard` | otherwise (span in [3 weeks, 6 weeks)) | "...worth **a word with your vet**." |
 
 No `soft` register: a symptom present and recurring for ≥3 weeks always points at the vet — the gentlest chronicity register still does. (This is intentionally one tier fewer than ④, which has a `soft` spread-only arm that has no chronicity analog.)
+
+> **⚠ The hold (CUL-1272, PM-approved 2026-09-26; ruling (a): both arms).** A firm ask never softens because a comparison window slid. Before this, the inherited arm lapsed the evening ④'s week slid past (Nyx, June 2026: "book a vet visit" at 16 episodes, then "a word with your vet" for eight evenings while the count held and rose to 18), and the span arm lapsed the day a course's first episode aged out of the 8-week lookback. **The rule, exactly as the row states it:** within one course (it fired at every instant in between), if the card **earned** `firm` by either arm above at some earlier instant, at a count at or below today's, today is `firm`. That is the only form under which the promise holds for any reads an owner makes (an owner told "book" at 12 is never told "a word" at 12 or more later in the course); anchoring on the *most recent* firm instant broke it when a new episode briefly raised the count before an old one aged out (adversarial pass, 2026-09-26). It releases when the 8-week count falls below every count the course was judged firm at; a course that stood down earns its own tier when it returns. **Stickiness ruled (a), accepted as shipped (PM, 2026-09-26, CUL-1330):** a firm ask lent by a one-week ④ blip, which a steady course can produce by chance, binds for the rest of the course (measured on steady 3–6-week courses: firm reads 42–51% before, 83–92% after); EN-1's scorecard (CUL-1131) keeps counting both sides. Built in the composition layer (`holdChronicityTier`, after `suppressWorseningWhenChronic`) by replaying the shipped detectors just after each instant at which their answer can change (an onset entering or leaving a window, the recency floor lapsing, a logged day entering or leaving ④'s weeks), so it reads every state at any time of day; a 24h grid missed a five-hour ④ window from evening reads. The Signal and the vet report share it. Stated blind spots: the walk reaches back at most 120 days (inside the 180-day fetch) and steps through at most 700 instants (a reach of 13 to 115 days, by how much is logged; it keeps the walk near 0.3 s of the 2 s Edge Function CPU budget at the heaviest logging), past which there is no hold; it replays the live read as returned (a capped read, CUL-989, is replayed capped); the report's window start is fixed, so the report can hold **more** often than Home (for a window of 56 days or less nothing ages out and a hold ends only when the course stands down), and nothing renders the report's tier today.
 
 ### 4.7 Guardrails specific to ⑦ (the never-reassure asymmetry, made concrete)
 

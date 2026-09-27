@@ -41,6 +41,7 @@ jest.mock('../../hooks/useSignal', () => ({
 }));
 jest.mock('../../hooks/useWatchingRows', () => ({
   useWatchingRows: () => [],
+  useWatchingRowsRead: () => ({ rows: [], answered: true }),
 }));
 jest.mock('../../hooks/useReducedMotion', () => ({
   useReducedMotion: () => false,

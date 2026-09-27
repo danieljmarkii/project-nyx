@@ -24,9 +24,12 @@ import { useDesignV2 } from '../../hooks/useDesignV2';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { Tick } from '../designV2/waits/Tick';
 import { ThemedText } from '../ui/ThemedText';
+import { isQuietVerdict } from '../../lib/incidentVerdict';
 
-/** The shipped recommendation enum. Named here only to pick a tone. */
-export type IncidentVerdict = 'worth_a_call' | 'monitor' | 'not_enough_to_say';
+/** The verdict the record holds, named here only to pick a tone. Text, not the shipped
+ *  three-value union: a server may hold a verdict this build has never seen (CUL-1277),
+ *  and the tone below is decided by the quiet list, never by the literal. */
+export type IncidentVerdict = string;
 
 export const INCIDENT_READ_DISCLAIMER =
   'This is a quick read of a single moment, not a diagnosis.';
@@ -77,16 +80,14 @@ export function IncidentReadPending({
   );
 }
 
-/**
- * The two verdicts that may render CALM. Deliberately an allowlist, not
- * `verdict === 'worth_a_call'`: a value outside the shipped enum — a server that gains a
- * fourth recommendation before this build does — would otherwise take the grey rail, and
- * a grey rail is a positive claim that this is not an escalation. Absence of a known
- * escalation is not calm (Pattern 1's shape, applied to the presentation layer), so the
- * unknown case fails toward the rose. It costs a false alarm at worst; the other
- * direction costs a missed one.
- */
-const CALM_VERDICTS: readonly string[] = ['monitor', 'not_enough_to_say'];
+// The verdicts that may render with a grey rail are an ALLOWLIST, not
+// `verdict === 'worth_a_call'`: a value outside the shipped enum — a server that gains a
+// fourth recommendation before this build does — would otherwise take the grey rail, and
+// a grey rail is a positive claim that this is not an escalation. Absence of a known
+// escalation is not calm (Pattern 1's shape, applied to the presentation layer), so the
+// unknown case fails toward the rose. It costs a false alarm at worst; the other
+// direction costs a missed one. The list is `QUIET_VERDICTS` in `lib/incidentVerdict.ts`
+// since CUL-1277, the one the sections' fold, the failure rescue and the server read too.
 
 export function IncidentReadCard({
   verdict,
@@ -110,7 +111,7 @@ export function IncidentReadCard({
    *  rail's apparent growth rate depend on the verdict. G4 says it must not. */
   onMeasure?: (height: number) => void;
 }) {
-  const attn = !CALM_VERDICTS.includes(verdict);
+  const attn = !isQuietVerdict(verdict);
   return (
     <View
       testID="incident-read-card"

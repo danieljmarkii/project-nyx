@@ -63,8 +63,16 @@ type Row = Record<string, unknown>;
 
 /** Anchored to `Date.now()`, never a literal date — the floor under test is judged
  *  against a real-clock day counter (C-29). */
-const dayKeyDaysAgo = (n: number): string =>
-  toLocalDayKey(new Date(Date.now() - n * 24 * 60 * 60 * 1000));
+// N LOCAL CALENDAR days back, never N × 24h: across a daylight-saving change a local
+// day is 23 or 25 hours long, so the millisecond subtraction lands a date early just
+// after local midnight. Caught by the non-UTC job on 2026-09-27, the day Chatham sprang
+// forward: 52 × 24h back from 00:07 Chatham daylight time is 23:07 on the wrong date, and the day
+// counter read 54 for a fixture meaning 53.
+const dayKeyDaysAgo = (n: number): string => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return toLocalDayKey(d);
+};
 
 function seed(overrides: Record<string, unknown> = {}): void {
   const row = {
