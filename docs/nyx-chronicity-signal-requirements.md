@@ -1,6 +1,7 @@
 # Nyx — Chronicity / Persistence Signal Lane Requirements (Detector ⑦)
 
 **Status:** Build-ready spec, pending PM greenlight to promote to active build.
+**Last updated:** 2026-09-26 — §4.6 gains the firm-tier hold (CUL-1272, PM-approved; stickiness ruled on CUL-1330).
 **Backlog:** B-182 (Next). **Build step:** Step 10 evolution — the deterministic Signal engine (`supabase/functions/generate-signal/detection.ts`).
 **Origin:** `docs/research/2026-06-vet-council-nyx-deep-dive.md` §9 #1, Findings 2/3, Consensus §5.1 #3.
 **Author:** Data Scientist + Dr. Chen lenses, this session. **Reviewers required before merge:** `adversarial-reviewer` (MANDATORY — clinically load-bearing, never-reassure), `code-reviewer`.
