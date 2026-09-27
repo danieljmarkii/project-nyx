@@ -53,6 +53,15 @@ const mockLive = jest.fn(() => true);
 jest.mock('../../hooks/useTrialScreen', () => ({ useTrialScreen: () => mockLive() }));
 const mockReduced = jest.fn(() => false);
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => mockReduced() }));
+// TS-9: the Signal door's gate and read. Design v2 defaults OFF, so every case above the
+// Signal door block renders the screen as it was before the door existed.
+const mockDesignV2 = jest.fn(() => false);
+jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockDesignV2() }));
+const mockReadSignalCache = jest.fn(async (_petId: string): Promise<unknown> => null);
+jest.mock('../../lib/signal', () => ({
+  ...jest.requireActual('../../lib/signal'),
+  readSignalCache: (petId: string) => mockReadSignalCache(petId),
+}));
 const mockFocus = jest.fn();
 jest.mock('../../lib/a11yFocus', () => ({ focusAccessibility: (...a: unknown[]) => mockFocus(...a) }));
 
@@ -114,6 +123,7 @@ jest.mock('../trial/TrialLifecycleSheets', () => ({
 
 import TrialRoute, { BAD_LINK_BODY, OFF_BODY, OFF_TITLE } from '../../app/trial/[pet]';
 import { SIGNAL_OPEN_MOTION } from '../motion/signalOpenMotion';
+import { useSyncStore } from '../../store/syncStore';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -488,5 +498,133 @@ describe('the milestone (§3.9)', () => {
     expect(mockExtendTrial.mock.calls[0]).toEqual([
       expect.objectContaining({ trialId: 't-1' }),
     ]);
+  });
+});
+
+// ── §3.7 (TS-9): the door to the Signal's trial finding ─────────────────────────
+
+describe('the Signal door (TS-9)', () => {
+  const trialFinding = (dir: 'fewer_during_trial' | 'more_during_trial') => ({
+    type: 'trial_response',
+    priorityClass: 'insight',
+    trialDayNumber: 10,
+    targetDurationDays: 56,
+    trialLoggedDays: 10,
+    baselineLoggedDays: 30,
+    baselineWindowDays: 49,
+    pooledTrialCount: 3,
+    pooledBaselineCount: 11,
+    rapid: { trial: 1, baseline: 4 },
+    long: { trial: 0, baseline: 0 },
+    rapidWindowMinutes: 30,
+    longGapHours: 6,
+    treatShare: { trial: null, baseline: null },
+    mealsPerDay: { trial: null, baseline: null },
+    comparisonDirection: dir,
+    trialWindowDays: 10,
+  });
+  const cacheWith = (dir: 'fewer_during_trial' | 'more_during_trial') => ({
+    signalText: null,
+    isBuilding: false,
+    findings: [{ rank: 0, text: 'sentence', finding: trialFinding(dir) }],
+    coverage: [],
+    generatedAt: null,
+    expiresAt: '2099-01-01T00:00:00Z',
+  });
+
+  beforeEach(() => {
+    mockReadSignalCache.mockImplementation(async () => cacheWith('fewer_during_trial'));
+  });
+
+  it('Design v2 off: no door, and the Signal cache is never read, over a cache that would answer', async () => {
+    mockTrial = { input: running({ trialResponse: VOMITING }), status: 'loaded', inputIsForPet: true };
+    const off = await renderRoute();
+    expect(off.getByTestId('trial-record-card')).toBeTruthy();
+    expect(off.queryByTestId('trial-door-signal')).toBeNull();
+    expect(mockReadSignalCache).not.toHaveBeenCalled();
+    // …and it would have answered: the same fixture with the gate on draws the door.
+    mockDesignV2.mockReturnValue(true);
+    const on = await renderRoute();
+    expect(on.getByTestId('trial-door-signal')).toBeTruthy();
+    mockDesignV2.mockReturnValue(false);
+  });
+
+  it('Design v2 on: the door names the Signal screen, sits under the facts card, and pushes the route’s pet once', async () => {
+    mockDesignV2.mockReturnValue(true);
+    mockTrial = { input: running({ trialResponse: VOMITING }), status: 'loaded', inputIsForPet: true };
+    const view = await renderRoute();
+    expect(mockReadSignalCache.mock.calls.every(([id]) => id === 'pet-2')).toBe(true);
+    const row = view.getByTestId('trial-door-signal');
+    expect(row.props.accessibilityLabel).toBe('Diet trial, day 10 of 56, Vomiting, from the Signal');
+    expect(within(row).getByText('Vomiting, from the Signal')).toBeTruthy();
+    // Directly after the facts card, before the exposures door (§3.7).
+    const ids = view.queryAllByTestId(/^trial-/).map((n) => String(n.props.testID));
+    const seq = ids.filter((id, i) => ids.indexOf(id) === i);
+    expect(seq.indexOf('trial-door-signal')).toBeGreaterThan(seq.indexOf('trial-record-card'));
+    expect(seq.indexOf('trial-door-signal')).toBeLessThan(seq.indexOf('trial-door-exposures'));
+    fireEvent.press(row);
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith('/signal/trial_response?pet=pet-2');
+    mockDesignV2.mockReturnValue(false);
+  });
+
+  it('a falling pair over a refusing pet has no door (Home draws no card); a rising one keeps it on the safety face', async () => {
+    mockDesignV2.mockReturnValue(true);
+    mockTrial = {
+      input: running({ petName: 'Biscuit', trialDietRefusal: REFUSAL, trialResponse: VOMITING }),
+      status: 'loaded',
+      inputIsForPet: true,
+    };
+    const falling = await renderRoute();
+    expect(falling.getByTestId('trial-safety')).toBeTruthy();
+    expect(falling.queryByTestId('trial-door-signal')).toBeNull();
+    expect(mockReadSignalCache).toHaveBeenCalled();
+
+    mockReadSignalCache.mockImplementation(async () => cacheWith('more_during_trial'));
+    const rising = await renderRoute();
+    expect(rising.getByTestId('trial-safety')).toBeTruthy();
+    expect(rising.getByTestId('trial-door-signal')).toBeTruthy();
+    mockDesignV2.mockReturnValue(false);
+  });
+
+  // The adversarial pass's counterexample: a regen that flips the pair's direction while this
+  // screen is open must move the door with Home, which re-reads on the signal tick.
+  it('a regen that lands while the screen is open re-reads: a door Home drops goes, one it adds comes', async () => {
+    mockDesignV2.mockReturnValue(true);
+    mockTrial = {
+      input: running({ petName: 'Biscuit', trialDietRefusal: REFUSAL, trialResponse: VOMITING }),
+      status: 'loaded',
+      inputIsForPet: true,
+    };
+    mockReadSignalCache.mockImplementation(async () => cacheWith('more_during_trial'));
+    const view = await renderRoute();
+    expect(view.getByTestId('trial-door-signal')).toBeTruthy();
+
+    mockReadSignalCache.mockImplementation(async () => cacheWith('fewer_during_trial'));
+    await act(async () => {
+      useSyncStore.getState().bumpSignalTick();
+    });
+    expect(view.queryByTestId('trial-door-signal')).toBeNull();
+
+    mockReadSignalCache.mockImplementation(async () => cacheWith('more_during_trial'));
+    await act(async () => {
+      useSyncStore.getState().bumpSignalTick();
+    });
+    expect(view.getByTestId('trial-door-signal')).toBeTruthy();
+    mockDesignV2.mockReturnValue(false);
+  });
+
+  it('a failed cache read draws no door and leaves the screen whole', async () => {
+    mockDesignV2.mockReturnValue(true);
+    mockReadSignalCache.mockImplementation(async () => {
+      throw new Error('offline');
+    });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockTrial = { input: running({ trialResponse: VOMITING }), status: 'loaded', inputIsForPet: true };
+    const view = await renderRoute();
+    expect(view.queryByTestId('trial-door-signal')).toBeNull();
+    expect(view.getByTestId('trial-vomiting')).toBeTruthy();
+    warn.mockRestore();
+    mockDesignV2.mockReturnValue(false);
   });
 });

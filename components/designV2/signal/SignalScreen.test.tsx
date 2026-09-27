@@ -72,6 +72,7 @@ import type { CachedFinding, IntakeDeclineFinding, SymptomChronicityFinding } fr
 import { SIGNAL_OPEN_MOTION } from '../../motion/signalOpenMotion';
 import { FLIGHT_MOTION, abortFlight, getFlightState, landFlight, setHeroReady, settleOutbound, stageFlight } from '../../motion/flightMotion';
 import { createElement } from 'react';
+import { usePetStore } from '../../../store/petStore';
 import { dayKeyFromIndex, localDayIndexOf } from '../../../lib/utils';
 
 const shift = (key: string, d: number) => dayKeyFromIndex((localDayIndexOf(key) as number) + d);
@@ -377,6 +378,36 @@ describe('SignalScreen — the sections, in the ruled order', () => {
     expect(view.getByText("This signal isn't in Nyx's picture any more.")).toBeTruthy();
   });
 
+  // TS-9 (CUL-1305): a finding Home withholds says WHY, never "not in the picture", which over
+  // a vomiting finding could read as "it stopped" (C-37: return the reason).
+  it('the withheld state explains and points to the vet; it never says the signal is gone', async () => {
+    mockLoadSignalScreen.mockResolvedValue({ status: 'withheld', petName: 'Nyx' });
+    const view = render(<SignalScreen petId="pet-1" identity="trial_response" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-withheld')).toBeTruthy());
+    expect(view.getByText("This one is set aside while Nyx may not be eating. Fewer vomits from an empty stomach isn't a sign of getting better.")).toBeTruthy();
+    expect(view.getByText("If you're worried about Nyx, your vet is the best call.")).toBeTruthy();
+    expect(view.queryByTestId('signal-screen-missing')).toBeNull();
+  });
+
+  it('an unanswered register is a failed read with Try again, and the screen re-reads once the pets arrive', async () => {
+    const pets = usePetStore.getState().pets;
+    usePetStore.setState({ pets: [] as never });
+    mockLoadSignalScreen.mockRejectedValue(new Error('the not-eating register has not answered'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const view = render(<SignalScreen petId="pet-1" identity="trial_response" />);
+    await waitFor(() => expect(view.getByText('Try again')).toBeTruthy());
+    expect(view.queryByTestId('signal-screen-missing')).toBeNull();
+    const calls = mockLoadSignalScreen.mock.calls.length;
+    mockLoadSignalScreen.mockResolvedValue({ status: 'withheld', petName: 'Nyx' });
+    await act(async () => {
+      usePetStore.setState({ pets: [{ id: 'pet-1', name: 'Nyx', species: 'cat' }] as never });
+    });
+    expect(mockLoadSignalScreen.mock.calls.length).toBe(calls + 1);
+    await waitFor(() => expect(view.getByTestId('signal-screen-withheld')).toBeTruthy());
+    warn.mockRestore();
+    usePetStore.setState({ pets });
+  });
+
   it('an intake decline: title + sentence + why + script, no charts, no gallery, no fold control', async () => {
     const intake: IntakeDeclineFinding = { type: 'intake_decline', priorityClass: 'safety', trigger: 'consecutive_low', species: 'cat', daysBelowBaseline: 3, refusedFoodLabel: null, ratedMealsConsidered: 9 };
     mockLoadSignalScreen.mockResolvedValue(ready({ rank: 0, text: 'Nyx has eaten less than usual for 3 days. Call your vet today.', finding: intake }));
@@ -494,6 +525,27 @@ describe('the flight’s landing (D2-6 · CUL-1069)', () => {
     act(() => settleOutbound());
     expect(getFlightState().phase).toBe('idle');
     expect(StyleSheet.flatten(view.getByTestId('signal-section-weekly').props.style).opacity).toBeUndefined();
+  });
+
+  // TS-9 (CUL-1305, adversarial re-check): the gate can answer withheld for a card Home drew a
+  // beat before a regen; the clone of its falling bars must not stay painted over that answer.
+  it.each([
+    ['withheld', { status: 'withheld', petName: 'Nyx' }],
+    ['missing', { status: 'missing', petName: 'Nyx' }],
+  ])('a load that settles %s abandons the flown-in chart', async (_label, answer) => {
+    stage();
+    mockLoadSignalScreen.mockReturnValue(pending());
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    const slot = view.getByTestId('signal-hero-slot');
+    act(() => {
+      fireEvent(slot, 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: OUTER, height: 100 } } });
+    });
+    expect(getFlightState().phase).toBe('outbound');
+    await act(async () => {
+      resolveLoad?.(answer);
+    });
+    expect(getFlightState().phase).toBe('idle');
+    expect(getFlightState().flight).toBeNull();
   });
 
   it('Back reverses the flight before the pop; the hero hides again under the returning clone', async () => {

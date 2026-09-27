@@ -26,8 +26,10 @@ import { useDietTrial } from '../../hooks/useDietTrial';
 import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { useTrialFacts } from '../../hooks/useTrialFacts';
 import { useTrialLifecycle } from '../../hooks/useTrialLifecycle';
+import { useTrialSignalDoor } from '../../hooks/useTrialSignalDoor';
 import { focusAccessibility } from '../../lib/a11yFocus';
 import type { TrialCardAction, TrialCardActionId } from '../../lib/dietTrialCard';
+import type { TrialSignalDoor } from '../../lib/trialSignalDoor';
 import { PROFILE_ROUTE, profileStartTrialHref } from '../../lib/profileFocus';
 import {
   buildTrialScreenModel,
@@ -101,6 +103,17 @@ export function TrialScreen({ petId }: { petId: string }) {
     facts,
     allowedSet,
     appointment,
+  });
+
+  // §3.7 (TS-9): the door to the Signal's trial finding, exactly when Home would draw that
+  // card. The register is the model's, so it is only ever this pet's answered facts.
+  const signalDoor = useTrialSignalDoor({
+    petId,
+    trial: dietTrial.inputIsForPet ? (dietTrial.input?.trial ?? null) : null,
+    notEating: model.kind === 'trial' ? model.notEating : null,
+    // The clock the Signal screen titles with at its own load, so the door's day and the
+    // screen's day agree even across a midnight with this screen open.
+    nowMs: Date.now(),
   });
 
   // The lifecycle writes against the input on screen, and only when it is this pet's.
@@ -177,6 +190,7 @@ export function TrialScreen({ petId }: { petId: string }) {
         <TrialBody
           model={model}
           petId={petId}
+          signalDoor={signalDoor}
           titleRef={titleRef}
           handlers={handlers}
           busyAction={lifecycle.extending ? 'trial_extend' : null}
@@ -193,13 +207,15 @@ export function TrialScreen({ petId }: { petId: string }) {
 interface TrialBodyProps {
   model: TrialScreenTrial;
   petId: string;
+  /** §3.7 (TS-9) — null wherever Home would draw no trial card, or Design v2 is off. */
+  signalDoor: TrialSignalDoor | null;
   titleRef: React.RefObject<View | null>;
   handlers: Partial<Record<TrialCardActionId, () => void>>;
   busyAction: TrialCardActionId | null;
   onManage: () => void;
 }
 
-function TrialBody({ model, petId, titleRef, handlers, busyAction, onManage }: TrialBodyProps) {
+function TrialBody({ model, petId, signalDoor, titleRef, handlers, busyAction, onManage }: TrialBodyProps) {
   const safety = model.safety !== null;
   const hasRecordCard =
     model.ledger !== null ||
@@ -225,6 +241,18 @@ function TrialBody({ model, petId, titleRef, handlers, busyAction, onManage }: T
       ) : null}
     </View>
   );
+
+  // §3.7 (TS-9): directly under the facts card, whose last line is the vomiting sentence,
+  // on both faces. On a safety face only a RISING pair can reach here (Home withholds the
+  // falling one over a pet that may not be eating), and Home keeps that card, so the
+  // screen keeps its door (S7: never less than Home when it escalates).
+  const signalRow = signalDoor ? (
+    <DoorRow
+      door={signalDoor}
+      testID="trial-door-signal"
+      onPress={() => router.push(signalDoor.href)}
+    />
+  ) : null;
 
   // §3.9: the running trial's bottom action, and the intake-decline face's after its doors
   // (CUL-1339 #2). Null wherever the model withholds it.
@@ -290,6 +318,7 @@ function TrialBody({ model, petId, titleRef, handlers, busyAction, onManage }: T
               <FactLines model={model} />
             </Card>
           ) : null}
+          {signalRow}
           {model.exposures ? (
             <DoorRow
               door={model.exposures}
@@ -329,6 +358,7 @@ function TrialBody({ model, petId, titleRef, handlers, busyAction, onManage }: T
               <FactLines model={model} />
             </Card>
           ) : null}
+          {signalRow}
           {model.exposures ? (
             <DoorRow
               door={model.exposures}

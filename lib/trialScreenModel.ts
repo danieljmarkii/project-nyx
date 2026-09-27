@@ -115,6 +115,9 @@ export interface TrialScreenTrial {
   facts: TrialCardLine[];
   /** §3.7 — `resolveTrialStrip(input).trialResponseLine`, verbatim. */
   vomiting: string | null;
+  /** `isAnimalNotEating(input)`: the register Home feeds `visibleFindings`, handed to the
+   *  Signal door (TS-9) so the door and Home's card can never disagree about a falling pair. */
+  notEating: boolean;
   /** The LOCKED blind-spot qualifier, once, at the foot of the card the ledger and the
    *  facts share (§3.5, §5.2: the qualifier sits on the claim). */
   qualifier: string | null;
@@ -321,6 +324,7 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
     ledger,
     facts: factLines,
     vomiting: strip?.trialResponseLine ?? null,
+    notEating,
     qualifier,
     standingMeta: card.standingMeta,
     standingNote: card.standingNote,
