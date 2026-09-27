@@ -1,7 +1,16 @@
 // The coverage door (D2-4 / CUL-1066): speaks coverage, opens Patterns, keeps nothing
 // tappable at the row's right edge under the FAB (C-5).
 
-jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
+const mockFocusListeners: (() => void)[] = [];
+jest.mock('expo-router', () => ({
+  router: { push: jest.fn() },
+  useNavigation: () => ({
+    addListener: (_e: string, cb: () => void) => {
+      mockFocusListeners.push(cb);
+      return () => mockFocusListeners.splice(mockFocusListeners.indexOf(cb), 1);
+    },
+  }),
+}));
 // `lib/monthCoverage` now reads the event category (`lib/dayEvents`), whose closure
 // reaches `lib/supabase`; stubbed at the boundary as every sibling suite does.
 jest.mock('../../../lib/supabase', () => ({ supabase: { from: jest.fn() } }));
@@ -21,7 +30,7 @@ jest.mock('../../../store/eventStore', () => ({
   useEventStore: (sel: (s: { todayEvents: unknown[] }) => unknown) => sel({ todayEvents: [] }),
 }));
 
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { CoverageDoor, COVERAGE_DOOR_LABEL } from './CoverageDoor';
@@ -104,4 +113,20 @@ describe('CoverageDoor', () => {
     );
     expect(t.getAllByRole('button')).toHaveLength(1);
   });
+
+  it('re-reads the record when Home regains focus — an edit elsewhere can move where it starts', async () => {
+    // The only event, today: the record starts today…
+    mockReadRecordStart.mockResolvedValue(local(today, 8).occurredAt);
+    mockReadMonth.mockResolvedValue([local(today, 8)]);
+    const t = render(<CoverageDoor />);
+    await waitFor(() => expect(t.getByText(/the record starts today/)).toBeTruthy());
+    // …then, on another screen, it is re-timed to an older record start. Nothing Home
+    // watches changed; focus is the only signal.
+    mockReadRecordStart.mockResolvedValue(OLD_RECORD);
+    const calls = mockReadRecordStart.mock.calls.length;
+    act(() => mockFocusListeners.forEach((cb) => cb()));
+    await waitFor(() => expect(mockReadRecordStart.mock.calls.length).toBeGreaterThan(calls));
+    await waitFor(() => expect(t.queryByText(/the record starts today/)).toBeNull());
+  });
 });
+

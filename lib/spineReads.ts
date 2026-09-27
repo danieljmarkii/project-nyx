@@ -131,7 +131,10 @@ export async function readAnalysisCopy(
  *  `spineReads.recordStart.test.ts` pins the two together. */
 export const RECORD_START_EXCLUDED_TYPE = 'check_in';
 
-/** How many of the earliest rows to look at before giving up on a parseable instant. */
+/** How many of the earliest rows to look at before giving up on a parseable instant.
+ *  Every writer stores a valid ISO instant, so five unparseable rows in a row would be a
+ *  corrupt record; the door then reads it as not-yet-started (the invitation), the one
+ *  state that claims no count. Accepted, not defended further. */
 const RECORD_START_PROBE = 5;
 
 /**
@@ -142,7 +145,9 @@ const RECORD_START_PROBE = 5;
  *
  * C-40: the ORDER BY is on text, which is safe here and only here: the two ISO spellings
  * agree through the seconds (`…T08:00:04` in both), so they can only swap two rows inside
- * ONE second, and that cannot move the day. It is an ORDER, never a BOUND; the caller
+ * ONE second, and that cannot move the day. That premise holds because every writer
+ * stores UTC (`toISOString()` locally, PostgREST's `+00:00` on hydration); a row spelled
+ * with another offset would break it. It is an ORDER, never a BOUND; the caller
  * parses the instant and decides the day. A few rows are read so one unparseable value
  * cannot pass for "no record".
  */

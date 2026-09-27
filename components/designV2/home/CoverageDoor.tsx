@@ -15,7 +15,7 @@
 
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import { monthCoverage, monthCoverageLine } from '../../../lib/monthCoverage';
 import { readMonthRows, readRecordStart } from '../../../lib/spineReads';
@@ -34,6 +34,13 @@ export function CoverageDoor({ onPress }: { onPress?: () => void }) {
   const todayCount = useEventStore((s) => s.todayEvents.length);
   // The window ends YESTERDAY, so it moves at midnight even when nothing is logged.
   const todayKey = useTodayKey();
+  // An edit or a delete of an OLDER row moves neither the day's count nor a hydration
+  // tick, yet it can move the record's start (the adversarial pass on CUL-1221: the only
+  // event re-timed to yesterday kept "the record starts today"). Those edits happen on a
+  // pushed screen or another tab, so Home regaining focus is when the record is re-read.
+  const navigation = useNavigation();
+  const [focusTick, setFocusTick] = useState(0);
+  useEffect(() => navigation.addListener('focus', () => setFocusTick((t) => t + 1)), [navigation]);
   const [line, setLine] = useState<{ petId: string; text: string } | null>(null);
 
   useEffect(() => {
@@ -57,7 +64,7 @@ export function CoverageDoor({ onPress }: { onPress?: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [petId, hydrationTick, todayCount, todayKey]);
+  }, [petId, hydrationTick, todayCount, todayKey, focusTick]);
 
   // A read that hasn't answered is never a number (C-12): the door still opens, and the
   // line arrives when the record has answered for THIS pet.

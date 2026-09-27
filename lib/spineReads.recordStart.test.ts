@@ -68,6 +68,16 @@ describe('readRecordStart', () => {
     expect(await readRecordStart(PET)).toBe('2026-06-09T23:59:59.999Z');
   });
 
+  it('the one place the spellings disagree — a tie inside one second — cannot move the day', async () => {
+    // The same instant, both spellings: whichever the text sort returns, it is the same
+    // instant, so the local day monthCoverage keys from it is the same.
+    ev('local', 'meal', '2026-06-10T23:59:59.000Z');
+    ev('hydrated', 'meal', '2026-06-10T23:59:59+00:00');
+    const got = await readRecordStart(PET);
+    expect(got).not.toBeNull();
+    expect(Date.parse(got!)).toBe(Date.parse('2026-06-10T23:59:59Z'));
+  });
+
   it('is null for a record of looks alone, or no record at all — the door invites', async () => {
     expect(await readRecordStart(PET)).toBeNull();
     ev('look', 'check_in', '2026-09-01T08:00:00.000Z');
