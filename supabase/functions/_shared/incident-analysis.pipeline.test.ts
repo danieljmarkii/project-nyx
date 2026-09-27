@@ -484,3 +484,85 @@ Deno.test('pipeline CUL-1203 — an edited row takes the read-fields update on t
   assertStrictEquals(w.row?.recommendation, 'worth_a_call')
   assertStrictEquals(w.row?.colour, 'green')
 })
+
+// ── CUL-1323: a new read clears the owner's hide; a hold and a plain failure do not ────
+// The ruling (PM, 2026-09-27): a hide is about the words the owner read. Every write
+// that puts words there they have not seen clears it, and only those. Asserted on what
+// lands in the row, since "AI note hidden" over a Worth a call is the harm.
+
+const HIDDEN = '2026-09-25T09:00:00.000Z'
+const HIDDEN_CALM: Row = {
+  id: 'a1', recommendation: 'monitor', status: 'completed', read_text: 'MONITOR:Mochi', blood_col: 'no', dismissed_at: HIDDEN,
+}
+
+Deno.test('pipeline CUL-1323 — a re-read landing a Worth a call over a hidden calm read clears the hide, edited or not', async () => {
+  for (const edited_at of [null, '2026-09-20T00:00:00Z']) {
+    const w = makeWorld({ row: { ...HIDDEN_CALM, edited_at }, vision: () => BLOODY })
+    await run(w)
+    assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+    assertStrictEquals(w.row?.dismissed_at, null, `edited_at=${edited_at}`)
+  }
+})
+
+Deno.test('pipeline CUL-1323 — the capped contextual escalation over a hidden calm read clears the hide', async () => {
+  // The path round 1 of the adversarial pass found untested: no model runs, the
+  // escalation is the context's, and it goes through the builder.
+  const w = makeWorld({ row: { ...HIDDEN_CALM }, contextFlags: ['ctx_flag'], dayCount: 11, vision: () => CLEAN })
+  await run(w)
+  assertStrictEquals(w.visionCalls, 0)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.dismissed_at, null)
+})
+
+Deno.test('pipeline CUL-1323 — the rescue over a hidden calm read clears the hide (a failed run that still warns)', async () => {
+  const w = makeWorld({ row: { ...HIDDEN_CALM }, contextFlags: ['ctx_flag'], vision: overloaded })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.status, 'failed')
+  assertStrictEquals(w.row?.dismissed_at, null)
+})
+
+Deno.test('pipeline CUL-1323 — a HOLD clears a hide the owner may never have seen (old build, stale screen)', async () => {
+  // Adversarial round 2, Break 1, end to end. The owner's screen shows a calm read; a
+  // Worth a call lands where the screen is not looking; a build without the compare-and-set
+  // hides it unconditionally; then a calmer re-read (a photo swap, Ask's live read) is
+  // held. The hold keeps the escalation's words and must not keep that hide.
+  const w = makeWorld({ row: { ...HIDDEN_CALM }, vision: () => BLOODY })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.dismissed_at, null)
+  w.row!.dismissed_at = HIDDEN // the old build's `update({ dismissed_at }).eq('event_id')`
+  w.vision = () => CLEAN
+  w.writes = []
+  const r = await run(w)
+  assertStrictEquals(r.body.held, true)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.read_text, 'MODEL: blood')
+  assertStrictEquals(w.row?.dismissed_at, null)
+  assertEquals(w.writes, [{ mode: 'update', values: { dismissed_at: null } }])
+})
+
+Deno.test('pipeline CUL-1323 — a settling hold clears the hide with the status; an un-hidden hold still writes nothing', async () => {
+  const kept: Row = {
+    id: 'a1', recommendation: 'worth_a_call', status: 'failed', visual_flags: ['blood'], read_text: 'MODEL: blood',
+    blood_col: 'yes', error: 'Claude API error 529', dismissed_at: HIDDEN,
+  }
+  const settling = makeWorld({ row: { ...kept }, vision: () => CLEAN })
+  await run(settling)
+  assertEquals(settling.writes, [{ mode: 'update', values: { status: 'completed', error: null, dismissed_at: null } }])
+  assertStrictEquals(settling.row?.read_text, 'MODEL: blood')
+  const shown = makeWorld({ row: { ...kept, status: 'completed', error: null, dismissed_at: null }, vision: () => CLEAN })
+  const r = await run(shown)
+  assertStrictEquals(r.body.held, true)
+  assertEquals(shown.writes, [])
+})
+
+Deno.test('pipeline CUL-1323 — a failure that writes no words keeps the hide', async () => {
+  const w = makeWorld({ row: { ...HIDDEN_CALM }, vision: overloaded })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertStrictEquals(w.row?.status, 'failed')
+  assertStrictEquals(w.row?.read_text, 'MONITOR:Mochi')
+  assertStrictEquals(w.row?.dismissed_at, HIDDEN)
+})

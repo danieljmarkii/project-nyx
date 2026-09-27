@@ -273,6 +273,33 @@ export type AnalysisWriteBack =
 // identity keys. Identity (event_id / pet_id / incident_type) is spread AFTER
 // structuredValues so a descriptor bug can never override row identity; the
 // read fields land last, matching the shipped vomit semantics.
+//
+// A NEW READ CLEARS THE OWNER'S "HIDE" (CUL-1323, PM-ruled 2026-09-27). A
+// dismissal is a statement about the words the owner read, and this write puts a
+// read there they have not seen. The words can repeat (the templated reads do),
+// and clearing on a repeat only ever shows the owner more, so the rule does not
+// ask whether they changed. Before this, `dismissed_at` belonged to the INCIDENT:
+// an owner who hid a calm read and later asked for a new one (Try again, a
+// replaced photo, Ask's live read) got a Worth a call rendered as "AI note
+// hidden", with the escalation on the record and off the screen. It is set here,
+// in the one builder every read goes through (both modes, and the capped path's
+// contextual escalation), and AFTER the read fields so no caller can carry an old
+// dismissal forward. It is a presentation state, not a clinical field, so the
+// never-clobber guarantee below is untouched.
+//
+// The other writes, each pinned end to end in incident-analysis.pipeline.test.ts:
+//   · the failure write (`buildFailureWrite`) records no new read and leaves the
+//     hide alone, EXCEPT its rescue, which writes an escalation's words and clears
+//     it for the same reason this builder does;
+//   · a HOLD (`resolveReanalysisWrite`) keeps the stored escalation's words and
+//     clears the hide too: it is a new read, and a hide on file may predate the client
+//     that asks which words it was made on (see ReanalysisWrite).
+// The sink scan in incident-analysis.test.ts fails the build on a write of read
+// words that comes from none of these. The ORDER half is the client's: a Hide
+// writes only over the read on screen (lib/analysisDismissal.ts), so on that client
+// a read landing first is never hidden unseen. A build already on a phone hides
+// unconditionally, and nothing here can refuse it; that residual, and the rows the
+// old bug left hidden, are CUL-1357.
 export function buildAnalysisWriteBack<TFlag extends string>(params: {
   humanEdited: boolean
   eventId: string
@@ -282,9 +309,9 @@ export function buildAnalysisWriteBack<TFlag extends string>(params: {
   readFields: AnalysisReadFields<TFlag>
 }): AnalysisWriteBack {
   if (params.humanEdited) {
-    // ONLY the read columns. No structured field, no ai_raw_payload — that's the
-    // never-clobber guarantee, by construction.
-    return { mode: 'update', values: { ...params.readFields } }
+    // ONLY the read columns (and the hide they supersede). No structured field,
+    // no ai_raw_payload — that's the never-clobber guarantee, by construction.
+    return { mode: 'update', values: { ...params.readFields, dismissed_at: null } }
   }
   return {
     mode: 'upsert',
@@ -294,6 +321,7 @@ export function buildAnalysisWriteBack<TFlag extends string>(params: {
       pet_id: params.petId,
       incident_type: params.incidentType,
       ...params.readFields,
+      dismissed_at: null,
     },
   }
 }
@@ -333,6 +361,8 @@ export interface StoredAnalysis {
   // edited. The descriptor's present-only derivation (Pattern 9), never the cached
   // visual_flags, which an owner edit deliberately leaves stale.
   presentFlags: string[]
+  // dismissed_at is set: the owner's hide is on the row (CUL-1323). A hold clears it.
+  hidden: boolean
 }
 
 export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
@@ -345,6 +375,7 @@ export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, T
     status: typeof row.status === 'string' ? row.status : null,
     edited: !!row.edited_at,
     presentFlags: descriptor.presentFlagsFromStructured(row),
+    hidden: !!row.dismissed_at,
   }
 }
 
@@ -354,9 +385,19 @@ export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, T
 // so the row takes this run's status ('completed', or 'uncertain' for a read that
 // could not say) and drops the stale error. Left 'failed', the row would disable Edit,
 // and Ask's A8 would re-run a live read, and spend a unit, on every question about it.
+//
+// And it clears the owner's hide (CUL-1323): a hold is a new read, and the ruling is
+// that every new read clears it. "Those are the words the owner hid" is true only of a
+// hide made through the compare-and-set client (lib/analysisDismissal.ts). Builds
+// already on phones send an unconditional Hide, so a stale screen can hide a Worth a
+// call that landed unseen, and rows the pre-CUL-1323 bug left hidden are on file now.
+// Kept, that hide would stand over the escalation across every calmer read after it
+// (adversarial round 2). Cleared, the escalation shows, and the owner can hide it again.
+// This repairs such a row only when another read runs, and a hidden row offers no
+// Re-run, so it is a mitigation, not the fix: CUL-1357 carries the server-side one.
 export type ReanalysisWrite =
   | AnalysisWriteBack
-  | { mode: 'hold'; values: { status: string; error: null } | null }
+  | { mode: 'hold'; values: { status?: string; error?: null; dismissed_at?: null } | null }
 
 // The step-9 write decision. Two rules on top of Pattern 7's never-clobber:
 //
@@ -407,7 +448,14 @@ export function resolveReanalysisWrite<TFlag extends string>(params: {
   // too, and is held.
   if (stored && isEscalationVerdict(stored.recommendation) && !isEscalationVerdict(readFields.recommendation)) {
     const settle = stored.status !== 'completed' && stored.status !== 'uncertain'
-    return { mode: 'hold', values: settle ? { status: readFields.status, error: null } : null }
+    if (!settle && !stored.hidden) return { mode: 'hold', values: null }
+    return {
+      mode: 'hold',
+      values: {
+        ...(settle ? { status: readFields.status, error: null } : {}),
+        ...(stored.hidden ? { dismissed_at: null } : {}),
+      },
+    }
   }
   const dropsStoredFlag = !!stored &&
     stored.presentFlags.some((flag) => !params.nextPresentFlags.includes(flag))
@@ -626,6 +674,11 @@ export function buildFailureWrite(params: {
     // Identity + read fields only. PostgREST's upsert updates exactly the columns it
     // is sent, so an existing row's structured fields and edited_at are untouched and
     // a fresh row's are null, which is right for a read that never finished.
+    //
+    // And the owner's hide goes (CUL-1323). This is the one failure shape that writes
+    // WORDS: an escalation over a row that held none, so words the owner has not seen.
+    // A hide they made on the calm read before it would otherwise stand over them, and
+    // "AI note hidden" would sit where the warning belongs.
     return {
       mode: 'rescue',
       values: {
@@ -638,6 +691,7 @@ export function buildFailureWrite(params: {
         contextual_flags: params.rescue.contextual_flags,
         status: 'failed',
         error: params.message,
+        dismissed_at: null,
       },
     }
   }
@@ -1107,7 +1161,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // between them takes 10-60s and a sibling run (Ask's A8 read holds no analysis-
   // chain claim) or an owner edit can land inside it. A read error throws (CUL-817).
   // pet_id: every decision on the row first checks it is this event's (CUL-1203).
-  const storedColumns = ['id', 'pet_id', 'edited_at', 'status', 'recommendation', ...descriptor.redFlagColumns].join(', ')
+  // dismissed_at: a hold clears the owner's hide, so it has to know one is there (CUL-1323).
+  const storedColumns = ['id', 'pet_id', 'edited_at', 'status', 'recommendation', 'dismissed_at', ...descriptor.redFlagColumns].join(', ')
   const readStoredRow = async (): Promise<StoredRow | null> =>
     existingRowOrThrow(
       await adminClient
