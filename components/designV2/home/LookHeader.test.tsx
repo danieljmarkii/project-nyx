@@ -473,3 +473,56 @@ describe('BRK-17 — the stacked doors share no hit area (C-5, the rendered boxe
     expect(row.marginTop).toBe(LINE_CLEARANCE + HEADER_CHIP_REACH);
   });
 });
+
+// ── The adversarial pass on CUL-1220 ─────────────────────────────────────────────
+describe('the withheld read follows the record, and never hides a concern while it waits', () => {
+  it('a meal RATED Refused (no new row) re-reads the facts: Played gives way to the withheld entry', async () => {
+    const { useSyncStore } = require('../../../store/syncStore');
+    useEventStore.setState({ todayEvents: [lookAt('r1', at(7, 5), ['played']) as never] });
+    const t = render(<LookHeader />);
+    await waitFor(() => expect(t.getByText('Played')).toBeTruthy());
+    // Two bowls are rated Refused on the meal card: the row count does not move, the tick does.
+    mockLoadWithheldFacts.mockResolvedValue(refusing);
+    await act(async () => {
+      useSyncStore.getState().bumpHydrationTick();
+    });
+    await waitFor(() => expect(t.getByTestId('look-header-withheld')).toBeTruthy());
+    expect(t.queryByText('Played')).toBeNull();
+  });
+
+  it('a withheld read that fails never hides the concern: only the entry that could withhold waits', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockLoadWithheldFacts.mockRejectedValue(new Error('db locked'));
+    useEventStore.setState({
+      todayEvents: [lookAt('late', at(20, 0), ['played']) as never, lookAt('early', at(7, 10), ['hiding']) as never],
+    });
+    const t = render(<LookHeader />);
+    await waitFor(() => expect(warn).toHaveBeenCalled());
+    expect(t.getByText('Hiding')).toBeTruthy();
+    expect(t.queryByText('Played')).toBeNull();
+    expect(t.getAllByTestId('look-header-skeleton')).toHaveLength(1);
+    expect(t.getByTestId('look-header-add')).toBeTruthy();
+    warn.mockRestore();
+  });
+
+  it('a word this build does not know fails CLOSED: it stays on the day, never folded away', async () => {
+    useEventStore.setState({
+      todayEvents: [lookAt('late', at(20, 0), ['played']) as never, lookAt('early', at(7, 10), ['a_word_from_a_newer_app']) as never],
+    });
+    const t = render(<LookHeader />);
+    await waitFor(() => expect(t.getByText('Played')).toBeTruthy());
+    expect(t.queryByTestId('look-header-more-today')).toBeNull();
+    expect(t.getAllByTestId('look-header-answered')).toHaveLength(2);
+  });
+
+  it('a hydrated +00:00 row and a local .000Z row sort by instant, not by text (C-40)', async () => {
+    const later = new Date(at(20, 0));
+    const hydrated = later.toISOString().replace('.000Z', '+00:00');
+    useEventStore.setState({
+      todayEvents: [lookAt('early', at(7, 10), ['played']) as never, lookAt('late', hydrated, ['lively']) as never],
+    });
+    const t = render(<LookHeader />);
+    await waitFor(() => expect(t.getByText('Lively')).toBeTruthy());
+    expect(t.getByText('1 more today ›')).toBeTruthy();
+  });
+});

@@ -43,6 +43,7 @@ import {
   LOOK_OPENING_CHIP_KEY,
   lookSpeciesOf,
   lookWord,
+  lookWordKind,
   notHerselfLabel,
   type LookSpecies,
 } from '../../../constants/lookWords';
@@ -80,6 +81,7 @@ import { formatTime } from '../../../lib/utils';
 import { LOOK_DWELL_MS, useMomentStore } from '../../../store/momentStore';
 import { useEventStore, type NyxEvent } from '../../../store/eventStore';
 import { usePetStore } from '../../../store/petStore';
+import { useSyncStore } from '../../../store/syncStore';
 import { useUiStore } from '../../../store/uiStore';
 import { LookEmergencySheet } from '../../home/LookEmergencySheet';
 import { LookWithheldEntry, LookWithheldReasonLine, WITHHELD_UNDO_FADE_MS } from '../../home/LookWithheldEntry';
@@ -139,6 +141,10 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
   const openIntakeDoor = useUiStore((s) => s.openIntakeDoor);
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
+  // A meal RATED Refused adds no row, so the row count cannot see it; the rating bumps the
+  // hydration tick (`rateMealIntake`), which is what re-reads the withheld facts (the
+  // CUL-1220 adversarial pass: two refused bowls left a Played look speaking).
+  const hydrationTick = useSyncStore((s) => s.hydrationTick);
 
   const species: LookSpecies | null = lookSpeciesOf(activePet?.species);
   const live = lookCardLive({ eligible, optedIn, species: activePet?.species }) && activePet !== null;
@@ -167,7 +173,8 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
     () =>
       todayEvents
         .filter((e) => isLookRow(e) && e.pet_id === petId)
-        .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)),
+        // Parsed, never compared as text (C-40: `.000Z` and `+00:00` spell one instant).
+        .sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at)),
     [todayEvents, petId],
   );
   const newest = todayLooks[0] ?? null;
@@ -212,7 +219,7 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [live, petId, petSpecies, todayEvents.length, trialNotEating]);
+  }, [live, petId, petSpecies, todayEvents.length, hydrationTick, trialNotEating]);
 
   useEffect(() => {
     if (!live || !petId || withheldState !== 'withheld') return;
@@ -396,14 +403,16 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
           read is in flight the entries are a skeleton: neither claim (C-12). */}
       {shown.length > 0 ? (
         <View testID="look-header-entries">
-          {withheldState === 'unknown' ? (
-            <View style={styles.answered} testID="look-header-skeleton">
-              <Skeleton width="60%" height={13} />
-            </View>
-          ) : (
-            <>
+          {/* A concern entry never withholds, so it needs no withheld fact to be drawn:
+              only an entry that COULD withhold waits on the read as a skeleton, and a read
+              that never answers never hides a concern (the adversarial pass). */}
+          <>
               {shown.map((row) =>
-                withholds(row) ? (
+                withheldState === 'unknown' && !carriesConcern(row, species) ? (
+                  <View key={row.id} style={styles.answered} testID="look-header-skeleton">
+                    <Skeleton width="60%" height={13} />
+                  </View>
+                ) : withholds(row) ? (
                   <LookWithheldEntry
                     key={row.id}
                     occurredAt={row.occurred_at}
@@ -449,8 +458,7 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
                   <ThemedText style={styles.control}>{lookMoreToday(folded)}</ThemedText>
                 </Pressable>
               ) : null}
-            </>
-          )}
+          </>
         </View>
       ) : null}
 
@@ -585,10 +593,16 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
 }
 
 /** Does this look carry a concern word? The one fact that keeps an earlier entry on the
- *  day (BRK-20) — the inverse of `entryWithholdsWords`, imported rather than restated. */
+ *  day (BRK-20) — the inverse of `entryWithholdsWords`, imported rather than restated.
+ *  FAILS CLOSED: only a recorded absence, or words this build can resolve and none of
+ *  them a concern, reads as "no concern". A key this build does not know (a newer
+ *  client's word) or a row whose outcome has not synced yet stays on the day. */
 function carriesConcern(row: NyxEvent, species: LookSpecies): boolean {
-  if (row.look_outcome !== 'observed') return false;
-  return !entryWithholdsWords(wordsFromLocalText(row.look_words), species);
+  if (row.look_outcome === 'nothing_unusual') return false;
+  const words = wordsFromLocalText(row.look_words);
+  if (row.look_outcome !== 'observed' && words.length === 0) return true;
+  if (words.some((w) => lookWordKind(w, species) === null)) return true;
+  return !entryWithholdsWords(words, species);
 }
 
 // ── The answered row ─────────────────────────────────────────────────────────────
