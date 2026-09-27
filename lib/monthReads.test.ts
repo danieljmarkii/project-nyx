@@ -373,6 +373,7 @@ describe('readMonthFacts against the production DDL', () => {
     expect(edge.episodeDays).toEqual([]);
     expect(edge.continuationDays).toEqual([{ day: '2026-09-01', from: '2026-08-31' }]);
   });
+
   it('bounds are parsed, never compared as text: both spellings of a boundary instant land on their day (C-40)', async () => {
     // The same instant — the first second of the range's first local day — spelled the
     // two ways the table holds it. A text bound would keep one and drop the other.
