@@ -18,7 +18,9 @@
 //   • draws NO BAR and NO END DATE (a) — a tidy "day 23 of 56 · ends Oct 29" with a filling
 //     bar over a pet that may not be eating is the chart-under-a-safety-row the Signal/Home
 //     spine forbids (S4);
-//   • carries the screen's FIRST safety sentence, verbatim, as plain text on a rose rail (a′).
+//   • carries the screen's safety sentences, verbatim, as plain text on a rose rail: the fact
+//     and the ask (a′, then "both", PM 2026-09-27 — the call-today lives in the SECOND
+//     sentence, so the fact alone escalated without saying to call).
 //     (a) assumed the ask stays on Home's Signal card. It does for an intake decline and does
 //     NOT for a trial refusal: the Signal's detector cannot see a cat that refuses from day 1
 //     (B-789), and Home's strip is silent on a refusal because the register lived on the Pet
@@ -46,8 +48,9 @@ export interface TrialDoorRowModel {
   /** The strip's header while active ("Rabbit trial · day 23 of 56"); the card's kicker on
    *  an ended trial ("Diet trial · finished"). */
   title: string;
-  /** The screen's first safety sentence, verbatim, or null when the screen shows none. */
-  alert: string | null;
+  /** The screen's first two safety sentences (the fact, then the ask), verbatim, or null
+   *  when the screen shows none. */
+  alert: string[] | null;
   /** DAY progress in [0, 1], or null where the row draws no bar. */
   progressFraction: number | null;
   /** `{food} · ends {date}`, the food alone where the end is dropped, or null. */
@@ -56,8 +59,10 @@ export interface TrialDoorRowModel {
   accessibilityLabel: string;
 }
 
-/** How many of the screen's safety sentences the row carries (ruling (a′): the first). */
-const DOOR_ALERT_LINES = 1;
+/** How many of the screen's safety sentences the row carries: both, the fact and the ask
+ *  (PM, 2026-09-27). The registers write two; a third, were one ever added, stays on the
+ *  screen. */
+const DOOR_ALERT_LINES = 2;
 
 /** Null when there is no trial to open (the start card stays), else the one row. */
 export function buildTrialDoorRow(input: TrialCardInput | null): TrialDoorRowModel | null {
@@ -67,7 +72,7 @@ export function buildTrialDoorRow(input: TrialCardInput | null): TrialDoorRowMod
   const strip = resolveTrialStrip(input);
   const safetyLines = trialSafetyLines(card);
   const safety = safetyLines.length > 0;
-  const alert = safety ? safetyLines.slice(0, DOOR_ALERT_LINES).join(' ') : null;
+  const alert = safety ? safetyLines.slice(0, DOOR_ALERT_LINES) : null;
 
   const title = strip?.header ?? card.kicker;
   const progressFraction = safety ? null : card.progressFraction;
@@ -86,8 +91,8 @@ export function buildTrialDoorRow(input: TrialCardInput | null): TrialDoorRowMod
     alert,
     progressFraction,
     subline,
-    // The alert is its own sentence and already ends in a full stop.
-    accessibilityLabel: [title, alert?.replace(/\.$/, ''), subline, 'Open the diet trial.']
+    // Each alert line is its own sentence and already ends in a full stop.
+    accessibilityLabel: [title, ...(alert ?? []).map((l) => l.replace(/\.$/, '')), subline, 'Open the diet trial.']
       .filter(Boolean)
       .join('. '),
   };

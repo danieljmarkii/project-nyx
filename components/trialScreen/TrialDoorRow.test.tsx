@@ -1,6 +1,6 @@
 // The Pet tab's door row as drawn (TS-6 · CUL-1302; rulings (a), (a′)). The model is
 // `lib/trialDoorRow.test.ts`'s business; this pins what the drawing does with it.
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { TrialDoorRow } from './TrialDoorRow';
 import type { TrialDoorRowModel } from '../../lib/trialDoorRow';
@@ -17,7 +17,10 @@ const RUNNING: TrialDoorRowModel = {
 };
 const REFUSING: TrialDoorRowModel = {
   ...RUNNING,
-  alert: '4 feedings of the 5 trial-diet feedings you’ve rated were left unfinished, across 2 days.',
+  alert: [
+    '4 feedings of the 5 trial-diet feedings you’ve rated were left unfinished, across 2 days.',
+    'A diet Pixel isn’t eating can’t answer the question the trial was started for — and a cat that isn’t eating what’s put down needs a call today, whatever the trial is doing.',
+  ],
   progressFraction: null,
   subline: 'Royal Canin Rabbit',
 };
@@ -42,11 +45,12 @@ describe('TrialDoorRow', () => {
     expect(view.queryByTestId('trial-door-row-alert')).toBeNull();
   });
 
-  it('a safety face: the screen’s first sentence on the rail, and no bar', () => {
+  it('a safety face: the fact and the ask on the rail, in that order, and no bar', () => {
     const view = render(<TrialDoorRow model={REFUSING} onPress={jest.fn()} />);
     const alert = view.getByTestId('trial-door-row-alert');
     expect(StyleSheet.flatten(alert.props.style).borderLeftWidth).toBeGreaterThan(0);
-    expect(view.getByText(REFUSING.alert!)).toBeTruthy();
+    const lines = within(alert).getAllByText(/./);
+    expect(lines.map((n) => n.props.children)).toEqual(REFUSING.alert);
     expect(view.queryByTestId('trial-door-row-track')).toBeNull();
   });
 });

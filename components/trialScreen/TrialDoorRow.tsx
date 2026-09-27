@@ -11,8 +11,8 @@ import type { TrialDoorRowModel } from '../../lib/trialDoorRow';
 // In the namespace so the flag-off guard can stub it: flag-off, the Pet tab's tree must equal
 // the tree with this file absent (`guards/trialScreenFlagOff.test.tsx`, C-36).
 //
-// On a safety face (ruling (a′)) the row carries the screen's first safety sentence on a
-// rose rail, and no bar and no end date.
+// On a safety face (ruling (a′), both sentences) the row carries the screen's fact and ask
+// on a rose rail, and no bar and no end date.
 //
 // The whole row is ONE accessible button carrying the model's sentence, so the bar is never
 // the only place the day lives and VoiceOver reads the door once, not as five fragments.
@@ -42,10 +42,15 @@ export function TrialDoorRow({
         <ThemedText style={styles.eyebrow}>{model.eyebrow}</ThemedText>
         <ThemedText style={styles.title}>{model.title}</ThemedText>
         {model.alert ? (
-          // Ruling (a′): the screen's first safety sentence, on the screen's own rose rail.
-          // Plain text and no chart (S4); the row still draws no bar on this face.
+          // Ruling (a′): the screen's safety sentences, on the screen's own rose rail — the
+          // fact, then the ask in the screen's ask ink (`safetyAsk`). Plain text and no chart
+          // (S4); the row still draws no bar on this face.
           <View style={styles.alert} testID="trial-door-row-alert">
-            <ThemedText style={styles.alertText}>{model.alert}</ThemedText>
+            {model.alert.map((line, i) => (
+              <ThemedText key={i} style={i === 0 ? styles.alertText : styles.alertAsk}>
+                {line}
+              </ThemedText>
+            ))}
           </View>
         ) : null}
         {model.progressFraction !== null ? (
@@ -96,6 +101,7 @@ const styles = StyleSheet.create({
   },
   // The screen's safety rail (`TrialScreen.tsx` `safety`), at the row's scale.
   alert: {
+    gap: theme.space0_5,
     borderLeftWidth: 3,
     borderLeftColor: theme.colorEventSymptom,
     paddingLeft: theme.space1,
@@ -106,6 +112,12 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightSM,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
+  },
+  alertAsk: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorEventSymptomInk,
   },
   // The card's own bar (`components/profile/DietTrialCard`), so the door reads as the
   // card's summary rather than a new chart.

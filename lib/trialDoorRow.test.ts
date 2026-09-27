@@ -116,12 +116,16 @@ describe('the safety faces: the screen’s first sentence, no bar, no end date (
     const i = input({ species: 'cat', trialDietRefusal: REFUSAL });
     expect(resolveTrialCard(i).state).toBe('trial_refusal');
     const r = row(i);
-    expect(r.alert).toBe('4 feedings of the 5 trial-diet feedings you’ve rated were left unfinished, across 2 days.');
-    expect(r.alert).toBe(screenFor(i).safety![0]);
+    // Both sentences (PM, 2026-09-27): the fact, then the ask, which is where the call lives.
+    expect(r.alert).toEqual([
+      '4 feedings of the 5 trial-diet feedings you’ve rated were left unfinished, across 2 days.',
+      'A diet Mochi isn’t eating can’t answer the question the trial was started for — and a cat that isn’t eating what’s put down needs a call today, whatever the trial is doing. Culprit isn’t reading these days as a clean run while this is going on.',
+    ]);
+    expect(r.alert).toEqual(screenFor(i).safety!.slice(0, 2));
     expect(r.progressFraction).toBeNull();
     expect(r.subline).toBe('Royal Canin Rabbit');
     expect(r.accessibilityLabel).toBe(
-      'Diet trial · day 23 of 56. 4 feedings of the 5 trial-diet feedings you’ve rated were left unfinished, across 2 days. Royal Canin Rabbit. Open the diet trial.',
+      'Diet trial · day 23 of 56. 4 feedings of the 5 trial-diet feedings you’ve rated were left unfinished, across 2 days. A diet Mochi isn’t eating can’t answer the question the trial was started for — and a cat that isn’t eating what’s put down needs a call today, whatever the trial is doing. Culprit isn’t reading these days as a clean run while this is going on. Royal Canin Rabbit. Open the diet trial.',
     );
   });
 
@@ -130,8 +134,11 @@ describe('the safety faces: the screen’s first sentence, no bar, no end date (
     expect(resolveTrialCard(i).state).toBe('intake_decline');
     const r = row(i);
     expect(r.title).toBe('Diet trial · day 23 of 56');
-    expect(r.alert).toBe(DECLINE);
-    expect(r.alert).toBe(screenFor(i).safety![0]);
+    expect(r.alert).toEqual([
+      DECLINE,
+      'A pet that goes off their food needs a call, whatever the trial is doing. Culprit isn’t reading these days as a clean run while this is going on.',
+    ]);
+    expect(r.alert).toEqual(screenFor(i).safety!.slice(0, 2));
     expect(r.progressFraction).toBeNull();
     expect(r.subline).toBe('Royal Canin Rabbit');
     // Non-vacuity: the same trial without the flag has a bar and an end date to leak.
@@ -146,7 +153,8 @@ describe('the safety faces: the screen’s first sentence, no bar, no end date (
     expect(resolveTrialCard(i).state).toBe('completed');
     expect(screenFor(i).safety).not.toBeNull();
     const r = row(i);
-    expect(r.alert).toBe(DECLINE);
+    expect(r.alert?.[0]).toBe(DECLINE);
+    expect(r.alert?.[1]).toMatch(/needs a call today/);
     expect(r.progressFraction).toBeNull();
   });
 
