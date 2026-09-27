@@ -217,6 +217,78 @@ describe('useThreadDraw', () => {
     expect(valueOf(result.current.rowStyle(2).opacity)).toBe(1);
   });
 
+  // CUL-1375. Stopping a native animation is answered a frame later by the native side with
+  // the value it had reached, and RN writes that value into the JS node and re-renders the
+  // bound view (`Animation.__startAnimationIfNative`). The mocked driver never answers, so
+  // the reply is played by hand, onto the value that was bound when the draw was cut.
+  const nativeReply = (v: Animated.Value, value: number) =>
+    (v as unknown as { __onAnimatedValueUpdateReceived: (n: number) => void }).__onAnimatedValueUpdateReceived(value);
+
+  it('a cut draw survives the native stop\'s late reply: the row bound after the cut stays at rest', () => {
+    const { result, rerender } = renderHook((p: { appActive: boolean }) => useThreadDraw({ ...base, ...p, token: 't', claim: () => true }), {
+      initialProps: { appActive: true },
+    });
+    const boundRow = result.current.rowStyle(0).opacity;
+    const boundShift = result.current.rowStyle(0).transform[0].translateY;
+    const boundLine = result.current.lineScale;
+    rerender({ appActive: false });
+    // The stop's reply: the first row had barely begun.
+    act(() => {
+      nativeReply(boundRow, 0);
+      nativeReply(boundShift, -THREAD_DRAW.rowDriftPt);
+      nativeReply(boundLine, 0.1);
+    });
+    expect(result.current.drawing).toBe(false);
+    expect(valueOf(result.current.rowStyle(0).opacity)).toBe(1);
+    expect(valueOf(result.current.rowStyle(0).transform[0].translateY)).toBe(0);
+    expect(valueOf(result.current.lineScale)).toBe(1);
+  });
+
+  it('the valve\'s cut survives the late reply too', () => {
+    const parallel = jest.spyOn(Animated, 'parallel').mockImplementation(
+      () => ({ start: () => {}, stop: () => {}, reset: () => {} }) as unknown as Animated.CompositeAnimation,
+    );
+    const { result } = renderHook(() => useThreadDraw({ ...base, token: 't', claim: () => true }));
+    const bound = result.current.rowStyle(2).opacity;
+    act(() => {
+      jest.advanceTimersByTime(threadDrawTotalMs(3) + FOLD_MOTION.settleSlackMs * 2);
+    });
+    act(() => nativeReply(bound, 0.4));
+    expect(valueOf(result.current.rowStyle(2).opacity)).toBe(1);
+    parallel.mockRestore();
+  });
+
+  it('a draw that FINISHED keeps its values: nothing is left to reply, so nothing is rebound', () => {
+    const { result } = renderHook(() => useThreadDraw({ ...base, token: 't', claim: () => true }));
+    const bound = result.current.rowStyle(0).opacity;
+    act(() => {
+      jest.advanceTimersByTime(threadDrawTotalMs(3) + 50);
+    });
+    expect(result.current.rowStyle(0).opacity).toBe(bound);
+    expect(valueOf(bound)).toBe(1);
+  });
+
+  it('a card that first draws while the app is NOT active: the still frame, nothing seeded, the token NOT spent', () => {
+    // A cold launch reports `inactive` for its first frames; an unfocused iPad window too.
+    const claim = jest.fn(() => true);
+    const { result } = renderHook(() => useThreadDraw({ ...base, appActive: false, token: 'paint:x:d', claim }));
+    expect(result.current.drawing).toBe(false);
+    expect(claim).not.toHaveBeenCalled();
+    expect(valueOf(result.current.lineScale)).toBe(1);
+    for (let i = 0; i < 3; i++) expect(valueOf(result.current.rowStyle(i).opacity)).toBe(1);
+  });
+
+  it('the app becoming active afterwards never draws the refused token late (never motion after the fact)', () => {
+    const claim = jest.fn(() => true);
+    const { result, rerender } = renderHook((p: { appActive: boolean }) => useThreadDraw({ ...base, ...p, token: 'paint:x:d', claim }), {
+      initialProps: { appActive: false },
+    });
+    rerender({ appActive: true });
+    expect(claim).not.toHaveBeenCalled();
+    expect(result.current.drawing).toBe(false);
+    expect(valueOf(result.current.rowStyle(0).opacity)).toBe(1);
+  });
+
   it('Reduce Motion switched on mid-draw: the still frame, now', () => {
     const { result, rerender } = renderHook((p: { reducedMotion: boolean }) => useThreadDraw({ ...base, ...p, token: 't', claim: () => true }), {
       initialProps: { reducedMotion: false },

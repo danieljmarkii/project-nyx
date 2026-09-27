@@ -36,11 +36,25 @@
 // owner's own scroll, so a list whose first frame held no card never draws one later.
 //
 // REDUCED MOTION is the still frame: nothing is seeded, nothing starts, and the token is
-// left unclaimed rather than spent on a draw nobody saw. APP BLUR FINISHES, never pauses:
-// a draw cut by a blur is committed at its end state. A native-driver animation never
-// writes its final value back to JS, so every end PINS its values (the fold's `rest()`).
-// And the end never rides on the frame clock alone (the Motion Designer's rule): a timer
-// set to the draw's own length ends it if the completion callback never comes.
+// left unclaimed rather than spent on a draw nobody saw. So is a card that first draws
+// while the app is NOT ACTIVE (a cold launch reports `inactive` for its first frames; an
+// iPad window without focus reads `inactive` too): a draw started there was cut by the
+// blur rule one passive effect later. APP BLUR FINISHES, never pauses: a draw cut by a
+// blur is committed at its end state. A native-driver animation never writes its final
+// value back to JS, so every end PINS its values (the fold's `rest()`). And the end never
+// rides on the frame clock alone (the Motion Designer's rule): a timer set to the draw's
+// own length ends it if the completion callback never comes.
+//
+// A CUT DRAW ABANDONS ITS VALUES (CUL-1375). Stopping a native animation is not the end
+// of it: the native side answers the stop a frame later with the value it had reached,
+// and RN writes that value into the JS node and re-renders every view bound to it
+// (`Animation.__startAnimationIfNative`'s end callback). So a pin made at the cut is
+// overwritten by the stop's own reply, and a row the cut caught before it landed (the
+// first row starts at once; the later ones wait on a JS timer and have no native side
+// yet) is committed at opacity 0: a row-sized blank on the card, for good. A cut
+// therefore rebinds the rows and the line to FRESH values at rest; the reply lands on
+// values nothing reads any more. Only a cut does this: a draw that finished has nothing
+// left to reply.
 //
 // No haptic here and none may be added: the rows that land include a photographed vomit's
 // `worth_a_call`, and this file is named in `guards/haptics.test.ts`'s ALWAYS_SCANNED.
@@ -186,7 +200,9 @@ interface Params {
 }
 
 export function useThreadDraw({ token, rows, claim, reducedMotion, appActive }: Params): ThreadDraw {
-  const lineScale = useRef(new Animated.Value(1)).current;
+  // Held in refs, not bound once: a cut replaces them (the header's "a cut draw abandons
+  // its values").
+  const lineScale = useRef(new Animated.Value(1));
   const opacities = useRef<Animated.Value[]>([]);
   const shifts = useRef<Animated.Value[]>([]);
   const running = useRef<Animated.CompositeAnimation | null>(null);
@@ -214,29 +230,37 @@ export function useThreadDraw({ token, rows, claim, reducedMotion, appActive }: 
 
   /** Every value at the draw's FROM-state: the line at nothing, every row above and clear. */
   const seed = useCallback(() => {
-    lineScale.setValue(0);
+    lineScale.current.setValue(0);
     for (let i = 0; i < opacities.current.length; i++) {
       opacities.current[i].setValue(0);
       shifts.current[i].setValue(-THREAD_DRAW.rowDriftPt);
     }
-  }, [lineScale]);
+  }, []);
 
-  /** Every value at rest, nothing in flight. */
-  const rest = useCallback(() => {
+  /** Every value at rest, nothing in flight. `finished`: the draw reached its own end, so
+   *  nothing is left to answer a stop; anything else is a cut, and a cut rebinds. */
+  const rest = useCallback((finished = false) => {
     if (valve.current !== null) clearTimeout(valve.current);
     valve.current = null;
     const anim = running.current;
     running.current = null;
     anim?.stop();
-    lineScale.setValue(1);
+    if (anim !== null && !finished) {
+      // The cut: fresh values at rest, so the stop's late reply lands on nothing bound.
+      lineScale.current = new Animated.Value(1);
+      opacities.current = opacities.current.map(() => new Animated.Value(1));
+      shifts.current = shifts.current.map(() => new Animated.Value(0));
+      return;
+    }
+    lineScale.current.setValue(1);
     for (const v of opacities.current) v.setValue(1);
     for (const v of shifts.current) v.setValue(0);
-  }, [lineScale]);
+  }, []);
 
   // ARMED: a token this hook has not acted on, and motion allowed. The from-state must be
   // on the FIRST frame the card draws (a row that paints and then vanishes to land is a
   // flash, not a draw), so it is seeded here, in the render, once per token.
-  const armed = token !== null && token !== handled.current && !reducedMotion;
+  const armed = token !== null && token !== handled.current && !reducedMotion && appActive;
   if (armed && seeded.current !== token) {
     seeded.current = token;
     seed();
@@ -249,8 +273,9 @@ export function useThreadDraw({ token, rows, claim, reducedMotion, appActive }: 
   useLayoutEffect(() => {
     if (token === null || token === handled.current) return;
     handled.current = token;
-    // Reduced motion, or a token another mount of this card already spent: the still frame.
-    if (reducedMotion || !claimRef.current(token)) {
+    // Reduced motion, an app that is not active, or a token another mount of this card
+    // already spent: the still frame. The first two leave the token unclaimed.
+    if (reducedMotion || !appActive || !claimRef.current(token)) {
       rest();
       setFlying(false);
       rerender();
@@ -265,7 +290,7 @@ export function useThreadDraw({ token, rows, claim, reducedMotion, appActive }: 
     seed();
     const n = Math.min(rowsRef.current, opacities.current.length);
     const beats: Animated.CompositeAnimation[] = [
-      Animated.timing(lineScale, {
+      Animated.timing(lineScale.current, {
         toValue: 1,
         duration: THREAD_DRAW.lineMs,
         easing: LINE_EASE,
@@ -300,7 +325,7 @@ export function useThreadDraw({ token, rows, claim, reducedMotion, appActive }: 
       // `finished: false` is a stop (blur, reduced motion, a new token, unmount): whoever
       // stopped it owns the end state.
       if (!finished || running.current !== anim) return;
-      rest();
+      rest(true);
       setFlying(false);
     });
     // The safety valve: the draw ends at its own length whatever the frame clock did.
@@ -310,7 +335,7 @@ export function useThreadDraw({ token, rows, claim, reducedMotion, appActive }: 
       rest();
       setFlying(false);
     }, threadDrawTotalMs(n) + FOLD_MOTION.settleSlackMs * 2);
-  }, [token, reducedMotion, rest, seed, lineScale]);
+  }, [token, reducedMotion, appActive, rest, seed]);
 
   // Unmount: whatever was drawing is committed at rest (and nothing is left running).
   useEffect(
@@ -338,5 +363,5 @@ export function useThreadDraw({ token, rows, claim, reducedMotion, appActive }: 
     [ensure],
   );
 
-  return { drawing: flying || armed, lineScale, rowStyle };
+  return { drawing: flying || armed, lineScale: lineScale.current, rowStyle };
 }
