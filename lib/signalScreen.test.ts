@@ -1155,6 +1155,11 @@ describe('CUL-1216 — the loader reads the not-eating register for the ROUTE’
       await expect(loadSignalScreen('pet-1', 'trial_response')).rejects.toThrow(/not answered/);
     });
 
+    it('a pet the loaded list does not hold (archived) is missing, never a Try again that cannot succeed', async () => {
+      mockReadSignalCache.mockResolvedValue({ findings: [trialPair('fewer_during_trial')] });
+      expect((await loadSignalScreen('pet-archived', 'trial_response')).status).toBe('missing');
+    });
+
     it('findings Home keeps over a refusing cat still render; only an expired stood-down line is missing', async () => {
       mockLoadDietTrialFacts.mockResolvedValue(refusing());
       mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(postprandial())] });

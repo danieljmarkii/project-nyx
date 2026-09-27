@@ -935,6 +935,9 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   // offline expiry, the one other thing `visibleFindings` drops, is "not in the picture".
   if (!visibleFindings(row?.findings ?? [], notEating !== false, nowMs).includes(cached)) {
     if (!isFallingVomitPair(cached.finding)) return { status: 'missing', petName };
+    // A pet the loaded list does not hold (archived, or gone) can never answer: a retry would
+    // be a dead button, so it is not in the picture (a raw deep link is the only way here).
+    if (notEating === null && pets.length > 0 && !pet) return { status: 'missing', petName };
     if (notEating === null) throw new Error('the not-eating register has not answered');
     return { status: 'withheld', petName };
   }
