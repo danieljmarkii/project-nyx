@@ -12,6 +12,7 @@ import { act, fireEvent, render, within } from '@testing-library/react-native';
 import type { TrialCardInput } from '../../lib/dietTrialCard';
 import { buildTrialContext } from '../../lib/dietTrial';
 import type { TrialAllowedSet } from '../../lib/trialAllowedSet';
+import { localDayIndexOf } from '../../lib/utils';
 import type { DietTrialStatus } from '../../hooks/useDietTrial';
 import type { TrialFactsState } from '../../hooks/useTrialFacts';
 
@@ -156,8 +157,9 @@ const READY_SET = {
 } as unknown as TrialAllowedSet;
 
 const VOMITING = {
-  trialDayNumber: 10, trialCount: 3, baselineCount: 11, trialLoggedDays: 10,
-  baselineLoggedDays: 30, baselineWindowDays: 49, densityComparable: true,
+  trialDayNumber: 10, trialCount: 3, trialLastEpisodeDayIndex: localDayIndexOf(keyDaysAgo(1)),
+  baselineCount: 11, trialLoggedDays: 10, baselineLoggedDays: 30, baselineWindowDays: 49,
+  densityComparable: true,
 };
 
 const REFUSAL = { refusedFeedings: 4, ratedFeedings: 5, days: 2, population: 'trial_diet' as const };
@@ -375,7 +377,9 @@ describe('a trial refusal (§3.2, S4)', () => {
       inputIsForPet: true,
     };
     const view = await renderRoute();
-    const order = ['trial-screen-title', 'trial-safety', 'trial-door-report', 'trial-action-trial_manage'];
+    const order = [
+      'trial-screen-title', 'trial-safety', 'trial-for-the-call', 'trial-door-report', 'trial-action-trial_manage',
+    ];
     // Document order of every composite carrying a testID, first appearance each.
     const all: ReactTestInstance[] = view.UNSAFE_root.findAll(
       (n: ReactTestInstance) => typeof n.props.testID === 'string' && typeof n.type !== 'string',
@@ -395,6 +399,44 @@ describe('a trial refusal (§3.2, S4)', () => {
     expect(view.queryByTestId('trial-manage')).toBeNull();
     expect(view.queryByTestId('trial-vomiting')).toBeNull();
     expect(view.queryByText(/^Meals logged on/)).toBeNull();
+  });
+
+  it('carries For the call inside the safety block, under the register (§3.3, TS-7)', async () => {
+    mockParams = { pet: 'pet-1' };
+    mockTrial = {
+      input: running({ petName: 'Biscuit', trialDietRefusal: REFUSAL, trialResponse: VOMITING }),
+      status: 'loaded',
+      inputIsForPet: true,
+    };
+    const view = await renderRoute();
+    // Inside the one accessible element, so VoiceOver reads the fact, the ask and the call
+    // facts together.
+    const call = within(view.getByTestId('trial-safety')).getByTestId('trial-for-the-call');
+    expect(within(call).getByText('For the call')).toBeTruthy();
+    const lines = within(call).getAllByTestId('trial-for-the-call-line').map((n) => n.props.children);
+    expect(lines[0]).toBe('Offered: Royal Canin Rabbit');
+    expect(lines[1]).toBe('Day 10 of the trial');
+    expect(lines[2]).toMatch(/^Vomiting logged: 3 in the trial's 10 days, the last on [A-Z][a-z]{2} \d{1,2}(, \d{4})?$/);
+    expect(lines).toHaveLength(3);
+    expect(within(call).getByTestId('trial-for-the-call-swap').props.children).toBe(
+      'Veterinary diets are usually guaranteed, so the clinic can swap this one if Biscuit isn’t eating it.',
+    );
+  });
+
+  it('draws no For the call on an intake decline (refusal face only, PM 2026-09-27)', async () => {
+    mockParams = { pet: 'pet-1' };
+    mockTrial = {
+      input: running({
+        petName: 'Biscuit',
+        trialDietRefusal: REFUSAL,
+        intakeDeclineHeadline: 'Biscuit has left most of his food for 3 days.',
+      }),
+      status: 'loaded',
+      inputIsForPet: true,
+    };
+    const view = await renderRoute();
+    expect(view.getByTestId('trial-safety')).toBeTruthy();
+    expect(view.queryByTestId('trial-for-the-call')).toBeNull();
   });
 });
 

@@ -1,6 +1,6 @@
 # The trial's own screen — Requirements
 
-**Version:** 1.1 · BUILD-READY (v1.0 failed its adversarial pass; v1.1 carries the fixes, §12) | **Last Updated:** 2026-09-27 (§5.1, §0.3, §3.9, §5.2 rulings inline) | **Issue:** CUL-1291 (discovery) · the Linear project **Diet trial — its own screen**
+**Version:** 1.1 · BUILD-READY (v1.0 failed its adversarial pass; v1.1 carries the fixes, §12) | **Last Updated:** 2026-09-27 (§0.3, §3.3, §3.9, §5.1, §5.2 rulings inline) | **Issue:** CUL-1291 (discovery) · the Linear project **Diet trial — its own screen**
 **Design authority:** `docs/culprit-trial-screen-mockups.html` round 2 (one proposal), published at https://claude.ai/artifact/5AHCdRG9jXj2q48vC2o6cA
 **Evidence:** `docs/sessions/2026-09-26-trial-screen-brainstorm.md` (five isolated reads). The August pass at the same idea is draft PR #631 (T2, the `/trial` room); this spec supersedes its T2 and T3.
 **Parent spec:** `docs/nyx-diet-trial-requirements.md`. Every trial rule in it binds here (§5.2 the permitted statements, §5.3 one predicate, B-422 belief versus evidence). This spec adds a host, not a meaning.
@@ -87,6 +87,8 @@ A block under the register's lines, headed *For the call*. It restates nothing t
 - `Vomiting logged: {k} in the trial's {n} days, the last on {date}`: **only when k ≥ 1** (T-4). `k` is the trial's episode count from the module that owns it (`computeTrialResponseCounts`' `trialCount`, bouts collapsed), never a raw event count. Never zero, never a baseline, never a direction.
 
 Beneath it, one line of new copy (nyx-voice and Dr. Chen at TS-7): *Veterinary diets are usually guaranteed, so the clinic can swap this one if {pet} isn't eating it.* No volitional wording ("won't eat", "refuses"), per `trialViabilityNote`'s own rule. Then the door to the vet report, then the card's own actions.
+
+**⚠ RULED 2026-09-27 (PM, on CUL-1303):** the swap line renders **only when the refusal's `population` is `trial_diet`**, the same gate as *Offered*. Under `meal_record` the register's note directly above says the app can't name which food went untouched, so "swap this one" would point at nothing, or at a food the pet is eating fine (TS-7's adversarial pass). The block is on the **trial-refusal face only**; the intake-decline face carries none (PM, same day). The pass's spec-level findings (a recent cluster inside a larger count, the faces with no vomiting fact, a failed read that looks like zero) are CUL-1341, for Dr. Chen.
 
 ### 3.4 What {pet} can eat
 

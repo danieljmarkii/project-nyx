@@ -39,6 +39,7 @@ import {
   type TrialCardModel,
   type TrialCardState,
 } from './dietTrialCard';
+import { buildForTheCall, type ForTheCall } from './trialForTheCall';
 import { buildTrialLedger, type TrialLedger } from './trialLedger';
 import type { TrialAllowedSet } from './trialAllowedSet';
 import { localDayIndex, localDayIndexOf, toLocalDayKey } from './utils';
@@ -99,6 +100,8 @@ export interface TrialScreenTrial {
   subline: string | null;
   /** §3.2 — the card's register lines, in the card's order. First line is the fact. */
   safety: string[] | null;
+  /** §3.3 (TS-7) — the facts for the call, under the register's lines. Trial refusal only. */
+  forTheCall: ForTheCall | null;
   /** The milestone's headline (the card's day line in its headline role). */
   headline: string | null;
   /** The decision block drawn inline above the record (milestone: its note and three
@@ -311,6 +314,7 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
     title: strip?.header ?? card.kicker,
     subline: sublineFor(input, card.foodLabel, card.dayLine, state),
     safety: safety ? safetyLines : null,
+    forTheCall: safety ? buildForTheCall(input, state, card.foodLabel) : null,
     headline: card.dayLineRole === 'headline' ? card.dayLine : null,
     decision: decisionState ? { notes: decisionNotes, actions: card.actions } : null,
     allowedFoods,
