@@ -562,6 +562,21 @@ export const STRUCTURED_FIELD_KEYS = [
   'foreign_material_present', 'foreign_material_note', 'description',
 ] as const
 
+// The columns a stool red flag lives in, and the present-only read of them (Pattern 9).
+// Stool blood is its OWN column (stool_blood_present, migration 034), keyed on
+// presence and never the subtype; foreign material reuses 013's shared column. The
+// shared pipeline runs this on the stored row, the stored ai_raw_payload and this
+// run's columns (CUL-532, CUL-1201). Answers the same question as generate-signal's
+// deriveIncidentFlags for the stool family; the parity test imports it (C-34).
+export const RED_FLAG_COLUMNS = ['stool_blood_present', 'foreign_material_present'] as const
+
+export function presentFlagsFromStructured(row: Record<string, unknown>): string[] {
+  const flags: string[] = []
+  if (row.stool_blood_present === 'yes') flags.push('blood')
+  if (row.foreign_material_present === 'yes') flags.push('foreign_material')
+  return flags
+}
+
 // ── Context assembly (DB reads, ownership-scoped via the caller JWT) ───────────
 
 async function assembleContext(
@@ -652,6 +667,8 @@ const STOOL_DESCRIPTOR: IncidentDescriptor<StoolAnalysis, ContextualFlag> = {
     computeContextualFlags(await assembleContext(userClient, petId, occurredAt, eventType)),
   copy: STOOL_COPY,
   buildStructuredValues: buildStoolStructuredValues,
+  redFlagColumns: RED_FLAG_COLUMNS,
+  presentFlagsFromStructured,
 }
 
 const handler = (req: Request): Promise<Response> => runIncidentAnalysis(STOOL_DESCRIPTOR, req)

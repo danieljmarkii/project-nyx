@@ -18,6 +18,8 @@ import {
   selectDescription,
   buildAnalysisWriteBack,
   STRUCTURED_FIELD_KEYS,
+  RED_FLAG_COLUMNS,
+  presentFlagsFromStructured,
   detectImageMediaType,
   bytesToBase64,
   resolveGateState,
@@ -27,6 +29,7 @@ import {
   type VomitAnalysis,
   type FunctionCaps,
 } from './index.ts'
+import { deriveIncidentFlags } from '../generate-signal/detection.ts'
 import { shouldCollapsePartialRead } from '../_shared/incident-analysis.ts'
 
 // ── Cap + flag gate (T2-3) ────────────────────────────────────────────────────
@@ -890,4 +893,57 @@ Deno.test('buildAnalysisWriteBack — un-edited row with a failed vision call st
   assertStrictEquals(wb.values.ai_raw_payload, null)
   assertStrictEquals(wb.values.blood_present, null)
   assertStrictEquals(wb.values.recommendation, 'not_enough_to_say')
+})
+
+// ── presentFlagsFromStructured — the stored red flags a re-read may not take off (CUL-532, CUL-1201) ──
+
+Deno.test('presentFlagsFromStructured (vomit) — the same answer as generate-signal\'s deriveIncidentFlags, every value', () => {
+  // C-34: a mirrored rule must answer the same question. Home derives the red-flag card from
+  // these columns; the re-read guard must see exactly the flags Home would show, or it
+  // protects a flag Home never raised, or lets one Home did raise be erased.
+  const bloods = ['none_visible', 'fresh_red', 'coffee_ground', 'unsure', null, 'not_an_enum_value']
+  const tristates = ['yes', 'no', 'unsure', null]
+  let checked = 0
+  for (const blood of bloods) {
+    for (const foreign of tristates) {
+      const ours = presentFlagsFromStructured({ blood_present: blood, foreign_material_present: foreign })
+      const home = deriveIncidentFlags({
+        eventId: 'evt',
+        incidentType: 'vomit',
+        occurredAt: '2026-09-01T12:00:00Z',
+        bloodPresent: blood,
+        stoolBloodPresent: 'yes', // stool's column: must never count for a vomit row
+        foreignMaterialPresent: foreign,
+      })
+      assertEquals(ours, home, `blood=${blood} foreign=${foreign}`)
+      checked++
+    }
+  }
+  assertStrictEquals(checked, 24)
+})
+
+Deno.test('presentFlagsFromStructured (vomit) — reads ONLY the columns step 3b selects (RED_FLAG_COLUMNS)', () => {
+  // Non-vacuity: the selected columns alone produce every flag.
+  assertEquals(presentFlagsFromStructured({ blood_present: 'fresh_red', foreign_material_present: 'yes' }), ['blood', 'foreign_material'])
+  // Every other structured column set to a present-looking value, the red-flag columns
+  // absent: nothing. A derivation that read an unselected column would see it here and
+  // never on a real stored row, where only RED_FLAG_COLUMNS are fetched.
+  const decoy: Record<string, unknown> = { stool_blood_present: 'yes' }
+  for (const key of STRUCTURED_FIELD_KEYS) {
+    if (!(RED_FLAG_COLUMNS as readonly string[]).includes(key)) decoy[key] = 'yes'
+  }
+  assertEquals(presentFlagsFromStructured(decoy), [])
+})
+
+Deno.test('presentFlagsFromStructured (vomit) — a stored ai_raw_payload maps through the column set to the same flags', () => {
+  // The pipeline reads the model's original flags by running the stored payload through
+  // buildStructuredValues; the full-upsert values are exactly that mapping.
+  const wb = buildAnalysisWriteBack({
+    humanEdited: false,
+    eventId: 'evt',
+    petId: 'pet',
+    analysis: { ...sampleAnalysis, blood_present: 'coffee_ground', foreign_material_present: 'yes' },
+    readFields: freshReadFields,
+  })
+  assertEquals(presentFlagsFromStructured(wb.values), ['blood', 'foreign_material'])
 })

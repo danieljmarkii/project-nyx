@@ -178,6 +178,8 @@ if (usableBlobs.length === 0) {
 
 **ANTI-PATTERN:** Returning a 500 on an unreadable image (the user sees a generic failure and loses the read entirely). Or, worse, returning a `monitor` recommendation with a "couldn't see the photo so probably fine" read — that's reassurance on absence, the exact rule violation Pattern 1 forbids.
 
+**A run that FAILS keeps the escalation it already computed (CUL-815).** A transient failure (a storage error, a 529, a failed write-back) still ends in the outer catch, but the catch no longer throws away the escalation the run worked out first: `buildRescueRead` takes the run's own post-floor escalation, or the contextual flags alone, and `buildFailureWrite` writes it as `status: 'failed'` with the read fields only (never a structured column). A stored escalation still outranks it (CUL-812, error-only), and an unreadable row still skips (fail closed). And no write is decided on an unanswered read: the step-3b existing-row read throws on error (`existingRowOrThrow`, CUL-817), before the cap gate spends a unit.
+
 ---
 
 ## PATTERN 6: Tracking-Dependent Flags Need an Absence-of-Log Guard
@@ -219,14 +221,10 @@ Deno.test('computeContextualFlags — feline flag suppressed when owner does not
 
 **RULE:** When re-analysing an event whose structured observations have been edited by the owner (`edited_at` is set), the write-back must preserve all editable facts and the cached original AI payload. Only the read (`read_text`, `recommendation`, `visual_flags`, `contextual_flags`, `status`) refreshes — because the deterministic floor must remain free to re-escalate on worsening context, but the owner's clinical observations are now load-bearing for the vet report and must not be silently overwritten.
 
-**CANONICAL EXAMPLE** (`supabase/functions/_shared/incident-analysis.ts` — `buildAnalysisWriteBack` ~252, fed by the `edited_at` read in `runIncidentAnalysis` ~795; both incident types run through it):
+**CANONICAL EXAMPLE** (`supabase/functions/_shared/incident-analysis.ts` — `buildAnalysisWriteBack`, reached through `resolveReanalysisWrite`, fed by `readStoredRow` in `runIncidentAnalysis`, which throws on a read error; both incident types run through it):
 
 ```ts
-const { data: existing } = await adminClient
-  .from('event_ai_analysis')
-  .select('id, edited_at, status, recommendation')
-  .eq('event_id', eventId)
-  .maybeSingle()
+const existing = await readStoredRow() // existingRowOrThrow: an unanswered read is never "no row"
 const humanEdited = !!existing?.edited_at
 
 export function buildAnalysisWriteBack(params): AnalysisWriteBack {
@@ -244,6 +242,13 @@ export function buildAnalysisWriteBack(params): AnalysisWriteBack {
 ```
 
 **ANTI-PATTERN:** Unconditionally upserting the full AI payload on every re-analysis. The owner's edits — which the vet will rely on — are silently lost on the next trigger.
+
+**Two rules on top, both in `resolveReanalysisWrite` (`_shared/incident-analysis.ts`), decided on a fresh read of the row taken after the vision call:**
+
+- **A re-analysis never LOWERS a stored escalation (CUL-1201 part 2, PM 2026-09-26).** A second run of one incident that sees less is absence, and absence is not wellness. A stored `worth_a_call` is held whatever the calmer run says, across re-reads and photo swaps, contextual escalations included: both descriptors count their context windows back from `Date.now()`, so a lapsed window cannot be told from an owner deleting a duplicate. Nothing is written except, on a row the last run left `failed`, this run's status (`completed` or `uncertain`). There is **no owner-correction exception yet**: `ai_raw_payload` is frozen at the read the owner edited, so it cannot say whether the stored verdict came from that read or from a later re-escalation the owner never saw. The owner's path to lower a verdict needs a read-time stamp (CUL-1201 part 1) or an explicit owner act on the verdict (CUL-1107 / CUL-409). So "a re-analysis refreshes the verdict" above holds only upward or sideways.
+- **A stored red flag carries; a stored absence does not (CUL-532).** When the stored structured columns assert a flag (per the descriptor's `presentFlagsFromStructured`, the Pattern 9 derivation) that this run's columns don't, the write refreshes the read fields only. The capped branch never overwrites an existing row's structured columns, and a failed run over a stored flag writes the error only, so the retry frame never hides it. A stored "none visible" is never kept over a read that saw nothing. The per-field union of a stored flag and a DIFFERENT new one is CUL-1110's.
+
+**These are proven through the pipeline, not only the helpers:** `_shared/incident-analysis.pipeline.test.ts` drives the real `runIncidentAnalysis` through a fake client and model (`PipelineDeps`). A new write path or a rebase of this one adds its case there.
 
 ---
 
