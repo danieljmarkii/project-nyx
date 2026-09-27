@@ -684,6 +684,26 @@ describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
     alert.mockRestore();
   });
 
+  it('the owner’s own in-flight Show survives a failed trigger’s restore (M3)', async () => {
+    // The vomit twin's M3, which the round-7 pass found missing here (mutating this
+    // file's restore left every stool test green). Show, then Re-run before the Show
+    // reached the server: the server's copy still says hidden, and the restore must not
+    // put the note back behind "AI note hidden".
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const hidden = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', dismissed_at: '2026-09-19T08:00:00.000Z', updated_at: '2026-09-20T09:00:00.000Z' });
+    mockRow = hidden;
+    const view = render(<StoolAnalysisSection eventId="as-11" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Show'));
+    mockRow = hidden; // the Show's write has not landed server-side yet
+    (triggerStoolAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'FunctionsHttpError: 500' });
+    const rerun = await view.findByText('Re-run analysis');
+    await act(async () => { fireEvent.press(rerun); });
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(view.queryByText('AI note hidden')).toBeNull();
+    alert.mockRestore();
+  });
+
   it('a read already in the record on open says nothing', async () => {
     mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.' });
     const view = render(<StoolAnalysisSection eventId="as-3" petId="pet-1" petName="Rex" hasPhoto />);
