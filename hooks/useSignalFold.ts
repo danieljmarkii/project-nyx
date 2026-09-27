@@ -31,6 +31,7 @@ import {
   pruneFoldStore,
   readFoldEntries,
   reconcileFolds,
+  setFactsFor,
   subscribeFoldStore,
   writeFoldEntries,
   type BackBecauseReason,
@@ -178,7 +179,10 @@ export function useSignalFold({
       if (!canFold(finding)) return;
       const key = foldIdentity(finding);
       const nowIso = new Date().toISOString();
-      commit((prev) => ({ ...prev, [key]: foldedEntry(finding, nowIso, recordOf(finding)) }));
+      // The set's facts (the cough↔vomit pair, CUL-1273) as of the fold, from the same
+      // settled set the reconcile reads.
+      const set = setFactsFor(finding, latestFindings.current.map((f) => f.finding));
+      commit((prev) => ({ ...prev, [key]: foldedEntry(finding, nowIso, recordOf(finding), set) }));
     },
     [commit, recordOf],
   );
