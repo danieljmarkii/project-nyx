@@ -27,6 +27,12 @@ import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import {
+  writeAnalysisDismissal,
+  sameWords,
+  READ_CHANGED_TITLE,
+  READ_CHANGED_BODY,
+} from '../../lib/analysisDismissal';
+import {
   triggerStoolAnalysis,
   awaitAnalysisChain,
   watchAnalysisRow,
@@ -252,19 +258,24 @@ export function StoolAnalysisSection(
     beginWatch();
   }
 
+  // CUL-1323 — Hide and Show write only over the words on screen
+  // (lib/analysisDismissal). When the read changed underneath (a replaced photo, a
+  // second device), the record is shown and said, never hidden unseen.
   async function setDismissed(dismiss: boolean) {
     if (!row) return;
+    const shown = row;
     const nextIso = dismiss ? new Date().toISOString() : null;
-    const prev = row.dismissed_at;
-    setRow({ ...row, dismissed_at: nextIso }); // optimistic
-    const { error } = await supabase
-      .from('event_ai_analysis')
-      .update({ dismissed_at: nextIso })
-      .eq('event_id', eventId);
-    if (error) {
-      setRow({ ...row, dismissed_at: prev });
-      Alert.alert('Could not update', 'Try again in a moment.');
+    setRow({ ...shown, dismissed_at: nextIso }); // optimistic
+    const outcome = await writeAnalysisDismissal(eventId, shown, nextIso);
+    if (outcome === 'written') return;
+    const latest = outcome === 'read_changed' ? await fetchRow() : null;
+    if (latest && !sameWords(latest, shown)) {
+      setRow(latest);
+      Alert.alert(READ_CHANGED_TITLE, READ_CHANGED_BODY);
+      return;
     }
+    setRow(shown);
+    Alert.alert('Could not update', 'Try again in a moment.');
   }
 
   // Persist owner edits to the structured fields (B-028). A no-op save (nothing

@@ -284,10 +284,11 @@ Deno.test('write-back — humanEdited update carries EXACTLY the read-field keys
 })
 
 // ── A new read clears the owner's hide (CUL-1323, PM-ruled 2026-09-27) ──────────
-// A dismissal belongs to the words the owner read. Every real read is new words, so
-// it clears — in BOTH write modes, and whatever the verdict (the ruling is (a),
-// always, not only on an escalation). The failure write records no new read, so it
-// never touches the hide.
+// A dismissal belongs to the words the owner read. Every read clears it, in BOTH
+// write modes and whatever the verdict (the ruling is (a), always, not only on an
+// escalation), even when a templated read repeats the words: clearing on a repeat
+// only ever shows more. The failure write records no new read, so it never touches
+// the hide.
 
 Deno.test('CUL-1323 — a new read clears the hide in BOTH modes, on every verdict', () => {
   for (const humanEdited of [true, false]) {
@@ -842,4 +843,167 @@ Deno.test('CUL-1203 — step 3b reads pet_id and refuses on it before any write 
   const catchRead = handler.slice(handler.indexOf('let latestReadFailed'))
   assertStrictEquals(/\.select\('recommendation, pet_id'\)/.test(catchRead), true)
   assertStrictEquals(/analysisRowMatchesEvent\(latestRow \?\? null, petIdForFailure\)/.test(catchRead), true)
+})
+
+// ── Read words reach the table only through the builder (CUL-1323) ────────────
+// The clear lives in buildAnalysisWriteBack, so "a new read clears the hide" is only
+// as true as "every write of a verdict or read text goes through it". The capped
+// path's escalation is the write no test can drive (runIncidentAnalysis has no
+// end-to-end harness), and bypassing the builder there left every test in this
+// directory green (adversarial pass on #952). So the sinks are scanned instead:
+//   1. every event_ai_analysis write under supabase/functions takes the generic
+//      helper's own parameter, the failure write's values, or a literal naming
+//      neither `read_text` nor `recommendation` and spreading nothing;
+//   2. every applyAnalysisWriteBack call is handed a value bound to
+//      buildAnalysisWriteBack(…);
+//   3. every other updateAnalysisRow call is handed `.values` of a builder's
+//      result (the failure write's, or the analysis builder's).
+// Blind spots, stated: the binding is read off the nearest `const|let` of that name
+// before the call, so a reassignment between them is not followed; a helper that
+// wraps the table write under another name is caught by rule 1 only if its
+// argument is not one of the three sanctioned names.
+
+type Sink = { kind: string; at: number }
+
+// The argument list of the call whose `(` is at `open`, balanced over () [] {},
+// strings skipped, split at top-level commas.
+function callArgs(src: string, open: number): string[] {
+  const args: string[] = []
+  let depth = 0
+  let start = open + 1
+  let quote: string | null = null
+  for (let i = open; i < src.length; i++) {
+    const c = src[i]
+    if (quote) {
+      if (c === '\\') i++
+      else if (c === quote) quote = null
+      continue
+    }
+    if (c === "'" || c === '"' || c === '`') quote = c
+    else if (c === '(' || c === '[' || c === '{') depth++
+    else if (c === ')' || c === ']' || c === '}') {
+      depth--
+      if (depth === 0) {
+        args.push(src.slice(start, i).trim())
+        return args.filter((a) => a.length > 0)
+      }
+    } else if (c === ',' && depth === 1) {
+      args.push(src.slice(start, i).trim())
+      start = i + 1
+    }
+  }
+  return args
+}
+
+function enclosingFunction(src: string, at: number): string | null {
+  const all = [...src.slice(0, at).matchAll(/\bfunction\s+(\w+)/g)]
+  return all.length ? all[all.length - 1][1] : null
+}
+
+// What `name` was last bound to before `at` (the rest of that line).
+function boundTo(src: string, name: string, at: number): string {
+  const all = [...src.slice(0, at).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${name}\\s*=\\s*([^\\n]*)`, 'g'))]
+  return all.length ? all[all.length - 1][1].trim() : ''
+}
+
+const BUILT = /^(buildAnalysisWriteBack|buildFailureWrite)\(/
+
+function readWordSinks(raw: string): { sanctioned: Sink[]; violations: string[] } {
+  const src = blankComments(raw)
+  const sanctioned: Sink[] = []
+  const violations: string[] = []
+  const lineOf = (i: number) => src.slice(0, i).split('\n').length
+
+  // 1. Direct writes to the table.
+  for (const m of src.matchAll(/\.from\(\s*['"]event_ai_analysis['"]\s*\)/g)) {
+    const chain = analysisChains(src.slice(m.index!))[0] ?? ''
+    const w = /\.(update|upsert|insert)\(/.exec(chain)
+    if (!w) continue
+    const open = m.index! + w.index + w[0].length - 1
+    const arg = callArgs(src, open)[0] ?? ''
+    const fn = enclosingFunction(src, m.index!)
+    const owner = /^(\w+)\.values$/.exec(arg)
+    if (arg === 'values' && fn === 'updateAnalysisRow') sanctioned.push({ kind: 'updateAnalysisRow', at: open })
+    else if (arg === 'writeBack.values' && fn === 'applyAnalysisWriteBack') sanctioned.push({ kind: 'applyAnalysisWriteBack', at: open })
+    else if (owner && /^buildFailureWrite\(/.test(boundTo(src, owner[1], open))) sanctioned.push({ kind: 'failure write', at: open })
+    else if (arg.startsWith('{') && !/\b(?:read_text|recommendation)\b|\.\.\./.test(arg)) sanctioned.push({ kind: 'state literal', at: open })
+    else violations.push(`line ${lineOf(open)} (${fn}): event_ai_analysis .${w[1]}(${arg.slice(0, 60)})`)
+  }
+
+  // 2. applyAnalysisWriteBack is handed a builder's result.
+  for (const m of src.matchAll(/(?<!function\s)\bapplyAnalysisWriteBack\(/g)) {
+    const open = m.index! + m[0].length - 1
+    const arg = callArgs(src, open)[2] ?? ''
+    if (/^\w+$/.test(arg) && /^buildAnalysisWriteBack\(/.test(boundTo(src, arg, open))) {
+      sanctioned.push({ kind: 'builder → apply', at: open })
+    } else violations.push(`line ${lineOf(open)}: applyAnalysisWriteBack(…, ${arg.slice(0, 60)})`)
+  }
+
+  // 3. updateAnalysisRow is handed a builder's `.values`.
+  for (const m of src.matchAll(/(?<!function\s)\bupdateAnalysisRow\(/g)) {
+    const open = m.index! + m[0].length - 1
+    const arg = callArgs(src, open)[2] ?? ''
+    const owner = /^(\w+)\.values$/.exec(arg)
+    if (enclosingFunction(src, open) === 'applyAnalysisWriteBack' && arg === 'writeBack.values') continue
+    if (owner && BUILT.test(boundTo(src, owner[1], open))) sanctioned.push({ kind: 'builder → update', at: open })
+    else violations.push(`line ${lineOf(open)}: updateAnalysisRow(…, ${arg.slice(0, 60)})`)
+  }
+  return { sanctioned, violations }
+}
+
+Deno.test('CUL-1323 — every write of read words under supabase/functions goes through buildAnalysisWriteBack', async () => {
+  const root = new URL('../', import.meta.url)
+  const violations: string[] = []
+  for await (const file of sourceFiles(root)) {
+    const { violations: v } = readWordSinks(await Deno.readTextFile(file))
+    violations.push(...v.map((x) => `${file.pathname}: ${x}`))
+  }
+  assertEquals(violations, [])
+
+  // Floor, from the pipeline's own text: each sanctioned shape was actually SEEN,
+  // and the capped branch's escalation is one of the builder → apply calls.
+  const raw = await Deno.readTextFile(new URL('./incident-analysis.ts', import.meta.url))
+  const { sanctioned } = readWordSinks(raw)
+  const kinds = new Set(sanctioned.map((s) => s.kind))
+  for (const k of ['updateAnalysisRow', 'applyAnalysisWriteBack', 'failure write', 'state literal', 'builder → apply', 'builder → update']) {
+    assertStrictEquals(kinds.has(k), true, `the scan never saw a "${k}" sink`)
+  }
+  const src = blankComments(raw)
+  const capStart = src.indexOf('if (!gate.allow) {')
+  const capEnd = src.indexOf('Response.json(', capStart)
+  assertStrictEquals(capStart > 0 && capEnd > capStart, true, 'the capped branch moved; re-anchor this floor')
+  assertStrictEquals(
+    sanctioned.some((s) => s.kind === 'builder → apply' && s.at > capStart && s.at < capEnd),
+    true,
+    'the capped escalation no longer writes through buildAnalysisWriteBack',
+  )
+})
+
+Deno.test('CUL-1323 — the builder scan sees a bypass when there is one (the guard, proven)', () => {
+  const bypasses = [
+    // The adversarial pass's mutant: the capped escalation straight to the helper.
+    'async function runIncidentAnalysis() {\n  const { error } = await updateAnalysisRow(adminClient, { eventId, petId }, readFields)\n}',
+    // A hand-built write-back, inline and bound.
+    "async function runIncidentAnalysis() {\n  await applyAnalysisWriteBack(adminClient, { eventId, petId }, { mode: 'update', values: readFields })\n}",
+    "async function runIncidentAnalysis() {\n  const writeBack = { mode: 'update' as const, values: { ...readFields } }\n  await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack)\n}",
+    // Direct table writes carrying words.
+    "async function runIncidentAnalysis() {\n  await c.from('event_ai_analysis').update({ ...readFields }).eq('event_id', e).eq('pet_id', p)\n}",
+    "async function runIncidentAnalysis() {\n  await c.from('event_ai_analysis').upsert({ event_id: e, pet_id: p, read_text: t }, { onConflict: 'event_id' })\n}",
+    "async function runIncidentAnalysis() {\n  await c.from('event_ai_analysis').upsert(readFields, { onConflict: 'event_id' })\n}",
+    // `values` outside the generic helper is not the helper's parameter.
+    "async function runIncidentAnalysis() {\n  await c.from('event_ai_analysis').update(values).eq('event_id', e).eq('pet_id', p)\n}",
+  ]
+  for (const src of bypasses) {
+    assertStrictEquals(readWordSinks(src).violations.length, 1, src)
+  }
+  // And the shapes it must let through are not flagged.
+  const allowed =
+    "async function runIncidentAnalysis() {\n" +
+    '  const writeBack = buildAnalysisWriteBack({ humanEdited, eventId, petId, incidentType, structuredValues, readFields })\n' +
+    '  await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack)\n' +
+    "  await adminClient.from('event_ai_analysis').upsert({ event_id: eventId, pet_id: petId, incident_type: incidentType, status, error: null }, { onConflict: 'event_id' })\n" +
+    '  const failureWrite = buildFailureWrite({ existing, eventId, petId, incidentType, message })\n' +
+    '  await updateAnalysisRow(adminClient, { eventId, petId }, failureWrite.values)\n' +
+    '}'
+  assertEquals(readWordSinks(allowed).violations, [])
 })

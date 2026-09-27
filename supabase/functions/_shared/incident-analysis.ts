@@ -269,16 +269,22 @@ export type AnalysisWriteBack =
 // read fields land last, matching the shipped vomit semantics.
 //
 // A NEW READ CLEARS THE OWNER'S "HIDE" (CUL-1323, PM-ruled 2026-09-27). A
-// dismissal is a statement about the words the owner read, and this write puts
-// words there they have not seen. Before this, `dismissed_at` belonged to the
-// INCIDENT: an owner who hid a calm read and later asked for a new one (Try
-// again, a replaced photo, Ask's live read) got a Worth a call rendered as "AI
-// note hidden", with the escalation on the record and off the screen. It is set
-// here, in the one builder every real read goes through (both modes, and the
-// capped path's contextual escalation), and AFTER the read fields so no caller
-// can carry an old dismissal forward. It is a presentation state, not a clinical
-// field, so the never-clobber guarantee below is untouched. The failure write
-// (`buildFailureWrite`) records no new read and deliberately leaves it alone.
+// dismissal is a statement about the words the owner read, and this write puts a
+// read there they have not seen. The words can repeat (the templated reads do),
+// and clearing on a repeat only ever shows the owner more, so the rule does not
+// ask whether they changed. Before this, `dismissed_at` belonged to the INCIDENT:
+// an owner who hid a calm read and later asked for a new one (Try again, a
+// replaced photo, Ask's live read) got a Worth a call rendered as "AI note
+// hidden", with the escalation on the record and off the screen. It is set here,
+// in the one builder every read goes through (both modes, and the capped path's
+// contextual escalation; the sink scan in incident-analysis.test.ts fails the
+// build on a write of read words that bypasses it), and AFTER the read fields so
+// no caller can carry an old dismissal forward. It is a presentation state, not a
+// clinical field, so the never-clobber guarantee below is untouched. The failure
+// write (`buildFailureWrite`) records no new read and deliberately leaves it
+// alone. The ORDER half is the client's: a Hide writes only over the words on
+// screen (lib/analysisDismissal.ts), so a read landing first is never hidden
+// unseen.
 export function buildAnalysisWriteBack<TFlag extends string>(params: {
   humanEdited: boolean
   eventId: string
