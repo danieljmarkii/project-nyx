@@ -361,7 +361,15 @@ function Body({
         <ThemedText style={styles.sentence}>{model.sentence}</ThemedText>
         {model.compare && model.noun ? (
           <View style={styles.compare} testID="signal-section-compare">
-            <CompareBars model={model.compare} noun={model.noun} drawIn={drawIn} identity={model.identity} />
+            {/* The compare draws on its own landing (CUL-1223): it sits inside the view
+                `useSignalOpen` holds at opacity 0 until 200ms. */}
+            <CompareBars
+              model={model.compare}
+              noun={model.noun}
+              drawIn={drawIn}
+              identity={model.identity}
+              drawDelayMs={SIGNAL_OPEN_MOTION.landDelayMs}
+            />
           </View>
         ) : null}
       </Animated.View>

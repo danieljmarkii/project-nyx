@@ -19,6 +19,7 @@ import { configure, fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { WeightCard } from './WeightCard';
+import { WeightDots } from '../../charts/WeightDots';
 import { HOME_SCALE_CAVEAT } from '../../../lib/chartCopy';
 import { theme } from '../../../constants/theme';
 
@@ -184,5 +185,15 @@ describe('WeightCard (Design v2)', () => {
     expect(getByTestId('weight-card-header').props.children).toBe('Weight · 20 readings');
     fireEvent.press(getByTestId('weight-card-door'));
     expect(router.push).toHaveBeenCalledWith({ pathname: '/weight-history', params: { petId: 'pet-x' } });
+  });
+
+  // CUL-1223 (BRK-12): the card's only caller now asks for the draw; it draws once per PET
+  // (the identity), so a re-read never replays and a pet switch draws the new pet's dots.
+  it('hands the dots a per-pet draw identity', () => {
+    const readings = [r(4.6, at(2026, 9, 1)), r(4.7, at(2026, 9, 12))];
+    const api = render(<WeightCard readings={readings} readingCount={2} petId="p1" drawIn />);
+    const props = api.UNSAFE_getByType(WeightDots).props as { drawIn?: boolean; identity?: string };
+    expect(props.drawIn).toBe(true);
+    expect(props.identity).toBe('weight:p1');
   });
 });

@@ -56,9 +56,13 @@ export function TimingLanes({ lanes, axis, drawIn = false, identity = 'lanes' }:
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
   const dotCount = lanes.reduce((a, l) => a + l.dots.length, 0);
+  // One run per lane (CUL-1223, WBC-4): each lane's dots stagger from 0 under one total
+  // ceiling, so a busy record's ~170 dots pop inside the budget rather than over five
+  // seconds, and every lane's dots are up before its counts land.
   const { markStyle, labelStyle } = useDrawIn({
     kind: 'dots',
     count: dotCount,
+    groups: lanes.map((l) => l.dots.length),
     drawIn,
     identity,
     reducedMotion,

@@ -25,6 +25,7 @@ jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 import { act, configure, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { LayoutAnimation, StyleSheet } from 'react-native';
 import { MonthInstrument } from './MonthInstrument';
+import { WeeklyBars } from '../../charts/WeeklyBars';
 import { monthReadRange } from '../../../lib/monthModel';
 import type { MonthFacts } from '../../../lib/monthReads';
 import { theme } from '../../../constants/theme';
@@ -460,5 +461,19 @@ describe('MonthInstrument', () => {
     expect(monthReadRange({ year: 2026, month: 7 }, TODAY)).toEqual({ fromKey: '2026-07-05', toKey: '2026-09-05' });
     // A month ending on a Saturday draws no next-month days, and reads none (Oct 31 2026).
     expect(monthReadRange({ year: 2026, month: 9 }, '2026-11-20').toKey).toBe('2026-10-31');
+  });
+
+  // CUL-1223 (BRK-12): the month drew only after a page turn, so the chart an owner opens
+  // Patterns to never drew at all. It draws on first show; a refresh of the cached month
+  // keeps its identity (no replay); a page turn is a new identity (a new draw).
+  it('the chart draws in on first show, not only after a page turn; a refresh never replays it', async () => {
+    const readFacts = jest.fn(async () => facts());
+    const api = render(<MonthInstrument petId="p1" today={TODAY} readFacts={readFacts} readDay={jest.fn(async () => [])} trialMark={null} />);
+    await waitFor(() => expect(api.getByTestId('weekly-bars')).toBeTruthy());
+    const first = api.UNSAFE_getByType(WeeklyBars).props as { drawIn?: boolean; identity?: string };
+    expect(first.drawIn).toBe(true);
+    api.rerender(<MonthInstrument petId="p1" today={TODAY} readFacts={readFacts} readDay={jest.fn(async () => [])} trialMark={null} refreshTick={1} />);
+    await waitFor(() => expect(readFacts).toHaveBeenCalledTimes(2));
+    expect((api.UNSAFE_getByType(WeeklyBars).props as { identity?: string }).identity).toBe(first.identity);
   });
 });

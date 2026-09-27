@@ -89,7 +89,8 @@ export function WeightCard({ readings, readingCount, petName, petId, drawIn = fa
         </ThemedText>
       ) : (
         <View style={styles.body}>
-          <WeightDots model={model} unit={UNIT} formatDate={formatWeightDate} drawIn={drawIn} />
+          {/* Draws once per pet (CUL-1223): the pet is the identity, so a re-read never replays. */}
+          <WeightDots model={model} unit={UNIT} formatDate={formatWeightDate} drawIn={drawIn} identity={`weight:${petId}`} />
           {model.state === 'number' ? (
             <ThemedText style={styles.note} testID="weight-card-note">
               One reading is a number, not a line. The second one draws the band.

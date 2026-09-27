@@ -453,20 +453,29 @@ function ArrivalStage({
   moment,
   outgoingFrame,
   stack,
+  active = true,
 }: {
   moment: ArrivalMoment | null;
   outgoingFrame: ReactNode;
   stack: ReactNode;
+  /**
+   * Design v2 keeps the stage mounted on every render and switches it (CUL-1223, BRK-49):
+   * swapping `<ArrivalStage>` for a bare `<LiveStack>` at the moment's edges changed the
+   * component in that slot, so every card remounted — the lead three times, each at its
+   * skeleton — and VoiceOver's focus was reset under "first pattern is ready". Inactive,
+   * the stage clips nothing and blocks no tap. Flag-off keeps the shipped swap.
+   */
+  active?: boolean;
 }) {
   return (
     <View
-      style={styles.arrivalStage}
+      style={active ? styles.arrivalStage : undefined}
       // The lead sits at opacity 0 for the crossfade's first 400ms, beneath a still-
       // opaque outgoing frame — so without this, a tap on what LOOKS like a ghost
       // watching row lands on the invisible InsightCard underneath and expands it. The
       // card is inert for the moment; a tap that does nothing beats a tap that does
       // something the owner cannot see they asked for.
-      pointerEvents="none"
+      pointerEvents={active ? 'none' : 'auto'}
     >
       {stack}
       {outgoingFrame ? (
@@ -769,11 +778,34 @@ export function SignalZone({
       {showAck ? <AckLine petName={petName} /> : null}
 
       {state === 'live' ? (
-        // The stage exists ONLY while the moment plays. On every ordinary render the
+        // Design v2 keeps the stage mounted and switches it (CUL-1223). Flag-off: the
+        // stage exists ONLY while the moment plays. On every ordinary render the
         // stack is returned bare, exactly as it shipped — no wrapper node, no clip, no
         // opacity node (the same byte-identical-when-inert rule the section label's
         // single style reference follows above).
-        arriving ? (
+        designV2 ? (
+          <ArrivalStage
+            active={arriving}
+            moment={moment}
+            outgoingFrame={outgoingFrame}
+            stack={
+              <LiveStack
+                findings={findings}
+                petName={petName}
+                trialRunning={trialRunning}
+                withholdFallingVomit={withholdFallingVomit}
+                arrival={moment}
+                fold={fold}
+                lastEpisodes={lastEpisodes}
+                generatedAt={generatedAt}
+                trialAnchor={trialAnchor}
+                designV2={designV2}
+                petId={petId}
+                onOpen={openSignal}
+              />
+            }
+          />
+        ) : arriving ? (
           <ArrivalStage
             moment={moment}
             outgoingFrame={outgoingFrame}
@@ -1052,9 +1084,11 @@ function LiveStack({
           </>
         );
         const key = `${f.finding.type}-${f.rank}`;
-        if (!arrival) return <View key={key}>{row}</View>;
+        // Design v2 keeps ONE host type per row across the moment's edges (CUL-1223): a
+        // `View` → `Animated.View` swap is a remount of the row, and of its card's read.
+        if (!arrival && !designV2) return <View key={key}>{row}</View>;
         return (
-          <Animated.View key={key} style={{ opacity: i === 0 ? arrival.crossfade : arrival.tail }}>
+          <Animated.View key={key} style={arrival ? { opacity: i === 0 ? arrival.crossfade : arrival.tail } : undefined}>
             {row}
           </Animated.View>
         );
