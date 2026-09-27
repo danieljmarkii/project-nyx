@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AccessibilityInfo,
   Animated,
@@ -19,7 +19,7 @@ import { useSignal } from '../../hooks/useSignal';
 import { visibleFindings } from '../../lib/signalVisible';
 import { useSignalFold, type SignalFoldApi } from '../../hooks/useSignalFold';
 import { useLastEpisodeDates, type LastEpisodeDates } from '../../hooks/useLastEpisodeDates';
-import { useWatchingRows } from '../../hooks/useWatchingRows';
+import { useWatchingRowsRead } from '../../hooks/useWatchingRows';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useAppActive } from '../../hooks/useAppActive';
 import { hasPlayedArrival, markArrivalPlayed } from '../../lib/signalArrival';
@@ -500,8 +500,8 @@ interface SignalZoneProps {
   // the strip withholds its vomit line on (`isAnimalNotEating`), so the card and the strip
   // can never disagree. Default false: every non-Home caller is unaffected.
   suppressTrialResponse?: boolean;
-  // TS-5 (CUL-1301, trial-screen spec §5.1) — tells Home whether a SAFETY-class card is in
-  // this zone's settled set for its pet, so the trial strip's week lane never draws under
+  // TS-5 (CUL-1301, trial-screen spec §5.1) — tells Home whether a SAFETY-class card (or
+  // the escalate-only gap row) is in this zone's settled set for its pet, so the trial strip's week lane never draws under
   // one. `live` is null until the cache read has answered for that pet (C-12: a read that
   // hasn't answered is never an empty set), and the consumer fails closed on null. It
   // reads the FULL set, like `hasSafetyFinding`'s other reader, so no suppression or fold
@@ -605,7 +605,7 @@ export function SignalZone({
   // thrown away — but the gate is the SKELETON, not `loading`, so a hung read can never
   // suppress the escalate-only gap row past the time-box (adversarial ④).
   const watchingEnabled = !showSkeleton && (state === 'building' || state === 'no_pattern');
-  const watching = useWatchingRows(watchingEnabled, dayNumber);
+  const { rows: watching, answered: watchingAnswered } = useWatchingRowsRead(watchingEnabled, dayNumber);
 
   // B-769 (CUL-29, PM-ruled D3a — GA Phase 0): the escalate-only gap row leaves the
   // "still needs" umbrella. It is a concerning FACT about the record, not an unmet need,
@@ -683,8 +683,13 @@ export function SignalZone({
     hasSafetyFinding,
   });
 
-  const safetyLive = answered ? hasSafetyFinding : null;
-  useEffect(() => {
+  // The escalate-only gap row counts too (adversarial pass on TS-5): it is the pre-floor
+  // form of `symptom_worsening`, a concerning fact about the record drawn above everything
+  // else in the zone, and it carries no `priorityClass` because it is a local watching row.
+  // It arrives from its own read, so the report waits on that read as well. A layout
+  // effect, so a safety card and the lane are never painted in the same frame.
+  const safetyLive = answered && watchingAnswered ? hasSafetyFinding || gapRow !== null : null;
+  useLayoutEffect(() => {
     onSafetyLive?.({ petId, live: safetyLive });
   }, [onSafetyLive, petId, safetyLive]);
 

@@ -201,7 +201,7 @@ describe('TrialStrip: the trial_screen gate', () => {
     const tree = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} />);
     expect(tree.getByTestId('trial-strip')).toBeTruthy();
     expect(tree.queryByTestId('trial-strip-door')).toBeNull();
-    expect(tree.queryByTestId('trial-lane')).toBeNull();
+    expect(tree.queryByTestId('trial-lane', { includeHiddenElements: true })).toBeNull();
     expect(mockUseTrialFacts).not.toHaveBeenCalled();
     fireEvent.press(tree.getByTestId('trial-strip'));
     expect(router.push).toHaveBeenCalledTimes(1);

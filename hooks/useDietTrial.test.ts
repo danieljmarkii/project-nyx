@@ -145,11 +145,14 @@ describe('useDietTrial', () => {
     act(() => usePetStore.setState({ pets: [PET2], activePet: PET2 }));
     await waitFor(() => expect(result.current.inputIsForPet).toBe(false));
     expect(result.current.input).toBe(FACTS_A); // retained (no empty flash), but reported stale
+    // TS-5 (CUL-1301): the pet that retained input belongs to, which Home's door opens.
+    expect(result.current.loadedPetId).toBe(PET.id);
 
     // Once the new pet’s facts land, it is fresh again.
     act(() => resolveB(FACTS_B));
     await waitFor(() => expect(result.current.input).toBe(FACTS_B));
     expect(result.current.inputIsForPet).toBe(true);
+    expect(result.current.loadedPetId).toBe('pet-2');
   });
 
   // A total read failure must LEAVE THE PREVIOUS INPUT IN PLACE rather than flash an

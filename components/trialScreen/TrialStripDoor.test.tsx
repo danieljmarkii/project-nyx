@@ -106,7 +106,9 @@ describe('TrialStripDoor: the door', () => {
       'Week 4 · 1 of 2 so far',
       '›',
     ]) {
-      expect(owningTouchable(screen.getByText(text))).toBe(owner);
+      // The lane is hidden from assistive tech inside the door, so it is queried with
+      // hidden elements included; the responder walk is what matters here.
+      expect(owningTouchable(screen.getByText(text, { includeHiddenElements: true }))).toBe(owner);
     }
     // The floor, read off the RENDERED style of the responder itself (C-5).
     expect(flat(owner).minHeight).toBeGreaterThanOrEqual(44);
@@ -132,23 +134,34 @@ describe('TrialStripDoor: the door', () => {
 describe('TrialStripDoor: this week lane', () => {
   it('draws the ledger current row when every gate is open (non-vacuity)', () => {
     draw();
-    expect(screen.getByTestId('trial-lane')).toBeTruthy();
-    expect(screen.getByText('Week 4 · 1 of 2 so far')).toBeTruthy();
+    expect(screen.getByTestId('trial-lane', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByText('Week 4 · 1 of 2 so far', { includeHiddenElements: true })).toBeTruthy();
+  });
+
+  it('is not a second accessibility stop inside the door: the door label already speaks it', () => {
+    draw();
+    const lane = screen.getByTestId('trial-lane', { includeHiddenElements: true });
+    expect(lane.props.accessible).toBe(false);
+    expect(lane.props.accessibilityElementsHidden).toBe(true);
+    expect(lane.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(screen.getByTestId('trial-strip-door').props.accessibilityLabel).toContain(
+      'This trial week, week 4: meals logged on 1 of 2 days so far.',
+    );
   });
 
   it('draws no lane under a live safety-class card, and says none', () => {
     draw({ petId: PET, live: true });
-    expect(screen.queryByTestId('trial-lane')).toBeNull();
+    expect(screen.queryByTestId('trial-lane', { includeHiddenElements: true })).toBeNull();
     expect(screen.getByTestId('trial-strip-door').props.accessibilityLabel).not.toMatch(/This trial week/);
   });
 
   it('draws no lane until the Signal has answered for this pet', () => {
     draw(null);
-    expect(screen.queryByTestId('trial-lane')).toBeNull();
+    expect(screen.queryByTestId('trial-lane', { includeHiddenElements: true })).toBeNull();
     draw({ petId: PET, live: null });
-    expect(screen.queryByTestId('trial-lane')).toBeNull();
+    expect(screen.queryByTestId('trial-lane', { includeHiddenElements: true })).toBeNull();
     draw({ petId: 'pet-2', live: false });
-    expect(screen.queryByTestId('trial-lane')).toBeNull();
+    expect(screen.queryByTestId('trial-lane', { includeHiddenElements: true })).toBeNull();
   });
 
   it('draws no lane while the ledger facts are still reading', () => {
@@ -157,13 +170,13 @@ describe('TrialStripDoor: this week lane', () => {
     render(
       <TrialStripDoor model={resolveTrialStrip(input)!} petId={PET} input={input} inputFresh safety={CLEAR} />,
     );
-    expect(screen.queryByTestId('trial-lane')).toBeNull();
+    expect(screen.queryByTestId('trial-lane', { includeHiddenElements: true })).toBeNull();
     // The strip itself still stands: withholding the lane never hides the door.
     expect(screen.getByText('Diet trial · day 23 of 56')).toBeTruthy();
   });
 
   it('draws no lane over a live intake decline, and the strip drops to its header', () => {
     draw(CLEAR, { intakeDeclineHeadline: 'Mochi ate less' });
-    expect(screen.queryByTestId('trial-lane')).toBeNull();
+    expect(screen.queryByTestId('trial-lane', { includeHiddenElements: true })).toBeNull();
   });
 });

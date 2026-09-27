@@ -28,8 +28,13 @@ jest.mock('../../hooks/useSignal', () => ({
 // The watching-rows hook does a local SQLite read on focus; here we drive its output
 // directly. Default [] so the watching block is inert unless a test opts into rows.
 const mockUseWatchingRows = jest.fn();
+let mockWatchingAnswered = true;
 jest.mock('../../hooks/useWatchingRows', () => ({
   useWatchingRows: (enabled: boolean, dayNumber: number) => mockUseWatchingRows(enabled, dayNumber),
+  useWatchingRowsRead: (enabled: boolean, dayNumber: number) => ({
+    rows: mockUseWatchingRows(enabled, dayNumber),
+    answered: mockWatchingAnswered,
+  }),
 }));
 
 // CUL-601 (§4) — the arrival moment's collaborators. Motion + foreground are pinned so
@@ -122,6 +127,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   // Default: no watching rows, so the watching block never renders unless a test opts in.
   mockUseWatchingRows.mockReturnValue([]);
+  mockWatchingAnswered = true;
   mockUseReducedMotion.mockReturnValue(false);
   mockHasPlayedArrival.mockResolvedValue(false);
   mockMarkArrivalPlayed.mockResolvedValue(undefined);
@@ -1184,6 +1190,27 @@ describe('SignalZone — onSafetyLive (TS-5, the week lane never draws under a s
     view.rerender(<SignalZone onSafetyLive={onSafetyLive} />);
     await act(async () => {});
     expect(lastReport(onSafetyLive)).toEqual({ petId: 'pet-1', live: false });
+  });
+
+  // Adversarial pass on TS-5: the escalate-only gap row is a concern with no priorityClass.
+  const shortening: WatchingRow = { key: 'gap', text: watchingGapRow('vomiting', '6 days, then 3, then 2') };
+
+  it('reports live under the escalate-only gap row, which carries no priorityClass', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building', findings: [] }));
+    mockUseWatchingRows.mockReturnValue([shortening]);
+    const onSafetyLive = jest.fn();
+    render(<SignalZone onSafetyLive={onSafetyLive} />);
+    await act(async () => {});
+    expect(lastReport(onSafetyLive)).toEqual({ petId: 'pet-1', live: true });
+  });
+
+  it('reports null while the watching read that carries the gap row has not answered', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building', findings: [] }));
+    mockWatchingAnswered = false;
+    const onSafetyLive = jest.fn();
+    render(<SignalZone onSafetyLive={onSafetyLive} />);
+    await act(async () => {});
+    expect(lastReport(onSafetyLive)).toEqual({ petId: 'pet-1', live: null });
   });
 
   it('a pet switch reports the NEW pet as unanswered, never the old pet all-clear', async () => {

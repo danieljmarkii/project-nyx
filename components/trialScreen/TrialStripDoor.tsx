@@ -63,31 +63,33 @@ export function TrialStripDoor({ model, petId, input, inputFresh, safety, onPres
       testID="trial-strip-door"
     >
       <Card>
-        <View style={styles.row}>
-          <View style={styles.body}>
-            <ThemedText style={styles.headline}>{model.header}</ThemedText>
-            <View style={styles.progressTrack} testID="trial-strip-door-track">
-              <View
-                testID="trial-strip-door-fill"
-                // Day progress, and nothing else (R2 of the parent spec).
-                style={[styles.progressFill, { width: `${model.progressFraction * 100}%` }]}
-              />
-            </View>
-            {model.line !== null && <ThemedText style={styles.line}>{model.line}</ThemedText>}
-            {model.trialResponseLine !== null && (
-              <ThemedText style={styles.trialResponseLine}>{model.trialResponseLine}</ThemedText>
-            )}
-            {lane ? (
-              <View style={styles.lane}>
-                <ThisWeekLane lane={lane} />
-              </View>
-            ) : null}
-          </View>
+        {/* The chevron sits in the HEADLINE row (round 2's frame), so on a five-line card it
+            still marks the headline rather than floating beside the middle line. */}
+        <View style={styles.headRow}>
+          <ThemedText style={styles.headline}>{model.header}</ThemedText>
           <View style={styles.chevronWell}>
             {/* geist-ok: Icon glyph, not copy — stays a raw <Text> (the strips' chevron). */}
             <Text style={styles.chevron}>›</Text>
           </View>
         </View>
+        <View style={styles.progressTrack} testID="trial-strip-door-track">
+          <View
+            testID="trial-strip-door-fill"
+            // Day progress, and nothing else (R2 of the parent spec).
+            style={[styles.progressFill, { width: `${model.progressFraction * 100}%` }]}
+          />
+        </View>
+        {model.line !== null && <ThemedText style={styles.line}>{model.line}</ThemedText>}
+        {model.trialResponseLine !== null && (
+          <ThemedText style={styles.trialResponseLine}>{model.trialResponseLine}</ThemedText>
+        )}
+        {lane ? (
+          <View style={styles.lane}>
+            {/* The door's label already speaks the lane's sentence, so the lane is not a
+                second focus stop inside it (TalkBack would read it twice). */}
+            <ThisWeekLane lane={lane} insideLabelledControl />
+          </View>
+        ) : null}
       </Card>
     </Pressable>
   );
@@ -99,16 +101,14 @@ const styles = StyleSheet.create({
   target: {
     minHeight: 44,
   },
-  row: {
+  headRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space2,
   },
-  body: {
+  headline: {
     flex: 1,
     minWidth: 0,
-  },
-  headline: {
     fontSize: theme.textMD,
     lineHeight: theme.lineHeightBody,
     fontWeight: theme.weightSemibold,
