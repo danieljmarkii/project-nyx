@@ -251,9 +251,9 @@ describe('buildTrialLedger — the round-2 frame (Mochi, day 23 of 56)', () => {
         'week 3, meals logged 7 of 7 days with an off-diet feeding logged on Jul 19; ' +
         'week 4, meals logged 1 of 2 days so far. Weeks 5 to 8 not reached.',
     );
-    expect(thisWeekLane(l, input)?.label).toBe('Week 4 · 1 of 2 so far');
+    expect(thisWeekLane(l, input)?.label).toBe('Week 4 · meals logged 1 of 2 so far');
     expect(thisWeekLane(l, input)?.accessibilityLabel).toBe(
-      'This trial week, week 4: meals logged on 1 of 2 days so far',
+      'Week 4 of the trial: meals logged on 1 of 2 days so far',
     );
   });
 

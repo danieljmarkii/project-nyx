@@ -103,7 +103,7 @@ describe('trialStripLane: every gate open', () => {
     expect(withholdingReasons(input)).toEqual([]);
     const lane = trialStripLane(open(input, facts));
     expect(lane).not.toBeNull();
-    expect(lane!.label).toBe('Week 2 · 3 of 3 so far');
+    expect(lane!.label).toBe('Week 2 · meals logged 3 of 3 so far');
     expect(lane).toEqual(thisWeekLane(buildTrialLedger({ input, facts }), input));
   });
 });

@@ -286,7 +286,7 @@ export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null
  *  here is necessary and not sufficient. */
 export interface TrialLane {
   row: TrialLedgerRow;
-  /** `Week 4 · 1 of 2 so far` */
+  /** `Week 4 · meals logged 1 of 2 so far` */
   label: string;
   accessibilityLabel: string;
 }
@@ -300,8 +300,11 @@ export function thisWeekLane(ledger: TrialLedger | null, input: TrialCardInput):
   const tail = soFar ? ' so far' : '';
   return {
     row,
-    label: `Week ${row.week} · ${covered} of ${elapsed}${tail}`,
-    accessibilityLabel: `This trial week, week ${row.week}: meals logged on ${covered} of ${elapsed} ${
+    // PM ruling on CUL-1343 (2026-09-27): the lane stands alone on Home with no legend, so
+    // it names what it counts ("meals logged", the legend's own words, §0.3). A bare
+    // "1 of 2" read as an adherence score.
+    label: `Week ${row.week} · meals logged ${covered} of ${elapsed}${tail}`,
+    accessibilityLabel: `Week ${row.week} of the trial: meals logged on ${covered} of ${elapsed} ${
       elapsed === 1 ? 'day' : 'days'
     }${tail}`,
   };

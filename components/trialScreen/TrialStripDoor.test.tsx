@@ -103,7 +103,7 @@ describe('TrialStripDoor: the door', () => {
     for (const text of [
       'Diet trial · day 23 of 56',
       /meals logged on 22 of 23 days/,
-      'Week 4 · 1 of 2 so far',
+      'Week 4 · meals logged 1 of 2 so far',
       '›',
     ]) {
       // The lane is hidden from assistive tech inside the door, so it is queried with
@@ -124,7 +124,7 @@ describe('TrialStripDoor: the door', () => {
     const door = screen.getByTestId('trial-strip-door');
     expect(door.props.accessibilityLabel).toBe(
       'Diet trial · day 23 of 56. Royal Canin Rabbit · ends Aug 27 · meals logged on 22 of 23 days. ' +
-        'This trial week, week 4: meals logged on 1 of 2 days so far.',
+        'Week 4 of the trial: meals logged on 1 of 2 days so far.',
     );
     expect(door.props.accessibilityHint).toBe(TRIAL_STRIP_DOOR_HINT);
     expect(door.props.accessibilityRole).toBe('button');
@@ -135,7 +135,7 @@ describe('TrialStripDoor: this week lane', () => {
   it('draws the ledger current row when every gate is open (non-vacuity)', () => {
     draw();
     expect(screen.getByTestId('trial-lane', { includeHiddenElements: true })).toBeTruthy();
-    expect(screen.getByText('Week 4 · 1 of 2 so far', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByText('Week 4 · meals logged 1 of 2 so far', { includeHiddenElements: true })).toBeTruthy();
   });
 
   it('is not a second accessibility stop inside the door: the door label already speaks it', () => {
@@ -145,14 +145,14 @@ describe('TrialStripDoor: this week lane', () => {
     expect(lane.props.accessibilityElementsHidden).toBe(true);
     expect(lane.props.importantForAccessibility).toBe('no-hide-descendants');
     expect(screen.getByTestId('trial-strip-door').props.accessibilityLabel).toContain(
-      'This trial week, week 4: meals logged on 1 of 2 days so far.',
+      'Week 4 of the trial: meals logged on 1 of 2 days so far.',
     );
   });
 
   it('draws no lane under a live safety-class card, and says none', () => {
     draw({ petId: PET, live: true });
     expect(screen.queryByTestId('trial-lane', { includeHiddenElements: true })).toBeNull();
-    expect(screen.getByTestId('trial-strip-door').props.accessibilityLabel).not.toMatch(/This trial week/);
+    expect(screen.getByTestId('trial-strip-door').props.accessibilityLabel).not.toMatch(/of the trial: meals logged/);
   });
 
   it('draws no lane until the Signal has answered for this pet', () => {
