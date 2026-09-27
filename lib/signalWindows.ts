@@ -195,11 +195,13 @@ export function weekLineNumbers(model: WeeklyBucketsModel): { thisWeek: number; 
 }
 
 /** "2 this week so far · 3 last week" — the card's one line. "So far" only while the week
- *  is not over; a count, never a direction word. */
-export function weekLine(model: WeeklyBucketsModel): string {
+ *  is not over; a count, never a direction word. `withholdPrior` drops last week's count
+ *  when the pair may not be printed (`lib/signalWithhold.ts`, CUL-1216) — this week's
+ *  count alone, the shipped face's density swap. */
+export function weekLine(model: WeeklyBucketsModel, withholdPrior: boolean = false): string {
   const { thisWeek, lastWeek, soFar } = weekLineNumbers(model);
   const head = `${thisWeek} this week${soFar ? ' so far' : ''}`;
-  return lastWeek == null ? head : `${head} · ${lastWeek} last week`;
+  return lastWeek == null || withholdPrior ? head : `${head} · ${lastWeek} last week`;
 }
 
 /** One compare window, before its episodes are counted. */
@@ -280,10 +282,16 @@ export interface SignalLaneSpec {
 
 /** Before the trial · in the trial, or one lane over the lookback (a trial under the
  *  compare floor takes the one lane too — no two-lane split over a day or two). */
-export function signalLaneSpec(finding: SignalFinding, today: string, trial: SignalTrialWindow | null): SignalLaneSpec[] {
+export function signalLaneSpec(
+  finding: SignalFinding,
+  today: string,
+  trial: SignalTrialWindow | null,
+  /** One lane over the lookback even on a trial (CUL-1216: the caller withholds the split). */
+  undivided: boolean = false,
+): SignalLaneSpec[] {
   const [before, during] = signalCompareSpec(finding, today, trial);
   const endOf = (w: SignalWindowSpec) => dayKeyFromIndex(indexOf(w.startDay, 'startDay') + w.days - 1);
-  if (trial && !trialTooYoungToCompare(trial)) {
+  if (trial && !trialTooYoungToCompare(trial) && !undivided) {
     return [
       { label: 'Before the trial', startDay: before.startDay, endDay: endOf(before) },
       { label: 'In the trial', startDay: during.startDay, endDay: endOf(during) },
@@ -300,6 +308,8 @@ export interface SignalLanesInput {
   trial: SignalTrialWindow | null;
   /** One entry per episode, timed or not. */
   episodes: readonly SignalEpisodeDay[];
+  /** One lane even on a trial — the caller withholds the before/in-trial split. */
+  undivided?: boolean;
 }
 
 export interface SignalLanesModel {
@@ -309,7 +319,7 @@ export interface SignalLanesModel {
 
 /** The timing lanes, laid with the shipped panel's own geometry (`laneDots`). */
 export function signalLanes(input: SignalLanesInput): SignalLanesModel {
-  const specs = signalLaneSpec(input.finding, input.today, input.trial);
+  const specs = signalLaneSpec(input.finding, input.today, input.trial, input.undivided ?? false);
   const lanes = specs.map((spec) => {
     const start = indexOf(spec.startDay, 'lane.startDay');
     const end = indexOf(spec.endDay, 'lane.endDay');

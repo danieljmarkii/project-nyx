@@ -111,7 +111,9 @@ export default function HomeScreen() {
   // falling reflection's expanded state appends the mid-trial adjacency line. `isTrialRunning`
   // is the one trial predicate (lib/dietTrial), read on the trial's own clock (`nowMs`).
   const trialRunning = trialInput?.trial ? isTrialRunning(trialInput.trial, trialInput.nowMs) : false;
-  // B-789 (§5.2) — suppress the event-driven Signal trial_response card whenever the active pet's
+  // B-789 (§5.2) — withhold every falling vomit pair on the Signal (the event-driven trial_response
+  // `fewer` card, and since CUL-1216 a falling vomit reflection, the design_v2 lead card's week line
+  // and a vomit chronicity card's compare) whenever the active pet's
   // record carries a NOT-EATING concern (a live intake decline or a diet refusal). The card fires
   // from the server `trial_response` finding, which is blind to the refusal: a diet-trial cat
   // refusing the prescribed diet from day 1 has uniform-low intake, so the relative-decline detector
@@ -127,7 +129,7 @@ export default function HomeScreen() {
   // of eating (n=1 never reassures), so suppress until the facts are confirmed for the active pet
   // (`inputIsForPet`). That flag stays true across a same-pet sync, so this never flickers the
   // card on a routine refresh.
-  const suppressTrialResponse =
+  const withholdFallingVomit =
     trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : !trialFactsFresh;
   // B-789 — the trial strip's standing vomit line (CUL-13) is the SAME reassuring summary the card
   // carries, and `resolveTrialStrip` reads the retained `trialInput` directly, so across a pet switch it
@@ -146,7 +148,7 @@ export default function HomeScreen() {
   //   • the WITHHELD PREDICATE reads `null` as unanswered and fails CLOSED. Drawing a
   //     quiet run before the facts land is the direction that cannot be taken back.
   //
-  // `suppressTrialResponse` above is a third reading of the same register — "may this card
+  // `withholdFallingVomit` above is a third reading of the same register — "may this card
   // reassure?" — and it collapses ignorance to suppression for its own reason. Three
   // questions, one fact, each answer named where it is read.
   const trialNotEating: boolean | null =
@@ -243,7 +245,7 @@ export default function HomeScreen() {
           <CrossPetSafetyBanner />
           <SignalZone
             trialRunning={trialRunning}
-            suppressTrialResponse={suppressTrialResponse}
+            withholdFallingVomit={withholdFallingVomit}
             onSafetyLive={setSignalSafety}
           />
           {/* B-417 §4.2 — a running trial gets a compact strip here, BELOW Signal

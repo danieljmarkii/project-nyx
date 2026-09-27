@@ -86,12 +86,15 @@ function finding(over: Partial<CachedFinding> & { text: string; rank: number }):
     finding:
       over.finding ??
       ({
+        // A FLAT week (CUL-1216): a falling vomit pair is withheld beside an intake decline,
+        // and these fixtures sit beside one to test ORDER and the CAP, not that rule — which
+        // has its own case below ('a falling vomit week beside an intake decline').
         type: 'reflection',
         priorityClass: 'insight',
         symptomType: 'vomit',
         currentCount: 2,
-        priorCount: 5,
-        direction: 'improving',
+        priorCount: 2,
+        direction: 'flat',
         windowDays: 30,
       } satisfies SignalFinding),
   };
@@ -218,7 +221,7 @@ function catLowFlag(): IntakeDeclineFlag {
 function input(over: Partial<WorthRaisingInput> = {}): WorthRaisingInput {
   return {
     findings: [],
-    suppressTrialResponse: false,
+    withholdFallingVomit: false,
     trialStrip: null,
     trialScreen: null,
     trialResponseCounts: null,
@@ -570,13 +573,31 @@ describe('the B-789 suppression is inherited, not re-derived', () => {
     // intake, so the relative-decline detector never fires. Home withholds this
     // sentence; re-deriving "the leading findings" here would bring it back as a
     // thing to RAISE WITH A VET, over a starving cat.
-    const { rows } = buildWorthRaising(input({ findings: [reassuring], suppressTrialResponse: true }));
+    const { rows } = buildWorthRaising(input({ findings: [reassuring], withholdFallingVomit: true }));
     expect(rows).toHaveLength(0);
   });
 
   it('lets it through when the record shows no refusal', () => {
-    const { rows } = buildWorthRaising(input({ findings: [reassuring], suppressTrialResponse: false }));
+    const { rows } = buildWorthRaising(input({ findings: [reassuring], withholdFallingVomit: false }));
     expect(rows).toHaveLength(1);
+  });
+
+  // CUL-1216 (BRK-6): the same register now takes every falling vomit pair, and the Signal's
+  // own intake decline is a register on its own — a pet with no trial has no other.
+  it('a falling vomit week beside an intake decline is not raised with the vet; the flat week is', () => {
+    const falling = finding({
+      text: 'Mochi vomited 2 times this week, down from 5 the week before.',
+      rank: 1,
+      finding: { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 2, priorCount: 5, direction: 'improving', windowDays: 14 },
+    });
+    const flat = finding({ text: 'Mochi vomited 2 times this week, about the same.', rank: 2 });
+    const decline = finding({ text: 'Mochi has finished 2 of 6 meals rated since Tuesday.', rank: 0, finding: SAFETY });
+    const texts = buildWorthRaising(input({ findings: [decline, falling, flat], withholdFallingVomit: false })).rows.map((r) => r.text);
+    expect(texts).not.toContain(falling.text);
+    expect(texts).toContain(flat.text);
+    // Without the decline and with the pet eating, the falling week is raised as before.
+    const eating = buildWorthRaising(input({ findings: [falling], withholdFallingVomit: false })).rows.map((r) => r.text);
+    expect(eating).toContain(falling.text);
   });
 });
 

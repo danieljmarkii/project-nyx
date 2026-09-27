@@ -52,8 +52,12 @@ import { leadChartWidth } from './SignalLeadCard';
 // (`screenLeadsWithLanes`).
 //
 // A safety finding gets the screen too (S1 lives on Home's card, not here): the same
-// sections over its record, plus the shipped phone script (`ExpandedReceipts`) after the
-// why — the safety tap's script is one screen away, as it was one tap away.
+// sections over its record, plus the shipped phone script (`ExpandedReceipts`). THE ASK
+// COMES FIRST (CUL-1216, BRK-39): the sentence that carries it and the script that says
+// how to act on it sit directly under the title, above every chart — they used to trail
+// the gallery and the why, under "Compared as counts, not a verdict", which read calm on
+// the one screen that must not. A safety screen draws no local compare (the model's rule):
+// its one compare is the engine's, in the script.
 //
 // THE OPENING (Motion Designer, §06): the route rises with the fold's physics (the native
 // transition, set in `app/signal/[id].tsx`); the charts draw in on arrival (`drawIn`, the
@@ -325,8 +329,9 @@ function Body({
       </View>
 
       {/* 2 · the finding's own evidence first: the lanes for a timing finding, else the
-          weekly bars — the hero. A chart that flew in does not draw in again. */}
-      {lanesLead ? lanesSection : hero}
+          weekly bars — the hero. A chart that flew in does not draw in again. On a safety
+          finding the ask leads instead (below), and the charts follow it. */}
+      {model.safety ? null : lanesLead ? lanesSection : hero}
 
       {/* 3 + 4 · the sentence and the compare land together */}
       <Animated.View style={[styles.section, landStyle]} testID="signal-section-sentence">
@@ -337,6 +342,25 @@ function Body({
           </View>
         ) : null}
       </Animated.View>
+
+      {/* The safety phone script — the shipped receipts, the same words, one screen away —
+          straight under the sentence that carries the ask (BRK-39). */}
+      {model.safety ? (
+        <View style={styles.section} testID="signal-section-script">
+          <ThemedText style={styles.sectionTitle} accessibilityRole="header">
+            {SCRIPT_TITLE}
+          </ThemedText>
+          <ExpandedReceipts
+            finding={model.finding}
+            petName={petName}
+            trialRunning={false}
+            withholdFallingVomit={model.withholdFallingVomit}
+          />
+        </View>
+      ) : null}
+
+      {/* On a safety finding the charts come after the ask, in their usual order. */}
+      {model.safety ? (lanesLead ? lanesSection : hero) : null}
 
       {/* 5 · timed from meals — or, on a timing finding, the weekly bars below the sentence */}
       {lanesLead ? hero : lanesSection}
@@ -359,17 +383,6 @@ function Body({
           </ThemedText>
         ))}
       </View>
-
-      {/* The safety phone script — the shipped receipts, the same words, one screen away. */}
-      {model.safety ? (
-        <View style={styles.section} testID="signal-section-script">
-          <ThemedText style={styles.sectionTitle} accessibilityRole="header">
-            {SCRIPT_TITLE}
-          </ThemedText>
-          <ExpandedReceipts finding={model.finding} petName={petName} trialRunning={false} />
-        </View>
-      ) : null}
-
     </ScrollView>
   );
 }

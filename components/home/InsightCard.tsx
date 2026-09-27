@@ -327,10 +327,14 @@ export function ExpandedReceipts({
   finding,
   petName,
   trialRunning,
+  withholdFallingVomit,
 }: {
   finding: SignalFinding;
   petName: string;
   trialRunning: boolean;
+  /** The pet's not-eating register (CUL-1216, BRK-6): a falling vomit chronicity compare is
+   *  withheld from the box and the phone script beside it. Required — no fail-open default. */
+  withholdFallingVomit: boolean;
 }) {
   if (isTimingFinding(finding)) {
     const disclosure = timingControlDisclosure(finding);
@@ -364,14 +368,14 @@ export function ExpandedReceipts({
       </EvidenceBox>
     );
   }
-  const facts = phoneScript(finding, petName);
+  const facts = phoneScript(finding, petName, withholdFallingVomit);
   if (facts) {
     // v1.1-b (CUL-787): a chronicity finding whose cache carries the counted 4-week halves
     // draws them ABOVE the script, in the same "Counted honestly" box the reflection lane
     // uses — the two counts, the logged-days line, and (falling only) the why-it-stands
     // clause. Expand-only: the face and the sentence stay exactly as shipped (§3.5), and an
     // old cache (no `compare`) renders the pre-v1.1-b expand byte-identically.
-    const compare = finding.type === 'symptom_chronicity' ? chronicityCompareExtras(finding) : null;
+    const compare = finding.type === 'symptom_chronicity' ? chronicityCompareExtras(finding, withholdFallingVomit) : null;
     return (
       <>
         {compare ? (
@@ -551,6 +555,12 @@ interface Props {
   // resolved once by SignalZone). Gates ONLY the falling reflection's mid-trial adjacency
   // line in the expanded state; default false, so every non-Home caller is unaffected.
   trialRunning?: boolean;
+  // CUL-1216 (BRK-6) — the pet's not-eating register, as SignalZone holds it (Home's
+  // fail-closed `isAnimalNotEating`, OR'd with an `intake_decline` in the Signal). True
+  // withholds a FALLING vomit chronicity compare from the expand and the phone script.
+  // Defaults to TRUE: a caller that does not know whether the pet is eating withholds the
+  // pair (a default on a safety decision is that decision, C-37 — so it is the safe one).
+  withholdFallingVomit?: boolean;
   // CUL-784 — the Signal fold (fold spec §3). `onFold` wires the `Keep it compact`
   // control; absent (a non-Home caller, the shipped tests) the control does not render
   // and the card behaves as shipped. The control also never renders for a finding this
@@ -583,6 +593,7 @@ export function InsightCard({
   isLead = false,
   compact = false,
   trialRunning = false,
+  withholdFallingVomit = true,
   onFold,
   backBecause = null,
   onTouch,
@@ -797,7 +808,12 @@ export function InsightCard({
               ) : isTrial ? (
                 <TrialResponseExpanded finding={cached.finding} />
               ) : (
-                <ExpandedReceipts finding={cached.finding} petName={petName} trialRunning={trialRunning} />
+                <ExpandedReceipts
+                  finding={cached.finding}
+                  petName={petName}
+                  trialRunning={trialRunning}
+                  withholdFallingVomit={withholdFallingVomit}
+                />
               )}
             </>
           )}

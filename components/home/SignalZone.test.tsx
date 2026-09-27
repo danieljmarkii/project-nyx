@@ -471,42 +471,66 @@ describe('SignalZone — v2 cards in the LiveStack', () => {
     },
   };
 
+  // The co-finding beside the trial card is a FLAT week, not the file's default `liveFinding`:
+  // that one is an intake decline, and since CUL-1216 an intake decline in the Signal is a
+  // not-eating register on its own, which withholds the falling trial card (its own case below).
+  const coFinding: CachedFinding = {
+    rank: 0,
+    text: 'A live finding sentence.',
+    finding: { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 2, priorCount: 2, direction: 'flat', windowDays: 14 },
+  };
+
   it('renders the trial card in the stack alongside the other findings', () => {
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }));
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [coFinding, trialFinding] }));
     const view = render(<SignalZone />);
     expect(view.queryByText('Day 20 of 56')).toBeTruthy();
     expect(view.queryByText('A live finding sentence.')).toBeTruthy();
   });
 
   // ── B-789 (§5.2) — the not-eating suppression of the reassuring trial_response card ──
-  // Home passes `suppressTrialResponse` (computed from the same `trialInput` the strip
+  // Home passes `withholdFallingVomit` (computed from the same `trialInput` the strip
   // withholds its vomit line on, `isAnimalNotEating`) so a reassuring "0 vomiting · was 20"
   // never renders over a day-1 diet-refusal cat the relative-decline lane can't see. This is
   // SUPPRESSION, not reorder: the card must not render at all, even below a safety card.
   describe('B-789 suppression on a not-eating record', () => {
-    it('drops the trial card when suppressTrialResponse is set; keeps the other findings', () => {
+    it('drops the trial card when withholdFallingVomit is set; keeps the other findings', () => {
       mockUseSignal.mockReturnValue(
-        signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }),
+        signalState({ displayState: 'live', findings: [coFinding, trialFinding] }),
       );
-      const view = render(<SignalZone suppressTrialResponse />);
+      const view = render(<SignalZone withholdFallingVomit />);
       // The trial card is gone (its "Day 20 of 56" face is not rendered)…
       expect(view.queryByText('Day 20 of 56')).toBeNull();
       // …but the co-finding still renders — no stray gap where the card was.
       expect(view.queryByText('A live finding sentence.')).toBeTruthy();
     });
 
-    it('renders the trial card when suppressTrialResponse is false (the eating trial)', () => {
+    it('renders the trial card when withholdFallingVomit is false (the eating trial)', () => {
       mockUseSignal.mockReturnValue(
-        signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }),
+        signalState({ displayState: 'live', findings: [coFinding, trialFinding] }),
       );
-      const view = render(<SignalZone suppressTrialResponse={false} />);
+      const view = render(<SignalZone withholdFallingVomit={false} />);
       expect(view.queryByText('Day 20 of 56')).toBeTruthy();
+      expect(view.queryByText('A live finding sentence.')).toBeTruthy();
+    });
+
+    // CUL-1216 (BRK-6): the Signal's own intake decline withholds on its own — a pet with no
+    // trial has no other register — and so does a falling vomit reflection.
+    it('an intake decline in the Signal drops the falling trial card and a falling vomit week, prop or no prop', () => {
+      const fallingWeek: CachedFinding = {
+        rank: 2,
+        text: 'Nyx vomited once this week, down from 4 the week before.',
+        finding: { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 1, priorCount: 4, direction: 'improving', windowDays: 14 },
+      };
+      mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding, trialFinding, fallingWeek] }));
+      const view = render(<SignalZone withholdFallingVomit={false} />);
+      expect(view.queryByText('Day 20 of 56')).toBeNull();
+      expect(view.queryByText(fallingWeek.text)).toBeNull();
       expect(view.queryByText('A live finding sentence.')).toBeTruthy();
     });
 
     it('defaults to not suppressing — a non-Home caller (no prop) renders the card', () => {
       mockUseSignal.mockReturnValue(
-        signalState({ displayState: 'live', findings: [liveFinding, trialFinding] }),
+        signalState({ displayState: 'live', findings: [coFinding, trialFinding] }),
       );
       expect(render(<SignalZone />).queryByText('Day 20 of 56')).toBeTruthy();
     });
@@ -515,7 +539,7 @@ describe('SignalZone — v2 cards in the LiveStack', () => {
     // §5.2 hazard. A `more_during_trial` card is a vomiting ESCALATION during the trial — on a
     // not-eating cat that is a concern to KEEP, not a reassurance to hide. It must survive the
     // suppression (dropping it would lose the only card carrying the rise in the ④/⑦ dead zone).
-    it('keeps a more_during_trial ESCALATION card even when suppressTrialResponse is set', () => {
+    it('keeps a more_during_trial ESCALATION card even when withholdFallingVomit is set', () => {
       const moreFinding: TrialResponseFinding = {
         ...(trialFinding.finding as TrialResponseFinding),
         comparisonDirection: 'more_during_trial',
@@ -524,9 +548,9 @@ describe('SignalZone — v2 cards in the LiveStack', () => {
       };
       const moreTrialFinding: CachedFinding = { ...trialFinding, finding: moreFinding };
       mockUseSignal.mockReturnValue(
-        signalState({ displayState: 'live', findings: [liveFinding, moreTrialFinding] }),
+        signalState({ displayState: 'live', findings: [coFinding, moreTrialFinding] }),
       );
-      const view = render(<SignalZone suppressTrialResponse />);
+      const view = render(<SignalZone withholdFallingVomit />);
       expect(view.queryByText('Day 20 of 56')).toBeTruthy();
       expect(view.queryByText('A live finding sentence.')).toBeTruthy();
     });
@@ -629,11 +653,11 @@ describe('SignalZone — the arrival moment', () => {
     petName = 'Nyx',
   ) {
     mockUseSignal.mockReturnValue(signalState({ petId, petName, displayState: 'building' }));
-    const view = render(<SignalZone suppressTrialResponse={suppress} />);
+    const view = render(<SignalZone withholdFallingVomit={suppress} />);
     await flush();
     mockUseSignal.mockReturnValue(signalState({ petId, petName, displayState: 'live', findings }));
     await act(async () => {
-      view.rerender(<SignalZone suppressTrialResponse={suppress} />);
+      view.rerender(<SignalZone withholdFallingVomit={suppress} />);
     });
     await flush();
     return view;

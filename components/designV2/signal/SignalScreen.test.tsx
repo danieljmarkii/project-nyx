@@ -127,7 +127,7 @@ function episode(dayKey: string, hour: number, over: Partial<SignalScreenEpisode
   };
 }
 
-function input(cached: CachedFinding): SignalScreenInput {
+function input(cached: CachedFinding, over: Partial<SignalScreenInput> = {}): SignalScreenInput {
   const episodes: SignalScreenEpisode[] = [];
   for (let i = 0; i < 21; i++) episodes.push(episode(shift(TRIAL_START, (i * 13) % 55), 17, { minutesSinceMeal: i % 3 === 0 ? 3 + i : null }));
   for (let i = 0; i < 19; i++) episodes.push(episode(shift(TRIAL_START, -1 - ((i * 7) % 55)), 9));
@@ -151,10 +151,22 @@ function input(cached: CachedFinding): SignalScreenInput {
       [photographed[4].eventId]: null,
     },
     doses: ['2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12'].map((dayKey) => ({ drugLabel: 'Cerenia', dayKey })),
+    gateLoggedDays: over.loggedDays ?? loggedDays,
+    notEating: false,
+    trialVomitingLine: null,
+    trialUnanswered: false,
+    ...over,
   };
 }
 
-const ready = (cached: CachedFinding) => ({ status: 'ready' as const, model: buildSignalScreenModel(input(cached)), petName: 'Nyx' });
+const ready = (cached: CachedFinding, over: Partial<SignalScreenInput> = {}) => ({
+  status: 'ready' as const,
+  model: buildSignalScreenModel(input(cached, over)),
+  petName: 'Nyx',
+});
+// Off a trial, where the screen draws its compare (CUL-1216: a running trial's before/during
+// statement is the strip's sentence, and nothing is drawn).
+const noTrial = { trial: null };
 
 /** Every string rendered anywhere in the tree. */
 function allText(json: unknown, out: string[] = []): string[] {
@@ -198,7 +210,7 @@ beforeEach(() => {
 
 describe('SignalScreen — the sections, in the ruled order', () => {
   it('title · bars · sentence · compare · lanes · episodes · why', async () => {
-    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    mockLoadSignalScreen.mockResolvedValue(ready(benign, noTrial));
     const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
     await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
     const ids = testIds(view.toJSON());
@@ -218,7 +230,7 @@ describe('SignalScreen — the sections, in the ruled order', () => {
   });
 
   it('a TIMING finding leads with its own evidence: title · lanes · sentence · compare · bars (D2 = a, CUL-1270)', async () => {
-    mockLoadSignalScreen.mockResolvedValue(ready(timingCached));
+    mockLoadSignalScreen.mockResolvedValue(ready(timingCached, noTrial));
     const view = render(<SignalScreen petId="pet-1" identity="postprandial_timing:vomit" />);
     await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
     expect(view.getByTestId('signal-screen-title').props.children.props.children).toBe('Vomiting soon after meals');
@@ -250,11 +262,11 @@ describe('SignalScreen — the sections, in the ruled order', () => {
   });
 
   it('the compare says "logged N of M days" for both windows and adjudicates nothing; the lanes carry the untimed line', async () => {
-    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    mockLoadSignalScreen.mockResolvedValue(ready(benign, noTrial));
     const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
     await waitFor(() => expect(view.getByTestId('compare-bars')).toBeTruthy());
-    expect(view.getByTestId('compare-coverage-0').props.children).toMatch(/^logged \d+ of 55 days$/);
-    expect(view.getByTestId('compare-coverage-1').props.children).toMatch(/^logged \d+ of 55 days$/);
+    expect(view.getByTestId('compare-coverage-0').props.children).toMatch(/^logged \d+ of 7 days$/);
+    expect(view.getByTestId('compare-coverage-1').props.children).toMatch(/^logged \d+ of 7 days$/);
     expect(view.getByTestId('timing-untimed-line').props.children).toMatch(/couldn't be timed against a meal/);
     const text = allText(view.toJSON()).join(' ').toLowerCase();
     expect(text).not.toMatch(/\bfair/);
@@ -289,12 +301,26 @@ describe('SignalScreen — the sections, in the ruled order', () => {
     expect(view.getByText('Day 55 of 56 on Royal Canin Selected Protein PR.')).toBeTruthy();
   });
 
-  it('a safety finding gets the screen too, with the phone script after the why', async () => {
-    mockLoadSignalScreen.mockResolvedValue(ready(safety));
+  // CUL-1216 (BRK-39): the ask first — the sentence that carries it and the phone script sit
+  // under the title, above every chart, the gallery and the why; no local compare is drawn and
+  // no "not a verdict" line reads calm beside it.
+  it('a safety finding gets the screen too, with the ask first: title · sentence · script · bars · episodes · why', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(safety, noTrial));
     const view = render(<SignalScreen petId="pet-1" identity="symptom_chronicity:vomit" />);
     await waitFor(() => expect(view.getByText(SCRIPT_TITLE)).toBeTruthy());
     const ids = testIds(view.toJSON());
-    expect(ids.indexOf('signal-section-script')).toBeGreaterThan(ids.indexOf('signal-section-why'));
+    const order = [
+      'signal-screen-title',
+      'signal-section-sentence',
+      'signal-section-script',
+      'signal-section-weekly',
+      'signal-section-episodes',
+      'signal-section-why',
+    ].map((id) => ids.indexOf(id));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(view.queryByTestId('signal-section-compare')).toBeNull();
+    expect(allText(view.toJSON()).join(' ')).not.toMatch(/not a verdict/);
     expect(view.getByTestId('signal-screen-title')).toBeTruthy();
   });
 

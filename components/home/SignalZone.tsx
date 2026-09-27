@@ -16,7 +16,7 @@ import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
 import { InsightCard, RAIL_WIDTH, stripRenderable } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
-import { visibleFindings } from '../../lib/signalVisible';
+import { signalSaysNotEating, visibleFindings } from '../../lib/signalVisible';
 import { useSignalFold, type SignalFoldApi } from '../../hooks/useSignalFold';
 import { useLastEpisodeDates, type LastEpisodeDates } from '../../hooks/useLastEpisodeDates';
 import { useWatchingRowsRead } from '../../hooks/useWatchingRows';
@@ -491,15 +491,18 @@ interface SignalZoneProps {
   // read). Threaded to the falling reflection's expanded state for the mid-trial adjacency
   // line; default false, so every non-Home caller is unaffected.
   trialRunning?: boolean;
-  // B-789 (§5.2) — drop the event-driven trial_response card when the active pet's record
-  // carries a NOT-EATING concern (a live intake decline or a diet refusal). The card fires
+  // B-789 (§5.2) — drop every FALLING VOMIT PAIR (`isFallingVomitPair`: the trial_response
+  // `fewer` card and, since CUL-1216, a falling vomit reflection) when the active pet's record
+  // carries a NOT-EATING concern (a live intake decline or a diet refusal), or its facts have not
+  // answered yet (Home fails closed). The design_v2 lead card's week line and a vomit chronicity
+  // card's compare read it too. The card fires
   // from the server `trial_response` finding, which is blind to the refusal — the day-1
   // diet-refusal cat has uniform-low intake, so the relative-decline detector never fires
   // and no safety card leads, yet a reassuring "0 vomiting · was 20" would render over a
   // starving cat (the B-494 anorexic-cat case). Home computes this from the SAME `trialInput`
   // the strip withholds its vomit line on (`isAnimalNotEating`), so the card and the strip
   // can never disagree. Default false: every non-Home caller is unaffected.
-  suppressTrialResponse?: boolean;
+  withholdFallingVomit?: boolean;
   // TS-5 (CUL-1301, trial-screen spec §5.1) — tells Home whether a SAFETY-class card (or
   // the escalate-only gap row) is in this zone's settled set for its pet, so the trial strip's week lane never draws under
   // one. `live` is null until the cache read has answered for that pet (C-12: a read that
@@ -511,7 +514,7 @@ interface SignalZoneProps {
 
 export function SignalZone({
   trialRunning = false,
-  suppressTrialResponse = false,
+  withholdFallingVomit = false,
   onSafetyLive,
 }: SignalZoneProps = {}) {
   const {
@@ -671,7 +674,7 @@ export function SignalZone({
   // spending it, so without this exclusion the card standing down would hand the arrival a
   // count of 1 with no safety finding in the set, and the once-ever celebration would play
   // over a sentence about absence.
-  const renderableCount = visibleFindings(findings, suppressTrialResponse).filter(
+  const renderableCount = visibleFindings(findings, withholdFallingVomit).filter(
     (f) => !isStoodDown(f.finding),
   ).length;
 
@@ -760,7 +763,7 @@ export function SignalZone({
                 findings={findings}
                 petName={petName}
                 trialRunning={trialRunning}
-                suppressTrialResponse={suppressTrialResponse}
+                withholdFallingVomit={withholdFallingVomit}
                 arrival={moment}
                 fold={fold}
                 lastEpisodes={lastEpisodes}
@@ -776,7 +779,7 @@ export function SignalZone({
             findings={findings}
             petName={petName}
             trialRunning={trialRunning}
-            suppressTrialResponse={suppressTrialResponse}
+            withholdFallingVomit={withholdFallingVomit}
             fold={fold}
             lastEpisodes={lastEpisodes}
             generatedAt={generatedAt}
@@ -883,7 +886,7 @@ function LiveStack({
   findings,
   petName,
   trialRunning,
-  suppressTrialResponse,
+  withholdFallingVomit,
   arrival = null,
   fold,
   lastEpisodes = {},
@@ -895,7 +898,7 @@ function LiveStack({
   findings: CachedFinding[];
   petName: string;
   trialRunning: boolean;
-  suppressTrialResponse: boolean;
+  withholdFallingVomit: boolean;
   /** D2-3 — the redesign is on: the lead insight card takes the chart canvas and every
    *  face is a door. Default false: every flag-off render is the shipped stack. */
   designV2?: boolean;
@@ -915,7 +918,7 @@ function LiveStack({
   generatedAt?: string | null;
 }) {
   // B-789 (§5.2) — drop the trial_response card when the record shows the animal isn't eating
-  // (`suppressTrialResponse`, computed by Home from the same `trialInput` the strip withholds its
+  // (`withholdFallingVomit`, computed by Home from the same `trialInput` the strip withholds its
   // vomit line on). SUPPRESSION, NOT REORDER: §5.2 forbids a reassuring summary next to a refusal
   // even BELOW the safety card, so ranking it down is insufficient — the card must not render at all.
   // The server emits `trial_response` blind to the refusal (the day-1-refusal cat the relative-decline
@@ -934,7 +937,12 @@ function LiveStack({
   // displayState fix rides CUL-527. The finding stays in the cache; nothing consumes it but this stack.
   // CUL-601: the arrival moment reads `visibleFindings` too, so that empty frame no longer
   // gets a celebration drawn over it — but the empty frame itself is still CUL-527's.
-  const ordered = visibleFindings(findings, suppressTrialResponse);
+  const ordered = visibleFindings(findings, withholdFallingVomit);
+  // CUL-1216 (BRK-6): the SAME register for the pairs a card carries inside it — the Design v2
+  // lead card's week line and a vomit chronicity card's compare — with the Signal's own
+  // `intake_decline` OR'd in, exactly as `visibleFindings` reads it, so the card a stack drops
+  // and the pair a card withholds can never disagree.
+  const withholdPairs = withholdFallingVomit || signalSaysNotEating(findings);
   // CUL-786: the lead canvas belongs to the first CARD. A stood-down line is not a card — the
   // engine has stopped asserting that concern and left a seven-day epitaph — and it is spliced
   // below every live safety finding server-side, so the only card it can precede is a benign
@@ -980,7 +988,7 @@ function LiveStack({
               <StoodDownLine text={f.text} />
             ) : designV2 && onOpen && petId && i === leadIndex && f.finding.priorityClass === 'insight' ? (
               // D2-3: the lead insight card is the title + chart + line, and a door.
-              <SignalLeadCard cached={f} petId={petId} onOpen={onOpen} />
+              <SignalLeadCard cached={f} petId={petId} onOpen={onOpen} withholdFallingVomit={withholdPairs} />
             ) : designV2 && onOpen && petId ? (
               // CUL-1270 (D1 = B): every other card — a safety lead and every lower card — is
               // a row: headline, the ask, a chevron, a door to its own screen. A safety row
@@ -996,6 +1004,7 @@ function LiveStack({
                 isLead={i === leadIndex}
                 compact={i > leadIndex}
                 trialRunning={trialRunning}
+                withholdFallingVomit={withholdPairs}
                 onFold={fold.fold}
                 folded={folded}
                 onUnfold={fold.unfold}

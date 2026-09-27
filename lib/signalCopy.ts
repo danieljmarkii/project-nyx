@@ -804,12 +804,22 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
   }
   if (finding.type === 'reflection') {
     const symptom = symptomWord(finding.symptomType);
-    const trend =
-      finding.direction === 'improving'
+    // CUL-1216 (BRK-4): a falling pair the SR-4 density gate marked incomparable never mints
+    // "down from N" here either. The face already swaps to this week's count alone
+    // (`isReflectionDensityWithheld`) and the expanded box says why (`DENSITY_WITHHELD`), so
+    // this text states the week's count and nothing about last week — no second sentence
+    // about the gate, which the box beside it already carries. This path is live for every
+    // account (the shipped card's expand and the Design v2 screen's *Why* both read it).
+    // The same swap `isReflectionDensityWithheld` makes (spelled out: a type guard would
+    // narrow the else-branch of an already-narrowed reflection to `never`).
+    const withheld = finding.direction === 'improving' && finding.density?.comparable === false;
+    const trend = withheld
+      ? null
+      : finding.direction === 'improving'
         ? `down from ${count(finding.priorCount, 'episode', 'episodes')} the week before`
         : 'about the same as the week before';
     return (
-      `We've logged ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} this week — ${trend}. ` +
+      `We've logged ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} this week${trend ? ` — ${trend}` : ''}. ` +
       `This is a count we're tracking with you — not a diagnosis, and not a verdict on how ${petName} is doing. Keep logging and we'll keep watching the trend.`
     );
   }
@@ -1136,11 +1146,26 @@ export interface ChronicityCompareExpanded {
   whyItStands: string | null;
 }
 
+/**
+ * A vomit chronicity course's FALLING compare beside a pet not known to be eating (CUL-1216,
+ * BRK-6): an empty stomach has less to bring up, so "Recent 4 weeks: 2 · the 4 before: 12" is
+ * the reassuring composition §5.2 forbids beside a refusal. The card stays (it is safety, and
+ * its ask does not move); only the pair goes, in the expand and in the phone script alike.
+ * A rise or a flat pair, and every other symptom, keep printing.
+ */
+export function chronicityCompareWithheld(f: SymptomChronicityFinding, withholdFallingVomit: boolean): boolean {
+  return withholdFallingVomit && f.symptomType === 'vomit' && f.compare != null && isChronicityCompareFalling(f.compare);
+}
+
 /** Everything the chronicity expand's "Counted honestly" box renders, or null when the cached
- *  finding carries no compare (an old cache — the pre-v1.1-b expand, byte-identical). */
-export function chronicityCompareExtras(f: SymptomChronicityFinding): ChronicityCompareExpanded | null {
+ *  finding carries no compare (an old cache — the pre-v1.1-b expand, byte-identical), or when
+ *  the compare is withheld beside a not-eating record (`chronicityCompareWithheld`). */
+export function chronicityCompareExtras(
+  f: SymptomChronicityFinding,
+  withholdFallingVomit: boolean,
+): ChronicityCompareExpanded | null {
   const c = f.compare;
-  if (!c) return null;
+  if (!c || chronicityCompareWithheld(f, withholdFallingVomit)) return null;
   return {
     rows: chronicityCompareRows(c),
     densityLine: chronicityCompareDensityLine(c),
@@ -1861,7 +1886,13 @@ function shortDateUTC(iso: string): string {
 /** The phone-call script facts for a SAFETY finding, or null for any other type (the
  *  script renders only on the safety expand). Each fact is one row (§4 phone script);
  *  the last recency row appears only when the payload carries a "most recent". */
-export function phoneScript(finding: SignalFinding, petName: string): PhoneScriptFact[] | null {
+export function phoneScript(
+  finding: SignalFinding,
+  petName: string,
+  /** The pet's not-eating register (CUL-1216): true drops a FALLING vomit chronicity compare
+   *  row (`chronicityCompareWithheld`). Required — a default here would be the decision. */
+  withholdFallingVomit: boolean,
+): PhoneScriptFact[] | null {
   if (finding.type === 'symptom_worsening') {
     const symptom = symptomWord(finding.symptomType);
     const thisWeek =
@@ -1896,7 +1927,11 @@ export function phoneScript(finding: SignalFinding, petName: string): PhoneScrip
       // v1.1-b (CUL-787): the counted halves as ONE two-sided row, only when the cache carries
       // them (an old cache renders the pre-v1.1-b script). Sits between the total and the
       // most-recent date so the script still reads oldest-fact → newest-fact.
-      ...(finding.compare ? [chronicityComparePhoneScriptFact(finding.compare)] : []),
+      // CUL-1216 (BRK-6): withheld when it falls, counts vomiting, and the pet is not known
+      // to be eating — the ask and every other row stay.
+      ...(finding.compare && !chronicityCompareWithheld(finding, withholdFallingVomit)
+        ? [chronicityComparePhoneScriptFact(finding.compare)]
+        : []),
       { label: 'Most recent', value: recencyPhrase(finding.daysSinceLastEpisode) },
       // The relay the owner READS ALOUD is the one place this mattered most and the one
       // place the first cut omitted it (adversarial pass, 2026-08-28): "mention both" is an
