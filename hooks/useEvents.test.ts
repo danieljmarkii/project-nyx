@@ -32,6 +32,26 @@ const dose = (adherence: string) => ({
   adherence,
 });
 
+// THE CLOCK IS PINNED (C-29, the time axis). `dose` sits a minute before now and the hook
+// reads "today" off the real clock, so in the first minute after local midnight the dose
+// fell on yesterday and all three tests went red: the non-UTC job hit exactly that at
+// 10:00 UTC, midnight in Honolulu. Local NOON, built from local components, is mid-day in
+// every zone the matrix runs. Only Date is faked; the reads' promises stay real.
+const PINNED_NOW = new Date(2026, 8, 24, 12, 0);
+beforeAll(() => {
+  jest.useFakeTimers({
+    doNotFake: [
+      'hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame',
+      'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback', 'setImmediate',
+      'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout',
+    ],
+  });
+  jest.setSystemTime(PINNED_NOW);
+});
+afterAll(() => {
+  jest.useRealTimers();
+});
+
 beforeEach(() => {
   mockReads.length = 0;
   mockActivePet = { id: 'p1' };
