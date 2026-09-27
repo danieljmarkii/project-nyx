@@ -61,6 +61,7 @@ import {
 import { TRIAL_RESPONSE_COUNTS_DEFAULTS } from './trialResponseCounts';
 import { foldIdentity } from './signalFold';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
+import { isOtherTrialReassurance, signalTrialWindowFor } from './signalTrialAnchor';
 import {
   signalCompare,
   signalCompareSpec,
@@ -952,7 +953,15 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
         })
       : Promise.resolve(null),
   ]);
-  const trial = trialFacts?.trial ? signalTrialWindowOf(trialFacts.trial, nowMs) : null;
+  // CUL-1360: which trial the cached finding counted. A trial finding from a trial since
+  // replaced or restarted is not this trial's: the screen draws a rising one in its own day
+  // (no trial window — the title, the compare and the lanes all speak in the finding's own
+  // span) and answers a falling one as Home does, not in the picture.
+  const trialAnchor = {
+    generatedAt: row?.generatedAt ?? null,
+    trial: trialFacts?.trial ? signalTrialWindowOf(trialFacts.trial, nowMs) : null,
+  };
+  const trial = signalTrialWindowFor(cached.finding, trialAnchor);
   // Either fact withholds: the Signal's own intake decline answers on its own, whatever the
   // trial read did (a positive fact in hand is never downgraded to "unknown").
   const notEating: NotEatingFact = signalSaysNotEating(row?.findings ?? [])
@@ -970,9 +979,13 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   //
   // Three causes, three answers (C-37: return the REASON): a register that has not answered is
   // a failed read with Try again, never a permanent-sounding "gone" (the screen re-runs when the
-  // pet list arrives); a withheld pair says why it is set aside; only the stood-down line's
-  // offline expiry, the one other thing `visibleFindings` drops, is "not in the picture".
-  if (!visibleFindings(row?.findings ?? [], notEating !== false, nowMs).includes(cached)) {
+  // pet list arrives); a withheld pair says why it is set aside; the stood-down line's offline
+  // expiry and an older trial's falling pair (CUL-1360), the other things `visibleFindings`
+  // drops, are "not in the picture".
+  if (!visibleFindings(row?.findings ?? [], notEating !== false, nowMs, trialAnchor).includes(cached)) {
+    // An older trial's falling pair is dropped by the anchor, not withheld by the register:
+    // no retry and no reason about eating would be true of it.
+    if (isOtherTrialReassurance(cached.finding, trialAnchor)) return { status: 'missing', petName };
     if (!isFallingVomitPair(cached.finding)) return { status: 'missing', petName };
     // A pet the loaded list does not hold (archived, or gone) can never answer: a retry would
     // be a dead button, so it is not in the picture (a raw deep link is the only way here).

@@ -24,6 +24,7 @@ import {
   describeActiveTrial,
   endActiveTrial,
   getActiveTrialForPet,
+  TrialEndRefused,
   type ActiveTrialSummary,
 } from '../../lib/dietTrialSetup';
 import { captureVisitPaperwork, forgetPaperwork, readPaperworkFor } from '../../lib/visitPaperwork';
@@ -458,19 +459,35 @@ export default function AfterVisitScreen() {
       // before the end means a crash between the two leaves a running trial with its
       // provenance recorded rather than an ended one with none.
       const linkedNow = await linkTrialToVisit(trial.id, id);
-      const endedOn = endOn ?? localDateKey(new Date());
+      let endedOn = endOn ?? localDateKey(new Date());
       if (verdict === 'ended') {
         const { complete } = describeActiveTrial(trial);
-        await endActiveTrial({
-          trialId: trial.id,
-          // 'The vet said to stop' is literally what happened on this screen. On a
-          // trial that has reached its target the honest token is `completed`, which
-          // is also the only one `endActiveTrial` will attach an outcome to.
-          reason: complete ? 'completed' : 'vet_advised',
-          // The day the confirm showed. Only *Ended* reaches this branch, and only
-          // through the confirm, so it is always present here.
-          endedOn: endOn ?? undefined,
-        });
+        try {
+          await endActiveTrial({
+            trialId: trial.id,
+            // 'The vet said to stop' is literally what happened on this screen. On a
+            // trial that has reached its target the honest token is `completed`, which
+            // is also the only one `endActiveTrial` will attach an outcome to.
+            reason: complete ? 'completed' : 'vet_advised',
+            // The day the confirm showed. Only *Ended* reaches this branch, and only
+            // through the confirm, so it is always present here.
+            endedOn: endOn ?? undefined,
+          });
+        } catch (e) {
+          if (!(e instanceof TrialEndRefused)) throw e;
+          // CUL-1329 — the trial was already ended (on another device, or from the
+          // Pet tab) after this screen read it. That first ending is the record and
+          // is left alone. The owner's answer is still true — the trial IS over — so
+          // the row settles as ended, on the day the RECORD holds rather than the day
+          // this confirm showed (which would be a date nothing wrote). With no
+          // readable stored day, or no row at all, re-read and say nothing: "try
+          // again" would be advice to repeat something that cannot succeed.
+          if (e.reason !== 'not_running' || !e.endedOn || !/^\d{4}-\d{2}-\d{2}$/.test(e.endedOn)) {
+            if (petId) await loadPlan(petId);
+            return;
+          }
+          endedOn = e.endedOn;
+        }
         // The row stays, saying the trial ended — and it does NOT turn into *Start a
         // trial*, which is what the null trial read below would otherwise render: the
         // app asking to start a trial a second after the owner said the vet stopped

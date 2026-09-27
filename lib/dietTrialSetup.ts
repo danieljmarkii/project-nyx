@@ -656,6 +656,34 @@ export async function getFoodPrimaryProteins(
  *
  * A trial ENDS via `status`/`ended_at` — never a DELETE (soft-delete house rule),
  * so the record a vet reads survives the owner changing course.
+ *
+ * ── IT ENDS A RUNNING TRIAL OR NOTHING (CUL-1329) ───────────────────────────
+ *
+ * The UPDATE carries `AND status = 'active'`, and zero rows matched throws
+ * `TrialEndRefused` rather than resolving. Before this, a card rendered before a
+ * trial was ended — on another device whose ending has since hydrated here, or on
+ * the other host on this one (the Pet tab and `/trial/[pet]` both carry the
+ * buttons) — wrote its own ending over the first: a new `ended_at`, and possibly a
+ * different `outcome` / `stopped_reason`. Last-write-wins then carried the second
+ * ending to the server, over the one the vet report reads. The FIRST ending is the
+ * record; a second is a stale card, and the caller's job is to re-read, never to
+ * retry. `changeTrialWindow` refuses the same way for the same reason (CUL-1039).
+ *
+ * `status` ONLY — deliberately NOT `changeTrialWindow`'s second half (`ended_at` on a
+ * row still marked `active`). That row is a sync artefact every read surface already
+ * treats as over, but it still holds migration 040's one-active-trial slot, and
+ * `getActiveTrialForPet` (status only, by design) is what the start modal offers to
+ * end. Refusing it here would leave the owner unable to end it AND unable to start a
+ * new trial, with no explanation. Ending it writes `status`, which is what frees the
+ * slot.
+ *
+ * What this does NOT close: a device that has not yet HYDRATED the other device's
+ * ending still holds `status = 'active'` locally, so the predicate passes and the
+ * push is last-write-wins at the server. Only a server-side guard can see that case
+ * (the `CUL-1044` shape, for the window).
+ *
+ * A refused call writes nothing at all — no `updated_at` bump, no `synced = 0`, no
+ * notify, no push — so there is nothing queued to overwrite the other ending.
  */
 export async function endActiveTrial(params: {
   trialId: string;
@@ -699,12 +727,12 @@ export async function endActiveTrial(params: {
   // contract for every local mutation. Clearing the error is what makes ending a
   // trial a FRESH ATTEMPT for a row that was previously quarantined on a 23505
   // rather than a permanently-parked one.
-  await db.runAsync(
+  const result = await db.runAsync(
     `UPDATE diet_trials
         SET status = ?, ended_at = ?, completed_at = ?, stopped_reason = ?,
             outcome = ?, outcome_notes = ?,
             updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
-      WHERE id = ?`,
+      WHERE id = ? AND status = 'active'`,
     [
       completed ? 'completed' : 'abandoned',
       today,
@@ -716,6 +744,18 @@ export async function endActiveTrial(params: {
       params.trialId,
     ],
   );
+  // Zero rows is a refusal, never a quiet success (C-39). The follow-up read only
+  // tells the caller WHICH refusal: a row that is there and no longer running, or no
+  // row at all. It never decides whether to write — the predicate already did.
+  if (result.changes === 0) {
+    const row = await db.getFirstAsync<{ status: string; ended_at: string | null }>(
+      `SELECT status, ended_at FROM diet_trials WHERE id = ?`,
+      [params.trialId],
+    );
+    throw row
+      ? new TrialEndRefused({ reason: 'not_running', status: row.status, endedOn: row.ended_at })
+      : new TrialEndRefused({ reason: 'not_found' });
+  }
 
   notifyTrialChanged();
 
@@ -726,6 +766,39 @@ export async function endActiveTrial(params: {
   syncPendingDietTrials().catch((err) =>
     console.warn('[dietTrialSetup] end-trial sync failed (queued):', err),
   );
+}
+
+/**
+ * An ending the record refused — CUL-1329. The trial is no longer running
+ * (`not_running`: ended here, on the other host, or on another device whose ending
+ * has hydrated) or the row is gone (`not_found`). Either way the card that offered
+ * the button is stale, and the honest response is to re-read, never to retry.
+ *
+ * A sibling of `TrialWindowRefused` rather than a reuse of it: that class is
+ * denominated in window days (`requestedDays` is required and its `message` names
+ * `changeTrialWindow`), none of which means anything to an ending. Structured
+ * fields, never a display string — `guards/ownerFacingCopy.test.ts`, the same
+ * reasoning as its sibling.
+ */
+export class TrialEndRefused extends Error {
+  readonly reason: 'not_found' | 'not_running';
+  /** The row's stored status — null on `not_found`. */
+  readonly status: string | null;
+  /** The row's stored `ended_at` ('YYYY-MM-DD'), the day the FIRST ending recorded.
+   *  Null on `not_found`, and on a row that is not running yet carries no end date. */
+  readonly endedOn: string | null;
+
+  constructor(args: {
+    reason: 'not_found' | 'not_running';
+    status?: string | null;
+    endedOn?: string | null;
+  }) {
+    super(`endActiveTrial refused (${args.reason})`);
+    this.name = 'TrialEndRefused';
+    this.reason = args.reason;
+    this.status = args.status ?? null;
+    this.endedOn = args.endedOn ?? null;
+  }
 }
 
 /**

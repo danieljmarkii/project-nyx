@@ -12,5 +12,10 @@ module.exports = {
   testPathIgnorePatterns: [
     '/node_modules/',
     '/supabase/functions/', // Deno tests — run via `deno test`, not jest
+    // Agent worktrees (Claude Code `isolation: worktree`) are full repo checkouts inside
+    // this one: without this, `npm test` (and the pre-push hook) runs every worktree's
+    // suite too, and their duplicate `__mocks__` collide in the haste map.
+    '<rootDir>/.claude/worktrees/', // rooted, so a run INSIDE a worktree still sees its own tests
   ],
+  modulePathIgnorePatterns: ['<rootDir>/.claude/worktrees/'],
 };

@@ -64,7 +64,7 @@ jest.mock('./dailyRecapOffer', () => ({
 import {
   addTrialFood, buildTrialRows, canStartTrial, defaultDurationDays, describeActiveTrial,
   durationHelperLine, endActiveTrial, foodLabel, formatTrialEndDate,
-  extendTrial, changeTrialWindow, TrialWindowRefused, getActiveTrialForPet,
+  extendTrial, changeTrialWindow, TrialWindowRefused, TrialEndRefused, getActiveTrialForPet,
   permittedRoleForFood, secondTrialIntro,
   setTrialTargetProtein, startDietTrial,
   stopReasonOptions, trialEndDayKey, trialSetupLines, TRIAL_RECORD_DISCLOSURE,
@@ -97,9 +97,11 @@ function input(overrides: Partial<StartTrialInput> = {}): StartTrialInput {
 
 beforeEach(() => {
   mockIdSeq = 0;
-  mockRunAsync.mockClear();
+  // mockReset, not mockClear: a queued `*Once` answer a test did not consume (e.g. a
+  // mutant that skips the read) must not leak into the next test.
+  mockRunAsync.mockReset().mockResolvedValue({ changes: 1, lastInsertRowId: 0 });
   mockWithTransactionAsync.mockClear();
-  mockGetFirstAsync.mockClear().mockResolvedValue(null);
+  mockGetFirstAsync.mockReset().mockResolvedValue(null);
   mockGetAllAsync.mockClear();
   mockSyncTrials.mockClear();
   mockSyncTrialFoods.mockClear();
@@ -430,6 +432,55 @@ describe('endActiveTrial', () => {
     // the server's UNIQUE active index early is what keeps a subsequent start
     // from earning a terminal 23505.
     expect(mockSyncTrials).toHaveBeenCalled();
+  });
+
+  // ── CUL-1329 — a stale card must not write a second ending over the first ──
+  //
+  // The mock answers `{ changes: 0 }` the way expo-sqlite does when the predicate
+  // matches nothing (C-39: a mock narrower than the API would make this branch
+  // unassertable). The real-engine half — that the predicate actually excludes an
+  // ended row — is `lib/dietTrialEnd.test.ts`.
+
+  it('ends ONLY a running trial — the predicate is in the statement', async () => {
+    await endActiveTrial({ trialId: 't-1', reason: 'completed' });
+    const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/WHERE id = \? AND status = 'active'/);
+    expect(params[params.length - 1]).toBe('t-1');
+  });
+
+  it('refuses as not_running when the row is there and already ended', async () => {
+    mockRunAsync.mockResolvedValueOnce({ changes: 0, lastInsertRowId: 0 });
+    mockGetFirstAsync.mockResolvedValueOnce({ status: 'completed', ended_at: '2026-09-20' });
+    const before = useSyncStore.getState().hydrationTick;
+
+    const e = await endActiveTrial({ trialId: 't-1', reason: 'refused' }).then(
+      () => { throw new Error('endActiveTrial resolved over an ended trial — it must refuse'); },
+      (err: unknown) => err,
+    );
+
+    expect(e).toBeInstanceOf(TrialEndRefused);
+    expect(e).toMatchObject({ reason: 'not_running', status: 'completed', endedOn: '2026-09-20' });
+    // Nothing happened, so nothing is announced and nothing is pushed.
+    await flush();
+    expect(useSyncStore.getState().hydrationTick).toBe(before);
+    expect(mockSyncTrials).not.toHaveBeenCalled();
+    expect(mockRunAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses as not_found when the row is gone', async () => {
+    mockRunAsync.mockResolvedValueOnce({ changes: 0, lastInsertRowId: 0 });
+    mockGetFirstAsync.mockResolvedValueOnce(null);
+    await expect(endActiveTrial({ trialId: 't-missing', reason: 'completed' }))
+      .rejects.toMatchObject({ reason: 'not_found', status: null, endedOn: null });
+    await flush();
+    expect(mockSyncTrials).not.toHaveBeenCalled();
+  });
+
+  it('lets a genuine database failure through as itself, not as a refusal', async () => {
+    mockRunAsync.mockRejectedValueOnce(new Error('SQLITE_BUSY'));
+    const e = await endActiveTrial({ trialId: 't-1', reason: 'completed' }).catch((err: unknown) => err);
+    expect(e).toBeInstanceOf(Error);
+    expect(e).not.toBeInstanceOf(TrialEndRefused);
   });
 });
 

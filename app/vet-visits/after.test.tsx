@@ -663,6 +663,63 @@ describe('CUL-951 — *Ended* confirms first, and never turns into *Start a tria
     const { endActiveTrial } = jest.requireMock('../../lib/dietTrialSetup');
     expect(endActiveTrial).not.toHaveBeenCalled();
   });
+
+  // CUL-1329 — the trial was ended elsewhere (another device, or the Pet tab) after
+  // this screen read it. The write path refuses; the screen must neither write a
+  // second ending nor tell the owner to "try that again". The REAL `TrialEndRefused`
+  // (the factory spreads `requireActual`), so `instanceof` meets the class the write
+  // path throws.
+  it('a refused end settles the row on the day the RECORD holds, with no alert', async () => {
+    const { endActiveTrial, getActiveTrialForPet, TrialEndRefused } =
+      jest.requireMock('../../lib/dietTrialSetup');
+    endActiveTrial.mockImplementationOnce(async () => {
+      getActiveTrialForPet.mockImplementation(async () => null);
+      throw new TrialEndRefused({ reason: 'not_running', status: 'completed', endedOn: '2020-01-15' });
+    });
+    const alert = answerAlertWith('End it');
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+
+    fireEvent.press(screen.getByText('Ended'));
+    await screen.findByText(/^Ended Jan 15/);
+    expect(screen.queryByText('Ended today')).toBeNull();
+    expect(screen.queryByText('Start a trial')).toBeNull();
+    // One alert only — the confirm. No "That didn’t save".
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(alert.mock.calls[0][0]).toBe('End the Hill’s z/d trial?');
+  });
+
+  it('a refused end with no row to read re-reads the plan and says nothing', async () => {
+    const { endActiveTrial, getActiveTrialForPet, TrialEndRefused } =
+      jest.requireMock('../../lib/dietTrialSetup');
+    endActiveTrial.mockImplementationOnce(async () => {
+      throw new TrialEndRefused({ reason: 'not_found' });
+    });
+    const alert = answerAlertWith('End it');
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+    const readsBefore = getActiveTrialForPet.mock.calls.length;
+
+    await act(async () => { fireEvent.press(screen.getByText('Ended')); });
+    await waitFor(() => expect(getActiveTrialForPet.mock.calls.length).toBeGreaterThan(readsBefore));
+    expect(screen.queryByText('Ended today')).toBeNull();
+    expect(alert).toHaveBeenCalledTimes(1);
+  });
+
+  it('a genuine failure on *Ended* still says so', async () => {
+    const { endActiveTrial } = jest.requireMock('../../lib/dietTrialSetup');
+    endActiveTrial.mockImplementationOnce(async () => { throw new Error('SQLITE_BUSY'); });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const alert = answerAlertWith('End it');
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+
+    await act(async () => { fireEvent.press(screen.getByText('Ended')); });
+    await waitFor(() => expect(alert).toHaveBeenCalledTimes(2));
+    expect(alert.mock.calls[1][0]).toBe('That didn’t save');
+    expect(screen.queryByText('Ended today')).toBeNull();
+    warn.mockRestore();
+  });
 });
 
 // CUL-1092 — two rough edges `pm-feature-review` found on the after-visit screen.

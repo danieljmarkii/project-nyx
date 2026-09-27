@@ -222,8 +222,13 @@ function input(over: Partial<WorthRaisingInput> = {}): WorthRaisingInput {
   return {
     findings: [],
     withholdFallingVomit: false,
+    // No trial anchor: the cache's stamp and the running trial are unknown (CUL-1364's
+    // cases set both).
+    signalAnchor: { generatedAt: null, trial: null },
     trialStrip: null,
     trialScreen: null,
+    // No oral-route read answered (CUL-1342's lane is `trialRecheck.test.ts`'s to prove).
+    trialFacts: { status: 'unknown' },
     trialResponseCounts: null,
     intakeDecline: [],
     rundown: rundown(),
@@ -1380,6 +1385,7 @@ function screenTrial(over: Partial<TrialScreenTrial> = {}): TrialScreenTrial {
     decision: null,
     allowedFoods: null,
     ledger: null,
+    ledgerUnreadable: null,
     facts: [
       { role: 'fact', text: 'Meals logged on 21 of 23 days.' },
       { role: 'fact', text: '22 feedings in total, all the trial diet.' },

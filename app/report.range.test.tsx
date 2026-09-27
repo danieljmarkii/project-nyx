@@ -14,7 +14,9 @@ jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
-jest.mock('expo-router', () => ({ router: { push: jest.fn(), back: jest.fn() } }));
+// No `?pet=`: the report is the active pet's (CUL-1334's fallback), as every door but the
+// trial screen's and Get ready's opens it.
+jest.mock('expo-router', () => ({ router: { push: jest.fn(), back: jest.fn() }, useLocalSearchParams: () => ({}) }));
 jest.mock('react-native-webview', () => ({ WebView: () => null }));
 let mockPickedDate = new Date(2026, 5, 1);
 jest.mock('@react-native-community/datetimepicker', () => {
@@ -34,7 +36,8 @@ jest.mock('../hooks/useDesignV2', () => ({ useDesignV2: () => false }));
 jest.mock('../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
 jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
 jest.mock('../store/petStore', () => {
-  const state = { activePet: { id: 'p1', name: 'Mochi' } };
+  const pet = { id: 'p1', name: 'Mochi' };
+  const state = { activePet: pet, pets: [pet] };
   return {
     usePetStore: Object.assign(
       (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state),

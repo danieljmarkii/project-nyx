@@ -15,7 +15,13 @@ jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
-jest.mock('expo-router', () => ({ router: { push: jest.fn(), back: jest.fn() } }));
+// The route's `?pet=` (CUL-1334). Absent unless a test sets it: every pre-existing case
+// is the active pet's report, the fallback every door but the trial screen's takes.
+let mockParams: Record<string, string> = {};
+jest.mock('expo-router', () => ({
+  router: { push: jest.fn(), back: jest.fn() },
+  useLocalSearchParams: () => mockParams,
+}));
 jest.mock('react-native-webview', () => ({ WebView: () => null }));
 jest.mock('@react-native-community/datetimepicker', () => () => null);
 // The two shipped waits and the two Design v2 ones, each a marker: the D2-7 cases below
@@ -54,7 +60,10 @@ jest.mock('../hooks/useDesignV2', () => ({ useDesignV2: () => mockUseDesignV2() 
 jest.mock('../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
 jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
 jest.mock('../store/petStore', () => {
-  const state = { activePet: { id: 'p1', name: 'Mochi' } };
+  // Two pets, Mochi active. Biscuit is the one a `?pet=` names; `p-archived` is in
+  // neither list, as an archived pet or a stale link is (the list holds non-archived pets).
+  const mochi = { id: 'p1', name: 'Mochi' };
+  const state = { activePet: mochi, pets: [mochi, { id: 'p2', name: 'Biscuit' }] };
   return {
     usePetStore: Object.assign(
       (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state),
@@ -72,7 +81,7 @@ jest.mock('../lib/pdf', () => ({
 jest.mock('../lib/vetDocumentLibrary', () => ({ readVetLibrary: jest.fn(async () => []) }));
 jest.mock('../lib/vetFilesEntry', () => ({ VET_FILES_ENTRY_ENABLED: true }));
 
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { generateVetReport, shareReportPdf, type VetReport } from '../lib/pdf';
 import { readVetLibrary } from '../lib/vetDocumentLibrary';
@@ -99,6 +108,7 @@ const DOCS_LINE = 'Your saved vet documents aren’t part of this report. Share 
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockParams = {};
   mockUseDesignV2.mockReturnValue(false);
   mockedLibrary.mockResolvedValue([]);
 });
@@ -217,5 +227,47 @@ describe('documents do not travel (CUL-457)', () => {
     await waitFor(() => expect(warn).toHaveBeenCalled());
     expect(queryByText(DOCS_LINE)).toBeNull();
     warn.mockRestore();
+  });
+});
+
+// CUL-1334 — the report takes a pet. The two GUARD cases (a named non-active pet, an
+// unknown one) red on the pre-CUL-1334 tree, which read `activePet` and ignored the
+// route: the first builds Mochi's report, the second builds Mochi's report instead of
+// refusing. The no-param case is refactor-safety (green before and after).
+describe('whose report: /report?pet= (CUL-1334)', () => {
+  it('no ?pet=: the active pet’s report, as every existing door expects', async () => {
+    mockedGenerate.mockResolvedValue(report());
+    const { findByText } = render(<ReportScreen />);
+    await findByText('Send to vet');
+    expect(mockedGenerate).toHaveBeenCalledWith({ petId: 'p1', includeNotes: true });
+    expect(mockedLibrary).toHaveBeenCalledWith('p1');
+  });
+
+  it('?pet= a pet that is not the active one: every read takes THAT pet, and the wait names it', async () => {
+    mockParams = { pet: 'p2' };
+    mockUseDesignV2.mockReturnValue(true);
+    mockedGenerate.mockReturnValue(new Promise(() => {}));
+    const { getByTestId } = render(<ReportScreen />);
+    // The wait names the report's pet, never the active one (C-9).
+    expect(getByTestId('report-silhouette').props.children).toBe('Biscuit true');
+    await waitFor(() => expect(mockedGenerate).toHaveBeenCalled());
+    expect(mockedGenerate.mock.calls.every(([p]) => p.petId === 'p2')).toBe(true);
+    expect(mockedLibrary.mock.calls).toEqual([['p2']]);
+  });
+
+  it('?pet= a pet the account does not hold: the pet-gone line, no report built, no fallback', async () => {
+    mockParams = { pet: 'p-archived' };
+    mockedGenerate.mockResolvedValue(report());
+    const { findByTestId, queryByText, queryByTestId } = render(<ReportScreen />);
+    expect((await findByTestId('report-pet-gone')).props.children).toBe(
+      'This pet isn’t in your account any more.',
+    );
+    // An absence proves the refusal only because the generator WOULD answer if asked.
+    await act(async () => {});
+    expect(mockedGenerate).not.toHaveBeenCalled();
+    expect(mockedLibrary).not.toHaveBeenCalled();
+    expect(queryByText('Send to vet')).toBeNull();
+    expect(queryByText('Report range')).toBeNull();
+    expect(queryByTestId('night-moment')).toBeNull();
   });
 });

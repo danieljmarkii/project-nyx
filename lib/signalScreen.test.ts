@@ -1312,6 +1312,55 @@ describe('CUL-1216 — the loader reads the not-eating register for the ROUTE’
       ]);
       expect(lines.join(' ')).not.toMatch(/!|\d/);
     });
+
+    // CUL-1360: the cache still holds rabbit's pair (counted just after midnight today, on its
+    // day 21 — `trialPair`'s day, rabbit having started twenty days ago) and the owner then
+    // replaced rabbit with chicken. The screen reads the SAME anchor Home's stack
+    // does: the falling pair is not in the picture, the rising pair speaks in its own day.
+    describe('a trial finding counted over a trial since replaced', () => {
+      const today = () => toLocalDayKey(new Date());
+      // Past the lag band after local midnight, so the engine's day is today's (C-29: built
+      // from local components, the same instant in every CI zone's terms).
+      const countedToday = (): string => {
+        const [y, m, d] = today().split('-').map(Number);
+        return new Date(y, m - 1, d, 0, 30).toISOString();
+      };
+      const chickenToday = (): TrialCardInput =>
+        ({
+          ...eating(),
+          trial: { id: 't2', status: 'active', startedAt: today(), endedAt: null, targetDurationDays: 56, foodLabel: null, trialProtein: { protein: 'chicken', source: 'owner' } },
+        }) as TrialCardInput;
+      const DIET_CHANGE_LINE = 'A diet change is one of several things that can move this.';
+      const rabbitRow = (dir: 'fewer_during_trial' | 'more_during_trial') => ({ findings: [trialPair(dir)], generatedAt: countedToday() });
+
+      it('the falling pair is missing (not withheld: no reason about eating is true of it)', async () => {
+        mockReadSignalCache.mockResolvedValue(rabbitRow('fewer_during_trial'));
+        mockLoadDietTrialFacts.mockResolvedValue(chickenToday());
+        expect(await loadSignalScreen('pet-1', 'trial_response')).toEqual({ status: 'missing', petName: 'Nyx' });
+      });
+
+      it('the rising pair is ready, titled by its own day and drawn with no trial window', async () => {
+        mockReadSignalCache.mockResolvedValue(rabbitRow('more_during_trial'));
+        mockLoadDietTrialFacts.mockResolvedValue(chickenToday());
+        const out = await loadSignalScreen('pet-1', 'trial_response');
+        if (out.status !== 'ready') throw new Error(out.status);
+        expect(out.model.title).toBe('Diet trial, day 21 of 56');
+        // No trial window: none of the running trial's lines, which name chicken's day.
+        expect(out.model.why).not.toContain(DIET_CHANGE_LINE);
+      });
+
+      it('the same pair over the trial it counted keeps the running trial’s name and window', async () => {
+        mockReadSignalCache.mockResolvedValue(rabbitRow('fewer_during_trial'));
+        mockLoadDietTrialFacts.mockResolvedValue({
+          ...eating(),
+          trial: { ...eating().trial, trialProtein: { protein: 'rabbit', source: 'owner' } },
+        } as TrialCardInput);
+        const out = await loadSignalScreen('pet-1', 'trial_response');
+        if (out.status !== 'ready') throw new Error(out.status);
+        expect(out.model.title).toBe('Rabbit trial, day 21 of 56');
+        expect(out.model.why).toContain(DIET_CHANGE_LINE);
+      });
+    });
   });
 
   it('an intake decline in the pet’s Signal withholds, whatever the trial facts said', async () => {

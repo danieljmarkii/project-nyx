@@ -105,6 +105,7 @@ import {
   startDietTrial,
   getFoodPrimaryProteins,
   stopReasonOptions,
+  TrialEndRefused,
 } from '../../lib/dietTrialSetup';
 import { toLocalDayKey } from '../../lib/utils';
 
@@ -275,6 +276,57 @@ describe('StartTrialModal — end-and-continue ordering', () => {
     expect(screen.props.onStarted).not.toHaveBeenCalled();
 
     errorSpy.mockRestore();
+    alertSpy.mockRestore();
+  });
+
+  // CUL-1329 — the old trial was ended elsewhere while this form was open. The real
+  // `TrialEndRefused` (the factory spreads `requireActual`), so the modal's
+  // `instanceof` is tested against the class the write path actually throws.
+  it('a refused end over a trial already ended elsewhere still starts the new one, when nothing else is running', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockedGetActive.mockResolvedValueOnce(RUNNING_TRIAL).mockResolvedValue(null);
+    mockedEnd.mockRejectedValue(new TrialEndRefused({ reason: 'not_running', status: 'completed', endedOn: '2026-09-20' }));
+
+    const screen = renderModal();
+    await reachFormAfterAgreeingToEnd(screen);
+    await fillForm(screen);
+    fireEvent.press(screen.getByText('Start trial'));
+
+    await waitFor(() => expect(mockedStart).toHaveBeenCalledTimes(1));
+    expect(mockedEnd).toHaveBeenCalledTimes(1);
+    // The record was asked again before starting — not assumed free.
+    expect(mockedGetActive).toHaveBeenCalledTimes(2);
+    expect(screen.props.onStarted).toHaveBeenCalledWith('trial-new');
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it('a refused end where ANOTHER trial is now running goes back to the blocked screen and starts nothing', async () => {
+    // The other device ended the old trial AND started its own. Starting here would
+    // put two active trials on one pet — the terminal 23505 the pre-flight prevents.
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const OTHER = { ...RUNNING_TRIAL, id: 'trial-other', foodLabel: 'Other Diet' };
+    mockedGetActive.mockResolvedValueOnce(RUNNING_TRIAL).mockResolvedValue(OTHER);
+    mockedEnd.mockRejectedValue(new TrialEndRefused({ reason: 'not_running', status: 'abandoned', endedOn: '2026-09-20' }));
+
+    const screen = renderModal();
+    await reachFormAfterAgreeingToEnd(screen);
+    await fillForm(screen);
+    fireEvent.press(screen.getByText('Start trial'));
+
+    await waitFor(() => expect(screen.getByText('Pixel already has a trial running')).toBeTruthy());
+    expect(mockedStart).not.toHaveBeenCalled();
+    expect(screen.props.onStarted).not.toHaveBeenCalled();
+    expect(alertSpy).not.toHaveBeenCalled();
+
+    // The owner decides again, about the trial that is actually running now.
+    const reasons = stopReasonOptions('Pixel', false);
+    fireEvent.press(screen.getByText(reasons[0].label));
+    fireEvent.press(screen.getByText('End this one and start the new one'));
+    mockedEnd.mockResolvedValue(undefined);
+    fireEvent.press(await screen.findByText('Start trial'));
+    await waitFor(() => expect(mockedStart).toHaveBeenCalledTimes(1));
+    expect(mockedEnd).toHaveBeenLastCalledWith({ trialId: 'trial-other', reason: reasons[0].value });
     alertSpy.mockRestore();
   });
 

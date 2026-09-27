@@ -13,19 +13,24 @@ import {
   GetReadyTitle,
 } from '../components/vetvisits/GetReadyHeader';
 import { WorthRaisingList } from '../components/vetvisits/WorthRaisingList';
-import { resolveRecordPetName, usePetStore } from '../store/petStore';
+import { resolveRecordPetName, usePetStore, type Pet } from '../store/petStore';
 import { buildRundown, rundownToPlainText, type Rundown, type RundownTap } from '../lib/rundown';
 import { rundownHistoryHref } from '../lib/historyDoors';
 import { useHistoryV2 } from '../hooks/useHistoryV2';
 import { buildWorthRaising, localIntakeDeclines, type WorthRaising } from '../lib/getReady';
 import { buildTrialScreenModel } from '../lib/trialScreenModel';
 import { UNKNOWN_ALLOWED_SET } from '../lib/trialAllowedSet';
-import { NO_LEDGER_FACTS } from '../lib/trialRecheck';
+import { NO_LEDGER_FACTS, recheckFactsState } from '../lib/trialRecheck';
 import { useTrialScreen } from '../hooks/useTrialScreen';
 import { RecheckQuestions } from '../components/trialScreen/RecheckQuestions';
-import { loadDietTrialFacts } from '../lib/dietTrialFacts';
+import {
+  loadDietTrialFacts,
+  loadTrialPredicateFacts,
+  type TrialPredicateFacts,
+} from '../lib/dietTrialFacts';
 import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
 import { readSignalCache } from '../lib/signal';
+import { signalTrialWindowOf } from '../lib/signalScreen';
 import { syncPendingVetAppointments } from '../lib/sync';
 import {
   buildAppointmentView,
@@ -37,6 +42,7 @@ import {
 } from '../lib/vetVisits';
 import { uuid } from '../lib/utils';
 import { profileFocusHref } from '../lib/profileFocus';
+import { reportHref } from '../lib/reportRoute';
 
 // The vet-visit rundown (Ask / B-228 PR A6, spec §3.3 + mock §7), and — with an
 // `appointmentId` — GET READY (CUL-903 VV-5; vet-visits spec §4.1 B1, mock B1 / B1b).
@@ -76,7 +82,12 @@ import { profileFocusHref } from '../lib/profileFocus';
 // Behind `trial_screen`, the trial row grows into the vet's recheck questions, answered
 // from the trial screen's own model (`buildTrialScreenModel`, fed the same loader output
 // the screen reads) and drawn by `components/trialScreen/RecheckQuestions`. Flag-off the
-// model is never built and the row is today's; no read is added either way.
+// model is never built and the row is today's, and no read is added.
+//
+// Flag-on, CUL-1342 adds ONE read: `loadTrialPredicateFacts`, for the oral-route lane (the
+// chewable and food-paired doses the feeding counts never hold). It runs beside the trial
+// read inside this same awaited pass, so it can never be "still loading" when the rows are
+// built, and a failure is its own state (`unreadable`), never an empty lane (C-12).
 
 type Status = 'loading' | 'ready' | 'error';
 
@@ -260,6 +271,14 @@ export default function RundownScreen() {
     router.setParams({ ask: undefined });
   }, [getReady]);
 
+  // The report of the pet whose rundown is on screen (CUL-1334): in Get-ready mode that is
+  // the appointment's pet, which need not be the active one, so the door names it rather
+  // than letting `/report` fall back to the active pet (C-9). `rundownPetId` is set in the
+  // same commit as the rundown it describes.
+  const openReport = useCallback(() => {
+    router.push(rundownPetId ? reportHref(rundownPetId) : '/report');
+  }, [rundownPetId]);
+
   const onCopyAsText = useCallback(async () => {
     setMenuOpen(false);
     if (!rundown) return;
@@ -358,7 +377,19 @@ export default function RundownScreen() {
                   // the gate live (`buildForAppointment`). Keyed on the live gate instead, a
                   // revocation while the page is open drew a refusal row as a bare title
                   // in the safety band (adversarial pass, TS-8).
-                  renderRecheck={(recheck) => <RecheckQuestions recheck={recheck} />}
+                  renderRecheck={(recheck) => (
+                    <RecheckQuestions
+                      recheck={recheck}
+                      // CUL-1342: the capped dose rows' door, to the APPOINTMENT's pet's list
+                      // (C-9), the same route and param the trial screen's door uses.
+                      onOpenDoses={() =>
+                        router.push({
+                          pathname: '/trial-exposures',
+                          params: { pet: getReady.appointment.pet_id },
+                        })
+                      }
+                    />
+                  )}
                   onRemove={(id) =>
                     writeQuestions(getReady.questions.filter((q) => q.id !== id)).catch(() => {})
                   }
@@ -380,7 +411,7 @@ export default function RundownScreen() {
               // lenses said so independently — so the only hand-off here is the
               // report, and the text share sits under ⋯ as *Copy as text*.
               <>
-                <PrimaryButton label="Send the vet report" onPress={() => router.push('/report')} />
+                <PrimaryButton label="Send the vet report" onPress={openReport} />
                 {/* The door Get ready was always specified to have (spec §4.1 C1:
                     the notes are "opened from Get ready") and never got, which is
                     half of CUL-966 — the questions typed on THIS page become ticks
@@ -400,7 +431,7 @@ export default function RundownScreen() {
               </>
             ) : (
               <>
-                <PrimaryButton label="Share the full vet report" onPress={() => router.push('/report')} />
+                <PrimaryButton label="Share the full vet report" onPress={openReport} />
                 <PrimaryButton
                   // "Share", not "Save" — it opens the OS share sheet (no in-app
                   // persistence, §10); the label matches what actually happens.
@@ -474,7 +505,9 @@ async function buildForAppointment(
   const { pets } = usePetStore.getState();
   const pet = pets.find((p) => p.id === subjectId) ?? null;
 
-  const [findings, trialInput] = await Promise.all([
+  // One clock for every read and the build, so the two trial reads bound the same window.
+  const nowMs = Date.now();
+  const [signalRow, trialInput, recheckRead] = await Promise.all([
     readSignalCache(subjectId)
       // `row ? row.findings : null` — NOT `row?.findings ?? []`, and the difference is
       // the whole point of the two states.
@@ -488,8 +521,9 @@ async function buildForAppointment(
       // have never succeeded. Absence of a computed finding is not absence of a finding.
       //
       // `row.findings` is already `[]` when the engine ran and found nothing, so the
-      // genuinely-quiet record still renders mock B1b.
-      .then((row) => (row ? row.findings : null))
+      // genuinely-quiet record still renders mock B1b. The row's `generated_at` rides with
+      // them: it is half the trial anchor (CUL-1364).
+      .then((row) => (row ? { findings: row.findings, generatedAt: row.generatedAt } : null))
       // A throw is the other unreadable case (offline, or a failed request).
       .catch(() => null),
     pet
@@ -497,8 +531,11 @@ async function buildForAppointment(
           pet: { id: pet.id, name: pet.name, species: pet.species, sex: pet.sex },
           otherPetNames: pets.filter((p) => p.id !== pet.id).map((p) => p.name),
           signalsV2: true,
+          nowMs,
         }).catch(() => null)
       : Promise.resolve(null),
+    // Flag-on only, and for the appointment's pet (C-9).
+    trialScreenLive && pet ? readRecheckFacts(pet, nowMs) : Promise.resolve('unreadable' as const),
   ]);
 
   if (loadIdRef.current !== myId) {
@@ -515,7 +552,6 @@ async function buildForAppointment(
           pet: { id: pet.id, name: pet.name },
           petsLoaded: true,
           petName: resolveRecordPetName(pets, pet.id),
-          isActivePet: usePetStore.getState().activePet?.id === pet.id,
           trial: trialInput
             ? { status: 'loaded', input: trialInput, inputIsForPet: true }
             : { status: 'unreadable', input: null, inputIsForPet: false },
@@ -526,13 +562,20 @@ async function buildForAppointment(
       : null;
 
   return buildWorthRaising({
-    findings,
+    findings: signalRow ? signalRow.findings : null,
+    // CUL-1364: Home's trial anchor, for THIS pet's running trial (C-9), on the build's clock.
+    signalAnchor: {
+      generatedAt: signalRow ? signalRow.generatedAt : null,
+      trial: trialInput?.trial ? signalTrialWindowOf(trialInput.trial, nowMs) : null,
+    },
     // The same fail-closed rule Home applies (B-789): absence of a refusal fact
     // during a failed load is not evidence of eating, so an unloadable trial
     // suppresses the reassuring trial_response row rather than letting it through.
     withholdFallingVomit: trialInput ? isAnimalNotEating(trialInput) : true,
     trialStrip: trialInput ? resolveTrialStrip(trialInput) : null,
     trialScreen,
+    // Accepted only when it answered for the trial the input above is about.
+    trialFacts: recheckFactsState(recheckRead, trialInput?.trial?.id ?? null),
     trialResponseCounts: trialInput?.trialResponse ?? null,
     // REQUIRED on the input type, never defaulted. `resolveTrialStrip` discards the
     // device's declines because on Home the Signal card above the strip owns the
@@ -543,8 +586,27 @@ async function buildForAppointment(
     // `buildWorthRaising` can drop only the ones the Signal already states (CUL-950).
     intakeDecline: localIntakeDeclines(trialInput),
     rundown: built,
-    nowMs: Date.now(),
+    nowMs,
   });
+}
+
+/**
+ * The recheck's facts read. A throw (sync or async) is `'unreadable'`, never a null:
+ * null is "this pet has no trial", which a failed read is not.
+ */
+async function readRecheckFacts(
+  pet: Pet,
+  nowMs: number,
+): Promise<TrialPredicateFacts | null | 'unreadable'> {
+  try {
+    return await loadTrialPredicateFacts(
+      { id: pet.id, name: pet.name, species: pet.species, sex: pet.sex },
+      nowMs,
+    );
+  } catch (e) {
+    console.error('[Get ready] trial facts read failed:', e);
+    return 'unreadable';
+  }
 }
 
 

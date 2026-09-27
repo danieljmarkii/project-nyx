@@ -131,6 +131,14 @@ export default function HomeScreen() {
   // card on a routine refresh.
   const withholdFallingVomit =
     trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : !trialFactsFresh;
+  // CUL-1360 — the trial row, for the Signal's anchor: which trial a cached trial finding
+  // counted. From the same `trialInput`, only once it is confirmed for the active pet (the
+  // pet it names is checked again inside the zone), so a switch never anchors one pet's
+  // findings on another pet's trial.
+  const signalTrial =
+    trialFactsFresh && trialInput && trialPetId
+      ? { petId: trialPetId, trial: trialInput.trial, nowMs: trialInput.nowMs }
+      : null;
   // B-789 — the trial strip's standing vomit line (CUL-13) is the SAME reassuring summary the card
   // carries, and `resolveTrialStrip` reads the retained `trialInput` directly, so across a pet switch it
   // can lag onto the previous (eating) pet's count over a now-active refuser. Withhold that ONE line
@@ -247,6 +255,7 @@ export default function HomeScreen() {
             trialRunning={trialRunning}
             withholdFallingVomit={withholdFallingVomit}
             onSafetyLive={setSignalSafety}
+            signalTrial={signalTrial}
           />
           {/* B-417 §4.2 — a running trial gets a compact strip here, BELOW Signal
               and ABOVE Today. Deliberate: Principle 3 says safety insights always

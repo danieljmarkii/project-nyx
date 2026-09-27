@@ -31,6 +31,7 @@ import { focusAccessibility } from '../../lib/a11yFocus';
 import type { TrialCardAction, TrialCardActionId } from '../../lib/dietTrialCard';
 import type { TrialSignalDoor } from '../../lib/trialSignalDoor';
 import { PROFILE_ROUTE, profileStartTrialHref } from '../../lib/profileFocus';
+import { reportHref } from '../../lib/reportRoute';
 import {
   buildTrialScreenModel,
   noTrialLine,
@@ -84,7 +85,10 @@ function useNextAppointment(petId: string): { id: string; when: string } | null 
 
 export function TrialScreen({ petId }: { petId: string }) {
   const pets = usePetStore((s) => s.pets);
-  const activePetId = usePetStore((s) => s.activePet?.id ?? null);
+  // CUL-1336: the list's own "answered" flag, so an account with no pets reaches
+  // `unknown_pet` instead of a skeleton that never resolves (S9, C-12). A list with pets in
+  // it has answered too, whichever path filled it.
+  const petListAnswered = usePetStore((s) => s.petsLoaded);
   const pet = pets.find((p) => p.id === petId) ?? null;
   const petName = resolveRecordPetName(pets, petId);
 
@@ -96,9 +100,8 @@ export function TrialScreen({ petId }: { petId: string }) {
   const model = buildTrialScreenModel({
     petId,
     pet,
-    petsLoaded: pets.length > 0,
+    petsLoaded: petListAnswered || pets.length > 0,
     petName,
-    isActivePet: activePetId === petId,
     trial: { status: dietTrial.status, input: dietTrial.input, inputIsForPet: dietTrial.inputIsForPet },
     facts,
     allowedSet,
@@ -125,13 +128,19 @@ export function TrialScreen({ petId }: { petId: string }) {
 
   // Back from the allowed list, the exposures list or Get ready: re-read, as the Pet tab's
   // card does on focus. The first focus is the arrival, which the hooks already read for.
+  // Both reads (CUL-1336): the facts are the ledger's, and a card re-read beside a stale
+  // ledger withholds the ledger (the S3 coverage check) until something else re-reads it.
   const { reload } = dietTrial;
+  const { reload: reloadFacts } = facts;
   const focusedOnce = useRef(false);
   useFocusEffect(
     useCallback(() => {
-      if (focusedOnce.current) reload();
+      if (focusedOnce.current) {
+        reload();
+        reloadFacts();
+      }
       focusedOnce.current = true;
-    }, [reload]),
+    }, [reload, reloadFacts]),
   );
 
   // VoiceOver lands on the title when the model arrives (§6). The title element carries
@@ -154,7 +163,7 @@ export function TrialScreen({ petId }: { petId: string }) {
     },
     trial_complete: () => lifecycle.openCompletion('complete'),
     trial_stopped_early: () => lifecycle.openCompletion('stopped_early'),
-    open_report: () => router.push('/report'),
+    open_report: () => router.push(reportHref(petId)),
     start_trial: handOffToStart,
   };
 
@@ -195,6 +204,7 @@ export function TrialScreen({ petId }: { petId: string }) {
           handlers={handlers}
           busyAction={lifecycle.extending ? 'trial_extend' : null}
           onManage={lifecycle.openManage}
+          onRetryLedger={reloadFacts}
         />
       )}
       <TrialLifecycleSheets lifecycle={lifecycle} onReplaceTrial={handOffToStart} />
@@ -213,12 +223,24 @@ interface TrialBodyProps {
   handlers: Partial<Record<TrialCardActionId, () => void>>;
   busyAction: TrialCardActionId | null;
   onManage: () => void;
+  /** CUL-1336 — *Try again* over a ledger read that failed. */
+  onRetryLedger: () => void;
 }
 
-function TrialBody({ model, petId, signalDoor, titleRef, handlers, busyAction, onManage }: TrialBodyProps) {
+function TrialBody({
+  model,
+  petId,
+  signalDoor,
+  titleRef,
+  handlers,
+  busyAction,
+  onManage,
+  onRetryLedger,
+}: TrialBodyProps) {
   const safety = model.safety !== null;
   const hasRecordCard =
     model.ledger !== null ||
+    model.ledgerUnreadable !== null ||
     model.facts.length > 0 ||
     model.vomiting !== null ||
     model.qualifier !== null ||
@@ -237,7 +259,7 @@ function TrialBody({ model, petId, signalDoor, titleRef, handlers, busyAction, o
         />
       ) : null}
       {model.report ? (
-        <DoorRow door={model.report} testID="trial-door-report" onPress={() => router.push('/report')} />
+        <DoorRow door={model.report} testID="trial-door-report" onPress={() => router.push(reportHref(petId))} />
       ) : null}
     </View>
   );
@@ -355,6 +377,21 @@ function TrialBody({ model, petId, signalDoor, titleRef, handlers, busyAction, o
           {hasRecordCard ? (
             <Card testID="trial-record-card" style={styles.recordCard}>
               {model.ledger ? <TrialLedger ledger={model.ledger} /> : null}
+              {model.ledgerUnreadable !== null ? (
+                // S9 (CUL-1336): where the ledger would be, the cause and the way back.
+                <View style={styles.ledgerUnreadable} testID="trial-ledger-unreadable">
+                  <ThemedText style={styles.fact}>{model.ledgerUnreadable}</ThemedText>
+                  <Pressable
+                    onPress={onRetryLedger}
+                    accessibilityRole="button"
+                    accessibilityLabel={TRY_AGAIN}
+                    testID="trial-ledger-unreadable-action"
+                    style={styles.linkAction}
+                  >
+                    <ThemedText style={styles.linkActionText}>{TRY_AGAIN}</ThemedText>
+                  </Pressable>
+                </View>
+              ) : null}
               <FactLines model={model} />
             </Card>
           ) : null}
@@ -616,6 +653,9 @@ const styles = StyleSheet.create({
   },
   recordCard: {
     gap: theme.space2,
+  },
+  ledgerUnreadable: {
+    alignItems: 'flex-start',
   },
   facts: {
     gap: theme.space1,
