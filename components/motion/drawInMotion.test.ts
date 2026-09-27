@@ -210,13 +210,38 @@ describe('useDrawIn — the ceiling reaches the animations it starts', () => {
     timing.mockRestore();
   });
 
-  it('an effect re-run that does not re-arm pins the end state, never a frozen half-draw', () => {
+  it('a count change for the SAME identity neither restarts nor snaps the draw in flight', () => {
+    const stop = jest.fn();
+    const parallel = jest
+      .spyOn(Animated, 'parallel')
+      .mockReturnValue({ start: jest.fn(), stop, reset: jest.fn() } as unknown as Animated.CompositeAnimation);
     const { result, rerender } = renderHook<DrawIn, { count: number }>(
       ({ count }) => useDrawIn({ kind: 'bars', count, ...base }),
       { initialProps: { count: 5 } },
     );
+    const armed = parallel.mock.calls.length;
     act(() => rerender({ count: 6 }));
+    expect(parallel.mock.calls.length).toBe(armed);
+    expect(stop).not.toHaveBeenCalled();
+    // Still at its seed: the draw is running, not pinned.
+    expect(scaleOf(result.current.markStyle(0))).toBe(DRAW_IN_MOTION.barFromScale);
+    // The new mark sits at rest.
+    expect(scaleOf(result.current.markStyle(5))).toBe(1);
+    parallel.mockRestore();
+  });
+
+  it('the fact switching off mid-draw pins the end state, never a frozen half-draw', () => {
+    const parallel = jest
+      .spyOn(Animated, 'parallel')
+      .mockReturnValue({ start: jest.fn(), stop: jest.fn(), reset: jest.fn() } as unknown as Animated.CompositeAnimation);
+    const { result, rerender } = renderHook<DrawIn, { drawIn: boolean }>(
+      ({ drawIn }) => useDrawIn({ kind: 'bars', count: 5, ...base, drawIn }),
+      { initialProps: { drawIn: true } },
+    );
+    expect(scaleOf(result.current.markStyle(0))).toBe(DRAW_IN_MOTION.barFromScale);
+    act(() => rerender({ drawIn: false }));
     for (let i = 0; i < 5; i++) expect(scaleOf(result.current.markStyle(i))).toBe(1);
     expect(valueOf(result.current.labelStyle.opacity as never)).toBe(1);
+    parallel.mockRestore();
   });
 });

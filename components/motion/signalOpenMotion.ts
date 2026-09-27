@@ -106,10 +106,9 @@ export function useSignalOpen({ arrived, identity, reducedMotion, appActive }: P
       // A native-driver animation never writes its end value back; a finished landing pins it.
       if (finished) settle();
     });
-    return () => {
-      running.current?.stop();
-      running.current = null;
-    };
+    // Cleanup PINS the end state, the draw-in's rule (CUL-1223): a stop alone leaves the
+    // block wherever the native driver was, and a re-arm reseeds right after anyway.
+    return settle;
   }, [arrived, identity, reducedMotion, opacity, translateY, settle]);
 
   useEffect(() => {

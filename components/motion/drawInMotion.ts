@@ -235,6 +235,11 @@ export function useDrawIn({ kind, count, groups, delayMs = 0, drawIn, identity, 
   groupsRef.current = groups;
   const delayRef = useRef(delayMs);
   delayRef.current = delayMs;
+  // The count too: a re-read of the SAME identity whose mark count moved (a week bucket
+  // added at midnight) must neither restart the draw nor snap it to its end (the
+  // code-reviewer on CUL-1223). A mark past the armed count simply sits at rest.
+  const countRef = useRef(count);
+  countRef.current = count;
 
   const ensure = useCallback((n: number) => {
     while (scales.current.length < n) {
@@ -265,7 +270,7 @@ export function useDrawIn({ kind, count, groups, delayMs = 0, drawIn, identity, 
     }
     running.current?.stop();
     const { fromScale } = beatsFor(kind);
-    const n = Math.min(count, scales.current.length);
+    const n = Math.min(countRef.current, scales.current.length);
     const plan = drawInPlan(kind, groupsRef.current ?? [n], delayRef.current);
     const marks: Animated.CompositeAnimation[] = [];
     for (let i = 0; i < n; i++) {
@@ -313,12 +318,11 @@ export function useDrawIn({ kind, count, groups, delayMs = 0, drawIn, identity, 
       // end state. A finished draw pins every value (the native driver never writes back).
       if (finished) settle();
     });
-    // Any cleanup PINS the end state (CUL-1223): an effect re-run that does not re-arm (a
-    // count change, the fact switching off) would otherwise stop a draw mid-flight and
-    // leave the chart frozen half-drawn. A re-arm reseeds right after, so pinning first
-    // costs nothing there.
+    // Any cleanup PINS the end state (CUL-1223): an effect re-run that does not re-arm (the
+    // fact switching off) would otherwise stop a draw mid-flight and leave the chart frozen
+    // half-drawn. A re-arm reseeds right after, so pinning first costs nothing there.
     return settle;
-  }, [drawIn, identity, kind, count, labelOpacity, settle]);
+  }, [drawIn, identity, kind, labelOpacity, settle]);
 
   // Blur FINISHES: the chart is where it was going, committed un-animated.
   useEffect(() => {
