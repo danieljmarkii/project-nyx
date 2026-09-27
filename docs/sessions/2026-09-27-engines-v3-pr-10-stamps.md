@@ -35,3 +35,15 @@ Live probes on the PM's own pet, in one rolled-back transaction: the stamp freez
 ## Next
 
 PR-11a (the flag read, the pure context builder, the one stamp writer) and PR-12 (the phone copy gains the stamp columns) can start side by side. The PM's uid goes on `engines_v3_en0` by a recorded config update when EN-0 is ready to show.
+
+## Definition of Done (wrap)
+
+- Acceptance criteria (the PR-10 bundle prompt + the three issues' newest comments): all pass; listed on #963.
+- Anti-patterns: none introduced. Schema in its own PR; migration pre-flight present; the new functions are pinned, revoked and registered.
+- `tsc --noEmit` clean; `jest` 562 suites / 12,687 tests green; CI green on #963.
+- Tests: `lib/functionHardening.test.ts` registers both new trigger functions, each proven by mutation. The table's policies, grants and CHECKs are proven by the harness probes and the live rolled-back probe, not by a committed test (no in-repo SQL harness exists to host one).
+- Secrets: none new.
+- Personas: Dir. of Engineering ✓ (one reconciled stamp vocabulary, single writer deferred to PR-11a) — Trust & Safety ✓ (R-5 line, `rls-privacy-reviewer` three breaks fixed before apply) — Data Scientist ✓ (the log derives first/last shown; no count or engine logic touched) — Designer N/A (no surface) — Dr. Chen N/A (no clinical logic; the "never lower a stored escalation" rule is PR-11a's to honour against these stamps).
+- Adversarial review: N/A for clinical/statistical logic (none changed). The falsification pass that applied was access control: `rls-privacy-reviewer` tried an owner rewriting `engine_flags` to NULL so a flag-off re-read could lower an EN-0 escalation (broke, fixed by the freeze; re-probed live, refused 42501), a sentence smuggled through `finding_key` / `engine_flags` (broke, fixed by the CHECKs), and a 2099 `updated_at` pinning the phone watermark (broke, fixed by the assertion; the phone half is CUL-1379).
+- Future-self: the stamp freeze is a new pattern (a role-judged INVOKER trigger). In 12 months it still earns its place unless CUL-1377's column grants land, at which point it becomes a second wall rather than the only one.
+- PM actions: none new. CUL-1313 stays open; the PM's uid goes on `engines_v3_en0` when EN-0 (PR-13a) is ready to show, not now.
