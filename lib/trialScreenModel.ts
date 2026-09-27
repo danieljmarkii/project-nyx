@@ -67,6 +67,12 @@ export function unreadableLine(petName: string): string {
   return `I couldn’t pull ${petName}’s trial just now.`;
 }
 
+/** §3.5 / S9 (CUL-1336) — the ledger's read failed while the trial's did not. Said where the
+ *  ledger would be, beside *Try again*, so the facts below it are not mistaken for all there is. */
+export function ledgerUnreadableLine(petName: string): string {
+  return `I couldn’t pull ${petName}’s week-by-week record just now.`;
+}
+
 export function noTrialLine(petName: string): string {
   return `${sentenceStart(petName)} isn’t on a diet trial right now.`;
 }
@@ -111,6 +117,10 @@ export interface TrialScreenTrial {
   allowedFoods: TrialScreenDoor | null;
   /** §3.5 — null on every state that withholds it. */
   ledger: TrialLedger | null;
+  /** §3.5, S9 (CUL-1336) — `ledgerUnreadableLine`, where the ledger would be, when its read
+   *  FAILED on a state that would draw one. Null on every state that withholds the ledger
+   *  anyway: a failed read is never a reason to say more than the answered one would. */
+  ledgerUnreadable: string | null;
   /** §3.6 — the card's record region, in its order, with the qualifier lifted to `qualifier`. */
   facts: TrialCardLine[];
   /** §3.7 — `resolveTrialStrip(input).trialResponseLine`, verbatim. */
@@ -197,6 +207,11 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
   // this pet the screen draws nothing that counts, so a grid can never pop in under a
   // caption from a different read.
   if (facts.status === 'unknown') return { kind: 'loading' };
+  // …and for THIS TRIAL (CUL-1336). The facts hook is keyed by pet, so a replaced trial's
+  // facts can sit beside the new trial's card until both reads land: not yet, never theirs.
+  if (facts.status === 'ready' && facts.trialId !== undefined && facts.trialId !== input.trial.id) {
+    return { kind: 'loading' };
+  }
 
   // S7 — WHERE HOME WITHHOLDS ITS RATIO, SO DOES THIS. Over a pet that may not be eating
   // (`isAnimalNotEating`, the raw refusal facts, so a refusal the register has stood down
@@ -265,6 +280,17 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
     safety || state === 'milestone' || notEating || facts.status !== 'ready'
       ? null
       : buildTrialLedger({ input, facts: facts.facts, timeZone: args.timeZone });
+  // S9 (CUL-1336): a failed ledger read is said where the ledger would be, never a silent
+  // gap. Only on a state that would draw one: `buildTrialLedger`'s input-side gates.
+  const ledgerUnreadable =
+    facts.status === 'unreadable' &&
+    !safety &&
+    state !== 'milestone' &&
+    !notEating &&
+    !input.freeFed &&
+    !input.freeFedOverlap
+      ? ledgerUnreadableLine(args.petName)
+      : null;
 
   const hasAction = (id: TrialCardAction['id']) => card.actions.some((a) => a.id === id);
   // §3.4: the head alone until the set has hydrated. The door is Jordan's first moment,
@@ -322,6 +348,7 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
     decision: decisionState ? { notes: decisionNotes, actions: card.actions } : null,
     allowedFoods,
     ledger,
+    ledgerUnreadable,
     facts: factLines,
     vomiting: strip?.trialResponseLine ?? null,
     notEating,

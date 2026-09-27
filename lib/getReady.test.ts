@@ -1380,6 +1380,7 @@ function screenTrial(over: Partial<TrialScreenTrial> = {}): TrialScreenTrial {
     decision: null,
     allowedFoods: null,
     ledger: null,
+    ledgerUnreadable: null,
     facts: [
       { role: 'fact', text: 'Meals logged on 21 of 23 days.' },
       { role: 'fact', text: '22 feedings in total, all the trial diet.' },

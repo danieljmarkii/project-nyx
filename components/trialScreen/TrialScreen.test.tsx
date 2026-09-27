@@ -72,9 +72,16 @@ const PETS = [
 ];
 const mockSelectPet = jest.fn();
 let mockPets = PETS;
+// CUL-1336: whether the pet list has answered, apart from what it holds.
+let mockPetsLoaded = true;
 jest.mock('../../store/petStore', () => {
   const actual = jest.requireActual('../../store/petStore');
-  const state = () => ({ pets: mockPets, activePet: mockPets[0] ?? null, selectPet: mockSelectPet });
+  const state = () => ({
+    pets: mockPets,
+    petsLoaded: mockPetsLoaded,
+    activePet: mockPets[0] ?? null,
+    selectPet: mockSelectPet,
+  });
   const hook = (sel: (s: ReturnType<typeof state>) => unknown) => sel(state());
   return { ...actual, usePetStore: Object.assign(hook, { getState: state }) };
 });
@@ -91,7 +98,8 @@ jest.mock('../../hooks/useDietTrial', () => ({
   useDietTrial: (petId: string | null) => mockUseDietTrial(petId),
 }));
 let mockFacts: TrialFactsState = { status: 'ready', facts: null };
-const mockUseTrialFacts = jest.fn((_petId: string | null) => mockFacts);
+const mockFactsReload = jest.fn();
+const mockUseTrialFacts = jest.fn((_petId: string | null) => ({ ...mockFacts, reload: mockFactsReload }));
 jest.mock('../../hooks/useTrialFacts', () => ({
   useTrialFacts: (petId: string | null) => mockUseTrialFacts(petId),
 }));
@@ -177,6 +185,7 @@ const REFUSAL = { refusedFeedings: 4, ratedFeedings: 5, days: 2, population: 'tr
 beforeEach(() => {
   mockParams = { pet: 'pet-2' };
   mockPets = PETS;
+  mockPetsLoaded = true;
   mockLive.mockReturnValue(true);
   mockReduced.mockReturnValue(false);
   mockTrial = { input: running(), status: 'loaded', inputIsForPet: true };
@@ -241,6 +250,15 @@ describe('the route, app/trial/[pet]', () => {
     expect(mockReload).not.toHaveBeenCalled();
     act(() => mockLastFocus!());
     expect(mockReload).toHaveBeenCalledTimes(1);
+  });
+
+  // CUL-1336: back from `/trial-foods`, the ledger's facts re-read with the card, or the
+  // card's new coverage sits beside a grid from before the edit (and the S3 check drops it).
+  it('coming back re-reads the ledger’s facts too; arriving does not', async () => {
+    await renderRoute();
+    expect(mockFactsReload).not.toHaveBeenCalled();
+    act(() => mockLastFocus!());
+    expect(mockFactsReload).toHaveBeenCalledTimes(1);
   });
 
   it('rises with the Signal screen’s physics; reduced motion turns the transition off', async () => {
@@ -318,6 +336,38 @@ describe('loading, unreadable, no trial, unknown pet (S9)', () => {
     expect(view.getByText('Mochi isn’t on a diet trial right now.')).toBeTruthy();
     fireEvent.press(view.getByTestId('trial-screen-no-trial-action'));
     expect(mockPush.mock.calls[0][0]).toMatchObject({ pathname: '/(tabs)/profile', params: { pet: 'pet-2' } });
+  });
+
+  // CUL-1336: an account with no active pets holds `[]`, the same as a cold start. The
+  // list's own answered flag tells them apart.
+  it('an account with no pets, once the list has answered, is "not in your account", never a skeleton', async () => {
+    mockPets = [];
+    mockTrial = { input: null, status: 'no_pet', inputIsForPet: false };
+    const view = await renderRoute();
+    expect(view.getByText('This pet isn’t in your account any more.')).toBeTruthy();
+    expect(view.queryByTestId('trial-screen-loading', { includeHiddenElements: true })).toBeNull();
+  });
+
+  it('an empty list that has not answered yet is still loading', async () => {
+    mockPets = [];
+    mockPetsLoaded = false;
+    mockTrial = { input: null, status: 'no_pet', inputIsForPet: false };
+    const view = await renderRoute();
+    expect(view.getByTestId('trial-screen-loading', { includeHiddenElements: true })).toBeTruthy();
+    expect(view.queryByText('This pet isn’t in your account any more.')).toBeNull();
+  });
+
+  it('a ledger read that failed says so where the ledger would be, and retries that read', async () => {
+    mockFacts = { status: 'unreadable' };
+    const view = await renderRoute();
+    const box = view.getByTestId('trial-ledger-unreadable');
+    expect(within(box).getByText('I couldn’t pull Mochi’s week-by-week record just now.')).toBeTruthy();
+    // Inside the record card, with the card's facts still drawn below it.
+    expect(within(view.getByTestId('trial-record-card')).getByTestId('trial-ledger-unreadable')).toBeTruthy();
+    fireEvent.press(within(box).getByRole('button', { name: 'Try again' }));
+    expect(mockFactsReload).toHaveBeenCalledTimes(1);
+    // The trial read answered; only the ledger's is retried.
+    expect(mockReload).not.toHaveBeenCalled();
   });
 
   it('an unknown pet echoes no id and goes Home', async () => {

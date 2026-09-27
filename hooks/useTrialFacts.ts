@@ -11,7 +11,7 @@
 // same split `useTrialAllowedSet` carries: "there is no trial" is something the app
 // knows, and "the record could not be read" is not. The screen renders each
 // differently, and neither is an empty list.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { loadTrialPredicateFacts } from '../lib/dietTrialFacts';
 import type { TrialFacts } from '../lib/dietTrial';
 import { usePetStore } from '../store/petStore';
@@ -30,12 +30,22 @@ export type TrialFactsState =
   /** No card-eligible trial for this pet (none, or one whose grace window closed). */
   | { status: 'no_trial' }
   /** A trial exists. `facts` is null when its record could not be read or computed —
-   *  which is still not an empty record, and the screen says so. */
-  | { status: 'ready'; facts: TrialFacts | null };
+   *  which is still not an empty record, and the screen says so.
+   *
+   *  `trialId` is the trial these facts were computed FOR (CUL-1336). The hook is keyed
+   *  by pet, and a pet's trial can change under it (replaced from the Pet tab, then back);
+   *  a consumer that pairs these facts with another read's trial checks the id rather
+   *  than trusting the key. Always set by this hook; absent only on a hand-built state
+   *  that carries no facts to mis-pair (Get ready's `NO_LEDGER_FACTS`). */
+  | { status: 'ready'; trialId?: string; facts: TrialFacts | null };
+
+/** The state, plus a way to ask again (CUL-1336): the trial screen's *Try again* over an
+ *  unreadable read, and its re-read on coming back from a list edit. */
+export type TrialFactsRead = TrialFactsState & { reload: () => void };
 
 // CUL-1297 — reads the pet it is HANDED (C-9), never `activePet`; the exposures
 // screen passes its `?pet=` param, falling back to the active pet.
-export function useTrialFacts(petId: string | null): TrialFactsState {
+export function useTrialFacts(petId: string | null): TrialFactsRead {
   const pets = usePetStore((s) => s.pets);
   const pet = petId ? pets.find((p) => p.id === petId) : undefined;
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
@@ -47,6 +57,10 @@ export function useTrialFacts(petId: string | null): TrialFactsState {
     petId: null,
     value: { status: 'unknown' },
   });
+  const [tick, setTick] = useState(0);
+  // The previous answer stays on screen while the re-read runs, as `useDietTrial`'s does:
+  // a re-read is not "not yet", and flipping to `unknown` would blank the whole screen.
+  const reload = useCallback(() => setTick((t) => t + 1), []);
 
   const resolvedId = pet?.id ?? null;
   const petName = pet?.name;
@@ -64,7 +78,10 @@ export function useTrialFacts(petId: string | null): TrialFactsState {
         if (cancelled) return;
         setState({
           petId: resolvedId,
-          value: core === null ? { status: 'no_trial' } : { status: 'ready', facts: core.facts },
+          value:
+            core === null
+              ? { status: 'no_trial' }
+              : { status: 'ready', trialId: core.trial.id, facts: core.facts },
         });
       })
       .catch((e) => {
@@ -78,7 +95,10 @@ export function useTrialFacts(petId: string | null): TrialFactsState {
     return () => {
       cancelled = true;
     };
-  }, [resolvedId, petName, species, sex, hydrationTick]);
+  }, [resolvedId, petName, species, sex, hydrationTick, tick]);
 
-  return state.petId === resolvedId ? state.value : { status: 'unknown' };
+  const value: TrialFactsState = state.petId === resolvedId ? state.value : UNKNOWN;
+  return useMemo(() => ({ ...value, reload }), [value, reload]);
 }
+
+const UNKNOWN: TrialFactsState = { status: 'unknown' };

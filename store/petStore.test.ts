@@ -38,6 +38,7 @@ const INITIAL = {
   pets: [] as Pet[],
   activePet: null as Pet | null,
   isOnboarded: false,
+  petsLoaded: false,
 };
 
 describe('resolveActivePet', () => {
@@ -124,6 +125,26 @@ describe('petStore', () => {
   beforeEach(async () => {
     usePetStore.setState(INITIAL);
     await AsyncStorage.clear();
+  });
+
+  // CUL-1336: an answered list and an unanswered one are both `[]` on an account with no
+  // active pets, so "loaded" is its own fact, and a sign-out forgets it.
+  it('petsLoaded: false until the list answers, true after any answer, even an empty one', () => {
+    expect(usePetStore.getState().petsLoaded).toBe(false);
+    usePetStore.getState().setPets([]);
+    expect(usePetStore.getState()).toMatchObject({ pets: [], petsLoaded: true });
+  });
+
+  it('markPetsLoaded records an answered empty list without touching the pets', () => {
+    usePetStore.getState().addPet(pixel);
+    usePetStore.getState().markPetsLoaded();
+    expect(usePetStore.getState()).toMatchObject({ pets: [pixel], petsLoaded: true });
+  });
+
+  it('reset (the sign-out wipe) returns the next account to "not answered"', () => {
+    usePetStore.getState().setPets([pixel]);
+    usePetStore.getState().reset();
+    expect(usePetStore.getState()).toMatchObject({ pets: [], activePet: null, petsLoaded: false });
   });
 
   it('setPets restores the persisted selection via preferredId', () => {

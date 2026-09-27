@@ -54,6 +54,7 @@ import { loadTrialAllowedSet, type TrialAllowedSet } from './trialAllowedSet';
 import type { TrialResponseCounts } from './trialResponseCounts';
 import {
   buildTrialScreenModel,
+  ledgerUnreadableLine,
   noTrialLine,
   unreadableLine,
   type TrialScreenModel,
@@ -803,5 +804,50 @@ describe('Manage on the intake-decline face never drops the call-today (CUL-1339
     } finally {
       getIntakeDecline.mockResolvedValue({ status: 'none', flags: [] });
     }
+  });
+});
+
+// ── CUL-1336: the facts read's own answers ─────────────────────────────────────────
+
+describe('a facts read that failed, or answered for another trial (S9, CUL-1336)', () => {
+  const UNREADABLE: TrialFactsState = { status: 'unreadable' };
+
+  it('unreadable facts say so where the ledger would be, and keep the card’s own facts', async () => {
+    const l = await load(MOCHI_DAY_23);
+    // Non-vacuity: the same record draws a ledger when the read answers.
+    const answered = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(answered.ledger).not.toBeNull();
+    expect(answered.ledgerUnreadable).toBeNull();
+
+    const m = trialModel(buildTrialScreenModel(argsFor(l, { facts: UNREADABLE })));
+    expect(m.ledger).toBeNull();
+    expect(m.ledgerUnreadable).toBe('I couldn’t pull Mochi’s week-by-week record just now.');
+    expect(ledgerUnreadableLine('your pet')).toBe('I couldn’t pull your pet’s week-by-week record just now.');
+    // The card's facts come from the trial read, which answered: they stay.
+    expect(texts(m)).toEqual(texts(answered));
+  });
+
+  it('says nothing more on a state that draws no ledger anyway', async () => {
+    const all = Array.from({ length: 56 }, (_, i) => i + 1);
+    const cases: [Rec, string][] = [
+      [{ target: 56, mealDays: all, treatDays: [30], nowDay: 56 }, 'milestone'],
+      [{ target: 56, mealDays: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], rating: 'refused', nowDay: 10 }, 'trial_refusal'],
+      [{ target: 56, mealDays: [1, 2, 3], freeChoice: true, nowDay: 10 }, 'free_fed'],
+    ];
+    for (const [rec, state] of cases) {
+      const l = await load(rec);
+      const m = trialModel(buildTrialScreenModel(argsFor(l, { facts: UNREADABLE })));
+      expect([m.state, m.ledgerUnreadable]).toEqual([state, null]);
+    }
+  });
+
+  it('facts computed for a different trial are "not yet", never that trial’s facts', async () => {
+    const l = await load(MOCHI_DAY_23);
+    const id = l.input.trial!.id;
+    const other: TrialFactsState = { status: 'ready', trialId: `${id}-replaced`, facts: l.facts };
+    expect(buildTrialScreenModel(argsFor(l, { facts: other }))).toEqual({ kind: 'loading' });
+    // The same facts, labelled for this trial, draw it.
+    const mine: TrialFactsState = { status: 'ready', trialId: id, facts: l.facts };
+    expect(trialModel(buildTrialScreenModel(argsFor(l, { facts: mine }))).ledger).not.toBeNull();
   });
 });
