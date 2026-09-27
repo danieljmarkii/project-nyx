@@ -96,6 +96,20 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     definer: true, pinned: true, execute: [],
     why: 'CUL-1203 (074) — DEFINER so the insert lookup is not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
   },
+  // 075 (CUL-1201 part 3): event_ai_analysis's updated_at, strictly increasing.
+  // Reads nothing, so INVOKER; a trigger fires without an EXECUTE check, so no
+  // client role needs it.
+  set_updated_at_monotonic: {
+    definer: false, pinned: true, execute: [],
+    why: 'CUL-1201 (075) — reads no table, so INVOKER; search_path pinned and revoked so it is not RPC-callable.',
+  },
+  // 075 (CUL-1267): a client UPDATE may not move a read's stamps. INVOKER is the
+  // point, not a default: it judges `current_user`, which under DEFINER would be
+  // the owner, and the freeze would stop nothing.
+  freeze_event_ai_analysis_stamps: {
+    definer: false, pinned: true, execute: [],
+    why: 'CUL-1267 (075) — must stay INVOKER (it tests current_user; DEFINER would freeze nothing); pinned and revoked so it is not RPC-callable.',
+  },
 
   // ── B-403: the auth/utility functions ─────────────────────────────────────
   handle_new_user: {
