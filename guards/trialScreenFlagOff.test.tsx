@@ -28,11 +28,10 @@
 //
 // TS-0 shipped the list ASSERTED empty, naming TS-4, so the first consumer red this file
 // until it registered itself (a rule added after the first caller is a rule added after
-// the bug). TS-4 (CUL-1300) registered the route, `app/trial/[pet].tsx`. Spec §7 names
-// the three still to come, each in the PR that makes it a consumer:
+// the bug). TS-4 (CUL-1300) registered the route, `app/trial/[pet].tsx`; TS-6 (CUL-1302)
+// registered the Pet tab (`app/(tabs)/profile.tsx`) and the Day Summary (a sender, so also
+// a decider). Spec §7 names the one still to come, in the PR that makes it a consumer:
 //   • Home, for the strip as the door — TS-5 (CUL-1301)
-//   • the Pet tab, `app/(tabs)/profile.tsx` — TS-6 (CUL-1302)
-//   • the Day Summary, a sender — TS-6 (CUL-1302)
 // The route/decider rule below is what forces each registration: a route under `app/`
 // that reads the gate and is not a listed surface reds. STATED BLIND SPOT: a consumer
 // under `components/` (Home's strip at TS-5 is one) is held to the delegation rule and the
@@ -326,8 +325,7 @@ interface Surface {
  * The guard's SCOPE: a surface absent from this list has its flag-off tree checked by
  * nothing (C-41). Each is loaded through `require` inside the test, never imported at
  * the top — a top-level import would bind one cached instance. PINNED below: the next
- * surfaces are Home (TS-5), the Pet tab and the Day Summary (TS-6), each added in the
- * PR that makes it a consumer.
+ * surface is Home (TS-5), added in the PR that makes it a consumer.
  *
  * The route (TS-4, CUL-1300): flag-off it draws its small screen and NO trial read. The
  * async half (no read issued over reads that would answer) is proven in the screen's own
