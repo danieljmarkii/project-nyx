@@ -48,7 +48,9 @@ jest.mock('./supabase', () => ({ supabase: { from: () => mockFrom() } }));
 
 import { BASE_SCHEMA_SQL, COLUMN_UPGRADES } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
-import { readDayRows, readMonthFacts, readWorthACall } from './monthReads';
+import { readRecordStartDay } from './historyQueries';
+import { buildMonthModel } from './monthModel';
+import { continuationDaysOf, readDayRows, readMonthFacts, readWorthACall } from './monthReads';
 import { toLocalDayKey } from './utils';
 
 function freshDb(): Db {
@@ -124,6 +126,33 @@ beforeEach(() => {
   mockSqlLog.length = 0;
   food('food-1', 'meal');
   food('treat-1', 'treat');
+});
+
+describe('continuationDaysOf', () => {
+  const H = 3_600_000;
+  const T0 = new Date(2026, 8, 12, 20, 0).getTime(); // Sep 12, 20:00 local
+  const keyOf = (ms: number) => toLocalDayKey(new Date(ms));
+
+  it('a chain through two midnights: each later day names the day the bout began', () => {
+    // Every two hours for thirty hours: one bout (each gap under the engine's three).
+    const rows = Array.from({ length: 16 }, (_, i) => ({ ms: T0 + i * 2 * H }));
+    expect(continuationDaysOf(rows, keyOf)).toEqual([
+      { day: '2026-09-13', from: '2026-09-12' },
+      { day: '2026-09-14', from: '2026-09-12' },
+    ]);
+  });
+
+  it('a day that holds both the tail of one bout and a new bout is an episode day, not a continuation', () => {
+    const rows = [{ ms: T0 + 3.5 * H }, { ms: T0 + 4.5 * H }, { ms: T0 + 16 * H }]; // 23:30, 00:30, then noon
+    expect(continuationDaysOf(rows, keyOf)).toEqual([]);
+  });
+
+  it('a re-log that does not cross midnight, a gap longer than the engine\'s, and an unparsed row add nothing', () => {
+    expect(continuationDaysOf([{ ms: T0 }, { ms: T0 + H }], keyOf)).toEqual([]);
+    expect(continuationDaysOf([{ ms: T0 + 3.5 * H }, { ms: T0 + 8 * H }], keyOf)).toEqual([]);
+    expect(continuationDaysOf([{ ms: Number.NaN }, { ms: T0 }], keyOf)).toEqual([]);
+    expect(continuationDaysOf([], keyOf)).toEqual([]);
+  });
 });
 
 describe('readMonthFacts against the production DDL', () => {
@@ -257,7 +286,7 @@ describe('readMonthFacts against the production DDL', () => {
     );
   });
 
-  it('the record start is the earliest surviving event of any type, as a local day', async () => {
+  it('the record start is the earliest surviving event of any type but a look, as a local day', async () => {
     ev('weight_check', at('2026-06-14'));
     ev('vomit', at('2026-05-01'), { deleted: true });
     ev('meal', at('2026-09-03'));
@@ -267,6 +296,83 @@ describe('readMonthFacts against the production DDL', () => {
     expect((await readMonthFacts(PET, RANGE)).recordStart).toBeNull();
   });
 
+  it('a look never starts the record: a look on day 1, the first meal on day 4 → days 1–3 are before the record, not unlogged (CUL-1194)', async () => {
+    ev('check_in', at('2026-09-01', 8));
+    meal(at('2026-09-04', 8), 'all');
+    const facts = await readMonthFacts(PET, RANGE);
+    expect(facts.recordStart).toBe('2026-09-04');
+    // Carried through the model the screen builds from this read.
+    const m = buildMonthModel({
+      year: 2026, month: 8, today: '2026-09-06', noun: 'vomiting',
+      recordStart: facts.recordStart, recordEmpty: facts.recordStart == null,
+      episodeDays: facts.episodeDays, loggedDays: facts.loggedDays,
+    });
+    expect(m.days.slice(0, 3).map((d) => d.coverage)).toEqual(['before_record', 'before_record', 'before_record']);
+    expect(m.days[3].coverage).toBe('logged');
+    // Sep 5 and 6: after the record began, nothing logged — the only unlogged days.
+    expect(m.unloggedDays).toBe(2);
+    expect(m.beforeRecordDays).toBe(3);
+    // A pet with only looks has no record at all: the month invites the first entry.
+    mockDb = freshDb();
+    ev('check_in', at('2026-09-01', 8));
+    expect((await readMonthFacts(PET, RANGE)).recordStart).toBeNull();
+  });
+
+  it('the record start is ordered by the parsed instant, never the text (C-40)', async () => {
+    // The earliest instant, one hour before local midnight, spelled with an offset whose
+    // TEXT sorts after a later row's `…Z`: a text ORDER BY picked the later row, and its
+    // day. Offset spellings are not what the app writes; they are the cleanest proof that
+    // the order is the instant's, whichever spelling a row arrives in.
+    const earliest = new Date(2026, 5, 14, 0, 0, 0).getTime() - 3_600_000; // Jun 13, 23:00 local
+    const later = new Date(2026, 5, 14, 1, 0, 0).toISOString(); // Jun 14, 01:00 local, `…Z`
+    const plus14 = `${new Date(earliest + 14 * 3_600_000).toISOString().slice(0, 19)}+14:00`;
+    expect(Date.parse(plus14)).toBe(earliest);
+    expect(plus14 > later).toBe(true); // as text, the earliest row sorts LAST
+    ev('meal', later);
+    ev('weight_check', plus14);
+    expect((await readMonthFacts(PET, RANGE)).recordStart).toBe('2026-06-13');
+    // An instant that does not parse sorted FIRST as text ('' before any date) and
+    // blanked the start — the whole month then read as a pet with nothing logged.
+    mockDb = freshDb();
+    ev('note', '');
+    ev('meal', later);
+    expect((await readMonthFacts(PET, RANGE)).recordStart).toBe('2026-06-14');
+    // And a first row at exactly local midnight is that day, not a hair before it.
+    mockDb = freshDb();
+    ev('meal', new Date(2026, 5, 14, 0, 0, 0).toISOString().replace(/\.000Z$/, '+00:00'));
+    expect((await readMonthFacts(PET, RANGE)).recordStart).toBe('2026-06-14');
+  });
+
+  it('the month and History start the record on the same day, over one table (GAP-24)', async () => {
+    const cases: [string, string, { deleted?: boolean }?][][] = [
+      [['check_in', at('2026-06-01')], ['meal', at('2026-06-04')]],
+      [['vomit', at('2026-05-01'), { deleted: true }], ['weight_check', new Date(2026, 5, 14).toISOString().replace(/\.000Z$/, '+00:00')]],
+      [['check_in', at('2026-06-01')]],
+      [],
+    ];
+    for (const rows of cases) {
+      mockDb = freshDb();
+      for (const [type, iso, opts] of rows) ev(type, iso, opts);
+      const history = await readRecordStartDay(PET);
+      expect((await readMonthFacts(PET, RANGE)).recordStart).toBe(history);
+    }
+  });
+
+  it('a bout that runs past midnight: the next day is a continuation, never an episode or a blank (CUL-1226)', async () => {
+    ev('vomit', at('2026-09-12', 23, 10));
+    ev('vomit', at('2026-09-13', 0, 40)); // inside the engine's gap: the same bout
+    const facts = await readMonthFacts(PET, RANGE);
+    expect(facts.episodeDays).toEqual(['2026-09-12']);
+    expect(facts.continuationDays).toEqual([{ day: '2026-09-13', from: '2026-09-12' }]);
+    expect(facts.loggedDays).toEqual(['2026-09-12', '2026-09-13']);
+    // Across the month's first day: the bout began in August, the row is on Sep 1.
+    mockDb = freshDb();
+    ev('vomit', at('2026-08-31', 23, 30));
+    ev('vomit', at('2026-09-01', 1, 0));
+    const edge = await readMonthFacts(PET, RANGE);
+    expect(edge.episodeDays).toEqual([]);
+    expect(edge.continuationDays).toEqual([{ day: '2026-09-01', from: '2026-08-31' }]);
+  });
   it('bounds are parsed, never compared as text: both spellings of a boundary instant land on their day (C-40)', async () => {
     // The same instant — the first second of the range's first local day — spelled the
     // two ways the table holds it. A text bound would keep one and drop the other.

@@ -22,7 +22,7 @@ jest.mock('../../../lib/sync', () => ({
 jest.mock('../../../lib/db', () => ({ getDb: () => ({}), getTimeline: jest.fn() }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
-import { act, configure, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, configure, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { LayoutAnimation, StyleSheet } from 'react-native';
 import { MonthInstrument } from './MonthInstrument';
 import { monthReadRange } from '../../../lib/monthModel';
@@ -48,6 +48,7 @@ const TODAY = '2026-09-17';
 function facts(over: Partial<MonthFacts> = {}): MonthFacts {
   return {
     episodeDays: ['2026-09-02', '2026-09-02', '2026-09-05', '2026-09-11', '2026-09-11', '2026-09-16'],
+    continuationDays: [],
     loggedDays: range('2026-07-01', TODAY).filter((k) => k !== '2026-09-08' && k !== '2026-09-09'),
     leftSomeDays: ['2026-09-04'],
     dosedDays: ['2026-09-03'],
@@ -428,6 +429,19 @@ describe('MonthInstrument', () => {
     expect(sep5.props.accessibilityLabel).toContain('vomiting logged 1 time');
     fireEvent.press(sep5);
     await waitFor(() => expect(getByText('Vomit logged 3 times · everything this day:')).toBeTruthy(), { timeout: 4000 });
+  });
+
+  it('a day a bout continues into is spoken as holding vomiting, and keeps the episode\'s box (CUL-1226)', async () => {
+    const { getByTestId, getAllByTestId } = mount(jest.fn(async () => facts({ continuationDays: [{ day: '2026-09-06', from: '2026-09-05' }] })));
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    const sep6 = getAllByTestId('daymark')[7];
+    expect(sep6.props.accessibilityLabel).toContain('September 6');
+    expect(sep6.props.accessibilityLabel).toContain('vomiting logged, part of the bout that began');
+    expect(sep6.props.accessibilityLabel).not.toContain('no vomiting');
+    // The rose and the corner stay the episode's: Sep 6 draws no count.
+    expect(within(sep6).queryByTestId('daymark-count')).toBeNull();
+    // And the neighbour with no continuation still reads as it did.
+    expect(getAllByTestId('daymark')[5].props.accessibilityLabel).toContain('logged, no vomiting'); // Sep 4
   });
 
   it('a pet with no record: every day says "nothing logged yet", the line invites the first entry', async () => {
