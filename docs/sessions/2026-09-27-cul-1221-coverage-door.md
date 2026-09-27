@@ -28,6 +28,7 @@ owned the coverage door and Home's header date.
 - **PM, 2026-09-27:** (a) today is out of both numbers; (a) the window is exported for
   Patterns to adopt under CUL-1194. This lane does not edit `monthModel`.
 - **Kept the ratio register.** PMD-16 is ruled at GA.
+- **PM, 2026-09-27:** the record starts at the first entry (a), not at the pet's creation.
 
 ## Falsification (adversarial-reviewer)
 
@@ -58,5 +59,5 @@ Mutation proofs:
 ## Residuals
 
 - **CUL-1194:** Patterns adopts `coverageWindow`.
-- **PM question:** should the record start at the pet's creation rather than its first
-  entry? Both surfaces use the first entry today.
+- **Record start, ruled by the PM on 2026-09-27:** the record starts at the pet's first
+  entry, not at its creation. That is option (a), the definition both surfaces already use.
