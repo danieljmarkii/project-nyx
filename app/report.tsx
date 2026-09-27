@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, Alert, Switch, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../constants/theme';
 import { Header, PrimaryButton, SectionLabel, ThemedText } from '../components/ui';
@@ -19,6 +19,7 @@ import { toLocalDayKey } from '../lib/utils';
 import { readVetLibrary } from '../lib/vetDocumentLibrary';
 import { VET_FILES_ENTRY_ENABLED } from '../lib/vetFilesEntry';
 import { CUSTOM_RANGE_SETTLE_MS, isCustomWindowEdit, reportScopeLine } from '../lib/reportRange';
+import { REPORT_PET_GONE, resolveReportSubject } from '../lib/reportRoute';
 import {
   flushBeforeReport, generateVetReport, reportFreshnessLine, shareReportPdf,
   type VetReport, type VetReportParams,
@@ -67,6 +68,12 @@ import {
 // fast-follow (B-236). Meanwhile the last-90-days case is still covered: it's what
 // "Default" resolves to when there's no visit/trial, and "Custom…" opens
 // pre-filled to exactly the last 90 days.
+//
+// WHOSE REPORT (CUL-1334). The pet comes from `?pet=`, falling back to the active pet
+// when a door sends none (`lib/reportRoute.ts`). Every read here — the generator's pet
+// id, the vet-documents read, the name in the build wait — takes THAT pet, never the
+// active one (C-9). A `?pet=` the account does not hold renders the pet-gone line and
+// builds nothing: it never falls back to the active pet's report.
 
 type Status = 'loading' | 'ready' | 'error';
 type RangeMode = 'default' | 'custom';
@@ -91,7 +98,10 @@ function formatFieldDate(d: Date): string {
 }
 
 export default function ReportScreen() {
+  const { pet: petParam } = useLocalSearchParams<{ pet?: string | string[] }>();
   const activePet = usePetStore((s) => s.activePet);
+  const pets = usePetStore((s) => s.pets);
+  const subject = resolveReportSubject(petParam, activePet, pets);
   const insets = useSafeAreaInsets();
   const [status, setStatus] = useState<Status>('loading');
   const [report, setReport] = useState<VetReport | null>(null);
@@ -118,7 +128,8 @@ export default function ReportScreen() {
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
 
-  const petId = activePet?.id;
+  const petId = subject.kind === 'pet' ? subject.petId : undefined;
+  const petName = subject.kind === 'pet' ? subject.petName : null;
   const customStartKey = toLocalDayKey(customStart);
   const customEndKey = toLocalDayKey(customEnd);
 
@@ -287,11 +298,27 @@ export default function ReportScreen() {
   const designV2 = useDesignV2();
   const building = status === 'loading' && !report;
 
+  // A `?pet=` naming a pet the account does not hold (a stale link, an archived pet):
+  // say so, and build nothing. `requestParams` is null here, so no generate call and no
+  // documents read was made for it; the back control is the way out.
+  if (subject.kind === 'unknown_pet') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <Header title="Vet report" leading="back" onLeadingPress={() => router.back()} />
+        <View style={styles.center}>
+          <ThemedText testID="report-pet-gone" style={styles.muted}>
+            {REPORT_PET_GONE}
+          </ThemedText>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header title="Vet report" leading="back" onLeadingPress={() => router.back()} />
 
-      {activePet && (
+      {petId !== undefined && (
         <View style={styles.rangeBar}>
           <SectionLabel label="Report range" />
           <ChipGroup
@@ -521,11 +548,11 @@ export default function ReportScreen() {
           silhouette in the same slot: it is mounted only while building, since it has
           no dissolve of its own — the report's blocks become the page. */}
       {designV2 ? (
-        building && <ReportSilhouette petName={activePet?.name} working={building} />
+        building && <ReportSilhouette petName={petName} working={building} />
       ) : (
         <NightMoment
           visible={building}
-          title={activePet ? `Building ${activePet.name}’s report…` : 'Building the report…'}
+          title={petName ? `Building ${petName}’s report…` : 'Building the report…'}
           subtitle="Pulling together the full record."
         />
       )}

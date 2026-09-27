@@ -11,6 +11,7 @@ import { readGateLoggedDays, readSignalEpisodes, readLoggedDays, readSignalTrial
 import type { CachedFinding } from './signal';
 import { symptomWord } from './signalCopy';
 import { signalTitle } from './signalTitle';
+import { signalTrialWindowFor } from './signalTrialAnchor';
 import { signalSymptomOf, signalWeeks, weekLine, type SignalTrialWindow } from './signalWindows';
 import { weekLineWithheld, type NotEatingFact, type WeekLineWithheld } from './signalWithhold';
 import type { WeeklyBucketsModel } from './chartModels';
@@ -33,11 +34,16 @@ export interface SignalLeadModel {
  * not-eating register as the zone holds it (Home's fail-closed reading, OR'd with an
  * `intake_decline` in the Signal): a falling vomit week pair is never printed beside it, and
  * neither is a falling pair the density gate withholds (CUL-1216, BRK-4 / BRK-6).
+ *
+ * `generatedAt` is the cache row's (CUL-1360): a trial finding counted over a trial since
+ * replaced is titled and charted in its own day, never in the running trial's window.
+ * Required, so no caller can leave the anchor out and fall back to the running trial.
  */
 export async function loadSignalLead(
   petId: string,
   cached: CachedFinding,
   notEating: NotEatingFact,
+  generatedAt: string | null,
   nowMs: number = Date.now(),
 ): Promise<SignalLeadModel> {
   const today = toLocalDayKey(new Date(nowMs));
@@ -59,7 +65,7 @@ export async function loadSignalLead(
     symptom ? readGateLoggedDays(petId, symptom).catch(() => [] as string[]) : Promise.resolve([] as string[]),
   ]);
   const trialUnanswered = trialRead === 'unanswered';
-  const trial = trialRead === 'unanswered' ? null : trialRead;
+  const trial = signalTrialWindowFor(cached.finding, { generatedAt, trial: trialRead === 'unanswered' ? null : trialRead });
   const title = signalTitle(cached.finding, trial);
   if (!symptom) return { title, weekly: null, line: null, lineWithheld: null, noun: null, trial };
   const weekly = signalWeeks({
@@ -78,7 +84,8 @@ export async function loadSignalLead(
  * The running trial alone, for a Signal row that names it (CUL-1270): the trial card's
  * title reads the local trial's identity and day, exactly as the lead card and the screen
  * do, so the row and the screen it opens print the same day. Null when there is no pet,
- * no trial, or the read failed — the title then falls back to the cache's own day.
+ * no trial, or the read failed — the title then falls back to the cache's own day. The row
+ * passes it through `signalTrialWindowFor` before titling (CUL-1360).
  */
 export async function loadSignalRowTrial(petId: string, nowMs: number = Date.now()): Promise<SignalTrialWindow | null> {
   const pet = usePetStore.getState().pets.find((p) => p.id === petId) ?? null;

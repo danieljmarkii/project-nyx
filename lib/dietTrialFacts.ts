@@ -540,6 +540,10 @@ export async function loadDietTrialFacts(args: {
           // temptation this file failed three times is to suppress it when
           // something else is uncertain; §5.2 rules that the wrong direction.
           offDiet: readable.exposures.offDiet,
+          // Feedings naming no food: counted by coverage, on neither side of the
+          // two above, and disclosed by the card rather than left to read as an
+          // empty record beside a full day count (CUL-1338).
+          unclassifiable: readable.exposures.unclassifiable,
           mostRecent: readable.exposures.mostRecent
             ? {
                 label: readable.exposures.mostRecent.label ?? 'Something off the list',

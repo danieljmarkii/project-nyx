@@ -109,8 +109,20 @@ interface PetState {
   pets: Pet[];
   activePet: Pet | null;
   isOnboarded: boolean;
+  /**
+   * Whether the account's pet list has ANSWERED this session (CUL-1336). `pets` alone
+   * cannot say: an account whose every pet is archived holds `[]`, and so does a cold
+   * start whose read is still in flight, and a screen that waits on `pets.length > 0`
+   * draws a skeleton forever over the first (C-12). Set by `setPets` (any list handed to
+   * it is an answer) and by `markPetsLoaded` (the loader's answered-empty path, where it
+   * deliberately does not call `setPets`); cleared by `reset`, so a sign-out starts the
+   * next account at "not answered" (FR-9 parity, `wipeLocalSession`).
+   */
+  petsLoaded: boolean;
   /** Replace the active-pet list (oldest-first) and resolve the selection against it. */
   setPets: (pets: Pet[], preferredId?: string | null) => void;
+  /** The pet list read answered, possibly with nothing in it. */
+  markPetsLoaded: () => void;
   /** Switch the active pet by id; persists the device-local selection. */
   selectPet: (petId: string) => void;
   /** Add a newly created pet to the list, optionally making it active. */
@@ -150,6 +162,7 @@ export const usePetStore = create<PetState>((set, get) => ({
   pets: [],
   activePet: null,
   isOnboarded: false,
+  petsLoaded: false,
   // INVARIANT: `pets` holds only NON-archived pets. Every loader filters
   // `is_active = true` (usePet) and archiving calls removePet, so an archived pet
   // never enters the list. The cross-pet safety banner (multi-pet §4) relies on
@@ -159,7 +172,9 @@ export const usePetStore = create<PetState>((set, get) => ({
     set((state) => ({
       pets,
       activePet: resolveActivePet(pets, preferredId ?? state.activePet?.id ?? null),
+      petsLoaded: true,
     })),
+  markPetsLoaded: () => set({ petsLoaded: true }),
   selectPet: (petId) => {
     const pet = get().pets.find((p) => p.id === petId);
     if (!pet) return;
@@ -238,5 +253,5 @@ export const usePetStore = create<PetState>((set, get) => ({
     notifyPetsChanged();
   },
   setOnboarded: (isOnboarded) => set({ isOnboarded }),
-  reset: () => set({ pets: [], activePet: null, isOnboarded: false }),
+  reset: () => set({ pets: [], activePet: null, isOnboarded: false, petsLoaded: false }),
 }));

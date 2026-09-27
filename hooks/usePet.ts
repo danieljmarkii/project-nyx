@@ -7,7 +7,7 @@ import { decideOnboarding } from '../lib/onboarding';
 
 export function usePet() {
   const { user } = useAuthStore();
-  const { pets, activePet, isOnboarded, setPets, setOnboarded } = usePetStore();
+  const { pets, activePet, isOnboarded, setPets, setOnboarded, markPetsLoaded } = usePetStore();
 
   useEffect(() => {
     if (!user) return;
@@ -110,6 +110,12 @@ export function usePet() {
       });
 
       if (decision.onboarded) {
+        // CUL-1336: the pet list has answered, including an onboarded account whose
+        // every pet is archived — which `setPets` above is deliberately never handed, so
+        // without this a screen keyed on the list could not tell that account from a
+        // cold start. Safe on the first pass: a readable completion flag means the token
+        // was attached, so the empty pets read is not the token race.
+        markPetsLoaded();
         setOnboarded(true);
         return;
       }
@@ -123,6 +129,9 @@ export function usePet() {
         }, 600);
         return;
       }
+
+      // Second clean pass: the empty list is an answer now (CUL-1336).
+      markPetsLoaded();
 
       // Second clean pass still says "not onboarded". If the store already holds a
       // pet — onboarding/add-pet created one while this retry was in flight and the

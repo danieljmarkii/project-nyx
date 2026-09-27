@@ -54,7 +54,7 @@ describe('loadSignalLead', () => {
       { eventId: 'a', occurredAt: '', dayKey: today, minutesSinceMeal: null, photo: null },
       { eventId: 'b', occurredAt: '', dayKey: shift(today, -8), minutesSinceMeal: null, photo: null },
     ]);
-    const model = await loadSignalLead('pet-1', reflection, false);
+    const model = await loadSignalLead('pet-1', reflection, false, null);
     expect(mockReadSignalTrial).toHaveBeenCalledWith(expect.objectContaining({ id: 'pet-1', name: 'Nyx', species: 'cat' }), expect.any(Number));
     expect(mockReadSignalEpisodes).toHaveBeenCalledWith('pet-1', 'vomit');
     expect(model.title).toBe('Vomiting, week over week');
@@ -67,14 +67,14 @@ describe('loadSignalLead', () => {
   it('a running trial marks the chart; the title is the claim, the same on a trial day (D2, CUL-1270)', async () => {
     mockReadSignalEpisodes.mockResolvedValue([]);
     mockReadSignalTrial.mockResolvedValue({ startDay: shift(today, -20), identity: 'Rabbit trial', dayCounter: 21, targetDays: 56, foodLabel: null });
-    const model = await loadSignalLead('pet-1', reflection, false);
+    const model = await loadSignalLead('pet-1', reflection, false, null);
     expect(model.title).toBe('Vomiting, week over week');
     expect(model.trial?.dayCounter).toBe(21);
     expect(model.weekly?.mark?.day).toBe(shift(today, -20));
   });
 
   it('a finding that counts no symptom carries the title alone, and issues no episode read', async () => {
-    const model = await loadSignalLead('pet-1', intake, false);
+    const model = await loadSignalLead('pet-1', intake, false, null);
     expect(model).toMatchObject({ title: 'Eating less than usual', weekly: null, line: null, noun: null });
     expect(mockReadSignalEpisodes).not.toHaveBeenCalled();
   });
@@ -82,10 +82,10 @@ describe('loadSignalLead', () => {
   it('a failed trial read still draws the card without the trial; an unknown pet reads no trial', async () => {
     mockReadSignalEpisodes.mockResolvedValue([]);
     mockReadSignalTrial.mockRejectedValue(new Error('sqlite'));
-    const model = await loadSignalLead('pet-1', reflection, false);
+    const model = await loadSignalLead('pet-1', reflection, false, null);
     expect(model.trial).toBeNull();
     expect(model.title).toBe('Vomiting, week over week');
-    await loadSignalLead('pet-9', reflection, false);
+    await loadSignalLead('pet-9', reflection, false, null);
     expect(mockReadSignalTrial).toHaveBeenCalledTimes(1);
   });
 });
@@ -116,7 +116,7 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
   it('a falling vomit pair beside a not-eating record prints this week alone', async () => {
     mockReadSignalEpisodes.mockResolvedValue(episodesLastWeek);
     mockReadLoggedDays.mockResolvedValue({ loggedDays: [...lastWeekDays, ...thisWeekDays], recordStart: shift(today, -100) });
-    const model = await loadSignalLead('pet-1', falling, true, NOW);
+    const model = await loadSignalLead('pet-1', falling, true, null, NOW);
     expect(model.lineWithheld).toBe('not_eating');
     expect(model.line).not.toMatch(/last week/);
     expect(model.line).toMatch(/^0 this week/);
@@ -125,7 +125,7 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
   it('the same record with the pet eating prints the pair (the gate withholds only what it must)', async () => {
     mockReadSignalEpisodes.mockResolvedValue(episodesLastWeek);
     mockReadLoggedDays.mockResolvedValue({ loggedDays: [...lastWeekDays, ...thisWeekDays], recordStart: shift(today, -100) });
-    const model = await loadSignalLead('pet-1', falling, false, NOW);
+    const model = await loadSignalLead('pet-1', falling, false, null, NOW);
     expect(model.lineWithheld).toBeNull();
     expect(model.line).toMatch(/· 3 last week$/);
   });
@@ -134,7 +134,7 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
     mockReadSignalEpisodes.mockResolvedValue(episodesLastWeek);
     // Last week fully logged; nothing logged this week so far.
     mockReadLoggedDays.mockResolvedValue({ loggedDays: lastWeekDays, recordStart: shift(today, -100) });
-    const model = await loadSignalLead('pet-1', falling, false, NOW);
+    const model = await loadSignalLead('pet-1', falling, false, null, NOW);
     expect(model.lineWithheld).toBe('thin');
     expect(model.line).not.toMatch(/last week/);
   });
@@ -146,7 +146,7 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
       ...falling,
       finding: { ...falling.finding, density: { comparable: false, currentLoggingDays: 4, priorLoggingDays: 7 } } as CachedFinding['finding'],
     };
-    const model = await loadSignalLead('pet-1', engineWithheld, false, NOW);
+    const model = await loadSignalLead('pet-1', engineWithheld, false, null, NOW);
     expect(model.lineWithheld).toBe('density');
     expect(model.line).not.toMatch(/last week/);
   });
@@ -154,7 +154,7 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
   it('a RISE is never withheld, not even beside a not-eating record', async () => {
     mockReadSignalEpisodes.mockResolvedValue([{ eventId: 't', occurredAt: '', dayKey: today, minutesSinceMeal: null, photo: null }]);
     mockReadLoggedDays.mockResolvedValue({ loggedDays: thisWeekDays, recordStart: shift(today, -100) });
-    const model = await loadSignalLead('pet-1', reflection, true, NOW);
+    const model = await loadSignalLead('pet-1', reflection, true, null, NOW);
     expect(model.lineWithheld).toBeNull();
     expect(model.line).toMatch(/· 0 last week$/);
   });
@@ -165,7 +165,7 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
     mockReadSignalEpisodes.mockResolvedValue(episodesLastWeek);
     mockReadLoggedDays.mockResolvedValue({ loggedDays: [...lastWeekDays, ...thisWeekDays], recordStart: shift(today, -100) });
     mockReadGateLoggedDays.mockResolvedValue([...lastWeekDays, thisWeekDays[0]]);
-    const model = await loadSignalLead('pet-1', falling, false, NOW);
+    const model = await loadSignalLead('pet-1', falling, false, null, NOW);
     expect(model.lineWithheld).toBe('thin');
     expect(model.line).not.toMatch(/last week/);
   });
@@ -177,12 +177,12 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
     mockReadSignalEpisodes.mockResolvedValue(episodesLastWeek);
     mockReadLoggedDays.mockResolvedValue({ loggedDays: [...lastWeekDays, ...thisWeekDays], recordStart: shift(today, -100) });
     mockReadSignalTrial.mockResolvedValue({ startDay: dayKeyFromIndex(thisSunday), identity: 'Rabbit trial', dayCounter: todayIdx - thisSunday + 1, targetDays: 56, foodLabel: null });
-    const model = await loadSignalLead('pet-1', falling, false, NOW);
+    const model = await loadSignalLead('pet-1', falling, false, null, NOW);
     expect(model.lineWithheld).toBe('trial_start');
     expect(model.line).not.toMatch(/last week/);
     // Both weeks inside the trial: a week-over-week pair within it, under the other gates.
     mockReadSignalTrial.mockResolvedValue({ startDay: dayKeyFromIndex(thisSunday - 14), identity: 'Rabbit trial', dayCounter: todayIdx - thisSunday + 15, targetDays: 56, foodLabel: null });
-    const inside = await loadSignalLead('pet-1', falling, false, NOW);
+    const inside = await loadSignalLead('pet-1', falling, false, null, NOW);
     expect(inside.lineWithheld).toBeNull();
   });
 
@@ -193,9 +193,57 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
     mockReadLoggedDays.mockResolvedValue({ loggedDays: [...lastWeekDays, ...thisWeekDays], recordStart: shift(today, -100) });
     mockReadSignalTrial.mockRejectedValue(new Error('sqlite'));
     const cough: CachedFinding = { ...falling, finding: { ...falling.finding, symptomType: 'cough' } as CachedFinding['finding'] };
-    const model = await loadSignalLead('pet-1', cough, false, NOW);
+    const model = await loadSignalLead('pet-1', cough, false, null, NOW);
     expect(model.trial).toBeNull();
     expect(model.lineWithheld).toBe('trial_start');
     expect(model.line).not.toMatch(/last week/);
+  });
+});
+
+// CUL-1360: the lead card titles and charts a trial finding in the window of the trial it
+// counted. Rabbit's pair was counted just after midnight today on its day 20 (so rabbit
+// started nineteen days ago); the phone now runs chicken, started today.
+describe('loadSignalLead — a trial finding counted over a trial since replaced', () => {
+  const [y, m, d] = today.split('-').map(Number);
+  const counted = new Date(y, m - 1, d, 0, 30).toISOString();
+  const rabbitPair: CachedFinding = {
+    rank: 0,
+    text: "We've logged 11 episodes of vomiting for Nyx in the trial's 20 days, compared with 2 in the 49 days before it — worth reviewing with your vet.",
+    finding: {
+      type: 'trial_response',
+      priorityClass: 'insight',
+      trialDayNumber: 20,
+      targetDurationDays: 56,
+      trialLoggedDays: 20,
+      baselineLoggedDays: 45,
+      baselineWindowDays: 49,
+      pooledTrialCount: 11,
+      pooledBaselineCount: 2,
+      rapid: { trial: 4, baseline: 1 },
+      long: { trial: 1, baseline: 0 },
+      rapidWindowMinutes: 30,
+      longGapHours: 6,
+      treatShare: { trial: null, baseline: null },
+      mealsPerDay: { trial: null, baseline: null },
+      comparisonDirection: 'more_during_trial',
+      trialWindowDays: 20,
+    },
+  };
+
+  beforeEach(() => mockReadSignalEpisodes.mockResolvedValue([]));
+
+  it('another trial running: its own day, and no trial window under the chart', async () => {
+    mockReadSignalTrial.mockResolvedValue({ startDay: today, identity: 'Chicken trial', dayCounter: 1, targetDays: 56, foodLabel: null });
+    const model = await loadSignalLead('pet-1', rabbitPair, false, counted);
+    expect(model.title).toBe('Diet trial, day 20 of 56');
+    expect(model.trial).toBeNull();
+  });
+
+  it('the trial it counted still running: the trial’s name and window', async () => {
+    const running = { startDay: shift(today, -19), identity: 'Rabbit trial', dayCounter: 20, targetDays: 56, foodLabel: null };
+    mockReadSignalTrial.mockResolvedValue(running);
+    const model = await loadSignalLead('pet-1', rabbitPair, false, counted);
+    expect(model.title).toBe('Rabbit trial, day 20 of 56');
+    expect(model.trial).toEqual(running);
   });
 });
