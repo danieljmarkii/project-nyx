@@ -264,7 +264,7 @@ const READ_FIELDS: AnalysisReadFields = {
   error: null,
 }
 
-Deno.test('write-back — humanEdited update carries EXACTLY the read-field keys, nothing else', () => {
+Deno.test('write-back — humanEdited update carries EXACTLY the read-field keys and the cleared hide, nothing else', () => {
   const wb = buildAnalysisWriteBack({
     humanEdited: true,
     eventId: 'evt',
@@ -274,10 +274,75 @@ Deno.test('write-back — humanEdited update carries EXACTLY the read-field keys
     readFields: READ_FIELDS,
   })
   assertStrictEquals(wb.mode, 'update')
+  // `dismissed_at` is the one non-read key, and it is presentation state, not a
+  // clinical field (CUL-1323): the never-clobber guarantee is about the owner's
+  // structured observations, which are all still absent.
   assertEquals(
     Object.keys(wb.values).sort(),
-    ['contextual_flags', 'error', 'read_text', 'recommendation', 'status', 'visual_flags'],
+    ['contextual_flags', 'dismissed_at', 'error', 'read_text', 'recommendation', 'status', 'visual_flags'],
   )
+})
+
+// ── A new read clears the owner's hide (CUL-1323, PM-ruled 2026-09-27) ──────────
+// A dismissal belongs to the words the owner read. Every real read is new words, so
+// it clears — in BOTH write modes, and whatever the verdict (the ruling is (a),
+// always, not only on an escalation). The failure write records no new read, so it
+// never touches the hide.
+
+Deno.test('CUL-1323 — a new read clears the hide in BOTH modes, on every verdict', () => {
+  for (const humanEdited of [true, false]) {
+    for (const recommendation of ['worth_a_call', 'monitor', 'not_enough_to_say'] as const) {
+      const wb = buildAnalysisWriteBack({
+        humanEdited,
+        eventId: 'evt',
+        petId: 'pet',
+        incidentType: 'vomit',
+        structuredValues: { colour: 'yellow' },
+        readFields: { ...READ_FIELDS, recommendation },
+      })
+      assertStrictEquals(Object.prototype.hasOwnProperty.call(wb.values, 'dismissed_at'), true)
+      assertStrictEquals(wb.values.dismissed_at, null)
+    }
+  }
+})
+
+Deno.test('CUL-1323 — no caller can carry an old hide forward through the builder', () => {
+  // The clear lands AFTER both spreads, so a descriptor's structuredValues (or a
+  // future read-field that grew a dismissed_at) cannot re-assert the old hide.
+  const wb = buildAnalysisWriteBack({
+    humanEdited: false,
+    eventId: 'evt',
+    petId: 'pet',
+    incidentType: 'vomit',
+    structuredValues: { dismissed_at: '2026-09-19T08:00:00.000Z', colour: 'yellow' },
+    readFields: { ...READ_FIELDS, dismissed_at: '2026-09-19T08:00:00.000Z' } as unknown as AnalysisReadFields,
+  })
+  assertStrictEquals(wb.values.dismissed_at, null)
+  const edited = buildAnalysisWriteBack({
+    humanEdited: true,
+    eventId: 'evt',
+    petId: 'pet',
+    incidentType: 'vomit',
+    structuredValues: {},
+    readFields: { ...READ_FIELDS, dismissed_at: '2026-09-19T08:00:00.000Z' } as unknown as AnalysisReadFields,
+  })
+  assertStrictEquals(edited.values.dismissed_at, null)
+})
+
+Deno.test('CUL-1323 — the failure write NEVER touches the hide: a failed attempt is not a new read', () => {
+  // Every shape the failure write can take — error-only over a Worth a call, the
+  // failed upsert over anything else, and the skip — leaves `dismissed_at` out, so
+  // the owner's hide stands until a read they have not seen actually lands.
+  const base = {
+    eventId: 'evt-1', petId: 'pet-1', incidentType: 'vomit',
+    message: 'Claude API error 529', existingReadFailed: false,
+  }
+  for (const existing of [{ recommendation: 'worth_a_call' }, { recommendation: 'monitor' }, null]) {
+    const write = buildFailureWrite({ ...base, existing })
+    const values = write.mode === 'skip' ? {} : write.values
+    assertStrictEquals(Object.prototype.hasOwnProperty.call(values, 'dismissed_at'), false)
+  }
+  assertStrictEquals(buildFailureWrite({ ...base, existing: null, petId: null }).mode, 'skip')
 })
 
 Deno.test('write-back — un-edited upsert composes identity + structured + read fields', () => {

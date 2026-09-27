@@ -267,6 +267,18 @@ export type AnalysisWriteBack =
 // identity keys. Identity (event_id / pet_id / incident_type) is spread AFTER
 // structuredValues so a descriptor bug can never override row identity; the
 // read fields land last, matching the shipped vomit semantics.
+//
+// A NEW READ CLEARS THE OWNER'S "HIDE" (CUL-1323, PM-ruled 2026-09-27). A
+// dismissal is a statement about the words the owner read, and this write puts
+// words there they have not seen. Before this, `dismissed_at` belonged to the
+// INCIDENT: an owner who hid a calm read and later asked for a new one (Try
+// again, a replaced photo, Ask's live read) got a Worth a call rendered as "AI
+// note hidden", with the escalation on the record and off the screen. It is set
+// here, in the one builder every real read goes through (both modes, and the
+// capped path's contextual escalation), and AFTER the read fields so no caller
+// can carry an old dismissal forward. It is a presentation state, not a clinical
+// field, so the never-clobber guarantee below is untouched. The failure write
+// (`buildFailureWrite`) records no new read and deliberately leaves it alone.
 export function buildAnalysisWriteBack<TFlag extends string>(params: {
   humanEdited: boolean
   eventId: string
@@ -276,9 +288,9 @@ export function buildAnalysisWriteBack<TFlag extends string>(params: {
   readFields: AnalysisReadFields<TFlag>
 }): AnalysisWriteBack {
   if (params.humanEdited) {
-    // ONLY the read columns. No structured field, no ai_raw_payload — that's the
-    // never-clobber guarantee, by construction.
-    return { mode: 'update', values: { ...params.readFields } }
+    // ONLY the read columns (and the hide they supersede). No structured field,
+    // no ai_raw_payload — that's the never-clobber guarantee, by construction.
+    return { mode: 'update', values: { ...params.readFields, dismissed_at: null } }
   }
   return {
     mode: 'upsert',
@@ -288,6 +300,7 @@ export function buildAnalysisWriteBack<TFlag extends string>(params: {
       pet_id: params.petId,
       incident_type: params.incidentType,
       ...params.readFields,
+      dismissed_at: null,
     },
   }
 }
