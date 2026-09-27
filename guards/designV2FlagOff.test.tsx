@@ -720,7 +720,7 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('the redesign has one gate, and its consumers stay inside the namespace', () => {
-  it('Home, Patterns, the Signal zone, the Signal route, the four wait hosts and the trial screen\'s Signal door consume the gate (D2-4, D2-5, D2-3, D2-7, TS-9), and every consumer is a known one', () => {
+  it('Home, Patterns, the Signal zone, the Signal route, the four wait hosts, the trial screen\'s Signal door and Home\'s header date consume the gate (D2-4, D2-5, D2-3, D2-7, TS-9, CUL-1221), and every consumer is a known one', () => {
     // The set is PINNED, not floored: a new consumer is a new surface or a new card,
     // and it joins this list in the diff that adds it — with its flag-off proof.
     expect(gateConsumers()).toEqual([
@@ -731,6 +731,10 @@ describe('the redesign has one gate, and its consumers stay inside the namespace
       'app/signal/[id].tsx',
       'components/ColdStartOverlay.tsx',
       'components/event/IncidentReadCard.tsx',
+      // CUL-1221: the header's date, drawn by components/designV2/home/HeaderDate. Its
+      // flag-off proof is synchronous (the date is in the first frame), so Home's entry
+      // in SURFACES covers it; HomeHeader.test.tsx pins the flag-off row as well.
+      'components/home/HomeHeader.tsx',
       'components/home/SignalZone.tsx',
       'hooks/useTrialSignalDoor.ts',
     ]);
