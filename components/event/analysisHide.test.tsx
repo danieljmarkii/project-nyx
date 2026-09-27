@@ -198,7 +198,11 @@ describe.each(SECTIONS)('$name — Hide and Show write only over the read on scr
 // records every column it reads, across fixtures reaching each branch (every red flag
 // present, an 'unsure' foreign-material note, the hidden state). A regex over the grid's
 // source was green over a destructured read and a column the card draws outside the
-// grid (round 4 of the adversarial pass).
+// grid (round 4 of the adversarial pass). Stated blind spot (round 5): a column read
+// only behind ANOTHER column's value that no fixture holds (a row gated on
+// `blood_present === 'coffee_ground'`) is never recorded; add the fixture with the
+// branch. A copy of the row (a spread, JSON.stringify) reads every key, so it fails
+// loud, never silent.
 const NOT_ON_SCREEN: Record<string, string> = {
   status: 'decides which frame renders; a status move under the same read hides nothing new',
   error: 'never rendered (the owner-facing copy guard)',

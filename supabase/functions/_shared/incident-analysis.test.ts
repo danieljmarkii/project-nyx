@@ -1154,8 +1154,9 @@ Deno.test('CUL-1203 — step 3b reads pet_id and refuses on it before any write 
 // end-to-end harness), and bypassing the builder there left every test in this
 // directory green (adversarial pass on #952). So the sinks are scanned instead:
 //   1. every event_ai_analysis write under supabase/functions takes the generic
-//      helper's own parameter, the failure write's values, or a literal naming
-//      neither `read_text` nor `recommendation` and spreading nothing;
+//      helper's own parameter, the failure write's values, or a literal holding only
+//      identity and state keys (STATE_KEYS) and spreading nothing; and no query on the
+//      table escapes unfinished (returned, or handed out by an arrow helper);
 //   2. every applyAnalysisWriteBack call is handed a value bound to
 //      buildAnalysisWriteBack(…) or resolveReanalysisWrite(…) (which returns the
 //      builder's result or a hold);
@@ -1250,7 +1251,17 @@ const NON_LITERAL_FROM: Record<string, { arg: string; why: string }> = {
   },
 }
 
-const FROM_CALL = /\.from\s*(?:<[^>()]*>)?\s*\(/g
+// A literal write the scan lets through without a builder: identity plus state, and
+// nothing a reader sees. An ALLOWLIST of keys (round 5: a literal carrying
+// blood_present or description changed what the owner sees without clearing the hide).
+const STATE_KEYS = new Set(['event_id', 'pet_id', 'incident_type', 'status', 'error'])
+function isStateLiteral(arg: string): boolean {
+  if (!arg.startsWith('{') || arg.includes('...')) return false
+  const body = arg.slice(1, -1)
+  return callArgs(`(${body})`, 0).every((entry) => STATE_KEYS.has(/^(\w+)/.exec(entry)?.[1] ?? ''))
+}
+
+const FROM_CALL = /\.from\s*(?:<(?:[^<>()]|<[^<>()]*>)*>)?\s*\(/g
 
 // The names in the parameter list of the named function enclosing `at`.
 function paramsAt(src: string, at: number): string[] {
@@ -1314,7 +1325,7 @@ function readWordSinks(raw: string, file?: string): { sanctioned: Sink[]; violat
   const writes: { open: number; method: string; site: number }[] = []
   for (const { m, table } of sites) {
     if (table !== 'event_ai_analysis') continue
-    const head = /^\.from\s*(?:<[^>()]*>)?\s*\([^)]*\)/.exec(src.slice(m.index!))![0]
+    const head = /^\.from\s*(?:<(?:[^<>()]|<[^<>()]*>)*>)?\s*\([^)]*\)/.exec(src.slice(m.index!))![0]
     const chain = analysisChains(".from('event_ai_analysis')" + src.slice(m.index! + head.length))[0] ?? ''
     const w = /\.(update|upsert|insert)\(/.exec(chain)
     if (w) {
@@ -1333,7 +1344,15 @@ function readWordSinks(raw: string, file?: string): { sanctioned: Sink[]; violat
       continue
     }
     const bound = new RegExp(BINDING + '$').exec(lead)
-    if (!bound) continue
+    // Neither written here, returned, nor held in a variable the scan can follow: the
+    // query escapes (an arrow helper `(c) => c.from(T)`, `let q; q = …`). A finished
+    // read is fine; anything else fails closed (round 5).
+    if (!bound) {
+      if (!/\.(select|delete)\(/.test(chain)) {
+        violations.push(`line ${lineOf(m.index!)} (${enclosingFunction(src, m.index!)}): an event_ai_analysis query that escapes the scan`)
+      }
+      continue
+    }
     const fnStart = enclosingFunctionMatch(src, m.index!)?.index ?? 0
     const fnEnd = (() => {
       const next = src.slice(m.index!).search(/\n(?:export\s+)?(?:async\s+)?function\s/)
@@ -1350,7 +1369,7 @@ function readWordSinks(raw: string, file?: string): { sanctioned: Sink[]; violat
     if (arg === 'values' && fn === 'updateAnalysisRow') sanctioned.push({ kind: 'updateAnalysisRow', at: open })
     else if (arg === 'writeBack.values' && fn === 'applyAnalysisWriteBack') sanctioned.push({ kind: 'applyAnalysisWriteBack', at: open })
     else if (owner && /^buildFailureWrite\(/.test(boundTo(src, owner[1], open))) sanctioned.push({ kind: 'failure write', at: open })
-    else if (arg.startsWith('{') && !/\b(?:read_text|recommendation)\b|\.\.\./.test(arg)) sanctioned.push({ kind: 'state literal', at: open })
+    else if (isStateLiteral(arg)) sanctioned.push({ kind: 'state literal', at: open })
     else violations.push(`line ${lineOf(open)} (${fn}): event_ai_analysis .${method}(${arg.slice(0, 60)})`)
   }
 
@@ -1469,6 +1488,14 @@ Deno.test('CUL-1323 — the builder scan sees a bypass when there is one (the gu
     "async function persistLiveRead() {\n  await adminClient.from<Row>('event_ai_analysis').upsert({ ...readFields })\n}",
     "function analysisTable(c) {\n  return c\n    .from('event_ai_analysis')\n}",
     "async function persistLiveRead() {\n  await fetch(`${url}/rest/v1/event_ai_analysis?event_id=eq.${e}`, { method: 'PATCH', body })\n}",
+    // Round 5's: an arrow helper (one line, several lines, an object method), a
+    // let-then-assign query, a nested generic, and a literal carrying observations.
+    "export const analysisTable = (c: SupabaseClient) => c.from('event_ai_analysis')",
+    "export const analysisTable = (c: SupabaseClient) =>\n  c\n    .from('event_ai_analysis')",
+    "const tables = { analysis: (c) => c.from('event_ai_analysis') }",
+    "async function persistLiveRead() {\n  let q\n  q = adminClient.from('event_ai_analysis')\n  await q.update({ ...readFields })\n}",
+    "async function persistLiveRead() {\n  await adminClient.from<Tables<'event_ai_analysis'>>('event_ai_analysis').upsert({ ...readFields })\n}",
+    "async function runIncidentAnalysis() {\n  await c.from('event_ai_analysis').update({ status: 'completed', blood_present: 'fresh_red', description: d }).eq('event_id', e).eq('pet_id', p)\n}",
   ]
   for (const src of bypasses) {
     assertStrictEquals(readWordSinks(src).violations.length, 1, src)
