@@ -94,6 +94,8 @@ const mockDb = {
     }
     if (/FROM event_ai_verdicts/.test(sql)) return mockCopyRows.filter((r) => params.includes(r.event_id));
     if (/FROM events WHERE/.test(sql)) return [{ occurred_at: new Date().toISOString() }];
+    // The door's record start (CUL-1221): the fixture's one event, today's, is the record.
+    if (/FROM events\s+WHERE[\s\S]*ORDER BY occurred_at ASC/.test(sql)) return [{ occurred_at: new Date().toISOString() }];
     return [];
   }),
 };
@@ -178,7 +180,9 @@ describe('flag-on: the spine draws the row, the copy is read, the door speaks co
     await waitFor(() => expect(t.queryByTestId('spine-unread-v1')).toBeNull());
     expect(t.queryByTestId('spine-verdict-v1')).toBeNull();
     expect(t.getByTestId('coverage-door')).toBeTruthy();
-    await waitFor(() => expect(t.getByText(/logged 1 of \d+ day/)).toBeTruthy());
+    // The fixture's only event is today's, so the record starts today: no ratio yet, and
+    // today is never a counted day (CUL-1221).
+    await waitFor(() => expect(t.getByText(/the record starts today/)).toBeTruthy());
     expect(t.queryByTestId('zone-today')).toBeNull();
     expect(t.queryByTestId('zone-trend')).toBeNull();
     expect(t.queryByTestId('zone-med')).toBeNull();
