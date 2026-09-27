@@ -31,6 +31,7 @@ import { focusAccessibility } from '../../lib/a11yFocus';
 import type { TrialCardAction, TrialCardActionId } from '../../lib/dietTrialCard';
 import type { TrialSignalDoor } from '../../lib/trialSignalDoor';
 import { PROFILE_ROUTE, profileStartTrialHref } from '../../lib/profileFocus';
+import { reportHref } from '../../lib/reportRoute';
 import {
   buildTrialScreenModel,
   noTrialLine,
@@ -88,7 +89,6 @@ export function TrialScreen({ petId }: { petId: string }) {
   // `unknown_pet` instead of a skeleton that never resolves (S9, C-12). A list with pets in
   // it has answered too, whichever path filled it.
   const petListAnswered = usePetStore((s) => s.petsLoaded);
-  const activePetId = usePetStore((s) => s.activePet?.id ?? null);
   const pet = pets.find((p) => p.id === petId) ?? null;
   const petName = resolveRecordPetName(pets, petId);
 
@@ -102,7 +102,6 @@ export function TrialScreen({ petId }: { petId: string }) {
     pet,
     petsLoaded: petListAnswered || pets.length > 0,
     petName,
-    isActivePet: activePetId === petId,
     trial: { status: dietTrial.status, input: dietTrial.input, inputIsForPet: dietTrial.inputIsForPet },
     facts,
     allowedSet,
@@ -164,7 +163,7 @@ export function TrialScreen({ petId }: { petId: string }) {
     },
     trial_complete: () => lifecycle.openCompletion('complete'),
     trial_stopped_early: () => lifecycle.openCompletion('stopped_early'),
-    open_report: () => router.push('/report'),
+    open_report: () => router.push(reportHref(petId)),
     start_trial: handOffToStart,
   };
 
@@ -260,7 +259,7 @@ function TrialBody({
         />
       ) : null}
       {model.report ? (
-        <DoorRow door={model.report} testID="trial-door-report" onPress={() => router.push('/report')} />
+        <DoorRow door={model.report} testID="trial-door-report" onPress={() => router.push(reportHref(petId))} />
       ) : null}
     </View>
   );

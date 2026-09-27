@@ -188,7 +188,6 @@ function argsFor(l: Loaded, over: Partial<TrialScreenModelArgs> = {}): TrialScre
     pet: { id: PET.id, name: PET.name },
     petsLoaded: true,
     petName: PET.name,
-    isActivePet: true,
     trial: { status: 'loaded', input: l.input, inputIsForPet: true },
     facts: { status: 'ready', facts: l.facts },
     allowedSet: l.allowedSet,
@@ -307,12 +306,15 @@ describe('a running trial (§3, round 2 §03)', () => {
     }
   });
 
-  it('names the route’s pet, not the active one, and withholds /report for another pet (C-9)', async () => {
+  it('names the route’s pet, and draws the report door whichever pet is active (C-9, CUL-1334)', async () => {
+    // The model takes no active-pet input: `/report?pet=` builds the route's pet's
+    // report, so the door is the same on every pet's screen. That it carries the pet is
+    // the screen's (components/trialScreen/TrialScreen.test.tsx).
     const l = await load(MOCHI_DAY_23);
-    const m = trialModel(buildTrialScreenModel(argsFor(l, { isActivePet: false })));
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
     expect(m.petName).toBe('Mochi');
     expect(m.allowedFoods?.label).toBe('What Mochi can eat');
-    expect(m.report).toBeNull();
+    expect(m.report).toEqual({ label: 'Vet report', sub: null });
   });
 });
 
@@ -503,14 +505,6 @@ describe('ended trials (the 30-day grace)', () => {
     expect(m.report).toBeNull();
     expect(m.manage).toBeNull();
     expect(m.vomiting).toBeNull();
-  });
-
-  it('completed, for a pet that is not the active one: no door to the wrong pet’s report', async () => {
-    const all = Array.from({ length: 56 }, (_, i) => i + 1);
-    const l = await load({ target: 56, status: 'completed', endedDay: 56, mealDays: all, nowDay: 60 });
-    const m = trialModel(buildTrialScreenModel(argsFor(l, { isActivePet: false })));
-    expect(m.actions).toEqual([]);
-    expect(m.report).toBeNull();
   });
 
   it('abandoned: Start a new trial at the bottom', async () => {

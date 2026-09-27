@@ -37,6 +37,7 @@ import {
 } from '../lib/vetVisits';
 import { uuid } from '../lib/utils';
 import { profileFocusHref } from '../lib/profileFocus';
+import { reportHref } from '../lib/reportRoute';
 
 // The vet-visit rundown (Ask / B-228 PR A6, spec §3.3 + mock §7), and — with an
 // `appointmentId` — GET READY (CUL-903 VV-5; vet-visits spec §4.1 B1, mock B1 / B1b).
@@ -260,6 +261,14 @@ export default function RundownScreen() {
     router.setParams({ ask: undefined });
   }, [getReady]);
 
+  // The report of the pet whose rundown is on screen (CUL-1334): in Get-ready mode that is
+  // the appointment's pet, which need not be the active one, so the door names it rather
+  // than letting `/report` fall back to the active pet (C-9). `rundownPetId` is set in the
+  // same commit as the rundown it describes.
+  const openReport = useCallback(() => {
+    router.push(rundownPetId ? reportHref(rundownPetId) : '/report');
+  }, [rundownPetId]);
+
   const onCopyAsText = useCallback(async () => {
     setMenuOpen(false);
     if (!rundown) return;
@@ -380,7 +389,7 @@ export default function RundownScreen() {
               // lenses said so independently — so the only hand-off here is the
               // report, and the text share sits under ⋯ as *Copy as text*.
               <>
-                <PrimaryButton label="Send the vet report" onPress={() => router.push('/report')} />
+                <PrimaryButton label="Send the vet report" onPress={openReport} />
                 {/* The door Get ready was always specified to have (spec §4.1 C1:
                     the notes are "opened from Get ready") and never got, which is
                     half of CUL-966 — the questions typed on THIS page become ticks
@@ -400,7 +409,7 @@ export default function RundownScreen() {
               </>
             ) : (
               <>
-                <PrimaryButton label="Share the full vet report" onPress={() => router.push('/report')} />
+                <PrimaryButton label="Share the full vet report" onPress={openReport} />
                 <PrimaryButton
                   // "Share", not "Save" — it opens the OS share sheet (no in-app
                   // persistence, §10); the label matches what actually happens.
@@ -515,7 +524,6 @@ async function buildForAppointment(
           pet: { id: pet.id, name: pet.name },
           petsLoaded: true,
           petName: resolveRecordPetName(pets, pet.id),
-          isActivePet: usePetStore.getState().activePet?.id === pet.id,
           trial: trialInput
             ? { status: 'loaded', input: trialInput, inputIsForPet: true }
             : { status: 'unreadable', input: null, inputIsForPet: false },

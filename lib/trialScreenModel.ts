@@ -162,8 +162,6 @@ export interface TrialScreenModelArgs {
   petsLoaded: boolean;
   /** The record's pet name for copy (`resolveRecordPetName`, C-9). */
   petName: string;
-  /** Whether the route's pet is the active one — `/report` reads the active pet. */
-  isActivePet: boolean;
   trial: { status: DietTrialStatus; input: TrialCardInput | null; inputIsForPet: boolean };
   facts: TrialFactsState;
   allowedSet: TrialAllowedSet;
@@ -317,24 +315,15 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
 
   // The state's own actions. The doors carry the card's two references (the allowed list
   // and the exposures list), so neither is repeated as an action; the decision block
-  // carries the milestone's and the overrun's.
-  //
-  // `/report` builds the ACTIVE pet's report, so from another pet's screen either door to
-  // it would build the wrong animal's (C-9). Both are withheld there until the report
-  // takes a pet (CUL-1334). Correct-but-absent beats confidently wrong.
+  // carries the milestone's and the overrun's. Both report doors open the route's pet's
+  // report (`/report?pet=`, CUL-1334), so neither depends on which pet is active.
   const actions = decisionState
     ? []
-    : card.actions.filter(
-        (a) =>
-          a.id !== 'view_allowed_foods' &&
-          a.id !== 'view_exposures' &&
-          (a.id !== 'open_report' || args.isActivePet),
-      );
+    : card.actions.filter((a) => a.id !== 'view_allowed_foods' && a.id !== 'view_exposures');
 
   // The vet report door, unless the state's own action already is that door (S8: one door
   // per action).
-  const report =
-    args.isActivePet && !hasAction('open_report') ? { label: VET_REPORT_DOOR, sub: null } : null;
+  const report = !hasAction('open_report') ? { label: VET_REPORT_DOOR, sub: null } : null;
 
   return {
     kind: 'trial',

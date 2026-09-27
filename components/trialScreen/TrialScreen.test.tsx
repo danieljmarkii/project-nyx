@@ -293,8 +293,31 @@ describe('the route’s pet (S1, C-9)', () => {
       { pathname: '/trial-foods', params: { pet: 'pet-2' } },
       { pathname: '/trial-exposures', params: { pet: 'pet-2' } },
     ]);
-    // /report reads the active pet, so from Mochi's screen there is no door to it (CUL-1334).
+  });
+
+  it('a pet that is not the active one opens ITS report, not the active pet’s (CUL-1334)', async () => {
+    // Biscuit is active; the route names Mochi. The door is drawn, and it names Mochi.
+    const view = await renderRoute();
+    fireEvent.press(view.getByTestId('trial-door-report'));
+    expect(mockPush.mock.calls.map((c) => c[0])).toEqual([
+      { pathname: '/report', params: { pet: 'pet-2' } },
+    ]);
+  });
+
+  it('the completed card’s Open vet report opens the route pet’s report too (CUL-1334)', async () => {
+    const ended = running(
+      { trial: { ...running({}, 60, 56).trial!, status: 'completed', endedAt: keyDaysAgo(4) } },
+      60,
+      56,
+    );
+    mockTrial = { input: ended, status: 'loaded', inputIsForPet: true };
+    const view = await renderRoute();
+    // S8: the action IS the report's door, so there is no second one beside it.
     expect(view.queryByTestId('trial-door-report')).toBeNull();
+    fireEvent.press(view.getByTestId('trial-action-open_report'));
+    expect(mockPush.mock.calls.map((c) => c[0])).toEqual([
+      { pathname: '/report', params: { pet: 'pet-2' } },
+    ]);
   });
 
   it('the active pet’s screen carries the report door and Get ready, keyed by its booking', async () => {
@@ -305,7 +328,7 @@ describe('the route’s pet (S1, C-9)', () => {
     fireEvent.press(view.getByTestId('trial-door-report'));
     expect(mockPush.mock.calls.map((c) => c[0])).toEqual([
       { pathname: '/rundown', params: { appointmentId: 'appt-1' } },
-      '/report',
+      { pathname: '/report', params: { pet: 'pet-1' } },
     ]);
   });
 });

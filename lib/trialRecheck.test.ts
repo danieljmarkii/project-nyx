@@ -188,7 +188,6 @@ function argsFor(l: Loaded, over: Partial<TrialScreenModelArgs> = {}): TrialScre
     pet: { id: PET.id, name: PET.name },
     petsLoaded: true,
     petName: PET.name,
-    isActivePet: true,
     trial: { status: 'loaded', input: l.input, inputIsForPet: true },
     facts: { status: 'ready', facts: l.facts },
     allowedSet: l.allowedSet,

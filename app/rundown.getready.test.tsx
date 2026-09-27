@@ -275,6 +275,27 @@ describe('the notes door (CUL-966)', () => {
   });
 });
 
+// CUL-1334 — the report door names the appointment's pet. Get ready's subject is the
+// appointment's pet (AC 11), which need not be the active one (the trial screen opens Get
+// ready for whichever pet it shows), and a bare `/report` builds the ACTIVE pet's. A guard:
+// on the pre-CUL-1334 tree the push is the bare string.
+describe('the report door takes the appointment’s pet (CUL-1334)', () => {
+  it('Send the vet report opens the report of the pet the appointment is for, not the active one', async () => {
+    mockAppointments['appt-2'] = { ...mockAppointment, id: 'appt-2', pet_id: 'p2' };
+    params.current = { appointmentId: 'appt-2' };
+    const r = render(<RundownScreen />);
+    fireEvent.press(await r.findByText('Send the vet report'));
+    expect((router.push as jest.Mock).mock.calls).toEqual([[{ pathname: '/report', params: { pet: 'p2' } }]]);
+  });
+
+  it('the plain rundown is the active pet’s, and so is its report', async () => {
+    params.current = {};
+    const r = render(<RundownScreen />);
+    fireEvent.press(await r.findByText('Share the full vet report'));
+    expect((router.push as jest.Mock).mock.calls).toEqual([[{ pathname: '/report', params: { pet: 'p1' } }]]);
+  });
+});
+
 describe('AC 4 — zero model calls, through mount and every tap', () => {
   it('invokes no Edge Function on mount', async () => {
     params.current = { appointmentId: 'appt-1' };
