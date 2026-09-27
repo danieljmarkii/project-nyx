@@ -27,6 +27,8 @@
   - `docs/nyx-vet-visits-requirements.md` v1.2 (the T-3 edit, the four rulings, two build rules).
   - Trial-screen mock round 2 gains the Get ready frames, republished to the same URL.
 
+**After TS-5/6/7 landed (merge, same day):** TS-7's *For the call* block puts a presence-only vomiting count on the screen's refusal face. Get ready's symptoms question now quotes it there (`ForTheCall.vomiting`, a new field so it is routed by structure). Otherwise Get ready would have said less than the screen in the escalating direction. The guard's Get ready entry now arranges its own empty pet store.
+
 ## Decisions
 
 - **PM, in session (2026-09-27), all four as recommended:**

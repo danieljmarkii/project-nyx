@@ -47,6 +47,7 @@ import { BLIND_SPOT_QUALIFIER, resolveTrialStrip, type TrialCardInput } from './
 import { loadTrialAllowedSet, type TrialAllowedSet } from './trialAllowedSet';
 import type { TrialResponseCounts } from './trialResponseCounts';
 import type { Rundown, RundownTile } from './rundown';
+import { localDayIndex } from './utils';
 import {
   buildTrialScreenModel,
   type TrialScreenModel,
@@ -210,6 +211,7 @@ const VOMITING: TrialResponseCounts = {
   baselineLoggedDays: 30,
   baselineWindowDays: 49,
   densityComparable: true,
+  trialLastEpisodeDayIndex: null,
 };
 
 const MOCHI_DAY_23: Rec = {
@@ -300,6 +302,7 @@ describe('every trial answer is the trial screen’s own line (§11 TS-8)', () =
           ...(screen.standingNote ? [`${screen.standingNote.title}. ${screen.standingNote.body}`] : []),
           ...(screen.qualifier ? [screen.qualifier] : []),
           ...(screen.vomiting ? [screen.vomiting] : []),
+          ...(screen.forTheCall?.vomiting ? [screen.forTheCall.vomiting] : []),
         ];
         const trialAnswers = recheck!.questions
           .filter((q) => q.key === 'by_mouth' || q.key === 'eating' || q.key === 'symptoms')
@@ -438,9 +441,9 @@ describe('the questions are the vet’s, in his order', () => {
 // ── The safety faces and the withholding ─────────────────────────────────────
 
 describe('a pet that may not be eating', () => {
-  it('a trial refusal answers *is she eating it* with the register, leads the list, and asks nothing about vomiting (D1)', async () => {
+  it('a trial refusal with no vomit logged: the register answers *is she eating it*, and nothing about vomiting (D1)', async () => {
     const l = await load(REFUSING);
-    const input = { ...l.input, trialResponse: VOMITING };
+    const input = { ...l.input, trialResponse: { ...VOMITING, trialCount: 0 } };
     // Non-vacuity: the same counts over a pet that IS eating print a vomiting line.
     const eating = await load(MOCHI_DAY_23);
     expect(resolveTrialStrip({ ...eating.input, trialResponse: VOMITING })!.trialResponseLine).not.toBeNull();
@@ -458,6 +461,27 @@ describe('a pet that may not be eating', () => {
     expect(recheck!.questions.map((q) => q.key)).toEqual(['eating', 'other_meds', 'weight']);
     // No coverage ratio over a refused bowl (S7), exactly as the screen withholds it.
     expect((answersOf(recheck!, 'by_mouth') ?? []).some((t) => t.startsWith('Meals logged on'))).toBe(false);
+  });
+
+  it('a trial refusal with vomiting logged quotes the screen’s *For the call* count, with its last date (T-4)', async () => {
+    // The strip withholds its comparison over a pet that may not be eating; the screen's refusal
+    // face still states the presence-only count. Get ready must not say less than the screen.
+    const l = await load(REFUSING);
+    const trialResponse = {
+      ...VOMITING,
+      trialDayNumber: 10,
+      trialCount: 2,
+      trialLastEpisodeDayIndex: localDayIndex(onDay(9).getTime()),
+    };
+    const input = { ...l.input, trialResponse };
+    const { screen, recheck } = recheckFor(l, input);
+    expect(screen.state).toBe('trial_refusal');
+    expect(screen.vomiting).toBeNull();
+    expect(screen.forTheCall?.vomiting).toBe("Vomiting logged: 2 in the trial's 10 days, the last on Jul 11");
+    expect(answersOf(recheck!, 'symptoms')).toEqual([screen.forTheCall!.vomiting]);
+    // Presence only: zero is never said.
+    const zero = recheckFor(l, { ...input, trialResponse: { ...trialResponse, trialCount: 0 } }).recheck!;
+    expect(zero.questions.map((q) => q.key)).not.toContain('symptoms');
   });
 
   it('an intake decline: the headline the list already leads with is not printed twice, the ask stays', async () => {

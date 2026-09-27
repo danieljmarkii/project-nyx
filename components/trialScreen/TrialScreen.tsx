@@ -226,6 +226,21 @@ function TrialBody({ model, petId, titleRef, handlers, busyAction, onManage }: T
     </View>
   );
 
+  // §3.9: the running trial's bottom action, and the intake-decline face's after its doors
+  // (CUL-1339 #2). Null wherever the model withholds it.
+  const manageLink =
+    model.manage !== null ? (
+      <Pressable
+        onPress={onManage}
+        accessibilityRole="button"
+        accessibilityLabel={model.manage}
+        testID="trial-manage"
+        style={styles.linkAction}
+      >
+        <ThemedText style={styles.linkActionText}>{model.manage}</ThemedText>
+      </Pressable>
+    ) : null;
+
   return (
     <ScrollView contentContainerStyle={styles.scroll} testID="trial-screen-body">
       {/* One element for the title and its sub-line (§6): VoiceOver lands here, and on a
@@ -252,6 +267,23 @@ function TrialBody({ model, petId, titleRef, handlers, busyAction, onManage }: T
                 {line}
               </ThemedText>
             ))}
+            {model.forTheCall ? (
+              // §3.3 (TS-7): inside the rail, under the register, so the fact, the ask and
+              // what to have ready read as one element and never drift apart on screen.
+              <View style={styles.call} testID="trial-for-the-call">
+                <ThemedText style={styles.callHeading}>{model.forTheCall.heading}</ThemedText>
+                {model.forTheCall.facts.map((line, i) => (
+                  <ThemedText key={i} testID="trial-for-the-call-line" style={styles.callLine}>
+                    {line}
+                  </ThemedText>
+                ))}
+                {model.forTheCall.swap !== null ? (
+                  <ThemedText testID="trial-for-the-call-swap" style={styles.callSwap}>
+                    {model.forTheCall.swap}
+                  </ThemedText>
+                ) : null}
+              </View>
+            ) : null}
           </View>
           {model.facts.length > 0 ? (
             <Card testID="trial-record-card" style={styles.recordCard}>
@@ -267,6 +299,8 @@ function TrialBody({ model, petId, titleRef, handlers, busyAction, onManage }: T
           ) : null}
           {doors}
           <ActionList actions={model.actions} handlers={handlers} busyAction={busyAction} />
+          {/* CUL-1339 #2: the intake-decline face carries Manage, after the doors. */}
+          {manageLink}
         </>
       ) : (
         <>
@@ -304,17 +338,7 @@ function TrialBody({ model, petId, titleRef, handlers, busyAction, onManage }: T
           ) : null}
           {doors}
           <ActionList actions={model.actions} handlers={handlers} busyAction={busyAction} />
-          {model.manage !== null ? (
-            <Pressable
-              onPress={onManage}
-              accessibilityRole="button"
-              accessibilityLabel={model.manage}
-              testID="trial-manage"
-              style={styles.linkAction}
-            >
-              <ThemedText style={styles.linkActionText}>{model.manage}</ThemedText>
-            </Pressable>
-          ) : null}
+          {manageLink}
         </>
       )}
     </ScrollView>
@@ -535,6 +559,30 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightBody,
     fontWeight: theme.weightMedium,
     color: theme.colorEventSymptomInk,
+  },
+  call: {
+    marginTop: theme.space2,
+    paddingTop: theme.space2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colorBorder,
+    gap: theme.space1,
+  },
+  callHeading: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextPrimary,
+  },
+  callLine: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextPrimary,
+  },
+  callSwap: {
+    marginTop: theme.space1,
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextSecondary,
   },
   recordCard: {
     gap: theme.space2,

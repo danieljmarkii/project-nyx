@@ -1354,6 +1354,7 @@ function screenTrial(over: Partial<TrialScreenTrial> = {}): TrialScreenTrial {
     title: 'Rabbit trial · day 23 of 56',
     subline: 'Royal Canin Rabbit · since Jul 3 · ends Aug 27',
     safety: null,
+    forTheCall: null,
     headline: null,
     decision: null,
     allowedFoods: null,
@@ -1487,6 +1488,7 @@ describe('TS-8 — one vomiting comparison per page, only when they are one (adv
     baselineLoggedDays: 40,
     baselineWindowDays: 70,
     densityComparable: true,
+    trialLastEpisodeDayIndex: null,
   };
   function signalTrial(day: number, trialCount: number, baselineCount: number, rank = 1) {
     return finding({

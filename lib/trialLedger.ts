@@ -144,7 +144,9 @@ export interface BuildTrialLedgerArgs {
  *    end line, and drawing it would put counted rows under "the end you set",
  *    which §0.3 forbids. Same ruling, the mirror case, found by the adversarial
  *    pass;
- *  • the two reads disagree about coverage.
+ *  • the two reads disagree about coverage;
+ *  • a rated, unfinished bowl of the refusal lane's population sits in the current
+ *    trial week, below the refusal fact's floors (CUL-1344).
  */
 export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null {
   const { input, facts, timeZone } = args;
@@ -257,6 +259,18 @@ export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null
       ? rowOf(todayIndex)
       : null;
 
+  // CUL-1344 (PM ruling 2026-09-27): a rated, UNFINISHED bowl of the refusal lane's
+  // population anywhere in the current trial week withholds the ledger, BELOW the
+  // refusal fact's floors. A refused bowl still counts as a logged day, so the day
+  // would draw filled; the floors exist to decide when to SPEAK a refusal, and this
+  // only withholds (S3). The WHOLE ledger, not the one row: a grid missing its current
+  // row breaks S5 (every row carries its count) and the rows' partition of the caption
+  // (C-3). Home's lane is this row, so it goes with it.
+  if (currentRowIndex !== null) {
+    const weekStart = startIndex + currentRowIndex * 7;
+    if (facts.unfinishedDayIndices.some((d) => d >= weekStart && d <= todayIndex)) return null;
+  }
+
   const drawn = rows.flatMap((r) => r.days);
   const legend: TrialLedgerLegendKey[] = ['meals_logged', 'none_logged', 'off_diet'];
   if (drawn.some((d) => d.fill === 'not_tracked')) legend.push('not_tracked');
@@ -286,7 +300,7 @@ export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null
  *  here is necessary and not sufficient. */
 export interface TrialLane {
   row: TrialLedgerRow;
-  /** `Week 4 · 1 of 2 so far` */
+  /** `Week 4 · meals logged 1 of 2 so far` */
   label: string;
   accessibilityLabel: string;
 }
@@ -300,8 +314,11 @@ export function thisWeekLane(ledger: TrialLedger | null, input: TrialCardInput):
   const tail = soFar ? ' so far' : '';
   return {
     row,
-    label: `Week ${row.week} · ${covered} of ${elapsed}${tail}`,
-    accessibilityLabel: `This trial week, week ${row.week}: meals logged on ${covered} of ${elapsed} ${
+    // PM ruling on CUL-1343 (2026-09-27): the lane stands alone on Home with no legend, so
+    // it names what it counts ("meals logged", the legend's own words, §0.3). A bare
+    // "1 of 2" read as an adherence score.
+    label: `Week ${row.week} · meals logged ${covered} of ${elapsed}${tail}`,
+    accessibilityLabel: `Week ${row.week} of the trial: meals logged on ${covered} of ${elapsed} ${
       elapsed === 1 ? 'day' : 'days'
     }${tail}`,
   };

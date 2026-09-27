@@ -182,9 +182,15 @@ export function buildTrialRecheck(args: TrialRecheckArgs): TrialRecheck | null {
     byMouth.push({ text: screen.qualifier, label: null, role: 'quiet' });
   }
 
-  // Home's vomiting sentence, verbatim, and null exactly when Home withholds it (T-1).
-  const symptoms: RecheckAnswer[] = screen.vomiting
-    ? [{ text: screen.vomiting, label: null, role: 'fact' }]
+  // Home's vomiting sentence, verbatim, and null exactly when Home withholds it (T-1). Over a
+  // pet that may not be eating, where that sentence is withheld, the screen's refusal face
+  // still says what T-4 allows: the count only when at least one was logged, always with its
+  // last date, never zero or a comparison (*For the call*, TS-7). Quoted here too, or Get ready
+  // would say less than the screen in the escalating direction. The two cannot both be set:
+  // the block exists only on the refusal face, and the strip withholds its line there.
+  const vomitingFact = screen.vomiting ?? screen.forTheCall?.vomiting ?? null;
+  const symptoms: RecheckAnswer[] = vomitingFact
+    ? [{ text: vomitingFact, label: null, role: 'fact' }]
     : [];
 
   const answers: Record<RecheckQuestionKey, RecheckAnswer[]> = {

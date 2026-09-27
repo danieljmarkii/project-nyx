@@ -46,6 +46,10 @@ import { StartTrialModal } from '../../components/profile/StartTrialModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
 import { DietTrialCard } from '../../components/profile/DietTrialCard';
 import { TrialLifecycleSheets } from '../../components/trial/TrialLifecycleSheets';
+import { TrialDoorRow } from '../../components/trialScreen/TrialDoorRow';
+import { useTrialScreen } from '../../hooks/useTrialScreen';
+import { buildTrialDoorRow } from '../../lib/trialDoorRow';
+import { trialScreenHref } from '../../lib/trialRoute';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { useTrialLifecycle } from '../../hooks/useTrialLifecycle';
 import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
@@ -257,6 +261,10 @@ export default function ProfileScreen() {
   // hydrated draws no action at all (`DietTrialCard` renders an action only when a
   // handler exists), instead of a link that opens a screen with nothing to say.
   const trialAllowedSet = useTrialAllowedSet(activePet?.id ?? null);
+  // TS-6 (CUL-1302) — under `trial_screen`, the trial's slot is a one-row door to the trial's
+  // own screen while a trial runs or is in its grace (spec §5.2, R-3, S8), and a widget trial
+  // tap forwards there (§5.3). Flag-off, every line below reduces to today's card and scroll.
+  const trialScreenLive = useTrialScreen();
   const [startTrialVisible, setStartTrialVisible] = useState(false);
   // B-535 — the start-modal → food-capture round trip. "Snap a new food" closes
   // the modal and routes out; the modal stays mounted so the half-filled form
@@ -298,7 +306,8 @@ export default function ProfileScreen() {
   // STATED BLIND SPOT (C-41): the widget's link carries no nonce, so a tap is once per MOUNT,
   // and this tab stays mounted. Tap Mochi's widget, switch to Pixel in the app, tap the same
   // widget again: neither the pet nor the focus re-applies. The fix is the app-side per-tap
-  // signal, CUL-1177; CUL-1302 re-points this sender at the trial screen.
+  // signal, CUL-1177. Under `trial_screen` the same
+  // tap forwards to the trial's own screen instead of scrolling (TS-6, below).
   const params = useLocalSearchParams<{
     focus?: string; med?: string; ts?: string; pet?: string; src?: string; open?: string;
   }>();
@@ -401,6 +410,18 @@ export default function ProfileScreen() {
         pendingFocusRef.current = null;
         return;
       }
+      // TS-6 (CUL-1302, spec §5.3) — under the flag a widget trial tap forwards to the
+      // trial's own screen, ONCE, now that the switch to its pet has landed. It waits for
+      // nothing else: the screen reads its pet from the route, so this tab's content need
+      // not have loaded. Consumed BEFORE the push (C-22), so a re-entrant call cannot push
+      // twice. STATED BLIND SPOT: the flag fails closed until app config hydrates, so a cold
+      // start that reaches this line first scrolls to the door row instead (still the right
+      // pet, one tap from the screen).
+      if (trialScreenLive && pendingFocus.focus === 'trial') {
+        pendingFocusRef.current = null;
+        router.push(trialScreenHref(pendingFocus.petId));
+        return;
+      }
       if (focusContentSettledFor !== pendingFocus.petId) return;
     }
     let y: number | null;
@@ -435,7 +456,7 @@ export default function ProfileScreen() {
     // Consumed BEFORE the scroll, so a re-entrant call cannot see a live request.
     pendingFocusRef.current = null;
     scrollRef.current?.scrollTo({ y, animated: !focusReducedMotion });
-  }, [focusContentSettled, focusContentSettledFor, medications, focusReducedMotion]);
+  }, [focusContentSettled, focusContentSettledFor, medications, focusReducedMotion, trialScreenLive]);
 
   // Covers the already-mounted tab, where the content has long since laid out and
   // no `onLayout` will fire again; the handlers below cover the cold arrival.
@@ -1138,6 +1159,14 @@ export default function ProfileScreen() {
   // the opposite direction from the ruling: slice 4 shipped the note the ruling
   // said it would cut, and it is correct content — C2's standing fact).
   const trialCard = trialInput ? resolveTrialCard(trialInput) : null;
+  // TS-6 — the door, only over a read that answered FOR the pet on screen (B-789): the push
+  // names that pet, so the row must describe it. `null` with the flag off, with no trial
+  // (the start card stays, §5.2) and while the read is still the previous pet's.
+  const trialDoor =
+    trialScreenLive && trialInputIsForActivePet ? buildTrialDoorRow(trialInput) : null;
+  // Flag on and the read is still the previous pet's: draw neither, rather than the full
+  // card for one frame (S8: the Pet tab never carries the buttons under the flag).
+  const trialSlotPending = trialScreenLive && !trialInputIsForActivePet;
 
 
   return (
@@ -1516,8 +1545,20 @@ export default function ProfileScreen() {
             second path). PR 3 landed that entry and its own state-0 markup; this
             keeps the entry and folds the markup into the one card, so the eleven
             states stay a switch over one layout rather than three Card blocks
-            that can drift. `onManage` is PR 3's header affordance, unchanged. */}
-        {!trialLoading && trialCard && (
+            that can drift. `onManage` is PR 3's header affordance, unchanged.
+
+            TS-6 (CUL-1302): under `trial_screen` the slot is `TrialDoorRow` instead,
+            while a trial runs or is in its grace, and every action above lives on the
+            trial's own screen (S8). With no trial the card, and the start entry, stay. */}
+        {!trialLoading && trialDoor ? (
+          <TrialDoorRow
+            model={trialDoor}
+            style={styles.sectionGap}
+            // CUL-170 anchor — a leftover `focus=trial` link lands on the door.
+            onLayout={handleTrialAnchorLayout}
+            onPress={() => router.push(trialScreenHref(activePet.id))}
+          />
+        ) : !trialLoading && trialCard && !trialSlotPending && (
           <DietTrialCard
             model={trialCard}
             style={styles.sectionGap}

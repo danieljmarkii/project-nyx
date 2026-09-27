@@ -150,6 +150,8 @@ _Three isolated research agents ran in parallel on 2026-09-09 (competitive · le
 > 3. **Active trials only**, as the row above. A trial ended before the recheck has no row (CUL-1340 holds it).
 > 4. **A trial row carrying a safety line** (a trial refusal's register, or the call-today ask under an intake decline) **joins the safety band above the cap**, after the Signal's and the device's intake rows; a decline headline the list already states is not repeated inside it.
 >
+> Over a pet that may not be eating, where the strip's comparison is withheld, *what have {pet}'s symptoms done* quotes the trial screen's *For the call* count instead (T-4: presence only, always with its last date, never zero or a comparison), so Get ready never says less than the screen in the escalating direction.
+>
 > Two build rules from the adversarial pass: **one vomiting comparison per page** (when the Signal's own `trial_response` row is printed, the recheck drops its symptoms question and the Signal's row stays, since it may be the escalating one; G6 / CUL-746), and **a heading never promises more than its answer holds** (Dr. Chen's "chewables included" waits on CUL-1342, because the answer counts feedings only).
 >
 > The duplication with the rundown tiles below (CUL-967) is unchanged by this and stays that issue's call.

@@ -88,6 +88,11 @@ export interface TrialResponseCounts {
   trialDayNumber: number;
   /** Vomit episodes (3h-collapsed) with onset in the trial era [start, today]. */
   trialCount: number;
+  /** The local day index of the LATEST of those `trialCount` episodes, or null when there are
+   *  none. Placed from the same collapsed set as the count, so a count and its last date can never
+   *  describe two different episode sets (TS-7's "the last on {date}", CUL-1303: a whole-trial
+   *  count without it dilutes a recent cluster). */
+  trialLastEpisodeDayIndex: number | null;
   /** Vomit episodes (3h-collapsed) with onset in the baseline window [start − baselineDays, start). */
   baselineCount: number;
   /** Distinct logged local days in the trial era (the data-sufficiency read for the line's form). */
@@ -136,11 +141,16 @@ export function computeTrialResponseCounts(
     config.episodeGapHours,
   );
   let trialCount = 0;
+  let trialLastEpisodeDayIndex: number | null = null;
   let baselineCount = 0;
   for (const e of collapsed) {
     const di = dayIndexOf(e.ms);
-    if (inTrialEra(di)) trialCount++;
-    else if (inBaseline(di)) baselineCount++;
+    if (inTrialEra(di)) {
+      trialCount++;
+      if (trialLastEpisodeDayIndex === null || (di as number) > trialLastEpisodeDayIndex) {
+        trialLastEpisodeDayIndex = di as number;
+      }
+    } else if (inBaseline(di)) baselineCount++;
   }
 
   const loggedDaysIn = (pred: (di: number | null) => boolean): number => {
@@ -170,6 +180,7 @@ export function computeTrialResponseCounts(
   return {
     trialDayNumber,
     trialCount,
+    trialLastEpisodeDayIndex,
     baselineCount,
     trialLoggedDays,
     baselineLoggedDays,

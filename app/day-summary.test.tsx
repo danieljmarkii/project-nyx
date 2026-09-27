@@ -26,6 +26,9 @@ jest.mock('expo-router', () => {
   };
 });
 
+// TS-6: the trial screen's flag, off unless a test says otherwise.
+let mockTrialScreenLive = false;
+jest.mock('../hooks/useTrialScreen', () => ({ useTrialScreen: () => mockTrialScreenLive }));
 const mockState = jest.fn();
 jest.mock('../hooks/useDaySummary', () => ({ useDaySummary: () => mockState() }));
 // The in-context offer (DR-3) is stubbed off for the four-state wiring tests (its
@@ -160,6 +163,8 @@ describe('the strips deep-link to their own card', () => {
     }),
   });
 
+  // TS-6's flag-off proof (the decider entry in `guards/trialScreenFlagOff.test.tsx`
+  // names this test): with `trial_screen` off, the strip links exactly as it did before.
   it('the trial strip opens the trial card', () => {
     mockState.mockReturnValue(
       ready({ trialStrip: { title: 'Whitefish trial', fact: 'Day 12 of 28' } }),
@@ -170,6 +175,35 @@ describe('the strips deep-link to their own card', () => {
     const href = (router.push as jest.Mock).mock.calls[0][0];
     expect(href.pathname).toBe('/(tabs)/profile');
     expect(href.params.focus).toBe('trial');
+  });
+
+  it('under trial_screen, the trial strip opens the recap pet’s trial screen (TS-6)', () => {
+    mockTrialScreenLive = true;
+    try {
+      mockState.mockReturnValue(
+        ready({ trialStrip: { title: 'Whitefish trial', fact: 'Day 12 of 28' } }),
+      );
+      const { getByText } = render(<DaySummaryScreen />);
+      fireEvent.press(getByText('Whitefish trial'));
+      expect(router.push).toHaveBeenCalledTimes(1);
+      expect(router.push).toHaveBeenCalledWith('/trial/p1');
+    } finally {
+      mockTrialScreenLive = false;
+    }
+  });
+
+  it('under trial_screen, a med strip still opens its own card', () => {
+    mockTrialScreenLive = true;
+    try {
+      mockState.mockReturnValue(
+        ready({ medStrips: [{ key: 'item-amox', title: 'Amoxicillin · day 5 of 14', fact: null, isConcern: false }] }),
+      );
+      const { getByText } = render(<DaySummaryScreen />);
+      fireEvent.press(getByText('Amoxicillin · day 5 of 14'));
+      expect((router.push as jest.Mock).mock.calls[0][0].params.focus).toBe('medications');
+    } finally {
+      mockTrialScreenLive = false;
+    }
   });
 
   it('each med strip carries ITS OWN key, not the first one on the screen', () => {
