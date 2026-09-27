@@ -180,6 +180,22 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(getByText(/^It’s on\. Open History: each day is its own card/)).toBeTruthy();
   });
 
+  // CUL-1220 / BRK-21 — design_v2 does not widen the daily_look rollout, so the hint
+  // names the look at the top of Today only for an account the look is on for.
+  it('the Design v2 hint names the daily look only when the look is on for this account', () => {
+    setAllowlist({ design_v2: gatedToPm });
+    const off = render(<BetaFeaturesScreen />);
+    act(() => useBetaOptInStore.getState().setOptIn('design_v2', true));
+    expect(off.getByText(/^It’s on\. Home’s Signal/)).toBeTruthy();
+    expect(off.queryByText(/daily look/)).toBeNull();
+    off.unmount();
+
+    setAllowlist({ design_v2: gatedToPm, daily_look: gatedToPm });
+    act(() => useBetaOptInStore.getState().setOptIn('daily_look', true));
+    const on = render(<BetaFeaturesScreen />);
+    expect(on.getByText(/with the daily look at the top/)).toBeTruthy();
+  });
+
   it('a different account is not shown the History v2 card', () => {
     setAllowlist({ history_v2: { enabled: false, allowlist: ['someone-else'] } });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);

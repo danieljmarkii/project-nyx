@@ -46,6 +46,10 @@ import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import { useEvents } from '../../../hooks/useEvents';
 import { useHistoryV2 } from '../../../hooks/useHistoryV2';
+import { useAllowlistFlag } from '../../../hooks/useAppConfig';
+import { useBetaOptIn } from '../../../lib/betaFeatures';
+import { lookCardLive, todayMealNudge, todayNudgeKind } from '../../../lib/lookCard';
+import { isLookRow } from '../../../lib/lookDisplay';
 import { analysisChainOutstanding, awaitAnalysisChain, watchAnalysisRow } from '../../../lib/analysis';
 import { DEFAULT_MEAL_TIMING_CONFIG } from '../../../lib/mealTiming';
 import { countLine, mayCarryRead, type SpineAnalysisRow } from '../../../lib/spineNode';
@@ -77,14 +81,33 @@ import { Spine } from './Spine';
 /** The quiet day (Principle 5) — says what to do, without a nudge. `nyx-voice`: plain,
  *  warm, no exclamation, no claim about how she is. The last sentence rides only when
  *  the look is on the card. */
-export const TODAY_EMPTY_LINE = 'Nothing logged yet today. Meals, symptoms and medication go in with the + button.';
+export const TODAY_PLUS_LINE = 'Meals, symptoms and medication go in with the + button.';
+export const TODAY_EMPTY_LINE = `Nothing logged yet today. ${TODAY_PLUS_LINE}`;
 export const TODAY_EMPTY_LOOK_LINE = 'The look above is enough to start.';
+
+/**
+ * The quiet day's sentence (CUL-1220, BRK-21). A look is not a spine node, so a day with
+ * only a look reaches the empty branch — and "Nothing logged yet" under an answered look
+ * is the app forgetting her answer one line later. The branch is Today's shipped nudge
+ * rule (`todayNudgeKind`) over the header's own gate (`lookCardLive`), both imported:
+ *   • the look is not on Home → the plain empty line, pointing at nothing above it;
+ *   • the look is on Home, unanswered → the empty line and the pointer to the look;
+ *   • the look is answered → the day is not empty: ask about the bowl.
+ */
+export function todayQuietLine(params: { lookLive: boolean; hasLookToday: boolean; petName: string }): string {
+  const kind = todayNudgeKind({ hasNonLookEvents: false, lookLive: params.lookLive, hasLookToday: params.hasLookToday });
+  if (kind === 'meal') return `${todayMealNudge(params.petName)} ${TODAY_PLUS_LINE}`;
+  if (kind === 'none') return `${TODAY_EMPTY_LINE} ${TODAY_EMPTY_LOOK_LINE}`;
+  return TODAY_EMPTY_LINE;
+}
 export const TODAY_FAILED_LINE = 'Couldn’t read today’s log.';
 export const TODAY_RETRY = 'Try again';
 
 interface Props {
   trialNotEating?: boolean | null;
-  /** The look header's position, for Home's pinned exits (T-21). */
+  /** The card's own position in Home's scroll content, and the look header's inside
+   *  the card — composed by Home into the pinned exits' rect (T-21, BRK-16). */
+  onLayout?: (e: LayoutChangeEvent) => void;
   onLookLayout?: (e: LayoutChangeEvent) => void;
   /** Overridable navigation for the spine's rows. */
   onOpenEvent?: (id: string) => void;
@@ -99,7 +122,7 @@ interface Facts {
   priorOnsets: { ms: number; confidence: OnsetConfidence | null }[];
 }
 
-export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: Props) {
+export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpenEvent }: Props) {
   const activePet = usePetStore((s) => s.activePet);
   const petId = activePet?.id ?? null;
   const { todayEvents, loadTodayEvents } = useEvents();
@@ -284,6 +307,11 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
   // History v2's first paint on Home (the header): opened by the render that first has the
   // day's answer for this pet, sealed once that commit is on screen.
   const historyV2 = useHistoryV2();
+  // The look header's gate, read here too so the quiet line can never point at a header
+  // that is not drawn (BRK-21; `lookCardLive` is the one predicate, never restated).
+  const lookEligible = useAllowlistFlag('daily_look');
+  const lookOptedIn = useBetaOptIn('daily_look');
+  const lookLive = lookCardLive({ eligible: lookEligible, optedIn: lookOptedIn, species: activePet?.species });
   const ledger = useRef(createPaintLedger()).current;
   const dayKey = useMemo(() => toLocalDayKey(new Date(dayStartMs)), [dayStartMs]);
   if (historyV2 && readState === 'ready' && petId) ledger.open(JSON.stringify([petId, dayKey]));
@@ -292,7 +320,7 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
   });
 
   return (
-    <Card testID="today-card">
+    <Card testID="today-card" onLayout={onLayout}>
       <SectionLabel label="Today" header />
       <LookHeader trialNotEating={trialNotEating} onLayout={onLookLayout} />
 
@@ -313,8 +341,11 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
         </View>
       ) : model.nodes.length === 0 ? (
         <ThemedText style={styles.empty} testID="today-empty">
-          {TODAY_EMPTY_LINE}
-          <LookTail />
+          {todayQuietLine({
+            lookLive,
+            hasLookToday: rows.some(isLookRow),
+            petName: activePet?.name ?? '',
+          })}
         </ThemedText>
       ) : (
         <>
@@ -333,18 +364,6 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
       )}
     </Card>
   );
-}
-
-/** The empty line's last sentence, only when the look is on the card. Reads the same
- *  gate the header does so the sentence cannot point at a header that is not there. */
-function LookTail() {
-  const activePet = usePetStore((s) => s.activePet);
-  const species = activePet?.species;
-  // The header renders for cats and dogs on the rollout; `other` has no vocabulary. The
-  // flag halves are the header's own reads; here the species is the one fact that can
-  // make the sentence a lie on its own, so it is the one checked.
-  if (species !== 'cat' && species !== 'dog') return null;
-  return <ThemedText> {TODAY_EMPTY_LOOK_LINE}</ThemedText>;
 }
 
 /** Overridable so a test opens a row without a router. */

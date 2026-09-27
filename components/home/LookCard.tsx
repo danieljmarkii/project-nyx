@@ -880,6 +880,8 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
       busy: submitting,
       onBack: closeGrid,
       onDone: summary ? handleDone : null,
+      // The card's Done bar owns the FAB's corner while the grid is open (T-21).
+      drawsDoneBar: true,
     });
   }, [live, gridOpen, summary, submitting, closeGrid, handleDone, setCaptureOverlay]);
 

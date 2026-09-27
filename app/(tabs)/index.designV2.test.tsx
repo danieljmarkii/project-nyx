@@ -38,7 +38,7 @@ jest.mock('../../components/vetvisits/AppointmentStrip', () => ({ AppointmentStr
 jest.mock('../../components/home/TrialStrip', () => ({ TrialStrip: marker('trial') }));
 jest.mock('../../components/home/MedStrip', () => ({ MedStrip: marker('med') }));
 jest.mock('../../components/home/LookCard', () => ({ LookCard: marker('look') }));
-jest.mock('../../components/home/LookExits', () => ({ LookExits: marker('look-exits'), exitVisibility: () => ({}) }));
+jest.mock('../../components/home/LookExits', () => ({ LookExits: marker('look-exits'), exitVisibility: () => ({}), lookRectInPage: () => null }));
 jest.mock('../../components/home/TodayZone', () => ({ TodayZone: marker('today') }));
 jest.mock('../../components/home/TrendZone', () => ({ TrendZone: marker('trend') }));
 jest.mock('../../components/designV2/home/LookHeader', () => ({ LookHeader: marker('look-header') }));

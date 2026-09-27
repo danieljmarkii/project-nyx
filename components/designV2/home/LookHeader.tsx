@@ -3,25 +3,28 @@
 //
 // *How does Nyx seem today?* in the serif, then the compact chips — eight for a cat (the
 // seven concerns and two positives, `LOOK_HEAD_WORDS`), *More…* to the families — and,
-// once answered, the row: a rail, the head word, its gloss, the time, *Change*. Tap a
-// chip and it becomes a fact with a time.
+// once answered, the day's entries — a rail, the head word, its gloss, the time — and
+// *Add a look*. Tap a chip and it becomes a fact with a time.
 //
 // ── WHAT IT KEEPS FROM THE CARD, AND WHAT IT CHANGES ─────────────────────────
 // The WRITE PATH is the card's: `insertLook` → the optimistic `prependEvent` → `showLook`
 // (the completion register owns the dwell, the Undo target and the staleness guard, C-20)
 // — `guards/homeWrites.test.ts` names this file with exactly `insertLook` and nothing
 // else. The pet is captured at the tap, never re-read at save (T-11 / C-9). The
-// PROTECTION is the card's too: under a live intake concern the answered row is
-// `LookWithheldEntry` rather than a quiet look's words (CUL-873; `lookWithheldState`
-// fails toward 'unknown' → a skeleton, never a claim). Every DOOR the card had is one
-// tap deeper, behind *More…*: the families, the intake router (a navigation, T-3), the
-// absence chip, and the emergency door (§3.7, T-4). The gate is `lookCardLive` — the
-// `daily_look` rollout is NOT widened by `design_v2` (CUL-891 is a PM call).
+// PROTECTION is the card's too (CUL-1220 restored what the first cut dropped): under a
+// live intake concern a quiet look draws `LookWithheldEntry` AND the reason line, and the
+// question stays open beneath it, so the emergency door is always reachable (BRK-19;
+// `lookWithheldState` fails toward 'unknown' → a skeleton, never a claim, and the ask
+// stays there too). A later quiet or positive look never hides an earlier concern: every
+// concern entry of the day stays drawn (BRK-20, §3.3 floor 5). The families and the
+// emergency door (§3.7, T-4) are behind *More…*; where the intake router (a navigation,
+// T-3) and the absence chip sit is GC-6, see `REFUSAL_DOORS_ON_FIRST_ROW`. The gate is
+// `lookCardLive` — the `daily_look` rollout is NOT widened by `design_v2` (CUL-891).
 //
 // What changes: ONE TAP IS ONE WORD IS ONE LOOK. The card collected several words and a
 // Done bar; the page rules the chip itself is the save ("tap a chip and it becomes a
-// fact with a time"). A second word is a second entry, made through *Change* — which is
-// R9 / T-14's rule already: the question never closes, and a later look is a later row,
+// fact with a time"). A second word is a second entry, made through *Add a look* — which
+// is R9 / T-14's rule already: the question never closes, and a later look is a later row,
 // never an edit of the first. The note (T-22) stays on the record screen; the header has
 // no field, so Home carries no form (§0.1). Both are stated on the issue for D2-8's
 // Tier-2 edit of §4 / §10, not decided here quietly.
@@ -56,6 +59,8 @@ import {
   intakeDoorLabel,
   lookCardLive,
   lookHeaderQuestion,
+  lookMoreToday,
+  lookMoreTodayHref,
 } from '../../../lib/lookCard';
 import { describeLook, gridChipLabel, gridSectionsFor, isLookRow, lookHeadline } from '../../../lib/lookDisplay';
 import { EMERGENCY_DOOR_LABEL, type EmergencyRead } from '../../../lib/lookEmergency';
@@ -69,7 +74,7 @@ import {
   type LookWithheldFacts,
 } from '../../../lib/lookWithheld';
 import { insertLook } from '../../../lib/looks';
-import { HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT } from '../../../lib/completionCard';
+import { HITSLOP_ACTION_SOLO } from '../../../lib/completionCard';
 import { wordsFromLocalText, wordsToLocalText } from '../../../lib/lookWordsCodec';
 import { formatTime } from '../../../lib/utils';
 import { LOOK_DWELL_MS, useMomentStore } from '../../../store/momentStore';
@@ -77,20 +82,34 @@ import { useEventStore, type NyxEvent } from '../../../store/eventStore';
 import { usePetStore } from '../../../store/petStore';
 import { useUiStore } from '../../../store/uiStore';
 import { LookEmergencySheet } from '../../home/LookEmergencySheet';
-import { LookWithheldEntry, WITHHELD_UNDO_FADE_MS } from '../../home/LookWithheldEntry';
+import { LookWithheldEntry, LookWithheldReasonLine, WITHHELD_UNDO_FADE_MS } from '../../home/LookWithheldEntry';
 import { useGridDisclosure, useLookArrival } from '../../motion/lookMotion';
 import { ThemedText } from '../../ui/ThemedText';
 import { Skeleton } from '../../ui/Skeleton';
 
 /** The header's own copy. */
 export const LOOK_MORE = 'More…';
-export const LOOK_CHANGE = 'Change';
+/** The ask-again control (BRK-20). A second tap writes a second look, never an edit of
+ *  the first (T-14), so the control says so — it was *Change*, which it never did. */
+export const LOOK_ADD = 'Add a look';
+
+/**
+ * GC-6 (CUL-1179) — where *Didn't eat ›* and *Nothing unusual* sit. **Unruled when this
+ * shipped; option (a) is built as a stated assumption (CUL-1220):** both on the compact
+ * first row, both species, because intake is not preference and a refusal must never
+ * cost more taps than a mood word. Option (b) — both behind *More…* — is `false` here and
+ * nothing else; the door row draws them in that case.
+ */
+export const REFUSAL_DOORS_ON_FIRST_ROW = true;
 
 /** A chip's vertical reach, and the row gap it forces (C-5: two stacked chips face each
  *  other with the full reach between them, derived once here). */
 export const HEADER_CHIP_REACH = 5;
 export const HEADER_CHIP_ROW_GAP = HEADER_CHIP_REACH * 2;
 const HEADER_CHIP_SLOP = { top: HEADER_CHIP_REACH, bottom: HEADER_CHIP_REACH };
+/** The vertical reach of an entry's controls above a line (the completion Undo's slop and
+ *  the withheld entry's 8), so a line beneath shares no point with them (C-5). */
+export const LINE_CLEARANCE = Math.max(HITSLOP_ACTION_SOLO.bottom, 8);
 
 interface Props {
   /** The trial's refusal register, three-state (CUL-873): a positive fact or nothing for
@@ -211,7 +230,16 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
       setCaptureOverlay(null);
       return;
     }
-    setCaptureOverlay({ summary: null, inViewport: true, busy: submitting, onBack: closeGrid, onDone: null });
+    // No Done bar, so the FAB's corner stays the FAB's (BRK-18): the + is the way to log
+    // anything else while the words are open, on this tab and every other.
+    setCaptureOverlay({
+      summary: null,
+      inViewport: true,
+      busy: submitting,
+      onBack: closeGrid,
+      onDone: null,
+      drawsDoneBar: false,
+    });
   }, [live, gridOpen, submitting, closeGrid, setCaptureOverlay]);
   useEffect(() => () => setCaptureOverlay(null), [setCaptureOverlay]);
 
@@ -329,15 +357,128 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
   const families = gridSectionsFor(species, headWords, sex).filter((s) => s.label !== null);
   const asking = newest === null || askOpen;
 
+  // WHAT THE DAY SHOWS (BRK-20; §3.3 floor 5, T-15). The newest look, plus EVERY earlier
+  // look today that carries a concern word: a good evening never removes a worry the
+  // morning said. The rest fold behind the card's own door to History. A concern entry
+  // never withholds its words (`entryWithholdsWords`), so at most one withheld entry is
+  // ever drawn — the newest.
+  const shown = todayLooks.filter((row, i) => i === 0 || carriesConcern(row, species));
+  const folded = todayLooks.length - shown.length;
+  const withholds = (row: NyxEvent) =>
+    withheldState === 'withheld' && entryWithholdsWords(wordsFromLocalText(row.look_words), species);
+  const firstWithheld = shown.find(withholds) ?? null;
+
+  const refusalDoors = (
+    <>
+      <HeaderChip label={LOOK_ABSENCE_CHIP} onPress={onAbsence} disabled={submitting} testID="look-header-absence" />
+      <Pressable
+        onPress={onIntakeDoor}
+        hitSlop={HEADER_CHIP_SLOP}
+        accessibilityRole="button"
+        accessibilityLabel={intakeDoorLabel(pets.length > 1, sex)}
+        accessibilityHint={`Opens a new meal to say how much ${petName} ate`}
+        style={styles.chip}
+        testID="look-header-intake-door"
+      >
+        <ThemedText style={styles.chipText}>{intakeDoorLabel(pets.length > 1, sex)}</ThemedText>
+      </Pressable>
+    </>
+  );
+
   return (
     <View style={styles.header} onLayout={onLayout} testID="look-header">
       <ThemedText style={styles.question} accessibilityRole="header">
         {lookHeaderQuestion(petName)}
       </ThemedText>
 
+      {/* THE DAY'S ENTRIES — drawn whenever the day holds a look, asking or not, so
+          re-opening the words never takes a concern off the screen. While the withheld
+          read is in flight the entries are a skeleton: neither claim (C-12). */}
+      {shown.length > 0 ? (
+        <View testID="look-header-entries">
+          {withheldState === 'unknown' ? (
+            <View style={styles.answered} testID="look-header-skeleton">
+              <Skeleton width="60%" height={13} />
+            </View>
+          ) : (
+            <>
+              {shown.map((row) =>
+                withholds(row) ? (
+                  <LookWithheldEntry
+                    key={row.id}
+                    occurredAt={row.occurred_at}
+                    petName={petName}
+                    sex={sex}
+                    undoLive={beatLive && row.id === justWritten}
+                    dwellMs={LOOK_DWELL_MS}
+                    onUndo={() => onUndo(row.id)}
+                    onOpenRecord={() => router.push(`/event/${row.id}` as never)}
+                    testID="look-header-withheld"
+                  />
+                ) : (
+                  <AnsweredRow
+                    key={row.id}
+                    row={row}
+                    species={activePet.species}
+                    sex={sex}
+                    arrival={row.id === justWritten ? arrival : null}
+                    undoLive={beatLive && row.id === justWritten}
+                    onUndo={() => onUndo(row.id)}
+                  />
+                ),
+              )}
+              {/* THE REASON, once (BRK-19; T-20, floor item 12). A destination is not a
+                  reason, and "Saved" alone is the state the completion system exists to
+                  prevent. */}
+              {firstWithheld ? (
+                <LookWithheldReasonLine
+                  petName={petName}
+                  sex={sex}
+                  onOpenRecord={() => router.push(`/event/${firstWithheld.id}` as never)}
+                  testID="look-header-withheld-reason"
+                />
+              ) : null}
+              {folded > 0 ? (
+                <Pressable
+                  onPress={() => router.push(lookMoreTodayHref() as never)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Show ${folded} more of today's looks in history`}
+                  style={styles.line}
+                  testID="look-header-more-today"
+                >
+                  <ThemedText style={styles.control}>{lookMoreToday(folded)}</ThemedText>
+                </Pressable>
+              ) : null}
+            </>
+          )}
+        </View>
+      ) : null}
+
+      {/* THE QUESTION NEVER CLOSES (T-14, BRK-19). In every state below "asking" —
+          answered, withheld, still reading — the words are one tap away, and through
+          them *More…* and the emergency door. A second look is a second row, so the
+          control is named for that, never "Change". */}
+      {!asking ? (
+        <Pressable
+          onPress={() => {
+            openMenu();
+            setAskOpen(true);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={`${LOOK_ADD}. Opens the words again`}
+          style={styles.line}
+          testID="look-header-add"
+        >
+          <ThemedText style={styles.control}>{LOOK_ADD}</ThemedText>
+        </Pressable>
+      ) : null}
+
       {asking ? (
         <>
-          <View style={styles.chips} testID="look-header-chips">
+          <View
+            style={[styles.chips, shown.length > 0 && styles.chipsAfterEntries]}
+            testID="look-header-chips"
+          >
             {headWords.map((key) => {
               const word = lookWord(species, key);
               if (!word) return null;
@@ -352,6 +493,7 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
                 />
               );
             })}
+            {REFUSAL_DOORS_ON_FIRST_ROW ? refusalDoors : null}
             {!gridOpen ? (
               <Pressable
                 onPress={() => {
@@ -361,7 +503,11 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
                 hitSlop={HEADER_CHIP_SLOP}
                 accessibilityRole="button"
                 accessibilityLabel="More words"
-                accessibilityHint="Shows the full list, the didn’t-eat door and when to call"
+                accessibilityHint={
+                  REFUSAL_DOORS_ON_FIRST_ROW
+                    ? 'Shows the full list and when to call'
+                    : 'Shows the full list, the didn’t-eat door and when to call'
+                }
                 style={styles.moreChip}
                 testID="look-header-more"
               >
@@ -372,22 +518,10 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
 
           {gridOpen ? (
             <>
-              {/* The first row's other doors, one tap deeper than the card had them and
-                  at equal cost to each other (§3.2): the absence, the router, the opening
-                  chip. */}
-              <View style={[styles.chips, styles.doorRow]}>
-                <HeaderChip label={LOOK_ABSENCE_CHIP} onPress={onAbsence} disabled={submitting} testID="look-header-absence" />
-                <Pressable
-                  onPress={onIntakeDoor}
-                  hitSlop={HEADER_CHIP_SLOP}
-                  accessibilityRole="button"
-                  accessibilityLabel={intakeDoorLabel(pets.length > 1, sex)}
-                  accessibilityHint={`Opens a new meal to say how much ${petName} ate`}
-                  style={styles.chip}
-                  testID="look-header-intake-door"
-                >
-                  <ThemedText style={styles.chipText}>{intakeDoorLabel(pets.length > 1, sex)}</ThemedText>
-                </Pressable>
+              {/* The first row's other doors. Where the refusal door and the absence sit
+                  is GC-6 (CUL-1179): see `REFUSAL_DOORS_ON_FIRST_ROW`. */}
+              <View style={[styles.chips, styles.doorRow]} testID="look-header-door-row">
+                {REFUSAL_DOORS_ON_FIRST_ROW ? null : refusalDoors}
                 <HeaderChip
                   label={notHerselfLabel(sex)}
                   onPress={() => onWord(LOOK_OPENING_CHIP_KEY)}
@@ -395,19 +529,20 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
                   testID="look-header-opening"
                 />
               </View>
+              {/* C-5 (BRK-17): the two stacked doors take 44pt boxes and NO slop, and the
+                  first sits a chip's reach below the chip row, so no two responders share
+                  a point — the emergency door's edge no longer closes the grid. */}
               <Pressable
                 onPress={openEmergency}
-                hitSlop={8}
                 accessibilityRole="button"
                 accessibilityLabel={EMERGENCY_DOOR_LABEL.replace(' ›', '')}
-                style={styles.door}
+                style={[styles.door, styles.doorAfterChips]}
                 testID="look-header-emergency-door"
               >
                 <ThemedText style={styles.emergencyText}>{EMERGENCY_DOOR_LABEL}</ThemedText>
               </Pressable>
               <Pressable
                 onPress={closeGrid}
-                hitSlop={8}
                 accessibilityRole="button"
                 accessibilityLabel="Show fewer words"
                 style={styles.door}
@@ -436,37 +571,6 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
             </>
           ) : null}
         </>
-      ) : newest ? (
-        withheldState === 'unknown' ? (
-          <View style={styles.answered} testID="look-header-skeleton">
-            <Skeleton width="60%" height={13} />
-          </View>
-        ) : withheldState === 'withheld' &&
-          entryWithholdsWords(wordsFromLocalText(newest.look_words), species) ? (
-          <LookWithheldEntry
-            occurredAt={newest.occurred_at}
-            petName={petName}
-            sex={sex}
-            undoLive={beatLive}
-            dwellMs={LOOK_DWELL_MS}
-            onUndo={() => onUndo(newest.id)}
-            onOpenRecord={() => router.push(`/event/${newest.id}` as never)}
-            testID="look-header-withheld"
-          />
-        ) : (
-          <AnsweredRow
-            row={newest}
-            species={activePet.species}
-            sex={sex}
-            arrival={newest.id === justWritten ? arrival : null}
-            undoLive={beatLive}
-            onUndo={() => onUndo(newest.id)}
-            onChange={() => {
-              openMenu();
-              setAskOpen(true);
-            }}
-          />
-        )
       ) : null}
 
       <LookEmergencySheet
@@ -480,6 +584,13 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
   );
 }
 
+/** Does this look carry a concern word? The one fact that keeps an earlier entry on the
+ *  day (BRK-20) — the inverse of `entryWithholdsWords`, imported rather than restated. */
+function carriesConcern(row: NyxEvent, species: LookSpecies): boolean {
+  if (row.look_outcome !== 'observed') return false;
+  return !entryWithholdsWords(wordsFromLocalText(row.look_words), species);
+}
+
 // ── The answered row ─────────────────────────────────────────────────────────────
 
 function AnsweredRow({
@@ -489,7 +600,6 @@ function AnsweredRow({
   arrival,
   undoLive,
   onUndo,
-  onChange,
 }: {
   row: NyxEvent;
   species: string | null | undefined;
@@ -497,7 +607,6 @@ function AnsweredRow({
   arrival: ReturnType<typeof useLookArrival> | null;
   undoLive: boolean;
   onUndo: () => void;
-  onChange: () => void;
 }) {
   const described = describeLook(row, { species, sex });
   const head = lookHeadline(described) ?? 'Noticed';
@@ -530,15 +639,14 @@ function AnsweredRow({
           {` · ${time}`}
         </ThemedText>
       </Animated.View>
-      {/* THE ACTION PAIR'S TOUCH TARGETS (C-5, CUL-612): Undo and Change face each other
-          across the row's 8pt gap for the dwell, and Undo's tap IS its confirm (§5.6) — so
-          the two take the completion cards' asymmetric slops, each yielding the facing
-          edge (4 + 4 = the gap), never a symmetric 8 that overlaps by half. */}
+      {/* Undo is the row's only control now that *Add a look* has its own line (BRK-20);
+          its slop is the completion cards' (C-5), and every line below it keeps a full
+          reach of margin (`styles.line`). */}
       {undoLive ? (
         <Animated.View style={{ opacity: undoOpacity }}>
           <Pressable
             onPress={onUndo}
-            hitSlop={HITSLOP_ACTION_LEFT}
+            hitSlop={HITSLOP_ACTION_SOLO}
             accessibilityRole="button"
             accessibilityLabel={`Undo. ${head}`}
             testID="look-header-undo"
@@ -547,15 +655,6 @@ function AnsweredRow({
           </Pressable>
         </Animated.View>
       ) : null}
-      <Pressable
-        onPress={onChange}
-        hitSlop={HITSLOP_ACTION_RIGHT}
-        accessibilityRole="button"
-        accessibilityLabel="Change. Shows the words again for another look"
-        testID="look-header-change"
-      >
-        <ThemedText style={styles.control}>{LOOK_CHANGE}</ThemedText>
-      </Pressable>
     </View>
   );
 }
@@ -642,7 +741,15 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorAccentInk,
   },
-  door: { paddingVertical: theme.space1, alignSelf: 'flex-start' },
+  // 44pt boxes with no slop (C-5, BRK-17): the stacked doors meet edge to edge and share
+  // nothing. `doorAfterChips` clears the chip row's reach above the first of them.
+  door: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' },
+  doorAfterChips: { marginTop: HEADER_CHIP_REACH },
+  // A line under the entries (*N more today ›*, *Add a look*): a 44pt box with no slop,
+  // a full reach below the Undo above it (the completion slop, `HITSLOP_ACTION_SOLO`).
+  line: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', marginTop: LINE_CLEARANCE },
+  // The chips re-opened under the entries clear the last entry's control (C-5).
+  chipsAfterEntries: { marginTop: LINE_CLEARANCE + HEADER_CHIP_REACH },
   doorText: { fontSize: theme.textSM, fontWeight: theme.weightMedium, color: theme.colorAccentInk },
   emergencyText: { fontSize: theme.textSM, fontWeight: theme.weightMedium, color: theme.colorEventSymptomInk },
   section: { marginTop: theme.space1 },
@@ -666,5 +773,5 @@ const styles = StyleSheet.create({
   answeredText: { fontSize: theme.textSM, color: theme.colorTextSecondary },
   answeredQuiet: { color: theme.colorTextTertiary },
   answeredHead: { fontWeight: theme.weightSemibold, color: theme.colorTextPrimary },
-  control: { fontSize: theme.textXS, fontWeight: theme.weightMedium, color: theme.colorAccentInk, paddingVertical: theme.space0_5 },
+  control: { fontSize: theme.textXS, fontWeight: theme.weightMedium, color: theme.colorAccentInk },
 });

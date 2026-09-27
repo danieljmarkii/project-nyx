@@ -50,7 +50,10 @@ type IconComponent = ComponentType<{ size?: number; color?: string; strokeWidth?
 // BETA_REGISTRY is UI-free data (so it unit-tests in plain jest and useWidgetSnapshots
 // can read the opt-in without a screen's import graph). A `switch` with a default
 // keeps any future key renderable without an exhaustiveness burden.
-function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?: string } {
+function presentationFor(
+  key: AllowlistFlagKey,
+  ctx: { dailyLookOn: boolean },
+): { Icon: IconComponent; onHint?: string } {
   switch (key) {
     case 'widget_enabled':
       // The hint only makes sense on the widget: iOS makes the OWNER add a widget
@@ -80,10 +83,15 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
       // the day it ships and false the day after). A palette reads as "how the app
       // looks", distinct from the widget grid, the picker pen, the taxonomy shapes,
       // Noticed's eye and the vet's stethoscope.
+      //
+      // The daily look's clause rides only when the look is on for this account
+      // (CUL-1220, BRK-21): `design_v2` does not widen the `daily_look` rollout, so an
+      // account outside Noticed's cohort has no look at the top of Today to be told about.
       return {
         Icon: Palette,
-        onHint:
-          'It’s on. Home’s Signal leads with its chart — tap it for the Signal’s own screen; Today reads as one line per moment, with the daily look at the top and the month’s coverage at the foot; open Patterns to see the month with its weekly bars and the weight drawn by date.',
+        onHint: ctx.dailyLookOn
+          ? 'It’s on. Home’s Signal leads with its chart — tap it for the Signal’s own screen; Today reads as one line per moment, with the daily look at the top and the month’s coverage at the foot; open Patterns to see the month with its weekly bars and the weight drawn by date.'
+          : 'It’s on. Home’s Signal leads with its chart — tap it for the Signal’s own screen; Today reads as one line per moment, with the month’s coverage at the foot; open Patterns to see the month with its weekly bars and the weight drawn by date.',
       };
     case 'history_v2':
       // The on-state hint, written by the lane that drew the list (HV-7, CUL-1164) for
@@ -105,12 +113,16 @@ function BetaFeatureCard({ feature }: { feature: BetaFeature }) {
   const eligible = useAllowlistFlag(feature.key);
   const optedIn = useBetaOptIn(feature.key);
   const setOptIn = useBetaOptInStore((s) => s.setOptIn);
+  // Both hooks run every render (never short-circuited): the daily look's own two gates.
+  const dailyLookEligible = useAllowlistFlag('daily_look');
+  const dailyLookOptedIn = useBetaOptIn('daily_look');
+  const dailyLookOn = dailyLookEligible && dailyLookOptedIn;
 
   // Gate 1: no card for a beta the account isn't in the cohort for (belt-and-braces
   // with the eligibility-gated Settings row that pushes this screen).
   if (!eligible) return null;
 
-  const { Icon, onHint } = presentationFor(feature.key);
+  const { Icon, onHint } = presentationFor(feature.key, { dailyLookOn });
 
   return (
     <Card style={styles.betaCard}>
