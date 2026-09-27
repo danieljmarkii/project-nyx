@@ -500,11 +500,19 @@ interface SignalZoneProps {
   // the strip withholds its vomit line on (`isAnimalNotEating`), so the card and the strip
   // can never disagree. Default false: every non-Home caller is unaffected.
   suppressTrialResponse?: boolean;
+  // TS-5 (CUL-1301, trial-screen spec §5.1) — tells Home whether a SAFETY-class card is in
+  // this zone's settled set for its pet, so the trial strip's week lane never draws under
+  // one. `live` is null until the cache read has answered for that pet (C-12: a read that
+  // hasn't answered is never an empty set), and the consumer fails closed on null. It
+  // reads the FULL set, like `hasSafetyFinding`'s other reader, so no suppression or fold
+  // can unhide a lane. Draws nothing; absent, the zone is unchanged.
+  onSafetyLive?: (report: { petId: string | null; live: boolean | null }) => void;
 }
 
 export function SignalZone({
   trialRunning = false,
   suppressTrialResponse = false,
+  onSafetyLive,
 }: SignalZoneProps = {}) {
   const {
     petId,
@@ -674,6 +682,11 @@ export function SignalZone({
     findingCount: renderableCount,
     hasSafetyFinding,
   });
+
+  const safetyLive = answered ? hasSafetyFinding : null;
+  useEffect(() => {
+    onSafetyLive?.({ petId, live: safetyLive });
+  }, [onSafetyLive, petId, safetyLive]);
 
   // The outgoing frame for the crossfade. Captured DURING render because by the time an
   // effect could run, the state has already flipped to live and the building frame it

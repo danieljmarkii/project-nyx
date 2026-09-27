@@ -22,6 +22,7 @@ import { TrendZone } from '../../components/home/TrendZone';
 import { pullThreshold } from '../../lib/haptics';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { resolveTrialStrip, isAnimalNotEating } from '../../lib/dietTrialCard';
+import type { TrialStripSafety } from '../../lib/trialStripDoor';
 import { isTrialRunning } from '../../lib/dietTrial';
 import { useMedStrips } from '../../hooks/useMedStrips';
 import { resolveMedStrips } from '../../lib/medStrip';
@@ -96,7 +97,15 @@ export default function HomeScreen() {
   // Same loader as the Pet-tab card, so the two surfaces cannot disagree about
   // the same trial (B-417 PR 4). `inputIsForPet` fails closed for B-789 below.
   const activePetId = usePetStore((s) => s.activePet?.id ?? null);
-  const { input: trialInput, inputIsForPet: trialFactsFresh } = useDietTrial(activePetId);
+  const {
+    input: trialInput,
+    inputIsForPet: trialFactsFresh,
+    loadedPetId: trialPetId,
+  } = useDietTrial(activePetId);
+  // TS-5 (CUL-1301) — what the Signal zone last reported about safety-class cards for its
+  // pet, handed to the trial strip so this week's lane never draws under one. Null until the
+  // zone reports; the strip fails closed on null and on a report for another pet.
+  const [signalSafety, setSignalSafety] = useState<TrialStripSafety | null>(null);
   // B-721 SR-5 (§3.4) — is a trial running for the active pet? Computed here from the
   // trial input Home already loads (no second read) and passed to SignalZone, where a
   // falling reflection's expanded state appends the mid-trial adjacency line. `isTrialRunning`
@@ -232,7 +241,11 @@ export default function HomeScreen() {
               belongs to a DIFFERENT pet; renders nothing for single-pet households
               or when no other pet has a cached safety finding. */}
           <CrossPetSafetyBanner />
-          <SignalZone trialRunning={trialRunning} suppressTrialResponse={suppressTrialResponse} />
+          <SignalZone
+            trialRunning={trialRunning}
+            suppressTrialResponse={suppressTrialResponse}
+            onSafetyLive={setSignalSafety}
+          />
           {/* B-417 §4.2 — a running trial gets a compact strip here, BELOW Signal
               and ABOVE Today. Deliberate: Principle 3 says safety insights always
               lead, and a trial is context, not an insight. `resolveTrialStrip`
@@ -254,7 +267,13 @@ export default function HomeScreen() {
               §0.1, PM-approved 2026-09-11 as one CONFIRMATION and no form — see the
               component header and `guards/homeWrites.test.ts`. */}
           <AppointmentStrip />
-          <TrialStrip model={trialStripModel} />
+          <TrialStrip
+            model={trialStripModel}
+            petId={trialPetId}
+            input={trialInput}
+            inputFresh={trialFactsFresh}
+            safety={signalSafety}
+          />
           {/* B-614 §8/D9 — one compact strip PER active/recent medication, BELOW
               the trial strip and ABOVE Today. The trial is the wedge's primary
               object (8–12 weeks); a 14-day course is the shorter-lived guest. A

@@ -1160,3 +1160,40 @@ describe('SignalZone — the labeled stand-down line (CUL-786)', () => {
     expect(getByLabelText(STOOD_DOWN_TEXT)).toBeTruthy();
   });
 });
+
+// ── TS-5 (CUL-1301): the safety report Home's trial strip reads ─────────────────────
+describe('SignalZone — onSafetyLive (TS-5, the week lane never draws under a safety card)', () => {
+  const lastReport = (fn: jest.Mock) => fn.mock.calls[fn.mock.calls.length - 1][0];
+
+  it('reports null until the read has answered: an unread set is never an all-clear (C-12)', async () => {
+    mockUseSignal.mockReturnValue(signalState({ answered: false, isLoading: true }));
+    const onSafetyLive = jest.fn();
+    render(<SignalZone onSafetyLive={onSafetyLive} />);
+    await act(async () => {});
+    expect(lastReport(onSafetyLive)).toEqual({ petId: 'pet-1', live: null });
+  });
+
+  it('reports live with a safety-class card in the settled set, and clear without one', async () => {
+    const onSafetyLive = jest.fn();
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    const view = render(<SignalZone onSafetyLive={onSafetyLive} />);
+    await act(async () => {});
+    expect(lastReport(onSafetyLive)).toEqual({ petId: 'pet-1', live: true });
+
+    mockUseSignal.mockReturnValue(signalState({ findings: [] }));
+    view.rerender(<SignalZone onSafetyLive={onSafetyLive} />);
+    await act(async () => {});
+    expect(lastReport(onSafetyLive)).toEqual({ petId: 'pet-1', live: false });
+  });
+
+  it('a pet switch reports the NEW pet as unanswered, never the old pet all-clear', async () => {
+    const onSafetyLive = jest.fn();
+    mockUseSignal.mockReturnValue(signalState({ findings: [] }));
+    const view = render(<SignalZone onSafetyLive={onSafetyLive} />);
+    await act(async () => {});
+    mockUseSignal.mockReturnValue(signalState({ petId: 'pet-2', answered: false, isLoading: true }));
+    view.rerender(<SignalZone onSafetyLive={onSafetyLive} />);
+    await act(async () => {});
+    expect(lastReport(onSafetyLive)).toEqual({ petId: 'pet-2', live: null });
+  });
+});
