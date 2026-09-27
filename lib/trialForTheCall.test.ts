@@ -81,6 +81,7 @@ describe('For the call — the refusal face only', () => {
         'Day 5 of the trial',
         "Vomiting logged: 2 in the trial's 5 days, the last on Sep 25",
       ],
+      vomiting: "Vomiting logged: 2 in the trial's 5 days, the last on Sep 25",
       swap: 'Veterinary diets are usually guaranteed, so the clinic can swap this one if Pixel isn’t eating it.',
     });
   });
