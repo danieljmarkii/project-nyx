@@ -383,6 +383,7 @@ export default function PatternsScreen() {
                 readingCount={weightSeries.count}
                 petName={activePet.name}
                 petId={activePet.id}
+                drawIn
               />
               {cards
                 .filter((c) => c.kind === 'topFood' || c.kind === 'topProtein' || c.kind === 'composition')

@@ -36,6 +36,9 @@ interface Props {
   noun: string;
   drawIn?: boolean;
   identity?: string;
+  /** Hold the draw this long — the Signal screen's compare lands at 200ms, and a draw that
+   *  started inside a view still at opacity 0 would play unseen (CUL-1223). */
+  drawDelayMs?: number;
 }
 
 const TRACK_HEIGHT = 11;
@@ -43,12 +46,13 @@ const TRACK_HEIGHT = 11;
  *  with its "0" beside the empty track. */
 const MIN_FILL_FRAC = 0.02;
 
-export function CompareBars({ model, noun, drawIn = false, identity = 'compare' }: Props) {
+export function CompareBars({ model, noun, drawIn = false, identity = 'compare', drawDelayMs = 0 }: Props) {
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
   const { markStyle, labelStyle } = useDrawIn({
     kind: 'compare',
     count: 2,
+    delayMs: drawDelayMs,
     drawIn,
     identity,
     reducedMotion,
