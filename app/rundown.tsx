@@ -354,9 +354,11 @@ export default function RundownScreen() {
                   questions={getReady.questions}
                   petName={getReady.petName}
                   onAdd={() => setSheetOpen(true)}
-                  renderRecheck={
-                    trialScreen ? (recheck) => <RecheckQuestions recheck={recheck} /> : undefined
-                  }
+                  // Keyed on the ROW, which carries a recheck only when it was built with
+                  // the gate live (`buildForAppointment`). Keyed on the live gate instead, a
+                  // revocation while the page is open drew a refusal row as a bare title
+                  // in the safety band (adversarial pass, TS-8).
+                  renderRecheck={(recheck) => <RecheckQuestions recheck={recheck} />}
                   onRemove={(id) =>
                     writeQuestions(getReady.questions.filter((q) => q.id !== id)).catch(() => {})
                   }

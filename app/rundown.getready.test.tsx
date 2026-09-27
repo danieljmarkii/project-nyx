@@ -604,6 +604,15 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
     expect(r.getByText('Worth raising')).toBeTruthy();
   });
 
+  it('a gate revoked while the page is open keeps the rows it built drawn in full (adversarial pass)', async () => {
+    const r = await getReadyWith(true);
+    await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
+    mockTrialScreen.on = false;
+    r.rerender(<RundownScreen />);
+    await act(async () => {});
+    expect(r.getByTestId('recheck-questions')).toBeTruthy();
+  });
+
   it('flag-on: the same fixture draws the vet’s questions, with the same single read', async () => {
     const r = await getReadyWith(true);
     await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
