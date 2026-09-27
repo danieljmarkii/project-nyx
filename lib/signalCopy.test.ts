@@ -1109,6 +1109,34 @@ describe('evidenceText — reflection (B-051)', () => {
     expect(CAUSAL_RE.test(s)).toBe(false);
     expect(REASSURANCE_RE.test(s)).toBe(false);
   });
+  // CUL-1216 (BRK-4): the counterexample — logging fell to 4 of 7 days, the engine withheld
+  // the pair, and *Why* still said "down from 5". Live for every account.
+  it('improving on incomparable logging density: never mints "down from", states this week only', () => {
+    const s = evidenceText(
+      reflection({
+        direction: 'improving',
+        currentCount: 1,
+        priorCount: 5,
+        density: { comparable: false, currentLoggingDays: 4, priorLoggingDays: 7 },
+      }),
+      'Nyx',
+    );
+    expect(s).not.toMatch(/down from|the week before|last week/);
+    expect(s).toContain('1 episode of vomiting for Nyx this week.');
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+  it('improving on COMPARABLE density keeps "down from" (the gate withholds only what it must)', () => {
+    const s = evidenceText(
+      reflection({
+        direction: 'improving',
+        currentCount: 2,
+        priorCount: 5,
+        density: { comparable: true, currentLoggingDays: 7, priorLoggingDays: 7 },
+      }),
+      'Nyx',
+    );
+    expect(s).toContain('down from 5 episodes the week before');
+  });
 });
 
 describe('sampleLine — symptom-worsening (④)', () => {

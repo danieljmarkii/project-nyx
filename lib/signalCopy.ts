@@ -804,12 +804,19 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
   }
   if (finding.type === 'reflection') {
     const symptom = symptomWord(finding.symptomType);
-    const trend =
-      finding.direction === 'improving'
+    // CUL-1216 (BRK-4): a falling pair the SR-4 density gate marked incomparable never mints
+    // "down from N" here either. The face already swaps to this week's count alone
+    // (`isReflectionDensityWithheld`) and the expanded box says why (`DENSITY_WITHHELD`), so
+    // this text states the week's count and nothing about last week — no second sentence
+    // about the gate, which the box beside it already carries. This path is live for every
+    // account (the shipped card's expand and the Design v2 screen's *Why* both read it).
+    const trend = isReflectionDensityWithheld(finding)
+      ? null
+      : finding.direction === 'improving'
         ? `down from ${count(finding.priorCount, 'episode', 'episodes')} the week before`
         : 'about the same as the week before';
     return (
-      `We've logged ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} this week — ${trend}. ` +
+      `We've logged ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} this week${trend ? ` — ${trend}` : ''}. ` +
       `This is a count we're tracking with you — not a diagnosis, and not a verdict on how ${petName} is doing. Keep logging and we'll keep watching the trend.`
     );
   }
