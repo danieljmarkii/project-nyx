@@ -109,6 +109,9 @@ export interface DayMarkFacts {
   coverage: DayMarkCoverage;
   medication: boolean;
   photo: DayMarkPhoto;
+  /** The day a bout began, when this day holds its rows and no bout of its own
+   *  (CUL-1226). Then a zero is not "no <noun>": the record holds some. */
+  continuesFrom?: string | null;
   /** The symptom layer is showing. Off, the count is not spoken — and the day is still
    *  not "clear": the coverage is spoken either way. */
   symptomLayer: boolean;
@@ -127,6 +130,11 @@ export function dayMarkDateWord(dayKey: string): string {
 /**
  * The day in one sentence. A clean day reads "logged, no vomiting" — never an all-clear —
  * and a day ahead reads "ahead". A layer that is off says nothing about what it hid.
+ *
+ * The count is EPISODES, dated by their first row, so a bout that runs past midnight
+ * counts on the day it began. The next day holds rows of it and a count of zero, and is
+ * spoken as what it holds — "vomiting logged, part of the bout that began Sep 12" —
+ * never "no vomiting" (CUL-1226). The words may say more than the rose, never less.
  */
 export function dayMarkA11yLabel(f: DayMarkFacts, noun: string): string {
   const parts: string[] = [dayMarkDateWord(f.dayKey)];
@@ -135,6 +143,7 @@ export function dayMarkA11yLabel(f: DayMarkFacts, noun: string): string {
   else if (f.coverage === 'unlogged') parts.push('nothing logged');
   else {
     if (f.symptomLayer && f.count > 0) parts.push(`${noun} logged ${f.count} ${pluralize(f.count, 'time')}`);
+    else if (f.symptomLayer && f.continuesFrom) parts.push(`${noun} logged, part of the bout that began ${dateWord(f.continuesFrom)}`);
     else if (f.symptomLayer) parts.push(`logged, no ${noun}`);
     else parts.push('logged');
     if (f.coverage === 'left_some') parts.push('a meal left unfinished');

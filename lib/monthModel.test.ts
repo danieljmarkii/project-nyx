@@ -191,6 +191,31 @@ describe('the bars over the rows (AC 1)', () => {
     expect(m.line).toBe('Vomiting 1 time on 1 day · through Aug 31');
   });
 
+  it('a bout that continues past midnight: the next day holds its start day and no count, and nothing else moves (CUL-1226)', () => {
+    const base = septModel();
+    const m = septModel({
+      continuationDays: [
+        { day: '2026-09-03', from: '2026-09-02' }, // the tail of Sep 2's bout
+        { day: '2026-09-01', from: '2026-08-31' }, // a bout that began in August
+        { day: '2026-09-11', from: '2026-09-10' }, // an episode day: its own count speaks
+        { day: '2026-09-20', from: '2026-09-19' }, // ahead: nothing drawn, nothing said
+      ],
+    });
+    const byKey = new Map(m.days.map((d) => [d.key, d]));
+    expect(byKey.get('2026-09-03')).toMatchObject({ count: 0, continuesFrom: '2026-09-02', coverage: 'logged' });
+    expect(byKey.get('2026-09-01')?.continuesFrom).toBe('2026-08-31');
+    expect(byKey.get('2026-09-11')).toMatchObject({ count: 2, continuesFrom: null });
+    expect(byKey.get('2026-09-20')).toMatchObject({ coverage: 'ahead', continuesFrom: null });
+    expect(byKey.get('2026-09-04')?.continuesFrom).toBeNull();
+    // The rose, the corners, the bars and the line stay the episode's.
+    expect(m.count).toBe(base.count);
+    expect(m.episodeDayCount).toBe(base.episodeDayCount);
+    expect(m.line).toBe(base.line);
+    expect(m.weekly.weeks.map((w) => w.count)).toEqual(base.weekly.weeks.map((w) => w.count));
+    expect(m.days.map((d) => d.count)).toEqual(base.days.map((d) => d.count));
+    expect(() => septModel({ continuationDays: [{ day: '2026-09-03', from: 'Sep 2' }] })).toThrow(/day key/);
+  });
+
   it('the BARS honour the record\'s start too: pre-record days carry no tick and leave the denominator (mutant M18)', () => {
     const m = septModel({ recordStart: '2026-09-10', loggedDays: range('2026-09-10', TODAY), episodeDays: ['2026-09-11'] });
     const week = m.weekly.weeks[7]; // the week of Sep 6: Sep 6–9 before the record, 10–12 in it

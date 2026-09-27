@@ -190,6 +190,7 @@ export function MonthInstrument({
             recordStart: facts.recordStart,
             recordEmpty: facts.recordStart == null,
             episodeDays: facts.episodeDays,
+            continuationDays: facts.continuationDays,
             loggedDays: facts.loggedDays,
             leftSomeDays: facts.leftSomeDays,
             dosedDays: facts.dosedDays,
@@ -415,6 +416,7 @@ function GridDay({
       dayKey={day.key}
       dayOfMonth={day.dayOfMonth}
       count={day.count}
+      continuesFrom={day.continuesFrom}
       coverage={coverage}
       symptomLayer={layers.vomit}
       medication={layers.meds && day.medication}
