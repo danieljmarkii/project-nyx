@@ -193,6 +193,8 @@ describe('a tap is a fact with a time', () => {
     expect(addStyle.minHeight).toBe(44);
     expect(addStyle.marginTop).toBe(LINE_CLEARANCE);
     expect(addStyle.marginTop).toBeGreaterThanOrEqual(undo.props.hitSlop.bottom);
+    // Undo's own floor is its BOX, never its slop (HITSLOP_ACTION_SOLO's contract).
+    expect((StyleSheet.flatten(undo.props.style) as { minHeight?: number }).minHeight).toBe(44);
   });
 
   it('Add a look returns the chips, and a second tap is a SECOND entry — never an edit of the first', async () => {
@@ -429,6 +431,12 @@ describe('BRK-20 — a later look never hides an earlier concern', () => {
     expect(t.getByText('Hiding')).toBeTruthy();
     expect(t.queryByText('Played')).toBeNull();
     expect(t.getAllByTestId('look-header-withheld-reason')).toHaveLength(1);
+    // The reason sits directly under the entry it explains (the first group), never after
+    // the concern row.
+    const withheldGroup = t.getByTestId('look-header-entries').children[0] as never;
+    expect(within(withheldGroup).getByTestId('look-header-withheld')).toBeTruthy();
+    expect(within(withheldGroup).getByTestId('look-header-withheld-reason')).toBeTruthy();
+    expect(within(withheldGroup).queryByText('Hiding')).toBeNull();
   });
 
   it('earlier QUIET looks fold behind the door to History — never a feed', async () => {

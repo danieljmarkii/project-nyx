@@ -7,6 +7,8 @@ import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaShelf } from '../../hooks/useBetaShelf';
+import { lookCardLive } from '../../lib/lookCard';
+import { usePetStore } from '../../store/petStore';
 import {
   BETA_REGISTRY,
   useBetaOptIn,
@@ -116,7 +118,10 @@ function BetaFeatureCard({ feature }: { feature: BetaFeature }) {
   // Both hooks run every render (never short-circuited): the daily look's own two gates.
   const dailyLookEligible = useAllowlistFlag('daily_look');
   const dailyLookOptedIn = useBetaOptIn('daily_look');
-  const dailyLookOn = dailyLookEligible && dailyLookOptedIn;
+  // The header's own predicate, species included (the code review; C-34): a pet the look
+  // has no vocabulary for gets no header, so the hint must not promise one.
+  const activeSpecies = usePetStore((s) => s.activePet?.species);
+  const dailyLookOn = lookCardLive({ eligible: dailyLookEligible, optedIn: dailyLookOptedIn, species: activeSpecies });
 
   // Gate 1: no card for a beta the account isn't in the cohort for (belt-and-braces
   // with the eligibility-gated Settings row that pushes this screen).

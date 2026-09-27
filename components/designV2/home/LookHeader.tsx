@@ -373,7 +373,6 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
   const folded = todayLooks.length - shown.length;
   const withholds = (row: NyxEvent) =>
     withheldState === 'withheld' && entryWithholdsWords(wordsFromLocalText(row.look_words), species);
-  const firstWithheld = shown.find(withholds) ?? null;
 
   const refusalDoors = (
     <>
@@ -399,66 +398,65 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
       </ThemedText>
 
       {/* THE DAY'S ENTRIES — drawn whenever the day holds a look, asking or not, so
-          re-opening the words never takes a concern off the screen. While the withheld
-          read is in flight the entries are a skeleton: neither claim (C-12). */}
+          re-opening the words never takes a concern off the screen. */}
       {shown.length > 0 ? (
         <View testID="look-header-entries">
           {/* A concern entry never withholds, so it needs no withheld fact to be drawn:
               only an entry that COULD withhold waits on the read as a skeleton, and a read
-              that never answers never hides a concern (the adversarial pass). */}
-          <>
-              {shown.map((row) =>
-                withheldState === 'unknown' && !carriesConcern(row, species) ? (
-                  <View key={row.id} style={styles.answered} testID="look-header-skeleton">
-                    <Skeleton width="60%" height={13} />
-                  </View>
-                ) : withholds(row) ? (
-                  <LookWithheldEntry
-                    key={row.id}
-                    occurredAt={row.occurred_at}
-                    petName={petName}
-                    sex={sex}
-                    undoLive={beatLive && row.id === justWritten}
-                    dwellMs={LOOK_DWELL_MS}
-                    onUndo={() => onUndo(row.id)}
-                    onOpenRecord={() => router.push(`/event/${row.id}` as never)}
-                    testID="look-header-withheld"
-                  />
-                ) : (
-                  <AnsweredRow
-                    key={row.id}
-                    row={row}
-                    species={activePet.species}
-                    sex={sex}
-                    arrival={row.id === justWritten ? arrival : null}
-                    undoLive={beatLive && row.id === justWritten}
-                    onUndo={() => onUndo(row.id)}
-                  />
-                ),
-              )}
-              {/* THE REASON, once (BRK-19; T-20, floor item 12). A destination is not a
-                  reason, and "Saved" alone is the state the completion system exists to
-                  prevent. */}
-              {firstWithheld ? (
+              that never answers never hides a concern (the adversarial pass, C-12: an
+              entry that could withhold says neither claim while it waits). */}
+          {shown.map((row) =>
+            withheldState === 'unknown' && !carriesConcern(row, species) ? (
+              <View key={row.id} style={styles.answered} testID="look-header-skeleton">
+                <Skeleton width="60%" height={13} />
+              </View>
+            ) : withholds(row) ? (
+              <View key={row.id}>
+                <LookWithheldEntry
+                  occurredAt={row.occurred_at}
+                  petName={petName}
+                  sex={sex}
+                  undoLive={beatLive && row.id === justWritten}
+                  dwellMs={LOOK_DWELL_MS}
+                  onUndo={() => onUndo(row.id)}
+                  onOpenRecord={() => router.push(`/event/${row.id}` as never)}
+                  testID="look-header-withheld"
+                />
+                {/* THE REASON, once, directly under the entry it explains (BRK-19; T-20,
+                    floor item 12): only the newest entry can withhold, so this renders
+                    at most once and never after an unrelated concern row. A destination
+                    is not a reason, and "Saved" alone is the state the completion
+                    system exists to prevent. */}
                 <LookWithheldReasonLine
                   petName={petName}
                   sex={sex}
-                  onOpenRecord={() => router.push(`/event/${firstWithheld.id}` as never)}
+                  onOpenRecord={() => router.push(`/event/${row.id}` as never)}
                   testID="look-header-withheld-reason"
                 />
-              ) : null}
-              {folded > 0 ? (
-                <Pressable
-                  onPress={() => router.push(lookMoreTodayHref() as never)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Show ${folded} more of today's looks in history`}
-                  style={styles.line}
-                  testID="look-header-more-today"
-                >
-                  <ThemedText style={styles.control}>{lookMoreToday(folded)}</ThemedText>
-                </Pressable>
-              ) : null}
-          </>
+              </View>
+            ) : (
+              <AnsweredRow
+                key={row.id}
+                row={row}
+                species={activePet.species}
+                sex={sex}
+                arrival={row.id === justWritten ? arrival : null}
+                undoLive={beatLive && row.id === justWritten}
+                onUndo={() => onUndo(row.id)}
+              />
+            ),
+          )}
+          {folded > 0 ? (
+            <Pressable
+              onPress={() => router.push(lookMoreTodayHref() as never)}
+              accessibilityRole="button"
+              accessibilityLabel={`Show ${folded} more of today's looks in history`}
+              style={styles.line}
+              testID="look-header-more-today"
+            >
+              <ThemedText style={styles.control}>{lookMoreToday(folded)}</ThemedText>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
 
@@ -661,6 +659,9 @@ function AnsweredRow({
           <Pressable
             onPress={onUndo}
             hitSlop={HITSLOP_ACTION_SOLO}
+            // The floor is the BOX's (HITSLOP_ACTION_SOLO's contract): the slop is reach,
+            // never rescue (the code review; `SheetLogBeat`'s `undoBtn`).
+            style={styles.undoBox}
             accessibilityRole="button"
             accessibilityLabel={`Undo. ${head}`}
             testID="look-header-undo"
@@ -787,5 +788,6 @@ const styles = StyleSheet.create({
   answeredText: { fontSize: theme.textSM, color: theme.colorTextSecondary },
   answeredQuiet: { color: theme.colorTextTertiary },
   answeredHead: { fontWeight: theme.weightSemibold, color: theme.colorTextPrimary },
+  undoBox: { minHeight: 44, justifyContent: 'center' },
   control: { fontSize: theme.textXS, fontWeight: theme.weightMedium, color: theme.colorAccentInk },
 });
