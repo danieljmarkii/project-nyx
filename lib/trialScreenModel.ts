@@ -233,12 +233,27 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
   // ("Nothing is on the record for this trial yet.") over logged, refused meals. There its
   // fact lines are dropped: zero feedings means zero off-diet, so no floor is lost, and
   // saying nothing beats saying "nothing" (adversarial re-run, TS-4).
+  //
+  // EXCEPT WHERE THE CARD CAN NOW SAY WHY (CUL-1338). When those days hold feedings that
+  // name no food, every register that reached "nothing" speaks a count of them instead
+  // ("20 logged feedings don't name a food, so they can't be checked against the trial
+  // diet."), so the drop would now hide the one true line. Walked for this projection
+  // (coverage null, zero feedings, zero off-diet) register by register: the sentence and
+  // the "so far" paragraph become that disclosure alone; day 1's "Nothing logged yet
+  // today." is withheld by the card itself; the floor sentence needs an off-diet count
+  // there is none of; the free-fed count is the Pet tab's own line. No line states or
+  // implies that anything matched, so nothing reassuring reaches a pet that may not be
+  // eating. The drop stays for the residual (days logged, nothing classified, nothing
+  // unnamed), which no register can yet explain.
   const notEating = isAnimalNotEating(input);
   const running = input.trial.status === 'active';
   const projected = notEating && running;
   const card = trialScreenCard(input);
   const unclassifiedRecord =
-    projected && (input.coverage?.daysLogged ?? 0) > 0 && (input.exposures?.totalFeedings ?? 0) === 0;
+    projected &&
+    (input.coverage?.daysLogged ?? 0) > 0 &&
+    (input.exposures?.totalFeedings ?? 0) === 0 &&
+    (input.exposures?.unclassifiable ?? 0) === 0;
   const strip = resolveTrialStrip(input);
   const state = card.state;
   const decisionState = DECISION_STATES.has(state);

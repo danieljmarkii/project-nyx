@@ -690,14 +690,58 @@ describe('the coverage-null projection never reads a logged record as empty, nor
     expect(isAnimalNotEating(l.input)).toBe(true);
     expect(l.input.coverage!.daysLogged).toBe(6);
     expect(l.input.exposures!.totalFeedings).toBe(0);
-    // Non-vacuity: resolved without coverage, the card WOULD say the record is empty.
-    const projectedCard = resolveTrialCard({ ...l.input, coverage: null });
-    expect(projectedCard.lines.map((x) => x.text)).toContain('Nothing is on the record for this trial yet.');
+    // The loader carries the count the card discloses (CUL-1338).
+    expect(l.input.exposures!.unclassifiable).toBe(6);
 
+    // CUL-1338: the screen no longer drops the facts here, because the card no longer
+    // says "nothing" — it says what the record holds, and that is a limit, not a reading.
     const m = trialModel(buildTrialScreenModel(argsFor(l)));
     expect(texts(m)).not.toContain('Nothing is on the record for this trial yet.');
     expect(texts(m).some((t) => /\d+ of \d+ days/.test(t))).toBe(false);
+    expect(m.facts.filter((x) => x.role === 'fact').map((x) => x.text)).toEqual([
+      '6 logged feedings don’t name a food, so they can’t be checked against the trial diet.',
+    ]);
+    // Over a pet that may not be eating, nothing may read as a clean record.
+    expect(texts(m).some((t) => /\bmatched\b|in total/.test(t))).toBe(false);
+  });
+
+  it('the residual drop still holds where nothing is unnamed to explain the zero', async () => {
+    // A fixture the loader cannot produce today (days logged, no feeding classified, none
+    // unnamed): the drop is the defensive half and is asserted on its own.
+    const l = await load({
+      target: 56, nowDay: 20, noPrimary: true, mealDays: [],
+      noFoodMeals: [
+        ...[1, 2, 3].map((day) => ({ day, rating: 'refused' })),
+        ...[18, 19, 20].map((day) => ({ day, rating: 'all' })),
+      ],
+    });
+    const residual: Loaded = {
+      ...l,
+      input: { ...l.input, exposures: { ...l.input.exposures!, unclassifiable: 0 } },
+    };
+    // Non-vacuity: resolved without coverage, the card WOULD say the record is empty.
+    const projectedCard = resolveTrialCard({ ...residual.input, coverage: null });
+    expect(projectedCard.lines.map((x) => x.text)).toContain('Nothing is on the record for this trial yet.');
+    const m = trialModel(buildTrialScreenModel(argsFor(residual)));
+    expect(texts(m)).not.toContain('Nothing is on the record for this trial yet.');
     expect(m.facts.filter((x) => x.role === 'fact')).toEqual([]);
+  });
+
+  it('the Pet tab card over meals that name no food: the day count, then why nothing is counted (CUL-1338)', async () => {
+    // Twenty eaten meals, none naming a food (the food deleted out from under them). Driven
+    // through the real loader, so the wiring from the facts to the card is what is tested.
+    const l = await load({
+      target: 56, nowDay: 20, mealDays: [],
+      noFoodMeals: Array.from({ length: 20 }, (_, i) => ({ day: i + 1, rating: 'all' })),
+    });
+    expect(isAnimalNotEating(l.input)).toBe(false);
+    const card = resolveTrialCard(l.input);
+    const facts = card.lines.filter((x) => x.role === 'fact').map((x) => x.text);
+    expect(facts).toEqual([
+      'Meals logged on 20 of 20 days.',
+      '20 logged feedings don’t name a food, so they can’t be checked against the trial diet.',
+    ]);
+    expect(card.lines.map((x) => x.text)).not.toContain('Nothing logged against the trial yet.');
   });
 
   it('the same shape above the floor: no "Nothing logged against the trial yet."', async () => {
