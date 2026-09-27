@@ -128,6 +128,10 @@ export interface SignalScreenInput {
   /** The days a falling-pair GATE counts (`readGateLoggedDays`: the engine's comparison-gate
    *  symptoms, a meal, the finding's own sign) — never the coverage days (CUL-1216, F3). */
   gateLoggedDays: readonly string[];
+  /** The gate's read failed (C-12): its days are unknown, not none. The gates fail closed on
+   *  the empty set as before, and no compare is drawn at all — its strips and its why would
+   *  print "logged on 0 and 0" beside real episodes (adversarial pass on CUL-1212). */
+  gateUnanswered?: boolean;
   recordStart: string | null;
   /** Verdict by event id; an absent key is "no read yet". */
   verdicts: Readonly<Record<string, EpisodeVerdict | null>>;
@@ -302,6 +306,10 @@ export function safeLabel(label: string | null | undefined): string | null {
  * med-context line's precedent, B-733) is dropped, never rendered.
  */
 export function medicationLines(input: SignalScreenInput): string[] {
+  // A correlation names no window of the screen's (CUL-1218): its matched days span the
+  // engine's 180-day read, so "inside the recent 28 days" would name a window the finding
+  // never counted and miss a dose on a matched day months back. No lines, never wrong ones.
+  if (input.cached.finding.type === 'food_symptom_correlation') return [];
   const [before, during] = medicationWindowSpec(input);
   const beforeStart = indexOf(before.startDay);
   const beforeEnd = beforeStart + before.days - 1;
@@ -551,7 +559,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
   // the set its withheld line already names — never the bars' coverage ticks, where a dose
   // or a weight counts. `signalCompare` returns null where no compare is drawn at all.
   const drawable =
-    safety || trialCompares || trialTooYoungToCompare(input.trial)
+    safety || trialCompares || trialTooYoungToCompare(input.trial) || input.gateUnanswered
       ? null
       : signalCompare({ ...windows, loggedDays: input.gateLoggedDays });
   const specs = signalCompareSpec(finding, input.today, input.trial);
@@ -921,12 +929,12 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   const pet = pets.find((p) => p.id === petId) ?? null;
   const symptom = signalChartSymptomOf(cached.finding);
 
-  const [episodes, logged, gateLoggedDays, trialFacts] = await Promise.all([
+  const [episodes, logged, gateRead, trialFacts] = await Promise.all([
     symptom ? readSignalEpisodes(petId, symptom) : Promise.resolve([]),
     readLoggedDays(petId),
-    // A gate that cannot read its days has none: every falling pair is then 'thin' and
-    // withheld, never printed on the chart's wider count.
-    symptom ? readGateLoggedDays(petId, symptom).catch(() => [] as string[]) : Promise.resolve([] as string[]),
+    // A gate that cannot read its days is UNANSWERED (C-12): no compare is drawn, and the
+    // falling-pair gates see no days, so they withhold rather than print.
+    symptom ? readGateLoggedDays(petId, symptom).catch(() => null) : Promise.resolve([] as string[]),
     // The route's pet's trial facts (C-9), the strip's own loader: the trial window, the
     // not-eating register and the strip's vomiting sentence all come from this ONE read of
     // the trial row. A failed read is null: no trial window (as a failed trial read always
@@ -993,7 +1001,8 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     trial,
     episodes,
     loggedDays: logged.loggedDays,
-    gateLoggedDays,
+    gateLoggedDays: gateRead ?? [],
+    gateUnanswered: gateRead == null,
     recordStart: logged.recordStart,
     verdicts,
     doses,

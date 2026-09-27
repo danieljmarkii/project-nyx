@@ -483,6 +483,17 @@ describe('CUL-1218 — a correlation screen counts nothing its finding did not',
     expect(correlationWindowLine('Nyx')).toBe("The pattern comes from the last 180 days of Nyx's logs.");
   });
 
+  // Adversarial pass: its medication lines named "the recent 28 days", a window the finding
+  // never counted, and missed a dose on a matched day months back.
+  it('names no medication window — the screen’s windows are not the finding’s', () => {
+    const doses = [{ drugLabel: 'Cerenia', dayKey: shift(THURSDAY, -3) }];
+    const m = buildSignalScreenModel(mockInput({ cached: cachedOf(correlation), trial: null, doses }));
+    expect(m.why.some((l) => /was given/.test(l))).toBe(false);
+    // The same doses DO reach a non-correlation's why, so the absence above is the rule.
+    const other = buildSignalScreenModel(mockInput({ cached: cachedOf(postprandial()), trial: null, doses }));
+    expect(other.why.some((l) => /was given/.test(l))).toBe(true);
+  });
+
   it('the window line is a correlation’s alone', () => {
     const m = buildSignalScreenModel(mockInput({ cached: cachedOf(postprandial()), trial: null }));
     expect(m.why).not.toContain(correlationWindowLine('Nyx'));
@@ -926,6 +937,20 @@ describe('CUL-1216 — a falling pair on the screen carries its gates', () => {
     expect(m.compareWithheld).toBeNull();
     expect(m.compare?.windows.map((w) => w.count)).toEqual([8, 2]);
     expect(m.why).toContain('Two windows of 28 days, with symptoms or meals logged on 28 and 28 of them. Compared as counts, not a verdict on how Nyx is doing.');
+  });
+
+  // Adversarial pass on CUL-1212 (C-12): the strips now PRINT the gate's days, so a failed
+  // gate read is unanswered, never "logged on 0 and 0" beside real episodes — no compare.
+  it('a failed gate read draws no compare and prints no zero-logged windows line', () => {
+    // A RISING pair: no falling-pair gate withholds it, so only the flag can.
+    const rising = [-20, -3, -2, -1].map((d) => episode(shift(THURSDAY, d), 9));
+    const m = buildSignalScreenModel(benign({ episodes: rising, gateLoggedDays: [], gateUnanswered: true }));
+    expect(m.compare).toBeNull();
+    expect(m.why.join(' ')).not.toMatch(/logged on 0 and 0/);
+    // The same record with the gate unanswered-but-unflagged would print exactly that line.
+    const unflagged = buildSignalScreenModel(benign({ episodes: rising, gateLoggedDays: [] }));
+    expect(unflagged.compare).not.toBeNull();
+    expect(unflagged.why.join(' ')).toMatch(/logged on 0 and 0/);
   });
 
   // CUL-1212: the compare's strips answer the comparison-gate question, not coverage. A record

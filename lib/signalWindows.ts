@@ -61,7 +61,8 @@ export const DEFAULT_WINDOW_DAYS = 56;
  * The window a `food_symptom_correlation` counted over: the engine reads every event of the
  * last 180 days (`LOOKBACK_DAYS`, `supabase/functions/generate-signal/index.ts`) and the
  * payload carries no window of its own. MIRRORED — same value, same question ("which days
- * could the matched pairs have come from") — so the title names it (CUL-1218, C-34). If the
+ * could the matched pairs have come from") — so the screen's *Why* names it (CUL-1218, C-34;
+ * the title stays count-free, as every title's number must be the sentence's). If the
  * engine's fetch changes, this changes with it.
  */
 export const CORRELATION_LOOKBACK_DAYS = 180;
