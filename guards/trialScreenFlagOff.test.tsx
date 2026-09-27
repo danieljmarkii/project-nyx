@@ -32,6 +32,8 @@
 // registered the Pet tab (`app/(tabs)/profile.tsx`) and the Day Summary (a sender, so also
 // a decider); TS-5 (CUL-1301) registered Home, for the strip as the door. That is every
 // surface spec §7 names; a later sender registers the same way, in the PR that adds it.
+// TS-8 (CUL-1304) registered Get ready, `app/rundown.tsx`, whose trial row grows into the
+// recheck questions behind the gate.
 // The route/decider rule below is what forces each registration: a route under `app/`
 // that reads the gate and is not a listed surface reds. STATED BLIND SPOT: a consumer
 // under `components/` (Home's strip at TS-5 is one) is held to the delegation rule and the
@@ -420,10 +422,30 @@ const SURFACES: ReadonlyArray<Surface> = [
     arrange: () => arrangeOthers([]),
     mustContain: '"Diet trial · day 23 of 56"',
   },
+  {
+    // Get ready (TS-8, CUL-1304). Its trial row draws the recheck through
+    // `components/trialScreen/RecheckQuestions`, and only after the page's load answers.
+    // WHAT THIS ENTRY PROVES, NARROWLY: this file's router mock hands every surface
+    // `{ pet }` and no `appointmentId`, so `app/rundown.tsx` mounts in its PLAIN rundown mode
+    // here, and the comparison is its first frame: that the route's module graph draws no
+    // namespace node synchronously, whatever mode it is in. It does not render Get-ready
+    // mode. The async half (flag-off, over a running trial
+    // that would answer, no recheck node and the strip's row unchanged) is proven in
+    // `app/rundown.getready.test.tsx`.
+    name: 'Get ready',
+    rel: 'app/rundown.tsx',
+    load: () => require('../app/rundown').default,
+    // No pets, so the header is the page's own: an earlier surface leaves one in the store.
+    arrange: () => {
+      arrangeOthers([]);
+      usePetStore.setState({ pets: [], activePet: null });
+    },
+    mustContain: '"Visit rundown"',
+  },
 ];
 
 /** The surfaces this PR registers, in order — pinned so a new one edits this line. */
-const PINNED_SURFACES = ['the trial screen route', 'the Pet tab', 'the Day Summary', 'Home'];
+const PINNED_SURFACES = ['the trial screen route', 'the Pet tab', 'the Day Summary', 'Home', 'Get ready'];
 
 /** Arrange the OTHER betas through the real stores; `trial_screen` stays unset. */
 function arrangeOthers(keys: readonly AllowlistFlagKey[]): void {
@@ -655,7 +677,7 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('the trial screen has one gate, and its consumers stay inside the namespace', () => {
-  it('the consumers of the gate are pinned: the route, the Pet tab, the Day Summary and Home strip', () => {
+  it('the consumers of the gate are pinned: the route, the Pet tab, the Day Summary, Home strip and Get ready', () => {
     // PINNED, not floored: a new consumer is a new surface, and it joins this list —
     // with its SURFACES entry and its async flag-off proof — in the diff that adds it.
     // TS-5: the strip is a consumer under `components/`, so its HOST (Home) joined
@@ -663,6 +685,7 @@ describe('the trial screen has one gate, and its consumers stay inside the names
     expect(gateConsumers()).toEqual([
       'app/(tabs)/profile.tsx',
       'app/day-summary.tsx',
+      'app/rundown.tsx',
       'app/trial/[pet].tsx',
       'components/home/TrialStrip.tsx',
     ]);

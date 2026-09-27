@@ -21,6 +21,8 @@ import {
   selectDescription,
   buildAnalysisWriteBack,
   STRUCTURED_FIELD_KEYS,
+  RED_FLAG_COLUMNS,
+  presentFlagsFromStructured,
   detectImageMediaType,
   bytesToBase64,
   resolveGateState,
@@ -30,6 +32,7 @@ import {
   type StoolAnalysis,
   type FunctionCaps,
 } from './index.ts'
+import { deriveIncidentFlags } from '../generate-signal/detection.ts'
 
 // ── Cap + flag gate (T2-3) ────────────────────────────────────────────────────
 // analyze-stool free caps mirror vomit: daily 10 / monthly 200, identical across
@@ -715,4 +718,54 @@ Deno.test('buildAnalysisWriteBack — un-edited row with a failed vision call st
   assertStrictEquals(wb.values.stool_consistency, null)
   assertStrictEquals(wb.values.stool_blood_present, null)
   assertStrictEquals(wb.values.recommendation, 'not_enough_to_say')
+})
+
+// ── presentFlagsFromStructured — the stored red flags a re-read may not take off (CUL-532, CUL-1201) ──
+
+Deno.test('presentFlagsFromStructured (stool) — the same answer as generate-signal\'s deriveIncidentFlags, both stool types, every value', () => {
+  // C-34: a mirrored rule must answer the same question. Home derives the red-flag card from
+  // these columns; the re-read guard must see exactly the flags Home would show.
+  const tristates = ['yes', 'no', 'unsure', null, 'not_an_enum_value']
+  let checked = 0
+  for (const incidentType of ['stool_normal', 'diarrhea']) {
+    for (const blood of tristates) {
+      for (const foreign of tristates) {
+        const ours = presentFlagsFromStructured({ stool_blood_present: blood, foreign_material_present: foreign })
+        const home = deriveIncidentFlags({
+          eventId: 'evt',
+          incidentType,
+          occurredAt: '2026-09-01T12:00:00Z',
+          bloodPresent: 'fresh_red', // vomit's column: must never count for a stool row
+          stoolBloodPresent: blood,
+          foreignMaterialPresent: foreign,
+        })
+        assertEquals(ours, home, `${incidentType} blood=${blood} foreign=${foreign}`)
+        checked++
+      }
+    }
+  }
+  assertStrictEquals(checked, 50)
+})
+
+Deno.test('presentFlagsFromStructured (stool) — reads ONLY the columns step 3b selects (RED_FLAG_COLUMNS)', () => {
+  assertEquals(presentFlagsFromStructured({ stool_blood_present: 'yes', foreign_material_present: 'yes' }), ['blood', 'foreign_material'])
+  const decoy: Record<string, unknown> = { blood_present: 'fresh_red' }
+  for (const key of STRUCTURED_FIELD_KEYS) {
+    if (!(RED_FLAG_COLUMNS as readonly string[]).includes(key)) decoy[key] = 'yes'
+  }
+  assertEquals(presentFlagsFromStructured(decoy), [])
+})
+
+Deno.test('presentFlagsFromStructured (stool) — the payload\'s blood_present maps to stool_blood_present, then to the flag', () => {
+  // The seam (B-364): the model's field is `blood_present`, the column is
+  // `stool_blood_present`. Reading the payload's own key would drop a stored bleed.
+  const wb = buildAnalysisWriteBack({
+    humanEdited: false,
+    eventId: 'evt',
+    petId: 'pet',
+    incidentType: 'diarrhea',
+    analysis: { ...sampleAnalysis, blood_present: 'yes', blood_type: 'fresh_red' },
+    readFields: freshReadFields,
+  })
+  assertEquals(presentFlagsFromStructured(wb.values), ['blood'])
 })

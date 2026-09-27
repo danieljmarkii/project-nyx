@@ -24,6 +24,7 @@ import type { CachedFinding, IntakeDeclineFinding, SignalFinding } from './signa
 import type { Rundown, RundownTile } from './rundown';
 import type { MedicationCourse, MedicationCourseEnd } from './medicationHistory';
 import type { TrialStripModel } from './dietTrialCard';
+import type { TrialScreenTrial } from './trialScreenModel';
 
 // "Worth raising" — the quoting rules, the cap, and the two never-say invariants
 // (CUL-903 VV-5; spec §7 AC 5).
@@ -219,6 +220,8 @@ function input(over: Partial<WorthRaisingInput> = {}): WorthRaisingInput {
     findings: [],
     suppressTrialResponse: false,
     trialStrip: null,
+    trialScreen: null,
+    trialResponseCounts: null,
     intakeDecline: [],
     rundown: rundown(),
     nowMs: NOW,
@@ -1333,5 +1336,216 @@ describe('CUL-950 — the premise the blind spot above rests on', () => {
     for (const suppress of [true, false]) {
       expect(visibleFindings(findings, suppress, DETECT_NOW)).toEqual(findings);
     }
+  });
+});
+
+// ── TS-8 (CUL-1304): the trial row grown into the recheck ──────────────────────────
+//
+// Where the grown row goes, what it displaces and what stays byte-identical flag-off. The
+// ANSWERS are held to the trial screen in `trialRecheck.test.ts`, over the real loaders;
+// this block is about placement, so the screen model here is a hand fixture in the shape
+// `buildTrialScreenModel` returns for a running trial.
+
+function screenTrial(over: Partial<TrialScreenTrial> = {}): TrialScreenTrial {
+  return {
+    kind: 'trial',
+    state: 'clean',
+    petName: 'Mochi',
+    title: 'Rabbit trial · day 23 of 56',
+    subline: 'Royal Canin Rabbit · since Jul 3 · ends Aug 27',
+    safety: null,
+    forTheCall: null,
+    headline: null,
+    decision: null,
+    allowedFoods: null,
+    ledger: null,
+    facts: [
+      { role: 'fact', text: 'Meals logged on 21 of 23 days.' },
+      { role: 'fact', text: '22 feedings in total, all the trial diet.' },
+    ],
+    vomiting: "Vomiting: 3 in the trial's 23 days · 11 in the 49 days before, a longer stretch.",
+    qualifier: null,
+    standingMeta: null,
+    standingNote: null,
+    exposures: null,
+    getReady: null,
+    report: null,
+    actions: [],
+    manage: null,
+    ...over,
+  };
+}
+
+const RUNNING_STRIP: TrialStripModel = {
+  header: 'Rabbit trial · day 23 of 56',
+  line: 'Royal Canin Rabbit · ends Aug 27 · meals logged on 21 of 23 days',
+  progressFraction: 0.41,
+  trialResponseLine: null,
+};
+
+describe('TS-8 — the trial row asks the recheck questions (behind trial_screen)', () => {
+  it('flag-off (trialScreen null) the trial row is today’s, from the strip, with no recheck', () => {
+    const { rows } = buildWorthRaising(input({ trialStrip: RUNNING_STRIP, trialScreen: null }));
+    expect(rows[0]).toEqual({
+      id: 'trial',
+      text: RUNNING_STRIP.header,
+      detail: RUNNING_STRIP.line,
+      source: 'trial',
+      sourceLabel: 'from the trial',
+      isSafety: false,
+    });
+    expect('recheck' in rows[0]).toBe(false);
+  });
+
+  it('flag-on the trial row carries the questions, under the screen’s title and sub-line', () => {
+    const { rows } = buildWorthRaising(input({ trialStrip: RUNNING_STRIP, trialScreen: screenTrial() }));
+    const trial = rows.find((r) => r.id === 'trial')!;
+    expect(trial.text).toBe('Rabbit trial · day 23 of 56');
+    expect(trial.detail).toBe('Royal Canin Rabbit · since Jul 3 · ends Aug 27');
+    expect(trial.recheck!.questions.map((q) => q.key)).toEqual(['by_mouth', 'symptoms', 'weight']);
+    expect(trial.isSafety).toBe(false);
+    // It is still one row against the cap, in the trial's slot (first of the optional rows).
+    expect(rows[0]).toBe(trial);
+  });
+
+  it('the weight row folds into the trial row’s *Weight?* — the page says the weight once (D2)', () => {
+    const lastVisitAt = new Date(NOW - 30 * DAY).toISOString().slice(0, 10);
+    const stale = rundown({ facts: { courses: [], medItemNames: NAMES, lastVisitAt, weighIns: [weighIn(60)] } });
+    // Non-vacuity: flag-off, the same record raises the weight row.
+    const off = buildWorthRaising(input({ rundown: stale, trialStrip: RUNNING_STRIP }));
+    const offWeight = off.rows.find((r) => r.source === 'weight')!;
+    expect(offWeight.text).toContain('before the last visit');
+
+    const on = buildWorthRaising(input({ rundown: stale, trialStrip: RUNNING_STRIP, trialScreen: screenTrial() }));
+    expect(on.rows.filter((r) => r.source === 'weight')).toEqual([]);
+    const weightQ = on.rows[0].recheck!.questions.find((q) => q.key === 'weight')!;
+    expect(weightQ.answers.map((a) => a.text)).toEqual([offWeight.text, offWeight.detail]);
+  });
+
+  it('the weight row stays when there is no running trial to fold into', () => {
+    const lastVisitAt = new Date(NOW - 30 * DAY).toISOString().slice(0, 10);
+    const stale = rundown({ facts: { courses: [], medItemNames: NAMES, lastVisitAt, weighIns: [weighIn(60)] } });
+    const ended = screenTrial({ state: 'completed' });
+    const { rows } = buildWorthRaising(input({ rundown: stale, trialStrip: null, trialScreen: ended }));
+    expect(rows.map((r) => r.source)).toEqual(['weight']);
+  });
+
+  it('a refusing trial leads as a safety row, above the cap and after the clinical lane (Principle 3)', () => {
+    const refusal = screenTrial({
+      state: 'trial_refusal',
+      safety: [
+        '4 feedings of the 5 trial-diet feedings you’ve rated were left unfinished, across 2 days.',
+        'A diet Mochi isn’t eating can’t answer the question the trial was started for.',
+      ],
+      facts: [],
+      vomiting: null,
+    });
+    const benign = [1, 2, 3, 4, 5].map((i) => finding({ text: `Benign finding ${i}.`, rank: i }));
+    const signalSafety = finding({ text: 'Mochi has eaten less than usual.', rank: 0, finding: SAFETY });
+    const { rows } = buildWorthRaising(
+      input({ findings: [signalSafety, ...benign], trialStrip: RUNNING_STRIP, trialScreen: refusal }),
+    );
+    expect(rows[0].text).toBe('Mochi has eaten less than usual.');
+    expect(rows[1].id).toBe('trial');
+    expect(rows[1].isSafety).toBe(true);
+    // The cap still governs the optional rows below: four benign findings, none displaced
+    // by the trial, which now sits above the cap.
+    expect(rows.slice(2).map((r) => r.text)).toEqual(benign.slice(0, WORTH_RAISING_CAP).map((f) => f.text));
+  });
+
+  it('the device’s decline headline is not repeated inside the trial row', () => {
+    const headline = 'Mochi has eaten less than usual for 1 day.';
+    const decline = screenTrial({
+      state: 'intake_decline',
+      safety: [headline, 'A cat that stops eating needs a call today, whatever the trial is doing.'],
+      facts: [],
+      vomiting: null,
+    });
+    const { rows } = buildWorthRaising(
+      input({
+        trialStrip: RUNNING_STRIP,
+        trialScreen: decline,
+        intakeDecline: [{ trigger: 'consecutive_low', refusedFoodLabel: null, headline }],
+      }),
+    );
+    expect(rows[0].text).toBe(headline);
+    const eating = rows[1].recheck!.questions.find((q) => q.key === 'eating')!;
+    expect(eating.answers.map((a) => a.text)).toEqual([
+      'A cat that stops eating needs a call today, whatever the trial is doing.',
+    ]);
+    // The headline appears once on the list.
+    const all = rows.flatMap((r) => [r.text, ...(r.recheck?.questions.flatMap((q) => q.answers.map((a) => a.text)) ?? [])]);
+    expect(all.filter((t) => t === headline)).toHaveLength(1);
+  });
+});
+
+describe('TS-8 — one vomiting comparison per page, only when they are one (adversarial passes: G6, S7)', () => {
+  const DEVICE = {
+    trialDayNumber: 37,
+    trialCount: 1,
+    baselineCount: 18,
+    trialLoggedDays: 30,
+    baselineLoggedDays: 40,
+    baselineWindowDays: 70,
+    densityComparable: true,
+    trialLastEpisodeDayIndex: null,
+  };
+  function signalTrial(day: number, trialCount: number, baselineCount: number, rank = 1) {
+    return finding({
+      text: `Vomiting: ${trialCount} in the trial’s ${day} days · ${baselineCount} in the 70 days before.`,
+      rank,
+      finding: {
+        type: 'trial_response',
+        priorityClass: 'insight',
+        trialDayNumber: day,
+        pooledTrialCount: trialCount,
+        pooledBaselineCount: baselineCount,
+      } as unknown as SignalFinding,
+    });
+  }
+  const symptomsAsked = (rows: ReturnType<typeof buildWorthRaising>['rows']) =>
+    rows.find((r) => r.recheck)!.recheck!.questions.map((q) => q.key).includes('symptoms');
+
+  it('the same snapshot prints once: the recheck’s question goes, the Signal’s row stays', () => {
+    const same = signalTrial(37, 1, 18);
+    // Non-vacuity: without the Signal row, the recheck asks it.
+    const alone = buildWorthRaising(
+      input({ trialStrip: RUNNING_STRIP, trialScreen: screenTrial(), trialResponseCounts: DEVICE }),
+    );
+    expect(symptomsAsked(alone.rows)).toBe(true);
+
+    const { rows } = buildWorthRaising(
+      input({ findings: [same], trialStrip: RUNNING_STRIP, trialScreen: screenTrial(), trialResponseCounts: DEVICE }),
+    );
+    expect(symptomsAsked(rows)).toBe(false);
+    expect(rows.map((r) => r.text)).toContain(same.text);
+  });
+
+  it('a stale cache that says less keeps the device’s fresh rise on the page (the re-run’s break)', () => {
+    // Cache from day 30 says 2; the device on day 33 knows 14.
+    const stale = signalTrial(30, 2, 10);
+    const device = { ...DEVICE, trialDayNumber: 33, trialCount: 14, baselineCount: 10 };
+    const { rows } = buildWorthRaising(
+      input({ findings: [stale], trialStrip: RUNNING_STRIP, trialScreen: screenTrial(), trialResponseCounts: device }),
+    );
+    expect(symptomsAsked(rows)).toBe(true);
+    expect(rows.map((r) => r.text)).toContain(stale.text);
+  });
+
+  it('no device counts is never "the same"', () => {
+    const { rows } = buildWorthRaising(
+      input({ findings: [signalTrial(37, 1, 18)], trialStrip: RUNNING_STRIP, trialScreen: screenTrial() }),
+    );
+    expect(symptomsAsked(rows)).toBe(true);
+  });
+
+  it('keeps the strip’s sentence when the Signal’s row is capped away', () => {
+    const benign = [2, 3, 4, 5].map((i) => finding({ text: `Benign finding ${i}.`, rank: i }));
+    const capped = signalTrial(37, 1, 18, 9);
+    const { rows } = buildWorthRaising(
+      input({ findings: [...benign, capped], trialStrip: RUNNING_STRIP, trialScreen: screenTrial(), trialResponseCounts: DEVICE }),
+    );
+    expect(rows.map((r) => r.text)).not.toContain(capped.text);
+    expect(symptomsAsked(rows)).toBe(true);
   });
 });

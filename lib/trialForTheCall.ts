@@ -44,6 +44,12 @@ export interface ForTheCall {
    *  Not `lines`: that name is the card model's, and `guards/dietTrialProvenance.test.ts`
    *  counts every reader of it. */
   facts: string[];
+  /**
+   * The T-4 vomiting fact on its own, the same string `facts` carries, or null. Exposed so a
+   * surface that quotes the block by QUESTION (Get ready's recheck, TS-8) routes it by field,
+   * never by matching the text of `facts`.
+   */
+  vomiting: string | null;
   /** The one line of new copy, after the facts. Null when the app could not name the diet. */
   swap: string | null;
 }
@@ -89,7 +95,12 @@ export function buildForTheCall(
   const vomiting = vomitingLine(input);
   if (vomiting) facts.push(vomiting);
 
-  return { heading: FOR_THE_CALL_HEADING, facts, swap: named ? forTheCallSwapLine(input.petName) : null };
+  return {
+    heading: FOR_THE_CALL_HEADING,
+    facts,
+    vomiting,
+    swap: named ? forTheCallSwapLine(input.petName) : null,
+  };
 }
 
 /**
