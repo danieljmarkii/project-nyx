@@ -15,6 +15,8 @@ import type { Rundown, RundownTile } from './rundown';
 import type { TrialCardInput, TrialStripModel } from './dietTrialCard';
 import type { MedicationCourse } from './medicationHistory';
 import type { MedItemName } from './rundown';
+import type { TrialScreenModel } from './trialScreenModel';
+import { buildTrialRecheck, type TrialRecheck } from './trialRecheck';
 
 // "Worth raising" — the Get-ready block (CUL-903 VV-5; spec §4.1 B1, §7 AC 5, mock B1).
 //
@@ -80,6 +82,12 @@ export interface WorthRaisingRow {
   sourceLabel: string;
   /** True for a Signal finding whose own priority class is safety. Never capped away. */
   isSafety: boolean;
+  /**
+   * The trial row grown into the vet's recheck questions (TS-8), on the trial row only
+   * and only while the `trial_screen` gate is live. Absent on every other row, and on
+   * the trial row flag-off, which keeps today's header + line.
+   */
+  recheck?: TrialRecheck;
 }
 
 export interface WorthRaising {
@@ -122,6 +130,13 @@ export interface WorthRaisingInput {
   suppressTrialResponse: boolean;
   /** `resolveTrialStrip`'s model for this pet, or null when no trial is running. */
   trialStrip: TrialStripModel | null;
+  /**
+   * The trial screen's own model for this pet (`buildTrialScreenModel`) when the
+   * `trial_screen` gate is live, else null — and null is today's trial row, byte for
+   * byte. REQUIRED, never defaulted (C-37): on a refusing cat this is what carries the
+   * refusal onto the page, and a default would drop it by writing nothing.
+   */
+  trialScreen: TrialScreenModel | null;
   /**
    * The DEVICE-LOCAL intake declines (`localIntakeDeclines`), every flag the device
    * holds, empty when it holds none. Separate from `trialStrip` because
@@ -186,6 +201,20 @@ export const INTAKE_TRIGGER_ORDER: Readonly<Record<IntakeDeclineTrigger, number>
 
 export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
   const signal = buildSignalRows(input);
+  const weight = weightRow(input.rundown);
+  // TS-8: with the gate live, the trial row is the screen's model under the vet's
+  // questions, and the weight row folds into its *Weight?* (PM ruling D2) so the page
+  // says the weight once. Null flag-off, or with no running trial on the screen's read:
+  // the row below is then today's, from the strip.
+  const recheck = input.trialScreen
+    ? buildTrialRecheck({
+        screen: input.trialScreen,
+        rundown: input.rundown,
+        weight: weight && weight.id === 'weight-stale' ? { text: weight.text, detail: weight.detail } : null,
+        statedDeclines: input.intakeDecline.map((d) => d.headline),
+      })
+    : null;
+  const trial = recheck ? recheckRow(recheck) : trialRow(input.trialStrip);
   // The trial leads the optional rows, the Signal's insight findings follow, and the
   // course and the weight gap come last.
   //
@@ -209,7 +238,7 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
   // The ORDER is what fixes the displacement — the two weakest rows yield, not the
   // Signal's band.
   const optional = [
-    trialRow(input.trialStrip),
+    trial && !trial.isSafety ? trial : null,
     ...signal.filter((s) => !s.row.isSafety).map((s) => s.row),
     courseRow(
       input.rundown.facts.courses,
@@ -220,7 +249,7 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
       // disagree with the rows printed under it about which courses exist.
       input.rundown.generatedAtMs,
     ),
-    weightRow(input.rundown),
+    recheck ? null : weight,
   ].filter((r): r is WorthRaisingRow => r !== null);
 
   // THE PARTITION IS THE SAFETY RULE. Every safety row leads and sits ABOVE the cap;
@@ -234,6 +263,10 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
     signal.filter((s) => s.row.isSafety),
     input.intakeDecline,
   );
+  // A trial row carrying a safety register (a refusal, or the ask under a decline) joins
+  // the band, after the clinical lane's rows: the trial's own register is ordered below
+  // `detectIntakeDecline` everywhere both fire (`dietTrialCard`, `stateFor`).
+  if (trial?.isSafety) safety.push(trial);
   return {
     rows: [...safety, ...optional.slice(0, WORTH_RAISING_CAP)],
     signalUnavailable: input.findings === null,
@@ -475,6 +508,24 @@ function trialRow(strip: TrialStripModel | null): WorthRaisingRow | null {
     source: 'trial',
     sourceLabel: 'from the trial',
     isSafety: false,
+  };
+}
+
+/**
+ * The running trial under the vet's recheck questions (TS-8). Every string in it is quoted
+ * (`buildTrialRecheck`); `text` / `detail` carry the header and sub-line so a reader of
+ * the row that does not know `recheck` (the plain-text accessibility label) still says
+ * which trial it is.
+ */
+function recheckRow(recheck: TrialRecheck): WorthRaisingRow {
+  return {
+    id: 'trial',
+    text: recheck.title,
+    detail: recheck.subline,
+    source: 'trial',
+    sourceLabel: 'from the trial',
+    isSafety: recheck.isSafety,
+    recheck,
   };
 }
 

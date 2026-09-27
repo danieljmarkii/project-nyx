@@ -18,6 +18,11 @@ import { buildRundown, rundownToPlainText, type Rundown, type RundownTap } from 
 import { rundownHistoryHref } from '../lib/historyDoors';
 import { useHistoryV2 } from '../hooks/useHistoryV2';
 import { buildWorthRaising, localIntakeDeclines, type WorthRaising } from '../lib/getReady';
+import { buildTrialScreenModel } from '../lib/trialScreenModel';
+import { UNKNOWN_ALLOWED_SET } from '../lib/trialAllowedSet';
+import { NO_LEDGER_FACTS } from '../lib/trialRecheck';
+import { useTrialScreen } from '../hooks/useTrialScreen';
+import { RecheckQuestions } from '../components/trialScreen/RecheckQuestions';
 import { loadDietTrialFacts } from '../lib/dietTrialFacts';
 import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
 import { readSignalCache } from '../lib/signal';
@@ -64,8 +69,14 @@ import { profileFocusHref } from '../lib/profileFocus';
 // In Get-ready mode every read is scoped to `appointment.pet_id`, never to
 // `activePet` (CUL-574 / AC 11), including the trial facts — which is why this
 // screen calls `loadDietTrialFacts` itself. (Written when `useDietTrial` read only the
-// active pet; since CUL-1297 it takes a pet, so moving this read onto the hook is open
-// to TS-8, which owns Get ready's trial row.)
+// active pet; since CUL-1297 it takes a pet. TS-8 kept the direct read: the load below is
+// one awaited pass with a staleness id, and a hook would split it across renders.)
+//
+// ── THE RECHECK (TS-8 · CUL-1304) ────────────────────────────────────────────────
+// Behind `trial_screen`, the trial row grows into the vet's recheck questions, answered
+// from the trial screen's own model (`buildTrialScreenModel`, fed the same loader output
+// the screen reads) and drawn by `components/trialScreen/RecheckQuestions`. Flag-off the
+// model is never built and the row is today's; no read is added either way.
 
 type Status = 'loading' | 'ready' | 'error';
 
@@ -133,6 +144,7 @@ export default function RundownScreen() {
   // Whose record `rundown` is: the appointment's pet in Get ready, else the active pet.
   const [rundownPetId, setRundownPetId] = useState<string | null>(null);
   const historyV2 = useHistoryV2();
+  const trialScreen = useTrialScreen();
   const [getReady, setGetReady] = useState<GetReadyState | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -188,7 +200,7 @@ export default function RundownScreen() {
       // slow load for pet A could commit A's appointment and A's name over a render
       // already showing B. `buildForAppointment` bails out on a stale id, so the rows
       // were safe; the appointment and the pet NAME were not.
-      const worthRaising = await buildForAppointment(built, subjectId, myId, loadIdRef);
+      const worthRaising = await buildForAppointment(built, subjectId, myId, loadIdRef, trialScreen);
       if (loadIdRef.current !== myId) return;
       setGetReady({
         appointment,
@@ -204,7 +216,7 @@ export default function RundownScreen() {
       setStatus('error');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- petId is the intended trigger; the subject is read fresh inside
-  }, [petId, wantsGetReady, appointmentId]);
+  }, [petId, wantsGetReady, appointmentId, trialScreen]);
 
   // ON FOCUS, not on mount (CUL-952). `load`'s deps are `[petId, wantsGetReady,
   // appointmentId]`, and none of them change when a screen pushed FROM here pops —
@@ -330,6 +342,9 @@ export default function RundownScreen() {
                   questions={getReady.questions}
                   petName={getReady.petName}
                   onAdd={() => setSheetOpen(true)}
+                  renderRecheck={
+                    trialScreen ? (recheck) => <RecheckQuestions recheck={recheck} /> : undefined
+                  }
                   onRemove={(id) =>
                     writeQuestions(getReady.questions.filter((q) => q.id !== id)).catch(() => {})
                   }
@@ -438,6 +453,7 @@ async function buildForAppointment(
   subjectId: string,
   myId: number,
   loadIdRef: { current: number },
+  trialScreenLive: boolean,
 ): Promise<WorthRaising> {
   // ONE snapshot, read once. Two `getState()` calls here were not a race — both are
   // synchronous with no await between them — but a reader has to prove that each time.
@@ -475,6 +491,26 @@ async function buildForAppointment(
     return { rows: [], signalUnavailable: false };
   }
 
+  // TS-8: the screen's model over the SAME input this page already read, for the same pet.
+  // An unloadable trial is the screen's own `unreadable` state, which the recheck renders
+  // nothing for, and the row falls back to the strip's, which is null too: no row.
+  const trialScreen =
+    trialScreenLive && pet
+      ? buildTrialScreenModel({
+          petId: pet.id,
+          pet: { id: pet.id, name: pet.name },
+          petsLoaded: true,
+          petName: resolveRecordPetName(pets, pet.id),
+          isActivePet: usePetStore.getState().activePet?.id === pet.id,
+          trial: trialInput
+            ? { status: 'loaded', input: trialInput, inputIsForPet: true }
+            : { status: 'unreadable', input: null, inputIsForPet: false },
+          facts: NO_LEDGER_FACTS,
+          allowedSet: UNKNOWN_ALLOWED_SET,
+          appointment: null,
+        })
+      : null;
+
   return buildWorthRaising({
     findings,
     // The same fail-closed rule Home applies (B-789): absence of a refusal fact
@@ -482,6 +518,7 @@ async function buildForAppointment(
     // suppresses the reassuring trial_response row rather than letting it through.
     suppressTrialResponse: trialInput ? isAnimalNotEating(trialInput) : true,
     trialStrip: trialInput ? resolveTrialStrip(trialInput) : null,
+    trialScreen,
     // REQUIRED on the input type, never defaulted. `resolveTrialStrip` discards the
     // device's declines because on Home the Signal card above the strip owns the
     // statement — and Get ready has no Signal card above it, so passing only the strip

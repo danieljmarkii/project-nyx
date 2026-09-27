@@ -28,8 +28,10 @@
 //
 // TS-0 shipped the list ASSERTED empty, naming TS-4, so the first consumer red this file
 // until it registered itself (a rule added after the first caller is a rule added after
-// the bug). TS-4 (CUL-1300) registered the route, `app/trial/[pet].tsx`. Spec §7 names
-// the three still to come, each in the PR that makes it a consumer:
+// the bug). TS-4 (CUL-1300) registered the route, `app/trial/[pet].tsx`; TS-8 (CUL-1304)
+// registered Get ready, `app/rundown.tsx`, whose trial row grows into the recheck questions
+// behind the gate. Spec §7 names the three still to come, each in the PR that makes it a
+// consumer:
 //   • Home, for the strip as the door — TS-5 (CUL-1301)
 //   • the Pet tab, `app/(tabs)/profile.tsx` — TS-6 (CUL-1302)
 //   • the Day Summary, a sender — TS-6 (CUL-1302)
@@ -256,10 +258,23 @@ const SURFACES: ReadonlyArray<Surface> = [
     arrange: () => arrangeOthers([]),
     mustContain: '"Nothing to show here"',
   },
+  {
+    // Get ready (TS-8, CUL-1304). Its trial row draws the recheck through
+    // `components/trialScreen/RecheckQuestions`, and only after the page's load answers,
+    // so the first frame here is the page's own loading or error state: this entry checks
+    // what the gate can leak synchronously. The async half (flag-off, over a running trial
+    // that would answer, no recheck node and the strip's row unchanged) is proven in
+    // `app/rundown.getready.test.tsx`.
+    name: 'Get ready',
+    rel: 'app/rundown.tsx',
+    load: () => require('../app/rundown').default,
+    arrange: () => arrangeOthers([]),
+    mustContain: '"Visit rundown"',
+  },
 ];
 
 /** The surfaces this PR registers, in order — pinned so a new one edits this line. */
-const PINNED_SURFACES = ['the trial screen route'];
+const PINNED_SURFACES = ['the trial screen route', 'Get ready'];
 
 /** Arrange the OTHER betas through the real stores; `trial_screen` stays unset. */
 function arrangeOthers(keys: readonly AllowlistFlagKey[]): void {
@@ -483,10 +498,10 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('the trial screen has one gate, and its consumers stay inside the namespace', () => {
-  it('the consumers of the gate are pinned: the route alone, until TS-5 and TS-6', () => {
+  it('the consumers of the gate are pinned: the route and Get ready, until TS-5 and TS-6', () => {
     // PINNED, not floored: a new consumer is a new surface, and it joins this list —
     // with its SURFACES entry and its async flag-off proof — in the diff that adds it.
-    expect(gateConsumers()).toEqual(['app/trial/[pet].tsx']);
+    expect(gateConsumers()).toEqual(['app/rundown.tsx', 'app/trial/[pet].tsx']);
   });
 
   it('the key is read directly in exactly one file — the hook — for both gates', () => {

@@ -55,6 +55,9 @@ const RENDER_PATH = [
   'components/vetvisits/WorthRaisingList.tsx',
   'components/vetvisits/GetReadyHeader.tsx',
   'components/vetvisits/AddQuestionSheet.tsx',
+  // TS-8: the recheck's question copy and its drawing.
+  'lib/trialRecheck.ts',
+  'components/trialScreen/RecheckQuestions.tsx',
 ];
 
 /**
@@ -102,6 +105,14 @@ const UNSCREENED: Record<string, string> = {
     'a pet that has stopped eating, in the state (no network) where it is the only ' +
     'safety fact the page has at all. Its copy is composed in `lib/dietTrialFacts.ts` ' +
     'and rendered unscreened on Home, where the same words already reach the owner.',
+  recheckRow:
+    'QUOTED, not composed (TS-8, CUL-1304): the header and sub-line are the trial ' +
+    'screen’s, and every answer is a line `buildTrialScreenModel` or the rundown ' +
+    'renders unscreened elsewhere (`trialRecheck.test.ts` holds them equal). It can ' +
+    'also be a SAFETY row (a trial refusal, the call-today ask), so `screen`, which ' +
+    'DROPS on a trip, is the one thing it may never pass through. The five question ' +
+    'headings are the only copy written for it, in `lib/trialRecheck.ts`, which is on ' +
+    'the render path below and so held to the no-preference-vocabulary scan.',
   weightRow:
     'QUOTED, not composed: the rundown’s own weight tile, rendered verbatim in the ' +
     'block directly below this section. Its other half is a DATE and the order of two ' +
@@ -227,7 +238,7 @@ describe('AC 5 — no row turns a decline into a taste', () => {
     expect(Object.keys(UNSCREENED).filter((fn) => !builders.has(fn))).toEqual([]);
   });
 
-  it('the unscreened set is exactly the four QUOTED rows', () => {
+  it('the unscreened set is exactly the five QUOTED rows', () => {
     // Stated as an equality rather than a subset: widening this set is a decision about
     // what the app may say about a decline, and it should have to be written into a diff.
     //
@@ -238,6 +249,7 @@ describe('AC 5 — no row turns a decline into a taste', () => {
     expect(Object.keys(UNSCREENED).sort()).toEqual([
       'buildSignalRows',
       'intakeRow',
+      'recheckRow',
       'trialRow',
       'weightRow',
     ]);

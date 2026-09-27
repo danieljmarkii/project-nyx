@@ -36,6 +36,9 @@ jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null 
 // The History doors read the gate (HV-11). On for the one suite that asks.
 const mockHistoryV2 = { on: false };
 jest.mock('../hooks/useHistoryV2', () => ({ useHistoryV2: () => mockHistoryV2.on }));
+// TS-8: the trial screen's gate. Off unless a test turns it on.
+const mockTrialScreen = { on: false };
+jest.mock('../hooks/useTrialScreen', () => ({ useTrialScreen: () => mockTrialScreen.on }));
 jest.mock('../store/petStore', () => {
   const pet = { id: 'p1', name: 'Mochi', species: 'cat', sex: 'female' };
   const state = { activePet: pet, pets: [pet] };
@@ -167,6 +170,7 @@ const FIXTURE = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockHistoryV2.on = false;
+  mockTrialScreen.on = false;
   params.current = {};
   mockAppointment.questions = null;
   mockTrialGate.holdNext = false;
@@ -543,3 +547,61 @@ describe('the History doors land on the pet on screen, or not at all (HV-11 / CU
   });
 });
 
+
+// ── TS-8 (CUL-1304): the recheck, behind trial_screen ───────────────────────────
+//
+// The async half the flag-off guard cannot see (its comparison is the first frame, and the
+// recheck renders only after this page's load answers — C-41). Proven here over a RUNNING
+// trial the load really returns, so the absence flag-off is an absence of something that was
+// available to leak: the same fixture, flag-on, draws the questions.
+
+describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
+  function runningTrial() {
+    const started = new Date(Date.now() - 22 * 86_400_000);
+    return {
+      trial: {
+        status: 'active',
+        startedAt: `${started.getFullYear()}-${String(started.getMonth() + 1).padStart(2, '0')}-${String(started.getDate()).padStart(2, '0')}`,
+        targetDurationDays: 56,
+        foodLabel: 'Royal Canin Rabbit',
+      },
+      nowMs: Date.now(),
+      petName: 'Mochi',
+      species: 'dog',
+      coverage: { daysLogged: 21, daysElapsed: 23 },
+      exposures: { totalFeedings: 22, offDiet: 0, items: [], mayStateRecordClean: true },
+    };
+  }
+
+  async function getReadyWith(on: boolean) {
+    mockTrialScreen.on = on;
+    mockTrialInput.current = runningTrial();
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText('Worth raising')).toBeTruthy());
+    return r;
+  }
+
+  it('flag-off: the strip’s row, and no recheck node, over a trial that would answer', async () => {
+    const r = await getReadyWith(false);
+    expect(r.getByText(/day 23 of 56/)).toBeTruthy();
+    expect(r.getByText(/meals logged on 21 of 23 days/)).toBeTruthy();
+    expect(r.queryByTestId('recheck-questions')).toBeNull();
+    expect(r.queryByText(/What the vet will ask/)).toBeNull();
+    // No read is added for the feature: the page's one trial read, and nothing else.
+    const { loadDietTrialFacts } = require('../lib/dietTrialFacts');
+    expect(loadDietTrialFacts).toHaveBeenCalledTimes(1);
+  });
+
+  it('flag-on: the same fixture draws the vet’s questions, with the same single read', async () => {
+    const r = await getReadyWith(true);
+    await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
+    expect(r.getByText('Has Mochi had anything besides the trial diet, chewable medicine included?')).toBeTruthy();
+    expect(r.getByText('Meals logged on 21 of 23 days.')).toBeTruthy();
+    const { loadDietTrialFacts } = require('../lib/dietTrialFacts');
+    expect(loadDietTrialFacts).toHaveBeenCalledTimes(1);
+    // Zero model calls still (AC 4), with the gate on.
+    expect(invoke).not.toHaveBeenCalled();
+  });
+});

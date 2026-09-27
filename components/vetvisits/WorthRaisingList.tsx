@@ -1,8 +1,10 @@
+import type { ReactNode } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { ThemedText } from '../ui/ThemedText';
 import type { WorthRaising } from '../../lib/getReady';
+import type { TrialRecheck } from '../../lib/trialRecheck';
 import type { AppointmentQuestion } from '../../lib/vetVisits';
 
 // "Worth raising" / "Your questions" — ONE list (CUL-903 VV-5; mock B1 / B1b).
@@ -33,9 +35,22 @@ interface Props {
   onAdd: () => void;
   onRemove: (questionId: string) => void;
   petName: string;
+  /**
+   * Draws a trial row's recheck questions (TS-8). Passed by the host only while the
+   * `trial_screen` gate is live, and the drawing lives in `components/trialScreen/` so the
+   * flag-off guard can stub it. Absent, a row's recheck is never drawn.
+   */
+  renderRecheck?: (recheck: TrialRecheck) => ReactNode;
 }
 
-export function WorthRaisingList({ worthRaising, questions, onAdd, onRemove, petName }: Props) {
+export function WorthRaisingList({
+  worthRaising,
+  questions,
+  onAdd,
+  onRemove,
+  petName,
+  renderRecheck,
+}: Props) {
   const { rows, signalUnavailable } = worthRaising;
   const heading = rows.length > 0 ? 'Worth raising' : 'Your questions';
 
@@ -50,6 +65,7 @@ export function WorthRaisingList({ worthRaising, questions, onAdd, onRemove, pet
             text={row.text}
             detail={row.detail}
             source={row.sourceLabel}
+            extra={row.recheck && renderRecheck ? renderRecheck(row.recheck) : null}
           />
         ))}
         {questions.map((q, i) => (
@@ -116,17 +132,21 @@ function Row({
   detail,
   source,
   onRemove,
+  extra,
 }: {
   n: number;
   text: string;
   detail: string | null;
   source: string;
   onRemove?: () => void;
+  /** Drawn under the detail, before the source (the trial row's recheck questions). */
+  extra?: ReactNode;
 }) {
   const body = (
     <>
       <ThemedText style={styles.rowText}>{text}</ThemedText>
       {detail ? <ThemedText style={styles.rowDetail}>{detail}</ThemedText> : null}
+      {extra ?? null}
       <ThemedText style={styles.rowSource}>{source}</ThemedText>
     </>
   );
@@ -137,7 +157,14 @@ function Row({
   // remove affordance, and it is its own responder so a press on the text cannot
   // reach it.
   return (
-    <View style={styles.row} accessible={!onRemove} accessibilityLabel={!onRemove ? `${text}. ${source}` : undefined}>
+    // A row carrying `extra` (the recheck questions) is NOT collapsed into one sentence:
+    // its label would be the title alone and the questions would be unreachable to a
+    // screen reader. The questions group themselves, one element each.
+    <View
+      style={styles.row}
+      accessible={!onRemove && !extra}
+      accessibilityLabel={!onRemove && !extra ? `${text}. ${source}` : undefined}
+    >
       <ThemedText style={styles.rowNumber}>{n}</ThemedText>
       <View style={styles.rowBody}>{body}</View>
       {onRemove ? (
