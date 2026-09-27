@@ -376,7 +376,19 @@ export default function RundownScreen() {
                   // the gate live (`buildForAppointment`). Keyed on the live gate instead, a
                   // revocation while the page is open drew a refusal row as a bare title
                   // in the safety band (adversarial pass, TS-8).
-                  renderRecheck={(recheck) => <RecheckQuestions recheck={recheck} />}
+                  renderRecheck={(recheck) => (
+                    <RecheckQuestions
+                      recheck={recheck}
+                      // CUL-1342: the capped dose rows' door, to the APPOINTMENT's pet's list
+                      // (C-9), the same route and param the trial screen's door uses.
+                      onOpenDoses={() =>
+                        router.push({
+                          pathname: '/trial-exposures',
+                          params: { pet: getReady.appointment.pet_id },
+                        })
+                      }
+                    />
+                  )}
                   onRemove={(id) =>
                     writeQuestions(getReady.questions.filter((q) => q.id !== id)).catch(() => {})
                   }

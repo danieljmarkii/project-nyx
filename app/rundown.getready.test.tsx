@@ -688,6 +688,30 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
     // Zero model calls still (AC 4), with the gate on.
     expect(invoke).not.toHaveBeenCalled();
   });
+  it('past the cap, the door opens the APPOINTMENT’s pet’s dose list (CUL-1342)', async () => {
+    const base = chewableFacts();
+    mockTrialFacts.current = {
+      ...base,
+      facts: {
+        ...base.facts,
+        oralRoute: Array.from({ length: 5 }, (_, i) => ({
+          eventId: `d${i}`,
+          occurredAt: new Date(Date.now() - (i + 1) * 86_400_000).toISOString(),
+          drugLabel: 'Rimadyl',
+          trigger: 'chewable',
+        })),
+      },
+    };
+    const r = await getReadyWith(true);
+    await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
+    expect(r.getAllByText(/^Rimadyl · .* · flavoured chewable$/)).toHaveLength(3);
+    (router.push as jest.Mock).mockClear();
+    fireEvent.press(r.getByText('See all 5 logged doses given by mouth'));
+    expect((router.push as jest.Mock).mock.calls).toEqual([
+      [{ pathname: '/trial-exposures', params: { pet: 'p1' } }],
+    ]);
+  });
+
   it('a facts read that throws keeps the food-only heading and names no dose (C-12)', async () => {
     mockTrialFacts.fail = true;
     const r = await getReadyWith(true);

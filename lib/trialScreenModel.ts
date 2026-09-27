@@ -41,6 +41,7 @@ import {
 } from './dietTrialCard';
 import { buildForTheCall, type ForTheCall } from './trialForTheCall';
 import { buildTrialLedger, type TrialLedger } from './trialLedger';
+import { oralRouteRows } from './trialExposuresScreen';
 import type { TrialAllowedSet } from './trialAllowedSet';
 import { localDayIndex, localDayIndexOf, toLocalDayKey } from './utils';
 import { getDietTrialProgress } from './analytics';
@@ -325,8 +326,16 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
     : null;
 
   const offDiet = input.exposures?.offDiet ?? 0;
+  // CUL-1363: a chewable or food-paired dose opens the door too. The list holds them in
+  // its "Given by mouth" group, and until this the only way to reach that group was an
+  // off-diet FEEDING, so a trial whose only exposure was a chewable had no door to it
+  // anywhere. Asked of `oralRouteRows`, the list's own builder, so the door opens exactly
+  // when the list would draw a dose row: never onto an empty screen, never over facts the
+  // list would refuse to read (no range), and never before the facts read answered.
+  const doseRows = facts.status === 'ready' ? oralRouteRows(facts.facts, input.nowMs) : null;
   // §3.6, every state: on an ended trial the list is what the recheck asks about.
-  const exposures = offDiet > 0 ? { label: EXPOSURES_DOOR, sub: null } : null;
+  const exposures =
+    offDiet > 0 || (doseRows?.length ?? 0) > 0 ? { label: EXPOSURES_DOOR, sub: null } : null;
 
   // The state's own actions. The doors carry the card's two references (the allowed list
   // and the exposures list), so neither is repeated as an action; the decision block

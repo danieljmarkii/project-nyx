@@ -60,7 +60,9 @@ import {
 } from './trialScreenModel';
 import {
   NO_LEDGER_FACTS,
+  RECHECK_DOSE_ROWS_SHOWN,
   RECHECK_QUESTION_ORDER,
+  doseListLabel,
   buildTrialRecheck,
   recheckFactsState,
   recheckQuestion,
@@ -633,6 +635,7 @@ describe('the oral route under *anything besides the trial diet* (CUL-1342)', ()
     expect(screenDoseLines(l)).toHaveLength(2);
     expect(doseLines).toEqual(screenDoseLines(l));
     expect(doseLines[0]).toMatch(/^Rimadyl · Jul 21, .* · flavoured chewable$/);
+    expect(q.doseList).toBeNull();
 
     // The reason is `oralRouteCopy`, verbatim, ONCE for two doses of one drug (§6.8: keep
     // giving it, ask the vet about an unflavoured version; never "skip" or "stop").
@@ -723,13 +726,62 @@ describe('the oral route under *anything besides the trial diet* (CUL-1342)', ()
     expect(recheck!.isSafety).toBe(true);
   });
 
-  it('two drugs keep two reasons; a daily chewable keeps one', async () => {
+  it('a daily chewable: the newest rows up to the cap, one reason, and the door with the TOTAL', async () => {
     const days = Array.from({ length: 10 }, (_, i) => ({ day: i + 5, drug: 'Rimadyl', form: 'chewable' }));
     const l = await load({ ...MOCHI_DAY_23, doses: [...days, { day: 16, drug: 'Simparica', form: 'chewable' }] });
     const q = byMouth(recheckFor(l, l.input).recheck!)!;
+    // The shown rows are the list's newest rows, verbatim, and no more than the cap.
+    const shown = q.answers.filter((a) => a.label !== null).map((a) => `${a.label} · ${a.text}`);
+    expect(shown).toEqual(screenDoseLines(l).slice(0, RECHECK_DOSE_ROWS_SHOWN));
+    expect(shown).toHaveLength(RECHECK_DOSE_ROWS_SHOWN);
+    // One reason per drug, over every dose.
     const reasons = q.answers.filter((a) => a.role === 'quiet' && a.text.includes('Keep giving it'));
     expect(reasons.map((a) => a.text.split(' ')[0])).toEqual(['Simparica', 'Rimadyl']);
-    expect(q.answers.filter((a) => a.label !== null)).toHaveLength(11);
+    // The door speaks the total the list it opens holds: never the shown or hidden count.
+    const total = screenDoseLines(l).length;
+    expect(total).toBe(11);
+    expect(q.doseList).toEqual({ label: 'See all 11 logged doses given by mouth', total });
+    expect(q.doseList!.label).not.toContain(String(RECHECK_DOSE_ROWS_SHOWN));
+    expect(q.doseList!.label).not.toContain(String(total - RECHECK_DOSE_ROWS_SHOWN));
+    // The qualifier still closes the answer.
+    expect(q.answers[q.answers.length - 1].text).toBe(BLIND_SPOT_QUALIFIER);
+  });
+
+  it('a drug whose every dose falls below the cap is still named, by its reason', async () => {
+    const recent = [18, 19, 20, 21].map((day) => ({ day, drug: 'Rimadyl', form: 'chewable' }));
+    const l = await load({ ...MOCHI_DAY_23, doses: [{ day: 5, drug: 'Simparica', form: 'chewable' }, ...recent] });
+    const q = byMouth(recheckFor(l, l.input).recheck!)!;
+    expect(q.answers.filter((a) => a.label !== null).map((a) => a.label)).toEqual(['Rimadyl', 'Rimadyl', 'Rimadyl']);
+    expect(q.answers.map((a) => a.text)).toContain(oralRouteCopy(l.facts!.oralRoute.find((d) => d.drugLabel === 'Simparica')!).body);
+    expect(q.doseList).toEqual({ label: 'See all 5 logged doses given by mouth', total: 5 });
+  });
+
+  it('at the cap or under it, every row prints and there is no door', async () => {
+    const l = await load({
+      ...MOCHI_DAY_23,
+      doses: Array.from({ length: RECHECK_DOSE_ROWS_SHOWN }, (_, i) => ({ day: 10 + i, drug: 'Rimadyl', form: 'chewable' })),
+    });
+    const q = byMouth(recheckFor(l, l.input).recheck!)!;
+    expect(q.answers.filter((a) => a.label !== null)).toHaveLength(RECHECK_DOSE_ROWS_SHOWN);
+    expect(q.doseList).toBeNull();
+  });
+
+  it('the door lives on the by-mouth question only', async () => {
+    const days = Array.from({ length: 6 }, (_, i) => ({ day: i + 5, drug: 'Rimadyl', form: 'chewable' }));
+    const l = await load({ ...MOCHI_DAY_23, doses: days });
+    const { recheck } = recheckFor(l, { ...l.input, trialResponse: VOMITING });
+    expect(recheck!.questions.filter((q) => q.doseList !== null).map((q) => q.key)).toEqual(['by_mouth']);
+  });
+});
+
+describe('the dose list door’s label', () => {
+  it('speaks the total, in the list’s own words, with no count of what is hidden', () => {
+    expect(doseListLabel(1)).toBe('See the logged dose given by mouth');
+    expect(doseListLabel(4)).toBe('See all 4 logged doses given by mouth');
+    for (const n of [1, 4, 40]) {
+      expect(doseListLabel(n)).not.toContain('!');
+      expect(doseListLabel(n)).not.toMatch(/\b(missed|skip|stop|more|other)\b/i);
+    }
   });
 });
 

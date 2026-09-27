@@ -321,9 +321,9 @@ export function buildTrialExposuresScreen(
     // than symmetry. Dropping it in the doses-only case leaves a prescribed
     // medication sitting bare under the words "Outside the trial diet" — which
     // reads as the app calling a dose the owner was told to give a transgression,
-    // on the record their vet reads. It is unreachable today (the card draws the
-    // link only over a non-zero FEEDING count), and that is a reachability
-    // accident rather than a decision, so the rule holds here instead.
+    // on the record their vet reads. The doses-only case is REACHABLE: the trial
+    // screen's door opens over a dose alone (CUL-1363), and Get ready's recheck
+    // points here when it caps its dose rows (CUL-1342).
     groups.push({ title: TRIAL_EXPOSURES_GROUP_ORAL, rows: doses });
   }
 

@@ -17,6 +17,7 @@ const mockDb = {
   allowed: [] as Array<Record<string, unknown>>,
   feedings: [] as Array<Record<string, unknown>>,
   arrangements: [] as Array<Record<string, unknown>>,
+  doses: [] as Array<Record<string, unknown>>,
 };
 jest.mock('./db', () => ({
   getDb: () => ({
@@ -24,7 +25,7 @@ jest.mock('./db', () => ({
     getAllAsync: jest.fn(async (sql: string) => {
       if (sql.includes('diet_trial_foods')) return mockDb.allowed;
       if (sql.includes('FROM meals m')) return mockDb.feedings;
-      if (sql.includes('medication_administrations')) return [];
+      if (sql.includes('medication_administrations')) return mockDb.doses;
       if (sql.includes('feeding_arrangements')) return mockDb.arrangements;
       return [];
     }),
@@ -52,6 +53,7 @@ import {
 } from './dietTrialCard';
 import { loadTrialAllowedSet, type TrialAllowedSet } from './trialAllowedSet';
 import type { TrialResponseCounts } from './trialResponseCounts';
+import { TRIAL_EXPOSURES_GROUP_ORAL, buildTrialExposuresScreen } from './trialExposuresScreen';
 import {
   buildTrialScreenModel,
   ledgerUnreadableLine,
@@ -100,6 +102,8 @@ interface Rec {
   freeChoice?: boolean;
   /** Extra permitted foods on the allowed list. */
   extras?: number;
+  /** Logged doses (CUL-1363), in `readDoses`' row shape: a chewable form, or a food vehicle. */
+  doses?: Array<{ day: number; drug: string; form: string | null; adherence?: string }>;
   nowDay: number;
 }
 
@@ -160,6 +164,12 @@ function seed(rec: Rec) {
     });
   }
   mockDb.feedings = feedings;
+  mockDb.doses = (rec.doses ?? []).map((d, i) => ({
+    event_id: `d${d.day}-${i}`, occurred_at: onDay(d.day, 7).toISOString(),
+    adherence: d.adherence ?? 'given', paired_event_id: null,
+    generic_name: null, brand_name: d.drug, form: d.form,
+    vehicle_food_item_id: null, vehicle_brand: null, vehicle_product_name: null,
+  }));
   mockDb.arrangements = rec.freeChoice
     ? [{ food_item_id: 'f1', active_from: START_KEY, active_until: null, brand: 'Royal Canin', product_name: 'Rabbit' }]
     : [];
@@ -664,6 +674,45 @@ describe('a refusal at the window (spec conflict, awaiting a ruling)', () => {
     expect(m.actions.map((a) => a.id)).toEqual(['trial_manage', 'milestone']);
     expect(m.decision).toBeNull();
     expect(m.ledger).toBeNull();
+  });
+});
+
+describe('a logged chewable opens the exposures door (CUL-1363)', () => {
+  // A clean record: no off-diet feeding, so before CUL-1363 there was no door at all.
+  const CLEAN: Rec = { target: 56, mealDays: Array.from({ length: 22 }, (_, i) => i + 1), nowDay: 23 };
+
+  it('a chewable alone opens it, onto a list that holds the dose', async () => {
+    const l = await load({ ...CLEAN, doses: [{ day: 12, drug: 'Rimadyl', form: 'chewable' }] });
+    expect(l.input.exposures!.offDiet).toBe(0);
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(m.exposures).toEqual({ label: 'Outside the trial diet', sub: null });
+    // The door never opens onto an empty screen: the list it opens draws the dose.
+    const list = buildTrialExposuresScreen(PET.name, l.facts, onDay(23, 20).getTime())!;
+    expect(list.empty).toBeNull();
+    expect(list.title).toBe(m.exposures!.label);
+    expect(list.groups.map((g) => g.title)).toEqual([TRIAL_EXPOSURES_GROUP_ORAL]);
+  });
+
+  it('no dose that went in, no door: a plain tablet and a missed chewable', async () => {
+    const l = await load({
+      ...CLEAN,
+      doses: [
+        { day: 12, drug: 'Apoquel', form: 'tablet' },
+        { day: 13, drug: 'Rimadyl', form: 'chewable', adherence: 'missed' },
+      ],
+    });
+    expect(trialModel(buildTrialScreenModel(argsFor(l))).exposures).toBeNull();
+  });
+
+  it('only over a facts read that answered with a readable range', async () => {
+    const l = await load({ ...CLEAN, doses: [{ day: 12, drug: 'Rimadyl', form: 'chewable' }] });
+    for (const facts of [
+      { status: 'unreadable' as const },
+      { status: 'ready' as const, facts: null },
+      { status: 'ready' as const, facts: { ...l.facts!, range: null } },
+    ]) {
+      expect(trialModel(buildTrialScreenModel(argsFor(l, { facts }))).exposures).toBeNull();
+    }
   });
 });
 

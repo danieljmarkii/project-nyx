@@ -124,6 +124,42 @@ export interface RecheckQuestion {
   key: RecheckQuestionKey;
   question: string;
   answers: RecheckAnswer[];
+  /**
+   * The door to the pet's full "Outside the trial diet" list when the dose rows were capped
+   * (CUL-1342), else null. On the by-mouth question only. The route is the screen's to
+   * build: this module does not know the appointment's pet, and should not.
+   */
+  doseList: RecheckDoseList | null;
+}
+
+/** "See all 7 logged doses given by mouth": the capped dose rows' door to the full list. */
+export interface RecheckDoseList {
+  label: string;
+  /** Every oral-route dose the read holds — the number the label speaks. */
+  total: number;
+}
+
+/**
+ * How many dose rows the recheck prints before pointing at the list (CUL-1342, PM ruling
+ * on brief #2, option B). Three because the vet's question is "has anything else gone in"
+ * and the newest few dates answer it; a daily chewable on day 40 printed forty rows,
+ * burying the four questions below it on the page read aloud in the exam room. The full,
+ * dated list is one tap away on the exposures screen, which exists to be that list.
+ * Every drug stays NAMED below the cap: each one's reason prints whether or not any of
+ * its doses made the cut.
+ */
+export const RECHECK_DOSE_ROWS_SHOWN = 3;
+
+/**
+ * The capped list's door. It speaks the TOTAL (every dose the list it opens holds), never
+ * the rows shown or the rows hidden (C-3 / CUL-223: the cap may index, only the total is
+ * said). "Given by mouth" is the list's own group title, so the label names what it opens
+ * and cannot be read as every medication dose the pet has had.
+ */
+export function doseListLabel(total: number): string {
+  return total === 1
+    ? 'See the logged dose given by mouth'
+    : `See all ${total} logged doses given by mouth`;
 }
 
 export interface TrialRecheck {
@@ -230,7 +266,8 @@ export function buildTrialRecheck(args: TrialRecheckArgs): TrialRecheck | null {
     });
   }
   // The oral route (C3, CUL-1342): the exposures screen's own "Given by mouth" rows.
-  const doses = oralRouteAnswers(args.facts, args.nowMs);
+  const oral = oralRouteAnswers(args.facts, args.nowMs);
+  const doses = oral.answers;
   byMouth.push(...doses);
   // The LOCKED qualifier, once, on the claim it qualifies (§5.2). Only beside a claim:
   // with nothing above it, it would qualify nothing.
@@ -269,7 +306,12 @@ export function buildTrialRecheck(args: TrialRecheckArgs): TrialRecheck | null {
     subline: screen.subline,
     questions: RECHECK_QUESTION_ORDER.flatMap((key) =>
       answers[key].length > 0
-        ? [{ key, question: recheckQuestion(key, screen.petName, doses.length > 0), answers: answers[key] }]
+        ? [{
+            key,
+            question: recheckQuestion(key, screen.petName, doses.length > 0),
+            answers: answers[key],
+            doseList: key === 'by_mouth' ? oral.doseList : null,
+          }]
         : [],
     ),
     isSafety: eating.some((a) => a.role === 'flag'),
@@ -277,25 +319,35 @@ export function buildTrialRecheck(args: TrialRecheckArgs): TrialRecheck | null {
 }
 
 /**
- * The exposures screen's oral-route rows, quoted: one line per logged dose (the drug as
- * its label, the screen's own "{date}, {time} · flavoured chewable" as its text), then
- * each distinct `oralRouteCopy` reason once, quiet. Once, because a daily chewable would
- * otherwise print the same sentence under every dose; the sentence names its drug, so two
- * drugs keep two.
+ * The exposures screen's oral-route rows, quoted: the newest `RECHECK_DOSE_ROWS_SHOWN`
+ * doses (the drug as the label, the screen's own "{date}, {time} · flavoured chewable" as
+ * the text), then each distinct `oralRouteCopy` reason once, quiet, over EVERY dose, not
+ * only the shown ones. Once, because a daily chewable would otherwise print the same
+ * sentence under every dose; over every dose, because the reason names its drug, so a
+ * drug whose doses all fall below the cap is still named on the page. When the cap hid
+ * any row, `doseList` carries the door to the full list with the total.
  *
  * Empty for anything but an answered read: `unknown` and `unreadable` are never "none
  * logged" (C-12), and an answered read with no dose is left unsaid rather than stated as
  * a zero (G2, the exposures screen's own empty lane).
  */
-function oralRouteAnswers(state: TrialFactsState, nowMs: number): RecheckAnswer[] {
-  if (state.status !== 'ready') return [];
+function oralRouteAnswers(
+  state: TrialFactsState,
+  nowMs: number,
+): { answers: RecheckAnswer[]; doseList: RecheckDoseList | null } {
+  const none = { answers: [], doseList: null };
+  if (state.status !== 'ready') return none;
   const rows = oralRouteRows(state.facts, nowMs);
-  if (!rows || rows.length === 0) return [];
-  const out: RecheckAnswer[] = rows.map((r) => ({ text: r.meta, label: r.label, role: 'fact' }));
+  if (!rows || rows.length === 0) return none;
+  // Two variables on purpose (C-3): the cap INDEXES the rows, the total is what is SAID.
+  const shown = rows.slice(0, RECHECK_DOSE_ROWS_SHOWN);
+  const total = rows.length;
+  const answers: RecheckAnswer[] = shown.map((r) => ({ text: r.meta, label: r.label, role: 'fact' }));
   const reasons = new Set<string>();
   for (const r of rows) if (r.reason) reasons.add(r.reason.body);
-  for (const body of reasons) out.push({ text: body, label: null, role: 'quiet' });
-  return out;
+  for (const body of reasons) answers.push({ text: body, label: null, role: 'quiet' });
+  const doseList = total > shown.length ? { label: doseListLabel(total), total } : null;
+  return { answers, doseList };
 }
 
 /** The strip exists only while a trial is active, and this row with it (D3). */
