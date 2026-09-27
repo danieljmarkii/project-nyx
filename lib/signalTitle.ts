@@ -103,20 +103,22 @@ function symptomThing(symptomType: Parameters<typeof symptomWord>[0]): string {
  * already skips an unknown type (`InsightCard`'s registry guard), so refusing here is the
  * shipped behaviour, not a new one. A new type joins this set and `signalTitle` together.
  */
-const TITLED_TYPES: ReadonlySet<string> = new Set<SignalFinding['type']>([
-  'symptom_chronicity',
-  'symptom_worsening',
-  'reflection',
-  'postprandial_timing',
-  'empty_stomach_timing',
-  'timing_story',
-  'timeofday_clustering',
-  'food_symptom_correlation',
-  'stood_down',
-  'trial_response',
-  'incident_red_flag',
-  'intake_decline',
-]);
+// Keyed by the union: a type added to `SignalFinding` without a row here fails the typecheck.
+const TITLED: Record<SignalFinding['type'], true> = {
+  symptom_chronicity: true,
+  symptom_worsening: true,
+  reflection: true,
+  postprandial_timing: true,
+  empty_stomach_timing: true,
+  timing_story: true,
+  timeofday_clustering: true,
+  food_symptom_correlation: true,
+  stood_down: true,
+  trial_response: true,
+  incident_red_flag: true,
+  intake_decline: true,
+};
+const TITLED_TYPES: ReadonlySet<string> = new Set(Object.keys(TITLED));
 
 /** True when this build can title the finding (`TITLED_TYPES`); false refuses it. */
 export function hasSignalTitleRule(finding: SignalFinding): boolean {
