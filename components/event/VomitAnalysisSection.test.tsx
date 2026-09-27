@@ -13,7 +13,18 @@ jest.mock('../../lib/supabase', () => ({
   supabase: {
     from: () => ({
       select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: mockRow, error: null }) }) }),
-      update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+      // Answers both write shapes Hide / Show has had: `await .update().eq()`, and
+      // CUL-1323's compare-and-set, `.eq().eq|is().select()` (lib/analysisDismissal),
+      // which reads one written row back as "the words on screen were still the record's".
+      update: () => {
+        const chain: Record<string, unknown> = {
+          eq: () => chain,
+          is: () => chain,
+          select: () => Promise.resolve({ data: [{ event_id: 'e' }], error: null }),
+          then: (resolve: (r: { error: null }) => unknown) => resolve({ error: null }),
+        };
+        return chain;
+      },
     }),
   },
 }));
