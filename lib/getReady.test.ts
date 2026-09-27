@@ -224,6 +224,8 @@ function input(over: Partial<WorthRaisingInput> = {}): WorthRaisingInput {
     withholdFallingVomit: false,
     trialStrip: null,
     trialScreen: null,
+    // No oral-route read answered (CUL-1342's lane is `trialRecheck.test.ts`'s to prove).
+    trialFacts: { status: 'unknown' },
     trialResponseCounts: null,
     intakeDecline: [],
     rundown: rundown(),

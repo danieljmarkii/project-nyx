@@ -13,8 +13,16 @@
 // cut asked "…chewable medicine included?" over an answer that counts FEEDINGS only: the
 // oral-route lane (a chewable or food-paired dose, `TrialFacts.oralRoute`) is never folded
 // into the card's feeding counts, so a logged chewable went unnamed under the question that
-// asked for it. The heading asks what the answer answers; bringing the chewable lane in is
-// CUL-1342.
+// asked for it. The heading asks what the answer answers.
+//
+// CUL-1342 brings the chewable lane in. The by-mouth answer now also quotes the exposures
+// screen's own "Given by mouth" rows (`oralRouteRows`, whose reason is `oralRouteCopy`
+// verbatim: keep giving it as prescribed, ask the vet about an unflavoured version, §6.8),
+// and the heading carries "chewable medicine included" ONLY when at least one such row is
+// under it. Not whenever the read answered: that read may never say "none" (G2, the
+// exposures screen draws no group for an empty lane), so a clause over no row would be
+// answered by silence, which is what ruling D1 below forbids. An unread or unreadable
+// facts read lists nothing and keeps the food-only heading (C-12).
 //
 // Every answer is QUOTED from a module that already renders it:
 //   • the trial's answers come from `buildTrialScreenModel`, the trial screen's own model,
@@ -41,6 +49,9 @@
 import type { TrialScreenModel, TrialScreenTrial } from './trialScreenModel';
 import type { Rundown } from './rundown';
 import type { TrialFactsState } from '../hooks/useTrialFacts';
+import type { TrialPredicateFacts } from './dietTrialFacts';
+import { BLIND_SPOT_QUALIFIER } from './dietTrialCard';
+import { oralRouteRows } from './trialExposuresScreen';
 
 /**
  * The facts read Get ready hands `buildTrialScreenModel`: "a trial exists, and no ledger".
@@ -48,9 +59,14 @@ import type { TrialFactsState } from '../hooks/useTrialFacts';
  * The screen reads `TrialFacts` for two things only, the day ledger and its freshness
  * gate (`trialScreenModel.ts`), and Get ready draws neither. The gate's job (nothing that
  * counts renders until the read answered FOR THIS PET) is done here by the page's own
- * load, which awaits the trial input for the appointment's pet before building. So this
- * page makes no second facts read, and the parity test proves the record lines and the
- * vomiting sentence equal the screen's with the real facts in place.
+ * load, which awaits the trial input for the appointment's pet before building. The
+ * parity test proves the record lines and the vomiting sentence equal the screen's with
+ * the real facts in place.
+ *
+ * Get ready DOES read the facts since CUL-1342, for the oral-route lane only, and hands
+ * that read to `buildTrialRecheck` (`facts`), never to the screen's model: the model's
+ * lines stay the ones the parity test holds, and the dose rows are quoted from the
+ * exposures screen instead.
  */
 export const NO_LEDGER_FACTS: TrialFactsState = { status: 'ready', facts: null };
 
@@ -68,11 +84,18 @@ export const RECHECK_QUESTION_ORDER: readonly RecheckQuestionKey[] = [
 /** The eyebrow over the questions. States nothing about the record. */
 export const RECHECK_EYEBROW = 'What the vet will ask';
 
-/** The heading for each question. The vet's words, with the pet's name. */
-export function recheckQuestion(key: RecheckQuestionKey, petName: string): string {
+/**
+ * The heading for each question. The vet's words, with the pet's name.
+ *
+ * `chewables` is true only when the by-mouth answer lists at least one logged chewable
+ * or food-paired dose (CUL-1342); every other question ignores it.
+ */
+export function recheckQuestion(key: RecheckQuestionKey, petName: string, chewables: boolean): string {
   switch (key) {
     case 'by_mouth':
-      return `Has ${petName} had anything besides the trial diet?`;
+      return chewables
+        ? `Has ${petName} had anything besides the trial diet, chewable medicine included?`
+        : `Has ${petName} had anything besides the trial diet?`;
     case 'eating':
       return `Is ${petName} eating the trial diet?`;
     case 'symptoms':
@@ -132,6 +155,36 @@ export interface TrialRecheckArgs {
    * lesson). The ask under it ("needs a call today") stays: the list states it nowhere else.
    */
   statedDeclines: readonly string[];
+  /**
+   * The predicate facts for this trial (`loadTrialPredicateFacts`, mapped through
+   * `recheckFactsState`), read for the oral-route lane: the chewable and food-paired doses
+   * the feeding counts never hold. REQUIRED, never defaulted (C-37): anything but a
+   * `ready` read with facts lists no dose and keeps the food-only heading, and a default
+   * would make that silence the answer by writing nothing.
+   */
+  facts: TrialFactsState;
+  /** Judges "the current year" for the dose dates, as the exposures screen does (H-10). */
+  nowMs: number;
+}
+
+/**
+ * The facts read Get ready made, as the state `buildTrialRecheck` takes.
+ *
+ * `read` is `loadTrialPredicateFacts`' answer, or `'unreadable'` when it threw. The read
+ * is a SECOND read beside the page's `loadDietTrialFacts`, so it is accepted only when it
+ * answered for the SAME trial the strip and the screen's model are about (`trialId`, off
+ * that input): a trial that ended or was replaced between the two reads would otherwise
+ * put one trial's doses under another trial's heading. A mismatch is `unreadable`, never
+ * `no_trial` and never an empty lane.
+ */
+export function recheckFactsState(
+  read: TrialPredicateFacts | null | 'unreadable',
+  trialId: string | null,
+): TrialFactsState {
+  if (read === 'unreadable') return { status: 'unreadable' };
+  if (read === null) return { status: 'no_trial' };
+  if (trialId === null || read.trial.id !== trialId) return { status: 'unreadable' };
+  return { status: 'ready', facts: read.facts };
 }
 
 export function buildTrialRecheck(args: TrialRecheckArgs): TrialRecheck | null {
@@ -176,10 +229,20 @@ export function buildTrialRecheck(args: TrialRecheckArgs): TrialRecheck | null {
       role: 'fact',
     });
   }
+  // The oral route (C3, CUL-1342): the exposures screen's own "Given by mouth" rows.
+  const doses = oralRouteAnswers(args.facts, args.nowMs);
+  byMouth.push(...doses);
   // The LOCKED qualifier, once, on the claim it qualifies (§5.2). Only beside a claim:
   // with nothing above it, it would qualify nothing.
-  if (screen.qualifier && byMouth.some((a) => a.role === 'fact')) {
-    byMouth.push({ text: screen.qualifier, label: null, role: 'quiet' });
+  //
+  // A dose row brings the qualifier with it even on a face whose card carries none (a
+  // trial refusal withholds the record region): a list of logged doses under "chewable
+  // medicine included?" must never read as the whole answer, and a dose given in an
+  // unlogged pill pocket or a flavoured tablet is exactly what it cannot hold (B-419,
+  // CUL-1353). A floor is the disclosing direction, which S7 lets this page add.
+  const qualifier = screen.qualifier ?? (doses.length > 0 ? BLIND_SPOT_QUALIFIER : null);
+  if (qualifier && byMouth.some((a) => a.role === 'fact')) {
+    byMouth.push({ text: qualifier, label: null, role: 'quiet' });
   }
 
   // Home's vomiting sentence, verbatim, and null exactly when Home withholds it (T-1). Over a
@@ -206,11 +269,33 @@ export function buildTrialRecheck(args: TrialRecheckArgs): TrialRecheck | null {
     subline: screen.subline,
     questions: RECHECK_QUESTION_ORDER.flatMap((key) =>
       answers[key].length > 0
-        ? [{ key, question: recheckQuestion(key, screen.petName), answers: answers[key] }]
+        ? [{ key, question: recheckQuestion(key, screen.petName, doses.length > 0), answers: answers[key] }]
         : [],
     ),
     isSafety: eating.some((a) => a.role === 'flag'),
   };
+}
+
+/**
+ * The exposures screen's oral-route rows, quoted: one line per logged dose (the drug as
+ * its label, the screen's own "{date}, {time} · flavoured chewable" as its text), then
+ * each distinct `oralRouteCopy` reason once, quiet. Once, because a daily chewable would
+ * otherwise print the same sentence under every dose; the sentence names its drug, so two
+ * drugs keep two.
+ *
+ * Empty for anything but an answered read: `unknown` and `unreadable` are never "none
+ * logged" (C-12), and an answered read with no dose is left unsaid rather than stated as
+ * a zero (G2, the exposures screen's own empty lane).
+ */
+function oralRouteAnswers(state: TrialFactsState, nowMs: number): RecheckAnswer[] {
+  if (state.status !== 'ready') return [];
+  const rows = oralRouteRows(state.facts, nowMs);
+  if (!rows || rows.length === 0) return [];
+  const out: RecheckAnswer[] = rows.map((r) => ({ text: r.meta, label: r.label, role: 'fact' }));
+  const reasons = new Set<string>();
+  for (const r of rows) if (r.reason) reasons.add(r.reason.body);
+  for (const body of reasons) out.push({ text: body, label: null, role: 'quiet' });
+  return out;
 }
 
 /** The strip exists only while a trial is active, and this row with it (D3). */

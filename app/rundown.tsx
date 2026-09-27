@@ -13,17 +13,21 @@ import {
   GetReadyTitle,
 } from '../components/vetvisits/GetReadyHeader';
 import { WorthRaisingList } from '../components/vetvisits/WorthRaisingList';
-import { resolveRecordPetName, usePetStore } from '../store/petStore';
+import { resolveRecordPetName, usePetStore, type Pet } from '../store/petStore';
 import { buildRundown, rundownToPlainText, type Rundown, type RundownTap } from '../lib/rundown';
 import { rundownHistoryHref } from '../lib/historyDoors';
 import { useHistoryV2 } from '../hooks/useHistoryV2';
 import { buildWorthRaising, localIntakeDeclines, type WorthRaising } from '../lib/getReady';
 import { buildTrialScreenModel } from '../lib/trialScreenModel';
 import { UNKNOWN_ALLOWED_SET } from '../lib/trialAllowedSet';
-import { NO_LEDGER_FACTS } from '../lib/trialRecheck';
+import { NO_LEDGER_FACTS, recheckFactsState } from '../lib/trialRecheck';
 import { useTrialScreen } from '../hooks/useTrialScreen';
 import { RecheckQuestions } from '../components/trialScreen/RecheckQuestions';
-import { loadDietTrialFacts } from '../lib/dietTrialFacts';
+import {
+  loadDietTrialFacts,
+  loadTrialPredicateFacts,
+  type TrialPredicateFacts,
+} from '../lib/dietTrialFacts';
 import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
 import { readSignalCache } from '../lib/signal';
 import { syncPendingVetAppointments } from '../lib/sync';
@@ -77,7 +81,12 @@ import { reportHref } from '../lib/reportRoute';
 // Behind `trial_screen`, the trial row grows into the vet's recheck questions, answered
 // from the trial screen's own model (`buildTrialScreenModel`, fed the same loader output
 // the screen reads) and drawn by `components/trialScreen/RecheckQuestions`. Flag-off the
-// model is never built and the row is today's; no read is added either way.
+// model is never built and the row is today's, and no read is added.
+//
+// Flag-on, CUL-1342 adds ONE read: `loadTrialPredicateFacts`, for the oral-route lane (the
+// chewable and food-paired doses the feeding counts never hold). It runs beside the trial
+// read inside this same awaited pass, so it can never be "still loading" when the rows are
+// built, and a failure is its own state (`unreadable`), never an empty lane (C-12).
 
 type Status = 'loading' | 'ready' | 'error';
 
@@ -483,7 +492,9 @@ async function buildForAppointment(
   const { pets } = usePetStore.getState();
   const pet = pets.find((p) => p.id === subjectId) ?? null;
 
-  const [findings, trialInput] = await Promise.all([
+  // One clock for every read and the build, so the two trial reads bound the same window.
+  const nowMs = Date.now();
+  const [findings, trialInput, recheckRead] = await Promise.all([
     readSignalCache(subjectId)
       // `row ? row.findings : null` — NOT `row?.findings ?? []`, and the difference is
       // the whole point of the two states.
@@ -506,8 +517,11 @@ async function buildForAppointment(
           pet: { id: pet.id, name: pet.name, species: pet.species, sex: pet.sex },
           otherPetNames: pets.filter((p) => p.id !== pet.id).map((p) => p.name),
           signalsV2: true,
+          nowMs,
         }).catch(() => null)
       : Promise.resolve(null),
+    // Flag-on only, and for the appointment's pet (C-9).
+    trialScreenLive && pet ? readRecheckFacts(pet, nowMs) : Promise.resolve('unreadable' as const),
   ]);
 
   if (loadIdRef.current !== myId) {
@@ -541,6 +555,8 @@ async function buildForAppointment(
     withholdFallingVomit: trialInput ? isAnimalNotEating(trialInput) : true,
     trialStrip: trialInput ? resolveTrialStrip(trialInput) : null,
     trialScreen,
+    // Accepted only when it answered for the trial the input above is about.
+    trialFacts: recheckFactsState(recheckRead, trialInput?.trial?.id ?? null),
     trialResponseCounts: trialInput?.trialResponse ?? null,
     // REQUIRED on the input type, never defaulted. `resolveTrialStrip` discards the
     // device's declines because on Home the Signal card above the strip owns the
@@ -551,8 +567,27 @@ async function buildForAppointment(
     // `buildWorthRaising` can drop only the ones the Signal already states (CUL-950).
     intakeDecline: localIntakeDeclines(trialInput),
     rundown: built,
-    nowMs: Date.now(),
+    nowMs,
   });
+}
+
+/**
+ * The recheck's facts read. A throw (sync or async) is `'unreadable'`, never a null:
+ * null is "this pet has no trial", which a failed read is not.
+ */
+async function readRecheckFacts(
+  pet: Pet,
+  nowMs: number,
+): Promise<TrialPredicateFacts | null | 'unreadable'> {
+  try {
+    return await loadTrialPredicateFacts(
+      { id: pet.id, name: pet.name, species: pet.species, sex: pet.sex },
+      nowMs,
+    );
+  } catch (e) {
+    console.error('[Get ready] trial facts read failed:', e);
+    return 'unreadable';
+  }
 }
 
 

@@ -18,6 +18,7 @@ import type { MedItemName } from './rundown';
 import type { TrialScreenModel } from './trialScreenModel';
 import type { TrialResponseCounts } from './trialResponseCounts';
 import { buildTrialRecheck, withoutSymptoms, type TrialRecheck } from './trialRecheck';
+import type { TrialFactsState } from '../hooks/useTrialFacts';
 
 // "Worth raising" — the Get-ready block (CUL-903 VV-5; spec §4.1 B1, §7 AC 5, mock B1).
 //
@@ -139,6 +140,14 @@ export interface WorthRaisingInput {
    */
   trialScreen: TrialScreenModel | null;
   /**
+   * The trial's predicate facts, read for the recheck's oral-route lane (CUL-1342: the
+   * chewable and food-paired doses `buildTrialRecheck` quotes under *anything besides the
+   * trial diet*). Built with `recheckFactsState`, so a read that failed or answered for a
+   * different trial is `unreadable`. REQUIRED, never defaulted (C-37): a default would
+   * leave a logged chewable off the page by writing nothing. Read only with `trialScreen`.
+   */
+  trialFacts: TrialFactsState;
+  /**
    * The device's own vomiting counts behind the recheck's symptoms sentence
    * (`TrialCardInput.trialResponse`), or null. Read only to decide whether the Signal's
    * trial-response row says the SAME thing (see `sameVomitingSnapshot`). REQUIRED, never
@@ -221,6 +230,8 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
         rundown: input.rundown,
         weight: weight && weight.id === 'weight-stale' ? { text: weight.text, detail: weight.detail } : null,
         statedDeclines: input.intakeDecline.map((d) => d.headline),
+        facts: input.trialFacts,
+        nowMs: input.nowMs,
       })
     : null;
   const trial = recheck ? recheckRow(recheck) : trialRow(input.trialStrip);

@@ -89,6 +89,8 @@ const mockTrialGate: { holdNext: boolean; release: null | (() => void) } = {
 };
 // What the loader resolves to — null (no trial running) unless a test sets it.
 const mockTrialInput: { current: unknown } = { current: null };
+// CUL-1342: what the recheck's facts read resolves to (null: no trial), or a throw.
+const mockTrialFacts: { current: unknown; fail: boolean } = { current: null, fail: false };
 jest.mock('../lib/dietTrialFacts', () => ({
   loadDietTrialFacts: jest.fn(async () => {
     if (mockTrialGate.holdNext) {
@@ -98,6 +100,12 @@ jest.mock('../lib/dietTrialFacts', () => ({
       });
     }
     return mockTrialInput.current;
+  }),
+  // CUL-1342: the recheck's oral-route read. Resolves `mockTrialFacts.current`, or throws
+  // when a test sets `mockTrialFacts.fail`.
+  loadTrialPredicateFacts: jest.fn(async () => {
+    if (mockTrialFacts.fail) throw new Error('db closed');
+    return mockTrialFacts.current;
   }),
 }));
 
@@ -176,6 +184,8 @@ beforeEach(() => {
   mockTrialGate.holdNext = false;
   mockTrialGate.release = null;
   mockTrialInput.current = null;
+  mockTrialFacts.current = null;
+  mockTrialFacts.fail = false;
   for (const k of Object.keys(mockAppointments)) delete mockAppointments[k];
   (buildRundown as jest.Mock).mockResolvedValue(FIXTURE);
 });
@@ -581,6 +591,7 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
     const started = new Date(Date.now() - 22 * 86_400_000);
     return {
       trial: {
+        id: 't1',
         status: 'active',
         startedAt: `${started.getFullYear()}-${String(started.getMonth() + 1).padStart(2, '0')}-${String(started.getDate()).padStart(2, '0')}`,
         targetDurationDays: 56,
@@ -594,9 +605,31 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
     };
   }
 
+  /** The facts read's answer for that trial (CUL-1342): one chewable logged four days ago.
+   *  Only the two fields the oral-route lane reads are real; the lane's behaviour over the
+   *  loader's true shapes is `lib/trialRecheck.test.ts`'s to prove. */
+  function chewableFacts(trialId = 't1') {
+    return {
+      trial: { id: trialId },
+      stoppedForRefusal: false,
+      facts: {
+        range: { startDayIndex: 0, endDayIndex: 22 },
+        oralRoute: [
+          {
+            eventId: 'd1',
+            occurredAt: new Date(Date.now() - 4 * 86_400_000).toISOString(),
+            drugLabel: 'Rimadyl',
+            trigger: 'chewable',
+          },
+        ],
+      },
+    };
+  }
+
   async function getReadyWith(on: boolean) {
     mockTrialScreen.on = on;
     mockTrialInput.current = runningTrial();
+    mockTrialFacts.current = mockTrialFacts.current ?? chewableFacts();
     params.current = { appointmentId: 'appt-1' };
     const r = render(<RundownScreen />);
     await r.findByTestId('rundown-block');
@@ -611,8 +644,11 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
     expect(r.queryByTestId('recheck-questions')).toBeNull();
     expect(r.queryByText(/What the vet will ask/)).toBeNull();
     // No read is added for the feature: the page's one trial read, and nothing else.
-    const { loadDietTrialFacts } = require('../lib/dietTrialFacts');
+    const { loadDietTrialFacts, loadTrialPredicateFacts } = require('../lib/dietTrialFacts');
     expect(loadDietTrialFacts).toHaveBeenCalledTimes(1);
+    // …and the recheck's facts read (CUL-1342) is flag-on only, over a fixture that would
+    // answer with a chewable if called.
+    expect(loadTrialPredicateFacts).not.toHaveBeenCalled();
   });
 
   it('a gate that flips after mount does not reload the page under the owner (code review)', async () => {
@@ -634,14 +670,39 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
     expect(r.getByTestId('recheck-questions')).toBeTruthy();
   });
 
-  it('flag-on: the same fixture draws the vet’s questions, with the same single read', async () => {
+  it('flag-on: the same fixture draws the vet’s questions, naming the logged chewable (CUL-1342)', async () => {
+    const r = await getReadyWith(true);
+    await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
+    expect(r.getByText('Has Mochi had anything besides the trial diet, chewable medicine included?')).toBeTruthy();
+    expect(r.getByText('Meals logged on 21 of 23 days.')).toBeTruthy();
+    expect(r.getByText(/^Rimadyl · .* · flavoured chewable$/)).toBeTruthy();
+    expect(r.getByText(/^Rimadyl is a chewable, .*Keep giving it exactly as prescribed/)).toBeTruthy();
+    const { loadDietTrialFacts, loadTrialPredicateFacts } = require('../lib/dietTrialFacts');
+    expect(loadDietTrialFacts).toHaveBeenCalledTimes(1);
+    // One facts read, for the APPOINTMENT's pet (C-9), on the same clock as the trial read.
+    expect(loadTrialPredicateFacts).toHaveBeenCalledTimes(1);
+    expect((loadTrialPredicateFacts as jest.Mock).mock.calls[0][0]).toMatchObject({ id: 'p1' });
+    expect((loadTrialPredicateFacts as jest.Mock).mock.calls[0][1]).toBe(
+      (loadDietTrialFacts as jest.Mock).mock.calls[0][0].nowMs,
+    );
+    // Zero model calls still (AC 4), with the gate on.
+    expect(invoke).not.toHaveBeenCalled();
+  });
+  it('a facts read that throws keeps the food-only heading and names no dose (C-12)', async () => {
+    mockTrialFacts.fail = true;
+    const r = await getReadyWith(true);
+    await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
+    // The page still builds (the read's failure is its own state, not the page's error).
+    expect(r.getByText('Has Mochi had anything besides the trial diet?')).toBeTruthy();
+    expect(r.getByText('Meals logged on 21 of 23 days.')).toBeTruthy();
+    expect(r.queryByText(/Rimadyl|chewable/)).toBeNull();
+  });
+
+  it('a facts read that answered for a different trial is not quoted', async () => {
+    mockTrialFacts.current = chewableFacts('t-other');
     const r = await getReadyWith(true);
     await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
     expect(r.getByText('Has Mochi had anything besides the trial diet?')).toBeTruthy();
-    expect(r.getByText('Meals logged on 21 of 23 days.')).toBeTruthy();
-    const { loadDietTrialFacts } = require('../lib/dietTrialFacts');
-    expect(loadDietTrialFacts).toHaveBeenCalledTimes(1);
-    // Zero model calls still (AC 4), with the gate on.
-    expect(invoke).not.toHaveBeenCalled();
+    expect(r.queryByText(/Rimadyl/)).toBeNull();
   });
 });

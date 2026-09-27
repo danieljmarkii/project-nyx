@@ -18,6 +18,7 @@ const mockDb = {
   allowed: [] as Array<Record<string, unknown>>,
   feedings: [] as Array<Record<string, unknown>>,
   arrangements: [] as Array<Record<string, unknown>>,
+  doses: [] as Array<Record<string, unknown>>,
 };
 jest.mock('./db', () => ({
   getDb: () => ({
@@ -25,7 +26,7 @@ jest.mock('./db', () => ({
     getAllAsync: jest.fn(async (sql: string) => {
       if (sql.includes('diet_trial_foods')) return mockDb.allowed;
       if (sql.includes('FROM meals m')) return mockDb.feedings;
-      if (sql.includes('medication_administrations')) return [];
+      if (sql.includes('medication_administrations')) return mockDb.doses;
       if (sql.includes('feeding_arrangements')) return mockDb.arrangements;
       return [];
     }),
@@ -41,7 +42,10 @@ jest.mock('./trialContaminant', () => ({
   antigenPausedNote: jest.fn(() => ({ title: 'paused', body: 'paused' })),
 }));
 
-import type { TrialFacts } from './dietTrial';
+import { oralRouteCopy, type TrialFacts } from './dietTrial';
+import type { TrialPredicateFacts } from './dietTrialFacts';
+import type { TrialFactsState } from '../hooks/useTrialFacts';
+import { TRIAL_EXPOSURES_GROUP_ORAL, buildTrialExposuresScreen } from './trialExposuresScreen';
 import { loadDietTrialFacts, loadTrialPredicateFacts } from './dietTrialFacts';
 import { BLIND_SPOT_QUALIFIER, resolveTrialStrip, type TrialCardInput } from './dietTrialCard';
 import { loadTrialAllowedSet, type TrialAllowedSet } from './trialAllowedSet';
@@ -58,6 +62,7 @@ import {
   NO_LEDGER_FACTS,
   RECHECK_QUESTION_ORDER,
   buildTrialRecheck,
+  recheckFactsState,
   recheckQuestion,
   type TrialRecheck,
 } from './trialRecheck';
@@ -100,6 +105,16 @@ interface Rec {
   freeChoice?: boolean;
   /** Extra permitted foods on the allowed list. */
   extras?: number;
+  /** Logged doses (CUL-1342), in `readDoses`' row shape. */
+  doses?: Array<{
+    day: number;
+    hour?: number;
+    drug: string;
+    form: string | null;
+    adherence?: string | null;
+    /** A food vehicle, off the trial list (Acme Chicken Jerky). */
+    vehicle?: boolean;
+  }>;
   nowDay: number;
 }
 
@@ -160,6 +175,18 @@ function seed(rec: Rec) {
     });
   }
   mockDb.feedings = feedings;
+  mockDb.doses = (rec.doses ?? []).map((d, i) => ({
+    event_id: `d${d.day}-${i}`,
+    occurred_at: onDay(d.day, d.hour ?? 7).toISOString(),
+    adherence: d.adherence ?? 'given',
+    paired_event_id: d.vehicle ? `v${d.day}` : null,
+    generic_name: null,
+    brand_name: d.drug,
+    form: d.form,
+    vehicle_food_item_id: d.vehicle ? 'fx' : null,
+    vehicle_brand: d.vehicle ? 'Acme' : null,
+    vehicle_product_name: d.vehicle ? 'Chicken Jerky' : null,
+  }));
   mockDb.arrangements = rec.freeChoice
     ? [{ food_item_id: 'f1', active_from: START_KEY, active_until: null, brand: 'Royal Canin', product_name: 'Rabbit' }]
     : [];
@@ -169,6 +196,7 @@ interface Loaded {
   input: TrialCardInput;
   facts: TrialFacts | null;
   allowedSet: TrialAllowedSet;
+  nowMs: number;
 }
 
 async function load(rec: Rec): Promise<Loaded> {
@@ -179,7 +207,7 @@ async function load(rec: Rec): Promise<Loaded> {
     loadTrialPredicateFacts(PET, nowMs),
     loadTrialAllowedSet(PET.id, nowMs),
   ]);
-  return { input, facts: core?.facts ?? null, allowedSet };
+  return { input, facts: core?.facts ?? null, allowedSet, nowMs };
 }
 
 function argsFor(l: Loaded, over: Partial<TrialScreenModelArgs> = {}): TrialScreenModelArgs {
@@ -262,6 +290,9 @@ function recheckFor(
     rundown: rundown(),
     weight: null,
     statedDeclines: [],
+    // The facts read Get ready now makes (CUL-1342), answered, as production hands it over.
+    facts: { status: 'ready', facts: l.facts },
+    nowMs: l.nowMs,
     ...over,
   });
   return { screen, recheck };
@@ -520,7 +551,12 @@ describe('an ended trial has no recheck row (PM ruling D3)', () => {
       const l = await load({ ...MOCHI_DAY_23, status, endedDay: 20, stoppedReason: status === 'abandoned' ? 'other' : null });
       const model = buildTrialScreenModel(argsFor(l, { facts: NO_LEDGER_FACTS }));
       expect(model.kind).toBe('trial');
-      expect(buildTrialRecheck({ screen: model, rundown: rundown(), weight: null, statedDeclines: [] })).toBeNull();
+      expect(
+        buildTrialRecheck({
+          screen: model, rundown: rundown(), weight: null, statedDeclines: [],
+          facts: { status: 'ready', facts: l.facts }, nowMs: l.nowMs,
+        }),
+      ).toBeNull();
     }
   });
 
@@ -530,7 +566,11 @@ describe('an ended trial has no recheck row (PM ruling D3)', () => {
       { kind: 'unreadable', petName: 'Mochi' },
       { kind: 'loading' },
     ] as TrialScreenModel[]) {
-      expect(buildTrialRecheck({ screen, rundown: rundown(), weight: null, statedDeclines: [] })).toBeNull();
+      expect(
+        buildTrialRecheck({
+          screen, rundown: rundown(), weight: null, statedDeclines: [], facts: { status: 'unknown' }, nowMs: 0,
+        }),
+      ).toBeNull();
     }
   });
 });
@@ -538,11 +578,172 @@ describe('an ended trial has no recheck row (PM ruling D3)', () => {
 describe('the question copy', () => {
   it('names the pet and states no record fact', () => {
     for (const key of RECHECK_QUESTION_ORDER) {
-      const q = recheckQuestion(key, 'Pixel');
-      expect(q).toContain('Pixel');
-      expect(q).not.toMatch(/\d/);
-      expect(q).not.toContain('!');
-      expect(q).not.toMatch(/\b(fussy|picky|prefers?|won’t|won't)\b/i);
+      for (const chewables of [false, true]) {
+        const q = recheckQuestion(key, 'Pixel', chewables);
+        expect(q).toContain('Pixel');
+        expect(q).not.toMatch(/\d/);
+        expect(q).not.toContain('!');
+        expect(q).not.toMatch(/\b(fussy|picky|prefers?|won’t|won't)\b/i);
+      }
     }
+    // Only the by-mouth question carries the chewable clause, and only when asked for.
+    expect(recheckQuestion('by_mouth', 'Pixel', true)).toBe(
+      'Has Pixel had anything besides the trial diet, chewable medicine included?',
+    );
+    expect(recheckQuestion('by_mouth', 'Pixel', false)).toBe('Has Pixel had anything besides the trial diet?');
+    for (const key of RECHECK_QUESTION_ORDER.filter((k) => k !== 'by_mouth')) {
+      expect(recheckQuestion(key, 'Pixel', true)).toBe(recheckQuestion(key, 'Pixel', false));
+    }
+  });
+});
+
+// ── CUL-1342: chewable and food-paired doses under *anything besides the trial diet* ──
+//
+// The oral-route lane (C3) is kept out of the feeding counts by design, so the card never
+// states it and TS-8 shipped the by-mouth heading without its chewable clause. These drive
+// the real loaders over doses in `readDoses`' row shape and hold the recheck's dose lines to
+// the exposures screen's own "Given by mouth" rows for the same facts.
+
+describe('the oral route under *anything besides the trial diet* (CUL-1342)', () => {
+  const CHEWABLE_DAYS: Rec = {
+    ...MOCHI_DAY_23,
+    doses: [
+      { day: 12, drug: 'Rimadyl', form: 'chewable' },
+      { day: 19, drug: 'Rimadyl', form: 'chewable' },
+    ],
+  };
+
+  /** The exposures screen's oral group for the same facts, as the recheck must quote it. */
+  function screenDoseLines(l: Loaded): string[] {
+    const model = buildTrialExposuresScreen(PET.name, l.facts, l.nowMs)!;
+    const oral = model.groups.find((g) => g.title === TRIAL_EXPOSURES_GROUP_ORAL);
+    return oral ? oral.rows.map((r) => `${r.label} · ${r.meta}`) : [];
+  }
+
+  const byMouth = (r: TrialRecheck) => r.questions.find((q) => q.key === 'by_mouth') ?? null;
+
+  it('a logged chewable is named, as the exposures screen names it, and the heading asks for it', async () => {
+    const l = await load(CHEWABLE_DAYS);
+    const { recheck } = recheckFor(l, l.input);
+    const q = byMouth(recheck!)!;
+    expect(q.question).toBe('Has Mochi had anything besides the trial diet, chewable medicine included?');
+
+    // The dose rows ARE the exposures screen's rows (label · date · tag), newest first.
+    const doseLines = q.answers.filter((a) => a.label !== null).map((a) => `${a.label} · ${a.text}`);
+    expect(screenDoseLines(l)).toHaveLength(2);
+    expect(doseLines).toEqual(screenDoseLines(l));
+    expect(doseLines[0]).toMatch(/^Rimadyl · Jul 21, .* · flavoured chewable$/);
+
+    // The reason is `oralRouteCopy`, verbatim, ONCE for two doses of one drug (§6.8: keep
+    // giving it, ask the vet about an unflavoured version; never "skip" or "stop").
+    const reason = oralRouteCopy(l.facts!.oralRoute[0]).body;
+    expect(q.answers.filter((a) => a.text === reason)).toEqual([{ text: reason, label: null, role: 'quiet' }]);
+    expect(reason).toContain('Keep giving it exactly as prescribed');
+    for (const a of q.answers) expect(a.text).not.toMatch(/\b(skip|stop|don’t give|don't give|hold)\b/i);
+
+    // The food answer is untouched, the doses follow it, and the locked qualifier closes it.
+    expect(q.answers.map((a) => a.text)).toEqual([
+      'Meals logged on 21 of 23 days.',
+      '22 feedings in total — 21 matched, 1 did not.',
+      'That 1 is what’s been logged, not a total.',
+      '6 days ago — Acme Chicken Jerky. Keep going with the trial diet. Your vet will want to see this at the recheck.',
+      q.answers[4].text,
+      q.answers[5].text,
+      reason,
+      BLIND_SPOT_QUALIFIER,
+    ]);
+  });
+
+  it('a dose given inside an off-list food is named with the screen’s own tag', async () => {
+    const l = await load({ ...MOCHI_DAY_23, doses: [{ day: 15, drug: 'Clavamox', form: 'tablet', vehicle: true }] });
+    const q = byMouth(recheckFor(l, l.input).recheck!)!;
+    expect(q.question).toContain('chewable medicine included');
+    expect(q.answers.filter((a) => a.label !== null).map((a) => `${a.label} · ${a.text}`)).toEqual(screenDoseLines(l));
+    expect(q.answers.find((a) => a.label === 'Clavamox')!.text).toMatch(/given inside food$/);
+    expect(q.answers.map((a) => a.text)).toContain(
+      'Clavamox was given inside food, so whatever it was hidden in counts too. Keep giving it exactly as ' +
+        'prescribed — ask your vet whether there’s an unflavoured version to switch to.',
+    );
+  });
+
+  it('none logged: the food-only heading and no dose line, never a "none" (G2, ruling D1)', async () => {
+    // A plain tablet and a MISSED chewable: neither is an oral-route exposure (C3), so the
+    // record answered and holds none. Non-vacuity: the same record with a given chewable
+    // does carry the clause (the first test).
+    const l = await load({
+      ...MOCHI_DAY_23,
+      doses: [
+        { day: 12, drug: 'Apoquel', form: 'tablet' },
+        { day: 14, drug: 'Rimadyl', form: 'chewable', adherence: 'missed' },
+      ],
+    });
+    expect(l.facts!.oralRoute).toEqual([]);
+    const { recheck } = recheckFor(l, l.input);
+    const q = byMouth(recheck!)!;
+    expect(q.question).toBe('Has Mochi had anything besides the trial diet?');
+    expect(q.answers.every((a) => a.label === null)).toBe(true);
+    const all = recheck!.questions.flatMap((x) => [x.question, ...x.answers.map((a) => a.text)]).join('\n');
+    expect(all).not.toMatch(/chewable|by mouth|no medicine|none logged/i);
+  });
+
+  it('a read that has not answered lists nothing and keeps the food-only heading (C-12)', async () => {
+    const l = await load(CHEWABLE_DAYS);
+    expect(l.facts!.oralRoute).toHaveLength(2); // the doses were there to leak
+    const states: TrialFactsState[] = [
+      { status: 'unknown' },
+      { status: 'unreadable' },
+      { status: 'no_trial' },
+      { status: 'ready', facts: null },
+      // A read whose range could not be established: the exposures screen draws nothing either.
+      { status: 'ready', facts: { ...l.facts!, range: null } },
+    ];
+    for (const facts of states) {
+      const q = byMouth(recheckFor(l, l.input, { facts }).recheck!)!;
+      expect(q.question).toBe('Has Mochi had anything besides the trial diet?');
+      expect(q.answers.map((a) => a.text).join('\n')).not.toMatch(/Rimadyl|chewable/);
+    }
+  });
+
+  it('over a trial refusal the doses still reach the vet, with the floor the card did not print', async () => {
+    const l = await load({ ...REFUSING, doses: [{ day: 6, drug: 'Rimadyl', form: 'chewable' }] });
+    const { screen, recheck } = recheckFor(l, l.input);
+    expect(screen.state).toBe('trial_refusal');
+    // Non-vacuity: the refusal face carries no record region and no qualifier of its own,
+    // so before CUL-1342 there was no by-mouth question at all on this record.
+    expect(screen.qualifier).toBeNull();
+    const q = byMouth(recheck!)!;
+    expect(q.question).toContain('chewable medicine included');
+    expect(q.answers.map((a) => a.text)).toEqual([
+      q.answers[0].text,
+      oralRouteCopy(l.facts!.oralRoute[0]).body,
+      BLIND_SPOT_QUALIFIER,
+    ]);
+    expect(q.answers[0].label).toBe('Rimadyl');
+    // The refusal still makes this a safety row.
+    expect(recheck!.isSafety).toBe(true);
+  });
+
+  it('two drugs keep two reasons; a daily chewable keeps one', async () => {
+    const days = Array.from({ length: 10 }, (_, i) => ({ day: i + 5, drug: 'Rimadyl', form: 'chewable' }));
+    const l = await load({ ...MOCHI_DAY_23, doses: [...days, { day: 16, drug: 'Simparica', form: 'chewable' }] });
+    const q = byMouth(recheckFor(l, l.input).recheck!)!;
+    const reasons = q.answers.filter((a) => a.role === 'quiet' && a.text.includes('Keep giving it'));
+    expect(reasons.map((a) => a.text.split(' ')[0])).toEqual(['Simparica', 'Rimadyl']);
+    expect(q.answers.filter((a) => a.label !== null)).toHaveLength(11);
+  });
+});
+
+describe('recheckFactsState: the second read is accepted only for the same trial', () => {
+  const read = (id: string): TrialPredicateFacts =>
+    ({ trial: { id }, stoppedForRefusal: false, facts: null }) as unknown as TrialPredicateFacts;
+
+  it('maps each answer to the state it is, and a different trial to unreadable', () => {
+    expect(recheckFactsState('unreadable', 't1')).toEqual({ status: 'unreadable' });
+    expect(recheckFactsState(null, 't1')).toEqual({ status: 'no_trial' });
+    expect(recheckFactsState(read('t1'), 't1')).toEqual({ status: 'ready', facts: null });
+    // The trial ended or was replaced between the two reads: never one trial's doses under
+    // another trial's heading, and never "none" either.
+    expect(recheckFactsState(read('t2'), 't1')).toEqual({ status: 'unreadable' });
+    expect(recheckFactsState(read('t1'), null)).toEqual({ status: 'unreadable' });
   });
 });
