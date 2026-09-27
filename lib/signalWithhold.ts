@@ -17,18 +17,35 @@
 // asymmetry, `detectTrialResponse`; never-reassure — a fall is the only reading an owner
 // could take as "better").
 //
-// ── THE TWO REASONS ─────────────────────────────────────────────────────────────
-//   • `density` — the two windows were not logged with comparable intensity, so a quieter
-//     window may just be a less-logged one. The ratio is the trial strip's and the engine's
-//     (`TRIAL_RESPONSE_COUNTS_DEFAULTS.densityComparableMinRatio`, detection.ts's
-//     `DENSITY_COMPARABLE_MIN_RATIO`): the same question — "were these two windows logged
-//     alike enough for a reduction to be read" — so the value is mirrored, not re-chosen
-//     (C-34). The engine's own verdict wins where it has one (a reflection's `density`).
-//   • `not_eating` — the pair counts VOMITING and the pet's record says it is not eating
-//     (`isAnimalNotEating`, B-789, or an `intake_decline` in the Signal itself). An empty
-//     stomach has less to bring up. `null` is "not answered", and a surface that prints a
-//     pair treats it as not eating (fail closed: absence of a refusal fact is not evidence
-//     of eating); the copy for that case never claims the pet is not eating.
+// ── THE REASONS, in the order they are checked ──────────────────────────────────
+//   • `not_eating` / `not_eating_unknown` — the pair counts VOMITING and the pet's record
+//     says it is not eating (`isAnimalNotEating`, B-789, or an `intake_decline` in the Signal
+//     itself), or the facts have not answered (`null`: fail closed — absence of a refusal
+//     fact is not evidence of eating). An empty stomach has less to bring up.
+//   • `trial_start` (the week line only) — a running trial began after the start of "last
+//     week", so "this week · last week" is a before/during pair drawn across the trial's
+//     start, with none of the strip's floors or baseline (PM ruling (a): no drawn trial
+//     compare; the strip's own sentence is the trial's one compare).
+//   • `density` — the engine's own verdict on the pair, where it has one (a reflection's
+//     `density.comparable === false`), else the two windows' logging FRACTIONS are not within
+//     the shared ratio of each other.
+//   • `thin` — a window holds fewer logged days than the engine's reflection floor.
+//
+// ── THE DENOMINATOR IS THE ENGINE'S, NOT THE CHART'S (adversarial pass, F3) ──────
+// The ticks under the bars count every logged day (`readLoggedDays`: any event, and a look);
+// that is COVERAGE, and it stays on the chart. A GATE on a falling symptom pair asks a
+// narrower question — could these days have shown this sign — so it counts what the engine's
+// gate counts (`loggingDaysInWindow`, detection.ts): the comparison-gate symptom set
+// (`CORRELATION_SYMPTOM_TYPES`, parity-pinned by `guards/loggedDayParity.test.ts`), a meal,
+// and the finding's own sign (the `alsoCounts` rule, CUL-787). A dose confirm or a look
+// keeps the day count up while vomit logging lapses — the maropitant counterexample — and
+// cannot vouch for vomit observation. `readGateLoggedDays` reads exactly that set.
+//
+// The ratio and the floor are MIRRORED, each naming its source, because each answers the
+// same question its source does (C-34): the ratio is the strip's and the engine's
+// (`TRIAL_RESPONSE_COUNTS_DEFAULTS.densityComparableMinRatio` / `DENSITY_COMPARABLE_MIN_RATIO`,
+// "were these windows logged alike enough for a reduction to be read"); the floor is the
+// reflection lane's `minLoggingDaysPerWindow` ("were these windows logged at all").
 //
 // Pure: no store, no clock, no database.
 
@@ -36,9 +53,18 @@ import type { CompareWindowsModel, WeeklyBucketsModel } from './chartModels';
 import type { SignalFinding, SignalSymptomType } from './signal';
 import { isReflectionDensityWithheld } from './signalCopy';
 import { TRIAL_RESPONSE_COUNTS_DEFAULTS } from './trialResponseCounts';
-import { weekLineNumbers } from './signalWindows';
+import { weekLineNumbers, type SignalTrialWindow, type SignalWindowSpec } from './signalWindows';
+import { localDayIndexOf } from './utils';
 
-export type FallingPairWithheld = 'density' | 'not_eating' | 'not_eating_unknown';
+/**
+ * The fewest gate-logged days a window may hold for a falling pair over it to print —
+ * mirrored from the engine's reflection lane (`DEFAULT_CONFIG.reflection.minLoggingDaysPerWindow`,
+ * detection.ts): the same question, "was this window logged enough to compare at all".
+ */
+export const MIN_GATE_LOGGED_DAYS_PER_WINDOW = 3;
+
+export type FallingPairWithheld = 'not_eating' | 'not_eating_unknown' | 'density' | 'thin';
+export type WeekLineWithheld = FallingPairWithheld | 'trial_start';
 
 /** The pet's not-eating register as a surface holds it: `true` a positive fact, `false`
  *  answered and eating, `null` not answered yet (or the read failed). */
@@ -63,6 +89,15 @@ export function loggingComparable(
   return hi <= 0 ? true : lo >= hi * minRatio;
 }
 
+export interface FallingPairInput {
+  finding: SignalFinding;
+  /** The symptom the pair counts (`signalSymptomOf`). */
+  symptom: SignalSymptomType | null;
+  notEating: NotEatingFact;
+  /** The GATE's logged days (`readGateLoggedDays`) — never the chart's coverage days. */
+  gateLoggedDays: readonly string[];
+}
+
 function notEatingReason(symptom: SignalSymptomType | null, notEating: NotEatingFact): FallingPairWithheld | null {
   if (symptom !== 'vomit') return null;
   if (notEating === true) return 'not_eating';
@@ -70,50 +105,98 @@ function notEatingReason(symptom: SignalSymptomType | null, notEating: NotEating
   return null;
 }
 
-export interface FallingPairInput {
-  finding: SignalFinding;
-  /** The symptom the pair counts (`signalSymptomOf`). */
-  symptom: SignalSymptomType | null;
-  notEating: NotEatingFact;
+/** Gate-logged days inside [first, last] (inclusive day indexes). */
+function loggedIn(gateLoggedDays: readonly string[], first: number, last: number): number {
+  const seen = new Set<number>();
+  for (const key of gateLoggedDays) {
+    const i = localDayIndexOf(key);
+    if (i != null && i >= first && i <= last) seen.add(i);
+  }
+  return seen.size;
+}
+
+/** One window as the density and floor gates read it. */
+export interface GateWindow {
+  logged: number;
+  loggable: number;
+}
+
+/** The density and floor verdict over two windows, earlier first. */
+function loggingReason(
+  finding: SignalFinding,
+  earlier: GateWindow,
+  recent: GateWindow,
+): FallingPairWithheld | null {
+  // The engine's own verdict wins where it has one.
+  if (isReflectionDensityWithheld(finding)) return 'density';
+  if (earlier.logged < MIN_GATE_LOGGED_DAYS_PER_WINDOW || recent.logged < MIN_GATE_LOGGED_DAYS_PER_WINDOW) return 'thin';
+  if (!loggingComparable(earlier, recent)) return 'density';
+  return null;
 }
 
 /**
- * The lead card's week line ("1 this week so far · 4 last week"): withheld when it falls and
- * either the engine's own density gate withheld this finding's pair (the shipped face's swap,
- * `isReflectionDensityWithheld`), the two drawn weeks were not logged alike, or it counts
- * vomiting over a pet not known to be eating. Null when the pair may print.
- *
- * Not-eating is checked first: it is the reason the owner most needs, and the density reason
- * would be true of an empty-bowl week too.
+ * The lead card's week line ("1 this week so far · 4 last week"), and the screen's: withheld
+ * when it FALLS and any reason above holds. Null when the pair may print. `trial` is the
+ * running trial, or null.
  */
-export function weekLineWithheld(weekly: WeeklyBucketsModel, input: FallingPairInput): FallingPairWithheld | null {
+export function weekLineWithheld(
+  weekly: WeeklyBucketsModel,
+  input: FallingPairInput & { trial: SignalTrialWindow | null },
+): WeekLineWithheld | null {
   const { thisWeek, lastWeek } = weekLineNumbers(weekly);
   if (lastWeek == null || thisWeek >= lastWeek) return null;
   const eating = notEatingReason(input.symptom, input.notEating);
   if (eating) return eating;
-  if (isReflectionDensityWithheld(input.finding)) return 'density';
   const n = weekly.weeks.length;
   const cur = weekly.weeks[n - 1];
   const prev = weekly.weeks[n - 2];
-  if (!loggingComparable({ logged: cur.loggedCount, loggable: cur.daysSoFar }, { logged: prev.loggedCount, loggable: prev.daysSoFar })) {
-    return 'density';
+  const prevStart = localDayIndexOf(prev.startKey) as number;
+  if (input.trial) {
+    const trialStart = localDayIndexOf(input.trial.startDay);
+    if (trialStart != null && trialStart > prevStart) return 'trial_start';
   }
-  return null;
+  const curStart = localDayIndexOf(cur.startKey) as number;
+  // The days of each week that have arrived and follow the record's start are exactly the
+  // bucket's `daysSoFar`; they are the week's LAST `daysSoFar` arrived days, so count the
+  // gate days over the arrived span (a day before the record holds no log to count anyway).
+  const prevEnd = localDayIndexOf(prev.endKey) as number;
+  const curArrivedEnd = curStart + cur.days.filter((d) => d !== 'ahead').length - 1;
+  return loggingReason(
+    input.finding,
+    { logged: loggedIn(input.gateLoggedDays, prevStart, prevEnd), loggable: prev.daysSoFar },
+    { logged: loggedIn(input.gateLoggedDays, curStart, curArrivedEnd), loggable: cur.daysSoFar },
+  );
 }
 
 /**
  * The screen's drawn compare (the two halves of the lookback, off a trial): withheld on the
- * same three reasons when the recent window holds fewer episodes than the one before it.
+ * same reasons when the recent window holds fewer episodes than the one before it. `specs`
+ * are the windows the compare was built from (`signalCompareSpec`), earlier first.
  */
-export function compareWithheld(compare: CompareWindowsModel, input: FallingPairInput): FallingPairWithheld | null {
+export function compareWithheld(
+  compare: CompareWindowsModel,
+  specs: readonly [SignalWindowSpec, SignalWindowSpec],
+  input: FallingPairInput,
+): FallingPairWithheld | null {
   const [before, recent] = compare.windows;
   if (recent.count >= before.count) return null;
   const eating = notEatingReason(input.symptom, input.notEating);
   if (eating) return eating;
-  if (isReflectionDensityWithheld(input.finding)) return 'density';
-  const loggable = (w: typeof before) => w.days - w.beforeRecord;
-  if (!loggingComparable({ logged: before.loggedCount, loggable: loggable(before) }, { logged: recent.loggedCount, loggable: loggable(recent) })) {
-    return 'density';
-  }
-  return null;
+  const gate = (spec: SignalWindowSpec, w: typeof before): GateWindow => {
+    const start = localDayIndexOf(spec.startDay) as number;
+    return { logged: loggedIn(input.gateLoggedDays, start, start + spec.days - 1), loggable: w.days - w.beforeRecord };
+  };
+  return loggingReason(input.finding, gate(specs[0], before), gate(specs[1], recent));
+}
+
+/** The gate's logged-day counts over the compare's windows, for the withheld line's words. */
+export function compareGateCounts(
+  specs: readonly [SignalWindowSpec, SignalWindowSpec],
+  gateLoggedDays: readonly string[],
+): [number, number] {
+  const count = (spec: SignalWindowSpec) => {
+    const start = localDayIndexOf(spec.startDay) as number;
+    return loggedIn(gateLoggedDays, start, start + spec.days - 1);
+  };
+  return [count(specs[0]), count(specs[1])];
 }

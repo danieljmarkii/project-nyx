@@ -383,8 +383,6 @@ function Body({
           </ThemedText>
         ))}
       </View>
-
-
     </ScrollView>
   );
 }

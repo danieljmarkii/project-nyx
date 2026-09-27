@@ -41,16 +41,22 @@
 import { getDietTrialProgress } from './analytics';
 import { episodeDaysOf, type CompareWindowsModel, type WeeklyBucketsModel } from './chartModels';
 import { getDb } from './db';
-import { isAnimalNotEating, resolveTrialStrip, trialIdentityLabel } from './dietTrialCard';
+import { isAnimalNotEating, resolveTrialStrip, trialIdentityLabel, type TrialCardTrial } from './dietTrialCard';
 import { isTrialRunning } from './dietTrial';
 import { loadDietTrialFacts, loadTrialPredicateFacts } from './dietTrialFacts';
 import { classifyEpisodeSet, collapseEpisodes, DEFAULT_MEAL_TIMING_CONFIG, type OnsetConfidence } from './mealTiming';
 import { drugDisplayName } from './medications';
-import { readFeedingRows, readFreeFedSpans, TIMING_SYMPTOM_TYPE } from './patternsTiming';
+import { CORRELATION_SYMPTOM_TYPES, readFeedingRows, readFreeFedSpans, TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import { readSignalCache, type CachedFinding, type SignalFinding } from './signal';
-import { evidenceText, hasBannedSignalVocabulary, reflectionExpandedExtras, symptomWord } from './signalCopy';
+import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, reflectionExpandedExtras, symptomWord } from './signalCopy';
 import { signalSaysNotEating } from './signalVisible';
-import { compareWithheld, weekLineWithheld, type FallingPairWithheld, type NotEatingFact } from './signalWithhold';
+import {
+  compareGateCounts,
+  compareWithheld,
+  weekLineWithheld,
+  type FallingPairWithheld,
+  type NotEatingFact,
+} from './signalWithhold';
 import { TRIAL_RESPONSE_COUNTS_DEFAULTS } from './trialResponseCounts';
 import { foldIdentity } from './signalFold';
 import { signalTitle } from './signalTitle';
@@ -113,8 +119,12 @@ export interface SignalScreenInput {
   today: string;
   trial: SignalTrialWindow | null;
   episodes: readonly SignalScreenEpisode[];
-  /** Every local day with any log — never derived from the episodes (C-3). */
+  /** Every local day with any log — never derived from the episodes (C-3). The chart's
+   *  COVERAGE ticks. */
   loggedDays: readonly string[];
+  /** The days a falling-pair GATE counts (`readGateLoggedDays`: the engine's comparison-gate
+   *  symptoms, a meal, the finding's own sign) — never the coverage days (CUL-1216, F3). */
+  gateLoggedDays: readonly string[];
   recordStart: string | null;
   /** Verdict by event id; an absent key is "no read yet". */
   verdicts: Readonly<Record<string, EpisodeVerdict | null>>;
@@ -365,19 +375,32 @@ export function trialLine(trial: SignalTrialWindow): string {
 
 /**
  * Why a compare the screen would have drawn is not drawn (CUL-1216). Counts are never
- * adjudicated here; the line says which fact stops the two from being read side by side.
- * `not_eating_unknown` never claims the pet is not eating: it says the app could not check.
+ * adjudicated here; the line says which fact stops the two from being read side by side,
+ * and it is TRUE of the record it describes (adversarial pass, F5): the density line names
+ * the window that was logged less, whichever it is. The days it names are the gate's
+ * (`gateLogged`), the days that could have shown this sign. `not_eating_unknown` never
+ * claims the pet is not eating: it says the app could not check.
  */
-export function compareWithheldLine(reason: FallingPairWithheld, petName: string, compare: CompareWindowsModel): string {
-  const [a, b] = compare.windows;
-  const n = a.days;
+export function compareWithheldLine(
+  reason: FallingPairWithheld,
+  petName: string,
+  compare: CompareWindowsModel,
+  gateLogged: readonly [number, number],
+): string {
+  const n = compare.windows[0].days;
+  const [a, b] = gateLogged;
+  const logged = `Two windows of ${n} ${plural(n, 'day')}, with symptoms or meals logged on ${a} and ${b} of them.`;
   switch (reason) {
     case 'not_eating':
-      return `${petName}'s record says ${petName} hasn't been eating normally, so the vomiting counts aren't compared here. Less in the stomach can mean fewer episodes on its own.`;
+      return `The record says ${petName} hasn't been eating normally, so the vomiting counts aren't compared here. Less in the stomach can mean fewer episodes on its own.`;
     case 'not_eating_unknown':
       return `We couldn't check how ${petName} has been eating, so the vomiting counts aren't compared here. Less in the stomach can mean fewer episodes on its own.`;
+    case 'thin':
+      return `${logged} That's too few logged days to compare their counts.`;
     case 'density':
-      return `Two windows of ${n} ${plural(n, 'day')}, logged on ${a.loggedCount} and ${b.loggedCount} of them. Logged that unevenly, their counts aren't compared here: fewer logged days can look like fewer episodes on their own.`;
+      return b < a
+        ? `${logged} The recent one was logged on fewer days, so their counts aren't compared here: fewer logged days can look like fewer episodes on their own.`
+        : `${logged} Logged that unevenly, their counts aren't compared here.`;
   }
 }
 
@@ -388,7 +411,7 @@ export function compareWithheldLine(reason: FallingPairWithheld, petName: string
 export function whyLines(
   input: SignalScreenInput,
   compare: CompareWindowsModel | null,
-  withheld: { reason: FallingPairWithheld; compare: CompareWindowsModel } | null = null,
+  withheld: { reason: FallingPairWithheld; compare: CompareWindowsModel; gateLogged: readonly [number, number] } | null = null,
 ): string[] {
   const { finding } = input.cached;
   const lines: string[] = [evidenceText(finding, input.petName)];
@@ -398,10 +421,12 @@ export function whyLines(
   const reflection = finding.type === 'reflection' ? reflectionExpandedExtras(finding, input.trial != null) : null;
   if (reflection?.densityLine) lines.push(reflection.densityLine);
   if (withheld) {
-    // The engine's withheld line already says the week pair is not compared; a second
-    // density sentence over the same weeks would say it twice.
-    const engineSaidIt = withheld.reason === 'density' && reflection?.densityLine != null;
-    if (!engineSaidIt) lines.push(compareWithheldLine(withheld.reason, input.petName, withheld.compare));
+    // The engine's WITHHELD line already says the week pair is not compared; a second
+    // density sentence would say it twice. Only that line: the engine's comparable
+    // disclosure ("Counted from days you logged…") is not a reason, and beside it the
+    // withheld compare still owes its own (adversarial pass, F4).
+    const engineSaidIt = withheld.reason === 'density' && reflection?.densityLine === DENSITY_WITHHELD;
+    if (!engineSaidIt) lines.push(compareWithheldLine(withheld.reason, input.petName, withheld.compare, withheld.gateLogged));
   } else if (compare) {
     const [a, b] = compare.windows;
     const n = a.days;
@@ -497,7 +522,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     recordStart: input.recordStart,
   };
   const weekly = signalWeeks(windows);
-  const gate = { finding, symptom, notEating: input.notEating };
+  const gate = { finding, symptom, notEating: input.notEating, gateLoggedDays: input.gateLoggedDays };
   // THE ONE DRAWN COMPARE (CUL-1216). None on a SAFETY finding: its compare is the engine's,
   // in the phone script, over the engine's windows and denominator — drawing a second one
   // over local windows counted one population two ways (BRK-39). None on a running trial:
@@ -507,21 +532,29 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
   // lookback, withheld when the pair falls and may not be read (BRK-4 / BRK-6).
   const trialCompares = input.trial != null && !trialTooYoungToCompare(input.trial);
   const drawable = safety || trialCompares || trialTooYoungToCompare(input.trial) ? null : signalCompare(windows);
-  const withheldReason = drawable ? compareWithheld(drawable, gate) : null;
+  const specs = signalCompareSpec(finding, input.today, input.trial);
+  const withheldReason = drawable ? compareWithheld(drawable, specs, gate) : null;
   const compare = withheldReason ? null : drawable;
-  const withheld = withheldReason && drawable ? { reason: withheldReason, compare: drawable } : null;
-  const lineWithheld = weekLineWithheld(weekly, gate);
+  const withheld =
+    withheldReason && drawable
+      ? { reason: withheldReason, compare: drawable, gateLogged: compareGateCounts(specs, input.gateLoggedDays) }
+      : null;
+  const lineWithheld = weekLineWithheld(weekly, { ...gate, trial: input.trial });
   // The lanes time against meals, which the engine does for vomiting only (the shipped
   // panel's symptom); a cough has no "minutes after eating".
-  const lanes =
-    symptom === TIMING_SYMPTOM_TYPE
-      ? signalLanes({
-          finding,
-          today: input.today,
-          trial: input.trial,
-          episodes: input.episodes.map((e) => ({ dayKey: e.dayKey, minutesSinceMeal: e.minutesSinceMeal })),
-        })
-      : null;
+  const laneEpisodes = input.episodes.map((e) => ({ dayKey: e.dayKey, minutesSinceMeal: e.minutesSinceMeal }));
+  const split =
+    symptom === TIMING_SYMPTOM_TYPE ? signalLanes({ finding, today: input.today, trial: input.trial, episodes: laneEpisodes }) : null;
+  // The two trial lanes ("Before the trial · In the trial") are a before/during pair too,
+  // over the screen's own windows (adversarial pass, F2). They stay split where they show
+  // the timing shape on a flat or rising count; on a safety screen (one compare, the
+  // engine's — BRK-39) and wherever the in-trial lane holds FEWER episodes (the pair ruling
+  // (a) and the not-eating gate withhold), they are one undivided lane over the lookback.
+  const undivide =
+    split != null && split.lanes.length === 2 && (safety || split.lanes[1].total < split.lanes[0].total);
+  const lanes = undivide
+    ? signalLanes({ finding, today: input.today, trial: input.trial, episodes: laneEpisodes, undivided: true })
+    : split;
   const inWeeks = episodesInWeeks(input.episodes, weekly, input.today);
 
   return {
@@ -681,6 +714,28 @@ export async function readLoggedDays(petId: string): Promise<{ loggedDays: strin
   return { loggedDays, recordStart: loggedDays[0] ?? null };
 }
 
+/**
+ * The days a falling-pair GATE counts for this finding's sign (CUL-1216, adversarial pass
+ * F3): a day with a comparison-gate symptom (`CORRELATION_SYMPTOM_TYPES`, the engine's
+ * `countsTowardComparisonGate` cell, parity-pinned), a meal, or the finding's OWN sign (the
+ * engine's `alsoCounts` rule — a cough compare counts cough days). Never a dose, a weight,
+ * a note or a look: those are coverage, and they cannot vouch for the sign being watched.
+ * The engine's `loggingDaysInWindow`, on the phone.
+ */
+export async function readGateLoggedDays(petId: string, symptomType: string | null): Promise<string[]> {
+  const types = [...new Set<string>([...CORRELATION_SYMPTOM_TYPES, 'meal', ...(symptomType ? [symptomType] : [])])];
+  const rows = await getDb().getAllAsync<{ occurred_at: string }>(
+    `SELECT occurred_at FROM events WHERE pet_id = ? AND deleted_at IS NULL AND event_type IN (${types.map(() => '?').join(', ')})`,
+    [petId, ...types],
+  );
+  const days = new Set<string>();
+  for (const r of rows) {
+    const ms = Date.parse(r.occurred_at);
+    if (Number.isFinite(ms)) days.add(toLocalDayKey(new Date(ms)));
+  }
+  return [...days].sort();
+}
+
 /** Delivered doses (`given` / `partial` — D1's therapy-delivered count) since `fromIso`,
  *  one entry per dose day, named through the shipped display-name rule. */
 export async function readDoseDays(petId: string, fromIso: string): Promise<SignalDoseDay[]> {
@@ -714,8 +769,15 @@ export async function readSignalTrial(
   nowMs: number,
 ): Promise<SignalTrialWindow | null> {
   const core = await loadTrialPredicateFacts(pet, nowMs);
-  if (!core) return null;
-  const { trial } = core;
+  return core ? signalTrialWindowOf(core.trial, nowMs) : null;
+}
+
+/**
+ * The trial row as the windows need it, or null when it is not running today. Pure, so the
+ * screen's loader can build it from the trial row `loadDietTrialFacts` already read rather
+ * than reading the row a second time (CUL-1216 review).
+ */
+export function signalTrialWindowOf(trial: TrialCardTrial, nowMs: number): SignalTrialWindow | null {
   // The ONE predicate (`lib/dietTrial.ts`): a terminal or ended trial is not "on this
   // diet today", whatever its dates say (B-422).
   if (!isTrialRunning({ startedAt: trial.startedAt, targetDurationDays: trial.targetDurationDays, status: trial.status, endedAt: trial.endedAt }, nowMs)) {
@@ -813,13 +875,16 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   const pet = pets.find((p) => p.id === petId) ?? null;
   const symptom = signalSymptomOf(cached.finding);
 
-  const [trial, episodes, logged, trialFacts] = await Promise.all([
-    pet ? readSignalTrial({ id: pet.id, name: pet.name, species: pet.species, sex: pet.sex }, nowMs).catch(() => null) : Promise.resolve(null),
+  const [episodes, logged, gateLoggedDays, trialFacts] = await Promise.all([
     symptom ? readSignalEpisodes(petId, symptom) : Promise.resolve([]),
     readLoggedDays(petId),
-    // The route's pet's trial facts (C-9), the strip's own loader: the not-eating register
-    // and the strip's vomiting sentence come from the one module that writes them. A failed
-    // read is null — not answered — never "eating".
+    // A gate that cannot read its days has none: every falling pair is then 'thin' and
+    // withheld, never printed on the chart's wider count.
+    symptom ? readGateLoggedDays(petId, symptom).catch(() => [] as string[]) : Promise.resolve([] as string[]),
+    // The route's pet's trial facts (C-9), the strip's own loader: the trial window, the
+    // not-eating register and the strip's vomiting sentence all come from this ONE read of
+    // the trial row. A failed read is null: no trial window (as a failed trial read always
+    // was), and the register not answered — never "eating".
     pet
       ? loadDietTrialFacts({
           pet: { id: pet.id, name: pet.name, species: pet.species, sex: pet.sex },
@@ -833,6 +898,7 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
         })
       : Promise.resolve(null),
   ]);
+  const trial = trialFacts?.trial ? signalTrialWindowOf(trialFacts.trial, nowMs) : null;
   // Either fact withholds: the Signal's own intake decline answers on its own, whatever the
   // trial read did (a positive fact in hand is never downgraded to "unknown").
   const notEating: NotEatingFact = signalSaysNotEating(row?.findings ?? [])
@@ -861,6 +927,7 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     trial,
     episodes,
     loggedDays: logged.loggedDays,
+    gateLoggedDays,
     recordStart: logged.recordStart,
     verdicts,
     doses,

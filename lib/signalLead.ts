@@ -7,12 +7,12 @@
 // doses the card never shows. Nothing here reads the active pet: the zone hands the pet
 // the findings belong to.
 
-import { readSignalEpisodes, readLoggedDays, readSignalTrial } from './signalScreen';
+import { readGateLoggedDays, readSignalEpisodes, readLoggedDays, readSignalTrial } from './signalScreen';
 import type { CachedFinding } from './signal';
 import { symptomWord } from './signalCopy';
 import { signalTitle } from './signalTitle';
 import { signalSymptomOf, signalWeeks, weekLine, type SignalTrialWindow } from './signalWindows';
-import { weekLineWithheld, type FallingPairWithheld, type NotEatingFact } from './signalWithhold';
+import { weekLineWithheld, type NotEatingFact, type WeekLineWithheld } from './signalWithhold';
 import type { WeeklyBucketsModel } from './chartModels';
 import { toLocalDayKey } from './utils';
 import { usePetStore } from '../store/petStore';
@@ -23,7 +23,7 @@ export interface SignalLeadModel {
   weekly: WeeklyBucketsModel | null;
   line: string | null;
   /** Why the line dropped last week's count, or null when it prints the pair (CUL-1216). */
-  lineWithheld: FallingPairWithheld | null;
+  lineWithheld: WeekLineWithheld | null;
   noun: string | null;
   trial: SignalTrialWindow | null;
 }
@@ -43,10 +43,13 @@ export async function loadSignalLead(
   const today = toLocalDayKey(new Date(nowMs));
   const pet = usePetStore.getState().pets.find((p) => p.id === petId) ?? null;
   const symptom = signalSymptomOf(cached.finding);
-  const [trial, episodes, logged] = await Promise.all([
+  const [trial, episodes, logged, gateLoggedDays] = await Promise.all([
     pet ? readSignalTrial({ id: pet.id, name: pet.name, species: pet.species, sex: pet.sex }, nowMs).catch(() => null) : Promise.resolve(null),
     symptom ? readSignalEpisodes(petId, symptom) : Promise.resolve([]),
     readLoggedDays(petId),
+    // The gate's own days (the engine's set, never the chart's coverage — CUL-1216 F3); a
+    // failed read is none, which withholds a falling line rather than printing it.
+    symptom ? readGateLoggedDays(petId, symptom).catch(() => [] as string[]) : Promise.resolve([] as string[]),
   ]);
   const title = signalTitle(cached.finding, trial);
   if (!symptom) return { title, weekly: null, line: null, lineWithheld: null, noun: null, trial };
@@ -58,7 +61,7 @@ export async function loadSignalLead(
     loggedDays: logged.loggedDays,
     recordStart: logged.recordStart,
   });
-  const lineWithheld = weekLineWithheld(weekly, { finding: cached.finding, symptom, notEating });
+  const lineWithheld = weekLineWithheld(weekly, { finding: cached.finding, symptom, notEating, gateLoggedDays, trial });
   return { title, weekly, line: weekLine(weekly, lineWithheld != null), lineWithheld, noun: symptomWord(symptom), trial };
 }
 

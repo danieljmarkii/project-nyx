@@ -151,6 +151,7 @@ function input(cached: CachedFinding, over: Partial<SignalScreenInput> = {}): Si
       [photographed[4].eventId]: null,
     },
     doses: ['2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12'].map((dayKey) => ({ drugLabel: 'Cerenia', dayKey })),
+    gateLoggedDays: over.loggedDays ?? loggedDays,
     notEating: false,
     trialVomitingLine: null,
     ...over,

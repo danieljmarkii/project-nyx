@@ -167,6 +167,9 @@ function mockInput(over: Partial<SignalScreenInput> = {}): SignalScreenInput {
     recordStart: shift(THURSDAY, -200),
     verdicts,
     doses: [],
+    // The gate's days follow the coverage days unless a case says otherwise: every
+    // fixture day here holds a symptom or a meal.
+    gateLoggedDays: over.loggedDays ?? loggedDays,
     notEating: false,
     trialVomitingLine: null,
     ...over,
@@ -214,7 +217,11 @@ describe('buildSignalScreenModel — the mock’s Thursday', () => {
   });
 
   it('the lanes: before the trial · in it, every episode on its lane, the untimed ones counted', () => {
-    const lanes = model.lanes?.lanes ?? [];
+    // A SAFETY screen draws one undivided lane (its one compare is the engine's — BRK-39);
+    // the split is a benign finding's, and only while the in-trial lane does not fall (F2).
+    expect(model.lanes?.lanes.map((l) => l.label)).toEqual(['The last 56 days']);
+    const benign = buildSignalScreenModel(mockInput({ cached: cachedOf(postprandial()) }));
+    const lanes = benign.lanes?.lanes ?? [];
     expect(lanes.map((l) => l.label)).toEqual(['Before the trial', 'In the trial']);
     expect(lanes[1].total).toBe(21);
     expect(lanes[1].timedCount).toBe(7);
@@ -720,10 +727,10 @@ describe('loadSignalScreen', () => {
     // 2026-11-14 under a skewed-clock run. Day 59 keeps the dose bound below honest: the
     // earlier window sits before the trial, so the read reaches back well past 100 days.
     const today = toLocalDayKey(new Date());
-    mockLoadTrialPredicateFacts.mockResolvedValue({
+    // The trial row arrives with the strip's facts: ONE read of it (CUL-1216 review).
+    mockLoadDietTrialFacts.mockResolvedValue({
+      ...trialLessFacts,
       trial: { id: 't', status: 'active', startedAt: shift(today, -58), endedAt: null, targetDurationDays: 56, foodLabel: 'Rabbit & Pea', trialProtein: { protein: 'rabbit', source: 'stored' } },
-      stoppedForRefusal: false,
-      facts: null,
     });
     mockGetAllAsync.mockImplementation((sql: string) => {
       if (/FROM events\s+WHERE pet_id = \? AND event_type/.test(sql)) return Promise.resolve([{ id: 'v1', occurred_at: new Date().toISOString(), occurred_at_confidence: null }]);
@@ -754,12 +761,13 @@ describe('loadSignalScreen', () => {
     // C-40: the bound compares the fixed-width prefix, never the two spellings whole.
     expect(doseCall[0]).toMatch(/substr\(e\.occurred_at, 1, 19\) >= substr\(\?, 1, 19\)/);
     expect(Date.parse(doseCall[1][2] as string)).toBeLessThan(Date.parse(`${today}T00:00:00Z`) - 100 * 86_400_000);
-    expect(mockLoadTrialPredicateFacts).toHaveBeenCalledWith(expect.objectContaining({ id: 'pet-1', name: 'Nyx', species: 'cat' }), expect.any(Number));
+    expect(mockLoadDietTrialFacts).toHaveBeenCalledWith(expect.objectContaining({ pet: expect.objectContaining({ id: 'pet-1', name: 'Nyx', species: 'cat' }) }));
+    // The screen never reads the trial row a second time.
+    expect(mockLoadTrialPredicateFacts).not.toHaveBeenCalled();
   });
 
   it('a tile carries the rose its bout holds on another row, and reads it off the phone (F3 on #912)', async () => {
     mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(chronicity())] });
-    mockLoadTrialPredicateFacts.mockResolvedValue({ trial: null, stoppedForRefusal: false, facts: null });
     // A vomit logged without a photo, its contextual read escalated; re-logged twenty
     // minutes later WITH the photo, whose own read said monitor. One bout, one tile.
     const first = new Date(Date.now() - 20 * 60_000).toISOString();
@@ -786,19 +794,19 @@ describe('loadSignalScreen', () => {
 
   it('a trial that is not running today gives no trial window, and a failed trial read does not fail the screen', async () => {
     mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(chronicity())] });
-    mockLoadTrialPredicateFacts.mockResolvedValue({
+    mockLoadDietTrialFacts.mockResolvedValue({
+      ...trialLessFacts,
       trial: { id: 't', status: 'completed', startedAt: '2026-01-01', endedAt: '2026-02-01', targetDurationDays: 30, foodLabel: null, trialProtein: null },
-      stoppedForRefusal: false,
-      facts: null,
     });
     mockGetAllAsync.mockResolvedValue([]);
     const ended = await loadSignalScreen('pet-1', 'symptom_chronicity:vomit');
     expect(ended.status === 'ready' && ended.model.title).toBe('Vomiting in 7 of the last 8 weeks');
     expect(ended.status === 'ready' && (ended.model.weekly?.mark ?? null)).toBeNull();
 
-    mockLoadTrialPredicateFacts.mockRejectedValue(new Error('sqlite'));
+    mockLoadDietTrialFacts.mockRejectedValue(new Error('sqlite'));
     const failed = await loadSignalScreen('pet-1', 'symptom_chronicity:vomit');
     expect(failed.status).toBe('ready');
+    expect(failed.status === 'ready' && (failed.model.weekly?.mark ?? null)).toBeNull();
   });
 });
 
@@ -845,7 +853,64 @@ describe('CUL-1216 — a falling pair on the screen carries its gates', () => {
     const m = buildSignalScreenModel(benign({ loggedDays: logged }));
     expect(m.compare).toBeNull();
     expect(m.compareWithheld).toBe('density');
-    expect(m.why.join(' ')).toMatch(/Logged that unevenly, their counts aren't compared here/);
+    expect(m.why.join(' ')).toContain(
+      "Two windows of 28 days, with symptoms or meals logged on 28 and 12 of them. The recent one was logged on fewer days, so their counts aren't compared here",
+    );
+  });
+
+  // Adversarial pass F5: the gate is symmetric, so a fall is also withheld when the RECENT
+  // window was logged more; the line must not then say "fewer logged days" of it.
+  it('F5: the density line names the window that was logged less — never "fewer" of the one logged more', () => {
+    const logged = [...everyDay(-70, -28).filter((_, i) => i % 7 < 3), ...everyDay(-27, 0)];
+    const m = buildSignalScreenModel(benign({ loggedDays: logged }));
+    expect(m.compareWithheld).toBe('density');
+    const why = m.why.join(' ');
+    expect(why).toContain("Logged that unevenly, their counts aren't compared here.");
+    expect(why).not.toMatch(/recent one was logged on fewer days/);
+  });
+
+  // Adversarial pass F3: coverage (a dose, a look) is not the gate's denominator.
+  it('F3: a window whose coverage is full but whose symptom-or-meal days are thin withholds as thin', () => {
+    const gate = [...everyDay(-70, -28), shift(THURSDAY, -3)];
+    const m = buildSignalScreenModel(benign({ gateLoggedDays: gate }));
+    expect(m.compareWithheld).toBe('thin');
+    expect(m.why.join(' ')).toContain("with symptoms or meals logged on 28 and 1 of them. That's too few logged days to compare their counts.");
+  });
+
+  // Adversarial pass F4: the engine's COMPARABLE disclosure is not a reason; a compare the
+  // screen withholds beside it still says why.
+  it('F4: beside the engine’s comparable disclosure, a withheld compare still states its own reason', () => {
+    const reflection: CachedFinding['finding'] = {
+      type: 'reflection',
+      priorityClass: 'insight',
+      symptomType: 'vomit',
+      currentCount: 1,
+      priorCount: 4,
+      direction: 'improving',
+      windowDays: 14,
+      density: { comparable: true, currentLoggingDays: 7, priorLoggingDays: 6 },
+    };
+    // The reflection's halves are THU-13..THU-7 and THU-6..THU: 4 episodes, then 1. The
+    // gate's days: the earlier half every day, the recent half on 3 of 7 (above the floor,
+    // below the ratio) — so the screen withholds on DENSITY while the engine said comparable.
+    const eps = [-12, -11, -9, -8].map((d) => episode(shift(THURSDAY, d), 9)).concat([episode(shift(THURSDAY, -2), 9)]);
+    const gate = [...everyDay(-70, -7), shift(THURSDAY, -6), shift(THURSDAY, -4), shift(THURSDAY, -2)];
+    const m = buildSignalScreenModel(benign({ cached: cachedOf(reflection), episodes: eps, gateLoggedDays: gate }));
+    expect(m.compareWithheld).toBe('density');
+    const why = m.why.join(' ');
+    expect(why).toContain('Counted from days you logged: 7 this week, 6 last.');
+    expect(why).toContain("The recent one was logged on fewer days, so their counts aren't compared here");
+  });
+
+  // Adversarial pass F2: the trial lanes are a before/during pair; a falling split is one lane.
+  it('F2: on a trial, a falling before/in-trial lane split is drawn as one lane; a rising one stays split', () => {
+    const t = trial({ dayCounter: 20, startDay: shift(THURSDAY, -19) });
+    const before = [-38, -35, -30, -25, -21].map((d) => episode(shift(THURSDAY, d), 9, { minutesSinceMeal: 10 }));
+    const inTrial = [episode(shift(THURSDAY, -5), 9, { minutesSinceMeal: 10 })];
+    const falling = buildSignalScreenModel(mockInput({ cached: cachedOf(postprandial()), trial: t, episodes: [...before, ...inTrial] }));
+    expect(falling.lanes?.lanes.map((l) => l.label)).toEqual(['The last 56 days']);
+    const rising = buildSignalScreenModel(mockInput({ cached: cachedOf(postprandial()), trial: t, episodes: [...inTrial, ...before.map((e) => ({ ...e, dayKey: shift(e.dayKey, 20), eventId: `${e.eventId}-t` }))] }));
+    expect(rising.lanes?.lanes.map((l) => l.label)).toEqual(['Before the trial', 'In the trial']);
   });
 
   it('the week line takes the same gate: a falling vomit week pair beside a not-eating record prints this week alone', () => {
@@ -962,7 +1027,6 @@ describe('CUL-1216 — the loader reads the not-eating register for the ROUTE’
   it('on a running trial the strip’s own vomiting sentence reaches Why, verbatim, and nothing is drawn', async () => {
     const today = toLocalDayKey(new Date());
     const running = { id: 't', status: 'active', startedAt: shift(today, -20), endedAt: null, targetDurationDays: 56, foodLabel: null };
-    mockLoadTrialPredicateFacts.mockResolvedValue({ trial: running, stoppedForRefusal: false, facts: null });
     mockLoadDietTrialFacts.mockResolvedValue({
       ...trialLessFacts,
       nowMs: Date.now(),
