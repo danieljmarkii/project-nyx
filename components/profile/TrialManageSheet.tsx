@@ -58,11 +58,10 @@ interface Props {
   busy?: boolean;
   /** The host's phrasing of a refused write — never an error's `message`. */
   writeError?: string | null;
-  /** The pet whose trial this is, for the subtitle. The host passes `activePet.name`,
-   *  and that is correct here rather than a C-9 violation: this door only opens from
-   *  the active pet's own card, so there is no route by which it could render another
-   *  pet's record. (An earlier wording claimed the opposite — see the same note on
-   *  `TrialWindowSheet`.) */
+  /** The pet whose trial this is, for the subtitle: the RECORD's pet (C-9). Since TS-3
+   *  the host is `TrialLifecycleSheets`, which resolves it from the lifecycle's `petId`,
+   *  and since TS-4 the door also opens from the trial's own screen, whose pet comes
+   *  from its route and may not be the active one. */
   petName: string;
   onClose: () => void;
   /**

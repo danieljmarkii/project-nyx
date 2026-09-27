@@ -19,12 +19,18 @@ import {
   selectReadText,
   buildAnalysisWriteBack,
   buildFailureWrite,
+  isRealAnalysis,
+  selectDescription,
+  analysisRowMatchesEvent,
+  updateAnalysisRow,
+  applyAnalysisWriteBack,
   fetchUsableImageBlob,
   getToolUseInput,
   sanitizeEnum,
   sanitizeEnumArray,
   type IncidentCopy,
   type AnalysisReadFields,
+  type Recommendation,
 } from './incident-analysis.ts'
 
 // ── fetchUsableImageBlob — the transform-only opt-in (B-228 A8, §6.2.4 / AC-13) ─────
@@ -424,4 +430,351 @@ Deno.test('buildFailureWrite — an UNREADABLE row fails closed: write nothing r
     buildFailureWrite({ ...FAILURE_BASE, existing: { recommendation: 'monitor' }, existingReadFailed: true }).mode,
     'skip',
   )
+})
+
+// ── A verdict this code does not know yet (CUL-1277) ──────────────────────────
+// EN-3 (CUL-1133) will write verdicts the shipped code cannot name, and a flag rolled
+// back leaves them in the record for THIS code to meet. Every guard that PROTECTS an
+// escalation already in the record asks the shared quiet list (lib/incidentVerdict.ts),
+// so the unknown value is protected exactly like worth_a_call. The two gates that
+// RELEASE the model's own words stay on the literal (Pattern 10), and are pinned here
+// too, so nobody moves them onto the list by symmetry. `call_now` is the fixture because
+// it is the likeliest real name; `a_verdict_from_the_future` because it can never be one.
+
+const UNKNOWN_VERDICTS = ['call_now', 'a_verdict_from_the_future'] as const
+
+Deno.test('CUL-1277 buildFailureWrite — an unknown verdict in the record survives a failed re-read (the CUL-812 shape)', () => {
+  for (const verdict of UNKNOWN_VERDICTS) {
+    const write = buildFailureWrite({ ...FAILURE_BASE, existing: { recommendation: verdict } })
+    assertStrictEquals(write.mode, 'error-only', verdict)
+    assertEquals(write.mode === 'error-only' ? Object.keys(write.values) : [], ['error'])
+  }
+})
+
+Deno.test('CUL-1277 isRealAnalysis — a failed or pending row holding an unknown verdict is never buried by a cap', () => {
+  for (const verdict of UNKNOWN_VERDICTS) {
+    assertStrictEquals(isRealAnalysis({ status: 'failed', recommendation: verdict }), true, verdict)
+    assertStrictEquals(isRealAnalysis({ status: 'pending', recommendation: verdict }), true, verdict)
+  }
+  // The shipped shape, unchanged: the literal escalation, and the status half.
+  assertStrictEquals(isRealAnalysis({ status: 'failed', recommendation: 'worth_a_call' }), true)
+  assertStrictEquals(isRealAnalysis({ status: 'completed', recommendation: 'monitor' }), true)
+  assertStrictEquals(isRealAnalysis({ status: 'uncertain', recommendation: 'not_enough_to_say' }), true)
+  // A quiet verdict on a failed or pending row is NOT protected: nothing a cap band buries.
+  assertStrictEquals(isRealAnalysis({ status: 'failed', recommendation: 'monitor' }), false)
+  assertStrictEquals(isRealAnalysis({ status: 'failed', recommendation: 'not_enough_to_say' }), false)
+  assertStrictEquals(isRealAnalysis({ status: 'pending', recommendation: null }), false)
+  assertStrictEquals(isRealAnalysis(null), false)
+})
+
+Deno.test('CUL-1277 shouldCollapsePartialRead — an unknown verdict on a partial read is never collapsed', () => {
+  for (const verdict of UNKNOWN_VERDICTS) {
+    assertStrictEquals(shouldCollapsePartialRead({ usableCount: 1, totalCount: 2, recommendation: verdict }), false, verdict)
+  }
+})
+
+Deno.test('CUL-1277 the free-text gates stay on the literal: an unknown verdict never releases model words (Pattern 10)', () => {
+  const copy: IncidentCopy = {
+    contextual: () => 'CONTEXTUAL',
+    photoUnreadable: () => 'UNREADABLE',
+    monitor: () => 'MONITOR',
+    visualFlagFallback: () => 'VISUAL',
+    noFlag: () => 'NOFLAG',
+  }
+  for (const verdict of UNKNOWN_VERDICTS) {
+    // The cast is the point: these gates are typed to the shipped three, and a value
+    // outside them must still take a deterministic template, never the model's prose.
+    const recommendation = verdict as unknown as Recommendation
+    const readText = selectReadText(copy, {
+      petName: 'Rex', recommendation, contextualFlags: [], visualFlags: [],
+      modelReadText: 'MODEL PROSE', photoUnreadable: false, hasPhoto: true,
+    })
+    assertStrictEquals(readText === 'MODEL PROSE', false, verdict)
+    assertStrictEquals(
+      selectDescription({ modelDescription: 'MODEL PROSE', recommendation, contextualFlags: [], photoUnreadable: false }),
+      null,
+      verdict,
+    )
+  }
+})
+
+// ── Whose row is it (CUL-1203) ────────────────────────────────────────────────
+// An in-memory event_ai_analysis that APPLIES the .eq filters, so a planted row is
+// driven through real filtering rather than a recorded call list: the assertion is
+// on what the row holds afterwards, which is what an attacker would read.
+
+type Row = Record<string, unknown>
+
+function memoryTable(rows: Row[], opts: { failWith?: string } = {}) {
+  const log: string[] = []
+  const client = {
+    from(table: string) {
+      log.push(`from:${table}`)
+      let pending: { kind: 'update' | 'upsert'; values: Row } | null = null
+      const filters: [string, unknown][] = []
+      let selecting = false
+      const run = () => {
+        if (opts.failWith) return { data: null, error: { message: opts.failWith } }
+        if (!pending) return { data: null, error: { message: 'no operation' } }
+        if (pending.kind === 'upsert') {
+          const hit = rows.find((r) => r.event_id === pending!.values.event_id)
+          if (hit) Object.assign(hit, pending.values)
+          else rows.push({ ...pending.values })
+          return { data: null, error: null }
+        }
+        const matched = rows.filter((r) => filters.every(([c, v]) => r[c] === v))
+        for (const r of matched) Object.assign(r, pending.values)
+        return { data: selecting ? matched.map((r) => ({ id: r.id })) : null, error: null }
+      }
+      const builder = {
+        update(values: Row) { pending = { kind: 'update', values }; log.push('update'); return builder },
+        upsert(values: Row, o: unknown) { pending = { kind: 'upsert', values }; log.push(`upsert:${JSON.stringify(o)}`); return builder },
+        eq(c: string, v: unknown) { filters.push([c, v]); log.push(`eq:${c}`); return builder },
+        select(_cols: string) { selecting = true; log.push('select'); return builder },
+        then(resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) {
+          return Promise.resolve(run()).then(resolve, reject)
+        },
+      }
+      return builder
+    },
+  }
+  // deno-lint-ignore no-explicit-any
+  return { client: client as any, rows, log }
+}
+
+const VICTIM_READ: AnalysisReadFields<'blood'> = {
+  recommendation: 'worth_a_call',
+  read_text: 'Mochi threw up twice today. Worth a call to your vet.',
+  visual_flags: [],
+  contextual_flags: [],
+  status: 'completed',
+  error: null,
+}
+
+Deno.test('CUL-1203 — the plant: a humanEdited write-back cannot reach a row filed under another pet', async () => {
+  // The attack as it ran before 074: a row on the victim's event, filed under the
+  // attacker's pet, with edited_at set so the read takes the update branch.
+  const planted: Row = { id: 'r1', event_id: 'E', pet_id: 'attacker-pet', edited_at: 't', read_text: null, recommendation: null }
+  const { client } = memoryTable([planted])
+  const writeBack = buildAnalysisWriteBack({
+    humanEdited: true,
+    eventId: 'E',
+    petId: 'victim-pet',
+    incidentType: 'vomit',
+    structuredValues: {},
+    readFields: VICTIM_READ,
+  })
+  const { error } = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack)
+  // Nothing of the victim's read reached the attacker's row, and the miss is SAID.
+  assertStrictEquals(planted.read_text, null)
+  assertStrictEquals(planted.recommendation, null)
+  assertStrictEquals(error, 'no event_ai_analysis row for this event and pet')
+})
+
+Deno.test('CUL-1203 — the owner\'s own edited row still takes the read', async () => {
+  const own: Row = { id: 'r1', event_id: 'E', pet_id: 'victim-pet', edited_at: 't', description: 'owner edit', read_text: null }
+  const { client, log } = memoryTable([own])
+  const writeBack = buildAnalysisWriteBack({
+    humanEdited: true, eventId: 'E', petId: 'victim-pet', incidentType: 'vomit', structuredValues: {}, readFields: VICTIM_READ,
+  })
+  const { error } = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack)
+  assertStrictEquals(error, null)
+  assertStrictEquals(own.read_text, VICTIM_READ.read_text)
+  assertStrictEquals(own.description, 'owner edit') // never-clobber, unchanged
+  assertEquals(log, ['from:event_ai_analysis', 'update', 'eq:event_id', 'eq:pet_id', 'select'])
+})
+
+Deno.test('CUL-1203 — updateAnalysisRow: zero rows is an error, never a silent success (C-39)', async () => {
+  const { client } = memoryTable([])
+  const { error } = await updateAnalysisRow(client, { eventId: 'E', petId: 'P' }, { error: 'boom' })
+  assertStrictEquals(error, 'no event_ai_analysis row for this event and pet')
+})
+
+Deno.test('CUL-1203 — updateAnalysisRow: a database error passes through', async () => {
+  const { client } = memoryTable([{ id: 'r1', event_id: 'E', pet_id: 'P' }], { failWith: 'permission denied' })
+  const { error } = await updateAnalysisRow(client, { eventId: 'E', petId: 'P' }, { error: 'boom' })
+  assertStrictEquals(error, 'permission denied')
+})
+
+Deno.test('CUL-1203 — the upsert branch is unchanged: onConflict event_id, the event\'s pet as a value', async () => {
+  const { client, rows, log } = memoryTable([])
+  const writeBack = buildAnalysisWriteBack({
+    humanEdited: false, eventId: 'E', petId: 'victim-pet', incidentType: 'vomit', structuredValues: {}, readFields: VICTIM_READ,
+  })
+  const { error } = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack)
+  assertStrictEquals(error, null)
+  assertEquals(log, ['from:event_ai_analysis', 'upsert:{"onConflict":"event_id"}'])
+  assertStrictEquals(rows[0].pet_id, 'victim-pet')
+})
+
+Deno.test('CUL-1203 — analysisRowMatchesEvent: no row, or the event\'s own pet; anything else is refused', () => {
+  assertStrictEquals(analysisRowMatchesEvent(null, 'P'), true)
+  assertStrictEquals(analysisRowMatchesEvent({ pet_id: 'P' }, 'P'), true)
+  assertStrictEquals(analysisRowMatchesEvent({ pet_id: 'Q' }, 'P'), false)
+  // Fails closed: a select that forgot pet_id, or a NULL, is never a match.
+  assertStrictEquals(analysisRowMatchesEvent({}, 'P'), false)
+  assertStrictEquals(analysisRowMatchesEvent({ pet_id: null }, 'P'), false)
+})
+
+// ── The static half: every UPDATE on the table keys on pet_id ─────────────────
+// Engines v3 queues more writers on this table (EN-2, EN-3, EN-4 — CUL-1268
+// BRK-1). The unit tests above prove the helper; this proves nobody routes around
+// it. It reads every non-test .ts under supabase/functions and, for each
+// `.from('event_ai_analysis')` chain that calls `.update(`, requires an
+// `.eq('pet_id', …)` in the same chain.
+//
+// BLIND SPOTS, stated so a green run is not read as more (C-38): a chain split
+// across variables (`const t = c.from('event_ai_analysis'); t.update(…)`), a raw
+// SQL or RPC writer, and a table name built at runtime are all invisible; and the
+// chain's END is a text heuristic (see analysisChains), so a `.eq('pet_id', …)`
+// that follows an unkeyed update on the same line or inside an expression the
+// heuristic does not split can still launder it; and the comment blanker does
+// not parse regex literals, so a `//` inside one reads as a comment start. The invariant itself is
+// migration 074's trigger; this pins the write-back's keying.
+
+async function* sourceFiles(dir: URL): AsyncGenerator<URL> {
+  for await (const entry of Deno.readDir(dir)) {
+    const child = new URL(entry.name + (entry.isDirectory ? '/' : ''), dir)
+    if (entry.isDirectory) yield* sourceFiles(child)
+    else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') && !entry.name.endsWith('_test.ts')) yield child
+  }
+}
+
+// The chain runs from `.from('event_ai_analysis')` to the statement's end. The
+// house style omits semicolons, so the end is the FIRST of: a `;`, a blank line,
+// the next `.from(` (the next query, e.g. inside a Promise.all array), or a line
+// opening a new statement. Without the last two, an unkeyed update followed on
+// the very next line by an unrelated query's `.eq('pet_id', …)` read as keyed
+// (rls-privacy-reviewer H3, measured as a surviving mutant).
+const NEXT_STATEMENT = /\n\s*(?:await|const|let|return|if|for|throw|try)\b/
+
+// Comments are blanked first (newlines kept), so a `;` or a blank line inside
+// prose cannot end a chain early — which would drop an unkeyed update from the
+// scan entirely (code-reviewer finding on this PR; this file's house style is
+// semicolon-rich prose). One left-to-right pass that tracks string literals, so
+// a `//` inside a string is not a comment (C-18's single-pass rule). Strings are
+// KEPT: the table name the scan looks for is one.
+function blankComments(src: string): string {
+  let out = ''
+  let i = 0
+  let quote: string | null = null
+  while (i < src.length) {
+    const c = src[i]
+    if (quote) {
+      out += c
+      if (c === '\\') { out += src[i + 1] ?? ''; i += 2; continue }
+      if (c === quote) quote = null
+      i++
+      continue
+    }
+    if (c === "'" || c === '"' || c === '`') { quote = c; out += c; i++; continue }
+    if (c === '/' && src[i + 1] === '/') {
+      while (i < src.length && src[i] !== '\n') { out += ' '; i++ }
+      continue
+    }
+    if (c === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2)
+      const stop = end < 0 ? src.length : end + 2
+      for (; i < stop; i++) out += src[i] === '\n' ? '\n' : ' '
+      continue
+    }
+    out += c
+    i++
+  }
+  return out
+}
+
+function analysisChains(raw: string): string[] {
+  const src = blankComments(raw)
+  const out: string[] = []
+  for (const m of src.matchAll(/\.from\(\s*['"]event_ai_analysis['"]\s*\)/g)) {
+    const rest = src.slice(m.index!)
+    const ends = [
+      rest.indexOf(';'),
+      rest.indexOf('\n\n'),
+      rest.indexOf('.from(', m[0].length),
+      rest.search(NEXT_STATEMENT),
+    ].filter((i) => i > 0)
+    out.push(rest.slice(0, ends.length ? Math.min(...ends) : rest.length))
+  }
+  return out
+}
+
+Deno.test('CUL-1203 — every event_ai_analysis UPDATE under supabase/functions keys on pet_id', async () => {
+  const root = new URL('../', import.meta.url)
+  const updates: { file: string; chain: string }[] = []
+  for await (const file of sourceFiles(root)) {
+    const src = await Deno.readTextFile(file)
+    for (const chain of analysisChains(src)) {
+      if (/\.update\(/.test(chain)) updates.push({ file: file.pathname, chain })
+    }
+  }
+  // Floor: the helper's OWN chain must be among them, keyed — not merely "some
+  // update was found", which a scan dropping every other chain would still pass.
+  const helper = updates.filter((u) =>
+    u.file.endsWith('/_shared/incident-analysis.ts') && /\.update\(values\)/.test(u.chain))
+  assertStrictEquals(helper.length, 1, 'the scan did not find updateAnalysisRow\'s own chain')
+  for (const { file, chain } of updates) {
+    assertStrictEquals(
+      /\.eq\(\s*['"]pet_id['"]/.test(chain), true,
+      `${file}: an event_ai_analysis update without .eq('pet_id', …) — route it through updateAnalysisRow (CUL-1203)`,
+    )
+  }
+})
+
+Deno.test('CUL-1203 — the scan sees an unkeyed update when there is one (the guard, proven)', () => {
+  const unkeyed = "await adminClient\n  .from('event_ai_analysis')\n  .update(values)\n  .eq('event_id', eventId)\n\nconst x = 1"
+  const keyed = "await c.from('event_ai_analysis').update(v).eq('event_id', e).eq('pet_id', p).select('id')\n"
+  const [u] = analysisChains(unkeyed)
+  const [k] = analysisChains(keyed)
+  assertStrictEquals(/\.update\(/.test(u) && !/\.eq\(\s*['"]pet_id['"]/.test(u), true)
+  assertStrictEquals(/\.eq\(\s*['"]pet_id['"]/.test(k), true)
+  // And the chain stops at the statement: a later pet_id filter on ANOTHER query
+  // must not launder this one — after a blank line, on the very next line
+  // (H3's surviving mutant), or as the next element of a Promise.all array.
+  const [laundered] = analysisChains(unkeyed + "\nawait c.from('events').select('id').eq('pet_id', p)")
+  assertStrictEquals(/\.eq\(\s*['"]pet_id['"]/.test(laundered), false)
+  const adjacent =
+    "await adminClient\n  .from('event_ai_analysis')\n  .update(values)\n  .eq('event_id', eventId)\n" +
+    "await adminClient.from('events').select('id').eq('pet_id', petId)\n"
+  const [nextLine] = analysisChains(adjacent)
+  assertStrictEquals(/\.update\(/.test(nextLine) && !/\.eq\(\s*['"]pet_id['"]/.test(nextLine), true)
+  const inArray =
+    "await Promise.all([\n  c.from('event_ai_analysis').update(v).eq('event_id', e),\n  c.from('events').select('id').eq('pet_id', p),\n])"
+  const [arrayElem] = analysisChains(inArray)
+  assertStrictEquals(/\.update\(/.test(arrayElem) && !/\.eq\(\s*['"]pet_id['"]/.test(arrayElem), true)
+  // A `;` inside a comment between .from and .update must not end the chain
+  // before the update (which would drop it from the scan unseen), nor may a
+  // block comment spanning lines.
+  const commented =
+    "await c\n  .from('event_ai_analysis')\n  // the owner's row; never another pet's\n  /* see CUL-1203;\n     074 */\n  .update(v)\n  .eq('event_id', e)\n"
+  const [throughComment] = analysisChains(commented)
+  assertStrictEquals(/\.update\(/.test(throughComment), true)
+  // And a `//` inside a string is not a comment.
+  assertStrictEquals(blankComments("const u = 'https://x'; // gone"), "const u = 'https://x';        ")
+})
+
+Deno.test('CUL-1203 — step 3b reads pet_id and refuses on it before any write (wiring, static)', async () => {
+  // runIncidentAnalysis has no end-to-end harness, so its two load-bearing lines
+  // are pinned as text. Dropping pet_id from the select would refuse EVERY
+  // re-analysis (the helper fails closed); dropping the call would leave the
+  // decision to the database alone.
+  const src = await Deno.readTextFile(new URL('./incident-analysis.ts', import.meta.url))
+  const handler = src.slice(src.indexOf('export async function runIncidentAnalysis'))
+  const read = /\.from\('event_ai_analysis'\)\s*\.select\('([^']*)'\)\s*\.eq\('event_id', eventId\)\s*\.maybeSingle\(\)\s*\/\/ CUL-1203/.exec(handler)
+  assertStrictEquals(read !== null, true, 'the step-3b existing-row read moved or lost its CUL-1203 marker')
+  assertStrictEquals(read![1].split(',').map((c) => c.trim()).includes('pet_id'), true)
+  const refuse = handler.indexOf('if (!analysisRowMatchesEvent(existing, petId))')
+  const firstWrite = handler.search(/applyAnalysisWriteBack\(|\.upsert\(|recordUsage\(/)
+  assertStrictEquals(refuse > 0 && refuse < firstWrite, true, 'the refusal must run before the usage counter and every write')
+  // And the branch must LEAVE: an `if` that only logs would fall through to the
+  // writes (rls-privacy-reviewer H2 — a log-only mutant survived the check above).
+  const branch = handler.slice(refuse, handler.indexOf('\n    }\n', refuse))
+  assertStrictEquals(/\n\s*return Response\.json\(/.test(branch), true, 'the refusal branch must return')
+  assertStrictEquals(/status:\s*409/.test(branch), true, 'the refusal must answer 409')
+  // The catch's re-read decides the failure write off a row, so it asks the same
+  // question of that row (code-reviewer finding on this PR).
+  const catchRead = handler.slice(handler.indexOf('let latestReadFailed'))
+  assertStrictEquals(/\.select\('recommendation, pet_id'\)/.test(catchRead), true)
+  assertStrictEquals(/analysisRowMatchesEvent\(latestRow \?\? null, petIdForFailure\)/.test(catchRead), true)
 })

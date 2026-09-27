@@ -139,8 +139,8 @@ const ALLOWED: Record<string, string> = {
     'WHERE THE ATTRIBUTION IS MINTED (CUL-1040 §4.2, D4a). The vet switch is the origin of target_duration_vet_directed: unchecked by default, never required, and reset by the panel UNMOUNTING between steps, so a stale true cannot attribute to a vet a window the vet never named. It holds the boolean and hands it to the host; it reads no row and renders no attribution back.',
   'components/profile/TrialManageSheet.tsx':
     'The one Modal (C-14), which passes the panel\u2019s onSave straight through to the host and never inspects its payload. Registered because it names the field in that signature, not because it decides anything with it \u2014 and a registry entry describes what the file HANDLES, so a pass-through says so plainly.',
-  'app/(tabs)/profile.tsx':
-    'The host that carries the minted boolean to the one write path (handleChangeWindow \u2192 changeTrialWindow), passing false as false rather than folding it into null — the column keeps three states. It renders the value nowhere; the only thing it renders from these columns is the refusal sentence, phrased from structured fields.',
+  'hooks/useTrialLifecycle.ts':
+    'The lifecycle host that carries the minted boolean to the one write path (changeWindow \u2192 changeTrialWindow), passing false as false rather than folding it into null — the column keeps three states. It renders the value nowhere; the only thing it renders from these columns is the refusal sentence, phrased from structured fields. Moved here from the Pet tab by CUL-1299 (TS-3) so the trial screen can share it; `components/trial/TrialLifecycleSheets.tsx` hands the sheet\u2019s onSave to it without naming the field, and so is not an entry.',
 };
 
 /** Every non-test source in the tree, derived from the REPOSITORY rather than from a list
@@ -228,7 +228,7 @@ describe('CUL-1041 — the window-provenance columns are the vet report’s, and
     }
   });
 
-  it('exactly ONE importer of the card model NAMES its lines — the Pet-tab card (CUL-1040)', () => {
+  it('only the two in-app hosts of the card model NAME its lines — the Pet-tab card and the trial screen (CUL-1040, CUL-1300)', () => {
     // `withWindowMovedLine` appends to the SHARED `TrialCardModel.lines`, and a line
     // appended to a shared model travels wherever the model travels. Six modules import
     // `lib/dietTrialCard.ts`; only the card component reads the lines, and the rest take
@@ -255,7 +255,11 @@ describe('CUL-1041 — the window-provenance columns are the vet report’s, and
       const src = code(rel);
       return importsCard(src) && READS_LINES.test(src);
     });
-    expect(readers).toEqual(['components/profile/DietTrialCard.tsx']);
+    // TS-4 (CUL-1300): the trial's own screen is the card's successor surface (spec S2:
+    // "one resolver, a new layout"). Its model reads the lines to place them, verbatim, in
+    // the app, next to the same pet's trial; the window-moved line travelling there is the
+    // point, not a leak. It crosses no process boundary and feeds no notification.
+    expect(readers).toEqual(['components/profile/DietTrialCard.tsx', 'lib/trialScreenModel.ts']);
     // Non-vacuity: the importer set is real and larger than the reader set, so the
     // filter above is discriminating rather than matching nothing.
     const importers = sources().filter((rel) => importsCard(code(rel)));

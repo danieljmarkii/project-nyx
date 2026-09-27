@@ -11,6 +11,19 @@
 -- CTE matched) and `pet_id`: record.deno.ts refuses anything but the same one pet in both
 -- (CUL-1276), so a typo can never replay as an empty record.
 --
+-- WHOSE PET (CUL-1314, PMD-12). `execute_sql` is the service role and skips RLS, and a
+-- correct id and owner pair proves only that the two agree, not that a session may read
+-- them. Until the privacy policy names an evaluation purpose, only the PM's own pets and
+-- synthetic records are evaluation subjects. Each CTE matches only the pets listed in
+-- evaluationSubjects.ts, so run as written, any other pair comes back as `subjects: 0`
+-- and none of its rows leave the database; the loader refuses any other pet id as well.
+-- The query is pinned (exportPin.ts): changing anything Postgres would execute here reds
+-- the build until a privacy review re-pins it; editing a comment line does not. That binds
+-- the committed file, not an edited copy: the rule is followed, never enforced. Run it
+-- unchanged. To add a pet, add it there and to both lists here in one reviewed PR.
+-- Not yet tied to the pet's owner: the food rows (Query 1's `arr` join, Query 2's
+-- `foods`), which are read by id alone. CUL-1316.
+--
 -- Deliberately NOT exported: diet_trials.target_duration_days_initial,
 -- target_duration_set_at and target_duration_vet_directed. They carry a treatment-response
 -- inference the repo keeps for the vet report alone (guards/dietTrialProvenance.test.ts).
@@ -23,6 +36,8 @@ with subj as (
   from pets p
   where p.id = '<pet uuid>'
     and p.user_id = (select id from auth.users where email = '<owner email>')
+    -- The evaluation subjects (evaluationSubjects.ts, PMD-12). Not a literal to replace.
+    and p.id in ('bf7b196e-6db1-4a34-af34-f1759d380042', '892f29cb-fdc7-4add-a374-bc082e028825')
 )
 select json_build_object(
   'subjects', (select count(*) from subj),
@@ -73,6 +88,8 @@ with subj as (
   from pets p
   where p.id = '<pet uuid>'
     and p.user_id = (select id from auth.users where email = '<owner email>')
+    -- The evaluation subjects (evaluationSubjects.ts, PMD-12). Not a literal to replace.
+    and p.id in ('bf7b196e-6db1-4a34-af34-f1759d380042', '892f29cb-fdc7-4add-a374-bc082e028825')
 )
 select json_build_object(
   'subjects', (select count(*) from subj),

@@ -94,8 +94,9 @@ export default function HomeScreen() {
     [navigation],
   );
   // Same loader as the Pet-tab card, so the two surfaces cannot disagree about
-  // the same trial (B-417 PR 4). `inputIsForActivePet` fails closed for B-789 below.
-  const { input: trialInput, inputIsForActivePet: trialFactsFresh } = useDietTrial();
+  // the same trial (B-417 PR 4). `inputIsForPet` fails closed for B-789 below.
+  const activePetId = usePetStore((s) => s.activePet?.id ?? null);
+  const { input: trialInput, inputIsForPet: trialFactsFresh } = useDietTrial(activePetId);
   // B-721 SR-5 (§3.4) — is a trial running for the active pet? Computed here from the
   // trial input Home already loads (no second read) and passed to SignalZone, where a
   // falling reflection's expanded state appends the mid-trial adjacency line. `isTrialRunning`
@@ -115,7 +116,7 @@ export default function HomeScreen() {
   // plain `trialInput ? … : false` let the reassuring card render before the facts landed (cold
   // start) or over the wrong pet (a switch). Absence of a refusal fact during a load is NOT evidence
   // of eating (n=1 never reassures), so suppress until the facts are confirmed for the active pet
-  // (`inputIsForActivePet`). That flag stays true across a same-pet sync, so this never flickers the
+  // (`inputIsForPet`). That flag stays true across a same-pet sync, so this never flickers the
   // card on a routine refresh.
   const suppressTrialResponse =
     trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : !trialFactsFresh;

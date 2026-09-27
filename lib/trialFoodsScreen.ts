@@ -321,6 +321,18 @@ export function trialFoodsTitle(petName: string): string {
   return `What ${petName} can eat`;
 }
 
+/** CUL-400 — the allowed-set read threw. The same register as the exposures
+ *  screen's `TRIAL_EXPOSURES_UNREADABLE` (the two list screens answer the same
+ *  failure the same way): the cause, that nothing is lost, the next action. Never
+ *  an empty list — that would say nothing is permitted. */
+export const TRIAL_FOODS_UNREADABLE =
+  'Culprit couldn’t read this trial’s food list just now. Nothing has been lost — ' +
+  'this screen just couldn’t load it. Try again in a moment.';
+
+/** CUL-1297 — a `?pet=` naming a pet the account no longer holds (trial-screen
+ *  spec §4, verbatim). No id is echoed, and no other pet's trial stands in. */
+export const TRIAL_ROUTE_PET_GONE = 'This pet isn’t in your account any more.';
+
 export function noTrialLine(petName: string): string {
   return `${petName} isn’t on a diet trial right now. When one is running, the foods it allows show up here.`;
 }

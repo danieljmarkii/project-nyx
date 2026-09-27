@@ -107,11 +107,13 @@ export function decideIntakePrefill(
   trial: TrialAllowedSet,
   nowMs: number = Date.now(),
 ): IntakePrefillDecision {
-  // Not "no trial" — "we do not know yet". `loadTrialAllowedSet` returns this for a read
-  // that threw AND for a live trial whose `diet_trial_foods` have not hydrated, which is
-  // a real state on a fresh install or a re-login. Treating it as "no trial" is exactly
-  // how a topper becomes the pre-fill on a trial pet.
-  if (trial.status === 'unknown') return { kind: 'none' };
+  // Not "no trial" — "we do not know". `loadTrialAllowedSet` answers `unknown` for a live
+  // trial whose `diet_trial_foods` have not hydrated (a real state on a fresh install or a
+  // re-login) and `unreadable` for a read that threw (CUL-400). Treating either as "no
+  // trial" is exactly how a topper becomes the pre-fill on a trial pet. Written as the two
+  // KNOWN answers rather than a list of unknowns, so an arm added to the union later fails
+  // closed here instead of falling through to the recent-meal pre-fill (CUL-1297 review).
+  if (trial.status !== 'ready' && trial.status !== 'no_trial') return { kind: 'none' };
 
   if (trial.status === 'ready') {
     const diet = trialListFoodsOn(trial, nowMs).filter((f) => f.role === 'primary_diet');
