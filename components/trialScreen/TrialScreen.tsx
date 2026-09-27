@@ -262,9 +262,11 @@ function TrialBody({ model, petId, titleRef, handlers, busyAction, onManage }: T
                     {line}
                   </ThemedText>
                 ))}
-                <ThemedText testID="trial-for-the-call-swap" style={styles.callSwap}>
-                  {model.forTheCall.swap}
-                </ThemedText>
+                {model.forTheCall.swap !== null ? (
+                  <ThemedText testID="trial-for-the-call-swap" style={styles.callSwap}>
+                    {model.forTheCall.swap}
+                  </ThemedText>
+                ) : null}
               </View>
             ) : null}
           </View>

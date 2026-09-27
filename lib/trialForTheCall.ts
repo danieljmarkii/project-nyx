@@ -33,14 +33,19 @@ import { toLocalDayKey } from './utils';
 /** The block's heading, verbatim from §3.3. */
 export const FOR_THE_CALL_HEADING = 'For the call';
 
+/**
+ * The swap line is null under `meal_record`: the register's note directly above it says the app
+ * can't tell which food went untouched, so "this one" would have nothing to point at, and the wide
+ * population can include a food the pet is eating fine (adversarial pass, TS-7).
+ */
 export interface ForTheCall {
   heading: string;
   /** The record's facts, in §3.3's order: Offered (when nameable), the day, vomiting (when ≥ 1).
    *  Not `lines`: that name is the card model's, and `guards/dietTrialProvenance.test.ts`
    *  counts every reader of it. */
   facts: string[];
-  /** The one line of new copy, after the facts. */
-  swap: string;
+  /** The one line of new copy, after the facts. Null when the app could not name the diet. */
+  swap: string | null;
 }
 
 /** §3.3's one line of new copy (nyx-voice + Dr. Chen, TS-7). "Isn't eating it", never a motive. */
@@ -69,8 +74,9 @@ export function buildForTheCall(
 
   // B-530: under `meal_record` the app could not match the meals to the trial's foods, so it
   // names no diet. The register's note says so; this line must not contradict it.
+  const named = refusal.population === 'trial_diet';
   const label = foodLabel?.trim() ?? '';
-  if (refusal.population === 'trial_diet' && label.length > 0) {
+  if (named && label.length > 0) {
     facts.push(`Offered: ${label}`);
   }
 
@@ -83,7 +89,7 @@ export function buildForTheCall(
   const vomiting = vomitingLine(input);
   if (vomiting) facts.push(vomiting);
 
-  return { heading: FOR_THE_CALL_HEADING, facts, swap: forTheCallSwapLine(input.petName) };
+  return { heading: FOR_THE_CALL_HEADING, facts, swap: named ? forTheCallSwapLine(input.petName) : null };
 }
 
 /**

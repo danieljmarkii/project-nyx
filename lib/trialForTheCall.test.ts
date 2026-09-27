@@ -130,9 +130,13 @@ describe('For the call — the refusal face only', () => {
 });
 
 describe('Offered (B-530)', () => {
-  it('names no diet when the refusal is over the meal record', () => {
-    const { call } = build(refusing({ trialDietRefusal: { ...REFUSAL, population: 'meal_record' } }));
+  it('names no diet, and offers no swap, when the refusal is over the meal record', () => {
+    // The register's note says the app can't tell which food went untouched; "swap this one"
+    // beneath it would point at nothing, or at a food the pet is eating fine.
+    const { card, call } = build(refusing({ trialDietRefusal: { ...REFUSAL, population: 'meal_record' } }));
+    expect(card.lines.some((l) => /can’t name which one went untouched/.test(l.text))).toBe(true);
     expect(call?.facts).toEqual(['Day 5 of the trial']);
+    expect(call?.swap).toBeNull();
   });
 
   it('names no diet when the trial carries no label', () => {
@@ -173,6 +177,17 @@ describe('Vomiting logged (T-4: presence only, always with its last date)', () =
       'Day 40 of the trial',
       "Vomiting logged: 3 in the trial's 40 days, the last on Sep 27",
     ]);
+  });
+
+  it('says nothing at zero even when handed a date (an out-of-contract pair the loader cannot build today)', () => {
+    // The shipped counts couple the two (no episode ⇒ no date), which is exactly why a dropped
+    // k ≥ 1 gate would survive every in-contract fixture. This pins the gate itself.
+    const input = refusing();
+    const { call } = build({
+      ...input,
+      trialResponse: { ...counts(input.trial!.startedAt, []), trialLastEpisodeDayIndex: localDayIndexOf(keyDaysAgo(2)) },
+    });
+    expect(call?.facts.some((l) => /vomit/i.test(l))).toBe(false);
   });
 
   it('never carries a count without its date', () => {
@@ -218,7 +233,7 @@ describe('the words', () => {
       const trialResponse = counts(input.trial!.startedAt, [atLocal(1, 9), atLocal(3, 9)]);
       const { call } = build({ ...input, trialResponse });
       expect(call).not.toBeNull();
-      const text = [call!.heading, ...call!.facts, call!.swap].join('\n');
+      const text = [call!.heading, ...call!.facts, call!.swap ?? ''].join('\n');
       expect(text).not.toMatch(/won[’']t|refus|reject|picky|fussy|doesn[’']t want|!/i);
     }
   });
@@ -227,7 +242,7 @@ describe('the words', () => {
     const { card, call } = build(refusing());
     const register = card.lines.filter((l) => l.role === 'flag').map((l) => l.text).join(' ');
     expect(register).toMatch(/4 feedings of the 5/);
-    const text = [...call!.facts, call!.swap].join(' ');
+    const text = [...call!.facts, call!.swap ?? ''].join(' ');
     expect(text).not.toMatch(/unfinished|\b4\b|\b5 trial/);
   });
 
