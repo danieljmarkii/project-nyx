@@ -16,7 +16,7 @@ import { TrialStrip } from '../../components/home/TrialStrip';
 import { MedStrip } from '../../components/home/MedStrip';
 import { AppointmentStrip } from '../../components/vetvisits/AppointmentStrip';
 import { LookCard } from '../../components/home/LookCard';
-import { LookExits, exitVisibility } from '../../components/home/LookExits';
+import { LookExits, exitVisibility, lookRectInPage, type LayoutBox } from '../../components/home/LookExits';
 import { TodayZone } from '../../components/home/TodayZone';
 import { TrendZone } from '../../components/home/TrendZone';
 import { pullThreshold } from '../../lib/haptics';
@@ -67,6 +67,10 @@ export default function HomeScreen() {
   // Kept as ONE object so a paint can never mix a fresh height with a stale top; and
   // written only from `onLayout`, which fires when the grid opens and closes.
   const [lookRect, setLookRect] = useState<{ top: number; height: number } | null>(null);
+  // design_v2 only: the Today card's box in the scroll content and the look header's box
+  // inside the card, composed below (CUL-1220, BRK-16).
+  const [todayCardBox, setTodayCardBox] = useState<LayoutBox | null>(null);
+  const [lookHeaderBox, setLookHeaderBox] = useState<LayoutBox | null>(null);
   const [scrollY, setScrollY] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
 
@@ -175,6 +179,7 @@ export default function HomeScreen() {
   // Trend card is retired, and the coverage door closes the feed. Flag-off is today's
   // Home, untouched.
   const designV2 = useDesignV2();
+  const pinnedRect = designV2 ? lookRectInPage(todayCardBox, lookHeaderBox) : lookRect;
 
   useEffect(() => {
     loadTodayEvents();
@@ -315,10 +320,13 @@ export default function HomeScreen() {
             // door (the one door to Patterns on Home; left-aligned, C-5). The header's
             // rect feeds the same pinned exits the card fed (T-21).
             <>
+              {/* BRK-16: the header measures inside the card, so its rect is composed in
+                  page coordinates from both layouts (`lookRectInPage`, C-22). */}
               <TodayCard
                 trialNotEating={trialNotEating}
+                onLayout={(e) => setTodayCardBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })}
                 onLookLayout={(e) =>
-                  setLookRect({ top: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
+                  setLookHeaderBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
                 }
               />
               <CoverageDoor />
@@ -341,8 +349,8 @@ export default function HomeScreen() {
             published handles and returns null otherwise. */}
         <LookExits
           {...exitVisibility({
-            cardTop: lookRect?.top ?? null,
-            cardHeight: lookRect?.height ?? null,
+            cardTop: pinnedRect?.top ?? null,
+            cardHeight: pinnedRect?.height ?? null,
             scrollY,
             viewportHeight,
           })}

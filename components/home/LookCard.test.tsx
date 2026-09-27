@@ -835,6 +835,23 @@ describe('the withheld state (floor item 12, T-20)', () => {
     expect(t.queryByTestId('look-withheld-e1')).toBeNull();
   });
 
+  // CUL-1220's adversarial pass: a meal RATED Refused adds no row, so a read keyed on the
+  // row count never saw it. The rating bumps the hydration tick; the tick re-reads.
+  it('a meal rated Refused after the look re-reads the facts and withholds the quiet entry', async () => {
+    const { useSyncStore } = require('../../store/syncStore');
+    mockLoadWithheldFacts.mockResolvedValue({ ...withheldFacts, trialNotEating: false });
+    useEventStore.setState({
+      todayEvents: [lookRow('e1', 1, { look_outcome: 'nothing_unusual', look_words: null })],
+    });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByText('Nothing unusual')).toBeTruthy());
+    mockLoadWithheldFacts.mockResolvedValue(withheldFacts);
+    await act(async () => {
+      useSyncStore.getState().bumpHydrationTick();
+    });
+    await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
+  });
+
   it('the footer goes with the words', async () => {
     mockLoadWithheldFacts.mockResolvedValue(withheldFacts);
     useEventStore.setState({

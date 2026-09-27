@@ -1,4 +1,5 @@
 import { act, render } from '@testing-library/react-native';
+import { usePetStore } from '../../store/petStore';
 import BetaFeaturesScreen from './beta';
 import { __resetAppConfigForTest } from '../../hooks/useAppConfig';
 import {
@@ -178,6 +179,37 @@ describe('BetaFeaturesScreen — eligible account', () => {
     act(() => useBetaOptInStore.getState().setOptIn('history_v2', true));
     expect(getByRole('switch').props.value).toBe(true);
     expect(getByText(/^It’s on\. Open History: each day is its own card/)).toBeTruthy();
+  });
+
+  // CUL-1220 / BRK-21 — design_v2 does not widen the daily_look rollout, so the hint
+  // names the look at the top of Today only for an account the look is on for.
+  it('the Design v2 hint names the daily look only when the look is on for this account', () => {
+    setAllowlist({ design_v2: gatedToPm });
+    const off = render(<BetaFeaturesScreen />);
+    act(() => useBetaOptInStore.getState().setOptIn('design_v2', true));
+    expect(off.getByText(/^It’s on\. Home’s Signal/)).toBeTruthy();
+    expect(off.queryByText(/daily look/)).toBeNull();
+    off.unmount();
+
+    usePetStore.setState({ activePet: { id: 'p1', name: 'Mochi', species: 'cat' } as never });
+    setAllowlist({ design_v2: gatedToPm, daily_look: gatedToPm });
+    act(() => useBetaOptInStore.getState().setOptIn('daily_look', true));
+    const on = render(<BetaFeaturesScreen />);
+    expect(on.getByText(/with the daily look at the top/)).toBeTruthy();
+    usePetStore.setState({ activePet: null });
+  });
+
+  it('…and not for a pet the look has no vocabulary for (species other: the header never draws)', () => {
+    usePetStore.setState({ activePet: { id: 'p9', name: 'Kiwi', species: 'other' } as never });
+    setAllowlist({ design_v2: gatedToPm, daily_look: gatedToPm });
+    act(() => {
+      useBetaOptInStore.getState().setOptIn('design_v2', true);
+      useBetaOptInStore.getState().setOptIn('daily_look', true);
+    });
+    const t = render(<BetaFeaturesScreen />);
+    expect(t.getByText(/^It’s on\. Home’s Signal/)).toBeTruthy();
+    expect(t.queryByText(/daily look at the top/)).toBeNull();
+    usePetStore.setState({ activePet: null });
   });
 
   it('a different account is not shown the History v2 card', () => {

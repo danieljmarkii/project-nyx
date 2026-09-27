@@ -80,6 +80,7 @@ import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { usePetStore } from '../../store/petStore';
 import { useEventStore, type NyxEvent } from '../../store/eventStore';
 import { LOOK_DWELL_MS, useMomentStore } from '../../store/momentStore';
+import { useSyncStore } from '../../store/syncStore';
 import { useUiStore } from '../../store/uiStore';
 import { openMenu, selectChip } from '../../lib/haptics';
 import { insertLook, loadLookDays, answeredDays, updateLookNote, type LookDayRow } from '../../lib/looks';
@@ -253,6 +254,9 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   const openIntakeDoor = useUiStore((s) => s.openIntakeDoor);
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
+  // A meal rated Refused adds no row; the rating bumps the hydration tick, which re-reads
+  // the withheld facts (CUL-1220's adversarial pass found the same staleness here).
+  const hydrationTick = useSyncStore((s) => s.hydrationTick);
 
   const [draft, setDraft] = useState<LookDraft>(emptyDraft);
   const [gridOpen, setGridOpen] = useState(false);
@@ -428,7 +432,7 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
     // reference on any unrelated store mutation — a name edit, a photo, a weigh-in — and
     // listing the object here re-issued all three reads on every one of them. The id and
     // species guards inside made that invisible rather than harmless (the code review).
-  }, [live, petId, petSpecies, todayEvents.length, trialNotEating]);
+  }, [live, petId, petSpecies, todayEvents.length, hydrationTick, trialNotEating]);
 
   // Remember the day we withheld, so the footer stays away until the window has moved past
   // it (T-16). Fire-and-forget and idempotent within a day — the mark is the footer's only
@@ -880,6 +884,8 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
       busy: submitting,
       onBack: closeGrid,
       onDone: summary ? handleDone : null,
+      // The card's Done bar owns the FAB's corner while the grid is open (T-21).
+      drawsDoneBar: true,
     });
   }, [live, gridOpen, summary, submitting, closeGrid, handleDone, setCaptureOverlay]);
 

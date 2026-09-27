@@ -46,6 +46,7 @@ jest.mock('../../components/home/LookCard', () => ({ LookCard: marker('look') })
 jest.mock('../../components/home/LookExits', () => ({
   LookExits: marker('look-exits'),
   exitVisibility: () => ({}),
+  lookRectInPage: () => null,
 }));
 jest.mock('../../components/home/TodayZone', () => ({ TodayZone: marker('today') }));
 jest.mock('../../components/home/TrendZone', () => ({ TrendZone: marker('trend') }));

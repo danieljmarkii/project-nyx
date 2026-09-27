@@ -97,7 +97,8 @@ export const HISTORY_DOORS: readonly HistoryDoor[] = [
   },
   {
     id: 'look-more-today',
-    senders: ['components/home/LookCard.tsx'],
+    // The design_v2 look header folds the day's quiet looks behind the same door (CUL-1220).
+    senders: ['components/home/LookCard.tsx', 'components/designV2/home/LookHeader.tsx'],
     builder: { file: 'lib/lookCard.ts', fn: 'lookMoreTodayHref' },
     sends: '`type=check_in`, `window=today`, `ts`',
     flagOff: 'Check-in, Today',

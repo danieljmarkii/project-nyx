@@ -173,7 +173,11 @@ export function FAB() {
   // Read as a boolean, so this component never sees the overlay's handles: the FAB has
   // one question to answer, and widening it is how a "some card is up" flag would start
   // hiding the app's primary control for every future sheet.
-  const captureOverlayOpen = useUiStore((s) => s.captureOverlay !== null);
+  //
+  // And only an overlay that can draw a Done bar holds the corner (CUL-1220, BRK-18): the
+  // design_v2 look header publishes an overlay for its pinned way back and never draws a
+  // bar, and hiding the + for it took the primary control off every tab.
+  const captureOverlayOpen = useUiStore((s) => s.captureOverlay?.drawsDoneBar === true);
 
   const openMenu = useCallback(() => {
     // Light impact on OPEN only — closing the menu commits to nothing and stays silent.
