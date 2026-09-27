@@ -63,8 +63,12 @@ type Row = Record<string, unknown>;
 
 /** Anchored to `Date.now()`, never a literal date — the floor under test is judged
  *  against a real-clock day counter (C-29). */
-const dayKeyDaysAgo = (n: number): string =>
-  toLocalDayKey(new Date(Date.now() - n * 24 * 60 * 60 * 1000));
+// Calendar days, never `n × 24h`: across a local DST change a 24h step lands on the wrong
+// day (Pacific/Chatham, 2026-09-27; CUL-1347).
+const dayKeyDaysAgo = (n: number): string => {
+  const now = new Date();
+  return toLocalDayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - n, 12));
+};
 
 function seed(overrides: Record<string, unknown> = {}): void {
   const row = {

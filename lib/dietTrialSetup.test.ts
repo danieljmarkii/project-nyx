@@ -439,8 +439,12 @@ describe('endActiveTrial', () => {
 // ANCHORED TO `Date.now()`, never to a literal date: the floor these tests probe is
 // judged against a real-clock day counter, and a fixture pinned to an absolute date
 // fails on a calendar boundary rather than on a change (C-29).
-const dayKeyDaysAgo = (n: number): string =>
-  toLocalDayKey(new Date(Date.now() - n * 24 * 60 * 60 * 1000));
+// Calendar days, never `n × 24h`: across a local DST change a 24h step lands on the wrong
+// day (Pacific/Chatham, 2026-09-27; CUL-1347).
+const dayKeyDaysAgo = (n: number): string => {
+  const now = new Date();
+  return toLocalDayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - n, 12));
+};
 
 /** A running trial the write path can read: day `dayCounter` of `target`. */
 function trialRow(overrides: Partial<{
