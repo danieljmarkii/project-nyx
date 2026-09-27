@@ -671,6 +671,19 @@ describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
     alert.mockRestore();
   });
 
+  it('a failed Try again behind an old hide does not re-hide a NEW read the server has un-hidden (CUL-1323)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockRow = row({ status: 'failed', recommendation: 'monitor', read_text: 'Formed.', dismissed_at: '2026-09-19T08:00:00.000Z', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<StoolAnalysisSection eventId="as-10" petId="pet-1" petName="Rex" hasPhoto />);
+    const tryAgain = await view.findByText('Try again');
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', dismissed_at: null, updated_at: '2026-09-26T11:00:00.000Z' });
+    (triggerStoolAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'FunctionsHttpError: 500' });
+    await act(async () => { fireEvent.press(tryAgain); });
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(view.queryByText('AI note hidden')).toBeNull();
+    alert.mockRestore();
+  });
+
   it('a read already in the record on open says nothing', async () => {
     mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.' });
     const view = render(<StoolAnalysisSection eventId="as-3" petId="pet-1" petName="Rex" hasPhoto />);

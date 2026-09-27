@@ -1163,6 +1163,27 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     alert.mockRestore();
   });
 
+  // ── CUL-1323 — a new read clears the hide (PM-ruled 2026-09-27) ────────────────
+  it('a failed Try again behind an old hide does not re-hide a NEW read the server has un-hidden (CUL-1323)', async () => {
+    // The owner hid a calm read; a later re-read failed (the failure write keeps the
+    // hide), so the screen shows the failed frame over a hidden row. Meanwhile a new read
+    // written where this screen was not watching (a replaced photo, another device) is a
+    // Worth a call, and since CUL-1323 the server cleared the hide with it. The owner
+    // taps Try again and that trigger fails: the restore reads the server, and the
+    // screen's older hide belongs to the OLD words — it must not be carried onto new ones.
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockRow = row({ status: 'failed', recommendation: 'monitor', read_text: 'Yellow, foamy.', dismissed_at: '2026-09-19T08:00:00.000Z', updated_at: '2026-09-20T09:00:00.000Z' });
+    const view = render(<VomitAnalysisSection eventId="an-26" petId="pet-1" petName="Rex" hasPhoto />);
+    const tryAgain = await view.findByText('Try again');
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', dismissed_at: null, updated_at: '2026-09-26T11:00:00.000Z' });
+    (triggerVomitAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'FunctionsHttpError: 500' });
+    await act(async () => { fireEvent.press(tryAgain); });
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    expect(view.queryByText('AI note hidden')).toBeNull();
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    alert.mockRestore();
+  });
+
   it('is spoken on ANDROID too — the section carries no live region to cover it', async () => {
     Platform.OS = 'android';
     mockRow = row({ status: 'pending', recommendation: null });

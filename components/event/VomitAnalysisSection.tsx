@@ -82,16 +82,22 @@ interface AnalysisRow {
   error: string | null;
 }
 
-/** Two copies of the row SHOW the same read: the same state, verdict, words and
- *  hidden-ness. Decides whether a re-run's wait may re-base on the server's copy
- *  (CUL-1275 — see `handleRetry`). */
-function showsSameRead(a: AnalysisRow, b: AnalysisRow): boolean {
+/** Two copies of the row hold the same READ: the same state, verdict and words. The
+ *  owner's Hide / Show is not part of it — that is what a copy may differ in while the
+ *  owner's own write is in flight. */
+function sameRead(a: AnalysisRow, b: AnalysisRow): boolean {
   return (
     a.status === b.status &&
     a.recommendation === b.recommendation &&
-    a.read_text === b.read_text &&
-    !!a.dismissed_at === !!b.dismissed_at
+    a.read_text === b.read_text
   );
+}
+
+/** Two copies of the row SHOW the same thing: the same read, equally hidden or shown.
+ *  Decides whether a re-run's wait may re-base on the server's copy (CUL-1275 — see
+ *  `handleRetry`). */
+function showsSameRead(a: AnalysisRow, b: AnalysisRow): boolean {
+  return sameRead(a, b) && !!a.dismissed_at === !!b.dismissed_at;
 }
 
 /** The hidden note's line: rendered, and spoken when a read lands behind it. */
@@ -299,15 +305,19 @@ export function VomitAnalysisSection(
       // overwrites. A calm copy is never put back after a failure the client could not
       // confirm (round 6); the owner keeps what they already saw, and nothing is spoken.
       //
-      // The owner's own latest Hide / Show is kept (it may not have reached the server
-      // yet). A read the owner has not been shown is a landing, told to the announcer
-      // outright rather than left to the pending write and this one committing apart
-      // (round 4, F1).
+      // The owner's own latest Hide / Show is kept — but only over the SAME read (it may
+      // not have reached the server yet). A NEW read takes the server's: since CUL-1323
+      // (PM-ruled 2026-09-27) a real read clears the hide server-side, because a
+      // dismissal belongs to the words the owner read, so carrying this screen's older
+      // hide onto new words would re-hide what the server has just shown. A read the
+      // owner has not been shown is a landing, told to the announcer outright rather than
+      // left to the pending write and this one committing apart (round 4, F1).
       const after = await fetchRow();
       if (cancelled.current) return;
       const server = after ?? (escalationSurvivesFailure(fresh) ? fresh : null);
+      const keepScreenHide = !!shown && !!server && sameRead(server, shown);
       const back = server
-        ? { ...server, dismissed_at: shown ? shown.dismissed_at : server.dismissed_at }
+        ? { ...server, dismissed_at: keepScreenHide && shown ? shown.dismissed_at : server.dismissed_at }
         : base;
       if (back) {
         if (server && !(shown && showsSameRead(server, shown))) announcer.expectLanding();
@@ -490,10 +500,11 @@ export function VomitAnalysisSection(
       arrival={arrival}
       announcer={announcer}
       // The verdict, in the enum's own words — or, over a hidden note, what the screen
-      // says: that it is hidden. NOT silence. A dismissal outlives the read it was made on
-      // (a failed re-read keeps `dismissed_at`), so a Worth a call the owner asked for can
-      // land behind one; the screen's half of that is its own issue, and saying "hidden"
-      // tells the owner a read landed and where to find it without speaking what they hid.
+      // says: that it is hidden. NOT silence. Since CUL-1323 a new read clears the hide
+      // server-side, so this line is reached when the row moved WITHOUT new words — an
+      // error-only write over a hidden Worth a call — or before that server change is
+      // live. Saying "hidden" tells the owner something landed and where to find it,
+      // without speaking what they chose to hide.
       announcement={dismissed ? DISMISSED_LINE : REC_LABEL[rec]}
       pending={false}
     >
