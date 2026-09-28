@@ -201,3 +201,30 @@ Deno.test('mapMedDoseFacts — a dose whose regimen is absent from the set and h
 Deno.test('mapMedDoseFacts — no doses → no facts', () => {
   assertEquals(mapMedDoseFacts([regimen()], [], noIntake), [])
 })
+
+// ── EN-F wiring (Engines v3 PR-11a) ─────────────────────────────────────────────────────
+// The handler has no fake-client harness, so its three Engines v3 wirings are pinned on
+// the source; each rule itself is tested where it lives (engineStamps.test.ts,
+// standDown.test.ts). Proven by mutation when written: dropping any one of them reds this.
+
+Deno.test('EN-F wiring — the prior row is read with its flags, and minting is gated on them', async () => {
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  const priorRead = src.slice(src.indexOf(".from('ai_signals')"), src.indexOf('resolveStandDowns({'))
+  assertStrictEquals(/\.select\('[^']*\bengine_flags\b[^']*'\)/.test(priorRead), true, 'the prior read no longer selects engine_flags')
+  assertStrictEquals(
+    /priorForStandDowns\(\s*readPriorEntries\(priorRow\.findings\),\s*standDownMintAllowed\(priorRow\.engine_flags,\s*engineFlags\),?\s*\)/
+      .test(priorRead),
+    true,
+    'the prior payload no longer passes through the EN-F gate',
+  )
+  assertStrictEquals(/prior = readPriorEntries\(/.test(src), false, 'an ungated prior assignment is back')
+})
+
+Deno.test('EN-F wiring — the flag is read for the pet\'s owner, and the cache row carries the stamps', async () => {
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  assertStrictEquals(/readEngineFlags\(supabase,[^)]*pet\.user_id/.test(src), true, 'the flag is not read for the pet\'s owner')
+  const insert = src.slice(src.indexOf(".from('ai_signals').insert("))
+  assertStrictEquals(/\.\.\.signalStampValues\(engineFlags, fingerprint\)/.test(insert.slice(0, insert.indexOf('})'))), true, 'the cache row lost its stamps')
+})

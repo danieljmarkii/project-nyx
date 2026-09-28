@@ -251,6 +251,18 @@ export interface ResolveStandDownsArgs {
  *  deleted the folded entry). The counterfactual run is deferred until a candidate exists, so a
  *  regen with nothing to stand down costs no second detection pass.
  */
+/**
+ * EN-F's gate on the prior payload (Engines v3 PR-11a; 075 §4). When the prior row ran under
+ * different Engines flags (`standDownMintAllowed` false, engineStamps.ts), a chronicity card
+ * missing from this run may be missing because the ENGINE changed, and a stand-down would tell
+ * the owner the pet changed. So only the prior's MARKERS survive: a carry restates a stand-down
+ * already minted under matching flags (a past event, still re-anchored to the record), and
+ * nothing new is minted. Allowed ⇒ the prior is returned untouched (flag-off is today).
+ */
+export function priorForStandDowns(prior: PriorEntry[], mintAllowed: boolean): PriorEntry[] {
+  return mintAllowed ? prior : prior.filter((entry) => entry.finding.type === 'stood_down')
+}
+
 export function resolveStandDowns(args: ResolveStandDownsArgs): StoodDownMarker[] {
   const { prior, priorGeneratedAtMs, current, input, nowMs } = args
   const config = args.config ?? DEFAULT_CONFIG

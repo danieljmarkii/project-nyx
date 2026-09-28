@@ -196,6 +196,7 @@ function body(html: string): string {
 function renderWithLooks(rows: ReportLookInput[], over: Partial<ReportInput> = {}): string {
   const input: ReportInput = {
     now: '2026-09-15T18:00:00Z',
+    engineFlags: { on: [], readOk: true },
     timezone: TZ,
     pet: {
       id: 'pet-1',
@@ -894,6 +895,7 @@ Deno.test('a look enters no count on the rest of the report — WITH its parent 
   )
   const withLooks = assembleReport({
     now: '2026-09-15T18:00:00Z',
+    engineFlags: { on: [], readOk: true },
     timezone: TZ,
     pet: { id: 'p', name: 'Cooper', species: 'dog', breed: null, sex: 'male', dateOfBirth: null, weightKg: null },
     ownerName: null,

@@ -42,6 +42,7 @@ import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
 import type { BackBecauseReason } from './signalFold';
 import { formatTimingBandLabel } from './timingBandLabels';
 import { careClaimReason } from './careClaimScreens';
+import { correlationCluster } from './findingIdentity';
 
 // A timing finding — the two types whose evidence renders as a receipt (SR-1, §4).
 type TimingFinding = PostprandialTimingFinding | TimeOfDayClusteringFinding;
@@ -116,7 +117,7 @@ function count(n: number, one: string, many: string): string {
  * directly, so an old cached row can never render as an empty list.
  */
 export function proteinCluster(finding: CorrelationFinding): string[] {
-  return finding.proteins && finding.proteins.length > 0 ? finding.proteins : [finding.protein];
+  return correlationCluster(finding);
 }
 
 /** True when the engine could not separate this candidate's proteins (D5). */

@@ -19,10 +19,13 @@ import {
   type SymptomType,
 } from './detection.ts'
 import { hasBannedSignalVocabulary, type CachedFinding } from './phrasing.ts'
+import { standDownMintAllowed } from '../_shared/engineStamps.ts'
+import type { EngineFlags } from '../_shared/engineFlags.ts'
 import {
   gapLoggingHeld,
   isStoodDownEntry,
   mergeStandDowns,
+  priorForStandDowns,
   readPriorEntries,
   resolveStandDowns,
   STOOD_DOWN_TTL_DAYS,
@@ -543,4 +546,47 @@ Deno.test('gapLoggingHeld — the two halves are judged separately, inclusive of
   // The episode's own day never counts, however many events land on it.
   const sameDay = stoodDownInput({ mealEvents: [mealAgo(15), mealAgo(15), mealAgo(15), ...mealsDaily(0, 7)] })
   assert.equal(gapLoggingHeld(sameDay, last, NOW_MS, 3), false)
+})
+
+// ── EN-F (Engines v3 PR-11a; 075 §4): no stand-down is minted across a flag change ──────
+// A stand-down tells the owner a finding went away. When the prior row ran under different
+// Engines flags, the finding may be missing because the ENGINE changed; the owner would be
+// told the pet changed. The gate is the one index.ts applies to the prior payload.
+
+const FLAGS_OFF: EngineFlags = { on: [], readOk: true }
+const FLAGS_ON: EngineFlags = { on: ['engines_v3_en0'], readOk: true }
+const gated = (prior: PriorEntry[], priorFlags: unknown, current: EngineFlags) =>
+  resolve(priorForStandDowns(prior, standDownMintAllowed(priorFlags, current)), stoodDownInput())
+
+Deno.test('EN-F — same flags, or a pre-stamp prior under flag-off: mints exactly as it shipped', () => {
+  const prior = [priorChronicity('vomit', 'firm')]
+  const shipped = resolve(prior, stoodDownInput())
+  assert.equal(shipped.length, 1, 'fixture premise: the golden shape mints')
+  assert.deepEqual(gated(prior, [], FLAGS_OFF), shipped)
+  assert.deepEqual(gated(prior, null, FLAGS_OFF), shipped, 'a pre-stamp row was the flag-off engine')
+  assert.deepEqual(gated(prior, ['engines_v3_en0'], FLAGS_ON), shipped)
+})
+
+Deno.test('EN-F — the flag turned on, or rolled back: the vanished card is NOT announced as stood down', () => {
+  const prior = [priorChronicity('vomit', 'firm')]
+  assert.deepEqual(gated(prior, [], FLAGS_ON), [])
+  assert.deepEqual(gated(prior, null, FLAGS_ON), [])
+  assert.deepEqual(gated(prior, ['engines_v3_en0'], FLAGS_OFF), [])
+})
+
+Deno.test('EN-F — a flag read that did not answer mints nothing', () => {
+  assert.deepEqual(gated([priorChronicity('vomit', 'firm')], [], { on: [], readOk: false }), [])
+})
+
+Deno.test('EN-F — a marker minted before the change still CARRIES (a past fact, re-anchored to the record)', () => {
+  const prior = [priorMarker('vomit', 3, 1)]
+  const carried = gated(prior, [], FLAGS_ON)
+  assert.equal(carried.length, 1)
+  assert.deepEqual(carried, resolve(prior, stoodDownInput()))
+})
+
+Deno.test('EN-F — priorForStandDowns: allowed returns the prior untouched; gated keeps only markers', () => {
+  const prior = [priorChronicity('vomit', 'firm', 0), priorMarker('cough', 2, 1)]
+  assert.equal(priorForStandDowns(prior, true), prior)
+  assert.deepEqual(priorForStandDowns(prior, false).map((e) => e.finding.type), ['stood_down'])
 })
