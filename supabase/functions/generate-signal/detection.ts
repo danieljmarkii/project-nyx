@@ -3546,7 +3546,13 @@ export function detectCorrelations(
       standingConfounder,
       medicationPresent,
     } = cand
-    const riskDifference = caseExposed / matchedPairs - controlExposed / matchedPairs
+    // (b − c) / n, from integers. Over a ratings-blind record this equals the old
+    // caseExposed/n − controlExposed/n exactly (concordant pairs cancel), minus the float
+    // wobble that let a true 0.2 fail at 0.3 − 0.1 and pass at 0.8 − 0.6. CUL-1190 needs
+    // the discordant form: a withdrawn case keeps its control's count in controlExposed
+    // (the food WAS offered there), so the difference form read it as a control-only pair
+    // and dropped a b = 6, c = 0 culprit the pet refused on five other sick days.
+    const riskDifference = (b - c) / matchedPairs
 
     // Positive, case-direction enrichment only, with a coincidence guard on discordants.
     if (riskDifference < cfg.earlyMinRiskDifference) continue

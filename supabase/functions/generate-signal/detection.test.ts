@@ -1397,6 +1397,31 @@ Deno.test('detectCorrelations — CUL-1190: a pet refusing everything on sick da
   assert.equal(beef!.discordantControlOnly, 0, 'the refusal days are not counted against beef')
 })
 
+Deno.test('detectCorrelations — CUL-1190: a withdrawn case counts against nothing, the risk-difference gate included (F1)', () => {
+  // Third pass: tuna eaten before 6 vomits with none on the control day (b = 6); on 5 more sick
+  // days she refused tuna that she had eaten on the control day. The withdrawn cases are in
+  // neither b nor c, but the old `caseExposed/n − controlExposed/n` gate still counted their
+  // controls, read each as a control-only pair, and dropped tuna: the cut-1 exoneration by
+  // another route. The gate is (b − c)/n.
+  const mealEvents: MealEvent[] = []
+  for (let d = 1; d <= 23; d++) mealEvents.push(fed(d, 'chicken', 7, null))
+  const caseDays = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22]
+  caseDays.forEach((d, i) => {
+    if (i < 6) mealEvents.push(fed(d, 'tuna', 8, null))
+    else {
+      mealEvents.push(fed(d, 'tuna', 8, 'refused'))
+      mealEvents.push(fed(d - 1, 'tuna', 8, null))
+    }
+  })
+  const symptomEvents = caseDays.map((d) => symptom('vomit', at(d, 14)))
+  const tuna = detectCorrelations(input({ mealEvents, symptomEvents })).find((f) => f.protein === 'tuna')
+  assert.ok(tuna, 'the culprit is not dropped')
+  assert.equal(tuna!.discordantCaseOnly, 6)
+  assert.equal(tuna!.discordantControlOnly, 0)
+  assert.equal(tuna!.matchedPairs, 11)
+  assert.equal(tuna!.tier, 'established', 'as the ratings-blind engine has it')
+})
+
 Deno.test('detectCorrelations — CUL-1190: a bowl eaten in the same window wins over one refused (ADV-3b)', () => {
   // The nausea prodrome: beef eaten at 10:00, beef refused at 17:00, vomit at 20:00. Beef went
   // in, so the case counts for it; the later refusal withdraws nothing.
