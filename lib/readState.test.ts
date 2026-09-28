@@ -166,7 +166,9 @@ describe('the cross product: one predicate, never two answers', () => {
   const VERDICTS: (string | null)[] = [null, 'worth_a_call', 'monitor', 'not_enough_to_say', 'looks_fine_to_me', ''];
   const TYPES: (string | null)[] = ['vomit', 'stool_normal', 'diarrhea', 'cough', 'meal', null];
   const copies: (ReadCopy | undefined)[] = [undefined];
-  for (const s of STATUSES) for (const v of VERDICTS) copies.push(copy(s, v));
+  // Every copy twice: as stored, and with its photo set stale (Engines v3 PR-12).
+  for (const s of STATUSES)
+    for (const v of VERDICTS) copies.push(copy(s, v), { ...copy(s, v), photoSetStale: true });
 
   const inputs: ReadStateInput[] = [];
   for (const c of copies)
@@ -195,7 +197,9 @@ describe('the cross product: one predicate, never two answers', () => {
       else if (state === 'pending') expect(verdict).toBeNull();
       else {
         const finishedUnclear =
-          i.copy?.recommendation === 'not_enough_to_say' && ['completed', 'uncertain'].includes(i.copy.status);
+          i.copy?.recommendation === 'not_enough_to_say' &&
+          ['completed', 'uncertain'].includes(i.copy.status) &&
+          i.copy.photoSetStale !== true;
         expect(verdict).toBe(finishedUnclear ? 'not_enough_to_say' : null);
       }
     }
@@ -213,7 +217,8 @@ describe('the cross product: one predicate, never two answers', () => {
         !i.inFlight &&
         !i.readingOff &&
         ['vomit', 'stool_normal', 'diarrhea'].includes(i.eventType ?? '') &&
-        i.copy?.recommendation === 'not_enough_to_say' &&
+        (i.copy?.recommendation === 'not_enough_to_say' || i.copy?.recommendation === 'monitor') &&
+        (i.copy.recommendation === 'not_enough_to_say' || i.copy.photoSetStale === true) &&
         ['completed', 'uncertain'].includes(i.copy.status),
     );
     expect(shouldBeGrey.length).toBeGreaterThan(0);
@@ -235,6 +240,39 @@ describe('the cross product: one predicate, never two answers', () => {
       (i) => readStateOf(i) === 'calm' && !['completed', 'uncertain'].includes(i.copy?.status ?? ''),
     );
     expect(calmUnfinished).toEqual([]);
+  });
+
+  // ── Engines v3 PR-12: a quiet verdict over photos that are gone ──
+  const staleInputs = inputs.filter((i) => i.copy?.photoSetStale === true);
+  const current = (i: ReadStateInput): ReadStateInput => ({ ...i, copy: { ...(i.copy as ReadCopy), photoSetStale: false } });
+
+  it('the stale half of the product is non-trivial and reaches the demotion', () => {
+    expect(staleInputs.length).toBe(inputs.length / 2 - TYPES.length * 4);
+    expect(staleInputs.some((i) => readStateOf(current(i)) === 'calm' && readStateOf(i) === 'unread')).toBe(true);
+  });
+
+  it('a stale photo set never changes the rose or a read in flight (CUL-1201 part 2)', () => {
+    const moved = staleInputs.filter((i) => {
+      const before = readStateOf(current(i));
+      return (before === 'worth_a_call' || before === 'pending') && readStateOf(i) !== before;
+    });
+    expect(moved).toEqual([]);
+  });
+
+  it('a stale photo set only ever takes a quiet verdict away, never adds one', () => {
+    for (const i of staleInputs) {
+      const before = readVerdictOf(current(i));
+      const after = readVerdictOf(i);
+      if (before.state === after.state) continue;
+      expect(before.state).toBe('calm');
+      expect(['unread', 'none', 'off']).toContain(after.state);
+    }
+  });
+
+  it('a stale calm read on a photographed row, reading on, is the grey mark with no verdict', () => {
+    expect(
+      readVerdictOf(base({ copy: { ...copy('completed', 'monitor'), photoSetStale: true } })),
+    ).toEqual({ state: 'unread', verdict: null });
   });
 
   it('nothing but a read in flight or a pending row is ever pending', () => {

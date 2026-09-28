@@ -220,7 +220,7 @@ describe('the read slot claims only once the copy answered (HV-6, TodayCard\'s r
   });
 
   it('a rose in the copy is drawn whether or not the photo fact is in', () => {
-    const rose = new Map([['v2', { event_id: 'v2', status: 'completed', recommendation: 'worth_a_call', updated_at: iso(17, 20) }]]);
+    const rose = new Map([['v2', { event_id: 'v2', status: 'completed', recommendation: 'worth_a_call', updated_at: iso(17, 20), photo_set_key: null, rule_version: null, engine_flags: null }]]);
     expect(v2({ ...NO_READS, analysis: rose })?.read.state).toBe('worth_a_call');
   });
 

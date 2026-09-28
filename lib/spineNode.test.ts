@@ -93,6 +93,7 @@ function input(over: Partial<SpineInput> = {}): SpineInput {
 /** A row of the phone's copy (HV-5): four columns, no words, no hide stamp. */
 const landed = (event_id: string, recommendation: string | null, status = 'completed'): SpineAnalysisRow => ({
   event_id, status, recommendation, updated_at: '2026-09-17T12:00:00+00:00',
+  photo_set_key: null, rule_version: null, engine_flags: null,
 });
 
 /** Each line as the day reads: a run's ids, or a single id. */
