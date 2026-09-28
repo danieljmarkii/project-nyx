@@ -60,6 +60,13 @@ interface ServerRow {
   updated_at: string;
   read_text?: string | null;
   dismissed_at?: string | null;
+  // Migration 075's stamps. The read stamps travel to the phone; the payload stamps
+  // (model_id, prompt_hash) must not.
+  photo_set_key?: unknown;
+  rule_version?: unknown;
+  engine_flags?: unknown;
+  model_id?: string | null;
+  prompt_hash?: string | null;
 }
 interface Query {
   cols: string;
@@ -192,7 +199,9 @@ import {
   READ_COPY_COLUMNS,
   READ_COPY_PAGE,
   READ_COPY_PULL_BUDGET_MS,
+  READ_COPY_WATERMARK_KEY,
   keysetAfter,
+  photoSetStaleOf,
   pullReadCopies,
   pullReadCopyFor,
   readCopies,
@@ -209,7 +218,7 @@ function copyOf(id: string): Record<string, unknown> | undefined {
 }
 function watermark(): string | null {
   return (
-    (mockDb.prepare("SELECT watermark FROM sync_watermarks WHERE table_name = 'event_ai_verdicts'").get() as
+    (mockDb.prepare('SELECT watermark FROM sync_watermarks WHERE table_name = ?').get(READ_COPY_WATERMARK_KEY) as
       | { watermark: string }
       | undefined)?.watermark ?? null
   );
@@ -222,6 +231,8 @@ const row = (event_id: string, updated_at: string, recommendation: string | null
   // What the server row also holds, and the copy must never take.
   read_text: 'Streaks of red in tonight’s photo are worth a call.',
   dismissed_at: '2026-09-20T08:00:00+00:00',
+  model_id: 'claude-sonnet-4-6',
+  prompt_hash: 'f'.repeat(64),
 });
 
 let nowSpy: jest.SpyInstance<number, []>;
@@ -247,14 +258,16 @@ beforeEach(() => {
   mockQueries.length = 0;
 });
 
-describe('what the phone keeps: four columns, never the words, never the hide', () => {
-  it('the real DDL builds exactly the four columns', () => {
+const SEVEN = ['event_id', 'status', 'recommendation', 'updated_at', 'photo_set_key', 'rule_version', 'engine_flags'];
+
+describe('what the phone keeps: seven columns, never the words, the hide or the payload stamps', () => {
+  it('the real DDL builds exactly the seven columns', () => {
     const cols = (mockDb.prepare('PRAGMA table_info(event_ai_verdicts)').all() as { name: string }[]).map((c) => c.name);
-    expect(cols).toEqual(['event_id', 'status', 'recommendation', 'updated_at']);
+    expect(cols).toEqual(SEVEN);
   });
 
-  it('the module asks the server for exactly those four, in every request it makes', async () => {
-    expect(READ_COPY_COLUMNS.split(',').map((c) => c.trim())).toEqual(['event_id', 'status', 'recommendation', 'updated_at']);
+  it('the module asks the server for exactly those seven, in every request it makes', async () => {
+    expect(READ_COPY_COLUMNS.split(',').map((c) => c.trim())).toEqual(SEVEN);
     mockServer = [row('a', '2026-09-24T10:00:00+00:00')];
     await pullReadCopies(mockAdapter, never);
     await pullReadCopyFor(mockAdapter, 'a', never);
@@ -265,11 +278,19 @@ describe('what the phone keeps: four columns, never the words, never the hide', 
     for (const q of mockQueries.filter((x) => x.head)) expect(q.cols).toBe('event_id');
   });
 
-  it('a server row carrying the words and the hide lands as the four columns only', async () => {
+  it('a server row carrying the words, the hide and the payload stamps lands as the seven columns only', async () => {
     mockServer = [row('a', '2026-09-24T10:00:00+00:00', 'worth_a_call')];
     await pullReadCopies(mockAdapter, never);
-    expect(copyRows()).toEqual([
-      { event_id: 'a', status: 'completed', recommendation: 'worth_a_call', updated_at: '2026-09-24T10:00:00+00:00' },
+    expect(mockDb.prepare('SELECT * FROM event_ai_verdicts').all()).toEqual([
+      {
+        event_id: 'a',
+        status: 'completed',
+        recommendation: 'worth_a_call',
+        updated_at: '2026-09-24T10:00:00+00:00',
+        photo_set_key: null,
+        rule_version: null,
+        engine_flags: null,
+      },
     ]);
   });
 });
@@ -673,5 +694,222 @@ describe('pullReadCopyFor — a read landing on this device', () => {
     release();
     await pulling;
     expect(copyOf('a')).toMatchObject({ recommendation: 'worth_a_call', updated_at: '2026-09-24T10:05:00+00:00' });
+  });
+});
+
+// ── Engines v3 PR-12 (CUL-1267): the three read stamps ──────────────────────
+
+const A1 = '0a1b2c3d-0000-4000-8000-000000000001';
+const A2 = '0a1b2c3d-0000-4000-8000-000000000002';
+const A3 = '0a1b2c3d-0000-4000-8000-000000000003';
+/** A server row written under the stamps (PR-11a onward). */
+const stamped = (
+  event_id: string,
+  updated_at: string,
+  over: Partial<ServerRow> = {},
+): ServerRow => ({
+  ...row(event_id, updated_at),
+  photo_set_key: A1,
+  rule_version: 'f1.vomit1',
+  engine_flags: [],
+  ...over,
+});
+function stampsOf(id: string): Record<string, unknown> | undefined {
+  return mockDb
+    .prepare('SELECT photo_set_key, rule_version, engine_flags FROM event_ai_verdicts WHERE event_id = ?')
+    .get(id);
+}
+/** Photos this phone holds for an event, oldest first: each is created a second after the
+ *  one before, so the LAST id listed is the one the event shows (EVENT_ATTACHMENT_ORDER).
+ *  The attachments' FK to events is not what is under test, so it is off for the insert. */
+function holdPhotos(event_id: string, ids: string[]): void {
+  mockDb.exec('PRAGMA foreign_keys = OFF');
+  ids.forEach((id, i) => {
+    mockDb
+      .prepare(
+        'INSERT INTO event_attachments (id, event_id, pet_id, local_uri, storage_path, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(id, event_id, 'pet-1', `file:///${id}.jpg`, `pet-1/${event_id}/${id}.jpg`, `2026-09-28 10:00:0${i}`);
+  });
+}
+
+describe('the stamps land as the copy stores them', () => {
+  it('keeps the three read stamps, engine_flags as a sorted JSON array', async () => {
+    await writeCopies(
+      mockAdapter,
+      [
+        stamped('a', '2026-09-28T10:00:00+00:00', { engine_flags: ['engines_v3_z', 'engines_v3_en0'] }),
+        stamped('b', '2026-09-28T10:00:00+00:00', { photo_set_key: null }),
+      ],
+      never,
+    );
+    expect(stampsOf('a')).toEqual({ photo_set_key: A1, rule_version: 'f1.vomit1', engine_flags: '["engines_v3_en0","engines_v3_z"]' });
+    // Every key off is '[]', never NULL: NULL is reserved for "written before the stamps".
+    expect(stampsOf('b')).toEqual({ photo_set_key: null, rule_version: 'f1.vomit1', engine_flags: '[]' });
+  });
+
+  it('a malformed stamp stores NULL for that stamp and never costs the row its verdict', async () => {
+    const bad = [
+      stamped('a', '2026-09-28T10:00:00+00:00', { recommendation: 'worth_a_call', photo_set_key: 'https://x/y.jpg' }),
+      stamped('b', '2026-09-28T10:00:00+00:00', { recommendation: 'worth_a_call', rule_version: 'F1 VOMIT' }),
+      stamped('c', '2026-09-28T10:00:00+00:00', { recommendation: 'worth_a_call', engine_flags: ['ok', 'Not-A-Key'] }),
+      stamped('d', '2026-09-28T10:00:00+00:00', { recommendation: 'worth_a_call', engine_flags: '{engines_v3_en0}' }),
+      stamped('e', '2026-09-28T10:00:00+00:00', { recommendation: 'worth_a_call', engine_flags: Array(33).fill('k') }),
+    ];
+    expect(await writeCopies(mockAdapter, bad, never)).toBe(5);
+    expect(copyRows().map((r) => r.recommendation)).toEqual(Array(5).fill('worth_a_call'));
+    expect(stampsOf('a')?.photo_set_key).toBeNull();
+    expect(stampsOf('b')?.rule_version).toBeNull();
+    for (const id of ['c', 'd', 'e']) expect(stampsOf(id)?.engine_flags).toBeNull();
+  });
+
+  it('the landed-read pull carries the stamps too', async () => {
+    mockServer = [stamped('a', '2026-09-28T10:00:00+00:00', { engine_flags: ['engines_v3_en0'] })];
+    expect(await pullReadCopyFor(mockAdapter, 'a', never)).toBe(1);
+    expect(stampsOf('a')).toEqual({ photo_set_key: A1, rule_version: 'f1.vomit1', engine_flags: '["engines_v3_en0"]' });
+  });
+});
+
+describe('a row pulled before the stamps existed gains them, once', () => {
+  it('the same version fills a pre-stamp row, and then converges as a no-op', async () => {
+    await writeCopies(mockAdapter, [row('a', '2026-09-28T10:00:00+00:00')], never);
+    expect(stampsOf('a')).toEqual({ photo_set_key: null, rule_version: null, engine_flags: null });
+    expect(await writeCopies(mockAdapter, [stamped('a', '2026-09-28T10:00:00+00:00')], never)).toBe(1);
+    expect(stampsOf('a')).toEqual({ photo_set_key: A1, rule_version: 'f1.vomit1', engine_flags: '[]' });
+    // A re-pulled boundary row after that is the no-op it always was.
+    expect(await writeCopies(mockAdapter, [stamped('a', '2026-09-28T10:00:00+00:00')], never)).toBe(0);
+  });
+
+  it('fills across the two spellings of one instant (C-40)', async () => {
+    await writeCopies(mockAdapter, [row('a', '2026-09-28T10:00:00+00:00')], never);
+    expect(await writeCopies(mockAdapter, [stamped('a', '2026-09-28T10:00:00.000Z')], never)).toBe(1);
+    expect(stampsOf('a')?.engine_flags).toBe('[]');
+  });
+
+  it('never rewrites a stamped row at the same instant, and never un-stamps one', async () => {
+    await writeCopies(mockAdapter, [stamped('a', '2026-09-28T10:00:00+00:00', { engine_flags: ['engines_v3_en0'] })], never);
+    expect(await writeCopies(mockAdapter, [stamped('a', '2026-09-28T10:00:00+00:00', { engine_flags: [] })], never)).toBe(0);
+    expect(await writeCopies(mockAdapter, [row('a', '2026-09-28T10:00:00+00:00')], never)).toBe(0);
+    expect(stampsOf('a')?.engine_flags).toBe('["engines_v3_en0"]');
+  });
+
+  it('an OLDER version never fills, even into a pre-stamp row', async () => {
+    await writeCopies(mockAdapter, [row('a', '2026-09-28T10:00:00+00:00', 'worth_a_call')], never);
+    expect(await writeCopies(mockAdapter, [stamped('a', '2026-09-28T09:59:59+00:00', { recommendation: 'monitor' })], never)).toBe(0);
+    expect(copyOf('a')).toMatchObject({ recommendation: 'worth_a_call' });
+  });
+
+  it('an upgraded phone re-pulls every row once under the new watermark key', async () => {
+    // What an earlier build left behind: rows with NULL stamps, and a watermark under the
+    // OLD key past all of them.
+    await writeCopies(mockAdapter, [row('a', '2026-09-28T10:00:00+00:00'), row('b', '2026-09-28T11:00:00+00:00')], never);
+    mockDb
+      .prepare('INSERT INTO sync_watermarks (table_name, watermark) VALUES (?, ?)')
+      .run('event_ai_verdicts', '2026-09-28T11:00:00+00:00');
+    mockServer = [stamped('a', '2026-09-28T10:00:00+00:00'), stamped('b', '2026-09-28T11:00:00+00:00', { photo_set_key: A2 })];
+    await pullReadCopies(mockAdapter, never);
+    // No floor on the count or the first page: the whole table was read.
+    expect(mockQueries.every((q) => q.gte === null)).toBe(true);
+    expect(stampsOf('a')?.photo_set_key).toBe(A1);
+    expect(stampsOf('b')?.photo_set_key).toBe(A2);
+    expect(watermark()).not.toBeNull();
+    expect(READ_COPY_WATERMARK_KEY).not.toBe('event_ai_verdicts');
+  });
+});
+
+describe('the millisecond tie (CUL-1201): an equal julianday is decided on the seconds', () => {
+  const jd = (ts: string) => (mockDb.prepare('SELECT julianday(?) AS j').get(ts) as { j: number }).j;
+  const OLDER = '2026-09-28T10:00:00.123100+00:00';
+  const NEWER = '2026-09-28T10:00:00.123300+00:00';
+
+  it('the fixture is the case: two versions julianday cannot tell apart', () => {
+    expect(jd(OLDER)).toBe(jd(NEWER));
+  });
+
+  it('a newer version inside the same millisecond replaces', async () => {
+    await writeCopies(mockAdapter, [stamped('a', OLDER, { recommendation: 'monitor' })], never);
+    expect(await writeCopies(mockAdapter, [stamped('a', NEWER, { recommendation: 'worth_a_call' })], never)).toBe(1);
+    expect(copyOf('a')).toMatchObject({ recommendation: 'worth_a_call', updated_at: NEWER });
+  });
+
+  it('an older one inside the same millisecond does not', async () => {
+    await writeCopies(mockAdapter, [stamped('a', NEWER, { recommendation: 'worth_a_call' })], never);
+    expect(await writeCopies(mockAdapter, [stamped('a', OLDER, { recommendation: 'monitor' })], never)).toBe(0);
+    expect(copyOf('a')).toMatchObject({ recommendation: 'worth_a_call' });
+  });
+
+  it('across offsets: the seconds field does not move with the offset', async () => {
+    await writeCopies(mockAdapter, [stamped('a', '2026-09-28T12:00:00.123100+02:00', { recommendation: 'monitor' })], never);
+    expect(await writeCopies(mockAdapter, [stamped('a', NEWER, { recommendation: 'worth_a_call' })], never)).toBe(1);
+  });
+});
+
+describe('photoSetStaleOf — was the photo this phone shows read', () => {
+  const s = (photo_set_key: string | null, engine_flags: string | null = '[]') => ({ photo_set_key, engine_flags });
+
+  it('the shown photo in the stamped set is current, in any case', () => {
+    expect(photoSetStaleOf(s(A1), A1)).toBe(false);
+    expect(photoSetStaleOf(s(`${A1},${A2}`), A2.toUpperCase())).toBe(false);
+  });
+
+  it('a replaced or added photo no read covered is stale', () => {
+    expect(photoSetStaleOf(s(A1), A3)).toBe(true);
+    expect(photoSetStaleOf(s(`${A1},${A2}`), A3)).toBe(true);
+  });
+
+  it('a read written over no photo is stale once the phone shows one', () => {
+    expect(photoSetStaleOf(s(null), A1)).toBe(true);
+  });
+
+  it('cannot tell, so says current: pre-stamp, no photo shown here, the hash form', () => {
+    expect(photoSetStaleOf(s(A1, null), A3)).toBe(false);
+    expect(photoSetStaleOf(s(null, null), A3)).toBe(false);
+    expect(photoSetStaleOf(s(A1), null)).toBe(false);
+    expect(photoSetStaleOf(s('ab'.repeat(32)), A3)).toBe(false);
+  });
+
+  it('an id that is a prefix of a stamped one is not in the set', () => {
+    expect(photoSetStaleOf(s(A1), A1.slice(0, 20))).toBe(true);
+  });
+});
+
+describe('readCopies hands every copy its photoSetStale', () => {
+  it('checks the photo each event shows, per event', async () => {
+    const id = (n: number) => `0a1b2c3d-0000-4000-8000-0000000001${String(n).padStart(2, '0')}`;
+    await writeCopies(
+      mockAdapter,
+      [
+        stamped('read', '2026-09-28T10:00:00+00:00', { photo_set_key: id(1) }),
+        stamped('swapped', '2026-09-28T10:00:00+00:00', { photo_set_key: id(2) }),
+        // The adversarial pass's case 1: a replace made offline. The server's remote delete
+        // never happened, so the read after the replace was stamped over BOTH; this phone
+        // holds only the new one. A set compare called this stale forever.
+        stamped('offline-replace', '2026-09-28T10:00:00+00:00', { photo_set_key: [id(4), id(5)].sort().join(',') }),
+        // Case 2: a replace made on another phone. The re-read was stamped over the new
+        // photo only; this phone never learns the old row was deleted and holds both.
+        stamped('other-phone', '2026-09-28T10:00:00+00:00', { photo_set_key: id(7) }),
+        stamped('none-here', '2026-09-28T10:00:00+00:00', { photo_set_key: id(1) }),
+        row('pre-stamp', '2026-09-28T10:00:00+00:00'),
+      ],
+      never,
+    );
+    holdPhotos('read', [id(1)]);
+    holdPhotos('swapped', [id(2), id(3)]); // id(3) replaced id(2); no read of it landed
+    holdPhotos('offline-replace', [id(5)]);
+    holdPhotos('other-phone', [id(6), id(7)]); // id(6) old, id(7) the replacement shown
+    holdPhotos('pre-stamp', [id(8)]);
+    const got = await readCopies(['read', 'swapped', 'offline-replace', 'other-phone', 'none-here', 'pre-stamp']);
+    expect(got.get('read')?.photoSetStale).toBe(false);
+    expect(got.get('swapped')?.photoSetStale).toBe(true);
+    expect(got.get('offline-replace')?.photoSetStale).toBe(false);
+    expect(got.get('other-phone')?.photoSetStale).toBe(false);
+    expect(got.get('none-here')?.photoSetStale).toBe(false);
+    expect(got.get('pre-stamp')?.photoSetStale).toBe(false);
+    expect(got.get('swapped')).toMatchObject({ photo_set_key: id(2), engine_flags: '[]', rule_version: 'f1.vomit1' });
+  });
+
+  it('an event with photos and no copy is still absent', async () => {
+    holdPhotos('x', [A1]);
+    expect((await readCopies(['x'])).size).toBe(0);
   });
 });

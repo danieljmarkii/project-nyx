@@ -5,13 +5,14 @@
 // verdict from the server every time they drew it, so offline "Worth a call" simply
 // vanished: the month drew every photographed day as seen and Home drew nothing. The
 // copy holds four columns of the server's analysis row (event id, status, verdict,
-// change time) and `lib/readState.ts` decides every surface's state from it.
+// change time) plus its three read stamps (PR-12, below), and `lib/readState.ts` decides
+// every surface's state from it.
 //
 // WHAT IT NEVER HOLDS. The read's words (`read_text`: no surface that reads the copy
 // shows any, and they are the model's free text about a pet's health) and the hide
 // stamp (`dismissed_at`: Hide hides words and never stands the rose down, H-4a).
 // `READ_COPY_COLUMNS` is the only column list this module sends, and
-// `lib/readCopy.test.ts` pins it and the real DDL to exactly the four.
+// `lib/readCopy.test.ts` pins it and the real DDL to exactly the seven.
 //
 // ONE WRITER, THREE CALLERS (the PM's ruling on the plan, 2026-09-25). `writeCopies`
 // is the only statement that writes the table, and three things call it:
@@ -62,6 +63,31 @@
 // holds the watermark, and the next pull, from the old place, reads the row. Half the
 // overlap for the pull leaves the other half for the writing transaction's own length.
 //
+// THE THREE STAMPS (Engines v3 PR-12, CUL-1267; migration 075). The copy also keeps the
+// read's `photo_set_key`, `rule_version` and `engine_flags`: which photos, which floor rules
+// and which Engines keys produced the verdict. Never `model_id` / `prompt_hash`, which
+// describe the model's raw output the phone never holds. The server is their only writer
+// (`_shared/engineStamps.ts`, and 075 §2b freezes them against a client UPDATE); this copy
+// only mirrors them. They change three things here:
+//   · `readCopies` checks that the photo this phone shows is in `photo_set_key` and hands
+//     each copy `photoSetStale`, which `lib/readState.ts` reads to stop a quiet verdict standing
+//     over a photo nothing has read. It never reaches the rose (`photoSetStaleOf` says when).
+//   · Every phone re-pulls every row once, under `WATERMARK_KEY`'s new name: rows pulled by
+//     an earlier build sit behind the old watermark with NULL stamps. The upsert fills
+//     stamps into a row it already holds at the same instant, once, and only from NULL.
+//   · The millisecond tie (CUL-1201, the 9/25 comment). `julianday` rounds to the
+//     millisecond, and 075's trigger makes every rewrite strictly later at MICROSECOND
+//     grain, so two versions inside one millisecond compared equal and the newer one was
+//     refused. On an equal `julianday` the upsert now compares the seconds field as a
+//     NUMBER (`CAST(substr(…, 18) AS REAL)`), never the strings: `…00.000Z` and
+//     `…00+00:00` are one instant, and as text the first sorts later (C-40).
+//
+// STATED BLIND SPOT (PR-12's privacy pass). A build DOWNGRADE (an OTA rollback to a build
+// before PR-12) writes a newer verdict with its old four-column upsert and leaves the
+// stamps it found; on the next upgrade that row is not NULL-stamped and not behind the new
+// watermark, so it keeps the older stamps until the server rewrites it. The compare can
+// then only err toward grey: a mismatch demotes a calm read and never reaches the rose.
+//
 // STATED BLIND SPOT (C-38). A server row that is DELETED is never mirrored. Nothing in
 // the client deletes an analysis row today. The server removes one through a cascade
 // from its event or pet (account deletion wipes this device anyway), and the table's
@@ -71,18 +97,24 @@
 // reader asks only for events this device still holds.
 
 import { getDb, getWatermark, setWatermark } from './db';
+import { EVENT_ATTACHMENT_ORDER } from './eventAttachmentQueries';
 import { advanceWatermark, HYDRATE_WATERMARK_OVERLAP_MS, watermarkQueryFloor } from './hydration';
 import type { ReadCopyRow } from './readState';
 import { supabase } from './supabase';
 
 /**
- * Exactly the four columns the copy keeps, and the only columns this module ever asks
- * the server for. Never `read_text`, never `dismissed_at`.
+ * Exactly the seven columns the copy keeps, and the only columns this module ever asks
+ * the server for. Never `read_text`, never `dismissed_at`, never the payload stamps.
  */
-export const READ_COPY_COLUMNS = 'event_id, status, recommendation, updated_at';
+export const READ_COPY_COLUMNS =
+  'event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags';
 
-/** The copy's key in `sync_watermarks` (wiped at sign-out with the rest). */
-const WATERMARK_KEY = 'event_ai_verdicts';
+/** The copy's key in `sync_watermarks` (wiped at sign-out with the rest). Renamed from
+ *  `event_ai_verdicts` when the stamps arrived (PR-12): a new name has no watermark, so
+ *  the first pull after the upgrade reads every row once and fills the stamps a row pulled
+ *  by an earlier build lacks. The old key's row is left to the sign-out wipe; nothing
+ *  reads it. Rename it again whenever a column is added that existing rows must gain. */
+export const READ_COPY_WATERMARK_KEY = 'event_ai_verdicts:v2';
 
 /** Rows asked for per page. A server `max-rows` below this number costs pages, never
  *  rows: the cursor is the last row RECEIVED, whatever the page's length. */
@@ -118,46 +150,169 @@ export async function readCopies(eventIds: readonly string[]): Promise<Map<strin
   const ids = [...new Set(eventIds)];
   for (let i = 0; i < ids.length; i += READ_CHUNK) {
     const chunk = ids.slice(i, i + READ_CHUNK);
+    const marks = chunk.map(() => '?').join(', ');
     const rows = await db.getAllAsync<ReadCopyRow>(
-      `SELECT event_id, status, recommendation, updated_at FROM event_ai_verdicts
-        WHERE event_id IN (${chunk.map(() => '?').join(', ')})`,
+      `SELECT event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags
+         FROM event_ai_verdicts
+        WHERE event_id IN (${marks})`,
       chunk,
     );
-    for (const row of rows) out.set(row.event_id, row);
+    if (rows.length === 0) continue;
+    // The photo each event SHOWS on this phone: the first row in the order every screen
+    // renders by (`EVENT_ATTACHMENT_ORDER`, what `getEventAttachment` returns). Ordered
+    // per event so the first row seen for an event is that photo.
+    const photos = await db.getAllAsync<{ event_id: string; id: string }>(
+      `SELECT event_id, id FROM event_attachments WHERE event_id IN (${marks})
+        ${EVENT_ATTACHMENT_ORDER.replace('ORDER BY', 'ORDER BY event_id,')}`,
+      chunk,
+    );
+    const shownByEvent = new Map<string, string>();
+    for (const p of photos) if (!shownByEvent.has(p.event_id)) shownByEvent.set(p.event_id, p.id);
+    for (const row of rows) {
+      out.set(row.event_id, { ...row, photoSetStale: photoSetStaleOf(row, shownByEvent.get(row.event_id) ?? null) });
+    }
   }
   return out;
 }
 
+/** The server's hash form of `photo_set_key` (engineStamps.ts): 64 hex, no comma, no
+ *  hyphen, so it can never be mistaken for a list of UUIDs. The phone cannot compare it. */
+const PHOTO_SET_HASH = /^[0-9a-f]{64}$/;
+
+/**
+ * Whether the photo this phone SHOWS for the event was absent when the read's words were
+ * written, so a quiet verdict does not speak for it. The server's list form
+ * (`photoSetKey`, `_shared/engineStamps.ts`) is the event's attachment ids, lowercased,
+ * sorted and comma-joined.
+ *
+ * Membership of the shown photo, NOT equality of the two sets (the adversarial pass on
+ * PR-12): the sets need not converge. A replace made offline leaves the old row on the
+ * server for good (the remote delete in `detachEventAttachment` is best-effort and never
+ * retried), and a replace made on another phone leaves the old row on this one (the
+ * attachment pull is insert-only). A set compare marked such an event *Photo not read*
+ * forever over a photo that was read, and on two phones the mark moved between them each
+ * time one re-pushed its rows. The owner's question is only whether the photo in front of
+ * them was read, and the app shows one photo per event.
+ *
+ * False, which is today's behaviour, whenever the phone cannot tell:
+ *   · the row is pre-stamp (`engine_flags` NULL): a read from before migration 075 says
+ *     nothing about its photos (the PM's D-3, 2026-09-28);
+ *   · the phone shows no photo for the event: it may not have pulled it yet, and "no photo
+ *     here" is not "a different photo";
+ *   · the key is the hash form, which only a set past 4,000 characters gets.
+ * True when the read was written over no photo and the phone now shows one, or over a set
+ * that does not include the one it shows (a replace or an add no read has covered). Either
+ * way it can only take a calm read away, never the rose (`lib/readState.ts`).
+ */
+export function photoSetStaleOf(
+  stamps: Pick<ReadCopyRow, 'photo_set_key' | 'engine_flags'>,
+  shownAttachmentId: string | null,
+): boolean {
+  if (stamps.engine_flags === null || stamps.engine_flags === undefined) return false;
+  if (shownAttachmentId === null) return false;
+  const key = stamps.photo_set_key;
+  if (key === null || key === undefined) return true;
+  if (PHOTO_SET_HASH.test(key)) return false;
+  return !key.split(',').includes(shownAttachmentId.toLowerCase());
+}
+
 // ── Writing (the one statement) ──────────────────────────────────────────────
+
+/** The seconds field of a server timestamp, as a number (`SS.ffffff`), when the string has
+ *  the ISO shape that puts it at character 18; NULL otherwise. Offsets move hours and
+ *  minutes, never seconds, so two spellings of one instant give one number. */
+const secondsOf = (col: string) =>
+  `(CASE WHEN substr(${col}, 11, 1) = 'T' AND substr(${col}, 17, 1) = ':'
+         THEN CAST(substr(${col}, 18) AS REAL) END)`;
+const IN_SECONDS = secondsOf('excluded.updated_at');
+const STORED_SECONDS = secondsOf('event_ai_verdicts.updated_at');
 
 /**
  * Insert a row the copy does not hold; replace one it holds only when the incoming
- * `updated_at` is STRICTLY newer, compared as parsed instants. An equal instant is a
- * no-op (a re-pulled boundary row converges without a rewrite). An incoming instant that
+ * `updated_at` is STRICTLY newer, compared as parsed instants. An incoming instant that
  * does not parse can never be shown newer, so it never replaces; a stored one that does
  * not parse is replaced by any row that does (the `shouldWriteRemoteRow` rules, moved
  * into the statement so they hold under interleaving).
+ *
+ * `julianday` rounds to the millisecond, so an equal `julianday` is decided on the seconds
+ * field instead (the header's PR-12 section):
+ *   · strictly larger by less than a second: a newer version inside the same millisecond,
+ *     which replaces. (A pair that straddles a minute inside one millisecond differs by
+ *     about sixty and replaces nothing, which is the behaviour before PR-12.)
+ *   · equal: the same version. A no-op, so a re-pulled boundary row converges without a
+ *     rewrite, EXCEPT once: a row pulled before the stamps existed (stored `engine_flags`
+ *     NULL) takes them from the same version when it carries them.
  */
 const UPSERT_SQL = `
-  INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at)
-  VALUES (?, ?, ?, ?)
+  INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags)
+  VALUES (?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(event_id) DO UPDATE SET
     status = excluded.status,
     recommendation = excluded.recommendation,
-    updated_at = excluded.updated_at
+    updated_at = excluded.updated_at,
+    photo_set_key = excluded.photo_set_key,
+    rule_version = excluded.rule_version,
+    engine_flags = excluded.engine_flags
   WHERE julianday(excluded.updated_at) IS NOT NULL
     AND (julianday(event_ai_verdicts.updated_at) IS NULL
-         OR julianday(excluded.updated_at) > julianday(event_ai_verdicts.updated_at))`;
+         OR julianday(excluded.updated_at) > julianday(event_ai_verdicts.updated_at)
+         OR (julianday(excluded.updated_at) = julianday(event_ai_verdicts.updated_at)
+             AND (${IN_SECONDS} > ${STORED_SECONDS} AND ${IN_SECONDS} - ${STORED_SECONDS} < 1
+                  OR (${IN_SECONDS} = ${STORED_SECONDS}
+                      AND event_ai_verdicts.engine_flags IS NULL
+                      AND excluded.engine_flags IS NOT NULL))))`;
 
-function isWritable(row: Partial<ReadCopyRow> | null | undefined): row is ReadCopyRow {
-  return (
-    !!row &&
-    typeof row.event_id === 'string' &&
-    row.event_id.length > 0 &&
-    typeof row.status === 'string' &&
-    typeof row.updated_at === 'string' &&
-    (row.recommendation === null || typeof row.recommendation === 'string')
-  );
+/** A server row as PostgREST hands it over: `engine_flags` is the `text[]` as an array. */
+export interface ServerVerdictRow {
+  event_id: string;
+  status: string;
+  recommendation: string | null;
+  updated_at: string;
+  photo_set_key?: unknown;
+  rule_version?: unknown;
+  engine_flags?: unknown;
+}
+
+// The shapes 075's CHECKs enforce on the server, checked again here because a stamp this
+// module stores is a stamp `photoSetStaleOf` trusts.
+const PHOTO_SET_KEY_SHAPE = /^[0-9a-f,-]{1,4000}$/;
+const RULE_VERSION_SHAPE = /^[a-z0-9._-]{1,64}$/;
+const ENGINE_KEY_SHAPE = /^[a-z0-9_]{1,64}$/;
+
+/** `engine_flags` as the copy stores it: the sorted keys as a JSON array, or NULL. */
+function engineFlagsText(value: unknown): string | null {
+  if (!Array.isArray(value) || value.length > 32) return null;
+  if (!value.every((k): k is string => typeof k === 'string' && ENGINE_KEY_SHAPE.test(k))) return null;
+  return JSON.stringify([...value].sort());
+}
+
+/**
+ * The row as the copy stores it, or null when it cannot be keyed. A malformed STAMP
+ * stores NULL for that stamp and keeps the row: a bad stamp must never cost a verdict
+ * (and a NULL `engine_flags` reads as pre-stamp, which compares nothing).
+ */
+function toCopyRow(row: Partial<ServerVerdictRow> | null | undefined): ReadCopyRow | null {
+  if (
+    !row ||
+    typeof row.event_id !== 'string' ||
+    row.event_id.length === 0 ||
+    typeof row.status !== 'string' ||
+    typeof row.updated_at !== 'string' ||
+    !(row.recommendation === null || typeof row.recommendation === 'string')
+  ) {
+    return null;
+  }
+  return {
+    event_id: row.event_id,
+    status: row.status,
+    recommendation: row.recommendation,
+    updated_at: row.updated_at,
+    photo_set_key:
+      typeof row.photo_set_key === 'string' && PHOTO_SET_KEY_SHAPE.test(row.photo_set_key) ? row.photo_set_key : null,
+    rule_version:
+      typeof row.rule_version === 'string' && RULE_VERSION_SHAPE.test(row.rule_version) ? row.rule_version : null,
+    engine_flags: engineFlagsText(row.engine_flags),
+  };
 }
 
 /**
@@ -170,17 +325,26 @@ function isWritable(row: Partial<ReadCopyRow> | null | undefined): row is ReadCo
  */
 export async function writeCopies(
   db: ReadCopyDb,
-  rows: readonly (Partial<ReadCopyRow> | null | undefined)[],
+  rows: readonly (Partial<ServerVerdictRow> | null | undefined)[],
   stale: () => boolean,
 ): Promise<number> {
   let changed = 0;
-  for (const row of rows) {
+  for (const raw of rows) {
     if (stale()) return changed;
-    if (!isWritable(row)) {
-      console.warn('[read-copy] skipped a row with no usable key:', row?.event_id ?? '(none)');
+    const row = toCopyRow(raw);
+    if (!row) {
+      console.warn('[read-copy] skipped a row with no usable key:', raw?.event_id ?? '(none)');
       continue;
     }
-    const result = await db.runAsync(UPSERT_SQL, [row.event_id, row.status, row.recommendation ?? null, row.updated_at]);
+    const result = await db.runAsync(UPSERT_SQL, [
+      row.event_id,
+      row.status,
+      row.recommendation,
+      row.updated_at,
+      row.photo_set_key,
+      row.rule_version,
+      row.engine_flags,
+    ]);
     changed += result.changes;
   }
   return changed;
@@ -210,7 +374,7 @@ export function keysetAfter(cursor: Cursor): string {
 }
 
 interface PulledVerdicts {
-  rows: ReadCopyRow[];
+  rows: ServerVerdictRow[];
   /** The rows received cover the exact count taken before paging, every page moved the
    *  cursor forward, and the pull ran inside its time budget. */
   complete: boolean;
@@ -235,7 +399,7 @@ async function fetchVerdictsSince(floor: string | null, stale: () => boolean): P
   }
   if (count === 0) return { rows: [], complete: true };
 
-  const rows: ReadCopyRow[] = [];
+  const rows: ServerVerdictRow[] = [];
   // Every (event, version) received. A page that adds none is a server that did not
   // honour the cursor, and asking again would only get the same page back.
   const seen = new Set<string>();
@@ -253,7 +417,7 @@ async function fetchVerdictsSince(floor: string | null, stale: () => boolean): P
       console.warn('[read-copy] pull failed:', error.message);
       return null;
     }
-    const received = (data ?? []) as unknown as ReadCopyRow[];
+    const received = (data ?? []) as unknown as ServerVerdictRow[];
     // An EMPTY page is the end: nothing sorts after the cursor. A short one is not
     // (C-42): under a `max-rows` cap below the page size, a page comes back short while
     // rows remain.
@@ -291,7 +455,7 @@ async function fetchVerdictsSince(floor: string | null, stale: () => boolean): P
  * count proved complete.
  */
 export async function pullReadCopies(db: ReadCopyDb, stale: () => boolean): Promise<void> {
-  const since = await getWatermark(WATERMARK_KEY);
+  const since = await getWatermark(READ_COPY_WATERMARK_KEY);
   const pulled = await fetchVerdictsSince(watermarkQueryFloor(since), stale);
   if (pulled === null || stale()) return;
   await writeCopies(db, pulled.rows, stale);
@@ -304,7 +468,7 @@ export async function pullReadCopies(db: ReadCopyDb, stale: () => boolean): Prom
     since,
   );
   if (stale()) return;
-  if (next) await setWatermark(WATERMARK_KEY, next);
+  if (next) await setWatermark(READ_COPY_WATERMARK_KEY, next);
 }
 
 /**
@@ -324,5 +488,5 @@ export async function pullReadCopyFor(db: ReadCopyDb, eventId: string, stale: ()
     return 0;
   }
   if (!data || stale()) return 0;
-  return writeCopies(db, [data as unknown as ReadCopyRow], stale);
+  return writeCopies(db, [data as unknown as ServerVerdictRow], stale);
 }

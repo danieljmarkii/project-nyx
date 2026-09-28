@@ -167,9 +167,10 @@ export const BASE_SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS event_ai_verdicts (
       -- The per-incident read's copy on the phone (History v2 §5.3, HV-5 / CUL-1162), so
       -- "Worth a call" never waits on the network. FOUR columns of the server's analysis
-      -- row and nothing else: never the read's words (no surface that reads this shows
-      -- any) and never the hide stamp (Hide never touches the rose). lib/readCopy.test.ts
-      -- pins this column set against the real DDL. Written ONLY by lib/readCopy.ts (the
+      -- row plus its three read stamps (below), and nothing else: never the read's words
+      -- (no surface that reads this shows any) and never the hide stamp (Hide never
+      -- touches the rose). lib/readCopy.test.ts pins this column set against the real
+      -- DDL. Written ONLY by lib/readCopy.ts (the
       -- sync pull, and a read landing on this device); read only through it; wiped at
       -- sign-out with the rest of the account's record (LOCAL_WIPE_TABLES).
       --
@@ -182,7 +183,17 @@ export const BASE_SCHEMA_SQL = `
       status          TEXT NOT NULL,
       recommendation  TEXT,
       -- The server's updated_at, verbatim: the pull's watermark and the last write wins key.
-      updated_at      TEXT NOT NULL
+      updated_at      TEXT NOT NULL,
+      -- Engines v3 PR-12 (CUL-1267, migration 075): the three READ stamps, mirrored so the
+      -- phone can tell whether the verdict above speaks for the photo it shows
+      -- (lib/readCopy.ts, photoSetStale). Never the payload stamps (model_id, prompt_hash):
+      -- they describe the model's raw output, which the phone never holds. All three NULL
+      -- on a read written before the stamps existed; engine_flags is the server's text[]
+      -- as a JSON array, so NULL (pre-stamp) and '[]' (every key off) stay apart. Declared
+      -- here AND in COLUMN_UPGRADES, the vet_visits.deleted_at precedent.
+      photo_set_key   TEXT,
+      rule_version    TEXT,
+      engine_flags    TEXT
     );
 
     CREATE TABLE IF NOT EXISTS vet_visits (
@@ -548,6 +559,14 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   { table: 'vet_visits', column: 'deleted_at', type: 'TEXT' },
   { table: 'medications', column: 'vet_visit_id', type: 'TEXT' },
   { table: 'diet_trials', column: 'vet_visit_id', type: 'TEXT' },
+  // Engines v3 PR-12 (CUL-1267) / migration 075 — the read copy's three stamps. The copy
+  // shipped in HV-5 without them, so an installed phone has the table and only this path
+  // can add them. Nullable, no default: NULL is "written before the stamps", which is
+  // exactly what a row pulled by an earlier build is. lib/readCopy.ts re-pulls every row
+  // once under a new watermark key and fills them from the server.
+  { table: 'event_ai_verdicts', column: 'photo_set_key', type: 'TEXT' },
+  { table: 'event_ai_verdicts', column: 'rule_version', type: 'TEXT' },
+  { table: 'event_ai_verdicts', column: 'engine_flags', type: 'TEXT' },
   // B-398 — the quarantine pair, on every queue table. Generated from SYNC_QUEUES
   // rather than typed out twelve times, so the set that gets the columns and the
   // set the badge counts are provably the same set.

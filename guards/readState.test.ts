@@ -95,7 +95,8 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
     why:
       'The copy’s only reader and only writer: the local read every surface goes ' +
       'through, the one upsert, the sync pull and the landed-read pull. Its server ' +
-      'reads select exactly four columns (lib/readCopy.test.ts pins them).',
+      'reads select exactly seven columns: the verdict and its three read stamps ' +
+      '(lib/readCopy.test.ts pins them).',
   },
   'lib/localSchema.ts': {
     kinds: ['copy', 'field'],

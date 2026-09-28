@@ -23,9 +23,11 @@
 //      replaced, and standing it in front of the new one is reassurance about an image
 //      nothing has read (CUL-812's reasoning, applied to the wait as well as the
 //      failure).
-//   3. calm: a FINISHED read that said `monitor`. It stands whether or not this device
-//      holds the photo: a photoless stool's contextual read is still the record's read
-//      (B-363 is the record screen's business, not this predicate's).
+//   3. calm: a FINISHED read that said `monitor`, over the photos this phone holds. It
+//      stands whether or not this device holds the photo: a photoless stool's contextual
+//      read is still the record's read (B-363 is the record screen's business, not this
+//      predicate's). A read whose stamped photo set does not include the photo this
+//      phone shows (`photoSetStale`, Engines v3 PR-12) is not calm: see below.
 //   4. none: no read is expected (the type has no per-incident read, or there is no
 //      photo) and no read above applies.
 //   5. off: a read was expected but the owner turned photo reading off (CUL-552,
@@ -45,6 +47,18 @@
 // with no photo would be false). The finished verdict still RIDES on `verdict`, so a
 // surface that speaks the record's words (the Signal gallery) keeps saying *Not enough
 // to say yet* rather than *No read yet*: each surface says the most specific true thing.
+//
+// ── A READ OF PHOTOS THAT ARE GONE (Engines v3 PR-12, CUL-1267 / CUL-1201 part 1) ─
+// Since migration 075 the server stamps each read with the photos present when its words
+// were written (`photo_set_key`). `lib/readCopy.ts` says `photoSetStale` when the photo
+// this phone shows is not among them: the owner replaced or added the photo and no read of
+// it has landed (it failed, hit the cap, or has not run yet). The
+// stored words describe an image that is gone, so a QUIET verdict on them stops standing:
+// a calm read becomes `unread` (the grey *Photo not read*), and a stale verdict never rides
+// on `verdict` either, so the Signal gallery stops saying *keep an eye on* about a photo
+// nothing read. It is a demotion only. The rose is decided first and never reads the flag,
+// because an escalation stands across photo swaps (CUL-1201 part 2): presence carries
+// across, and absence on a later photo is not wellness. A read in flight still outranks it.
 //
 // ── WHAT IS NOT AN INPUT ─────────────────────────────────────────────────────
 // Dismissal. Hide hides the read's WORDS on the record (H-4a); it never stands the
@@ -79,14 +93,27 @@ export interface ReadCopy {
   /** The `ai_recommendation` enum, or null when no read produced one. Text for the same
    *  reason: a value this build does not know fails toward the rose, never a throw. */
   recommendation: string | null;
+  /** The photo this phone shows is not in the copy's stamped photo set, so a quiet
+   *  verdict does not speak for it (Engines v3 PR-12). Computed by `readCopies`,
+   *  never stored. Absent reads as false: a row written before the stamps, or a copy
+   *  built by a caller that did not compare, keeps today's behaviour. */
+  photoSetStale?: boolean;
 }
 
-/** One row of the copy (`event_ai_verdicts`): the deciding pair, its key, and the
- *  server's change time, which is both the pull's watermark and the last write wins
- *  key. Four columns, and that is the whole of what the phone keeps. */
+/** One row of the copy (`event_ai_verdicts`): the deciding pair, its key, the server's
+ *  change time (both the pull's watermark and the last write wins key), and the three
+ *  read stamps (migration 075). Seven columns, and that is the whole of what the phone
+ *  keeps. The stamps are NULL on a read written before they existed. */
 export interface ReadCopyRow extends ReadCopy {
   event_id: string;
   updated_at: string;
+  /** The event's attachment ids when the words were written, sorted and comma-joined, or
+   *  their SHA-256 past 4,000 characters; NULL when the event had no photo. */
+  photo_set_key: string | null;
+  /** Which floor rules produced the verdict (`f1.vomit1`). */
+  rule_version: string | null;
+  /** The Engines keys on for this write, as a JSON array; NULL before the stamps. */
+  engine_flags: string | null;
 }
 
 export type ReadState = 'worth_a_call' | 'calm' | 'pending' | 'unread' | 'off' | 'none';
@@ -135,6 +162,9 @@ export function isWorthACall(copy: ReadCopy | null | undefined): boolean {
 /** The quiet verdict a FINISHED read stands on, or null (no read, a read in flight, a
  *  read that failed or was capped, or the rose). */
 function finishedQuietOf(copy: ReadCopy | null | undefined): QuietVerdict | null {
+  // A quiet verdict over photos that are gone describes nothing on screen (the header's
+  // PR-12 section). Only the quiet half reads this; the rose is decided before it.
+  if (copy?.photoSetStale === true) return null;
   const verdict = copy?.recommendation;
   if (verdict === null || verdict === undefined || !isQuietVerdict(verdict)) return null;
   return FINISHED_READ_STATUSES.includes(copy?.status ?? '') ? verdict : null;

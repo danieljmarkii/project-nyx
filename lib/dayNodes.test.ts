@@ -65,6 +65,10 @@ const analysisRow = (event_id: string, recommendation: string | null, status = '
   status,
   recommendation,
   updated_at: '2026-09-17T18:00:00+00:00',
+  // Pre-stamp (migration 075's columns NULL): no photo-set compare.
+  photo_set_key: null,
+  rule_version: null,
+  engine_flags: null,
 });
 
 /** A meal row's feeding as the lane takes it: keyed by its event id, witnessed, unrated,
@@ -208,6 +212,9 @@ function randomDay(rand: () => number): SweepDay {
         status: pick(STATUSES),
         recommendation: pick(RECS),
         updated_at: new Date(BASE).toISOString(),
+        photo_set_key: null,
+        rule_version: null,
+        engine_flags: null,
       });
     }
   }
