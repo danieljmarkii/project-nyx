@@ -2089,7 +2089,9 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // just endpoints, so "N days since a full meal" can't be misread as N days of MARKED
       // anorexia. The pet may have eaten partially in between (all → some → picked → refused);
       // naming that shape is honest AND keeps the escalation (a decline TO refusal, not "picky").
-      const recent = snap.provenance.intakeLog.slice(0, 4).reverse() // chronological, up to 4
+      // CUL-1086: only the meals the flag counted; a free-fed bowl's row is listed in appendix E
+      // but is not part of the decline this sentence describes.
+      const recent = snap.provenance.intakeLog.filter((e) => !e.notCountedFreeFed).slice(0, 4).reverse() // chronological, up to 4
       const trajectoryBit =
         recent.length >= 2
           ? ` Recent rated meals declined: ${h(recent.map((e) => intakeLabel(e.intakeRating).toLowerCase()).join(' → '))}.`
@@ -2105,6 +2107,16 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
               f.hoursSinceLastFullMeal,
             )} without a full meal.`
           : ' No fully-eaten meal is recorded in this window.'
+      // CUL-1086 — said on page 1, beside the claim it scopes (cold read): the first question
+      // about a hyporexic pet with a bowl down is whether she is eating from the bowl, and the
+      // flag answers it by exclusion. The rows themselves are listed and dated in appendix E.
+      const bowlRatings = snap.provenance.intakeLogFreeFedExcluded
+      const freeFedBit =
+        bowlRatings > 0
+          ? ` ${num(bowlRatings)} rating${bowlRatings === 1 ? '' : 's'} of a free-fed bowl ${
+              bowlRatings === 1 ? 'is' : 'are'
+            } not counted here: intake from a bowl left down is not directly observed.`
+          : ''
       const appendixBit =
         snap.provenance.intakeLog.length > 0 ? ' Meal-by-meal detail in appendix&nbsp;E (meals &amp; intake).' : ''
       const detail =
@@ -2117,7 +2129,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
             }</b>.${baselineBit}`
       return flagRow(
         'Intake',
-        `<b>Reduced intake.</b> ${detail}${trajectoryBit}${durationBit}${feline} Recorded as a health signal — not &ldquo;picky.&rdquo;${appendixBit}`,
+        `<b>Reduced intake.</b> ${detail}${freeFedBit}${trajectoryBit}${durationBit}${feline} Recorded as a health signal — not &ldquo;picky.&rdquo;${appendixBit}`,
       )
     }
     case 'chronicity': {
@@ -7443,16 +7455,14 @@ function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[], foot: st
           ? 'the &ldquo;last fully-eaten meal&rdquo; on page&nbsp;1 is the row tagged &ldquo;last full meal&rdquo; here; the time since it is how long the pet has gone without a full meal, which sets the urgency of a reduced-intake flag (especially the feline 48&ndash;72&nbsp;h window)'
           : 'no fully-eaten meal was recorded in this window, so page&nbsp;1 shows no &ldquo;last full meal&rdquo; and none is tagged here'
       }. Absence of a full meal is not evidence the pet ate nothing — only that no fully-eaten meal was recorded.`
-  // CUL-1086 — the flag list is the detector's input, which never reads a free-fed bowl.
-  // Said where the vet meets the list, so a missing kibble row is not read as a missing log.
-  const freeFedOmitted = snap.provenance.intakeLogFreeFedOmitted
+  // CUL-1086 — the flag list keeps a free-fed bowl's ratings, marked, because a vet must be
+  // able to weigh a bowl "ate it all" dated after the anchor; the flag itself does not count them.
+  const freeFedRows = snap.provenance.intakeLogFreeFedExcluded
   const freeFedBit =
-    !unfinishedOnly && freeFedOmitted > 0
-      ? ` ${num(freeFedOmitted)} rating${freeFedOmitted === 1 ? '' : 's'} of a free-fed bowl ${
-          freeFedOmitted === 1 ? 'is' : 'are'
-        } not listed: intake from a bowl left down is not directly observed, so the flag does not count ${
-          freeFedOmitted === 1 ? 'it' : 'them'
-        }.`
+    !unfinishedOnly && freeFedRows > 0
+      ? freeFedRows === 1
+        ? ' The row marked &ldquo;free-fed bowl&rdquo; is a rating of a bowl left down: intake from it is not directly observed, so the flag does not count it and it is never the last full meal.'
+        : ` The ${num(freeFedRows)} rows marked &ldquo;free-fed bowl&rdquo; are ratings of a bowl left down: intake from it is not directly observed, so the flag does not count them and none is the last full meal.`
       : ''
   const lead = unfinishedOnly
     ? '<b>Meals not fully eaten</b> — every rated meal in this window the owner did not record as fully eaten, most recent first.'
@@ -7470,7 +7480,11 @@ function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[], foot: st
 }
 
 function intakeLogRow(e: IntakeLogEntry, tz: string | null): string {
-  const tag = e.isLastFullMeal ? ` <span class="conf">last full meal</span>` : ''
+  const tag = e.isLastFullMeal
+    ? ` <span class="conf">last full meal</span>`
+    : e.notCountedFreeFed
+      ? ` <span class="conf">free-fed bowl</span>`
+      : ''
   const eaten = e.intakeRating === 'all' || e.intakeRating === 'most'
   // Below-baseline ratings get weight so the decline reads down the column; a full/most meal
   // stays plain. NOT a colour or a verdict — just typographic emphasis on the concerning rows.

@@ -140,6 +140,12 @@ Deno.test('CUL-1086 — the Signal\'s entry point hands the engine its free-fed 
   // silently reverts to the disagreement. Pin the one line in the entry point that passes it,
   // and that the set it passes is the phone's definition (active: no end date). The report's
   // caller is driven for real in generate-report/report.test.ts.
+  //
+  // A SOURCE SCAN, stated as one, with its blind spots: it cannot see a set that is built right
+  // in text but empty at runtime, and the second regex pins formatting as well as meaning. The
+  // slice ends at the literal's first `\n    }\n`, so a nested block at that indent would cut it
+  // early (it fails red, with a misleading message). PR-11b extracts this pipeline out of
+  // index.ts; when it lands, this test follows the literal to its new home or drives it.
   const src = Deno.readTextFileSync(new URL('./index.ts', import.meta.url))
   const literal = src.slice(src.indexOf('const input: DetectionInput = {'))
   const body = literal.slice(0, literal.indexOf('\n    }\n'))

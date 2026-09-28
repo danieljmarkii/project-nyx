@@ -688,15 +688,18 @@ export interface DetectionInput {
   feedingArrangements?: FeedingArrangement[]
   /**
    * Foods CURRENTLY free-fed for this pet (CUL-1086): the food ids of active free_choice
-   * arrangements with `active_until IS NULL`, the phone's `readFreeFedFoodIds` definition.
+   * arrangements with `active_until IS NULL`, the phone's `readFreeFedFoodIds` definition (which
+   * also inner-joins the local food cache, so a food missing from the cache is excluded here and
+   * not on the phone; rare, and it errs toward the server reading fewer bowl ratings).
    * The intake lane (② and the rate_meals diagnostic) drops every rated meal of these foods,
    * the §11 #6 rule: a free-fed bowl's rating is unreliable and its absence is not a refusal.
    * Without it the phone and this engine read different meals, and a free-fed bowl rated
    * "ate it all" could hold a real drop in eating off Home.
    *
    * Optional only because fixtures predate it; absent ⇒ nothing is excluded. Both production
-   * callers (`generate-signal/index.ts`, `generate-report/report.ts` buildDetectionInput)
-   * MUST pass it, which `intakeFreeFed.test.ts` asserts. The rule is by food id and
+   * callers MUST pass it: `generate-signal/index.ts` (pinned by a source scan in
+   * `intakeFreeFed.test.ts`) and `generate-report/report.ts` buildDetectionInput (driven for real
+   * in `report.test.ts`). The rule is by food id and
    * ignores time, exactly as the phone's is: a change to that is a change to both surfaces.
    */
   freeFedFoodIds?: ReadonlySet<string>

@@ -287,7 +287,8 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       uncategorisedObservations: 0,
       symptomLog: [],
       intakeLog: [],
-      intakeLogHiddenOlder: 0, intakeLogFreeFedOmitted: 0,
+      intakeLogHiddenOlder: 0,
+      intakeLogFreeFedExcluded: 0,
       intakeLogScope: null,
       confounders: [],
       proteinExposureTally: {}, proteinUnknownCount: 0,
@@ -568,12 +569,13 @@ Deno.test('B-213 — the flag shows the decline SLOPE so the gap is not misread 
         symptomLog: [],
         intakeLogScope: 'intake_flag',
         intakeLog: [
-          { eventId: 'm3', occurredAt: '2026-07-02T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
-          { eventId: 'm2', occurredAt: '2026-07-01T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'picked', isLastFullMeal: false, pinned: false },
-          { eventId: 'm1b', occurredAt: '2026-06-30T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'some', isLastFullMeal: false, pinned: false },
-          { eventId: 'm1', occurredAt: '2026-06-30T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'all', isLastFullMeal: true, pinned: false },
+          { eventId: 'm3', occurredAt: '2026-07-02T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'refused', isLastFullMeal: false, pinned: false, notCountedFreeFed: false },
+          { eventId: 'm2', occurredAt: '2026-07-01T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'picked', isLastFullMeal: false, pinned: false, notCountedFreeFed: false },
+          { eventId: 'm1b', occurredAt: '2026-06-30T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'some', isLastFullMeal: false, pinned: false, notCountedFreeFed: false },
+          { eventId: 'm1', occurredAt: '2026-06-30T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'all', isLastFullMeal: true, pinned: false, notCountedFreeFed: false },
         ],
-        intakeLogHiddenOlder: 0, intakeLogFreeFedOmitted: 0,
+        intakeLogHiddenOlder: 0,
+        intakeLogFreeFedExcluded: 0,
         confounders: [], proteinExposureTally: {}, proteinUnknownCount: 0, conditions: [],
       },
     }),
@@ -581,6 +583,38 @@ Deno.test('B-213 — the flag shows the decline SLOPE so the gap is not misread 
   // The trajectory names the slope (oldest→newest), so "3 days since a full meal" can't be read
   // as 3 days of marked anorexia — the pet ate partially in between.
   assert.ok(/Recent rated meals declined: ate it all . ate some . picked at it . refused/i.test(text), text.slice(text.indexOf('Reduced intake'), text.indexOf('Reduced intake') + 400))
+})
+
+Deno.test('CUL-1086 — one free-fed bowl row: page 1 and the list say so in the singular, and the trajectory skips it', () => {
+  const flag: SafetyFlag = {
+    kind: 'intake_decline', trigger: 'consecutive_low', species: 'cat',
+    baselineScore: 4, recentScore: 1, daysBelowBaseline: 1, refusedFoodLabel: null,
+    ratedMealsConsidered: 6, lastFullMealIso: '2026-06-30T08:00:00Z', hoursSinceLastFullMeal: 52,
+  }
+  const text = renderReport(
+    base({
+      safetyFlags: [flag],
+      provenance: {
+        ownerReported: true, totalSymptomIncidents: 0, estimatedOrWindowCount: 0, deletedExcluded: true, uncategorisedObservations: 0,
+        symptomLog: [],
+        intakeLogScope: 'intake_flag',
+        intakeLog: [
+          intakeRow({ eventId: 'm4', occurredAt: '2026-07-02T08:00:00Z', intakeRating: 'picked' }),
+          intakeRow({ eventId: 'b1', occurredAt: '2026-07-01T20:00:00Z', foodLabel: 'Kibble', intakeRating: 'all', notCountedFreeFed: true }),
+          intakeRow({ eventId: 'm3', occurredAt: '2026-07-01T08:00:00Z', intakeRating: 'some' }),
+          intakeRow({ eventId: 'm1', occurredAt: '2026-06-30T08:00:00Z', intakeRating: 'all', isLastFullMeal: true }),
+        ],
+        intakeLogHiddenOlder: 0,
+        intakeLogFreeFedExcluded: 1,
+        confounders: [], proteinExposureTally: {}, proteinUnknownCount: 0, conditions: [],
+      },
+    }),
+  ).replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&ldquo;|&rdquo;/g, '"').replace(/\s+/g, ' ')
+  assert.ok(text.includes('1 rating of a free-fed bowl is not counted here: intake from a bowl left down is not directly observed.'))
+  assert.ok(text.includes('The row marked "free-fed bowl" is a rating of a bowl left down: intake from it is not directly observed, so the flag does not count it and it is never the last full meal.'))
+  // The bowl's "ate it all" sits between the counted meals and is not in the sentence.
+  assert.ok(text.includes('Recent rated meals declined: ate it all → ate some → picked at it.'))
+  assert.ok(/Kibble\s*Ate it all\s*free-fed bowl/.test(text), 'the row is listed, dated and marked')
 })
 
 Deno.test('B-213 — no full meal in window renders honestly, never a false recent anchor', () => {
@@ -626,11 +660,12 @@ Deno.test('B-213 — recent-meals appendix line-items rated meals, tags the last
         symptomLog: [],
         intakeLogScope: 'intake_flag',
         intakeLog: [
-          { eventId: 'm3', occurredAt: '2026-07-02T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
-          { eventId: 'm2', occurredAt: '2026-07-01T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'some', isLastFullMeal: false, pinned: false },
-          { eventId: 'm1', occurredAt: '2026-06-30T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'all', isLastFullMeal: true, pinned: false },
+          { eventId: 'm3', occurredAt: '2026-07-02T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'refused', isLastFullMeal: false, pinned: false, notCountedFreeFed: false },
+          { eventId: 'm2', occurredAt: '2026-07-01T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'some', isLastFullMeal: false, pinned: false, notCountedFreeFed: false },
+          { eventId: 'm1', occurredAt: '2026-06-30T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'all', isLastFullMeal: true, pinned: false, notCountedFreeFed: false },
         ],
-        intakeLogHiddenOlder: 5, intakeLogFreeFedOmitted: 0,
+        intakeLogHiddenOlder: 5,
+        intakeLogFreeFedExcluded: 0,
         confounders: [],
         proteinExposureTally: {}, proteinUnknownCount: 0,
         conditions: [],
@@ -878,7 +913,8 @@ Deno.test('severity never reaches the report — no column, no x/5, no "Severity
           logEntry({ type: 'diarrhea', occurredAt: '2026-06-02T12:00:00Z', severity: 3 }),
         ],
         intakeLog: [],
-        intakeLogHiddenOlder: 0, intakeLogFreeFedOmitted: 0,
+        intakeLogHiddenOlder: 0,
+        intakeLogFreeFedExcluded: 0,
         intakeLogScope: null,
         confounders: [],
         proteinExposureTally: {}, proteinUnknownCount: 0,
@@ -915,7 +951,8 @@ Deno.test('B-010 — windowed event renders a time RANGE, estimated an ~time, ne
           logEntry({ type: 'diarrhea', occurredAt: '2026-06-02T12:00:00Z', occurredAtConfidence: 'estimated' }),
         ],
         intakeLog: [],
-        intakeLogHiddenOlder: 0, intakeLogFreeFedOmitted: 0,
+        intakeLogHiddenOlder: 0,
+        intakeLogFreeFedExcluded: 0,
         intakeLogScope: null,
         confounders: [],
         proteinExposureTally: {}, proteinUnknownCount: 0,
@@ -1766,7 +1803,8 @@ Deno.test('Appendix B labels a format=treat exposure "Treat" (label parity with 
         uncategorisedObservations: 0,
         symptomLog: [],
         intakeLog: [],
-        intakeLogHiddenOlder: 0, intakeLogFreeFedOmitted: 0,
+        intakeLogHiddenOlder: 0,
+        intakeLogFreeFedExcluded: 0,
         intakeLogScope: null,
         confounders: [
           { eventId: 'e1', occurredAt: '2026-06-01T16:00:00Z', dayKey: '2026-06-01', foodLabel: 'Jerky', primaryProtein: 'chicken', proteinSet: pset(['chicken']), format: 'treat', foodType: 'other', note: null },
@@ -1941,7 +1979,7 @@ Deno.test('appendix lettering — conditional recent-meals is E; the how-to-read
         // A non-empty log with a null scope is a state the pipeline cannot produce (B-532).
         intakeLogScope: 'intake_flag',
         intakeLog: [
-          { eventId: 'm1', occurredAt: '2026-06-30T12:00:00Z', foodLabel: 'Wet food', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
+          { eventId: 'm1', occurredAt: '2026-06-30T12:00:00Z', foodLabel: 'Wet food', intakeRating: 'refused', isLastFullMeal: false, pinned: false, notCountedFreeFed: false },
         ],
       },
     }),
@@ -1963,7 +2001,7 @@ Deno.test('legend intake entry never promises a suppressed appendix (dangling cr
         // A non-empty log with a null scope is a state the pipeline cannot produce (B-532).
         intakeLogScope: 'intake_flag',
         intakeLog: [
-          { eventId: 'm1', occurredAt: '2026-06-30T12:00:00Z', foodLabel: 'Wet food', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
+          { eventId: 'm1', occurredAt: '2026-06-30T12:00:00Z', foodLabel: 'Wet food', intakeRating: 'refused', isLastFullMeal: false, pinned: false, notCountedFreeFed: false },
         ],
       },
     }),
@@ -2162,7 +2200,7 @@ Deno.test('R2-3 — a free-fed pet WITH a decline flag keeps the scored figure (
       mealItems: [mealItem({ foodLabel: 'Wet pouch', count: 25, intakeBreakdown: [{ rating: 'all', count: 5 }, { rating: 'some', count: 20 }] })],
     },
     safetyFlags: [flag],
-    provenance: { ...base().provenance, intakeLogScope: 'intake_flag', intakeLog: [{ eventId: 'm1', occurredAt: '2026-06-28T18:00:00Z', foodLabel: 'RC', intakeRating: 'all', isLastFullMeal: true, pinned: false }] },
+    provenance: { ...base().provenance, intakeLogScope: 'intake_flag', intakeLog: [{ eventId: 'm1', occurredAt: '2026-06-28T18:00:00Z', foodLabel: 'RC', intakeRating: 'all', isLastFullMeal: true, pinned: false, notCountedFreeFed: false }] },
   })
   const html = renderReport(snap)
   assert.ok(/rated meals fully eaten/.test(html), 'the scored figure stays when a decline flag is present')
@@ -3232,7 +3270,7 @@ Deno.test('PR7 render — with a meals appendix present, photos take the NEXT le
       provenance: {
         ...base().provenance,
         intakeLogScope: 'intake_flag',
-        intakeLog: [{ eventId: 'm1', occurredAt: '2026-06-30T12:00:00Z', foodLabel: 'Wet food', intakeRating: 'refused', isLastFullMeal: false, pinned: false }],
+        intakeLog: [{ eventId: 'm1', occurredAt: '2026-06-30T12:00:00Z', foodLabel: 'Wet food', intakeRating: 'refused', isLastFullMeal: false, pinned: false, notCountedFreeFed: false }],
       },
       incidentPhotos: [photo({ eventId: 'v1', occurredAt: '2026-06-20T14:00:00Z', dataUri: PNG_1PX })],
     }),
@@ -4395,8 +4433,8 @@ Deno.test('B-532 — the unfinished meals are itemised with NO reduced-intake fl
         ...base().provenance,
         intakeLogScope: 'unfinished',
         intakeLog: [
-          { eventId: 'm2', occurredAt: '2026-06-19T18:00:00Z', foodLabel: "Hill's z/d", intakeRating: 'refused', isLastFullMeal: false, pinned: false },
-          { eventId: 'm1', occurredAt: '2026-06-03T18:00:00Z', foodLabel: "Hill's z/d", intakeRating: 'some', isLastFullMeal: false, pinned: false },
+          { eventId: 'm2', occurredAt: '2026-06-19T18:00:00Z', foodLabel: "Hill's z/d", intakeRating: 'refused', isLastFullMeal: false, pinned: false, notCountedFreeFed: false },
+          { eventId: 'm1', occurredAt: '2026-06-03T18:00:00Z', foodLabel: "Hill's z/d", intakeRating: 'some', isLastFullMeal: false, pinned: false, notCountedFreeFed: false },
         ],
       },
     }),
@@ -5427,7 +5465,7 @@ Deno.test('B-532 — the legend describes the page-1 intake line only when that 
           ...base().provenance,
           intakeLogScope: 'unfinished',
           intakeLog: [
-            { eventId: 'm1', occurredAt: '2026-06-19T18:00:00Z', foodLabel: 'z/d', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
+            { eventId: 'm1', occurredAt: '2026-06-19T18:00:00Z', foodLabel: 'z/d', intakeRating: 'refused', isLastFullMeal: false, pinned: false, notCountedFreeFed: false },
           ],
         },
       }),
@@ -5445,7 +5483,7 @@ Deno.test('B-532 — the legend describes the page-1 intake line only when that 
           ...base().provenance,
           intakeLogScope: 'intake_flag',
           intakeLog: [
-            { eventId: 'm1', occurredAt: '2026-06-19T18:00:00Z', foodLabel: 'z/d', intakeRating: 'all', isLastFullMeal: true, pinned: false },
+            { eventId: 'm1', occurredAt: '2026-06-19T18:00:00Z', foodLabel: 'z/d', intakeRating: 'all', isLastFullMeal: true, pinned: false, notCountedFreeFed: false },
           ],
         },
       }),
@@ -6489,6 +6527,7 @@ const intakeRow = (over: Partial<IntakeLogEntry> = {}): IntakeLogEntry => ({
   intakeRating: over.intakeRating ?? 'some',
   isLastFullMeal: over.isLastFullMeal ?? false,
   pinned: over.pinned ?? false,
+  notCountedFreeFed: over.notCountedFreeFed ?? false,
 })
 
 /** Every clause on the report that points the reader at appendix E. */
@@ -6518,7 +6557,8 @@ Deno.test('R-13 item 1 — no pointer promises itemisation, and every one matche
       ...b.provenance,
       intakeLog: [intakeRow({ intakeRating: 'picked' })],
       intakeLogScope: 'unfinished',
-      intakeLogHiddenOlder: 0, intakeLogFreeFedOmitted: 0,
+      intakeLogHiddenOlder: 0,
+      intakeLogFreeFedExcluded: 0,
     },
   })
   const flagged = base({
@@ -6527,7 +6567,8 @@ Deno.test('R-13 item 1 — no pointer promises itemisation, and every one matche
       ...b.provenance,
       intakeLog: [intakeRow({ intakeRating: 'all', isLastFullMeal: true })],
       intakeLogScope: 'intake_flag',
-      intakeLogHiddenOlder: 0, intakeLogFreeFedOmitted: 0,
+      intakeLogHiddenOlder: 0,
+      intakeLogFreeFedExcluded: 0,
     },
   })
 

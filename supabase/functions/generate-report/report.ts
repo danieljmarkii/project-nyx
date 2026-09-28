@@ -2313,6 +2313,12 @@ export interface IntakeLogEntry {
    */
   isLastFullMeal: boolean
   /**
+   * CUL-1086 — a rating of a currently free-fed food in the flag population: listed so the vet
+   * sees it (a bowl "ate it all" after the anchor is theirs to weigh), not counted by the flag,
+   * never the anchor, and left out of page 1's recent-meals trajectory.
+   */
+  notCountedFreeFed: boolean
+  /**
    * True when this row is the anchor PINNED back in past the most-recent cap (it is older than
    * every other shown row, with omitted meals between). Render draws an "earlier meals omitted"
    * break before it so it never reads as contiguous with the recent rows.
@@ -2365,11 +2371,12 @@ export interface Provenance {
   /** Count of in-window rated meals older than the intakeLog cap (disclosed, never a silent truncation). */
   intakeLogHiddenOlder: number
   /**
-   * CUL-1086 — in-window ratings of a currently free-fed food left out of the `intake_flag`
-   * list because the detector does not read them (§11 #6). Disclosed beside the list, never
-   * silent. Always 0 for the other scopes, which do not claim to be the detector's input.
+   * CUL-1086 — in-window ratings of a currently free-fed food in the `intake_flag` population,
+   * which the detector does not count (§11 #6). They stay listed, marked `notCountedFreeFed`;
+   * this count is what page 1's flag and the list's note say. Always 0 for the other scopes,
+   * which do not claim to be the detector's input.
    */
-  intakeLogFreeFedOmitted: number
+  intakeLogFreeFedExcluded: number
   /**
    * WHICH meals `intakeLog` holds — never inferred from its contents:
    *   • `intake_flag`   — every rated meal (most recent first), because the page-1 decline
@@ -4710,19 +4717,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       : null
   let intakeLog: IntakeLogEntry[] = []
   let intakeLogHiddenOlder = 0
-  let intakeLogFreeFedOmitted = 0
+  let intakeLogFreeFedExcluded = 0
   const intakeFreeFed = currentlyFreeFedFoodIds(input.feedingArrangements)
   if (intakeLogScope !== null) {
-    // CUL-1086 — the flag population is the detector's: a free-fed food's ratings never reach
-    // detectIntakeDecline, so they are not "the meals behind the flag", and a free-fed "ate it
-    // all" row left in would out-date the tagged anchor it cannot be (page 1's last full meal).
-    // They are counted and said, never dropped silently. The `unfinished` population is the
-    // ratings themselves, not a detector's input, so it keeps every rated meal as before.
-    const ratedForLog =
-      intakeLogScope === 'intake_flag'
-        ? ratedMealsInWindow.filter((e) => !(e.meal!.foodItemId && intakeFreeFed.has(e.meal!.foodItemId)))
-        : unfinishedRated
-    if (intakeLogScope === 'intake_flag') intakeLogFreeFedOmitted = ratedMealsInWindow.length - ratedForLog.length
+    // CUL-1086 — a free-fed food's ratings never reach detectIntakeDecline (§11 #6), so in the
+    // flag population they are LISTED BUT MARKED, never hidden (cold read: a vet must be able to
+    // see a bowl "ate it all" dated after the anchor and weigh it) and never the anchor. The
+    // `unfinished` population is the ratings themselves, not a detector's input, and is unchanged.
+    const isIntakeFreeFed = (e: ReportEventInput): boolean =>
+      !!e.meal!.foodItemId && intakeFreeFed.has(e.meal!.foodItemId)
+    const ratedForLog = intakeLogScope === 'intake_flag' ? ratedMealsInWindow : unfinishedRated
+    if (intakeLogScope === 'intake_flag') intakeLogFreeFedExcluded = ratedForLog.filter(isIntakeFreeFed).length
     // The page-1 anchor = the most recent fully-eaten meal (ratedForLog is most-recent-first,
     // so the first `all` is exactly the meal detection.ts anchored `lastFullMealIso` on — one
     // rule, no divergence). May be null (no full meal in the window → flag says so honestly).
@@ -4730,7 +4735,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // construction, and pinning one into it would put a fully-eaten meal in a list captioned
     // as the meals that were not.
     const anchorMeal =
-      intakeLogScope === 'intake_flag' ? ratedForLog.find((e) => e.meal!.intakeRating === 'all') ?? null : null
+      intakeLogScope === 'intake_flag'
+        ? ratedForLog.find((e) => e.meal!.intakeRating === 'all' && !isIntakeFreeFed(e)) ?? null
+        : null
     const head = ratedForLog.slice(0, INTAKE_LOG_CAP)
     // TRACEABILITY (adversarial finding): the "how long off food" number must point at a VISIBLE
     // row. If the anchor predates the most-recent cap (a chronically-inappetent pet with >cap
@@ -4746,6 +4753,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       foodLabel: mealFoodLabel(e.meal!),
       intakeRating: e.meal!.intakeRating as IntakeRating,
       isLastFullMeal: anchorMeal !== null && e.id === anchorMeal.id,
+      notCountedFreeFed: intakeLogScope === 'intake_flag' && isIntakeFreeFed(e),
       pinned: !anchorInHead && anchorMeal !== null && e.id === anchorMeal.id,
     }))
   }
@@ -4759,7 +4767,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     uncategorisedObservations,
     intakeLog,
     intakeLogHiddenOlder,
-    intakeLogFreeFedOmitted,
+    intakeLogFreeFedExcluded,
     intakeLogScope,
     confounders,
     proteinExposureTally,

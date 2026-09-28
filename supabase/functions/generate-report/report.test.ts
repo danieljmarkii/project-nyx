@@ -534,7 +534,7 @@ Deno.test('CUL-1086 — the report hands detection the foods free-fed TODAY, the
   assert.deepEqual([...(det.freeFedFoodIds ?? [])], ['fi-kibble'])
 })
 
-Deno.test('CUL-1086 — a free-fed "ate it all" no longer hides the drop on the report, and the list says what it left out', () => {
+Deno.test('CUL-1086 — a free-fed "ate it all" no longer hides the drop on the report; the bowl rows are listed, marked, never the anchor', () => {
   idSeq = 0
   // The watched wet food: "all" through Jul 1, "picked" today. The kibble bowl is down and
   // rated "all" every day, today included — the bowl that held the flag off before.
@@ -554,19 +554,34 @@ Deno.test('CUL-1086 — a free-fed "ate it all" no longer hides the drop on the 
   // The anchor is the last WET "all" (Jul 1 08:00Z), never the kibble two hours later.
   assert.equal(flag.lastFullMealIso, '2026-07-01T08:00:00Z')
 
-  // The appendix is the detector's input: nine wet rows, the nine kibble ratings counted.
+  // The bowl rows stay in the list, marked and dated, so a vet can weigh a bowl "ate it all"
+  // later than the anchor (cold read); they are never the anchor and never in the trajectory.
   assert.equal(snap.provenance.intakeLogScope, 'intake_flag')
-  assert.equal(snap.provenance.intakeLog.length, 9)
-  assert.ok(snap.provenance.intakeLog.every((e) => e.foodLabel !== 'Bowl Kibble'))
-  assert.equal(snap.provenance.intakeLogFreeFedOmitted, 9)
+  assert.equal(snap.provenance.intakeLog.length, 18)
+  const bowlRows = snap.provenance.intakeLog.filter((e) => e.notCountedFreeFed)
+  assert.equal(bowlRows.length, 9)
+  assert.ok(bowlRows.every((e) => e.foodLabel === 'Bowl Kibble' && !e.isLastFullMeal))
+  assert.equal(snap.provenance.intakeLogFreeFedExcluded, 9)
   const anchor = snap.provenance.intakeLog.find((e) => e.isLastFullMeal)
   assert.equal(anchor?.occurredAt, flag.lastFullMealIso, 'the tagged row IS page 1\'s last full meal')
+  // A bowl "all" (Jul 2 10:00Z) is dated AFTER the anchor and is on the page to be weighed.
+  assert.ok(bowlRows.some((e) => e.occurredAt === '2026-07-02T10:00:00Z'))
 
   const text = plainText(renderReport(snap))
+  // Page 1: the flag says what it did not count, beside the claim it scopes.
   assert.ok(
-    text.includes('9 ratings of a free-fed bowl are not listed: intake from a bowl left down is not directly observed, so the flag does not count them.'),
-    'the omission is said where the vet meets the list',
+    text.includes('9 ratings of a free-fed bowl are not counted here: intake from a bowl left down is not directly observed.'),
   )
+  // The trajectory is the counted wet meals only: "ate it all" on Jun 30 and Jul 1, then "picked at it".
+  assert.ok(text.includes('Recent rated meals declined: ate it all → ate it all → ate it all → picked at it.'))
+  // The list says what its marked rows are.
+  assert.ok(
+    /The 9 rows marked "free-fed bowl" are ratings of a bowl left down: intake from it is not directly observed, so the flag does not count them and none is the last full meal\./.test(text),
+  )
+  // Mutation twin: without the arrangement nothing is marked and neither sentence renders.
+  const plain = assembleReport(baseInput({ events: events.filter((e) => e.meal?.foodItemId !== 'fi-kibble') }))
+  assert.equal(plain.provenance.intakeLogFreeFedExcluded, 0)
+  assert.ok(!plainText(renderReport(plain)).includes('free-fed bowl'))
 })
 
 Deno.test('CUL-1086 — the unfinished list is the ratings themselves, so it keeps the bowl and says nothing', () => {
@@ -578,8 +593,9 @@ Deno.test('CUL-1086 — the unfinished list is the ratings themselves, so it kee
   const snap = assembleReport(baseInput({ events, feedingArrangements: [KIBBLE_BOWL_DOWN] }))
   assert.equal(snap.provenance.intakeLogScope, 'unfinished')
   assert.equal(snap.provenance.intakeLog.length, 1)
-  assert.equal(snap.provenance.intakeLogFreeFedOmitted, 0)
-  assert.ok(!plainText(renderReport(snap)).includes('free-fed bowl are not listed'))
+  assert.equal(snap.provenance.intakeLogFreeFedExcluded, 0)
+  assert.ok(!snap.provenance.intakeLog.some((e) => e.notCountedFreeFed))
+  assert.ok(!plainText(renderReport(snap)).includes('free-fed bowl'))
 })
 
 Deno.test('B-213/B-500 — no intake flag ⇒ the log itemises the not-fully-eaten meals only, never a full dump', () => {
