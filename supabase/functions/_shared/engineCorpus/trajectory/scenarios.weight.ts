@@ -26,6 +26,32 @@ export const WEIGHT_SCENARIOS: ScenarioSpec[] = [
     pets: [{ ...cat('Pebble'), feeding: stapleFeeding(), signs: quietVomit, weight: { startKg: 4.2, trend: { kind: 'flat' }, homeSd: 0.1, cadence: { kind: 'home', everyDays: [42, 70], firstDay: 10 } }, logging: logging() }],
     ciSeeds: CI_SEEDS,
     truth: 'The true weight never changes. A weight-loss card is a false card.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'weight' },
+      ],
+      detect: [],
+    },
+  },
+  {
+    id: 'wt-null-sparse-noisy',
+    title: 'The same stable cat on a scale twice as noisy',
+    category: 'weight',
+    rationale:
+      'The 0.1 kg scale above is optimistic: the step-change brief cites about ±0.2 kg for a home scale with a cat on it. At 0.25 kg (one sd) three sparse readings routinely span half a kilo, a 12% "loss" on a 4.2 kg cat. The null EN-8 must survive at the noisy end of the sweep.',
+    covers: ['sparse_weigh_ins'],
+    tz: 'America/Chicago',
+    startDate: START,
+    days: 365,
+    pets: [{ ...cat('Cinder'), feeding: stapleFeeding(), signs: quietVomit, weight: { startKg: 4.2, trend: { kind: 'flat' }, homeSd: 0.25, cadence: { kind: 'home', everyDays: [42, 70], firstDay: 10 } }, logging: logging() }],
+    ciSeeds: CI_SEEDS,
+    truth: 'The true weight never changes. A weight-loss card is a false card.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'weight' },
+      ],
+      detect: [],
+    },
   },
   {
     id: 'wt-loss-weekly',
@@ -39,6 +65,12 @@ export const WEIGHT_SCENARIOS: ScenarioSpec[] = [
     pets: [{ ...cat('Rowan'), feeding: stapleFeeding(), signs: quietVomit, weight: { startKg: 4.8, trend: { kind: 'loss', pctPerWeek: 1, fromDay: 60 }, homeSd: 0.1, cadence: { kind: 'home', everyDays: [7, 7], firstDay: 3 } }, logging: logging() }],
     ciSeeds: CI_SEEDS,
     truth: 'True weight falls 1% a week from day 60 (about 5% by day 95). Days to detect count from 60.',
+    key: {
+      falseCards: [],
+      detect: [
+        { petKey: 'a', lane: 'weight', from: { day: 60 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'wt-loss-sparse',
@@ -52,6 +84,12 @@ export const WEIGHT_SCENARIOS: ScenarioSpec[] = [
     pets: [{ ...cat('Linden'), feeding: stapleFeeding(), signs: quietVomit, weight: { startKg: 4.8, trend: { kind: 'loss', pctPerWeek: 1, fromDay: 60 }, homeSd: 0.1, cadence: { kind: 'home', everyDays: [42, 70], firstDay: 10 } }, logging: logging() }],
     ciSeeds: CI_SEEDS,
     truth: 'True weight falls 1% a week from day 60. Days to detect count from 60.',
+    key: {
+      falseCards: [],
+      detect: [
+        { petKey: 'a', lane: 'weight', from: { day: 60 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'wt-clinic-only-loss',
@@ -77,7 +115,13 @@ export const WEIGHT_SCENARIOS: ScenarioSpec[] = [
       },
     ],
     ciSeeds: CI_SEEDS,
-    truth: 'True weight falls 0.5% a week from day 0 (about 8.6% by day 140). Neither visit acknowledged any concern.',
+    truth: 'True weight falls 0.5% a week from day 0 (about 9.5% by day 140, 8.2% between the two visits). Neither visit acknowledged any concern.',
+    key: {
+      falseCards: [],
+      detect: [
+        { petKey: 'a', lane: 'weight', from: { day: 0 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'wt-legacy-profile-true-loss',
@@ -106,6 +150,12 @@ export const WEIGHT_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'The profile 5.1 kg was true at creation; the cat has lost about 16% by day 90. A rule that can confirm the old number would detect it; one that cannot stays silent (PMD-9).',
+    key: {
+      falseCards: [],
+      detect: [
+        { petKey: 'a', lane: 'weight', from: { day: 0 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'wt-legacy-profile-guess',
@@ -134,5 +184,11 @@ export const WEIGHT_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'No weight change at any time; the profile number was a guess. A weight-loss card is a false card.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'weight' },
+      ],
+      detect: [],
+    },
   },
 ]

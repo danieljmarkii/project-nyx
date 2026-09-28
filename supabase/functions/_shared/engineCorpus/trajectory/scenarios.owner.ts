@@ -6,14 +6,20 @@
 // nothing happens (the scenario's rows are the pet alone), and under PR-16's pipeline the
 // answer, the visit or the lapse lands on the evening the engine earned it.
 //
-// Every pet here has chronic vomiting at five a month (the FCEAI moderate band the deep dive
-// placed Nyx in), so a correct engine asks, and the owner has something to answer.
+// Every pet here vomits about ten times a month (2.3 a week: the FCEAI moderate band, 2 to 3 a
+// week; Jergens 2010, evidence pack §4), so a correct engine asks and the owner has something
+// to answer. The deep dive placed Nyx at every two to four days, moderate to severe.
+//
+// Scoring rule (spec.ts TruthKey): an effect anchored to the acknowledgement (`afterAck`)
+// only happens if the engine asked, so its truth differs between two engines run over the
+// same seed. Those detections are scored `both_acknowledged` and are never an E-6 proof;
+// own-visit-doubling-fixed is the paired sibling, its doubling on a fixed day.
 
 import { CI_SEEDS, logging, rotatingFeeding, stapleFeeding, START } from './scenarios.shared.ts'
 import type { ScenarioSpec, SignSpec } from './spec.ts'
 
 const cat = (name: string) => ({ key: 'a', name, species: 'cat' as const })
-const chronic: SignSpec[] = [{ sign: 'vomit', rate: { perMonth: 5 } }]
+const chronic: SignSpec[] = [{ sign: 'vomit', rate: { perMonth: 10 } }]
 
 export const OWNER_SCENARIOS: ScenarioSpec[] = [
   {
@@ -28,7 +34,16 @@ export const OWNER_SCENARIOS: ScenarioSpec[] = [
     days: 180,
     pets: [{ ...cat('Figaro'), feeding: stapleFeeding(), signs: chronic, owner: [{ kind: 'answer_vet_knows', afterEvenings: 3 }], logging: logging() }],
     ciSeeds: CI_SEEDS,
-    truth: 'Chronic vomiting at five a month, unchanged throughout. After the answer, a re-raise is a false re-raise; the concern itself is real.',
+    truth: 'Chronic vomiting at ten a month, unchanged throughout. After the answer, a re-raise is a false re-raise; the concern itself is real.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 're_raise', sign: 'vomit' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'chronic', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'own-visit-with-recheck',
@@ -52,6 +67,15 @@ export const OWNER_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'Stable chronic vomiting. The visit acknowledges it; the recheck date is when the vet expects to look again. Asking daily after the visit is the latch EN-9 removes.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 're_raise', sign: 'vomit' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'chronic', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'own-vaccine-visit',
@@ -66,6 +90,14 @@ export const OWNER_SCENARIOS: ScenarioSpec[] = [
     pets: [{ ...cat('Thistle'), feeding: stapleFeeding(), signs: chronic, visits: [{ day: 50, reason: 'Annual vaccines', raises: null, recheckDays: null }], logging: logging() }],
     ciSeeds: CI_SEEDS,
     truth: 'Chronic vomiting, never acknowledged. Standing down after day 50 is a false stand-down.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'chronic', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'own-lapse-flat',
@@ -90,7 +122,15 @@ export const OWNER_SCENARIOS: ScenarioSpec[] = [
       },
     ],
     ciSeeds: CI_SEEDS,
-    truth: 'Five vomits a month throughout; none logged after the answer. An improvement or resolution read is a false reassurance.',
+    truth: 'Ten vomits a month throughout; none logged after the answer. An improvement or resolution read is a false reassurance.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'chronic', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'own-lapse-doubling',
@@ -117,6 +157,15 @@ export const OWNER_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'The rate doubles 21 days after the answer; nothing after the answer is logged. Any improvement read is a false reassurance; detection is impossible from the record and is scored as a miss.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'chronic', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
+        { petKey: 'a', lane: 'worsening', sign: 'vomit', from: { afterAck: 21 }, scoring: 'both_acknowledged' },
+      ],
+    },
   },
   {
     id: 'own-visit-then-doubling',
@@ -140,5 +189,46 @@ export const OWNER_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'The rate doubles 28 days after the visit and stays. Detection is a re-raise on or after that day.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'chronic', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
+        { petKey: 'a', lane: 're_raise', sign: 'vomit', from: { afterAck: 28 }, scoring: 'both_acknowledged' },
+      ],
+    },
+  },
+  {
+    id: 'own-visit-doubling-fixed',
+    title: 'A visit acknowledges the concern, and the vomiting doubles on day 90 whatever happened',
+    category: 'owner',
+    rationale:
+      'The paired sibling of own-visit-then-doubling: the same owner and visit, but the doubling is on a fixed day, so two engines run over the same seed face the same pet. This is the scenario an E-6 detection comparison uses for the re-raise; the acknowledgement-anchored one measures EN-9 behaviour only on seeds where both arms asked.',
+    covers: ['visit_carries_concern', 'rate_doubling'],
+    tz: 'America/Chicago',
+    startDate: START,
+    days: 200,
+    pets: [
+      {
+        ...cat('Fern'),
+        feeding: rotatingFeeding(),
+        signs: chronic,
+        effects: [{ kind: 'rate_step', sign: 'vomit', multiplier: 2, from: { day: 90 } }],
+        owner: [{ kind: 'book_visit', afterEvenings: 2, leadDays: [3, 10], carriesConcern: true, recheckDays: null, attendsRecheck: false }],
+        logging: logging(),
+      },
+    ],
+    ciSeeds: CI_SEEDS,
+    truth: 'The rate doubles on day 90 and stays, in every arm. Detection is a worsening or re-raise card on or after day 90.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'chronic', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
+        { petKey: 'a', lane: 're_raise', sign: 'vomit', from: { day: 90 }, scoring: 'paired' },
+      ],
+    },
   },
 ]

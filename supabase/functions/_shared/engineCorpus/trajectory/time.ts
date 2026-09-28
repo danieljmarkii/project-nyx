@@ -20,11 +20,15 @@ export function localToUtcMs(ymd: string, hour: number, tz: string): number {
 
 /** The UTC instant of a local wall-clock time given as "local ms since the epoch". */
 export function wallToUtcMs(wall: number, tz: string): number {
-  // Two passes of offset correction settle every instant except the skipped DST hour, which
-  // lands an hour late: acceptable for placing a meal.
-  let guess = wall
-  for (let i = 0; i < 2; i++) guess = wall - offsetMs(guess, tz)
-  return guess
+  // Guess with the offset at the wall time read as UTC, then correct once with the offset at
+  // the guess. If the result does not round-trip, the wall time does not exist (the hour the
+  // clocks skip in spring); take the later candidate, as JavaScript's Date does, so 02:30 on
+  // the US change day becomes 03:30 daylight time rather than 01:30 standard. In the hour the
+  // clocks repeat in autumn, either instant is a true reading and the first one found stands.
+  const t1 = wall - offsetMs(wall, tz)
+  const o = offsetMs(t1, tz)
+  const t2 = wall - o
+  return offsetMs(t2, tz) === o ? t2 : Math.max(t1, t2)
 }
 
 const formatters = new Map<string, Intl.DateTimeFormat>()

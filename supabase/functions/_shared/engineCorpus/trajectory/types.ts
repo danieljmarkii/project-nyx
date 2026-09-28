@@ -156,7 +156,12 @@ export interface SynAppointment {
   scheduled_at: Iso
   reason: string
   questions: SynAppointmentQuestion[] | null
-  vet_visit_id: string | null
+  /**
+   * The visit this appointment became: vet_appointments' link column, renamed here on purpose.
+   * guards/visitReaders.test.ts bounds every product file that carries the real column name,
+   * and this corpus is not a product reader; PR-16's mapper translates it.
+   */
+  visitId: string | null
   created_at: Iso
 }
 
@@ -260,11 +265,28 @@ export interface TruthAck {
   via: 'answer' | 'visit'
 }
 
+/** The photo read the scenario put blood in: the first true vomit on or after its day. */
+export interface TruthRedFlag {
+  petKey: string
+  episodeId: string
+  eventId: string
+  day: number
+}
+
+/** What the profile weight really was: the pair of legacy scenarios differs only here. */
+export interface TruthProfileWeight {
+  petKey: string
+  enteredKg: number
+  trueKgAtCreation: number
+}
+
 export interface TruthLedger {
   episodes: TruthEpisode[]
   meals: TruthMeal[]
   weighIns: TruthWeighIn[]
   acks: TruthAck[]
+  redFlags: TruthRedFlag[]
+  profileWeights: TruthProfileWeight[]
 }
 
 // ─── The engine seam ───────────────────────────────────────────────────────────────────
@@ -288,9 +310,12 @@ export interface EveningView {
   /** The evening's instant (21:00 local), UTC ISO. */
   nowIso: Iso
   /**
-   * Every row written so far. A back-filled row can carry a `cr` later than `nowIso`; the
-   * observer applies the one as-of visibility rule (the replay's `visibleAt`), which this
-   * corpus does not restate.
+   * Every row written so far, as ONE live object that the simulation keeps appending to (do
+   * not hold it across evenings; copy what you need). Rows are in write order, not time
+   * order, until the simulation ends. A back-filled row can carry a `cr` later than `nowIso`;
+   * the observer applies the one as-of visibility rule (the replay's `visibleAt`), which
+   * this corpus does not restate. Foods, trials, visits and answers appear on the day they
+   * are written, and `pets[].weight_kg` is the current profile value.
    */
   record: SyntheticRecord
 }

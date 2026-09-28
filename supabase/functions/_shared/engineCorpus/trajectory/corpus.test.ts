@@ -9,7 +9,7 @@
 
 import { assert, assertEquals, assertNotEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import { NULL_OBSERVER, REQUIRED_COVERAGE, scenarioById, simulate, TRAJECTORY_CORPUS, withRate } from './index.ts'
-import type { CoverageTag, Observer, ScenarioSpec, SimulationResult, Sign } from './index.ts'
+import type { CoverageTag, EffectStart, Observer, ScenarioSpec, SimulationResult, Sign } from './index.ts'
 import { MINTED_ID } from './rng.ts'
 import { DAY_MS, localDayIndex, localHour } from './time.ts'
 
@@ -188,10 +188,10 @@ Deno.test('null rates land on their stated monthly rate, and the bursty ones are
   }
 })
 
-Deno.test('null feeders: no protein raises the vomit rate (staple, rotation, grazer bowl alike)', () => {
-  within(proteinRateRatio(scenarioById('null-rotating-3pm-bursty'), 'beef', SEEDS(120), 'truth'), 0.8, 1.25, 'rotation, beef')
-  within(proteinRateRatio(scenarioById('null-rotating-3pm-bursty'), 'chicken', SEEDS(120), 'truth'), 0.8, 1.25, 'rotation, chicken')
-  within(proteinRateRatio(scenarioById('null-staple-3pm-bursty'), 'salmon', SEEDS(120), 'truth'), 0.75, 1.3, 'staple, the 10% food')
+Deno.test('null feeders: no protein raises the vomit rate (staple and rotation)', () => {
+  within(proteinRateRatio(scenarioById('null-rotating-3pm-bursty'), 'beef', SEEDS(200), 'truth'), 0.85, 1.15, 'rotation, beef')
+  within(proteinRateRatio(scenarioById('null-rotating-3pm-bursty'), 'chicken', SEEDS(200), 'truth'), 0.85, 1.15, 'rotation, chicken')
+  within(proteinRateRatio(scenarioById('null-staple-3pm-bursty'), 'salmon', SEEDS(200), 'truth'), 0.8, 1.2, 'staple, the 10% food')
 })
 
 Deno.test('null timing: vomits fall after meals only as often as chance puts them there', () => {
@@ -270,24 +270,116 @@ Deno.test('the two-cat home: found piles go to the cat on screen, witnessed ones
 
 // ─── truth: injected problems are there, from when they say ────────────────────────────
 
-Deno.test('a protein reaction lands near its stated relative risk, in the truth and in the logged rows', () => {
+Deno.test('a protein reaction lands at its stated relative risk (±10%), in the truth and in the logged rows', () => {
   const sc = scenarioById('inj-protein-reaction-rr3')
   const effect = sc.pets[0].effects!.find((e) => e.kind === 'protein_reaction')!
   assert(effect.kind === 'protein_reaction')
-  within(proteinRateRatio(sc, effect.protein, SEEDS(120), 'truth'), effect.rr * 0.8, effect.rr * 1.2, 'rr3 in truth')
-  within(proteinRateRatio(sc, effect.protein, SEEDS(120), 'logged'), effect.rr * 0.7, effect.rr * 1.3, 'rr3 in logged rows')
+  within(proteinRateRatio(sc, effect.protein, SEEDS(300), 'truth'), effect.rr * 0.9, effect.rr * 1.1, 'rr3 in truth')
+  within(proteinRateRatio(sc, effect.protein, SEEDS(300), 'logged'), effect.rr * 0.85, effect.rr * 1.15, 'rr3 in logged rows')
   // The hidden-chicken cat: chicken days (the chicken food and the duck food) carry the effect.
-  within(proteinRateRatio(scenarioById('inj-protein-reaction-hidden'), 'chicken', SEEDS(120), 'truth'), 2.4, 3.6, 'hidden chicken')
+  within(proteinRateRatio(scenarioById('inj-protein-reaction-hidden'), 'chicken', SEEDS(300), 'truth'), 2.7, 3.3, 'hidden chicken')
 })
 
-Deno.test('rate steps land on their stated day at their stated size', () => {
+Deno.test('a protein reaction is timed after the meal that carried it, and its food leaves days without it', () => {
+  for (const sc of TRAJECTORY_CORPUS) {
+    for (const pet of sc.pets) {
+      for (const e of pet.effects ?? []) {
+        if (e.kind !== 'protein_reaction') continue
+        let exposedDays = 0, allDays = 0
+        for (const seed of SEEDS(20)) {
+          const r = sim(sc, seed)
+          const proteinsOf = new Map(r.record.foods.map((f) => [f.id, f.proteins]))
+          const exposedMeals = r.truth.meals.filter((m) => m.petKey === pet.key && proteinsOf.get(m.foodItemId)!.includes(e.protein)).map((m) => Date.parse(m.at))
+          for (const ep of r.truth.episodes.filter((x) => x.cause === 'protein')) {
+            const t = Date.parse(ep.at)
+            assert(exposedMeals.some((m) => t - m >= 0.5 * 3_600_000 - 1 && t - m <= 8 * 3_600_000 + 1), `${sc.id}: a protein episode follows its meal by 0.5 to 8 hours`)
+          }
+          const days = new Set(exposedMeals.map((m) => careDay(sc, new Date(m).toISOString())))
+          exposedDays += days.size
+          allDays += sc.days
+        }
+        // A reaction on a food eaten nearly every day is a rate step no food lane can see.
+        assert(1 - exposedDays / allDays >= 0.3, `${sc.id}: at least 30% of days without ${e.protein}`)
+      }
+    }
+  }
+})
+
+Deno.test('rate steps land on their stated day at their stated size (±10%)', () => {
   const onset = scenarioById('inj-enteropathy-onset')
-  within(ratePerDay(onset, 'vomit', SEEDS(60), 90, 240) / ratePerDay(onset, 'vomit', SEEDS(60), 0, 90), 5, 7, 'enteropathy sixfold')
+  const multOf = (sc: ScenarioSpec, sign: Sign) => {
+    const e = sc.pets[0].effects!.find((x) => x.kind === 'rate_step' && x.sign === sign)!
+    assert(e.kind === 'rate_step' && 'day' in e.from)
+    return { m: e.multiplier, day: (e.from as { day: number }).day }
+  }
+  const v = multOf(onset, 'vomit')
+  within(ratePerDay(onset, 'vomit', SEEDS(200), v.day, onset.days) / ratePerDay(onset, 'vomit', SEEDS(200), 0, v.day), v.m * 0.9, v.m * 1.1, 'enteropathy vomiting')
   // Diarrhoea starts at 0.3 a month, so its baseline needs more seeds to be measured at all.
-  within(ratePerDay(onset, 'diarrhea', SEEDS(300), 100, 240) / ratePerDay(onset, 'diarrhea', SEEDS(300), 0, 100), 4, 6, 'diarrhoea fivefold')
+  const d = multOf(onset, 'diarrhea')
+  within(ratePerDay(onset, 'diarrhea', SEEDS(400), d.day, onset.days) / ratePerDay(onset, 'diarrhea', SEEDS(400), 0, d.day), d.m * 0.85, d.m * 1.15, 'enteropathy diarrhoea')
   const dbl = scenarioById('inj-rate-doubling')
-  within(ratePerDay(dbl, 'vomit', SEEDS(60), 100, 200) / ratePerDay(dbl, 'vomit', SEEDS(60), 0, 100), 1.7, 2.3, 'doubling')
-  within(ratePerDay(dbl, 'vomit', SEEDS(60), 90, 100) / ratePerDay(dbl, 'vomit', SEEDS(60), 0, 90), 0.6, 1.5, 'not before day 100')
+  const s = multOf(dbl, 'vomit')
+  within(ratePerDay(dbl, 'vomit', SEEDS(300), s.day, dbl.days) / ratePerDay(dbl, 'vomit', SEEDS(300), 0, s.day), s.m * 0.9, s.m * 1.1, 'doubling')
+  within(ratePerDay(dbl, 'vomit', SEEDS(300), s.day - 10, s.day) / ratePerDay(dbl, 'vomit', SEEDS(300), 0, s.day - 10), 0.8, 1.25, 'not before its day')
+})
+
+Deno.test('a cause label means "would not have happened without the effect": half the doubled rate is background', () => {
+  const sc = scenarioById('inj-rate-doubling')
+  let bg = 0, step = 0
+  for (const seed of SEEDS(200)) {
+    for (const e of sim(sc, seed).truth.episodes) {
+      if (localDayIndex(Date.parse(e.at), sc.startDate, sc.tz) < 101) continue
+      if (e.cause === 'background') bg++
+      if (e.cause === 'rate_step') step++
+    }
+  }
+  within(step / (bg + step), 0.45, 0.55, 'share labelled rate_step after a doubling')
+})
+
+Deno.test('the unmeasured-by-default effects are there at their stated size', () => {
+  const monthlyDispersion = (sc: ScenarioSpec, seeds: number[]) => {
+    const monthly: number[] = []
+    for (const seed of seeds) {
+      const r = sim(sc, seed)
+      for (let m = 0; m < Math.floor(sc.days / 30); m++) {
+        monthly.push(r.truth.episodes.filter((e) => e.sign === 'vomit' && e.petKey === 'a' && Math.floor(localDayIndex(Date.parse(e.at), sc.startDate, sc.tz) / 30) === m).length)
+      }
+    }
+    const mean = monthly.reduce((a, b) => a + b, 0) / monthly.length
+    return monthly.reduce((a, b) => a + (b - mean) ** 2, 0) / (monthly.length - 1) / mean
+  }
+  assert(monthlyDispersion(scenarioById('null-wandering-365'), SEEDS(60)) > 1.3, 'the wander widens monthly counts beyond Poisson')
+  assert(monthlyDispersion(scenarioById('null-rotating-3pm-bursty'), SEEDS(60)) > 1.3, 'weekly dispersion widens monthly counts')
+  within(monthlyDispersion(scenarioById('null-rotating-1pm'), SEEDS(60)), 0.75, 1.3, 'a plain Poisson pet does not')
+
+  const monthlyRate = (id: string, sign: Sign) => {
+    const sc = scenarioById(id)
+    return ratePerDay(sc, sign, SEEDS(200), 0, sc.days) * 30
+  }
+  within(monthlyRate('inj-postprandial', 'vomit'), 2.7, 3.3, 'post-prandial rate, 3 a month')
+  within(monthlyRate('inj-cough-and-vomit', 'cough'), 5.4, 6.6, 'cough, 6 a month')
+
+  const dog = scenarioById('null-dog-indiscretion')
+  const raid = dog.pets[0].effects!.find((e) => e.kind === 'indiscretion')!
+  assert(raid.kind === 'indiscretion')
+  let raidDays = 0
+  for (const seed of SEEDS(100)) raidDays += new Set(sim(dog, seed).truth.episodes.filter((e) => e.cause === 'indiscretion').map((e) => careDay(dog, e.at))).size
+  within(raidDays / 100 / (dog.days / 30), raid.perMonth * 0.85, raid.perMonth * 1.15, 'raids per month')
+
+  const kcs = scenarioById('inj-kennel-cough-gag')
+  const kc = kcs.pets[0].effects!.find((e) => e.kind === 'kennel_cough')!
+  assert(kc.kind === 'kennel_cough')
+  let coughs = 0, logged = 0, asVomit = 0
+  for (const seed of SEEDS(100)) {
+    for (const e of sim(kcs, seed).truth.episodes) {
+      if (e.cause !== 'infection') continue
+      coughs++
+      if (e.loggedAs !== null) logged++
+      if (e.loggedAs === 'vomit') asVomit++
+    }
+  }
+  within(coughs / 100 / kc.days, kc.perDay * 0.9, kc.perDay * 1.1, 'kennel-cough coughs per day')
+  within(asVomit / logged, 0.25, 0.35, 'share of logged coughs written as vomits')
 })
 
 Deno.test('phenotypes: post-prandial vomits all follow a meal; bilious ones all fall 04:00 to 07:00 with bile', () => {
@@ -306,20 +398,41 @@ Deno.test('phenotypes: post-prandial vomits all follow a meal; bilious ones all 
   }
 })
 
-Deno.test('the red flag: exactly one bloody read, on the first vomit on or after its day, never earlier', () => {
+Deno.test('the red flag: one bloody read, on the first vomit on or after its day, recorded in the truth ledger', () => {
   const sc = scenarioById('inj-red-flag')
   const flagDay = sc.pets[0].redFlagDays![0]
-  for (const seed of SEEDS(20)) {
-    const r = simulate(sc, seed)
+  let flagged = 0
+  for (const seed of SEEDS(40)) {
+    const r = sim(sc, seed)
     const bloody = r.record.analyses.filter((a) => a.blood_present === 'fresh_red')
-    assertEquals(bloody.length, 1, `seed ${seed}`)
-    const ev = r.record.events.find((e) => e.id === bloody[0].event_id)!
-    const day = localDayIndex(Date.parse(ev.at), sc.startDate, sc.tz)
+    assertEquals(bloody.length, r.truth.redFlags.length, `seed ${seed}: a bloody read iff the ledger records one`)
+    if (bloody.length === 0) continue
+    flagged++
+    assertEquals(bloody.length, 1)
+    const entry = r.truth.redFlags[0]
+    assertEquals(entry.eventId, bloody[0].event_id)
+    const ep = r.truth.episodes.find((e) => e.id === entry.episodeId)!
+    const day = localDayIndex(Date.parse(ep.at), sc.startDate, sc.tz)
     assert(day >= flagDay, `bloody read on day ${day}`)
-    const flagged = r.truth.episodes.find((e) => e.loggedEventIds.includes(ev.id))!
-    const earlierVomits = r.truth.episodes.filter((e) => e !== flagged && e.sign === 'vomit' && localDayIndex(Date.parse(e.at), sc.startDate, sc.tz) >= flagDay && Date.parse(e.at) < Date.parse(flagged.at))
-    assertEquals(earlierVomits.length, 0, 'it is the first vomit on or after the day')
+    const earlier = r.truth.episodes.filter((e) => e !== ep && e.sign === 'vomit' && localDayIndex(Date.parse(e.at), sc.startDate, sc.tz) >= flagDay && Date.parse(e.at) < Date.parse(ep.at))
+    assertEquals(earlier.length, 0, 'it is the first vomit on or after the day')
   }
+  assert(flagged >= 35, `most seeds carry the flag (${flagged}/40)`)
+})
+
+Deno.test('overnight vomits are mostly found in the morning, not witnessed', () => {
+  const sc = scenarioById('inj-early-morning-bilious')
+  let windows = 0, total = 0
+  for (const seed of SEEDS(40)) {
+    const r = sim(sc, seed)
+    const byId = new Map(r.record.events.map((e) => [e.id, e]))
+    for (const e of r.truth.episodes) {
+      if (e.loggedEventIds.length === 0 || r.truth.redFlags.some((f) => f.episodeId === e.id)) continue
+      total++
+      if (byId.get(e.loggedEventIds[0])!.cf === 'window') windows++
+    }
+  }
+  within(windows / total, 0.52, 0.68, 'share of 04:00–07:00 vomits logged as found')
 })
 
 Deno.test('the trial responder falls to its stated residual; the non-responder does not move', () => {
@@ -327,9 +440,9 @@ Deno.test('the trial responder falls to its stated residual; the non-responder d
   const t = resp.pets[0].trial!
   assert(t.response.kind === 'responder')
   const onset = t.startDay + t.response.onsetDays
-  within(ratePerDay(resp, 'vomit', SEEDS(80), onset, resp.days) / ratePerDay(resp, 'vomit', SEEDS(80), 0, t.startDay), t.response.residual * 0.7, t.response.residual * 1.35, 'responder')
+  within(ratePerDay(resp, 'vomit', SEEDS(200), onset, resp.days) / ratePerDay(resp, 'vomit', SEEDS(200), 0, t.startDay), t.response.residual - 0.04, t.response.residual + 0.04, 'responder')
   const non = scenarioById('inj-trial-non-responder')
-  within(ratePerDay(non, 'vomit', SEEDS(80), onset, non.days) / ratePerDay(non, 'vomit', SEEDS(80), 0, t.startDay), 0.8, 1.25, 'non-responder')
+  within(ratePerDay(non, 'vomit', SEEDS(200), onset, non.days) / ratePerDay(non, 'vomit', SEEDS(200), 0, t.startDay), 0.9, 1.1, 'non-responder')
 })
 
 Deno.test('kennel cough: gags logged as vomits sit inside the cough, and the cough is real', () => {
@@ -395,7 +508,9 @@ Deno.test('the legacy profile weight has no date or source, and the first weigh-
     assertEquals(first.held_since_earliest, r.record.pets[0].created_at, 'never edited: held since creation (072 case b)')
     assertEquals(first.replaced_by_kg, r.record.weightChecks[0].weight_kg)
     const second = r.record.weightDisplacements[1]
-    if (second) assertEquals(second.held_since_earliest, first.displaced_at, 'a later one held since the last displacement (072 case a)')
+    assert(second !== undefined, 'a second weigh-in displaces the first')
+    assertEquals(second.held_since_earliest, first.displaced_at, 'a later one held since the last displacement (072 case a)')
+    assertEquals(r.truth.profileWeights, [{ petKey: 'a', enteredKg: profile.kg, trueKgAtCreation: profile.trueAtCreationKg }])
   }
   // The pair differs in truth only: the guess had no loss behind it.
   const guess = simulate(scenarioById('wt-legacy-profile-guess'), 1)
@@ -443,7 +558,7 @@ Deno.test('a booked visit carries the concern, sets a recheck, and the recheck i
     const firstDay = localDayIndex(Date.parse(`${first.visited_at}T12:00:00Z`), sc.startDate, 'UTC')
     within(firstDay, 22 + 3, 22 + 10, 'visit 3 to 10 days after booking on day 22')
     assertEquals(first.next_visit_at, recheck.visited_at, 'the recheck happens on the date the vet set')
-    const appt = r.record.appointments.find((x) => x.vet_visit_id === first.id)!
+    const appt = r.record.appointments.find((x) => x.visitId === first.id)!
     assertEquals(appt.questions?.map((q) => [q.source, q.source_ref]), [['record', 'vomit']], 'the concern was on the list')
     assertEquals(r.truth.acks.map((x) => [x.via, x.day]), [['visit', firstDay]])
     assert(r.truth.weighIns.some((t) => t.scale === 'clinic'), 'weighed at the clinic')
@@ -484,21 +599,58 @@ Deno.test('the doubling behind the lapse happens 21 days after the answer, and n
   assertEquals(simulate(sc, 1, NULL_OBSERVER).truth.episodes.filter((e) => e.cause === 'rate_step').length, 0)
 })
 
-Deno.test('common random numbers: two observers see the same pet until the owner responds', () => {
-  const sc = scenarioById('own-visit-then-doubling')
-  for (const seed of SEEDS(5)) {
-    const a = simulate(sc, seed, NULL_OBSERVER)
-    const b = simulate(sc, seed, askFrom(20))
-    const firstAck = b.truth.acks[0].day
-    const upTo = (r: SimulationResult) => r.truth.episodes.filter((e) => localDayIndex(Date.parse(e.at), sc.startDate, sc.tz) < firstAck + 28)
-    assertEquals(upTo(a), upTo(b), 'same episodes until the effect the response starts')
-    assertEquals(a.truth.meals, b.truth.meals, 'the same meals throughout')
+Deno.test('common random numbers: two observers see the same background and meals for the whole run', () => {
+  for (const id of ['own-visit-then-doubling', 'own-visit-doubling-fixed', 'own-lapse-doubling']) {
+    const sc = scenarioById(id)
+    for (const seed of SEEDS(5)) {
+      const a = simulate(sc, seed, NULL_OBSERVER)
+      const b = simulate(sc, seed, askFrom(20))
+      const background = (r: SimulationResult) => r.truth.episodes.filter((e) => e.cause === 'background').map((e) => [e.id, e.at])
+      assertEquals(background(a), background(b), `${id}: same background episodes`)
+      assertEquals(a.truth.meals.map((m) => [m.at, m.foodItemId]), b.truth.meals.map((m) => [m.at, m.foodItemId]), `${id}: same meals`)
+    }
+  }
+  // The fixed-day sibling is the paired comparison: its injected truth is identical across arms.
+  const fixed = scenarioById('own-visit-doubling-fixed')
+  const injected = (r: SimulationResult) => r.truth.episodes.filter((e) => e.cause === 'rate_step').map((e) => e.at)
+  assertEquals(injected(simulate(fixed, 1000, NULL_OBSERVER)), injected(simulate(fixed, 1000, askFrom(20))))
+})
+
+Deno.test('every evening the observer can resolve what it sees: foods, the current weight, and no trial before it starts', () => {
+  for (const sc of TRAJECTORY_CORPUS) {
+    let checked = 0
+    const probe: Observer = (v) => {
+      const foods = new Set(v.record.foods.map((f) => f.id))
+      for (const m of v.record.meals) assert(foods.has(m.foodItemId), `${sc.id} day ${v.dayIndex}: meal food is resolvable`)
+      for (const t of v.record.trials) assert(Date.parse(t.created_at) <= Date.parse(v.nowIso), `${sc.id}: no trial row before it starts`)
+      for (const p of v.record.pets) {
+        const mine = v.record.weightChecks.filter((w) => w.petKey === p.key)
+        const expected = mine.length > 0 ? mine[mine.length - 1].weight_kg : (v.record.profileWeights.find((w) => w.petKey === p.key)?.weight_kg ?? null)
+        assertEquals(p.weight_kg, expected, `${sc.id} day ${v.dayIndex}: pets.weight_kg is the current value`)
+      }
+      checked++
+      return askFrom(20)(v)
+    }
+    simulate(sc, sc.ciSeeds[0], probe)
+    assertEquals(checked, sc.days)
   }
 })
 
 // ─── the floor: every scenario the PR-15 row names exists, and shows in its rows ───────
 
 type Exhibit = (r: SimulationResult, sc: ScenarioSpec) => boolean
+/** Mean and variance/mean of 30-day vomit counts over 30 seeds: for the tags one seed cannot show. */
+function monthlyStats(sc: ScenarioSpec): { mean: number; dispersion: number } {
+  const monthly: number[] = []
+  for (const seed of SEEDS(30)) {
+    const r = sim(sc, seed)
+    for (let m = 0; m < Math.floor(sc.days / 30); m++) {
+      monthly.push(r.truth.episodes.filter((e) => e.sign === 'vomit' && e.petKey === 'a' && Math.floor(localDayIndex(Date.parse(e.at), sc.startDate, sc.tz) / 30) === m).length)
+    }
+  }
+  const mean = monthly.reduce((a, b) => a + b, 0) / monthly.length
+  return { mean, dispersion: monthly.reduce((a, b) => a + (b - mean) ** 2, 0) / (monthly.length - 1) / mean }
+}
 const vomitsOf = (r: SimulationResult) => r.truth.episodes.filter((e) => e.sign === 'vomit')
 const shareOfTopFood = (r: SimulationResult) => {
   const counts = new Map<string, number>()
@@ -509,10 +661,10 @@ const EXHIBITS: Record<CoverageTag, Exhibit> = {
   staple_feeder: (r) => shareOfTopFood(r) >= 0.8,
   rotating_feeder: (r) => new Set(r.truth.meals.map((m) => m.protein)).size >= 5 && shareOfTopFood(r) < 0.3,
   grazer: (r) => r.record.arrangements.some((a) => a.method === 'free_choice'),
-  vomit_1_per_month: (r, sc) => sc.pets.some((p) => p.signs.some((s) => s.sign === 'vomit' && s.rate.perMonth === 1)) && vomitsOf(r).length > 0,
-  vomit_3_per_month: (r, sc) => sc.pets.some((p) => p.signs.some((s) => s.sign === 'vomit' && s.rate.perMonth === 3)) && vomitsOf(r).length > 0,
-  overdispersed: (_r, sc) => sc.pets.some((p) => p.signs.some((s) => s.rate.weeklyDispersion !== undefined)),
-  wandering_rate: (_r, sc) => sc.pets.some((p) => p.signs.some((s) => s.rate.wander !== undefined)),
+  vomit_1_per_month: (_r, sc) => Math.abs(monthlyStats(sc).mean - 1) < 0.25,
+  vomit_3_per_month: (_r, sc) => Math.abs(monthlyStats(sc).mean - 3) < 0.6,
+  overdispersed: (_r, sc) => monthlyStats(sc).dispersion > 1.3,
+  wandering_rate: (_r, sc) => monthlyStats(sc).dispersion > 1.3,
   logging_attrition: (r, sc) => {
     const early = r.truth.episodes.filter((e) => localDayIndex(Date.parse(e.at), sc.startDate, sc.tz) < 90)
     const late = r.truth.episodes.filter((e) => localDayIndex(Date.parse(e.at), sc.startDate, sc.tz) >= sc.days - 90)
@@ -528,13 +680,23 @@ const EXHIBITS: Record<CoverageTag, Exhibit> = {
   event_dependent_feeding: (r) => r.truth.meals.some((m) => m.protein === 'whitefish'),
   enteropathy_onset: (r) => r.truth.episodes.some((e) => e.cause === 'rate_step') && r.truth.episodes.some((e) => e.sign === 'diarrhea'),
   protein_reaction: (r) => r.truth.episodes.some((e) => e.cause === 'protein'),
-  postprandial: (_r, sc) => sc.pets.some((p) => p.signs.some((s) => s.timing === 'postprandial')),
-  early_morning: (r, sc) => sc.pets.some((p) => p.signs.some((s) => s.timing === 'early_morning')) && vomitsOf(r).length > 0,
+  postprandial: (r) => {
+    const meals = r.truth.meals.map((m) => Date.parse(m.at))
+    const v = vomitsOf(r)
+    return v.length > 0 && v.every((e) => meals.some((m) => Date.parse(e.at) - m >= 0.25 * 3_600_000 - 1 && Date.parse(e.at) - m <= 2 * 3_600_000 + 1))
+  },
+  early_morning: (r, sc) => vomitsOf(r).length > 0 && vomitsOf(r).every((e) => { const h = localHour(Date.parse(e.at), sc.tz); return h >= 4 && h < 7 }),
   rate_doubling: (r, sc) => sc.pets.some((p) => (p.effects ?? []).some((e) => e.kind === 'rate_step' && e.multiplier === 2)) && r.truth.episodes.some((e) => e.cause === 'rate_step'),
   red_flag: (r) => r.record.analyses.some((a) => a.blood_present === 'fresh_red'),
   weight_loss: (r) => r.truth.weighIns.length >= 2 && r.truth.weighIns[r.truth.weighIns.length - 1].trueKg < 0.97 * r.truth.weighIns[0].trueKg,
-  trial_responder: (r, sc) => r.record.trials.length > 0 && sc.pets.some((p) => p.trial?.response.kind === 'responder'),
-  trial_non_responder: (r, sc) => r.record.trials.length > 0 && sc.pets.some((p) => p.trial?.response.kind === 'non_responder'),
+  trial_responder: (r, sc) => {
+    const t = sc.pets[0].trial!
+    return r.record.trials.length > 0 && ratePerDay(sc, 'vomit', SEEDS(30), t.startDay + 14, sc.days) < 0.5 * ratePerDay(sc, 'vomit', SEEDS(30), 0, t.startDay)
+  },
+  trial_non_responder: (r, sc) => {
+    const t = sc.pets[0].trial!
+    return r.record.trials.length > 0 && ratePerDay(sc, 'vomit', SEEDS(30), t.startDay + 14, sc.days) > 0.75 * ratePerDay(sc, 'vomit', SEEDS(30), 0, t.startDay)
+  },
   cough_and_vomit: (r) => r.record.events.some((e) => e.ty === 'cough') && r.record.events.some((e) => e.ty === 'vomit') && !r.truth.episodes.some((e) => e.cause === 'infection'),
   kennel_cough_gag: (r) => r.truth.episodes.some((e) => e.cause === 'infection' && e.loggedAs === 'vomit'),
   sparse_weigh_ins: (r, sc) => {
@@ -544,8 +706,8 @@ const EXHIBITS: Record<CoverageTag, Exhibit> = {
   clinic_only_weights: (r) => r.truth.weighIns.length > 0 && r.truth.weighIns.every((t) => t.scale === 'clinic'),
   legacy_weight_no_source: (r) => r.record.profileWeights.length > 0 && r.record.weightDisplacements.length > 0,
   answers_vet_knows: (r) => r.record.ownerAnswers.length > 0,
-  visit_carries_concern: (r) => r.record.visits.some((v) => r.record.appointments.some((a) => a.vet_visit_id === v.id && a.questions?.some((q) => q.source === 'record'))),
-  visit_without_concern: (r) => r.record.visits.some((v) => r.record.appointments.some((a) => a.vet_visit_id === v.id && a.questions === null)),
+  visit_carries_concern: (r) => r.record.visits.some((v) => r.record.appointments.some((a) => a.visitId === v.id && a.questions?.some((q) => q.source === 'record'))),
+  visit_without_concern: (r) => r.record.visits.some((v) => r.record.appointments.some((a) => a.visitId === v.id && a.questions === null)),
   recheck_date: (r) => r.record.visits.some((v) => v.next_visit_at !== null),
   symptom_only_lapse: (r, sc) => {
     const lapse = r.responses.find((x) => x.action === 'lapse_started')
@@ -555,6 +717,38 @@ const EXHIBITS: Record<CoverageTag, Exhibit> = {
   },
   doubling_behind_lapse: (r) => r.responses.some((x) => x.action === 'lapse_started') && r.truth.episodes.some((e) => e.cause === 'rate_step' && e.loggedEventIds.length === 0),
 }
+
+Deno.test('the answer key is consistent with the effects, and says how each detection may be scored', () => {
+  for (const sc of TRAJECTORY_CORPUS) {
+    const petKeys = new Set(sc.pets.map((p) => p.key))
+    for (const f of sc.key.falseCards) assert(petKeys.has(f.petKey), `${sc.id}: false card names a pet`)
+    for (const d of sc.key.detect) {
+      assert(petKeys.has(d.petKey), `${sc.id}: detection names a pet`)
+      // An acknowledgement-anchored truth differs between arms, so it can never be scored paired.
+      assertEquals(d.scoring, 'afterAck' in d.from ? 'both_acknowledged' : 'paired', `${sc.id}: ${d.lane} scoring`)
+      // No lane is both a detection and a false card for the same sign.
+      assert(!sc.key.falseCards.some((f) => f.petKey === d.petKey && f.lane === d.lane && f.sign === d.sign), `${sc.id}: ${d.lane} both detect and false`)
+    }
+    if (sc.category === 'null') {
+      assertEquals(sc.key.detect, [], `${sc.id}: a null pet has nothing to detect`)
+      assert(sc.key.falseCards.length > 0, `${sc.id}: a null pet names what must not be found`)
+    } else {
+      assert(sc.key.detect.length > 0 || sc.key.falseCards.length > 0, `${sc.id}: scored somehow`)
+    }
+    if (sc.category === 'injected') assert(sc.key.detect.some((d) => d.scoring === 'paired'), `${sc.id}: an injected pet has a paired detection`)
+    // Every effect that starts after day 0 is named by a detection starting on its day.
+    for (const pet of sc.pets) {
+      const starts: EffectStart[] = []
+      for (const e of pet.effects ?? []) if (e.kind === 'rate_step') starts.push(e.from)
+      for (const day of pet.redFlagDays ?? []) starts.push({ day })
+      if (pet.trial?.response.kind === 'responder') starts.push({ day: pet.trial.startDay + pet.trial.response.onsetDays })
+      if (pet.weight?.trend.kind === 'loss' && pet.weight.trend.fromDay > 0) starts.push({ day: pet.weight.trend.fromDay })
+      for (const st of starts) {
+        assert(sc.key.detect.some((d) => d.petKey === pet.key && JSON.stringify(d.from) === JSON.stringify(st)), `${sc.id}: an effect from ${JSON.stringify(st)} has a detection`)
+      }
+    }
+  }
+})
 
 Deno.test('the floor: every tag the PR-15 row names is carried by a scenario whose rows show it', () => {
   const carried = new Set(TRAJECTORY_CORPUS.flatMap((s) => s.covers))

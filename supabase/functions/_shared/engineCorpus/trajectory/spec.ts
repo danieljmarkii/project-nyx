@@ -117,6 +117,8 @@ export interface LoggingSpec {
   attritionHalfLifeDays?: number
   /** Of logged vomits and diarrhoeas, the share found later rather than witnessed. */
   pFound: number
+  /** The same share for an episode between 23:00 and 07:00 local, while the owner sleeps. Default 0.6. */
+  pFoundOvernight?: number
   /** Of logged episodes, the share logged twice. */
   pDuplicate: number
   /** Of duplicates, the share the owner deletes (soft) afterwards. */
@@ -125,7 +127,7 @@ export interface LoggingSpec {
   pBackfill: number
   /** Of logged vomits, the share photographed (a photo read is written). */
   pPhoto: number
-  /** Of kennel-cough gags, the share the owner logs as a vomit. */
+  /** Of kennel-cough coughs, the share the owner logs as a vomit (the end-of-fit gag). An assumption. */
   pGagAsVomit?: number
   /** Two-pet homes: a found pile is logged to this pet, whoever produced it (MFU-5). */
   foundPilesGoTo?: string
@@ -168,7 +170,12 @@ export interface PetSpec {
   logging: LoggingSpec
   owner?: OwnerPolicy[]
   visits?: ScheduledVisit[]
-  /** Photo-read red flags: the first logged vomit on or after each day is photographed and shows blood. */
+  /**
+   * Photo-read red flags: the first TRUE vomit on or after each day is logged, witnessed and
+   * photographed with blood, whatever the logging probability, attrition or a lapse. The
+   * scenario tests what the engine does with a read, not whether the owner captured it; a
+   * seed whose pet does not vomit again before the end has no flag (truth.redFlags says).
+   */
   redFlagDays?: number[]
 }
 
@@ -217,6 +224,35 @@ export type CoverageTag =
   | 'symptom_only_lapse'
   | 'doubling_behind_lapse'
 
+/** The engine's lanes, as the answer key names them. */
+export type Lane =
+  | 'food' // a food or protein culprit card
+  | 'timing' // a post-prandial, time-of-day or timing-story card
+  | 'worsening' // the sign is getting worse
+  | 'chronic' // the sign is ongoing and worth a vet visit
+  | 'trial' // a read of the diet trial's effect
+  | 'weight' // a weight-loss card
+  | 'red_flag' // a visual red flag from a photo read
+  | 'resolution' // an improving or resolved read (a reassurance)
+  | 're_raise' // the concern raised again after the owner acknowledged it
+
+/**
+ * The machine-readable answer key. `falseCards`: a card of this lane (and sign) on this pet
+ * is false whenever it shows. `detect`: what a correct engine finds, from when. Lanes named in
+ * neither are not scored on this scenario.
+ *
+ * `scoring` is the rule the harness applies when it compares two engines over the same seeds:
+ *   paired             the truth is the same in both arms, so every seed counts;
+ *   both_acknowledged  the effect is anchored to the owner's acknowledgement, which only
+ *                      happens if the engine asked, so the truth itself differs between arms.
+ *                      Score only seeds where both arms reached the acknowledgement, and report
+ *                      an arm that never asked as its own failure. Never an E-6 detection proof.
+ */
+export interface TruthKey {
+  falseCards: { petKey: string; lane: Lane; sign?: Sign }[]
+  detect: { petKey: string; lane: Lane; sign?: Sign; protein?: string; from: EffectStart; scoring: 'paired' | 'both_acknowledged' }[]
+}
+
 export interface ScenarioSpec {
   id: string
   title: string
@@ -237,4 +273,6 @@ export interface ScenarioSpec {
    * be found; injected ones say what is there, from when.
    */
   truth: string
+  /** The same answer key, for the harness. Tests hold it consistent with the effects. */
+  key: TruthKey
 }

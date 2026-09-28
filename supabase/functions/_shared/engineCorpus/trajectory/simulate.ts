@@ -17,11 +17,14 @@
 //   · meal intake as a signal: ratings are drawn independently of health, so no scenario
 //     carries an intake-decline truth (D2, CUL-1118, decides whether that is worth adding);
 //   · an owner's response to anything but a card's sign and ask register (card text is not read);
+//   · an owner answering or booking twice for one sign (each happens at most once per run);
+//   · 072's "edited profile" window: a first displacement is always held since pet creation,
+//     which is exact for the legacy-profile scenarios (the profile was never edited);
 //   · stool reads (analyze-stool), and any symptom beyond vomit, diarrhoea and cough.
 
 import { between, chance, gamma, intBetween, mintId, normal, pickWeighted, poisson, stream, type Rng } from './rng.ts'
 import type { Effect, FoodSpec, PetSpec, ScenarioSpec, SignSpec } from './spec.ts'
-import { addDays, DAY_MS, HOUR_MS, iso, MINUTE_MS, wallToUtcMs } from './time.ts'
+import { addDays, DAY_MS, HOUR_MS, iso, localHour, MINUTE_MS, wallToUtcMs } from './time.ts'
 import { SIGNS } from './types.ts'
 import type {
   EpisodeCause,
@@ -88,6 +91,8 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
       productName: `${f.protein} ${f.foodType}`,
     }
     foods.set(f.id, made)
+    // Visible from the moment it exists: an observer resolving a meal's protein must find it.
+    record.foods.push(made)
     return made
   }
 
@@ -111,7 +116,7 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
     visits: [],
     ownerAnswers: [],
   }
-  const truth: TruthLedger = { episodes: [], meals: [], weighIns: [], acks: [] }
+  const truth: TruthLedger = { episodes: [], meals: [], weighIns: [], acks: [], redFlags: [], profileWeights: [] }
   const responses: ResponseLogEntry[] = []
   const shown: SimulationResult['shown'] = []
   let pending: Pending[] = []
@@ -121,7 +126,7 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
   for (const spec of scenario.pets) {
     const profile = spec.weight?.profile
     const petCreatedMs = localMs(-(profile?.petCreatedDaysBefore ?? 0), 6)
-    record.pets.push({ key: spec.key, name: spec.name, species: spec.species, created_at: iso(petCreatedMs), weight_kg: null })
+    record.pets.push({ key: spec.key, name: spec.name, species: spec.species, created_at: iso(petCreatedMs), weight_kg: profile ? profile.kg : null })
     const state: PetState = {
       spec,
       wander: {},
@@ -138,15 +143,24 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
       petCreatedMs,
     }
     states.set(spec.key, state)
-    if (profile) record.profileWeights.push({ petKey: spec.key, weight_kg: profile.kg, pet_created_at: iso(petCreatedMs) })
-    if (spec.trial) {
-      record.trials.push({
-        petKey: spec.key,
-        started_at: addDays(startDate, spec.trial.startDay),
-        target_duration_days: spec.trial.targetDays,
-        status: 'active',
-        created_at: iso(localMs(spec.trial.startDay, 9)),
-        foodItemId: food(spec.trial.food).id,
+    if (profile) {
+      record.profileWeights.push({ petKey: spec.key, weight_kg: profile.kg, pet_created_at: iso(petCreatedMs) })
+      truth.profileWeights.push({ petKey: spec.key, enteredKg: profile.kg, trueKgAtCreation: profile.trueAtCreationKg })
+    }
+    const trial = spec.trial
+    if (trial && trial.startDay < scenario.days) {
+      // Written on the morning it starts, so no evening before it can see it.
+      pending.push({
+        day: trial.startDay,
+        run: () =>
+          record.trials.push({
+            petKey: spec.key,
+            started_at: addDays(startDate, trial.startDay),
+            target_duration_days: trial.targetDays,
+            status: 'active',
+            created_at: iso(localMs(trial.startDay, 9)),
+            foodItemId: food(trial.food).id,
+          }),
       })
     }
     if (spec.feeding.kind === 'free_choice') {
@@ -207,6 +221,7 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
       state.lastDisplacement = { at: cr, replacedBy: kg }
     }
     state.weightKg = kg
+    record.pets.find((p) => p.key === spec.key)!.weight_kg = kg
   }
 
   // ── Owner responses: appointments, visits, answers ──
@@ -241,7 +256,7 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
       scheduled_at: iso(localMs(visitDay, 10)),
       reason,
       questions: concern ? [{ text: `The ${concern}`, source, source_ref: concern, asked_at: iso(createdMs) }] : null,
-      vet_visit_id: null as string | null,
+      visitId: null as string | null,
       created_at: iso(createdMs),
     }
     record.appointments.push(appt)
@@ -253,7 +268,7 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
         const visitId = id('visit', key, visitDay, reason)
         const next = recheckDays == null ? null : addDays(startDate, visitDay + recheckDays)
         record.visits.push({ id: visitId, petKey: key, visited_at: addDays(startDate, visitDay), reason, next_visit_at: next, created_at: iso(localMs(visitDay, 16)) })
-        appt.vet_visit_id = visitId
+        appt.visitId = visitId
         responses.push({ petKey: key, day: visitDay, action: 'visit', sign: concern })
         if (state.spec.weight && state.spec.weight.cadence.kind !== 'none') weighIn(state, visitDay, 10.25, 'clinic')
         if (concern) acknowledge(state, concern, visitDay, 'visit')
@@ -303,7 +318,8 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
     return ack !== undefined && day >= ack + e.from.afterAck
   }
 
-  function rateToday(state: PetState, s: SignSpec, day: number): number {
+  /** The null process's rate for the day: base, weekly dispersion, wander. No effect is in it. */
+  function backgroundRate(state: PetState, s: SignSpec, day: number): number {
     const key = state.spec.key
     let lambda = s.rate.perMonth / 30
     if (s.rate.weeklyDispersion) {
@@ -316,23 +332,7 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
       state.wander[s.sign] = x
       lambda *= Math.exp(x)
     }
-    for (const e of state.spec.effects ?? []) {
-      if (e.kind === 'rate_step' && e.sign === s.sign && effectActive(state, e, day)) lambda *= e.multiplier
-      if (e.kind === 'flare' && e.sign === s.sign && day >= e.fromDay && day < e.fromDay + e.days) lambda *= e.multiplier
-    }
-    const t = state.spec.trial
-    if (t && t.response.kind === 'responder' && s.sign === 'vomit' && day >= t.startDay + t.response.onsetDays) {
-      lambda *= t.response.residual
-    }
     return lambda
-  }
-
-  function causeOf(state: PetState, sign: Sign, day: number): EpisodeCause {
-    for (const e of state.spec.effects ?? []) {
-      if (e.kind === 'rate_step' && e.sign === sign && effectActive(state, e, day)) return 'rate_step'
-      if (e.kind === 'flare' && e.sign === sign && day >= e.fromDay && day < e.fromDay + e.days) return 'flare'
-    }
-    return 'background'
   }
 
   interface DayMeal { atMs: number; food: SynFood }
@@ -360,61 +360,85 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
     return out.sort((a, b) => a.atMs - b.atMs)
   }
 
-  interface DayEpisode { atMs: number; sign: Sign; cause: EpisodeCause }
+  /** An episode carries a stable key (its source and draw number), never its sort position,
+   *  so an extra drawn on a step day cannot shift the logging draws of the background. */
+  interface DayEpisode { atMs: number; sign: Sign; cause: EpisodeCause; key: string }
 
   function episodesToday(state: PetState, day: number, meals: DayMeal[]): DayEpisode[] {
     const spec = state.spec
+    const pk = spec.key
     const out: DayEpisode[] = []
+    const placed = (s: SignSpec, rng: Rng): number => {
+      const timing = s.timing ?? 'any'
+      if (timing === 'postprandial' && meals.length > 0) return meals[Math.floor(rng() * meals.length)].atMs + between(rng, 0.25, 2) * HOUR_MS
+      if (timing === 'early_morning') return localMs(day, between(rng, 4, 7))
+      return localMs(day, between(rng, 0, 24))
+    }
     for (const s of spec.signs) {
-      const rng = S(spec.key, 'ep', s.sign, day)
-      // Once per sign per day: rateToday advances the wander state.
-      const lambda = rateToday(state, s, day)
-      const n = poisson(rng, lambda)
-      const cause = causeOf(state, s.sign, day)
-      for (let i = 0; i < n; i++) {
-        let atMs: number
-        const timing = s.timing ?? 'any'
-        if (timing === 'postprandial' && meals.length > 0) {
-          const m = meals[Math.floor(rng() * meals.length)]
-          atMs = m.atMs + between(rng, 0.25, 2) * HOUR_MS
-        } else if (timing === 'early_morning') {
-          atMs = localMs(day, between(rng, 4, 7))
-        } else {
-          atMs = localMs(day, between(rng, 0, 24))
-        }
-        out.push({ atMs, sign: s.sign, cause })
+      // Once per sign per day: backgroundRate advances the wander state.
+      const bg = backgroundRate(state, s, day)
+      // The background is drawn from its own stream at the null rate. Every effect ADDS
+      // episodes from a stream of its own, labelled with its cause, so a label is exactly
+      // "this episode would not have happened without the effect" and the background is
+      // the same draw with the effect on or off (and under either observer).
+      const rng = S(pk, 'ep', s.sign, day)
+      const n = poisson(rng, bg)
+      for (let i = 0; i < n; i++) out.push({ atMs: placed(s, rng), sign: s.sign, cause: 'background', key: `bg-${s.sign}-${i}` })
+
+      let stepMult = 1
+      for (const e of spec.effects ?? []) if (e.kind === 'rate_step' && e.sign === s.sign && effectActive(state, e, day)) stepMult *= e.multiplier
+      if (stepMult > 1) {
+        const r = S(pk, 'step', s.sign, day)
+        const extra = poisson(r, bg * (stepMult - 1))
+        for (let i = 0; i < extra; i++) out.push({ atMs: placed(s, r), sign: s.sign, cause: 'rate_step', key: `step-${s.sign}-${i}` })
+      }
+      for (const e of spec.effects ?? []) {
+        if (e.kind !== 'flare' || e.sign !== s.sign || day < e.fromDay || day >= e.fromDay + e.days) continue
+        const r = S(pk, 'flare', s.sign, day)
+        const extra = poisson(r, bg * stepMult * (e.multiplier - 1))
+        for (let i = 0; i < extra; i++) out.push({ atMs: placed(s, r), sign: s.sign, cause: 'flare', key: `flare-${s.sign}-${i}` })
       }
       // A protein reaction adds (rr − 1) × the day's rate on a day the protein was eaten, timed
-      // after that meal, so the day-level rate ratio (exposed vs not) is rr by construction.
+      // 0.5 to 8 hours after that meal. The estimand: the rate ratio per exposed CARE day
+      // (06:00 to 06:00 local, so a dinner and the night it causes are one day) is rr; on
+      // midnight calendar days it reads lower (about 2.6 for rr 3), because a dinner's
+      // reaction can land after midnight.
       for (const e of spec.effects ?? []) {
         if (e.kind !== 'protein_reaction' || e.sign !== s.sign) continue
         const exposed = meals.filter((m) => m.food.proteins.includes(e.protein))
         if (exposed.length === 0) continue
-        const extra = poisson(S(spec.key, 'protein', s.sign, day), lambda * (e.rr - 1))
-        const r2 = S(spec.key, 'protein-time', s.sign, day)
+        const r = S(pk, 'protein', s.sign, day)
+        const extra = poisson(r, bg * stepMult * (e.rr - 1))
         for (let i = 0; i < extra; i++) {
-          const m = exposed[Math.floor(r2() * exposed.length)]
-          out.push({ atMs: m.atMs + between(r2, 0.5, 8) * HOUR_MS, sign: s.sign, cause: 'protein' })
+          const m = exposed[Math.floor(r() * exposed.length)]
+          out.push({ atMs: m.atMs + between(r, 0.5, 8) * HOUR_MS, sign: s.sign, cause: 'protein', key: `protein-${s.sign}-${i}` })
         }
       }
     }
     for (const e of spec.effects ?? []) {
       if (e.kind === 'indiscretion') {
-        const rng = S(spec.key, 'raid', day)
+        const rng = S(pk, 'raid', day)
         if (chance(rng, e.perMonth / 30)) {
           const startMs = localMs(day, between(rng, 8, 20))
           const vomits = intBetween(rng, 2, 3)
-          for (let i = 0; i < vomits; i++) out.push({ atMs: startMs + between(rng, 0, 12) * HOUR_MS, sign: 'vomit', cause: 'indiscretion' })
-          out.push({ atMs: startMs + between(rng, 4, 16) * HOUR_MS, sign: 'diarrhea', cause: 'indiscretion' })
+          for (let i = 0; i < vomits; i++) out.push({ atMs: startMs + between(rng, 0, 12) * HOUR_MS, sign: 'vomit', cause: 'indiscretion', key: `raid-v-${i}` })
+          out.push({ atMs: startMs + between(rng, 4, 16) * HOUR_MS, sign: 'diarrhea', cause: 'indiscretion', key: 'raid-d' })
         }
       }
       if (e.kind === 'kennel_cough' && day >= e.fromDay && day < e.fromDay + e.days) {
-        const rng = S(spec.key, 'kc', day)
+        const rng = S(pk, 'kc', day)
         const n = poisson(rng, e.perDay)
-        for (let i = 0; i < n; i++) out.push({ atMs: localMs(day, between(rng, 6, 23)), sign: 'cough', cause: 'infection' })
+        for (let i = 0; i < n; i++) out.push({ atMs: localMs(day, between(rng, 6, 23)), sign: 'cough', cause: 'infection', key: `kc-${i}` })
       }
     }
-    return out.sort((a, b) => a.atMs - b.atMs)
+    // A diet trial that works removes episodes: each vomit is kept with probability `residual`,
+    // decided per episode from its own stream, so the survivors are a subset of the same draw.
+    const t = spec.trial
+    const responding = t !== undefined && t.response.kind === 'responder' && day >= t.startDay + t.response.onsetDays
+    const kept = responding
+      ? out.filter((ep) => ep.sign !== 'vomit' || chance(S(pk, 'trial-keep', day, ep.key), (t!.response as { residual: number }).residual))
+      : out
+    return kept.sort((a, b) => a.atMs - b.atMs || (a.key < b.key ? -1 : 1))
   }
 
   // ── Logging: what the owner writes ──
@@ -427,11 +451,11 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
     return atMs + (chance(rng, pBackfill) ? between(rng, 6, 36) * HOUR_MS : between(rng, 1, 15) * MINUTE_MS)
   }
 
-  function logEpisode(state: PetState, day: number, ep: DayEpisode, index: number) {
+  function logEpisode(state: PetState, day: number, ep: DayEpisode) {
     const spec = state.spec
     const L = spec.logging
-    const epId = id('truth-ep', spec.key, day, index)
-    const rng = S(spec.key, 'log-ep', day, index)
+    const epId = id('truth-ep', spec.key, day, ep.key)
+    const rng = S(spec.key, 'log-ep', day, ep.key)
     const entry: TruthEpisode = { id: epId, petKey: spec.key, sign: ep.sign, at: iso(ep.atMs), cause: ep.cause, loggedEventIds: [], loggedPetKey: null, loggedAs: null }
     truth.episodes.push(entry)
 
@@ -443,7 +467,10 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
     if (redFlag) state.redFlagsPending.shift()
 
     const ty: SynEvent['ty'] = ep.cause === 'infection' && chance(rng, L.pGagAsVomit ?? 0) ? 'vomit' : ep.sign
-    const found = !redFlag && ty !== 'cough' && chance(rng, L.pFound)
+    // Nobody witnesses a vomit at 3 a.m.: overnight, a logged pile is found in the morning.
+    const hour = localHour(ep.atMs, tz)
+    const pFound = hour >= 23 || hour < 7 ? Math.max(L.pFound, L.pFoundOvernight ?? 0.6) : L.pFound
+    const found = !redFlag && ty !== 'cough' && chance(rng, pFound)
     const loggedPet = found ? (L.foundPilesGoTo ?? spec.key) : spec.key
     let at: number
     let cf: SynEvent['cf']
@@ -463,12 +490,13 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
       cf = 'witnessed'
     }
     const cr = Math.max(createdAfter(rng, at, L.pBackfill), at + MINUTE_MS)
-    const eventId = id('ev', spec.key, day, index)
+    const eventId = id('ev', spec.key, day, ep.key)
     const row: SynEvent = { id: eventId, petKey: loggedPet, ty, at: iso(at), cf, ea, la, cr: iso(cr), del: null, sev: null }
     record.events.push(row)
     entry.loggedEventIds.push(eventId)
     entry.loggedPetKey = loggedPet
     entry.loggedAs = ty
+    if (redFlag) truth.redFlags.push({ petKey: spec.key, episodeId: epId, eventId, day })
 
     if (ty === 'vomit' && (redFlag || chance(rng, L.pPhoto))) {
       const blood: SynAnalysis['blood_present'] = redFlag ? 'fresh_red' : chance(rng, 0.05) ? 'unsure' : 'none_visible'
@@ -492,7 +520,7 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
       })
     }
     if (chance(rng, L.pDuplicate)) {
-      const dupId = id('ev-dup', spec.key, day, index)
+      const dupId = id('ev-dup', spec.key, day, ep.key)
       const dupCr = cr + between(rng, 1, 20) * MINUTE_MS
       const del = chance(rng, L.pDuplicateCleanedUp) ? iso(dupCr + between(rng, 5, 120) * MINUTE_MS) : null
       record.events.push({ ...row, id: dupId, cr: iso(dupCr), del })
@@ -517,6 +545,15 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
 
   // ── The day loop ──
   for (let day = 0; day < scenario.days; day++) {
+    // The 08:00 home weigh-in comes before the day's queued actions (a 10:00 visit, a 19:30
+    // answer), so weigh-ins land in the order they are written.
+    for (const state of states.values()) {
+      if (state.nextHomeWeighDay === day && state.spec.weight?.cadence.kind === 'home') {
+        weighIn(state, day, 8, 'home')
+        const [lo, hi] = state.spec.weight.cadence.everyDays
+        state.nextHomeWeighDay = day + intBetween(S(state.spec.key, 'weigh-gap', day), lo, hi)
+      }
+    }
     // An action can queue another for the same day (a visit booked for today), so drain until quiet.
     for (let due = pending.filter((p) => p.day === day); due.length > 0; due = pending.filter((p) => p.day === day)) {
       pending = pending.filter((p) => p.day !== day)
@@ -526,12 +563,7 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
     for (const state of states.values()) {
       const meals = mealsToday(state, day)
       meals.forEach((m, i) => logMeal(state, day, m, i))
-      episodesToday(state, day, meals).forEach((ep, i) => logEpisode(state, day, ep, i))
-      if (state.nextHomeWeighDay === day && state.spec.weight?.cadence.kind === 'home') {
-        weighIn(state, day, 8, 'home')
-        const [lo, hi] = state.spec.weight.cadence.everyDays
-        state.nextHomeWeighDay = day + intBetween(S(state.spec.key, 'weigh-gap', day), lo, hi)
-      }
+      for (const ep of episodesToday(state, day, meals)) logEpisode(state, day, ep)
     }
 
     const nowIso = iso(localMs(day, EVENING_HOUR))
@@ -540,8 +572,6 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
     for (const state of states.values()) respond(state, day, cards)
   }
 
-  for (const p of record.pets) p.weight_kg = states.get(p.key)!.weightKg
-  record.foods = [...foods.values()]
   // Every `at` is toISOString()'s fixed-width UTC spelling, so text order is time order here
   // (C-40's warning is about mixing spellings, which this corpus never does).
   const byTime = (a: { at: string; id: string }, b: { at: string; id: string }) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : 1)

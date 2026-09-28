@@ -8,8 +8,8 @@
 // The rates are a grid, never one assumed value (evidence pack §4.1, "honesty risks"): one
 // and three a month, plain Poisson and bursty, flat and wandering. One a month is the rate
 // the Engineering lens's null probe used (CUL-1268: 93 of 100 such cats saw a food culprit
-// card on the shipped engine); three a month is the top of what is still commonly called
-// occasional. Neither is a claim about the population; together they bracket it.
+// card on the shipped engine); three a month is still below the FCEAI mild band (about once a
+// week; Jergens 2010, evidence pack §4). Neither is a claim about the population.
 //
 // A null pet can still carry a real clinical story (a garbage raid, a flare that ends on its
 // own). "Null" means null FOR THE LANES THE SCENARIO NAMES in its `truth`, never "healthy".
@@ -33,6 +33,16 @@ export const NULL_SCENARIOS: ScenarioSpec[] = [
     pets: [{ ...cat('Marlow'), feeding: stapleFeeding(), signs: [{ sign: 'vomit', rate: { perMonth: 1 } }], logging: logging() }],
     ciSeeds: CI_SEEDS,
     truth: 'No food causes vomiting; the rate never changes. Any food, worsening or timing card is a false card.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'worsening' },
+        { petKey: 'a', lane: 'chronic' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [],
+    },
   },
   {
     id: 'null-staple-3pm-bursty',
@@ -47,6 +57,15 @@ export const NULL_SCENARIOS: ScenarioSpec[] = [
     pets: [{ ...cat('Tansy'), feeding: stapleFeeding(), signs: [{ sign: 'vomit', rate: { perMonth: 3, weeklyDispersion: 0.5 } }], logging: logging() }],
     ciSeeds: CI_SEEDS,
     truth: 'No food causes vomiting and the long-run rate is flat; the weekly clusters are noise. A worsening card on a cluster is a false card.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'worsening' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [],
+    },
   },
   {
     id: 'null-rotating-1pm',
@@ -61,6 +80,16 @@ export const NULL_SCENARIOS: ScenarioSpec[] = [
     pets: [{ ...cat('Pilot'), feeding: rotatingFeeding(), signs: [{ sign: 'vomit', rate: { perMonth: 1 } }], logging: logging() }],
     ciSeeds: CI_SEEDS,
     truth: 'No food causes vomiting; the rate never changes. Any food culprit or worsening card is a false card.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'worsening' },
+        { petKey: 'a', lane: 'chronic' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [],
+    },
   },
   {
     id: 'null-rotating-3pm-bursty',
@@ -74,6 +103,15 @@ export const NULL_SCENARIOS: ScenarioSpec[] = [
     pets: [{ ...cat('Wren'), feeding: rotatingFeeding(), signs: [{ sign: 'vomit', rate: { perMonth: 3, weeklyDispersion: 1 } }], logging: logging() }],
     ciSeeds: CI_SEEDS,
     truth: 'No food causes vomiting and the long-run rate is flat.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'worsening' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [],
+    },
   },
   {
     id: 'null-grazer',
@@ -95,6 +133,15 @@ export const NULL_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'Neither food causes vomiting, and vomits are not timed to the wet meal. A timing or food card is a false card.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'worsening' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [],
+    },
   },
   {
     id: 'null-wandering-365',
@@ -109,6 +156,13 @@ export const NULL_SCENARIOS: ScenarioSpec[] = [
     pets: [{ ...cat('Juno'), feeding: rotatingFeeding(), signs: [{ sign: 'vomit', rate: { perMonth: 2, wander: { sd: 0.15, halfLifeDays: 30 } } }], logging: logging() }],
     ciSeeds: CI_SEEDS,
     truth: 'No trend and no food effect. The rate drifts with no cause; a card is a false card unless the harness defines a drift size as clinically real (this scenario does not).',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'timing' },
+      ],
+      detect: [],
+    },
   },
   {
     id: 'null-attrition-365',
@@ -123,6 +177,15 @@ export const NULL_SCENARIOS: ScenarioSpec[] = [
     pets: [{ ...cat('Moth'), feeding: stapleFeeding(), signs: [{ sign: 'vomit', rate: { perMonth: 2 } }], logging: logging({ attritionHalfLifeDays: 90 }) }],
     ciSeeds: CI_SEEDS,
     truth: 'The true rate is flat all year. An improvement or resolution card is a false reassurance; a food card is a false card.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'worsening' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [],
+    },
   },
   {
     id: 'null-found-piles',
@@ -137,6 +200,15 @@ export const NULL_SCENARIOS: ScenarioSpec[] = [
     pets: [{ ...cat('Ash'), feeding: stapleFeeding(), signs: [{ sign: 'vomit', rate: { perMonth: 2 } }], logging: logging({ pFound: 0.6 }) }],
     ciSeeds: CI_SEEDS,
     truth: 'No food or timing effect. A post-prandial or early-morning card built on window rows is a false card.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'worsening' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [],
+    },
   },
   {
     id: 'null-two-cat-home',
@@ -154,13 +226,27 @@ export const NULL_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: "Cat A vomits about twice in six months. Cat B's rate is flat at three a month. A worsening or chronic card on cat A is built on cat B's vomits.",
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'worsening' },
+        { petKey: 'a', lane: 'chronic' },
+        { petKey: 'a', lane: 'resolution' },
+        { petKey: 'b', lane: 'food' },
+        { petKey: 'b', lane: 'timing' },
+        { petKey: 'b', lane: 'worsening' },
+        { petKey: 'b', lane: 'resolution' },
+      ],
+      detect: [],
+    },
   },
   {
     id: 'null-dog-indiscretion',
     title: 'A meal-fed dog who raids the bin about once a month',
     category: 'null',
     rationale:
-      'MFU-4: dogs are absent from the instruments. This one eats two kibble meals and a treat most days, vomits rarely, and about once a month gets into something: two or three vomits and a loose stool inside twelve hours. Dietary indiscretion is the commonest cause of acute vomiting in dogs and is not a food intolerance; the treat he had that afternoon is a bystander.',
+      'MFU-4: dogs are absent from the instruments. This one eats two kibble meals and a treat most days, vomits rarely, and about once a month gets into something: two or three vomits and a loose stool inside twelve hours. Dietary indiscretion is a common cause of acute vomiting in dogs and is not a food intolerance; the treat he had that afternoon is a bystander.',
     covers: ['dog', 'dietary_indiscretion'],
     tz: 'America/Chicago',
     startDate: START,
@@ -187,6 +273,13 @@ export const NULL_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'No food causes vomiting; the raid clusters are acute and self-limiting. A food card naming the treat, or a chronic card, is a false card. Each cluster is a real acute episode the per-incident read may take seriously.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'chronic' },
+      ],
+      detect: [],
+    },
   },
   {
     id: 'null-species-other',
@@ -213,13 +306,23 @@ export const NULL_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'Nothing is wrong and nothing changes. Any card is a false card.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'worsening' },
+        { petKey: 'a', lane: 'chronic' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [],
+    },
   },
   {
     id: 'null-trial-at-peak',
     title: 'A diet trial started at the top of a flare that was ending anyway',
     category: 'null',
     rationale:
-      'Regression to the mean, the trial lane\'s central trap: owners start a trial when things are worst. A four-week flare (four times baseline) peaks in its middle, the trial starts then, and the flare ends two weeks later on its own. The diet does nothing. A trial lane reading before vs after will credit it.',
+      'Regression to the mean, the trial lane\'s central trap: owners start a trial when things are worst. A four-week flare (four times baseline) peaks in its middle, the trial starts then, and the flare ends two weeks later on its own. The diet does nothing. A trial lane reading before vs after will credit it. The confound is built in on purpose, as it is in life: the rotation proteins were eaten through half the flare and the trial food through its tail, so every rotation protein carries a higher crude rate than rabbit. No food causes anything; a food card here is false.',
     covers: ['trial_at_peak'],
     tz: 'America/Chicago',
     startDate: START,
@@ -236,6 +339,13 @@ export const NULL_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'The trial has no effect. The fall after day 58 is the flare ending. A "responding to the trial" read is a false attribution.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'trial' },
+      ],
+      detect: [],
+    },
   },
   {
     id: 'null-event-dependent-feeding',
@@ -257,5 +367,14 @@ export const NULL_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'No food causes vomiting. White fish follows vomits by the owner\'s choice. A white fish card is a false card, and so is any card naming the food eaten before a switch.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'worsening' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [],
+    },
   },
 ]

@@ -18,7 +18,7 @@ export const INJECTED_SCENARIOS: ScenarioSpec[] = [
     title: 'Chronic enteropathy starting on day 90',
     category: 'injected',
     rationale:
-      'A cat vomiting once a month goes to six a month (about every five days, the FCEAI moderate band) from day 90, with diarrhoea following ten days later. The chronic enteropathy onset the deep dive names (brief §7 A2). Chronic vomiting at this rate warrants a booked workup (EN-9 evidence).',
+      'A cat vomiting once a month goes to ten a month (about 2.3 a week: the FCEAI moderate band, 2 to 3 a week; Jergens 2010, evidence pack §4) from day 90, with diarrhoea following ten days later. The chronic enteropathy onset the deep dive names (brief §7 A2).',
     covers: ['enteropathy_onset', 'staple_feeder'],
     tz: 'America/Chicago',
     startDate: START,
@@ -32,14 +32,26 @@ export const INJECTED_SCENARIOS: ScenarioSpec[] = [
           { sign: 'diarrhea', rate: { perMonth: 0.3 } },
         ],
         effects: [
-          { kind: 'rate_step', sign: 'vomit', multiplier: 6, from: { day: 90 } },
+          { kind: 'rate_step', sign: 'vomit', multiplier: 10, from: { day: 90 } },
           { kind: 'rate_step', sign: 'diarrhea', multiplier: 5, from: { day: 100 } },
         ],
         logging: logging(),
       },
     ],
     ciSeeds: CI_SEEDS,
-    truth: 'Vomiting rises sixfold from day 90 and diarrhoea fivefold from day 100, and stays. Detection is a worsening or chronic card for vomiting on or after day 90; days to detect count from 90.',
+    truth: 'Vomiting rises tenfold from day 90 and diarrhoea fivefold from day 100, and stays. Detection is a worsening or chronic card for vomiting on or after day 90; days to detect count from 90.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'worsening', sign: 'vomit', from: { day: 90 }, scoring: 'paired' },
+        { petKey: 'a', lane: 'chronic', sign: 'vomit', from: { day: 90 }, scoring: 'paired' },
+        { petKey: 'a', lane: 'worsening', sign: 'diarrhea', from: { day: 100 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'inj-protein-reaction-rr3',
@@ -62,6 +74,15 @@ export const INJECTED_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'Beef days carry three times the vomit rate. Detection is a food card naming beef; a card naming any other protein is a false attribution.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'worsening' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'food', protein: 'beef', from: { day: 0 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'inj-protein-reaction-hidden',
@@ -89,6 +110,15 @@ export const INJECTED_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'Any day with chicken (the chicken food or the duck food) carries three times the rate. Detection names chicken; naming duck alone is a partial miss.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'worsening' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'food', protein: 'chicken', from: { day: 0 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'inj-postprandial',
@@ -103,6 +133,15 @@ export const INJECTED_SCENARIOS: ScenarioSpec[] = [
     pets: [{ ...cat('Pippin'), feeding: stapleFeeding(), signs: [{ sign: 'vomit', rate: { perMonth: 3 }, timing: 'postprandial' }], logging: logging() }],
     ciSeeds: CI_SEEDS,
     truth: 'Every vomit follows a meal within two hours. Detection is the rapid-after-meal timing card; a food card is a false attribution.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'worsening' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'timing', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'inj-early-morning-bilious',
@@ -117,6 +156,15 @@ export const INJECTED_SCENARIOS: ScenarioSpec[] = [
     pets: [{ ...cat('Dusk'), feeding: stapleFeeding(), signs: [{ sign: 'vomit', rate: { perMonth: 3 }, timing: 'early_morning' }], logging: logging({ pPhoto: 0.5 }) }],
     ciSeeds: CI_SEEDS,
     truth: 'Every vomit is 04:00 to 07:00 local with bile. Detection is an early-morning or empty-stomach timing read; a post-prandial card is wrong.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'worsening' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'timing', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'inj-rate-doubling',
@@ -139,6 +187,16 @@ export const INJECTED_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'The vomit rate doubles on day 100 and stays. Detection is a worsening card for vomiting on or after day 100.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'worsening', sign: 'vomit', from: { day: 100 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'inj-red-flag',
@@ -153,13 +211,25 @@ export const INJECTED_SCENARIOS: ScenarioSpec[] = [
     pets: [{ ...cat('Ember'), feeding: stapleFeeding(), signs: [{ sign: 'vomit', rate: { perMonth: 1 } }], redFlagDays: [75], logging: logging({ pPhoto: 0.3 }) }],
     ciSeeds: CI_SEEDS,
     truth: 'The first vomit on or after day 75 is photographed with blood present. It must land at its shipped tier or higher, the evening its read exists.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'timing' },
+        { petKey: 'a', lane: 'worsening' },
+        { petKey: 'a', lane: 'chronic' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'red_flag', sign: 'vomit', from: { day: 75 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'inj-trial-responder',
     title: 'A diet trial that works',
     category: 'injected',
     rationale:
-      'A cat vomiting five times a month starts a rabbit trial on day 30 (56-day target); from two weeks in the rate falls to a quarter. A real responder, for the trial lane\'s sensitivity (brief §7 A2: a responder and a non-responder).',
+      'A cat vomiting ten times a month (FCEAI moderate) starts a rabbit trial on day 30 (56-day target); from two weeks in, each vomit is prevented with probability three in four. A real responder, for the trial lane\'s sensitivity (brief §7 A2: a responder and a non-responder).',
     covers: ['trial_responder'],
     tz: 'America/Chicago',
     startDate: START,
@@ -168,13 +238,21 @@ export const INJECTED_SCENARIOS: ScenarioSpec[] = [
       {
         ...cat('Sorrel'),
         feeding: rotatingFeeding(),
-        signs: [{ sign: 'vomit', rate: { perMonth: 5 } }],
+        signs: [{ sign: 'vomit', rate: { perMonth: 10 } }],
         trial: { startDay: 30, targetDays: 56, food: FOOD.rabbitTrial, response: { kind: 'responder', residual: 0.25, onsetDays: 14 } },
         logging: logging(),
       },
     ],
     ciSeeds: CI_SEEDS,
     truth: 'The vomit rate falls to a quarter from day 44 and stays down on the trial food. Detection is a trial read of improvement after day 44, never before.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'trial', from: { day: 44 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'inj-trial-non-responder',
@@ -189,20 +267,30 @@ export const INJECTED_SCENARIOS: ScenarioSpec[] = [
       {
         ...cat('Tamsin'),
         feeding: rotatingFeeding(),
-        signs: [{ sign: 'vomit', rate: { perMonth: 5 } }],
+        signs: [{ sign: 'vomit', rate: { perMonth: 10 } }],
         trial: { startDay: 30, targetDays: 56, food: FOOD.rabbitTrial, response: { kind: 'non_responder' } },
         logging: logging(),
       },
     ],
     ciSeeds: CI_SEEDS,
-    truth: 'The rate is five a month throughout. An improvement read is false; the chronic vomiting remains a concern the engine should keep raising.',
+    truth: 'The rate is ten a month throughout. An improvement read is false; the chronic vomiting remains a concern the engine should keep raising.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'trial' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'chronic', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'inj-cough-and-vomit',
     title: 'A cat with a chronic cough and chronic vomiting',
     category: 'injected',
     rationale:
-      'GAP-29: cough and vomiting are two concerns, and an owner cannot always tell a cough from a retch. This cat has both, independently (six coughs and three vomits a month), as with asthma beside a chronic enteropathy. Each is a real concern and neither explains the other.',
+      'GAP-29: cough and vomiting are two concerns, and an owner cannot always tell a cough from a retch. This cat has both, independently (six coughs and ten vomits a month), as with asthma beside a chronic enteropathy. Each is a real concern and neither explains the other.',
     covers: ['cough_and_vomit'],
     tz: 'America/Chicago',
     startDate: START,
@@ -212,7 +300,7 @@ export const INJECTED_SCENARIOS: ScenarioSpec[] = [
         ...cat('Hazel'),
         feeding: stapleFeeding(),
         signs: [
-          { sign: 'vomit', rate: { perMonth: 3 } },
+          { sign: 'vomit', rate: { perMonth: 10 } },
           { sign: 'cough', rate: { perMonth: 6 } },
         ],
         logging: logging(),
@@ -220,13 +308,23 @@ export const INJECTED_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'Two independent chronic concerns. Detection keeps both; a card that folds one into the other, or drops the cough, is a miss.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'resolution' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'chronic', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
+        { petKey: 'a', lane: 'chronic', sign: 'cough', from: { day: 0 }, scoring: 'paired' },
+      ],
+    },
   },
   {
     id: 'inj-kennel-cough-gag',
     title: 'A dog with kennel cough whose gags are logged as vomits',
     category: 'injected',
     rationale:
-      'MFU-4: kennel cough ends a coughing fit with a gag that brings up foam, and owners log it as a vomit. Five coughs a day for two weeks from day 60; three in ten are logged as vomits. The real problem is a self-limiting cough; the "vomiting spike" is a labelling artefact.',
+      'MFU-4: kennel cough ends a coughing fit with a gag that brings up foam, and owners log it as a vomit. Five coughs a day for two weeks from day 60; three in ten are logged as vomits (the share is an assumption for a sweep to move, not a measurement). The real problem is a self-limiting cough; the "vomiting spike" is a labelling artefact.',
     covers: ['kennel_cough_gag', 'dog'],
     tz: 'America/Chicago',
     startDate: START,
@@ -244,5 +342,14 @@ export const INJECTED_SCENARIOS: ScenarioSpec[] = [
     ],
     ciSeeds: CI_SEEDS,
     truth: 'A two-week cough from day 60. The vomit rows in that window are mostly gags. A vomiting worsening card there misreads a cough; a cough card is right.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 'food' },
+        { petKey: 'a', lane: 'chronic', sign: 'vomit' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'worsening', sign: 'cough', from: { day: 60 }, scoring: 'paired' },
+      ],
+    },
   },
 ]
