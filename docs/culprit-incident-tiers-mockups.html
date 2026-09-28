@@ -326,7 +326,8 @@
       <div><b>EN-5's question</b><span>A free-fed bowl answers "Didn't see", stored as not observable. Dogs and trial pets are asked "Could he have eaten something else?". No time limit; a heading and a radio group for VoiceOver. <span class="pill">current · §07</span></span></div>
       <div><b>CUL-819 (a) and CUL-531</b><span>The disclosure line under a rescued call. CUL-531 drawn three ways; the team recommends scoping the observation, which neither of the issue's two options did. <span class="pill">current · §08</span> <span class="pill open">CUL-531 decide</span></span></div>
       <div><b>EN-4's floor spec</b><span>Runs on the server from a durable marker; offline the phone shows a preview it never stores. The 24-hour re-run reads the stored fields and never re-sends a photo. <span class="pill">current · §09</span></span></div>
-      <div><b>The sign-to-tier table</b><span>29 rows for the ruling sheet (CUL-583) and the paid vet review (CUL-1312). Every row that fires less than today is marked and waits on harness proof and your sign-off. <span class="pill needs">to the ruling sheet · §10</span></span></div>
+      <div><b>The adversarial pass on this round's first draft</b><span>It failed the draft: six rows would have shown an owner something calmer than today with no "quieter" mark (the feline intake arm, species "other", the counting merge, the stool rows, a writer that skipped the tier, a photoless vomit labelled calm). Every one is fixed on this page and in the spec's §13. <span class="pill">applied</span></span></div>
+      <div><b>The sign-to-tier table</b><span>35 rows for the ruling sheet (CUL-583) and the paid vet review (CUL-1312). Every row that fires less than today is marked and waits on harness proof and your sign-off. <span class="pill needs">to the ruling sheet · §10</span></span></div>
     </div>
     <div class="rule-key">
       <span><span class="pill">current</span> the proposal</span>
@@ -373,11 +374,11 @@
         <tbody>
           <tr><th>tier <code>call_now</code><small>legacy column: worth_a_call</small></th><td><span class="tier now page">Call your vet now</span></td><td><b>Call your vet now.</b> If they're closed, call an emergency clinic.</td><td class="speak">"Nyx's read: call your vet now."</td><td>read as call now</td><td>rose, filled; rose rail</td><td>Yes, new-rule population</td></tr>
           <tr><th>tier <code>call_today</code><small>legacy column: worth_a_call</small></th><td><span class="tier today page">Call your vet today</span></td><td><b>Call your vet today.</b> If they're closed, first thing tomorrow, or an emergency clinic tonight if [the call-now signs for this pet].</td><td class="speak">"Nyx's read: call your vet today."</td><td>read as call today</td><td>rose outline; rose rail</td><td>Yes, new-rule population</td></tr>
-          <tr><th>pattern<small>drawn from a live Home finding (K2); legacy column: monitor</small></th><td><span class="tier pattern page">Part of a pattern</span></td><td>Home is tracking Nyx's vomiting, and this one is part of it. <b>See what Home is tracking</b> (a door).</td><td class="speak">"Nyx's read: part of a pattern Home is tracking."</td><td>read as part of a pattern</td><td>dashed pale rose; no fill</td><td>No</td></tr>
+          <tr><th>pattern<small>drawn from a live Home finding (K2); legacy column: monitor</small></th><td><span class="tier pattern page">Part of a pattern</span></td><td>Home is tracking Nyx's vomiting, and this one is part of it. <b>See what Home is tracking</b> (a door).</td><td class="speak">"Nyx's read: part of a pattern Home is tracking."</td><td>not used: History, the month and charts use "keep an eye out"</td><td>dashed pale rose; no fill</td><td>No</td></tr>
           <tr><th>tier <code>logged</code><small>legacy column: monitor</small></th><td><span class="tier eye page">Keep an eye out</span></td><td>The two-sentence watch-for list: "Call your vet now if … Call your vet today if …", built from §10's rows for this pet.</td><td class="speak">"Nyx's read: keep an eye out. What would change that is below."</td><td>read as keep an eye out</td><td>grey</td><td>No</td></tr>
-          <tr><th><code>not_enough_to_say</code><small>both columns, unchanged</small></th><td><span class="tier nes page">Not enough to say yet</span></td><td>Today's copy, unchanged, plus the same watch-for list.</td><td class="speak">"Nyx's read: not enough to say yet."</td><td>not read</td><td>grey</td><td>No</td></tr>
-          <tr><th>legacy <code>worth_a_call</code><small>tier NULL (read before go-live)</small></th><td><span class="tier legacy page">Worth a call</span></td><td>Today's words, unchanged, for the life of the row.</td><td class="speak">"Nyx's read: worth a call."</td><td>read as worth a call</td><td>rose, filled</td><td>Yes, but only in the earlier-rule count (§05)</td></tr>
-          <tr><th>legacy <code>monitor</code><small>tier NULL</small></th><td><span class="tier legacy-calm page">Keep an eye out</span></td><td>Today's words, unchanged.</td><td class="speak">"Nyx's read: keep an eye out."</td><td>read as keep an eye out</td><td>grey</td><td>No</td></tr>
+          <tr><th><code>not_enough_to_say</code><small>both columns; every photoless or unread vomit with no call</small></th><td><span class="tier nes page">Not enough to say yet</span></td><td>Today's copy, unchanged, plus the same watch-for list.</td><td class="speak">"Nyx's read: not enough to say yet."</td><td>not read</td><td>grey</td><td>No</td></tr>
+          <tr><th>legacy <code>worth_a_call</code><small>earlier rule, by the rule-version stamp</small></th><td><span class="tier legacy page">Worth a call</span></td><td>Today's words, unchanged, for the life of the row.</td><td class="speak">"Nyx's read: worth a call."</td><td>read as worth a call</td><td>rose, filled</td><td>Yes, but only in the earlier-rule count (§05)</td></tr>
+          <tr><th>legacy <code>monitor</code><small>earlier rule</small></th><td><span class="tier legacy-calm page">Keep an eye out</span></td><td>Today's words, unchanged.</td><td class="speak">"Nyx's read: keep an eye out."</td><td>read as keep an eye out</td><td>grey</td><td>No</td></tr>
           <tr><th>any value this build doesn't know</th><td><span class="tier legacy page">Worth a call</span></td><td>CUL-1277's fallback: an unknown value is an escalation, never blank and never calm.</td><td class="speak">"Nyx's read: worth a call."</td><td>read as worth a call</td><td>rose, filled</td><td>Yes</td></tr>
         </tbody>
       </table>
@@ -385,10 +386,11 @@
 
     <ol class="spec">
       <li><b>Every action line names the service and the clock</b> (GAP-13). "Now" appears on every call-now surface, the Home row and its strip included. A call today after hours resolves to "first thing tomorrow", with the pet's own call-now signs as the exception.</li>
-      <li><b>A call carries what to tell the vet</b> (S9's call script): the time, what was seen, and any course on board, from structured fields only. Model words appear only where Pattern 10 already lets them.</li>
+      <li><b>A call carries what to tell the vet</b> (S9's call script): the time, what was seen, and any course on board, from enum fields only. Never the model's note, description or read text (Pattern 10; the foreign-material note is filled on "unsure" too).</li>
       <li><b>No tier has a wellness word</b> (clinical-guardrails Pattern 1). The lowest one is "Keep an eye out", and it always carries the list of what would change it. It never comments on the absence of concern.</li>
       <li><b>The vet report renders no tier</b> (GAP-27). It keeps its present-only blood and foreign-material line. The acceptance line on CUL-1133 that says "the report renders tiers" is corrected to this.</li>
-      <li><b>The quiet list gains <code>logged</code> in the tier column only</b>. <code>QUIET_VERDICTS</code> sorts the legacy column; the tier column gets its own one-list sort with <code>call_now &gt; call_today &gt; pattern &gt; logged &gt; not_enough_to_say</code>. Every legacy <code>worth_a_call</code> ranks at <code>call_today</code> for the never-lower rule, so an escalation replacing an escalation never steps down (the PR-04b note on CUL-1133).</li>
+      <li><b>Every writer sets both columns, and readers take the louder.</b> The rescue, the cap branch and the partial-read collapse write the tier too; a reader shows the max of the tier and the legacy column, so a missed write can never render calmer. "Earlier rule" comes from the rule-version stamp, never from an empty tier.</li>
+      <li><b>Never-lower binds the calls only</b>: <code>call_now &gt; call_today &gt; {logged, not_enough_to_say}</code>, a legacy <code>worth_a_call</code> ranking as call today. "Keep an eye out" can still fall to "Not enough to say yet" when a photo turns out unreadable (B-203, CUL-812), and an escalation replacing an escalation never steps down (the PR-04b note on CUL-1133). A vomit with no photo read is never "Keep an eye out", so an installed build never shows a calm read over nothing.</li>
     </ol>
   </section>
 
@@ -414,7 +416,7 @@
             <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
           </div>
         </div>
-        <div class="frame-cap"><b>call_now, from a photo finding <span class="pill">current</span></b><span>Row T12. The "what to tell them" line comes from structured fields and the pet's courses, never from model prose. "Tonight" follows the clock; at 2 PM the line says "today".</span></div>
+        <div class="frame-cap"><b>call_now, from a photo finding <span class="pill">current</span></b><span>Row T12. The "what to tell them" line comes from enum fields and the pet's courses, never from model prose or the model's note. "Tonight" follows the clock; at 2 PM the line says "today".</span></div>
       </div>
 
       <div class="frame">
@@ -444,8 +446,8 @@
             <div class="rc-action">Home is tracking Nyx's vomiting, and this one is part of it.</div>
             <span class="rc-door">See what Home is tracking ›</span>
             <div class="watch">
-              <p><b>Call your vet now</b> if she vomits twice more in the next 4 hours, or is low on energy.</p>
-              <p><b>Call your vet today</b> if she vomits again in the next 4 hours, twice more by 7 PM tomorrow, or refuses her next meal.</p>
+              <p><b>Call your vet now</b> if you see her vomit twice more in the next 4 hours, or she's low on energy before 7 PM tomorrow.</p>
+              <p><b>Call your vet today</b> if she vomits again in the next 4 hours, twice more by 7 PM tomorrow, or doesn't finish a meal by then.</p>
             </div>
             <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
           </div>
@@ -462,13 +464,13 @@
             <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier eye">Keep an eye out</span></div>
             <div class="rc-why">One photo can't tell you how Nyx is doing. Here's what would change this read:</div>
             <div class="watch">
-              <p><b>Call your vet now</b> if she vomits twice more in the next 4 hours, is low on energy, or you see blood.</p>
-              <p><b>Call your vet today</b> if she vomits again in the next 4 hours, twice more by 2 AM tomorrow, or refuses her next meal.</p>
+              <p><b>Call your vet now</b> if you see her vomit twice more in the next 4 hours, she's low on energy before 2 AM tomorrow, or you see blood.</p>
+              <p><b>Call your vet today</b> if she vomits again in the next 4 hours, twice more by 2 AM tomorrow, on each of the next two days, or doesn't finish a meal by 2 AM tomorrow.</p>
             </div>
             <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
           </div>
         </div>
-        <div class="frame-cap"><b>logged, a cat <span class="pill">current</span></b><span>Each clause is a row of §10 (T2, T3, T13; T5a, T4, T10), so the list and the rule cannot drift: a test runs the real rule for every clause and checks the tier its sentence names. Every sign is one the engines hear (PMD-10). The meal clause shows only for a pet whose meals are rated.</span></div>
+        <div class="frame-cap"><b>logged, a cat <span class="pill">current</span></b><span>Each clause is a row of §10 (T2, T3, T12/T13; T5a, T4, T8, T10c), so the list and the rule cannot drift: a test runs the real rule for every clause and checks the tier its sentence names. "You see her vomit" because the call-now count hears witnessed logs; blood is heard only through a photo, so its test uses one. The meal clause shows only for a pet whose meals are rated.</span></div>
       </div>
 
       <div class="frame">
@@ -481,7 +483,7 @@
             <div class="rc-why">One photo can't tell you how Mochi is doing. Here's what would change this read:</div>
             <div class="watch">
               <p class="static"><b>Go to your vet or an emergency clinic now</b> if he retches with nothing coming up, or his belly looks swollen or tight. That can be bloat.</p>
-              <p><b>Call your vet now</b> if he vomits twice more in the next 4 hours, is low on energy, or you see blood.</p>
+              <p><b>Call your vet now</b> if you see him vomit twice more in the next 4 hours, he's low on energy before 9 PM tomorrow, or you see blood.</p>
               <p><b>Call your vet today</b> if he vomits again by 9 PM tomorrow.</p>
             </div>
             <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
@@ -508,15 +510,15 @@
           <tr><th>Home safety band<small>Signal row, <code>incident_red_flag</code></small></th><td><b>Row:</b> "Call your vet now" as the ask; ranks first</td><td><b>Row:</b> "Call your vet today"</td><td>No row (Home already holds the finding)</td><td>No row</td><td>No row</td><td>Today's row, "Worth a call to your vet", until its 14 days end</td></tr>
           <tr><th>Cross-pet banner</th><td>"Nyx: a vomit read says call your vet now ›"</td><td>"Nyx: a vomit read says call your vet today ›"</td><td>None</td><td>None</td><td>None</td><td>Today's banner</td></tr>
           <tr><th>Signal screen, expanded evidence</th><td colspan="2">The row's sentence, the "automated read of one photo, not a diagnosis" line, and the tier words from the map</td><td>n/a</td><td>n/a</td><td>n/a</td><td>Today's words</td></tr>
-          <tr><th>Episode gallery tiles</th><td>Chip words, rose fill</td><td>Chip words, rose outline</td><td>Chip words, dashed</td><td>"Keep an eye out", grey</td><td>"Not read", grey</td><td>"Worth a call" / "Keep an eye out"</td></tr>
-          <tr><th>Home spine node, today's card</th><td>Rose ink: "Vomit · 1:30 AM · call now"</td><td>Rose ink: "· call today"</td><td>Ink: "· part of a pattern"</td><td>Ink-2: "· keep an eye out"</td><td>No suffix</td><td>Today's words</td></tr>
-          <tr><th>History row</th><td>Chip at the right, rose</td><td>Chip, outline</td><td>Chip, dashed</td><td>Chip, grey</td><td>"Not read"</td><td>Today's chip</td></tr>
+          <tr><th>Episode gallery tiles</th><td>Chip words, rose fill</td><td>Chip words, rose outline</td><td>Chip words, dashed (only reads in the finding's evidence)</td><td>"Keep an eye out", grey</td><td>"Not read", grey</td><td>"Worth a call" / "Keep an eye out"</td></tr>
+          <tr><th>Home spine node, today's card</th><td>Rose ink: "Vomit · 1:30 AM · call now"</td><td>Rose ink: "· call today"</td><td>As logged: "· keep an eye out"</td><td>Ink-2: "· keep an eye out"</td><td>No suffix</td><td>Today's words</td></tr>
+          <tr><th>History row</th><td>Chip at the right, rose</td><td>Chip, outline</td><td>As logged</td><td>Chip, grey</td><td>"Not read"</td><td>Today's chip</td></tr>
           <tr><th>Month calendar photo layer</th><td>Day painted rose</td><td>Day painted rose</td><td>Not painted</td><td>Not painted</td><td>Not painted</td><td>Rose, counted in the earlier-rule line only (§05)</td></tr>
-          <tr><th>Chart and month text<small><code>chartCopy</code>, the month's label</small></th><td>"photographed, read as call now"</td><td>"… read as call today"</td><td>"… read as part of a pattern"</td><td>"… read as keep an eye out"</td><td>"photographed, not read"</td><td>"… read as worth a call"</td></tr>
+          <tr><th>Chart and month text<small><code>chartCopy</code>, the month's label</small></th><td>"photographed, read as call now"</td><td>"… read as call today"</td><td>As logged</td><td>"… read as keep an eye out"</td><td>"photographed, not read"</td><td>"… read as worth a call"</td></tr>
           <tr><th>Get ready · Worth raising</th><td colspan="2">In the app: the Home row's sentence, as today. In Copy as text (leaves the phone): dated facts only, never a tier word (GAP-27)</td><td>n/a</td><td>n/a</td><td>n/a</td><td>Today's behaviour</td></tr>
           <tr><th>Ask</th><td colspan="5">Quotes the tier's words from the map. The model receives a one-line definition of each tier and never the raw stored value (today it gets <code>recommendation</code> undefined, <code>ask/index.ts</code> ~474)</td><td>"worth a call", defined as the earlier single tier</td></tr>
           <tr><th>Vet report</th><td colspan="6"><b>Renders no tier.</b> Keeps its present-only blood and foreign-material line with thumbnails. No read text, no tier, no care state (GAP-27)</td></tr>
-          <tr><th>Stool record</th><td colspan="5">The same map. EN-7 (PR-26) stops a recent vomit from calling a normal stool; a loose stool with vomiting that meets T4 stays call today (T24)</td><td>Today's words</td></tr>
+          <tr><th>Stool record</th><td colspan="5">The same map. EN-7 (PR-26) stops a recent vomit from calling a normal stool; a loose stool with any vomit in 24 hours stays call today (S1)</td><td>Today's words</td></tr>
           <tr><th>Completion card</th><td colspan="2">Depends on PMD-14 (§06)</td><td>Nothing added</td><td>Nothing added</td><td>Nothing added</td><td>Unchanged</td></tr>
           <tr><th>Notifications</th><td colspan="6">None, as today. A push about a read is PR-36's question under the notification foundation's consent rules, not this one's</td></tr>
         </tbody>
@@ -586,7 +588,7 @@
       <table class="grid">
         <thead><tr><th>Moment</th><th>Spoken</th><th>When and how</th></tr></thead>
         <tbody>
-          <tr><th>A read lands on the open record</th><td class="speak">"Nyx's read: call your vet now." / "… call your vet today." / "… part of a pattern Home is tracking." / "… keep an eye out. What would change that is below." / "… not enough to say yet."</td><td>Once, when the stored status goes from pending to finished: the fact, never the arrival motion. Action and clock first, pet named.</td></tr>
+          <tr><th>A read lands on the open record</th><td class="speak">"Nyx's read: call your vet now." / "… call your vet today." / "… part of a pattern Home is tracking." / "… keep an eye out. What would change that is below." / "… not enough to say yet."</td><td>Once, when the stored status goes from pending to finished, and only if the stored tier is above what the phone already showed offline: the fact, never the arrival motion. Action and clock first, pet named.</td></tr>
           <tr><th>A read already on screen is raised</th><td class="speak">"Nyx's read changed: call your vet now. Lethargy was logged at 9:15 AM."</td><td>Once, on the tier change. Never for a same-tier recompute.</td></tr>
           <tr><th>A read is raised while the owner is elsewhere</th><td class="speak">"Lethargy logged for Nyx. Her 7:02 AM vomit read is now: call your vet now."</td><td>On the completion of the log that raised it (PMD-14 A). Said once, then it lives on Home's band.</td></tr>
           <tr><th>A photoless vomit whose check returns a call</th><td class="speak">"Vomit logged for Nyx. From what's logged: call your vet today."</td><td>PMD-14 A: on the completion card; call now also routes to the record, which announces as above.</td></tr>
@@ -625,8 +627,8 @@
             <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier eye">Keep an eye out</span></div>
             <div class="rc-why">One photo can't tell you how Nyx is doing. Here's what would change this read:</div>
             <div class="watch">
-              <p><b>Call your vet now</b> if she vomits twice more in the next 4 hours, is low on energy, or you see blood.</p>
-              <p><b>Call your vet today</b> if she vomits again in the next 4 hours, twice more by 8 PM tomorrow, or refuses her next meal.</p>
+              <p><b>Call your vet now</b> if you see her vomit twice more in the next 4 hours, she's low on energy before 8 PM tomorrow, or you see blood.</p>
+              <p><b>Call your vet today</b> if she vomits again in the next 4 hours, twice more by 8 PM tomorrow, or doesn't finish a meal by then.</p>
             </div>
             <div class="seam">New since Oct 20: reads say how soon to call. Nyx's earlier reads keep the words they had.</div>
             <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
@@ -773,7 +775,7 @@
     <div class="sec-head"><span class="sec-num">07</span><h2>EN-5's question</h2></div>
     <div class="col">
       <p>The read cannot see whether a cat ate, and today it guesses from missing ratings: it told Nyx's owner three times that she "hasn't eaten a full meal recently" when meals were logged but not rated. EN-5 asks instead. The question lives on the record under the read, with no time limit, until it is answered. No answer is stored as unknown, never as "normally". The deadline is a named hour, never "since yesterday" (at 7 AM that spans 31 hours).</p>
-      <p>An answer only adds evidence. "No" can raise the read (T10); "Yes, ate well" never lowers a tier the owner was shown.</p>
+      <p>An answer only adds evidence. "No" can raise the read (T10, T10c); "Yes, ate well" counts like a rated meal for later reads and never lowers a call the owner was shown.</p>
     </div>
     <div class="frames">
       <div class="frame">
@@ -797,7 +799,7 @@
             <div class="qblock"><div class="q">Did you see Pixel eat since 6 PM yesterday?</div><div class="qs">Her bowl is always out and shared, so "Didn't see" is a fine answer.</div><div class="answers"><span>Yes</span><span>No, she wouldn't</span><span class="pri">Didn't see</span></div></div>
           </div>
         </div>
-        <div class="frame-cap"><b>A free-fed bowl answers "not observable" <span class="pill">current</span> <span class="pill needs">wording to CUL-583</span></b><span>The question asks what the owner could have seen, not what the bowl did. "Didn't see" is first among equals, not a failure. "No, she wouldn't" is an observed refusal and counts (T10).</span></div>
+        <div class="frame-cap"><b>A free-fed bowl answers "not observable" <span class="pill">current</span> <span class="pill needs">wording to CUL-583</span></b><span>The question asks what the owner could have seen, not what the bowl did. "Didn't see" is first among equals, not a failure. "No, she wouldn't" is an observed refusal and counts (T10, T10c).</span></div>
       </div>
 
       <div class="frame">
@@ -938,11 +940,11 @@
       <li><b>Its authoritative home is the server.</b> A floor-only mode of the incident pipeline in <code>_shared/incident-analysis.ts</code> (a request mode on <code>analyze-vomit</code> or a small sibling function, decided in PR-28's plan). It reads the settled record with the caller's JWT, computes the context flags and the tier, and writes the read fields only, through <code>resolveReanalysisWrite</code>. A Deno test drives it with a fake client whose Storage download and model call both throw, and it must complete.</li>
       <li><b>Triggers.</b> The insert of a vomit, a lethargy log or a meal; a later rating on a meal; the edit or soft delete of any of those. A delete re-runs the floor and can still never lower a shown tier.</li>
       <li><b>The durable marker.</b> A local queue row written in the same local transaction as the event. It is a schema constant and on the wipe list (<code>LOCAL_WIPE_TABLES</code>), survives the app being killed, and drains only after the event's own push has landed, marking the version it sent (C-23, C-24).</li>
-      <li><b>Offline.</b> The phone runs the same rule over local SQLite and shows the tier on the completion card and the record, with one line: "Worked out on this phone. It's saved when Nyx's record syncs." The preview never reaches History, the month or Home's band, which read the stored tier. The tier the phone showed rides the marker, and the stored tier is never below it, since an owner who was told "call now" was told it.</li>
+      <li><b>Offline.</b> The phone runs the same rule over local SQLite and shows the tier on the completion card and the record, with one line: "Worked out on this phone. It's saved when Nyx's record syncs." The preview never reaches History, the month or Home's band, which read the stored tier. The tier the phone showed rides the marker as a claim, with its rule version and the rows it read. The server adopts it only if its own rule gives the same tier from those rows; otherwise it stores its own and the record says "Shown on this phone as call now at 3:14 AM" beside it. A phone can never write a tier the rule does not give.</li>
       <li><b>The 24-hour re-run.</b> A lethargy log or a refusal re-runs the floor over every vomit of the same pet in the prior 24 hours. It reads each stored row's structured fields for photo findings (Pattern 9), adds the new context, and writes the tier. It never downloads a photo, never calls the model, never regenerates model words and never spends a cap unit. A raised read's words are the context template for its new reason.</li>
-      <li><b>One arrival per bout</b> (GAP-33). When a re-run raises several reads of one bout at once, only the most recent carries the arrival, the announcement and Home's row; the others take the tier silently and render as part of it.</li>
-      <li><b>Never lower a shown tier.</b> A recompute may add evidence; only the owner's own act lowers a verdict, recorded as such. Proven by mutation: delete the guard and a test with "call today at 8:00, a meal rated All at 12:00" goes red.</li>
-      <li><b>Counting.</b> The rungs count witnessed onsets in a span that contains this vomit and two others, merged within 30 minutes of the first without chaining. Found piles count toward the 24-hour rule and are dated by when they were found, never as onsets. It is a second, differently named predicate beside <code>lib/symptomEpisodes.ts</code>, registered under C-34, and its copy says "vomits logged", never "episodes" (GAP-10).</li>
+      <li><b>One arrival per bout</b> (GAP-33). When a re-run raises several reads of one bout at once, only the most recent carries the arrival, the announcement and Home's row; the others take the tier silently and render as part of it. A stored tier is announced only when it is above what the phone already showed, so an offline preview never arrives twice.</li>
+      <li><b>Never lower a shown call.</b> A recompute may add evidence; only the owner's own act lowers a call, recorded as such. Deleting the log that raised it (lethargy on the wrong pet) is that act, and the record says so. Proven by mutation: delete the guard and a test with "call today at 8:00, a meal rated All at 12:00" goes red.</li>
+      <li><b>Counting.</b> The call-now rungs count witnessed, estimated and unclassified onsets in a span that contains this vomit and two others, merged within 30 minutes of the first without chaining. The merge makes two logs 10 minutes apart one onset, which is quieter than today, so until T5c passes the two-in-4-hours rung counts raw logs. Found piles count toward the 24-hour rule and are dated by when they were found, never as onsets. It is a second, differently named predicate beside <code>lib/symptomEpisodes.ts</code>, registered under C-34, and its copy says "vomits logged", never "episodes" (GAP-10).</li>
       <li><b>Behind the flag.</b> Flag-off never runs the floor-only path, so today is byte-identical; a flag rollback never lowers a tier written under the flag (R-1).</li>
       <li><b>Known limits, stated where the tier shows.</b> A found pile in a two-cat home goes to the pet on screen (CUL-807, MFU-5); the tier names the pet it was logged for. Species "other" runs the count rungs only (T26). An unknown birthday prints the young-animal line (T7).</li>
     </ol>
@@ -967,15 +969,17 @@
         <tbody>
           <tr><th>T1</th><td>Three vomits logged, witnessed</td><td>All</td><td>30 min</td><td><b>Call now</b></td><td>Worth a call</td><td><span class="dir louder">louder</span></td><td>The 30-minute merge gap; whether three re-logs of one bout can reach this (they cannot once merged)</td></tr>
           <tr><th>T2</th><td>Three witnessed vomits in a span containing this one</td><td>All</td><td>~4 h</td><td><b>Call now</b></td><td>Worth a call (2 in 4 h)</td><td><span class="dir louder">louder</span></td><td>The span length</td></tr>
-          <tr class="contested"><th>T3</th><td>Vomiting with lethargy logged</td><td>All</td><td>24 h before the vomit to a fixed bound after it</td><td><b>Call now</b></td><td>Worth a call; the Noticed door says call today</td><td><span class="dir louder">louder</span></td><td>Contested (BRK-3). The door moves up to match until ruled. The bound after the vomit (TD-2)</td></tr>
+          <tr class="contested"><th>T3</th><td>Vomiting with lethargy logged</td><td>All</td><td>24 h before the vomit to a fixed bound after it</td><td><b>Call now</b></td><td>Worth a call; the Noticed door says call today</td><td><span class="dir louder">louder</span></td><td>Contested (BRK-3). The door moves up to match until ruled. A bound after the vomit shorter than today's reach is <span class="dir quieter">quieter</span> there (TD-2)</td></tr>
           <tr class="contested"><th>T4</th><td>Three vomits in 24 h (found piles count)</td><td>Adult cat, dog</td><td>24 h</td><td><b>Call today</b></td><td>Worth a call</td><td><span class="dir same">same</span></td><td>Cats: call today or call now</td></tr>
-          <tr class="contested"><th>T5a</th><td>Two vomits within 4 h</td><td>Adult cat</td><td>4 h</td><td><b>Call today</b>, provisionally (today's row stands)</td><td>Worth a call</td><td><span class="dir same">same</span></td><td>EN-4's draft makes this keep an eye out, which is <span class="dir quieter">quieter</span>: it waits on the harness, you and the vet</td></tr>
+          <tr class="contested"><th>T5a</th><td>Two vomits logged within 4 h, any confidence, merged or not</td><td>Adult cat, species other</td><td>4 h</td><td><b>Call today</b>, provisionally (today's row stands)</td><td>Worth a call</td><td><span class="dir same">same</span></td><td>EN-4's draft makes this keep an eye out, which is <span class="dir quieter">quieter</span>: it waits on the harness, you and the vet</td></tr>
+          <tr class="contested"><th>T5c</th><td>EN-4's counting: witnessed logs within 30 min merge; found piles are never onsets</td><td>All</td><td>—</td><td>Two logs 10 min apart become one; a witnessed vomit and a found pile in 4 h no longer meet T5a</td><td>Worth a call</td><td><span class="dir quieter">quieter</span></td><td>Waits on the harness, you and the vet. Estimated and unclassified logs count as onsets</td></tr>
           <tr><th>T5b</th><td>Two vomits in 24 h, more than 4 h apart</td><td>Adult cat</td><td>24 h</td><td><b>Keep an eye out</b>, counted toward the pattern</td><td>Nothing</td><td><span class="dir same">same</span></td><td>Confirm</td></tr>
           <tr class="contested"><th>T6</th><td>Two vomits in 24 h</td><td>Dog</td><td>24 h</td><td><b>Call today</b> (the Noticed door's row)</td><td>Worth a call if within 4 h</td><td><span class="dir louder">louder</span></td><td>EN-4's draft said keep an eye out; the louder row stands</td></tr>
           <tr><th>T7</th><td>Two vomits in 24 h, under 6 months or no birthday on file</td><td>All</td><td>24 h</td><td><b>Call today</b></td><td>Worth a call if within 4 h</td><td><span class="dir louder">louder</span></td><td>The age cut; unknown age prints the line</td></tr>
           <tr><th>T8</th><td>Vomiting on three days in a row</td><td>All</td><td>3 days</td><td><b>Call today</b> (the persistence rung)</td><td>Nothing unless 3 in 24 h</td><td><span class="dir louder">louder</span></td><td>Two days or three (GAP-5)</td></tr>
           <tr><th>T9</th><td>Another vomit while a call today is open</td><td>All</td><td>While open</td><td><b>Call now</b> (the accumulation rung)</td><td>Another worth a call</td><td><span class="dir louder">louder</span></td><td>How long a call today stays open (GAP-33)</td></tr>
-          <tr><th>T10</th><td>Vomit with an observed refusal: two of the last three qualifying meals refused or picked (treats and free-fed bowls excluded), or EN-5's "No"</td><td>Cat</td><td>3 days</td><td><b>Call today</b></td><td>Worth a call on a weaker test</td><td><span class="dir same">same</span></td><td>Rides the one shipped intake predicate (GAP-28); unrated meals are unknown, never refusal</td></tr>
+          <tr class="contested"><th>T10</th><td>Vomit with an observed refusal: two of the last three qualifying meals refused or picked (treats and free-fed bowls excluded), or EN-5's "No"</td><td>Cat</td><td>3 days</td><td><b>Call today</b></td><td>Worth a call on T10c's test</td><td><span class="dir quieter">quieter</span></td><td>The one shipped intake predicate (GAP-28). Replacing T10c fires less (a tracking cat with nothing rated in 24 h), so it waits</td></tr>
+          <tr><th>T10c</th><td>Today's arm: a cat whose meals are rated, no meal rated most or all in 24 h, and a vomit</td><td>Cat</td><td>24 h</td><td><b>Call today</b>, in union with T10 until T10 passes</td><td>Worth a call</td><td><span class="dir same">same</span></td><td>Keeps the tracking guard (Pattern 6)</td></tr>
           <tr class="contested"><th>T10b</th><td>The same, for a dog</td><td>Dog</td><td>24 h</td><td><b>Call today</b> if no food for 24 h (the Noticed door's row)</td><td>Nothing</td><td><span class="dir louder">louder</span></td><td>Whether the refusal rung covers dogs</td></tr>
           <tr class="held"><th>T11</th><td>Retching with nothing produced, or a swollen belly</td><td>Dog</td><td>—</td><td><b>Go now</b> (emergency)</td><td>Nothing</td><td><span class="dir louder">louder</span></td><td>Held: no way to log it yet (GAP-14). Meanwhile a static line on every dog read. Size and the kennel-cough exclusion</td></tr>
           <tr><th>T12</th><td>Photo: dark, gritty (digested) blood</td><td>All</td><td>—</td><td><b>Call now</b></td><td>Worth a call</td><td><span class="dir louder">louder</span></td><td>Confirm</td></tr>
@@ -990,9 +994,13 @@
           <tr><th>T21</th><td>A course started in the last 14 days and vomiting</td><td>All</td><td>14 days</td><td><b>Call today</b></td><td>Nothing</td><td><span class="dir louder">louder</span></td><td>The window</td></tr>
           <tr class="contested"><th>T22</th><td>A known condition (kidney disease, diabetes, IBD) and a vomit</td><td>All</td><td>—</td><td>One rung up from the count's tier, or none</td><td>Nothing</td><td><span class="dir louder">louder</span></td><td>A chronic vomiter would call every time: which conditions, if any</td></tr>
           <tr class="contested"><th>T23</th><td>A normal stool after a recent vomit</td><td>All</td><td>24 h</td><td>No call from the stool (EN-7)</td><td>Worth a call, saying "loose stool"</td><td><span class="dir quieter">quieter</span></td><td>Removes a false sentence but fires less, so it waits on the harness</td></tr>
-          <tr><th>T24</th><td>A loose stool while the vomiting meets T4</td><td>All</td><td>24 h</td><td><b>Call today</b></td><td>Worth a call</td><td><span class="dir same">same</span></td><td>Confirm</td></tr>
+          <tr><th>S1</th><td>A loose stool and any vomit in 24 h</td><td>All</td><td>24 h</td><td><b>Call today</b></td><td>Worth a call</td><td><span class="dir same">same</span></td><td>Confirm</td></tr>
+          <tr><th>S2</th><td>Two loose stools in 24 h</td><td>All</td><td>24 h</td><td><b>Call today</b></td><td>Worth a call</td><td><span class="dir same">same</span></td><td>Confirm</td></tr>
+          <tr><th>S3</th><td>A stool and lethargy</td><td>All</td><td>24 h</td><td><b>Call today</b></td><td>Worth a call</td><td><span class="dir same">same</span></td><td>Call now, to match T3?</td></tr>
+          <tr><th>S4</th><td>Stool photo: blood present</td><td>All</td><td>—</td><td><b>Call today</b></td><td>Worth a call</td><td><span class="dir same">same</span></td><td>Fresh against dark</td></tr>
+          <tr><th>S5</th><td>Stool photo: foreign material present</td><td>All</td><td>—</td><td><b>Call today</b></td><td>Worth a call</td><td><span class="dir same">same</span></td><td>Confirm</td></tr>
           <tr><th>T25</th><td>A cough logged beside vomiting</td><td>All</td><td>—</td><td>No discount; the shipped "either count may hold the other's events" disclosure</td><td>The disclosure</td><td><span class="dir same">same</span></td><td>The breathing arm in the call copy (GAP-29)</td></tr>
-          <tr><th>T26</th><td>Species "other"</td><td>Other</td><td>—</td><td>Count rungs only (T1, T2, T4, T8, T9)</td><td>Same as a cat without the cat rules</td><td><span class="dir same">same</span></td><td>What the floor does for species "other" (R-4)</td></tr>
+          <tr><th>T26</th><td>Species "other"</td><td>Other</td><td>—</td><td>The count rungs (T1, T2, T4, T5a, T8, T9), T3, every all-species photo row (T12–T19) and S1–S5</td><td>Today's rules without the cat intake arm</td><td><span class="dir same">same</span></td><td>What the floor does for species "other" (R-4)</td></tr>
           <tr><th>T27</th><td>Four or more vomits in 7 days with no earlier week</td><td>All</td><td>7 days</td><td>The burden card on Home (CUL-1311), not a read tier</td><td>Nothing</td><td><span class="dir louder">louder</span></td><td>The count; must be live before PR-28</td></tr>
         </tbody>
       </table>
@@ -1016,7 +1024,7 @@
         <h4>K2 · What puts a read in "part of a pattern" <span class="pill open">decide before PR-25</span></h4>
         <p><b>Deciding:</b> whether "part of a pattern" is a stored value or drawn at render. This is a better-than-the-rule brief: D1 (9/26) named it as one of four stored tiers, to stop a pattern being called once per vomit.</p>
         <ul>
-          <li><b>Drawn at render (recommended):</b> store three tiers; a read below a call shows "Part of a pattern" while Home holds a live finding on the same sign, and "Keep an eye out" otherwise. It never goes stale against Home, and EN-3 no longer waits on EN-9.</li>
+          <li><b>Drawn at render (recommended):</b> store three tiers; a "Keep an eye out" read that is in a live Home finding's evidence shows "Part of a pattern" on the record and the gallery, and nowhere else (never History, the month or charts, never on a call or an unread photo). It never goes stale against Home, and EN-3 no longer waits on EN-9.</li>
           <li><b>Stored:</b> the floor writes <code>pattern</code> when a finding is live at read time. A September read keeps pointing at a concern Home stood down in October (GAP-11's counterexample), and EN-3 must wait for PR-23.</li>
         </ul>
         <p><b>Consequence:</b> the protection D1 wanted (no call per vomit for a known pattern) holds either way, because the call tiers come from §10's rows, not from this chip. Recommended keeps the migration at four values.</p>
@@ -1035,7 +1043,7 @@
 
     <h3>Not yours, and where they go</h3>
     <ul class="next-list">
-      <li><b>The contested rows of §10</b> (T3, T4, T5a, T6, T10b, T13, T14, T17, T18, T22, T23) go to Dr. Chen's ruling sheet (CUL-583) and the paid vet review (CUL-1312) as one packet. The copy in §02 is written against the proposed column and rewritten if a row moves.</li>
+      <li><b>The contested rows of §10</b> (T3, T4, T5a, T5c, T6, T10, T10b, T13, T14, T17, T18, T22, T23) go to Dr. Chen's ruling sheet (CUL-583) and the paid vet review (CUL-1312) as one packet. The copy in §02 is written against the proposed column and rewritten if a row moves.</li>
       <li><b>The free-fed check's wording</b> (§07) goes to CUL-583.</li>
       <li><b>The Tier-2 edits</b> this round implies are listed in the spec's §12: incident screen D2 and G3 (only under K1 A), the vet report spec's line that the report renders no tier, and the clinical-guardrails skill's Patterns 1 and 2 (rewritten in PR-26, not here).</li>
     </ul>
