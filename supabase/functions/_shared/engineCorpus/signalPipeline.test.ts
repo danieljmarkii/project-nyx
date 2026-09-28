@@ -25,7 +25,7 @@ import {
   type PriorSignal,
   type SignalPayload,
 } from '../../generate-signal/pipeline.ts'
-import { SIGNAL_ENGINE_KEYS, type EngineFlags } from '../engineFlags.ts'
+import { ENGINE_KEYS, SIGNAL_ENGINE_KEYS, type EngineFlags } from '../engineFlags.ts'
 import {
   EMPTY_CARE_RECORD,
   POPULATED_CARE_RECORD,
@@ -34,10 +34,14 @@ import {
 } from './signalPipeline.corpus.ts'
 
 const OFF: EngineFlags = { on: [], readOk: true }
+// Derived from ENGINE_KEYS, never listed by hand (adversarial review, PR-11b): a list naming
+// only today's key could not see a step gated on the next one, and that step would also slip
+// past the stand-down gate, which compares only registered Signal keys.
 const FLAG_STATES: Record<string, EngineFlags> = {
   'every key off': OFF,
   'the flag read failed': { on: [], readOk: false },
-  'engines_v3_en0 on': { on: ['engines_v3_en0'], readOk: true },
+  'every key on': { on: [...ENGINE_KEYS].sort(), readOk: true },
+  ...Object.fromEntries(ENGINE_KEYS.map((k) => [`${k} alone`, { on: [k], readOk: true }])),
 }
 
 const run = (c: SignalPipelineCase, engineFlags: EngineFlags = OFF, careRecord: CareRecord = EMPTY_CARE_RECORD) =>
@@ -75,9 +79,15 @@ Deno.test('(b) the floor: enough cases, each safety lane fires, a building case,
     assertStrictEquals(fired.has(t), true, `no case lands ${t}`)
   }
   assertStrictEquals(SIGNAL_PIPELINE_CORPUS.some((c) => payload(c).isBuilding), true, 'no building case')
-  // A case whose prior card would mint, but whose prior is absent: the withheld half.
+  // The withheld half, by behaviour: every minting case, with its prior gone (a failed or
+  // absent read), mints nothing, and the corpus holds such a case itself.
+  const minting = SIGNAL_PIPELINE_CORPUS.filter((c) => c.expectedTypes.includes('stood_down'))
+  for (const c of minting) {
+    assertStrictEquals(types(payload({ ...c, prior: null })).includes('stood_down'), false, `${c.name}: minted with no prior`)
+  }
   assertStrictEquals(
-    SIGNAL_PIPELINE_CORPUS.some((c) => c.prior === null && c.name.includes('stopped course')),
+    // a prior-less case whose rows WOULD mint under a minting case's prior
+    SIGNAL_PIPELINE_CORPUS.some((c) => c.prior === null && types(payload({ ...c, prior: minting[0].prior })).includes('stood_down')),
     true,
     'no case withholds a stand-down on a failed prior read',
   )

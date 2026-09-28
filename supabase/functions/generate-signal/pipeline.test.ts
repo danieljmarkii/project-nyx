@@ -44,6 +44,26 @@ Deno.test('pipeline.ts reads no clock, env, network or database, and does not lo
   assertEquals(hits, [])
 })
 
+// A key the pipeline gates on must be one the stand-down gate compares (SIGNAL_ENGINE_KEYS),
+// or a flip of it mints "no vomiting logged" when the ENGINE changed, not the pet
+// (adversarial review, PR-11b). So the pipeline reads flags only through isEngineKeyOn with
+// a literal key, and every such key is registered. Scoped to pipeline.ts: detection and the
+// other modules take no flags today, and a new flag parameter there must arrive through here.
+Deno.test('every Engines key the pipeline gates on is a registered Signal key', async () => {
+  const { SIGNAL_ENGINE_KEYS } = await import('../_shared/engineFlags.ts')
+  const src = blankComments(await Deno.readTextFile(PIPELINE))
+  const gated = [...src.matchAll(/\bisEngineKeyOn\s*\(\s*[^,]+,\s*(['"])([^'"]+)\1\s*\)/g)].map((m) => m[2])
+  const unregistered = gated.filter((k) => !(SIGNAL_ENGINE_KEYS as readonly string[]).includes(k))
+  assertEquals(unregistered, [], 'gate on a key only after adding it to SIGNAL_ENGINE_KEYS')
+  // Any other read of the flags (engineFlags.on, a non-literal key) escapes the check above.
+  const lines = src.split('\n')
+  const stray = lines
+    .map((line, i) => [line, i + 1] as const)
+    .filter(([line]) => /\.on\b/.test(line) || /\bisEngineKeyOn\s*\(\s*[^,]+,\s*[^'"\s]/.test(line))
+    .map(([, n]) => `line ${n}`)
+  assertEquals(stray, [], 'read the Engines flags only through isEngineKeyOn with a literal key')
+})
+
 // Every static specifier in a file (`from '…'`, `import '…'`, `export … from '…'`).
 function specifiers(src: string): string[] {
   return [...src.matchAll(/(?:\bfrom|^\s*import)\s*['"]([^'"]+)['"]/gm)].map((m) => m[1])
