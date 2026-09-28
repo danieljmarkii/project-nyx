@@ -1,6 +1,6 @@
 # Nyx Care State and Outcome Loop — Requirements (EN-9 + EN-14)
 
-**Version:** 1.0 — **DRAFT for PM review** | **Date:** 2026-09-28 | **Issues:** CUL-1139 (EN-9, the care state), CUL-1144 (EN-14, the outcome loop); project *Engines v3: the accountable engine*, Wave 3, PR-20 | **Status:** every ruling the build rests on is in §0.1; three calls remain (§0.3): **PMD-4** (before PR-20 lands), **the re-raise tolerance** (before PR-23), and **approval of the AC 10 wording** (§12). Design authority: `docs/culprit-engines-v3-mockups.html` **round 3** (published at https://claude.ai/artifact/XrAawavFSUgbBKdWdxFsdY; the repo file wins on divergence). Everything an owner sees ships dark behind the Engines v3 flag (EN-F, CUL-1267).
+**Version:** 1.1 — **BUILD-READY** (PMD-4, the tolerance and AC 10 ruled 2026-09-28) | **Date:** 2026-09-28 | **Issues:** CUL-1139 (EN-9, the care state), CUL-1144 (EN-14, the outcome loop); project *Engines v3: the accountable engine*, Wave 3, PR-20 | **Status:** every ruling the build rests on is in §0.1 and §0.3. The one conflict left, TD-5, is decided at PR-36. Design authority: `docs/culprit-engines-v3-mockups.html` **round 3** (published at https://claude.ai/artifact/XrAawavFSUgbBKdWdxFsdY; the repo file wins on divergence). Everything an owner sees ships dark behind the Engines v3 flag (EN-F, CUL-1267).
 
 **Read with:** `docs/engines-v3-critique-2026-09.md` (R-2, BRK-4, GAP-15/16/17/19/23/27/29/32/33, MFU-3, PMD-4/5/6) · `docs/nyx-vet-visits-requirements.md` (AC 10, §5.6, "How did it go?") · `docs/nyx-signal-fold-requirements.md` (DF-5, DF-8, FS-3, FS-10, §3.3, §5.3, §7) · `docs/nyx-notification-foundation-requirements.md` (D2, D3, G1–G6) · `docs/nyx-diet-trial-requirements.md` · `supabase/migrations/075_engines_v3_stamps.sql` (the shown log).
 
@@ -12,7 +12,7 @@ Today the app asks for a vet visit about a recurring symptom every evening, fore
 
 The second half is the **outcome loop**. When the app says "call your vet" and the owner taps "I've called", the call becomes its own small record in the pet's Vet visits, with an optional note no AI reads. A couple of days later the app asks once, inside the app, "What did the vet say?" Those answers are how the app will eventually learn which warnings were worth making.
 
-**What the PM decides:** PMD-4 (does a vet-started trial count, recommended yes through one question to the owner), the re-raise tolerance (recommended at most 5% of stable pets re-asked within eight weeks), and the exact AC 10 wording in §12.
+**Ruled 2026-09-28:** a vet-started trial or course counts when the owner says so for that symptom; at most 5% of stable pets may be asked again within eight weeks; the AC 10 wording is approved.
 
 ---
 
@@ -42,20 +42,13 @@ The second half is the **outcome loop**. When the app says "call your vet" and t
 5. **Acknowledgements are listed in Vet visits** as "you noted" rows (mock 2c), not in History's day rows: an acknowledgement is not something that happened to the pet.
 6. **EN-3's tiers are not drawn here.** Round 2 promised them for round 3; the plan review moved them to PR-24's own page.
 
-### 0.3 Open (decision briefs)
+### 0.3 Ruled 2026-09-28 (PM: "PMD-4 A, tolerance A, AC 10 approve")
 
-**PMD-4 · Does a vet-directed trial or course acknowledge a concern?** (rule before PR-20 lands)
-- **Deciding:** whether an owner whose vet started a diet trial before the app was installed (Jordan's case) gets out of the raised state through the trial.
-- **Options:** **A via the owner's answer (recommended):** while a trial or course runs, the concern's finding screen asks once, per sign, "Did his vet start it for his vomiting?"; *Yes, for this* stores an acknowledgement scoped to that trial or course, ending when it ends. *Why:* it is E-2's rule applied to the wedge; nothing is matched on an indication, and the owner names the sign. · **A from the record:** `vet_visit_id`, `vet_name` or `target_duration_vet_directed` acknowledges the indication's signs with no question (faster; but `target_duration_vet_directed` means only "the owner ticked a box" per migration 068's own comment, and `gi` covers two signs the owner never named). · **B:** trials and courses never acknowledge; "My vet knows" only.
-- **Consequence:** A adds `scope_kind` / `scope_id` / `ends_on` to the acknowledgement row (PR-21) and one question to the finding screen (PR-35); B removes both and leaves the wedge's own owner in mock 1a for a whole trial unless they find "My vet knows".
+- **PMD-4 = A, through the owner's answer.** While a trial or course runs, the concern's finding screen asks once, per sign, whether the vet started it for that sign. *Yes, for this* stores an acknowledgement scoped to that trial or course. It ends by §3.2's rules: the initial target, the last dose + 14 days or the 56-day cap, and stand-down. It is never matched on an indication. Options not taken: A from the record (the vet-directed box means only "the owner ticked it"), and B (tap only).
+- **Re-raise tolerance = A.** False returns are capped at **5% of stable pets within eight weeks**. The sensitivity that buys is reported per base rate, and fast worsening is left to the burden card and the dense-day arm (§4.3–§4.4). PR-16 measures the frontier over α, r and the reference length on ≥1,000 synthetic pets per scenario and picks the most sensitive configuration under the cap. PR-23 does not go live until the harness shows it. Options not taken: a 10% cap, and a sensitivity floor first.
+- **AC 10 wording = approved as written** (§12). It is written into `docs/nyx-vet-visits-requirements.md` v1.3 in this PR. The guard change lands with PR-22, when the shell's first read is registered.
 
-**The re-raise tolerance** (the ruling sheet's "now" item; rule before PR-23)
-- **Deciding:** how often a stable pet's owner may be asked again for nothing.
-- **What changed (the adversarial pass, 2026-09-28):** the pair the first draft recommended (≤5% false, ≥80% of doublings in 4 weeks) looks **infeasible** at 2/week. No count test catches a doubling from that base reliably in four weeks; α 0.1 reached 58% at about 9% false. So the ruling is a point on a measured frontier, and fast worsening is covered by the burden card and the dense-day arm (§4.3–§4.4), not by this test.
-- **Options:** **A: cap false re-raises at 5% of stable pets within eight weeks and take the sensitivity that buys, reported per base rate (recommended).** *Why:* noise is what made the drafted trigger unusable (59–81% re-raised), and the fast-worsening cases have their own nets. · **B: cap at 10%**, which roughly doubles sensitivity at low base rates for twice the noise. · **C: set a sensitivity floor first** (e.g. ≥50% of doublings within 8 weeks) and accept whatever false rate that costs.
-- **Consequence:** PR-16 measures the frontier over α, r and the reference length on ≥1,000 pets per scenario and reports it. The PM picks the point before PR-23; PR-23 does not go live until the harness shows the chosen configuration meets it.
-
-**AC 10 wording** — §12. Deciding: the words, not the rule (ruled "amend"). Recommend approve as written. Consequence: PR-21 writes it with the guard change.
+What stays open: TD-5's call-now "Not yet" (a recorded conflict, decided at PR-36).
 
 ---
 
@@ -437,11 +430,11 @@ Verdict on the first draft: **FAIL, eleven counterexamples, all taken into this 
 
 ---
 
-## 12. Tier-2 edits for PM approval
+## 12. Tier-2 edits (approved 2026-09-28; (a) and (b) written into the vet visits spec v1.3)
 
 **(a) `docs/nyx-vet-visits-requirements.md` §7 AC 10 (v1.2 → v1.3).** Append to AC 10:
 
-> **Amended 2026-09-XX (CUL-1139; Engines v3 AC 10 ruling, 2026-09-26):** one reader crosses the line, and only with dates and owner answers. The Signal engine's shell (`supabase/functions/generate-signal/` outside `detection.ts` and `phrasing.ts`, which stay in the guard's must-stay-clean list) may read `vet_visits.visited_at`, `vet_appointments.scheduled_at` / `cancelled_at` / `deleted_at`, and the owner's acknowledgement rows, by explicit column list, to set a finding's care state and to state a visit date on EN-10's context line. No visit, appointment or answer enters a count, a floor, a window or a test statistic: every count the care state speaks is computed from events alone, from a date the owner's answer names. Notes, reasons, clinic and vet names never leave the vet tables for an engine. The guard's allow-set gains the shell with `kinds: ['table']` and a column-list assertion.
+> **Amended 2026-09-28 (CUL-1139; Engines v3 AC 10 ruling, 2026-09-26):** one reader crosses the line, and only with dates and owner answers. The Signal engine's shell (`supabase/functions/generate-signal/` outside `detection.ts` and `phrasing.ts`, which stay in the guard's must-stay-clean list) may read `vet_visits.visited_at`, `vet_appointments.scheduled_at` / `cancelled_at` / `deleted_at`, and the owner's acknowledgement rows, by explicit column list, to set a finding's care state and to state a visit date on EN-10's context line. No visit, appointment or answer enters a count, a floor, a window or a test statistic: every count the care state speaks is computed from events alone, from a date the owner's answer names. Notes, reasons, clinic and vet names never leave the vet tables for an engine. The guard's allow-set gains the shell with `kinds: ['table']` and a column-list assertion.
 
 **(b) The same spec, §5.6, last sentence,** appended: "The one engine reader is the Signal shell (AC 10 as amended), registered with its column list; `detection.ts` and `phrasing.ts` stay pinned at zero reads."
 
@@ -468,4 +461,5 @@ This spec's Read-These row in CLAUDE.md lands with PR-21 (CLAUDE.md is at its by
 
 | Version | Date | Change |
 |---|---|---|
+| 1.1 | 2026-09-28 | PM rulings: PMD-4 A, tolerance A, AC 10 approved (§0.3); the AC 10 text written into the vet visits spec. |
 | 1.0 | 2026-09-28 | First draft (PR-20, CUL-1139 + CUL-1144), amended the same day after the adversarial pass (§10.1). Mock round 3. |

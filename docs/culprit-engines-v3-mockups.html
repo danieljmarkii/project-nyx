@@ -258,18 +258,18 @@
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 3 · 2026-09-28 · the care state and the call</span><span>Engines v3 · CUL-1139 · CUL-1144</span><span>supersedes round 2 at this URL</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 3 · 2026-09-28 · PMD-4, tolerance, AC 10 ruled</span><span>Engines v3 · CUL-1139 · CUL-1144</span><span>supersedes round 2 at this URL</span></p>
     <h1>The care state and the outcome loop, drawn from day 30 of a GI trial</h1>
-    <p class="standfirst">Round 2 drew the loop between the Signal and vet visits. You ruled it: the owner's answer acknowledges a concern, one sign at a time; a recheck date hands the concern to the appointment strip; a call's note lives in Vet visits; the engine's shell may read owner answers and dates. This round draws every state that follows from those rulings, on a dog whose vet started his diet trial before the app was on the phone. It is one proposal. The two choices still open sit in labelled boxes beside the frames they compete with. Round 2 is in git.</p>
+    <p class="standfirst">Round 2 drew the loop between the Signal and vet visits. You ruled it: the owner's answer acknowledges a concern, one sign at a time; a recheck date hands the concern to the appointment strip; a call's note lives in Vet visits; the engine's shell may read owner answers and dates. This round draws every state that follows from those rulings, on a dog whose vet started his diet trial before the app was on the phone. It is one proposal, and on Sep 28 you ruled its three open calls (§07). The one conflict left for the build, TD-5, sits in a labelled box in §04. Round 2 is in git.</p>
 
     <div class="ledger" aria-label="What was ruled since round 2 and what moved on this page">
       <div><b>E-2 = A restated · "My vet knows" acknowledges, per sign, as a dated fact</b><span>Drawn as a source like any other. The row names who said what and when. <span class="pill">ruled · §01 §02</span></span></div>
       <div><b>E-3 as restated</b><span>A recheck hands the concern to the appointment strip (frame 1e). No calendar question here; that stays CUL-1290. <span class="pill">ruled · §01</span></span></div>
       <div><b>N-1 = A · the call is its own record in Vet visits</b><span>Drawn in full: the list, the record, the follow-up, and what happens with notifications off. <span class="pill">ruled · §04</span></span></div>
-      <div><b>AC 10 = amend (plan review defaults, 9/26)</b><span>The exact text of the edit is in §07 for your approval before it's written into the vet visits spec. <span class="pill open">approve the wording · §07</span></span></div>
+      <div><b>AC 10 = amend (plan review defaults, 9/26)</b><span>The exact text of the edit is in §07 for your approval before it's written into the vet visits spec. <span class="pill">approved 9/28 · §07</span></span></div>
       <div><b>"Draw Jordan's case" (plan review)</b><span>The subject is Otis, a dog on a hydrolyzed trial his vet started on Aug 26. The app went on the phone on Aug 29. No visit on record could ever acknowledge anything for him. <span class="pill">§01</span></span></div>
-      <div><b>PMD-4 · does a vet-directed trial acknowledge?</b><span>Drawn as the recommended answer (ask the owner once, per sign) with the alternative boxed beside it. <span class="pill open">decide · §01</span></span></div>
-      <div><b>EN-9's re-raise tolerance</b><span>The test is specified. The number it's held to is yours. <span class="pill open">decide · §07</span></span></div>
+      <div><b>PMD-4 · does a vet-directed trial acknowledge?</b><span>Ruled A: the app asks the owner once, per sign, while a trial runs (1b). The tap-only alternative left the page. <span class="pill">ruled A · §01</span></span></div>
+      <div><b>EN-9's re-raise tolerance</b><span>Ruled A: at most 5% of stable pets asked again within eight weeks, with the sensitivity that buys measured and reported. <span class="pill">ruled A · §07</span></span></div>
       <div><b>An adversarial pass on the draft (2026-09-28)</b><span>It failed the first draft on eleven counts, all taken. The biggest: the re-raise test caught 2 to 4% of real doublings, pets vomiting on half their days could never come back, and an old answer outlived its concern. Drawn here: frozen references and a latch (1f), the recheck rule (1e), the weight line (1c, 1d), drug before trial (5a), "something logged" everywhere. <span class="pill">spec §4</span></span></div>
       <div><b>Round 2's loop (ticks at the vet, "How did it go?", the past-visit question)</b><span>Unchanged and still current, carried to §08 in the new words. Its follow-up and Vet visits frames are replaced by §04; the snapshot option left the page (E-2 ruled). <span class="pill dir">§08</span></span></div>
       <div><b>Round 2 promised EN-3's tiers on every surface</b><span>Moved to PR-24's own page, per the plan review. Nothing about tiers is drawn here. <span class="pill dir">moved</span></span></div>
@@ -322,13 +322,10 @@
             <div class="answers" style="margin-top:0"><span>Book a visit</span><span>My vet knows</span><span>Not yet</span></div>
           </div>
         </div>
-        <div class="frame-cap"><b>1b · The one question, while a trial runs <span class="pill open">PMD-4 · recommended</span></b><span>Asked on the finding's screen only, once per sign, never on Home. "Yes, for this" stores a dated acknowledgement scoped to the trial. "No" and "Not sure" store nothing and leave the round 2 answers underneath. Nothing is matched from the trial's indication; the owner says which sign.</span></div>
+        <div class="frame-cap"><b>1b · The one question, while a trial runs <span class="pill">PMD-4 ruled A</span></b><span>Asked on the finding's screen only, once per sign, never on Home. "Yes, for this" stores a dated acknowledgement scoped to the trial. "No" and "Not sure" store nothing and leave the round 2 answers underneath. Nothing is matched from the trial's indication; the owner says which sign.</span></div>
       </div>
 
-      <div class="option">
-        <div class="option-head"><b>PMD-4 · B: the trial never acknowledges</b><span>No trial question. Jordan's only way out of 1a is "My vet knows" on each finding. Simpler, one fewer source, and it lasts past the trial's end, which is worse (see 1h).</span></div>
-        <div class="frames">
-          <div class="frame">
+      <div class="frame">
             <div class="phone short" aria-label="The finding's screen with only the round 2 answers">
               <div class="screen-head">
                 <div class="back">‹</div>
@@ -352,7 +349,7 @@
             <div class="zone-label">Signal</div>
             <div class="railed door"><div class="body"><div class="head">Loose stool in 5 of the last 5 weeks</div><div class="sub">17 days since Aug 29 · <span class="ask-in">worth booking a vet visit</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
             <div class="row-divider"></div>
-            <div class="railed watch door needs-box"><div class="body"><span class="needs-tag">needs PMD-4 · PR-23</span><div class="head"><span class="state with">With your vet</span>Vomiting</div><div class="sub">You said his vet started the trial for it. 9 episodes in the 30 days of the trial, with something logged on 29 of them. Last weighed Aug 26.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="railed watch door needs-box"><div class="body"><span class="needs-tag">needs PR-23</span><div class="head"><span class="state with">With your vet</span>Vomiting</div><div class="sub">You said his vet started the trial for it. 9 episodes in the 30 days of the trial, with something logged on 29 of them. Last weighed Aug 26.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
             <div class="zone-foot"><span>A read of Otis's logs, not a diagnosis.</span><span>All patterns ›</span></div>
           </div>
           <div class="strip"><div class="sh">Hydrolyzed trial · day 30 of 56 <i>›</i></div><div class="sl">Hill's z/d · ends Oct 26</div><div class="bar"><b style="width:54%"></b></div></div>
@@ -406,7 +403,7 @@
           <div class="appbar"><span class="pet"><i class="avatar"></i>Otis</span><span class="askpill"><i></i>Ask</span></div>
           <div class="card">
             <div class="zone-label">Signal</div>
-            <div class="railed door needs-box"><div class="body"><span class="needs-tag">needs the tolerance · §07</span><div class="eyebrow-s">Back because it's coming more often</div><div class="head">Vomiting in 6 of the last 6 weeks</div><div class="sub">8 episodes in the last 2 weeks; 5 in the 4 weeks before the trial. You said his vet started the trial for it. <span class="ask-in">Worth a word with your vet</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="railed door needs-box"><div class="body"><span class="needs-tag">needs PR-16 · PR-23</span><div class="eyebrow-s">Back because it's coming more often</div><div class="head">Vomiting in 6 of the last 6 weeks</div><div class="sub">8 episodes in the last 2 weeks; 5 in the 4 weeks before the trial. You said his vet started the trial for it. <span class="ask-in">Worth a word with your vet</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
             <div class="row-divider"></div>
             <div class="railed watch door"><div class="body"><div class="head"><span class="state with">With your vet</span>Loose stool</div><div class="sub">You said on Sep 30 his vet knows. 6 days with loose stool since, with something logged on 13 of 14.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
             <div class="zone-foot"><span>A read of Otis's logs, not a diagnosis.</span><span>All patterns ›</span></div>
@@ -803,17 +800,17 @@
 
   <!-- §07 -->
   <section id="decide">
-    <div class="sec-head"><span class="sec-num">07</span><h2>What's left for you</h2></div>
-    <div class="col"><p>Three calls. The AC 10 edit is a wording approval on a rule you already ruled. PMD-4 and the tolerance gate PR-20 landing and PR-23 respectively.</p></div>
+    <div class="sec-head"><span class="sec-num">07</span><h2>What you ruled on Sep 28</h2></div>
+    <div class="col"><p><b>Ruled 2026-09-28:</b> PMD-4 A, tolerance A, AC 10 approved. The briefs stay below as the record. The one conflict left is TD-5 (§04), decided at PR-36.</p></div>
     <div class="briefs">
       <div class="brief">
-        <h4>AC 10 · approve the Tier-2 edit <span class="pill open">approve</span></h4>
+        <h4>AC 10 · the Tier-2 edit <span class="pill">approved</span></h4>
         <p><b>Deciding:</b> the exact words that go into the vet visits spec, ruled "amend" on 9/26.</p>
         <p><b>Options:</b> <b>approve as written below (recommended)</b>: it names the one new reader and what may cross. Or reword.</p>
         <p><b>Consequence:</b> PR-21 writes it with the guard change; PR-22 and PR-23 may then read answers and dates.</p>
       </div>
       <div class="brief">
-        <h4>PMD-4 · does a vet-directed trial acknowledge? <span class="pill open">decide · before PR-20 lands</span></h4>
+        <h4>PMD-4 · does a vet-directed trial acknowledge? <span class="pill">ruled A</span></h4>
         <p><b>Deciding:</b> whether Jordan gets out of 1a through his trial.</p>
         <ul>
           <li><b>A, through the owner's answer (recommended):</b> while a trial runs, the finding's screen asks once, per sign, whether the vet started it for that sign; "yes" acknowledges until the trial ends (1b, 1c, 1h). <i>Why:</i> it's E-2's rule applied to the wedge, and nothing is matched on an indication.</li>
@@ -823,7 +820,7 @@
         <p><b>Consequence:</b> A adds a trial scope and an end to the acknowledgement row (PR-21), and one question to the finding's screen (PR-35). Courses follow the same rule, via "Did the vet start this for it?" on the course.</p>
       </div>
       <div class="brief">
-        <h4>EN-9's re-raise tolerance <span class="pill open">decide · before PR-23</span></h4>
+        <h4>EN-9's re-raise tolerance <span class="pill">ruled A</span></h4>
         <p><b>Deciding:</b> how often a stable pet's owner may be asked again for nothing, now that the adversarial pass showed the drafted pair can't both hold. At 2 a week, no count test catches a doubling reliably within four weeks, so fast worsening is left to the burden card and the dense-day arm.</p>
         <ul>
           <li><b>A · cap false returns at 5% of stable pets in eight weeks (recommended),</b> and take the sensitivity that buys, reported per base rate. <i>Why:</i> noise is what sank the drafted trigger (59 to 81% re-asked), and the fast cases have their own nets.</li>
@@ -834,10 +831,10 @@
       </div>
     </div>
 
-    <h3>The AC 10 edit, as it would be written</h3>
+    <h3>The AC 10 edit, as written into the vet visits spec v1.3</h3>
     <div class="edit">
       <span class="where">docs/nyx-vet-visits-requirements.md · §7 AC 10 · v1.2 → v1.3</span>
-      10. A visit row in History taps to the visit; <code>guards/visitReaders.test.ts</code> pins the reader set — visits never appear in any count, coverage line, Patterns panel or engine input. <ins><b>Amended 2026-09-XX (CUL-1139, Engines v3 AC 10 ruling of 2026-09-26):</b> one reader crosses the line, and only with dates and owner answers. The Signal engine's shell (<code>supabase/functions/generate-signal/</code> outside <code>detection.ts</code> and <code>phrasing.ts</code>, which stay in the guard's must-stay-clean list) may read <code>vet_visits.visited_at</code>, <code>vet_appointments.scheduled_at</code> / <code>cancelled_at</code> / <code>deleted_at</code>, and the owner's acknowledgement rows, by explicit column list, to set a finding's care state and to state a visit date on EN-10's context line. No visit, appointment or answer enters a count, a floor, a window or a test statistic: every count the care state speaks is computed from events alone, from a date the owner's answer names. Notes, reasons, clinic and vet names never leave the vet tables for an engine. The guard's allow-set gains the shell with <code>kinds: ['table']</code> and a column-list assertion.</ins>
+      10. A visit row in History taps to the visit; <code>guards/visitReaders.test.ts</code> pins the reader set — visits never appear in any count, coverage line, Patterns panel or engine input. <ins><b>Amended 2026-09-28 (CUL-1139, Engines v3 AC 10 ruling of 2026-09-26):</b> one reader crosses the line, and only with dates and owner answers. The Signal engine's shell (<code>supabase/functions/generate-signal/</code> outside <code>detection.ts</code> and <code>phrasing.ts</code>, which stay in the guard's must-stay-clean list) may read <code>vet_visits.visited_at</code>, <code>vet_appointments.scheduled_at</code> / <code>cancelled_at</code> / <code>deleted_at</code>, and the owner's acknowledgement rows, by explicit column list, to set a finding's care state and to state a visit date on EN-10's context line. No visit, appointment or answer enters a count, a floor, a window or a test statistic: every count the care state speaks is computed from events alone, from a date the owner's answer names. Notes, reasons, clinic and vet names never leave the vet tables for an engine. The guard's allow-set gains the shell with <code>kinds: ['table']</code> and a column-list assertion.</ins>
     </div>
     <div class="edit">
       <span class="where">docs/nyx-vet-visits-requirements.md · §5.6, last sentence</span>
