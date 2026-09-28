@@ -70,6 +70,7 @@ import { canonicalizeProtein, readProteinSet } from './protein.ts'
 import {
   classifyEpisodeSet,
   collapseEpisodes,
+  feedingIsEatingAnchor,
   timedEligibleFeedings,
   type FeedingInput,
   type FreeFedSpan,
@@ -373,7 +374,12 @@ export interface MealEvent {
    * keeps every existing detection test green.
    */
   proteins?: string[] | null
-  /** WSAVA intake rating; null for legacy/unrated rows or non-meal foods (treats/other). */
+  /**
+   * WSAVA intake rating; null for legacy/unrated rows. A treat can carry one too (the
+   * completion card offers intake for meals AND treats), so ② filters on foodType itself,
+   * while ① and ⑤ read the rating whatever the food type (a refused treat is not eaten,
+   * CUL-1122 / CUL-1190).
+   */
   intakeRating: IntakeRating | null
   /** food_items.food_type — only 'meal' contributes to the intake baseline (migration 010/011). */
   foodType: 'meal' | 'treat' | 'other' | null
@@ -2829,6 +2835,17 @@ interface ClassifiedMeal {
    * correlate — see MealEvent.isMedicationVehicle. Defaults false (no pairing).
    */
   isMedicationVehicle: boolean
+  /**
+   * Food went in (CUL-1190): false only when the owner rated the feeding Refused. Read
+   * through `feedingIsEatingAnchor`, the ONE "did food go in" rule `lib/mealTiming.ts`
+   * holds for the timing lane (CUL-1122), because ① asks the same question: a bowl she
+   * refused is not an exposure to its food. Picked at IS an exposure (a few bites is
+   * enough for a food reaction; an elimination trial fails on a lick), and so is an
+   * unrated bowl (ratings are exception-only, CUL-1118). A refused feeding is still a
+   * LOGGED feeding: it keeps the window logging-eligible and the protein a candidate,
+   * exactly as a medication vehicle does. See windowExposures.
+   */
+  eaten: boolean
 }
 
 /**
@@ -2855,6 +2872,7 @@ function classifyMeals(mealEvents: MealEvent[]): ClassifiedMeal[] {
       attribution: (m.attributionConfidence ?? 'high') as AttributionConfidence,
       foodType: m.foodType ?? null,
       isMedicationVehicle: m.isMedicationVehicle === true, // B-156 PR C1; absent ⇒ false
+      eaten: feedingIsEatingAnchor(m.intakeRating), // CUL-1190; unrated ⇒ eaten
     }))
     .filter((m): m is ClassifiedMeal => m.proteins.length > 0 && Number.isFinite(m.ms))
     .sort((x, y) => x.ms - y.ms)
@@ -3138,6 +3156,13 @@ export function detectCorrelations(
       // build its own food→symptom case. PER-EXPOSURE (not candidacy-wide like free-fed):
       // the same food without a pill on another day still credits its protein normally.
       if (m.isMedicationVehicle) continue
+      // CUL-1190: a bowl the owner rated Refused put no food in the pet, so it credits no
+      // exposure. Same shape as the vehicle above, for the same reason: it stays in
+      // mealCount (the owner was logging, and the record says she ate nothing from it),
+      // so eligibility and control matching are untouched and only the exposure moves.
+      // Without this, tuna offered only on bad days and refused every time read as an
+      // established tuna → vomit link, identical to the same record rated All.
+      if (!m.eaten) continue
       // B-351 slice 6 — the feeding contributes its WHOLE set. A protein is exposed in
       // this window iff it is in ANY in-window feeding's set, and each member inherits
       // THIS feeding's attribution (one 'low' exposure caps that protein, unchanged).
@@ -5798,7 +5823,12 @@ function detectStapleWashout(
   // chicken treat is a chicken exposure (① counts it identically to a meal — see
   // ClassifiedMeal.foodType), which is why a 3×/day chicken treat washes out in the
   // case-crossover; the diagnostic that EXPLAINS that washout must use the same set.
-  const meals = classifyMeals(input.mealEvents)
+  //
+  // CUL-1190: EXPOSURES, so only feedings the pet ate. A refused bowl credits nothing in
+  // ① (windowExposures), and a staple the pet keeps refusing is not "in most of what she
+  // eats". Vehicles are not filtered here, as before this change; they are dropped in ①
+  // but still count toward a staple, which is a pre-existing asymmetry left alone.
+  const meals = classifyMeals(input.mealEvents).filter((m) => m.eaten)
   // "...X is in most of what the pet eats" must be honest — needs real exposure volume.
   if (meals.length < config.coverage.stapleMinMeals) return null
 

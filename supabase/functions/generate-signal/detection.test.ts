@@ -1248,6 +1248,101 @@ Deno.test('detectCorrelations — B-156 PR C1: no vehicle flag is byte-identical
   assert.equal(findings[0].tier, 'established', 'no vehicle flag ⇒ unchanged behavior')
 })
 
+// ── Detector ①: CUL-1190 — a refused bowl is not an exposure ─────────────────
+//
+// ① used to read no intake rating at all, so a bowl the owner rated Refused credited its
+// protein exactly like one she finished. The adversarial reviewer's repro: tuna offered only
+// on bad days and refused every time came out "established", identical to the same record
+// rated All. The rule is the timing lane's (CUL-1122, `feedingIsEatingAnchor`): Refused is
+// not eating; Picked at, Some, Most, All and unrated are.
+
+/** A tuna feeding on each of `days` at 10:00, rated `rating` (null = unrated). */
+const tunaOn = (days: number[], rating: IntakeRating | null, foodType: MealEvent['foodType'] = 'meal'): MealEvent[] =>
+  days.map((d) => meal({ occurredAt: at(d, 10), primaryProtein: 'tuna', intakeRating: rating, foodType }))
+
+const BAD_DAYS = [1, 2, 3, 4, 5, 6, 7, 8]
+const badDayVomits = () => BAD_DAYS.map((d) => symptom('vomit', at(d, 11)))
+
+Deno.test('detectCorrelations — CUL-1190: tuna offered only on bad days and REFUSED every time is never the culprit', () => {
+  const run = (rating: IntakeRating | null) =>
+    detectCorrelations(
+      input({ mealEvents: [...staple(1, 16, 'chicken', 9), ...tunaOn(BAD_DAYS, rating)], symptomEvents: badDayVomits() }),
+    )
+  // The fixture is live: eaten, this tuna is the textbook established correlate (8 of 8
+  // case windows, no control), so the refused run below is silent for the RATING alone.
+  const eaten = run('all').find((f) => f.protein === 'tuna')
+  assert.ok(eaten, 'eaten tuna on every bad day fires')
+  assert.equal(eaten!.tier, 'established')
+  assert.equal(eaten!.caseExposed, 8)
+  assert.equal(eaten!.controlExposed, 0)
+
+  const refused = run('refused')
+  assert.equal(
+    refused.some((f) => f.protein === 'tuna'),
+    false,
+    'a food she never ate is never blamed for her bad days',
+  )
+  assert.equal(refused.length, 0, 'and nothing else is manufactured in its place (the staple still washes out)')
+})
+
+Deno.test('detectCorrelations — CUL-1190: Picked at and unrated ARE exposures (only Refused is dropped)', () => {
+  // Picked at: a few bites is enough for a food reaction, and it is the ruled answer for
+  // timing too (CUL-1122, Dr. Chen lens). Unrated: ratings are exception-only (CUL-1118),
+  // so an unrated bowl is presumed eaten; reading it as refused would invent a refusal and
+  // silence every unrated record's correlations.
+  const tierFor = (rating: IntakeRating | null) =>
+    detectCorrelations(
+      input({ mealEvents: [...staple(1, 16, 'chicken', 9), ...tunaOn(BAD_DAYS, rating)], symptomEvents: badDayVomits() }),
+    ).find((f) => f.protein === 'tuna')?.tier
+  for (const rating of ['picked', 'some', 'most', 'all', null] as const) {
+    assert.equal(tierFor(rating), 'established', `tuna rated ${rating ?? 'unrated'} is an exposure`)
+  }
+})
+
+Deno.test('detectCorrelations — CUL-1190: a refused TREAT is dropped too (the rule reads the rating, never the food type)', () => {
+  const run = (rating: IntakeRating | null) =>
+    detectCorrelations(
+      input({
+        mealEvents: [...staple(1, 16, 'chicken', 9), ...tunaOn(BAD_DAYS, rating, 'treat')],
+        symptomEvents: badDayVomits(),
+      }),
+    )
+  assert.equal(run('all').some((f) => f.protein === 'tuna'), true, 'an eaten tuna treat is an exposure')
+  assert.equal(run('refused').some((f) => f.protein === 'tuna'), false, 'a refused tuna treat is not')
+})
+
+Deno.test('detectCorrelations — CUL-1190: a refused bowl keeps its window eligible and moves no OTHER finding', () => {
+  // The fix moves exposure only. A refused feeding is still a logged feeding (the vehicle
+  // precedent), so: (a) a case window whose ONLY feeding was refused still pairs, (b) the
+  // Bonferroni family is unchanged (the refused-only protein stays a zero-vector candidate),
+  // so a refusal about one food can never promote a finding about another.
+  //
+  // beef is the real correlate (the canonical Established fixture, days 1–6). Days 20 and 22
+  // each carry a vomit whose 12h window holds nothing but a tuna bowl: the chicken staple
+  // stops at day 12, so tuna is the only thing that makes those two case windows eligible.
+  const mealEvents = (rating: IntakeRating) => [
+    ...staple(1, 12, 'chicken', 9),
+    ...[1, 2, 3, 4, 5, 6].map((d) => pMeal(d, 'beef', 10)),
+    ...tunaOn([20, 22], rating),
+    ...staple(24, 30, 'chicken', 9), // symptom-free control days for the two late cases
+  ]
+  const symptomEvents = [...[1, 2, 3, 4, 5, 6, 20, 22].map((d) => symptom('vomit', at(d, 11)))]
+  const beefFor = (rating: IntakeRating) =>
+    detectCorrelations(input({ mealEvents: mealEvents(rating), symptomEvents })).find((f) => f.protein === 'beef')
+
+  const refused = beefFor('refused')
+  const eaten = beefFor('all')
+  assert.ok(refused && eaten, 'beef fires either way')
+  // (a) the two tuna-only case windows still pair: 8 matched pairs, not 6.
+  assert.equal(eaten!.matchedPairs, 8, 'fixture: both late cases pair when the tuna is eaten')
+  assert.equal(refused!.matchedPairs, 8, 'a refused bowl still makes its window logging-eligible')
+  // (b) beef's arithmetic and the family it is corrected against are byte-identical.
+  assert.equal(refused!.discordantCaseOnly, eaten!.discordantCaseOnly)
+  assert.equal(refused!.discordantControlOnly, eaten!.discordantControlOnly)
+  assert.equal(refused!.correctedAlpha, eaten!.correctedAlpha, 'the Bonferroni family did not shrink')
+  assert.equal(refused!.tier, eaten!.tier)
+})
+
 // ── Detector ①: B-052 protein-key canonicalization (read-time) ───────────────
 
 Deno.test('detectCorrelations — B-052: by-product/casing variants pool into one protein', () => {
@@ -4294,6 +4389,24 @@ Deno.test('detectCoverage — B-070: NOT dominant (60/40) → silent, no false s
     undefined,
     'a 60/40 split is not a dominant staple — never claim one',
   )
+})
+
+Deno.test('detectCoverage — CUL-1190: the staple is measured over what she ATE (a refused bowl is not an exposure)', () => {
+  // The 60/40 fixture above, with the four beef bowls rated. Eaten, beef is 40% of exposures
+  // and nothing dominates. Refused, the pet ate chicken and only chicken, which is exactly
+  // what ① now sees (beef credits no window), so the explanation of ①'s silence must say so.
+  const mealEvents = (beefRating: IntakeRating) => [
+    ...Array.from({ length: 6 }, (_, i) => ratedProteinMeal(10 + i, 'chicken', 'all')),
+    ...Array.from({ length: 4 }, (_, i) => ratedProteinMeal(16 + i, 'beef', beefRating)),
+  ]
+  const symptomEvents = [symptom('vomit', at(12, 8)), symptom('vomit', at(18, 8)), symptom('vomit', at(24, 8))]
+  const swFor = (r: IntakeRating) =>
+    findDiag(detectCoverage(input({ mealEvents: mealEvents(r), symptomEvents })), 'staple_washout')
+  assert.equal(swFor('all'), undefined, 'eaten beef: 60/40, no staple')
+  assert.equal(swFor('picked'), undefined, 'picked-at beef is still an exposure')
+  const sw = swFor('refused')
+  assert.ok(sw, 'refused beef: chicken is everything she ate')
+  assert.equal(sw!.protein, 'chicken', 'and beef, which she never ate, is never named')
 })
 
 Deno.test('detectCoverage — B-070: a genuinely mixed-source staple reports stapleSource=mixed', () => {
