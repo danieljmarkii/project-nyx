@@ -44,6 +44,6 @@ Every finding the engine makes with ratings is one it makes with the ratings str
 - CUL-1382: a medication vehicle still reads as absent on the control side (the refused pill-pocket repro is on the issue).
 - CUL-1383: check whether ten straight refusals can fold into the intake baseline.
 - CUL-1387: Home and the report can disagree when a meal is logged twice with different ratings (the report is the weaker, never the stronger).
-- A PM / Dr. Chen ruling on the power trade-off (CUL-1388): withdrawing refused case exposures loses some real culprits whose cause lies outside the 12h window (Established 88 → 32 of 800 in the worst simulated row), in exchange for removing false findings (sick-day refusal null row 191 → 1).
+- The power trade-off, **ruled by the PM the same day (CUL-1388, option A: accept)**: withdrawing refused case exposures loses some real culprits whose cause lies outside the 12h window (Established 88 → 32 of 800 in the worst simulated row), in exchange for removing false findings (sick-day refusal null row 191 → 1). No follow-up queued; a lookback to the last eaten meal can be raised under EN-11 (CUL-1141) if the replay ledger shows the miss in real records.
 - Printed counts: `caseExposed` now means eaten while `controlExposed` still means offered, so the report's "N/M exposed cases vs K controls" can understate an association; it never overstates. Noted on CUL-1386.
 - The ratings-blind engine's own null rate (a food offered on half the days yields a false Early card in about 13% of records) is pre-existing and untouched.
