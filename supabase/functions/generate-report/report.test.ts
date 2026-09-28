@@ -647,6 +647,12 @@ Deno.test('CUL-1086 — a bowl rated four times a day never pushes the counted m
   assert.ok(log.find((e) => e.isLastFullMeal && !e.notCountedFreeFed))
   const text = plainText(renderReport(snap))
   assert.ok(text.includes('3 of them fall after the last full meal'))
+  // Cold read r3: the sentence follows the one that names the last full meal, never before it,
+  // and the caption's split says "watched", not "counted by the flag" (page 1's baseline count
+  // is a subset of these rows and would read as a second, contradicting flag count).
+  assert.ok(text.indexOf('The most recent fully-eaten meal was') < text.indexOf('ratings of a free-fed bowl are not counted here'))
+  assert.ok(/\( ?25 ?watched, ?40 ?free-fed bowl\)/.test(text))
+  assert.ok(!text.includes('counted by the flag'))
   assert.ok(/Rows marked "free-fed bowl" are ratings of a bowl left down \( ?50 ?in this window, ?40 ?shown\)/.test(text))
 })
 

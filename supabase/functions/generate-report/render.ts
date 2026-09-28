@@ -2138,7 +2138,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
             }</b>.${baselineBit}`
       return flagRow(
         'Intake',
-        `<b>Reduced intake.</b> ${detail}${freeFedBit}${trajectoryBit}${durationBit}${feline} Recorded as a health signal — not &ldquo;picky.&rdquo;${appendixBit}`,
+        `<b>Reduced intake.</b> ${detail}${trajectoryBit}${durationBit}${freeFedBit}${feline} Recorded as a health signal — not &ldquo;picky.&rdquo;${appendixBit}`,
       )
     }
     case 'chronicity': {
@@ -7494,10 +7494,12 @@ function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[], foot: st
   <p class="note lead" style="margin-top:16px">${lead}${hiddenBit}${freeFedBit}</p>
   <table>
     <caption>${num(log.length)} ${noun}${log.length === 1 ? '' : 's'} shown${
-      // CUL-1086 (cold read r2): "rated meals" on page 1 means the meals the flag counted; say
-      // how this table's rows split so the word does not name two populations unannounced.
+      // CUL-1086 (cold reads r2, r3): say how this table's rows split so "rated meals" does not
+      // name two populations unannounced. NOT "counted by the flag": page 1's "baseline read over
+      // N" counts only the baseline half of these rows, and two numbers under one label read as
+      // a contradiction. "Watched" is the word the note below uses for the same rows.
       hasBowlRows
-        ? ` (${num(log.length - log.filter((e) => e.notCountedFreeFed).length)} counted by the flag, ${num(
+        ? ` (${num(log.length - log.filter((e) => e.notCountedFreeFed).length)} watched, ${num(
             log.filter((e) => e.notCountedFreeFed).length,
           )} free-fed bowl)`
         : ''
