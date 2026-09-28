@@ -523,8 +523,8 @@ describe('COLUMN_UPGRADES — the ALTER path an already-installed device takes (
     db.exec(DIET_TRIAL_SCHEMA_SQL);
     const before = columnsOf(db);
     const upgrades = COLUMN_UPGRADES.filter((u) => u.table === 'diet_trials');
-    await expect(applyColumnUpgrades(async (sql) => db.exec(sql), upgrades)).resolves.toBeUndefined();
-    await expect(applyColumnUpgrades(async (sql) => db.exec(sql), upgrades)).resolves.toBeUndefined();
+    await expect(applyColumnUpgrades(async (sql) => db.exec(sql), upgrades)).resolves.toEqual([]);
+    await expect(applyColumnUpgrades(async (sql) => db.exec(sql), upgrades)).resolves.toEqual([]);
     expect(columnsOf(db)).toEqual(before);
     db.close();
   });

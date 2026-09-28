@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DatabaseSync } from 'node:sqlite';
 
-import { BASE_SCHEMA_SQL, COLUMN_UPGRADES } from './localSchema';
+import { BASE_SCHEMA_SQL, COLUMN_UPGRADES, applyColumnUpgrades } from './localSchema';
 
 type Db = InstanceType<typeof DatabaseSync>;
 
@@ -91,5 +91,60 @@ describe('feeding_arrangements.ended_at on an upgraded device (CUL-1396)', () =>
     expect((d.prepare('SELECT ended_at FROM feeding_arrangements').get() as { ended_at: string }).ended_at).toBe(
       '2026-09-28T20:00:00.000Z',
     );
+  });
+
+  it('the upgrade that adds the column re-pulls the table once (adversarial round 4, E2)', async () => {
+    const d = preUpgradeDb();
+    const watermark = () =>
+      (d.prepare("SELECT watermark FROM sync_watermarks WHERE table_name = 'feeding_arrangements'").get() as
+        | { watermark: string }
+        | undefined)?.watermark;
+    // An older build pulled every arrangement and moved the watermark past them.
+    d.prepare("INSERT INTO sync_watermarks (table_name, watermark) VALUES ('feeding_arrangements', '2026-09-28T21:00:00Z')").run();
+    d.prepare("INSERT INTO sync_watermarks (table_name, watermark) VALUES ('events', '2026-09-28T21:00:00Z')").run();
+    const exec = async (sql: string) => d.exec(sql);
+    // initDb's own reset statement, from lib/db.ts, run for each table the upgrade returns.
+    const src = fs.readFileSync(path.join(__dirname, 'db.ts'), 'utf8');
+    const reset = src.match(/'(DELETE FROM sync_watermarks WHERE table_name = \?)'/);
+    expect(reset).not.toBeNull();
+    expect(src).toMatch(/addedColumns\.filter\(\(u\) => u\.rehydrate\)/);
+    const launch = async () => {
+      const added = await applyColumnUpgrades(exec);
+      for (const t of new Set(added.filter((u) => u.rehydrate).map((u) => u.table))) d.prepare(reset![1]).run(t);
+      return added;
+    };
+
+    const first = await launch();
+    expect(first.filter((u) => u.rehydrate).map((u) => `${u.table}.${u.column}`)).toEqual(['feeding_arrangements.ended_at']);
+    expect(columns(d)).toContain('ended_at');
+    expect(watermark()).toBeUndefined(); // the next hydrate is a full pull of arrangements
+    expect(d.prepare("SELECT watermark FROM sync_watermarks WHERE table_name = 'events'").get()).toBeDefined(); // no other table
+    // Every later launch: nothing is added, and a watermark written since is left alone.
+    d.prepare("INSERT INTO sync_watermarks (table_name, watermark) VALUES ('feeding_arrangements', '2026-09-29T08:00:00Z')").run();
+    expect(await launch()).toEqual([]);
+    expect(watermark()).toBe('2026-09-29T08:00:00Z');
+  });
+
+  it('hydrate fills a local NULL ended_at from the server even when LWW leaves the row (the statement from lib/sync.ts, run)', () => {
+    const d = preUpgradeDb();
+    upgrade(d);
+    const src = fs.readFileSync(path.join(__dirname, 'sync.ts'), 'utf8');
+    const m = src.match(/`(UPDATE feeding_arrangements SET ended_at = \?[\s\S]*?AND synced = 1)`/);
+    expect(m).not.toBeNull();
+    const insert = (id: string, synced: number, endedAt: string | null) =>
+      d.prepare(
+        `INSERT INTO feeding_arrangements (id, pet_id, food_item_id, method, active_from, active_until, ended_at, created_at, updated_at, synced)
+         VALUES (?, 'pet-1', 'food-1', 'free_choice', '2026-06-01', '2026-06-12', ?, '2026-06-01T00:00:00Z', '2026-09-28T20:00:00Z', ?)`,
+      ).run(id, endedAt, synced);
+    insert('pulled-by-old-build', 1, null);
+    insert('pending-local-edit', 0, null);
+    insert('already-known', 1, '2026-06-12T08:00:00.000Z');
+    for (const id of ['pulled-by-old-build', 'pending-local-edit', 'already-known']) {
+      d.prepare(m![1]).run('2026-06-12T09:15:00.000Z', id);
+    }
+    const endedAt = (id: string) => (d.prepare('SELECT ended_at FROM feeding_arrangements WHERE id = ?').get(id) as { ended_at: string | null }).ended_at;
+    expect(endedAt('pulled-by-old-build')).toBe('2026-06-12T09:15:00.000Z');
+    expect(endedAt('pending-local-edit')).toBeNull(); // never under an unpushed local write
+    expect(endedAt('already-known')).toBe('2026-06-12T08:00:00.000Z'); // fills a NULL, never overwrites
   });
 });
