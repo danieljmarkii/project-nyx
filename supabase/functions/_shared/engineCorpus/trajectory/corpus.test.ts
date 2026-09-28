@@ -22,6 +22,21 @@ function askFrom(fromDay: number, sign: Sign = 'vomit', ask: 'book_visit' | 'non
 
 const SEEDS = (n: number) => Array.from({ length: n }, (_, i) => 1000 + i)
 
+// Simulations are pure functions of (scenario, seed, observer), so the pooled measurements
+// share them. This keeps the file fast enough for deploy-edge.sh, which runs every _shared
+// suite before each deploy under a 180-second timeout.
+const OBSERVERS = { null: NULL_OBSERVER, ask20: askFrom(20) } as const
+const memo = new Map<string, SimulationResult>()
+function sim(sc: ScenarioSpec, seed: number, observer: keyof typeof OBSERVERS = 'null'): SimulationResult {
+  const key = `${sc.id}|${seed}|${observer}`
+  let r = memo.get(key)
+  if (!r) {
+    r = simulate(sc, seed, OBSERVERS[observer])
+    memo.set(key, r)
+  }
+  return r
+}
+
 /** The day an instant belongs to, with days starting at 06:00 local (see time.ts). */
 function careDay(sc: ScenarioSpec, isoAt: string): number {
   return localDayIndex(Date.parse(isoAt), sc.startDate, sc.tz, 6)
@@ -38,7 +53,7 @@ function episodesByDay(sc: ScenarioSpec, r: SimulationResult, petKey: string, si
 function proteinRateRatio(sc: ScenarioSpec, protein: string, seeds: number[], source: 'truth' | 'logged'): number {
   let expDays = 0, expEp = 0, unDays = 0, unEp = 0
   for (const seed of seeds) {
-    const r = simulate(sc, seed)
+    const r = sim(sc, seed)
     const proteinsOf = new Map(r.record.foods.map((f) => [f.id, f.proteins]))
     const exposed = new Set<number>()
     const meals = source === 'truth' ? r.truth.meals.map((m) => ({ at: m.at, foodItemId: m.foodItemId })) : r.record.meals
@@ -54,10 +69,10 @@ function proteinRateRatio(sc: ScenarioSpec, protein: string, seeds: number[], so
 }
 
 /** Pooled over seeds: truth episodes per day in [from, to) for pet 'a'. */
-function ratePerDay(sc: ScenarioSpec, sign: Sign, seeds: number[], from: number, to: number, observer?: Observer, anchor?: (r: SimulationResult) => number | null): number {
+function ratePerDay(sc: ScenarioSpec, sign: Sign, seeds: number[], from: number, to: number, observer: keyof typeof OBSERVERS = 'null', anchor?: (r: SimulationResult) => number | null): number {
   let n = 0, days = 0
   for (const seed of seeds) {
-    const r = simulate(sc, seed, observer)
+    const r = sim(sc, seed, observer)
     const base = anchor ? anchor(r) : 0
     if (base === null) continue
     const lo = base + from, hi = Math.min(base + to, sc.days)
@@ -162,7 +177,7 @@ Deno.test('null rates land on their stated monthly rate, and the bursty ones are
     assertEquals(sc.pets[0].signs[0].rate.perMonth, perMonth)
     const monthly: number[] = []
     for (const seed of SEEDS(60)) {
-      const r = simulate(sc, seed)
+      const r = sim(sc, seed)
       for (let m = 0; m < 6; m++) monthly.push(r.truth.episodes.filter((e) => { const d = localDayIndex(Date.parse(e.at), sc.startDate, sc.tz); return d >= m * 30 && d < (m + 1) * 30 }).length)
     }
     const mean = monthly.reduce((s, x) => s + x, 0) / monthly.length
@@ -183,7 +198,7 @@ Deno.test('null timing: vomits fall after meals only as often as chance puts the
   let after = 0, total = 0
   const sc = scenarioById('null-staple-3pm-bursty')
   for (const seed of SEEDS(40)) {
-    const r = simulate(sc, seed)
+    const r = sim(sc, seed)
     const meals = r.truth.meals.map((m) => Date.parse(m.at))
     for (const e of r.truth.episodes) {
       total++
@@ -199,7 +214,7 @@ Deno.test('logging attrition thins the record while the truth stays flat', () =>
   const sc = scenarioById('null-attrition-365')
   let loggedEarly = 0, loggedLate = 0, trueEarly = 0, trueLate = 0
   for (const seed of SEEDS(40)) {
-    const r = simulate(sc, seed)
+    const r = sim(sc, seed)
     for (const e of r.truth.episodes) {
       const d = localDayIndex(Date.parse(e.at), sc.startDate, sc.tz)
       const logged = e.loggedEventIds.length > 0
@@ -224,7 +239,7 @@ Deno.test('the trial started at a peak does nothing: the fall is the flare endin
 Deno.test('event-dependent feeding: white fish only ever follows a logged vomit, and causes nothing', () => {
   const sc = scenarioById('null-event-dependent-feeding')
   for (const seed of SEEDS(10)) {
-    const r = simulate(sc, seed)
+    const r = sim(sc, seed)
     const whitefish = r.record.foods.find((f) => f.primaryProtein === 'whitefish')!.id
     const vomitDays = r.record.events.filter((e) => e.ty === 'vomit' && e.petKey === 'a').map((e) => localDayIndex(Date.parse(e.at), sc.startDate, sc.tz))
     const fishDays = r.truth.meals.filter((m) => m.foodItemId === whitefish).map((m) => localDayIndex(Date.parse(m.at), sc.startDate, sc.tz))
@@ -445,24 +460,24 @@ Deno.test('a vaccine visit does not acknowledge the concern', () => {
 Deno.test('the lapse: after the answer only symptoms stop being logged; meals and the truth carry on', () => {
   const sc = scenarioById('own-lapse-flat')
   for (const seed of SEEDS(10)) {
-    const r = simulate(sc, seed, askFrom(20))
+    const r = sim(sc, seed, 'ask20')
     const ackDay = r.truth.acks[0].day
     const after = (at: string) => localDayIndex(Date.parse(at), sc.startDate, sc.tz) >= ackDay
     assertEquals(r.record.events.filter((e) => e.ty === 'vomit' && after(e.at)).length, 0, 'no vomit logged after the answer')
     assert(r.truth.episodes.filter((e) => after(e.at)).length > 10, 'the cat keeps vomiting')
     assert(r.record.meals.filter((m) => after(m.at)).length > 100, 'meals keep being logged')
   }
-  const flatAfter = ratePerDay(sc, 'vomit', SEEDS(60), 0, 150, askFrom(20), (r) => r.truth.acks[0]?.day ?? null)
+  const flatAfter = ratePerDay(sc, 'vomit', SEEDS(60), 0, 150, 'ask20', (r) => r.truth.acks[0]?.day ?? null)
   within(flatAfter / ratePerDay(sc, 'vomit', SEEDS(60), 0, 23), 0.8, 1.25, 'the truth after the answer is unchanged')
 })
 
 Deno.test('the doubling behind the lapse happens 21 days after the answer, and none of it is logged', () => {
   const sc = scenarioById('own-lapse-doubling')
   const ack = (r: SimulationResult) => r.truth.acks[0]?.day ?? null
-  const before = ratePerDay(sc, 'vomit', SEEDS(60), 0, 21, askFrom(20), ack)
-  const doubled = ratePerDay(sc, 'vomit', SEEDS(60), 21, 180, askFrom(20), ack)
+  const before = ratePerDay(sc, 'vomit', SEEDS(60), 0, 21, 'ask20', ack)
+  const doubled = ratePerDay(sc, 'vomit', SEEDS(60), 21, 180, 'ask20', ack)
   within(doubled / before, 1.6, 2.5, 'doubling after ack + 21')
-  const r = simulate(sc, 1, askFrom(20))
+  const r = sim(sc, 1000, 'ask20')
   assert(r.truth.episodes.filter((e) => e.cause === 'rate_step').length > 5)
   assert(r.truth.episodes.filter((e) => e.cause === 'rate_step').every((e) => e.loggedEventIds.length === 0))
   // Without an acknowledgement the effect never starts: it is anchored to the owner, not the calendar.

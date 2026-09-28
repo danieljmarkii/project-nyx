@@ -21,7 +21,8 @@
 
 import { between, chance, gamma, intBetween, mintId, normal, pickWeighted, poisson, stream, type Rng } from './rng.ts'
 import type { Effect, FoodSpec, PetSpec, ScenarioSpec, SignSpec } from './spec.ts'
-import { addDays, DAY_MS, HOUR_MS, iso, localToUtcMs, MINUTE_MS } from './time.ts'
+import { addDays, DAY_MS, HOUR_MS, iso, MINUTE_MS, wallToUtcMs } from './time.ts'
+import { SIGNS } from './types.ts'
 import type {
   EpisodeCause,
   Observer,
@@ -69,7 +70,9 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
   const { tz, startDate } = scenario
   const S = (...parts: (string | number)[]): Rng => stream(seed, scenario.id, ...parts)
   const id = (...parts: (string | number)[]) => mintId(seed, scenario.id, ...parts)
-  const localMs = (day: number, hour: number) => localToUtcMs(addDays(startDate, day), hour, tz)
+  const [y0, m0, d0] = startDate.split('-').map(Number)
+  const wall0 = Date.UTC(y0, m0 - 1, d0)
+  const localMs = (day: number, hour: number) => wallToUtcMs(wall0 + day * DAY_MS + hour * HOUR_MS, tz)
 
   const foods = new Map<string, SynFood>()
   const food = (f: FoodSpec): SynFood => {
@@ -263,8 +266,7 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
 
   function respond(state: PetState, day: number, cards: ShownCard[]) {
     const key = state.spec.key
-    const signs: Sign[] = ['vomit', 'diarrhea', 'cough']
-    for (const sign of signs) {
+    for (const sign of SIGNS) {
       const asked = cards.some((c) => c.petKey === key && c.sign === sign && c.ask !== 'none')
       state.consecutiveAsk[sign] = asked ? (state.consecutiveAsk[sign] ?? 0) + 1 : 0
       const run = state.consecutiveAsk[sign]!
@@ -540,7 +542,9 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
 
   for (const p of record.pets) p.weight_kg = states.get(p.key)!.weightKg
   record.foods = [...foods.values()]
-  const byTime = (a: { at: string; id: string }, b: { at: string; id: string }) => Date.parse(a.at) - Date.parse(b.at) || (a.id < b.id ? -1 : 1)
+  // Every `at` is toISOString()'s fixed-width UTC spelling, so text order is time order here
+  // (C-40's warning is about mixing spellings, which this corpus never does).
+  const byTime = (a: { at: string; id: string }, b: { at: string; id: string }) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : 1)
   record.events.sort(byTime)
   record.meals.sort(byTime)
   return { record, truth, responses, shown }

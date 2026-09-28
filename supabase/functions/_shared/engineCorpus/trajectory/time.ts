@@ -15,7 +15,11 @@ export function addDays(ymd: string, days: number): string {
 /** The UTC instant of a local wall-clock time in an IANA zone. `hour` may be fractional. */
 export function localToUtcMs(ymd: string, hour: number, tz: string): number {
   const [y, m, d] = ymd.split('-').map(Number)
-  const wall = Date.UTC(y, m - 1, d) + hour * 3_600_000
+  return wallToUtcMs(Date.UTC(y, m - 1, d) + hour * 3_600_000, tz)
+}
+
+/** The UTC instant of a local wall-clock time given as "local ms since the epoch". */
+export function wallToUtcMs(wall: number, tz: string): number {
   // Two passes of offset correction settle every instant except the skipped DST hour, which
   // lands an hour late: acceptable for placing a meal.
   let guess = wall
@@ -24,9 +28,30 @@ export function localToUtcMs(ymd: string, hour: number, tz: string): number {
 }
 
 const formatters = new Map<string, Intl.DateTimeFormat>()
+const offsets = new Map<string, Map<number, number>>()
+const QUARTER_HOUR_MS = 900_000
 
-/** The zone's offset from UTC at an instant (local minus UTC). */
+/**
+ * The zone's offset from UTC at an instant (local minus UTC). Cached per quarter hour of UTC:
+ * every IANA offset is a whole number of quarter hours and every transition falls on a local
+ * quarter hour, so no quarter-hour bucket straddles a change. Intl's formatToParts is the
+ * simulator's hot path, and the cache is what keeps a 1,000-pet sweep in minutes.
+ */
 export function offsetMs(utcMs: number, tz: string): number {
+  let zone = offsets.get(tz)
+  if (!zone) {
+    zone = new Map()
+    offsets.set(tz, zone)
+  }
+  const bucket = Math.floor(utcMs / QUARTER_HOUR_MS)
+  const hit = zone.get(bucket)
+  if (hit !== undefined) return hit
+  const value = computeOffsetMs(bucket * QUARTER_HOUR_MS, tz)
+  zone.set(bucket, value)
+  return value
+}
+
+function computeOffsetMs(utcMs: number, tz: string): number {
   let fmt = formatters.get(tz)
   if (!fmt) {
     fmt = new Intl.DateTimeFormat('en-US', {
@@ -44,7 +69,7 @@ export function offsetMs(utcMs: number, tz: string): number {
   const parts = fmt.formatToParts(new Date(utcMs))
   const get = (t: string) => Number(parts.find((p) => p.type === t)!.value)
   const asLocal = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'))
-  return asLocal - Math.floor(utcMs / 1000) * 1000
+  return asLocal - utcMs
 }
 
 /** The local hour (fractional) of an instant. */

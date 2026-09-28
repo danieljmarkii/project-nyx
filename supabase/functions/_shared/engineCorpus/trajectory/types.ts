@@ -15,8 +15,13 @@ export type Iso = string
 
 export type SyntheticSpecies = 'cat' | 'dog' | 'other'
 
-/** The signs this corpus generates. A subset of detection.ts's SymptomType. */
-export type Sign = 'vomit' | 'diarrhea' | 'cough'
+/**
+ * The signs this corpus can generate: a subset of detection.ts's SymptomType, chosen by what
+ * the scenarios need, never a lane's membership.
+ */
+// symptom-list-ok: the simulator's own generated-sign vocabulary; it decides which signs a synthetic pet can produce and no product lane reads it, so a new leaf joins only when a scenario needs one (C-32: not registered, because registration would stop the scan).
+export const SIGNS = ['vomit', 'diarrhea', 'cough'] as const
+export type Sign = (typeof SIGNS)[number]
 
 // ─── The logged layer: what the engine may see ─────────────────────────────────────────
 
@@ -24,7 +29,7 @@ export interface SynEvent {
   id: string
   petKey: string
   /** events.event_type */
-  ty: 'vomit' | 'diarrhea' | 'cough' | 'meal' | 'weight_check'
+  ty: Sign | 'meal' | 'weight_check'
   /** occurred_at (UTC ISO). For a found pile this is the window's latest edge, as the app writes it. */
   at: Iso
   /** occurred_at_confidence */
