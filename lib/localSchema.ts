@@ -572,25 +572,21 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
 export async function applyColumnUpgrades(
   exec: (sql: string) => Promise<unknown>,
   upgrades: readonly ColumnUpgrade[] = COLUMN_UPGRADES,
-): Promise<void> {
+): Promise<ColumnUpgrade[]> {
+  // Returns the entries this call actually ADDED (the ALTER succeeded), so the caller can act
+  // once, on the launch that gained a column — `initDb` re-pulls each `rehydrate` table. The
+  // re-pull's statement lives in `lib/db.ts`, the write layer, not here: this module sits in
+  // Home's import closure, where a raw mutation is a Home write (C-33, guards/homeWrites).
+  const added: ColumnUpgrade[] = [];
   for (const u of upgrades) {
     try {
       await exec(`ALTER TABLE ${u.table} ADD COLUMN ${u.column} ${u.type}`);
+      added.push(u);
     } catch {
       // Column already exists ("duplicate column name") — the intended no-op.
-      continue;
-    }
-    // Reached only on the launch that ADDED the column (the ALTER above succeeded), so the
-    // re-pull happens once. Its own try: a missing watermark table (a test fixture built
-    // from part of the schema) must not undo the column the ALTER just added.
-    if (u.rehydrate) {
-      try {
-        await exec(`DELETE FROM sync_watermarks WHERE table_name = '${u.table}'`);
-      } catch {
-        // No watermark table yet: the first hydrate is a full pull anyway.
-      }
     }
   }
+  return added;
 }
 
 // ── The sign-out FILE wipe, derived rather than hand-listed (B-519) ──────────

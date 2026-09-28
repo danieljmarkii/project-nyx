@@ -103,13 +103,25 @@ describe('feeding_arrangements.ended_at on an upgraded device (CUL-1396)', () =>
     d.prepare("INSERT INTO sync_watermarks (table_name, watermark) VALUES ('feeding_arrangements', '2026-09-28T21:00:00Z')").run();
     d.prepare("INSERT INTO sync_watermarks (table_name, watermark) VALUES ('events', '2026-09-28T21:00:00Z')").run();
     const exec = async (sql: string) => d.exec(sql);
-    await applyColumnUpgrades(exec);
+    // initDb's own reset statement, from lib/db.ts, run for each table the upgrade returns.
+    const src = fs.readFileSync(path.join(__dirname, 'db.ts'), 'utf8');
+    const reset = src.match(/'(DELETE FROM sync_watermarks WHERE table_name = \?)'/);
+    expect(reset).not.toBeNull();
+    expect(src).toMatch(/addedColumns\.filter\(\(u\) => u\.rehydrate\)/);
+    const launch = async () => {
+      const added = await applyColumnUpgrades(exec);
+      for (const t of new Set(added.filter((u) => u.rehydrate).map((u) => u.table))) d.prepare(reset![1]).run(t);
+      return added;
+    };
+
+    const first = await launch();
+    expect(first.filter((u) => u.rehydrate).map((u) => `${u.table}.${u.column}`)).toEqual(['feeding_arrangements.ended_at']);
     expect(columns(d)).toContain('ended_at');
     expect(watermark()).toBeUndefined(); // the next hydrate is a full pull of arrangements
     expect(d.prepare("SELECT watermark FROM sync_watermarks WHERE table_name = 'events'").get()).toBeDefined(); // no other table
-    // Every later launch: the ALTER no-ops, and a watermark written since is left alone.
+    // Every later launch: nothing is added, and a watermark written since is left alone.
     d.prepare("INSERT INTO sync_watermarks (table_name, watermark) VALUES ('feeding_arrangements', '2026-09-29T08:00:00Z')").run();
-    await applyColumnUpgrades(exec);
+    expect(await launch()).toEqual([]);
     expect(watermark()).toBe('2026-09-29T08:00:00Z');
   });
 
