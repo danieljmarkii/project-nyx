@@ -25,7 +25,7 @@ The second half is the **outcome loop**. When the app says "call your vet" and t
 | **D1 = A** four tiers for the per-incident read | 2026-09-26 PM | Tiers are EN-3's; this spec keys the outcome loop to the **escalation**, whatever its tier. |
 | **TD-4 = D** answers one tap away, never on Home | 2026-09-26 PM | Every answer lives on the finding's screen, the incident screen, "At the vet", "How did it go?" or the follow-up screen. Home keeps its three write classes (C-33). |
 | **E-2 = A restated** the owner's answer acknowledges, per sign | 2026-09-26 PM | §3.2. A visit alone acknowledges nothing; the owner's answer about it does. |
-| **E-3 as restated** recheck-keyed now; calendar fallback secondary | 2026-09-26 PM | §4.4. The eight-week question is CUL-1290, gated on EN-1. |
+| **E-3 as restated** recheck-keyed now; calendar fallback secondary | 2026-09-26 PM | §4.7. The eight-week question is CUL-1290, gated on EN-1. |
 | **N-1 = A** a call's note lives on its own call record in Vet visits | 2026-09-26 PM | §6.4. |
 | **AC 10 = amend** the engine's shell may read owner answers and appointment dates; no visit enters a count | 2026-09-26 PM (plan review defaults) | §12 carries the wording for approval. |
 | **"My vet knows" acknowledges, per sign, as a dated fact** | 2026-09-26 PM (plan review) | §3.2 source `my_vet_knows`. |
@@ -51,8 +51,9 @@ The second half is the **outcome loop**. When the app says "call your vet" and t
 
 **The re-raise tolerance** (the ruling sheet's "now" item; rule before PR-23)
 - **Deciding:** how often a stable pet's owner may be asked again for nothing.
-- **Options:** **≤5% of stable pets re-raised within eight weeks, with ≥80% of true doublings caught within four weeks at full logging (recommended).** *Why:* the drafted "1.5× the rate" trigger re-raised 59–75% (plan review) / 64–81% (critique); 5% is one false return per twenty owners per two months, and the test in §4.2 is built to be tuned to it. · **10%:** catches a doubling sooner, twice the noise. · **2%:** quieter, slower on a real change.
-- **Consequence:** PR-16 fixes the number as a pass line before any flag-on run; PR-23 does not go live until the harness shows the test meets it. The windows in §4.2 move only to meet it.
+- **What changed (the adversarial pass, 2026-09-28):** the pair the first draft recommended (≤5% false, ≥80% of doublings in 4 weeks) looks **infeasible** at 2/week. No count test catches a doubling from that base reliably in four weeks; α 0.1 reached 58% at about 9% false. So the ruling is a point on a measured frontier, and fast worsening is covered by the burden card and the dense-day arm (§4.3–§4.4), not by this test.
+- **Options:** **A: cap false re-raises at 5% of stable pets within eight weeks and take the sensitivity that buys, reported per base rate (recommended).** *Why:* noise is what made the drafted trigger unusable (59–81% re-raised), and the fast-worsening cases have their own nets. · **B: cap at 10%**, which roughly doubles sensitivity at low base rates for twice the noise. · **C: set a sensitivity floor first** (e.g. ≥50% of doublings within 8 weeks) and accept whatever false rate that costs.
+- **Consequence:** PR-16 measures the frontier over α, r and the reference length on ≥1,000 pets per scenario and reports it. The PM picks the point before PR-23; PR-23 does not go live until the harness shows the chosen configuration meets it.
 
 **AC 10 wording** — §12. Deciding: the words, not the rule (ruled "amend"). Recommend approve as written. Consequence: PR-21 writes it with the guard change.
 
@@ -99,11 +100,13 @@ An acknowledgement is a row the owner caused, stating that a vet knows about one
 
 | `source` | Where the owner says it | Anchor date | Ends |
 |---|---|---|---|
-| `at_vet_tick` | a Worth-raising row ticked on "At the vet" (mock round 2 §03 f3), confirmed in "How did it go?" | the visit's `visited_at` | never (until superseded) |
-| `visit_answer` | "Talked about it" in "How did it go?"'s *What Home was raising*, or the one question for a visit already on record (round 2 §03 f5) | the visit's `visited_at` | never |
-| `my_vet_knows` | the finding screen's "My vet knows" (mock 2a–2b) | the day of the tap | never |
-| `vet_started_trial` / `vet_started_course` | PMD-4 A's one question (mock 1b) | the trial's / course's start date | the trial's / course's end (`ended_at`, `completed_at`, or the target end if still running past it: the acknowledgement ends at whichever comes first) |
+| `at_vet_tick` | a Worth-raising row ticked on "At the vet" (mock round 2 §03 f3), confirmed in "How did it go?" | the visit's `visited_at` | at stand-down (below) |
+| `visit_answer` | "Talked about it" in "How did it go?"'s *What Home was raising*, or the one question for a visit already on record (round 2 §03 f5) | the visit's `visited_at` | at stand-down |
+| `my_vet_knows` | the finding screen's "My vet knows" (mock 2a–2b) | the day of the tap | at stand-down |
+| `vet_started_trial` / `vet_started_course` | PMD-4 A's one question (mock 1b) | the trial's / course's start date | the earliest of: the trial's or course's end (`ended_at`, `completed_at`); for a trial, the end of its **initial** target (`target_duration_days_initial`, so an extension re-asks rather than silently extending); for a course, the last logged dose + 14 days, or 56 days from the answer when the course has no target; and stand-down |
 
+- **Every acknowledgement belongs to the course of the concern it was given for.** It lapses when that concern stands down (its lanes stop firing and a stand-down marker is minted, or the finding leaves the set). A later recurrence is a new concern and is born `raised`; an old answer never covers it.
+- **A visit answer must postdate the concern:** the past-visit question is offered, and a `visit_answer` / `at_vet_tick` accepted, only for a visit on or after the concern's first onset in the engine's lookback. A February vaccine visit never acknowledges June's vomiting.
 - **Per sign:** each row names one `symptom_type`. A tick on a row whose sentence names two signs (the cough/vomit pair) writes one acknowledgement, for the row's own sign.
 - **"Not yet"** writes nothing and is never removed (fold §3.3). **"Not this time"** in "How did it go?" writes nothing. **"Later"** writes nothing.
 - **Undo / change** writes a new row with `retracts` pointing at the old one (append-only, §8.1).
@@ -116,10 +119,10 @@ An acknowledgement is a row the owner caused, stating that a vet knows about one
 
 | `careState` | When | Owner copy (Home row) | Rail |
 |---|---|---|---|
-| `raised` | no live acknowledgement for the sign, or the only one ended | the shipped chronicity/worsening row, ask intact | rose |
-| `with_vet` | a live acknowledgement exists and no re-raise test fires | tag **With your vet** · "{source sentence}. {count since} , logged on {k} of {n} days." | rose-soft |
-| `recheck_booked` | `with_vet`, and a non-cancelled, non-deleted `vet_appointments` row for the pet is scheduled after the acknowledgement's anchor and not yet past | tag **With your vet** · "{source sentence}. Recheck booked for {date}." | rose-soft |
-| `raised_again` | a live acknowledgement exists and a §4.2 test fires | "Back because it's coming more often" line (DF-8) + the lane's row with its ask + the compared pair + the earlier answer as a fact | rose |
+| `raised` | no live acknowledgement for the sign, or the only one lapsed | the shipped chronicity/worsening row, ask intact | rose |
+| `with_vet` | a live acknowledgement exists and no re-raise test fires | tag **With your vet** · "{source sentence}. {count since}, with something logged on {k} of {n} days." (plus "Last weighed {Mon d}." while §4.1's weight rule applies) | rose-soft |
+| `recheck_booked` | `with_vet`, and an appointment **about this sign** is booked (§4.7) | tag **With your vet** · "{source sentence}. Recheck booked for {date}." | rose-soft |
+| `raised_again` | a live acknowledgement exists and a §4.2 or §4.3 trigger has fired; latched until a newer answer (§4.5) | "Back because it's coming more often" line (DF-8) + the lane's row with its ask + the compared pair + the earlier answer as a fact | rose |
 
 The source sentences, verbatim (nyx-voice pass at PR-35):
 - `at_vet_tick` / `visit_answer`: "You said you talked about it at the {Mon d} visit."
@@ -153,28 +156,66 @@ Always **"you said"**, never "your vet saw" (the app knows only what the owner s
 
 ### 4.1 What may bring a concern back
 
-Only a **tested change in the record** (§4.2), the **other sign of the cough/vomit pair turning chronic** while this one is `with_vet` (GAP-29's seventh trigger, re-raises this one too, since either count may hold the other's events), or the **end of a scoped acknowledgement** (a trial or course ends, §3.2). Never a calendar, never one bad day, never a time since the answer (DF-5 stands; the calendar question is CUL-1290). Weight loss (EN-8) and intake decline are their own cards and raise themselves; they do not need to re-raise a GI concern to be seen.
+Only a **tested change in the record**: the rate test (§4.2), the dense-day arm (§4.3), or the **other sign of the cough/vomit pair turning chronic** while this one is `with_vet` (GAP-29's seventh trigger; either count may hold the other's events). Also the **end of an acknowledgement** (§3.2 lapse rules). Never a calendar, never one bad day, never time since the answer (DF-5 stands; the calendar question is CUL-1290).
 
-### 4.2 The worsening test (replaces "a band change" and "1.5× the rate")
+**Known gap, stated:** a pet that simply fails to improve (steady at 2/week for months after "come back if it continues") **never re-raises in v1**. That is PMD-5's case and it belongs to CUL-1290, behind EN-1's measurement. The row keeps printing its count and its logging, so the non-improvement is visible, but no ask returns.
 
-Per concern, evaluated at each engine run once a day:
-- **Windows:** the *current* window is the last 14 days; the *reference* window is the 14 days before the acknowledgement's anchor (for a trial-scoped answer, the 14 days before the trial started), or, when that is not fully logged, the most recent 14 days whose logging clears the floor after the anchor. The two never overlap.
-- **Exposure:** logged days (a day with any event for the pet), never calendar days. Counts are episode-days for the sign (one per local day, the chronicity lane's own unit).
-- **Test:** exact conditional binomial. Given `n = a + b` episode-days across both windows, with logged days `Lc` and `Lr`, test `a ~ Binomial(n, Lc / (Lc + Lr))` one-sided for excess in the current window. Fires when `p < α` **and** the current rate is at least **2×** the reference rate (a doubling, the clinically named change).
-- **Persistence:** the test must fire on **two evaluations at least 7 days apart** before `raised_again` (a dog's bin raid never re-raises alone; mock 3d).
-- **Coverage floor:** both windows must be logged on at least **10 of 14 days**. Below it the test does not run and the row says so: "Logged on {k} of the last 14 days, too few to count from." (mock 3b). This is the honest half of BRK-4's miss behind a lapse: the row stops claiming it can see.
-- **Zero:** a zero count is said only above the floor and always with its logging (mock 3a).
-- **Tuning:** `α`, the 2× ratio and the windows are the knobs; PR-16 reports each configuration's null false re-raise rate on stable phenotypes and its delay to a true doubling at 100% and 50% logging, on ≥1,000 synthetic pets per scenario, and PR-23 ships the configuration that meets §0.3's tolerance. Starting point for the harness: `α = 0.01`, 2×, 14/14, persistence 2 × 7 days.
-- **What the row then says:** the pair it compared ("8 episodes in the last 2 weeks, 2 in the 2 before, logged on 27 of 28 days"), never a rate, never a percentage.
-- **No tier drop without a fall in the count** (R-2): `raised_again` keeps the lane's own tier; the care state never softens the lane's ask.
+**Weight:** a watched GI concern never waits for EN-8. Until EN-8 is live, the `with_vet` Home row carries the record fact "Last weighed {Mon d}." whenever the newest weigh-in predates the acknowledgement's anchor (§5.3). It is a fact line, not a door. PR-23 does not go live for a species until either EN-8 is live for it or this line ships with it.
 
-### 4.3 Tested on
+### 4.2 The rate test (replaces "a band change" and "1.5× the rate")
 
-Stable cat at 2/week (must stay `with_vet` ≥95% of eight-week runs at the ruled tolerance); true doubling at full logging and behind a 50% lapse; a dog with one-day spikes; a co-chronic cough/vomit cat; a relabelling cat (coughs relabelled as vomits after the visit: neither concern may go quiet on the relabel alone); a trial ending mid-concern.
+Per concern, evaluated at each daily engine run:
+- **Unit:** **episodes, collapsed exactly as ⑦ collapses them** (`computeChronicityStats` / `toEpisodeOnsets`, 3 h), not episode-days. There is no ceiling: a pet at 60% of days going to three a day can re-raise. The day key is the local day (C-40; ⑦'s UTC bucketing is filed separately).
+- **Reference window: 28 days, frozen once and stored.** It is the 28 days before the acknowledgement's anchor (for a trial-scoped answer, the 28 days before the trial started). If those days are not logged on at least 20 of 28, the reference is instead the **first** 28-day window after the anchor that clears the floor. It is frozen at that moment and stored on the finding, and the row discloses it ("compared with Sep 1 to Sep 28"). The reference **never slides** (a sliding reference caught a step change 0.9% of the time against 16.5% fixed).
+- **Current window:** the last 14 days, logged on at least 10 of 14.
+- **Exposure:** days with anything logged, never calendar days.
+- **Test:** the Poisson rate comparison as an exact conditional binomial. Given `n = a + b` episodes across both windows with logged days `Lc` and `Lr`, test `a ~ Binomial(n, Lc / (Lc + Lr))`, one-sided for excess. It fires when `p < α` and the current rate is at least `r` × the reference rate.
+- **Persistence:** it must fire at `t` **and again on an evaluation within t+7 to t+14, with no evaluation in between failing the coverage floor**. Two unrelated flares months apart never add up.
+- **Below the floor** the test does not run and the row says so: "Something logged on {k} of the last 14 days, too few to count from." (mock 3b).
+- **Coverage wording:** always "something logged" or "days with anything logged", never "logged on k of n days" alone. Meal logging can continue while symptom logging tails off, and "logged on 14 of 14" would then read as full symptom coverage. A fixture pins it: meals logged every day, vomits logged on none, and the row makes no claim that reads as improvement.
+- **The knobs are `α`, `r` and the two windows.** Measured by the adversarial pass (2026-09-28, 800–2,000 synthetic pets per cell): the first draft's settings (α 0.01, 2×, 14/14 episode-days) caught 2–4% of true doublings within 4 weeks. At 2/week, "≤5% false re-raises and ≥80% of doublings within 4 weeks" **looks infeasible** (α 0.1 reached 58% of doublings at about 9% false). **A doubling from about 2/week is not reliably detectable within four weeks by any count test.** So the tolerance ruling (§0.3) picks a point on a measured frontier, and the burden card and the dense-day arm are the net for fast worsening. Starting point for PR-16's grid: α ∈ {0.05, 0.1}, r ∈ {1.5, 2}, reference 28 or 56 days.
+- **What the row then says:** the pair it compared, as counts with their windows ("8 episodes in the last 2 weeks; 5 in the 4 weeks before the trial"), never a rate or a percentage.
+- **No tier drop without a fall in the count** (R-2): `raised_again` keeps the lane's own tier.
 
-### 4.4 A booked recheck (E-3)
+### 4.3 The dense-day arm
 
-A `vet_appointments` row for the pet, scheduled after the acknowledgement's anchor, not cancelled or deleted and not yet past, moves `with_vet` to `recheck_booked`: the row names the date and asks nothing, and the appointment strip holds the one ask, as shipped (five-day window; after the day, "Did {day}'s visit happen?" once). After the appointment's day passes, the concern returns to `with_vet` from the same acknowledgement until the owner answers "How did it go?", whose *What Home was raising* re-asks for every raised or watched concern. A `raised_again` test that fires while a recheck is booked still re-raises: a worsening never waits for an appointment.
+The worsening lane's shipped dense-day floor (④: a sign on 4 of the last 7 days, the floor that lifts chronicity to firm today, `detection.ts` ~6755–6775) is a re-raise trigger in its own right while a concern is `with_vet`, with the same persistence as §4.2. A tested floor the engine already trusts is never silenced by a care state.
+
+### 4.4 The burden card is the net, and that is a pinned property
+
+CUL-1311's absolute-burden card is never quieted by a care state (§3.1). §4.2 is weakest exactly where the reference rate is high or the rise is fast. PR-23's gate on CUL-1311 part 2 therefore gains a harness property: **on every PR-15 scenario where §4.2 is structurally slow (a reference at or above 50% of days, three or more episodes a day, or a doubling from a high base), the burden card or the dense-day arm fires within the ruled delay.** Until CUL-1311 records its threshold, this property cannot be checked, and PR-23 does not go live.
+
+### 4.5 `raised_again` latches
+
+Once raised again, a concern stays `raised_again`, ask and all, until the owner answers again with an acknowledgement **dated after the re-raise**. A cooling current window never drops it back quietly: that would be an automatic lowering (R-2, "never lower a stored escalation automatically").
+
+### 4.6 Tested on
+
+- A stable cat at 2/week.
+- A true doubling at full logging, and behind a 50% lapse.
+- Every other day going to daily, and to three a day (the old ceiling).
+- A step change and a steady climb, each with a reference that could only be taken after the anchor.
+- A reference taken at a peak.
+- A dog with one-day spikes.
+- A co-chronic cough/vomit cat.
+- A relabelling cat, where counts change retroactively. The frozen reference keeps its stored counts, and the relabel is disclosed rather than re-deriving the reference.
+- A trial ending mid-concern.
+- A January acknowledgement, a stand-down, then a September recurrence (must be born `raised`).
+- A visit answer for a visit before the concern's onset (must be refused).
+- Meals logged with symptoms not logged.
+
+### 4.7 A booked recheck (E-3)
+
+A `vet_appointments` row for the pet moves `with_vet` to `recheck_booked` only when **all** of these hold:
+- it is scheduled after the acknowledgement's anchor;
+- it is not cancelled or deleted, and not yet past;
+- it is **about this sign**, meaning one of:
+  - its `reason` names the sign;
+  - one of its `questions` rows carries this finding's `source_ref`;
+  - it was booked from this finding's "Book a visit";
+  - the owner answered the finding screen's one question "Is the {date} visit about his vomiting?" with Yes.
+
+A dental booked four months out never quiets vomiting. The row names the date and asks nothing, and the appointment strip holds the one ask, as shipped (five-day window; after the day, "Did {day}'s visit happen?" once). After the appointment's day passes, the concern returns to `with_vet` until "How did it go?" is answered. Its *What Home was raising* re-asks for every raised or with-vet concern. Any §4.2–§4.3 trigger re-raises straight through a booked recheck.
 
 ---
 
@@ -184,10 +225,11 @@ Rendered on the finding screen and carried in the cached sentence where the plan
 
 ### 5.1 The lines
 
-- **Visit:** "Since the {Mon d} visit, {n} days: {count} {sign-unit}, logged on {k} of {n}." Reads `vet_visits.visited_at` (AC 10 as amended). Counts from the day after.
-- **Trial:** "{Protein} trial, day {d} of {N}: {count} {unit} in its {d} days, logged on {k}." Only on concerns the trial covers: `indication = 'gi'` → vomiting and diarrhea; `skin` → itch and scratch; `other` → none (the trial screen speaks for it).
-- **Course:** "{Drug} since {Mon d}, {n} days: {count} {unit}, logged on {k} of {n}." Shown beside **every concern the drug can move**, from a curated drug-class table (systemic corticosteroids → every concern; antiemetics and GI protectants → vomiting; antidiarrheals and probiotics → diarrhea; antipruritics → itch/scratch; antitussives and bronchodilators → cough). Matched on drug class, **never on `indication` free text**. The table goes to the ruling sheet (CUL-583) with the "too soon" windows.
-- **Zero beside a drug start is never shown.** At zero the course line states the start and stops: "{Drug} since {Mon d}, {n} days. Started {n} days ago." (A steroid can mask the counted sign; a zero reads as "it worked".)
+- **Visit:** "Since the {Mon d} visit, {n} days: {count} {sign-unit}, with something logged on {k} of {n}." Reads `vet_visits.visited_at` (AC 10 as amended). Counts from the day after. **Within 14 days of a visit it never shows a zero** and carries "Anything given at the visit isn't in the record." whenever the count is below the reference, because an injection (Depo-Medrol, maropitant) never enters `medications`.
+- **Trial:** "{Protein} trial, day {d} of {N}: {count} {unit} in its {d} days, with something logged on {k}." Only on concerns the trial covers: `indication = 'gi'` → vomiting and diarrhea; `skin` → itch and scratch; `other` → none (the trial screen speaks for it).
+- **Course:** "{Drug} since {Mon d}, {n} days: {count} {unit}, with something logged on {k} of {n}." Shown beside **every concern the drug can move, in either direction**, from a curated drug-class table. Drugs that **mask**: systemic corticosteroids → every concern; inhaled corticosteroids (fluticasone) → cough; antiemetics and GI protectants → vomiting; antidiarrheals, metronidazole, tylosin and probiotics → diarrhea; antipruritics (oclacitinib, lokivetmab, cyclosporine) → itch/scratch; antitussives and bronchodilators → cough. Drugs that **cause**: NSAIDs, doxycycline, methimazole, cyclosporine and chemotherapy → vomiting and diarrhea. Matched on drug class, **never on `indication` free text**. **A drug name the table cannot resolve fails toward disclosure:** it shows beside every concern, like a systemic steroid. The table goes to the ruling sheet (CUL-583) with the "too soon" windows per drug.
+- **No zero anywhere beside an on-board drug that can mask the sign.** Within that drug's too-soon window (14 days until CUL-583 rules per drug), no count on the same row or screen shows a zero: not the course line, not the visit line, not the trial line, and not the `with_vet` row itself ("You said Nyx's vet started prednisone for it. 0 episodes" is exactly the "it worked" reading). At zero the course line states the start and stops ("{Drug} since {Mon d}, {n} days. Started {n} days ago."), and the other lines state their window and logging without the count.
+- **Order:** when a masking drug is on board inside a trial, the course line renders **above** the trial line, so the diet is never the first explanation a reader meets.
 - **Co-chronic pair:** the cough and vomiting screens each carry the full shipped disclosure; a line never nets one sign's count against the other.
 
 ### 5.2 Rules
@@ -206,7 +248,7 @@ On the finding screen and in Get ready, never on Home: "Last weighed {Mon d}, {s
 
 ### 6.1 The escalation is the unit
 
-An **escalation** is one per pet per incident family (vomit, stool, intake), opened by the first read or context fact at a call rung, re-alerting only on a higher rung or a new reason class, closed by the owner's answer or the rung's quiet window (GAP-33). EN-4 (PR-28) builds it; until then the outcome loop keys to the **first call-tier read of a bout**, where a bout is the same pet, same incident family, within 24 h of the previous read, so three reads of one bout owe one follow-up. "I've called" attaches to the escalation, and the escalation's ask is **never lowered** by it (the row gains "You called on {Mon d}." and keeps its ask word for word; mock 4b).
+An **escalation** is one per pet per incident family (vomit, stool, intake), opened by the first read or context fact at a call rung, re-alerting only on a higher rung or a new reason class, closed by the owner's answer or the rung's quiet window (GAP-33). EN-4 (PR-28) builds it; until then the outcome loop keys to the **first call-tier read of a bout**, where a bout is the same pet and incident family **within 24 h of the bout's first read** (never chained from the previous read). A read at a higher rung, or with a new reason class (blood, foreign material), opens a new bout with its own follow-up, mirroring GAP-33's latch rule. Three reads of one bout owe one follow-up. "I've called" attaches to the escalation, and the escalation's ask is **never lowered** by it (the row gains "You called on {Mon d}." and keeps its ask word for word; mock 4b).
 
 ### 6.2 The answers
 
@@ -219,7 +261,7 @@ On the finding or incident screen: **I've called · Not yet** (call tier) and **
 
 ### 6.3 The follow-up
 
-- **Owed:** one per escalation with an "I've called" answer, **due 48 h after the call answer, expiring 7 days after it**. Keyed on `(pet_id, escalation_key)`, where the escalation key names the first read's `event_id` (any server writer of "owed" keys on both event and pet, per the plan review).
+- **Owed:** one per escalation with an "I've called" answer, **due 48 h after the call answer, expiring 7 days after it**. Keyed on `(pet_id, escalation_key)`, where the escalation key is **the escalation as shown**, read from `signal_shown_log` / the read's stamps at the moment "I've called" was tapped, never its current tier (a later recompute can't orphan it, GAP-34). It names the first read's `event_id`; if that event is soft-deleted as a duplicate, the key re-points to the next read in the bout (any server writer of "owed" keys on both event and pet, per the plan review). **Undo** of "I've called" writes a `withdrawn` ledger row, and nothing is asked.
 - **Where it arrives, notifications off (the default):** a navigation line on the escalation's own Home row, "You called on {Mon d}. What did the vet say? ›" (mock 4b; navigation, so no new write class, C-33), counted as the day's one nudge (Principle 4); the top of the finding/incident screen; the call record in Vet visits. Never a card of its own, never a sheet on Home.
 - **Notifications on:** a new category `follow_ups`, **default off** (G6), body "A question about {pet}" (names no record fact, G1/D3), tap → the follow-up screen. Scheduled locally from the owed row once it syncs; cancelled on answer, on expiry and in `wipeLocalSession`. **The confirmation never names a day** ("We'll ask on Friday") because nothing guarantees delivery; with the category on it reads "We'll send a reminder in a couple of days."
 - **Answered once, across phones:** the server ledger's `answered_at` is the truth; a device that sees an answered row cancels its local schedule. Server-initiated push is **not** needed for v1 (the Open Question narrows: needed only if a follow-up must reach a phone that never saw the escalation; that gates PR-36's notification half, not the in-app follow-up).
@@ -297,7 +339,7 @@ CREATE TABLE vet_call_follow_ups (
   vet_call_id   UUID NOT NULL REFERENCES vet_calls(id) ON DELETE CASCADE,
   event_id      UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,   -- owed keys on event AND pet
   reason        TEXT NOT NULL CHECK (reason IN ('called','sampled')),
-  status        TEXT NOT NULL CHECK (status IN ('owed','answered','expired')),
+  status        TEXT NOT NULL CHECK (status IN ('owed','answered','expired','withdrawn')),
   answer        TEXT CHECK (answer IN ('wants_to_see','started_treatment','keep_watching','something_else','could_not_reach')),
   worth_it      TEXT CHECK (worth_it IN ('yes','no','did_not_say')),
   due_at        TIMESTAMPTZ NOT NULL,
@@ -332,15 +374,43 @@ Additive (`n`); rollback `DROP TABLE vet_call_follow_ups; DROP TABLE vet_calls; 
 
 ## 10. Persona positions and recorded conflicts
 
-- **Dr. Chen:** holds the "never quiets safety" rule and the drug-class matching; dissents on TD-5 (above). Tried: *a cat at 3/week acknowledged, then vomiting daily behind a two-week logging gap* → the coverage floor stops the count and says so, and the burden card (CUL-1311), which is never quieted, is the daily-vomiting net ✓. Tried: *prednisone started for the cough; vomiting falls* → the course line sits beside vomiting too and states no comparison ✓.
-- **Data Scientist:** the test in §4.2 replaces both drafted triggers; exposure is logged days; persistence and the floor are the BRK-4 fixes. Tried: *stable 2/week cat with a chance week of 3* → one window with 3 against 4 does not reach 2× and `p < 0.01`, and persistence would need a second firing a week later ✓ (to be measured, not asserted: PR-16).
+- **Dr. Chen:** holds the "never quiets safety" rule and the drug-class matching; dissents on TD-5 (above). Tried: *a cat at 3/week acknowledged, then vomiting daily behind a two-week logging gap* → the coverage floor stops the count and says so, and the burden card (CUL-1311), which is never quieted, is the daily-vomiting net: **unverifiable until CUL-1311 records its threshold** (§4.4), so not a ✓. Tried: *prednisone started for the cough; vomiting falls* → the course line sits beside vomiting too and states no comparison ✓.
+- **Data Scientist:** §4.2 replaces both drafted triggers, counts ⑦'s episodes against a frozen reference, and states its own blind spot (a doubling from a low base).
 - **Designer:** one vocabulary; every state drawn; Home carries no control.
 - **Jordan:** PMD-4 A is his case; dissents on TD-5.
-- **Sam:** the relabelling cat is in the fixtures (§4.3); "you said" is how she'd want it phrased.
+- **Sam:** the relabelling cat is in the fixtures (§4.6); "you said" is how she'd want it phrased.
 - **Trust & Safety:** the note guard, append-only by RLS, PMD-12, the report line.
 - **Dir. Eng / QA:** careState in the pure pipeline; the ranking in one server re-rank; the AC list below.
 
 ---
+
+### 10.1 The adversarial pass (2026-09-28, `adversarial-reviewer`, isolated)
+
+Verdict on the first draft: **FAIL, eleven counterexamples, all taken into this version.**
+
+| Counterexample (Monte Carlo, 800–2,000 synthetic pets per cell) | First draft | Now |
+|---|---|---|
+| True doubling 2→4/week at full logging | caught 2.4% within 4 weeks | the tolerance is ruled on a measured frontier; the blind spot is stated (§4.2, §0.3) |
+| Every other day → daily | 3% (the episode-day ceiling) | ⑦'s episodes counted, no ceiling; the burden card is a pinned net (§4.2, §4.4) |
+| Sliding post-anchor reference, step change | 0.9% caught (16.5% fixed) | reference frozen once, stored, disclosed (§4.2) |
+| January answer, stand-down, September recurrence | born `with_vet` | acknowledgements lapse at stand-down (§3.2) |
+| Past-visit answer for a visit before the onset | acknowledged | refused (§3.2) |
+| `raised_again` after a quieter fortnight | dropped back silently | latched until a newer answer (§4.5) |
+| Dense-day ④ firing while `with_vet` | silenced | a trigger of its own (§4.3) |
+| An unrelated dental appointment | "Recheck booked" | only an appointment about the sign (§4.7) |
+| Vet-started prednisone, 0 vomits | the `with_vet` row printed the zero | no zero on any line beside a masking drug (§5.1) |
+| Depo-Medrol given at the visit | "0 vomits since the visit" | no zero within 14 days of a visit, plus a disclosure line (§5.1) |
+| Open-ended course / extended trial | acknowledged indefinitely | ends at last dose + 14 d, a 56-day cap, or the initial target (§3.2) |
+| Reads every 20 h for 5 days, blood on day 5 | merged into day 1's bout | bout bounded from its first read; a new reason class opens a new one (§6.1) |
+| Undo of "I've called" | follow-up still asked | `withdrawn` (§6.3) |
+| Drug table | suppressors only; fluticasone missed | "can cause" rows; unresolved drugs disclose everywhere (§5.1) |
+| Meals logged, vomits not | "logged on 14 of 14" read as full coverage | "something logged", with a fixture (§4.2) |
+
+**Held:** a stable 2/week cat stays `with_vet` (about 0.3% false re-raise); attention-biased logging stays under the 2× bar because of the 10/14 floor; three reads in one bout owe one follow-up; escalations are untouched by a care state (AC-3); PMD-4's per-sign question stops a skin trial from covering vomiting.
+
+**Unverifiable today:** the burden-card net, because CUL-1311 records no threshold. PR-23 is gated on it (§4.4).
+
+**Stated, not fixed:** a pet that never improves never re-raises in v1 (CUL-1290).
 
 ## 11. Acceptance criteria
 
@@ -358,7 +428,12 @@ Additive (`n`); rollback `DROP TABLE vet_call_follow_ups; DROP TABLE vet_calls; 
 11. The follow-up's confirmation never names a weekday; the notification body names no record fact; the category defaults off.
 12. Append-only: no UPDATE or DELETE policy or grant on the three tables; `delete-account` leaves zero rows; `rls-privacy-reviewer` reports the attacks it tried.
 13. The note guard reds on a `vet_calls` `note` select anywhere under `supabase/functions/` (proven by a planted violation).
-14. `nyx-voice` over every string; the words "seen", "acknowledged", "resolved", "watching" and "stood down" appear in no owner string or a11y label this spec adds.
+14. **Lapse:** an acknowledgement given in one course never covers a later course (a January answer, stand-down, a September recurrence: born `raised`); a visit answer for a visit before the concern's onset is refused.
+15. **Latch:** `raised_again` never returns to `with_vet` without an acknowledgement dated after the re-raise.
+16. **Recheck:** an appointment that is not about the sign (§4.7) never produces `recheck_booked`.
+17. **Zero:** with a masking drug on board inside its window, no count on the row or screen renders zero (property test over every line type).
+18. **The reference never slides:** a fixture where the first qualifying window is found after the anchor stores it once, and the row discloses it.
+19. `nyx-voice` over every string; the words "seen", "acknowledged", "resolved", "watching" and "stood down" appear in no owner string or a11y label this spec adds.
 
 ---
 
@@ -381,7 +456,7 @@ Additive (`n`); rollback `DROP TABLE vet_call_follow_ups; DROP TABLE vet_calls; 
 | 20 | CUL-1139 + CUL-1144 | This spec + mock round 3 (docs only) | PMD-4 before it lands |
 | 21 | CUL-1139 + CUL-1144 | Migration: the three tables (§8), same-pet triggers, wipe list, export line, note guard | PR-20 approved · CUL-1384 (the shown log's client INSERT policy dropped) · `rls-privacy-reviewer` |
 | 22 | CUL-1140 | EN-10 server lines (§5), the drug-class table stub, Ask's rule 10 in the prompt, `visitReaders` registration of the shell, the AC 10 text (§12) | PR-20 · PR-11b |
-| 23 | CUL-1139 | `careState` in the pipeline (§3.3), the §4.2 test, ranking, Ask handling + fixtures, the report guard | PR-21 · PR-22 · CUL-1311 pt 2 live · the tolerance ruled and met on PR-16 |
+| 23 | CUL-1139 | `careState` in the pipeline (§3.3), the §4.2 test, ranking, Ask handling + fixtures, the report guard | PR-21 · PR-22 · CUL-1311 pt 2 live with its threshold recorded (§4.4) · the tolerance ruled and met on PR-16 · EN-8 live or the weight line (§4.1) |
 | 35 | CUL-1139 | Client: answers on the finding and incident screens, PMD-4's question, tickable rows at the vet, the past-visit question, the rows (in `components/designV2/`) | PR-23 |
 | 36 | CUL-1144 | Client: the call record, the follow-up screen and Home line, the `follow_ups` category, TD-5 | PR-35 · CUL-1313 for any account but the PM's |
 
@@ -393,4 +468,4 @@ This spec's Read-These row in CLAUDE.md lands with PR-21 (CLAUDE.md is at its by
 
 | Version | Date | Change |
 |---|---|---|
-| 1.0 | 2026-09-28 | First draft (PR-20, CUL-1139 + CUL-1144). Mock round 3. |
+| 1.0 | 2026-09-28 | First draft (PR-20, CUL-1139 + CUL-1144), amended the same day after the adversarial pass (§10.1). Mock round 3. |
