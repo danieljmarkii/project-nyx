@@ -251,6 +251,49 @@ export interface ResolveStandDownsArgs {
  *  deleted the folded entry). The counterfactual run is deferred until a candidate exists, so a
  *  regen with nothing to stand down costs no second detection pass.
  */
+/**
+ * A prior marker as a mint could have made it, or null. The checks are the mint's own
+ * guarantees: a tier of `firm` or `standard`, `priorityClass` 'insight', the recency floor
+ * the engine uses for this symptom and species (a mint writes exactly that number; a floor
+ * changed within the marker's seven days drops it, the safe direction), and a mint time that
+ * is not in the future (a future `stoodDownAt` would carry past its TTL). Only the known
+ * fields are kept.
+ */
+function carriedMarker(
+  m: StoodDownMarker,
+  recencyFloor: number,
+  mintedMs: number,
+  nowMs: number,
+  formerRank: number,
+): StoodDownMarker | null {
+  if (m.tier !== 'firm' && m.tier !== 'standard') return null
+  if (m.recencyDays !== recencyFloor) return null
+  if (mintedMs > nowMs) return null
+  return {
+    type: 'stood_down',
+    priorityClass: 'insight',
+    symptomType: m.symptomType,
+    recencyDays: m.recencyDays,
+    tier: m.tier,
+    lastEpisodeIso: m.lastEpisodeIso,
+    stoodDownAt: m.stoodDownAt,
+    formerRank,
+    associationalOnly: true,
+  }
+}
+
+/**
+ * EN-F's gate on the prior payload (Engines v3 PR-11a; 075 §4). When the prior row ran under
+ * different Engines flags (`standDownMintAllowed` false, engineStamps.ts), a chronicity card
+ * missing from this run may be missing because the ENGINE changed, and a stand-down would tell
+ * the owner the pet changed. So only the prior's MARKERS survive: a carry restates a stand-down
+ * already minted under matching flags (a past event, still re-anchored to the record), and
+ * nothing new is minted. Allowed ⇒ the prior is returned untouched (flag-off is today).
+ */
+export function priorForStandDowns(prior: PriorEntry[], mintAllowed: boolean): PriorEntry[] {
+  return mintAllowed ? prior : prior.filter((entry) => entry.finding.type === 'stood_down')
+}
+
 export function resolveStandDowns(args: ResolveStandDownsArgs): StoodDownMarker[] {
   const { prior, priorGeneratedAtMs, current, input, nowMs } = args
   const config = args.config ?? DEFAULT_CONFIG
@@ -290,8 +333,17 @@ export function resolveStandDowns(args: ResolveStandDownsArgs): StoodDownMarker[
       const anchoredMs = Date.parse(m.lastEpisodeIso)
       const latestMs = lastEpisodeMsOf(input, m.symptomType, nowMs)
       if (latestMs === null || !Number.isFinite(anchoredMs) || latestMs > anchoredMs) continue
+      // THE PRIOR ROW IS CLIENT-WRITABLE (ai_signals_owner is FOR ALL, CUL-1378), and since
+      // Engines v3 PR-11a a carried marker is also written into signal_shown_log by the
+      // SERVICE ROLE. So a carry is rebuilt from the fields this module mints, each checked
+      // against what a real mint could have produced, never spread wholesale: a marker no
+      // mint could have made is dropped (the wordless vanish, the safe direction). A real
+      // marker passes every check unchanged (rls-privacy-reviewer, PR-11a).
+      const recencyFloor = chronicityFloorsFor(m.symptomType, input.pet.species, config.chronicity).ongoingRecencyDays
+      const carried = carriedMarker(m, recencyFloor, mintedMs, nowMs, entry.rank)
+      if (!carried) continue
       seen.add(m.symptomType)
-      out.push({ ...m, formerRank: entry.rank })
+      out.push(carried)
       continue
     }
     if (f.type !== 'symptom_chronicity') continue

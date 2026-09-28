@@ -225,6 +225,7 @@ function cleanCase(): ReportInput {
 
   return {
     now: NOW,
+    engineFlags: { on: [], readOk: true },
     timezone: TZ,
     pet: {
       id: 'pet-cooper',
@@ -313,6 +314,7 @@ function refusedCase(): ReportInput {
   }
   return {
     now: NOW,
+    engineFlags: { on: [], readOk: true },
     timezone: TZ,
     pet: {
       id: 'pet-mira',
@@ -435,6 +437,7 @@ function completedCase(): ReportInput {
 
   return {
     now: NOW,
+    engineFlags: { on: [], readOk: true },
     timezone: TZ,
     pet: {
       id: 'pet-rosie',
@@ -594,6 +597,7 @@ function truncatedCase(): ReportInput {
 
   return {
     now: NOW,
+    engineFlags: { on: [], readOk: true },
     timezone: TZ,
     pet: {
       id: 'pet-juno',
@@ -703,6 +707,7 @@ function pastWindowCase(): ReportInput {
 
   return {
     now: NOW,
+    engineFlags: { on: [], readOk: true },
     timezone: TZ,
     pet: {
       id: 'pet-tama',
@@ -818,6 +823,7 @@ function windowMoveCase(o: {
 
   return {
     now: NOW,
+    engineFlags: { on: [], readOk: true },
     timezone: TZ,
     pet: {
       id: o.petId,

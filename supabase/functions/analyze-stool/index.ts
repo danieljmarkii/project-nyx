@@ -661,6 +661,9 @@ const STOOL_DESCRIPTOR: IncidentDescriptor<StoolAnalysis, ContextualFlag> = {
   systemPrompt: SYSTEM_PROMPT,
   tool: ANALYZE_TOOL,
   userMessageText: 'Analyse this photo of pet stool.',
+  // The descriptor half of rule_version (engineStamps.ts): bump with any change to
+  // which findings become flags or to the contextual derivation.
+  ruleVersion: 'stool1',
   parseToolResult: parseAnalysisToolResult,
   appearsToShowSubject: (analysis) => analysis.appears_to_show_stool,
   computeContextualFlags: async (userClient, { petId, occurredAt, eventType }) =>

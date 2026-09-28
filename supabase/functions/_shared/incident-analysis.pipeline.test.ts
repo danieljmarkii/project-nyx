@@ -46,6 +46,8 @@ interface World {
   aiWriteError?: (n: number) => boolean
   // Runs inside the vision call: a sibling run landing in the 10-60s window.
   duringVision?: (w: World) => void
+  // What app_config returns (Engines v3 flag + the gate config), or a read error.
+  appConfig?: Row[] | 'error'
   aiReads: number
   aiWriteAttempts: number
   rpcCalls: number
@@ -55,6 +57,8 @@ interface World {
 
 // A stored row is this event's own unless a test says otherwise (CUL-1203).
 const OWN = { id: 'a1', event_id: 'evt-1', pet_id: 'pet-1' }
+// The event's one photo (an attachment id is a UUID; photo_set_key is built from it).
+const ATTACHMENT_ID = '0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b'
 
 function makeWorld(o: Partial<World> & Pick<World, 'vision'>): World {
   return {
@@ -96,13 +100,15 @@ class FakeQuery {
       return {
         data: {
           id: 'evt-1', pet_id: 'pet-1', event_type: 'vomit', occurred_at: '2026-09-26T08:00:00Z',
-          deleted_at: null, pets: { name: 'Mochi', species: 'cat' },
+          deleted_at: null, pets: { name: 'Mochi', species: 'cat', user_id: 'owner-1' },
         },
         error: null,
       }
     }
-    if (this.table === 'event_attachments') return { data: [{ storage_path: 'pet-1/evt-1/a.jpg' }], error: null }
-    if (this.table === 'app_config') return { data: [], error: null }
+    if (this.table === 'event_attachments') return { data: [{ id: ATTACHMENT_ID, storage_path: 'pet-1/evt-1/a.jpg' }], error: null }
+    if (this.table === 'app_config') {
+      return w.appConfig === 'error' ? { data: null, error: { message: 'app_config unreachable' } } : { data: w.appConfig ?? [], error: null }
+    }
     if (this.table !== 'event_ai_analysis') throw new Error(`unexpected table ${this.table}`)
 
     if (this.mode === 'select') {
@@ -195,7 +201,8 @@ function descriptorFor(w: World): IncidentDescriptor<TestAnalysis, Flag> {
     systemPrompt: '',
     tool: { name: 'analyze_test' },
     userMessageText: '',
-    parseToolResult: () => null, // the model is injected as a parsed result
+    ruleVersion: 'test1',
+  parseToolResult: () => null, // the model is injected as a parsed result
     appearsToShowSubject: (a) => a.appears,
     computeContextualFlags: () => Promise.resolve(w.contextFlags),
     copy: COPY,
@@ -565,4 +572,112 @@ Deno.test('pipeline CUL-1323 — a failure that writes no words keeps the hide',
   assertStrictEquals(w.row?.status, 'failed')
   assertStrictEquals(w.row?.read_text, 'MONITOR:Mochi')
   assertStrictEquals(w.row?.dismissed_at, HIDDEN)
+})
+
+// ── Engines v3 PR-11a: the stamps land with the words, and only with the words ──────────
+// engineStamps.ts carries the rule; these pin that the pipeline calls it at every write of
+// words, and at no other write. The owner is the pet's user_id ('owner-1'), never the caller.
+
+const EN0_FOR_OWNER: Row[] = [{ key: 'engines_v3_en0', value: { enabled: false, allowlist: ['owner-1'] } }]
+const HEX64 = /^[0-9a-f]{64}$/
+
+Deno.test('pipeline EN-F — a first read carries every stamp, with the flag off for this owner', async () => {
+  const w = makeWorld({ vision: () => CLEAN })
+  await run(w)
+  assertEquals(w.row?.engine_flags, [])
+  assertStrictEquals(w.row?.rule_version, 'f1.test1')
+  assertStrictEquals(w.row?.photo_set_key, ATTACHMENT_ID)
+  assertStrictEquals(w.row?.model_id, 'test-model')
+  assertStrictEquals(HEX64.test(String(w.row?.prompt_hash)), true)
+})
+
+Deno.test('pipeline EN-F — the flag resolves for the pet\'s OWNER from the allowlist', async () => {
+  const on = makeWorld({ vision: () => CLEAN, appConfig: EN0_FOR_OWNER })
+  await run(on)
+  assertEquals(on.row?.engine_flags, ['engines_v3_en0'])
+  const other = makeWorld({ vision: () => CLEAN, appConfig: [{ key: 'engines_v3_en0', value: { enabled: false, allowlist: ['someone-else'] } }] })
+  await run(other)
+  assertEquals(other.row?.engine_flags, [])
+})
+
+Deno.test('pipeline EN-F — an unreachable app_config: the engine flag fails CLOSED while the read itself still runs', async () => {
+  // readGateConfig fails OPEN (the read stays on); the Engines flag fails closed.
+  const w = makeWorld({ vision: () => BLOODY, appConfig: 'error' })
+  const r = await run(w)
+  assertStrictEquals(r.status, 200)
+  assertStrictEquals(w.visionCalls, 1)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertEquals(w.row?.engine_flags, [])
+})
+
+Deno.test('pipeline EN-F ROLLBACK — a flag-off re-read holds an escalation written under the key, stamps and all', async () => {
+  // The EN-F rollback clause: flag-off code never overwrites, collapses or lowers an
+  // escalation written under the flag, and never relabels it as flag-off.
+  const underKey: Row = {
+    recommendation: 'worth_a_call', status: 'completed', read_text: 'MODEL: blood', blood_col: 'no',
+    engine_flags: ['engines_v3_en0'], rule_version: 'f1.test1', photo_set_key: ATTACHMENT_ID,
+    model_id: 'test-model', prompt_hash: 'a'.repeat(64),
+  }
+  const w = makeWorld({ row: { ...underKey }, vision: () => CLEAN })
+  const r = await run(w)
+  assertStrictEquals(r.body.held, true)
+  assertEquals(w.writes, [])
+  for (const [k, v] of Object.entries(underKey)) assertEquals(w.row?.[k], v, k)
+})
+
+Deno.test('pipeline EN-F — an owner-edited row: the read stamps refresh, the payload stamps stay with the payload', async () => {
+  const w = makeWorld({
+    row: {
+      recommendation: 'monitor', status: 'completed', edited_at: '2026-09-20T00:00:00Z', blood_col: 'no',
+      ai_raw_payload: { old: true }, model_id: 'old-model', prompt_hash: 'b'.repeat(64), engine_flags: null,
+    },
+    vision: () => BLOODY,
+    appConfig: EN0_FOR_OWNER,
+  })
+  await run(w)
+  assertEquals(w.writes.map((x) => x.mode), ['update'])
+  assertEquals(w.row?.engine_flags, ['engines_v3_en0'])
+  assertStrictEquals(w.row?.rule_version, 'f1.test1')
+  assertEquals(w.row?.ai_raw_payload, { old: true })
+  assertStrictEquals(w.row?.model_id, 'old-model')
+  assertStrictEquals(w.row?.prompt_hash, 'b'.repeat(64))
+})
+
+Deno.test('pipeline EN-F — a capped escalation on a fresh row: read stamps, and NULL payload stamps (no model ran)', async () => {
+  const w = makeWorld({ contextFlags: ['ctx_flag'], dayCount: 11, vision: () => CLEAN })
+  await run(w)
+  assertStrictEquals(w.visionCalls, 0)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertEquals(w.row?.engine_flags, [])
+  assertStrictEquals(w.row?.model_id, null)
+  assertStrictEquals(w.row?.prompt_hash, null)
+})
+
+Deno.test('pipeline EN-F — the capped STATE write carries no words and no stamps', async () => {
+  const w = makeWorld({ dayCount: 11, vision: () => CLEAN })
+  await run(w)
+  assertStrictEquals(w.row?.status, 'capped')
+  assertStrictEquals('engine_flags' in (w.row ?? {}), false)
+})
+
+Deno.test('pipeline EN-F — the rescue (a failed run that still warns) carries the read stamps', async () => {
+  const w = makeWorld({ contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN0_FOR_OWNER })
+  await run(w)
+  assertStrictEquals(w.row?.status, 'failed')
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertEquals(w.row?.engine_flags, ['engines_v3_en0'])
+  assertStrictEquals(w.row?.photo_set_key, ATTACHMENT_ID)
+})
+
+Deno.test('pipeline EN-F — a failure that writes no words leaves the stamps of the read the row still holds', async () => {
+  const stored: Row = {
+    recommendation: 'monitor', status: 'completed', read_text: 'MONITOR:Mochi', blood_col: 'no',
+    engine_flags: [], rule_version: 'f0.test0', photo_set_key: 'old', model_id: 'm0', prompt_hash: 'c'.repeat(64),
+  }
+  const w = makeWorld({ row: { ...stored }, vision: overloaded, appConfig: EN0_FOR_OWNER })
+  await run(w)
+  assertStrictEquals(w.row?.status, 'failed')
+  for (const k of ['engine_flags', 'rule_version', 'photo_set_key', 'model_id', 'prompt_hash']) {
+    assertEquals(w.row?.[k], stored[k], k)
+  }
 })

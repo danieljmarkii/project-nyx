@@ -35,6 +35,7 @@
 // Storage write. The service-role Storage WRITE (immutable snapshot) arrives in PR 6.
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { readEngineFlags } from '../_shared/engineFlagsRead.ts'
 import {
   assembleReport,
   resolveScope,
@@ -1315,6 +1316,11 @@ export async function generateReportForPet(
   }
   if (profileRes.error) throw new Error(`user_profiles read failed: ${profileRes.error.message}`)
 
+  // EN-F (Engines v3 PR-11a): the Engines flag for the pet's OWNER (the verified row's
+  // user_id, never a body value), failing closed. Required on ReportInput and read by
+  // nothing yet, so the report is unchanged; see ReportInput.engineFlags.
+  const engineFlags = await readEngineFlags(supabase, petRow.user_id)
+
   const profile = profileRes.data as { display_name: string | null; timezone: string | null } | null
   const pet = mapPet(petRow)
   let ownerName = profile?.display_name?.trim() || null
@@ -1714,6 +1720,7 @@ export async function generateReportForPet(
     lookRowsComplete,
     incompletePulls,
     audience,
+    engineFlags,
   }
 
   // 4. Pure assembly → (PR 7) embed the incident-photo bytes → pure render.

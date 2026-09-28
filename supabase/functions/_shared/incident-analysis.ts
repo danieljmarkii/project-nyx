@@ -52,6 +52,11 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { fetchWithTimeout } from './http.ts'
+// Engines v3 (PR-11a, CUL-1267): the rollout flag, read fail-closed for the record's owner,
+// and the one writer of every stamp migration 075 added (the rule is on engineStamps.ts).
+import type { EngineFlags } from './engineFlags.ts'
+import { readEngineFlags } from './engineFlagsRead.ts'
+import { buildIncidentStamps, stampIncidentWrite, type IncidentStamps } from './engineStamps.ts'
 // The ONE quiet-verdict list, shared with the phone (CUL-1277). Every guard below that
 // protects an escalation already in the RECORD reads it, so a verdict a later rule wrote
 // (EN-3's tiers, a flag rolled back) is protected like `worth_a_call`. The free-text gates
@@ -528,11 +533,19 @@ export async function updateAnalysisRow(
 // writes keep their own shapes — the cap / disabled state upsert and the
 // failure write — and each carries the event's pet_id as a value (the upsert)
 // or goes through updateAnalysisRow (the error-only update).
+//
+// And the one place a builder's words meet their stamps (Engines v3 PR-11a): every
+// write-back carries read words, so every one is stamped here, after the builder has
+// decided the values (engineStamps.ts owns which stamps a write carries). `stamps` is
+// required and nullable, never defaulted (C-37): only a test that is not about stamps
+// passes null, and it has to say so.
 export async function applyAnalysisWriteBack(
   client: SupabaseClient,
   key: { eventId: string; petId: string },
-  writeBack: AnalysisWriteBack,
+  unstamped: AnalysisWriteBack,
+  stamps: IncidentStamps | null,
 ): Promise<{ error: string | null }> {
+  const writeBack = stamps ? stampIncidentWrite(unstamped, stamps) : unstamped
   if (writeBack.mode === 'update') return updateAnalysisRow(client, key, writeBack.values)
   const { error } = await client
     .from('event_ai_analysis')
@@ -651,6 +664,11 @@ export function buildFailureWrite(params: {
   incidentType: string | null
   message: string
   rescue: RescueRead | null
+  // The stamps the rescue's words carry (engineStamps.ts). Only the rescue writes words,
+  // so only the rescue is stamped; the error-only and plain failure shapes leave the
+  // row's stamps describing the read it still holds. Required for the same reason as
+  // `rescue` (C-37); null only where a caller has none (a test not about stamps).
+  stamps: IncidentStamps | null
 }): FailureWrite {
   // The table requires pet_id + incident_type NOT NULL: if we failed before the
   // event loaded we have nothing valid to write at all.
@@ -679,7 +697,7 @@ export function buildFailureWrite(params: {
     // WORDS: an escalation over a row that held none, so words the owner has not seen.
     // A hide they made on the calm read before it would otherwise stand over them, and
     // "AI note hidden" would sit where the warning belongs.
-    return {
+    const rescue: FailureWrite & { mode: 'rescue' } = {
       mode: 'rescue',
       values: {
         event_id: params.eventId,
@@ -694,6 +712,7 @@ export function buildFailureWrite(params: {
         dismissed_at: null,
       },
     }
+    return params.stamps ? stampIncidentWrite(rescue, params.stamps) : rescue
   }
 
   if (params.existing && params.existing.presentFlags.length > 0) {
@@ -988,6 +1007,11 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   systemPrompt: string
   tool: Record<string, unknown>
   userMessageText: string
+  // This descriptor's half of the row's rule_version stamp (the framework's half is
+  // FRAMEWORK_RULE_VERSION in engineStamps.ts). Bump it with any change to which
+  // findings become flags or to the contextual flags' derivation: a row must say which
+  // rules made it (critique R-1). Shape: [a-z0-9]+, e.g. 'vomit1'.
+  ruleVersion: string
   // Parse + sanitize the tool_use result into the per-type analysis; null when
   // the model returned no usable tool call.
   parseToolResult(response: ClaudeResponse): TAnalysis | null
@@ -1003,9 +1027,12 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   // (stool's repeated_loose_stool needs to know if this event is 'diarrhea' —
   // B-247 PR 3). It is PRE-vision context, so it neither reaches the model nor
   // depends on the vision result: escalation still survives the cap.
+  // `engineFlags` is the Engines v3 flag state resolved for the record's owner
+  // (engineFlags.ts); a descriptor that gates a rule on a key reads it here, and one
+  // that gates nothing ignores it.
   computeContextualFlags(
     userClient: SupabaseClient,
-    event: { petId: string; occurredAt: string; species: string; eventType: string },
+    event: { petId: string; occurredAt: string; species: string; eventType: string; engineFlags: EngineFlags },
   ): Promise<TFlag[]>
   // Per-type owner-facing read templates. Every new descriptor's strings need
   // their own reassurance-word regex test (Pattern 8) — not inherited.
@@ -1155,6 +1182,9 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   let hasPhotoForFailure = false
   let contextualFlagsForFailure: TFlag[] = []
   let computedRead: RescueRead<TFlag> | null = null
+  // The stamps this run's words carry (engineStamps.ts). Out here for the same reason as
+  // the rescue's inputs: the catch's rescue writes words, so it writes their stamps.
+  let stampsForFailure: IncidentStamps | null = null
 
   // The stored row, read with every column a write decision switches on. Read twice:
   // at step 3b for the cap branch, and again at step 9, because the vision call
@@ -1186,7 +1216,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //    this descriptor's type.
     const { data: event } = await userClient
       .from('events')
-      .select('id, pet_id, event_type, occurred_at, deleted_at, pets(name, species)')
+      .select('id, pet_id, event_type, occurred_at, deleted_at, pets(name, species, user_id)')
       .eq('id', eventId)
       .is('deleted_at', null)
       .maybeSingle()
@@ -1198,7 +1228,9 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       return Response.json({ error: descriptor.wrongEventTypeMessage }, { status: 400, headers: CORS_HEADERS })
     }
 
-    const pet = (Array.isArray(event.pets) ? event.pets[0] : event.pets) as { name: string; species: string } | null
+    const pet = (Array.isArray(event.pets) ? event.pets[0] : event.pets) as
+      | { name: string; species: string; user_id?: string | null }
+      | null
     const petName = pet?.name ?? 'your pet'
     const species = pet?.species ?? 'unknown'
     const petId = event.pet_id as string
@@ -1210,10 +1242,16 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     incidentTypeForFailure = incidentType
     petNameForFailure = petName
 
+    // 1b. The Engines v3 flag, for the record's OWNER (pets.user_id off the RLS-scoped
+    //     read above), failing closed: a missing, malformed or unreadable row is off
+    //     (engineFlags.ts). A failed read runs the flag-off engine and says so in the
+    //     stamp (engine_flags '{}'), which is the truth about the run.
+    const engineFlags = await readEngineFlags(userClient, typeof pet?.user_id === 'string' ? pet.user_id : null)
+
     // 2. Photo(s) for this event (ordered). May be empty (logged without a photo).
     const { data: attachments } = await userClient
       .from('event_attachments')
-      .select('storage_path')
+      .select('id, storage_path')
       .eq('event_id', eventId)
       .order('sort_order', { ascending: true })
 
@@ -1221,13 +1259,31 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     const hasPhoto = photoPaths.length > 0
     hasPhotoForFailure = hasPhoto
 
+    // 2b. The stamps every write of read words below carries (engineStamps.ts).
+    const stamps = await buildIncidentStamps({
+      attachmentIds: (attachments ?? []).map((a) => a.id),
+      descriptorRuleVersion: descriptor.ruleVersion,
+      engineFlags,
+      model: descriptor.model,
+      systemPrompt: descriptor.systemPrompt,
+      tool: descriptor.tool,
+      userMessageText: descriptor.userMessageText,
+    })
+    stampsForFailure = stamps
+
     // 3. Deterministic contextual flags FIRST (§5.4 step 2 — the reorder). These
     //    are DB reads, fully independent of the vision result (they already run
     //    for photo-less logs), so they compute BEFORE the model call and
     //    therefore SURVIVE the cap. This is what guarantees a capped /
     //    flagged-off incident still escalates when the context warrants it — the
     //    invariant the adversarial review must try to break.
-    const contextualFlags = await descriptor.computeContextualFlags(userClient, { petId, occurredAt, species, eventType: incidentType })
+    const contextualFlags = await descriptor.computeContextualFlags(userClient, {
+      petId,
+      occurredAt,
+      species,
+      eventType: incidentType,
+      engineFlags,
+    })
     contextualFlagsForFailure = contextualFlags
 
     // 3b. Existing analysis row — honors the never-clobber guard (B-028) in every
@@ -1322,7 +1378,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           structuredValues: descriptor.buildStructuredValues(null),
           readFields,
         })
-        const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack)
+        const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps)
         if (writeError) throw new Error(`DB write failed: ${writeError}`)
       } else if (!existingRealAnalysis) {
         // No escalation AND no prior real analysis to protect → record the cap /
@@ -1498,6 +1554,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       readFields,
     })
 
+    // A hold writes no stamp: the words it keeps are an earlier run's (engineStamps.ts).
     if (writeBack.mode === 'hold') {
       console.info(`${descriptor.functionName}: held a stored escalation over a calmer read (CUL-1201)`)
       if (writeBack.values) {
@@ -1513,7 +1570,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       )
     }
 
-    const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack)
+    const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps)
     if (writeError) throw new Error(`DB write failed: ${writeError}`)
 
     return Response.json(
@@ -1567,6 +1624,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         petName: petNameForFailure,
         hasPhoto: hasPhotoForFailure,
       }),
+      stamps: stampsForFailure,
     })
     // Best-effort, as before: a failure write that fails is not re-reported. It is
     // keyed on the event's pet like every other update (CUL-1203); buildFailureWrite

@@ -8,9 +8,9 @@
 //
 // Three columns per analysed vomit:
 //   stored    — the contextual flags the live read wrote.
-//   shipped   — the SHIPPED computeContextualFlags, fed the way analyze-vomit's
-//               assembleContext feeds it: every window anchored at the moment the analysis
-//               ran, over the rows that existed then. Must equal `stored`; a mismatch means
+//   shipped   — the SHIPPED computeContextualFlags over the SHIPPED context builder
+//               (analyze-vomit/context.ts): every window anchored at the moment the
+//               analysis ran, over the rows that existed then. Must equal `stored`; a mismatch means
 //               the replay is not faithful and nothing below it should be trusted.
 //   sketch    — the recalibration proposed in docs/research/2026-09-engines-step-change.md
 //               §7, AS AMENDED by that session's adversarial pass. A research sketch, not a
@@ -20,6 +20,7 @@
 // The photo half cannot be replayed without re-running the vision model; visual flags are
 // reported as stored, beside whether the owner later edited the fields they rest on.
 import { computeContextualFlags } from '../../supabase/functions/analyze-vomit/index.ts'
+import { shippedVomitContext } from '../../supabase/functions/analyze-vomit/context.ts'
 import { argValue, loadRecord, visibleAt, type PetRecord, type RecordEvent } from './record.deno.ts'
 import { emptyReplayProblem } from './subject.ts'
 
@@ -27,18 +28,24 @@ const H = 3_600_000
 const SETTLE = 5 * 60_000 // see record.deno.ts visibleAt
 const t = (s: string) => Date.parse(s)
 
-// analyze-vomit/index.ts assembleContext, restated as a query over the as-of record. The
-// windows (24h vomits, 24h lethargy, 7d intake baseline, 24h positive intake) are read from
-// that file; if it changes, the `shipped` column stops matching `stored` and says so.
+// analyze-vomit's own context builder (context.ts, PR-11a), fed the rows that were visible
+// at the moment the analysis ran. The windows and the derivation are the shipped code's,
+// no longer restated here; only the as-of visibility is the replay's. If the shipped
+// derivation changes, the `shipped` column moves with it.
 function shippedInput(rec: PetRecord, ev: RecordEvent, T: number) {
   const vis = (e: RecordEvent) => visibleAt(e, T, Infinity, SETTLE)
-  const recentVomitTimes = rec.events.filter((e) => e.ty === 'vomit' && vis(e) && t(e.at) >= T - 24 * H).map((e) => e.at)
-  if (!recentVomitTimes.includes(ev.at)) recentVomitTimes.push(ev.at)
-  const hasRecentLethargy = rec.events.some((e) => e.ty === 'lethargy' && vis(e) && t(e.at) >= T - 24 * H)
-  const meals = rec.meals.filter((m) => visibleAt({ cr: m.cr, del: m.del, at: m.at }, T, Infinity, SETTLE) && t(m.at) >= T - 7 * 24 * H)
-  const tracksIntake = meals.some((m) => m.rating !== null)
-  const hasRecentPositiveIntake = meals.some((m) => t(m.at) >= T - 24 * H && (m.rating === 'most' || m.rating === 'all'))
-  return { species: rec.pet.species, recentVomitTimes, thisEventOccurredAt: ev.at, hasRecentPositiveIntake, tracksIntake, hasRecentLethargy }
+  return shippedVomitContext({
+    rows: {
+      vomits: rec.events.filter((e) => e.ty === 'vomit' && vis(e)).map((e) => ({ occurred_at: e.at })),
+      lethargy: rec.events.filter((e) => e.ty === 'lethargy' && vis(e)).map((e) => ({ occurred_at: e.at })),
+      meals: rec.meals
+        .filter((m) => visibleAt({ cr: m.cr, del: m.del, at: m.at }, T, Infinity, SETTLE))
+        .map((m) => ({ occurred_at: m.at, meals: { intake_rating: m.rating } })),
+    },
+    thisEventOccurredAt: ev.at,
+    species: rec.pet.species,
+    nowMs: T,
+  })
 }
 
 // ── The sketch (brief §7, amended) ────────────────────────────────────────────────────
@@ -101,7 +108,7 @@ if (import.meta.main) {
     // but never recomputes the flags (clinical-guardrails Pattern 7), so an edited row falls
     // back to its first run.
     const T = t(a.edited_at == null && a.updated_at ? a.updated_at : a.created_at)
-    const shipped = computeContextualFlags(shippedInput(rec, ev, T) as Parameters<typeof computeContextualFlags>[0])
+    const shipped = computeContextualFlags(shippedInput(rec, ev, T))
     const stored = a.contextual_flags ?? []
     const ok = shipped.length === stored.length && shipped.every((f) => stored.includes(f))
     if (!ok) mismatches++

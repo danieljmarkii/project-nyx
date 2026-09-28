@@ -505,6 +505,7 @@ Deno.test('integration: mapped rows assemble + render to HTML naming the pet', (
   ])
   const input: ReportInput = {
     now: NOW, timezone: 'America/New_York', pet: mapPet(petRow), ownerName: 'Jordan',
+    engineFlags: { on: [], readOk: true },
     events,
     aiAnalyses: mapAiAnalysisRows([{ event_id: 'e1', status: 'completed', colour: 'yellow', contents: ['bile'],
       consistency: 'foamy', blood_present: 'none_visible', bile_present: 'yes', foreign_material_present: 'no',
