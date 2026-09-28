@@ -31,7 +31,7 @@ export type EngineKey = typeof ENGINE_KEYS[number]
 
 // The keys the SIGNAL engine (generate-signal) reads. Empty today: EN-0's key gates the
 // per-incident read only. A Signal phase adds its key here in the PR that makes the Signal
-// read it. The stand-down gate compares only these (engineStamps.ts standDownMintAllowed):
+// read it. The stand-down gate compares only these (standDownMintAllowed, below):
 // a key the Signal never reads cannot change what it detects, so flipping it must not cost
 // an owner a stand-down (adversarial review, PR-11a).
 export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = []
@@ -66,4 +66,33 @@ export function resolveEngineFlags(
 
 export function isEngineKeyOn(flags: EngineFlags, key: EngineKey): boolean {
   return flags.on.includes(key)
+}
+
+// May this run mint a stand-down against the prior cache row? Only when the prior row ran
+// under the same SIGNAL keys as this run. A stand-down says a finding went away; across a
+// change in a key the Signal engine reads, it may have gone because the ENGINE changed, and
+// the owner would be told the pet changed (075 §4).
+//
+// ONLY the keys the Signal reads (`signalKeys`, SIGNAL_ENGINE_KEYS at the call site) are
+// compared. A key it never reads cannot change what it detects, and withholding a mint is not
+// free: the next regen's prior no longer holds the vanished card, so a withheld stand-down is
+// lost for good, the wordless vanish CUL-786 exists to prevent (adversarial review, PR-11a).
+// Likewise a flag read that did not answer blocks a mint only when the Signal reads a key.
+// Required, never defaulted (C-37): the caller says which keys its engine reads.
+//
+// A PRE-STAMP prior (NULL) counts as every key off, deliberately. Before this code deployed
+// no engine honoured any key, so every such row WAS written by the flag-off engine.
+export function standDownMintAllowed(
+  priorEngineFlags: unknown,
+  current: EngineFlags,
+  signalKeys: readonly string[],
+): boolean {
+  if (signalKeys.length === 0) return true
+  if (!current.readOk) return false
+  const prior = priorEngineFlags === null || priorEngineFlags === undefined ? [] : priorEngineFlags
+  if (!Array.isArray(prior) || prior.some((k) => typeof k !== 'string')) return false
+  const relevant = (keys: readonly string[]) => keys.filter((k) => signalKeys.includes(k)).sort()
+  const a = relevant(prior as string[])
+  const b = relevant(current.on)
+  return a.length === b.length && a.every((k, i) => k === b[i])
 }

@@ -209,16 +209,30 @@ Deno.test('mapMedDoseFacts — no doses → no facts', () => {
 
 Deno.test('EN-F wiring — the prior row is read with its flags, and minting is gated on them', async () => {
   const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  // PR-11b moved the gate into the pure pipeline; the read stays in the shell. Both halves
+  // are pinned where they now live: the shell selects the stamp and hands it over, and the
+  // pipeline gates the prior on it (behaviour: signalPipeline.test.ts).
   const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
-  const priorRead = src.slice(src.indexOf(".from('ai_signals')"), src.indexOf('resolveStandDowns({'))
+  const priorRead = src.slice(src.indexOf(".from('ai_signals')"), src.indexOf('runSignalPipeline({'))
   assertStrictEquals(/\.select\('[^']*\bengine_flags\b[^']*'\)/.test(priorRead), true, 'the prior read no longer selects engine_flags')
+  assertStrictEquals(/engineFlags:\s*priorRow\.engine_flags\b/.test(priorRead), true, 'the prior read no longer hands its flags to the pipeline')
+  const pipeline = blankComments(await Deno.readTextFile(new URL('./pipeline.ts', import.meta.url)))
   assertStrictEquals(
-    /priorForStandDowns\(\s*readPriorEntries\(priorRow\.findings\),\s*standDownMintAllowed\(priorRow\.engine_flags,\s*engineFlags,\s*SIGNAL_ENGINE_KEYS\),?\s*\)/
-      .test(priorRead),
+    /priorForStandDowns\(\s*readPriorEntries\(priorSignal\.findings\),\s*standDownMintAllowed\(priorSignal\.engineFlags,\s*engineFlags,\s*SIGNAL_ENGINE_KEYS\),?\s*\)/
+      .test(pipeline),
     true,
     'the prior payload no longer passes through the EN-F gate',
   )
-  assertStrictEquals(/prior = readPriorEntries\(/.test(src), false, 'an ungated prior assignment is back')
+  // The hand-over itself (code review, PR-11b): dropping `prior` or the flags from the call
+  // passes every pin above and mints no stand-down, or gates on nothing.
+  const call = src.slice(src.indexOf('runSignalPipeline({'), src.indexOf('careRecord:', src.indexOf('runSignalPipeline({')))
+  for (const field of ['prior', 'nowMs', 'engineFlags']) {
+    assertStrictEquals(new RegExp(`\\b${field},`).test(call), true, `the shell no longer hands the pipeline its ${field}`)
+  }
+  assertStrictEquals(/payload\.standDownError !== null\)\s*\{\s*console\.warn\(/.test(src), true, 'a stand-down failure is no longer logged')
+  for (const [file, text] of [['index.ts', src], ['pipeline.ts', pipeline]]) {
+    assertStrictEquals(/prior = readPriorEntries\(/.test(text), false, `an ungated prior assignment is back in ${file}`)
+  }
 })
 
 Deno.test('EN-F wiring — the flag is read for the pet\'s owner, and the cache row carries the stamps', async () => {
