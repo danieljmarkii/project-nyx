@@ -99,6 +99,7 @@ import {
 // dependency-free precisely so both runtimes share one copy; a second map here is the
 // B-103 drift class, where a new enum value reaches one surface and not the other).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
+import { isFreeFedIntakeMeal, parseFreeFedIntakeSpans } from '../../../lib/freeFedIntake.ts'
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 // CUL-226 — the SHARED vomit-contents presence leaves: the SAME food/hair/bile atoms L3's
 // photoComposition reads (same dependency-free, both-runtimes rationale as foodFormat above), so
@@ -599,6 +600,8 @@ export interface ReportFeedingArrangementInput extends ReportFoodProteinInput {
   id: string
   foodItemId: string
   method: string // 'free_choice'|'meal_fed'
+  /** CUL-1086 — ISO instant the row was written (the toggle-on); opens the intake span. */
+  createdAt?: string | null
   activeFrom: string | null // DATE
   activeUntil: string | null // DATE; NULL = still active (bowl still down)
   isShared: boolean
@@ -2378,6 +2381,12 @@ export interface Provenance {
    */
   intakeLogFreeFedExcluded: number
   /**
+   * CUL-1086 — of those, the ones logged AFTER page 1's last full meal: inside the gap page 1
+   * states, which a vet weighs (cold read r2). Counted over every bowl row, never the shown
+   * ones, so a cap cannot shrink it (C-3). 0 without an anchor or outside the flag scope.
+   */
+  intakeLogFreeFedAfterAnchor: number
+  /**
    * WHICH meals `intakeLog` holds — never inferred from its contents:
    *   • `intake_flag`   — every rated meal (most recent first), because the page-1 decline
    *                       figures need their meal-by-meal home and the last-full-meal anchor
@@ -3116,6 +3125,10 @@ export function buildDetectionInput(
       activeFrom: a.activeFrom,
       activeUntil: a.activeUntil,
       attributionConfidence: a.isShared ? ('low' as const) : ('high' as const),
+      // CUL-1086 — the intake lane excludes a bowl's rating by date; the window-overlap filter
+      // above is right for it too (a bowl outside the window cannot cover a meal inside it).
+      foodItemId: a.foodItemId,
+      createdAt: a.createdAt ?? null,
     }))
 
   // Medication confounder windows — regimen spans + administered dose POINTS in the
@@ -3157,26 +3170,10 @@ export function buildDetectionInput(
     symptomEvents,
     mealEvents,
     feedingArrangements,
-    freeFedFoodIds: currentlyFreeFedFoodIds(input.feedingArrangements),
     medicationWindows,
     timezone: input.timezone ?? undefined,
     now: scope.detectionNowIso,
   }
-}
-
-/**
- * CUL-1086: the foods free-fed TODAY, the set the Signal's intake lane excludes (§11 #6).
- * Deliberately NOT the window-overlap filter the correlation lane's arrangements get above:
- * the report's intake flag must read the same meals as Home's, and Home (phone and
- * `generate-signal`) excludes by the current arrangement, `free_choice` with no end date.
- * `input.feedingArrangements` is already non-deleted (index.ts pull).
- */
-export function currentlyFreeFedFoodIds(arrangements: ReportFeedingArrangementInput[]): Set<string> {
-  return new Set(
-    arrangements
-      .filter((a) => a.method === 'free_choice' && a.activeUntil === null && !!a.foodItemId)
-      .map((a) => a.foodItemId),
-  )
 }
 
 /** A regimen's DATE end is inclusive of the whole day → push to end-of-day (mirrors generate-signal/index.ts). */
@@ -4718,35 +4715,56 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   let intakeLog: IntakeLogEntry[] = []
   let intakeLogHiddenOlder = 0
   let intakeLogFreeFedExcluded = 0
-  const intakeFreeFed = currentlyFreeFedFoodIds(input.feedingArrangements)
+  let intakeLogFreeFedAfterAnchor = 0
+  // CUL-1086 — the detector's own exclusion, by date, over every free-choice arrangement.
+  const intakeFreeFedSpans = parseFreeFedIntakeSpans(
+    input.feedingArrangements
+      .filter((a) => a.method === 'free_choice')
+      .map((a) => ({ foodItemId: a.foodItemId, createdAt: a.createdAt ?? null, activeFrom: a.activeFrom, activeUntil: a.activeUntil })),
+  )
   if (intakeLogScope !== null) {
     // CUL-1086 — a free-fed food's ratings never reach detectIntakeDecline (§11 #6), so in the
     // flag population they are LISTED BUT MARKED, never hidden (cold read: a vet must be able to
     // see a bowl "ate it all" dated after the anchor and weigh it) and never the anchor. The
     // `unfinished` population is the ratings themselves, not a detector's input, and is unchanged.
     const isIntakeFreeFed = (e: ReportEventInput): boolean =>
-      !!e.meal!.foodItemId && intakeFreeFed.has(e.meal!.foodItemId)
+      isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans)
     const ratedForLog = intakeLogScope === 'intake_flag' ? ratedMealsInWindow : unfinishedRated
-    if (intakeLogScope === 'intake_flag') intakeLogFreeFedExcluded = ratedForLog.filter(isIntakeFreeFed).length
-    // The page-1 anchor = the most recent fully-eaten meal (ratedForLog is most-recent-first,
-    // so the first `all` is exactly the meal detection.ts anchored `lastFullMealIso` on — one
-    // rule, no divergence). May be null (no full meal in the window → flag says so honestly).
-    // Only the flag population carries it: the unfinished population has no `all` row by
-    // construction, and pinning one into it would put a fully-eaten meal in a list captioned
-    // as the meals that were not.
+    // The rows the flag counted, and (flag scope only) the bowl's rows beside them. The cap and
+    // the anchor pin run over the COUNTED rows alone, so a bowl rated four times a day can never
+    // push the meals behind the flag out of the list (adversarial pass: 32 bowl rows shown, 8
+    // counted). Bowl rows are shown back to the oldest counted row shown, or the anchor if older,
+    // so every bowl rating dated after the last full meal is on the page; their own cap is the
+    // same number, and the window's count is disclosed beside the shown one.
+    const bowlRows = intakeLogScope === 'intake_flag' ? ratedForLog.filter(isIntakeFreeFed) : []
+    const counted = intakeLogScope === 'intake_flag' ? ratedForLog.filter((e) => !isIntakeFreeFed(e)) : ratedForLog
+    if (intakeLogScope === 'intake_flag') intakeLogFreeFedExcluded = bowlRows.length
+    // The page-1 anchor = the most recent fully-eaten COUNTED meal (most-recent-first, so the
+    // first `all` is exactly the meal detection.ts anchored `lastFullMealIso` on — one rule, no
+    // divergence). May be null (no full meal in the window → flag says so honestly). Only the
+    // flag population carries it: the unfinished population has no `all` row by construction,
+    // and pinning one into it would put a fully-eaten meal in a list captioned as the meals that
+    // were not.
     const anchorMeal =
-      intakeLogScope === 'intake_flag'
-        ? ratedForLog.find((e) => e.meal!.intakeRating === 'all' && !isIntakeFreeFed(e)) ?? null
-        : null
-    const head = ratedForLog.slice(0, INTAKE_LOG_CAP)
+      intakeLogScope === 'intake_flag' ? counted.find((e) => e.meal!.intakeRating === 'all') ?? null : null
+    const head = counted.slice(0, INTAKE_LOG_CAP)
     // TRACEABILITY (adversarial finding): the "how long off food" number must point at a VISIBLE
     // row. If the anchor predates the most-recent cap (a chronically-inappetent pet with >cap
     // non-full meals since its last full meal), PIN it back in as a trailing row so it is shown
     // and taggable — never left cited-but-invisible. Everything between is disclosed as omitted.
     const anchorInHead = anchorMeal !== null && head.includes(anchorMeal)
-    const shownRows = anchorMeal !== null && !anchorInHead ? [...head, anchorMeal] : head
+    const oldestShown = head.length > 0 ? Date.parse(head[head.length - 1].occurredAt) : Infinity
+    const floorMs = anchorMeal !== null ? Math.min(oldestShown, Date.parse(anchorMeal.occurredAt)) : oldestShown
+    const bowlShown = bowlRows.filter((e) => Date.parse(e.occurredAt) >= floorMs).slice(0, INTAKE_LOG_CAP)
+    const inList = new Set([...head, ...bowlShown].map((e) => e.id))
+    const merged = ratedForLog.filter((e) => inList.has(e.id)) // keeps the list's most-recent-first order
+    const shownRows = anchorMeal !== null && !anchorInHead ? [...merged, anchorMeal] : merged
     const shownIds = new Set(shownRows.map((e) => e.id))
-    intakeLogHiddenOlder = ratedForLog.filter((e) => !shownIds.has(e.id)).length
+    intakeLogHiddenOlder = counted.filter((e) => !shownIds.has(e.id)).length
+    if (anchorMeal !== null) {
+      const anchorMs = Date.parse(anchorMeal.occurredAt) // parsed, never compared as text (C-40)
+      intakeLogFreeFedAfterAnchor = bowlRows.filter((e) => Date.parse(e.occurredAt) > anchorMs).length
+    }
     intakeLog = shownRows.map((e) => ({
       eventId: e.id,
       occurredAt: e.occurredAt,
@@ -4768,6 +4786,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     intakeLog,
     intakeLogHiddenOlder,
     intakeLogFreeFedExcluded,
+    intakeLogFreeFedAfterAnchor,
     intakeLogScope,
     confounders,
     proteinExposureTally,

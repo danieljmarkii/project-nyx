@@ -2114,12 +2114,8 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // Cold read r2: the most useful fact the listed rows carry is whether the bowl was rated
       // AFTER the last full meal, i.e. inside the gap page 1 states. Said here, beside the gap,
       // as a count with a pointer; never as a verdict on the gap (the bowl is not observed).
-      // Instants are parsed, never compared as text (C-40). The log is most-recent-first and the
-      // anchor is pinned when capped, so every row after it is in the log.
-      const anchorMs = f.lastFullMealIso ? Date.parse(f.lastFullMealIso) : NaN
-      const bowlAfter = Number.isFinite(anchorMs)
-        ? snap.provenance.intakeLog.filter((e) => e.notCountedFreeFed && Date.parse(e.occurredAt) > anchorMs).length
-        : 0
+      // report.ts counts it over every bowl row, not the shown ones (C-3).
+      const bowlAfter = snap.provenance.intakeLogFreeFedAfterAnchor
       const freeFedBit =
         bowlRatings > 0
           ? ` ${num(bowlRatings)} rating${bowlRatings === 1 ? '' : 's'} of a free-fed bowl ${

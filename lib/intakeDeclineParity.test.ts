@@ -10,6 +10,12 @@
 // size, or silence on both. Two floors keep it honest (C-36): enough records fire at all, and
 // enough of them are records where the free-fed filter CHANGES the server's answer, so the
 // agreement is measured where the defect lived rather than over records it could not reach.
+//
+// BY DATE (PM ruling 2026-09-28): the generator writes bowls as arrangement ROWS — a creation
+// instant, an optional end DATE, some ended, some opened mid-record — and each side parses them
+// its own production way: the phone through `parseFreeFedIntakeSpans` (what its read wrapper
+// does), the server from `FeedingArrangement`s (what its callers hand it). Ratings land on both
+// sides of every span edge, so the agreement covers the edges, not only the middle.
 
 jest.mock('./db', () => ({ getDb: jest.fn() }));
 jest.mock('./feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
@@ -17,7 +23,9 @@ jest.mock('./feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn
 import { detectIntakeDecline as phoneDetect } from './analytics';
 import type { AnalyticsMeal, IntakeDeclineFlag } from './analytics';
 import { detectIntakeDecline as serverDetect } from '../supabase/functions/generate-signal/detection';
+import { parseFreeFedIntakeSpans, type FreeFedIntakeArrangement } from './freeFedIntake';
 import type {
+  FeedingArrangement,
   IntakeDeclineFinding,
   IntakeRating,
   MealEvent,
@@ -44,7 +52,7 @@ function rng(seed: number): () => number {
 interface Rec {
   species: Species;
   nowMs: number;
-  freeFed: Set<string>;
+  bowls: (FreeFedIntakeArrangement & { foodItemId: string })[];
   meals: { ms: number; foodItemId: string | null; foodType: string | null; rating: IntakeRating | null }[];
 }
 
@@ -52,7 +60,21 @@ function generate(seed: number): Rec {
   const r = rng(seed);
   const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(r() * xs.length)];
   const nowMs = BASE_NOW + Math.floor(r() * 24) * MS_PER_HOUR;
-  const freeFed = new Set(FOODS.filter(() => r() < 0.35));
+  // A bowl per chosen food: written somewhere in the last 20 days (some before every meal),
+  // half of them taken up again at the end of a later day. Dates are UTC, the convention.
+  const dayKey = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const bowls: Rec['bowls'] = [];
+  for (const f of FOODS) {
+    if (r() >= 0.4) continue;
+    const createdMs = nowMs - Math.floor(r() * 20 * 24) * MS_PER_HOUR - Math.floor(r() * 60) * 60_000;
+    const endMs = r() < 0.5 ? null : createdMs + Math.floor(r() * 12 * 24) * MS_PER_HOUR;
+    bowls.push({
+      foodItemId: f,
+      createdAt: new Date(createdMs).toISOString(),
+      activeFrom: dayKey(createdMs),
+      activeUntil: endMs === null ? null : dayKey(endMs),
+    });
+  }
   // Each food gets a "usual" rating and a "lately" rating, so records split between steady
   // eaters and real drops — a uniform rating would almost never clear the decline triggers.
   const usual = new Map(FOODS.map((f) => [f, r() < 0.75 ? 'all' : pick(RATINGS)] as const));
@@ -71,7 +93,7 @@ function generate(seed: number): Rec {
       rating: r() < 0.15 ? pick(RATINGS) : base,
     });
   }
-  return { species: r() < 0.5 ? 'cat' : 'dog', nowMs, freeFed, meals };
+  return { species: r() < 0.5 ? 'cat' : 'dog', nowMs, bowls, meals };
 }
 
 const labelOf = (id: string | null): string | null => (id === null ? null : `Food ${id}`);
@@ -85,11 +107,11 @@ function phoneVerdict(rec: Rec): Verdict[] {
     primaryProtein: null,
     intakeRating: m.rating,
   }));
-  const res = phoneDetect({ species: rec.species, nowMs: rec.nowMs, meals, freeFedFoodIds: rec.freeFed });
+  const res = phoneDetect({ species: rec.species, nowMs: rec.nowMs, meals, freeFedSpans: parseFreeFedIntakeSpans(rec.bowls) });
   return res.status === 'watch' ? res.flags.map(verdictOf) : [];
 }
 
-function serverVerdict(rec: Rec, freeFed: ReadonlySet<string> | undefined): Verdict[] {
+function serverVerdict(rec: Rec, withBowls: boolean): Verdict[] {
   const mealEvents: MealEvent[] = rec.meals.map((m, i) => ({
     id: `m${i}`,
     occurredAt: new Date(m.ms).toISOString(),
@@ -103,7 +125,16 @@ function serverVerdict(rec: Rec, freeFed: ReadonlySet<string> | undefined): Verd
     pet: { name: 'Pet', species: rec.species, dietTrialActive: false },
     symptomEvents: [],
     mealEvents,
-    freeFedFoodIds: freeFed,
+    feedingArrangements: withBowls
+      ? rec.bowls.map((b, i): FeedingArrangement => ({
+          id: `a${i}`,
+          primaryProtein: null,
+          activeFrom: b.activeFrom,
+          activeUntil: b.activeUntil,
+          foodItemId: b.foodItemId,
+          createdAt: b.createdAt,
+        }))
+      : [],
     now: new Date(rec.nowMs).toISOString(),
   }).map(verdictOf);
 }
@@ -133,16 +164,16 @@ describe('intake-decline parity: phone and server over the same meals (CUL-1086)
     for (let seed = 1; seed <= RECORDS; seed++) {
       const rec = generate(seed);
       const phone = phoneVerdict(rec);
-      const server = serverVerdict(rec, rec.freeFed);
+      const server = serverVerdict(rec, true);
       if (JSON.stringify(server) !== JSON.stringify(phone)) {
         throw new Error(
           `seed ${seed} disagrees\nphone:  ${JSON.stringify(phone)}\nserver: ${JSON.stringify(server)}`,
         );
       }
       if (phone.length > 0) fired++;
-      if (JSON.stringify(serverVerdict(rec, undefined)) !== JSON.stringify(server)) filterDecided++;
+      if (JSON.stringify(serverVerdict(rec, false)) !== JSON.stringify(server)) filterDecided++;
     }
-    // Non-vacuity. Measured at authoring: 295 records fired, and on 275 the free-fed filter
+    // Non-vacuity. Measured at authoring (by date): 347 records fired, and on 281 the bowls
     // changed the server's answer (of 4000). The floors sit under those so a harmless generator
     // tweak does not red the suite, and far above zero so a generator that stops reaching the
     // filter does.
@@ -161,11 +192,12 @@ describe('intake-decline parity: phone and server over the same meals (CUL-1086)
     }
     meals.push({ ms: BASE_NOW + 8 * MS_PER_HOUR, foodItemId: 'f1', foodType: 'meal', rating: 'picked' });
     meals.push({ ms: BASE_NOW + 12 * MS_PER_HOUR, foodItemId: 'f2', foodType: 'meal', rating: 'all' });
-    const rec: Rec = { species: 'cat', nowMs: BASE_NOW + 20 * MS_PER_HOUR, freeFed: new Set(['f2']), meals };
+    const bowl = { foodItemId: 'f2', createdAt: '2026-06-01T00:00:00.000Z', activeFrom: '2026-06-01', activeUntil: null };
+    const rec: Rec = { species: 'cat', nowMs: BASE_NOW + 20 * MS_PER_HOUR, bowls: [bowl], meals };
 
-    expect(serverVerdict(rec, undefined)).toEqual([]); // the defect: the server stayed quiet
+    expect(serverVerdict(rec, false)).toEqual([]); // the defect: the server stayed quiet
     const phone = phoneVerdict(rec);
     expect(phone.map((v) => v.trigger)).toEqual(['consecutive_low']);
-    expect(serverVerdict(rec, rec.freeFed)).toEqual(phone);
+    expect(serverVerdict(rec, true)).toEqual(phone);
   });
 });

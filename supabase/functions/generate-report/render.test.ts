@@ -289,6 +289,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       intakeLog: [],
       intakeLogHiddenOlder: 0,
       intakeLogFreeFedExcluded: 0,
+      intakeLogFreeFedAfterAnchor: 0,
       intakeLogScope: null,
       confounders: [],
       proteinExposureTally: {}, proteinUnknownCount: 0,
@@ -576,6 +577,7 @@ Deno.test('B-213 — the flag shows the decline SLOPE so the gap is not misread 
         ],
         intakeLogHiddenOlder: 0,
         intakeLogFreeFedExcluded: 0,
+        intakeLogFreeFedAfterAnchor: 0,
         confounders: [], proteinExposureTally: {}, proteinUnknownCount: 0, conditions: [],
       },
     }),
@@ -606,6 +608,7 @@ Deno.test('CUL-1086 — one free-fed bowl row: page 1 and the list say so in the
         ],
         intakeLogHiddenOlder: 0,
         intakeLogFreeFedExcluded: 1,
+        intakeLogFreeFedAfterAnchor: 1,
         confounders: [], proteinExposureTally: {}, proteinUnknownCount: 0, conditions: [],
       },
     }),
@@ -666,6 +669,7 @@ Deno.test('B-213 — recent-meals appendix line-items rated meals, tags the last
         ],
         intakeLogHiddenOlder: 5,
         intakeLogFreeFedExcluded: 0,
+        intakeLogFreeFedAfterAnchor: 0,
         confounders: [],
         proteinExposureTally: {}, proteinUnknownCount: 0,
         conditions: [],
@@ -915,6 +919,7 @@ Deno.test('severity never reaches the report — no column, no x/5, no "Severity
         intakeLog: [],
         intakeLogHiddenOlder: 0,
         intakeLogFreeFedExcluded: 0,
+        intakeLogFreeFedAfterAnchor: 0,
         intakeLogScope: null,
         confounders: [],
         proteinExposureTally: {}, proteinUnknownCount: 0,
@@ -953,6 +958,7 @@ Deno.test('B-010 — windowed event renders a time RANGE, estimated an ~time, ne
         intakeLog: [],
         intakeLogHiddenOlder: 0,
         intakeLogFreeFedExcluded: 0,
+        intakeLogFreeFedAfterAnchor: 0,
         intakeLogScope: null,
         confounders: [],
         proteinExposureTally: {}, proteinUnknownCount: 0,
@@ -1805,6 +1811,7 @@ Deno.test('Appendix B labels a format=treat exposure "Treat" (label parity with 
         intakeLog: [],
         intakeLogHiddenOlder: 0,
         intakeLogFreeFedExcluded: 0,
+        intakeLogFreeFedAfterAnchor: 0,
         intakeLogScope: null,
         confounders: [
           { eventId: 'e1', occurredAt: '2026-06-01T16:00:00Z', dayKey: '2026-06-01', foodLabel: 'Jerky', primaryProtein: 'chicken', proteinSet: pset(['chicken']), format: 'treat', foodType: 'other', note: null },
@@ -6559,6 +6566,7 @@ Deno.test('R-13 item 1 — no pointer promises itemisation, and every one matche
       intakeLogScope: 'unfinished',
       intakeLogHiddenOlder: 0,
       intakeLogFreeFedExcluded: 0,
+      intakeLogFreeFedAfterAnchor: 0,
     },
   })
   const flagged = base({
@@ -6569,6 +6577,7 @@ Deno.test('R-13 item 1 — no pointer promises itemisation, and every one matche
       intakeLogScope: 'intake_flag',
       intakeLogHiddenOlder: 0,
       intakeLogFreeFedExcluded: 0,
+      intakeLogFreeFedAfterAnchor: 0,
     },
   })
 

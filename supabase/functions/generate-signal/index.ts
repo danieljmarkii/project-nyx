@@ -145,7 +145,7 @@ const PHRASING_MODEL = 'claude-haiku-4-5'
 // DEFAULT_CONFIG, the phrasing model and the Engines flags; engineStamps.ts). Bump it with
 // any change to detection, curation, decoration or phrasing that can change what a pet's
 // Signal says: the fingerprint cannot see a code change this number does not record.
-export const SIGNAL_ENGINE_VERSION = 'signal.1'
+export const SIGNAL_ENGINE_VERSION = 'signal.2' // signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
 
 const MS_PER_DAY = 86_400_000
 
@@ -382,9 +382,10 @@ function mapSymptomRows(rows: SymptomRow[]): SymptomEvent[] {
   }))
 }
 
-interface ArrangementRow {
+export interface ArrangementRow {
   id: string
   food_item_id: string | null
+  created_at: string | null
   is_shared: boolean
   active_from: string | null
   active_until: string | null
@@ -399,7 +400,7 @@ interface ArrangementRow {
 // exposure — its intake IS the discrete meal stream). is_shared → 'low' attribution
 // (multi-cat shared bowl, deferred); in R1 is_shared is always FALSE → 'high'
 // (single-pet free-fed: no other pet could have eaten it). Forward-compatible for free.
-function mapArrangementRows(rows: ArrangementRow[]): FeedingArrangement[] {
+export function mapArrangementRows(rows: ArrangementRow[]): FeedingArrangement[] {
   return rows.map((r) => {
     const fi = first(r.food_items)
     return {
@@ -410,6 +411,9 @@ function mapArrangementRows(rows: ArrangementRow[]): FeedingArrangement[] {
       activeFrom: r.active_from,
       activeUntil: r.active_until,
       attributionConfidence: r.is_shared ? 'low' : 'high',
+      // CUL-1086 — the intake lane tells a bowl's rating from a watched meal by date.
+      foodItemId: r.food_item_id,
+      createdAt: r.created_at,
     }
   })
 }
@@ -854,7 +858,7 @@ const handler = async (req: Request): Promise<Response> => {
       // The active-window overlap is resolved inside detection, not the query.
       supabase
         .from('feeding_arrangements')
-        .select('id, food_item_id, is_shared, active_from, active_until, food_items(primary_protein, proteins)')
+        .select('id, food_item_id, created_at, is_shared, active_from, active_until, food_items(primary_protein, proteins)')
         .eq('pet_id', petId)
         .eq('method', 'free_choice')
         .is('deleted_at', null),
@@ -997,7 +1001,6 @@ const handler = async (req: Request): Promise<Response> => {
       symptomEvents,
       mealEvents,
       feedingArrangements,
-      freeFedFoodIds, // CUL-1086: the intake lane reads the phone's meals (§11 #6)
       medicationWindows,
       incidentAnalyses,
       // Signals v2 (CUL-8) — the active trial for the L2 trial-response lane. The SAME row

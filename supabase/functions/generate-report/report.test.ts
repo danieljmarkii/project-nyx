@@ -514,15 +514,13 @@ function ratedMealOf(
 
 const KIBBLE_BOWL_DOWN: ReportInput['feedingArrangements'][number] = {
   id: 'fa-kibble', foodItemId: 'fi-kibble', method: 'free_choice', foodLabel: 'Bowl Kibble',
-  activeFrom: '2026-01-01', activeUntil: null, isShared: false, primaryProtein: 'chicken',
+  createdAt: '2026-01-01T09:00:00Z', activeFrom: '2026-01-01', activeUntil: null, isShared: false, primaryProtein: 'chicken',
 }
 
-Deno.test('CUL-1086 — the report hands detection the foods free-fed TODAY, the set Home excludes', () => {
+Deno.test('CUL-1086 — the report hands detection each free-choice bowl\'s food and creation instant', () => {
   const arrangements: ReportInput['feedingArrangements'] = [
     KIBBLE_BOWL_DOWN,
-    // Ended: Home stopped excluding it the day the bowl came up, so the report must too.
-    { ...KIBBLE_BOWL_DOWN, id: 'fa-old', foodItemId: 'fi-old', activeUntil: '2026-06-01' },
-    // meal_fed is vet-report metadata; its intake IS the discrete meal stream.
+    // meal_fed is vet-report metadata; its intake IS the discrete meal stream, so never a span.
     { ...KIBBLE_BOWL_DOWN, id: 'fa-mealfed', foodItemId: 'fi-wet', method: 'meal_fed' },
   ]
   const det = buildDetectionInput(
@@ -531,7 +529,36 @@ Deno.test('CUL-1086 — the report hands detection the foods free-fed TODAY, the
     [],
     new Set(),
   )
-  assert.deepEqual([...(det.freeFedFoodIds ?? [])], ['fi-kibble'])
+  assert.deepEqual(
+    (det.feedingArrangements ?? []).map((a) => [a.foodItemId, a.createdAt]),
+    [['fi-kibble', '2026-01-01T09:00:00Z']],
+  )
+  // The pull must select the instant, or every span opens at midnight: the query is the one
+  // part a test cannot drive, so its column list is pinned (a source scan, stated as one).
+  const src = Deno.readTextFileSync(new URL('./index.ts', import.meta.url))
+  assert.match(src, /'feeding_arrangements'[\s\S]{0,200}?`id, food_item_id, method, created_at,/)
+})
+
+Deno.test('CUL-1086 by date — a bowl put down AFTER a past window never erases that window\'s flag', () => {
+  idSeq = 0
+  // The adversarial pass's report case: June's kibble was meal-fed, eaten fully, then refused on
+  // Jun 14. The owner put a bowl of it down on Jun 25. A report over Jun 5 – Jun 14 read June's
+  // meals against the September bowl, lost the flag and said nothing about why.
+  const events: ReportEventInput[] = []
+  for (const d of ['2026-06-05', '2026-06-06', '2026-06-07', '2026-06-08', '2026-06-09', '2026-06-10', '2026-06-11', '2026-06-12', '2026-06-13']) {
+    events.push(ratedMealOf('fi-kibble', d, '12:00:00', 'all'))
+  }
+  events.push(ratedMealOf('fi-kibble', '2026-06-14', '08:00:00', 'refused'), ratedMealOf('fi-kibble', '2026-06-14', '12:00:00', 'refused'))
+  const window = { startDate: '2026-06-05', endDate: '2026-06-14' }
+  const laterBowl = { ...KIBBLE_BOWL_DOWN, createdAt: '2026-06-25T09:00:00Z', activeFrom: '2026-06-25' }
+
+  const without = assembleReport(baseInput({ events, requestedWindow: window }))
+  assert.ok(without.safetyFlags.some((f) => f.kind === 'intake_decline'), 'the fixture flags June')
+
+  const snap = assembleReport(baseInput({ events, requestedWindow: window, feedingArrangements: [laterBowl] }))
+  assert.ok(snap.safetyFlags.some((f) => f.kind === 'intake_decline'), 'a later bowl cannot reach back into June')
+  assert.equal(snap.provenance.intakeLogFreeFedExcluded, 0)
+  assert.ok(!plainText(renderReport(snap)).includes('free-fed bowl'), 'and no bowl sentence about a bowl that was not down')
 })
 
 Deno.test('CUL-1086 — a free-fed "ate it all" no longer hides the drop on the report; the bowl rows are listed, marked, never the anchor', () => {
@@ -583,6 +610,44 @@ Deno.test('CUL-1086 — a free-fed "ate it all" no longer hides the drop on the 
   const plain = assembleReport(baseInput({ events: events.filter((e) => e.meal?.foodItemId !== 'fi-kibble') }))
   assert.equal(plain.provenance.intakeLogFreeFedExcluded, 0)
   assert.ok(!plainText(renderReport(plain)).includes('free-fed bowl'))
+})
+
+Deno.test('CUL-1086 — a bowl rated four times a day never pushes the counted meals off the list', () => {
+  idSeq = 0
+  // The adversarial pass's count case: 32 bowl rows shown, 8 counted, 19 hidden. The cap now
+  // runs over the counted rows; the bowl's rows sit beside them and are counted apart.
+  const events: ReportEventInput[] = []
+  const days: string[] = []
+  for (let d = 20; d <= 30; d++) days.push(`2026-06-${d}`)
+  days.push('2026-07-01')
+  for (const d of days) {
+    events.push(ratedMealOf('fi-wet', d, '08:00:00', 'all'), ratedMealOf('fi-wet', d, '20:00:00', 'all'))
+    for (const h of ['06', '11', '16', '21']) events.push(ratedMealOf('fi-kibble', d, `${h}:00:00`, 'all'))
+  }
+  events.push(ratedMealOf('fi-wet', '2026-07-02', '08:00:00', 'picked'))
+  for (const h of ['06', '11']) events.push(ratedMealOf('fi-kibble', '2026-07-02', `${h}:00:00`, 'all'))
+
+  const snap = assembleReport(baseInput({ events, feedingArrangements: [KIBBLE_BOWL_DOWN] }))
+  const flag = snap.safetyFlags.find((f) => f.kind === 'intake_decline')
+  assert.ok(flag && flag.kind === 'intake_decline')
+  const log = snap.provenance.intakeLog
+  const counted = log.filter((e) => !e.notCountedFreeFed)
+  // Every one of the 25 counted meals is on the page; none hidden.
+  assert.equal(counted.length, 25)
+  assert.equal(snap.provenance.intakeLogHiddenOlder, 0)
+  // 50 bowl ratings in the window, at most the cap shown, and the page says both numbers.
+  assert.equal(snap.provenance.intakeLogFreeFedExcluded, 50)
+  assert.equal(log.filter((e) => e.notCountedFreeFed).length, 40)
+  // After the Jul 1 20:00 anchor: Jul 1 21:00, Jul 2 06:00 and 11:00.
+  assert.equal(flag.lastFullMealIso, '2026-07-01T20:00:00Z')
+  assert.equal(snap.provenance.intakeLogFreeFedAfterAnchor, 3)
+  // Most recent first, the anchor tagged, never a bowl row.
+  const times = log.map((e) => Date.parse(e.occurredAt))
+  assert.deepEqual(times, [...times].sort((a, b) => b - a))
+  assert.ok(log.find((e) => e.isLastFullMeal && !e.notCountedFreeFed))
+  const text = plainText(renderReport(snap))
+  assert.ok(text.includes('3 of them fall after the last full meal'))
+  assert.ok(/Rows marked "free-fed bowl" are ratings of a bowl left down \( ?50 ?in this window, ?40 ?shown\)/.test(text))
 })
 
 Deno.test('CUL-1086 — the unfinished list is the ratings themselves, so it keeps the bowl and says nothing', () => {

@@ -82,6 +82,11 @@ import {
 // (spec §2 L2, G9). `localDayIndex`/`localDayIndexOf` are the same day-boundary helpers the
 // trial card counts "day N of M" with (B-421), so L2's day-count cannot drift from the card's.
 import { isTrialRunning } from '../../../lib/dietTrial.ts'
+import {
+  isFreeFedIntakeMeal,
+  parseFreeFedIntakeSpans,
+  type FreeFedIntakeSpan,
+} from '../../../lib/freeFedIntake.ts'
 // `trialDayCounter` is the ONE "day N of M" formula (B-449) — re-spelling `max(1, end - start + 1)`
 // here is the drift the guard test forbids elsewhere. `localDayIndex*` are the tz-aware day-boundary
 // helpers the trial card counts with (B-421); L2 windows in day-INDEX space (never `index * MS_PER_DAY`,
@@ -493,6 +498,16 @@ export interface FeedingArrangement {
    * bowl = 'low' (is_shared, deferred to the multi-pet sprint). Absent → 'high'.
    */
   attributionConfidence?: AttributionConfidence | null
+  /**
+   * CUL-1086 — the free-fed food, and the instant its row was written (the toggle-on). The
+   * intake lane (② + rate_meals) reads these, through `lib/freeFedIntake.ts`, to tell a bowl's
+   * rating from a watched meal BY DATE; the correlation lanes ignore both. Absent ⇒ the
+   * arrangement excludes no rating (the pre-CUL-1086 behavior), so both production callers
+   * populate them: `generate-signal/index.ts` mapArrangementRows and the report's
+   * buildDetectionInput, each pinned by a test.
+   */
+  foodItemId?: string | null
+  createdAt?: string | null
 }
 
 /**
@@ -686,23 +701,6 @@ export interface DetectionInput {
    * confounder) per detectCorrelations. See FeedingArrangement.
    */
   feedingArrangements?: FeedingArrangement[]
-  /**
-   * Foods CURRENTLY free-fed for this pet (CUL-1086): the food ids of active free_choice
-   * arrangements with `active_until IS NULL`, the phone's `readFreeFedFoodIds` definition (which
-   * also inner-joins the local food cache, so a food missing from the cache is excluded here and
-   * not on the phone; rare, and it errs toward the server reading fewer bowl ratings).
-   * The intake lane (② and the rate_meals diagnostic) drops every rated meal of these foods,
-   * the §11 #6 rule: a free-fed bowl's rating is unreliable and its absence is not a refusal.
-   * Without it the phone and this engine read different meals, and a free-fed bowl rated
-   * "ate it all" could hold a real drop in eating off Home.
-   *
-   * Optional only because fixtures predate it; absent ⇒ nothing is excluded. Both production
-   * callers MUST pass it: `generate-signal/index.ts` (pinned by a source scan in
-   * `intakeFreeFed.test.ts`) and `generate-report/report.ts` buildDetectionInput (driven for real
-   * in `report.test.ts`). The rule is by food id and
-   * ignores time, exactly as the phone's is: a change to that is a change to both surfaces.
-   */
-  freeFedFoodIds?: ReadonlySet<string>
   /**
    * Medication exposure windows for this pet (B-117 PR 9, §8) — regimen spans + administered
    * dose points, see MedicationWindow. They are CONFOUNDERS on the food→symptom correlation,
@@ -3657,28 +3655,37 @@ interface RatedMeal {
 }
 
 /**
- * A meal of a food that is currently free-fed (CUL-1086, §11 #6). The same test as the
- * phone's `lib/analytics.ts` classifyRatedMeals: by food id, a null food never matches.
+ * The intake lane's free-fed spans (CUL-1086, §11 #6): a rating logged while its food's bowl was
+ * down is a bowl, not a watched meal. BY DATE, through the one predicate the phone also uses
+ * (`lib/freeFedIntake.ts`), so the two detectors cannot disagree on which meals they read.
  */
-function isFreeFedMeal(m: MealEvent, freeFed: ReadonlySet<string> | undefined): boolean {
-  return freeFed !== undefined && m.foodItemId !== null && freeFed.has(m.foodItemId)
+function intakeFreeFedSpans(input: DetectionInput): FreeFedIntakeSpan[] {
+  return parseFreeFedIntakeSpans(
+    (input.feedingArrangements ?? []).map((a) => ({
+      foodItemId: a.foodItemId ?? null,
+      createdAt: a.createdAt ?? null,
+      activeFrom: a.activeFrom,
+      activeUntil: a.activeUntil,
+    })),
+  )
+}
+
+function isFreeFedMeal(m: MealEvent, spans: readonly FreeFedIntakeSpan[]): boolean {
+  return isFreeFedIntakeMeal(m.foodItemId, Date.parse(m.occurredAt), spans)
 }
 
 /**
- * Rated meals only: 'meal'-type foods with a real intake rating, free-fed foods excluded,
- * sorted ascending. Treats/other and unrated rows are excluded so a logging gap can never
- * masquerade as a decline. Shared by detectIntakeDecline AND the B-053 rate_meals coverage
- * diagnostic so the "rated meal" definition (the line-710 coverage floor) has ONE
- * source and cannot drift.
- *
- * CUL-1086: this is the phone's classifyRatedMeals (`lib/analytics.ts`) meal for meal; the
- * free-fed filter was the half the two "mirrors" did not share. `lib/intakeDeclineParity.test.ts`
- * drives both real detectors over the same generated meals and requires the same verdict.
+ * Rated meals only: 'meal'-type foods with a real intake rating, free-fed bowl ratings excluded
+ * by date, sorted ascending. Treats/other and unrated rows are excluded so a logging gap can
+ * never masquerade as a decline. Shared by detectIntakeDecline AND the B-053 rate_meals coverage
+ * diagnostic so the "rated meal" definition (the line-710 coverage floor) has ONE source and
+ * cannot drift. The phone's classifyRatedMeals (`lib/analytics.ts`) is this meal for meal;
+ * `lib/intakeDeclineParity.test.ts` drives both real detectors and requires the same verdict.
  */
-function classifyRatedMeals(mealEvents: MealEvent[], freeFed: ReadonlySet<string> | undefined): RatedMeal[] {
+function classifyRatedMeals(mealEvents: MealEvent[], freeFedSpans: readonly FreeFedIntakeSpan[]): RatedMeal[] {
   return mealEvents
     .filter((m) => m.foodType === 'meal' && m.intakeRating != null)
-    .filter((m) => !isFreeFedMeal(m, freeFed))
+    .filter((m) => !isFreeFedMeal(m, freeFedSpans))
     .map((m) => ({
       ms: Date.parse(m.occurredAt),
       occurredAt: m.occurredAt,
@@ -3711,7 +3718,7 @@ export function detectIntakeDecline(
   const nowMs = Date.parse(input.now)
   if (!Number.isFinite(nowMs)) return []
 
-  const ratedMeals = classifyRatedMeals(input.mealEvents, input.freeFedFoodIds)
+  const ratedMeals = classifyRatedMeals(input.mealEvents, intakeFreeFedSpans(input))
 
   // Coverage floor: too few rated meals → SILENT. Silence is not an all-clear (§9);
   // the composition layer renders the building/stale state, never "intake is fine".
@@ -5824,11 +5831,12 @@ function detectRateMeals(
   // is a non-sequitur (that's the building/empty case, not a coverage gap). We gate
   // on raw meal-type events, NOT rated ones, since the whole point is unrated meals.
   //
-  // CUL-1086: a free-fed food's meals count for neither half. Its rating never reaches ②, so
-  // asking the owner to rate it would be advice that cannot wake the lane; a pet fed only from
-  // a free-fed bowl gets no nudge (the phone reads that pet the same way: not observable).
+  // CUL-1086: a meal logged while its bowl was down counts for neither half. Its rating never
+  // reaches ②, so asking the owner to rate it would be advice that cannot wake the lane; a pet
+  // fed only from a free-fed bowl gets no nudge (the phone reads that pet the same way).
+  const freeFedSpans = intakeFreeFedSpans(input)
   const mealsLogged = input.mealEvents.filter(
-    (m) => m.foodType === 'meal' && !isFreeFedMeal(m, input.freeFedFoodIds),
+    (m) => m.foodType === 'meal' && !isFreeFedMeal(m, freeFedSpans),
   ).length
   if (mealsLogged === 0) return null
 
@@ -5836,7 +5844,7 @@ function detectRateMeals(
   // stays silent. If the floor is already met, ②'s silence is NOT a coverage gap
   // (intake is simply steady) — no diagnostic. This is what gives a healthy,
   // well-rated pet (Nyx) staple_washout instead of a spurious rate-meals nudge.
-  const ratedMeals = classifyRatedMeals(input.mealEvents, input.freeFedFoodIds).length
+  const ratedMeals = classifyRatedMeals(input.mealEvents, freeFedSpans).length
   const needed = config.intakeDecline.minRatedMealsForBaseline
   if (ratedMeals >= needed) return null
 

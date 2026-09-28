@@ -386,7 +386,7 @@ Deno.test('mapDietTrialRows: an ABANDONED trial carries ended_at, and food_label
 
 Deno.test('mapFeedingArrangementRows: label + protein from join, method + shared carried', () => {
   const rows = mapFeedingArrangementRows([{
-    id: 'a1', food_item_id: 'f1', method: 'free_choice', active_from: '2026-04-01',
+    id: 'a1', food_item_id: 'f1', method: 'free_choice', created_at: '2026-04-01T09:30:00Z', active_from: '2026-04-01',
     active_until: null, is_shared: false,
     food_items: { primary_protein: 'duck', proteins: ['duck'], ingredients_notes: null, ai_extraction_confidence: null, brand: 'RC', product_name: 'Weight', format: 'dry_kibble' },
   }])
@@ -397,6 +397,9 @@ Deno.test('mapFeedingArrangementRows: label + protein from join, method + shared
   // one indistinguishable "RC Weight" line on the report.
   assert.equal(rows[0].foodLabel, 'RC Weight (Dry)')
   assert.equal(rows[0].activeUntil, null)
+  // CUL-1086 — the toggle-on instant opens the intake lane's span (a rating logged before the
+  // app knew the bowl was down is a watched meal).
+  assert.equal(rows[0].createdAt, '2026-04-01T09:30:00Z')
 })
 
 Deno.test('mapVetVisitRows / mapConditionRows: straight field renames', () => {
