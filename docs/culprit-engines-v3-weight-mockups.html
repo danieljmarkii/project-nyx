@@ -306,6 +306,7 @@
       <div><b>Whether weight reaches the vet report</b><span>Readings with their source and one change line from the same predicate. No finding, no tier. <span class="pill open">W3 · decide · §04</span></span></div>
       <div><b>What EN-8 does on Nyx under PMD-9, in advance</b><span>Today, nothing: June's 4.4 kg is in no table. Re-entered, it depends on PMD-9 and on where June was weighed. <span class="pill">current · §05</span></span></div>
       <div><b>A no-scale household</b><span>No line assumes a scale. Clinic readings confirm on their own, so the lane runs at the pace of visits. <span class="pill">current · §06</span></span></div>
+      <div><b>An isolated adversarial pass on the first draft</b><span>Twelve attacks, nine broke it. The biggest: a steady loss weighed monthly at home never confirmed a peak. Confirmation now counts pairs of readings; every fix is in the spec's §12, and the frames follow it. <span class="pill">applied</span></span></div>
     </div>
     <div class="rule-key">
       <span><span class="pill">current</span> the proposal</span>
@@ -465,18 +466,18 @@
   <section id="one-story">
     <div class="sec-head"><span class="sec-num">03</span><h2>One predicate, one sentence, everywhere</h2></div>
     <div class="col">
-      <p>GAP-20's counterexample: Miso weighs 8.8, 9.9 and 8.9 lb (4.0, 4.5 and 4.05 kg) on a kitchen scale, one reading each. Today Patterns and Ask measure from the first reading and say she's up a little; Get ready prints a range; the report measures first to last in kilograms; the proposed row would measure from the peak and say she's down 10%. With one predicate, every surface says the same thing, and which thing depends on one ruling: under PMD-9 the 9.9 lb peak is a single reading and anchors nothing, so every surface says <i>Up 0.1 lb since Jul 3</i> and no row appears; under D7 as written every surface says <i>Down 1.0 lb from 9.9 lb on Aug 4</i> and the row appears. Either way, no two screens disagree.</p>
+      <p>GAP-20's counterexample: Miso weighs 8.8, 9.9 and 8.9 lb (4.0, 4.5 and 4.05 kg) on a kitchen scale, one reading each. Today Patterns and Ask measure from the first reading and say she's up a little; Get ready prints a range; the report measures first to last in kilograms; the proposed row would measure from the peak and say she's down 10%. With one predicate, every surface says the same sentence: the latest reading, the highest reading before it, and that the 9.9 lb was a single reading. Whether the Signal adds a row is one ruling: under PMD-9 a single high reading confirms nothing, so no row; under D7 as written, a firm row. Either way, no two screens disagree.</p>
     </div>
     <div class="tbl-wrap">
       <table class="tbl">
         <thead><tr><th>Surface</th><th>Today (file:line)</th><th>With the predicate</th></tr></thead>
         <tbody>
-          <tr><td>Patterns, design_v2</td><td>"Up 0.1 lbs (1%) since Jul 3 · a home scale moves about that much on its own" (<code>chartCopy.ts:207-228</code>)</td><td>PMD-9: "Up 0.1 lb since Jul 3. A home scale moves about that much on its own." D7 as written: "Down 1.0 lb from 9.9 lb on Aug 4."</td></tr>
+          <tr><td>Patterns, design_v2</td><td>"Up 0.1 lbs (1%) since Jul 3 · a home scale moves about that much on its own" (<code>chartCopy.ts:207-228</code>)</td><td>"8.9 lb on Sep 20, down 1.0 lb from 9.9 lb on Aug 4. That was one reading."</td></tr>
           <tr><td>Patterns, flag off · Profile</td><td>"Up 0.1 lbs since Jul 3" (<code>weight.ts:698-705</code>)</td><td>the same sentence</td></tr>
           <tr><td>Ask</td><td><code>deltaLbs</code> from the window's first reading (<code>ask/tools.ts:1327-1354</code>)</td><td>state, anchor and latest, each with its source, in pounds</td></tr>
           <tr><td>Get ready</td><td>"8.9–9.9 lbs · 3 weigh-ins" (<code>rundown.ts:922-937</code>)</td><td>range kept; the <i>weigh</i> question quotes the sentence</td></tr>
           <tr><td>Vet report</td><td>"4.00 → 4.05 kg" (<code>render.ts:4305-4378</code>)</td><td>readings with sources; one change line (W3)</td></tr>
-          <tr><td>Signal</td><td>nothing: the engine has no weight input</td><td>PMD-9: nothing. D7 as written: the safety row, F1</td></tr>
+          <tr><td>Signal</td><td>nothing: the engine has no weight input</td><td>PMD-9: nothing. D7 as written: the firm row, F1</td></tr>
         </tbody>
       </table>
     </div>
@@ -522,7 +523,7 @@
             <div class="pcard-line">Down 0.3 lb from 9.6 lb on Jul 2. A home scale moves about that much on its own.</div>
           </div>
         </div>
-        <div class="frame-cap"><b>F7a · Within the scale's range <span class="pill">current</span></b><span>The shipped caveat, now shown only in this state: at most 5% and 0.5 lb, with a home reading at one end.</span></div>
+        <div class="frame-cap"><b>F7a · Within the scale's range <span class="pill">current</span></b><span>The shipped caveat, now shown only in this state: at most 5% and 0.5 lb, resting on a single reading at one end. Once two readings agree on a change, the caveat never appears, however small the change.</span></div>
       </div>
       <div class="frame">
         <div class="phone short" aria-label="Patterns weight card with a confirmed drop">
@@ -614,7 +615,7 @@
           <tr><td>Sep 16 corrected to "at the vet"</td><td class="quiet">silent</td><td class="quiet">silent</td><td class="quiet">silent</td></tr>
           <tr><td>June re-entered as a weigh-in (home scale)</td><td class="fire">firm row</td><td class="quiet">silent, for good: one June reading can't be confirmed. Patterns still shows the 1.5 lb.</td><td class="fire">firm row</td></tr>
           <tr><td>June re-entered and, only if true, "at the vet"</td><td class="fire">firm row</td><td class="fire">firm row</td><td class="fire">firm row</td></tr>
-          <tr><td>June typed into Edit profile</td><td class="quiet">silent: an estimate never anchors</td><td class="quiet">silent</td><td class="quiet">silent</td></tr>
+          <tr><td>June typed into Edit profile</td><td class="quiet">silent: an estimate never anchors. Patterns shows it beside the reading, with <i>Add it as a reading</i>.</td><td class="quiet">silent</td><td class="quiet">silent</td></tr>
         </tbody>
       </table>
     </div>

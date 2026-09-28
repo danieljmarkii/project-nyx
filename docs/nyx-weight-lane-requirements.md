@@ -1,6 +1,6 @@
 # The weight lane — Requirements & PR plan (EN-8, CUL-1135)
 
-**Version:** 1.0 · **Date:** 2026-09-28 · **Status:** 🌱 SPEC, seven decisions open for the PM (W1 to W7, §0), every threshold a placeholder for the CUL-583 ruling sheet (§9)
+**Version:** 1.0 · **Date:** 2026-09-28 · **Status:** 🌱 SPEC, seven decisions open for the PM (W1 to W7, §0), every threshold a placeholder for the CUL-583 ruling sheet (§9). §4 and §5 carry the adversarial pass's twelve attacks (§12).
 **Project:** Engines v3: the accountable engine, Wave 2, Lane F. This is PR-18a; it gates PR-18 (the migration), PR-19 (the lane in `generate-signal`) and PR-37 (the client).
 **Pairs with:** `docs/culprit-engines-v3-weight-mockups.html`, published at https://claude.ai/artifact/TagYzKd662BBDPFaaSZehL (the frames; this spec cites them as **F1 to F12**) · `docs/culprit-engines-v3-mockups.html` round 2 (the Home the weight row sits in) · `docs/engines-v3-critique-2026-09.md` (GAP-20, PMD-9, MFU-8, BRK-11, R-2, R-5) · `docs/research/2026-09-engines-step-change.md` (§2 R2, §7 C3, §8 P6) · migrations 024 and 072.
 
@@ -113,69 +113,89 @@ A person-held weigh-in (owner on a bathroom scale, then holding the cat) is a ho
 
 - **Where:** the weigh-in's completion card names the source (*8.2 lb · on a home scale · Change*), and the reading's record screen (`app/event/[id].tsx`) carries the same row. Both are after the save. Neither is Home.
 - **What:** a three-choice sheet: *At the vet* · *On a home scale* · *It was an estimate*. One tap writes `source` and `source_basis = 'owner'` and moves `updated_at` (C-23). No confirm: the choice is reversible by the same sheet (C-21's reversal half).
-- **Effect:** the lane recomputes on the next Signal regen (the weigh-in path gains `triggerSignalRegenDebounced`, which `lib/weight.ts:12-16` names as the step to add when a lane exists). A correction never rewrites a stored escalation (the CUL-1201 ruling): a card already raised stays until the owner acts (§5.5), and a card that a correction would now raise is raised on the next regen.
+- **A weigh-in on a visit day asks once.** When the local day of the reading has a recorded visit, the completion card's source line reads *on a home scale · At the vet today?* (one tap relabels it). This is F5's question at the other door, and it is how a no-scale household that logs the vet's number through the log still gets *at the vet* (adversarial pass, attack 9).
+- **Effect:** the lane recomputes on the next Signal regen (the weigh-in path gains `triggerSignalRegenDebounced`, which `lib/weight.ts:12-16` names as the step to add when a lane exists). A correction never rewrites a stored escalation (the CUL-1201 ruling): a row already raised stays until the owner acts (§5.5), and a row that a correction would now raise is raised on the next regen.
+- **A relabel never hides a reading.** A reading marked *It was an estimate* leaves every count, anchor and plot, and stays listed on the finding's screen, Patterns and the report as *Not counted: you marked this an estimate (8.2 lb, Sep 16)*. An owner who relabels a low reading to make a loss go away is making a choice, and the record says so (attack 6).
 
 ### 4.3 Stop the pre-fill
 
-`app/log.tsx:272-275` pre-fills the weigh-in with the last snapshot. A pre-fill saved unchanged is a copy stored as a new, witnessed reading, and under PMD-9 it would *confirm* whatever it copied. PR-37 replaces it with a hint under the empty field: *Last: 8.2 lb on Sep 16*. The field stays one tap to focus; typing the number is the observation (024's note: the value is the event).
+`app/log.tsx:272-275` pre-fills the weigh-in with the last snapshot. A pre-fill saved unchanged is a copy stored as a new, witnessed reading, and it would confirm whatever it copied (§5.3 counts pairs). PR-37 replaces it with a hint under the empty field: *Last: 8.2 lb on Sep 16*. The field stays one tap to focus; typing the number is the observation (024's note: the value is the event).
+
+Rows written before PR-37 may be such copies, and the snapshot they copied may have been a profile estimate. So, from PR-19 on: **a reading whose value equals the reading immediately before it, to the gram, never pairs with that reading** (§5.3). It still counts as a reading of that value; it just cannot confirm one (attack 7).
 
 ## 5. The predicate
 
 ### 5.1 Input and output
 
-`weightStory({ readings, windowDays, nowMs, species, dateOfBirth, plannedLoss })` where each reading is `{ kg, occurredAt, source, sourceBasis }` and soft-deleted rows are already excluded. Estimates are passed separately (`estimates: { kg, heldSince }[]`) and only ever reach §6.4.
+`weightStory({ readings, estimates, windowDays, nowMs, species, dateOfBirth, plans, standDowns })` where each reading is `{ kg, occurredAt, source, sourceBasis }`, soft-deleted rows are already excluded, and readings the owner marked as estimates arrive only in the not-counted list.
 
-It returns one state and the readings that justify it:
+It returns a **descriptive sentence** (the same on every surface) and a **state** (which decides the Signal):
 
 | State | Means | Signal | Descriptive surfaces |
 |---|---|---|---|
 | `none` | no readings | nothing | designed empty state (§6.4) |
-| `one_reading` | one reading in the window | nothing | the value, its source, its date |
-| `within_noise` | the change is inside the band of the readings compared | nothing | change in lb + the shipped caveat |
+| `one_reading` | one reading in the window | nothing | the value, its source, its date; an estimate beside it if they differ past the line (§6.4) |
+| `within_noise` | the change rests on a single reading and is inside the band | nothing | change in lb + the shipped caveat |
 | `level_or_up` | not down past the line | nothing | change in lb, no verdict word (WG-7) |
-| `drop_unconfirmed` | down past the line on a reading that is not confirmed | plain row, W5 | change in lb + *one reading so far* |
-| `drop_confirmed` | down past the soft line, both ends confirmed | safety row, "Worth raising with your vet" | change in lb, both readings sourced |
-| `drop_firm` | down past the firm line, both ends confirmed | safety row, "Worth booking a vet visit" | as above |
+| `drop_unconfirmed` | a confirmed level, then one reading below it past the line | plain row, W5 | change in lb + *one reading so far* |
+| `drop_confirmed` | the confirmed latest level is below the confirmed high level past the soft line | safety row, "Worth raising with your vet" | change in lb, both readings sourced |
+| `drop_firm` | as above, past the firm line | safety row, "Worth booking a vet visit" | as above |
 
 The juvenile and planned-loss rules (§5.6) select among the same states; they add none.
 
-### 5.2 The anchor
+### 5.2 The sentence: what every surface says
 
-The anchor is the reading every change is measured from. It is chosen by one ladder, and every sentence names it (WG-5):
+Every surface states **the latest reading and the highest reading before it in the window**, each with its date and source, and says when either is a single reading (*9.7 lb in June, one home reading*). Named by value and date (WG-5), so no two surfaces can say different things.
 
-1. **The highest confirmed reading in the window** (D7 A's peak comparison, with PMD-9's confirmation). A clinic reading is confirmed on its own; a home-scale peak is confirmed when the next home reading after it is within the noise band of it.
-2. If no reading in the window is confirmed, **the earliest reading in the window**, and the sentence says *since* rather than *from her highest*. A rung-2 anchor never raises a safety row; it can reach `drop_unconfirmed` at most.
+This replaces today's anchors: first of the latest 12 readings (Patterns, Profile), first in the window (Ask, report), and a min–max range (Get ready). Get ready keeps printing its range; its *weigh* question quotes the sentence.
 
-A consequence, stated so nobody is surprised by it: under PMD-9 a peak that is a single home reading anchors nothing, so GAP-20's own counterexample (4.0 → 4.5 → 4.05 kg, one reading each) reads *Up 0.1 lb since Jul 3* on every surface and raises no row. Under D7 as written it reads *Down 1.0 lb from 9.9 lb on Aug 4* on every surface and raises the row. What GAP-20 fixed is the disagreement between screens; which sentence they agree on is PMD-9's ruling. W5's plain row therefore fires only once a peak is confirmed (a confirmed peak, then one low home reading).
+The highest reading, never the earliest: a kitten that grew from 1.0 to 2.0 kg and fell to 1.7 kg has lost weight, and a sentence measured from eight weeks old would say it gained (attack 10b). The highest reading *before the latest*, never the latest itself: a low clinic reading must not become its own comparison (attack 2).
 
-This replaces today's anchors: first of the latest 12 readings (Patterns, Profile), first in the window (Ask, report), and a min–max range (Get ready). Get ready keeps printing its range; its *weigh* question quotes the predicate's sentence.
+**The window** is placeholder 12 months (Freeman 2016's pre-diagnosis year), record-anchored: a change is spoken only over readings inside it, and a date outside it is named as such (C-37). Patterns may keep drawing its dots; the sentence obeys the window (C-3).
 
-**The window** is placeholder 12 months (Freeman 2016's pre-diagnosis year), record-anchored: a count or change is spoken only over readings inside it, and a date outside it is named as such (C-37). Patterns may keep drawing its dots; the sentence obeys the window (C-3).
+### 5.3 The decision: confirmed levels (PMD-9, placeholder)
 
-**Under D7 as written** (no confirmation), rung 1 is simply the highest reading in the window. The predicate carries both behind one constant so PMD-9's ruling is a one-line change with a test on each side (§9).
+The sentence always names real readings. Whether the Signal shows a row is decided from **confirmed levels**, so one high or one low reading on a kitchen scale cannot raise it:
 
-### 5.3 Confirming a drop (PMD-9, placeholder)
+- **A clinic reading is a confirmed level on its own.**
+- **Two consecutive home readings confirm the level both reached:** the lower of the two as a high level, the higher of the two as a low level. Consecutive means next to each other in the record, whatever the gap in days. (The exact-copy rule in §4.3 applies.)
+- **The confirmed high** is the highest confirmed level in the window before the confirmed low. **The confirmed low** is the latest reading if it is a clinic reading, else the higher of the latest two readings.
+- **A row is raised** when the confirmed low is below the confirmed high by the line (placeholder 5% soft, 10% firm), measured as a share of the confirmed high.
+- **Mixed instruments:** when one level is clinic and the other home, the difference must clear the line **plus** the band (§5.4), because a home scale can read consistently low and two readings on it don't cancel that (attack 4).
 
-A drop is confirmed when the latest reading is below the line **and** either it is a clinic reading or the reading before it is a home reading also below the line. Two consecutive readings, not two in a row of days: a month apart still counts. The Data Scientist's simulation behind PMD-9: false cards on a stable monthly-weighed cat fall from 87% to 6%, 99% of true losses are still caught, and a 1%-a-week loss is caught near week 8.
+Worked through the adversarial pass's cases:
 
-**Noise-scaled confirmation** (the plan review's addition, for the ruling sheet): a drop larger than a multiple of the instrument band (say 3 × 0.2 kg) needs no second reading. It fires more than PMD-9 and less than D7 as written. It is ruled on the synthetic harness (PR-15, PR-16), never on Nyx (§8).
+| Readings (kg) | Confirmed high → low | Result |
+|---|---|---|
+| Steady 1.5% a week, monthly, home: 4.50, 4.23, 3.98, 3.74 | 4.23 → 3.98 (5.9%) at the 4th reading | soft row at month 3; at the 3rd reading, nothing (4.23 → 4.23). The sentence says *8.2 lb, down from 9.9 lb on Jul 3*. |
+| Stable cat, kitchen scale noise, one spike: 4.0, 4.0, 4.2, 4.0 | 4.0 → 4.0 | nothing; the sentence says *Down 0.4 lb from 9.3 lb on Aug 4, one reading* |
+| GAP-20's counterexample, one reading each: 4.0, 4.5, 4.05 | 4.0 → 4.5 (pair min of 4.0/4.5 is 4.0; latest pair's higher is 4.5) | nothing, and no plain row (no confirmed level above the latest reading); the sentence says *Down 1.0 lb from 9.9 lb on Aug 4, one reading* |
+| Kitten levelling off: 2.05, 2.02, 2.04 | 2.02 → 2.04 | nothing (attack 10a) |
+| Clinic 4.50, then a home scale that reads 0.25 low: 4.25, 4.25 | 4.50 → 4.25 (5.6%), mixed | nothing: 0.25 kg is under line + band (0.225 + 0.23 kg) |
+
+The Data Scientist's PMD-9 figures (false cards on a stable monthly-weighed cat from 87% to 6%, 99% of true losses caught, 1% a week caught near week 8) were run on the critique's wording. **PR-16 re-runs them on this exact definition before PMD-9 is ruled;** the spec does not cite them as its own.
+
+**Noise-scaled confirmation** (for the ruling sheet): a difference of at least 3 × 0.2 kg between the highest reading before the latest and the latest reading raises the row whether or not either end is confirmed. It fires more than PMD-9 and less than D7 as written. It confirms both ends (attack 3).
+
+**Under D7 as written** (the louder rule, live under E-6 amended until PMD-9 is ruled): the row compares the sentence's two readings directly, no confirmation. The predicate carries all three behind one constant, each with its own test.
 
 ### 5.4 Noise
 
-One band, used everywhere: a change is `within_noise` when it is **≤ 5% and ≤ 0.5 lb** (today's `HOME_SCALE_NOISE_FRAC` and the Patterns card's `noiseAbs`, now owned by the predicate), and at least one end is a home or legacy reading. A clinic-to-clinic change is never described as scale noise. The soft safety line is **placeholder 5%**, so the two bands meet at one point; the predicate resolves the boundary to the safety side when both ends are confirmed and to `within_noise` otherwise, and a property test pins that no input yields both.
+One band: **≤ 5% and ≤ 0.5 lb** (today's `HOME_SCALE_NOISE_FRAC` and the Patterns card's `noiseAbs`, now owned by the predicate). The shipped caveat (*a home scale moves about that much on its own*) appears only in `within_noise`: the change is inside the band **and** rests on a single reading at either end. A change the last two readings agree on never carries it, whatever its size, so the caveat cannot sit over a slow real loss (attack 5). A clinic-to-clinic change is never described as scale noise. `within_noise` and a raised row come from disjoint states; a property test pins that no input yields both.
 
 ### 5.5 How long a raised row stays
 
 - It stays until **the owner answers** on the finding's screen. EN-9 supplies the answers (per sign, E-2 A): *My vet knows* moves it to watching (quieter rail, still in the safety group, R-2); *Not yet* keeps it raised.
 - A later reading **never lowers it by itself**, even a confirmed regain (the CUL-1201 ruling: only the owner's own act lowers a verdict). A confirmed regain adds a dated line on the finding's screen (*Back to 9.5 lb on Oct 30, at the vet*) and adds an answer, *She's gained it back*, which stands the row down.
+- **A stand-down ends that finding.** Its readings stop anchoring; the next row is a new finding, measured from confirmed levels after the stand-down (attack 11).
 - Time never moves it. No roll-off, no eight-week re-ask from this lane (E-3 as restated; CUL-1290 owns the fallback).
-- A further confirmed drop from a watched state re-raises it (the EN-9 trigger "weight loss ≥5% or a falling trend", brief C1), measured from the weight at acknowledgement.
+- A further confirmed drop from a watched state re-raises it (the EN-9 trigger "weight loss ≥5% or a falling trend", brief C1), measured from the confirmed level at acknowledgement.
 
 ### 5.6 Juveniles, planned loss, species
 
-- **Juveniles** (placeholder: under 12 months by `date_of_birth`, with its precision): the brief's "any drop from peak, or no gain in four weeks" gives a growing kitten a false card in 62% to 98% of runs (PMD-9). Placeholder until ruled: a confirmed drop from a confirmed peak, at any size, reaches `drop_confirmed`; "no gain" is a ruling-sheet item and ships off. An unknown birthday is an adult.
-- **Planned loss** (W6, from a vet plan only): the soft line is off; the firm line is replaced by a rate, placeholder **2% of body weight a week** averaged over confirmed readings at least 7 days apart (rapid loss in an overweight cat is a hepatic-lipidosis risk). A planned-loss row's ask names the plan: *Losing faster than the plan from Sep 16*.
-- **Species:** cats and dogs share the lane. Species `other` gets the descriptive surfaces and no Signal row until the ruling sheet says otherwise (R-4). Dogs enter CUL-508 with a meal-fed dog on a weight plan before GA (R-4).
+- **Juveniles** (placeholder: under 12 months by `date_of_birth`, with its precision): the brief's "any drop from peak, or no gain in four weeks" gives a growing kitten a false card in 62% to 98% of runs (PMD-9). Placeholder until ruled: a drop between confirmed levels that clears the band raises the soft row at any percentage; "no gain" is a ruling-sheet item and ships off. An unknown birthday is an adult.
+- **Planned loss** (W6, from a vet plan only): while the plan runs, the soft line is off and the firm line becomes a rate, placeholder **2% of body weight a week** between confirmed levels at least 7 days apart (rapid loss in an overweight cat is a hepatic-lipidosis risk). The ask names the plan: *Losing faster than the plan from Sep 16*. **Readings from before the plan's start never anchor again**, during the plan or after it ends; a cat that reached her goal is not measured against the weight she was asked to lose (attack 12). A plan ends when a later visit's plan says so.
+- **Species:** cats and dogs share the lane. The pair rule does not depend on the band, so it holds for a 30 kg dog; the mixed-instrument margin does, and the ruling sheet decides whether it scales with body weight. Species `other` gets the descriptive surfaces and no Signal row until the ruling sheet says otherwise (R-4). Dogs enter CUL-508 with a meal-fed dog on a weight plan before GA (R-4).
 
 ## 6. Surfaces
 
@@ -204,7 +224,8 @@ A household with no home-scale reading ever (`hasHomeScale = false`, read from t
 - Every prompt names the vet instead: *No weight since the Sep 16 visit. Ask for one at the next visit.* It lives on Patterns and Get ready, never on Home.
 - Its readings are clinic readings, each confirmed on its own, so the lane works at the cadence of visits: two visits a few months apart are a full comparison (F9).
 - An estimate on file with no reading: *9.7 lb is from Nyx's profile, not a weigh-in. The next vet visit will give one.* (F10)
-- The day the household logs a home reading, `hasHomeScale` flips and the scale version applies. EN-9's watching prompt ("no weight logged since…", PR-20) reads the same flag; its copy is PR-20's.
+- **An estimate beside a reading** (any household): when the profile value and the latest reading differ by more than the soft line, the descriptive surfaces show both, *8.2 lb on Sep 16 · 9.7 lb in Nyx's profile is an estimate*, and offer *Add it as a reading* (a date and a source, then an ordinary reading). The estimate never anchors and never raises a row; the owner turning it into a dated, sourced reading is what lets it count (attack 8).
+- The day the household logs a home reading, `hasHomeScale` flips and the scale version applies. A reading logged on the local day of a recorded visit does not flip it: that is usually the vet's number typed in at home, and §4.2's *At the vet today?* is asked instead (attack 9). EN-9's watching prompt ("no weight logged since…", PR-20) reads the same flag; its copy is PR-20's.
 
 ### 6.5 The vet report (W3 A)
 
@@ -226,9 +247,9 @@ The record, read 2026-09-28 (service-role, scoped by pet and owner): **one** wei
 |---|---|---|---|
 | **Today** (one reading) | silent (`one_reading`) | silent | silent |
 | Sep 16 corrected to *at the vet* | silent | silent | silent |
-| June re-entered as a weigh-in (*home scale*), Sep 16 *at the vet* | **firm row** (15% from 9.7 lb) | **silent**: June is one home reading, so no peak is confirmed and it never can be; Patterns says *Down 1.5 lb since June (one home reading)* | **firm row** (0.67 kg is more than 3 × the band) |
+| June re-entered as a weigh-in (*home scale*), Sep 16 *at the vet* | **firm row** (15% from 9.7 lb) | **silent**: June is one home reading, so no peak is confirmed and it never can be; every surface says *8.2 lb on Sep 16, down from 9.7 lb in June, one home reading* | **firm row** (0.67 kg is more than 3 × 0.2 kg) |
 | June re-entered and, **only if true**, corrected to *at the vet* | firm row | **firm row** | firm row |
-| June typed into Edit profile | silent (an estimate never anchors) | silent | silent |
+| June typed into Edit profile | silent (an estimate never anchors); Patterns shows it beside the reading and offers *Add it as a reading* | silent | silent |
 
 The Sep 16 source moves only the PMD-9 column: D7 as written and the noise-scaled variant fire on the re-entered June reading whichever way Sep 16 is labelled. June's day of the month is whatever the owner enters; frames write *June*.
 
@@ -271,3 +292,22 @@ Each item: placeholder, direction of failure, where it binds. Under E-6 amended,
 - CUL-765 (Edit profile accepts 0 and negatives) and CUL-1283 (the lossy lb round trip on a name edit) stay their own issues; W1 A keeps both outside the history.
 - The widget shows no weight and gains none.
 - A server push when a clinic reading arrives is not in scope (the notification foundation is local-first).
+
+## 12. Adversarial pass (2026-09-28, isolated `adversarial-reviewer`)
+
+Twelve attacks on the first draft; nine broke it, one found a gap, two held. Every fix is in §4 to §6 above, marked by attack number.
+
+1. A steady 1.5%-a-week loss on monthly home readings never confirmed a peak, so a 17% loss sat unconfirmed forever. **Fixed:** confirmed *levels* from pairs (§5.3); the worked case raises the row at month 3.
+2. A low clinic reading anchored on itself. **Fixed:** the sentence compares the latest with the highest reading *before* it (§5.2).
+3. The noise-scaled column in §8 contradicted the ladder. **Fixed:** noise-scaled confirms both ends (§5.3).
+4. A home scale reading consistently low raised a false row against a clinic anchor. **Fixed:** the mixed-instrument margin (§5.3).
+5. The caveat could sit over a slow real loss. **Fixed:** it needs a single reading at one end (§5.4). The exclusivity of the caveat and the row held.
+6. Relabelling a low reading as an estimate silenced a loss with no trace. **Fixed:** a relabelled reading stays listed as not counted (§4.2).
+7. Legacy rows may be pre-fill copies of an estimate. **Fixed:** an exact copy of the reading before it never pairs (§4.3).
+8. An estimate far from the only reading was ignored (Nyx's shape if June were typed into the profile). **Fixed:** shown beside it, with *Add it as a reading* (§6.4).
+9. A no-scale owner logging the vet's number through the log became a scale household. **Fixed:** the visit-day question and the `hasHomeScale` exception (§4.2, §6.4).
+10. Kittens: jitter raised rows, and a loss read as a gain from eight weeks old. **Fixed:** the band on a juvenile drop; the highest, never the earliest (§5.2, §5.6).
+11. Regain then a new loss was undefined. **Fixed:** a stand-down ends the finding (§5.5).
+12. A finished planned diet raised a firm row against the pre-diet weight. **Fixed:** pre-plan readings never anchor again (§5.6).
+
+DoD line, verbatim in substance: *Biostatistician: tried a steady 1.5%-a-week loss on monthly home readings (4.50 → 3.74 kg); no peak ever confirmed, so a 17% loss never raised a row, and a low clinic reading anchored on itself.* Both fixed as above; **PR-19's own adversarial pass re-runs every case against code**, and PR-16 re-measures PMD-9's figures on §5.3's exact definition.

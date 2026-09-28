@@ -17,6 +17,10 @@ Engines v3, Wave 2, Lane F, PR-18a (CUL-1135). Discovery: a spec and a frames pa
 - The weigh-in pre-fills the last snapshot; saved unchanged it is a copy stored as a new reading, and under PMD-9 it would confirm itself. The spec replaces it with a hint.
 - Nyx's live record (read-only, scoped by pet and owner): one weigh-in, 3.73 kg on Sep 16, logged through the log 48 minutes after the visit was saved; June's 4.4 kg is in no table (the overwrite predates 072); born 2023-09-01.
 
+## Review
+
+- **adversarial-reviewer** (isolated, on the first draft): twelve attacks, nine broke it. The strongest: a steady 1.5%-a-week loss weighed monthly at home (4.50 → 3.74 kg) never confirmed a peak under the draft's ladder, so a 17% loss never raised a row; and a low clinic reading anchored on itself. Fixed by deciding from confirmed *levels* built from pairs of consecutive readings (the lower of a pair confirms a high, the higher of the latest pair confirms a low), a mixed-instrument margin, the highest reading before the latest as every sentence's comparison, and seven smaller fixes. All twelve are in the spec's §12; PR-19's own pass re-runs them against code, and PR-16 re-measures PMD-9's figures on the exact definition.
+
 ## Decisions surfaced (W1 to W7, all open for the PM)
 
 W1 estimates stay out of the history · W2 legacy readings = home scale · W3 the report gets sources and one change line, no finding · W4 Patterns loses its percentage · W5 a plain Home row for a drop on one reading · W6 planned loss only from a vet plan · W7 an optional weight row on "How did it go?". Recommendations in the spec §0 and the page §07.
