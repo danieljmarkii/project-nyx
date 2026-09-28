@@ -70,6 +70,7 @@ import { canonicalizeProtein, readProteinSet } from './protein.ts'
 import {
   classifyEpisodeSet,
   collapseEpisodes,
+  feedingIsEatingAnchor,
   timedEligibleFeedings,
   type FeedingInput,
   type FreeFedSpan,
@@ -373,7 +374,12 @@ export interface MealEvent {
    * keeps every existing detection test green.
    */
   proteins?: string[] | null
-  /** WSAVA intake rating; null for legacy/unrated rows or non-meal foods (treats/other). */
+  /**
+   * WSAVA intake rating; null for legacy/unrated rows. A treat can carry one too (the
+   * completion card offers intake for meals AND treats), so ② filters on foodType itself,
+   * while ① and ⑤ read the rating whatever the food type (a refused treat is not eaten,
+   * CUL-1122 / CUL-1190).
+   */
   intakeRating: IntakeRating | null
   /** food_items.food_type — only 'meal' contributes to the intake baseline (migration 010/011). */
   foodType: 'meal' | 'treat' | 'other' | null
@@ -2829,6 +2835,15 @@ interface ClassifiedMeal {
    * correlate — see MealEvent.isMedicationVehicle. Defaults false (no pairing).
    */
   isMedicationVehicle: boolean
+  /**
+   * Food went in (CUL-1190): false only when the owner rated the feeding Refused, read
+   * through `feedingIsEatingAnchor`, the one "did food go in" rule `lib/mealTiming.ts`
+   * holds for the timing lane (CUL-1122). Picked at is eating (a few bites is enough for a
+   * food reaction), and so is an unrated bowl (ratings are exception-only, CUL-1118).
+   * Read ONLY where ① credits a case exposure (see `refusedOnly` in windowExposures);
+   * every other use of a feeding, including the staple-washout count, is unchanged.
+   */
+  eaten: boolean
 }
 
 /**
@@ -2855,6 +2870,7 @@ function classifyMeals(mealEvents: MealEvent[]): ClassifiedMeal[] {
       attribution: (m.attributionConfidence ?? 'high') as AttributionConfidence,
       foodType: m.foodType ?? null,
       isMedicationVehicle: m.isMedicationVehicle === true, // B-156 PR C1; absent ⇒ false
+      eaten: feedingIsEatingAnchor(m.intakeRating), // CUL-1190; unrated ⇒ eaten
     }))
     .filter((m): m is ClassifiedMeal => m.proteins.length > 0 && Number.isFinite(m.ms))
     .sort((x, y) => x.ms - y.ms)
@@ -3124,6 +3140,10 @@ export function detectCorrelations(
   // logging-eligibility for an absence claim (the B-027/B-050 logging-gap guard).
   const windowExposures = (anchorMs: number, windowMs: number) => {
     const exposures = new Map<string, AttributionConfidence>()
+    // CUL-1190: proteins that were in the window ONLY through feedings she refused. They
+    // stay in `exposures` (offered, exactly as before), so clustering, the family and every
+    // control window are untouched; the candidate loop reads this set on the CASE side only.
+    const eatenProteins = new Set<string>()
     let mealCount = 0
     for (const m of meals) {
       if (m.ms > anchorMs) break // sorted ascending — nothing later precedes the anchor
@@ -3145,8 +3165,10 @@ export function detectCorrelations(
         if (m.attribution === 'low' || !exposures.has(protein)) {
           exposures.set(protein, m.attribution)
         }
+        if (m.eaten) eatenProteins.add(protein)
       }
     }
+    const refusedOnly = new Set([...exposures.keys()].filter((p) => !eatenProteins.has(p)))
     const windowStart = anchorMs - windowMs
     let standingInWindow = false
     const standingProteins = new Set<string>()
@@ -3174,7 +3196,7 @@ export function detectCorrelations(
         break
       }
     }
-    return { exposures, mealCount, standingInWindow, standingProteins, standingPrimaries, medActive }
+    return { exposures, refusedOnly, mealCount, standingInWindow, standingProteins, standingPrimaries, medActive }
   }
 
   interface Candidate {
@@ -3274,6 +3296,8 @@ export function detectCorrelations(
     const pairs: {
       caseExp: Map<string, AttributionConfidence>
       ctrlExp: Map<string, AttributionConfidence>
+      /** Proteins in the case window only through refused feedings (CUL-1190). */
+      caseRefusedOnly: Set<string>
       /** A free-fed standing exposure was in the case OR control window (B-040 confounder). */
       standing: boolean
       /** A medication was on board in the CASE window (B-117 PR 9 confounder analysis). */
@@ -3331,6 +3355,7 @@ export function detectCorrelations(
       pairs.push({
         caseExp: caseWin.exposures,
         ctrlExp: bestCtrl.exposures,
+        caseRefusedOnly: caseWin.refusedOnly,
         standing: caseWin.standingInWindow || bestCtrl.standingInWindow,
         medInCase: caseWin.medActive,
         medInControl: bestCtrl.medActive,
@@ -3437,8 +3462,31 @@ export function detectCorrelations(
       for (const p of pairs) {
         const inCase = p.caseExp.has(representative)
         const inCtrl = p.ctrlExp.has(representative)
+        // CUL-1190 — A REFUSAL CAN ONLY WITHDRAW EVIDENCE FOR THE FOOD SHE REFUSED.
+        //
+        // A case exposure counts FOR the cluster only if some member went in: a bowl she
+        // refused before a vomit is not evidence the food caused it. Before this, tuna
+        // offered only on bad days and refused every time read "established, 8/0".
+        //
+        // Nothing else reads the rating, and that is the design, not an omission. Two
+        // adversarial passes broke every reading that let a refusal count AGAINST a food
+        // or move a pair: a refusal is driven by the illness (a nauseous pet refuses before
+        // a vomit, a recovering one the day after), so reading it as ABSENT let the illness
+        // choose the exposure (one refused staple bowl on the day the matcher picks as
+        // every control made "chicken, established, 8/0"; a dog refusing everything on sick
+        // days demoted its real culprit), and skipping the pair instead biased the test
+        // toward positives, because only the pairs that argue AGAINST a food have it on the
+        // control side to be refused (false Established rose several-fold in simulation).
+        // So a control-side refusal reads exactly as before (offered), a withdrawn case is
+        // counted in neither b nor c, the matched set and the clusters are the offered
+        // reading's, and b can only fall, c is unchanged, the risk difference can only
+        // fall. Every finding is one the ratings-blind engine also made, at the same tier
+        // or lower: `detection.test.ts` holds that as a property over generated records.
+        const inCaseEaten = inCase && !cluster.every((member) => p.caseRefusedOnly.has(member))
+        if (inCaseEaten) caseExposed++
+        // The attribution floor still reads every OFFERED case exposure, as before: a
+        // refused shared bowl cannot lift the floor, only leave it where it was.
         if (inCase) {
-          caseExposed++
           for (const member of cluster) {
             if (p.caseExp.get(member) === 'low') attributionFloor = 'low'
           }
@@ -3455,7 +3503,7 @@ export function detectCorrelations(
             if (p.ctrlExp.get(member) === 'low') attributionFloor = 'low'
           }
         }
-        if (inCase && !inCtrl) b++
+        if (inCaseEaten && !inCtrl) b++
         else if (!inCase && inCtrl) c++
       }
       candidates.push({
@@ -3498,7 +3546,13 @@ export function detectCorrelations(
       standingConfounder,
       medicationPresent,
     } = cand
-    const riskDifference = caseExposed / matchedPairs - controlExposed / matchedPairs
+    // (b − c) / n, from integers. Over a ratings-blind record this equals the old
+    // caseExposed/n − controlExposed/n exactly (concordant pairs cancel), minus the float
+    // wobble that let a true 0.2 fail at 0.3 − 0.1 and pass at 0.8 − 0.6. CUL-1190 needs
+    // the discordant form: a withdrawn case keeps its control's count in controlExposed
+    // (the food WAS offered there), so the difference form read it as a control-only pair
+    // and dropped a b = 6, c = 0 culprit the pet refused on five other sick days.
+    const riskDifference = (b - c) / matchedPairs
 
     // Positive, case-direction enrichment only, with a coincidence guard on discordants.
     if (riskDifference < cfg.earlyMinRiskDifference) continue

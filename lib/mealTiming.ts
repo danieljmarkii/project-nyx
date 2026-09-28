@@ -51,6 +51,12 @@
 // say WHY an episode could not be timed (`refused_only`), so no surface tells an owner
 // "no meal logged" about a record that logged one.
 //
+// `feedingIsEatingAnchor` has a SECOND reader: detector ① (food correlation) in
+// `detection.ts`, via `classifyMeals` (CUL-1190). There it decides whether a case exposure
+// may count FOR its food, which is the same question ("did food go in") with the same
+// answer: Refused may not, Picked at may (a few bites is enough for a food reaction).
+// A change to the table below moves both lanes, deliberately.
+//
 // ── PURE AND DEPENDENCY-FREE, AND THAT IS A HARD CONSTRAINT ───────────────────
 //
 // Same rule as `lib/dietTrial.ts`: this module takes plain data and returns plain
