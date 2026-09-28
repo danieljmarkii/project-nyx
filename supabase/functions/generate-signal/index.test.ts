@@ -223,6 +223,13 @@ Deno.test('EN-F wiring — the prior row is read with its flags, and minting is 
     true,
     'the prior payload no longer passes through the EN-F gate',
   )
+  // The hand-over itself (code review, PR-11b): dropping `prior` or the flags from the call
+  // passes every pin above and mints no stand-down, or gates on nothing.
+  const call = src.slice(src.indexOf('runSignalPipeline({'), src.indexOf('careRecord:', src.indexOf('runSignalPipeline({')))
+  for (const field of ['prior', 'nowMs', 'engineFlags']) {
+    assertStrictEquals(new RegExp(`\\b${field},`).test(call), true, `the shell no longer hands the pipeline its ${field}`)
+  }
+  assertStrictEquals(/payload\.standDownError !== null\)\s*\{\s*console\.warn\(/.test(src), true, 'a stand-down failure is no longer logged')
   for (const [file, text] of [['index.ts', src], ['pipeline.ts', pipeline]]) {
     assertStrictEquals(/prior = readPriorEntries\(/.test(text), false, `an ungated prior assignment is back in ${file}`)
   }

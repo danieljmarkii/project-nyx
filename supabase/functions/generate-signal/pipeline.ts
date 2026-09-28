@@ -8,7 +8,8 @@
 // directly instead.
 //
 // The code below moved here unchanged from index.ts, in the order it ran there, and the
-// existing suites passing unmodified are the refactor proof. Two things are new:
+// existing suites passing (index.test.ts apart from its one source pin, which follows the
+// gate to this file) are the refactor proof. Two things are new:
 //
 //   • `careRecord` is RESERVED. Owner answers and appointment dates are what EN-9's care
 //     state is computed from (PR-23), and the critique's AC 10 amendment puts that
@@ -715,6 +716,10 @@ export interface SignalPayload {
   findings: CachedEntry[]
   coverage: CoverageDiagnostic[]
   summary: CachedSummary | null
+  // Why this row carries no marker it should have: resolving the stand-downs or merging them
+  // threw. Null when neither did. Not written to the row; the shell logs it (no silent
+  // failures), as the handler's single fence did before the split.
+  standDownError: string | null
 }
 
 // The cache row's content, from the pipeline's result and the shell's phrasing: `texts[i]`
@@ -737,14 +742,16 @@ export function assembleSignal(
     ? buildBuildingText(result.petName, result.hasRecentActivity)
     : cachedFindings[0].text
   let entries: CachedEntry[] = cachedFindings
-  if (result.standDownError === null) {
+  let standDownError = result.standDownError
+  if (standDownError === null) {
     try {
       entries = mergeStandDowns(cachedFindings, result.standDowns, result.petName)
-    } catch {
+    } catch (err) {
       entries = cachedFindings
+      standDownError = err instanceof Error ? err.message : String(err)
     }
   }
-  return { signalText, isBuilding: result.isBuilding, findings: entries, coverage: result.coverage, summary }
+  return { signalText, isBuilding: result.isBuilding, findings: entries, coverage: result.coverage, summary, standDownError }
 }
 
 // Every card's deterministic sentence: what the shell writes when the model is off, fails

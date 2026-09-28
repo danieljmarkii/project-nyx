@@ -23,9 +23,8 @@
 // between the reads and the phrasing (map, detect, curate, decorate, the summary
 // packet, the stand-down) is the pure ./pipeline.ts (Engines v3 PR-11b), which the
 // EN-1 harness runs with no database. This file is the I/O shell: DB reads, the
-// Claude call, and the cache write. It runs with
-// the caller's JWT so RLS enforces pet ownership on every read and the cache
-// write.
+// Claude call, and the cache write. It runs with the caller's JWT so RLS enforces
+// pet ownership on every read and the cache write.
 //
 // ONE service-role write (Engines v3 PR-11a, CUL-1378 ruled at the plan): the row per
 // served finding in `signal_shown_log`, keyed on the pet id the caller's own RLS-scoped
@@ -566,7 +565,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     // 1b. The Engines v3 flag, for the pet's OWNER, failing closed (engineFlags.ts). A read
     //     that did not answer runs the flag-off engine and stamps '{}' (the truth about this
-    //     run). Nothing below reads a key yet (SIGNAL_ENGINE_KEYS is empty): EN-0 is the
+    //     run). Nothing below gates on a key yet (SIGNAL_ENGINE_KEYS is empty): EN-0 is the
     //     per-incident read, and the Signal's first gated phase adds its own key.
     const engineFlags = await readEngineFlags(supabase, typeof pet.user_id === 'string' ? pet.user_id : null)
     const fingerprint = await engineFingerprint({
@@ -621,10 +620,6 @@ const handler = async (req: Request): Promise<Response> => {
       engineFlags,
       careRecord: { ownerAnswers: [], appointments: [] },
     })
-    if (result.standDownError !== null) {
-      console.warn('generate-signal: stand-down resolution failed — findings written without a marker:', result.standDownError)
-    }
-
     // 4. Phrase — one sentence per finding, in parallel, each falling back to
     //    its template independently. The set is never blank because the LLM
     //    failed (§2): a failed call yields the template, not a dropped card.
@@ -639,6 +634,9 @@ const handler = async (req: Request): Promise<Response> => {
 
     // 5. Cache. Empty findings = building/stale (§3.3), NEVER an all-clear (§9).
     const payload = assembleSignal(result, texts, summary)
+    if (payload.standDownError !== null) {
+      console.warn('generate-signal: stand-down resolution failed — findings written without a marker:', payload.standDownError)
+    }
     const { signalText, isBuilding, coverage } = payload
     const cachedEntries: CachedEntry[] = payload.findings
 

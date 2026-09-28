@@ -8,6 +8,11 @@
 // local import closure is walked for a remote specifier. Behaviour lives in
 // _shared/engineCorpus/signalPipeline.test.ts.
 //
+// Blind spots, stated (C-38): the scan reads pipeline.ts alone, by pattern. It does not see
+// `performance.now`, `crypto.*`, timers or a `globalThis` lookup, nor a clock read inside a
+// module the pipeline imports (the closure walk below checks only for remote specifiers).
+// The behavioural net for those is signalPipeline.test.ts (e): two runs over one input agree.
+//
 // Proven by mutation when written (C-18): planting each forbidden shape in pipeline.ts reds
 // the first test; importing a URL from a module pipeline.ts reaches reds the second.
 

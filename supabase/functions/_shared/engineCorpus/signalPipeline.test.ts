@@ -12,13 +12,15 @@
 //     test on purpose, in the PR that starts reading it.
 // (e) The pipeline is a function of its input: the same input twice gives the same result,
 //     and the input is never mutated.
-// (f) The stand-down fence: a throw while resolving costs the marker, never the findings.
+// (f) The stand-down fence: a throw while resolving or merging costs the marker, never the
+//     findings, and says so (the shell logs `standDownError`).
 
 import { assertEquals, assertStrictEquals, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   assembleSignal,
   runSignalPipeline,
   templatePayload,
+  templateTexts,
   type CareRecord,
   type PriorSignal,
   type SignalPayload,
@@ -130,7 +132,24 @@ Deno.test('(f) a throw while resolving the stand-down costs the marker, never th
   assertStrictEquals(result.standDownError, 'boom')
   assertEquals(result.standDowns, [])
   const withoutPrior = run({ ...golden, prior: null })
-  assertEquals(templatePayload(result), templatePayload(withoutPrior))
+  assertEquals(
+    { ...templatePayload(result), standDownError: null },
+    templatePayload(withoutPrior),
+    'the row differs from a run with no prior beyond the reported error',
+  )
+  assertStrictEquals(templatePayload(result).standDownError, 'boom')
+})
+
+Deno.test('(f) a throw while merging the markers costs the marker, never the findings, and is reported', () => {
+  const golden = SIGNAL_PIPELINE_CORPUS.find((c) => c.expectedTypes.includes('stood_down'))!
+  const result = run(golden)
+  assertStrictEquals(result.standDowns.length, 1, 'fixture premise: the golden case mints one marker')
+  const exploding = new Proxy(result.standDowns[0], { get: () => { throw new Error('merge boom') } })
+  const p = assembleSignal({ ...result, standDowns: [exploding] }, templateTexts(result), null)
+  assertStrictEquals(p.standDownError, 'merge boom')
+  assertEquals(types(p), [])
+  // A clean run reports nothing.
+  assertStrictEquals(templatePayload(result).standDownError, null)
 })
 
 Deno.test('assembleSignal refuses a phrasing that does not match the findings one for one', () => {
