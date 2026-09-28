@@ -1,0 +1,709 @@
+<title>The Weight Lane</title>
+<meta name="description" content="Engines v3 EN-8 frames: one weight story on every screen, sources from how a reading was entered, the vet report, Nyx under PMD-9, and a no-scale household.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+  /* ============================================================
+     The weight lane, round 1 (EN-8, CUL-1135, PR-18a; 2026-09-28).
+     Its own current-proposal page beside "Engines v3 on Home"
+     (docs/culprit-engines-v3-mockups.html), so EN-9's round 3 can
+     republish that URL without colliding. Spec:
+     docs/nyx-weight-lane-requirements.md (frames F1 to F12).
+     House system: round 2's tokens, verbatim, plus the additions
+     at the foot of this block. Phone frames render the app's light
+     tokens in both page themes; the report frame is paper.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --note-ink: #7A4E00; --note-wash: #FDF3DC; --note-rule: #E3B85C;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    /* The app's own light tokens, inside the phone frames in both page themes. */
+    --app-ground: #FAFAFA; --app-card: #FFFFFF; --app-subtle: #F4F4F5; --app-ink: #0A0A0A;
+    --app-ink-2: #525252; --app-ink-3: #737373; --app-rule: #E7E5E4;
+    --app-rose: #F43F5E; --app-rose-ink: #B4123B; --app-rose-soft: #FBB6C3;
+    --app-teal: #00C2A8; --app-teal-ink: #0B7B6C; --app-teal-wash: #E0FBF7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8A86BA;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --note-ink: #F5C26B; --note-wash: rgba(245,194,107,0.12); --note-rule: rgba(245,194,107,0.45);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8A86BA;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --note-ink: #F5C26B; --note-wash: rgba(245,194,107,0.12); --note-rule: rgba(245,194,107,0.45);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  a { color: var(--teal-ink); text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 3px; border-radius: 3px; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 64ch; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 500; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.needs { color: var(--note-ink); background: var(--note-wash); }
+  .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
+
+  /* The ledger: each critique finding, and what moved on the page */
+  .ledger { display: grid; gap: 0; margin: 26px 0 0; }
+  .ledger div { display: grid; grid-template-columns: 250px 1fr; gap: 16px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-block: 9px; }
+  .ledger div > b { color: var(--ink); font-weight: 500; }
+  @media (max-width: 680px) { .ledger div { grid-template-columns: 1fr; gap: 3px; } }
+  .rule-key { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 22px; font-size: 13.5px; color: var(--ink-2); }
+  .rule-key span { display: inline-flex; align-items: center; gap: 8px; }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 36px 0 6px; }
+  p { margin: 0 0 14px; }
+  .col p:last-child { margin-bottom: 0; }
+
+  /* Frames */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 26px; align-items: flex-start; }
+  .frame { display: flex; flex-direction: column; gap: 12px; width: 316px; max-width: 100%; }
+  .frame-cap { display: flex; flex-direction: column; gap: 5px; }
+  .frame-cap b { font-size: 14.5px; font-weight: 600; }
+  .frame-cap span, .frame-cap li { font-size: 13.5px; color: var(--ink-2); }
+  .frame-cap .pill { font-size: 10.5px; color: var(--teal-ink); }
+  .frame-cap .pill.dir { color: var(--ink-2); }
+  .frame-cap .pill.needs { color: var(--note-ink); }
+  .frame-cap ul { margin: 2px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+  .option { border: 1px dashed var(--rule); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 14px; max-width: 100%; }
+  .option-head { display: flex; flex-direction: column; gap: 4px; }
+  .option-head::before { content: "Option, drawn for the decision, not the current proposal"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  .option-head b { font-size: 15px; }
+  .option-head span { font-size: 13.5px; color: var(--ink-2); max-width: 60ch; }
+  .option .frames { margin-top: 0; }
+  .side { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 26px; align-items: flex-start; }
+
+  /* The phone */
+  .phone { width: 316px; max-width: 100%; background: var(--app-ground); border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.14); padding: 14px 12px 16px; color: var(--app-ink); font-family: var(--sans); font-variant-numeric: tabular-nums; font-size: 13px; line-height: 1.4; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 10px; }
+  .phone.short { padding-bottom: 12px; }
+  .appbar { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 2px; }
+  .appbar .pet { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, #3a3a3a, #8a8a8a); }
+  .askpill { font-size: 12px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 3px 10px; display: flex; align-items: center; gap: 5px; }
+  .askpill i { width: 6px; height: 6px; border-radius: 50%; background: var(--app-teal); display: inline-block; }
+  .card { background: var(--app-card); border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); }
+  .zone-label { font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-3); margin-bottom: 8px; }
+  .row-divider { height: 1px; background: var(--app-rule); margin: 11px 0; }
+  .zone-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; font-size: 10.5px; color: var(--app-ink-3); }
+  .zone-foot span:last-child { font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; white-space: nowrap; }
+  .fade-bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 54px; background: linear-gradient(rgba(250,250,250,0), var(--app-ground)); pointer-events: none; }
+
+  /* Signal rows (CUL-1270 as built: headline, count, ask, door) */
+  .door { display: flex; align-items: center; gap: 10px; position: relative; }
+  .door .body { flex: 1; min-width: 0; }
+  .railed { border-left: 3px solid var(--app-rose); padding-left: 10px; }
+  .railed.watch { border-left-color: var(--app-rose-soft); }
+  .plain-row { padding-left: 13px; }
+  .eyebrow-s { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); font-weight: 500; }
+  .head { font-size: 14px; font-weight: 600; line-height: 1.3; }
+  .head.serif { font-family: var(--serif); font-weight: 500; font-size: 18px; line-height: 1.22; }
+  .asktxt { font-size: 12px; color: var(--app-rose-ink); font-weight: 500; margin-top: 2px; }
+  .sub { font-size: 11.5px; color: var(--app-ink-2); margin-top: 2px; }
+  .sub .ask-in { color: var(--app-rose-ink); }
+  .state { display: inline-block; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 4px; padding: 1px 5px; margin-right: 4px; vertical-align: 1px; }
+  .chev { width: 22px; height: 22px; flex-shrink: 0; color: var(--app-ink-3); }
+  .chev svg { display: block; }
+  .chev.big { width: 28px; height: 28px; border-radius: 50%; background: var(--app-subtle); display: grid; place-items: center; }
+  .lane { display: block; margin-top: 6px; }
+  .answers { display: flex; flex-wrap: wrap; column-gap: 16px; row-gap: 16px; margin-top: 9px; }
+  .answers span { font-size: 12px; font-weight: 500; border: 1px solid var(--app-rule); border-radius: 999px; padding: 6px 12px; min-height: 30px; display: inline-flex; align-items: center; color: var(--app-ink); background: var(--app-card); }
+  .answers span.pri { border-color: var(--app-ink); }
+
+  /* Strips (shipped register: context, never urgency) */
+  .strip { background: var(--app-card); border-radius: 14px; padding: 11px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .strip .sh { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; }
+  .strip .sh i { font-style: normal; color: var(--app-ink-3); font-weight: 400; }
+  .strip .sl { font-size: 11.5px; color: var(--app-ink-2); margin-top: 2px; }
+  .strip .bar { height: 4px; background: var(--app-subtle); border-radius: 2px; margin-top: 7px; overflow: hidden; }
+  .strip .bar b { display: block; height: 100%; background: var(--app-teal); border-radius: 2px; }
+  .strip .doors { display: flex; gap: 20px; margin-top: 8px; font-size: 12px; font-weight: 500; color: var(--app-teal-ink); }
+  .ghost { display: grid; gap: 8px; padding: 2px 0; }
+  .ghost i { display: block; height: 8px; border-radius: 4px; background: var(--app-rule); }
+  .ghost i:nth-child(2) { width: 72%; } .ghost i:nth-child(3) { width: 84%; }
+
+  /* Screens (Design v2's Signal screen and forms) */
+  .screen-head { background: var(--app-card); border-radius: 18px; padding: 14px; }
+  .back { font-size: 20px; color: var(--app-ink-2); line-height: 1; margin-bottom: 8px; }
+  .screen-title { font-family: var(--serif); font-size: 21px; line-height: 1.2; letter-spacing: -0.005em; margin-bottom: 6px; }
+  .screen-sent { font-size: 12px; color: var(--app-ink-2); line-height: 1.45; }
+  .mini-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); margin: 12px 0 6px; }
+  .photo { height: 96px; border-radius: 10px; background: radial-gradient(circle at 38% 42%, #d8c9a8, #9c8a66 55%, #6e6048); position: relative; }
+  .photo::after { content: ""; position: absolute; left: 58%; top: 40%; width: 22px; height: 12px; border-radius: 4px; background: #4b4b52; transform: rotate(-18deg); }
+  .qblock { background: var(--app-subtle); border-radius: 12px; padding: 11px 12px 12px; margin-top: 12px; }
+  .qblock .q { font-size: 13px; font-weight: 600; line-height: 1.35; }
+  .qblock .qs { font-size: 11.5px; color: var(--app-ink-2); margin-top: 3px; }
+  .qblock .answers span { background: var(--app-card); }
+  .form-row { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-top: 1px solid var(--app-rule); }
+  .form-row:first-of-type { border-top: 0; }
+  .form-row .fr-h { font-size: 13px; font-weight: 600; }
+  .form-row .fr-s { font-size: 11.5px; color: var(--app-ink-2); }
+  .seg { display: flex; gap: 0; margin-top: 7px; border: 1px solid var(--app-rule); border-radius: 10px; overflow: hidden; }
+  .seg span { flex: 1; text-align: center; font-size: 11.5px; font-weight: 500; padding: 7px 4px; min-height: 32px; display: grid; place-items: center; border-left: 1px solid var(--app-rule); }
+  .seg span:first-child { border-left: 0; }
+  .seg span.on { background: var(--app-ink); color: #fff; }
+  .read-pill { display: inline-block; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; border-radius: 999px; padding: 3px 9px; }
+  .read-pill.call { color: #fff; background: var(--app-rose); }
+  .read-pill.watchfor { color: var(--app-ink-2); background: var(--app-subtle); }
+  .obs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .obs span { font-size: 11px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 3px 9px; color: var(--app-ink-2); }
+  .correction { margin-top: 10px; border-top: 1px solid var(--app-rule); padding-top: 9px; font-size: 11.5px; color: var(--app-ink-2); }
+  .correction b { color: var(--app-ink); font-weight: 600; }
+  .struck { color: var(--app-ink-3); }
+
+  /* The annotation layer: never app chrome. Marks a row the rules cannot draw yet. */
+  .needs-tag { display: inline-block; margin-bottom: 5px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em; color: #7A4E00; background: #FDF3DC; border: 1px solid #E3B85C; border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+  .needs-box { outline: 1.5px dashed #E3B85C; outline-offset: 4px; border-radius: 6px; }
+  .note { font-size: 13.5px; color: var(--ink-2); background: var(--note-wash); border-left: 3px solid var(--note-rule); padding: 10px 14px; border-radius: 0 6px 6px 0; max-width: 72ch; }
+  .note b { color: var(--ink); }
+
+  /* Briefs */
+  .briefs { display: grid; gap: 18px; margin-top: 24px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px; font-size: 14.5px; color: var(--ink-2); display: flex; flex-direction: column; gap: 8px; }
+  .brief h4 { margin: 0; font-size: 16px; color: var(--ink); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .brief p { margin: 0; }
+  .brief b { color: var(--ink); }
+  .brief ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+  .conflict { border-left: 3px solid var(--rose-ink); padding-left: 12px; }
+  .next-list { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); font-size: 14.5px; max-width: 72ch; }
+  footer { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13.5px; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 8px 18px; }
+
+  /* Round 2: the loop diagram and the new screen parts */
+  .archive { margin-top: 18px; font-size: 14px; color: var(--ink-2); }
+  .archive summary { cursor: pointer; color: var(--ink-2); font-size: 13.5px; }
+  .archive summary:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 3px; border-radius: 3px; }
+  .ledger q { font-style: italic; quotes: "\201C" "\201D"; }
+  .diagram { margin: 28px 0 0; max-width: 980px; }
+  .diagram-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; color: var(--ink); }
+  .diagram-scroll svg { display: block; width: 100%; min-width: 760px; height: auto; }
+  .diagram figcaption { font-size: 13.5px; color: var(--ink-2); margin-top: 10px; max-width: 72ch; }
+  .d-lane { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; fill: var(--ink-3); }
+  .d-label { font-family: var(--sans); font-size: 13px; font-weight: 500; fill: var(--ink); }
+  .d-small { font-family: var(--sans); font-size: 11.5px; fill: var(--ink-2); }
+  .d-node { fill: var(--paper-2); stroke: var(--rule); stroke-width: 1.2; }
+  .d-node-raised { stroke: var(--rose-ink); }
+  .d-node-new { stroke: var(--teal-ink); stroke-dasharray: 4 3; }
+  .d-shipped { stroke: var(--ink-3); stroke-width: 1.4; fill: none; }
+  .d-shipped-fill { fill: var(--ink-3); }
+  .d-new { stroke: var(--teal-ink); stroke-width: 2; fill: none; }
+  .d-new-fill { fill: var(--teal-ink); }
+  .d-new-text { fill: var(--teal-ink); font-weight: 500; }
+  .d-boundary { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 2 4; }
+  .links { display: flex; gap: 20px; margin-top: 8px; font-size: 12px; font-weight: 500; color: var(--app-teal-ink); }
+  .links span { min-height: 30px; display: inline-flex; align-items: center; }
+  .field { margin-top: 10px; border: 1px solid var(--app-rule); border-radius: 10px; padding: 10px; font-size: 12.5px; line-height: 1.45; min-height: 74px; color: var(--app-ink); }
+  .field.slim { min-height: 36px; color: var(--app-ink-3); }
+  .save { margin-top: 12px; background: var(--app-ink); color: #fff; border-radius: 12px; text-align: center; font-weight: 600; font-size: 13px; padding: 10px; }
+  .tick-row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; min-height: 36px; border-top: 1px solid var(--app-rule); }
+  .tick-row i { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--app-ink-3); flex-shrink: 0; position: relative; }
+  .tick-row.on i { background: var(--app-teal-ink); border-color: var(--app-teal-ink); }
+  .tick-row.on i::after { content: ""; position: absolute; left: 5px; top: 1px; width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .choice { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 44px; border-top: 1px solid var(--app-rule); font-size: 13px; font-weight: 500; }
+  .choice em { font-style: normal; font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; }
+  .vv-row { display: flex; flex-direction: column; gap: 2px; padding: 9px 0; border-top: 1px solid var(--app-rule); font-size: 12px; color: var(--app-ink-2); }
+  .vv-row b { font-size: 13px; color: var(--app-ink); font-weight: 600; }
+  .vv-note { font-style: italic; color: var(--app-ink-2); }
+  .frame-cap code, .brief code, .col code { font-family: var(--mono); font-size: 0.86em; }
+
+  /* EN-8 additions: source chips, the dot row, the completion card, sheets, the report paper */
+  .src { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 500; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+  .src.vet { color: var(--app-teal-ink); background: var(--app-teal-wash); }
+  .src.est { color: var(--app-ink-3); background: transparent; border: 1px dashed var(--app-rule); }
+  .readings { margin-top: 8px; }
+  .reading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; border-top: 1px solid var(--app-rule); font-size: 12.5px; }
+  .reading b { font-weight: 600; }
+  .reading .rl { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .reading .rl span { font-size: 11px; color: var(--app-ink-3); }
+  .reading .fix { font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; white-space: nowrap; }
+  .dots { margin-top: 10px; background: var(--app-subtle); border-radius: 10px; padding: 8px 6px 4px; }
+  .dots svg { display: block; width: 100%; height: auto; }
+  .dots .axis { font-family: var(--sans); font-size: 9px; fill: var(--app-ink-3); }
+  .dots .grid { stroke: var(--app-rule); stroke-width: 1; }
+  .dots .pt { fill: var(--app-ink); }
+  .dots .pt-home { fill: var(--app-card); stroke: var(--app-ink); stroke-width: 1.6; }
+  .dots .anchor { stroke: var(--app-rose); stroke-width: 1; stroke-dasharray: 3 3; }
+  .dots .lbl { font-family: var(--sans); font-size: 9.5px; font-weight: 600; fill: var(--app-ink); }
+  .compare { margin-top: 8px; font-size: 11.5px; color: var(--app-ink-2); line-height: 1.45; }
+  .dim { opacity: 0.38; pointer-events: none; }
+  .moment { background: var(--app-card); border-radius: 18px; padding: 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.14); display: flex; flex-direction: column; gap: 6px; }
+  .moment .mt { font-size: 15px; font-weight: 600; }
+  .moment .ms { font-size: 12px; color: var(--app-ink-2); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .moment .links { margin-top: 4px; }
+  .sheet { background: var(--app-card); border-radius: 18px 18px 0 0; padding: 12px 14px 8px; box-shadow: 0 -8px 26px rgba(0,0,0,0.12); }
+  .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--app-rule); margin: 0 auto 10px; }
+  .sheet-t { font-size: 14px; font-weight: 600; }
+  .sheet-s { font-size: 11.5px; color: var(--app-ink-2); margin: 3px 0 6px; }
+  .choice.on { color: var(--app-teal-ink); }
+  .choice .tick { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--app-ink-3); flex-shrink: 0; }
+  .choice.on .tick { border: 5px solid var(--app-teal-ink); }
+  .hint { font-size: 11px; color: var(--app-ink-3); margin-top: 6px; }
+  .bignum { font-size: 34px; font-weight: 600; letter-spacing: -0.02em; text-align: center; padding: 18px 0 2px; }
+  .bignum small { font-size: 15px; font-weight: 500; color: var(--app-ink-3); margin-left: 4px; }
+  .numfield { border: 1px solid var(--app-rule); border-radius: 12px; }
+  .inline-q { background: var(--app-subtle); border-radius: 10px; padding: 9px 10px; margin-top: 8px; font-size: 12px; }
+  .inline-q b { display: block; font-size: 12.5px; }
+  .inline-q .links { margin-top: 4px; }
+  .pcard-h { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; font-weight: 600; }
+  .pcard-h i { font-style: normal; color: var(--app-ink-3); font-weight: 400; font-size: 11px; }
+  .pcard-big { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; margin-top: 4px; }
+  .pcard-big small { font-size: 12px; font-weight: 500; color: var(--app-ink-3); margin-left: 4px; }
+  .pcard-line { font-size: 12px; color: var(--app-ink-2); margin-top: 3px; }
+  .pcard-line .strike { text-decoration: line-through; color: var(--app-rose-ink); }
+  .bubble { background: var(--app-subtle); border-radius: 14px 14px 4px 14px; padding: 8px 11px; font-size: 12.5px; align-self: flex-end; max-width: 85%; }
+  .answer { font-size: 12.5px; line-height: 1.5; color: var(--app-ink); }
+  .answer p { margin: 0 0 6px; }
+  /* The vet report is paper, not a phone: its own frame, the report's register */
+  .paper { width: 460px; max-width: 100%; background: #FFFFFF; color: #111; border: 1px solid rgba(27,26,46,0.16); border-radius: 4px; box-shadow: 0 10px 30px rgba(19,17,46,0.10); padding: 16px 18px; font-family: var(--sans); font-size: 11.5px; line-height: 1.45; font-variant-numeric: tabular-nums; }
+  .paper h5 { margin: 0 0 6px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #555; font-weight: 600; }
+  .paper table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  .paper td, .paper th { text-align: left; padding: 4px 6px 4px 0; border-top: 1px solid #E5E5E5; font-weight: 400; }
+  .paper th { font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #666; border-top: 0; }
+  .paper .chg { margin-top: 8px; font-weight: 600; }
+  .paper .foot { margin-top: 6px; color: #666; font-size: 10.5px; }
+  .paper .old { color: #8A1C1C; }
+  /* Tables on the page */
+  .tbl-wrap { overflow-x: auto; margin-top: 18px; max-width: 100%; }
+  .tbl { border-collapse: collapse; font-size: 14px; min-width: 640px; }
+  .tbl th, .tbl td { text-align: left; vertical-align: top; padding: 9px 14px 9px 0; border-top: 1px solid var(--rule); color: var(--ink-2); }
+  .tbl th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; border-top: 0; }
+  .tbl td:first-child { color: var(--ink); font-weight: 500; }
+  .tbl .fire { color: var(--rose-ink); font-weight: 600; }
+  .tbl .quiet { color: var(--ink-3); }
+</style>
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Round 1 · 2026-09-28 · EN-8 spec</span><span>Engines v3 · CUL-1135 · PR-18a</span><span>its own page, beside round 2 of Engines v3 on Home</span></p>
+    <h1>The weight lane, one story on every screen</h1>
+    <p class="standfirst">Nyx weighed 4.4 kg in June and 3.73 kg on Sep 16. Nothing in the app can say so, and five screens would each describe a weight change a different way. These frames draw one story: pounds and dates for owners, each reading labelled by where it was taken, and a Signal row only when a loss is confirmed. The spec is <code>docs/nyx-weight-lane-requirements.md</code>; frame numbers below match it.</p>
+
+    <div class="ledger" aria-label="What each plan-review item asked, and where it is on this page">
+      <div><b>The card: pounds, no percentages, one anchor and noise rule, Ask included (GAP-20)</b><span>One predicate behind every weight sentence. The row states two readings and their dates. Patterns loses its percentage (W4). <span class="pill">current · §01 §03</span></span></div>
+      <div><b>A reading's source from how it was entered, correctable after the save</b><span>Log weigh-in: home scale. "How did it go?": at the vet. Profile: an estimate, never a reading. The source shows on the completion card with a Change door. Nothing new at the scale. <span class="pill">current · §02</span></span></div>
+      <div><b>Whether weight reaches the vet report</b><span>Readings with their source and one change line from the same predicate. No finding, no tier. <span class="pill open">W3 · decide · §04</span></span></div>
+      <div><b>What EN-8 does on Nyx under PMD-9, in advance</b><span>Today, nothing: June's 4.4 kg is in no table. Re-entered, it depends on PMD-9 and on where June was weighed. <span class="pill">current · §05</span></span></div>
+      <div><b>A no-scale household</b><span>No line assumes a scale. Clinic readings confirm on their own, so the lane runs at the pace of visits. <span class="pill">current · §06</span></span></div>
+    </div>
+    <div class="rule-key">
+      <span><span class="pill">current</span> the proposal</span>
+      <span><span class="pill open">decide</span> yours to rule</span>
+      <span><span class="pill needs">needs X</span> a row the rules can't draw until X lands</span>
+    </div>
+    <p class="note" style="margin-top:20px"><b>Two cats stand in for the general cases.</b> Nyx's frames use her real readings, with June re-entered where marked. <b>Miso</b> (a home-scale household) and <b>Pepper</b> (no scale at home) are made up to show rules Nyx's record can't. Every threshold is a placeholder for the CUL-583 ruling sheet.</p>
+  </header>
+
+  <!-- §01 -->
+  <section id="card">
+    <div class="sec-head"><span class="sec-num">01</span><h2>The Signal row and the finding's screen</h2></div>
+    <div class="col">
+      <p>The row sits in the Signal's safety group. It states the two readings the comparison uses and says where each was taken, in pounds, never as a difference or a percentage. It stays until the owner answers on the screen behind it; a later reading, even a regain, never lowers it by itself.</p>
+    </div>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone" aria-label="Home on September 23 with the weight row, June re-entered and both readings at the vet">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door"><div class="body"><div class="eyebrow-s">Photo read · Sep 22</div><div class="head serif">Possible foreign material in a vomit photo</div><div class="asktxt">Worth a call to your vet</div></div><span class="chev big"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed door needs-box"><div class="body"><span class="needs-tag">needs June re-entered, at the vet · §05</span><div class="eyebrow-s">Weight</div><div class="head">Nyx weighed 8.2 lb on Sep 16, down from 9.7 lb in June</div><div class="sub">Both at the vet · <span class="ask-in">worth booking a vet visit</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed door"><div class="body"><div class="head">Vomiting in 5 of the last 8 weeks</div><div class="sub">13 episodes since August · <span class="ask-in">worth booking a vet visit</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Nyx's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+          <div class="fade-bottom"></div>
+        </div>
+        <div class="frame-cap"><b>F1 · The weight row on Home <span class="pill">current</span></b>
+          <ul>
+            <li>Changed from round 2: the sources move to the sub-line, and a loss past the firm line (placeholder 10%) asks for a visit, the same words the chronicity rows use.</li>
+            <li>Its slot is after the photo red flag and intake decline, before chronicity. Placeholder; the ruling sheet decides.</li>
+            <li>Template text only, never written by the model (MFU-8).</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="The weight finding's screen">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Nyx weighed 8.2 lb on Sep 16, down from 9.7 lb in June</div>
+            <div class="screen-sent">That's 1.5 lb less. Worth booking a vet visit.</div>
+            <div class="dots" role="img" aria-label="Two readings: 9.7 pounds in June at the vet, 8.2 pounds on September 16 at the vet">
+              <svg viewBox="0 0 280 92">
+                <line class="grid" x1="28" y1="78" x2="276" y2="78"/><line class="grid" x1="28" y1="44" x2="276" y2="44"/><line class="grid" x1="28" y1="10" x2="276" y2="10"/>
+                <text class="axis" x="2" y="81">8 lb</text><text class="axis" x="2" y="47">9 lb</text><text class="axis" x="0" y="13">10 lb</text>
+                <line class="anchor" x1="46" y1="20" x2="270" y2="20"/>
+                <circle class="pt" cx="46" cy="20" r="4.5"/><circle class="pt" cx="250" cy="71" r="4.5"/>
+                <text class="lbl" x="56" y="16">9.7</text><text class="lbl" x="224" y="67">8.2</text>
+                <text class="axis" x="38" y="90">Jun</text><text class="axis" x="240" y="90">Sep 16</text>
+              </svg>
+            </div>
+            <div class="compare">Compared with her highest confirmed weight in the last 12 months. Filled dots were weighed at the vet.</div>
+            <div class="readings">
+              <div class="reading"><div class="rl"><b>8.2 lb</b><span>Sep 16</span></div><span class="src vet">at the vet</span><span class="fix">Change</span></div>
+              <div class="reading"><div class="rl"><b>9.7 lb</b><span>June</span></div><span class="src vet">at the vet</span><span class="fix">Change</span></div>
+            </div>
+            <div class="qblock needs-box" style="outline-offset:2px">
+              <span class="needs-tag">needs EN-9 · PR-20</span>
+              <div class="q">Does your vet know about her weight?</div>
+              <div class="answers"><span class="pri">My vet knows</span><span>Not yet</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>F2 · The finding's screen <span class="pill">current</span></b>
+          <ul>
+            <li>The screen may state the difference in pounds. Never a percentage (S3).</li>
+            <li>One line says what the comparison is against, so it can never be read as "since the start".</li>
+            <li>Each reading has its own Change door for its source (§02).</li>
+            <li>A confirmed regain later adds <i>Back to 9.5 lb on Oct 30, at the vet</i> and the answer <i>She's gained it back</i>. The row leaves only when the owner answers.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- §02 -->
+  <section id="sources">
+    <div class="sec-head"><span class="sec-num">02</span><h2>Where a reading was taken, from how it was entered</h2></div>
+    <div class="col">
+      <p>The weigh-in step keeps one field and one button. The source is set by the path: a log weigh-in is <i>on a home scale</i>, the after-visit weight row is <i>at the vet</i>, and the profile field is <i>an estimate</i> that never joins the history (W1). The owner corrects it afterwards, from the completion card or the reading's record.</p>
+      <p>The field no longer pre-fills with the last weight. A pre-fill saved unchanged is a copy stored as a new reading, and under PMD-9 it would confirm the very number it copied. The last weight becomes a hint under an empty field.</p>
+    </div>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone short" aria-label="The weigh-in step with an empty field and a hint">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Weight</div>
+            <div class="numfield"><div class="bignum">&nbsp;<small>lb</small></div></div>
+            <div class="hint" style="text-align:center">Last: 8.2 lb on Sep 16</div>
+            <div class="save">Log</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>F3a · The scale, unchanged except the pre-fill <span class="pill">current</span></b><span>No source chip, no question. The hint gives the last number without offering to re-save it.</span></div>
+      </div>
+      <div class="frame">
+        <div class="phone short" aria-label="The completion card after a weigh-in, naming its source">
+          <div class="ghost"><i></i><i></i><i></i></div>
+          <div class="moment">
+            <div class="mt">Nyx · 8.2 lb</div>
+            <div class="ms">Sep 16, 6:51 PM · <span class="src">on a home scale</span></div>
+            <div class="links"><span>Change</span><span>Undo</span></div>
+          </div>
+          <div class="ghost"><i></i><i></i></div>
+        </div>
+        <div class="frame-cap"><b>F3b · The completion card names the source <span class="pill">current</span></b><span>"Change" opens the source sheet. It sits beside Undo, after the save, so the moment at the scale gains nothing. The card's time control stays off for weight (<code>completionCard.ts:175</code>).</span></div>
+      </div>
+      <div class="frame">
+        <div class="phone short" aria-label="The source correction sheet">
+          <div class="ghost"><i></i><i></i><i></i><i></i></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="sheet-t">Where was Nyx weighed?</div>
+            <div class="sheet-s">8.2 lb on Sep 16. We labelled it from how it was logged.</div>
+            <div class="choice on"><span>At the vet</span><span class="tick"></span></div>
+            <div class="choice"><span>On a home scale</span><span class="tick"></span></div>
+            <div class="choice"><span>It was an estimate</span><span class="tick"></span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>F4 · The correction <span class="pill">current</span></b>
+          <ul>
+            <li>One tap saves it. The same sheet reverses it, so there's no confirm (one net, C-21).</li>
+            <li>Nyx's Sep 16 reading was logged 48 minutes after the visit was saved. This is how it becomes "at the vet".</li>
+            <li>A correction never lowers a row already raised. It can raise one on the next refresh.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="frame">
+        <div class="phone short" aria-label="How did it go, with an optional weight row">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">How did it go?</div>
+            <div class="screen-sent">Nyx's visit on Sep 16</div>
+            <div class="mini-label">Her weight at the visit · optional</div>
+            <div class="inline-q"><b>You logged 8.2 lb today.</b><span>Was that on the vet's scale?</span><div class="links"><span>Yes, the vet's scale</span><span>No</span></div></div>
+            <div class="mini-label">Plan</div>
+            <div class="choice"><span>Weight: aim for her to lose weight</span><em>Add</em></div>
+            <div class="choice"><span>Prednisolone 5 mg</span><em>Keep</em></div>
+            <div class="save">Save</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>F5 · The clinic reading's home <span class="pill open">W7, W6 · decide</span></b>
+          <ul>
+            <li>With a weigh-in already logged that day, the row offers to relabel it and writes nothing new. Otherwise it's an empty, optional field.</li>
+            <li>The plan row is the only way to set "planned weight loss" (W6). The row still fires above 2% a week.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- §03 -->
+  <section id="one-story">
+    <div class="sec-head"><span class="sec-num">03</span><h2>One predicate, one sentence, everywhere</h2></div>
+    <div class="col">
+      <p>GAP-20's counterexample: Miso weighs 8.8, 9.9 and 8.9 lb (4.0, 4.5 and 4.05 kg) on a kitchen scale, one reading each. Today Patterns and Ask measure from the first reading and say she's up a little; Get ready prints a range; the report measures first to last in kilograms; the proposed row would measure from the peak and say she's down 10%. With one predicate, every surface says the same thing, and which thing depends on one ruling: under PMD-9 the 9.9 lb peak is a single reading and anchors nothing, so every surface says <i>Up 0.1 lb since Jul 3</i> and no row appears; under D7 as written every surface says <i>Down 1.0 lb from 9.9 lb on Aug 4</i> and the row appears. Either way, no two screens disagree.</p>
+    </div>
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr><th>Surface</th><th>Today (file:line)</th><th>With the predicate</th></tr></thead>
+        <tbody>
+          <tr><td>Patterns, design_v2</td><td>"Up 0.1 lbs (1%) since Jul 3 · a home scale moves about that much on its own" (<code>chartCopy.ts:207-228</code>)</td><td>PMD-9: "Up 0.1 lb since Jul 3. A home scale moves about that much on its own." D7 as written: "Down 1.0 lb from 9.9 lb on Aug 4."</td></tr>
+          <tr><td>Patterns, flag off · Profile</td><td>"Up 0.1 lbs since Jul 3" (<code>weight.ts:698-705</code>)</td><td>the same sentence</td></tr>
+          <tr><td>Ask</td><td><code>deltaLbs</code> from the window's first reading (<code>ask/tools.ts:1327-1354</code>)</td><td>state, anchor and latest, each with its source, in pounds</td></tr>
+          <tr><td>Get ready</td><td>"8.9–9.9 lbs · 3 weigh-ins" (<code>rundown.ts:922-937</code>)</td><td>range kept; the <i>weigh</i> question quotes the sentence</td></tr>
+          <tr><td>Vet report</td><td>"4.00 → 4.05 kg" (<code>render.ts:4305-4378</code>)</td><td>readings with sources; one change line (W3)</td></tr>
+          <tr><td>Signal</td><td>nothing: the engine has no weight input</td><td>PMD-9: nothing. D7 as written: the safety row, F1</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="frames">
+      <div class="frame">
+        <div class="phone short" aria-label="Home with a plain weight row for an unconfirmed drop">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Miso</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="door plain-row"><div class="body"><div class="eyebrow-s">Weight</div><div class="head">Miso weighed 8.9 lb on Sep 20, down from 9.9 lb on Aug 4</div><div class="sub">One reading so far, on a home scale. Weigh her again this week to check.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="door plain-row"><div class="body"><div class="head">Vomiting soon after meals</div><div class="sub">4 of 5 timed episodes within 30 min</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Miso's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>F6 · A drop on one reading: a plain row <span class="pill open">W5 · decide</span></b><span>A different Miso record: 9.9 lb twice (Jul 3, Aug 4), so the peak is confirmed, then 8.9 lb once. No rail, no red, no vet ask. It asks for the second reading PMD-9 waits on, once, and leaves when any later reading arrives. If that reading confirms the drop, F1's safety row takes its place.</span></div>
+      </div>
+      <div class="option">
+        <div class="option-head"><b>W5, the other option: nothing on Home</b><span>The drop shows only on Patterns. PMD-9's detection figures assume a second weigh-in; an owner who never opens Patterns never gets asked for one.</span></div>
+        <div class="frames">
+          <div class="frame">
+            <div class="phone short" aria-label="Home with no weight row">
+              <div class="appbar"><span class="pet"><i class="avatar"></i>Miso</span><span class="askpill"><i></i>Ask</span></div>
+              <div class="card">
+                <div class="zone-label">Signal</div>
+                <div class="door plain-row"><div class="body"><div class="head">Vomiting soon after meals</div><div class="sub">4 of 5 timed episodes within 30 min</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+                <div class="zone-foot"><span>A read of Miso's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Patterns: the percentage leaves, the noise line and the safety line never meet</h3>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone short" aria-label="Patterns weight card within noise">
+          <div class="card">
+            <div class="pcard-h"><span>Weight</span><i>4 readings</i></div>
+            <div class="pcard-big">9.3<small>lb · Sep 20</small></div>
+            <div class="pcard-line">Down 0.3 lb from 9.6 lb on Jul 2. A home scale moves about that much on its own.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>F7a · Within the scale's range <span class="pill">current</span></b><span>The shipped caveat, now shown only in this state: at most 5% and 0.5 lb, with a home reading at one end.</span></div>
+      </div>
+      <div class="frame">
+        <div class="phone short" aria-label="Patterns weight card with a confirmed drop">
+          <div class="card">
+            <div class="pcard-h"><span>Weight</span><i>5 readings</i></div>
+            <div class="pcard-big">8.8<small>lb · Oct 2</small></div>
+            <div class="pcard-line">Down 1.1 lb from 9.9 lb on Aug 4. Low twice now, on a home scale.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>F7b · A confirmed drop <span class="pill">current</span></b><span>F6's record one weigh-in later (8.8 lb on Oct 2). No caveat, because the row on Home is raised from this same state. The two lines can't render together (a property test pins it).</span></div>
+      </div>
+      <div class="option">
+        <div class="option-head"><b>W4, the other option: keep the percentage</b><span>Patterns v2 as it ships in design_v2 today. The Signal row would still be barred from saying it (S3), so the two would read as two rules.</span></div>
+        <div class="frames">
+          <div class="frame">
+            <div class="phone short" aria-label="Patterns weight card with a percentage">
+              <div class="card">
+                <div class="pcard-h"><span>Weight</span><i>5 readings</i></div>
+                <div class="pcard-big">8.8<small>lb · Oct 2</small></div>
+                <div class="pcard-line">Down 1.1 lbs (11%) since Aug 4</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="frame">
+        <div class="phone short" aria-label="Ask answering a weight question">
+          <div class="bubble">Is Nyx losing weight?</div>
+          <div class="answer">
+            <p>Nyx weighed 8.2 lb at the vet on Sep 16. Her highest weight on record is 9.7 lb in June, also at the vet. That's 1.5 lb less.</p>
+            <p>Worth booking a vet visit about it.</p>
+          </div>
+          <div class="hint">From Nyx's weigh-ins · 2 readings</div>
+        </div>
+        <div class="frame-cap"><b>F8 · Ask says what Home says <span class="pill">current</span></b><span>Its tool returns the predicate's state, anchor and latest with sources, in pounds. The weight finding is relayed with its template sentence.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- §04 -->
+  <section id="report">
+    <div class="sec-head"><span class="sec-num">04</span><h2>The vet report <span class="pill open">W3 · decide</span></h2></div>
+    <div class="col">
+      <p>The report is for the vet, in kilograms, and already prints a percentage. The recommendation keeps it descriptive (its spec forbids a loss flag) and adds what a vet needs to trust a number: where each reading was taken, and which two readings the change compares. The Signal's weight finding stays off the report, like every owner-app state.</p>
+    </div>
+    <div class="frames">
+      <div class="frame" style="width:460px">
+        <div class="paper" aria-label="The report's weight section with sources">
+          <h5>Weight</h5>
+          <table>
+            <thead><tr><th>Date</th><th>Weight</th><th>Where</th></tr></thead>
+            <tbody>
+              <tr><td>Jun</td><td>4.40 kg</td><td>home scale · one reading</td></tr>
+              <tr><td>Sep 16</td><td>3.73 kg</td><td>clinic</td></tr>
+            </tbody>
+          </table>
+          <div class="chg">3.73 kg (clinic, Sep 16) from 4.40 kg (home scale, June): −0.67 kg, about 15% of body weight.</div>
+          <div class="foot">The change is measured from the reading it names. Owner estimates are not plotted. Descriptive, not a diagnosis.</div>
+        </div>
+        <div class="frame-cap"><b>F11 · A: sources and one change line <span class="pill">recommended</span></b><span>Drawn on Nyx with June re-entered from a home scale. The line says June was one reading, so a vet can weigh it. No tier, no care state, no "Worth booking".</span></div>
+      </div>
+      <div class="option">
+        <div class="option-head"><b>W3 C, no change</b><span>Today's report: first to last in the window, no sources. For the counterexample Miso it prints a small gain, while the app under D7 as written would raise a row.</span></div>
+        <div class="frames">
+          <div class="frame" style="width:420px">
+            <div class="paper" aria-label="The report's weight section as shipped">
+              <h5>Weight</h5>
+              <div>4.00 → 4.05 kg</div>
+              <div class="chg old">+0.05 kg</div>
+              <div class="foot">Descriptive, not a diagnosis.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- §05 -->
+  <section id="nyx">
+    <div class="sec-head"><span class="sec-num">05</span><h2>What EN-8 does on Nyx, written before it's built</h2></div>
+    <div class="col">
+      <p>Read from the live record on Sep 28: one weigh-in, 3.73 kg on Sep 16, logged through the log's weigh-in 48 minutes after the visit was saved. June's 4.4 kg is in no table; the overwrite happened before migration 072 started keeping displaced weights. She's a cat born Sep 2023, so the adult rules apply.</p>
+    </div>
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr><th>Nyx's record</th><th>D7 as written (live until PMD-9 is ruled)</th><th>PMD-9, confirmed peak</th><th>PMD-9 + noise-scaled</th></tr></thead>
+        <tbody>
+          <tr><td>Today: one reading</td><td class="quiet">silent</td><td class="quiet">silent</td><td class="quiet">silent</td></tr>
+          <tr><td>Sep 16 corrected to "at the vet"</td><td class="quiet">silent</td><td class="quiet">silent</td><td class="quiet">silent</td></tr>
+          <tr><td>June re-entered as a weigh-in (home scale)</td><td class="fire">firm row</td><td class="quiet">silent, for good: one June reading can't be confirmed. Patterns still shows the 1.5 lb.</td><td class="fire">firm row</td></tr>
+          <tr><td>June re-entered and, only if true, "at the vet"</td><td class="fire">firm row</td><td class="fire">firm row</td><td class="fire">firm row</td></tr>
+          <tr><td>June typed into Edit profile</td><td class="quiet">silent: an estimate never anchors</td><td class="quiet">silent</td><td class="quiet">silent</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note" style="margin-top:18px"><b>The rules around this table.</b> June is corrected to "at the vet" only if the owner knows it was. No floor, band or window is picked by running it on Nyx: PMD-9 and noise-scaled confirmation are ruled on the synthetic pets (PR-15, PR-16). Whatever the rule, once June is on file the loss shows as numbers on Patterns, the Pet tab, Ask and the report. A silence in this table is the Signal row's, never the record's.</p>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone short" aria-label="Nyx's Patterns weight card today, one reading">
+          <div class="card">
+            <div class="pcard-h"><span>Weight</span><i>1 reading</i></div>
+            <div class="pcard-big">8.2<small>lb · Sep 16</small></div>
+            <div class="pcard-line">One weigh-in on record, <span class="src">on a home scale</span>. Weigh her again to start a trend.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>F12 · Nyx today <span class="pill">current</span></b><span>One reading, so no comparison anywhere and no Signal row. The label follows the log path until the owner corrects it (F4).</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- §06 -->
+  <section id="no-scale">
+    <div class="sec-head"><span class="sec-num">06</span><h2>A household with no scale</h2></div>
+    <div class="col">
+      <p>Most cat households don't own a pet scale. The app never asks: a pet with no home-scale reading ever gets a version where no line assumes one. Its readings come from visits, each confirmed on its own, so two visits a few months apart are a full comparison. The day the owner logs a home weigh-in, the scale version takes over.</p>
+    </div>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone short" aria-label="Pepper's Home with a weight row from two clinic readings">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Pepper</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door"><div class="body"><div class="eyebrow-s">Weight</div><div class="head">Pepper weighed 10.4 lb on Sep 3, down from 11.2 lb in March</div><div class="sub">Both at the vet · <span class="ask-in">worth raising with your vet</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Pepper's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>F9 · Two visits, a full comparison <span class="pill">current</span></b><span>Both readings came in through "How did it go?" (F5). 0.8 lb is past the soft line and under the firm one, so the ask is "worth raising". The row can arrive the evening of the visit; the vet in the room may already know, which is what "My vet knows" answers.</span></div>
+      </div>
+      <div class="frame">
+        <div class="phone short" aria-label="Pepper's Patterns weight card with one clinic reading and an estimate">
+          <div class="card">
+            <div class="pcard-h"><span>Weight</span><i>1 reading</i></div>
+            <div class="pcard-big">11.2<small>lb · Mar 14</small></div>
+            <div class="pcard-line">One weight on record, <span class="src vet">at the vet</span>. No weight since that visit. Ask for one at the next.</div>
+            <div class="pcard-line" style="margin-top:6px">12 lb in Pepper's profile is an estimate, not a weigh-in.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>F10 · Building, with no scale <span class="pill">current</span></b><span>No "weigh her" anywhere. The prompt points at the next visit, lives on Patterns and in Get ready, and never on Home. The estimate is named and never compared. EN-9's watching prompt (PR-20) reads the same no-scale test.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- §07 -->
+  <section id="decide">
+    <div class="sec-head"><span class="sec-num">07</span><h2>Seven calls for you</h2></div>
+    <div class="col"><p>Rule by letter, e.g. "W1 A, W2 home scale, W3 A, W4 remove, W5 A, W6 vet plan, W7 A". W1 and W2 gate the migration (PR-18); the rest gate the client (PR-37). Thresholds and PMD-9 go to the CUL-583 ruling sheet, not here.</p></div>
+    <div class="briefs">
+      <div class="brief"><h4>W1 · Where an estimate lives <span class="pill open">decide</span></h4>
+        <p><b>Deciding:</b> whether a weight typed into Edit profile becomes a row in the history.</p>
+        <ul><li><b>A, never a reading (recommended):</b> the profile stays a snapshot; 072 keeps what it displaces. <i>Why:</i> a guess can't reach the report's plot if it's never in the table the report plots.</li><li><b>B, a reading marked "estimate":</b> five readers must filter it out, and one that forgets plots a guess.</li></ul>
+        <p><b>Consequence:</b> A leaves Edit profile's write alone; B moves it onto the weigh-in writer plus a guard.</p></div>
+      <div class="brief"><h4>W2 · Readings already on file <span class="pill open">decide</span></h4>
+        <p><b>Deciding:</b> the source existing weigh-ins get.</p>
+        <ul><li><b>Home scale, by the rule (recommended):</b> every one came through the log's weigh-in, so the path is known. <i>Why:</i> home scale already needs a second reading to confirm.</li><li><b>Unknown:</b> every account's history anchors nothing until re-weighed twice.</li></ul>
+        <p><b>Consequence:</b> Nyx's Sep 16 reads "on a home scale" until corrected (F4).</p></div>
+      <div class="brief"><h4>W3 · The vet report <span class="pill open">decide · §04</span></h4>
+        <p><b>Deciding:</b> what the report prints about weight.</p>
+        <ul><li><b>A, sources and one change line (recommended):</b> kg and its existing percentage, both readings named. <i>Why:</i> a vet trusts two dated, sourced readings over an app's verdict.</li><li><b>B, A plus the finding:</b> an unratified app threshold in front of a vet, and it reverses "no loss flag".</li><li><b>C, no change:</b> the report and the app disagree about the same cat.</li></ul>
+        <p><b>Consequence:</b> A is a Tier-2 edit to the report spec, in PR-19, with a cold read.</p></div>
+      <div class="brief"><h4>W4 · Patterns' percentage <span class="pill open">decide · §03</span></h4>
+        <p><b>Deciding:</b> whether design_v2's Patterns card keeps "(11%)".</p>
+        <ul><li><b>Remove (recommended):</b> <i>Why:</i> the one owner-facing percentage, beside a Signal row that fires at 5% and may not say so.</li><li><b>Keep,</b> with a better-than-the-rule brief on S3 for the row too.</li></ul>
+        <p><b>Consequence:</b> design_v2 isn't GA, so no owner loses a line they have.</p></div>
+      <div class="brief"><h4>W5 · A drop on one reading <span class="pill open">decide · F6</span></h4>
+        <p><b>Deciding:</b> whether Home shows anything before a drop is confirmed.</p>
+        <ul><li><b>A plain row, no ask (recommended):</b> <i>Why:</i> it's how the second reading PMD-9 waits on gets asked for.</li><li><b>Nothing on Home:</b> only Patterns shows it.</li></ul>
+        <p><b>Consequence:</b> the plain row counts toward Home's cap and never outranks a safety row.</p></div>
+      <div class="brief"><h4>W6 · Who sets "planned loss" <span class="pill open">decide · F5</span></h4>
+        <p><b>Deciding:</b> the source of the state that relaxes the row.</p>
+        <ul><li><b>Only a vet's plan (recommended):</b> a plan row in "How did it go?". <i>Why:</i> a self-set diet is where a fast loss goes unseen.</li><li><b>Also an owner switch</b> on the Pet tab.</li></ul>
+        <p><b>Consequence:</b> the row still fires above 2% a week (placeholder).</p></div>
+      <div class="brief"><h4>W7 · A clinic reading's home <span class="pill open">decide · F5</span></h4>
+        <p><b>Deciding:</b> how a reading becomes "at the vet".</p>
+        <ul><li><b>An optional weight row on "How did it go?" (recommended):</b> <i>Why:</i> the owner has the number in hand after the visit, away from the scale, and a no-scale household has no other door.</li><li><b>Correction only:</b> log it as a weigh-in, then relabel it (F4).</li></ul>
+        <p><b>Consequence:</b> A adds one optional row and one write path to the after-visit form.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>EN-8 · CUL-1135 · PR-18a</span>
+    <span>Spec: docs/nyx-weight-lane-requirements.md</span>
+    <span>Home context: Engines v3 on Home, round 2</span>
+  </footer>
+</div>
