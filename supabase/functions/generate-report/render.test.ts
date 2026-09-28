@@ -610,7 +610,7 @@ Deno.test('CUL-1086 — one free-fed bowl row: page 1 and the list say so in the
       },
     }),
   ).replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&ldquo;|&rdquo;/g, '"').replace(/\s+/g, ' ')
-  assert.ok(text.includes('1 rating of a free-fed bowl is not counted here: intake from a bowl left down is not directly observed.'))
+  assert.ok(text.includes('1 rating of a free-fed bowl is not counted here: intake from a bowl left down is not directly observed; it falls after the last full meal (dated in appendix E).'))
   assert.ok(text.includes('The row marked "free-fed bowl" is a rating of a bowl left down: intake from it is not directly observed, so the flag does not count it and it is never the last full meal.'))
   // The bowl's "ate it all" sits between the counted meals and is not in the sentence.
   assert.ok(text.includes('Recent rated meals declined: ate it all → ate some → picked at it.'))

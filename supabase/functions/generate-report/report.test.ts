@@ -570,13 +570,14 @@ Deno.test('CUL-1086 — a free-fed "ate it all" no longer hides the drop on the 
   const text = plainText(renderReport(snap))
   // Page 1: the flag says what it did not count, beside the claim it scopes.
   assert.ok(
-    text.includes('9 ratings of a free-fed bowl are not counted here: intake from a bowl left down is not directly observed.'),
+    // Two of them (Jul 1 10:00Z, Jul 2 10:00Z) fall after the Jul 1 08:00Z anchor, inside the stated gap.
+    text.includes('9 ratings of a free-fed bowl are not counted here: intake from a bowl left down is not directly observed; 2 of them fall after the last full meal (dated in appendix E).'),
   )
   // The trajectory is the counted wet meals only: "ate it all" on Jun 30 and Jul 1, then "picked at it".
   assert.ok(text.includes('Recent rated meals declined: ate it all → ate it all → ate it all → picked at it.'))
   // The list says what its marked rows are.
   assert.ok(
-    /The 9 rows marked "free-fed bowl" are ratings of a bowl left down: intake from it is not directly observed, so the flag does not count them and none is the last full meal\./.test(text),
+    /Rows marked "free-fed bowl" are ratings of a bowl left down \( ?9 ?in this window\): intake from it is not directly observed, so the flag does not count them and none is the last full meal\./.test(text),
   )
   // Mutation twin: without the arrangement nothing is marked and neither sentence renders.
   const plain = assembleReport(baseInput({ events: events.filter((e) => e.meal?.foodItemId !== 'fi-kibble') }))
