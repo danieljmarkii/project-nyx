@@ -366,6 +366,7 @@ export const BASE_SCHEMA_SQL = `
       method        TEXT NOT NULL DEFAULT 'free_choice',
       active_from   TEXT,
       active_until  TEXT,
+      ended_at      TEXT,
       is_shared     INTEGER NOT NULL DEFAULT 0,
       notes         TEXT,
       deleted_at    TEXT,
@@ -478,6 +479,11 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   // legitimately has no filename worth keeping, and no pre-048 row has one to
   // recover, so NULL is the honest value for both.
   { table: 'vet_documents', column: 'source_filename', type: 'TEXT' },
+  // CUL-1396 / migration 076 — the instant a free-fed bowl came up, beside the local DATE
+  // `active_until`. `feeding_arrangements` predates this build, so only this path can add it.
+  // Nullable, no default, nothing to backfill locally: the server's backfill travels down
+  // through hydrate, and a row ended before this build honestly has no recorded instant.
+  { table: 'feeding_arrangements', column: 'ended_at', type: 'TEXT' },
   // B-704 / migration 053 — the owner-stated trial protein + its provenance stamp.
   // `diet_trials` predates this build, so CREATE TABLE IF NOT EXISTS cannot add the
   // columns to an already-installed device — only this can. Both nullable, no
