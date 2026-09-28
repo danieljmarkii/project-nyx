@@ -803,6 +803,13 @@ export type EvidenceTier = 'early' | 'established'
 interface FindingBase {
   type: InsightType
   priorityClass: PriorityClass
+  /**
+   * CUL-989 — set by the pipeline, never by a detector, when a pull behind this run came back
+   * INCOMPLETE. Every count on the finding is then a floor (the read holds a subset of the
+   * record), and the templates state it as "at least N". Absent on a complete read, so a
+   * finding from a complete read is byte-identical to one computed before this field existed.
+   */
+  countIsFloor?: true
 }
 
 /**

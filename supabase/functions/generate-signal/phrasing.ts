@@ -154,6 +154,22 @@ export function templateWorsening(f: SymptomWorseningFinding, petName: string): 
   const symptom = SYMPTOM_LABEL[f.symptomType]
   const episodeNoun = f.currentCount === 1 ? 'episode' : 'episodes'
 
+  // CUL-989 — over an incomplete read every count is a floor. The card still escalates (the
+  // ruling), but the week-over-week clause goes: last week's count is a floor too, so "up from
+  // N" could name a rise the full record does not have. What stays is true of any subset.
+  if (f.countIsFloor) {
+    const ask =
+      f.tier === 'firm'
+        ? 'worth booking a vet visit soon'
+        : f.tier === 'soft'
+          ? 'worth keeping an eye on, and a word with your vet if it carries on'
+          : 'worth a word with your vet'
+    if (f.tier === 'standard') {
+      return `${petName} has had at least ${f.currentCount} ${episodeNoun} of ${symptom} this week — ${ask}.`
+    }
+    return `${petName} has had ${symptom} on at least ${f.currentDays} of the last ${f.windowDays} days — ${ask}.`
+  }
+
   if (f.tier === 'firm') {
     // Dense current week — symptoms on most days. Phrase the rise on the axis that
     // ACTUALLY rose (the trigger): for more_days the episode count is flat-or-FALLING
@@ -230,8 +246,10 @@ export function templateIncidentRedFlag(f: IncidentRedFlagFinding, petName: stri
       ? `${INCIDENT_FLAG_PHRASE.blood} and ${INCIDENT_FLAG_PHRASE.foreign_material}`
       : INCIDENT_FLAG_PHRASE[f.flags[0]]
   const when = onsetDay(f.mostRecentFlaggedIso)
+  // CUL-989 — over an incomplete read "a photo" may be one of several; the plural lead is true
+  // of one flagged photo or many, and it names the most recent date either way.
   const lead =
-    f.flaggedIncidentCount === 1
+    f.flaggedIncidentCount === 1 && !f.countIsFloor
       ? `A photo you logged of ${petName}'s ${symptom} showed ${phrase}, on ${when}`
       : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}, most recently on ${when}`
   return `${lead} — worth a call to your vet. This is a read of your logs, not a diagnosis.`
@@ -312,7 +330,11 @@ export function templateChronicity(f: SymptomChronicityFinding, petName: string)
   const adjacency = f.coughVomitAdjacent
     ? ` ${adjacencyBridge(f.symptomType)} — a cough can look like retching or end in vomiting. Mention both.`
     : ''
-  return `We've logged ${symptom} for ${petName} across ${f.activeWeeks} of the last ${windowWeeks} weeks — ${f.episodeCount} ${noun} since ${onsetMonth(f.firstOnsetIso)}. A symptom that keeps recurring over weeks is ${vetAsk}.${adjacency} This is a read of your logs, not a diagnosis.`
+  // CUL-989 — over an incomplete read the count is a floor. ONE "at least", on the episode count:
+  // the length cap above has ~13 characters of headroom and this spends 9 of them (the cap test
+  // pins the floor arm on the same worst case).
+  const count = f.countIsFloor ? `at least ${f.episodeCount}` : `${f.episodeCount}`
+  return `We've logged ${symptom} for ${petName} across ${f.activeWeeks} of the last ${windowWeeks} weeks — ${count} ${noun} since ${onsetMonth(f.firstOnsetIso)}. A symptom that keeps recurring over weeks is ${vetAsk}.${adjacency} This is a read of your logs, not a diagnosis.`
 }
 
 export function templatePostprandialTiming(f: PostprandialTimingFinding, petName: string): string {
@@ -419,7 +441,10 @@ export function templateTrialResponse(f: TrialResponseFinding, petName: string):
   // ("worth reviewing", never "working"/"better"); vomit-only (the round-2 masking fix), so "symptom
   // episodes" would over-claim a whole-body read the count does not support.
   const lengthCue = baselineDays >= trialDays * 1.5 ? ', a longer stretch' : ''
-  return `We've logged ${f.pooledTrialCount} ${trialNoun} of vomiting for ${petName} in the trial's ${trialDays} ${trialDayNoun}, compared with ${f.pooledBaselineCount} in the ${baselineDays} ${baselineDayNoun} before it${lengthCue} — worth reviewing with your vet.`
+  // CUL-989 — over an incomplete read both pooled counts are floors (only the more-during-trial
+  // direction reaches here then; the other is withheld in the pipeline).
+  const atLeast = f.countIsFloor ? 'at least ' : ''
+  return `We've logged ${atLeast}${f.pooledTrialCount} ${trialNoun} of vomiting for ${petName} in the trial's ${trialDays} ${trialDayNoun}, compared with ${atLeast}${f.pooledBaselineCount} in the ${baselineDays} ${baselineDayNoun} before it${lengthCue} — worth reviewing with your vet.`
 }
 
 /** Render one inter-episode gap (hours) as a friendly value + unit. ≥24h → whole days, else whole

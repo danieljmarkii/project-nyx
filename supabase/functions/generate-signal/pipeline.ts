@@ -458,6 +458,11 @@ export interface CareRecord {
 
 export interface SignalPipelineInput {
   rows: SignalRows
+  // CUL-989 — the pulls behind `rows` that did NOT read to the end (_shared/pull.ts). Empty on a
+  // complete read, which is byte-identical to the pipeline before this field existed (pinned by
+  // signalPipeline.test.ts, the with-and-without diff). Required, so no caller can forget to say
+  // (C-37). Non-empty applies the step-3 ruling below: `applyIncompleteRead`.
+  incompletePulls: readonly string[]
   prior: PriorSignal | null
   nowMs: number
   engineFlags: EngineFlags
@@ -484,12 +489,16 @@ export interface SignalPipelineResult {
   // The message when resolving the stand-downs threw; the run keeps its findings and
   // writes no marker. The shell logs it.
   standDownError: string | null
+  // CUL-989 — over an incomplete read, the summary slot's deterministic disclosure (the owner-
+  // visible "says so"), replacing the summary. Null on a complete read.
+  incompleteDisclosure: CachedSummary | null
 }
 
 // ── The pipeline ──────────────────────────────────────────────────────────────
 
 export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResult {
   const { rows, prior: priorSignal, nowMs, engineFlags } = args
+  const readIncomplete = args.incompletePulls.length > 0
   const petName = rows.pet.name || 'your pet'
 
   const mealRows = rows.meals
@@ -583,7 +592,9 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
     timezone,
     now: new Date(nowMs).toISOString(),
   }
-  const ranked = detectSignals(input, DEFAULT_CONFIG)
+  const detected = detectSignals(input, DEFAULT_CONFIG)
+  // CUL-989 step 3, BEFORE curation so a withheld card never holds a slot under the cap.
+  const ranked = readIncomplete ? withholdOverIncompleteRead(detected) : detected
 
   // 3. Curate — cap the insight tail; safety findings always kept.
   const curated = curateFindings(ranked)
@@ -612,8 +623,10 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
     // has its own symptom type), computed from the same events the detector read. Attached here,
     // after detection, so the valve that mutes ③ while ⑦ fires is untouched — the change an
     // easing course shows lives inside the safety card's expand, never as a second calm card.
+    // CUL-989: not over an incomplete read. The compare is the one place an easing course is
+    // shown, and an easing shown from a partial record is the reassurance the ruling withholds.
     const chronicityCompare: ChronicityCompare | null =
-      r.finding.type === 'symptom_chronicity'
+      r.finding.type === 'symptom_chronicity' && !readIncomplete
         ? computeChronicityCompare(input, r.finding.symptomType, DEFAULT_CONFIG)
         : null
     return {
@@ -633,7 +646,11 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
   // decoration; it keeps the raw per-episode timestamps out of the phrasing / cache / HTTP layer
   // (CUL-7 finding ②), including the copy that rides on a merged timing_story's `long` block.
   const strippedFindings = stripInternalOnsets(decoratedWithOnsets.map((r) => r.finding))
-  const decorated = decoratedWithOnsets.map((r, i) => ({ rank: r.rank, finding: strippedFindings[i] }))
+  // CUL-989: over an incomplete read every count is a floor, and the finding says so.
+  const decorated = decoratedWithOnsets.map((r, i) => ({
+    rank: r.rank,
+    finding: readIncomplete ? ({ ...strippedFindings[i], countIsFloor: true } as Finding) : strippedFindings[i],
+  }))
 
   // 4a. AI summary (B-023 PR 4). Assemble a DETERMINISTIC fact packet from the curated
   //     findings + the descriptive intake aggregates (computed over the same in-memory
@@ -641,7 +658,9 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
   //     validateSummary-gated, deterministic template fallback). Null when nothing is
   //     substantive — the client then renders its own "still gathering" state. Reads only
   //     the cards' data, so it is grounded in what the dashboard shows.
-  const summaryPacket = buildSummaryPacket({
+  // CUL-989: no packet over an incomplete read. Its clauses are counts and a finished-meal rate
+  // over the partial set, and its quiet path is the reassuring shape; the disclosure replaces it.
+  const summaryPacket = readIncomplete ? null : buildSummaryPacket({
     petName,
     findings: curated.map((r) => r.finding),
     mealEvents,
@@ -678,28 +697,32 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
   //     decoration on the record rather than the record.
   let standDowns: StoodDownMarker[] = []
   let standDownError: string | null = null
-  try {
-    let prior: ReturnType<typeof readPriorEntries> = []
-    let priorGeneratedAtMs: number | null = null
-    if (priorSignal) {
-      prior = priorForStandDowns(
-        readPriorEntries(priorSignal.findings),
-        standDownMintAllowed(priorSignal.engineFlags, engineFlags, SIGNAL_ENGINE_KEYS),
-      )
-      const gen = Date.parse(String(priorSignal.generatedAt ?? ''))
-      priorGeneratedAtMs = Number.isFinite(gen) ? gen : null
+  // CUL-989: no stand-down over an incomplete read. A marker says a course went quiet, and a
+  // read that stops short of the record cannot tell quiet from unread.
+  if (!readIncomplete) {
+    try {
+      let prior: ReturnType<typeof readPriorEntries> = []
+      let priorGeneratedAtMs: number | null = null
+      if (priorSignal) {
+        prior = priorForStandDowns(
+          readPriorEntries(priorSignal.findings),
+          standDownMintAllowed(priorSignal.engineFlags, engineFlags, SIGNAL_ENGINE_KEYS),
+        )
+        const gen = Date.parse(String(priorSignal.generatedAt ?? ''))
+        priorGeneratedAtMs = Number.isFinite(gen) ? gen : null
+      }
+      standDowns = resolveStandDowns({
+        prior,
+        priorGeneratedAtMs,
+        current: curated.map((r) => r.finding),
+        input,
+        config: DEFAULT_CONFIG,
+        nowMs,
+      })
+    } catch (err) {
+      standDowns = []
+      standDownError = err instanceof Error ? err.message : String(err)
     }
-    standDowns = resolveStandDowns({
-      prior,
-      priorGeneratedAtMs,
-      current: curated.map((r) => r.finding),
-      input,
-      config: DEFAULT_CONFIG,
-      nowMs,
-    })
-  } catch (err) {
-    standDowns = []
-    standDownError = err instanceof Error ? err.message : String(err)
   }
 
   return {
@@ -712,6 +735,63 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
     coverage,
     standDowns,
     standDownError,
+    incompleteDisclosure: readIncomplete
+      ? incompleteReadDisclosure(petName, decorated.some((r) => r.finding.priorityClass === 'safety'))
+      : null,
+  }
+}
+
+// ── The incomplete read (CUL-989 step 3) ──────────────────────────────────────
+//
+// THE RULING (PM, 2026-09-26, the Engines v3 plan review's defaults): an incomplete read never
+// produces a reassuring or resolving finding; it withholds and says so. Escalations still fire
+// on a partial read, with their counts stated as "at least N".
+//
+// WHY THE ASYMMETRY IS SOUND. A pull is ordered newest-first, so a shortfall drops the OLDEST
+// rows (or, rarely, a row a concurrent delete shifted past the cursor). Either way the read is
+// a SUBSET of the record: every count on it is at most the truth, which makes "at least N" true
+// by construction, and an escalation computed from a subset is one the full record would carry
+// at least as strongly on the counts it names. What a subset cannot support is a comparison
+// that ends in "less" or "gone": the missing rows are exactly what a fall or a stand-down would
+// need to rule out. That is the n=1 asymmetry (clinical-guardrails), applied to a query's edge.
+//
+// WHAT IS WITHHELD, and each is named rather than inferred from a word list:
+//   • `reflection` — flat or improving by construction (③ never emits worsening).
+//   • `trial_response` in the `fewer_during_trial` direction; `more_during_trial` is the
+//     escalation direction and stays.
+//   • the stand-down marker (runSignalPipeline), the chronicity compare's easing halves
+//     (decoration), and the summary packet, whose quiet path is the reassuring shape.
+// Everything else keeps firing: the safety lanes, and the descriptive timing / correlation /
+// gap cards, whose sentences are counts over what was read and claim no improvement.
+
+/** A finding the incomplete-read rule withholds. Exported for the with-and-without diff. */
+export function isReassuringOrResolving(f: Finding): boolean {
+  if (f.type === 'reflection') return true
+  if (f.type === 'trial_response') return f.comparisonDirection === 'fewer_during_trial'
+  return false
+}
+
+function withholdOverIncompleteRead(ranked: DetectedRanked[]): DetectedRanked[] {
+  return ranked.filter((r) => !isReassuringOrResolving(r.finding))
+}
+
+type DetectedRanked = ReturnType<typeof detectSignals>[number]
+
+/**
+ * The owner-facing half of "says so": the summary slot's text over an incomplete read. The one
+ * text slot that carries it with no migration and no client change (a CachedSummary is already
+ * rendered wherever the summary is). Deterministic, never the model. `hasSafety` keeps the
+ * safety styling cue honest; `quiet` is false because this line is not a quiet summary.
+ */
+export function incompleteReadDisclosure(petName: string, hasSafety: boolean): CachedSummary {
+  return {
+    text:
+      `Part of ${petName}'s record didn't load for this update. The cards below count at least ` +
+      `what came through, and none of them says a symptom has eased or settled.`,
+    source: 'template',
+    evidence: [],
+    hasSafety,
+    quiet: false,
   }
 }
 
@@ -784,6 +864,6 @@ export function templatePayload(result: SignalPipelineResult): SignalPayload {
   return assembleSignal(
     result,
     templateTexts(result),
-    result.summaryPacket ? templateSummary(result.summaryPacket) : null,
+    result.incompleteDisclosure ?? (result.summaryPacket ? templateSummary(result.summaryPacket) : null),
   )
 }

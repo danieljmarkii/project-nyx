@@ -14,10 +14,18 @@
 //     and the input is never mutated.
 // (f) The stand-down fence: a throw while resolving or merging costs the marker, never the
 //     findings, and says so (the shell logs `standDownError`).
+// (g)–(j) Engines v3 PR-09 (CUL-989), the with-and-without diff. The pulls now page newest-
+//     first and can come back incomplete. (g) a complete read is today's row; (h) the row does
+//     not depend on the order the rows arrive in; (i) an incomplete read loses no warning and
+//     keeps no reassuring or resolving entry; (j) it floors every count it states and says so.
+//     The byte-for-byte comparison against the pipeline BEFORE this PR is (a)'s hand-stated
+//     rows plus the measured diff recorded in the PR; (g) is the part that stays true after.
 
 import { assertEquals, assertStrictEquals, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   assembleSignal,
+  incompleteReadDisclosure,
+  isReassuringOrResolving,
   runSignalPipeline,
   templatePayload,
   templateTexts,
@@ -44,8 +52,12 @@ const FLAG_STATES: Record<string, EngineFlags> = {
   ...Object.fromEntries(ENGINE_KEYS.map((k) => [`${k} alone`, { on: [k], readOk: true }])),
 }
 
-const run = (c: SignalPipelineCase, engineFlags: EngineFlags = OFF, careRecord: CareRecord = EMPTY_CARE_RECORD) =>
-  runSignalPipeline({ rows: c.rows, prior: c.prior, nowMs: Date.parse(c.nowIso), engineFlags, careRecord })
+const run = (
+  c: SignalPipelineCase,
+  engineFlags: EngineFlags = OFF,
+  careRecord: CareRecord = EMPTY_CARE_RECORD,
+  incompletePulls: readonly string[] = [],
+) => runSignalPipeline({ rows: c.rows, incompletePulls, prior: c.prior, nowMs: Date.parse(c.nowIso), engineFlags, careRecord })
 const payload = (c: SignalPipelineCase, engineFlags?: EngineFlags, careRecord?: CareRecord): SignalPayload =>
   templatePayload(run(c, engineFlags, careRecord))
 const types = (p: SignalPayload): string[] => p.findings.map((e) => e.finding.type)
@@ -134,6 +146,7 @@ Deno.test('(f) a throw while resolving the stand-down costs the marker, never th
   }
   const result = runSignalPipeline({
     rows: golden.rows,
+    incompletePulls: [],
     prior: exploding,
     nowMs: Date.parse(golden.nowIso),
     engineFlags: OFF,
@@ -167,4 +180,115 @@ Deno.test('assembleSignal refuses a phrasing that does not match the findings on
   const result = run(chronic)
   assertThrows(() => assembleSignal(result, [], null))
   assertThrows(() => assembleSignal(result, ['a', 'b'], null))
+})
+
+// ── Engines v3 PR-09 (CUL-989): the with-and-without diff ─────────────────────
+
+const INCOMPLETE = ['symptoms']
+const partial = (c: SignalPipelineCase): SignalPayload => templatePayload(run(c, OFF, EMPTY_CARE_RECORD, INCOMPLETE))
+// A card's identity for "the same warning": its lane and the symptom it is about.
+const cardKey = (f: { type: string; symptomType?: unknown; incidentType?: unknown }): string =>
+  `${f.type}:${String(f.symptomType ?? f.incidentType ?? '')}`
+
+Deno.test('(g) a complete read is today: nothing floored, no disclosure, the summary unchanged', () => {
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const result = run(c)
+    assertStrictEquals(result.incompleteDisclosure, null, c.name)
+    for (const r of result.findings) {
+      // Absent, not false: a complete read's finding must serialise exactly as it did before
+      // the field existed, or every cached row's bytes move.
+      assertStrictEquals('countIsFloor' in r.finding, false, `${c.name}: ${r.finding.type} carries countIsFloor`)
+    }
+    assertStrictEquals(templatePayload(result).findings.some((e) => /\bat least\b/.test(e.text)), false, c.name)
+  }
+})
+
+Deno.test('(h) the row does not depend on the order the rows arrive in (newest-first, reversed, shuffled)', () => {
+  // Before CUL-989 PostgREST returned rows in physical order; the paged pulls return them
+  // newest-first. Detection must not have depended on the old order, and must not depend on
+  // any order: every array is reversed, then rotated, and each gives the corpus row.
+  const permute = (c: SignalPipelineCase, f: <T>(xs: T[]) => T[]): SignalPipelineCase => ({
+    ...c,
+    rows: {
+      ...c.rows,
+      symptoms: f(c.rows.symptoms),
+      meals: f(c.rows.meals),
+      arrangements: f(c.rows.arrangements),
+      regimens: f(c.rows.regimens),
+      doseEvents: f(c.rows.doseEvents),
+      incidentAnalyses: f(c.rows.incidentAnalyses),
+    },
+  })
+  const reverse = <T>(xs: T[]): T[] => [...xs].reverse()
+  const rotate = <T>(xs: T[]): T[] => (xs.length < 2 ? [...xs] : [...xs.slice(Math.ceil(xs.length / 3)), ...xs.slice(0, Math.ceil(xs.length / 3))])
+  const newestFirst = <T>(xs: T[]): T[] =>
+    [...xs].sort((a, b) => String((b as { occurred_at?: string }).occurred_at ?? '').localeCompare(String((a as { occurred_at?: string }).occurred_at ?? '')))
+  let moved = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const base = payload(c)
+    for (const [label, f] of [['reversed', reverse], ['rotated', rotate], ['newest-first', newestFirst]] as const) {
+      const p = permute(c, f)
+      if (JSON.stringify(p.rows) !== JSON.stringify(c.rows)) moved++
+      assertEquals(templatePayload(run(p)), base, `${c.name}: ${label}`)
+    }
+  }
+  // Non-vacuity: the permutations actually moved rows on most of the corpus.
+  assertStrictEquals(moved >= SIGNAL_PIPELINE_CORPUS.length, true, `only ${moved} permutations moved a row`)
+})
+
+Deno.test('(i) an incomplete read loses no warning and keeps nothing reassuring or resolving', () => {
+  let withheld = 0
+  let kept = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const full = payload(c)
+    const part = partial(c)
+    const partKeys = part.findings.map((e) => cardKey(e.finding))
+    for (const e of full.findings) {
+      if (e.finding.type === 'stood_down') continue // resolving: asserted absent below
+      const f = e.finding
+      if (isReassuringOrResolving(f)) {
+        assertStrictEquals(partKeys.includes(cardKey(f)), false, `${c.name}: ${f.type} survived an incomplete read`)
+        withheld++
+      } else {
+        // Every other card, safety or not, is still there: the rule only ever REMOVES the
+        // reassuring and resolving shapes, never a warning.
+        assertStrictEquals(partKeys.includes(cardKey(f)), true, `${c.name}: lost ${f.type}`)
+        if (f.priorityClass === 'safety') kept++
+      }
+    }
+    assertStrictEquals(part.findings.some((e) => e.finding.type === 'stood_down'), false, `${c.name}: a stand-down over a partial read`)
+    assertStrictEquals(part.findings.some((e) => e.finding.type !== 'stood_down' && isReassuringOrResolving(e.finding)), false, c.name)
+    // Nothing appears that the complete read did not carry.
+    for (const k of partKeys) assertStrictEquals(full.findings.map((e) => cardKey(e.finding)).includes(k), true, `${c.name}: gained ${k}`)
+  }
+  // Non-vacuity: the corpus exercises both halves (a reflection and a fewer-during-trial card
+  // withheld; chronicity, worsening, red flag and decline kept).
+  assertStrictEquals(withheld >= 2, true, `withheld only ${withheld}`)
+  assertStrictEquals(kept >= 4, true, `kept only ${kept} safety cards`)
+})
+
+Deno.test('(j) an incomplete read floors every count it states, and says so', () => {
+  let floored = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const result = run(c, OFF, EMPTY_CARE_RECORD, INCOMPLETE)
+    const p = templatePayload(result)
+    for (const e of p.findings) {
+      const f = e.finding
+      if (f.type === 'stood_down') throw new Error(`${c.name}: a stand-down over a partial read`)
+      assertStrictEquals(f.countIsFloor, true, `${c.name}: ${f.type} not floored`)
+    }
+    for (const e of p.findings.filter((x) => ['symptom_chronicity', 'symptom_worsening', 'trial_response'].includes(x.finding.type))) {
+      assertStrictEquals(/\bat least\b/.test(e.text), true, `${c.name}: "${e.text}"`)
+      floored++
+    }
+    // Worsening states no comparison over a partial read: the prior week is a floor too.
+    for (const e of p.findings.filter((x) => x.finding.type === 'symptom_worsening')) {
+      assertStrictEquals(/up from|after none/.test(e.text), false, `${c.name}: "${e.text}"`)
+    }
+    // The summary slot carries the disclosure, deterministic, whatever the record held.
+    assertEquals(p.summary, incompleteReadDisclosure(result.petName, p.findings.some((e) => e.finding.priorityClass === 'safety')))
+    assertStrictEquals(result.summaryPacket, null, c.name)
+    assertStrictEquals(p.summary?.text.includes('!'), false)
+  }
+  assertStrictEquals(floored >= 3, true, `only ${floored} floored sentences`)
 })

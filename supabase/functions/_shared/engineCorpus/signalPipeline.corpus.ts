@@ -318,6 +318,48 @@ export const SIGNAL_PIPELINE_CORPUS: SignalPipelineCase[] = [
     // The regimen span plus the given dose; the refused dose is dropped.
     expect: { vehicleMealIds: [vehicleMealId], medicationWindowCount: 2 },
   },
+  // ── Engines v3 PR-09 (CUL-989): the shapes the incomplete-read rule acts on ──
+  // Before these the corpus fired no reflection, no worsening and no trial response, so the
+  // with-and-without diff (signalPipeline.test.ts (g)–(i)) would have withheld nothing and
+  // floored nothing, and passed over an empty set.
+  {
+    name: 'a quieter week than the last (the reflection an incomplete read withholds)',
+    nowIso: NOW,
+    rows: {
+      pet: dog,
+      ...EMPTY,
+      symptoms: [symptom('vomit', 1), symptom('vomit', 3), symptom('vomit', 8), symptom('vomit', 10), symptom('vomit', 12)],
+      meals: mealsDaily(0, 29),
+    },
+    prior: null,
+    expectedTypes: ['reflection'],
+  },
+  {
+    name: 'vomiting on five of the last seven days (the worsening an incomplete read floors)',
+    nowIso: NOW,
+    rows: {
+      pet: dog,
+      ...EMPTY,
+      symptoms: [1, 2, 3, 4, 5, 10].map((d) => symptom('vomit', d)),
+      meals: mealsDaily(0, 29),
+    },
+    prior: null,
+    expectedTypes: ['symptom_worsening'],
+  },
+  {
+    name: 'a recurring course, fewer episodes on the trial than before it',
+    nowIso: NOW,
+    rows: {
+      pet: dog,
+      ...EMPTY,
+      symptoms: [...Array.from({ length: 14 }, (_, i) => symptom('vomit', 30 + i * 3)), symptom('vomit', 5), symptom('vomit', 20)],
+      meals: mealsDaily(0, 79),
+      activeTrials: [{ started_at: ago(28, 0).slice(0, 10), target_duration_days: 56 }],
+    },
+    prior: null,
+    expectedTypes: ['symptom_chronicity', 'trial_response'],
+    expect: { dietTrialActive: true },
+  },
 ]
 
 // A populated care record, for the guard that nothing reads it yet.
