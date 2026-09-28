@@ -554,7 +554,8 @@ describe('COLUMN_UPGRADES (the ALTER path every existing install takes)', () => 
 
   it('is idempotent — a second launch re-runs every ALTER harmlessly', async () => {
     const db = await realSchemaDb();
-    await expect(applyColumnUpgrades(async (sql) => db.exec(sql))).resolves.toBeUndefined();
+    // Nothing is added on a second launch (CUL-1396: the return is what initDb re-pulls on).
+    await expect(applyColumnUpgrades(async (sql) => db.exec(sql))).resolves.toEqual([]);
     expect(TABLES_WITH_COLUMN(db, 'sync_error').length).toBe(SYNC_QUEUES.length);
     db.close();
   });

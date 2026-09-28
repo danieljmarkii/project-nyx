@@ -1899,7 +1899,7 @@ async function drainFeedingArrangementsQueue(): Promise<void> {
 
   const unsynced = await db.getAllAsync<{
     id: string; pet_id: string; food_item_id: string; method: string;
-    active_from: string | null; active_until: string | null; is_shared: number;
+    active_from: string | null; active_until: string | null; ended_at: string | null; is_shared: number;
     notes: string | null; deleted_at: string | null; created_at: string; updated_at: string;
   }>(`SELECT * FROM feeding_arrangements WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 100`);
 
@@ -1914,6 +1914,10 @@ async function drainFeedingArrangementsQueue(): Promise<void> {
   await pushRows(db, 'feeding_arrangements', unsynced, (a) => ({
     id: a.id, pet_id: a.pet_id, food_item_id: a.food_item_id, method: a.method,
     active_from: a.active_from, active_until: a.active_until,
+    // CUL-1396 — the take-up instant. A row this device has not ended pushes null, which
+    // is also the server's value for it; a row another device ended reaches this one by
+    // hydrate carrying its instant, so an echo of it pushes that instant back unchanged.
+    ended_at: a.ended_at ?? null,
     is_shared: Boolean(a.is_shared), notes: a.notes,
     deleted_at: a.deleted_at, created_at: a.created_at, updated_at: a.updated_at,
   }));
@@ -2221,6 +2225,7 @@ interface RemoteVetDocument {
 interface RemoteFeedingArrangement {
   id: string; pet_id: string; food_item_id: string; method: string | null;
   active_from: string | null; active_until: string | null; is_shared: boolean | null;
+  ended_at?: string | null; // CUL-1396 / migration 076
   notes: string | null; deleted_at: string | null; created_at: string; updated_at: string;
 }
 interface RemoteMedication {
@@ -2755,7 +2760,7 @@ async function hydrateFeedingArrangements(db: Db, stale: () => boolean): Promise
   const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteFeedingArrangement>(
     'feeding_arrangements',
-    'id, pet_id, food_item_id, method, active_from, active_until, is_shared, notes, deleted_at, created_at, updated_at',
+    'id, pet_id, food_item_id, method, active_from, active_until, ended_at, is_shared, notes, deleted_at, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -2766,18 +2771,34 @@ async function hydrateFeedingArrangements(db: Db, stale: () => boolean): Promise
   for (const a of toWrite) {
     await db.runAsync(
       `INSERT INTO feeding_arrangements
-        (id, pet_id, food_item_id, method, active_from, active_until, is_shared, notes,
+        (id, pet_id, food_item_id, method, active_from, active_until, ended_at, is_shared, notes,
          deleted_at, created_at, updated_at, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,1)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          food_item_id=excluded.food_item_id, method=excluded.method,
          active_from=excluded.active_from, active_until=excluded.active_until,
+         ended_at=excluded.ended_at,
          is_shared=excluded.is_shared, notes=excluded.notes,
          deleted_at=excluded.deleted_at, updated_at=excluded.updated_at, synced=1
        WHERE feeding_arrangements.synced = 1`,
       [a.id, a.pet_id, a.food_item_id, a.method ?? 'free_choice',
-       a.active_from ?? null, a.active_until ?? null, a.is_shared ? 1 : 0,
+       a.active_from ?? null, a.active_until ?? null, a.ended_at ?? null, a.is_shared ? 1 : 0,
        a.notes ?? null, a.deleted_at ?? null, a.created_at, a.updated_at],
+    );
+  }
+  // CUL-1396 — fill a local NULL `ended_at` from the server, for every row fetched, whether
+  // or not LWW rewrote it. The re-pull after the column upgrade (COLUMN_UPGRADES `rehydrate`)
+  // returns rows whose `updated_at` equals the local copy, which `reconcileBatch` rightly leaves
+  // alone, so without this the upgraded phone kept NULL where the server holds the instant.
+  // Fills only a NULL, only on a synced row, and touches no other column and no `updated_at`:
+  // it records a value the server already has, and queues nothing.
+  if (stale()) return;
+  for (const a of rows) {
+    if (!a.ended_at) continue;
+    await db.runAsync(
+      `UPDATE feeding_arrangements SET ended_at = ?
+       WHERE id = ? AND ended_at IS NULL AND synced = 1`,
+      [a.ended_at, a.id],
     );
   }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);

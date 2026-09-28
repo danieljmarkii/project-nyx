@@ -174,7 +174,19 @@ export async function initDb(): Promise<void> {
   //
   // Runs AFTER all three CREATE blocks, so the medication/diet-trial tables its
   // entries target already exist.
-  await applyColumnUpgrades((sql) => database.execAsync(sql));
+  const addedColumns = await applyColumnUpgrades((sql) => database.execAsync(sql));
+
+  // CUL-1396 — a column an older build hydrated WITHOUT (`rehydrate` in COLUMN_UPGRADES): that
+  // build moved the table's watermark past every row, so clear it, once, on the launch that
+  // added the column, and the next hydrate pulls the table in full. Its own try per table:
+  // the column is already added, and a failure here only costs the refill, never the schema.
+  for (const table of new Set(addedColumns.filter((u) => u.rehydrate).map((u) => u.table))) {
+    try {
+      await database.runAsync('DELETE FROM sync_watermarks WHERE table_name = ?', [table]);
+    } catch (e) {
+      console.warn(`[initDb] could not reset the ${table} watermark after its column upgrade:`, e);
+    }
+  }
 
   // Backfill in its own try so it still runs if the ADD COLUMN above already
   // happened on a prior launch (a single try/catch would let a transient failure

@@ -388,6 +388,8 @@ interface ArrangementRow {
   id: string
   food_item_id: string
   method: string
+  created_at: string | null
+  ended_at: string | null
   active_from: string | null
   active_until: string | null
   is_shared: boolean
@@ -996,6 +998,8 @@ export function mapFeedingArrangementRows(rows: ArrangementRow[]): ReportFeeding
       id: r.id,
       foodItemId: r.food_item_id,
       method: r.method,
+      createdAt: r.created_at ?? null,
+      endedAt: r.ended_at ?? null,
       activeFrom: r.active_from ?? null,
       activeUntil: r.active_until ?? null,
       isShared: r.is_shared,
@@ -1474,7 +1478,7 @@ export async function generateReportForPet(
       supabase
       .from('feeding_arrangements')
       .select(
-        `id, food_item_id, method, active_from, active_until, is_shared, food_items(${FOOD_PROTEIN_COLS}, brand, product_name, format)`,
+        `id, food_item_id, method, created_at, ended_at, active_from, active_until, is_shared, food_items(${FOOD_PROTEIN_COLS}, brand, product_name, format)`,
         { count: 'exact' },
       )
       .eq('pet_id', petId)

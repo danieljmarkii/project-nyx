@@ -44,6 +44,7 @@
 
 import { getDb } from './db';
 import { getActiveArrangementsForPet } from './feedingArrangements';
+import { isFreeFedIntakeMeal, parseFreeFedIntakeSpans, type FreeFedIntakeSpan } from './freeFedIntake';
 import { canonicalizeProtein, proteinsFromCacheText, readProteinSet } from './protein';
 import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
 
@@ -757,10 +758,19 @@ export interface IntakeRateOptions {
   freeFedFoodIds: ReadonlySet<string>;
 }
 
-/** True when a meal's food is currently free-fed for this pet — its intake isn't
- *  directly observed, so it is excluded from every intake-rate denominator (§11 #6). */
-function isFreeFedMeal(m: AnalyticsMeal, freeFed: ReadonlySet<string>): boolean {
-  return m.foodItemId !== null && freeFed.has(m.foodItemId);
+/**
+ * The free-fed exclusion a caller hands the intake predicates (§11 #6): a set of foods
+ * free-fed TODAY (by food, the descriptive rate cards) or the bowl spans (by date, the
+ * intake-decline detector and every reader that must see what it sees, CUL-1086). The
+ * rate cards' move to spans is CUL-1392; until then they pass the set.
+ */
+export type FreeFedExclusion = ReadonlySet<string> | readonly FreeFedIntakeSpan[];
+
+/** True when a meal was a free-fed bowl — its intake isn't directly observed, so it is
+ *  excluded from every intake denominator (§11 #6). */
+function isFreeFedMeal(m: AnalyticsMeal, freeFed: FreeFedExclusion): boolean {
+  if (Array.isArray(freeFed)) return isFreeFedIntakeMeal(m.foodItemId, m.ms, freeFed);
+  return m.foodItemId !== null && (freeFed as ReadonlySet<string>).has(m.foodItemId);
 }
 
 /** A meal counts as "finished" at most/all (score ≥ FINISHED_SCORE). ONE definition,
@@ -784,7 +794,7 @@ export function isFinishedMeal(m: AnalyticsMeal): boolean {
  * same predicate, so the fourth consumer calls this rather than restating it — and the
  * third, the decline calendar, stopped restating it in the same change.
  */
-export function qualifyingIntakeMeals(rows: AnalyticsMeal[], freeFed: ReadonlySet<string>): AnalyticsMeal[] {
+export function qualifyingIntakeMeals(rows: AnalyticsMeal[], freeFed: FreeFedExclusion): AnalyticsMeal[] {
   return rows.filter(
     (m) => m.foodType !== 'treat' && m.intakeRating != null && !isFreeFedMeal(m, freeFed),
   );
@@ -969,8 +979,9 @@ export interface IntakeDeclineInput {
   nowMs: number;
   /** All meals in the clinical baseline lookback (any food_type/rating). */
   meals: AnalyticsMeal[];
-  /** Foods currently free-fed for this pet — their meals are excluded (§11 #6). */
-  freeFedFoodIds: ReadonlySet<string>;
+  /** This pet's free-fed bowl spans, active and ended — a rating logged while its food's bowl
+   *  was down is excluded (§11 #6, by date: CUL-1086, `lib/freeFedIntake.ts`). */
+  freeFedSpans: readonly FreeFedIntakeSpan[];
 }
 
 interface RatedMeal {
@@ -983,11 +994,11 @@ interface RatedMeal {
 /** Rated 'meal'-type foods only, free-fed excluded, sorted ascending — the exact
  *  classification detection.ts uses (foodType === 'meal' && rating != null), so a
  *  logging gap or a treat can never masquerade as a decline, plus the §11 #6
- *  free-fed exclusion. */
-function classifyRatedMeals(meals: AnalyticsMeal[], freeFed: ReadonlySet<string>): RatedMeal[] {
+ *  free-fed exclusion BY DATE through the one shared predicate (CUL-1086). */
+function classifyRatedMeals(meals: AnalyticsMeal[], freeFedSpans: readonly FreeFedIntakeSpan[]): RatedMeal[] {
   return meals
     .filter((m) => m.foodType === 'meal' && m.intakeRating != null)
-    .filter((m) => !(m.foodItemId !== null && freeFed.has(m.foodItemId)))
+    .filter((m) => !isFreeFedIntakeMeal(m.foodItemId, m.ms, freeFedSpans))
     .map((m) => ({
       ms: m.ms,
       score: INTAKE_SCORE[m.intakeRating as string] ?? 0,
@@ -1002,7 +1013,7 @@ export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineRes
   const nowMs = input.nowMs;
   if (!Number.isFinite(nowMs)) return notEnoughData(0, DECLINE.minRatedMealsForBaseline);
 
-  const ratedMeals = classifyRatedMeals(input.meals, input.freeFedFoodIds);
+  const ratedMeals = classifyRatedMeals(input.meals, input.freeFedSpans);
 
   // Coverage floor: too few rated meals → not enough data (NOT an all-clear — §11 #2).
   if (ratedMeals.length < DECLINE.minRatedMealsForBaseline) {
@@ -1173,7 +1184,37 @@ function foodLabelOf(brand: string | null, product: string | null): string | nul
   return label.length > 0 ? label : null;
 }
 
-/** Foods currently free-fed for this pet (§11 #6 exclusion set). */
+/**
+ * This pet's free-fed bowl spans, active AND ended (CUL-1086, by date). Deliberately no join to
+ * the food cache: `getActiveArrangementsForPet` inner-joins it, so a food missing from the cache
+ * vanished from the phone's exclusion while the server still excluded it — the one route the
+ * adversarial pass found to the server staying quiet where the phone would raise.
+ */
+async function readFreeFedIntakeSpans(petId: string): Promise<FreeFedIntakeSpan[]> {
+  const db = getDb();
+  const rows = await db.getAllAsync<{
+    food_item_id: string | null;
+    created_at: string | null;
+    active_from: string | null;
+    active_until: string | null;
+    ended_at: string | null;
+  }>(
+    `SELECT food_item_id, created_at, active_from, active_until, ended_at FROM feeding_arrangements
+     WHERE pet_id = ? AND method = 'free_choice' AND deleted_at IS NULL`,
+    [petId],
+  );
+  return parseFreeFedIntakeSpans(
+    rows.map((r) => ({
+      foodItemId: r.food_item_id,
+      createdAt: r.created_at,
+      activeFrom: r.active_from,
+      activeUntil: r.active_until,
+      endedAt: r.ended_at,
+    })),
+  );
+}
+
+/** Foods currently free-fed for this pet (§11 #6 exclusion set, by food: the rate cards). */
 async function readFreeFedFoodIds(petId: string): Promise<Set<string>> {
   const arrangements = await getActiveArrangementsForPet(petId);
   return new Set(arrangements.map((a) => a.food_item_id));
@@ -1349,7 +1390,7 @@ export async function getMealTreatComposition(
  * This pet's QUALIFYING meals in [startMs, endMs), newest first — the read behind the
  * daily look's record-local withheld arm (CUL-873, T-20).
  *
- * A wrapper, not a new query: `readMealRows` + `readFreeFedFoodIds` + the shared
+ * A wrapper, not a new query: `readMealRows` + `readFreeFedIntakeSpans` (by date, CUL-1086) + the shared
  * `qualifyingIntakeMeals` filter, in that order, so the look can never see a meal the
  * intake detectors would have excluded. The free-fed read is the reason this lives here
  * rather than in `lib/lookWithheld.ts` — the exclusion set is per-pet arrangement state
@@ -1363,11 +1404,12 @@ export async function getQualifyingIntakeMeals(
   startMs: number,
   endMs: number,
 ): Promise<AnalyticsMeal[]> {
-  const [meals, freeFedFoodIds] = await Promise.all([
+  // By date, the detector's own exclusion (CUL-1086): T-20 reads what the detector reads.
+  const [meals, freeFedSpans] = await Promise.all([
     readMealRows(petId, startMs, endMs),
-    readFreeFedFoodIds(petId),
+    readFreeFedIntakeSpans(petId),
   ]);
-  return qualifyingIntakeMeals(meals, freeFedFoodIds).sort((a, b) => b.ms - a.ms);
+  return qualifyingIntakeMeals(meals, freeFedSpans).sort((a, b) => b.ms - a.ms);
 }
 
 export async function getIntakeDecline(
@@ -1383,9 +1425,9 @@ export async function getIntakeDecline(
   const todayIndex = Math.floor(nowMs / MS_PER_DAY);
   const startMs = (todayIndex - DECLINE.baselineWindowDays) * MS_PER_DAY;
   const endMs = (todayIndex + 1) * MS_PER_DAY;
-  const [meals, freeFedFoodIds] = await Promise.all([
+  const [meals, freeFedSpans] = await Promise.all([
     readMealRows(petId, startMs, endMs),
-    readFreeFedFoodIds(petId),
+    readFreeFedIntakeSpans(petId),
   ]);
-  return detectIntakeDecline({ species, nowMs, meals, freeFedFoodIds });
+  return detectIntakeDecline({ species, nowMs, meals, freeFedSpans });
 }
