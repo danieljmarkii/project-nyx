@@ -165,7 +165,7 @@ function detect(meals: AnalyticsMeal[], nowMs: number): IntakeDeclineFlag[] {
     species: 'cat',
     nowMs,
     meals,
-    freeFedFoodIds: new Set(),
+    freeFedSpans: [],
   });
   return result.status === 'watch' ? result.flags : [];
 }

@@ -111,7 +111,7 @@ const PHRASING_MODEL = 'claude-haiku-4-5'
 // DEFAULT_CONFIG, the phrasing model and the Engines flags; engineStamps.ts). Bump it with
 // any change to detection, curation, decoration or phrasing that can change what a pet's
 // Signal says: the fingerprint cannot see a code change this number does not record.
-export const SIGNAL_ENGINE_VERSION = 'signal.1'
+export const SIGNAL_ENGINE_VERSION = 'signal.2' // signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
 
 const MS_PER_DAY = 86_400_000
 
@@ -512,7 +512,7 @@ const handler = async (req: Request): Promise<Response> => {
       // The active-window overlap is resolved inside detection, not the query.
       supabase
         .from('feeding_arrangements')
-        .select('id, food_item_id, is_shared, active_from, active_until, food_items(primary_protein, proteins)')
+        .select('id, food_item_id, created_at, is_shared, active_from, active_until, ended_at, food_items(primary_protein, proteins)')
         .eq('pet_id', petId)
         .eq('method', 'free_choice')
         .is('deleted_at', null),

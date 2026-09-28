@@ -82,6 +82,11 @@ import {
 // (spec §2 L2, G9). `localDayIndex`/`localDayIndexOf` are the same day-boundary helpers the
 // trial card counts "day N of M" with (B-421), so L2's day-count cannot drift from the card's.
 import { isTrialRunning } from '../../../lib/dietTrial.ts'
+import {
+  isFreeFedIntakeMeal,
+  parseFreeFedIntakeSpans,
+  type FreeFedIntakeSpan,
+} from '../../../lib/freeFedIntake.ts'
 // `trialDayCounter` is the ONE "day N of M" formula (B-449) — re-spelling `max(1, end - start + 1)`
 // here is the drift the guard test forbids elsewhere. `localDayIndex*` are the tz-aware day-boundary
 // helpers the trial card counts with (B-421); L2 windows in day-INDEX space (never `index * MS_PER_DAY`,
@@ -493,6 +498,18 @@ export interface FeedingArrangement {
    * bowl = 'low' (is_shared, deferred to the multi-pet sprint). Absent → 'high'.
    */
   attributionConfidence?: AttributionConfidence | null
+  /**
+   * CUL-1086 — the free-fed food, and the instant its row was written (the toggle-on). The
+   * intake lane (② + rate_meals) reads these, through `lib/freeFedIntake.ts`, to tell a bowl's
+   * rating from a watched meal BY DATE; the correlation lanes ignore both. Absent ⇒ the
+   * arrangement excludes no rating (the pre-CUL-1086 behavior), so both production callers
+   * populate them: `generate-signal/index.ts` mapArrangementRows and the report's
+   * buildDetectionInput, each pinned by a test.
+   */
+  foodItemId?: string | null
+  createdAt?: string | null
+  /** CUL-1396 / migration 076 — the toggle-off instant; null while down or on a pre-076 end. */
+  endedAt?: string | null
 }
 
 /**
@@ -3640,15 +3657,38 @@ interface RatedMeal {
 }
 
 /**
- * Rated meals only: 'meal'-type foods with a real intake rating, sorted ascending.
- * Treats/other and unrated rows are excluded so a logging gap can never masquerade
- * as a decline. Shared by detectIntakeDecline AND the B-053 rate_meals coverage
- * diagnostic so the "rated meal" definition (the line-710 coverage floor) has ONE
- * source and cannot drift.
+ * The intake lane's free-fed spans (CUL-1086, §11 #6): a rating logged while its food's bowl was
+ * down is a bowl, not a watched meal. BY DATE, through the one predicate the phone also uses
+ * (`lib/freeFedIntake.ts`), so the two detectors cannot disagree on which meals they read.
  */
-function classifyRatedMeals(mealEvents: MealEvent[]): RatedMeal[] {
+function intakeFreeFedSpans(input: DetectionInput): FreeFedIntakeSpan[] {
+  return parseFreeFedIntakeSpans(
+    (input.feedingArrangements ?? []).map((a) => ({
+      foodItemId: a.foodItemId ?? null,
+      createdAt: a.createdAt ?? null,
+      activeFrom: a.activeFrom,
+      activeUntil: a.activeUntil,
+      endedAt: a.endedAt ?? null,
+    })),
+  )
+}
+
+function isFreeFedMeal(m: MealEvent, spans: readonly FreeFedIntakeSpan[]): boolean {
+  return isFreeFedIntakeMeal(m.foodItemId, Date.parse(m.occurredAt), spans)
+}
+
+/**
+ * Rated meals only: 'meal'-type foods with a real intake rating, free-fed bowl ratings excluded
+ * by date, sorted ascending. Treats/other and unrated rows are excluded so a logging gap can
+ * never masquerade as a decline. Shared by detectIntakeDecline AND the B-053 rate_meals coverage
+ * diagnostic so the "rated meal" definition (the line-710 coverage floor) has ONE source and
+ * cannot drift. The phone's classifyRatedMeals (`lib/analytics.ts`) is this meal for meal;
+ * `lib/intakeDeclineParity.test.ts` drives both real detectors and requires the same verdict.
+ */
+function classifyRatedMeals(mealEvents: MealEvent[], freeFedSpans: readonly FreeFedIntakeSpan[]): RatedMeal[] {
   return mealEvents
     .filter((m) => m.foodType === 'meal' && m.intakeRating != null)
+    .filter((m) => !isFreeFedMeal(m, freeFedSpans))
     .map((m) => ({
       ms: Date.parse(m.occurredAt),
       occurredAt: m.occurredAt,
@@ -3681,7 +3721,7 @@ export function detectIntakeDecline(
   const nowMs = Date.parse(input.now)
   if (!Number.isFinite(nowMs)) return []
 
-  const ratedMeals = classifyRatedMeals(input.mealEvents)
+  const ratedMeals = classifyRatedMeals(input.mealEvents, intakeFreeFedSpans(input))
 
   // Coverage floor: too few rated meals → SILENT. Silence is not an all-clear (§9);
   // the composition layer renders the building/stale state, never "intake is fine".
@@ -5793,14 +5833,21 @@ function detectRateMeals(
   // Only meaningful when the owner IS logging meals — otherwise "rate a few meals"
   // is a non-sequitur (that's the building/empty case, not a coverage gap). We gate
   // on raw meal-type events, NOT rated ones, since the whole point is unrated meals.
-  const mealsLogged = input.mealEvents.filter((m) => m.foodType === 'meal').length
+  //
+  // CUL-1086: a meal logged while its bowl was down counts for neither half. Its rating never
+  // reaches ②, so asking the owner to rate it would be advice that cannot wake the lane; a pet
+  // fed only from a free-fed bowl gets no nudge (the phone reads that pet the same way).
+  const freeFedSpans = intakeFreeFedSpans(input)
+  const mealsLogged = input.mealEvents.filter(
+    (m) => m.foodType === 'meal' && !isFreeFedMeal(m, freeFedSpans),
+  ).length
   if (mealsLogged === 0) return null
 
   // The line-710 floor: too few RATED meals to establish an intake baseline → ②
   // stays silent. If the floor is already met, ②'s silence is NOT a coverage gap
   // (intake is simply steady) — no diagnostic. This is what gives a healthy,
   // well-rated pet (Nyx) staple_washout instead of a spurious rate-meals nudge.
-  const ratedMeals = classifyRatedMeals(input.mealEvents).length
+  const ratedMeals = classifyRatedMeals(input.mealEvents, freeFedSpans).length
   const needed = config.intakeDecline.minRatedMealsForBaseline
   if (ratedMeals >= needed) return null
 

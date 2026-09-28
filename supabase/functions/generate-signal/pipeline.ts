@@ -143,9 +143,11 @@ export function mapSymptomRows(rows: SymptomRow[]): SymptomEvent[] {
 export interface ArrangementRow {
   id: string
   food_item_id: string | null
+  created_at: string | null
   is_shared: boolean
   active_from: string | null
   active_until: string | null
+  ended_at: string | null
   food_items:
     | { primary_protein: string | null; proteins: string[] | null }
     | { primary_protein: string | null; proteins: string[] | null }[]
@@ -168,6 +170,11 @@ export function mapArrangementRows(rows: ArrangementRow[]): FeedingArrangement[]
       activeFrom: r.active_from,
       activeUntil: r.active_until,
       attributionConfidence: r.is_shared ? 'low' : 'high',
+      // CUL-1086 — the intake lane tells a bowl's rating from a watched meal by instant: the
+      // toggle-on (`created_at`) and the toggle-off (`ended_at`, migration 076).
+      foodItemId: r.food_item_id,
+      createdAt: r.created_at,
+      endedAt: r.ended_at,
     }
   })
 }
