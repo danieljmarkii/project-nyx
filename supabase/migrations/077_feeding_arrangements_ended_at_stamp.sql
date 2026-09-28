@@ -3,6 +3,9 @@
 -- (CUL-1396; adversarial round 4 on CUL-1086, finding E1)
 -- ============================================================
 --
+-- DROPPED BY 078 (PM ruling 2026-09-28, adversarial round 5). Kept because it was
+-- applied to production; the SQL below is what ran. Read 078 for why.
+--
 -- 076 added `feeding_arrangements.ended_at`, the toggle-off instant, written by
 -- the app beside `active_until`. Builds that predate it keep ending bowls without
 -- it until their owners update: their upsert omits the column, so the row lands

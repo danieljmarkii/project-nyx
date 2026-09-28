@@ -1,0 +1,37 @@
+-- ============================================================
+-- Migration 078: drop the ended_at stamp trigger (reverts 077)
+-- (CUL-1396; PM ruling 2026-09-28 after adversarial round 5 on CUL-1086)
+-- ============================================================
+--
+-- 077 stamped `feeding_arrangements.ended_at` with the time a take-up REACHED the
+-- server, for builds that predate 076 and so omit the column. Round 5 of the
+-- adversarial pass broke it three ways, measured on PostgreSQL 16:
+--
+--   1. The server can only stamp late, never early. An old build that was offline,
+--      or whose toggle-off push lost the race to the meals queue (meals push first),
+--      was stamped after refusals the owner watched in between, and hid them where
+--      the readers' date fallback (no instant: count every rating) had counted them.
+--   2. Under PostgREST's upsert (INSERT … ON CONFLICT DO UPDATE SET col =
+--      EXCLUDED.col) the BEFORE INSERT trigger fires on the PROPOSED row, so a
+--      CURRENT build re-pushing an ended row with `ended_at: null` (a lost response,
+--      two devices ending one bowl) had its true instant overwritten with now().
+--      077's "a row already ended is never re-stamped" was false under upsert.
+--   3. A row re-opened by a stale push and then ended by an old build kept the stale
+--      instant, so bowl ratings up to the real take-up counted as watched meals.
+--
+-- The PM ruled to drop it. Break 2 reached current builds; break 1 was worse than
+-- no trigger for the refusals it exists to protect; and the builds 077 served are
+-- held by no real owner (1.2.0 is the first build real owners hold, per the Engines
+-- v3 plan), so the tail it covered is the team's own dogfood devices until they
+-- update. From here: a build carrying 076's client write records the exact instant;
+-- an older build's end leaves `ended_at` NULL and the readers fall back to the date
+-- (lib/freeFedIntake.ts), which counts every rating from the date on.
+--
+-- Production at the drop: 3 rows, 0 ended without an instant (verified 2026-09-28),
+-- so nothing 077 stamped needs undoing; 076's backfilled values stand.
+--
+-- Rollback: re-apply 077 (not recommended; see above).
+-- Destructive: n (drops a trigger and its function; no data).
+
+DROP TRIGGER IF EXISTS trg_feeding_arrangements_ended_at_stamp ON feeding_arrangements;
+DROP FUNCTION IF EXISTS stamp_feeding_arrangement_ended_at();
