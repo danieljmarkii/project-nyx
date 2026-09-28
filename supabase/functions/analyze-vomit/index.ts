@@ -50,6 +50,13 @@ import {
   buildAnalysisWriteBack as buildIncidentAnalysisWriteBack,
   runIncidentAnalysis,
 } from '../_shared/incident-analysis.ts'
+import type { EngineFlags } from '../_shared/engineFlags.ts'
+import {
+  buildVomitContext,
+  vomitContextWindows,
+  type ContextInput,
+  type VomitContextRows,
+} from './context.ts'
 
 // The incident-agnostic pure helpers moved to the shared pipeline module in the
 // D2 refactor; re-export them — and their parameter/return types, i.e. the full
@@ -70,16 +77,8 @@ const REPEAT_VOMIT_SHORT_WINDOW_HOURS = 4
 const REPEAT_VOMIT_SHORT_WINDOW_COUNT = 2
 const REPEAT_VOMIT_DAY_WINDOW_HOURS = 24
 const REPEAT_VOMIT_DAY_WINDOW_COUNT = 3
-// Feline reduced-intake fires at the 24h edge (not the textbook 48h) because
-// it only ever fires alongside an active vomit incident — vomiting + anorexia
-// compounds risk toward the hepatic-lipidosis window.
-const FELINE_REDUCED_INTAKE_HOURS = 24
-const CONCURRENT_LETHARGY_HOURS = 24
-// Intake-tracking baseline window: the feline flag keys off ABSENCE of
-// positive intake, which conflates "didn't eat" with "didn't log". Only fire
-// it for owners who actually track intake — i.e. who have rated a meal in the
-// last week — so we never flag a non-logger. (Data caveat, B-027.)
-const INTAKE_BASELINE_WINDOW_DAYS = 7
+// The context windows (feline intake, lethargy, the intake-tracking baseline) and the
+// derivation over them live in ./context.ts, the pure builder (Engines v3 PR-11a).
 
 // ── Enum vocabularies (must match the DB enums in migration 013) ──────────────
 const COLOURS = ['clear', 'white', 'yellow', 'green', 'brown', 'tan', 'pink_red', 'dark_red', 'black_coffee_ground', 'mixed', 'unsure'] as const
@@ -301,21 +300,9 @@ export function parseAnalysisToolResult(response: ClaudeResponse): VomitAnalysis
   }
 }
 
-export interface ContextInput {
-  species: string
-  // occurred_at (ISO) of every non-deleted vomit event in the last 24h,
-  // INCLUDING the event being analysed. Uses occurred_at (B-010 representative
-  // point) — imprecise for windowed events but the agreed sort/representative key.
-  recentVomitTimes: string[]
-  thisEventOccurredAt: string
-  // True if the cat has had a meal rated 'most'/'all' within the feline window.
-  hasRecentPositiveIntake: boolean
-  // True if the owner actually tracks intake (any rated meal in the baseline
-  // window) — guards the feline flag against absence-of-logging false positives.
-  tracksIntake: boolean
-  // True if a non-deleted lethargy event was logged within the lethargy window.
-  hasRecentLethargy: boolean
-}
+// The context shape moved to the pure builder with its derivation; re-exported so this
+// file stays the suite's single import surface.
+export type { ContextInput } from './context.ts'
 
 export function computeContextualFlags(input: ContextInput): ContextualFlag[] {
   const flags: ContextualFlag[] = []
@@ -531,18 +518,18 @@ export function presentFlagsFromStructured(row: Record<string, unknown>): string
 }
 
 // ── Context assembly (DB reads, ownership-scoped via the caller JWT) ───────────
+// The reads only. What they mean is ./context.ts's (buildVomitContext), which is pure,
+// so the harness and the guard corpus can drive it without a database.
 
 async function assembleContext(
   userClient: SupabaseClient,
   petId: string,
   thisEventOccurredAt: string,
   species: string,
+  engineFlags: EngineFlags,
 ): Promise<ContextInput> {
-  const now = Date.now()
-  const dayAgo = new Date(now - 24 * 3_600_000).toISOString()
-  const intakeBaselineAgo = new Date(now - INTAKE_BASELINE_WINDOW_DAYS * 86_400_000).toISOString()
-  const felineWindowAgo = new Date(now - FELINE_REDUCED_INTAKE_HOURS * 3_600_000).toISOString()
-  const lethargyWindowAgo = new Date(now - CONCURRENT_LETHARGY_HOURS * 3_600_000).toISOString()
+  const nowMs = Date.now()
+  const w = vomitContextWindows(nowMs)
 
   const [vomitsRes, lethargyRes, mealEventsRes] = await Promise.all([
     userClient
@@ -551,14 +538,14 @@ async function assembleContext(
       .eq('pet_id', petId)
       .eq('event_type', 'vomit')
       .is('deleted_at', null)
-      .gte('occurred_at', dayAgo),
+      .gte('occurred_at', w.vomitsSinceIso),
     userClient
       .from('events')
-      .select('id')
+      .select('id, occurred_at')
       .eq('pet_id', petId)
       .eq('event_type', 'lethargy')
       .is('deleted_at', null)
-      .gte('occurred_at', lethargyWindowAgo)
+      .gte('occurred_at', w.lethargySinceIso)
       .limit(1),
     // Meal events in the intake baseline window, with their intake rating.
     userClient
@@ -567,34 +554,15 @@ async function assembleContext(
       .eq('pet_id', petId)
       .eq('event_type', 'meal')
       .is('deleted_at', null)
-      .gte('occurred_at', intakeBaselineAgo),
+      .gte('occurred_at', w.intakeBaselineSinceIso),
   ])
 
-  const recentVomitTimes = (vomitsRes.data ?? []).map((r) => r.occurred_at as string)
-  // Ensure this event is represented even if the read raced its own write.
-  if (!recentVomitTimes.includes(thisEventOccurredAt)) recentVomitTimes.push(thisEventOccurredAt)
-
-  const hasRecentLethargy = (lethargyRes.data ?? []).length > 0
-
-  type MealEventRow = { occurred_at: string; meals: { intake_rating: string | null } | { intake_rating: string | null }[] | null }
-  const mealRows = (mealEventsRes.data ?? []) as MealEventRow[]
-  const ratingOf = (m: MealEventRow): string | null => {
-    const meal = Array.isArray(m.meals) ? m.meals[0] : m.meals
-    return meal?.intake_rating ?? null
+  const rows: VomitContextRows = {
+    vomits: (vomitsRes.data ?? []) as VomitContextRows['vomits'],
+    lethargy: (lethargyRes.data ?? []) as VomitContextRows['lethargy'],
+    meals: (mealEventsRes.data ?? []) as VomitContextRows['meals'],
   }
-  const tracksIntake = mealRows.some((m) => ratingOf(m) !== null)
-  const hasRecentPositiveIntake = mealRows.some(
-    (m) => m.occurred_at >= felineWindowAgo && (ratingOf(m) === 'most' || ratingOf(m) === 'all'),
-  )
-
-  return {
-    species,
-    recentVomitTimes,
-    thisEventOccurredAt,
-    hasRecentPositiveIntake,
-    tracksIntake,
-    hasRecentLethargy,
-  }
+  return buildVomitContext({ rows, thisEventOccurredAt, species, nowMs, engineFlags })
 }
 
 // ── Cap + flag gate identity (Monetization Track 2, T2-3 / B-329 + B-001) ─────
@@ -622,10 +590,13 @@ const VOMIT_DESCRIPTOR: IncidentDescriptor<VomitAnalysis, ContextualFlag> = {
   systemPrompt: SYSTEM_PROMPT,
   tool: ANALYZE_TOOL,
   userMessageText: 'Analyse this photo of pet vomit.',
+  // The descriptor half of rule_version (engineStamps.ts): bump with any change to
+  // which findings become flags or to the contextual derivation (./context.ts).
+  ruleVersion: 'vomit1',
   parseToolResult: parseAnalysisToolResult,
   appearsToShowSubject: (analysis) => analysis.appears_to_show_vomit,
-  computeContextualFlags: async (userClient, { petId, occurredAt, species }) =>
-    computeContextualFlags(await assembleContext(userClient, petId, occurredAt, species)),
+  computeContextualFlags: async (userClient, { petId, occurredAt, species, engineFlags }) =>
+    computeContextualFlags(await assembleContext(userClient, petId, occurredAt, species, engineFlags)),
   copy: VOMIT_COPY,
   buildStructuredValues: buildVomitStructuredValues,
   redFlagColumns: RED_FLAG_COLUMNS,

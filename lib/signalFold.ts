@@ -24,7 +24,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { InsightType, SignalFinding } from './signal';
-import { proteinCluster } from './signalCopy';
+import { findingIdentity } from './findingIdentity';
 
 export const SIGNAL_FOLD_STORAGE_KEY = 'nyx.signalFold';
 
@@ -92,26 +92,12 @@ export function canFold(finding: SignalFinding): boolean {
 // ── Identity (§5.2) — the finding key, never `rank` ───────────────────────────
 
 /**
- * `type` + the noun the sentence is about. Rank is presentation and moves as findings
- * come and go; the key must survive a re-rank so a fold follows its finding. A lone
- * `postprandial_timing` that becomes a `timing_story` is a NEW identity and renders open
- * — correct: the card's shape changed.
+ * `type` + the noun the sentence is about. The derivation lives in `lib/findingIdentity.ts`
+ * so generate-signal writes the same key into `signal_shown_log` (Engines v3 PR-11a); this
+ * name stays the phone's.
  */
 export function foldIdentity(finding: SignalFinding): string {
-  switch (finding.type) {
-    case 'food_symptom_correlation':
-      // The cluster, sorted — a member joining is a new key (a new identity, §5.3).
-      return `${finding.type}:${[...proteinCluster(finding)].sort().join('+')}`;
-    case 'incident_red_flag':
-      // A fold on a vomit flag never covers a later stool flag.
-      return `${finding.type}:${finding.incidentType}`;
-    case 'trial_response':
-    case 'intake_decline':
-      // One per pet.
-      return finding.type;
-    default:
-      return `${finding.type}:${finding.symptomType}`;
-  }
+  return findingIdentity(finding);
 }
 
 // ── The material-change table (§5.3) ──────────────────────────────────────────

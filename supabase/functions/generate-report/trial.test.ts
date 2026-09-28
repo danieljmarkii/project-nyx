@@ -160,6 +160,7 @@ function dayKeyPlus(key: string, days: number): string {
 function baseInput(over: Partial<ReportInput> = {}): ReportInput {
   return {
     now: NOW,
+    engineFlags: { on: [], readOk: true },
     timezone: TZ,
     pet: {
       id: 'pet-1',

@@ -22,7 +22,13 @@
 // (unit-tested offline in phrasing.test.ts, mirroring detection.ts). This file
 // is the I/O shell: DB reads, the Claude call, and the cache write. It runs with
 // the caller's JWT so RLS enforces pet ownership on every read and the cache
-// write — no service role needed (no storage, no cross-user data).
+// write.
+//
+// ONE service-role write (Engines v3 PR-11a, CUL-1378 ruled at the plan): the row per
+// served finding in `signal_shown_log`, keyed on the pet id the caller's own RLS-scoped
+// `pets` read just returned. The admin client is built for that insert and does nothing
+// else (_shared/engineStamps.ts insertShownLog carries why the log must not be
+// client-writable).
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
@@ -89,10 +95,22 @@ import {
 // cap, the model, the summary, or the vet report (which re-runs detection and never reads this cache).
 import {
   mergeStandDowns,
+  priorForStandDowns,
   readPriorEntries,
   resolveStandDowns,
   type CachedEntry,
 } from './standDown.ts'
+// Engines v3 (PR-11a, CUL-1267): the rollout flag, read fail-closed for the pet's owner, and
+// the one writer of the cache row's stamps and the shown log.
+import { readEngineFlags } from '../_shared/engineFlagsRead.ts'
+import { SIGNAL_ENGINE_KEYS } from '../_shared/engineFlags.ts'
+import {
+  buildShownLogRows,
+  engineFingerprint,
+  insertShownLog,
+  signalStampValues,
+  standDownMintAllowed,
+} from '../_shared/engineStamps.ts'
 import {
   buildSummaryPacket,
   summaryTemplate,
@@ -122,6 +140,12 @@ const LOOKBACK_DAYS = 180
 // so the cheapest capable model is the right call for a per-finding, per-pet,
 // daily-cached call (B-001 cost). Bump this one constant if voice disappoints.
 const PHRASING_MODEL = 'claude-haiku-4-5'
+
+// The Signal engine's version, one input to the cache row's engine_fingerprint (with
+// DEFAULT_CONFIG, the phrasing model and the Engines flags; engineStamps.ts). Bump it with
+// any change to detection, curation, decoration or phrasing that can change what a pet's
+// Signal says: the fingerprint cannot see a code change this number does not record.
+export const SIGNAL_ENGINE_VERSION = 'signal.1'
 
 const MS_PER_DAY = 86_400_000
 
@@ -799,7 +823,7 @@ const handler = async (req: Request): Promise<Response> => {
       incidentAnalysesRes,
     ] =
       await Promise.all([
-      supabase.from('pets').select('name, species').eq('id', petId).maybeSingle(),
+      supabase.from('pets').select('id, name, species, user_id').eq('id', petId).maybeSingle(),
       supabase
         .from('events')
         .select('id, event_type, occurred_at, occurred_at_confidence, severity')
@@ -876,11 +900,24 @@ const handler = async (req: Request): Promise<Response> => {
         .gte('events.occurred_at', lookbackIso),
     ])
 
-    const pet = petRes.data as { name: string; species: string } | null
+    const pet = petRes.data as { id: string; name: string; species: string; user_id: string | null } | null
     if (!pet) {
       return Response.json({ error: 'Pet not found' }, { status: 404, headers: CORS_HEADERS })
     }
     const petName = pet.name || 'your pet'
+
+    // 1b. The Engines v3 flag, for the pet's OWNER, failing closed (engineFlags.ts). A read
+    //     that did not answer runs the flag-off engine and stamps '{}' (the truth about this
+    //     run). Nothing below reads a key yet (SIGNAL_ENGINE_KEYS is empty): EN-0 is the
+    //     per-incident read, and the Signal's first gated phase adds its own key.
+    const engineFlags = await readEngineFlags(supabase, typeof pet.user_id === 'string' ? pet.user_id : null)
+    const fingerprint = await engineFingerprint({
+      engine: 'generate-signal',
+      version: SIGNAL_ENGINE_VERSION,
+      config: DEFAULT_CONFIG,
+      phrasingModel: PHRASING_MODEL,
+      engineFlags: engineFlags.on,
+    })
 
     const mealRows = (mealsRes.data ?? []) as MealEventRow[]
     const doseRows = (doseEventsRes.data ?? []) as MedDoseEventRow[]
@@ -1092,7 +1129,7 @@ const handler = async (req: Request): Promise<Response> => {
       let priorGeneratedAtMs: number | null = null
       const { data: priorRow, error: priorError } = await supabase
         .from('ai_signals')
-        .select('findings, generated_at')
+        .select('findings, generated_at, engine_flags')
         .eq('pet_id', petId)
         .order('expires_at', { ascending: false })
         .limit(1)
@@ -1100,7 +1137,13 @@ const handler = async (req: Request): Promise<Response> => {
       if (priorError) {
         console.warn('generate-signal: prior ai_signals read failed — no stand-down minted:', priorError.message)
       } else if (priorRow) {
-        prior = readPriorEntries(priorRow.findings)
+        // EN-F (075 §4): a stand-down says a finding went away. Across a change in a key the
+        // Signal engine reads it may have gone because the ENGINE changed, so nothing is
+        // MINTED across one; a marker already minted is a past fact and still carries.
+        prior = priorForStandDowns(
+          readPriorEntries(priorRow.findings),
+          standDownMintAllowed(priorRow.engine_flags, engineFlags, SIGNAL_ENGINE_KEYS),
+        )
         const gen = Date.parse(String(priorRow.generated_at ?? ''))
         priorGeneratedAtMs = Number.isFinite(gen) ? gen : null
       }
@@ -1129,8 +1172,32 @@ const handler = async (req: Request): Promise<Response> => {
       findings: cachedEntries,
       coverage,
       summary,
+      ...signalStampValues(engineFlags, fingerprint),
     })
     if (insertError) throw new Error(`ai_signals write failed: ${insertError.message}`)
+
+    // 6. What the Signal showed (MFU-3): one row per served entry, identity + tier + a hash
+    //    of the text. Service role, keyed on the id the RLS-scoped pets read returned (the
+    //    ownership check). Fenced like the stand-down: the log is measurement, and a failure
+    //    here must cost its rows, never the Signal the owner is waiting for.
+    try {
+      const rows = await buildShownLogRows({
+        petId: pet.id,
+        generatedAtIso: new Date(nowMs).toISOString(),
+        entries: cachedEntries,
+        engineFlags,
+        fingerprint,
+      })
+      const adminClient = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      )
+      const { error: logError } = await insertShownLog(adminClient, rows)
+      if (logError) console.warn('generate-signal: the shown-log write failed:', logError)
+    } catch (logErr) {
+      const detail = logErr instanceof Error ? logErr.message : String(logErr)
+      console.warn('generate-signal: the shown-log write failed:', detail)
+    }
 
     return Response.json(
       { is_building: isBuilding, signal_text: signalText, findings: cachedEntries, coverage, summary },

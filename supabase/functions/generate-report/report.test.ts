@@ -102,6 +102,7 @@ function plainText(html: string): string {
 function baseInput(overrides: Partial<ReportInput> = {}): ReportInput {
   return {
     now: NOW,
+    engineFlags: { on: [], readOk: true },
     timezone: TZ,
     pet: {
       id: 'pet-nyx',

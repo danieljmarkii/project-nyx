@@ -12,6 +12,7 @@
 // Per-type copy content (reassurance-regex, Pattern 8) stays in each
 // function's own suite — it is per-descriptor by design, never inherited.
 
+import { blankComments, sourceFiles } from './sourceScan.testutil.ts'
 import { assertEquals, assertStrictEquals, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   applyEscalationFloor,
@@ -343,7 +344,7 @@ Deno.test('CUL-1323 — the failure write touches the hide ONLY when its rescue 
   // words over a row that held none, so it clears.
   const base = {
     eventId: 'evt-1', petId: 'pet-1', incidentType: 'vomit',
-    message: 'Claude API error 529', existingReadFailed: false, rescue: null,
+    message: 'Claude API error 529', existingReadFailed: false, rescue: null, stamps: null,
   }
   for (const existing of [{ recommendation: 'worth_a_call', presentFlags: [] }, { recommendation: 'monitor', presentFlags: [] }, null]) {
     const write = buildFailureWrite({ ...base, existing })
@@ -489,6 +490,8 @@ const FAILURE_BASE = {
   message: 'Claude API error 529',
   existingReadFailed: false,
   rescue: null,
+  // Not about stamps; engineStamps.test.ts pins what a stamped rescue carries.
+  stamps: null,
 }
 
 Deno.test('buildFailureWrite — a worth_a_call already in the record is NEVER overwritten by a failure', () => {
@@ -928,7 +931,7 @@ Deno.test('CUL-1203 — the plant: a humanEdited write-back cannot reach a row f
     structuredValues: {},
     readFields: VICTIM_READ,
   })
-  const { error } = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack)
+  const { error } = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack, null)
   // Nothing of the victim's read reached the attacker's row, and the miss is SAID.
   assertStrictEquals(planted.read_text, null)
   assertStrictEquals(planted.recommendation, null)
@@ -941,7 +944,7 @@ Deno.test('CUL-1203 — the owner\'s own edited row still takes the read', async
   const writeBack = buildAnalysisWriteBack({
     humanEdited: true, eventId: 'E', petId: 'victim-pet', incidentType: 'vomit', structuredValues: {}, readFields: VICTIM_READ,
   })
-  const { error } = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack)
+  const { error } = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack, null)
   assertStrictEquals(error, null)
   assertStrictEquals(own.read_text, VICTIM_READ.read_text)
   assertStrictEquals(own.description, 'owner edit') // never-clobber, unchanged
@@ -965,7 +968,7 @@ Deno.test('CUL-1203 — the upsert branch is unchanged: onConflict event_id, the
   const writeBack = buildAnalysisWriteBack({
     humanEdited: false, eventId: 'E', petId: 'victim-pet', incidentType: 'vomit', structuredValues: {}, readFields: VICTIM_READ,
   })
-  const { error } = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack)
+  const { error } = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack, null)
   assertStrictEquals(error, null)
   assertEquals(log, ['from:event_ai_analysis', 'upsert:{"onConflict":"event_id"}'])
   assertStrictEquals(rows[0].pet_id, 'victim-pet')
@@ -996,13 +999,6 @@ Deno.test('CUL-1203 — analysisRowMatchesEvent: no row, or the event\'s own pet
 // not parse regex literals, so a `//` inside one reads as a comment start. The invariant itself is
 // migration 074's trigger; this pins the write-back's keying.
 
-async function* sourceFiles(dir: URL): AsyncGenerator<URL> {
-  for await (const entry of Deno.readDir(dir)) {
-    const child = new URL(entry.name + (entry.isDirectory ? '/' : ''), dir)
-    if (entry.isDirectory) yield* sourceFiles(child)
-    else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') && !entry.name.endsWith('_test.ts')) yield child
-  }
-}
 
 // The chain runs from `.from('event_ai_analysis')` to the statement's end. The
 // house style omits semicolons, so the end is the FIRST of: a `;`, a blank line,
@@ -1018,35 +1014,8 @@ const NEXT_STATEMENT = /\n\s*(?:await|const|let|return|if|for|throw|try)\b/
 // semicolon-rich prose). One left-to-right pass that tracks string literals, so
 // a `//` inside a string is not a comment (C-18's single-pass rule). Strings are
 // KEPT: the table name the scan looks for is one.
-function blankComments(src: string): string {
-  let out = ''
-  let i = 0
-  let quote: string | null = null
-  while (i < src.length) {
-    const c = src[i]
-    if (quote) {
-      out += c
-      if (c === '\\') { out += src[i + 1] ?? ''; i += 2; continue }
-      if (c === quote) quote = null
-      i++
-      continue
-    }
-    if (c === "'" || c === '"' || c === '`') { quote = c; out += c; i++; continue }
-    if (c === '/' && src[i + 1] === '/') {
-      while (i < src.length && src[i] !== '\n') { out += ' '; i++ }
-      continue
-    }
-    if (c === '/' && src[i + 1] === '*') {
-      const end = src.indexOf('*/', i + 2)
-      const stop = end < 0 ? src.length : end + 2
-      for (; i < stop; i++) out += src[i] === '\n' ? '\n' : ' '
-      continue
-    }
-    out += c
-    i++
-  }
-  return out
-}
+// blankComments and sourceFiles live in ./sourceScan.testutil.ts, shared with the
+// Engines v3 one-writer guard (engineStamps.guard.test.ts).
 
 function analysisChains(raw: string): string[] {
   const src = blankComments(raw)

@@ -140,6 +140,7 @@ import {
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
 import type { TrialDietRefusal, TrialSpecies } from '../../../lib/dietTrial.ts'
+import type { EngineFlags } from '../_shared/engineFlags.ts'
 export type {
   TrialBlock,
   TrialExposure,
@@ -740,6 +741,20 @@ export interface ReportInput {
    * rather than remembered.
    */
   audience: ReportAudience
+  /**
+   * EN-F (Engines v3 PR-11a, CUL-1267) — the Engines v3 flag state, resolved for the
+   * pet's OWNER, failing closed (`_shared/engineFlags.ts`). The report runs its own
+   * detection (`assembleReport`), so it is an engine entry point like generate-signal and
+   * the analyze functions, and a phase that changes what the engines say must be able to
+   * gate the report on the same key.
+   *
+   * REQUIRED, never defaulted, like `audience`: PR 6's share-link mint (view-report) must
+   * resolve the owner's flags rather than inherit "off" by omission. NOTHING READS IT YET —
+   * no phase gates the report today — so every report is byte-identical to before this
+   * field existed. The first phase that reads it says so in its PR and runs
+   * `vet-report-cold-read`.
+   */
+  engineFlags: EngineFlags
 }
 
 // ── Date / window helpers (tz-aware calendar-day math) ───────────────────────
