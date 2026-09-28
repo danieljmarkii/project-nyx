@@ -5,9 +5,12 @@
 // repo: the engine-replay README, PMD-12 / CUL-1313). It lives under supabase/functions/
 // because that is the only tree CI's Deno job reads (ci.yml `--allow-read`).
 //
-// Each case states the flags the SHIPPED derivation computes, by hand, from the rows. They
-// are the flag-off expectations: what EN-F promises every account not on the allowlist
-// keeps. Three are the named scenarios EN-0 is built against (critique R-3; the engines
+// Each case states the flags the shipped derivation computes, by hand, from the rows: the
+// derivation as of PR-11a (analyze-vomit/context.ts shippedVomitContext). They are the
+// flag-off expectations, what EN-F promises every account not on the allowlist keeps. Two
+// cases differ from the code before PR-11a, both on purpose and both marked: the meal at
+// exactly the feline window's millisecond (C-40, now inclusive) and this event in the other
+// ISO spelling (no longer counted twice; production never sends two spellings). Three are the named scenarios EN-0 is built against (critique R-3; the engines
 // deep dive §5): the 8/19 read two days late, "ate then refused and read late", and the
 // 6/7 vomit logged before the morning's meals were back-filled. Their shipped flags are
 // the wrong answers EN-0 exists to correct, recorded here as what flag-off still says.
@@ -86,11 +89,23 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     shippedFlags: [],
   },
   {
+    // Differs from the code before PR-11a (a textual `includes` counted it twice).
     name: 'this event in the other ISO spelling is one vomit, not two (C-40)',
     species: 'dog',
     nowIso: T,
     thisEventOccurredAt: at(T, -1),
     rows: { vomits: [{ occurred_at: at(T, -1, '+00:00') }], lethargy: [], meals: [] },
+    shippedFlags: [],
+  },
+  {
+    // A late read of an old vomit: both rows sit outside the read-anchored 24 h window but
+    // an hour apart. Pins the builder's own vomit-window re-filter (without it, two within
+    // four hours would fire), which matters once EN-0 anchors windows on the vomit.
+    name: 'two old vomits an hour apart, read 30 hours later, are outside the window',
+    species: 'dog',
+    nowIso: T,
+    thisEventOccurredAt: at(T, -30),
+    rows: { vomits: [{ occurred_at: at(T, -30) }, { occurred_at: at(T, -31) }], lethargy: [], meals: [] },
     shippedFlags: [],
   },
   {
@@ -138,6 +153,16 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     shippedFlags: [],
   },
   {
+    // The only rated meal is eight days old: outside the seven-day baseline, so this owner
+    // does not count as tracking intake. Pins the baseline re-filter.
+    name: 'a cat whose only rated meal is older than the tracking baseline',
+    species: 'cat',
+    nowIso: T,
+    thisEventOccurredAt: at(T, -1),
+    rows: { vomits: [{ occurred_at: at(T, -1) }], lethargy: [], meals: [meal(at(T, -8 * 24), 'refused'), meal(at(T, -6), null)] },
+    shippedFlags: [],
+  },
+  {
     name: 'a dog is never flagged for intake',
     species: 'dog',
     nowIso: T,
@@ -146,6 +171,8 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     shippedFlags: [],
   },
   {
+    // Differs from the code before PR-11a (a textual compare dropped it): the one boundary
+    // PR-11a moves, disclosed in context.ts.
     name: 'a good meal at exactly the window edge, spelled +00:00, counts (C-40, inclusive)',
     species: 'cat',
     nowIso: T,

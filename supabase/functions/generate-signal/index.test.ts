@@ -213,7 +213,7 @@ Deno.test('EN-F wiring — the prior row is read with its flags, and minting is 
   const priorRead = src.slice(src.indexOf(".from('ai_signals')"), src.indexOf('resolveStandDowns({'))
   assertStrictEquals(/\.select\('[^']*\bengine_flags\b[^']*'\)/.test(priorRead), true, 'the prior read no longer selects engine_flags')
   assertStrictEquals(
-    /priorForStandDowns\(\s*readPriorEntries\(priorRow\.findings\),\s*standDownMintAllowed\(priorRow\.engine_flags,\s*engineFlags\),?\s*\)/
+    /priorForStandDowns\(\s*readPriorEntries\(priorRow\.findings\),\s*standDownMintAllowed\(priorRow\.engine_flags,\s*engineFlags,\s*SIGNAL_ENGINE_KEYS\),?\s*\)/
       .test(priorRead),
     true,
     'the prior payload no longer passes through the EN-F gate',

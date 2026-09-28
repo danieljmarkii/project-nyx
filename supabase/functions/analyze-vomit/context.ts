@@ -132,7 +132,9 @@ export function shippedVomitContext(args: Omit<BuildVomitContextArgs, 'engineFla
 }
 
 // EN-0's step (CUL-1130): handed the shipped context and the same rows, returns the
-// context EN-0 reads. PR-11a ships the identity; PR-13a replaces it. It lives here, in
+// context EN-0 reads. PR-11a ships the identity; PR-13a replaces it, AND bumps the vomit
+// descriptor's ruleVersion (index.ts): rows stamped ['engines_v3_en0'] + 'f1.vomit1' were
+// written by this identity step, and only the bump tells them apart from EN-0's. It lives here, in
 // the one namespace the flag-off guard stubs, so "flag-off" can be asserted against
 // the step's absence (C-36) rather than against a snapshot.
 export type VomitContextStep = (shipped: ContextInput, args: BuildVomitContextArgs) => ContextInput

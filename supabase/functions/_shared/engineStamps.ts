@@ -34,10 +34,17 @@
 //     STATE write. None of them writes words; the row's stamps keep describing the
 //     words it holds.
 //
-// PRE-STAMP is `engine_flags IS NULL`: every write through this module sets it (to
-// '{}' when every key is off). The other stamps' NULLs are then read beside it: a NULL
-// photo_set_key beside a non-NULL engine_flags means the read had no photo; a NULL
-// model_id beside it means no model's payload is on the row.
+// PRE-STAMP is `engine_flags IS NULL`: every write of words through this module sets it
+// (to '{}' when every key is off). How to read the rest (adversarial review, PR-11a):
+//   · photo_set_key is the photos PRESENT on the event when the words were written, not the
+//     photos a model read: a capped escalation, a rescue and an unreadable photo are stamped
+//     with the set too. That is the comparison PR-12 needs (were these words written over
+//     these photos?), never "these photos were read". NULL beside a non-NULL engine_flags
+//     means the event had no photo.
+//   · model_id / prompt_hash describe ai_raw_payload and nothing else. They never credit the
+//     read text: on the read-only update the words are this run's and the payload (and its
+//     stamps) an earlier run's. A NULL model_id beside a non-NULL ai_raw_payload means that
+//     payload predates the stamps (a pre-075 read that a later update wrote words over).
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import type { EngineFlags } from './engineFlags.ts'
@@ -164,22 +171,32 @@ export function engineFingerprint(parts: unknown): Promise<string> {
   return sha256Hex(canonicalJson(parts))
 }
 
-// May this run mint a stand-down against the prior cache row? Only when the flag read
-// answered and the prior row ran under the same keys. A stand-down says a finding went
-// away; across a flag flip the finding may have gone because the ENGINE changed, and
+// May this run mint a stand-down against the prior cache row? Only when the prior row ran
+// under the same SIGNAL keys as this run. A stand-down says a finding went away; across a
+// change in a key the Signal engine reads, it may have gone because the ENGINE changed, and
 // the owner would be told the pet changed (075 §4).
 //
-// A PRE-STAMP prior (NULL) counts as every key off, deliberately. Before this code
-// deployed no engine honoured any key, so every such row WAS written by the flag-off
-// engine. Treating NULL as "unknown" instead would withhold every pet's stand-down on
-// the first regen after the deploy: an owner-visible change on the flag-off path,
-// which EN-F forbids.
-export function standDownMintAllowed(priorEngineFlags: unknown, current: EngineFlags): boolean {
+// ONLY the keys the Signal reads (`signalKeys`, SIGNAL_ENGINE_KEYS at the call site) are
+// compared. A key it never reads cannot change what it detects, and withholding a mint is not
+// free: the next regen's prior no longer holds the vanished card, so a withheld stand-down is
+// lost for good, the wordless vanish CUL-786 exists to prevent (adversarial review, PR-11a).
+// Likewise a flag read that did not answer blocks a mint only when the Signal reads a key.
+// Required, never defaulted (C-37): the caller says which keys its engine reads.
+//
+// A PRE-STAMP prior (NULL) counts as every key off, deliberately. Before this code deployed
+// no engine honoured any key, so every such row WAS written by the flag-off engine.
+export function standDownMintAllowed(
+  priorEngineFlags: unknown,
+  current: EngineFlags,
+  signalKeys: readonly string[],
+): boolean {
+  if (signalKeys.length === 0) return true
   if (!current.readOk) return false
   const prior = priorEngineFlags === null || priorEngineFlags === undefined ? [] : priorEngineFlags
   if (!Array.isArray(prior) || prior.some((k) => typeof k !== 'string')) return false
-  const a = [...(prior as string[])].sort()
-  const b = [...current.on].sort()
+  const relevant = (keys: readonly string[]) => keys.filter((k) => signalKeys.includes(k)).sort()
+  const a = relevant(prior as string[])
+  const b = relevant(current.on)
   return a.length === b.length && a.every((k, i) => k === b[i])
 }
 

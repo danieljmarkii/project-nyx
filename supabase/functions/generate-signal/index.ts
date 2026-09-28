@@ -103,6 +103,7 @@ import {
 // Engines v3 (PR-11a, CUL-1267): the rollout flag, read fail-closed for the pet's owner, and
 // the one writer of the cache row's stamps and the shown log.
 import { readEngineFlags } from '../_shared/engineFlagsRead.ts'
+import { SIGNAL_ENGINE_KEYS } from '../_shared/engineFlags.ts'
 import {
   buildShownLogRows,
   engineFingerprint,
@@ -906,9 +907,9 @@ const handler = async (req: Request): Promise<Response> => {
     const petName = pet.name || 'your pet'
 
     // 1b. The Engines v3 flag, for the pet's OWNER, failing closed (engineFlags.ts). A read
-    //     that did not answer runs the flag-off engine, stamps '{}' (the truth about this run)
-    //     and mints no stand-down (step 5b). Nothing below reads a key yet: EN-0 is the
-    //     per-incident read, and the Signal's first gated phase seeds its own key.
+    //     that did not answer runs the flag-off engine and stamps '{}' (the truth about this
+    //     run). Nothing below reads a key yet (SIGNAL_ENGINE_KEYS is empty): EN-0 is the
+    //     per-incident read, and the Signal's first gated phase adds its own key.
     const engineFlags = await readEngineFlags(supabase, typeof pet.user_id === 'string' ? pet.user_id : null)
     const fingerprint = await engineFingerprint({
       engine: 'generate-signal',
@@ -1136,12 +1137,12 @@ const handler = async (req: Request): Promise<Response> => {
       if (priorError) {
         console.warn('generate-signal: prior ai_signals read failed — no stand-down minted:', priorError.message)
       } else if (priorRow) {
-        // EN-F (075 §4): a stand-down says a finding went away. Across a change in the
-        // Engines flags it may have gone because the ENGINE changed, so nothing is MINTED
-        // across one; a marker already minted is a past fact and still carries.
+        // EN-F (075 §4): a stand-down says a finding went away. Across a change in a key the
+        // Signal engine reads it may have gone because the ENGINE changed, so nothing is
+        // MINTED across one; a marker already minted is a past fact and still carries.
         prior = priorForStandDowns(
           readPriorEntries(priorRow.findings),
-          standDownMintAllowed(priorRow.engine_flags, engineFlags),
+          standDownMintAllowed(priorRow.engine_flags, engineFlags, SIGNAL_ENGINE_KEYS),
         )
         const gen = Date.parse(String(priorRow.generated_at ?? ''))
         priorGeneratedAtMs = Number.isFinite(gen) ? gen : null

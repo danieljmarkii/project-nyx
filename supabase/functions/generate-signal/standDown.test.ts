@@ -20,7 +20,7 @@ import {
 } from './detection.ts'
 import { hasBannedSignalVocabulary, type CachedFinding } from './phrasing.ts'
 import { standDownMintAllowed } from '../_shared/engineStamps.ts'
-import type { EngineFlags } from '../_shared/engineFlags.ts'
+import { SIGNAL_ENGINE_KEYS, type EngineFlags } from '../_shared/engineFlags.ts'
 import {
   gapLoggingHeld,
   isStoodDownEntry,
@@ -548,39 +548,52 @@ Deno.test('gapLoggingHeld — the two halves are judged separately, inclusive of
   assert.equal(gapLoggingHeld(sameDay, last, NOW_MS, 3), false)
 })
 
-// ── EN-F (Engines v3 PR-11a; 075 §4): no stand-down is minted across a flag change ──────
-// A stand-down tells the owner a finding went away. When the prior row ran under different
-// Engines flags, the finding may be missing because the ENGINE changed; the owner would be
-// told the pet changed. The gate is the one index.ts applies to the prior payload.
+// ── EN-F (Engines v3 PR-11a; 075 §4): no stand-down is minted across a change in a key the
+// Signal engine reads. A stand-down tells the owner a finding went away; across such a
+// change the finding may be missing because the ENGINE changed. The gate is the one
+// index.ts applies to the prior payload. Today the Signal reads no key (SIGNAL_ENGINE_KEYS
+// is empty), so every flip mints as it shipped; READ_BY_SIGNAL stands in for a later phase.
 
 const FLAGS_OFF: EngineFlags = { on: [], readOk: true }
 const FLAGS_ON: EngineFlags = { on: ['engines_v3_en0'], readOk: true }
-const gated = (prior: PriorEntry[], priorFlags: unknown, current: EngineFlags) =>
-  resolve(priorForStandDowns(prior, standDownMintAllowed(priorFlags, current)), stoodDownInput())
+const READ_BY_SIGNAL = ['engines_v3_en0']
+const gated = (prior: PriorEntry[], priorFlags: unknown, current: EngineFlags, signalKeys: readonly string[]) =>
+  resolve(priorForStandDowns(prior, standDownMintAllowed(priorFlags, current, signalKeys)), stoodDownInput())
 
-Deno.test('EN-F — same flags, or a pre-stamp prior under flag-off: mints exactly as it shipped', () => {
+Deno.test('EN-F — today the Signal reads no key: every flip and a failed read mint exactly as shipped', () => {
   const prior = [priorChronicity('vomit', 'firm')]
   const shipped = resolve(prior, stoodDownInput())
   assert.equal(shipped.length, 1, 'fixture premise: the golden shape mints')
-  assert.deepEqual(gated(prior, [], FLAGS_OFF), shipped)
-  assert.deepEqual(gated(prior, null, FLAGS_OFF), shipped, 'a pre-stamp row was the flag-off engine')
-  assert.deepEqual(gated(prior, ['engines_v3_en0'], FLAGS_ON), shipped)
+  assert.deepEqual(SIGNAL_ENGINE_KEYS, [], 'a Signal key was added: this test becomes that phase\'s')
+  for (const [priorFlags, current] of [
+    [[], FLAGS_OFF], [null, FLAGS_OFF], [[], FLAGS_ON], [['engines_v3_en0'], FLAGS_OFF], [[], { on: [], readOk: false }],
+  ] as [unknown, EngineFlags][]) {
+    assert.deepEqual(gated(prior, priorFlags, current, SIGNAL_ENGINE_KEYS), shipped, JSON.stringify([priorFlags, current]))
+  }
 })
 
-Deno.test('EN-F — the flag turned on, or rolled back: the vanished card is NOT announced as stood down', () => {
+Deno.test('EN-F — same Signal keys, or a pre-stamp prior under flag-off: mints exactly as it shipped', () => {
   const prior = [priorChronicity('vomit', 'firm')]
-  assert.deepEqual(gated(prior, [], FLAGS_ON), [])
-  assert.deepEqual(gated(prior, null, FLAGS_ON), [])
-  assert.deepEqual(gated(prior, ['engines_v3_en0'], FLAGS_OFF), [])
+  const shipped = resolve(prior, stoodDownInput())
+  assert.deepEqual(gated(prior, [], FLAGS_OFF, READ_BY_SIGNAL), shipped)
+  assert.deepEqual(gated(prior, null, FLAGS_OFF, READ_BY_SIGNAL), shipped, 'a pre-stamp row was the flag-off engine')
+  assert.deepEqual(gated(prior, ['engines_v3_en0'], FLAGS_ON, READ_BY_SIGNAL), shipped)
 })
 
-Deno.test('EN-F — a flag read that did not answer mints nothing', () => {
-  assert.deepEqual(gated([priorChronicity('vomit', 'firm')], [], { on: [], readOk: false }), [])
+Deno.test('EN-F — a Signal key turned on, or rolled back: the vanished card is NOT announced as stood down', () => {
+  const prior = [priorChronicity('vomit', 'firm')]
+  assert.deepEqual(gated(prior, [], FLAGS_ON, READ_BY_SIGNAL), [])
+  assert.deepEqual(gated(prior, null, FLAGS_ON, READ_BY_SIGNAL), [])
+  assert.deepEqual(gated(prior, ['engines_v3_en0'], FLAGS_OFF, READ_BY_SIGNAL), [])
+})
+
+Deno.test('EN-F — with a Signal key, a flag read that did not answer mints nothing', () => {
+  assert.deepEqual(gated([priorChronicity('vomit', 'firm')], [], { on: [], readOk: false }, READ_BY_SIGNAL), [])
 })
 
 Deno.test('EN-F — a marker minted before the change still CARRIES (a past fact, re-anchored to the record)', () => {
   const prior = [priorMarker('vomit', 3, 1)]
-  const carried = gated(prior, [], FLAGS_ON)
+  const carried = gated(prior, [], FLAGS_ON, READ_BY_SIGNAL)
   assert.equal(carried.length, 1)
   assert.deepEqual(carried, resolve(prior, stoodDownInput()))
 })
@@ -589,4 +602,37 @@ Deno.test('EN-F — priorForStandDowns: allowed returns the prior untouched; gat
   const prior = [priorChronicity('vomit', 'firm', 0), priorMarker('cough', 2, 1)]
   assert.equal(priorForStandDowns(prior, true), prior)
   assert.deepEqual(priorForStandDowns(prior, false).map((e) => e.finding.type), ['stood_down'])
+})
+
+// ── A carried marker is rebuilt, never spread (rls-privacy-reviewer, Engines v3 PR-11a) ──
+// The prior row is client-writable (CUL-1378) and a carried marker now reaches the
+// service-role shown log, so a marker no mint could have made is dropped, and a real one
+// keeps only the fields a mint writes.
+
+const forged = (over: Record<string, unknown>): PriorEntry => {
+  const real = priorMarker('vomit', 3, 1)
+  return { rank: real.rank, finding: { ...real.finding, ...over } as PriorEntry['finding'] }
+}
+
+Deno.test('CARRY hardening — a real marker is carried exactly as before', () => {
+  const out = resolve([priorMarker('vomit', 3, 1)], stoodDownInput())
+  assert.deepEqual(out, [{ ...(priorMarker('vomit', 3, 1).finding as unknown as StoodDownMarker), formerRank: 1 }])
+})
+
+Deno.test('CARRY hardening — a marker no mint could make is dropped', () => {
+  const inp = stoodDownInput()
+  assert.deepEqual(resolve([forged({ tier: 'secret_payload_abc123' })], inp), [], 'an unknown tier')
+  assert.deepEqual(resolve([forged({ recencyDays: '<script>' })], inp), [], 'a non-integer floor')
+  assert.deepEqual(resolve([forged({ recencyDays: 0 })], inp), [], 'a zero floor')
+  assert.deepEqual(resolve([forged({ recencyDays: 400 })], inp), [], 'a floor the engine does not use')
+  assert.deepEqual(resolve([forged({ recencyDays: 28 })], inp), [], "cough's floor on a vomiting marker")
+  assert.deepEqual(resolve([forged({ stoodDownAt: new Date(NOW_MS + 30 * DAY_MS).toISOString() })], inp), [], 'a future mint')
+})
+
+Deno.test('CARRY hardening — only the minted fields survive; priorityClass is always insight', () => {
+  const [out] = resolve([forged({ priorityClass: 'safety', smuggle: 'x'.repeat(50) })], stoodDownInput())
+  assert.equal(out.priorityClass, 'insight')
+  assert.deepEqual(Object.keys(out).sort(), [
+    'associationalOnly', 'formerRank', 'lastEpisodeIso', 'priorityClass', 'recencyDays', 'stoodDownAt', 'symptomType', 'tier', 'type',
+  ])
 })

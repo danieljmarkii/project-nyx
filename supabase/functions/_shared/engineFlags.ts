@@ -29,6 +29,13 @@ import { resolveAllowlistFlag } from './flags.ts'
 export const ENGINE_KEYS = ['engines_v3_en0'] as const
 export type EngineKey = typeof ENGINE_KEYS[number]
 
+// The keys the SIGNAL engine (generate-signal) reads. Empty today: EN-0's key gates the
+// per-incident read only. A Signal phase adds its key here in the PR that makes the Signal
+// read it. The stand-down gate compares only these (engineStamps.ts standDownMintAllowed):
+// a key the Signal never reads cannot change what it detects, so flipping it must not cost
+// an owner a stand-down (adversarial review, PR-11a).
+export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = []
+
 export interface EngineFlags {
   // The keys resolved ON for this owner, sorted: the exact value every stamp records.
   on: EngineKey[]

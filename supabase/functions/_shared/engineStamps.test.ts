@@ -229,20 +229,33 @@ Deno.test('engine_fingerprint: moves with any input, never with key order', asyn
   assertStrictEquals(canonicalJson({ b: [1, { d: 1, c: 2 }], a: null }), '{"a":null,"b":[1,{"c":2,"d":1}]}')
 })
 
-Deno.test('stand-downs are minted only when the prior row ran under the same keys and the read answered', () => {
-  assertStrictEquals(standDownMintAllowed([], OFF), true)
-  assertStrictEquals(standDownMintAllowed(['engines_v3_en0'], ON), true)
-  assertStrictEquals(standDownMintAllowed([], ON), false, 'flag turned on')
-  assertStrictEquals(standDownMintAllowed(['engines_v3_en0'], OFF), false, 'flag rolled back')
-  assertStrictEquals(standDownMintAllowed([], { on: [], readOk: false }), false, 'the read did not answer')
-  assertStrictEquals(standDownMintAllowed('engines_v3_en0', ON), false, 'malformed prior')
-  assertStrictEquals(standDownMintAllowed([1], OFF), false, 'malformed prior element')
+// A Signal key, as a later phase will add one; the gate's semantics are tested with it.
+const READ_BY_SIGNAL = ['engines_v3_en0']
+
+Deno.test('stand-downs: with a key the Signal reads, minted only under the same keys and an answered read', () => {
+  assertStrictEquals(standDownMintAllowed([], OFF, READ_BY_SIGNAL), true)
+  assertStrictEquals(standDownMintAllowed(['engines_v3_en0'], ON, READ_BY_SIGNAL), true)
+  assertStrictEquals(standDownMintAllowed([], ON, READ_BY_SIGNAL), false, 'flag turned on')
+  assertStrictEquals(standDownMintAllowed(['engines_v3_en0'], OFF, READ_BY_SIGNAL), false, 'flag rolled back')
+  assertStrictEquals(standDownMintAllowed([], { on: [], readOk: false }, READ_BY_SIGNAL), false, 'the read did not answer')
+  assertStrictEquals(standDownMintAllowed('engines_v3_en0', ON, READ_BY_SIGNAL), false, 'malformed prior')
+  assertStrictEquals(standDownMintAllowed([1], OFF, READ_BY_SIGNAL), false, 'malformed prior element')
+})
+
+Deno.test('stand-downs: a key the Signal never reads changes nothing (today: EN-0 flips, failed reads)', () => {
+  // The adversarial review's counterexample: allowlisting an owner for EN-0 (a per-incident
+  // key) withheld that regen's stand-down, and a withheld stand-down is lost for good.
+  assertStrictEquals(standDownMintAllowed([], ON, []), true)
+  assertStrictEquals(standDownMintAllowed(['engines_v3_en0'], OFF, []), true)
+  assertStrictEquals(standDownMintAllowed([], { on: [], readOk: false }, []), true)
+  assertStrictEquals(standDownMintAllowed(['engines_v3_en0'], OFF, ['some_signal_key']), true, 'only the Signal keys are compared')
+  assertStrictEquals(standDownMintAllowed([], ON, ['some_signal_key']), true)
 })
 
 Deno.test('a PRE-STAMP prior (NULL) was written by the flag-off engine: flag-off mints as today, flag-on does not', () => {
-  assertStrictEquals(standDownMintAllowed(null, OFF), true)
-  assertStrictEquals(standDownMintAllowed(undefined, OFF), true)
-  assertStrictEquals(standDownMintAllowed(null, ON), false)
+  assertStrictEquals(standDownMintAllowed(null, OFF, READ_BY_SIGNAL), true)
+  assertStrictEquals(standDownMintAllowed(undefined, OFF, READ_BY_SIGNAL), true)
+  assertStrictEquals(standDownMintAllowed(null, ON, READ_BY_SIGNAL), false)
 })
 
 // ── signal_shown_log ────────────────────────────────────────────────────────────────
