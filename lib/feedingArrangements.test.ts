@@ -88,6 +88,13 @@ describe('endFreeChoice', () => {
     expect(sql).toMatch(/active_until = \?/);
     expect(sql).toMatch(/synced = 0/);
     expect(sql).toMatch(/active_until IS NULL/); // only ends the currently-active row
+    // CUL-1396 — the take-up INSTANT beside the local date: an ISO instant, the same one
+    // stamped on updated_at (one moment, one write).
+    expect(sql).toMatch(/ended_at = \?/);
+    const params = update![1] as unknown[];
+    expect(params[0]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(params[1]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    expect(params[1]).toBe(params[2]);
     // No DELETE anywhere — soft lifecycle only.
     expect(mockRunAsync.mock.calls.some((c) => /DELETE/.test(c[0] as string))).toBe(false);
     expect(mockSyncPendingFeedingArrangements).toHaveBeenCalledTimes(1);
