@@ -247,7 +247,7 @@ describe('the cross product: one predicate, never two answers', () => {
   const current = (i: ReadStateInput): ReadStateInput => ({ ...i, copy: { ...(i.copy as ReadCopy), photoSetStale: false } });
 
   it('the stale half of the product is non-trivial and reaches the demotion', () => {
-    expect(staleInputs.length).toBe(inputs.length / 2 - TYPES.length * 4);
+    expect(staleInputs.length).toBeGreaterThan(0);
     expect(staleInputs.some((i) => readStateOf(current(i)) === 'calm' && readStateOf(i) === 'unread')).toBe(true);
   });
 

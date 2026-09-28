@@ -719,15 +719,18 @@ function stampsOf(id: string): Record<string, unknown> | undefined {
     .prepare('SELECT photo_set_key, rule_version, engine_flags FROM event_ai_verdicts WHERE event_id = ?')
     .get(id);
 }
-/** Photos this phone holds for an event. The copy's table has no FK and the attachments'
- *  FK to events is not what is under test, so the constraint is off for the insert. */
+/** Photos this phone holds for an event, oldest first: each is created a second after the
+ *  one before, so the LAST id listed is the one the event shows (EVENT_ATTACHMENT_ORDER).
+ *  The attachments' FK to events is not what is under test, so it is off for the insert. */
 function holdPhotos(event_id: string, ids: string[]): void {
   mockDb.exec('PRAGMA foreign_keys = OFF');
-  for (const id of ids) {
+  ids.forEach((id, i) => {
     mockDb
-      .prepare('INSERT INTO event_attachments (id, event_id, pet_id, local_uri, storage_path) VALUES (?, ?, ?, ?, ?)')
-      .run(id, event_id, 'pet-1', `file:///${id}.jpg`, `pet-1/${event_id}/${id}.jpg`);
-  }
+      .prepare(
+        'INSERT INTO event_attachments (id, event_id, pet_id, local_uri, storage_path, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(id, event_id, 'pet-1', `file:///${id}.jpg`, `pet-1/${event_id}/${id}.jpg`, `2026-09-28 10:00:0${i}`);
+  });
 }
 
 describe('the stamps land as the copy stores them', () => {
@@ -841,53 +844,68 @@ describe('the millisecond tie (CUL-1201): an equal julianday is decided on the s
   });
 });
 
-describe('photoSetStaleOf — does the stored verdict still speak for the photos here', () => {
+describe('photoSetStaleOf — was the photo this phone shows read', () => {
   const s = (photo_set_key: string | null, engine_flags: string | null = '[]') => ({ photo_set_key, engine_flags });
 
-  it('the same set, in any order and case, is current', () => {
-    expect(photoSetStaleOf(s(`${A1},${A2}`), [A2, A1])).toBe(false);
-    expect(photoSetStaleOf(s(`${A1},${A2}`), [A2.toUpperCase(), A1])).toBe(false);
+  it('the shown photo in the stamped set is current, in any case', () => {
+    expect(photoSetStaleOf(s(A1), A1)).toBe(false);
+    expect(photoSetStaleOf(s(`${A1},${A2}`), A2.toUpperCase())).toBe(false);
   });
 
-  it('a replaced, added or removed photo is stale', () => {
-    expect(photoSetStaleOf(s(A1), [A3])).toBe(true);
-    expect(photoSetStaleOf(s(A1), [A1, A2])).toBe(true);
-    expect(photoSetStaleOf(s(`${A1},${A2}`), [A1])).toBe(true);
+  it('a replaced or added photo no read covered is stale', () => {
+    expect(photoSetStaleOf(s(A1), A3)).toBe(true);
+    expect(photoSetStaleOf(s(`${A1},${A2}`), A3)).toBe(true);
   });
 
-  it('a read written over no photo is stale once the phone holds one', () => {
-    expect(photoSetStaleOf(s(null), [A1])).toBe(true);
+  it('a read written over no photo is stale once the phone shows one', () => {
+    expect(photoSetStaleOf(s(null), A1)).toBe(true);
   });
 
-  it('cannot tell, so says current: pre-stamp, no photo on this phone, the hash form', () => {
-    expect(photoSetStaleOf(s(A1, null), [A3])).toBe(false);
-    expect(photoSetStaleOf(s(null, null), [A3])).toBe(false);
-    expect(photoSetStaleOf(s(A1), [])).toBe(false);
-    expect(photoSetStaleOf(s('ab'.repeat(32)), [A3])).toBe(false);
+  it('cannot tell, so says current: pre-stamp, no photo shown here, the hash form', () => {
+    expect(photoSetStaleOf(s(A1, null), A3)).toBe(false);
+    expect(photoSetStaleOf(s(null, null), A3)).toBe(false);
+    expect(photoSetStaleOf(s(A1), null)).toBe(false);
+    expect(photoSetStaleOf(s('ab'.repeat(32)), A3)).toBe(false);
+  });
+
+  it('an id that is a prefix of a stamped one is not in the set', () => {
+    expect(photoSetStaleOf(s(A1), A1.slice(0, 20))).toBe(true);
   });
 });
 
 describe('readCopies hands every copy its photoSetStale', () => {
-  it('compares against the photos this phone holds, per event', async () => {
+  it('checks the photo each event shows, per event', async () => {
+    const id = (n: number) => `0a1b2c3d-0000-4000-8000-0000000001${String(n).padStart(2, '0')}`;
     await writeCopies(
       mockAdapter,
       [
-        stamped('same', '2026-09-28T10:00:00+00:00', { photo_set_key: `${A1},${A2}` }),
-        stamped('swapped', '2026-09-28T10:00:00+00:00', { photo_set_key: A1 }),
-        stamped('none-here', '2026-09-28T10:00:00+00:00', { photo_set_key: A1 }),
+        stamped('read', '2026-09-28T10:00:00+00:00', { photo_set_key: id(1) }),
+        stamped('swapped', '2026-09-28T10:00:00+00:00', { photo_set_key: id(2) }),
+        // The adversarial pass's case 1: a replace made offline. The server's remote delete
+        // never happened, so the read after the replace was stamped over BOTH; this phone
+        // holds only the new one. A set compare called this stale forever.
+        stamped('offline-replace', '2026-09-28T10:00:00+00:00', { photo_set_key: [id(4), id(5)].sort().join(',') }),
+        // Case 2: a replace made on another phone. The re-read was stamped over the new
+        // photo only; this phone never learns the old row was deleted and holds both.
+        stamped('other-phone', '2026-09-28T10:00:00+00:00', { photo_set_key: id(7) }),
+        stamped('none-here', '2026-09-28T10:00:00+00:00', { photo_set_key: id(1) }),
         row('pre-stamp', '2026-09-28T10:00:00+00:00'),
       ],
       never,
     );
-    holdPhotos('same', [A2, A1]);
-    holdPhotos('swapped', [A3]);
-    holdPhotos('pre-stamp', ['0a1b2c3d-0000-4000-8000-000000000004']);
-    const got = await readCopies(['same', 'swapped', 'none-here', 'pre-stamp']);
-    expect(got.get('same')?.photoSetStale).toBe(false);
+    holdPhotos('read', [id(1)]);
+    holdPhotos('swapped', [id(2), id(3)]); // id(3) replaced id(2); no read of it landed
+    holdPhotos('offline-replace', [id(5)]);
+    holdPhotos('other-phone', [id(6), id(7)]); // id(6) old, id(7) the replacement shown
+    holdPhotos('pre-stamp', [id(8)]);
+    const got = await readCopies(['read', 'swapped', 'offline-replace', 'other-phone', 'none-here', 'pre-stamp']);
+    expect(got.get('read')?.photoSetStale).toBe(false);
     expect(got.get('swapped')?.photoSetStale).toBe(true);
+    expect(got.get('offline-replace')?.photoSetStale).toBe(false);
+    expect(got.get('other-phone')?.photoSetStale).toBe(false);
     expect(got.get('none-here')?.photoSetStale).toBe(false);
     expect(got.get('pre-stamp')?.photoSetStale).toBe(false);
-    expect(got.get('swapped')).toMatchObject({ photo_set_key: A1, engine_flags: '[]', rule_version: 'f1.vomit1' });
+    expect(got.get('swapped')).toMatchObject({ photo_set_key: id(2), engine_flags: '[]', rule_version: 'f1.vomit1' });
   });
 
   it('an event with photos and no copy is still absent', async () => {

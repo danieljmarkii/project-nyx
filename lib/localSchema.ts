@@ -185,7 +185,7 @@ export const BASE_SCHEMA_SQL = `
       -- The server's updated_at, verbatim: the pull's watermark and the last write wins key.
       updated_at      TEXT NOT NULL,
       -- Engines v3 PR-12 (CUL-1267, migration 075): the three READ stamps, mirrored so the
-      -- phone can tell whether the verdict above still speaks for the photos it holds
+      -- phone can tell whether the verdict above speaks for the photo it shows
       -- (lib/readCopy.ts, photoSetStale). Never the payload stamps (model_id, prompt_hash):
       -- they describe the model's raw output, which the phone never holds. All three NULL
       -- on a read written before the stamps existed; engine_flags is the server's text[]

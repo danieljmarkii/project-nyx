@@ -69,8 +69,8 @@
 // describe the model's raw output the phone never holds. The server is their only writer
 // (`_shared/engineStamps.ts`, and 075 §2b freezes them against a client UPDATE); this copy
 // only mirrors them. They change three things here:
-//   · `readCopies` compares `photo_set_key` with the photos this phone holds and hands each
-//     copy `photoSetStale`, which `lib/readState.ts` reads to stop a quiet verdict standing
+//   · `readCopies` checks that the photo this phone shows is in `photo_set_key` and hands
+//     each copy `photoSetStale`, which `lib/readState.ts` reads to stop a quiet verdict standing
 //     over a photo nothing has read. It never reaches the rose (`photoSetStaleOf` says when).
 //   · Every phone re-pulls every row once, under `WATERMARK_KEY`'s new name: rows pulled by
 //     an earlier build sit behind the old watermark with NULL stamps. The upsert fills
@@ -82,6 +82,12 @@
 //     NUMBER (`CAST(substr(…, 18) AS REAL)`), never the strings: `…00.000Z` and
 //     `…00+00:00` are one instant, and as text the first sorts later (C-40).
 //
+// STATED BLIND SPOT (PR-12's privacy pass). A build DOWNGRADE (an OTA rollback to a build
+// before PR-12) writes a newer verdict with its old four-column upsert and leaves the
+// stamps it found; on the next upgrade that row is not NULL-stamped and not behind the new
+// watermark, so it keeps the older stamps until the server rewrites it. The compare can
+// then only err toward grey: a mismatch demotes a calm read and never reaches the rose.
+//
 // STATED BLIND SPOT (C-38). A server row that is DELETED is never mirrored. Nothing in
 // the client deletes an analysis row today. The server removes one through a cascade
 // from its event or pet (account deletion wipes this device anyway), and the table's
@@ -91,6 +97,7 @@
 // reader asks only for events this device still holds.
 
 import { getDb, getWatermark, setWatermark } from './db';
+import { EVENT_ATTACHMENT_ORDER } from './eventAttachmentQueries';
 import { advanceWatermark, HYDRATE_WATERMARK_OVERLAP_MS, watermarkQueryFloor } from './hydration';
 import type { ReadCopyRow } from './readState';
 import { supabase } from './supabase';
@@ -151,21 +158,18 @@ export async function readCopies(eventIds: readonly string[]): Promise<Map<strin
       chunk,
     );
     if (rows.length === 0) continue;
-    // The photos this phone holds for the same events, for the stamp compare. Every row,
-    // replaced predecessors included: `getEventAttachment` shows the newest, but the
-    // server stamps the whole set, so the whole set is what is compared.
+    // The photo each event SHOWS on this phone: the first row in the order every screen
+    // renders by (`EVENT_ATTACHMENT_ORDER`, what `getEventAttachment` returns). Ordered
+    // per event so the first row seen for an event is that photo.
     const photos = await db.getAllAsync<{ event_id: string; id: string }>(
-      `SELECT event_id, id FROM event_attachments WHERE event_id IN (${marks})`,
+      `SELECT event_id, id FROM event_attachments WHERE event_id IN (${marks})
+        ${EVENT_ATTACHMENT_ORDER.replace('ORDER BY', 'ORDER BY event_id,')}`,
       chunk,
     );
-    const idsByEvent = new Map<string, string[]>();
-    for (const p of photos) {
-      const list = idsByEvent.get(p.event_id);
-      if (list) list.push(p.id);
-      else idsByEvent.set(p.event_id, [p.id]);
-    }
+    const shownByEvent = new Map<string, string>();
+    for (const p of photos) if (!shownByEvent.has(p.event_id)) shownByEvent.set(p.event_id, p.id);
     for (const row of rows) {
-      out.set(row.event_id, { ...row, photoSetStale: photoSetStaleOf(row, idsByEvent.get(row.event_id) ?? []) });
+      out.set(row.event_id, { ...row, photoSetStale: photoSetStaleOf(row, shownByEvent.get(row.event_id) ?? null) });
     }
   }
   return out;
@@ -176,36 +180,40 @@ export async function readCopies(eventIds: readonly string[]): Promise<Map<strin
 const PHOTO_SET_HASH = /^[0-9a-f]{64}$/;
 
 /**
- * Whether a read's stamped photo set no longer matches the photos this phone holds, so a
- * quiet verdict does not speak for them. The phone's key is built the way the server
- * builds its list form (`photoSetKey`, `_shared/engineStamps.ts`): the ids lowercased,
+ * Whether the photo this phone SHOWS for the event was absent when the read's words were
+ * written, so a quiet verdict does not speak for it. The server's list form
+ * (`photoSetKey`, `_shared/engineStamps.ts`) is the event's attachment ids, lowercased,
  * sorted and comma-joined.
+ *
+ * Membership of the shown photo, NOT equality of the two sets (the adversarial pass on
+ * PR-12): the sets need not converge. A replace made offline leaves the old row on the
+ * server for good (the remote delete in `detachEventAttachment` is best-effort and never
+ * retried), and a replace made on another phone leaves the old row on this one (the
+ * attachment pull is insert-only). A set compare marked such an event *Photo not read*
+ * forever over a photo that was read, and on two phones the mark moved between them each
+ * time one re-pushed its rows. The owner's question is only whether the photo in front of
+ * them was read, and the app shows one photo per event.
  *
  * False, which is today's behaviour, whenever the phone cannot tell:
  *   · the row is pre-stamp (`engine_flags` NULL): a read from before migration 075 says
  *     nothing about its photos (the PM's D-3, 2026-09-28);
- *   · the phone holds no photo for the event: it may not have pulled them yet, and "no
- *     photo here" is not "a different photo";
+ *   · the phone shows no photo for the event: it may not have pulled it yet, and "no photo
+ *     here" is not "a different photo";
  *   · the key is the hash form, which only a set past 4,000 characters gets.
- * True when the read was written over no photo and the phone now holds one, or over a set
- * that differs from the phone's. A set the phone holds MORE of than the server (a delete
- * made on another phone is never mirrored here) also reads stale, the safe direction: it
- * can only take a calm read away, never the rose (`lib/readState.ts`).
+ * True when the read was written over no photo and the phone now shows one, or over a set
+ * that does not include the one it shows (a replace or an add no read has covered). Either
+ * way it can only take a calm read away, never the rose (`lib/readState.ts`).
  */
 export function photoSetStaleOf(
   stamps: Pick<ReadCopyRow, 'photo_set_key' | 'engine_flags'>,
-  localAttachmentIds: readonly string[],
+  shownAttachmentId: string | null,
 ): boolean {
   if (stamps.engine_flags === null || stamps.engine_flags === undefined) return false;
-  if (localAttachmentIds.length === 0) return false;
+  if (shownAttachmentId === null) return false;
   const key = stamps.photo_set_key;
   if (key === null || key === undefined) return true;
   if (PHOTO_SET_HASH.test(key)) return false;
-  const local = localAttachmentIds
-    .map((id) => id.toLowerCase())
-    .sort()
-    .join(',');
-  return local !== key;
+  return !key.split(',').includes(shownAttachmentId.toLowerCase());
 }
 
 // ── Writing (the one statement) ──────────────────────────────────────────────

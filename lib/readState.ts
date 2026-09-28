@@ -26,8 +26,8 @@
 //   3. calm: a FINISHED read that said `monitor`, over the photos this phone holds. It
 //      stands whether or not this device holds the photo: a photoless stool's contextual
 //      read is still the record's read (B-363 is the record screen's business, not this
-//      predicate's). A read whose stamped photo set no longer matches the photos this
-//      phone holds (`photoSetStale`, Engines v3 PR-12) is not calm: see below.
+//      predicate's). A read whose stamped photo set does not include the photo this
+//      phone shows (`photoSetStale`, Engines v3 PR-12) is not calm: see below.
 //   4. none: no read is expected (the type has no per-incident read, or there is no
 //      photo) and no read above applies.
 //   5. off: a read was expected but the owner turned photo reading off (CUL-552,
@@ -50,9 +50,9 @@
 //
 // ── A READ OF PHOTOS THAT ARE GONE (Engines v3 PR-12, CUL-1267 / CUL-1201 part 1) ─
 // Since migration 075 the server stamps each read with the photos present when its words
-// were written (`photo_set_key`). `lib/readCopy.ts` compares that stamp with the photos
-// this phone holds and says `photoSetStale` when they differ: the owner replaced the photo
-// and no read of the new one has landed (it failed, hit the cap, or has not run yet). The
+// were written (`photo_set_key`). `lib/readCopy.ts` says `photoSetStale` when the photo
+// this phone shows is not among them: the owner replaced or added the photo and no read of
+// it has landed (it failed, hit the cap, or has not run yet). The
 // stored words describe an image that is gone, so a QUIET verdict on them stops standing:
 // a calm read becomes `unread` (the grey *Photo not read*), and a stale verdict never rides
 // on `verdict` either, so the Signal gallery stops saying *keep an eye on* about a photo
@@ -93,8 +93,8 @@ export interface ReadCopy {
   /** The `ai_recommendation` enum, or null when no read produced one. Text for the same
    *  reason: a value this build does not know fails toward the rose, never a throw. */
   recommendation: string | null;
-  /** The copy's stamped photo set no longer matches the photos this phone holds, so a
-   *  quiet verdict does not speak for them (Engines v3 PR-12). Computed by `readCopies`,
+  /** The photo this phone shows is not in the copy's stamped photo set, so a quiet
+   *  verdict does not speak for it (Engines v3 PR-12). Computed by `readCopies`,
    *  never stored. Absent reads as false: a row written before the stamps, or a copy
    *  built by a caller that did not compare, keeps today's behaviour. */
   photoSetStale?: boolean;
