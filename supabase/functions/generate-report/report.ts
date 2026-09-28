@@ -3114,12 +3114,28 @@ export function buildDetectionInput(
 
   // Free-fed standing exposures overlapping the window (B-040). meal_fed rows are
   // vet-report metadata, never standing exposures (detection contract).
+  //
+  // CUL-1086 (adversarial round 4, E3) — OR the bowl's INSTANTS cover a meal in the window. The
+  // dates above are the toggling device's local days and the window is the requesting device's,
+  // so across zones a bowl taken up late on the window's eve (LA) is dropped by date while its
+  // instants still reach the window's first hours (New York): the bowl's "ate it all" then
+  // became page 1's last full meal, where the live Signal (no filter) set it aside. Asked of the
+  // shared intake predicate, over the meals actually in the window, so the report reads exactly
+  // the arrangements the intake question can see.
+  const windowMealEvents = windowEvents.filter((e) => e.type === 'meal' && e.meal)
+  const coversAWindowMeal = (a: ReportFeedingArrangementInput): boolean => {
+    const spans = parseFreeFedIntakeSpans([
+      { foodItemId: a.foodItemId, createdAt: a.createdAt ?? null, activeFrom: a.activeFrom, activeUntil: a.activeUntil, endedAt: a.endedAt ?? null },
+    ])
+    return spans.length > 0 &&
+      windowMealEvents.some((e) => isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), spans))
+  }
   const feedingArrangements: FeedingArrangement[] = input.feedingArrangements
     .filter((a) => a.method === 'free_choice')
     .filter((a) => {
       const fromNum = a.activeFrom ? dayNumber(a.activeFrom) : -Infinity
       const untilNum = a.activeUntil ? dayNumber(a.activeUntil) : Infinity
-      return (fromNum ?? -Infinity) <= scope.endDayNum && scope.startDayNum <= (untilNum ?? Infinity)
+      return ((fromNum ?? -Infinity) <= scope.endDayNum && scope.startDayNum <= (untilNum ?? Infinity)) || coversAWindowMeal(a)
     })
     .map((a) => ({
       id: a.id,

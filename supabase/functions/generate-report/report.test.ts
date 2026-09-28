@@ -689,6 +689,34 @@ Deno.test('CUL-1086 by instant — ahead of UTC, a watched meal the day after ta
   }
 })
 
+Deno.test('CUL-1086 by instant — a bowl taken up across a zone boundary still covers the window\'s first hours', () => {
+  idSeq = 0
+  // Round 4 probe E3: the bowl comes up in Los Angeles at 22:00 local on Jun 21 (Jun 22 05:00Z,
+  // active_until = Jun 21); the report is requested from New York for Jun 22 – Jul 2. Its bowl
+  // "ate it all" at Jun 22 04:30Z (00:30 in New York, inside the window) was dropped with the
+  // arrangement by the local-date filter and became page 1's last full meal.
+  const events: ReportEventInput[] = [ratedMealOf('fi-kibble', '2026-06-22', '04:30:00', 'all')]
+  for (const d of ['2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25', '2026-06-26', '2026-06-27', '2026-06-28', '2026-06-29', '2026-06-30', '2026-07-01']) {
+    events.push(ratedMealOf('fi-wet', d, '12:00:00', 'most'))
+  }
+  events.push(ratedMealOf('fi-wet', '2026-07-02', '12:00:00', 'picked'))
+  const takenUpInLA = {
+    ...KIBBLE_BOWL_DOWN,
+    createdAt: '2026-06-01T00:00:00Z', activeFrom: '2026-06-01', activeUntil: '2026-06-21', endedAt: '2026-06-22T05:00:00Z',
+  }
+  const snap = assembleReport(baseInput({
+    events,
+    timezone: 'America/New_York',
+    requestedWindow: { startDate: '2026-06-22', endDate: '2026-07-02' },
+    feedingArrangements: [takenUpInLA],
+  }))
+  const flag = snap.safetyFlags.find((f) => f.kind === 'intake_decline')
+  assert.ok(flag && flag.kind === 'intake_decline')
+  assert.equal(flag.lastFullMealIso, null, 'the bowl\'s "ate it all" is never the last full meal')
+  assert.equal(snap.provenance.intakeLogFreeFedExcluded, 1)
+  // The Signal reads every arrangement unfiltered, so the report now agrees with it.
+})
+
 Deno.test('CUL-1086 — the unfinished list is the ratings themselves, so it keeps the bowl and says nothing', () => {
   idSeq = 0
   const events: ReportEventInput[] = [
