@@ -52,9 +52,9 @@
 // "no meal logged" about a record that logged one.
 //
 // `feedingIsEatingAnchor` has a SECOND reader: detector ① (food correlation) in
-// `detection.ts`, via `classifyMeals` (CUL-1190). There it decides whether a feeding is an
-// EXPOSURE to its food, which is the same question ("did food go in") with the same
-// answer: Refused is not, Picked at is (a few bites is enough for a food reaction).
+// `detection.ts`, via `classifyMeals` (CUL-1190). There it decides whether a case exposure
+// may count FOR its food, which is the same question ("did food go in") with the same
+// answer: Refused may not, Picked at may (a few bites is enough for a food reaction).
 // A change to the table below moves both lanes, deliberately.
 //
 // ── PURE AND DEPENDENCY-FREE, AND THAT IS A HARD CONSTRAINT ───────────────────
