@@ -171,34 +171,10 @@ export function engineFingerprint(parts: unknown): Promise<string> {
   return sha256Hex(canonicalJson(parts))
 }
 
-// May this run mint a stand-down against the prior cache row? Only when the prior row ran
-// under the same SIGNAL keys as this run. A stand-down says a finding went away; across a
-// change in a key the Signal engine reads, it may have gone because the ENGINE changed, and
-// the owner would be told the pet changed (075 §4).
-//
-// ONLY the keys the Signal reads (`signalKeys`, SIGNAL_ENGINE_KEYS at the call site) are
-// compared. A key it never reads cannot change what it detects, and withholding a mint is not
-// free: the next regen's prior no longer holds the vanished card, so a withheld stand-down is
-// lost for good, the wordless vanish CUL-786 exists to prevent (adversarial review, PR-11a).
-// Likewise a flag read that did not answer blocks a mint only when the Signal reads a key.
-// Required, never defaulted (C-37): the caller says which keys its engine reads.
-//
-// A PRE-STAMP prior (NULL) counts as every key off, deliberately. Before this code deployed
-// no engine honoured any key, so every such row WAS written by the flag-off engine.
-export function standDownMintAllowed(
-  priorEngineFlags: unknown,
-  current: EngineFlags,
-  signalKeys: readonly string[],
-): boolean {
-  if (signalKeys.length === 0) return true
-  if (!current.readOk) return false
-  const prior = priorEngineFlags === null || priorEngineFlags === undefined ? [] : priorEngineFlags
-  if (!Array.isArray(prior) || prior.some((k) => typeof k !== 'string')) return false
-  const relevant = (keys: readonly string[]) => keys.filter((k) => signalKeys.includes(k)).sort()
-  const a = relevant(prior as string[])
-  const b = relevant(current.on)
-  return a.length === b.length && a.every((k, i) => k === b[i])
-}
+// The stand-down gate lives in ./engineFlags.ts (PR-11b): it compares flags and nothing
+// else, and the pure Signal pipeline imports it, so it must sit in a module with no remote
+// import. Re-exported here for the callers that already import it from this file.
+export { standDownMintAllowed } from './engineFlags.ts'
 
 // ── signal_shown_log (MFU-3) ────────────────────────────────────────────────────────
 //
