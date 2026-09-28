@@ -487,6 +487,101 @@ Deno.test('B-213 — assembleReport threads lastFullMealIso + hoursSinceLastFull
   for (const e of snap.provenance.intakeLog) assert.ok(e.occurredAt && e.intakeRating)
 })
 
+// ── CUL-1086: the report's intake flag reads Home's meals ──────────────────────
+
+/** A rated meal of a named food (the B-213 helper is pinned to one food). */
+function ratedMealOf(
+  foodItemId: string,
+  date: string,
+  time: string,
+  rating: 'all' | 'most' | 'some' | 'picked' | 'refused',
+): ReportEventInput {
+  return makeEvent({
+    type: 'meal',
+    occurredAt: at(date, time),
+    meal: {
+      foodItemId,
+      intakeRating: rating,
+      quantity: null,
+      foodType: 'meal',
+      format: null,
+      primaryProtein: foodItemId === 'fi-kibble' ? 'chicken' : 'duck',
+      brand: foodItemId === 'fi-kibble' ? 'Bowl' : 'Trial',
+      productName: foodItemId === 'fi-kibble' ? 'Kibble' : 'Wet',
+    },
+  })
+}
+
+const KIBBLE_BOWL_DOWN: ReportInput['feedingArrangements'][number] = {
+  id: 'fa-kibble', foodItemId: 'fi-kibble', method: 'free_choice', foodLabel: 'Bowl Kibble',
+  activeFrom: '2026-01-01', activeUntil: null, isShared: false, primaryProtein: 'chicken',
+}
+
+Deno.test('CUL-1086 — the report hands detection the foods free-fed TODAY, the set Home excludes', () => {
+  const arrangements: ReportInput['feedingArrangements'] = [
+    KIBBLE_BOWL_DOWN,
+    // Ended: Home stopped excluding it the day the bowl came up, so the report must too.
+    { ...KIBBLE_BOWL_DOWN, id: 'fa-old', foodItemId: 'fi-old', activeUntil: '2026-06-01' },
+    // meal_fed is vet-report metadata; its intake IS the discrete meal stream.
+    { ...KIBBLE_BOWL_DOWN, id: 'fa-mealfed', foodItemId: 'fi-wet', method: 'meal_fed' },
+  ]
+  const det = buildDetectionInput(
+    baseInput({ feedingArrangements: arrangements }),
+    resolveScope(baseInput()),
+    [],
+    new Set(),
+  )
+  assert.deepEqual([...(det.freeFedFoodIds ?? [])], ['fi-kibble'])
+})
+
+Deno.test('CUL-1086 — a free-fed "ate it all" no longer hides the drop on the report, and the list says what it left out', () => {
+  idSeq = 0
+  // The watched wet food: "all" through Jul 1, "picked" today. The kibble bowl is down and
+  // rated "all" every day, today included — the bowl that held the flag off before.
+  const events: ReportEventInput[] = []
+  for (const d of ['2026-06-24', '2026-06-25', '2026-06-26', '2026-06-27', '2026-06-28', '2026-06-29', '2026-06-30', '2026-07-01']) {
+    events.push(ratedMealOf('fi-wet', d, '08:00:00', 'all'), ratedMealOf('fi-kibble', d, '10:00:00', 'all'))
+  }
+  events.push(ratedMealOf('fi-wet', '2026-07-02', '08:00:00', 'picked'), ratedMealOf('fi-kibble', '2026-07-02', '10:00:00', 'all'))
+
+  // The defect, proven on the same record: without the arrangement nothing is excluded.
+  const before = assembleReport(baseInput({ events }))
+  assert.ok(!before.safetyFlags.some((f) => f.kind === 'intake_decline'), 'the bowl held the flag off')
+
+  const snap = assembleReport(baseInput({ events, feedingArrangements: [KIBBLE_BOWL_DOWN] }))
+  const flag = snap.safetyFlags.find((f) => f.kind === 'intake_decline')
+  assert.ok(flag && flag.kind === 'intake_decline', 'the drop reaches the report')
+  // The anchor is the last WET "all" (Jul 1 08:00Z), never the kibble two hours later.
+  assert.equal(flag.lastFullMealIso, '2026-07-01T08:00:00Z')
+
+  // The appendix is the detector's input: nine wet rows, the nine kibble ratings counted.
+  assert.equal(snap.provenance.intakeLogScope, 'intake_flag')
+  assert.equal(snap.provenance.intakeLog.length, 9)
+  assert.ok(snap.provenance.intakeLog.every((e) => e.foodLabel !== 'Bowl Kibble'))
+  assert.equal(snap.provenance.intakeLogFreeFedOmitted, 9)
+  const anchor = snap.provenance.intakeLog.find((e) => e.isLastFullMeal)
+  assert.equal(anchor?.occurredAt, flag.lastFullMealIso, 'the tagged row IS page 1\'s last full meal')
+
+  const text = plainText(renderReport(snap))
+  assert.ok(
+    text.includes('9 ratings of a free-fed bowl are not listed: intake from a bowl left down is not directly observed, so the flag does not count them.'),
+    'the omission is said where the vet meets the list',
+  )
+})
+
+Deno.test('CUL-1086 — the unfinished list is the ratings themselves, so it keeps the bowl and says nothing', () => {
+  idSeq = 0
+  const events: ReportEventInput[] = [
+    ratedMealOf('fi-wet', '2026-06-28', '08:00:00', 'all'),
+    ratedMealOf('fi-kibble', '2026-06-29', '10:00:00', 'some'),
+  ]
+  const snap = assembleReport(baseInput({ events, feedingArrangements: [KIBBLE_BOWL_DOWN] }))
+  assert.equal(snap.provenance.intakeLogScope, 'unfinished')
+  assert.equal(snap.provenance.intakeLog.length, 1)
+  assert.equal(snap.provenance.intakeLogFreeFedOmitted, 0)
+  assert.ok(!plainText(renderReport(snap)).includes('free-fed bowl are not listed'))
+})
+
 Deno.test('B-213/B-500 — no intake flag ⇒ the log itemises the not-fully-eaten meals only, never a full dump', () => {
   // Nyx's real dry-run: free-fed + three rated tuna meals, one rated "most". No RELATIVE
   // decline fires, so this is the non-flag population — but the one "most" meal is the "1"

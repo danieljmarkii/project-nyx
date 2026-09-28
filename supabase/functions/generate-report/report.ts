@@ -2365,6 +2365,12 @@ export interface Provenance {
   /** Count of in-window rated meals older than the intakeLog cap (disclosed, never a silent truncation). */
   intakeLogHiddenOlder: number
   /**
+   * CUL-1086 — in-window ratings of a currently free-fed food left out of the `intake_flag`
+   * list because the detector does not read them (§11 #6). Disclosed beside the list, never
+   * silent. Always 0 for the other scopes, which do not claim to be the detector's input.
+   */
+  intakeLogFreeFedOmitted: number
+  /**
    * WHICH meals `intakeLog` holds — never inferred from its contents:
    *   • `intake_flag`   — every rated meal (most recent first), because the page-1 decline
    *                       figures need their meal-by-meal home and the last-full-meal anchor
@@ -3144,10 +3150,26 @@ export function buildDetectionInput(
     symptomEvents,
     mealEvents,
     feedingArrangements,
+    freeFedFoodIds: currentlyFreeFedFoodIds(input.feedingArrangements),
     medicationWindows,
     timezone: input.timezone ?? undefined,
     now: scope.detectionNowIso,
   }
+}
+
+/**
+ * CUL-1086: the foods free-fed TODAY, the set the Signal's intake lane excludes (§11 #6).
+ * Deliberately NOT the window-overlap filter the correlation lane's arrangements get above:
+ * the report's intake flag must read the same meals as Home's, and Home (phone and
+ * `generate-signal`) excludes by the current arrangement, `free_choice` with no end date.
+ * `input.feedingArrangements` is already non-deleted (index.ts pull).
+ */
+export function currentlyFreeFedFoodIds(arrangements: ReportFeedingArrangementInput[]): Set<string> {
+  return new Set(
+    arrangements
+      .filter((a) => a.method === 'free_choice' && a.activeUntil === null && !!a.foodItemId)
+      .map((a) => a.foodItemId),
+  )
 }
 
 /** A regimen's DATE end is inclusive of the whole day → push to end-of-day (mirrors generate-signal/index.ts). */
@@ -4688,8 +4710,19 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       : null
   let intakeLog: IntakeLogEntry[] = []
   let intakeLogHiddenOlder = 0
+  let intakeLogFreeFedOmitted = 0
+  const intakeFreeFed = currentlyFreeFedFoodIds(input.feedingArrangements)
   if (intakeLogScope !== null) {
-    const ratedForLog = intakeLogScope === 'intake_flag' ? ratedMealsInWindow : unfinishedRated
+    // CUL-1086 — the flag population is the detector's: a free-fed food's ratings never reach
+    // detectIntakeDecline, so they are not "the meals behind the flag", and a free-fed "ate it
+    // all" row left in would out-date the tagged anchor it cannot be (page 1's last full meal).
+    // They are counted and said, never dropped silently. The `unfinished` population is the
+    // ratings themselves, not a detector's input, so it keeps every rated meal as before.
+    const ratedForLog =
+      intakeLogScope === 'intake_flag'
+        ? ratedMealsInWindow.filter((e) => !(e.meal!.foodItemId && intakeFreeFed.has(e.meal!.foodItemId)))
+        : unfinishedRated
+    if (intakeLogScope === 'intake_flag') intakeLogFreeFedOmitted = ratedMealsInWindow.length - ratedForLog.length
     // The page-1 anchor = the most recent fully-eaten meal (ratedForLog is most-recent-first,
     // so the first `all` is exactly the meal detection.ts anchored `lastFullMealIso` on — one
     // rule, no divergence). May be null (no full meal in the window → flag says so honestly).
@@ -4726,6 +4759,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     uncategorisedObservations,
     intakeLog,
     intakeLogHiddenOlder,
+    intakeLogFreeFedOmitted,
     intakeLogScope,
     confounders,
     proteinExposureTally,

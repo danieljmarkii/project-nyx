@@ -7443,11 +7443,22 @@ function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[], foot: st
           ? 'the &ldquo;last fully-eaten meal&rdquo; on page&nbsp;1 is the row tagged &ldquo;last full meal&rdquo; here; the time since it is how long the pet has gone without a full meal, which sets the urgency of a reduced-intake flag (especially the feline 48&ndash;72&nbsp;h window)'
           : 'no fully-eaten meal was recorded in this window, so page&nbsp;1 shows no &ldquo;last full meal&rdquo; and none is tagged here'
       }. Absence of a full meal is not evidence the pet ate nothing — only that no fully-eaten meal was recorded.`
+  // CUL-1086 — the flag list is the detector's input, which never reads a free-fed bowl.
+  // Said where the vet meets the list, so a missing kibble row is not read as a missing log.
+  const freeFedOmitted = snap.provenance.intakeLogFreeFedOmitted
+  const freeFedBit =
+    !unfinishedOnly && freeFedOmitted > 0
+      ? ` ${num(freeFedOmitted)} rating${freeFedOmitted === 1 ? '' : 's'} of a free-fed bowl ${
+          freeFedOmitted === 1 ? 'is' : 'are'
+        } not listed: intake from a bowl left down is not directly observed, so the flag does not count ${
+          freeFedOmitted === 1 ? 'it' : 'them'
+        }.`
+      : ''
   const lead = unfinishedOnly
     ? '<b>Meals not fully eaten</b> — every rated meal in this window the owner did not record as fully eaten, most recent first.'
     : '<b>Recent rated meals</b> — the meals behind the reduced-intake flag on page&nbsp;1, most recent first.'
   return `
-  <p class="note lead" style="margin-top:16px">${lead}${hiddenBit}</p>
+  <p class="note lead" style="margin-top:16px">${lead}${hiddenBit}${freeFedBit}</p>
   <table>
     <caption>${num(log.length)} ${noun}${log.length === 1 ? '' : 's'} shown &middot; ${h(
     fmtRange(snap.scope.startDate, snap.scope.endDate),

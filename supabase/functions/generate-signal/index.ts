@@ -997,6 +997,7 @@ const handler = async (req: Request): Promise<Response> => {
       symptomEvents,
       mealEvents,
       feedingArrangements,
+      freeFedFoodIds, // CUL-1086: the intake lane reads the phone's meals (§11 #6)
       medicationWindows,
       incidentAnalyses,
       // Signals v2 (CUL-8) — the active trial for the L2 trial-response lane. The SAME row
