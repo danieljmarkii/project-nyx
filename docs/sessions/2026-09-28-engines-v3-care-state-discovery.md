@@ -52,12 +52,15 @@ The ≤5% / ≥80% tolerance pair looks infeasible at low base rates. The tolera
 - `signal_shown_log` (075) already exists, so MFU-3 is met.
 - lookNotes' server allow-set is `generate-report/`, not empty. The call-note guard's allow-set is the empty one.
 
-## Open for the PM
+## Ruled by the PM (2026-09-28, same session)
 
-- PMD-4, before this lands. Recommended A: through the owner's answer, per sign.
-- The re-raise tolerance, before PR-23. Recommended A: cap false returns at 5%.
-- Approval of the AC 10 wording (spec §12).
-- TD-5's call-now "Not yet" stays a recorded conflict for PR-36.
+"PMD-4 A, tolerance A, AC 10 approve."
+
+- **PMD-4 = A.** The app asks the owner once per sign while a trial or course runs. A "yes" acknowledges the concern until the earliest of: the initial target, the last dose + 14 days (or 56 days for a course with no target), or stand-down.
+- **Tolerance = A.** False returns are capped at 5% of stable pets within eight weeks. PR-16 measures the frontier, and PR-23 waits on it.
+- **AC 10 approved.** It is written into `docs/nyx-vet-visits-requirements.md` v1.3 (AC 10 and §5.6, under ⚠ markers).
+
+The spec went to v1.1 BUILD-READY. Mock round 3 was republished with the rulings shown, and the tap-only PMD-4 option was removed. TD-5, the call-now "Not yet", stays a recorded conflict for PR-36.
 
 ## Not done
 
