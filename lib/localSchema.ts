@@ -432,6 +432,14 @@ export interface ColumnUpgrade {
   readonly column: string;
   /** Full SQLite type + constraints, e.g. `TEXT NOT NULL DEFAULT 'app'`. */
   readonly type: string;
+  /**
+   * CUL-1396 — re-pull this table's server rows once, on the upgrade that adds the column.
+   * An older build hydrated those rows WITHOUT the column and advanced the table's watermark
+   * past them, so without a reset the upgraded phone never learns values the server already
+   * holds (the migration's backfill, or another device's writes). Set only where a reader
+   * depends on the server's value; the re-pull costs one full fetch of the table.
+   */
+  readonly rehydrate?: true;
 }
 
 export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
@@ -483,7 +491,12 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   // `active_until`. `feeding_arrangements` predates this build, so only this path can add it.
   // Nullable, no default, nothing to backfill locally: the server's backfill travels down
   // through hydrate, and a row ended before this build honestly has no recorded instant.
-  { table: 'feeding_arrangements', column: 'ended_at', type: 'TEXT' },
+  //
+  // `rehydrate`: an older build pulled every arrangement without this column and moved the
+  // watermark past them, including 076's backfilled rows and any row a current build ended
+  // meanwhile. Nothing else would re-pull them, and the intake detectors would read the date
+  // fallback on the phone while the server read the instant (adversarial round 4, E2).
+  { table: 'feeding_arrangements', column: 'ended_at', type: 'TEXT', rehydrate: true },
   // B-704 / migration 053 — the owner-stated trial protein + its provenance stamp.
   // `diet_trials` predates this build, so CREATE TABLE IF NOT EXISTS cannot add the
   // columns to an already-installed device — only this can. Both nullable, no
@@ -565,6 +578,17 @@ export async function applyColumnUpgrades(
       await exec(`ALTER TABLE ${u.table} ADD COLUMN ${u.column} ${u.type}`);
     } catch {
       // Column already exists ("duplicate column name") — the intended no-op.
+      continue;
+    }
+    // Reached only on the launch that ADDED the column (the ALTER above succeeded), so the
+    // re-pull happens once. Its own try: a missing watermark table (a test fixture built
+    // from part of the schema) must not undo the column the ALTER just added.
+    if (u.rehydrate) {
+      try {
+        await exec(`DELETE FROM sync_watermarks WHERE table_name = '${u.table}'`);
+      } catch {
+        // No watermark table yet: the first hydrate is a full pull anyway.
+      }
     }
   }
 }

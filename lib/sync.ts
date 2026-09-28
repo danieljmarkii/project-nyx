@@ -2786,6 +2786,21 @@ async function hydrateFeedingArrangements(db: Db, stale: () => boolean): Promise
        a.notes ?? null, a.deleted_at ?? null, a.created_at, a.updated_at],
     );
   }
+  // CUL-1396 — fill a local NULL `ended_at` from the server, for every row fetched, whether
+  // or not LWW rewrote it. The re-pull after the column upgrade (COLUMN_UPGRADES `rehydrate`)
+  // returns rows whose `updated_at` equals the local copy, which `reconcileBatch` rightly leaves
+  // alone, so without this the upgraded phone kept NULL where the server holds the instant.
+  // Fills only a NULL, only on a synced row, and touches no other column and no `updated_at`:
+  // it records a value the server already has, and queues nothing.
+  if (stale()) return;
+  for (const a of rows) {
+    if (!a.ended_at) continue;
+    await db.runAsync(
+      `UPDATE feeding_arrangements SET ended_at = ?
+       WHERE id = ? AND ended_at IS NULL AND synced = 1`,
+      [a.ended_at, a.id],
+    );
+  }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
   if (stale()) return;
   if (wm) await setWatermark('feeding_arrangements', wm);
