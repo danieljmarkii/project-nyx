@@ -1,0 +1,1049 @@
+<title>Per-incident read tiers</title>
+<meta name="description" content="Engines v3 PR-24 mock round 1: the four tiers of the per-incident read on every surface, the GA day, PMD-14, EN-5's question, CUL-819 and CUL-531, EN-4's floor and the sign-to-tier table.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+  /* ============================================================
+     Per-incident read tiers, mock round 1 (Engines v3 PR-24; CUL-1133 EN-3
+     + CUL-1134 EN-4, 2026-09-28). Its own current-proposal page, separate
+     from docs/culprit-engines-v3-mockups.html (PR-20 republishes that one).
+     Visual system copied from that page so the two rounds read as one
+     family: the Design v2 device tokens outside the frames, the app's real
+     light tokens (constants/theme.ts) inside them.
+     Layout: a masthead ledger, then one section per thing the plan asked
+     PR-24 to draw, then the ruling sheet and the decision briefs.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --note-ink: #7A4E00; --note-wash: #FDF3DC; --note-rule: #E3B85C;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    /* The app's own light tokens, inside the phone frames in both page themes. */
+    --app-ground: #FAFAFA; --app-card: #FFFFFF; --app-subtle: #F4F4F5; --app-ink: #0A0A0A;
+    --app-ink-2: #525252; --app-ink-3: #737373; --app-rule: #E7E5E4;
+    --app-rose: #F43F5E; --app-rose-ink: #B4123B; --app-rose-soft: #FBB6C3;
+    --app-teal: #00C2A8; --app-teal-ink: #0B7B6C; --app-teal-wash: #E0FBF7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8A86BA;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --note-ink: #F5C26B; --note-wash: rgba(245,194,107,0.12); --note-rule: rgba(245,194,107,0.45);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8A86BA;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --note-ink: #F5C26B; --note-wash: rgba(245,194,107,0.12); --note-rule: rgba(245,194,107,0.45);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  a { color: var(--teal-ink); text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 3px; border-radius: 3px; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 64ch; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 500; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.needs { color: var(--note-ink); background: var(--note-wash); }
+  .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
+
+  /* The ledger: each critique finding, and what moved on the page */
+  .ledger { display: grid; gap: 0; margin: 26px 0 0; }
+  .ledger div { display: grid; grid-template-columns: 250px 1fr; gap: 16px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-block: 9px; }
+  .ledger div > b { color: var(--ink); font-weight: 500; }
+  @media (max-width: 680px) { .ledger div { grid-template-columns: 1fr; gap: 3px; } }
+  .rule-key { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 22px; font-size: 13.5px; color: var(--ink-2); }
+  .rule-key span { display: inline-flex; align-items: center; gap: 8px; }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 36px 0 6px; }
+  p { margin: 0 0 14px; }
+  .col p:last-child { margin-bottom: 0; }
+
+  /* Frames */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 26px; align-items: flex-start; }
+  .frame { display: flex; flex-direction: column; gap: 12px; width: 316px; max-width: 100%; }
+  .frame-cap { display: flex; flex-direction: column; gap: 5px; }
+  .frame-cap b { font-size: 14.5px; font-weight: 600; }
+  .frame-cap span, .frame-cap li { font-size: 13.5px; color: var(--ink-2); }
+  .frame-cap .pill { font-size: 10.5px; color: var(--teal-ink); }
+  .frame-cap .pill.dir { color: var(--ink-2); }
+  .frame-cap .pill.needs { color: var(--note-ink); }
+  .frame-cap ul { margin: 2px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+  .option { border: 1px dashed var(--rule); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 14px; max-width: 100%; }
+  .option-head { display: flex; flex-direction: column; gap: 4px; }
+  .option-head::before { content: "Option, drawn for the decision, not the current proposal"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  .option-head b { font-size: 15px; }
+  .option-head span { font-size: 13.5px; color: var(--ink-2); max-width: 60ch; }
+  .option .frames { margin-top: 0; }
+  .side { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 26px; align-items: flex-start; }
+
+  /* The phone */
+  .phone { width: 316px; max-width: 100%; background: var(--app-ground); border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.14); padding: 14px 12px 16px; color: var(--app-ink); font-family: var(--sans); font-variant-numeric: tabular-nums; font-size: 13px; line-height: 1.4; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 10px; }
+  .phone.short { padding-bottom: 12px; }
+  .appbar { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 2px; }
+  .appbar .pet { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, #3a3a3a, #8a8a8a); }
+  .askpill { font-size: 12px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 3px 10px; display: flex; align-items: center; gap: 5px; }
+  .askpill i { width: 6px; height: 6px; border-radius: 50%; background: var(--app-teal); display: inline-block; }
+  .card { background: var(--app-card); border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); }
+  .zone-label { font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-3); margin-bottom: 8px; }
+  .row-divider { height: 1px; background: var(--app-rule); margin: 11px 0; }
+  .zone-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; font-size: 10.5px; color: var(--app-ink-3); }
+  .zone-foot span:last-child { font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; white-space: nowrap; }
+  .fade-bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 54px; background: linear-gradient(rgba(250,250,250,0), var(--app-ground)); pointer-events: none; }
+
+  /* Signal rows (CUL-1270 as built: headline, count, ask, door) */
+  .door { display: flex; align-items: center; gap: 10px; position: relative; }
+  .door .body { flex: 1; min-width: 0; }
+  .railed { border-left: 3px solid var(--app-rose); padding-left: 10px; }
+  .railed.watch { border-left-color: var(--app-rose-soft); }
+  .plain-row { padding-left: 13px; }
+  .eyebrow-s { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); font-weight: 500; }
+  .head { font-size: 14px; font-weight: 600; line-height: 1.3; }
+  .head.serif { font-family: var(--serif); font-weight: 500; font-size: 18px; line-height: 1.22; }
+  .asktxt { font-size: 12px; color: var(--app-rose-ink); font-weight: 500; margin-top: 2px; }
+  .sub { font-size: 11.5px; color: var(--app-ink-2); margin-top: 2px; }
+  .sub .ask-in { color: var(--app-rose-ink); }
+  .state { display: inline-block; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 4px; padding: 1px 5px; margin-right: 4px; vertical-align: 1px; }
+  .chev { width: 22px; height: 22px; flex-shrink: 0; color: var(--app-ink-3); }
+  .chev svg { display: block; }
+  .chev.big { width: 28px; height: 28px; border-radius: 50%; background: var(--app-subtle); display: grid; place-items: center; }
+  .lane { display: block; margin-top: 6px; }
+  .answers { display: flex; flex-wrap: wrap; column-gap: 16px; row-gap: 16px; margin-top: 9px; }
+  .answers span { font-size: 12px; font-weight: 500; border: 1px solid var(--app-rule); border-radius: 999px; padding: 6px 12px; min-height: 30px; display: inline-flex; align-items: center; color: var(--app-ink); background: var(--app-card); }
+  .answers span.pri { border-color: var(--app-ink); }
+
+  /* Strips (shipped register: context, never urgency) */
+  .strip { background: var(--app-card); border-radius: 14px; padding: 11px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .strip .sh { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; }
+  .strip .sh i { font-style: normal; color: var(--app-ink-3); font-weight: 400; }
+  .strip .sl { font-size: 11.5px; color: var(--app-ink-2); margin-top: 2px; }
+  .strip .bar { height: 4px; background: var(--app-subtle); border-radius: 2px; margin-top: 7px; overflow: hidden; }
+  .strip .bar b { display: block; height: 100%; background: var(--app-teal); border-radius: 2px; }
+  .strip .doors { display: flex; gap: 20px; margin-top: 8px; font-size: 12px; font-weight: 500; color: var(--app-teal-ink); }
+  .ghost { display: grid; gap: 8px; padding: 2px 0; }
+  .ghost i { display: block; height: 8px; border-radius: 4px; background: var(--app-rule); }
+  .ghost i:nth-child(2) { width: 72%; } .ghost i:nth-child(3) { width: 84%; }
+
+  /* Screens (Design v2's Signal screen and forms) */
+  .screen-head { background: var(--app-card); border-radius: 18px; padding: 14px; }
+  .back { font-size: 20px; color: var(--app-ink-2); line-height: 1; margin-bottom: 8px; }
+  .screen-title { font-family: var(--serif); font-size: 21px; line-height: 1.2; letter-spacing: -0.005em; margin-bottom: 6px; }
+  .screen-sent { font-size: 12px; color: var(--app-ink-2); line-height: 1.45; }
+  .mini-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); margin: 12px 0 6px; }
+  .photo { height: 96px; border-radius: 10px; background: radial-gradient(circle at 38% 42%, #d8c9a8, #9c8a66 55%, #6e6048); position: relative; }
+  .photo::after { content: ""; position: absolute; left: 58%; top: 40%; width: 22px; height: 12px; border-radius: 4px; background: #4b4b52; transform: rotate(-18deg); }
+  .qblock { background: var(--app-subtle); border-radius: 12px; padding: 11px 12px 12px; margin-top: 12px; }
+  .qblock .q { font-size: 13px; font-weight: 600; line-height: 1.35; }
+  .qblock .qs { font-size: 11.5px; color: var(--app-ink-2); margin-top: 3px; }
+  .qblock .answers span { background: var(--app-card); }
+  .form-row { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-top: 1px solid var(--app-rule); }
+  .form-row:first-of-type { border-top: 0; }
+  .form-row .fr-h { font-size: 13px; font-weight: 600; }
+  .form-row .fr-s { font-size: 11.5px; color: var(--app-ink-2); }
+  .seg { display: flex; gap: 0; margin-top: 7px; border: 1px solid var(--app-rule); border-radius: 10px; overflow: hidden; }
+  .seg span { flex: 1; text-align: center; font-size: 11.5px; font-weight: 500; padding: 7px 4px; min-height: 32px; display: grid; place-items: center; border-left: 1px solid var(--app-rule); }
+  .seg span:first-child { border-left: 0; }
+  .seg span.on { background: var(--app-ink); color: #fff; }
+  .read-pill { display: inline-block; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; border-radius: 999px; padding: 3px 9px; }
+  .read-pill.call { color: #fff; background: var(--app-rose); }
+  .read-pill.watchfor { color: var(--app-ink-2); background: var(--app-subtle); }
+  .obs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .obs span { font-size: 11px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 3px 9px; color: var(--app-ink-2); }
+  .correction { margin-top: 10px; border-top: 1px solid var(--app-rule); padding-top: 9px; font-size: 11.5px; color: var(--app-ink-2); }
+  .correction b { color: var(--app-ink); font-weight: 600; }
+  .struck { color: var(--app-ink-3); }
+
+  /* The annotation layer: never app chrome. Marks a row the rules cannot draw yet. */
+  .needs-tag { display: inline-block; margin-bottom: 5px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em; color: #7A4E00; background: #FDF3DC; border: 1px solid #E3B85C; border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+  .needs-box { outline: 1.5px dashed #E3B85C; outline-offset: 4px; border-radius: 6px; }
+  .note { font-size: 13.5px; color: var(--ink-2); background: var(--note-wash); border-left: 3px solid var(--note-rule); padding: 10px 14px; border-radius: 0 6px 6px 0; max-width: 72ch; }
+  .note b { color: var(--ink); }
+
+  /* Briefs */
+  .briefs { display: grid; gap: 18px; margin-top: 24px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px; font-size: 14.5px; color: var(--ink-2); display: flex; flex-direction: column; gap: 8px; }
+  .brief h4 { margin: 0; font-size: 16px; color: var(--ink); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .brief p { margin: 0; }
+  .brief b { color: var(--ink); }
+  .brief ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+  .conflict { border-left: 3px solid var(--rose-ink); padding-left: 12px; }
+  .next-list { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); font-size: 14.5px; max-width: 72ch; }
+  footer { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13.5px; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 8px 18px; }
+
+  /* Round 2: the loop diagram and the new screen parts */
+  .archive { margin-top: 18px; font-size: 14px; color: var(--ink-2); }
+  .archive summary { cursor: pointer; color: var(--ink-2); font-size: 13.5px; }
+  .archive summary:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 3px; border-radius: 3px; }
+  .ledger q { font-style: italic; quotes: "\201C" "\201D"; }
+  .diagram { margin: 28px 0 0; max-width: 980px; }
+  .diagram-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; color: var(--ink); }
+  .diagram-scroll svg { display: block; width: 100%; min-width: 760px; height: auto; }
+  .diagram figcaption { font-size: 13.5px; color: var(--ink-2); margin-top: 10px; max-width: 72ch; }
+  .d-lane { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; fill: var(--ink-3); }
+  .d-label { font-family: var(--sans); font-size: 13px; font-weight: 500; fill: var(--ink); }
+  .d-small { font-family: var(--sans); font-size: 11.5px; fill: var(--ink-2); }
+  .d-node { fill: var(--paper-2); stroke: var(--rule); stroke-width: 1.2; }
+  .d-node-raised { stroke: var(--rose-ink); }
+  .d-node-new { stroke: var(--teal-ink); stroke-dasharray: 4 3; }
+  .d-shipped { stroke: var(--ink-3); stroke-width: 1.4; fill: none; }
+  .d-shipped-fill { fill: var(--ink-3); }
+  .d-new { stroke: var(--teal-ink); stroke-width: 2; fill: none; }
+  .d-new-fill { fill: var(--teal-ink); }
+  .d-new-text { fill: var(--teal-ink); font-weight: 500; }
+  .d-boundary { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 2 4; }
+  .links { display: flex; gap: 20px; margin-top: 8px; font-size: 12px; font-weight: 500; color: var(--app-teal-ink); }
+  .links span { min-height: 30px; display: inline-flex; align-items: center; }
+  .field { margin-top: 10px; border: 1px solid var(--app-rule); border-radius: 10px; padding: 10px; font-size: 12.5px; line-height: 1.45; min-height: 74px; color: var(--app-ink); }
+  .field.slim { min-height: 36px; color: var(--app-ink-3); }
+  .save { margin-top: 12px; background: var(--app-ink); color: #fff; border-radius: 12px; text-align: center; font-weight: 600; font-size: 13px; padding: 10px; }
+  .tick-row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; min-height: 36px; border-top: 1px solid var(--app-rule); }
+  .tick-row i { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--app-ink-3); flex-shrink: 0; position: relative; }
+  .tick-row.on i { background: var(--app-teal-ink); border-color: var(--app-teal-ink); }
+  .tick-row.on i::after { content: ""; position: absolute; left: 5px; top: 1px; width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .choice { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 44px; border-top: 1px solid var(--app-rule); font-size: 13px; font-weight: 500; }
+  .choice em { font-style: normal; font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; }
+  .vv-row { display: flex; flex-direction: column; gap: 2px; padding: 9px 0; border-top: 1px solid var(--app-rule); font-size: 12px; color: var(--app-ink-2); }
+  .vv-row b { font-size: 13px; color: var(--app-ink); font-weight: 600; }
+  .vv-note { font-style: italic; color: var(--app-ink-2); }
+  .frame-cap code, .brief code, .col code { font-family: var(--mono); font-size: 0.86em; }
+
+  /* ── Round-specific: the tier chips (shape carries now vs today, never hue alone) ── */
+  .tier { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; line-height: 1.2; border-radius: 999px; padding: 3px 10px; border: 1.5px solid transparent; white-space: nowrap; }
+  .tier.now { background: var(--app-rose); color: #fff; }
+  .tier.today { background: var(--app-card); color: var(--app-rose-ink); border-color: var(--app-rose); }
+  .tier.pattern { background: var(--app-card); color: var(--app-ink); border-color: var(--app-rose-soft); border-style: dashed; }
+  .tier.eye { background: var(--app-subtle); color: var(--app-ink-2); }
+  .tier.nes { background: var(--app-subtle); color: var(--app-ink-3); }
+  .tier.legacy { background: var(--app-rose); color: #fff; }
+  .tier.legacy-calm { background: var(--app-subtle); color: var(--app-ink-2); }
+  .tier.page { font-size: 11px; }
+  .readcard { background: var(--app-card); border-radius: 16px; padding: 12px 14px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); display: flex; flex-direction: column; gap: 7px; }
+  .readcard.r-call { border-left: 3px solid var(--app-rose); }
+  .readcard.r-pattern { border-left: 3px dashed var(--app-rose-soft); }
+  .rc-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .rc-eyebrow { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); font-weight: 500; }
+  .rc-action { font-size: 13.5px; font-weight: 600; line-height: 1.35; }
+  .rc-why { font-size: 12px; color: var(--app-ink-2); line-height: 1.45; }
+  .rc-script { font-size: 11.5px; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 8px; padding: 7px 9px; line-height: 1.45; }
+  .rc-script b { color: var(--app-ink); font-weight: 600; }
+  .rc-foot { font-size: 10.5px; color: var(--app-ink-3); }
+  .rc-door { font-size: 12px; font-weight: 500; color: var(--app-teal-ink); min-height: 30px; display: inline-flex; align-items: center; }
+  .watch { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--app-rule); padding-top: 8px; }
+  .watch p { margin: 0; font-size: 12px; line-height: 1.45; color: var(--app-ink); }
+  .watch p b { font-weight: 600; }
+  .watch .static { color: var(--app-rose-ink); }
+  .disclose { font-size: 11.5px; color: var(--app-ink); background: var(--app-subtle); border-radius: 8px; padding: 8px 9px; line-height: 1.45; display: flex; flex-direction: column; gap: 3px; }
+  .disclose span { color: var(--app-teal-ink); font-weight: 500; }
+  .raised { font-size: 11.5px; color: var(--app-ink-2); border-top: 1px solid var(--app-rule); padding-top: 7px; }
+  .raised b { color: var(--app-ink); font-weight: 600; }
+  .seam { font-size: 11px; color: var(--app-ink-2); border: 1px solid var(--app-rule); border-radius: 8px; padding: 7px 9px; line-height: 1.45; }
+  .meta-line { font-size: 10.5px; color: var(--app-ink-3); }
+  .nophoto { height: 58px; border-radius: 10px; background: var(--app-subtle); display: grid; place-items: center; font-size: 11px; color: var(--app-ink-3); }
+  .rec-title { font-family: var(--serif); font-size: 19px; line-height: 1.2; }
+  .rec-sub { font-size: 11.5px; color: var(--app-ink-2); }
+  .hrow { display: flex; align-items: center; gap: 10px; min-height: 44px; border-top: 1px solid var(--app-rule); font-size: 12.5px; }
+  .hrow:first-of-type { border-top: 0; }
+  .hrow .t { width: 58px; flex-shrink: 0; color: var(--app-ink-3); font-size: 11.5px; }
+  .hrow .w { flex: 1; min-width: 0; }
+  .hrow .w small { display: block; color: var(--app-ink-3); font-size: 10.5px; }
+  .hdiv { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--app-ink-3); padding: 8px 0 4px; border-top: 1px dashed var(--app-rule); }
+  .complete { background: var(--app-ink); color: #fff; border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 5px; }
+  .complete .c1 { font-size: 13.5px; font-weight: 600; }
+  .complete .c2 { font-size: 12px; color: #d4d4d4; line-height: 1.45; }
+  .complete .c3 { font-size: 12px; color: #7eecdc; font-weight: 500; }
+  .complete .c4 { font-size: 11.5px; color: #fbb6c3; font-weight: 600; }
+  .month { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .month i { aspect-ratio: 1; max-width: 100%; border-radius: 6px; background: var(--app-subtle); font-style: normal; font-size: 9px; color: var(--app-ink-3); display: grid; place-items: start; padding: 2px 3px; position: relative; }
+  .month i.c { background: var(--app-rose); color: #fff; }
+  .month i.p { box-shadow: inset 0 0 0 1.5px var(--app-ink-3); }
+  .month i.seamday { box-shadow: inset 2px 0 0 0 var(--app-ink); }
+  .legend { display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; color: var(--app-ink-2); margin-top: 8px; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; background: var(--app-rose); display: inline-block; flex-shrink: 0; }
+  .legend i.pp { background: transparent; box-shadow: inset 0 0 0 1.5px var(--app-ink-3); }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .tile { border-radius: 10px; background: var(--app-card); box-shadow: 0 1px 2px rgba(0,0,0,0.06); padding: 5px; display: flex; flex-direction: column; gap: 4px; }
+  .tile .ph { height: 42px; border-radius: 7px; background: radial-gradient(circle at 40% 45%, #d8c9a8, #9c8a66 60%, #6e6048); }
+  .tile .tl { font-size: 9.5px; color: var(--app-ink-3); }
+  .tile .tier { font-size: 9.5px; padding: 2px 6px; white-space: normal; }
+
+  /* Page-level tables */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 22px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper-2); }
+  table.grid { border-collapse: collapse; width: 100%; font-size: 13px; color: var(--ink-2); min-width: 980px; }
+  table.grid th, table.grid td { text-align: left; vertical-align: top; padding: 9px 11px; border-top: 1px solid var(--rule-soft); }
+  table.grid thead th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; border-top: 0; background: var(--paper-2); position: sticky; top: 0; }
+  table.grid tbody th { color: var(--ink); font-weight: 600; font-size: 13px; min-width: 150px; }
+  table.grid td b { color: var(--ink); font-weight: 600; }
+  table.grid td small { display: block; color: var(--ink-3); font-size: 11.5px; margin-top: 2px; }
+  table.grid tr.contested td, table.grid tr.contested th { background: var(--note-wash); }
+  table.grid tr.held td, table.grid tr.held th { background: var(--rule-soft); }
+  .dir { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+  .dir.louder { color: var(--rose-ink); } .dir.same { color: var(--ink-3); } .dir.quieter { color: var(--note-ink); }
+  .speak { font-family: var(--serif); font-style: italic; color: var(--ink); }
+  .specimens { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 18px; padding: 16px; border-radius: 12px; background: var(--app-ground); color: var(--app-ink); border: 1px solid var(--rule); }
+  .specimens figure { margin: 0; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .specimens figcaption { font-family: var(--mono); font-size: 10px; color: var(--app-ink-3); letter-spacing: 0.04em; }
+  ol.spec { margin: 14px 0 0; padding-left: 22px; display: grid; gap: 9px; color: var(--ink-2); font-size: 14.5px; max-width: 76ch; }
+  ol.spec b { color: var(--ink); }
+  .toc { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 4px 24px; margin-top: 18px; font-size: 14px; }
+  .toc a { text-decoration: none; color: var(--ink-2); padding: 3px 0; border-bottom: 1px solid var(--rule-soft); display: flex; gap: 10px; }
+  .toc a span { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+  .toc a:hover { color: var(--ink); }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Round 1 · 2026-09-28</span><span>Engines v3 · PR-24 · CUL-1133 EN-3 + CUL-1134 EN-4</span><span>Wave 4 discovery · no code</span></p>
+    <h1>The per-incident read, in four tiers</h1>
+    <p class="standfirst">Today every warning from a vomit or stool photo says one thing, "Worth a call". You ruled four tiers on 9/26: call now, call today, part of a pattern, and keep an eye out. This page draws them on every surface that shows a read, says how each one is spoken, and draws the day they go live. It also draws the three things only you can rule (PMD-14, what puts a read in "part of a pattern", and CUL-531), EN-5's question, CUL-819's disclosure, where EN-4's check runs, and the sign-to-tier table the vet review reads.</p>
+
+    <div class="ledger" aria-label="What the plan asked PR-24 to draw, and where it is on this page">
+      <div><b>The four tiers on every surface, one tier-word map, the spoken contract</b><span>One map feeds every word, colour and count. Both call tiers share the rose; fill versus outline and the words carry now versus today, never hue alone. <span class="pill">current · §01–§04</span></span></div>
+      <div><b>The GA day: old reads never get new words; the month never adds two rules into one number</b><span>An old "Worth a call" stays "Worth a call" forever. The month's legend splits its count at the go-live date. <span class="pill">current · §05</span></span></div>
+      <div><b>PMD-14, for your ruling</b><span>Where a call with no photo, or one raised after the save, appears. Drawn both ways side by side. <span class="pill open">decide · §06</span></span></div>
+      <div><b>EN-5's question</b><span>A free-fed bowl answers "Didn't see", stored as not observable. Dogs and trial pets are asked "Could he have eaten something else?". No time limit; a heading and a radio group for VoiceOver. <span class="pill">current · §07</span></span></div>
+      <div><b>CUL-819 (a) and CUL-531</b><span>The disclosure line under a rescued call. CUL-531 drawn three ways; the team recommends scoping the observation, which neither of the issue's two options did. <span class="pill">current · §08</span> <span class="pill open">CUL-531 decide</span></span></div>
+      <div><b>EN-4's floor spec</b><span>Runs on the server from a durable marker; offline the phone shows a preview it never stores. The 24-hour re-run reads the stored fields and never re-sends a photo. <span class="pill">current · §09</span></span></div>
+      <div><b>The sign-to-tier table</b><span>29 rows for the ruling sheet (CUL-583) and the paid vet review (CUL-1312). Every row that fires less than today is marked and waits on harness proof and your sign-off. <span class="pill needs">to the ruling sheet · §10</span></span></div>
+    </div>
+    <div class="rule-key">
+      <span><span class="pill">current</span> the proposal</span>
+      <span><span class="pill open">decide</span> yours to rule</span>
+      <span><span class="pill needs">needs X</span> waits on X before it can be built</span>
+    </div>
+    <p class="note" style="margin-top:22px"><b>What the frames are.</b> Nyx is the dogfood cat; Pixel is Sam's free-fed cat; Mochi is Jordan's dog. Every date after Oct 20 is illustrative, and Oct 20 stands in for whatever day the tiers go live. Every count on a frame is one the rules in §10 would produce for that frame's setup, not a replay of the real record.</p>
+    <nav class="toc" aria-label="Sections">
+      <a href="#s01"><span>01</span>The tier-word map</a>
+      <a href="#s02"><span>02</span>The record, tier by tier</a>
+      <a href="#s03"><span>03</span>Every other surface</a>
+      <a href="#s04"><span>04</span>The spoken contract</a>
+      <a href="#s05"><span>05</span>The GA day</a>
+      <a href="#s06"><span>06</span>PMD-14: where a later call shows</a>
+      <a href="#s07"><span>07</span>EN-5's question</a>
+      <a href="#s08"><span>08</span>CUL-819 and CUL-531</a>
+      <a href="#s09"><span>09</span>EN-4's floor: where it runs</a>
+      <a href="#s10"><span>10</span>The sign-to-tier table</a>
+      <a href="#s11"><span>11</span>Your three rulings</a>
+    </nav>
+  </header>
+
+  <!-- ═══════════════════════════ 01 ═══════════════════════════ -->
+  <section id="s01">
+    <div class="sec-head"><span class="sec-num">01</span><h2>One tier-word map feeds every word, colour and count</h2></div>
+    <div class="col">
+      <p>The tier is a new column written beside today's verdict, never in place of it (the critique's GAP-3, CUL-1277). Old phones keep reading the old column and keep today's words. New phones read the tier, and every word they draw or speak for it comes from this one map. A build guard fails on the literal "worth a call" anywhere outside the map (WBC-1).</p>
+      <p>"Part of a pattern" is drawn here as a tier the owner sees. Whether it is also a <em>stored</em> value is your second ruling (§11, K2); the team recommends it is drawn at render from a live Home finding and never stored.</p>
+    </div>
+
+    <div class="specimens" aria-label="The tier chips as the app would draw them">
+      <figure><span class="tier now">Call your vet now</span><figcaption>call_now · filled rose</figcaption></figure>
+      <figure><span class="tier today">Call your vet today</span><figcaption>call_today · rose outline</figcaption></figure>
+      <figure><span class="tier pattern">Part of a pattern</span><figcaption>pattern · dashed, no fill</figcaption></figure>
+      <figure><span class="tier eye">Keep an eye out</span><figcaption>logged · grey</figcaption></figure>
+      <figure><span class="tier nes">Not enough to say yet</span><figcaption>not_enough_to_say · grey</figcaption></figure>
+      <figure><span class="tier legacy">Worth a call</span><figcaption>legacy worth_a_call · unchanged</figcaption></figure>
+      <figure><span class="tier legacy-calm">Keep an eye out</span><figcaption>legacy monitor · unchanged</figcaption></figure>
+    </div>
+
+    <div class="table-scroll" tabindex="0" role="region" aria-label="The tier-word map">
+      <table class="grid">
+        <thead><tr><th>Stored</th><th>Chip</th><th>The action line (record)</th><th>Spoken when it lands</th><th>"read as" (History, charts, month)</th><th>Colour</th><th>Counts as a call?</th></tr></thead>
+        <tbody>
+          <tr><th>tier <code>call_now</code><small>legacy column: worth_a_call</small></th><td><span class="tier now page">Call your vet now</span></td><td><b>Call your vet now.</b> If they're closed, call an emergency clinic.</td><td class="speak">"Nyx's read: call your vet now."</td><td>read as call now</td><td>rose, filled; rose rail</td><td>Yes, new-rule population</td></tr>
+          <tr><th>tier <code>call_today</code><small>legacy column: worth_a_call</small></th><td><span class="tier today page">Call your vet today</span></td><td><b>Call your vet today.</b> If they're closed, first thing tomorrow, or an emergency clinic tonight if [the call-now signs for this pet].</td><td class="speak">"Nyx's read: call your vet today."</td><td>read as call today</td><td>rose outline; rose rail</td><td>Yes, new-rule population</td></tr>
+          <tr><th>pattern<small>drawn from a live Home finding (K2); legacy column: monitor</small></th><td><span class="tier pattern page">Part of a pattern</span></td><td>Home is tracking Nyx's vomiting, and this one is part of it. <b>See what Home is tracking</b> (a door).</td><td class="speak">"Nyx's read: part of a pattern Home is tracking."</td><td>read as part of a pattern</td><td>dashed pale rose; no fill</td><td>No</td></tr>
+          <tr><th>tier <code>logged</code><small>legacy column: monitor</small></th><td><span class="tier eye page">Keep an eye out</span></td><td>The two-sentence watch-for list: "Call your vet now if … Call your vet today if …", built from §10's rows for this pet.</td><td class="speak">"Nyx's read: keep an eye out. What would change that is below."</td><td>read as keep an eye out</td><td>grey</td><td>No</td></tr>
+          <tr><th><code>not_enough_to_say</code><small>both columns, unchanged</small></th><td><span class="tier nes page">Not enough to say yet</span></td><td>Today's copy, unchanged, plus the same watch-for list.</td><td class="speak">"Nyx's read: not enough to say yet."</td><td>not read</td><td>grey</td><td>No</td></tr>
+          <tr><th>legacy <code>worth_a_call</code><small>tier NULL (read before go-live)</small></th><td><span class="tier legacy page">Worth a call</span></td><td>Today's words, unchanged, for the life of the row.</td><td class="speak">"Nyx's read: worth a call."</td><td>read as worth a call</td><td>rose, filled</td><td>Yes, but only in the earlier-rule count (§05)</td></tr>
+          <tr><th>legacy <code>monitor</code><small>tier NULL</small></th><td><span class="tier legacy-calm page">Keep an eye out</span></td><td>Today's words, unchanged.</td><td class="speak">"Nyx's read: keep an eye out."</td><td>read as keep an eye out</td><td>grey</td><td>No</td></tr>
+          <tr><th>any value this build doesn't know</th><td><span class="tier legacy page">Worth a call</span></td><td>CUL-1277's fallback: an unknown value is an escalation, never blank and never calm.</td><td class="speak">"Nyx's read: worth a call."</td><td>read as worth a call</td><td>rose, filled</td><td>Yes</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ol class="spec">
+      <li><b>Every action line names the service and the clock</b> (GAP-13). "Now" appears on every call-now surface, the Home row and its strip included. A call today after hours resolves to "first thing tomorrow", with the pet's own call-now signs as the exception.</li>
+      <li><b>A call carries what to tell the vet</b> (S9's call script): the time, what was seen, and any course on board, from structured fields only. Model words appear only where Pattern 10 already lets them.</li>
+      <li><b>No tier has a wellness word</b> (clinical-guardrails Pattern 1). The lowest one is "Keep an eye out", and it always carries the list of what would change it. It never comments on the absence of concern.</li>
+      <li><b>The vet report renders no tier</b> (GAP-27). It keeps its present-only blood and foreign-material line. The acceptance line on CUL-1133 that says "the report renders tiers" is corrected to this.</li>
+      <li><b>The quiet list gains <code>logged</code> in the tier column only</b>. <code>QUIET_VERDICTS</code> sorts the legacy column; the tier column gets its own one-list sort with <code>call_now &gt; call_today &gt; pattern &gt; logged &gt; not_enough_to_say</code>. Every legacy <code>worth_a_call</code> ranks at <code>call_today</code> for the never-lower rule, so an escalation replacing an escalation never steps down (the PR-04b note on CUL-1133).</li>
+    </ol>
+  </section>
+
+  <!-- ═══════════════════════════ 02 ═══════════════════════════ -->
+  <section id="s02">
+    <div class="sec-head"><span class="sec-num">02</span><h2>The record, tier by tier</h2></div>
+    <div class="col">
+      <p>The record (<code>app/event/[id].tsx</code>) is where a read lands and where it lives. The photo stays the hero (incident D3). Each frame is the read section under it: the chip, one action line with its service and clock, one line of why, and for the calls, what to tell the vet. The list under "Keep an eye out" is two sentences with their own timeframes, so it still makes sense read aloud (BRK-3).</p>
+    </div>
+    <div class="frames">
+
+      <div class="frame">
+        <div class="phone" aria-label="Nyx's vomit record with a call-now read">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Oct 22, 1:30 AM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+          <div class="photo"></div>
+          <div class="readcard r-call">
+            <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier now">Call your vet now</span></div>
+            <div class="rc-action">Call your vet now. If they're closed, call an emergency clinic.</div>
+            <div class="rc-why">This photo shows dark, gritty material that can be digested blood. A vet should hear about that tonight.</div>
+            <div class="rc-script"><b>What to tell them:</b> vomited at 1:30 AM, dark gritty material, on prednisone since Sep 21.</div>
+            <div class="obs"><span>Blood: possible, digested</span><span>Foreign material: none visible</span></div>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>call_now, from a photo finding <span class="pill">current</span></b><span>Row T12. The "what to tell them" line comes from structured fields and the pet's courses, never from model prose. "Tonight" follows the clock; at 2 PM the line says "today".</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Nyx's vomit record with a call-today read from the record, no photo concern">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Oct 23, 7:02 AM</div><div class="rec-sub">Found · Nyx</div></div>
+          <div class="photo"></div>
+          <div class="readcard r-call">
+            <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier today">Call your vet today</span></div>
+            <div class="rc-action">Call your vet today. If they're closed, first thing tomorrow.</div>
+            <div class="rc-why">3 vomits logged since 8 AM yesterday. That many in a day is worth a vet's view today.</div>
+            <div class="watch"><p><b>Go tonight</b> to your vet or an emergency clinic if she vomits again in the next few hours, or is low on energy.</p></div>
+            <div class="rc-script"><b>What to tell them:</b> 3 vomits logged since 8 AM yesterday, the last one found at 7:02 AM.</div>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>call_today, from the record <span class="pill">current</span></b><span>Row T4. The count says "vomits logged", never "episodes" (GAP-10). A found pile is counted toward the 24-hour rule and dated as found. The "go tonight" line is the accumulation rung (T9: another vomit while a call today is open lifts it to call now) and lethargy (T3), so the two timeframes never disagree.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Nyx's vomit record with a part-of-a-pattern read">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Oct 27, 6:40 PM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+          <div class="photo"></div>
+          <div class="readcard r-pattern">
+            <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier pattern">Part of a pattern</span></div>
+            <div class="rc-action">Home is tracking Nyx's vomiting, and this one is part of it.</div>
+            <span class="rc-door">See what Home is tracking ›</span>
+            <div class="watch">
+              <p><b>Call your vet now</b> if she vomits twice more in the next 4 hours, or is low on energy.</p>
+              <p><b>Call your vet today</b> if she vomits again in the next 4 hours, twice more by 7 PM tomorrow, or refuses her next meal.</p>
+            </div>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>pattern <span class="pill needs">needs K2's ruling</span></b><span>The line never restates Home's ask and never quotes a care state ("seen by your vet"), so it cannot contradict Home the way GAP-11's Sep 10 read did. The door is the only link. Below it, the same list as "Keep an eye out", because this read is not a call on its own.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Nyx's vomit record with a keep-an-eye-out read and the watch-for list">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Oct 24, 2:10 AM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+          <div class="photo"></div>
+          <div class="readcard">
+            <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier eye">Keep an eye out</span></div>
+            <div class="rc-why">One photo can't tell you how Nyx is doing. Here's what would change this read:</div>
+            <div class="watch">
+              <p><b>Call your vet now</b> if she vomits twice more in the next 4 hours, is low on energy, or you see blood.</p>
+              <p><b>Call your vet today</b> if she vomits again in the next 4 hours, twice more by 2 AM tomorrow, or refuses her next meal.</p>
+            </div>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>logged, a cat <span class="pill">current</span></b><span>Each clause is a row of §10 (T2, T3, T13; T5a, T4, T10), so the list and the rule cannot drift: a test runs the real rule for every clause and checks the tier its sentence names. Every sign is one the engines hear (PMD-10). The meal clause shows only for a pet whose meals are rated.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Mochi's vomit record with a keep-an-eye-out read for a dog, including the bloat line">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Mochi</span><span class="askpill"><i></i>Ask</span></div>
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Oct 24, 9:15 PM</div><div class="rec-sub">Witnessed · Mochi</div></div>
+          <div class="photo"></div>
+          <div class="readcard">
+            <div class="rc-h"><span class="rc-eyebrow">Mochi's read</span><span class="tier eye">Keep an eye out</span></div>
+            <div class="rc-why">One photo can't tell you how Mochi is doing. Here's what would change this read:</div>
+            <div class="watch">
+              <p class="static"><b>Go to your vet or an emergency clinic now</b> if he retches with nothing coming up, or his belly looks swollen or tight. That can be bloat.</p>
+              <p><b>Call your vet now</b> if he vomits twice more in the next 4 hours, is low on energy, or you see blood.</p>
+              <p><b>Call your vet today</b> if he vomits again by 9 PM tomorrow.</p>
+            </div>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>logged, a dog <span class="pill">current</span></b><span>The bloat line is static on every dog read until a way to log "nothing came up" exists (GAP-14); it never says "GDV". A dog's second vomit in a day is call today, the shipped Noticed door's row (T6), which is louder than EN-4's draft, so it stands until the vet review.</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ 03 ═══════════════════════════ -->
+  <section id="s03">
+    <div class="sec-head"><span class="sec-num">03</span><h2>Every other surface that shows a read</h2></div>
+    <div class="col">
+      <p>These are the twelve surfaces from the source maps (Lane B §3), plus History and the completion card, which the maps did not list. Every cell is an entry of its own (GAP-11). PR-27 builds the app half in <code>components/designV2/</code>; the record, the incident screen, the gallery tiles, History and the month move together in that one PR.</p>
+    </div>
+
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Every surface by tier">
+      <table class="grid">
+        <thead><tr><th>Surface</th><th>call_now</th><th>call_today</th><th>pattern</th><th>logged</th><th>not_enough</th><th>legacy worth_a_call / monitor</th></tr></thead>
+        <tbody>
+          <tr><th>Record read card<small>vomit and stool, §02</small></th><td>Chip, rail, action, why, script</td><td>Same, outline chip</td><td>Chip, pointer door, list</td><td>Chip, two-sentence list</td><td>Today's copy + list</td><td>Today's card, unchanged, plus "Read under the earlier rule" (§05)</td></tr>
+          <tr><th>Home safety band<small>Signal row, <code>incident_red_flag</code></small></th><td><b>Row:</b> "Call your vet now" as the ask; ranks first</td><td><b>Row:</b> "Call your vet today"</td><td>No row (Home already holds the finding)</td><td>No row</td><td>No row</td><td>Today's row, "Worth a call to your vet", until its 14 days end</td></tr>
+          <tr><th>Cross-pet banner</th><td>"Nyx: a vomit read says call your vet now ›"</td><td>"Nyx: a vomit read says call your vet today ›"</td><td>None</td><td>None</td><td>None</td><td>Today's banner</td></tr>
+          <tr><th>Signal screen, expanded evidence</th><td colspan="2">The row's sentence, the "automated read of one photo, not a diagnosis" line, and the tier words from the map</td><td>n/a</td><td>n/a</td><td>n/a</td><td>Today's words</td></tr>
+          <tr><th>Episode gallery tiles</th><td>Chip words, rose fill</td><td>Chip words, rose outline</td><td>Chip words, dashed</td><td>"Keep an eye out", grey</td><td>"Not read", grey</td><td>"Worth a call" / "Keep an eye out"</td></tr>
+          <tr><th>Home spine node, today's card</th><td>Rose ink: "Vomit · 1:30 AM · call now"</td><td>Rose ink: "· call today"</td><td>Ink: "· part of a pattern"</td><td>Ink-2: "· keep an eye out"</td><td>No suffix</td><td>Today's words</td></tr>
+          <tr><th>History row</th><td>Chip at the right, rose</td><td>Chip, outline</td><td>Chip, dashed</td><td>Chip, grey</td><td>"Not read"</td><td>Today's chip</td></tr>
+          <tr><th>Month calendar photo layer</th><td>Day painted rose</td><td>Day painted rose</td><td>Not painted</td><td>Not painted</td><td>Not painted</td><td>Rose, counted in the earlier-rule line only (§05)</td></tr>
+          <tr><th>Chart and month text<small><code>chartCopy</code>, the month's label</small></th><td>"photographed, read as call now"</td><td>"… read as call today"</td><td>"… read as part of a pattern"</td><td>"… read as keep an eye out"</td><td>"photographed, not read"</td><td>"… read as worth a call"</td></tr>
+          <tr><th>Get ready · Worth raising</th><td colspan="2">In the app: the Home row's sentence, as today. In Copy as text (leaves the phone): dated facts only, never a tier word (GAP-27)</td><td>n/a</td><td>n/a</td><td>n/a</td><td>Today's behaviour</td></tr>
+          <tr><th>Ask</th><td colspan="5">Quotes the tier's words from the map. The model receives a one-line definition of each tier and never the raw stored value (today it gets <code>recommendation</code> undefined, <code>ask/index.ts</code> ~474)</td><td>"worth a call", defined as the earlier single tier</td></tr>
+          <tr><th>Vet report</th><td colspan="6"><b>Renders no tier.</b> Keeps its present-only blood and foreign-material line with thumbnails. No read text, no tier, no care state (GAP-27)</td></tr>
+          <tr><th>Stool record</th><td colspan="5">The same map. EN-7 (PR-26) stops a recent vomit from calling a normal stool; a loose stool with vomiting that meets T4 stays call today (T24)</td><td>Today's words</td></tr>
+          <tr><th>Completion card</th><td colspan="2">Depends on PMD-14 (§06)</td><td>Nothing added</td><td>Nothing added</td><td>Nothing added</td><td>Unchanged</td></tr>
+          <tr><th>Notifications</th><td colspan="6">None, as today. A push about a read is PR-36's question under the notification foundation's consent rules, not this one's</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="frames">
+      <div class="frame">
+        <div class="phone short" aria-label="Home's Signal zone with a call-now row and a call-today row">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door"><div class="body"><div class="eyebrow-s">Photo read · Oct 22, 1:30 AM</div><div class="head serif">Possible digested blood in a vomit photo</div><div class="asktxt">Call your vet now</div></div><span class="chev big"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed door"><div class="body"><div class="head">3 vomits logged since 8 AM yesterday</div><div class="sub"><span class="ask-in">Call your vet today</span> · first thing tomorrow if they're closed</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Nyx's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>Home's safety band <span class="pill">current</span> <span class="pill needs">row 2 needs PMD-14 (A)</span></b><span>"Now" is on the Home row itself (GAP-13). The second row, a call from the record with no photo concern, reaches Home only if you rule PMD-14 option A; today contextual calls never reach Home.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="History list with tiered reads">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">History · Oct 24</div>
+            <div class="hrow"><span class="t">2:10 AM</span><span class="w">Vomit<small>Photo</small></span><span class="tier eye">Keep an eye out</span></div>
+            <div class="zone-label" style="margin-top:10px">Oct 23</div>
+            <div class="hrow"><span class="t">7:02 AM</span><span class="w">Vomit<small>Found · photo</small></span><span class="tier today">Call today</span></div>
+            <div class="hrow"><span class="t">6:15 PM</span><span class="w">Meal<small>Refused</small></span><span></span></div>
+            <div class="zone-label" style="margin-top:10px">Oct 22</div>
+            <div class="hrow"><span class="t">1:30 AM</span><span class="w">Vomit<small>Photo</small></span><span class="tier now">Call now</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>History <span class="pill">current</span></b><span>The chip is the short form of the map's words ("Call now", "Call today") where the row is narrow; the accessible label always says the full "call your vet now".</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="The Signal screen's episode gallery and today's spine node">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Vomiting · the photos</div>
+            <div class="tiles">
+              <div class="tile"><div class="ph"></div><span class="tl">Oct 22 · 1:30 AM</span><span class="tier now">Call now</span></div>
+              <div class="tile"><div class="ph"></div><span class="tl">Oct 23 · 7:02 AM</span><span class="tier today">Call today</span></div>
+              <div class="tile"><div class="ph"></div><span class="tl">Oct 24 · 2:10 AM</span><span class="tier eye">Keep an eye out</span></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="zone-label">Today</div>
+            <div class="hrow"><span class="t">1:30 AM</span><span class="w">Vomit <span style="color:var(--app-rose-ink);font-weight:600">· call now</span></span></div>
+            <div class="hrow"><span class="t">7:40 AM</span><span class="w">Meal · ate most</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>The gallery and today's spine <span class="pill">current</span></b><span>One tile per bout, as the gallery already draws (GAP-33 holds there). The spine suffix is the "read as" form without "read as".</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ 04 ═══════════════════════════ -->
+  <section id="s04">
+    <div class="sec-head"><span class="sec-num">04</span><h2>The spoken contract</h2></div>
+    <div class="col">
+      <p>Today a read lands in silence for a VoiceOver owner, and the one surface that announces anything speaks every non-quiet value as "Worth a call" (GAP-32, BRK-14). CUL-1275 fixes the silence first. This is what each tier says, when, and how.</p>
+    </div>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="What is spoken for each moment">
+      <table class="grid">
+        <thead><tr><th>Moment</th><th>Spoken</th><th>When and how</th></tr></thead>
+        <tbody>
+          <tr><th>A read lands on the open record</th><td class="speak">"Nyx's read: call your vet now." / "… call your vet today." / "… part of a pattern Home is tracking." / "… keep an eye out. What would change that is below." / "… not enough to say yet."</td><td>Once, when the stored status goes from pending to finished: the fact, never the arrival motion. Action and clock first, pet named.</td></tr>
+          <tr><th>A read already on screen is raised</th><td class="speak">"Nyx's read changed: call your vet now. Lethargy was logged at 9:15 AM."</td><td>Once, on the tier change. Never for a same-tier recompute.</td></tr>
+          <tr><th>A read is raised while the owner is elsewhere</th><td class="speak">"Lethargy logged for Nyx. Her 7:02 AM vomit read is now: call your vet now."</td><td>On the completion of the log that raised it (PMD-14 A). Said once, then it lives on Home's band.</td></tr>
+          <tr><th>A photoless vomit whose check returns a call</th><td class="speak">"Vomit logged for Nyx. From what's logged: call your vet today."</td><td>PMD-14 A: on the completion card; call now also routes to the record, which announces as above.</td></tr>
+          <tr><th>An old-rule read</th><td class="speak">"Nyx's read: worth a call."</td><td>Unchanged words, forever (§05).</td></tr>
+          <tr><th>The rescued call (CUL-819)</th><td class="speak">"Nyx's read: call your vet today. Reading the new photo didn't finish."</td><td>The disclosure is part of the same announcement, so it is never lost behind the call.</td></tr>
+          <tr><th>EN-5's question</th><td class="speak">"Has Nyx eaten a meal since 6 PM yesterday? Heading." then "Yes, ate well. Radio button, 1 of 4."</td><td>Never announced; it waits. A heading, a radio group, no timer, no dwell. It stays on the record until answered.</td></tr>
+          <tr><th>Home's band row</th><td class="speak">"Call your vet now. Possible digested blood in a vomit photo, October 22 at 1:30 AM. Button."</td><td>A label, never an announcement: Home does not speak when it changes.</td></tr>
+          <tr><th>A month day</th><td class="speak">"October 22. 1 photo, read as call now."</td><td>The "read as" form from the map. Earlier-rule days say "read as worth a call".</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ol class="spec">
+      <li><b>Every announcement pairs the Android live region with the iOS hook</b> (<code>useLiveRegionAnnouncement</code>, C-44). No Engines v3 prompt depends on a live region alone.</li>
+      <li><b>Every tier delivers the same way.</b> Queued, never interrupting, so a call now is not heard as more alarming because of how it arrived, only because of its words.</li>
+      <li><b>The read section is a stable heading</b> ("Nyx's read"), so a VoiceOver owner can jump to it on any record.</li>
+      <li><b>Colour never carries a tier alone.</b> Now and today share the rose; fill against outline and the words tell them apart, which holds under deuteranopia, where the page's old rose and amber were 10 apart.</li>
+      <li><b>The spoken words are the visible words.</b> No label says something the screen does not, and truncation never edits what is read (C-8).</li>
+    </ol>
+  </section>
+
+  <!-- ═══════════════════════════ 05 ═══════════════════════════ -->
+  <section id="s05">
+    <div class="sec-head"><span class="sec-num">05</span><h2>The GA day: two rules, never one number</h2></div>
+    <div class="col">
+      <p>Reads are stored per event, so on the day the tiers go live a pet's record holds reads made under two rules. Three things keep that honest (GAP-30). An old read never gets new words: a September "Worth a call" is never relabelled "call now" or "call today", because nobody knows which it would have been. An old-rule read says so on its record. And the month never adds the two populations into one count, so a steady cat never looks improved because the rule changed.</p>
+      <p>Nothing about the change reaches Home, a notification, a motion or a haptic. The owner meets it on the first new read, once per pet, in one dated line.</p>
+    </div>
+    <div class="frames">
+
+      <div class="frame">
+        <div class="phone" aria-label="The first tiered read after go-live, with the one dated line">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Oct 21, 8:05 PM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+          <div class="photo"></div>
+          <div class="readcard">
+            <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier eye">Keep an eye out</span></div>
+            <div class="rc-why">One photo can't tell you how Nyx is doing. Here's what would change this read:</div>
+            <div class="watch">
+              <p><b>Call your vet now</b> if she vomits twice more in the next 4 hours, is low on energy, or you see blood.</p>
+              <p><b>Call your vet today</b> if she vomits again in the next 4 hours, twice more by 8 PM tomorrow, or refuses her next meal.</p>
+            </div>
+            <div class="seam">New since Oct 20: reads say how soon to call. Nyx's earlier reads keep the words they had.</div>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>The first new read, per pet <span class="pill">current</span></b><span>Shown on the first tiered read of a pet that already has an earlier-rule read, decided from the record, so it needs no device key and a second phone agrees. A pet with no earlier reads never sees it.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="An earlier-rule read, unchanged, with its rule named">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Sep 22, 1:30 AM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+          <div class="photo"></div>
+          <div class="readcard r-call">
+            <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier legacy">Worth a call</span></div>
+            <div class="rc-why">I can see something that doesn't look like food in this photo. That's worth a call to your vet about Nyx.</div>
+            <div class="meta-line">Read under the earlier rule, before Oct 20.</div>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>An old read keeps its words <span class="pill">current</span></b><span>Today's card, byte for byte, plus one meta line. Only a Re-run, a replaced photo or an Ask live read can give it a tier. The tier it gains keeps or raises the call and never lowers it (Pattern 7, CUL-1201, GAP-34); from then on it reads as a new-rule read.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="The Patterns month for October straddling the go-live date">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">October · photo reads</div>
+            <div class="month" aria-hidden="true">
+              <i>1</i><i>2</i><i>3</i><i class="c">4</i><i>5</i><i>6</i><i>7</i>
+              <i>8</i><i>9</i><i class="c">10</i><i>11</i><i>12</i><i>13</i><i>14</i>
+              <i>15</i><i>16</i><i>17</i><i>18</i><i>19</i><i class="seamday">20</i><i class="p">21</i>
+              <i class="c">22</i><i class="c">23</i><i class="p">24</i><i>25</i><i>26</i><i class="p">27</i><i>28</i>
+            </div>
+            <div class="legend">
+              <span><i></i>Before Oct 20, read as worth a call · 2 days</span>
+              <span><i></i>From Oct 20, read as call now or call today · 2 days</span>
+              <span><i class="pp"></i>Photographed, no call · 3 days</span>
+            </div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>The month splits its count at the seam <span class="pill">current</span></b><span>The day marks share the rose, and the legend never adds 2 and 2 into "4 days". A thin mark on Oct 20 names the seam. The accessible summary reads both lines. A month wholly on one side shows one line, as today.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="The same October 23 read on an installed 1.2.0 phone">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">History · Oct 23 · on a 1.2.0 phone</div>
+            <div class="hrow"><span class="t">7:02 AM</span><span class="w">Vomit<small>Found · photo</small></span><span class="tier legacy">Worth a call</span></div>
+            <div class="hrow"><span class="t">2:10 AM</span><span class="w">Vomit<small>Oct 24 · photo</small></span><span class="tier legacy-calm">Keep an eye out</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>An installed phone keeps today's words <span class="pill">current</span></b><span>The tier column is new, so a 1.2.0 phone never reads it: call now and call today are written as <code>worth_a_call</code> in the old column, "part of a pattern" and "keep an eye out" as <code>monitor</code>. Two phones on one login can differ in detail, never in direction.</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ 06 ═══════════════════════════ -->
+  <section id="s06">
+    <div class="sec-head"><span class="sec-num">06</span><h2>PMD-14: where a call with no photo, or a call raised later, shows up</h2></div>
+    <div class="col">
+      <p>Today a vomit logged without a photo gets a five-second completion beat and nothing else. The incident spec (D2) says its escalation is the Home red-flag card's job, but that card reads only photo fields, so D2's premise is false. EN-4 makes every vomit checked, which means a 3 AM cat with three photoless vomits in four hours will compute "call your vet now" and, as things stand, show it nowhere. A call raised later (lethargy logged at 9:15 over a 7:02 read) repaints a record nobody has open.</p>
+      <p>Both options below put the call on Home's safety band. They differ on whether a photoless call now takes the owner to its record. The team recommends A.</p>
+    </div>
+
+    <div class="side">
+      <div class="option">
+        <div class="option-head"><b>A · A photoless call now lands on its record; every call joins Home's band <span class="pill">recommended</span></b><span>Amends incident D2: a photoless vomit whose check returns call now routes to its record, the way a photographed one does. Call today stays on the completion path, said once there, and held on Home's band. A log that raises an earlier read says so on its own completion.</span></div>
+        <div class="frames">
+          <div class="frame">
+            <div class="phone" aria-label="Option A: a photoless vomit at 3 AM lands on its record with call now">
+              <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+              <div><div class="back">‹</div><div class="rec-title">Vomit · Oct 25, 3:12 AM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+              <div class="nophoto">No photo · Add one</div>
+              <div class="readcard r-call">
+                <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier now">Call your vet now</span></div>
+                <div class="rc-action">Call your vet now. If they're closed, call an emergency clinic.</div>
+                <div class="rc-why">3 vomits logged since 11:40 PM. That many in a few hours needs a vet tonight.</div>
+                <div class="rc-script"><b>What to tell them:</b> 3 vomits since 11:40 PM, the last at 3:12 AM.</div>
+                <div class="qblock"><div class="q">Has Nyx eaten a meal since 6 PM yesterday?</div><div class="answers"><span>Yes, ate well</span><span>A little</span><span>No</span><span>Not sure</span></div></div>
+              </div>
+            </div>
+            <div class="frame-cap"><b>A · the 3 AM photoless triple</b><span>Principle 1 survives by scope: only a call now routes, and the record needs no decision to be read. EN-5's question gets its one home here.</span></div>
+          </div>
+          <div class="frame">
+            <div class="phone short" aria-label="Option A: the completion card of a lethargy log that raised an earlier read">
+              <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+              <div class="complete">
+                <span class="c1">Lethargy logged</span>
+                <span class="c2">Saved to Nyx's record · 9:15 AM</span>
+                <span class="c4">Her 7:02 AM vomit read is now: call your vet now.</span>
+                <span class="c3">Open the read ›</span>
+              </div>
+              <div class="card"><div class="zone-label">Signal</div><div class="railed door"><div class="body"><div class="head">Vomiting, and low on energy since 9:15 AM</div><div class="sub"><span class="ask-in">Call your vet now</span> · an emergency clinic if they're closed</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div></div>
+            </div>
+            <div class="frame-cap"><b>A · raised after the save</b><span>Said once, on the log that raised it; the completion card holds while a call is on it (a dialog-style dwell pause, C-21), then Home's band carries it.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="option">
+        <div class="option-head"><b>B · Home's band and the completion card only; D2 unchanged</b><span>A photoless vomit keeps the shipped completion path. Its call is said on the completion card and held on Home's band. The record carries the call when someone opens it.</span></div>
+        <div class="frames">
+          <div class="frame">
+            <div class="phone short" aria-label="Option B: the completion card for a photoless vomit with call now">
+              <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+              <div class="complete">
+                <span class="c1">Vomit logged</span>
+                <span class="c2">Saved to Nyx's record · 3:12 AM</span>
+                <span class="c4">From what's logged: call your vet now, or an emergency clinic if they're closed.</span>
+                <span class="c3">Open the record ›</span>
+              </div>
+              <div class="card"><div class="zone-label">Signal</div><div class="railed door"><div class="body"><div class="head">3 vomits logged since 11:40 PM</div><div class="sub"><span class="ask-in">Call your vet now</span> · an emergency clinic if they're closed</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div></div>
+            </div>
+            <div class="frame-cap"><b>B · the 3 AM photoless triple</b><span>Fewer screens, D2 untouched. Cost: the call's reason and script live one tap further away at the worst moment, and EN-5's question can only live on a record the owner has to open from History.</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frames">
+      <div class="frame">
+        <div class="phone" aria-label="Both options: an open record whose read was raised later">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Oct 26, 7:02 AM</div><div class="rec-sub">Found · Nyx</div></div>
+          <div class="photo"></div>
+          <div class="readcard r-call">
+            <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier now">Call your vet now</span></div>
+            <div class="rc-action">Call your vet now. If they're closed, call an emergency clinic.</div>
+            <div class="rc-why">Nyx vomited and has been low on energy. Together, those need a vet now.</div>
+            <div class="raised"><b>Raised</b> from keep an eye out at 9:15 AM, because lethargy was logged.</div>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>Both options · a read raised later <span class="pill">current</span></b><span>A tier changed after it was first shown carries a record-fact line: what it was, when it changed and which log changed it. It only ever goes up; the shown tier is stored and never recomputed down (GAP-34).</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ 07 ═══════════════════════════ -->
+  <section id="s07">
+    <div class="sec-head"><span class="sec-num">07</span><h2>EN-5's question</h2></div>
+    <div class="col">
+      <p>The read cannot see whether a cat ate, and today it guesses from missing ratings: it told Nyx's owner three times that she "hasn't eaten a full meal recently" when meals were logged but not rated. EN-5 asks instead. The question lives on the record under the read, with no time limit, until it is answered. No answer is stored as unknown, never as "normally". The deadline is a named hour, never "since yesterday" (at 7 AM that spans 31 hours).</p>
+      <p>An answer only adds evidence. "No" can raise the read (T10); "Yes, ate well" never lowers a tier the owner was shown.</p>
+    </div>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone" aria-label="The intake question for a meal-fed cat">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="readcard">
+            <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier eye">Keep an eye out</span></div>
+            <div class="rc-why">One photo can't tell you how Nyx is doing.</div>
+            <div class="qblock"><div class="q">Has Nyx eaten a meal since 6 PM yesterday?</div><div class="qs">Your answer goes on her record and helps this read.</div><div class="answers"><span>Yes, ate well</span><span>A little</span><span>No</span><span>Not sure</span></div></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>A meal-fed cat <span class="pill">current</span></b><span>"Not sure" and no answer are the same stored fact: intake not observable. Where the answer is stored (a meal row or a dated intake fact) is D2's ruling on CUL-1118.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="The intake question for a free-fed cat in a two-cat home">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Pixel</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="readcard">
+            <div class="rc-h"><span class="rc-eyebrow">Pixel's read</span><span class="tier eye">Keep an eye out</span></div>
+            <div class="rc-why">One photo can't tell you how Pixel is doing.</div>
+            <div class="qblock"><div class="q">Did you see Pixel eat since 6 PM yesterday?</div><div class="qs">Her bowl is always out and shared, so "Didn't see" is a fine answer.</div><div class="answers"><span>Yes</span><span>No, she wouldn't</span><span class="pri">Didn't see</span></div></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>A free-fed bowl answers "not observable" <span class="pill">current</span> <span class="pill needs">wording to CUL-583</span></b><span>The question asks what the owner could have seen, not what the bowl did. "Didn't see" is first among equals, not a failure. "No, she wouldn't" is an observed refusal and counts (T10).</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="The something-else question for a dog">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Mochi</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="readcard">
+            <div class="rc-h"><span class="rc-eyebrow">Mochi's read</span><span class="tier eye">Keep an eye out</span></div>
+            <div class="rc-why">One photo can't tell you how Mochi is doing.</div>
+            <div class="qblock"><div class="q">Could Mochi have eaten something else?</div><div class="qs">Scraps, something on a walk, the bin.</div><div class="answers"><span>Yes</span><span>No</span><span>Not sure</span></div></div>
+            <span class="rc-door">After Yes: Log what he ate ›</span>
+          </div>
+        </div>
+        <div class="frame-cap"><b>Dogs are asked what a vet asks first <span class="pill">current</span></b><span>Yes opens the off-diet capture as a door; the record never grows a form (Home's rule, kept on the record too). Whether the refusal rung covers dogs is row T10b on the ruling sheet.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Both questions for a cat on a diet trial, with one answered">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="readcard">
+            <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier eye">Keep an eye out</span></div>
+            <div class="rc-why">One photo can't tell you how Nyx is doing.</div>
+            <div class="qblock"><div class="q">Has Nyx eaten a meal since 6 PM yesterday?</div><div class="qs">You said: Yes, ate well · <span style="color:var(--app-teal-ink);font-weight:500">Change</span></div></div>
+            <div class="qblock"><div class="q">Could Nyx have eaten something off her rabbit trial?</div><div class="qs">A treat, another cat's food, something on the counter.</div><div class="answers"><span>Yes</span><span>No</span><span>Not sure</span></div></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>A trial pet gets both <span class="pill">current</span></b><span>Yes opens the off-diet log for the trial (a door), so the trial's off-diet count can move. An answered question folds to one line with Change; changing it follows the same raise-only rule.</span></div>
+      </div>
+    </div>
+    <ol class="spec">
+      <li><b>VoiceOver.</b> Each question is a heading; each answer is a radio button with its position ("1 of 4"); the answered state reads "You said: Yes, ate well. Change, button." Nothing times out and nothing is announced: the question waits.</li>
+      <li><b>One home, reachable later.</b> The record, from History or the completion card's door. Under PMD-14 B a photoless vomit's question has only that route.</li>
+      <li><b>One intake predicate.</b> The answer is a new input to the shipped rule (<code>qualifyingIntakeMeals</code>, <code>intakeArm</code>), moved into an import-free module both the app and <code>analyze-vomit</code> import, never a third "is she eating" rule (GAP-28).</li>
+      <li><b>The pet is named in every question</b>, and in a two-cat home the question never guesses: a found pile's question names the pet it was logged for (MFU-5).</li>
+    </ol>
+  </section>
+
+  <!-- ═══════════════════════════ 08 ═══════════════════════════ -->
+  <section id="s08">
+    <div class="sec-head"><span class="sec-num">08</span><h2>CUL-819's disclosure, and CUL-531</h2></div>
+    <div class="col">
+      <p><b>CUL-819, ruled (a):</b> when a re-read of a replaced photo fails, the earlier call stands and the card says, beside it, that the new photo was not read. The observations are labelled as the earlier photo's, because they describe a photo no longer on screen.</p>
+      <p><b>CUL-531, yours:</b> a read where some photos could not be opened, escalated by the record alone, still prints "Blood: none visible" from the photos it did read. The issue offered hide or keep. The team recommends a third: keep the observation and say how much it covers.</p>
+    </div>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone" aria-label="CUL-819: a rescued call with the disclosure line">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Oct 23, 7:02 AM</div><div class="rec-sub">Found · Nyx · photo replaced 8:40 AM</div></div>
+          <div class="photo"></div>
+          <div class="readcard r-call">
+            <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier today">Call your vet today</span></div>
+            <div class="rc-action">Call your vet today. If they're closed, first thing tomorrow.</div>
+            <div class="rc-why">3 vomits logged since 8 AM yesterday.</div>
+            <div class="disclose">Reading the new photo didn't finish. The call above is from the earlier read at 7:05 AM.<span>Try again</span></div>
+            <div class="meta-line">From the earlier photo</div>
+            <div class="obs"><span>Blood: none visible</span><span>Foreign material: none visible</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>CUL-819 (a) <span class="pill">ruled</span> <span class="pill needs">CUL-816 lands first</span></b><span>Disclosed beside the verdict, never reverted: the diet trial's blackout rule, applied here. Try again is safe only once a refused re-run can't leave a permanent spinner (CUL-816).</span></div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="option">
+        <div class="option-head"><b>CUL-531 · A · Hide absence observations on a partial read</b><span>Keep only what was seen as present. Loses a real observation a vet might want.</span></div>
+        <div class="frames"><div class="frame"><div class="phone short" aria-label="CUL-531 option A">
+          <div class="readcard r-call"><div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier today">Call your vet today</span></div><div class="rc-why">3 vomits logged since 8 AM yesterday.</div><div class="meta-line">1 of 3 photos couldn't be opened.</div><div class="obs"><span>Texture: partly digested food</span></div></div>
+        </div></div></div>
+      </div>
+      <div class="option">
+        <div class="option-head"><b>CUL-531 · B · Keep as shipped</b><span>The owner is being sent to the vet either way, but "none visible" reads as covering all three photos.</span></div>
+        <div class="frames"><div class="frame"><div class="phone short" aria-label="CUL-531 option B">
+          <div class="readcard r-call"><div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier today">Call your vet today</span></div><div class="rc-why">3 vomits logged since 8 AM yesterday.</div><div class="obs"><span>Blood: none visible</span><span>Texture: partly digested food</span></div></div>
+        </div></div></div>
+      </div>
+      <div class="option">
+        <div class="option-head"><b>CUL-531 · C · Keep it, scoped to what was read <span class="pill">recommended</span></b><span>The claim carries its scope where the reader meets it (C-3). Nothing is lost, and nothing reads wider than it is.</span></div>
+        <div class="frames"><div class="frame"><div class="phone short" aria-label="CUL-531 option C">
+          <div class="readcard r-call"><div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier today">Call your vet today</span></div><div class="rc-why">3 vomits logged since 8 AM yesterday.</div><div class="obs"><span>Blood: none visible in the 2 photos read</span><span>Texture: partly digested food</span></div><div class="meta-line">1 photo couldn't be opened.</div></div>
+        </div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ 09 ═══════════════════════════ -->
+  <section id="s09">
+    <div class="sec-head"><span class="sec-num">09</span><h2>EN-4's floor: where it runs, offline, and why the re-run never re-sends a photo</h2></div>
+    <div class="col">
+      <p>Today the rule-based check runs only inside <code>analyze-vomit</code>, after sync, and only when a photo was attached or someone opens the record. EN-4 runs it on every vomit. It has to live somewhere that works at 3 AM with no signal, never spends the model or the photo cap, and never lowers a call the owner already saw (GAP-9, GAP-34).</p>
+    </div>
+
+    <figure class="diagram">
+      <div class="diagram-scroll">
+        <svg viewBox="0 0 980 330" role="img" aria-label="Where the floor runs: the phone writes the event and a marker together, previews the tier offline, then after the event syncs the server runs the floor over the settled record and writes the tier, raise only, never touching Storage or the model.">
+          <text class="d-lane" x="20" y="28">ON THE PHONE</text>
+          <text class="d-lane" x="560" y="28">ON THE SERVER</text>
+          <line class="d-boundary" x1="530" y1="14" x2="530" y2="320"/>
+          <rect class="d-node" x="20" y="48" width="220" height="70" rx="10"/>
+          <text class="d-label" x="34" y="74">A vomit, lethargy or meal</text>
+          <text class="d-small" x="34" y="94">is written locally, with a</text>
+          <text class="d-small" x="34" y="110">floor marker in the same transaction</text>
+          <rect class="d-node d-node-new" x="280" y="48" width="220" height="70" rx="10"/>
+          <text class="d-label d-new-text" x="294" y="74">Offline preview</text>
+          <text class="d-small" x="294" y="94">the same pure rule over local</text>
+          <text class="d-small" x="294" y="110">rows; shown, never stored</text>
+          <path class="d-new" d="M240 83 H276"/><path class="d-new-fill" d="M276 78 l8 5 -8 5z"/>
+          <rect class="d-node" x="20" y="168" width="220" height="70" rx="10"/>
+          <text class="d-label" x="34" y="194">The event pushes first</text>
+          <text class="d-small" x="34" y="214">then the marker drains, one queue</text>
+          <text class="d-small" x="34" y="230">at a time (serializeQueuePush)</text>
+          <path class="d-shipped" d="M130 118 V164"/><path class="d-shipped-fill" d="M125 160 l5 8 5-8z"/>
+          <path class="d-new" d="M240 203 H556"/><path class="d-new-fill" d="M556 198 l8 5 -8 5z"/>
+          <text class="d-small" x="300" y="195">marker + the tier the phone showed</text>
+          <rect class="d-node d-node-new" x="566" y="160" width="250" height="86" rx="10"/>
+          <text class="d-label d-new-text" x="580" y="186">Floor-only path</text>
+          <text class="d-small" x="580" y="206">reads the settled record (caller's JWT)</text>
+          <text class="d-small" x="580" y="222">same pure rule; no Storage, no model,</text>
+          <text class="d-small" x="580" y="238">no cap unit</text>
+          <rect class="d-node d-node-raised" x="566" y="48" width="250" height="70" rx="10"/>
+          <text class="d-label" x="580" y="74">The stored tier</text>
+          <text class="d-small" x="580" y="94">written raise-only through</text>
+          <text class="d-small" x="580" y="110">resolveReanalysisWrite</text>
+          <path class="d-new" d="M690 160 V124"/><path class="d-new-fill" d="M685 128 l5 -8 5 8z"/>
+          <rect class="d-node" x="840" y="160" width="124" height="86" rx="10"/>
+          <text class="d-label" x="852" y="186">24 h re-run</text>
+          <text class="d-small" x="852" y="206">each stored row's</text>
+          <text class="d-small" x="852" y="222">structured fields</text>
+          <text class="d-small" x="852" y="238">+ new context</text>
+          <path class="d-new" d="M816 203 H836"/><path class="d-new-fill" d="M836 198 l8 5 -8 5z"/>
+          <text class="d-small" x="566" y="290">Never: a photo download, a model call, a cap unit, a lower tier.</text>
+        </svg>
+      </div>
+      <figcaption>Dashed boxes are new. The phone's preview and the server's stored tier run one pure rule, so they can only disagree when the server sees rows the phone doesn't have yet.</figcaption>
+    </figure>
+
+    <ol class="spec">
+      <li><b>One pure rule.</b> An import-free, copy-free module beside <code>lib/incidentVerdict.ts</code> (so the Edge Functions can import it without pulling client copy into their closure, C-26). In: the settled rows (vomit onsets marked witnessed or found, lethargy, meal ratings, the EN-5 answers), species, age, courses on board, known conditions, and the tiers already shown. Out: a tier, a reason class and the counts behind it.</li>
+      <li><b>Its authoritative home is the server.</b> A floor-only mode of the incident pipeline in <code>_shared/incident-analysis.ts</code> (a request mode on <code>analyze-vomit</code> or a small sibling function, decided in PR-28's plan). It reads the settled record with the caller's JWT, computes the context flags and the tier, and writes the read fields only, through <code>resolveReanalysisWrite</code>. A Deno test drives it with a fake client whose Storage download and model call both throw, and it must complete.</li>
+      <li><b>Triggers.</b> The insert of a vomit, a lethargy log or a meal; a later rating on a meal; the edit or soft delete of any of those. A delete re-runs the floor and can still never lower a shown tier.</li>
+      <li><b>The durable marker.</b> A local queue row written in the same local transaction as the event. It is a schema constant and on the wipe list (<code>LOCAL_WIPE_TABLES</code>), survives the app being killed, and drains only after the event's own push has landed, marking the version it sent (C-23, C-24).</li>
+      <li><b>Offline.</b> The phone runs the same rule over local SQLite and shows the tier on the completion card and the record, with one line: "Worked out on this phone. It's saved when Nyx's record syncs." The preview never reaches History, the month or Home's band, which read the stored tier. The tier the phone showed rides the marker, and the stored tier is never below it, since an owner who was told "call now" was told it.</li>
+      <li><b>The 24-hour re-run.</b> A lethargy log or a refusal re-runs the floor over every vomit of the same pet in the prior 24 hours. It reads each stored row's structured fields for photo findings (Pattern 9), adds the new context, and writes the tier. It never downloads a photo, never calls the model, never regenerates model words and never spends a cap unit. A raised read's words are the context template for its new reason.</li>
+      <li><b>One arrival per bout</b> (GAP-33). When a re-run raises several reads of one bout at once, only the most recent carries the arrival, the announcement and Home's row; the others take the tier silently and render as part of it.</li>
+      <li><b>Never lower a shown tier.</b> A recompute may add evidence; only the owner's own act lowers a verdict, recorded as such. Proven by mutation: delete the guard and a test with "call today at 8:00, a meal rated All at 12:00" goes red.</li>
+      <li><b>Counting.</b> The rungs count witnessed onsets in a span that contains this vomit and two others, merged within 30 minutes of the first without chaining. Found piles count toward the 24-hour rule and are dated by when they were found, never as onsets. It is a second, differently named predicate beside <code>lib/symptomEpisodes.ts</code>, registered under C-34, and its copy says "vomits logged", never "episodes" (GAP-10).</li>
+      <li><b>Behind the flag.</b> Flag-off never runs the floor-only path, so today is byte-identical; a flag rollback never lowers a tier written under the flag (R-1).</li>
+      <li><b>Known limits, stated where the tier shows.</b> A found pile in a two-cat home goes to the pet on screen (CUL-807, MFU-5); the tier names the pet it was logged for. Species "other" runs the count rungs only (T26). An unknown birthday prints the young-animal line (T7).</li>
+    </ol>
+  </section>
+
+  <!-- ═══════════════════════════ 10 ═══════════════════════════ -->
+  <section id="s10">
+    <div class="sec-head"><span class="sec-num">10</span><h2>The sign-to-tier table, for the ruling sheet and the vet review</h2></div>
+    <div class="col">
+      <p>One table that EN-4's floor, EN-3's watch-for lists, EN-5 and the shipped Noticed door (<code>lib/lookEmergency.ts</code>) all read, so they can never give three answers again (BRK-3). The direction column compares each row with today's single "Worth a call". Under E-6, a louder row is adopted provisionally; a quieter row waits on harness proof (PR-16's pass line: no injected red flag below its shipped tier), your sign-off and the paid vet review (CUL-1312). Where two tables disagree today, the louder row stands until then.</p>
+      <p>Every threshold here is a placeholder for Dr. Chen's ruling sheet (CUL-583). None is tuned on Nyx's record or the demo pets.</p>
+    </div>
+    <div class="rule-key">
+      <span><span class="dir louder">louder</span> fires more than today; adopted provisionally</span>
+      <span><span class="dir same">same</span> today's behaviour, new words</span>
+      <span><span class="dir quieter">quieter</span> fires less; waits on harness, you and the vet</span>
+      <span>Shaded rows are contested; grey rows are held.</span>
+    </div>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="The sign-to-tier table">
+      <table class="grid">
+        <thead><tr><th>#</th><th>Sign</th><th>Who</th><th>Window</th><th>Proposed tier</th><th>Today</th><th>vs today</th><th>For the vet to rule</th></tr></thead>
+        <tbody>
+          <tr><th>T1</th><td>Three vomits logged, witnessed</td><td>All</td><td>30 min</td><td><b>Call now</b></td><td>Worth a call</td><td><span class="dir louder">louder</span></td><td>The 30-minute merge gap; whether three re-logs of one bout can reach this (they cannot once merged)</td></tr>
+          <tr><th>T2</th><td>Three witnessed vomits in a span containing this one</td><td>All</td><td>~4 h</td><td><b>Call now</b></td><td>Worth a call (2 in 4 h)</td><td><span class="dir louder">louder</span></td><td>The span length</td></tr>
+          <tr class="contested"><th>T3</th><td>Vomiting with lethargy logged</td><td>All</td><td>24 h before the vomit to a fixed bound after it</td><td><b>Call now</b></td><td>Worth a call; the Noticed door says call today</td><td><span class="dir louder">louder</span></td><td>Contested (BRK-3). The door moves up to match until ruled. The bound after the vomit (TD-2)</td></tr>
+          <tr class="contested"><th>T4</th><td>Three vomits in 24 h (found piles count)</td><td>Adult cat, dog</td><td>24 h</td><td><b>Call today</b></td><td>Worth a call</td><td><span class="dir same">same</span></td><td>Cats: call today or call now</td></tr>
+          <tr class="contested"><th>T5a</th><td>Two vomits within 4 h</td><td>Adult cat</td><td>4 h</td><td><b>Call today</b>, provisionally (today's row stands)</td><td>Worth a call</td><td><span class="dir same">same</span></td><td>EN-4's draft makes this keep an eye out, which is <span class="dir quieter">quieter</span>: it waits on the harness, you and the vet</td></tr>
+          <tr><th>T5b</th><td>Two vomits in 24 h, more than 4 h apart</td><td>Adult cat</td><td>24 h</td><td><b>Keep an eye out</b>, counted toward the pattern</td><td>Nothing</td><td><span class="dir same">same</span></td><td>Confirm</td></tr>
+          <tr class="contested"><th>T6</th><td>Two vomits in 24 h</td><td>Dog</td><td>24 h</td><td><b>Call today</b> (the Noticed door's row)</td><td>Worth a call if within 4 h</td><td><span class="dir louder">louder</span></td><td>EN-4's draft said keep an eye out; the louder row stands</td></tr>
+          <tr><th>T7</th><td>Two vomits in 24 h, under 6 months or no birthday on file</td><td>All</td><td>24 h</td><td><b>Call today</b></td><td>Worth a call if within 4 h</td><td><span class="dir louder">louder</span></td><td>The age cut; unknown age prints the line</td></tr>
+          <tr><th>T8</th><td>Vomiting on three days in a row</td><td>All</td><td>3 days</td><td><b>Call today</b> (the persistence rung)</td><td>Nothing unless 3 in 24 h</td><td><span class="dir louder">louder</span></td><td>Two days or three (GAP-5)</td></tr>
+          <tr><th>T9</th><td>Another vomit while a call today is open</td><td>All</td><td>While open</td><td><b>Call now</b> (the accumulation rung)</td><td>Another worth a call</td><td><span class="dir louder">louder</span></td><td>How long a call today stays open (GAP-33)</td></tr>
+          <tr><th>T10</th><td>Vomit with an observed refusal: two of the last three qualifying meals refused or picked (treats and free-fed bowls excluded), or EN-5's "No"</td><td>Cat</td><td>3 days</td><td><b>Call today</b></td><td>Worth a call on a weaker test</td><td><span class="dir same">same</span></td><td>Rides the one shipped intake predicate (GAP-28); unrated meals are unknown, never refusal</td></tr>
+          <tr class="contested"><th>T10b</th><td>The same, for a dog</td><td>Dog</td><td>24 h</td><td><b>Call today</b> if no food for 24 h (the Noticed door's row)</td><td>Nothing</td><td><span class="dir louder">louder</span></td><td>Whether the refusal rung covers dogs</td></tr>
+          <tr class="held"><th>T11</th><td>Retching with nothing produced, or a swollen belly</td><td>Dog</td><td>—</td><td><b>Go now</b> (emergency)</td><td>Nothing</td><td><span class="dir louder">louder</span></td><td>Held: no way to log it yet (GAP-14). Meanwhile a static line on every dog read. Size and the kennel-cough exclusion</td></tr>
+          <tr><th>T12</th><td>Photo: dark, gritty (digested) blood</td><td>All</td><td>—</td><td><b>Call now</b></td><td>Worth a call</td><td><span class="dir louder">louder</span></td><td>Confirm</td></tr>
+          <tr class="contested"><th>T13</th><td>Photo: fresh red blood</td><td>All</td><td>—</td><td><b>Call now</b></td><td>Worth a call</td><td><span class="dir louder">louder</span></td><td>A streak against a lot: call today for a streak?</td></tr>
+          <tr class="contested"><th>T14</th><td>Photo: foreign material present</td><td>All</td><td>—</td><td><b>Call today</b>; string or thread in a cat, <b>call now</b></td><td>Worth a call</td><td><span class="dir same">same</span></td><td>Toy fragment in a bright dog (GAP-13's 10 PM case)</td></tr>
+          <tr><th>T15</th><td>Photo: blood-like colour, blood "unsure"</td><td>All</td><td>—</td><td><b>Call today</b></td><td>Keep an eye out ("unsure" never escalates)</td><td><span class="dir louder">louder</span></td><td>Needs a presence field (GAP-31)</td></tr>
+          <tr><th>T16</th><td>Photo: possible worms</td><td>All</td><td>—</td><td><b>Call today</b> (the single-incident finding)</td><td>Only the model's own call</td><td><span class="dir louder">louder</span></td><td>Needs a presence field. Whether "call today" or "mention at the next visit"</td></tr>
+          <tr class="contested"><th>T17</th><td>Photo: a tablet or pill visible</td><td>All</td><td>—</td><td><b>Call today</b>; a critical drug, <b>call now</b></td><td>Only the model's own call</td><td><span class="dir louder">louder</span></td><td>Whether a dose was lost; needs the drug list (T20)</td></tr>
+          <tr class="contested"><th>T18</th><td>Photo: plant material</td><td>Cat</td><td>—</td><td><b>Call now</b> if a lily is possible, else <b>call today</b></td><td>Only the model's own call</td><td><span class="dir louder">louder</span></td><td>The lily question's wording</td></tr>
+          <tr><th>T19</th><td>The model's own escalation with no structured field behind it</td><td>All</td><td>—</td><td><b>Call today</b>, its words kept, counted separately</td><td>Worth a call</td><td><span class="dir same">same</span></td><td>Interim until presence fields exist (GAP-31); never call now, never lower</td></tr>
+          <tr><th>T20</th><td>A critical drug on board (insulin, anti-seizure, cardiac) and any vomit</td><td>All</td><td>—</td><td><b>Call today</b></td><td>Nothing</td><td><span class="dir louder">louder</span></td><td>The curated list (GAP-7)</td></tr>
+          <tr><th>T21</th><td>A course started in the last 14 days and vomiting</td><td>All</td><td>14 days</td><td><b>Call today</b></td><td>Nothing</td><td><span class="dir louder">louder</span></td><td>The window</td></tr>
+          <tr class="contested"><th>T22</th><td>A known condition (kidney disease, diabetes, IBD) and a vomit</td><td>All</td><td>—</td><td>One rung up from the count's tier, or none</td><td>Nothing</td><td><span class="dir louder">louder</span></td><td>A chronic vomiter would call every time: which conditions, if any</td></tr>
+          <tr class="contested"><th>T23</th><td>A normal stool after a recent vomit</td><td>All</td><td>24 h</td><td>No call from the stool (EN-7)</td><td>Worth a call, saying "loose stool"</td><td><span class="dir quieter">quieter</span></td><td>Removes a false sentence but fires less, so it waits on the harness</td></tr>
+          <tr><th>T24</th><td>A loose stool while the vomiting meets T4</td><td>All</td><td>24 h</td><td><b>Call today</b></td><td>Worth a call</td><td><span class="dir same">same</span></td><td>Confirm</td></tr>
+          <tr><th>T25</th><td>A cough logged beside vomiting</td><td>All</td><td>—</td><td>No discount; the shipped "either count may hold the other's events" disclosure</td><td>The disclosure</td><td><span class="dir same">same</span></td><td>The breathing arm in the call copy (GAP-29)</td></tr>
+          <tr><th>T26</th><td>Species "other"</td><td>Other</td><td>—</td><td>Count rungs only (T1, T2, T4, T8, T9)</td><td>Same as a cat without the cat rules</td><td><span class="dir same">same</span></td><td>What the floor does for species "other" (R-4)</td></tr>
+          <tr><th>T27</th><td>Four or more vomits in 7 days with no earlier week</td><td>All</td><td>7 days</td><td>The burden card on Home (CUL-1311), not a read tier</td><td>Nothing</td><td><span class="dir louder">louder</span></td><td>The count; must be live before PR-28</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ 11 ═══════════════════════════ -->
+  <section id="s11">
+    <div class="sec-head"><span class="sec-num">11</span><h2>Your three rulings</h2></div>
+    <div class="briefs">
+      <div class="brief">
+        <h4>K1 · PMD-14: where a later or photoless call shows <span class="pill open">decide before PR-28 and PR-30</span></h4>
+        <p><b>Deciding:</b> whether a vomit with no photo whose check says "call now" takes the owner to its record.</p>
+        <ul>
+          <li><b>A (recommended):</b> call now routes to the record; every call joins Home's band; a later raise is said on the log that caused it. The 3 AM owner sees the reason and the script without hunting.</li>
+          <li><b>B:</b> Home's band and the completion card only; incident D2 unchanged. Fewer screens, but the call's detail and EN-5's question sit one History tap away.</li>
+        </ul>
+        <p><b>Consequence:</b> A needs a Tier-2 edit to <code>docs/nyx-incident-screen-requirements.md</code> D2 and G3 (drafted in the spec, §6). Either way unblocks PR-28 and PR-30. §06 draws both.</p>
+      </div>
+      <div class="brief">
+        <h4>K2 · What puts a read in "part of a pattern" <span class="pill open">decide before PR-25</span></h4>
+        <p><b>Deciding:</b> whether "part of a pattern" is a stored value or drawn at render. This is a better-than-the-rule brief: D1 (9/26) named it as one of four stored tiers, to stop a pattern being called once per vomit.</p>
+        <ul>
+          <li><b>Drawn at render (recommended):</b> store three tiers; a read below a call shows "Part of a pattern" while Home holds a live finding on the same sign, and "Keep an eye out" otherwise. It never goes stale against Home, and EN-3 no longer waits on EN-9.</li>
+          <li><b>Stored:</b> the floor writes <code>pattern</code> when a finding is live at read time. A September read keeps pointing at a concern Home stood down in October (GAP-11's counterexample), and EN-3 must wait for PR-23.</li>
+        </ul>
+        <p><b>Consequence:</b> the protection D1 wanted (no call per vomit for a known pattern) holds either way, because the call tiers come from §10's rows, not from this chip. Recommended keeps the migration at four values.</p>
+      </div>
+      <div class="brief">
+        <h4>K3 · CUL-531: an observation from a partial read <span class="pill open">decide any time before PR-27</span></h4>
+        <p><b>Deciding:</b> what "Blood: none visible" says when one of three photos couldn't be opened.</p>
+        <ul>
+          <li><b>C, scope it (recommended):</b> "none visible in the 2 photos read" plus "1 photo couldn't be opened". Keeps the vet's context and reads no wider than it is.</li>
+          <li><b>A, hide it:</b> loses a real observation.</li>
+          <li><b>B, keep as shipped:</b> reads as covering all three photos.</li>
+        </ul>
+        <p><b>Consequence:</b> C is a copy change in PR-27 on the record and the stool record; the vet report is already guarded and doesn't move.</p>
+      </div>
+    </div>
+
+    <h3>Not yours, and where they go</h3>
+    <ul class="next-list">
+      <li><b>The contested rows of §10</b> (T3, T4, T5a, T6, T10b, T13, T14, T17, T18, T22, T23) go to Dr. Chen's ruling sheet (CUL-583) and the paid vet review (CUL-1312) as one packet. The copy in §02 is written against the proposed column and rewritten if a row moves.</li>
+      <li><b>The free-fed check's wording</b> (§07) goes to CUL-583.</li>
+      <li><b>The Tier-2 edits</b> this round implies are listed in the spec's §12: incident screen D2 and G3 (only under K1 A), the vet report spec's line that the report renders no tier, and the clinical-guardrails skill's Patterns 1 and 2 (rewritten in PR-26, not here).</li>
+    </ul>
+  </section>
+
+  <footer>
+    <span>Per-incident read tiers · round 1 · 2026-09-28</span>
+    <span>Canonical: <code>docs/culprit-incident-tiers-mockups.html</code>; spec <code>docs/nyx-incident-tiers-requirements.md</code></span>
+    <span>CUL-1133 · CUL-1134 · CUL-819 · CUL-531 · Engines v3 PR-24</span>
+  </footer>
+</div>
