@@ -315,23 +315,25 @@
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 1 · 2026-09-28</span><span>Engines v3 · PR-24 · CUL-1133 EN-3 + CUL-1134 EN-4</span><span>Wave 4 discovery · no code</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 1 · ruled 2026-09-28</span><span>Engines v3 · PR-24 · CUL-1133 EN-3 + CUL-1134 EN-4</span><span>Wave 4 discovery · no code</span></p>
     <h1>The per-incident read, in four tiers</h1>
     <p class="standfirst">Today every warning from a vomit or stool photo says one thing, "Worth a call". You ruled four tiers on 9/26: call now, call today, part of a pattern, and keep an eye out. This page draws them on every surface that shows a read, says how each one is spoken, and draws the day they go live. It also draws the three things only you can rule (PMD-14, what puts a read in "part of a pattern", and CUL-531), EN-5's question, CUL-819's disclosure, where EN-4's check runs, and the sign-to-tier table the vet review reads.</p>
 
+    <div class="ledger" aria-label="Your rulings on this round, and what each one moved">
+      <div><b><q>Defaults on K1, K2, K3</q></b><span>K1 = A: a photoless call now lands on its record and every call joins Home's band. Option B has left the page. K2 = drawn at render: "Part of a pattern" is never stored, and the tier column has four values. K3 = C: the partial-read observation is scoped. Options A and B have left the page. Git keeps the retired frames (commit 4bae51d). <span class="pill">ruled · §06, §08, §11</span></span></div>
+    </div>
     <div class="ledger" aria-label="What the plan asked PR-24 to draw, and where it is on this page">
       <div><b>The four tiers on every surface, one tier-word map, the spoken contract</b><span>One map feeds every word, colour and count. Both call tiers share the rose; fill versus outline and the words carry now versus today, never hue alone. <span class="pill">current · §01–§04</span></span></div>
       <div><b>The GA day: old reads never get new words; the month never adds two rules into one number</b><span>An old "Worth a call" stays "Worth a call" forever. The month's legend splits its count at the go-live date. <span class="pill">current · §05</span></span></div>
-      <div><b>PMD-14, for your ruling</b><span>Where a call with no photo, or one raised after the save, appears. Drawn both ways side by side. <span class="pill open">decide · §06</span></span></div>
+      <div><b>PMD-14, for your ruling</b><span>Where a call with no photo, or one raised after the save, appears. A photoless call now lands on its record; every call joins Home's band. <span class="pill">ruled A · §06</span></span></div>
       <div><b>EN-5's question</b><span>A free-fed bowl answers "Didn't see", stored as not observable. Dogs and trial pets are asked "Could he have eaten something else?". No time limit; a heading and a radio group for VoiceOver. <span class="pill">current · §07</span></span></div>
-      <div><b>CUL-819 (a) and CUL-531</b><span>The disclosure line under a rescued call. CUL-531 drawn three ways; the team recommends scoping the observation, which neither of the issue's two options did. <span class="pill">current · §08</span> <span class="pill open">CUL-531 decide</span></span></div>
+      <div><b>CUL-819 (a) and CUL-531</b><span>The disclosure line under a rescued call. CUL-531 ruled C: the observation is scoped to the photos read. <span class="pill">current · §08</span> <span class="pill">ruled C</span></span></div>
       <div><b>EN-4's floor spec</b><span>Runs on the server from a durable marker; offline the phone shows a preview it never stores. The 24-hour re-run reads the stored fields and never re-sends a photo. <span class="pill">current · §09</span></span></div>
       <div><b>The adversarial pass on this round's first draft</b><span>It failed the draft: six rows would have shown an owner something calmer than today with no "quieter" mark (the feline intake arm, species "other", the counting merge, the stool rows, a writer that skipped the tier, a photoless vomit labelled calm). Every one is fixed on this page and in the spec's §13. <span class="pill">applied</span></span></div>
       <div><b>The sign-to-tier table</b><span>35 rows for the ruling sheet (CUL-583) and the paid vet review (CUL-1312). Every row that fires less than today is marked and waits on harness proof and your sign-off. <span class="pill needs">to the ruling sheet · §10</span></span></div>
     </div>
     <div class="rule-key">
       <span><span class="pill">current</span> the proposal</span>
-      <span><span class="pill open">decide</span> yours to rule</span>
       <span><span class="pill needs">needs X</span> waits on X before it can be built</span>
     </div>
     <p class="note" style="margin-top:22px"><b>What the frames are.</b> Nyx is the dogfood cat; Pixel is Sam's free-fed cat; Mochi is Jordan's dog. Every date after Oct 20 is illustrative, and Oct 20 stands in for whatever day the tiers go live. Every count on a frame is one the rules in §10 would produce for that frame's setup, not a replay of the real record.</p>
@@ -346,7 +348,7 @@
       <a href="#s08"><span>08</span>CUL-819 and CUL-531</a>
       <a href="#s09"><span>09</span>EN-4's floor: where it runs</a>
       <a href="#s10"><span>10</span>The sign-to-tier table</a>
-      <a href="#s11"><span>11</span>Your three rulings</a>
+      <a href="#s11"><span>11</span>The three rulings</a>
     </nav>
   </header>
 
@@ -355,7 +357,7 @@
     <div class="sec-head"><span class="sec-num">01</span><h2>One tier-word map feeds every word, colour and count</h2></div>
     <div class="col">
       <p>The tier is a new column written beside today's verdict, never in place of it (the critique's GAP-3, CUL-1277). Old phones keep reading the old column and keep today's words. New phones read the tier, and every word they draw or speak for it comes from this one map. A build guard fails on the literal "worth a call" anywhere outside the map (WBC-1).</p>
-      <p>"Part of a pattern" is drawn here as a tier the owner sees. Whether it is also a <em>stored</em> value is your second ruling (§11, K2); the team recommends it is drawn at render from a live Home finding and never stored.</p>
+      <p>"Part of a pattern" is a tier the owner sees and never a stored value (K2, ruled 2026-09-28): it is drawn at render on a "Keep an eye out" read that a live Home finding covers.</p>
     </div>
 
     <div class="specimens" aria-label="The tier chips as the app would draw them">
@@ -452,7 +454,7 @@
             <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
           </div>
         </div>
-        <div class="frame-cap"><b>pattern <span class="pill needs">needs K2's ruling</span></b><span>The line never restates Home's ask and never quotes a care state ("seen by your vet"), so it cannot contradict Home the way GAP-11's Sep 10 read did. The door is the only link. Below it, the same list as "Keep an eye out", because this read is not a call on its own.</span></div>
+        <div class="frame-cap"><b>pattern, drawn at render <span class="pill">current · K2 ruled</span></b><span>The line never restates Home's ask and never quotes a care state ("seen by your vet"), so it cannot contradict Home the way GAP-11's Sep 10 read did. The door is the only link. Below it, the same list as "Keep an eye out", because this read is not a call on its own.</span></div>
       </div>
 
       <div class="frame">
@@ -537,7 +539,7 @@
             <div class="zone-foot"><span>A read of Nyx's logs, not a diagnosis.</span><span>All patterns ›</span></div>
           </div>
         </div>
-        <div class="frame-cap"><b>Home's safety band <span class="pill">current</span> <span class="pill needs">row 2 needs PMD-14 (A)</span></b><span>"Now" is on the Home row itself (GAP-13). The second row, a call from the record with no photo concern, reaches Home only if you rule PMD-14 option A; today contextual calls never reach Home.</span></div>
+        <div class="frame-cap"><b>Home's safety band <span class="pill">current</span> <span class="pill">PMD-14 ruled A</span></b><span>"Now" is on the Home row itself (GAP-13). The second row is a call from the record with no photo concern; under PMD-14 (ruled A) it joins Home's band, where today contextual calls never reach Home.</span></div>
       </div>
 
       <div class="frame">
@@ -693,15 +695,14 @@
     <div class="sec-head"><span class="sec-num">06</span><h2>PMD-14: where a call with no photo, or a call raised later, shows up</h2></div>
     <div class="col">
       <p>Today a vomit logged without a photo gets a five-second completion beat and nothing else. The incident spec (D2) says its escalation is the Home red-flag card's job, but that card reads only photo fields, so D2's premise is false. EN-4 makes every vomit checked, which means a 3 AM cat with three photoless vomits in four hours will compute "call your vet now" and, as things stand, show it nowhere. A call raised later (lethargy logged at 9:15 over a 7:02 read) repaints a record nobody has open.</p>
-      <p>Both options below put the call on Home's safety band. They differ on whether a photoless call now takes the owner to its record. The team recommends A.</p>
+      <p><b>Ruled A (2026-09-28).</b> A photoless call now takes the owner to its record, every call joins Home's safety band, and a later raise is said once on the log that raised it. The incident spec's D2 and G3 are amended to match (v1.2). Option B, band and completion card only, has left the page.</p>
     </div>
 
     <div class="side">
-      <div class="option">
-        <div class="option-head"><b>A · A photoless call now lands on its record; every call joins Home's band <span class="pill">recommended</span></b><span>Amends incident D2: a photoless vomit whose check returns call now routes to its record, the way a photographed one does. Call today stays on the completion path, said once there, and held on Home's band. A log that raises an earlier read says so on its own completion.</span></div>
-        <div class="frames">
+      <div>
+        <div class="frames" style="margin-top:0">
           <div class="frame">
-            <div class="phone" aria-label="Option A: a photoless vomit at 3 AM lands on its record with call now">
+            <div class="phone" aria-label="A photoless vomit at 3 AM lands on its record with call now">
               <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
               <div><div class="back">‹</div><div class="rec-title">Vomit · Oct 25, 3:12 AM</div><div class="rec-sub">Witnessed · Nyx</div></div>
               <div class="nophoto">No photo · Add one</div>
@@ -713,10 +714,10 @@
                 <div class="qblock"><div class="q">Has Nyx eaten a meal since 6 PM yesterday?</div><div class="answers"><span>Yes, ate well</span><span>A little</span><span>No</span><span>Not sure</span></div></div>
               </div>
             </div>
-            <div class="frame-cap"><b>A · the 3 AM photoless triple</b><span>Principle 1 survives by scope: only a call now routes, and the record needs no decision to be read. EN-5's question gets its one home here.</span></div>
+            <div class="frame-cap"><b>The 3 AM photoless triple <span class="pill">current · ruled A</span></b><span>Principle 1 survives by scope: only a call now routes, and the record needs no decision to be read. EN-5's question gets its one home here.</span></div>
           </div>
           <div class="frame">
-            <div class="phone short" aria-label="Option A: the completion card of a lethargy log that raised an earlier read">
+            <div class="phone short" aria-label="The completion card of a lethargy log that raised an earlier read">
               <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
               <div class="complete">
                 <span class="c1">Lethargy logged</span>
@@ -726,26 +727,7 @@
               </div>
               <div class="card"><div class="zone-label">Signal</div><div class="railed door"><div class="body"><div class="head">Vomiting, and low on energy since 9:15 AM</div><div class="sub"><span class="ask-in">Call your vet now</span> · an emergency clinic if they're closed</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div></div>
             </div>
-            <div class="frame-cap"><b>A · raised after the save</b><span>Said once, on the log that raised it; the completion card holds while a call is on it (a dialog-style dwell pause, C-21), then Home's band carries it.</span></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="option">
-        <div class="option-head"><b>B · Home's band and the completion card only; D2 unchanged</b><span>A photoless vomit keeps the shipped completion path. Its call is said on the completion card and held on Home's band. The record carries the call when someone opens it.</span></div>
-        <div class="frames">
-          <div class="frame">
-            <div class="phone short" aria-label="Option B: the completion card for a photoless vomit with call now">
-              <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
-              <div class="complete">
-                <span class="c1">Vomit logged</span>
-                <span class="c2">Saved to Nyx's record · 3:12 AM</span>
-                <span class="c4">From what's logged: call your vet now, or an emergency clinic if they're closed.</span>
-                <span class="c3">Open the record ›</span>
-              </div>
-              <div class="card"><div class="zone-label">Signal</div><div class="railed door"><div class="body"><div class="head">3 vomits logged since 11:40 PM</div><div class="sub"><span class="ask-in">Call your vet now</span> · an emergency clinic if they're closed</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div></div>
-            </div>
-            <div class="frame-cap"><b>B · the 3 AM photoless triple</b><span>Fewer screens, D2 untouched. Cost: the call's reason and script live one tap further away at the worst moment, and EN-5's question can only live on a record the owner has to open from History.</span></div>
+            <div class="frame-cap"><b>Raised after the save <span class="pill">current · ruled A</span></b><span>Said once, on the log that raised it; the completion card holds while a call is on it (a dialog-style dwell pause, C-21), then Home's band carries it.</span></div>
           </div>
         </div>
       </div>
@@ -753,7 +735,7 @@
 
     <div class="frames">
       <div class="frame">
-        <div class="phone" aria-label="Both options: an open record whose read was raised later">
+        <div class="phone" aria-label="An open record whose read was raised later">
           <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
           <div><div class="back">‹</div><div class="rec-title">Vomit · Oct 26, 7:02 AM</div><div class="rec-sub">Found · Nyx</div></div>
           <div class="photo"></div>
@@ -765,7 +747,7 @@
             <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
           </div>
         </div>
-        <div class="frame-cap"><b>Both options · a read raised later <span class="pill">current</span></b><span>A tier changed after it was first shown carries a record-fact line: what it was, when it changed and which log changed it. It only ever goes up; the shown tier is stored and never recomputed down (GAP-34).</span></div>
+        <div class="frame-cap"><b>A read raised later <span class="pill">current</span></b><span>A tier changed after it was first shown carries a record-fact line: what it was, when it changed and which log changed it. It only ever goes up; the shown tier is stored and never recomputed down (GAP-34).</span></div>
       </div>
     </div>
   </section>
@@ -830,7 +812,7 @@
     </div>
     <ol class="spec">
       <li><b>VoiceOver.</b> Each question is a heading; each answer is a radio button with its position ("1 of 4"); the answered state reads "You said: Yes, ate well. Change, button." Nothing times out and nothing is announced: the question waits.</li>
-      <li><b>One home, reachable later.</b> The record, from History or the completion card's door. Under PMD-14 B a photoless vomit's question has only that route.</li>
+      <li><b>One home, reachable later.</b> The record, from History or the completion card's door; a photoless call now lands there directly (PMD-14, ruled A).</li>
       <li><b>One intake predicate.</b> The answer is a new input to the shipped rule (<code>qualifyingIntakeMeals</code>, <code>intakeArm</code>), moved into an import-free module both the app and <code>analyze-vomit</code> import, never a third "is she eating" rule (GAP-28).</li>
       <li><b>The pet is named in every question</b>, and in a two-cat home the question never guesses: a found pile's question names the pet it was logged for (MFU-5).</li>
     </ol>
@@ -841,7 +823,7 @@
     <div class="sec-head"><span class="sec-num">08</span><h2>CUL-819's disclosure, and CUL-531</h2></div>
     <div class="col">
       <p><b>CUL-819, ruled (a):</b> when a re-read of a replaced photo fails, the earlier call stands and the card says, beside it, that the new photo was not read. The observations are labelled as the earlier photo's, because they describe a photo no longer on screen.</p>
-      <p><b>CUL-531, yours:</b> a read where some photos could not be opened, escalated by the record alone, still prints "Blood: none visible" from the photos it did read. The issue offered hide or keep. The team recommends a third: keep the observation and say how much it covers.</p>
+      <p><b>CUL-531, ruled C (2026-09-28):</b> a read where some photos could not be opened keeps its observation and says how much it covers. Hiding it (A) and keeping it as shipped (B) have left the page.</p>
     </div>
     <div class="frames">
       <div class="frame">
@@ -863,23 +845,10 @@
     </div>
 
     <div class="side">
-      <div class="option">
-        <div class="option-head"><b>CUL-531 · A · Hide absence observations on a partial read</b><span>Keep only what was seen as present. Loses a real observation a vet might want.</span></div>
-        <div class="frames"><div class="frame"><div class="phone short" aria-label="CUL-531 option A">
-          <div class="readcard r-call"><div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier today">Call your vet today</span></div><div class="rc-why">3 vomits logged since 8 AM yesterday.</div><div class="meta-line">1 of 3 photos couldn't be opened.</div><div class="obs"><span>Texture: partly digested food</span></div></div>
-        </div></div></div>
-      </div>
-      <div class="option">
-        <div class="option-head"><b>CUL-531 · B · Keep as shipped</b><span>The owner is being sent to the vet either way, but "none visible" reads as covering all three photos.</span></div>
-        <div class="frames"><div class="frame"><div class="phone short" aria-label="CUL-531 option B">
-          <div class="readcard r-call"><div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier today">Call your vet today</span></div><div class="rc-why">3 vomits logged since 8 AM yesterday.</div><div class="obs"><span>Blood: none visible</span><span>Texture: partly digested food</span></div></div>
-        </div></div></div>
-      </div>
-      <div class="option">
-        <div class="option-head"><b>CUL-531 · C · Keep it, scoped to what was read <span class="pill">recommended</span></b><span>The claim carries its scope where the reader meets it (C-3). Nothing is lost, and nothing reads wider than it is.</span></div>
-        <div class="frames"><div class="frame"><div class="phone short" aria-label="CUL-531 option C">
+      <div>
+        <div class="frames" style="margin-top:0"><div class="frame"><div class="phone short" aria-label="CUL-531 as ruled: the observation scoped to the photos read">
           <div class="readcard r-call"><div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier today">Call your vet today</span></div><div class="rc-why">3 vomits logged since 8 AM yesterday.</div><div class="obs"><span>Blood: none visible in the 2 photos read</span><span>Texture: partly digested food</span></div><div class="meta-line">1 photo couldn't be opened.</div></div>
-        </div></div></div>
+        </div><div class="frame-cap"><b>CUL-531, ruled C <span class="pill">current</span></b><span>The claim carries its scope where the reader meets it (C-3). The vet keeps the observation, and it reads no wider than it is. A copy change in PR-27; the vet report is already guarded.</span></div></div></div>
       </div>
     </div>
   </section>
@@ -1009,35 +978,19 @@
 
   <!-- ═══════════════════════════ 11 ═══════════════════════════ -->
   <section id="s11">
-    <div class="sec-head"><span class="sec-num">11</span><h2>Your three rulings</h2></div>
+    <div class="sec-head"><span class="sec-num">11</span><h2>The three rulings (2026-09-28)</h2></div>
     <div class="briefs">
       <div class="brief">
-        <h4>K1 · PMD-14: where a later or photoless call shows <span class="pill open">decide before PR-28 and PR-30</span></h4>
-        <p><b>Deciding:</b> whether a vomit with no photo whose check says "call now" takes the owner to its record.</p>
-        <ul>
-          <li><b>A (recommended):</b> call now routes to the record; every call joins Home's band; a later raise is said on the log that caused it. The 3 AM owner sees the reason and the script without hunting.</li>
-          <li><b>B:</b> Home's band and the completion card only; incident D2 unchanged. Fewer screens, but the call's detail and EN-5's question sit one History tap away.</li>
-        </ul>
-        <p><b>Consequence:</b> A needs a Tier-2 edit to <code>docs/nyx-incident-screen-requirements.md</code> D2 and G3 (drafted in the spec, §6). Either way unblocks PR-28 and PR-30. §06 draws both.</p>
+        <h4>K1 · PMD-14 <span class="pill">ruled A</span></h4>
+        <p>A photoless vomit whose check says "call now" lands on its record; every call joins Home's safety band; a later raise is said once on the completion of the log that raised it. The incident spec's D2 and G3 are amended (v1.2). Unblocks PR-28 and PR-30.</p>
       </div>
       <div class="brief">
-        <h4>K2 · What puts a read in "part of a pattern" <span class="pill open">decide before PR-25</span></h4>
-        <p><b>Deciding:</b> whether "part of a pattern" is a stored value or drawn at render. This is a better-than-the-rule brief: D1 (9/26) named it as one of four stored tiers, to stop a pattern being called once per vomit.</p>
-        <ul>
-          <li><b>Drawn at render (recommended):</b> store three tiers; a "Keep an eye out" read that is in a live Home finding's evidence shows "Part of a pattern" on the record and the gallery, and nowhere else (never History, the month or charts, never on a call or an unread photo). It never goes stale against Home, and EN-3 no longer waits on EN-9.</li>
-          <li><b>Stored:</b> the floor writes <code>pattern</code> when a finding is live at read time. A September read keeps pointing at a concern Home stood down in October (GAP-11's counterexample), and EN-3 must wait for PR-23.</li>
-        </ul>
-        <p><b>Consequence:</b> the protection D1 wanted (no call per vomit for a known pattern) holds either way, because the call tiers come from §10's rows, not from this chip. Recommended keeps the migration at four values.</p>
+        <h4>K2 · "Part of a pattern" <span class="pill">ruled: drawn at render</span></h4>
+        <p>Never stored. It shows only on a "Keep an eye out" read that a live Home finding covers, on the record and the gallery, never in History, the month or charts. This amends D1's stored fourth tier. PR-25's tier column has four values: <code>call_now</code>, <code>call_today</code>, <code>logged</code>, <code>not_enough_to_say</code>. Unblocks PR-25.</p>
       </div>
       <div class="brief">
-        <h4>K3 · CUL-531: an observation from a partial read <span class="pill open">decide any time before PR-27</span></h4>
-        <p><b>Deciding:</b> what "Blood: none visible" says when one of three photos couldn't be opened.</p>
-        <ul>
-          <li><b>C, scope it (recommended):</b> "none visible in the 2 photos read" plus "1 photo couldn't be opened". Keeps the vet's context and reads no wider than it is.</li>
-          <li><b>A, hide it:</b> loses a real observation.</li>
-          <li><b>B, keep as shipped:</b> reads as covering all three photos.</li>
-        </ul>
-        <p><b>Consequence:</b> C is a copy change in PR-27 on the record and the stool record; the vet report is already guarded and doesn't move.</p>
+        <h4>K3 · CUL-531 <span class="pill">ruled C</span></h4>
+        <p>"Blood: none visible in the 2 photos read" plus "1 photo couldn't be opened". Builds in PR-27.</p>
       </div>
     </div>
 

@@ -4,7 +4,7 @@
 **Issues:** CUL-1133 (EN-3), CUL-1134 (EN-4); frames CUL-819 (a), CUL-531
 **Project:** Engines v3: the accountable engine, Wave 4 (PR-24 → PR-25, PR-26, PR-27, PR-28, PR-30)
 **Design authority:** `docs/culprit-incident-tiers-mockups.html` round 1 (https://claude.ai/artifact/Ug8BR3wCSgDVAgnZKmw3ao). Its own page; the Engines v3 mock (`docs/culprit-engines-v3-mockups.html`) is PR-20's.
-**Status:** 🌱 living. Three PM rulings open (§9: K1 = PMD-14, K2, K3 = CUL-531). Every threshold in §7 is a placeholder for the ruling sheet (CUL-583) and the paid vet review (CUL-1312). Nothing here is built.
+**Status:** 🌱 living. K1, K2 and K3 ruled 2026-09-28 (PM: "Defaults"), §11. Every threshold in §7 is a placeholder for the ruling sheet (CUL-583) and the paid vet review (CUL-1312). Nothing here is built.
 
 **Binds:** `clinical-guardrails` (all ten patterns), the critique's R-1 to R-5 (`docs/engines-v3-critique-2026-09.md`), E-6 as amended 9/26, the never-lower rule (CUL-1201 part 2).
 
@@ -83,7 +83,7 @@ Recommended (K1 A):
 3. A log that raises an earlier read says so on its own completion ("Her 7:02 AM vomit read is now: call your vet now. Open the read"), and that card holds while a call is on it (C-21 dwell pause).
 4. A tier changed after it was shown carries a record-fact line: "Raised from keep an eye out at 9:15 AM, because lethargy was logged."
 
-Tier-2 edit it needs (drafted, awaiting approval): `docs/nyx-incident-screen-requirements.md` D2 gains "…and a photoless vomit whose rule-based check returns call now"; G3's "an escalation that lands after they leave is the Signal's acute card's job" gains "and is said once on the completion of the log that raised it". D2's premise that the Signal handles photoless escalations is recorded as false (critique PMD-14).
+Tier-2 edit, **written 2026-09-28 under K1 = A** (incident spec v1.2, D2 and G3 ⚠ AMENDED): `docs/nyx-incident-screen-requirements.md` D2 gains "…and a photoless vomit whose rule-based check returns call now"; G3's "an escalation that lands after they leave is the Signal's acute card's job" gains "and is said once on the completion of the log that raised it". D2's premise that the Signal handles photoless escalations is recorded as false (critique PMD-14).
 
 ## 7. The sign-to-tier table (for CUL-583 and CUL-1312)
 
@@ -157,18 +157,18 @@ Acceptance (PR-28): `incidentReplay.deno.ts` replays the record as an event stre
 ## 10. CUL-819 and CUL-531
 
 - **CUL-819 (a), ruled:** a rescued call keeps its card and adds "Reading the new photo didn't finish. The call above is from the earlier read at {time}. Try again", and the observations are labelled "From the earlier photo". Spoken as one announcement with the call. Needs CUL-816 first.
-- **CUL-531 (K3):** recommended C, scope the observation: "Blood: none visible in the 2 photos read" + "1 photo couldn't be opened".
+- **CUL-531 (K3), ruled C:** scope the observation: "Blood: none visible in the 2 photos read" + "1 photo couldn't be opened".
 
-## 11. Open rulings (PM)
+## 11. Rulings (PM, 2026-09-28: "Defaults")
 
-- **K1 · PMD-14:** A (recommended) or B. §6. Gates PR-28 and PR-30.
-- **K2 · "Part of a pattern":** drawn at render from a live Home finding on the same sign (recommended; a better-than-the-rule brief against D1's stored fourth tier) or stored. Gates PR-25.
-- **K3 · CUL-531:** C (recommended), A or B.
+- **K1 · PMD-14 = A.** A photoless call now routes to its record; every call joins Home's band; a later raise is said on its log's completion (§6). Unblocks PR-28 and PR-30.
+- **K2 = drawn at render.** "Part of a pattern" is never stored; it shows only on a `logged` read in a live finding's evidence, on the record and the gallery (§4). This amends D1's stored fourth tier. PR-25's CHECK has four values: `call_now`, `call_today`, `logged`, `not_enough_to_say`. Unblocks PR-25.
+- **K3 · CUL-531 = C.** Scope the observation: "Blood: none visible in the 2 photos read" + "1 photo couldn't be opened" (§10). Builds in PR-27.
 
-## 12. Tier-2 edits this implies (awaiting approval, not written)
+## 12. Tier-2 edits this implies
 
-- `docs/nyx-incident-screen-requirements.md` D2 and G3 (only under K1 A), §6 above.
-- `docs/nyx-vet-report-requirements.md`: one line that the report renders no per-incident tier.
+- `docs/nyx-incident-screen-requirements.md` D2 and G3: **written** (v1.2, 2026-09-28).
+- `docs/nyx-vet-report-requirements.md`: one line that the report renders no per-incident tier (awaiting approval).
 - `.claude/skills/clinical-guardrails/SKILL.md` Patterns 1 and 2: rewritten in PR-26 (the tier column, the order, the model's own call → call today, the never-lower rule), not here.
 
 ## 13. v0.2: what the adversarial pass changed (2026-09-28)

@@ -17,11 +17,13 @@ Engines v3, Wave 4, PR-24 (CUL-1133 EN-3 + CUL-1134 EN-4; frames for CUL-819 and
 - EN-4's floor is a pure shared rule, stored server-side through a floor-only mode that makes no Storage, model or cap call. It drains from a durable local marker. The offline preview is a device claim the server must reproduce. There is one arrival per bout, and the 24 h re-run never re-sends a photo.
 - Where two tables disagree, the louder row stands until harness proof, a PM ruling and the vet review (E-6).
 
-## PM rulings open
+## PM rulings (2026-09-28, "Defaults on K1, K2, K3")
 
-- **K1, PMD-14:** A (a photoless call now lands on its record; every call joins Home's band) is recommended, or B.
-- **K2, "part of a pattern":** drawn at render, limited to `logged` reads in a live finding's evidence (recommended; a better-than-the-rule brief against D1's stored fourth tier), or stored.
-- **K3, CUL-531:** C, scope the observation (recommended), A or B.
+- **K1, PMD-14 = A:** a photoless call now lands on its record; every call joins Home's band; a later raise is said on its log's completion. The incident spec's D2 and G3 are amended in place under ⚠ markers (v1.2). Unblocks PR-28 and PR-30.
+- **K2 = drawn at render:** "part of a pattern" is never stored and shows only on `logged` reads in a live finding's evidence. This amends D1's stored fourth tier. PR-25's tier column has four values. Unblocks PR-25.
+- **K3, CUL-531 = C:** the observation is scoped to the photos read. Builds in PR-27.
+
+The mock was republished as one proposal: option B of K1 and options A and B of K3 left the page, and a ledger at the top maps the ruling to what moved.
 
 ## Review
 
@@ -32,4 +34,4 @@ Engines v3, Wave 4, PR-24 (CUL-1133 EN-3 + CUL-1134 EN-4; frames for CUL-819 and
 
 - The contested rows (T3, T4, T5a, T5c, T6, T10, T10b, T13, T14, T17, T18, T22, T23) go to CUL-583 and CUL-1312 as one packet.
 - EN-5's "A little" mapping and the answer's storage shape depend on CUL-1118 (D2).
-- Tier-2 edits, awaiting approval: incident screen D2/G3 (under K1 A), the vet report "no tier" line, and clinical-guardrails Patterns 1–2 (in PR-26).
+- Tier-2 edits: incident screen D2/G3 written (K1 = A). Still awaiting approval: the vet report "no tier" line. clinical-guardrails Patterns 1–2 are rewritten in PR-26.
