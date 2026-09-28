@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-28
 
-Engines v3, Wave 2, Lane F, PR-18a (CUL-1135). Discovery: a spec and a frames page, no code, no migration. Shipped via the session's draft PR (number in the PR itself; see CUL-1135's outcome comment).
+Engines v3, Wave 2, Lane F, PR-18a (CUL-1135). Discovery: a spec and a frames page, no code, no migration. Shipped via #968.
 
 ## What shipped
 
@@ -33,4 +33,5 @@ On Nyx today the lane says nothing. With June re-entered as a home reading: D7 a
 
 - The PM: rule W1 to W7; say where June's 4.4 kg was weighed, if known.
 - CUL-583 gets the §9 items (confirmation, noise-scaled confirmation, window, juvenile, planned-loss rate, rank, species other).
-- PR-18 waits on W1 and W2.
+- PR-18 waits on W1 and W2 (CUL-1390, `Waiting on PM`).
+- CUL-1135 stays `In Progress`: PR-18a is one of its four PRs (PR-18, PR-19 and PR-37 remain).
