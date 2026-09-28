@@ -769,7 +769,7 @@ export type FreeFedExclusion = ReadonlySet<string> | readonly FreeFedIntakeSpan[
 /** True when a meal was a free-fed bowl — its intake isn't directly observed, so it is
  *  excluded from every intake denominator (§11 #6). */
 function isFreeFedMeal(m: AnalyticsMeal, freeFed: FreeFedExclusion): boolean {
-  if (Array.isArray(freeFed)) return isFreeFedIntakeMeal(m.foodItemId, m.ms, freeFed);
+  if (Array.isArray(freeFed)) return isFreeFedIntakeMeal(m.foodItemId, m.ms, m.intakeRating, freeFed);
   return m.foodItemId !== null && (freeFed as ReadonlySet<string>).has(m.foodItemId);
 }
 
@@ -998,7 +998,7 @@ interface RatedMeal {
 function classifyRatedMeals(meals: AnalyticsMeal[], freeFedSpans: readonly FreeFedIntakeSpan[]): RatedMeal[] {
   return meals
     .filter((m) => m.foodType === 'meal' && m.intakeRating != null)
-    .filter((m) => !isFreeFedIntakeMeal(m.foodItemId, m.ms, freeFedSpans))
+    .filter((m) => !isFreeFedIntakeMeal(m.foodItemId, m.ms, m.intakeRating, freeFedSpans))
     .map((m) => ({
       ms: m.ms,
       score: INTAKE_SCORE[m.intakeRating as string] ?? 0,
@@ -1388,7 +1388,7 @@ export async function getMealTreatComposition(
  * This pet's QUALIFYING meals in [startMs, endMs), newest first — the read behind the
  * daily look's record-local withheld arm (CUL-873, T-20).
  *
- * A wrapper, not a new query: `readMealRows` + `readFreeFedFoodIds` + the shared
+ * A wrapper, not a new query: `readMealRows` + `readFreeFedIntakeSpans` (by date, CUL-1086) + the shared
  * `qualifyingIntakeMeals` filter, in that order, so the look can never see a meal the
  * intake detectors would have excluded. The free-fed read is the reason this lives here
  * rather than in `lib/lookWithheld.ts` — the exclusion set is per-pet arrangement state

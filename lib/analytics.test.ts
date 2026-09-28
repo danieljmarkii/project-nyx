@@ -1103,7 +1103,7 @@ describe('detectIntakeDecline', () => {
     ];
     const out = detectIntakeDecline({
       species: 'dog', nowMs: NOW, meals,
-      freeFedSpans: [{ foodItemId: 'f1', fromMs: -Infinity, untilMs: Infinity }],
+      freeFedSpans: [{ foodItemId: 'f1', bowlFromMs: -Infinity, bowlUntilMs: Infinity, uncertain: [] }],
     });
     expect(isNotEnoughData(out)).toBe(true);
   });
@@ -1119,12 +1119,12 @@ describe('detectIntakeDecline', () => {
       meal({ ms: at(0, 8), foodItemId: 'f1', intakeRating: 'refused' }),
     ];
     // The bowl went down at 10:00 today, two hours after the refusal.
-    const bowl = [{ foodItemId: 'f1', fromMs: at(0, 10), untilMs: Infinity }];
+    const bowl = [{ foodItemId: 'f1', bowlFromMs: at(0, 10), bowlUntilMs: Infinity, uncertain: [] }];
     const out = detectIntakeDecline({ species: 'dog', nowMs: NOW, meals, freeFedSpans: bowl });
     expect(out.status).toBe('watch');
     expect(out.status === 'watch' && out.flags.map((f) => f.trigger)).toEqual(['refused_normal_food']);
     // The same bowl opened before the refusal: the refusal is a bowl, and the lane is dormant.
-    const earlier = [{ foodItemId: 'f1', fromMs: at(0, 6), untilMs: Infinity }];
+    const earlier = [{ foodItemId: 'f1', bowlFromMs: at(0, 6), bowlUntilMs: Infinity, uncertain: [] }];
     expect(detectIntakeDecline({ species: 'dog', nowMs: NOW, meals, freeFedSpans: earlier }).status).not.toBe('watch');
   });
 
@@ -1136,7 +1136,7 @@ describe('detectIntakeDecline', () => {
       meal({ ms: at(0), foodItemId: 'f1', intakeRating: 'refused' }),
     ];
     // Down for a fortnight, taken up at the end of three days ago.
-    const ended = [{ foodItemId: 'f1', fromMs: at(20), untilMs: (TODAY_IDX - 2) * DAY }];
+    const ended = [{ foodItemId: 'f1', bowlFromMs: at(20), bowlUntilMs: (TODAY_IDX - 2) * DAY, uncertain: [] }];
     const out = detectIntakeDecline({ species: 'dog', nowMs: NOW, meals: [
       ...meals,
       // Bowl-era ratings inside the span, which must NOT enter the prior mean.
@@ -1148,7 +1148,7 @@ describe('detectIntakeDecline', () => {
     expect(out.status).not.toBe('watch');
     // With no span, the two "picked" bowl ratings drag the prior mean under the floor: the bowl
     // would have SUPPRESSED the refusal. The span keeps them out of the history.
-    const openAfter = [{ foodItemId: 'f1', fromMs: at(4, 0), untilMs: (TODAY_IDX - 2) * DAY }];
+    const openAfter = [{ foodItemId: 'f1', bowlFromMs: at(4, 0), bowlUntilMs: (TODAY_IDX - 2) * DAY, uncertain: [] }];
     const kept = detectIntakeDecline({ species: 'dog', nowMs: NOW, meals: [
       ...meals,
       meal({ ms: at(4), foodItemId: 'f1', intakeRating: 'picked' }),

@@ -139,6 +139,25 @@ Deno.test('CUL-1086 by date — a bowl taken up yesterday is never the last full
   assert.equal(detectIntakeDecline(input('cat', after, [takenUp]))[0]?.lastFullMealIso, '2026-07-09T12:00:00.000Z')
 })
 
+Deno.test('CUL-1086 by date — refusals on the day the bowl comes up count (round 2, probe 1)', () => {
+  // The bowl comes up in the morning so the owner can watch her meals, as a vet would ask; she
+  // refuses the kibble at 08:00 and 18:00. active_until is the owner's LOCAL date, so the take-up
+  // instant is unknown inside it: a refusal there may escalate, an "ate it all" may not reassure.
+  const meals: MealEvent[] = []
+  for (let d = 4; d <= 9; d++) meals.push(meal(d, 12, KIBBLE, 'all'))
+  meals.push(meal(10, 8, KIBBLE, 'refused'), meal(10, 18, KIBBLE, 'refused'))
+  const upToday = bowl('2026-07-01T00:00:00.000Z', '2026-07-10')
+  // The Jul 4–9 "all"s are certain bowl time, so the refusals have no history to be "normally
+  // eaten" against, and a cat's single-day trigger needs a baseline: the honest answer here is
+  // the coverage floor. So give her a watched food with a baseline, as the phone test does.
+  for (let d = 4; d <= 9; d++) meals.push(meal(d, 8, WET, 'all'))
+  const out = detectIntakeDecline(input('cat', meals, [upToday]))
+  assert.deepEqual(out.map((f) => f.trigger), ['consecutive_low'])
+  // The round-2 defect: closing the span at the end of the UTC date read both refusals as bowl.
+  const endOfUtcDate = detectIntakeDecline(input('cat', meals.filter((m) => !(m.foodItemId === KIBBLE && m.occurredAt.startsWith('2026-07-10'))), [upToday]))
+  assert.deepEqual(endOfUtcDate, [], 'without the two refusals the record is quiet: they are what fires it')
+})
+
 Deno.test('CUL-1086 — rate_meals counts the floor the detector counts, and never asks to rate a free-fed bowl', () => {
   const meals: MealEvent[] = [
     meal(6, 8, WET, 'all'),

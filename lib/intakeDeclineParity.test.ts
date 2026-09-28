@@ -60,20 +60,29 @@ function generate(seed: number): Rec {
   const r = rng(seed);
   const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(r() * xs.length)];
   const nowMs = BASE_NOW + Math.floor(r() * 24) * MS_PER_HOUR;
-  // A bowl per chosen food: written somewhere in the last 20 days (some before every meal),
-  // half of them taken up again at the end of a later day. Dates are UTC, the convention.
-  const dayKey = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  // Bowls as the phone writes them: `created_at` an instant, the two DATEs the owner's LOCAL
+  // day (a zone from UTC−12 to UTC+14 per record, round 2's point). Some rows have no
+  // `created_at` (the fallback), some are toggled off and on again (two rows, one food), and
+  // half are taken up. Ratings land on both sides of every edge.
+  const offsetMs = (Math.floor(r() * 27) - 12) * MS_PER_HOUR;
+  const localDay = (ms: number) => new Date(ms + offsetMs).toISOString().slice(0, 10);
   const bowls: Rec['bowls'] = [];
   for (const f of FOODS) {
     if (r() >= 0.4) continue;
-    const createdMs = nowMs - Math.floor(r() * 20 * 24) * MS_PER_HOUR - Math.floor(r() * 60) * 60_000;
-    const endMs = r() < 0.5 ? null : createdMs + Math.floor(r() * 12 * 24) * MS_PER_HOUR;
-    bowls.push({
-      foodItemId: f,
-      createdAt: new Date(createdMs).toISOString(),
-      activeFrom: dayKey(createdMs),
-      activeUntil: endMs === null ? null : dayKey(endMs),
-    });
+    let createdMs = nowMs - Math.floor(r() * 20 * 24) * MS_PER_HOUR - Math.floor(r() * 60) * 60_000;
+    const rows = r() < 0.25 ? 2 : 1;
+    for (let k = 0; k < rows && createdMs <= nowMs; k++) {
+      const last = k === rows - 1;
+      const endMs = last && r() < 0.5 ? null : createdMs + Math.floor(r() * 6 * 24) * MS_PER_HOUR;
+      bowls.push({
+        foodItemId: f,
+        createdAt: r() < 0.15 ? null : new Date(createdMs).toISOString(),
+        activeFrom: localDay(createdMs),
+        activeUntil: endMs === null ? null : localDay(endMs),
+      });
+      if (endMs === null) break;
+      createdMs = endMs + Math.floor(r() * 36) * MS_PER_HOUR;
+    }
   }
   // Each food gets a "usual" rating and a "lately" rating, so records split between steady
   // eaters and real drops — a uniform rating would almost never clear the decline triggers.
@@ -173,8 +182,8 @@ describe('intake-decline parity: phone and server over the same meals (CUL-1086)
       if (phone.length > 0) fired++;
       if (JSON.stringify(serverVerdict(rec, false)) !== JSON.stringify(server)) filterDecided++;
     }
-    // Non-vacuity. Measured at authoring (by date): 347 records fired, and on 281 the bowls
-    // changed the server's answer (of 4000). The floors sit under those so a harmless generator
+    // Non-vacuity. Measured at authoring (by date, zones and toggles): 357 records fired, and
+    // on 260 the bowls changed the server's answer (of 4000). The floors sit under those so a harmless generator
     // tweak does not red the suite, and far above zero so a generator that stops reaching the
     // filter does.
     expect(fired).toBeGreaterThan(150);

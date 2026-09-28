@@ -656,6 +656,42 @@ Deno.test('CUL-1086 — a bowl rated four times a day never pushes the counted m
   assert.ok(/Rows marked "free-fed bowl" are ratings of a bowl left down \( ?50 ?in this window, ?40 ?shown\)/.test(text))
 })
 
+Deno.test('CUL-1086 by date — ahead of UTC, the flag and the list agree on a row at the window\'s edge', () => {
+  idSeq = 0
+  // Round 2 probe 3 (Australia/Sydney): the bowl came up Sun Jun 21 local, so active_until =
+  // Jun 21; the only "ate it all" in the Jun 22 – Jul 2 window is the kibble at Mon Jun 22 08:00
+  // local (Jun 21 22:00Z). The detector used to count it as page 1's last full meal while the
+  // appendix called it a bowl row and hid it: "about 10.6 days without a full meal" citing a
+  // row the page said did not exist.
+  const events: ReportEventInput[] = [ratedMealOf('fi-kibble', '2026-06-21', '22:00:00', 'all')]
+  for (const d of ['2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25', '2026-06-26', '2026-06-27', '2026-06-28', '2026-06-29', '2026-06-30', '2026-07-01']) {
+    events.push(ratedMealOf('fi-wet', d, '00:00:00', 'most'))
+  }
+  events.push(ratedMealOf('fi-wet', '2026-07-02', '00:00:00', 'picked'))
+  const takenUp = { ...KIBBLE_BOWL_DOWN, createdAt: '2026-06-01T00:00:00Z', activeFrom: '2026-06-01', activeUntil: '2026-06-21' }
+  const snap = assembleReport(baseInput({
+    events,
+    timezone: 'Australia/Sydney',
+    requestedWindow: { startDate: '2026-06-22', endDate: '2026-07-02' },
+    feedingArrangements: [takenUp],
+  }))
+  const flag = snap.safetyFlags.find((f) => f.kind === 'intake_decline')
+  assert.ok(flag && flag.kind === 'intake_decline', 'the flag fires on the watched wet food')
+  // Inside the take-up date's uncertainty an "ate it all" cannot reassure: not the anchor on
+  // either side, and the two sides say the same thing.
+  assert.equal(flag.lastFullMealIso, null)
+  assert.ok(!snap.provenance.intakeLog.some((e) => e.isLastFullMeal))
+  // It predates every counted row, so the list does not reach it, and says so (round 2 probe 4:
+  // never the singular "the row marked" over zero rows).
+  assert.equal(snap.provenance.intakeLogFreeFedExcluded, 1)
+  assert.ok(!snap.provenance.intakeLog.some((e) => e.notCountedFreeFed))
+  const text = plainText(renderReport(snap))
+  assert.ok(text.includes('No watched meal is recorded as fully eaten in this window.'))
+  assert.ok(text.includes('1 rating of a free-fed bowl in this window is older than every row shown and not listed'))
+  assert.ok(!text.includes('The row marked'))
+  assert.ok(!text.includes('The most recent fully-eaten meal was'))
+})
+
 Deno.test('CUL-1086 — the unfinished list is the ratings themselves, so it keeps the bowl and says nothing', () => {
   idSeq = 0
   const events: ReportEventInput[] = [

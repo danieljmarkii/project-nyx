@@ -3112,12 +3112,19 @@ export function buildDetectionInput(
 
   // Free-fed standing exposures overlapping the window (B-040). meal_fed rows are
   // vet-report metadata, never standing exposures (detection contract).
+  //
+  // CUL-1086 — with a day's grace each side: the intake lane's spans (`lib/freeFedIntake.ts`)
+  // treat a local DATE as uncertain across every zone, up to 14 h before and 36 h after its
+  // UTC midnight, so a bowl taken up the day before the window can still decide a rating on
+  // the window's first day. Dropping it here left the detector counting a row the appendix
+  // called a bowl (adversarial round 2). The correlation lanes classify spans by instant, so a
+  // row that reaches none of the window's instants changes nothing there.
   const feedingArrangements: FeedingArrangement[] = input.feedingArrangements
     .filter((a) => a.method === 'free_choice')
     .filter((a) => {
       const fromNum = a.activeFrom ? dayNumber(a.activeFrom) : -Infinity
       const untilNum = a.activeUntil ? dayNumber(a.activeUntil) : Infinity
-      return (fromNum ?? -Infinity) <= scope.endDayNum && scope.startDayNum <= (untilNum ?? Infinity)
+      return (fromNum ?? -Infinity) <= scope.endDayNum + 1 && scope.startDayNum - 2 <= (untilNum ?? Infinity)
     })
     .map((a) => ({
       id: a.id,
@@ -4716,11 +4723,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   let intakeLogHiddenOlder = 0
   let intakeLogFreeFedExcluded = 0
   let intakeLogFreeFedAfterAnchor = 0
-  // CUL-1086 — the detector's own exclusion, by date, over every free-choice arrangement.
+  // CUL-1086 — the detector's own exclusion, over the SAME arrangements detection received, so
+  // the list can never call a row a bowl that the flag counted (adversarial round 2).
   const intakeFreeFedSpans = parseFreeFedIntakeSpans(
-    input.feedingArrangements
-      .filter((a) => a.method === 'free_choice')
-      .map((a) => ({ foodItemId: a.foodItemId, createdAt: a.createdAt ?? null, activeFrom: a.activeFrom, activeUntil: a.activeUntil })),
+    (detInput.feedingArrangements ?? []).map((a) => ({
+      foodItemId: a.foodItemId ?? null,
+      createdAt: a.createdAt ?? null,
+      activeFrom: a.activeFrom,
+      activeUntil: a.activeUntil,
+    })),
   )
   if (intakeLogScope !== null) {
     // CUL-1086 — a free-fed food's ratings never reach detectIntakeDecline (§11 #6), so in the
@@ -4728,7 +4739,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // see a bowl "ate it all" dated after the anchor and weigh it) and never the anchor. The
     // `unfinished` population is the ratings themselves, not a detector's input, and is unchanged.
     const isIntakeFreeFed = (e: ReportEventInput): boolean =>
-      isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans)
+      isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), e.meal!.intakeRating ?? null, intakeFreeFedSpans)
     const ratedForLog = intakeLogScope === 'intake_flag' ? ratedMealsInWindow : unfinishedRated
     // The rows the flag counted, and (flag scope only) the bowl's rows beside them. The cap and
     // the anchor pin run over the COUNTED rows alone, so a bowl rated four times a day can never

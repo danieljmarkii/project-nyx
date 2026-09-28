@@ -2106,7 +2106,11 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
           ? ` The most recent fully-eaten meal was ${h(fmtLocalDay(f.lastFullMealIso, tz))} — about ${humanizeGap(
               f.hoursSinceLastFullMeal,
             )} without a full meal.`
-          : ' No fully-eaten meal is recorded in this window.'
+          : snap.provenance.intakeLogFreeFedExcluded > 0
+            ? // CUL-1086 (adversarial round 2): the bowl may have been rated "ate it all"; the
+              // absence this sentence states is of a WATCHED full meal, the word appendix E uses.
+              ' No watched meal is recorded as fully eaten in this window.'
+            : ' No fully-eaten meal is recorded in this window.'
       // CUL-1086 — said on page 1, beside the claim it scopes (cold read): the first question
       // about a hyporexic pet with a bowl down is whether she is eating from the bowl, and the
       // flag answers it by exclusion. The rows themselves are listed and dated in appendix E.
@@ -2116,13 +2120,23 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // as a count with a pointer; never as a verdict on the gap (the bowl is not observed).
       // report.ts counts it over every bowl row, not the shown ones (C-3).
       const bowlAfter = snap.provenance.intakeLogFreeFedAfterAnchor
+      // The pointer promises dates, so it names how many the appendix actually holds (C-3): past
+      // the list's cap only the most recent are dated there.
+      const anchorMs = f.lastFullMealIso ? Date.parse(f.lastFullMealIso) : NaN
+      const bowlAfterShown = snap.provenance.intakeLog.filter(
+        (e) => e.notCountedFreeFed && Date.parse(e.occurredAt) > anchorMs,
+      ).length
+      const bowlAfterPointer =
+        bowlAfterShown >= bowlAfter
+          ? '(dated in appendix&nbsp;E)'
+          : `(the most recent ${num(bowlAfterShown)} dated in appendix&nbsp;E)`
       const freeFedBit =
         bowlRatings > 0
           ? ` ${num(bowlRatings)} rating${bowlRatings === 1 ? '' : 's'} of a free-fed bowl ${
               bowlRatings === 1 ? 'is' : 'are'
             } not counted here: intake from a bowl left down is not directly observed${
               bowlAfter > 0
-                ? `; ${bowlRatings === 1 ? 'it falls' : `${num(bowlAfter)} of them fall${bowlAfter === 1 ? 's' : ''}`} after the last full meal (dated in appendix&nbsp;E)`
+                ? `; ${bowlRatings === 1 ? 'it falls' : `${num(bowlAfter)} of them fall${bowlAfter === 1 ? 's' : ''}`} after the last full meal ${bowlAfterPointer}`
                 : ''
             }.`
           : ''
@@ -7478,13 +7492,21 @@ function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[], foot: st
   // rows, and a vet who counts the tags must get the number the note prints.
   const freeFedRows = snap.provenance.intakeLogFreeFedExcluded
   const freeFedShown = log.filter((e) => e.notCountedFreeFed).length
+  // Keyed on the rows SHOWN (adversarial round 2: the singular sentence printed over a caption
+  // reading "0 free-fed bowl"), with the window's count beside it whenever the two differ.
   const freeFedBit = !hasBowlRows
     ? ''
-    : freeFedRows === 1
-      ? ' The row marked &ldquo;free-fed bowl&rdquo; is a rating of a bowl left down: intake from it is not directly observed, so the flag does not count it and it is never the last full meal.'
-      : ` Rows marked &ldquo;free-fed bowl&rdquo; are ratings of a bowl left down (${num(freeFedRows)} in this window${
-          freeFedShown < freeFedRows ? `, ${num(freeFedShown)} shown` : ''
-        }): intake from it is not directly observed, so the flag does not count them and none is the last full meal.`
+    : freeFedShown === 0
+      ? ` ${num(freeFedRows)} rating${freeFedRows === 1 ? '' : 's'} of a free-fed bowl in this window ${
+          freeFedRows === 1 ? 'is' : 'are'
+        } older than every row shown and not listed: intake from a bowl left down is not directly observed, so the flag does not count ${
+          freeFedRows === 1 ? 'it' : 'them'
+        }.`
+      : freeFedShown === 1 && freeFedRows === 1
+        ? ' The row marked &ldquo;free-fed bowl&rdquo; is a rating of a bowl left down: intake from it is not directly observed, so the flag does not count it and it is never the last full meal.'
+        : ` Rows marked &ldquo;free-fed bowl&rdquo; are ratings of a bowl left down (${num(freeFedRows)} in this window${
+            freeFedShown < freeFedRows ? `, ${num(freeFedShown)} shown` : ''
+          }): intake from it is not directly observed, so the flag does not count them and none is the last full meal.`
   const lead = unfinishedOnly
     ? '<b>Meals not fully eaten</b> — every rated meal in this window the owner did not record as fully eaten, most recent first.'
     : hasBowlRows

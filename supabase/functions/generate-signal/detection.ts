@@ -3671,7 +3671,7 @@ function intakeFreeFedSpans(input: DetectionInput): FreeFedIntakeSpan[] {
 }
 
 function isFreeFedMeal(m: MealEvent, spans: readonly FreeFedIntakeSpan[]): boolean {
-  return isFreeFedIntakeMeal(m.foodItemId, Date.parse(m.occurredAt), spans)
+  return isFreeFedIntakeMeal(m.foodItemId, Date.parse(m.occurredAt), m.intakeRating, spans)
 }
 
 /**
