@@ -508,6 +508,8 @@ export interface FeedingArrangement {
    */
   foodItemId?: string | null
   createdAt?: string | null
+  /** CUL-1396 / migration 076 — the toggle-off instant; null while down or on a pre-076 end. */
+  endedAt?: string | null
 }
 
 /**
@@ -3666,12 +3668,13 @@ function intakeFreeFedSpans(input: DetectionInput): FreeFedIntakeSpan[] {
       createdAt: a.createdAt ?? null,
       activeFrom: a.activeFrom,
       activeUntil: a.activeUntil,
+      endedAt: a.endedAt ?? null,
     })),
   )
 }
 
 function isFreeFedMeal(m: MealEvent, spans: readonly FreeFedIntakeSpan[]): boolean {
-  return isFreeFedIntakeMeal(m.foodItemId, Date.parse(m.occurredAt), m.intakeRating, spans)
+  return isFreeFedIntakeMeal(m.foodItemId, Date.parse(m.occurredAt), spans)
 }
 
 /**

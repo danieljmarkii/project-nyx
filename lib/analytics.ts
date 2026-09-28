@@ -769,7 +769,7 @@ export type FreeFedExclusion = ReadonlySet<string> | readonly FreeFedIntakeSpan[
 /** True when a meal was a free-fed bowl — its intake isn't directly observed, so it is
  *  excluded from every intake denominator (§11 #6). */
 function isFreeFedMeal(m: AnalyticsMeal, freeFed: FreeFedExclusion): boolean {
-  if (Array.isArray(freeFed)) return isFreeFedIntakeMeal(m.foodItemId, m.ms, m.intakeRating, freeFed);
+  if (Array.isArray(freeFed)) return isFreeFedIntakeMeal(m.foodItemId, m.ms, freeFed);
   return m.foodItemId !== null && (freeFed as ReadonlySet<string>).has(m.foodItemId);
 }
 
@@ -998,7 +998,7 @@ interface RatedMeal {
 function classifyRatedMeals(meals: AnalyticsMeal[], freeFedSpans: readonly FreeFedIntakeSpan[]): RatedMeal[] {
   return meals
     .filter((m) => m.foodType === 'meal' && m.intakeRating != null)
-    .filter((m) => !isFreeFedIntakeMeal(m.foodItemId, m.ms, m.intakeRating, freeFedSpans))
+    .filter((m) => !isFreeFedIntakeMeal(m.foodItemId, m.ms, freeFedSpans))
     .map((m) => ({
       ms: m.ms,
       score: INTAKE_SCORE[m.intakeRating as string] ?? 0,
@@ -1197,8 +1197,9 @@ async function readFreeFedIntakeSpans(petId: string): Promise<FreeFedIntakeSpan[
     created_at: string | null;
     active_from: string | null;
     active_until: string | null;
+    ended_at: string | null;
   }>(
-    `SELECT food_item_id, created_at, active_from, active_until FROM feeding_arrangements
+    `SELECT food_item_id, created_at, active_from, active_until, ended_at FROM feeding_arrangements
      WHERE pet_id = ? AND method = 'free_choice' AND deleted_at IS NULL`,
     [petId],
   );
@@ -1208,6 +1209,7 @@ async function readFreeFedIntakeSpans(petId: string): Promise<FreeFedIntakeSpan[
       createdAt: r.created_at,
       activeFrom: r.active_from,
       activeUntil: r.active_until,
+      endedAt: r.ended_at,
     })),
   );
 }

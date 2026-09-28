@@ -11,37 +11,33 @@
 //   • a bowl taken up yesterday counted again, and its "ate it all" became page 1's last full
 //     meal, understating the gap inside the feline 48–72 h window.
 //
-// WHAT THE RECORD KNOWS, AND WHERE IT DOES NOT. The opening is an instant: every toggle-on writes
-// a fresh row whose `created_at` is that moment (`startFreeChoice`; sync carries it verbatim and
-// never rewrites it). The closing is NOT: `active_until` is the owner's LOCAL date
-// (`localDateString`), and the one instant written with it, `updated_at`, is restamped by the
-// server trigger on every push. So the take-up happened somewhere inside that local date, which
-// in UTC is somewhere in [date 00:00Z − 14 h, date 24:00Z + 12 h): 50 hours, whatever the zone.
+// BY INSTANT, BECAUSE THE DATE COULD NOT SAY (PM ruling, same day, CUL-1396). A bowl is down
+// from the toggle-on to the toggle-off: `created_at` (every toggle-on writes a fresh row; sync
+// carries it verbatim) until `ended_at` (migration 076, written beside `active_until`). Before
+// 076 the only record of the toggle-off was `active_until`, the owner's LOCAL DATE, some 50 hours
+// of UTC wide; two more adversarial rounds broke every rule that inferred the instant inside it
+// (the end of the UTC date hid refusals the owner watched on the take-up day; counting only
+// concern ratings there lowered the baseline and masked a later drop).
 //
-// Round 2 of the adversarial pass broke the obvious reading (parse the date as UTC, close at its
-// end, the Patterns convention): refusals the owner watched on the take-up day vanished (every
-// zone), a bowl's evening "ate it all" counted as a watched meal (behind UTC), and the report's
-// detector and appendix disagreed at a window edge (ahead of UTC). Patterns' convention is right
-// for Patterns' question ("could she have grazed near this onset?"); it is the wrong constant here.
-//
-// SO THE UNKNOWN HALF IS SPLIT BY THE n=1 ASYMMETRY, not by a guess at the zone. Inside a bowl's
-// UNCERTAIN interval a rating of concern (`refused`, `picked`) is counted, because a sample may
-// escalate on presence; any other rating is set aside, because an unobservable "ate it all" may
-// never reassure. Outside it the answer is certain. No time zone is read, so the phone and the
-// server cannot disagree about a zone, and no guess about one can point the wrong way.
-//
-// The opening falls back to `active_from` (also a local date) only when `created_at` is
-// unreadable; that date gets the same uncertain treatment.
+// WHERE AN INSTANT IS MISSING, THE RATING COUNTS. That is the safe error for an escalation-only
+// detector: a rating wrongly counted can at worst fire a flag; a rating wrongly set aside can
+// hide one. So:
+//   • no `ended_at` on an ended row (a row ended by a build predating 076): the bowl is down
+//     only until the local date could have begun anywhere (UTC+14), and everything after counts;
+//   • no `created_at` (never true of a synced row: NOT NULL DEFAULT NOW() server-side): the bowl
+//     is down only from when the local date `active_from` has ended everywhere (UTC−12);
+//   • `ended_at` on a row with no `active_until` is IGNORED: a stale push from an old build can
+//     re-open a row another device ended, and the row, not a leftover instant, is the truth
+//     (rls-privacy-reviewer condition on 076).
 //
 // Pure: no I/O, no RN imports. `supabase/functions` imports this file, so a change here
 // redeploys `generate-signal` and `generate-report` on merge (C-26).
 
 const MS_PER_HOUR = 3_600_000;
-const MS_PER_DAY = 24 * MS_PER_HOUR;
 /** The earliest a local date can begin, relative to its UTC midnight (UTC+14). */
 const EARLIEST_LOCAL_START_MS = -14 * MS_PER_HOUR;
 /** The latest a local date can end, relative to its UTC midnight (UTC−12). */
-const LATEST_LOCAL_END_MS = MS_PER_DAY + 12 * MS_PER_HOUR;
+const LATEST_LOCAL_END_MS = 36 * MS_PER_HOUR;
 
 /** A `free_choice` arrangement row, reduced to what the intake question reads. Callers pass
  *  only non-soft-deleted `free_choice` rows, active or ended. */
@@ -49,94 +45,69 @@ export interface FreeFedIntakeArrangement {
   foodItemId: string | null;
   /** ISO instant the row was written (the toggle-on). */
   createdAt: string | null;
-  /** The owner's local DATE 'YYYY-MM-DD' — the fallback opening when `createdAt` is unreadable. */
+  /** The owner's local DATE 'YYYY-MM-DD' the bowl went down (fallback only). */
   activeFrom: string | null;
-  /** The owner's local DATE 'YYYY-MM-DD', or null while the bowl is still down. */
+  /** The owner's local DATE 'YYYY-MM-DD' the bowl came up, or null while it is down. */
   activeUntil: string | null;
+  /** ISO instant of the toggle-off (migration 076); null while down or on a pre-076 end. */
+  endedAt: string | null;
 }
 
-/**
- * A parsed arrangement. Ratings of `foodItemId` logged in [bowlFromMs, bowlUntilMs) were
- * certainly a bowl; those in an `uncertain` interval may or may not have been.
- */
+/** A parsed span: ratings of `foodItemId` logged in [fromMs, untilMs) were a bowl. */
 export interface FreeFedIntakeSpan {
   foodItemId: string;
-  bowlFromMs: number;
-  bowlUntilMs: number;
-  uncertain: readonly { fromMs: number; untilMs: number }[];
+  fromMs: number;
+  untilMs: number;
 }
 
-/** The UTC instants a local date could span, whatever the owner's zone. */
-function localDateBounds(date: string): { earliest: number; latest: number } | null {
-  const midnightUtc = Date.parse(date);
-  if (Number.isNaN(midnightUtc)) return null;
-  return { earliest: midnightUtc + EARLIEST_LOCAL_START_MS, latest: midnightUtc + LATEST_LOCAL_END_MS };
+function parseInstant(iso: string | null): number {
+  return iso == null ? NaN : Date.parse(iso);
 }
 
 /**
- * Parse arrangement rows to spans. Drops a row with no food (it names no ratings) or with no
- * readable opening at all. A row toggled off minutes after it went on keeps only an uncertain
- * interval: its concern ratings still count, and nothing it covers can reassure.
+ * Parse arrangement rows to spans. Drops a row with no food (it names no ratings), no readable
+ * opening, or an empty / inverted span (a toggle off before any meal exposes nothing).
  */
 export function parseFreeFedIntakeSpans(rows: readonly FreeFedIntakeArrangement[]): FreeFedIntakeSpan[] {
   const out: FreeFedIntakeSpan[] = [];
   for (const r of rows) {
     if (!r.foodItemId) continue;
-    const uncertain: { fromMs: number; untilMs: number }[] = [];
 
-    // The opening: an instant when the row has one; otherwise the whole of its local date is
-    // uncertain and the bowl is certain only once that date has ended everywhere.
-    const created = r.createdAt == null ? NaN : Date.parse(r.createdAt);
-    let open: number;
-    if (Number.isFinite(created)) {
-      open = created;
-    } else {
-      const from = r.activeFrom == null ? null : localDateBounds(r.activeFrom);
-      if (from === null) continue;
-      uncertain.push({ fromMs: from.earliest, untilMs: from.latest });
-      open = from.latest;
+    let from = parseInstant(r.createdAt);
+    if (!Number.isFinite(from)) {
+      const day = parseInstant(r.activeFrom);
+      if (!Number.isFinite(day)) continue;
+      from = day + LATEST_LOCAL_END_MS;
     }
 
-    // The closing: never while the bowl is down; otherwise the take-up is somewhere inside the
-    // local date, so the bowl is certain only until that date could have begun, and uncertain
-    // from there until it has ended everywhere. Neither interval reaches back before the row.
-    let close = Infinity;
+    let until = Infinity;
     if (r.activeUntil != null) {
-      const until = localDateBounds(r.activeUntil);
-      if (until === null) continue;
-      close = Math.max(open, until.earliest);
-      const uncertainFrom = Number.isFinite(created) ? Math.max(created, until.earliest) : until.earliest;
-      if (until.latest > uncertainFrom) uncertain.push({ fromMs: uncertainFrom, untilMs: until.latest });
+      const ended = parseInstant(r.endedAt);
+      if (Number.isFinite(ended)) {
+        until = ended;
+      } else {
+        const day = parseInstant(r.activeUntil);
+        if (!Number.isFinite(day)) continue;
+        until = day + EARLIEST_LOCAL_START_MS;
+      }
     }
 
-    out.push({ foodItemId: r.foodItemId, bowlFromMs: open, bowlUntilMs: close, uncertain });
+    if (until <= from) continue;
+    out.push({ foodItemId: r.foodItemId, fromMs: from, untilMs: until });
   }
   return out;
 }
 
-/** A rating that may escalate on presence (n=1): the pet refused or only picked at it. */
-function isConcernRating(rating: string | null): boolean {
-  return rating === 'refused' || rating === 'picked';
-}
-
 /**
- * Was a rating of `foodItemId` logged at `ms` a free-fed bowl? Certain bowl time excludes it;
- * uncertain time excludes it unless it is a rating of concern; any other time counts it. A null
- * food, or a non-finite instant, never matches: the rating stays counted, the safe direction for
- * an escalation-only detector.
+ * Was a rating of `foodItemId` logged at `ms` a free-fed bowl? A null food, or a non-finite
+ * instant, never matches: the rating stays counted, the safe direction for an escalation-only
+ * detector.
  */
 export function isFreeFedIntakeMeal(
   foodItemId: string | null,
   ms: number,
-  rating: string | null,
   spans: readonly FreeFedIntakeSpan[],
 ): boolean {
   if (foodItemId === null || !Number.isFinite(ms)) return false;
-  let uncertain = false;
-  for (const s of spans) {
-    if (s.foodItemId !== foodItemId) continue;
-    if (s.bowlFromMs <= ms && ms < s.bowlUntilMs) return true;
-    if (s.uncertain.some((u) => u.fromMs <= ms && ms < u.untilMs)) uncertain = true;
-  }
-  return uncertain && !isConcernRating(rating);
+  return spans.some((s) => s.foodItemId === foodItemId && s.fromMs <= ms && ms < s.untilMs);
 }

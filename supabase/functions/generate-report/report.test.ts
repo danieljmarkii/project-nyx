@@ -530,13 +530,13 @@ Deno.test('CUL-1086 — the report hands detection each free-choice bowl\'s food
     new Set(),
   )
   assert.deepEqual(
-    (det.feedingArrangements ?? []).map((a) => [a.foodItemId, a.createdAt]),
-    [['fi-kibble', '2026-01-01T09:00:00Z']],
+    (det.feedingArrangements ?? []).map((a) => [a.foodItemId, a.createdAt, a.endedAt]),
+    [['fi-kibble', '2026-01-01T09:00:00Z', null]],
   )
   // The pull must select the instant, or every span opens at midnight: the query is the one
   // part a test cannot drive, so its column list is pinned (a source scan, stated as one).
   const src = Deno.readTextFileSync(new URL('./index.ts', import.meta.url))
-  assert.match(src, /'feeding_arrangements'[\s\S]{0,200}?`id, food_item_id, method, created_at,/)
+  assert.match(src, /'feeding_arrangements'[\s\S]{0,200}?`id, food_item_id, method, created_at, ended_at,/)
 })
 
 Deno.test('CUL-1086 by date — a bowl put down AFTER a past window never erases that window\'s flag', () => {
@@ -656,40 +656,37 @@ Deno.test('CUL-1086 — a bowl rated four times a day never pushes the counted m
   assert.ok(/Rows marked "free-fed bowl" are ratings of a bowl left down \( ?50 ?in this window, ?40 ?shown\)/.test(text))
 })
 
-Deno.test('CUL-1086 by date — ahead of UTC, the flag and the list agree on a row at the window\'s edge', () => {
+Deno.test('CUL-1086 by instant — ahead of UTC, a watched meal the day after take-up is the anchor on both sides', () => {
   idSeq = 0
-  // Round 2 probe 3 (Australia/Sydney): the bowl came up Sun Jun 21 local, so active_until =
-  // Jun 21; the only "ate it all" in the Jun 22 – Jul 2 window is the kibble at Mon Jun 22 08:00
-  // local (Jun 21 22:00Z). The detector used to count it as page 1's last full meal while the
-  // appendix called it a bowl row and hid it: "about 10.6 days without a full meal" citing a
-  // row the page said did not exist.
+  // Round 2 probe 3 and round 3 finding D (Australia/Sydney): the bowl came up Sun Jun 21 at
+  // 07:00 local (Jun 20 21:00Z); the only "ate it all" in the Jun 22 – Jul 2 window is the kibble
+  // at Mon Jun 22 08:00 local (Jun 21 22:00Z), a meal the owner watched a day after take-up.
+  // Round 2's detector counted it while the appendix hid it; round 3's called it a bowl rating.
+  // With the toggle-off instant recorded it is what it is: a watched full meal, on both sides.
   const events: ReportEventInput[] = [ratedMealOf('fi-kibble', '2026-06-21', '22:00:00', 'all')]
   for (const d of ['2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25', '2026-06-26', '2026-06-27', '2026-06-28', '2026-06-29', '2026-06-30', '2026-07-01']) {
     events.push(ratedMealOf('fi-wet', d, '00:00:00', 'most'))
   }
   events.push(ratedMealOf('fi-wet', '2026-07-02', '00:00:00', 'picked'))
-  const takenUp = { ...KIBBLE_BOWL_DOWN, createdAt: '2026-06-01T00:00:00Z', activeFrom: '2026-06-01', activeUntil: '2026-06-21' }
-  const snap = assembleReport(baseInput({
-    events,
-    timezone: 'Australia/Sydney',
-    requestedWindow: { startDate: '2026-06-22', endDate: '2026-07-02' },
-    feedingArrangements: [takenUp],
-  }))
-  const flag = snap.safetyFlags.find((f) => f.kind === 'intake_decline')
-  assert.ok(flag && flag.kind === 'intake_decline', 'the flag fires on the watched wet food')
-  // Inside the take-up date's uncertainty an "ate it all" cannot reassure: not the anchor on
-  // either side, and the two sides say the same thing.
-  assert.equal(flag.lastFullMealIso, null)
-  assert.ok(!snap.provenance.intakeLog.some((e) => e.isLastFullMeal))
-  // It predates every counted row, so the list does not reach it, and says so (round 2 probe 4:
-  // never the singular "the row marked" over zero rows).
-  assert.equal(snap.provenance.intakeLogFreeFedExcluded, 1)
-  assert.ok(!snap.provenance.intakeLog.some((e) => e.notCountedFreeFed))
-  const text = plainText(renderReport(snap))
-  assert.ok(text.includes('No watched meal is recorded as fully eaten in this window.'))
-  assert.ok(text.includes('1 rating of a free-fed bowl in this window is older than every row shown and not listed'))
-  assert.ok(!text.includes('The row marked'))
-  assert.ok(!text.includes('The most recent fully-eaten meal was'))
+  for (const endedAt of ['2026-06-20T21:00:00Z', null]) {
+    // The instant (076), and a pre-076 end with none (the fallback counts from the date on).
+    const takenUp = { ...KIBBLE_BOWL_DOWN, createdAt: '2026-06-01T00:00:00Z', activeFrom: '2026-06-01', activeUntil: '2026-06-21', endedAt }
+    const snap = assembleReport(baseInput({
+      events,
+      timezone: 'Australia/Sydney',
+      requestedWindow: { startDate: '2026-06-22', endDate: '2026-07-02' },
+      feedingArrangements: [takenUp],
+    }))
+    const flag = snap.safetyFlags.find((f) => f.kind === 'intake_decline')
+    assert.ok(flag && flag.kind === 'intake_decline', 'the flag fires on the watched wet food')
+    assert.equal(flag.lastFullMealIso, '2026-06-21T22:00:00Z')
+    const anchor = snap.provenance.intakeLog.find((e) => e.isLastFullMeal)
+    assert.equal(anchor?.occurredAt, flag.lastFullMealIso, 'the tagged row IS page 1\'s last full meal')
+    assert.equal(snap.provenance.intakeLogFreeFedExcluded, 0)
+    const text = plainText(renderReport(snap))
+    assert.ok(text.includes('The most recent fully-eaten meal was'))
+    assert.ok(!text.includes('free-fed bowl are not counted'))
+  }
 })
 
 Deno.test('CUL-1086 — the unfinished list is the ratings themselves, so it keeps the bowl and says nothing', () => {

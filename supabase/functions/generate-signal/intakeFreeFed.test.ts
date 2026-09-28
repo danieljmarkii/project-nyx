@@ -18,7 +18,7 @@ import {
   type MealEvent,
   type Species,
 } from './detection.ts'
-import { mapArrangementRows } from './index.ts'
+import { mapArrangementRows } from './pipeline.ts'
 
 const NOW = '2026-07-10T20:00:00.000Z'
 const WET = 'f-wet'
@@ -40,8 +40,9 @@ function meal(day: number, hour: number, foodItemId: string, rating: IntakeRatin
   }
 }
 
-/** A kibble bowl written at `createdAt`, down until the end of `activeUntil` (null = still down). */
-function bowl(createdAt: string, activeUntil: string | null = null): FeedingArrangement {
+/** A kibble bowl down from `createdAt` until `endedAt` (the toggle-off instant, migration 076),
+ *  or still down. `activeUntil` is the local date the app writes beside the instant. */
+function bowl(createdAt: string, endedAt: string | null = null, activeUntil: string | null = endedAt?.slice(0, 10) ?? null): FeedingArrangement {
   return {
     id: `a-${createdAt}`,
     primaryProtein: 'chicken',
@@ -49,6 +50,7 @@ function bowl(createdAt: string, activeUntil: string | null = null): FeedingArra
     activeUntil,
     foodItemId: KIBBLE,
     createdAt,
+    endedAt,
   }
 }
 /** Down since long before any meal in these fixtures. */
@@ -117,14 +119,14 @@ Deno.test('CUL-1086 by date — refusals logged BEFORE the owner leaves that foo
 })
 
 Deno.test('CUL-1086 by date — a bowl taken up yesterday is never the last full meal today', () => {
-  // The kibble bowl was down Jul 1–8 and rated "all" daily; it came up at the end of Jul 8. The
+  // The kibble bowl was down Jul 1–8 and rated "all" daily; it came up at 20:00 on Jul 8. The
   // wet food is "all" through Jul 4, "some" after, and "picked" today (a cat).
   const meals: MealEvent[] = []
   for (let d = 1; d <= 8; d++) meals.push(meal(d, 12, KIBBLE, 'all'))
   for (let d = 1; d <= 4; d++) meals.push(meal(d, 8, WET, 'all'))
   for (let d = 5; d <= 9; d++) meals.push(meal(d, 8, WET, 'some'))
   meals.push(meal(10, 8, WET, 'picked'))
-  const takenUp = bowl('2026-07-01T00:00:00.000Z', '2026-07-08')
+  const takenUp = bowl('2026-07-01T00:00:00.000Z', '2026-07-08T20:00:00.000Z')
 
   const byDate = detectIntakeDecline(input('cat', meals, [takenUp]))
   assert.ok(byDate.length > 0)
@@ -139,23 +141,44 @@ Deno.test('CUL-1086 by date — a bowl taken up yesterday is never the last full
   assert.equal(detectIntakeDecline(input('cat', after, [takenUp]))[0]?.lastFullMealIso, '2026-07-09T12:00:00.000Z')
 })
 
-Deno.test('CUL-1086 by date — refusals on the day the bowl comes up count (round 2, probe 1)', () => {
-  // The bowl comes up in the morning so the owner can watch her meals, as a vet would ask; she
-  // refuses the kibble at 08:00 and 18:00. active_until is the owner's LOCAL date, so the take-up
-  // instant is unknown inside it: a refusal there may escalate, an "ate it all" may not reassure.
+Deno.test('CUL-1086 by instant — refusals after the bowl comes up count, the bowl before it does not', () => {
+  // Round 2 probe 1: the bowl comes up at 07:00 so the owner can watch her meals, as a vet would
+  // ask; she refuses the kibble at 08:00 and 18:00. With the toggle-off instant recorded (076)
+  // there is nothing to infer: a rating after it is a watched meal.
   const meals: MealEvent[] = []
-  for (let d = 4; d <= 9; d++) meals.push(meal(d, 12, KIBBLE, 'all'))
-  meals.push(meal(10, 8, KIBBLE, 'refused'), meal(10, 18, KIBBLE, 'refused'))
-  const upToday = bowl('2026-07-01T00:00:00.000Z', '2026-07-10')
-  // The Jul 4–9 "all"s are certain bowl time, so the refusals have no history to be "normally
-  // eaten" against, and a cat's single-day trigger needs a baseline: the honest answer here is
-  // the coverage floor. So give her a watched food with a baseline, as the phone test does.
   for (let d = 4; d <= 9; d++) meals.push(meal(d, 8, WET, 'all'))
+  meals.push(meal(10, 8, KIBBLE, 'refused'), meal(10, 18, KIBBLE, 'refused'))
+  const upToday = bowl('2026-07-01T00:00:00.000Z', '2026-07-10T07:00:00.000Z')
   const out = detectIntakeDecline(input('cat', meals, [upToday]))
   assert.deepEqual(out.map((f) => f.trigger), ['consecutive_low'])
-  // The round-2 defect: closing the span at the end of the UTC date read both refusals as bowl.
-  const endOfUtcDate = detectIntakeDecline(input('cat', meals.filter((m) => !(m.foodItemId === KIBBLE && m.occurredAt.startsWith('2026-07-10'))), [upToday]))
-  assert.deepEqual(endOfUtcDate, [], 'without the two refusals the record is quiet: they are what fires it')
+
+  // Round 3 probes A–C: low BOWL ratings from before the take-up never enter the baseline, and a
+  // "some" day after it is a concern day like any other. The bowl's picks on Jul 8–9 must not
+  // drag the baseline down under a watched drop to "some" on Jul 10.
+  const r3: MealEvent[] = []
+  for (let d = 3; d <= 7; d++) r3.push(meal(d, 8, WET, 'all'))
+  r3.push(meal(8, 12, KIBBLE, 'picked'), meal(8, 20, KIBBLE, 'picked'), meal(9, 4, KIBBLE, 'picked'))
+  r3.push(meal(10, 8, KIBBLE, 'some'), meal(10, 12, KIBBLE, 'some'))
+  const upJul9 = bowl('2026-07-01T00:00:00.000Z', '2026-07-09T06:00:00.000Z')
+  assert.deepEqual(detectIntakeDecline(input('cat', r3, [upJul9])).map((f) => f.trigger), ['consecutive_low'])
+  // Without the bowl the picks sit in the baseline and the drop is silenced: the fixture reaches it.
+  assert.deepEqual(detectIntakeDecline(input('cat', r3)), [])
+  // Probe B (a dog): the bowl's picks must not spoil the food's normally-eaten history either.
+  const b: MealEvent[] = [meal(7, 12, KIBBLE, 'picked'), meal(7, 20, KIBBLE, 'picked')]
+  b.push(meal(8, 8, KIBBLE, 'all'), meal(9, 8, KIBBLE, 'all'), meal(9, 18, KIBBLE, 'all'), meal(10, 8, KIBBLE, 'refused'))
+  const upJul8 = bowl('2026-07-01T00:00:00.000Z', '2026-07-08T06:00:00.000Z')
+  assert.deepEqual(detectIntakeDecline(input('dog', b, [upJul8])).map((f) => f.trigger), ['refused_normal_food'])
+  assert.deepEqual(detectIntakeDecline(input('dog', b)), [], 'the fixture reaches the history: without the bowl it goes silent')
+})
+
+Deno.test('CUL-1086 — a bowl ended before migration 076 (no ended_at) counts every rating from its date on', () => {
+  // The fallback when the instant is missing: the bowl is down only until the local date could
+  // have begun anywhere (UTC+14), so a take-up-day refusal counts. Counting is the safe error.
+  const meals: MealEvent[] = []
+  for (let d = 4; d <= 9; d++) meals.push(meal(d, 8, WET, 'all'))
+  meals.push(meal(10, 8, KIBBLE, 'refused'))
+  const legacy = bowl('2026-07-01T00:00:00.000Z', null, '2026-07-10')
+  assert.deepEqual(detectIntakeDecline(input('cat', meals, [legacy])).map((f) => f.trigger), ['consecutive_low'])
 })
 
 Deno.test('CUL-1086 — rate_meals counts the floor the detector counts, and never asks to rate a free-fed bowl', () => {
@@ -187,7 +210,8 @@ Deno.test('CUL-1086 — an arrangement without a food or a creation instant excl
   // The correlation lanes' shape (no foodItemId): byte-identical to no arrangement at all.
   const { foodItemId: _f, createdAt: _c, ...legacy } = DOWN_ALL_ALONG
   assert.deepEqual(detectIntakeDecline(input('cat', meals, [legacy])), none)
-  // No created_at: the span falls back to active_from midnight, the documented fallback.
+  // No created_at: the span opens once active_from has ended everywhere (the documented
+  // fallback); a bowl down since June covers the July meals either way.
   const fallback = { ...DOWN_ALL_ALONG, createdAt: null }
   assert.deepEqual(detectIntakeDecline(input('cat', meals, [fallback])), detectIntakeDecline(input('cat', meals, [DOWN_ALL_ALONG])))
   // A null food on a meal never matches a bowl.
@@ -195,17 +219,21 @@ Deno.test('CUL-1086 — an arrangement without a food or a creation instant excl
   assert.deepEqual(detectIntakeDecline(input('cat', unidentified, [DOWN_ALL_ALONG])), detectIntakeDecline(input('cat', unidentified)))
 })
 
-Deno.test('CUL-1086 — the Signal\'s entry point hands the engine each bowl\'s food and creation instant', () => {
-  // Driven, not scanned: the mapper is what turns rows into the engine's arrangements.
+Deno.test('CUL-1086 — the Signal\'s entry point hands the engine each bowl\'s food and both instants', () => {
+  // Driven, not scanned: the mapper (moved to pipeline.ts by PR-11b) turns rows into arrangements.
   const [a] = mapArrangementRows([{
     id: 'a1', food_item_id: KIBBLE, created_at: '2026-07-10T14:00:00.000Z', is_shared: false,
-    active_from: '2026-07-10', active_until: null, food_items: { primary_protein: 'chicken', proteins: ['chicken'] },
+    active_from: '2026-07-10', active_until: '2026-07-12', ended_at: '2026-07-12T09:30:00.000Z',
+    food_items: { primary_protein: 'chicken', proteins: ['chicken'] },
   }])
   assert.equal(a.foodItemId, KIBBLE)
   assert.equal(a.createdAt, '2026-07-10T14:00:00.000Z')
-  // The one thing a test cannot drive is the query, so its column list is pinned: without
-  // `created_at` every span falls back to midnight and the same-day refusal is a bowl again.
-  // A source scan, stated as one. PR-11b moves this pipeline; the pin follows the query.
+  assert.equal(a.endedAt, '2026-07-12T09:30:00.000Z')
+  // The one thing a test cannot drive is the query, so its column list is pinned: without the
+  // two instants every span falls back to its dates (a source scan, stated as one).
   const src = Deno.readTextFileSync(new URL('./index.ts', import.meta.url))
-  assert.match(src, /\.from\('feeding_arrangements'\)\s*\.select\('[^']*\bcreated_at\b[^']*'\)/)
+  const select = src.match(/\.from\('feeding_arrangements'\)\s*\.select\('([^']*)'\)/)
+  assert.ok(select, 'the arrangements query is where this pin expects it')
+  assert.match(select[1], /\bcreated_at\b/)
+  assert.match(select[1], /\bended_at\b/)
 })

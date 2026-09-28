@@ -1103,7 +1103,7 @@ describe('detectIntakeDecline', () => {
     ];
     const out = detectIntakeDecline({
       species: 'dog', nowMs: NOW, meals,
-      freeFedSpans: [{ foodItemId: 'f1', bowlFromMs: -Infinity, bowlUntilMs: Infinity, uncertain: [] }],
+      freeFedSpans: [{ foodItemId: 'f1', fromMs: -Infinity, untilMs: Infinity }],
     });
     expect(isNotEnoughData(out)).toBe(true);
   });
@@ -1119,12 +1119,12 @@ describe('detectIntakeDecline', () => {
       meal({ ms: at(0, 8), foodItemId: 'f1', intakeRating: 'refused' }),
     ];
     // The bowl went down at 10:00 today, two hours after the refusal.
-    const bowl = [{ foodItemId: 'f1', bowlFromMs: at(0, 10), bowlUntilMs: Infinity, uncertain: [] }];
+    const bowl = [{ foodItemId: 'f1', fromMs: at(0, 10), untilMs: Infinity }];
     const out = detectIntakeDecline({ species: 'dog', nowMs: NOW, meals, freeFedSpans: bowl });
     expect(out.status).toBe('watch');
     expect(out.status === 'watch' && out.flags.map((f) => f.trigger)).toEqual(['refused_normal_food']);
     // The same bowl opened before the refusal: the refusal is a bowl, and the lane is dormant.
-    const earlier = [{ foodItemId: 'f1', bowlFromMs: at(0, 6), bowlUntilMs: Infinity, uncertain: [] }];
+    const earlier = [{ foodItemId: 'f1', fromMs: at(0, 6), untilMs: Infinity }];
     expect(detectIntakeDecline({ species: 'dog', nowMs: NOW, meals, freeFedSpans: earlier }).status).not.toBe('watch');
   });
 
@@ -1136,7 +1136,7 @@ describe('detectIntakeDecline', () => {
       meal({ ms: at(0), foodItemId: 'f1', intakeRating: 'refused' }),
     ];
     // Down for a fortnight, taken up at the end of three days ago.
-    const ended = [{ foodItemId: 'f1', bowlFromMs: at(20), bowlUntilMs: (TODAY_IDX - 2) * DAY, uncertain: [] }];
+    const ended = [{ foodItemId: 'f1', fromMs: at(20), untilMs: (TODAY_IDX - 2) * DAY }];
     const out = detectIntakeDecline({ species: 'dog', nowMs: NOW, meals: [
       ...meals,
       // Bowl-era ratings inside the span, which must NOT enter the prior mean.
@@ -1148,7 +1148,7 @@ describe('detectIntakeDecline', () => {
     expect(out.status).not.toBe('watch');
     // With no span, the two "picked" bowl ratings drag the prior mean under the floor: the bowl
     // would have SUPPRESSED the refusal. The span keeps them out of the history.
-    const openAfter = [{ foodItemId: 'f1', bowlFromMs: at(4, 0), bowlUntilMs: (TODAY_IDX - 2) * DAY, uncertain: [] }];
+    const openAfter = [{ foodItemId: 'f1', fromMs: at(4, 0), untilMs: (TODAY_IDX - 2) * DAY }];
     const kept = detectIntakeDecline({ species: 'dog', nowMs: NOW, meals: [
       ...meals,
       meal({ ms: at(4), foodItemId: 'f1', intakeRating: 'picked' }),
@@ -1227,7 +1227,7 @@ describe('getIntakeDecline (wrapper wiring, CUL-1086)', () => {
     mockGetAllAsync.mockImplementation(async (sql: string) =>
       /feeding_arrangements/.test(sql)
         ? // The bowl went down at 10:00 today, after the 08:00 refusal.
-          [{ food_item_id: 'k', created_at: iso(0, 10), active_from: null, active_until: null }]
+          [{ food_item_id: 'k', created_at: iso(0, 10), active_from: null, active_until: null, ended_at: null }]
         : [mealRow(7, 8, 'all'), mealRow(6, 8, 'all'), mealRow(5, 8, 'all'), mealRow(0, 8, 'refused')],
     );
     const out = await getIntakeDecline('pet-1', 'dog', NOW);
@@ -1236,6 +1236,7 @@ describe('getIntakeDecline (wrapper wiring, CUL-1086)', () => {
     expect(arrangementSql).toMatch(/method = 'free_choice'/);
     expect(arrangementSql).toMatch(/deleted_at IS NULL/);
     expect(arrangementSql).not.toMatch(/active_until IS NULL/); // ended bowls are spans too
+    expect(arrangementSql).toMatch(/\bended_at\b/); // the toggle-off instant closes the span (076)
     expect(arrangementSql).not.toMatch(/food_items_cache/); // no join: a missing cache row cannot drop a bowl
     expect(mockGetActiveArrangementsForPet).not.toHaveBeenCalled();
   });

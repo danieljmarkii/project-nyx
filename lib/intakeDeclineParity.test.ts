@@ -15,7 +15,8 @@
 // instant, an optional end DATE, some ended, some opened mid-record — and each side parses them
 // its own production way: the phone through `parseFreeFedIntakeSpans` (what its read wrapper
 // does), the server from `FeedingArrangement`s (what its callers hand it). Ratings land on both
-// sides of every span edge, so the agreement covers the edges, not only the middle.
+// sides of every span edge, so the agreement covers the edges, not only the middle. Rows carry
+// the toggle-off instant (`ended_at`, migration 076) or, like a pre-076 end, do not.
 
 jest.mock('./db', () => ({ getDb: jest.fn() }));
 jest.mock('./feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
@@ -79,6 +80,8 @@ function generate(seed: number): Rec {
         createdAt: r() < 0.15 ? null : new Date(createdMs).toISOString(),
         activeFrom: localDay(createdMs),
         activeUntil: endMs === null ? null : localDay(endMs),
+        // Migration 076: a current build writes the toggle-off instant; a pre-076 end has none.
+        endedAt: endMs === null || r() < 0.2 ? null : new Date(endMs).toISOString(),
       });
       if (endMs === null) break;
       createdMs = endMs + Math.floor(r() * 36) * MS_PER_HOUR;
@@ -142,6 +145,7 @@ function serverVerdict(rec: Rec, withBowls: boolean): Verdict[] {
           activeUntil: b.activeUntil,
           foodItemId: b.foodItemId,
           createdAt: b.createdAt,
+          endedAt: b.endedAt,
         }))
       : [],
     now: new Date(rec.nowMs).toISOString(),
@@ -182,8 +186,8 @@ describe('intake-decline parity: phone and server over the same meals (CUL-1086)
       if (phone.length > 0) fired++;
       if (JSON.stringify(serverVerdict(rec, false)) !== JSON.stringify(server)) filterDecided++;
     }
-    // Non-vacuity. Measured at authoring (by date, zones and toggles): 357 records fired, and
-    // on 260 the bowls changed the server's answer (of 4000). The floors sit under those so a harmless generator
+    // Non-vacuity. Measured at authoring (by instant, zones, toggles, pre-076 ends): 352 records
+    // fired, and on 228 the bowls changed the server's answer (of 4000). The floors sit under those so a harmless generator
     // tweak does not red the suite, and far above zero so a generator that stops reaching the
     // filter does.
     expect(fired).toBeGreaterThan(150);
@@ -201,7 +205,7 @@ describe('intake-decline parity: phone and server over the same meals (CUL-1086)
     }
     meals.push({ ms: BASE_NOW + 8 * MS_PER_HOUR, foodItemId: 'f1', foodType: 'meal', rating: 'picked' });
     meals.push({ ms: BASE_NOW + 12 * MS_PER_HOUR, foodItemId: 'f2', foodType: 'meal', rating: 'all' });
-    const bowl = { foodItemId: 'f2', createdAt: '2026-06-01T00:00:00.000Z', activeFrom: '2026-06-01', activeUntil: null };
+    const bowl = { foodItemId: 'f2', createdAt: '2026-06-01T00:00:00.000Z', activeFrom: '2026-06-01', activeUntil: null, endedAt: null };
     const rec: Rec = { species: 'cat', nowMs: BASE_NOW + 20 * MS_PER_HOUR, bowls: [bowl], meals };
 
     expect(serverVerdict(rec, false)).toEqual([]); // the defect: the server stayed quiet
