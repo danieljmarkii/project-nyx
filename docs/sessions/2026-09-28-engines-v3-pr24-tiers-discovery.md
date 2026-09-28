@@ -35,3 +35,9 @@ The mock was republished as one proposal: option B of K1 and options A and B of 
 - The contested rows (T3, T4, T5a, T5c, T6, T10, T10b, T13, T14, T17, T18, T22, T23) go to CUL-583 and CUL-1312 as one packet.
 - EN-5's "A little" mapping and the answer's storage shape depend on CUL-1118 (D2).
 - Tier-2 edits: incident screen D2/G3 written (K1 = A). Still awaiting approval: the vet report "no tier" line. clinical-guardrails Patterns 1–2 are rewritten in PR-26.
+- PR-20's care-state spec (`docs/nyx-care-state-requirements.md`, around line 270) hands this track a **sampled follow-up on "keep an eye out" reads** (`reason = 'sampled'`), so that missed calls at the lowest tier can be counted. It is not drawn here and belongs with PR-27 or EN-14's build.
+
+## Process note: Linear closes an issue from a discovery PR
+
+Linear's GitHub integration attached #967 to both EN-3 and EN-4 as soon as the PR text named their IDs. It re-attached within seconds after each removal, and it moved both issues to In Progress. An attachment closes the issue on merge (the CUL-803 rule), which is wrong for a discovery PR that finishes neither. The workaround was to name the issues in words in the PR title and body, and to squash-merge with a message that carries no ID. CLAUDE.md's "reference `CUL-NNN` in every PR" rule does not cover this case. It needs a one-line carve-out for DISCOVERY PRs, left for the PM because CLAUDE.md has a size budget.
+
