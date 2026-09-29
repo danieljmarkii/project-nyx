@@ -400,7 +400,7 @@ Deno.test('CUL-1323 — a HOLD writes no words, clears a hide it finds, and writ
   // client (old builds hide unconditionally), which is why "the owner hid these words" is
   // not enough to keep it (adversarial round 2, Break 1).
   const stored = (over: Partial<StoredAnalysis>): StoredAnalysis => ({
-    recommendation: 'worth_a_call', status: 'completed', edited: false, presentFlags: [], hidden: false, ...over,
+    recommendation: 'worth_a_call', tier: null, status: 'completed', edited: false, presentFlags: [], hidden: false, ...over,
   })
   const call = (s: StoredAnalysis | null, recommendation: 'worth_a_call' | 'monitor') =>
     resolveReanalysisWrite({
@@ -709,12 +709,12 @@ Deno.test('snapshotStoredAnalysis — reads the verdict, the status, the edit an
       blood_col: 'yes',
       dismissed_at: '2026-09-21T10:00:00Z',
     }),
-    { recommendation: 'monitor', status: 'failed', edited: true, presentFlags: ['blood'], hidden: true },
+    { recommendation: 'monitor', tier: null, status: 'failed', edited: true, presentFlags: ['blood'], hidden: true },
   )
   // Garbage in the typed columns reads as absent, never as a verdict.
   assertEquals(
     snapshotStoredAnalysis(FAKE_DESCRIPTOR, { recommendation: 7, status: null, edited_at: null, blood_col: 'no' }),
-    { recommendation: null, status: null, edited: false, presentFlags: [], hidden: false },
+    { recommendation: null, tier: null, status: null, edited: false, presentFlags: [], hidden: false },
   )
 })
 
@@ -722,6 +722,7 @@ Deno.test('snapshotStoredAnalysis — reads the verdict, the status, the edit an
 
 const stored = (o: Partial<StoredAnalysis> = {}): StoredAnalysis => ({
   recommendation: 'worth_a_call',
+  tier: null,
   status: 'completed',
   edited: false,
   presentFlags: [],

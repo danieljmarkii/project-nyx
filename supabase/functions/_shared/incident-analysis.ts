@@ -54,7 +54,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { fetchWithTimeout } from './http.ts'
 // Engines v3 (PR-11a, CUL-1267): the rollout flag, read fail-closed for the record's owner,
 // and the one writer of every stamp migration 075 added (the rule is on engineStamps.ts).
-import type { EngineFlags } from './engineFlags.ts'
+import { isEngineKeyOn, type EngineFlags } from './engineFlags.ts'
 import { readEngineFlags } from './engineFlagsRead.ts'
 import { buildIncidentStamps, stampIncidentWrite, type IncidentStamps } from './engineStamps.ts'
 // The ONE quiet-verdict list, shared with the phone (CUL-1277). Every guard below that
@@ -62,6 +62,15 @@ import { buildIncidentStamps, stampIncidentWrite, type IncidentStamps } from './
 // (EN-3's tiers, a flag rolled back) is protected like `worth_a_call`. The free-text gates
 // (Pattern 10) deliberately do NOT: see `selectReadText`.
 import { isEscalationVerdict, isQuietVerdict } from '../../../lib/incidentVerdict.ts'
+// The tier order (EN-3, CUL-1133; Engines v3 PR-26): one import-free module beside the quiet
+// list, shared with the phone. See "The tier" below for what this file does with it.
+import {
+  effectiveTierRank,
+  type IncidentTier,
+  TIER_RANK,
+  tierForVerdict,
+  tierRank,
+} from '../../../lib/incidentTier.ts'
 
 export type { SupabaseClient }
 
@@ -205,15 +214,35 @@ export interface IncidentCopy<TFlag extends string = string> {
 
 // A descriptor's contextual flags with the copy this run's words come from (see
 // IncidentDescriptor.computeContextualFlags).
-export interface ContextualRun<TFlag extends string = string> {
+export interface ContextualRun<TFlag extends string = string, TAnalysis = unknown> {
   flags: TFlag[]
   copy: IncidentCopy<TFlag>
+  // Optional (EN-7, CUL-1138; stool's flag-on rule only). A contextual flag whose trigger
+  // needs the photo's read as well as the record: stool's concurrent_vomiting fires on a
+  // vomit beside a LOOSE stool, and the read can see a loose stool the owner logged as
+  // Normal. Built by the descriptor with this run's context, and called once after the
+  // vision call with the parsed analysis (null when no model ran or none came back). It may
+  // ADD flags and pick the copy their words come from; the framework keeps every flag the
+  // record gave whatever it returns (mergeAfterRead), so a descriptor still cannot weaken
+  // the floor. A capped run never reaches it, so a flag the record alone can prove belongs
+  // in `flags`, never here.
+  afterRead?(analysis: TAnalysis | null): { flags: TFlag[]; copy: IncidentCopy<TFlag> }
 }
 
-export function resolveContextualRun<TFlag extends string>(
-  result: TFlag[] | ContextualRun<TFlag>,
+// The post-read hook's answer, folded in: every pre-vision flag stays, in its order, and
+// the hook's additions follow. The hook's copy is taken, since it knows about both halves.
+export function mergeAfterRead<TFlag extends string>(
+  before: { flags: TFlag[]; copy: IncidentCopy<TFlag> },
+  after: { flags: TFlag[]; copy: IncidentCopy<TFlag> },
+): { flags: TFlag[]; copy: IncidentCopy<TFlag> } {
+  const added = after.flags.filter((f) => !before.flags.includes(f))
+  return { flags: [...before.flags, ...added], copy: after.copy }
+}
+
+export function resolveContextualRun<TFlag extends string, TAnalysis = unknown>(
+  result: TFlag[] | ContextualRun<TFlag, TAnalysis>,
   fallback: IncidentCopy<TFlag>,
-): ContextualRun<TFlag> {
+): ContextualRun<TFlag, TAnalysis> {
   return Array.isArray(result) ? { flags: result, copy: fallback } : result
 }
 
@@ -283,6 +312,49 @@ export function selectDescription(params: {
   return maySurface ? params.modelDescription : null
 }
 
+// ── The tier (EN-3, CUL-1133; Engines v3 PR-26) ──────────────────────────────
+// docs/nyx-incident-tiers-requirements.md §1. Under `engines_v3_en3` every write that sets
+// `recommendation` also sets `tier`: the full write-back, the owner-edited update, the
+// capped escalation and the failure path's rescue. The partial-read collapse needs no case
+// of its own, because the tier is derived from the verdict AFTER the collapse. With the key
+// off no write names the column, so every write is today's, byte for byte, and a tier an
+// earlier flag-on run wrote stays on the row (readers take the louder column).
+//
+// THE MAP (tierForVerdict, lib/incidentTier.ts) is the only decision here: worth_a_call →
+// call_today, monitor → logged, not_enough_to_say → not_enough_to_say. Nothing in this PR
+// writes call_now. Every escalation the engine makes today is a "same as today" row of the
+// spec's §7 table at call today; the louder rows (the vomit counts, lethargy, the photo
+// findings) arrive with the rules that decide them (PR-28, PR-29), each with its review.
+// A vomit with no photo read is not_enough_to_say in both columns, never logged: the floor
+// already returns not_enough_to_say for no photo, an unreadable one and one that does not
+// show the subject, and only a read photo reaches monitor.
+//
+// THE MODEL'S OWN ESCALATION (GAP-31, row T19) maps to call today like any other, keeps its
+// words (selectReadText is unchanged), and is told apart by tierReasonOf: a call with no
+// contextual and no visual flag is the model's alone. That is derivable from the row, so an
+// evaluation (PR-17) counts it from the same three columns.
+export const TIER_ENGINE_KEY = 'engines_v3_en3' as const
+
+export function tieredReadFields<TFlag extends string>(
+  readFields: AnalysisReadFields<TFlag>,
+  tiersOn: boolean,
+): AnalysisReadFields<TFlag> {
+  return tiersOn ? { ...readFields, tier: tierForVerdict(readFields.recommendation) } : readFields
+}
+
+export type TierReason = 'contextual' | 'visual' | 'model_only' | 'logged' | 'not_enough_to_say'
+
+export function tierReasonOf(fields: {
+  tier: IncidentTier
+  contextual_flags: readonly string[]
+  visual_flags: readonly string[]
+}): TierReason {
+  if (fields.tier === 'logged' || fields.tier === 'not_enough_to_say') return fields.tier
+  if (fields.contextual_flags.length > 0) return 'contextual'
+  if (fields.visual_flags.length > 0) return 'visual'
+  return 'model_only'
+}
+
 // ── Write-back decision (Pattern 7 — the never-clobber guard, B-028) ──────────
 // The n=1 read + flags always refresh (so the deterministic floor can
 // re-escalate on worsening context); the structured CLINICAL fields are the
@@ -290,6 +362,9 @@ export function selectDescription(params: {
 
 export interface AnalysisReadFields<TFlag extends string = string> {
   recommendation: Recommendation
+  // EN-3's tier, beside the verdict. Present exactly when this run is under
+  // `engines_v3_en3` (tieredReadFields); absent, the write is byte-for-byte today's.
+  tier?: IncidentTier
   read_text: string | null
   visual_flags: string[]
   contextual_flags: TFlag[]
@@ -383,12 +458,17 @@ export type StoredRow = Record<string, unknown> & {
   edited_at?: string | null
   status?: string | null
   recommendation?: string | null
+  tier?: string | null
 }
 
 // What a re-analysis learns about the row already on file: every field a write
 // decision below switches on, and nothing else.
 export interface StoredAnalysis {
   recommendation: string | null
+  // EN-3's tier (079). NULL on every row written before PR-26 or with the key off; the
+  // guards below read the louder of it and `recommendation`, so NULL never protects less
+  // than today.
+  tier: string | null
   status: string | null
   // edited_at is set: the owner has corrected a structured field (Pattern 7).
   edited: boolean
@@ -407,6 +487,7 @@ export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, T
   if (!row) return null
   return {
     recommendation: typeof row.recommendation === 'string' ? row.recommendation : null,
+    tier: typeof row.tier === 'string' ? row.tier : null,
     status: typeof row.status === 'string' ? row.status : null,
     edited: !!row.edited_at,
     presentFlags: descriptor.presentFlagsFromStructured(row),
@@ -469,6 +550,30 @@ export type ReanalysisWrite =
 // finds a different one keeps the stored columns, so the new finding reaches the card
 // (the verdict and read escalate) but not the structured fields. The per-field union
 // needs per-field provenance for ai_raw_payload, which is CUL-1110's design.
+// Does the stored row hold over this run's read? Rule 1 above, in ranks (lib/incidentTier.ts).
+//
+// Every write: a stored escalation holds over a calmer verdict. "Stored escalation" is the
+// louder of the row's two columns, so with no tier on the row (every pre-PR-26 row, every
+// flag-off row) it is exactly today's test, the CUL-1277 allowlist included (an unknown
+// verdict ranks as a call). A tier written under the key keeps protecting after a rollback,
+// and after a client lowered `recommendation` beside it (CUL-1321's M1): the tier is frozen
+// to clients (079), the verdict is not.
+//
+// A tiered write (this run is under the key, so its read fields carry a tier) also holds
+// when it would step a call DOWN: a stored call now is never replaced by a call today (the
+// PR-04b note on CUL-1133: "an escalation replacing an escalation never steps down"). The
+// quiet tiers share a rank, so logged ↔ not_enough_to_say stays free (B-203, CUL-812).
+// Only the call tiers bind.
+export function holdsOver(
+  stored: Pick<StoredAnalysis, 'recommendation' | 'tier'>,
+  next: Pick<AnalysisReadFields, 'recommendation' | 'tier'>,
+): boolean {
+  const storedRank = effectiveTierRank(stored)
+  if (storedRank === TIER_RANK.quiet) return false
+  if (!isEscalationVerdict(next.recommendation)) return true
+  return next.tier !== undefined && tierRank(next.tier) < storedRank
+}
+
 export function resolveReanalysisWrite<TFlag extends string>(params: {
   stored: StoredAnalysis | null
   eventId: string
@@ -479,9 +584,7 @@ export function resolveReanalysisWrite<TFlag extends string>(params: {
   readFields: AnalysisReadFields<TFlag>
 }): ReanalysisWrite {
   const { stored, readFields } = params
-  // The allowlist (CUL-1277): a stored verdict this build does not know is an escalation
-  // too, and is held.
-  if (stored && isEscalationVerdict(stored.recommendation) && !isEscalationVerdict(readFields.recommendation)) {
+  if (stored && holdsOver(stored, readFields)) {
     const settle = stored.status !== 'completed' && stored.status !== 'uncertain'
     if (!settle && !stored.hidden) return { mode: 'hold', values: null }
     return {
@@ -643,6 +746,9 @@ export type FailureWrite =
 // needs the fact that the latest read didn't finish.
 export interface RescueRead<TFlag extends string = string> {
   recommendation: Recommendation
+  // Present exactly when the run was under the tier key (withRescueTier); the rescue then
+  // writes it beside the verdict like every other write of words.
+  tier?: IncidentTier
   read_text: string
   visual_flags: string[]
   contextual_flags: TFlag[]
@@ -680,6 +786,16 @@ export function buildRescueRead<TFlag extends string>(
   }
 }
 
+// The rescue's tier, under the key: the same map as every other write, from the verdict the
+// rescue carries (a computed read's tier, when it had one, is that same map's answer).
+export function withRescueTier<TFlag extends string>(
+  rescue: RescueRead<TFlag> | null,
+  tiersOn: boolean,
+): RescueRead<TFlag> | null {
+  if (!rescue || !tiersOn) return rescue
+  return { ...rescue, tier: tierForVerdict(rescue.recommendation) }
+}
+
 // `existing` is the row read AT THE MOMENT OF THIS DECISION, not at step 3b — see
 // the call site for why the difference matters. `existingReadFailed` says that read
 // itself errored, which is NOT the same as "no row": the caller cannot tell an empty
@@ -687,7 +803,7 @@ export function buildRescueRead<TFlag extends string>(
 // a missing retry button, so it fails CLOSED. `rescue` is required, not defaulted: a
 // default on a safety decision is that decision (C-37), and "no rescue" must be said.
 export function buildFailureWrite(params: {
-  existing: Pick<StoredAnalysis, 'recommendation' | 'presentFlags'> | null
+  existing: Pick<StoredAnalysis, 'recommendation' | 'presentFlags'> & { tier?: string | null } | null
   existingReadFailed: boolean
   eventId: string
   petId: string | null
@@ -710,7 +826,9 @@ export function buildFailureWrite(params: {
   // outcome that is safe whatever the row holds.
   if (params.existingReadFailed) return { mode: 'skip' }
 
-  if (isEscalationVerdict(params.existing?.recommendation)) {
+  // The louder of the two columns (lib/incidentTier.ts): with no tier on the row this is
+  // exactly isEscalationVerdict(recommendation); a tier written under the key protects too.
+  if (params.existing && effectiveTierRank(params.existing) !== TIER_RANK.quiet) {
     // Record the error alongside for observability; leave status, recommendation
     // and read_text exactly as the record earned them. A later successful read
     // clears `error` via readFields (error: null). A rescue would only swap one
@@ -734,6 +852,7 @@ export function buildFailureWrite(params: {
         pet_id: params.petId,
         incident_type: params.incidentType,
         recommendation: params.rescue.recommendation,
+        ...(params.rescue.tier !== undefined ? { tier: params.rescue.tier } : {}),
         read_text: params.rescue.read_text,
         visual_flags: params.rescue.visual_flags,
         contextual_flags: params.rescue.contextual_flags,
@@ -776,11 +895,13 @@ export function buildFailureWrite(params: {
 // (EN-3's tiers, then a flag rollback) is protected the same way. Pure + exported so the
 // clause is tested rather than asserted inline in the untested pipeline.
 export function isRealAnalysis(
-  existing: { status?: string | null; recommendation?: string | null } | null | undefined,
+  existing: { status?: string | null; recommendation?: string | null; tier?: string | null } | null | undefined,
 ): boolean {
   if (!existing) return false
   if (existing.status !== 'pending' && existing.status !== 'failed') return true
-  return isEscalationVerdict(existing.recommendation)
+  // The louder column (EN-3): identical to isEscalationVerdict(recommendation) on a row with
+  // no tier, and a call tier written under the key is protected the same way.
+  return effectiveTierRank(existing) !== TIER_RANK.quiet
 }
 
 // ── Cap + flag gate (Monetization Track 2, T2-3 / B-329 + B-001) ──────────────
@@ -1068,7 +1189,7 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   computeContextualFlags(
     userClient: SupabaseClient,
     event: { petId: string; occurredAt: string; species: string; eventType: string; engineFlags: EngineFlags },
-  ): Promise<TFlag[] | ContextualRun<TFlag>>
+  ): Promise<TFlag[] | ContextualRun<TFlag, TAnalysis>>
   // Per-type owner-facing read templates. Every new descriptor's strings need
   // their own reassurance-word regex test (Pattern 8) — not inherited.
   copy: IncidentCopy<TFlag>
@@ -1221,6 +1342,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // The stamps this run's words carry (engineStamps.ts). Out here for the same reason as
   // the rescue's inputs: the catch's rescue writes words, so it writes their stamps.
   let stampsForFailure: IncidentStamps | null = null
+  // Whether this run writes tiers (EN-3), for the same reason: the rescue writes one.
+  let tiersOnForFailure = false
 
   // The stored row, read with every column a write decision switches on. Read twice:
   // at step 3b for the cap branch, and again at step 9, because the vision call
@@ -1228,7 +1351,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // chain claim) or an owner edit can land inside it. A read error throws (CUL-817).
   // pet_id: every decision on the row first checks it is this event's (CUL-1203).
   // dismissed_at: a hold clears the owner's hide, so it has to know one is there (CUL-1323).
-  const storedColumns = ['id', 'pet_id', 'edited_at', 'status', 'recommendation', 'dismissed_at', ...descriptor.redFlagColumns].join(', ')
+  // tier: every guard reads the louder of it and `recommendation` (EN-3, lib/incidentTier.ts).
+  const storedColumns = ['id', 'pet_id', 'edited_at', 'status', 'recommendation', 'tier', 'dismissed_at', ...descriptor.redFlagColumns].join(', ')
   const readStoredRow = async (): Promise<StoredRow | null> =>
     existingRowOrThrow(
       await adminClient
@@ -1283,6 +1407,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //     (engineFlags.ts). A failed read runs the flag-off engine and says so in the
     //     stamp (engine_flags '{}'), which is the truth about the run.
     const engineFlags = await readEngineFlags(userClient, typeof pet?.user_id === 'string' ? pet.user_id : null)
+    const tiersOn = isEngineKeyOn(engineFlags, TIER_ENGINE_KEY)
+    tiersOnForFailure = tiersOn
 
     // 2. Photo(s) for this event (ordered). May be empty (logged without a photo).
     const { data: attachments } = await userClient
@@ -1323,8 +1449,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       }),
       descriptor.copy,
     )
-    const contextualFlags = contextRun.flags
-    const copy = contextRun.copy
+    let contextualFlags = contextRun.flags
+    let copy = contextRun.copy
     contextualFlagsForFailure = contextualFlags
     copyForFailure = copy
 
@@ -1404,24 +1530,48 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           photoUnreadable: false,
           hasPhoto,
         })
-        const readFields: AnalysisReadFields<TFlag> = {
+        const readFields: AnalysisReadFields<TFlag> = tieredReadFields({
           recommendation: cappedRec,
           read_text: readText,
           visual_flags: [],
           contextual_flags: contextualFlags,
           status: 'completed',
           error: null,
+        }, tiersOn)
+        // Under the tier key, a capped call never steps a stored louder call down (spec §1,
+        // the PR-04b note): the same hold step 9 takes, decided on the step-3b row, because
+        // this branch makes no vision call and so has no window for a sibling to land in.
+        // With the key off this branch writes as it always has.
+        const storedForCap = tiersOn ? snapshotStoredAnalysis(descriptor, existing) : null
+        if (storedForCap && holdsOver(storedForCap, readFields)) {
+          // The same decision step 9 takes (holdsOver is its first test), so a hold here is
+          // step 9's hold: it settles a stale status and clears a hide, nothing else.
+          const held = resolveReanalysisWrite({
+            stored: storedForCap,
+            eventId,
+            petId,
+            incidentType,
+            structuredValues: {},
+            nextPresentFlags: storedForCap.presentFlags,
+            readFields,
+          })
+          console.info(`${descriptor.functionName}: capped run held a louder stored call (EN-3)`)
+          if (held.mode === 'hold' && held.values) {
+            const { error: settleError } = await updateAnalysisRow(adminClient, { eventId, petId }, held.values)
+            if (settleError) throw new Error(`DB write failed: ${settleError}`)
+          }
+        } else {
+          const writeBack = buildAnalysisWriteBack({
+            humanEdited: preserveStructured,
+            eventId,
+            petId,
+            incidentType,
+            structuredValues: descriptor.buildStructuredValues(null),
+            readFields,
+          })
+          const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps)
+          if (writeError) throw new Error(`DB write failed: ${writeError}`)
         }
-        const writeBack = buildAnalysisWriteBack({
-          humanEdited: preserveStructured,
-          eventId,
-          petId,
-          incidentType,
-          structuredValues: descriptor.buildStructuredValues(null),
-          readFields,
-        })
-        const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps)
-        if (writeError) throw new Error(`DB write failed: ${writeError}`)
       } else if (!existingRealAnalysis) {
         // No escalation AND no prior real analysis to protect → record the cap /
         // disabled STATE (§4.5) so the client renders its designed state (T2-4).
@@ -1497,6 +1647,17 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       }
     }
 
+    // 6b. A contextual flag that needs the photo's read too (EN-7). Only ADDS: every flag
+    //     step 3 computed stays (mergeAfterRead). The rescue takes the merged run, so a
+    //     write that fails after this point keeps what the read added.
+    if (contextRun.afterRead) {
+      const merged = mergeAfterRead({ flags: contextualFlags, copy }, contextRun.afterRead(analysis))
+      contextualFlags = merged.flags
+      copy = merged.copy
+      contextualFlagsForFailure = contextualFlags
+      copyForFailure = copy
+    }
+
     // 7. Escalation floor (contextual flags from step 3 + the model's visual flags).
     let visualFlags = analysis?.visual_flags ?? []
     let recommendation = applyEscalationFloor({
@@ -1564,19 +1725,25 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // From here the run has a verdict of its own; if the write below fails, the catch
     // keeps it when it escalates (CUL-815's variant: a visual escalation this run found
     // over a stored 'monitor', lost to a failed write-back).
-    computedRead = { recommendation, read_text: readText, visual_flags: visualFlags, contextual_flags: contextualFlags }
+    computedRead = withRescueTier(
+      { recommendation, read_text: readText, visual_flags: visualFlags, contextual_flags: contextualFlags },
+      tiersOn,
+    )
 
     // 9. Write-back. Never clobbers a human-edited row (Pattern 7), never lowers a
     // stored escalation, never takes a stored red flag off the record
     // (resolveReanalysisWrite). Decided on a FRESH read of the row, not step 3b's: see
     // readStoredRow for why that window matters.
-    const readFields: AnalysisReadFields<TFlag> = {
+    const readFields: AnalysisReadFields<TFlag> = tieredReadFields({
       recommendation,
       read_text: readText,
       visual_flags: visualFlags,
       contextual_flags: contextualFlags,
       status,
       error: null,
+    }, tiersOn)
+    if (readFields.tier) {
+      console.info(`${descriptor.functionName}: tier ${readFields.tier} (${tierReasonOf({ ...readFields, tier: readFields.tier })})`)
     }
 
     const structuredValues = descriptor.buildStructuredValues(analysis)
@@ -1663,12 +1830,15 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       petId: petIdForFailure,
       incidentType: incidentTypeForFailure,
       message,
-      rescue: buildRescueRead(copyForFailure, {
-        computed: computedRead,
-        contextualFlags: contextualFlagsForFailure,
-        petName: petNameForFailure,
-        hasPhoto: hasPhotoForFailure,
-      }),
+      rescue: withRescueTier(
+        buildRescueRead(copyForFailure, {
+          computed: computedRead,
+          contextualFlags: contextualFlagsForFailure,
+          petName: petNameForFailure,
+          hasPhoto: hasPhotoForFailure,
+        }),
+        tiersOnForFailure,
+      ),
       stamps: stampsForFailure,
     })
     // Best-effort, as before: a failure write that fails is not re-reported. It is
