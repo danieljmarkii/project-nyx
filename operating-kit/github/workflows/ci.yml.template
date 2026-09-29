@@ -1,0 +1,67 @@
+# CI floor. Required checks on a `main` ruleset with an EMPTY bypass list.
+#
+# Why: the predecessor project merged ~400 PRs with zero server-side checks; its only
+# gate was a local pre-push hook anyone could skip. Every guard it later wrote only
+# became binding once this existed.
+#
+# Rules this file keeps:
+# - Actions pinned to full commit SHAs with the version in a trailing comment (a tag is
+#   mutable, and CI runs third-party code with the repo checked out). Bump both together.
+# - Top-level read-only permissions, so no job can silently widen them.
+# - A re-push cancels its own in-flight run.
+# - Jobs run in parallel and report independently, each under ONE stable name (the
+#   ruleset lists required checks by name; a matrix multiplies names).
+# - Never fix a red run by weakening a check (skip flags, continue-on-error, dropping a
+#   suite) without saying so in the PR.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Typecheck + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@{{CHECKOUT_SHA}} # {{CHECKOUT_VERSION}}
+      # {{SETUP_TOOLCHAIN}}  e.g. actions/setup-node@<sha> with node-version and cache
+      # {{INSTALL}}          e.g. `npm ci` (lockfile authoritative; drift fails here)
+      # {{TYPECHECK}}        e.g. `npx tsc --noEmit`
+      # {{TEST}}             e.g. `npm test -- --ci` (an unmatched snapshot fails instead of writing)
+      - run: echo "fill in the steps above"
+
+  # The timezone leg. The suite's day boundary is LOCAL midnight wherever the product
+  # has a "today"; a UTC runner makes every fixture assert the runner's zone. The
+  # predecessor found seven drifted suites this way, and a real timezone bug shipped
+  # that a green UTC suite could not see.
+  #   Pacific/Kiritimati  UTC+14      maximum eastward offset
+  #   Pacific/Chatham     UTC+12:45   quarter-hour offset; caught what +14 missed
+  #   Pacific/Honolulu    UTC-10      a UTC instant lands on the previous local day
+  # Offset extremes are not a superset of the middle: add zones, never assume.
+  tests-timezones:
+    name: Tests (non-UTC timezones)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@{{CHECKOUT_SHA}} # {{CHECKOUT_VERSION}}
+      # {{SETUP_TOOLCHAIN}} / {{INSTALL}}
+      - shell: bash
+        run: |
+          set -uo pipefail
+          fail=0
+          for tz in Pacific/Kiritimati Pacific/Chatham Pacific/Honolulu; do
+            echo "::group::TZ=$tz"
+            TZ="$tz" {{TEST_COMMAND}} || { echo "FAILED under $tz"; fail=1; }
+            echo "::endgroup::"
+          done
+          exit $fail
