@@ -1667,6 +1667,26 @@ describe('syncPendingWeightChecks — snapshot reconcile wiring (CUL-293)', () =
     expect(petEq).toHaveBeenCalledWith('id', 'pet-A');
   });
 
+  it('pushes each reading with its source and how it was decided (migration 081)', async () => {
+    mockGetAllAsync.mockResolvedValue([
+      { id: 'w1', event_id: 'e1', pet_id: 'pet-A', weight_kg: 5.2, notes: null,
+        source: 'home_scale', source_basis: 'entry', created_at: 't', updated_at: 't' },
+    ]);
+    mockGetFirstAsync.mockResolvedValue({ weight_kg: 5.2 });
+    const wcSelect = jest.fn().mockResolvedValue({ data: [{ id: 'w1' }], error: null });
+    const wcUpsert = jest.fn().mockReturnValue({ select: wcSelect });
+    const petEq = jest.fn().mockResolvedValue({ error: null });
+    mockFrom.mockImplementation((table: string) =>
+      table === 'pets' ? { update: jest.fn().mockReturnValue({ eq: petEq }) } : { upsert: wcUpsert },
+    );
+
+    await syncPendingWeightChecks();
+
+    // Sent explicitly: left out, the server would label a current build's reading 'legacy'.
+    const payload = wcUpsert.mock.calls[0][0] as Record<string, unknown>[];
+    expect(payload[0]).toMatchObject({ source: 'home_scale', source_basis: 'entry' });
+  });
+
   it('does NOT reconcile a pet whose weight row failed to land (RLS-blocked / not returned)', async () => {
     mockGetAllAsync.mockResolvedValue([
       { id: 'w1', event_id: 'e1', pet_id: 'pet-A', weight_kg: 5.2, notes: null, created_at: 't', updated_at: 't' },

@@ -1,6 +1,6 @@
 # The weight lane — Requirements & PR plan (EN-8, CUL-1135)
 
-**Version:** 1.0 · **Date:** 2026-09-28 · **Status:** 🌱 SPEC, seven decisions open for the PM (W1 to W7, §0), every threshold a placeholder for the CUL-583 ruling sheet (§9). §4 and §5 carry the adversarial pass's twelve attacks (§12).
+**Version:** 1.1 · **Date:** 2026-09-29 · **Status:** 🌱 SPEC; W1 and W2 ruled (PM 2026-09-28, CUL-1390), five decisions open for the PM (W3 to W7, §0), every threshold a placeholder for the CUL-583 ruling sheet (§9). §4 and §5 carry the adversarial pass's twelve attacks (§12).
 **Project:** Engines v3: the accountable engine, Wave 2, Lane F. This is PR-18a; it gates PR-18 (the migration), PR-19 (the lane in `generate-signal`) and PR-37 (the client).
 **Pairs with:** `docs/culprit-engines-v3-weight-mockups.html`, published at https://claude.ai/artifact/TagYzKd662BBDPFaaSZehL (the frames; this spec cites them as **F1 to F12**) · `docs/culprit-engines-v3-mockups.html` round 2 (the Home the weight row sits in) · `docs/engines-v3-critique-2026-09.md` (GAP-20, PMD-9, MFU-8, BRK-11, R-2, R-5) · `docs/research/2026-09-engines-step-change.md` (§2 R2, §7 C3, §8 P6) · migrations 024 and 072.
 
@@ -21,6 +21,7 @@ Written in advance, as the plan asked: **on Nyx's record as it stands today, the
 Each is a decision brief. The team's recommendation is marked. W1 to W4 gate PR-18 (the migration); W5 to W7 gate PR-37 (the client). None gates PR-19's server logic, which reads the one predicate either way.
 
 **W1 · Where an estimate lives** (gates PR-18)
+- **⚠ RULED 2026-09-28 (PM, CUL-1390): A.** Estimates never become `weight_checks` rows. Migration 081 carries it: no entry path writes `source = 'estimate'`; the only way in is an owner correcting a reading (PR-37).
 - **Deciding:** whether a weight typed into Edit profile becomes a row in the weight history.
 - **Options:**
   - **A, estimates stay out of `weight_checks` (recommended).** The profile field stays a snapshot, 072 keeps every value it displaces, and the lane reads those only to prompt a weigh-in. *Why:* a reader that forgets to filter cannot plot a guess on the vet report, because the guess is never in the table the report plots (BRK-11's own rule).
@@ -28,6 +29,7 @@ Each is a decision brief. The team's recommendation is marked. W1 to W4 gate PR-
 - **Consequence:** A needs no change to EditPetModal's write and no new reader of 072 beyond the lane. B moves EditPetModal onto `insertWeightCheck` and adds a filter to five readers and a guard to keep them honest.
 
 **W2 · What source the readings already on file get** (gates PR-18)
+- **⚠ RULED 2026-09-28 (PM, CUL-1390): home scale.** Existing rows backfill as `source = 'home_scale'`, `source_basis = 'legacy'`. Migration 081 does it through the column defaults, which stay after the backfill so an installed build's weigh-in still lands; a row such a build writes is therefore also `legacy` (labelled by rule, not by the writer).
 - **Deciding:** the backfill for every `weight_checks` row written before PR-18.
 - **Options:**
   - **Home scale, by the rule (recommended).** Every existing row came through the log weigh-in or its edit screen (no other writer exists), so the entry-path rule gives *home scale*; the row is marked `source_basis = 'legacy'` so the correction sheet can say so. *Why:* the path is known, not guessed, and home scale is the class that needs confirmation anyway.
@@ -238,6 +240,11 @@ Kg, as today. Each plotted reading carries *clinic* or *home scale*; estimates a
 - Planned loss (W6 A) is a plan-row value on the after-visit write, not this migration; it rides PR-37's plan-row work or VV's own schema line.
 - **Privacy line (R-5):** cascade from `pets` and `events` (unchanged); RLS unchanged (per-verb pet-owner policies on `weight_checks`); same-pet trigger unchanged; the local wipe list already holds `weight_checks`; a model reads the source *word* through Ask's tool output, never free text; export and the App Store label gain "weight source" under health data.
 - **Migration Safety Pre-flight** is PR-18's to write; destructive = n.
+- **⚠ As built (PR-18, migration 081, 2026-09-29):**
+  - Both columns keep their defaults (`home_scale`, `legacy`) after the backfill. Installed builds upsert without them; without a default every weigh-in from an installed phone fails with 23502 and quarantines. A current build always sends both.
+  - No CHECK pairs `estimate` with `owner`. A violating write would be a client bug, and the CHECK would refuse the whole reading (C-38); the pairing is PR-37's writer contract.
+  - `guards/weightDisplacements.test.ts` stays empty here. Its entry lands with its reader in PR-19 (C-32), not ahead of it.
+  - The local mirror's two `COLUMN_UPGRADES` entries carry `rehydrate`, so a label another device wrote reaches a phone that pulled the row before it had the column.
 
 ## 8. What EN-8 does on Nyx, written in advance
 

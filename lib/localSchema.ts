@@ -64,6 +64,12 @@ export const BASE_SCHEMA_SQL = `
       pet_id        TEXT NOT NULL,
       weight_kg     REAL NOT NULL,
       notes         TEXT,
+      -- Migration 081 (EN-8, CUL-1412): where the reading was taken and how that was
+      -- decided. The defaults are the server's (the W2 backfill), so a device's rows
+      -- and the server's agree without a pull; insertWeightCheck writes both
+      -- explicitly. No CHECK, as elsewhere in this mirror: the server's is the authority.
+      source        TEXT NOT NULL DEFAULT 'home_scale',
+      source_basis  TEXT NOT NULL DEFAULT 'legacy',
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
       synced        INTEGER NOT NULL DEFAULT 0,
@@ -567,6 +573,14 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   { table: 'event_ai_verdicts', column: 'photo_set_key', type: 'TEXT' },
   { table: 'event_ai_verdicts', column: 'rule_version', type: 'TEXT' },
   { table: 'event_ai_verdicts', column: 'engine_flags', type: 'TEXT' },
+  // Engines v3 PR-18 (CUL-1412) / migration 081 — each weight reading's source. The table
+  // shipped in B-186 without them, so only this path reaches an installed phone. The constant
+  // defaults are the server's backfill (W2: home_scale, 'legacy'), true for every row an
+  // earlier build wrote. `rehydrate`: an earlier build that pulled a row a current build
+  // wrote on another device (source 'entry' now, 'clinic' once PR-37 ships) would otherwise
+  // keep the default here while the server holds the real label.
+  { table: 'weight_checks', column: 'source', type: "TEXT NOT NULL DEFAULT 'home_scale'", rehydrate: true },
+  { table: 'weight_checks', column: 'source_basis', type: "TEXT NOT NULL DEFAULT 'legacy'", rehydrate: true },
   // B-398 — the quarantine pair, on every queue table. Generated from SYNC_QUEUES
   // rather than typed out twelve times, so the set that gets the columns and the
   // set the badge counts are provably the same set.
