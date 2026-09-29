@@ -489,6 +489,9 @@ export interface SignalPipelineResult {
   // The message when resolving the stand-downs threw; the run keeps its findings and
   // writes no marker. The shell logs it.
   standDownError: string | null
+  // CUL-989 — over an incomplete read, the previous Signal's safety cards that this run did not
+  // reproduce, carried forward verbatim (text and finding as shown). Always [] on a complete read.
+  carried: CachedFinding[]
   // CUL-989 — over an incomplete read, the summary slot's deterministic disclosure (the owner-
   // visible "says so"), replacing the summary. Null on a complete read.
   incompleteDisclosure: CachedSummary | null
@@ -497,7 +500,8 @@ export interface SignalPipelineResult {
 // ── The pipeline ──────────────────────────────────────────────────────────────
 
 export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResult {
-  const { rows, prior: priorSignal, nowMs, engineFlags } = args
+  const { prior: priorSignal, nowMs, engineFlags } = args
+  const rows = canonicalRows(args.rows)
   const readIncomplete = args.incompletePulls.length > 0
   const petName = rows.pet.name || 'your pet'
 
@@ -646,11 +650,19 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
   // decoration; it keeps the raw per-episode timestamps out of the phrasing / cache / HTTP layer
   // (CUL-7 finding ②), including the copy that rides on a merged timing_story's `long` block.
   const strippedFindings = stripInternalOnsets(decoratedWithOnsets.map((r) => r.finding))
-  // CUL-989: over an incomplete read every count is a floor, and the finding says so.
+  // CUL-989: over an incomplete read every count is a floor, and the finding says so; and no
+  // safety card is softened below the tier the previous Signal showed (holdPriorTiers).
+  const priorSafety = readIncomplete && priorSignal ? readPriorSafetyEntries(priorSignal.findings) : []
   const decorated = decoratedWithOnsets.map((r, i) => ({
     rank: r.rank,
-    finding: readIncomplete ? ({ ...strippedFindings[i], countIsFloor: true } as Finding) : strippedFindings[i],
+    finding: readIncomplete
+      ? holdPriorTier({ ...strippedFindings[i], countIsFloor: true } as Finding, priorSafety)
+      : strippedFindings[i],
   }))
+  // CUL-989: and no safety card the previous Signal showed disappears on an incomplete read.
+  // Its absence here may be the rows the read did not reach, which is the resolution the ruling
+  // withholds, so the prior card is carried forward as it was shown.
+  const carried: CachedFinding[] = readIncomplete ? carryPriorSafety(priorSafety, decorated.map((r) => r.finding)) : []
 
   // 4a. AI summary (B-023 PR 4). Assemble a DETERMINISTIC fact packet from the curated
   //     findings + the descriptive intake aggregates (computed over the same in-memory
@@ -670,7 +682,7 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
   })
 
   // 5. Cache. Empty findings = building/stale (§3.3), NEVER an all-clear (§9).
-  const isBuilding = decorated.length === 0
+  const isBuilding = decorated.length === 0 && carried.length === 0
   const hasRecentActivity = [...symptomEvents, ...mealEvents].some(
     (e) => nowMs - Date.parse(e.occurredAt) <= 2 * MS_PER_DAY,
   )
@@ -735,8 +747,9 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
     coverage,
     standDowns,
     standDownError,
+    carried,
     incompleteDisclosure: readIncomplete
-      ? incompleteReadDisclosure(petName, decorated.some((r) => r.finding.priorityClass === 'safety'))
+      ? incompleteReadDisclosure(petName, decorated.some((r) => r.finding.priorityClass === 'safety') || carried.length > 0)
       : null,
   }
 }
@@ -795,6 +808,89 @@ export function incompleteReadDisclosure(petName: string, hasSafety: boolean): C
   }
 }
 
+// ── Row order (CUL-989) ───────────────────────────────────────────────────────
+//
+// The pulls used to arrive in physical order and now arrive newest-first on (time, id). Neither
+// order may matter, and one did: two rows of the same food at the same minute (a picker rounds to
+// the minute) decided whether the intake-refusal card fired by which came last (adversarial pass,
+// this PR; `toConfidenceEpisodes` has the same shape). So the pipeline puts every array into ONE
+// canonical order before anything reads it: ascending instant, then the row's full content as a
+// total tie-break. The detectors are unchanged and can no longer see the order a read chose.
+
+function canonicalOrder<T>(rows: readonly T[], instantOf: (row: T) => string | null | undefined): T[] {
+  const keyed = rows.map((row) => {
+    const ms = Date.parse(String(instantOf(row) ?? ''))
+    return { row, ms: Number.isFinite(ms) ? ms : Number.NEGATIVE_INFINITY, tie: JSON.stringify(row) }
+  })
+  keyed.sort((a, b) => (a.ms !== b.ms ? a.ms - b.ms : a.tie < b.tie ? -1 : a.tie > b.tie ? 1 : 0))
+  return keyed.map((k) => k.row)
+}
+
+/** The rows in canonical order (exported for the order-invariance guard). Never mutates. */
+export function canonicalRows(rows: SignalRows): SignalRows {
+  return {
+    ...rows,
+    symptoms: canonicalOrder(rows.symptoms, (r) => r.occurred_at),
+    meals: canonicalOrder(rows.meals, (r) => r.occurred_at),
+    activeTrials: canonicalOrder(rows.activeTrials, (r) => r.started_at),
+    arrangements: canonicalOrder(rows.arrangements, (r) => r.created_at),
+    regimens: canonicalOrder(rows.regimens, (r) => r.started_at),
+    doseEvents: canonicalOrder(rows.doseEvents, (r) => r.occurred_at),
+    incidentAnalyses: canonicalOrder(rows.incidentAnalyses, (r) => first(r.events)?.occurred_at),
+  }
+}
+
+// ── The prior Signal's safety cards over an incomplete read (CUL-989) ─────────
+//
+// A read that stopped short can make a safety card weaker (fewer weeks, so `firm` → `standard`)
+// or make it vanish (a course whose older episodes were not read no longer clears its floor).
+// Both are the reassuring direction: the owner is told less than before, because of rows the
+// read did not reach. The engine's only memory of what it told the owner is the previous cache
+// row, so over an incomplete read that row sets a floor under the safety cards: a card the prior
+// showed keeps at least its prior tier, and one this run did not reproduce is carried forward as
+// it was shown. On a complete read none of this runs, and the record decides alone.
+
+const TIER_RANK: Record<string, number> = { soft: 0, standard: 1, firm: 2 }
+
+type PriorSafetyEntry = { rank: number; text: string; finding: Finding }
+
+const safetyKey = (f: { type: string; symptomType?: unknown; incidentType?: unknown }): string =>
+  `${f.type}:${String(f.symptomType ?? f.incidentType ?? '')}`
+
+/** The prior row's safety cards with their text, tolerant of any shape (a malformed entry is
+ *  dropped, which can only withhold a carried card). Markers are never safety cards. */
+export function readPriorSafetyEntries(raw: unknown): PriorSafetyEntry[] {
+  if (!Array.isArray(raw)) return []
+  const out: PriorSafetyEntry[] = []
+  raw.forEach((e, i) => {
+    if (!e || typeof e !== 'object') return
+    const { text, finding, rank } = e as { text?: unknown; finding?: unknown; rank?: unknown }
+    if (typeof text !== 'string' || text.trim().length === 0) return
+    if (!finding || typeof finding !== 'object') return
+    const f = finding as { type?: unknown; priorityClass?: unknown }
+    if (typeof f.type !== 'string' || f.type === 'stood_down' || f.priorityClass !== 'safety') return
+    out.push({ rank: typeof rank === 'number' && Number.isFinite(rank) ? rank : i, text, finding: finding as Finding })
+  })
+  return out.sort((a, b) => a.rank - b.rank)
+}
+
+/** A floored card never shows a lower tier than the prior card for the same lane and symptom. */
+function holdPriorTier(f: Finding, prior: readonly PriorSafetyEntry[]): Finding {
+  if (f.type !== 'symptom_chronicity' && f.type !== 'symptom_worsening') return f
+  const match = prior.find((p) => safetyKey(p.finding) === safetyKey(f))
+  const priorTier = match ? (match.finding as { tier?: unknown }).tier : undefined
+  if (typeof priorTier !== 'string' || !(priorTier in TIER_RANK)) return f
+  return TIER_RANK[priorTier] > TIER_RANK[f.tier] ? ({ ...f, tier: priorTier } as Finding) : f
+}
+
+/** The prior safety cards this run did not reproduce, verbatim, in their prior order. */
+function carryPriorSafety(prior: readonly PriorSafetyEntry[], current: readonly Finding[]): CachedFinding[] {
+  const shown = new Set(current.map(safetyKey))
+  return prior
+    .filter((p) => !shown.has(safetyKey(p.finding)))
+    .map((p, i) => ({ rank: i, text: p.text, finding: p.finding }))
+}
+
 // ── After the phrasing ────────────────────────────────────────────────────────
 
 export interface SignalPayload {
@@ -825,16 +921,24 @@ export function assembleSignal(
     text: texts[i],
     finding: r.finding,
   }))
+  // Carried cards (CUL-989) sit after this run's safety cards and before its insight cards.
+  const safetyCount = cachedFindings.filter((f) => f.finding.priorityClass === 'safety').length
+  const withCarried: CachedFinding[] = result.carried.length === 0
+    ? cachedFindings
+    : [...cachedFindings.slice(0, safetyCount), ...result.carried, ...cachedFindings.slice(safetyCount)]
+        .map((f, i) => ({ ...f, rank: i }))
+  // The headline. Over an incomplete read with nothing to show it is the disclosure, never the
+  // "still getting to know" line: Home's one sentence must not describe an unread record as new.
   const signalText = result.isBuilding
-    ? buildBuildingText(result.petName, result.hasRecentActivity)
-    : cachedFindings[0].text
-  let entries: CachedEntry[] = cachedFindings
+    ? (result.incompleteDisclosure?.text ?? buildBuildingText(result.petName, result.hasRecentActivity))
+    : withCarried[0].text
+  let entries: CachedEntry[] = withCarried
   let standDownError = result.standDownError
   if (standDownError === null) {
     try {
-      entries = mergeStandDowns(cachedFindings, result.standDowns, result.petName)
+      entries = mergeStandDowns(withCarried, result.standDowns, result.petName)
     } catch (err) {
-      entries = cachedFindings
+      entries = withCarried
       standDownError = err instanceof Error ? err.message : String(err)
     }
   }

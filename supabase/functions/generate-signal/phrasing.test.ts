@@ -1501,7 +1501,9 @@ Deno.test('CUL-989 chronicity floor arm: "at least" on the count, and it still f
       }),
       'Bartholomew',
     )
-    assert.ok(/at least 137 episodes since September/.test(s), s)
+    assert.ok(/across at least 8 of the last 8 weeks — at least 137 episodes\./.test(s), s)
+    // No onset month over a partial read: it is the fact a missing-oldest read gets wrong.
+    assert.doesNotMatch(s, /since/)
     assert.ok(s.length <= 320, `${tier}: ${s.length} chars over the 320 cap: ${s}`)
     assert.ok(validatePhrasing(s, chronicity({ tier, symptomType: 'cough' })))
   }

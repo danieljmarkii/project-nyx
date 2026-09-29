@@ -258,8 +258,13 @@ Deno.test('(i) an incomplete read loses no warning and keeps nothing reassuring 
     }
     assertStrictEquals(part.findings.some((e) => e.finding.type === 'stood_down'), false, `${c.name}: a stand-down over a partial read`)
     assertStrictEquals(part.findings.some((e) => e.finding.type !== 'stood_down' && isReassuringOrResolving(e.finding)), false, c.name)
-    // Nothing appears that the complete read did not carry.
-    for (const k of partKeys) assertStrictEquals(full.findings.map((e) => cardKey(e.finding)).includes(k), true, `${c.name}: gained ${k}`)
+    // Nothing appears that neither the complete read nor the prior Signal carried (a prior safety
+    // card is carried forward over an incomplete read, by design: see (k)).
+    const priorRaw = Array.isArray(c.prior?.findings) ? (c.prior!.findings as { finding?: { type: string; symptomType?: unknown } }[]) : []
+    const priorKeys = priorRaw.filter((e) => e?.finding).map((e) => cardKey(e.finding!))
+    for (const k of partKeys) {
+      assertStrictEquals(full.findings.map((e) => cardKey(e.finding)).includes(k) || priorKeys.includes(k), true, `${c.name}: gained ${k}`)
+    }
   }
   // Non-vacuity: the corpus exercises both halves (a reflection and a fewer-during-trial card
   // withheld; chronicity, worsening, red flag and decline kept).
@@ -275,9 +280,12 @@ Deno.test('(j) an incomplete read floors every count it states, and says so', ()
     for (const e of p.findings) {
       const f = e.finding
       if (f.type === 'stood_down') throw new Error(`${c.name}: a stand-down over a partial read`)
+      // A card carried from the prior Signal is shown as it was; everything computed now is floored.
+      if (result.carried.some((x) => x.finding === f)) continue
       assertStrictEquals(f.countIsFloor, true, `${c.name}: ${f.type} not floored`)
     }
-    for (const e of p.findings.filter((x) => ['symptom_chronicity', 'symptom_worsening', 'trial_response'].includes(x.finding.type))) {
+    const computed = p.findings.filter((x) => !result.carried.some((cf) => cf.finding === x.finding))
+    for (const e of computed.filter((x) => ['symptom_chronicity', 'symptom_worsening', 'trial_response'].includes(x.finding.type))) {
       assertStrictEquals(/\bat least\b/.test(e.text), true, `${c.name}: "${e.text}"`)
       floored++
     }
@@ -291,4 +299,55 @@ Deno.test('(j) an incomplete read floors every count it states, and says so', ()
     assertStrictEquals(p.summary?.text.includes('!'), false)
   }
   assertStrictEquals(floored >= 3, true, `only ${floored} floored sentences`)
+})
+
+Deno.test('(h2) a same-minute tie cannot decide a safety card (the order a read chose is invisible)', () => {
+  // The adversarial pass's counterexample: the refusing cat, plus a same-food, same-minute twin of
+  // the 18:00 refusal rated `all`. Before the canonical order the card fired or not by which of
+  // the two arrived last, and paged reads order ties by a random UUID.
+  const cat = SIGNAL_PIPELINE_CORPUS.find((c) => c.expectedTypes.includes('intake_decline'))!
+  const refusal = cat.rows.meals[cat.rows.meals.length - 1]
+  const twin = { ...refusal, id: 'meal-twin', meals: { ...(refusal.meals as Record<string, unknown>), intake_rating: 'all' } } as typeof refusal
+  const twinFirst = { ...cat, rows: { ...cat.rows, meals: [twin, ...cat.rows.meals] } }
+  const twinLast = { ...cat, rows: { ...cat.rows, meals: [...cat.rows.meals, twin] } }
+  assertEquals(payload(twinFirst), payload(twinLast))
+  // And the tie is in the input, not assumed: same instant, same food, different rating.
+  assertStrictEquals(twin.occurred_at, refusal.occurred_at)
+})
+
+Deno.test('(k) a partial read of the SAME record never weakens or drops a safety card the full read showed', () => {
+  // (i) and (j) re-run the whole record with the flag set. This one removes rows, the way a
+  // newest-first shortfall does (the OLDEST go), with the full read's row as the prior Signal,
+  // which is what the engine will have cached before a read comes back short.
+  const TIER: Record<string, number> = { soft: 0, standard: 1, firm: 2 }
+  let probed = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const full = payload(c)
+    const fullSafety = full.findings.filter((e) => e.finding.type !== 'stood_down' && e.finding.priorityClass === 'safety')
+    if (fullSafety.length === 0) continue
+    const prior: PriorSignal = { findings: full.findings, generatedAt: new Date(Date.parse(c.nowIso) - 86_400_000).toISOString(), engineFlags: [] }
+    const newestFirst = <T extends { occurred_at: string }>(xs: T[]) => [...xs].sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at))
+    for (const keep of [0.8, 0.6, 0.4, 0.2]) {
+      const cut = <T extends { occurred_at: string }>(xs: T[]) => newestFirst(xs).slice(0, Math.ceil(xs.length * keep))
+      const truncated: SignalPipelineCase = { ...c, prior, rows: { ...c.rows, symptoms: cut(c.rows.symptoms), meals: cut(c.rows.meals) } }
+      const p = templatePayload(run(truncated, OFF, EMPTY_CARE_RECORD, INCOMPLETE))
+      for (const e of fullSafety) {
+        const same = p.findings.find((x) => cardKey(x.finding) === cardKey(e.finding))
+        assertStrictEquals(same !== undefined, true, `${c.name} @${keep}: lost ${cardKey(e.finding)}`)
+        const was = (e.finding as { tier?: string }).tier
+        const now = (same!.finding as { tier?: string }).tier
+        if (was !== undefined) assertStrictEquals(TIER[now!] >= TIER[was], true, `${c.name} @${keep}: ${was} → ${now}`)
+      }
+      assertStrictEquals(p.findings.some((x) => x.finding.type !== 'stood_down' && isReassuringOrResolving(x.finding)), false)
+      probed++
+    }
+  }
+  assertStrictEquals(probed >= 12, true, `only ${probed} truncations probed`)
+})
+
+Deno.test('(k2) with no prior, a partial read still never shows the empty-record headline', () => {
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const p = templatePayload(run({ ...c, prior: null }, OFF, EMPTY_CARE_RECORD, INCOMPLETE))
+    if (p.isBuilding) assertStrictEquals(p.signalText, p.summary?.text, `${c.name}: "${p.signalText}"`)
+  }
 })

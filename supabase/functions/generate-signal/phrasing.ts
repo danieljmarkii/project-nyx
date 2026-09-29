@@ -330,11 +330,15 @@ export function templateChronicity(f: SymptomChronicityFinding, petName: string)
   const adjacency = f.coughVomitAdjacent
     ? ` ${adjacencyBridge(f.symptomType)} — a cough can look like retching or end in vomiting. Mention both.`
     : ''
-  // CUL-989 — over an incomplete read the count is a floor. ONE "at least", on the episode count:
-  // the length cap above has ~13 characters of headroom and this spends 9 of them (the cap test
-  // pins the floor arm on the same worst case).
-  const count = f.countIsFloor ? `at least ${f.episodeCount}` : `${f.episodeCount}`
-  return `We've logged ${symptom} for ${petName} across ${f.activeWeeks} of the last ${windowWeeks} weeks — ${count} ${noun} since ${onsetMonth(f.firstOnsetIso)}. A symptom that keeps recurring over weeks is ${vetAsk}.${adjacency} This is a read of your logs, not a diagnosis.`
+  // CUL-989 — over an incomplete read the weeks and the count are floors, and the onset month is
+  // the one fact a read missing the OLDEST rows gets wrong in the calming direction (the course
+  // looks younger than it is: "since August" for a course that began in July, adversarial pass).
+  // So the floor arm drops the month and says "at least" twice; it is shorter than the shipped
+  // arm, so the cap above still holds (pinned on the same worst case in phrasing.test.ts).
+  if (f.countIsFloor) {
+    return `We've logged ${symptom} for ${petName} across at least ${f.activeWeeks} of the last ${windowWeeks} weeks — at least ${f.episodeCount} ${noun}. A symptom that keeps recurring over weeks is ${vetAsk}.${adjacency} This is a read of your logs, not a diagnosis.`
+  }
+  return `We've logged ${symptom} for ${petName} across ${f.activeWeeks} of the last ${windowWeeks} weeks — ${f.episodeCount} ${noun} since ${onsetMonth(f.firstOnsetIso)}. A symptom that keeps recurring over weeks is ${vetAsk}.${adjacency} This is a read of your logs, not a diagnosis.`
 }
 
 export function templatePostprandialTiming(f: PostprandialTimingFinding, petName: string): string {

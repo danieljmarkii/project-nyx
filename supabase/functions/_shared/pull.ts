@@ -258,9 +258,19 @@ export async function readDosesAsToday<T>(fn: string, pull: Promise<Pull<T>>): P
     return await pull
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
+    // ONLY the ambiguity (PGRST201's message; `rowsOrThrow` keeps the message, not the code).
+    // Any other failure — a timeout, an RLS fault — throws like every other read: "didn't
+    // read" must never be scored as "didn't happen" (adversarial pass, this PR).
+    if (!isAmbiguousEmbed(detail)) throw err
     console.warn(`${fn}: dose-event read failed, read as no doses (CUL-1099):`, detail)
     return { rows: [], complete: true }
   }
+}
+
+/** PostgREST's PGRST201, by the message it carries: "Could not embed because more than one
+ *  relationship was found for 'events' and 'medication_administrations'". */
+export function isAmbiguousEmbed(message: string): boolean {
+  return /PGRST201|more than one relationship was found/i.test(message)
 }
 
 /** The names of the pulls that did not read to the end, in the order given (a log line, and
