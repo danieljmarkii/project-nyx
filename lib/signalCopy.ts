@@ -1926,7 +1926,7 @@ export function phoneScript(
     return [
       { label: 'Sign', value: symptomWord(finding.symptomType) },
       { label: 'This week', value: `${count(finding.count, 'vomit', 'vomits')} on ${count(finding.days, 'day', 'days')}` },
-      { label: 'Days in a row', value: String(finding.runDays) },
+      ...(finding.persistenceArm ? [{ label: 'Days in a row', value: String(finding.runDays) }] : []),
       { label: 'Watched over', value: `the last ${finding.windowDays} days` },
     ];
   }
@@ -2460,7 +2460,10 @@ function stripCount(finding: SignalFinding, ctx: StripContext, spoken: boolean):
   const suffix = (day: StripDay | null): string => (day ? (spoken ? `, last ${day.spoken}` : ` · last ${day.short}`) : '');
   switch (finding.type) {
     case 'symptom_burden':
-      return `${finding.count} this week, ${finding.runDays} in a row${suffix(lastLocal)}`;
+      // The run only when it is the arm that fired: a count-only card's run can be 1.
+      return finding.persistenceArm
+        ? `${finding.count} this week, ${finding.runDays} in a row${suffix(lastLocal)}`
+        : `${finding.count} this week${suffix(lastLocal)}`;
     case 'symptom_chronicity':
       // Dr. Chen's own strip form: the face's "14 episodes across 5 of the last 8 weeks" said
       // in fewer words, plus the date of the last episode from the record.
