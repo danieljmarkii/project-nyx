@@ -504,7 +504,9 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
       : f.type === 'symptom_worsening'
         ? `${SYMPTOM_LABEL[f.symptomType]} coming more often`
         : f.type === 'intake_decline'
-          ? 'eating less than usual'
+          ? f.trigger === 'refused_normal_food'
+            ? 'turning down a food they usually eat'
+            : 'eating less than usual'
           : f.type === 'incident_red_flag'
             ? `a photo of ${INCIDENT_NOUN[f.incidentType]} showing ${f.flags.map((k) => INCIDENT_FLAG_PHRASE[k]).join(' and ')}`
             : 'a pattern'
@@ -515,6 +517,34 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
         ? 'worth booking a vet visit'
         : 'worth a word with your vet'
   return `An earlier read of ${petName}'s record, on ${onsetDay(carriedFromIso)}, showed ${what} — ${ask}. Part of the record didn't load for this update, so it hasn't been checked again yet.`
+}
+
+/**
+ * Whether `templateCarried` can render this prior entry with every word it needs. A prior row is
+ * read back from jsonb the owner can write, so a lane name alone is not enough: an unknown symptom
+ * printed "undefined", and a red flag with no `flags` threw inside the pipeline (adversarial
+ * third check, CUL-989). An entry that fails is simply not carried, which can only withhold.
+ */
+export function canRenderCarried(f: unknown): boolean {
+  if (!f || typeof f !== 'object') return false
+  const x = f as { type?: unknown; symptomType?: unknown; incidentType?: unknown; flags?: unknown; tier?: unknown; trigger?: unknown }
+  const known = (map: object, k: unknown) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k)
+  switch (x.type) {
+    case 'symptom_chronicity':
+    case 'symptom_worsening':
+      return known(SYMPTOM_LABEL, x.symptomType) && (x.tier === undefined || typeof x.tier === 'string')
+    case 'intake_decline':
+      return x.trigger === undefined || typeof x.trigger === 'string'
+    case 'incident_red_flag':
+      return (
+        known(INCIDENT_NOUN, x.incidentType) &&
+        Array.isArray(x.flags) &&
+        x.flags.length > 0 &&
+        x.flags.every((k) => known(INCIDENT_FLAG_PHRASE, k))
+      )
+    default:
+      return false
+  }
 }
 
 export function templateForFinding(finding: Finding, petName: string): string {

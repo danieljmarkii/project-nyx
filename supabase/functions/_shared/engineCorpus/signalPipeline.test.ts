@@ -409,6 +409,11 @@ Deno.test('(k4) only the four safety lanes are carried: a forged or malformed pr
       { rank: 2, text: 'x', finding: { type: 'symptom_chronicity', priorityClass: 'insight', symptomType: 'vomit' } },
       { rank: 3, text: 'x', finding: { type: 'symptom_chronicity', priorityClass: 'safety' } }, // no symptomType
       { rank: 4, text: 'x', finding: null },
+      // The third check's two: a red flag with no flags (it threw), an unknown symptom ("undefined").
+      { rank: 5, text: 'x', finding: { type: 'incident_red_flag', priorityClass: 'safety', incidentType: 'vomit' } },
+      { rank: 6, text: 'x', finding: { type: 'incident_red_flag', priorityClass: 'safety', incidentType: 'vomit', flags: ['nope'] } },
+      { rank: 7, text: 'x', finding: { type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'zzz', tier: 'firm' } },
+      { rank: 8, text: 'x', finding: { type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'toString', tier: 'firm' } },
       'garbage',
     ],
     generatedAt: new Date(Date.parse(quiet.nowIso) - 86_400_000).toISOString(),
@@ -419,4 +424,17 @@ Deno.test('(k4) only the four safety lanes are carried: a forged or malformed pr
   // A future-dated prior carries nothing either (a clock skew cannot pin a card forever).
   const future = { ...forged, findings: payload(SIGNAL_PIPELINE_CORPUS.find((c) => c.expectedTypes.includes('intake_decline'))!).findings, generatedAt: '2099-01-01T00:00:00.000Z' }
   assertEquals(templatePayload(run({ ...quiet, prior: future }, OFF, EMPTY_CARE_RECORD, INCOMPLETE)).findings, [])
+})
+
+Deno.test('(k5) a carried intake card names the finding it carries: a refusal is never "eating less"', () => {
+  const cat = SIGNAL_PIPELINE_CORPUS.find((c) => c.expectedTypes.includes('intake_decline'))!
+  const [later] = chain(cat, [2])
+  const card = later.findings.find((e) => e.finding.type === 'intake_decline')!
+  const trigger = (card.finding as { trigger?: string }).trigger
+  assertStrictEquals(
+    /turning down a food they usually eat/.test(card.text),
+    trigger === 'refused_normal_food',
+    `${trigger}: "${card.text}"`,
+  )
+  assertStrictEquals(/undefined/.test(card.text), false)
 })

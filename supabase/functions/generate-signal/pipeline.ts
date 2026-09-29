@@ -72,7 +72,14 @@ import { computePhotoComposition, type PhotoAnalysisInput } from './photoComposi
 // function boundary exactly as `./protein.ts` already re-exports `lib/protein.ts`
 // — a second copy of `start + target + grace` living here is the failure mode.
 import { isTrialRunning } from '../../../lib/dietTrial.ts'
-import { buildBuildingText, curateFindings, templateCarried, templateForFinding, type CachedFinding } from './phrasing.ts'
+import {
+  buildBuildingText,
+  canRenderCarried,
+  curateFindings,
+  templateCarried,
+  templateForFinding,
+  type CachedFinding,
+} from './phrasing.ts'
 import {
   mergeStandDowns,
   priorForStandDowns,
@@ -905,9 +912,9 @@ export function readPriorSafetyEntries(raw: unknown, priorGeneratedAt: unknown, 
     if (!e || typeof e !== 'object') return
     const { finding, rank } = e as { finding?: unknown; rank?: unknown }
     if (!finding || typeof finding !== 'object') return
-    const f = finding as { type?: unknown; priorityClass?: unknown; carriedFrom?: unknown; symptomType?: unknown; incidentType?: unknown }
+    const f = finding as { type?: unknown; priorityClass?: unknown; carriedFrom?: unknown }
     if (typeof f.type !== 'string' || !CARRYABLE.has(f.type) || f.priorityClass !== 'safety') return
-    if (f.type === 'incident_red_flag' ? typeof f.incidentType !== 'string' : f.type !== 'intake_decline' && typeof f.symptomType !== 'string') return
+    if (!canRenderCarried(finding)) return
     // A carried card keeps the date of the read that computed it; a computed one takes the row's.
     const originMs = typeof f.carriedFrom === 'string' ? Date.parse(f.carriedFrom) : generatedMs
     if (!Number.isFinite(originMs) || nowMs - originMs > CARRY_MAX_DAYS * MS_PER_DAY || originMs > nowMs) return
