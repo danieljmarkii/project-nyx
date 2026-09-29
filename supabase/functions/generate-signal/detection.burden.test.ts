@@ -207,17 +207,34 @@ Deno.test('persistence arm counts the OWNER\'s days: three local days that are n
   assert.deepEqual(detectBurden(input(events, { timezone: 'UTC' })), [], 'a UTC calendar: two days, no run')
 })
 
-Deno.test('no usable zone: an evening cat in Los Angeles still gets the card (every offset is tried, the loudest wins)', () => {
-  // Monday 17:30, Tuesday 16:00 and Wednesday 08:00 PDT are Tuesday, Tuesday and Wednesday in UTC:
-  // a UTC guess counted two days and a count of three, and missed the counterexample.
-  const evening = [vomit(ago(2, 0, 30)), vomit(ago(2, 23)), vomit(ago(1, 15))]
-  assert.equal(only(input(evening)).runDays, 3, 'with the zone')
-  assert.deepEqual(detectBurden(input(evening, { timezone: 'UTC' })), [], 'a UTC calendar sees two days: the guess this replaces')
+Deno.test('no usable zone: a run is claimed only if it holds wherever the owner is', () => {
+  // Every whole-hour offset is read and the QUIETEST reading is stated (the second adversarial
+  // pass: the loudest offset invented runs). Each case below is checked under null, empty and
+  // invalid zones alike.
   for (const timezone of [undefined, '', 'Not/AZone']) {
-    const f = only(input(evening, { timezone }))
-    assert.equal(f.persistenceArm, true, String(timezone))
-    assert.equal(f.tier, 'today', String(timezone))
+    const z = String(timezone)
+    // Monday, Tuesday and Wednesday mornings in LA (15:00 UTC): consecutive days in every zone.
+    const morning = only(input(MON_TUE_WED, { timezone }))
+    assert.equal(morning.persistenceArm, true, z)
+    assert.equal(morning.runDays, 3, z)
+    // Three vomits inside 26 hours: three days only in a zone whose midnight falls in the right
+    // two hours. Never "3 days in a row".
+    const tight = [vomit(ago(1, 10)), vomit(ago(1, 23)), vomit(ago(0, 11))]
+    assert.deepEqual(detectBurden(input(tight, { timezone, now: ago(0, 11, 30) })), [], `26 hours, ${z}`)
+    // A run that ended two UTC days ago is never pulled forward to "yesterday".
+    const old = [4, 3, 2].map((d) => vomit(ago(d, 20)))
+    const f = only(input(old, { timezone, now: ago(0, 5) }))
+    assert.equal(f.tier, 'soon', `old run, ${z}`)
+    // The priced residual: Monday 17:30, Tuesday 16:00, Wednesday 08:00 PDT is three local days in
+    // LA and two in UTC, so with no zone the persistence arm stays quiet. Stated, so it reads as
+    // a decision, not coverage.
+    const evening = [vomit(ago(2, 0, 30)), vomit(ago(2, 23)), vomit(ago(1, 15))]
+    assert.deepEqual(detectBurden(input(evening, { timezone })), [], `evening residual, ${z}`)
   }
+  // With the zone, the evening cat gets its card.
+  const evening = [vomit(ago(2, 0, 30)), vomit(ago(2, 23)), vomit(ago(1, 15))]
+  assert.equal(only(input(evening)).tier, 'today')
+  assert.deepEqual(detectBurden(input(evening, { timezone: 'UTC' })), [], 'a UTC calendar sees two days')
 })
 
 Deno.test('"today" is the owner\'s today: an evening run in Los Angeles is still going after UTC midnight', () => {

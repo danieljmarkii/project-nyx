@@ -206,7 +206,9 @@ Deno.test('contract honoured — findings describe ONLY the surviving record', (
   assert.deepEqual(typesIn(CONTRACT_HONOURED), ['symptom_burden', 'symptom_worsening'])
   const burden = CONTRACT_HONOURED[0].finding as { count: number; runDays: number; tier: string }
   assert.equal(burden.count, 8)
-  assert.equal(burden.runDays, 7)
+  // The fixture has no timezone, so the card states the run every zone agrees on: 6 (in some
+  // zone two of these days' vomits share a date). PR-14d's quietest-reading rule.
+  assert.equal(burden.runDays, 6)
   assert.equal(burden.tier, 'today')
   assert.ok(burden.count <= LIVE_SYMPTOMS.length, 'the burden count is bounded by the live rows')
 

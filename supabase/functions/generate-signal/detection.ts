@@ -4451,8 +4451,8 @@ export function detectWorsening(
 //   • PERSISTENCE — a vomit on `burden.persistenceMinDays` (provisional 3) consecutive LOCAL days
 //     (EN-4's rung). Local, because "three days running" is the owner's three days: a cat that
 //     vomits at 11 pm in Los Angeles vomited that day, not the next UTC one. With no usable zone
-//     the day boundary is unknown, so every whole-hour offset is tried and the loudest reading
-//     wins (never a UTC guess, which misses an evening cat: the adversarial pass).
+//     the day boundary is unknown, so every whole-hour offset is read and only what holds in all
+//     of them is claimed (never a UTC guess, and never the loudest offset: see detectBurden).
 //
 // No logging-eligibility floor, on purpose: the card speaks on the PRESENCE of logged vomits, and
 // a logging gap can only hide vomits, which makes it quieter, never louder. A found pile counts
@@ -4496,11 +4496,14 @@ export function detectBurden(
 
   // Which calendar the days are counted in. With a valid zone, the owner's. With none (a null
   // `user_profiles.timezone`, an invalid string, or a profile read that failed), the day boundary
-  // is unknown, and a fixed guess (UTC) misses the counterexample itself: Monday 17:30, Tuesday
-  // 16:00 and Wednesday 08:00 in Los Angeles are Tuesday, Tuesday and Wednesday in UTC (the
-  // adversarial pass). So every whole-hour offset a pet can live at (UTC−12 … UTC+14) is tried,
-  // and the loudest reading wins. That errs toward escalation by construction, and only for a pet
-  // whose zone the engine cannot see.
+  // is unknown. A UTC guess is wrong either way (it split an evening Los Angeles run into two
+  // days), and so is the LOUDEST offset: it turned three vomits inside 26 hours into "3 days in a
+  // row — call today" and pulled a run that ended two days ago forward to "yesterday" (the
+  // adversarial second pass). So every whole-hour offset a pet can live at (UTC−12 … UTC+14) is
+  // read and the QUIETEST reading is stated: a run is claimed only if it holds wherever the owner
+  // is, and the ask is the one every zone agrees with. Priced residual, accepted: a zone-less
+  // pet's evening run can go unstated by this arm (the count arm is unaffected). Zone-less is
+  // rare: the app stamps the device's zone into the profile on launch (lib/profile.ts).
   const calendars: ((ms: number) => number)[] = isValidTimeZone(input.timezone)
     ? [(ms) => localDayIndex(ms, input.timezone)]
     : Array.from({ length: 27 }, (_, i) => (ms: number) => Math.floor((ms + (i - 12) * 3_600_000) / MS_PER_DAY))
@@ -4522,21 +4525,21 @@ export function detectBurden(
         runs.push({ len: 1, end: sorted[i] })
       }
     }
-    if (runs.length === 0) continue
+    if (runs.length === 0) return [] // no vomit in the window (count > 0 makes this unreachable)
     const qualifying = runs.filter((r) => r.len >= cfg.persistenceMinDays)
     const run =
       qualifying.length > 0
         ? qualifying[qualifying.length - 1]
         : runs.reduce((a, b) => (b.len >= a.len ? b : a))
     const reading = { runDays: run.len, runEnd: run.end, today, days: days.size, persistenceArm: qualifying.length > 0 }
-    // Loudest first: a qualifying run beats none, then the more recent run end, then the longer run.
-    const louder =
+    // Quietest first: no qualifying run beats one, then the OLDER run end, then the shorter run.
+    const quieter =
       best === null ||
-      (reading.persistenceArm && !best.persistenceArm) ||
+      (!reading.persistenceArm && best.persistenceArm) ||
       (reading.persistenceArm === best.persistenceArm &&
-        (reading.today - reading.runEnd < best.today - best.runEnd ||
-          (reading.today - reading.runEnd === best.today - best.runEnd && reading.runDays > best.runDays)))
-    if (louder) best = reading
+        (reading.today - reading.runEnd > best.today - best.runEnd ||
+          (reading.today - reading.runEnd === best.today - best.runEnd && reading.runDays < best.runDays)))
+    if (quieter) best = reading
   }
   if (best === null) return []
   const { runDays, runEnd, today, persistenceArm } = best
