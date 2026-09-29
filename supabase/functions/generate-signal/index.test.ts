@@ -16,6 +16,7 @@ import {
   resolveCaps,
   computeResetsAt,
   mapMedDoseFacts,
+  readCareContextFacts,
   SIGNAL_DOSE_LANES_ON,
   type FunctionCaps,
   type RegimenRow,
@@ -265,3 +266,112 @@ Deno.test('CUL-1099 — the dose pull names its FK, throws on failure, and feeds
   const incomplete = src.slice(src.indexOf('incompletePullNames({'), src.indexOf('incidentAnalyses:', src.indexOf('incompletePullNames({')))
   assertStrictEquals(/\.\.\.\(SIGNAL_DOSE_LANES_ON \? \{ doseEvents: doseEventsPull \} : \{\}\)/.test(incomplete), true, 'an unread dose pull can mark the record incomplete')
 })
+
+// ── EN-10's reads (Engines v3 PR-22, CUL-1420) ─────────────────────────────────────────
+// The shell reads `vet_visits` and the logging pull only while engines_v3_en10 is on, by one
+// column, and fails toward no lines. The gate and the prompt rule are pinned on the source;
+// the reads themselves run against a fake client that records every call.
+
+type Call = { table: string; ops: [string, unknown[]][] }
+function fakeClient(answer: (c: Call) => { data: unknown; error: unknown; count?: number }) {
+  const calls: Call[] = []
+  const client = {
+    from(table: string) {
+      const call: Call = { table, ops: [] }
+      calls.push(call)
+      const builder: Record<string, unknown> = {}
+      for (const op of ['select', 'eq', 'neq', 'is', 'lte', 'gte', 'order', 'limit', 'range', 'in']) {
+        builder[op] = (...args: unknown[]) => {
+          call.ops.push([op, args])
+          return builder
+        }
+      }
+      builder.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
+        Promise.resolve().then(() => answer(call)).then(res, rej)
+      return builder
+    },
+  }
+  return { client: client as unknown as Parameters<typeof readCareContextFacts>[0], calls }
+}
+const LOOKBACK = '2026-04-01T00:00:00.000Z'
+const LOGGED = [{ id: 'e1', occurred_at: '2026-09-20T09:00:00.000Z' }, { id: 'e2', occurred_at: '2026-09-21T09:00:00.000Z' }]
+
+Deno.test('EN-10 reads — one column of the last visit on or before today, and every event but a look', async () => {
+  const { client, calls } = fakeClient((c) =>
+    c.table === 'vet_visits' ? { data: [{ visited_at: '2026-09-16' }], error: null } : { data: LOGGED, error: null, count: 2 },
+  )
+  const facts = await readCareContextFacts(client, 'pet-1', LOOKBACK, '2026-09-27')
+  assertEquals(facts, { lastVisitOn: '2026-09-16', loggedAt: LOGGED.map((r) => r.occurred_at), readSinceIso: LOOKBACK })
+  const visit = calls.find((c) => c.table === 'vet_visits')!
+  assertEquals(visit.ops, [
+    ['select', ['visited_at']],
+    ['eq', ['pet_id', 'pet-1']],
+    ['is', ['deleted_at', null]],
+    ['lte', ['visited_at', '2026-09-27']],
+    ['order', ['visited_at', { ascending: false }]],
+    ['limit', [1]],
+  ])
+  const events = calls.find((c) => c.table === 'events')!
+  assertEquals(events.ops.filter(([op]) => op !== 'range').slice(0, 5), [
+    ['select', ['id, occurred_at', { count: 'exact' }]],
+    ['eq', ['pet_id', 'pet-1']],
+    ['neq', ['event_type', 'check_in']],
+    ['is', ['deleted_at', null]],
+    ['gte', ['occurred_at', LOOKBACK]],
+  ])
+  assertEquals(calls.map((c) => c.table).sort(), ['events', 'vet_visits'])
+})
+
+Deno.test('EN-10 reads — no visit on record is an answer; a failed visit read or a short pull is no lines', async () => {
+  const none = await readCareContextFacts(
+    fakeClient((c) => (c.table === 'vet_visits' ? { data: [], error: null } : { data: LOGGED, error: null, count: 2 })).client,
+    'pet-1', LOOKBACK, '2026-09-27',
+  )
+  assertStrictEquals(none?.lastVisitOn, null)
+  const failed = await readCareContextFacts(
+    fakeClient((c) => (c.table === 'vet_visits' ? { data: null, error: { message: 'x' } } : { data: LOGGED, error: null, count: 2 })).client,
+    'pet-1', LOOKBACK, '2026-09-27',
+  )
+  assertStrictEquals(failed, null)
+  // The count says 5 rows exist and the read returned 2: incomplete, so no lines.
+  const short = await readCareContextFacts(
+    fakeClient((c) => (c.table === 'vet_visits' ? { data: [], error: null } : { data: LOGGED, error: null, count: 5 })).client,
+    'pet-1', LOOKBACK, '2026-09-27',
+  )
+  assertStrictEquals(short, null)
+  const thrown = await readCareContextFacts(
+    fakeClient(() => { throw new Error('network') }).client,
+    'pet-1', LOOKBACK, '2026-09-27',
+  )
+  assertStrictEquals(thrown, null)
+})
+
+Deno.test('EN-10 wiring — flag-off makes neither read, and the facts reach the pipeline', async () => {
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  // The one call site, behind the key.
+  assertStrictEquals(src.split('readCareContextFacts(').length - 1, 2, 'readCareContextFacts is defined once and called once')
+  assertStrictEquals(
+    /isEngineKeyOn\(engineFlags, 'engines_v3_en10'\)\s*\?\s*await readCareContextFacts\(/.test(src),
+    true,
+    'the EN-10 reads are no longer behind engines_v3_en10',
+  )
+  const call = src.slice(src.indexOf('runSignalPipeline({'), src.indexOf('})', src.indexOf('runSignalPipeline({')))
+  assertStrictEquals(/\bcareContextFacts,/.test(call), true, 'the shell no longer hands the pipeline its EN-10 facts')
+  // vet_visits is read inside readCareContextFacts and nowhere else in the shell.
+  const fn = src.slice(src.indexOf('export async function readCareContextFacts('))
+  assertStrictEquals(src.split(".from('vet_visits')").length - 1, 1)
+  assertStrictEquals(fn.includes(".from('vet_visits')"), true)
+})
+
+Deno.test('EN-10 — Ask\'s rule 10 is in the phrasing and summary prompts', async () => {
+  const { PHRASING_SYSTEM } = await import('./phrasing.ts')
+  const { SUMMARY_SYSTEM } = await import('./summary.ts')
+  for (const [name, prompt] of [['phrasing', PHRASING_SYSTEM], ['summary', SUMMARY_SYSTEM]] as const) {
+    assertStrictEquals(prompt.includes('VISITS, CARE AND TREATMENTS'), true, name)
+    assertStrictEquals(prompt.includes('DATED FACT beside a COUNT'), true, name)
+    assertStrictEquals(prompt.includes('under control'), true, name)
+    assertStrictEquals(prompt.includes('helping or working'), true, name)
+  }
+})
+

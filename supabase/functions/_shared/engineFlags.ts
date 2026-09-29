@@ -32,15 +32,23 @@ import { resolveAllowlistFlag } from './flags.ts'
 // fix. NOT SEEDED, on purpose: a missing row reads as off (above), so it needs no migration
 // to stay dark, and Wave 4 turns on only after the real-vet review (CUL-1312). The PM's
 // allowlist step inserts the row.
-export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3'] as const
+// engines_v3_en10: EN-10's context lines on the Signal (Engines v3 PR-22, CUL-1420): the
+// visit, trial and course lines beside a finding's counts, and the shell's one read of
+// `vet_visits` that feeds them. NOT SEEDED, like en3: absent reads as off.
+export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en10'] as const
 export type EngineKey = typeof ENGINE_KEYS[number]
 
-// The keys the SIGNAL engine (generate-signal) reads. Empty today: EN-0's key gates the
-// per-incident read only. A Signal phase adds its key here in the PR that makes the Signal
-// read it. The stand-down gate compares only these (standDownMintAllowed, below):
+// The keys the SIGNAL engine (generate-signal) reads. EN-0's key gates the per-incident read
+// only. A Signal phase adds its key here in the PR that makes the Signal read it (the first
+// was EN-10's, PR-22). The stand-down gate compares only these (standDownMintAllowed, below):
 // a key the Signal never reads cannot change what it detects, so flipping it must not cost
 // an owner a stand-down (adversarial review, PR-11a).
-export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = []
+//
+// en10 decorates findings and changes none of them, so strictly it could not make one vanish.
+// It is registered anyway, because pipeline.test.ts requires every key the pipeline gates on to
+// be here, and the cost is bounded: the one regeneration that runs across a flip of en10 mints
+// no stand-down (075 §4's conservative side), where it would otherwise have minted one.
+export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = ['engines_v3_en10']
 
 export interface EngineFlags {
   // The keys resolved ON for this owner, sorted: the exact value every stamp records.

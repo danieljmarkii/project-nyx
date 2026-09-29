@@ -819,6 +819,32 @@ interface FindingBase {
    * incomplete read: the ISO instant of the read that last computed it. Never set by a detector.
    */
   carriedFrom?: string
+  /**
+   * EN-10 (Engines v3 PR-22, CUL-1420) — set by the pipeline, never by a detector, behind
+   * `engines_v3_en10`: the visit, trial and course lines the finding's screen draws beside its
+   * counts (careContext.ts). Dates and counts only, never a comparison. Absent when the key is
+   * off or no line applies, so such a finding is byte-identical to one from before the field.
+   */
+  careContext?: CareContextLine[]
+}
+
+/**
+ * One EN-10 context line (docs/nyx-care-state-requirements.md §5.1). A window, the count of
+ * the finding's sign in it and the days with anything logged. `count` is null when the line
+ * states no count (a withheld zero, or a window the read does not reach); `loggedDays` is null
+ * only for the latter. `text` is the deterministic sentence; no model ever phrases it.
+ */
+export interface CareContextLine {
+  kind: 'course' | 'trial' | 'visit'
+  /** The DATE the window hangs on: the course start, the trial start or the visit day. */
+  anchorOn: string
+  /** Days in the window. */
+  days: number
+  count: number | null
+  loggedDays: number | null
+  /** The owner's name for the drug, on a course line only. */
+  drugLabel?: string
+  text: string
 }
 
 /**

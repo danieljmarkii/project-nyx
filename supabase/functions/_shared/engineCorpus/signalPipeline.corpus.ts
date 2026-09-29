@@ -15,6 +15,7 @@
 //
 // PR-15 (CUL-508) writes the synthetic population beside this file; it does not edit it.
 
+import type { CareContextFacts } from '../../generate-signal/careContext.ts'
 import type {
   ArrangementRow,
   CareRecord,
@@ -428,3 +429,12 @@ export const POPULATED_CARE_RECORD: CareRecord = {
   ],
 }
 export const EMPTY_CARE_RECORD: CareRecord = { ownerAnswers: [], appointments: [] }
+
+// EN-10 (PR-22): the facts the shell reads while engines_v3_en10 is on. A visit 10 days ago,
+// something logged every day of the lookback, read from the shell's 180-day lookback. The
+// flag-off guard hands these in with every flag state, so a gate that leaked would show.
+export const POPULATED_CARE_CONTEXT_FACTS: CareContextFacts = {
+  lastVisitOn: ago(10).slice(0, 10),
+  loggedAt: Array.from({ length: 170 }, (_, i) => ago(i, 8)),
+  readSinceIso: new Date(NOW_MS - 180 * DAY).toISOString(),
+}

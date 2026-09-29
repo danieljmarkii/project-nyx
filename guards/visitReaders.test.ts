@@ -225,6 +225,17 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'window then counts (the report\'s rung-1 entry below is the same kind of reader).',
   },
 
+  // ── The Signal shell (AC 10 as amended 2026-09-28; CUL-1420, Engines v3 PR-22) ──
+  'supabase/functions/generate-signal/index.ts': {
+    kinds: ['table'],
+    why:
+      'readCareContextFacts — EN-10\'s context line, behind engines_v3_en10. The ONE engine ' +
+      'reader of a vet table: one column, `visited_at`, of the most recent visit, to start a ' +
+      'window ("Since the Sep 16 visit, 11 days: …"). Every count the line speaks is computed ' +
+      'from events alone (careContext.ts, which stays clean below); no clinic, vet, reason or ' +
+      'note is selected, pinned by SHELL_COLUMNS. PR-23 widens it to the appointment dates.',
+  },
+
   // ── The report ──
   'supabase/functions/generate-report/index.ts': {
     kinds: ['table'],
@@ -247,6 +258,10 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
 const MUST_STAY_CLEAN = [
   'supabase/functions/generate-signal/detection.ts',
   'supabase/functions/generate-signal/phrasing.ts',
+  // EN-10 (PR-22): the pure half. The visit reaches these as a DATE the shell read; neither
+  // may read a vet table itself (AC 10 as amended names the shell, and only the shell).
+  'supabase/functions/generate-signal/pipeline.ts',
+  'supabase/functions/generate-signal/careContext.ts',
   'lib/analytics.ts',
   'lib/dietTrial.ts',
   'lib/lookDayCounts.ts',
@@ -547,6 +562,62 @@ describe('AC 10 — visit data never reaches a count, a coverage line or an engi
     for (const file of MUST_STAY_CLEAN) {
       expect(fs.existsSync(path.join(ROOT, file))).toBe(true);
     }
+  });
+});
+
+// ── The Signal shell's column list (AC 10 as amended, 2026-09-28) ────────────
+//
+// The amendment lets the shell read "by explicit column list", and names the columns. A kind
+// (`table`) says the file may query the table; it cannot say WHICH columns, and a `select('*')`
+// or a `select('visited_at, notes')` added beside the sanctioned read would pass the allow-set.
+// So every read of a vet table in the shell is extracted and its select list compared, as a
+// SET, with the columns the amendment names. PR-23 adds `vet_appointments`' three dates here.
+
+const SHELL = 'supabase/functions/generate-signal/index.ts';
+const SHELL_COLUMNS: Record<string, readonly string[]> = {
+  vet_visits: ['visited_at'],
+};
+
+/** Every `.from('<vet table>')` in `src` with the select list that follows it. */
+export function vetTableSelects(src: string): { table: string; columns: string | null }[] {
+  const out: { table: string; columns: string | null }[] = [];
+  const re = new RegExp(`\\.from\\(\\s*['"\`](${TABLES.slice(3, -1)})['"\`]\\s*\\)`, 'g');
+  for (const m of src.matchAll(re)) {
+    // The select must be the chain's next call: a filter before it is still this chain, a
+    // second `.from(` is not.
+    const rest = src.slice((m.index ?? 0) + m[0].length);
+    const next = rest.search(/\.from\(/);
+    const chain = next === -1 ? rest : rest.slice(0, next);
+    const sel = /\.select\(\s*(['"`])([^'"`]*)\1/.exec(chain);
+    out.push({ table: m[1], columns: sel ? sel[2] : null });
+  }
+  return out;
+}
+
+describe('the Signal shell reads a vet table only by its sanctioned columns', () => {
+  const src = blankComments(fs.readFileSync(path.join(ROOT, SHELL), 'utf8'));
+  const reads = vetTableSelects(src);
+
+  it('finds the shell\'s read (non-vacuity)', () => {
+    expect(reads.map((r) => r.table)).toEqual(['vet_visits']);
+  });
+
+  it('every read names exactly the columns the amendment allows, never `*`', () => {
+    for (const r of reads) {
+      expect(r.columns).not.toBeNull();
+      const cols = (r.columns as string).split(',').map((c) => c.trim()).filter(Boolean).sort();
+      expect(cols).toEqual([...(SHELL_COLUMNS[r.table] ?? [])].sort());
+    }
+  });
+
+  it('the extractor sees a widened list, a star and a missing select (proven)', () => {
+    expect(vetTableSelects(`sb.from('vet_visits').select('visited_at, notes').eq('a', 1)`)).toEqual([
+      { table: 'vet_visits', columns: 'visited_at, notes' },
+    ]);
+    expect(vetTableSelects(`sb.from('vet_visits').select('*')`)).toEqual([{ table: 'vet_visits', columns: '*' }]);
+    expect(vetTableSelects(`sb.from('vet_appointments').eq('x', 1); sb.from('events').select('id')`)).toEqual([
+      { table: 'vet_appointments', columns: null },
+    ]);
   });
 });
 

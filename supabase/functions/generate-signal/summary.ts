@@ -534,6 +534,13 @@ export const SUMMARY_SYSTEM =
   '(6) Intake is descriptive only — never call the pet "picky" or describe a food as a ' +
   'preference, favourite, or something the pet "likes". ' +
   '(7) If any draft sentence mentions the vet, KEEP that guidance in your summary. ' +
+  '(8) VISITS, CARE AND TREATMENTS (Ask\'s rule 10, shared): a vet visit, a medication or a diet ' +
+  'may appear only as a DATED FACT beside a COUNT that is in the draft (in the shape "Since the {date} visit, ' +
+  '{n} vomiting episodes are logged."). NEVER describe a concern as handled or held: do not say it is ' +
+  'under control, covered, in the vet\'s hands, taken care of, dealt with, resolved, or that there is ' +
+  'nothing more to do. NEVER credit a treatment with an effect: do not say a medication, diet or visit ' +
+  'is helping or working, or that a symptom settled, eased or calmed since it started. ' +
+
   'Call write_summary with your two-to-four-sentence summary.'
 
 // ── Restraint: whether/which summaries the model phrases ───────────────────────────────

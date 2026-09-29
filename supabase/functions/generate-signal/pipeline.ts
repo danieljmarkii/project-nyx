@@ -22,9 +22,12 @@
 //     vanish), and RESOLVED here, inside the same fence the handler had (a throw costs the
 //     marker, never the run). The merge is `assembleSignal`, after the shell has phrased.
 //
-// Nothing here gates on an Engines key yet (SIGNAL_ENGINE_KEYS is empty); `engineFlags`
-// reaches the stand-down gate only. The first Signal phase adds its key and its gated step
-// here, and the corpus guard becomes the C-36 absence guard the vomit read has.
+// The first gated step is EN-10's context lines (PR-22, CUL-1420), behind `engines_v3_en10`:
+// `careContextFacts` (the last visit's DATE and the days with anything logged) is read by the
+// shell only while that key is on, and the step decorates the findings after everything else
+// has run, so it changes no finding's presence, rank or sentence. The corpus guard is now the
+// C-36 absence guard (signalPipeline.test.ts (c)): flag-off equals the pipeline with the step
+// absent, even when a step that changes everything is handed in.
 //
 // The vet report does not use this file: generate-report runs its own detection over its
 // own window (report.ts) and never reads the Signal's cache.
@@ -91,7 +94,15 @@ import {
 import { buildSummaryPacket, summaryTemplate, type CachedSummary, type SummaryFactPacket } from './summary.ts'
 // The flag half only: engineFlags.ts has no remote import, so the harness can run this file
 // with no network (pipeline.test.ts walks the closure). engineStamps.ts imports supabase-js.
-import { SIGNAL_ENGINE_KEYS, standDownMintAllowed, type EngineFlags } from '../_shared/engineFlags.ts'
+import { isEngineKeyOn, SIGNAL_ENGINE_KEYS, standDownMintAllowed, type EngineFlags } from '../_shared/engineFlags.ts'
+// EN-10 (PR-22): the context lines. Pure; the visit reaches it as a DATE only (AC 10 amended).
+import {
+  EN10_CONTEXT_STEP,
+  type CareContextFacts,
+  type CareContextStep,
+  type CourseFact,
+  type TrialFact,
+} from './careContext.ts'
 
 const MS_PER_DAY = 86_400_000
 
@@ -202,6 +213,11 @@ export interface RegimenRow {
   medication_item_id: string | null
   started_at: string | null // DATE; parses to that day's UTC midnight = start-of-day (correct span start)
   ended_at: string | null // DATE; the drug is on board through the WHOLE day → end-of-day-inclusive below
+  // EN-10 (PR-22): read for the course lines only, inert to the confounder pass. `status`
+  // ends a course the owner stopped without a date; the library item's names let the drug
+  // table resolve a regimen whose own name is a nickname. Optional: the corpus predates them.
+  status?: string | null
+  medication_items?: MedItemJoin | MedItemJoin[] | null
 }
 
 export type MedItemJoin = { generic_name: string | null; brand_name: string | null }
@@ -418,6 +434,10 @@ export function mapPhotoAnalyses(rows: IncidentAnalysisRow[]): PhotoAnalysisInpu
 export interface ActiveTrialRow {
   started_at: string
   target_duration_days: number
+  // EN-10 (PR-22): which signs the trial line sits beside, and the name it prints. Read by
+  // the context step only; optional because the corpus predates them.
+  indication?: string | null
+  target_protein?: string | null
 }
 
 // The reads, exactly as PostgREST returns them to index.ts (each `data ?? []`). Every
@@ -474,6 +494,10 @@ export interface SignalPipelineInput {
   nowMs: number
   engineFlags: EngineFlags
   careRecord: CareRecord
+  // EN-10 (PR-22): the facts the context lines need beyond `rows`. The shell reads them only
+  // while `engines_v3_en10` is on, and passes null otherwise. Required, so no caller forgets
+  // to say (C-37).
+  careContextFacts: CareContextFacts | null
 }
 
 export interface RankedFinding {
@@ -506,7 +530,12 @@ export interface SignalPipelineResult {
 
 // ── The pipeline ──────────────────────────────────────────────────────────────
 
-export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResult {
+// `careContextStep` exists for the flag-off guard, which hands in a step that changes every
+// finding so its running is always visible; production always takes EN10_CONTEXT_STEP.
+export function runSignalPipeline(
+  args: SignalPipelineInput,
+  careContextStep: CareContextStep = EN10_CONTEXT_STEP,
+): SignalPipelineResult {
   const { prior: priorSignal, nowMs, engineFlags } = args
   const rows = canonicalRows(args.rows)
   const readIncomplete = args.incompletePulls.length > 0
@@ -664,12 +693,29 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
     readIncomplete && priorSignal && standDownMintAllowed(priorSignal.engineFlags, engineFlags, SIGNAL_ENGINE_KEYS)
       ? readPriorSafetyEntries(priorSignal.findings, priorSignal.generatedAt, nowMs)
       : []
-  const decorated = decoratedWithOnsets.map((r, i) => ({
+  const decoratedBase = decoratedWithOnsets.map((r, i) => ({
     rank: r.rank,
     finding: readIncomplete
       ? holdPriorTier({ ...strippedFindings[i], countIsFloor: true } as Finding, priorSafety)
       : strippedFindings[i],
   }))
+  // 3c. EN-10 (PR-22, CUL-1420): the context lines, behind `engines_v3_en10`. Last, so the
+  //     step sees the finished findings and nothing downstream reads what it adds (the summary
+  //     packet is built from `curated`, the stand-down from `curated` and `input`). Not over an
+  //     incomplete read: every count on a line would be a floor, and a zero there the very
+  //     reassurance CUL-989 withholds. The facts arrive only while the key is on (the shell).
+  const decorated =
+    !readIncomplete && args.careContextFacts !== null && isEngineKeyOn(engineFlags, 'engines_v3_en10')
+      ? careContextStep(decoratedBase, {
+        facts: args.careContextFacts,
+        symptoms: symptomEvents,
+        courses: regimenRows.map(courseFactOf),
+        trial: trialRow && dietTrialActive ? trialFactOf(trialRow) : null,
+        timezone,
+        nowMs,
+        episodeGapHours: DEFAULT_CONFIG.symptomEpisodeGapHours,
+      })
+      : decoratedBase
   // CUL-989: and no safety card the previous Signal showed disappears on an incomplete read.
   // Its absence here may be the rows the read did not reach, which is the resolution the ruling
   // withholds, so the prior card is carried forward as it was shown.
@@ -764,6 +810,25 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
     incompleteDisclosure: readIncomplete
       ? incompleteReadDisclosure(petName, decorated.some((r) => r.finding.priorityClass === 'safety') || carried.length > 0)
       : null,
+  }
+}
+
+// ── EN-10's fact mapping (PR-22) ──────────────────────────────────────────────
+
+// A regimen as the context step sees it. The drug table matches on every name the course
+// has: the owner's own `drug_name` and the linked library item's generic and brand names.
+export function courseFactOf(r: RegimenRow): CourseFact {
+  const item = first(r.medication_items ?? null)
+  const names = [item?.generic_name, item?.brand_name].filter((n): n is string => typeof n === 'string' && n.trim() !== '')
+  return { drugLabel: r.drug_name, names, startedOn: r.started_at, endedOn: r.ended_at, status: r.status ?? null }
+}
+
+export function trialFactOf(t: ActiveTrialRow): TrialFact {
+  return {
+    startedOn: t.started_at,
+    targetDurationDays: t.target_duration_days,
+    indication: t.indication ?? null,
+    targetProtein: t.target_protein ?? null,
   }
 }
 
