@@ -229,6 +229,8 @@ export async function updateWeightCheck(
   if (!row) return null;
 
   await db.runAsync(
+    // Leaves source / source_basis alone on purpose (migration 081): a new value is still
+    // the same reading, taken the same way. Only the owner's correction (PR-37) moves it.
     `UPDATE weight_checks SET weight_kg = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE event_id = ?`,
     [weightKg, now, eventId],
   );

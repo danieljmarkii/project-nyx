@@ -142,6 +142,30 @@ describe('weight_checks.source / source_basis (migration 081)', () => {
     });
   });
 
+  it('the re-pull fills a synced row whose updated_at is unchanged (the step LWW skips)', () => {
+    const d = preUpgradeDb();
+    seedEvent(d, 'e1');
+    seedEvent(d, 'e2');
+    // An earlier build pulled both rows, before it knew the columns.
+    d.prepare(
+      `INSERT INTO weight_checks (id, event_id, pet_id, weight_kg, created_at, updated_at, synced)
+       VALUES ('w1', 'e1', 'pet-1', 3.73, 't0', '2026-09-16T15:00:00.000Z', 1),
+              ('w2', 'e2', 'pet-1', 3.80, 't0', '2026-09-17T15:00:00.000Z', 0)`,
+    ).run();
+    upgrade(d);
+    // The server holds another device's label; same version, spelled the server's way.
+    const fill = shippedStatement('sync.ts', 'UPDATE weight_checks SET source = ?, source_basis = ?');
+    const r1 = d.prepare(fill).run('clinic', 'owner', 'w1', 'clinic', 'owner');
+    const r2 = d.prepare(fill).run('clinic', 'owner', 'w2', 'clinic', 'owner');
+    expect(r1.changes).toBe(1);
+    expect(r2.changes).toBe(0); // an unpushed row keeps its own label
+    expect(d.prepare(`SELECT source, source_basis, updated_at FROM weight_checks WHERE id = 'w1'`).get()).toEqual({
+      source: 'clinic',
+      source_basis: 'owner',
+      updated_at: '2026-09-16T15:00:00.000Z', // a fill records, it never re-versions
+    });
+  });
+
   it('hydrate never overwrites a label this phone has not pushed yet', () => {
     const d = preUpgradeDb();
     upgrade(d);

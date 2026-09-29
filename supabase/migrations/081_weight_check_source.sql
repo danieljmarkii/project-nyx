@@ -30,8 +30,9 @@
 --
 -- source_basis: how `source` was decided. It never changes what a source may do;
 -- it lets the correction sheet say "We labelled this from how it was logged".
---   entry   derived from the entry path by a client that knows this column (the
---           log weigh-in writes home_scale; the after-visit row writes clinic).
+--   entry   derived from the entry path by a client that knows this column. Today
+--           that is the log weigh-in, which writes home_scale; the after-visit
+--           weight row (W7, PR-37) will write clinic.
 --   owner   the owner corrected it.
 --   legacy  labelled by rule, not by the writer: every row on file before this
 --           migration, and every row a build that predates this column writes.
@@ -42,9 +43,12 @@
 -- ------------------------------------------------------------
 -- THE BACKFILL IS THE COLUMN DEFAULT (W2, PM 2026-09-28)
 -- ------------------------------------------------------------
--- Every existing row came through the log weigh-in or its edit screen: no other
--- writer of weight_checks exists (lib/weight.ts insertWeightCheck and
--- updateWeightCheck; hydrate only mirrors server rows down). The entry-path rule
+-- Every existing owner row came through the log weigh-in or its edit screen: no
+-- other app writer of weight_checks exists (lib/weight.ts insertWeightCheck and
+-- updateWeightCheck; hydrate only mirrors server rows down; no Edge Function
+-- writes the table). The one other writer is the demo seed
+-- (scripts/demo/emitSeedSql.ts), whose synthetic readings take the defaults too,
+-- which is what a demo home-scale history should read as. The entry-path rule
 -- therefore gives home_scale, known rather than guessed, and home scale is the
 -- class that needs confirmation anyway. `ADD COLUMN … NOT NULL DEFAULT <const>`
 -- fills every existing row in the same statement, so no separate UPDATE runs and
@@ -124,6 +128,11 @@
 --                 both columns and a push naming a dropped column fails.)
 --   Backfill:     the column defaults (above). Every existing row becomes
 --                 source = 'home_scale', source_basis = 'legacy'.
+--   ORDER:        apply this BEFORE any client carrying this PR runs (merge,
+--                 OTA, or a Metro session on the branch). That client pushes and
+--                 selects both columns; against a table without them PostgREST
+--                 answers PGRST204, the weight push counts toward quarantine and
+--                 the weight_checks pull is skipped.
 --   Row check before applying:
 --                 SELECT count(*) FROM weight_checks;
 --   and after (expect the same total in one row, and zero NULLs):

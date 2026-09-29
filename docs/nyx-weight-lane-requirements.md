@@ -244,7 +244,8 @@ Kg, as today. Each plotted reading carries *clinic* or *home scale*; estimates a
   - Both columns keep their defaults (`home_scale`, `legacy`) after the backfill. Installed builds upsert without them; without a default every weigh-in from an installed phone fails with 23502 and quarantines. A current build always sends both.
   - No CHECK pairs `estimate` with `owner`. A violating write would be a client bug, and the CHECK would refuse the whole reading (C-38); the pairing is PR-37's writer contract.
   - `guards/weightDisplacements.test.ts` stays empty here. Its entry lands with its reader in PR-19 (C-32), not ahead of it.
-  - The local mirror's two `COLUMN_UPGRADES` entries carry `rehydrate`, so a label another device wrote reaches a phone that pulled the row before it had the column.
+  - The local mirror's two `COLUMN_UPGRADES` entries carry `rehydrate`, and `hydrateWeightChecks` fills the label on every synced row it fetches (the CUL-1396 shape: the re-pull returns rows whose `updated_at` equals the local copy, which LWW skips). Without the fill, an upgraded phone kept the default and its next weight edit pushed it back over the server's label.
+  - The privacy line above has two slips, corrected here rather than rewritten: RLS on `weight_checks` is one `FOR ALL USING` policy (024), reused as the check on insert and update, not per-verb policies; and the App Store label gains nothing. A reading's source is a detail of weight data, already declared under Health & Fitness · User Content (`docs/app-privacy-answers.md`). Export does not exist yet (B-041); when it is built it carries the column with its row.
 
 ## 8. What EN-8 does on Nyx, written in advance
 

@@ -2444,6 +2444,24 @@ async function hydrateWeightChecks(db: Db, stale: () => boolean): Promise<void> 
         w.created_at, w.updated_at],
     );
   }
+  // Migration 081 (CUL-1412) — fill the source label from the server for every row fetched,
+  // whether or not LWW rewrote it: the CUL-1396 shape. The re-pull after the column upgrade
+  // (COLUMN_UPGRADES `rehydrate`) returns rows whose `updated_at` equals the local copy, which
+  // `reconcileBatch` rightly leaves alone, so without this an upgraded phone keeps the default
+  // where the server holds another device's label, and its next push of a weight edit would
+  // send that stale default back up. Only a synced row: its content is the server's, so the
+  // server's current label is the right one; an unpushed edit is never touched. No
+  // `updated_at` comparison (two spellings of one instant do not compare as text, C-40), no
+  // `updated_at` write, nothing queued.
+  if (stale()) return;
+  for (const w of rows) {
+    if (!w.source || !w.source_basis) continue;
+    await db.runAsync(
+      `UPDATE weight_checks SET source = ?, source_basis = ?
+       WHERE id = ? AND synced = 1 AND (source IS NOT ? OR source_basis IS NOT ?)`,
+      [w.source, w.source_basis, w.id, w.source, w.source_basis],
+    );
+  }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
   if (stale()) return;
   if (wm) await setWatermark('weight_checks', wm);
