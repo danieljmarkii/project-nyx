@@ -603,7 +603,8 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
     timezone,
     now: new Date(nowMs).toISOString(),
   }
-  const detected = detectSignals(input, DEFAULT_CONFIG)
+  // Engines v3 PR-14d (CUL-1410): one card per sign where the burden card and ④ say the same week.
+  const detected = suppressWorseningUnderBurden(detectSignals(input, DEFAULT_CONFIG))
   // CUL-989 step 3, BEFORE curation so a withheld card never holds a slot under the cap.
   const ranked = readIncomplete ? withholdOverIncompleteRead(detected) : detected
 
@@ -881,14 +882,15 @@ export function canonicalRows(rows: SignalRows): SignalRows {
 // complete read none of this runs, and the record decides alone.
 
 const TIER_RANK: Record<string, number> = { soft: 0, standard: 1, firm: 2 }
+const BURDEN_TIER_RANK: Record<string, number> = { soon: 0, today: 1 }
 
 const safetyKey = (f: { type: string; symptomType?: unknown; incidentType?: unknown }): string =>
   `${f.type}:${String(f.symptomType ?? f.incidentType ?? '')}`
 
-/** The lanes whose card may be held or carried: the four safety lanes, by name. A prior row is
+/** The lanes whose card may be held or carried: the five safety lanes, by name. A prior row is
  *  written by the engine but readable and writable by its owner (ai_signals_owner), so a card of
  *  any other type, or a malformed one, is never re-emitted as engine output (adversarial re-check). */
-const CARRYABLE = new Set(['symptom_chronicity', 'symptom_worsening', 'intake_decline', 'incident_red_flag'])
+const CARRYABLE = new Set(['symptom_chronicity', 'symptom_worsening', 'symptom_burden', 'intake_decline', 'incident_red_flag'])
 
 /**
  * How long a carried card may be carried, from the read that last COMPUTED it (`carriedFrom`,
@@ -929,23 +931,51 @@ export function readPriorSafetyEntries(raw: unknown, priorGeneratedAt: unknown, 
 
 /** A floored card never shows a lower tier than the prior card for the same lane and symptom. */
 function holdPriorTier(f: Finding, prior: readonly PriorSafetyEntry[]): Finding {
-  if (f.type !== 'symptom_chronicity' && f.type !== 'symptom_worsening') return f
+  if (f.type !== 'symptom_chronicity' && f.type !== 'symptom_worsening' && f.type !== 'symptom_burden') return f
+  const ranks = f.type === 'symptom_burden' ? BURDEN_TIER_RANK : TIER_RANK
   const match = prior.find((p) => safetyKey(p.finding) === safetyKey(f))
   const priorTier = match ? (match.finding as { tier?: unknown }).tier : undefined
-  if (typeof priorTier !== 'string' || !(priorTier in TIER_RANK)) return f
-  return TIER_RANK[priorTier] > TIER_RANK[f.tier] ? ({ ...f, tier: priorTier } as Finding) : f
+  if (typeof priorTier !== 'string' || !Object.prototype.hasOwnProperty.call(ranks, priorTier)) return f
+  return ranks[priorTier] > ranks[f.tier] ? ({ ...f, tier: priorTier } as Finding) : f
 }
 
 /** The prior safety cards this run did not reproduce, in their prior order: the finding marked
  *  with the date of the read that computed it, and a dated sentence (never its old one). */
 function carryPriorSafety(prior: readonly PriorSafetyEntry[], current: readonly Finding[], petName: string): CachedFinding[] {
   const shown = new Set(current.map(safetyKey))
+  // A same-sign ④ this run's burden card replaced is not missing: the burden card says it.
+  const burdenSigns = new Set(current.flatMap((f) => (f.type === 'symptom_burden' ? [String(f.symptomType)] : [])))
   return prior
     .filter((p) => !shown.has(safetyKey(p.finding)))
+    .filter((p) => !(p.finding.type === 'symptom_worsening' && burdenSigns.has(String(p.finding.symptomType))))
     .map((p, i) => {
       const finding = { ...p.finding, carriedFrom: p.carriedFromIso } as Finding
       return { rank: i, text: templateCarried(finding, petName, p.carriedFromIso), finding }
     })
+}
+
+/**
+ * Engines v3 PR-14d (CUL-1410): on Home, a same-sign ④ card is dropped under a burden card.
+ *
+ * Both state the same current week of the same sign, so showing both is two cards about one
+ * week with two different asks. The burden card keeps it, because its QUIETEST ask ("worth
+ * booking a vet visit soon") is ④'s LOUDEST (firm), so the drop never lowers what the owner is
+ * asked to do; and ④'s count comparison ("up from 1 last week") is the only thing lost, which a
+ * card saying "vomited 5 times in the last 7 days" does not need to be honest.
+ *
+ * Here and not in detectSignals, on purpose: generate-report runs detectSignals and reads ④ into
+ * its safety band, and does not read the burden type. Dropping ④ in the engine would take a flag
+ * off the vet report with nothing in its place. Chronicity is NOT dropped (duration and this
+ * week's burden are different statements, and the ⑦ valve and stand-down depend on it).
+ */
+export function suppressWorseningUnderBurden<T extends { rank: number; finding: Finding }>(ranked: readonly T[]): T[] {
+  const burdenSigns = new Set<string>(
+    ranked.flatMap((r) => (r.finding.type === 'symptom_burden' ? [r.finding.symptomType] : [])),
+  )
+  if (burdenSigns.size === 0) return [...ranked]
+  return ranked
+    .filter((r) => !(r.finding.type === 'symptom_worsening' && burdenSigns.has(r.finding.symptomType)))
+    .map((r, i) => ({ ...r, rank: i }))
 }
 
 // ── After the phrasing ────────────────────────────────────────────────────────

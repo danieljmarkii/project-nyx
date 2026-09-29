@@ -89,7 +89,7 @@ Deno.test('(a) every case lands its hand-stated cache row, flags off', () => {
 Deno.test('(b) the floor: enough cases, each safety lane fires, a building case, a minted and a withheld stand-down', () => {
   assertStrictEquals(SIGNAL_PIPELINE_CORPUS.length >= 12, true, `only ${SIGNAL_PIPELINE_CORPUS.length} cases`)
   const fired = new Set<string>(SIGNAL_PIPELINE_CORPUS.flatMap((c) => types(payload(c))))
-  for (const t of ['symptom_chronicity', 'incident_red_flag', 'intake_decline', 'stood_down']) {
+  for (const t of ['symptom_chronicity', 'symptom_burden', 'symptom_worsening', 'incident_red_flag', 'intake_decline', 'stood_down']) {
     assertStrictEquals(fired.has(t), true, `no case lands ${t}`)
   }
   assertStrictEquals(SIGNAL_PIPELINE_CORPUS.some((c) => payload(c).isBuilding), true, 'no building case')
@@ -287,7 +287,7 @@ Deno.test('(j) an incomplete read floors every count it states, and says so', ()
       assertStrictEquals(f.countIsFloor, true, `${c.name}: ${f.type} not floored`)
     }
     const computed = p.findings.filter((x) => !result.carried.some((cf) => cf.finding === x.finding))
-    for (const e of computed.filter((x) => ['symptom_chronicity', 'symptom_worsening', 'trial_response'].includes(x.finding.type))) {
+    for (const e of computed.filter((x) => ['symptom_chronicity', 'symptom_worsening', 'symptom_burden', 'trial_response'].includes(x.finding.type))) {
       assertStrictEquals(/\bat least\b/.test(e.text), true, `${c.name}: "${e.text}"`)
       floored++
     }
@@ -328,7 +328,8 @@ Deno.test('(k) a partial read of the SAME record never weakens or drops a safety
   // (i) and (j) re-run the whole record with the flag set. This one removes rows, the way a
   // newest-first shortfall does (the OLDEST go), with the full read's row as the prior Signal,
   // which is what the engine will have cached before a read comes back short.
-  const TIER: Record<string, number> = { soft: 0, standard: 1, firm: 2 }
+  // Each lane's own scale: ④ / ⑦ soft < standard < firm; the burden card (PR-14d) soon < today.
+  const TIER: Record<string, number> = { soft: 0, standard: 1, firm: 2, soon: 0, today: 1 }
   let probed = 0
   for (const c of SIGNAL_PIPELINE_CORPUS) {
     const full = payload(c)
@@ -400,7 +401,7 @@ Deno.test('(k3) a carried card is dated, never its old sentence, and ages out; t
   assertStrictEquals(carriedSeen >= 8, true, `only ${carriedSeen} carried cards seen`)
 })
 
-Deno.test('(k4) only the four safety lanes are carried: a forged or malformed prior entry never is', () => {
+Deno.test('(k4) only the five safety lanes are carried: a forged or malformed prior entry never is', () => {
   const quiet = SIGNAL_PIPELINE_CORPUS.find((c) => c.name === 'a new pet with nothing logged')!
   const forged: PriorSignal = {
     findings: [
@@ -415,6 +416,10 @@ Deno.test('(k4) only the four safety lanes are carried: a forged or malformed pr
       { rank: 7, text: 'x', finding: { type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'zzz', tier: 'firm' } },
       { rank: 8, text: 'x', finding: { type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'toString', tier: 'firm' } },
       { rank: 9, text: 'x', finding: { type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'vomit', tier: 'constructor' } },
+      // PR-14d's burden card: its own tier scale, never the other lanes' (and never a missing one).
+      { rank: 10, text: 'x', finding: { type: 'symptom_burden', priorityClass: 'safety', symptomType: 'vomit', tier: 'firm' } },
+      { rank: 11, text: 'x', finding: { type: 'symptom_burden', priorityClass: 'safety', symptomType: 'vomit' } },
+      { rank: 12, text: 'x', finding: { type: 'symptom_burden', priorityClass: 'safety', symptomType: 'zzz', tier: 'today' } },
       'garbage',
     ],
     generatedAt: new Date(Date.parse(quiet.nowIso) - 86_400_000).toISOString(),
@@ -438,4 +443,24 @@ Deno.test('(k5) a carried intake card names the finding it carries: a refusal is
     `${trigger}: "${card.text}"`,
   )
   assertStrictEquals(/undefined/.test(card.text), false)
+})
+
+Deno.test('(k6) the burden card holds a prior "today" over an incomplete read, and its sentence stays true', () => {
+  // Engines v3 PR-14d (CUL-1410). The GAP-5 cat's card says "today" on Thursday. Three days later
+  // the run ended four days ago, so a complete read says "soon"; a read that came back short must
+  // not soften the prior card (CUL-989), and the sentence it holds must still be true of the rows.
+  const gap5 = SIGNAL_PIPELINE_CORPUS.find((c) => c.name.includes('GAP-5') && c.name.includes('no photos'))!
+  const shown = payload(gap5)
+  const burden = shown.findings.find((e) => e.finding.type === 'symptom_burden')!
+  assertStrictEquals((burden.finding as { tier?: string }).tier, 'today')
+  const later = { ...gap5, nowIso: new Date(Date.parse(gap5.nowIso) + 3 * 86_400_000).toISOString() }
+  // Complete read, three days on: 'soon'. (The mutant that reads burden tiers off ④'s scale
+  // cannot hold them and fails below.)
+  const complete = payload(later).findings.find((e) => e.finding.type === 'symptom_burden')!
+  assertStrictEquals((complete.finding as { tier?: string }).tier, 'soon')
+  const prior: PriorSignal = { findings: shown.findings, generatedAt: gap5.nowIso, engineFlags: [] }
+  const held = templatePayload(run({ ...later, prior }, OFF, EMPTY_CARE_RECORD, INCOMPLETE))
+  const card = held.findings.find((e) => e.finding.type === 'symptom_burden')!
+  assertStrictEquals((card.finding as { tier?: string }).tier, 'today')
+  assertStrictEquals(card.text, 'Miso has vomited on at least 3 days in a row — worth a call to your vet today.')
 })

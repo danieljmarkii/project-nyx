@@ -774,6 +774,8 @@ export type InsightType =
   | 'intake_decline'
   | 'reflection'
   | 'symptom_worsening'
+  // Engines v3 PR-14d (CUL-1410): absolute burden, the safety card that needs no earlier week.
+  | 'symptom_burden'
   | 'symptom_chronicity'
   | 'postprandial_timing'
   // Signals v2 (B-755 / CUL-7): the empty-stomach ≥6h lane (L1, the ⑤ mirror) and the
@@ -1171,6 +1173,56 @@ export interface SymptomWorseningFinding extends FindingBase {
   tier: WorseningTier
   /** Length of each comparison window, in days (7 = week-over-week). */
   windowDays: number
+}
+
+/**
+ * Copy-urgency tier for a burden finding. Resolved here, never in copy.
+ *   - 'today' — the persistence run ended today or yesterday (local): "worth a call to your
+ *               vet today" (EN-4's rung, the incident-tiers table's T8).
+ *   - 'soon'  — the count arm alone, or a run that ended earlier in the week: "worth booking a
+ *               vet visit soon". That is detector ④'s FIRM ask, deliberately: the Home pipeline
+ *               drops a same-sign ④ card under this one, so this card's quietest ask must be no
+ *               quieter than the loudest ask it replaces.
+ */
+export type BurdenTier = 'today' | 'soon'
+
+/**
+ * Absolute symptom burden (Engines v3 PR-14d, CUL-1410; CUL-1311 scope 2, GAP-5). The SAFETY
+ * card for a high count with NO earlier week to compare it to. Every other symptom lane is
+ * relative: ④ needs a rise over a logged prior week, ⑦ needs three weeks of history. So a cat
+ * quiet last week that vomits Monday, Tuesday and Wednesday, or a new account's cat vomiting most
+ * days in its first week, got no safety card at all, and PR-14c's valve only removed the calm
+ * one. This owns that case.
+ *
+ * Vomit only (FCEAI's severe band is stated for vomiting). Purely DESCRIPTIVE: a count and a run
+ * of days, no cause, no mechanism, no severity word, no diagnosis. NEVER reassures; its absence is
+ * silence, not wellness. It needs no logging-eligibility floor: it speaks on the presence of
+ * logged vomits, and an unlogged vomit can only make it quieter (the escalation-safe direction).
+ */
+export interface SymptomBurdenFinding extends FindingBase {
+  type: 'symptom_burden'
+  priorityClass: 'safety'
+  symptomType: SymptomType
+  /** Vomits logged in the window, re-logs within 60 s collapsed (the ONE count PR-14c's valve reads). */
+  count: number
+  /** Distinct local days in the window carrying a vomit. */
+  days: number
+  /**
+   * The run of consecutive local days carrying a vomit that the card states: the most recent one
+   * long enough to fire the persistence arm, else the longest (inside the window).
+   */
+  runDays: number
+  /** Local days since that run's last day (0 = it includes today). */
+  daysSinceRunEnd: number
+  /** The count arm holds: at least `reflection.burdenMuteMinEpisodes` vomits in the window. */
+  countArm: boolean
+  /** The persistence arm holds: a vomit on at least `burden.persistenceMinDays` consecutive local days. */
+  persistenceArm: boolean
+  tier: BurdenTier
+  /** The window, in days (the reflection lane's, so "this week" means one thing). */
+  windowDays: number
+  /** Hard marker for the phrasing layer + reviewers: counts only, never causal. */
+  associationalOnly: true
 }
 
 /**
@@ -1759,6 +1811,7 @@ export type Finding =
   | IntakeDeclineFinding
   | ReflectionFinding
   | SymptomWorseningFinding
+  | SymptomBurdenFinding
   | SymptomChronicityFinding
   | PostprandialTimingFinding
   | EmptyStomachTimingFinding
@@ -2012,10 +2065,32 @@ export interface DetectionConfig {
      * Reassurance-direction only: it removes a calm card and never adds a finding, so it
      * ships on its own proof (E-1 A amended). PROVISIONAL at 4: FCEAI's "severe" band for
      * vomiting is 4 or more in 7 days, applied pet-wide to every sign like the other two
-     * gates. The ratified value is a CUL-583 ruling-sheet item. The burden CARD (a safety
-     * finding on the same count) is CUL-1311 scope 2 and does not read this knob yet.
+     * gates. The ratified value is a CUL-583 ruling-sheet item.
+     *
+     * SHARED with the burden card's count arm (PR-14d, CUL-1410), over the SAME count
+     * (`SymptomStat.currentLogs`): for vomit, "③ goes silent on burden ⟺ the burden card
+     * speaks" holds by construction, the valve pattern `isWorsening` set. For the other lane
+     * signs the mute still has no card of its own (the card is vomit only).
      */
     burdenMuteMinEpisodes: number
+  }
+  /**
+   * The burden card's persistence arm (Engines v3 PR-14d, CUL-1410: EN-4's rung, the
+   * incident-tiers table's T8). Its count arm reads `reflection.burdenMuteMinEpisodes`.
+   */
+  burden: {
+    /**
+     * A vomit on at least this many consecutive LOCAL days inside the window fires the card.
+     * PROVISIONAL at 3 (T8's proposed row; the critique says "2 to 3"). The CUL-583 sheet rules
+     * 2 or 3; the corpus report prints the chance rate at both.
+     */
+    persistenceMinDays: number
+    /**
+     * A run whose last day is at most this many local days ago carries the 'today' ask.
+     * 1 = the run includes today or yesterday: "call today" is honest about a run that is
+     * still going, and becomes "book a visit soon" once a whole day has passed without one.
+     */
+    todayMaxDaysSinceRunEnd: number
   }
   chronicity: {
     /**
@@ -2416,7 +2491,13 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     // so the one new escalation boundary is clinically defensible (see WorseningTier).
     worseningDenseDayFloor: 4,
     // PR-14c (CUL-1311): provisional, FCEAI severe (4+ in 7 days). CUL-583 ratifies.
+    // Also the burden card's count arm (PR-14d, CUL-1410).
     burdenMuteMinEpisodes: 4,
+  },
+  // PR-14d (CUL-1410): provisional, T8 ("vomiting 3 days running: call today"). CUL-583 rules 2 or 3.
+  burden: {
+    persistenceMinDays: 3,
+    todayMaxDaysSinceRunEnd: 1,
   },
   // B-182 detector ⑦ (symptom chronicity) floors (§6). Clinically-anchored v1 defaults
   // (PM/Dr. Chen D2 — recommend-and-proceed, pending ratification): a course is "chronic"
@@ -4348,6 +4429,141 @@ export function detectWorsening(
       trigger,
       tier: resolveWorseningTier(s, trigger, cfg),
       windowDays: cfg.windowDays,
+    },
+  ]
+}
+
+// ── Detector ⑧b: absolute burden (Engines v3 PR-14d, CUL-1410 — the card with no earlier week) ──
+//
+// The one symptom lane that needs no comparison. ③ is muted over a heavy week (PR-14c's valve),
+// ④ needs a rise over a LOGGED prior week, ⑦ needs three weeks of history, and the per-incident
+// read (analyze-vomit) counts only 2 in 4 h and 3 in 24 h and never runs on a vomit logged without
+// a photo. So the critique's counterexample (GAP-5: a quiet cat vomits Monday, Tuesday and
+// Wednesday mornings, no photos) reached Home as nothing, and EN-4, EN-11 and D5 each make the
+// first weeks quieter still. This card owns the case, and must be live before any of them.
+//
+// Two arms, one card, both over ③/④'s window so "this week" means one thing:
+//   • COUNT — `reflection.burdenMuteMinEpisodes` (provisional 4, FCEAI severe) or more vomits,
+//     read off the SAME `SymptomStat.currentLogs` the valve reads: re-logs of one vomit within
+//     60 s collapse, and nothing else does, because the 3h episode chain has no length cap (the
+//     PR-14c adversarial pass). One number, two consumers: the valve mutes ③ on vomit exactly when
+//     this arm speaks.
+//   • PERSISTENCE — a vomit on `burden.persistenceMinDays` (provisional 3) consecutive LOCAL days
+//     (EN-4's rung). Local, because "three days running" is the owner's three days: a cat that
+//     vomits at 11 pm in Los Angeles vomited that day, not the next UTC one. With no usable zone
+//     the day boundary is unknown, so every whole-hour offset is read and only what holds in all
+//     of them is claimed (never a UTC guess, and never the loudest offset: see detectBurden).
+//
+// No logging-eligibility floor, on purpose: the card speaks on the PRESENCE of logged vomits, and
+// a logging gap can only hide vomits, which makes it quieter, never louder. A found pile counts
+// like a witnessed vomit (T4: found piles count); its time is when it was found, which can only
+// move it inside the week, never add one.
+//
+// SILENCE IS NEVER WELLNESS: below both arms the card is silent and emits nothing. It never says a
+// week was calm.
+
+const BURDEN_SYMPTOM_TYPE: SymptomType = 'vomit'
+
+/** True for a zone Intl can resolve. `localDayIndex` silently falls back to the device zone
+ *  (UTC on the server) for anything else, which is a guess this detector must not make. */
+function isValidTimeZone(tz: string | undefined): tz is string {
+  if (!tz) return false
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function detectBurden(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): SymptomBurdenFinding[] {
+  const windowed = computeWindowedStats(input, config)
+  if (!windowed) return []
+  const stat = windowed.stats.find((s) => s.symptomType === BURDEN_SYMPTOM_TYPE)
+  const count = stat?.currentLogs ?? 0
+  if (count === 0) return []
+
+  const nowMs = Date.parse(input.now)
+  const windowStart = nowMs - config.reflection.windowDays * MS_PER_DAY
+  const cfg = config.burden
+  const msList = input.symptomEvents
+    .filter((s) => s.type === BURDEN_SYMPTOM_TYPE)
+    .map((s) => Date.parse(s.occurredAt))
+    .filter((ms) => Number.isFinite(ms) && ms >= windowStart && ms < nowMs)
+
+  // Which calendar the days are counted in. With a valid zone, the owner's. With none (a null
+  // `user_profiles.timezone`, an invalid string, or a profile read that failed), the day boundary
+  // is unknown. A UTC guess is wrong either way (it split an evening Los Angeles run into two
+  // days), and so is the LOUDEST offset: it turned three vomits inside 26 hours into "3 days in a
+  // row — call today" and pulled a run that ended two days ago forward to "yesterday" (the
+  // adversarial second pass). So every whole-hour offset a pet can live at (UTC−12 … UTC+14) is
+  // read and the QUIETEST reading is stated: a run is claimed only if it holds wherever the owner
+  // is, and the ask is the one every zone agrees with. Priced residual, accepted: a zone-less
+  // pet's evening run can go unstated by this arm (the count arm is unaffected). Zone-less is
+  // rare: the app stamps the device's zone into the profile on launch (lib/profile.ts).
+  const calendars: ((ms: number) => number)[] = isValidTimeZone(input.timezone)
+    ? [(ms) => localDayIndex(ms, input.timezone)]
+    : Array.from({ length: 27 }, (_, i) => (ms: number) => Math.floor((ms + (i - 12) * 3_600_000) / MS_PER_DAY))
+
+  let best: { runDays: number; runEnd: number; today: number; days: number; persistenceArm: boolean } | null = null
+  for (const dayOf of calendars) {
+    const days = new Set(msList.map(dayOf))
+    const today = dayOf(nowMs)
+    // Runs of consecutive days, oldest first. The run the card states is the MOST RECENT one long
+    // enough to fire the persistence arm (it decides the ask: a 4-day run early in the week must
+    // not turn a 3-day run ending today into "book a visit soon"); failing that, the longest.
+    const sorted = [...days].sort((a, b) => a - b)
+    const runs: { len: number; end: number }[] = []
+    for (let i = 0; i < sorted.length; i++) {
+      if (i > 0 && sorted[i] === sorted[i - 1] + 1) {
+        runs[runs.length - 1].len++
+        runs[runs.length - 1].end = sorted[i]
+      } else {
+        runs.push({ len: 1, end: sorted[i] })
+      }
+    }
+    if (runs.length === 0) return [] // no vomit in the window (count > 0 makes this unreachable)
+    const qualifying = runs.filter((r) => r.len >= cfg.persistenceMinDays)
+    const run =
+      qualifying.length > 0
+        ? qualifying[qualifying.length - 1]
+        : runs.reduce((a, b) => (b.len >= a.len ? b : a))
+    const reading = { runDays: run.len, runEnd: run.end, today, days: days.size, persistenceArm: qualifying.length > 0 }
+    // Quietest first: no qualifying run beats one, then the OLDER run end, then the shorter run.
+    const quieter =
+      best === null ||
+      (!reading.persistenceArm && best.persistenceArm) ||
+      (reading.persistenceArm === best.persistenceArm &&
+        (reading.today - reading.runEnd > best.today - best.runEnd ||
+          (reading.today - reading.runEnd === best.today - best.runEnd && reading.runDays < best.runDays)))
+    if (quieter) best = reading
+  }
+  if (best === null) return []
+  const { runDays, runEnd, today, persistenceArm } = best
+
+  const countArm = count >= config.reflection.burdenMuteMinEpisodes
+  if (!countArm && !persistenceArm) return []
+
+  const daysSinceRunEnd = Math.max(0, today - runEnd)
+  const tier: BurdenTier =
+    persistenceArm && daysSinceRunEnd <= cfg.todayMaxDaysSinceRunEnd ? 'today' : 'soon'
+  return [
+    {
+      type: 'symptom_burden',
+      priorityClass: 'safety',
+      symptomType: BURDEN_SYMPTOM_TYPE,
+      count,
+      days: best.days,
+      runDays,
+      daysSinceRunEnd,
+      countArm,
+      persistenceArm,
+      tier,
+      windowDays: config.reflection.windowDays,
+      associationalOnly: true,
     },
   ]
 }
@@ -6531,6 +6747,10 @@ export const DETECTOR_REGISTRY: Detector[] = [
   { type: 'food_symptom_correlation', detect: detectCorrelations },
   { type: 'intake_decline', detect: detectIntakeDecline },
   { type: 'symptom_worsening', detect: detectWorsening },
+  // Engines v3 PR-14d (CUL-1410): absolute burden, safety class. Additive here: detectSignals
+  // drops nothing for it, so the vet report (which ignores the type) keeps every flag it had. The
+  // Home pipeline alone drops a same-sign ④ under it (pipeline.ts, suppressWorseningUnderBurden).
+  { type: 'symptom_burden', detect: detectBurden },
   // Detector ⑦ (B-182). Live in detectSignals (PR 1), with its within-safety-band RANKING
   // (SAFETY_TYPE_ORDER: chronicity above worsening) and composition couplings — the
   // ③-suppression valve (§4.4) and same-symptom ④-suppression with firm-tier inheritance
@@ -6582,7 +6802,7 @@ export const DETECTOR_REGISTRY: Detector[] = [
 //   4  gap_shortening (L4, CUL-10) — the sub-floor watching/quiet row; the engine's
 //      quietest, ranked below even reflection so it leads only when nothing else exists.
 function priorityBand(finding: Finding, ctx: PetContext): number {
-  if (finding.priorityClass === 'safety') return 0 // incident_red_flag, intake_decline, symptom_chronicity, symptom_worsening
+  if (finding.priorityClass === 'safety') return 0 // incident_red_flag, intake_decline, symptom_burden, symptom_chronicity, symptom_worsening
   // The gap-shortening lane (L4, CUL-10) is the QUIETEST insight — a sub-floor watching row shown while
   // real-world behavior is still being observed (§2 L4, D5). It ranks BELOW even reflection so it only
   // ever leads when nothing louder exists, which is exactly the sub-floor state it is built for. Band 4
@@ -6637,11 +6857,15 @@ const INSIGHT_TYPE_ORDER: Record<string, number> = {
 //   • chronicity (⑦, B-182) outranks the week-over-week worsening bump — the vet council ranked
 //     sustained chronicity ABOVE the bump as the more clinically established concern (Consensus
 //     #3): "this has gone on for weeks" is a more complete statement than "up 2 this week".
+//   • burden (PR-14d, CUL-1410) sits between intake-decline and chronicity: it is this week's
+//     count, and its ask can be "today"; chronicity's is at most "book a visit". Both show when
+//     they co-fire (duration and this week's burden are different statements).
 const SAFETY_TYPE_ORDER: Record<string, number> = {
   incident_red_flag: 0,
   intake_decline: 1,
-  symptom_chronicity: 2,
-  symptom_worsening: 3,
+  symptom_burden: 2,
+  symptom_chronicity: 3,
+  symptom_worsening: 4,
 }
 
 /**

@@ -20,6 +20,7 @@ import type {
   ReflectionFinding,
   SignalFinding,
   SignalSymptomType,
+  SymptomBurdenFinding,
   SymptomChronicityFinding,
   SymptomWorseningFinding,
   TimeOfDayClusteringFinding,
@@ -247,8 +248,29 @@ function redFlags(): IncidentRedFlagFinding[] {
   return out;
 }
 
+// Engines v3 PR-14d (CUL-1410): both tiers, each arm alone and both, counts that equal the run
+// and counts that do not (so a swapped field cannot hide), and a floored read.
+function burdens(): SymptomBurdenFinding[] {
+  const out: SymptomBurdenFinding[] = [];
+  for (const [count, days, runDays, daysSinceRunEnd, countArm, persistenceArm, tier] of [
+    [3, 3, 3, 1, false, true, 'today'],
+    [7, 5, 4, 0, true, true, 'today'],
+    [5, 3, 1, 4, true, false, 'soon'],
+    [4, 4, 2, 2, true, false, 'soon'],
+    [3, 3, 3, 3, false, true, 'soon'],
+    [6, 4, 3, 2, true, true, 'soon'],
+  ] as const)
+    for (const countIsFloor of [undefined, true] as const)
+      out.push({
+        type: 'symptom_burden', priorityClass: 'safety', symptomType: 'vomit',
+        count, days, runDays, daysSinceRunEnd, countArm, persistenceArm, tier, windowDays: 7,
+        ...(countIsFloor ? ({ countIsFloor } as object) : {}),
+      });
+  return out;
+}
+
 function everyFinding(): SignalFinding[] {
-  const out: SignalFinding[] = [trialCard, ...intakes(), ...redFlags()];
+  const out: SignalFinding[] = [trialCard, ...intakes(), ...redFlags(), ...burdens()];
   for (const s of SYMPTOMS) out.push(...chronicities(s), ...worsenings(s), ...reflections(s), ...timings(s), ...correlations(s));
   return out;
 }
@@ -337,6 +359,10 @@ describe('ROLES: with every field distinct, each number comes from the field its
     [timings('vomit')[4], 'Vomiting long after meals', '4 of 6 timed episodes, at least 6 hours after eating'],
     [{ ...correlations('vomit')[1] }, 'Vomiting after chicken', 'A tendency, compared across 9 days of logs'],
     [trialCard, 'Diet trial, day 21 of 56', '4 episodes of vomiting in the trial, 20 in the 49 days before, a longer stretch'],
+    [burdens()[0], 'Vomiting on 3 days in a row', null],
+    [burdens()[2], 'Vomiting on 4 days in a row', '7 times this week'],
+    [burdens()[4], 'Vomiting, 5 times in the last 7 days', null],
+    [burdens()[8], 'Vomiting on 3 days in a row this week', null],
     [intakes()[0], 'Eating less than usual', 'The last three days'],
     [{ ...intakes()[0], daysBelowBaseline: 2 }, 'Eating less than usual', 'The last two days'],
     [{ ...intakes()[0], daysBelowBaseline: 1 }, 'Eating less than usual', 'Today'],

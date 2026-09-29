@@ -505,6 +505,9 @@ const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactEleme
   // Symptom-frequency worsening (④) — also a calm sentence, but a SAFETY finding, so
   // it rides the safety rail (via priorityClass) and leads the surface.
   symptom_worsening: SentenceBody,
+  // Absolute burden (Engines v3 PR-14d, CUL-1410) — a calm sentence on the SAFETY rail: the count
+  // or the run of days, with the ask its tier chose. Leads below intake-decline.
+  symptom_burden: SentenceBody,
   // Symptom chronicity / persistence (⑦, B-182) — a calm sentence on the SAFETY rail: the
   // "this has been going on for weeks and isn't resolving" statement. No confidence tag (a
   // deterministic count shows its sample size); leads the surface below intake-decline.
