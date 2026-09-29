@@ -25,8 +25,14 @@ import { resolveAllowlistFlag } from './flags.ts'
 // as a type and the report-rendering scripts still type-check that graph with no network
 // (ci.yml, Deno check (scripts)). The read itself is engineFlagsRead.ts.
 
-// Seeded by migration 075 as {"enabled": false, "allowlist": []}: eligible for no one.
-export const ENGINE_KEYS = ['engines_v3_en0'] as const
+// engines_v3_en0: seeded by migration 075 as {"enabled": false, "allowlist": []}, eligible
+// for no one. Gates EN-0's vomit context and copy.
+// engines_v3_en3: EN-3's server half and EN-7, which ship together (Engines v3 PR-26): the
+// tier written beside every verdict, the tier-aware never-lower, and the stool spill-over
+// fix. NOT SEEDED, on purpose: a missing row reads as off (above), so it needs no migration
+// to stay dark, and Wave 4 turns on only after the real-vet review (CUL-1312). The PM's
+// allowlist step inserts the row.
+export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3'] as const
 export type EngineKey = typeof ENGINE_KEYS[number]
 
 // The keys the SIGNAL engine (generate-signal) reads. Empty today: EN-0's key gates the

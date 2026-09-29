@@ -585,7 +585,7 @@ Deno.test('pipeline EN-F — a first read carries every stamp, with the flag off
   const w = makeWorld({ vision: () => CLEAN })
   await run(w)
   assertEquals(w.row?.engine_flags, [])
-  assertStrictEquals(w.row?.rule_version, 'f1.test1')
+  assertStrictEquals(w.row?.rule_version, 'f2.test1')
   assertStrictEquals(w.row?.photo_set_key, ATTACHMENT_ID)
   assertStrictEquals(w.row?.model_id, 'test-model')
   assertStrictEquals(HEX64.test(String(w.row?.prompt_hash)), true)
@@ -637,7 +637,7 @@ Deno.test('pipeline EN-F — an owner-edited row: the read stamps refresh, the p
   await run(w)
   assertEquals(w.writes.map((x) => x.mode), ['update'])
   assertEquals(w.row?.engine_flags, ['engines_v3_en0'])
-  assertStrictEquals(w.row?.rule_version, 'f1.test1')
+  assertStrictEquals(w.row?.rule_version, 'f2.test1')
   assertEquals(w.row?.ai_raw_payload, { old: true })
   assertStrictEquals(w.row?.model_id, 'old-model')
   assertStrictEquals(w.row?.prompt_hash, 'b'.repeat(64))
@@ -680,4 +680,134 @@ Deno.test('pipeline EN-F — a failure that writes no words leaves the stamps of
   for (const k of ['engine_flags', 'rule_version', 'photo_set_key', 'model_id', 'prompt_hash']) {
     assertEquals(w.row?.[k], stored[k], k)
   }
+})
+
+// ── EN-3 (CUL-1133; Engines v3 PR-26): the tier, dual-written under engines_v3_en3 ──────
+// Every writer that sets `recommendation` sets `tier` under the key, by the one map; with
+// the key off no write names the column. The never-lower rule reads the louder column.
+
+const EN3_FOR_OWNER: Row[] = [{ key: 'engines_v3_en3', value: { enabled: false, allowlist: ['owner-1'] } }]
+const MODEL_ONLY: TestAnalysis = {
+  appears: true, blood: 'no', colour: 'yellow', visual_flags: [], recommendation: 'worth_a_call', read_text: 'MODEL: its own call', description: null,
+}
+const NOT_SUBJECT: TestAnalysis = { ...CLEAN, appears: false }
+const tierWritten = (w: World) => w.writes.filter((x) => 'tier' in x.values).map((x) => x.values.tier)
+
+Deno.test('pipeline EN-3 — flag-on, the full write-back carries the mapped tier beside the verdict', async () => {
+  const cases: Array<[TestAnalysis, string, string]> = [
+    [CLEAN, 'monitor', 'logged'],
+    [BLOODY, 'worth_a_call', 'call_today'],
+    [NOT_SUBJECT, 'not_enough_to_say', 'not_enough_to_say'],
+  ]
+  for (const [vision, recommendation, tier] of cases) {
+    const w = makeWorld({ vision: () => vision, appConfig: EN3_FOR_OWNER })
+    await run(w)
+    assertStrictEquals(w.row?.recommendation, recommendation)
+    assertStrictEquals(w.row?.tier, tier)
+    assertEquals(w.row?.engine_flags, ['engines_v3_en3'])
+    assertStrictEquals(w.row?.rule_version, 'f2.test1')
+  }
+})
+
+Deno.test('pipeline EN-3 GAP-31 — the model\'s own escalation writes call today and keeps its words', async () => {
+  const w = makeWorld({ vision: () => MODEL_ONLY, appConfig: EN3_FOR_OWNER })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.tier, 'call_today')
+  assertStrictEquals(w.row?.read_text, 'MODEL: its own call')
+  assertEquals(w.row?.visual_flags, [])
+  assertEquals(w.row?.contextual_flags, [])
+})
+
+Deno.test('pipeline EN-3 — flag-on, the owner-edited update, the capped escalation and the rescue all carry the tier', async () => {
+  const edited = makeWorld({
+    row: { recommendation: 'monitor', status: 'completed', edited_at: '2026-09-20T00:00:00Z', blood_col: 'no' },
+    vision: () => BLOODY, appConfig: EN3_FOR_OWNER,
+  })
+  await run(edited)
+  assertEquals(edited.writes.map((x) => x.mode), ['update'])
+  assertStrictEquals(edited.row?.tier, 'call_today')
+
+  const capped = makeWorld({ contextFlags: ['ctx_flag'], dayCount: 11, vision: () => CLEAN, appConfig: EN3_FOR_OWNER })
+  await run(capped)
+  assertStrictEquals(capped.visionCalls, 0)
+  assertStrictEquals(capped.row?.tier, 'call_today')
+
+  const rescued = makeWorld({ contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER })
+  await run(rescued)
+  assertStrictEquals(rescued.row?.status, 'failed')
+  assertStrictEquals(rescued.row?.tier, 'call_today')
+})
+
+Deno.test('pipeline EN-3 flag-off — no write in any path names the tier (the column\'s absence is today)', async () => {
+  const worlds = [
+    makeWorld({ vision: () => CLEAN }),
+    makeWorld({ vision: () => BLOODY }),
+    makeWorld({ vision: () => MODEL_ONLY }),
+    makeWorld({ row: { recommendation: 'monitor', status: 'completed', edited_at: '2026-09-20T00:00:00Z' }, vision: () => BLOODY }),
+    makeWorld({ contextFlags: ['ctx_flag'], dayCount: 11, vision: () => CLEAN }),
+    makeWorld({ contextFlags: ['ctx_flag'], vision: overloaded }),
+    // EN-0's key on is not EN-3's.
+    makeWorld({ vision: () => BLOODY, appConfig: EN0_FOR_OWNER }),
+  ]
+  for (const w of worlds) {
+    await run(w)
+    assertStrictEquals(w.writes.length > 0, true, 'a scenario wrote nothing; the guard would be vacuous')
+    assertEquals(tierWritten(w), [])
+  }
+})
+
+Deno.test('pipeline EN-3 never-lower — a call today over a stored call now writes its finding and keeps call now (F3)', async () => {
+  const w = makeWorld({
+    row: { recommendation: 'worth_a_call', tier: 'call_now', status: 'completed', read_text: 'EARLIER CALL NOW', blood_col: 'no' },
+    vision: () => BLOODY, appConfig: EN3_FOR_OWNER,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertStrictEquals(w.row?.blood_col, 'yes') // the new finding reaches the structured columns
+  assertEquals(w.row?.visual_flags, ['blood'])
+})
+
+Deno.test('pipeline EN-3 never-lower — a capped call today never steps a stored call now down', async () => {
+  const w = makeWorld({
+    row: { recommendation: 'worth_a_call', tier: 'call_now', status: 'completed', read_text: 'EARLIER CALL NOW' },
+    contextFlags: ['ctx_flag'], dayCount: 11, vision: () => CLEAN, appConfig: EN3_FOR_OWNER,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertEquals(w.row?.contextual_flags, ['ctx_flag'])
+})
+
+Deno.test('pipeline EN-3 never-lower — quiet tiers move freely: an unreadable re-read collapses a stored logged', async () => {
+  const w = makeWorld({
+    row: { recommendation: 'monitor', tier: 'logged', status: 'completed', blood_col: 'no' },
+    vision: unreadable, appConfig: EN3_FOR_OWNER,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'not_enough_to_say')
+  assertStrictEquals(w.row?.tier, 'not_enough_to_say')
+})
+
+Deno.test('pipeline EN-3 ROLLBACK — flag-off never lowers a call tier written under the key', async () => {
+  // A calm flag-off re-read over a tiered call: held, tier and all (the shipped rule).
+  const calm = makeWorld({
+    row: { recommendation: 'worth_a_call', tier: 'call_today', status: 'completed', read_text: 'CALL', engine_flags: ['engines_v3_en3'] },
+    vision: () => CLEAN,
+  })
+  await run(calm)
+  assertEquals(calm.writes, [])
+  assertStrictEquals(calm.row?.tier, 'call_today')
+  // A client lowered the verdict beside a frozen call tier (CUL-1321 M1): still held.
+  const lowered = makeWorld({
+    row: { recommendation: 'monitor', tier: 'call_today', status: 'completed', read_text: 'CALL' },
+    vision: () => CLEAN,
+  })
+  await run(lowered)
+  assertEquals(lowered.writes, [])
+  // A flag-off escalation over a tiered calm row writes the verdict and leaves the tier:
+  // the louder column (worth_a_call, call today) is what every reader shows.
+  const raised = makeWorld({ row: { recommendation: 'monitor', tier: 'logged', status: 'completed', blood_col: 'no' }, vision: () => BLOODY })
+  await run(raised)
+  assertStrictEquals(raised.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(raised.row?.tier, 'logged')
 })

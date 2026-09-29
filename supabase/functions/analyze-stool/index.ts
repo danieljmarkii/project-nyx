@@ -45,6 +45,7 @@ import {
   type FunctionCaps,
   type IncidentCopy,
   type IncidentDescriptor,
+  type ContextualRun,
   type AnalysisWriteBack,
   type AnalysisReadFields as IncidentAnalysisReadFields,
   getToolUseInput,
@@ -56,6 +57,11 @@ import {
   buildAnalysisWriteBack as buildIncidentAnalysisWriteBack,
   runIncidentAnalysis,
 } from '../_shared/incident-analysis.ts'
+import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
+import { anyVomitMeetsRepeatRule, REPEAT_VOMIT_DAY_WINDOW_HOURS } from '../_shared/vomitRepeat.ts'
+// The vomit read's own intake derivation (pure; no remote import), for EN-7's feline arm.
+import { buildVomitContext, INTAKE_BASELINE_WINDOW_DAYS, type VomitContextRows } from '../analyze-vomit/context.ts'
+import { STOOL_FORMED_CONSISTENCIES } from '../../../lib/stoolForm.ts'
 
 // Re-export the incident-agnostic pure helpers (and their types) under this
 // function's import surface, mirroring analyze-vomit — so index.test.ts imports
@@ -87,6 +93,47 @@ const REPEAT_LOOSE_STOOL_COUNT = 2
 // the "more than a tummy ache" cue. Presence within the window is enough.
 const CONCURRENT_VOMITING_HOURS = 24
 const CONCURRENT_LETHARGY_HOURS = 24
+
+// ── EN-7, the stool spill-over (CUL-1138; Engines v3 PR-26, behind engines_v3_en3) ──
+// Shipped, ANY vomit in the prior day raises concurrent_vomiting on EVERY stool, a formed one
+// included, and the floor turns that into a call whose words describe loose stool. The pair
+// that means something is vomiting WITH an abnormal stool (the fluid-loss pair, spec §7 S1:
+// call today). Vomiting beside a normal stool adds nothing to the stool's read (T23).
+//
+// THE QUIETING NEEDS POSITIVE EVIDENCE (adversarial pass on this PR, F2). Flag-on the flag is
+// computed exactly as shipped, before the read, so every path that never sees the stool's form
+// (a capped or disabled read, an unreadable photo, a failed vision call and its rescue, no
+// photo) keeps today's call. The flag is WITHDRAWN only after a COMPLETE read (every photo on
+// the event read; the framework refuses a withdrawal otherwise) that shows stool at Bristol
+// type 2, 3 or 4, and only when nothing else asks for it:
+//   · the owner logged the stool Loose ('diarrhea');
+//   · the vomiting meets the vomit read's REPEAT RULE on its own (two within 4 h, three within
+//     24 h; Dr. Chen's pin on CUL-1138, one predicate with analyze-vomit, _shared/vomitRepeat.ts);
+//   · the cat INTAKE ARM holds: the vomit read's own feline_reduced_intake condition over the
+//     record at the moment of this read (adversarial F1: a photoless vomit gets no read of
+//     its own until its record is opened, so "the vomit's own read carries it" is only true if
+//     the stool asks the vomit's questions). One derivation, analyze-vomit/context.ts (C-34).
+// Type 1, 5, 6, 7, 'unsure' and a photo that does not show stool never withdraw. Type 5 is kept
+// loud on purpose ("trending loose"). All are placeholders for CUL-583 and CUL-1312.
+// This is a QUIETER row than today (T23), so it ships dark and stays dark until that review.
+// The formed set is one list with the phone's edit re-check (CUL-1408): lib/stoolForm.ts.
+const EN7_FORMED_CONSISTENCIES = STOOL_FORMED_CONSISTENCIES
+const EN7_LOOSE_CONSISTENCIES: readonly string[] = ['type_6_mushy', 'type_7_watery']
+// The vomits read for the repeat rule reach one day further back than the concurrent window,
+// so a vomit near the window's edge still sees the vomits its own read would count.
+const EN7_VOMIT_READ_HOURS = CONCURRENT_VOMITING_HOURS + REPEAT_VOMIT_DAY_WINDOW_HOURS
+// THE WINDOW IS ANCHORED ON THE STOOL TOO (adversarial round 4, R2d). Shipped, "a vomit in the
+// concurrent window" is counted back from the moment the read runs, so a re-read hours later
+// (an owner's correction re-running it, CUL-1408; a Re-run; a replaced photo) asks a different
+// question from the first read, and a vomit 20 h before the stool falls out six hours on.
+// Flag-on the window is the UNION of the shipped read-time window and ±24 h around the stool's
+// own occurred_at (EN-0's anchoring, applied to the stool): never quieter than shipped, and the
+// same answer whenever the stool is re-read. The vomit and meal reads reach back from the
+// earlier of the stool and the read.
+const EN7_STOOL_ANCHOR_HOURS = CONCURRENT_VOMITING_HOURS
+// The meals the intake arm reads: the vomit read's 7-day tracking baseline, counted back from
+// the earliest vomit in the concurrent window (EN-0's anchored half), so a day further.
+const EN7_MEAL_READ_HOURS = INTAKE_BASELINE_WINDOW_DAYS * 24 + CONCURRENT_VOMITING_HOURS
 
 // ── Enum vocabularies (must match the DB enums in migration 034) ──────────────
 // Bristol Stool Scale Type 1-7 (D3). Type 4 is the "normal" reference point;
@@ -341,6 +388,19 @@ export interface StoolContextInput {
   hasRecentVomiting: boolean
   // True if a non-deleted lethargy event was logged within the concurrent window.
   hasRecentLethargy: boolean
+  // EN-7's facts, present exactly when engines_v3_en3 is on for the owner (assembleContext).
+  // Absent, computeContextualFlags is the shipped derivation.
+  en7?: StoolEn7Facts
+}
+
+export interface StoolEn7Facts {
+  // The owner logged this stool Loose (event_type 'diarrhea').
+  loggedLoose: boolean
+  // A vomit in the concurrent window meets the repeat rule on its own.
+  vomitingRepeats: boolean
+  // A cat whose owner rates meals, with no Most or All meal in the 24 h before this read:
+  // the vomit read's feline_reduced_intake, asked of the same record at the same moment.
+  intakeArm: boolean
 }
 
 export function computeContextualFlags(input: StoolContextInput): ContextualFlag[] {
@@ -352,6 +412,8 @@ export function computeContextualFlags(input: StoolContextInput): ContextualFlag
     flags.push('repeated_loose_stool')
   }
 
+  // Any vomit in the window, flag on or off. EN-7 never removes it here: only a complete read
+  // of a formed stool can, after the read (stoolContextualRun's afterRead).
   if (input.hasRecentVomiting) {
     flags.push('concurrent_vomiting')
   }
@@ -504,6 +566,102 @@ export function selectReadText(params: {
   return selectIncidentReadText(STOOL_COPY, params)
 }
 
+// ── EN-7's copy and run (CUL-1138; flag-on only) ─────────────────────────────────
+// Why concurrent_vomiting fired, so its sentence says what is true. The shipped sentence
+// ("Vomiting and loose stool together…") stood over a formed stool; flag-on each reason has
+// its own words, and none comments on what the stool does not show (Pattern 1). The words
+// are pinned to this stool ("around the same time as this stool") and carry no "today" or
+// "in the last day": the read is stored, and a relative clock goes false by the time the
+// owner reads it (critique GAP-1). How soon to call is the tier's to say (PR-27's map).
+export type En7VomitReason = 'logged_loose' | 'read_loose' | 'read_hard' | 'intake' | 'repeats' | 'unread'
+
+export function buildEn7VomitReadText(petName: string, reason: En7VomitReason): string {
+  const p = petName || 'Your pet'
+  const lead = `${p} has vomited around the same time as this stool`
+  if (reason === 'logged_loose') {
+    return `${lead}, which was logged as loose. Vomiting and loose stool together can run a pet down quickly, so call your vet.`
+  }
+  if (reason === 'read_loose') {
+    return `${lead}, and it looks loose in the photo. Vomiting and loose stool together can run a pet down quickly, so call your vet.`
+  }
+  if (reason === 'read_hard') {
+    return `${lead}, and it looks hard and dry in the photo. Vomiting with a hard, dry stool can be a sign of dehydration, so call your vet.`
+  }
+  if (reason === 'intake') {
+    return `${lead}, and when I read this, no meal logged in the 24 hours before was marked Most or All. In a cat that's vomiting, that's reason to call your vet.`
+  }
+  if (reason === 'repeats') {
+    return `${p} has vomited more than once in the days around this stool. Vomiting that repeats like that is reason enough to call your vet.`
+  }
+  return `${lead}. With vomiting around it, call your vet rather than waiting to see how the next stool looks.`
+}
+
+export function en7StoolCopy(reason: En7VomitReason): IncidentCopy<ContextualFlag> {
+  return {
+    ...STOOL_COPY,
+    contextual: (petName, flags) =>
+      flags.includes('concurrent_vomiting') ? buildEn7VomitReadText(petName, reason) : buildContextualReadText(petName, flags),
+  }
+}
+
+// What a read shows about the stool's form: loose (6, 7), hard (1), formed (2, 3, 4), or
+// nothing usable (type 5, 'unsure', no consistency, or a photo that does not show stool).
+export function en7ReadForm(analysis: StoolAnalysis | null): 'loose' | 'hard' | 'formed' | null {
+  if (!analysis || !analysis.appears_to_show_stool || !analysis.consistency) return null
+  if (EN7_LOOSE_CONSISTENCIES.includes(analysis.consistency)) return 'loose'
+  if (analysis.consistency === 'type_1_hard_lumps') return 'hard'
+  if (EN7_FORMED_CONSISTENCIES.includes(analysis.consistency)) return 'formed'
+  return null
+}
+
+// The stored row's say, when the owner has edited it: its consistency must be a formed type.
+// An unedited row (or none) defers to this run's read.
+export function ownerAgreesFormed(stored: Record<string, unknown> | null): boolean {
+  if (!stored || !stored.edited_at) return true
+  return typeof stored.stool_consistency === 'string' && EN7_FORMED_CONSISTENCIES.includes(stored.stool_consistency)
+}
+
+// Flag-on: the shipped flags, the words for why concurrent_vomiting stands, which flag the
+// read may withdraw, and the post-read hook. Flag-off: the shipped flags alone, so the
+// pipeline uses STOOL_COPY exactly as before and never calls a hook.
+export function stoolContextualRun(
+  context: StoolContextInput,
+): ContextualFlag[] | ContextualRun<ContextualFlag, StoolAnalysis> {
+  const flags = computeContextualFlags(context)
+  const en7 = context.en7
+  if (!en7) return flags
+  // Why the vomiting asks for a call whatever the stool looks like. Words in this order.
+  const standing: En7VomitReason | null = en7.loggedLoose
+    ? 'logged_loose'
+    : en7.intakeArm
+    ? 'intake'
+    : en7.vomitingRepeats
+    ? 'repeats'
+    : null
+  const before: En7VomitReason = standing ?? 'unread'
+  const withdrawable: ContextualFlag[] = context.hasRecentVomiting && standing === null ? ['concurrent_vomiting'] : []
+  return {
+    flags,
+    copy: en7StoolCopy(before),
+    withdrawable,
+    afterRead: (analysis, stored) => {
+      const form = en7ReadForm(analysis)
+      if (!flags.includes('concurrent_vomiting')) return { flags, copy: en7StoolCopy(before) }
+      // A formed stool, and nothing else asks: the pair adds nothing to this stool's read.
+      // On an owner-edited row the owner's consistency must say formed too: a Re-run whose
+      // model reads type 4 never withdraws over a correction to watery (round 2, R2).
+      if (form === 'formed' && standing === null && ownerAgreesFormed(stored)) {
+        return { flags: flags.filter((f) => f !== 'concurrent_vomiting'), copy: en7StoolCopy(before) }
+      }
+      // The read describes this stool; the owner's Loose still leads.
+      if ((form === 'loose' || form === 'hard') && standing !== 'logged_loose') {
+        return { flags, copy: en7StoolCopy(form === 'loose' ? 'read_loose' : 'read_hard') }
+      }
+      return { flags, copy: en7StoolCopy(before) }
+    },
+  }
+}
+
 // ── Write-back: the server half of the never-clobber guard (B-028) ─────────────
 // The read + flags always refresh (so the floor can re-escalate on worsening
 // context); the structured CLINICAL fields are the owner's once edited and must
@@ -579,13 +737,21 @@ export function presentFlagsFromStructured(row: Record<string, unknown>): string
 
 // ── Context assembly (DB reads, ownership-scoped via the caller JWT) ───────────
 
-async function assembleContext(
+export async function assembleContext(
   userClient: SupabaseClient,
   petId: string,
   thisEventOccurredAt: string,
   eventType: string,
+  engineFlags: EngineFlags,
+  species: string,
+  nowMs: number = Date.now(),
 ): Promise<StoolContextInput> {
-  const now = Date.now()
+  // EN-7 reads the vomits' times (for the repeat rule) instead of "is there one". Flag-off
+  // the shipped query runs unchanged, so a flag-off read makes the same calls it always has.
+  if (isEngineKeyOn(engineFlags, 'engines_v3_en3')) {
+    return assembleEn7Context(userClient, petId, thisEventOccurredAt, eventType, species, engineFlags, nowMs)
+  }
+  const now = nowMs
   const looseWindowAgo = new Date(now - REPEAT_LOOSE_STOOL_WINDOW_HOURS * 3_600_000).toISOString()
   const vomitWindowAgo = new Date(now - CONCURRENT_VOMITING_HOURS * 3_600_000).toISOString()
   const lethargyWindowAgo = new Date(now - CONCURRENT_LETHARGY_HOURS * 3_600_000).toISOString()
@@ -635,6 +801,139 @@ async function assembleContext(
   }
 }
 
+// The flag-on context: the shipped loose and lethargy reads, and the vomits' times over the
+// concurrent window plus a day, so the repeat rule sees every vomit an anchor's own read
+// would. hasRecentVomiting keeps its shipped meaning (a vomit in the concurrent window).
+async function assembleEn7Context(
+  userClient: SupabaseClient,
+  petId: string,
+  thisEventOccurredAt: string,
+  eventType: string,
+  species: string,
+  engineFlags: EngineFlags,
+  nowMs: number,
+): Promise<StoolContextInput> {
+  const looseWindowAgo = new Date(nowMs - REPEAT_LOOSE_STOOL_WINDOW_HOURS * 3_600_000).toISOString()
+  const stoolMs = Date.parse(thisEventOccurredAt)
+  const fromMs = Number.isFinite(stoolMs) ? Math.min(stoolMs, nowMs) : nowMs
+  const vomitReadAgo = new Date(fromMs - EN7_VOMIT_READ_HOURS * 3_600_000).toISOString()
+  const lethargyWindowAgo = new Date(nowMs - CONCURRENT_LETHARGY_HOURS * 3_600_000).toISOString()
+
+  const [looseRes, vomitRes, lethargyRes, mealRes] = await Promise.all([
+    userClient
+      .from('events')
+      .select('occurred_at')
+      .eq('pet_id', petId)
+      .eq('event_type', 'diarrhea')
+      .is('deleted_at', null)
+      .gte('occurred_at', looseWindowAgo),
+    userClient
+      .from('events')
+      .select('occurred_at')
+      .eq('pet_id', petId)
+      .eq('event_type', 'vomit')
+      .is('deleted_at', null)
+      .gte('occurred_at', vomitReadAgo),
+    userClient
+      .from('events')
+      .select('id')
+      .eq('pet_id', petId)
+      .eq('event_type', 'lethargy')
+      .is('deleted_at', null)
+      .gte('occurred_at', lethargyWindowAgo)
+      .limit(1),
+    // The vomit read's intake reads, for its feline arm (cats only; other species skip it).
+    species === 'cat'
+      ? userClient
+        .from('events')
+        .select('occurred_at, meals(intake_rating)')
+        .eq('pet_id', petId)
+        .eq('event_type', 'meal')
+        .is('deleted_at', null)
+        .gte('occurred_at', new Date(fromMs - EN7_MEAL_READ_HOURS * 3_600_000).toISOString())
+      : Promise.resolve({ data: [] as unknown[] }),
+  ])
+
+  return buildEn7StoolContext({
+    engineFlags,
+    species,
+    meals: (mealRes.data ?? []) as VomitContextRows['meals'],
+    looseTimes: (looseRes.data ?? []).map((r) => r.occurred_at as string),
+    vomitTimes: (vomitRes.data ?? []).map((r) => r.occurred_at as string),
+    hasRecentLethargy: (lethargyRes.data ?? []).length > 0,
+    thisEventOccurredAt,
+    eventType,
+    nowMs,
+  })
+}
+
+// The vomit read's feline_reduced_intake condition, asked by the stool of each vomit in the
+// window, through the vomit read's own builder with the owner's Engines flags
+// (analyze-vomit/context.ts buildVomitContext, C-34). With EN-0 on that is the union of the
+// read-time half and the vomit-anchored half (refusals before a vomit are never cancelled by
+// eating after it); with EN-0 off, the shipped half. Asked as if each vomit were read now, so
+// the stool calls wherever that vomit's own read would (adversarial round 2, R1).
+function felineIntakeArm(
+  species: string,
+  meals: VomitContextRows['meals'],
+  vomitAnchors: readonly string[],
+  engineFlags: EngineFlags,
+  nowMs: number,
+): boolean {
+  if (species !== 'cat') return false
+  return vomitAnchors.some((anchor) => {
+    const ctx = buildVomitContext({
+      rows: { vomits: [], lethargy: [], meals },
+      thisEventOccurredAt: anchor,
+      species,
+      nowMs,
+      engineFlags,
+    })
+    return ctx.tracksIntake && !ctx.hasRecentPositiveIntake
+  })
+}
+
+// The flag-on context from its rows, pure so the rule is tested without a client.
+// `vomitTimes` reach EN7_VOMIT_READ_HOURS back; the anchors are the ones inside the
+// concurrent window. Times are parsed, never compared as text (C-40).
+export function buildEn7StoolContext(rows: {
+  engineFlags: EngineFlags
+  species: string
+  meals: VomitContextRows['meals']
+  looseTimes: string[]
+  vomitTimes: string[]
+  hasRecentLethargy: boolean
+  thisEventOccurredAt: string
+  eventType: string
+  nowMs: number
+}): StoolContextInput {
+  const recentLooseStoolTimes = [...rows.looseTimes]
+  // The shipped race guard: a Loose stool counts itself even if the read raced its write.
+  if (rows.eventType === 'diarrhea' && !recentLooseStoolTimes.includes(rows.thisEventOccurredAt)) {
+    recentLooseStoolTimes.push(rows.thisEventOccurredAt)
+  }
+  // The shipped read-time window, OR ±24 h around the stool itself (R2d, above).
+  const windowStartMs = rows.nowMs - CONCURRENT_VOMITING_HOURS * 3_600_000
+  const stoolMs = Date.parse(rows.thisEventOccurredAt)
+  const aroundStool = (ms: number) =>
+    Number.isFinite(stoolMs) && Math.abs(ms - stoolMs) <= EN7_STOOL_ANCHOR_HOURS * 3_600_000
+  const anchors = rows.vomitTimes.filter((t) => {
+    const ms = new Date(t).getTime()
+    return ms >= windowStartMs || aroundStool(ms)
+  })
+  return {
+    recentLooseStoolTimes,
+    thisEventOccurredAt: rows.thisEventOccurredAt,
+    hasRecentVomiting: anchors.length > 0,
+    hasRecentLethargy: rows.hasRecentLethargy,
+    en7: {
+      loggedLoose: rows.eventType === 'diarrhea',
+      vomitingRepeats: anyVomitMeetsRepeatRule(rows.vomitTimes, anchors),
+      intakeArm: felineIntakeArm(rows.species, rows.meals, anchors, rows.engineFlags, rows.nowMs),
+    },
+  }
+}
+
 // ── Cap + flag gate identity (Monetization Track 2, T2-3 / B-329 + B-001) ─────
 // docs/monetization-and-throttling-requirements.md §4–§5. The gate logic is the
 // shared module's; the per-type keys + caps live here in the descriptor. The
@@ -648,7 +947,7 @@ const FLAG_KEY = 'ai_stool_read_enabled'
 
 // ── The stool descriptor (D2) ────────────────────────────────────────────────────
 
-const STOOL_DESCRIPTOR: IncidentDescriptor<StoolAnalysis, ContextualFlag> = {
+export const STOOL_DESCRIPTOR: IncidentDescriptor<StoolAnalysis, ContextualFlag> = {
   functionName: 'analyze-stool',
   // Both owner-classified stool event types get a read (D1 keeps the split). The
   // row's incident_type reuses events.event_type ('stool_normal' or 'diarrhea').
@@ -663,14 +962,19 @@ const STOOL_DESCRIPTOR: IncidentDescriptor<StoolAnalysis, ContextualFlag> = {
   userMessageText: 'Analyse this photo of pet stool.',
   // The descriptor half of rule_version (engineStamps.ts): bump with any change to
   // which findings become flags or to the contextual derivation.
-  ruleVersion: 'stool1',
+  // stool2 (Engines v3 PR-26): EN-7's concurrent_vomiting rule under engines_v3_en3.
+  ruleVersion: 'stool2',
   parseToolResult: parseAnalysisToolResult,
   appearsToShowSubject: (analysis) => analysis.appears_to_show_stool,
-  computeContextualFlags: async (userClient, { petId, occurredAt, eventType }) =>
-    computeContextualFlags(await assembleContext(userClient, petId, occurredAt, eventType)),
+  // Flag-on (engines_v3_en3) the run carries EN-7's copy and post-read hook; flag-off it is
+  // the shipped flags alone (stoolContextualRun).
+  computeContextualFlags: async (userClient, { petId, occurredAt, eventType, species, engineFlags }) =>
+    stoolContextualRun(await assembleContext(userClient, petId, occurredAt, eventType, engineFlags, species)),
   copy: STOOL_COPY,
   buildStructuredValues: buildStoolStructuredValues,
   redFlagColumns: RED_FLAG_COLUMNS,
+  // EN-7's withdrawal defers to an owner-corrected consistency (ownerAgreesFormed).
+  afterReadColumns: ['stool_consistency'],
   presentFlagsFromStructured,
 }
 

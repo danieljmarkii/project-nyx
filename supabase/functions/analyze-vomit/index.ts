@@ -45,13 +45,13 @@ import {
   getToolUseInput,
   sanitizeEnum,
   sanitizeEnumArray,
-  hoursBetween,
   applyEscalationFloor as applyIncidentEscalationFloor,
   selectReadText as selectIncidentReadText,
   buildAnalysisWriteBack as buildIncidentAnalysisWriteBack,
   runIncidentAnalysis,
 } from '../_shared/incident-analysis.ts'
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
+import { meetsVomitRepeatRuleAt } from '../_shared/vomitRepeat.ts'
 import {
   buildVomitContext,
   vomitAnchoredReads,
@@ -76,10 +76,8 @@ export {
 export type { FunctionCaps, GateState, AnalysisWriteBack } from '../_shared/incident-analysis.ts'
 
 // ── Clinical thresholds (Dr. Chen, 2026-05-24) ────────────────────────────────
-const REPEAT_VOMIT_SHORT_WINDOW_HOURS = 4
-const REPEAT_VOMIT_SHORT_WINDOW_COUNT = 2
-const REPEAT_VOMIT_DAY_WINDOW_HOURS = 24
-const REPEAT_VOMIT_DAY_WINDOW_COUNT = 3
+// The repeat rule (two within 4 h, three within 24 h) lives in _shared/vomitRepeat.ts,
+// one predicate shared with analyze-stool's EN-7 check (Engines v3 PR-26, C-34).
 // The context windows (feline intake, lethargy, the intake-tracking baseline) and the
 // derivation over them live in ./context.ts, the pure builder (Engines v3 PR-11a).
 
@@ -310,12 +308,7 @@ export type { ContextInput } from './context.ts'
 export function computeContextualFlags(input: ContextInput): ContextualFlag[] {
   const flags: ContextualFlag[] = []
 
-  const within = (hours: number) =>
-    input.recentVomitTimes.filter((t) => hoursBetween(t, input.thisEventOccurredAt) <= hours).length
-  if (
-    within(REPEAT_VOMIT_SHORT_WINDOW_HOURS) >= REPEAT_VOMIT_SHORT_WINDOW_COUNT ||
-    within(REPEAT_VOMIT_DAY_WINDOW_HOURS) >= REPEAT_VOMIT_DAY_WINDOW_COUNT
-  ) {
+  if (meetsVomitRepeatRuleAt(input.recentVomitTimes, input.thisEventOccurredAt)) {
     flags.push('repeated_vomiting')
   }
 

@@ -54,7 +54,10 @@ import { findingIdentity, type IdentifiableFinding } from '../../../lib/findingI
 // escalation ladder, the partial-read collapse, the hold, the rescue). Bump it with any
 // change to _shared/incident-analysis.ts that changes which verdict a row gets. Each
 // descriptor carries its own half (which findings become flags), bumped with its rules.
-export const FRAMEWORK_RULE_VERSION = 'f1'
+// f2 (Engines v3 PR-26, CUL-1133): the tier written beside the verdict under
+// engines_v3_en3, and the hold that compares tiers (holdsOver). A row's tier is read under
+// the rule its rule_version names (the "earlier rule" line, spec §1).
+export const FRAMEWORK_RULE_VERSION = 'f2'
 
 export async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
