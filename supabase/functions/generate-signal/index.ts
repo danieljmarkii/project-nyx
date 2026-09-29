@@ -58,6 +58,8 @@ import {
 // callers already fall back to the deterministic template on any throw, so a timeout
 // degrades safely — it just stops a hung upstream from holding the function open.
 import { fetchWithTimeout } from '../_shared/http.ts'
+// CUL-989 — CUL-975's paged reader, shared with generate-report and ask.
+import { fetchAll, incompletePullNames, readDosesAsToday } from '../_shared/pull.ts'
 import {
   templateForFinding,
   validatePhrasing,
@@ -111,9 +113,15 @@ const PHRASING_MODEL = 'claude-haiku-4-5'
 // DEFAULT_CONFIG, the phrasing model and the Engines flags; engineStamps.ts). Bump it with
 // any change to detection, curation, decoration or phrasing that can change what a pet's
 // Signal says: the fingerprint cannot see a code change this number does not record.
-export const SIGNAL_ENGINE_VERSION = 'signal.2' // signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
+export const SIGNAL_ENGINE_VERSION = 'signal.3' // signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
 
 const MS_PER_DAY = 86_400_000
+
+// CUL-989 — how long a Signal computed from an incomplete read is served before the client
+// regenerates it. Short, because the shortfall is usually a write racing a multi-page pull,
+// which the next read does not repeat; not zero, because a record past the page ceiling is
+// incomplete on every read and the per-pet cap should not be spent re-reading it each open.
+const INCOMPLETE_READ_TTL_MS = 60 * 60 * 1000
 
 // ── Phrasing call (the only LLM use; reasoning stays deterministic upstream) ──
 
@@ -469,35 +477,53 @@ const handler = async (req: Request): Promise<Response> => {
     // 1. Load pet, symptom events, meal events, active diet trial — all
     //    ownership-scoped by RLS via the caller's JWT. Soft-deleted rows are
     //    excluded here (the detection module's documented contract).
+    //
+    //    CUL-989 — every multi-row pull goes through `fetchAll` (_shared/pull.ts), newest-first
+    //    on a TOTAL key, so a record past PostgREST's `max-rows` is read in full and a shortfall
+    //    that does happen drops the OLDEST rows and is REPORTED, never silent. Before this every
+    //    pull was a bare select that kept the oldest rows and dropped the newest, so a detector
+    //    asking "is this still happening?" would have read a record that stopped before today.
+    //    And every read's error is now read: a failed query throws (a 500, and the client keeps
+    //    its cached Signal) instead of arriving as an empty record written with a fresh TTL.
+    //    The one exception is the dose pull, below.
     const [
       petRes,
-      symptomsRes,
-      mealsRes,
+      symptomsPull,
+      mealsPull,
       trialRes,
-      arrangementsRes,
+      arrangementsPull,
       profileRes,
-      regimensRes,
-      doseEventsRes,
-      incidentAnalysesRes,
+      regimensPull,
+      doseEventsPull,
+      incidentAnalysesPull,
     ] =
       await Promise.all([
       supabase.from('pets').select('id, name, species, user_id').eq('id', petId).maybeSingle(),
-      supabase
+      fetchAll<SymptomRow>('events', (r) => r.id, (from, to) =>
+        supabase
         .from('events')
-        .select('id, event_type, occurred_at, occurred_at_confidence, severity')
+        .select('id, event_type, occurred_at, occurred_at_confidence, severity', { count: 'exact' })
         .eq('pet_id', petId)
         .in('event_type', [...CORRELATION_SYMPTOM_TYPES])
         .is('deleted_at', null)
-        .gte('occurred_at', lookbackIso),
-      supabase
+        .gte('occurred_at', lookbackIso)
+        .order('occurred_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)),
+      fetchAll<MealEventRow>('events', (r) => r.id, (from, to) =>
+        supabase
         .from('events')
         .select(
           'id, occurred_at, occurred_at_confidence, meals(food_item_id, intake_rating, food_items(primary_protein, proteins, food_type, format, brand, product_name))',
+          { count: 'exact' },
         )
         .eq('pet_id', petId)
         .eq('event_type', 'meal')
         .is('deleted_at', null)
-        .gte('occurred_at', lookbackIso),
+        .gte('occurred_at', lookbackIso)
+        .order('occurred_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)),
       // `started_at` + `target_duration_days` are selected so the B-422 effective
       // end can be derived here; `select('id')` was enough only while `active`
       // was believed to mean "running today".
@@ -510,12 +536,19 @@ const handler = async (req: Request): Promise<Response> => {
       // Active free-fed standing facts (B-040 R1, PR 4). No lookback filter: a
       // free_choice bowl set months ago and still down is a current standing exposure.
       // The active-window overlap is resolved inside detection, not the query.
-      supabase
+      fetchAll<ArrangementRow>('feeding_arrangements', (r) => r.id, (from, to) =>
+        supabase
         .from('feeding_arrangements')
-        .select('id, food_item_id, created_at, is_shared, active_from, active_until, ended_at, food_items(primary_protein, proteins)')
+        .select(
+          'id, food_item_id, created_at, is_shared, active_from, active_until, ended_at, food_items(primary_protein, proteins)',
+          { count: 'exact' },
+        )
         .eq('pet_id', petId)
         .eq('method', 'free_choice')
-        .is('deleted_at', null),
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)),
       // Caller's IANA timezone (B-079, detector ⑥). RLS on user_profiles scopes to the
       // owner's own row (auth.uid() = id), so this returns the pet owner's profile. Absent
       // / unreadable ⇒ undefined ⇒ ⑥ stays silent (never guess UTC — §4.2).
@@ -525,20 +558,34 @@ const handler = async (req: Request): Promise<Response> => {
       // completed course is a valid historical confounder, and the [from,until] overlap with
       // the bounded symptom set is resolved inside detection. Status is irrelevant to the
       // span — started_at + ended_at fully define it (active → null end → through now).
-      supabase.from('medications').select('id, drug_name, medication_item_id, started_at, ended_at').eq('pet_id', petId),
+      // Ordered on `created_at`, not the nullable `started_at` (the generate-report reason).
+      fetchAll<RegimenRow>('medications', (r) => r.id, (from, to) =>
+        supabase
+        .from('medications')
+        .select('id, drug_name, medication_item_id, started_at, ended_at', { count: 'exact' })
+        .eq('pet_id', petId)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)),
       // Administered medication dose events (B-117 PR 9) — point exposures at occurred_at, the
       // dominant signal today since logged doses are regimen-unlinked (B-135). Same shape as the
       // meals join; soft-deleted + out-of-lookback rows excluded here (the engine's contract).
       // missed/refused doses are filtered in mapMedicationWindows (doseToMedicationWindow).
-      supabase
+      // Error-tolerant ON PURPOSE, and only this one: see `readDosesAsToday`.
+      readDosesAsToday('generate-signal', fetchAll<MedDoseEventRow & { id: string }>('events', (r) => r.id, (from, to) =>
+        supabase
         .from('events')
         .select(
-          'occurred_at, medication_administrations(medication_id, medication_item_id, adherence, paired_event_id, medication_items(generic_name, brand_name))',
+          'id, occurred_at, medication_administrations(medication_id, medication_item_id, adherence, paired_event_id, medication_items(generic_name, brand_name))',
+          { count: 'exact' },
         )
         .eq('pet_id', petId)
         .eq('event_type', 'medication')
         .is('deleted_at', null)
-        .gte('occurred_at', lookbackIso),
+        .gte('occurred_at', lookbackIso)
+        .order('occurred_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to))),
       // Per-incident visual red flags (B-340 vomit + B-364 stool) — the owner-editable structured
       // fields from event_ai_analysis for this pet's analysed incidents, INNER-joined to events so a
       // soft-deleted or out-of-lookback incident is excluded (the engine's contract) and we get
@@ -547,16 +594,44 @@ const handler = async (req: Request): Promise<Response> => {
       // from the structured fields (override-aware), never the cached visual_flags. `status`,
       // `contents` + `bile_present` are added for L3 photo composition (CUL-9), which reads the same
       // rows but filters to completed VOMIT reads itself (computePhotoComposition). Empty ⇒ silent.
-      supabase
+      fetchAll<IncidentAnalysisRow>('event_ai_analysis', (r) => r.event_id, (from, to) =>
+        supabase
         .from('event_ai_analysis')
         .select(
           'event_id, incident_type, status, blood_present, stool_blood_present, foreign_material_present, contents, bile_present, events!inner(occurred_at)',
+          { count: 'exact' },
         )
         .eq('pet_id', petId)
         .in('incident_type', [...RED_FLAG_INCIDENT_TYPES])
         .is('events.deleted_at', null)
-        .gte('events.occurred_at', lookbackIso),
+        .gte('events.occurred_at', lookbackIso)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)),
     ])
+
+    // The single-row reads throw on an error too (a failed trial read is not "no trial": it
+    // would unmute ⑧–⑩ and demote the correlation band for a pet mid-trial).
+    if (petRes.error) throw new Error(`pets read failed: ${petRes.error.message}`)
+    if (trialRes.error) throw new Error(`diet_trials read failed: ${trialRes.error.message}`)
+    // The zone alone degrades rather than throws: its documented absence is "detector ⑥ stays
+    // silent" (and the trial predicate's UTC fallback), a silence rather than a false calm.
+    if (profileRes.error) console.warn('generate-signal: user_profiles read failed, no timezone:', profileRes.error.message)
+
+    // CUL-989 step 3 — which pulls did not read to the end. Named for the log and handed to the
+    // pipeline, which withholds every reassuring or resolving entry and states counts as floors.
+    const incompletePulls = incompletePullNames({
+      symptoms: symptomsPull,
+      meals: mealsPull,
+      arrangements: arrangementsPull,
+      regimens: regimensPull,
+      doseEvents: doseEventsPull,
+      incidentAnalyses: incidentAnalysesPull,
+    })
+    if (incompletePulls.length > 0) {
+      // Error level on purpose: this is the line whose absence let CUL-975 run for a week.
+      console.error('generate-signal incomplete pulls:', petId, incompletePulls.join(', '))
+    }
 
     const pet = petRes.data as { id: string; name: string; species: string; user_id: string | null } | null
     if (!pet) {
@@ -606,15 +681,16 @@ const handler = async (req: Request): Promise<Response> => {
     const result = runSignalPipeline({
       rows: {
         pet: { name: pet.name, species: pet.species },
-        symptoms: (symptomsRes.data ?? []) as SymptomRow[],
-        meals: (mealsRes.data ?? []) as MealEventRow[],
+        symptoms: symptomsPull.rows,
+        meals: mealsPull.rows,
         activeTrials: (trialRes.data ?? []) as ActiveTrialRow[],
-        arrangements: (arrangementsRes.data ?? []) as ArrangementRow[],
+        arrangements: arrangementsPull.rows,
         timezone: (profileRes.data as { timezone: string | null } | null)?.timezone ?? null,
-        regimens: (regimensRes.data ?? []) as RegimenRow[],
-        doseEvents: (doseEventsRes.data ?? []) as MedDoseEventRow[],
-        incidentAnalyses: (incidentAnalysesRes.data ?? []) as IncidentAnalysisRow[],
+        regimens: regimensPull.rows,
+        doseEvents: doseEventsPull.rows,
+        incidentAnalyses: incidentAnalysesPull.rows,
       },
+      incompletePulls,
       prior,
       nowMs,
       engineFlags,
@@ -623,14 +699,18 @@ const handler = async (req: Request): Promise<Response> => {
     // 4. Phrase — one sentence per finding, in parallel, each falling back to
     //    its template independently. The set is never blank because the LLM
     //    failed (§2): a failed call yields the template, not a dropped card.
+    //    CUL-989: over an incomplete read every card is its template, which is where the
+    //    "at least N" lives; a model sentence could restate a floor as a total.
+    const phraseWithModel = phrasingEnabled && result.incompleteDisclosure === null
     const texts = await Promise.all(
-      result.findings.map((r) => phraseFinding(r.finding, result.petName, phrasingEnabled)),
+      result.findings.map((r) => phraseFinding(r.finding, result.petName, phraseWithModel)),
     )
     // 4b. AI summary (B-023 PR 4): the pipeline's deterministic fact packet, phrased
     //     (validateSummary-gated, template fallback). Null when nothing is substantive.
-    const summary: CachedSummary | null = result.summaryPacket
-      ? await phraseSummaryText(result.summaryPacket, phrasingEnabled)
-      : null
+    //     Over an incomplete read the pipeline hands the disclosure instead (CUL-989 step 3:
+    //     it withholds and SAYS SO), and there is no packet to phrase.
+    const summary: CachedSummary | null = result.incompleteDisclosure
+      ?? (result.summaryPacket ? await phraseSummaryText(result.summaryPacket, phrasingEnabled) : null)
 
     // 5. Cache. Empty findings = building/stale (§3.3), NEVER an all-clear (§9).
     const payload = assembleSignal(result, texts, summary)
@@ -650,7 +730,11 @@ const handler = async (req: Request): Promise<Response> => {
       findings: cachedEntries,
       coverage,
       summary,
+      // CUL-989: a row computed from an incomplete read expires in an hour, not the column's
+      // 24h default, so the next open retries the read instead of serving the withheld state
+      // (and its disclosure) for a day.
       ...signalStampValues(engineFlags, fingerprint),
+      ...(incompletePulls.length > 0 ? { expires_at: new Date(nowMs + INCOMPLETE_READ_TTL_MS).toISOString() } : {}),
     })
     if (insertError) throw new Error(`ai_signals write failed: ${insertError.message}`)
 
@@ -678,7 +762,16 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     return Response.json(
-      { is_building: isBuilding, signal_text: signalText, findings: cachedEntries, coverage, summary },
+      {
+        is_building: isBuilding,
+        signal_text: signalText,
+        findings: cachedEntries,
+        coverage,
+        summary,
+        // CUL-989: which pulls did not read to the end ([] on a complete read). The cache row
+        // has no column for it; the summary carries the owner-facing half.
+        record_incomplete: incompletePulls,
+      },
       { headers: CORS_HEADERS },
     )
   } catch (err) {

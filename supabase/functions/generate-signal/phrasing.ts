@@ -154,6 +154,22 @@ export function templateWorsening(f: SymptomWorseningFinding, petName: string): 
   const symptom = SYMPTOM_LABEL[f.symptomType]
   const episodeNoun = f.currentCount === 1 ? 'episode' : 'episodes'
 
+  // CUL-989 — over an incomplete read every count is a floor. The card still escalates (the
+  // ruling), but the week-over-week clause goes: last week's count is a floor too, so "up from
+  // N" could name a rise the full record does not have. What stays is true of any subset.
+  if (f.countIsFloor) {
+    const ask =
+      f.tier === 'firm'
+        ? 'worth booking a vet visit soon'
+        : f.tier === 'soft'
+          ? 'worth keeping an eye on, and a word with your vet if it carries on'
+          : 'worth a word with your vet'
+    if (f.tier === 'standard') {
+      return `${petName} has had at least ${f.currentCount} ${episodeNoun} of ${symptom} this week — ${ask}.`
+    }
+    return `${petName} has had ${symptom} on at least ${f.currentDays} of the last ${f.windowDays} days — ${ask}.`
+  }
+
   if (f.tier === 'firm') {
     // Dense current week — symptoms on most days. Phrase the rise on the axis that
     // ACTUALLY rose (the trigger): for more_days the episode count is flat-or-FALLING
@@ -230,8 +246,10 @@ export function templateIncidentRedFlag(f: IncidentRedFlagFinding, petName: stri
       ? `${INCIDENT_FLAG_PHRASE.blood} and ${INCIDENT_FLAG_PHRASE.foreign_material}`
       : INCIDENT_FLAG_PHRASE[f.flags[0]]
   const when = onsetDay(f.mostRecentFlaggedIso)
+  // CUL-989 — over an incomplete read "a photo" may be one of several; the plural lead is true
+  // of one flagged photo or many, and it names the most recent date either way.
   const lead =
-    f.flaggedIncidentCount === 1
+    f.flaggedIncidentCount === 1 && !f.countIsFloor
       ? `A photo you logged of ${petName}'s ${symptom} showed ${phrase}, on ${when}`
       : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}, most recently on ${when}`
   return `${lead} — worth a call to your vet. This is a read of your logs, not a diagnosis.`
@@ -312,6 +330,14 @@ export function templateChronicity(f: SymptomChronicityFinding, petName: string)
   const adjacency = f.coughVomitAdjacent
     ? ` ${adjacencyBridge(f.symptomType)} — a cough can look like retching or end in vomiting. Mention both.`
     : ''
+  // CUL-989 — over an incomplete read the weeks and the count are floors, and the onset month is
+  // the one fact a read missing the OLDEST rows gets wrong in the calming direction (the course
+  // looks younger than it is: "since August" for a course that began in July, adversarial pass).
+  // So the floor arm drops the month and says "at least" twice; it is shorter than the shipped
+  // arm, so the cap above still holds (pinned on the same worst case in phrasing.test.ts).
+  if (f.countIsFloor) {
+    return `We've logged ${symptom} for ${petName} across at least ${f.activeWeeks} of the last ${windowWeeks} weeks — at least ${f.episodeCount} ${noun}. A symptom that keeps recurring over weeks is ${vetAsk}.${adjacency} This is a read of your logs, not a diagnosis.`
+  }
   return `We've logged ${symptom} for ${petName} across ${f.activeWeeks} of the last ${windowWeeks} weeks — ${f.episodeCount} ${noun} since ${onsetMonth(f.firstOnsetIso)}. A symptom that keeps recurring over weeks is ${vetAsk}.${adjacency} This is a read of your logs, not a diagnosis.`
 }
 
@@ -419,7 +445,10 @@ export function templateTrialResponse(f: TrialResponseFinding, petName: string):
   // ("worth reviewing", never "working"/"better"); vomit-only (the round-2 masking fix), so "symptom
   // episodes" would over-claim a whole-body read the count does not support.
   const lengthCue = baselineDays >= trialDays * 1.5 ? ', a longer stretch' : ''
-  return `We've logged ${f.pooledTrialCount} ${trialNoun} of vomiting for ${petName} in the trial's ${trialDays} ${trialDayNoun}, compared with ${f.pooledBaselineCount} in the ${baselineDays} ${baselineDayNoun} before it${lengthCue} — worth reviewing with your vet.`
+  // CUL-989 — over an incomplete read both pooled counts are floors (only the more-during-trial
+  // direction reaches here then; the other is withheld in the pipeline).
+  const atLeast = f.countIsFloor ? 'at least ' : ''
+  return `We've logged ${atLeast}${f.pooledTrialCount} ${trialNoun} of vomiting for ${petName} in the trial's ${trialDays} ${trialDayNoun}, compared with ${atLeast}${f.pooledBaselineCount} in the ${baselineDays} ${baselineDayNoun} before it${lengthCue} — worth reviewing with your vet.`
 }
 
 /** Render one inter-episode gap (hours) as a friendly value + unit. ≥24h → whole days, else whole
@@ -461,6 +490,63 @@ export function templateGapShortening(f: GapShorteningFinding, petName: string):
   const symptom = SYMPTOM_LABEL[f.symptomType]
   const sequence = formatGapSequence(f.recentGapsHours)
   return `For ${petName}, the gaps between ${symptom} episodes have been ${sequence} — a pattern worth keeping an eye on.`
+}
+
+// CUL-989 — a safety card CARRIED from the previous Signal over an incomplete read. Never the
+// card's old sentence: that one was true on the day it was computed ("just turned down", "up from
+// 1 last week") and goes false as the days pass (adversarial pass, this PR). This names the lane,
+// dates the read that found it, keeps the card's own vet ask, and says why it is not re-checked.
+// No count, no "since": the numbers belong to a read this run could not repeat.
+export function templateCarried(f: Finding, petName: string, carriedFromIso: string): string {
+  const what =
+    f.type === 'symptom_chronicity'
+      ? `${SYMPTOM_LABEL[f.symptomType]} recurring over several weeks`
+      : f.type === 'symptom_worsening'
+        ? `${SYMPTOM_LABEL[f.symptomType]} coming more often`
+        : f.type === 'intake_decline'
+          ? f.trigger === 'refused_normal_food'
+            ? 'turning down a food they usually eat'
+            : 'eating less than usual'
+          : f.type === 'incident_red_flag'
+            ? `a photo of ${INCIDENT_NOUN[f.incidentType]} showing ${f.flags.map((k) => INCIDENT_FLAG_PHRASE[k]).join(' and ')}`
+            : 'a pattern'
+  const ask =
+    f.type === 'incident_red_flag'
+      ? 'worth a call to your vet'
+      : (f.type === 'symptom_chronicity' || f.type === 'symptom_worsening') && f.tier === 'firm'
+        ? 'worth booking a vet visit'
+        : 'worth a word with your vet'
+  return `An earlier read of ${petName}'s record, on ${onsetDay(carriedFromIso)}, showed ${what} — ${ask}. Part of the record didn't load for this update, so it hasn't been checked again yet.`
+}
+
+/**
+ * Whether `templateCarried` can render this prior entry with every word it needs. A prior row is
+ * read back from jsonb the owner can write, so a lane name alone is not enough: an unknown symptom
+ * printed "undefined", and a red flag with no `flags` threw inside the pipeline (adversarial
+ * third check, CUL-989). An entry that fails is simply not carried, which can only withhold.
+ */
+const CARRYABLE_TIERS = { soft: true, standard: true, firm: true }
+
+export function canRenderCarried(f: unknown): boolean {
+  if (!f || typeof f !== 'object') return false
+  const x = f as { type?: unknown; symptomType?: unknown; incidentType?: unknown; flags?: unknown; tier?: unknown; trigger?: unknown }
+  const known = (map: object, k: unknown) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k)
+  switch (x.type) {
+    case 'symptom_chronicity':
+    case 'symptom_worsening':
+      return known(SYMPTOM_LABEL, x.symptomType) && (x.tier === undefined || known(CARRYABLE_TIERS, x.tier))
+    case 'intake_decline':
+      return x.trigger === undefined || typeof x.trigger === 'string'
+    case 'incident_red_flag':
+      return (
+        known(INCIDENT_NOUN, x.incidentType) &&
+        Array.isArray(x.flags) &&
+        x.flags.length > 0 &&
+        x.flags.every((k) => known(INCIDENT_FLAG_PHRASE, k))
+      )
+    default:
+      return false
+  }
 }
 
 export function templateForFinding(finding: Finding, petName: string): string {

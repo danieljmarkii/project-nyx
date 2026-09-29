@@ -1,6 +1,11 @@
-// Every row pull in `generate-report` either PAGES to the end of its result set or
-// carries an explicit cap with an ordering that makes the drop safe — and this file is
-// what says so after the fact.
+// Every row pull in `generate-report`, `generate-signal` and `ask` either PAGES to the end
+// of its result set or carries an explicit cap with an ordering that makes the drop safe —
+// and this file is what says so after the fact.
+//
+// WIDENED BY CUL-989 (Engines v3 PR-09). The report half was built for CUL-975, below; the
+// same bare pull was in the Signal engine (the function that decides what to warn an owner
+// about) and in Ask. The reader moved to `supabase/functions/_shared/pull.ts`, and this scan
+// now reads all three directories.
 //
 // CUL-975. On 2026-09-15 the PM generated his own cat's vet report for an appointment the
 // next morning. The report was titled Jul 26 – Sep 15 and contained no event after Sep 7.
@@ -46,23 +51,39 @@ import * as path from 'path';
 import { blankComments } from './blankComments';
 
 const ROOT = path.resolve(__dirname, '..');
-const REPORT_DIR = path.join(ROOT, 'supabase/functions/generate-report');
+const FUNCTIONS_DIR = path.join(ROOT, 'supabase/functions');
 
-/** Source files of the function, derived from the REPOSITORY rather than from a list in
+/**
+ * The functions whose pulls this guard covers, each with the fewest multi-row pulls it must
+ * find there — the per-function NON-VACUITY FLOOR. A directory removed from this list is
+ * caught by the test that asserts each is a real function; a directory whose extractor
+ * silently matched nothing is caught by its floor. It is a list and not every function on
+ * purpose: the per-incident reads (`analyze-*`) and `delete-account` fetch by id or page by
+ * their own discipline, and widening past these three is a decision, not a default.
+ */
+const COVERED: Record<string, number> = {
+  'generate-report': 11,
+  'generate-signal': 6,
+  ask: 7,
+};
+
+/** Source files of a function, derived from the REPOSITORY rather than from a list in
  *  this file — a floor that iterates its own constant is green when an entry is dropped
  *  from it (C-38, measured on `guards/visitReaders.test.ts`). */
-function sourceFiles(): string[] {
+function sourceFiles(fn: string): string[] {
   return fs
-    .readdirSync(REPORT_DIR)
-    .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
-    .sort();
+    .readdirSync(path.join(FUNCTIONS_DIR, fn))
+    .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && !f.endsWith('.testutil.ts'))
+    .sort()
+    .map((f) => `${fn}/${f}`);
 }
 
 /** Comments blanked line-preservingly, so a sentence ABOUT a pull is never mistaken for
  *  the pull (C-18: a guard's own prose is not its evidence — and this file's subject is a
- *  defect whose comment described the fix it had not received). */
+ *  defect whose comment described the fix it had not received). `rel` is relative to
+ *  `supabase/functions/`. */
 function code(rel: string): string {
-  return blankComments(fs.readFileSync(path.join(REPORT_DIR, rel), 'utf8'));
+  return blankComments(fs.readFileSync(path.join(FUNCTIONS_DIR, rel), 'utf8'));
 }
 
 interface Site {
@@ -98,13 +119,17 @@ function sites(file: string): Site[] {
     // measured, on this file, before the bound below existed.
     const next = src.indexOf(".from('", at + 1);
     const end = next === -1 ? src.length : next;
-    out.push({ file, table: m[1], chain: src.slice(at, Math.min(end, at + 2000)), lead });
+    const chain = src.slice(at, Math.min(end, at + 2000));
+    // A WRITE is not a pull (CUL-989: generate-signal replaces its cache row). Excluded by the
+    // verb that follows `.from(…)`, so a read that merely mentions a write later cannot hide.
+    if (/^\.from\('[^']+'\)\s*\.(insert|delete|update|upsert)\(/.test(chain)) continue;
+    out.push({ file, table: m[1], chain, lead });
   }
   return out;
 }
 
 function allSites(): Site[] {
-  return sourceFiles().flatMap(sites);
+  return Object.keys(COVERED).flatMap(sourceFiles).flatMap(sites);
 }
 
 /**
@@ -117,7 +142,9 @@ function allSites(): Site[] {
  * this shape exists to prevent.
  */
 const DELIBERATE_CAP: Record<string, string> = {
-  looks:
+  // Keyed `<function>/<table>`: the same table can be a safe cap in one function and a defect
+  // in another, and an exemption earned in one must not travel.
+  'generate-report/looks':
     'CUL-875. This pull has NO date bound by design — the "answered on 118 days before it ' +
     'since May 3" clause reads back past the window on purpose, so a `.gte` would make that ' +
     'sentence a statement about the query. The cap is what bounds it, the newest-first order ' +
@@ -125,6 +152,28 @@ const DELIBERATE_CAP: Record<string, string> = {
     'the render as a floor with no start date. Paging it would read an unbounded history to ' +
     'improve one clause that is already honest when it degrades.',
 };
+
+/**
+ * READS BOUNDED BY THEIR OWN KEY, NOT BY A CAP (CUL-989). The rule above is about a pull
+ * over a pet's RECORD, which grows without limit. These two grow with nothing a pet logs:
+ * each is filtered to a closed set whose size is fixed by the code, so `max-rows` cannot
+ * reach them. Each entry is earned by stating that bound; none is a pull over events.
+ */
+const BOUNDED_BY_KEY: Record<string, string> = {
+  'generate-signal/app_config':
+    'The phrasing flag and the caps: `.in(\'key\', [FLAG_KEY, \'ai_caps\'])`, two rows at most — ' +
+    'app_config is keyed by `key`, so the filter bounds the result at the length of the list.',
+  'ask/app_config':
+    'The Ask flags and caps: `.in(\'key\', [ASK_FLAG, GENERAL_FLAG, \'ai_caps\'])`, three rows at ' +
+    'most, by the same primary-key argument.',
+  'ask/ai_usage':
+    'The monthly conversation count: one row per (function, scope, UTC day), filtered to one ' +
+    'function, one scope and the current month — at most 31 rows, fixed by the calendar.',
+};
+
+/** `generate-report/index.ts` → `generate-report`. */
+const fnOf = (s: Site): string => s.file.split('/')[0];
+const keyOf = (s: Site): string => `${fnOf(s)}/${s.table}`;
 
 /** A site is PAGED when it is the query `fetchAll` builds: the call wraps it, and the
  *  chain carries the three things that make paging sound. */
@@ -147,12 +196,23 @@ function isPaged(s: Site): boolean {
  */
 const TIME_COLUMNS = ['occurred_at', 'created_at', 'started_at', 'visited_at', 'local_day'];
 
-/** A site that returns AT MOST ONE ROW cannot truncate. */
+/** A site that returns AT MOST ONE ROW cannot truncate. `.limit(1)` is one row by
+ *  definition (CUL-989: the active trial, the latest cached Signal), and says so in code. */
 function isSingleRow(s: Site): boolean {
-  return /\.maybeSingle\(\)/.test(s.chain);
+  return /\.maybeSingle\(\)/.test(s.chain) || /\.limit\(1\)/.test(s.chain);
 }
 
-describe('CUL-975 — every generate-report pull paginates or carries an ordered, counted cap', () => {
+describe('CUL-975 / CUL-989 — every pull in the covered functions paginates or carries an ordered, counted cap', () => {
+  it('every covered function is a real function directory, and each meets its floor of paged pulls', () => {
+    // Derived from the REPOSITORY: the list above is checked against what is on disk, so a
+    // renamed function reds here instead of leaving its floor reading an empty directory.
+    for (const fn of Object.keys(COVERED)) {
+      expect(fs.existsSync(path.join(FUNCTIONS_DIR, fn, 'index.ts'))).toBe(true);
+      const paged = sourceFiles(fn).flatMap(sites).filter(isPaged);
+      expect(`${fn}: ${paged.length} paged pulls`).toBe(`${fn}: ${Math.max(paged.length, COVERED[fn])} paged pulls`);
+    }
+  });
+
   it('the scan finds every query site, and the same number a plain count does', () => {
     // NON-VACUITY FLOOR, and it is derived two independent ways. Eight green assertions
     // over an extractor that silently matched nothing is the failure mode this class of
@@ -161,15 +221,17 @@ describe('CUL-975 — every generate-report pull paginates or carries an ordered
     // The second count shares no code with `sites()` beyond the regex: it re-reads the
     // files and re-classifies storage itself, so an extractor that silently stopped
     // matching disagrees with it rather than agreeing at zero.
-    const plain = sourceFiles().flatMap((f) => {
+    const plain = Object.keys(COVERED).flatMap(sourceFiles).flatMap((f) => {
       const src = code(f);
       return [...src.matchAll(/\.from\('[a-z_][a-z0-9_-]*'\)/g)].map((m) => ({
         storage: /storage\s*$/.test(src.slice(Math.max(0, (m.index ?? 0) - 400), m.index)),
+        write: /^\.from\('[^']+'\)\s*\.(insert|delete|update|upsert)\(/.test(src.slice(m.index ?? 0, (m.index ?? 0) + 200)),
       }));
     });
-    expect(found.length).toBeGreaterThanOrEqual(11);
-    expect(found.length).toBe(plain.filter((m) => !m.storage).length);
-    expect(plain.filter((m) => m.storage).length).toBe(1); // the incident-photo bucket
+    expect(found.length).toBeGreaterThanOrEqual(24);
+    expect(found.length).toBe(plain.filter((m) => !m.storage && !m.write).length);
+    expect(plain.filter((m) => m.storage).length).toBe(1); // the report's incident-photo bucket
+    expect(plain.filter((m) => m.write).length).toBe(2); // the Signal's cache replace: delete + insert
     // And the tables are the ones this report is actually built from, not a subset the
     // extractor happened to reach.
     for (const t of ['events', 'medication_administrations', 'diet_trials', 'vet_visits', 'looks']) {
@@ -183,8 +245,14 @@ describe('CUL-975 — every generate-report pull paginates or carries an ordered
       .map((s) => [`${s.file} → ${s.table}`, s] as [string, Site]),
   )('%s pages, or is a registered cap that is ordered and counted', (_label, s) => {
     if (isPaged(s)) return;
-    const reason = DELIBERATE_CAP[s.table];
-    expect(reason ?? `${s.table} neither pages nor is registered as a deliberate cap`).toBe(reason);
+    if (BOUNDED_BY_KEY[keyOf(s)]) {
+      // Bounded by its key, and the filter that bounds it is still in the chain.
+      expect(s.chain).toMatch(/\.(in|eq)\('key'|\.eq\('function'/);
+      expect(BOUNDED_BY_KEY[keyOf(s)].length).toBeGreaterThan(80);
+      return;
+    }
+    const reason = DELIBERATE_CAP[keyOf(s)];
+    expect(reason ?? `${keyOf(s)} neither pages nor is registered as a deliberate cap`).toBe(reason);
     // A registered cap still has to be a SAFE one. Newest-first is what makes the drop
     // land on the oldest rows, and the count is what lets the shortfall be noticed at all.
     expect(s.chain).toMatch(/\.order\(/);
@@ -216,8 +284,9 @@ describe('CUL-975 — every generate-report pull paginates or carries an ordered
   });
 });
 
-describe('CUL-975 — the reader itself', () => {
-  const src = code('index.ts');
+describe('CUL-975 — the reader itself (_shared/pull.ts since CUL-989)', () => {
+  const src = code('_shared/pull.ts');
+  const report = code('generate-report/index.ts');
 
   it('advances by the rows RECEIVED, never by the page size', () => {
     // The one line that makes the reader correct at a server ceiling it cannot observe.
@@ -261,8 +330,8 @@ describe('CUL-975 — the reader itself', () => {
     // `lookbackIso` is what the query asked for; after CUL-975 inverted the truncation
     // direction those are two different numbers on an incomplete pull, and `countIsFloor`
     // downstream reads this one.
-    expect(src).toMatch(/eventsSinceIso: reachedLookbackIso\(/);
-    expect(src).not.toMatch(/eventsSinceIso: lookbackIso/);
+    expect(report).toMatch(/eventsSinceIso: reachedLookbackIso\(/);
+    expect(report).not.toMatch(/eventsSinceIso: lookbackIso/);
   });
 
   it('a page range error that means "the set shrank" stops the loop instead of 500ing', () => {
@@ -282,16 +351,16 @@ describe('CUL-975 — the reader itself', () => {
   });
 
   it('the (a′) refusal reads the EVENTS pull, the one page 1 is computed from', () => {
-    expect(src).toMatch(/const windowMayBeCut\s*=\s*\n?\s*!eventsPull\.complete/);
-    expect(src).toMatch(/status: 503/);
-    expect(src).toMatch(/record_incomplete/);
+    expect(report).toMatch(/const windowMayBeCut\s*=\s*\n?\s*!eventsPull\.complete/);
+    expect(report).toMatch(/status: 503/);
+    expect(report).toMatch(/record_incomplete/);
   });
 
   it('every incomplete pull is named to the render, and logged for us', () => {
     // The disclosure is what the owner and the vet get; the log line is what WE get, and
     // its absence is why this ran for a week without anyone knowing.
-    expect(src).toMatch(/incompletePulls,/);
-    expect(src).toMatch(/console\.error\('generate-report incomplete pulls:'/);
+    expect(report).toMatch(/incompletePulls,/);
+    expect(report).toMatch(/console\.error\('generate-report incomplete pulls:'/);
   });
 });
 
@@ -332,6 +401,75 @@ describe('CUL-975 — the detectors fire on the shapes the defect takes', () => 
   });
 
   it('does not mistake a Storage bucket for a table', () => {
-    expect(sites('index.ts').map((s) => s.table)).not.toContain('nyx-event-attachments');
+    expect(sites('generate-report/index.ts').map((s) => s.table)).not.toContain('nyx-event-attachments');
+  });
+
+  it('does not mistake a write for a pull, and does not let a read hide behind a later write', () => {
+    expect(sites('generate-signal/index.ts').some((s) => /^\.from\('ai_signals'\)\s*\.delete/.test(s.chain))).toBe(false);
+    const readThenWrite = `.from('events').select('id').eq('pet_id', p); await x.delete()`;
+    expect(/^\.from\('[^']+'\)\s*\.(insert|delete|update|upsert)\(/.test(readThenWrite)).toBe(false);
+  });
+
+  it('a registered cap does not travel to another function', () => {
+    expect(DELIBERATE_CAP['generate-signal/looks']).toBeUndefined();
+    expect(DELIBERATE_CAP['ask/looks']).toBeUndefined();
+  });
+});
+
+// ── CUL-989: what the Signal and Ask DO with an incomplete pull ──
+//
+// BLIND SPOTS, stated because an undocumented one reads as coverage (C-38):
+//   • The "every failed read throws" count matches the pre-CUL-989 shape `xRes.data ?? [])`
+//     only. A failed read swallowed any other way (`?? null`, a destructure that ignores
+//     `error`) is invisible to it; the call-site review is what catches those.
+//   • The error checks are asserted as present in the file, not tied to the read they guard.
+//   • The dose-exemption regex reaches from `readDosesAsToday(` to the `event_type` filter
+//     within 400 characters, so a much longer select reds it on a benign edit (the safe way
+//     to be wrong: a false red, never a false green).
+//   • The incomplete-read BEHAVIOUR is proven in `_shared/engineCorpus/signalPipeline.test.ts`
+//     (g)–(j); this file pins only the wiring into it.
+describe('CUL-989 — an incomplete pull is acted on, in each function, and the dose exemption is one site each', () => {
+  const signal = code('generate-signal/index.ts');
+  const ask = code('ask/index.ts');
+
+  it('generate-signal hands the incomplete pulls to the pipeline and logs them at error level', () => {
+    // The pipeline's side (withhold the reassuring, floor the rest, disclose) is proven by
+    // behaviour in _shared/engineCorpus/signalPipeline.test.ts (g)–(j); this pins the wire.
+    expect(signal).toMatch(/const incompletePulls = incompletePullNames\(\{/);
+    expect(signal).toMatch(/runSignalPipeline\(\{[\s\S]*?\n\s*incompletePulls,\n/);
+    expect(signal).toMatch(/console\.error\('generate-signal incomplete pulls:'/);
+    // Over an incomplete read no card goes to the model: the "at least" lives in the template.
+    expect(signal).toMatch(/const phraseWithModel = phrasingEnabled && result\.incompleteDisclosure === null/);
+  });
+
+  it('ask answers nothing over an incomplete pull: it returns BEFORE the model loop', () => {
+    const gate = ask.indexOf('if (ctx.recordIncomplete.length > 0)');
+    const loop = ask.indexOf('await runAskLoop(');
+    expect(gate).toBeGreaterThan(-1);
+    expect(loop).toBeGreaterThan(gate);
+    const branch = ask.slice(gate, loop);
+    expect(branch).toMatch(/buildDeflection\('llm_unavailable'/);
+    expect(branch).toMatch(/safetyLead: leadingSafetyText\(/); // escalations are never hidden
+    expect(branch).toMatch(/console\.error\('ask incomplete pulls:'/);
+    expect(branch).toMatch(/return answerResponse\(/);
+  });
+
+  it('every failed read throws, except the one registered dose pull (CUL-1099)', () => {
+    // The pre-CUL-989 shape: `(xRes.data ?? [])` read a failed query as an empty record.
+    for (const [fn, src] of [['generate-signal', signal], ['ask', ask]] as const) {
+      // What may still read `.data ?? []`: the trial read, whose error is thrown just above it,
+      // and Ask's relay of the cached Signal, whose failure is logged and read as "no engine
+      // findings" (the relay leads with nothing, never with a false calm).
+      const allowed = /(trialRes|signalsRes)\.data \?\? \[\]\)/g;
+      expect(`${fn}: ${(src.match(/Res\.data \?\? \[\]\)/g) ?? []).length}`).toBe(`${fn}: ${(src.match(allowed) ?? []).length}`);
+      expect(src).toMatch(/if \(trialRes\.error\) throw/);
+      // The zone read degrades on purpose (its absence is a documented silence), but it is
+      // still READ: a failed zone read is logged, never taken as a clean answer unseen.
+      expect(src).toMatch(/if \(profileRes\.error\) console\.warn\(/);
+      // THE EXEMPTION, earned once per function and wrapped around the dose pull only.
+      const wraps = [...src.matchAll(/readDosesAsToday\('[a-z-]+', fetchAll<[^>]*>\('([a-z_]+)'[\s\S]{0,400}?\.eq\('event_type', '([a-z]+)'\)/g)];
+      expect(wraps.map((m) => `${m[1]}:${m[2]}`)).toEqual(['events:medication']);
+      expect((src.match(/readDosesAsToday\(/g) ?? []).length).toBe(1);
+    }
   });
 });

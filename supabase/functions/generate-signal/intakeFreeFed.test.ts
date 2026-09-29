@@ -232,7 +232,8 @@ Deno.test('CUL-1086 — the Signal\'s entry point hands the engine each bowl\'s 
   // The one thing a test cannot drive is the query, so its column list is pinned: without the
   // two instants every span falls back to its dates (a source scan, stated as one).
   const src = Deno.readTextFileSync(new URL('./index.ts', import.meta.url))
-  const select = src.match(/\.from\('feeding_arrangements'\)\s*\.select\('([^']*)'\)/)
+  // The column list only, so the paged form's `{ count: 'exact' }` argument (CUL-989) matches too.
+  const select = src.match(/\.from\('feeding_arrangements'\)\s*\.select\(\s*'([^']*)'/)
   assert.ok(select, 'the arrangements query is where this pin expects it')
   assert.match(select[1], /\bcreated_at\b/)
   assert.match(select[1], /\bended_at\b/)

@@ -38,6 +38,8 @@ import { resolveAllowlistFlagFromRows } from '../_shared/flags.ts'
 // single hung iteration can't hold the function open; the loop stays bounded by
 // MAX_TOOL_ITERATIONS.
 import { fetchWithTimeout } from '../_shared/http.ts'
+// CUL-989 — CUL-975's paged reader, shared with generate-report and generate-signal.
+import { fetchAll, incompletePullNames, readDosesAsToday } from '../_shared/pull.ts'
 import { resolveIanaZone } from '../../../lib/utils.ts'
 import { projectCachedRead } from './tools.ts'
 import type {
@@ -561,63 +563,109 @@ async function fetchContext(
   pet: { name: string; species: string },
   nowMs: number,
   requestTimezone: string | null,
-): Promise<AskDataContext> {
+): Promise<AskDataContext & { recordIncomplete: string[] }> {
   const lookbackIso = new Date(nowMs - LOOKBACK_DAYS * MS_PER_DAY).toISOString()
 
+  // CUL-989 — every multi-row pull pages to the end through `fetchAll` (_shared/pull.ts),
+  // newest-first on a TOTAL key, and reports whether it did. Before this each was a bare select
+  // that PostgREST capped at `max-rows`, keeping the OLDEST rows: Ask would have answered "how
+  // many times this month?" from a record that stopped before this month, sounding current.
+  // Every read's error is read too (a failed query is not an empty record). The handler acts on
+  // an incomplete pull: it answers nothing (see `recordIncomplete`). The dose pull alone keeps
+  // today's error-as-empty reading, for the CUL-1099 reason `readDosesAsToday` carries.
   const [
-    eventsRes,
-    mealsRes,
-    weightsRes,
-    regimensRes,
-    doseEventsRes,
-    arrangementsRes,
-    readsRes,
+    eventsPull,
+    mealsPull,
+    weightsPull,
+    regimensPull,
+    doseEventsPull,
+    arrangementsPull,
+    readsPull,
     trialRes,
     profileRes,
     signalsRes,
   ] = await Promise.all([
     // All non-deleted events in the lookback (any type) — count/recall run over the full
     // stream. event_attachments(id) gives photo PRESENCE only (§6.2 mode 1; bytes never fetched).
-    client
+    fetchAll<EventRowDb>('events', (r) => r.id, (from, to) =>
+      client
       .from('events')
-      .select('id, event_type, occurred_at, occurred_at_confidence, occurred_at_earliest, occurred_at_latest, notes, event_attachments(id)')
+      .select('id, event_type, occurred_at, occurred_at_confidence, occurred_at_earliest, occurred_at_latest, notes, event_attachments(id)', { count: 'exact' })
       .eq('pet_id', petId)
       .is('deleted_at', null)
-      .gte('occurred_at', lookbackIso),
+      .gte('occurred_at', lookbackIso)
+      .order('occurred_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to)),
     // Meal events with their food/protein/intake join (the rate/food/protein aggregates).
-    client
+    fetchAll<MealRowDb>('events', (r) => r.id, (from, to) =>
+      client
       .from('events')
-      .select('id, occurred_at, occurred_at_confidence, event_attachments(id), meals(food_item_id, intake_rating, food_items(primary_protein, proteins, food_type, brand, product_name))')
+      .select('id, occurred_at, occurred_at_confidence, event_attachments(id), meals(food_item_id, intake_rating, food_items(primary_protein, proteins, food_type, brand, product_name))', { count: 'exact' })
       .eq('pet_id', petId)
       .eq('event_type', 'meal')
       .is('deleted_at', null)
-      .gte('occurred_at', lookbackIso),
+      .gte('occurred_at', lookbackIso)
+      .order('occurred_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to)),
     // Weight readings — joined to events for occurred_at + soft-delete (weight_checks has no
     // occurred_at of its own). No lookback filter: the full series is a legitimate 'all' answer.
-    client.from('weight_checks').select('weight_kg, events!inner(occurred_at, deleted_at)').eq('pet_id', petId).is('events.deleted_at', null),
+    fetchAll<WeightRowDb>('weight_checks', (r) => r.event_id, (from, to) =>
+      client
+      .from('weight_checks')
+      .select('event_id, weight_kg, events!inner(occurred_at, deleted_at)', { count: 'exact' })
+      .eq('pet_id', petId)
+      .is('events.deleted_at', null)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to)),
     // Regimens — status/started_at/ended_at define the active span (no soft-delete on meds).
     // medication_item_id is the drug key an unlinked one-tap dose attributes to (B-135).
-    client.from('medications').select('id, medication_item_id, drug_name, status, started_at, ended_at, dose_amount').eq('pet_id', petId),
+    // Ordered on `created_at`, not the nullable `started_at` (the generate-report reason).
+    fetchAll<RegimenRowDb>('medications', (r) => r.id, (from, to) =>
+      client
+      .from('medications')
+      .select('id, medication_item_id, drug_name, status, started_at, ended_at, dose_amount', { count: 'exact' })
+      .eq('pet_id', petId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to)),
     // Administered dose events (point exposures) + their administration child. The nested
     // medication_items(generic_name) NAMES a regimen-unlinked dose (medication_id null — the
     // dominant B-135 shape) that would otherwise be an anonymous "a medication"; RLS-scoped by
     // the caller JWT like every read here (medication_items is per-account, B-354).
-    client
+    readDosesAsToday('ask', fetchAll<DoseRowDb>('events', (r) => r.id, (from, to) =>
+      client
       .from('events')
-      .select('id, occurred_at, medication_administrations(medication_id, medication_item_id, adherence, medication_items(generic_name))')
+      .select('id, occurred_at, medication_administrations(medication_id, medication_item_id, adherence, medication_items(generic_name))', { count: 'exact' })
       .eq('pet_id', petId)
       .eq('event_type', 'medication')
       .is('deleted_at', null)
-      .gte('occurred_at', lookbackIso),
+      .gte('occurred_at', lookbackIso)
+      .order('occurred_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to))),
     // Active free-fed standing facts (no lookback; the active window is resolved in the tool).
-    client
+    fetchAll<ArrRowDb>('feeding_arrangements', (r) => r.id, (from, to) =>
+      client
       .from('feeding_arrangements')
-      .select('id, food_item_id, active_from, active_until, food_items(primary_protein, brand, product_name)')
+      .select('id, food_item_id, active_from, active_until, food_items(primary_protein, brand, product_name)', { count: 'exact' })
       .eq('pet_id', petId)
       .eq('method', 'free_choice')
-      .is('deleted_at', null),
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to)),
     // Cached per-incident AI reads (§6.2 mode 2) — the override-aware structured fields.
-    client.from('event_ai_analysis').select(READ_COLS).eq('pet_id', petId),
+    fetchAll<ReadRowDb>('event_ai_analysis', (r) => r.event_id, (from, to) =>
+      client
+      .from('event_ai_analysis')
+      .select(READ_COLS, { count: 'exact' })
+      .eq('pet_id', petId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to)),
     // Active diet trial → the `since_trial_start` window + diet_trial_status tool.
     client.from('diet_trials').select('started_at, target_duration_days, status').eq('pet_id', petId).eq('status', 'active').limit(1),
     // The caller's IANA timezone (for time_of_day; absent ⇒ the tool stays silent).
@@ -625,6 +673,25 @@ async function fetchContext(
     // The freshest cached engine findings (relay-only, §7.2).
     client.from('ai_signals').select('findings').eq('pet_id', petId).order('generated_at', { ascending: false }).limit(1),
   ])
+
+  // The single-row reads: an error is not "no trial" / "no zone". The engine-findings read is
+  // the one whose failure is survivable as absence, and it is what leads a safety answer, so it
+  // is logged rather than thrown (the relay then leads with nothing, today's failed-read shape).
+  if (trialRes.error) throw new Error(`diet_trials read failed: ${trialRes.error.message}`)
+  // The stored zone alone degrades: the request's own zone is preferred anyway (B-443), and
+  // absent both the tools fall back to UTC, their documented shape.
+  if (profileRes.error) console.warn('ask: user_profiles read failed, no stored timezone:', profileRes.error.message)
+  if (signalsRes.error) console.warn('ask: ai_signals read failed, no engine findings relayed:', signalsRes.error.message)
+
+  const recordIncomplete = incompletePullNames({
+    events: eventsPull,
+    meals: mealsPull,
+    weights: weightsPull,
+    regimens: regimensPull,
+    doseEvents: doseEventsPull,
+    arrangements: arrangementsPull,
+    reads: readsPull,
+  })
 
   // ── events ──
   type EventRowDb = {
@@ -637,7 +704,7 @@ async function fetchContext(
     notes: string | null
     event_attachments: { id: string }[] | null
   }
-  const events: AskEventRow[] = ((eventsRes.data ?? []) as EventRowDb[]).map((r) => ({
+  const events: AskEventRow[] = eventsPull.rows.map((r) => ({
     id: r.id,
     type: r.event_type,
     occurredAt: r.occurred_at,
@@ -658,7 +725,7 @@ async function fetchContext(
     event_attachments: { id: string }[] | null
     meals: { food_item_id: string | null; intake_rating: string | null; food_items: FoodItemDb | null } | { food_item_id: string | null; intake_rating: string | null; food_items: unknown }[] | null
   }
-  const meals: AskMealRow[] = ((mealsRes.data ?? []) as MealRowDb[]).map((r) => {
+  const meals: AskMealRow[] = mealsPull.rows.map((r) => {
     const meal = first(r.meals) as { food_item_id: string | null; intake_rating: string | null; food_items: FoodItemDb | FoodItemDb[] | null } | null
     const fi = first(meal?.food_items ?? null) as FoodItemDb | null
     return {
@@ -680,8 +747,8 @@ async function fetchContext(
   })
 
   // ── weights ──
-  type WeightRowDb = { weight_kg: number; events: { occurred_at: string } | { occurred_at: string }[] | null }
-  const weights: AskWeightRow[] = ((weightsRes.data ?? []) as WeightRowDb[])
+  type WeightRowDb = { event_id: string; weight_kg: number; events: { occurred_at: string } | { occurred_at: string }[] | null }
+  const weights: AskWeightRow[] = weightsPull.rows
     .map((r): AskWeightRow | null => {
       const ev = first(r.events)
       return ev ? { weightKg: Number(r.weight_kg), occurredAt: ev.occurred_at, deletedAt: null } : null
@@ -690,7 +757,7 @@ async function fetchContext(
 
   // ── regimens ──
   type RegimenRowDb = { id: string; medication_item_id: string | null; drug_name: string; status: string | null; started_at: string | null; ended_at: string | null; dose_amount: string | null }
-  const regimens: AskRegimenRow[] = ((regimensRes.data ?? []) as RegimenRowDb[]).map((r) => ({
+  const regimens: AskRegimenRow[] = regimensPull.rows.map((r) => ({
     id: r.id,
     medicationItemId: r.medication_item_id,
     drugLabel: r.drug_name,
@@ -713,7 +780,7 @@ async function fetchContext(
   }
   type DoseRowDb = { id: string; occurred_at: string; medication_administrations: AdminRowDb | AdminRowDb[] | null }
   const regimenLabelById = new Map(regimens.map((r) => [r.id, r.drugLabel]))
-  const doses: AskDoseRow[] = ((doseEventsRes.data ?? []) as DoseRowDb[]).map((r) => {
+  const doses: AskDoseRow[] = doseEventsPull.rows.map((r) => {
     const admin = first(r.medication_administrations)
     const medId = admin?.medication_id ?? null
     const itemId = admin?.medication_item_id ?? null
@@ -732,7 +799,7 @@ async function fetchContext(
 
   // ── arrangements ──
   type ArrRowDb = { id: string; food_item_id: string | null; active_from: string | null; active_until: string | null; food_items: { primary_protein: string | null; brand: string | null; product_name: string | null } | { primary_protein: string | null; brand: string | null; product_name: string | null }[] | null }
-  const arrRows = (arrangementsRes.data ?? []) as ArrRowDb[]
+  const arrRows = arrangementsPull.rows
   const arrangements: AskFeedingArrangementRow[] = arrRows.map((r) => {
     const fi = first(r.food_items)
     return {
@@ -749,7 +816,7 @@ async function fetchContext(
   const freeFedFoodIds = new Set<string>(arrRows.filter((r) => r.active_until === null && r.food_item_id).map((r) => r.food_item_id as string))
 
   // ── reads ──
-  const reads: AskCachedReadRow[] = ((readsRes.data ?? []) as ReadRowDb[]).map(mapReadRow)
+  const reads: AskCachedReadRow[] = readsPull.rows.map(mapReadRow)
 
   // ── trial / timezone / engine findings ──
   //
@@ -809,6 +876,7 @@ async function fetchContext(
     reads,
     freeFedFoodIds,
     engineFindingsRaw,
+    recordIncomplete,
   }
 }
 
@@ -901,6 +969,23 @@ const handler = async (req: Request): Promise<Response> => {
 
     // 6. Fetch the working set (RLS-scoped) and run the bounded plan-loop.
     const ctx = await fetchContext(client, petId, pet as { name: string; species: string }, nowMs, requestTimezone)
+
+    // 6a. CUL-989 — a pull that did not read to the end answers NOTHING. Ask speaks counts, dates
+    //     and "how is she doing" in the record's voice, and over a partial record every one of
+    //     them could be an old slice sounding current, or a quiet stretch that is only unread.
+    //     So: the designed can't-answer-right-now deflection (non-substantive, no credit burned),
+    //     with the engine's live safety finding still leading it (escalations are never hidden),
+    //     and an error-level log naming the pulls, because a silent shortfall is the whole defect.
+    if (ctx.recordIncomplete.length > 0) {
+      console.error('ask incomplete pulls:', petId, ctx.recordIncomplete.join(', '))
+      const withheld = buildDeflection('llm_unavailable', ctx.petName)
+      return answerResponse({
+        ...withheld,
+        safetyLead: leadingSafetyText(ctx.engineFindingsRaw, ctx.petName),
+        conversationCredited: alreadyCredited,
+      })
+    }
+
     const { body: loopBody } = await runAskLoop(client, ctx, question, conversation, generalEnabled, apiKey, model)
 
     // 6b. STRUCTURALLY attach a live engine SAFETY finding as the leading card (§7.2 — safety

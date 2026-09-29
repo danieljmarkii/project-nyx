@@ -72,7 +72,14 @@ import { computePhotoComposition, type PhotoAnalysisInput } from './photoComposi
 // function boundary exactly as `./protein.ts` already re-exports `lib/protein.ts`
 // — a second copy of `start + target + grace` living here is the failure mode.
 import { isTrialRunning } from '../../../lib/dietTrial.ts'
-import { buildBuildingText, curateFindings, templateForFinding, type CachedFinding } from './phrasing.ts'
+import {
+  buildBuildingText,
+  canRenderCarried,
+  curateFindings,
+  templateCarried,
+  templateForFinding,
+  type CachedFinding,
+} from './phrasing.ts'
 import {
   mergeStandDowns,
   priorForStandDowns,
@@ -458,6 +465,11 @@ export interface CareRecord {
 
 export interface SignalPipelineInput {
   rows: SignalRows
+  // CUL-989 — the pulls behind `rows` that did NOT read to the end (_shared/pull.ts). Empty on a
+  // complete read, which is byte-identical to the pipeline before this field existed (pinned by
+  // signalPipeline.test.ts, the with-and-without diff). Required, so no caller can forget to say
+  // (C-37). Non-empty applies the step-3 ruling below: `applyIncompleteRead`.
+  incompletePulls: readonly string[]
   prior: PriorSignal | null
   nowMs: number
   engineFlags: EngineFlags
@@ -484,12 +496,20 @@ export interface SignalPipelineResult {
   // The message when resolving the stand-downs threw; the run keeps its findings and
   // writes no marker. The shell logs it.
   standDownError: string | null
+  // CUL-989 — over an incomplete read, the previous Signal's safety cards that this run did not
+  // reproduce, carried forward verbatim (text and finding as shown). Always [] on a complete read.
+  carried: CachedFinding[]
+  // CUL-989 — over an incomplete read, the summary slot's deterministic disclosure (the owner-
+  // visible "says so"), replacing the summary. Null on a complete read.
+  incompleteDisclosure: CachedSummary | null
 }
 
 // ── The pipeline ──────────────────────────────────────────────────────────────
 
 export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResult {
-  const { rows, prior: priorSignal, nowMs, engineFlags } = args
+  const { prior: priorSignal, nowMs, engineFlags } = args
+  const rows = canonicalRows(args.rows)
+  const readIncomplete = args.incompletePulls.length > 0
   const petName = rows.pet.name || 'your pet'
 
   const mealRows = rows.meals
@@ -583,7 +603,9 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
     timezone,
     now: new Date(nowMs).toISOString(),
   }
-  const ranked = detectSignals(input, DEFAULT_CONFIG)
+  const detected = detectSignals(input, DEFAULT_CONFIG)
+  // CUL-989 step 3, BEFORE curation so a withheld card never holds a slot under the cap.
+  const ranked = readIncomplete ? withholdOverIncompleteRead(detected) : detected
 
   // 3. Curate — cap the insight tail; safety findings always kept.
   const curated = curateFindings(ranked)
@@ -612,8 +634,10 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
     // has its own symptom type), computed from the same events the detector read. Attached here,
     // after detection, so the valve that mutes ③ while ⑦ fires is untouched — the change an
     // easing course shows lives inside the safety card's expand, never as a second calm card.
+    // CUL-989: not over an incomplete read. The compare is the one place an easing course is
+    // shown, and an easing shown from a partial record is the reassurance the ruling withholds.
     const chronicityCompare: ChronicityCompare | null =
-      r.finding.type === 'symptom_chronicity'
+      r.finding.type === 'symptom_chronicity' && !readIncomplete
         ? computeChronicityCompare(input, r.finding.symptomType, DEFAULT_CONFIG)
         : null
     return {
@@ -633,7 +657,24 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
   // decoration; it keeps the raw per-episode timestamps out of the phrasing / cache / HTTP layer
   // (CUL-7 finding ②), including the copy that rides on a merged timing_story's `long` block.
   const strippedFindings = stripInternalOnsets(decoratedWithOnsets.map((r) => r.finding))
-  const decorated = decoratedWithOnsets.map((r, i) => ({ rank: r.rank, finding: strippedFindings[i] }))
+  // CUL-989: over an incomplete read every count is a floor, and the finding says so; and no
+  // safety card is softened below the tier the previous Signal showed (holdPriorTiers).
+  const priorSafety =
+    readIncomplete && priorSignal && standDownMintAllowed(priorSignal.engineFlags, engineFlags, SIGNAL_ENGINE_KEYS)
+      ? readPriorSafetyEntries(priorSignal.findings, priorSignal.generatedAt, nowMs)
+      : []
+  const decorated = decoratedWithOnsets.map((r, i) => ({
+    rank: r.rank,
+    finding: readIncomplete
+      ? holdPriorTier({ ...strippedFindings[i], countIsFloor: true } as Finding, priorSafety)
+      : strippedFindings[i],
+  }))
+  // CUL-989: and no safety card the previous Signal showed disappears on an incomplete read.
+  // Its absence here may be the rows the read did not reach, which is the resolution the ruling
+  // withholds, so the prior card is carried forward as it was shown.
+  const carried: CachedFinding[] = readIncomplete
+    ? carryPriorSafety(priorSafety, decorated.map((r) => r.finding), petName)
+    : []
 
   // 4a. AI summary (B-023 PR 4). Assemble a DETERMINISTIC fact packet from the curated
   //     findings + the descriptive intake aggregates (computed over the same in-memory
@@ -641,7 +682,9 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
   //     validateSummary-gated, deterministic template fallback). Null when nothing is
   //     substantive — the client then renders its own "still gathering" state. Reads only
   //     the cards' data, so it is grounded in what the dashboard shows.
-  const summaryPacket = buildSummaryPacket({
+  // CUL-989: no packet over an incomplete read. Its clauses are counts and a finished-meal rate
+  // over the partial set, and its quiet path is the reassuring shape; the disclosure replaces it.
+  const summaryPacket = readIncomplete ? null : buildSummaryPacket({
     petName,
     findings: curated.map((r) => r.finding),
     mealEvents,
@@ -651,7 +694,7 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
   })
 
   // 5. Cache. Empty findings = building/stale (§3.3), NEVER an all-clear (§9).
-  const isBuilding = decorated.length === 0
+  const isBuilding = decorated.length === 0 && carried.length === 0
   const hasRecentActivity = [...symptomEvents, ...mealEvents].some(
     (e) => nowMs - Date.parse(e.occurredAt) <= 2 * MS_PER_DAY,
   )
@@ -678,28 +721,32 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
   //     decoration on the record rather than the record.
   let standDowns: StoodDownMarker[] = []
   let standDownError: string | null = null
-  try {
-    let prior: ReturnType<typeof readPriorEntries> = []
-    let priorGeneratedAtMs: number | null = null
-    if (priorSignal) {
-      prior = priorForStandDowns(
-        readPriorEntries(priorSignal.findings),
-        standDownMintAllowed(priorSignal.engineFlags, engineFlags, SIGNAL_ENGINE_KEYS),
-      )
-      const gen = Date.parse(String(priorSignal.generatedAt ?? ''))
-      priorGeneratedAtMs = Number.isFinite(gen) ? gen : null
+  // CUL-989: no stand-down over an incomplete read. A marker says a course went quiet, and a
+  // read that stops short of the record cannot tell quiet from unread.
+  if (!readIncomplete) {
+    try {
+      let prior: ReturnType<typeof readPriorEntries> = []
+      let priorGeneratedAtMs: number | null = null
+      if (priorSignal) {
+        prior = priorForStandDowns(
+          readPriorEntries(priorSignal.findings),
+          standDownMintAllowed(priorSignal.engineFlags, engineFlags, SIGNAL_ENGINE_KEYS),
+        )
+        const gen = Date.parse(String(priorSignal.generatedAt ?? ''))
+        priorGeneratedAtMs = Number.isFinite(gen) ? gen : null
+      }
+      standDowns = resolveStandDowns({
+        prior,
+        priorGeneratedAtMs,
+        current: curated.map((r) => r.finding),
+        input,
+        config: DEFAULT_CONFIG,
+        nowMs,
+      })
+    } catch (err) {
+      standDowns = []
+      standDownError = err instanceof Error ? err.message : String(err)
     }
-    standDowns = resolveStandDowns({
-      prior,
-      priorGeneratedAtMs,
-      current: curated.map((r) => r.finding),
-      input,
-      config: DEFAULT_CONFIG,
-      nowMs,
-    })
-  } catch (err) {
-    standDowns = []
-    standDownError = err instanceof Error ? err.message : String(err)
   }
 
   return {
@@ -712,7 +759,193 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
     coverage,
     standDowns,
     standDownError,
+    carried,
+    incompleteDisclosure: readIncomplete
+      ? incompleteReadDisclosure(petName, decorated.some((r) => r.finding.priorityClass === 'safety') || carried.length > 0)
+      : null,
   }
+}
+
+// ── The incomplete read (CUL-989 step 3) ──────────────────────────────────────
+//
+// THE RULING (PM, 2026-09-26, the Engines v3 plan review's defaults): an incomplete read never
+// produces a reassuring or resolving finding; it withholds and says so. Escalations still fire
+// on a partial read, with their counts stated as "at least N".
+//
+// WHY THE ASYMMETRY IS SOUND. A pull is ordered newest-first, so a shortfall drops the OLDEST
+// rows (or, rarely, a row a concurrent delete shifted past the cursor). Either way the read is
+// a SUBSET of the record: every count on it is at most the truth, which makes "at least N" true
+// by construction, and an escalation computed from a subset is one the full record would carry
+// at least as strongly on the counts it names. What a subset cannot support is a comparison
+// that ends in "less" or "gone": the missing rows are exactly what a fall or a stand-down would
+// need to rule out. That is the n=1 asymmetry (clinical-guardrails), applied to a query's edge.
+//
+// WHAT IS WITHHELD, and each is named rather than inferred from a word list:
+//   • `reflection` — flat or improving by construction (③ never emits worsening).
+//   • `trial_response` in the `fewer_during_trial` direction; `more_during_trial` is the
+//     escalation direction and stays.
+//   • the stand-down marker (runSignalPipeline), the chronicity compare's easing halves
+//     (decoration), and the summary packet, whose quiet path is the reassuring shape.
+// Everything else keeps firing: the safety lanes, and the descriptive timing / correlation /
+// gap cards, whose sentences are counts over what was read and claim no improvement.
+
+/** A finding the incomplete-read rule withholds. Exported for the with-and-without diff. */
+export function isReassuringOrResolving(f: Finding): boolean {
+  if (f.type === 'reflection') return true
+  if (f.type === 'trial_response') return f.comparisonDirection === 'fewer_during_trial'
+  return false
+}
+
+function withholdOverIncompleteRead(ranked: DetectedRanked[]): DetectedRanked[] {
+  return ranked.filter((r) => !isReassuringOrResolving(r.finding))
+}
+
+type DetectedRanked = ReturnType<typeof detectSignals>[number]
+
+/**
+ * The owner-facing half of "says so": the summary slot's text over an incomplete read. The one
+ * text slot that carries it with no migration and no client change (a CachedSummary is already
+ * rendered wherever the summary is). Deterministic, never the model. `hasSafety` keeps the
+ * safety styling cue honest; `quiet` is false because this line is not a quiet summary.
+ */
+export function incompleteReadDisclosure(petName: string, hasSafety: boolean): CachedSummary {
+  return {
+    text:
+      `Part of ${petName}'s record didn't load for this update. The cards below count at least ` +
+      `what came through, and none of them says a symptom has eased or settled.`,
+    source: 'template',
+    evidence: [],
+    hasSafety,
+    quiet: false,
+  }
+}
+
+// ── Row order (CUL-989) ───────────────────────────────────────────────────────
+//
+// The pulls used to arrive in physical order and now arrive newest-first on (time, id). Neither
+// order may matter, and one did: two rows of the same food at the same minute (a picker rounds to
+// the minute) decided whether the intake-refusal card fired by which came last (adversarial pass,
+// this PR; `toConfidenceEpisodes` has the same shape). So the pipeline puts every array into ONE
+// canonical order before anything reads it: ascending instant, then the row's full content as a
+// total tie-break. The detectors are unchanged and can no longer see the order a read chose.
+
+function canonicalOrder<T>(
+  rows: readonly T[],
+  instantOf: (row: T) => string | null | undefined,
+  concernOf: (row: T) => number = () => 0,
+): T[] {
+  const keyed = rows.map((row) => {
+    const ms = Date.parse(String(instantOf(row) ?? ''))
+    return { row, ms: Number.isFinite(ms) ? ms : Number.NEGATIVE_INFINITY, concern: concernOf(row), tie: JSON.stringify(row) }
+  })
+  keyed.sort((a, b) =>
+    a.ms !== b.ms
+      ? a.ms - b.ms
+      : a.concern !== b.concern
+        ? a.concern - b.concern
+        : a.tie < b.tie ? -1 : a.tie > b.tie ? 1 : 0
+  )
+  return keyed.map((k) => k.row)
+}
+
+// Among meals at the SAME instant, the worse intake sorts LATER, so a detector reading "the latest
+// meal" reads the concerning one. Deterministic by content alone was not enough: the same-minute
+// twin then fired or not by its UUID (adversarial re-check, this PR). The tie falls toward
+// escalation, the direction the whole engine fails in.
+const INTAKE_CONCERN: Record<string, number> = { all: 0, most: 1, some: 2, picked: 3, refused: 4 }
+const mealConcern = (r: MealEventRow): number => INTAKE_CONCERN[String(first(r.meals)?.intake_rating ?? '')] ?? -1
+
+/** The rows in canonical order (exported for the order-invariance guard). Never mutates. */
+export function canonicalRows(rows: SignalRows): SignalRows {
+  return {
+    ...rows,
+    symptoms: canonicalOrder(rows.symptoms, (r) => r.occurred_at),
+    meals: canonicalOrder(rows.meals, (r) => r.occurred_at, mealConcern),
+    activeTrials: canonicalOrder(rows.activeTrials, (r) => r.started_at),
+    arrangements: canonicalOrder(rows.arrangements, (r) => r.created_at),
+    regimens: canonicalOrder(rows.regimens, (r) => r.started_at),
+    doseEvents: canonicalOrder(rows.doseEvents, (r) => r.occurred_at),
+    incidentAnalyses: canonicalOrder(rows.incidentAnalyses, (r) => first(r.events)?.occurred_at),
+  }
+}
+
+// ── The prior Signal's safety cards over an incomplete read (CUL-989) ─────────
+//
+// A read that stopped short can make a safety card weaker (fewer weeks, so `firm` → `standard`)
+// or make it vanish (a course whose older episodes were not read no longer clears its floor).
+// Both are the reassuring direction: the owner is told less than before, because of rows the
+// read did not reach. The engine's only memory of what it told the owner is the previous cache
+// row, so over an incomplete read that row sets a floor under the safety cards: a card the prior
+// showed keeps at least its prior tier, and one this run did not reproduce is carried forward
+// under a dated sentence, for at most CARRY_MAX_DAYS from the read that computed it. On a
+// complete read none of this runs, and the record decides alone.
+
+const TIER_RANK: Record<string, number> = { soft: 0, standard: 1, firm: 2 }
+
+const safetyKey = (f: { type: string; symptomType?: unknown; incidentType?: unknown }): string =>
+  `${f.type}:${String(f.symptomType ?? f.incidentType ?? '')}`
+
+/** The lanes whose card may be held or carried: the four safety lanes, by name. A prior row is
+ *  written by the engine but readable and writable by its owner (ai_signals_owner), so a card of
+ *  any other type, or a malformed one, is never re-emitted as engine output (adversarial re-check). */
+const CARRYABLE = new Set(['symptom_chronicity', 'symptom_worsening', 'intake_decline', 'incident_red_flag'])
+
+/**
+ * How long a carried card may be carried, from the read that last COMPUTED it (`carriedFrom`,
+ * which does not reset when a carried card is carried again). A record past the page ceiling is
+ * incomplete on every read, so without a bound a card would outlive the lookback that produced
+ * it. Past this the card drops and the headline is the disclosure, which never claims recovery.
+ * Two weeks: the chronicity lane's own recency floor for vomiting (14 days), the span over which
+ * the engine already treats a sign's absence as meaningful.
+ */
+export const CARRY_MAX_DAYS = 14
+
+type PriorSafetyEntry = { rank: number; finding: Finding; carriedFromIso: string }
+
+/** The prior row's safety cards that may be held or carried, tolerant of any shape: a malformed
+ *  entry, an unlisted lane or one older than CARRY_MAX_DAYS is dropped (which can only withhold). */
+export function readPriorSafetyEntries(raw: unknown, priorGeneratedAt: unknown, nowMs: number): PriorSafetyEntry[] {
+  if (!Array.isArray(raw)) return []
+  const generatedMs = Date.parse(String(priorGeneratedAt ?? ''))
+  const out: PriorSafetyEntry[] = []
+  raw.forEach((e, i) => {
+    if (!e || typeof e !== 'object') return
+    const { finding, rank } = e as { finding?: unknown; rank?: unknown }
+    if (!finding || typeof finding !== 'object') return
+    const f = finding as { type?: unknown; priorityClass?: unknown; carriedFrom?: unknown }
+    if (typeof f.type !== 'string' || !CARRYABLE.has(f.type) || f.priorityClass !== 'safety') return
+    if (!canRenderCarried(finding)) return
+    // A carried card keeps the date of the read that computed it; a computed one takes the row's.
+    const originMs = typeof f.carriedFrom === 'string' ? Date.parse(f.carriedFrom) : generatedMs
+    if (!Number.isFinite(originMs) || nowMs - originMs > CARRY_MAX_DAYS * MS_PER_DAY || originMs > nowMs) return
+    out.push({
+      rank: typeof rank === 'number' && Number.isFinite(rank) ? rank : i,
+      finding: finding as Finding,
+      carriedFromIso: new Date(originMs).toISOString(),
+    })
+  })
+  return out.sort((a, b) => a.rank - b.rank)
+}
+
+/** A floored card never shows a lower tier than the prior card for the same lane and symptom. */
+function holdPriorTier(f: Finding, prior: readonly PriorSafetyEntry[]): Finding {
+  if (f.type !== 'symptom_chronicity' && f.type !== 'symptom_worsening') return f
+  const match = prior.find((p) => safetyKey(p.finding) === safetyKey(f))
+  const priorTier = match ? (match.finding as { tier?: unknown }).tier : undefined
+  if (typeof priorTier !== 'string' || !(priorTier in TIER_RANK)) return f
+  return TIER_RANK[priorTier] > TIER_RANK[f.tier] ? ({ ...f, tier: priorTier } as Finding) : f
+}
+
+/** The prior safety cards this run did not reproduce, in their prior order: the finding marked
+ *  with the date of the read that computed it, and a dated sentence (never its old one). */
+function carryPriorSafety(prior: readonly PriorSafetyEntry[], current: readonly Finding[], petName: string): CachedFinding[] {
+  const shown = new Set(current.map(safetyKey))
+  return prior
+    .filter((p) => !shown.has(safetyKey(p.finding)))
+    .map((p, i) => {
+      const finding = { ...p.finding, carriedFrom: p.carriedFromIso } as Finding
+      return { rank: i, text: templateCarried(finding, petName, p.carriedFromIso), finding }
+    })
 }
 
 // ── After the phrasing ────────────────────────────────────────────────────────
@@ -745,16 +978,24 @@ export function assembleSignal(
     text: texts[i],
     finding: r.finding,
   }))
+  // Carried cards (CUL-989) sit after this run's safety cards and before its insight cards.
+  const safetyCount = cachedFindings.filter((f) => f.finding.priorityClass === 'safety').length
+  const withCarried: CachedFinding[] = result.carried.length === 0
+    ? cachedFindings
+    : [...cachedFindings.slice(0, safetyCount), ...result.carried, ...cachedFindings.slice(safetyCount)]
+        .map((f, i) => ({ ...f, rank: i }))
+  // The headline. Over an incomplete read with nothing to show it is the disclosure, never the
+  // "still getting to know" line: Home's one sentence must not describe an unread record as new.
   const signalText = result.isBuilding
-    ? buildBuildingText(result.petName, result.hasRecentActivity)
-    : cachedFindings[0].text
-  let entries: CachedEntry[] = cachedFindings
+    ? (result.incompleteDisclosure?.text ?? buildBuildingText(result.petName, result.hasRecentActivity))
+    : withCarried[0].text
+  let entries: CachedEntry[] = withCarried
   let standDownError = result.standDownError
   if (standDownError === null) {
     try {
-      entries = mergeStandDowns(cachedFindings, result.standDowns, result.petName)
+      entries = mergeStandDowns(withCarried, result.standDowns, result.petName)
     } catch (err) {
-      entries = cachedFindings
+      entries = withCarried
       standDownError = err instanceof Error ? err.message : String(err)
     }
   }
@@ -784,6 +1025,6 @@ export function templatePayload(result: SignalPipelineResult): SignalPayload {
   return assembleSignal(
     result,
     templateTexts(result),
-    result.summaryPacket ? templateSummary(result.summaryPacket) : null,
+    result.incompleteDisclosure ?? (result.summaryPacket ? templateSummary(result.summaryPacket) : null),
   )
 }

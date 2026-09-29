@@ -1481,3 +1481,60 @@ Deno.test('every template — no banned glyph/percentage vocabulary, any type (f
     assert.ok(validatePhrasing(t, f), `${f.type} template must pass its own validation: ${t}`)
   }
 })
+
+// ── CUL-989 — the "at least N" arms (a finding the pipeline floored over an incomplete read) ──
+
+Deno.test('CUL-989 chronicity floor arm: "at least" on the count, and it still fits the cap on the worst case', () => {
+  // The worst case the cap test above pins (longest month, longest ask, adjacency, 3-digit count),
+  // plus the floor's nine characters and a longer pet name than that test's.
+  for (const tier of ['firm', 'standard'] as const) {
+    const s = templateChronicity(
+      chronicity({
+        tier,
+        symptomType: 'cough',
+        episodeCount: 137,
+        activeWeeks: 8,
+        daysSinceLastEpisode: 0,
+        firstOnsetIso: '2026-09-15T08:00:00.000Z',
+        coughVomitAdjacent: true,
+        countIsFloor: true,
+      }),
+      'Bartholomew',
+    )
+    assert.ok(/across at least 8 of the last 8 weeks — at least 137 episodes\./.test(s), s)
+    // No onset month over a partial read: it is the fact a missing-oldest read gets wrong.
+    assert.doesNotMatch(s, /since/)
+    assert.ok(s.length <= 320, `${tier}: ${s.length} chars over the 320 cap: ${s}`)
+    assert.ok(validatePhrasing(s, chronicity({ tier, symptomType: 'cough' })))
+  }
+  // Absent ⇒ the shipped sentence, byte for byte.
+  assert.equal(templateChronicity(chronicity(), 'Rex').includes('at least'), false)
+})
+
+Deno.test('CUL-989 worsening floor arm: at least, still escalates, and names no week-over-week comparison', () => {
+  const cases: [WorseningTier, WorseningTrigger, RegExp, RegExp][] = [
+    ['firm', 'more_episodes', /on at least 5 of the last 7 days/, /booking a vet visit soon/],
+    ['firm', 'more_days', /on at least 5 of the last 7 days/, /booking a vet visit soon/],
+    ['soft', 'more_days', /on at least 5 of the last 7 days/, /word with your vet if it carries on/],
+    ['standard', 'more_episodes', /at least 4 episodes of vomiting this week/, /worth a word with your vet/],
+  ]
+  for (const [tier, trigger, count, ask] of cases) {
+    const f = worsening({ tier, trigger, currentCount: 4, priorCount: 1, currentDays: 5, priorDays: 1, windowDays: 7, countIsFloor: true })
+    const s = templateWorsening(f, 'Rex')
+    assert.match(s, count)
+    assert.match(s, ask)
+    // The prior week is a floor too, so "up from N" could name a rise the record does not have.
+    assert.doesNotMatch(s, /up from|after none|last week|the week before/)
+    assert.ok(validatePhrasing(s, f), s)
+  }
+})
+
+Deno.test('CUL-989 trial response and red flag floor arms', () => {
+  const t = templateTrialResponse(trialResponse({ countIsFloor: true }), 'Rex')
+  assert.equal((t.match(/\bat least\b/g) ?? []).length, 2, t)
+  assert.equal(templateTrialResponse(trialResponse(), 'Rex').includes('at least'), false)
+  // One flagged photo over a partial read may be one of several: the plural lead is true of both.
+  const one = incidentRedFlag({ flaggedIncidentCount: 1, countIsFloor: true })
+  assert.match(templateIncidentRedFlag(one, 'Rex'), /^Photos you logged/)
+  assert.match(templateIncidentRedFlag(incidentRedFlag({ flaggedIncidentCount: 1 }), 'Rex'), /^A photo you logged/)
+})
