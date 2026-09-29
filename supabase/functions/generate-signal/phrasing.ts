@@ -155,14 +155,21 @@ export function templateReflection(f: ReflectionFinding, petName: string): strin
 // run, placed in the week (it ended at least two days ago, so "in a row" alone would read as now).
 export function templateBurden(f: SymptomBurdenFinding, petName: string): string {
   const floor = f.countIsFloor ? 'at least ' : ''
+  const times = `${floor}${f.count} ${f.count === 1 ? 'time' : 'times'}`
+  const days = `${floor}${f.runDays} ${f.runDays === 1 ? 'day' : 'days'} in a row`
   if (f.tier === 'today') {
-    const countClause = f.countArm ? `${floor}${f.count} times this week, ` : ''
-    return `${petName} has vomited ${countClause}on ${floor}${f.runDays} days in a row — worth a call to your vet today.`
+    // The run is stated only when it IS the persistence arm. A 'today' tier HELD from the previous
+    // Signal over an incomplete read (pipeline.ts holdPriorTier) can sit on a finding whose run no
+    // longer qualifies; stating it then printed "at least 1 days in a row — call today" (the
+    // adversarial pass). The count carries the held ask instead, and is true of any subset.
+    if (!f.persistenceArm) return `${petName} has vomited ${times} this week — worth a call to your vet today.`
+    const countClause = f.countArm ? `${times} this week, ` : ''
+    return `${petName} has vomited ${countClause}on ${days} — worth a call to your vet today.`
   }
   if (f.countArm) {
-    return `${petName} has vomited ${floor}${f.count} times in the last ${f.windowDays} days — worth booking a vet visit soon.`
+    return `${petName} has vomited ${times} in the last ${f.windowDays} days — worth booking a vet visit soon.`
   }
-  return `${petName} vomited on ${floor}${f.runDays} days in a row this week — worth booking a vet visit soon.`
+  return `${petName} vomited on ${days} this week — worth booking a vet visit soon.`
 }
 
 export function templateWorsening(f: SymptomWorseningFinding, petName: string): string {
@@ -687,20 +694,18 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     if (REASSURANCE_RE.test(t) || DISMISSIVE_RE.test(t)) return false
   }
   if (finding.type === 'symptom_burden') {
-    // Engines v3 PR-14d (CUL-1410): TEMPLATE-ONLY BY CONSTRUCTION. A sentence passes only if it IS
-    // the card's template, the pet's name aside. The card's load is its ask ("a call to your vet
-    // today" vs "a vet visit soon") and its numbers, and no keyword screen holds either: "probably
-    // something she ate" carries no causal keyword (the build's own test found it). The other safety
-    // lanes are template-only through index.ts's list; that file is outside PR-14d, so this screen
-    // is the guarantee until the type joins the list, and the backstop after. A CARRIED line
-    // (templateCarried, over an incomplete read) is held to its own template the same way.
-    if (finding.carriedFrom !== undefined) {
-      const name = /^An earlier read of (.+)'s record, /.exec(t)?.[1]
-      return name !== undefined && t === templateCarried(finding, name, finding.carriedFrom)
-    }
-    const tail = templateBurden(finding, '').trim()
-    const name = t.endsWith(` ${tail}`) ? t.slice(0, t.length - tail.length - 1) : ''
-    return name.length > 0 && name.length <= 60 && !/[,;:.—]/.test(name)
+    // Engines v3 PR-14d (CUL-1410): NO MODEL SENTENCE IS EVER ACCEPTED. The card's load is its ask
+    // ("a call to your vet today" vs "a vet visit soon") and its numbers, and no screen over a free
+    // sentence holds them: a keyword list let "probably something she ate" through, and a
+    // "the template's tail, any short prefix" rule let "Not urgent but Miso has vomited…" through
+    // (both found by review). This function's one runtime caller is index.ts's model path, so
+    // refusing here makes the card template-only: it always renders `templateBurden`, the fallback.
+    // (index.ts's own template-only list is outside PR-14d; CUL-1426 adds the type there, which
+    // only saves the call.) A CARRIED line is never model-phrased; it is held to its exact template
+    // so the corpus guard can screen it like every other carried card.
+    if (finding.carriedFrom === undefined) return false
+    const name = /^An earlier read of (.+)'s record, /.exec(t)?.[1]
+    return name !== undefined && t === templateCarried(finding, name, finding.carriedFrom)
   }
   if (finding.type === 'food_symptom_correlation') {
     // Associational only — the model may not assert causation.
@@ -875,8 +880,8 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
     }
   }
   if (finding.type === 'symptom_burden') {
-    // Engines v3 PR-14d (CUL-1410). validatePhrasing passes only the template itself (the pet's
-    // name aside), so a model sentence never reaches the card; kept for shape-correctness and to
+    // Engines v3 PR-14d (CUL-1410). validatePhrasing refuses every model sentence for this type, so
+    // a model sentence never reaches the card; kept for shape-correctness and to
     // narrow the union for the intake_decline fallthrough below. Counts only, no cause.
     return {
       insight_type: 'symptom_burden',

@@ -66,7 +66,9 @@ export interface ChanceRow {
   petEvenings: number
   /** For scale: pets that saw a vomit worsening card (④, shipped) within the horizon. */
   petsWithWorsening: number
-  /** Net new safety exposure: pets that saw the shipped burden card and never a worsening card. */
+  /** Net new safety exposure: pets with at least one evening where the shipped burden card showed
+   *  and no vomit worsening card did (per evening, not over the run: over the run nearly every
+   *  pet sees ④ at some point, which made the first version of this column read 0 — review). */
   petsBurdenOnly: number
 }
 
@@ -89,6 +91,7 @@ export function measureScenario(scenario: ScenarioSpec, seeds: readonly number[]
       const vomits = r.record.events.filter((e) => e.petKey === pet.key && e.ty === 'vomit')
       const meals = r.record.meals.filter((m) => m.petKey === pet.key)
       let sawWorsening = false
+      let burdenWithoutWorsening = false
       const saw = variants.map(() => false)
       const sawToday = variants.map(() => false)
       for (const ev of evenings) {
@@ -103,25 +106,30 @@ export function measureScenario(scenario: ScenarioSpec, seeds: readonly number[]
           timezone: r.record.tz,
           now: ev.nowIso,
         }
-        // ④ is checked every evening until it first fires, so "never saw ④" is exact.
-        if (!sawWorsening) {
-          const mealEvents: MealEvent[] = meals
-            .filter((m) => Date.parse(m.cr) <= T && (m.del === null || Date.parse(m.del) > T) && Date.parse(m.at) <= T)
-            .map((m) => ({ id: m.id, occurredAt: m.at, foodItemId: m.foodItemId, primaryProtein: null, intakeRating: m.rating, foodType: 'meal', foodLabel: null }))
-          sawWorsening = detectWorsening({ ...input, mealEvents }).some((f) => f.symptomType === 'vomit')
-        }
+        let burdenTonight = false
         variants.forEach((v, i) => {
           const card = detectBurden(input, v.config)[0]
           if (!card) return
           saw[i] = true
+          if (i === 0) burdenTonight = true
           if (card.tier === 'today') sawToday[i] = true
           row.cardEvenings[i]++
         })
+        // ④ tonight: needed on every burden evening (the per-evening net-new column), and on every
+        // evening until it first fires (the any-evening column). Skipped otherwise, for speed.
+        if (burdenTonight || !sawWorsening) {
+          const mealEvents: MealEvent[] = meals
+            .filter((m) => Date.parse(m.cr) <= T && (m.del === null || Date.parse(m.del) > T) && Date.parse(m.at) <= T)
+            .map((m) => ({ id: m.id, occurredAt: m.at, foodItemId: m.foodItemId, primaryProtein: null, intakeRating: m.rating, foodType: 'meal', foodLabel: null }))
+          const worseningTonight = detectWorsening({ ...input, mealEvents }).some((f) => f.symptomType === 'vomit')
+          if (worseningTonight) sawWorsening = true
+          if (burdenTonight && !worseningTonight) burdenWithoutWorsening = true
+        }
         row.petEvenings++
       }
       row.pets++
       if (sawWorsening) row.petsWithWorsening++
-      if (saw[0] && !sawWorsening) row.petsBurdenOnly++
+      if (burdenWithoutWorsening) row.petsBurdenOnly++
       saw.forEach((s, i) => { if (s) row.petsWithCard[i]++ })
       sawToday.forEach((s, i) => { if (s) row.petsWithToday[i]++ })
     }
@@ -139,9 +147,9 @@ export function formatReport(rows: readonly ChanceRow[], seedsPerScenario: numbe
     '',
     '## For scale: the shipped vomit worsening card (④) on the same pets',
     '',
-    'The last column is the net new safety exposure: pets that saw the shipped burden card and never a worsening card.',
+    'The last column is the net new safety exposure: pets with at least one evening where the shipped burden card showed and no vomit worsening card did.',
     '',
-    '| scenario | saw a worsening card | burden card, never worsening |',
+    '| scenario | saw a worsening card | an evening with burden and no worsening |',
     '|---|---|---|',
     ...rows.map((r) => `| ${r.scenario} | ${pct(r.petsWithWorsening, r.pets)} | ${pct(r.petsBurdenOnly, r.pets)} |`),
     `| **all null pets** | ${pct(rows.reduce((a, r) => a + r.petsWithWorsening, 0), allPets)} | ${pct(rows.reduce((a, r) => a + r.petsBurdenOnly, 0), allPets)} |`,

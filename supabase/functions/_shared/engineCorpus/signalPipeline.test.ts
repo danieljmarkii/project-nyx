@@ -444,3 +444,23 @@ Deno.test('(k5) a carried intake card names the finding it carries: a refusal is
   )
   assertStrictEquals(/undefined/.test(card.text), false)
 })
+
+Deno.test('(k6) the burden card holds a prior "today" over an incomplete read, and its sentence stays true', () => {
+  // Engines v3 PR-14d (CUL-1410). The GAP-5 cat's card says "today" on Thursday. Three days later
+  // the run ended four days ago, so a complete read says "soon"; a read that came back short must
+  // not soften the prior card (CUL-989), and the sentence it holds must still be true of the rows.
+  const gap5 = SIGNAL_PIPELINE_CORPUS.find((c) => c.name.includes('GAP-5') && c.name.includes('no photos'))!
+  const shown = payload(gap5)
+  const burden = shown.findings.find((e) => e.finding.type === 'symptom_burden')!
+  assertStrictEquals((burden.finding as { tier?: string }).tier, 'today')
+  const later = { ...gap5, nowIso: new Date(Date.parse(gap5.nowIso) + 3 * 86_400_000).toISOString() }
+  // Complete read, three days on: 'soon'. (The mutant that reads burden tiers off ④'s scale
+  // cannot hold them and fails below.)
+  const complete = payload(later).findings.find((e) => e.finding.type === 'symptom_burden')!
+  assertStrictEquals((complete.finding as { tier?: string }).tier, 'soon')
+  const prior: PriorSignal = { findings: shown.findings, generatedAt: gap5.nowIso, engineFlags: [] }
+  const held = templatePayload(run({ ...later, prior }, OFF, EMPTY_CARE_RECORD, INCOMPLETE))
+  const card = held.findings.find((e) => e.finding.type === 'symptom_burden')!
+  assertStrictEquals((card.finding as { tier?: string }).tier, 'today')
+  assertStrictEquals(card.text, 'Miso has vomited on at least 3 days in a row — worth a call to your vet today.')
+})

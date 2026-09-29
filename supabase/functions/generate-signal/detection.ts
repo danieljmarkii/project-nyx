@@ -4450,8 +4450,9 @@ export function detectWorsening(
 //     this arm speaks.
 //   • PERSISTENCE — a vomit on `burden.persistenceMinDays` (provisional 3) consecutive LOCAL days
 //     (EN-4's rung). Local, because "three days running" is the owner's three days: a cat that
-//     vomits at 11 pm in Los Angeles vomited that day, not the next UTC one. No zone falls back to
-//     the server's (UTC), the same posture as the trial lane's day counter.
+//     vomits at 11 pm in Los Angeles vomited that day, not the next UTC one. With no usable zone
+//     the day boundary is unknown, so every whole-hour offset is tried and the loudest reading
+//     wins (never a UTC guess, which misses an evening cat: the adversarial pass).
 //
 // No logging-eligibility floor, on purpose: the card speaks on the PRESENCE of logged vomits, and
 // a logging gap can only hide vomits, which makes it quieter, never louder. A found pile counts
@@ -4462,6 +4463,18 @@ export function detectWorsening(
 // week was calm.
 
 const BURDEN_SYMPTOM_TYPE: SymptomType = 'vomit'
+
+/** True for a zone Intl can resolve. `localDayIndex` silently falls back to the device zone
+ *  (UTC on the server) for anything else, which is a guess this detector must not make. */
+function isValidTimeZone(tz: string | undefined): tz is string {
+  if (!tz) return false
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz })
+    return true
+  } catch {
+    return false
+  }
+}
 
 export function detectBurden(
   input: DetectionInput,
@@ -4475,40 +4488,60 @@ export function detectBurden(
 
   const nowMs = Date.parse(input.now)
   const windowStart = nowMs - config.reflection.windowDays * MS_PER_DAY
-  const tz = input.timezone
-  const days = new Set<number>()
-  for (const s of input.symptomEvents) {
-    if (s.type !== BURDEN_SYMPTOM_TYPE) continue
-    const ms = Date.parse(s.occurredAt)
-    if (Number.isFinite(ms) && ms >= windowStart && ms < nowMs) days.add(localDayIndex(ms, tz))
-  }
-  const today = localDayIndex(nowMs, tz)
-
-  // Runs of consecutive local days, oldest first. The run the card states is the MOST RECENT one
-  // long enough to fire the persistence arm (it decides the ask: a 4-day run early in the week
-  // must not turn a 3-day run ending today into "book a visit soon"); failing that, the longest.
   const cfg = config.burden
-  const sorted = [...days].sort((a, b) => a - b)
-  const runs: { len: number; end: number }[] = []
-  for (let i = 0; i < sorted.length; i++) {
-    if (i > 0 && sorted[i] === sorted[i - 1] + 1) {
-      runs[runs.length - 1].len++
-      runs[runs.length - 1].end = sorted[i]
-    } else {
-      runs.push({ len: 1, end: sorted[i] })
+  const msList = input.symptomEvents
+    .filter((s) => s.type === BURDEN_SYMPTOM_TYPE)
+    .map((s) => Date.parse(s.occurredAt))
+    .filter((ms) => Number.isFinite(ms) && ms >= windowStart && ms < nowMs)
+
+  // Which calendar the days are counted in. With a valid zone, the owner's. With none (a null
+  // `user_profiles.timezone`, an invalid string, or a profile read that failed), the day boundary
+  // is unknown, and a fixed guess (UTC) misses the counterexample itself: Monday 17:30, Tuesday
+  // 16:00 and Wednesday 08:00 in Los Angeles are Tuesday, Tuesday and Wednesday in UTC (the
+  // adversarial pass). So every whole-hour offset a pet can live at (UTC−12 … UTC+14) is tried,
+  // and the loudest reading wins. That errs toward escalation by construction, and only for a pet
+  // whose zone the engine cannot see.
+  const calendars: ((ms: number) => number)[] = isValidTimeZone(input.timezone)
+    ? [(ms) => localDayIndex(ms, input.timezone)]
+    : Array.from({ length: 27 }, (_, i) => (ms: number) => Math.floor((ms + (i - 12) * 3_600_000) / MS_PER_DAY))
+
+  let best: { runDays: number; runEnd: number; today: number; days: number; persistenceArm: boolean } | null = null
+  for (const dayOf of calendars) {
+    const days = new Set(msList.map(dayOf))
+    const today = dayOf(nowMs)
+    // Runs of consecutive days, oldest first. The run the card states is the MOST RECENT one long
+    // enough to fire the persistence arm (it decides the ask: a 4-day run early in the week must
+    // not turn a 3-day run ending today into "book a visit soon"); failing that, the longest.
+    const sorted = [...days].sort((a, b) => a - b)
+    const runs: { len: number; end: number }[] = []
+    for (let i = 0; i < sorted.length; i++) {
+      if (i > 0 && sorted[i] === sorted[i - 1] + 1) {
+        runs[runs.length - 1].len++
+        runs[runs.length - 1].end = sorted[i]
+      } else {
+        runs.push({ len: 1, end: sorted[i] })
+      }
     }
+    if (runs.length === 0) continue
+    const qualifying = runs.filter((r) => r.len >= cfg.persistenceMinDays)
+    const run =
+      qualifying.length > 0
+        ? qualifying[qualifying.length - 1]
+        : runs.reduce((a, b) => (b.len >= a.len ? b : a))
+    const reading = { runDays: run.len, runEnd: run.end, today, days: days.size, persistenceArm: qualifying.length > 0 }
+    // Loudest first: a qualifying run beats none, then the more recent run end, then the longer run.
+    const louder =
+      best === null ||
+      (reading.persistenceArm && !best.persistenceArm) ||
+      (reading.persistenceArm === best.persistenceArm &&
+        (reading.today - reading.runEnd < best.today - best.runEnd ||
+          (reading.today - reading.runEnd === best.today - best.runEnd && reading.runDays > best.runDays)))
+    if (louder) best = reading
   }
-  if (runs.length === 0) return []
-  const qualifying = runs.filter((r) => r.len >= cfg.persistenceMinDays)
-  const run =
-    qualifying.length > 0
-      ? qualifying[qualifying.length - 1]
-      : runs.reduce((a, b) => (b.len >= a.len ? b : a))
-  const runDays = run.len
-  const runEnd = run.end
+  if (best === null) return []
+  const { runDays, runEnd, today, persistenceArm } = best
 
   const countArm = count >= config.reflection.burdenMuteMinEpisodes
-  const persistenceArm = qualifying.length > 0
   if (!countArm && !persistenceArm) return []
 
   const daysSinceRunEnd = Math.max(0, today - runEnd)
@@ -4520,7 +4553,7 @@ export function detectBurden(
       priorityClass: 'safety',
       symptomType: BURDEN_SYMPTOM_TYPE,
       count,
-      days: days.size,
+      days: best.days,
       runDays,
       daysSinceRunEnd,
       countArm,

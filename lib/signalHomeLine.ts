@@ -88,7 +88,7 @@ function countLine(finding: SignalFinding): string | null {
     case 'symptom_burden':
       // The 'today' headline names the run; when the count arm also holds, the sentence says
       // "{n} times this week" and the row carries it. Every other form's headline holds its number.
-      return finding.tier === 'today' && finding.countArm ? `${finding.count} times this week` : null;
+      return finding.tier === 'today' && finding.persistenceArm && finding.countArm ? `${finding.count} times this week` : null;
     case 'symptom_chronicity':
       // "— 14 episodes since August" (the onset month is UTC, the engine's day-bucketing).
       return `${plural(finding.episodeCount, 'episode', 'episodes')} since ${onsetMonth(finding.firstOnsetIso)}`;

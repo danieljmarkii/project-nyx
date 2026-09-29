@@ -204,7 +204,28 @@ Deno.test('persistence arm counts the OWNER\'s days: three local days that are n
   const local = only(input(events))
   assert.equal(local.runDays, 3)
   assert.equal(local.persistenceArm, true)
-  assert.deepEqual(detectBurden(input(events, { timezone: undefined })), [], 'no zone: UTC days, no run')
+  assert.deepEqual(detectBurden(input(events, { timezone: 'UTC' })), [], 'a UTC calendar: two days, no run')
+})
+
+Deno.test('no usable zone: an evening cat in Los Angeles still gets the card (every offset is tried, the loudest wins)', () => {
+  // Monday 17:30, Tuesday 16:00 and Wednesday 08:00 PDT are Tuesday, Tuesday and Wednesday in UTC:
+  // a UTC guess counted two days and a count of three, and missed the counterexample.
+  const evening = [vomit(ago(2, 0, 30)), vomit(ago(2, 23)), vomit(ago(1, 15))]
+  assert.equal(only(input(evening)).runDays, 3, 'with the zone')
+  assert.deepEqual(detectBurden(input(evening, { timezone: 'UTC' })), [], 'a UTC calendar sees two days: the guess this replaces')
+  for (const timezone of [undefined, '', 'Not/AZone']) {
+    const f = only(input(evening, { timezone }))
+    assert.equal(f.persistenceArm, true, String(timezone))
+    assert.equal(f.tier, 'today', String(timezone))
+  }
+})
+
+Deno.test('"today" is the owner\'s today: an evening run in Los Angeles is still going after UTC midnight', () => {
+  // NOW moved to 18:00 PDT Thursday (01:00 UTC Friday). The run ended Wednesday: one local day ago
+  // ('today'), two UTC days ago ('soon' if today were read in UTC).
+  const f = only(input(MON_TUE_WED, { now: '2026-09-11T01:00:00.000Z' }))
+  assert.equal(f.daysSinceRunEnd, 1)
+  assert.equal(f.tier, 'today')
 })
 
 Deno.test('persistence arm: the ask follows the run — today while it is going, soon once a whole day has passed', () => {
@@ -289,33 +310,43 @@ Deno.test('templates: each arm and tier, and the floor over an incomplete read',
   )
 })
 
-Deno.test('validatePhrasing: every template passes; a sentence that softens the ask or moves a number fails', () => {
+Deno.test('validatePhrasing: no model sentence is ever accepted for this card, the template included; the carried line passes', () => {
+  // index.ts's model path is validatePhrasing's one runtime caller: refusing every sentence makes
+  // the card render templateBurden, the fallback, always. A screen over free text did not hold:
+  // review got "probably something she ate" past a keyword list, and "Not urgent but Miso has
+  // vomited on 3 days in a row — worth a call to your vet today." past a template-tail rule.
   const cards = [
     only(input(MON_TUE_WED)),
     only(input([1, 3, 5, 6].map((d) => vomit(ago(d, 15))))),
     only(input([4, 3, 2].map((d) => vomit(ago(d, 15))))),
-    only(input([6, 5, 4, 2, 1, 0].map((d) => vomit(ago(d, 11))))),
   ]
+  const today = cards[0]
+  for (const t of [
+    templateBurden(today, 'Miso'),
+    'Not urgent but Miso has vomited on 3 days in a row — worth a call to your vet today.',
+    'Probably something she ate so Miso has vomited on 3 days in a row — worth a call to your vet today.',
+    'Since the food switch Miso has vomited on 3 days in a row — worth a call to your vet today.',
+    'Miso has vomited on 3 days in a row — worth keeping an eye on.',
+  ]) assert.equal(validatePhrasing(t, today), false, t)
   for (const f of cards) {
-    assert.ok(validatePhrasing(templateBurden(f, 'Miso'), f), templateBurden(f, 'Miso'))
-    assert.ok(validatePhrasing(templateBurden({ ...f, countIsFloor: true }, 'Miso'), { ...f, countIsFloor: true }))
-    // The carried line (an incomplete read, dated) is held to the carried ask and states no count.
     const carriedFrom = new Date(NOW_MS - 2 * DAY).toISOString()
     const carried = { ...f, carriedFrom }
-    assert.ok(validatePhrasing(templateCarried(carried, 'Miso', carriedFrom), carried), templateCarried(carried, 'Miso', carriedFrom))
+    const line = templateCarried(carried, 'Miso', carriedFrom)
+    assert.ok(validatePhrasing(line, carried), line)
+    assert.equal(validatePhrasing(line.replace('worth', 'probably nothing, but worth'), carried), false)
   }
-  const today = cards[0]
-  const bad = [
-    'Miso has vomited on 3 days in a row — worth keeping an eye on.', // the ask softened
-    'Miso has vomited on 3 days in a row — worth a call to your vet.', // "today" dropped
-    'Miso has vomited on 2 days in a row — worth a call to your vet today.', // a number moved
-    'Miso has vomited on 3 days in a row, probably something she ate — worth a call to your vet today.',
-    'Miso has vomited on 3 days in a row, likely a food intolerance — worth a call to your vet today.',
-    'Miso has vomited on 3 days in a row but seems fine — worth a call to your vet today.',
-  ]
-  for (const t of bad) assert.equal(validatePhrasing(t, today), false, t)
-  const soon = cards[1]
-  assert.equal(validatePhrasing('Miso has vomited 4 times in the last 7 days — worth a word with your vet.', soon), false)
+})
+
+Deno.test('a today tier held over an incomplete read never states a run the read does not show', () => {
+  // pipeline.ts holdPriorTier keeps a prior 'today' on a floored read. If what loaded holds only
+  // the count arm, the card states the count with the held ask, never "1 days in a row".
+  const held: SymptomBurdenFinding = {
+    ...only(input([1, 3, 5, 6, 6].map((d, i) => vomit(ago(d, 9 + i))))),
+    tier: 'today',
+    countIsFloor: true,
+  }
+  assert.equal(held.persistenceArm, false)
+  assert.equal(templateBurden(held, 'Miso'), 'Miso has vomited at least 5 times this week — worth a call to your vet today.')
 })
 
 Deno.test('the card carries no cause, no mechanism and no alarm word, in any arm', () => {

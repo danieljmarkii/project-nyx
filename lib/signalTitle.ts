@@ -156,7 +156,9 @@ export function signalTitle(finding: SignalFinding, trial: SignalTrialWindow | n
       // templateBurden's claim, in its own numbers: the run for 'today' and for a run-only 'soon',
       // the count when the count arm speaks.
       const thing = symptomThing(finding.symptomType);
-      if (finding.tier === 'today') return `${thing} on ${finding.runDays} days in a row`;
+      // A 'today' held over an incomplete read with no qualifying run states the count, as its sentence does.
+      if (finding.tier === 'today' && finding.persistenceArm) return `${thing} on ${finding.runDays} days in a row`;
+      if (finding.tier === 'today') return `${thing}, ${finding.count} ${finding.count === 1 ? 'time' : 'times'} this week`;
       if (finding.countArm) return `${thing}, ${finding.count} times in the last ${finding.windowDays} days`;
       return `${thing} on ${finding.runDays} days in a row this week`;
     }

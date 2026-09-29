@@ -833,6 +833,15 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // Engines v3 PR-14d (CUL-1410). Why this card speaks with no earlier week to compare to: the
     // count or the run is the finding. Counts and days only — no cause, no severity word, and the
     // ask the server's tier chose, in the server's own words.
+    if (finding.tier === 'today' && !finding.persistenceArm) {
+      // A 'today' held over an incomplete read (the server's holdPriorTier) with no qualifying run
+      // in what loaded: the count, never a run the record did not show.
+      return (
+        `We've logged ${count(finding.count, 'vomit', 'vomits')} for ${petName} this week. An earlier update ` +
+        `asked for a call to your vet today, and part of the record didn't load for this one — a read of ` +
+        `your logs, not a diagnosis.`
+      );
+    }
     if (finding.tier === 'today') {
       return (
         `${petName} has vomited on ${count(finding.runDays, 'day', 'days')} in a row. Vomiting that comes back day ` +
