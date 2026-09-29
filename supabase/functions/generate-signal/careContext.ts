@@ -136,6 +136,9 @@ export const DRUG_NAME_CLASSES: Record<string, readonly DrugClass[]> = {
   methylprednisolone: ['systemic_corticosteroid'],
   medrol: ['systemic_corticosteroid'],
   'depo-medrol': ['systemic_corticosteroid'],
+  // "Depo" alone is how owners write a depot injection (Depo-Medrol, Depo-Provera); both are
+  // hormonal and treated as masking, the conservative side.
+  depo: ['systemic_corticosteroid'],
   triamcinolone: ['systemic_corticosteroid'],
   budesonide: ['systemic_corticosteroid'],
   'temaril-p': ['systemic_corticosteroid'],
@@ -168,6 +171,7 @@ export const DRUG_NAME_CLASSES: Record<string, readonly DrugClass[]> = {
   loperamide: ['antidiarrheal'],
   imodium: ['antidiarrheal'],
   'pro-pectalin': ['antidiarrheal'],
+  pectalin: ['antidiarrheal'],
   // Antipruritics — itch and scratch.
   oclacitinib: ['antipruritic'],
   apoquel: ['antipruritic'],
@@ -227,6 +231,10 @@ const FORM_WORDS = new Set([
   'er', 'sr', 'xr', 'maleate', 'sodium', 'hydrochloride', 'hcl', 'acetate', 'phosphate', 'succinate', 'tartrate',
   'citrate', 'besylate', 'sulfate', 'hyclate', 'monohydrate', 'my', 'his', 'her', 'dog', 'cat', 'pet', 'med', 'meds',
   'medicine', 'medication',
+  // Brand suffixes and release forms (adversarial final pass, PR-22): without these, "Pepcid AC"
+  // or a cat's lifelong "Methimazole transdermal" failed toward disclosure and masked every sign.
+  'transdermal', 'powder', 'slurry', 'delayed', 'release', 'delayed-release', 'extended', 'extended-release',
+  'odt', 'hfa', 'otc', 'ac', 'sp', 'dc', 'a-d', 'forte', 'pro',
 ])
 
 /** A word's classes, and whether any part of it is unknown. The whole word is looked up

@@ -280,6 +280,22 @@ Deno.test('a hyphenated or joined compound never resolves as its first drug', ()
   ])
 })
 
+Deno.test('brand suffixes and release forms resolve, so common labels do not over-disclose', () => {
+  const cases: [string, string[]][] = [
+    ['Pepcid AC', ['antiemetic_gi_protectant']], ['Prilosec OTC', ['antiemetic_gi_protectant']],
+    ['Imodium A-D', ['antidiarrheal']], ['Flovent HFA', ['inhaled_corticosteroid']],
+    ['Dexamethasone SP', ['systemic_corticosteroid']], ['Ondansetron ODT', ['antiemetic_gi_protectant']],
+    ['Proviable-DC', ['antidiarrheal']], ['Pro Pectalin', ['antidiarrheal']], ['Depo Medrol', ['systemic_corticosteroid']],
+    ['Methimazole transdermal', ['gi_upset_other']], ['Omeprazole 20mg delayed-release', ['antiemetic_gi_protectant']],
+    ['Tylan powder', ['antidiarrheal']], ['Sucralfate slurry', ['antiemetic_gi_protectant']], ['Pred-Forte', ['systemic_corticosteroid']],
+  ]
+  for (const [name, want] of cases) assertEquals(resolveDrugClasses([name]), want, name)
+  // A cat on transdermal methimazole: no line beside itching, and its zero may show on vomiting.
+  const m: CourseFact = { drugLabel: 'Methimazole transdermal', names: [], startedOn: dayKey(30), endedOn: null, status: 'active' }
+  assertEquals(linesForSign('itch', argsOf({ courses: [m] }, { lastVisitOn: null })), [])
+  assertStrictEquals(texts('vomit', argsOf({ courses: [m] }, { lastVisitOn: null }))[0], 'Methimazole transdermal since Aug 28, 30 days: 0 episodes, with something logged on 30 of 30.')
+})
+
 Deno.test('the trial draws no line past its target end (the grace bounds belief, never evidence)', () => {
   const trial: TrialFact = { startedOn: dayKey(79), targetDurationDays: 56, indication: 'gi', targetProtein: 'duck' }
   assertEquals(linesForSign('vomit', argsOf({ trial }, { lastVisitOn: null })), [])
