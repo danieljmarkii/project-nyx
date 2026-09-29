@@ -209,6 +209,17 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     laterInstant: ['record.lastEpisodeIso'],
     reason: (field, kind) => (kind === 'later' ? 'new_episode' : kind === 'increase' ? 'new_week' : 'ask_changed'),
   },
+  // Engines v3 PR-14d (CUL-1410): more vomits or a longer run re-opens, as does a run that now
+  // ends nearer today (a newer episode) or a changed ask ('soon' → 'today').
+  symptom_burden: {
+    increaseOnly: ['count', 'runDays'],
+    decreaseOnly: ['daysSinceRunEnd'],
+    arrivesWithPair: [],
+    promoteOnly: [],
+    anyChange: ['tier'],
+    laterInstant: ['record.lastEpisodeIso'],
+    reason: (field) => (field === 'tier' ? 'ask_changed' : 'new_episode'),
+  },
   food_symptom_correlation: {
     increaseOnly: ['matchedPairs', 'symptomEventCount'],
     decreaseOnly: [],

@@ -107,6 +107,7 @@ function symptomThing(symptomType: Parameters<typeof symptomWord>[0]): string {
 const TITLED: Record<SignalFinding['type'], true> = {
   symptom_chronicity: true,
   symptom_worsening: true,
+  symptom_burden: true,
   reflection: true,
   postprandial_timing: true,
   empty_stomach_timing: true,
@@ -150,6 +151,14 @@ export function signalTitle(finding: SignalFinding, trial: SignalTrialWindow | n
       if (finding.tier === 'firm') return `${thing} on ${finding.currentDays} of the last ${finding.windowDays} days`;
       if (finding.tier === 'soft') return `${thing} on ${finding.currentDays} separate days this week`;
       return `${thing}, ${finding.currentCount} ${finding.currentCount === 1 ? 'episode' : 'episodes'} this week`;
+    }
+    case 'symptom_burden': {
+      // templateBurden's claim, in its own numbers: the run for 'today' and for a run-only 'soon',
+      // the count when the count arm speaks.
+      const thing = symptomThing(finding.symptomType);
+      if (finding.tier === 'today') return `${thing} on ${finding.runDays} days in a row`;
+      if (finding.countArm) return `${thing}, ${finding.count} times in the last ${finding.windowDays} days`;
+      return `${thing} on ${finding.runDays} days in a row this week`;
     }
     case 'reflection':
       return `${symptomThing(finding.symptomType)}, week over week`;

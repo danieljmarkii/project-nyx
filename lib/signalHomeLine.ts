@@ -60,6 +60,7 @@ function numWord(n: number): string {
  * The conditional asks keep their lead-in: cut to "a word with your vet if it carries on"
  * they read as a fragment with no verb (pm-feature-review).
  *   red flag     "worth a call to your vet"
+ *   burden       today "worth a call to your vet today" · soon "worth booking a vet visit soon"
  */
 export function signalHomeAsk(finding: SignalFinding): string | null {
   switch (finding.type) {
@@ -75,6 +76,8 @@ export function signalHomeAsk(finding: SignalFinding): string | null {
       return 'worth keeping an eye on, and a word with your vet if it carries on';
     case 'incident_red_flag':
       return 'worth a call to your vet';
+    case 'symptom_burden':
+      return finding.tier === 'today' ? 'worth a call to your vet today' : 'worth booking a vet visit soon';
     default:
       return null;
   }
@@ -82,6 +85,10 @@ export function signalHomeAsk(finding: SignalFinding): string | null {
 
 function countLine(finding: SignalFinding): string | null {
   switch (finding.type) {
+    case 'symptom_burden':
+      // The 'today' headline names the run; when the count arm also holds, the sentence says
+      // "{n} times this week" and the row carries it. Every other form's headline holds its number.
+      return finding.tier === 'today' && finding.countArm ? `${finding.count} times this week` : null;
     case 'symptom_chronicity':
       // "— 14 episodes since August" (the onset month is UTC, the engine's day-bucketing).
       return `${plural(finding.episodeCount, 'episode', 'episodes')} since ${onsetMonth(finding.firstOnsetIso)}`;

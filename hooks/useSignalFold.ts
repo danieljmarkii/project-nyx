@@ -64,7 +64,7 @@ const EMPTY: PetFoldEntries = {};
 /** The record's facts for one finding — the standing safety types carry the newest-episode
  *  witness (CUL-785); every other type has none. */
 export function recordFactsFor(finding: SignalFinding, lastEpisodes: LastEpisodeDates): RecordFacts {
-  if (finding.type === 'symptom_chronicity' || finding.type === 'symptom_worsening') {
+  if (finding.type === 'symptom_chronicity' || finding.type === 'symptom_worsening' || finding.type === 'symptom_burden') {
     return { lastEpisodeIso: lastEpisodes[finding.symptomType] ?? null };
   }
   return {};

@@ -29,6 +29,8 @@ export type InsightType =
   | 'intake_decline'
   | 'reflection'
   | 'symptom_worsening'
+  // Engines v3 PR-14d (CUL-1410) — absolute burden, the safety card that needs no earlier week.
+  | 'symptom_burden'
   | 'symptom_chronicity'
   | 'postprandial_timing'
   | 'timeofday_clustering'
@@ -221,6 +223,33 @@ export interface SymptomWorseningFinding {
   priorDays: number;
   trigger: WorseningTrigger;
   tier: WorseningTier;
+  windowDays: number;
+}
+
+// Absolute symptom burden (Engines v3 PR-14d, CUL-1410; the critique's GAP-5) — the SAFETY card
+// for a high count with NO earlier week to compare to: 4+ vomits in 7 days, or a vomit on 3+
+// consecutive local days. Vomit only. A count and a run of days, never causal, never a severity
+// verdict, never reassures; ranks below intake-decline and above chronicity. On Home it replaces
+// a same-sign ④ card (the server drops it: one card per sign per week). Mirror of detection.ts
+// SymptomBurdenFinding (rendered fields; the server-only `associationalOnly` marker is omitted).
+// `tier` is the ask: 'today' = "worth a call to your vet today", 'soon' = "worth booking a vet
+// visit soon" (④'s firm ask, so the replacement never asks for less).
+export type BurdenTier = 'today' | 'soon';
+export interface SymptomBurdenFinding {
+  type: 'symptom_burden';
+  priorityClass: 'safety';
+  symptomType: SignalSymptomType;
+  /** Vomits in the window, re-logs within 60 s collapsed. */
+  count: number;
+  /** Distinct local days in the window with a vomit. */
+  days: number;
+  /** The run of consecutive local days the card states. */
+  runDays: number;
+  /** Local days since that run's last day (0 = it includes today). */
+  daysSinceRunEnd: number;
+  countArm: boolean;
+  persistenceArm: boolean;
+  tier: BurdenTier;
   windowDays: number;
 }
 
@@ -530,6 +559,7 @@ export type SignalFinding =
   | IntakeDeclineFinding
   | ReflectionFinding
   | SymptomWorseningFinding
+  | SymptomBurdenFinding
   | SymptomChronicityFinding
   | PostprandialTimingFinding
   | TimeOfDayClusteringFinding

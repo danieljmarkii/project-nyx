@@ -40,6 +40,7 @@ import type {
   SignalFinding,
   SymptomChronicityFinding,
   SymptomWorseningFinding,
+  SymptomBurdenFinding,
   TimeOfDayClusteringFinding,
   TimingStoryFinding,
   TrialResponseFinding,
@@ -85,6 +86,19 @@ const worsening: SymptomWorseningFinding = {
   trigger: 'more_episodes',
   tier: 'standard',
   windowDays: 14,
+};
+const burden: SymptomBurdenFinding = {
+  type: 'symptom_burden',
+  priorityClass: 'safety',
+  symptomType: 'vomit',
+  count: 4,
+  days: 3,
+  runDays: 3,
+  daysSinceRunEnd: 1,
+  countArm: true,
+  persistenceArm: true,
+  tier: 'today',
+  windowDays: 7,
 };
 const postprandial: PostprandialTimingFinding = {
   type: 'postprandial_timing',
@@ -213,6 +227,7 @@ const BASE: Record<InsightType, SignalFinding> = {
   food_symptom_correlation: correlation,
   symptom_chronicity: chronicity,
   symptom_worsening: worsening,
+  symptom_burden: burden,
   postprandial_timing: postprandial,
   timeofday_clustering: timeofday,
   empty_stomach_timing: emptyStomach,
@@ -343,7 +358,8 @@ describe('materialChange — the per-type table, walked as a property', () => {
       // A record witness is a `record.*` path (read from RecordFacts, never the finding), and
       // only the two standing safety types carry one (CUL-785).
       for (const f of spec.laterInstant) expect(f.startsWith('record.')).toBe(true);
-      expect(spec.laterInstant.length > 0).toBe(t === 'symptom_chronicity' || t === 'symptom_worsening');
+      // The burden card (PR-14d, CUL-1410) is the third: Home reads its last-episode date the same way.
+      expect(spec.laterInstant.length > 0).toBe(t === 'symptom_chronicity' || t === 'symptom_worsening' || t === 'symptom_burden');
     }
   });
 

@@ -117,6 +117,7 @@ export function signalSymptomOf(finding: SignalFinding): SignalSymptomType | nul
   switch (finding.type) {
     case 'symptom_chronicity':
     case 'symptom_worsening':
+    case 'symptom_burden':
     case 'reflection':
     case 'postprandial_timing':
     case 'empty_stomach_timing':
@@ -152,6 +153,7 @@ export function signalWindowDays(finding: SignalFinding): number {
   switch (finding.type) {
     case 'symptom_chronicity':
     case 'symptom_worsening':
+    case 'symptom_burden':
     case 'reflection':
     case 'postprandial_timing':
     case 'empty_stomach_timing':

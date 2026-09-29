@@ -687,26 +687,20 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     if (REASSURANCE_RE.test(t) || DISMISSIVE_RE.test(t)) return false
   }
   if (finding.type === 'symptom_burden') {
-    // Engines v3 PR-14d (CUL-1410). The card's load is its ASK and its NUMBERS, and a keyword
-    // screen cannot tell a paraphrase that softens the ask from one that keeps it. So this branch
-    // checks the two things directly: the tier's ask must appear VERBATIM, and every number in the
-    // sentence must be one the finding holds (a model that turns "5 times" into "3 times" fails).
-    // The template passes by construction; a model sentence passes only if it keeps both, which
-    // leaves it nothing to change but the connective words. (The other safety lanes are template-
-    // only through index.ts's list; that file is outside PR-14d, so this screen is the guarantee
-    // until the type joins the list, and the backstop after.) A CARRIED line (templateCarried) is
-    // dated and states no count, so it is held to the carried ask and skips the number check.
-    if (CAUSAL_RE.test(t) || MECHANISM_RE.test(t) || FOOD_NAMING_RE.test(t)) return false
-    const carried = finding.carriedFrom !== undefined
-    const ask =
-      finding.tier === 'today'
-        ? carried ? 'worth a call to your vet' : 'worth a call to your vet today'
-        : carried ? 'worth booking a vet visit' : 'worth booking a vet visit soon'
-    if (!t.toLowerCase().includes(ask)) return false
-    if (!carried) {
-      const held = new Set([finding.count, finding.runDays, finding.windowDays].map(String))
-      if ((t.match(/\d+/g) ?? []).some((n) => !held.has(n))) return false
+    // Engines v3 PR-14d (CUL-1410): TEMPLATE-ONLY BY CONSTRUCTION. A sentence passes only if it IS
+    // the card's template, the pet's name aside. The card's load is its ask ("a call to your vet
+    // today" vs "a vet visit soon") and its numbers, and no keyword screen holds either: "probably
+    // something she ate" carries no causal keyword (the build's own test found it). The other safety
+    // lanes are template-only through index.ts's list; that file is outside PR-14d, so this screen
+    // is the guarantee until the type joins the list, and the backstop after. A CARRIED line
+    // (templateCarried, over an incomplete read) is held to its own template the same way.
+    if (finding.carriedFrom !== undefined) {
+      const name = /^An earlier read of (.+)'s record, /.exec(t)?.[1]
+      return name !== undefined && t === templateCarried(finding, name, finding.carriedFrom)
     }
+    const tail = templateBurden(finding, '').trim()
+    const name = t.endsWith(` ${tail}`) ? t.slice(0, t.length - tail.length - 1) : ''
+    return name.length > 0 && name.length <= 60 && !/[,;:.—]/.test(name)
   }
   if (finding.type === 'food_symptom_correlation') {
     // Associational only — the model may not assert causation.
@@ -881,9 +875,9 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
     }
   }
   if (finding.type === 'symptom_burden') {
-    // Engines v3 PR-14d (CUL-1410). validatePhrasing holds a model sentence to the tier's ask,
-    // verbatim, and to the finding's own numbers; kept for shape-correctness and to narrow the
-    // union for the intake_decline fallthrough below. Counts only, no cause.
+    // Engines v3 PR-14d (CUL-1410). validatePhrasing passes only the template itself (the pet's
+    // name aside), so a model sentence never reaches the card; kept for shape-correctness and to
+    // narrow the union for the intake_decline fallthrough below. Counts only, no cause.
     return {
       insight_type: 'symptom_burden',
       pet_name: petName,

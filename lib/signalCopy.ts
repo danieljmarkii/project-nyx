@@ -31,6 +31,7 @@ import type {
   StoodDownMarker,
   SignalSymptomType,
   StapleSource,
+  SymptomBurdenFinding,
   SymptomChronicityFinding,
   ChronicityCompare,
   SymptomWorseningFinding,
@@ -551,6 +552,10 @@ export function sampleLine(finding: SignalFinding): string {
   if (finding.type === 'reflection') {
     return `${count(finding.currentCount, 'episode', 'episodes')} this week, ${finding.priorCount} last week`;
   }
+  if (finding.type === 'symptom_burden') {
+    // Engines v3 PR-14d (CUL-1410): the vomits and the days they fell on — the card's own two numbers.
+    return `${count(finding.count, 'vomit', 'vomits')} on ${count(finding.days, 'day', 'days')} this week`;
+  }
   if (finding.type === 'symptom_worsening') {
     // Show the axis that actually rose: days for the more_days arm, episodes otherwise.
     if (finding.trigger === 'more_days') {
@@ -822,6 +827,29 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     return (
       `We've logged ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} this week${trend ? ` — ${trend}` : ''}. ` +
       `This is a count we're tracking with you — not a diagnosis, and not a verdict on how ${petName} is doing. Keep logging and we'll keep watching the trend.`
+    );
+  }
+  if (finding.type === 'symptom_burden') {
+    // Engines v3 PR-14d (CUL-1410). Why this card speaks with no earlier week to compare to: the
+    // count or the run is the finding. Counts and days only — no cause, no severity word, and the
+    // ask the server's tier chose, in the server's own words.
+    if (finding.tier === 'today') {
+      return (
+        `${petName} has vomited on ${count(finding.runDays, 'day', 'days')} in a row. Vomiting that comes back day ` +
+        `after day is worth a call to your vet today, whatever the week before looked like — a read of your logs, ` +
+        `not a diagnosis.`
+      );
+    }
+    if (finding.countArm) {
+      return (
+        `We've logged ${count(finding.count, 'vomit', 'vomits')} for ${petName} in the last ${finding.windowDays} ` +
+        `days, on ${count(finding.days, 'day', 'days')}. That many in a week is worth booking a vet visit soon, ` +
+        `whatever the week before looked like — a read of your logs, not a diagnosis.`
+      );
+    }
+    return (
+      `${petName} vomited on ${count(finding.runDays, 'day', 'days')} in a row earlier this week. A run like that is ` +
+      `worth booking a vet visit soon — a read of your logs, not a diagnosis.`
     );
   }
   if (finding.type === 'symptom_worsening') {
@@ -1894,6 +1922,14 @@ export function phoneScript(
    *  row (`chronicityCompareWithheld`). Required — a default here would be the decision. */
   withholdFallingVomit: boolean,
 ): PhoneScriptFact[] | null {
+  if (finding.type === 'symptom_burden') {
+    return [
+      { label: 'Sign', value: symptomWord(finding.symptomType) },
+      { label: 'This week', value: `${count(finding.count, 'vomit', 'vomits')} on ${count(finding.days, 'day', 'days')}` },
+      { label: 'Days in a row', value: String(finding.runDays) },
+      { label: 'Watched over', value: `the last ${finding.windowDays} days` },
+    ];
+  }
   if (finding.type === 'symptom_worsening') {
     const symptom = symptomWord(finding.symptomType);
     const thisWeek =
@@ -2005,20 +2041,25 @@ export function phoneScript(
 // top-ranked safety finding (a directly-photographed blood / foreign-body flag), and B-191's own
 // rationale applies with full force: a SECONDARY pet whose only flag is a photographed red flag
 // must be able to raise the banner, never stay silent while a lower-priority lane on another pet
-// would. chronicity (⑦, B-182/B-191) slots below intake_decline; worsening is last.
+// would. chronicity (⑦, B-182/B-191) slots below intake_decline; worsening is last. The burden
+// card (Engines v3 PR-14d, CUL-1410) is added deliberately, between intake_decline and chronicity
+// exactly as the engine ranks it: a pet vomiting on three days running, with no card of any other
+// lane, must be able to raise the banner, and its ask can be "today".
 const BANNER_SAFETY_PRIORITY: Record<
-  'incident_red_flag' | 'intake_decline' | 'symptom_chronicity' | 'symptom_worsening',
+  'incident_red_flag' | 'intake_decline' | 'symptom_burden' | 'symptom_chronicity' | 'symptom_worsening',
   number
 > = {
   incident_red_flag: 0,
   intake_decline: 1,
-  symptom_chronicity: 2,
-  symptom_worsening: 3,
+  symptom_burden: 2,
+  symptom_chronicity: 3,
+  symptom_worsening: 4,
 };
 
 export type BannerSafetyFinding =
   | IncidentRedFlagFinding
   | IntakeDeclineFinding
+  | SymptomBurdenFinding
   | SymptomChronicityFinding
   | SymptomWorseningFinding;
 
@@ -2028,6 +2069,7 @@ function isBannerSafetyFinding(f: SignalFinding): f is BannerSafetyFinding {
   return (
     f.type === 'incident_red_flag' ||
     f.type === 'intake_decline' ||
+    f.type === 'symptom_burden' ||
     f.type === 'symptom_chronicity' ||
     f.type === 'symptom_worsening'
   );
@@ -2143,6 +2185,13 @@ function bannerRest(finding: BannerSafetyFinding): string {
     const span =
       finding.daysBelowBaseline <= 1 ? 'today' : `for ${finding.daysBelowBaseline} days`;
     return ` has eaten less than usual ${span} — worth a look.`;
+  }
+  if (finding.type === 'symptom_burden') {
+    // Engines v3 PR-14d (CUL-1410) — the run or the count, the card's own words; the ask lives
+    // on the pet's Signal, like every banner.
+    return finding.persistenceArm
+      ? ` has vomited on ${finding.runDays} days in a row — worth a look.`
+      : ` has vomited ${finding.count} times this week — worth a look.`;
   }
   if (finding.type === 'symptom_chronicity') {
     // ⑦ (B-182/B-191) — DURATION, not a week-over-week delta. Anchor to the onset
@@ -2327,6 +2376,11 @@ export function chronicityLastEpisodeFallbackIso(
  */
 export function stripNameLine(finding: SignalFinding): string | null {
   switch (finding.type) {
+    case 'symptom_burden':
+      // The arm that fired, no count (the count line carries it).
+      return finding.persistenceArm
+        ? `${capitalize(symptomWord(finding.symptomType))} days in a row`
+        : `${capitalize(symptomWord(finding.symptomType))} this week`;
     case 'symptom_chronicity':
       return `Recurring ${symptomWord(finding.symptomType)}`;
     case 'symptom_worsening':
@@ -2375,6 +2429,9 @@ export function stripNameLine(finding: SignalFinding): string | null {
  */
 export function stripAskLine(finding: SignalFinding): string | null {
   switch (finding.type) {
+    case 'symptom_burden':
+      // templateBurden: today → "worth a call to your vet today"; soon → "worth booking a vet visit soon".
+      return finding.tier === 'today' ? STRIP_ASKS.call : STRIP_ASKS.visit;
     case 'symptom_chronicity':
       // templateChronicity: firm → "worth booking a vet visit", else "worth a word with your vet".
       return finding.tier === 'firm' ? STRIP_ASKS.visit : STRIP_ASKS.tell;
@@ -2402,6 +2459,8 @@ function stripCount(finding: SignalFinding, ctx: StripContext, spoken: boolean):
   const lastLocal = ctx.lastEpisodeIso ? stripDayLocal(ctx.lastEpisodeIso) : null;
   const suffix = (day: StripDay | null): string => (day ? (spoken ? `, last ${day.spoken}` : ` · last ${day.short}`) : '');
   switch (finding.type) {
+    case 'symptom_burden':
+      return `${finding.count} this week, ${finding.runDays} in a row${suffix(lastLocal)}`;
     case 'symptom_chronicity':
       // Dr. Chen's own strip form: the face's "14 episodes across 5 of the last 8 weeks" said
       // in fewer words, plus the date of the last episode from the record.

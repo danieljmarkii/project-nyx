@@ -41,6 +41,7 @@ import type {
   StoodDownMarker,
   SymptomChronicityFinding,
   SymptomWorseningFinding,
+  SymptomBurdenFinding,
   TimeOfDayClusteringFinding,
   TimingStoryFinding,
   TrialResponseFinding,
@@ -177,6 +178,20 @@ const worsening = (over: Partial<SymptomWorseningFinding> = {}): SymptomWorsenin
   trigger: 'more_episodes',
   tier: 'standard',
   windowDays: 14,
+  ...over,
+});
+const burden = (over: Partial<SymptomBurdenFinding> = {}): SymptomBurdenFinding => ({
+  type: 'symptom_burden',
+  priorityClass: 'safety',
+  symptomType: 'vomit',
+  count: 3,
+  days: 3,
+  runDays: 3,
+  daysSinceRunEnd: 1,
+  countArm: false,
+  persistenceArm: true,
+  tier: 'today',
+  windowDays: 7,
   ...over,
 });
 const intake = (over: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding => ({
@@ -356,7 +371,7 @@ describe('the strip day (§3.4 / B-514) — the device-zone day for the record, 
     expect(stripDayUTC('')).toBeNull();
   });
   it('a date, never a counter: no "days since", "days ago", "clear" or "free" on any safety strip', () => {
-    for (const f of [chronicity(), worsening(), intake(), redFlag()]) {
+    for (const f of [chronicity(), worsening(), burden(), intake(), redFlag()]) {
       const all = `${stripNameLine(f)} ${stripAskLine(f)} ${stripCountLine(f, LAST)} ${stripA11yLabel(f, LAST)}`;
       expect(all).not.toMatch(/days? (since|ago|clear|free)/i);
     }
@@ -375,6 +390,12 @@ const EVERY_TYPE: Record<InsightType, SignalFinding[]> = {
     worsening({ tier: 'soft', trigger: 'more_days' }),
     worsening({ tier: 'firm', trigger: 'more_days' }),
     worsening({ priorCount: 0, priorDays: 0 }),
+  ],
+  symptom_burden: [
+    burden(),
+    burden({ count: 5, days: 3, countArm: true, persistenceArm: false, runDays: 1, tier: 'soon' }),
+    burden({ daysSinceRunEnd: 3, tier: 'soon' }),
+    burden({ count: 6, days: 4, countArm: true }),
   ],
   intake_decline: [
     intake({ species: 'cat' }),

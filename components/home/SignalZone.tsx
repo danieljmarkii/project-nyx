@@ -562,7 +562,7 @@ export function SignalZone({
   const lastEpisodes = useLastEpisodeDates({
     petId,
     symptomTypes: findings
-      .filter((f) => f.finding.type === 'symptom_chronicity' || f.finding.type === 'symptom_worsening')
+      .filter((f) => f.finding.type === 'symptom_chronicity' || f.finding.type === 'symptom_worsening' || f.finding.type === 'symptom_burden')
       .map((f) => (f.finding as { symptomType: string }).symptomType),
   });
 
@@ -1017,9 +1017,9 @@ function LiveStack({
     <View>
       {ordered.map((f, i) => {
         // §3.4: the record's date first; for chronicity the engine-derived fallback when the
-        // record did not answer; worsening has no fallback and prints no date then.
+        // record did not answer; worsening and burden have no fallback and print no date then.
         const lastEpisodeIso =
-          f.finding.type === 'symptom_chronicity' || f.finding.type === 'symptom_worsening'
+          f.finding.type === 'symptom_chronicity' || f.finding.type === 'symptom_worsening' || f.finding.type === 'symptom_burden'
             ? lastEpisodes[f.finding.symptomType] ??
               (f.finding.type === 'symptom_chronicity' ? chronicityLastEpisodeFallbackIso(f.finding, generatedAt) : null)
             : null;
