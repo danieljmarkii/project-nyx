@@ -218,10 +218,11 @@ export function shippedVomitContext(args: Omit<BuildVomitContextArgs, 'engineFla
 //     one. A shipped row that counts (within 24 h of this vomit) is inside the anchored
 //     window too, so the union's counts are the anchored counts, and those are never
 //     below the shipped ones.
-//   - feline intake: fires when either evaluation does. The anchored half asks "was a Most
-//     or All meal logged in the 24 h before this vomit, for an owner who rated a meal in
-//     the week before it"; the shipped half still reads the 24 h before the read, which is
-//     what keeps the cat that ate, vomited, then refused, read late (Dr. Chen's hold).
+//   - feline intake: fires when either evaluation does. The anchored half asks "were meals
+//     logged in the 24 h before this vomit, none of them Most or All, for an owner who
+//     rated a meal in the week before it" (an empty window adds nothing: ruling (a)); the
+//     shipped half still reads the 24 h before the read, which is what keeps the cat that
+//     ate, vomited, then refused, read late (Dr. Chen's hold).
 //   - lethargy: the shipped value, untouched.
 // Property-tested over every read time after the vomit (engineCorpus/en0Union.test.ts).
 export type VomitContextStep = (shipped: ContextInput, args: BuildVomitContextArgs) => ContextInput
@@ -245,7 +246,13 @@ export const EN0_CONTEXT_STEP: VomitContextStep = (shipped, args) => {
     (m) => inRange(m.occurred_at, a.intakeBaselineFromMs, vomitMs) && ratingOf(m) !== null,
   )
   const beforeVomit = args.rows.meals.filter((m) => inRange(m.occurred_at, a.felineIntakeFromMs, vomitMs))
-  const anchoredFires = anchoredTracks && !beforeVomit.some((m) => isPositive(ratingOf(m)))
+  // PM ruling (a), 2026-09-29, CUL-1130: the anchored half never escalates on an empty
+  // window. With no meal logged in the 24 h before the vomit, "no Most or All meal" is a
+  // gap in the log, not a record of the cat eating poorly, and escalating on it is the
+  // Pattern 6 hazard the tracking guard only half covers (it checks the week). The shipped
+  // half still fires exactly as it did, so nothing is lost.
+  const anchoredFires =
+    anchoredTracks && beforeVomit.length > 0 && !beforeVomit.some((m) => isPositive(ratingOf(m)))
 
   if (anchoredFires) {
     return {

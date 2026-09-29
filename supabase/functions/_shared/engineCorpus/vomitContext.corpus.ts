@@ -215,6 +215,22 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     en0Flags: ['repeated_vomiting', 'feline_reduced_intake', 'concurrent_lethargy'],
     en0IntakeRecord: { window: 'before_vomit', mealsLogged: 1 },
   },
+  {
+    // PM ruling (a), 2026-09-29: nothing logged in the day before the vomit, then the cat
+    // ate well after it; read two days late. The shipped window holds the good meals, and
+    // the anchored window is empty, which is a gap in the log, not a finding. Quiet both ways.
+    name: 'a logging gap before the vomit, eating well after it, read late, adds nothing',
+    species: 'cat',
+    nowIso: T,
+    thisEventOccurredAt: at(T, -48),
+    rows: {
+      vomits: [{ occurred_at: at(T, -48) }],
+      lethargy: [],
+      meals: [meal(at(T, -38), 'all'), meal(at(T, -18), 'all'), meal(at(T, -6), 'most'), meal(at(T, -100), 'some')],
+    },
+    shippedFlags: [],
+    en0Flags: [],
+  },
   // ── EN-0's named scenarios (their shipped answers, which EN-0 corrects) ──────────────
   {
     // Six meals in the 24 h before the vomit, all unrated; the read ran two days later, so
@@ -270,8 +286,10 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
       meals: [meal('2026-06-05T07:00:00.000Z', 'most')],
     },
     shippedFlags: ['feline_reduced_intake'],
+    // The anchored half counted no meals, so it adds nothing (ruling (a)); the read-time
+    // half fired, and its read says so, pinned to the read's moment.
     en0Flags: ['feline_reduced_intake'],
-    en0IntakeRecord: { window: 'before_vomit', mealsLogged: 0 },
+    en0IntakeRecord: { window: 'before_read', mealsLogged: 0 },
   },
   {
     // The same vomit re-read at 07:55, after the back-fill landed.

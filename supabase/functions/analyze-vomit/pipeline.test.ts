@@ -246,7 +246,7 @@ Deno.test('pipeline · 6/7: a flag-on re-read after the back-fill never lowers t
   const first = { ...(await read(w)) }
   assertStrictEquals(first.recommendation, 'worth_a_call')
   // Pinned to the read's own moment, so the held words stay true after the back-fill.
-  assertStrictEquals(String(first.read_text).startsWith('When I read this, no meals were logged for Nyx in the 24 hours before this vomit.'), true)
+  assertStrictEquals(String(first.read_text).startsWith('When I read this, no meals had been logged for Nyx in the 24 hours before then.'), true)
   // The morning's meals land; the same vomit is read again, now quiet by both halves.
   w.others.push({ event_type: 'meal', occurred_at: iso(vomitMs - 1 * H), rating: 'all' })
   const writesBefore = w.writes
@@ -266,7 +266,7 @@ Deno.test('pipeline · a photo the model says is not vomit is never read as hold
   assertStrictEquals(row.recommendation, 'worth_a_call')
   assertStrictEquals(
     row.read_text,
-    "When I read this, no meals were logged for Nyx in the 24 hours before this vomit. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, no meals had been logged for Nyx in the 24 hours before then. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
   )
 })
 
