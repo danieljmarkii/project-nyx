@@ -1,6 +1,6 @@
 # Dispatch v1.1 and one sub-issue per PR: merges stop closing unfinished work
 
-**Date:** 2026-09-29 · **Issues:** CUL-1397, CUL-1409 · shipped via #PR_NUMBER
+**Date:** 2026-09-29 · **Issues:** CUL-1397, CUL-1409 · shipped via #981
 
 ## What happened
 
