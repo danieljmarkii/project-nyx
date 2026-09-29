@@ -414,6 +414,7 @@ Deno.test('(k4) only the four safety lanes are carried: a forged or malformed pr
       { rank: 6, text: 'x', finding: { type: 'incident_red_flag', priorityClass: 'safety', incidentType: 'vomit', flags: ['nope'] } },
       { rank: 7, text: 'x', finding: { type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'zzz', tier: 'firm' } },
       { rank: 8, text: 'x', finding: { type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'toString', tier: 'firm' } },
+      { rank: 9, text: 'x', finding: { type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'vomit', tier: 'constructor' } },
       'garbage',
     ],
     generatedAt: new Date(Date.parse(quiet.nowIso) - 86_400_000).toISOString(),

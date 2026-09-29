@@ -525,6 +525,8 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
  * printed "undefined", and a red flag with no `flags` threw inside the pipeline (adversarial
  * third check, CUL-989). An entry that fails is simply not carried, which can only withhold.
  */
+const CARRYABLE_TIERS = { soft: true, standard: true, firm: true }
+
 export function canRenderCarried(f: unknown): boolean {
   if (!f || typeof f !== 'object') return false
   const x = f as { type?: unknown; symptomType?: unknown; incidentType?: unknown; flags?: unknown; tier?: unknown; trigger?: unknown }
@@ -532,7 +534,7 @@ export function canRenderCarried(f: unknown): boolean {
   switch (x.type) {
     case 'symptom_chronicity':
     case 'symptom_worsening':
-      return known(SYMPTOM_LABEL, x.symptomType) && (x.tier === undefined || typeof x.tier === 'string')
+      return known(SYMPTOM_LABEL, x.symptomType) && (x.tier === undefined || known(CARRYABLE_TIERS, x.tier))
     case 'intake_decline':
       return x.trigger === undefined || typeof x.trigger === 'string'
     case 'incident_red_flag':
