@@ -1,0 +1,118 @@
+// CLAUDE.md does not grow. An addition is paid for by a deletion.
+//
+// WHY THIS FILE EXISTS. CLAUDE.md is auto-loaded in full on every turn of every
+// session, so it is the largest fixed cost in the repo. In the predecessor project it
+// was trimmed twice and regrew past its starting size both times (126 KB → 237 KB in
+// two weeks; a 51% trim bought NINE DAYS). A written cap ("keep three version entries")
+// held perfectly while the section still weighed 14.6 KB. **A cap on COUNT with no cap
+// on SIZE is not a budget**, and a rule enforced only by prose fires approximately
+// never. This guard caps the only quantity that costs anything: bytes.
+//
+// WHAT IT CHECKS: a RATCHET, both directions.
+//   (1) REGROWTH: CLAUDE.md is larger than CEILING_BYTES. Fix: delete something in the
+//       same PR (move the story behind a rule to docs/engineering-lessons.md; move a
+//       resolved question to docs/decisions-archive.md). NEVER raise CEILING_BYTES.
+//   (2) SLACK: CLAUDE.md is more than SLACK_BYTES below the ceiling, i.e. a trim landed
+//       and the ceiling stayed put. Fix: lower CEILING_BYTES to the new size. The
+//       ceiling only ever moves down.
+//
+// SCOPE BOUNDARY (stated, because an undocumented blind spot reads as coverage): this
+// guards SIZE, not VALUE, and says nothing about docs/, .claude/ or STATUS.md.
+
+import * as fs from 'fs';
+import * as path from 'path';
+
+const REPO_ROOT = path.resolve(__dirname, '..');
+const MANUAL = 'CLAUDE.md';
+
+/**
+ * The ceiling, in BYTES on disk (what `wc -c CLAUDE.md` reports), not characters:
+ * multi-byte UTF-8 (— § ✓ ⚠) makes the two differ. Set at onboarding to the file's
+ * size; lower it whenever a trim lands, and never raise it.
+ */
+const CEILING_BYTES = {{CEILING_BYTES}};
+
+/** How far below the ceiling the file may sit before the ceiling is stale. */
+const SLACK_BYTES = 2_048;
+
+const manualPath = path.join(REPO_ROOT, MANUAL);
+const manual = fs.readFileSync(manualPath);
+const sizeBytes = manual.length;
+
+const overBy = sizeBytes - CEILING_BYTES;
+const underBy = CEILING_BYTES - sizeBytes;
+
+describe('CLAUDE.md byte ratchet', () => {
+  // NON-VACUITY FLOOR. Everything below compares one number to another, so the suite
+  // could pass while measuring nothing by (a) reading a file that is not the manual, or
+  // (b) counting CHARACTERS while the ceiling is in bytes. Proven by mutation in the
+  // predecessor: switching to readFileSync(p, 'utf8').length loosened the limit by
+  // ~1.1 KB and both verdict tests stayed green.
+  it('measures the real CLAUDE.md, in bytes', () => {
+    expect(fs.existsSync(manualPath)).toBe(true);
+
+    // The manual, not an empty or truncated read. Any plausible CLAUDE.md is far
+    // above this; a wrong path or a zero-length read is far below it.
+    expect(sizeBytes).toBeGreaterThan(5_000);
+
+    // It really is the manual, not some other markdown file at that path.
+    const head = manual.subarray(0, 200).toString('utf8');
+    expect(head).toContain('{{PRODUCT}}');
+
+    // BYTES, not characters. This fails the moment the reader is changed to
+    // `readFileSync(p, 'utf8').length`, which is the mistake that would make
+    // CEILING_BYTES mean something other than what `wc -c` prints.
+    const chars = manual.toString('utf8').length;
+    expect(sizeBytes).toBeGreaterThan(chars);
+  });
+
+  it(`is at or under the ${CEILING_BYTES.toLocaleString('en-US')} B ceiling`, () => {
+    if (sizeBytes > CEILING_BYTES) {
+      throw new Error(
+        [
+          `CLAUDE.md has grown past its ceiling: ${sizeBytes.toLocaleString('en-US')} B, ` +
+            `which is ${overBy.toLocaleString('en-US')} B over ${CEILING_BYTES.toLocaleString('en-US')} B.`,
+          '',
+          'This file is auto-loaded in full at the start of every session, so every byte',
+          'added here is paid on every turn of every session.',
+          '',
+          'THE REPAIR — delete at least that much from CLAUDE.md in this same PR:',
+          '  • A convention keeps its RULE and its ENFORCEMENT here, in a few lines. The',
+          '    account behind it — the incident, the falsification rounds, the measurements —',
+          '    goes to docs/engineering-lessons.md under that convention\'s pointer.',
+          '  • A resolved Open Questions row moves to docs/decisions-archive.md, verbatim.',
+          '  • A Read-These row that no longer describes a live surface goes.',
+          '  • Anything git, the tracker or docs/sessions/ already records is a duplicate; the',
+          '    duplicate is reliably the stale copy.',
+          '',
+          'DO NOT raise CEILING_BYTES to go green. The ceiling only ever moves DOWN.',
+          'A written cap that holds perfectly is worth nothing if nothing caps the size.',
+        ].join('\n'),
+      );
+    }
+    expect(sizeBytes).toBeLessThanOrEqual(CEILING_BYTES);
+  });
+
+  it('has a ceiling that still tracks the file (lower it after a trim)', () => {
+    if (underBy > SLACK_BYTES) {
+      throw new Error(
+        [
+          `CLAUDE.md is ${underBy.toLocaleString('en-US')} B below its ceiling ` +
+            `(${sizeBytes.toLocaleString('en-US')} B vs ${CEILING_BYTES.toLocaleString('en-US')} B), ` +
+            `which is more than the ${SLACK_BYTES.toLocaleString('en-US')} B of slack this ratchet allows.`,
+          '',
+          'That means a trim landed and the ceiling was left where it was — so the space',
+          'you just freed has become a budget for the next few sessions to grow back into.',
+          'That is how a trimmed file regrows past its starting size.',
+          '',
+          `THE REPAIR: set CEILING_BYTES to ${sizeBytes.toLocaleString('en-US')} in this same PR`,
+          '(guards/claudeMdBudget.test.ts), and say in the PR body what you removed.',
+          '',
+          'This is the half that makes this a ratchet rather than a cap: the ceiling',
+          'follows the file down, and never back up.',
+        ].join('\n'),
+      );
+    }
+    expect(underBy).toBeLessThanOrEqual(SLACK_BYTES);
+  });
+});
