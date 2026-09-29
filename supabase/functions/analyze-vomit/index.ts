@@ -39,6 +39,7 @@ import {
   type FunctionCaps,
   type IncidentCopy,
   type IncidentDescriptor,
+  type ContextualRun,
   type AnalysisWriteBack,
   type AnalysisReadFields as IncidentAnalysisReadFields,
   getToolUseInput,
@@ -50,11 +51,12 @@ import {
   buildAnalysisWriteBack as buildIncidentAnalysisWriteBack,
   runIncidentAnalysis,
 } from '../_shared/incident-analysis.ts'
-import type { EngineFlags } from '../_shared/engineFlags.ts'
+import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 import {
   buildVomitContext,
-  vomitContextWindows,
+  vomitReadBounds,
   type ContextInput,
+  type IntakeRecord,
   type VomitContextRows,
 } from './context.ts'
 
@@ -399,21 +401,26 @@ function buildMonitorReadText(petName: string): string {
   return `A single photo on its own can't tell you how ${p} is doing. Keep an eye on ${p} — if it happens again, or ${p} seems unwell or goes off food, your vet is the best call.`
 }
 
-// Escalation on a visual flag (model-raised or derived from the structured fields,
-// CUL-534), used when the model didn't write its own escalation read. Names the present
-// concern plainly (the safe direction) and routes to the vet.
-function buildVisualFlagReadText(petName: string, visualFlags: string[]): string {
-  const p = petName || 'your pet'
+// What the photo showed, from the visual flags alone (never the model's words). With no
+// flag, the model's own worth_a_call is the finding, named without a noun it did not give.
+function seenInPhoto(visualFlags: string[]): string {
   const hasBlood = visualFlags.includes('blood')
   const hasForeign = visualFlags.includes('suspected_foreign_material')
-  const seen = hasBlood && hasForeign
+  return hasBlood && hasForeign
     ? "what looks like blood, and something that doesn't look like food,"
     : hasBlood
       ? 'what looks like blood'
       : hasForeign
         ? "something that doesn't look like food"
         : 'something worth a closer look'
-  return `I can see ${seen} in this photo. That's worth a call to your vet about ${p}.`
+}
+
+// Escalation on a visual flag (model-raised or derived from the structured fields,
+// CUL-534), used when the model didn't write its own escalation read. Names the present
+// concern plainly (the safe direction) and routes to the vet.
+function buildVisualFlagReadText(petName: string, visualFlags: string[]): string {
+  const p = petName || 'your pet'
+  return `I can see ${seenInPhoto(visualFlags)} in this photo. That's worth a call to your vet about ${p}.`
 }
 
 // Photo present but unreadable (oversize / undecodable format). Honest about the
@@ -431,6 +438,70 @@ const VOMIT_COPY: IncidentCopy<ContextualFlag> = {
   monitor: buildMonitorReadText,
   visualFlagFallback: buildVisualFlagReadText,
   noFlag: buildNoFlagReadText,
+}
+
+// ── EN-0's copy (CUL-1130): the read states the record, anchored to the vomit ──────────
+// Runs only with engines_v3_en0 on for the record's owner (vomitContextualRun below);
+// flag-off every read is VOMIT_COPY's, word for word.
+//
+// The intake template no longer concludes. The shipped "hasn't eaten a full meal
+// recently" was false wherever meals were logged but not rated (the 9/4 read had four,
+// the 9/22 read six), and "recently" was measured from whenever the read ran. This one
+// says what the record holds, in the app's own rating words, over the window that fired,
+// named against a fixed point ("before this vomit", or "before I read this" when only the
+// read-time half fired). Both stay true once the words are stored; no clause is relative
+// to the day the owner reads them (critique GAP-1). The escalation is unchanged: the
+// feline flag still forces worth_a_call.
+function intakeRecordSentence(p: string, record: IntakeRecord): string {
+  const span = record.window === 'before_vomit' ? 'in the 24 hours before this vomit' : 'in the 24 hours before I read this'
+  if (record.mealsLogged === 0) return `No meals are logged for ${p} ${span}.`
+  if (record.mealsLogged === 1) return `One meal is logged for ${p} ${span}, and it isn't marked Most or All.`
+  return `${record.mealsLogged} meals are logged for ${p} ${span}, and none is marked Most or All.`
+}
+
+export function buildEn0ContextualReadText(petName: string, flags: ContextualFlag[], intakeRecord?: IntakeRecord): string {
+  if (flags.includes('feline_reduced_intake')) {
+    const p = petName || 'your pet'
+    // EN0_CONTEXT_STEP sets the record whenever this flag can fire; the line after `??`
+    // is the defensive form, still a statement about the log, never a conclusion.
+    const record = intakeRecord
+      ? intakeRecordSentence(p, intakeRecord)
+      : `The meal log doesn't show ${p} eating most or all of a meal around this vomit.`
+    return `${record} In a cat that's vomiting, that's worth a call to your vet sooner rather than later.`
+  }
+  return buildContextualReadText(petName, flags)
+}
+
+// A contextual escalation over a photo that escalated on its own: the photo finding leads,
+// named from the visual flags by the same template the visual-only read uses, then the
+// context. On 9/22 the possible foreign material went unsaid behind the intake sentence.
+export function buildEn0PhotoFirstReadText(
+  petName: string,
+  flags: ContextualFlag[],
+  visualFlags: string[],
+  intakeRecord?: IntakeRecord,
+): string {
+  return `I can see ${seenInPhoto(visualFlags)} in this photo. ${buildEn0ContextualReadText(petName, flags, intakeRecord)}`
+}
+
+export function en0VomitCopy(context: ContextInput): IncidentCopy<ContextualFlag> {
+  return {
+    ...VOMIT_COPY,
+    contextual: (petName, flags) => buildEn0ContextualReadText(petName, flags, context.intakeRecord),
+    contextualWithPhotoFinding: (petName, flags, visualFlags) =>
+      buildEn0PhotoFirstReadText(petName, flags, visualFlags, context.intakeRecord),
+  }
+}
+
+// The flags, and flag-on the copy their words come from. The same key gates the context
+// step (context.ts) and this copy; flag-off returns the flags alone, so the pipeline uses
+// VOMIT_COPY exactly as before.
+export function vomitContextualRun(
+  context: ContextInput,
+  engineFlags: EngineFlags,
+): ContextualFlag[] | ContextualRun<ContextualFlag> {
+  const flags = computeContextualFlags(context)
+  return isEngineKeyOn(engineFlags, 'engines_v3_en0') ? { flags, copy: en0VomitCopy(context) } : flags
 }
 
 // The load-bearing read selection, pure + exported so the never-reassure guarantee is
@@ -529,7 +600,7 @@ async function assembleContext(
   engineFlags: EngineFlags,
 ): Promise<ContextInput> {
   const nowMs = Date.now()
-  const w = vomitContextWindows(nowMs)
+  const w = vomitReadBounds(nowMs, thisEventOccurredAt, engineFlags)
 
   const [vomitsRes, lethargyRes, mealEventsRes] = await Promise.all([
     userClient
@@ -592,11 +663,13 @@ const VOMIT_DESCRIPTOR: IncidentDescriptor<VomitAnalysis, ContextualFlag> = {
   userMessageText: 'Analyse this photo of pet vomit.',
   // The descriptor half of rule_version (engineStamps.ts): bump with any change to
   // which findings become flags or to the contextual derivation (./context.ts).
-  ruleVersion: 'vomit1',
+  // 'vomit2': EN-0's union step and copy (CUL-1130). Flag-off rows carry it too; their
+  // derivation is vomit1's, and their engine_flags stamp ('{}') says so.
+  ruleVersion: 'vomit2',
   parseToolResult: parseAnalysisToolResult,
   appearsToShowSubject: (analysis) => analysis.appears_to_show_vomit,
   computeContextualFlags: async (userClient, { petId, occurredAt, species, engineFlags }) =>
-    computeContextualFlags(await assembleContext(userClient, petId, occurredAt, species, engineFlags)),
+    vomitContextualRun(await assembleContext(userClient, petId, occurredAt, species, engineFlags), engineFlags),
   copy: VOMIT_COPY,
   buildStructuredValues: buildVomitStructuredValues,
   redFlagColumns: RED_FLAG_COLUMNS,

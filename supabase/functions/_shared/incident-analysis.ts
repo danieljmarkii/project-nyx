@@ -195,6 +195,26 @@ export interface IncidentCopy<TFlag extends string = string> {
   visualFlagFallback(petName: string, visualFlags: string[]): string
   // not_enough_to_say — unclear photo, not the subject, or no photo at all.
   noFlag(petName: string, hasPhoto: boolean): string
+  // Optional (EN-0, CUL-1130; vomit's flag-on copy only). A contextual escalation over
+  // a photo that was read AND escalated on its own (a visual flag, or the model's own
+  // worth_a_call): the read names the photo finding FIRST, from a template, then the
+  // context. A copy without it keeps step 1's contextual template, so stool and
+  // flag-off vomit are unchanged. Never handed the model's words (Pattern 10).
+  contextualWithPhotoFinding?(petName: string, flags: TFlag[], visualFlags: string[]): string
+}
+
+// A descriptor's contextual flags with the copy this run's words come from (see
+// IncidentDescriptor.computeContextualFlags).
+export interface ContextualRun<TFlag extends string = string> {
+  flags: TFlag[]
+  copy: IncidentCopy<TFlag>
+}
+
+export function resolveContextualRun<TFlag extends string>(
+  result: TFlag[] | ContextualRun<TFlag>,
+  fallback: IncidentCopy<TFlag>,
+): ContextualRun<TFlag> {
+  return Array.isArray(result) ? { flags: result, copy: fallback } : result
 }
 
 export function selectReadText<TFlag extends string>(
@@ -207,11 +227,21 @@ export function selectReadText<TFlag extends string>(
     modelReadText: string | null
     photoUnreadable: boolean
     hasPhoto: boolean
+    // The model's OWN recommendation was worth_a_call. Read only by step 1's photo-first
+    // branch, and only to pick a template; the model's words stay out of it.
+    modelEscalated?: boolean
   },
 ): string {
   const { petName, recommendation, contextualFlags, visualFlags, modelReadText, photoUnreadable, hasPhoto } = params
   // 1. Floor escalated on CONTEXT — the model's photo-only read may contradict it.
-  if (contextualFlags.length > 0) return copy.contextual(petName, contextualFlags)
+  //    With a photo finding of its own, a copy that can say so names it first (EN-0).
+  if (contextualFlags.length > 0) {
+    const photoFinding = hasPhoto && !photoUnreadable && (visualFlags.length > 0 || params.modelEscalated === true)
+    if (photoFinding && copy.contextualWithPhotoFinding) {
+      return copy.contextualWithPhotoFinding(petName, contextualFlags, visualFlags)
+    }
+    return copy.contextual(petName, contextualFlags)
+  }
   // 2. Unreadable photo — honest failure, never reassures, never the model's words.
   if (photoUnreadable) return copy.photoUnreadable(petName)
   // 3. Escalation — the ONLY path that surfaces the model's free text (a model-
@@ -1030,10 +1060,15 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   // `engineFlags` is the Engines v3 flag state resolved for the record's owner
   // (engineFlags.ts); a descriptor that gates a rule on a key reads it here, and one
   // that gates nothing ignores it.
+  //
+  // It may return the flags alone, or the flags with the copy THIS run's words come from
+  // (a ContextualRun): EN-0's vomit copy states the record the flags were computed over,
+  // so it is built per run. Every read this run writes (the full read, the capped
+  // escalation, the failure rescue) takes that copy; without one, `copy` below.
   computeContextualFlags(
     userClient: SupabaseClient,
     event: { petId: string; occurredAt: string; species: string; eventType: string; engineFlags: EngineFlags },
-  ): Promise<TFlag[]>
+  ): Promise<TFlag[] | ContextualRun<TFlag>>
   // Per-type owner-facing read templates. Every new descriptor's strings need
   // their own reassurance-word regex test (Pattern 8) — not inherited.
   copy: IncidentCopy<TFlag>
@@ -1181,6 +1216,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   let petNameForFailure = 'your pet'
   let hasPhotoForFailure = false
   let contextualFlagsForFailure: TFlag[] = []
+  let copyForFailure: IncidentCopy<TFlag> = descriptor.copy
   let computedRead: RescueRead<TFlag> | null = null
   // The stamps this run's words carry (engineStamps.ts). Out here for the same reason as
   // the rescue's inputs: the catch's rescue writes words, so it writes their stamps.
@@ -1277,14 +1313,20 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //    therefore SURVIVE the cap. This is what guarantees a capped /
     //    flagged-off incident still escalates when the context warrants it — the
     //    invariant the adversarial review must try to break.
-    const contextualFlags = await descriptor.computeContextualFlags(userClient, {
-      petId,
-      occurredAt,
-      species,
-      eventType: incidentType,
-      engineFlags,
-    })
+    const contextRun = resolveContextualRun(
+      await descriptor.computeContextualFlags(userClient, {
+        petId,
+        occurredAt,
+        species,
+        eventType: incidentType,
+        engineFlags,
+      }),
+      descriptor.copy,
+    )
+    const contextualFlags = contextRun.flags
+    const copy = contextRun.copy
     contextualFlagsForFailure = contextualFlags
+    copyForFailure = copy
 
     // 3b. Existing analysis row — honors the never-clobber guard (B-028) in every
     //     write path below, and decides whether a cap/disabled STATE may be written
@@ -1353,7 +1395,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         // no structured data of its own to contribute, so an existing row has nothing
         // for it to overwrite and everything for it to lose.
         const preserveStructured = humanEdited || existingRealAnalysis || existing !== null
-        const readText = selectReadText(descriptor.copy, {
+        const readText = selectReadText(copy, {
           petName,
           recommendation: cappedRec, // worth_a_call
           contextualFlags,
@@ -1488,7 +1530,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // escalation path; the monitor / no-flag path is a deterministic template, so a
     // single sample can never assert an all-clear (the n=1 invariant, made structural
     // after a denylist proved too leaky to be the net — adversarial review 2026-06-24).
-    const readText = selectReadText(descriptor.copy, {
+    const readText = selectReadText(copy, {
       petName,
       recommendation,
       contextualFlags,
@@ -1496,6 +1538,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       modelReadText: analysis?.read_text ?? null,
       photoUnreadable,
       hasPhoto,
+      modelEscalated: analysis?.recommendation === 'worth_a_call',
     })
 
     // 8b. Post-floor gate on the model's free-text `description` (CUL-152 / B-179 — see
@@ -1618,7 +1661,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       petId: petIdForFailure,
       incidentType: incidentTypeForFailure,
       message,
-      rescue: buildRescueRead(descriptor.copy, {
+      rescue: buildRescueRead(copyForFailure, {
         computed: computedRead,
         contextualFlags: contextualFlagsForFailure,
         petName: petNameForFailure,
