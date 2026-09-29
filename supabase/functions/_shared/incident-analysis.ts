@@ -236,8 +236,9 @@ export interface ContextualRun<TFlag extends string = string, TAnalysis = unknow
   //   · and only on a SINGLE-photo event: the model returns one set of structured fields for
   //     every frame it saw, so a multi-photo read cannot say that each frame shows what a
   //     withdrawal needs (adversarial round 2, R3). A multi-photo read may still ADD.
-  // `stored` is the row read at step 3b with `afterReadColumns` selected, so an owner's
-  // correction can outrank the model (Pattern 7: the owner's edit wins; round 2, R2).
+  // `stored` is the fresh read taken straight after the vision call (step 6a, the row step 9
+  // decides on) with `afterReadColumns` selected, so an owner's correction, even one made
+  // during the call, can outrank the model (Pattern 7: the owner's edit wins; R2, R2c).
   withdrawable?: TFlag[]
   afterRead?(analysis: TAnalysis | null, stored: Record<string, unknown> | null): { flags: TFlag[]; copy: IncidentCopy<TFlag> }
 }
@@ -1658,6 +1659,20 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       }
     }
 
+    // 6a. The FRESH read of the stored row step 9 decides on (see readStoredRow for why the
+    //     vision call's window matters). Read here, straight after that call, so the post-read
+    //     hook below reads the same row step 9 does: an owner edit that landed during the
+    //     call is seen by both (adversarial round 3, R2c). Everything between here and step 9
+    //     is pure, so the window step 9 guards is unchanged.
+    const freshRow = await readStoredRow()
+    // CUL-1203 again, on the fresh read: a row that is not this event's must not steer
+    // a hold or a write. It can only appear mid-run if the event moved between one
+    // owner's pets (CUL-882); throwing lands in the catch, which folds the mismatch into
+    // "could not read" and writes nothing.
+    if (!analysisRowMatchesEvent(freshRow, petId)) {
+      throw new Error('Analysis row does not belong to this event')
+    }
+
     // 6b. The flags' second look, once the photo is read (EN-7; ContextualRun.afterRead).
     //     Only on a COMPLETE read: every photo on the event reached the model and a parsed
     //     analysis came back. Anything less keeps every flag step 3 computed. The rescue
@@ -1666,7 +1681,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     if (contextRun.afterRead && completeRead) {
       const merged = mergeAfterRead(
         { flags: contextualFlags, copy, withdrawable: photoPaths.length === 1 ? contextRun.withdrawable : [] },
-        contextRun.afterRead(analysis, existing),
+        contextRun.afterRead(analysis, freshRow),
       )
       contextualFlags = merged.flags
       copy = merged.copy
@@ -1763,14 +1778,6 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     }
 
     const structuredValues = descriptor.buildStructuredValues(analysis)
-    const freshRow = await readStoredRow()
-    // CUL-1203 again, on the fresh read: a row that is not this event's must not steer
-    // a hold or a write. It can only appear mid-run if the event moved between one
-    // owner's pets (CUL-882); throwing lands in the catch, which folds the mismatch into
-    // "could not read" and writes nothing.
-    if (!analysisRowMatchesEvent(freshRow, petId)) {
-      throw new Error('Analysis row does not belong to this event')
-    }
     const stored = snapshotStoredAnalysis(descriptor, freshRow)
     const writeBack = resolveReanalysisWrite({
       stored,

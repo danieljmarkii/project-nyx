@@ -38,12 +38,17 @@ EN-3's server half (CUL-1133) and EN-7 (CUL-1138), in one PR, shipped via the dr
 - **R3:** a multi-photo read returns one consistency for every frame. Fixed: the framework withdraws only on a single-photo event.
 - **R4:** the repeats sentence now says "in the days around this stool".
 
+**Round 3 (at `f064e67`): FAIL on one path that needs a client or PR-28 change, plus one fixed here.**
+- **R2c, fixed:** the post-read hook read the step-3b row, so an owner edit during the model call was missed. The fresh row is now read straight after the vision call and serves both the hook and step 9.
+- **R2b, gated:** an owner correcting a withdrawn formed read to watery re-checks nothing, because the edit writers invoke no read. No server change can see an edit, so it is filed as CUL-1408, a decision brief that blocks turning the key on (CUL-1407).
+- Note: flag-off row reads now also select `tier` and `stool_consistency`. Decisions and written values are unchanged, but the query text is not byte-identical.
+
 ## Proof
 
 - Deno: `_shared/`, `analyze-vomit/`, `analyze-stool/` (new `pipeline.test.ts` driving the real stool descriptor through the real pipeline, key off and on; new `en7.test.ts`), and `_shared/incident-tier.test.ts`. Jest: `lib/incidentTier.test.ts` and the two guards; the full suite ran green in the pre-push hook.
-- Mutation, each red: the tier gate, the keep-louder rule (write and cap), the failure write's louder column, the complete-read gate, the withdrawable bound, the stool flag gate, the intake arm, the repeat pin, withdrawing on any read form, EN-0's anchored intake half, the owner-consistency check and the single-photo bound.
+- Mutation, each red: the tier gate, the keep-louder rule (write and cap), the failure write's louder column, the complete-read gate, the withdrawable bound, the stool flag gate, the intake arm, the repeat pin, withdrawing on any read form, EN-0's anchored intake half, the owner-consistency check, the single-photo bound, and the hook reading the fresh row.
 
 ## Carried forward
 
 - PR-27: the tier-word map, every surface, Ask's one-line definitions, `escalationSurvivesFailure` on the louder column.
-- The Wave 4 allowlist step seeds `engines_v3_en3` (Waiting on PM).
+- The Wave 4 allowlist step seeds `engines_v3_en3` (CUL-1407, Waiting on PM), blocked by CUL-1408 (R2b).

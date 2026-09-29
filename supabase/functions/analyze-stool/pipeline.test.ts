@@ -30,6 +30,8 @@ interface World {
   photos?: number
   // A vision call that throws (e.g. a 529, or a 400 for an unreadable image).
   visionThrows?: string
+  // Runs inside the vision call: an owner edit landing in the 10-60 s window.
+  duringVision?: (w: World) => void
   en3: boolean
   vision: StoolAnalysis
   dayCount: number
@@ -109,6 +111,7 @@ function deps(w: World): PipelineDeps {
     // deno-lint-ignore require-await
     vision: (async () => {
       w.visionCalls++
+      w.duringVision?.(w)
       if (w.visionThrows) throw new Error(w.visionThrows)
       return structuredClone(w.vision)
     }) as PipelineDeps['vision'],
@@ -279,6 +282,16 @@ Deno.test('EN-7 R2 · a Re-run reading type 4 never withdraws over the owner\'s 
   const row = await read(w)
   assertStrictEquals(row.tier, 'call_today')
   assertStrictEquals(row.stool_consistency, 'type_7_watery') // the owner's edit is kept (Pattern 7)
+})
+
+Deno.test('EN-7 R2c · an owner correction to watery DURING the read is seen by the hook: the call stands', async () => {
+  const w = unreadWorld({
+    row: { id: 'a1', pet_id: 'pet-1', edited_at: null, stool_consistency: 'type_4_smooth_soft', recommendation: 'monitor', status: 'completed' },
+    duringVision: (world) => Object.assign(world.row!, { edited_at: '2026-09-29T00:00:00Z', stool_consistency: 'type_7_watery' }),
+  })
+  const row = await read(w)
+  assertStrictEquals(row.tier, 'call_today')
+  assertStrictEquals(row.stool_consistency, 'type_7_watery')
 })
 
 Deno.test('EN-7 F1 · a cat with no Most or All meal, one unopened photoless vomit, a formed stool: the call stands', async () => {
