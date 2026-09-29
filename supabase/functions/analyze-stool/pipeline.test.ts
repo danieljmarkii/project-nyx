@@ -24,7 +24,12 @@ const OWNER = 'owner-1'
 interface World {
   eventType: 'stool_normal' | 'diarrhea'
   stoolMs: number
-  others: { event_type: string; occurred_at: string }[]
+  others: { event_type: string; occurred_at: string; rating?: string | null }[]
+  species?: 'cat' | 'dog'
+  // How many photos the event carries (each is downloadable); the model reads the first 3.
+  photos?: number
+  // A vision call that throws (e.g. a 529, or a 400 for an unreadable image).
+  visionThrows?: string
   en3: boolean
   vision: StoolAnalysis
   dayCount: number
@@ -59,7 +64,7 @@ class FakeQuery {
       return {
         data: {
           id: 'evt-1', pet_id: 'pet-1', event_type: w.eventType, occurred_at: iso(w.stoolMs), deleted_at: null,
-          pets: { name: 'Cooper', species: 'dog', user_id: OWNER },
+          pets: { name: 'Cooper', species: w.species ?? 'dog', user_id: OWNER },
         },
         error: null,
       }
@@ -69,10 +74,13 @@ class FakeQuery {
       const rows = all
         .filter((e) => e.event_type === this.filters.event_type)
         .filter((e) => this.since === null || Date.parse(e.occurred_at) >= Date.parse(this.since))
-        .map((e) => ({ id: 'x', occurred_at: e.occurred_at }))
+        .map((e) => (e.event_type === 'meal' ? { occurred_at: e.occurred_at, meals: { intake_rating: e.rating ?? null } } : { id: 'x', occurred_at: e.occurred_at }))
       return { data: rows, error: null }
     }
-    if (this.table === 'event_attachments') return { data: [{ id: '0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b', storage_path: 'pet-1/evt-1/a.jpg' }], error: null }
+    if (this.table === 'event_attachments') {
+      const n = w.photos ?? 1
+      return { data: Array.from({ length: n }, (_, i) => ({ id: `0f8e7d6c-5b4a-4938-8271-605f4e3d2c1${i}`, storage_path: `pet-1/evt-1/${i}.jpg` })), error: null }
+    }
     if (this.table === 'app_config') {
       return { data: w.en3 ? [{ key: 'engines_v3_en3', value: { enabled: false, allowlist: [OWNER] } }] : [], error: null }
     }
@@ -101,12 +109,13 @@ function deps(w: World): PipelineDeps {
     // deno-lint-ignore require-await
     vision: (async () => {
       w.visionCalls++
+      if (w.visionThrows) throw new Error(w.visionThrows)
       return structuredClone(w.vision)
     }) as PipelineDeps['vision'],
   }
 }
 
-async function read(w: World): Promise<Row> {
+async function read(w: World, expectStatus = 200): Promise<Row> {
   const quiet = { error: console.error, warn: console.warn, info: console.info }
   console.error = console.warn = console.info = () => {}
   try {
@@ -115,7 +124,7 @@ async function read(w: World): Promise<Row> {
       new Request('http://local/analyze-stool', { method: 'POST', headers: { Authorization: 'Bearer t' }, body: JSON.stringify({ event_id: 'evt-1' }) }),
       deps(w),
     )
-    assertStrictEquals(res.status, 200)
+    assertStrictEquals(res.status, expectStatus)
   } finally {
     Object.assign(console, quiet)
   }
@@ -224,20 +233,60 @@ Deno.test('EN-7 · two vomits more than 4 h apart and nothing else: no repeat, s
   assertStrictEquals(on.tier, 'logged')
 })
 
-Deno.test('EN-7 · a capped read beside one vomit follows the owner: Loose escalates, Normal writes the cap state', async () => {
-  const loose = await read({
-    eventType: 'diarrhea', stoolMs: Date.now() - H, others: oneVomit(Date.now() - H), vision: WATERY,
-    en3: true, row: null, visionCalls: 0, dayCount: 11,
-  })
-  assertStrictEquals(loose.tier, 'call_today')
-  const w: World = {
-    eventType: 'stool_normal', stoolMs: Date.now() - H, others: oneVomit(Date.now() - H), vision: WATERY,
-    en3: true, row: null, visionCalls: 0, dayCount: 11,
+// F2: every path that never sees the stool's form keeps today's call.
+const unreadWorld = (o: Partial<World>): World => ({
+  eventType: 'stool_normal', stoolMs: Date.now() - H, others: oneVomit(Date.now() - H), vision: FORMED,
+  en3: true, row: null, visionCalls: 0, dayCount: 1, ...o,
+})
+
+Deno.test('EN-7 F2 · a capped read beside one vomit keeps the call, logged Normal or Loose', async () => {
+  for (const eventType of ['stool_normal', 'diarrhea'] as const) {
+    const w = unreadWorld({ eventType, dayCount: 11 })
+    const row = await read(w)
+    assertStrictEquals(w.visionCalls, 0)
+    assertStrictEquals(row.recommendation, 'worth_a_call', eventType)
+    assertStrictEquals(row.tier, 'call_today', eventType)
   }
-  const normal = await read(w)
-  assertStrictEquals(w.visionCalls, 0)
-  assertStrictEquals(normal.status, 'capped')
-  assertStrictEquals(normal.recommendation ?? null, null)
+})
+
+Deno.test('EN-7 F2 · an unreadable photo, a failed call, a partial read, type 5 or unsure: the call stands', async () => {
+  const unreadable = await read(unreadWorld({ visionThrows: 'Claude API error 400: could not process image' }))
+  assertStrictEquals(unreadable.tier, 'call_today')
+  const failed = await read(unreadWorld({ visionThrows: 'Claude API error 529: overloaded' }), 500)
+  assertStrictEquals(failed.recommendation, 'worth_a_call')
+  assertStrictEquals(failed.tier, 'call_today')
+  assertStrictEquals(failed.status, 'failed')
+  // Four photos, three read, all formed: an unread frame could be loose (B-203's reasoning).
+  const partial = await read(unreadWorld({ photos: 4 }))
+  assertStrictEquals(partial.tier, 'call_today')
+  assertEquals(partial.contextual_flags, ['concurrent_vomiting'])
+  for (const consistency of ['type_5_soft_blobs', 'unsure']) {
+    const row = await read(unreadWorld({ vision: { ...FORMED, consistency } }))
+    assertStrictEquals(row.tier, 'call_today', consistency)
+    assertStrictEquals(row.read_text, buildEn7VomitReadText('Cooper', 'unread'), consistency)
+  }
+  const notStool = await read(unreadWorld({ vision: { ...FORMED, appears_to_show_stool: false } }))
+  assertStrictEquals(notStool.tier, 'call_today')
+})
+
+Deno.test('EN-7 F1 · a cat with no Most or All meal, one unopened photoless vomit, a formed stool: the call stands', async () => {
+  const stoolMs = Date.now() - H
+  const row = await read(unreadWorld({
+    species: 'cat',
+    others: [
+      ...oneVomit(stoolMs),
+      { event_type: 'meal', occurred_at: iso(stoolMs - 6 * H), rating: 'some' },
+      { event_type: 'meal', occurred_at: iso(stoolMs - 72 * H), rating: 'all' },
+    ],
+  }))
+  assertStrictEquals(row.tier, 'call_today')
+  assertStrictEquals(row.read_text, buildEn7VomitReadText('Cooper', 'intake'))
+  // The same cat after a Most meal: the pair adds nothing, the stool's own read stands.
+  const fed = await read(unreadWorld({
+    species: 'cat',
+    others: [...oneVomit(stoolMs), { event_type: 'meal', occurred_at: iso(stoolMs - 6 * H), rating: 'most' }],
+  }))
+  assertStrictEquals(fed.tier, 'logged')
 })
 
 Deno.test('EN-7 · a vomit stays a flag the stool read cannot drop once the record gave it (the hook only adds)', async () => {

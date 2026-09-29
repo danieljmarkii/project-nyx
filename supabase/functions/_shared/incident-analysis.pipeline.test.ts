@@ -757,16 +757,15 @@ Deno.test('pipeline EN-3 flag-off — no write in any path names the tier (the c
   }
 })
 
-Deno.test('pipeline EN-3 never-lower — a stored call now is held over a tiered call today, words and all', async () => {
+Deno.test('pipeline EN-3 never-lower — a call today over a stored call now writes its finding and keeps call now (F3)', async () => {
   const w = makeWorld({
-    row: { recommendation: 'worth_a_call', tier: 'call_now', status: 'completed', read_text: 'EARLIER CALL NOW', blood_col: 'yes' },
+    row: { recommendation: 'worth_a_call', tier: 'call_now', status: 'completed', read_text: 'EARLIER CALL NOW', blood_col: 'no' },
     vision: () => BLOODY, appConfig: EN3_FOR_OWNER,
   })
-  const r = await run(w)
-  assertStrictEquals(r.body.held, true)
-  assertEquals(w.writes, [])
+  await run(w)
   assertStrictEquals(w.row?.tier, 'call_now')
-  assertStrictEquals(w.row?.read_text, 'EARLIER CALL NOW')
+  assertStrictEquals(w.row?.blood_col, 'yes') // the new finding reaches the structured columns
+  assertEquals(w.row?.visual_flags, ['blood'])
 })
 
 Deno.test('pipeline EN-3 never-lower — a capped call today never steps a stored call now down', async () => {
@@ -775,9 +774,8 @@ Deno.test('pipeline EN-3 never-lower — a capped call today never steps a store
     contextFlags: ['ctx_flag'], dayCount: 11, vision: () => CLEAN, appConfig: EN3_FOR_OWNER,
   })
   await run(w)
-  assertEquals(w.writes, [])
   assertStrictEquals(w.row?.tier, 'call_now')
-  assertStrictEquals(w.row?.read_text, 'EARLIER CALL NOW')
+  assertEquals(w.row?.contextual_flags, ['ctx_flag'])
 })
 
 Deno.test('pipeline EN-3 never-lower — quiet tiers move freely: an unreadable re-read collapses a stored logged', async () => {

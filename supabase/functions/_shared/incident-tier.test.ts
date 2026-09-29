@@ -9,6 +9,7 @@ import {
   buildRescueRead,
   holdsOver,
   type IncidentCopy,
+  keepLouderTier,
   isRealAnalysis,
   mergeAfterRead,
   resolveReanalysisWrite,
@@ -77,42 +78,50 @@ Deno.test('EN-3 never-lower — with no tier on the stored row, the hold is exac
   }
 })
 
-Deno.test('EN-3 never-lower — a tiered call never steps a louder stored call down (the PR-04b note)', () => {
-  const callToday = { recommendation: 'worth_a_call' as const, tier: 'call_today' as const }
-  assertStrictEquals(holdsOver({ recommendation: 'worth_a_call', tier: 'call_now' }, callToday), true)
-  // A value this build does not know ranks as call now (CUL-1277 taken to the top).
-  assertStrictEquals(holdsOver({ recommendation: 'something_new', tier: null }, callToday), true)
-  // Equal or louder writes.
-  assertStrictEquals(holdsOver({ recommendation: 'worth_a_call', tier: 'call_today' }, callToday), false)
-  assertStrictEquals(holdsOver({ recommendation: 'worth_a_call', tier: null }, callToday), false)
+Deno.test('EN-3 never-lower — a call over a louder stored call writes, and keeps the louder tier (the PR-04b note, F3)', () => {
+  const callToday = tieredReadFields({ ...FIELDS, recommendation: 'worth_a_call' }, true)
+  // An escalation over an escalation is never held: its findings must land.
+  assertStrictEquals(holdsOver({ recommendation: 'worth_a_call', tier: 'call_now' }, callToday), false)
+  assertStrictEquals(keepLouderTier({ tier: 'call_now' }, callToday).tier, 'call_now')
+  assertStrictEquals(keepLouderTier({ tier: 'call_today' }, callToday).tier, 'call_today')
+  // Equal or louder: this run's tier.
+  assertStrictEquals(keepLouderTier({ tier: null }, callToday).tier, 'call_today')
+  // A verdict alone never mints a tier; an unknown tier value is not copied forward.
+  assertStrictEquals(keepLouderTier({ tier: 'something_new' }, callToday).tier, 'call_today')
+  // Flag-off writes carry no tier and are untouched.
+  assertEquals(keepLouderTier({ tier: 'call_now' }, FIELDS), FIELDS)
 })
 
 Deno.test('EN-3 never-lower — only the calls bind: logged ↔ not_enough_to_say is free both ways', () => {
-  assertStrictEquals(holdsOver({ recommendation: 'monitor', tier: 'logged' }, { recommendation: 'not_enough_to_say', tier: 'not_enough_to_say' }), false)
-  assertStrictEquals(holdsOver({ recommendation: 'not_enough_to_say', tier: 'not_enough_to_say' }, { recommendation: 'monitor', tier: 'logged' }), false)
+  const nets = tieredReadFields({ ...FIELDS, recommendation: 'not_enough_to_say' }, true)
+  const logged = tieredReadFields({ ...FIELDS, recommendation: 'monitor' }, true)
+  assertStrictEquals(holdsOver({ recommendation: 'monitor', tier: 'logged' }, nets), false)
+  assertStrictEquals(keepLouderTier({ tier: 'logged' }, nets).tier, 'not_enough_to_say')
+  assertStrictEquals(holdsOver({ recommendation: 'not_enough_to_say', tier: 'not_enough_to_say' }, logged), false)
 })
 
 Deno.test('EN-3 never-lower — a stored call tier beside a lowered verdict still holds, flag on or off', () => {
   // A client can lower `recommendation` (CUL-1321 M1); `tier` is frozen to clients (079).
   const lowered = { recommendation: 'monitor', tier: 'call_today' }
-  assertStrictEquals(holdsOver(lowered, { recommendation: 'monitor' }), true) // flag-off calm read
-  assertStrictEquals(holdsOver(lowered, { recommendation: 'monitor', tier: 'logged' }), true) // flag-on
+  assertStrictEquals(holdsOver(lowered, { recommendation: 'monitor' }), true)
+  assertStrictEquals(holdsOver(lowered, { recommendation: 'not_enough_to_say' }), true)
 })
 
-Deno.test('EN-3 never-lower — resolveReanalysisWrite holds a stored call now over a tiered call today', () => {
+Deno.test('EN-3 never-lower — resolveReanalysisWrite writes a call today over a stored call now, at call now', () => {
   const w = resolveReanalysisWrite({
-    stored: stored({ tier: 'call_now' }), eventId: 'e', petId: 'p', incidentType: 'vomit', structuredValues: {},
-    nextPresentFlags: [], readFields: tieredReadFields({ ...FIELDS, recommendation: 'worth_a_call' }, true),
-  })
-  assertEquals(w, { mode: 'hold', values: null })
-  // Flag-off, the same write goes through: the column is left alone, so the stored call now
-  // stays on the row and readers take the louder column.
+    stored: stored({ tier: 'call_now' }), eventId: 'e', petId: 'p', incidentType: 'vomit', structuredValues: { blood_col: 'yes' },
+    nextPresentFlags: ['blood'], readFields: tieredReadFields({ ...FIELDS, recommendation: 'worth_a_call' }, true),
+  }) as { mode: string; values: Record<string, unknown> }
+  assertStrictEquals(w.mode, 'upsert')
+  assertStrictEquals(w.values.tier, 'call_now')
+  assertStrictEquals(w.values.blood_col, 'yes') // the new finding lands
+  // Flag-off: the column is left alone (the stored call now stays on the row).
   const off = resolveReanalysisWrite({
     stored: stored({ tier: 'call_now' }), eventId: 'e', petId: 'p', incidentType: 'vomit', structuredValues: {},
     nextPresentFlags: [], readFields: { ...FIELDS, recommendation: 'worth_a_call' },
-  })
+  }) as { mode: string; values: Record<string, unknown> }
   assertStrictEquals(off.mode, 'upsert')
-  assertStrictEquals('tier' in (off as { values: Record<string, unknown> }).values, false)
+  assertStrictEquals('tier' in off.values, false)
 })
 
 // ── The failure path ───────────────────────────────────────────────────────────────────
@@ -157,12 +166,14 @@ Deno.test('EN-3 — isRealAnalysis: a failed row holding a call tier is real (th
 
 // ── mergeAfterRead: the post-read hook can only add ────────────────────────────────────
 
-Deno.test('EN-7 — the post-read hook cannot take a flag the record gave', () => {
+Deno.test('EN-7 — the post-read hook can take away only a flag named withdrawable', () => {
   const other: IncidentCopy = { ...COPY, monitor: () => 'OTHER' }
   const merged = mergeAfterRead({ flags: ['a', 'b'], copy: COPY }, { flags: [], copy: other })
   assertEquals(merged.flags, ['a', 'b'])
   assertStrictEquals(merged.copy, other)
   assertEquals(mergeAfterRead({ flags: ['a'], copy: COPY }, { flags: ['c', 'a'], copy: COPY }).flags, ['a', 'c'])
+  assertEquals(mergeAfterRead({ flags: ['a', 'b'], copy: COPY, withdrawable: ['b'] }, { flags: [], copy: COPY }).flags, ['a'])
+  assertEquals(mergeAfterRead({ flags: ['a', 'b'], copy: COPY, withdrawable: ['b'] }, { flags: ['b'], copy: COPY }).flags, ['a', 'b'])
 })
 
 // ── Ask never sees the raw tier (spec §4; the PR-25 privacy note) ──────────────────────

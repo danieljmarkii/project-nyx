@@ -67,6 +67,7 @@ import { isEscalationVerdict, isQuietVerdict } from '../../../lib/incidentVerdic
 import {
   effectiveTierRank,
   type IncidentTier,
+  isIncidentTier,
   TIER_RANK,
   tierForVerdict,
   tierRank,
@@ -217,26 +218,35 @@ export interface IncidentCopy<TFlag extends string = string> {
 export interface ContextualRun<TFlag extends string = string, TAnalysis = unknown> {
   flags: TFlag[]
   copy: IncidentCopy<TFlag>
-  // Optional (EN-7, CUL-1138; stool's flag-on rule only). A contextual flag whose trigger
-  // needs the photo's read as well as the record: stool's concurrent_vomiting fires on a
-  // vomit beside a LOOSE stool, and the read can see a loose stool the owner logged as
-  // Normal. Built by the descriptor with this run's context, and called once after the
-  // vision call with the parsed analysis (null when no model ran or none came back). It may
-  // ADD flags and pick the copy their words come from; the framework keeps every flag the
-  // record gave whatever it returns (mergeAfterRead), so a descriptor still cannot weaken
-  // the floor. A capped run never reaches it, so a flag the record alone can prove belongs
-  // in `flags`, never here.
+  // Optional (EN-7, CUL-1138; stool's flag-on rule only): a second look at the flags once the
+  // photo has been read. Stool's concurrent_vomiting is right beside a loose stool and adds
+  // nothing beside a formed one, and only the read can tell them apart.
+  //
+  // `withdrawable` names the flags the read may take away. It is a DELIBERATE framework
+  // change to "a descriptor cannot weaken the floor", bounded three ways, all enforced here
+  // (mergeAfterRead and the call site), never left to the descriptor:
+  //   · a flag not named in `withdrawable` can never leave;
+  //   · the hook runs only on a COMPLETE read: every photo on the event reached the model
+  //     and a parsed analysis came back. A capped run, an unreadable or partly read photo,
+  //     no photo and a failed call never reach it, so each of them keeps every flag the
+  //     record gave (B-203's reasoning: an unseen frame could hold what the read ones lack);
+  //   · the flags computed before the read are what the cap branch and the rescue write, so
+  //     a withdrawal can only follow a read that happened.
+  // The hook may also ADD flags and choose the copy the words come from.
+  withdrawable?: TFlag[]
   afterRead?(analysis: TAnalysis | null): { flags: TFlag[]; copy: IncidentCopy<TFlag> }
 }
 
 // The post-read hook's answer, folded in: every pre-vision flag stays, in its order, and
 // the hook's additions follow. The hook's copy is taken, since it knows about both halves.
 export function mergeAfterRead<TFlag extends string>(
-  before: { flags: TFlag[]; copy: IncidentCopy<TFlag> },
+  before: { flags: TFlag[]; copy: IncidentCopy<TFlag>; withdrawable?: readonly TFlag[] },
   after: { flags: TFlag[]; copy: IncidentCopy<TFlag> },
 ): { flags: TFlag[]; copy: IncidentCopy<TFlag> } {
-  const added = after.flags.filter((f) => !before.flags.includes(f))
-  return { flags: [...before.flags, ...added], copy: after.copy }
+  const withdrawable = before.withdrawable ?? []
+  const kept = before.flags.filter((f) => after.flags.includes(f) || !withdrawable.includes(f))
+  const added = after.flags.filter((f) => !kept.includes(f))
+  return { flags: [...kept, ...added], copy: after.copy }
 }
 
 export function resolveContextualRun<TFlag extends string, TAnalysis = unknown>(
@@ -550,28 +560,37 @@ export type ReanalysisWrite =
 // finds a different one keeps the stored columns, so the new finding reaches the card
 // (the verdict and read escalate) but not the structured fields. The per-field union
 // needs per-field provenance for ai_raw_payload, which is CUL-1110's design.
-// Does the stored row hold over this run's read? Rule 1 above, in ranks (lib/incidentTier.ts).
+// Does the stored row hold over this run's read? Rule 1 above, in ranks (lib/incidentTier.ts):
+// a stored escalation holds over a calmer VERDICT. "Stored escalation" is the louder of the
+// row's two columns, so with no tier on the row (every pre-PR-26 row, every flag-off row) it is
+// exactly today's test, the CUL-1277 allowlist included. A tier written under the key keeps
+// protecting after a rollback, and after a client lowered `recommendation` beside it
+// (CUL-1321's M1): the tier is frozen to clients (079), the verdict is not.
 //
-// Every write: a stored escalation holds over a calmer verdict. "Stored escalation" is the
-// louder of the row's two columns, so with no tier on the row (every pre-PR-26 row, every
-// flag-off row) it is exactly today's test, the CUL-1277 allowlist included (an unknown
-// verdict ranks as a call). A tier written under the key keeps protecting after a rollback,
-// and after a client lowered `recommendation` beside it (CUL-1321's M1): the tier is frozen
-// to clients (079), the verdict is not.
-//
-// A tiered write (this run is under the key, so its read fields carry a tier) also holds
-// when it would step a call DOWN: a stored call now is never replaced by a call today (the
-// PR-04b note on CUL-1133: "an escalation replacing an escalation never steps down"). The
-// quiet tiers share a rank, so logged ↔ not_enough_to_say stays free (B-203, CUL-812).
-// Only the call tiers bind.
+// An escalation over an escalation is never held, whatever the tiers: the new run may carry
+// a finding the stored one lacks (fresh blood on a re-read), and a hold would keep it off the
+// structured columns Home and the vet report derive from (adversarial F3 on this PR). Its
+// TIER cannot step down instead: keepLouderTier below.
 export function holdsOver(
   stored: Pick<StoredAnalysis, 'recommendation' | 'tier'>,
-  next: Pick<AnalysisReadFields, 'recommendation' | 'tier'>,
+  next: Pick<AnalysisReadFields, 'recommendation'>,
 ): boolean {
-  const storedRank = effectiveTierRank(stored)
-  if (storedRank === TIER_RANK.quiet) return false
-  if (!isEscalationVerdict(next.recommendation)) return true
-  return next.tier !== undefined && tierRank(next.tier) < storedRank
+  return effectiveTierRank(stored) !== TIER_RANK.quiet && !isEscalationVerdict(next.recommendation)
+}
+
+// Never-lower on the call tiers (spec §1; the PR-04b note on CUL-1133): a tiered call written
+// over a louder stored call carries the stored tier, so a call now is never replaced by a call
+// today while the new run's findings and words still land. Only a known stored tier is kept:
+// a verdict alone never mints a tier. The quiet tiers are not touched, so logged ↔
+// not_enough_to_say stays free (B-203, CUL-812), and flag-off (no tier on the write) is today.
+export function keepLouderTier<TFlag extends string>(
+  stored: Pick<StoredAnalysis, 'tier'> | null,
+  readFields: AnalysisReadFields<TFlag>,
+): AnalysisReadFields<TFlag> {
+  if (!stored || readFields.tier === undefined || !isIncidentTier(stored.tier)) return readFields
+  const storedRank = tierRank(stored.tier)
+  if (storedRank === TIER_RANK.quiet || storedRank <= tierRank(readFields.tier)) return readFields
+  return { ...readFields, tier: stored.tier }
 }
 
 export function resolveReanalysisWrite<TFlag extends string>(params: {
@@ -595,6 +614,7 @@ export function resolveReanalysisWrite<TFlag extends string>(params: {
       },
     }
   }
+  const readFieldsKept = keepLouderTier(stored, readFields)
   const dropsStoredFlag = !!stored &&
     stored.presentFlags.some((flag) => !params.nextPresentFlags.includes(flag))
   return buildAnalysisWriteBack({
@@ -603,7 +623,7 @@ export function resolveReanalysisWrite<TFlag extends string>(params: {
     petId: params.petId,
     incidentType: params.incidentType,
     structuredValues: params.structuredValues,
-    readFields,
+    readFields: readFieldsKept,
   })
 }
 
@@ -1538,40 +1558,20 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           status: 'completed',
           error: null,
         }, tiersOn)
-        // Under the tier key, a capped call never steps a stored louder call down (spec §1,
-        // the PR-04b note): the same hold step 9 takes, decided on the step-3b row, because
-        // this branch makes no vision call and so has no window for a sibling to land in.
-        // With the key off this branch writes as it always has.
-        const storedForCap = tiersOn ? snapshotStoredAnalysis(descriptor, existing) : null
-        if (storedForCap && holdsOver(storedForCap, readFields)) {
-          // The same decision step 9 takes (holdsOver is its first test), so a hold here is
-          // step 9's hold: it settles a stale status and clears a hide, nothing else.
-          const held = resolveReanalysisWrite({
-            stored: storedForCap,
-            eventId,
-            petId,
-            incidentType,
-            structuredValues: {},
-            nextPresentFlags: storedForCap.presentFlags,
-            readFields,
-          })
-          console.info(`${descriptor.functionName}: capped run held a louder stored call (EN-3)`)
-          if (held.mode === 'hold' && held.values) {
-            const { error: settleError } = await updateAnalysisRow(adminClient, { eventId, petId }, held.values)
-            if (settleError) throw new Error(`DB write failed: ${settleError}`)
-          }
-        } else {
-          const writeBack = buildAnalysisWriteBack({
-            humanEdited: preserveStructured,
-            eventId,
-            petId,
-            incidentType,
-            structuredValues: descriptor.buildStructuredValues(null),
-            readFields,
-          })
-          const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps)
-          if (writeError) throw new Error(`DB write failed: ${writeError}`)
-        }
+        // Under the tier key a capped call never steps a louder stored call down (spec §1,
+        // the PR-04b note): it keeps the stored tier, from the step-3b row, because this branch
+        // makes no vision call and so has no window for a sibling to land in.
+        const readFieldsKept = keepLouderTier(snapshotStoredAnalysis(descriptor, existing), readFields)
+        const writeBack = buildAnalysisWriteBack({
+          humanEdited: preserveStructured,
+          eventId,
+          petId,
+          incidentType,
+          structuredValues: descriptor.buildStructuredValues(null),
+          readFields: readFieldsKept,
+        })
+        const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps)
+        if (writeError) throw new Error(`DB write failed: ${writeError}`)
       } else if (!existingRealAnalysis) {
         // No escalation AND no prior real analysis to protect → record the cap /
         // disabled STATE (§4.5) so the client renders its designed state (T2-4).
@@ -1647,11 +1647,16 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       }
     }
 
-    // 6b. A contextual flag that needs the photo's read too (EN-7). Only ADDS: every flag
-    //     step 3 computed stays (mergeAfterRead). The rescue takes the merged run, so a
-    //     write that fails after this point keeps what the read added.
-    if (contextRun.afterRead) {
-      const merged = mergeAfterRead({ flags: contextualFlags, copy }, contextRun.afterRead(analysis))
+    // 6b. The flags' second look, once the photo is read (EN-7; ContextualRun.afterRead).
+    //     Only on a COMPLETE read: every photo on the event reached the model and a parsed
+    //     analysis came back. Anything less keeps every flag step 3 computed. The rescue
+    //     takes the merged run, so a write that fails after this point keeps its result.
+    const completeRead = analysis !== null && photoPaths.length > 0 && usableReadCount === photoPaths.length
+    if (contextRun.afterRead && completeRead) {
+      const merged = mergeAfterRead(
+        { flags: contextualFlags, copy, withdrawable: contextRun.withdrawable },
+        contextRun.afterRead(analysis),
+      )
       contextualFlags = merged.flags
       copy = merged.copy
       contextualFlagsForFailure = contextualFlags
