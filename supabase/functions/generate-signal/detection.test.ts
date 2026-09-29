@@ -2071,17 +2071,51 @@ Deno.test('detectReflections — PR-14c: the gate is pet-wide (a heavy vomit wee
   assert.deepEqual(detectReflections(input({ symptomEvents })), [])
 })
 
-Deno.test('detectReflections — PR-14c: the floor counts collapsed EPISODES, not raw re-logs', () => {
-  // Four logs of one vomit inside the episode gap are one episode: a re-logging owner must not
-  // mute a genuinely calm week. Current = 3 episodes (one of them logged 4×), prior = 5.
+Deno.test('detectReflections — PR-14c: a re-log of one vomit inside a minute counts once', () => {
+  // Four taps on one vomit (20s apart) are one vomit under the report's §5.11 rule, so a
+  // re-logging owner does not mute a genuinely calm week. Current = 3 vomits, prior = 5.
+  const relog = (sec: number) => symptom('vomit', `2026-05-24T08:00:${String(sec).padStart(2, '0')}.000Z`)
   const symptomEvents = [
-    symptom('vomit', at(24, 8)), symptom('vomit', at(24, 8, 10)), symptom('vomit', at(24, 8, 20)), symptom('vomit', at(24, 8, 30)),
+    relog(0), relog(20), relog(40), relog(59),
     symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
     ...vomitDays(17, 5),
   ]
   const findings = detectReflections(input({ symptomEvents }))
   assert.equal(findings.length, 1)
   assert.equal(findings[0].currentCount, 3)
+})
+
+Deno.test('detectReflections — PR-14c: separate same-day episodes count (4 episodes on 2 days mutes)', () => {
+  // Kills the `currentDays` mutant: episodes ≠ days here, and 4 episodes is the floor.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(24, 14)), symptom('vomit', at(26, 8)), symptom('vomit', at(26, 14)),
+    ...vomitDays(17, 6),
+  ]
+  assert.deepEqual(detectReflections(input({ symptomEvents })), [])
+})
+
+Deno.test('detectReflections — PR-14c: a CHAINED heavy week mutes (30 vomits that collapse to 3 episodes)', () => {
+  // Adversarial record A: ten vomits 2.5h apart on the 24th, 26th and 28th. The 3h chain makes each
+  // day ONE episode (3 vs 5 → "down from 5"), but a vet counts thirty vomits.
+  const day = (d: number) =>
+    Array.from({ length: 10 }, (_, i) => symptom('vomit', new Date(Date.parse(at(d, 0)) + i * 150 * 60_000).toISOString()))
+  const symptomEvents = [...day(24), ...day(26), ...day(28), ...vomitDays(17, 5)]
+  const inp = input({ symptomEvents })
+  assert.equal(
+    detectReflections(inp, { ...DEFAULT_CONFIG, reflection: { ...DEFAULT_CONFIG.reflection, burdenMuteMinEpisodes: 1e9 } })[0]
+      ?.currentCount,
+    3,
+    'non-vacuity: without the gate this record renders a 3-episode "down from 5"',
+  )
+  assert.deepEqual(detectReflections(inp), [])
+})
+
+Deno.test('detectReflections — PR-14c: a chain straddling the window start still counts its in-window vomits', () => {
+  // Adversarial record D: a chain opens 1h before the current window (May 23 11:00) and drips every
+  // 2.5h well into it. The episode lands in the PRIOR week; its in-window vomits are this week's.
+  const chain = Array.from({ length: 12 }, (_, i) => symptom('vomit', new Date(Date.parse(at(23, 11)) + i * 150 * 60_000).toISOString()))
+  const symptomEvents = [...chain, symptom('vomit', at(27, 8)), symptom('vomit', at(28, 8)), ...vomitDays(17, 3)]
+  assert.deepEqual(detectReflections(input({ symptomEvents })), [])
 })
 
 Deno.test('DEFAULT_CONFIG — PR-14c burden floor is pinned at FCEAI severe (a change is a CUL-583 ruling)', () => {

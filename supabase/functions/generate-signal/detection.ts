@@ -2004,8 +2004,8 @@ export interface DetectionConfig {
     worseningDenseDayFloor: number
     /**
      * Absolute-burden mute floor (PR-14c, CUL-1311 GAP-5): the whole reflection layer stays
-     * silent while ANY tracked sign has at least this many current-window episodes, whatever
-     * last week held. The worsening and chronicity gates are both RELATIVE (a rise, or weeks
+     * silent while ANY tracked sign has at least this many current-window logs (re-logs of one
+     * vomit collapsed, never the 3h episode chain), whatever last week held. The worsening and chronicity gates are both RELATIVE (a rise, or weeks
      * of history), so a pet at 6 then 5 a week, not yet chronic, cleared both and got a calm
      * "down from 6". A high count is not a reassuring count, whichever way it moved.
      *
@@ -3921,6 +3921,13 @@ interface SymptomStat {
   priorCount: number
   currentDays: number
   priorDays: number
+  /**
+   * Current-window LOGS with only near-duplicate re-logs collapsed (the report's §5.11 rule,
+   * `INCIDENT_RELOG_DEDUP_MS`), NOT the 3h episode chain. Read only by ③'s burden gate
+   * (PR-14c): the chain has no length cap, so ten vomits 2.5h apart are one episode, and a
+   * floor stated in vomits (FCEAI) must count vomits (CUL-1311 adversarial pass, record A).
+   */
+  currentLogs: number
 }
 
 interface WindowedStats {
@@ -4005,12 +4012,18 @@ function computeWindowedStats(input: DetectionInput, config: DetectionConfig): W
     const onsets = toEpisodeOnsets(msList, config.symptomEpisodeGapHours)
     const cur = onsets.filter((ms) => ms >= currentStart && ms < nowMs)
     const pri = onsets.filter((ms) => ms >= priorStart && ms < currentStart)
+    // Every raw log in the window, re-logs collapsed: a chain straddling the window's start
+    // files its whole episode under the prior week, but its in-window vomits still count here.
+    const currentLogs = countFlaggedClusters(
+      msList.filter((ms) => ms >= currentStart && ms < nowMs).map((ms) => ({ ms, flagged: true })),
+    )
     stats.push({
       symptomType,
       currentCount: cur.length,
       priorCount: pri.length,
       currentDays: new Set(cur.map((ms) => Math.floor(ms / MS_PER_DAY))).size,
       priorDays: new Set(pri.map((ms) => Math.floor(ms / MS_PER_DAY))).size,
+      currentLogs,
     })
   }
   return { stats, loggingEligible }
@@ -4088,9 +4101,14 @@ export function detectReflections(
   // Unlike the two above it has no safety twin yet: the burden card is CUL-1311 scope 2,
   // so today this mute leaves the case to the safety lanes that already exist rather than
   // handing it to a card of its own. Silence is not an all-clear; a calm sentence over a
-  // severe week is the thing it removes. Same `stats` (collapsed episodes, same window)
-  // the worsening gate reads, so the two can never disagree about the count.
-  if (stats.some((s) => s.currentCount >= cfg.burdenMuteMinEpisodes)) return []
+  // severe week is the thing it removes.
+  //
+  // It counts VOMITS, not 3h episodes: the floor is FCEAI's, stated in vomits, and the episode
+  // chain has no length cap (ten vomits 2.5h apart are one episode; a 36h drip of fifteen is
+  // one). So it reads the re-log-deduped log count; re-logs of one vomit inside a minute stay
+  // one (the vet report's §5.11 rule). That count is never below the episode count (each
+  // onset is a log 3h+ from the next, and a re-log cluster spans a minute), so it needs no max.
+  if (stats.some((s) => s.currentLogs >= cfg.burdenMuteMinEpisodes)) return []
 
   // Candidates: flat-or-improving on BOTH episode count AND symptom-day spread, on a
   // real current count, with enough history in the busier window to state a trend.
