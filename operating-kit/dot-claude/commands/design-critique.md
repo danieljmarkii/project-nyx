@@ -22,7 +22,7 @@ What makes it work, and what this command locks in:
 | A requirements spec (`docs/<product>-*-requirements.md`) | `spec` | before the build issues are cut |
 | A shipped surface: its screen and component files, plus the PM's screenshots | `shipped` | to improve what ships, or a finish pass before GA |
 
-Not for a code diff (`/code-review`, `code-reviewer`), a statistics check (`adversarial-reviewer`), an access-control check (`rls-privacy-reviewer`), or a quick product read of a built feature with no decisions to make (`/pm-review`).
+Not for a code diff (`/code-review`, `code-reviewer`), a statistics check (`adversarial-reviewer`), an access-control check (`security-privacy-reviewer`), or a quick product read of a built feature with no decisions to make (`/pm-review`).
 
 ## Depth
 
@@ -76,10 +76,10 @@ Default to full for a mock round or a spec headed to build, light otherwise. Nam
      },
      settled: ['...'], overruled: ['...'], open: ['...'],
      exclude: ['<issue> comments', 'docs/sessions/<the round record>.md'],   // deliberation a lens reads only after its findings
-     standards: ['docs/<product>-<surface>-requirements.md §1'],                   // on top of the principles, Design v2, C-rules, personas
+     standards: ['docs/<product>-<surface>-requirements.md §1'],                   // on top of the principles, the conventions, personas
      lenses: [
        { key: 'designer', focus: '...' },
-       { key: 'tns', agentType: 'rls-privacy-reviewer', focus: '...' },
+       { key: 'tns', agentType: 'security-privacy-reviewer', focus: '...' },
        { key: 'a11y', name: 'Accessibility', code: 'A11Y', mandate: '...', focus: '...' },
      ],
    } })
@@ -98,7 +98,7 @@ Default to full for a mock round or a spec headed to build, light otherwise. Nam
    - The briefs, posted on the issue.
    - **The filing bar:** a finding becomes a {{TRACKER}} issue only when a verifier CONFIRMED it (or the lead reproduced it) **and** it is a defect in shipped code or a gate on the next step. Everything else lives in the doc.
 
-7. **Offer the next step:** a mock round that draws the recommendations as current frames with the open alternatives beside them (CLAUDE.md § Mock what you change; a reaction round republishes as one proposal).
+7. **Offer the next step:** a mock round that draws the recommendations as current frames with the open alternatives beside them (CLAUDE.md § Presenting decisions to the PM, "Mock what you change"; a reaction round republishes as one proposal).
 
 ## Rules
 

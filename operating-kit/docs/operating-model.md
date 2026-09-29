@@ -108,7 +108,7 @@ A quick-win label was ~60% stale within weeks; 10 of 21 "quick wins" had a disqu
 
 - The auto-loaded manual is the single largest fixed cost: every byte is paid on every turn of every session. Rules live in the manual; stories live in `docs/engineering-lessons.md`.
 - `git status` before the first commit. Push once, then end the turn.
-- Two tracker writes per issue per session: the claim and the outcome.
+- Keep tracker writes per issue minimal: the claim at start and the outcome at wrap, plus the state moves they carry. No running commentary.
 - One foreground code review, told what is already proven.
 - One-line status updates while waiting on background work; never poll.
 - Push early. Cloud containers restart and take unpushed work with them.

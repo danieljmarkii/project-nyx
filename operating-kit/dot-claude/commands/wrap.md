@@ -18,7 +18,7 @@ Run the close-out **in this exact order**. Every session ends the same way, and 
 
    **If a decision changed the operating manual**, update CLAUDE.md now (Tier 1), and pay for the addition with a deletion: the byte ratchet will red the build otherwise. **If you materially edited a living doc**, bump its header date in the same commit.
 
-   Commit all of this **onto the session's existing branch**, so it rides the session's one PR. Create the draft PR first if it does not exist (the number is assigned at creation).
+   Commit all of this **onto the session's existing branch**, so it rides the session's one PR. Open the PR first if it does not exist (the number is assigned at creation). Draft only while the work is genuinely unfinished; a PR whose diff is only the session record opens non-draft, because a deliverable on an unmerged branch does not exist (operating-model L5).
 
 4. **Reconcile every issue this session touched.**
    - **Status current.** `In Progress` while landing, `In Review` once the PR is open. Merge moves it to `Done` via the integration, **but only an attachment closes an issue; a bare mention does nothing**. Confirm the link fired; if not, set state explicitly and attach the PR.
@@ -27,7 +27,7 @@ Run the close-out **in this exact order**. Every session ends the same way, and 
    - **Every PM action becomes tracker state, not prose.** Move the issue to `Needs PM` (or file one there) with the single remaining step as the first line. The summary lists `{{ISSUE_PREFIX}}-NNN — <action>` links, never a second checklist.
    - **New scope is a new issue**, never folded into an unrelated one.
 
-5. **Emit the Session Summary** in CLAUDE.md's format.
+5. **Emit the summary** in the shape of CLAUDE.md § Session End.
 
 6. **Emit the Dev Handoff** if anything was pushed: the exact commands from `docs/dev-handoff-runbook.md` plus the numbered Manual QA Script tied to acceptance criteria.
 

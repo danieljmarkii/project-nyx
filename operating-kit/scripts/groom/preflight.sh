@@ -31,8 +31,8 @@
 # writes a fresh root into `.git/shallow`. Measured 2026-09-12 — after one such fetch
 # `.git/shallow` exists while `git rev-list --count origin/main` still reads 837, i.e.
 # main's history is completely intact and the pass has nothing to repair. The literal
-# check would fail the next preflight over a branch nobody is reconciling, which is the
-# C-38 shape: a guard that re-validates on every run also bricks what it failed to
+# check would fail the next preflight over a branch nobody is reconciling, which is a
+# known shape: a guard that re-validates on every run also bricks what it failed to
 # protect. The question this script exists to answer is "is the history I am about to
 # reason about truncated?", so it asks exactly that, of exactly the ref it reasons about.
 #
@@ -52,7 +52,7 @@ REMOTE=origin
 BRANCH=main
 REF="$REMOTE/$BRANCH"
 
-# Test seam, deliberately not a secret: the guard drives this script against a fixture
+# Test seam, deliberately not a secret: a test (write one when you adopt this) can drive this script against a fixture
 # repo with its own watermark. It is PRINTED on every run (see the evidence line at the
 # bottom), so a pass that quietly pointed the floor somewhere lower would say so in its
 # own output. The grooming pass never sets it.

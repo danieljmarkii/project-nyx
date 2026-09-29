@@ -14,7 +14,7 @@ Every pattern points at a string already shipped, so the next contributor copies
 
 ---
 
-## PATTERN 1: Address the user as "you"; name the object of care
+## PATTERN 1: Address the user as "you"; name the {{ENTITY}}
 **RULE:** {{NAMING_RULE}}  <!-- e.g. "The pet is the subject, by name; the owner is 'you'. Fallback when the name is missing: 'your pet', never 'the pet'." -->
 **CANONICAL EXAMPLE:** `<file:line>`
 **ANTI-PATTERN:** "The user's item…", "Your account has…" where a name exists.
@@ -36,7 +36,7 @@ Every pattern points at a string already shipped, so the next contributor copies
 ## PATTERN 6: Concerns surface clearly, without alarm, and never reassure
 **RULE:** Name the concern plainly; no alarm language before the data justifies it; never assert safety on absence. This is the copy face of `ai-output-guardrails`.
 
-## PATTERN 7: The nudge is warm, not nagging
+## PATTERN 7: The nudge is warm, not nagging (delete if the product never nudges)
 **RULE:** At most one per day, specific, sent only when something is worth saying. Read it aloud: thoughtful friend or metrics target?
 
 ## PATTERN 8: Errors never leak internals

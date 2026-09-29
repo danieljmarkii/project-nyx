@@ -2,9 +2,9 @@
 
 **Status:** 🌱 living. Seeded from a predecessor project's `docs/engineering-lessons.md` (44 conventions, 12 spec rulings, 14 process notes, June–September 2026), distilled to what transfers across domains. Every law below was paid for by a real defect, not written from theory.
 
-**How this file works.** CLAUDE.md § Code Conventions carries each adopted rule in a few lines plus its enforcement (the guard, the marker, the file). This file carries the account behind it. When this project earns its own lesson, add it here under a new `C-N` heading (the incident, the measurement, the law) and put the one-paragraph rule in CLAUDE.md, paid for by a deletion there.
+**How this file works.** CLAUDE.md § Code Conventions carries each adopted rule in a few lines plus its enforcement (the guard, the marker, the file). This file carries the account behind it. When this project earns its own lesson, add it here under a new `E-N` heading (E for engineering; the Tier A/B/C numbers below are the inherited set) (the incident, the measurement, the law) and put the one-paragraph rule in CLAUDE.md, paid for by a deletion there.
 
-**Numbering hazard.** Two branches can both mint `C-12` and git will merge them cleanly. Before adding a number, fetch `origin/main` and take the next free one; a clean merge is not evidence.
+**Numbering hazard.** Two branches can both mint `E-12` and git will merge them cleanly. Before adding a number, fetch `origin/main` and take the next free one; a clean merge is not evidence.
 
 ---
 
@@ -159,4 +159,4 @@
 ---
 
 ## Deliberately not carried over (domain-only)
-The predecessor's clinical invariants in their literal form (their general shape is Tier A and the `ai-output-guardrails` skill); product-specific spec rulings; its home-screen write-class rule (the by-effect guard mechanism is kept, C-20); its haptic vocabulary; its font rollout and colour tokens; its widget runtime constraint; its mobile build/runtime commands; its mock-publishing specifics (the portable form is `docs/templates/mock-round-protocol.md`).
+The predecessor's clinical invariants in their literal form (their general shape is Tier A and the `ai-output-guardrails` skill); product-specific spec rulings; its home-screen write-class rule (the by-effect guard mechanism is kept, Tier C 20); its haptic vocabulary; its font rollout and colour tokens; its widget runtime constraint; its mobile build/runtime commands; its mock-publishing specifics (the portable form is `docs/templates/mock-round-protocol.md`).

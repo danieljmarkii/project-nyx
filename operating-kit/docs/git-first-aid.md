@@ -16,7 +16,7 @@ If you remember nothing else: the fix is almost never "merge vs rebase." It's "g
 ```bash
 git config --global pull.ff only
 ```
-Kills the `divergent branches` prompt for good: from now on a `git pull` either fast-forwards cleanly or fails loudly, instead of dropping you into the merge-vs-rebase chooser. (As of this writing it was **not** set — run it once.)
+Kills the `divergent branches` prompt for good: from now on a `git pull` either fast-forwards cleanly or fails loudly, instead of dropping you into the merge-vs-rebase chooser.
 
 ---
 
@@ -57,7 +57,7 @@ The next session's handoff will name a fresh `claude/…` branch to check out �
 ### `error: fetching ref refs/remotes/origin/main failed: incorrect old value provided`
 Two git processes tried to update the same remote-tracking ref at the same moment, usually something in the background (a session's startup hook, an editor's auto-fetch) racing your own `git pull`. One wins, the other prints this. The branch in the message may be any branch, not only `main`.
 
-**The dangerous part:** before it gives up, `git pull` may already have printed `Your branch is up to date with 'origin/main'`, read from the *old* ref. It is not up to date. On 2026-09-15 this left `main` four commits behind, right before an Edge Function deploy.
+**The dangerous part:** before it gives up, `git pull` may already have printed `Your branch is up to date with 'origin/main'`, read from the *old* ref. It is not up to date. In the predecessor project this once left `main` four commits behind right before a deploy.
 
 **Fix — pull again; the race is over by now:**
 ```bash
@@ -101,7 +101,7 @@ git clean -fd          # also delete untracked files/folders — omit if unsure
 ### `fatal: not a git repository`
 You're not in the project folder. `cd` back in:
 ```bash
-cd ~/project-nyx       # or wherever your Codespace cloned it
+cd ~/<your-project>     # wherever you cloned it
 ```
 
 ---

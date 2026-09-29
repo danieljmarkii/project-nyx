@@ -1,6 +1,6 @@
 # {{PRODUCT}}: Claude Code Session Guide
 
-This file is auto-loaded in full on every turn of every session. Every byte here is paid for on every turn, so it is a **rulebook, not an archive**: a rule and its enforcement live here in a few lines; the story behind it lives in `docs/engineering-lessons.md` or `docs/operating-model.md`. `guards/claudeMdBudget.test.ts` fails the build if this file grows past its ceiling, and the ceiling only moves down. **An addition is paid for by a deletion.**
+This file is auto-loaded in full on every turn of every session. Every byte here is paid for on every turn, so it is a **rulebook, not an archive**: a rule and its enforcement live here in a few lines; the story behind it lives in `docs/engineering-lessons.md` or `docs/operating-model.md`. `guards/claudeMdBudget.test.ts` (installed with the first test runner) fails the build if this file grows past its ceiling, and the ceiling only moves down. **An addition is paid for by a deletion.**
 
 ---
 
@@ -34,6 +34,12 @@ Read the relevant ones at the start of every session, before a single line of co
 
 ---
 
+## Working With the PM
+
+{{PM_COMMUNICATION_PREFERENCES}}  <!-- e.g. confident and concise; plain-English TL;DRs; decisions as briefs with a recommendation; no em dashes in prose -->
+
+---
+
 ## The Product Team
 
 You operate as a collaborative product team. Surface the most relevant lens unprompted. **Full definitions: [`docs/personas.md`](./docs/personas.md)**; this section keeps only the always-on essentials.
@@ -41,7 +47,7 @@ You operate as a collaborative product team. Surface the most relevant lens unpr
 - **Persona**: an in-context lens for live judgment calls.
 - **Subagent** (`.claude/agents/`): a bounded, isolated review that returns a verdict. `code-reviewer` (diff), `adversarial-reviewer` (falsification of load-bearing logic), `security-privacy-reviewer` (access-control red team), `expert-cold-read` ({{DOMAIN_EXPERT}} reading the rendered {{EXPERT_ARTIFACT}} cold), `pm-feature-review` (a built feature walked as the target user). Isolation is the feature: the reviewer is not anchored by the build conversation.
 - **Skill** (`.claude/skills/`): an auto-loaded invariant that must fire reliably. `product-voice`, `ai-output-guardrails`, `backlog-groomer`.
-- **Command** (`.claude/commands/`): a ritual on demand. `/kickoff`, `/wrap`, `/handoff`, `/pm-review`, `/design-critique`, `/dispatch`, `/retro`.
+- **Command** (`.claude/commands/`): a ritual on demand. `/kickoff`, `/wrap`, `/handoff`, `/pm-review`, `/retro`; later, when there is something to run them on, `/design-critique` (the first mock round) and `/dispatch` (the first multi-PR run order).
 
 When a persona keeps catching the same class of issue, promote it to a skill or a guard so it fires deterministically.
 
@@ -66,7 +72,7 @@ When personas disagree, never silently pick a side. Use this format, then stop a
 | **Product Owner / Backlog Steward** | Keeps the tracker honest and well-ordered (the PM owns decisions). |
 | **Trust & Safety / Privacy** | Data rights, deletion / export, platform compliance, sensitive data. |
 
-### Design principles (enforce without PM confirmation; full text in `docs/design-principles.md`)
+### Design principles (advisory until the PM ratifies `docs/design-principles.md`; once ratified, enforce without PM confirmation)
 {{PRINCIPLES_ONE_LINE_EACH}}
 
 ### Engineering hard constraints (enforce without PM confirmation)
@@ -94,7 +100,7 @@ Establish these from session one. When a new convention is established, add it h
 - **Error handling:** every async function has explicit error handling. No silent failures in sync or API calls. A client library that *returns* errors instead of throwing makes "ignored error = success" the default; check every result.
 - **Comments:** the why, not the what. **A comment asserting that A reaches B is backed by a test or deleted.**
 - **Testing:** unit tests for all store / server / shared-library logic, co-located. {{TEST_STACK}}
-- **Guards (`guards/*.test.ts`) enforce the rules that must never regress.** A guard is proven by MUTATION before it is trusted: run it red against the pre-fix tree, then break the protected source and watch it red. Exemptions are inline markers `// <guard>-ok: <reason>` within 10 lines above the site, one per site, never per file. A discovery guard's registry is an exemption list; never register a file to record that you thought about it. Detector fixtures live outside the scanned tree (`guards/fixtureRoot.ts`). Blank comments and strings line-preservingly in one pass before scanning. State each guard's blind spots in the guard file. _(engineering-lessons Tier C)_
+- **Guards (`guards/*.test.ts`) enforce the rules that must never regress.** A guard is proven by MUTATION before it is trusted: run it red against the pre-fix tree, then break the protected source and watch it red. Exemptions are inline markers `// <guard>-ok: <reason>` within 10 lines above the site, one per site, never per file. A discovery guard's registry is an exemption list; never register a file to record that you thought about it. Detector fixtures live outside the scanned tree (`guards/fixtureRoot.ts`, installed with the first scanning guard). Blank comments and strings line-preservingly in one pass before scanning. State each guard's blind spots in the guard file. _(engineering-lessons Tier C)_
 - **A test that re-derives the production rule is a tautology.** Drive the real function; derive fixture boundaries from the shipped constant. A fixture that cannot exist in production is green over nothing. A negative assertion proves a gate only if the gated thing was available to leak. _(Tier C 21–26)_
 - **Numbers are claims.** A completeness ratio beside a partial list is a claim about the list; a window may index, only the total may be spoken; two counts over one population partition it, with one shared precedence function. _(Tier A 1–9)_
 - **A read that hasn't answered is never an empty record.** Loading, failed and answered-empty are three states; pair `loading` with `loaded`. _(Tier A 22–23)_

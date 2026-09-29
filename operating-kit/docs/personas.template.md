@@ -66,7 +66,7 @@ Owns vision, roadmap and all final calls. Anything requiring a PM decision is fl
 - A home surface that is a feed, a nav menu or an upsell.
 - Onboarding that takes longer than {{ONBOARDING_BUDGET}} to reach the first real action.
 - A modal on top of a modal.
-- Touch targets under 44pt without expanded hit area; adjacent targets sharing hit area.
+- (Touch products) targets under 44pt without expanded hit area; adjacent targets sharing hit area. (Desktop) click targets too small or too close for a hurried user.
 - Notification copy that sounds like a metrics target rather than a thoughtful person.
 - Options hidden in silent horizontal overflow.
 - *(Append here.)*
@@ -132,17 +132,17 @@ Owns vision, roadmap and all final calls. Anything requiring a PM decision is fl
 
 **Active responsibilities:** verify every feature against its issue's acceptance criteria and list pass/fail; surface edge cases before code is written; flag cross-feature breakage; catch unhandled empty and error states.
 
-**Edge cases to always consider:**
-- The user works offline and reconnects hours later with a queue of writes.
+**Edge cases to always consider** (delete the ones that cannot occur in this product; mobile / offline ones are marked):
+- (Offline-capable) The user works offline and reconnects hours later with a queue of writes.
 - The user back-dates an entry across a boundary that matters (a period start, a window edge).
 - Zero data: every surface has a designed empty state.
 - Something archived is still referenced by history, reports and active plans; every reference still resolves.
 - A share link accessed after expiry.
 - A parent record is deleted: the cascade across every child table, file store and cache.
 - Two devices on one account write conflicting edits at once.
-- Metadata (timestamps, EXIF, headers) absent or malformed: fall back, never throw.
-- An upload fails mid-sync offline: retried on reconnect, never silently dropped.
-- The stressed, one-handed, distracted moment: {{STRESS_MOMENT}}.
+- Metadata (timestamps, file headers, imported fields) absent or malformed: fall back, never throw.
+- An upload or import fails midway: retried or reported, never silently dropped.
+- The stressed moment: {{STRESS_MOMENT}}.
 - Timezones at ±14h and a quarter-hour offset; a daylight-saving day; local midnight.
 - *(Append here.)*
 

@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@<sha> # vX.Y.Z
+      - uses: actions/checkout@{{CHECKOUT_SHA}} # {{CHECKOUT_VERSION}}
       # {{SETUP_TOOLCHAIN}}  e.g. actions/setup-node@<sha> with node-version and cache
       # {{INSTALL}}          e.g. `npm ci` (lockfile authoritative; drift fails here)
       # {{TYPECHECK}}        e.g. `npx tsc --noEmit`
@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@<sha> # vX.Y.Z
+      - uses: actions/checkout@{{CHECKOUT_SHA}} # {{CHECKOUT_VERSION}}
       # {{SETUP_TOOLCHAIN}} / {{INSTALL}}
       - shell: bash
         run: |

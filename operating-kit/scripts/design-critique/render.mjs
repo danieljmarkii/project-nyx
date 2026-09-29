@@ -14,8 +14,9 @@
 // states the defaults miss (e.g. a long list scrolled one
 // viewport at a time).
 //
-// Why not scripts/render-mockup.mjs: that renders one full-page PNG for presenting a
-// board. A critique needs per-frame, per-state, per-motion evidence and a manifest.
+// A critique needs per-frame, per-state, per-motion evidence and a manifest, not one
+// full-page PNG. Defaults assume phone frames (`.phone`, 390 wide); for a desktop product
+// pass --frames with your frame selector and adjust the widths.
 //
 // Playwright is deliberately not a project dependency. The cloud container ships it
 // globally with Chromium in /opt/pw-browsers (PLAYWRIGHT_BROWSERS_PATH); elsewhere run

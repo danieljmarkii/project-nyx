@@ -18,22 +18,22 @@ A constitution, not a component library. Read it before designing any surface, w
 
 ## Core principles
 
-The seven below are the predecessor project's, rewritten domain-neutral. Keep, adapt or replace each one at onboarding; the PM ratifies the final set.
+The seven below are the predecessor project's, rewritten domain-neutral. **They came from a consumer mobile logging app: rewrite, don't fill.** For a desk-based or B2B product several change shape (capture speed becomes review throughput; the daily nudge may not exist; monetization is not "core is free"). Keep, adapt or replace each one at onboarding; the PM ratifies the final set.
 
 ### 1. Zero decisions at the moment of capture
 The moment a user records something is the moment they have the least attention to give.
 **In practice:** pre-select context; auto-stamp time; the primary choice is a single tap; optional fields sit below the fold.
-**The test:** could the user do it one-handed, distracted, in under {{TIME_BUDGET}}?
+**The test:** {{TIME_TEST}}
 
 ### 2. Confirmation over entry
-Set up once; after that, routine capture confirms something already known, and the library grows passively from deviations.
+Set up once; after that, routine work confirms something the system already proposes, and the system learns its defaults from what the user actually does.
 **The test:** after week one, does any routine capture require typing?
 
 ### 3. Home is an understanding surface, not an archive
 It answers the question the user is actually asking before they ask it: a curated, prioritized set, where concerns always lead and are never dropped to honour a layout cap. Never a feed, a nav menu or an upsell. Critical findings stay deliberately plain, so plainness itself signals severity.
 **The test:** in five seconds, does the user know what matters today and why?
 
-### 4. The nudge is warm, not nagging
+### 4. The nudge is warm, not nagging (if the product nudges at all)
 At most one per day, specific copy, sent only when there is something genuinely worth saying.
 **The test:** read it aloud. A thoughtful friend, or a metrics target?
 
@@ -45,9 +45,9 @@ Warm, honest, forward-looking: name what is being built and when it pays off. A 
 Anything read by {{DOMAIN_EXPERT}} is dense, scannable in about 60 seconds, explicit about its date range and denominators, and free of decoration.
 **The test:** can a stranger extract what matters in 60 seconds with no context?
 
-### 7. Monetize convenience, never the core outcome
-{{BRAND_PRINCIPLE}}
-**The test:** would a non-paying user get a meaningfully worse core outcome? If yes, it is free.
+### 7. {{MONETIZATION_PRINCIPLE_TITLE}}
+{{MONETIZATION_PRINCIPLE}}  <!-- the predecessor's: "Monetize convenience, never the core outcome: if gating a feature reduces the quality of care, it is free." A B2B product needs its own version, e.g. "never gate the safety signal behind a tier". -->
+**The test:** {{MONETIZATION_TEST}}
 
 ---
 

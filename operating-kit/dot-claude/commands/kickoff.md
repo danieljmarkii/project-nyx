@@ -13,12 +13,12 @@ Produce a tight orientation so a session (or the PM) can start working immediate
      > **Claimed** — branch `<branch>`, `<ISO-8601 UTC>`, mode BUILD|DISCOVERY.
      > A different session reading this: stop and surface rather than starting. Released by this session's `/wrap` outcome comment.
    - **Another branch's claim, recent, no merged PR** → **stop and surface.** Name the branch and claim time; ask the PM whether to take over or pick something else. This case is the whole point of the step.
-   - **Another branch's claim >24h old, no open PR** → stale. Say so in one line, post a fresh claim naming the stale one, continue.
+   - **Another branch's claim >24h old, no open PR, no commit on that branch in 24h** → stale: safe to take over. Say so in one line, post a fresh claim naming the stale one, continue. (Distinct from the groomer's *abandoned* test, branch tip >14 days, which resets an issue nobody is taking over.)
    - **An open PR already references the issue** → work in review, not a claim. Surface it before touching anything.
 
    **Do not key this on status.** The launch path often sets `In Progress` seconds before your first tool call, so status tells you someone started, never who. The **branch name in the comment** discriminates. Both, or the guard does not work.
 
-1. **Read the pointer card, then the state.** `STATUS.md` is a ~60-line pointer card, not a state store. Read it for routing, then get the state from the tracker (step 2). Read the **2–3 newest session records**: `ls docs/sessions/ | sort -r | head -3`. (The SessionStart hook already printed their names, the Needs PM count, and whether a retro is due.)
+1. **Read the pointer card, then the state.** `STATUS.md` is a ~60-line pointer card, not a state store. Read it for routing, then get the state from the tracker (step 2). Read the **2–3 newest session records**: `ls docs/sessions/ | sort -r | head -3`. (The SessionStart hook already printed their names and whether a retro is due.)
 
 2. **Pull the four views that make up "where are we?"** Scope to the current project where you can; a team-wide sweep buries the answer.
    - **Live tracks:** `list_projects`.
@@ -40,6 +40,6 @@ Produce a tight orientation so a session (or the PM) can start working immediate
 - **Recommended first task** — one concrete step, naming the file to open first and the issue it advances.
 - **Alternates** — 1–2 other live tracks.
 
-Interactive with the PM present → end with the three Session Start questions from CLAUDE.md. Non-interactive → skip them and proceed on what the tracker says.
+Interactive with the PM present → end with the three questions at the end of CLAUDE.md § Starting a session. Non-interactive → skip them and proceed on what the tracker says.
 
 $ARGUMENTS

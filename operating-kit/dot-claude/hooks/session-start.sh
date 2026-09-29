@@ -18,7 +18,9 @@ if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
     timeout 60 git fetch --quiet --unshallow origin main 2>/dev/null \
       || timeout 30 git fetch --quiet origin main 2>/dev/null || true
   fi
-  # {{INSTALL_COMMAND}}   e.g. `npm install --silent` — keep it idempotent and quiet.
+  # Dependency install: idempotent and quiet (e.g. `npm install --silent`). Replace the
+  # line below, or delete it if nothing needs installing.
+  {{INSTALL_COMMAND}}
 fi
 
 # ── 2. Orientation ────────────────────────────────────────────────────────────────
