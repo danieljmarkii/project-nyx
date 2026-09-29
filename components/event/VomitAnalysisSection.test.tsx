@@ -516,6 +516,47 @@ describe('VomitAnalysisSection — an escalation stays on screen through a re-ru
     await act(async () => { release({ error: null }); });
   });
 
+  it('a CALM verdict never stands beside the re-read cue, even before the pending mark lands (adversarial #2)', async () => {
+    mockRow = row({ recommendation: 'monitor', read_text: 'Keep an eye on this one.' });
+    const view = render(<VomitAnalysisSection eventId="rr-10" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    // Straight after the tap: the re-base read has not answered, the row is not pending yet.
+    expect(view.queryByText('Keep an eye out')).toBeNull();
+    expect(view.queryByText(RE_READING)).toBeNull();
+    expect(view.getByText(PENDING)).toBeTruthy();
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+  });
+
+  it('a Hide made DURING a re-run survives a refused invoke’s restore (adversarial #3)', async () => {
+    let release: (v: { error: string }) => void = () => {};
+    (triggerVomitAnalysis as jest.Mock).mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    mockRow = row({ recommendation: 'worth_a_call', read_text: READ_TEXT });
+    const view = render(<VomitAnalysisSection eventId="rr-11" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(triggerVomitAnalysis as jest.Mock).toHaveBeenCalledTimes(1));
+    await act(async () => { fireEvent.press(view.getByText('Hide this note')); });
+    expect(await view.findByText('AI note hidden')).toBeTruthy();
+    // The server answers the restore's re-read with the row as the owner's Hide left it.
+    mockRow = row({ recommendation: 'worth_a_call', read_text: READ_TEXT, dismissed_at: '2026-09-29T10:00:00.000Z' });
+    await act(async () => { release({ error: 'FunctionsFetchError: offline' }); });
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('Could not start analysis', 'Try again in a moment.'));
+    expect(view.getByText('AI note hidden')).toBeTruthy();
+    expect(view.queryByText(READ_TEXT)).toBeNull();
+  });
+
+  it('…and when the server has not heard the Hide yet, the screen still keeps it', async () => {
+    let release: (v: { error: string }) => void = () => {};
+    (triggerVomitAnalysis as jest.Mock).mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    mockRow = row({ recommendation: 'worth_a_call', read_text: READ_TEXT });
+    const view = render(<VomitAnalysisSection eventId="rr-12" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(triggerVomitAnalysis as jest.Mock).toHaveBeenCalledTimes(1));
+    await act(async () => { fireEvent.press(view.getByText('Hide this note')); });
+    await act(async () => { release({ error: 'FunctionsFetchError: offline' }); });
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(view.getByText('AI note hidden')).toBeTruthy();
+  });
+
   it('a CALM verdict keeps the pending frame — never stood in front of a read that has not finished', async () => {
     mockRow = row({ recommendation: 'monitor', read_text: 'Keep an eye on this one.' });
     const view = render(<VomitAnalysisSection eventId="rr-7" petId="pet-1" petName="Rex" hasPhoto />);
@@ -888,6 +929,37 @@ describe('VomitAnalysisSection — the arrival fires only for a read the screen 
     await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
     // The fetch frame is not a wait. Nothing animated on the way to this read.
     expect(configureNext).not.toHaveBeenCalled();
+  });
+
+  // CUL-827 (adversarial #1). The first-load box is on screen for a frame on every open,
+  // and it used to survive in the stage's memory: a re-read over an escalation that never
+  // left the screen then "arrived" on landing, clipping the card and fading a ghost
+  // "Reading the photo…" over it. Mutation-proven against the re-seed in arrivalMotion.
+  it('a re-run over an escalation that stayed on screen does NOT replay the arrival', async () => {
+    mockRow = row({ status: 'completed', recommendation: 'worth_a_call', read_text: 'Worth a call to your vet.' });
+    const view = render(<VomitAnalysisSection eventId="rr-arr-1" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    mockRow = row({ status: 'completed', recommendation: 'worth_a_call', read_text: 'Still worth a call.' });
+    const check = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![1] as () => Promise<boolean>;
+    await act(async () => { await check(); });
+    expect(view.queryByTestId('incident-read-ghost')).toBeNull();
+    expect(view.queryByTestId('incident-read-clip')).toBeNull();
+    await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
+    expect(configureNext).not.toHaveBeenCalled();
+    expect(view.getByText('Still worth a call.')).toBeTruthy();
+  });
+
+  it('…while a re-run over a CALM read, which did show the box, still arrives once', async () => {
+    mockRow = row({ status: 'completed', recommendation: 'monitor', read_text: 'Keep an eye on this one.' });
+    const view = render(<VomitAnalysisSection eventId="rr-arr-2" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    mockRow = row({ status: 'completed', recommendation: 'worth_a_call', read_text: 'Worth a call to your vet.' });
+    const check = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![1] as () => Promise<boolean>;
+    await act(async () => { await check(); });
+    await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
+    expect(configureNext).toHaveBeenCalledTimes(1);
   });
 
   it('a read that lands while the screen waits: the box opens once', async () => {

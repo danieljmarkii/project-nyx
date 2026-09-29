@@ -151,6 +151,12 @@ export function StoolAnalysisSection(
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const cancelled = useRef(false);
+  // The row as the screen holds it NOW, for a handler that awaits across a render. A re-run
+  // over an escalation leaves the card (and its Hide) on screen for the whole wait, so the
+  // owner can change the hide mid-flight; a restore that read only the tap-time copy would
+  // quietly undo that (CUL-827, adversarial #3).
+  const latestRow = useRef<AnalysisRow | null | undefined>(undefined);
+  latestRow.current = row;
   const watchTeardown = useRef<(() => void) | null>(null);
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
@@ -305,7 +311,9 @@ export function StoolAnalysisSection(
     //     re-run and is never spoken.
     // So the wait re-bases on the server's row only when it SHOWS what the screen already
     // shows; otherwise the local baseline stands and anything new counts as a landing.
-    const fresh = await fetchRow();
+    // Caught, like every read below: a throw here would leave `retrying` set, and that is a
+    // re-read that never ends (CUL-827). A failed read re-bases on the screen's own copy.
+    const fresh = await fetchRow().catch(() => null);
     if (cancelled.current) return;
     const base = fresh && shown && showsSameRead(fresh, shown) ? fresh : shown;
     if (base) setRow({ ...base, status: 'pending', error: null });
@@ -351,9 +359,12 @@ export function StoolAnalysisSection(
       if (cancelled.current) return;
       const server = after ?? (escalationSurvivesFailure(fresh) ? fresh : null);
       const keepScreenHide = !!shown && !!server && sameRead(server, shown);
+      // The screen's hide as it is NOW, not at the tap: over an escalation the card stayed
+      // up through the wait, and a Hide or Show made during it is the owner's latest word.
+      const screenHide = latestRow.current ? latestRow.current.dismissed_at : shown?.dismissed_at ?? null;
       const back = server
-        ? { ...server, dismissed_at: keepScreenHide && shown ? shown.dismissed_at : server.dismissed_at }
-        : base;
+        ? { ...server, dismissed_at: keepScreenHide ? screenHide : server.dismissed_at }
+        : base && { ...base, dismissed_at: screenHide };
       if (back) {
         if (server && !(shown && showsSameRead(server, shown))) announcer.expectLanding();
         setRow(back);
@@ -418,7 +429,11 @@ export function StoolAnalysisSection(
     // The same trigger-and-watch as the mount path; the invoke outlives this screen.
     if (needsEn7Recheck(row, norm.stool_consistency)) {
       setWorking(true);
-      const { error: recheckError } = await triggerStoolAnalysis(eventId);
+      // A rejection is a refusal too (CUL-827): uncaught, it would leave `working` set over a
+      // calm row, which is a pending box with nothing watching.
+      const { error: recheckError } = await triggerStoolAnalysis(eventId).catch((e: unknown) => ({
+        error: e instanceof Error ? e.message : String(e),
+      }));
       if (cancelled.current) return;
       if (recheckError) {
         // The owner's correction is saved; the re-check that follows from it did not start.
@@ -445,12 +460,13 @@ export function StoolAnalysisSection(
   const status: Status | undefined = row?.status;
 
   // A read is being produced: the server was asked and is being watched (`working`), or
-  // the owner's Re-run has marked the row and is asking now (`retrying` over `pending`).
-  // NOT `status === 'pending'` alone (CUL-827): the pending mark outlives a watch that gave
+  // the owner's Re-run is under way (`retrying`, from the tap: its first step is a read
+  // that can hang for a fetch timeout, and a calm verdict must not stand beside a re-read
+  // cue for it — adversarial #2). NOT `status === 'pending'` alone (CUL-827): the pending mark outlives a watch that gave
   // up, and keyed on it the section rendered "Reading the photo…" for the rest of the
   // visit with nothing watching and no control to press. A row still marked pending with
   // nothing in flight falls through to the frames below, each of which carries a retry.
-  const reading = working || (retrying && status === 'pending');
+  const reading = working || retrying;
 
   // Pending / actively working — UNLESS the record already holds an escalation, which
   // stays on screen through the re-read with the re-read shown in place beside it
