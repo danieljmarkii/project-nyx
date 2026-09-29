@@ -85,6 +85,9 @@
 --     COMMIT;
 --     One transaction: 079's body names NEW.tier, so with the column gone and
 --     the body not yet restored every UPDATE on the table would fail.
+--     Safe as written only while nothing names the column. Once PR-26's writers
+--     set `tier` (every analyze-* write-back would then fail, escalations
+--     included) or PR-27 selects it, revert or hold those first, then run this.
 --     (Irreversible only for tier values PR-26 has written by then.)
 --   Backfill:     N/A, deliberately (see above).
 --   Affected tables: event_ai_analysis (ADD COLUMN; the freeze trigger's function).
