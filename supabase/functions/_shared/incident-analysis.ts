@@ -1538,7 +1538,9 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       modelReadText: analysis?.read_text ?? null,
       photoUnreadable,
       hasPhoto,
-      modelEscalated: analysis?.recommendation === 'worth_a_call',
+      // The model's own call counts as a photo finding only on a photo it says shows the
+      // subject: a not-vomit photo is never described as holding one.
+      modelEscalated: !!analysis && descriptor.appearsToShowSubject(analysis) && analysis.recommendation === 'worth_a_call',
     })
 
     // 8b. Post-floor gate on the model's free-text `description` (CUL-152 / B-179 — see

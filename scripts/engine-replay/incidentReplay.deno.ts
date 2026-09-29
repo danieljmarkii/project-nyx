@@ -128,10 +128,10 @@ if (import.meta.main) {
     const ok = shipped.length === stored.length && shipped.every((f) => stored.includes(f))
     if (!ok) mismatches++
     const en0 = computeContextualFlags(en0Input(rec, ev, T))
-    // Lost: a flag the shipped rule gives, or the stored read carries, that EN-0 does not.
-    // Either is a warning EN-0 removed.
-    const en0Set = new Set<string>(en0)
-    const lost = [...shipped, ...stored].some((f) => !en0Set.has(f))
+    // Lost: a flag the shipped rule gives that EN-0 does not. Measured against `shipped`,
+    // not `stored`: a stored flag the shipped rule does not reproduce is a fidelity
+    // mismatch, already counted above, and not EN-0's to answer for.
+    const lost = shipped.some((f) => !en0.includes(f))
     if (lost) en0Lost++
     const addedHere = en0.some((f) => !shipped.includes(f))
     if (addedHere) en0Added++

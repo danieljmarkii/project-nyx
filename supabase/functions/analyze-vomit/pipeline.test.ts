@@ -216,8 +216,10 @@ Deno.test('pipeline diff D · ate, vomited, then refused, read late: the warning
       species: 'cat', vomitMs, vision: CLEAN,
       others: [
         { event_type: 'meal', occurred_at: iso(vomitMs - 2 * H), rating: 'all' },
-        { event_type: 'meal', occurred_at: iso(vomitMs + 6 * H), rating: 'refused' },
-        { event_type: 'meal', occurred_at: iso(vomitMs + 12 * H), rating: 'refused' },
+        // Clear of the read-time window's edge (vomit + 6 h): the clock moves between
+        // building this record and the read, so a row on the edge would flicker (C-29).
+        { event_type: 'meal', occurred_at: iso(vomitMs + 8 * H), rating: 'refused' },
+        { event_type: 'meal', occurred_at: iso(vomitMs + 14 * H), rating: 'refused' },
       ],
     }
   })
@@ -244,4 +246,19 @@ Deno.test('pipeline · 6/7: a flag-on re-read after the back-fill never lowers t
   await read(w)
   assertStrictEquals(w.writes, writesBefore, 'a calmer re-read wrote over a stored escalation')
   assertEquals(w.row, first)
+})
+
+Deno.test('pipeline · a photo the model says is not vomit is never read as holding a finding, even on its own worth_a_call', async () => {
+  const vomitMs = Date.now() - 1 * H
+  const w: World = {
+    species: 'cat', vomitMs, en0: true, writes: 0, row: null,
+    vision: { ...CLEAN, appears_to_show_vomit: false, recommendation: 'worth_a_call' },
+    others: [{ event_type: 'meal', occurred_at: iso(vomitMs - 72 * H), rating: 'all' }],
+  }
+  const row = await read(w)
+  assertStrictEquals(row.recommendation, 'worth_a_call')
+  assertStrictEquals(
+    row.read_text,
+    "No meals are logged for Nyx in the 24 hours before this vomit. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+  )
 })
