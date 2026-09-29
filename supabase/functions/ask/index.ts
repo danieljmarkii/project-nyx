@@ -39,7 +39,7 @@ import { resolveAllowlistFlagFromRows } from '../_shared/flags.ts'
 // MAX_TOOL_ITERATIONS.
 import { fetchWithTimeout } from '../_shared/http.ts'
 // CUL-989 — CUL-975's paged reader, shared with generate-report and generate-signal.
-import { fetchAll, incompletePullNames, readDosesAsToday } from '../_shared/pull.ts'
+import { fetchAll, incompletePullNames } from '../_shared/pull.ts'
 import { resolveIanaZone } from '../../../lib/utils.ts'
 import { projectCachedRead } from './tools.ts'
 import type {
@@ -571,8 +571,8 @@ async function fetchContext(
   // that PostgREST capped at `max-rows`, keeping the OLDEST rows: Ask would have answered "how
   // many times this month?" from a record that stopped before this month, sounding current.
   // Every read's error is read too (a failed query is not an empty record). The handler acts on
-  // an incomplete pull: it answers nothing (see `recordIncomplete`). The dose pull alone keeps
-  // today's error-as-empty reading, for the CUL-1099 reason `readDosesAsToday` carries.
+  // an incomplete pull: it answers nothing (see `recordIncomplete`). The dose pull included:
+  // its error-as-empty exemption was deleted with the FK hint that made it resolve (CUL-1099).
   const [
     eventsPull,
     mealsPull,
@@ -635,17 +635,19 @@ async function fetchContext(
     // medication_items(generic_name) NAMES a regimen-unlinked dose (medication_id null — the
     // dominant B-135 shape) that would otherwise be an anonymous "a medication"; RLS-scoped by
     // the caller JWT like every read here (medication_items is per-account, B-354).
-    readDosesAsToday('ask', fetchAll<DoseRowDb>('events', (r) => r.id, (from, to) =>
+    // The embed NAMES its FK (CUL-1099): `paired_event_id` (migration 023) is a second FK to
+    // events, so the bare embed is ambiguous (PGRST201) and failed on every call until this.
+    fetchAll<DoseRowDb>('events', (r) => r.id, (from, to) =>
       client
       .from('events')
-      .select('id, occurred_at, medication_administrations(medication_id, medication_item_id, adherence, medication_items(generic_name))', { count: 'exact' })
+      .select('id, occurred_at, medication_administrations!medication_administrations_event_id_fkey(medication_id, medication_item_id, adherence, medication_items(generic_name))', { count: 'exact' })
       .eq('pet_id', petId)
       .eq('event_type', 'medication')
       .is('deleted_at', null)
       .gte('occurred_at', lookbackIso)
       .order('occurred_at', { ascending: false })
       .order('id', { ascending: false })
-      .range(from, to))),
+      .range(from, to)),
     // Active free-fed standing facts (no lookback; the active window is resolved in the tool).
     fetchAll<ArrRowDb>('feeding_arrangements', (r) => r.id, (from, to) =>
       client

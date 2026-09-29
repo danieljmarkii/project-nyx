@@ -16,6 +16,7 @@ import {
   resolveCaps,
   computeResetsAt,
   mapMedDoseFacts,
+  SIGNAL_DOSE_LANES_ON,
   type FunctionCaps,
   type RegimenRow,
   type MedDoseEventRow,
@@ -241,4 +242,26 @@ Deno.test('EN-F wiring — the flag is read for the pet\'s owner, and the cache 
   assertStrictEquals(/readEngineFlags\(supabase,[^)]*pet\.user_id/.test(src), true, 'the flag is not read for the pet\'s owner')
   const insert = src.slice(src.indexOf(".from('ai_signals').insert("))
   assertStrictEquals(/\.\.\.signalStampValues\(engineFlags, fingerprint\)/.test(insert.slice(0, insert.indexOf('})'))), true, 'the cache row lost its stamps')
+})
+
+// ── CUL-1099 (Engines v3 PR-22a): the dose pull resolves, and the engine stays dark to it ──
+// The adversarial pass found the dose lanes can suppress a true food correlate and add claims,
+// so turning them on is CUL-1425's, behind an Engines key. Until then the pull is READ (so a
+// failure throws like every pull) and the pipeline is handed nothing, which is the output
+// production has shown since June. Pinned on the source, as the EN-F wirings above are.
+Deno.test('CUL-1099 — the dose pull names its FK, throws on failure, and feeds the engine nothing yet', async () => {
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  assertStrictEquals(
+    src.includes('medication_administrations!medication_administrations_event_id_fkey('),
+    true,
+    'the dose embed lost its FK hint (PGRST201 on the live API)',
+  )
+  assertStrictEquals(/readDosesAsToday|isAmbiguousEmbed/.test(src), false, 'an error-as-empty dose wrapper is back')
+  // Dark: CUL-1425 flips this through a registered Engines key, never by editing the constant.
+  assertStrictEquals(SIGNAL_DOSE_LANES_ON, false, 'the dose lanes were turned on outside an Engines key')
+  const call = src.slice(src.indexOf('runSignalPipeline({'), src.indexOf('careRecord:', src.indexOf('runSignalPipeline({')))
+  assertStrictEquals(/doseEvents: SIGNAL_DOSE_LANES_ON \? doseEventsPull\.rows : \[\],/.test(call), true, 'the pipeline is handed dose rows ungated')
+  const incomplete = src.slice(src.indexOf('incompletePullNames({'), src.indexOf('incidentAnalyses:', src.indexOf('incompletePullNames({')))
+  assertStrictEquals(/\.\.\.\(SIGNAL_DOSE_LANES_ON \? \{ doseEvents: doseEventsPull \} : \{\}\)/.test(incomplete), true, 'an unread dose pull can mark the record incomplete')
 })

@@ -59,7 +59,7 @@ import {
 // degrades safely — it just stops a hung upstream from holding the function open.
 import { fetchWithTimeout } from '../_shared/http.ts'
 // CUL-989 — CUL-975's paged reader, shared with generate-report and ask.
-import { fetchAll, incompletePullNames, readDosesAsToday } from '../_shared/pull.ts'
+import { fetchAll, incompletePullNames } from '../_shared/pull.ts'
 import {
   templateForFinding,
   validatePhrasing,
@@ -306,6 +306,17 @@ async function phraseSummaryText(packet: SummaryFactPacket, phrasingEnabled = tr
 // phrasing. Re-exported for the existing suites (index.test.ts imports them from here).
 export { mapMedDoseFacts, type RegimenRow, type MedDoseEventRow } from './pipeline.ts'
 
+// CUL-1099: the dose pull resolves now (its embed names its FK), and the engine still does not
+// read it. The adversarial pass on turning the dose rows on found they can SUPPRESS a true
+// food correlate (a pill pocket that is the allergen, marked a drug vehicle; an as-needed
+// antiemetic given after each vomit, read as a confounder that withdraws the vomit lane) and
+// ADD claims (a new correlate once pocket exposures leave both arms; the med-on-board line),
+// so by Engines v3's rule they go behind a flag rather than ship on this PR's proof. Held
+// false, the Signal's output is byte-identical to what production has shown since June, when
+// every dose read failed. CUL-1425 replaces this constant with a registered Engines key, gated
+// in the pipeline, once the corpus guard it must rewrite is free to edit.
+export const SIGNAL_DOSE_LANES_ON = false as boolean
+
 // ── Cap + flag gate (Monetization Track 2, T2-3 / B-329 + B-001) ──────────────
 // docs/monetization-and-throttling-requirements.md §4–§5. Per-function COPY of the
 // shared-shape gate logic (S6: no _shared/ module; copy-paste per function —
@@ -485,7 +496,7 @@ const handler = async (req: Request): Promise<Response> => {
     //    asking "is this still happening?" would have read a record that stopped before today.
     //    And every read's error is now read: a failed query throws (a 500, and the client keeps
     //    its cached Signal) instead of arriving as an empty record written with a fresh TTL.
-    //    The one exception is the dose pull, below.
+    //    No exception: the dose pull's was deleted with the hint that made it resolve (CUL-1099).
     const [
       petRes,
       symptomsPull,
@@ -571,12 +582,16 @@ const handler = async (req: Request): Promise<Response> => {
       // dominant signal today since logged doses are regimen-unlinked (B-135). Same shape as the
       // meals join; soft-deleted + out-of-lookback rows excluded here (the engine's contract).
       // missed/refused doses are filtered in mapMedicationWindows (doseToMedicationWindow).
-      // Error-tolerant ON PURPOSE, and only this one: see `readDosesAsToday`.
-      readDosesAsToday('generate-signal', fetchAll<MedDoseEventRow & { id: string }>('events', (r) => r.id, (from, to) =>
+      // The embed NAMES its FK (CUL-1099): migration 023 gave medication_administrations a
+      // second FK to events (`paired_event_id`), so a bare `medication_administrations(...)`
+      // is ambiguous and the live API answers PGRST201. Until this hint the read failed on
+      // every call and was taken as "no doses"; it now throws like every pull here.
+      // `guards/medAdminEmbedHint.test.ts` fails the build on an unhinted embed.
+      fetchAll<MedDoseEventRow & { id: string }>('events', (r) => r.id, (from, to) =>
         supabase
         .from('events')
         .select(
-          'id, occurred_at, medication_administrations(medication_id, medication_item_id, adherence, paired_event_id, medication_items(generic_name, brand_name))',
+          'id, occurred_at, medication_administrations!medication_administrations_event_id_fkey(medication_id, medication_item_id, adherence, paired_event_id, medication_items(generic_name, brand_name))',
           { count: 'exact' },
         )
         .eq('pet_id', petId)
@@ -585,7 +600,7 @@ const handler = async (req: Request): Promise<Response> => {
         .gte('occurred_at', lookbackIso)
         .order('occurred_at', { ascending: false })
         .order('id', { ascending: false })
-        .range(from, to))),
+        .range(from, to)),
       // Per-incident visual red flags (B-340 vomit + B-364 stool) — the owner-editable structured
       // fields from event_ai_analysis for this pet's analysed incidents, INNER-joined to events so a
       // soft-deleted or out-of-lookback incident is excluded (the engine's contract) and we get
@@ -620,12 +635,14 @@ const handler = async (req: Request): Promise<Response> => {
 
     // CUL-989 step 3 — which pulls did not read to the end. Named for the log and handed to the
     // pipeline, which withholds every reassuring or resolving entry and states counts as floors.
+    // The dose pull counts only while the engine reads it: an unread pull cannot make this
+    // run's record incomplete, and counting it would change output the dark gate holds still.
     const incompletePulls = incompletePullNames({
       symptoms: symptomsPull,
       meals: mealsPull,
       arrangements: arrangementsPull,
       regimens: regimensPull,
-      doseEvents: doseEventsPull,
+      ...(SIGNAL_DOSE_LANES_ON ? { doseEvents: doseEventsPull } : {}),
       incidentAnalyses: incidentAnalysesPull,
     })
     if (incompletePulls.length > 0) {
@@ -687,7 +704,7 @@ const handler = async (req: Request): Promise<Response> => {
         arrangements: arrangementsPull.rows,
         timezone: (profileRes.data as { timezone: string | null } | null)?.timezone ?? null,
         regimens: regimensPull.rows,
-        doseEvents: doseEventsPull.rows,
+        doseEvents: SIGNAL_DOSE_LANES_ON ? doseEventsPull.rows : [],
         incidentAnalyses: incidentAnalysesPull.rows,
       },
       incompletePulls,
