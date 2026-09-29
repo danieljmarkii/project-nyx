@@ -11,6 +11,10 @@
 
 // A `mock`-prefixed holder the hoisted supabase mock closes over; each test sets it.
 let mockRow: Record<string, unknown> | null = null;
+// Set to make a Hide / Show write fail, and to hold it until the test lets it answer
+// (CUL-827's R7 case: the write must fail AFTER a re-run's restore has landed).
+let mockUpdateError: { message: string } | null = null;
+let mockUpdateGate: Promise<void> | null = null;
 jest.mock('../../lib/supabase', () => ({
   supabase: {
     from: () => ({
@@ -23,7 +27,9 @@ jest.mock('../../lib/supabase', () => ({
           eq: () => chain,
           is: () => chain,
           filter: () => chain,
-          select: () => Promise.resolve({ data: [{ event_id: 'e' }], error: null }),
+          select: () => (mockUpdateGate ?? Promise.resolve()).then(() => (
+            mockUpdateError ? { data: null, error: mockUpdateError } : { data: [{ event_id: 'e' }], error: null }
+          )),
           then: (resolve: (r: { error: null }) => unknown) => resolve({ error: null }),
         };
         return chain;
@@ -621,6 +627,41 @@ describe('StoolAnalysisSection — an escalation stays on screen through a re-ru
     await act(async () => { release({ error: 'FunctionsFetchError: offline' }); });
     await waitFor(() => expect(alert).toHaveBeenCalled());
     expect(view.getByText('AI note hidden')).toBeTruthy();
+  });
+
+  it('a Hide that FAILS after a refused re-run’s restore never re-marks the row pending (adversarial round 2, R7)', async () => {
+    let release: (v: { error: string }) => void = () => {};
+    (triggerStoolAnalysis as jest.Mock).mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    mockRow = row({ recommendation: 'worth_a_call', read_text: READ_TEXT });
+    const view = render(<StoolAnalysisSection eventId="rr-13" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(triggerStoolAnalysis as jest.Mock).toHaveBeenCalledTimes(1));
+    // Hide goes out while the re-run is still asking; its write is held, and will fail.
+    let openGate: () => void = () => {};
+    mockUpdateGate = new Promise<void>((r) => { openGate = r; });
+    mockUpdateError = { message: 'offline' };
+    fireEvent.press(view.getByText('Hide this note'));
+    try {
+      // The re-run is refused and restored FIRST…
+      await act(async () => { release({ error: 'FunctionsFetchError: offline' }); });
+      await waitFor(() => expect(alert).toHaveBeenCalledWith('Could not start analysis', 'Try again in a moment.'));
+      // …and only then does the Hide write fail.
+      await act(async () => { openGate(); });
+      await waitFor(() => expect(alert).toHaveBeenCalledWith('Could not update', 'Try again in a moment.'));
+    } finally {
+      mockUpdateGate = null;
+      mockUpdateError = null;
+    }
+    // The failed Hide rolls back only the hide: the call is shown, nothing is pending, and
+    // Re-run is live. `Add details` is the row's status made visible: it is offered only on
+    // a finished read, so a row re-marked `pending` loses it.
+    expect(view.getByText('Worth a call')).toBeTruthy();
+    expect(view.getByText('Add details')).toBeTruthy();
+    expect(view.getByText(READ_TEXT)).toBeTruthy();
+    expect(view.queryByText(RE_READING)).toBeNull();
+    expect(view.queryByText(PENDING)).toBeNull();
+    fireEvent.press(view.getByText('Re-run analysis'));
+    await waitFor(() => expect(triggerStoolAnalysis as jest.Mock).toHaveBeenCalledTimes(2));
   });
 
   it('a CALM verdict keeps the pending frame — never stood in front of a read that has not finished', async () => {

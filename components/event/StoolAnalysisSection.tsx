@@ -397,7 +397,15 @@ export function StoolAnalysisSection(
       Alert.alert(READ_CHANGED_TITLE, READ_CHANGED_BODY);
       return;
     }
-    setRow(shown);
+    // Roll back the HIDE only, over the row as it is now (CUL-827, adversarial round 2):
+    // over an escalation the card stays up through a re-run, so `shown` may be the re-run's
+    // pending-marked copy, and putting it back whole would re-mark a row whose restore has
+    // already landed. Over different words, what is on screen already stands.
+    setRow((cur) =>
+      cur && cur.recommendation === shown.recommendation && cur.read_text === shown.read_text
+        ? { ...cur, dismissed_at: shown.dismissed_at }
+        : cur ?? shown,
+    );
     Alert.alert('Could not update', 'Try again in a moment.');
   }
 
