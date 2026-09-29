@@ -256,6 +256,9 @@ Deno.test('EN-7 F2 · an unreadable photo, a failed call, a partial read, type 5
   assertStrictEquals(failed.recommendation, 'worth_a_call')
   assertStrictEquals(failed.tier, 'call_today')
   assertStrictEquals(failed.status, 'failed')
+  // Two photos, both read, one consistency back: a multi-photo read never withdraws (R3).
+  const two = await read(unreadWorld({ photos: 2 }))
+  assertStrictEquals(two.tier, 'call_today')
   // Four photos, three read, all formed: an unread frame could be loose (B-203's reasoning).
   const partial = await read(unreadWorld({ photos: 4 }))
   assertStrictEquals(partial.tier, 'call_today')
@@ -267,6 +270,15 @@ Deno.test('EN-7 F2 · an unreadable photo, a failed call, a partial read, type 5
   }
   const notStool = await read(unreadWorld({ vision: { ...FORMED, appears_to_show_stool: false } }))
   assertStrictEquals(notStool.tier, 'call_today')
+})
+
+Deno.test('EN-7 R2 · a Re-run reading type 4 never withdraws over the owner\'s correction to watery', async () => {
+  const w = unreadWorld({
+    row: { id: 'a1', pet_id: 'pet-1', edited_at: '2026-09-29T00:00:00Z', stool_consistency: 'type_7_watery', recommendation: 'monitor', status: 'completed' },
+  })
+  const row = await read(w)
+  assertStrictEquals(row.tier, 'call_today')
+  assertStrictEquals(row.stool_consistency, 'type_7_watery') // the owner's edit is kept (Pattern 7)
 })
 
 Deno.test('EN-7 F1 · a cat with no Most or All meal, one unopened photoless vomit, a formed stool: the call stands', async () => {

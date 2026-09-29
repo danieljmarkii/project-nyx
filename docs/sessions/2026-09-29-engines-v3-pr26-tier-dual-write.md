@@ -32,10 +32,16 @@ EN-3's server half (CUL-1133) and EN-7 (CUL-1138), in one PR, shipped via the dr
 - **F5 (low):** flag-off rows now carry `f2.*` rule versions; "earlier rule" is `rule_version` plus `engine_flags` (the EN-0 precedent). Spec §1's wording is a proposed Tier-2 edit.
 - **F6 (note for PR-27):** status (failed, capped) must lead the tier on screen, or an old `logged` shows over a read that did not finish.
 
+**Round 2 (at `c386dbe`): FAIL on two narrower paths, fixed.**
+- **R1:** the intake arm asked only the read-time half; with EN-0 on, the vomit's own read also asks the anchored half. Fixed: the stool runs `buildVomitContext` with the owner's flags, anchored on each vomit in the window, over an 8-day meal read.
+- **R2:** a Re-run reading type 4 withdrew over an owner's correction to watery. Fixed: on an edited row the stored consistency must be formed too (`ownerAgreesFormed`, `afterReadColumns`).
+- **R3:** a multi-photo read returns one consistency for every frame. Fixed: the framework withdraws only on a single-photo event.
+- **R4:** the repeats sentence now says "in the days around this stool".
+
 ## Proof
 
 - Deno: `_shared/`, `analyze-vomit/`, `analyze-stool/` (new `pipeline.test.ts` driving the real stool descriptor through the real pipeline, key off and on; new `en7.test.ts`), and `_shared/incident-tier.test.ts`. Jest: `lib/incidentTier.test.ts` and the two guards; the full suite ran green in the pre-push hook.
-- Mutation, each red: the tier gate, the keep-louder rule (write and cap), the failure write's louder column, the complete-read gate, the withdrawable bound, the stool flag gate, the intake arm, the repeat pin, and withdrawing on any read form.
+- Mutation, each red: the tier gate, the keep-louder rule (write and cap), the failure write's louder column, the complete-read gate, the withdrawable bound, the stool flag gate, the intake arm, the repeat pin, withdrawing on any read form, EN-0's anchored intake half, the owner-consistency check and the single-photo bound.
 
 ## Carried forward
 

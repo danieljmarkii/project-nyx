@@ -233,8 +233,13 @@ export interface ContextualRun<TFlag extends string = string, TAnalysis = unknow
   //   · the flags computed before the read are what the cap branch and the rescue write, so
   //     a withdrawal can only follow a read that happened.
   // The hook may also ADD flags and choose the copy the words come from.
+  //   · and only on a SINGLE-photo event: the model returns one set of structured fields for
+  //     every frame it saw, so a multi-photo read cannot say that each frame shows what a
+  //     withdrawal needs (adversarial round 2, R3). A multi-photo read may still ADD.
+  // `stored` is the row read at step 3b with `afterReadColumns` selected, so an owner's
+  // correction can outrank the model (Pattern 7: the owner's edit wins; round 2, R2).
   withdrawable?: TFlag[]
-  afterRead?(analysis: TAnalysis | null): { flags: TFlag[]; copy: IncidentCopy<TFlag> }
+  afterRead?(analysis: TAnalysis | null, stored: Record<string, unknown> | null): { flags: TFlag[]; copy: IncidentCopy<TFlag> }
 }
 
 // The post-read hook's answer, folded in: every pre-vision flag stays, in its order, and
@@ -1223,6 +1228,9 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   // these, so presentFlagsFromStructured must read nothing else (each descriptor's
   // suite pins that).
   redFlagColumns: readonly string[]
+  // Optional (EN-7): further stored columns step 3b selects for a ContextualRun.afterRead to
+  // read (stool's owner-editable consistency). Never read by the red-flag derivation.
+  afterReadColumns?: readonly string[]
   // The PRESENT red flags a row of structured column values asserts, present-only:
   // never a flag on 'unsure', 'no', 'none_visible' or null. Run on the stored row, on
   // the stored ai_raw_payload mapped through buildStructuredValues, and on this run's
@@ -1372,7 +1380,10 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // pet_id: every decision on the row first checks it is this event's (CUL-1203).
   // dismissed_at: a hold clears the owner's hide, so it has to know one is there (CUL-1323).
   // tier: every guard reads the louder of it and `recommendation` (EN-3, lib/incidentTier.ts).
-  const storedColumns = ['id', 'pet_id', 'edited_at', 'status', 'recommendation', 'tier', 'dismissed_at', ...descriptor.redFlagColumns].join(', ')
+  const storedColumns = [
+    'id', 'pet_id', 'edited_at', 'status', 'recommendation', 'tier', 'dismissed_at',
+    ...descriptor.redFlagColumns, ...(descriptor.afterReadColumns ?? []),
+  ].join(', ')
   const readStoredRow = async (): Promise<StoredRow | null> =>
     existingRowOrThrow(
       await adminClient
@@ -1654,8 +1665,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     const completeRead = analysis !== null && photoPaths.length > 0 && usableReadCount === photoPaths.length
     if (contextRun.afterRead && completeRead) {
       const merged = mergeAfterRead(
-        { flags: contextualFlags, copy, withdrawable: contextRun.withdrawable },
-        contextRun.afterRead(analysis),
+        { flags: contextualFlags, copy, withdrawable: photoPaths.length === 1 ? contextRun.withdrawable : [] },
+        contextRun.afterRead(analysis, existing),
       )
       contextualFlags = merged.flags
       copy = merged.copy

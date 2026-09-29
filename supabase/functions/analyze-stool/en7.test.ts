@@ -7,6 +7,7 @@ import {
   buildEn7StoolContext,
   buildEn7VomitReadText,
   computeContextualFlags,
+  ownerAgreesFormed,
   type En7VomitReason,
   en7ReadForm,
   en7StoolCopy,
@@ -71,26 +72,29 @@ Deno.test('EN-7 — the flag is withdrawable only when nothing else asks for it'
 Deno.test('EN-7 — the hook withdraws the flag on a formed stool only (types 2, 3, 4)', () => {
   const run = flagOnRun({ ...base, en7: QUIET })
   for (const c of ['type_2_lumpy', 'type_3_cracked', 'type_4_smooth_soft']) {
-    assertEquals(run.afterRead!(at(c)).flags, [], c)
+    assertEquals(run.afterRead!(at(c), null).flags, [], c)
   }
   // Loose, hard, "trending loose", unsure, no consistency, or not stool: the call stands.
   for (const [c, appears] of [['type_1_hard_lumps', true], ['type_5_soft_blobs', true], ['type_6_mushy', true],
     ['type_7_watery', true], ['unsure', true], [null, true], ['type_4_smooth_soft', false]] as const) {
-    assertEquals(run.afterRead!(at(c, appears)).flags, ['concurrent_vomiting'], `${c} ${appears}`)
+    assertEquals(run.afterRead!(at(c, appears), null).flags, ['concurrent_vomiting'], `${c} ${appears}`)
   }
-  assertEquals(run.afterRead!(null).flags, ['concurrent_vomiting'])
+  assertEquals(run.afterRead!(null, null).flags, ['concurrent_vomiting'])
 })
 
 Deno.test('EN-7 F1 — a formed stool keeps the call when the cat intake arm holds', () => {
   const run = flagOnRun({ ...base, en7: { ...QUIET, intakeArm: true } })
-  assertEquals(run.afterRead!(FORMED).flags, ['concurrent_vomiting'])
-  assertStrictEquals(run.afterRead!(FORMED).copy.contextual('Mochi', ['concurrent_vomiting']), buildEn7VomitReadText('Mochi', 'intake'))
+  assertEquals(run.afterRead!(FORMED, null).flags, ['concurrent_vomiting'])
+  assertStrictEquals(run.afterRead!(FORMED, null).copy.contextual('Mochi', ['concurrent_vomiting']), buildEn7VomitReadText('Mochi', 'intake'))
 })
 
 // ── The reads ─────────────────────────────────────────────────────────────────────────
 
-const ctx = (vomitHours: number[], o: { eventType?: string; species?: string; meals?: { h: number; rating: string | null }[] } = {}) =>
+const EN0_ON = { on: ['engines_v3_en0', 'engines_v3_en3'] as ('engines_v3_en0' | 'engines_v3_en3')[], readOk: true }
+const EN0_OFF = { on: ['engines_v3_en3'] as ('engines_v3_en0' | 'engines_v3_en3')[], readOk: true }
+const ctx = (vomitHours: number[], o: { eventType?: string; species?: string; meals?: { h: number; rating: string | null }[]; en0?: boolean } = {}) =>
   buildEn7StoolContext({
+    engineFlags: o.en0 ? EN0_ON : EN0_OFF,
     species: o.species ?? 'dog',
     meals: (o.meals ?? []).map((m) => ({ occurred_at: iso(NOW - m.h * H), meals: { intake_rating: m.rating } })),
     looseTimes: [], vomitTimes: vomitHours.map((h) => iso(NOW - h * H)), hasRecentLethargy: false,
@@ -116,6 +120,25 @@ Deno.test('EN-7 F1 — the intake arm is the vomit read\'s feline_reduced_intake
   assertStrictEquals(ctx([2], { species: 'cat', meals: [{ h: 5, rating: null }] }).en7?.intakeArm, false)
   // A dog: the arm is feline.
   assertStrictEquals(ctx([2], { species: 'dog', meals: [{ h: 5, rating: 'some' }] }).en7?.intakeArm, false)
+})
+
+Deno.test('EN-7 R1 — with EN-0 on, the arm asks the vomit\'s anchored half too (eating after never cancels refusals before)', () => {
+  // Refusals before a vomit 20 h ago, then an 'all' meal after it.
+  const meals = [{ h: 100, rating: 'all' }, { h: 30, rating: 'none' }, { h: 22, rating: 'none' }, { h: 2, rating: 'all' }]
+  assertStrictEquals(ctx([20], { species: 'cat', meals, en0: true }).en7?.intakeArm, true)
+  // EN-0 off: the shipped read-time half only, which the 'all' at 2 h satisfies.
+  assertStrictEquals(ctx([20], { species: 'cat', meals, en0: false }).en7?.intakeArm, false)
+})
+
+Deno.test('EN-7 R2 — an owner-edited consistency must agree the stool is formed before the flag can go', () => {
+  assertStrictEquals(ownerAgreesFormed(null), true)
+  assertStrictEquals(ownerAgreesFormed({ edited_at: null, stool_consistency: 'type_7_watery' }), true) // unedited: the read decides
+  assertStrictEquals(ownerAgreesFormed({ edited_at: '2026-09-29T00:00:00Z', stool_consistency: 'type_7_watery' }), false)
+  assertStrictEquals(ownerAgreesFormed({ edited_at: '2026-09-29T00:00:00Z', stool_consistency: null }), false)
+  assertStrictEquals(ownerAgreesFormed({ edited_at: '2026-09-29T00:00:00Z', stool_consistency: 'type_3_cracked' }), true)
+  const run = flagOnRun({ ...base, en7: QUIET })
+  assertEquals(run.afterRead!(FORMED, { edited_at: '2026-09-29T00:00:00Z', stool_consistency: 'type_7_watery' }).flags, ['concurrent_vomiting'])
+  assertEquals(run.afterRead!(FORMED, null).flags, [])
 })
 
 Deno.test('EN-7 — the repeat predicate is the vomit read\'s, at its thresholds', () => {
@@ -146,7 +169,7 @@ Deno.test('EN-7 — a read\'s form: loose 6-7, hard 1, formed 2-4, anything else
 Deno.test('EN-7 — the words: the owner\'s Loose leads, then the read, then the reason the vomiting asks', () => {
   const words = (en7: typeof QUIET, a: StoolAnalysis | null) => {
     const run = flagOnRun({ ...base, en7 })
-    const after = run.afterRead!(a)
+    const after = run.afterRead!(a, null)
     return after.copy.contextual('Cooper', after.flags)
   }
   const watery = at('type_7_watery')
