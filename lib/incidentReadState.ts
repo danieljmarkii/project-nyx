@@ -42,6 +42,26 @@ export function escalationSurvivesFailure(
   return isEscalationVerdict(row?.recommendation);
 }
 
+// ── …and a re-read that is still running (CUL-827) ─────────────────────────────
+//
+// The pending sibling of the rule above. Both sections render their pending box ahead of
+// the read card, and `Re-run analysis` marks the row `pending` before it asks the server,
+// so one ordinary tap used to take a live escalation off the screen and put "Reading the
+// photo…" in its place: to an owner, the same NOTHING WAS FOUND a failed read said, and
+// for as long as the re-read ran (or, on a refused invoke or a watch that gave up, for the
+// rest of the visit). An escalation in the record now stays on screen through a re-read,
+// with the re-read shown in place beside it.
+//
+// The same asymmetry, for the same reason: a `monitor` or `not_enough_to_say` keeps the
+// pending box. The re-read may be of a REPLACED photo, and standing a calm verdict in
+// front of it while it runs would be reassurance about an image nothing has read yet.
+// Keyed on the same predicate, so an unknown verdict (EN-3's `call_now`) is held too.
+export function escalationSurvivesReRead(
+  row: { recommendation?: string | null } | null | undefined,
+): boolean {
+  return isEscalationVerdict(row?.recommendation);
+}
+
 // ── A quiet verdict stands only on a read that FINISHED (CUL-1277) ─────────────
 //
 // The statuses under which a finished verdict STANDS. `lib/readState.ts` (History, the

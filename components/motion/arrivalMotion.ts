@@ -388,6 +388,17 @@ export function useIncidentArrival({
   useLayoutEffect(() => {
     const was = wasAwaiting.current;
     wasAwaiting.current = awaitingRead;
+    // The wait STARTS: the stage's "was" is re-seeded from what it shows now, so only a
+    // change seen during THIS wait can make a landing. Without it, a pending box from the
+    // mount's first-load frame survived in `stageWas`, and a re-read over an escalation
+    // that never left the screen (CUL-827 keeps the card up) "arrived" on landing: the
+    // card clipped to the old box's height and a ghost "Reading the photo…" faded over
+    // it, for a beat the very swap CUL-827 removes. The stage's layout effect runs before
+    // this one (child first), so `stageNow` is already this commit's stage.
+    if (!was && awaitingRead) {
+      stageWas.current = stageNow.current;
+      return;
+    }
     if (!was || awaitingRead) return;
     if (suppressedRef.current) return;
     // The stage's half: it must have been showing the pending box and be showing content

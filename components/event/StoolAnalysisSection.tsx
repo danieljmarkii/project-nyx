@@ -47,6 +47,7 @@ import {
 } from '../../lib/analysis';
 import {
   escalationSurvivesFailure,
+  escalationSurvivesReRead,
   incidentVerdictLabel,
   quietVerdictUnfinished,
 } from '../../lib/incidentReadState';
@@ -65,6 +66,7 @@ import {
 import { ThemedText } from '../ui/ThemedText';
 import {
   IncidentReadCard, RAIL_TICK_HEIGHT, INCIDENT_READ_FAILED_LINE, INCIDENT_READ_NOT_ENOUGH_LINE,
+  INCIDENT_RE_READING_PHOTO_LINE, INCIDENT_RE_READING_LINE,
 } from './IncidentReadCard';
 import { useReadLandingAnnouncement } from './useReadLandingAnnouncement';
 import { IncidentReadSection } from './IncidentReadSection';
@@ -149,6 +151,12 @@ export function StoolAnalysisSection(
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const cancelled = useRef(false);
+  // The row as the screen holds it NOW, for a handler that awaits across a render. A re-run
+  // over an escalation leaves the card (and its Hide) on screen for the whole wait, so the
+  // owner can change the hide mid-flight; a restore that read only the tap-time copy would
+  // quietly undo that (CUL-827, adversarial #3).
+  const latestRow = useRef<AnalysisRow | null | undefined>(undefined);
+  latestRow.current = row;
   const watchTeardown = useRef<(() => void) | null>(null);
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
@@ -303,11 +311,19 @@ export function StoolAnalysisSection(
     //     re-run and is never spoken.
     // So the wait re-bases on the server's row only when it SHOWS what the screen already
     // shows; otherwise the local baseline stands and anything new counts as a landing.
-    const fresh = await fetchRow();
+    // Caught, like every read below: a throw here would leave `retrying` set, and that is a
+    // re-read that never ends (CUL-827). A failed read re-bases on the screen's own copy.
+    const fresh = await fetchRow().catch(() => null);
     if (cancelled.current) return;
     const base = fresh && shown && showsSameRead(fresh, shown) ? fresh : shown;
     if (base) setRow({ ...base, status: 'pending', error: null });
-    const { error } = await triggerStoolAnalysis(eventId);
+    // A REJECTED invoke is a refused one (CUL-827). The trigger catches its own throws
+    // today, but the pending mark above must come off on every path that did not start a
+    // read, not only on the ones that return an error: a throw here would skip the restore
+    // below and leave `retrying` set, which renders as a re-read that never ends.
+    const { error } = await triggerStoolAnalysis(eventId).catch((e: unknown) => ({
+      error: e instanceof Error ? e.message : String(e),
+    }));
     // Navigated away mid-trigger — don't setState or open a watch on an
     // unmounted instance (mirrors start()'s guard after the same await).
     if (cancelled.current) return;
@@ -339,13 +355,16 @@ export function StoolAnalysisSection(
       // hide onto new words would re-hide what the server has just shown. A read the
       // owner has not been shown is a landing, told to the announcer outright rather than
       // left to the pending write and this one committing apart (round 4, F1).
-      const after = await fetchRow();
+      const after = await fetchRow().catch(() => null);
       if (cancelled.current) return;
       const server = after ?? (escalationSurvivesFailure(fresh) ? fresh : null);
       const keepScreenHide = !!shown && !!server && sameRead(server, shown);
+      // The screen's hide as it is NOW, not at the tap: over an escalation the card stayed
+      // up through the wait, and a Hide or Show made during it is the owner's latest word.
+      const screenHide = latestRow.current ? latestRow.current.dismissed_at : shown?.dismissed_at ?? null;
       const back = server
-        ? { ...server, dismissed_at: keepScreenHide && shown ? shown.dismissed_at : server.dismissed_at }
-        : base;
+        ? { ...server, dismissed_at: keepScreenHide ? screenHide : server.dismissed_at }
+        : base && { ...base, dismissed_at: screenHide };
       if (back) {
         if (server && !(shown && showsSameRead(server, shown))) announcer.expectLanding();
         setRow(back);
@@ -378,7 +397,15 @@ export function StoolAnalysisSection(
       Alert.alert(READ_CHANGED_TITLE, READ_CHANGED_BODY);
       return;
     }
-    setRow(shown);
+    // Roll back the HIDE only, over the row as it is now (CUL-827, adversarial round 2):
+    // over an escalation the card stays up through a re-run, so `shown` may be the re-run's
+    // pending-marked copy, and putting it back whole would re-mark a row whose restore has
+    // already landed. Over different words, what is on screen already stands.
+    setRow((cur) =>
+      cur && cur.recommendation === shown.recommendation && cur.read_text === shown.read_text
+        ? { ...cur, dismissed_at: shown.dismissed_at }
+        : cur ?? shown,
+    );
     Alert.alert('Could not update', 'Try again in a moment.');
   }
 
@@ -410,7 +437,11 @@ export function StoolAnalysisSection(
     // The same trigger-and-watch as the mount path; the invoke outlives this screen.
     if (needsEn7Recheck(row, norm.stool_consistency)) {
       setWorking(true);
-      const { error: recheckError } = await triggerStoolAnalysis(eventId);
+      // A rejection is a refusal too (CUL-827): uncaught, it would leave `working` set over a
+      // calm row, which is a pending box with nothing watching.
+      const { error: recheckError } = await triggerStoolAnalysis(eventId).catch((e: unknown) => ({
+        error: e instanceof Error ? e.message : String(e),
+      }));
       if (cancelled.current) return;
       if (recheckError) {
         // The owner's correction is saved; the re-check that follows from it did not start.
@@ -436,9 +467,21 @@ export function StoolAnalysisSection(
 
   const status: Status | undefined = row?.status;
 
-  // Pending / actively working. Same photoless rule: no spinner for a photoless
-  // event — a contextual escalation pops in clean when it resolves (B-363).
-  if (hasPhoto && (working || status === 'pending')) {
+  // A read is being produced: the server was asked and is being watched (`working`), or
+  // the owner's Re-run is under way (`retrying`, from the tap: its first step is a read
+  // that can hang for a fetch timeout, and a calm verdict must not stand beside a re-read
+  // cue for it — adversarial #2). NOT `status === 'pending'` alone (CUL-827): the pending mark outlives a watch that gave
+  // up, and keyed on it the section rendered "Reading the photo…" for the rest of the
+  // visit with nothing watching and no control to press. A row still marked pending with
+  // nothing in flight falls through to the frames below, each of which carries a retry.
+  const reading = working || retrying;
+
+  // Pending / actively working — UNLESS the record already holds an escalation, which
+  // stays on screen through the re-read with the re-read shown in place beside it
+  // (CUL-827; see escalationSurvivesReRead for why a calm verdict does not). Same
+  // photoless rule: no spinner for a photoless event — a contextual escalation pops in
+  // clean when it resolves (B-363).
+  if (hasPhoto && reading && !escalationSurvivesReRead(row)) {
     return <IncidentReadSection arrival={arrival} announcer={announcer} pending working />;
   }
 
@@ -624,13 +667,28 @@ export function StoolAnalysisSection(
           Two slopped controls facing each other at a zero gap overlap (C-5), and the fix
           for controls already flush is to grow the BOX — `rerunRow` carries the 44pt
           floor in `minHeight` instead. */}
+      {/* CUL-827 — over an escalation a re-read no longer swaps the card for the pending
+          box, so the re-read is shown HERE, in place, and the control is unavailable for
+          as long as it runs (its label says why). Once nothing is in flight — the read
+          landed, the invoke was refused, or the watch gave up — it is `Re-run analysis`
+          again, so no path leaves an escalation beside a wait with no way on. */}
       {!dismissed && !editing ? (
         <TouchableOpacity
           onPress={handleRetry}
-          disabled={retrying}
-          style={styles.rerunRow}
+          disabled={retrying || reading}
+          accessibilityRole="button"
+          style={[styles.rerunRow, retrying || reading ? styles.rerunRowReading : null]}
         >
-          <ThemedText style={styles.linkText}>{retrying ? 'Re-running…' : 'Re-run analysis'}</ThemedText>
+          {retrying || reading ? (
+            <>
+              <WhorlSpinner size="sm" ground="day" />
+              <ThemedText style={styles.rerunReadingText}>
+                {hasPhoto ? INCIDENT_RE_READING_PHOTO_LINE : INCIDENT_RE_READING_LINE}
+              </ThemedText>
+            </>
+          ) : (
+            <ThemedText style={styles.linkText}>Re-run analysis</ThemedText>
+          )}
         </TouchableOpacity>
       ) : null}
     </IncidentReadSection>
@@ -776,6 +834,17 @@ const styles = StyleSheet.create({
     // Pinned explicitly because the 44pt floor depends on it and the slop that used to
     // reach it is gone (C-5).
     minHeight: 44,
+  },
+  // The in-place re-read (CUL-827): the spinner and its line side by side, in the row's
+  // own box so the 44pt floor above still holds.
+  rerunRowReading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+  },
+  rerunReadingText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
   },
   dismissedRow: {
     flexDirection: 'row',
