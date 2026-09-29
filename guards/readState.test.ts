@@ -89,6 +89,14 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'both places by one rule. Handed rows; reads no table.',
   },
 
+  'lib/incidentTier.ts': {
+    kinds: ['field'],
+    why:
+      'The tier ORDER (EN-3, CUL-1133): ranks a row’s tier and verdict so the server’s ' +
+      'never-lower and PR-27’s reader take the louder column by one rule. Handed rows; ' +
+      'reads no table, renders nothing, and an unknown verdict ranks as a call.',
+  },
+
   // ── The copy: its one module, and its DDL ──
   'lib/readCopy.ts': {
     kinds: ['server', 'copy', 'field'],

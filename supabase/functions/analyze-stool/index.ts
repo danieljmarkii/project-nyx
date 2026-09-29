@@ -837,7 +837,7 @@ const FLAG_KEY = 'ai_stool_read_enabled'
 
 // ── The stool descriptor (D2) ────────────────────────────────────────────────────
 
-const STOOL_DESCRIPTOR: IncidentDescriptor<StoolAnalysis, ContextualFlag> = {
+export const STOOL_DESCRIPTOR: IncidentDescriptor<StoolAnalysis, ContextualFlag> = {
   functionName: 'analyze-stool',
   // Both owner-classified stool event types get a read (D1 keeps the split). The
   // row's incident_type reuses events.event_type ('stool_normal' or 'diarrhea').

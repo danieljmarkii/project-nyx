@@ -122,6 +122,9 @@ const NOT_A_SURFACE: Record<string, string> = {
   'lib/readCopy.ts': 'the phone’s copy: stores and syncs the value verbatim, reads it through lib/readState.ts',
   'lib/localSchema.ts': 'DDL: declares the copy’s column',
   'lib/analysisDismissal.ts': 'the Hide / Show compare-and-set (CUL-1323): matches the verdict on screen as an opaque value, never sorts or renders it',
+  // Ranks, never renders: an unknown verdict ranks as call now (lib/incidentTier.test.ts).
+  // PR-27 reads the tier through it on a surface; that surface is classified there.
+  'lib/incidentTier.ts': 'the tier order (EN-3): ranks the verdict beside the tier for the never-lower rule; renders nothing',
 };
 
 // ── The two record sections ───────────────────────────────────────────────────
