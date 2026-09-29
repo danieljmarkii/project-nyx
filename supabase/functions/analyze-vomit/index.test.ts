@@ -25,12 +25,17 @@ import {
   resolveGateState,
   resolveFlagValue,
   resolveCaps,
+  buildEn0ContextualReadText,
+  buildEn0PhotoFirstReadText,
+  en0VomitCopy,
+  vomitContextualRun,
   type ContextInput,
   type VomitAnalysis,
   type FunctionCaps,
 } from './index.ts'
 import { deriveIncidentFlags } from '../generate-signal/detection.ts'
-import { shouldCollapsePartialRead } from '../_shared/incident-analysis.ts'
+import { selectReadText as selectSharedReadText, shouldCollapsePartialRead } from '../_shared/incident-analysis.ts'
+import type { IntakeRecord } from './context.ts'
 
 // ── Cap + flag gate (T2-3) ────────────────────────────────────────────────────
 // analyze-vomit free caps are daily 10 / monthly 200, identical across tiers (D-M2).
@@ -810,6 +815,138 @@ Deno.test('selectReadText — every deterministic template it emits never reassu
     assertEquals(REASSURE_VOCAB.test(t), false, `reassured: "${t}"`)
     assertEquals(t.includes('!'), false)
   }
+})
+
+// ── EN-0 (CUL-1130): the read states the record, and names the photo finding first ──────
+// Flag-on only (vomitContextualRun). Pattern 8 over every string the EN-0 copy can build,
+// Pattern 10 unchanged (the model's words never ride a contextual read), and the two reads
+// the issue names, word for word.
+
+type VFlag = 'repeated_vomiting' | 'feline_reduced_intake' | 'concurrent_lethargy'
+const EN0_RECORDS: (IntakeRecord | undefined)[] = [
+  undefined,
+  ...(['before_vomit', 'before_read'] as const).flatMap((window) => [0, 1, 2, 6].map((mealsLogged) => ({ window, mealsLogged }))),
+]
+const FLAG_SETS: VFlag[][] = [
+  ['feline_reduced_intake'], ['repeated_vomiting'], ['concurrent_lethargy'],
+  ['repeated_vomiting', 'feline_reduced_intake', 'concurrent_lethargy'],
+]
+const VISUAL_SETS = [[], ['blood'], ['suspected_foreign_material'], ['blood', 'suspected_foreign_material']]
+
+function en0Strings(): string[] {
+  const out: string[] = []
+  for (const pet of ['Mochi', '']) {
+    for (const record of EN0_RECORDS) {
+      for (const flags of FLAG_SETS) {
+        out.push(buildEn0ContextualReadText(pet, flags, record))
+        for (const visual of VISUAL_SETS) out.push(buildEn0PhotoFirstReadText(pet, flags, visual, record))
+      }
+    }
+  }
+  return out
+}
+
+Deno.test('EN-0 copy — every string it can build never reassures, never shouts, never concludes (Pattern 8)', () => {
+  const all = en0Strings()
+  assertEquals(all.length > 300, true)
+  for (const t of all) {
+    assertEquals(REASSURE_VOCAB.test(t), false, `reassured: "${t}"`)
+    assertEquals(t.includes('!'), false, t)
+    // The shipped conclusion, and any clause relative to the day the owner reads it (GAP-1).
+    assertEquals(/hasn't eaten|\brecently\b|\byesterday\b|\btoday\b|\blast night\b/i.test(t), false, `concluded or dated: "${t}"`)
+    assertEquals(/vet/.test(t), true, `no route to the vet: "${t}"`)
+  }
+})
+
+Deno.test('EN-0 copy — the 8/19 read states the six unrated meals before the vomit', () => {
+  assertStrictEquals(
+    buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'before_vomit', mealsLogged: 6 }),
+    "6 meals are logged for Nyx in the 24 hours before this vomit, and none is marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+  )
+})
+
+Deno.test('EN-0 copy — ate, vomited, then refused, read late: the record before the READ, said so', () => {
+  assertStrictEquals(
+    buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'before_read', mealsLogged: 2 }),
+    "2 meals are logged for Nyx in the 24 hours before I read this, and none is marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+  )
+  assertStrictEquals(
+    buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'before_vomit', mealsLogged: 0 }),
+    "No meals are logged for Nyx in the 24 hours before this vomit. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+  )
+})
+
+Deno.test('EN-0 copy — the 9/22 read names the possible foreign material first, then the meals', () => {
+  assertStrictEquals(
+    buildEn0PhotoFirstReadText('Nyx', ['feline_reduced_intake'], ['suspected_foreign_material'], { window: 'before_vomit', mealsLogged: 6 }),
+    "I can see something that doesn't look like food in this photo. 6 meals are logged for Nyx in the 24 hours before this vomit, and none is marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+  )
+})
+
+Deno.test('EN-0 copy — repeated vomiting and lethargy keep their shipped words', () => {
+  for (const flags of [['repeated_vomiting'], ['concurrent_lethargy'], ['repeated_vomiting', 'concurrent_lethargy']] as VFlag[][]) {
+    assertStrictEquals(buildEn0ContextualReadText('Mochi', flags), buildContextualReadText('Mochi', flags))
+  }
+})
+
+const en0Ctx: ContextInput = {
+  species: 'cat', recentVomitTimes: [], thisEventOccurredAt: '2026-09-22T01:30:00Z',
+  hasRecentPositiveIntake: false, tracksIntake: true, hasRecentLethargy: false,
+  intakeRecord: { window: 'before_vomit', mealsLogged: 6 },
+}
+const en0Base = { ...base, recommendation: 'worth_a_call' as const, contextualFlags: ['feline_reduced_intake'] as VFlag[] }
+const MODEL_WORDS = 'MODEL WORDS: a totally normal hairball, nothing to worry about.'
+
+Deno.test('EN-0 selection — a visual flag leads; the model\'s words never ride a contextual read (Pattern 10)', () => {
+  const out = selectSharedReadText(en0VomitCopy(en0Ctx), { ...en0Base, visualFlags: ['blood'], modelReadText: MODEL_WORDS, modelEscalated: true })
+  assertEquals(out.startsWith('I can see what looks like blood in this photo. 6 meals are logged'), true, out)
+  assertEquals(out.includes('MODEL WORDS'), false)
+})
+
+Deno.test('EN-0 selection — the model\'s own call with no visual flag leads from a template ("the model\'s own call included")', () => {
+  const out = selectSharedReadText(en0VomitCopy(en0Ctx), { ...en0Base, modelReadText: MODEL_WORDS, modelEscalated: true })
+  assertEquals(out.startsWith('I can see something worth a closer look in this photo.'), true, out)
+  assertEquals(out.includes('MODEL WORDS'), false)
+})
+
+Deno.test('EN-0 selection — no photo finding, no lead: a calm model read, an unreadable photo, no photo', () => {
+  const plain = buildEn0ContextualReadText('Mochi', ['feline_reduced_intake'], en0Ctx.intakeRecord)
+  const copy = en0VomitCopy(en0Ctx)
+  assertStrictEquals(selectSharedReadText(copy, { ...en0Base, modelEscalated: false }), plain)
+  assertStrictEquals(selectSharedReadText(copy, { ...en0Base, visualFlags: ['blood'], photoUnreadable: true, modelEscalated: true }), plain)
+  assertStrictEquals(selectSharedReadText(copy, { ...en0Base, visualFlags: ['blood'], hasPhoto: false, modelEscalated: true }), plain)
+})
+
+Deno.test('EN-0 selection — every non-contextual path is VOMIT_COPY\'s, word for word', () => {
+  const copy = en0VomitCopy(en0Ctx)
+  for (const p of [
+    { ...base, recommendation: 'monitor' as const },
+    { ...base, recommendation: 'worth_a_call' as const, visualFlags: ['blood'], modelReadText: null },
+    { ...base, recommendation: 'worth_a_call' as const, visualFlags: ['blood'], modelReadText: MODEL_WORDS },
+    { ...base, recommendation: 'not_enough_to_say' as const },
+    { ...base, recommendation: 'not_enough_to_say' as const, hasPhoto: false },
+    { ...base, recommendation: 'not_enough_to_say' as const, photoUnreadable: true },
+  ]) {
+    assertStrictEquals(selectSharedReadText(copy, p), selectReadText(p))
+  }
+})
+
+Deno.test('EN-0 gate — flag-off hands the pipeline the flags alone (VOMIT_COPY stands); flag-on, the EN-0 copy', () => {
+  const off = vomitContextualRun(en0Ctx, { on: [], readOk: true })
+  const failed = vomitContextualRun(en0Ctx, { on: [], readOk: false })
+  assertEquals(off, ['feline_reduced_intake'])
+  assertEquals(failed, ['feline_reduced_intake'])
+  const on = vomitContextualRun(en0Ctx, { on: ['engines_v3_en0'], readOk: true })
+  assertEquals(Array.isArray(on), false)
+  if (Array.isArray(on)) return
+  assertEquals(on.flags, ['feline_reduced_intake'])
+  assertStrictEquals(on.copy.contextual('Nyx', on.flags), buildEn0ContextualReadText('Nyx', on.flags, en0Ctx.intakeRecord))
+})
+
+Deno.test('flag-off selection — a contextual read over a visual finding keeps the shipped contextual words', () => {
+  // VOMIT_COPY has no photo-first template, so step 1 is unchanged for flag-off vomit.
+  const out = selectReadText({ ...en0Base, visualFlags: ['blood'], modelReadText: MODEL_WORDS })
+  assertStrictEquals(out, buildContextualReadText('Mochi', ['feline_reduced_intake']))
 })
 
 // ── buildAnalysisWriteBack — the never-clobber guard (B-028) ───────────────────

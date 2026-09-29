@@ -14,10 +14,14 @@
 //   - seeded random records around one vomit, every row occurring no later than the read
 //     (a row the read could not have seen is a fixture production cannot hand over, C-35).
 //
-// Mutation-proven when written (C-18): replacing EN0_CONTEXT_STEP's union with the
-// anchored half alone (the vomit list filtered to the anchored window only; the intake
-// branch returning the anchored verdict even when only the shipped half fired) reds the
-// superset test on the named "ate, vomited, then refused" sweep and on the random records.
+// Mutation-proven when written (C-18): making the intake half anchored-only (dropping the
+// shipped fallback, returning the anchored verdict) reds all three tests, first on the
+// corpus sweep, the "ate, vomited, then refused" hold and seed 4. Filtering the VOMIT list
+// to the anchored window alone SURVIVES, and is an equivalent mutant rather than a gap:
+// the count is |t − vomit| ≤ 4 h or 24 h, and every shipped row that close to the vomit is
+// inside the anchored window too, so the union's counts are the anchored counts. The union
+// is kept in context.ts because it says what was ruled; this note says why no test can
+// tell the two apart.
 
 import { assertStrictEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import { buildVomitContext, type BuildVomitContextArgs, type VomitContextRows } from '../../analyze-vomit/context.ts'

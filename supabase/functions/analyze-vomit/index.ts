@@ -650,7 +650,9 @@ const FLAG_KEY = 'ai_vomit_read_enabled'
 
 // ── The vomit descriptor (D2) ───────────────────────────────────────────────────
 
-const VOMIT_DESCRIPTOR: IncidentDescriptor<VomitAnalysis, ContextualFlag> = {
+// Exported for pipeline.test.ts, which drives the real descriptor through the shared
+// pipeline with the EN-0 key on and off.
+export const VOMIT_DESCRIPTOR: IncidentDescriptor<VomitAnalysis, ContextualFlag> = {
   functionName: 'analyze-vomit',
   eventTypes: ['vomit'],
   wrongEventTypeMessage: 'Event is not a vomit event',

@@ -12,6 +12,11 @@
 //               (analyze-vomit/context.ts): every window anchored at the moment the
 //               analysis ran, over the rows that existed then. Must equal `stored`; a mismatch means
 //               the replay is not faithful and nothing below it should be trusted.
+//   en0       — EN-0 (CUL-1130, PR-13a): the same builder with engines_v3_en0 ON, over the
+//               same as-of rows. Each flag is the union of the shipped evaluation and a
+//               vomit-anchored one, so it must contain `shipped`; the run counts every read
+//               where it does not ("lost escalations", which must be 0) and every read
+//               where it adds a flag. It is evaluated at the stored read's own moment.
 //   sketch    — the recalibration proposed in docs/research/2026-09-engines-step-change.md
 //               §7, AS AMENDED by that session's adversarial pass. A research sketch, not a
 //               spec: its thresholds are placeholders for a Dr. Chen ruling, and it never
@@ -20,7 +25,7 @@
 // The photo half cannot be replayed without re-running the vision model; visual flags are
 // reported as stored, beside whether the owner later edited the fields they rest on.
 import { computeContextualFlags } from '../../supabase/functions/analyze-vomit/index.ts'
-import { shippedVomitContext } from '../../supabase/functions/analyze-vomit/context.ts'
+import { buildVomitContext, shippedVomitContext, type VomitContextRows } from '../../supabase/functions/analyze-vomit/context.ts'
 import { argValue, loadRecord, visibleAt, type PetRecord, type RecordEvent } from './record.deno.ts'
 import { emptyReplayProblem } from './subject.ts'
 
@@ -32,19 +37,29 @@ const t = (s: string) => Date.parse(s)
 // at the moment the analysis ran. The windows and the derivation are the shipped code's,
 // no longer restated here; only the as-of visibility is the replay's. If the shipped
 // derivation changes, the `shipped` column moves with it.
-function shippedInput(rec: PetRecord, ev: RecordEvent, T: number) {
+function rowsAt(rec: PetRecord, T: number): VomitContextRows {
   const vis = (e: RecordEvent) => visibleAt(e, T, Infinity, SETTLE)
-  return shippedVomitContext({
-    rows: {
-      vomits: rec.events.filter((e) => e.ty === 'vomit' && vis(e)).map((e) => ({ occurred_at: e.at })),
-      lethargy: rec.events.filter((e) => e.ty === 'lethargy' && vis(e)).map((e) => ({ occurred_at: e.at })),
-      meals: rec.meals
-        .filter((m) => visibleAt({ cr: m.cr, del: m.del, at: m.at }, T, Infinity, SETTLE))
-        .map((m) => ({ occurred_at: m.at, meals: { intake_rating: m.rating } })),
-    },
+  return {
+    vomits: rec.events.filter((e) => e.ty === 'vomit' && vis(e)).map((e) => ({ occurred_at: e.at })),
+    lethargy: rec.events.filter((e) => e.ty === 'lethargy' && vis(e)).map((e) => ({ occurred_at: e.at })),
+    meals: rec.meals
+      .filter((m) => visibleAt({ cr: m.cr, del: m.del, at: m.at }, T, Infinity, SETTLE))
+      .map((m) => ({ occurred_at: m.at, meals: { intake_rating: m.rating } })),
+  }
+}
+
+function shippedInput(rec: PetRecord, ev: RecordEvent, T: number) {
+  return shippedVomitContext({ rows: rowsAt(rec, T), thisEventOccurredAt: ev.at, species: rec.pet.species, nowMs: T })
+}
+
+// The key on for this run only; the builder decides what that means (context.ts).
+function en0Input(rec: PetRecord, ev: RecordEvent, T: number) {
+  return buildVomitContext({
+    rows: rowsAt(rec, T),
     thisEventOccurredAt: ev.at,
     species: rec.pet.species,
     nowMs: T,
+    engineFlags: { on: ['engines_v3_en0'], readOk: true },
   })
 }
 
@@ -97,9 +112,9 @@ if (import.meta.main) {
   const rec = loadRecord(argValue('record'), argValue('meals'))
   const byEvent = new Map(rec.events.map((e) => [e.id, e]))
   const fmt = (ms: number) => new Intl.DateTimeFormat('en-US', { timeZone: rec.tz, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms))
-  let reads = 0, storedCalls = 0, mismatches = 0
+  let reads = 0, storedCalls = 0, mismatches = 0, en0Lost = 0, en0Added = 0
   const tierCount = new Map<string, number>()
-  console.log('vomit        stored rec     stored ctx              shipped ok  visual (edited?)                 sketch')
+  console.log('vomit        stored rec     stored ctx              shipped ok  en0 ctx                                   visual (edited?)                 sketch')
   for (const a of [...rec.analyses].sort((x, y) => t(byEvent.get(x.event_id)?.at ?? x.created_at) - t(byEvent.get(y.event_id)?.at ?? y.created_at))) {
     const ev = byEvent.get(a.event_id)
     if (!ev || ev.del || a.incident_type !== 'vomit' || a.recommendation == null) continue
@@ -112,20 +127,33 @@ if (import.meta.main) {
     const stored = a.contextual_flags ?? []
     const ok = shipped.length === stored.length && shipped.every((f) => stored.includes(f))
     if (!ok) mismatches++
+    const en0 = computeContextualFlags(en0Input(rec, ev, T))
+    // Lost: a flag the shipped rule gives, or the stored read carries, that EN-0 does not.
+    // Either is a warning EN-0 removed.
+    const en0Set = new Set<string>(en0)
+    const lost = [...shipped, ...stored].some((f) => !en0Set.has(f))
+    if (lost) en0Lost++
+    const addedHere = en0.some((f) => !shipped.includes(f))
+    if (addedHere) en0Added++
     if (a.recommendation === 'worth_a_call') storedCalls++
     const sk = sketch(rec, ev, T)
     const top = sk.find((s) => s.tier === 'call_now') ?? sk[0]
     const visual = (a.visual_flags ?? []).join(',')
-    if (a.recommendation === 'worth_a_call' || sk.length > 0 || !ok) {
+    if (a.recommendation === 'worth_a_call' || sk.length > 0 || !ok || lost || addedHere) {
       tierCount.set(top?.tier ?? 'logged', (tierCount.get(top?.tier ?? 'logged') ?? 0) + (stored.length > 0 || sk.length > 0 ? 1 : 0))
-      console.log(`${fmt(t(ev.at))}  ${a.recommendation.padEnd(13)}  ${JSON.stringify(stored).padEnd(22)}  ${String(ok).padEnd(10)}  ${(visual ? `${visual} (${a.edited_at ? 'edited' : 'not edited'})` : '').padEnd(32)} ${sk.map((s) => `${s.tier}: ${s.why}`).join('; ') || '(logged)'}`)
+      console.log(`${fmt(t(ev.at))}  ${a.recommendation.padEnd(13)}  ${JSON.stringify(stored).padEnd(22)}  ${String(ok).padEnd(10)}  ${(JSON.stringify(en0) + (lost ? ' LOST' : addedHere ? ' +' : '')).padEnd(40)}  ${(visual ? `${visual} (${a.edited_at ? 'edited' : 'not edited'})` : '').padEnd(32)} ${sk.map((s) => `${s.tier}: ${s.why}`).join('; ') || '(logged)'}`)
     }
   }
   console.log(`\n${reads} live vomit reads · ${storedCalls} stored worth_a_call · shipped-rule mismatches: ${mismatches}`)
+  console.log(`EN-0 (union): lost escalations: ${en0Lost} over ${reads} reads · reads where EN-0 adds a flag: ${en0Added}`)
   // A mismatch count over zero reads is not a fidelity pass (CUL-1276).
   const empty = emptyReplayProblem('live vomit reads', reads)
   if (empty) {
     console.error(`FAIL: ${empty}`)
+    Deno.exit(1)
+  }
+  if (en0Lost > 0) {
+    console.error(`FAIL: EN-0 lost ${en0Lost} escalation(s) the shipped rule gives`)
     Deno.exit(1)
   }
 }
