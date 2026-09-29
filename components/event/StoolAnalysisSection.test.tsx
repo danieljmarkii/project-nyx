@@ -47,7 +47,14 @@ jest.mock('../../lib/analysis', () => ({
   extractStoolEditableFromPayload: jest.fn(() => null),
   normalizeStoolEdits: jest.fn((x: unknown) => x),
 }));
-jest.mock('./StoolFieldsEditor', () => ({ StoolFieldsEditor: () => null }));
+// The editor's props, so a test can save an edit without driving the form (CUL-1408).
+let mockEditorProps: { onSave: (next: Record<string, unknown>) => Promise<void> } | null = null;
+jest.mock('./StoolFieldsEditor', () => ({
+  StoolFieldsEditor: (props: { onSave: (next: Record<string, unknown>) => Promise<void> }) => {
+    mockEditorProps = props;
+    return null;
+  },
+}));
 // CUL-1275 (F1) — the real announcer, `expectLanding` recorded on the way through (see the
 // vomit suite for why the call itself is what an act-driven test can pin).
 const mockExpectLanding = jest.fn();
@@ -72,7 +79,7 @@ import { Alert, LayoutAnimation } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { StoolAnalysisSection } from './StoolAnalysisSection';
 import { readLandedCopy } from './useReadLandingAnnouncement';
-import { watchAnalysisRow, awaitAnalysisChain, triggerStoolAnalysis } from '../../lib/analysis';
+import { watchAnalysisRow, awaitAnalysisChain, triggerStoolAnalysis, deriveEditedStoolFields } from '../../lib/analysis';
 import { __resetReducedMotionForTest, useReducedMotionStore } from '../../store/reducedMotionStore';
 
 const REASSURANCE = /\b(fine|okay|ok|healthy|all clear|no worries|nothing to worry|probably fine)\b/i;
@@ -721,5 +728,54 @@ describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
     const view = render(<StoolAnalysisSection eventId="as-3" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(announce).not.toHaveBeenCalled();
+  });
+});
+
+// ── CUL-1408 (PM ruling (a), 2026-09-29): an owner edit away from a formed stool re-runs a
+// read EN-7 wrote without its vomiting call, so the call comes back. Dark: only a row the
+// server stamped with engines_v3_en3 qualifies. The predicate's cases are lib/stoolForm.test.ts;
+// this pins the wiring, both ways.
+describe('StoolAnalysisSection — EN-7 re-check on an owner edit (CUL-1408)', () => {
+  // Earlier suites in this file leave calls on the shared mocks; start from none.
+  beforeEach(() => {
+    (triggerStoolAnalysis as jest.Mock).mockClear();
+    (watchAnalysisRow as jest.Mock).mockClear();
+  });
+  afterEach(() => {
+    mockRow = null;
+    mockEditorProps = null;
+    (triggerStoolAnalysis as jest.Mock).mockClear();
+    (watchAnalysisRow as jest.Mock).mockClear();
+  });
+
+  async function saveConsistency(over: Record<string, unknown>, next: string) {
+    mockRow = row({ recommendation: 'monitor', stool_consistency: 'type_4_smooth_soft', ...over });
+    const screen = render(<StoolAnalysisSection eventId="e" petId="p" petName="Cooper" hasPhoto />);
+    await waitFor(() => expect(screen.getByText('Edit')).toBeTruthy());
+    expect(triggerStoolAnalysis).not.toHaveBeenCalled(); // a finished read triggers nothing on mount
+    fireEvent.press(screen.getByText('Edit'));
+    await waitFor(() => expect(mockEditorProps).not.toBeNull());
+    (deriveEditedStoolFields as jest.Mock).mockReturnValueOnce(['stool_consistency']);
+    await act(async () => {
+      await mockEditorProps!.onSave({ stool_consistency: next });
+    });
+    return screen;
+  }
+
+  it('a row EN-7 wrote with no vomiting call: an edit to watery re-runs the read and watches it', async () => {
+    await saveConsistency({ engine_flags: ['engines_v3_en3'], contextual_flags: [] }, 'type_7_watery');
+    expect(triggerStoolAnalysis).toHaveBeenCalledTimes(1);
+    expect(triggerStoolAnalysis).toHaveBeenCalledWith('e');
+    expect(watchAnalysisRow).toHaveBeenCalled();
+  });
+
+  it('a row written by today\'s rule (key off): the same edit re-runs nothing', async () => {
+    await saveConsistency({ engine_flags: [], contextual_flags: [] }, 'type_7_watery');
+    expect(triggerStoolAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('an edit that stays formed, or a call that already stands: nothing re-runs', async () => {
+    await saveConsistency({ engine_flags: ['engines_v3_en3'], contextual_flags: [] }, 'type_3_cracked');
+    expect(triggerStoolAnalysis).not.toHaveBeenCalled();
   });
 });

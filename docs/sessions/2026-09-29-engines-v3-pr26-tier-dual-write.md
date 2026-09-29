@@ -40,7 +40,7 @@ EN-3's server half (CUL-1133) and EN-7 (CUL-1138), in one PR, shipped via the dr
 
 **Round 3 (at `f064e67`): FAIL on one path that needs a client or PR-28 change, plus one fixed here.**
 - **R2c, fixed:** the post-read hook read the step-3b row, so an owner edit during the model call was missed. The fresh row is now read straight after the vision call and serves both the hook and step 9.
-- **R2b, gated:** an owner correcting a withdrawn formed read to watery re-checks nothing, because the edit writers invoke no read. No server change can see an edit, so it is filed as CUL-1408, a decision brief that blocks turning the key on (CUL-1407).
+- **R2b, built after the PM ruled (a) on CUL-1408:** an owner correcting a withdrawn formed read to watery re-checked nothing, because the edit writers invoke no read. Now `StoolAnalysisSection` re-runs the read after an edit away from formed, on a row the server stamped with `engines_v3_en3` and without `concurrent_vomiting` (`needsEn7Recheck`). The re-read keeps the call on every path (a capped run keeps the flag computed before any read; a read run honours the owner's consistency). The formed set is one list for both sides, `lib/stoolForm.ts`. Dark: a row written by today's rule never qualifies.
 - Note: flag-off row reads now also select `tier` and `stool_consistency`. Decisions and written values are unchanged, but the query text is not byte-identical.
 
 ## Proof
@@ -51,4 +51,4 @@ EN-3's server half (CUL-1133) and EN-7 (CUL-1138), in one PR, shipped via the dr
 ## Carried forward
 
 - PR-27: the tier-word map, every surface, Ask's one-line definitions, `escalationSurvivesFailure` on the louder column.
-- The Wave 4 allowlist step seeds `engines_v3_en3` (CUL-1407, Waiting on PM), blocked by CUL-1408 (R2b).
+- The Wave 4 allowlist step seeds `engines_v3_en3` (CUL-1407, Waiting on PM). CUL-1408 is built here and closes on merge.

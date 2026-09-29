@@ -61,6 +61,7 @@ import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 import { anyVomitMeetsRepeatRule, REPEAT_VOMIT_DAY_WINDOW_HOURS } from '../_shared/vomitRepeat.ts'
 // The vomit read's own intake derivation (pure; no remote import), for EN-7's feline arm.
 import { buildVomitContext, INTAKE_BASELINE_WINDOW_DAYS, type VomitContextRows } from '../analyze-vomit/context.ts'
+import { STOOL_FORMED_CONSISTENCIES } from '../../../lib/stoolForm.ts'
 
 // Re-export the incident-agnostic pure helpers (and their types) under this
 // function's import surface, mirroring analyze-vomit — so index.test.ts imports
@@ -115,7 +116,8 @@ const CONCURRENT_LETHARGY_HOURS = 24
 // Type 1, 5, 6, 7, 'unsure' and a photo that does not show stool never withdraw. Type 5 is kept
 // loud on purpose ("trending loose"). All are placeholders for CUL-583 and CUL-1312.
 // This is a QUIETER row than today (T23), so it ships dark and stays dark until that review.
-const EN7_FORMED_CONSISTENCIES: readonly string[] = ['type_2_lumpy', 'type_3_cracked', 'type_4_smooth_soft']
+// The formed set is one list with the phone's edit re-check (CUL-1408): lib/stoolForm.ts.
+const EN7_FORMED_CONSISTENCIES = STOOL_FORMED_CONSISTENCIES
 const EN7_LOOSE_CONSISTENCIES: readonly string[] = ['type_6_mushy', 'type_7_watery']
 // The vomits read for the repeat rule reach one day further back than the concurrent window,
 // so a vomit near the window's edge still sees the vomits its own read would count.

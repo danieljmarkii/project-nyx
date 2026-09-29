@@ -51,6 +51,7 @@ import {
   quietVerdictUnfinished,
 } from '../../lib/incidentReadState';
 import { isEscalationVerdict } from '../../lib/incidentVerdict';
+import { needsEn7Recheck } from '../../lib/stoolForm';
 import { StoolFieldsEditor } from './StoolFieldsEditor';
 import { stoolCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -104,6 +105,11 @@ interface AnalysisRow {
    *  read that was written from a wait that ended with nothing written (CUL-1275). */
   updated_at?: string | null;
   error: string | null;
+  /** EN-7's re-check on an owner edit (CUL-1408, lib/stoolForm.ts): the key the read was
+   *  written under, and whether its vomiting call stands. Optional: a row read before they
+   *  were selected carries neither, and then no re-check fires. */
+  engine_flags?: string[] | null;
+  contextual_flags?: string[] | null;
 }
 
 /** Two copies of the row hold the same READ: the same state, verdict and words. The
@@ -131,7 +137,7 @@ const SELECT_COLS =
   'status, recommendation, read_text, description, stool_consistency, stool_colour, ' +
   'stool_content, stool_blood_present, stool_blood_type, stool_mucus_present, ' +
   'foreign_material_present, foreign_material_note, ai_raw_payload, edited_at, dismissed_at, ' +
-  'updated_at, error';
+  'updated_at, error, engine_flags, contextual_flags';
 
 export function StoolAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
@@ -397,6 +403,18 @@ export function StoolAnalysisSection(
     // Optimistic local commit — mirror the DB write (fields + provenance stamp).
     setRow({ ...row, ...norm, edited_at: new Date().toISOString() });
     setEditing(false);
+    // CUL-1408 (PM ruling (a), 2026-09-29): an edit that moves the consistency away from
+    // formed, on a read EN-7 wrote without its vomiting call, re-runs the read, so the call
+    // comes back (the server honours the owner's consistency, and a capped run keeps the
+    // call). Dark until engines_v3_en3 is on: only a row stamped with that key qualifies.
+    // The same trigger-and-watch as the mount path; the invoke outlives this screen.
+    if (needsEn7Recheck(row, norm.stool_consistency)) {
+      setWorking(true);
+      const { error: recheckError } = await triggerStoolAnalysis(eventId);
+      if (recheckError) console.warn('[stool-analysis] EN-7 re-check trigger error:', recheckError);
+      if (cancelled.current) return;
+      beginWatch();
+    }
   }
 
   // ── Render states ──
