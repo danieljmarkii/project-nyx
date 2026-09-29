@@ -121,6 +121,43 @@ const EMPTY = {
 const dog = { name: 'Rex', species: 'dog' }
 const cat = { name: 'Miso', species: 'cat' }
 
+// The critique's GAP-5 counterexample (CUL-1311, Dr. Chen), for PR-14d (CUL-1410): a cat quiet
+// last week (meals logged every day, no vomit) vomits Monday, Tuesday and Wednesday mornings in
+// Los Angeles; the Signal runs Thursday at 5 am local. Three vomits is below the count arm, so the
+// persistence arm (three days running) is what fires, at the 'today' ask. With `photos`, each
+// vomit carries a completed read that shows nothing flagged, which must not quiet it: the
+// per-incident read counts only 2 in 4 h and 3 in 24 h, and these are a day apart.
+function GAP5_COUNTEREXAMPLE(photos: boolean): SignalPipelineCase {
+  const mornings = [3, 2, 1].map((d) => ({ id: `gap5-vomit-${photos ? 'photo' : 'plain'}-${d}`, at: ago(d, 15, '+00:00') }))
+  return {
+    name: `a quiet cat vomits Monday, Tuesday and Wednesday, ${photos ? 'each with a clean photo read' : 'no photos'} (GAP-5)`,
+    nowIso: NOW,
+    rows: {
+      pet: cat,
+      ...EMPTY,
+      timezone: 'America/Los_Angeles',
+      symptoms: mornings.map((m) => ({ id: m.id, event_type: 'vomit', occurred_at: m.at, occurred_at_confidence: 'witnessed', severity: null })),
+      meals: mealsDaily(0, 20),
+      incidentAnalyses: photos
+        ? mornings.map((m) => ({
+          event_id: m.id,
+          incident_type: 'vomit',
+          status: 'completed',
+          blood_present: 'none_visible',
+          stool_blood_present: null,
+          foreign_material_present: 'no',
+          contents: ['food'],
+          bile_present: 'no',
+          events: { occurred_at: m.at },
+        }))
+        : [],
+    },
+    prior: null,
+    // ④ fires too (three against a logged zero) and Home drops it under the burden card.
+    expectedTypes: ['symptom_burden'],
+  }
+}
+
 // The chronicity card as the previous run cached it (the stand-down's memory).
 const priorChronicityRow = (engineFlags: unknown): PriorSignal => ({
   findings: [
@@ -335,7 +372,11 @@ export const SIGNAL_PIPELINE_CORPUS: SignalPipelineCase[] = [
     expectedTypes: ['reflection'],
   },
   {
-    name: 'vomiting on five of the last seven days (the worsening an incomplete read floors)',
+    // Five vomits this week against one the week before. Before PR-14d this was ④'s firm card;
+    // the burden card (CUL-1410) now leads, and Home drops the same-sign ④ under it. Every firm
+    // ④ (4+ symptom days) is at least 4 vomits, so on Home a firm ④ for vomit is always the
+    // burden card now; the vet report keeps ④ (it runs detectSignals and reads no burden type).
+    name: 'vomiting on five of the last seven days (the burden card an incomplete read floors)',
     nowIso: NOW,
     rows: {
       pet: dog,
@@ -344,8 +385,24 @@ export const SIGNAL_PIPELINE_CORPUS: SignalPipelineCase[] = [
       meals: mealsDaily(0, 29),
     },
     prior: null,
+    expectedTypes: ['symptom_burden'],
+  },
+  {
+    // A rise below both burden arms: three vomits on separate, non-consecutive days against one.
+    // ④ keeps its card here, so the corpus still holds the worsening an incomplete read floors.
+    name: 'three vomits on separate days after one last week (the worsening an incomplete read floors)',
+    nowIso: NOW,
+    rows: {
+      pet: dog,
+      ...EMPTY,
+      symptoms: [1, 3, 5, 10].map((d) => symptom('vomit', d)),
+      meals: mealsDaily(0, 29),
+    },
+    prior: null,
     expectedTypes: ['symptom_worsening'],
   },
+  GAP5_COUNTEREXAMPLE(false),
+  GAP5_COUNTEREXAMPLE(true),
   {
     name: 'a recurring course, fewer episodes on the trial than before it',
     nowIso: NOW,

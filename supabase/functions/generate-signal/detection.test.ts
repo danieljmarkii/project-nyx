@@ -2356,9 +2356,13 @@ Deno.test('detectSignals — end to end: a worsening pet leads with the safety w
   // Prior window needs ≥3 logged days for the rise to be trustworthy (fake-rise guard).
   const mealEvents = [meal({ occurredAt: at(18, 8) }), meal({ occurredAt: at(19, 8) })]
   const ranked = detectSignals(input({ pet: cat, symptomEvents, mealEvents }))
-  assert.equal(ranked.length, 1)
-  assert.equal(ranked[0].finding.type, 'symptom_worsening')
-  assert.equal(ranked[0].finding.priorityClass, 'safety')
+  // Four vomits this week, three of them on consecutive days: the burden card (PR-14d, CUL-1410)
+  // fires beside ④ and leads it. detectSignals keeps both (the vet report reads ④); only the
+  // Home pipeline drops the same-sign ④ under it (pipeline.ts suppressWorseningUnderBurden).
+  assert.equal(ranked.length, 2)
+  assert.equal(ranked[0].finding.type, 'symptom_burden')
+  assert.equal(ranked[1].finding.type, 'symptom_worsening')
+  assert.ok(ranked.every((r) => r.finding.priorityClass === 'safety'))
 })
 
 // ── Detector ⑦: symptom chronicity / persistence (B-182) ─────────────────────

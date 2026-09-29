@@ -21,6 +21,7 @@ import type {
   IntakeDeclineFinding,
   ReflectionFinding,
   SymptomWorseningFinding,
+  SymptomBurdenFinding,
   SymptomChronicityFinding,
   PostprandialTimingFinding,
   EmptyStomachTimingFinding,
@@ -145,6 +146,23 @@ export function templateReflection(f: ReflectionFinding, petName: string): strin
     return `We've logged ${f.currentCount} ${noun} of ${symptom} for ${petName} this week, down from ${f.priorCount} last week.`
   }
   return `We've logged ${f.currentCount} ${noun} of ${symptom} for ${petName} this week — about the same as last week.`
+}
+
+// Engines v3 PR-14d (CUL-1410) — the burden card. A count and a run of days, routed to the vet
+// at the tier the engine resolved; never a cause, a mechanism or a severity word, never reassures.
+// Vomit only, so the verb is the plain one an owner would use ("vomited"), not the label.
+// 'today' names the run that earned it; 'soon' names the count when that arm holds, otherwise the
+// run, placed in the week (it ended at least two days ago, so "in a row" alone would read as now).
+export function templateBurden(f: SymptomBurdenFinding, petName: string): string {
+  const floor = f.countIsFloor ? 'at least ' : ''
+  if (f.tier === 'today') {
+    const countClause = f.countArm ? `${floor}${f.count} times this week, ` : ''
+    return `${petName} has vomited ${countClause}on ${floor}${f.runDays} days in a row — worth a call to your vet today.`
+  }
+  if (f.countArm) {
+    return `${petName} has vomited ${floor}${f.count} times in the last ${f.windowDays} days — worth booking a vet visit soon.`
+  }
+  return `${petName} vomited on ${floor}${f.runDays} days in a row this week — worth booking a vet visit soon.`
 }
 
 export function templateWorsening(f: SymptomWorseningFinding, petName: string): string {
@@ -503,6 +521,8 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
       ? `${SYMPTOM_LABEL[f.symptomType]} recurring over several weeks`
       : f.type === 'symptom_worsening'
         ? `${SYMPTOM_LABEL[f.symptomType]} coming more often`
+        : f.type === 'symptom_burden'
+          ? `${SYMPTOM_LABEL[f.symptomType]} on several days close together`
         : f.type === 'intake_decline'
           ? f.trigger === 'refused_normal_food'
             ? 'turning down a food they usually eat'
@@ -513,9 +533,13 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
   const ask =
     f.type === 'incident_red_flag'
       ? 'worth a call to your vet'
-      : (f.type === 'symptom_chronicity' || f.type === 'symptom_worsening') && f.tier === 'firm'
-        ? 'worth booking a vet visit'
-        : 'worth a word with your vet'
+      : f.type === 'symptom_burden'
+        ? f.tier === 'today'
+          ? 'worth a call to your vet'
+          : 'worth booking a vet visit'
+        : (f.type === 'symptom_chronicity' || f.type === 'symptom_worsening') && f.tier === 'firm'
+          ? 'worth booking a vet visit'
+          : 'worth a word with your vet'
   return `An earlier read of ${petName}'s record, on ${onsetDay(carriedFromIso)}, showed ${what} — ${ask}. Part of the record didn't load for this update, so it hasn't been checked again yet.`
 }
 
@@ -526,6 +550,7 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
  * third check, CUL-989). An entry that fails is simply not carried, which can only withhold.
  */
 const CARRYABLE_TIERS = { soft: true, standard: true, firm: true }
+const CARRYABLE_BURDEN_TIERS = { today: true, soon: true }
 
 export function canRenderCarried(f: unknown): boolean {
   if (!f || typeof f !== 'object') return false
@@ -535,6 +560,8 @@ export function canRenderCarried(f: unknown): boolean {
     case 'symptom_chronicity':
     case 'symptom_worsening':
       return known(SYMPTOM_LABEL, x.symptomType) && (x.tier === undefined || known(CARRYABLE_TIERS, x.tier))
+    case 'symptom_burden':
+      return known(SYMPTOM_LABEL, x.symptomType) && known(CARRYABLE_BURDEN_TIERS, x.tier)
     case 'intake_decline':
       return x.trigger === undefined || typeof x.trigger === 'string'
     case 'incident_red_flag':
@@ -559,6 +586,8 @@ export function templateForFinding(finding: Finding, petName: string): string {
       return templateReflection(finding, petName)
     case 'symptom_worsening':
       return templateWorsening(finding, petName)
+    case 'symptom_burden':
+      return templateBurden(finding, petName)
     case 'symptom_chronicity':
       return templateChronicity(finding, petName)
     case 'postprandial_timing':
@@ -656,6 +685,28 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
   if (finding.priorityClass === 'safety') {
     // Never reassure on a safety flag; never reframe a decline as fussiness.
     if (REASSURANCE_RE.test(t) || DISMISSIVE_RE.test(t)) return false
+  }
+  if (finding.type === 'symptom_burden') {
+    // Engines v3 PR-14d (CUL-1410). The card's load is its ASK and its NUMBERS, and a keyword
+    // screen cannot tell a paraphrase that softens the ask from one that keeps it. So this branch
+    // checks the two things directly: the tier's ask must appear VERBATIM, and every number in the
+    // sentence must be one the finding holds (a model that turns "5 times" into "3 times" fails).
+    // The template passes by construction; a model sentence passes only if it keeps both, which
+    // leaves it nothing to change but the connective words. (The other safety lanes are template-
+    // only through index.ts's list; that file is outside PR-14d, so this screen is the guarantee
+    // until the type joins the list, and the backstop after.) A CARRIED line (templateCarried) is
+    // dated and states no count, so it is held to the carried ask and skips the number check.
+    if (CAUSAL_RE.test(t) || MECHANISM_RE.test(t) || FOOD_NAMING_RE.test(t)) return false
+    const carried = finding.carriedFrom !== undefined
+    const ask =
+      finding.tier === 'today'
+        ? carried ? 'worth a call to your vet' : 'worth a call to your vet today'
+        : carried ? 'worth booking a vet visit' : 'worth booking a vet visit soon'
+    if (!t.toLowerCase().includes(ask)) return false
+    if (!carried) {
+      const held = new Set([finding.count, finding.runDays, finding.windowDays].map(String))
+      if ((t.match(/\d+/g) ?? []).some((n) => !held.has(n))) return false
+    }
   }
   if (finding.type === 'food_symptom_correlation') {
     // Associational only — the model may not assert causation.
@@ -827,6 +878,21 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       tier: finding.tier, // 'firm' | 'standard' | 'soft' — urgency register
       relationship: 'descriptive_count', // a frequency we are noting — NOT a cause
       severity: 'calm_safety_flag', // surface clearly, never reassure
+    }
+  }
+  if (finding.type === 'symptom_burden') {
+    // Engines v3 PR-14d (CUL-1410). validatePhrasing holds a model sentence to the tier's ask,
+    // verbatim, and to the finding's own numbers; kept for shape-correctness and to narrow the
+    // union for the intake_decline fallthrough below. Counts only, no cause.
+    return {
+      insight_type: 'symptom_burden',
+      pet_name: petName,
+      symptom: SYMPTOM_LABEL[finding.symptomType],
+      count_this_week: finding.count,
+      consecutive_days: finding.runDays,
+      tier: finding.tier, // 'today' | 'soon'
+      relationship: 'descriptive_count',
+      severity: 'calm_safety_flag',
     }
   }
   if (finding.type === 'symptom_chronicity') {

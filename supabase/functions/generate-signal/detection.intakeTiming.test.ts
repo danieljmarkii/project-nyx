@@ -178,9 +178,12 @@ Deno.test('CUL-1122 pin — the ranked Signal over both records keeps its pre-ch
   // for a reason unrelated to CUL-1122: the record vomits every day from the 16th to the 27th, so
   // the reflection it carried said "down from 7" over a week of 5, and the absolute-burden gate
   // (5 ≥ burdenMuteMinEpisodes) now mutes exactly that. The ⑤ / ⑥ half this pin guards is unchanged.
+  // PR-14d (CUL-1410) then GAINED the burden card on the same record, for the same reason: five
+  // vomits this week, on consecutive days, is the week the valve went quiet over, and the card is
+  // the valve's safety twin. It leads (safety band); ⑤ / ⑥ are still ranked and suppressed as before.
   assert.deepEqual(
     detectSignals(input(postprandialNoRefusals())).map((r) => r.finding.type),
-    ['postprandial_timing', 'timeofday_clustering'],
+    ['symptom_burden', 'postprandial_timing', 'timeofday_clustering'],
   )
   assert.deepEqual(
     detectSignals(input(emptyStomachNoRefusals())).map((r) => r.finding.type),

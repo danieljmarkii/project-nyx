@@ -199,10 +199,18 @@ Deno.test('fixture — the surviving log is the MINORITY of what was logged', ()
 // ── 2. The contract honoured: no deleted row reaches any detector ─────────────
 
 Deno.test('contract honoured — findings describe ONLY the surviving record', () => {
-  // Exactly one thing is true of this pet's live log: vomiting rose week over week.
-  assert.deepEqual(typesIn(CONTRACT_HONOURED), ['symptom_worsening'])
+  // Two things are true of this pet's live log, both about vomiting: it vomited on every one of
+  // the last 7 days (the burden card, PR-14d / CUL-1410), and that is more than the week before
+  // (④). The engine states both; the Home pipeline shows the burden card alone, and the vet
+  // report keeps ④ (it reads no burden type).
+  assert.deepEqual(typesIn(CONTRACT_HONOURED), ['symptom_burden', 'symptom_worsening'])
+  const burden = CONTRACT_HONOURED[0].finding as { count: number; runDays: number; tier: string }
+  assert.equal(burden.count, 8)
+  assert.equal(burden.runDays, 7)
+  assert.equal(burden.tier, 'today')
+  assert.ok(burden.count <= LIVE_SYMPTOMS.length, 'the burden count is bounded by the live rows')
 
-  const f = CONTRACT_HONOURED[0].finding as { symptomType: string; currentCount: number; priorCount: number }
+  const f = CONTRACT_HONOURED[1].finding as { symptomType: string; currentCount: number; priorCount: number }
   assert.equal(f.symptomType, 'vomit')
   // 8 live episodes this week against 6 the week before — countable by hand off the
   // fixture above, and bounded by the 21 live rows.
@@ -276,7 +284,7 @@ Deno.test('contract broken — the CORRECT finding is lost, not merely joined', 
     (r) => (r.finding as { symptomType?: string }).symptomType === 'vomit',
   ).map((r) => r.finding.type)
   assert.ok(!vomitFindings.includes('symptom_worsening'))
-  assert.deepEqual(typesIn(CONTRACT_HONOURED), ['symptom_worsening'])
+  assert.deepEqual(typesIn(CONTRACT_HONOURED), ['symptom_burden', 'symptom_worsening'])
 })
 
 Deno.test('contract broken — a blood red flag fires from a deleted incident', () => {
@@ -293,8 +301,8 @@ Deno.test('contract broken — the two runs disagree on everything that matters'
   // The summary assertion: same pet, same meals, same clock. The ONLY difference is
   // the filter, and it changes how many cards fire, which detectors speak, and what
   // they say. That is the measure of how load-bearing this one clause is.
-  assert.equal(CONTRACT_HONOURED.length, 1)
-  assert.equal(CONTRACT_BROKEN.length, 3)
+  assert.equal(CONTRACT_HONOURED.length, 2)
+  assert.equal(CONTRACT_BROKEN.length, 4)
   assert.notDeepEqual(typesIn(CONTRACT_HONOURED), typesIn(CONTRACT_BROKEN))
   assert.ok(
     CONTRACT_BROKEN.every((r) => r.finding.priorityClass === 'safety'),
