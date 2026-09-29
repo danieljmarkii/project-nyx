@@ -280,7 +280,7 @@ function fakeClient(answer: (c: Call) => { data: unknown; error: unknown; count?
       const call: Call = { table, ops: [] }
       calls.push(call)
       const builder: Record<string, unknown> = {}
-      for (const op of ['select', 'eq', 'neq', 'is', 'lte', 'gte', 'order', 'limit', 'range', 'in']) {
+      for (const op of ['select', 'eq', 'neq', 'is', 'lt', 'lte', 'gte', 'order', 'limit', 'range', 'in']) {
         builder[op] = (...args: unknown[]) => {
           call.ops.push([op, args])
           return builder
@@ -296,7 +296,7 @@ function fakeClient(answer: (c: Call) => { data: unknown; error: unknown; count?
 const LOOKBACK = '2026-04-01T00:00:00.000Z'
 const LOGGED = [{ id: 'e1', occurred_at: '2026-09-20T09:00:00.000Z' }, { id: 'e2', occurred_at: '2026-09-21T09:00:00.000Z' }]
 
-Deno.test('EN-10 reads — one column of the last visit on or before today, and every event but a look', async () => {
+Deno.test('EN-10 reads — one column of the last visit before today, and every event but a look', async () => {
   const { client, calls } = fakeClient((c) =>
     c.table === 'vet_visits' ? { data: [{ visited_at: '2026-09-16' }], error: null } : { data: LOGGED, error: null, count: 2 },
   )
@@ -307,7 +307,7 @@ Deno.test('EN-10 reads — one column of the last visit on or before today, and 
     ['select', ['visited_at']],
     ['eq', ['pet_id', 'pet-1']],
     ['is', ['deleted_at', null]],
-    ['lte', ['visited_at', '2026-09-27']],
+    ['lt', ['visited_at', '2026-09-27']],
     ['order', ['visited_at', { ascending: false }]],
     ['limit', [1]],
   ])

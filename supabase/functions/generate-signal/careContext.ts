@@ -19,7 +19,7 @@
 // WHERE A ZERO MAY NOT APPEAR (§5.1). A count of zero reads as "it worked", and a steroid can
 // hide the very sign being counted. So a zero is withheld (the line states its window and
 // logging and stops) whenever any of these holds:
-//   • a drug that can MASK this sign is on board, or ended within MASK_TAIL_DAYS (a steroid
+//   • a drug that can MASK this sign is on board, or ended within MASK_TAIL_DAYS (42) (a steroid
 //     keeps acting after the last dose, and a depot injection for weeks), or is a drug the
 //     table cannot resolve (which fails toward disclosure like a systemic steroid). Every
 //     line on the screen, not only the course's own. ⚠ Stricter than the spec's text, on
@@ -27,8 +27,12 @@
 //     rules per drug); this holds it for as long as the course is on board, because a
 //     steroid still masks on day 40. Raised as a better-than-the-rule brief on CUL-1420.
 //     An ended course draws no line of its own; it only withholds the zeros.
-//   • the line is the visit line and the visit was 14 days ago or fewer, because an injection
-//     given at the visit (Depo-Medrol, maropitant) never enters `medications`.
+//   • the window overlaps the 42 days after the last visit, because an injection given at the
+//     visit (Depo-Medrol, maropitant, Cytopoint) never enters `medications`: the visit is taken
+//   as an unrecorded masking drug, on every line. A window that starts at the visit always
+//   overlaps, so the visit line never shows a zero.
+//   • a masking course's span (start to end + 42 days) overlaps the window, so a window partly
+//     under a steroid never reads as "none since".
 //   • the logging behind it is thin: fewer days with anything logged than §4.2's current-window
 //     floor (10 of 14) allows, scaled to the window. A zero over a record nobody kept is not a
 //     zero.
@@ -40,6 +44,7 @@
 
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 import { localDayIndex, localDayIndexOf } from '../../../lib/utils.ts'
+import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 import type { CareContextLine, Finding, SymptomEvent, SymptomType } from './detection.ts'
 
 const MS_PER_DAY = 86_400_000
@@ -48,7 +53,7 @@ const MS_PER_DAY = 86_400_000
 
 /** The two facts the shell reads for EN-10 alone, only while the key is on. */
 export interface CareContextFacts {
-  /** `vet_visits.visited_at` (a DATE) of the most recent non-deleted visit on or before
+  /** `vet_visits.visited_at` (a DATE) of the most recent non-deleted visit before
    *  today, or null. A DAY: no clinic, vet, reason or note ever reaches the engine. */
   lastVisitOn: string | null
   /** `occurred_at` of every non-deleted event in the read window, of every type but the
@@ -210,23 +215,52 @@ export const DRUG_NAME_CLASSES: Record<string, readonly DrugClass[]> = {
   palladia: ['gi_upset_other'],
 }
 
+// Words that say how a drug is given, how much or how often, or which salt it is, never what
+// it is. Stripped before a name is judged, so "Prednisolone 5mg tablets" resolves as
+// prednisolone and "Buddy's pills" as nothing.
+const FORM_WORDS = new Set([
+  'mg', 'mcg', 'ml', 'g', 'kg', 'iu', 'u', 'units', 'tab', 'tabs', 'tablet', 'tablets', 'pill', 'pills', 'capsule',
+  'capsules', 'cap', 'caps', 'chew', 'chews', 'chewable', 'chewables', 'liquid', 'suspension', 'solution', 'syrup',
+  'oral', 'inj', 'injection', 'injectable', 'shot', 'cream', 'ointment', 'drops', 'drop', 'gel', 'spray', 'inhaler',
+  'daily', 'bid', 'sid', 'tid', 'eod', 'q', 'h', 'hr', 'hrs', 'x', 'per', 'day', 'days', 'once', 'twice', 'a', 'an',
+  'the', 'of', 'for', 's', 'dose', 'doses', 'half', 'quarter', 'generic', 'compounded', 'flavored', 'flavoured',
+  'er', 'sr', 'xr', 'maleate', 'sodium', 'hydrochloride', 'hcl', 'acetate', 'phosphate', 'succinate', 'tartrate',
+  'citrate', 'besylate', 'sulfate', 'hyclate', 'monohydrate', 'my', 'his', 'her', 'dog', 'cat', 'pet', 'med', 'meds',
+  'medicine', 'medication',
+])
+
+function classesOfWord(w: string): readonly DrugClass[] {
+  const direct = DRUG_NAME_CLASSES[w]
+  if (direct) return direct
+  // A hyphenated brand's first word is tried alone too ("Cerenia-injectable").
+  const head = w.split('-')[0]
+  return head !== w ? (DRUG_NAME_CLASSES[head] ?? []) : []
+}
+
 /**
- * The classes a course's names resolve to, or null when none resolves. Matched on whole
- * words of each name ("Prednisolone 5mg" → prednisolone), never on substrings, so "Predator"
- * resolves nothing rather than a steroid. Null is the disclosure path, never "harmless".
+ * The classes a course's names resolve to, or null for DISCLOSURE (shown beside every concern,
+ * masking every sign). Matched on whole words, never substrings ("Predator" is not a steroid).
+ *
+ * A name resolves only when EVERY word in it that is not a form or dose word is in the table.
+ * A name that half-resolves ("Carprofen + mirtazapine", "Rimadyl (Depo shot at clinic)") is a
+ * combination with an unknown member, which may mask the sign, so the whole course fails
+ * toward disclosure (adversarial review, PR-22: one known NSAID used to hide an antiemetic).
+ * A name with no known word at all (an owner's nickname) is set aside if another name — the
+ * library item's generic or brand — resolves in full; if none does, null.
  */
 export function resolveDrugClasses(names: readonly string[]): DrugClass[] | null {
   const found = new Set<DrugClass>()
+  let anyFull = false
   for (const name of names) {
-    const words = (name ?? '').toLowerCase().split(/[^a-z-]+/).filter(Boolean)
-    for (const w of words) {
-      for (const cls of DRUG_NAME_CLASSES[w] ?? []) found.add(cls)
-      // A hyphenated brand's first word is tried alone too ("Cerenia-injectable").
-      const head = w.split('-')[0]
-      if (head !== w) for (const cls of DRUG_NAME_CLASSES[head] ?? []) found.add(cls)
-    }
+    const words = (name ?? '').toLowerCase().split(/[^a-z-]+/).filter((w) => w && !FORM_WORDS.has(w))
+    if (words.length === 0) continue
+    const known = words.filter((w) => classesOfWord(w).length > 0)
+    if (known.length === 0) continue
+    if (known.length < words.length) return null
+    anyFull = true
+    for (const w of known) for (const cls of classesOfWord(w)) found.add(cls)
   }
-  return found.size > 0 ? [...found].sort() : null
+  return anyFull ? [...found].sort() : null
 }
 
 /** How a course relates to one sign: it can hide it, bring it on, or neither. */
@@ -239,11 +273,15 @@ export function courseEffectOn(classes: DrugClass[] | null, sign: SymptomType): 
 
 // ── The rules' constants ──────────────────────────────────────────────────────
 
-/** A masking course that ended this recently (in days) still withholds zeros (the spec's
- *  too-soon window, used here as the tail until CUL-583 rules per drug). */
-export const MASK_TAIL_DAYS = 14
-/** A visit this recent (in days) never shows a zero, and carries the injection disclosure. */
-export const VISIT_NO_ZERO_DAYS = 14
+// ⚠ Both windows are 42 days, not the spec's 14, until CUL-583 rules per drug: a depot
+// steroid (Depo-Medrol) acts for 3 to 6 weeks, longer in cats, and lokivetmab (Cytopoint) for
+// 4 to 8 (adversarial review, PR-22). Raised on CUL-1420 as a better-than-the-rule brief.
+/** A masking course withholds zeros from its start until this many days after its end. */
+export const MASK_TAIL_DAYS = 42
+/** A visit is treated as an unrecorded masking drug given that day (an injection never enters
+ *  `medications`): every window overlapping [visit, visit + this] withholds its zero, and the
+ *  visit line carries the disclosure while it is this recent. */
+export const VISIT_NO_ZERO_DAYS = 42
 /** §4.2's current-window floor (10 of 14 days with anything logged), as a fraction. A zero
  *  shows only when the window's logging clears it. */
 export const ZERO_COVERAGE_FLOOR = 10 / 14
@@ -354,69 +392,101 @@ export function linesForSign(sign: SymptomType, args: CareContextArgs): CareCont
   }
 
   // Every course with what it can do to this sign, and whether it is on board today or ended
-  // inside the masking tail. A course marked ended with no end date counts as in its tail
-  // (its end is unknown, so it may have been yesterday).
+  // inside the masking tail. A course marked ended with no end date is taken to have ended
+  // today (its end is unknown, so it may have been yesterday).
   const assessed = args.courses.map((c) => {
     const start = c.startedOn ? localDayIndexOf(c.startedOn, tz) : null
-    const end = c.endedOn ? localDayIndexOf(c.endedOn, tz) : null
     const ended = c.status === 'completed' || c.status === 'stopped'
+    const endIdx = c.endedOn ? localDayIndexOf(c.endedOn, tz) : null
+    const end = endIdx !== null ? endIdx : ended ? today : null
     const started = start !== null && start <= today
-    const onBoard = started && (end === null ? !ended : end >= today)
-    const inTail = started && !onBoard && (end === null || today - end <= MASK_TAIL_DAYS)
-    return { c, start, onBoard, inTail, effect: courseEffectOn(resolveDrugClasses([c.drugLabel, ...c.names]), sign) }
+    const onBoard = started && (end === null || (end >= today && !(ended && endIdx === null)))
+    const inTail = started && !onBoard && end !== null && today - end <= MASK_TAIL_DAYS
+    // An owner's label that itself makes a care claim ("Cerenia (helped last time)") is never
+    // printed; the library's name, or a plain noun, stands in (CUL-1271's screen).
+    const label = careClaimReason(c.drugLabel) === null ? c.drugLabel : (c.names[0] ?? 'A medication')
+    return { c, label, start, end, onBoard, inTail, effect: courseEffectOn(resolveDrugClasses([c.drugLabel, ...c.names]), sign) }
   })
-  const courses = assessed
-    .filter((x) => x.onBoard && x.effect.shown)
-    .sort((a, b) => (a.start as number) - (b.start as number) || a.c.drugLabel.localeCompare(b.c.drugLabel))
-  const maskOnBoard = assessed.some((x) => (x.onBoard || x.inTail) && x.effect.masks)
 
-  // A zero is withheld (§5.1, the header): beside a masking drug, on a thinly logged window,
-  // and on the visit line while the visit is recent.
-  const zeroWithheld = (c: Counted, length: number, recentVisit: boolean): boolean =>
-    c.count === 0 && (maskOnBoard || recentVisit || (c.logged as number) < ZERO_COVERAGE_FLOOR * length)
+  // Where a zero may not appear for this sign: every masking course from its start to its end
+  // plus the tail, and a visit as an unrecorded masking drug. A window that OVERLAPS any span
+  // withholds its zero, so a window partly under a steroid never reads as "none since".
+  const maskSpans: [number, number][] = []
+  for (const x of assessed) {
+    if (x.start === null || x.start > today || !x.effect.masks) continue
+    maskSpans.push([x.start, (x.onBoard || x.end === null ? today : x.end) + MASK_TAIL_DAYS])
+  }
+  const visitOn = args.facts.lastVisitOn
+  const v = visitOn ? localDayIndexOf(visitOn, tz) : null
+  if (v !== null && v < today) maskSpans.push([v, v + VISIT_NO_ZERO_DAYS])
+
+  // A zero is withheld (§5.1, the header): in a window a masking span overlaps, or on a thinly
+  // logged window.
+  const zeroWithheld = (c: Counted, w: Window): boolean =>
+    c.count === 0 &&
+    (maskSpans.some(([a, b]) => a <= w.fromDay + w.length - 1 && b >= w.fromDay) ||
+      (c.logged as number) < ZERO_COVERAGE_FLOOR * w.length)
 
   const lines: CareContextLine[] = []
 
-  // 1. Courses, above the trial, so the diet is never the first explanation a reader meets.
-  for (const { c, start } of courses) {
+  // 1. Courses, above the trial, so the diet is never the first explanation a reader meets. A
+  //    course on board draws its window; one ended inside its tail draws its dates, and no
+  //    count, because it still acts on what is counted below it.
+  const drawn = assessed
+    .filter((x) => (x.onBoard || x.inTail) && x.effect.shown)
+    .sort((a, b) => (a.start as number) - (b.start as number) || a.label.localeCompare(b.label))
+  for (const { c, label, start, end, onBoard } of drawn) {
     const s = start as number
     const on = formatDay(s, today)
-    const n = today - s
     const anchorOn = c.startedOn as string
+    if (!onBoard) {
+      const to = end as number
+      lines.push({
+        kind: 'course', anchorOn, days: to - s + 1, count: null, loggedDays: null, drugLabel: label,
+        text: to > s ? `${label}, ${on} to ${formatDay(to, today)}.` : `${label}, ${on}.`,
+      })
+      continue
+    }
+    const n = today - s
     if (n < 1) {
-      lines.push({ kind: 'course', anchorOn, days: 0, count: null, loggedDays: null, drugLabel: c.drugLabel, text: `${c.drugLabel} since ${on}.` })
+      lines.push({ kind: 'course', anchorOn, days: 0, count: null, loggedDays: null, drugLabel: label, text: `${label} since ${on}.` })
       continue
     }
     // Counted from the day after the start: the start day's episodes may predate the first dose.
-    const got = count({ fromDay: s + 1, length: n })
+    const w = { fromDay: s + 1, length: n }
+    const got = count(w)
     if (got.count === null) {
-      lines.push({ kind: 'course', anchorOn, days: n, count: null, loggedDays: null, drugLabel: c.drugLabel, text: `${c.drugLabel} since ${on}, ${days(n)}.` })
-    } else if (zeroWithheld(got, n, false)) {
+      lines.push({ kind: 'course', anchorOn, days: n, count: null, loggedDays: null, drugLabel: label, text: `${label} since ${on}, ${days(n)}.` })
+    } else if (zeroWithheld(got, w)) {
       lines.push({
-        kind: 'course', anchorOn, days: n, count: null, loggedDays: got.logged, drugLabel: c.drugLabel,
-        text: `${c.drugLabel} since ${on}, ${days(n)}. Started ${days(n)} ago.`,
+        kind: 'course', anchorOn, days: n, count: null, loggedDays: got.logged, drugLabel: label,
+        text: `${label} since ${on}, ${days(n)}. Started ${days(n)} ago.`,
       })
     } else {
       lines.push({
-        kind: 'course', anchorOn, days: n, count: got.count, loggedDays: got.logged, drugLabel: c.drugLabel,
-        text: `${c.drugLabel} since ${on}, ${days(n)}: ${episodes(got.count)}, with something logged on ${got.logged} of ${n}.`,
+        kind: 'course', anchorOn, days: n, count: got.count, loggedDays: got.logged, drugLabel: label,
+        text: `${label} since ${on}, ${days(n)}: ${episodes(got.count)}, with something logged on ${got.logged} of ${n}.`,
       })
     }
   }
 
-  // 2. The trial, only on a sign its indication covers.
+  // 2. The trial, only on a sign its indication covers, and only up to its target's last day.
+  //    Past it the pipeline may still BELIEVE the trial runs (the B-422 grace), but the grace
+  //    never reaches evidence: those days may be a re-challenge. The trial screen speaks then.
   const trial = args.trial
   if (trial && trialCovers(trial.indication, sign)) {
     const s = localDayIndexOf(trial.startedOn, tz)
-    if (s !== null && s <= today) {
+    const target = Math.floor(trial.targetDurationDays)
+    if (s !== null && s <= today && Number.isFinite(target) && target > 0 && today <= s + target - 1) {
       const d = today - s + 1 // "day d": the start day is day 1
       const name = trial.targetProtein && trial.targetProtein.trim() ? `${titleCase(trial.targetProtein)} trial` : 'Diet trial'
-      const head = `${name}, day ${d} of ${trial.targetDurationDays}`
-      const got = count({ fromDay: s, length: d })
+      const head = `${name}, day ${d} of ${target}`
+      const w = { fromDay: s, length: d }
+      const got = count(w)
       const base = { kind: 'trial' as const, anchorOn: trial.startedOn, days: d }
       if (got.count === null) {
         lines.push({ ...base, count: null, loggedDays: null, text: `${head}.` })
-      } else if (zeroWithheld(got, d, false)) {
+      } else if (zeroWithheld(got, w)) {
         lines.push({ ...base, count: null, loggedDays: got.logged, text: `${head}, with something logged on ${got.logged} of its ${days(d)}.` })
       } else {
         lines.push({
@@ -428,19 +498,18 @@ export function linesForSign(sign: SymptomType, args: CareContextArgs): CareCont
   }
 
   // 3. The last visit. A DATE: it starts a window and contributes nothing to what is counted.
-  const visitOn = args.facts.lastVisitOn
-  const v = visitOn ? localDayIndexOf(visitOn, tz) : null
   if (visitOn && v !== null && v < today) {
     const n = today - v
     const recent = n <= VISIT_NO_ZERO_DAYS
     const on = formatDay(v, today)
     // Counted from the day after: the visit day's own episodes may be why they went.
-    const got = count({ fromDay: v + 1, length: n })
+    const w = { fromDay: v + 1, length: n }
+    const got = count(w)
     const disclosure = recent ? ' Anything given at the visit isn\'t in the record.' : ''
     const base = { kind: 'visit' as const, anchorOn: visitOn, days: n }
     if (got.count === null) {
       lines.push({ ...base, count: null, loggedDays: null, text: `Since the ${on} visit, ${days(n)}.${disclosure}` })
-    } else if (zeroWithheld(got, n, recent)) {
+    } else if (zeroWithheld(got, w)) {
       lines.push({ ...base, count: null, loggedDays: got.logged, text: `Since the ${on} visit, ${days(n)}, with something logged on ${got.logged} of ${n}.${disclosure}` })
     } else {
       lines.push({

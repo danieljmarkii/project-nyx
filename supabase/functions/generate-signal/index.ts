@@ -824,8 +824,7 @@ const handler = async (req: Request): Promise<Response> => {
 //
 // The Signal shell is the ONE engine reader of a vet table (vet visits spec AC 10, amended
 // 2026-09-28; registered in guards/visitReaders.test.ts with its column list). It reads one
-// column, `visited_at`, of one row: the most recent non-deleted visit on or before the owner's
-// today. The date starts a window; it never enters a count, a floor or a test statistic, and
+// column, `visited_at`, of one row: the most recent non-deleted visit before the owner's today. The date starts a window; it never enters a count, a floor or a test statistic, and
 // no clinic, vet, reason or note is selected. Caller's JWT, so RLS scopes it to the owner.
 //
 // The logging pull is every non-deleted event in the lookback, of every type but the daily
@@ -847,7 +846,9 @@ export async function readCareContextFacts(
         .select('visited_at')
         .eq('pet_id', petId)
         .is('deleted_at', null)
-        .lte('visited_at', todayKey)
+        // Strictly before today: a visit dated today opens no window yet, and must not hide the
+        // one before it (a recheck today over a Depo-Medrol visit ten days ago).
+        .lt('visited_at', todayKey)
         .order('visited_at', { ascending: false })
         .limit(1),
       fetchAll<{ id: string; occurred_at: string }>('events', (r) => r.id, (from, to) =>
