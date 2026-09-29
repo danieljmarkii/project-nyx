@@ -214,6 +214,22 @@ Deno.test('a course ended or stopped is not on board; one with no start has no l
   assertStrictEquals(linesForSign('vomit', argsOf({ courses: [{ ...PRED, endedOn: dayKey(0) }] }, { lastVisitOn: null })).length, 1)
 })
 
+Deno.test('a masking course that ended inside its tail draws no line but still withholds every zero', () => {
+  for (const ended of [
+    { ...PRED, endedOn: dayKey(1), status: 'completed' },
+    { ...PRED, endedOn: dayKey(14), status: 'completed' },
+    { ...PRED, endedOn: null, status: 'stopped' },
+  ]) {
+    assertEquals(texts('vomit', argsOf({ courses: [ended] }, { lastVisitOn: dayKey(40) })), [
+      'Since the Aug 18 visit, 40 days, with something logged on 40 of 40.',
+    ], JSON.stringify(ended))
+  }
+  // Past the tail, the zero is back.
+  assertEquals(texts('vomit', argsOf({ courses: [{ ...PRED, startedOn: '2026-08-01', endedOn: dayKey(15), status: 'completed' }] }, { lastVisitOn: dayKey(40) })), [
+    'Since the Aug 18 visit, 40 days: 0 episodes, with something logged on 40 of 40.',
+  ])
+})
+
 Deno.test('a year appears only when the date is not in this year', () => {
   const newYear = Date.parse('2027-01-05T18:00:00.000Z')
   const lines = linesForSign('vomit', argsOf({ nowMs: newYear }, { lastVisitOn: '2026-12-20', loggedAt: [] }))

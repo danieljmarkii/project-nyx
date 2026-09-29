@@ -551,9 +551,8 @@ Deno.test('gapLoggingHeld — the two halves are judged separately, inclusive of
 // ── EN-F (Engines v3 PR-11a; 075 §4): no stand-down is minted across a change in a key the
 // Signal engine reads. A stand-down tells the owner a finding went away; across such a
 // change the finding may be missing because the ENGINE changed. The gate is the one
-// index.ts applies to the prior payload. The Signal's first key is EN-10's (PR-22, CUL-1420);
-// READ_BY_SIGNAL below still stands in for a phase in the generic tests, and the first test
-// pins the real list.
+// index.ts applies to the prior payload. Today the Signal reads no key (SIGNAL_ENGINE_KEYS
+// is empty), so every flip mints as it shipped; READ_BY_SIGNAL stands in for a later phase.
 
 const FLAGS_OFF: EngineFlags = { on: [], readOk: true }
 const FLAGS_ON: EngineFlags = { on: ['engines_v3_en0'], readOk: true }
@@ -561,26 +560,15 @@ const READ_BY_SIGNAL = ['engines_v3_en0']
 const gated = (prior: PriorEntry[], priorFlags: unknown, current: EngineFlags, signalKeys: readonly string[]) =>
   resolve(priorForStandDowns(prior, standDownMintAllowed(priorFlags, current, signalKeys)), stoodDownInput())
 
-Deno.test('EN-F — the real Signal keys: an en0/en3 flip mints as shipped; an en10 flip or a failed read withholds', () => {
+Deno.test('EN-F — today the Signal reads no key: every flip and a failed read mint exactly as shipped', () => {
   const prior = [priorChronicity('vomit', 'firm')]
   const shipped = resolve(prior, stoodDownInput())
   assert.equal(shipped.length, 1, 'fixture premise: the golden shape mints')
-  assert.deepEqual([...SIGNAL_ENGINE_KEYS], ['engines_v3_en10'], 'a Signal key was added or removed: this test is that phase\'s')
-  // Keys the Signal never reads: every flip mints exactly as it shipped.
+  assert.deepEqual(SIGNAL_ENGINE_KEYS, [], 'a Signal key was added: this test becomes that phase\'s')
   for (const [priorFlags, current] of [
-    [[], FLAGS_OFF], [null, FLAGS_OFF], [[], FLAGS_ON], [['engines_v3_en0'], FLAGS_OFF],
-    [['engines_v3_en3'], FLAGS_OFF], [[], { on: ['engines_v3_en3'], readOk: true }],
-    [['engines_v3_en10'], { on: ['engines_v3_en10'], readOk: true }],
-    [['engines_v3_en0', 'engines_v3_en10'], { on: ['engines_v3_en10'], readOk: true }],
+    [[], FLAGS_OFF], [null, FLAGS_OFF], [[], FLAGS_ON], [['engines_v3_en0'], FLAGS_OFF], [[], { on: [], readOk: false }],
   ] as [unknown, EngineFlags][]) {
     assert.deepEqual(gated(prior, priorFlags, current, SIGNAL_ENGINE_KEYS), shipped, JSON.stringify([priorFlags, current]))
-  }
-  // EN-10's key turned on or rolled back, or a flag read that did not answer: no mint.
-  for (const [priorFlags, current] of [
-    [[], { on: ['engines_v3_en10'], readOk: true }], [null, { on: ['engines_v3_en10'], readOk: true }],
-    [['engines_v3_en10'], FLAGS_OFF], [[], { on: [], readOk: false }],
-  ] as [unknown, EngineFlags][]) {
-    assert.deepEqual(gated(prior, priorFlags, current, SIGNAL_ENGINE_KEYS), [], JSON.stringify([priorFlags, current]))
   }
 })
 

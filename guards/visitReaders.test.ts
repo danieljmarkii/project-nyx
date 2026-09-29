@@ -572,6 +572,13 @@ describe('AC 10 — visit data never reaches a count, a coverage line or an engi
 // or a `select('visited_at, notes')` added beside the sanctioned read would pass the allow-set.
 // So every read of a vet table in the shell is extracted and its select list compared, as a
 // SET, with the columns the amendment names. PR-23 adds `vet_appointments`' three dates here.
+//
+// Blind spots, stated (C-38): the extractor reads the FIRST string-literal `.select(` after a
+// `.from('<vet table>')`, so a concatenated list (`'visited_at' + ', notes'`) reads as its first
+// literal and passes; filter and order columns (`.eq('reason', …)`) are not checked; a vet table
+// EMBEDDED from another table (`.from('events').select('id, vet_visits(notes)')`) is invisible
+// to this and to the table detector above; and the chain runs to the next `.from(`, so a later
+// unrelated `.select` can be attributed to it (a false red, the safe direction).
 
 const SHELL = 'supabase/functions/generate-signal/index.ts';
 const SHELL_COLUMNS: Record<string, readonly string[]> = {

@@ -35,7 +35,7 @@ import {
   type RankedFinding,
   type SignalPayload,
 } from '../../generate-signal/pipeline.ts'
-import { ENGINE_KEYS, SIGNAL_ENGINE_KEYS, type EngineFlags } from '../engineFlags.ts'
+import { ENGINE_KEYS, SIGNAL_DECORATING_KEYS, SIGNAL_ENGINE_KEYS, type EngineFlags } from '../engineFlags.ts'
 import { hasBannedSignalVocabulary, validatePhrasing } from '../../generate-signal/phrasing.ts'
 import { EN10_CONTEXT_STEP, type CareContextFacts, type CareContextStep } from '../../generate-signal/careContext.ts'
 import { careClaimReason } from '../../../../lib/careClaimScreens.ts'
@@ -133,29 +133,25 @@ const withoutLines = (p: SignalPayload): SignalPayload =>
   JSON.parse(JSON.stringify(p, (k, v) => (k === 'careContext' ? undefined : v)))
 
 Deno.test('(c) tripwire: the Signal keys are exactly the ones with an absence guard here', () => {
-  assertEquals([...SIGNAL_ENGINE_KEYS], [EN10], 'a new Signal key needs its own absence guard beside (c)')
+  // A decorating key is kept out of the stand-down gate on the strength of the next three
+  // tests (the row changes only by its field); a new one needs its own absence guard beside
+  // them, and a key that changes what is detected goes in SIGNAL_ENGINE_KEYS instead.
+  assertEquals([...SIGNAL_DECORATING_KEYS], [EN10], 'a new decorating key needs its own absence guard beside (c)')
+  assertEquals([...SIGNAL_ENGINE_KEYS], [], 'a Signal key that changes detection needs its own absence guard beside (c)')
   assertStrictEquals(ON_STATES.length >= 2 && OFF_STATES.length >= 3, true, 'the flag states lost a side')
 })
 
 Deno.test('(c) flag-off equals EN-10\'s step absent, even with populated facts and a step that changes everything', () => {
-  // The absent side runs under the SAME flags: the stand-down gate reads them too (a read that
-  // did not answer, or a flip of a Signal key against the prior's stamps, mints nothing: 075
-  // §4, standDown.test.ts), and that is not EN-10's step.
+  // Compared with every key off and the step absent: no Signal key reaches the stand-down gate
+  // (SIGNAL_ENGINE_KEYS is empty), so a failed flag read or a flip mints exactly as today.
   for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const absent = run(c, OFF, EMPTY_CARE_RECORD, [], null, ABSENT)
     for (const [label, flags] of OFF_STATES) {
-      assertEquals(
-        run(c, flags, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS, SENTINEL),
-        run(c, flags, EMPTY_CARE_RECORD, [], null, ABSENT),
-        `${c.name}: ${label}`,
-      )
+      assertEquals(run(c, flags, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS, SENTINEL), absent, `${c.name}: ${label}`)
     }
     // Key on, but the shell's read failed (null facts): no step either.
     for (const [label, flags] of ON_STATES) {
-      assertEquals(
-        run(c, flags, EMPTY_CARE_RECORD, [], null, SENTINEL),
-        run(c, flags, EMPTY_CARE_RECORD, [], null, ABSENT),
-        `${c.name}: ${label}, no facts`,
-      )
+      assertEquals(run(c, flags, EMPTY_CARE_RECORD, [], null, SENTINEL), absent, `${c.name}: ${label}, no facts`)
     }
   }
   // And with every key off and the read answering, that is exactly (a)'s hand-stated row.
@@ -180,8 +176,8 @@ Deno.test('(c) the gate opens for engines_v3_en10: the step runs on every case w
 Deno.test('(c) the real step changes nothing but the lines: presence, rank, sentence and summary hold', () => {
   let lined = 0
   for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const base = payload(c, OFF)
     for (const [label, flags] of ON_STATES) {
-      const base = templatePayload(run(c, flags, EMPTY_CARE_RECORD, [], null, ABSENT))
       const result = run(c, flags, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS)
       const p = templatePayload(result)
       assertEquals(withoutLines(p), base, `${c.name}: ${label}`)

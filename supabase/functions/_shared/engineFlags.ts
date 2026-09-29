@@ -38,17 +38,20 @@ import { resolveAllowlistFlag } from './flags.ts'
 export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en10'] as const
 export type EngineKey = typeof ENGINE_KEYS[number]
 
-// The keys the SIGNAL engine (generate-signal) reads. EN-0's key gates the per-incident read
-// only. A Signal phase adds its key here in the PR that makes the Signal read it (the first
-// was EN-10's, PR-22). The stand-down gate compares only these (standDownMintAllowed, below):
-// a key the Signal never reads cannot change what it detects, so flipping it must not cost
-// an owner a stand-down (adversarial review, PR-11a).
-//
-// en10 decorates findings and changes none of them, so strictly it could not make one vanish.
-// It is registered anyway, because pipeline.test.ts requires every key the pipeline gates on to
-// be here, and the cost is bounded: the one regeneration that runs across a flip of en10 mints
-// no stand-down (075 §4's conservative side), where it would otherwise have minted one.
-export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = ['engines_v3_en10']
+// The keys the SIGNAL engine (generate-signal) reads that can change WHAT IT DETECTS. Empty
+// today. A Signal phase that changes which findings exist, their rank or their sentence adds
+// its key here in the PR that makes the Signal read it. The stand-down gate compares only
+// these (standDownMintAllowed, below): a key that cannot change what the Signal detects
+// cannot make a finding vanish, so flipping it must not cost an owner a stand-down
+// (adversarial review, PR-11a).
+export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = []
+
+// The keys the Signal reads that only DECORATE a finding it already made: they add a field,
+// and change no finding's presence, rank or sentence. Proven per key by the corpus guard
+// (signalPipeline.test.ts (c): the flag-on row, less the key's field, equals the flag-off
+// row), which is what licenses keeping them out of the stand-down gate. EN-10's context
+// lines (PR-22, CUL-1420) are the first.
+export const SIGNAL_DECORATING_KEYS: readonly EngineKey[] = ['engines_v3_en10']
 
 export interface EngineFlags {
   // The keys resolved ON for this owner, sorted: the exact value every stamp records.

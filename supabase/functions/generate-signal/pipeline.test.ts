@@ -46,15 +46,21 @@ Deno.test('pipeline.ts reads no clock, env, network or database, and does not lo
 
 // A key the pipeline gates on must be one the stand-down gate compares (SIGNAL_ENGINE_KEYS),
 // or a flip of it mints "no vomiting logged" when the ENGINE changed, not the pet
-// (adversarial review, PR-11b). So the pipeline reads flags only through isEngineKeyOn with
-// a literal key, and every such key is registered. Scoped to pipeline.ts: detection and the
-// other modules take no flags today, and a new flag parameter there must arrive through here.
+// (adversarial review, PR-11b). The one exception is a DECORATING key (SIGNAL_DECORATING_KEYS,
+// PR-22): it adds a field to findings already made and changes none of them, which the corpus
+// guard proves per key, so it cannot make a finding vanish. So the pipeline reads flags only
+// through isEngineKeyOn with a literal key, and every such key is registered in one of the two.
+// Scoped to pipeline.ts: detection and the other modules take no flags today, and a new flag
+// parameter there must arrive through here.
 Deno.test('every Engines key the pipeline gates on is a registered Signal key', async () => {
-  const { SIGNAL_ENGINE_KEYS } = await import('../_shared/engineFlags.ts')
+  const { SIGNAL_ENGINE_KEYS, SIGNAL_DECORATING_KEYS } = await import('../_shared/engineFlags.ts')
+  const registered: readonly string[] = [...SIGNAL_ENGINE_KEYS, ...SIGNAL_DECORATING_KEYS]
   const src = blankComments(await Deno.readTextFile(PIPELINE))
   const gated = [...src.matchAll(/\bisEngineKeyOn\s*\(\s*[^,]+,\s*(['"])([^'"]+)\1\s*\)/g)].map((m) => m[2])
-  const unregistered = gated.filter((k) => !(SIGNAL_ENGINE_KEYS as readonly string[]).includes(k))
-  assertEquals(unregistered, [], 'gate on a key only after adding it to SIGNAL_ENGINE_KEYS')
+  const unregistered = gated.filter((k) => !registered.includes(k))
+  assertEquals(unregistered, [], 'gate on a key only after adding it to SIGNAL_ENGINE_KEYS (or, for a decorating key, SIGNAL_DECORATING_KEYS)')
+  // Non-vacuity: the scan finds the gate that exists today.
+  assertStrictEquals(gated.includes('engines_v3_en10'), true, 'the scan no longer finds EN-10\'s gate')
   // Any other read of the flags (engineFlags.on, a non-literal key) escapes the check above.
   const lines = src.split('\n')
   const stray = lines

@@ -19,12 +19,14 @@
 // WHERE A ZERO MAY NOT APPEAR (§5.1). A count of zero reads as "it worked", and a steroid can
 // hide the very sign being counted. So a zero is withheld (the line states its window and
 // logging and stops) whenever any of these holds:
-//   • a drug that can MASK this sign is on board (or a drug the table cannot resolve, which
-//     fails toward disclosure like a systemic steroid). Every line on the screen, not only
-//     the course's own. ⚠ Stricter than the spec's text, on purpose: §5.1 scopes the rule to
-//     the drug's too-soon window (14 days until CUL-583 rules per drug); this holds it for as
-//     long as the course is on board, because a steroid still masks on day 40. Raised as a
-//     better-than-the-rule brief on CUL-1420; loosening it is one constant (ZERO_WITHHELD_*).
+//   • a drug that can MASK this sign is on board, or ended within MASK_TAIL_DAYS (a steroid
+//     keeps acting after the last dose, and a depot injection for weeks), or is a drug the
+//     table cannot resolve (which fails toward disclosure like a systemic steroid). Every
+//     line on the screen, not only the course's own. ⚠ Stricter than the spec's text, on
+//     purpose: §5.1 scopes the rule to the drug's too-soon window (14 days until CUL-583
+//     rules per drug); this holds it for as long as the course is on board, because a
+//     steroid still masks on day 40. Raised as a better-than-the-rule brief on CUL-1420.
+//     An ended course draws no line of its own; it only withholds the zeros.
 //   • the line is the visit line and the visit was 14 days ago or fewer, because an injection
 //     given at the visit (Depo-Medrol, maropitant) never enters `medications`.
 //   • the logging behind it is thin: fewer days with anything logged than §4.2's current-window
@@ -237,6 +239,9 @@ export function courseEffectOn(classes: DrugClass[] | null, sign: SymptomType): 
 
 // ── The rules' constants ──────────────────────────────────────────────────────
 
+/** A masking course that ended this recently (in days) still withholds zeros (the spec's
+ *  too-soon window, used here as the tail until CUL-583 rules per drug). */
+export const MASK_TAIL_DAYS = 14
 /** A visit this recent (in days) never shows a zero, and carries the injection disclosure. */
 export const VISIT_NO_ZERO_DAYS = 14
 /** §4.2's current-window floor (10 of 14 days with anything logged), as a fraction. A zero
@@ -348,18 +353,22 @@ export function linesForSign(sign: SymptomType, args: CareContextArgs): CareCont
     return { count: c, logged: k }
   }
 
-  // Courses on board today, with what each can do to this sign.
-  const courses = args.courses
-    .map((c) => {
-      const start = c.startedOn ? localDayIndexOf(c.startedOn, tz) : null
-      const end = c.endedOn ? localDayIndexOf(c.endedOn, tz) : null
-      const ended = c.status === 'completed' || c.status === 'stopped'
-      const onBoard = start !== null && start <= today && (end === null ? !ended : end >= today)
-      return { c, start, onBoard, effect: courseEffectOn(resolveDrugClasses([c.drugLabel, ...c.names]), sign) }
-    })
+  // Every course with what it can do to this sign, and whether it is on board today or ended
+  // inside the masking tail. A course marked ended with no end date counts as in its tail
+  // (its end is unknown, so it may have been yesterday).
+  const assessed = args.courses.map((c) => {
+    const start = c.startedOn ? localDayIndexOf(c.startedOn, tz) : null
+    const end = c.endedOn ? localDayIndexOf(c.endedOn, tz) : null
+    const ended = c.status === 'completed' || c.status === 'stopped'
+    const started = start !== null && start <= today
+    const onBoard = started && (end === null ? !ended : end >= today)
+    const inTail = started && !onBoard && (end === null || today - end <= MASK_TAIL_DAYS)
+    return { c, start, onBoard, inTail, effect: courseEffectOn(resolveDrugClasses([c.drugLabel, ...c.names]), sign) }
+  })
+  const courses = assessed
     .filter((x) => x.onBoard && x.effect.shown)
     .sort((a, b) => (a.start as number) - (b.start as number) || a.c.drugLabel.localeCompare(b.c.drugLabel))
-  const maskOnBoard = courses.some((x) => x.effect.masks)
+  const maskOnBoard = assessed.some((x) => (x.onBoard || x.inTail) && x.effect.masks)
 
   // A zero is withheld (§5.1, the header): beside a masking drug, on a thinly logged window,
   // and on the visit line while the visit is recent.
