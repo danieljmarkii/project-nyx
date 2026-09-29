@@ -6,14 +6,13 @@
 // directly. Before this file the derivation lived inside the reads, so the only way to
 // test a scenario was a fake database.
 //
-// Every window is measured back from `nowMs`, the moment of analysis, exactly as it
-// shipped (CUL-131). That anchoring is the defect EN-0 exists to fix (the 8/19 read two
-// days late, the 6/7 vomit logged before the morning's meals were back-filled); this
-// file does not fix it. It gives EN-0 one seam to fix it in: `buildVomitContext` runs
-// the shipped derivation, then the EN-0 step, and the step runs ONLY when
-// `engines_v3_en0` is on for the record's owner. PR-11a ships the step as the identity,
-// so with the key on or off the context is today's. PR-13a fills it (the union of the
-// shipped and a vomit-anchored evaluation, so no warning is lost).
+// The shipped windows are measured back from `nowMs`, the moment of analysis (CUL-131).
+// That anchoring is the defect EN-0 exists to fix (the 8/19 read two days late, the 6/7
+// vomit logged before the morning's meals were back-filled). `buildVomitContext` runs the
+// shipped derivation, then the EN-0 step, and the step runs ONLY when `engines_v3_en0` is
+// on for the record's owner. PR-13a (CUL-1130) fills the step: each flag becomes the
+// UNION of the shipped read-time evaluation and one anchored on the vomit, so the step
+// can add a warning and can never remove one (critique BRK-2 / TD-2).
 //
 // The builder re-applies every window to the rows it is handed, rather than trusting
 // the query that fetched them: a predicate about the record takes the record (C-35), and
@@ -56,6 +55,19 @@ export interface ContextInput {
   tracksIntake: boolean
   // True if a non-deleted lethargy event was logged within the lethargy window.
   hasRecentLethargy: boolean
+  // EN-0 only (set by EN0_CONTEXT_STEP, never by the shipped derivation): when the feline
+  // intake flag fires, the record its read states. `window` is the evaluation that fired
+  // (the vomit-anchored one wins when both did); `mealsLogged` counts every meal in that
+  // window, rated or not, so the read can say "6 meals were logged … none was marked Most
+  // or All" rather than conclude the cat has not eaten (the 9/4 and 9/22 reads).
+  intakeRecord?: IntakeRecord
+}
+
+export interface IntakeRecord {
+  // 'before_vomit': the 24 h before the vomit. 'before_read': the 24 h before the read ran
+  // (the shipped window, when only it fired, e.g. the cat that ate, vomited, then refused).
+  window: 'before_vomit' | 'before_read'
+  mealsLogged: number
 }
 
 // The rows, in the shapes the three reads return them.
@@ -91,11 +103,72 @@ export function vomitContextWindows(nowMs: number): {
   }
 }
 
+// The vomit-anchored windows (EN-0), as instants. Every one is bounded by the vomit, never
+// by the read time: running a window to "now" would judge an old vomit by lethargy or
+// refusals logged days later (BRK-2). Repeated vomiting looks both ways, as the shipped
+// count does (|t − vomit|), to a fixed 24 h after; intake and its tracking baseline look
+// back from the vomit only, so eating AFTER the vomit never cancels this half. Lethargy has
+// no anchored half: it keeps its shipped window (TD-2).
+export function vomitAnchoredWindows(vomitMs: number): {
+  vomitsFromMs: number
+  vomitsToMs: number
+  felineIntakeFromMs: number
+  intakeBaselineFromMs: number
+} {
+  return {
+    vomitsFromMs: vomitMs - RECENT_VOMIT_WINDOW_HOURS * 3_600_000,
+    vomitsToMs: vomitMs + RECENT_VOMIT_WINDOW_HOURS * 3_600_000,
+    felineIntakeFromMs: vomitMs - FELINE_REDUCED_INTAKE_HOURS * 3_600_000,
+    intakeBaselineFromMs: vomitMs - INTAKE_BASELINE_WINDOW_DAYS * 24 * 3_600_000,
+  }
+}
+
+// The extra reads EN-0 needs, or null when it needs none (flag-off, or an instant that
+// cannot anchor). The shipped reads stay exactly as they were; these fetch only the part
+// of each anchored window the shipped read does not already cover: [from, to], and
+// strictly before the shipped lower bound (`beforeIso`). So no row is read twice (a vomit
+// read twice would count twice), and every read is bounded on both sides by the vomit.
+// An earlier draft widened the shipped lower bound instead, which left an old vomit's
+// read unbounded above and exposed it to PostgREST's max-rows cap, dropping the NEWEST
+// rows (C-42, the adversarial pass on this PR).
+export interface AnchoredRange {
+  fromIso: string
+  toIso: string
+  beforeIso: string
+}
+export function vomitAnchoredReads(
+  nowMs: number,
+  thisEventOccurredAt: string,
+  engineFlags: EngineFlags,
+): { vomits: AnchoredRange | null; meals: AnchoredRange | null } | null {
+  const vomitMs = Date.parse(thisEventOccurredAt)
+  if (!isEngineKeyOn(engineFlags, 'engines_v3_en0') || !Number.isFinite(vomitMs)) return null
+  const shipped = vomitContextWindows(nowMs)
+  const a = vomitAnchoredWindows(vomitMs)
+  const range = (fromMs: number, toMs: number, beforeIso: string): AnchoredRange | null =>
+    fromMs < Date.parse(beforeIso) && fromMs <= toMs
+      ? { fromIso: new Date(fromMs).toISOString(), toIso: new Date(toMs).toISOString(), beforeIso }
+      : null
+  return {
+    vomits: range(a.vomitsFromMs, a.vomitsToMs, shipped.vomitsSinceIso),
+    meals: range(a.intakeBaselineFromMs, vomitMs, shipped.intakeBaselineSinceIso),
+  }
+}
+
 // Inclusive, on parsed instants; an unparseable time is outside every window.
 function atOrAfter(iso: string, boundIso: string): boolean {
   const t = Date.parse(iso)
   return Number.isFinite(t) && t >= Date.parse(boundIso)
 }
+
+// Inclusive at both ends, on parsed instants. A meal at the vomit's own instant counts as
+// "before this vomit": the owner logged them together, and the read cannot order them.
+function inRange(iso: string, fromMs: number, toMs: number): boolean {
+  const t = Date.parse(iso)
+  return Number.isFinite(t) && t >= fromMs && t <= toMs
+}
+
+const isPositive = (rating: string | null) => rating === 'most' || rating === 'all'
 
 function ratingOf(m: { meals: MealIntakeJoin }): string | null {
   const meal = Array.isArray(m.meals) ? m.meals[0] : m.meals
@@ -132,13 +205,69 @@ export function shippedVomitContext(args: Omit<BuildVomitContextArgs, 'engineFla
 }
 
 // EN-0's step (CUL-1130): handed the shipped context and the same rows, returns the
-// context EN-0 reads. PR-11a ships the identity; PR-13a replaces it, AND bumps the vomit
-// descriptor's ruleVersion (index.ts): rows stamped ['engines_v3_en0'] + 'f1.vomit1' were
-// written by this identity step, and only the bump tells them apart from EN-0's. It lives here, in
-// the one namespace the flag-off guard stubs, so "flag-off" can be asserted against
-// the step's absence (C-36) rather than against a snapshot.
+// context EN-0 reads. It lives here, in the one namespace the flag-off guard stubs, so
+// "flag-off" can be asserted against the step's absence (C-36) rather than against a
+// snapshot. PR-11a shipped it as the identity; rows stamped ['engines_v3_en0'] +
+// 'f1.vomit1' were written by that identity, and the descriptor's 'vomit2' tells them
+// apart from this step's.
+//
+// THE UNION, by construction rather than by comparison. The returned context fires each
+// flag computeContextualFlags would fire on the shipped context OR on the vomit-anchored
+// one, and nothing else:
+//   - repeated vomiting: the vomit list is every row in the shipped window OR the anchored
+//     one. A shipped row that counts (within 24 h of this vomit) is inside the anchored
+//     window too, so the union's counts are the anchored counts, and those are never
+//     below the shipped ones.
+//   - feline intake: fires when either evaluation does. The anchored half asks "were meals
+//     logged in the 24 h before this vomit, none of them Most or All, for an owner who
+//     rated a meal in the week before it" (an empty window adds nothing: ruling (a)); the
+//     shipped half still reads the 24 h before the read, which is what keeps the cat that
+//     ate, vomited, then refused, read late (Dr. Chen's hold).
+//   - lethargy: the shipped value, untouched.
+// Property-tested over every read time after the vomit (engineCorpus/en0Union.test.ts).
 export type VomitContextStep = (shipped: ContextInput, args: BuildVomitContextArgs) => ContextInput
-export const EN0_CONTEXT_STEP: VomitContextStep = (shipped) => shipped
+export const EN0_CONTEXT_STEP: VomitContextStep = (shipped, args) => {
+  const vomitMs = Date.parse(args.thisEventOccurredAt)
+  // An instant that cannot be read cannot anchor anything; the shipped context stands.
+  if (!Number.isFinite(vomitMs)) return shipped
+  const a = vomitAnchoredWindows(vomitMs)
+  const w = vomitContextWindows(args.nowMs)
+
+  const recentVomitTimes = args.rows.vomits
+    .map((r) => r.occurred_at)
+    .filter((t) => atOrAfter(t, w.vomitsSinceIso) || inRange(t, a.vomitsFromMs, a.vomitsToMs))
+  if (!recentVomitTimes.some((t) => Date.parse(t) === vomitMs)) recentVomitTimes.push(args.thisEventOccurredAt)
+
+  const next: ContextInput = { ...shipped, recentVomitTimes }
+  if (args.species !== 'cat') return next
+
+  const shippedFires = shipped.tracksIntake && !shipped.hasRecentPositiveIntake
+  const anchoredTracks = args.rows.meals.some(
+    (m) => inRange(m.occurred_at, a.intakeBaselineFromMs, vomitMs) && ratingOf(m) !== null,
+  )
+  const beforeVomit = args.rows.meals.filter((m) => inRange(m.occurred_at, a.felineIntakeFromMs, vomitMs))
+  // PM ruling (a), 2026-09-29, CUL-1130: the anchored half never escalates on an empty
+  // window. With no meal logged in the 24 h before the vomit, "no Most or All meal" is a
+  // gap in the log, not a record of the cat eating poorly, and escalating on it is the
+  // Pattern 6 hazard the tracking guard only half covers (it checks the week). The shipped
+  // half still fires exactly as it did, so nothing is lost.
+  const anchoredFires =
+    anchoredTracks && beforeVomit.length > 0 && !beforeVomit.some((m) => isPositive(ratingOf(m)))
+
+  if (anchoredFires) {
+    return {
+      ...next,
+      tracksIntake: true,
+      hasRecentPositiveIntake: false,
+      intakeRecord: { window: 'before_vomit', mealsLogged: beforeVomit.length },
+    }
+  }
+  if (shippedFires) {
+    const beforeRead = args.rows.meals.filter((m) => atOrAfter(m.occurred_at, w.felineIntakeSinceIso))
+    return { ...next, intakeRecord: { window: 'before_read', mealsLogged: beforeRead.length } }
+  }
+  return next
+}
 
 // The gate. `step` is a parameter so the guard can hand in a step that changes
 // something and prove the gate decides whether it runs (a deleted gate reds either

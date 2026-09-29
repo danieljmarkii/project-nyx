@@ -14,12 +14,14 @@
 // deep dive §5): the 8/19 read two days late, "ate then refused and read late", and the
 // 6/7 vomit logged before the morning's meals were back-filled. Their shipped flags are
 // the wrong answers EN-0 exists to correct, recorded here as what flag-off still says.
-// PR-13a adds each case's flag-ON expectation beside it.
+// PR-13a (CUL-1130) added each case's flag-ON expectation beside it, also by hand:
+// `en0Flags` (the union of the shipped and the vomit-anchored evaluation, so always a
+// superset of `shippedFlags`) and, where the intake flag fires, the record its read states.
 //
 // Times use both ISO spellings, `Z` and PostgREST's `+00:00`, because the builder parses
 // every instant (C-40) and a corpus in one spelling could not show it.
 
-import type { VomitContextRows } from '../../analyze-vomit/context.ts'
+import type { IntakeRecord, VomitContextRows } from '../../analyze-vomit/context.ts'
 
 export type VomitContextualFlag = 'repeated_vomiting' | 'feline_reduced_intake' | 'concurrent_lethargy'
 
@@ -32,6 +34,9 @@ export interface VomitContextCase {
   rows: VomitContextRows
   // The shipped (flag-off) contextual flags, stated by hand.
   shippedFlags: VomitContextualFlag[]
+  // The EN-0 (flag-on) flags and intake record, stated by hand.
+  en0Flags: VomitContextualFlag[]
+  en0IntakeRecord?: IntakeRecord
 }
 
 const H = 3_600_000
@@ -51,6 +56,7 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     thisEventOccurredAt: at(T, -1),
     rows: { vomits: [{ occurred_at: at(T, -1) }], lethargy: [], meals: [] },
     shippedFlags: [],
+    en0Flags: [],
   },
   {
     name: 'two vomits inside four hours',
@@ -59,6 +65,7 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     thisEventOccurredAt: at(T, -1),
     rows: { vomits: [{ occurred_at: at(T, -1) }, { occurred_at: at(T, -4, '+00:00') }], lethargy: [], meals: [] },
     shippedFlags: ['repeated_vomiting'],
+    en0Flags: ['repeated_vomiting'],
   },
   {
     name: 'three vomits eight hours apart inside a day',
@@ -71,6 +78,7 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
       meals: [],
     },
     shippedFlags: ['repeated_vomiting'],
+    en0Flags: ['repeated_vomiting'],
   },
   {
     name: 'the third vomit is 25 hours before the read, so outside the window',
@@ -79,6 +87,7 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     thisEventOccurredAt: T,
     rows: { vomits: [{ occurred_at: T }, { occurred_at: at(T, -10) }, { occurred_at: at(T, -25) }], lethargy: [], meals: [] },
     shippedFlags: [],
+    en0Flags: [],
   },
   {
     name: 'the read raced its own write: the vomit query did not return this event',
@@ -87,6 +96,7 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     thisEventOccurredAt: at(T, -1),
     rows: { vomits: [], lethargy: [], meals: [] },
     shippedFlags: [],
+    en0Flags: [],
   },
   {
     // Differs from the code before PR-11a (a textual `includes` counted it twice).
@@ -96,6 +106,7 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     thisEventOccurredAt: at(T, -1),
     rows: { vomits: [{ occurred_at: at(T, -1, '+00:00') }], lethargy: [], meals: [] },
     shippedFlags: [],
+    en0Flags: [],
   },
   {
     // A late read of an old vomit: both rows sit outside the read-anchored 24 h window but
@@ -107,6 +118,7 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     thisEventOccurredAt: at(T, -30),
     rows: { vomits: [{ occurred_at: at(T, -30) }, { occurred_at: at(T, -31) }], lethargy: [], meals: [] },
     shippedFlags: [],
+    en0Flags: ['repeated_vomiting'],
   },
   {
     name: 'lethargy five hours ago',
@@ -115,6 +127,7 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     thisEventOccurredAt: at(T, -1),
     rows: { vomits: [{ occurred_at: at(T, -1) }], lethargy: [{ occurred_at: at(T, -5) }], meals: [] },
     shippedFlags: ['concurrent_lethargy'],
+    en0Flags: ['concurrent_lethargy'],
   },
   {
     name: 'lethargy thirty hours ago is outside its window',
@@ -123,6 +136,7 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     thisEventOccurredAt: at(T, -1),
     rows: { vomits: [{ occurred_at: at(T, -1) }], lethargy: [{ occurred_at: at(T, -30) }], meals: [] },
     shippedFlags: [],
+    en0Flags: [],
   },
   {
     name: 'a tracked cat that ate most of a meal six hours ago',
@@ -131,6 +145,7 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     thisEventOccurredAt: at(T, -1),
     rows: { vomits: [{ occurred_at: at(T, -1) }], lethargy: [], meals: [meal(at(T, -6), 'most'), meal(at(T, -30), 'all')] },
     shippedFlags: [],
+    en0Flags: [],
   },
   {
     name: 'a tracked cat whose only meals in a day were picked at',
@@ -143,6 +158,8 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
       meals: [meal(at(T, -6), 'picked'), meal(at(T, -14), 'some'), meal(at(T, -60), 'all')],
     },
     shippedFlags: ['feline_reduced_intake'],
+    en0Flags: ['feline_reduced_intake'],
+    en0IntakeRecord: { window: 'before_vomit', mealsLogged: 2 },
   },
   {
     name: 'a cat whose owner never rates meals (absence of logging is not anorexia)',
@@ -151,6 +168,7 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     thisEventOccurredAt: at(T, -1),
     rows: { vomits: [{ occurred_at: at(T, -1) }], lethargy: [], meals: [meal(at(T, -6), null), meal(at(T, -30), null)] },
     shippedFlags: [],
+    en0Flags: [],
   },
   {
     // The only rated meal is eight days old: outside the seven-day baseline, so this owner
@@ -161,6 +179,7 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     thisEventOccurredAt: at(T, -1),
     rows: { vomits: [{ occurred_at: at(T, -1) }], lethargy: [], meals: [meal(at(T, -8 * 24), 'refused'), meal(at(T, -6), null)] },
     shippedFlags: [],
+    en0Flags: [],
   },
   {
     name: 'a dog is never flagged for intake',
@@ -169,6 +188,7 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     thisEventOccurredAt: at(T, -1),
     rows: { vomits: [{ occurred_at: at(T, -1) }], lethargy: [], meals: [meal(at(T, -6), 'refused'), meal(at(T, -60), 'all')] },
     shippedFlags: [],
+    en0Flags: [],
   },
   {
     // Differs from the code before PR-11a (a textual compare dropped it): the one boundary
@@ -179,6 +199,7 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
     thisEventOccurredAt: at(T, -1),
     rows: { vomits: [{ occurred_at: at(T, -1) }], lethargy: [], meals: [meal(at(T, -24, '+00:00'), 'all')] },
     shippedFlags: [],
+    en0Flags: [],
   },
   {
     name: 'every flag at once',
@@ -191,6 +212,24 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
       meals: [meal(at(T, -8), 'refused'), meal(at(T, -50), 'all')],
     },
     shippedFlags: ['repeated_vomiting', 'feline_reduced_intake', 'concurrent_lethargy'],
+    en0Flags: ['repeated_vomiting', 'feline_reduced_intake', 'concurrent_lethargy'],
+    en0IntakeRecord: { window: 'before_vomit', mealsLogged: 1 },
+  },
+  {
+    // PM ruling (a), 2026-09-29: nothing logged in the day before the vomit, then the cat
+    // ate well after it; read two days late. The shipped window holds the good meals, and
+    // the anchored window is empty, which is a gap in the log, not a finding. Quiet both ways.
+    name: 'a logging gap before the vomit, eating well after it, read late, adds nothing',
+    species: 'cat',
+    nowIso: T,
+    thisEventOccurredAt: at(T, -48),
+    rows: {
+      vomits: [{ occurred_at: at(T, -48) }],
+      lethargy: [],
+      meals: [meal(at(T, -38), 'all'), meal(at(T, -18), 'all'), meal(at(T, -6), 'most'), meal(at(T, -100), 'some')],
+    },
+    shippedFlags: [],
+    en0Flags: [],
   },
   // ── EN-0's named scenarios (their shipped answers, which EN-0 corrects) ──────────────
   {
@@ -210,6 +249,8 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
       ],
     },
     shippedFlags: ['feline_reduced_intake'],
+    en0Flags: ['feline_reduced_intake'],
+    en0IntakeRecord: { window: 'before_vomit', mealsLogged: 6 },
   },
   {
     // Ate everything two hours before the vomit, refused twice after it; read 30 h after the
@@ -229,6 +270,8 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
       ],
     },
     shippedFlags: ['feline_reduced_intake'],
+    en0Flags: ['feline_reduced_intake'],
+    en0IntakeRecord: { window: 'before_read', mealsLogged: 2 },
   },
   {
     // The owner logged the vomit at 07:44 and back-filled the morning's meals at 07:48 to
@@ -243,6 +286,10 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
       meals: [meal('2026-06-05T07:00:00.000Z', 'most')],
     },
     shippedFlags: ['feline_reduced_intake'],
+    // The anchored half counted no meals, so it adds nothing (ruling (a)); the read-time
+    // half fired, and its read says so, pinned to the read's moment.
+    en0Flags: ['feline_reduced_intake'],
+    en0IntakeRecord: { window: 'before_read', mealsLogged: 0 },
   },
   {
     // The same vomit re-read at 07:55, after the back-fill landed.
@@ -256,5 +303,6 @@ export const VOMIT_CONTEXT_CORPUS: VomitContextCase[] = [
       meals: [meal('2026-06-07T06:30:00.000Z', 'all'), meal('2026-06-05T07:00:00.000Z', 'most')],
     },
     shippedFlags: [],
+    en0Flags: [],
   },
 ]

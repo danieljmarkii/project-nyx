@@ -11,8 +11,9 @@
 //
 // Mutation-proven when written (C-18): replacing the gate in context.ts with
 // `step(shipped, args)` reds (a) on every case; replacing it with `shipped` reds (b).
-// PR-13a replaces EN0_CONTEXT_STEP and adds each case's flag-on expectation; (a) and (c)
-// stay as they are.
+// PR-13a (CUL-1130) replaced EN0_CONTEXT_STEP and added each case's flag-on expectation;
+// (a) and (c) stay as they were. The union property over every read time is
+// en0Union.test.ts.
 
 import { assertEquals, assertNotEquals, assertStrictEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
@@ -84,13 +85,23 @@ Deno.test('(b) the gate opens for the key: the step runs, on every case', () => 
   }
 })
 
-Deno.test('PR-11a ships the EN-0 step as the identity: nothing moves with the key on yet', () => {
-  // PR-13a replaces this test with each case's flag-on expectation.
+Deno.test('flag-on: each case computes its hand-stated EN-0 flags and intake record', () => {
   for (const c of VOMIT_CONTEXT_CORPUS) {
-    const args = argsOf(c, ON)
-    assertEquals(buildVomitContext(args), shippedVomitContext(args), c.name)
-    assertEquals(buildVomitContext(args, EN0_CONTEXT_STEP), buildVomitContext(args), c.name)
+    const on = buildVomitContext(argsOf(c, ON))
+    assertEquals(flagsOf(on), [...c.en0Flags].sort(), c.name)
+    assertEquals(on.intakeRecord, c.en0IntakeRecord, c.name)
+    // The production default is the EN-0 step.
+    assertEquals(buildVomitContext(argsOf(c, ON), EN0_CONTEXT_STEP), on, c.name)
   }
+})
+
+Deno.test('flag-on never drops a flag-off flag, case by case (the union, stated by hand)', () => {
+  for (const c of VOMIT_CONTEXT_CORPUS) {
+    for (const f of c.shippedFlags) assertStrictEquals(c.en0Flags.includes(f), true, `${c.name}: ${f}`)
+  }
+  // Non-vacuity: the step moves something, or the gate tests above prove nothing about it.
+  assertStrictEquals(VOMIT_CONTEXT_CORPUS.some((c) => c.en0Flags.length > c.shippedFlags.length), true)
+  assertStrictEquals(VOMIT_CONTEXT_CORPUS.some((c) => c.en0IntakeRecord?.window === 'before_read'), true)
 })
 
 Deno.test('the corpus is hand-built: rows carry only the fields the reads select', () => {

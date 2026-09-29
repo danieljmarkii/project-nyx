@@ -230,6 +230,36 @@ Deno.test('selectReadText — a contextual flag overrides the model text even on
   assertStrictEquals(out, 'CONTEXTUAL:Pet:ctx_flag')
 })
 
+// EN-0 (CUL-1130): the optional photo-first template. Only a copy that supplies it can
+// lead with the photo finding; a copy without it (stool, flag-off vomit) is step 1 as it
+// shipped, whatever the photo showed.
+const PHOTO_FIRST_COPY: IncidentCopy = {
+  ...SENTINEL_COPY,
+  contextualWithPhotoFinding: (pet, flags, visual) => `PHOTO_FIRST:${pet}:${flags.join(',')}:${visual.join(',')}`,
+}
+const ctxBase = { ...readBase, recommendation: 'worth_a_call' as const, contextualFlags: ['ctx_flag'] }
+
+Deno.test('selectReadText — a copy without the photo-first template ignores a photo finding (stool unchanged)', () => {
+  for (const p of [
+    { ...ctxBase, visualFlags: ['blood'] },
+    { ...ctxBase, modelEscalated: true },
+    { ...ctxBase, visualFlags: ['blood'], modelEscalated: true },
+  ]) {
+    assertStrictEquals(selectReadText(SENTINEL_COPY, p), 'CONTEXTUAL:Pet:ctx_flag')
+  }
+})
+
+Deno.test('selectReadText — the photo-first template runs only on a readable photo that escalated on its own', () => {
+  assertStrictEquals(selectReadText(PHOTO_FIRST_COPY, { ...ctxBase, visualFlags: ['blood'] }), 'PHOTO_FIRST:Pet:ctx_flag:blood')
+  assertStrictEquals(selectReadText(PHOTO_FIRST_COPY, { ...ctxBase, modelEscalated: true }), 'PHOTO_FIRST:Pet:ctx_flag:')
+  // No finding of its own, an unreadable photo, or no photo: the contextual template.
+  assertStrictEquals(selectReadText(PHOTO_FIRST_COPY, { ...ctxBase, modelEscalated: false }), 'CONTEXTUAL:Pet:ctx_flag')
+  assertStrictEquals(selectReadText(PHOTO_FIRST_COPY, { ...ctxBase, visualFlags: ['blood'], photoUnreadable: true }), 'CONTEXTUAL:Pet:ctx_flag')
+  assertStrictEquals(selectReadText(PHOTO_FIRST_COPY, { ...ctxBase, visualFlags: ['blood'], hasPhoto: false }), 'CONTEXTUAL:Pet:ctx_flag')
+  // Never the model's words (Pattern 10).
+  assertStrictEquals(selectReadText(PHOTO_FIRST_COPY, { ...ctxBase, visualFlags: ['blood'] }).includes('MODEL_SAYS'), false)
+})
+
 Deno.test('selectReadText — an unreadable photo beats even an escalating recommendation (no model text)', () => {
   const out = selectReadText(SENTINEL_COPY, {
     ...readBase,
