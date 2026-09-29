@@ -1,0 +1,47 @@
+---
+name: <kebab-name>
+description: Use this skill when <activity>. Triggers include <concrete file paths, function calls, UI elements, kinds of change; enumerate generously, because this text is what makes the skill fire>. Loads <the rule set in one clause>, grounded in <where the canonical examples live>. For <adjacent concern>, defer to the `<other-skill>` skill; this skill covers X, that one covers Y.
+---
+
+# <Skill Title>: <one-line subtitle>
+
+## Origin and Scope
+Where the canonical rules live (doc + line refs) and what this skill adds ("the code-grounded version: every rule points at something already shipped, so the next contributor copies by example"). Why it exists: the regression it prevents, or the bug class that already cost time (name the incident / issue).
+
+**Out of scope:** each adjacent concern and which skill or doc owns it, naming the seam.
+
+---
+
+## PATTERN 1: <Imperative rule title>
+
+**RULE:** The rule, its reason, its source (`doc:line`), and the failure mode it prevents ("will silently mark rows synced on every failure").
+
+**CANONICAL EXAMPLE** (`path/file.ts:lines`):
+```ts
+// the real shipped snippet, with the comment that names the trap
+```
+Why this example is the bar, in 1–2 sentences. If a test enforces the rule, say so and cite it.
+
+**ANTI-PATTERN:** the literal wrong code or copy, why it looks fine, how it fails downstream, and the helper to use instead.
+
+(Optional) **CARVE-OUT:** a narrowly sanctioned exception: who ruled it, the date, and the exact boundary ("sanctioned there, and only there").
+
+---
+
+## PATTERN 2 … N  (same shape; ~6–8 patterns)
+
+---
+
+## Ambiguities Flagged
+Gaps between what this skill asserts and what the code currently enforces, left open for a PM decision rather than silently "fixed":
+1. **<Gap>.** Evidence at file:line; why it is probably accidental; the cheap fix.
+
+<!--
+Conventions:
+- A persona that keeps catching the same class of issue gets promoted to a skill. A skill whose rule must NEVER be broken gets promoted again, to a guard.
+- The description is written for triggering: long, concrete, path-heavy.
+- Anti-patterns are literal code or copy, not adjectives.
+- Skills cross-reference each other at explicit seams.
+- The Ambiguities section is mandatory and honest about enforcement gaps.
+Rename this file to SKILL.md inside .claude/skills/<name>/ when used.
+-->
