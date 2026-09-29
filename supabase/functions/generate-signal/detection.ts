@@ -14,7 +14,9 @@
 //      layer: "Nyx vomited 4 times this week — same as last." Counts/streaks,
 //      NO causal claim. Renders only for a FLAT or IMPROVING (falling) trend; a
 //      worsening trend is suppressed — never normalized as a neutral reflection
-//      — and a zero-symptom week is never surfaced (absence ≠ wellness, §9).)
+//      — and a zero-symptom week is never surfaced (absence ≠ wellness, §9). Nor
+//      does it render over a heavy week in any direction: the absolute-burden gate,
+//      PR-14c / CUL-1311, mutes it while any sign is at burdenMuteMinEpisodes.)
 //   ④ symptom-frequency worsening          (the deterministic worsening lane — the
 //      SAFETY-class counterpart to ③. ③'s worsening gate suppresses a rising trend
 //      and, until now, nothing fired in its place — a one-way valve into silence
@@ -2000,6 +2002,20 @@ export interface DetectionConfig {
      * than not". Tune on real data, not a re-decision.
      */
     worseningDenseDayFloor: number
+    /**
+     * Absolute-burden mute floor (PR-14c, CUL-1311 GAP-5): the whole reflection layer stays
+     * silent while ANY tracked sign has at least this many current-window episodes, whatever
+     * last week held. The worsening and chronicity gates are both RELATIVE (a rise, or weeks
+     * of history), so a pet at 6 then 5 a week, not yet chronic, cleared both and got a calm
+     * "down from 6". A high count is not a reassuring count, whichever way it moved.
+     *
+     * Reassurance-direction only: it removes a calm card and never adds a finding, so it
+     * ships on its own proof (E-1 A amended). PROVISIONAL at 4: FCEAI's "severe" band for
+     * vomiting is 4 or more in 7 days, applied pet-wide to every sign like the other two
+     * gates. The ratified value is a CUL-583 ruling-sheet item. The burden CARD (a safety
+     * finding on the same count) is CUL-1311 scope 2 and does not read this knob yet.
+     */
+    burdenMuteMinEpisodes: number
   }
   chronicity: {
     /**
@@ -2399,6 +2415,8 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     // week shows symptoms on ≥4 of 7 days. Anchored to density, not a raw count cutoff,
     // so the one new escalation boundary is clinically defensible (see WorseningTier).
     worseningDenseDayFloor: 4,
+    // PR-14c (CUL-1311): provisional, FCEAI severe (4+ in 7 days). CUL-583 ratifies.
+    burdenMuteMinEpisodes: 4,
   },
   // B-182 detector ⑦ (symptom chronicity) floors (§6). Clinically-anchored v1 defaults
   // (PM/Dr. Chen D2 — recommend-and-proceed, pending ratification): a course is "chronic"
@@ -3875,7 +3893,7 @@ export function detectIntakeDecline(
 // ① nor ② fired (the dogfooding case that opened B-051: a constant-staple diet
 // washes ① out and steady intake keeps ② silent, yet the owner has logged heavily).
 //
-// Three guardrails, all enforced here and re-asserted by the phrasing layer:
+// Four guardrails, all enforced here:
 //   (1) DIRECTION — render only for current ≤ prior (flat or falling). A rising
 //       trend is SUPPRESSED, never reframed as a neutral reflection (Dr. Chen's
 //       §7.1 amendment #5 — worsening is the safety lane's job, not ③'s).
@@ -3883,6 +3901,9 @@ export function detectIntakeDecline(
 //       is reassurance-by-absence (§9), the exact thing the layer must not do.
 //   (3) LOGGING-ELIGIBILITY — both windows must be actively logged, so a logging
 //       gap can't read as "improving" (the recurring §9 / B-027 / B-050 trap).
+//   (4) BURDEN — never render while any sign's current count is at the burden
+//       floor, whichever way it moved (PR-14c, CUL-1311 GAP-5): "down from 6" over
+//       a week of 5 is a reassurance about a week a vet would call severe.
 //
 // Surfaces at most ONE reflection (the symptom most present right now) so the
 // Signal stays calm — never a wall of count cards.
@@ -4058,6 +4079,18 @@ export function detectReflections(
   if (chronicityStats?.some((s) => isChronic(s, input.pet.species, config.chronicity) && s.loggingEligible)) {
     return []
   }
+
+  // GLOBAL absolute-burden gate (PR-14c, CUL-1311 GAP-5). The two gates above are both
+  // relative: worsening needs a rise over last week, chronicity needs three weeks of
+  // history. A cat at 6 vomits last week and 5 this week, in its first weeks of logging,
+  // cleared both and got "down from 6" on a week a vet would call severe. So the layer
+  // also stays silent while ANY sign's current count is at or above the burden floor.
+  // Unlike the two above it has no safety twin yet: the burden card is CUL-1311 scope 2,
+  // so today this mute leaves the case to the safety lanes that already exist rather than
+  // handing it to a card of its own. Silence is not an all-clear; a calm sentence over a
+  // severe week is the thing it removes. Same `stats` (collapsed episodes, same window)
+  // the worsening gate reads, so the two can never disagree about the count.
+  if (stats.some((s) => s.currentCount >= cfg.burdenMuteMinEpisodes)) return []
 
   // Candidates: flat-or-improving on BOTH episode count AND symptom-day spread, on a
   // real current count, with enough history in the busier window to state a trend.

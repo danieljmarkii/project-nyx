@@ -174,9 +174,13 @@ Deno.test('CUL-1122 pin — L1 on a record with every rating except Refused is b
 })
 
 Deno.test('CUL-1122 pin — the ranked Signal over both records keeps its pre-change findings (⑥ still suppressed or kept the same way)', () => {
+  // The first record's trailing 'reflection' left this pin in PR-14c (CUL-1311), deliberately and
+  // for a reason unrelated to CUL-1122: the record vomits every day from the 16th to the 27th, so
+  // the reflection it carried said "down from 7" over a week of 5, and the absolute-burden gate
+  // (5 ≥ burdenMuteMinEpisodes) now mutes exactly that. The ⑤ / ⑥ half this pin guards is unchanged.
   assert.deepEqual(
     detectSignals(input(postprandialNoRefusals())).map((r) => r.finding.type),
-    ['postprandial_timing', 'timeofday_clustering', 'reflection'],
+    ['postprandial_timing', 'timeofday_clustering'],
   )
   assert.deepEqual(
     detectSignals(input(emptyStomachNoRefusals())).map((r) => r.finding.type),
