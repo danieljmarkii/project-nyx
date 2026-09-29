@@ -417,6 +417,17 @@ describe('CUL-975 — the detectors fire on the shapes the defect takes', () => 
 });
 
 // ── CUL-989: what the Signal and Ask DO with an incomplete pull ──
+//
+// BLIND SPOTS, stated because an undocumented one reads as coverage (C-38):
+//   • The "every failed read throws" count matches the pre-CUL-989 shape `xRes.data ?? [])`
+//     only. A failed read swallowed any other way (`?? null`, a destructure that ignores
+//     `error`) is invisible to it; the call-site review is what catches those.
+//   • The error checks are asserted as present in the file, not tied to the read they guard.
+//   • The dose-exemption regex reaches from `readDosesAsToday(` to the `event_type` filter
+//     within 400 characters, so a much longer select reds it on a benign edit (the safe way
+//     to be wrong: a false red, never a false green).
+//   • The incomplete-read BEHAVIOUR is proven in `_shared/engineCorpus/signalPipeline.test.ts`
+//     (g)–(j); this file pins only the wiring into it.
 describe('CUL-989 — an incomplete pull is acted on, in each function, and the dose exemption is one site each', () => {
   const signal = code('generate-signal/index.ts');
   const ask = code('ask/index.ts');
@@ -452,7 +463,9 @@ describe('CUL-989 — an incomplete pull is acted on, in each function, and the 
       const allowed = /(trialRes|signalsRes)\.data \?\? \[\]\)/g;
       expect(`${fn}: ${(src.match(/Res\.data \?\? \[\]\)/g) ?? []).length}`).toBe(`${fn}: ${(src.match(allowed) ?? []).length}`);
       expect(src).toMatch(/if \(trialRes\.error\) throw/);
-      expect(src).toMatch(/if \(profileRes\.error\) throw/);
+      // The zone read degrades on purpose (its absence is a documented silence), but it is
+      // still READ: a failed zone read is logged, never taken as a clean answer unseen.
+      expect(src).toMatch(/if \(profileRes\.error\) console\.warn\(/);
       // THE EXEMPTION, earned once per function and wrapped around the dose pull only.
       const wraps = [...src.matchAll(/readDosesAsToday\('[a-z-]+', fetchAll<[^>]*>\('([a-z_]+)'[\s\S]{0,400}?\.eq\('event_type', '([a-z]+)'\)/g)];
       expect(wraps.map((m) => `${m[1]}:${m[2]}`)).toEqual(['events:medication']);

@@ -557,11 +557,6 @@ async function runLivePhotoRead(
   return photoReadOutcome(eventId, eventType, incidentType, 'unavailable')
 }
 
-// The paged pulls' row shapes, as far as `fetchAll` needs them (its de-dupe key); each is
-// narrowed to its full DB shape where it is mapped below.
-type AskIdRow = Record<string, unknown> & { id: string }
-type AskEventIdRow = Record<string, unknown> & { event_id: string }
-
 async function fetchContext(
   client: SupabaseClient,
   petId: string,
@@ -592,7 +587,7 @@ async function fetchContext(
   ] = await Promise.all([
     // All non-deleted events in the lookback (any type) — count/recall run over the full
     // stream. event_attachments(id) gives photo PRESENCE only (§6.2 mode 1; bytes never fetched).
-    fetchAll<AskIdRow>('events', (r) => r.id, (from, to) =>
+    fetchAll<EventRowDb>('events', (r) => r.id, (from, to) =>
       client
       .from('events')
       .select('id, event_type, occurred_at, occurred_at_confidence, occurred_at_earliest, occurred_at_latest, notes, event_attachments(id)', { count: 'exact' })
@@ -603,7 +598,7 @@ async function fetchContext(
       .order('id', { ascending: false })
       .range(from, to)),
     // Meal events with their food/protein/intake join (the rate/food/protein aggregates).
-    fetchAll<AskIdRow>('events', (r) => r.id, (from, to) =>
+    fetchAll<MealRowDb>('events', (r) => r.id, (from, to) =>
       client
       .from('events')
       .select('id, occurred_at, occurred_at_confidence, event_attachments(id), meals(food_item_id, intake_rating, food_items(primary_protein, proteins, food_type, brand, product_name))', { count: 'exact' })
@@ -616,7 +611,7 @@ async function fetchContext(
       .range(from, to)),
     // Weight readings — joined to events for occurred_at + soft-delete (weight_checks has no
     // occurred_at of its own). No lookback filter: the full series is a legitimate 'all' answer.
-    fetchAll<AskEventIdRow>('weight_checks', (r) => r.event_id, (from, to) =>
+    fetchAll<WeightRowDb>('weight_checks', (r) => r.event_id, (from, to) =>
       client
       .from('weight_checks')
       .select('event_id, weight_kg, events!inner(occurred_at, deleted_at)', { count: 'exact' })
@@ -628,7 +623,7 @@ async function fetchContext(
     // Regimens — status/started_at/ended_at define the active span (no soft-delete on meds).
     // medication_item_id is the drug key an unlinked one-tap dose attributes to (B-135).
     // Ordered on `created_at`, not the nullable `started_at` (the generate-report reason).
-    fetchAll<AskIdRow>('medications', (r) => r.id, (from, to) =>
+    fetchAll<RegimenRowDb>('medications', (r) => r.id, (from, to) =>
       client
       .from('medications')
       .select('id, medication_item_id, drug_name, status, started_at, ended_at, dose_amount', { count: 'exact' })
@@ -640,7 +635,7 @@ async function fetchContext(
     // medication_items(generic_name) NAMES a regimen-unlinked dose (medication_id null — the
     // dominant B-135 shape) that would otherwise be an anonymous "a medication"; RLS-scoped by
     // the caller JWT like every read here (medication_items is per-account, B-354).
-    readDosesAsToday('ask', fetchAll<AskIdRow>('events', (r) => r.id, (from, to) =>
+    readDosesAsToday('ask', fetchAll<DoseRowDb>('events', (r) => r.id, (from, to) =>
       client
       .from('events')
       .select('id, occurred_at, medication_administrations(medication_id, medication_item_id, adherence, medication_items(generic_name))', { count: 'exact' })
@@ -652,7 +647,7 @@ async function fetchContext(
       .order('id', { ascending: false })
       .range(from, to))),
     // Active free-fed standing facts (no lookback; the active window is resolved in the tool).
-    fetchAll<AskIdRow>('feeding_arrangements', (r) => r.id, (from, to) =>
+    fetchAll<ArrRowDb>('feeding_arrangements', (r) => r.id, (from, to) =>
       client
       .from('feeding_arrangements')
       .select('id, food_item_id, active_from, active_until, food_items(primary_protein, brand, product_name)', { count: 'exact' })
@@ -683,7 +678,9 @@ async function fetchContext(
   // the one whose failure is survivable as absence, and it is what leads a safety answer, so it
   // is logged rather than thrown (the relay then leads with nothing, today's failed-read shape).
   if (trialRes.error) throw new Error(`diet_trials read failed: ${trialRes.error.message}`)
-  if (profileRes.error) throw new Error(`user_profiles read failed: ${profileRes.error.message}`)
+  // The stored zone alone degrades: the request's own zone is preferred anyway (B-443), and
+  // absent both the tools fall back to UTC, their documented shape.
+  if (profileRes.error) console.warn('ask: user_profiles read failed, no stored timezone:', profileRes.error.message)
   if (signalsRes.error) console.warn('ask: ai_signals read failed, no engine findings relayed:', signalsRes.error.message)
 
   const recordIncomplete = incompletePullNames({
@@ -707,7 +704,7 @@ async function fetchContext(
     notes: string | null
     event_attachments: { id: string }[] | null
   }
-  const events: AskEventRow[] = (eventsPull.rows as unknown as EventRowDb[]).map((r) => ({
+  const events: AskEventRow[] = eventsPull.rows.map((r) => ({
     id: r.id,
     type: r.event_type,
     occurredAt: r.occurred_at,
@@ -728,7 +725,7 @@ async function fetchContext(
     event_attachments: { id: string }[] | null
     meals: { food_item_id: string | null; intake_rating: string | null; food_items: FoodItemDb | null } | { food_item_id: string | null; intake_rating: string | null; food_items: unknown }[] | null
   }
-  const meals: AskMealRow[] = (mealsPull.rows as unknown as MealRowDb[]).map((r) => {
+  const meals: AskMealRow[] = mealsPull.rows.map((r) => {
     const meal = first(r.meals) as { food_item_id: string | null; intake_rating: string | null; food_items: FoodItemDb | FoodItemDb[] | null } | null
     const fi = first(meal?.food_items ?? null) as FoodItemDb | null
     return {
@@ -750,8 +747,8 @@ async function fetchContext(
   })
 
   // ── weights ──
-  type WeightRowDb = { weight_kg: number; events: { occurred_at: string } | { occurred_at: string }[] | null }
-  const weights: AskWeightRow[] = (weightsPull.rows as unknown as WeightRowDb[])
+  type WeightRowDb = { event_id: string; weight_kg: number; events: { occurred_at: string } | { occurred_at: string }[] | null }
+  const weights: AskWeightRow[] = weightsPull.rows
     .map((r): AskWeightRow | null => {
       const ev = first(r.events)
       return ev ? { weightKg: Number(r.weight_kg), occurredAt: ev.occurred_at, deletedAt: null } : null
@@ -760,7 +757,7 @@ async function fetchContext(
 
   // ── regimens ──
   type RegimenRowDb = { id: string; medication_item_id: string | null; drug_name: string; status: string | null; started_at: string | null; ended_at: string | null; dose_amount: string | null }
-  const regimens: AskRegimenRow[] = (regimensPull.rows as unknown as RegimenRowDb[]).map((r) => ({
+  const regimens: AskRegimenRow[] = regimensPull.rows.map((r) => ({
     id: r.id,
     medicationItemId: r.medication_item_id,
     drugLabel: r.drug_name,
@@ -783,7 +780,7 @@ async function fetchContext(
   }
   type DoseRowDb = { id: string; occurred_at: string; medication_administrations: AdminRowDb | AdminRowDb[] | null }
   const regimenLabelById = new Map(regimens.map((r) => [r.id, r.drugLabel]))
-  const doses: AskDoseRow[] = (doseEventsPull.rows as unknown as DoseRowDb[]).map((r) => {
+  const doses: AskDoseRow[] = doseEventsPull.rows.map((r) => {
     const admin = first(r.medication_administrations)
     const medId = admin?.medication_id ?? null
     const itemId = admin?.medication_item_id ?? null
@@ -802,7 +799,7 @@ async function fetchContext(
 
   // ── arrangements ──
   type ArrRowDb = { id: string; food_item_id: string | null; active_from: string | null; active_until: string | null; food_items: { primary_protein: string | null; brand: string | null; product_name: string | null } | { primary_protein: string | null; brand: string | null; product_name: string | null }[] | null }
-  const arrRows = arrangementsPull.rows as unknown as ArrRowDb[]
+  const arrRows = arrangementsPull.rows
   const arrangements: AskFeedingArrangementRow[] = arrRows.map((r) => {
     const fi = first(r.food_items)
     return {

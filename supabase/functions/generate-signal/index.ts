@@ -117,6 +117,12 @@ export const SIGNAL_ENGINE_VERSION = 'signal.3' // signal.3: CUL-989, paged newe
 
 const MS_PER_DAY = 86_400_000
 
+// CUL-989 — how long a Signal computed from an incomplete read is served before the client
+// regenerates it. Short, because the shortfall is usually a write racing a multi-page pull,
+// which the next read does not repeat; not zero, because a record past the page ceiling is
+// incomplete on every read and the per-pet cap should not be spent re-reading it each open.
+const INCOMPLETE_READ_TTL_MS = 60 * 60 * 1000
+
 // ── Phrasing call (the only LLM use; reasoning stays deterministic upstream) ──
 
 interface ClaudeToolResponse {
@@ -608,7 +614,9 @@ const handler = async (req: Request): Promise<Response> => {
     // would unmute ⑧–⑩ and demote the correlation band for a pet mid-trial).
     if (petRes.error) throw new Error(`pets read failed: ${petRes.error.message}`)
     if (trialRes.error) throw new Error(`diet_trials read failed: ${trialRes.error.message}`)
-    if (profileRes.error) throw new Error(`user_profiles read failed: ${profileRes.error.message}`)
+    // The zone alone degrades rather than throws: its documented absence is "detector ⑥ stays
+    // silent" (and the trial predicate's UTC fallback), a silence rather than a false calm.
+    if (profileRes.error) console.warn('generate-signal: user_profiles read failed, no timezone:', profileRes.error.message)
 
     // CUL-989 step 3 — which pulls did not read to the end. Named for the log and handed to the
     // pipeline, which withholds every reassuring or resolving entry and states counts as floors.
@@ -722,7 +730,11 @@ const handler = async (req: Request): Promise<Response> => {
       findings: cachedEntries,
       coverage,
       summary,
+      // CUL-989: a row computed from an incomplete read expires in an hour, not the column's
+      // 24h default, so the next open retries the read instead of serving the withheld state
+      // (and its disclosure) for a day.
       ...signalStampValues(engineFlags, fingerprint),
+      ...(incompletePulls.length > 0 ? { expires_at: new Date(nowMs + INCOMPLETE_READ_TTL_MS).toISOString() } : {}),
     })
     if (insertError) throw new Error(`ai_signals write failed: ${insertError.message}`)
 
