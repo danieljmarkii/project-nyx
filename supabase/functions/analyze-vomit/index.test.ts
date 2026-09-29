@@ -861,25 +861,25 @@ Deno.test('EN-0 copy — every string it can build never reassures, never shouts
 Deno.test('EN-0 copy — the 8/19 read states the six unrated meals before the vomit', () => {
   assertStrictEquals(
     buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'before_vomit', mealsLogged: 6 }),
-    "6 meals are logged for Nyx in the 24 hours before this vomit, and none is marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
   )
 })
 
 Deno.test('EN-0 copy — ate, vomited, then refused, read late: the record before the READ, said so', () => {
   assertStrictEquals(
     buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'before_read', mealsLogged: 2 }),
-    "2 meals are logged for Nyx in the 24 hours before I read this, and none is marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, 2 meals had been logged for Nyx in the 24 hours before then, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
   )
   assertStrictEquals(
     buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'before_vomit', mealsLogged: 0 }),
-    "No meals are logged for Nyx in the 24 hours before this vomit. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, no meals were logged for Nyx in the 24 hours before this vomit. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
   )
 })
 
 Deno.test('EN-0 copy — the 9/22 read names the possible foreign material first, then the meals', () => {
   assertStrictEquals(
     buildEn0PhotoFirstReadText('Nyx', ['feline_reduced_intake'], ['suspected_foreign_material'], { window: 'before_vomit', mealsLogged: 6 }),
-    "I can see something that doesn't look like food in this photo. 6 meals are logged for Nyx in the 24 hours before this vomit, and none is marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "I can see something that doesn't look like food in this photo. When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
   )
 })
 
@@ -899,7 +899,7 @@ const MODEL_WORDS = 'MODEL WORDS: a totally normal hairball, nothing to worry ab
 
 Deno.test('EN-0 selection — a visual flag leads; the model\'s words never ride a contextual read (Pattern 10)', () => {
   const out = selectSharedReadText(en0VomitCopy(en0Ctx), { ...en0Base, visualFlags: ['blood'], modelReadText: MODEL_WORDS, modelEscalated: true })
-  assertEquals(out.startsWith('I can see what looks like blood in this photo. 6 meals are logged'), true, out)
+  assertEquals(out.startsWith('I can see what looks like blood in this photo. When I read this, 6 meals were logged'), true, out)
   assertEquals(out.includes('MODEL WORDS'), false)
 })
 

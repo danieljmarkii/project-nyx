@@ -54,7 +54,8 @@ import {
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 import {
   buildVomitContext,
-  vomitReadBounds,
+  vomitAnchoredReads,
+  vomitContextWindows,
   type ContextInput,
   type IntakeRecord,
   type VomitContextRows,
@@ -447,16 +448,26 @@ const VOMIT_COPY: IncidentCopy<ContextualFlag> = {
 // The intake template no longer concludes. The shipped "hasn't eaten a full meal
 // recently" was false wherever meals were logged but not rated (the 9/4 read had four,
 // the 9/22 read six), and "recently" was measured from whenever the read ran. This one
-// says what the record holds, in the app's own rating words, over the window that fired,
-// named against a fixed point ("before this vomit", or "before I read this" when only the
-// read-time half fired). Both stay true once the words are stored; no clause is relative
-// to the day the owner reads them (critique GAP-1). The escalation is unchanged: the
+// says what the record held when the read ran, in the app's own rating words, over the
+// window that fired ("before this vomit", or the 24 h before the read when only the
+// read-time half fired). Every clause is pinned to the vomit or to the read's own moment,
+// so the words stay true once stored; none is relative to the day the owner reads them
+// (critique GAP-1). The escalation is unchanged: the
 // feline flag still forces worth_a_call.
 function intakeRecordSentence(p: string, record: IntakeRecord): string {
-  const span = record.window === 'before_vomit' ? 'in the 24 hours before this vomit' : 'in the 24 hours before I read this'
-  if (record.mealsLogged === 0) return `No meals are logged for ${p} ${span}.`
-  if (record.mealsLogged === 1) return `One meal is logged for ${p} ${span}, and it isn't marked Most or All.`
-  return `${record.mealsLogged} meals are logged for ${p} ${span}, and none is marked Most or All.`
+  // Past tense, pinned to the moment of the read: a meal back-filled later cannot make it
+  // false (the adversarial pass on this PR: "are logged" went false beside a held
+  // escalation once the morning's meals landed).
+  if (record.window === 'before_vomit') {
+    const span = 'in the 24 hours before this vomit'
+    if (record.mealsLogged === 0) return `When I read this, no meals were logged for ${p} ${span}.`
+    if (record.mealsLogged === 1) return `When I read this, one meal was logged for ${p} ${span}, and it wasn't marked Most or All.`
+    return `When I read this, ${record.mealsLogged} meals were logged for ${p} ${span}, and none was marked Most or All.`
+  }
+  const span = 'in the 24 hours before then'
+  if (record.mealsLogged === 0) return `When I read this, no meals had been logged for ${p} ${span}.`
+  if (record.mealsLogged === 1) return `When I read this, one meal had been logged for ${p} ${span}, and it wasn't marked Most or All.`
+  return `When I read this, ${record.mealsLogged} meals had been logged for ${p} ${span}, and none was marked Most or All.`
 }
 
 export function buildEn0ContextualReadText(petName: string, flags: ContextualFlag[], intakeRecord?: IntakeRecord): string {
@@ -600,9 +611,23 @@ async function assembleContext(
   engineFlags: EngineFlags,
 ): Promise<ContextInput> {
   const nowMs = Date.now()
-  const w = vomitReadBounds(nowMs, thisEventOccurredAt, engineFlags)
+  const w = vomitContextWindows(nowMs)
+  // Flag-on only: the anchored rows the shipped reads below do not cover (context.ts).
+  const anchored = vomitAnchoredReads(nowMs, thisEventOccurredAt, engineFlags)
+  const anchoredRead = (eventType: 'vomit' | 'meal', select: string, r: { fromIso: string; toIso: string; beforeIso: string } | null) =>
+    r
+      ? userClient
+        .from('events')
+        .select(select)
+        .eq('pet_id', petId)
+        .eq('event_type', eventType)
+        .is('deleted_at', null)
+        .gte('occurred_at', r.fromIso)
+        .lte('occurred_at', r.toIso)
+        .lt('occurred_at', r.beforeIso)
+      : Promise.resolve({ data: [] as unknown[] })
 
-  const [vomitsRes, lethargyRes, mealEventsRes] = await Promise.all([
+  const [vomitsRes, lethargyRes, mealEventsRes, anchoredVomitsRes, anchoredMealsRes] = await Promise.all([
     userClient
       .from('events')
       .select('occurred_at')
@@ -626,12 +651,14 @@ async function assembleContext(
       .eq('event_type', 'meal')
       .is('deleted_at', null)
       .gte('occurred_at', w.intakeBaselineSinceIso),
+    anchoredRead('vomit', 'occurred_at', anchored?.vomits ?? null),
+    anchoredRead('meal', 'occurred_at, meals(intake_rating)', anchored?.meals ?? null),
   ])
 
   const rows: VomitContextRows = {
-    vomits: (vomitsRes.data ?? []) as VomitContextRows['vomits'],
+    vomits: [...(vomitsRes.data ?? []), ...(anchoredVomitsRes.data ?? [])] as VomitContextRows['vomits'],
     lethargy: (lethargyRes.data ?? []) as VomitContextRows['lethargy'],
-    meals: (mealEventsRes.data ?? []) as VomitContextRows['meals'],
+    meals: [...(mealEventsRes.data ?? []), ...(anchoredMealsRes.data ?? [])] as VomitContextRows['meals'],
   }
   return buildVomitContext({ rows, thisEventOccurredAt, species, nowMs, engineFlags })
 }

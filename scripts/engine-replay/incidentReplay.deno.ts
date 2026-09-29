@@ -127,7 +127,9 @@ if (import.meta.main) {
     const stored = a.contextual_flags ?? []
     const ok = shipped.length === stored.length && shipped.every((f) => stored.includes(f))
     if (!ok) mismatches++
-    const en0 = computeContextualFlags(en0Input(rec, ev, T))
+    const en0Ctx = en0Input(rec, ev, T)
+    const en0 = computeContextualFlags(en0Ctx)
+    const rec0 = en0Ctx.intakeRecord ? ` ${en0Ctx.intakeRecord.window}:${en0Ctx.intakeRecord.mealsLogged}` : ''
     // Lost: a flag the shipped rule gives that EN-0 does not. Measured against `shipped`,
     // not `stored`: a stored flag the shipped rule does not reproduce is a fidelity
     // mismatch, already counted above, and not EN-0's to answer for.
@@ -141,7 +143,7 @@ if (import.meta.main) {
     const visual = (a.visual_flags ?? []).join(',')
     if (a.recommendation === 'worth_a_call' || sk.length > 0 || !ok || lost || addedHere) {
       tierCount.set(top?.tier ?? 'logged', (tierCount.get(top?.tier ?? 'logged') ?? 0) + (stored.length > 0 || sk.length > 0 ? 1 : 0))
-      console.log(`${fmt(t(ev.at))}  ${a.recommendation.padEnd(13)}  ${JSON.stringify(stored).padEnd(22)}  ${String(ok).padEnd(10)}  ${(JSON.stringify(en0) + (lost ? ' LOST' : addedHere ? ' +' : '')).padEnd(40)}  ${(visual ? `${visual} (${a.edited_at ? 'edited' : 'not edited'})` : '').padEnd(32)} ${sk.map((s) => `${s.tier}: ${s.why}`).join('; ') || '(logged)'}`)
+      console.log(`${fmt(t(ev.at))}  ${a.recommendation.padEnd(13)}  ${JSON.stringify(stored).padEnd(22)}  ${String(ok).padEnd(10)}  ${(JSON.stringify(en0) + rec0 + (lost ? ' LOST' : addedHere ? ' +' : '')).padEnd(40)}  ${(visual ? `${visual} (${a.edited_at ? 'edited' : 'not edited'})` : '').padEnd(32)} ${sk.map((s) => `${s.tier}: ${s.why}`).join('; ') || '(logged)'}`)
     }
   }
   console.log(`\n${reads} live vomit reads · ${storedCalls} stored worth_a_call · shipped-rule mismatches: ${mismatches}`)

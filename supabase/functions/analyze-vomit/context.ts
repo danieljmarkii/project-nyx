@@ -58,7 +58,7 @@ export interface ContextInput {
   // EN-0 only (set by EN0_CONTEXT_STEP, never by the shipped derivation): when the feline
   // intake flag fires, the record its read states. `window` is the evaluation that fired
   // (the vomit-anchored one wins when both did); `mealsLogged` counts every meal in that
-  // window, rated or not, so the read can say "6 meals are logged … none is marked Most
+  // window, rated or not, so the read can say "6 meals were logged … none was marked Most
   // or All" rather than conclude the cat has not eaten (the 9/4 and 9/22 reads).
   intakeRecord?: IntakeRecord
 }
@@ -123,24 +123,35 @@ export function vomitAnchoredWindows(vomitMs: number): {
   }
 }
 
-// The lower bounds the three reads use. Flag-off they are the shipped windows exactly, so
-// the queries do not move. Flag-on each takes the earlier of the shipped and the anchored
-// bound, so a late read still fetches the rows around its vomit (the builder re-filters).
-export function vomitReadBounds(
+// The extra reads EN-0 needs, or null when it needs none (flag-off, or an instant that
+// cannot anchor). The shipped reads stay exactly as they were; these fetch only the part
+// of each anchored window the shipped read does not already cover: [from, to], and
+// strictly before the shipped lower bound (`beforeIso`). So no row is read twice (a vomit
+// read twice would count twice), and every read is bounded on both sides by the vomit.
+// An earlier draft widened the shipped lower bound instead, which left an old vomit's
+// read unbounded above and exposed it to PostgREST's max-rows cap, dropping the NEWEST
+// rows (C-42, the adversarial pass on this PR).
+export interface AnchoredRange {
+  fromIso: string
+  toIso: string
+  beforeIso: string
+}
+export function vomitAnchoredReads(
   nowMs: number,
   thisEventOccurredAt: string,
   engineFlags: EngineFlags,
-): ReturnType<typeof vomitContextWindows> {
-  const shipped = vomitContextWindows(nowMs)
+): { vomits: AnchoredRange | null; meals: AnchoredRange | null } | null {
   const vomitMs = Date.parse(thisEventOccurredAt)
-  if (!isEngineKeyOn(engineFlags, 'engines_v3_en0') || !Number.isFinite(vomitMs)) return shipped
+  if (!isEngineKeyOn(engineFlags, 'engines_v3_en0') || !Number.isFinite(vomitMs)) return null
+  const shipped = vomitContextWindows(nowMs)
   const a = vomitAnchoredWindows(vomitMs)
-  const earlier = (iso: string, ms: number) => new Date(Math.min(Date.parse(iso), ms)).toISOString()
+  const range = (fromMs: number, toMs: number, beforeIso: string): AnchoredRange | null =>
+    fromMs < Date.parse(beforeIso) && fromMs <= toMs
+      ? { fromIso: new Date(fromMs).toISOString(), toIso: new Date(toMs).toISOString(), beforeIso }
+      : null
   return {
-    vomitsSinceIso: earlier(shipped.vomitsSinceIso, a.vomitsFromMs),
-    lethargySinceIso: shipped.lethargySinceIso,
-    intakeBaselineSinceIso: earlier(shipped.intakeBaselineSinceIso, a.intakeBaselineFromMs),
-    felineIntakeSinceIso: shipped.felineIntakeSinceIso,
+    vomits: range(a.vomitsFromMs, a.vomitsToMs, shipped.vomitsSinceIso),
+    meals: range(a.intakeBaselineFromMs, vomitMs, shipped.intakeBaselineSinceIso),
   }
 }
 
@@ -150,7 +161,8 @@ function atOrAfter(iso: string, boundIso: string): boolean {
   return Number.isFinite(t) && t >= Date.parse(boundIso)
 }
 
-// Inclusive at both ends, on parsed instants.
+// Inclusive at both ends, on parsed instants. A meal at the vomit's own instant counts as
+// "before this vomit": the owner logged them together, and the read cannot order them.
 function inRange(iso: string, fromMs: number, toMs: number): boolean {
   const t = Date.parse(iso)
   return Number.isFinite(t) && t >= fromMs && t <= toMs

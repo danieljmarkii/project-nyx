@@ -39,6 +39,8 @@ class FakeQuery {
   private values: Row = {}
   private filters: Row = {}
   private since: string | null = null
+  private until: string | null = null
+  private before: string | null = null
   private single = false
   constructor(private w: World, private table: string) {}
   select() { return this }
@@ -48,6 +50,8 @@ class FakeQuery {
   order() { return this }
   limit() { return this }
   gte(_c: string, v: string) { this.since = v; return this }
+  lte(_c: string, v: string) { this.until = v; return this }
+  lt(_c: string, v: string) { this.before = v; return this }
   maybeSingle() { this.single = true; return this }
   update(v: Row) { this.mode = 'update'; this.values = v; return this }
   upsert(v: Row) { this.mode = 'upsert'; this.values = v; return this }
@@ -70,6 +74,8 @@ class FakeQuery {
       const rows = all
         .filter((e) => e.event_type === this.filters.event_type)
         .filter((e) => this.since === null || Date.parse(e.occurred_at) >= Date.parse(this.since))
+        .filter((e) => this.until === null || Date.parse(e.occurred_at) <= Date.parse(this.until))
+        .filter((e) => this.before === null || Date.parse(e.occurred_at) < Date.parse(this.before))
         .map((e) => (e.event_type === 'meal' ? { occurred_at: e.occurred_at, meals: { intake_rating: e.rating ?? null } } : { id: 'x', occurred_at: e.occurred_at }))
       return { data: rows, error: null }
     }
@@ -160,7 +166,7 @@ Deno.test('pipeline diff A · 8/19: a late read over unrated meals — same verd
   assertStrictEquals(off.read_text, buildContextualReadText('Nyx', ['feline_reduced_intake']))
   assertStrictEquals(
     on.read_text,
-    "6 meals are logged for Nyx in the 24 hours before this vomit, and none is marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
   )
   assertEquals([off.recommendation, on.recommendation], ['worth_a_call', 'worth_a_call'])
   assertEquals(off.engine_flags, [])
@@ -183,7 +189,7 @@ Deno.test('pipeline diff B · 9/22: foreign material and the intake flag — the
   assertStrictEquals(off.read_text, buildContextualReadText('Nyx', ['feline_reduced_intake']))
   assertStrictEquals(
     on.read_text,
-    "I can see something that doesn't look like food in this photo. 6 meals are logged for Nyx in the 24 hours before this vomit, and none is marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "I can see something that doesn't look like food in this photo. When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
   )
   // Pattern 10 unchanged: a contextual read carries neither of the model's texts.
   for (const r of [off, on]) {
@@ -227,7 +233,7 @@ Deno.test('pipeline diff D · ate, vomited, then refused, read late: the warning
   assertEquals(on.contextual_flags, ['feline_reduced_intake'])
   assertStrictEquals(
     on.read_text,
-    "2 meals are logged for Nyx in the 24 hours before I read this, and none is marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, 2 meals had been logged for Nyx in the 24 hours before then, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
   )
 })
 
@@ -239,7 +245,8 @@ Deno.test('pipeline · 6/7: a flag-on re-read after the back-fill never lowers t
   }
   const first = { ...(await read(w)) }
   assertStrictEquals(first.recommendation, 'worth_a_call')
-  assertStrictEquals(String(first.read_text).startsWith('No meals are logged for Nyx in the 24 hours before this vomit.'), true)
+  // Pinned to the read's own moment, so the held words stay true after the back-fill.
+  assertStrictEquals(String(first.read_text).startsWith('When I read this, no meals were logged for Nyx in the 24 hours before this vomit.'), true)
   // The morning's meals land; the same vomit is read again, now quiet by both halves.
   w.others.push({ event_type: 'meal', occurred_at: iso(vomitMs - 1 * H), rating: 'all' })
   const writesBefore = w.writes
@@ -259,6 +266,18 @@ Deno.test('pipeline · a photo the model says is not vomit is never read as hold
   assertStrictEquals(row.recommendation, 'worth_a_call')
   assertStrictEquals(
     row.read_text,
-    "No meals are logged for Nyx in the 24 hours before this vomit. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, no meals were logged for Nyx in the 24 hours before this vomit. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
   )
+})
+
+Deno.test('pipeline · the anchored reads never re-read a row the shipped read already holds (a vomit read twice counts twice)', async () => {
+  // Two vomits ten hours apart, both inside the read-time window: two in 24 h, no flag.
+  // Read twice, they would be four, and "3+ in 24 h" would fire on nothing.
+  const vomitMs = Date.now() - 1 * H
+  const row = await read({
+    species: 'dog', vomitMs, vision: CLEAN, en0: true, writes: 0, row: null,
+    others: [{ event_type: 'vomit', occurred_at: iso(vomitMs - 10 * H) }],
+  })
+  assertEquals(row.contextual_flags, [])
+  assertStrictEquals(row.recommendation, 'monitor')
 })
