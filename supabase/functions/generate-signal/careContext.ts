@@ -229,13 +229,29 @@ const FORM_WORDS = new Set([
   'medicine', 'medication',
 ])
 
-function classesOfWord(w: string): readonly DrugClass[] {
+/** A word's classes, and whether any part of it is unknown. The whole word is looked up
+ *  first ("depo-medrol", "temaril-p"); otherwise a hyphenated word is a COMBINATION and every
+ *  part must be known or a form word ("Cerenia-injectable" resolves; "Metronidazole-Prednisolone"
+ *  resolves to both; "Metro-Pred" has an unknown part). Adversarial review, PR-22: taking the
+ *  first part alone read a compounded steroid as metronidazole only. */
+function readWord(w: string): { classes: DrugClass[]; unknown: boolean } {
   const direct = DRUG_NAME_CLASSES[w]
-  if (direct) return direct
-  // A hyphenated brand's first word is tried alone too ("Cerenia-injectable").
-  const head = w.split('-')[0]
-  return head !== w ? (DRUG_NAME_CLASSES[head] ?? []) : []
+  if (direct) return { classes: [...direct], unknown: false }
+  const parts = w.split('-').filter((x) => x && !FORM_WORDS.has(x))
+  if (parts.length <= 1 && !w.includes('-')) return { classes: [], unknown: true }
+  const classes: DrugClass[] = []
+  let unknown = false
+  for (const part of parts) {
+    const c = DRUG_NAME_CLASSES[part]
+    if (c) classes.push(...c)
+    else unknown = true
+  }
+  return { classes, unknown }
 }
+
+// A name that joins two things ("+", "/", "&", a hyphenated word) is a combination: it is never
+// set aside as a nickname, because an unknown member may mask.
+const COMBINATION = /[+/&]|[a-z]-[a-z]/i
 
 /**
  * The classes a course's names resolve to, or null for DISCLOSURE (shown beside every concern,
@@ -254,11 +270,16 @@ export function resolveDrugClasses(names: readonly string[]): DrugClass[] | null
   for (const name of names) {
     const words = (name ?? '').toLowerCase().split(/[^a-z-]+/).filter((w) => w && !FORM_WORDS.has(w))
     if (words.length === 0) continue
-    const known = words.filter((w) => classesOfWord(w).length > 0)
-    if (known.length === 0) continue
-    if (known.length < words.length) return null
+    const read = words.map(readWord)
+    const known = read.filter((r) => r.classes.length > 0)
+    if (known.length === 0) {
+      // A nickname ("Buddy's pills") is set aside; an unreadable combination is not.
+      if (COMBINATION.test(name)) return null
+      continue
+    }
+    if (read.some((r) => r.unknown)) return null
     anyFull = true
-    for (const w of known) for (const cls of classesOfWord(w)) found.add(cls)
+    for (const r of known) for (const cls of r.classes) found.add(cls)
   }
   return anyFull ? [...found].sort() : null
 }
@@ -404,8 +425,9 @@ export function linesForSign(sign: SymptomType, args: CareContextArgs): CareCont
     const inTail = started && !onBoard && end !== null && today - end <= MASK_TAIL_DAYS
     // An owner's label that itself makes a care claim ("Cerenia (helped last time)") is never
     // printed; the library's name, or a plain noun, stands in (CUL-1271's screen).
-    const label = careClaimReason(c.drugLabel) === null ? c.drugLabel : (c.names[0] ?? 'A medication')
-    return { c, label, start, end, onBoard, inTail, effect: courseEffectOn(resolveDrugClasses([c.drugLabel, ...c.names]), sign) }
+    const fallback = c.names[0] ? c.names[0][0].toUpperCase() + c.names[0].slice(1) : 'A medication'
+    const label = careClaimReason(c.drugLabel) === null ? c.drugLabel : fallback
+    return { c, label, start, end, endKnown: endIdx !== null, onBoard, inTail, effect: courseEffectOn(resolveDrugClasses([c.drugLabel, ...c.names]), sign) }
   })
 
   // Where a zero may not appear for this sign: every masking course from its start to its end
@@ -435,16 +457,15 @@ export function linesForSign(sign: SymptomType, args: CareContextArgs): CareCont
   const drawn = assessed
     .filter((x) => (x.onBoard || x.inTail) && x.effect.shown)
     .sort((a, b) => (a.start as number) - (b.start as number) || a.label.localeCompare(b.label))
-  for (const { c, label, start, end, onBoard } of drawn) {
+  for (const { c, label, start, end, onBoard, endKnown } of drawn) {
     const s = start as number
     const on = formatDay(s, today)
     const anchorOn = c.startedOn as string
     if (!onBoard) {
       const to = end as number
-      lines.push({
-        kind: 'course', anchorOn, days: to - s + 1, count: null, loggedDays: null, drugLabel: label,
-        text: to > s ? `${label}, ${on} to ${formatDay(to, today)}.` : `${label}, ${on}.`,
-      })
+      // No end date on record: say it stopped, never an end the record does not hold.
+      const text = !endKnown ? `${label} since ${on}, stopped.` : to > s ? `${label}, ${on} to ${formatDay(to, today)}.` : `${label}, ${on}.`
+      lines.push({ kind: 'course', anchorOn, days: to - s + 1, count: null, loggedDays: null, drugLabel: label, text })
       continue
     }
     const n = today - s

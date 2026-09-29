@@ -224,7 +224,7 @@ Deno.test('a course ended inside its tail draws its dates and no count; past the
   ])
   // Marked stopped with no end date: taken to have ended today.
   assertEquals(texts('vomit', argsOf({ courses: [{ ...PRED, endedOn: null, status: 'stopped' }] }, { lastVisitOn: null })), [
-    'Prednisone, Sep 21 to Sep 27.',
+    'Prednisone since Sep 21, stopped.',
   ])
   for (const c of [
     { ...PRED, startedOn: '2026-07-01', endedOn: dayKey(43), status: 'completed' },
@@ -261,6 +261,25 @@ Deno.test('a half-resolved name fails toward disclosure (an unknown member may m
   }
 })
 
+Deno.test('a hyphenated or joined compound never resolves as its first drug', () => {
+  assertEquals(resolveDrugClasses(['Metronidazole-Prednisolone']), ['antidiarrheal', 'systemic_corticosteroid'])
+  assertEquals(resolveDrugClasses(['Cerenia-Pred']), ['antiemetic_gi_protectant', 'systemic_corticosteroid'])
+  assertStrictEquals(resolveDrugClasses(['Carprofen-mirtazapine']), null)
+  assertStrictEquals(resolveDrugClasses(['Metro-Pred compound', 'metronidazole']), null)
+  assertStrictEquals(resolveDrugClasses(['Metro/Lax', 'metronidazole']), null)
+  // Whole-word entries and form suffixes still resolve.
+  assertEquals(resolveDrugClasses(['Depo-Medrol']), ['systemic_corticosteroid'])
+  assertEquals(resolveDrugClasses(['Temaril-P']), ['systemic_corticosteroid'])
+  assertEquals(resolveDrugClasses(['Cerenia-injectable']), ['antiemetic_gi_protectant'])
+  // The re-pass's case: the steroid half now withholds the trial's zero and draws a course line.
+  const c: CourseFact = { drugLabel: 'Metronidazole-Prednisolone', names: [], startedOn: dayKey(15), endedOn: null, status: 'active' }
+  const trial: TrialFact = { startedOn: dayKey(15), targetDurationDays: 56, indication: 'gi', targetProtein: 'rabbit' }
+  assertEquals(texts('vomit', argsOf({ courses: [c], trial }, { lastVisitOn: null })), [
+    'Metronidazole-Prednisolone since Sep 12, 15 days. Started 15 days ago.',
+    'Rabbit trial, day 16 of 56, with something logged on 16 of its 16 days.',
+  ])
+})
+
 Deno.test('the trial draws no line past its target end (the grace bounds belief, never evidence)', () => {
   const trial: TrialFact = { startedOn: dayKey(79), targetDurationDays: 56, indication: 'gi', targetProtein: 'duck' }
   assertEquals(linesForSign('vomit', argsOf({ trial }, { lastVisitOn: null })), [])
@@ -273,7 +292,7 @@ Deno.test('an owner label that makes a care claim is never printed; the library 
   const label = 'Pred (it is working)'
   assertStrictEquals(careClaimReason(label) !== null, true, 'fixture premise: the screen flags the label')
   const c: CourseFact = { drugLabel: label, names: ['prednisolone'], startedOn: dayKey(20), endedOn: null, status: 'active' }
-  assertEquals(texts('vomit', argsOf({ courses: [c] }, { lastVisitOn: null })), ['prednisolone since Sep 7, 20 days. Started 20 days ago.'])
+  assertEquals(texts('vomit', argsOf({ courses: [c] }, { lastVisitOn: null })), ['Prednisolone since Sep 7, 20 days. Started 20 days ago.'])
   assertEquals(texts('vomit', argsOf({ courses: [{ ...c, names: [] }] }, { lastVisitOn: null })), ['A medication since Sep 7, 20 days. Started 20 days ago.'])
 })
 
