@@ -238,41 +238,6 @@ export async function fetchAll<T>(
   return { rows, complete: !hitCeiling && !shifted && total !== null && rows.length >= total }
 }
 
-/**
- * THE DOSE PULL READS AS IT DID BEFORE CUL-989, AND IT IS THE ONLY ONE THAT DOES.
- *
- * Every other pull in generate-signal and ask throws on a query error. The dose pull cannot
- * yet: its embed `medication_administrations(...)` is ambiguous since migration 023 added
- * `paired_event_id` (a second FK to `events`), and the live API answers PGRST201 on every call
- * (CUL-1099, verified 2026-09-23; the other embeds in both functions were checked against the
- * live schema on 2026-09-28 and are unambiguous). The shipped code read that error as "no
- * doses", so the Signal and Ask have both run with none. Making it fatal would 500 every
- * pet's Signal; adding the hint turns on dose lanes that have never run on production data,
- * which CUL-1099 owns together with its mandatory adversarial pass. So this keeps today's
- * answer — no doses, and NOT an incomplete read (counting it incomplete would withhold every
- * reflection for every pet) — and makes the failure loud. CUL-1099 deletes this in the PR that
- * adds the hint; `guards/reportPullPagination.test.ts` registers it as the one exemption.
- */
-export async function readDosesAsToday<T>(fn: string, pull: Promise<Pull<T>>): Promise<Pull<T>> {
-  try {
-    return await pull
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err)
-    // ONLY the ambiguity (PGRST201's message; `rowsOrThrow` keeps the message, not the code).
-    // Any other failure — a timeout, an RLS fault — throws like every other read: "didn't
-    // read" must never be scored as "didn't happen" (adversarial pass, this PR).
-    if (!isAmbiguousEmbed(detail)) throw err
-    console.warn(`${fn}: dose-event read failed, read as no doses (CUL-1099):`, detail)
-    return { rows: [], complete: true }
-  }
-}
-
-/** PostgREST's PGRST201, by the message it carries: "Could not embed because more than one
- *  relationship was found for 'events' and 'medication_administrations'". */
-export function isAmbiguousEmbed(message: string): boolean {
-  return /PGRST201|more than one relationship was found/i.test(message)
-}
-
 /** The names of the pulls that did not read to the end, in the order given (a log line, and
  *  generate-signal's `record_incomplete`). */
 export function incompletePullNames(pulls: Record<string, Pull<unknown>>): string[] {

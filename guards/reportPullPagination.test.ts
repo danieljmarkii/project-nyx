@@ -423,12 +423,12 @@ describe('CUL-975 — the detectors fire on the shapes the defect takes', () => 
 //     only. A failed read swallowed any other way (`?? null`, a destructure that ignores
 //     `error`) is invisible to it; the call-site review is what catches those.
 //   • The error checks are asserted as present in the file, not tied to the read they guard.
-//   • The dose-exemption regex reaches from `readDosesAsToday(` to the `event_type` filter
-//     within 400 characters, so a much longer select reds it on a benign edit (the safe way
-//     to be wrong: a false red, never a false green).
+//   • The dose pull's error-as-empty exemption (`readDosesAsToday`) was deleted by CUL-1099
+//     with the FK hint that made the read resolve; the assertion below keeps it deleted by
+//     name only. A new tolerant wrapper under another name is the call-site review's to catch.
 //   • The incomplete-read BEHAVIOUR is proven in `_shared/engineCorpus/signalPipeline.test.ts`
 //     (g)–(j); this file pins only the wiring into it.
-describe('CUL-989 — an incomplete pull is acted on, in each function, and the dose exemption is one site each', () => {
+describe('CUL-989 — an incomplete pull is acted on, in each function, and no read is exempt', () => {
   const signal = code('generate-signal/index.ts');
   const ask = code('ask/index.ts');
 
@@ -454,7 +454,7 @@ describe('CUL-989 — an incomplete pull is acted on, in each function, and the 
     expect(branch).toMatch(/return answerResponse\(/);
   });
 
-  it('every failed read throws, except the one registered dose pull (CUL-1099)', () => {
+  it('every failed read throws, the dose pull included (CUL-1099)', () => {
     // The pre-CUL-989 shape: `(xRes.data ?? [])` read a failed query as an empty record.
     for (const [fn, src] of [['generate-signal', signal], ['ask', ask]] as const) {
       // What may still read `.data ?? []`: the trial read, whose error is thrown just above it,
@@ -466,10 +466,9 @@ describe('CUL-989 — an incomplete pull is acted on, in each function, and the 
       // The zone read degrades on purpose (its absence is a documented silence), but it is
       // still READ: a failed zone read is logged, never taken as a clean answer unseen.
       expect(src).toMatch(/if \(profileRes\.error\) console\.warn\(/);
-      // THE EXEMPTION, earned once per function and wrapped around the dose pull only.
-      const wraps = [...src.matchAll(/readDosesAsToday\('[a-z-]+', fetchAll<[^>]*>\('([a-z_]+)'[\s\S]{0,400}?\.eq\('event_type', '([a-z]+)'\)/g)];
-      expect(wraps.map((m) => `${m[1]}:${m[2]}`)).toEqual(['events:medication']);
-      expect((src.match(/readDosesAsToday\(/g) ?? []).length).toBe(1);
+      // NO EXEMPTION. The dose pull read PGRST201 as "no doses" until CUL-1099 hinted its FK;
+      // the wrapper that did it is gone, and a read that fails now throws like its neighbours.
+      expect(src).not.toMatch(/readDosesAsToday/);
     }
   });
 });
