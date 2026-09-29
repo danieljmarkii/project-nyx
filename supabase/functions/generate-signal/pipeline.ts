@@ -72,7 +72,7 @@ import { computePhotoComposition, type PhotoAnalysisInput } from './photoComposi
 // function boundary exactly as `./protein.ts` already re-exports `lib/protein.ts`
 // — a second copy of `start + target + grace` living here is the failure mode.
 import { isTrialRunning } from '../../../lib/dietTrial.ts'
-import { buildBuildingText, curateFindings, templateForFinding, type CachedFinding } from './phrasing.ts'
+import { buildBuildingText, curateFindings, templateCarried, templateForFinding, type CachedFinding } from './phrasing.ts'
 import {
   mergeStandDowns,
   priorForStandDowns,
@@ -652,7 +652,10 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
   const strippedFindings = stripInternalOnsets(decoratedWithOnsets.map((r) => r.finding))
   // CUL-989: over an incomplete read every count is a floor, and the finding says so; and no
   // safety card is softened below the tier the previous Signal showed (holdPriorTiers).
-  const priorSafety = readIncomplete && priorSignal ? readPriorSafetyEntries(priorSignal.findings) : []
+  const priorSafety =
+    readIncomplete && priorSignal && standDownMintAllowed(priorSignal.engineFlags, engineFlags, SIGNAL_ENGINE_KEYS)
+      ? readPriorSafetyEntries(priorSignal.findings, priorSignal.generatedAt, nowMs)
+      : []
   const decorated = decoratedWithOnsets.map((r, i) => ({
     rank: r.rank,
     finding: readIncomplete
@@ -662,7 +665,9 @@ export function runSignalPipeline(args: SignalPipelineInput): SignalPipelineResu
   // CUL-989: and no safety card the previous Signal showed disappears on an incomplete read.
   // Its absence here may be the rows the read did not reach, which is the resolution the ruling
   // withholds, so the prior card is carried forward as it was shown.
-  const carried: CachedFinding[] = readIncomplete ? carryPriorSafety(priorSafety, decorated.map((r) => r.finding)) : []
+  const carried: CachedFinding[] = readIncomplete
+    ? carryPriorSafety(priorSafety, decorated.map((r) => r.finding), petName)
+    : []
 
   // 4a. AI summary (B-023 PR 4). Assemble a DETERMINISTIC fact packet from the curated
   //     findings + the descriptive intake aggregates (computed over the same in-memory
@@ -817,21 +822,38 @@ export function incompleteReadDisclosure(petName: string, hasSafety: boolean): C
 // canonical order before anything reads it: ascending instant, then the row's full content as a
 // total tie-break. The detectors are unchanged and can no longer see the order a read chose.
 
-function canonicalOrder<T>(rows: readonly T[], instantOf: (row: T) => string | null | undefined): T[] {
+function canonicalOrder<T>(
+  rows: readonly T[],
+  instantOf: (row: T) => string | null | undefined,
+  concernOf: (row: T) => number = () => 0,
+): T[] {
   const keyed = rows.map((row) => {
     const ms = Date.parse(String(instantOf(row) ?? ''))
-    return { row, ms: Number.isFinite(ms) ? ms : Number.NEGATIVE_INFINITY, tie: JSON.stringify(row) }
+    return { row, ms: Number.isFinite(ms) ? ms : Number.NEGATIVE_INFINITY, concern: concernOf(row), tie: JSON.stringify(row) }
   })
-  keyed.sort((a, b) => (a.ms !== b.ms ? a.ms - b.ms : a.tie < b.tie ? -1 : a.tie > b.tie ? 1 : 0))
+  keyed.sort((a, b) =>
+    a.ms !== b.ms
+      ? a.ms - b.ms
+      : a.concern !== b.concern
+        ? a.concern - b.concern
+        : a.tie < b.tie ? -1 : a.tie > b.tie ? 1 : 0
+  )
   return keyed.map((k) => k.row)
 }
+
+// Among meals at the SAME instant, the worse intake sorts LATER, so a detector reading "the latest
+// meal" reads the concerning one. Deterministic by content alone was not enough: the same-minute
+// twin then fired or not by its UUID (adversarial re-check, this PR). The tie falls toward
+// escalation, the direction the whole engine fails in.
+const INTAKE_CONCERN: Record<string, number> = { all: 0, most: 1, some: 2, picked: 3, refused: 4 }
+const mealConcern = (r: MealEventRow): number => INTAKE_CONCERN[String(first(r.meals)?.intake_rating ?? '')] ?? -1
 
 /** The rows in canonical order (exported for the order-invariance guard). Never mutates. */
 export function canonicalRows(rows: SignalRows): SignalRows {
   return {
     ...rows,
     symptoms: canonicalOrder(rows.symptoms, (r) => r.occurred_at),
-    meals: canonicalOrder(rows.meals, (r) => r.occurred_at),
+    meals: canonicalOrder(rows.meals, (r) => r.occurred_at, mealConcern),
     activeTrials: canonicalOrder(rows.activeTrials, (r) => r.started_at),
     arrangements: canonicalOrder(rows.arrangements, (r) => r.created_at),
     regimens: canonicalOrder(rows.regimens, (r) => r.started_at),
@@ -847,29 +869,53 @@ export function canonicalRows(rows: SignalRows): SignalRows {
 // Both are the reassuring direction: the owner is told less than before, because of rows the
 // read did not reach. The engine's only memory of what it told the owner is the previous cache
 // row, so over an incomplete read that row sets a floor under the safety cards: a card the prior
-// showed keeps at least its prior tier, and one this run did not reproduce is carried forward as
-// it was shown. On a complete read none of this runs, and the record decides alone.
+// showed keeps at least its prior tier, and one this run did not reproduce is carried forward
+// under a dated sentence, for at most CARRY_MAX_DAYS from the read that computed it. On a
+// complete read none of this runs, and the record decides alone.
 
 const TIER_RANK: Record<string, number> = { soft: 0, standard: 1, firm: 2 }
-
-type PriorSafetyEntry = { rank: number; text: string; finding: Finding }
 
 const safetyKey = (f: { type: string; symptomType?: unknown; incidentType?: unknown }): string =>
   `${f.type}:${String(f.symptomType ?? f.incidentType ?? '')}`
 
-/** The prior row's safety cards with their text, tolerant of any shape (a malformed entry is
- *  dropped, which can only withhold a carried card). Markers are never safety cards. */
-export function readPriorSafetyEntries(raw: unknown): PriorSafetyEntry[] {
+/** The lanes whose card may be held or carried: the four safety lanes, by name. A prior row is
+ *  written by the engine but readable and writable by its owner (ai_signals_owner), so a card of
+ *  any other type, or a malformed one, is never re-emitted as engine output (adversarial re-check). */
+const CARRYABLE = new Set(['symptom_chronicity', 'symptom_worsening', 'intake_decline', 'incident_red_flag'])
+
+/**
+ * How long a carried card may be carried, from the read that last COMPUTED it (`carriedFrom`,
+ * which does not reset when a carried card is carried again). A record past the page ceiling is
+ * incomplete on every read, so without a bound a card would outlive the lookback that produced
+ * it. Past this the card drops and the headline is the disclosure, which never claims recovery.
+ * Two weeks: the chronicity lane's own recency floor for vomiting (14 days), the span over which
+ * the engine already treats a sign's absence as meaningful.
+ */
+export const CARRY_MAX_DAYS = 14
+
+type PriorSafetyEntry = { rank: number; finding: Finding; carriedFromIso: string }
+
+/** The prior row's safety cards that may be held or carried, tolerant of any shape: a malformed
+ *  entry, an unlisted lane or one older than CARRY_MAX_DAYS is dropped (which can only withhold). */
+export function readPriorSafetyEntries(raw: unknown, priorGeneratedAt: unknown, nowMs: number): PriorSafetyEntry[] {
   if (!Array.isArray(raw)) return []
+  const generatedMs = Date.parse(String(priorGeneratedAt ?? ''))
   const out: PriorSafetyEntry[] = []
   raw.forEach((e, i) => {
     if (!e || typeof e !== 'object') return
-    const { text, finding, rank } = e as { text?: unknown; finding?: unknown; rank?: unknown }
-    if (typeof text !== 'string' || text.trim().length === 0) return
+    const { finding, rank } = e as { finding?: unknown; rank?: unknown }
     if (!finding || typeof finding !== 'object') return
-    const f = finding as { type?: unknown; priorityClass?: unknown }
-    if (typeof f.type !== 'string' || f.type === 'stood_down' || f.priorityClass !== 'safety') return
-    out.push({ rank: typeof rank === 'number' && Number.isFinite(rank) ? rank : i, text, finding: finding as Finding })
+    const f = finding as { type?: unknown; priorityClass?: unknown; carriedFrom?: unknown; symptomType?: unknown; incidentType?: unknown }
+    if (typeof f.type !== 'string' || !CARRYABLE.has(f.type) || f.priorityClass !== 'safety') return
+    if (f.type === 'incident_red_flag' ? typeof f.incidentType !== 'string' : f.type !== 'intake_decline' && typeof f.symptomType !== 'string') return
+    // A carried card keeps the date of the read that computed it; a computed one takes the row's.
+    const originMs = typeof f.carriedFrom === 'string' ? Date.parse(f.carriedFrom) : generatedMs
+    if (!Number.isFinite(originMs) || nowMs - originMs > CARRY_MAX_DAYS * MS_PER_DAY || originMs > nowMs) return
+    out.push({
+      rank: typeof rank === 'number' && Number.isFinite(rank) ? rank : i,
+      finding: finding as Finding,
+      carriedFromIso: new Date(originMs).toISOString(),
+    })
   })
   return out.sort((a, b) => a.rank - b.rank)
 }
@@ -883,12 +929,16 @@ function holdPriorTier(f: Finding, prior: readonly PriorSafetyEntry[]): Finding 
   return TIER_RANK[priorTier] > TIER_RANK[f.tier] ? ({ ...f, tier: priorTier } as Finding) : f
 }
 
-/** The prior safety cards this run did not reproduce, verbatim, in their prior order. */
-function carryPriorSafety(prior: readonly PriorSafetyEntry[], current: readonly Finding[]): CachedFinding[] {
+/** The prior safety cards this run did not reproduce, in their prior order: the finding marked
+ *  with the date of the read that computed it, and a dated sentence (never its old one). */
+function carryPriorSafety(prior: readonly PriorSafetyEntry[], current: readonly Finding[], petName: string): CachedFinding[] {
   const shown = new Set(current.map(safetyKey))
   return prior
     .filter((p) => !shown.has(safetyKey(p.finding)))
-    .map((p, i) => ({ rank: i, text: p.text, finding: p.finding }))
+    .map((p, i) => {
+      const finding = { ...p.finding, carriedFrom: p.carriedFromIso } as Finding
+      return { rank: i, text: templateCarried(finding, petName, p.carriedFromIso), finding }
+    })
 }
 
 // ── After the phrasing ────────────────────────────────────────────────────────

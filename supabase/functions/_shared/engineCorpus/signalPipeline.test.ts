@@ -24,6 +24,7 @@
 import { assertEquals, assertStrictEquals, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   assembleSignal,
+  CARRY_MAX_DAYS,
   incompleteReadDisclosure,
   isReassuringOrResolving,
   runSignalPipeline,
@@ -34,6 +35,7 @@ import {
   type SignalPayload,
 } from '../../generate-signal/pipeline.ts'
 import { ENGINE_KEYS, SIGNAL_ENGINE_KEYS, type EngineFlags } from '../engineFlags.ts'
+import { validatePhrasing } from '../../generate-signal/phrasing.ts'
 import {
   EMPTY_CARE_RECORD,
   POPULATED_CARE_RECORD,
@@ -313,6 +315,13 @@ Deno.test('(h2) a same-minute tie cannot decide a safety card (the order a read 
   assertEquals(payload(twinFirst), payload(twinLast))
   // And the tie is in the input, not assumed: same instant, same food, different rating.
   assertStrictEquals(twin.occurred_at, refusal.occurred_at)
+  // Not only deterministic but toward escalation: whatever the twin's id sorts as, the refusal is
+  // the "latest" meal and the card fires (the re-check found it decided by the UUID before).
+  // Ids chosen to sort on BOTH sides of the refusal's own id ('meal-…'), so each order is exercised.
+  for (const twinId of ['0000-twin', 'zzzz-twin']) {
+    const t = { ...twin, id: twinId }
+    assertEquals(types(payload({ ...cat, rows: { ...cat.rows, meals: [...cat.rows.meals, t] } })), ['intake_decline'], twinId)
+  }
 })
 
 Deno.test('(k) a partial read of the SAME record never weakens or drops a safety card the full read showed', () => {
@@ -350,4 +359,64 @@ Deno.test('(k2) with no prior, a partial read still never shows the empty-record
     const p = templatePayload(run({ ...c, prior: null }, OFF, EMPTY_CARE_RECORD, INCOMPLETE))
     if (p.isBuilding) assertStrictEquals(p.signalText, p.summary?.text, `${c.name}: "${p.signalText}"`)
   }
+})
+
+// The carried card over a chain of incomplete reads: each run's row is the next run's prior.
+const chain = (c: SignalPipelineCase, stepsDays: number[]): SignalPayload[] => {
+  let prior: PriorSignal = { findings: payload(c).findings, generatedAt: c.nowIso, engineFlags: [] }
+  const out: SignalPayload[] = []
+  for (const d of stepsDays) {
+    const nowIso = new Date(Date.parse(c.nowIso) + d * 86_400_000).toISOString()
+    const emptied: SignalPipelineCase = { ...c, nowIso, prior, rows: { ...c.rows, symptoms: [], meals: [], incidentAnalyses: [], doseEvents: [] } }
+    const p = templatePayload(run(emptied, OFF, EMPTY_CARE_RECORD, INCOMPLETE))
+    out.push(p)
+    prior = { findings: p.findings, generatedAt: nowIso, engineFlags: [] }
+  }
+  return out
+}
+
+Deno.test('(k3) a carried card is dated, never its old sentence, and ages out; then the headline is the disclosure', () => {
+  let carriedSeen = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const fullSafety = payload(c).findings.filter((e) => e.finding.type !== 'stood_down' && e.finding.priorityClass === 'safety')
+    if (fullSafety.length === 0) continue
+    const [day3, day10, dayPast] = chain(c, [3, 10, CARRY_MAX_DAYS + 1])
+    for (const p of [day3, day10]) {
+      const carried = p.findings.filter((e) => e.finding.type !== 'stood_down' && e.finding.carriedFrom !== undefined)
+      assertStrictEquals(carried.length, fullSafety.length, `${c.name}: carried ${carried.length}`)
+      for (const e of carried) {
+        // Dated from the read that COMPUTED it, which a re-carry does not reset.
+        assertStrictEquals(e.finding.type !== 'stood_down' && e.finding.carriedFrom, new Date(Date.parse(c.nowIso)).toISOString())
+        assertStrictEquals(/^An earlier read of /.test(e.text), true, e.text)
+        assertStrictEquals(/\bjust\b|up from|this week|since|\d+ (episode|of the last)/.test(e.text), false, e.text)
+        assertStrictEquals(validatePhrasing(e.text, e.finding as never), true, e.text)
+        carriedSeen++
+      }
+    }
+    // Past the bound, from the ORIGINAL read: nothing carried, and the headline never claims recovery.
+    assertStrictEquals(dayPast.findings.length, 0, `${c.name}: still carrying past the bound`)
+    assertStrictEquals(dayPast.signalText, dayPast.summary?.text, c.name)
+  }
+  assertStrictEquals(carriedSeen >= 8, true, `only ${carriedSeen} carried cards seen`)
+})
+
+Deno.test('(k4) only the four safety lanes are carried: a forged or malformed prior entry never is', () => {
+  const quiet = SIGNAL_PIPELINE_CORPUS.find((c) => c.name === 'a new pet with nothing logged')!
+  const forged: PriorSignal = {
+    findings: [
+      { rank: 0, text: 'Your cat is fine.', finding: { type: 'food_symptom_correlation', priorityClass: 'safety', symptomType: 'vomit' } },
+      { rank: 1, text: 'x', finding: { type: 'no_such_lane', priorityClass: 'safety' } },
+      { rank: 2, text: 'x', finding: { type: 'symptom_chronicity', priorityClass: 'insight', symptomType: 'vomit' } },
+      { rank: 3, text: 'x', finding: { type: 'symptom_chronicity', priorityClass: 'safety' } }, // no symptomType
+      { rank: 4, text: 'x', finding: null },
+      'garbage',
+    ],
+    generatedAt: new Date(Date.parse(quiet.nowIso) - 86_400_000).toISOString(),
+    engineFlags: [],
+  }
+  const p = templatePayload(run({ ...quiet, prior: forged }, OFF, EMPTY_CARE_RECORD, INCOMPLETE))
+  assertEquals(p.findings, [])
+  // A future-dated prior carries nothing either (a clock skew cannot pin a card forever).
+  const future = { ...forged, findings: payload(SIGNAL_PIPELINE_CORPUS.find((c) => c.expectedTypes.includes('intake_decline'))!).findings, generatedAt: '2099-01-01T00:00:00.000Z' }
+  assertEquals(templatePayload(run({ ...quiet, prior: future }, OFF, EMPTY_CARE_RECORD, INCOMPLETE)).findings, [])
 })

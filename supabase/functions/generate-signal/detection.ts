@@ -810,6 +810,11 @@ interface FindingBase {
    * finding from a complete read is byte-identical to one computed before this field existed.
    */
   countIsFloor?: true
+  /**
+   * CUL-989 — set by the pipeline on a safety card CARRIED from the previous Signal over an
+   * incomplete read: the ISO instant of the read that last computed it. Never set by a detector.
+   */
+  carriedFrom?: string
 }
 
 /**

@@ -492,6 +492,31 @@ export function templateGapShortening(f: GapShorteningFinding, petName: string):
   return `For ${petName}, the gaps between ${symptom} episodes have been ${sequence} — a pattern worth keeping an eye on.`
 }
 
+// CUL-989 — a safety card CARRIED from the previous Signal over an incomplete read. Never the
+// card's old sentence: that one was true on the day it was computed ("just turned down", "up from
+// 1 last week") and goes false as the days pass (adversarial pass, this PR). This names the lane,
+// dates the read that found it, keeps the card's own vet ask, and says why it is not re-checked.
+// No count, no "since": the numbers belong to a read this run could not repeat.
+export function templateCarried(f: Finding, petName: string, carriedFromIso: string): string {
+  const what =
+    f.type === 'symptom_chronicity'
+      ? `${SYMPTOM_LABEL[f.symptomType]} recurring over several weeks`
+      : f.type === 'symptom_worsening'
+        ? `${SYMPTOM_LABEL[f.symptomType]} coming more often`
+        : f.type === 'intake_decline'
+          ? 'eating less than usual'
+          : f.type === 'incident_red_flag'
+            ? `a photo of ${INCIDENT_NOUN[f.incidentType]} showing ${f.flags.map((k) => INCIDENT_FLAG_PHRASE[k]).join(' and ')}`
+            : 'a pattern'
+  const ask =
+    f.type === 'incident_red_flag'
+      ? 'worth a call to your vet'
+      : (f.type === 'symptom_chronicity' || f.type === 'symptom_worsening') && f.tier === 'firm'
+        ? 'worth booking a vet visit'
+        : 'worth a word with your vet'
+  return `An earlier read of ${petName}'s record, on ${onsetDay(carriedFromIso)}, showed ${what} — ${ask}. Part of the record didn't load for this update, so it hasn't been checked again yet.`
+}
+
 export function templateForFinding(finding: Finding, petName: string): string {
   switch (finding.type) {
     case 'food_symptom_correlation':
