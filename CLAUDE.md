@@ -241,7 +241,7 @@ Single source of truth for every secret the project uses. Update this table inli
 
 **PR descriptions must include:**
 - What changed and why (not just what — the why is the important part)
-- The `CUL-NNN` Linear issue(s) this advances — reference each in the PR **title or description** (e.g. `Fixes CUL-183`, or a bare `CUL-183`) so Linear's native GitHub integration auto-links the PR and moves the issue's status. See the merge→Linear-status rule below.
+- The `CUL-NNN` of each issue this PR **finishes**, and only those, in the PR **title or description** — the merge closes every one it names. See the merge→Linear-status rule below.
 - Which Linear project / milestone this advances
 - Any schema changes made
 - Any open questions this raises or resolves
@@ -264,10 +264,10 @@ Single source of truth for every secret the project uses. Update this table inli
 
 **Merge → Linear status — reference `CUL-NNN` in every PR (instituted 2026-08-16).** Linear (team Culprit) owns issue status, and the native GitHub↔Linear integration moves an issue Todo/Backlog → In Progress → Done automatically **when a PR references it** — verified: CUL-15 auto-linked PR #655 and transitioned in lockstep with the merge. So:
 
-- Put the issue identifier (`CUL-NNN`, or a closing magic word like `Fixes CUL-NNN`) in **every PR's title or description**. One PR advancing several issues names all of them, so they all move together.
+- Put the identifier (`CUL-NNN`) of each issue the PR **finishes** in its title or description; a PR finishing several names all of them.
 - Where the session controls the branch name, prefer Linear's suggested `gitBranchName` (e.g. `danieljmarkii/cul-NNN-…`, on the issue) so the link fires off the branch too. **Agent sessions run on a fixed `claude/<slug>` branch that does not reference the issue** — for those, the PR-body reference is the only trigger, so never assume the branch alone linked it.
-- **Backstop when auto-link didn't fire:** `/wrap` explicitly sets each touched issue's status and attaches the PR via the Linear MCP (`save_issue` state + `create_attachment`). See `/wrap` Step 4.
-- **The ATTACHMENT is what closes an issue — a mention on its own does nothing (CUL-803, 2026-09-05).** The bullets above are about *getting* an issue linked; this is the other edge of the same mechanism, and it is measured rather than assumed. On #806's merge the two issues carrying an attachment (CUL-803, CUL-660) both moved to `Done`, with no magic word anywhere; the **four** named in the same PR body without one (CUL-800, CUL-826, CUL-827, CUL-828) all held their state, and the integration never linked them at all. So: `create_attachment` / `save_issue({links})` is a **commitment that merging this PR finishes that issue**, not a "related work" pointer — CUL-660 was attached as related work and closed on merge, with an open decision brief, its own draft PR and nothing built. Point at related work in an issue **comment** instead. The converse is why the backstop above exists: a bare `CUL-NNN` may not move anything, so never rely on the mention alone either — `/wrap` step 4 sets the state explicitly.
+- **Backstop when auto-link didn't fire:** `/wrap` step 4 sets each touched issue's state with `save_issue`. A hand-made `create_attachment` link never closes anything (CUL-1035).
+- **The `CUL-NNN` token is what closes an issue (CUL-1397, measured):** every issue named in a PR's title or body goes `Done` when it merges, and deleting the attachment first does not stop it (CUL-973). So related or newly filed issues are pointed at in a Linear **comment**, never in the PR, and **a task that ships in several PRs gets one sub-issue per PR**: each PR names only its own sub-issue, the parent never appears in a PR, and whoever closes the last sub-issue closes the parent. After a merge, read back every issue the PR named and reopen any that closed early.
 - **Do not build a custom GitHub Action for this** — it would duplicate the native integration and fight it on status writes.
 
 **Migration Safety Pre-flight.** Any PR containing a schema migration must include, in the PR description:

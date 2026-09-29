@@ -2,7 +2,7 @@
 <!-- The "why" is the important part. What problem does this solve or what step does it advance? -->
 
 ## Linear issue(s)
-<!-- Reference each CUL-NNN this PR advances (e.g. "Fixes CUL-183", or a bare "CUL-183") so the GitHub↔Linear integration auto-links the PR and moves the issue's status on merge. Team Culprit. -->
+<!-- Name each CUL-NNN this PR FINISHES, and only those: every issue named here or in the title goes Done on merge. A task shipped across several PRs names its own sub-issue, never the parent; point at related issues in a Linear comment (CLAUDE.md § Merge → Linear status). Team Culprit. -->
 
 ## Project / milestone
 <!-- Which Linear project and milestone does this advance? -->
