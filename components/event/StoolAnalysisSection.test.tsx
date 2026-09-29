@@ -774,6 +774,16 @@ describe('StoolAnalysisSection — EN-7 re-check on an owner edit (CUL-1408)', (
     expect(triggerStoolAnalysis).not.toHaveBeenCalled();
   });
 
+  it('a re-check that does not start is said, never a silent calm card (R2e)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    (triggerStoolAnalysis as jest.Mock).mockImplementationOnce(() => Promise.resolve({ error: 'network' }));
+    await saveConsistency({ engine_flags: ['engines_v3_en3'], contextual_flags: [] }, 'type_7_watery');
+    expect(triggerStoolAnalysis).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledWith('Saved, but the read did not re-run', 'Tap Re-run analysis to check it again.');
+    expect(watchAnalysisRow).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
+
   it('an edit that stays formed, or a call that already stands: nothing re-runs', async () => {
     await saveConsistency({ engine_flags: ['engines_v3_en3'], contextual_flags: [] }, 'type_3_cracked');
     expect(triggerStoolAnalysis).not.toHaveBeenCalled();

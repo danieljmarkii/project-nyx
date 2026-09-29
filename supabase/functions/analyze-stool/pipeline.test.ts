@@ -294,6 +294,17 @@ Deno.test('EN-7 R2c · an owner correction to watery DURING the read is seen by 
   assertStrictEquals(row.stool_consistency, 'type_7_watery')
 })
 
+Deno.test('EN-7 R2d · the owner corrects a withdrawn read to watery six hours later: the re-read still sees the vomit', async () => {
+  const stoolMs = Date.now() - 6 * H
+  const row = await read(unreadWorld({
+    stoolMs,
+    others: [{ event_type: 'vomit', occurred_at: iso(stoolMs - 20 * H) }], // 26 h before the re-read
+    row: { id: 'a1', pet_id: 'pet-1', edited_at: '2026-09-29T00:00:00Z', stool_consistency: 'type_7_watery', recommendation: 'monitor', status: 'completed' },
+  }))
+  assertStrictEquals(row.tier, 'call_today')
+  assertEquals(row.contextual_flags, ['concurrent_vomiting'])
+})
+
 Deno.test('EN-7 F1 · a cat with no Most or All meal, one unopened photoless vomit, a formed stool: the call stands', async () => {
   const stoolMs = Date.now() - H
   const row = await read(unreadWorld({

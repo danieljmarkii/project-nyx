@@ -122,6 +122,15 @@ const EN7_LOOSE_CONSISTENCIES: readonly string[] = ['type_6_mushy', 'type_7_wate
 // The vomits read for the repeat rule reach one day further back than the concurrent window,
 // so a vomit near the window's edge still sees the vomits its own read would count.
 const EN7_VOMIT_READ_HOURS = CONCURRENT_VOMITING_HOURS + REPEAT_VOMIT_DAY_WINDOW_HOURS
+// THE WINDOW IS ANCHORED ON THE STOOL TOO (adversarial round 4, R2d). Shipped, "a vomit in the
+// concurrent window" is counted back from the moment the read runs, so a re-read hours later
+// (an owner's correction re-running it, CUL-1408; a Re-run; a replaced photo) asks a different
+// question from the first read, and a vomit 20 h before the stool falls out six hours on.
+// Flag-on the window is the UNION of the shipped read-time window and ±24 h around the stool's
+// own occurred_at (EN-0's anchoring, applied to the stool): never quieter than shipped, and the
+// same answer whenever the stool is re-read. The vomit and meal reads reach back from the
+// earlier of the stool and the read.
+const EN7_STOOL_ANCHOR_HOURS = CONCURRENT_VOMITING_HOURS
 // The meals the intake arm reads: the vomit read's 7-day tracking baseline, counted back from
 // the earliest vomit in the concurrent window (EN-0's anchored half), so a day further.
 const EN7_MEAL_READ_HOURS = INTAKE_BASELINE_WINDOW_DAYS * 24 + CONCURRENT_VOMITING_HOURS
@@ -805,7 +814,9 @@ async function assembleEn7Context(
   nowMs: number,
 ): Promise<StoolContextInput> {
   const looseWindowAgo = new Date(nowMs - REPEAT_LOOSE_STOOL_WINDOW_HOURS * 3_600_000).toISOString()
-  const vomitReadAgo = new Date(nowMs - EN7_VOMIT_READ_HOURS * 3_600_000).toISOString()
+  const stoolMs = Date.parse(thisEventOccurredAt)
+  const fromMs = Number.isFinite(stoolMs) ? Math.min(stoolMs, nowMs) : nowMs
+  const vomitReadAgo = new Date(fromMs - EN7_VOMIT_READ_HOURS * 3_600_000).toISOString()
   const lethargyWindowAgo = new Date(nowMs - CONCURRENT_LETHARGY_HOURS * 3_600_000).toISOString()
 
   const [looseRes, vomitRes, lethargyRes, mealRes] = await Promise.all([
@@ -839,7 +850,7 @@ async function assembleEn7Context(
         .eq('pet_id', petId)
         .eq('event_type', 'meal')
         .is('deleted_at', null)
-        .gte('occurred_at', new Date(nowMs - EN7_MEAL_READ_HOURS * 3_600_000).toISOString())
+        .gte('occurred_at', new Date(fromMs - EN7_MEAL_READ_HOURS * 3_600_000).toISOString())
       : Promise.resolve({ data: [] as unknown[] }),
   ])
 
@@ -901,8 +912,15 @@ export function buildEn7StoolContext(rows: {
   if (rows.eventType === 'diarrhea' && !recentLooseStoolTimes.includes(rows.thisEventOccurredAt)) {
     recentLooseStoolTimes.push(rows.thisEventOccurredAt)
   }
+  // The shipped read-time window, OR ±24 h around the stool itself (R2d, above).
   const windowStartMs = rows.nowMs - CONCURRENT_VOMITING_HOURS * 3_600_000
-  const anchors = rows.vomitTimes.filter((t) => new Date(t).getTime() >= windowStartMs)
+  const stoolMs = Date.parse(rows.thisEventOccurredAt)
+  const aroundStool = (ms: number) =>
+    Number.isFinite(stoolMs) && Math.abs(ms - stoolMs) <= EN7_STOOL_ANCHOR_HOURS * 3_600_000
+  const anchors = rows.vomitTimes.filter((t) => {
+    const ms = new Date(t).getTime()
+    return ms >= windowStartMs || aroundStool(ms)
+  })
   return {
     recentLooseStoolTimes,
     thisEventOccurredAt: rows.thisEventOccurredAt,

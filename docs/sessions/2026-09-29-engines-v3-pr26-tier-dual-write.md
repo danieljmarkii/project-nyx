@@ -41,6 +41,11 @@ EN-3's server half (CUL-1133) and EN-7 (CUL-1138), in one PR, shipped via the dr
 **Round 3 (at `f064e67`): FAIL on one path that needs a client or PR-28 change, plus one fixed here.**
 - **R2c, fixed:** the post-read hook read the step-3b row, so an owner edit during the model call was missed. The fresh row is now read straight after the vision call and serves both the hook and step 9.
 - **R2b, built after the PM ruled (a) on CUL-1408:** an owner correcting a withdrawn formed read to watery re-checked nothing, because the edit writers invoke no read. Now `StoolAnalysisSection` re-runs the read after an edit away from formed, on a row the server stamped with `engines_v3_en3` and without `concurrent_vomiting` (`needsEn7Recheck`). The re-read keeps the call on every path (a capped run keeps the flag computed before any read; a read run honours the owner's consistency). The formed set is one list for both sides, `lib/stoolForm.ts`. Dark: a row written by today's rule never qualifies.
+**Round 4 (at `4f5aadd`): FAIL on R2d, fixed.**
+- **R2d:** the stool's vomit window was counted back from the read, so the CUL-1408 re-read a few hours after a withdrawal no longer saw the vomit. Flag-on the window is now the union of the shipped read-time window and ±24 h around the stool's own `occurred_at` (EN-0's anchoring), so every re-read asks the first read's question.
+- **R2e:** a re-check that fails to start now says so ("Saved, but the read did not re-run") instead of falling back to the calm card.
+- Cost only, accepted: `needsEn7Recheck` cannot tell a withdrawn call from a stool with no vomit, so an EN-7 row edited away from formed with no vomit spends one read. It cannot lower anything.
+
 - Note: flag-off row reads now also select `tier` and `stool_consistency`. Decisions and written values are unchanged, but the query text is not byte-identical.
 
 ## Proof

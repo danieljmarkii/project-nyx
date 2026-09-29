@@ -411,8 +411,16 @@ export function StoolAnalysisSection(
     if (needsEn7Recheck(row, norm.stool_consistency)) {
       setWorking(true);
       const { error: recheckError } = await triggerStoolAnalysis(eventId);
-      if (recheckError) console.warn('[stool-analysis] EN-7 re-check trigger error:', recheckError);
       if (cancelled.current) return;
+      if (recheckError) {
+        // The owner's correction is saved; the re-check that follows from it did not start.
+        // Say so, as a failed Re-run does, and leave the retry to them (round 4, R2e): a
+        // silent fall back to the calm card is the one outcome this re-check exists to stop.
+        console.warn('[stool-analysis] EN-7 re-check trigger error:', recheckError);
+        setWorking(false);
+        Alert.alert('Saved, but the read did not re-run', 'Tap Re-run analysis to check it again.');
+        return;
+      }
       beginWatch();
     }
   }

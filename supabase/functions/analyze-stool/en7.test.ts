@@ -102,7 +102,7 @@ const ctx = (vomitHours: number[], o: { eventType?: string; species?: string; me
   })
 
 Deno.test('EN-7 — the concurrent window is 24 h back from the read; the repeat rule sees a day further', () => {
-  assertStrictEquals(ctx([25]).hasRecentVomiting, false)
+  assertStrictEquals(ctx([25.5]).hasRecentVomiting, false) // 25.5 h from the read, 24.5 h from the stool: neither window
   assertStrictEquals(ctx([24]).hasRecentVomiting, true) // the boundary instant is inside
   assertStrictEquals(ctx([20, 30, 36]).en7?.vomitingRepeats, true) // the anchor counts older vomits
   assertStrictEquals(ctx([30, 36, 40]).en7?.vomitingRepeats, false) // none inside: nothing to anchor
@@ -120,6 +120,27 @@ Deno.test('EN-7 F1 — the intake arm is the vomit read\'s feline_reduced_intake
   assertStrictEquals(ctx([2], { species: 'cat', meals: [{ h: 5, rating: null }] }).en7?.intakeArm, false)
   // A dog: the arm is feline.
   assertStrictEquals(ctx([2], { species: 'dog', meals: [{ h: 5, rating: 'some' }] }).en7?.intakeArm, false)
+})
+
+Deno.test('EN-7 R2d — the window also counts vomits within 24 h of the stool, so a later re-read asks the same question', () => {
+  // A stool logged 30 h before the read, a vomit 20 h before the stool (50 h before the read).
+  const late = buildEn7StoolContext({
+    engineFlags: EN0_OFF, species: 'dog', meals: [], looseTimes: [], vomitTimes: [iso(NOW - 50 * H)],
+    hasRecentLethargy: false, thisEventOccurredAt: iso(NOW - 30 * H), eventType: 'stool_normal', nowMs: NOW,
+  })
+  assertStrictEquals(late.hasRecentVomiting, true)
+  // A vomit 25 h from the stool and 25 h+ from the read counts in neither window.
+  const far = buildEn7StoolContext({
+    engineFlags: EN0_OFF, species: 'dog', meals: [], looseTimes: [], vomitTimes: [iso(NOW - 55.5 * H)],
+    hasRecentLethargy: false, thisEventOccurredAt: iso(NOW - 30 * H), eventType: 'stool_normal', nowMs: NOW,
+  })
+  assertStrictEquals(far.hasRecentVomiting, false)
+  // A vomit AFTER the stool, within a day of it, counts too (the anchored window looks both ways).
+  const after = buildEn7StoolContext({
+    engineFlags: EN0_OFF, species: 'dog', meals: [], looseTimes: [], vomitTimes: [iso(NOW - 26 * H)],
+    hasRecentLethargy: false, thisEventOccurredAt: iso(NOW - 40 * H), eventType: 'stool_normal', nowMs: NOW,
+  })
+  assertStrictEquals(after.hasRecentVomiting, true)
 })
 
 Deno.test('EN-7 R1 — with EN-0 on, the arm asks the vomit\'s anchored half too (eating after never cancels refusals before)', () => {
