@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-29
 
-EN-3's server half (CUL-1133) and EN-7 (CUL-1138), in one PR, shipped via the draft PR on `claude/cul-1133-pr26-0929`. Server only, no migration. Everything an owner could see is behind a new Engines key, `engines_v3_en3`, which is not seeded, so it is off for every account until the PM's Wave 4 allowlist step (after the vet review, CUL-1312).
+EN-3's server half (CUL-1133), EN-7 (CUL-1138) and the owner-edit re-check the PM ruled (a) on (CUL-1408), in one PR, shipped via #980. No migration. The server changes, plus one dark client change (`StoolAnalysisSection` + `lib/stoolForm.ts`). Everything an owner could see is behind a new Engines key, `engines_v3_en3`, which is not seeded, so it is off for every account until the PM's Wave 4 allowlist step (after the vet review, CUL-1312).
 
 ## What shipped
 
@@ -59,3 +59,7 @@ EN-3's server half (CUL-1133) and EN-7 (CUL-1138), in one PR, shipped via the dr
 
 - PR-27: the tier-word map, every surface, Ask's one-line definitions, `escalationSurvivesFailure` on the louder column.
 - The Wave 4 allowlist step seeds `engines_v3_en3` (CUL-1407, Waiting on PM). CUL-1408 is built here and closes on merge.
+
+## Deploy
+
+Merging redeploys every function whose closure changed: `analyze-vomit`, `analyze-stool`, and, through `_shared/engineFlags.ts`'s new key, `generate-signal` and `generate-report`. With the key unseeded every one of them behaves as before; the flag read asks for one more key and finds no row. No `hold` is needed: the server depends on no app build, and 079 (the `tier` column the reads now select) is already applied.
