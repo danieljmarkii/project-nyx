@@ -40,6 +40,7 @@ import {
 } from '../../lib/analysis';
 import {
   escalationSurvivesFailure,
+  escalationSurvivesReRead,
   incidentVerdictLabel,
   quietVerdictUnfinished,
 } from '../../lib/incidentReadState';
@@ -56,6 +57,7 @@ import {
 import { ThemedText } from '../ui/ThemedText';
 import {
   IncidentReadCard, RAIL_TICK_HEIGHT, INCIDENT_READ_FAILED_LINE, INCIDENT_READ_NOT_ENOUGH_LINE,
+  INCIDENT_RE_READING_PHOTO_LINE, INCIDENT_RE_READING_LINE,
 } from './IncidentReadCard';
 import { useReadLandingAnnouncement } from './useReadLandingAnnouncement';
 import { IncidentReadSection } from './IncidentReadSection';
@@ -291,7 +293,13 @@ export function VomitAnalysisSection(
     if (cancelled.current) return;
     const base = fresh && shown && showsSameRead(fresh, shown) ? fresh : shown;
     if (base) setRow({ ...base, status: 'pending', error: null });
-    const { error } = await triggerVomitAnalysis(eventId);
+    // A REJECTED invoke is a refused one (CUL-827). The trigger catches its own throws
+    // today, but the pending mark above must come off on every path that did not start a
+    // read, not only on the ones that return an error: a throw here would skip the restore
+    // below and leave `retrying` set, which renders as a re-read that never ends.
+    const { error } = await triggerVomitAnalysis(eventId).catch((e: unknown) => ({
+      error: e instanceof Error ? e.message : String(e),
+    }));
     // Navigated away mid-trigger — don't setState or open a watch on an
     // unmounted instance (mirrors start()'s guard after the same await).
     if (cancelled.current) return;
@@ -323,7 +331,7 @@ export function VomitAnalysisSection(
       // hide onto new words would re-hide what the server has just shown. A read the
       // owner has not been shown is a landing, told to the announcer outright rather than
       // left to the pending write and this one committing apart (round 4, F1).
-      const after = await fetchRow();
+      const after = await fetchRow().catch(() => null);
       if (cancelled.current) return;
       const server = after ?? (escalationSurvivesFailure(fresh) ? fresh : null);
       const keepScreenHide = !!shown && !!server && sameRead(server, shown);
@@ -400,9 +408,20 @@ export function VomitAnalysisSection(
 
   const status: Status | undefined = row?.status;
 
-  // Pending / actively working. Same photoless rule: no spinner for a photoless
-  // event — a contextual escalation pops in clean when it resolves (B-363).
-  if (hasPhoto && (working || status === 'pending')) {
+  // A read is being produced: the server was asked and is being watched (`working`), or
+  // the owner's Re-run has marked the row and is asking now (`retrying` over `pending`).
+  // NOT `status === 'pending'` alone (CUL-827): the pending mark outlives a watch that gave
+  // up, and keyed on it the section rendered "Reading the photo…" for the rest of the
+  // visit with nothing watching and no control to press. A row still marked pending with
+  // nothing in flight falls through to the frames below, each of which carries a retry.
+  const reading = working || (retrying && status === 'pending');
+
+  // Pending / actively working — UNLESS the record already holds an escalation, which
+  // stays on screen through the re-read with the re-read shown in place beside it
+  // (CUL-827; see escalationSurvivesReRead for why a calm verdict does not). Same
+  // photoless rule: no spinner for a photoless event — a contextual escalation pops in
+  // clean when it resolves (B-363).
+  if (hasPhoto && reading && !escalationSurvivesReRead(row)) {
     return <IncidentReadSection arrival={arrival} announcer={announcer} pending working />;
   }
 
@@ -588,13 +607,28 @@ export function VomitAnalysisSection(
           Two slopped controls facing each other at a zero gap overlap (C-5), and the fix
           for controls already flush is to grow the BOX — `rerunRow` carries the 44pt
           floor in `minHeight` instead. */}
+      {/* CUL-827 — over an escalation a re-read no longer swaps the card for the pending
+          box, so the re-read is shown HERE, in place, and the control is unavailable for
+          as long as it runs (its label says why). Once nothing is in flight — the read
+          landed, the invoke was refused, or the watch gave up — it is `Re-run analysis`
+          again, so no path leaves an escalation beside a wait with no way on. */}
       {!dismissed && !editing ? (
         <TouchableOpacity
           onPress={handleRetry}
-          disabled={retrying}
-          style={styles.rerunRow}
+          disabled={retrying || reading}
+          accessibilityRole="button"
+          style={[styles.rerunRow, retrying || reading ? styles.rerunRowReading : null]}
         >
-          <ThemedText style={styles.linkText}>{retrying ? 'Re-running…' : 'Re-run analysis'}</ThemedText>
+          {retrying || reading ? (
+            <>
+              <WhorlSpinner size="sm" ground="day" />
+              <ThemedText style={styles.rerunReadingText}>
+                {hasPhoto ? INCIDENT_RE_READING_PHOTO_LINE : INCIDENT_RE_READING_LINE}
+              </ThemedText>
+            </>
+          ) : (
+            <ThemedText style={styles.linkText}>Re-run analysis</ThemedText>
+          )}
         </TouchableOpacity>
       ) : null}
     </IncidentReadSection>
@@ -723,6 +757,17 @@ const styles = StyleSheet.create({
     // Pinned explicitly because the 44pt floor depends on it and the slop that used to
     // reach it is gone (C-5).
     minHeight: 44,
+  },
+  // The in-place re-read (CUL-827): the spinner and its line side by side, in the row's
+  // own box so the 44pt floor above still holds.
+  rerunRowReading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+  },
+  rerunReadingText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
   },
   dismissedRow: {
     flexDirection: 'row',

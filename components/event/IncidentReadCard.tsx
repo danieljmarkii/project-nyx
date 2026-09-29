@@ -37,6 +37,11 @@ export const INCIDENT_READ_DISCLAIMER =
 export const INCIDENT_READ_HIDE_LABEL = 'Hide this note';
 /** §5.5 — "Reading the photo…" on the photographed path (was "Reading this one…"). */
 export const INCIDENT_READ_PENDING_LABEL = 'Reading the photo…';
+/** CUL-827 — a re-read running beside an escalation that stays on screen: the in-place
+ *  sibling of the pending line, in the Re-run control's slot. The photoless line is for a
+ *  contextual escalation (repeated vomiting, a concurrent symptom) that has no photo to read. */
+export const INCIDENT_RE_READING_PHOTO_LINE = 'Reading the photo again…';
+export const INCIDENT_RE_READING_LINE = 'Reading this one again…';
 /** The failed read's line, and the no-recommendation read's. Named here (CUL-1275) because
  *  each is now said twice — on screen, and to a screen reader when it lands — and both
  *  sections say them, so one string per line keeps the two channels and the two surfaces

@@ -396,6 +396,161 @@ describe('VomitAnalysisSection — deferring to the log-path read (CUL-801)', ()
   });
 });
 
+// ── CUL-827 — the pending sibling of CUL-812 ─────────────────────────────────
+//
+// A re-run over a live escalation used to swap the card for "Reading the photo…" the
+// moment it was pressed, and a refused invoke or a watch that gave up left it there. Each
+// test drives the real section through the real predicate (lib/incidentReadState.ts);
+// only the network edges are stubbed.
+describe('VomitAnalysisSection — an escalation stays on screen through a re-run (CUL-827)', () => {
+  const PENDING = 'Reading the photo…';
+  const RE_READING = 'Reading the photo again…';
+  const READ_TEXT = 'There is blood visible in this one.';
+  let alert: jest.SpyInstance;
+
+  beforeEach(() => {
+    mockRow = null;
+    (watchAnalysisRow as jest.Mock).mockClear();
+    (triggerVomitAnalysis as jest.Mock).mockClear();
+    alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    alert.mockRestore();
+    mockRow = null;
+  });
+
+  /** The escalation is on screen, whole: its verdict and its words. */
+  function expectEscalationShown(view: ReturnType<typeof render>, label = 'Worth a call') {
+    expect(view.getByText(label)).toBeTruthy();
+    expect(view.getByText(READ_TEXT)).toBeTruthy();
+    expect(view.queryByText(PENDING)).toBeNull();
+  }
+
+  it('a REJECTING invoke keeps the escalation, rolls the pending mark back, and leaves Re-run pressable', async () => {
+    (triggerVomitAnalysis as jest.Mock).mockRejectedValueOnce(new Error('Network request failed'));
+    mockRow = row({ recommendation: 'worth_a_call', read_text: READ_TEXT });
+    const view = render(<VomitAnalysisSection eventId="rr-1" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('Could not start analysis', 'Try again in a moment.'));
+
+    expectEscalationShown(view);
+    expect(view.queryByText(RE_READING)).toBeNull();
+    // The affordance is back AND live: a second press asks the server again.
+    await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
+    await waitFor(() => expect(triggerVomitAnalysis as jest.Mock).toHaveBeenCalledTimes(2));
+  });
+
+  it('an invoke that returns an error does the same (the shipped refusal shape)', async () => {
+    (triggerVomitAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'FunctionsFetchError: offline' });
+    mockRow = row({ recommendation: 'worth_a_call', read_text: READ_TEXT });
+    const view = render(<VomitAnalysisSection eventId="rr-2" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expectEscalationShown(view);
+    expect(view.getByText('Re-run analysis')).toBeTruthy();
+  });
+
+  it('a re-run over a live call never shows the pending frame alone — asking, watching, landing', async () => {
+    let release: (v: { error: null }) => void = () => {};
+    (triggerVomitAnalysis as jest.Mock).mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    mockRow = row({ recommendation: 'worth_a_call', read_text: READ_TEXT, updated_at: '2026-09-29T09:00:00.000Z' });
+    const view = render(<VomitAnalysisSection eventId="rr-3" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(triggerVomitAnalysis as jest.Mock).toHaveBeenCalledTimes(1));
+
+    // 1. Asking: the trigger has not answered.
+    expectEscalationShown(view);
+    expect(view.getByText(RE_READING)).toBeTruthy();
+    expect(view.queryByText('Re-run analysis')).toBeNull();
+
+    // 2. Watching: the server took it, the realtime watch is open.
+    await act(async () => { release({ error: null }); });
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    expectEscalationShown(view);
+    expect(view.getByText(RE_READING)).toBeTruthy();
+
+    // 3. Landing: the new read replaces the old one, and the control comes back.
+    mockRow = row({ recommendation: 'worth_a_call', read_text: READ_TEXT, updated_at: '2026-09-29T09:00:05.000Z' });
+    const check = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![1] as () => Promise<boolean>;
+    await act(async () => { await check(); });
+    expectEscalationShown(view);
+    expect(view.queryByText(RE_READING)).toBeNull();
+    expect(view.getByText('Re-run analysis')).toBeTruthy();
+  });
+
+  it('a watch that GIVES UP over a live call hands the control back — never a wait with no way on', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', read_text: READ_TEXT });
+    const view = render(<VomitAnalysisSection eventId="rr-4" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    expect(view.getByText(RE_READING)).toBeTruthy();
+
+    const onGiveUp = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![2] as () => void;
+    await act(async () => { onGiveUp(); });
+    expectEscalationShown(view);
+    expect(view.queryByText(RE_READING)).toBeNull();
+    expect(view.getByText('Re-run analysis')).toBeTruthy();
+  });
+
+  it('holds a verdict this build does not know yet (EN-3’s call_now), in the rose’s words', async () => {
+    let release: (v: { error: null }) => void = () => {};
+    (triggerVomitAnalysis as jest.Mock).mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    mockRow = row({ recommendation: 'call_now', read_text: READ_TEXT });
+    const view = render(<VomitAnalysisSection eventId="rr-5" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(triggerVomitAnalysis as jest.Mock).toHaveBeenCalledTimes(1));
+    expectEscalationShown(view);
+    await act(async () => { release({ error: null }); });
+  });
+
+  it('a photoless contextual escalation re-reads in place with the photoless line', async () => {
+    let release: (v: { error: null }) => void = () => {};
+    (triggerVomitAnalysis as jest.Mock).mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    mockRow = row({ recommendation: 'worth_a_call', read_text: READ_TEXT });
+    const view = render(<VomitAnalysisSection eventId="rr-6" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(triggerVomitAnalysis as jest.Mock).toHaveBeenCalledTimes(1));
+    expectEscalationShown(view);
+    expect(view.getByText('Reading this one again…')).toBeTruthy();
+    expect(view.queryByText(RE_READING)).toBeNull();
+    await act(async () => { release({ error: null }); });
+  });
+
+  it('a CALM verdict keeps the pending frame — never stood in front of a read that has not finished', async () => {
+    mockRow = row({ recommendation: 'monitor', read_text: 'Keep an eye on this one.' });
+    const view = render(<VomitAnalysisSection eventId="rr-7" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    expect(view.getByText(PENDING)).toBeTruthy();
+    expect(view.queryByText('Keep an eye out')).toBeNull();
+  });
+
+  it('…and when ITS watch gives up, the spinner ends in a retry, not in a wait that cannot end', async () => {
+    mockRow = row({ recommendation: 'monitor', read_text: 'Keep an eye on this one.' });
+    const view = render(<VomitAnalysisSection eventId="rr-8" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Re-run analysis'));
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    const onGiveUp = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![2] as () => void;
+    await act(async () => { onGiveUp(); });
+    expect(view.queryByText(PENDING)).toBeNull();
+    // The calm verdict is NOT put back over a read that never finished (CUL-1277): the
+    // honest not-read-yet frame, with its retry.
+    expect(view.queryByText('Keep an eye out')).toBeNull();
+    expect(view.getByText('Try analysis')).toBeTruthy();
+  });
+
+  it('a stale pending row on mount whose watch gives up ends in a retry too', async () => {
+    mockRow = row({ status: 'pending', recommendation: null });
+    const view = render(<VomitAnalysisSection eventId="rr-9" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    expect(view.getByText(PENDING)).toBeTruthy();
+    const onGiveUp = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![2] as () => void;
+    await act(async () => { onGiveUp(); });
+    expect(view.queryByText(PENDING)).toBeNull();
+    expect(view.getByText('Try analysis')).toBeTruthy();
+  });
+});
+
 describe('VomitAnalysisSection — an escalation outlives a failed re-read (CUL-812)', () => {
   afterEach(() => { mockRow = null; });
 
