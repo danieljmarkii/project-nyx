@@ -2000,19 +2000,126 @@ Deno.test('detectReflections — a lone single worsening log does NOT blank a st
 })
 
 Deno.test('detectReflections — surfaces ONE reflection (the symptom most present right now)', () => {
+  // Both current counts sit BELOW burdenMuteMinEpisodes (4), so the only thing under test is
+  // the one-card selection. (Was vomit 4/5 before PR-14c; a week of 4 is now a muted week.)
   const symptomEvents = [
-    // vomit current 4 / prior 5 (improving) — the more present symptom
-    symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    // vomit current 3 / prior 5 (improving) — the more present symptom
+    symptom('vomit', at(24, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
     symptom('vomit', at(17, 8)), symptom('vomit', at(18, 8)), symptom('vomit', at(19, 8)),
     symptom('vomit', at(20, 8)), symptom('vomit', at(21, 8)),
-    // diarrhea current 3 / prior 3 (flat) — also qualifies but is less present
-    symptom('diarrhea', at(24, 9)), symptom('diarrhea', at(26, 9)), symptom('diarrhea', at(28, 9)),
+    // diarrhea current 2 / prior 3 (improving) — also qualifies but is less present
+    symptom('diarrhea', at(24, 9)), symptom('diarrhea', at(26, 9)),
     symptom('diarrhea', at(17, 9)), symptom('diarrhea', at(19, 9)), symptom('diarrhea', at(21, 9)),
   ]
   const findings = detectReflections(input({ symptomEvents }))
   assert.equal(findings.length, 1, 'one reflection only — never a wall of count cards')
   assert.equal(findings[0].symptomType, 'vomit', 'the symptom with the highest current count wins')
-  assert.equal(findings[0].currentCount, 4)
+  assert.equal(findings[0].currentCount, 3)
+})
+
+// ── PR-14c (CUL-1311 GAP-5): the absolute-burden gate ────────────────────────
+// The worsening and chronicity gates are both RELATIVE. A not-yet-chronic pet at 6 then 5
+// cleared both and got a calm "down from 6". These pin the third gate at its boundary, off
+// the shipped constant (C-34: never a restated literal).
+
+/**
+ * `n` vomits on distinct days from `firstDay`, 08:00 each (one episode a day). The current window
+ * opens at May 23 12:00, so a current week starts on the 24th and a prior week on the 17th.
+ */
+const vomitDays = (firstDay: number, n: number) =>
+  Array.from({ length: n }, (_, i) => symptom('vomit', at(firstDay + i, 8)))
+
+Deno.test('detectReflections — PR-14c: 6 then 5 a week, not chronic, gets NO "down" card (the GAP-5 defect)', () => {
+  const symptomEvents = [...vomitDays(17, 6), ...vomitDays(24, 5)] // prior 6 (17–22) · current 5 (24–28)
+  const inp = input({ symptomEvents })
+  // Non-vacuity: the two relative gates really are open on this record, so the silence is ours.
+  // Not worsening (5 < 6 episodes, 5 < 6 days) and not chronic (a 12-day span, under ⑦'s floor).
+  assert.deepEqual(detectWorsening(inp), [], 'worsening does not fire — the relative gate is open')
+  assert.deepEqual(detectChronicity(inp), [], 'chronicity does not fire — the course is too short')
+  assert.deepEqual(detectReflections(inp), [])
+  // And the mute is the burden gate: raise the floor past 5 and the calm card comes back.
+  const lifted = detectReflections(inp, {
+    ...DEFAULT_CONFIG,
+    reflection: { ...DEFAULT_CONFIG.reflection, burdenMuteMinEpisodes: 6 },
+  })
+  assert.equal(lifted.length, 1)
+  assert.equal(lifted[0].direction, 'improving')
+})
+
+Deno.test('detectReflections — PR-14c: the boundary is exact (floor − 1 renders, floor mutes)', () => {
+  const floor = DEFAULT_CONFIG.reflection.burdenMuteMinEpisodes
+  const below = detectReflections(input({ symptomEvents: [...vomitDays(17, floor + 1), ...vomitDays(24, floor - 1)] }))
+  assert.equal(below.length, 1, `a week of ${floor - 1} still reflects`)
+  assert.equal(below[0].currentCount, floor - 1)
+  const at_ = detectReflections(input({ symptomEvents: [...vomitDays(17, floor + 1), ...vomitDays(24, floor)] }))
+  assert.deepEqual(at_, [], `a week of ${floor} is muted`)
+  // Flat at the floor is muted too: "about the same" over a severe week is the same reassurance.
+  const flat = detectReflections(input({ symptomEvents: [...vomitDays(17, floor), ...vomitDays(24, floor)] }))
+  assert.deepEqual(flat, [])
+})
+
+Deno.test('detectReflections — PR-14c: the gate is pet-wide (a heavy vomit week mutes a calm itch card)', () => {
+  // vomit flat at 4 a week (neither rising nor chronic); itch 5 → 3, which would render.
+  const floor = DEFAULT_CONFIG.reflection.burdenMuteMinEpisodes
+  const itch = [
+    symptom('itch', at(24, 9)), symptom('itch', at(26, 9)), symptom('itch', at(28, 9)),
+    symptom('itch', at(17, 9)), symptom('itch', at(18, 9)), symptom('itch', at(19, 9)),
+    symptom('itch', at(20, 9)), symptom('itch', at(21, 9)),
+  ]
+  assert.equal(detectReflections(input({ symptomEvents: itch })).length, 1, 'itch alone renders')
+  const symptomEvents = [...itch, ...vomitDays(17, floor), ...vomitDays(24, floor)]
+  assert.deepEqual(detectReflections(input({ symptomEvents })), [])
+})
+
+Deno.test('detectReflections — PR-14c: a re-log of one vomit inside a minute counts once', () => {
+  // Four taps on one vomit (20s apart) are one vomit under the report's §5.11 rule, so a
+  // re-logging owner does not mute a genuinely calm week. Current = 3 vomits, prior = 5.
+  const relog = (sec: number) => symptom('vomit', `2026-05-24T08:00:${String(sec).padStart(2, '0')}.000Z`)
+  const symptomEvents = [
+    relog(0), relog(20), relog(40), relog(59),
+    symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    ...vomitDays(17, 5),
+  ]
+  const findings = detectReflections(input({ symptomEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].currentCount, 3)
+})
+
+Deno.test('detectReflections — PR-14c: separate same-day episodes count (4 episodes on 2 days mutes)', () => {
+  // Kills the `currentDays` mutant: episodes ≠ days here, and 4 episodes is the floor.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(24, 14)), symptom('vomit', at(26, 8)), symptom('vomit', at(26, 14)),
+    ...vomitDays(17, 6),
+  ]
+  assert.deepEqual(detectReflections(input({ symptomEvents })), [])
+})
+
+Deno.test('detectReflections — PR-14c: a CHAINED heavy week mutes (30 vomits that collapse to 3 episodes)', () => {
+  // Adversarial record A: ten vomits 2.5h apart on the 24th, 26th and 28th. The 3h chain makes each
+  // day ONE episode (3 vs 5 → "down from 5"), but a vet counts thirty vomits.
+  const day = (d: number) =>
+    Array.from({ length: 10 }, (_, i) => symptom('vomit', new Date(Date.parse(at(d, 0)) + i * 150 * 60_000).toISOString()))
+  const symptomEvents = [...day(24), ...day(26), ...day(28), ...vomitDays(17, 5)]
+  const inp = input({ symptomEvents })
+  assert.equal(
+    detectReflections(inp, { ...DEFAULT_CONFIG, reflection: { ...DEFAULT_CONFIG.reflection, burdenMuteMinEpisodes: 1e9 } })[0]
+      ?.currentCount,
+    3,
+    'non-vacuity: without the gate this record renders a 3-episode "down from 5"',
+  )
+  assert.deepEqual(detectReflections(inp), [])
+})
+
+Deno.test('detectReflections — PR-14c: a chain straddling the window start still counts its in-window vomits', () => {
+  // Adversarial record D: a chain opens 1h before the current window (May 23 11:00) and drips every
+  // 2.5h well into it. The episode lands in the PRIOR week; its in-window vomits are this week's.
+  const chain = Array.from({ length: 12 }, (_, i) => symptom('vomit', new Date(Date.parse(at(23, 11)) + i * 150 * 60_000).toISOString()))
+  const symptomEvents = [...chain, symptom('vomit', at(27, 8)), symptom('vomit', at(28, 8)), ...vomitDays(17, 3)]
+  assert.deepEqual(detectReflections(input({ symptomEvents })), [])
+})
+
+Deno.test('DEFAULT_CONFIG — PR-14c burden floor is pinned at FCEAI severe (a change is a CUL-583 ruling)', () => {
+  assert.equal(DEFAULT_CONFIG.reflection.burdenMuteMinEpisodes, 4)
 })
 
 // ── Detector ④: symptom-frequency worsening (the deterministic worsening lane) ──
