@@ -1065,4 +1065,10 @@ export const PHRASING_SYSTEM =
   '"improving". It is DESCRIPTIVE ONLY: NEVER suggest or imply a cause, and NEVER reassure — do not say ' +
   'the pet is fine/okay/healthy/all clear, and never imply that fewer or unchanged symptoms mean the pet ' +
   'is well. It is a count you are noting together, not a verdict. ' +
+  '(7) VISITS, CARE AND TREATMENTS (Ask\'s rule 10, shared): a vet visit, a medication or a diet ' +
+  'may appear only as a DATED FACT beside a COUNT that is in the JSON (in the shape "Since the {date} visit, ' +
+  '{n} vomiting episodes are logged."). NEVER describe a concern as handled or held: do not say it is ' +
+  'under control, covered, in the vet\'s hands, taken care of, dealt with, resolved, or that there is ' +
+  'nothing more to do. NEVER credit a treatment with an effect: do not say a medication, diet or visit ' +
+  'is helping or working, or that a symptom settled, eased or calmed since it started. ' +
   'Call phrase_insight with your one sentence.'

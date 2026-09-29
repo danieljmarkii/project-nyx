@@ -75,6 +75,10 @@ import { type CachedEntry } from './standDown.ts'
 // Engines v3 (PR-11a, CUL-1267): the rollout flag, read fail-closed for the pet's owner, and
 // the one writer of the cache row's stamps and the shown log.
 import { readEngineFlags } from '../_shared/engineFlagsRead.ts'
+import { isEngineKeyOn } from '../_shared/engineFlags.ts'
+// EN-10 (PR-22): the owner's local day, for the visit read's upper bound.
+import { dayKeyFromIndex, localDayIndex } from '../../../lib/utils.ts'
+import type { CareContextFacts } from './careContext.ts'
 import {
   buildShownLogRows,
   engineFingerprint,
@@ -113,7 +117,7 @@ const PHRASING_MODEL = 'claude-haiku-4-5'
 // DEFAULT_CONFIG, the phrasing model and the Engines flags; engineStamps.ts). Bump it with
 // any change to detection, curation, decoration or phrasing that can change what a pet's
 // Signal says: the fingerprint cannot see a code change this number does not record.
-export const SIGNAL_ENGINE_VERSION = 'signal.3' // signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
+export const SIGNAL_ENGINE_VERSION = 'signal.4' // signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
 
 const MS_PER_DAY = 86_400_000
 
@@ -538,9 +542,10 @@ const handler = async (req: Request): Promise<Response> => {
       // `started_at` + `target_duration_days` are selected so the B-422 effective
       // end can be derived here; `select('id')` was enough only while `active`
       // was believed to mean "running today".
+      // `indication` + `target_protein` feed EN-10's trial line only (PR-22); inert otherwise.
       supabase
         .from('diet_trials')
-        .select('id, started_at, target_duration_days')
+        .select('id, started_at, target_duration_days, indication, target_protein')
         .eq('pet_id', petId)
         .eq('status', 'active')
         .limit(1),
@@ -573,7 +578,9 @@ const handler = async (req: Request): Promise<Response> => {
       fetchAll<RegimenRow>('medications', (r) => r.id, (from, to) =>
         supabase
         .from('medications')
-        .select('id, drug_name, medication_item_id, started_at, ended_at', { count: 'exact' })
+        // `status` and the library item's names feed EN-10's course lines only (PR-22). One FK
+        // from medications to medication_items, so the embed needs no hint.
+        .select('id, drug_name, medication_item_id, started_at, ended_at, status, medication_items(generic_name, brand_name)', { count: 'exact' })
         .eq('pet_id', petId)
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
@@ -657,9 +664,20 @@ const handler = async (req: Request): Promise<Response> => {
 
     // 1b. The Engines v3 flag, for the pet's OWNER, failing closed (engineFlags.ts). A read
     //     that did not answer runs the flag-off engine and stamps '{}' (the truth about this
-    //     run). Nothing below gates on a key yet (SIGNAL_ENGINE_KEYS is empty): EN-0 is the
-    //     per-incident read, and the Signal's first gated phase adds its own key.
+    //     run). The Signal's one gated step is EN-10's context lines (engines_v3_en10, 1d).
     const engineFlags = await readEngineFlags(supabase, typeof pet.user_id === 'string' ? pet.user_id : null)
+
+    // 1d. EN-10 (PR-22, CUL-1420): the two facts the context lines need, read ONLY while the
+    //     key is on, so flag-off makes neither read. `readCareContextFacts` carries the rules;
+    //     null (any failure, or an incomplete logging pull) means no lines, never a wrong one.
+    const careContextFacts: CareContextFacts | null = isEngineKeyOn(engineFlags, 'engines_v3_en10')
+      ? await readCareContextFacts(
+        supabase,
+        petId,
+        lookbackIso,
+        dayKeyFromIndex(localDayIndex(nowMs, (profileRes.data as { timezone: string | null } | null)?.timezone ?? undefined)),
+      )
+      : null
     const fingerprint = await engineFingerprint({
       engine: 'generate-signal',
       version: SIGNAL_ENGINE_VERSION,
@@ -712,6 +730,7 @@ const handler = async (req: Request): Promise<Response> => {
       nowMs,
       engineFlags,
       careRecord: { ownerAnswers: [], appointments: [] },
+      careContextFacts,
     })
     // 4. Phrase — one sentence per finding, in parallel, each falling back to
     //    its template independently. The set is never blank because the LLM
@@ -798,6 +817,70 @@ const handler = async (req: Request): Promise<Response> => {
       { error: 'Signal generation failed', detail: message },
       { status: 500, headers: CORS_HEADERS },
     )
+  }
+}
+
+// ── EN-10's reads (Engines v3 PR-22, CUL-1420) ────────────────────────────────
+//
+// The Signal shell is the ONE engine reader of a vet table (vet visits spec AC 10, amended
+// 2026-09-28; registered in guards/visitReaders.test.ts with its column list). It reads one
+// column, `visited_at`, of one row: the most recent non-deleted visit before the owner's today. The date starts a window; it never enters a count, a floor or a test statistic, and
+// no clinic, vet, reason or note is selected. Caller's JWT, so RLS scopes it to the owner.
+//
+// The logging pull is every non-deleted event in the lookback, of every type but the daily
+// look's `check_in` parent (a look never enters another surface's coverage line), for the
+// "something logged on k of n" half of each line. Paged like every pull here (CUL-989).
+//
+// Fails toward NO LINES: a failed read or an incomplete logging pull returns null, logged. A
+// line with a wrong window, or a coverage count that is a floor, is worse than no line.
+export async function readCareContextFacts(
+  supabase: SupabaseClient,
+  petId: string,
+  lookbackIso: string,
+  todayKey: string,
+): Promise<CareContextFacts | null> {
+  try {
+    const [visitRes, loggedPull] = await Promise.all([
+      supabase
+        .from('vet_visits')
+        .select('visited_at')
+        .eq('pet_id', petId)
+        .is('deleted_at', null)
+        // Strictly before today: a visit dated today opens no window yet, and must not hide the
+        // one before it (a recheck today over a Depo-Medrol visit ten days ago).
+        .lt('visited_at', todayKey)
+        .order('visited_at', { ascending: false })
+        .limit(1),
+      fetchAll<{ id: string; occurred_at: string }>('events', (r) => r.id, (from, to) =>
+        supabase
+          .from('events')
+          .select('id, occurred_at', { count: 'exact' })
+          .eq('pet_id', petId)
+          .neq('event_type', 'check_in')
+          .is('deleted_at', null)
+          .gte('occurred_at', lookbackIso)
+          .order('occurred_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)),
+    ])
+    if (visitRes.error) {
+      console.warn('generate-signal: vet_visits read failed, no context lines:', visitRes.error.message)
+      return null
+    }
+    if (incompletePullNames({ logged: loggedPull }).length > 0) {
+      console.warn('generate-signal: the logging pull was incomplete, no context lines:', petId)
+      return null
+    }
+    // The error was read above; an absent row is "no visit on record", a real answer.
+    const visit = (visitRes.data as { visited_at: string | null }[] | null)?.[0]
+    return {
+      lastVisitOn: typeof visit?.visited_at === 'string' ? visit.visited_at : null,
+      loggedAt: loggedPull.rows.map((r) => r.occurred_at),
+      readSinceIso: lookbackIso,
+    }
+  } catch (err) {
+    console.warn('generate-signal: context-line reads failed, no context lines:', err instanceof Error ? err.message : String(err))
+    return null
   }
 }
 

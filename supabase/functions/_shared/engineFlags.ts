@@ -32,15 +32,26 @@ import { resolveAllowlistFlag } from './flags.ts'
 // fix. NOT SEEDED, on purpose: a missing row reads as off (above), so it needs no migration
 // to stay dark, and Wave 4 turns on only after the real-vet review (CUL-1312). The PM's
 // allowlist step inserts the row.
-export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3'] as const
+// engines_v3_en10: EN-10's context lines on the Signal (Engines v3 PR-22, CUL-1420): the
+// visit, trial and course lines beside a finding's counts, and the shell's one read of
+// `vet_visits` that feeds them. NOT SEEDED, like en3: absent reads as off.
+export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en10'] as const
 export type EngineKey = typeof ENGINE_KEYS[number]
 
-// The keys the SIGNAL engine (generate-signal) reads. Empty today: EN-0's key gates the
-// per-incident read only. A Signal phase adds its key here in the PR that makes the Signal
-// read it. The stand-down gate compares only these (standDownMintAllowed, below):
-// a key the Signal never reads cannot change what it detects, so flipping it must not cost
-// an owner a stand-down (adversarial review, PR-11a).
+// The keys the SIGNAL engine (generate-signal) reads that can change WHAT IT DETECTS. Empty
+// today. A Signal phase that changes which findings exist, their rank or their sentence adds
+// its key here in the PR that makes the Signal read it. The stand-down gate compares only
+// these (standDownMintAllowed, below): a key that cannot change what the Signal detects
+// cannot make a finding vanish, so flipping it must not cost an owner a stand-down
+// (adversarial review, PR-11a).
 export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = []
+
+// The keys the Signal reads that only DECORATE a finding it already made: they add a field,
+// and change no finding's presence, rank or sentence. Proven per key by the corpus guard
+// (signalPipeline.test.ts (c): the flag-on row, less the key's field, equals the flag-off
+// row), which is what licenses keeping them out of the stand-down gate. EN-10's context
+// lines (PR-22, CUL-1420) are the first.
+export const SIGNAL_DECORATING_KEYS: readonly EngineKey[] = ['engines_v3_en10']
 
 export interface EngineFlags {
   // The keys resolved ON for this owner, sorted: the exact value every stamp records.

@@ -3,11 +3,11 @@
 //
 // (a) Every case lands exactly the cache row its hand-stated expectation says, flags off.
 // (b) The floor: the corpus cannot shrink to nothing, or to cases that fire nothing.
-// (c) Flag-off is today. The Signal reads no Engines key yet (SIGNAL_ENGINE_KEYS is empty),
-//     so there is no gated step whose ABSENCE can be compared (the C-36 shape the vomit
-//     read's flagOff.test.ts has). Until there is, every flag state must give the same row;
-//     the tripwire below reds the day a Signal key lands, so this guard is replaced by the
-//     absence guard in the same PR rather than left green over a gate it cannot see.
+// (c) Flag-off is today, the C-36 way (Engines v3 PR-22, CUL-1420, the Signal's first key):
+//     with engines_v3_en10 off, the pipeline equals the pipeline with EN-10's step ABSENT,
+//     even when a step that changes every finding is handed in and the shell's facts are
+//     populated. Deleting the gate reds it; a gate that never opens reds the next test; and
+//     with the real step on, the row differs from flag-off ONLY by the lines it adds.
 // (d) The care record is RESERVED: read by nothing. PR-23 (EN-9's care state) flips this
 //     test on purpose, in the PR that starts reading it.
 // (e) The pipeline is a function of its input: the same input twice gives the same result,
@@ -32,12 +32,16 @@ import {
   templateTexts,
   type CareRecord,
   type PriorSignal,
+  type RankedFinding,
   type SignalPayload,
 } from '../../generate-signal/pipeline.ts'
-import { ENGINE_KEYS, SIGNAL_ENGINE_KEYS, type EngineFlags } from '../engineFlags.ts'
-import { validatePhrasing } from '../../generate-signal/phrasing.ts'
+import { ENGINE_KEYS, SIGNAL_DECORATING_KEYS, SIGNAL_ENGINE_KEYS, type EngineFlags } from '../engineFlags.ts'
+import { hasBannedSignalVocabulary, validatePhrasing } from '../../generate-signal/phrasing.ts'
+import { EN10_CONTEXT_STEP, type CareContextFacts, type CareContextStep } from '../../generate-signal/careContext.ts'
+import { careClaimReason } from '../../../../lib/careClaimScreens.ts'
 import {
   EMPTY_CARE_RECORD,
+  POPULATED_CARE_CONTEXT_FACTS,
   POPULATED_CARE_RECORD,
   SIGNAL_PIPELINE_CORPUS,
   type SignalPipelineCase,
@@ -59,7 +63,13 @@ const run = (
   engineFlags: EngineFlags = OFF,
   careRecord: CareRecord = EMPTY_CARE_RECORD,
   incompletePulls: readonly string[] = [],
-) => runSignalPipeline({ rows: c.rows, incompletePulls, prior: c.prior, nowMs: Date.parse(c.nowIso), engineFlags, careRecord })
+  careContextFacts: CareContextFacts | null = null,
+  step: CareContextStep = EN10_CONTEXT_STEP,
+) =>
+  runSignalPipeline(
+    { rows: c.rows, incompletePulls, prior: c.prior, nowMs: Date.parse(c.nowIso), engineFlags, careRecord, careContextFacts },
+    step,
+  )
 const payload = (c: SignalPipelineCase, engineFlags?: EngineFlags, careRecord?: CareRecord): SignalPayload =>
   templatePayload(run(c, engineFlags, careRecord))
 const types = (p: SignalPayload): string[] => p.findings.map((e) => e.finding.type)
@@ -107,19 +117,93 @@ Deno.test('(b) the floor: enough cases, each safety lane fires, a building case,
   )
 })
 
-Deno.test('(c) tripwire: the Signal reads no Engines key yet; the first one replaces guard (c) below', () => {
-  assertEquals(
-    [...SIGNAL_ENGINE_KEYS],
-    [],
-    'a Signal key exists: replace guard (c) with the C-36 absence guard (flag off equals the pipeline with the gated step absent), as flagOff.test.ts does for the vomit read',
-  )
+// EN-10's step, absent (the C-36 comparison's other side) and a sentinel that marks every
+// finding, so that its running is visible on any case with a finding.
+const ABSENT: CareContextStep = (findings) => findings
+const SENTINEL: CareContextStep = (findings) =>
+  findings.map((r) => ({
+    ...r,
+    finding: { ...r.finding, careContext: [{ kind: 'visit', anchorOn: '1970-01-01', days: 1, count: 1, loggedDays: 1, text: 'sentinel' }] },
+  }))
+const EN10 = 'engines_v3_en10'
+const OFF_STATES = Object.entries(FLAG_STATES).filter(([, f]) => !f.on.includes(EN10))
+const ON_STATES = Object.entries(FLAG_STATES).filter(([, f]) => f.on.includes(EN10))
+// The payload with every `careContext` removed: what the row would be had the step not run.
+const withoutLines = (p: SignalPayload): SignalPayload =>
+  JSON.parse(JSON.stringify(p, (k, v) => (k === 'careContext' ? undefined : v)))
+
+Deno.test('(c) tripwire: the Signal keys are exactly the ones with an absence guard here', () => {
+  // A decorating key is kept out of the stand-down gate on the strength of the next three
+  // tests (the row changes only by its field); a new one needs its own absence guard beside
+  // them, and a key that changes what is detected goes in SIGNAL_ENGINE_KEYS instead.
+  assertEquals([...SIGNAL_DECORATING_KEYS], [EN10], 'a new decorating key needs its own absence guard beside (c)')
+  assertEquals([...SIGNAL_ENGINE_KEYS], [], 'a Signal key that changes detection needs its own absence guard beside (c)')
+  assertStrictEquals(ON_STATES.length >= 2 && OFF_STATES.length >= 3, true, 'the flag states lost a side')
 })
 
-Deno.test('(c) flag-off is today: every flag state gives the same cache row on every case', () => {
+Deno.test('(c) flag-off equals EN-10\'s step absent, even with populated facts and a step that changes everything', () => {
+  // Compared with every key off and the step absent: no Signal key reaches the stand-down gate
+  // (SIGNAL_ENGINE_KEYS is empty), so a failed flag read or a flip mints exactly as today.
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const absent = run(c, OFF, EMPTY_CARE_RECORD, [], null, ABSENT)
+    for (const [label, flags] of OFF_STATES) {
+      assertEquals(run(c, flags, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS, SENTINEL), absent, `${c.name}: ${label}`)
+    }
+    // Key on, but the shell's read failed (null facts): no step either.
+    for (const [label, flags] of ON_STATES) {
+      assertEquals(run(c, flags, EMPTY_CARE_RECORD, [], null, SENTINEL), absent, `${c.name}: ${label}, no facts`)
+    }
+  }
+  // And with every key off and the read answering, that is exactly (a)'s hand-stated row.
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    assertEquals(types(templatePayload(run(c, OFF, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS, SENTINEL))), c.expectedTypes, c.name)
+  }
+})
+
+Deno.test('(c) the gate opens for engines_v3_en10: the step runs on every case with a finding', () => {
+  let opened = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    if (run(c).findings.length === 0) continue
+    for (const [label, flags] of ON_STATES) {
+      const on = run(c, flags, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS, SENTINEL)
+      assertStrictEquals(on.findings.every((r: RankedFinding) => r.finding.careContext?.[0]?.text === 'sentinel'), true, `${c.name}: ${label}`)
+      opened++
+    }
+  }
+  assertStrictEquals(opened >= 10, true, `the gate opened on only ${opened} runs`)
+})
+
+Deno.test('(c) the real step changes nothing but the lines: presence, rank, sentence and summary hold', () => {
+  let lined = 0
   for (const c of SIGNAL_PIPELINE_CORPUS) {
     const base = payload(c, OFF)
-    for (const [label, flags] of Object.entries(FLAG_STATES)) {
-      assertEquals(payload(c, flags), base, `${c.name}: ${label}`)
+    for (const [label, flags] of ON_STATES) {
+      const result = run(c, flags, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS)
+      const p = templatePayload(result)
+      assertEquals(withoutLines(p), base, `${c.name}: ${label}`)
+      for (const e of p.findings) {
+        for (const line of (e.finding as { careContext?: { text: string }[] }).careContext ?? []) {
+          lined++
+          // Every line passes the screens the Signal's own sentences pass (CUL-1271).
+          assertStrictEquals(careClaimReason(line.text), null, `${c.name}: ${line.text}`)
+          assertStrictEquals(hasBannedSignalVocabulary(line.text), false, `${c.name}: ${line.text}`)
+          assertStrictEquals(line.text.includes('!'), false, `${c.name}: ${line.text}`)
+        }
+      }
+    }
+  }
+  // Non-vacuity: the corpus's chronicity and timing cases carry the visit line.
+  assertStrictEquals(lined >= 4, true, `only ${lined} lines across the corpus`)
+})
+
+Deno.test('(c) over an incomplete read the step does not run, key on or off', () => {
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    for (const [label, flags] of ON_STATES) {
+      assertEquals(
+        run(c, flags, EMPTY_CARE_RECORD, ['symptoms'], POPULATED_CARE_CONTEXT_FACTS, SENTINEL),
+        run(c, flags, EMPTY_CARE_RECORD, ['symptoms'], null, ABSENT),
+        `${c.name}: ${label}`,
+      )
     }
   }
 })
@@ -153,6 +237,7 @@ Deno.test('(f) a throw while resolving the stand-down costs the marker, never th
     nowMs: Date.parse(golden.nowIso),
     engineFlags: OFF,
     careRecord: EMPTY_CARE_RECORD,
+    careContextFacts: null,
   })
   assertStrictEquals(result.standDownError, 'boom')
   assertEquals(result.standDowns, [])

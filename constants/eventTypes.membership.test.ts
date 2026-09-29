@@ -508,14 +508,26 @@ const WALK: WalkRow[] = [
     cough: { now: true, decision: 'YES — present since 3b (the universe, the fetch, the chronicity cell, the label). Read as "the engine knows this word", never as a lane membership: the per-lane row above is the ruling.' },
     sneeze: { now: true, decision: 'YES — typed and nameable at W1 though not fetched (§9). Same reading as cough.' },
     check_in: {
-      now: false,
-      decision: 'NO — ZERO OCCURRENCES, which is a stronger claim than any single list can make and '
+      now: true,
+      decision: 'YES, AS AN EXCLUSION ONLY (CUL-1420, Engines v3 PR-22) — exactly one occurrence, '
+        + '`.neq(\'event_type\', \'check_in\')` in index.ts readCareContextFacts, which keeps a look OUT '
+        + 'of EN-10\'s "something logged on k of n" (a look never enters another surface\'s coverage '
+        + 'line). Pinned below to that one occurrence. The ruling it replaced, kept for the record: '
+        + 'NO — ZERO OCCURRENCES, which is a stronger claim than any single list can make and '
         + 'the one the third adversarial pass actually verified ("check_in is 0x in '
         + 'supabase/functions/"). It is the whole of T-5 in one assertion: the engine cannot read, '
         + 'count, gate or name a look because the value is not in its source. The day N-6 teaches '
         + 'generate-REPORT about looks this row is untouched — the scope is the engine directory '
         + 'alone, deliberately, so the report can gain Appendix G without loosening the engine.',
     },
+  },
+  {
+    list: 'ALL_SIGNS + DRUG_CLASS_EFFECTS (generate-signal/careContext.ts)',
+    governs: 'EN-10\'s drug table (CUL-1420): which signs a medication course is drawn beside, and which signs it may MASK, so a zero is withheld. Placement only — every count is the chronicity lane\'s own episodes',
+    read: () => scan('supabase/functions/generate-signal/careContext.ts', 'const ALL_SIGNS', 'export const DRUG_NAME_CLASSES'),
+    cough: { now: true, decision: 'YES — a systemic steroid masks every sign, and inhaled corticosteroids, antitussives and bronchodilators mask cough (§5.1\'s rows, verbatim). Absent, a zero cough count would print beside prednisone: the "it worked" reading §5.1 forbids.' },
+    sneeze: { now: true, decision: 'YES — in ALL_SIGNS only (a systemic steroid masks it). No lane carries sneeze today, so no line is drawn beside it; the membership is there before a finding can be, the SYMPTOM_LABEL precedent.' },
+    check_in: { now: false, decision: 'NO — a look is not a sign a drug moves, and it never reaches a context line (the logging pull excludes it; see the whole-source row).' },
   },
   {
     list: 'LOOK_WORDS + LOOK_HEAD_WORDS (constants/lookWords.ts)',
@@ -637,7 +649,8 @@ describe('membership walk (HR-6) — every list decided, current state == decide
     // symptom leaf together. It sits BELOW the discovery guard's three-distinct-key floor
     // (two leaves), so the walk is the only place its membership decision can live.
     // +1 (CUL-1161 / HV-4): SAME_MINUTE_OBSERVATION_TYPES, the shared duplicate rule's set.
-    expect(WALK).toHaveLength(23);
+    // +1 (CUL-1420 / PR-22): EN-10's drug table (careContext.ts).
+    expect(WALK).toHaveLength(24);
   });
 });
 
@@ -931,5 +944,23 @@ describe('§8 degradation contract — what a build that does NOT know a leaf re
     const display = describeDayEvent(row);
     expect(display.title).toBe('Event');
     expect(display.category).toBe('other');
+  });
+});
+
+// The whole-source row's check_in decision, pinned to its one occurrence (CUL-1420): the
+// engine names the look only to exclude it from EN-10's logging pull. A second occurrence (a
+// look counted, gated or named) reds here and needs its own walk decision.
+describe('the engine names the daily look only to exclude it (CUL-1420)', () => {
+  it('exactly one occurrence under generate-signal/, and it is the logging pull’s exclusion', () => {
+    const dir = join(ROOT, 'supabase/functions/generate-signal');
+    const hits = readdirSync(dir)
+      .filter((f) => /\.ts$/.test(f) && !/\.test\.ts$/.test(f))
+      .flatMap((f) =>
+        blankComments(readFileSync(join(dir, f), 'utf8'))
+          .split('\n')
+          .filter((line) => line.includes('check_in'))
+          .map((line) => `${f}: ${line.trim()}`),
+      );
+    expect(hits).toEqual(["index.ts: .neq('event_type', 'check_in')"]);
   });
 });
