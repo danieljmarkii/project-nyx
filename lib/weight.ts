@@ -145,12 +145,16 @@ export async function insertWeightCheck(
       [eventId, petId, occurredAtIso, notes, occurredAtSource, now, now],
     );
 
-    // Weight child. updated_at is stamped ISO (not SQLite's local-time
+    // Weight child. The log weigh-in is a home-scale reading by its entry path
+    // (EN-8 spec WG-2, migration 081); stated here rather than left to the local
+    // default, which is 'legacy' and means "labelled by rule, not by the writer".
+    // The owner corrects it after the save (PR-37), never at the scale.
+    // updated_at is stamped ISO (not SQLite's local-time
     // datetime()) so cross-device last-write-wins compares correctly (B-055).
     await db.runAsync(
       `INSERT INTO weight_checks
-         (id, event_id, pet_id, weight_kg, notes, created_at, updated_at, synced)
-       VALUES (?, ?, ?, ?, NULL, ?, ?, 0)`,
+         (id, event_id, pet_id, weight_kg, notes, source, source_basis, created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, NULL, 'home_scale', 'entry', ?, ?, 0)`,
       [weightCheckId, eventId, petId, weightKg, now, now],
     );
   });
@@ -225,6 +229,8 @@ export async function updateWeightCheck(
   if (!row) return null;
 
   await db.runAsync(
+    // Leaves source / source_basis alone on purpose (migration 081): a new value is still
+    // the same reading, taken the same way. Only the owner's correction (PR-37) moves it.
     `UPDATE weight_checks SET weight_kg = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE event_id = ?`,
     [weightKg, now, eventId],
   );

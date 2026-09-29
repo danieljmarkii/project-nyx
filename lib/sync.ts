@@ -945,6 +945,8 @@ async function drainWeightChecksQueue(): Promise<void> {
     pet_id: string;
     weight_kg: number;
     notes: string | null;
+    source: string;
+    source_basis: string;
     created_at: string;
     updated_at: string;
   }>(
@@ -962,6 +964,10 @@ async function drainWeightChecksQueue(): Promise<void> {
     pet_id: w.pet_id,
     weight_kg: w.weight_kg,
     notes: w.notes,
+    // Migration 081. Sent every time, so the server never labels a current build's
+    // reading by its default ('legacy' is for builds that do not know the column).
+    source: w.source,
+    source_basis: w.source_basis,
     created_at: w.created_at,
     // B-055 — send the client updated_at. The set_updated_at trigger rewrites
     // it to server-NOW on the conflict-update branch (server-time LWW), so this
@@ -2185,7 +2191,8 @@ interface RemoteMeal {
 }
 interface RemoteWeightCheck {
   id: string; event_id: string; pet_id: string; weight_kg: number;
-  notes: string | null; created_at: string; updated_at: string;
+  notes: string | null; source: string; source_basis: string; // migration 081
+  created_at: string; updated_at: string;
 }
 interface RemoteLook {
   id: string; event_id: string; pet_id: string; outcome: string; local_day: string;
@@ -2408,7 +2415,7 @@ async function hydrateWeightChecks(db: Db, stale: () => boolean): Promise<void> 
   const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteWeightCheck>(
     'weight_checks',
-    'id, event_id, pet_id, weight_kg, notes, created_at, updated_at',
+    'id, event_id, pet_id, weight_kg, notes, source, source_basis, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -2417,7 +2424,8 @@ async function hydrateWeightChecks(db: Db, stale: () => boolean): Promise<void> 
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
   if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
   for (const w of toWrite) {
-    // DO UPDATE refreshes the mutable fields only (weight_kg, notes); identity
+    // DO UPDATE refreshes the mutable fields only (weight_kg, notes, and 081's
+    // source + source_basis, which an owner correction changes); identity
     // columns (event_id, pet_id) and created_at are immutable and deliberately
     // omitted from the SET — created_at appears in the column list for the INSERT
     // branch only, so that asymmetry is correct, not B-057 drift (mirrors
@@ -2425,13 +2433,33 @@ async function hydrateWeightChecks(db: Db, stale: () => boolean): Promise<void> 
     // never clobbers a row with an unpushed local edit.
     await db.runAsync(
       `INSERT INTO weight_checks
-        (id, event_id, pet_id, weight_kg, notes, created_at, updated_at, synced)
-       VALUES (?,?,?,?,?,?,?,1)
+        (id, event_id, pet_id, weight_kg, notes, source, source_basis, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          weight_kg=excluded.weight_kg, notes=excluded.notes,
+         source=excluded.source, source_basis=excluded.source_basis,
          updated_at=excluded.updated_at, synced=1
        WHERE weight_checks.synced = 1`,
-      [w.id, w.event_id, w.pet_id, w.weight_kg, w.notes ?? null, w.created_at, w.updated_at],
+      [w.id, w.event_id, w.pet_id, w.weight_kg, w.notes ?? null, w.source, w.source_basis,
+        w.created_at, w.updated_at],
+    );
+  }
+  // Migration 081 (CUL-1412) — fill the source label from the server for every row fetched,
+  // whether or not LWW rewrote it: the CUL-1396 shape. The re-pull after the column upgrade
+  // (COLUMN_UPGRADES `rehydrate`) returns rows whose `updated_at` equals the local copy, which
+  // `reconcileBatch` rightly leaves alone, so without this an upgraded phone keeps the default
+  // where the server holds another device's label, and its next push of a weight edit would
+  // send that stale default back up. Only a synced row: its content is the server's, so the
+  // server's current label is the right one; an unpushed edit is never touched. No
+  // `updated_at` comparison (two spellings of one instant do not compare as text, C-40), no
+  // `updated_at` write, nothing queued.
+  if (stale()) return;
+  for (const w of rows) {
+    if (!w.source || !w.source_basis) continue;
+    await db.runAsync(
+      `UPDATE weight_checks SET source = ?, source_basis = ?
+       WHERE id = ? AND synced = 1 AND (source IS NOT ? OR source_basis IS NOT ?)`,
+      [w.source, w.source_basis, w.id, w.source, w.source_basis],
     );
   }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
