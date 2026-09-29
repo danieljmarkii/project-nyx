@@ -1,7 +1,7 @@
 # Operating kit: the team, rituals and lessons, extracted for a new project
 
 **Date:** 2026-09-29
-**Issue:** CUL-1400 · **Mode:** DISCOVERY (the deliverable is a committed doc set) · **Outcome:** shipped via the session PR
+**Issue:** CUL-1400 · **Mode:** DISCOVERY (the deliverable is a committed doc set) · **Outcome:** shipped via #976
 
 The PM is starting a new project in a different domain and asked for everything this repo has learned about *how we work* to be extracted so the new project starts at the mature state.
 
@@ -25,4 +25,4 @@ Three isolated research passes (engineering lessons → portable laws; process h
 The cold read (posing as an accounting-reconciliation product's first session) returned ~40 findings, all applied in a second commit: a renamed agent still referenced by `/design-critique`; the hook's install line trapped in a comment; an invalid `@<sha>` in CI that the placeholder grep could not see; section references that did not match the manual's headings; a C-number scheme that collided with Tier C; draft-vs-non-draft and 24h-vs-14-day contradictions (now two named thresholds with two jobs); principles enforced before ratification; consumer-mobile assumptions in the principles, voice and QA edge cases (now flagged "rewrite, don't fill"); ~30 placeholders the interview never collected (now a derived/defaulted table); and a day-one vs when-first-needed install split so `/dispatch`, `/design-critique` and the groom preflight are not installed before they have work.
 
 ## Residuals
-- The hook's retro/manual-budget lines would help this repo too (retro F4 is still prose here). Not applied: out of scope for a kit PR, and CLAUDE.md is at its ceiling. Worth its own issue.
+- The hook's retro/manual-budget lines would help this repo too (retro F4 is still prose here). Not applied: out of scope for a kit PR, and CLAUDE.md is at its ceiling. Filed as CUL-1401.
