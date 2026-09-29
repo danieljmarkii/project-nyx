@@ -46,6 +46,8 @@ EN-3's server half (CUL-1133) and EN-7 (CUL-1138), in one PR, shipped via the dr
 - **R2e:** a re-check that fails to start now says so ("Saved, but the read did not re-run") instead of falling back to the calm card.
 - Cost only, accepted: `needsEn7Recheck` cannot tell a withdrawn call from a stool with no vomit, so an EN-7 row edited away from formed with no vomit spends one read. It cannot lower anything.
 
+**Round 5 (at `d24be11`): PASS.** Every load-bearing failure mode from rounds 1–4 held against a named counterexample. That covers the drift case at +6 h and +30 h; back-dated, future-dated and unparseable stool times; a vomit after the stool; the 24 h boundary; the repeat rule and the intake arm over the widened anchors; the failed re-check; and the key-off path. DoD line: "Biostatistician/Dr. Chen (adversarial, five isolated rounds): the pre-read flag is a superset of shipped, a withdrawal needs a complete single-photo formed read with no owner edit against it and no loose, repeat or intake reason, and a later correction gets the call back; T23's quieter row stays dark pending CUL-1312." Carried to the vet review packet: the formed-type thresholds and the single-photo-only withdrawal.
+
 - Note: flag-off row reads now also select `tier` and `stool_consistency`. Decisions and written values are unchanged, but the query text is not byte-identical.
 
 ## Proof
