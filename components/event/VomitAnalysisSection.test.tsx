@@ -79,6 +79,7 @@ import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
 import { Alert, LayoutAnimation, StyleSheet } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { VomitAnalysisSection } from './VomitAnalysisSection';
+import { theme } from '../../constants/theme';
 import { readLandedCopy } from './useReadLandingAnnouncement';
 import { watchAnalysisRow, awaitAnalysisChain, triggerVomitAnalysis } from '../../lib/analysis';
 import { __resetReducedMotionForTest, useReducedMotionStore } from '../../store/reducedMotionStore';
@@ -1489,5 +1490,71 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     mockRow = row({ recommendation: 'monitor', read_text: 'Yellow, foamy.' });
     const view = render(<VomitAnalysisSection eventId="an-9" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await view.findByRole('header', { name: 'AI READ' })).toBeTruthy();
+  });
+});
+
+// ── EN-3 (CUL-1133): the card speaks the tier-word map ─────────────────────────
+describe('VomitAnalysisSection — the tier (EN-3)', () => {
+  const EN3 = ['engines_v3_en3'];
+  afterEach(() => { mockRow = null; });
+
+  it('a new-rule call now: its words, its action line, the filled rose', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_now', engine_flags: EN3, read_text: 'Dark, gritty material.' });
+    const { findByText, getByTestId, queryByText } = render(<VomitAnalysisSection eventId="t1" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText('Call your vet now');
+    expect(queryByText("Call your vet now. If they're closed, call an emergency clinic.")).toBeTruthy();
+    expect(queryByText('Worth a call')).toBeNull();
+    // The filled rose: today's worth-a-call card, not the outline.
+    expect(flat(getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
+  });
+
+  it('a new-rule call today: its own words, and the rose OUTLINE on the plain surface', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3 });
+    const { findByText, getByTestId, queryByText } = render(<VomitAnalysisSection eventId="t2" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText('Call your vet today');
+    expect(queryByText("Call your vet today. If they're closed, first thing tomorrow.")).toBeTruthy();
+    expect(flat(getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorSurface);
+    expect(flat(getByTestId('incident-read-card')).borderColor).toBe(theme.colorEventSymptom);
+  });
+
+  it('an earlier-rule call keeps today\'s card: the words, no action line, no disclosure', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', error: 'timeout' });
+    const { findByText, queryByTestId, queryByText } = render(<VomitAnalysisSection eventId="t3" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText('Worth a call');
+    expect(queryByText(/If they're closed/)).toBeNull();
+    expect(queryByTestId('incident-read-disclosure')).toBeNull();
+  });
+
+  it('a tier call over a quiet verdict (a rolled-back write) is still the call, at a failed status', async () => {
+    mockRow = row({ status: 'failed', recommendation: 'monitor', tier: 'call_today', engine_flags: EN3 });
+    const { findByText } = render(<VomitAnalysisSection eventId="t4" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText('Call your vet today');
+  });
+
+  it('status ahead of tier: a failed row\'s earlier "logged" is not stood as the read', async () => {
+    mockRow = row({ status: 'failed', recommendation: 'monitor', tier: 'logged', engine_flags: EN3, read_text: 'One photo can’t tell you much.' });
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="t5" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText(/Couldn't finish reading this one\./);
+    expect(queryByText('Keep an eye out')).toBeNull();
+  });
+
+  it('CUL-819 (a): a call held over a read that did not finish says so, and its facts are the earlier read\'s', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3, error: 'timeout', blood_present: 'none_visible' });
+    const { findByText, getByTestId, queryByText } = render(<VomitAnalysisSection eventId="t6" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText('Call your vet today');
+    expect(getByTestId('incident-read-disclosure').props.children).toBe(
+      "The latest read didn't finish. The call above is from the earlier read.",
+    );
+    expect(queryByText('From the earlier read')).toBeTruthy();
+    expect(queryByText("What's visible")).toBeNull();
+  });
+
+  it('CUL-819 (a): a rescued call (status failed) says it comes from what is logged', async () => {
+    mockRow = row({ status: 'failed', recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3, error: 'timeout' });
+    const { findByText, getByTestId } = render(<VomitAnalysisSection eventId="t7" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText('Call your vet today');
+    expect(getByTestId('incident-read-disclosure').props.children).toBe(
+      "The latest read didn't finish. The call above is from what's already logged.",
+    );
   });
 });
