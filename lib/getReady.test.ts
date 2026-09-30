@@ -1577,3 +1577,42 @@ describe('TS-8 — one vomiting comparison per page, only when they are one (adv
     expect(symptomsAsked(rows)).toBe(true);
   });
 });
+
+describe('EN-10 (CUL-1421) — a Signal row quotes its context lines as its detail', () => {
+  const PRED_LINE = 'Prednisone since Sep 21, 6 days: 2 episodes, with something logged on 6 of 6.';
+  const VISIT_LINE = 'Since the Sep 16 visit, 11 days: 4 episodes, with something logged on 11 of 11.';
+  const chronic = (careContext?: unknown): SignalFinding =>
+    ({
+      type: 'symptom_chronicity',
+      priorityClass: 'safety',
+      symptomType: 'vomit',
+      episodeCount: 11,
+      spanDays: 40,
+      activeWeeks: 5,
+      symptomDays: 10,
+      daysSinceLastEpisode: 1,
+      firstOnsetIso: new Date(NOW - 40 * DAY).toISOString(),
+      tier: 'standard',
+      windowDays: 56,
+      ...(careContext === undefined ? {} : { careContext }),
+    }) as SignalFinding;
+  const TEXT = 'Mochi has vomited 11 times across 5 of the last 8 weeks. Worth a vet visit.';
+
+  it('the lines ride under the sentence, verbatim and in the server’s order (mock 5c)', () => {
+    const lines = [
+      { kind: 'course', anchorOn: '2026-09-21', days: 6, count: 2, loggedDays: 6, drugLabel: 'Prednisone', text: PRED_LINE },
+      { kind: 'visit', anchorOn: '2026-09-16', days: 11, count: 4, loggedDays: 11, text: VISIT_LINE },
+    ];
+    const { rows } = buildWorthRaising(input({ findings: [finding({ text: TEXT, rank: 0, finding: chronic(lines) })] }));
+    expect(rows[0].text).toBe(TEXT);
+    expect(rows[0].detail).toBe(`${PRED_LINE} ${VISIT_LINE}`);
+  });
+
+  it('no lines (the key off, an old cache, or a malformed set): the row is what it was', () => {
+    for (const careContext of [undefined, [], [{ kind: 'visit', text: VISIT_LINE }, { kind: 'appointment', text: 'x' }]]) {
+      const { rows } = buildWorthRaising(input({ findings: [finding({ text: TEXT, rank: 0, finding: chronic(careContext) })] }));
+      expect(rows[0].text).toBe(TEXT);
+      expect(rows[0].detail).toBeNull();
+    }
+  });
+});

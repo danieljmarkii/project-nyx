@@ -52,12 +52,17 @@ import {
 } from '../_shared/incident-analysis.ts'
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 import { meetsVomitRepeatRuleAt } from '../_shared/vomitRepeat.ts'
+import type { FloorResult, FloorTier } from '../../../lib/incidentFloor.ts'
 import {
+  buildFloor,
   buildVomitContext,
+  floorIsOn,
+  floorReadWindows,
   vomitAnchoredReads,
   vomitContextWindows,
   type ContextInput,
   type IntakeRecord,
+  type FloorRows,
   type VomitContextRows,
 } from './context.ts'
 
@@ -505,8 +510,80 @@ export function vomitContextualRun(
   engineFlags: EngineFlags,
 ): ContextualFlag[] | ContextualRun<ContextualFlag> {
   const flags = computeContextualFlags(context)
-  return isEngineKeyOn(engineFlags, 'engines_v3_en0') ? { flags, copy: en0VomitCopy(context) } : flags
+  const en0 = isEngineKeyOn(engineFlags, 'engines_v3_en0')
+  // EN-4: `floor` is set only when its keys are on (assembleContext), and adds only when it
+  // names a tier, so every other run is exactly the one above.
+  if (context.floor?.tier) {
+    const base = en0 ? en0VomitCopy(context) : VOMIT_COPY
+    return {
+      flags: [...flags, ...floorFlags(context.floor).filter((f) => !flags.includes(f))],
+      copy: en4VomitCopy(base, context.floor),
+      minTier: context.floor.tier,
+    }
+  }
+  return en0 ? { flags, copy: en0VomitCopy(context) } : flags
 }
+
+// ── EN-4's floor (Engines v3 PR-28, CUL-1134) ───────────────────────────────────────
+// The floor RAISES through the flags the read already knows, so the verdict stays
+// worth_a_call and installed builds (which read only `recommendation` and the flags) keep
+// today's words; the new tier rides beside it. Every count row is repeated vomiting, and T3 is
+// lethargy beside the vomit: no new flag value, nothing a shipped reader cannot render.
+const FLOOR_FLAG: Readonly<Record<FloorResult['rows'][number], ContextualFlag>> = {
+  T1: 'repeated_vomiting',
+  T2: 'repeated_vomiting',
+  T3: 'concurrent_lethargy',
+  T6: 'repeated_vomiting',
+  T7: 'repeated_vomiting',
+  T8: 'repeated_vomiting',
+}
+
+export function floorFlags(floor: FloorResult): ContextualFlag[] {
+  return [...new Set(floor.rows.map((r) => FLOOR_FLAG[r]))]
+}
+
+// The floor's words: what the record holds, then why it matters, and never how soon (the chip
+// and the record's action line carry that through the tier-word map, and resolve it against
+// the clock; a stored sentence cannot). "Vomits logged" and times thrown up, never
+// "episodes" (GAP-10). Pattern 8 covers every sentence (index.test.ts).
+export function floorSentence(petName: string, floor: FloorResult, row: FloorResult['rows'][number]): string {
+  const p = petName || 'Your pet'
+  switch (row) {
+    case 'T1':
+      return `${p} has thrown up ${floor.counts.burst} times within about half an hour. That many close together needs a call to your vet.`
+    case 'T2':
+      return `${p} has thrown up at ${floor.counts.span} separate times within about 4 hours. Vomiting that keeps coming back like that needs a call to your vet.`
+    case 'T3':
+      return `${p} has been vomiting and was also logged as low on energy. Together, those need a call to your vet.`
+    case 'T8':
+      return `${p} has vomited on three days in a row. Vomiting that keeps up day after day needs a call to your vet.`
+    case 'T6':
+      return `${p} has thrown up twice within a day. In a dog, that needs a call to your vet.`
+    case 'T7':
+      return floor.ageUnknown
+        ? `${p} has thrown up twice within a day. ${p}'s birthday isn't on file, so this is read the way it would be for a young animal, which can get dehydrated quickly. That needs a call to your vet.`
+        : `${p} has thrown up twice within a day, and is under six months old. A young animal can get dehydrated quickly, so that needs a call to your vet.`
+  }
+}
+
+// Highest acuity leads, one reason, as the shipped template does: a call-now row first, then
+// the intake sentence the base copy writes (a cat not eating around a vomit), then a call-today
+// row. `rows` come loudest first from the floor.
+export function en4VomitCopy(base: IncidentCopy<ContextualFlag>, floor: FloorResult): IncidentCopy<ContextualFlag> {
+  const lead = floor.rows[0]
+  const contextual = (petName: string, flags: ContextualFlag[]): string => {
+    if (floor.tier === 'call_now' || !flags.includes('feline_reduced_intake')) return floorSentence(petName, floor, lead)
+    return base.contextual(petName, flags)
+  }
+  return {
+    ...base,
+    contextual,
+    contextualWithPhotoFinding: (petName, flags, visualFlags) =>
+      `I can see ${seenInPhoto(visualFlags)} in this photo. ${contextual(petName, flags)}`,
+  }
+}
+
+export type { FloorTier }
 
 // The load-bearing read selection, pure + exported so the never-reassure guarantee is
 // unit-tested rather than asserted by a comment. The model's free text reaches the
@@ -598,6 +675,7 @@ export function presentFlagsFromStructured(row: Record<string, unknown>): string
 
 async function assembleContext(
   userClient: SupabaseClient,
+  eventId: string,
   petId: string,
   thisEventOccurredAt: string,
   species: string,
@@ -653,7 +731,47 @@ async function assembleContext(
     lethargy: (lethargyRes.data ?? []) as VomitContextRows['lethargy'],
     meals: [...(mealEventsRes.data ?? []), ...(anchoredMealsRes.data ?? [])] as VomitContextRows['meals'],
   }
-  return buildVomitContext({ rows, thisEventOccurredAt, species, nowMs, engineFlags })
+  const context = buildVomitContext({ rows, thisEventOccurredAt, species, nowMs, engineFlags })
+  if (!floorIsOn(engineFlags)) return context
+  return { ...context, floor: buildFloor(await readFloorRows(userClient, petId, thisEventOccurredAt), eventId, thisEventOccurredAt, species) }
+}
+
+// EN-4's reads (only under its keys): the vomits with their confidence three days either side,
+// the lethargy a day either side, and the birthday. Each read that does not answer THROWS: a
+// floor over rows it could not see would read absence as calm, and the pipeline's catch keeps
+// every contextual flag the shipped reads already found (CUL-815). Each window is days, so a
+// pet's rows stay far below PostgREST's max-rows (C-42 names report pulls, which this is not).
+async function readFloorRows(userClient: SupabaseClient, petId: string, thisEventOccurredAt: string): Promise<FloorRows> {
+  const vomitMs = Date.parse(thisEventOccurredAt)
+  if (!Number.isFinite(vomitMs)) return { vomits: [], lethargy: [], birthDate: null }
+  const w = floorReadWindows(vomitMs)
+  const [vomitsRes, lethargyRes, petRes] = await Promise.all([
+    userClient
+      .from('events')
+      .select('id, occurred_at, occurred_at_confidence')
+      .eq('pet_id', petId)
+      .eq('event_type', 'vomit')
+      .is('deleted_at', null)
+      .gte('occurred_at', w.vomitsFromIso)
+      .lte('occurred_at', w.vomitsToIso),
+    userClient
+      .from('events')
+      .select('occurred_at')
+      .eq('pet_id', petId)
+      .eq('event_type', 'lethargy')
+      .is('deleted_at', null)
+      .gte('occurred_at', w.lethargyFromIso)
+      .lte('occurred_at', w.lethargyToIso),
+    userClient.from('pets').select('date_of_birth').eq('id', petId).maybeSingle(),
+  ])
+  for (const r of [vomitsRes, lethargyRes, petRes]) {
+    if (r.error) throw new Error(`Floor read failed: ${r.error.message}`)
+  }
+  return {
+    vomits: (vomitsRes.data ?? []) as FloorRows['vomits'],
+    lethargy: (lethargyRes.data ?? []) as FloorRows['lethargy'],
+    birthDate: ((petRes.data as { date_of_birth?: string | null } | null)?.date_of_birth) ?? null,
+  }
 }
 
 // ── Cap + flag gate identity (Monetization Track 2, T2-3 / B-329 + B-001) ─────
@@ -687,11 +805,14 @@ export const VOMIT_DESCRIPTOR: IncidentDescriptor<VomitAnalysis, ContextualFlag>
   // which findings become flags or to the contextual derivation (./context.ts).
   // 'vomit2': EN-0's union step and copy (CUL-1130). Flag-off rows carry it too; their
   // derivation is vomit1's, and their engine_flags stamp ('{}') says so.
-  ruleVersion: 'vomit2',
+  // 'vomit3': EN-4's floor (CUL-1134), which adds flags and a tier only under
+  // engines_v3_en4 + engines_v3_en3; flag-off rows carry it too and derive as vomit2 did.
+  ruleVersion: 'vomit3',
+  floorEngineKey: 'engines_v3_en4',
   parseToolResult: parseAnalysisToolResult,
   appearsToShowSubject: (analysis) => analysis.appears_to_show_vomit,
-  computeContextualFlags: async (userClient, { petId, occurredAt, species, engineFlags }) =>
-    vomitContextualRun(await assembleContext(userClient, petId, occurredAt, species, engineFlags), engineFlags),
+  computeContextualFlags: async (userClient, { eventId, petId, occurredAt, species, engineFlags }) =>
+    vomitContextualRun(await assembleContext(userClient, eventId, petId, occurredAt, species, engineFlags), engineFlags),
   copy: VOMIT_COPY,
   buildStructuredValues: buildVomitStructuredValues,
   redFlagColumns: RED_FLAG_COLUMNS,

@@ -26,6 +26,7 @@
 // one boundary; nothing else moves.
 
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
+import { FLOOR_LETHARGY_HOURS, FLOOR_READ_HOURS, incidentFloor, type FloorResult } from '../../../lib/incidentFloor.ts'
 
 // ── Context windows (Dr. Chen, 2026-05-24) ─────────────────────────────────────────
 // The vomit lookback: every non-deleted vomit in the last 24 h.
@@ -61,6 +62,9 @@ export interface ContextInput {
   // window, rated or not, so the read can say "6 meals were logged … none was marked Most
   // or All" rather than conclude the cat has not eaten (the 9/4 and 9/22 reads).
   intakeRecord?: IntakeRecord
+  // EN-4 only (engines_v3_en4 with engines_v3_en3, set by assembleContext through buildFloor):
+  // the floor's answer over the record around this vomit (lib/incidentFloor.ts).
+  floor?: FloorResult
 }
 
 export interface IntakeRecord {
@@ -275,4 +279,45 @@ export const EN0_CONTEXT_STEP: VomitContextStep = (shipped, args) => {
 export function buildVomitContext(args: BuildVomitContextArgs, step: VomitContextStep = EN0_CONTEXT_STEP): ContextInput {
   const shipped = shippedVomitContext(args)
   return isEngineKeyOn(args.engineFlags, 'engines_v3_en0') ? step(shipped, args) : shipped
+}
+
+// ── EN-4's floor (Engines v3 PR-28, CUL-1134) ───────────────────────────────────────────
+// Runs only when both engines_v3_en4 and engines_v3_en3 are on for the owner: the floor's
+// answer is a tier, and with no tier written it would be a louder verdict with no tier beside
+// it. Flag-off, no read below is made and `floor` stays absent.
+export function floorIsOn(engineFlags: EngineFlags): boolean {
+  return isEngineKeyOn(engineFlags, 'engines_v3_en4') && isEngineKeyOn(engineFlags, 'engines_v3_en3')
+}
+
+// The floor's reads, as instants around the vomit. Both are bounded by the vomit on both sides
+// (never by the read time), so an old vomit's re-floor reads the same rows whenever it runs.
+export function floorReadWindows(vomitMs: number): { vomitsFromIso: string; vomitsToIso: string; lethargyFromIso: string; lethargyToIso: string } {
+  const at = (h: number) => new Date(vomitMs + h * 3_600_000).toISOString()
+  return {
+    vomitsFromIso: at(-FLOOR_READ_HOURS),
+    vomitsToIso: at(FLOOR_READ_HOURS),
+    lethargyFromIso: at(-FLOOR_LETHARGY_HOURS),
+    lethargyToIso: at(FLOOR_LETHARGY_HOURS),
+  }
+}
+
+export interface FloorRows {
+  vomits: { id: string; occurred_at: string; occurred_at_confidence: string | null }[]
+  lethargy: { occurred_at: string }[]
+  birthDate: string | null
+}
+
+// The floor over the rows the reads returned. The anchor's confidence is its own row's; a read
+// that raced this vomit's write (no row with its id) counts it as unclassified, which T1 and T2
+// treat as an onset: the louder reading of an unknown.
+export function buildFloor(rows: FloorRows, thisEventId: string, thisEventOccurredAt: string, species: string): FloorResult {
+  const own = rows.vomits.find((r) => r.id === thisEventId)
+  const anchor = { at: own?.occurred_at ?? thisEventOccurredAt, confidence: own?.occurred_at_confidence ?? null }
+  return incidentFloor({
+    anchor,
+    vomits: rows.vomits.map((r) => ({ at: r.occurred_at, confidence: r.occurred_at_confidence })),
+    lethargyAt: rows.lethargy.map((r) => r.occurred_at),
+    species,
+    birthDate: rows.birthDate,
+  })
 }
