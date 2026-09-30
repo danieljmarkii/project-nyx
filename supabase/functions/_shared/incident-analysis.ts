@@ -1465,9 +1465,9 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
 export const REFLOOR_TRIGGER_TYPES = ['lethargy', 'meal', 'vomit'] as const
 // Both ways from the trigger (adversarial D2): lethargy counts 24 h either side of a vomit
 // (T3), so lethargy backdated before a vomit already logged must reach it; and a vomit
-// logged late, backdated before its neighbours, must reach them. The spec's "prior 24 hours"
-// (§8.6) is the minimum. 72 h covers T8's three spans. The re-run is raise-only, so reading
-// wider only reaches more vomits and can lower none.
+// logged late, backdated before its neighbours, must reach them (spec §8.6, amended v0.3).
+// 72 h covers T8's three spans. The re-run is raise-only, so reading wider only reaches more
+// vomits and can lower none.
 export const REFLOOR_WINDOW_HOURS = 24
 export const REFLOOR_VOMIT_WINDOW_HOURS = FLOOR_READ_HOURS
 
