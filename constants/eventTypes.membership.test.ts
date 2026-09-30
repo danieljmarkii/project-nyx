@@ -621,6 +621,26 @@ const WALK: WalkRow[] = [
         + 'coverage it has, with its own denominator (T-16).',
     },
   },
+  {
+    list: 'care_acknowledgements.symptom_type CHECK (supabase/migrations/082_care_record.sql)',
+    governs: 'which signs an owner\'s "my vet knows" answer may be stored for (EN-9, CUL-1415): the '
+      + 'signs that can BE a concern, chronicity ∪ worsening (care-state spec §3.1). guards/careRecord.test.ts '
+      + 'pins it to LANE_SYMPTOM_TYPES, so a lane that widens reds until a migration widens the CHECK',
+    read: () => scan('supabase/migrations/082_care_record.sql',
+      'symptom_type  TEXT        NOT NULL CHECK', '),'),
+    cough: {
+      now: true,
+      decision: 'YES — cough is in the chronicity cell (§9 cough row), so a chronic cough is a concern and '
+        + 'the owner may say the vet knows about it. One sign per row (GAP-29): a cough answer never '
+        + 'covers vomiting.',
+    },
+    sneeze: { now: false, decision: 'NO — data-only at W1 (§9); no lane fires on it, so it is never a concern' },
+    check_in: {
+      now: false,
+      decision: 'NO — a look is not a sign and no lane reads it, so it is never a concern and never '
+        + 'carries a care state.',
+    },
+  },
 ];
 
 describe('membership walk (HR-6) — every list decided, current state == decided state', () => {
@@ -650,7 +670,8 @@ describe('membership walk (HR-6) — every list decided, current state == decide
     // (two leaves), so the walk is the only place its membership decision can live.
     // +1 (CUL-1161 / HV-4): SAME_MINUTE_OBSERVATION_TYPES, the shared duplicate rule's set.
     // +1 (CUL-1420 / PR-22): EN-10's drug table (careContext.ts).
-    expect(WALK).toHaveLength(24);
+    // +1 (CUL-1415 / PR-21): the care_acknowledgements sign CHECK (migration 082).
+    expect(WALK).toHaveLength(25);
   });
 });
 
