@@ -226,6 +226,15 @@ export interface ScenarioScore {
   laneEveningsPerPetMonth: Partial<Record<ScoreLane, number>>
   /** Evenings a card's ask fell a register while that card stayed and its sign's 7-day logged count did not fall, per pet-month (CUL-1272). */
   askDropWithoutFallPerPetMonth: number
+  /**
+   * Null staple feeders only: evenings per pet-month carrying a food card that names the staple's
+   * protein. "Blame the most-exposed protein" is never wrong on a reacting pet in this corpus (the
+   * hidden culprit is the most-exposed protein by design), and the other null food rows count
+   * evenings, not which protein a card names, so renaming every card to the staple passed every
+   * food line (eleventh adversarial pass). This makes it visible where it is false. The reacting
+   * scenario that makes it wrong on a sick pet is the corpus follow-up.
+   */
+  stapleNamedEveningsPerPetMonth: number | null
   /** Median evening of the first safety card (ARL to a first alarm, GAP-6), null when fewer than half the pet-runs saw one. */
   medianDaysToFirstSafety: number | null
   detections: DetectionScore[]
@@ -250,6 +259,14 @@ export interface CareScore {
   silentEveningShare: number | null
   /** Median, over those pet-runs, of the longest run of silent evenings after the acknowledgement. */
   medianLongestSilentRun: number | null
+}
+
+/** A staple feeder's staple protein: the food a weighted feeder draws most often (null for any other feeding). */
+export function stapleProtein(sc: ScenarioSpec, petKey: string): string | null {
+  const pet = sc.pets.find((p) => p.key === petKey)
+  if (!pet || pet.feeding.kind !== 'meals' || pet.feeding.choose !== 'weighted' || pet.feeding.foods.length === 0) return null
+  const top = [...pet.feeding.foods].sort((a, b) => b.weight - a.weight)[0]
+  return top.weight > 0.5 ? top.protein : null
 }
 
 function median(xs: number[]): number | null {
@@ -291,6 +308,7 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
     safety: new Map<number, number>(),
     ask: { call: 0, book_visit: 0, word_with_vet: 0, mention_to_vet: 0, any: 0 } as Record<Exclude<AskRegister, 'none'> | 'any', number>,
     askDrops: 0,
+    stapleNamed: 0,
     laneEvenings: new Map<ScoreLane, number>(),
     firstSafety: [] as number[],
   }
@@ -358,6 +376,8 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
           if (loggedCount7(run.result, petKey, c.sign, T) >= loggedCount7(run.result, petKey, c.sign, T - 86_400_000)) acc.askDrops++
         }
         prev = mine
+        const staple = stapleProtein(sc, petKey)
+        if (staple !== null && mine.some((c) => laneOf(c) === 'food' && c.proteins.includes(staple))) acc.stapleNamed++
       }
       for (const h of horizons) {
         for (const l of seenLane.get(h)!) acc.lane.set(`${h}|${l}`, (acc.lane.get(`${h}|${l}`) ?? 0) + 1)
@@ -524,6 +544,7 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
     askPerPetMonth,
     laneEveningsPerPetMonth: Object.fromEntries([...acc.laneEvenings].map(([l, n]) => [l, perMonth(n)])),
     askDropWithoutFallPerPetMonth: perMonth(acc.askDrops),
+    stapleNamedEveningsPerPetMonth: sc.category === 'null' && sc.pets.some((p) => stapleProtein(sc, p.key) !== null) ? perMonth(acc.stapleNamed) : null,
     medianDaysToFirstSafety: acc.firstSafety.length * 2 >= acc.petRuns ? median(acc.firstSafety) : null,
     detections,
     redFlags,
@@ -602,6 +623,7 @@ export function buildScorecard(scores: readonly ScenarioScore[], meta: Scorecard
     for (const [r, v] of Object.entries(s.askPerPetMonth)) rows[`${p}/askPerPetMonth/${r}`] = v
     for (const [l, v] of Object.entries(s.laneEveningsPerPetMonth)) rows[`${p}/laneEveningsPerPetMonth/${l}`] = v ?? null
     rows[`${p}/askDropWithoutFallPerPetMonth`] = s.askDropWithoutFallPerPetMonth
+    if (s.stapleNamedEveningsPerPetMonth !== null) rows[`${p}/stapleNamedEveningsPerPetMonth`] = s.stapleNamedEveningsPerPetMonth
     rows[`${p}/medianDaysToFirstSafety`] = s.medianDaysToFirstSafety
     for (const d of s.detections) {
       rows[`${p}/detect/${d.label}/probability`] = d.eligible === 0 ? null : round(d.detected / d.eligible)

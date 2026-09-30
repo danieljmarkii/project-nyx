@@ -14,7 +14,7 @@ import { scenarioById, simulate } from '../../_shared/engineCorpus/trajectory/in
 import type { Observer, ShownCard } from '../../_shared/engineCorpus/trajectory/index.ts'
 import { FLAG_OFF, makeSignalObserver, registerOfAsk, type ScoredCard } from './observer.ts'
 import { runCorpus } from './run.ts'
-import { buildScorecard, DETECT_WINDOW_DAYS, diffScorecards, formatDiff, laneOf, scoreScenario } from './scorecard.ts'
+import { buildScorecard, DETECT_WINDOW_DAYS, diffScorecards, formatDiff, laneOf, scoreScenario, stapleProtein } from './scorecard.ts'
 import { rowsAt } from './syntheticRows.ts'
 import { visibleAt } from './asOf.ts'
 
@@ -291,4 +291,16 @@ Deno.test('a reacting pet\'s food evenings partition into culprit alone, hedged,
   assert(Math.abs((thirds.wrongShareOfFoodEvenings as number) - 2 / 3) < 0.02, `${thirds.wrongShareOfFoodEvenings}`)
   // The culprit alone never hides it.
   assertEquals(score((d) => (d >= 5 ? [[entry.protein!]] : [])).culpritAbsentEveningsPerPetMonth, 0)
+})
+
+Deno.test('stapleNamed counts evenings whose food cards name a staple feeder\'s staple, and only on staple feeders', () => {
+  const sc = scenarioById('null-staple-1pm')
+  const stapleOf = (id: string) => { const x = scenarioById(id); return x.pets.map((p) => stapleProtein(x, p.key)) }
+  const [staple] = stapleOf('null-staple-1pm')
+  assert(staple !== null)
+  assertEquals(stapleOf('null-rotating-1pm'), [null])
+  const card = (proteins: string[]) => ({ petKey: 'a', findingType: 'food_symptom_correlation', sign: 'vomit' as const, ask: 'none' as const, priorityClass: 'insight', tier: 'established', proteins, direction: null })
+  const runs = (proteins: string[]) => sc.ciSeeds.map((seed) => ({ scenario: sc, seed, result: simulate(sc, seed, () => [card(proteins)]) }))
+  assert((scoreScenario(runs([staple!])).stapleNamedEveningsPerPetMonth as number) > 29)
+  assertEquals(scoreScenario(runs(['lamb'])).stapleNamedEveningsPerPetMonth, 0)
 })

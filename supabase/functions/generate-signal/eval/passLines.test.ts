@@ -27,9 +27,10 @@ import type { Scorecard } from './scorecard.ts'
 // seventh's (EN-11.wrongProteinEvenings), and the eighth's (food detection redefined as the
 // culprit alone, the PM's ruling; the two wrong-protein lines replaced by culpritPersistence and
 // foodPrecision, their rows kept as reporting), and the ninth's (a food detection is an EVENING
-// naming the culprit and nothing else), and the tenth's (EN-11.culpritAbsent).
+// naming the culprit and nothing else), the tenth's (EN-11.culpritAbsent), and the eleventh's
+// (EN-11.stapleBlame).
 // Every value but the two ruled ones is null.
-const PINNED = 'a30de2649d587cbaaaf2f8fee673df18c065673712c47fc3712c12b0b6687b04'
+const PINNED = 'ec3e44ad0f6ffa6fbc1b96901037994aba7a21de4b764a243d9b12898e2f0645'
 
 async function digest(lines: readonly PassLine[]): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(lines)))
@@ -212,7 +213,7 @@ const EN11 = PASS_LINES.filter((l) => l.wave === 'EN-11').map((l) => ({
   ...l,
   value: l.value ?? ({ 'EN-11.detection': 0.02, 'EN-11.delay': 7, 'EN-11.eligible': 0, 'EN-11.falseWorsening': 0.02, 'EN-11.falseWorseningEvenings': 1,
     'EN-11.foodDetection': 0.02, 'EN-11.foodDelay': 7, 'EN-11.foodEligible': 0, 'EN-11.falseFood': 0.02, 'EN-11.falseFoodEvenings': 1,
-    'EN-11.culpritPersistence': 1, 'EN-11.foodPrecision': 0.02, 'EN-11.culpritAbsent': 1 } as Record<string, number>)[l.id],
+    'EN-11.culpritPersistence': 1, 'EN-11.foodPrecision': 0.02, 'EN-11.culpritAbsent': 1, 'EN-11.stapleBlame': 1 } as Record<string, number>)[l.id],
 }))
 const rowsOf = (id: string) => line(id).rows
 
@@ -347,5 +348,24 @@ Deno.test('EN-11: cutting every hedge to one card raises detection and precision
   const results = evaluatePassLines(committed, capped, EN11)
   for (const id of ['EN-11.foodDetection', 'EN-11.culpritPersistence', 'EN-11.foodPrecision']) assertEquals(results.find((r) => r.id === id)!.status, 'pass', id)
   assertEquals(results.find((r) => r.id === 'EN-11.culpritAbsent')!.status, 'fail')
+  assertEquals(waveStatus(results, 'EN-11', EN11), 'fail')
+})
+
+Deno.test('EN-11: renaming every food card to the staple scores on the reacting pets but fails on the healthy staple feeders', () => {
+  // Eleventh adversarial pass: the hidden culprit is the most-exposed protein by design, so this
+  // raised every hidden-chicken food line with no null food row moving.
+  const hidden = (id: string) => rowsOf(id).filter((k) => k.startsWith('inj-protein-reaction-hidden/'))
+  const staple = onArm({
+    ...Object.fromEntries(hidden('EN-11.foodDetection').map((k) => [k, 0.67])),
+    ...Object.fromEntries(hidden('EN-11.culpritPersistence').map((k) => [k, 20])),
+    ...Object.fromEntries(hidden('EN-11.foodPrecision').map((k) => [k, 0])),
+    ...Object.fromEntries(hidden('EN-11.culpritAbsent').map((k) => [k, 0])),
+    ...Object.fromEntries(rowsOf('EN-11.stapleBlame').map((k) => [k, (committed.rows[k] as number) + 5])),
+  })
+  const results = evaluatePassLines(committed, staple, EN11)
+  for (const id of ['EN-11.foodDetection', 'EN-11.culpritPersistence', 'EN-11.foodPrecision', 'EN-11.culpritAbsent', 'EN-11.falseFood', 'EN-11.falseFoodEvenings']) {
+    assertEquals(results.find((r) => r.id === id)!.status, 'pass', id)
+  }
+  assertEquals(results.find((r) => r.id === 'EN-11.stapleBlame')!.status, 'fail')
   assertEquals(waveStatus(results, 'EN-11', EN11), 'fail')
 })
