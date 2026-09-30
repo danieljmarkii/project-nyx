@@ -8,6 +8,11 @@
 -- rulings 2026-09-28). Nothing reads or writes these tables yet: PR-23 is the
 -- first server reader (the care state, behind EN-F), PR-35 / PR-36 the client
 -- writers.
+--
+-- APPLIED to production 2026-09-30 via the Supabase MCP (PM-approved), live version
+-- 20260930001048, name care_record. The statements that ran are this file's with
+-- the comments stripped; comments added after the apply change no statement. The
+-- VERIFY block below passed on the live database.
 -- ============================================================
 --
 -- WHAT THE THREE TABLES ARE
@@ -95,6 +100,11 @@
 -- C-31: each RAISE names only NEW.* values, with ONE message for "no such parent",
 -- "another pet's parent" and "not your pet". Nothing read from a parent reaches it.
 --
+-- WHAT IS NOT CLOSED, stated (rls-privacy-reviewer, 2026-09-30): a row-id existence
+-- oracle. An INSERT reusing another account's primary key fails with 23505 where a
+-- fresh id succeeds, and ON CONFLICT DO NOTHING returns 0 rows versus 1. It is
+-- platform-generic, and it needs an unguessable UUID that no path hands out.
+--
 -- INSERT ONLY. The tables never UPDATE, so the trigger has no UPDATE arm. That is
 -- also why `ON DELETE SET NULL` on care_acknowledgements.vet_visit_id is safe: the
 -- cascade's UPDATE fires no guard, and no CHECK requires the column. A visit
@@ -108,10 +118,16 @@
 --     UPDATE re-validates no child (the class-wide CUL-882 gap that 023 / 041 /
 --     064 / 074 carry). The parent's RLS confines such a move to the owner's own
 --     pets, so it never crosses accounts, and the app has no path that moves any
---     of these between pets. A child left behind stays readable and cannot be
---     edited, because nothing can be.
---   * Nothing else. Every column of every row is frozen by the missing UPDATE
---     privilege.
+--     of these between pets. A child left behind stays readable, and no client
+--     or server write can edit it in place.
+--   * The owner's own parents. Hard-deleting her own trial, course or event (where
+--     that table allows it) cascades her acknowledgements, calls and ledger rows
+--     away, and a hard-deleted visit NULLs vet_visit_id. Own data only.
+--   * Nothing else. No role holds UPDATE, so no column changes except by those
+--     cascades.
+--   * PR-35/36 WRITERS: the guard runs before the FK, so a call or ledger row pushed
+--     before its offline-created event has synced fails with a terminal 23514, not a
+--     retryable 23503. Push the parent event first.
 --
 -- ------------------------------------------------------------
 -- THE PRIVACY LINE (R-5, §8.4)

@@ -23,9 +23,21 @@
 //      terminal 23514.
 //
 // ── WHAT IT DOES NOT CLAIM (C-38: a blind spot left unstated reads as coverage) ─────
-//   · Syntactic. A table or column name assembled at runtime is invisible to it, as are
-//     a `.from(variable)` and a raw SQL `SELECT *`. `guards/visitReaders.test.ts`
-//     registers every dynamic `.from()` in the product tree, and review covers the rest.
+//   · Syntactic. A table or column name assembled at runtime is invisible to it, and so
+//     is a `.from(variable)`. `guards/visitReaders.test.ts` registers every dynamic
+//     `.from()` in the product tree with the reason its name cannot reach a vet table.
+//     A raw SQL `SELECT *` in a string is not flagged; a row swept into JSON is.
+//   · The note scan is statement-scoped (to the enclosing `;` or blank line). A read
+//     split across a blank line inside one chain would split the statement too.
+//   · It scans `supabase/functions/` only. A shared `lib/` module an Edge Function
+//     imports (the C-26 closure) is outside it; review covers that closure.
+//   · Database-side reads are covered for migrations from 082 on: no VIEW over the three
+//     tables and no function but the guard may name them. A reader defined by hand in the
+//     dashboard is the B-505 class, below.
+//   · A row-id existence oracle remains, and it is platform-generic: an INSERT reusing
+//     another account's primary key fails with 23505 where a fresh id succeeds. It needs
+//     an unguessable UUID that no path hands out. The pet-pair membership oracle is the
+//     one 082 closes (rls-privacy-reviewer, 2026-09-30).
 //   · Server-side only. The app legitimately shows the owner her own note (PR-36),
 //     and no model runs on the device.
 //   · It reads migration files, so it cannot see a policy changed by hand in the
@@ -53,11 +65,6 @@ const TABLE_ALT = TABLES.join('|');
  *  until a PM ruling says a server surface may carry the owner's call note. */
 const NOTE_ALLOWED: Readonly<Record<string, string>> = {};
 
-/** How far apart `vet_calls` and `note` may sit and still be one request, measured in
- *  both directions: supabase-js names the table first, raw SQL names the column first
- *  (the lookNotes lesson). */
-const PAIR_WINDOW = 240;
-
 export interface Hit {
   line: number;
   excerpt: string;
@@ -73,26 +80,48 @@ function offsetsOf(src: string, word: string): number[] {
 
 const lineOf = (src: string, index: number) => src.slice(0, index).split('\n').length;
 
-/** Every place this source asks for a call's note: `vet_calls` and `note` within one
- *  request, either way round. `notes` (another table's column) is not `note`. */
+/** The statement around `at`: back to the previous `;` or blank line, forward to the
+ *  next one. A character window was the first draft, and a long column list pushed
+ *  `note` past it (code-reviewer, measured at ~300 characters). A chain or a SQL string
+ *  is one statement whichever way round it names the table and the column, and the
+ *  scope grows with it. The repo's Deno files omit semicolons, so a blank line also
+ *  ends a statement; otherwise a whole file would be one statement. */
+function statementAround(src: string, at: number): { start: number; text: string } {
+  const before = src.slice(0, at);
+  const semi = before.lastIndexOf(';');
+  const blank = before.search(/\n[ \t]*\n(?![\s\S]*\n[ \t]*\n)/);
+  const start = Math.max(semi + 1, blank === -1 ? 0 : blank + 1);
+  const after = src.slice(at);
+  const ends = [after.indexOf(';'), after.search(/\n[ \t]*\n/)].filter((i) => i !== -1);
+  const end = ends.length === 0 ? src.length : at + Math.min(...ends);
+  return { start, text: src.slice(start, end) };
+}
+
+/** Every place this source asks for a call's note: a statement that names `vet_calls`
+ *  and either names `note` (`notes`, another table's column, is not `note`) or sweeps a
+ *  whole row into JSON (`to_jsonb`, `row_to_json`, `json_agg`), which carries the note
+ *  without ever spelling it. */
 export function findCallNoteSelects(rawSource: string): Hit[] {
   const src = blankComments(rawSource);
-  const callsAt = offsetsOf(src, 'vet_calls');
-  const noteAt = offsetsOf(src, 'note');
   const hits: Hit[] = [];
-  for (const at of callsAt) {
-    const near = noteAt.filter((n) => Math.abs(n - at) <= PAIR_WINDOW);
-    if (near.length === 0) continue;
-    const start = Math.min(at, ...near);
-    hits.push({ line: lineOf(src, start), excerpt: src.slice(start, start + 120).replace(/\s+/g, ' ').trim() });
+  const seen = new Set<number>();
+  for (const at of offsetsOf(src, 'vet_calls')) {
+    const { start, text } = statementAround(src, at);
+    if (seen.has(start)) continue;
+    if (/\bnote\b/.test(text) || /\b(to_jsonb?|row_to_json|jsonb?_agg)\s*\(/i.test(text)) {
+      seen.add(start);
+      const from = start + (text.length - text.trimStart().length);
+      hits.push({ line: lineOf(src, from), excerpt: src.slice(from, from + 120).replace(/\s+/g, ' ').trim() });
+    }
   }
   return hits;
 }
 
 /**
  * Every server read of the three tables that does not name its columns: a `.from()` of
- * one of them whose chain has no string-literal `.select(`, or whose select holds a `*`,
- * and any embed of one of them with a `*` (`vet_calls(*)`, `vet_calls!fk(*)`).
+ * one of them (a generic `.from<Row>(…)` included) whose chain has no string-literal
+ * `.select(`, or whose select holds a `*`, and any embed of one of them whose column
+ * list holds a `*` (`vet_calls(*)`, `vet_calls(id, *)`, `vet_calls!a!inner(*)`).
  *
  * The chain runs to the next `.from(`. A write with no select is not a read and passes;
  * `.insert(...).select('*')` is a read of the row and reds.
@@ -100,11 +129,11 @@ export function findCallNoteSelects(rawSource: string): Hit[] {
 export function findUnlistedReads(rawSource: string): Hit[] {
   const src = blankComments(rawSource);
   const hits: Hit[] = [];
-  const fromRe = new RegExp(`\\.from\\(\\s*['"\`](${TABLE_ALT})['"\`]\\s*\\)`, 'g');
+  const fromRe = new RegExp(`\\.from(?:<[^>()]*>)?\\(\\s*['"\`](${TABLE_ALT})['"\`]\\s*\\)`, 'g');
   for (const m of src.matchAll(fromRe)) {
     const at = m.index ?? 0;
     const rest = src.slice(at + m[0].length);
-    const next = rest.search(/\.from\(/);
+    const next = rest.search(/\.from\b/);
     const chain = next === -1 ? rest : rest.slice(0, next);
     const isWrite = /^\s*\.(insert|upsert|update|delete)\(/.test(chain);
     const sel = /\.select\(\s*(['"`])([^'"`]*)\1/.exec(chain);
@@ -113,7 +142,7 @@ export function findUnlistedReads(rawSource: string): Hit[] {
       hits.push({ line: lineOf(src, at), excerpt: src.slice(at, at + 120).replace(/\s+/g, ' ').trim() });
     }
   }
-  const embedRe = new RegExp(`\\b(${TABLE_ALT})\\b(?:![\\w]+)?\\s*\\(\\s*\\*`, 'g');
+  const embedRe = new RegExp(`\\b(${TABLE_ALT})\\b(?:![\\w]+)*\\s*\\([^()]*\\*`, 'g');
   for (const m of src.matchAll(embedRe)) {
     const at = m.index ?? 0;
     hits.push({ line: lineOf(src, at), excerpt: src.slice(at, at + 120).replace(/\s+/g, ' ').trim() });
@@ -191,6 +220,17 @@ describe('the detectors, proven (C-18; fixtures outside the repo, CUL-712)', () 
     ]);
   });
 
+  it('FLAGS a note behind a long column list, and a row swept into JSON', () => {
+    // The first draft's 240-character window missed the first (code-reviewer, measured).
+    const cols = Array.from({ length: 12 }, (_, i) => `column_number_${i}_padding`).join(', ');
+    writeFixture(root, 'supabase/functions/ask/a.ts', `await sb.from('vet_calls').select('id, ${cols}, note')`);
+    writeFixture(root, 'supabase/functions/ask/b.ts', `const q = 'SELECT to_jsonb(c) FROM vet_calls c WHERE c.pet_id = $1';`);
+    expect(scan(root, findCallNoteSelects, {}).map((f) => f.split(':')[0])).toEqual([
+      'supabase/functions/ask/a.ts',
+      'supabase/functions/ask/b.ts',
+    ]);
+  });
+
   it('IGNORES another table\'s `notes`, a comment, and a note-free read', () => {
     writeFixture(root, 'supabase/functions/ask/a.ts', `await sb.from('vet_calls').select('id, called_on, event_id'); const x = e.notes;`);
     writeFixture(root, 'supabase/functions/ask/b.ts', `// vet_calls.note is owner-only\nconst y = 1;`);
@@ -203,12 +243,16 @@ describe('the detectors, proven (C-18; fixtures outside the repo, CUL-712)', () 
     writeFixture(root, 'supabase/functions/ask/c.ts', `await sb.from('vet_calls').eq('pet_id', p)`);
     writeFixture(root, 'supabase/functions/ask/d.ts', `await sb.from('events').select('id, vet_calls!vet_calls_event_id_fkey(*)')`);
     writeFixture(root, 'supabase/functions/ask/e.ts', `await sb.from('vet_calls').insert(row).select('*')`);
+    writeFixture(root, 'supabase/functions/ask/f.ts', `await sb.from<Row>('vet_calls').select('*')`);
+    writeFixture(root, 'supabase/functions/ask/g.ts', `await sb.from('events').select('id, vet_calls(id, *)')`);
     expect(scan(root, findUnlistedReads, {}).map((f) => f.split(':')[0])).toEqual([
       'supabase/functions/ask/a.ts',
       'supabase/functions/ask/b.ts',
       'supabase/functions/ask/c.ts',
       'supabase/functions/ask/d.ts',
       'supabase/functions/ask/e.ts',
+      'supabase/functions/ask/f.ts',
+      'supabase/functions/ask/g.ts',
     ]);
   });
 
@@ -226,14 +270,17 @@ describe('the detectors, proven (C-18; fixtures outside the repo, CUL-712)', () 
 // ── The migration, replayed ─────────────────────────────────────────────────
 
 /** Every migration from 082 on, comments stripped, concatenated in filename order. A
- *  later migration is read too: that is where an undoing would land. */
+ *  later migration is read too: that is where an undoing would land. Quoted identifiers
+ *  are unquoted for our three tables and the schema, so `"public"."vet_calls"` reads
+ *  the same as `public.vet_calls`. */
 function migrationsFrom082(): string {
   return fs
     .readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.sql') && f >= MIGRATION)
     .sort()
     .map((f) => stripSqlComments(fs.readFileSync(path.join(MIGRATIONS_DIR, f), 'utf8')))
-    .join('\n');
+    .join('\n')
+    .replace(new RegExp(`"(public|${TABLE_ALT})"`, 'g'), '$1');
 }
 
 function tableDdl(sql: string, table: string): string {
@@ -242,6 +289,15 @@ function tableDdl(sql: string, table: string): string {
   return sql.slice(start, sql.indexOf('\n);', start) + 3);
 }
 
+/** Every top-level statement matching `head`, to its `;`. Function bodies are skipped
+ *  first, since a `;` inside `$$ … $$` is not a statement end. */
+function statements(sql: string, head: RegExp): string[] {
+  const flat = sql.replace(/\$([A-Za-z_]\w*)?\$[\s\S]*?\$\1\$/g, '$$BODY$$');
+  return flat.split(';').map((x) => x.trim()).filter((x) => head.test(x));
+}
+
+const OWNER_PREDICATE = 'pet_id IN (SELECT id FROM public.pets WHERE user_id = (SELECT auth.uid()))';
+
 describe('AC 12 — append-only by RLS alone (migration 082 and everything after it)', () => {
   const sql = migrationsFrom082();
 
@@ -249,20 +305,31 @@ describe('AC 12 — append-only by RLS alone (migration 082 and everything after
     for (const t of TABLES) expect(() => tableDdl(sql, t)).not.toThrow();
   });
 
-  it.each(TABLES)('%s: RLS on, and its only policies are one SELECT and one INSERT', (t) => {
+  it.each(TABLES)('%s: RLS on, and never switched off or un-forced later', (t) => {
     expect(sql).toMatch(new RegExp(`ALTER TABLE public\\.${t}\\s+ENABLE ROW LEVEL SECURITY`));
-    const policies = [...sql.matchAll(new RegExp(`CREATE POLICY\\s+"[^"]+"\\s+ON public\\.${t}\\s+FOR\\s+(\\w+)`, 'g'))]
-      .map((m) => m[1].toUpperCase())
-      .sort();
-    expect(policies).toEqual(['INSERT', 'SELECT']);
-    expect(sql).not.toMatch(new RegExp(`CREATE POLICY[^;]*ON public\\.${t}\\b(?![^;]*FOR\\s+(SELECT|INSERT))`));
+    expect(sql).not.toMatch(new RegExp(`ALTER TABLE (?:ONLY\\s+)?public\\.${t}\\s+(DISABLE|NO FORCE) ROW LEVEL SECURITY`, 'i'));
   });
 
-  it.each(TABLES)('%s: no role is ever granted UPDATE, DELETE, TRUNCATE or a table-level INSERT', (t) => {
-    const grants = [...sql.matchAll(new RegExp(`GRANT\\s+([^;]*?)\\s+ON\\s+(?:TABLE\\s+)?public\\.${t}\\b`, 'g'))].map((m) => m[1]);
+  it.each(TABLES)('%s: exactly one SELECT and one INSERT policy, each the owner predicate, never altered or dropped', (t) => {
+    const onT = new RegExp(`\\bON\\s+public\\.${t}\\b`);
+    const creates = statements(sql, /^CREATE POLICY\b/i).filter((x) => onT.test(x));
+    const verbs = creates.map((x) => (/\bFOR\s+(\w+)/i.exec(x)?.[1] ?? 'ALL').toUpperCase()).sort();
+    expect(verbs).toEqual(['INSERT', 'SELECT']);
+    for (const x of creates) {
+      // A widened predicate (USING (true), another account) reds here.
+      expect(x.replace(/\s+/g, ' ')).toContain(OWNER_PREDICATE);
+      expect(x).not.toMatch(/\bAS\s+RESTRICTIVE\b/i);
+    }
+    expect(statements(sql, /^(ALTER|DROP) POLICY\b/i).filter((x) => onT.test(x))).toEqual([]);
+  });
+
+  it.each(TABLES)('%s: no role is ever granted UPDATE, DELETE, TRUNCATE, ALL or a table-level INSERT', (t) => {
+    const onT = new RegExp(`\\bON\\s+(?:TABLE\\s+)?(?:[\\w.]+\\s*,\\s*)*public\\.${t}\\b`);
+    const grants = statements(sql, /^GRANT\b/i).filter((x) => onT.test(x));
     expect(grants.length).toBeGreaterThan(0);
     for (const g of grants) {
-      expect(g).not.toMatch(/\b(UPDATE|DELETE|TRUNCATE|ALL)\b/i);
+      const verbs = g.slice(0, g.search(/\bON\b/)).replace(/\([^)]*\)/g, '');
+      expect({ g, bad: /\b(UPDATE|DELETE|TRUNCATE|ALL)\b/i.test(verbs) }).toEqual({ g, bad: false });
       // INSERT only with a column list — a bare INSERT would re-cover created_at.
       if (/\bINSERT\b/i.test(g)) expect(g).toMatch(/INSERT\s*\(/i);
     }
@@ -270,16 +337,29 @@ describe('AC 12 — append-only by RLS alone (migration 082 and everything after
     expect(sql).toMatch(new RegExp(`REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public\\.${t}\\s+FROM service_role`));
   });
 
-  it.each(TABLES)('%s: no created_at in the client INSERT grant (the server\'s clock orders "latest wins")', (t) => {
-    const m = new RegExp(`GRANT INSERT \\(([^)]*)\\)\\s*ON TABLE public\\.${t}\\b`).exec(sql);
-    expect(m).not.toBeNull();
-    expect((m as RegExpExecArray)[1]).not.toMatch(/created_at/);
+  it('no later schema-wide grant reaches them with a forbidden verb', () => {
+    for (const g of statements(sql, /^GRANT\b[\s\S]*\bON ALL TABLES IN SCHEMA public\b/i)) {
+      expect({ g, bad: /\b(UPDATE|DELETE|TRUNCATE|ALL|INSERT)\b/i.test(g.slice(0, g.search(/\bON\b/))) })
+        .toEqual({ g, bad: false });
+    }
   });
 
-  it.each(TABLES)('%s: cascades from pets, and no trigger fires on DELETE (it would abort account deletion)', (t) => {
+  it.each(TABLES)('%s: no INSERT column grant, in any migration, includes created_at (the server\'s clock orders "latest wins")', (t) => {
+    const ins = statements(sql, /^GRANT\b/i)
+      .filter((x) => new RegExp(`\\bpublic\\.${t}\\b`).test(x) && /INSERT\s*\(/i.test(x));
+    expect(ins.length).toBeGreaterThan(0);
+    for (const g of ins) expect(g).not.toMatch(/created_at/);
+  });
+
+  it.each(TABLES)('%s: cascades from pets, and every trigger ever made on it is BEFORE INSERT (a DELETE trigger would abort account deletion)', (t) => {
     expect(tableDdl(sql, t)).toMatch(/pet_id\s+UUID\s+NOT NULL REFERENCES public\.pets\(id\) ON DELETE CASCADE/);
-    const triggers = [...sql.matchAll(new RegExp(`CREATE TRIGGER\\s+\\w+\\s+([^;]*?)\\s+ON public\\.${t}\\b`, 'g'))].map((m) => m[1]);
+    const onT = new RegExp(`\\bON\\s+public\\.${t}\\b`);
+    const triggers = statements(sql, /^CREATE\s+(OR\s+REPLACE\s+)?(CONSTRAINT\s+)?TRIGGER\b/i)
+      .filter((x) => onT.test(x))
+      .map((x) => /TRIGGER\s+\w+\s+([\s\S]*?)\s+ON\s+public\./i.exec(x)?.[1].replace(/\s+/g, ' ').toUpperCase());
     expect(triggers).toEqual(['BEFORE INSERT']);
+    expect(statements(sql, /^DROP TRIGGER\b/i).filter((x) => onT.test(x))).toEqual([]);
+    expect(sql).not.toMatch(new RegExp(`ALTER TABLE (?:ONLY\\s+)?public\\.${t}\\s+DISABLE TRIGGER`, 'i'));
   });
 
   it('every FK in the three tables cascades or nulls, so no parent delete is blocked', () => {
@@ -290,15 +370,28 @@ describe('AC 12 — append-only by RLS alone (migration 082 and everything after
     }
   });
 
-  it('the same-pet guard keeps its ownership arm (the membership oracle stays closed)', () => {
+  it('the LATEST definition of the same-pet guard keeps its ownership arm (the membership oracle stays closed)', () => {
     // Without `p.user_id = me`, a write wholly inside another account passes the trigger
     // and is refused by RLS (42501), while a mismatched pair is refused here (23514): the
     // code tells a caller whether two UUIDs belong together. Proven on the PG16 replay by
-    // deleting this clause; recorded in the PR.
-    const fn = /CREATE OR REPLACE FUNCTION public\.enforce_care_record_same_pet\(\)[\s\S]*?\$\$;/.exec(sql);
-    expect(fn).not.toBeNull();
-    expect((fn as RegExpExecArray)[0]).toMatch(/AND \(me IS NULL OR p\.user_id = me\)/);
-    expect((fn as RegExpExecArray)[0]).toMatch(/me\s+uuid := auth\.uid\(\)/);
+    // deleting this clause; recorded in the PR. The LAST definition is the live one, so a
+    // later CREATE OR REPLACE that drops the arm reds.
+    const defs = [...sql.matchAll(/CREATE OR REPLACE FUNCTION public\.enforce_care_record_same_pet\(\)[\s\S]*?\$\$;/g)];
+    expect(defs.length).toBeGreaterThan(0);
+    const live = defs[defs.length - 1][0];
+    expect(live).toMatch(/AND \(me IS NULL OR p\.user_id = me\)/);
+    expect(live).toMatch(/me\s+uuid := auth\.uid\(\)/);
+  });
+
+  it('no view, and no other database function, reaches around RLS to the three tables', () => {
+    // The note rule's server scan reads TypeScript. A VIEW (which runs as its owner unless
+    // security_invoker) or a DEFINER function in a migration would be a read it cannot see.
+    const touches = new RegExp(`\\bpublic\\.(${TABLE_ALT})\\b|\\b(${TABLE_ALT})\\b`);
+    expect(statements(sql, /^CREATE\s+(OR\s+REPLACE\s+)?(MATERIALIZED\s+)?VIEW\b/i).filter((x) => touches.test(x))).toEqual([]);
+    const fns = [...sql.matchAll(/CREATE (?:OR REPLACE )?FUNCTION\s+([\w.]+)\s*\([\s\S]*?\$([A-Za-z_]\w*)?\$([\s\S]*?)\$\2\$/g)]
+      .filter((m) => m[1] !== 'public.enforce_care_record_same_pet' && touches.test(m[3]))
+      .map((m) => m[1]);
+    expect(fns).toEqual([]);
   });
 });
 
