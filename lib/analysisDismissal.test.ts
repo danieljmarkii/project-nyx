@@ -64,6 +64,7 @@ describe('writeAnalysisDismissal', () => {
       ['eq', 'event_id', 'e1'],
       ['eq', 'recommendation', 'monitor'],
       ['eq', 'read_text', CALM.read_text],
+      ['is', 'tier', null],
       ['eq', 'description', 'Yellow foam.'],
       ['eq', 'colour', 'yellow'],
       ['eq', 'consistency', 'foamy'],

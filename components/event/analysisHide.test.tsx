@@ -210,6 +210,8 @@ const NOT_ON_SCREEN: Record<string, string> = {
   ai_raw_payload: 'the edit-diff baseline behind the per-field "edited" marks',
   dismissed_at: 'the hide itself',
   updated_at: "the landing announcer's change marker (#938), never drawn",
+  engine_flags:
+    "decides whether the tier's words or the shipped ones stand; the server writes it only with a read, which writes `tier` beside it (compared)",
 };
 
 const RECORDED = [

@@ -25,6 +25,7 @@ import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { Tick } from '../designV2/waits/Tick';
 import { ThemedText } from '../ui/ThemedText';
 import { isQuietVerdict } from '../../lib/incidentVerdict';
+import { type TierTone } from '../../lib/incidentTierWords';
 
 /** The verdict the record holds, named here only to pick a tone. Text, not the shipped
  *  three-value union: a server may hold a verdict this build has never seen (CUL-1277),
@@ -97,14 +98,25 @@ export function IncidentReadPending({
 export function IncidentReadCard({
   verdict,
   label,
+  tone,
+  action,
+  disclosure,
   readText,
   onHide,
   arrival,
   onMeasure,
 }: {
   verdict: IncidentVerdict;
-  /** The enum's copy, verbatim from the section's own REC_LABEL map. */
+  /** The words, from the tier-word map (`lib/incidentTierWords.ts`) — never mapped here. */
   label: string;
+  /** The tier's tone from the map (EN-3). Absent, the tone is decided from the verdict as
+   *  it always was, so an earlier-rule read draws today's card to the byte. A value off the
+   *  quiet list is never drawn grey whatever tone is passed: the rose is decided first. */
+  tone?: TierTone;
+  /** A call's action line from the map (the service, and what to do if it is closed). */
+  action?: string | null;
+  /** CUL-819 (a): the latest read did not finish, said beside the call it left standing. */
+  disclosure?: string | null;
   readText?: string | null;
   onHide: () => void;
   /** Beat 1 of the arrival (CUL-804), while it is running; null every other moment —
@@ -116,14 +128,19 @@ export function IncidentReadCard({
    *  rail's apparent growth rate depend on the verdict. G4 says it must not. */
   onMeasure?: (height: number) => void;
 }) {
-  const attn = !isQuietVerdict(verdict);
+  const attn = !isQuietVerdict(verdict) || tone === 'call_filled' || tone === 'call_outline';
+  // Fill against outline tells call now from call today beside the words (GAP-32). An
+  // earlier-rule call, and any call drawn without a tone, keeps today's filled card.
+  const outline = attn && tone === 'call_outline';
+  const quietTone = tone === 'neutral' || tone === 'muted' ? tone : verdict === 'monitor' ? 'neutral' : 'muted';
   return (
     <View
       testID="incident-read-card"
       onLayout={onMeasure ? (e) => onMeasure(e.nativeEvent.layout.height) : undefined}
       style={[
         styles.card,
-        attn ? styles.cardAttn : verdict === 'monitor' ? styles.cardNeutral : styles.cardMuted,
+        attn ? (outline ? styles.cardAttnOutline : styles.cardAttn)
+        : quietTone === 'neutral' ? styles.cardNeutral : styles.cardMuted,
       ]}
     >
       {/* The rail LEAVES the row's flow for the commit that animates layout, and takes an
@@ -156,13 +173,17 @@ export function IncidentReadCard({
           style={[
             styles.verdict,
             attn ? styles.verdictAttn
-            : verdict === 'monitor' ? styles.verdictNeutral
+            : quietTone === 'neutral' ? styles.verdictNeutral
             : styles.verdictMuted,
           ]}
         >
           {label}
         </ThemedText>
+        {attn && action ? <ThemedText style={styles.action}>{action}</ThemedText> : null}
         {readText ? <ThemedText style={styles.readText}>{readText}</ThemedText> : null}
+        {attn && disclosure ? (
+          <ThemedText testID="incident-read-disclosure" style={styles.disclosure}>{disclosure}</ThemedText>
+        ) : null}
         <ThemedText style={styles.disclaimer}>{INCIDENT_READ_DISCLAIMER}</ThemedText>
         {/* The visible text IS the accessible name — never a label that differs from it
             (C-7). This replaces the shipped `✕`, which announced nothing at all. */}
@@ -193,6 +214,12 @@ const styles = StyleSheet.create({
   cardAttn: {
     backgroundColor: theme.colorEventSymptomLight,
     borderColor: theme.colorEventSymptomBorder,
+  },
+  // Call today: the rose outline on the plain surface. The rail and the words carry the
+  // rose too, so the tier never rests on the border's hue alone.
+  cardAttnOutline: {
+    backgroundColor: theme.colorSurface,
+    borderColor: theme.colorEventSymptom,
   },
   cardNeutral: {
     backgroundColor: theme.colorSurfaceSubtle,
@@ -234,6 +261,17 @@ const styles = StyleSheet.create({
   verdictAttn: { color: theme.colorEventSymptomInk },
   verdictNeutral: { color: theme.colorTextSecondary },
   verdictMuted: { color: theme.colorTextTertiary },
+  action: {
+    fontSize: theme.textMD,
+    fontWeight: theme.fontWeightMedium,
+    color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightBody,
+  },
+  disclosure: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightBody,
+  },
   readText: {
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,

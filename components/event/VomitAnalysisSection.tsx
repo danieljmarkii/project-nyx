@@ -41,10 +41,17 @@ import {
 import {
   escalationSurvivesFailure,
   escalationSurvivesReRead,
-  incidentVerdictLabel,
+  incidentReadLabel,
   quietVerdictUnfinished,
 } from '../../lib/incidentReadState';
-import { isEscalationVerdict } from '../../lib/incidentVerdict';
+import {
+  EARLIER_READ_LABEL,
+  heldCallDisclosureOf,
+  isCallRow,
+  isTieredRow,
+  TIER_WORDS,
+  tierDisplayOf,
+} from '../../lib/incidentTierWords';
 import { VomitFieldsEditor } from './VomitFieldsEditor';
 import { vomitCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -81,6 +88,9 @@ interface AnalysisRow {
   // build has never seen, and a type that says otherwise is what let `REC_LABEL[rec]`
   // render a blank label. Every read of it goes through `lib/incidentVerdict.ts`.
   recommendation: string | null;
+  /** EN-3's tier beside the verdict (migration 079), written only under the Engines v3
+   *  key. Read only through the tier-word map (`lib/incidentTierWords.ts`). */
+  tier?: string | null;
   read_text: string | null;
   description: string | null;
   colour: string | null;
@@ -97,6 +107,8 @@ interface AnalysisRow {
    *  read that was written from a wait that ended with nothing written (CUL-1275). */
   updated_at?: string | null;
   error: string | null;
+  /** The Engines keys the read was written under: a new-rule read speaks its tier. */
+  engine_flags?: string[] | null;
 }
 
 /** Two copies of the row hold the same READ: the same state, verdict and words. The
@@ -106,6 +118,7 @@ function sameRead(a: AnalysisRow, b: AnalysisRow): boolean {
   return (
     a.status === b.status &&
     a.recommendation === b.recommendation &&
+    (a.tier ?? null) === (b.tier ?? null) &&
     a.read_text === b.read_text
   );
 }
@@ -123,7 +136,7 @@ const DISMISSED_LINE = 'AI note hidden';
 const SELECT_COLS =
   'status, recommendation, read_text, description, colour, contents, consistency, ' +
   'blood_present, bile_present, foreign_material_present, foreign_material_note, ' +
-  'ai_raw_payload, edited_at, dismissed_at, updated_at, error';
+  'ai_raw_payload, edited_at, dismissed_at, updated_at, error, tier, engine_flags';
 
 export function VomitAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
@@ -551,6 +564,12 @@ export function VomitAnalysisSection(
 
   const rec = row.recommendation;
   const dismissed = !!row.dismissed_at;
+  // EN-3 (CUL-1133): which words stand, through the one map. Null on an earlier-rule read's
+  // tone/action (it keeps today's card), never null for a call.
+  const tiered = isTieredRow(row);
+  const display = tiered ? tierDisplayOf(row) : null;
+  // CUL-819 (a): a call left standing by a read that did not finish says so beside it.
+  const heldDisclosure = heldCallDisclosureOf(row);
 
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
@@ -568,7 +587,7 @@ export function VomitAnalysisSection(
       // error-only write over a hidden Worth a call — or before that server change is
       // live. Saying "hidden" tells the owner something landed and where to find it,
       // without speaking what they chose to hide.
-      announcement={dismissed ? DISMISSED_LINE : incidentVerdictLabel(rec)}
+      announcement={dismissed ? DISMISSED_LINE : incidentReadLabel(row)}
       pending={false}
     >
       {dismissed ? (
@@ -584,7 +603,12 @@ export function VomitAnalysisSection(
           // The words live in lib/incidentReadState.ts since D2-4 (CUL-1066), so Home's spine
           // node and this card cannot name one verdict two ways; a verdict this build does
           // not know is spoken as the escalation, never blank (CUL-1277).
-          label={incidentVerdictLabel(rec)}
+          label={incidentReadLabel(row)}
+          // EN-3: the tier's tone and action line from the map; both absent on an
+          // earlier-rule read, which draws today's card.
+          tone={display ? TIER_WORDS[display].tone : undefined}
+          action={display ? TIER_WORDS[display].action : null}
+          disclosure={heldDisclosure}
           readText={row.read_text}
           onHide={() => setDismissed(true)}
           arrival={arrival.rail}
@@ -615,7 +639,8 @@ export function VomitAnalysisSection(
           ) : undefined}
           // Any verdict off the quiet list, one this build does not know included: its
           // facts never fold (CUL-1277).
-          escalating={isEscalationVerdict(rec)}
+          escalating={isCallRow(row)}
+          heading={heldDisclosure ? EARLIER_READ_LABEL : undefined}
           folded={folded}
           onToggleFold={setFolded}
         />
