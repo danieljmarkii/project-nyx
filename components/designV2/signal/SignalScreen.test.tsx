@@ -66,7 +66,7 @@ import { Animated, Dimensions, StyleSheet } from 'react-native';
 import { SignalScreen, SCRIPT_TITLE, WHY_TITLE } from './SignalScreen';
 import { NO_READ_LABEL } from './EpisodeGallery';
 import SignalRoute, { OFF_TITLE } from '../../../app/signal/[id]';
-import { INCIDENT_REC_LABEL as REC_LABEL } from '../../../lib/incidentReadState';
+import { TIER_WORDS } from '../../../lib/incidentTierWords';
 import { buildSignalScreenModel, screenLeadsWithLanes, type SignalScreenEpisode, type SignalScreenInput } from '../../../lib/signalScreen';
 import type { CachedFinding, IntakeDeclineFinding, SymptomChronicityFinding } from '../../../lib/signal';
 import { SIGNAL_OPEN_MOTION } from '../../motion/signalOpenMotion';
@@ -284,9 +284,9 @@ describe('SignalScreen — the sections, in the ruled order', () => {
     expect(tiles).toHaveLength(9);
     for (const tile of tiles) {
       const verdict = view.getByTestId(`episode-verdict-${tile.eventId}`);
-      expect(verdict.props.children).toBe(tile.verdict ? REC_LABEL[tile.verdict] : NO_READ_LABEL);
+      expect(verdict.props.children).toBe(tile.verdict ? TIER_WORDS[tile.verdict].short : NO_READ_LABEL);
       const door = view.getByTestId(`episode-tile-${tile.eventId}`);
-      expect(door.props.accessibilityLabel).toMatch(tile.verdict ? new RegExp(`photographed, read as ${REC_LABEL[tile.verdict]}$`) : /photographed, no read yet$/);
+      expect(door.props.accessibilityLabel).toMatch(tile.verdict ? new RegExp(`photographed, read as ${TIER_WORDS[tile.verdict].label}$`) : /photographed, no read yet$/);
     }
     expect(view.getByTestId('episode-count-line').props.children).toBe(model.episodes?.countLine);
     const text = allText(view.toJSON()).join(' ').toLowerCase();

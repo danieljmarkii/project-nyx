@@ -199,7 +199,12 @@ export const BASE_SCHEMA_SQL = `
       -- here AND in COLUMN_UPGRADES, the vet_visits.deleted_at precedent.
       photo_set_key   TEXT,
       rule_version    TEXT,
-      engine_flags    TEXT
+      engine_flags    TEXT,
+      -- EN-3 (CUL-1133, migration 079): the read's tier beside the verdict, mirrored so
+      -- History, the month and the gallery speak the tier through the one word map
+      -- (lib/incidentTierWords.ts) without waiting on the network. NULL on every read
+      -- written before the Engines v3 key; declared here AND in COLUMN_UPGRADES.
+      tier            TEXT
     );
 
     CREATE TABLE IF NOT EXISTS vet_visits (
@@ -573,6 +578,7 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   { table: 'event_ai_verdicts', column: 'photo_set_key', type: 'TEXT' },
   { table: 'event_ai_verdicts', column: 'rule_version', type: 'TEXT' },
   { table: 'event_ai_verdicts', column: 'engine_flags', type: 'TEXT' },
+  { table: 'event_ai_verdicts', column: 'tier', type: 'TEXT' },
   // Engines v3 PR-18 (CUL-1412) / migration 081 — each weight reading's source. The table
   // shipped in B-186 without them, so only this path reaches an installed phone. The constant
   // defaults are the server's backfill (W2: home_scale, 'legacy'), true for every row an

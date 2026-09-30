@@ -92,3 +92,17 @@ describe('EpisodeGallery tile photo (CUL-1269)', () => {
     expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/event/ev-1');
   });
 });
+
+describe('EN-3: the tile speaks the tier-word map', () => {
+  it('a call now tile shows the short chip, in the ink, and its sentence says the full phrase', () => {
+    const { verdictWord, tileA11yLabel } = jest.requireActual('./EpisodeGallery') as typeof import('./EpisodeGallery');
+    expect(verdictWord('call_now')).toBe('Call now');
+    expect(verdictWord('call_today')).toBe('Call today');
+    expect(verdictWord('logged')).toBe('Keep an eye out');
+    // An earlier-rule tile says exactly what it said before.
+    expect(verdictWord('worth_a_call')).toBe('Worth a call');
+    expect(verdictWord('monitor')).toBe('Keep an eye out');
+    const tile = { eventId: 'e', dateWord: 'Oct 22', timeWord: '1:30 AM', verdict: 'call_now' } as unknown as GalleryTile;
+    expect(tileA11yLabel(tile)).toBe('Oct 22, 1:30 AM, photographed, read as Call your vet now');
+  });
+});

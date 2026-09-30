@@ -42,7 +42,7 @@ import {
 import { RAIL_W, TIME_W } from '../recap/DaySpine';
 
 const FRAME_MS = 20;
-const ROSE: NodeRead = { state: 'worth_a_call', label: 'Worth a call' };
+const ROSE: NodeRead = { state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' };
 
 function vomit(read: NodeRead, over: Partial<SpineEventNode> = {}): SpineEventNode {
   return {
@@ -317,6 +317,15 @@ describe('VoiceOver hears each row as one sentence, in reading order', () => {
     const t = render(<SpineEventRow node={vomit(ROSE)} isFirst isLast onOpen={jest.fn()} />);
     expect(t.getByTestId('spine-node-v2').props.accessibilityLabel).toBe(
       `Vomit, 4 min after eating, ${PHOTOGRAPHED_LABEL}, 5:11 PM. Worth a call. Opens details`,
+    );
+  });
+
+  it('EN-3: a new-rule call shows the short chip and says the full phrase (spec §2 rule 5)', () => {
+    const now: NodeRead = { state: 'worth_a_call', label: 'Call now', spoken: 'Call your vet now' };
+    const t = render(<SpineEventRow node={vomit(now)} isFirst isLast onOpen={jest.fn()} />);
+    expect(t.getByTestId('spine-verdict-v2').props.children).toBe('Call now');
+    expect(t.getByTestId('spine-node-v2').props.accessibilityLabel).toBe(
+      `Vomit, 4 min after eating, ${PHOTOGRAPHED_LABEL}, 5:11 PM. Call your vet now. Opens details`,
     );
   });
 

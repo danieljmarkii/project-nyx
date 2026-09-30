@@ -93,7 +93,7 @@ function input(over: Partial<SpineInput> = {}): SpineInput {
 /** A row of the phone's copy (HV-5): four columns, no words, no hide stamp. */
 const landed = (event_id: string, recommendation: string | null, status = 'completed'): SpineAnalysisRow => ({
   event_id, status, recommendation, updated_at: '2026-09-17T12:00:00+00:00',
-  photo_set_key: null, rule_version: null, engine_flags: null,
+  photo_set_key: null, rule_version: null, engine_flags: null, tier: null,
 });
 
 /** Each line as the day reads: a run's ids, or a single id. */
@@ -381,7 +381,7 @@ describe('the read on a node — nodeReadOf', () => {
     expect(nodeReadOf(landed('v', 'monitor', 'completed'), false)).toEqual({ state: 'calm' });
   });
   it('a landed worth_a_call is the rose, in its own words', () => {
-    expect(nodeReadOf(landed('v', 'worth_a_call'), false)).toEqual({ state: 'worth_a_call', label: 'Worth a call' });
+    expect(nodeReadOf(landed('v', 'worth_a_call'), false)).toEqual({ state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' });
   });
   it('an unclear read (not_enough_to_say) is never calm: on a photographed row it is unread (the PM’s 2026-09-25 ruling)', () => {
     const photographedVomit = { eventType: 'vomit', hasPhoto: true };
@@ -393,7 +393,7 @@ describe('the read on a node — nodeReadOf', () => {
   });
   it('an escalation SURVIVES a failed or capped row — escalate on presence', () => {
     for (const status of ['failed', 'capped', 'read_disabled']) {
-      expect(nodeReadOf(landed('v', 'worth_a_call', status), false)).toEqual({ state: 'worth_a_call', label: 'Worth a call' });
+      expect(nodeReadOf(landed('v', 'worth_a_call', status), false)).toEqual({ state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' });
     }
   });
   it('a failed / capped row with no recommendation is never calm — absence is never wellness', () => {
@@ -418,10 +418,10 @@ describe('the read on a node — nodeReadOf', () => {
     // on the record dropped "Worth a call" from Home while the month and the Signal
     // screen kept it. Hide hides WORDS.
     const hidden = { ...landed('v', 'worth_a_call'), dismissed_at: '2026-09-17T20:00:00Z' } as unknown as SpineAnalysisRow;
-    expect(nodeReadOf(hidden, false)).toEqual({ state: 'worth_a_call', label: 'Worth a call' });
+    expect(nodeReadOf(hidden, false)).toEqual({ state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' });
   });
   it('an unknown recommendation fails toward the rose, never toward calm, and is spoken in the rose’s words', () => {
-    expect(nodeReadOf(landed('v', 'looks_fine_to_me'), false)).toEqual({ state: 'worth_a_call', label: 'Worth a call' });
+    expect(nodeReadOf(landed('v', 'looks_fine_to_me'), false)).toEqual({ state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' });
   });
   it('a photographed vomit whose read the phone does not hold is UNREAD, never nothing (AC 21, the model half)', () => {
     expect(nodeReadOf(undefined, false, { eventType: 'vomit', hasPhoto: true })).toEqual({ state: 'unread' });
@@ -433,12 +433,12 @@ describe('the read on a node — nodeReadOf', () => {
   it('a read in flight shows the tick over a calm verdict, never over the rose', () => {
     const expect_ = { eventType: 'vomit', hasPhoto: true };
     expect(nodeReadOf(landed('v', 'monitor'), true, expect_)).toEqual({ state: 'pending' });
-    expect(nodeReadOf(landed('v', 'worth_a_call'), true, expect_)).toEqual({ state: 'worth_a_call', label: 'Worth a call' });
+    expect(nodeReadOf(landed('v', 'worth_a_call'), true, expect_)).toEqual({ state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' });
   });
   it('a read the record holds attaches to its SYMPTOM row even when the local photo fact is missing (F5 — a lagging attachment read never hides an escalation)', () => {
     const model = buildSpine(input({ photographed: new Set(), analysis: new Map([['v1', landed('v1', 'worth_a_call')]]) }));
     const v1 = model.nodes.find((n) => n.id === 'v1');
-    expect(v1?.kind === 'event' && v1.read).toEqual({ state: 'worth_a_call', label: 'Worth a call' });
+    expect(v1?.kind === 'event' && v1.read).toEqual({ state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' });
     expect(v1?.kind === 'event' && v1.photo).toBe(false);
   });
 
@@ -455,7 +455,7 @@ describe('the read on a node — nodeReadOf', () => {
     const hidden = { ...landed('v2', 'worth_a_call'), dismissed_at: '2026-09-17T20:00:00Z' } as unknown as SpineAnalysisRow;
     const model = buildSpine(input({ analysis: new Map([['v2', hidden]]) }));
     const v2 = model.nodes.find((n) => n.id === 'v2');
-    expect(v2?.kind === 'event' && v2.read).toEqual({ state: 'worth_a_call', label: 'Worth a call' });
+    expect(v2?.kind === 'event' && v2.read).toEqual({ state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' });
   });
 
   it('a read never attaches to a MEAL or a DOSE, whatever the map holds', () => {
@@ -479,14 +479,14 @@ describe('the read on a node — nodeReadOf', () => {
     );
     const byId = new Map(eventsOf(model).map((n) => [n.id, n]));
     expect(byId.get('s1')?.category).toBe('other');
-    expect(byId.get('s1')?.read).toEqual({ state: 'worth_a_call', label: 'Worth a call' });
+    expect(byId.get('s1')?.read).toEqual({ state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' });
     expect(byId.get('s2')?.read).toEqual({ state: 'unread' });
   });
 
   it('a row re-typed after its read landed keeps the rose (the predicate stands it on any type)', () => {
     const rows = [row('c', 'cough', 9, 0)];
     const model = buildSpine(input({ rows, feedings: [], photographed: new Set(), analysis: new Map([['c', landed('c', 'worth_a_call')]]) }));
-    expect(eventsOf(model)[0].read).toEqual({ state: 'worth_a_call', label: 'Worth a call' });
+    expect(eventsOf(model)[0].read).toEqual({ state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' });
   });
 });
 
@@ -494,7 +494,7 @@ describe('the safety day and the quiet day', () => {
   it('safety: the worth-a-call read is words on the node, and no image exists anywhere in the model', () => {
     const model = buildSpine(input({ analysis: new Map([['v2', landed('v2', 'worth_a_call', 'completed')]]) }));
     const v2 = model.nodes.find((n) => n.id === 'v2');
-    expect(v2?.kind === 'event' && v2.read).toEqual({ state: 'worth_a_call', label: 'Worth a call' });
+    expect(v2?.kind === 'event' && v2.read).toEqual({ state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' });
     // No node carries a URI, a path or an image of any kind — the model has no field for one.
     const serialized = JSON.stringify(model);
     expect(serialized).not.toMatch(/uri|storage_path|local_uri|image/i);
@@ -755,5 +755,20 @@ describe('the meal a line on ANOTHER day measures from keeps its own row (Histor
     const rows = [row('m18', 'meal', 18, 0, DRY), row('m22', 'meal', 22, 0, DRY)];
     expect(linesOf(bare(rows))).toEqual([['m18', 'm22']]);
     expect(linesOf(bare(rows, { timedElsewhere: new Set(['m22']) }))).toEqual(['m18', 'm22']);
+  });
+});
+
+describe('EN-3: the node speaks the tier through the one map', () => {
+  it('a new-rule call is the short chip, spoken in full; an earlier-rule call is unchanged', () => {
+    const tiered = { ...landed('v', 'worth_a_call'), tier: 'call_now', engine_flags: '["engines_v3_en3"]' };
+    expect(nodeReadOf(tiered, false)).toEqual({ state: 'worth_a_call', label: 'Call now', spoken: 'Call your vet now' });
+    const today = { ...landed('v', 'worth_a_call'), tier: 'call_today', engine_flags: '["engines_v3_en3"]' };
+    expect(nodeReadOf(today, false)).toEqual({ state: 'worth_a_call', label: 'Call today', spoken: 'Call your vet today' });
+    expect(nodeReadOf(landed('v', 'worth_a_call'), false)).toEqual({ state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' });
+  });
+
+  it('a calm tier draws nothing on the row, as a calm verdict never did (§3.6 rule 7)', () => {
+    const logged = { ...landed('v', 'monitor'), tier: 'logged', engine_flags: '["engines_v3_en3"]' };
+    expect(nodeReadOf(logged, false)).toEqual({ state: 'calm' });
   });
 });

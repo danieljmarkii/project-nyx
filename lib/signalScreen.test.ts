@@ -53,6 +53,7 @@ import {
   UNSUPPORTED_LINE,
   readSignalEpisodes,
   readTileVerdicts,
+  tileVerdictOf,
   readVerdicts,
   safeLabel,
   trialLine,
@@ -1373,5 +1374,16 @@ describe('CUL-1216 — the loader reads the not-eating register for the ROUTE’
     const out = await loadSignalScreen('pet-1', 'postprandial_timing:vomit');
     if (out.status !== 'ready') throw new Error(out.status);
     expect(out.model.withholdFallingVomit).toBe(true);
+  });
+});
+
+describe('EN-3: a tile takes its bout\'s loudest call, in the map\'s words', () => {
+  it('a call now anywhere in the bout is the tile\'s; else its own call; else the first call; else its own words', () => {
+    expect(tileVerdictOf('a', ['a', 'b'], { a: 'call_today', b: 'call_now' })).toBe('call_now');
+    expect(tileVerdictOf('a', ['a', 'b'], { a: 'call_today', b: 'worth_a_call' })).toBe('call_today');
+    expect(tileVerdictOf('a', ['a', 'b'], { a: 'logged', b: 'call_today' })).toBe('call_today');
+    expect(tileVerdictOf('a', ['a', 'b'], { a: 'monitor', b: 'worth_a_call' })).toBe('worth_a_call');
+    expect(tileVerdictOf('a', ['a', 'b'], { a: 'logged', b: 'not_enough_to_say' })).toBe('logged');
+    expect(tileVerdictOf('a', ['a', 'b'], { a: null, b: 'monitor' })).toBeNull();
   });
 });

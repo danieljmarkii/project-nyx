@@ -348,7 +348,7 @@ describe('lib/readState.ts — History, the month, Home’s spine, the Signal ga
       expect(isWorthACall(copy)).toBe(true);
       for (const hasPhoto of [true, false]) {
         const read = readVerdictOf({ eventType: 'vomit', hasPhoto, copy, inFlight: false, readingOff: false });
-        expect(read).toEqual({ state: 'worth_a_call', verdict: 'worth_a_call' });
+        expect(read).toEqual({ state: 'worth_a_call', verdict: 'worth_a_call', display: 'worth_a_call' });
       }
     }
   });

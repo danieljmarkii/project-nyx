@@ -81,15 +81,17 @@ import {
 import { analysisChainOutstanding } from './analysisChain';
 import { readCopies } from './readCopy';
 import { readVerdictOf, type ReadCopyRow } from './readState';
+import { TIER_WORDS, type TierDisplay } from './incidentTierWords';
 import { dayKeyFromIndex, formatCalendarDate, formatTime, localDayIndexOf, toLocalDayKey } from './utils';
 import { resolveRecordPetName, usePetStore } from '../store/petStore';
 
 // ── The model ─────────────────────────────────────────────────────────────────
 
-/** The per-incident read's verdict enum — `event_ai_analysis.recommendation`. The owner
- *  words for each live with the shipped read (`VomitAnalysisSection`'s label map), which
- *  the gallery imports; this module carries the key only. */
-export type EpisodeVerdict = 'worth_a_call' | 'monitor' | 'not_enough_to_say';
+/** The words that stand for a per-incident read, as the tier-word map names them (EN-3,
+ *  `lib/incidentTierWords.ts`): the four tiers on a new-rule read, the shipped three on
+ *  an earlier-rule one. The words themselves live in the map, which the gallery reads;
+ *  this module carries the key only. */
+export type EpisodeVerdict = TierDisplay;
 
 export interface SignalScreenPhoto {
   localUri: string | null;
@@ -884,7 +886,7 @@ export async function readVerdicts(
       inFlight: analysisChainOutstanding(eventId),
       // The owner's photo-reading choice arrives with CUL-552 (HV-18).
       readingOff: false,
-    }).verdict;
+    }).display;
   }
   return out;
 }
@@ -908,9 +910,26 @@ export async function readTileVerdicts(
   const each = await readVerdicts([...new Set(tiles.flatMap(boutOf))], eventType);
   const out: Record<string, EpisodeVerdict | null> = {};
   for (const tile of tiles) {
-    out[tile.eventId] = boutOf(tile).some((id) => each[id] === 'worth_a_call') ? 'worth_a_call' : (each[tile.eventId] ?? null);
+    out[tile.eventId] = tileVerdictOf(tile.eventId, boutOf(tile), each);
   }
   return out;
+}
+
+/**
+ * The tile's words from its bout's (EN-3). A call on any row is the tile's; among calls the
+ * loudest stands: a call now anywhere in the bout, else the tile's own call, else the first
+ * call in the bout. With no call, the tile's own row's words, as before.
+ */
+export function tileVerdictOf(
+  own: string,
+  bout: readonly string[],
+  each: Readonly<Record<string, EpisodeVerdict | null>>,
+): EpisodeVerdict | null {
+  const calls = bout.map((id) => each[id] ?? null).filter((d): d is EpisodeVerdict => d !== null && TIER_WORDS[d].call);
+  if (calls.length === 0) return each[own] ?? null;
+  if (calls.includes('call_now')) return 'call_now';
+  const mine = each[own] ?? null;
+  return mine !== null && TIER_WORDS[mine].call ? mine : calls[0];
 }
 
 /**
