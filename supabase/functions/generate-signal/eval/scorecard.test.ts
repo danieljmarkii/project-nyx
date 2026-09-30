@@ -14,7 +14,7 @@ import { scenarioById, simulate } from '../../_shared/engineCorpus/trajectory/in
 import type { Observer, ShownCard } from '../../_shared/engineCorpus/trajectory/index.ts'
 import { FLAG_OFF, makeSignalObserver, registerOfAsk, type ScoredCard } from './observer.ts'
 import { runCorpus } from './run.ts'
-import { buildScorecard, diffScorecards, formatDiff, laneOf, scoreScenario } from './scorecard.ts'
+import { buildScorecard, DETECT_WINDOW_DAYS, diffScorecards, formatDiff, laneOf, scoreScenario } from './scorecard.ts'
 import { rowsAt } from './syntheticRows.ts'
 import { visibleAt } from './asOf.ts'
 
@@ -164,7 +164,35 @@ Deno.test('a false card on a null pet moves its false-card, lane, safety and who
   assertEquals(score.laneShare[180].chronic, 1)
   assertEquals(score.safetyShare[180], 1)
   assertEquals(score.medianDaysToFirstSafety !== null && score.medianDaysToFirstSafety <= 30, true)
-  const card = buildScorecard([score], { arm: 'x', seeds: 'ci', horizons: [180, 365], scenarios: 1 })
+  const card = buildScorecard([score], { arm: 'x', seeds: 'ci', horizons: [180, 365], scenarios: 1, scenarioIds: ['null-staple-1pm'] })
   assertEquals(card.rows['null-staple-1pm/falseCard/180d'], 1)
   assertEquals(card.rows['engine/null/falseCard/worst/180d'], 1)
+})
+
+// ── The onset rule against the second adversarial pass's counterexamples ──
+
+Deno.test('detection scores only pets clear before the start: a standing card, or one with a one-evening gap, is never credited', () => {
+  const sc = scenarioById('inj-rate-doubling')
+  const entry = sc.key.detect.find((d) => d.lane === 'worsening')!
+  assert('day' in entry.from)
+  const from = entry.from.day
+  const label = `a:worsening:${entry.sign}`
+  const worsening = { petKey: 'a', findingType: 'symptom_worsening', sign: entry.sign!, ask: 'word_with_vet' as const, priorityClass: 'safety', tier: 'standard', proteins: [], direction: null }
+  const scripted = (on: (day: number) => boolean): () => Observer => () => (view) => (on(view.dayIndex) ? [worsening] : [])
+  const score = (on: (day: number) => boolean) => {
+    const runs = sc.ciSeeds.map((seed) => ({ scenario: sc, seed, result: simulate(sc, seed, scripted(on)()) }))
+    return scoreScenario(runs).detections.find((d) => d.label === label)!
+  }
+  // Standing from four days before the start and never off: not scored, reported.
+  const standing = score((d) => d >= from - 4)
+  assertEquals([standing.eligible, standing.detected, standing.showingAtStart], [0, 0, sc.ciSeeds.length])
+  // The same card with one evening off after the start: still not credited (was a detection before).
+  const flicker = score((d) => d >= from - 4 && d !== from + 10)
+  assertEquals([flicker.eligible, flicker.detected], [0, 0])
+  // Clear before the start, first shown five days in: a five-day detection.
+  const fresh = score((d) => d >= from + 5)
+  assertEquals([fresh.eligible, fresh.detected, fresh.medianDays], [sc.ciSeeds.length, sc.ciSeeds.length, 5])
+  // Clear, and nothing until after the detection window: a miss, not a slow detection.
+  const late = score((d) => d >= from + DETECT_WINDOW_DAYS + 1)
+  assertEquals([late.eligible, late.detected], [sc.ciSeeds.length, 0])
 })

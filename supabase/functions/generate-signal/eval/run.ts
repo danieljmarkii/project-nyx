@@ -33,6 +33,6 @@ export function runCorpus(opts: RunOptions): { scores: ScenarioScore[]; scorecar
     scores.push(score)
     opts.onScenario?.(score)
   }
-  const scorecard = buildScorecard(scores, { arm: opts.arm, seeds: opts.seedsLabel, horizons: HORIZONS, scenarios: scenarios.length })
+  const scorecard = buildScorecard(scores, { arm: opts.arm, seeds: opts.seedsLabel, horizons: HORIZONS, scenarios: scenarios.length, scenarioIds: scenarios.map((s) => s.id) })
   return { scores, scorecard }
 }

@@ -23,7 +23,8 @@
 // been seen is the failure this file exists to prevent: a change re-pins with the PM's sign-off
 // named beside the new digest.
 
-import type { Scorecard } from './scorecard.ts'
+import type { Lane } from '../../_shared/engineCorpus/trajectory/spec.ts'
+import { laneCanMatch, type Scorecard } from './scorecard.ts'
 
 export type Wave = 'EN-9' | 'EN-8' | 'EN-3/4/7' | 'EN-11'
 
@@ -36,8 +37,10 @@ export interface PassLine {
   measure: string
   /** The scorecard rows this line reads, by exact key. passLines.test.ts asserts each exists. */
   rows: readonly string[]
-  /** A row that must be at least 1 for the line to mean anything (a zero over nothing injected is no proof). */
-  nonVacuity?: string
+  /** A row that must reach `min` for the line to mean anything (a zero over nothing injected is no proof). */
+  nonVacuity?: { row: string; min: number }
+  /** The answer-key lane the rows score. A lane no card can answer yet (`laneCanMatch`) makes the line `incomplete`. */
+  needsLane?: Lane
   /** How the rows are summarised across scenarios: the worst scenario, or every row on its own. */
   aggregate: 'worst' | 'each'
   comparison: 'absolute' | 'flag_on_vs_flag_off'
@@ -86,7 +89,7 @@ export const PASS_LINES: readonly PassLine[] = [
     direction: 'at_least',
     value: null,
     valueSource: 'The ruling sheet (E-6, CUL-583), with EN-9\'s re-raise tolerance. BRK-4: the drafted triggers missed a doubling behind a lapse about three times in ten.',
-    pairedWith: 'EN-9.doublingDelay',
+    pairedWith: 'EN-9.reRaiseEver',
   },
   {
     id: 'EN-9.doublingDelay',
@@ -121,6 +124,40 @@ export const PASS_LINES: readonly PassLine[] = [
     pairedWith: 'EN-9.reRaise',
   },
   {
+    id: 'EN-9.reRaiseEver',
+    wave: 'EN-9',
+    firstFlagOnPr: 'PR-23',
+    measure: 'Re-raised with nothing to raise it, over the whole run: the share of stable cats asked about the acknowledged sign again at any point after the acknowledgement, and on the doubling scenarios the share asked between the acknowledgement and the doubling. Closes the eight-week window: a latch that starts at week nine, or a timer, passed EN-9.reRaise alone (second adversarial pass).',
+    rows: [
+      'own-answers-vet-knows/care/reRaisedEver',
+      'own-visit-with-recheck/care/reRaisedEver',
+      'own-visit-then-doubling/detect/a:re_raise:vomit/raisedBeforeStart',
+      'own-visit-doubling-fixed/detect/a:re_raise:vomit/raisedBeforeStart',
+    ],
+    aggregate: 'worst',
+    comparison: 'absolute',
+    direction: 'at_most',
+    value: null,
+    valueSource: "EN-9's re-raise tolerance on the ruling sheet (E-6, CUL-583), unruled; the same ruling as EN-9.reRaise, held over the whole run.",
+    pairedWith: 'EN-9.doubling',
+  },
+  {
+    id: 'EN-9.askAfterAck',
+    wave: 'EN-9',
+    firstFlagOnPr: 'PR-23',
+    measure: 'How often a stable cat is asked about the acknowledged sign after the acknowledgement: evenings carrying an ask on it, per pet-month.',
+    rows: [
+      'own-answers-vet-knows/care/askPerPetMonthAfterAck',
+      'own-visit-with-recheck/care/askPerPetMonthAfterAck',
+    ],
+    aggregate: 'worst',
+    comparison: 'absolute',
+    direction: 'at_most',
+    value: null,
+    valueSource: 'The ruling sheet (E-6, CUL-583), with EN-9\'s re-raise tolerance.',
+    pairedWith: 'EN-9.doubling',
+  },
+  {
     id: 'EN-9.lapseReassurance',
     wave: 'EN-9',
     firstFlagOnPr: 'PR-23',
@@ -152,6 +189,7 @@ export const PASS_LINES: readonly PassLine[] = [
     direction: 'at_most',
     value: null,
     valueSource: "EN-8's confirmation rule (PMD-9) on the ruling sheet (CUL-583), unruled. PMD-9's simulation: 87% of stable pets flagged unconfirmed, 6% confirmed.",
+    needsLane: 'weight',
     pairedWith: 'EN-8.delay',
   },
   {
@@ -170,6 +208,7 @@ export const PASS_LINES: readonly PassLine[] = [
     direction: 'at_most',
     value: null,
     valueSource: "EN-8's items on the ruling sheet (CUL-583). PMD-9 states its cost: a 1%-a-week loss caught near week 8.",
+    needsLane: 'weight',
     pairedWith: 'EN-8.falseCards',
   },
   // ── EN-3/4/7, the per-incident tiers (PR-26, PR-28) ──
@@ -181,7 +220,8 @@ export const PASS_LINES: readonly PassLine[] = [
     rows: [
       'engine/redFlag/belowShippedTier',
     ],
-    nonVacuity: 'engine/redFlag/injected',
+    // Three is what CI seeds carry (one scenario); the go-live size carries hundreds.
+    nonVacuity: { row: 'engine/redFlag/injected', min: 3 },
     aggregate: 'each',
     comparison: 'absolute',
     direction: 'zero',
@@ -225,7 +265,23 @@ export const PASS_LINES: readonly PassLine[] = [
     direction: 'at_most',
     value: null,
     valueSource: 'E-6 amended: detection no worse than shipped. The non-inferiority margin is unruled (CUL-583). A probability row passes at flag-off minus the margin or better; a days row at flag-off plus the margin or better.',
-    pairedWith: null,
+    pairedWith: 'EN-11.falseWorsening',
+  },
+  {
+    id: 'EN-11.falseWorsening',
+    wave: 'EN-11',
+    firstFlagOnPr: 'EN-11',
+    measure: 'The false-card cost of that detection: the share of null pets shown a worsening (or burden) card within 180 days, worst null scenario and pooled, flag on against flag off. Without it a noisier engine passes EN-11.worsening (second adversarial pass).',
+    rows: [
+      'engine/null/falseLane/worsening/worst/180d',
+      'engine/null/falseLane/worsening/pooled/180d',
+    ],
+    aggregate: 'each',
+    comparison: 'flag_on_vs_flag_off',
+    direction: 'at_most',
+    value: null,
+    valueSource: 'The ruling sheet (E-6, CUL-583): the margin by which EN-11 may raise false worsening cards, unruled.',
+    pairedWith: 'EN-11.worsening',
   },
 ]
 
@@ -255,16 +311,26 @@ function passes(line: PassLine, key: string, on: number, off: number | null): bo
  * are `incomparable`. A verdict on a comparison is only meaningful at the go-live size.
  */
 export function evaluatePassLines(off: Scorecard, on: Scorecard | null = null, lines: readonly PassLine[] = PASS_LINES): LineResult[] {
-  const comparable = on === null || (on.meta.seeds === off.meta.seeds && on.meta.scenarios === off.meta.scenarios)
+  // Two arms compare only when the off arm IS flag off, the on arm is something else, and both ran
+  // the same seeds over the same scenarios (by id, not count). Handing the flag-off file in as
+  // both arms passed every ruled comparison (second adversarial pass).
+  const comparable = on === null || (
+    off.meta.arm === 'flag_off' &&
+    on.meta.arm !== off.meta.arm &&
+    on.meta.seeds === off.meta.seeds &&
+    JSON.stringify(on.meta.scenarioIds) === JSON.stringify(off.meta.scenarioIds)
+  )
   return lines.map((line) => {
     const rows = line.rows.map((key) => ({ key, off: off.rows[key], on: on ? on.rows[key] : undefined }))
     const armRows = (arm: Scorecard) => line.rows.map((k) => arm.rows[k])
     if (!comparable) return { id: line.id, status: 'incomparable', rows }
+    if (line.needsLane !== undefined && !laneCanMatch(line.needsLane)) return { id: line.id, status: 'incomplete', rows }
     if (line.direction === 'zero') {
       const arm = on ?? off
       const values = armRows(arm)
-      const injected = line.nonVacuity === undefined ? 1 : arm.rows[line.nonVacuity]
-      if (values.some((v) => v === undefined || v === null) || typeof injected !== 'number' || injected < 1) return { id: line.id, status: 'incomplete', rows }
+      const injected = line.nonVacuity === undefined ? undefined : arm.rows[line.nonVacuity.row]
+      const vacuous = line.nonVacuity !== undefined && (typeof injected !== 'number' || injected < line.nonVacuity.min)
+      if (values.some((v) => v === undefined || v === null) || vacuous) return { id: line.id, status: 'incomplete', rows }
       return { id: line.id, status: values.every((v) => v === 0) ? 'pass' : 'fail', rows }
     }
     if (on === null) return { id: line.id, status: 'awaiting_flag_on', rows }

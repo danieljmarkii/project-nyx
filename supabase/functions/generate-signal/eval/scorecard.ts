@@ -88,6 +88,12 @@ function laneAnswers(keyLane: Lane, card: ScoredCard): boolean {
   }
 }
 
+/** Can any card answer this lane today? Weight has no finding type until EN-8 (PR-19): a line
+ *  over it would read zero false cards for every engine, so it is `incomplete`, never a pass. */
+export function laneCanMatch(keyLane: Lane): boolean {
+  return keyLane !== 'weight'
+}
+
 interface KeyRef {
   petKey: string
   lane: Lane
@@ -121,6 +127,15 @@ export const RE_RAISE_WINDOW_DAYS = 56
 const DAYS_PER_MONTH = 30
 /** A detection whose start leaves fewer evenings than this is censored, not scored as a miss. */
 export const DETECT_MIN_WINDOW_DAYS = 14
+/**
+ * Evenings with no matching card before the start for a pet-run to be scored at all. A card
+ * standing across the start is not the engine seeing the effect, and neither is one that blinked
+ * off for an evening (second adversarial pass: a one-evening gap in a standing latch was credited
+ * as a 43-day detection, and a stable correct card scored worse than the same card with a gap).
+ */
+export const DETECT_CLEAR_EVENINGS = 7
+/** A matching card later than this many days after the start is a miss, not a slow detection. */
+export const DETECT_WINDOW_DAYS = 56
 
 export interface DetectionScore {
   label: string
@@ -134,8 +149,11 @@ export interface DetectionScore {
   neverAcknowledged: number
   /** Pet-runs whose start left fewer than DETECT_MIN_WINDOW_DAYS evenings: not scored. */
   censored: number
-  /** Eligible pet-runs where a matching card was already showing the evening before the start. */
+  /** Pet-runs with a matching card in the DETECT_CLEAR_EVENINGS before the start: not scored, reported. */
   showingAtStart: number
+  /** re_raise only: of the acknowledged pet-runs, the share with an ask on the sign between the
+   *  acknowledgement and the start (a re-raise with nothing to raise it). */
+  raisedBeforeStart: number | null
 }
 
 export interface ScenarioScore {
@@ -147,6 +165,8 @@ export interface ScenarioScore {
   laneShare: Record<string, Partial<Record<ScoreLane, number>>>
   /** Share of pet-runs with at least one card the answer key calls false, within each horizon. */
   falseShare: Record<string, number | null>
+  /** The same, per lane the key calls false (0 included), so a lane's false-card cost is a row whatever the engine does. */
+  falseLaneShare: Record<string, Partial<Record<Lane, number>>>
   /** Share of pet-runs with at least one safety card within each horizon. */
   safetyShare: Record<string, number>
   /** Evenings carrying an ask, per pet-month, by Home's register; `any` is evenings with at least one. */
@@ -171,6 +191,10 @@ export interface CareScore {
   neverAcknowledged: number
   /** Of those, the share that saw an ask on that sign again within eight weeks. */
   reRaisedWithin8Weeks: number | null
+  /** Of those, the share that saw an ask on that sign again at any point after the acknowledgement. */
+  reRaisedEver: number | null
+  /** Evenings with an ask on that sign after the acknowledgement, per pet-month of those evenings. */
+  askPerPetMonthAfterAck: number | null
   /** Evenings after the acknowledgement with no card on that sign, over all such evenings. */
   silentEveningShare: number | null
   /** Median, over those pet-runs, of the longest run of silent evenings after the acknowledgement. */
@@ -212,6 +236,7 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
     petEvenings: 0,
     lane: new Map<string, number>(),
     falseAny: new Map<number, number>(),
+    falseLane: new Map<string, number>(),
     safety: new Map<number, number>(),
     ask: { call: 0, book_visit: 0, word_with_vet: 0, mention_to_vet: 0, any: 0 } as Record<Exclude<AskRegister, 'none'> | 'any', number>,
     askDrops: 0,
@@ -227,11 +252,14 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
     neverAcknowledged: 0,
     censored: 0,
     showingAtStart: 0,
+    raisedBeforeStart: null,
   }))
   const detectDays: number[][] = sc.key.detect.map(() => [])
+  const preRaise = sc.key.detect.map(() => ({ acked: 0, raised: 0 }))
   let redFlags: ScenarioScore['redFlags'] = null
   const reRaiseSigns = sc.key.falseCards.filter((f) => f.lane === 're_raise')
-  const care = { neverAcknowledged: 0, acknowledged: 0, reRaised: 0, silent: 0, postAck: 0, longest: [] as number[] }
+  const falseLanes = [...new Set(sc.key.falseCards.map((f) => f.lane).filter((l) => l !== 're_raise'))]
+  const care = { neverAcknowledged: 0, acknowledged: 0, reRaised: 0, reRaisedEver: 0, askEvenings: 0, silent: 0, postAck: 0, longest: [] as number[] }
 
   for (const run of runs) {
     const evenings = cardsOf(run.result)
@@ -240,6 +268,7 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
       acc.petRuns++
       const seenLane = new Map<number, Set<ScoreLane>>(horizons.map((h) => [h, new Set()]))
       const seenFalse = new Set<number>()
+      const seenFalseLane = new Set<string>()
       const seenSafety = new Set<number>()
       let firstSafety: number | null = null
       let prev: ScoredCard[] = []
@@ -257,6 +286,7 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
           if (ev.day >= h) continue
           for (const c of mine) seenLane.get(h)!.add(laneOf(c))
           if (isFalse) seenFalse.add(h)
+          for (const f of falseLanes) if (mine.some((c) => sc.key.falseCards.some((k) => k.lane === f && matchesKey(k, c)))) seenFalseLane.add(`${h}|${f}`)
           if (hasSafety) seenSafety.add(h)
         }
         // CUL-1272: the same card (type and sign) on consecutive evenings, its ask a register
@@ -272,15 +302,17 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
       for (const h of horizons) {
         for (const l of seenLane.get(h)!) acc.lane.set(`${h}|${l}`, (acc.lane.get(`${h}|${l}`) ?? 0) + 1)
         if (seenFalse.has(h)) acc.falseAny.set(h, (acc.falseAny.get(h) ?? 0) + 1)
+        for (const f of falseLanes) if (seenFalseLane.has(`${h}|${f}`)) acc.falseLane.set(`${h}|${f}`, (acc.falseLane.get(`${h}|${f}`) ?? 0) + 1)
         if (seenSafety.has(h)) acc.safety.set(h, (acc.safety.get(h) ?? 0) + 1)
       }
       if (firstSafety !== null) acc.firstSafety.push(firstSafety)
 
-      // Detection, per answer-key entry. A hit is an ONSET: the first evening on or after the
-      // start where a matching card shows and did not show the evening before. A card already
-      // standing when the effect began (a chance worsening card from day 86 on a rise that starts
-      // on day 90; a chronicity card that never left) is not the engine seeing the effect, and
-      // is counted in `showingAtStart` so the reader can see how often it happened.
+      // Detection, per answer-key entry. A pet-run is scored only when it was CLEAR: no matching
+      // card in the DETECT_CLEAR_EVENINGS before the start. Its hit is then the first matching
+      // card on or after the start, within DETECT_WINDOW_DAYS; later is a miss. A pet-run with a
+      // card standing (or flickering) across the start is counted in `showingAtStart` and left out
+      // of the probability, so neither a latch that never left nor a one-evening gap in it can
+      // read as the engine seeing the effect.
       sc.key.detect.forEach((d, i) => {
         if (d.petKey !== petKey) return
         const ackDay = d.sign ? truth.acks.find((a) => a.petKey === petKey && a.sign === d.sign)?.day : truth.acks.find((a) => a.petKey === petKey)?.day
@@ -289,22 +321,27 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
           detections[i].neverAcknowledged++
           return
         }
+        // A re-raise with nothing to raise it: an ask on the sign after the acknowledgement and
+        // before the effect starts (read before censoring, which only concerns the hit).
+        if (d.lane === 're_raise' && ackDay !== undefined) {
+          preRaise[i].acked++
+          if (evenings.some((ev) => ev.day > ackDay && ev.day < from && ev.cards.some((c) => matchesKey(d, c)))) preRaise[i].raised++
+        }
         // Censored: too few evenings left after the start to see anything (an arm that
         // acknowledges late must not collect misses it could never have avoided).
         if (from + DETECT_MIN_WINDOW_DAYS > sc.days) {
           detections[i].censored++
           return
         }
+        const matching = (ev: (typeof evenings)[number]) => ev.cards.some((c) => matchesKey(d, c))
+        // A re-raise must also be clear of the acknowledgement's own evening onward.
+        const clearFrom = d.lane === 're_raise' && ackDay !== undefined ? Math.max(from - DETECT_CLEAR_EVENINGS, ackDay + 1) : from - DETECT_CLEAR_EVENINGS
+        if (evenings.some((ev) => ev.day >= clearFrom && ev.day < from && matching(ev))) {
+          detections[i].showingAtStart++
+          return
+        }
         detections[i].eligible++
-        const matching = (ev: (typeof evenings)[number] | undefined) => ev !== undefined && ev.cards.some((c) => matchesKey(d, c))
-        const byDay = new Map(evenings.map((ev) => [ev.day, ev]))
-        if (matching(byDay.get(from - 1))) detections[i].showingAtStart++
-        const hit = evenings.find((ev) => {
-          if (ev.day < from || !matching(ev) || matching(byDay.get(ev.day - 1))) return false
-          // A re-raise must follow a quiet evening AFTER the acknowledgement: the ask went away
-          // and came back, never the standing ask it was acknowledged under.
-          return d.lane !== 're_raise' || (ackDay !== undefined && ev.day - 1 > ackDay)
-        })
+        const hit = evenings.find((ev) => ev.day >= from && ev.day <= from + DETECT_WINDOW_DAYS && matching(ev))
         if (hit) {
           detections[i].detected++
           detectDays[i].push(hit.day - from)
@@ -337,7 +374,12 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
         care.acknowledged++
         const after = evenings.filter((ev) => ev.day > ack.day)
         const onSign = (ev: (typeof evenings)[number]) => ev.cards.filter((c) => c.petKey === petKey && c.sign === ack.sign)
-        if (after.some((ev) => ev.day <= ack.day + RE_RAISE_WINDOW_DAYS && onSign(ev).some((c) => c.ask !== 'none'))) care.reRaised++
+        const asks = (ev: (typeof evenings)[number]) => onSign(ev).some((c) => c.ask !== 'none')
+        if (after.some((ev) => ev.day <= ack.day + RE_RAISE_WINDOW_DAYS && asks(ev))) care.reRaised++
+        // The whole horizon after the acknowledgement: a latch that starts after week 8, or a
+        // timer, clears the eight-week window and is caught here (second adversarial pass).
+        if (after.some(asks)) care.reRaisedEver++
+        care.askEvenings += after.filter(asks).length
         let run = 0
         let longest = 0
         for (const ev of after) {
@@ -358,6 +400,7 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
   const perMonth = (n: number) => round(n / petMonths)
   const laneShare: ScenarioScore['laneShare'] = {}
   const falseShare: ScenarioScore['falseShare'] = {}
+  const falseLaneShare: ScenarioScore['falseLaneShare'] = {}
   const safetyShare: ScenarioScore['safetyShare'] = {}
   for (const h of horizons) {
     laneShare[h] = {}
@@ -366,9 +409,13 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
       if (n > 0) laneShare[h][l] = share(n)
     }
     falseShare[h] = sc.key.falseCards.some((f) => f.lane !== 're_raise') ? share(acc.falseAny.get(h) ?? 0) : null
+    falseLaneShare[h] = Object.fromEntries(falseLanes.map((f) => [f, share(acc.falseLane.get(`${h}|${f}`) ?? 0)]))
     safetyShare[h] = share(acc.safety.get(h) ?? 0)
   }
-  detections.forEach((d, i) => { d.medianDays = median(detectDays[i]) })
+  detections.forEach((d, i) => {
+    d.medianDays = median(detectDays[i])
+    if (preRaise[i].acked > 0) d.raisedBeforeStart = round(preRaise[i].raised / preRaise[i].acked)
+  })
   const askPerPetMonth = Object.fromEntries(
     [...REGISTERS, 'any' as const].map((r) => [r, perMonth(acc.ask[r])]),
   ) as ScenarioScore['askPerPetMonth']
@@ -379,6 +426,7 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
     petEvenings: acc.petEvenings,
     laneShare,
     falseShare,
+    falseLaneShare,
     safetyShare,
     askPerPetMonth,
     laneEveningsPerPetMonth: Object.fromEntries([...acc.laneEvenings].map(([l, n]) => [l, perMonth(n)])),
@@ -392,6 +440,8 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
           acknowledged: care.acknowledged,
           neverAcknowledged: care.neverAcknowledged,
           reRaisedWithin8Weeks: care.acknowledged === 0 ? null : round(care.reRaised / care.acknowledged),
+          reRaisedEver: care.acknowledged === 0 ? null : round(care.reRaisedEver / care.acknowledged),
+          askPerPetMonthAfterAck: care.postAck === 0 ? null : round(care.askEvenings / (care.postAck / DAYS_PER_MONTH)),
           silentEveningShare: care.postAck === 0 ? null : round(care.silent / care.postAck),
           medianLongestSilentRun: median(care.longest),
         },
@@ -406,7 +456,7 @@ export function round(x: number): number {
 
 export interface Scorecard {
   /** How the numbers were made: the arm, the seeds, the horizons. Never a timestamp (the file must reproduce). */
-  meta: { arm: string; seeds: string; horizons: readonly number[]; scenarios: number }
+  meta: { arm: string; seeds: string; horizons: readonly number[]; scenarios: number; scenarioIds: readonly string[] }
   /** One flat key per number, so a diff is a list of rows and a mutation moves a named row. */
   rows: Record<string, number | null>
 }
@@ -421,6 +471,15 @@ function wholeEngineRows(scores: readonly ScenarioScore[], rows: Record<string, 
     const pets = withH.reduce((a, s) => a + s.petRuns, 0)
     rows[`engine/null/falseCard/pooled/${h}d`] = round(withH.reduce((a, s) => a + (s.falseShare[h] as number) * s.petRuns, 0) / pets)
     rows[`engine/null/safetyCard/worst/${h}d`] = Math.max(...withH.map((s) => s.safetyShare[h]))
+    // Per lane, over the null scenarios whose key calls that lane false: EN-11's worsening line is
+    // paired with its false-card cost here, so a noisier engine cannot pass it (second adversarial pass).
+    for (const lane of ['worsening', 'food', 'timing', 'chronic'] as const) {
+      const scored = withH.filter((s) => s.falseLaneShare[h]?.[lane] !== undefined)
+      if (scored.length === 0) continue
+      rows[`engine/null/falseLane/${lane}/worst/${h}d`] = Math.max(...scored.map((s) => s.falseLaneShare[h][lane] as number))
+      const n = scored.reduce((a, s) => a + s.petRuns, 0)
+      rows[`engine/null/falseLane/${lane}/pooled/${h}d`] = round(scored.reduce((a, s) => a + (s.falseLaneShare[h][lane] as number) * s.petRuns, 0) / n)
+    }
   }
   const evenings = nulls.reduce((a, s) => a + s.petEvenings, 0)
   for (const r of [...REGISTERS, 'any' as const]) {
@@ -439,6 +498,7 @@ export function buildScorecard(scores: readonly ScenarioScore[], meta: Scorecard
       for (const [l, v] of Object.entries(lanes)) rows[`${p}/cardShare/${l}/${h}d`] = v ?? null
     }
     for (const [h, v] of Object.entries(s.falseShare)) if (v !== null) rows[`${p}/falseCard/${h}d`] = v
+    for (const [h, lanes] of Object.entries(s.falseLaneShare)) for (const [l, v] of Object.entries(lanes)) rows[`${p}/falseLane/${l}/${h}d`] = v ?? null
     for (const [h, v] of Object.entries(s.safetyShare)) rows[`${p}/safetyCard/${h}d`] = v
     for (const [r, v] of Object.entries(s.askPerPetMonth)) rows[`${p}/askPerPetMonth/${r}`] = v
     for (const [l, v] of Object.entries(s.laneEveningsPerPetMonth)) rows[`${p}/laneEveningsPerPetMonth/${l}`] = v ?? null
@@ -448,6 +508,8 @@ export function buildScorecard(scores: readonly ScenarioScore[], meta: Scorecard
       rows[`${p}/detect/${d.label}/probability`] = d.eligible === 0 ? null : round(d.detected / d.eligible)
       rows[`${p}/detect/${d.label}/medianDays`] = d.medianDays
       rows[`${p}/detect/${d.label}/showingAtStart`] = d.showingAtStart
+      rows[`${p}/detect/${d.label}/eligible`] = d.eligible
+      if (d.raisedBeforeStart !== null) rows[`${p}/detect/${d.label}/raisedBeforeStart`] = d.raisedBeforeStart
       if (d.censored > 0) rows[`${p}/detect/${d.label}/censored`] = d.censored
       if (d.scoring === 'both_acknowledged') rows[`${p}/detect/${d.label}/neverAcknowledged`] = d.neverAcknowledged
     }
@@ -459,6 +521,8 @@ export function buildScorecard(scores: readonly ScenarioScore[], meta: Scorecard
       rows[`${p}/care/acknowledged`] = s.care.acknowledged
       rows[`${p}/care/neverAcknowledged`] = s.care.neverAcknowledged
       rows[`${p}/care/reRaisedWithin8Weeks`] = s.care.reRaisedWithin8Weeks
+      rows[`${p}/care/reRaisedEver`] = s.care.reRaisedEver
+      rows[`${p}/care/askPerPetMonthAfterAck`] = s.care.askPerPetMonthAfterAck
       rows[`${p}/care/silentEveningShare`] = s.care.silentEveningShare
       rows[`${p}/care/medianLongestSilentRun`] = s.care.medianLongestSilentRun
     }

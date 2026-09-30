@@ -1,5 +1,5 @@
-// The pass lines are fixed, and every one of them reads rows that exist
-// (Engines v3 PR-16, EN-1, CUL-1131). Run with:
+// The pass lines are fixed, every one of them reads rows that exist, and no line or wave passes
+// by construction (Engines v3 PR-16, EN-1, CUL-1131). Run with:
 //   deno test --allow-read=supabase/functions supabase/functions/generate-signal/eval/
 //
 // FIXED: the digest below is of PASS_LINES as ruled before any flag-on run. A change reds this
@@ -7,16 +7,18 @@
 // which issue), never after reading a flag-on result: choosing a line after seeing the number it
 // has to clear is the failure the freeze exists to prevent.
 //
-// NON-VACUOUS: a line whose pattern matches no row in the committed scorecard would report
-// "no_rows" forever and read as coverage (C-38). This fails instead.
+// NON-VACUOUS: a line naming a row the committed scorecard does not carry would report
+// "incomplete" forever and read as coverage (C-38). This fails instead.
 
 import { assert, assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import { evaluatePassLines, PASS_LINES, waveStatus, type PassLine } from './passLines.ts'
 import type { Scorecard } from './scorecard.ts'
 
 // Pinned 2026-09-30, PR-16 (CUL-1131): the lines as the 9/26 plan review ruled them (the
-// measures, comparisons and directions); every value but the red-flag property is null, unruled.
-const PINNED = '8e78b071f29930a44aedd2dc51525aea8dd5ff8df167d01d5439b6ebe31f398c'
+// measures, comparisons and directions), with the second adversarial pass's additions approved
+// by the PM in session the same day (EN-9.reRaiseEver, EN-9.askAfterAck, EN-11.falseWorsening,
+// EN-8's lane gate, the red-flag floor of 3). Every value but the two ruled ones is null.
+const PINNED = 'b87e42acd05b156ec9fdf173f16a734b9f08c44f212053fecc6867cc7403fc8b'
 
 async function digest(lines: readonly PassLine[]): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(lines)))
@@ -24,76 +26,151 @@ async function digest(lines: readonly PassLine[]): Promise<string> {
 }
 
 const committed: Scorecard = JSON.parse(Deno.readTextFileSync(new URL('./scorecard.json', import.meta.url)))
+const line = (id: string) => PASS_LINES.find((l) => l.id === id)!
+
+/** A flag-on arm over the committed rows, with `patch` applied. */
+function onArm(patch: Record<string, number | null> = {}): Scorecard {
+  return { meta: { ...committed.meta, arm: 'flag_on:test' }, rows: { ...committed.rows, ...patch } }
+}
 
 Deno.test('the pass lines are the pinned set', async () => {
   assertEquals(await digest(PASS_LINES), PINNED)
 })
 
-Deno.test('every wave the plan names has a line, and ids are unique', () => {
+Deno.test('every wave the plan names has a line, ids are unique, and every line pairs with one that exists', () => {
   const waves = new Set(PASS_LINES.map((l) => l.wave))
   for (const w of ['EN-9', 'EN-8', 'EN-3/4/7', 'EN-11']) assert(waves.has(w as PassLine['wave']), w)
   assertEquals(new Set(PASS_LINES.map((l) => l.id)).size, PASS_LINES.length)
-  for (const l of PASS_LINES) if (l.pairedWith) assert(PASS_LINES.some((x) => x.id === l.pairedWith), `${l.id} pairs with a line that exists`)
-})
-
-Deno.test('every row every line names exists in the committed scorecard (a line cannot quietly read fewer scenarios)', () => {
-  for (const line of PASS_LINES) {
-    assert(line.rows.length > 0, line.id)
-    for (const key of line.rows) assert(key in committed.rows, `${line.id}: no committed row ${key}`)
-    if (line.nonVacuity) assert(line.nonVacuity in committed.rows, `${line.id}: no committed row ${line.nonVacuity}`)
+  for (const l of PASS_LINES) {
+    assert(l.pairedWith !== null, `${l.id} has a pair`)
+    assert(PASS_LINES.some((x) => x.id === l.pairedWith && x.wave === l.wave), `${l.id} pairs within its wave`)
   }
 })
 
-Deno.test('flag off alone: only the hard property has a verdict; the rest wait for a flag-on arm', () => {
+Deno.test('every row every line names exists in the committed scorecard (a line cannot quietly read fewer scenarios)', () => {
+  for (const l of PASS_LINES) {
+    assert(l.rows.length > 0, l.id)
+    for (const key of l.rows) assert(key in committed.rows, `${l.id}: no committed row ${key}`)
+    if (l.nonVacuity) assert(l.nonVacuity.row in committed.rows, `${l.id}: no committed row ${l.nonVacuity.row}`)
+  }
+})
+
+Deno.test('flag off alone: the hard property has a verdict, the weight lines are incomplete, the rest wait for a flag-on arm', () => {
   for (const r of evaluatePassLines(committed)) {
-    const line = PASS_LINES.find((l) => l.id === r.id)!
-    if (line.direction === 'zero') assertEquals(r.status, 'pass')
-    else assertEquals(r.status, 'awaiting_flag_on')
+    const l = line(r.id)
+    const expected = l.direction === 'zero' ? 'pass' : l.needsLane === 'weight' ? 'incomplete' : 'awaiting_flag_on'
+    assertEquals(r.status, expected, r.id)
   }
 })
 
 Deno.test('with a flag-on arm, an unruled line says so and never passes', () => {
-  for (const r of evaluatePassLines(committed, committed)) {
-    const line = PASS_LINES.find((l) => l.id === r.id)!
-    if (line.value === null) assertEquals(r.status, 'unruled', r.id)
+  for (const r of evaluatePassLines(committed, onArm())) {
+    const l = line(r.id)
+    if (l.value === null && l.needsLane === undefined) assertEquals(r.status, 'unruled', r.id)
+  }
+})
+
+Deno.test('the weight lines are incomplete for every engine until a card can be a weight card, whatever the values', () => {
+  for (const id of ['EN-8.falseCards', 'EN-8.delay']) {
+    const ruled: PassLine = { ...line(id), value: 1000 }
+    const zeros = onArm(Object.fromEntries(ruled.rows.map((k) => [k, 0])))
+    assertEquals(evaluatePassLines(committed, zeros, [ruled])[0].status, 'incomplete', id)
   }
 })
 
 Deno.test('a ruled comparison line fails a flag-on arm that detects less, and a red flag below tier fails the property', () => {
-  const line: PassLine = { ...PASS_LINES.find((l) => l.id === 'EN-11.worsening')!, value: 0.02 }
-  const worse: Scorecard = { ...committed, rows: { ...committed.rows } }
-  const key = line.rows.find((k) => k.endsWith('/probability') && (worse.rows[k] as number) > 0.1)!
+  const ruled: PassLine = { ...line('EN-11.worsening'), value: 0.02 }
+  const key = ruled.rows.find((k) => k.endsWith('/probability') && typeof committed.rows[k] === 'number' && (committed.rows[k] as number) > 0.1)!
   assert(key, 'a detected worsening row to break')
-  worse.rows[key] = (committed.rows[key] as number) - 0.1
-  assertEquals(evaluatePassLines(committed, committed, [line])[0].status, 'pass')
-  assertEquals(evaluatePassLines(committed, worse, [line])[0].status, 'fail')
+  const same = onArm()
+  assertEquals(evaluatePassLines(committed, same, [ruled])[0].status, 'pass')
+  assertEquals(evaluatePassLines(committed, onArm({ [key]: (committed.rows[key] as number) - 0.1 }), [ruled])[0].status, 'fail')
+  // A detection flag off made and flag on no longer makes (a number becoming null) fails too.
+  assertEquals(evaluatePassLines(committed, onArm({ [key]: null }), [ruled])[0].status, 'fail')
 
-  const hard = PASS_LINES.find((l) => l.id === 'EN-3.redFlagTier')!
-  const below: Scorecard = { ...committed, rows: { ...committed.rows, 'engine/redFlag/belowShippedTier': 1 } }
-  assertEquals(evaluatePassLines(committed, below, [hard])[0].status, 'fail')
+  const hard = line('EN-3.redFlagTier')
+  assertEquals(evaluatePassLines(committed, onArm({ 'engine/redFlag/belowShippedTier': 1 }), [hard])[0].status, 'fail')
 })
 
-Deno.test('the zero property is no proof over nothing injected', () => {
-  const hard = PASS_LINES.find((l) => l.id === 'EN-3.redFlagTier')!
-  const none: Scorecard = { ...committed, rows: { ...committed.rows, 'engine/redFlag/injected': 0, 'engine/redFlag/belowShippedTier': 0 } }
-  assertEquals(evaluatePassLines(none, null, [hard])[0].status, 'incomplete')
+Deno.test('the zero property is no proof over too few injected flags', () => {
+  const hard = line('EN-3.redFlagTier')
+  for (const injected of [0, hard.nonVacuity!.min - 1]) {
+    const thin: Scorecard = { ...committed, rows: { ...committed.rows, 'engine/redFlag/injected': injected, 'engine/redFlag/belowShippedTier': 0 } }
+    assertEquals(evaluatePassLines(thin, null, [hard])[0].status, 'incomplete', `${injected} injected`)
+  }
 })
 
-Deno.test('a flag-on arm missing rows is incomplete, and one over other seeds is incomparable, never a pass', () => {
-  const line: PassLine = { ...PASS_LINES.find((l) => l.id === 'EN-11.worsening')!, value: 0 }
-  const subset: Scorecard = { ...committed, rows: Object.fromEntries(Object.entries(committed.rows).filter(([k]) => k.startsWith('inj-rate-doubling/'))) }
-  assertEquals(evaluatePassLines(committed, subset, [line])[0].status, 'incomplete')
-  const other: Scorecard = { ...committed, meta: { ...committed.meta, seeds: '10000..10999' } }
-  assertEquals(evaluatePassLines(committed, other, [line])[0].status, 'incomparable')
+Deno.test('arms that are not flag off against something else, over the same seeds and scenario ids, are incomparable', () => {
+  const ruled: PassLine = { ...line('EN-11.worsening'), value: 0 }
+  const status = (off: Scorecard, on: Scorecard) => evaluatePassLines(off, on, [ruled])[0].status
+  // The flag-off file handed in as the flag-on arm (the runner with SCORECARD_OFF and no SCORECARD_FLAGS).
+  assertEquals(status(committed, committed), 'incomparable')
+  // An "off" arm that is not flag off.
+  assertEquals(status(onArm(), { ...onArm(), meta: { ...committed.meta, arm: 'flag_on:other' } }), 'incomparable')
+  // Other seeds.
+  assertEquals(status(committed, { ...onArm(), meta: { ...onArm().meta, seeds: '10000..10999' } }), 'incomparable')
+  // The same count of scenarios, different ones.
+  const ids = [...committed.meta.scenarioIds]
+  ids[0] = 'some-other-scenario'
+  assertEquals(status(committed, { ...onArm(), meta: { ...onArm().meta, scenarioIds: ids } }), 'incomparable')
+  // A flag-on arm missing rows (run over a subset) is incomplete.
+  const subset = onArm()
+  subset.rows = Object.fromEntries(Object.entries(committed.rows).filter(([k]) => k.startsWith('inj-rate-doubling/')))
+  assertEquals(status(committed, subset), 'incomplete')
 })
 
-Deno.test('a wave passes only when every line of it does', () => {
-  const ruled = PASS_LINES.map((l) => (l.wave === 'EN-9' ? { ...l, value: l.value ?? 0 } : l))
-  // Silence alone: never raised again (reRaise 0) but the doubling is never caught.
-  const silent: Scorecard = { ...committed, rows: { ...committed.rows } }
-  for (const k of ruled.find((l) => l.id === 'EN-9.reRaise')!.rows) silent.rows[k] = 0
-  for (const k of ruled.find((l) => l.id === 'EN-9.doubling')!.rows) silent.rows[k] = 0
-  const results = evaluatePassLines(committed, silent, ruled)
+// ── A wave passes only when every line of it does, and silence or a late latch cannot pass EN-9 ──
+
+/** EN-9 with values chosen for the test (never the ruling): a stable cat is not asked again, a doubling is. */
+const EN9_TEST_VALUES: Record<string, number> = {
+  'EN-9.reRaise': 0.1,
+  'EN-9.reRaiseEver': 0.1,
+  'EN-9.askAfterAck': 0.5,
+  'EN-9.doubling': 0.8,
+  'EN-9.doublingDelay': 45,
+  'EN-9.silence': 14,
+}
+const EN9 = PASS_LINES.filter((l) => l.wave === 'EN-9').map((l) => ({ ...l, value: EN9_TEST_VALUES[l.id] ?? l.value }))
+const set = (ids: string[], value: number) => Object.fromEntries(ids.flatMap((id) => line(id).rows.map((k) => [k, value])))
+
+/** An arm that clears every EN-9 line: quiet on stable cats, the doubling caught in ten days. */
+const GOOD = {
+  ...set(['EN-9.reRaise', 'EN-9.reRaiseEver', 'EN-9.askAfterAck'], 0),
+  ...set(['EN-9.doubling'], 1),
+  ...set(['EN-9.doublingDelay'], 10),
+  ...set(['EN-9.silence'], 5),
+  // No more false reassurance behind a lapse than flag off.
+  ...Object.fromEntries(line('EN-9.lapseReassurance').rows.map((k) => [k, committed.rows[k] as number])),
+}
+
+Deno.test('EN-9: the passing arm passes, silence fails on the doubling line alone, and removing that line would pass it', () => {
+  assertEquals(waveStatus(evaluatePassLines(committed, onArm(GOOD), EN9), 'EN-9', EN9), 'pass')
+  // Never raises again: only the doubling probability differs from the passing arm.
+  const silent = onArm({ ...GOOD, ...set(['EN-9.doubling'], 0) })
+  const results = evaluatePassLines(committed, silent, EN9)
+  assertEquals(results.filter((r) => r.status !== 'pass').map((r) => r.id), ['EN-9.doubling'])
+  assertEquals(waveStatus(results, 'EN-9', EN9), 'fail')
+  // The mutation: without the doubling line, the same silent arm passes the wave.
+  const without = EN9.filter((l) => l.id !== 'EN-9.doubling')
+  assertEquals(waveStatus(evaluatePassLines(committed, silent, without), 'EN-9', without), 'pass')
+})
+
+Deno.test('EN-9: a latch that starts after week eight, or a timer, fails on the whole-run lines though the eight-week line passes', () => {
+  // Quiet for 56 days, then asking again: reRaise (eight weeks) reads 0, the whole run does not.
+  const late = onArm({ ...GOOD, ...set(['EN-9.reRaiseEver'], 1), ...set(['EN-9.askAfterAck'], 15) })
+  const results = evaluatePassLines(committed, late, EN9)
   assertEquals(results.find((r) => r.id === 'EN-9.reRaise')!.status, 'pass')
-  assertEquals(waveStatus(results, 'EN-9', ruled), 'fail')
+  assertEquals(results.find((r) => r.id === 'EN-9.reRaiseEver')!.status, 'fail')
+  assertEquals(waveStatus(results, 'EN-9', EN9), 'fail')
+})
+
+Deno.test('EN-11: a noisier engine that detects faster fails on its false-card pair', () => {
+  const ruled = PASS_LINES.filter((l) => l.wave === 'EN-11').map((l) => ({ ...l, value: 0.02 }))
+  const detectRows = line('EN-11.worsening').rows
+  const faster = Object.fromEntries(detectRows.map((k) => [k, k.endsWith('/probability') ? 1 : 0]))
+  const noisier = Object.fromEntries(line('EN-11.falseWorsening').rows.map((k) => [k, (committed.rows[k] as number) + 0.2]))
+  const results = evaluatePassLines(committed, onArm({ ...faster, ...noisier }), ruled)
+  assertEquals(results.find((r) => r.id === 'EN-11.worsening')!.status, 'pass')
+  assertEquals(results.find((r) => r.id === 'EN-11.falseWorsening')!.status, 'fail')
+  assertEquals(waveStatus(results, 'EN-11', ruled), 'fail')
 })
