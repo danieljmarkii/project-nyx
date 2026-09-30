@@ -52,3 +52,23 @@ Everything below is listed on **CUL-1432**, which blocks CUL-1407:
 - the unstamped `call_now` word step.
 
 CUL-531 (K3 = C) needs a stored photos-read count, a migration plus a server change. It stays open, with a comment explaining why.
+
+## Definition of Done
+
+- **Acceptance (CUL-1133):**
+  - Every surface that reads the verdict moves in one run ✓ (the record, the gallery, History / Home spine, the month; Home's band, the banner and Ask are on CUL-1432).
+  - Pattern 8's `REASSURE_VOCAB` runs over every map string ✓.
+  - The vet report renders no tier ✓ (untouched).
+  - Adversarial pass ✓ (3 rounds).
+  - "Replay shows the tier distribution": the server half's, not re-run here.
+- **Anti-patterns:**
+  - theme tokens only; ThemedText;
+  - ink on light grounds;
+  - no new touchables, so no hitSlop pairs;
+  - copy guard: no `!`.
+- **Types and tests:** `tsc` clean, full jest 13,022 passed, CI green on `fbc298d`.
+- **Secrets:** N/A.
+- **Personas:** Designer ✓ (principles 1, 3, 5; colour never carries a tier alone) · Engineer ✓ · Data ✓ (two populations never summed) · Dr. Chen / Biostatistician ✓ · T&S N/A.
+- **Adversarial:** a 720-row status × verdict × tier × stamp × stale-photo matrix: no hidden call, no quiet tier on an unfinished read, no calm stale read, no new words unstamped. A coffee-ground-blood read gets no leave to wait. An unstamped `{monitor, call_now}` row draws the rose. PASS on round 3.
+- **Future-self:** one map plus a literal guard is the shape we'd want in 12 months. The risk is the stamp-only rule's word step on a stale `call_now`, left for PR-28 (CUL-1432 item 10).
+- **Merged at the PM's request** (`/wrap and merge`). The on-device pass (Runtime B script in the PR) is still owed; everything is dark by data until CUL-1407.
