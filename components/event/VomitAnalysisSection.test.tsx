@@ -79,6 +79,7 @@ import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
 import { Alert, LayoutAnimation, StyleSheet } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { VomitAnalysisSection } from './VomitAnalysisSection';
+import { theme } from '../../constants/theme';
 import { readLandedCopy } from './useReadLandingAnnouncement';
 import { watchAnalysisRow, awaitAnalysisChain, triggerVomitAnalysis } from '../../lib/analysis';
 import { __resetReducedMotionForTest, useReducedMotionStore } from '../../store/reducedMotionStore';
@@ -1489,5 +1490,85 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     mockRow = row({ recommendation: 'monitor', read_text: 'Yellow, foamy.' });
     const view = render(<VomitAnalysisSection eventId="an-9" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await view.findByRole('header', { name: 'AI READ' })).toBeTruthy();
+  });
+});
+
+// ── EN-3 (CUL-1133): the card speaks the tier-word map ─────────────────────────
+describe('VomitAnalysisSection — the tier (EN-3)', () => {
+  const EN3 = ['engines_v3_en3'];
+  afterEach(() => { mockRow = null; });
+
+  it('a new-rule call now: its words, its action line, the filled rose', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_now', engine_flags: EN3, read_text: 'Dark, gritty material.' });
+    const { findByText, getByTestId, queryByText } = render(<VomitAnalysisSection eventId="t1" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText('Call your vet now');
+    expect(queryByText("Call your vet now. If they're closed, call an emergency clinic.")).toBeTruthy();
+    expect(queryByText('Worth a call')).toBeNull();
+    // The filled rose: today's worth-a-call card, not the outline.
+    expect(flat(getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
+  });
+
+  it('a new-rule call today: its own words, and the rose OUTLINE on the plain surface', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3 });
+    const { findByText, getByTestId, queryByText } = render(<VomitAnalysisSection eventId="t2" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText('Call your vet today');
+    // No leave to wait yet (CUL-1432): the call-now signs that make it safe come with PR-28.
+    expect(queryByText(/first thing tomorrow/)).toBeNull();
+    expect(flat(getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorSurface);
+    expect(flat(getByTestId('incident-read-card')).borderColor).toBe(theme.colorEventSymptom);
+  });
+
+  it('an earlier-rule call keeps today\'s card: the words, no action line, no disclosure', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', error: 'timeout' });
+    const { findByText, queryByTestId, queryByText } = render(<VomitAnalysisSection eventId="t3" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText('Worth a call');
+    expect(queryByText(/If they're closed/)).toBeNull();
+    expect(queryByTestId('incident-read-disclosure')).toBeNull();
+  });
+
+  it('a tier call over a quiet verdict (a rolled-back write) is still the call, at a failed status', async () => {
+    mockRow = row({ status: 'failed', recommendation: 'monitor', tier: 'call_today', engine_flags: EN3 });
+    const { findByText } = render(<VomitAnalysisSection eventId="t4" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText('Call your vet today');
+  });
+
+  it('status ahead of tier: a failed row\'s earlier "logged" is not stood as the read', async () => {
+    mockRow = row({ status: 'failed', recommendation: 'monitor', tier: 'logged', engine_flags: EN3, read_text: 'One photo can’t tell you much.' });
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="t5" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText(/Couldn't finish reading this one\./);
+    expect(queryByText('Keep an eye out')).toBeNull();
+  });
+
+  it('a call held only in the tier (the verdict NULL) still stands on the record, with a photo and without', async () => {
+    mockRow = row({ recommendation: null, tier: 'call_now', engine_flags: EN3 });
+    const withPhoto = render(<VomitAnalysisSection eventId="t8" petId="pet-1" petName="Rex" hasPhoto />);
+    await withPhoto.findByText('Call your vet now');
+    withPhoto.unmount();
+    mockRow = row({ recommendation: 'not_enough_to_say', tier: 'call_today', engine_flags: EN3 });
+    const photoless = render(<VomitAnalysisSection eventId="t9" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    await photoless.findByText('Call your vet today');
+  });
+
+  it('an UNSTAMPED quiet verdict beside a call tier draws the rose, never a grey card (round 2)', async () => {
+    for (const [i, over] of [
+      { recommendation: 'monitor', tier: 'call_now', engine_flags: [], read_text: 'Looks like a hairball.' },
+      { recommendation: 'not_enough_to_say', tier: 'call_today', engine_flags: null },
+    ].entries()) {
+      mockRow = row(over);
+      for (const hasPhoto of [true, false]) {
+        const view = render(<VomitAnalysisSection eventId={`u${i}${hasPhoto}`} petId="pet-1" petName="Rex" hasPhoto={hasPhoto} />);
+        await view.findByText('Worth a call');
+        expect(flat(view.getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
+        view.unmount();
+      }
+    }
+  });
+
+  it('CUL-819 (a) is withheld until the server clears a held call\'s error (CUL-1432): no line, today\'s heading', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3, error: 'timeout', blood_present: 'none_visible' });
+    const { findByText, queryByTestId, queryByText } = render(<VomitAnalysisSection eventId="t6" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText('Call your vet today');
+    expect(queryByTestId('incident-read-disclosure')).toBeNull();
+    expect(queryByText("What's visible")).toBeTruthy();
   });
 });

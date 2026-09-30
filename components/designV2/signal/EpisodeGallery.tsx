@@ -7,8 +7,7 @@ import { EVENT_ATTACHMENT_BUCKET } from '../../../lib/attachments';
 import { getSignedUrl } from '../../../lib/storage';
 import { localFileExists } from '../../../lib/localFile';
 import { resolveTilePhoto, tileNeedsRemote, TILE_PHOTO_FAILED_LABEL, type TileSource } from '../../../lib/tilePhoto';
-import { INCIDENT_REC_LABEL, type IncidentRecommendation } from '../../../lib/incidentReadState';
-import type { EpisodeVerdict } from '../../../lib/signalScreen';
+import { TIER_WORDS } from '../../../lib/incidentTierWords';
 import { ThemedText } from '../../ui/ThemedText';
 
 // EpisodeGallery — the photographed episodes on the Signal's screen (D2-3 · CUL-1065;
@@ -47,24 +46,24 @@ const SIGNED_URL_TTL_SEC = 60 * 60;
  *  request count is bounded by the photographed episodes in the drawn weeks. */
 const TILE_TRANSFORM = { width: 320, height: 320, resize: 'cover' as const };
 
-// The verdict enum the model carries (`lib/` cannot import a component) and the one the
-// shipped read declares are two spellings of the same union; both assignments below stop
-// compiling the day one gains a member the other lacks.
-const LABELS: Record<EpisodeVerdict, string> = INCIDENT_REC_LABEL;
-const LABELS_BACK: Record<IncidentRecommendation, string> = LABELS;
-void LABELS_BACK;
+// The words come from the one tier-word map (EN-3, `lib/incidentTierWords.ts`). A tile is
+// narrow, so a call takes the map's short chip ("Call now"); its sentence for a screen
+// reader takes the full phrase. An earlier-rule read's short form IS its label, so those
+// tiles say exactly what they said before.
 /** "No read yet" — an episode whose photo has no verdict on the record (pending, failed,
  *  or never read). Said, never blank: a missing word under a photo reads as "nothing found". */
 export const NO_READ_LABEL = 'No read yet';
 
 export function verdictWord(verdict: GalleryTile['verdict']): string {
-  return verdict ? LABELS[verdict] : NO_READ_LABEL;
+  return verdict ? TIER_WORDS[verdict].short : NO_READ_LABEL;
 }
 
 /** The tile in one sentence, for the screen reader. */
 export function tileA11yLabel(tile: GalleryTile): string {
   const when = tile.timeWord ? `${tile.dateWord}, ${tile.timeWord}` : tile.dateWord;
-  return tile.verdict ? `${when}, photographed, read as ${verdictWord(tile.verdict)}` : `${when}, photographed, ${NO_READ_LABEL.toLowerCase()}`;
+  return tile.verdict
+    ? `${when}, photographed, read as ${TIER_WORDS[tile.verdict].label}`
+    : `${when}, photographed, ${NO_READ_LABEL.toLowerCase()}`;
 }
 
 interface Props {
@@ -167,7 +166,7 @@ function Tile({ tile }: { tile: GalleryTile }) {
       {/* The read, in the record's own words. `worth_a_call` takes the symptom INK — text
           on a light ground (C-1), never the bright glyph tint. */}
       <ThemedText
-        style={[styles.verdict, tile.verdict === 'worth_a_call' ? styles.verdictCall : null]}
+        style={[styles.verdict, tile.verdict && TIER_WORDS[tile.verdict].call ? styles.verdictCall : null]}
         numberOfLines={2}
         testID={`episode-verdict-${tile.eventId}`}
       >

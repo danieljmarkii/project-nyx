@@ -9,6 +9,7 @@
 //
 // nyx-voice: descriptive, never a verdict; no "!"; a zero is spoken as a zero.
 
+import { isCallDisplay, TIER_WORDS, type CallDisplay } from './incidentTierWords';
 import { formatCalendarDate } from './utils';
 import {
   daysSoFarLabel,
@@ -101,7 +102,8 @@ export function timingLanesA11yLabel(lanes: readonly LaneModel[], rapidWindowMin
 }
 
 export type DayMarkCoverage = 'logged' | 'left_some' | 'unlogged' | 'ahead';
-export type DayMarkPhoto = 'none' | 'seen' | 'worth_a_call';
+/** The day's photo fact, in the tier-word map's key for a call (EN-3). */
+export type DayMarkPhoto = 'none' | 'seen' | CallDisplay;
 
 export interface DayMarkFacts {
   dayKey: string;
@@ -150,7 +152,7 @@ export function dayMarkA11yLabel(f: DayMarkFacts, noun: string): string {
   }
   if (f.medication) parts.push('medication');
   if (f.photo === 'seen') parts.push('photographed');
-  if (f.photo === 'worth_a_call') parts.push('photographed, read as worth a call');
+  if (isCallDisplay(f.photo)) parts.push(`photographed, read as ${TIER_WORDS[f.photo].readAs}`);
   if (f.selected) parts.push('selected');
   return parts.join(', ');
 }

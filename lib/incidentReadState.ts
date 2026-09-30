@@ -7,7 +7,9 @@
 // drift from the real one without either suite going red. Living here, the sections
 // import it directly and their tests exercise the REAL predicate.
 
-import { isEscalationVerdict, isQuietVerdict } from './incidentVerdict';
+import { isQuietVerdict } from './incidentVerdict';
+import { effectiveTierRank, TIER_RANK } from './incidentTier';
+import { INCIDENT_REC_LABEL, TIER_FINISHED_STATUSES, tierDisplayOf, TIER_WORDS } from './incidentTierWords';
 
 // Both incident sections render `status === 'failed'` ahead of the read card, so a
 // row that still holds `worth_a_call` + its read_text displayed as "Couldn't finish
@@ -36,10 +38,15 @@ import { isEscalationVerdict, isQuietVerdict } from './incidentVerdict';
 // fell to the retry frame on a failed re-read: the CUL-812 bug, one value over. It now
 // protects every value off the quiet list (`lib/incidentVerdict.ts`), which the server's
 // `buildFailureWrite` reads too, so the two halves cannot drift apart again.
+//
+// THE LOUDER COLUMN (EN-3, CUL-1133). Since migration 079 a row may carry a `tier` beside
+// the verdict; the rescue reads the louder of the two (`effectiveTierRank`), so a call held
+// in either column survives. With no tier on the row this is exactly the verdict rule above.
 export function escalationSurvivesFailure(
-  row: { recommendation?: string | null } | null | undefined,
+  row: { recommendation?: string | null; tier?: string | null } | null | undefined,
 ): boolean {
-  return isEscalationVerdict(row?.recommendation);
+  if (!row) return false;
+  return effectiveTierRank(row) !== TIER_RANK.quiet;
 }
 
 // ── …and a re-read that is still running (CUL-827) ─────────────────────────────
@@ -57,9 +64,9 @@ export function escalationSurvivesFailure(
 // front of it while it runs would be reassurance about an image nothing has read yet.
 // Keyed on the same predicate, so an unknown verdict (EN-3's `call_now`) is held too.
 export function escalationSurvivesReRead(
-  row: { recommendation?: string | null } | null | undefined,
+  row: { recommendation?: string | null; tier?: string | null } | null | undefined,
 ): boolean {
-  return isEscalationVerdict(row?.recommendation);
+  return escalationSurvivesFailure(row);
 }
 
 // ── A quiet verdict stands only on a read that FINISHED (CUL-1277) ─────────────
@@ -75,7 +82,7 @@ export function escalationSurvivesReRead(
 //
 // An ESCALATION is not held to it: presence escalates at any status (CUL-812), which is
 // `escalationSurvivesFailure` above and `isWorthACall` in lib/readState.ts.
-export const FINISHED_READ_STATUSES: readonly string[] = ['completed', 'uncertain'];
+export const FINISHED_READ_STATUSES: readonly string[] = TIER_FINISHED_STATUSES;
 
 /**
  * The row holds a QUIET verdict on a status that is not a finished read: the record must
@@ -83,23 +90,23 @@ export const FINISHED_READ_STATUSES: readonly string[] = ['completed', 'uncertai
  * same one a row with no verdict takes. PM ruling 2026-09-26 (CUL-1277, option (a)).
  */
 export function quietVerdictUnfinished(
-  row: { status?: string | null; recommendation?: string | null } | null | undefined,
+  row: { status?: string | null; recommendation?: string | null; tier?: string | null } | null | undefined,
 ): boolean {
-  const verdict = row?.recommendation;
-  if (verdict === null || verdict === undefined || !isQuietVerdict(verdict)) return false;
-  return !FINISHED_READ_STATUSES.includes(row?.status ?? '');
+  if (!row) return false;
+  // A call in either column is never held to the finished list (presence escalates).
+  if (effectiveTierRank(row) !== TIER_RANK.quiet) return false;
+  const verdict = row.recommendation;
+  const hasQuiet = (verdict !== null && verdict !== undefined && isQuietVerdict(verdict)) ||
+    (row.tier !== null && row.tier !== undefined);
+  if (!hasQuiet) return false;
+  return !FINISHED_READ_STATUSES.includes(row.status ?? '');
 }
 
-/** The shipped recommendation enum's owner-facing words, verbatim — the ONE map the two
- *  incident sections (`VomitAnalysisSection`, `StoolAnalysisSection`) and Home's spine
- *  node (`lib/spineNode.ts`, D2-4 / CUL-1066) read, so a verdict is named identically on
- *  the record and on Home. Lifted here rather than exported from a component file so a
- *  pure module can import the words without pulling a screen into `lib/`. */
-export const INCIDENT_REC_LABEL = {
-  worth_a_call: 'Worth a call',
-  monitor: 'Keep an eye out',
-  not_enough_to_say: 'Not enough to say yet',
-} as const;
+/** The shipped recommendation enum's owner-facing words, verbatim. They live in the
+ *  tier-word map since EN-3 (`lib/incidentTierWords.ts`, the one file allowed to name a
+ *  read); re-exported here so the readers that name an earlier-rule verdict by its enum
+ *  keep one import. */
+export { INCIDENT_REC_LABEL };
 
 export type IncidentRecommendation = keyof typeof INCIDENT_REC_LABEL;
 
@@ -121,4 +128,20 @@ function isKnownRecommendation(value: string): value is IncidentRecommendation {
 export function incidentVerdictLabel(value: string): string {
   if (isKnownRecommendation(value)) return INCIDENT_REC_LABEL[value];
   return INCIDENT_REC_LABEL.worth_a_call;
+}
+
+/**
+ * The record's label for a row, through the tier-word map (EN-3): a new-rule row speaks
+ * its tier, an earlier-rule row the shipped enum words. Falls back to the verdict's words
+ * where the map has none to stand (the section has already decided the row renders a card).
+ */
+export function incidentReadLabel(row: {
+  status?: string | null;
+  recommendation?: string | null;
+  tier?: string | null;
+  engine_flags?: unknown;
+}): string {
+  const display = tierDisplayOf(row);
+  if (display) return TIER_WORDS[display].label;
+  return incidentVerdictLabel(row.recommendation ?? 'worth_a_call');
 }

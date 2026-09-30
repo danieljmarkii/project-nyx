@@ -40,6 +40,7 @@ import {
 const CALM = {
   recommendation: 'monitor',
   read_text: 'Nothing obviously concerning on its own.',
+  tier: null as string | null,
   description: 'Yellow foam.',
   colour: 'yellow',
   consistency: 'foamy',
@@ -64,6 +65,7 @@ describe('writeAnalysisDismissal', () => {
       ['eq', 'event_id', 'e1'],
       ['eq', 'recommendation', 'monitor'],
       ['eq', 'read_text', CALM.read_text],
+      ['is', 'tier', null],
       ['eq', 'description', 'Yellow foam.'],
       ['eq', 'colour', 'yellow'],
       ['eq', 'consistency', 'foamy'],
@@ -127,7 +129,7 @@ describe('sameShown', () => {
   it('so is a change the grid draws through a column that is not a red flag on its own (round 3)', () => {
     // Stool "Blood: Fresh red" becoming "Dark / tarry" moves stool_blood_type only.
     const stool = {
-      recommendation: 'worth_a_call', read_text: 'Worth a call.', description: null, stool_consistency: 'loose',
+      recommendation: 'worth_a_call', read_text: 'Worth a call.', tier: null as string | null, description: null, stool_consistency: 'loose',
       stool_colour: 'brown', stool_content: null, stool_blood_present: 'yes', stool_blood_type: 'fresh_red',
       stool_mucus_present: 'no', foreign_material_present: 'unsure', foreign_material_note: null,
     };
@@ -135,6 +137,8 @@ describe('sameShown', () => {
     expect(sameShown({ ...stool, stool_blood_type: 'dark_tarry' }, seenStool)).toBe(false);
     // An 'unsure' foreign-material row appears only once a note exists.
     expect(sameShown({ ...stool, foreign_material_note: 'a small fragment' }, seenStool)).toBe(false);
+    // EN-3: a tier written under the same verdict changes the card's words (call today).
+    expect(sameShown({ ...stool, tier: 'call_today' }, seenStool)).toBe(false);
   });
 
   it('a column that is not a string reads as null, the way the screen held it', () => {

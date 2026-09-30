@@ -258,7 +258,8 @@ beforeEach(() => {
   mockQueries.length = 0;
 });
 
-const SEVEN = ['event_id', 'status', 'recommendation', 'updated_at', 'photo_set_key', 'rule_version', 'engine_flags'];
+// Seven columns until EN-3 (CUL-1133) added the tier; the name stays so the history reads.
+const SEVEN = ['event_id', 'status', 'recommendation', 'updated_at', 'photo_set_key', 'rule_version', 'engine_flags', 'tier'];
 
 describe('what the phone keeps: seven columns, never the words, the hide or the payload stamps', () => {
   it('the real DDL builds exactly the seven columns', () => {
@@ -290,6 +291,7 @@ describe('what the phone keeps: seven columns, never the words, the hide or the 
         photo_set_key: null,
         rule_version: null,
         engine_flags: null,
+        tier: null,
       },
     ]);
   });
@@ -911,5 +913,39 @@ describe('readCopies hands every copy its photoSetStale', () => {
   it('an event with photos and no copy is still absent', async () => {
     holdPhotos('x', [A1]);
     expect((await readCopies(['x'])).size).toBe(0);
+  });
+});
+
+describe('the tier (EN-3, CUL-1133)', () => {
+  const tierOf = (id: string) =>
+    (mockDb.prepare('SELECT tier FROM event_ai_verdicts WHERE event_id = ?').get(id) as { tier: string | null } | undefined)?.tier;
+
+  it('a tiered row keeps its tier, and readCopies hands it over', async () => {
+    await writeCopies(mockAdapter, [{ ...row('a', '2026-09-30T10:00:00+00:00', 'worth_a_call'), tier: 'call_now' }], never);
+    expect(tierOf('a')).toBe('call_now');
+    expect((await readCopies(['a'])).get('a')?.tier).toBe('call_now');
+  });
+
+  it('a tier this build does not know is kept, never dropped to NULL (the map speaks it as a call)', async () => {
+    await writeCopies(mockAdapter, [{ ...row('a', '2026-09-30T10:00:00+00:00', 'worth_a_call'), tier: 'call_within_the_hour' }], never);
+    expect(tierOf('a')).toBe('call_within_the_hour');
+    // Not a tier's shape at all: NULL, and the verdict still stands.
+    await writeCopies(mockAdapter, [{ ...row('b', '2026-09-30T10:00:00+00:00', 'worth_a_call'), tier: 'Call Now!' }], never);
+    expect(tierOf('b')).toBeNull();
+  });
+
+  it('the same version fills a NULL tier once, and never clears one', async () => {
+    await writeCopies(mockAdapter, [stamped('a', '2026-09-30T10:00:00+00:00', { recommendation: 'worth_a_call' })], never);
+    expect(tierOf('a')).toBeNull();
+    expect(
+      await writeCopies(mockAdapter, [{ ...stamped('a', '2026-09-30T10:00:00+00:00', { recommendation: 'worth_a_call' }), tier: 'call_today' }], never),
+    ).toBe(1);
+    expect(tierOf('a')).toBe('call_today');
+    expect(await writeCopies(mockAdapter, [stamped('a', '2026-09-30T10:00:00+00:00', { recommendation: 'worth_a_call' })], never)).toBe(0);
+    expect(tierOf('a')).toBe('call_today');
+  });
+
+  it('the watermark key moved, so every phone re-pulls once and gains the tier', () => {
+    expect(READ_COPY_WATERMARK_KEY).toBe('event_ai_verdicts:v3');
   });
 });

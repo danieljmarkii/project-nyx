@@ -104,6 +104,15 @@ describe('DayMark — the §05 row', () => {
     expect(seen.getByTestId('daymark').props.accessibilityLabel).toContain('photographed');
   });
 
+  it('EN-3: a new-rule call paints the same rose and says its own words', () => {
+    for (const [photo, words] of [['call_now', 'read as call now'], ['call_today', 'read as call today']] as const) {
+      const t = render(<DayMark {...base} count={1} coverage="logged" photo={photo} />);
+      expect(flat(t.getByTestId(`daymark-layer-photo-${photo}`).props.style).backgroundColor).toBe(theme.colorEventSymptomInk);
+      expect(t.getByTestId('daymark').props.accessibilityLabel).toContain(`photographed, ${words}`);
+      expect(t.getByTestId('daymark').props.accessibilityLabel).not.toContain('worth a call');
+    }
+  });
+
   it('speaks the count, never an all-clear', () => {
     const two = render(<DayMark {...base} count={2} coverage="logged" />);
     expect(two.getByTestId('daymark').props.accessibilityLabel).toContain('vomiting logged 2 times');

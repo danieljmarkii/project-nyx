@@ -46,7 +46,7 @@ describe('the §5.4 table, row by row', () => {
   });
 
   it('calm: a finished read that said monitor, and only that', () => {
-    expect(readVerdictOf(base({ copy: copy('completed', 'monitor') }))).toEqual({ state: 'calm', verdict: 'monitor' });
+    expect(readVerdictOf(base({ copy: copy('completed', 'monitor') }))).toEqual({ state: 'calm', verdict: 'monitor', display: 'monitor' });
   });
 
   it('unread: a finished read that could not say (the photo was unclear), with its verdict riding for word surfaces', () => {
@@ -56,6 +56,7 @@ describe('the §5.4 table, row by row', () => {
       expect(readVerdictOf(base({ copy: copy(status, 'not_enough_to_say') }))).toEqual({
         state: 'unread',
         verdict: 'not_enough_to_say',
+        display: 'not_enough_to_say',
       });
     }
   });
@@ -124,6 +125,7 @@ describe('precedence: the edges the header names', () => {
     expect(readVerdictOf(base({ eventType: 'stool_normal', hasPhoto: false, copy: copy('uncertain', 'not_enough_to_say') }))).toEqual({
       state: 'none',
       verdict: 'not_enough_to_say',
+      display: 'not_enough_to_say',
     });
   });
 
@@ -272,11 +274,66 @@ describe('the cross product: one predicate, never two answers', () => {
   it('a stale calm read on a photographed row, reading on, is the grey mark with no verdict', () => {
     expect(
       readVerdictOf(base({ copy: { ...copy('completed', 'monitor'), photoSetStale: true } })),
-    ).toEqual({ state: 'unread', verdict: null });
+    ).toEqual({ state: 'unread', verdict: null, display: null });
   });
 
   it('nothing but a read in flight or a pending row is ever pending', () => {
     const stray = inputs.filter((i) => readStateOf(i) === 'pending' && !i.inFlight && i.copy?.status !== 'pending');
     expect(stray).toEqual([]);
+  });
+});
+
+// ── EN-3 (CUL-1133): the tier through the one word map ─────────────────────────
+describe('the tier (EN-3): the louder column, status ahead of tier, words by rule', () => {
+  const EN3 = '["engines_v3_en3"]';
+  const tiered = (status: string, recommendation: string | null, tier: string | null): ReadCopy => ({
+    status, recommendation, tier, engine_flags: EN3,
+  });
+
+  it('a new-rule call speaks its tier; an earlier-rule call keeps "worth a call"', () => {
+    expect(readVerdictOf(base({ copy: tiered('completed', 'worth_a_call', 'call_today') }))).toMatchObject({ state: 'worth_a_call', display: 'call_today' });
+    expect(readVerdictOf(base({ copy: tiered('completed', 'worth_a_call', 'call_now') }))).toMatchObject({ state: 'worth_a_call', display: 'call_now' });
+    expect(readVerdictOf(base({ copy: copy('completed', 'worth_a_call') }))).toMatchObject({ state: 'worth_a_call', display: 'worth_a_call' });
+  });
+
+  it('a call in the TIER column is the rose even when the verdict beside it is quiet, at any status', () => {
+    for (const status of ['completed', 'failed', 'capped', 'pending', 'a_status_from_the_future']) {
+      const read = readVerdictOf(base({ copy: tiered(status, 'monitor', 'call_today') }));
+      expect(read.state).toBe('worth_a_call');
+      expect(read.display).toBe('call_today');
+    }
+  });
+
+  it('a quiet tier stands only on a finished read: a failed or capped row\'s earlier "logged" is not calm', () => {
+    expect(readVerdictOf(base({ copy: tiered('completed', 'monitor', 'logged') }))).toMatchObject({ state: 'calm', display: 'logged' });
+    for (const status of ['failed', 'capped', 'read_disabled', 'a_status_from_the_future']) {
+      const read = readVerdictOf(base({ copy: tiered(status, 'monitor', 'logged') }));
+      expect(read.state).toBe('unread');
+      expect(read.display).toBeNull();
+      expect(read.verdict).toBeNull();
+    }
+  });
+
+  it('a stale photo set demotes a tiered calm read exactly as it does an earlier-rule one', () => {
+    const read = readVerdictOf(base({ copy: { ...tiered('completed', 'monitor', 'logged'), photoSetStale: true } }));
+    expect(read).toEqual({ state: 'unread', verdict: null, display: null });
+  });
+
+  it('the columns disagreeing between the quiet two: the less calm one wins, and it is not calm', () => {
+    const read = readVerdictOf(base({ copy: tiered('completed', 'monitor', 'not_enough_to_say') }));
+    expect(read.state).toBe('unread');
+    expect(read.display).toBe('not_enough_to_say');
+    expect(read.verdict).toBe('not_enough_to_say');
+  });
+
+  it('isWorthACall and readStateOf agree over every tier × verdict × status', () => {
+    for (const status of ['completed', 'uncertain', 'failed', 'capped', 'pending', 'x']) {
+      for (const rec of ['worth_a_call', 'monitor', 'not_enough_to_say', null, 'zz']) {
+        for (const tier of ['call_now', 'call_today', 'logged', 'not_enough_to_say', null, 'zz']) {
+          const c = tiered(status, rec, tier);
+          expect(isWorthACall(c)).toBe(readStateOf(base({ copy: c })) === 'worth_a_call');
+        }
+      }
+    }
   });
 });

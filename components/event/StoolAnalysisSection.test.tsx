@@ -84,6 +84,8 @@ import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
 import { Alert, LayoutAnimation } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { StoolAnalysisSection } from './StoolAnalysisSection';
+import { theme } from '../../constants/theme';
+import { flat } from '../../testUtils/tree';
 import { readLandedCopy } from './useReadLandingAnnouncement';
 import { watchAnalysisRow, awaitAnalysisChain, triggerStoolAnalysis, deriveEditedStoolFields } from '../../lib/analysis';
 import { __resetReducedMotionForTest, useReducedMotionStore } from '../../store/reducedMotionStore';
@@ -1055,5 +1057,28 @@ describe('StoolAnalysisSection — EN-7 re-check on an owner edit (CUL-1408)', (
   it('an edit that stays formed, or a call that already stands: nothing re-runs', async () => {
     await saveConsistency({ engine_flags: ['engines_v3_en3'], contextual_flags: [] }, 'type_3_cracked');
     expect(triggerStoolAnalysis).not.toHaveBeenCalled();
+  });
+});
+
+describe('StoolAnalysisSection — the tier (EN-3)', () => {
+  const EN3 = ['engines_v3_en3'];
+  afterEach(() => { mockRow = null; });
+
+  it('a new-rule call today speaks its tier in the rose outline; an earlier-rule call keeps today\'s card', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3 });
+    const tiered = render(<StoolAnalysisSection eventId="s1" petId="pet-1" petName="Rex" hasPhoto />);
+    await tiered.findByText('Call your vet today');
+    expect(flat(tiered.getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorSurface);
+    tiered.unmount();
+    mockRow = row({ recommendation: 'worth_a_call' });
+    const earlier = render(<StoolAnalysisSection eventId="s2" petId="pet-1" petName="Rex" hasPhoto />);
+    await earlier.findByText('Worth a call');
+    expect(flat(earlier.getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
+  });
+
+  it('a new-rule calm read is "Keep an eye out", in the neutral card', async () => {
+    mockRow = row({ recommendation: 'monitor', tier: 'logged', engine_flags: EN3 });
+    const { findByText } = render(<StoolAnalysisSection eventId="s3" petId="pet-1" petName="Rex" hasPhoto />);
+    await findByText('Keep an eye out');
   });
 });

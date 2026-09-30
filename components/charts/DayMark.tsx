@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'rea
 import Svg, { Line } from 'react-native-svg';
 import { theme } from '../../constants/theme';
 import { dayMarkA11yLabel, type DayMarkCoverage, type DayMarkPhoto } from '../../lib/chartCopy';
+import { isCallDisplay } from '../../lib/incidentTierWords';
 import { ThemedText } from '../ui/ThemedText';
 
 // DayMark — one day of the month, to the §05 standard (CUL-1064; design authority
@@ -176,7 +177,7 @@ export function DayMarkFace({
           {medication && <View style={[styles.layerDot, styles.layerMedication]} testID="daymark-layer-medication" />}
           {photo !== 'none' && (
             <View
-              style={[styles.layerDot, photo === 'worth_a_call' ? styles.layerPhotoCall : styles.layerPhoto]}
+              style={[styles.layerDot, isCallDisplay(photo) ? styles.layerPhotoCall : styles.layerPhoto]}
               testID={`daymark-layer-photo-${photo}`}
             />
           )}

@@ -71,7 +71,8 @@ import {
 import type { TimelineRow } from './db';
 import { asDoseAdherence, doseDrugLabel } from './doseDisplay';
 import { FORMAT_LABEL, foodFormatTag, mealRowLabel } from './food';
-import { INCIDENT_REC_LABEL, type IncidentRecommendation } from './incidentReadState';
+import { type IncidentRecommendation } from './incidentReadState';
+import { TIER_WORDS } from './incidentTierWords';
 import { isComboDoseInDoubt, vehicleLabel } from './medications';
 import { readVerdictOf, type ReadCopyRow } from './readState';
 import { intakeChipTone, type RowChipTone } from './rowChips';
@@ -169,9 +170,11 @@ export type NodeRead =
   /** A read was expected and no check happened: failed, never sent, capped, no copy on
    *  this phone, or finished unable to say. The grey *Photo not read* (H-4b). */
   | { state: 'unread' }
-  /** The rose: *Worth a call*, whatever the row's status (CUL-812), an unknown verdict
-   *  included. */
-  | { state: 'worth_a_call'; label: string };
+  /** The rose, whatever the row's status (CUL-812), an unknown verdict included. `label`
+   *  is the narrow row's chip from the tier-word map (EN-3: *Call now* / *Call today* on a
+   *  new-rule read, *Worth a call* on an earlier-rule one); `spoken` is the full phrase a
+   *  screen reader hears (*Call your vet now*), never the short form. */
+  | { state: 'worth_a_call'; label: string; spoken: string };
 
 /** Whether a read is EXPECTED for the event: its type, and whether this device holds its
  *  photo. Without it a missing read cannot be told from no photo, so it reads as `none`
@@ -274,7 +277,7 @@ export function nodeReadOf(
   working: boolean,
   expect?: NodeReadExpectation,
 ): NodeRead {
-  const { state } = readVerdictOf({
+  const { state, display } = readVerdictOf({
     eventType: expect?.eventType ?? null,
     hasPhoto: expect?.hasPhoto ?? false,
     copy: row,
@@ -283,8 +286,10 @@ export function nodeReadOf(
     readingOff: false,
   });
   switch (state) {
-    case 'worth_a_call':
-      return { state: 'worth_a_call', label: INCIDENT_REC_LABEL.worth_a_call };
+    case 'worth_a_call': {
+      const words = TIER_WORDS[display ?? 'worth_a_call'];
+      return { state: 'worth_a_call', label: words.short, spoken: words.label };
+    }
     case 'calm':
       return { state: 'calm' };
     case 'pending':

@@ -6,10 +6,12 @@ import { theme, shadows } from '../../../constants/theme';
 import { useAppActive } from '../../../hooks/useAppActive';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { dayMarkDateWord } from '../../../lib/chartCopy';
+import { TIER_WORDS, TIERED_CALLS_READ_AS } from '../../../lib/incidentTierWords';
 import {
   buildMonthModel,
   compareMonths,
   monthA11yLabel,
+  monthCallDays,
   monthOfKey,
   monthReadRange,
   shiftMonth,
@@ -601,7 +603,9 @@ function RowsStage({
 function Legend({ model, layers }: { model: MonthModel; layers: MonthLayers }) {
   const dosedDays = model.days.filter((d) => d.medication).length;
   const photoDays = model.days.filter((d) => d.photo !== 'none').length;
-  const calledDays = model.days.filter((d) => d.photo === 'worth_a_call').length;
+  // The two rules' calls are two lines, never one sum (EN-3, spec §5). The earlier rule's
+  // line is today's line, drawn as it always was unless the month holds only new-rule calls.
+  const { earlier: calledDays, tiered: tieredDays } = monthCallDays(model);
   const dayWord = (n: number) => `${n} ${n === 1 ? 'day' : 'days'}`;
   return (
     <View style={styles.legend} testID="month-legend">
@@ -637,10 +641,22 @@ function Legend({ model, layers }: { model: MonthModel; layers: MonthLayers }) {
             <View style={[styles.legendDot, styles.legendDotPhoto]} />
             <ThemedText style={styles.legendText}>photographed · {dayWord(photoDays)}</ThemedText>
           </View>
-          <View style={styles.legendItem} testID="month-legend-photo-call">
-            <View style={[styles.legendDot, styles.legendDotPhotoCall]} />
-            <ThemedText style={styles.legendText}>photo read as worth a call · {dayWord(calledDays)}</ThemedText>
-          </View>
+          {calledDays > 0 || tieredDays === 0 ? (
+            <View style={styles.legendItem} testID="month-legend-photo-call">
+              <View style={[styles.legendDot, styles.legendDotPhotoCall]} />
+              <ThemedText style={styles.legendText}>
+                photo read as {TIER_WORDS.worth_a_call.readAs} · {dayWord(calledDays)}
+              </ThemedText>
+            </View>
+          ) : null}
+          {tieredDays > 0 ? (
+            <View style={styles.legendItem} testID="month-legend-photo-call-tiered">
+              <View style={[styles.legendDot, styles.legendDotPhotoCall]} />
+              <ThemedText style={styles.legendText}>
+                photo read as {TIERED_CALLS_READ_AS} · {dayWord(tieredDays)}
+              </ThemedText>
+            </View>
+          ) : null}
         </>
       )}
     </View>

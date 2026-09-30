@@ -78,6 +78,7 @@ import {
   type IncidentRecommendation,
 } from './incidentReadState';
 import { isQuietVerdict, type QuietVerdict } from './incidentVerdict';
+import { tierDisplayOf, type TierDisplay } from './incidentTierWords';
 
 /**
  * What the phone's copy holds for one event's read that can decide a state: two of
@@ -98,6 +99,13 @@ export interface ReadCopy {
    *  never stored. Absent reads as false: a row written before the stamps, or a copy
    *  built by a caller that did not compare, keeps today's behaviour. */
   photoSetStale?: boolean;
+  /** EN-3's tier (migration 079), mirrored by the copy; NULL / absent on an earlier-rule
+   *  read. Decides the words through the tier-word map, and the rose on the same max as
+   *  the record (`effectiveTierRank`): a call in either column is the rose. */
+  tier?: string | null;
+  /** The Engines keys the read was written under, the copy's JSON text. Decides whether a
+   *  row speaks its tier's words or the shipped ones (`isTieredRow`). */
+  engine_flags?: string | null;
 }
 
 /** One row of the copy (`event_ai_verdicts`): the deciding pair, its key, the server's
@@ -114,6 +122,8 @@ export interface ReadCopyRow extends ReadCopy {
   rule_version: string | null;
   /** The Engines keys on for this write, as a JSON array; NULL before the stamps. */
   engine_flags: string | null;
+  /** The read's tier (EN-3), NULL on an earlier-rule read. */
+  tier: string | null;
 }
 
 export type ReadState = 'worth_a_call' | 'calm' | 'pending' | 'unread' | 'off' | 'none';
@@ -180,19 +190,34 @@ export interface ReadVerdict {
    * in flight included.
    */
   verdict: IncidentRecommendation | null;
+  /**
+   * The words that stand, through the tier-word map (EN-3, `lib/incidentTierWords.ts`):
+   * `call_now` / `call_today` / `logged` / `not_enough_to_say` on a new-rule read, the
+   * shipped `worth_a_call` / `monitor` / `not_enough_to_say` on an earlier-rule one (and
+   * `worth_a_call` for any value this build does not know). Null exactly where `verdict`
+   * is null, so a surface that switches to it inherits every demotion above.
+   */
+  display: TierDisplay | null;
 }
 
 /** The state, with the verdict a word-speaking surface may name (the Signal gallery).
  *  The shared day row speaks no verdict words since HV-6: it draws the state. */
 export function readVerdictOf(input: ReadStateInput): ReadVerdict {
-  if (isWorthACall(input.copy)) return { state: 'worth_a_call', verdict: 'worth_a_call' };
-  if (input.inFlight || input.copy?.status === 'pending') return { state: 'pending', verdict: null };
+  if (isWorthACall(input.copy)) {
+    return { state: 'worth_a_call', verdict: 'worth_a_call', display: tierDisplayOf(input.copy) ?? 'worth_a_call' };
+  }
+  if (input.inFlight || input.copy?.status === 'pending') return { state: 'pending', verdict: null, display: null };
   const finished = finishedQuietOf(input.copy);
-  if (finished === 'monitor') return { state: 'calm', verdict: finished };
+  // The words for a finished quiet read, through the map; null wherever `finished` is.
+  const display = finished === null ? null : tierDisplayOf(input.copy);
+  if (finished === 'monitor' && display !== 'not_enough_to_say') return { state: 'calm', verdict: finished, display };
+  // A tier that says it could not read, beside a `monitor`, is not calm (the map's rule: the
+  // less calm quiet column wins), and is spoken as the not-enough verdict.
+  const quiet = finished === null ? null : display === 'not_enough_to_say' ? 'not_enough_to_say' : finished;
   // From here the photo was not checked: no read finished, or it finished unable to say.
-  if (!input.hasPhoto || !hasPerIncidentRead(input.eventType)) return { state: 'none', verdict: finished };
-  if (input.readingOff) return { state: 'off', verdict: finished };
-  return { state: 'unread', verdict: finished };
+  if (!input.hasPhoto || !hasPerIncidentRead(input.eventType)) return { state: 'none', verdict: quiet, display };
+  if (input.readingOff) return { state: 'off', verdict: quiet, display };
+  return { state: 'unread', verdict: quiet, display };
 }
 
 /** The read's state, as §5.4's table defines it. */

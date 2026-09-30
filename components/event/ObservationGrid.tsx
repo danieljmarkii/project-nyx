@@ -74,6 +74,7 @@ export function ObservationGrid({
   escalating,
   folded,
   onToggleFold,
+  heading = OBSERVATIONS_HEADING,
 }: {
   rows: readonly ObservationRow[];
   description?: string | null;
@@ -89,6 +90,9 @@ export function ObservationGrid({
   escalating?: boolean;
   folded: boolean;
   onToggleFold: (next: boolean) => void;
+  /** The block's heading. "What's visible" unless the facts describe a read the one on
+   *  screen replaced (CUL-819 (a): "From the earlier read" under a held call). */
+  heading?: string;
 }) {
   const stripLine = observationStripLine(rows.map((r) => r.value));
 
@@ -119,7 +123,7 @@ export function ObservationGrid({
             Each node after the first carries its own leading separator, so the grouped
             announcement reads as the one sentence it looks like and needs no invented
             label (C-7). */}
-        <ThemedText style={styles.stripHeading}>{OBSERVATIONS_HEADING}</ThemedText>
+        <ThemedText style={styles.stripHeading}>{heading}</ThemedText>
         <ThemedText style={styles.stripNamed} numberOfLines={1}>
           {` · ${stripLine.named}`}
         </ThemedText>
@@ -135,7 +139,7 @@ export function ObservationGrid({
   return (
     <View style={styles.block}>
       <View style={styles.headerRow}>
-        <ThemedText style={styles.heading}>{OBSERVATIONS_HEADING}</ThemedText>
+        <ThemedText style={styles.heading}>{heading}</ThemedText>
         {onEdit ? (
           <TouchableOpacity onPress={onEdit} hitSlop={16} accessibilityRole="button">
             <ThemedText style={styles.editLink}>{editLabel ?? 'Edit'}</ThemedText>

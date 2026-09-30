@@ -69,6 +69,7 @@ const analysisRow = (event_id: string, recommendation: string | null, status = '
   photo_set_key: null,
   rule_version: null,
   engine_flags: null,
+  tier: null,
 });
 
 /** A meal row's feeding as the lane takes it: keyed by its event id, witnessed, unrated,
@@ -215,6 +216,7 @@ function randomDay(rand: () => number): SweepDay {
         photo_set_key: null,
         rule_version: null,
         engine_flags: null,
+        tier: null,
       });
     }
   }

@@ -177,7 +177,7 @@ function RowChip({ chip, testID }: { chip: Chip; testID: string }) {
 function readSpoken(read: NodeRead): string {
   switch (read.state) {
     case 'worth_a_call':
-      return `. ${read.label}`;
+      return `. ${read.spoken}`;
     case 'unread':
       return `. ${PHOTO_NOT_READ_LABEL}`;
     case 'pending':
@@ -332,7 +332,7 @@ function ReadSlot({
   useLayoutEffect(() => {
     const was = wasPending.current;
     wasPending.current = pending;
-    if (was && !pending && landed) AccessibilityInfo.announceForAccessibility(read.label);
+    if (was && !pending && landed) AccessibilityInfo.announceForAccessibility(read.spoken);
   }, [pending, landed, read]);
 
   const railOut = railHeight != null;

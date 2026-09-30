@@ -48,10 +48,17 @@ import {
 import {
   escalationSurvivesFailure,
   escalationSurvivesReRead,
-  incidentVerdictLabel,
+  incidentReadLabel,
   quietVerdictUnfinished,
 } from '../../lib/incidentReadState';
-import { isEscalationVerdict } from '../../lib/incidentVerdict';
+import { isQuietVerdict } from '../../lib/incidentVerdict';
+import {
+  EARLIER_READ_LABEL,
+  isCallRow,
+  isTieredRow,
+  TIER_WORDS,
+  tierDisplayOf,
+} from '../../lib/incidentTierWords';
 import { needsEn7Recheck } from '../../lib/stoolForm';
 import { StoolFieldsEditor } from './StoolFieldsEditor';
 import { stoolCapCopy } from '../../constants/monetizationCopy';
@@ -90,6 +97,9 @@ interface AnalysisRow {
   // build has never seen, and a type that says otherwise is what let `REC_LABEL[rec]`
   // render a blank label. Every read of it goes through `lib/incidentVerdict.ts`.
   recommendation: string | null;
+  /** EN-3's tier beside the verdict (migration 079), written only under the Engines v3
+   *  key. Read only through the tier-word map (`lib/incidentTierWords.ts`). */
+  tier?: string | null;
   read_text: string | null;
   description: string | null;
   stool_consistency: string | null;
@@ -121,6 +131,7 @@ function sameRead(a: AnalysisRow, b: AnalysisRow): boolean {
   return (
     a.status === b.status &&
     a.recommendation === b.recommendation &&
+    (a.tier ?? null) === (b.tier ?? null) &&
     a.read_text === b.read_text
   );
 }
@@ -139,7 +150,7 @@ const SELECT_COLS =
   'status, recommendation, read_text, description, stool_consistency, stool_colour, ' +
   'stool_content, stool_blood_present, stool_blood_type, stool_mucus_present, ' +
   'foreign_material_present, foreign_material_note, ai_raw_payload, edited_at, dismissed_at, ' +
-  'updated_at, error, engine_flags, contextual_flags';
+  'updated_at, error, engine_flags, contextual_flags, tier';
 
 export function StoolAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
@@ -563,14 +574,17 @@ export function StoolAnalysisSection(
   // verdict takes (here, nothing; below, the honest retry). An escalation is never held
   // to this: presence escalates at any status.
   const unfinishedQuiet = quietVerdictUnfinished(row);
-  if (!hasPhoto && (!row?.recommendation || row.recommendation === 'not_enough_to_say' || unfinishedQuiet)) {
+  // A call in EITHER column is never suppressed here (EN-3: the louder column, the same
+  // max every other surface reads); only a row with no call reaches these two frames.
+  const callStands = isCallRow(row);
+  if (!hasPhoto && !callStands && (!row?.recommendation || row.recommendation === 'not_enough_to_say' || unfinishedQuiet)) {
     return null;
   }
 
   // No analysis and not working (e.g. gave up, or an unclear/unsynced photo). Only
   // reached WITH a photo now — the retry is legitimate (the photo may not have
   // synced yet, the documented race triggerStoolAnalysis guards against).
-  if (!row || !row.recommendation || unfinishedQuiet) {
+  if (!row || (!row.recommendation && !callStands) || unfinishedQuiet) {
     return (
       <IncidentReadSection
         arrival={arrival}
@@ -589,8 +603,24 @@ export function StoolAnalysisSection(
     );
   }
 
-  const rec = row.recommendation;
+  // The verdict that picks the card's tone. A call held in the TIER beside a null or quiet
+  // verdict (a writer bug, a rolled-back build's write) is still a call, and on an
+  // unstamped row no tier tone is passed, so the verdict itself must say so: otherwise the
+  // card draws grey under "Worth a call" (adversarial pass on PR-27, round 2).
+  const rec = callStands && (row.recommendation === null || isQuietVerdict(row.recommendation))
+    ? 'worth_a_call'
+    : (row.recommendation ?? 'worth_a_call');
   const dismissed = !!row.dismissed_at;
+  // EN-3 (CUL-1133): which words stand, through the one map. Null on an earlier-rule read's
+  // tone/action (it keeps today's card), never null for a call.
+  const tiered = isTieredRow(row);
+  const display = tiered ? tierDisplayOf(row) : null;
+  // CUL-819 (a) is WITHHELD for now: the phone cannot tell a held call whose latest run
+  // failed from one whose later run finished calm and was held, because the server's hold
+  // writes nothing and leaves the old `error` standing (CUL-1432 item 8). A line known to be
+  // false in that case is not shipped; `heldCallDisclosureOf` (tested) is wired here when
+  // the server clears `error` on a hold. The call itself draws the same either way.
+  const heldDisclosure: string | null = null;
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
   const editedSet = new Set<EditableStoolField>(
@@ -607,7 +637,7 @@ export function StoolAnalysisSection(
       // error-only write over a hidden Worth a call — or before that server change is
       // live. Saying "hidden" tells the owner something landed and where to find it,
       // without speaking what they chose to hide.
-      announcement={dismissed ? DISMISSED_LINE : incidentVerdictLabel(rec)}
+      announcement={dismissed ? DISMISSED_LINE : heldDisclosure ? `${incidentReadLabel(row)}. ${heldDisclosure}` : incidentReadLabel(row)}
       pending={false}
     >
       {dismissed ? (
@@ -623,7 +653,12 @@ export function StoolAnalysisSection(
           // The words live in lib/incidentReadState.ts since D2-4 (CUL-1066), so Home's spine
           // node and this card cannot name one verdict two ways; a verdict this build does
           // not know is spoken as the escalation, never blank (CUL-1277).
-          label={incidentVerdictLabel(rec)}
+          label={incidentReadLabel(row)}
+          // EN-3: the tier's tone and action line from the map; both absent on an
+          // earlier-rule read, which draws today's card.
+          tone={display ? TIER_WORDS[display].tone : undefined}
+          action={display ? TIER_WORDS[display].action : null}
+          disclosure={heldDisclosure}
           readText={row.read_text}
           onHide={() => setDismissed(true)}
           arrival={arrival.rail}
@@ -655,7 +690,8 @@ export function StoolAnalysisSection(
           ) : undefined}
           // Any verdict off the quiet list, one this build does not know included: its
           // facts never fold (CUL-1277).
-          escalating={isEscalationVerdict(rec)}
+          escalating={isCallRow(row)}
+          heading={heldDisclosure ? EARLIER_READ_LABEL : undefined}
           folded={folded}
           onToggleFold={setFolded}
         />

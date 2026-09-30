@@ -103,18 +103,20 @@ import type { ReadCopyRow } from './readState';
 import { supabase } from './supabase';
 
 /**
- * Exactly the seven columns the copy keeps, and the only columns this module ever asks
+ * Exactly the eight columns the copy keeps (the tier joined with EN-3, CUL-1133), and the only columns this module ever asks
  * the server for. Never `read_text`, never `dismissed_at`, never the payload stamps.
  */
 export const READ_COPY_COLUMNS =
-  'event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags';
+  'event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags, tier';
 
 /** The copy's key in `sync_watermarks` (wiped at sign-out with the rest). Renamed from
  *  `event_ai_verdicts` when the stamps arrived (PR-12): a new name has no watermark, so
  *  the first pull after the upgrade reads every row once and fills the stamps a row pulled
  *  by an earlier build lacks. The old key's row is left to the sign-out wipe; nothing
- *  reads it. Rename it again whenever a column is added that existing rows must gain. */
-export const READ_COPY_WATERMARK_KEY = 'event_ai_verdicts:v2';
+ *  reads it. Rename it again whenever a column is added that existing rows must gain.
+ *  `:v3` is EN-3's (CUL-1133): the tier. A row the server tiered before this build pulled
+ *  it would otherwise sit behind the old watermark with no tier. */
+export const READ_COPY_WATERMARK_KEY = 'event_ai_verdicts:v3';
 
 /** Rows asked for per page. A server `max-rows` below this number costs pages, never
  *  rows: the cursor is the last row RECEIVED, whatever the page's length. */
@@ -152,7 +154,7 @@ export async function readCopies(eventIds: readonly string[]): Promise<Map<strin
     const chunk = ids.slice(i, i + READ_CHUNK);
     const marks = chunk.map(() => '?').join(', ');
     const rows = await db.getAllAsync<ReadCopyRow>(
-      `SELECT event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags
+      `SELECT event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags, tier
          FROM event_ai_verdicts
         WHERE event_id IN (${marks})`,
       chunk,
@@ -244,23 +246,26 @@ const STORED_SECONDS = secondsOf('event_ai_verdicts.updated_at');
  *     NULL) takes them from the same version when it carries them.
  */
 const UPSERT_SQL = `
-  INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags, tier)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(event_id) DO UPDATE SET
     status = excluded.status,
     recommendation = excluded.recommendation,
     updated_at = excluded.updated_at,
     photo_set_key = excluded.photo_set_key,
     rule_version = excluded.rule_version,
-    engine_flags = excluded.engine_flags
+    engine_flags = excluded.engine_flags,
+    tier = excluded.tier
   WHERE julianday(excluded.updated_at) IS NOT NULL
     AND (julianday(event_ai_verdicts.updated_at) IS NULL
          OR julianday(excluded.updated_at) > julianday(event_ai_verdicts.updated_at)
          OR (julianday(excluded.updated_at) = julianday(event_ai_verdicts.updated_at)
              AND (${IN_SECONDS} > ${STORED_SECONDS} AND ${IN_SECONDS} - ${STORED_SECONDS} < 1
                   OR (${IN_SECONDS} = ${STORED_SECONDS}
-                      AND event_ai_verdicts.engine_flags IS NULL
-                      AND excluded.engine_flags IS NOT NULL))))`;
+                      AND ((event_ai_verdicts.engine_flags IS NULL
+                            AND excluded.engine_flags IS NOT NULL)
+                           OR (event_ai_verdicts.tier IS NULL
+                               AND excluded.tier IS NOT NULL))))))`;
 
 /** A server row as PostgREST hands it over: `engine_flags` is the `text[]` as an array. */
 export interface ServerVerdictRow {
@@ -271,6 +276,7 @@ export interface ServerVerdictRow {
   photo_set_key?: unknown;
   rule_version?: unknown;
   engine_flags?: unknown;
+  tier?: unknown;
 }
 
 // The shapes 075's CHECKs enforce on the server, checked again here because a stamp this
@@ -278,6 +284,9 @@ export interface ServerVerdictRow {
 const PHOTO_SET_KEY_SHAPE = /^[0-9a-f,-]{1,4000}$/;
 const RULE_VERSION_SHAPE = /^[a-z0-9._-]{1,64}$/;
 const ENGINE_KEY_SHAPE = /^[a-z0-9_]{1,64}$/;
+// Any tier-shaped text is kept, known or not: a tier this build does not know must reach
+// the word map, which speaks it as a call (CUL-1277), never be dropped to NULL here.
+const TIER_SHAPE = /^[a-z0-9_]{1,64}$/;
 
 /** `engine_flags` as the copy stores it: the sorted keys as a JSON array, or NULL. */
 function engineFlagsText(value: unknown): string | null {
@@ -312,6 +321,7 @@ function toCopyRow(row: Partial<ServerVerdictRow> | null | undefined): ReadCopyR
     rule_version:
       typeof row.rule_version === 'string' && RULE_VERSION_SHAPE.test(row.rule_version) ? row.rule_version : null,
     engine_flags: engineFlagsText(row.engine_flags),
+    tier: typeof row.tier === 'string' && TIER_SHAPE.test(row.tier) ? row.tier : null,
   };
 }
 
@@ -344,6 +354,7 @@ export async function writeCopies(
       row.photo_set_key,
       row.rule_version,
       row.engine_flags,
+      row.tier ?? null,
     ]);
     changed += result.changes;
   }
