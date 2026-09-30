@@ -6,6 +6,7 @@ import { useAppActive } from '../../../hooks/useAppActive';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { focusAccessibility } from '../../../lib/a11yFocus';
 import { measureNodeInWindow, type WindowRect } from '../../../lib/measureNode';
+import { CARE_CONTEXT_TITLE } from '../../../lib/careContext';
 import { loadSignalScreen, screenLeadsWithLanes, UNSUPPORTED_LINE, withheldLines, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
 import { usePetStore } from '../../../store/petStore';
 import { WhorlSpinner } from '../../brand/WhorlSpinner';
@@ -40,6 +41,13 @@ import { leadChartWidth } from './SignalLeadCard';
 //   5. the lanes                       timed from meals, before / in the trial, the untimed line
 //   6. the episodes                    a gallery, each tile its OWN read
 //   7. why this is a Signal            counts, not a verdict; the medication inside the window
+//
+// *Around this* (EN-10, CUL-1421; mock `docs/culprit-engines-v3-mockups.html` §05) sits
+// under the sentence it stands beside: the visit, trial and course lines, each a window,
+// a count and its logging, relayed verbatim from the server (`careContextLinesOf`). On a
+// safety screen it follows the phone script instead, so the ask and the script that says
+// how to act on it stay one block (BRK-39). Absent when the finding carries no line —
+// `engines_v3_en10` off, or an old cache — and then the screen is exactly what it was.
 //
 // There is no section 8 any more: *Keep it compact on Home* retired with the Signal fold
 // under Design v2 (CUL-1285, PM-ruled 2026-09-26 — every Home card is already a row, and
@@ -343,6 +351,20 @@ function Body({
       <TimingLanes lanes={model.lanes.lanes} axis={model.lanes.axis} drawIn={drawIn} identity={model.identity} />
     </View>
   ) : null;
+  const aroundThis =
+    model.context.length > 0 ? (
+      <View style={styles.section} testID="signal-section-context">
+        <ThemedText style={styles.sectionTitle} accessibilityRole="header">
+          {CARE_CONTEXT_TITLE}
+        </ThemedText>
+        {model.context.map((line, i) => (
+          <View key={i} style={styles.contextRow} testID="signal-context-line">
+            <View style={styles.contextDot} />
+            <ThemedText style={styles.contextText}>{line}</ThemedText>
+          </View>
+        ))}
+      </View>
+    ) : null;
   const hero = <Hero model={model} drawIn={drawIn && !flew} windowWidth={windowWidth} hidden={flight != null} onWindowRect={onHeroRect} />;
   return (
     <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} testID="signal-screen-body">
@@ -374,6 +396,9 @@ function Body({
         ) : null}
       </Animated.View>
 
+      {/* EN-10 · around this — directly under the sentence on an insight screen */}
+      {model.safety ? null : aroundThis}
+
       {/* The safety phone script — the shipped receipts, the same words, one screen away —
           straight under the sentence that carries the ask (BRK-39). */}
       {model.safety ? (
@@ -389,6 +414,9 @@ function Body({
           />
         </View>
       ) : null}
+
+      {/* EN-10 · around this — on a safety screen, after the ask and its script */}
+      {model.safety ? aroundThis : null}
 
       {/* On a safety finding the charts come after the ask, in their usual order. */}
       {model.safety ? (lanesLead ? lanesSection : hero) : null}
@@ -486,6 +514,25 @@ const styles = StyleSheet.create({
   },
   compare: {
     marginTop: theme.space1,
+  },
+  contextRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: theme.space1,
+  },
+  // The mock's bullet: a small neutral dot, never a category colour (a line is not a sign).
+  contextDot: {
+    width: theme.space0_5,
+    height: theme.space0_5,
+    borderRadius: theme.space0_5,
+    backgroundColor: theme.colorTextSecondary,
+    marginTop: theme.space1,
+  },
+  contextText: {
+    flex: 1,
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextSecondary,
   },
   why: {
     fontSize: theme.textSM,

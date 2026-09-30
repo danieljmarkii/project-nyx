@@ -2,6 +2,7 @@ import { visibleFindings } from './signalVisible';
 import { countedAnotherTrial, signalTrialWindowFor, type SignalTrialAnchor } from './signalTrialAnchor';
 import { signalTitle } from './signalTitle';
 import { isStoodDown } from './signalCopy';
+import { careContextLinesOf } from './careContext';
 import {
   splitPastCourses,
   pastMedTileValue,
@@ -36,7 +37,8 @@ import type { TrialFactsState } from '../hooks/useTrialFacts';
 //
 // Concretely, the four sources and what each contributes:
 //   • the Signal   → `CachedFinding.text`, the server-composed phrased sentence, the
-//                    exact string `InsightCard` renders on Home. Never re-phrased.
+//                    exact string `InsightCard` renders on Home. Never re-phrased. Its
+//                    detail is EN-10's lines, the strings the finding's screen draws.
 //   • the trial    → `TrialStripModel.header` / `.line`, the exact strings the Home
 //                    trial strip renders.
 //   • a course     → `pastMedTileValue` / `pastMedEndDetail`, the exact strings the
@@ -378,14 +380,25 @@ function buildSignalRows(input: WorthRaisingInput): SignalEntry[] {
         // CUL-1364: a rising trial pair counted over a trial since replaced says "in the
         // trial's 22 days" under a trial row reading day 1. It is named by its own day, the
         // title Home gives it ("Diet trial, day 22 of 56"); every other row has no detail.
+        // EN-10 (CUL-1421, mock §05 5c): a chronicity or timing row carries the finding's
+        // visit, trial and course lines as its detail, VERBATIM and in the server's order —
+        // the same strings the finding's own screen draws under *Around this*, so this row
+        // quotes and never counts (G6). The two details never meet: only a trial-response
+        // finding can count another trial, and it carries no lines.
         detail: countedAnotherTrial(f.finding, input.signalAnchor)
           ? signalTitle(f.finding, signalTrialWindowFor(f.finding, input.signalAnchor))
-          : null,
+          : careContextDetail(f.finding),
         source: 'signal' as const,
         sourceLabel: 'from the Signal',
         isSafety: f.finding.priorityClass === 'safety',
       },
     }));
+}
+
+/** EN-10's lines as one quoted detail, or null when the finding carries none. */
+function careContextDetail(finding: SignalFinding): string | null {
+  const lines = careContextLinesOf(finding);
+  return lines.length > 0 ? lines.join(' ') : null;
 }
 
 /**
