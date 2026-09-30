@@ -8,7 +8,6 @@ import {
   INCIDENT_REC_LABEL,
   isCallRow,
   isTieredRow,
-  RESCUED_CALL_DISCLOSURE,
   TIER_WORDS,
   tierDisplayOf,
   type TierDisplay,
@@ -52,33 +51,40 @@ describe('which words stand', () => {
     expect(isTieredRow({ engine_flags: 'not json' })).toBe(false);
   });
 
+  it('the STAMP decides new-rule words, never a tier\'s presence (spec §1); the tier still counts toward the call', () => {
+    // A rollback's flag-off write: a stale tier beside a stamp without the key.
+    expect(tierDisplayOf({ status: 'completed', recommendation: 'worth_a_call', tier: 'logged', engine_flags: [] })).toBe('worth_a_call');
+    expect(tierDisplayOf({ status: 'completed', recommendation: 'monitor', tier: 'call_now', engine_flags: [] })).toBe('worth_a_call');
+    expect(isTieredRow({ tier: 'call_today', engine_flags: null })).toBe(false);
+  });
+
   it('the louder column wins: a flag-off write of a verdict never lowers a stored call tier', () => {
     // A rolled-back build writes `monitor` over a row the key had tiered call now.
     expect(tierDisplayOf({ status: 'completed', recommendation: 'monitor', tier: 'call_now', engine_flags: STAMP })).toBe('call_now');
-    expect(tierDisplayOf({ status: 'completed', recommendation: 'monitor', tier: 'call_today' })).toBe('call_today');
+    expect(tierDisplayOf({ status: 'completed', recommendation: 'monitor', tier: 'call_today', engine_flags: STAMP })).toBe('call_today');
     // And a verdict louder than a quiet tier beside it (a missed tier write) is the call.
-    expect(tierDisplayOf({ status: 'completed', recommendation: 'worth_a_call', tier: 'logged' })).toBe('call_today');
+    expect(tierDisplayOf({ status: 'completed', recommendation: 'worth_a_call', tier: 'logged', engine_flags: STAMP })).toBe('call_today');
   });
 
   it('status ahead of tier: a call stands at every status, a quiet tier only on a finished read', () => {
     for (const status of STATUSES) {
-      expect(tierDisplayOf({ status, recommendation: 'worth_a_call', tier: 'call_now' })).toBe('call_now');
-      expect(tierDisplayOf({ status, recommendation: 'worth_a_call', tier: 'call_today' })).toBe('call_today');
-      const quiet = tierDisplayOf({ status, recommendation: 'monitor', tier: 'logged' });
+      expect(tierDisplayOf({ status, recommendation: 'worth_a_call', tier: 'call_now', engine_flags: STAMP })).toBe('call_now');
+      expect(tierDisplayOf({ status, recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP })).toBe('call_today');
+      const quiet = tierDisplayOf({ status, recommendation: 'monitor', tier: 'logged', engine_flags: STAMP });
       if (status === 'completed' || status === 'uncertain') expect(quiet).toBe('logged');
       else expect(quiet).toBeNull();
     }
   });
 
   it('between the two quiet tiers the less calm wins, so an unread photo never stands as looked-at', () => {
-    expect(tierDisplayOf({ status: 'completed', recommendation: 'monitor', tier: 'not_enough_to_say' })).toBe('not_enough_to_say');
-    expect(tierDisplayOf({ status: 'completed', recommendation: 'not_enough_to_say', tier: 'logged' })).toBe('not_enough_to_say');
+    expect(tierDisplayOf({ status: 'completed', recommendation: 'monitor', tier: 'not_enough_to_say', engine_flags: STAMP })).toBe('not_enough_to_say');
+    expect(tierDisplayOf({ status: 'completed', recommendation: 'not_enough_to_say', tier: 'logged', engine_flags: STAMP })).toBe('not_enough_to_say');
   });
 
   it('a value this build does not know is spoken as "Worth a call", and a stored call now is never softened by one', () => {
     expect(tierDisplayOf({ status: 'completed', recommendation: 'monitor', tier: 'call_within_the_hour' })).toBe('worth_a_call');
     expect(tierDisplayOf({ status: 'completed', recommendation: 'call_soon', tier: 'call_today' })).toBe('worth_a_call');
-    expect(tierDisplayOf({ status: 'completed', recommendation: 'call_soon', tier: 'call_now' })).toBe('call_now');
+    expect(tierDisplayOf({ status: 'completed', recommendation: 'call_soon', tier: 'call_now', engine_flags: STAMP })).toBe('call_now');
     for (const v of ['toString', 'constructor', '__proto__']) {
       expect(tierDisplayOf({ status: 'completed', recommendation: v })).toBe('worth_a_call');
       expect(tierDisplayOf({ status: 'completed', recommendation: 'monitor', tier: v })).toBe('worth_a_call');
@@ -134,7 +140,8 @@ describe('the words (spec §2)', () => {
       expect(text).toMatch(/now/i);
     }
     expect(TIER_WORDS.call_now.action).toMatch(/emergency clinic/);
-    expect(TIER_WORDS.call_today.action).toMatch(/first thing tomorrow/);
+    // No leave to wait until the call-now signs that make it safe exist (PR-28, CUL-1432).
+    expect(TIER_WORDS.call_today.action).toBeNull();
   });
 
   it('the two calls share the rose and differ by fill; colour never carries a tier alone', () => {
@@ -153,16 +160,19 @@ describe('the words (spec §2)', () => {
     for (const words of Object.values(TIER_WORDS)) {
       for (const text of Object.values(words)) if (typeof text === 'string') expect(text).not.toContain('!');
     }
-    for (const text of [HELD_CALL_DISCLOSURE, RESCUED_CALL_DISCLOSURE]) expect(text).not.toContain('!');
+    expect(HELD_CALL_DISCLOSURE).not.toContain('!');
   });
 });
 
 describe('CUL-819 (a): a call left standing by a read that did not finish', () => {
   const call = { recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP };
 
-  it('an error on a held call discloses the earlier read; a rescue discloses the record', () => {
+  it('an error on a held call and a rescue say the same line, which claims no source for the call', () => {
     expect(heldCallDisclosureOf({ ...call, status: 'completed', error: 'timeout' })).toBe(HELD_CALL_DISCLOSURE);
-    expect(heldCallDisclosureOf({ ...call, status: 'failed', error: 'timeout' })).toBe(RESCUED_CALL_DISCLOSURE);
+    expect(heldCallDisclosureOf({ ...call, status: 'failed', error: 'timeout' })).toBe(HELD_CALL_DISCLOSURE);
+    // A rescue may carry this run's own photo finding (CUL-815): the line must not say the
+    // call came from the log, nor that the read never finished.
+    expect(HELD_CALL_DISCLOSURE).not.toMatch(/logged|didn't finish|earlier read/);
   });
 
   it('nothing to disclose: a clean call, a run still going, a quiet row, an earlier-rule row', () => {

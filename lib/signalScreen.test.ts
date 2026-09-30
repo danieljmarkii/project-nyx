@@ -1378,9 +1378,11 @@ describe('CUL-1216 — the loader reads the not-eating register for the ROUTE’
 });
 
 describe('EN-3: a tile takes its bout\'s loudest call, in the map\'s words', () => {
-  it('a call now anywhere in the bout is the tile\'s; else its own call; else the first call; else its own words', () => {
+  it('the bout\'s louder call by the month\'s rule, whatever the order; else its own words', () => {
     expect(tileVerdictOf('a', ['a', 'b'], { a: 'call_today', b: 'call_now' })).toBe('call_now');
     expect(tileVerdictOf('a', ['a', 'b'], { a: 'call_today', b: 'worth_a_call' })).toBe('call_today');
+    expect(tileVerdictOf('a', ['a', 'b'], { a: 'worth_a_call', b: 'call_today' })).toBe('call_today');
+    expect(tileVerdictOf('a', ['a', 'b', 'c'], { a: 'logged', b: 'worth_a_call', c: 'call_today' })).toBe('call_today');
     expect(tileVerdictOf('a', ['a', 'b'], { a: 'logged', b: 'call_today' })).toBe('call_today');
     expect(tileVerdictOf('a', ['a', 'b'], { a: 'monitor', b: 'worth_a_call' })).toBe('worth_a_call');
     expect(tileVerdictOf('a', ['a', 'b'], { a: 'logged', b: 'not_enough_to_say' })).toBe('logged');

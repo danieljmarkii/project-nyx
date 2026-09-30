@@ -21,7 +21,8 @@
 //      a photo nothing has read. The resolver returns null there, and each surface draws
 //      its own honest not-read frame.
 //   3. NEW WORDS ONLY ON A NEW-RULE ROW. A row is new-rule when the server stamped it under
-//      the EN-3 key (`engine_flags`) or it holds a tier. Every other row is an earlier-rule
+//      the EN-3 key (`engine_flags`); the stamp decides, never a tier's presence (spec §1).
+//      Every other row is an earlier-rule
 //      read and keeps today's words to the byte: an old "Worth a call" is never relabelled
 //      "call now" or "call today", because nobody knows which it would have been (spec §5).
 //      This is also what keeps the change dark: nothing writes a tier or the stamp until
@@ -29,7 +30,7 @@
 //      shipped words.
 //   4. A VALUE THIS BUILD DOES NOT KNOW, in either column, is spoken as "Worth a call"
 //      (CUL-1277): never blank, never calm, and never a newer word than the build can back.
-//      One exception is louder, not softer: a stored `call_now` keeps its words beside an
+//      One exception is louder, not softer: a new-rule `call_now` keeps its words beside an
 //      unknown verdict, because "Call your vet now" is the stronger ask.
 //
 // ── WHAT THIS FILE DOES NOT DO ───────────────────────────────────────────────
@@ -39,14 +40,14 @@
 // "what to tell them" line and the pet's call-now signs are generated from the floor's rows
 // and land with EN-4 (PR-28), never hand-written here (spec §3, BRK-3).
 
-import { EN7_ENGINE_KEY } from './stoolForm';
 import { effectiveTierRank, isIncidentTier, TIER_RANK } from './incidentTier';
 import { isQuietVerdict } from './incidentVerdict';
 
 /** The key a new-rule read is stamped with (`engine_flags`). One key covers EN-3's server
- *  half and EN-7, which ship together (PR-26); `lib/stoolForm.ts` names it for the stool
- *  re-check, and this is the same string, not a second one. */
-export const EN3_ENGINE_KEY = EN7_ENGINE_KEY;
+ *  half and EN-7, which ship together (PR-26); `lib/stoolForm.ts` names the same string for
+ *  the stool re-check, and a test holds the two equal, so a split of EN-7's key is a red
+ *  build here rather than a silent change to which rows speak the new words. */
+export const EN3_ENGINE_KEY = 'engines_v3_en3';
 
 /** The finished statuses a quiet verdict stands on. Mirrors `FINISHED_READ_STATUSES` in
  *  `lib/incidentReadState.ts`, which imports THIS list, so the two cannot drift. */
@@ -102,7 +103,13 @@ export const TIER_WORDS: Readonly<Record<TierDisplay, TierWords>> = {
     label: 'Call your vet today',
     short: 'Call today',
     readAs: 'call today',
-    action: "Call your vet today. If they're closed, first thing tomorrow.",
+    // No action line yet. The spec's line gives leave to wait ("if they're closed, first
+    // thing tomorrow") only beside its exception ("or an emergency clinic tonight if
+    // {this pet's call-now signs}"), and those signs come from EN-4's rows (PR-28). Until
+    // they exist every call the engine writes is call today, a photo of digested blood
+    // included, so the leave to wait would be calmer than today's "Worth a call"
+    // (adversarial pass on PR-27). CUL-1432 carries the line.
+    action: null,
     tone: 'call_outline',
     call: true,
     rule: 'tiered',
@@ -199,11 +206,12 @@ function engineKeys(value: unknown): readonly unknown[] {
   return [];
 }
 
-/** Whether the row's words were written under the new rule: stamped with the EN-3 key, or
- *  holding a tier (only a writer under the key writes one). */
+/** Whether the row's words were written under the new rule: the rule-version STAMP decides,
+ *  never the presence of a tier (spec §1). A rolled-back build's write leaves a stale tier
+ *  beside a stamp without the key; that row is an earlier-rule read, and its words and its
+ *  month population follow the stamp. The tier still counts toward the louder column. */
 export function isTieredRow(row: TierRow | null | undefined): boolean {
   if (!row) return false;
-  if (row.tier !== null && row.tier !== undefined) return true;
   return engineKeys(row.engine_flags).includes(EN3_ENGINE_KEY);
 }
 
@@ -218,7 +226,9 @@ export function tierDisplayOf(row: TierRow | null | undefined): TierDisplay | nu
   if (tier === null && rec === null) return null;
 
   if (effectiveTierRank(row) !== TIER_RANK.quiet) {
-    if (tier === 'call_now') return 'call_now';
+    // A call now is spoken as one only on a new-rule row; an unstamped stale call now (a
+    // rollback) is still the louder column's call, in the shipped words.
+    if (tier === 'call_now' && isTieredRow(row)) return 'call_now';
     // A value this build does not know, in either column, keeps the shipped words.
     if (tier !== null && !isIncidentTier(tier)) return 'worth_a_call';
     if (rec !== null && !KNOWN_VERDICTS.includes(rec)) return 'worth_a_call';
@@ -253,15 +263,14 @@ export function isCallRow(row: TierRow | null | undefined): boolean {
 // Disclosed beside the verdict, never reverted (PM ruling (a), 2026-09-26; the diet
 // trial's blackout rule). New-rule rows only, so the change is dark until the key is on.
 
-// The words say only what the row can back. The re-run may have been of the same photo or
-// a replaced one, so neither line claims which; the mock's "new photo" is the replaced case.
-//   · error-only (the call's own read stands, a later run failed): the call is the
-//     earlier read's;
-//   · a rescue (status `failed`: no read finished, and the call was computed from the
-//     record at failure time): the call is from what is logged, not from any photo.
-export const HELD_CALL_DISCLOSURE = "The latest read didn't finish. The call above is from the earlier read.";
-export const RESCUED_CALL_DISCLOSURE = "The latest read didn't finish. The call above is from what's already logged.";
-/** The observations under a held call describe the read before the one that failed. */
+// The words say only what the row can back, and the row cannot back much: a timeout that
+// left the call's own read standing (error-only), a rescue written from the record, and a
+// rescue that carries this run's own photo finding whose SAVE failed (CUL-815) all look
+// alike to the phone. So one line for all of them, which claims neither where the call
+// came from nor that the read never finished: only that the latest attempt hit a problem
+// and the call stands (adversarial pass on PR-27).
+export const HELD_CALL_DISCLOSURE = 'The latest read hit a problem. This call stands.';
+/** The observations under a held call describe the read before the latest attempt. */
 export const EARLIER_READ_LABEL = 'From the earlier read';
 
 /**
@@ -274,6 +283,6 @@ export function heldCallDisclosureOf(
 ): string | null {
   if (!row || !isCallRow(row) || !isTieredRow(row)) return null;
   if (row.status === 'pending') return null;
-  if (row.status === 'failed') return RESCUED_CALL_DISCLOSURE;
+  if (row.status === 'failed') return HELD_CALL_DISCLOSURE;
   return typeof row.error === 'string' && row.error.length > 0 ? HELD_CALL_DISCLOSURE : null;
 }

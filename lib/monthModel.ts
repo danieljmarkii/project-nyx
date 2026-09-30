@@ -459,7 +459,10 @@ export function buildLine(f: LineFacts, opts: { withCount?: boolean } = {}): str
   return parts.join(' · ');
 }
 
-/** The month's called days, each rule's population on its own (never summed). */
+/** The month's called days, each rule's population on its own (never summed). A day is
+ *  counted once, under the words it is painted in: a day holding both an earlier-rule call
+ *  and a new-rule one counts in the new rule's line (`louderCall`), so the earlier line can
+ *  run one day short across the seam. Neither line ever claims a day the other holds. */
 export function monthCallDays(model: Pick<MonthModel, 'days'>): { earlier: number; tiered: number } {
   let earlier = 0;
   let tiered = 0;

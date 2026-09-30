@@ -81,7 +81,7 @@ import {
 import { analysisChainOutstanding } from './analysisChain';
 import { readCopies } from './readCopy';
 import { readVerdictOf, type ReadCopyRow } from './readState';
-import { TIER_WORDS, type TierDisplay } from './incidentTierWords';
+import { isCallDisplay, louderCall, type CallDisplay, type TierDisplay } from './incidentTierWords';
 import { dayKeyFromIndex, formatCalendarDate, formatTime, localDayIndexOf, toLocalDayKey } from './utils';
 import { resolveRecordPetName, usePetStore } from '../store/petStore';
 
@@ -916,20 +916,22 @@ export async function readTileVerdicts(
 }
 
 /**
- * The tile's words from its bout's (EN-3). A call on any row is the tile's; among calls the
- * loudest stands: a call now anywhere in the bout, else the tile's own call, else the first
- * call in the bout. With no call, the tile's own row's words, as before.
+ * The tile's words from its bout's (EN-3). A call on any row is the tile's, and among calls
+ * the louder by the month's own rule (`louderCall`: call now over the rest, the new rule's
+ * words over the shipped ones at the same rank), so the tile and the month's day never word
+ * one bout two ways. With no call, the tile's own row's words, as before.
  */
 export function tileVerdictOf(
   own: string,
   bout: readonly string[],
   each: Readonly<Record<string, EpisodeVerdict | null>>,
 ): EpisodeVerdict | null {
-  const calls = bout.map((id) => each[id] ?? null).filter((d): d is EpisodeVerdict => d !== null && TIER_WORDS[d].call);
-  if (calls.length === 0) return each[own] ?? null;
-  if (calls.includes('call_now')) return 'call_now';
-  const mine = each[own] ?? null;
-  return mine !== null && TIER_WORDS[mine].call ? mine : calls[0];
+  let loudest: CallDisplay | null = null;
+  for (const id of bout) {
+    const d = each[id] ?? null;
+    if (isCallDisplay(d)) loudest = louderCall(loudest, d);
+  }
+  return loudest ?? each[own] ?? null;
 }
 
 /**

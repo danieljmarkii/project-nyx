@@ -574,14 +574,17 @@ export function StoolAnalysisSection(
   // verdict takes (here, nothing; below, the honest retry). An escalation is never held
   // to this: presence escalates at any status.
   const unfinishedQuiet = quietVerdictUnfinished(row);
-  if (!hasPhoto && (!row?.recommendation || row.recommendation === 'not_enough_to_say' || unfinishedQuiet)) {
+  // A call in EITHER column is never suppressed here (EN-3: the louder column, the same
+  // max every other surface reads); only a row with no call reaches these two frames.
+  const callStands = isCallRow(row);
+  if (!hasPhoto && !callStands && (!row?.recommendation || row.recommendation === 'not_enough_to_say' || unfinishedQuiet)) {
     return null;
   }
 
   // No analysis and not working (e.g. gave up, or an unclear/unsynced photo). Only
   // reached WITH a photo now — the retry is legitimate (the photo may not have
   // synced yet, the documented race triggerStoolAnalysis guards against).
-  if (!row || !row.recommendation || unfinishedQuiet) {
+  if (!row || (!row.recommendation && !callStands) || unfinishedQuiet) {
     return (
       <IncidentReadSection
         arrival={arrival}
@@ -600,7 +603,9 @@ export function StoolAnalysisSection(
     );
   }
 
-  const rec = row.recommendation;
+  // A call held only in `tier` (a writer bug or a rollback) has no verdict to pick the
+  // rail's tone; it is a call, so it takes the escalation's (the map's words carry the rest).
+  const rec = row.recommendation ?? 'worth_a_call';
   const dismissed = !!row.dismissed_at;
   // EN-3 (CUL-1133): which words stand, through the one map. Null on an earlier-rule read's
   // tone/action (it keeps today's card), never null for a call.
