@@ -1444,7 +1444,8 @@ export interface EmptyStomachTimingFinding extends FindingBase {
    * Of `longCount`, the episodes whose last bowl before the onset was REFUSED (CUL-1195, via
    * `lib/mealTiming`'s `afterRefusal`). Timing from the last meal eaten is true, and a cat who turns
    * down dinner and vomits minutes later still lands in this band, whose owner reading is the
-   * harmless-looking one, so every surface printing the long count prints this beside it when ≥ 1.
+   * harmless-looking one, so the Signal surfaces printing the long count print this beside it when ≥ 1
+   * (the vet report's timing line does not yet: CUL-1430, sequenced after CUL-1002's deploy).
    * A DISCLOSURE, never a gate: it moves no band, no floor and no fire decision.
    */
   longAfterRefusalCount: number

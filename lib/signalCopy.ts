@@ -1841,18 +1841,26 @@ export function trialResponseTimedReconciliationLine(f: TrialResponseFinding): s
   return `Timed to a meal: ${timedTrial} of ${f.pooledTrialCount} in the trial · ${timedBaseline} of ${f.pooledBaselineCount} before.`;
 }
 
-/** CUL-1195 (provisional, as `timingStoryRefusalLine`): the long row's refused-bowl subset, both
- *  windows, so "6h or more after eating: 3 · was 0" over a cat refusing the trial diet says what it
- *  holds. A subset of the long row, never an addition, so the face still foots with the pooled lead.
- *  Null when neither window has one, or on a cache written before the field. Clamped per window. */
+/** CUL-1195 (provisional, as `timingStoryRefusalLine`): the long row's refused-bowl subset, so
+ *  "6h or more after eating: 3 · was 0" over a cat refusing the trial diet says what it holds. A
+ *  subset of the long row, never an addition, so the face still foots with the pooled lead.
+ *
+ *  PRESENT-ONLY PER WINDOW, deliberately NOT two-sided like the rows (adversarial pass): ratings are
+ *  exception-only (CUL-1118), so "0 in the trial" beside "2 before" is an absence claim, and on this
+ *  card a fall reads as "the trial fixed her refusals" — the falling-count-as-improvement trap. So a
+ *  window with none is left unsaid, never printed as a zero. Null when neither window has one, or on
+ *  a cache written before the field. Clamped per window. */
 export function trialResponseRefusalLine(f: TrialResponseFinding): string | null {
   const r = f.longAfterRefusal;
   if (!r) return null;
   const safe = (n: number, max: number) => (Number.isFinite(n) ? clampCount(n, max) : 0);
   const trial = safe(r.trial, f.long.trial);
   const baseline = safe(r.baseline, f.long.baseline);
-  if (trial === 0 && baseline === 0) return null;
-  return `Of those ${f.longGapHours}h or more after eating, after a refused meal: ${trial} in the trial · ${baseline} before.`;
+  const parts = [trial > 0 ? `${trial} in the trial` : null, baseline > 0 ? `${baseline} before it` : null].filter(
+    (p): p is string => p != null,
+  );
+  if (parts.length === 0) return null;
+  return `Of those ${f.longGapHours}h or more after eating, ${parts.join(' · ')} followed a refused meal.`;
 }
 
 /** The day-count badge — "Day N of M" (target set) or "Day N" (unset). `target_duration_days` is the

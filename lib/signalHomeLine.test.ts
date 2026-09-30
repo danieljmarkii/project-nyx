@@ -481,6 +481,8 @@ describe('the row’s words', () => {
     expect(line(empty).count).not.toMatch(/refus/);
     // A malformed cache never prints more refusals than long episodes.
     expect(line({ ...empty, longAfterRefusalCount: 9 }).count).toContain('; 4 followed a refused meal');
+    expect(line({ ...empty, longAfterRefusalCount: Number.NaN }).count).not.toMatch(/refus/);
+    expect(line({ ...empty, longAfterRefusalCount: -2 }).count).not.toMatch(/refus/);
   });
 
   it('the stand-down marker is not a row', () => {

@@ -252,7 +252,7 @@ describe('InsightCard — SR-1 card-face receipts', () => {
   });
 
   it('CUL-1195: the trial card face carries the long row’s refused-bowl subset, both windows', () => {
-    const line = 'Of those 6h or more after eating, after a refused meal: 3 in the trial · 0 before.';
+    const line = 'Of those 6h or more after eating, 3 in the trial followed a refused meal.';
     const node = (
       <InsightCard
         cached={anyCached(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 0 } }))}

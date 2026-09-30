@@ -120,7 +120,8 @@ function countLine(finding: SignalFinding): string | null {
     case 'empty_stomach_timing': {
       // CUL-1195 (provisional): the sentence's refused-bowl clause, beside the count it qualifies.
       // Present-only, like the sentence: at zero the row says nothing about refusals.
-      const k = Math.min(finding.longAfterRefusalCount ?? 0, finding.longCount);
+      const raw = finding.longAfterRefusalCount;
+      const k = raw != null && Number.isFinite(raw) ? Math.max(0, Math.min(Math.round(raw), finding.longCount)) : 0;
       const refused = k >= 1 ? `; ${k} followed a refused meal` : '';
       return `${finding.longCount} of ${finding.eligibleCount} timed episodes, at least ${finding.longGapHours} hours after eating${refused}`;
     }

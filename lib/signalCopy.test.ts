@@ -2495,17 +2495,25 @@ describe('CUL-1195 — the long band says when its vomits followed a refused bow
   it('the timing card: a malformed count never exceeds the long count', () => {
     expect(timingStoryRefusalLine(emptyStomach({ longCount: 4, longAfterRefusalCount: 9 }))).toMatch(/^4 of the 4 episodes/);
   });
-  it('the trial card: both windows, a subset of the long row', () => {
+  it('the trial card: each window that has one, a subset of the long row', () => {
+    expect(
+      trialResponseRefusalLine(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 2 } })),
+    ).toBe('Of those 6h or more after eating, 3 in the trial · 2 before it followed a refused meal.');
     expect(
       trialResponseRefusalLine(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 0 } })),
-    ).toBe('Of those 6h or more after eating, after a refused meal: 3 in the trial · 0 before.');
+    ).toBe('Of those 6h or more after eating, 3 in the trial followed a refused meal.');
+  });
+  it('the trial card: a window with none is never printed as a zero (a fall would read as the trial fixing it)', () => {
+    const line = trialResponseRefusalLine(trialResponse({ long: { trial: 2, baseline: 7 }, longAfterRefusal: { trial: 0, baseline: 2 } }));
+    expect(line).toBe('Of those 6h or more after eating, 2 before it followed a refused meal.');
+    expect(line).not.toMatch(/\b0\b/);
   });
   it('the trial card: nothing when neither window has one, or on an old cache; clamped per window', () => {
     expect(trialResponseRefusalLine(trialResponse({ longAfterRefusal: { trial: 0, baseline: 0 } }))).toBeNull();
     expect(trialResponseRefusalLine(trialResponse())).toBeNull();
     // long.trial is 0 in the fixture, so a malformed trial count clamps to zero and only the baseline speaks.
     expect(trialResponseRefusalLine(trialResponse({ longAfterRefusal: { trial: 5, baseline: 2 } }))).toBe(
-      'Of those 6h or more after eating, after a refused meal: 0 in the trial · 2 before.',
+      'Of those 6h or more after eating, 2 before it followed a refused meal.',
     );
   });
 });
