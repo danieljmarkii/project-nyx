@@ -64,6 +64,7 @@ jest.mock('../../../lib/measureNode', () => ({
 import { act, configure, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Animated, Dimensions, StyleSheet } from 'react-native';
 import { SignalScreen, SCRIPT_TITLE, WHY_TITLE } from './SignalScreen';
+import { CARE_CONTEXT_TITLE } from '../../../lib/careContext';
 import { NO_READ_LABEL } from './EpisodeGallery';
 import SignalRoute, { OFF_TITLE } from '../../../app/signal/[id]';
 import { TIER_WORDS } from '../../../lib/incidentTierWords';
@@ -432,6 +433,59 @@ describe('SignalScreen — the sections, in the ruled order', () => {
     expect(view.getByTestId('signal-section-why')).toBeTruthy();
     expect(view.getByTestId('signal-section-script')).toBeTruthy();
     expect(view.queryByTestId('signal-section-fold')).toBeNull();
+  });
+});
+
+// EN-10 (CUL-1421; mock §05 5a / 5b): the server's lines under *Around this*.
+const PRED_LINE = 'Prednisone since Sep 21, 6 days: 2 episodes, with something logged on 6 of 6.';
+const VISIT_LINE = 'Since the Sep 16 visit, 11 days: 4 episodes, with something logged on 11 of 11.';
+const withLines = (cached: CachedFinding): CachedFinding => ({
+  ...cached,
+  finding: {
+    ...cached.finding,
+    careContext: [
+      { kind: 'course', anchorOn: '2026-09-21', days: 6, count: 2, loggedDays: 6, drugLabel: 'Prednisone', text: PRED_LINE },
+      { kind: 'visit', anchorOn: '2026-09-16', days: 11, count: 4, loggedDays: 11, text: VISIT_LINE },
+    ],
+  } as CachedFinding['finding'],
+});
+
+describe('SignalScreen — around this (EN-10, CUL-1421)', () => {
+  it('an insight screen draws the lines directly under the sentence, in the server’s order', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(withLines(timingCached), noTrial));
+    const view = render(<SignalScreen petId="pet-1" identity="postprandial_timing:vomit" />);
+    await waitFor(() => expect(view.getByText(CARE_CONTEXT_TITLE)).toBeTruthy());
+    const ids = testIds(view.toJSON());
+    const sentence = ids.indexOf('signal-section-sentence');
+    const context = ids.indexOf('signal-section-context');
+    expect(context).toBeGreaterThan(sentence);
+    // Nothing between the sentence block and the lines but the sentence block's own children.
+    expect(ids.slice(sentence + 1, context).every((id) => id.startsWith('compare') || id === 'signal-section-compare' || id.startsWith('signal-compare'))).toBe(true);
+    const lines = view.getAllByTestId('signal-context-line').map((n) => allText(n).join(''));
+    expect(lines).toEqual([PRED_LINE, VISIT_LINE]);
+  });
+
+  it('a safety screen keeps the ask and its script together: the lines follow the script', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(withLines(safety), noTrial));
+    const view = render(<SignalScreen petId="pet-1" identity="symptom_chronicity:vomit" />);
+    await waitFor(() => expect(view.getByText(CARE_CONTEXT_TITLE)).toBeTruthy());
+    const ids = testIds(view.toJSON());
+    expect(ids.indexOf('signal-section-script')).toBeGreaterThan(ids.indexOf('signal-section-sentence'));
+    expect(ids.indexOf('signal-section-context')).toBeGreaterThan(ids.indexOf('signal-section-script'));
+    expect(ids.indexOf('signal-section-context')).toBeLessThan(ids.indexOf('signal-section-weekly'));
+  });
+
+  it('no lines (the key off, or a cache from before PR-22): no section, and the screen is what it was', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(safety, noTrial));
+    const view = render(<SignalScreen petId="pet-1" identity="symptom_chronicity:vomit" />);
+    await waitFor(() => expect(view.getByText(SCRIPT_TITLE)).toBeTruthy());
+    expect(view.queryByTestId('signal-section-context')).toBeNull();
+    expect(view.queryByText(CARE_CONTEXT_TITLE)).toBeNull();
+  });
+
+  it('the model carries the lines verbatim, and none when the finding has none', () => {
+    expect(buildSignalScreenModel(input(withLines(safety), noTrial)).context).toEqual([PRED_LINE, VISIT_LINE]);
+    expect(buildSignalScreenModel(input(safety, noTrial)).context).toEqual([]);
   });
 });
 

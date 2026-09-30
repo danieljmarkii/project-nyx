@@ -127,6 +127,28 @@ export interface ChronicityCompare {
   comparable: boolean;
 }
 
+// EN-10's context lines (Engines v3 PR-22 server, PR-38 client; docs/nyx-care-state-requirements.md
+// §5). A window, the count of the finding's sign in it and the days with anything logged, beside a
+// visit, a diet trial or a medication course. The server composes `text` deterministically (no
+// model ever phrases it) and has already withheld every zero the §5.1 rules forbid, so the client
+// RELAYS the sentence and never recomposes one from the numbers. Mirror of detection.ts
+// CareContextLine. OPTIONAL on each line-bearing finding: absent while `engines_v3_en10` is off,
+// on a cache written before PR-22, and wherever no line applies. Read through
+// `careContextLinesOf` (lib/careContext.ts), never off the field directly.
+export interface CareContextLine {
+  kind: 'course' | 'trial' | 'visit';
+  /** The DATE the window hangs on: the course start, the trial start or the visit day. */
+  anchorOn: string;
+  /** Days in the window. */
+  days: number;
+  /** Null when the line states no count (a withheld zero, or a window the read does not reach). */
+  count: number | null;
+  loggedDays: number | null;
+  /** The owner's name for the drug, on a course line only. */
+  drugLabel?: string;
+  text: string;
+}
+
 export interface CorrelationFinding {
   type: 'food_symptom_correlation';
   priorityClass: 'insight';
@@ -282,6 +304,8 @@ export interface SymptomChronicityFinding {
    *  script only). Optional because every finding cached before that engine version lacks it,
    *  and an old cache renders exactly the pre-v1.1-b card. */
   compare?: ChronicityCompare;
+  /** EN-10 (PR-38) — the visit, trial and course lines; absent otherwise (flag off / old cache / none apply). */
+  careContext?: CareContextLine[];
 }
 
 // The labeled stand-down (CUL-786 — Signal fold v1.1-a; spec §0 DF-9(a)). NOT a finding: a
@@ -346,6 +370,8 @@ export interface PostprandialTimingFinding {
    *  false/undefined ⇒ the gated split (fail-safe: only an explicit `true` clears the gate). Ships
    *  together with `eligibleMinutes`; its exact predicate is validation-gated (§7). */
   timingReliable?: boolean;
+  /** EN-10 (PR-38) — the visit, trial and course lines; absent otherwise (flag off / old cache / none apply). */
+  careContext?: CareContextLine[];
 }
 
 // Time-of-day clustering (⑥, B-079) — a descriptive count of witnessed vomiting episodes
@@ -374,6 +400,8 @@ export interface TimeOfDayClusteringFinding {
   windowDays: number;
   /** SR-4 (§5.4) — medication on board in the context window; absent otherwise (old cache / no course). */
   medContext?: MedOnBoardContext;
+  /** EN-10 (PR-38) — the visit, trial and course lines; absent otherwise (flag off / old cache / none apply). */
+  careContext?: CareContextLine[];
 }
 
 // ── L3 photo-record composition (Signals v2 / B-755 / CUL-9 §2 L3) ────────────
@@ -445,6 +473,8 @@ export interface EmptyStomachTimingFinding {
   medContext?: MedOnBoardContext;
   /** L3 (CUL-9 §2 L3) — photographed-content evidence; absent otherwise (old cache / no photos). */
   photoComposition?: PhotoComposition;
+  /** EN-10 (PR-38) — the visit, trial and course lines; absent otherwise (flag off / old cache / none apply). */
+  careContext?: CareContextLine[];
 }
 
 // The combined timing card (A2 — Signals v2 / B-755 / CUL-7 / CUL-12, D1). A
@@ -493,6 +523,8 @@ export interface TimingStoryFinding {
   medContext?: MedOnBoardContext;
   /** L3 (CUL-9 §2 L3) — photographed-content evidence; absent otherwise (old cache / no photos). */
   photoComposition?: PhotoComposition;
+  /** EN-10 (PR-38) — the visit, trial and course lines; absent otherwise (flag off / old cache / none apply). */
+  careContext?: CareContextLine[];
 }
 
 // The event-driven trial card (L2 — the wedge; Signals v2 / B-755 / CUL-8 / CUL-13, D3). Surfaces

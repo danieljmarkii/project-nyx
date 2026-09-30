@@ -49,6 +49,7 @@ import { classifyEpisodeSet, collapseEpisodes, DEFAULT_MEAL_TIMING_CONFIG, type 
 import { drugDisplayName } from './medications';
 import { CORRELATION_SYMPTOM_TYPES, readFeedingRows, readFreeFedSpans, TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import { readSignalCache, type CachedFinding, type SignalFinding } from './signal';
+import { careContextLinesOf } from './careContext';
 import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, reflectionExpandedExtras, symptomWord } from './signalCopy';
 import { isFallingVomitPair, signalSaysNotEating, visibleFindings } from './signalVisible';
 import {
@@ -199,6 +200,9 @@ export interface SignalScreenModel {
   episodes: SignalScreenEpisodes | null;
   /** *Why this is a Signal* — the lines, in order. */
   why: string[];
+  /** EN-10's *Around this* — the server's visit, trial and course lines, verbatim and in its
+   *  order (`careContextLinesOf`); empty when the finding carries none (flag off, old cache). */
+  context: string[];
   /** The Home card is plain text for these (S1); the screen carries the phone script. */
   safety: boolean;
   /** The not-eating register as the phone script needs it: withhold a falling vomit
@@ -533,6 +537,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
       lanes: null,
       episodes: null,
       why: whyLines(input, null),
+      context: careContextLinesOf(finding),
       safety,
       withholdFallingVomit: input.notEating !== false,
     };
@@ -603,6 +608,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     lanes,
     episodes: galleryOf(inWeeks, input.verdicts, weekly.weeks.length),
     why: whyLines(input, compare, withheld),
+    context: careContextLinesOf(finding),
     safety,
     withholdFallingVomit: input.notEating !== false,
   };
