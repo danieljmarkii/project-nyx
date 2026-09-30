@@ -9,6 +9,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "test": "jest",
+    "scorecard": "jest -c jest.scorecard.config.js --ci",
     "update:preview": "eas update --branch preview",
     "prepare": "git config core.hooksPath .githooks"
   },
