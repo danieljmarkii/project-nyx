@@ -174,7 +174,14 @@ function timings(s: SignalSymptomType): SignalFinding[] {
     rapid: { count: 3, medianMinutesSinceFeeding: 10, lastTwoEligible: false, feedingFormsInEvidence: [] },
     long: { count: 4, medianHoursSinceFeeding: 8, lastTwoEligible: false, feedingFormsInEvidence: [], clockBand: { startLocalHour: 4, windowHours: 4 }, clockCount: 3 },
   };
-  return [post, { ...post, rapidCount: 1, eligibleCount: 1, lastTwoEligibleRapid: false }, clock, { ...clock, clusterStartLocalHour: 4 }, empty, story];
+  // CUL-1195: the long band's refused-bowl subset, below and at the long count (the row and the
+  // sentence must say the same numbers either way).
+  const refusals: SignalFinding[] = [
+    { ...empty, longAfterRefusalCount: 3 },
+    { ...empty, longAfterRefusalCount: 4, lastTwoEligibleLong: true },
+    { ...story, long: { ...story.long, afterRefusalCount: 2 } },
+  ];
+  return [post, { ...post, rapidCount: 1, eligibleCount: 1, lastTwoEligibleRapid: false }, clock, { ...clock, clusterStartLocalHour: 4 }, empty, story, ...refusals];
 }
 
 function correlations(s: SignalSymptomType): CorrelationFinding[] {
@@ -463,6 +470,19 @@ describe('the row’s words', () => {
     const [refused, unnamed] = intakes().filter((i) => i.trigger === 'refused_normal_food');
     expect(line(refused).count).toBe('Kibble, just now');
     expect(line(unnamed).count).toBe('Just now');
+  });
+
+  it('CUL-1195: the empty-stomach row names the refused-bowl subset beside its count, and nothing at zero', () => {
+    const [, , , , empty] = timings('vomit') as [unknown, unknown, unknown, unknown, EmptyStomachTimingFinding];
+    expect(line({ ...empty, longAfterRefusalCount: 3 }).count).toBe(
+      '4 of 6 timed episodes, at least 6 hours after eating; 3 followed a refused meal',
+    );
+    expect(line({ ...empty, longAfterRefusalCount: 0 }).count).not.toMatch(/refus/);
+    expect(line(empty).count).not.toMatch(/refus/);
+    // A malformed cache never prints more refusals than long episodes.
+    expect(line({ ...empty, longAfterRefusalCount: 9 }).count).toContain('; 4 followed a refused meal');
+    expect(line({ ...empty, longAfterRefusalCount: Number.NaN }).count).not.toMatch(/refus/);
+    expect(line({ ...empty, longAfterRefusalCount: -2 }).count).not.toMatch(/refus/);
   });
 
   it('the stand-down marker is not a row', () => {

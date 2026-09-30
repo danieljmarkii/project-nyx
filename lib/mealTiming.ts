@@ -51,6 +51,17 @@
 // say WHY an episode could not be timed (`refused_only`), so no surface tells an owner
 // "no meal logged" about a record that logged one.
 //
+// ── AFTER A REFUSED BOWL (CUL-1195) ──────────────────────────────────────────
+//
+// Timing from the last meal EATEN is true, and it can still mislead: a cat who refuses dinner
+// and vomits five minutes later, night after night, reads "6h or more after eating", the band
+// whose owner reading is the harmless-looking one. So an eligible episode also says whether a
+// time-trustworthy feeding rated Refused sits between its anchor and its onset (`afterRefusal`):
+// the last bowl offered before the vomit was turned away. It never changes the band or the
+// minutes (the timing stays measured from eating); it is a DISCLOSURE the timing surfaces print
+// beside their count. No window of its own: the claim printed is "after a refused meal", true at
+// any gap inside the anchor's, so there is no constant here to anchor.
+//
 // `feedingIsEatingAnchor` has a SECOND reader: detector ① (food correlation) in
 // `detection.ts`, via `classifyMeals` (CUL-1190). There it decides whether a case exposure
 // may count FOR its food, which is the same question ("did food go in") with the same
@@ -467,6 +478,10 @@ export type EpisodeTiming =
       feedingId: string;
       /** The preceding feeding's evidence-only form label, or null. */
       feedingForm: string | null;
+      /** A time-trustworthy feeding rated Refused falls AFTER the anchor and at/before the onset:
+       *  the last bowl offered before this episode was turned away (CUL-1195). Never moves the
+       *  band; the surfaces disclose it beside the timing count. */
+      afterRefusal: boolean;
     }
   | { eligible: false; reason: TimingIneligibility };
 
@@ -517,12 +532,18 @@ function classifyEpisodeTimingPrepared(
     return { eligible: false, reason: refusedInLookback ? 'refused_only' : 'no_preceding_feeding' };
   }
   const minutesSinceFeeding = (episode.onsetMs - feeding.ms) / MS_PER_MINUTE;
+  // Strictly after the anchor: a refused bowl logged at the same instant as an eaten one did not
+  // follow it, so the eaten one stays the last word.
+  const afterRefusal = prepared.refused.some(
+    (r) => Number.isFinite(r.ms) && r.ms > feeding.ms && r.ms <= episode.onsetMs,
+  );
   return {
     eligible: true,
     minutesSinceFeeding,
     band: classifyGapMinutes(minutesSinceFeeding, config),
     feedingId: feeding.id,
     feedingForm: feeding.form,
+    afterRefusal,
   };
 }
 
@@ -537,6 +558,8 @@ export interface EligibleEpisodeTiming {
   /** The anchor feeding's EVENT id (see `EpisodeTiming`). */
   feedingId: string;
   feedingForm: string | null;
+  /** The last bowl before the onset was refused (see `EpisodeTiming`, CUL-1195). */
+  afterRefusal: boolean;
 }
 
 /** One ineligible episode, with its onset and the reason it could not be timed. */
@@ -576,6 +599,9 @@ export interface TimingDistribution {
   eligible: EligibleEpisodeTiming[];
   ineligible: IneligibleEpisode[];
   bandCounts: Record<TimingBand, number>;
+  /** Per band, how many of `bandCounts` came after a refused bowl (CUL-1195): a SUBSET of the
+   *  band's count, never an addition to it, so `afterRefusalCounts[b] <= bandCounts[b]`. */
+  afterRefusalCounts: Record<TimingBand, number>;
   /** eligible.length — the honest "of M we could time" denominator. */
   eligibleCount: number;
   /** eligible.length + ineligible.length — every episode considered. */
@@ -592,6 +618,7 @@ export function classifyEpisodeSet(
   const eligible: EligibleEpisodeTiming[] = [];
   const ineligible: IneligibleEpisode[] = [];
   const bandCounts: Record<TimingBand, number> = { rapid: 0, mid: 0, long: 0 };
+  const afterRefusalCounts: Record<TimingBand, number> = { rapid: 0, mid: 0, long: 0 };
 
   for (const episode of episodes) {
     const result = classifyEpisodeTimingPrepared(episode, prepared, freeFedSpans, config);
@@ -602,8 +629,10 @@ export function classifyEpisodeSet(
         band: result.band,
         feedingId: result.feedingId,
         feedingForm: result.feedingForm,
+        afterRefusal: result.afterRefusal,
       });
       bandCounts[result.band] += 1;
+      if (result.afterRefusal) afterRefusalCounts[result.band] += 1;
     } else {
       ineligible.push({ onsetMs: episode.onsetMs, reason: result.reason });
     }
@@ -613,6 +642,7 @@ export function classifyEpisodeSet(
     eligible,
     ineligible,
     bandCounts,
+    afterRefusalCounts,
     eligibleCount: eligible.length,
     totalCount: eligible.length + ineligible.length,
   };

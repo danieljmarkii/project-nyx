@@ -117,7 +117,7 @@ const PHRASING_MODEL = 'claude-haiku-4-5'
 // DEFAULT_CONFIG, the phrasing model and the Engines flags; engineStamps.ts). Bump it with
 // any change to detection, curation, decoration or phrasing that can change what a pet's
 // Signal says: the fingerprint cannot see a code change this number does not record.
-export const SIGNAL_ENGINE_VERSION = 'signal.4' // signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
+export const SIGNAL_ENGINE_VERSION = 'signal.5' // signal.5: PR-14e (CUL-1195), the long band carries and says its refused-bowl subset. signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
 
 const MS_PER_DAY = 86_400_000
 

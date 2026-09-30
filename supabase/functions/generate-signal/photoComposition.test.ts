@@ -70,7 +70,7 @@ const emptyStomach = (over: Partial<EmptyStomachTimingFinding> = {}): EmptyStoma
   bandCounts: { rapid: 1, mid: 3, long: 4 },
   totalEpisodes: 10,
   longGapHours: 6,
-  lastTwoEligibleLong: true,
+  lastTwoEligibleLong: true, longAfterRefusalCount: 0,
   medianHoursSinceFeeding: 9,
   feedingFormsInEvidence: [],
   associationalOnly: true,
@@ -89,7 +89,7 @@ const timingStory = (over: Partial<TimingStoryFinding> = {}): TimingStoryFinding
   longGapHours: 6,
   windowDays: 60,
   rapid: { count: 2, medianMinutesSinceFeeding: 15, lastTwoEligible: false, feedingFormsInEvidence: [] },
-  long: { count: 4, medianHoursSinceFeeding: 9, lastTwoEligible: true, feedingFormsInEvidence: [] },
+  long: { count: 4, medianHoursSinceFeeding: 9, lastTwoEligible: true, afterRefusalCount: 0, feedingFormsInEvidence: [] },
   associationalOnly: true,
   ...over,
 })
@@ -241,7 +241,7 @@ Deno.test('L3 retained food — reads through timing_story.long.longEpisodeOnset
     read(6, { contents: ['undigested_food'] }),
   ]
   const story = timingStory({
-    long: { count: 4, medianHoursSinceFeeding: 9, lastTwoEligible: true, feedingFormsInEvidence: [], longEpisodeOnsets: longMs },
+    long: { count: 4, medianHoursSinceFeeding: 9, lastTwoEligible: true, afterRefusalCount: 0, feedingFormsInEvidence: [], longEpisodeOnsets: longMs },
   })
   const pc = computePhotoComposition(story, analyses, NOW_MS)
   assert.ok(pc)

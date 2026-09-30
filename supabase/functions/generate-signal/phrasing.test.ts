@@ -168,7 +168,7 @@ const emptyStomach = (over: Partial<EmptyStomachTimingFinding> = {}): EmptyStoma
   bandCounts: { rapid: 1, mid: 2, long: 5 },
   totalEpisodes: 9,
   longGapHours: 6,
-  lastTwoEligibleLong: true,
+  lastTwoEligibleLong: true, longAfterRefusalCount: 0,
   medianHoursSinceFeeding: 9.5,
   feedingFormsInEvidence: ['kibble'],
   clockBand: { startLocalHour: 4, windowHours: 4 },
@@ -194,6 +194,7 @@ const timingStory = (over: Partial<TimingStoryFinding> = {}): TimingStoryFinding
     count: 5,
     medianHoursSinceFeeding: 9.5,
     lastTwoEligible: false,
+    afterRefusalCount: 0,
     feedingFormsInEvidence: ['kibble'],
     clockBand: { startLocalHour: 4, windowHours: 4 },
     clockCount: 4,
@@ -215,6 +216,7 @@ const trialResponse = (over: Partial<TrialResponseFinding> = {}): TrialResponseF
   rapid: { trial: 0, baseline: 4 },
   mid: { trial: 0, baseline: 2 },
   long: { trial: 0, baseline: 5 },
+  longAfterRefusal: { trial: 0, baseline: 0 },
   rapidWindowMinutes: 30,
   longGapHours: 6,
   treatShare: { trial: 0.1, baseline: 0.3 },
@@ -1008,7 +1010,7 @@ Deno.test('templateEmptyStomachTiming — drops "the last two" when they were no
 Deno.test('templateTimingStory — names the bimodal SHAPE in words (B-755 two-kinds), never reprints the band counts (S10)', () => {
   // The override's `long` carries no clockBand → the shape sentence with no clock clause.
   const t = templateTimingStory(
-    timingStory({ eligibleCount: 12, rapid: { count: 4, medianMinutesSinceFeeding: 18, lastTwoEligible: true, feedingFormsInEvidence: [] }, long: { count: 5, medianHoursSinceFeeding: 9, lastTwoEligible: false, feedingFormsInEvidence: [] } }),
+    timingStory({ eligibleCount: 12, rapid: { count: 4, medianMinutesSinceFeeding: 18, lastTwoEligible: true, feedingFormsInEvidence: [] }, long: { count: 5, medianHoursSinceFeeding: 9, lastTwoEligible: false, afterRefusalCount: 0, feedingFormsInEvidence: [] } }),
     'Nyx',
   )
   assert.ok(/two kinds of time/.test(t), 'names the bimodal shape')
@@ -1537,4 +1539,30 @@ Deno.test('CUL-989 trial response and red flag floor arms', () => {
   const one = incidentRedFlag({ flaggedIncidentCount: 1, countIsFloor: true })
   assert.match(templateIncidentRedFlag(one, 'Rex'), /^Photos you logged/)
   assert.match(templateIncidentRedFlag(incidentRedFlag({ flaggedIncidentCount: 1 }), 'Rex'), /^A photo you logged/)
+})
+
+// ── CUL-1195: the long-band sentence says when its vomits followed a refused bowl (provisional) ──
+
+Deno.test('CUL-1195 — L1 sentence names the refused-bowl subset beside the long count, and stays inside every screen', () => {
+  const t = templateEmptyStomachTiming(emptyStomach({ longCount: 11, eligibleCount: 11, longAfterRefusalCount: 11 }), 'Pixel')
+  assert.ok(t.includes('11 of those followed a refused meal'), t)
+  assert.ok(t.endsWith('a timing pattern worth mentioning to your vet.'), t)
+  assert.ok(validatePhrasing(t, emptyStomach({ longCount: 11, eligibleCount: 11, longAfterRefusalCount: 11 })), t)
+})
+
+Deno.test('CUL-1195 — L1 sentence at zero refusals is byte-identical to before: no "none followed" claim', () => {
+  const t = templateEmptyStomachTiming(emptyStomach({ longAfterRefusalCount: 0 }), 'Nyx')
+  assert.ok(!/refus/i.test(t), t)
+  // A cache written before the field existed reads the same way.
+  const { longAfterRefusalCount: _drop, ...legacy } = emptyStomach()
+  assert.equal(templateEmptyStomachTiming(legacy as EmptyStomachTimingFinding, 'Nyx'), t)
+})
+
+Deno.test('CUL-1195 — timing_story sentence carries the long band’s refused-bowl subset, never a count at zero', () => {
+  const base = timingStory()
+  const withRefusal = timingStory({ long: { ...base.long, afterRefusalCount: 3 } })
+  const t = templateTimingStory(withRefusal, 'Nyx')
+  assert.ok(t.includes('3 of the long-after ones followed a refused meal'), t)
+  assert.ok(validatePhrasing(t, withRefusal), t)
+  assert.ok(!/refus/i.test(templateTimingStory(timingStory({ long: { ...base.long, afterRefusalCount: 0 } }), 'Nyx')))
 })

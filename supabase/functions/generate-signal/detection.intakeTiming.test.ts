@@ -161,7 +161,7 @@ Deno.test('CUL-1122 pin — L1 on a record with every rating except Refused is b
       bandCounts: { rapid: 0, mid: 1, long: 7 },
       totalEpisodes: 8,
       longGapHours: 6,
-      lastTwoEligibleLong: true,
+      lastTwoEligibleLong: true, longAfterRefusalCount: 0,
       medianHoursSinceFeeding: 11,
       feedingFormsInEvidence: ['Acme Kibble'],
       clockBand: { startLocalHour: 13, windowHours: 4 },
@@ -370,4 +370,71 @@ Deno.test('CUL-1122 — the grazing guard counts eating, not bowls: refused bowl
   assert.equal(findings.length, 1)
   assert.equal(findings[0].rapidCount, 4)
   assert.equal(findings[0].eligibleCount, 12)
+})
+
+// ── CUL-1195: the long band says when its vomits followed a refused bowl ──────────────────────────
+//
+// CUL-1122 made the timing true (a refused bowl is not eating), and on some schedules that truth lands
+// a refusing cat in the long band: timed from breakfast, 14 h, the harmless-looking reading. The lane
+// now carries how many long episodes followed a refused bowl, so every surface printing the long count
+// can say so. A disclosure only: the counts, floors and fire decision are the CUL-1122 engine's.
+
+/** CUL-1195's named record: breakfast unrated, dinner refused on alternate nights, a witnessed vomit
+ *  five minutes after each refusal; the other dinners eaten. Eleven refusal nights. */
+function alternateRefusalNights(): { symptomEvents: SymptomEvent[]; mealEvents: MealEvent[] } {
+  const mealEvents: MealEvent[] = []
+  const symptomEvents: SymptomEvent[] = []
+  for (let d = 7; d <= 29; d++) {
+    const refused = d % 2 === 0
+    mealEvents.push(feed(d, 8, 0, null))
+    mealEvents.push(feed(d, 22, 0, refused ? 'refused' : null))
+    if (refused) symptomEvents.push(wVomit(d, 22, 5))
+  }
+  return { symptomEvents, mealEvents }
+}
+
+Deno.test('CUL-1195 — alternate refused dinners: L1 fires 11 of 11 long, and says all 11 followed a refused bowl', () => {
+  const f = detectEmptyStomachTiming(input(alternateRefusalNights()))
+  assert.equal(f.length, 1, 'the record the issue measured: L1 fires')
+  assert.equal(f[0].longCount, 11)
+  assert.equal(f[0].eligibleCount, 11)
+  assert.equal(f[0].longAfterRefusalCount, 11)
+  // The disclosure never re-times: the median is still measured from breakfast.
+  assert.equal(f[0].medianHoursSinceFeeding, 14.1)
+})
+
+Deno.test('CUL-1195 — the disclosure moves nothing else: L1 with the refusals erased differs only in the count', () => {
+  const record = alternateRefusalNights()
+  const withRefusals = detectEmptyStomachTiming(input(record))
+  // Erase each refused bowl entirely: the episodes are timed the same (from breakfast), so every field
+  // but the disclosure is identical.
+  const erased = { ...record, mealEvents: record.mealEvents.filter((m) => m.intakeRating !== 'refused') }
+  const without = detectEmptyStomachTiming(input(erased))
+  assert.equal(without.length, 1)
+  assert.equal(without[0].longAfterRefusalCount, 0)
+  assert.deepEqual({ ...withRefusals[0], longAfterRefusalCount: 0 }, without[0])
+})
+
+Deno.test('CUL-1195 — the merged timing_story carries L1’s count verbatim', () => {
+  // detection.test.ts's timing_story record (feedings 01:00 / 09:00 / 17:00; 3 rapid, 6 long, 1 mid),
+  // with a REFUSED bowl at 07:55 before three of the 08:00 long vomits. The refusals are not eating, so
+  // every episode keeps its band; three long ones now followed a refused bowl.
+  const mealEvents: MealEvent[] = []
+  for (let d = 5; d <= 27; d++) {
+    mealEvents.push(feed(d, 1, 0, null))
+    mealEvents.push(feed(d, 9, 0, null))
+    mealEvents.push(feed(d, 17, 0, null))
+  }
+  for (const d of [18, 20, 22]) mealEvents.push(feed(d, 7, 55, 'refused'))
+  const symptomEvents = [
+    wVomit(15, 9, 20), wVomit(16, 9, 20), wVomit(17, 9, 20),
+    wVomit(18, 8, 0), wVomit(19, 8, 0), wVomit(20, 8, 0), wVomit(21, 8, 0), wVomit(22, 8, 0), wVomit(23, 8, 0),
+    wVomit(24, 4, 0),
+  ]
+  const ranked = detectSignals(input({ symptomEvents, mealEvents }))
+  const story = ranked.map((r) => r.finding).find((f) => f.type === 'timing_story')
+  assert.ok(story && story.type === 'timing_story', 'the pair still merges')
+  assert.deepEqual(story.bandCounts, { rapid: 3, mid: 1, long: 6 }, 'no band moved')
+  assert.equal(story.long.count, 6)
+  assert.equal(story.long.afterRefusalCount, 3)
 })

@@ -5476,7 +5476,7 @@ Deno.test('stripInternalOnsets (CUL-9) — strips a merged timing_story\'s long.
     longGapHours: 6,
     windowDays: 60,
     rapid: { count: 2, medianMinutesSinceFeeding: 15, lastTwoEligible: false, feedingFormsInEvidence: [] },
-    long: { count: 4, medianHoursSinceFeeding: 9, lastTwoEligible: true, feedingFormsInEvidence: [], longEpisodeOnsets: [111, 222] },
+    long: { count: 4, medianHoursSinceFeeding: 9, lastTwoEligible: true, afterRefusalCount: 0, feedingFormsInEvidence: [], longEpisodeOnsets: [111, 222] },
     associationalOnly: true,
   }
   const stripped = stripInternalOnsets([story])[0] as TimingStoryFinding
