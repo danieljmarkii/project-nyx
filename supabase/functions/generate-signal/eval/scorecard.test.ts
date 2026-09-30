@@ -235,3 +235,22 @@ Deno.test('wrongProtein counts any card naming another protein, a joint card inc
   const other = score(['lamb'])
   assertEquals([other.wrongProtein, other.jointWithReacting], [1, 0])
 })
+
+Deno.test('a food detection names the culprit alone: a joint or everything-card is never a detection, and precision and persistence read the rest', () => {
+  const sc = scenarioById('inj-protein-reaction-rr3')
+  const entry = sc.key.detect.find((d) => d.lane === 'food')!
+  const label = `a:food:${entry.protein}`
+  const card = (proteins: string[]) => ({ petKey: 'a', findingType: 'food_symptom_correlation', sign: 'vomit' as const, ask: 'none' as const, priorityClass: 'insight', tier: 'established', proteins, direction: null })
+  const score = (cards: (day: number) => string[][]) => {
+    const runs = sc.ciSeeds.map((seed) => ({ scenario: sc, seed, result: simulate(sc, seed, (view) => cards(view.dayIndex).map(card)) }))
+    return scoreScenario(runs).detections.find((d) => d.label === label)!
+  }
+  const everything = score((d) => (d >= 5 ? [[entry.protein!, 'lamb', 'duck', 'chicken']] : []))
+  assertEquals([everything.detected, everything.culpritAloneEveningsPerPetMonth, everything.wrongShareOfFoodEvenings], [0, 0, 1])
+  const alone = score((d) => (d >= 5 ? [[entry.protein!]] : []))
+  assertEquals([alone.detected, alone.wrongShareOfFoodEvenings], [sc.ciSeeds.length, 0])
+  assert((alone.culpritAloneEveningsPerPetMonth as number) > 20)
+  // Half the food evenings wrong: precision reads a half however many evenings there are.
+  const half = score((d) => (d >= 5 && d < 45 ? [d % 2 === 0 ? [entry.protein!] : ['lamb']] : []))
+  assertEquals(half.wrongShareOfFoodEvenings, 0.5)
+})

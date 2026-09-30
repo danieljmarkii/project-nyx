@@ -24,9 +24,11 @@ import type { Scorecard } from './scorecard.ts'
 // an unruled tolerance), and the fifth's (EN-11's food lines, approved by the PM in session;
 // exact keys per wave; EN-8 not observed; the never-acknowledged fixed-day doubling counted), and
 // the sixth's (EN-11.wrongProtein, joint cards counted as wrong by the PM's ruling), and the
-// seventh's (EN-11.wrongProteinEvenings).
+// seventh's (EN-11.wrongProteinEvenings), and the eighth's (food detection redefined as the
+// culprit alone, the PM's ruling; the two wrong-protein lines replaced by culpritPersistence and
+// foodPrecision, their rows kept as reporting).
 // Every value but the two ruled ones is null.
-const PINNED = 'eee161ae6fc4794c34446dc5551c5a62c1972b4bb732f441d4b74988ed61e5ad'
+const PINNED = '8e808e9b3697238ef741d3ddd293fdc0cb4a2e61d89bcc3cddd5763f8bb6a9df'
 
 async function digest(lines: readonly PassLine[]): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(lines)))
@@ -209,7 +211,7 @@ const EN11 = PASS_LINES.filter((l) => l.wave === 'EN-11').map((l) => ({
   ...l,
   value: l.value ?? ({ 'EN-11.detection': 0.02, 'EN-11.delay': 7, 'EN-11.eligible': 0, 'EN-11.falseWorsening': 0.02, 'EN-11.falseWorseningEvenings': 1,
     'EN-11.foodDetection': 0.02, 'EN-11.foodDelay': 7, 'EN-11.foodEligible': 0, 'EN-11.falseFood': 0.02, 'EN-11.falseFoodEvenings': 1,
-    'EN-11.wrongProtein': 0.02, 'EN-11.wrongProteinEvenings': 1 } as Record<string, number>)[l.id],
+    'EN-11.culpritPersistence': 1, 'EN-11.foodPrecision': 0.02 } as Record<string, number>)[l.id],
 }))
 const rowsOf = (id: string) => line(id).rows
 
@@ -310,28 +312,24 @@ Deno.test('a comparison arm carries exactly its wave\'s keys: a bundled key is i
   for (const r of evaluatePassLines(committed, bundled, EN11)) assertEquals(r.status, 'incomparable', r.id)
 })
 
-Deno.test('EN-11: an engine that names every protein on every card detects "more" and fails on the wrong-protein line', () => {
-  // Sixth adversarial pass: naming all nine proteins raised foodDetection and moved no false-card row.
-  const everything = onArm({
-    ...Object.fromEntries(rowsOf('EN-11.foodDetection').map((k) => [k, 1])),
-    ...Object.fromEntries(rowsOf('EN-11.foodDelay').map((k) => [k, committed.rows[k] as number])),
-    ...Object.fromEntries(rowsOf('EN-11.wrongProtein').map((k) => [k, 1])),
+Deno.test('EN-11: naming every protein, then stopping after week 8, fails on precision and persistence', () => {
+  // Eighth adversarial pass: under "includes the culprit", this arm raised detection and lowered
+  // every wrong-protein row by showing fewer food evenings. Detection now needs the culprit alone,
+  // so an everything-card detects nothing; precision and persistence see the rest.
+  const allThenStop = onArm({
+    ...Object.fromEntries(rowsOf('EN-11.foodDetection').map((k) => [k, 0])),
+    ...Object.fromEntries(rowsOf('EN-11.foodPrecision').map((k) => [k, 1])),
+    ...Object.fromEntries(rowsOf('EN-11.culpritPersistence').map((k) => [k, 0])),
   })
-  const results = evaluatePassLines(committed, everything, EN11)
-  assertEquals(results.find((r) => r.id === 'EN-11.foodDetection')!.status, 'pass')
-  assertEquals(results.find((r) => r.id === 'EN-11.falseFood')!.status, 'pass')
-  assertEquals(results.find((r) => r.id === 'EN-11.wrongProtein')!.status, 'fail')
+  const results = evaluatePassLines(committed, allThenStop, EN11)
+  for (const id of ['EN-11.foodDetection', 'EN-11.foodPrecision', 'EN-11.culpritPersistence']) assertEquals(results.find((r) => r.id === id)!.status, 'fail', id)
   assertEquals(waveStatus(results, 'EN-11', EN11), 'fail')
 })
 
-Deno.test('EN-11: naming every protein once the engine has shown two different ones fails on wrong-protein evenings, though the share is unmoved', () => {
-  // Seventh adversarial pass: the per-pet "ever shown a wrong card" share saturates.
-  const later = onArm({
-    ...Object.fromEntries(rowsOf('EN-11.foodDetection').map((k) => [k, Math.min(1, (committed.rows[k] as number) + 0.05)])),
-    ...Object.fromEntries(rowsOf('EN-11.wrongProteinEvenings').map((k) => [k, (committed.rows[k] as number) + 5])),
-  })
-  const results = evaluatePassLines(committed, later, EN11)
-  assertEquals(results.find((r) => r.id === 'EN-11.wrongProtein')!.status, 'pass')
-  assertEquals(results.find((r) => r.id === 'EN-11.wrongProteinEvenings')!.status, 'fail')
-  assertEquals(waveStatus(results, 'EN-11', EN11), 'fail')
+Deno.test('EN-11: piling proteins onto evenings that are already wrong fails on precision, detection unmoved', () => {
+  const piled = onArm(Object.fromEntries(rowsOf('EN-11.foodPrecision').map((k) => [k, Math.min(1, (committed.rows[k] as number) + 0.1)])))
+  const results = evaluatePassLines(committed, piled, EN11)
+  assertEquals(results.find((r) => r.id === 'EN-11.foodDetection')!.status, 'pass')
+  assertEquals(results.find((r) => r.id === 'EN-11.foodPrecision')!.status, 'fail')
 })
+

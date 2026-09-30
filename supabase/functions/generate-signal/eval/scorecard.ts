@@ -104,7 +104,11 @@ interface KeyRef {
 function matchesKey(k: KeyRef, card: ScoredCard): boolean {
   if (card.petKey !== k.petKey) return false
   if (k.sign !== undefined && card.sign !== k.sign) return false
-  if (k.protein !== undefined && !card.proteins.includes(k.protein)) return false
+  // A food detection names the reacting protein ALONE (PM ruling, 2026-09-30). A joint card, or one
+  // naming everything the pet eats, points a vet's elimination diet at proteins that are not the
+  // culprit; counted as a detection whenever it merely INCLUDED the culprit, naming more proteins
+  // always bought detection, and four rounds of added rows only priced that (eighth adversarial pass).
+  if (k.protein !== undefined && !(card.proteins.length === 1 && card.proteins[0] === k.protein)) return false
   // A re-raise is a card on a sign, so a key that names none names every sign.
   return laneAnswers(k.lane, card)
 }
@@ -173,6 +177,10 @@ export interface DetectionScore {
    * every protein on every later evening cost nothing (seventh adversarial pass).
    */
   wrongProteinEveningsPerPetMonth: number | null
+  /** Food entries only: evenings per pet-month, from the start, carrying a food card naming the reacting protein alone. Persistence: a correct card that is dropped, or never shown, lowers it. */
+  culpritAloneEveningsPerPetMonth: number | null
+  /** Food entries only: of the evenings carrying a food card, the share whose cards name any other protein. Precision: showing fewer food evenings cannot lower it. */
+  wrongShareOfFoodEvenings: number | null
 }
 
 export interface ScenarioScore {
@@ -277,10 +285,12 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
     wrongProtein: null,
     jointWithReacting: null,
     wrongProteinEveningsPerPetMonth: null,
+    culpritAloneEveningsPerPetMonth: null,
+    wrongShareOfFoodEvenings: null,
   }))
   const detectDays: number[][] = sc.key.detect.map(() => [])
   const preRaise = sc.key.detect.map(() => ({ acked: 0, raised: 0 }))
-  const attribution = sc.key.detect.map(() => ({ runs: 0, wrong: 0, joint: 0, wrongEvenings: 0, evenings: 0 }))
+  const attribution = sc.key.detect.map(() => ({ runs: 0, wrong: 0, joint: 0, wrongEvenings: 0, evenings: 0, aloneEvenings: 0, foodEvenings: 0 }))
   let redFlags: ScenarioScore['redFlags'] = null
   const reRaiseSigns = sc.key.falseCards.filter((f) => f.lane === 're_raise')
   const falseLanes = [...new Set(sc.key.falseCards.map((f) => f.lane).filter((l) => l !== 're_raise'))]
@@ -350,6 +360,8 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
           attribution[i].runs++
           attribution[i].evenings += after.length
           attribution[i].wrongEvenings += after.filter((ev) => foodOn(ev).some((c) => c.proteins.some((p) => p !== d.protein))).length
+          attribution[i].foodEvenings += after.filter((ev) => foodOn(ev).length > 0).length
+          attribution[i].aloneEvenings += after.filter((ev) => foodOn(ev).some((c) => c.proteins.length === 1 && c.proteins[0] === d.protein)).length
           if (food.some((c) => c.proteins.some((p) => p !== d.protein))) attribution[i].wrong++
           if (food.some((c) => c.proteins.includes(d.protein!) && c.proteins.length > 1)) attribution[i].joint++
         }
@@ -466,6 +478,8 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
       d.wrongProtein = round(attribution[i].wrong / attribution[i].runs)
       d.jointWithReacting = round(attribution[i].joint / attribution[i].runs)
       d.wrongProteinEveningsPerPetMonth = attribution[i].evenings === 0 ? null : round(attribution[i].wrongEvenings / (attribution[i].evenings / DAYS_PER_MONTH))
+      d.culpritAloneEveningsPerPetMonth = attribution[i].evenings === 0 ? null : round(attribution[i].aloneEvenings / (attribution[i].evenings / DAYS_PER_MONTH))
+      d.wrongShareOfFoodEvenings = attribution[i].foodEvenings === 0 ? null : round(attribution[i].wrongEvenings / attribution[i].foodEvenings)
     }
   })
   const askPerPetMonth = Object.fromEntries(
@@ -572,6 +586,8 @@ export function buildScorecard(scores: readonly ScenarioScore[], meta: Scorecard
       if (d.wrongProtein !== null) rows[`${p}/detect/${d.label}/wrongProtein`] = d.wrongProtein
       if (d.jointWithReacting !== null) rows[`${p}/detect/${d.label}/jointWithReacting`] = d.jointWithReacting
       if (d.wrongProteinEveningsPerPetMonth !== null) rows[`${p}/detect/${d.label}/wrongProteinEveningsPerPetMonth`] = d.wrongProteinEveningsPerPetMonth
+      if (d.culpritAloneEveningsPerPetMonth !== null) rows[`${p}/detect/${d.label}/culpritAloneEveningsPerPetMonth`] = d.culpritAloneEveningsPerPetMonth
+      if (d.wrongShareOfFoodEvenings !== null) rows[`${p}/detect/${d.label}/wrongShareOfFoodEvenings`] = d.wrongShareOfFoodEvenings
       if (d.censored > 0) rows[`${p}/detect/${d.label}/censored`] = d.censored
       if (d.scoring === 'both_acknowledged' || d.lane === 're_raise') rows[`${p}/detect/${d.label}/neverAcknowledged`] = d.neverAcknowledged
     }
