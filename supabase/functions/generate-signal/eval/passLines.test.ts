@@ -11,7 +11,7 @@
 // "incomplete" forever and read as coverage (C-38). This fails instead.
 
 import { assert, assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
-import { evaluatePassLines, PASS_LINES, WAVE_KEYS, waveStatus, type PassLine } from './passLines.ts'
+import { evaluatePassLines, HARNESS_OBSERVES, PASS_LINES, WAVE_KEYS, waveStatus, type PassLine, type Wave } from './passLines.ts'
 import type { Scorecard } from './scorecard.ts'
 
 // Pinned 2026-09-30, PR-16 (CUL-1131): the lines as the 9/26 plan review ruled them (the
@@ -19,8 +19,10 @@ import type { Scorecard } from './scorecard.ts'
 // by the PM in session the same day (EN-9.reRaiseEver, EN-9.askAfterAck, EN-11.falseWorsening,
 // EN-8's lane gate, the red-flag floor of 3), and the third pass's (WAVE_KEYS, EN-11 split by
 // unit into detection and delay, EN-11.eligible, EN-11.falseWorseningEvenings, the floors on
-// scored pets and acknowledged cats). Every value but the three ruled ones is null.
-const PINNED = 'a36a15cab8e79aaa58e6a99b2aa1910b0bd348ef8db2326ce2a9f3d6741d3061'
+// scored pets and acknowledged cats), and the fourth's (HARNESS_OBSERVES, an arm that moved
+// nothing is incomparable, EN-9's floors per scenario, EN-9.scored, EN-11.eligible's margin made
+// an unruled tolerance). Every value but the two ruled ones is null.
+const PINNED = '868e13f94272ea01afca7cc64dc042da378cabfd525eacc18bec8f3fe21b549a'
 
 async function digest(lines: readonly PassLine[]): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(lines)))
@@ -32,10 +34,18 @@ const line = (id: string) => PASS_LINES.find((l) => l.id === id)!
 
 const ALL_WAVE_KEYS = [...new Set(Object.values(WAVE_KEYS).flat())].sort()
 
-/** A flag-on arm over the committed rows, with `patch` applied, carrying every wave's keys unless told otherwise. */
+/** A flag-on arm over the committed rows, with `patch` applied, carrying every wave's keys unless
+ *  told otherwise. It carries one marker row so it never equals flag off (an arm that moved nothing
+ *  is incomparable); `sameRows` builds that arm on purpose. */
 function onArm(patch: Record<string, number | null> = {}, flagsOn: readonly string[] = ALL_WAVE_KEYS): Scorecard {
-  return { meta: { ...committed.meta, arm: `flag_on:${flagsOn.join('+')}`, flagsOn }, rows: { ...committed.rows, ...patch } }
+  return { meta: { ...committed.meta, arm: `flag_on:${flagsOn.join('+')}`, flagsOn }, rows: { ...committed.rows, 'test/armMoved': 1, ...patch } }
 }
+function sameRows(flagsOn: readonly string[]): Scorecard {
+  return { meta: { ...committed.meta, arm: `flag_on:${flagsOn.join('+')}`, flagsOn }, rows: { ...committed.rows } }
+}
+
+/** Every wave treated as observed, to test a wave's lines before the harness can run its engine. */
+const OBSERVE_ALL: Record<Wave, boolean> = { 'EN-9': true, 'EN-8': true, 'EN-3/4/7': true, 'EN-11': true }
 
 Deno.test('the pass lines are the pinned set', async () => {
   assertEquals(await digest(PASS_LINES), PINNED)
@@ -68,7 +78,7 @@ Deno.test('flag off alone: the hard property has a verdict, the weight lines are
 })
 
 Deno.test('with a flag-on arm, an unruled line says so and never passes', () => {
-  for (const r of evaluatePassLines(committed, onArm())) {
+  for (const r of evaluatePassLines(committed, onArm(), PASS_LINES, OBSERVE_ALL)) {
     const l = line(r.id)
     if (l.value === null && l.needsLane === undefined) assertEquals(r.status, 'unruled', r.id)
   }
@@ -93,7 +103,7 @@ Deno.test('a ruled comparison line fails a flag-on arm that detects less, and a 
   assertEquals(evaluatePassLines(committed, onArm({ [key]: null }), [ruled])[0].status, 'fail')
 
   const hard = line('EN-3.redFlagTier')
-  assertEquals(evaluatePassLines(committed, onArm({ 'engine/redFlag/belowShippedTier': 1 }), [hard])[0].status, 'fail')
+  assertEquals(evaluatePassLines(committed, onArm({ 'engine/redFlag/belowShippedTier': 1 }), [hard], OBSERVE_ALL)[0].status, 'fail')
 })
 
 Deno.test('the zero property is no proof over too few injected flags', () => {
@@ -119,7 +129,13 @@ Deno.test('arms that are not flag off against something else, over the same seed
   assertEquals(status(committed, en0), 'incomparable')
   const redFlag = line('EN-3.redFlagTier')
   assertEquals(evaluatePassLines(committed, en0, [redFlag])[0].status, 'incomparable')
-  assertEquals(evaluatePassLines(committed, onArm({}, ['engines_v3_en3']), [redFlag])[0].status, 'pass')
+  // The wave's real key, but an engine the harness does not run: with engines_v3_en3 on, the rows
+  // were byte-identical to flag off and EN-3/4/7 read "pass" (fourth adversarial pass).
+  assertEquals(HARNESS_OBSERVES['EN-3/4/7'], false)
+  assertEquals(evaluatePassLines(committed, onArm({}, ['engines_v3_en3']), [redFlag])[0].status, 'incomparable')
+  // Observed, but the arm moved nothing: still incomparable. Observed and moved: read.
+  assertEquals(evaluatePassLines(committed, sameRows(['engines_v3_en3']), [redFlag], OBSERVE_ALL)[0].status, 'incomparable')
+  assertEquals(evaluatePassLines(committed, onArm({}, ['engines_v3_en3']), [redFlag], OBSERVE_ALL)[0].status, 'pass')
   // The same count of scenarios, different ones.
   const ids = [...committed.meta.scenarioIds]
   ids[0] = 'some-other-scenario'
@@ -140,6 +156,7 @@ const EN9_TEST_VALUES: Record<string, number> = {
   'EN-9.doubling': 0.8,
   'EN-9.doublingDelay': 45,
   'EN-9.silence': 14,
+  'EN-9.scored': 0,
 }
 const EN9 = PASS_LINES.filter((l) => l.wave === 'EN-9').map((l) => ({ ...l, value: EN9_TEST_VALUES[l.id] ?? l.value }))
 const set = (ids: string[], value: number) => Object.fromEntries(ids.flatMap((id) => line(id).rows.map((k) => [k, value])))
@@ -153,26 +170,28 @@ const GOOD = {
   // Enough acknowledged cats and scored pets to read the lines at all.
   ...Object.fromEntries(line('EN-9.reRaise').nonVacuity!.rows.map((k) => [k, 3])),
   ...Object.fromEntries(line('EN-9.doubling').nonVacuity!.rows.map((k) => [k, 3])),
+  // No more pets left unscored than flag off.
+  ...Object.fromEntries(line('EN-9.scored').rows.map((k) => [k, committed.rows[k] as number])),
   // No more false reassurance behind a lapse than flag off.
   ...Object.fromEntries(line('EN-9.lapseReassurance').rows.map((k) => [k, committed.rows[k] as number])),
 }
 
 Deno.test('EN-9: the passing arm passes, silence fails on the doubling line alone, and removing that line would pass it', () => {
-  assertEquals(waveStatus(evaluatePassLines(committed, onArm(GOOD), EN9), 'EN-9', EN9), 'pass')
+  assertEquals(waveStatus(evaluatePassLines(committed, onArm(GOOD), EN9, OBSERVE_ALL), 'EN-9', EN9), 'pass')
   // Never raises again: only the doubling probability differs from the passing arm.
   const silent = onArm({ ...GOOD, ...set(['EN-9.doubling'], 0) })
-  const results = evaluatePassLines(committed, silent, EN9)
+  const results = evaluatePassLines(committed, silent, EN9, OBSERVE_ALL)
   assertEquals(results.filter((r) => r.status !== 'pass').map((r) => r.id), ['EN-9.doubling'])
   assertEquals(waveStatus(results, 'EN-9', EN9), 'fail')
   // The mutation: without the doubling line, the same silent arm passes the wave.
   const without = EN9.filter((l) => l.id !== 'EN-9.doubling')
-  assertEquals(waveStatus(evaluatePassLines(committed, silent, without), 'EN-9', without), 'pass')
+  assertEquals(waveStatus(evaluatePassLines(committed, silent, without, OBSERVE_ALL), 'EN-9', without), 'pass')
 })
 
 Deno.test('EN-9: a latch that starts after week eight, or a timer, fails on the whole-run lines though the eight-week line passes', () => {
   // Quiet for 56 days, then asking again: reRaise (eight weeks) reads 0, the whole run does not.
   const late = onArm({ ...GOOD, ...set(['EN-9.reRaiseEver'], 1), ...set(['EN-9.askAfterAck'], 15) })
-  const results = evaluatePassLines(committed, late, EN9)
+  const results = evaluatePassLines(committed, late, EN9, OBSERVE_ALL)
   assertEquals(results.find((r) => r.id === 'EN-9.reRaise')!.status, 'pass')
   assertEquals(results.find((r) => r.id === 'EN-9.reRaiseEver')!.status, 'fail')
   assertEquals(waveStatus(results, 'EN-9', EN9), 'fail')
@@ -181,7 +200,7 @@ Deno.test('EN-9: a latch that starts after week eight, or a timer, fails on the 
 /** EN-11 with values chosen for the test (never the ruling). */
 const EN11 = PASS_LINES.filter((l) => l.wave === 'EN-11').map((l) => ({
   ...l,
-  value: l.value ?? ({ 'EN-11.detection': 0.02, 'EN-11.delay': 7, 'EN-11.falseWorsening': 0.02, 'EN-11.falseWorseningEvenings': 1 } as Record<string, number>)[l.id],
+  value: l.value ?? ({ 'EN-11.detection': 0.02, 'EN-11.delay': 7, 'EN-11.eligible': 0, 'EN-11.falseWorsening': 0.02, 'EN-11.falseWorseningEvenings': 1 } as Record<string, number>)[l.id],
 }))
 const rowsOf = (id: string) => line(id).rows
 
@@ -231,7 +250,31 @@ Deno.test('EN-11 and EN-9 are incomplete over nothing scored: no clear pets, no 
     ...line('EN-9.reRaise').nonVacuity!.rows.map((k) => [k, 0]),
     ...rowsOf('EN-9.reRaise').map((k) => [k, 0]),
   ]))
-  const results = evaluatePassLines(committed, none, [...EN11, ...EN9])
+  const results = evaluatePassLines(committed, none, [...EN11, ...EN9], OBSERVE_ALL)
   assertEquals(results.find((r) => r.id === 'EN-11.detection')!.status, 'incomplete')
   assertEquals(results.find((r) => r.id === 'EN-9.reRaise')!.status, 'incomplete')
+})
+
+Deno.test('EN-9: a shrunken scored population fails, and one scenario read over one pet is incomplete', () => {
+  // Fourth adversarial pass: 1 scored doubling pet (999 acknowledged too late) and 3 of 1,000 cats
+  // acknowledged passed every EN-9 line when the floor was a sum.
+  const [thenElig, fixedElig] = line('EN-9.doubling').nonVacuity!.rows
+  const shrunk = onArm({
+    ...GOOD,
+    [thenElig]: 1000,
+    [fixedElig]: 1,
+    'own-visit-doubling-fixed/detect/a:re_raise:vomit/ackTooLate': 999,
+    'own-answers-vet-knows/care/neverAcknowledged': 997,
+  })
+  const results = evaluatePassLines(committed, shrunk, EN9, OBSERVE_ALL)
+  assertEquals(results.find((r) => r.id === 'EN-9.doubling')!.status, 'incomplete')
+  assertEquals(results.find((r) => r.id === 'EN-9.scored')!.status, 'fail')
+  assertEquals(waveStatus(results, 'EN-9', EN9), 'fail')
+})
+
+Deno.test('every wave the harness does not run reads incomparable against any flag-on arm, EN-9 included', () => {
+  for (const wave of Object.keys(HARNESS_OBSERVES) as Wave[]) {
+    if (HARNESS_OBSERVES[wave]) continue
+    for (const r of evaluatePassLines(committed, onArm(), PASS_LINES.filter((l) => l.wave === wave))) assertEquals(r.status, 'incomparable', r.id)
+  }
 })

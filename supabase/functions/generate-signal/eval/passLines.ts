@@ -35,6 +35,22 @@ export type Wave = 'EN-9' | 'EN-8' | 'EN-3/4/7' | 'EN-11'
  * exists today (engineFlags.ts ENGINE_KEYS); the others are the names each wave's first PR adds,
  * and until then no arm can carry them, so those waves read `incomparable` against any arm.
  */
+/**
+ * Whether the harness runs the engine a wave's key changes. A key the observer never exercises
+ * leaves the flag-on rows equal to flag off's, and the wave then passes by construction: with
+ * `engines_v3_en3` on, the rows were byte-identical and EN-3/4/7 read "pass" (fourth adversarial
+ * pass), because that key changes the per-incident read (analyze-vomit, analyze-stool), which the
+ * observer does not run until CUL-1439. EN-9 is false while the observer passes an empty care
+ * record (observer.ts `NO_CARE`); PR-23 flips it in the PR that maps the corpus's answers onto it.
+ * A wave not observed reads `incomparable` against any flag-on arm.
+ */
+export const HARNESS_OBSERVES: Readonly<Record<Wave, boolean>> = {
+  'EN-9': false,
+  'EN-8': true,
+  'EN-3/4/7': false,
+  'EN-11': true,
+}
+
 export const WAVE_KEYS: Readonly<Record<Wave, readonly string[]>> = {
   'EN-9': ['engines_v3_en9'],
   'EN-8': ['engines_v3_en8'],
@@ -51,9 +67,11 @@ export interface PassLine {
   measure: string
   /** The scorecard rows this line reads, by exact key. passLines.test.ts asserts each exists. */
   rows: readonly string[]
-  /** Rows whose SUM in the arm read must reach `min` for the line to mean anything: a zero over
-   *  nothing injected, a rate over no scored pets, a re-raise share over one acknowledged cat, is no proof. */
-  nonVacuity?: { rows: readonly string[]; min: number }
+  /** Rows that must reach `min` in the arm read for the line to mean anything: a zero over nothing
+   *  injected, a rate over no scored pets, a re-raise share over one acknowledged cat, is no proof.
+   *  `each` holds every row to the floor (an `each` line's rows are read one by one, so a sum let one
+   *  scenario be read over a single pet, fourth adversarial pass); `sum` holds their total. */
+  nonVacuity?: { rows: readonly string[]; min: number; per: 'each' | 'sum' }
   /** The answer-key lane the rows score. A lane no card can answer yet (`laneCanMatch`) makes the line `incomplete`. */
   needsLane?: Lane
   /** How the rows are summarised across scenarios: the worst scenario, or every row on its own. */
@@ -83,7 +101,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'own-answers-vet-knows/care/reRaisedWithin8Weeks',
       'own-visit-with-recheck/care/reRaisedWithin8Weeks',
     ],
-    nonVacuity: { rows: ['own-answers-vet-knows/care/acknowledged', 'own-visit-with-recheck/care/acknowledged'], min: 3 },
+    nonVacuity: { rows: ['own-answers-vet-knows/care/acknowledged', 'own-visit-with-recheck/care/acknowledged'], min: 3, per: 'each' },
     aggregate: 'worst',
     comparison: 'absolute',
     direction: 'at_most',
@@ -100,7 +118,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'own-visit-then-doubling/detect/a:re_raise:vomit/probability',
       'own-visit-doubling-fixed/detect/a:re_raise:vomit/probability',
     ],
-    nonVacuity: { rows: ['own-visit-then-doubling/detect/a:re_raise:vomit/eligible', 'own-visit-doubling-fixed/detect/a:re_raise:vomit/eligible'], min: 3 },
+    nonVacuity: { rows: ['own-visit-then-doubling/detect/a:re_raise:vomit/eligible', 'own-visit-doubling-fixed/detect/a:re_raise:vomit/eligible'], min: 3, per: 'each' },
     aggregate: 'each',
     comparison: 'absolute',
     direction: 'at_least',
@@ -117,7 +135,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'own-visit-then-doubling/detect/a:re_raise:vomit/medianDays',
       'own-visit-doubling-fixed/detect/a:re_raise:vomit/medianDays',
     ],
-    nonVacuity: { rows: ['own-visit-then-doubling/detect/a:re_raise:vomit/eligible', 'own-visit-doubling-fixed/detect/a:re_raise:vomit/eligible'], min: 3 },
+    nonVacuity: { rows: ['own-visit-then-doubling/detect/a:re_raise:vomit/eligible', 'own-visit-doubling-fixed/detect/a:re_raise:vomit/eligible'], min: 3, per: 'each' },
     aggregate: 'each',
     comparison: 'absolute',
     direction: 'at_most',
@@ -134,7 +152,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'own-answers-vet-knows/care/medianLongestSilentRun',
       'own-visit-with-recheck/care/medianLongestSilentRun',
     ],
-    nonVacuity: { rows: ['own-answers-vet-knows/care/acknowledged', 'own-visit-with-recheck/care/acknowledged'], min: 3 },
+    nonVacuity: { rows: ['own-answers-vet-knows/care/acknowledged', 'own-visit-with-recheck/care/acknowledged'], min: 3, per: 'each' },
     aggregate: 'worst',
     comparison: 'absolute',
     direction: 'at_most',
@@ -153,7 +171,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'own-visit-then-doubling/detect/a:re_raise:vomit/raisedBeforeStart',
       'own-visit-doubling-fixed/detect/a:re_raise:vomit/raisedBeforeStart',
     ],
-    nonVacuity: { rows: ['own-answers-vet-knows/care/acknowledged', 'own-visit-with-recheck/care/acknowledged'], min: 3 },
+    nonVacuity: { rows: ['own-answers-vet-knows/care/acknowledged', 'own-visit-with-recheck/care/acknowledged'], min: 3, per: 'each' },
     aggregate: 'worst',
     comparison: 'absolute',
     direction: 'at_most',
@@ -170,12 +188,31 @@ export const PASS_LINES: readonly PassLine[] = [
       'own-answers-vet-knows/care/askPerPetMonthAfterAck',
       'own-visit-with-recheck/care/askPerPetMonthAfterAck',
     ],
-    nonVacuity: { rows: ['own-answers-vet-knows/care/acknowledged', 'own-visit-with-recheck/care/acknowledged'], min: 3 },
+    nonVacuity: { rows: ['own-answers-vet-knows/care/acknowledged', 'own-visit-with-recheck/care/acknowledged'], min: 3, per: 'each' },
     aggregate: 'worst',
     comparison: 'absolute',
     direction: 'at_most',
     value: null,
     valueSource: 'The ruling sheet (E-6, CUL-583), with EN-9\'s re-raise tolerance.',
+    pairedWith: 'EN-9.doubling',
+  },
+  {
+    id: 'EN-9.scored',
+    wave: 'EN-9',
+    firstFlagOnPr: 'PR-23',
+    measure: 'The pets the EN-9 lines are read over may not shrink: stable cats never acknowledged (the engine never asked), doubling cats never acknowledged, and doubling cats acknowledged too late to score a re-raise, flag on at most flag off plus a tolerance. A scorecard with 1 scored doubling pet and 3 of 1,000 cats acknowledged passed every other EN-9 line (fourth adversarial pass).',
+    rows: [
+      'own-answers-vet-knows/care/neverAcknowledged',
+      'own-visit-with-recheck/care/neverAcknowledged',
+      'own-visit-then-doubling/detect/a:re_raise:vomit/neverAcknowledged',
+      'own-visit-then-doubling/detect/a:re_raise:vomit/ackTooLate',
+      'own-visit-doubling-fixed/detect/a:re_raise:vomit/ackTooLate',
+    ],
+    aggregate: 'each',
+    comparison: 'flag_on_vs_flag_off',
+    direction: 'at_most',
+    value: null,
+    valueSource: 'A tolerance in pets, unruled (CUL-583), for the same count-noise reason as EN-11.eligible.',
     pairedWith: 'EN-9.doubling',
   },
   {
@@ -242,7 +279,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'engine/redFlag/belowShippedTier',
     ],
     // Three is what CI seeds carry (one scenario); the go-live size carries hundreds.
-    nonVacuity: { rows: ['engine/redFlag/injected'], min: 3 },
+    nonVacuity: { rows: ['engine/redFlag/injected'], min: 3, per: 'sum' },
     aggregate: 'each',
     comparison: 'absolute',
     direction: 'zero',
@@ -285,7 +322,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'inj-enteropathy-onset/detect/a:worsening:diarrhea/eligible',
       'inj-rate-doubling/detect/a:worsening:vomit/eligible',
       'inj-kennel-cough-gag/detect/a:worsening:cough/eligible',
-    ], min: 3 },
+    ], min: 3, per: 'sum' },
     aggregate: 'each',
     comparison: 'flag_on_vs_flag_off',
     direction: 'at_least',
@@ -309,7 +346,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'inj-enteropathy-onset/detect/a:worsening:diarrhea/eligible',
       'inj-rate-doubling/detect/a:worsening:vomit/eligible',
       'inj-kennel-cough-gag/detect/a:worsening:cough/eligible',
-    ], min: 3 },
+    ], min: 3, per: 'sum' },
     aggregate: 'each',
     comparison: 'flag_on_vs_flag_off',
     direction: 'at_most',
@@ -321,7 +358,7 @@ export const PASS_LINES: readonly PassLine[] = [
     id: 'EN-11.eligible',
     wave: 'EN-11',
     firstFlagOnPr: 'EN-11',
-    measure: 'The pets the detection lines score may not shrink: clear pets (no worsening card in the week before the rise) per injected scenario, flag on at least flag off. An engine that never stands a card down leaves fewer clear pets and raised its own detection share (third adversarial pass).',
+    measure: 'The pets the detection lines score may not shrink: clear pets (no worsening card in the week before the rise) per injected scenario, flag on at least flag off less a tolerance. An engine that never stands a card down leaves fewer clear pets and raised its own detection share (third adversarial pass).',
     rows: [
       'inj-enteropathy-onset/detect/a:worsening:vomit/eligible',
       'inj-enteropathy-onset/detect/a:worsening:diarrhea/eligible',
@@ -331,8 +368,8 @@ export const PASS_LINES: readonly PassLine[] = [
     aggregate: 'each',
     comparison: 'flag_on_vs_flag_off',
     direction: 'at_least',
-    value: 0,
-    valueSource: 'Structural, not a clinical threshold: the comparison is only honest over at least the pets flag off scored.',
+    value: null,
+    valueSource: "A tolerance in pets, unruled (CUL-583). Not structural: two equally noisy engines differ by about sqrt(2Np(1-p)) pets, about 16 at N = 1,000 and p = 0.15, so a margin of 0 fails a sound engine about half the time. And a rise is not free: hiding cards in the week before a rise raises it (fourth adversarial pass). Scoring only pets clear in BOTH arms retires this line (CUL-1441, before EN-11's first flag-on run).",
     pairedWith: 'EN-11.detection',
   },
   {
@@ -394,13 +431,21 @@ function passes(line: PassLine, key: string, on: number, off: number | null): bo
  * clear a line on the rows it happened to produce. Two arms over different seeds or scenarios
  * are `incomparable`. A verdict on a comparison is only meaningful at the go-live size.
  */
-export function evaluatePassLines(off: Scorecard, on: Scorecard | null = null, lines: readonly PassLine[] = PASS_LINES): LineResult[] {
+export function evaluatePassLines(
+  off: Scorecard,
+  on: Scorecard | null = null,
+  lines: readonly PassLine[] = PASS_LINES,
+  observes: Readonly<Record<Wave, boolean>> = HARNESS_OBSERVES,
+): LineResult[] {
   // Two arms compare only when the off arm IS flag off, the on arm is something else, and both ran
   // the same seeds over the same scenarios (by id, not count). Handing the flag-off file in as
   // both arms passed every ruled comparison (second adversarial pass).
   const comparable = on === null || (
+    Array.isArray(off.meta.flagsOn) && Array.isArray(on.meta.flagsOn) &&
     off.meta.arm === 'flag_off' &&
     off.meta.flagsOn.length === 0 &&
+    // An arm that moved nothing is not a flag-on arm, whatever keys it names.
+    JSON.stringify(on.rows) !== JSON.stringify(off.rows) &&
     on.meta.arm !== off.meta.arm &&
     on.meta.seeds === off.meta.seeds &&
     JSON.stringify(on.meta.scenarioIds) === JSON.stringify(off.meta.scenarioIds)
@@ -409,10 +454,13 @@ export function evaluatePassLines(off: Scorecard, on: Scorecard | null = null, l
     const rows = line.rows.map((key) => ({ key, off: off.rows[key], on: on ? on.rows[key] : undefined }))
     const armRows = (arm: Scorecard) => line.rows.map((k) => arm.rows[k])
     // The on arm must carry the wave's own keys: a name that differs is not an engine that differs.
-    if (!comparable || (on !== null && !WAVE_KEYS[line.wave].every((k) => on.meta.flagsOn.includes(k)))) return { id: line.id, status: 'incomparable', rows }
+    if (!comparable || (on !== null && (!observes[line.wave] || !WAVE_KEYS[line.wave].every((k) => on.meta.flagsOn.includes(k))))) {
+      return { id: line.id, status: 'incomparable', rows }
+    }
     const readArm = on ?? off
-    const floor = line.nonVacuity === undefined ? undefined : line.nonVacuity.rows.reduce((a, k) => a + (typeof readArm.rows[k] === 'number' ? (readArm.rows[k] as number) : 0), 0)
-    const vacuous = line.nonVacuity !== undefined && (floor as number) < line.nonVacuity.min
+    const nv = line.nonVacuity
+    const count = (k: string) => (typeof readArm.rows[k] === 'number' ? (readArm.rows[k] as number) : 0)
+    const vacuous = nv !== undefined && (nv.per === 'each' ? nv.rows.some((k) => count(k) < nv.min) : nv.rows.reduce((a, k) => a + count(k), 0) < nv.min)
     if (line.needsLane !== undefined && !laneCanMatch(line.needsLane)) return { id: line.id, status: 'incomplete', rows }
     if (line.direction === 'zero') {
       const arm = on ?? off
