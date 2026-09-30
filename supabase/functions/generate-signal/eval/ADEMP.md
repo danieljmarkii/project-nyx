@@ -33,14 +33,18 @@ Each is a row in `scorecard.json`, keyed `<scenario>/<measure>` or `engine/<meas
 | `askPerPetMonth/<register>` | Evenings carrying Home's ask in that register (call, book_visit, word_with_vet), per pet-month; `any` is evenings with at least one. |
 | `laneEveningsPerPetMonth/<lane>` | Evenings carrying a card of the lane, per pet-month. |
 | `askDropWithoutFallPerPetMonth` | Evenings a card stayed and its ask fell a register while the sign's logged 7-day count did not fall (CUL-1272), per pet-month. |
-| `detect/<pet>:<lane>[:<sign>][:<protein>]/probability`, `/medianDays` | For each `key.detect` entry: the share of eligible pet-runs where a matching card showed on or after the effect's start, and the median days to it. `paired` entries count every seed; `both_acknowledged` ones only seeds that reached the acknowledgement, with `/neverAcknowledged` counting the rest (the arm's own failure). |
+| `detect/<pet>:<lane>[:<sign>][:<protein>]/probability`, `/medianDays`, `/showingAtStart` | For each `key.detect` entry: the share of eligible pet-runs where a matching card had its ONSET (showing, and not showing the evening before) on or after the effect's start; the median days to that onset; and how many pet-runs already had a matching card standing the evening before the start. `paired` entries count every seed; `both_acknowledged` ones only seeds that reached the acknowledgement, with `/neverAcknowledged` counting the rest (the arm's own failure). A start with fewer than 14 evenings left is `/censored`, never a miss. |
 | `redFlag/injected`, `/belowShippedTier` | Every injected photo red flag, and how many did not show as a call on the first evening their row was visible (the EN-3/4/7 hard property). |
-| `care/acknowledged`, `/reRaisedWithin8Weeks`, `/silentEveningShare`, `/medianLongestSilentRun` | On scenarios whose key calls a re-raise false (a stable sign the owner acknowledged): the share raised again (an ask on the sign) within 56 days; the share of later evenings with no card on the sign; the longest such silent run, median. |
+| `care/acknowledged`, `/neverAcknowledged`, `/reRaisedWithin8Weeks`, `/silentEveningShare`, `/medianLongestSilentRun` | On scenarios whose key calls a re-raise false (a stable sign the owner acknowledged): the share raised again (an ask on the sign) within 56 days; the share of later evenings with no card on the sign; the longest such silent run, median. |
 | `engine/null/…` | Over the null family: the worst scenario's false-card share per horizon (E-4 restated: a worst case over named nulls, never a mean), the pooled share, the worst safety-card share, and the pooled ask rate per register. |
 
 **Lanes** are read off the card's finding type (`laneOf`). Two readings are deliberate: the key's `worsening` accepts the burden card, because PR-14c's valve drops ④ whenever burden shows for the sign, so a doubling burden caught would otherwise read as a miss; and `resolution` is an improving reflection. Weight has no finding type until EN-8, so its rows read zero detection today, which is true.
 
-**A detection** is the first matching card on or after the start. A chance card already showing when a real rise begins therefore counts as an instant detection; both arms share the definition, so a comparison stays paired.
+**A detection is an onset.** The first evening on or after the start where a matching card shows and did not show the evening before. A card already standing when the effect began is not the engine seeing the effect: in the first draft, a chance worsening card from day 86 scored a rise that starts on day 90 as caught on day 0, and the chronicity card that never leaves scored every re-raise as instant (adversarial review, this PR). `showingAtStart` says how often a card was already standing. **A re-raise** additionally needs a quiet evening after the acknowledgement: the ask went away and came back. Under flag off the ask never goes away, so flag off's re-raise probability is low by construction; the EN-9 lines are absolute for that reason.
+
+**Per-arm conditioning.** `both_acknowledged` detections and the `care/*` rows are conditioned on this arm's own acknowledgements. The corpus spec asks for the intersection of both arms' acknowledged seeds; the flat file does not carry seeds, so a comparison over these rows is read beside each arm's `neverAcknowledged`, and none of them is an E-6 detection proof.
+
+**Two readings that hide something, stated.** The key's `worsening` includes the burden card, so a correct burden card on a busy null pet counts as a false worsening card, and a swap between worsening and burden across arms does not move the false-card row (the per-lane rows `cardShare/burden` and `laneEveningsPerPetMonth/burden` show it). The soft and plain word-with-vet asks share one register, so `askDropWithoutFall` cannot see a drop between them.
 
 ## 4. Methods and pass lines
 
@@ -52,12 +56,13 @@ Each is a row in `scorecard.json`, keyed `<scenario>/<measure>` or `engine/<meas
 
 **The baseline** is flag off on `main` at a1ca847 (2026-09-30): after HV-2 (98292fc), PR-06, PR-14 (CUL-1190), PR-14b (CUL-1086) and PR-14c (CUL-1311's valve), as the plan review and the critique's MFU-1 asked. The committed file is that baseline at CI seeds; the go-live comparison re-runs it at size.
 
-**Pass lines** (`passLines.ts`, pinned by `passLines.test.ts`) are fixed per wave before any flag-on run. Each states its rows, comparison and direction; its value is a ruling from the ruling sheet (E-6, CUL-583). Where the sheet has not ruled, the value is null, and a null line reports "unruled" beside its numbers and never passes.
+**Pass lines** (`passLines.ts`, pinned by `passLines.test.ts`) are fixed per wave before any flag-on run. Each names its rows by exact key (the test asserts every one exists), its comparison and its direction; its value is a ruling from the ruling sheet (E-6, CUL-583). Where the sheet has not ruled, the value is null, and a null line reports "unruled" beside its numbers and never passes. A row absent from either arm makes a line `incomplete`, and two arms over different seeds or scenarios are `incomparable`: a flag-on arm run over a subset cannot clear a line on the rows it happened to produce. The hard property needs at least one injected red flag (`nonVacuity`), or it is `incomplete`, never a pass over nothing.
 
 | Line | Wave | Measure | Direction | Value |
 |---|---|---|---|---|
 | EN-9.reRaise | EN-9 (PR-23) | Share of stable cats raised again within eight weeks | at most | unruled (EN-9's re-raise tolerance) |
-| EN-9.doubling | EN-9 | A true doubling after the acknowledgement is caught, including behind a logging lapse | at least | unruled |
+| EN-9.doubling | EN-9 | A true doubling after the acknowledgement is caught (the ask returns after a quiet evening) | at least | unruled |
+| EN-9.lapseReassurance | EN-9 | Behind a logging lapse, no more improving or resolved cards than flag off | at most off + 0 | **0, ruled** (n=1 never reassures) |
 | EN-9.doublingDelay | EN-9 | Median days to that ask | at most | unruled |
 | EN-9.silence | EN-9 | Longest silent run for stable, unimproved disease | at most | unruled |
 | EN-8.falseCards | EN-8 (PR-19) | False weight cards on stable pets within 180 days | at most | unruled (PMD-9) |
@@ -66,7 +71,7 @@ Each is a row in `scorecard.json`, keyed `<scenario>/<measure>` or `engine/<meas
 | EN-3.nullCallRate | EN-3/4/7 | Call evenings per pet-month on null pets, flag on against off | at most off + margin | unruled margin |
 | EN-11.worsening | EN-11 | Worsening detection probability and delay, flag on against off | no worse than off, within a margin | unruled margin |
 
-**Why the lines come in pairs** (Data Science lens, 9/26): the headline ask-evenings number falls by construction once EN-9 exists, and an EN-9 that never raises a concern again scores a perfect zero. So every quieting line is paired with a detection line on the same wave's pets (`pairedWith`), and a wave passes only when both do.
+**Why the lines come in pairs** (Data Science lens, 9/26): the headline ask-evenings number falls by construction once EN-9 exists, and an EN-9 that never raises a concern again scores a perfect zero. So every quieting line is paired with a detection line on the same wave's pets (`pairedWith`), and `waveStatus` passes a wave only when every one of its lines does. The lapse case (a doubling the record cannot show, because symptoms stopped being logged) is not a detection line, since no engine can pass it: it is held as a no-reassurance line instead.
 
 ## 5. Performance: Monte Carlo size, and the go-live check
 
@@ -95,6 +100,9 @@ and say in the PR which rows moved and why. The file carries no timestamp: the s
 
 * **The per-incident call rate by tier** (EN-3's server half) and **escalations per bout** (GAP-33). The per-incident rule lives in `_shared/incident-analysis.ts` and `analyze-vomit`, which PR-28 (CUL-1134) is changing now; an observer over it follows once that lands. Until then only the Signal's red-flag card is scored.
 * **Weight.** No lane exists, so the weight rows read zero; EN-8 (PR-19) makes them live.
+* **The care record.** The observer passes an empty one, as the shell does today; PR-23 maps the corpus's answers, visits and appointments onto it in the same PR that makes the shell read them.
+* **Cadence.** The observer runs nightly at 21:00; production regenerates on app open and after a log, so stand-down timing can differ.
+* **Incomplete reads.** Every pull reads to the end here, so the carried-card branch (CUL-989) is never exercised.
 * **Owner reactions to text.** The owner model reacts to a card's sign and ask register only.
 * **Medications, stool reads, intake decline as a truth signal**: the corpus does not generate them (its README).
 * **The report.** `generate-report` runs its own detection and is not scored here.

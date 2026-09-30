@@ -119,6 +119,8 @@ export const HORIZONS = [180, 365] as const
 /** EN-9's re-raise window: eight weeks after the acknowledgement (BRK-4). */
 export const RE_RAISE_WINDOW_DAYS = 56
 const DAYS_PER_MONTH = 30
+/** A detection whose start leaves fewer evenings than this is censored, not scored as a miss. */
+export const DETECT_MIN_WINDOW_DAYS = 14
 
 export interface DetectionScore {
   label: string
@@ -126,10 +128,14 @@ export interface DetectionScore {
   /** Pet-runs the entry is scored on (for both_acknowledged: the ones that reached the acknowledgement). */
   eligible: number
   detected: number
-  /** Median days from the effect's start to the first matching card, over the detected. */
+  /** Median days from the effect's start to the first matching card's onset, over the detected. */
   medianDays: number | null
   /** both_acknowledged only: pet-runs where the engine never asked, so the owner never acknowledged. */
   neverAcknowledged: number
+  /** Pet-runs whose start left fewer than DETECT_MIN_WINDOW_DAYS evenings: not scored. */
+  censored: number
+  /** Eligible pet-runs where a matching card was already showing the evening before the start. */
+  showingAtStart: number
 }
 
 export interface ScenarioScore {
@@ -161,6 +167,8 @@ export interface ScenarioScore {
 export interface CareScore {
   /** Pet-runs with an acknowledgement of a sign the key says stays unchanged afterwards. */
   acknowledged: number
+  /** Pet-runs where the engine never asked, so the owner never acknowledged: the arm's own failure, never a pass. */
+  neverAcknowledged: number
   /** Of those, the share that saw an ask on that sign again within eight weeks. */
   reRaisedWithin8Weeks: number | null
   /** Evenings after the acknowledgement with no card on that sign, over all such evenings. */
@@ -217,11 +225,13 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
     detected: 0,
     medianDays: null,
     neverAcknowledged: 0,
+    censored: 0,
+    showingAtStart: 0,
   }))
   const detectDays: number[][] = sc.key.detect.map(() => [])
   let redFlags: ScenarioScore['redFlags'] = null
   const reRaiseSigns = sc.key.falseCards.filter((f) => f.lane === 're_raise')
-  const care = { acknowledged: 0, reRaised: 0, silent: 0, postAck: 0, longest: [] as number[] }
+  const care = { neverAcknowledged: 0, acknowledged: 0, reRaised: 0, silent: 0, postAck: 0, longest: [] as number[] }
 
   for (const run of runs) {
     const evenings = cardsOf(run.result)
@@ -266,7 +276,11 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
       }
       if (firstSafety !== null) acc.firstSafety.push(firstSafety)
 
-      // Detection, per answer-key entry.
+      // Detection, per answer-key entry. A hit is an ONSET: the first evening on or after the
+      // start where a matching card shows and did not show the evening before. A card already
+      // standing when the effect began (a chance worsening card from day 86 on a rise that starts
+      // on day 90; a chronicity card that never left) is not the engine seeing the effect, and
+      // is counted in `showingAtStart` so the reader can see how often it happened.
       sc.key.detect.forEach((d, i) => {
         if (d.petKey !== petKey) return
         const ackDay = d.sign ? truth.acks.find((a) => a.petKey === petKey && a.sign === d.sign)?.day : truth.acks.find((a) => a.petKey === petKey)?.day
@@ -275,23 +289,39 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
           detections[i].neverAcknowledged++
           return
         }
-        // A paired entry counts on every seed, from its fixed day, acknowledged or not (the
-        // truth is the same in both arms); an acknowledgement-anchored one only where the
-        // acknowledgement happened, which `startDay` already returned undefined for.
+        // Censored: too few evenings left after the start to see anything (an arm that
+        // acknowledges late must not collect misses it could never have avoided).
+        if (from + DETECT_MIN_WINDOW_DAYS > sc.days) {
+          detections[i].censored++
+          return
+        }
         detections[i].eligible++
-        const hit = evenings.find((ev) => ev.day >= from && ev.cards.some((c) => matchesKey(d, c)))
+        const matching = (ev: (typeof evenings)[number] | undefined) => ev !== undefined && ev.cards.some((c) => matchesKey(d, c))
+        const byDay = new Map(evenings.map((ev) => [ev.day, ev]))
+        if (matching(byDay.get(from - 1))) detections[i].showingAtStart++
+        const hit = evenings.find((ev) => {
+          if (ev.day < from || !matching(ev) || matching(byDay.get(ev.day - 1))) return false
+          // A re-raise must follow a quiet evening AFTER the acknowledgement: the ask went away
+          // and came back, never the standing ask it was acknowledged under.
+          return d.lane !== 're_raise' || (ackDay !== undefined && ev.day - 1 > ackDay)
+        })
         if (hit) {
           detections[i].detected++
           detectDays[i].push(hit.day - from)
         }
       })
 
-      // The red-flag property: on the first evening the flagged row is visible.
+      // The red-flag property: on the first evening both the flagged row and its photo read are
+      // visible (the read is written a few minutes after the row), a red-flag card at the
+      // shipped tier. Any red-flag card on the pet counts: every scenario injects one flag.
       for (const flag of truth.redFlags.filter((f) => f.petKey === petKey)) {
         redFlags ??= { injected: 0, atShippedTier: 0, below: 0 }
         redFlags.injected++
         const row = run.result.record.events.find((e) => e.id === flag.eventId)
-        const first = row ? evenings.find((ev) => ev.day >= flag.day && visibleAt(row, Date.parse(ev.nowIso))) : undefined
+        const read = run.result.record.analyses.find((a) => a.event_id === flag.eventId)
+        const first = row && read
+          ? evenings.find((ev) => ev.day >= flag.day && visibleAt(row, Date.parse(ev.nowIso)) && Date.parse(read.created_at) <= Date.parse(ev.nowIso))
+          : undefined
         const card = first?.cards.find((c) => c.petKey === petKey && laneOf(c) === 'red_flag')
         if (card && card.ask === 'call') redFlags.atShippedTier++
         else redFlags.below++
@@ -300,7 +330,10 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
       // EN-9's baseline: an acknowledged sign the key says stays unchanged.
       for (const f of reRaiseSigns.filter((x) => x.petKey === petKey)) {
         const ack = truth.acks.find((a) => a.petKey === petKey && (f.sign === undefined || a.sign === f.sign))
-        if (!ack) continue
+        if (!ack) {
+          care.neverAcknowledged++
+          continue
+        }
         care.acknowledged++
         const after = evenings.filter((ev) => ev.day > ack.day)
         const onSign = (ev: (typeof evenings)[number]) => ev.cards.filter((c) => c.petKey === petKey && c.sign === ack.sign)
@@ -357,6 +390,7 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
       ? null
       : {
           acknowledged: care.acknowledged,
+          neverAcknowledged: care.neverAcknowledged,
           reRaisedWithin8Weeks: care.acknowledged === 0 ? null : round(care.reRaised / care.acknowledged),
           silentEveningShare: care.postAck === 0 ? null : round(care.silent / care.postAck),
           medianLongestSilentRun: median(care.longest),
@@ -413,6 +447,8 @@ export function buildScorecard(scores: readonly ScenarioScore[], meta: Scorecard
     for (const d of s.detections) {
       rows[`${p}/detect/${d.label}/probability`] = d.eligible === 0 ? null : round(d.detected / d.eligible)
       rows[`${p}/detect/${d.label}/medianDays`] = d.medianDays
+      rows[`${p}/detect/${d.label}/showingAtStart`] = d.showingAtStart
+      if (d.censored > 0) rows[`${p}/detect/${d.label}/censored`] = d.censored
       if (d.scoring === 'both_acknowledged') rows[`${p}/detect/${d.label}/neverAcknowledged`] = d.neverAcknowledged
     }
     if (s.redFlags) {
@@ -421,6 +457,7 @@ export function buildScorecard(scores: readonly ScenarioScore[], meta: Scorecard
     }
     if (s.care) {
       rows[`${p}/care/acknowledged`] = s.care.acknowledged
+      rows[`${p}/care/neverAcknowledged`] = s.care.neverAcknowledged
       rows[`${p}/care/reRaisedWithin8Weeks`] = s.care.reRaisedWithin8Weeks
       rows[`${p}/care/silentEveningShare`] = s.care.silentEveningShare
       rows[`${p}/care/medianLongestSilentRun`] = s.care.medianLongestSilentRun

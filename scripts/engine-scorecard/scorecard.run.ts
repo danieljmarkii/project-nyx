@@ -2,7 +2,7 @@
 // jest.scorecard.config.js, never the app's `npm test`: see that file's header for why jest.
 //
 // It runs PR-15's committed synthetic pets through the shipped Signal pipeline, with each card's
-// ask read from `signalHomeAsk`, scores them (supabase/functions/generate-signal/eval/), and prints
+// ask read from Home's row (`signalHomeLine(f).ask`, which is `signalHomeAsk` behind Home's safety gate), scores them (supabase/functions/generate-signal/eval/), and prints
 // the diff against the committed scorecard plus every pass line's rows. REPORTED, NEVER GATING:
 // a moved row is information, and the test fails only when the harness itself breaks (it throws,
 // or it measured nothing). Environment:
@@ -17,7 +17,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { signalHomeAsk } from '../../lib/signalHomeLine';
+import { signalHomeLine } from '../../lib/signalHomeLine';
 import type { SignalFinding } from '../../lib/signal';
 import { ENGINE_KEYS, type EngineKey } from '../../supabase/functions/_shared/engineFlags';
 import { TRAJECTORY_CORPUS, type ScenarioSpec } from '../../supabase/functions/_shared/engineCorpus/trajectory/index';
@@ -52,11 +52,13 @@ test('the engine scorecard (reported, never gating)', () => {
   const { seeds, label } = seedsFrom(env.SCORECARD_SEEDS ?? 'ci');
   const only = env.SCORECARD_SCENARIOS?.split(',').map((s: string) => s.trim());
   const scenarios = only ? TRAJECTORY_CORPUS.filter((s) => only.includes(s.id)) : TRAJECTORY_CORPUS;
+  const unknown = only?.filter((id: string) => !TRAJECTORY_CORPUS.some((s) => s.id === id)) ?? [];
+  if (unknown.length > 0) throw new Error(`SCORECARD_SCENARIOS: no scenario ${unknown.join(', ')}`);
   if (scenarios.length === 0) throw new Error('no scenario selected');
 
   const started = Date.now();
   const { scorecard } = runCorpus({
-    observer: () => makeSignalObserver({ askOf: (f) => signalHomeAsk(f as unknown as SignalFinding), engineFlags: { on, readOk: true } }),
+    observer: () => makeSignalObserver({ askOf: (f) => signalHomeLine(f as unknown as SignalFinding)?.ask ?? null, engineFlags: { on, readOk: true } }),
     arm,
     seeds,
     seedsLabel: label,

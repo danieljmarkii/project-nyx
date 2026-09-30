@@ -3,13 +3,21 @@
 // `simulate(scenario, seed, observer)` calls the observer at 21:00 local each evening; this one
 // runs the SHIPPED Signal pipeline over each pet's rows as of that instant (syntheticRows.ts),
 // carries the previous evening's cache row forward as the prior (so stand-downs mint as they
-// would in production), and returns the cards Home shows.
+// would in production), and returns the cards Home shows. The cadence is nightly at 21:00; in
+// production the Signal regenerates on app open and after a log, so stand-down timing can differ.
+//
+// THE CARE RECORD IS EMPTY, as the shell passes it today (`careRecord` is reserved for PR-23).
+// The corpus writes owner answers, visits and appointments; PR-23 must map them onto the
+// pipeline's CareRecord HERE in the same PR that makes the shell read them, or every EN-9
+// flag-on arm through this observer equals flag off (it fails loudly: reRaise stays at 1).
 //
 // THE ASK IS HOME'S, NEVER A TEXT MATCH (CUL-1131, pinned 2026-09-26). Which vet ask a card
 // carries is read from `signalHomeAsk` (lib/signalHomeLine.ts), the function Home renders its
-// ask from, handed in as `askOf`. It is injected rather than imported because lib/'s closure
-// does not load under Deno (extensionless imports reaching expo modules); the jest runner
-// (scripts/engine-scorecard/) passes the real one. The replay's regex over the rendered sentence
+// ask from, handed in as `askOf`: the runner passes `signalHomeLine(f)?.ask`, so Home's own gate
+// (an ask only on a safety row, none on an untitled type or a stand-down) applies here too.
+// It is injected rather than imported because lib/'s closure does not load under Deno
+// (extensionless imports reaching expo modules); the jest runner (scripts/engine-scorecard/)
+// passes the real one. The replay's regex over the rendered sentence
 // (signalReplay.deno.ts `askRegister`) is not used here. On Design v2, Home asks only on safety
 // rows, so a benign card carries `ask: 'none'` even where its screen mentions a vet.
 //

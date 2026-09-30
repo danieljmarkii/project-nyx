@@ -7,7 +7,7 @@
 //   2. A mutation that loosens a floor visibly moves its row (the issue's acceptance): the
 //      chronicity floor's minimum episode count, lowered, raises the null pets' chronicity row.
 
-import { signalHomeAsk } from '../../lib/signalHomeLine';
+import { signalHomeAsk, signalHomeLine } from '../../lib/signalHomeLine';
 import type { SignalFinding } from '../../lib/signal';
 import { DEFAULT_CONFIG } from '../../supabase/functions/generate-signal/detection';
 import { scenarioById } from '../../supabase/functions/_shared/engineCorpus/trajectory/index';
@@ -38,7 +38,7 @@ test('a loosened floor visibly moves its row: chronicity at 2 episodes instead o
   const sc = scenarioById('null-staple-3pm-bursty');
   const run = () =>
     runCorpus({
-      observer: () => makeSignalObserver({ askOf: (f) => signalHomeAsk(f as unknown as SignalFinding) }),
+      observer: () => makeSignalObserver({ askOf: (f) => signalHomeLine(f as unknown as SignalFinding)?.ask ?? null }),
       arm: 'flag_off',
       seeds: (s) => s.ciSeeds.slice(0, 1),
       seedsLabel: 'first',

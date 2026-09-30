@@ -34,8 +34,10 @@ export interface PassLine {
   firstFlagOnPr: string
   /** What is measured, in words. */
   measure: string
-  /** Scorecard row keys this line reads (anchored regular expressions over `Scorecard.rows`). */
-  rows: string
+  /** The scorecard rows this line reads, by exact key. passLines.test.ts asserts each exists. */
+  rows: readonly string[]
+  /** A row that must be at least 1 for the line to mean anything (a zero over nothing injected is no proof). */
+  nonVacuity?: string
   /** How the rows are summarised across scenarios: the worst scenario, or every row on its own. */
   aggregate: 'worst' | 'each'
   comparison: 'absolute' | 'flag_on_vs_flag_off'
@@ -59,7 +61,10 @@ export const PASS_LINES: readonly PassLine[] = [
     wave: 'EN-9',
     firstFlagOnPr: 'PR-23',
     measure: 'The share of stable cats raised again within eight weeks of the owner acknowledging the concern (an ask on the acknowledged sign in the 56 days after).',
-    rows: '^own-(answers-vet-knows|visit-with-recheck|lapse-flat)/care/reRaisedWithin8Weeks$',
+    rows: [
+      'own-answers-vet-knows/care/reRaisedWithin8Weeks',
+      'own-visit-with-recheck/care/reRaisedWithin8Weeks',
+    ],
     aggregate: 'worst',
     comparison: 'absolute',
     direction: 'at_most',
@@ -71,8 +76,11 @@ export const PASS_LINES: readonly PassLine[] = [
     id: 'EN-9.doubling',
     wave: 'EN-9',
     firstFlagOnPr: 'PR-23',
-    measure: 'A true doubling after the acknowledgement is caught: the probability of an ask on the sign after the doubling starts, including behind a logging lapse.',
-    rows: '^own-(lapse-doubling|visit-then-doubling|visit-doubling-fixed)/detect/a:(re_raise|worsening):vomit/probability$',
+    measure: 'A true doubling after the acknowledgement is caught: the probability that an ask on the sign returns (after at least one quiet evening since the acknowledgement) once the doubling starts. Behind a logging lapse the record cannot show it, so that case is held by EN-9.lapseReassurance instead.',
+    rows: [
+      'own-visit-then-doubling/detect/a:re_raise:vomit/probability',
+      'own-visit-doubling-fixed/detect/a:re_raise:vomit/probability',
+    ],
     aggregate: 'each',
     comparison: 'absolute',
     direction: 'at_least',
@@ -85,7 +93,10 @@ export const PASS_LINES: readonly PassLine[] = [
     wave: 'EN-9',
     firstFlagOnPr: 'PR-23',
     measure: 'The delay on that doubling: median days from the doubling\'s start to the ask.',
-    rows: '^own-(lapse-doubling|visit-then-doubling|visit-doubling-fixed)/detect/a:(re_raise|worsening):vomit/medianDays$',
+    rows: [
+      'own-visit-then-doubling/detect/a:re_raise:vomit/medianDays',
+      'own-visit-doubling-fixed/detect/a:re_raise:vomit/medianDays',
+    ],
     aggregate: 'each',
     comparison: 'absolute',
     direction: 'at_most',
@@ -98,7 +109,10 @@ export const PASS_LINES: readonly PassLine[] = [
     wave: 'EN-9',
     firstFlagOnPr: 'PR-23',
     measure: 'Silent days for stable, unimproved disease: the longest run of evenings after the acknowledgement with no card at all on the sign (median over pets).',
-    rows: '^own-(answers-vet-knows|visit-with-recheck|lapse-flat)/care/medianLongestSilentRun$',
+    rows: [
+      'own-answers-vet-knows/care/medianLongestSilentRun',
+      'own-visit-with-recheck/care/medianLongestSilentRun',
+    ],
     aggregate: 'worst',
     comparison: 'absolute',
     direction: 'at_most',
@@ -106,13 +120,33 @@ export const PASS_LINES: readonly PassLine[] = [
     valueSource: 'The ruling sheet (E-6, CUL-583). With a booked recheck, the appointment strip carries the one ask (E-3).',
     pairedWith: 'EN-9.reRaise',
   },
+  {
+    id: 'EN-9.lapseReassurance',
+    wave: 'EN-9',
+    firstFlagOnPr: 'PR-23',
+    measure: 'Behind a logging lapse (symptoms stop being logged after the acknowledgement, meals continue) no card reads the silence as improvement: the share of pets shown an improving or resolved card, flag on against flag off.',
+    rows: [
+      'own-lapse-doubling/falseCard/180d',
+      'own-lapse-flat/falseCard/180d',
+    ],
+    aggregate: 'each',
+    comparison: 'flag_on_vs_flag_off',
+    direction: 'at_most',
+    value: 0,
+    valueSource: 'Ruled by the standing invariant (CLAUDE.md, n=1 never reassures: absence is not wellness), which needs no PM confirmation: flag on may show no more false reassurance than flag off. The shipped engine already shows one here (a separate issue).',
+    pairedWith: 'EN-9.doubling',
+  },
   // ── EN-8, the weight lane (PR-19) ──
   {
     id: 'EN-8.falseCards',
     wave: 'EN-8',
     firstFlagOnPr: 'PR-19',
     measure: 'False weight cards on stable pets: the share of pets on a flat weight that see a weight card within 180 days.',
-    rows: '^wt-(null-sparse-home|null-sparse-noisy|legacy-profile-guess)/falseCard/180d$',
+    rows: [
+      'wt-null-sparse-home/falseCard/180d',
+      'wt-null-sparse-noisy/falseCard/180d',
+      'wt-legacy-profile-guess/falseCard/180d',
+    ],
     aggregate: 'worst',
     comparison: 'absolute',
     direction: 'at_most',
@@ -125,7 +159,12 @@ export const PASS_LINES: readonly PassLine[] = [
     wave: 'EN-8',
     firstFlagOnPr: 'PR-19',
     measure: 'Detection delay by weigh-in cadence: median days from the loss\'s start to a weight card, weekly, sparse and clinic-only weighing each on its own.',
-    rows: '^wt-(loss-weekly|loss-sparse|clinic-only-loss|legacy-profile-true-loss)/detect/a:weight/medianDays$',
+    rows: [
+      'wt-loss-weekly/detect/a:weight/medianDays',
+      'wt-loss-sparse/detect/a:weight/medianDays',
+      'wt-clinic-only-loss/detect/a:weight/medianDays',
+      'wt-legacy-profile-true-loss/detect/a:weight/medianDays',
+    ],
     aggregate: 'each',
     comparison: 'absolute',
     direction: 'at_most',
@@ -139,7 +178,10 @@ export const PASS_LINES: readonly PassLine[] = [
     wave: 'EN-3/4/7',
     firstFlagOnPr: 'PR-26',
     measure: 'No injected red flag lands below its shipped tier: every photographed blood read shows on the evening its row is visible, as a call.',
-    rows: '^engine/redFlag/belowShippedTier$',
+    rows: [
+      'engine/redFlag/belowShippedTier',
+    ],
+    nonVacuity: 'engine/redFlag/injected',
     aggregate: 'each',
     comparison: 'absolute',
     direction: 'zero',
@@ -152,7 +194,9 @@ export const PASS_LINES: readonly PassLine[] = [
     wave: 'EN-3/4/7',
     firstFlagOnPr: 'PR-26',
     measure: 'The call rate on null pets: evenings carrying "worth a call" per pet-month, pooled over the null scenarios, flag on against flag off.',
-    rows: '^engine/null/askPerPetMonth/call$',
+    rows: [
+      'engine/null/askPerPetMonth/call',
+    ],
     aggregate: 'each',
     comparison: 'flag_on_vs_flag_off',
     direction: 'at_most',
@@ -166,7 +210,16 @@ export const PASS_LINES: readonly PassLine[] = [
     wave: 'EN-11',
     firstFlagOnPr: 'EN-11',
     measure: 'Worsening detection no slower than shipped: on every injected scenario the key scores for worsening, the probability of a worsening (or burden) card and its median delay, flag on against flag off over the same seeds.',
-    rows: '^inj-[a-z0-9-]+/detect/a:worsening:[a-z]+/(probability|medianDays)$',
+    rows: [
+      'inj-enteropathy-onset/detect/a:worsening:vomit/probability',
+      'inj-enteropathy-onset/detect/a:worsening:vomit/medianDays',
+      'inj-enteropathy-onset/detect/a:worsening:diarrhea/probability',
+      'inj-enteropathy-onset/detect/a:worsening:diarrhea/medianDays',
+      'inj-rate-doubling/detect/a:worsening:vomit/probability',
+      'inj-rate-doubling/detect/a:worsening:vomit/medianDays',
+      'inj-kennel-cough-gag/detect/a:worsening:cough/probability',
+      'inj-kennel-cough-gag/detect/a:worsening:cough/medianDays',
+    ],
     aggregate: 'each',
     comparison: 'flag_on_vs_flag_off',
     direction: 'at_most',
@@ -176,67 +229,84 @@ export const PASS_LINES: readonly PassLine[] = [
   },
 ]
 
-export type LineStatus = 'pass' | 'fail' | 'unruled' | 'awaiting_flag_on' | 'no_rows'
+export type LineStatus = 'pass' | 'fail' | 'unruled' | 'awaiting_flag_on' | 'incomplete' | 'incomparable'
 
 export interface LineResult {
   id: string
   status: LineStatus
-  /** The rows read, with the flag-off value and the flag-on value when there is one. */
-  rows: { key: string; off: number | null; on: number | null }[]
+  /** The rows read, with the flag-off value and the flag-on value when there is one (undefined: absent). */
+  rows: { key: string; off: number | null | undefined; on: number | null | undefined }[]
 }
 
-function pick(line: PassLine, card: Scorecard): string[] {
-  const re = new RegExp(line.rows)
-  return Object.keys(card.rows).filter((k) => re.test(k))
-}
-
-/** Is `v` on the passing side? Probabilities pass upward even under an `at_most` comparison line. */
+/** Is `on` on the passing side? A probability passes upward even under an `at_most` comparison line. */
 function passes(line: PassLine, key: string, on: number, off: number | null): boolean {
-  if (line.direction === 'zero') return on === 0
   const value = line.value as number
   const higherIsBetter = line.direction === 'at_least' || (line.comparison === 'flag_on_vs_flag_off' && key.endsWith('/probability'))
   if (line.comparison === 'absolute') return higherIsBetter ? on >= value : on <= value
-  if (off === null) return false
+  if (off === null) return true // flag off never found it; flag on cannot be worse than never
   return higherIsBetter ? on >= off - value : on <= off + value
 }
 
 /**
  * The lines' status. With only the flag-off scorecard (CI today), a hard property is read on it
- * and every other line reports its rows and waits for a flag-on arm. A verdict on a comparison
- * is only meaningful at the go-live size; the caller says which size it ran.
+ * and every other line reports its rows and waits for a flag-on arm. A row absent from either
+ * arm makes the line `incomplete`, never a pass: a flag-on arm run over fewer scenarios must not
+ * clear a line on the rows it happened to produce. Two arms over different seeds or scenarios
+ * are `incomparable`. A verdict on a comparison is only meaningful at the go-live size.
  */
 export function evaluatePassLines(off: Scorecard, on: Scorecard | null = null, lines: readonly PassLine[] = PASS_LINES): LineResult[] {
+  const comparable = on === null || (on.meta.seeds === off.meta.seeds && on.meta.scenarios === off.meta.scenarios)
   return lines.map((line) => {
-    const keys = pick(line, on ?? off)
-    const rows = keys.map((key) => ({ key, off: off.rows[key] ?? null, on: on ? (on.rows[key] ?? null) : null }))
-    if (keys.length === 0) return { id: line.id, status: 'no_rows', rows }
+    const rows = line.rows.map((key) => ({ key, off: off.rows[key], on: on ? on.rows[key] : undefined }))
+    const armRows = (arm: Scorecard) => line.rows.map((k) => arm.rows[k])
+    if (!comparable) return { id: line.id, status: 'incomparable', rows }
     if (line.direction === 'zero') {
-      const arms = on ? rows.map((r) => r.on) : rows.map((r) => r.off)
-      return { id: line.id, status: arms.every((v) => v === 0) ? 'pass' : 'fail', rows }
+      const arm = on ?? off
+      const values = armRows(arm)
+      const injected = line.nonVacuity === undefined ? 1 : arm.rows[line.nonVacuity]
+      if (values.some((v) => v === undefined || v === null) || typeof injected !== 'number' || injected < 1) return { id: line.id, status: 'incomplete', rows }
+      return { id: line.id, status: values.every((v) => v === 0) ? 'pass' : 'fail', rows }
     }
     if (on === null) return { id: line.id, status: 'awaiting_flag_on', rows }
     if (line.value === null) return { id: line.id, status: 'unruled', rows }
-    const measured = rows.filter((r) => r.on !== null)
-    if (measured.length === 0) return { id: line.id, status: 'no_rows', rows }
-    const values = line.aggregate === 'worst'
-      ? [line.direction === 'at_least' ? Math.min(...measured.map((r) => r.on as number)) : Math.max(...measured.map((r) => r.on as number))]
-      : null
-    const ok = values
-      ? passes(line, measured[0].key, values[0], null)
-      : measured.every((r) => passes(line, r.key, r.on as number, r.off))
+    if (rows.some((r) => r.on === undefined || r.off === undefined)) return { id: line.id, status: 'incomplete', rows }
+    if (line.comparison === 'absolute') {
+      if (rows.some((r) => r.on === null)) return { id: line.id, status: 'incomplete', rows }
+      const onValues = rows.map((r) => r.on as number)
+      const ok = line.aggregate === 'worst'
+        ? passes(line, rows[0].key, line.direction === 'at_least' ? Math.min(...onValues) : Math.max(...onValues), null)
+        : rows.every((r) => passes(line, r.key, r.on as number, null))
+      return { id: line.id, status: ok ? 'pass' : 'fail', rows }
+    }
+    // A comparison, row by row: flag on losing a number flag off had (a detection it no longer
+    // makes) fails; both null (neither arm found it) holds.
+    const ok = rows.every((r) => (r.on === null ? r.off === null : passes(line, r.key, r.on as number, r.off as number | null)))
     return { id: line.id, status: ok ? 'pass' : 'fail', rows }
   })
 }
 
-const show = (v: number | null) => (v === null ? '—' : String(v))
+const show = (v: number | null | undefined) => (v === undefined ? '(absent)' : v === null ? '—' : String(v))
+
+/** A wave passes only when every one of its lines does: `pairedWith` is what makes silence alone fail. */
+export function waveStatus(results: readonly LineResult[], wave: Wave, lines: readonly PassLine[] = PASS_LINES): LineStatus {
+  const mine = results.filter((r) => lines.find((l) => l.id === r.id)?.wave === wave)
+  for (const s of ['fail', 'incomparable', 'incomplete', 'unruled', 'awaiting_flag_on'] as const) if (mine.some((r) => r.status === s)) return s
+  return 'pass'
+}
 
 export function formatPassLines(results: readonly LineResult[], lines: readonly PassLine[] = PASS_LINES): string {
-  const out = ['## Pass lines (fixed before any flag-on run; read at the go-live size, never in CI)', '']
+  const waves = [...new Set(lines.map((l) => l.wave))]
+  const out = [
+    '## Pass lines (fixed before any flag-on run; read at the go-live size, never in CI)',
+    '',
+    `By wave (a wave passes only when every line of it does): ${waves.map((w) => `${w} ${waveStatus(results, w, lines)}`).join(' · ')}`,
+    '',
+  ]
   for (const r of results) {
     const line = lines.find((l) => l.id === r.id)!
     out.push(`**${line.id}** (${line.wave}, first flag-on in ${line.firstFlagOnPr}): ${r.status}. ${line.measure}`)
     out.push(`Passes: ${line.direction === 'zero' ? 'exactly 0' : `${line.direction.replace('_', ' ')} ${line.value === null ? 'an unruled value' : line.value}`}${line.comparison === 'flag_on_vs_flag_off' ? ' relative to flag off' : ''}. Value: ${line.valueSource}`)
-    for (const row of r.rows) out.push(`- \`${row.key}\`: flag off ${show(row.off)}${row.on !== null ? `, flag on ${show(row.on)}` : ''}`)
+    for (const row of r.rows) out.push(`- \`${row.key}\`: flag off ${show(row.off)}${row.on !== undefined ? `, flag on ${show(row.on)}` : ''}`)
     out.push('')
   }
   return out.join('\n')
