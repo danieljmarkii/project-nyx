@@ -238,11 +238,6 @@ export function tierDisplayOf(row: TierRow | null | undefined): TierDisplay | nu
   return isTieredRow(row) ? 'logged' : 'monitor';
 }
 
-/** The words for a display, or for an unknown one the shipped escalation's. */
-export function tierWordsOf(display: TierDisplay | null | undefined): TierWords | null {
-  return display ? TIER_WORDS[display] : null;
-}
-
 /** Whether the row stands as a call (either rule), decided on the same max as every
  *  surface: presence escalates at any status. */
 export function isCallRow(row: TierRow | null | undefined): boolean {
@@ -266,7 +261,6 @@ export function isCallRow(row: TierRow | null | undefined): boolean {
 //     record at failure time): the call is from what is logged, not from any photo.
 export const HELD_CALL_DISCLOSURE = "The latest read didn't finish. The call above is from the earlier read.";
 export const RESCUED_CALL_DISCLOSURE = "The latest read didn't finish. The call above is from what's already logged.";
-export const HELD_CALL_RETRY = 'Try again';
 /** The observations under a held call describe the read before the one that failed. */
 export const EARLIER_READ_LABEL = 'From the earlier read';
 
