@@ -32,8 +32,8 @@ export type Wave = 'EN-9' | 'EN-8' | 'EN-3/4/7' | 'EN-11'
  * The engine keys a flag-on arm must have on for a wave's comparison to mean anything. An arm
  * that only differs from flag off by NAME (a key the Signal never reads, so its rows equal flag
  * off's) passed EN-11 and EN-3 by construction (third adversarial pass). Of these, only
- * engines_v3_en3 exists today (engineFlags.ts ENGINE_KEYS also holds en0 and en10, which no wave
- * here names); the others are the names each wave's first PR adds, and until then no arm can carry
+ * engines_v3_en3 and engines_v3_en4 exist today (engineFlags.ts ENGINE_KEYS also holds en0 and
+ * en10, which no wave here names); the others are the names each wave's first PR adds, and until then no arm can carry
  * them. A comparison arm carries EXACTLY its wave's keys: an arm bundling a second key, or moving one
  * irrelevant row, let a no-op EN-11 pass every non-inferiority line (fifth adversarial pass). Waves
  * that stack are compared prior-waves against prior-waves-plus-key, never against flag off (CUL-1441).
@@ -59,7 +59,8 @@ export const HARNESS_OBSERVES: Readonly<Record<Wave, boolean>> = {
 export const WAVE_KEYS: Readonly<Record<Wave, readonly string[]>> = {
   'EN-9': ['engines_v3_en9'],
   'EN-8': ['engines_v3_en8'],
-  'EN-3/4/7': ['engines_v3_en3'],
+  // EN-4's floor (engines_v3_en4, PR-28) acts only where en3 writes tiers, so the wave's arm carries both.
+  'EN-3/4/7': ['engines_v3_en3', 'engines_v3_en4'],
   'EN-11': ['engines_v3_en11'],
 }
 

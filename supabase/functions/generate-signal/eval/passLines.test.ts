@@ -146,7 +146,7 @@ Deno.test('arms that are not flag off against something else, over the same seed
   assertEquals(evaluatePassLines(committed, onArm({}, ['engines_v3_en3']), [redFlag])[0].status, 'incomparable')
   // Observed, but the arm moved nothing: still incomparable. Observed and moved: read.
   assertEquals(evaluatePassLines(committed, sameRows(['engines_v3_en3']), [redFlag], OBSERVE_ALL)[0].status, 'incomparable')
-  assertEquals(evaluatePassLines(committed, onArm({}, ['engines_v3_en3']), [redFlag], OBSERVE_ALL)[0].status, 'pass')
+  assertEquals(evaluatePassLines(committed, onArm({}, WAVE_KEYS['EN-3/4/7']), [redFlag], OBSERVE_ALL)[0].status, 'pass')
   // The same count of scenarios, different ones.
   const ids = [...committed.meta.scenarioIds]
   ids[0] = 'some-other-scenario'
