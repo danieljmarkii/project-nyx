@@ -3,12 +3,14 @@
 
 import {
   EN3_ENGINE_KEY,
+  EARLIER_READ_LABEL,
   HELD_CALL_DISCLOSURE,
   heldCallDisclosureOf,
   INCIDENT_REC_LABEL,
   isCallRow,
   isTieredRow,
   TIER_WORDS,
+  TIERED_CALLS_READ_AS,
   tierDisplayOf,
   type TierDisplay,
 } from './incidentTierWords';
@@ -125,12 +127,17 @@ describe('which words stand', () => {
 });
 
 describe('the words (spec §2)', () => {
-  it('the lowest tier is "Keep an eye out", and no tier carries a wellness word (Pattern 1)', () => {
+  it('the lowest tier is "Keep an eye out", and no string in the map carries a reassurance word (Patterns 1 and 8)', () => {
     expect(TIER_WORDS.logged.label).toBe('Keep an eye out');
-    const WELLNESS = /\b(fine|normal|healthy|nothing to worry|no concern|reassur|all clear|okay|ok)\b/i;
+    // clinical-guardrails Pattern 8's REASSURE_VOCAB, word for word
+    // (supabase/functions/analyze-vomit/index.test.ts); widen all copies together.
+    const REASSURE_VOCAB = /\b(fine|okay|ok|healthy|normal|unremarkable|all clear|nothing (?:to worry|concerning|alarming))\b/i;
+    const strings: string[] = [HELD_CALL_DISCLOSURE, EARLIER_READ_LABEL, TIERED_CALLS_READ_AS];
     for (const words of Object.values(TIER_WORDS)) {
-      for (const text of [words.label, words.short, words.readAs, words.action ?? '']) expect(text).not.toMatch(WELLNESS);
+      for (const v of Object.values(words)) if (typeof v === 'string') strings.push(v);
     }
+    expect(strings.length).toBeGreaterThanOrEqual(30); // the walk found the map, not nothing
+    for (const text of strings) expect(REASSURE_VOCAB.test(text)).toBe(false);
   });
 
   it('each call names the service, and "now" is on every call-now word', () => {
