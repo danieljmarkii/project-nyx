@@ -46,6 +46,7 @@
 // the READ, not by inference here — this module never infers "logged" from "had an
 // episode" and never infers "unlogged" from "no episode".
 
+import { isCallDisplay, louderCall, TIER_WORDS, TIERED_CALLS_READ_AS, type CallDisplay } from './incidentTierWords';
 import { dayKeyFromIndex, localDayIndexOf, MONTHS } from './utils';
 import { weekdayOfIndex, weekStartIndex, weeklyBuckets, type WeeklyBucketsModel } from './chartModels';
 import { dateWord } from './chartCopy';
@@ -74,9 +75,10 @@ function capitalize(s: string): string {
 export type MonthCoverage = 'logged' | 'left_some' | 'unlogged' | 'ahead' | 'before_record';
 
 /** The photo layer's per-day fact: nothing, a photographed record, or one the
- *  per-incident read called worth a call. A photographed day with no verdict yet (or one
- *  the read could not reach) is `seen` — never a colour. */
-export type MonthPhoto = 'none' | 'seen' | 'worth_a_call';
+ *  per-incident read called a call, in the tier-word map's key (EN-3): `worth_a_call` for
+ *  an earlier-rule read, `call_now` / `call_today` for a new-rule one. A photographed day
+ *  with no verdict yet (or one the read could not reach) is `seen` — never a colour. */
+export type MonthPhoto = 'none' | 'seen' | CallDisplay;
 
 export interface MonthDay {
   key: string;
@@ -112,7 +114,7 @@ export interface MonthContinuationDay {
 
 export interface MonthPhotoDay {
   day: string;
-  verdict: 'seen' | 'worth_a_call';
+  verdict: 'seen' | CallDisplay;
 }
 
 export interface MonthModelInput {
@@ -274,8 +276,11 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
   for (const p of input.photoDays ?? []) {
     const i = indexOfKey(p.day, 'photoDays[].day');
     const prev = photos.get(i);
-    // The worse verdict wins: a day with one read worth a call is a day worth a call.
-    photos.set(i, prev === 'worth_a_call' ? prev : p.verdict);
+    // The worse verdict wins: a day with one read that is a call is a day of that call, and
+    // between two calls the louder (`louderCall`: call now over the rest).
+    const prevCall = isCallDisplay(prev) ? prev : null;
+    const nextCall = isCallDisplay(p.verdict) ? p.verdict : null;
+    photos.set(i, louderCall(prevCall, nextCall) ?? p.verdict);
   }
   const continues = new Map<number, string>();
   for (const c of input.continuationDays ?? []) {
@@ -454,19 +459,35 @@ export function buildLine(f: LineFacts, opts: { withCount?: boolean } = {}): str
   return parts.join(' · ');
 }
 
+/** The month's called days, each rule's population on its own (never summed). */
+export function monthCallDays(model: Pick<MonthModel, 'days'>): { earlier: number; tiered: number } {
+  let earlier = 0;
+  let tiered = 0;
+  for (const d of model.days) {
+    if (!isCallDisplay(d.photo)) continue;
+    if (TIER_WORDS[d.photo].rule === 'earlier') earlier += 1;
+    else tiered += 1;
+  }
+  return { earlier, tiered };
+}
+
 /** The month in one sentence for a screen reader: the line, then the totals of the
  *  layers that are ON — the eye and the ear hear the same layers (DayMark's own rule; a
  *  layer-blind label spoke medication days the grid did not draw). */
 export function monthA11yLabel(model: MonthModel, layers: { meds: boolean; photos: boolean } = { meds: true, photos: true }): string {
   const dosed = model.days.filter((d) => d.medication).length;
   const photographed = model.days.filter((d) => d.photo !== 'none').length;
-  const called = model.days.filter((d) => d.photo === 'worth_a_call').length;
+  // The two rules' calls are counted apart and never added (EN-3, spec §5): an earlier
+  // "worth a call" and a new "call today" are two populations, so a month spanning the
+  // change says both and a steady cat never looks improved because the rule moved.
+  const { earlier, tiered } = monthCallDays(model);
   const parts = [`${model.label}.`, `${model.line}.`];
   if (layers.meds && dosed > 0) parts.push(`Medication on ${dosed} ${plural(dosed, 'day')}.`);
   if (layers.photos && photographed > 0) {
-    parts.push(
-      `Photos on ${photographed} ${plural(photographed, 'day')}${called > 0 ? `, ${called} read as worth a call` : ''}.`,
-    );
+    const calls =
+      (earlier > 0 ? `, ${earlier} read as ${TIER_WORDS.worth_a_call.readAs}` : '') +
+      (tiered > 0 ? `, ${tiered} read as ${TIERED_CALLS_READ_AS}` : '');
+    parts.push(`Photos on ${photographed} ${plural(photographed, 'day')}${calls}.`);
   }
   return parts.join(' ');
 }

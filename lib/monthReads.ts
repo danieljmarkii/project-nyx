@@ -47,6 +47,7 @@
 // with a day of slack on each side, and the day a row belongs to is decided in JS from
 // the parsed instant. The slack costs a few rows; a text bound costs a boundary row.
 
+import { isCallDisplay, tierDisplayOf, type CallDisplay } from './incidentTierWords';
 import { getDb, getTimeline, type TimelineRow } from './db';
 import { episodeDaysOf } from './chartModels';
 import { collapseEpisodes, DEFAULT_MEAL_TIMING_CONFIG, type MealTimingConfig } from './mealTiming';
@@ -253,11 +254,12 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     const k = keyOfIso(r.occurred_at);
     if (k && inRange(k, range)) photoEvents.push({ eventId: r.event_id, key: k });
   }
-  const called = await readWorthACall(photoEvents.map((p) => p.eventId));
+  const called = await readCallWords(photoEvents.map((p) => p.eventId));
+  const callRank = (v: MonthPhotoDay['verdict']) => (v === 'call_now' ? 0 : v === 'call_today' ? 1 : v === 'worth_a_call' ? 2 : 3);
   const photoDays: MonthPhotoDay[] = photoEvents
-    .map((p): MonthPhotoDay => ({ day: p.key, verdict: called.has(p.eventId) ? 'worth_a_call' : 'seen' }))
-    // Ordered by day, then the escalation first: a DISTINCT read has no order of its own.
-    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : a.verdict === b.verdict ? 0 : a.verdict === 'worth_a_call' ? -1 : 1));
+    .map((p): MonthPhotoDay => ({ day: p.key, verdict: called.get(p.eventId) ?? 'seen' }))
+    // Ordered by day, then the loudest call first: a DISTINCT read has no order of its own.
+    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : callRank(a.verdict) - callRank(b.verdict)));
 
   const firstMs = msOfJulianDay(firstRow?.first_jd);
   return {
@@ -287,6 +289,28 @@ export async function readWorthACall(eventIds: readonly string[]): Promise<Set<s
     const copies = await readCopies(eventIds);
     for (const [eventId, copy] of copies) {
       if (isWorthACall(copy)) out.add(eventId);
+    }
+  } catch (e) {
+    console.warn('[month] read copy failed:', e);
+  }
+  return out;
+}
+
+/**
+ * The call each event's read stands as, in the tier-word map's key (EN-3): `call_now` /
+ * `call_today` on a new-rule read, `worth_a_call` on an earlier-rule one or a value this
+ * build does not know. Exactly the events `readWorthACall` returns, so the rose is decided
+ * by the same predicate; only the words it is spoken in are added.
+ */
+export async function readCallWords(eventIds: readonly string[]): Promise<Map<string, CallDisplay>> {
+  const out = new Map<string, CallDisplay>();
+  if (eventIds.length === 0) return out;
+  try {
+    const copies = await readCopies(eventIds);
+    for (const [eventId, copy] of copies) {
+      if (!isWorthACall(copy)) continue;
+      const display = tierDisplayOf(copy);
+      out.set(eventId, isCallDisplay(display) ? display : 'worth_a_call');
     }
   } catch (e) {
     console.warn('[month] read copy failed:', e);

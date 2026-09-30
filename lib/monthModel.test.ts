@@ -370,3 +370,32 @@ describe('timezone-honest (C-29)', () => {
     expect(buildMonthModel({ year: 2028, month: 1, today: '2028-03-01', noun: 'vomiting', episodeDays: [], loggedDays: [] }).rows).toHaveLength(5);
   });
 });
+
+describe('EN-3: the two rules\' calls, never one number (spec §5)', () => {
+  it('a day takes its louder call; the sentence counts each rule apart', () => {
+    const m = septModel({
+      photoDays: [
+        { day: '2026-09-02', verdict: 'worth_a_call' },
+        { day: '2026-09-02', verdict: 'call_now' },
+        { day: '2026-09-03', verdict: 'call_today' },
+        { day: '2026-09-03', verdict: 'worth_a_call' },
+        { day: '2026-09-04', verdict: 'worth_a_call' },
+        { day: '2026-09-05', verdict: 'seen' },
+      ],
+    });
+    const byKey = new Map(m.days.map((d) => [d.key, d]));
+    expect(byKey.get('2026-09-02')?.photo).toBe('call_now');
+    expect(byKey.get('2026-09-03')?.photo).toBe('call_today');
+    expect(byKey.get('2026-09-04')?.photo).toBe('worth_a_call');
+    // Never downgraded by order: the louder call arrives first or last, it wins.
+    const reversed = septModel({ photoDays: [{ day: '2026-09-02', verdict: 'call_now' }, { day: '2026-09-02', verdict: 'worth_a_call' }] });
+    expect(reversed.days.find((d) => d.key === '2026-09-02')?.photo).toBe('call_now');
+    expect(monthA11yLabel(m)).toMatch(/Photos on 4 days, 1 read as worth a call, 2 read as call now or call today\.$/);
+  });
+
+  it('a month wholly under the new rule says one line, and never "worth a call"', () => {
+    const m = septModel({ photoDays: [{ day: '2026-09-03', verdict: 'call_today' }] });
+    expect(monthA11yLabel(m)).toMatch(/Photos on 1 day, 1 read as call now or call today\.$/);
+    expect(monthA11yLabel(m)).not.toMatch(/worth a call/);
+  });
+});

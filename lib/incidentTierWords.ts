@@ -147,6 +147,25 @@ export const TIER_WORDS: Readonly<Record<TierDisplay, TierWords>> = {
   },
 };
 
+/** A call as the month stores a photographed day's read: the new-rule calls, or the shipped
+ *  "worth a call" of an earlier-rule read (and of any value this build does not know). */
+export type CallDisplay = 'call_now' | 'call_today' | 'worth_a_call';
+
+export function isCallDisplay(value: unknown): value is CallDisplay {
+  return value === 'call_now' || value === 'call_today' || value === 'worth_a_call';
+}
+
+/** The louder of two calls for one day or one bout: call now over the rest, and between
+ *  the two call-today words the new rule's, so a day reads in the newer words. */
+export function louderCall(a: CallDisplay | null, b: CallDisplay | null): CallDisplay | null {
+  const rank = (d: CallDisplay | null) => (d === 'call_now' ? 3 : d === 'call_today' ? 2 : d === 'worth_a_call' ? 1 : 0);
+  return rank(b) > rank(a) ? b : a;
+}
+
+/** The new rule's calls, read together, for a count that holds both (the month's legend and
+ *  its sentence): "call now or call today". Built from the map's own words. */
+export const TIERED_CALLS_READ_AS = `${TIER_WORDS.call_now.readAs} or ${TIER_WORDS.call_today.readAs}`;
+
 /** The shipped recommendation enum's words, verbatim. Kept for the readers that name an
  *  earlier-rule verdict by its enum (`lib/incidentReadState.ts` re-exports it). */
 export const INCIDENT_REC_LABEL = {
