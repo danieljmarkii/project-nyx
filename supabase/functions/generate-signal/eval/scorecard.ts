@@ -157,6 +157,16 @@ export interface DetectionScore {
   raisedBeforeStart: number | null
   /** re_raise only: pet-runs acknowledged too close to (or after) the start to score a re-raise. */
   ackTooLate: number
+  /**
+   * Food entries only, over every pet-run: the share shown, on or after the start, a food card that
+   * names ANY protein other than the reacting one, a joint card naming it alongside another
+   * included (the PM's ruling, 2026-09-30: to a vet building an elimination diet, a joint card
+   * still points at a protein that is not the culprit). An engine naming all nine proteins on every
+   * card raised food detection and moved no false-card row (sixth adversarial pass).
+   */
+  wrongProtein: number | null
+  /** Food entries only: the share shown a joint card naming the reacting protein alongside another (a subset of wrongProtein). */
+  jointWithReacting: number | null
 }
 
 export interface ScenarioScore {
@@ -258,9 +268,12 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
     showingAtStart: 0,
     raisedBeforeStart: null,
     ackTooLate: 0,
+    wrongProtein: null,
+    jointWithReacting: null,
   }))
   const detectDays: number[][] = sc.key.detect.map(() => [])
   const preRaise = sc.key.detect.map(() => ({ acked: 0, raised: 0 }))
+  const attribution = sc.key.detect.map(() => ({ runs: 0, wrong: 0, joint: 0 }))
   let redFlags: ScenarioScore['redFlags'] = null
   const reRaiseSigns = sc.key.falseCards.filter((f) => f.lane === 're_raise')
   const falseLanes = [...new Set(sc.key.falseCards.map((f) => f.lane).filter((l) => l !== 're_raise'))]
@@ -322,6 +335,13 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
         if (d.petKey !== petKey) return
         const ackDay = d.sign ? truth.acks.find((a) => a.petKey === petKey && a.sign === d.sign)?.day : truth.acks.find((a) => a.petKey === petKey)?.day
         const from = startDay(d.from, ackDay)
+        // Attribution, before any eligibility rule: every pet-run of a food entry counts.
+        if (d.protein !== undefined && from !== undefined) {
+          const food = evenings.filter((ev) => ev.day >= from).flatMap((ev) => ev.cards.filter((c) => c.petKey === petKey && laneOf(c) === 'food' && (d.sign === undefined || c.sign === d.sign)))
+          attribution[i].runs++
+          if (food.some((c) => c.proteins.some((p) => p !== d.protein))) attribution[i].wrong++
+          if (food.some((c) => c.proteins.includes(d.protein!) && c.proteins.length > 1)) attribution[i].joint++
+        }
         // No acknowledgement: an acknowledgement-anchored start has no day, and a re-raise has
         // nothing it raises again (a fixed-day doubling the engine never asked about was scored as
         // a first raise and counted nowhere, fifth adversarial pass). Both are counted and left out.
@@ -431,6 +451,10 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
   detections.forEach((d, i) => {
     d.medianDays = median(detectDays[i])
     if (preRaise[i].acked > 0) d.raisedBeforeStart = round(preRaise[i].raised / preRaise[i].acked)
+    if (attribution[i].runs > 0) {
+      d.wrongProtein = round(attribution[i].wrong / attribution[i].runs)
+      d.jointWithReacting = round(attribution[i].joint / attribution[i].runs)
+    }
   })
   const askPerPetMonth = Object.fromEntries(
     [...REGISTERS, 'any' as const].map((r) => [r, perMonth(acc.ask[r])]),
@@ -533,6 +557,8 @@ export function buildScorecard(scores: readonly ScenarioScore[], meta: Scorecard
       rows[`${p}/detect/${d.label}/eligible`] = d.eligible
       if (d.raisedBeforeStart !== null) rows[`${p}/detect/${d.label}/raisedBeforeStart`] = d.raisedBeforeStart
       if (d.lane === 're_raise') rows[`${p}/detect/${d.label}/ackTooLate`] = d.ackTooLate
+      if (d.wrongProtein !== null) rows[`${p}/detect/${d.label}/wrongProtein`] = d.wrongProtein
+      if (d.jointWithReacting !== null) rows[`${p}/detect/${d.label}/jointWithReacting`] = d.jointWithReacting
       if (d.censored > 0) rows[`${p}/detect/${d.label}/censored`] = d.censored
       if (d.scoring === 'both_acknowledged' || d.lane === 're_raise') rows[`${p}/detect/${d.label}/neverAcknowledged`] = d.neverAcknowledged
     }

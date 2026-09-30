@@ -216,3 +216,20 @@ Deno.test('a re-raise is never read off the ask that led to a late acknowledgeme
   const d = scoreScenario(runs).detections.find((x) => x.label === 'a:re_raise:vomit')!
   assertEquals([d.ackTooLate, d.eligible, d.detected, d.raisedBeforeStart], [sc.ciSeeds.length, 0, 0, null])
 })
+
+Deno.test('wrongProtein counts any card naming another protein, a joint card included; the culprit alone is right', () => {
+  const sc = scenarioById('inj-protein-reaction-rr3')
+  const entry = sc.key.detect.find((d) => d.lane === 'food')!
+  const label = `a:food:${entry.protein}`
+  const card = (proteins: string[]) => ({ petKey: 'a', findingType: 'food_symptom_correlation', sign: 'vomit' as const, ask: 'none' as const, priorityClass: 'insight', tier: 'established', proteins, direction: null })
+  const score = (proteins: string[]) => {
+    const runs = sc.ciSeeds.map((seed) => ({ scenario: sc, seed, result: simulate(sc, seed, (view) => (view.dayIndex >= 30 ? [card(proteins)] : [])) }))
+    return scoreScenario(runs).detections.find((d) => d.label === label)!
+  }
+  const alone = score([entry.protein!])
+  assertEquals([alone.wrongProtein, alone.jointWithReacting], [0, 0])
+  const joint = score([entry.protein!, 'lamb'])
+  assertEquals([joint.wrongProtein, joint.jointWithReacting], [1, 1])
+  const other = score(['lamb'])
+  assertEquals([other.wrongProtein, other.jointWithReacting], [1, 0])
+})

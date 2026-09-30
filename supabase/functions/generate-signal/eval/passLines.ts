@@ -458,7 +458,7 @@ export const PASS_LINES: readonly PassLine[] = [
     id: 'EN-11.foodEligible',
     wave: 'EN-11',
     firstFlagOnPr: 'EN-11',
-    measure: 'The pets the food lines score may not shrink: clear pets per protein-reaction scenario, flag on at least flag off less a tolerance.',
+    measure: 'The pets the food lines score may not shrink: clear pets per protein-reaction scenario, flag on at least flag off less a tolerance. A PLACEHOLDER today: food detection starts on day 0, so the clear window is empty and every pet-run is eligible, and this line cannot fail (sixth adversarial pass). It is kept so the food lines have the same shape as worsening when CUL-1441 scores both arms over the same pets.',
     rows: [
       'inj-protein-reaction-rr3/detect/a:food:beef/eligible',
       'inj-protein-reaction-hidden/detect/a:food:chicken/eligible',
@@ -486,6 +486,22 @@ export const PASS_LINES: readonly PassLine[] = [
     direction: 'at_most',
     value: null,
     valueSource: 'The ruling sheet (E-6, CUL-583): the margin, as a share, unruled; D4 (E-4) sets the absolute chance-card budget separately.',
+    pairedWith: 'EN-11.foodDetection',
+  },
+  {
+    id: 'EN-11.wrongProtein',
+    wave: 'EN-11',
+    firstFlagOnPr: 'EN-11',
+    measure: 'Naming the wrong protein on a pet that really reacts: on the two protein-reaction scenarios, the share of pets shown a food card naming any protein other than the reacting one, a joint card naming it alongside another included (PM ruling, 2026-09-30), flag on against flag off. An engine naming all nine proteins on every card raised food detection and moved no false-card row (sixth adversarial pass).',
+    rows: [
+      'inj-protein-reaction-rr3/detect/a:food:beef/wrongProtein',
+      'inj-protein-reaction-hidden/detect/a:food:chicken/wrongProtein',
+    ],
+    aggregate: 'each',
+    comparison: 'flag_on_vs_flag_off',
+    direction: 'at_most',
+    value: null,
+    valueSource: 'The ruling sheet (E-6, CUL-583): the margin, as a share, unruled. The joint cards within it are reported beside it (`jointWithReacting`), so the reader can see how much is the engine honestly saying it cannot separate two proteins.',
     pairedWith: 'EN-11.foodDetection',
   },
   {

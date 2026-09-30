@@ -22,9 +22,10 @@ import type { Scorecard } from './scorecard.ts'
 // scored pets and acknowledged cats), and the fourth's (HARNESS_OBSERVES, an arm that moved
 // nothing is incomparable, EN-9's floors per scenario, EN-9.scored, EN-11.eligible's margin made
 // an unruled tolerance), and the fifth's (EN-11's food lines, approved by the PM in session;
-// exact keys per wave; EN-8 not observed; the never-acknowledged fixed-day doubling counted).
+// exact keys per wave; EN-8 not observed; the never-acknowledged fixed-day doubling counted), and
+// the sixth's (EN-11.wrongProtein, joint cards counted as wrong by the PM's ruling).
 // Every value but the two ruled ones is null.
-const PINNED = 'ee751b3887e1198c1af5a073d9b8c8716ec3cfce16dc1e71ab80abb79baac0ed'
+const PINNED = '8be0085a85fbd4ea1e6a0801fd3450eb34657ac114cf44a0f615f74da9817870'
 
 async function digest(lines: readonly PassLine[]): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(lines)))
@@ -206,7 +207,8 @@ Deno.test('EN-9: a latch that starts after week eight, or a timer, fails on the 
 const EN11 = PASS_LINES.filter((l) => l.wave === 'EN-11').map((l) => ({
   ...l,
   value: l.value ?? ({ 'EN-11.detection': 0.02, 'EN-11.delay': 7, 'EN-11.eligible': 0, 'EN-11.falseWorsening': 0.02, 'EN-11.falseWorseningEvenings': 1,
-    'EN-11.foodDetection': 0.02, 'EN-11.foodDelay': 7, 'EN-11.foodEligible': 0, 'EN-11.falseFood': 0.02, 'EN-11.falseFoodEvenings': 1 } as Record<string, number>)[l.id],
+    'EN-11.foodDetection': 0.02, 'EN-11.foodDelay': 7, 'EN-11.foodEligible': 0, 'EN-11.falseFood': 0.02, 'EN-11.falseFoodEvenings': 1,
+    'EN-11.wrongProtein': 0.02 } as Record<string, number>)[l.id],
 }))
 const rowsOf = (id: string) => line(id).rows
 
@@ -305,4 +307,18 @@ Deno.test('a comparison arm carries exactly its wave\'s keys: a bundled key is i
   // Fifth adversarial pass: [en11, en8] with only a weight row moved let a no-op EN-11 pass.
   const bundled = onArm({ 'wt-loss-weekly/safetyCard/180d': 0.5 }, [...EN11_KEYS, ...WAVE_KEYS['EN-8']])
   for (const r of evaluatePassLines(committed, bundled, EN11)) assertEquals(r.status, 'incomparable', r.id)
+})
+
+Deno.test('EN-11: an engine that names every protein on every card detects "more" and fails on the wrong-protein line', () => {
+  // Sixth adversarial pass: naming all nine proteins raised foodDetection and moved no false-card row.
+  const everything = onArm({
+    ...Object.fromEntries(rowsOf('EN-11.foodDetection').map((k) => [k, 1])),
+    ...Object.fromEntries(rowsOf('EN-11.foodDelay').map((k) => [k, committed.rows[k] as number])),
+    ...Object.fromEntries(rowsOf('EN-11.wrongProtein').map((k) => [k, 1])),
+  })
+  const results = evaluatePassLines(committed, everything, EN11)
+  assertEquals(results.find((r) => r.id === 'EN-11.foodDetection')!.status, 'pass')
+  assertEquals(results.find((r) => r.id === 'EN-11.falseFood')!.status, 'pass')
+  assertEquals(results.find((r) => r.id === 'EN-11.wrongProtein')!.status, 'fail')
+  assertEquals(waveStatus(results, 'EN-11', EN11), 'fail')
 })
