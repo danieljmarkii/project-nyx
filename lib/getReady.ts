@@ -384,7 +384,7 @@ function buildSignalRows(input: WorthRaisingInput): SignalEntry[] {
         // visit, trial and course lines as its detail, VERBATIM and in the server's order —
         // the same strings the finding's own screen draws under *Around this*, so this row
         // quotes and never counts (G6). The two details never meet: only a trial-response
-        // finding can count another trial, and it carries no lines.
+        // finding can count another trial, and the reader takes no lines off that type.
         detail: countedAnotherTrial(f.finding, input.signalAnchor)
           ? signalTitle(f.finding, signalTrialWindowFor(f.finding, input.signalAnchor))
           : careContextDetail(f.finding),

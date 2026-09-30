@@ -359,7 +359,7 @@ function Body({
         </ThemedText>
         {model.context.map((line, i) => (
           <View key={i} style={styles.contextRow} testID="signal-context-line">
-            <View style={styles.contextDot} />
+            <View style={styles.contextDot} accessibilityElementsHidden importantForAccessibility="no" />
             <ThemedText style={styles.contextText}>{line}</ThemedText>
           </View>
         ))}

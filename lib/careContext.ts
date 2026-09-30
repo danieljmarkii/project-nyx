@@ -13,12 +13,24 @@ import type { CareContextLine, SignalFinding } from './signal';
 // second composer over one population (the CUL-746 shape), and the one place a withheld
 // zero could come back. So this returns the server's strings, in the server's order.
 //
-// ALL OR NOTHING. `ai_signals.findings` is a cache, so the shape is checked here. The lines
+// ALL OR NOTHING. `ai_signals.findings` is a cache, so each line's `kind` and `text` (the two
+// fields a relay reads) are checked here; the numbers are never read, so never checked. The lines
 // are a set composed together: the course line exists partly to sit ABOVE the trial line,
 // so the diet is never the first explanation a reader meets (§5.1 Order). Dropping one
 // malformed line and keeping its neighbours could print the trial alone beside a steroid,
 // so one bad line drops them all. An absent field is the flag-off and old-cache case and
 // returns nothing, which every surface renders as it did before EN-10.
+
+// The five types the server decorates (`generate-signal/careContext.ts` LINE_BEARING). A line
+// on any other type is not read, so Get ready's trial-response detail (the other trial's
+// title) and these lines can never compete for one row.
+const LINE_BEARING: ReadonlySet<SignalFinding['type']> = new Set<SignalFinding['type']>([
+  'symptom_chronicity',
+  'postprandial_timing',
+  'empty_stomach_timing',
+  'timing_story',
+  'timeofday_clustering',
+]);
 
 const KINDS: ReadonlySet<string> = new Set<CareContextLine['kind']>(['course', 'trial', 'visit']);
 
@@ -30,6 +42,7 @@ function isLine(x: unknown): x is CareContextLine {
 
 /** The finding's EN-10 lines as the server phrased them, in its order; empty when none. */
 export function careContextLinesOf(finding: SignalFinding): string[] {
+  if (!LINE_BEARING.has(finding.type)) return [];
   const raw = (finding as { careContext?: unknown }).careContext;
   if (!Array.isArray(raw) || raw.length === 0) return [];
   if (!raw.every(isLine)) return [];

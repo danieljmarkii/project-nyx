@@ -42,6 +42,13 @@ describe('careContextLinesOf', () => {
     expect(careContextLinesOf(intake)).toEqual([]);
   });
 
+  it('reads no lines off a type the server never decorates, even if a cache carries some', () => {
+    // Get ready's trial-response row owns its detail (the other trial's title); a line here
+    // would compete with it, so the reader is gated by type, not by the server's restraint.
+    const trialResponse = { type: 'trial_response', priorityClass: 'insight', careContext: [line('visit', 'Since the Sep 16 visit, 11 days.')] } as unknown as SignalFinding;
+    expect(careContextLinesOf(trialResponse)).toEqual([]);
+  });
+
   it("relays the server's sentences verbatim and in its order (the course above the trial)", () => {
     const f = chronicity([
       line('course', 'Prednisone since Sep 21, 6 days: 2 episodes, with something logged on 6 of 6.', { drugLabel: 'Prednisone' }),
