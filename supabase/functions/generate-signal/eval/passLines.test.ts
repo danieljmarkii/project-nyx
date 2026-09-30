@@ -26,9 +26,10 @@ import type { Scorecard } from './scorecard.ts'
 // the sixth's (EN-11.wrongProtein, joint cards counted as wrong by the PM's ruling), and the
 // seventh's (EN-11.wrongProteinEvenings), and the eighth's (food detection redefined as the
 // culprit alone, the PM's ruling; the two wrong-protein lines replaced by culpritPersistence and
-// foodPrecision, their rows kept as reporting).
+// foodPrecision, their rows kept as reporting), and the ninth's (a food detection is an EVENING
+// naming the culprit and nothing else).
 // Every value but the two ruled ones is null.
-const PINNED = '8e808e9b3697238ef741d3ddd293fdc0cb4a2e61d89bcc3cddd5763f8bb6a9df'
+const PINNED = '2d7f9357cde87bee1249301bbd6403360d4a16924eb29843865728353b9bf34f'
 
 async function digest(lines: readonly PassLine[]): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(lines)))

@@ -254,3 +254,21 @@ Deno.test('a food detection names the culprit alone: a joint or everything-card 
   const half = score((d) => (d >= 5 && d < 45 ? [d % 2 === 0 ? [entry.protein!] : ['lamb']] : []))
   assertEquals(half.wrongShareOfFoodEvenings, 0.5)
 })
+
+Deno.test('a lone culprit card beside a card for another protein on the same evening is neither a detection nor persistence', () => {
+  // Ninth adversarial pass: the shipped engine shows one single-protein card per protein, so adding
+  // a lone culprit card to an evening already naming two proteins bought detection for free.
+  const sc = scenarioById('inj-protein-reaction-rr3')
+  const entry = sc.key.detect.find((d) => d.lane === 'food')!
+  const label = `a:food:${entry.protein}`
+  const card = (proteins: string[]) => ({ petKey: 'a', findingType: 'food_symptom_correlation', sign: 'vomit' as const, ask: 'none' as const, priorityClass: 'insight', tier: 'established', proteins, direction: null })
+  const score = (cards: (day: number) => string[][]) => {
+    const runs = sc.ciSeeds.map((seed) => ({ scenario: sc, seed, result: simulate(sc, seed, (view) => cards(view.dayIndex).map(card)) }))
+    return scoreScenario(runs).detections.find((d) => d.label === label)!
+  }
+  const split = score((d) => (d >= 5 ? [[entry.protein!], ['lamb']] : []))
+  assertEquals([split.detected, split.culpritAloneEveningsPerPetMonth, split.wrongShareOfFoodEvenings], [0, 0, 1])
+  // Two cards both naming the culprit alone is still the culprit alone.
+  const twice = score((d) => (d >= 5 ? [[entry.protein!], [entry.protein!]] : []))
+  assertEquals([twice.detected, twice.wrongShareOfFoodEvenings], [sc.ciSeeds.length, 0])
+})

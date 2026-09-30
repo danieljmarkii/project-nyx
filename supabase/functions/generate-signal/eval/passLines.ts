@@ -418,7 +418,7 @@ export const PASS_LINES: readonly PassLine[] = [
     id: 'EN-11.foodDetection',
     wave: 'EN-11',
     firstFlagOnPr: 'EN-11',
-    measure: 'Food culprit detection no worse than shipped: on the two protein-reaction scenarios (relative risk 3, one protein hidden in a food named for another), the share of clear pets shown a food card naming the reacting protein ALONE within 56 days, flag on against flag off. A joint card, or one naming everything the pet eats, is never a detection (PM ruling, 2026-09-30): counted whenever it merely included the culprit, naming more proteins always bought detection (sixth to eighth adversarial passes).',
+    measure: 'Food culprit detection no worse than shipped: on the two protein-reaction scenarios (relative risk 3, one protein hidden in a food named for another), the share of clear pets with an evening, within 56 days, whose food cards name the reacting protein and nothing else, flag on against flag off. A joint card, one naming everything the pet eats, or a lone culprit card beside a card for another protein on the same evening, is never a detection (PM ruling, 2026-09-30): counted whenever it merely included the culprit, naming more proteins always bought detection (sixth to ninth adversarial passes).',
     rows: [
       'inj-protein-reaction-rr3/detect/a:food:beef/probability',
       'inj-protein-reaction-hidden/detect/a:food:chicken/probability',
@@ -492,7 +492,7 @@ export const PASS_LINES: readonly PassLine[] = [
     id: 'EN-11.culpritPersistence',
     wave: 'EN-11',
     firstFlagOnPr: 'EN-11',
-    measure: 'The correct card keeps showing: on the two protein-reaction scenarios, evenings per pet-month carrying a food card naming the reacting protein alone, flag on against flag off. Detection needs one evening; an engine that dropped its food cards after week 8 still scored as detecting (eighth adversarial pass).',
+    measure: 'The correct card keeps showing: on the two protein-reaction scenarios, evenings per pet-month whose food cards name the reacting protein and nothing else, flag on against flag off. Detection needs one evening; an engine that dropped its food cards after week 8 still scored as detecting (eighth adversarial pass).',
     rows: [
       'inj-protein-reaction-rr3/detect/a:food:beef/culpritAloneEveningsPerPetMonth',
       'inj-protein-reaction-hidden/detect/a:food:chicken/culpritAloneEveningsPerPetMonth',

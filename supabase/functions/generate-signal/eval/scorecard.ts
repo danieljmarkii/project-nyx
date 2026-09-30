@@ -101,6 +101,21 @@ interface KeyRef {
   protein?: string
 }
 
+/**
+ * A food EVENING names the culprit alone: the pet's food cards that evening (on the key's sign,
+ * when it names one) together name the reacting protein and nothing else. The shipped engine never
+ * shows a joint card; it shows one single-protein card per protein, several on one evening. So a
+ * lone culprit card beside a card for another protein is the joint card the PM ruled out, split in
+ * two, and adding singles to an evening already naming two proteins bought detection at no cost to
+ * precision (ninth adversarial pass). Detection and persistence both read the evening, never a card.
+ */
+export function culpritAloneEvening(cards: readonly ScoredCard[], k: KeyRef): boolean {
+  const food = cards.filter((c) => c.petKey === k.petKey && laneOf(c) === 'food' && (k.sign === undefined || c.sign === k.sign))
+  if (food.length === 0 || k.protein === undefined) return false
+  const named = new Set(food.flatMap((c) => c.proteins))
+  return named.size === 1 && named.has(k.protein)
+}
+
 function matchesKey(k: KeyRef, card: ScoredCard): boolean {
   if (card.petKey !== k.petKey) return false
   if (k.sign !== undefined && card.sign !== k.sign) return false
@@ -361,7 +376,7 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
           attribution[i].evenings += after.length
           attribution[i].wrongEvenings += after.filter((ev) => foodOn(ev).some((c) => c.proteins.some((p) => p !== d.protein))).length
           attribution[i].foodEvenings += after.filter((ev) => foodOn(ev).length > 0).length
-          attribution[i].aloneEvenings += after.filter((ev) => foodOn(ev).some((c) => c.proteins.length === 1 && c.proteins[0] === d.protein)).length
+          attribution[i].aloneEvenings += after.filter((ev) => culpritAloneEvening(ev.cards, d)).length
           if (food.some((c) => c.proteins.some((p) => p !== d.protein))) attribution[i].wrong++
           if (food.some((c) => c.proteins.includes(d.protein!) && c.proteins.length > 1)) attribution[i].joint++
         }
@@ -392,7 +407,7 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
           detections[i].censored++
           return
         }
-        const matching = (ev: (typeof evenings)[number]) => ev.cards.some((c) => matchesKey(d, c))
+        const matching = (ev: (typeof evenings)[number]) => (d.protein !== undefined ? culpritAloneEvening(ev.cards, d) : ev.cards.some((c) => matchesKey(d, c)))
         // A re-raise must also be clear of the acknowledgement's own evening onward.
         const clearFrom = d.lane === 're_raise' && ackDay !== undefined ? Math.max(from - DETECT_CLEAR_EVENINGS, ackDay + 1) : from - DETECT_CLEAR_EVENINGS
         if (evenings.some((ev) => ev.day >= clearFrom && ev.day < from && matching(ev))) {
