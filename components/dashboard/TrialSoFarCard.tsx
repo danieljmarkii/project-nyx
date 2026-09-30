@@ -6,6 +6,7 @@ import {
   trialContextLine,
   trialPhenotypeState,
   trialPhenotypeSampleLine,
+  trialPhenotypeRefusalLine,
   trialPhenotypeUntimedLine,
   trialNoneTimeableLine,
   trialTreatShareValue,
@@ -32,6 +33,8 @@ interface Props {
 export function TrialSoFarCard({ model, onPress }: Props) {
   const phenotypeState = trialPhenotypeState(model.phenotype);
   const untimed = trialPhenotypeUntimedLine(model.phenotype);
+  // CUL-1195 — the long band's refused-bowl disclosure (null at zero).
+  const refusal = trialPhenotypeRefusalLine(model.phenotype, model.config);
 
   // VoiceOver hears the whole card as one label, so fold the phenotype counts / disclosure
   // + the diet-structure into it — otherwise a screen-reader user never hears the
@@ -40,7 +43,7 @@ export function TrialSoFarCard({ model, onPress }: Props) {
     phenotypeState === 'rows'
       ? `Vomiting timing: ${model.phenotype.bandRows
           .map((r) => `${timingBandLabel(r.band, model.config)}, ${r.count}`)
-          .join('; ')}. ${trialPhenotypeSampleLine(model.phenotype)}${untimed ? `. ${untimed}` : ''}`
+          .join('; ')}. ${trialPhenotypeSampleLine(model.phenotype)}${refusal ? `. ${refusal}` : ''}${untimed ? `. ${untimed}` : ''}`
       : phenotypeState === 'none_timeable'
         ? trialNoneTimeableLine(model.phenotype)
         : '';
@@ -85,6 +88,7 @@ export function TrialSoFarCard({ model, onPress }: Props) {
                 ))}
               </View>
               <ThemedText style={styles.sample}>{trialPhenotypeSampleLine(model.phenotype)}</ThemedText>
+              {refusal != null && <ThemedText style={styles.sample}>{refusal}</ThemedText>}
               {untimed != null && <ThemedText style={styles.sample}>{untimed}</ThemedText>}
             </>
           ) : (

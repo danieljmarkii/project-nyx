@@ -96,6 +96,13 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     definer: true, pinned: true, execute: [],
     why: 'CUL-1203 (074) — DEFINER so the insert lookup is not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
   },
+  // 082 (CUL-1415 / CUL-1416): the care record's one same-pet guard over three
+  // tables. DEFINER for the lookups; its ownership arm reads auth.uid() so a write
+  // naming another account's pet is refused here, closing the 047-class oracle.
+  enforce_care_record_same_pet: {
+    definer: true, pinned: true, execute: [],
+    why: 'CUL-1415 / CUL-1416 (082) — DEFINER so the parent lookups are not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
+  },
   // 075 (CUL-1201 part 3): event_ai_analysis's updated_at, strictly increasing.
   // Reads nothing, so INVOKER; a trigger fires without an EXECUTE check, so no
   // client role needs it.

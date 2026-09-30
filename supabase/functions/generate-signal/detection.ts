@@ -1440,6 +1440,15 @@ export interface EmptyStomachTimingFinding extends FindingBase {
   lastTwoEligibleLong: boolean
   /** Median HOURS-since-feeding across the long episodes — the actual observed timing (evidence + vet report). */
   medianHoursSinceFeeding: number
+  /**
+   * Of `longCount`, the episodes whose last bowl before the onset was REFUSED (CUL-1195, via
+   * `lib/mealTiming`'s `afterRefusal`). Timing from the last meal eaten is true, and a cat who turns
+   * down dinner and vomits minutes later still lands in this band, whose owner reading is the
+   * harmless-looking one, so the Signal surfaces printing the long count print this beside it when ≥ 1
+   * (the vet report's timing line does not yet: CUL-1430, sequenced after CUL-1002's deploy).
+   * A DISCLOSURE, never a gate: it moves no band, no floor and no fire decision.
+   */
+  longAfterRefusalCount: number
   /** Forms of the feedings before the long episodes — EVIDENCE/vet-report ONLY, never the claim (§9.1). */
   feedingFormsInEvidence: string[]
   /**
@@ -1509,6 +1518,8 @@ export interface TimingStoryFinding extends FindingBase {
     count: number
     medianHoursSinceFeeding: number
     lastTwoEligible: boolean
+    /** Of `count`, the episodes after a refused bowl — L1's `longAfterRefusalCount`, verbatim (CUL-1195). */
+    afterRefusalCount: number
     feedingFormsInEvidence: string[]
     clockBand?: { startLocalHour: number; windowHours: number }
     clockCount?: number
@@ -1591,6 +1602,12 @@ export interface TrialResponseFinding extends FindingBase {
   rapid: { trial: number; baseline: number }
   mid: { trial: number; baseline: number }
   long: { trial: number; baseline: number }
+  /**
+   * Of `long` per window, the episodes whose last bowl before the onset was REFUSED (CUL-1195) — a
+   * subset of the long row, never added to it. A cat refusing the trial diet and vomiting minutes
+   * later reads "6h or more: 3 · was 0" without it. Context only, like the rows: it triggers nothing.
+   */
+  longAfterRefusal: { trial: number; baseline: number }
   /** The post-prandial band boundary in minutes (30) — the `rapid` row label. */
   rapidWindowMinutes: number
   /** The empty-stomach band boundary in hours (6) — the `long` row label. */
@@ -5591,6 +5608,7 @@ export function detectEmptyStomachTiming(
       longGapHours: cfg.longGapHours,
       lastTwoEligibleLong,
       medianHoursSinceFeeding,
+      longAfterRefusalCount: dist.afterRefusalCounts.long,
       feedingFormsInEvidence,
       clockBand,
       clockCount,
@@ -5858,6 +5876,9 @@ export function detectTrialResponse(
     band: 'rapid' | 'mid' | 'long',
     pred: (di: number | null) => boolean,
   ): number => dist.eligible.filter((e) => e.band === band && pred(dayIndexOf(e.onsetMs))).length
+  // The long row's refused-bowl subset (CUL-1195), placed by the same local-day predicates.
+  const longAfterRefusalInWindow = (pred: (di: number | null) => boolean): number =>
+    dist.eligible.filter((e) => e.band === 'long' && e.afterRefusal && pred(dayIndexOf(e.onsetMs))).length
 
   // Diet-structure deltas (§2 L2 — context rows, the observable half of the RTM confound). Never a
   // verdict: `treatShare` over classifiable feedings, `mealsPerDay` over logged days. Placed by the
@@ -5904,6 +5925,10 @@ export function detectTrialResponse(
       long: {
         trial: bandInWindow('long', inTrialEra),
         baseline: bandInWindow('long', inBaseline),
+      },
+      longAfterRefusal: {
+        trial: longAfterRefusalInWindow(inTrialEra),
+        baseline: longAfterRefusalInWindow(inBaseline),
       },
       rapidWindowMinutes: config.postprandial.rapidWindowMinutes,
       longGapHours: config.emptyStomach.longGapHours,
@@ -7070,6 +7095,7 @@ function composeTimingStory(findings: Finding[]): Finding[] {
         count: es.longCount,
         medianHoursSinceFeeding: es.medianHoursSinceFeeding,
         lastTwoEligible: es.lastTwoEligibleLong,
+        afterRefusalCount: es.longAfterRefusalCount,
         feedingFormsInEvidence: es.feedingFormsInEvidence,
         clockBand: es.clockBand,
         clockCount: es.clockCount,

@@ -312,7 +312,10 @@ const DYNAMIC_FROM_ALLOWED: Record<string, string> = {
 
 // ── The detector ─────────────────────────────────────────────────────────────
 
-const TABLES = '(?:vet_visits|vet_appointments)';
+// The care record (082, CUL-1415 / CUL-1416) joins the scanned set (care-state spec
+// §8.4): an owner's answer, a call and its ledger are vet-visit-family rows, so the same
+// rule binds them. No file reads them yet; PR-23 registers the shell's read.
+const TABLES = '(?:vet_visits|vet_appointments|care_acknowledgements|vet_calls|vet_call_follow_ups)';
 
 /**
  * A read or write of the table, by SHAPE. Both dialects the app speaks:

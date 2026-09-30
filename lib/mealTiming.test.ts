@@ -298,7 +298,7 @@ describe('mealTiming — classifyEpisodeTiming (the one predicate + gate ORDER)'
 
   it('eligible RAPID: witnessed onset 12 min after the meal', () => {
     const r = classifyEpisodeTiming({ onsetMs: at(12 * MIN), confidence: 'witnessed' }, feedings, noBowls);
-    expect(r).toEqual({ eligible: true, minutesSinceFeeding: 12, band: 'rapid', feedingId: 'k', feedingForm: 'kibble' });
+    expect(r).toEqual({ eligible: true, minutesSinceFeeding: 12, band: 'rapid', feedingId: 'k', feedingForm: 'kibble', afterRefusal: false });
   });
 
   it('eligible MID: witnessed onset 2h after the meal', () => {
@@ -439,6 +439,8 @@ describe('mealTiming — CUL-1122: the named counterexamples', () => {
       band: 'long',
       feedingId: 'breakfast',
       feedingForm: 'kibble',
+      // CUL-1195: the timing stays measured from eating, and the refused 10 PM bowl is disclosed.
+      afterRefusal: true,
     });
   });
 
@@ -474,7 +476,7 @@ describe('mealTiming — CUL-1122: the named counterexamples', () => {
       { id: 'snack', ms: dinner + 3 * HOUR, confidence: 'witnessed', intakeRating: 'refused', form: 'dry treat' },
     ];
     const r = classifyEpisodeTiming({ onsetMs: dinner + 3 * HOUR + 10 * MIN, confidence: 'witnessed' }, feedings, noBowls);
-    expect(r).toEqual({ eligible: true, minutesSinceFeeding: 190, band: 'mid', feedingId: 'dinner', feedingForm: 'kibble' });
+    expect(r).toEqual({ eligible: true, minutesSinceFeeding: 190, band: 'mid', feedingId: 'dinner', feedingForm: 'kibble', afterRefusal: true });
   });
 
   it('a picked-at vehicle meal carrying a dose at 1 PM — a 1:10 vomit is 10 min after it, and names it', () => {
@@ -484,7 +486,7 @@ describe('mealTiming — CUL-1122: the named counterexamples', () => {
       { id: 'vehicle', ms: lunch, confidence: 'witnessed', intakeRating: 'picked', form: 'wet' },
     ];
     const r = classifyEpisodeTiming({ onsetMs: lunch + 10 * MIN, confidence: 'witnessed' }, feedings, noBowls);
-    expect(r).toEqual({ eligible: true, minutesSinceFeeding: 10, band: 'rapid', feedingId: 'vehicle', feedingForm: 'wet' });
+    expect(r).toEqual({ eligible: true, minutesSinceFeeding: 10, band: 'rapid', feedingId: 'vehicle', feedingForm: 'wet', afterRefusal: false });
   });
 
   it('a refused TREAT never anchors; a treat she ate does', () => {
@@ -568,7 +570,11 @@ describe('mealTiming — CUL-1122 properties over random records with refusals',
       const { feedings, episodes } = randomRecord(rng);
       const withRefusals = classifyEpisodeSet(episodes, feedings, []);
       const without = classifyEpisodeSet(episodes, feedings.filter((f) => f.intakeRating !== 'refused'), []);
-      expect(withRefusals.eligible).toEqual(without.eligible);
+      // The timing is identical; only the CUL-1195 disclosure flag reads the refusals.
+      const timingOf = (d: typeof withRefusals) => d.eligible.map(({ afterRefusal: _a, ...t }) => t);
+      expect(timingOf(withRefusals)).toEqual(timingOf(without));
+      expect(without.eligible.every((e) => !e.afterRefusal)).toBe(true);
+      expect(without.afterRefusalCounts).toEqual({ rapid: 0, mid: 0, long: 0 });
       expect(withRefusals.bandCounts).toEqual(without.bandCounts);
       expect(withRefusals.ineligible.length).toBe(without.ineligible.length);
       withRefusals.ineligible.forEach((e, i) => {
@@ -592,5 +598,112 @@ describe('mealTiming — CUL-1122 properties over random records with refusals',
       });
     }
     expect(refusedOnlySeen).toBeGreaterThan(20); // non-vacuity: the refused_only branch was exercised
+  });
+  it('PROPERTY (CUL-1195): afterRefusal is exactly "a trustworthy refused bowl sits after the anchor, at/before the onset", and each band count bounds its subset', () => {
+    const rng = makeRng(1195);
+    let flagged = 0;
+    let unflagged = 0;
+    for (let trial = 0; trial < 400; trial++) {
+      const { feedings, episodes } = randomRecord(rng);
+      const dist = classifyEpisodeSet(episodes, feedings, []);
+      for (const e of dist.eligible) {
+        const anchor = feedings.find((f) => f.id === e.feedingId)!;
+        const expected = feedings.some(
+          (f) =>
+            f.intakeRating === 'refused' &&
+            (f.confidence == null || f.confidence === 'witnessed') &&
+            f.ms > anchor.ms &&
+            f.ms <= e.onsetMs,
+        );
+        expect(e.afterRefusal).toBe(expected);
+        if (expected) flagged++;
+        else unflagged++;
+      }
+      for (const band of ['rapid', 'mid', 'long'] as const) {
+        const subset = dist.eligible.filter((e) => e.band === band && e.afterRefusal).length;
+        expect(dist.afterRefusalCounts[band]).toBe(subset);
+        expect(dist.afterRefusalCounts[band]).toBeLessThanOrEqual(dist.bandCounts[band]);
+      }
+    }
+    // non-vacuity: both sides of the predicate were exercised
+    expect(flagged).toBeGreaterThan(20);
+    expect(unflagged).toBeGreaterThan(20);
+  });
+});
+
+describe('mealTiming — CUL-1195: a vomit after a refused bowl is disclosed, never re-timed', () => {
+  const noBowls: never[] = [];
+  const DAY = 24 * HOUR;
+
+  it('the named record: breakfast unrated, dinner refused on alternate nights, a vomit five minutes after each refusal — 11 of 11 long, 11 after a refused meal', () => {
+    const feedings: FeedingInput[] = [];
+    const episodes: { onsetMs: number; confidence: 'witnessed' }[] = [];
+    for (let d = 0; d < 22; d++) {
+      const morning = at(d * DAY - 4 * HOUR); // 8 AM
+      const evening = at(d * DAY + 10 * HOUR); // 10 PM
+      feedings.push({ id: `b${d}`, ms: morning, confidence: 'witnessed', intakeRating: null });
+      const refused = d % 2 === 0;
+      feedings.push({ id: `d${d}`, ms: evening, confidence: 'witnessed', intakeRating: refused ? 'refused' : null });
+      if (refused) episodes.push({ onsetMs: evening + 5 * MIN, confidence: 'witnessed' });
+    }
+    const dist = classifyEpisodeSet(episodes, feedings, noBowls);
+    expect(dist.eligibleCount).toBe(11);
+    expect(dist.bandCounts.long).toBe(11);
+    expect(dist.afterRefusalCounts).toEqual({ rapid: 0, mid: 0, long: 11 });
+    // The timing itself is unchanged: measured from breakfast, 14 h 5 min.
+    expect(dist.eligible.every((e) => e.minutesSinceFeeding === 14 * 60 + 5)).toBe(true);
+  });
+
+  it('a refused bowl BEFORE the eaten anchor is not the last bowl — no disclosure', () => {
+    const feedings: FeedingInput[] = [
+      { id: 'refused', ms: at(0), confidence: 'witnessed', intakeRating: 'refused' },
+      { id: 'eaten', ms: at(HOUR), confidence: 'witnessed', intakeRating: 'all' },
+    ];
+    const r = classifyEpisodeTiming({ onsetMs: at(8 * HOUR), confidence: 'witnessed' }, feedings, noBowls);
+    expect(r).toMatchObject({ eligible: true, feedingId: 'eaten', afterRefusal: false });
+  });
+
+  it('a refused bowl at the SAME instant as the eaten one did not follow it — no disclosure', () => {
+    const feedings: FeedingInput[] = [
+      { id: 'eaten', ms: at(0), confidence: 'witnessed', intakeRating: 'all' },
+      { id: 'refused', ms: at(0), confidence: 'witnessed', intakeRating: 'refused' },
+    ];
+    const r = classifyEpisodeTiming({ onsetMs: at(7 * HOUR), confidence: 'witnessed' }, feedings, noBowls);
+    expect(r).toMatchObject({ eligible: true, feedingId: 'eaten', afterRefusal: false });
+  });
+
+  it('a refused bowl AFTER the onset never discloses; one exactly AT the onset does', () => {
+    const eaten: FeedingInput = { id: 'eaten', ms: at(0), confidence: 'witnessed', intakeRating: 'all' };
+    const onset = at(7 * HOUR);
+    const later = classifyEpisodeTiming({ onsetMs: onset, confidence: 'witnessed' }, [
+      eaten,
+      { id: 'r', ms: onset + MIN, confidence: 'witnessed', intakeRating: 'refused' },
+    ], noBowls);
+    expect(later).toMatchObject({ eligible: true, afterRefusal: false });
+    const same = classifyEpisodeTiming({ onsetMs: onset, confidence: 'witnessed' }, [
+      eaten,
+      { id: 'r', ms: onset, confidence: 'witnessed', intakeRating: 'refused' },
+    ], noBowls);
+    expect(same).toMatchObject({ eligible: true, afterRefusal: true });
+  });
+
+  it('a refusal whose time is a guess (estimated / window) is not trustworthy enough to disclose', () => {
+    const eaten: FeedingInput = { id: 'eaten', ms: at(0), confidence: 'witnessed', intakeRating: 'all' };
+    for (const confidence of ['estimated', 'window'] as const) {
+      const r = classifyEpisodeTiming({ onsetMs: at(7 * HOUR), confidence: 'witnessed' }, [
+        eaten,
+        { id: 'r', ms: at(7 * HOUR - 5 * MIN), confidence, intakeRating: 'refused' },
+      ], noBowls);
+      expect(r).toMatchObject({ eligible: true, afterRefusal: false });
+    }
+  });
+
+  it('a picked-at bowl is eating, so it re-anchors rather than disclosing', () => {
+    const feedings: FeedingInput[] = [
+      { id: 'eaten', ms: at(0), confidence: 'witnessed', intakeRating: 'all' },
+      { id: 'picked', ms: at(7 * HOUR - 5 * MIN), confidence: 'witnessed', intakeRating: 'picked' },
+    ];
+    const r = classifyEpisodeTiming({ onsetMs: at(7 * HOUR), confidence: 'witnessed' }, feedings, noBowls);
+    expect(r).toMatchObject({ eligible: true, feedingId: 'picked', band: 'rapid', afterRefusal: false });
   });
 });

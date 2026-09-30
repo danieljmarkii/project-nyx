@@ -429,6 +429,9 @@ export interface EmptyStomachTimingFinding {
   lastTwoEligibleLong: boolean;
   /** Median HOURS-since-feeding across the long episodes — the actual observed timing (evidence). */
   medianHoursSinceFeeding: number;
+  /** Of `longCount`, the episodes whose last bowl before the onset was refused (CUL-1195): a
+   *  disclosure beside the long count. Optional so a cache written before the field renders as before. */
+  longAfterRefusalCount?: number;
   /** Forms of the feedings before the long episodes — vet-report parity ONLY, never the claim (§9.1). */
   feedingFormsInEvidence: string[];
   /** Clock concentration of the LONG episodes (evidence — the 2–8am fact renders in the expand). Absent
@@ -480,6 +483,8 @@ export interface TimingStoryFinding {
     count: number;
     medianHoursSinceFeeding: number;
     lastTwoEligible: boolean;
+    /** Of `count`, the long episodes after a refused bowl (CUL-1195). Optional for older caches. */
+    afterRefusalCount?: number;
     feedingFormsInEvidence: string[];
     clockBand?: { startLocalHour: number; windowHours: number };
     clockCount?: number;
@@ -530,6 +535,9 @@ export interface TrialResponseFinding {
   rapid: { trial: number; baseline: number };
   mid?: { trial: number; baseline: number };
   long: { trial: number; baseline: number };
+  /** Of `long` per window, the episodes whose last bowl was refused (CUL-1195) — a subset of the
+   *  long row. Optional: a cache written before the field reads as it did, with no line. */
+  longAfterRefusal?: { trial: number; baseline: number };
   /** The rapid band boundary in minutes (30) — the rapid row label. */
   rapidWindowMinutes: number;
   /** The empty-stomach band boundary in hours (6) — the long row label. */
