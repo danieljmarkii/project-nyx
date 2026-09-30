@@ -74,7 +74,7 @@ import {
 } from '../../../lib/incidentTier.ts'
 // EN-4's floor (Engines v3 PR-28): only its tier type is named here; the rule itself runs in
 // the vomit descriptor, which hands its answer over as ContextualRun.minTier.
-import type { FloorTier } from '../../../lib/incidentFloor.ts'
+import { FLOOR_READ_HOURS, type FloorTier } from '../../../lib/incidentFloor.ts'
 
 export type { SupabaseClient }
 
@@ -1326,8 +1326,9 @@ interface RequestBody {
   //   'floor'   — the record's rules only, over the event: never a Storage download, a model
   //               call or a cap unit. A photographed event whose photo has not been read yet
   //               is left to that read; one already read is only ever RAISED.
-  //   'refloor' — event_id names a lethargy, meal or vomit log; every live vomit of that pet
-  //               in the 24 h before it is floored again, each as a 'floor' request.
+  //   'refloor' — event_id names a lethargy, meal or vomit log (live or soft-deleted); every
+  //               live vomit of that pet within 24 h of it either way (72 h for a vomit) is
+  //               floored again, each as a 'floor' request.
   // Absent: today's read, byte for byte.
   mode?: 'floor' | 'refloor'
 }
@@ -1405,7 +1406,14 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
     .maybeSingle<{ visual_flags: string[] | null; contextual_flags: string[] | null }>()
   if (cachedErr || !cached) throw new Error(`Floor read of the stored flags failed${cachedErr ? `: ${cachedErr.message}` : ''}`)
   const storedContextual = (cached.contextual_flags ?? []) as TFlag[]
+  // An owner edit leaves the cached visual_flags stale on purpose (Pattern 7), so an edited
+  // row's photo finding comes from its structured columns, the owner's word (adversarial D5).
+  // presentFlagsFromStructured names foreign material 'foreign_material'; the read's words
+  // know it as 'suspected_foreign_material'.
   const visualFlags = cached.visual_flags ?? []
+  const leadFlags = p.existing.edited_at
+    ? descriptor.presentFlagsFromStructured(p.existing).map((f) => (f === 'foreign_material' ? 'suspected_foreign_material' : f))
+    : visualFlags
   const contextual = [...storedContextual, ...p.contextualFlags.filter((f) => !storedContextual.includes(f))]
 
   const next = raisedTier(tierForVerdict('worth_a_call'), { recommendation: 'worth_a_call', contextual_flags: contextual }, p.minTier)
@@ -1419,12 +1427,12 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
       petName: p.petName,
       recommendation: 'worth_a_call',
       contextualFlags: contextual,
-      visualFlags,
+      visualFlags: leadFlags,
       modelReadText: null,
       photoUnreadable: false,
       hasPhoto: true,
       // A stored call with no flag behind it was the model's own: the photo finding still leads.
-      modelEscalated: storedContextual.length === 0 && visualFlags.length === 0 && p.existing.recommendation === 'worth_a_call',
+      modelEscalated: !p.existing.edited_at && storedContextual.length === 0 && visualFlags.length === 0 && p.existing.recommendation === 'worth_a_call',
     }),
     visual_flags: visualFlags,
     contextual_flags: contextual,
@@ -1455,7 +1463,13 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
 // a meal (a refusal is today's feline arm), and a vomit (a late-logged one counts for its
 // neighbours).
 export const REFLOOR_TRIGGER_TYPES = ['lethargy', 'meal', 'vomit'] as const
+// Both ways from the trigger (adversarial D2): lethargy counts 24 h either side of a vomit
+// (T3), so lethargy backdated before a vomit already logged must reach it; and a vomit
+// logged late, backdated before its neighbours, must reach them. The spec's "prior 24 hours"
+// (§8.6) is the minimum. 72 h covers T8's three spans. The re-run is raise-only, so reading
+// wider only reaches more vomits and can lower none.
 export const REFLOOR_WINDOW_HOURS = 24
+export const REFLOOR_VOMIT_WINDOW_HOURS = FLOOR_READ_HOURS
 
 // The 24-hour re-run. Each vomit goes through this same pipeline as a 'floor' request with the
 // caller's JWT, so it inherits every guard the floor-only mode has (the flag refusal, the
@@ -1478,7 +1492,9 @@ async function runRefloor<TAnalysis extends IncidentAnalysisBase, TFlag extends 
       .from('events')
       .select('id, pet_id, event_type, occurred_at, pets(user_id)')
       .eq('id', triggerEventId)
-      .is('deleted_at', null)
+      // No deleted_at filter (adversarial D4): a soft delete is a trigger (spec §8.3). Deleting
+      // a meal rated All can raise the feline arm. Only the pet and the time are used, and
+      // RLS scopes the read to the caller's pets.
       .maybeSingle()
     if (!trigger) return Response.json({ error: 'Event not found' }, { status: 404, headers: CORS_HEADERS })
     if (!(REFLOOR_TRIGGER_TYPES as readonly string[]).includes(trigger.event_type as string)) {
@@ -1492,14 +1508,15 @@ async function runRefloor<TAnalysis extends IncidentAnalysisBase, TFlag extends 
 
     const atMs = Date.parse(trigger.occurred_at as string)
     if (!Number.isFinite(atMs)) return Response.json({ success: true, refloored: 0 }, { headers: CORS_HEADERS })
+    const reach = trigger.event_type === 'vomit' ? REFLOOR_VOMIT_WINDOW_HOURS : REFLOOR_WINDOW_HOURS
     const { data: vomits, error: vomitErr } = await userClient
       .from('events')
       .select('id, occurred_at')
       .eq('pet_id', trigger.pet_id as string)
       .in('event_type', descriptor.eventTypes)
       .is('deleted_at', null)
-      .gte('occurred_at', new Date(atMs - REFLOOR_WINDOW_HOURS * 3_600_000).toISOString())
-      .lte('occurred_at', new Date(atMs).toISOString())
+      .gte('occurred_at', new Date(atMs - reach * 3_600_000).toISOString())
+      .lte('occurred_at', new Date(atMs + reach * 3_600_000).toISOString())
       .order('occurred_at', { ascending: true })
       .order('id', { ascending: true })
     if (vomitErr) throw new Error(`Re-floor read failed: ${vomitErr.message}`)
@@ -1655,7 +1672,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // 1c. EN-4's floor-only mode (CUL-1134) runs only under its key AND the tier key (the
     //     floor's answer is a tier), for the owner. Refused here, before any read that could
     //     lead to a write: flag-off never runs the floor-only path (spec §8.10).
-    if (floorOnly && !(descriptor.floorEngineKey && isEngineKeyOn(engineFlags, descriptor.floorEngineKey) && tiersOn)) {
+    const floorOn = !!descriptor.floorEngineKey && isEngineKeyOn(engineFlags, descriptor.floorEngineKey) && tiersOn
+    if (floorOnly && !floorOn) {
       return Response.json({ success: true, skipped: 'floor_off' }, { headers: CORS_HEADERS })
     }
 
@@ -1703,7 +1721,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     let copy = contextRun.copy
     contextualFlagsForFailure = contextualFlags
     copyForFailure = copy
-    const minTier = contextRun.minTier
+    let minTier = contextRun.minTier
     minTierForFailure = minTier
 
     // 3b. Existing analysis row — honors the never-clobber guard (B-028) in every
@@ -1906,6 +1924,29 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // "could not read" and writes nothing.
     if (!analysisRowMatchesEvent(freshRow, petId)) {
       throw new Error('Analysis row does not belong to this event')
+    }
+
+    // 6a'. EN-4 (CUL-1134, adversarial D3): the record's rules again, after the vision call.
+    //     A lethargy or a vomit logged during the 10-60 s call is re-floored by its own log,
+    //     but that re-floor skips this event (no stored row yet: `photo_read_pending`), so
+    //     this run is the only one that can see it. Raise-only: flags are added, never
+    //     dropped, and the floor's tier only moves up. Under the floor keys only, so every
+    //     other run is exactly today's.
+    if (floorOn) {
+      const late = resolveContextualRun(
+        await descriptor.computeContextualFlags(userClient, { eventId, petId, occurredAt, species, eventType: incidentType, engineFlags }),
+        descriptor.copy,
+      )
+      const added = late.flags.filter((f) => !contextualFlags.includes(f))
+      const lateRaises = !!late.minTier && (!minTier || tierRank(late.minTier) > tierRank(minTier))
+      if (added.length > 0 || lateRaises) {
+        contextualFlags = [...contextualFlags, ...added]
+        copy = late.copy
+        if (lateRaises) minTier = late.minTier
+        contextualFlagsForFailure = contextualFlags
+        copyForFailure = copy
+        minTierForFailure = minTier
+      }
     }
 
     // 6b. The flags' second look, once the photo is read (EN-7; ContextualRun.afterRead).

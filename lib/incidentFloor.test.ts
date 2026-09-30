@@ -152,6 +152,14 @@ describe('incidentFloor: T8, vomiting three days running', () => {
     for (const anchor of days) expect(run({ anchor, vomits: days }).rows).toContain('T8');
   });
 
+  it('three calendar evenings, 23:00, 22:00, 23:30: the run need not start at a log (adversarial D1)', () => {
+    // Mon 23:00, Tue 22:00, Wed 23:30: gaps of 23 h and 25.5 h.
+    const mon = v(-(23 + 25.5) * H);
+    const tue = v(-25.5 * H);
+    const wed = v(0);
+    for (const anchor of [mon, tue, wed]) expect(run({ anchor, vomits: [mon, tue, wed] }).rows).toContain('T8');
+  });
+
   it('a gap day breaks the run', () => {
     const days = [v(-3 * 24 * H + H), v(-24 * H + H), v(0)];
     for (const anchor of days) expect(run({ anchor, vomits: days }).rows).not.toContain('T8');

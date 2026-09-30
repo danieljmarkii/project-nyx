@@ -9,7 +9,7 @@
 
 import { assertEquals, assertStrictEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import { runIncidentAnalysis, type PipelineDeps, type SupabaseClient } from '../_shared/incident-analysis.ts'
-import { VOMIT_DESCRIPTOR, floorSentence } from './index.ts'
+import { VOMIT_DESCRIPTOR, floorSentence, type VomitAnalysis } from './index.ts'
 import { incidentFloor } from '../../../lib/incidentFloor.ts'
 import { STOOL_DESCRIPTOR } from '../analyze-stool/index.ts'
 
@@ -26,6 +26,7 @@ interface Ev {
   occurred_at_confidence?: string | null
   rating?: string | null
   photo?: boolean
+  deleted?: boolean
 }
 
 interface World {
@@ -36,6 +37,9 @@ interface World {
   rows: Map<string, Row> // event_ai_analysis by event_id
   calls: { storage: number; model: number; usage: number }
   writes: number
+  // Only for the tests about a photo read: when set, Storage, the counter and the model answer,
+  // and `during` runs inside the model call (a log landing mid-read).
+  photoRead?: { analysis: VomitAnalysis; during?: (w: World) => void }
 }
 
 class FakeQuery {
@@ -50,7 +54,8 @@ class FakeQuery {
   select() { return this }
   eq(c: string, v: unknown) { this.filters[c] = v; return this }
   in(c: string, v: unknown[]) { this.inFilter = { col: c, vals: v }; return this }
-  is() { return this }
+  private liveOnly = false
+  is(c: string, v: unknown) { if (c === 'deleted_at' && v === null) this.liveOnly = true; return this }
   order() { return this }
   limit() { return this }
   gte(_c: string, v: string) { this.gteV = v; return this }
@@ -71,7 +76,7 @@ class FakeQuery {
   private run(): { data: unknown; error: null } {
     const w = this.w
     if (this.table === 'events' && this.filters.id !== undefined) {
-      const e = w.events.find((x) => x.id === this.filters.id)
+      const e = w.events.find((x) => x.id === this.filters.id && !(this.liveOnly && x.deleted))
       return {
         data: e ? { ...e, pet_id: PET_ID, deleted_at: null, pets: { name: 'Nyx', species: w.species, user_id: OWNER } } : null,
         error: null,
@@ -80,7 +85,7 @@ class FakeQuery {
     if (this.table === 'events') {
       const types = this.inFilter?.col === 'event_type' ? this.inFilter.vals : [this.filters.event_type]
       const rows = w.events
-        .filter((e) => types.includes(e.event_type) && this.inWindow(e.occurred_at))
+        .filter((e) => types.includes(e.event_type) && this.inWindow(e.occurred_at) && !(this.liveOnly && e.deleted))
         .map((e) => e.event_type === 'meal'
           ? { occurred_at: e.occurred_at, meals: { intake_rating: e.rating ?? null } }
           : { id: e.id, occurred_at: e.occurred_at, occurred_at_confidence: e.occurred_at_confidence ?? null })
@@ -113,13 +118,30 @@ function deps(w: World): PipelineDeps {
   const client = {
     auth: { getUser: () => Promise.resolve({ data: { user: { id: OWNER } }, error: null }) },
     from: (t: string) => new FakeQuery(w, t),
-    rpc: () => { w.calls.usage++; throw new Error('the floor spent a cap unit') },
-    storage: { from: () => ({ download: () => { w.calls.storage++; throw new Error('the floor downloaded a photo') } }) },
+    rpc: () => {
+      w.calls.usage++
+      if (!w.photoRead) throw new Error('the floor spent a cap unit')
+      return Promise.resolve({ data: { day_count: 1, month_count: 1 }, error: null })
+    },
+    storage: {
+      from: () => ({
+        download: () => {
+          w.calls.storage++
+          if (!w.photoRead) throw new Error('the floor downloaded a photo')
+          return Promise.resolve({ data: new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])]), error: null })
+        },
+      }),
+    },
   } as unknown as SupabaseClient
   return {
     userClient: () => client,
     adminClient: () => client,
-    vision: (() => { w.calls.model++; throw new Error('the floor called the model') }) as PipelineDeps['vision'],
+    vision: (() => {
+      w.calls.model++
+      if (!w.photoRead) throw new Error('the floor called the model')
+      w.photoRead.during?.(w)
+      return Promise.resolve(structuredClone(w.photoRead.analysis))
+    }) as PipelineDeps['vision'],
   }
 }
 
@@ -353,4 +375,100 @@ Deno.test('floor · every floor sentence never reassures, never exclaims, never 
       assertStrictEquals(t.includes('Mochi'), true, t)
     }
   }
+})
+
+const CLEAN: VomitAnalysis = {
+  appears_to_show_vomit: true, colour: 'yellow', contents: ['foam'], consistency: 'foamy', blood_present: 'none_visible',
+  bile_present: 'no', foreign_material_present: 'no', foreign_material_note: null, description: null,
+  visual_flags: [], recommendation: 'monitor', read_text: null, confidence: null,
+}
+
+Deno.test('floor · adversarial D2: lethargy backdated before a vomit already logged still raises it', async () => {
+  const t = Date.now() - 6 * H
+  const w = world({ events: [{ id: 'v1', event_type: 'vomit', occurred_at: iso(t), occurred_at_confidence: 'witnessed' }] })
+  await call(w, { event_id: 'v1', mode: 'floor' })
+  assertStrictEquals(w.rows.get('v1')!.tier, 'not_enough_to_say')
+  // "Flat all morning", logged afterwards, dated two hours BEFORE the vomit.
+  w.events.push({ id: 'l1', event_type: 'lethargy', occurred_at: iso(t - 2 * H) })
+  const r = await call(w, { event_id: 'l1', mode: 'refloor' })
+  assertStrictEquals(r.json.refloored, 1)
+  assertStrictEquals(w.rows.get('v1')!.tier, 'call_now')
+  noPhotoPathTouched(w)
+})
+
+Deno.test('floor · adversarial D2: a vomit logged late, dated before its neighbour, raises the neighbour', async () => {
+  const t = Date.now() - 8 * H
+  const w = world({
+    events: [
+      { id: 'v2', event_type: 'vomit', occurred_at: iso(t + 2 * H), occurred_at_confidence: 'witnessed' },
+      { id: 'v3', event_type: 'vomit', occurred_at: iso(t + 3 * H), occurred_at_confidence: 'witnessed' },
+    ],
+  })
+  await call(w, { event_id: 'v3', mode: 'floor' })
+  assertStrictEquals(w.rows.get('v3')!.tier, 'call_today') // today's two-in-4-h rule
+  w.events.push({ id: 'v1', event_type: 'vomit', occurred_at: iso(t), occurred_at_confidence: 'witnessed' })
+  await call(w, { event_id: 'v1', mode: 'refloor' })
+  assertStrictEquals(w.rows.get('v3')!.tier, 'call_now') // three onsets in 4 h (T2)
+})
+
+Deno.test('floor · adversarial D3: lethargy logged while the photo is being read still raises that read', async () => {
+  const t = Date.now() - 10 * 60_000
+  const w = world({
+    events: [{ id: 'v1', event_type: 'vomit', occurred_at: iso(t), occurred_at_confidence: 'witnessed', photo: true }],
+    photoRead: {
+      analysis: CLEAN,
+      during: (x) => { x.events.push({ id: 'l1', event_type: 'lethargy', occurred_at: iso(Date.now()) }) },
+    },
+  })
+  const r = await call(w, { event_id: 'v1' })
+  assertStrictEquals(r.status, 200)
+  const row = w.rows.get('v1')!
+  assertEquals([row.recommendation, row.tier], ['worth_a_call', 'call_now'])
+  assertEquals((row.contextual_flags as string[]).includes('concurrent_lethargy'), true)
+})
+
+Deno.test('floor · adversarial D3: flag-off, the photo read is today\'s single look at the record', async () => {
+  const t = Date.now() - 10 * 60_000
+  const w = world({
+    keys: ['engines_v3_en3'],
+    events: [{ id: 'v1', event_type: 'vomit', occurred_at: iso(t), occurred_at_confidence: 'witnessed', photo: true }],
+    photoRead: {
+      analysis: CLEAN,
+      during: (x) => { x.events.push({ id: 'l1', event_type: 'lethargy', occurred_at: iso(Date.now()) }) },
+    },
+  })
+  await call(w, { event_id: 'v1' })
+  assertEquals([w.rows.get('v1')!.recommendation, w.rows.get('v1')!.tier], ['monitor', 'logged'])
+})
+
+Deno.test('floor · adversarial D5: an owner-corrected photo finding is not asserted by the floor\'s words', async () => {
+  const w = world({ events: photolessTriple().map((e) => (e.id === 'v3' ? { ...e, photo: true } : e)) })
+  w.rows.set('v3', {
+    id: 'a-v3', event_id: 'v3', pet_id: PET_ID, status: 'completed', recommendation: 'worth_a_call', tier: 'call_today',
+    read_text: 'earlier', visual_flags: ['blood'], contextual_flags: [], blood_present: 'none_visible',
+    foreign_material_present: 'no', edited_at: iso(Date.now() - H), dismissed_at: null,
+  })
+  await call(w, { event_id: 'v3', mode: 'floor' })
+  const row = w.rows.get('v3')!
+  assertStrictEquals(row.tier, 'call_now')
+  assertStrictEquals(String(row.read_text).includes('blood'), false)
+  assertStrictEquals(String(row.read_text).startsWith('Nyx has thrown up'), true)
+  assertEquals(row.visual_flags, ['blood']) // the cache is left as the owner's edit left it (Pattern 7)
+})
+
+Deno.test('floor · adversarial D4: soft-deleting a mis-logged meal re-floors, and the intake arm it hid comes back', async () => {
+  const t = Date.now() - 6 * H
+  const w = world({
+    events: [
+      { id: 'v1', event_type: 'vomit', occurred_at: iso(t), occurred_at_confidence: 'witnessed' },
+      { id: 'm0', event_type: 'meal', occurred_at: iso(t - 5 * H), rating: 'refused' },
+      { id: 'm1', event_type: 'meal', occurred_at: iso(t - 2 * H), rating: 'all' },
+    ],
+  })
+  await call(w, { event_id: 'v1', mode: 'floor' })
+  assertStrictEquals(w.rows.get('v1')!.tier, 'not_enough_to_say')
+  w.events.find((e) => e.id === 'm1')!.deleted = true
+  const r = await call(w, { event_id: 'm1', mode: 'refloor' })
+  assertStrictEquals(r.status, 200)
+  assertEquals([w.rows.get('v1')!.tier, w.rows.get('v1')!.contextual_flags], ['call_today', ['feline_reduced_intake']])
 })

@@ -196,12 +196,16 @@ export function incidentFloor(input: FloorInput): FloorResult {
     if (age === null || age < FLOOR_YOUNG_MONTHS) rows.add('T7');
   }
 
-  // T8: three consecutive 24-hour spans, each holding a log, the anchor inside the three.
-  // The server knows no zone, so the spans are not calendar days: they may start at any
-  // moment, and an optimal run can always start at a log, so each log in reach is tried.
+  // T8: three back-to-back 24-hour spans, each holding a log, the anchor inside the three.
+  // The server knows no zone, so the spans are not calendar days: a run may start at any
+  // moment. Sliding a run later only loses a log when one crosses a span boundary, so some
+  // optimal run has a log exactly on a boundary: its start is a log's time less 0, 1 or 2
+  // days. Trying only the logs' own times missed a cat vomiting at 23:00, 22:00 and 23:30 on
+  // three evenings (the adversarial pass on this PR).
   const DAY = 24 * HOUR;
   const RUN = FLOOR_PERSISTENCE_DAYS * DAY;
-  for (const s of all) {
+  const starts = all.flatMap((t) => Array.from({ length: FLOOR_PERSISTENCE_DAYS }, (_, k) => t - k * DAY));
+  for (const s of starts) {
     if (s > a || a >= s + RUN) continue;
     let run = true;
     for (let k = 0; k < FLOOR_PERSISTENCE_DAYS; k++) {
