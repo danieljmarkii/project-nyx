@@ -15,6 +15,7 @@ import {
   trialNoneTimeableLine,
   trialPhenotypeSampleLine,
   trialPhenotypeState,
+  trialPhenotypeRefusalLine,
   trialPhenotypeUntimedLine,
   trialTreatShareValue,
   type TrialSoFarModel,
@@ -65,6 +66,8 @@ export default function TrialDetailRoute() {
 
   const phenotypeState = model ? trialPhenotypeState(model.phenotype) : null;
   const untimed = model ? trialPhenotypeUntimedLine(model.phenotype) : null;
+  // CUL-1195 — the long band's refused-bowl disclosure (null at zero).
+  const refusal = model ? trialPhenotypeRefusalLine(model.phenotype, model.config) : null;
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
@@ -117,6 +120,7 @@ export default function TrialDetailRoute() {
                       })}
                     </View>
                     <ThemedText style={styles.sample}>{trialPhenotypeSampleLine(model.phenotype)}</ThemedText>
+                    {refusal != null && <ThemedText style={styles.sample}>{refusal}</ThemedText>}
                     {untimed != null && <ThemedText style={styles.sample}>{untimed}</ThemedText>}
                   </>
                 ) : (

@@ -406,6 +406,19 @@ export function templateTimeOfDayClustering(f: TimeOfDayClusteringFinding, petNa
   return `${f.clusterCount} of ${petName}'s ${f.eligibleCount} timed ${symptom} episodes happened ${band} — a timing pattern worth mentioning to your vet.`
 }
 
+// CUL-1195 — PROVISIONAL wording, Dr. Chen's to ratify at the CUL-583 sitting (through nyx-voice).
+// The long band is timed from the last meal EATEN, which is true, and a cat who turns down dinner
+// and vomits minutes later still lands in it: "6 or more hours after eating" alone reads as the
+// harmless-looking pattern. So the sentence says how many of the long episodes followed a refused
+// bowl. "Followed" is sequence, never cause (CAUSAL_RE), and the clause is absent at zero: a
+// missing clause claims nothing, where "none followed a refused meal" would be a reassurance over
+// a record that may simply not rate its bowls (ratings are exception-only, CUL-1118).
+// `count` is optional so a finding built before the field existed renders as it did.
+function refusalClause(count: number | undefined, ofWhat: string): string {
+  if (count == null || count < 1) return ''
+  return `; ${count} of ${ofWhat} followed a refused meal`
+}
+
 export function templateEmptyStomachTiming(f: EmptyStomachTimingFinding, petName: string): string {
   // Detector L1 (Signals v2 / CUL-7 — the ⑤ mirror) — template-only (no LLM, like ③/④/⑤/⑥). Names
   // TIMING ONLY: "N or more hours after eating" is a timing reference, never the syndrome
@@ -414,7 +427,7 @@ export function templateEmptyStomachTiming(f: EmptyStomachTimingFinding, petName
   // count). Below-floor never reaches here (the engine stays silent).
   const symptom = SYMPTOM_LABEL[f.symptomType]
   const lastTwo = f.lastTwoEligibleLong ? ', including the last two' : ''
-  return `${f.longCount} of the ${f.eligibleCount} ${symptom} episodes we could time for ${petName} happened ${f.longGapHours} or more hours after eating${lastTwo} — a timing pattern worth mentioning to your vet.`
+  return `${f.longCount} of the ${f.eligibleCount} ${symptom} episodes we could time for ${petName} happened ${f.longGapHours} or more hours after eating${lastTwo}${refusalClause(f.longAfterRefusalCount, 'those')} — a timing pattern worth mentioning to your vet.`
 }
 
 export function templateTimingStory(f: TimingStoryFinding, petName: string): string {
@@ -435,7 +448,7 @@ export function templateTimingStory(f: TimingStoryFinding, petName: string): str
     f.long.clockBand && (f.long.clockCount ?? 0) >= 2
       ? `, ${f.long.clockCount} of them ${localHourBand(f.long.clockBand.startLocalHour, f.long.clockBand.windowHours)}`
       : ''
-  return `${petName}'s ${symptom} keeps two kinds of time — some soon after eating, and some a long time after${clock} — a timing pattern worth mentioning to your vet.`
+  return `${petName}'s ${symptom} keeps two kinds of time — some soon after eating, and some a long time after${clock}${refusalClause(f.long.afterRefusalCount, 'the long-after ones')} — a timing pattern worth mentioning to your vet.`
 }
 
 export function templateTrialResponse(f: TrialResponseFinding, petName: string): string {
@@ -952,6 +965,7 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       eligible_count: finding.eligibleCount,
       long_gap_hours: finding.longGapHours,
       including_last_two: finding.lastTwoEligibleLong,
+      long_after_refusal_count: finding.longAfterRefusalCount,
       relationship: 'associational_timing', // a timing pattern we are noting — NOT a cause, NOT a mechanism
     }
   }
@@ -963,6 +977,7 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       symptom: SYMPTOM_LABEL[finding.symptomType],
       rapid_count: finding.rapid.count,
       long_count: finding.long.count,
+      long_after_refusal_count: finding.long.afterRefusalCount,
       eligible_count: finding.eligibleCount,
       window_minutes: finding.rapidWindowMinutes,
       long_gap_hours: finding.longGapHours,
