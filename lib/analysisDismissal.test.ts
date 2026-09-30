@@ -40,6 +40,7 @@ import {
 const CALM = {
   recommendation: 'monitor',
   read_text: 'Nothing obviously concerning on its own.',
+  tier: null as string | null,
   description: 'Yellow foam.',
   colour: 'yellow',
   consistency: 'foamy',
