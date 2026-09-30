@@ -227,9 +227,11 @@ Deno.test('wrongProtein counts any card naming another protein, a joint card inc
     return scoreScenario(runs).detections.find((d) => d.label === label)!
   }
   const alone = score([entry.protein!])
-  assertEquals([alone.wrongProtein, alone.jointWithReacting], [0, 0])
+  assertEquals([alone.wrongProtein, alone.jointWithReacting, alone.wrongProteinEveningsPerPetMonth], [0, 0, 0])
   const joint = score([entry.protein!, 'lamb'])
   assertEquals([joint.wrongProtein, joint.jointWithReacting], [1, 1])
+  // Every evening from day 30 carries the wrong card: about 30 evenings a pet-month of those evenings.
+  assert((joint.wrongProteinEveningsPerPetMonth as number) > 20, `${joint.wrongProteinEveningsPerPetMonth}`)
   const other = score(['lamb'])
   assertEquals([other.wrongProtein, other.jointWithReacting], [1, 0])
 })

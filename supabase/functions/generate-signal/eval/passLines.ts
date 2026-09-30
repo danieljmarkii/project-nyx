@@ -505,6 +505,22 @@ export const PASS_LINES: readonly PassLine[] = [
     pairedWith: 'EN-11.foodDetection',
   },
   {
+    id: 'EN-11.wrongProteinEvenings',
+    wave: 'EN-11',
+    firstFlagOnPr: 'EN-11',
+    measure: 'Naming the wrong protein as a burden: on the two protein-reaction scenarios, evenings per pet-month carrying a food card that names any other protein (a joint card included), flag on against flag off. The share above saturates once a pet has seen one wrong card, and an engine that named every protein after showing two different ones raised food detection with that share unmoved (seventh adversarial pass).',
+    rows: [
+      'inj-protein-reaction-rr3/detect/a:food:beef/wrongProteinEveningsPerPetMonth',
+      'inj-protein-reaction-hidden/detect/a:food:chicken/wrongProteinEveningsPerPetMonth',
+    ],
+    aggregate: 'each',
+    comparison: 'flag_on_vs_flag_off',
+    direction: 'at_most',
+    value: null,
+    valueSource: 'The ruling sheet (E-6, CUL-583): the margin, in evenings per pet-month, unruled.',
+    pairedWith: 'EN-11.foodDetection',
+  },
+  {
     id: 'EN-11.falseFoodEvenings',
     wave: 'EN-11',
     firstFlagOnPr: 'EN-11',
