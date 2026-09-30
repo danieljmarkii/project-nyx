@@ -171,7 +171,7 @@ Deno.test('pipeline diff A · 8/19: a late read over unrated meals — same verd
   assertEquals([off.recommendation, on.recommendation], ['worth_a_call', 'worth_a_call'])
   assertEquals(off.engine_flags, [])
   assertEquals(on.engine_flags, ['engines_v3_en0'])
-  assertStrictEquals(on.rule_version, 'f2.vomit2')
+  assertStrictEquals(on.rule_version, 'f2.vomit3')
 })
 
 Deno.test('pipeline diff B · 9/22: foreign material and the intake flag — the photo finding leads, the model\'s words stay out', async () => {
