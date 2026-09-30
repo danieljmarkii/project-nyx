@@ -1679,6 +1679,27 @@ export function timingStoryClockLaneModel(f: TimingStoryLike): DotLaneModel | nu
   return { dots, bands, axis: ['12am', '6am', '12pm', '6pm'] };
 }
 
+// CUL-1195 — PROVISIONAL wording, Dr. Chen's to ratify at the CUL-583 sitting (nyx-voice). The
+// long band is timed from the last meal EATEN (CUL-1122), which is true, and a cat who turns down
+// dinner and vomits minutes later still lands in it, the band whose owner reading is the
+// harmless-looking one. So the face says how many of the long episodes followed a refused bowl.
+// "Followed" is sequence, never cause. Present-only: null at zero or on a cache written before the
+// field, because "none followed a refused meal" would reassure over a record whose bowls are rated
+// only by exception (CUL-1118). Clamped to the long count, so a malformed cache can never print
+// "12 of the 11".
+function refusalCountOf(f: TimingStoryLike): number {
+  const raw = f.type === 'timing_story' ? f.long.afterRefusalCount : f.longAfterRefusalCount;
+  return raw == null || !Number.isFinite(raw) ? 0 : clampCount(raw, longCountOf(f));
+}
+
+/** The long band's refused-bowl disclosure, printed on the face under the three-band compare. Null
+ *  when no long episode followed a refused bowl (never a zero line). */
+export function timingStoryRefusalLine(f: TimingStoryLike): string | null {
+  const k = refusalCountOf(f);
+  if (k < 1) return null;
+  return `${k} of the ${count(longCountOf(f), 'episode', 'episodes')} ${f.longGapHours}h or more after eating followed a refused meal.`;
+}
+
 /** The honest un-timeable remainder (S2) — episodes we couldn't place against a meal at
  *  all. Null when every in-window episode was timeable (nothing to disclose). */
 export function timingStoryControlDisclosure(f: TimingStoryLike): string | null {
@@ -1818,6 +1839,20 @@ export function trialResponseTimedReconciliationLine(f: TrialResponseFinding): s
   const untimeableBaseline = Math.max(0, f.pooledBaselineCount - timedBaseline);
   if (untimeableTrial === 0 && untimeableBaseline === 0) return null;
   return `Timed to a meal: ${timedTrial} of ${f.pooledTrialCount} in the trial · ${timedBaseline} of ${f.pooledBaselineCount} before.`;
+}
+
+/** CUL-1195 (provisional, as `timingStoryRefusalLine`): the long row's refused-bowl subset, both
+ *  windows, so "6h or more after eating: 3 · was 0" over a cat refusing the trial diet says what it
+ *  holds. A subset of the long row, never an addition, so the face still foots with the pooled lead.
+ *  Null when neither window has one, or on a cache written before the field. Clamped per window. */
+export function trialResponseRefusalLine(f: TrialResponseFinding): string | null {
+  const r = f.longAfterRefusal;
+  if (!r) return null;
+  const safe = (n: number, max: number) => (Number.isFinite(n) ? clampCount(n, max) : 0);
+  const trial = safe(r.trial, f.long.trial);
+  const baseline = safe(r.baseline, f.long.baseline);
+  if (trial === 0 && baseline === 0) return null;
+  return `Of those ${f.longGapHours}h or more after eating, after a refused meal: ${trial} in the trial · ${baseline} before.`;
 }
 
 /** The day-count badge — "Day N of M" (target set) or "Day N" (unset). `target_duration_days` is the

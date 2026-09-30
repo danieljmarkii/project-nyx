@@ -241,6 +241,28 @@ describe('InsightCard — SR-1 card-face receipts', () => {
     expect(render(<InsightCard cached={c} petName="Nyx" />).queryByLabelText(label, { exact: false })).toBeTruthy();
   });
 
+  it('CUL-1195: the timing card face says how many long-band vomits followed a refused bowl, and VoiceOver hears it', () => {
+    const line = '7 of the 7 episodes 6h or more after eating followed a refused meal.';
+    const node = <InsightCard cached={anyCached(emptyStomach({ longAfterRefusalCount: 7 }))} petName="Nyx" />;
+    expect(render(node).queryByText(line)).toBeTruthy();
+    expect(a11yLabelOf(node)).toContain(line);
+    // Nothing at zero: the face never says "none followed a refused meal".
+    const zero = render(<InsightCard cached={anyCached(emptyStomach({ longAfterRefusalCount: 0 }))} petName="Nyx" />);
+    expect(zero.queryByText(/refused meal/)).toBeNull();
+  });
+
+  it('CUL-1195: the trial card face carries the long row’s refused-bowl subset, both windows', () => {
+    const line = 'Of those 6h or more after eating, after a refused meal: 3 in the trial · 0 before.';
+    const node = (
+      <InsightCard
+        cached={anyCached(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 0 } }))}
+        petName="Nyx"
+      />
+    );
+    expect(render(node).queryByText(line)).toBeTruthy();
+    expect(a11yLabelOf(node)).toContain(line);
+  });
+
   it('a large-n timing card degrades to the compare (no dot lane) on the card face', () => {
     const finding = postprandial({ eligibleCount: 20, totalEpisodes: 24, rapidCount: 12 });
     const view = render(<InsightCard cached={anyCached(finding)} petName="Nyx" />);

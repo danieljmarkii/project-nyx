@@ -65,6 +65,7 @@ import {
   timingStoryMealLaneModel,
   timingStoryClockLaneModel,
   timingStoryControlDisclosure,
+  timingStoryRefusalLine,
   photoCompositionLines,
   timingStoryVetLine,
   DOT_LANE_MAX,
@@ -72,6 +73,7 @@ import {
   TRIAL_RTM_CONFOUND,
   trialResponseCompareRows,
   trialResponseTimedReconciliationLine,
+  trialResponseRefusalLine,
   trialResponseDayBadge,
   trialResponseSampleLine,
   trialResponseDensityLine,
@@ -1691,6 +1693,7 @@ describe('A2 timing card — evidenceText + guardrails (timing only, never a mec
       ...timingStoryBandRows(timingStory()).map((r) => r.label),
       timingStorySampleLine(timingStory()),
       timingStoryControlDisclosure(timingStory()) ?? '',
+      timingStoryRefusalLine(emptyStomach({ longCount: 11, eligibleCount: 11, longAfterRefusalCount: 11 })) ?? '',
       timingStoryVetLine(timingStory({ photoComposition: { hair: { count: 1, denominator: 3 } } })),
       timingStoryVetLine(emptyStomach({ clockBand: undefined, clockCount: undefined })),
       evidenceText(timingStory(), 'Nyx'),
@@ -2474,6 +2477,39 @@ describe('trialResponseCompareRows (CUL-13 / B-766 — the two-sided count rows)
   });
 });
 
+describe('CUL-1195 — the long band says when its vomits followed a refused bowl (provisional wording)', () => {
+  it('the timing card: the subset beside the long count, on either shape', () => {
+    expect(timingStoryRefusalLine(emptyStomach({ longCount: 11, eligibleCount: 11, longAfterRefusalCount: 11 }))).toBe(
+      '11 of the 11 episodes 6h or more after eating followed a refused meal.',
+    );
+    const story = timingStory();
+    expect(timingStoryRefusalLine(timingStory({ long: { ...story.long, afterRefusalCount: 1 } }))).toBe(
+      `1 of the ${story.long.count} episodes 6h or more after eating followed a refused meal.`,
+    );
+  });
+  it('the timing card: nothing at zero, on an old cache, or on a non-number — never "none followed"', () => {
+    expect(timingStoryRefusalLine(emptyStomach({ longAfterRefusalCount: 0 }))).toBeNull();
+    expect(timingStoryRefusalLine(emptyStomach())).toBeNull();
+    expect(timingStoryRefusalLine(emptyStomach({ longAfterRefusalCount: Number.NaN }))).toBeNull();
+  });
+  it('the timing card: a malformed count never exceeds the long count', () => {
+    expect(timingStoryRefusalLine(emptyStomach({ longCount: 4, longAfterRefusalCount: 9 }))).toMatch(/^4 of the 4 episodes/);
+  });
+  it('the trial card: both windows, a subset of the long row', () => {
+    expect(
+      trialResponseRefusalLine(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 0 } })),
+    ).toBe('Of those 6h or more after eating, after a refused meal: 3 in the trial · 0 before.');
+  });
+  it('the trial card: nothing when neither window has one, or on an old cache; clamped per window', () => {
+    expect(trialResponseRefusalLine(trialResponse({ longAfterRefusal: { trial: 0, baseline: 0 } }))).toBeNull();
+    expect(trialResponseRefusalLine(trialResponse())).toBeNull();
+    // long.trial is 0 in the fixture, so a malformed trial count clamps to zero and only the baseline speaks.
+    expect(trialResponseRefusalLine(trialResponse({ longAfterRefusal: { trial: 5, baseline: 2 } }))).toBe(
+      'Of those 6h or more after eating, after a refused meal: 0 in the trial · 2 before.',
+    );
+  });
+});
+
 describe('trialResponseTimedReconciliationLine (B-766 — the face foots with the pooled lead)', () => {
   it('discloses the un-timeable remainder so bands + remainder = the pooled lead', () => {
     // base: pooled 4/20; timed = 4/(8+3+7=18); so 0 un-timeable in the trial, 2 before.
@@ -2556,6 +2592,7 @@ describe('trial card copy — guardrails (CUL-13)', () => {
     const strings = [
       ...trialResponseCompareRows(trialResponse()).map((r) => r.label),
       trialResponseTimedReconciliationLine(trialResponse()) ?? '',
+      trialResponseRefusalLine(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 0 } })) ?? '',
       trialResponseDayBadge(trialResponse()),
       trialResponseSampleLine(trialResponse()),
       trialResponseDensityLine(trialResponse()),

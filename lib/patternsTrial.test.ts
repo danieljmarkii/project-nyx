@@ -18,6 +18,7 @@ import {
   trialPhenotypeState,
   trialPhenotypeSampleLine,
   trialPhenotypeUntimedLine,
+  trialPhenotypeRefusalLine,
   trialNoneTimeableLine,
   trialTreatShareValue,
   trialMealsPerDayValue,
@@ -186,3 +187,35 @@ describe('copy — count-anchored, never verdicted (§2 L2 / §6)', () => {
     expect(trialHonestyLine()).not.toContain('!');
   });
 });
+
+describe('CUL-1195 — the trial panel says when a long-band vomit followed a refused bowl', () => {
+  // The scenario's one long episode (day 111 04:00, timed from day 110 20:00) with a refused bowl
+  // at 03:55 before it: still timed from the meal eaten, still long, now disclosed.
+  const refusedBefore: FeedingRow = { id: 'r1', ms: at(111, 3, 55), confidence: 'witnessed', intakeRating: 'refused', form: 'Kibble', foodType: 'meal' };
+
+  it('counts the long episodes after a refused bowl, and moves no band', () => {
+    const base = scenario();
+    const m = buildTrialSoFar(scenario({ feedings: [...base.feedings, refusedBefore] }))!;
+    expect(m.phenotype.bandRows.map((r) => r.count)).toEqual([1, 1, 1]);
+    expect(m.phenotype.longAfterRefusalCount).toBe(1);
+    expect(trialPhenotypeRefusalLine(m.phenotype, m.config)).toBe('1 of the 1 episode 6h or more after eating followed a refused meal.');
+  });
+
+  it('nothing without a refused bowl — never a "none followed" line', () => {
+    const m = buildTrialSoFar(scenario())!;
+    expect(m.phenotype.longAfterRefusalCount).toBe(0);
+    expect(trialPhenotypeRefusalLine(m.phenotype, m.config)).toBeNull();
+  });
+
+  it('a refusal outside the trial window is not counted: the window clips the episode, and the count with it', () => {
+    const base = scenario();
+    const m = buildTrialSoFar(
+      scenario({
+        vomitOnsets: [...base.vomitOnsets, { ms: at(91, 4), confidence: 'witnessed' }],
+        feedings: [...base.feedings, { ...refusedBefore, id: 'r0', ms: at(91, 3, 55) }],
+      }),
+    )!;
+    expect(m.phenotype.longAfterRefusalCount).toBe(0);
+  });
+});
+

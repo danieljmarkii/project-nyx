@@ -60,12 +60,14 @@ import {
   timingStoryClockLaneModel,
   timingStoryControlDisclosure,
   timingStoryMealLaneModel,
+  timingStoryRefusalLine,
   timingStorySampleLine,
   timingStoryVetLine,
   trialResponseCompareRows,
   trialResponseDayBadge,
   trialResponseDensityLine,
   trialResponseDietStructureLine,
+  trialResponseRefusalLine,
   trialResponseSampleLine,
   trialResponseTimedReconciliationLine,
   worseningNewSampleLine,
@@ -182,10 +184,14 @@ function TimingStoryBody({ cached, isLead }: InsightBodyProps) {
   // Registry-keyed, so this is always a story type; the guard narrows the union for the
   // copy helpers (and is a defensive null for an impossible call).
   if (!isTimingStory(finding)) return null;
+  // CUL-1195 — the long band's refused-bowl disclosure sits directly under the count it qualifies
+  // (null at zero: the face never says "none followed a refused meal").
+  const refusal = timingStoryRefusalLine(finding);
   return (
     <View style={styles.body}>
       <ThemedText style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</ThemedText>
       <StackedCompare rows={timingStoryBandRows(finding)} />
+      {refusal ? <ThemedText style={styles.sample}>{refusal}</ThemedText> : null}
       <View style={styles.metaRow}>
         <Badge label={TIMING_STORY_BADGE} variant="muted" />
         <ThemedText style={styles.sample}>{timingStorySampleLine(finding)}</ThemedText>
@@ -212,11 +218,14 @@ function TrialResponseBody({ cached, isLead }: InsightBodyProps) {
   // row, only when the timed bands don't already sum to the pooled lead (else null). It is what makes
   // the face foot: three bands (the timed episodes) + this remainder = the pooled count in the lead.
   const reconciliation = trialResponseTimedReconciliationLine(finding);
+  // CUL-1195 — the long row's refused-bowl subset, both windows (null when neither has one).
+  const refusal = trialResponseRefusalLine(finding);
   return (
     <View style={styles.body}>
       <ThemedText style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</ThemedText>
       <StackedCompare rows={trialResponseCompareRows(finding)} />
       {reconciliation ? <ThemedText style={styles.sample}>{reconciliation}</ThemedText> : null}
+      {refusal ? <ThemedText style={styles.sample}>{refusal}</ThemedText> : null}
       <View style={styles.metaRow}>
         <Badge label={trialResponseDayBadge(finding)} variant="muted" />
         <ThemedText style={styles.sample}>{trialResponseSampleLine(finding)}</ThemedText>
@@ -651,13 +660,15 @@ export function InsightCard({
   let receiptA11y: string | null = null;
   let faceMedLine: string | null = null;
   if (isTimingStory(cached.finding)) {
-    receiptA11y = stackedCompareA11yLabel(timingStoryBandRows(cached.finding));
+    const refusal = timingStoryRefusalLine(cached.finding);
+    receiptA11y = `${stackedCompareA11yLabel(timingStoryBandRows(cached.finding))}${refusal ? ` ${refusal}` : ''}`;
   } else if (isTrialResponse(cached.finding)) {
     // The trial card folds its band count rows, the B-766 un-timeable reconciliation (when present),
     // and the day badge into the label; its med line is in the EXPAND, not the face (unlike the ⑤/⑥
     // face med line), so it's not part of the collapsed label. VoiceOver hears the face foot too.
     const recon = trialResponseTimedReconciliationLine(cached.finding);
-    receiptA11y = `${stackedCompareA11yLabel(trialResponseCompareRows(cached.finding))}${recon ? ` ${recon}` : ''} ${trialResponseDayBadge(cached.finding)}.`;
+    const refusal = trialResponseRefusalLine(cached.finding);
+    receiptA11y = `${stackedCompareA11yLabel(trialResponseCompareRows(cached.finding))}${recon ? ` ${recon}` : ''}${refusal ? ` ${refusal}` : ''} ${trialResponseDayBadge(cached.finding)}.`;
   } else {
     receiptA11y = cardFaceReceiptA11y(cached.finding);
     faceMedLine = medContextLine(cached.finding);

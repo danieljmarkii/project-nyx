@@ -117,8 +117,13 @@ function countLine(finding: SignalFinding): string | null {
     }
     case 'postprandial_timing':
       return `${finding.rapidCount} of ${finding.eligibleCount} timed episodes within ${finding.rapidWindowMinutes} min of eating`;
-    case 'empty_stomach_timing':
-      return `${finding.longCount} of ${finding.eligibleCount} timed episodes, at least ${finding.longGapHours} hours after eating`;
+    case 'empty_stomach_timing': {
+      // CUL-1195 (provisional): the sentence's refused-bowl clause, beside the count it qualifies.
+      // Present-only, like the sentence: at zero the row says nothing about refusals.
+      const k = Math.min(finding.longAfterRefusalCount ?? 0, finding.longCount);
+      const refused = k >= 1 ? `; ${k} followed a refused meal` : '';
+      return `${finding.longCount} of ${finding.eligibleCount} timed episodes, at least ${finding.longGapHours} hours after eating${refused}`;
+    }
     case 'timeofday_clustering':
       return `${finding.clusterCount} of ${finding.eligibleCount} timed episodes`;
     case 'timing_story':
