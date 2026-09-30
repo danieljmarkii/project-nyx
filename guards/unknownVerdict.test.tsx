@@ -91,6 +91,7 @@ import {
 } from '../lib/incidentReadState';
 import { isEscalationVerdict, isQuietVerdict, QUIET_VERDICTS } from '../lib/incidentVerdict';
 import { isWorthACall, readVerdictOf } from '../lib/readState';
+import { TIER_WORDS, tierDisplayOf, type TierDisplay } from '../lib/incidentTierWords';
 import { blankComments } from './blankComments';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -115,6 +116,7 @@ const SURFACES: Record<string, string> = {
   'components/event/StoolAnalysisSection.tsx': 'the record screen: the stool twin',
   'lib/incidentReadState.ts': 'the CUL-812 rescue and the words, which both sections read',
   'lib/readState.ts': 'the predicate History, the month, Home’s spine and the Signal gallery draw through',
+  'lib/incidentTierWords.ts': 'the tier-word map (EN-3): decides which words stand for a row, on every surface',
 };
 
 /** Files that name the field and decide nothing about it: storage, not a reader. */
@@ -310,6 +312,24 @@ describe('lib/incidentReadState.ts — the rescue and the words', () => {
   it('a value that names a prototype member is not mistaken for a known verdict', () => {
     for (const verdict of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
       expect(incidentVerdictLabel(verdict)).toBe(INCIDENT_REC_LABEL.worth_a_call);
+    }
+  });
+});
+
+describe('lib/incidentTierWords.ts — the tier-word map', () => {
+  const ROWS = [
+    ...FUTURE.map((v) => ({ recommendation: v, tier: null })),
+    ...FUTURE.map((v) => ({ recommendation: 'monitor', tier: v })),
+    ...FUTURE.map((v) => ({ recommendation: v, tier: 'logged', engine_flags: ['engines_v3_en3'] })),
+    ...['toString', 'constructor', '__proto__'].map((v) => ({ recommendation: v, tier: null })),
+  ];
+  it('a value this build does not know, in either column, stands as a call at every status, never calm or blank', () => {
+    for (const row of ROWS) {
+      for (const status of [...STATUSES, ...FUTURE_STATUSES, null]) {
+        const display = tierDisplayOf({ ...row, status });
+        expect(display === 'worth_a_call' || display === 'call_now').toBe(true);
+        expect(TIER_WORDS[display as TierDisplay].call).toBe(true);
+      }
     }
   });
 });

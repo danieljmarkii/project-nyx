@@ -97,6 +97,15 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'reads no table, renders nothing, and an unknown verdict ranks as a call.',
   },
 
+  'lib/incidentTierWords.ts': {
+    kinds: ['field'],
+    why:
+      'The tier-WORD map (EN-3 PR-27, CUL-1133): the one file allowed to name a read, and ' +
+      'its resolver `tierDisplayOf`, which decides which words stand from a row’s status, ' +
+      'tier, verdict and stamps. Handed rows by readState and the record sections; reads ' +
+      'no table.',
+  },
+
   // ── The copy: its one module, and its DDL ──
   'lib/readCopy.ts': {
     kinds: ['server', 'copy', 'field'],
