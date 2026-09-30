@@ -521,6 +521,22 @@ export const PASS_LINES: readonly PassLine[] = [
     pairedWith: 'EN-11.culpritPersistence',
   },
   {
+    id: 'EN-11.culpritAbsent',
+    wave: 'EN-11',
+    firstFlagOnPr: 'EN-11',
+    measure: 'Hiding the culprit: on the two protein-reaction scenarios, evenings per pet-month carrying a food card that does not name the reacting protein at all, flag on against flag off. With culpritPersistence (the culprit alone) and foodPrecision (another protein named) this holds every class of a reacting pet\'s food evening. Cutting a hedge to one card, whichever card, raised detection and persistence and improved precision while taking the culprit off the screen on the evenings it guessed wrong (tenth adversarial pass).',
+    rows: [
+      'inj-protein-reaction-rr3/detect/a:food:beef/culpritAbsentEveningsPerPetMonth',
+      'inj-protein-reaction-hidden/detect/a:food:chicken/culpritAbsentEveningsPerPetMonth',
+    ],
+    aggregate: 'each',
+    comparison: 'flag_on_vs_flag_off',
+    direction: 'at_most',
+    value: null,
+    valueSource: 'The ruling sheet (E-6, CUL-583): the margin, in evenings per pet-month, unruled.',
+    pairedWith: 'EN-11.culpritPersistence',
+  },
+  {
     id: 'EN-11.falseFoodEvenings',
     wave: 'EN-11',
     firstFlagOnPr: 'EN-11',

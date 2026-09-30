@@ -27,9 +27,9 @@ import type { Scorecard } from './scorecard.ts'
 // seventh's (EN-11.wrongProteinEvenings), and the eighth's (food detection redefined as the
 // culprit alone, the PM's ruling; the two wrong-protein lines replaced by culpritPersistence and
 // foodPrecision, their rows kept as reporting), and the ninth's (a food detection is an EVENING
-// naming the culprit and nothing else).
+// naming the culprit and nothing else), and the tenth's (EN-11.culpritAbsent).
 // Every value but the two ruled ones is null.
-const PINNED = '2d7f9357cde87bee1249301bbd6403360d4a16924eb29843865728353b9bf34f'
+const PINNED = 'a30de2649d587cbaaaf2f8fee673df18c065673712c47fc3712c12b0b6687b04'
 
 async function digest(lines: readonly PassLine[]): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(lines)))
@@ -212,7 +212,7 @@ const EN11 = PASS_LINES.filter((l) => l.wave === 'EN-11').map((l) => ({
   ...l,
   value: l.value ?? ({ 'EN-11.detection': 0.02, 'EN-11.delay': 7, 'EN-11.eligible': 0, 'EN-11.falseWorsening': 0.02, 'EN-11.falseWorseningEvenings': 1,
     'EN-11.foodDetection': 0.02, 'EN-11.foodDelay': 7, 'EN-11.foodEligible': 0, 'EN-11.falseFood': 0.02, 'EN-11.falseFoodEvenings': 1,
-    'EN-11.culpritPersistence': 1, 'EN-11.foodPrecision': 0.02 } as Record<string, number>)[l.id],
+    'EN-11.culpritPersistence': 1, 'EN-11.foodPrecision': 0.02, 'EN-11.culpritAbsent': 1 } as Record<string, number>)[l.id],
 }))
 const rowsOf = (id: string) => line(id).rows
 
@@ -334,3 +334,18 @@ Deno.test('EN-11: piling proteins onto evenings that are already wrong fails on 
   assertEquals(results.find((r) => r.id === 'EN-11.foodPrecision')!.status, 'fail')
 })
 
+
+Deno.test('EN-11: cutting every hedge to one card raises detection and precision but fails on the culprit-absent line', () => {
+  // Tenth adversarial pass: half the hedged evenings became credited lone-culprit evenings, the
+  // other half lone wrong cards that took the culprit off the screen, and every other food line improved.
+  const capped = onArm({
+    ...Object.fromEntries(rowsOf('EN-11.foodDetection').map((k) => [k, Math.min(1, (committed.rows[k] as number) + 0.07)])),
+    ...Object.fromEntries(rowsOf('EN-11.culpritPersistence').map((k) => [k, (committed.rows[k] as number) + 1.5])),
+    ...Object.fromEntries(rowsOf('EN-11.foodPrecision').map((k) => [k, Math.max(0, (committed.rows[k] as number) - 0.1)])),
+    ...Object.fromEntries(rowsOf('EN-11.culpritAbsent').map((k) => [k, (committed.rows[k] as number) + 2])),
+  })
+  const results = evaluatePassLines(committed, capped, EN11)
+  for (const id of ['EN-11.foodDetection', 'EN-11.culpritPersistence', 'EN-11.foodPrecision']) assertEquals(results.find((r) => r.id === id)!.status, 'pass', id)
+  assertEquals(results.find((r) => r.id === 'EN-11.culpritAbsent')!.status, 'fail')
+  assertEquals(waveStatus(results, 'EN-11', EN11), 'fail')
+})

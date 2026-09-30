@@ -196,6 +196,15 @@ export interface DetectionScore {
   culpritAloneEveningsPerPetMonth: number | null
   /** Food entries only: of the evenings carrying a food card, the share whose cards name any other protein. Precision: showing fewer food evenings cannot lower it. */
   wrongShareOfFoodEvenings: number | null
+  /**
+   * Food entries only: evenings per pet-month, from the start, carrying a food card that does NOT
+   * name the culprit at all. With persistence (the culprit alone) and precision (any other protein
+   * named), this completes the partition of a reacting pet's food evenings: alone, hedged, absent.
+   * Cutting a hedge to one card turned half the hedged evenings into credited lone-culprit evenings
+   * and the other half into lone wrong cards that took the culprit off the screen, and no row
+   * counted those (tenth adversarial pass).
+   */
+  culpritAbsentEveningsPerPetMonth: number | null
 }
 
 export interface ScenarioScore {
@@ -302,10 +311,11 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
     wrongProteinEveningsPerPetMonth: null,
     culpritAloneEveningsPerPetMonth: null,
     wrongShareOfFoodEvenings: null,
+    culpritAbsentEveningsPerPetMonth: null,
   }))
   const detectDays: number[][] = sc.key.detect.map(() => [])
   const preRaise = sc.key.detect.map(() => ({ acked: 0, raised: 0 }))
-  const attribution = sc.key.detect.map(() => ({ runs: 0, wrong: 0, joint: 0, wrongEvenings: 0, evenings: 0, aloneEvenings: 0, foodEvenings: 0 }))
+  const attribution = sc.key.detect.map(() => ({ runs: 0, wrong: 0, joint: 0, wrongEvenings: 0, evenings: 0, aloneEvenings: 0, foodEvenings: 0, absentEvenings: 0 }))
   let redFlags: ScenarioScore['redFlags'] = null
   const reRaiseSigns = sc.key.falseCards.filter((f) => f.lane === 're_raise')
   const falseLanes = [...new Set(sc.key.falseCards.map((f) => f.lane).filter((l) => l !== 're_raise'))]
@@ -377,6 +387,7 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
           attribution[i].wrongEvenings += after.filter((ev) => foodOn(ev).some((c) => c.proteins.some((p) => p !== d.protein))).length
           attribution[i].foodEvenings += after.filter((ev) => foodOn(ev).length > 0).length
           attribution[i].aloneEvenings += after.filter((ev) => culpritAloneEvening(ev.cards, d)).length
+          attribution[i].absentEvenings += after.filter((ev) => foodOn(ev).length > 0 && !foodOn(ev).some((c) => c.proteins.includes(d.protein!))).length
           if (food.some((c) => c.proteins.some((p) => p !== d.protein))) attribution[i].wrong++
           if (food.some((c) => c.proteins.includes(d.protein!) && c.proteins.length > 1)) attribution[i].joint++
         }
@@ -495,6 +506,7 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
       d.wrongProteinEveningsPerPetMonth = attribution[i].evenings === 0 ? null : round(attribution[i].wrongEvenings / (attribution[i].evenings / DAYS_PER_MONTH))
       d.culpritAloneEveningsPerPetMonth = attribution[i].evenings === 0 ? null : round(attribution[i].aloneEvenings / (attribution[i].evenings / DAYS_PER_MONTH))
       d.wrongShareOfFoodEvenings = attribution[i].foodEvenings === 0 ? null : round(attribution[i].wrongEvenings / attribution[i].foodEvenings)
+      d.culpritAbsentEveningsPerPetMonth = attribution[i].evenings === 0 ? null : round(attribution[i].absentEvenings / (attribution[i].evenings / DAYS_PER_MONTH))
     }
   })
   const askPerPetMonth = Object.fromEntries(
@@ -603,6 +615,7 @@ export function buildScorecard(scores: readonly ScenarioScore[], meta: Scorecard
       if (d.wrongProteinEveningsPerPetMonth !== null) rows[`${p}/detect/${d.label}/wrongProteinEveningsPerPetMonth`] = d.wrongProteinEveningsPerPetMonth
       if (d.culpritAloneEveningsPerPetMonth !== null) rows[`${p}/detect/${d.label}/culpritAloneEveningsPerPetMonth`] = d.culpritAloneEveningsPerPetMonth
       if (d.wrongShareOfFoodEvenings !== null) rows[`${p}/detect/${d.label}/wrongShareOfFoodEvenings`] = d.wrongShareOfFoodEvenings
+      if (d.culpritAbsentEveningsPerPetMonth !== null) rows[`${p}/detect/${d.label}/culpritAbsentEveningsPerPetMonth`] = d.culpritAbsentEveningsPerPetMonth
       if (d.censored > 0) rows[`${p}/detect/${d.label}/censored`] = d.censored
       if (d.scoring === 'both_acknowledged' || d.lane === 're_raise') rows[`${p}/detect/${d.label}/neverAcknowledged`] = d.neverAcknowledged
     }

@@ -272,3 +272,23 @@ Deno.test('a lone culprit card beside a card for another protein on the same eve
   const twice = score((d) => (d >= 5 ? [[entry.protein!], [entry.protein!]] : []))
   assertEquals([twice.detected, twice.wrongShareOfFoodEvenings], [sc.ciSeeds.length, 0])
 })
+
+Deno.test('a reacting pet\'s food evenings partition into culprit alone, hedged, and culprit absent, and each is counted', () => {
+  const sc = scenarioById('inj-protein-reaction-rr3')
+  const entry = sc.key.detect.find((d) => d.lane === 'food')!
+  const label = `a:food:${entry.protein}`
+  const card = (proteins: string[]) => ({ petKey: 'a', findingType: 'food_symptom_correlation', sign: 'vomit' as const, ask: 'none' as const, priorityClass: 'insight', tier: 'established', proteins, direction: null })
+  const score = (cards: (day: number) => string[][]) => {
+    const runs = sc.ciSeeds.map((seed) => ({ scenario: sc, seed, result: simulate(sc, seed, (view) => cards(view.dayIndex).map(card)) }))
+    return scoreScenario(runs).detections.find((d) => d.label === label)!
+  }
+  // Thirds from day 30: alone, hedged (the culprit and lamb), absent (lamb alone).
+  const thirds = score((d) => (d < 30 ? [] : d % 3 === 0 ? [[entry.protein!]] : d % 3 === 1 ? [[entry.protein!], ['lamb']] : [['lamb']]))
+  const alone = thirds.culpritAloneEveningsPerPetMonth as number
+  const absent = thirds.culpritAbsentEveningsPerPetMonth as number
+  assert(alone > 0 && absent > 0 && Math.abs(alone - absent) <= 0.5, `${alone} ${absent}`)
+  // Two of every three food evenings name another protein: the hedged and the absent.
+  assert(Math.abs((thirds.wrongShareOfFoodEvenings as number) - 2 / 3) < 0.02, `${thirds.wrongShareOfFoodEvenings}`)
+  // The culprit alone never hides it.
+  assertEquals(score((d) => (d >= 5 ? [[entry.protein!]] : [])).culpritAbsentEveningsPerPetMonth, 0)
+})
