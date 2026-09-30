@@ -31,9 +31,12 @@ export type Wave = 'EN-9' | 'EN-8' | 'EN-3/4/7' | 'EN-11'
 /**
  * The engine keys a flag-on arm must have on for a wave's comparison to mean anything. An arm
  * that only differs from flag off by NAME (a key the Signal never reads, so its rows equal flag
- * off's) passed EN-11 and EN-3 by construction (third adversarial pass). Only engines_v3_en3
- * exists today (engineFlags.ts ENGINE_KEYS); the others are the names each wave's first PR adds,
- * and until then no arm can carry them, so those waves read `incomparable` against any arm.
+ * off's) passed EN-11 and EN-3 by construction (third adversarial pass). Of these, only
+ * engines_v3_en3 exists today (engineFlags.ts ENGINE_KEYS also holds en0 and en10, which no wave
+ * here names); the others are the names each wave's first PR adds, and until then no arm can carry
+ * them. A comparison arm carries EXACTLY its wave's keys: an arm bundling a second key, or moving one
+ * irrelevant row, let a no-op EN-11 pass every non-inferiority line (fifth adversarial pass). Waves
+ * that stack are compared prior-waves against prior-waves-plus-key, never against flag off (CUL-1441).
  */
 /**
  * Whether the harness runs the engine a wave's key changes. A key the observer never exercises
@@ -46,7 +49,9 @@ export type Wave = 'EN-9' | 'EN-8' | 'EN-3/4/7' | 'EN-11'
  */
 export const HARNESS_OBSERVES: Readonly<Record<Wave, boolean>> = {
   'EN-9': false,
-  'EN-8': true,
+  // False until rowsAt (syntheticRows.ts) feeds weights: today the engine gets none, so a weight
+  // lane would read zero false cards by construction (fifth adversarial pass).
+  'EN-8': false,
   'EN-3/4/7': false,
   'EN-11': true,
 }
@@ -207,6 +212,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'own-visit-then-doubling/detect/a:re_raise:vomit/neverAcknowledged',
       'own-visit-then-doubling/detect/a:re_raise:vomit/ackTooLate',
       'own-visit-doubling-fixed/detect/a:re_raise:vomit/ackTooLate',
+      'own-visit-doubling-fixed/detect/a:re_raise:vomit/neverAcknowledged',
     ],
     aggregate: 'each',
     comparison: 'flag_on_vs_flag_off',
@@ -404,6 +410,99 @@ export const PASS_LINES: readonly PassLine[] = [
     valueSource: 'The ruling sheet (E-6, CUL-583): the margin, in evenings per pet-month, unruled.',
     pairedWith: 'EN-11.delay',
   },
+  // The food lane: what EN-11 changes most (the Early tier, the test before a culprit card; CUL-1141,
+  // the step-change brief's P7 names food time-to-significance as its cost). Worsening-only lines
+  // passed an EN-11 that never caught a protein reaction and put a culprit card on every staple
+  // (fifth adversarial pass); added with the PM's approval, 2026-09-30.
+  {
+    id: 'EN-11.foodDetection',
+    wave: 'EN-11',
+    firstFlagOnPr: 'EN-11',
+    measure: 'Food culprit detection no worse than shipped: on the two protein-reaction scenarios (relative risk 3, one protein hidden in a food named for another), the share of clear pets shown a food card naming the reacting protein within 56 days, flag on against flag off.',
+    rows: [
+      'inj-protein-reaction-rr3/detect/a:food:beef/probability',
+      'inj-protein-reaction-hidden/detect/a:food:chicken/probability',
+    ],
+    nonVacuity: { rows: [
+      'inj-protein-reaction-rr3/detect/a:food:beef/eligible',
+      'inj-protein-reaction-hidden/detect/a:food:chicken/eligible',
+    ], min: 3, per: 'each' },
+    aggregate: 'each',
+    comparison: 'flag_on_vs_flag_off',
+    direction: 'at_least',
+    value: null,
+    valueSource: 'The ruling sheet (E-6, CUL-583): the non-inferiority margin, as a share, unruled. D5 (CUL-1141) may deliberately slow this (retiring Early); the margin is where that cost is ruled.',
+    pairedWith: 'EN-11.falseFood',
+  },
+  {
+    id: 'EN-11.foodDelay',
+    wave: 'EN-11',
+    firstFlagOnPr: 'EN-11',
+    measure: 'Food culprit detection delay: median days to that card, flag on against flag off.',
+    rows: [
+      'inj-protein-reaction-rr3/detect/a:food:beef/medianDays',
+      'inj-protein-reaction-hidden/detect/a:food:chicken/medianDays',
+    ],
+    nonVacuity: { rows: [
+      'inj-protein-reaction-rr3/detect/a:food:beef/eligible',
+      'inj-protein-reaction-hidden/detect/a:food:chicken/eligible',
+    ], min: 3, per: 'each' },
+    aggregate: 'each',
+    comparison: 'flag_on_vs_flag_off',
+    direction: 'at_most',
+    value: null,
+    valueSource: 'The ruling sheet (E-6, CUL-583): the margin, in days, unruled. The step-change brief puts retiring Early at about week 8 against about week 2 today.',
+    pairedWith: 'EN-11.falseFoodEvenings',
+  },
+  {
+    id: 'EN-11.foodEligible',
+    wave: 'EN-11',
+    firstFlagOnPr: 'EN-11',
+    measure: 'The pets the food lines score may not shrink: clear pets per protein-reaction scenario, flag on at least flag off less a tolerance.',
+    rows: [
+      'inj-protein-reaction-rr3/detect/a:food:beef/eligible',
+      'inj-protein-reaction-hidden/detect/a:food:chicken/eligible',
+    ],
+    aggregate: 'each',
+    comparison: 'flag_on_vs_flag_off',
+    direction: 'at_least',
+    value: null,
+    valueSource: 'A tolerance in pets, unruled (CUL-583), for the count-noise reason EN-11.eligible gives; retired by CUL-1441.',
+    pairedWith: 'EN-11.foodDetection',
+  },
+  {
+    id: 'EN-11.falseFood',
+    wave: 'EN-11',
+    firstFlagOnPr: 'EN-11',
+    measure: 'False culprit cards: null pets shown a food card within 180 days, worst null scenario and pooled, and the two staple feeders on their own (a staple is where a false culprit costs a vet the elimination diet), flag on against flag off.',
+    rows: [
+      'engine/null/falseLane/food/worst/180d',
+      'engine/null/falseLane/food/pooled/180d',
+      'null-staple-1pm/falseLane/food/180d',
+      'null-staple-3pm-bursty/falseLane/food/180d',
+    ],
+    aggregate: 'each',
+    comparison: 'flag_on_vs_flag_off',
+    direction: 'at_most',
+    value: null,
+    valueSource: 'The ruling sheet (E-6, CUL-583): the margin, as a share, unruled; D4 (E-4) sets the absolute chance-card budget separately.',
+    pairedWith: 'EN-11.foodDetection',
+  },
+  {
+    id: 'EN-11.falseFoodEvenings',
+    wave: 'EN-11',
+    firstFlagOnPr: 'EN-11',
+    measure: 'False culprit cards as a burden: evenings per pet-month the null pets carry a food card, pooled, flag on against flag off (the worst share is already 1.0 under flag off).',
+    rows: [
+      'engine/null/laneEveningsPerPetMonth/food',
+    ],
+    aggregate: 'each',
+    comparison: 'flag_on_vs_flag_off',
+    direction: 'at_most',
+    value: null,
+    valueSource: 'The ruling sheet (E-6, CUL-583): the margin, in evenings per pet-month, unruled.',
+    pairedWith: 'EN-11.foodDelay',
+  },
 ]
 
 export type LineStatus = 'pass' | 'fail' | 'unruled' | 'awaiting_flag_on' | 'incomplete' | 'incomparable'
@@ -454,7 +553,8 @@ export function evaluatePassLines(
     const rows = line.rows.map((key) => ({ key, off: off.rows[key], on: on ? on.rows[key] : undefined }))
     const armRows = (arm: Scorecard) => line.rows.map((k) => arm.rows[k])
     // The on arm must carry the wave's own keys: a name that differs is not an engine that differs.
-    if (!comparable || (on !== null && (!observes[line.wave] || !WAVE_KEYS[line.wave].every((k) => on.meta.flagsOn.includes(k))))) {
+    const exactKeys = on !== null && JSON.stringify([...on.meta.flagsOn].sort()) === JSON.stringify([...WAVE_KEYS[line.wave]].sort())
+    if (!comparable || (on !== null && (!observes[line.wave] || !exactKeys))) {
       return { id: line.id, status: 'incomparable', rows }
     }
     const readArm = on ?? off

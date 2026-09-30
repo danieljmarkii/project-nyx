@@ -322,7 +322,10 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
         if (d.petKey !== petKey) return
         const ackDay = d.sign ? truth.acks.find((a) => a.petKey === petKey && a.sign === d.sign)?.day : truth.acks.find((a) => a.petKey === petKey)?.day
         const from = startDay(d.from, ackDay)
-        if (from === undefined) {
+        // No acknowledgement: an acknowledgement-anchored start has no day, and a re-raise has
+        // nothing it raises again (a fixed-day doubling the engine never asked about was scored as
+        // a first raise and counted nowhere, fifth adversarial pass). Both are counted and left out.
+        if (from === undefined || (d.lane === 're_raise' && ackDay === undefined)) {
           detections[i].neverAcknowledged++
           return
         }
@@ -498,10 +501,10 @@ function wholeEngineRows(scores: readonly ScenarioScore[], rows: Record<string, 
   for (const r of [...REGISTERS, 'any' as const]) {
     rows[`engine/null/askPerPetMonth/${r}`] = round(nulls.reduce((a, s) => a + s.askPerPetMonth[r] * s.petEvenings, 0) / evenings)
   }
-  // How MANY evenings the null pets carry a worsening or burden card, pooled. A share-of-pets row
+  // How MANY evenings the null pets carry a worsening, burden or food card, pooled. A share-of-pets row
   // saturates (the worst null scenario is already at 1.0 under flag off), so an engine that never
   // stands a card down is visible only here (third adversarial pass).
-  for (const lane of ['worsening', 'burden'] as const) {
+  for (const lane of ['worsening', 'burden', 'food'] as const) {
     rows[`engine/null/laneEveningsPerPetMonth/${lane}`] = round(nulls.reduce((a, s) => a + (s.laneEveningsPerPetMonth[lane] ?? 0) * s.petEvenings, 0) / evenings)
   }
   const flags = scores.flatMap((s) => (s.redFlags ? [s.redFlags] : []))
@@ -531,7 +534,7 @@ export function buildScorecard(scores: readonly ScenarioScore[], meta: Scorecard
       if (d.raisedBeforeStart !== null) rows[`${p}/detect/${d.label}/raisedBeforeStart`] = d.raisedBeforeStart
       if (d.lane === 're_raise') rows[`${p}/detect/${d.label}/ackTooLate`] = d.ackTooLate
       if (d.censored > 0) rows[`${p}/detect/${d.label}/censored`] = d.censored
-      if (d.scoring === 'both_acknowledged') rows[`${p}/detect/${d.label}/neverAcknowledged`] = d.neverAcknowledged
+      if (d.scoring === 'both_acknowledged' || d.lane === 're_raise') rows[`${p}/detect/${d.label}/neverAcknowledged`] = d.neverAcknowledged
     }
     if (s.redFlags) {
       rows[`${p}/redFlag/injected`] = s.redFlags.injected
