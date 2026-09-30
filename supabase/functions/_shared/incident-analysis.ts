@@ -54,7 +54,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { fetchWithTimeout } from './http.ts'
 // Engines v3 (PR-11a, CUL-1267): the rollout flag, read fail-closed for the record's owner,
 // and the one writer of every stamp migration 075 added (the rule is on engineStamps.ts).
-import { isEngineKeyOn, type EngineFlags } from './engineFlags.ts'
+import { isEngineKeyOn, type EngineFlags, type EngineKey } from './engineFlags.ts'
 import { readEngineFlags } from './engineFlagsRead.ts'
 import { buildIncidentStamps, stampIncidentWrite, type IncidentStamps } from './engineStamps.ts'
 // The ONE quiet-verdict list, shared with the phone (CUL-1277). Every guard below that
@@ -72,6 +72,9 @@ import {
   tierForVerdict,
   tierRank,
 } from '../../../lib/incidentTier.ts'
+// EN-4's floor (Engines v3 PR-28): only its tier type is named here; the rule itself runs in
+// the vomit descriptor, which hands its answer over as ContextualRun.minTier.
+import type { FloorTier } from '../../../lib/incidentFloor.ts'
 
 export type { SupabaseClient }
 
@@ -241,6 +244,11 @@ export interface ContextualRun<TFlag extends string = string, TAnalysis = unknow
   // during the call, can outrank the model (Pattern 7: the owner's edit wins; R2, R2c).
   withdrawable?: TFlag[]
   afterRead?(analysis: TAnalysis | null, stored: Record<string, unknown> | null): { flags: TFlag[]; copy: IncidentCopy<TFlag> }
+  // Optional (EN-4, CUL-1134; the vomit floor under engines_v3_en4 only): the least call tier
+  // the record earns (lib/incidentFloor.ts). It can only RAISE the tier a write carries, and
+  // only on a write that escalates with a contextual flag, which the descriptor adds beside
+  // it; absent, every tier is the map's answer, exactly as before (tieredReadFields).
+  minTier?: FloorTier
 }
 
 // The post-read hook's answer, folded in: every pre-vision flag stays, in its order, and
@@ -354,8 +362,23 @@ export const TIER_ENGINE_KEY = 'engines_v3_en3' as const
 export function tieredReadFields<TFlag extends string>(
   readFields: AnalysisReadFields<TFlag>,
   tiersOn: boolean,
+  minTier?: FloorTier,
 ): AnalysisReadFields<TFlag> {
-  return tiersOn ? { ...readFields, tier: tierForVerdict(readFields.recommendation) } : readFields
+  if (!tiersOn) return readFields
+  return { ...readFields, tier: raisedTier(tierForVerdict(readFields.recommendation), readFields, minTier) }
+}
+
+// EN-4 (CUL-1134): the floor's call tier lifts a write's tier, never lowers it, and only on a
+// write that is a contextual escalation. A write whose contextual flags are gone (EN-7's
+// withdrawal, a partial-read collapse to not_enough_to_say) carries no floor: the floor's
+// answer was a reading of the flags it added, so without them it has nothing to stand on.
+export function raisedTier(
+  mapped: IncidentTier,
+  fields: { recommendation: Recommendation; contextual_flags: readonly string[] },
+  minTier: FloorTier | undefined,
+): IncidentTier {
+  if (!minTier || fields.recommendation !== 'worth_a_call' || fields.contextual_flags.length === 0) return mapped
+  return tierRank(minTier) > tierRank(mapped) ? minTier : mapped
 }
 
 export type TierReason = 'contextual' | 'visual' | 'model_only' | 'logged' | 'not_enough_to_say'
@@ -607,6 +630,9 @@ export function resolveReanalysisWrite<TFlag extends string>(params: {
   structuredValues: Record<string, unknown>
   nextPresentFlags: string[]
   readFields: AnalysisReadFields<TFlag>
+  // EN-4's floor-only write (CUL-1134): it read no photo, so it has no structured values of
+  // its own and writes the read columns alone, whatever the row. Absent, today's decision.
+  readFieldsOnly?: boolean
 }): ReanalysisWrite {
   const { stored, readFields } = params
   if (stored && holdsOver(stored, readFields)) {
@@ -624,7 +650,7 @@ export function resolveReanalysisWrite<TFlag extends string>(params: {
   const dropsStoredFlag = !!stored &&
     stored.presentFlags.some((flag) => !params.nextPresentFlags.includes(flag))
   return buildAnalysisWriteBack({
-    humanEdited: (stored?.edited ?? false) || dropsStoredFlag,
+    humanEdited: (params.readFieldsOnly === true && stored !== null) || (stored?.edited ?? false) || dropsStoredFlag,
     eventId: params.eventId,
     petId: params.petId,
     incidentType: params.incidentType,
@@ -817,9 +843,10 @@ export function buildRescueRead<TFlag extends string>(
 export function withRescueTier<TFlag extends string>(
   rescue: RescueRead<TFlag> | null,
   tiersOn: boolean,
+  minTier?: FloorTier,
 ): RescueRead<TFlag> | null {
   if (!rescue || !tiersOn) return rescue
-  return { ...rescue, tier: tierForVerdict(rescue.recommendation) }
+  return { ...rescue, tier: raisedTier(tierForVerdict(rescue.recommendation), rescue, minTier) }
 }
 
 // `existing` is the row read AT THE MOMENT OF THIS DECISION, not at step 3b — see
@@ -1189,6 +1216,10 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   // findings become flags or to the contextual flags' derivation: a row must say which
   // rules made it (critique R-1). Shape: [a-z0-9]+, e.g. 'vomit1'.
   ruleVersion: string
+  // Optional (EN-4, CUL-1134): the engine key that turns on this type's record-only floor and
+  // the 'floor' / 'refloor' request modes. Absent (stool), those modes are refused. With the
+  // key off for the owner they are refused too, before anything is written.
+  floorEngineKey?: EngineKey
   // Parse + sanitize the tool_use result into the per-type analysis; null when
   // the model returned no usable tool call.
   parseToolResult(response: ClaudeResponse): TAnalysis | null
@@ -1214,7 +1245,7 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   // escalation, the failure rescue) takes that copy; without one, `copy` below.
   computeContextualFlags(
     userClient: SupabaseClient,
-    event: { petId: string; occurredAt: string; species: string; eventType: string; engineFlags: EngineFlags },
+    event: { eventId: string; petId: string; occurredAt: string; species: string; eventType: string; engineFlags: EngineFlags },
   ): Promise<TFlag[] | ContextualRun<TFlag, TAnalysis>>
   // Per-type owner-facing read templates. Every new descriptor's strings need
   // their own reassurance-word regex test (Pattern 8) — not inherited.
@@ -1290,6 +1321,15 @@ interface RequestBody {
   // default-off, so analyze-vomit/analyze-stool behaviour is unchanged for every existing
   // caller — the regression proof (each function's index.test.ts passing unmodified) holds.
   transform_only?: boolean
+  // EN-4 (CUL-1134), refused unless the descriptor has a floor and its key is on for the
+  // record's owner:
+  //   'floor'   — the record's rules only, over the event: never a Storage download, a model
+  //               call or a cap unit. A photographed event whose photo has not been read yet
+  //               is left to that read; one already read is only ever RAISED.
+  //   'refloor' — event_id names a lethargy, meal or vomit log; every live vomit of that pet
+  //               in the 24 h before it is floored again, each as a 'floor' request.
+  // Absent: today's read, byte for byte.
+  mode?: 'floor' | 'refloor'
 }
 
 // The pipeline's three outside dependencies, injectable so a test can drive the REAL
@@ -1325,6 +1365,166 @@ export const LIVE_PIPELINE_DEPS: PipelineDeps = {
   vision: runVisionCall,
 }
 
+// ── EN-4's floor-only writes (Engines v3 PR-28, CUL-1134) ──────────────────────
+// docs/nyx-incident-tiers-requirements.md §8. Both are reached only through a request mode the
+// pipeline has already refused unless the descriptor has a floor and its key and the tier key
+// are on for the record's owner.
+
+// A floor-only run over a read the photo already produced. The record's rules may RAISE that
+// read and nothing else: with no contextual flag, or no tier and no flag the row does not
+// already carry, nothing is written. The words become the contextual template for the reason,
+// led by what the photo showed (from the stored visual flags, never the model's text: Pattern
+// 9 / 10), and the write goes through resolveReanalysisWrite (read columns only, the stored
+// structured fields and the owner's edits untouched, the stored tier kept when louder) and
+// applyAnalysisWriteBack, the one stamped sink. Exported for the pipeline suite.
+export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
+  descriptor: IncidentDescriptor<TAnalysis, TFlag>,
+  adminClient: SupabaseClient,
+  p: {
+    eventId: string
+    petId: string
+    incidentType: string
+    petName: string
+    contextualFlags: TFlag[]
+    copy: IncidentCopy<TFlag>
+    minTier: FloorTier | undefined
+    existing: StoredRow
+    stamps: IncidentStamps
+  },
+): Promise<Response> {
+  const nothing = () => Response.json({ success: true, skipped: 'nothing_raised' }, { headers: CORS_HEADERS })
+  if (p.contextualFlags.length === 0) return nothing()
+
+  // The two cached columns this run keeps: what the photo showed, and the flags already on
+  // the row (a floor-only run never takes a flag off the record).
+  const { data: cached, error: cachedErr } = await adminClient
+    .from('event_ai_analysis')
+    .select('visual_flags, contextual_flags')
+    .eq('event_id', p.eventId)
+    .eq('pet_id', p.petId)
+    .maybeSingle<{ visual_flags: string[] | null; contextual_flags: string[] | null }>()
+  if (cachedErr || !cached) throw new Error(`Floor read of the stored flags failed${cachedErr ? `: ${cachedErr.message}` : ''}`)
+  const storedContextual = (cached.contextual_flags ?? []) as TFlag[]
+  const visualFlags = cached.visual_flags ?? []
+  const contextual = [...storedContextual, ...p.contextualFlags.filter((f) => !storedContextual.includes(f))]
+
+  const next = raisedTier(tierForVerdict('worth_a_call'), { recommendation: 'worth_a_call', contextual_flags: contextual }, p.minTier)
+  const addsFlag = contextual.length > storedContextual.length
+  if (tierRank(next) <= effectiveTierRank(p.existing) && !addsFlag) return nothing()
+
+  const readFields: AnalysisReadFields<TFlag> = {
+    recommendation: 'worth_a_call',
+    tier: next,
+    read_text: selectReadText(p.copy, {
+      petName: p.petName,
+      recommendation: 'worth_a_call',
+      contextualFlags: contextual,
+      visualFlags,
+      modelReadText: null,
+      photoUnreadable: false,
+      hasPhoto: true,
+      // A stored call with no flag behind it was the model's own: the photo finding still leads.
+      modelEscalated: storedContextual.length === 0 && visualFlags.length === 0 && p.existing.recommendation === 'worth_a_call',
+    }),
+    visual_flags: visualFlags,
+    contextual_flags: contextual,
+    status: 'completed',
+    error: null,
+  }
+  const stored = snapshotStoredAnalysis(descriptor, p.existing)
+  const writeBack = resolveReanalysisWrite({
+    stored,
+    eventId: p.eventId,
+    petId: p.petId,
+    incidentType: p.incidentType,
+    structuredValues: {},
+    nextPresentFlags: stored?.presentFlags ?? [],
+    readFields,
+    readFieldsOnly: true,
+  })
+  if (writeBack.mode === 'hold') return nothing() // unreachable: this write always escalates
+  const { error } = await applyAnalysisWriteBack(adminClient, { eventId: p.eventId, petId: p.petId }, writeBack, p.stamps)
+  if (error) throw new Error(`DB write failed: ${error}`)
+  return Response.json(
+    { success: true, floor: true, recommendation: 'worth_a_call', tier: writeBack.values.tier ?? next },
+    { headers: CORS_HEADERS },
+  )
+}
+
+// The event types whose log re-floors the vomits before it (spec §8.3, §8.6): lethargy (T3),
+// a meal (a refusal is today's feline arm), and a vomit (a late-logged one counts for its
+// neighbours).
+export const REFLOOR_TRIGGER_TYPES = ['lethargy', 'meal', 'vomit'] as const
+export const REFLOOR_WINDOW_HOURS = 24
+
+// The 24-hour re-run. Each vomit goes through this same pipeline as a 'floor' request with the
+// caller's JWT, so it inherits every guard the floor-only mode has (the flag refusal, the
+// ownership-scoped event read, CUL-1203's row check, never-lower) and makes no Storage
+// download, no model call and no cap unit (pinned by the pipeline suite with a throwing
+// Storage and model). Sequential, so two vomits of one bout never race each other's reads.
+async function runRefloor<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
+  descriptor: IncidentDescriptor<TAnalysis, TFlag>,
+  req: Request,
+  deps: PipelineDeps,
+  authHeader: string,
+  triggerEventId: string,
+): Promise<Response> {
+  const userClient = deps.userClient(authHeader)
+  try {
+    const { data: { user }, error: authErr } = await userClient.auth.getUser()
+    if (authErr || !user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
+
+    const { data: trigger } = await userClient
+      .from('events')
+      .select('id, pet_id, event_type, occurred_at, pets(user_id)')
+      .eq('id', triggerEventId)
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (!trigger) return Response.json({ error: 'Event not found' }, { status: 404, headers: CORS_HEADERS })
+    if (!(REFLOOR_TRIGGER_TYPES as readonly string[]).includes(trigger.event_type as string)) {
+      return Response.json({ error: 'Event does not re-floor' }, { status: 400, headers: CORS_HEADERS })
+    }
+    const pet = (Array.isArray(trigger.pets) ? trigger.pets[0] : trigger.pets) as { user_id?: string | null } | null
+    const engineFlags = await readEngineFlags(userClient, typeof pet?.user_id === 'string' ? pet.user_id : null)
+    if (!(descriptor.floorEngineKey && isEngineKeyOn(engineFlags, descriptor.floorEngineKey) && isEngineKeyOn(engineFlags, TIER_ENGINE_KEY))) {
+      return Response.json({ success: true, skipped: 'floor_off' }, { headers: CORS_HEADERS })
+    }
+
+    const atMs = Date.parse(trigger.occurred_at as string)
+    if (!Number.isFinite(atMs)) return Response.json({ success: true, refloored: 0 }, { headers: CORS_HEADERS })
+    const { data: vomits, error: vomitErr } = await userClient
+      .from('events')
+      .select('id, occurred_at')
+      .eq('pet_id', trigger.pet_id as string)
+      .in('event_type', descriptor.eventTypes)
+      .is('deleted_at', null)
+      .gte('occurred_at', new Date(atMs - REFLOOR_WINDOW_HOURS * 3_600_000).toISOString())
+      .lte('occurred_at', new Date(atMs).toISOString())
+      .order('occurred_at', { ascending: true })
+      .order('id', { ascending: true })
+    if (vomitErr) throw new Error(`Re-floor read failed: ${vomitErr.message}`)
+
+    const results: { event_id: string; status: number }[] = []
+    for (const v of (vomits ?? []) as { id: string }[]) {
+      const res = await runIncidentAnalysis(
+        descriptor,
+        new Request(req.url, {
+          method: 'POST',
+          headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event_id: v.id, mode: 'floor' }),
+        }),
+        deps,
+      )
+      results.push({ event_id: v.id, status: res.status })
+    }
+    return Response.json({ success: true, refloored: results.length, results }, { headers: CORS_HEADERS })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error(`${descriptor.functionName} refloor error:`, message)
+    return Response.json({ error: 'Re-floor failed', detail: message }, { status: 500, headers: CORS_HEADERS })
+  }
+}
+
 export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
   descriptor: IncidentDescriptor<TAnalysis, TFlag>,
   req: Request,
@@ -1352,6 +1552,14 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // Transform-only opt-in (B-228 A8). Any non-`true` value keeps the shipped raw-for-small
   // fetch — so an untrusted/garbled body can only ever tighten the fetch, never loosen it.
   const forceTransform = body.transform_only === true
+  if (body.mode !== undefined && body.mode !== 'floor' && body.mode !== 'refloor') {
+    return Response.json({ error: 'Unknown mode' }, { status: 400, headers: CORS_HEADERS })
+  }
+  if (body.mode !== undefined && !descriptor.floorEngineKey) {
+    return Response.json({ error: 'This read has no floor-only mode' }, { status: 400, headers: CORS_HEADERS })
+  }
+  if (body.mode === 'refloor') return runRefloor(descriptor, req, deps, authHeader, eventId)
+  const floorOnly = body.mode === 'floor'
 
   const userClient = deps.userClient(authHeader)
   const adminClient = deps.adminClient()
@@ -1373,6 +1581,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   let stampsForFailure: IncidentStamps | null = null
   // Whether this run writes tiers (EN-3), for the same reason: the rescue writes one.
   let tiersOnForFailure = false
+  // EN-4's floor tier, for the same reason: a rescued call carries the tier the record earned.
+  let minTierForFailure: FloorTier | undefined
 
   // The stored row, read with every column a write decision switches on. Read twice:
   // at step 3b for the cap branch, and again at step 9, because the vision call
@@ -1442,6 +1652,13 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     const tiersOn = isEngineKeyOn(engineFlags, TIER_ENGINE_KEY)
     tiersOnForFailure = tiersOn
 
+    // 1c. EN-4's floor-only mode (CUL-1134) runs only under its key AND the tier key (the
+    //     floor's answer is a tier), for the owner. Refused here, before any read that could
+    //     lead to a write: flag-off never runs the floor-only path (spec §8.10).
+    if (floorOnly && !(descriptor.floorEngineKey && isEngineKeyOn(engineFlags, descriptor.floorEngineKey) && tiersOn)) {
+      return Response.json({ success: true, skipped: 'floor_off' }, { headers: CORS_HEADERS })
+    }
+
     // 2. Photo(s) for this event (ordered). May be empty (logged without a photo).
     const { data: attachments } = await userClient
       .from('event_attachments')
@@ -1473,6 +1690,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //    invariant the adversarial review must try to break.
     const contextRun = resolveContextualRun(
       await descriptor.computeContextualFlags(userClient, {
+        eventId,
         petId,
         occurredAt,
         species,
@@ -1485,6 +1703,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     let copy = contextRun.copy
     contextualFlagsForFailure = contextualFlags
     copyForFailure = copy
+    const minTier = contextRun.minTier
+    minTierForFailure = minTier
 
     // 3b. Existing analysis row — honors the never-clobber guard (B-028) in every
     //     write path below, and decides whether a cap/disabled STATE may be written
@@ -1504,6 +1724,21 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         { status: 409, headers: CORS_HEADERS },
       )
     }
+    // 3c. EN-4's floor-only run over a PHOTOGRAPHED event (CUL-1134). It never downloads the
+    //     photo, never calls the model, never spends a cap unit (spec §8.2, §8.6): everything
+    //     the photo said is already on the stored row. With no stored read the photo's own
+    //     read has not run yet, and that read computes this same floor, so this run leaves it
+    //     alone. A photo-less event goes on down the ordinary path, which makes none of those
+    //     three calls without a photo (steps 4 and 6 run only `if (hasPhoto)`).
+    if (floorOnly && hasPhoto) {
+      if (!existing) {
+        return Response.json({ success: true, skipped: 'photo_read_pending' }, { headers: CORS_HEADERS })
+      }
+      return await writeFloorOverStoredRead(descriptor, adminClient, {
+        eventId, petId, incidentType, petName, contextualFlags, copy, minTier, existing, stamps,
+      })
+    }
+
     const humanEdited = !!existing?.edited_at
     // A row holding an escalation is a real analysis whatever its STATUS says
     // (CUL-812; any escalation since CUL-1277) — `isRealAnalysis` carries the why.
@@ -1569,7 +1804,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           contextual_flags: contextualFlags,
           status: 'completed',
           error: null,
-        }, tiersOn)
+        }, tiersOn, minTier)
         // Under the tier key a capped call never steps a louder stored call down (spec §1,
         // the PR-04b note): it keeps the stored tier, from the step-3b row, because this branch
         // makes no vision call and so has no window for a sibling to land in.
@@ -1759,6 +1994,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     computedRead = withRescueTier(
       { recommendation, read_text: readText, visual_flags: visualFlags, contextual_flags: contextualFlags },
       tiersOn,
+      minTier,
     )
 
     // 9. Write-back. Never clobbers a human-edited row (Pattern 7), never lowers a
@@ -1772,7 +2008,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       contextual_flags: contextualFlags,
       status,
       error: null,
-    }, tiersOn)
+    }, tiersOn, minTier)
     if (readFields.tier) {
       console.info(`${descriptor.functionName}: tier ${readFields.tier} (${tierReasonOf({ ...readFields, tier: readFields.tier })})`)
     }
@@ -1861,6 +2097,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           hasPhoto: hasPhotoForFailure,
         }),
         tiersOnForFailure,
+        minTierForFailure,
       ),
       stamps: stampsForFailure,
     })

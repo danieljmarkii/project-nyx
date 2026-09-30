@@ -35,7 +35,12 @@ import { resolveAllowlistFlag } from './flags.ts'
 // engines_v3_en10: EN-10's context lines on the Signal (Engines v3 PR-22, CUL-1420): the
 // visit, trial and course lines beside a finding's counts, and the shell's one read of
 // `vet_visits` that feeds them. NOT SEEDED, like en3: absent reads as off.
-export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en10'] as const
+// engines_v3_en4: EN-4's floor on the vomit read (Engines v3 PR-28, CUL-1134): the louder
+// count, lethargy, dog and young-animal rows (lib/incidentFloor.ts) and the floor-only request
+// modes that run them on every vomit with no photo read. It acts only where engines_v3_en3
+// also writes tiers, since the floor's answer IS a tier. NOT SEEDED, like en3: absent reads
+// as off, and it goes live only after the real-vet review (CUL-1312).
+export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en4', 'engines_v3_en10'] as const
 export type EngineKey = typeof ENGINE_KEYS[number]
 
 // The keys the SIGNAL engine (generate-signal) reads that can change WHAT IT DETECTS. Empty
