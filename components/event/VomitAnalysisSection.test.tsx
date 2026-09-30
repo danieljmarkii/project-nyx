@@ -1549,19 +1549,26 @@ describe('VomitAnalysisSection — the tier (EN-3)', () => {
     await photoless.findByText('Call your vet today');
   });
 
-  it('CUL-819 (a): a call held over a read that did not finish says so, and its facts are the earlier read\'s', async () => {
-    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3, error: 'timeout', blood_present: 'none_visible' });
-    const { findByText, getByTestId, queryByText } = render(<VomitAnalysisSection eventId="t6" petId="pet-1" petName="Rex" hasPhoto />);
-    await findByText('Call your vet today');
-    expect(getByTestId('incident-read-disclosure').props.children).toBe('The latest read hit a problem. This call stands.');
-    expect(queryByText('From the earlier read')).toBeTruthy();
-    expect(queryByText("What's visible")).toBeNull();
+  it('an UNSTAMPED quiet verdict beside a call tier draws the rose, never a grey card (round 2)', async () => {
+    for (const [i, over] of [
+      { recommendation: 'monitor', tier: 'call_now', engine_flags: [], read_text: 'Looks like a hairball.' },
+      { recommendation: 'not_enough_to_say', tier: 'call_today', engine_flags: null },
+    ].entries()) {
+      mockRow = row(over);
+      for (const hasPhoto of [true, false]) {
+        const view = render(<VomitAnalysisSection eventId={`u${i}${hasPhoto}`} petId="pet-1" petName="Rex" hasPhoto={hasPhoto} />);
+        await view.findByText('Worth a call');
+        expect(flat(view.getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
+        view.unmount();
+      }
+    }
   });
 
-  it('CUL-819 (a): a rescued call (status failed) says the same line, claiming no source for the call', async () => {
-    mockRow = row({ status: 'failed', recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3, error: 'timeout' });
-    const { findByText, getByTestId } = render(<VomitAnalysisSection eventId="t7" petId="pet-1" petName="Rex" hasPhoto />);
+  it('CUL-819 (a) is withheld until the server clears a held call\'s error (CUL-1432): no line, today\'s heading', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3, error: 'timeout', blood_present: 'none_visible' });
+    const { findByText, queryByTestId, queryByText } = render(<VomitAnalysisSection eventId="t6" petId="pet-1" petName="Rex" hasPhoto />);
     await findByText('Call your vet today');
-    expect(getByTestId('incident-read-disclosure').props.children).toBe('The latest read hit a problem. This call stands.');
+    expect(queryByTestId('incident-read-disclosure')).toBeNull();
+    expect(queryByText("What's visible")).toBeTruthy();
   });
 });

@@ -51,9 +51,9 @@ import {
   incidentReadLabel,
   quietVerdictUnfinished,
 } from '../../lib/incidentReadState';
+import { isQuietVerdict } from '../../lib/incidentVerdict';
 import {
   EARLIER_READ_LABEL,
-  heldCallDisclosureOf,
   isCallRow,
   isTieredRow,
   TIER_WORDS,
@@ -603,16 +603,24 @@ export function StoolAnalysisSection(
     );
   }
 
-  // A call held only in `tier` (a writer bug or a rollback) has no verdict to pick the
-  // rail's tone; it is a call, so it takes the escalation's (the map's words carry the rest).
-  const rec = row.recommendation ?? 'worth_a_call';
+  // The verdict that picks the card's tone. A call held in the TIER beside a null or quiet
+  // verdict (a writer bug, a rolled-back build's write) is still a call, and on an
+  // unstamped row no tier tone is passed, so the verdict itself must say so: otherwise the
+  // card draws grey under "Worth a call" (adversarial pass on PR-27, round 2).
+  const rec = callStands && (row.recommendation === null || isQuietVerdict(row.recommendation))
+    ? 'worth_a_call'
+    : (row.recommendation ?? 'worth_a_call');
   const dismissed = !!row.dismissed_at;
   // EN-3 (CUL-1133): which words stand, through the one map. Null on an earlier-rule read's
   // tone/action (it keeps today's card), never null for a call.
   const tiered = isTieredRow(row);
   const display = tiered ? tierDisplayOf(row) : null;
-  // CUL-819 (a): a call left standing by a read that did not finish says so beside it.
-  const heldDisclosure = heldCallDisclosureOf(row);
+  // CUL-819 (a) is WITHHELD for now: the phone cannot tell a held call whose latest run
+  // failed from one whose later run finished calm and was held, because the server's hold
+  // writes nothing and leaves the old `error` standing (CUL-1432 item 8). A line known to be
+  // false in that case is not shipped; `heldCallDisclosureOf` (tested) is wired here when
+  // the server clears `error` on a hold. The call itself draws the same either way.
+  const heldDisclosure: string | null = null;
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
   const editedSet = new Set<EditableStoolField>(
