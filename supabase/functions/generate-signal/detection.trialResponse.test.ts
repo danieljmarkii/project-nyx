@@ -443,6 +443,26 @@ Deno.test('detectTrialResponse — CUL-1122: a REFUSED bowl never times a vomit;
   assert.equal(t.rapid.trial, 1, 'the trial-era vomit followed a bowl she ate')
   assert.equal(t.pooledBaselineCount, 16)
   assert.equal(t.pooledTrialCount, 1)
+  // CUL-1195: of the sixteen long baseline episodes, the eight re-timed ones followed a refused bowl,
+  // and the long row says so beside itself; the trial era's one vomit followed a bowl she ate.
+  assert.deepEqual(t.longAfterRefusal, { trial: 0, baseline: 8 })
+})
+
+Deno.test('detectTrialResponse — CUL-1195: the refused-bowl subset is zero on a record with no refusals', () => {
+  const f = detectTrialResponse(
+    trialInput({
+      mealEvents: mealsAcross(77, 0),
+      symptomEvents: [52, 50, 48, 46, 44, 42, 40, 38, 36, 34].map((d) => ({
+        id: nextId(),
+        type: 'vomit' as const,
+        occurredAt: new Date(NOW_MS - d * MS_PER_DAY - (12 - 15) * HOUR).toISOString(),
+        occurredAtConfidence: 'witnessed' as const,
+      })),
+    }),
+  )
+  assert.equal(f.length, 1)
+  assert.ok(f[0].long.baseline >= 1, 'non-vacuity: long episodes exist to be counted')
+  assert.deepEqual(f[0].longAfterRefusal, { trial: 0, baseline: 0 })
 })
 
 // ── Diet-structure context rows (treat share, meals/day) ─────────────────────
