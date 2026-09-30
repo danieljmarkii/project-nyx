@@ -15,6 +15,8 @@ export interface RunOptions {
   observer: () => Observer
   /** The arm's name for the file (e.g. 'flag_off'). */
   arm: string
+  /** The engine keys on in this arm, sorted; [] is flag off. A pass line compares only arms whose keys include its wave's. */
+  flagsOn: readonly string[]
   /** Seeds per scenario: the scenario's committed `ciSeeds` (CI), or a range for the offline check. */
   seeds: (scenario: ScenarioSpec) => readonly number[]
   /** A label for the seeds, written into the file. */
@@ -33,6 +35,6 @@ export function runCorpus(opts: RunOptions): { scores: ScenarioScore[]; scorecar
     scores.push(score)
     opts.onScenario?.(score)
   }
-  const scorecard = buildScorecard(scores, { arm: opts.arm, seeds: opts.seedsLabel, horizons: HORIZONS, scenarios: scenarios.length, scenarioIds: scenarios.map((s) => s.id) })
+  const scorecard = buildScorecard(scores, { arm: opts.arm, seeds: opts.seedsLabel, horizons: HORIZONS, scenarios: scenarios.length, scenarioIds: scenarios.map((s) => s.id), flagsOn: [...opts.flagsOn].sort() })
   return { scores, scorecard }
 }

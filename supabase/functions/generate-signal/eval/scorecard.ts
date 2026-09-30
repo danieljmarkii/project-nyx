@@ -139,6 +139,7 @@ export const DETECT_WINDOW_DAYS = 56
 
 export interface DetectionScore {
   label: string
+  lane: Lane
   scoring: 'paired' | 'both_acknowledged'
   /** Pet-runs the entry is scored on (for both_acknowledged: the ones that reached the acknowledgement). */
   eligible: number
@@ -154,6 +155,8 @@ export interface DetectionScore {
   /** re_raise only: of the acknowledged pet-runs, the share with an ask on the sign between the
    *  acknowledgement and the start (a re-raise with nothing to raise it). */
   raisedBeforeStart: number | null
+  /** re_raise only: pet-runs acknowledged too close to (or after) the start to score a re-raise. */
+  ackTooLate: number
 }
 
 export interface ScenarioScore {
@@ -245,6 +248,7 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
   }
   const detections: DetectionScore[] = sc.key.detect.map((d) => ({
     label: `${d.petKey}:${d.lane}${d.sign ? `:${d.sign}` : ''}${d.protein ? `:${d.protein}` : ''}`,
+    lane: d.lane,
     scoring: d.scoring,
     eligible: 0,
     detected: 0,
@@ -253,6 +257,7 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
     censored: 0,
     showingAtStart: 0,
     raisedBeforeStart: null,
+    ackTooLate: 0,
   }))
   const detectDays: number[][] = sc.key.detect.map(() => [])
   const preRaise = sc.key.detect.map(() => ({ acked: 0, raised: 0 }))
@@ -319,6 +324,14 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
         const from = startDay(d.from, ackDay)
         if (from === undefined) {
           detections[i].neverAcknowledged++
+          return
+        }
+        // A re-raise needs room: CLEAR quiet evenings between the acknowledgement and the start.
+        // When the owner acknowledged later than that (a fixed-day doubling acknowledged on or
+        // after day 83), the ask that led to the acknowledgement would be read as the re-raise
+        // (third adversarial pass), so the pet is left out and counted in `ackTooLate`.
+        if (d.lane === 're_raise' && ackDay !== undefined && ackDay + DETECT_CLEAR_EVENINGS >= from) {
+          detections[i].ackTooLate++
           return
         }
         // A re-raise with nothing to raise it: an ask on the sign after the acknowledgement and
@@ -456,7 +469,7 @@ export function round(x: number): number {
 
 export interface Scorecard {
   /** How the numbers were made: the arm, the seeds, the horizons. Never a timestamp (the file must reproduce). */
-  meta: { arm: string; seeds: string; horizons: readonly number[]; scenarios: number; scenarioIds: readonly string[] }
+  meta: { arm: string; seeds: string; horizons: readonly number[]; scenarios: number; scenarioIds: readonly string[]; flagsOn: readonly string[] }
   /** One flat key per number, so a diff is a list of rows and a mutation moves a named row. */
   rows: Record<string, number | null>
 }
@@ -485,6 +498,12 @@ function wholeEngineRows(scores: readonly ScenarioScore[], rows: Record<string, 
   for (const r of [...REGISTERS, 'any' as const]) {
     rows[`engine/null/askPerPetMonth/${r}`] = round(nulls.reduce((a, s) => a + s.askPerPetMonth[r] * s.petEvenings, 0) / evenings)
   }
+  // How MANY evenings the null pets carry a worsening or burden card, pooled. A share-of-pets row
+  // saturates (the worst null scenario is already at 1.0 under flag off), so an engine that never
+  // stands a card down is visible only here (third adversarial pass).
+  for (const lane of ['worsening', 'burden'] as const) {
+    rows[`engine/null/laneEveningsPerPetMonth/${lane}`] = round(nulls.reduce((a, s) => a + (s.laneEveningsPerPetMonth[lane] ?? 0) * s.petEvenings, 0) / evenings)
+  }
   const flags = scores.flatMap((s) => (s.redFlags ? [s.redFlags] : []))
   rows['engine/redFlag/injected'] = flags.reduce((a, f) => a + f.injected, 0)
   rows['engine/redFlag/belowShippedTier'] = flags.reduce((a, f) => a + f.below, 0)
@@ -510,6 +529,7 @@ export function buildScorecard(scores: readonly ScenarioScore[], meta: Scorecard
       rows[`${p}/detect/${d.label}/showingAtStart`] = d.showingAtStart
       rows[`${p}/detect/${d.label}/eligible`] = d.eligible
       if (d.raisedBeforeStart !== null) rows[`${p}/detect/${d.label}/raisedBeforeStart`] = d.raisedBeforeStart
+      if (d.lane === 're_raise') rows[`${p}/detect/${d.label}/ackTooLate`] = d.ackTooLate
       if (d.censored > 0) rows[`${p}/detect/${d.label}/censored`] = d.censored
       if (d.scoring === 'both_acknowledged') rows[`${p}/detect/${d.label}/neverAcknowledged`] = d.neverAcknowledged
     }

@@ -30,8 +30,8 @@ const observer = () => makeSignalObserver({ askOf: standInAsk })
 
 Deno.test('the same seeds give the same scorecard, byte for byte', () => {
   const scenarios = [scenarioById('null-staple-1pm'), scenarioById('inj-red-flag')]
-  const a = runCorpus({ observer, arm: 'flag_off', seeds: (s) => s.ciSeeds.slice(0, 1), seedsLabel: 'first', scenarios })
-  const b = runCorpus({ observer, arm: 'flag_off', seeds: (s) => s.ciSeeds.slice(0, 1), seedsLabel: 'first', scenarios })
+  const a = runCorpus({ observer, arm: 'flag_off', flagsOn: [], seeds: (s) => s.ciSeeds.slice(0, 1), seedsLabel: 'first', scenarios })
+  const b = runCorpus({ observer, arm: 'flag_off', flagsOn: [], seeds: (s) => s.ciSeeds.slice(0, 1), seedsLabel: 'first', scenarios })
   assertEquals(JSON.stringify(a.scorecard), JSON.stringify(b.scorecard))
   assert(Object.keys(a.scorecard.rows).length > 20, 'the run measured something')
 })
@@ -123,19 +123,19 @@ function demoting(pred: (c: ShownCard) => boolean): () => Observer {
 Deno.test('the red-flag property: a dropped or demoted red flag is counted below its shipped tier', () => {
   const sc = scenarioById('inj-red-flag')
   const seeds = () => sc.ciSeeds
-  const shipped = runCorpus({ observer, arm: 'off', seeds, seedsLabel: 'ci', scenarios: [sc] }).scorecard
+  const shipped = runCorpus({ observer, arm: 'off', flagsOn: [], seeds, seedsLabel: 'ci', scenarios: [sc] }).scorecard
   assert((shipped.rows['engine/redFlag/injected'] as number) >= 1, 'a seed carries a red flag')
   assertEquals(shipped.rows['engine/redFlag/belowShippedTier'], 0)
   const isFlag = (c: ShownCard) => c.findingType === 'incident_red_flag'
   for (const broken of [dropping(isFlag), demoting(isFlag)]) {
-    const card = runCorpus({ observer: broken, arm: 'off', seeds, seedsLabel: 'ci', scenarios: [sc] }).scorecard
+    const card = runCorpus({ observer: broken, arm: 'off', flagsOn: [], seeds, seedsLabel: 'ci', scenarios: [sc] }).scorecard
     assertEquals(card.rows['engine/redFlag/belowShippedTier'], shipped.rows['engine/redFlag/injected'])
   }
 })
 
 Deno.test('a detection the engine loses moves its probability row, and the diff names it', () => {
   const sc = scenarioById('inj-enteropathy-onset')
-  const run = (obs: () => Observer) => runCorpus({ observer: obs, arm: 'off', seeds: () => sc.ciSeeds.slice(0, 1), seedsLabel: 'first', scenarios: [sc] }).scorecard
+  const run = (obs: () => Observer) => runCorpus({ observer: obs, arm: 'off', flagsOn: [], seeds: () => sc.ciSeeds.slice(0, 1), seedsLabel: 'first', scenarios: [sc] }).scorecard
   const shipped = run(observer)
   const key = Object.keys(shipped.rows).find((k) => /\/detect\/a:chronic:vomit\/probability$/.test(k))!
   assert(key && (shipped.rows[key] as number) > 0, `${key} is detected by the shipped engine`)
@@ -164,7 +164,7 @@ Deno.test('a false card on a null pet moves its false-card, lane, safety and who
   assertEquals(score.laneShare[180].chronic, 1)
   assertEquals(score.safetyShare[180], 1)
   assertEquals(score.medianDaysToFirstSafety !== null && score.medianDaysToFirstSafety <= 30, true)
-  const card = buildScorecard([score], { arm: 'x', seeds: 'ci', horizons: [180, 365], scenarios: 1, scenarioIds: ['null-staple-1pm'] })
+  const card = buildScorecard([score], { arm: 'x', seeds: 'ci', horizons: [180, 365], scenarios: 1, scenarioIds: ['null-staple-1pm'], flagsOn: [] })
   assertEquals(card.rows['null-staple-1pm/falseCard/180d'], 1)
   assertEquals(card.rows['engine/null/falseCard/worst/180d'], 1)
 })
@@ -195,4 +195,24 @@ Deno.test('detection scores only pets clear before the start: a standing card, o
   // Clear, and nothing until after the detection window: a miss, not a slow detection.
   const late = score((d) => d >= from + DETECT_WINDOW_DAYS + 1)
   assertEquals([late.eligible, late.detected], [sc.ciSeeds.length, 0])
+})
+
+Deno.test('a re-raise is never read off the ask that led to a late acknowledgement', () => {
+  // Third adversarial pass: the fixed-day doubling (start day 90), the engine asking days 80 to 94,
+  // the acknowledgement on day 95, and nothing after. That pre-acknowledgement ask was scored as a
+  // day-0 re-raise; now the pet is left out and counted.
+  const sc = scenarioById('own-visit-doubling-fixed')
+  const entry = sc.key.detect.find((d) => d.lane === 're_raise')!
+  assert('day' in entry.from)
+  const from = entry.from.day
+  const ask = { petKey: 'a', findingType: 'symptom_chronicity', sign: 'vomit' as const, ask: 'book_visit' as const, priorityClass: 'safety', tier: 'firm', proteins: [], direction: null }
+  const late = from + 5
+  const runs = sc.ciSeeds.map((seed) => {
+    const result = simulate(sc, seed, () => [])
+    result.shown = result.shown.map((ev) => ({ ...ev, cards: ev.day >= from - 10 && ev.day < late ? [ask] : [] }))
+    result.truth.acks = [{ petKey: 'a', sign: 'vomit', day: late, via: 'visit' }]
+    return { scenario: sc, seed, result }
+  })
+  const d = scoreScenario(runs).detections.find((x) => x.label === 'a:re_raise:vomit')!
+  assertEquals([d.ackTooLate, d.eligible, d.detected, d.raisedBeforeStart], [sc.ciSeeds.length, 0, 0, null])
 })

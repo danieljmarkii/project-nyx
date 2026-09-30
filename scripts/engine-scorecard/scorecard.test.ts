@@ -40,6 +40,7 @@ test('a loosened floor visibly moves its row: chronicity at 2 episodes instead o
     runCorpus({
       observer: () => makeSignalObserver({ askOf: (f) => signalHomeLine(f as unknown as SignalFinding)?.ask ?? null }),
       arm: 'flag_off',
+      flagsOn: [],
       seeds: (s) => s.ciSeeds.slice(0, 1),
       seedsLabel: 'first',
       scenarios: [sc],

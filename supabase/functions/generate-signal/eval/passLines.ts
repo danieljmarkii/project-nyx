@@ -28,6 +28,20 @@ import { laneCanMatch, type Scorecard } from './scorecard.ts'
 
 export type Wave = 'EN-9' | 'EN-8' | 'EN-3/4/7' | 'EN-11'
 
+/**
+ * The engine keys a flag-on arm must have on for a wave's comparison to mean anything. An arm
+ * that only differs from flag off by NAME (a key the Signal never reads, so its rows equal flag
+ * off's) passed EN-11 and EN-3 by construction (third adversarial pass). Only engines_v3_en3
+ * exists today (engineFlags.ts ENGINE_KEYS); the others are the names each wave's first PR adds,
+ * and until then no arm can carry them, so those waves read `incomparable` against any arm.
+ */
+export const WAVE_KEYS: Readonly<Record<Wave, readonly string[]>> = {
+  'EN-9': ['engines_v3_en9'],
+  'EN-8': ['engines_v3_en8'],
+  'EN-3/4/7': ['engines_v3_en3'],
+  'EN-11': ['engines_v3_en11'],
+}
+
 export interface PassLine {
   id: string
   wave: Wave
@@ -37,8 +51,9 @@ export interface PassLine {
   measure: string
   /** The scorecard rows this line reads, by exact key. passLines.test.ts asserts each exists. */
   rows: readonly string[]
-  /** A row that must reach `min` for the line to mean anything (a zero over nothing injected is no proof). */
-  nonVacuity?: { row: string; min: number }
+  /** Rows whose SUM in the arm read must reach `min` for the line to mean anything: a zero over
+   *  nothing injected, a rate over no scored pets, a re-raise share over one acknowledged cat, is no proof. */
+  nonVacuity?: { rows: readonly string[]; min: number }
   /** The answer-key lane the rows score. A lane no card can answer yet (`laneCanMatch`) makes the line `incomplete`. */
   needsLane?: Lane
   /** How the rows are summarised across scenarios: the worst scenario, or every row on its own. */
@@ -68,6 +83,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'own-answers-vet-knows/care/reRaisedWithin8Weeks',
       'own-visit-with-recheck/care/reRaisedWithin8Weeks',
     ],
+    nonVacuity: { rows: ['own-answers-vet-knows/care/acknowledged', 'own-visit-with-recheck/care/acknowledged'], min: 3 },
     aggregate: 'worst',
     comparison: 'absolute',
     direction: 'at_most',
@@ -84,6 +100,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'own-visit-then-doubling/detect/a:re_raise:vomit/probability',
       'own-visit-doubling-fixed/detect/a:re_raise:vomit/probability',
     ],
+    nonVacuity: { rows: ['own-visit-then-doubling/detect/a:re_raise:vomit/eligible', 'own-visit-doubling-fixed/detect/a:re_raise:vomit/eligible'], min: 3 },
     aggregate: 'each',
     comparison: 'absolute',
     direction: 'at_least',
@@ -100,6 +117,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'own-visit-then-doubling/detect/a:re_raise:vomit/medianDays',
       'own-visit-doubling-fixed/detect/a:re_raise:vomit/medianDays',
     ],
+    nonVacuity: { rows: ['own-visit-then-doubling/detect/a:re_raise:vomit/eligible', 'own-visit-doubling-fixed/detect/a:re_raise:vomit/eligible'], min: 3 },
     aggregate: 'each',
     comparison: 'absolute',
     direction: 'at_most',
@@ -116,6 +134,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'own-answers-vet-knows/care/medianLongestSilentRun',
       'own-visit-with-recheck/care/medianLongestSilentRun',
     ],
+    nonVacuity: { rows: ['own-answers-vet-knows/care/acknowledged', 'own-visit-with-recheck/care/acknowledged'], min: 3 },
     aggregate: 'worst',
     comparison: 'absolute',
     direction: 'at_most',
@@ -134,6 +153,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'own-visit-then-doubling/detect/a:re_raise:vomit/raisedBeforeStart',
       'own-visit-doubling-fixed/detect/a:re_raise:vomit/raisedBeforeStart',
     ],
+    nonVacuity: { rows: ['own-answers-vet-knows/care/acknowledged', 'own-visit-with-recheck/care/acknowledged'], min: 3 },
     aggregate: 'worst',
     comparison: 'absolute',
     direction: 'at_most',
@@ -150,6 +170,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'own-answers-vet-knows/care/askPerPetMonthAfterAck',
       'own-visit-with-recheck/care/askPerPetMonthAfterAck',
     ],
+    nonVacuity: { rows: ['own-answers-vet-knows/care/acknowledged', 'own-visit-with-recheck/care/acknowledged'], min: 3 },
     aggregate: 'worst',
     comparison: 'absolute',
     direction: 'at_most',
@@ -221,7 +242,7 @@ export const PASS_LINES: readonly PassLine[] = [
       'engine/redFlag/belowShippedTier',
     ],
     // Three is what CI seeds carry (one scenario); the go-live size carries hundreds.
-    nonVacuity: { row: 'engine/redFlag/injected', min: 3 },
+    nonVacuity: { rows: ['engine/redFlag/injected'], min: 3 },
     aggregate: 'each',
     comparison: 'absolute',
     direction: 'zero',
@@ -245,33 +266,80 @@ export const PASS_LINES: readonly PassLine[] = [
     pairedWith: 'EN-3.redFlagTier',
   },
   // ── EN-11, insight honesty ──
+  // Detection is split by unit (a share and a count of days never share one margin: a days-sized
+  // margin passed a 1.0 → 0 detection loss, third adversarial pass), and each half is paired with
+  // a false-card cost, and the pets scored may not shrink.
   {
-    id: 'EN-11.worsening',
+    id: 'EN-11.detection',
     wave: 'EN-11',
     firstFlagOnPr: 'EN-11',
-    measure: 'Worsening detection no slower than shipped: on every injected scenario the key scores for worsening, the probability of a worsening (or burden) card and its median delay, flag on against flag off over the same seeds.',
+    measure: 'Worsening detection no worse than shipped: on every injected scenario the key scores for worsening, the share of clear pets shown a worsening (or burden) card within 56 days of the rise, flag on against flag off over the same seeds.',
     rows: [
       'inj-enteropathy-onset/detect/a:worsening:vomit/probability',
-      'inj-enteropathy-onset/detect/a:worsening:vomit/medianDays',
       'inj-enteropathy-onset/detect/a:worsening:diarrhea/probability',
-      'inj-enteropathy-onset/detect/a:worsening:diarrhea/medianDays',
       'inj-rate-doubling/detect/a:worsening:vomit/probability',
-      'inj-rate-doubling/detect/a:worsening:vomit/medianDays',
       'inj-kennel-cough-gag/detect/a:worsening:cough/probability',
+    ],
+    nonVacuity: { rows: [
+      'inj-enteropathy-onset/detect/a:worsening:vomit/eligible',
+      'inj-enteropathy-onset/detect/a:worsening:diarrhea/eligible',
+      'inj-rate-doubling/detect/a:worsening:vomit/eligible',
+      'inj-kennel-cough-gag/detect/a:worsening:cough/eligible',
+    ], min: 3 },
+    aggregate: 'each',
+    comparison: 'flag_on_vs_flag_off',
+    direction: 'at_least',
+    value: null,
+    valueSource: 'E-6 amended: detection no worse than shipped. The non-inferiority margin, as a share, is unruled (CUL-583).',
+    pairedWith: 'EN-11.falseWorsening',
+  },
+  {
+    id: 'EN-11.delay',
+    wave: 'EN-11',
+    firstFlagOnPr: 'EN-11',
+    measure: 'Worsening detection no slower than shipped: the median days from the rise to that card, flag on against flag off.',
+    rows: [
+      'inj-enteropathy-onset/detect/a:worsening:vomit/medianDays',
+      'inj-enteropathy-onset/detect/a:worsening:diarrhea/medianDays',
+      'inj-rate-doubling/detect/a:worsening:vomit/medianDays',
       'inj-kennel-cough-gag/detect/a:worsening:cough/medianDays',
     ],
+    nonVacuity: { rows: [
+      'inj-enteropathy-onset/detect/a:worsening:vomit/eligible',
+      'inj-enteropathy-onset/detect/a:worsening:diarrhea/eligible',
+      'inj-rate-doubling/detect/a:worsening:vomit/eligible',
+      'inj-kennel-cough-gag/detect/a:worsening:cough/eligible',
+    ], min: 3 },
     aggregate: 'each',
     comparison: 'flag_on_vs_flag_off',
     direction: 'at_most',
     value: null,
-    valueSource: 'E-6 amended: detection no worse than shipped. The non-inferiority margin is unruled (CUL-583). A probability row passes at flag-off minus the margin or better; a days row at flag-off plus the margin or better.',
-    pairedWith: 'EN-11.falseWorsening',
+    valueSource: 'E-6 amended: detection no slower than shipped. The margin, in days, is unruled (CUL-583).',
+    pairedWith: 'EN-11.falseWorseningEvenings',
+  },
+  {
+    id: 'EN-11.eligible',
+    wave: 'EN-11',
+    firstFlagOnPr: 'EN-11',
+    measure: 'The pets the detection lines score may not shrink: clear pets (no worsening card in the week before the rise) per injected scenario, flag on at least flag off. An engine that never stands a card down leaves fewer clear pets and raised its own detection share (third adversarial pass).',
+    rows: [
+      'inj-enteropathy-onset/detect/a:worsening:vomit/eligible',
+      'inj-enteropathy-onset/detect/a:worsening:diarrhea/eligible',
+      'inj-rate-doubling/detect/a:worsening:vomit/eligible',
+      'inj-kennel-cough-gag/detect/a:worsening:cough/eligible',
+    ],
+    aggregate: 'each',
+    comparison: 'flag_on_vs_flag_off',
+    direction: 'at_least',
+    value: 0,
+    valueSource: 'Structural, not a clinical threshold: the comparison is only honest over at least the pets flag off scored.',
+    pairedWith: 'EN-11.detection',
   },
   {
     id: 'EN-11.falseWorsening',
     wave: 'EN-11',
     firstFlagOnPr: 'EN-11',
-    measure: 'The false-card cost of that detection: the share of null pets shown a worsening (or burden) card within 180 days, worst null scenario and pooled, flag on against flag off. Without it a noisier engine passes EN-11.worsening (second adversarial pass).',
+    measure: 'The false-card cost of detection, as a share: null pets shown a worsening (or burden) card within 180 days, worst null scenario and pooled, flag on against flag off.',
     rows: [
       'engine/null/falseLane/worsening/worst/180d',
       'engine/null/falseLane/worsening/pooled/180d',
@@ -280,8 +348,24 @@ export const PASS_LINES: readonly PassLine[] = [
     comparison: 'flag_on_vs_flag_off',
     direction: 'at_most',
     value: null,
-    valueSource: 'The ruling sheet (E-6, CUL-583): the margin by which EN-11 may raise false worsening cards, unruled.',
-    pairedWith: 'EN-11.worsening',
+    valueSource: 'The ruling sheet (E-6, CUL-583): the margin, as a share, by which EN-11 may raise false worsening cards, unruled.',
+    pairedWith: 'EN-11.detection',
+  },
+  {
+    id: 'EN-11.falseWorseningEvenings',
+    wave: 'EN-11',
+    firstFlagOnPr: 'EN-11',
+    measure: 'The false-card cost as a burden: evenings per pet-month the null pets carry a worsening or a burden card, pooled, flag on against flag off. The share above saturates (its worst row is 1.0 under flag off); this one does not, and an engine that never stands a card down moved it twentyfold.',
+    rows: [
+      'engine/null/laneEveningsPerPetMonth/worsening',
+      'engine/null/laneEveningsPerPetMonth/burden',
+    ],
+    aggregate: 'each',
+    comparison: 'flag_on_vs_flag_off',
+    direction: 'at_most',
+    value: null,
+    valueSource: 'The ruling sheet (E-6, CUL-583): the margin, in evenings per pet-month, unruled.',
+    pairedWith: 'EN-11.delay',
   },
 ]
 
@@ -316,6 +400,7 @@ export function evaluatePassLines(off: Scorecard, on: Scorecard | null = null, l
   // both arms passed every ruled comparison (second adversarial pass).
   const comparable = on === null || (
     off.meta.arm === 'flag_off' &&
+    off.meta.flagsOn.length === 0 &&
     on.meta.arm !== off.meta.arm &&
     on.meta.seeds === off.meta.seeds &&
     JSON.stringify(on.meta.scenarioIds) === JSON.stringify(off.meta.scenarioIds)
@@ -323,19 +408,21 @@ export function evaluatePassLines(off: Scorecard, on: Scorecard | null = null, l
   return lines.map((line) => {
     const rows = line.rows.map((key) => ({ key, off: off.rows[key], on: on ? on.rows[key] : undefined }))
     const armRows = (arm: Scorecard) => line.rows.map((k) => arm.rows[k])
-    if (!comparable) return { id: line.id, status: 'incomparable', rows }
+    // The on arm must carry the wave's own keys: a name that differs is not an engine that differs.
+    if (!comparable || (on !== null && !WAVE_KEYS[line.wave].every((k) => on.meta.flagsOn.includes(k)))) return { id: line.id, status: 'incomparable', rows }
+    const readArm = on ?? off
+    const floor = line.nonVacuity === undefined ? undefined : line.nonVacuity.rows.reduce((a, k) => a + (typeof readArm.rows[k] === 'number' ? (readArm.rows[k] as number) : 0), 0)
+    const vacuous = line.nonVacuity !== undefined && (floor as number) < line.nonVacuity.min
     if (line.needsLane !== undefined && !laneCanMatch(line.needsLane)) return { id: line.id, status: 'incomplete', rows }
     if (line.direction === 'zero') {
       const arm = on ?? off
       const values = armRows(arm)
-      const injected = line.nonVacuity === undefined ? undefined : arm.rows[line.nonVacuity.row]
-      const vacuous = line.nonVacuity !== undefined && (typeof injected !== 'number' || injected < line.nonVacuity.min)
       if (values.some((v) => v === undefined || v === null) || vacuous) return { id: line.id, status: 'incomplete', rows }
       return { id: line.id, status: values.every((v) => v === 0) ? 'pass' : 'fail', rows }
     }
     if (on === null) return { id: line.id, status: 'awaiting_flag_on', rows }
     if (line.value === null) return { id: line.id, status: 'unruled', rows }
-    if (rows.some((r) => r.on === undefined || r.off === undefined)) return { id: line.id, status: 'incomplete', rows }
+    if (rows.some((r) => r.on === undefined || r.off === undefined) || vacuous) return { id: line.id, status: 'incomplete', rows }
     if (line.comparison === 'absolute') {
       if (rows.some((r) => r.on === null)) return { id: line.id, status: 'incomplete', rows }
       const onValues = rows.map((r) => r.on as number)

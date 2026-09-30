@@ -11,14 +11,16 @@
 // "incomplete" forever and read as coverage (C-38). This fails instead.
 
 import { assert, assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
-import { evaluatePassLines, PASS_LINES, waveStatus, type PassLine } from './passLines.ts'
+import { evaluatePassLines, PASS_LINES, WAVE_KEYS, waveStatus, type PassLine } from './passLines.ts'
 import type { Scorecard } from './scorecard.ts'
 
 // Pinned 2026-09-30, PR-16 (CUL-1131): the lines as the 9/26 plan review ruled them (the
 // measures, comparisons and directions), with the second adversarial pass's additions approved
 // by the PM in session the same day (EN-9.reRaiseEver, EN-9.askAfterAck, EN-11.falseWorsening,
-// EN-8's lane gate, the red-flag floor of 3). Every value but the two ruled ones is null.
-const PINNED = 'b87e42acd05b156ec9fdf173f16a734b9f08c44f212053fecc6867cc7403fc8b'
+// EN-8's lane gate, the red-flag floor of 3), and the third pass's (WAVE_KEYS, EN-11 split by
+// unit into detection and delay, EN-11.eligible, EN-11.falseWorseningEvenings, the floors on
+// scored pets and acknowledged cats). Every value but the three ruled ones is null.
+const PINNED = 'a36a15cab8e79aaa58e6a99b2aa1910b0bd348ef8db2326ce2a9f3d6741d3061'
 
 async function digest(lines: readonly PassLine[]): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(lines)))
@@ -28,9 +30,11 @@ async function digest(lines: readonly PassLine[]): Promise<string> {
 const committed: Scorecard = JSON.parse(Deno.readTextFileSync(new URL('./scorecard.json', import.meta.url)))
 const line = (id: string) => PASS_LINES.find((l) => l.id === id)!
 
-/** A flag-on arm over the committed rows, with `patch` applied. */
-function onArm(patch: Record<string, number | null> = {}): Scorecard {
-  return { meta: { ...committed.meta, arm: 'flag_on:test' }, rows: { ...committed.rows, ...patch } }
+const ALL_WAVE_KEYS = [...new Set(Object.values(WAVE_KEYS).flat())].sort()
+
+/** A flag-on arm over the committed rows, with `patch` applied, carrying every wave's keys unless told otherwise. */
+function onArm(patch: Record<string, number | null> = {}, flagsOn: readonly string[] = ALL_WAVE_KEYS): Scorecard {
+  return { meta: { ...committed.meta, arm: `flag_on:${flagsOn.join('+')}`, flagsOn }, rows: { ...committed.rows, ...patch } }
 }
 
 Deno.test('the pass lines are the pinned set', async () => {
@@ -51,7 +55,7 @@ Deno.test('every row every line names exists in the committed scorecard (a line 
   for (const l of PASS_LINES) {
     assert(l.rows.length > 0, l.id)
     for (const key of l.rows) assert(key in committed.rows, `${l.id}: no committed row ${key}`)
-    if (l.nonVacuity) assert(l.nonVacuity.row in committed.rows, `${l.id}: no committed row ${l.nonVacuity.row}`)
+    for (const key of l.nonVacuity?.rows ?? []) assert(key in committed.rows, `${l.id}: no committed row ${key}`)
   }
 })
 
@@ -79,8 +83,8 @@ Deno.test('the weight lines are incomplete for every engine until a card can be 
 })
 
 Deno.test('a ruled comparison line fails a flag-on arm that detects less, and a red flag below tier fails the property', () => {
-  const ruled: PassLine = { ...line('EN-11.worsening'), value: 0.02 }
-  const key = ruled.rows.find((k) => k.endsWith('/probability') && typeof committed.rows[k] === 'number' && (committed.rows[k] as number) > 0.1)!
+  const ruled: PassLine = { ...line('EN-11.detection'), value: 0.02 }
+  const key = ruled.rows.find((k) => typeof committed.rows[k] === 'number' && (committed.rows[k] as number) > 0.1)!
   assert(key, 'a detected worsening row to break')
   const same = onArm()
   assertEquals(evaluatePassLines(committed, same, [ruled])[0].status, 'pass')
@@ -101,7 +105,7 @@ Deno.test('the zero property is no proof over too few injected flags', () => {
 })
 
 Deno.test('arms that are not flag off against something else, over the same seeds and scenario ids, are incomparable', () => {
-  const ruled: PassLine = { ...line('EN-11.worsening'), value: 0 }
+  const ruled: PassLine = { ...line('EN-11.detection'), value: 0 }
   const status = (off: Scorecard, on: Scorecard) => evaluatePassLines(off, on, [ruled])[0].status
   // The flag-off file handed in as the flag-on arm (the runner with SCORECARD_OFF and no SCORECARD_FLAGS).
   assertEquals(status(committed, committed), 'incomparable')
@@ -109,6 +113,13 @@ Deno.test('arms that are not flag off against something else, over the same seed
   assertEquals(status(onArm(), { ...onArm(), meta: { ...committed.meta, arm: 'flag_on:other' } }), 'incomparable')
   // Other seeds.
   assertEquals(status(committed, { ...onArm(), meta: { ...onArm().meta, seeds: '10000..10999' } }), 'incomparable')
+  // An arm whose name differs but which does not carry the wave's key (a key the Signal never reads):
+  // its rows equal flag off's, and it passed EN-11 and EN-3 by construction (third adversarial pass).
+  const en0 = onArm({}, ['engines_v3_en0'])
+  assertEquals(status(committed, en0), 'incomparable')
+  const redFlag = line('EN-3.redFlagTier')
+  assertEquals(evaluatePassLines(committed, en0, [redFlag])[0].status, 'incomparable')
+  assertEquals(evaluatePassLines(committed, onArm({}, ['engines_v3_en3']), [redFlag])[0].status, 'pass')
   // The same count of scenarios, different ones.
   const ids = [...committed.meta.scenarioIds]
   ids[0] = 'some-other-scenario'
@@ -139,6 +150,9 @@ const GOOD = {
   ...set(['EN-9.doubling'], 1),
   ...set(['EN-9.doublingDelay'], 10),
   ...set(['EN-9.silence'], 5),
+  // Enough acknowledged cats and scored pets to read the lines at all.
+  ...Object.fromEntries(line('EN-9.reRaise').nonVacuity!.rows.map((k) => [k, 3])),
+  ...Object.fromEntries(line('EN-9.doubling').nonVacuity!.rows.map((k) => [k, 3])),
   // No more false reassurance behind a lapse than flag off.
   ...Object.fromEntries(line('EN-9.lapseReassurance').rows.map((k) => [k, committed.rows[k] as number])),
 }
@@ -164,13 +178,60 @@ Deno.test('EN-9: a latch that starts after week eight, or a timer, fails on the 
   assertEquals(waveStatus(results, 'EN-9', EN9), 'fail')
 })
 
-Deno.test('EN-11: a noisier engine that detects faster fails on its false-card pair', () => {
-  const ruled = PASS_LINES.filter((l) => l.wave === 'EN-11').map((l) => ({ ...l, value: 0.02 }))
-  const detectRows = line('EN-11.worsening').rows
-  const faster = Object.fromEntries(detectRows.map((k) => [k, k.endsWith('/probability') ? 1 : 0]))
-  const noisier = Object.fromEntries(line('EN-11.falseWorsening').rows.map((k) => [k, (committed.rows[k] as number) + 0.2]))
-  const results = evaluatePassLines(committed, onArm({ ...faster, ...noisier }), ruled)
-  assertEquals(results.find((r) => r.id === 'EN-11.worsening')!.status, 'pass')
+/** EN-11 with values chosen for the test (never the ruling). */
+const EN11 = PASS_LINES.filter((l) => l.wave === 'EN-11').map((l) => ({
+  ...l,
+  value: l.value ?? ({ 'EN-11.detection': 0.02, 'EN-11.delay': 7, 'EN-11.falseWorsening': 0.02, 'EN-11.falseWorseningEvenings': 1 } as Record<string, number>)[l.id],
+}))
+const rowsOf = (id: string) => line(id).rows
+
+Deno.test('EN-11: flag off against itself (under a real key) passes every line, so the lines are not failed by construction', () => {
+  const results = evaluatePassLines(committed, onArm(), EN11)
+  assertEquals(results.filter((r) => r.status !== 'pass').map((r) => `${r.id}:${r.status}`), [])
+})
+
+Deno.test('EN-11: a noisier engine that detects faster fails on its false-card pairs', () => {
+  const faster = Object.fromEntries([...rowsOf('EN-11.detection').map((k) => [k, 1]), ...rowsOf('EN-11.delay').map((k) => [k, 0])])
+  const noisier = Object.fromEntries(rowsOf('EN-11.falseWorsening').map((k) => [k, Math.min(1, (committed.rows[k] as number) + 0.2)]))
+  const results = evaluatePassLines(committed, onArm({ ...faster, ...noisier }), EN11)
+  assertEquals(results.find((r) => r.id === 'EN-11.detection')!.status, 'pass')
   assertEquals(results.find((r) => r.id === 'EN-11.falseWorsening')!.status, 'fail')
-  assertEquals(waveStatus(results, 'EN-11', ruled), 'fail')
+  assertEquals(waveStatus(results, 'EN-11', EN11), 'fail')
+})
+
+Deno.test('EN-11: an engine that never stands a card down fails on the scored pets and on the burden evenings, though its detection share rises', () => {
+  const eligible = rowsOf('EN-11.eligible')
+  const latch = onArm({
+    ...Object.fromEntries(rowsOf('EN-11.detection').map((k) => [k, 1])),
+    // Fewer clear pets than flag off (still enough to read), and twenty times the burden evenings.
+    ...Object.fromEntries(eligible.map((k) => [k, Math.max(0, (committed.rows[k] as number) - 1)])),
+    [eligible[0]]: 3,
+    ...Object.fromEntries(rowsOf('EN-11.falseWorseningEvenings').map((k) => [k, (committed.rows[k] as number) * 20 + 1])),
+  })
+  const results = evaluatePassLines(committed, latch, EN11)
+  assertEquals(results.find((r) => r.id === 'EN-11.detection')!.status, 'pass')
+  assertEquals(results.find((r) => r.id === 'EN-11.eligible')!.status, 'fail')
+  assertEquals(results.find((r) => r.id === 'EN-11.falseWorseningEvenings')!.status, 'fail')
+})
+
+Deno.test('EN-11: a detection loss fails the share line whatever the days margin, and a slower one fails the delay line', () => {
+  const lost = onArm(Object.fromEntries(rowsOf('EN-11.detection').map((k) => [k, 0])))
+  const detection = evaluatePassLines(committed, lost, EN11).find((r) => r.id === 'EN-11.detection')!
+  const anyDetected = rowsOf('EN-11.detection').some((k) => typeof committed.rows[k] === 'number' && (committed.rows[k] as number) > 0.02)
+  assert(anyDetected, 'flag off detects something')
+  assertEquals(detection.status, 'fail')
+  const slower = onArm(Object.fromEntries(rowsOf('EN-11.delay').map((k) => [k, typeof committed.rows[k] === 'number' ? (committed.rows[k] as number) + 8 : null])))
+  assertEquals(evaluatePassLines(committed, slower, EN11).find((r) => r.id === 'EN-11.delay')!.status, 'fail')
+})
+
+Deno.test('EN-11 and EN-9 are incomplete over nothing scored: no clear pets, no acknowledged cats', () => {
+  const none = onArm(Object.fromEntries([
+    ...rowsOf('EN-11.detection').map((k) => [k, null]),
+    ...line('EN-11.detection').nonVacuity!.rows.map((k) => [k, 0]),
+    ...line('EN-9.reRaise').nonVacuity!.rows.map((k) => [k, 0]),
+    ...rowsOf('EN-9.reRaise').map((k) => [k, 0]),
+  ]))
+  const results = evaluatePassLines(committed, none, [...EN11, ...EN9])
+  assertEquals(results.find((r) => r.id === 'EN-11.detection')!.status, 'incomplete')
+  assertEquals(results.find((r) => r.id === 'EN-9.reRaise')!.status, 'incomplete')
 })

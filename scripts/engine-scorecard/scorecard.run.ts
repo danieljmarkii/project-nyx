@@ -60,6 +60,7 @@ test('the engine scorecard (reported, never gating)', () => {
   const { scorecard } = runCorpus({
     observer: () => makeSignalObserver({ askOf: (f) => signalHomeLine(f as unknown as SignalFinding)?.ask ?? null, engineFlags: { on, readOk: true } }),
     arm,
+    flagsOn: on,
     seeds,
     seedsLabel: label,
     scenarios,
