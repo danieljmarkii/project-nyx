@@ -42,21 +42,21 @@ Answer each row with **agree** (take the recommendation, always option A) or a l
 
 | # | Issue | The question | A (recommended) | Other options | Direction | Verdict | Before the cut |
 |---|---|---|---|---|---|---|---|
-| **R1** | **CUL-60(b)** | A cat fed once a day whose trial food the app cannot recognise refuses every bowl: should the card stay silent for nine days? | Speak from the meal record as soon as nothing has matched the trial food, from the third rated bowl (day 3), not the tenth | B: lower the count to 5 · C: no change | Louder | Adopt provisionally | **Yes** |
-| **R2** | **CUL-54(a)** | May the trial card say "needs a call today" from refusals that are weeks old? | When only old refusals hold the card, it speaks in dated past tense and keeps the call conditional on today | B: let the card expire after 14 quiet days · C: no change | Neutral (same records fire) | Adopt provisionally, your explicit agree on the tense | **Yes, the must-have** |
+| **R1** | **CUL-60(b)** | A cat fed once a day whose trial food the app has never recognised refuses every bowl: should the card stay silent for nine days? | Speak from the meal record as soon as nothing has matched the trial food, from the third rated bowl (day 3), not the tenth; caveat the off-diet count on that card | B: lower the count to 5 · C: no change | Louder | Adopt provisionally | **Yes** |
+| **R2** | **CUL-54(a)** | May the trial card say "needs a call today" from refusals that are weeks old? | Only when nothing in the last 14 days was left unfinished, the card speaks in dated past tense ("on 3 days between …") and asks for the next few ratings; any recent unfinished meal keeps today's present tense | B: let the card expire after 14 quiet days · C: no change | Neutral in firing; softer tense on stale evidence only | Adopt provisionally, your explicit agree on the tense | **Yes, the must-have** |
 | **R3** | **CUL-54(b)** | Should the refusal card wait a minimum number of trial days before it may speak? | No floor. Keep today's day 2 behaviour | B: a 3 day floor · C: a 7 day floor | Neutral (no change) | Real-vet list | No |
-| **R4** | **CUL-57** | A cat picking at every bowl and a cat eating nothing get the same sentence: should the app tell them apart? | Add a duration lead line when every recent rated meal was refused or only picked at, naming the count and the date it started. Leave the picker's sentence unchanged | B: also soften the picker's "today" · C: no change | Louder | Adopt provisionally (B goes to the real-vet list) | Yes |
-| **R5** | **CUL-59** | A substitute food the pet eats waters down a refusal of the trial food when the app cannot recognise the trial food: fix it now? | No threshold change. The dilution case is a pet that is eating; it stays a known limit fixed by food recognition (B-529) | B: test each food separately under the fallback | Neutral (no change) | Agree only | No |
+| **R4** | **CUL-57** | A cat picking at every bowl and a cat eating nothing get the same sentence: should the app tell them apart? | Add a lead line when every recent rated trial-diet feeding was refused or only picked at, naming the count and the date it started. Leave the picker's sentence unchanged | B: also soften the picker's "today" · C: no change | Louder | Adopt provisionally (B goes to the real-vet list) | Yes |
+| **R5** | **CUL-59** | Two blind spots when the app recognises the trial food only partly, or a substitute waters the refusal down: fix them now? | Two louder fallbacks: fall back to the meal record when no trial-diet feeding was logged in the last 14 days, and under the fallback also test each food on its own | B: no change, wait for food recognition (B-529) | Louder | Adopt provisionally | No |
 | **R6** | **CUL-60(a)** | Three rated meals can drive the vet report's refusal flag however many unrated meals surround them: raise the bar? | Keep the bar. Print the logged and unrated counts beside the rated ones on the flag | B: require a rated share · C: no change | Neutral (disclosure only) | Adopt provisionally, plus real-vet list | No |
-| **R7** | **CUL-55** | A grazing bowl is topped up all day: may the refusal card still say the cat isn't eating what's put down? | Keep the card where it is; add one line naming the grazing bowl and narrow the claim to the meals the owner rated | B: put the grazing card above the refusal card | Neutral (no firing change) | Adopt provisionally, mock first | No |
+| **R7** | **CUL-55** | A grazing bowl is topped up all day: may the refusal card still say the cat isn't eating what's put down? | Keep the card where it is; add one line saying Culprit can't see what she takes from the bowl, and narrow the claim to the meals the owner rated | B: put the grazing card above the refusal card | Neutral (no firing change) | Adopt provisionally, mock first | No |
 | **R8** | **CUL-56(1)** | Once the refusal card latches, the one line that says how to clear it never shows: add it? | Add one line under the refusal card when too few recent meals are rated for it to stand down | B: no change | Louder (adds a line) | Adopt provisionally, mock first | No |
 | **R9** | **CUL-56(2)** | The "rate your meals" line looks at the whole trial, so four diligent weeks buy four silent ones: add recency? | Also test the last 14 days; show the line if either window is under half rated | B: last 14 days only | Louder | Adopt provisionally | No |
 | **R10** | **CUL-179** | Should the "ongoing for weeks" vomiting card need 5 episodes instead of 6? | 5, with its noise gate re-pinned on both sides as cough's already is | B: keep 6 | Louder | Adopt provisionally, plus real-vet list | No |
 | **R11** | **CUL-267** | Is eight weeks the right grace before an overdue trial stops being treated as running? | Ratify 56 days as it ships | B: 28 · C: 84 | Neutral (no change) | Agree only | No |
-| **R12** | **CUL-367** | A gut trial meets "This trial is done" five times before twelve weeks, a skin trial twice: change the numbers? | One tap on a gut trial below 84 days moves it to 84 days. Keep the starting windows | B: gut extension +28 flat · C: ratify as is · D: split assessment from continuation | Neutral, protective (fewer invitations to stop; no warning muted) | Adopt provisionally; cat gut 42 days to the real-vet list | No |
-| **R13a** | **CUL-758 / 757** | A meal of the trial's own prescribed diet, on a day before the app recorded it as the diet, is counted as an off-diet breach and charted as antigen exposure. Should it be? | No. Where no trial diet was recorded for that day, a meal of the food that becomes the trial diet leaves the off-diet count and the antigen chart and is shown as a gap in the record | B: count it, caption it · C: exclude only when it is the trial's only diet | **Quieter** | **Needs your sign-off.** Harness proof missing; substitute proof named | No (report half rides CUL-19) |
-| **R13b** | **CUL-311** | On a back-dated trial, a treat the vet permitted is treated as permitted for weeks before the owner told the app. Should it be? | No. A permitted extra opens on the day it was entered; earlier feedings of it are counted and labelled "fed before it was added" | B: today's behaviour · C: open it at the trial start and say so on the report | Louder | Adopt provisionally | No |
-| **R14** | **CUL-749** | The vet report's refusal flag cannot see refusals in trial days the report's window cuts off. Should it? | The flag reads the whole trial, from its start to the report's end, and labels which dates sit outside the window | B: a one line count in the trial block · C: disclose only (today) | Louder | Adopt provisionally | No (rides CUL-19) |
+| **R12** | **CUL-367** | A gut trial meets "This trial is done" five times before twelve weeks, a skin trial twice: change the numbers? | One `Keep going` tap on a gut trial moves it to 84 days, or 14 days past today if that is later. Keep the starting windows | B: gut extension +28 flat · C: ratify as is · D: split assessment from continuation | Fewer asks (E-6 counts a muted ask as quieter), clinically protective | **Needs your explicit agree**; cat gut 42 days to the real-vet list | No |
+| **R13a** | **CUL-758 / 757** | A meal of the trial's own prescribed diet, eaten before the app recorded it as the diet, is counted as an off-diet breach and charted as antigen exposure. Should it be? | No, but only before that food's first trial-diet row opens, never after a row ends. Those meals leave the count and the chart, still block the "clean" claim, and are shown as a gap on the card and the report | B: count it, caption it · C: exclude only when it is the trial's only diet | **Quieter** | **Needs your sign-off.** Harness proof missing; substitute proof named | No (report half rides CUL-19) |
+| **R13b** | **CUL-311** | On a back-dated trial, a treat the vet permitted is treated as permitted for weeks before the owner told the app. Should it be? | No. A permitted extra opens on the day it was entered; earlier feedings of it are counted and labelled "fed before it was added" on every surface, the card and Ask included | B: today's behaviour · C: open it at the trial start and say so on the report | Louder | Adopt provisionally | No |
+| **R14** | **CUL-749** | The vet report's refusal flag cannot see refusals in trial days the report's window cuts off. Should it? | The flag fires on the window's refusals **or** the whole trial's, never one replacing the other, and prints the two spans' counts separately | B: a one line count in the trial block · C: disclose only (today) | Louder | Adopt provisionally | No (rides CUL-19) |
 | **R15** | **CUL-381** | What do Refused, Picked, Some, Most and All mean? | Five plain definitions, tap to reveal, with Some and Most split at "about half" | B: split at "three quarters" | Neutral (input calibration) | Adopt provisionally as copy; the half line to the real-vet list | No |
 
 **Recorded, not for ruling:** CUL-747 was ruled by the team on 2026-09-23 (keep the off-diet count, state its
@@ -66,7 +66,7 @@ coverage, never print it as a rate below the coverage floor). It is listed in §
 
 ## 1.1 The most dangerous row first: R1 · CUL-60(b)
 
-**The question.** A cat fed once a day whose trial food the app cannot recognise refuses every bowl. Should the card
+**The question.** A cat fed once a day whose trial food the app has never recognised refuses every bowl. Should the card
 stay silent for nine days, when the warning's own words cite a 48 to 72 hour window?
 
 **Today, at file:line.**
@@ -74,7 +74,7 @@ stay silent for nine days, when the warning's own words cite a 48 to 72 hour win
   cannot tell which logged food is the trial diet, that population is empty, and the lane falls back to every logged
   meal only once `allowedSetUnavailable` is true (`lib/dietTrial.ts:2769-2770`, `:2860-2861`).
 * `allowedSetUnavailable` is true at once when the trial has no `primary_diet` row (`lib/dietTrial.ts:2272`), but when
-  a row exists and simply never matched (a re-photographed bag, a cold food cache) it waits for
+  a row exists and simply never matched (a bag photographed before the trial food was added, a cold food cache) it waits for
   `UNHYDRATED_SET_FLOOR = 10` feedings (`lib/dietTrial.ts:2019`).
 * That floor's own docstring says it is "deliberately NOT clinical": it is a test of whether a database join is
   plausible, not of whether a pet is eating (`lib/dietTrial.ts:2004-2019`). It was never derived for this job.
@@ -105,6 +105,17 @@ must answer the same question).
    it makes, that what the cat is offered isn't being eaten, is true of that record.
 3. *A dog.* The same change reaches dogs. **Held:** the dog note is "it's worth a call to your vet"
    (`lib/dietTrial.ts:3476`), with no feline clock.
+4. *The executed case (adversarial pass).* A once-a-day cat whose `primary_diet` row exists and never matches,
+   refusing on 1, 2 and 3 July: with the gate split, the now-fact fires on day 3 (3 of 3, meal record). The 1,103
+   tests in the trial suites stay green. **Held, strictly louder:** below ten feedings the narrow counters are all
+   zero, so no stand-down can be lost.
+5. *A bag re-photographed after it had matched once (adversarial pass).* The narrow population is not empty, so R1
+   does not reach this cat, and today it stays silent **indefinitely**, not for nine days. **Not fixed by R1**; R5's
+   recency fallback is the row that reaches her.
+6. *One card, two answers (adversarial pass).* In this state the card also shows "off-diet: 3", and those three are
+   the prescribed bowls, beside "Culprit can't match these meals". **Fixed in A:** while the refusal lane speaks from
+   the meal record, the off-diet count carries the same can't-match caveat. It is caveated, not hidden; hiding would be
+   quieter.
 
 **Direction:** louder (fires on day 3 where it fired on day 10). **Verdict: adopt provisionally.** Recommended before
 the cut: it is the false negative on the agenda.
@@ -122,31 +133,40 @@ on days 3 and 4 followed by 41 unrated days still render the present-tense felin
 what's put down needs a call today" (`lib/dietTrial.ts:3474-3475`, `:3490-3494`). The file marks this as Dr. Chen's
 open call (`lib/dietTrialCard.ts:884-890`).
 
-**Recommendation (A).** No new number. When the card is held only by the range fact (the now-fact is null, which by
-construction means nothing in the last 14 days meets the floors), the headline becomes a **dated past fact** and the
-call becomes conditional on today:
+**Recommendation (A, revised after the adversarial pass).** No new number. The card switches to a **dated past fact**
+only when **no unfinished rated feeding of the population it speaks for lies inside the last 14 days**
+(`REFUSAL_WINDOW_DAYS`). Any recent unfinished feeding keeps today's present tense. The past-tense form:
 
-> Between 3 and 4 March, 3 of the 3 trial-diet feedings you rated were left unfinished. Nothing rated since shows
-> whether that has changed.
+> On 2 days between 3 and 4 March, 3 of the 3 trial-diet feedings you rated were left unfinished. Nothing rated since
+> shows whether that has changed.
 > If Mochi still isn't eating it, a cat that isn't eating needs a call today, whatever the trial is doing. Rating the
-> next meal tells Culprit.
+> next few meals tells Culprit.
 
-(The dog note becomes "If Rex still isn't eating it, it's worth a call to your vet.") **Why:** the defect is a false
-tense, not a false alarm; dating the fact makes every word true and keeps the card on the screen, which is the E-6
-comment's own recommendation (re-word as a dated past fact rather than go silent).
+The evidence is dated as "on N days between A and B", never "between A and B", because the range counts distinct
+days, not a span. "Nothing rated since" is said only when no rated feeding follows the last unfinished one; otherwise
+the line says what was rated since ("Since then, 1 of 1 rated feeding was finished."). The dog note becomes "If Rex
+still isn't eating it, it's worth a call to your vet." **Why:** the defect is a false tense, not a false alarm; dating
+the fact makes every word true and keeps the card on the screen, which is the E-6 comment's own recommendation
+(re-word as a dated past fact rather than go silent).
 
 **Counterexamples tried.**
 1. *The cat still refusing, owner stopped rating.* Under B (expiry) the card would vanish over a cat that is still
    refusing: the "silence must not cancel an alarm" rule (`lib/dietTrialCard.ts:843-850`). **Held under A:** the card
-   stays and asks for the one rating that would answer it.
-2. *A refusal 10 days ago plus two recent ones below the floor.* The range fact holds the card; the dated sentence
-   ("Between 18 and 27 March…") is still true. **Held.**
-3. *Is A quieter?* It fires on exactly the records it fires on today; only the tense moves. **Held as neutral**, but
-   the tense is softer on the page, which is why the verdict asks for your explicit agree rather than taking it by
-   implication.
+   stays and asks for the ratings that would answer it.
+2. *The adversarial pass's cat (executed):* 3 refusals on 1 to 2 July, 22 unrated days, then on 25 July refused at
+   08:00, picked at 12:00, all at 18:00. The now-fact is null (one recent day), the range fact holds the card. The
+   first draft of this row keyed the past tense on "the now-fact is null" and so rendered "Nothing rated since … if
+   Mochi still isn't eating it" over a cat that refused twice that day, with a false "nothing rated since" (an All was
+   rated after the last refusal) and "between 1 and 25 July" turning three days into a 25-day span. **Broken, fixed:**
+   the gate is now "no unfinished feeding in 14 days", so this cat keeps the present tense.
+3. *The first draft's own second counterexample* (a refusal 10 days ago plus two recent ones) was mis-traced: three
+   rated across two days 12 hours apart fire the now-fact, so the range fact never held that card. Removed.
+4. *"Rating the next meal tells Culprit."* False: re-firing and standing down both need 3 ratings. **Fixed** to "the
+   next few meals".
 
-**Direction:** neutral (no record changes whether it fires). **Verdict: adopt provisionally, with your explicit agree on
-the tense.** Required before the cut (CUL-54's own fallback names this as the one true pre-cut gate).
+**Direction:** neutral in firing (no record changes whether it fires); softer in tense on stale evidence only.
+**Verdict: adopt provisionally, with your explicit agree on the tense.** Required before the cut (CUL-54's own
+fallback names this as the one true pre-cut gate).
 
 ### R3 · CUL-54(b) · a minimum trial-day floor for the now-fact?
 
@@ -170,48 +190,69 @@ Picked and Refused all count as not finished (`lib/dietTrial.ts:1981-1995`). The
 (`lib/dietTrial.ts:3377-3418`), so a cat eating about a third of every bowl for three weeks and a cat that has eaten
 nothing since Tuesday read the same sentence, and both get "needs a call today".
 
-**Recommendation (A).** Keep the share register exactly as it is and **add a duration lead line above it** for the
-worse case: when the most recent rated feedings in an unbroken run (at least the existing `REFUSAL_MIN_RATED = 3`,
-spanning at least the existing 12 hours) were all **Refused or Picked**, the card leads with the run's count and the
-date it began:
+**Recommendation (A).** Keep the share register exactly as it is and **add a lead line above it** for the worse case:
+when the most recent rated feedings of the population the card speaks for, in an unbroken run (at least the existing
+`REFUSAL_MIN_RATED = 3`, spanning at least the existing 12 hours), were all **Refused or Picked**, the card leads with
+the run's count and the date it began. **The noun follows the population** (the B-530 rule the headline already
+obeys): "trial-diet feedings" under the narrow population, "meals" under the meal-record fallback. The start is a
+weekday and time inside six days, a full date beyond that.
 
-> The last 4 meals you rated, back to Tuesday 6 PM, were refused or only picked at.
+> The last 4 trial-diet feedings you rated, back to Tuesday 6 PM, were refused or only picked at.
 
 No new number: the run reuses the floors the register already fires on. **Why:** the emergency gets a different, more
-specific sentence, and the picker is not made quieter. The run is anchored on **rated** meals and states a count and a
-start date, never "nothing eaten for 52 hours", because unrated meals between them are unknown, and a duration claim
-over unknown meals would alarm on absence (the CLAUDE.md C-19 rule: a date is free, a duration is guarded).
+specific sentence, and the picker is not made quieter. The run is anchored on **rated** feedings and states a count
+and a start date, never "nothing eaten for 52 hours", because unrated meals between them are unknown, and a duration
+claim over unknown meals would alarm on absence (CLAUDE.md C-19: a date is free, a duration is guarded).
 
 **Counterexamples tried.**
 1. *A cat with a rated Some on Wednesday between refusals.* The run breaks; no lead line; the share register still
    fires. **Held:** Some is food going in.
-2. *Ten unrated days inside the run.* The line says "the last 4 meals you rated, back to …"; it makes no claim about
-   the unrated days. **Held.**
-3. *Option B (soften the picker's "today").* A cat eating about a third of every bowl is also markedly reduced intake,
-   the very state the feline note's window is about. **B is quieter with no harness, and the counterexample is the
-   wedge patient.** Sent to the real-vet list, not recommended.
+2. *Ten unrated days inside the run.* The line says "the last 4 … you rated"; it makes no claim about the unrated
+   days. **Held.**
+3. *A cat refusing the trial diet but finishing rated toppers (adversarial pass).* Under the narrow population the
+   toppers are not in the run, so "the last 4 meals you rated were refused" was false and alarming, the "a cat eating
+   this little" over-claim `trialViabilityNote` forbids (`lib/dietTrial.ts:3433-3437`). **Broken, fixed** by the noun
+   rule above.
+4. *A cat that eats for 10 days, then refuses.* No card: the share dilutes the run. **Held, with the dependency
+   named:** the Signal's single-day feline decline path covers her (`supabase/functions/generate-signal/detection.ts:2508-2519`).
+5. *Option B (soften the picker's "today").* A cat eating about a third of every bowl is also markedly reduced
+   intake, the very state the feline note's window is about. B is quieter with no harness, and the counterexample is
+   the wedge patient. Sent to the real-vet list, not recommended.
 
-**Direction:** louder (a more alarming lead on the worst records; nothing quieter). **Verdict: adopt provisionally.**
+**Direction:** louder (a more specific lead on the worst records; nothing quieter). **Verdict: adopt provisionally.**
 Whether a run of 48 hours or more should become "call now" rather than "today" joins the real-vet list and pairs with
 Part 2's T10.
 
 ### R5 · CUL-59 · the two identity-shaped blind spots
 
 **Today.** (1) A partial match of the trial food keeps the narrow population non-empty, so the fallback never opens
-(`lib/dietTrial.ts:1498-1505`). (2) Under the fallback, a substitute the pet eats sits in the share's denominator:
-14 of 14 prescribed bowls refused beside 28 tuna meals finished leaves `rangeRefusal` null
-(`lib/dietTrial.ts:1511-1522`). Both are pinned as `KNOWN LIMIT` tests in `lib/dietTrial.test.ts`.
+(`lib/dietTrial.ts:1498-1505`): the ate-for-seven-days, bag-re-photographed, refused-42-of-42 cat stays silent
+indefinitely. (2) Under the fallback, a substitute the pet eats sits in the share's denominator: 14 of 14 prescribed
+bowls refused beside 28 tuna meals finished leaves `rangeRefusal` null (`lib/dietTrial.ts:1511-1522`). Both are pinned
+as `KNOWN LIMIT` tests in `lib/dietTrial.test.ts`.
 
-**Recommendation (A).** No threshold change. (1) needs no clinical number: it is food recognition (B-529), and R1
-narrows it further. (2) is a pet that is eating, so it is a trial viability miss, not a starvation miss, and the
-narrow population, which catches trial viability, is immune by construction. **Why:** R4's duration line does not fix
-dilution and should not claim to; per food shares under the fallback (B) would fire on a disliked topper with the
-feline "call today" note.
+**Recommendation (A, revised after the adversarial pass).** Two louder fallbacks, both inside the B-530 rules (one
+population per call, chosen on feeding presence, never rating presence):
+1. **Recency fallback for blind spot (1):** the refusal lane also falls back to the meal record when **no trial-diet
+   feeding at all was logged in the last 14 days**. A bag re-photographed weeks ago no longer silences the cat.
+2. **Per-food test for blind spot (2):** under the meal-record fallback, the same floors are also tested over each
+   food on its own, and the lane fires if the whole record or any single food clears them.
 
-**Counterexample tried.** *The tuna cat is losing weight.* Then the weight lane (Part 2, EN-8) and the intake decline
-detector are the watchers, not this one. **Held, with the dependency named.**
+**Why:** the first draft declined (2) because it "would fire on a disliked topper with the feline call-today note",
+and the adversarial pass showed that reason contradicts R1 and R7, which both accept exactly that over-fire. E-6 adopts
+louder changes provisionally, so the consistent answer is to adopt. The first draft also claimed R1 narrows blind spot
+(1); it does not (R1 only acts where nothing ever matched), and that sentence is withdrawn.
 
-**Direction:** neutral. **Verdict: agree only.**
+**Counterexamples tried.**
+1. *The re-shot bag cat.* Fires once 14 days pass with no matched feeding, and earlier if nothing ever matched (R1).
+   **Held**, slower than R1's case.
+2. *A cat refusing a disliked topper three times while eating the trial diet (unrecognised).* Fires under (2): an
+   over-fire with the "can't match these meals" disclosure already on the card. **Held as an over-fire.**
+3. *B-530 round 2's break (a per-window selector misrouting the escalation).* (1) keys on feeding presence and picks
+   one population for both facts, so neither round 2 break is reachable. **Held**, and the build runs its own
+   adversarial pass on it.
+
+**Direction:** louder. **Verdict: adopt provisionally.**
 
 ### R6 · CUL-60(a) · three rated meals among many unrated ones
 
@@ -219,13 +260,15 @@ detector are the watchers, not this one. **Held, with the dependency named.**
 rated feedings only, whatever the unrated count. The report's flag prints "N of M rated feedings … left unfinished
 across D days" (`supabase/functions/generate-report/render.ts:2020-2024`).
 
-**Recommendation (A).** Keep the floors. Add the logged count to the flag, in the report's register:
-"3 of 3 rated feedings of z/d left unfinished across 2 days (64 logged in these dates; 61 not rated)." **Why:** raising
-the bar is quieter with no harness; the vet's first question is how much of the record this is, and the flag already
-argues that "the denominator is not optional" (`render.ts:2011-2012`).
+**Recommendation (A).** Keep the floors. Add the logged count to the flag, over the same population and the same dates
+as M (CLAUDE.md C-3), worded so an unrated meal cannot read as eaten: "3 of 3 rated feedings of z/d left unfinished
+across 2 days (64 logged in these dates; 61 with no intake recorded)." **Why:** raising the bar is quieter with no
+harness; the vet's first question is how much of the record this is, and the flag already argues that "the
+denominator is not optional" (`render.ts:2011-2012`).
 
 **Counterexample tried.** *A careful owner who rated only the bad meals.* The vet now sees 3 of 64 rated and can weigh
-it. **Held.**
+it. **Held.** The adversarial pass asked for "with no intake recorded" over "not rated", since a bare "not rated"
+invites reading those meals as eaten. Taken.
 
 **Direction:** neutral (disclosure). **Verdict: adopt provisionally; real-vet list** (is 3 rated enough to lead the
 vet's safety band?).
@@ -239,17 +282,22 @@ refusal register emits two flag lines with no grazing disclosure (`lib/dietTrial
 **Recommendation (A).** Keep the order: the refusal card stays on top. When a grazing bowl is in force, add one line
 and narrow the claim:
 
-> Mochi also grazes from a bowl that's topped up, so these are only the meals you rated, not everything she ate.
+> Mochi also grazes from a bowl that's topped up, so Culprit can't see what she takes from the bowl.
 > A cat leaving the meals you rate unfinished needs a call today, whatever the trial is doing.
 
 **Why:** B (grazing card above) would hide a real refusal of rated wet meals behind a card that says nothing about
 intake; A keeps the escalation and stops the unsupported claim.
 
-**Counterexample tried.** *A cat grazing well from the bowl and refusing a disliked wet topper.* A still fires: an
-over-fire, the survivable direction, now with the grazing bowl named so the owner can tell her vet. **Held.**
+**Counterexamples tried.**
+1. *A cat grazing well from the bowl and refusing a disliked wet topper.* A still fires: an over-fire, the survivable
+   direction, now with the grazing bowl named so the owner can tell her vet. **Held.**
+2. *The first draft's wording* ("these are only the meals you rated, not everything she ate") presumed she ate from
+   the bowl: reassurance by absence (adversarial pass). **Broken, fixed** to "Culprit can't see what she takes from
+   the bowl".
 
-**Direction:** neutral (no firing change). **Verdict: adopt provisionally.** The issue carries `Gate: design`, so the
-build session draws the line in the diet-trial mock round before any code.
+**Direction:** neutral (no firing change; the claim narrows to what the record shows). **Verdict: adopt
+provisionally.** The issue carries `Gate: design`, so the build session draws the line in the diet-trial mock round
+before any code.
 
 ### R8 · CUL-56(1) · the line that says how to clear the card
 
@@ -273,15 +321,15 @@ same weight of evidence the fire needed (`lib/dietTrialCard.ts:869-877`), so onl
 **Today.** The teach line compares the rated share over the whole trial against 50% (`lib/dietTrialCard.ts:691-692`,
 `:2247-2282`), so four diligent weeks keep it silent through four unrated ones.
 
-**Recommendation (A).** Compute the share over the last 14 days too (the ratified `REFUSAL_WINDOW_DAYS`), and show the
-line when either window is under half rated. **Why:** reuses a ratified window; only adds a line.
+**Recommendation (A).** Compute the share over the last 14 days too (the ratified `REFUSAL_WINDOW_DAYS`), with the same
+narrow-then-wide population rule `pushTeachLine` already uses, and show the line when either window is under half
+rated. **Why:** reuses a ratified window; only adds a line.
 
-**Counterexample tried.** *An owner who rated every meal for 4 weeks, then nothing for 5 days.* The 14 day share falls
-under half on about day 8 of the gap and the line appears. **Held.**
+**Counterexample tried.** *An owner who rated every meal for 4 weeks, then nothing.* The 14 day share falls under half
+on the eighth day of the gap (at five days it is 9 of 14 rated, so the line rightly stays off). **Held.** The first
+draft's arithmetic here was wrong and is corrected (adversarial pass).
 
 **Direction:** louder. **Verdict: adopt provisionally.**
-
----
 
 ## 1.3 The other Part 1 rows: R10 to R15
 
@@ -294,17 +342,21 @@ the open ratification. The required gate asserts a rate under 2%
 
 **Recommendation (A).** 5, and re-pin the gate on both sides the way the cough floor's gate already is
 (`detection.test.ts:2549-2575`): pin the noise rate at the measured value so it cannot drift, and pin the sensitivity
-case that 5 buys (a once weekly course of 5 episodes fires). **Why:** a safety lane errs toward firing (CUL-179's own
-TL;DR), and E-6 adopts louder floors provisionally.
+cases 5 buys. **Why:** a safety lane errs toward firing (CUL-179's own TL;DR), and E-6 adopts louder floors
+provisionally.
 
 **Counterexamples tried.**
-1. *The noise rate at 5.* Vomit's own rate at 5 was never measured, but the cough sweep runs the identical null (about
-   two sporadic events in 56 days) and measured 4 → 9.44%, **5 → 4.13%**, 6 → 1.38% (`detection.test.ts:2559`). So 5
-   roughly triples the false card rate on a healthy occasional vomiter, and **fails today's required gate (< 2%)**.
+1. *The noise rate at 5, measured on vomit's own null.* The adversarial pass ran fixture 14's generator (20,000
+   trials): 4 → 9.44%, **5 → 4.13%**, 6 → 1.38%, identical to the cough sweep's figures (`detection.test.ts:2559`). So 5
+   roughly triples the false card rate on a healthy occasional vomiter and **fails today's required gate (< 2%)**.
    **Held only with the gate re-pinned**, which the build must do openly (CLAUDE.md: never weaken a check without
    saying so in the PR).
-2. *What 5 actually rescues.* Weekly × 5 fires at 5 and is silent at 6. The q2wk × 4 course the issue also names stays
-   **silent at 5** (`detection.test.ts:2560`, same null). **Held, narrowed:** 5 rescues one of the two named misses.
+2. *What 5 rescues.* Weekly × 5 and fortnightly × 5 fire at 5 and are silent at 6. Weekly × 4 and fortnightly × 4
+   stay **silent at both**. **Held, narrowed:** 5 rescues the five-episode courses, not the four-episode ones the
+   issue also names.
+3. *Other tests at 5.* `supabase/functions/generate-signal/standDown.test.ts:347` premises a 5-episode vomit relapse
+   that chronicity cannot see under a floor of 6. At 5 the course fires and that guard's vomit half goes vacuous.
+   **Held with a second re-pin** (4 in-window episodes). No other loadable chronicity suite changed.
 
 **Direction:** louder. **Verdict: adopt provisionally; real-vet list** (is two sporadic vomits in eight weeks the right
 model of a healthy pet, and is about 4% an acceptable false card rate for this lane?).
@@ -328,26 +380,33 @@ on record; your agree here is the ratification it was waiting for.
 **Today.** `extensionDays('gi') = 14`, skin and other 28 (`lib/dietTrialCompletion.ts:89-91`); starting windows dog gut
 28, cat gut 42, skin 56 (`lib/dietTrialSetup.ts:100-101`). Tapped on time, dog gut meets "This trial is done" at 28,
 42, 56, 70 and 84; skin twice (the CUL-367 package, `docs/diet-trial-duration-ratification-2026-09.md` §3). The
-mid-trial window sheet the package found unbuilt is now in the tree (`components/profile/TrialWindowPanel.tsx`, reached
-from `TrialManageSheet`), so an owner can already set any total.
+mid-trial window sheet the package found unbuilt is now reachable with no flag gate
+(`components/profile/TrialWindowPanel.tsx`, via `TrialManageSheet` and `TrialLifecycleSheets` from the profile tab),
+so an owner can already set any total.
 
-**Recommendation (A, the package's option b).** One `Keep going` tap on a gut trial below 84 days moves it to 84.
-Starting windows unchanged. **Why:** the note beside the button already says gut diets are "often continued for around
-three months"; the tap should do what the sentence says. The package's own advice to rule what the number means first
-is honoured: A treats 28 as the assessment point (the day 28 card still offers `Stopped early` and `This trial is done`
-for a diet that is not working) and 84 as the continuation length.
+**Recommendation (A, the package's option b, revised).** One `Keep going` tap on a gut trial sets the target to **84
+days, or 14 days past today if that is later**. Starting windows unchanged. **Why:** the note beside the button already
+says gut diets are "often continued for around three months"; the tap should do what the sentence says. The package's
+advice to rule what the number means first is honoured: A treats 28 as the assessment point (the day 28 card still
+offers `Stopped early` and `This trial is done` for a diet that is not working) and 84 as the continuation length.
 
 **Counterexamples tried.**
 1. *A dog not responding at day 28.* Its vet switches diet; the owner taps `Stopped early` or `This trial is done`,
    both still on the card. **Held.**
-2. *Cat gut.* 42 → 84 is one tap. But cat gut 42 rests on feline skin evidence and canine gut evidence, with no feline
+2. *A tap on day 90 of a trial targeted at 70 (adversarial pass).* "Moves it to 84" writes a target already past, and
+   the `nextTargetDays` clamp degrades it to 91. **Broken, fixed** by "or 14 days past today if that is later".
+3. *Cat gut.* 42 → 84 is one tap. But cat gut 42 rests on feline skin evidence and canine gut evidence, with no feline
    gut duration source anywhere (package §7). **Not held as evidence:** sent to the real-vet list.
-3. *The two runtime sweep.* `guards/trialWindow.test.ts:811` pins a hand copied value so a change reds the build
-   (package §1). A cost, not a counterexample.
+4. *An abandoned trial after one tap* now holds its running state, and its explanation-only suppressions, until day
+   140 (84 + the 56 day grace). A cost, accepted.
+5. *The guard.* The first draft cited `guards/trialWindow.test.ts:811` as a hand-copied pin; it is a comment, and the
+   guard derives from `extensionDays` (`:643-646`, `:785`). Corrected; the Deno side's hand-copied value
+   (`supabase/functions/generate-report/trial.test.ts:4947`, per the package) still needs the sweep.
 
-**Direction:** neutral and protective (fewer invitations to stop early; no warning goes quiet). **Verdict: adopt
-provisionally; cat gut 42 days to the real-vet list.** `Keep going` stops being a fixed phrase ("to twelve weeks"),
-so the voice pass re-reads it in the build.
+**Direction:** fewer asks. The tap removes the day 42, 56 and 70 milestone asks, and E-6 lists "a muted ask" as
+quieter, so this is not neutral even though it is clinically protective. **Verdict: needs your explicit agree** (no
+harness measures it; the protective direction is the argument). Cat gut 42 days goes to the real-vet list. `Keep going`
+stops being a fixed phrase ("to twelve weeks"), so the voice pass re-reads it in the build.
 
 ### R13 · CUL-311, CUL-757, CUL-758 · `allowed_from` records entry time, not prescription time
 
@@ -356,7 +415,8 @@ One fact behind three issues. `diet_trial_foods.allowed_from` defaults to the da
 the trial's start (`lib/dietTrialSetup.ts:436-444`); a mid-trial add opens today (`lib/dietTrialSetup.ts:1294`).
 Membership is read day by day (`lib/dietTrial.ts:585-598`). So the app's dates say when it was told, not when the vet
 said so, and two opposite errors fall out of it. **One rule settles both: the trial's own diet is never a breach of
-itself; anything else the app learned about late is counted, and labelled with why.**
+itself before the app knew it was the diet; anything else the app learned about late is counted, and labelled with
+why.**
 
 **R13a · CUL-758 and CUL-757 · the prescribed diet before its row.**
 
@@ -366,27 +426,41 @@ off-diet feeding by protein with no reason split (`supabase/functions/generate-r
 artifact on CUL-758: a 9 of 10 off-diet tile over a dog that ate the prescribed hydrolysate at every meal; on CUL-757
 a "Soy ×7" bar that drops to zero on the day the row opened.
 
-*Recommendation (A, CUL-758's option A applied to both surfaces).* A feeding of a food that is (or later becomes) a
-`primary_diet` row of this trial, on a day when **no** `primary_diet` row is in force, is not an off-diet exposure: it
-leaves the numerator and the antigen chart and is disclosed as a gap in the record, in the register the report already
-owns ("Antigen check paused", `supabase/functions/generate-report/render.ts:2981`). *Why:* on such a day the app is
-measuring its own record, not the animal.
+*Recommendation (A, revised after the adversarial pass broke the first draft).* A feeding is excluded from the
+off-diet numerator and the antigen chart **only when it is dated before the earliest `allowed_from` of any
+`primary_diet` row of that same food in this trial**. Three conditions are part of the rule, not options:
+1. **Never after an `allowed_until`.** A food whose trial-diet row the vet ended stays counted when it is fed again.
+2. **An excluded feeding still darkens the arm.** It stays in `darkDays` and still blocks `mayClaimAllMatched` and
+   `mayStateRecordClean`, so no "clean" or "all matched" claim can rest on it.
+3. **The gap is disclosed on the card as well as the report** (the report's "Antigen check paused" register,
+   `supabase/functions/generate-report/render.ts:2981`; the card has no paused row today, so it gains one).
+
+*Why:* before the row opened, the app was measuring its own record, not the animal; but a gap in the record is a
+reason to withhold the clean claim, never to make it.
 
 *Counterexamples tried.*
-1. *A real switch between two hydrolysates.* On the days before the second diet's row opens, the first diet's row is in
-   force, so a feeding of the second diet still counts. **Held:** the "no row in force" condition is what separates the
-   two cases CUL-758 warns must not be conflated.
-2. *A mid-trial add used to bless contraband (§7 D5).* `addTrialFood` cannot write a `primary_diet` row
-   (`lib/dietTrialSetup.ts:1264-1268`), so this path cannot be reached through the front door. **Held.**
-3. *An owner who removed the only diet and kept feeding it.* After `allowed_until` no row is in force, so those
-   feedings leave the count too. **Partly broken:** the report says the antigen check is paused for those days rather
-   than counting them. Acceptable only because the paused row is on the page; the build must test that it is.
+1. *A soy hydrolysate row from 1 to 10 July that the vet ended, with the owner feeding it 11 to 20 July (adversarial
+   pass, executed).* The first draft ("is or later becomes a primary diet, on a day with no row in force") excluded all
+   ten, flipped the arm from dark to clear and unlocked `mayStateRecordClean` with interpretability `supports`: an
+   affirmative clean read over ten feedings of the antigen the vet removed. **Broken, fixed** by conditions 1 and 2:
+   those feedings are after the food's first row opened, so they stay counted, and nothing excluded can unlock a clean
+   claim.
+2. *A real switch between two hydrolysates.* The second diet's feedings before its own row opens are before that
+   food's first row, so they would be excluded; condition 2 keeps the clean claim withheld for those days and
+   condition 3 says why. **Held, and named:** this is the case CUL-758 warns must not be conflated, and the build must
+   test that the disclosure reads as a record gap, not as compliance.
+3. *A wet row at the start and a dry row added late, both primary.* The dry food's early feedings are before its first
+   row, so they are excluded under A. Today they count. Under A they disclose a gap instead. **Held as quieter, named,
+   and inside the sign-off.**
+4. *A mid-trial add used to bless contraband (§7 D5).* `addTrialFood` cannot write a `primary_diet` row
+   (`lib/dietTrialSetup.ts:1264-1268`). **Held.**
 
 *Direction:* **quieter** (the off-diet count falls on these records). *Verdict:* **needs your sign-off.** **Harness proof
 is missing**: CUL-508's corpus does not score `computeTrialFacts`. The substitute proof the build can produce is a
-property test over generated trials showing the change removes only feedings whose food is a `primary_diet` of the
-trial on a day with no `primary_diet` row in force, and that every other feeding's classification is identical before
-and after. Without your sign-off, today's count stays.
+property test over generated trials showing (a) the change removes only feedings dated before their food's first
+`primary_diet` row, (b) no excluded feeding ever turns `mayStateRecordClean` or `mayClaimAllMatched` true, (c) the
+withdrawn-diet record above keeps every feeding counted, and (d) every other feeding's classification is identical
+before and after. Without your sign-off, today's count stays.
 
 **R13b · CUL-311 · a permitted extra on a back-dated trial.**
 
@@ -395,13 +469,18 @@ weeks of it before the trial was entered convert from off-diet to permitted (`li
 trade and routes it here).
 
 *Recommendation (A).* At creation, a `permitted_*` row opens on the day it was entered, not the back-dated start;
-feedings of it in between are counted and carry the reason the report already renders for this case, "Fed before it
-was permitted (allowed from …)" (`supabase/functions/generate-report/render.ts:7978`). *Why:* §5.2 rules the count a
-floor, never a total, and a floor may only err upward; the reason column stops an honest owner reading as a careless
-one (§6.9's false accusation weight).
+feedings of it in between are counted and carry the reason "fed before it was added" **on every surface that shows
+them**: the report already renders "Fed before it was permitted (allowed from …)"
+(`supabase/functions/generate-report/render.ts:7978`), and the same PR carries the reason to the trial card, the
+off-diet screen, the day ledger's marks and `ask`. *Why:* §5.2 rules the count a floor, never a total, and a floor may
+only err upward; the reason stops an honest owner reading as a careless one (§6.9's false accusation weight).
 
-*Counterexample tried.* *The vet really did permit the treat from day one.* The count rises by those feedings, each
-labelled as fed before it was added, not as a breach. **Held.**
+*Counterexamples tried.*
+1. *The vet really did permit the treat from day one.* The count rises by those feedings, each labelled as fed before
+   it was added. **Held**, but only with the reason on the owner's surfaces too.
+2. *A back-dated trial with a permitted daily chew (adversarial pass).* With the reason on the report alone, the card
+   and Ask would show weeks of unexplained off-diet feedings on the day the trial is created: the false accusation the
+   row exists to prevent. **Broken, fixed** by carrying the reason to every surface in the same PR.
 
 *Direction:* louder. *Verdict:* **adopt provisionally.** It changes the write in `lib/dietTrialSetup.ts`, so it is its
 own PR.
@@ -412,17 +491,27 @@ own PR.
 and the safety flag reads those facts (`supabase/functions/generate-report/report.ts:4248-4268`). A cat that refused
 the prescribed diet on 42 cropped days gets no flag and no count.
 
-**Recommendation (A, the issue's shape 2).** The `trial_diet_refusal` flag reads the trial's evidence from its start to
-the report's end, and its date line names each span ("Dates covered: Apr 21 to Jul 2, from the trial's start, before
-this report's window opens on Jun 2"). The trial block's counts stay window scoped, so its "No count below is measured
-over the trial as a whole" sentence stays true. **Why:** a refusing patient is exactly what the flag exists for; a
-date may reach outside the window when a count in the same block may not (CLAUDE.md C-37).
+**Recommendation (A, revised after the adversarial pass).** The `trial_diet_refusal` flag fires on the **window's**
+refusal facts **or** the **whole trial's** (from its start to the report's end), never one replacing the other, and
+prints the two spans' counts separately: "7 of 8 rated feedings left unfinished in this report's window (Jun 2 to
+Jul 2); a further 42 of 42 before it (Apr 21 to Jun 1)." The trial block's counts stay window scoped, so its "No count
+below is measured over the trial as a whole" sentence stays true, and the flag never adds a count across the window
+edge. **Why:** a refusing patient is exactly what the flag exists for; a date may reach outside the window and a count
+may not, so each count stays inside its own named span (CLAUDE.md C-37).
 
-**Counterexample tried.** *A refusal months ago that has resolved.* The flag fires on a report whose window shows a cat
-eating. **Held as an over-fire with its dates on it:** a history is a defensible thing for a report to escalate on
-(the same argument `report.ts:4240-4246` makes for B-581).
+**Counterexamples tried.**
+1. *A cat that ate 40 rated meals from 21 April to 30 May, left 7 of 8 unfinished 5 to 8 June, then went unrated, with
+   a 2 June to 2 July window (adversarial pass, executed).* The first draft read the whole trial **instead of** the
+   window: 7 of 48 is under the share, the now-fact is empty, and the flag that fires today vanished. Labelled louder,
+   it was quieter. **Broken, fixed** by the OR.
+2. *The whole-trial read choosing a different population* (an early match makes it narrow where the window read fell
+   back to the meal record). Under the OR the window's own fact still fires. **Held.**
+3. *A refusal months ago that has resolved.* The flag fires on a report whose window shows a cat eating. **Held as an
+   over-fire with its span named:** a history is a defensible thing for a report to escalate on (the argument
+   `report.ts:4240-4246` makes for B-581).
 
-**Direction:** louder. **Verdict: adopt provisionally.** Rides the `generate-report` deploy (CUL-19).
+**Direction:** louder (fires on every record it fires on today, and on more). **Verdict: adopt provisionally.** Rides
+the `generate-report` deploy (CUL-19).
 
 ### R15 · CUL-381 · what the five intake words mean
 
@@ -445,9 +534,16 @@ anchors meal timing (`lib/mealTiming.ts:161`, CUL-1122).
 **Why:** the line that matters for the feline flag is Some versus Most, and "about half" is the plainest line an owner
 can judge at a glance.
 
-**Counterexample tried.** *An owner who used to tap Most for a cat that ate 40%.* She now taps Some, and the refusal
-lane sees it (louder). *One who used to tap Some for 60%* now taps Most (quieter). **Held as neutral in aggregate but
-not measurable**, which is why the half line goes on the real-vet list.
+**Counterexamples tried.**
+1. *An owner who used to tap Most for a cat that ate 40%.* She now taps Some, and the refusal lane sees it (louder).
+   *One who used to tap Some for 60%* now taps Most (quieter). **Held as neutral in aggregate but not measurable.**
+2. *Definitions arriving mid-record (adversarial pass).* One owner's taps re-calibrate on the day the definitions
+   ship, which moves the intake decline detector's relative baseline; an upward shift (Some to Most) during a real
+   decline can cancel it, which is quieter for that pet. **Held as a named risk**, added to the real-vet list item and
+   to the build's acceptance: the release note for the definitions should be checked against a decline fixture that
+   straddles the change.
+3. *Conflict with scoring.* None: Most or All stays finished, Picked stays food for meal timing, and R4's Refused or
+   Picked run matches analytics' decline half (`PICKED_SCORE`). **Held.**
 
 **Direction:** neutral. **Verdict: adopt provisionally as copy; the half line to the real-vet list.**
 
@@ -460,6 +556,12 @@ not measurable**, which is why the half line goes on the real-vet list.
 * R4 says "refused or only picked at", reporting the record, never "won't eat" (the volitional frame
   `lib/dietTrial.ts:3441-3446` forbids) and never "picky". **Pass.**
 * R8 is an instruction a caring friend would give, not a nag; it appears only while it is true. **Pass.**
+* R7, re-read after the review: "Culprit can't see what she takes from the bowl" states the blind spot without implying
+  she ate; the call keeps its "today" (Pattern 6, no reassurance by absence). **Pass.**
+* R2, re-read after the review: "On 2 days between 3 and 4 March" names the days and the span separately, and "Rating
+  the next few meals tells Culprit" matches what the card actually needs (three ratings). **Pass.**
+* R4, re-read after the review: "trial-diet feedings" under the narrow population matches the headline it sits above
+  (`trialViabilityHeadline`), so the two lines never use different nouns for one population. **Pass.**
 * R15 "A sniff or a lick counts as refused" was preferred to "Barely touched it", which blurs Refused and Picked, the
   boundary CUL-381 exists to sharpen. **Pass.**
 
@@ -475,7 +577,37 @@ not measurable**, which is why the half line goes on the real-vet list.
 
 ## 1.5 The adversarial pass over Part 1
 
-_Pending: recorded here when the `adversarial-reviewer` pass returns._
+An isolated `adversarial-reviewer` ran over every Part 1 row on 2026-10-01, executing its counterexamples in a scratch
+copy of the repo (no repo file was edited). **Verdict: FAIL on the first draft**, with three rows breaking in the
+dangerous direction. Every break changed the recommendation above; none was argued with.
+
+| Row | What the reviewer tried | Result | What changed |
+|---|---|---|---|
+| R1 | Unmatched once-a-day cat, refusals 1 to 3 July (executed) | Held, strictly louder | Added: a bag that matched once is not reached (R5 is); the off-diet count is caveated under the meal-record fallback |
+| **R2** | A cat refusing twice today while the range fact holds the card (executed) | **Broken:** past tense and a false "nothing rated since" over a cat refusing now; "between 1 and 25 July" a false span | Gate moved to "no unfinished feeding in 14 days"; "on N days between"; "nothing rated since" only when true; "next few meals"; relabelled softer tense on stale evidence |
+| R3 | Any louder option | Held: a floor can only be quieter | None |
+| R4 | A cat finishing rated toppers while refusing the trial diet | Wording broken: "meals" over-claimed | The noun follows the population; full date past six days |
+| R5 | The declined per-food option against R1 and R7 | **Reasoning broken:** the decline contradicted two other rows; "R1 narrows it" was false | Adopted both louder fallbacks provisionally |
+| R6 | Wording of the unrated count | Held | "with no intake recorded"; same population and dates as M |
+| R7 | "not everything she ate" | Wording broken: reassurance by absence | "Culprit can't see what she takes from the bowl" |
+| R8 | The teach line as a way to clear the warning | Held | None |
+| R9 | The 4 weeks on, 5 days off arithmetic | Held, arithmetic corrected | The line shows on day 8 of the gap; the narrow-then-wide rule applies |
+| R10 | Vomit's own null at 5 (executed, 20,000 trials) | Held: 4.13%, measured | A second fixture to re-pin (`standDown.test.ts:347`) |
+| R11 | None found | Held | None |
+| R12 | A tap on day 90 of a 70 day target; the guard citation; the label | Wording and label broken | `max(84, today + 14)`; citation corrected; relabelled "fewer asks", explicit agree |
+| **R13a** | A withdrawn soy hydrolysate fed ten more days (executed) | **Broken:** the exclusion unlocked an affirmative clean claim over the antigen the vet removed | Exclude only before the food's first row; never after an end; excluded meals keep the clean claim withheld; the gap shows on the card; the proof includes this case |
+| R13b | A back-dated trial with a permitted daily chew | Missing piece: the reason lived on the report only | The reason rides to the card, the off-diet screen, the ledger and Ask in the same PR |
+| **R14** | A window refusal after 40 eaten days (executed) | **Broken:** reading the whole trial instead of the window diluted 7/8 to 7/48 and dropped a flag that fires today | Window fact OR whole-trial fact; counts printed per span |
+| R15 | Scoring conflicts; definitions arriving mid-record | Held; a quieter n=1 path named | Added to the real-vet list and the build's acceptance |
+
+**The reviewer's DoD line, verbatim in substance:** tried a withdrawn soy hydrolysate fed ten more days, and R13a as
+first worded erased it and unlocked a clean claim (fixed); tried a window refusal after 40 eaten days, and R14's single
+whole-trial read dropped the flag (fixed); tried a cat refusing twice today under a range-fact hold, and R2 rendered a
+false past tense (fixed); tried an unmatched once-a-day cat, and R1 fires on day 3, strictly louder (held); re-ran the
+vomit chronicity null at 5, 4.13% with one more fixture to re-pin (held).
+
+**Not re-run.** The revised rows were checked against the reviewer's own required changes, not by a second isolated
+pass. The build sessions that apply R2, R5, R13a and R14 each owe their own `adversarial-reviewer` pass on the code.
 
 ## 1.6 The real-vet list from Part 1 (for CUL-1312)
 
@@ -486,7 +618,9 @@ _Pending: recorded here when the `adversarial-reviewer` pass returns._
 4. **R10:** is two sporadic vomits in eight weeks the right model of a healthy pet, and is about 4% an acceptable false
    card rate for the chronicity lane?
 5. **R12:** cat gut trial length: 42 days, with no feline gut duration source on record.
-6. **R15:** is "about half" the right line between Some and Most for an intake flag?
+6. **R15:** is "about half" the right line between Some and Most for an intake flag, and how should the app handle
+   owners whose taps re-calibrate when the definitions arrive mid-record?
+7. **R12:** is moving a gut trial's one-tap extension to twelve weeks right for cats as well as dogs?
 
 ---
 
