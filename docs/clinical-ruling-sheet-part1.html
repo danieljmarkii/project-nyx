@@ -292,6 +292,11 @@ function render() {
   out.value = "Part 1 rulings, " + n + " of " + ROWS.length + " ruled\n" + lines.join("\n");
 }
 render();
+try {
+  const h = (location.hash || "").slice(1);
+  const t = h && document.getElementById(h);
+  if (t) t.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+} catch (e) {}
 document.getElementById("copy").addEventListener("click", () => {
   const msg = document.getElementById("copied");
   const done = () => { msg.textContent = "Copied. Paste it into a CUL-583 comment."; };
