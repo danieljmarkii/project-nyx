@@ -1,5 +1,5 @@
 <title>Engines v3 on Home</title>
-<meta name="description" content="Engines v3 mock round 4 adds §00, no zero beside a masking drug or a recent visit (CUL-1440). Round 3: every care state from day 30 of a GI trial, My vet knows as a dated fact, the call record and its follow-up with notifications off, and EN-10's lines.">
+<meta name="description" content="Engines v3 mock round 5 at §00: no zero beside a masking drug or a recent visit, the interventions drawn on the record (CUL-1440). Round 3: every care state from day 30 of a GI trial, My vet knows as a dated fact, the call record and its follow-up with notifications off, and EN-10's lines.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
@@ -285,11 +285,42 @@
   .lanes2 .track i { position: absolute; top: 5px; width: 8px; height: 8px; border-radius: 50%; background: var(--app-rose); }
   .lanes2 .hlbox { outline: 1.5px solid var(--app-rose); outline-offset: 3px; border-radius: 6px; }
   .order-tag { font-family: var(--mono); font-size: 9px; color: var(--app-ink-3); letter-spacing: 0.06em; }
+  /* Round 5 (CUL-1440): CompareBars as shipped, the three-lane split, the hatched track. */
+  .cb { display: grid; gap: 8px; margin-top: 8px; }
+  .cb .r { display: grid; grid-template-columns: 34% 1fr; gap: 8px; align-items: start; }
+  .cb .lab { font-size: 10.5px; color: var(--app-ink-2); line-height: 1.3; }
+  .cb .lab small { display: block; color: var(--app-ink-3); font-size: 10px; }
+  .cb .tr { display: flex; align-items: center; gap: 5px; }
+  .cb .track { flex: 1; height: 11px; border-radius: 3px; background: var(--app-subtle); overflow: hidden; }
+  .cb .track.span { background: repeating-linear-gradient(135deg, var(--app-subtle) 0 5px, var(--app-card) 5px 9px); outline: 1px solid var(--app-rule); }
+  .cb .fill { height: 100%; background: var(--app-rose); }
+  .cb .fill.before { background: var(--app-rose-soft); }
+  .cb .n { font-size: 11px; font-weight: 600; min-width: 14px; text-align: right; font-variant-numeric: tabular-nums; }
+  .cb .n.hl { color: var(--app-rose-ink); outline: 1.5px solid var(--app-rose); outline-offset: 1px; border-radius: 3px; }
+  .cb .ticks { display: flex; gap: 1px; margin-top: 3px; }
+  .cb .ticks i { flex: 1; height: 4px; border-radius: 1px; background: var(--app-ink-3); }
+  .cb .ticks i.o { background: transparent; outline: 1px solid var(--app-rule); outline-offset: -1px; }
+  .ln3 { display: grid; gap: 9px; margin-top: 6px; }
+  .ln3 .hd { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--app-ink-2); }
+  .ln3 .hd b { font-weight: 600; color: var(--app-ink); }
+  .ln3 .tk { height: 20px; border-radius: 6px; position: relative; background: linear-gradient(90deg, var(--app-subtle) 0 20%, var(--app-card) 20% 84%, var(--app-subtle) 84%); outline: 1px solid var(--app-rule); outline-offset: -1px; }
+  .ln3 .tk.span { background: repeating-linear-gradient(135deg, var(--app-subtle) 0 5px, var(--app-card) 5px 9px); }
+  .ln3 .tk i { position: absolute; top: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--app-rose); }
+  .ln3 .bk { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--app-ink-3); padding: 0 2px; }
+  .ln3 .ax { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--app-ink-3); }
+  .ln3 .un { font-size: 10px; color: var(--app-ink-2); }
+  .ln3.lead { outline: 1.5px solid var(--app-rose); outline-offset: 4px; border-radius: 6px; }
+  .door-link { color: var(--app-teal-ink); font-weight: 500; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
+  .chips span { font-size: 11.5px; font-weight: 500; border: 1px solid var(--app-rule); border-radius: 999px; padding: 5px 10px; min-height: 30px; display: inline-flex; align-items: center; background: var(--app-card); }
+  .chips span.on { border-color: var(--app-ink); }
+  .state.knows { color: var(--app-teal-ink); background: var(--app-teal-wash); }
+  .consequence { font-size: 10.5px; color: var(--app-ink-3); margin-top: 3px; }
 </style>
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 4 · 2026-10-01 · CUL-1440 at §00</span><span>Round 3 (§01–§08) stands as ruled</span><span>Engines v3 · CUL-1139 · CUL-1144</span><span>supersedes round 2 at this URL</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 5 · 2026-10-01 · CUL-1440 at §00</span><span>Round 3 (§01–§08) stands as ruled</span><span>Engines v3 · CUL-1139 · CUL-1144</span><span>supersedes round 2 at this URL</span></p>
     <h1>The care state and the outcome loop, drawn from day 30 of a GI trial</h1>
     <p class="standfirst">Round 2 drew the loop between the Signal and vet visits. You ruled it: the owner's answer acknowledges a concern, one sign at a time; a recheck date hands the concern to the appointment strip; a call's note lives in Vet visits; the engine's shell may read owner answers and dates. This round draws every state that follows from those rulings, on a dog whose vet started his diet trial before the app was on the phone. It is one proposal, and on Sep 28 you ruled its three open calls (§07). The one conflict left for the build, TD-5, sits in a labelled box in §04. Round 2 is in git.</p>
 
@@ -312,49 +343,34 @@
     </div>
   </header>
 
-  <!-- ROUND 4 (CUL-1440, 2026-10-01). Sits above round 3, which stands as ruled. -->
+  <!-- ROUND 5 (CUL-1440, 2026-10-01): one proposal after the PM's reactions to round 4.
+       Round 4 (the side-by-side round) is in git at 9a0368c. Round 3 below stands as ruled. -->
   <section id="no-zeros" style="margin-top:56px">
-    <p class="eyebrow"><span class="roundtag">Round 4 · 2026-10-01 · CUL-1440</span><span>The rest of the screen, beside a masking drug or a recent visit</span></p>
-    <div class="sec-head"><span class="sec-num">00</span><h2>No zero anywhere beside a masking drug or a recent visit</h2></div>
+    <p class="eyebrow"><span class="roundtag">Round 5 · 2026-10-01 · CUL-1440</span><span>One proposal after your round 4 reactions</span><span>round 4 is in git (9a0368c)</span></p>
+    <div class="sec-head"><span class="sec-num">00</span><h2>No zero beside a masking drug or a recent visit, and the interventions drawn on the record</h2></div>
     <div class="col">
-      <p>EN-10's lines already hold the rule you ruled on Sep 29: while a drug that can hide the sign is on board, or ended within 42 days, or a visit is 42 days old or less, no window that touches that span shows a zero. The lines sit on screens that also draw weekly bars, a compare, the trial's vomiting sentence, a phone script and the timing lanes, and those still print the zero. PR-38's adversarial pass found six places. Each is drawn below as it is today and as proposed. Until this lands, <code>engines_v3_en10</code> stays off for every account.</p>
-      <p>One rule drives every proposal: a <b>masking span</b> runs from a masking course's start to 42 days after it ends (or today, while it runs), and from a visit to 42 days after it. A count over a window that touches a span never prints as 0. Windows that touch no span are unchanged, so a pet with no drug and no recent visit sees exactly today's screen.</p>
+      <p>EN-10's lines already hold the Sep 29 rule: while a drug that can hide the sign is on board, or ended within 42 days, or a visit is 42 days old or less, no window that touches that span shows a zero. The rest of the screen still printed one in six places. Round 4 drew them; you reacted; this round is the one proposal that follows. Until it lands, <code>engines_v3_en10</code> stays off for every account.</p>
+      <p>One visual language now runs through every chart: <b>a masking span is a grey hatched box</b>, named underneath with the drug and its start. Inside it, a chart keeps every mark (a bar, a dot) so a sign that comes through the drug is still seen, and a zero loses only its numeral. Sentences that compare two windows go quiet beside a span, because a sentence can't carry the hatch.</p>
     </div>
 
-    <div class="ledger" aria-label="What this round answers and where">
-      <div><b>1 · Weekly bars print 0 under "Prednisone since Sep 21"</b><span>The masked weeks are shaded and named; a zero in them loses its numeral. Options B and C beside it. <span class="pill open">decide D1</span> <span class="pill dir">§00a</span></span></div>
-      <div><b>2 · The drawn compare reads "Recent 30 days: 0" under maropitant</b><span>Withheld, with its reason in <i>Why this is a Signal</i>, the way a thin or uneven pair already is. Zero-only or every fall: <span class="pill open">decide D2</span> <span class="pill dir">§00b</span></span></div>
-      <div><b>3 · The trial's vomiting sentence prints its zero beside prednisone</b><span>Absent on the Signal screen and in Get ready's recheck, the silence the strip already uses when it withholds. The server's trial line stays. <span class="pill">covered by D2</span> <span class="pill dir">§00c</span></span></div>
-      <div><b>4 · "Most recent 8 days ago" beside "Started 6 days ago" implies the zero</b><span>The dates stay (the vet needs them). The course line says the drug can hide the sign, and the phone script gains an <i>On board</i> row. Needs a one-clause server change. <span class="pill open">decide D3</span> <span class="pill dir">§00d</span></span></div>
-      <div><b>5 · The chronicity compare row in the phone script can read 0 inside a visit's 42 days</b><span>That row is withheld when a half that touches a span is 0. Client only. <span class="pill">covered by D2</span> <span class="pill dir">§00d</span></span></div>
-      <div><b>6 · On a timing screen during a trial, the trial's lanes lead</b><span>With a masking drug on board, the lanes draw as one lane with no trial mark, so the diet is never the first explanation. Option B moves <i>Around this</i> up instead. <span class="pill open">decide D4</span> <span class="pill dir">§00e</span></span></div>
+    <div class="ledger" aria-label="Your round 4 reactions and what moved on this page">
+      <div><b>00a · "Love the grey boxes"</b><span>D1 = A, taken. The hatched span is now the language on every chart: the bars, the compare and the lanes. <span class="pill">ruled · §00a</span></span></div>
+      <div><b>00a · "Shouldn't the owner just log what was given at the visit?"</b><span>Yes, and the app should ask. Drawn: one question on "How did it go?" (<i>Anything given at the visit?</i>), and the chart's caption becomes a door to it. An answer replaces the assumption; only an unanswered or "Not sure" visit keeps it. Needs a small schema change, so it's its own issue. <span class="pill open">decide D5</span> <span class="pill dir">§00a</span></span></div>
+      <div><b>00b · "An incredibly uninspiring data visualization"</b><span>Agreed. The text-only frame left the page. The compare stays a chart: the shipped two bars, the recent one drawn inside the hatched span, its numeral dropped only at zero, its logged days still on the strip. Round 4 also drew today's compare as two tiles; it's two bars with coverage strips, now drawn as shipped. <span class="pill">§00b</span></span></div>
+      <div><b>00c · "I like your proposed approach"</b><span>Ruled. Unchanged. <span class="pill">ruled · §00c</span></span></div>
+      <div><b>00d · "Cleaner and more approachable"</b><span>D3 taken: the <i>On board</i> row and "It can hide {sign}." on the course line. The copy gets a voice pass at build. The "drop Most recent" option left the page. <span class="pill">ruled · §00d</span></span></div>
+      <div><b>00e · "Why hide it? It's important to visualize what meds and diet trials are doing"</b><span>The one-lane option left the page. Instead the lanes split at each intervention: <i>Before the trial · In the trial · In the trial, on prednisone</i>, the last one hatched. You see what happened in each period, and the drug is in the picture before the diet gets credit. Round 4's "today" frame was also wrong: today's lanes already merge into one when the trial lane falls (your pair ruling (a), Sep 27), so the split leads only on a flat or rising count. <span class="pill open">confirm D4</span> <span class="pill dir">§00e</span></span></div>
+      <div><b>D2 · zero only, or every fall</b><span>Your reactions answer it by surface: charts keep their marks and name the span (00a, 00b), and sentences that compare go quiet on any fall (00c). Written down as one rule below. <span class="pill open">confirm D2</span></span></div>
+      <div><b>"What does <i>with your vet</i> mean?"</b><span>Renamed and given its consequence. Drawn in §00f: <b>Your vet knows</b>, plus one line saying what that does. It's round 3's care state, built in PR-35, not this PR. <span class="pill open">decide D6</span> <span class="pill dir">§00f</span></span></div>
     </div>
 
     <!-- 00a -->
-    <h3 id="bars">00a · The weekly bars</h3>
-    <div class="col"><p>Nyx, a cat. Coughs logged Sep 17 to 19. Prednisone started Sep 21. Today is Sep 27.</p></div>
+    <h3 id="bars">00a · The weekly bars, and the visit</h3>
+    <div class="col"><p>Nyx, a cat. Coughs logged Sep 17 to 19. Prednisone started Sep 21. Today is Sep 27. In the second and fourth frames she also had a vet visit on Sep 10.</p></div>
     <div class="frames">
 
-      <div class="frame reject">
-        <div class="phone short" aria-label="Today: a zero over the prednisone week">
-          <div class="screen-head">
-            <span class="reject-tag">today · counterexample 1</span>
-            <div class="screen-title">Coughing in 7 of the last 8 weeks</div>
-            <div class="wb">
-              <div class="wk"><span class="num">2</span><div class="well"><div class="b" style="height:34%"></div></div><span class="d">Aug 31</span></div>
-              <div class="wk"><span class="num">0</span><div class="well"><div class="b zero"></div></div><span class="d"></span></div>
-              <div class="wk"><span class="num">3</span><div class="well"><div class="b" style="height:52%"></div></div><span class="d"></span></div>
-              <div class="wk"><span class="num hl">0</span><div class="well"><div class="b zero"></div></div><span class="d">Sep 21</span></div>
-            </div>
-            <div class="mini-label">Around this</div>
-            <div class="ctx">Prednisone since Sep 21, 6 days. Started 6 days ago.</div>
-          </div>
-        </div>
-        <div class="frame-cap"><b>What ships today</b><span><code>WeeklyBars.tsx</code> prints the number above every bar, a zero included. The line under it withholds the zero; the chart above it prints one.</span></div>
-      </div>
-
       <div class="frame">
-        <div class="phone short" aria-label="Proposed: the prednisone week shaded, no numeral on its zero">
+        <div class="phone short" aria-label="The prednisone week shaded, no numeral on its zero">
           <div class="screen-head">
             <div class="back">‹</div>
             <div class="screen-title">Coughing in 7 of the last 8 weeks</div>
@@ -365,15 +381,13 @@
               <div class="wk span"><span class="num gone">0</span><div class="well"><div class="b zero"></div></div><span class="d">Sep 21</span></div>
             </div>
             <div class="spanlabel"><i></i><span>Prednisone from Sep 21. It can hide coughing, so a quiet week since then isn't a sign it has settled.</span></div>
-            <div class="mini-label">Around this</div>
-            <div class="ctx">Prednisone since Sep 21, 6 days, with something logged on 6 of 6. It can hide coughing.</div>
           </div>
         </div>
-        <div class="frame-cap"><b>A · Shade the span, drop the zero's numeral <span class="pill">current</span> <span class="pill open">D1</span></b><span>The week that touches prednisone is shaded and named under the chart. Its zero keeps the baseline stub (the chart can't pretend the week wasn't counted) but loses the "0". A non-zero week in the span keeps its number: a cough that comes through a steroid is the escalation-direction fact. The Sep 7 week touches no span, so its 0 stays.</span><span class="spoken">Coughing by week. Aug 31, 2. Sep 7, 0. Sep 14, 3. Sep 21, 6 days so far, on prednisone from Sep 21.</span></div>
+        <div class="frame-cap"><b>The bars <span class="pill">current · D1 = A</span></b><span>The week that touches prednisone is shaded and named. Its zero keeps the baseline stub and loses the "0". A non-zero week in the span keeps its number. The Sep 7 week touches no span, so its 0 stays.</span><span class="spoken">Coughing by week. Aug 31, 2. Sep 7, 0. Sep 14, 3. Sep 21, 6 days so far, on prednisone from Sep 21.</span></div>
       </div>
 
       <div class="frame">
-        <div class="phone short" aria-label="Proposed: the same chart with a visit on Sep 10">
+        <div class="phone short" aria-label="A visit nobody has answered for yet">
           <div class="screen-head">
             <div class="back">‹</div>
             <div class="screen-title">Coughing in 7 of the last 8 weeks</div>
@@ -383,44 +397,58 @@
               <div class="wk span"><span class="num">3</span><div class="well"><div class="b" style="height:52%"></div></div><span class="d"></span></div>
               <div class="wk span"><span class="num gone">0</span><div class="well"><div class="b zero"></div></div><span class="d">Sep 21</span></div>
             </div>
-            <div class="spanlabel"><i></i><span>From the Sep 10 visit. Anything given at the visit isn't in the record, and prednisone from Sep 21 can hide coughing.</span></div>
+            <div class="spanlabel"><i></i><span>From the Sep 10 visit, and prednisone from Sep 21. Was anything given at the visit? <span class="door-link">Add it ›</span></span></div>
           </div>
         </div>
-        <div class="frame-cap"><b>A, with a visit on Sep 10 <span class="pill">current</span></b><span>The visit counts as an unrecorded masking drug (your Sep 29 ruling), so the span starts on Sep 10 and the Sep 7 week's zero goes too. The 3 stays.</span></div>
+        <div class="frame-cap"><b>An unanswered visit <span class="pill">current</span> <span class="pill needs">needs the D5 issue for the door</span></b><span>The app can't see a shot given in the room, so until the owner says what was given, the visit is treated as if it might have been a steroid. The caption says so as a question, and the question is a door to the visit's record.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="How did it go, with the new question">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">How did it go?</div>
+            <div class="screen-sent">Nyx's visit, Thu Sep 10</div>
+            <div class="mini-label">The plan</div>
+            <div class="form-row" style="border-top:0"><span class="fr-h">Anything given at the visit?</span><span class="fr-s">A shot, a pill in the room, or something to take home.</span>
+              <div class="chips"><span class="on">A shot</span><span>Something to take home</span><span>Nothing</span><span>Not sure</span></div></div>
+            <div class="form-row"><span class="fr-s">What was it?</span><span class="fr-h">Cytopoint</span><span class="fr-s">Given Sep 10 · one dose</span></div>
+            <div class="form-row"><span class="fr-h">Next visit</span><span class="fr-s">Wed Oct 14 · recheck</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>The question <span class="pill">current</span> <span class="pill needs">needs the D5 issue</span></b><span>One row on the shipped "How did it go?" plan, with four answers and "Not sure" always offered. "A shot" opens the medication form dated to the visit (a one-day course, the table that already exists), so the drug table can tell what it hides. "Nothing" records that, and the visit stops masking anything.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="The cough chart after the owner logged Cytopoint">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Coughing in 7 of the last 8 weeks</div>
+            <div class="wb">
+              <div class="wk"><span class="num">2</span><div class="well"><div class="b" style="height:34%"></div></div><span class="d">Aug 31</span></div>
+              <div class="wk"><span class="num">0</span><div class="well"><div class="b zero"></div></div><span class="d"></span></div>
+              <div class="wk"><span class="num">3</span><div class="well"><div class="b" style="height:52%"></div></div><span class="d"></span></div>
+              <div class="wk span"><span class="num gone">0</span><div class="well"><div class="b zero"></div></div><span class="d">Sep 21</span></div>
+            </div>
+            <div class="spanlabel"><i></i><span>Prednisone from Sep 21. It can hide coughing.</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>After the answer <span class="pill">current</span></b><span>Cytopoint hides itch, not coughing, so the Sep 10 visit no longer shades the cough chart and the Sep 7 week's 0 comes back. On Nyx's itch chart the same answer shades from Sep 10. An answer is more precise than the assumption, in both directions.</span></div>
       </div>
 
       <div class="option">
-        <div class="option-head"><b>B · Keep every number, shade and caption the span</b><span>A better-than-the-rule option, drawn so you can see it: the zero stays and the caption carries the warning. It breaks the Sep 29 ruling as written.</span></div>
+        <div class="option-head"><b>D5 option · drop the visit assumption now</b><span>A visit masks nothing unless a course is logged. No question, no schema change. The cost: Dr. Chen's Depo-Medrol case. A long-acting steroid injection the owner never logs puts "0" back over six weeks of the chart.</span></div>
         <div class="frames">
           <div class="frame">
-            <div class="phone short" aria-label="Option B: zero kept with a caption">
+            <div class="phone short" aria-label="Option: visit masks nothing">
               <div class="screen-head">
                 <div class="wb">
                   <div class="wk"><span class="num">2</span><div class="well"><div class="b" style="height:34%"></div></div><span class="d">Aug 31</span></div>
                   <div class="wk"><span class="num">0</span><div class="well"><div class="b zero"></div></div><span class="d"></span></div>
                   <div class="wk"><span class="num">3</span><div class="well"><div class="b" style="height:52%"></div></div><span class="d"></span></div>
-                  <div class="wk span"><span class="num">0</span><div class="well"><div class="b zero"></div></div><span class="d">Sep 21</span></div>
-                </div>
-                <div class="spanlabel"><i></i><span>Prednisone from Sep 21. It can hide coughing.</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="option">
-        <div class="option-head"><b>C · No numerals anywhere in the span</b><span>Every week touching the span drops its number, zero or not. Nothing can be read off the gap, but the 3 a vet would want goes too.</span></div>
-        <div class="frames">
-          <div class="frame">
-            <div class="phone short" aria-label="Option C: no numbers in the span">
-              <div class="screen-head">
-                <div class="wb">
-                  <div class="wk"><span class="num">2</span><div class="well"><div class="b" style="height:34%"></div></div><span class="d">Aug 31</span></div>
-                  <div class="wk span"><span class="num gone">0</span><div class="well"><div class="b zero"></div></div><span class="d"></span></div>
-                  <div class="wk span"><span class="num gone">3</span><div class="well"><div class="b" style="height:52%"></div></div><span class="d"></span></div>
                   <div class="wk span"><span class="num gone">0</span><div class="well"><div class="b zero"></div></div><span class="d">Sep 21</span></div>
                 </div>
-                <div class="spanlabel"><i></i><span>From the Sep 10 visit, and prednisone from Sep 21.</span></div>
+                <div class="spanlabel"><i></i><span>Prednisone from Sep 21. It can hide coughing.</span></div>
               </div>
             </div>
           </div>
@@ -429,75 +457,62 @@
     </div>
 
     <!-- 00b -->
-    <h3 id="compare">00b · The drawn compare</h3>
-    <div class="col"><p>Pip, a cat with a time-of-day vomiting finding. Seven vomits 55 to 35 days ago, none since. Maropitant started 30 days ago and is still running.</p></div>
+    <h3 id="compare">00b · The compare</h3>
+    <div class="col"><p>Pip, a cat with an evening-vomiting finding. Seven vomits 55 to 35 days ago, none since. Maropitant started 30 days ago and is still running.</p></div>
     <div class="frames">
       <div class="frame reject">
-        <div class="phone short" aria-label="Today: the compare prints Recent 30 days: 0">
+        <div class="phone short" aria-label="Today's compare bars, a zero beside maropitant">
           <div class="screen-head">
             <span class="reject-tag">today · counterexample 2</span>
             <div class="screen-title">Vomiting mostly in the evening</div>
-            <div class="cmp"><div>Earlier 30 days<b>7</b>logged on 26</div><div class="hl">Recent 30 days<b>0</b>logged on 28</div></div>
-            <div class="mini-label">Why this is a Signal</div>
-            <div class="why">Two windows of 30 days, with symptoms or meals logged on 26 and 28 of them. Compared as counts, not a verdict on how Pip is doing.</div>
+            <div class="cb">
+              <div class="r"><div class="lab">Earlier 30 days<small>logged on 26</small></div><div><div class="tr"><div class="track"><div class="fill before" style="width:100%"></div></div><span class="n">7</span></div><div class="ticks"><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div></div>
+              <div class="r"><div class="lab">Recent 30 days<small>logged on 28</small></div><div><div class="tr"><div class="track"></div><span class="n hl">0</span></div><div class="ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div></div>
+            </div>
             <div class="mini-label">Around this</div>
             <div class="ctx">Maropitant since Sep 1, 30 days, with something logged on 28 of 30.</div>
           </div>
         </div>
-        <div class="frame-cap"><b>What ships today</b><span><code>compareWithheld</code> gates on thin logging, uneven logging and not eating. Nothing gates on a drug, so "Recent 30 days: 0" sits two lines above the maropitant.</span></div>
+        <div class="frame-cap"><b>What ships today</b><span><code>CompareBars</code>: two bars with their counts, each over its window's logged-day strip. Nothing gates on a drug, so the recent bar reads 0 two lines above the maropitant.</span></div>
       </div>
 
       <div class="frame">
-        <div class="phone short" aria-label="Proposed: the compare withheld with its reason">
+        <div class="phone short" aria-label="Proposed compare: the recent bar inside the hatched span">
           <div class="screen-head">
             <div class="back">‹</div>
             <div class="screen-title">Vomiting mostly in the evening</div>
-            <div class="mini-label">Why this is a Signal</div>
-            <div class="why">Maropitant since Sep 1 can hide vomiting, so the two 30-day windows aren't compared here.</div>
-            <div class="mini-label">Around this</div>
-            <div class="ctx">Maropitant since Sep 1, 30 days, with something logged on 28 of 30. It can hide vomiting.</div>
+            <div class="cb">
+              <div class="r"><div class="lab">Earlier 30 days<small>logged on 26</small></div><div><div class="tr"><div class="track"><div class="fill before" style="width:100%"></div></div><span class="n">7</span></div><div class="ticks"><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div></div>
+              <div class="r"><div class="lab">Recent 30 days<small>logged on 28</small></div><div><div class="tr"><div class="track span"></div><span class="n"></span></div><div class="ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div></div>
+            </div>
+            <div class="spanlabel"><i></i><span>Maropitant from Sep 1. It can hide vomiting, so these two windows aren't a before and after.</span></div>
           </div>
         </div>
-        <div class="frame-cap"><b>Withheld, with its reason <span class="pill">current</span> <span class="pill open">D2</span></b><span>A new withheld reason beside the three that exist. The sentence names the drug and its start, and never says the vomiting stopped. Under D2's recommendation the same frame draws for Earlier 7 · Recent 2: a fall beside an antiemetic reads as "it worked" with or without the zero.</span></div>
+        <div class="frame-cap"><b>The bars stay, inside the span <span class="pill">current</span></b><span>The same chart, in the same place. The recent window sits in the hatched box with the drug named beneath it. Its empty track keeps the logged-day strip (28 of 30 days logged, so nobody can read the gap as missing data) and loses only the "0". The <i>Why</i> line beneath changes from "Compared as counts" to the drug's name, the same sentence as the caption.</span><span class="spoken">Vomiting. Earlier 30 days, 7, logged on 26. Recent 30 days, on maropitant from September 1, logged on 28.</span></div>
       </div>
 
-      <div class="option">
-        <div class="option-head"><b>D2 option · zero only</b><span>Withhold only when the recent count is 0. A fall to 2 is drawn as today.</span></div>
-        <div class="frames">
-          <div class="frame">
-            <div class="phone short" aria-label="Zero-only option: 7 then 2 drawn">
-              <div class="screen-head">
-                <div class="cmp"><div>Earlier 30 days<b>7</b>logged on 26</div><div>Recent 30 days<b>2</b>logged on 28</div></div>
-                <div class="ctx">Maropitant since Sep 1, 30 days: 2 episodes, with something logged on 28 of 30.</div>
-              </div>
+      <div class="frame">
+        <div class="phone short" aria-label="Proposed compare with a non-zero recent count">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Vomiting mostly in the evening</div>
+            <div class="cb">
+              <div class="r"><div class="lab">Earlier 30 days<small>logged on 26</small></div><div><div class="tr"><div class="track"><div class="fill before" style="width:100%"></div></div><span class="n">7</span></div><div class="ticks"><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div></div>
+              <div class="r"><div class="lab">Recent 30 days<small>logged on 28</small></div><div><div class="tr"><div class="track span"><div class="fill" style="width:29%"></div></div><span class="n">2</span></div><div class="ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div></div>
             </div>
+            <div class="spanlabel"><i></i><span>Maropitant from Sep 1. It can hide vomiting, so these two windows aren't a before and after.</span></div>
           </div>
         </div>
+        <div class="frame-cap"><b>Two through the drug <span class="pill">current</span></b><span>A count that comes through an antiemetic is the escalation-direction fact, so it keeps its bar and its number, as a non-zero week does on the bars. The caption carries the warning; no sentence calls it a fall.</span></div>
       </div>
     </div>
 
     <!-- 00c -->
-    <h3 id="trial-line">00c · The trial's vomiting sentence</h3>
-    <div class="col"><p>Nyx on a rabbit trial (GI), day 30 of 56. Seven vomits in the 49 days before it, none in it. Prednisone since Sep 21.</p></div>
+    <h3 id="trial-line">00c · The trial's vomiting sentence <span class="pill">ruled</span></h3>
+    <div class="col"><p>Nyx on a rabbit trial (GI), day 30 of 56. Seven vomits in the 49 days before it, none in it. Prednisone since Sep 21. Unchanged from round 4.</p></div>
     <div class="frames">
-      <div class="frame reject">
-        <div class="phone short" aria-label="Today: the strip's sentence beside prednisone">
-          <div class="screen-head">
-            <span class="reject-tag">today · counterexample 3</span>
-            <div class="screen-title">Vomiting, rabbit trial day 30</div>
-            <div class="mini-label">Why this is a Signal</div>
-            <div class="why hl">Vomiting: 0 in the trial's 30 days · 7 in the 49 days before, a longer stretch.</div>
-            <div class="why">A diet change is one of several things that can move this.</div>
-            <div class="mini-label">Around this</div>
-            <div class="ctx">Prednisone since Sep 21, 6 days. Started 6 days ago.</div>
-            <div class="ctx">Rabbit trial, day 30 of 56, with something logged on 28 of its 30 days.</div>
-          </div>
-        </div>
-        <div class="frame-cap"><b>What ships today</b><span><code>trialResponseStandingLine</code> prints the zero in <i>Why this is a Signal</i> and on Get ready's trial recheck, while the server's own trial line, two rows down, withholds it.</span></div>
-      </div>
-
       <div class="frame">
-        <div class="phone short" aria-label="Proposed: the sentence absent">
+        <div class="phone short" aria-label="The sentence absent">
           <div class="screen-head">
             <div class="back">‹</div>
             <div class="screen-title">Vomiting, rabbit trial day 30</div>
@@ -509,11 +524,10 @@
             <div class="ctx">Rabbit trial, day 30 of 56, with something logged on 28 of its 30 days.</div>
           </div>
         </div>
-        <div class="frame-cap"><b>Absent, on both surfaces <span class="pill">current</span></b><span>The sentence goes, as it already does when the strip withholds it. Get ready's recheck drops its <i>Symptoms</i> answer the same way (silence, never "none"). Under D2's recommendation a falling non-zero pair (2 · 7) goes too; a rise always stays.</span></div>
+        <div class="frame-cap"><b>Absent on the Signal screen <span class="pill">ruled</span></b><span>"Vomiting: 0 in the trial's 30 days · 7 before" goes, as it already does when the strip withholds it. A falling non-zero pair goes too; a rise always stays.</span></div>
       </div>
-
       <div class="frame">
-        <div class="phone short" aria-label="Get ready's trial recheck, proposed">
+        <div class="phone short" aria-label="Get ready's trial recheck">
           <div class="screen-head">
             <div class="back">‹</div>
             <div class="screen-title">Get ready</div>
@@ -522,33 +536,14 @@
             <div class="vv-row"><b>Weight?</b>Last weighed Sep 2.</div>
           </div>
         </div>
-        <div class="frame-cap"><b>Get ready's recheck <span class="pill">current</span></b><span>The row keeps its header and coverage. The <i>Symptoms?</i> question that quoted the strip's zero is gone; the rundown below still lists the courses.</span></div>
+        <div class="frame-cap"><b>And in Get ready <span class="pill">ruled</span></b><span>The recheck's <i>Symptoms?</i> answer that quoted the zero is gone. Silence, never "none".</span></div>
       </div>
     </div>
 
     <!-- 00d -->
-    <h3 id="script">00d · The phone script</h3>
-    <div class="col"><p>Nyx's cough, a safety chronicity finding. Last cough Sep 19, prednisone since Sep 21, today Sep 27. A visit on Aug 20 sits inside the compare's earlier half.</p></div>
+    <h3 id="script">00d · The phone script <span class="pill">ruled</span></h3>
+    <div class="col"><p>Nyx's cough, a safety chronicity finding. Last cough Sep 19, prednisone since Sep 21, today Sep 27, a visit on Aug 20. Unchanged from round 4; the copy gets a voice pass at build.</p></div>
     <div class="frames">
-      <div class="frame reject">
-        <div class="phone short" aria-label="Today's phone script">
-          <div class="screen-head">
-            <span class="reject-tag">today · counterexamples 4 and 5</span>
-            <div class="screen-title">What to say on the phone</div>
-            <dl class="script">
-              <dt>Sign</dt><dd>coughing</dd>
-              <dt>First logged</dt><dd>July</dd>
-              <dt>How often</dt><dd>23 episodes across 7 of 8 weeks</dd>
-              <dt>Recent 4 weeks</dt><dd class="hl">5 · the 4 before: 0 · logged on 27 of the recent 28 days, and 25 of the 28 before</dd>
-              <dt>Most recent</dt><dd class="hl">8 days ago</dd>
-            </dl>
-            <div class="mini-label">Around this</div>
-            <div class="ctx">Prednisone since Sep 21, 6 days. Started 6 days ago.</div>
-          </div>
-        </div>
-        <div class="frame-cap"><b>What ships today</b><span>"8 days ago" over "Started 6 days ago" says none since the steroid, without the digit. The line's no-count form is only ever printed at zero, so its shape leaks the zero on every surface that relays it. The compare row's earlier half reads 0 inside the visit's 42 days.</span></div>
-      </div>
-
       <div class="frame">
         <div class="phone short" aria-label="Proposed phone script">
           <div class="screen-head">
@@ -565,80 +560,91 @@
             <div class="ctx">Prednisone since Sep 21, 6 days, with something logged on 6 of 6. It can hide coughing.</div>
           </div>
         </div>
-        <div class="frame-cap"><b>Dates kept, the drug named beside them <span class="pill">current</span> <span class="pill open">D3</span></b><span>The vet needs the last date, so it stays. A new <i>On board</i> row names each masking course in the span and what it can hide. The course line drops "Started 6 days ago" (it restated the window) and gains "It can hide coughing" in both forms, so its shape no longer gives the count away. The compare row is withheld because its earlier half is 0 inside the visit's span; a half with episodes in it keeps the row.</span></div>
-      </div>
-
-      <div class="option">
-        <div class="option-head"><b>D3 option · drop "Most recent" while a span is in play</b><span>Nothing to infer from, and the vet loses the date.</span></div>
-        <div class="frames">
-          <div class="frame">
-            <div class="phone short" aria-label="Option: no Most recent row">
-              <div class="screen-head">
-                <dl class="script">
-                  <dt>Sign</dt><dd>coughing</dd>
-                  <dt>How often</dt><dd>23 episodes across 7 of 8 weeks</dd>
-                </dl>
-                <div class="ctx">Prednisone since Sep 21, 6 days. Started 6 days ago.</div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <div class="frame-cap"><b>Dates kept, the drug named beside them <span class="pill">ruled · D3</span></b><span>The course line drops "Started 6 days ago" and says what the drug can hide, in both its forms. The compare row is withheld when a half that touches a span is 0, as on the charts.</span></div>
       </div>
     </div>
 
     <!-- 00e -->
-    <h3 id="order">00e · What leads on a timing screen during a trial</h3>
-    <div class="col"><p>Nyx's after-meal vomiting finding, rabbit trial day 30, prednisone since Sep 21. The timing screen leads with its lanes (CUL-1270, D2 = a).</p></div>
+    <h3 id="order">00e · The lanes: each intervention gets its own lane</h3>
+    <div class="col"><p>Nyx's after-meal vomiting finding. Rabbit trial since Aug 29, prednisone since Sep 21. The lanes plot minutes after a meal, not dates, so a drug can't be shaded across them the way it is on the bars. It gets its own lane instead.</p></div>
     <div class="frames">
       <div class="frame reject">
         <div class="phone short" aria-label="Today: the trial lanes lead">
           <div class="screen-head">
             <span class="reject-tag">today · counterexample 6</span>
             <div class="screen-title">Vomiting within an hour of meals</div>
-            <div class="lanes2 hlbox">
-              <div class="ln">Before the trial · 9</div>
-              <div class="track"><i style="left:8%"></i><i style="left:14%"></i><i style="left:22%"></i><i style="left:40%"></i></div>
-              <div class="ln">In the trial · 4</div>
-              <div class="track"><i style="left:10%"></i><i style="left:18%"></i></div>
+            <div class="ln3 lead">
+              <div class="hd"><b>Before the trial</b><span>4 timed of 6</span></div>
+              <div class="tk"><i style="left:6%"></i><i style="left:12%"></i><i style="left:30%"></i><i style="left:55%"></i></div>
+              <div class="hd"><b>In the trial</b><span>6 timed of 7</span></div>
+              <div class="tk"><i style="left:5%"></i><i style="left:9%"></i><i style="left:14%"></i><i style="left:17%"></i><i style="left:40%"></i><i style="left:62%"></i></div>
+              <div class="ax"><span>0</span><span>30 min</span><span>2 h</span><span>6 h+</span></div>
             </div>
             <div class="mini-label">Around this</div>
-            <div class="ctx">Prednisone since Sep 21, 6 days: 1 episode, with something logged on 6 of 6.</div>
+            <div class="ctx">Prednisone since Sep 21, 6 days: 3 episodes, with something logged on 6 of 6.</div>
           </div>
         </div>
-        <div class="frame-cap"><b>What ships today</b><span>The first thing on the screen is a before-and-during split on the diet. The drug sits below the fold.</span></div>
+        <div class="frame-cap"><b>What ships today</b><span>On a flat or rising count the screen opens on a before-and-during split on the diet. The prednisone started inside "In the trial" is a line further down.</span></div>
       </div>
 
       <div class="frame">
-        <div class="phone short" aria-label="Proposed: one lane, no trial mark">
+        <div class="phone short" aria-label="Proposed: three lanes, the last one hatched">
           <div class="screen-head">
             <div class="back">‹</div>
             <div class="screen-title">Vomiting within an hour of meals</div>
-            <div class="lanes2">
-              <div class="ln">Last 8 weeks · 13</div>
-              <div class="track"><i style="left:6%"></i><i style="left:12%"></i><i style="left:18%"></i><i style="left:30%"></i><i style="left:44%"></i></div>
+            <div class="ln3">
+              <div class="hd"><b>Before the trial</b><span>4 timed of 6</span></div>
+              <div class="tk"><i style="left:6%"></i><i style="left:12%"></i><i style="left:30%"></i><i style="left:55%"></i></div>
+              <div class="hd"><b>In the trial, Aug 29 to Sep 20</b><span>3 timed of 4</span></div>
+              <div class="tk"><i style="left:5%"></i><i style="left:14%"></i><i style="left:40%"></i></div>
+              <div class="hd"><b>In the trial, on prednisone from Sep 21</b><span>3 timed of 3</span></div>
+              <div class="tk span"><i style="left:9%"></i><i style="left:17%"></i><i style="left:62%"></i></div>
+              <div class="ax"><span>0</span><span>30 min</span><span>2 h</span><span>6 h+</span></div>
+              <div class="un">2 + 1 episodes couldn't be timed. They aren't on the lanes.</div>
             </div>
+            <div class="spanlabel"><i></i><span>Prednisone can hide vomiting and change when it comes.</span></div>
             <div class="mini-label">Around this</div>
-            <div class="ctx">Prednisone since Sep 21, 6 days: 1 episode, with something logged on 6 of 6. It can hide vomiting.</div>
-            <div class="ctx">Rabbit trial, day 30 of 56: 4 episodes in its 30 days, with something logged on 28.</div>
+            <div class="ctx">Prednisone since Sep 21, 6 days: 3 episodes, with something logged on 6 of 6. It can hide vomiting.</div>
+            <div class="ctx">Rabbit trial, day 30 of 56: 7 episodes in its 30 days, with something logged on 28.</div>
           </div>
         </div>
-        <div class="frame-cap"><b>A · One lane while a masking span touches the trial <span class="pill">current</span> <span class="pill open">D4</span></b><span>The lanes draw undivided, the shape the screen already uses on a safety finding or a falling pair. The timing claim keeps its evidence; the diet stops being the first explanation. The trial is still named, below the drug, in <i>Around this</i>.</span></div>
+        <div class="frame-cap"><b>Split at each change <span class="pill">current</span> <span class="pill open">D4</span></b><span>Every period the record knows about gets its own lane, in order: before the trial, the trial alone, the trial with the drug. The drug's lane is hatched, the same box as on the bars. You see where the episodes fell in each period, and the diet never stands alone as the explanation. A lane with no episodes shows its hatch and its window, never "0 timed of 0". Where the lanes merge today (the trial count falls), they still merge.</span><span class="spoken">Timed from meals. Before the trial, 4 timed of 6. In the trial, August 29 to September 20, 3 timed of 4. In the trial, on prednisone from September 21, 3 timed of 3.</span></div>
+      </div>
+    </div>
+
+    <!-- 00f -->
+    <h3 id="vet-knows">00f · "With your vet", renamed</h3>
+    <div class="col"><p>Round 3's care state: the owner told the app the vet knows about a concern, so Home stops asking them to book. The tag named a place, not a fact, and never said what it does. Otis's Home, day 30 of his trial.</p></div>
+    <div class="frames">
+      <div class="frame reject">
+        <div class="phone short" aria-label="Round 3's With your vet row">
+          <div class="card">
+            <span class="reject-tag">round 3 · unclear</span>
+            <div class="zone-label">Signal</div>
+            <div class="railed watch door"><div class="body"><div class="head"><span class="state with">With your vet</span>Vomiting</div><div class="sub">You said his vet started the trial for it. 9 episodes in the 30 days of the trial, with something logged on 29 of them.</div></div></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>What round 3 drew</b><span>"With your vet" could mean the pet is at the clinic, or that the vet has taken over. Neither is true.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="Proposed: Your vet knows, with what it does">
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed watch door"><div class="body"><div class="head"><span class="state knows">Your vet knows</span>Vomiting</div><div class="sub">You said his vet started the trial for it. 9 episodes in the 30 days of the trial, with something logged on 29 of them.</div><div class="consequence">Not asking you to book. Back here if it comes more often.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>Your vet knows <span class="pill">current</span> <span class="pill open">D6</span></b><span>The tag uses the owner's own words (the button is "My vet knows"), and a quiet third line says what it does: no ask to book, and it comes back if it gets more frequent. "Back because…" and "Recheck booked" keep their words.</span><span class="spoken">Vomiting, your vet knows. You said his vet started the trial for it. 9 episodes in the 30 days of the trial. Not asking you to book.</span></div>
       </div>
 
       <div class="option">
-        <div class="option-head"><b>B · Keep the split, move <i>Around this</i> above the lanes</b><span>The drug is read first, then the before-and-during split.</span></div>
+        <div class="option-head"><b>D6 option · no tag, the sentence leads</b><span>The row opens on the fact in full. Clearest on its own; the longest row on Home.</span></div>
         <div class="frames">
           <div class="frame">
-            <div class="phone short" aria-label="Option B: Around this first">
-              <div class="screen-head">
-                <div class="mini-label" style="margin-top:0">Around this</div>
-                <div class="ctx">Prednisone since Sep 21, 6 days: 1 episode, with something logged on 6 of 6. It can hide vomiting.</div>
-                <div class="lanes2">
-                  <div class="ln">Before the trial · 9</div>
-                  <div class="track"><i style="left:8%"></i><i style="left:14%"></i><i style="left:22%"></i><i style="left:40%"></i></div>
-                  <div class="ln">In the trial · 4</div>
-                  <div class="track"><i style="left:10%"></i><i style="left:18%"></i></div>
-                </div>
+            <div class="phone short" aria-label="Option: sentence-led row">
+              <div class="card">
+                <div class="zone-label">Signal</div>
+                <div class="railed watch door"><div class="body"><div class="head">Vomiting · your vet started the trial for it</div><div class="sub">9 episodes in the trial's 30 days, with something logged on 29. Not asking you to book while the trial runs.</div></div></div>
               </div>
             </div>
           </div>
@@ -647,27 +653,28 @@
     </div>
 
     <!-- briefs -->
-    <h3 id="r4-briefs">00f · Yours to rule</h3>
+    <h3 id="r5-briefs">00g · Yours to rule</h3>
     <div class="briefs">
-      <div class="brief"><h4>D1 · The bars <span class="pill open">decide</span></h4>
-        <p><b>Deciding:</b> how a weekly chart shows the weeks a masking span touches.</p>
-        <ul><li><b>A (recommended):</b> shade and name the span, drop only the zero's numeral, keep non-zero numbers. Meets the Sep 29 rule and keeps the escalation-direction count.</li><li>B: keep every number and caption the span. Breaks the rule as written.</li><li>C: no numerals in the span. Hides the counts a vet wants.</li></ul>
-        <p><b>Consequence:</b> A changes <code>WeeklyBars</code> and its spoken label only where a span is in play.</p></div>
-      <div class="brief"><h4>D2 · Zero only, or every fall <span class="pill open">decide</span></h4>
-        <p><b>Deciding:</b> whether the compare, the trial sentence and the phone-script compare are withheld on any fall beside a masking span, or only on a zero.</p>
-        <ul><li><b>Every fall (recommended):</b> "7, then 2" beside maropitant is the same "it worked" reading as "7, then 0"; a rise always stays.</li><li>Zero only: mirrors the server lines exactly; a fall to 2 still draws.</li></ul>
-        <p><b>Consequence:</b> every fall adds one withheld reason to the compare and one gate on the trial sentence.</p></div>
-      <div class="brief"><h4>D3 · The dates <span class="pill open">decide</span></h4>
-        <p><b>Deciding:</b> how "Most recent 8 days ago" stops implying a zero beside "Started 6 days ago".</p>
-        <ul><li><b>Name the drug beside it (recommended):</b> an <i>On board</i> row in the phone script, and the course line says what the drug can hide, in both forms. Needs a one-clause change in the server's course line.</li><li>Drop "Most recent" while a span is in play. The vet loses the date.</li></ul>
-        <p><b>Consequence:</b> the recommendation touches <code>generate-signal/careContext.ts</code> in this PR (copy only; it deploys on merge, dark behind the key).</p></div>
-      <div class="brief"><h4>D4 · What leads <span class="pill open">decide</span></h4>
-        <p><b>Deciding:</b> what a timing screen leads with when a masking drug runs inside a trial.</p>
-        <ul><li><b>A (recommended):</b> one undivided lane, no trial mark; the drug and the trial stay named in <i>Around this</i>.</li><li>B: keep the split lanes and move <i>Around this</i> above them.</li></ul>
-        <p><b>Consequence:</b> A reuses the undivided shape the screen already draws; B reorders the screen for one case.</p></div>
+      <div class="brief"><h4>D2 · One rule for charts and sentences <span class="pill open">confirm</span></h4>
+        <p><b>Deciding:</b> the rule your 00a, 00b and 00c reactions add up to.</p>
+        <ul><li><b>As drawn (recommended):</b> charts keep every mark inside a hatched, named span and drop only a zero's numeral; a sentence that compares two windows goes quiet on any fall beside a span. A rise always shows.</li><li>Zero only everywhere: the trial sentence would still print "2 in the trial · 7 before" beside prednisone.</li></ul>
+        <p><b>Consequence:</b> this is the predicate the build implements.</p></div>
+      <div class="brief"><h4>D4 · Lanes split at each change <span class="pill open">confirm</span></h4>
+        <p><b>Deciding:</b> whether a masking course inside a trial gets its own hatched lane.</p>
+        <ul><li><b>Three lanes (recommended):</b> answers "why hide it" and keeps the diet from standing alone.</li><li>Two lanes, with the drug line moved above them.</li></ul>
+        <p><b>Consequence:</b> three lanes change <code>signalLanes</code>' split. Where the trial lane falls, the lanes still merge (ruling (a)); showing falling lanes would reopen that ruling, which I'd raise separately.</p></div>
+      <div class="brief"><h4>D5 · Ask what was given at the visit <span class="pill open">decide</span></h4>
+        <p><b>Deciding:</b> whether the visit stays an assumed masking drug until the owner answers.</p>
+        <ul><li><b>Ask, keep the assumption until answered (recommended):</b> your point and Dr. Chen's both hold. Owners often don't know a shot was a steroid, and an answer is more precise (Cytopoint hides itch, not cough).</li><li>Drop the assumption now: no question, and an unlogged Depo-Medrol shot shows 0 for six weeks.</li></ul>
+        <p><b>Consequence:</b> the question is a small schema change plus the visit form, so it's its own issue. This PR keeps the Sep 29 default and draws the caption without its door until that lands.</p></div>
+      <div class="brief"><h4>D6 · "Your vet knows" <span class="pill open">decide</span></h4>
+        <p><b>Deciding:</b> the care state's name on Home, Get ready and the spoken label.</p>
+        <ul><li><b>"Your vet knows" tag + one line on what it does (recommended):</b> the owner's own words, and the row explains itself.</li><li>No tag, a sentence-led row (clearest, longest).</li></ul>
+        <p><b>Consequence:</b> a vocabulary edit to the care-state spec (§0.2, §7) and PR-35's build. Not this PR.</p></div>
     </div>
-    <div class="note" style="margin-top:18px"><b>Build calls, no ruling needed (reverse by comment):</b> one client predicate decides every case, derived from the same drug table and span rule the server uses, lifted into one shared module so the two can't drift. It reads the pet's courses and last visit from the device, so it also covers screens whose finding carries no EN-10 lines (a trial-response or reflection screen) and Get ready's trial row. It acts only on a Signal written with <code>engines_v3_en10</code> on (the cache row's engine stamp, the way EN-3's reads gate); flag-off, every screen stays as it is today. A window that touches no span is never changed.</div>
+    <div class="note" style="margin-top:18px"><b>Build calls, no ruling needed (reverse by comment):</b> one client predicate decides every case. It comes from the same drug table and span rule the server uses, lifted into one shared module so the two can't drift. It reads the pet's courses and last visit from the device, so it also covers screens whose finding carries no EN-10 lines, and Get ready's trial row. It acts only on a Signal written with <code>engines_v3_en10</code> on (the cache row's engine stamp, the way EN-3's reads gate). Flag-off, every screen stays as it is today. A window that touches no span is never changed.</div>
   </section>
+
 
   <!-- §01 -->
   <section id="states">
@@ -1394,7 +1401,7 @@
   </section>
 
   <footer>
-    <span>Round 4 of one page (§00 is round 4; §01–§08 are round 3). Rounds 1 and 2 are in git (e6fb38f and the round 2 commit on main). The spec is <code>docs/nyx-care-state-requirements.md</code>.</span>
+    <span>Round 5 of one page (§00 is round 5, round 4 is in git at 9a0368c; §01–§08 are round 3). Rounds 1 and 2 are in git (e6fb38f and the round 2 commit on main). The spec is <code>docs/nyx-care-state-requirements.md</code>.</span>
     <a href="https://linear.app/projectnyx/issue/CUL-1139">CUL-1139</a>
     <a href="https://linear.app/projectnyx/issue/CUL-1144">CUL-1144</a>
     <a href="https://linear.app/projectnyx/issue/CUL-1146">CUL-1146 rulings</a>
