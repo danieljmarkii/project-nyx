@@ -432,6 +432,7 @@ const HISTORY_ROW_SELECT = `
          COALESCE(pd.dose_count, 0) AS paired_dose_count,
          pd.rep_event_id AS paired_dose_event_id,
          pdmi.generic_name AS paired_dose_drug_name,
+         COALESCE(pd.unrated_count, 0) AS paired_dose_unrated_count,
          lk.outcome AS look_outcome, lk.words AS look_words, lk.notes AS look_note,
          lk.local_day AS look_local_day,
          ma.id AS dose_id, ma.medication_id AS medication_id, rg.drug_name AS regimen_drug_name,

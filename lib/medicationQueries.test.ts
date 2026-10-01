@@ -284,9 +284,11 @@ describe('PAIRED_DOSE_REVERSE_JOIN (B-156 PR B4 vehicle → dose cross-link)', (
     db.exec(`CREATE TABLE medication_items_cache (
       id TEXT PRIMARY KEY, generic_name TEXT, brand_name TEXT, strength TEXT, form TEXT, default_route TEXT
     );`);
-    // paired_event_id is the only addition over the picker harness's dose table.
+    // paired_event_id and adherence (CUL-382) are the additions over the picker
+    // harness's dose table.
     db.exec(`CREATE TABLE medication_administrations (
-      id TEXT PRIMARY KEY, event_id TEXT, pet_id TEXT, medication_item_id TEXT, paired_event_id TEXT
+      id TEXT PRIMARY KEY, event_id TEXT, pet_id TEXT, medication_item_id TEXT, paired_event_id TEXT,
+      adherence TEXT
     );`);
     return db;
   }
@@ -374,4 +376,39 @@ describe('PAIRED_DOSE_REVERSE_JOIN (B-156 PR B4 vehicle → dose cross-link)', (
     db.close();
     expect(row).toMatchObject({ paired_dose_count: 1, paired_dose_event_id: 'dose-1', paired_dose_drug_name: null });
   });
+
+  // The two columns as `getEventById` / `getTimeline` select them.
+  const REVERSE_UNRATED = `
+    SELECT COALESCE(pd.dose_count, 0) AS n, COALESCE(pd.unrated_count, 0) AS unrated
+    FROM events e
+    ${PAIRED_DOSE_REVERSE_JOIN}
+    WHERE e.id = ?`;
+
+  // CUL-382 — the unanswered-dose count the meal's "Unconfirmed" tag reads.
+  it('counts only the paired doses with NO adherence answer, and never a soft-deleted one', () => {
+    const db = reverseDb();
+    const ev = db.prepare(`INSERT INTO events (id, occurred_at, deleted_at) VALUES (?, ?, ?)`);
+    ev.run('meal-1', '2026-06-23T16:00:00.000Z', null);
+    ev.run('dose-open', '2026-06-23T16:01:00.000Z', null);
+    ev.run('dose-given', '2026-06-23T16:02:00.000Z', null);
+    ev.run('dose-missed', '2026-06-23T16:03:00.000Z', null);
+    ev.run('dose-gone', '2026-06-23T16:04:00.000Z', '2026-06-23T17:00:00.000Z');
+    const dose = db.prepare(
+      `INSERT INTO medication_administrations (id, event_id, pet_id, medication_item_id, paired_event_id, adherence)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    dose.run('adm-open', 'dose-open', 'p1', null, 'meal-1', null);
+    // An answer of any kind, `missed` included, is the owner's call and not in doubt.
+    dose.run('adm-given', 'dose-given', 'p1', null, 'meal-1', 'given');
+    dose.run('adm-missed', 'dose-missed', 'p1', null, 'meal-1', 'missed');
+    // Unanswered but removed: the reversal takes it out of the doubt with the count.
+    dose.run('adm-gone', 'dose-gone', 'p1', null, 'meal-1', null);
+
+    const row = db.prepare(REVERSE_UNRATED).get('meal-1') as unknown as { n: number; unrated: number };
+    const solo = db.prepare(REVERSE_UNRATED).get('dose-open') as unknown as { n: number; unrated: number };
+    db.close();
+    expect(row).toEqual({ n: 3, unrated: 1 });
+    expect(solo).toEqual({ n: 0, unrated: 0 });
+  });
+
 });

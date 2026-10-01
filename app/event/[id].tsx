@@ -42,7 +42,7 @@ import { AdherenceChipRow, DoseAdherence } from '../../components/log/AdherenceC
 import { VehicleChipRow } from '../../components/log/VehicleChipRow';
 import {
   doubleDoseNote, DoubleDoseResult, asDoseVehicle,
-  isComboDoseInDoubt, doseInDoubtNote,
+  isComboDoseInDoubt, isAnyPairedDoseInDoubt, doseInDoubtNote, DOSE_IN_DOUBT_TAG,
   pairedVehicleLinkLabel, pairedDoseLinkLabel, type DoseVehicle,
 } from '../../lib/medications';
 import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
@@ -111,12 +111,19 @@ function confidenceWord(confidence: string | null | undefined): string | null {
 // when there is nothing to point at (a null label OR no target) — which is how the
 // soft-delete drop works: removing the other side nulls the label/target and the link
 // vanishes, never dangling at an event gone from History.
+//
+// CUL-382 — `inDoubt` adds the History row's calm "Unconfirmed" pill, so a meal whose
+// dose may never have gone down says so where the owner reviews the meal, not only on
+// the dose's own screen. The pill is part of the link's spoken label too: the label
+// replaces the children for a screen reader, so a pill left out of it is unheard.
 function ComboLinkRow({
   label,
   targetEventId,
+  inDoubt = false,
 }: {
   label: string | null;
   targetEventId: string | null | undefined;
+  inDoubt?: boolean;
 }) {
   if (!label || !targetEventId) return null;
   return (
@@ -125,9 +132,14 @@ function ComboLinkRow({
       onPress={() => router.push({ pathname: '/event/[id]', params: { id: targetEventId } })}
       activeOpacity={0.7}
       accessibilityRole="link"
-      accessibilityLabel={label}
+      accessibilityLabel={inDoubt ? `${label}, ${DOSE_IN_DOUBT_TAG}` : label}
     >
       <ThemedText style={styles.comboLinkText} numberOfLines={1}>{label}</ThemedText>
+      {inDoubt ? (
+        <View style={styles.inDoubtTag}>
+          <ThemedText style={styles.inDoubtTagText}>{DOSE_IN_DOUBT_TAG}</ThemedText>
+        </View>
+      ) : null}
       <ChevronRight size={16} color={theme.colorAccent} strokeWidth={2} />
     </TouchableOpacity>
   );
@@ -968,6 +980,10 @@ export default function EventDetailScreen() {
                 drugName: event.paired_dose_drug_name,
               })}
               targetEventId={event.paired_dose_event_id}
+              inDoubt={isAnyPairedDoseInDoubt({
+                vehicleIntake: intakeRating,
+                unratedDoseCount: event.paired_dose_unrated_count ?? 0,
+              })}
             />
           ) : null}
 
@@ -1248,6 +1264,23 @@ const styles = StyleSheet.create({
     color: theme.colorAccentInk,
     fontWeight: theme.fontWeightMedium,
     flexShrink: 1,
+  },
+  // CUL-382 — the History row's in-doubt pill (`EventRow` inDoubtTag), with the rose INK
+  // for its text: the bright rose is a glyph tint, and this is text on the light rose
+  // ground (C-1). It never shrinks; the drug name in the label yields first.
+  inDoubtTag: {
+    flexShrink: 0,
+    paddingHorizontal: theme.space1,
+    paddingVertical: theme.spaceMicro,
+    borderRadius: theme.radiusFull,
+    borderWidth: 1,
+    borderColor: theme.colorEventSymptom,
+    backgroundColor: theme.colorEventSymptomLight,
+  },
+  inDoubtTagText: {
+    fontSize: theme.textXS,
+    fontWeight: theme.fontWeightMedium,
+    color: theme.colorEventSymptomInk,
   },
   // The retroactive combo entry (B-325). Accent text, ≥44pt tap target (the 3am-test
   // floor) via minHeight; a top hairline so it reads as a distinct, optional add-on beneath
