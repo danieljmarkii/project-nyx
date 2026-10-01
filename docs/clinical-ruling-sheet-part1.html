@@ -1,0 +1,302 @@
+<title>Clinical Ruling Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,650&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one narrow reading column; a summary strip, then one ruling card per row, then the real-vet list. */
+:root {
+  --bg: #f6f7f5;
+  --surface: #ffffff;
+  --ink: #1d2422;
+  --muted: #5d6965;
+  --line: #dde3e0;
+  --accent: #1f6f66;
+  --accent-soft: #e2f0ed;
+  --loud: #9a3b1f;
+  --loud-soft: #f8e6de;
+  --quiet: #6a4fa0;
+  --quiet-soft: #ece6f6;
+  --neutral-soft: #eceeed;
+  --font-display: "Literata", Georgia, "Times New Roman", serif;
+  --font-body: "Public Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121615; --surface: #1a201e; --ink: #e5ebe8; --muted: #9aa7a2; --line: #2c3532;
+    --accent: #6cc3b6; --accent-soft: #1d3330; --loud: #f0a07f; --loud-soft: #3a2219;
+    --quiet: #b9a3e6; --quiet-soft: #2a2238; --neutral-soft: #242b29; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121615; --surface: #1a201e; --ink: #e5ebe8; --muted: #9aa7a2; --line: #2c3532;
+  --accent: #6cc3b6; --accent-soft: #1d3330; --loud: #f0a07f; --loud-soft: #3a2219;
+  --quiet: #b9a3e6; --quiet-soft: #2a2238; --neutral-soft: #242b29; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15.5px; line-height: 1.55; }
+.wrap { max-width: 44rem; margin: 0 auto; padding-inline: 16px; padding-block: 28px 64px; display: flex; flex-direction: column; gap: 28px; }
+h1, h2 { font-family: var(--font-display); font-weight: 650; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: 1.9rem; line-height: 1.15; }
+h2 { font-size: 1.3rem; }
+p { margin: 0; }
+.eyebrow { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.lede { color: var(--muted); max-width: 40rem; }
+header { display: flex; flex-direction: column; gap: 10px; }
+.rules { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+.rule { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
+.rule b { font-weight: 600; }
+.pill { display: inline-flex; align-items: center; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.p-loud { background: var(--loud-soft); color: var(--loud); }
+.p-quiet { background: var(--quiet-soft); color: var(--quiet); }
+.p-neutral { background: var(--neutral-soft); color: var(--muted); }
+.p-cut { background: var(--accent-soft); color: var(--accent); }
+.list { display: flex; flex-direction: column; gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.card.top { border-color: var(--loud); }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rid { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 500; color: var(--accent); }
+.issue { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
+.q { font-family: var(--font-display); font-size: 1.06rem; font-weight: 500; line-height: 1.4; }
+.rec { border-left: 3px solid var(--accent); padding-left: 10px; }
+.rec .lab, .opts .lab { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; display: block; }
+.opts { font-size: 0.92rem; color: var(--muted); }
+.verdict { font-size: 0.9rem; }
+.verdict b { font-weight: 600; }
+details { font-size: 0.9rem; }
+summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+details[open] summary { margin-bottom: 6px; }
+details p + p { margin-top: 6px; }
+.choose { display: flex; flex-wrap: wrap; gap: 6px; }
+.choose button { font: inherit; font-size: 0.85rem; font-weight: 500; padding: 6px 12px; min-height: 36px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+.choose button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+button:focus-visible, summary:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.out { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.out textarea { width: 100%; min-height: 9rem; font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; resize: vertical; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn { font: inherit; font-weight: 600; font-size: 0.9rem; padding: 8px 14px; min-height: 40px; border-radius: 8px; border: 0; background: var(--accent); color: var(--surface); cursor: pointer; }
+.status { font-size: 0.85rem; color: var(--muted); }
+ol.vet { margin: 0; padding-left: 1.3rem; display: flex; flex-direction: column; gap: 6px; }
+code { font-family: var(--font-mono); font-size: 0.85em; }
+.foot { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; }
+.foot a { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">CUL-583 · Part 1 · gates the 1.2.0 cut</span>
+    <h1>The clinical ruling sheet</h1>
+    <p class="lede">Sixteen rows. Answer each with <b>agree</b> (take option A) or a letter. About thirty minutes. Each card says whether the change makes the app speak up more or less than it does today, and what that earns under your E-6 ruling of 26 September.</p>
+  </header>
+
+  <section class="rules" aria-label="How E-6 sorts the rows">
+    <div class="rule"><span class="pill p-loud">Louder</span><span>Speaks up more. <b>Adopted provisionally</b> on your agree.</span></div>
+    <div class="rule"><span class="pill p-quiet">Quieter</span><span>Speaks up less. <b>Needs your sign-off</b> and harness proof. Without both, today's louder behaviour stays.</span></div>
+    <div class="rule"><span class="pill p-neutral">Neutral</span><span>Wording, disclosure or a ratification. <b>Your agree</b> is enough.</span></div>
+  </section>
+
+  <p class="status">One harness fact: the synthetic test pets score the Signal engine only, not the diet-trial card or the vet report's trial block. So every quieter row on those surfaces has <b>no harness proof yet</b>; each one names the substitute proof a build could produce.</p>
+
+  <div class="list" id="rows"></div>
+
+  <section class="out" aria-labelledby="out-h">
+    <h2 id="out-h">Your rulings</h2>
+    <p class="status">Tap a choice on each card. Your picks stay on this device. Copy them and paste into a CUL-583 comment.</p>
+    <textarea id="out" readonly aria-label="Your rulings as text"></textarea>
+    <div class="row">
+      <button class="btn" id="copy" type="button">Copy rulings</button>
+      <span class="status" id="copied" role="status"></span>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:10px" aria-labelledby="vet-h">
+    <h2 id="vet-h">For the real-vet review</h2>
+    <p class="status">The thinnest evidence in Part 1. These go to CUL-1312 and block nothing.</p>
+    <ol class="vet">
+      <li>R3: should a refusal card wait a minimum number of trial days before it speaks?</li>
+      <li>R4: should a run of refused or picked meals over 48 hours in a cat be "call now" rather than "today"? Should the picker keep "today"?</li>
+      <li>R6: are 3 rated feedings enough to put a refusal flag on the vet's safety band?</li>
+      <li>R10: is two sporadic vomits in eight weeks the right model of a healthy pet, and is about 4% an acceptable false card rate?</li>
+      <li>R12: cat gut trials start at 42 days with no feline gut source on record. Is twelve weeks right for cats too?</li>
+      <li>R15: is "about half" the right line between Some and Most, and how should owners whose taps shift mid-record be handled?</li>
+    </ol>
+  </section>
+
+  <p class="foot">Full sheet, with file and line citations, every counterexample and Part 2 (Engines v3): <code>docs/clinical-ruling-sheet-2026-10.md</code> on <a href="https://github.com/danieljmarkii/project-nyx/pull/995">draft PR #995</a>. An isolated adversarial review failed the first draft on three rows (R2, R13a, R14). All three were rewritten, and this page shows the revised versions.</p>
+</div>
+
+<script>
+const ROWS = [
+  { id: "R1", issue: "CUL-60(b)", top: true, cut: true, dir: "loud",
+    q: "A cat fed once a day whose trial food the app has never recognised refuses every bowl. Should the card stay silent for nine days?",
+    a: "Speak from the meal record as soon as nothing has matched the trial food, from the third rated bowl (day 3), not the tenth. Caveat the off-diet count on that card.",
+    opts: "B: lower the count to 5 · C: no change",
+    verdict: "Adopt provisionally",
+    why: "The ten-meal wait was built to test whether a database match is broken, not whether a cat is eating. The report's own line names a 48 to 72 hour window for cats.",
+    tried: "Executed on an unmatched once-a-day cat: fires on day 3; the trial test suites stay green. A bag that matched once before being re-photographed is not reached here (R5 is)." },
+  { id: "R2", issue: "CUL-54(a)", cut: true, dir: "neutral", dirLabel: "Neutral firing, softer tense",
+    q: "May the trial card say “needs a call today” from refusals that are weeks old?",
+    a: "Only when nothing in the last 14 days was left unfinished, the card speaks in dated past tense (“On 2 days between 3 and 4 March …”) and asks for the next few ratings. Any recent unfinished meal keeps today's present tense.",
+    opts: "B: let the card expire after 14 quiet days · C: no change",
+    verdict: "Adopt provisionally, with your explicit agree on the tense. The cut's must-have.",
+    why: "The defect is a false tense, not a false alarm. Dating the fact makes every word true and keeps the card on screen.",
+    tried: "The first draft broke on a cat refusing twice today while old refusals held the card: it showed past tense and a false “nothing rated since”. Fixed by gating on the last 14 days." },
+  { id: "R3", issue: "CUL-54(b)", dir: "neutral", dirLabel: "Neutral (no change)",
+    q: "Should the refusal card wait a minimum number of trial days before it may speak?",
+    a: "No floor. Keep today's behaviour.",
+    opts: "B: a 3 day floor · C: a 7 day floor",
+    verdict: "Real-vet list",
+    why: "Any floor is quieter and nothing can measure it. The day 2 dog already gets the mildest note on the card.",
+    tried: "A cat refusing a new trial diet from day 1: a 3 day floor silences her inside the window the feline note cites." },
+  { id: "R4", issue: "CUL-57", cut: true, dir: "loud",
+    q: "A cat picking at every bowl and a cat eating nothing get the same sentence. Should the app tell them apart?",
+    a: "Add a lead line when every recent rated trial-diet feeding was refused or only picked at: “The last 4 trial-diet feedings you rated, back to Tuesday 6 PM, were refused or only picked at.” The picker's sentence stays as is.",
+    opts: "B: also soften the picker's “today” · C: no change",
+    verdict: "Adopt provisionally. B goes to the real-vet list.",
+    why: "The emergency gets a sharper sentence and nobody gets a quieter one. It states a count and a start date, never “nothing eaten for 52 hours”.",
+    tried: "A cat finishing rated toppers while refusing the trial diet: “meals” over-claimed, so the noun now follows what was measured." },
+  { id: "R5", issue: "CUL-59", dir: "loud",
+    q: "Two blind spots when the app only partly recognises the trial food, or a substitute food waters a refusal down. Fix them now?",
+    a: "Two louder fallbacks: use the meal record when no trial-diet feeding was logged in the last 14 days, and under that fallback also test each food on its own.",
+    opts: "B: no change, wait for better food recognition",
+    verdict: "Adopt provisionally",
+    why: "The first draft declined this for a reason two other rows contradict. Under E-6 the consistent answer is to adopt.",
+    tried: "A cat refusing a disliked topper fires: an over-fire, already disclosed as “can't match these meals”." },
+  { id: "R6", issue: "CUL-60(a)", dir: "neutral", dirLabel: "Neutral (disclosure)",
+    q: "Three rated meals can drive the vet report's refusal flag however many unrated meals surround them. Raise the bar?",
+    a: "Keep the bar. Print the counts beside it: “3 of 3 rated … (64 logged in these dates; 61 with no intake recorded)”.",
+    opts: "B: require a rated share · C: no change",
+    verdict: "Adopt provisionally, plus real-vet list",
+    why: "Raising the bar is quieter with no proof. The vet's first question is how much of the record this is.",
+    tried: "An owner who rated only the bad meals: the vet now sees 3 of 64 and can weigh it." },
+  { id: "R7", issue: "CUL-55", dir: "neutral", dirLabel: "Neutral (no firing change)",
+    q: "A bowl is topped up all day. May the refusal card still say the cat isn't eating what's put down?",
+    a: "Keep the card on top. Add: “Mochi also grazes from a bowl that's topped up, so Culprit can't see what she takes from the bowl.” Narrow the call to the meals the owner rated.",
+    opts: "B: put the grazing card above the refusal card",
+    verdict: "Adopt provisionally, drawn in the mock round first",
+    why: "B would hide a real refusal of rated wet meals behind a card that says nothing about intake.",
+    tried: "The first wording (“not everything she ate”) implied she ate from the bowl. Fixed." },
+  { id: "R8", issue: "CUL-56(1)", dir: "loud", dirLabel: "Louder (adds a line)",
+    q: "Once the refusal card latches, the one line that says how to clear it never shows. Add it?",
+    a: "When too few recent meals are rated for the card to stand down: “Rating the next few meals is how this card can tell that Mochi is eating again.”",
+    opts: "B: no change",
+    verdict: "Adopt provisionally, drawn in the mock round first",
+    why: "The owner who stopped rating is the one owner who can never be told what would help.",
+    tried: "Only genuinely finished meals clear the card, so the line cannot be gamed." },
+  { id: "R9", issue: "CUL-56(2)", dir: "loud",
+    q: "The “rate your meals” line looks at the whole trial, so four diligent weeks buy four silent ones. Add recency?",
+    a: "Also check the last 14 days, and show the line if either window is under half rated.",
+    opts: "B: last 14 days only",
+    verdict: "Adopt provisionally",
+    why: "Reuses a 14 day window already ratified. Only adds a line.",
+    tried: "Four rated weeks, then nothing: the line appears on day 8 of the gap." },
+  { id: "R10", issue: "CUL-179", dir: "loud",
+    q: "Should the “ongoing for weeks” vomiting card need 5 episodes instead of 6?",
+    a: "5, with its noise test re-pinned on both sides, as the cough floor's already is.",
+    opts: "B: keep 6",
+    verdict: "Adopt provisionally, plus real-vet list",
+    why: "A safety lane errs toward speaking up. 5 catches the five-episode weekly and fortnightly courses that 6 misses.",
+    tried: "Measured on healthy occasional vomiters: 6 fires on 1.4%, 5 on 4.1%. That fails today's 2% test, so the test is re-pinned openly, with one more fixture." },
+  { id: "R11", issue: "CUL-267", dir: "neutral", dirLabel: "Neutral (no change)",
+    q: "Is eight weeks the right grace before an overdue trial stops being treated as running?",
+    a: "Ratify 56 days as it ships.",
+    opts: "B: 28 · C: 84",
+    verdict: "Agree only",
+    why: "The smallest value that keeps every trial believed past its clinical ceiling. At 28 the report lost a gut trial on day 71.",
+    tried: "An abandoned trial keeps its widget row up to eight weeks past target. A cost, bounded." },
+  { id: "R12", issue: "CUL-367", dir: "quiet", dirLabel: "Fewer asks (protective)",
+    q: "A gut trial meets “This trial is done” five times before twelve weeks, a skin trial twice. Change the numbers?",
+    a: "One Keep going tap on a gut trial sets it to 84 days, or 14 days past today if later. Starting windows unchanged.",
+    opts: "B: gut extension +28 flat · C: ratify as is · D: split assessment from continuation",
+    verdict: "Needs your explicit agree. Cat gut 42 days goes to the real-vet list.",
+    why: "The note beside the button already says gut diets often run about three months. A dog not responding at day 28 can still stop.",
+    tried: "A tap on day 90 of a 70 day target would have written a date already past. Fixed with “or 14 days past today”." },
+  { id: "R13a", issue: "CUL-758 / CUL-757", dir: "quiet", dirLabel: "Quieter",
+    q: "Meals of the trial's own prescribed diet, eaten before the app recorded it as the diet, count as off-diet breaches and as antigen exposure. Should they?",
+    a: "No, but only before that food's first trial-diet entry, never after one ends. Those meals leave the count and the chart, still block any “clean” claim, and show as a gap on the card and the report.",
+    opts: "B: count them, with a caption · C: exclude only when it is the trial's only diet",
+    verdict: "Needs your sign-off. No harness proof exists for trial counts; the substitute is a property test that includes the case below.",
+    why: "Before the entry existed, the app was measuring its own record, not the animal. A dog that ate the prescribed diet at every meal showed 9 of 10 off-diet.",
+    tried: "The first draft broke: a diet the vet withdrew, fed ten more days, was erased and the report called the trial clean. Fixed by the before-the-first-entry rule." },
+  { id: "R13b", issue: "CUL-311", dir: "loud",
+    q: "On a back-dated trial, a treat the vet permitted counts as permitted for weeks before the owner told the app. Should it?",
+    a: "No. A permitted extra starts on the day it was entered. Earlier feedings are counted and labelled “fed before it was added” on every surface, the card and Ask included.",
+    opts: "B: today's behaviour · C: start it at the trial start and say so on the report",
+    verdict: "Adopt provisionally",
+    why: "The off-diet count is a floor, so it may only err upward. The label stops an honest owner reading as a careless one.",
+    tried: "With the label on the report only, the card would accuse the owner on day one. Fixed by carrying it everywhere." },
+  { id: "R14", issue: "CUL-749", dir: "loud",
+    q: "The vet report's refusal flag cannot see refusals in trial days the report's window cuts off. Should it?",
+    a: "Fire on the window's refusals or the whole trial's, never one replacing the other, and print each span's count separately.",
+    opts: "B: a one line count in the trial block · C: disclose only (today)",
+    verdict: "Adopt provisionally",
+    why: "A refusing patient is what the flag exists for. A date may reach outside the window; a count stays inside its named span.",
+    tried: "The first draft broke: reading the whole trial instead of the window turned 7 of 8 refused into 7 of 48 and dropped a flag that fires today. Fixed with “or”." },
+  { id: "R15", issue: "CUL-381", dir: "neutral", dirLabel: "Neutral",
+    q: "What do Refused, Picked, Some, Most and All mean?",
+    a: "Tap to reveal: Refused “Didn't eat any. A sniff or a lick counts as refused.” Picked “A few bites.” Some “More than a few bites, about half or less.” Most “More than half, with some left.” All “Finished it.”",
+    opts: "B: split Some and Most at three quarters",
+    verdict: "Adopt provisionally as copy. The half line goes to the real-vet list.",
+    why: "Some against Most is the line the cat intake warnings read. “About half” is the plainest line an owner can judge.",
+    tried: "Owners whose taps shift when the definitions arrive could hide a real decline for one pet. Named, and added to the vet list." }
+];
+
+const DIR = { loud: ["p-loud", "Louder"], quiet: ["p-quiet", "Quieter"], neutral: ["p-neutral", "Neutral"] };
+const KEY = "ruling-sheet-part1-choices";
+let picks = {};
+try { picks = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { picks = {}; }
+
+function choicesFor(r) {
+  const letters = (r.opts.match(/\b([B-D]):/g) || []).map((m) => m[0]);
+  return ["Agree"].concat(letters);
+}
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+
+const list = document.getElementById("rows");
+ROWS.forEach((r) => {
+  const card = el("article", "card" + (r.top ? " top" : ""));
+  card.id = r.id.toLowerCase();
+  const head = el("div", "card-head");
+  head.append(el("span", "rid", r.id), el("span", "issue", r.issue));
+  const d = DIR[r.dir];
+  head.append(el("span", "pill " + d[0], r.dirLabel || d[1]));
+  if (r.cut) head.append(el("span", "pill p-cut", "Before the cut"));
+  if (r.top) head.append(el("span", "pill p-loud", "Most dangerous"));
+  card.append(head, el("p", "q", r.q));
+  const rec = el("div", "rec");
+  rec.append(el("span", "lab", "A, recommended"), el("p", null, r.a));
+  const opts = el("p", "opts"); opts.append(el("span", "lab", "Other options")); opts.append(document.createTextNode(r.opts));
+  const ver = el("p", "verdict"); const vb = el("b", null, "Verdict: "); ver.append(vb, document.createTextNode(r.verdict));
+  const det = el("details"); det.append(el("summary", null, "Why, and what was tried"), el("p", null, r.why), el("p", null, "Tried: " + r.tried));
+  const ch = el("div", "choose"); ch.setAttribute("role", "group"); ch.setAttribute("aria-label", "Your ruling on " + r.id);
+  choicesFor(r).forEach((c) => {
+    const b = el("button", null, c); b.type = "button"; b.id = "pick-" + r.id + "-" + c;
+    b.setAttribute("aria-pressed", picks[r.id] === c ? "true" : "false");
+    b.addEventListener("click", () => {
+      picks[r.id] = picks[r.id] === c ? undefined : c;
+      if (!picks[r.id]) delete picks[r.id];
+      try { localStorage.setItem(KEY, JSON.stringify(picks)); } catch (e) {}
+      ch.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", picks[r.id] === x.textContent ? "true" : "false"));
+      render();
+    });
+    ch.append(b);
+  });
+  card.append(rec, opts, ver, det, ch);
+  list.append(card);
+});
+
+const out = document.getElementById("out");
+function render() {
+  const lines = ROWS.map((r) => r.id + " (" + r.issue + "): " + (picks[r.id] ? picks[r.id].toLowerCase() : "not ruled yet"));
+  const n = ROWS.filter((r) => picks[r.id]).length;
+  out.value = "Part 1 rulings, " + n + " of " + ROWS.length + " ruled\n" + lines.join("\n");
+}
+render();
+document.getElementById("copy").addEventListener("click", () => {
+  const msg = document.getElementById("copied");
+  const done = () => { msg.textContent = "Copied. Paste it into a CUL-583 comment."; };
+  try {
+    navigator.clipboard.writeText(out.value).then(done, () => { out.select(); msg.textContent = "Selected. Copy it from the box."; });
+  } catch (e) { out.select(); msg.textContent = "Selected. Copy it from the box."; }
+});
+</script>

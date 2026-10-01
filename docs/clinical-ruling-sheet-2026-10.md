@@ -3,7 +3,7 @@
 **Date:** 2026-10-01 · **For:** the PM, ruling under E-6 (amended 2026-09-26) ·
 **Replaces:** the "batched Dr. Chen sitting" CUL-583 was filed to book ·
 **Status:** 🧊 dated artifact. The input to a ruling, not a spec. Each row is superseded by the ruling it gets.
-**Read on a phone:** Part 1 is published as an Artifact page, linked from the CUL-583 comment that carries its ruling table.
+**Read on a phone:** Part 1 is published as an Artifact page, https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh (source: `docs/clinical-ruling-sheet-part1.html`), where each row can be ruled with a tap and the rulings copied into a CUL-583 comment.
 
 ## How to read this
 
