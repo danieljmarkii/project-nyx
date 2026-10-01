@@ -64,6 +64,32 @@ coverage, never print it as a rate below the coverage floor). It is listed in §
 
 ---
 
+## 1.0a Rulings received (PM, 2026-10-01)
+
+* **R2: agree (A), explicit.** The dated past tense, on stale evidence only.
+* **R1, R3 to R11, R13b, R14, R15: agree (A)**, the PM deferring to the recommendations.
+* **R13a: agree (A), the PM deferring to the recommendation** after asking what a "breach before the trial started"
+  means. In plain terms: nothing is breached. The app's record of *which food is the trial diet* can be dated later
+  than the trial itself, so meals of the prescribed food in between look to the app like a food that is not on the
+  list. A stops calling those meals off-diet and shows them as a gap in the record. The build still owes the property
+  test named in the row.
+* **R12: open.** The PM asked why the app doesn't just ask the owner how long to extend. The answer and a revised
+  option are below; R12 waits on the PM's pick.
+
+**R12, revisited.** The app already asks. *Change the window* (`components/profile/TrialWindowPanel.tsx`, reached from
+the trial's Manage door) lets an owner set any total ("How long is this trial now?"), and its spec forbids Culprit
+proposing a length (TE-5). The milestone's `Keep going` is deliberately different: it is a one-tap named default,
+kept because Jordan's review found that a named default is what stops an owner tapping `This trial is done` at the
+milestone (§4.3). So the question is not "ask or don't ask" but **what the milestone shows**:
+
+* **E (recommended): both.** `Keep going` stays one tap and, on a gut trial, goes to twelve weeks (A's size); directly
+  under it, a link *Your vet said a different length* opens the existing sheet. The vet's number is one tap away, and
+  the protective default stays. Direction: fewer asks, as A.
+* **F: ask only.** `Keep going` opens the sheet with no preset (TE-5 forbids one). Every gut owner types or picks a
+  number at the moment stopping is easiest. Direction: neutral on asks, but it adds a decision where the one-tap
+  default was doing protective work.
+* A, B, C and D as in the row below remain on the table.
+
 ## 1.1 The most dangerous row first: R1 · CUL-60(b)
 
 **The question.** A cat fed once a day whose trial food the app has never recognised refuses every bowl. Should the card
