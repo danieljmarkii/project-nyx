@@ -490,6 +490,451 @@ _Pending: recorded here when the `adversarial-reviewer` pass returns._
 
 ---
 
+
 # Part 2 · Engines v3
 
-_In progress in this session; written below Part 1 in the same document._
+## 2.0 How Part 2 is organised
+
+Every Engines v3 item posted on CUL-583 since 2026-09-24, in the order of the PR it gates, so each group can be ruled
+just before that PR needs it. The run order lives only in the Linear project description ("Engines v3: the
+accountable engine", *The plan, PR by PR, in run order*); the repo holds partial copies (weight spec §10, incident
+tiers header, care state §13).
+
+**The baseline that changes how "today" reads in Part 2.**
+* Most Engines v3 lanes are **not live**. The weight lane is not built at all (`lib/weight.ts:12-16`: "the engine has
+  no weight lane"), so every weight row is louder than today; the meaningful comparison is against **D7 as ruled**
+  (CUL-1146, 2026-09-26: "5% loss or more is a safety card, 10% or more firm … a comparison against the peak"), which
+  the weight spec's own §9 table uses. Where a row is quieter than D7, it is treated as quieter under E-6.
+* EN-4's floor merged dark (PR-28, #992, behind `engines_v3_en4`, rows T1, T2, T3, T6, T7, T8 in
+  `lib/incidentFloor.ts:17-24`). "Today" for a tier row means the flag-off read, unless the row says otherwise.
+* **Harness reach.** PR-16's scorecard observes **EN-11 only** today (`HARNESS_OBSERVES`,
+  `supabase/functions/generate-signal/eval/passLines.ts:50-57`). EN-8 waits on weights being fed to the corpus,
+  EN-9 on PR-23, EN-3/4/7 on CUL-1439. So for every quieter row below outside EN-11, **the harness proof is
+  missing today**, and the row says when it can exist.
+
+## 2.1 The Part 2 ruling table
+
+| # | Gates | The question | A (recommended) | Other options | Direction | Verdict |
+|---|---|---|---|---|---|---|
+| **N1** | PR-16 (merged) | `EN-9.scored` tolerance | 0 | B: a count noise tolerance like `EN-11.eligible` | Neutral (a test line; stricter) | Agree only |
+| **N2** | PR-16, PR-23 | `EN-9.reRaise` / `reRaiseEver` still read "unruled" | Set both to 0.05, the 2026-09-28 ruling | none | Neutral (housekeeping) | Agree only |
+| **N3** | PR-16 | The other unruled pass lines | Rule each with its wave (§2.2 lists them); none now | rule all now | Neutral | Agree only |
+| **N4** | PR-31 | D4's null phenotypes | Ratify PR-15's 13 null scenarios as the null set; E-4's budget stays open for PR-31 | none | Neutral | Agree, plus real-vet list |
+| **W1** | PR-19 | Must a weight level be confirmed before it can raise a card? (PMD-9) | Yes: a clinic reading alone, or two consecutive home readings, **together with W2** | B: D7 as written (any single reading anchors) | Louder than today; **quieter than D7** | **Needs your sign-off**; proof missing until PR-19 feeds weights to the corpus |
+| **W2** | PR-19 | Should a drop of 3 × the scale's noise (0.6 kg) raise the row without confirmation? | Yes, but it confirms the two ends only: the row still needs the 5% line | B: as specced (0.6 kg alone raises the row) | Louder than PMD-9 alone; quieter than spec wording for large dogs | Adopt provisionally |
+| **W3** | PR-19 | Does the clinic versus home margin scale with body weight for dogs? | No change to the formula; real-vet question | B: scale it | Neutral | Real-vet list |
+| **W4** | PR-19 | Soft 5%, firm 10%, 12 month window, the noise band (≤ 5% and ≤ 0.5 lb, only when one end is a single reading) | Adopt as specced | none | Louder than today; same as D7 | Adopt provisionally, plus real-vet list |
+| **W5** | PR-19 | Juveniles under 12 months: any confirmed drop clearing the band raises the row; "no gain in four weeks" off | Adopt as specced | B: keep "no gain" on | Louder than today; **quieter than D7's juvenile wording** | **Needs your sign-off** (the measured cost of B is on record) |
+| **W6** | PR-19, PR-37 | Planned loss: set from a vet plan only; fires above 2% a week; pre-plan readings never anchor again | Adopt as specced | B: no planned state | **Quieter than D7 while a plan runs** | **Needs your sign-off**, plus real-vet list |
+| **W7** | PR-19 | The weight row's rank | Below the burden card, above chronicity | B: above the burden card (the spec's `weight_loss: 2`) | Neutral (ordering) | Agree only |
+| **W8** | PR-19 | Species "other" | Same rows as cats and dogs (D7 as ruled) | B: descriptive only (the spec) | A louder than spec; B **quieter than D7** | Adopt provisionally |
+| **C1** | PR-23 | Concern words and co-sign sources (critique PMD-10) | **Cannot be ruled: no proposal exists in any spec.** File it before PR-23 | none | n/a | Missing input |
+| **C2** | PR-22 (shipped) | "Too soon to read" window | Ratify 42 days as shipped | none | Neutral | Agree, plus real-vet list (per drug) |
+| **T1** | PR-26 (built dark) | T23: a normal stool after a recent vomit stops the stool read calling | Adopt as built, behind its flag | B: today's call stands | **Quieter** | **Needs your sign-off**; proof missing until CUL-1439 |
+| **T2** | PR-26 | T19: the model's own call, with no field behind it, maps to call today | Ratify | none | Neutral | Agree only |
+| **T3** | PR-28 | T3: vomiting plus lethargy, 24 h either side | Call now, 24 h either side, as built; the Noticed door moves to match (CUL-1436) | B: call today | Louder | Adopt provisionally |
+| **T4** | PR-28 | T4: three vomits in 24 h in a cat: today or now? | Today, as shipped | B: now | Neutral (no change) | Real-vet list |
+| **T5** | PR-28 | T5a: two logs within 4 h stay call today | Yes, as shipped | B: the EN-4 draft's "keep an eye out" | Neutral (no change) | Agree only |
+| **T6** | PR-28 | T5c: two logs 10 min apart are one onset; found piles stop being onsets for T5a | Merge logs ≤ 10 min apart; keep counting found piles | B: both as specced · C: neither | **Quieter** (the merge half) | **Needs your sign-off**; proof missing until CUL-1439 |
+| **T7** | PR-28 | T6: a dog's second vomit in 24 h is call today | Yes, as built | none | Louder | Adopt provisionally |
+| **T8** | PR-28, PR-30 | T10b: does a "not eating" rung cover dogs? | Yes, paired with a vomit: no food seen in 24 h plus a vomit is call today | B: refusal alone · C: no | Louder | Adopt provisionally, plus real-vet list |
+| **T9** | PR-28 | T11: dog bloat | Stays held for capture (GAP-14); the static line stays | none | Neutral | Agree only |
+| **T10** | PR-28 | T22: known conditions move a vomit up one rung? | None until conditions are captured (EN-15) | B: one rung up for a named list | Neutral (no change) | Real-vet list |
+| **T11** | PR-28 | Persistence rung: 3 days running or 2? | 3, as shipped | B: 2 | Neutral (no change) | Real-vet list |
+| **T12** | PR-28 | Absolute burden: 4 or more vomits in 7 days | Ratify, as shipped | none | Neutral | Agree, plus real-vet list |
+| **T13** | PR-29 | T13: fresh blood: a streak versus a lot | Any fresh red blood stays call today until a quantity field exists; a lot, once captured, is call now | B: any fresh blood is call now | Neutral now; louder later | Real-vet list |
+| **T14** | PR-29 | T14: foreign material | Call today; string, thread or ribbon in a cat is call now; a toy fragment in a bright dog stays call today | B: all call now | Louder (the string half) | Adopt provisionally |
+| **T15** | PR-29 | T17: a visible tablet or pill | Call today; call now on a critical drug once the T20 list exists | none | Louder | Adopt provisionally |
+| **T16** | PR-29 | T18: plant material in a cat | Ask the lily question; Yes is call now, Not sure is call today with lilies named | B: Not sure is call now | Louder | Adopt provisionally, plus real-vet list |
+| **T17** | PR-29 | The critical drug list, new course, comorbidity, unknown age | T21 (a course started in the last 14 days plus vomiting is call today) and T7 (unknown age reads young) adopted; **the drug list is the vet's** | none | Louder | Adopt T21 provisionally; the list goes to the real-vet list |
+| **I1** | PR-30 | T10: replace today's 24 h feline arm with the Noticed predicate | No. Run both in union (T10c stays) until the harness can show T10 alone is no worse | B: replace | B is **quieter** | Agree (A changes nothing) |
+| **I2** | PR-30 | The free-fed check's words | "Have you seen Pixel eat since 6 PM yesterday?" Yes · No, she wouldn't · Haven't seen | B: as drafted | Neutral (wording) | Adopt provisionally |
+| **I3** | PR-30 | What "A little" stores | Picked, not Some | B: Some (the spec) | Louder | Adopt provisionally |
+| **I4** | PR-30 | CUL-1195's six refused-meal strings | Ratify; add the vet tail to the three card surfaces that lack it; no time window | B: add a window · C: ratify as is | Louder (the tail) | Adopt provisionally |
+| **I5** | PR-30 | CUL-1196: refused, then vomited within minutes, as its own flag | Build it as a line on the cat intake card, not a new card; values on the real-vet list | B: a new safety card · C: no | Louder | Adopt provisionally (dark until built), plus real-vet list |
+| **E1** | PR-32 | Worsening's sensitivity-first floor | No value proposed anywhere; EN-11 must show detection no worse than the shipped floor | none | Neutral | Agree only |
+| **D1** | every lane's GA | Dogs and species "other" (R-4) | Per row above (W8, T7, T8, T9); no blanket rule | none | n/a | Agree only |
+
+---
+
+## 2.2 Before PR-16's lines are used (the scorecard, merged as #993)
+
+### N1 · `EN-9.scored` tolerance
+
+* **Question.** How many more cats may the care state leave unscored (never acknowledged, or acknowledged too late)
+  with the flag on than with it off?
+* **Today.** `value: null`, "a tolerance in pets, unruled (CUL-583), for the same count-noise reason as
+  EN-11.eligible" (`passLines.ts:206`, `:221-222`).
+* **Recommendation.** 0. **Why:** the PR-16 comment on CUL-583 (2026-09-30) argues a sound EN-9 changes nothing before
+  the acknowledgement, and both arms draw every number from streams named by seed, scenario, pet, component and day
+  (`_shared/engineCorpus/trajectory/README.md:19`). Whether a cat is acknowledged, and when, is decided before EN-9
+  acts, so the two counts should be identical; any difference is EN-9 reaching behaviour it must not touch.
+* **Counterexample tried.** The corpus README's exception: "the acknowledgement only happens if the engine asked, so the
+  injected truth differs between arms." **Held:** that exception covers detections **after** an acknowledgement; the
+  ask that produces the acknowledgement is the pre-EN-9 Signal in both arms. If PR-23 changes the first ask at all (a
+  folded card, a moved rank), this line goes red, and that is the line doing its job, not noise.
+* **Direction:** neutral (a test line, stricter). **Verdict: agree only.**
+
+### N2 · the re-raise lines say "unruled" after the ruling
+
+* `EN-9.reRaise` and `EN-9.reRaiseEver` hold `null` (`passLines.ts:114-115`, `:184-185`), but the tolerance was ruled
+  on 2026-09-28: "at most 5% of stable pets may be asked again within eight weeks"
+  (`docs/nyx-care-state-requirements.md:15`, `:48`). **Recommendation:** set both to 0.05 in the PR that next touches
+  the file. **Also correct the record:** `passLines.ts:115` says the drafted 1.5× trigger re-raised 59% to 75% of
+  stable cats; the critique's BRK-4 (`docs/engines-v3-critique-2026-09.md:225`) says 64% to 81%. One of them is
+  stale; the build session re-measures rather than picking. **Verdict: agree only.**
+
+### N3 · the other unruled pass lines
+
+Every line except `EN-9.lapseReassurance` and `EN-3.redFlagTier` (both ruled 0, `passLines.ts:237`, `:293`) is null.
+None can be ruled usefully before its wave's harness observes it, so the recommendation is to rule each in the PR
+that turns its wave on, from a measured noise band rather than a chosen number:
+
+| Lines | Rule when | Recommended basis |
+|---|---|---|
+| `EN-8.falseCards`, `EN-8.delay` (`:243-275`) | PR-19, with W1 | PMD-9's measured frontier, re-run on the spec's exact definition |
+| `EN-9.doubling`, `doublingDelay`, `silence`, `askAfterAck` (`:119-202`) | PR-23 | Report the frontier the 5% cap buys; no separate floor (care state §4.2 calls ≥80% within 4 weeks infeasible) |
+| `EN-3.nullCallRate` (`:298-309`) | CUL-1439 | Report, never gate: a louder row is adopted provisionally, so this is its cost, not its test |
+| `EN-11.*` (`:317-573`) | PR-32 | Detection no worse than shipped, within the Monte Carlo band; `EN-11.eligible` and `foodEligible` are retired by CUL-1441 first, so do not rule them |
+
+**Verdict: agree only.**
+
+### N4 · D4's null phenotypes
+
+* **Today.** Thirteen null scenarios, from 0.5 to 3 vomits a month, including a grazer, found piles, a two cat home,
+  a dog with garbage raids and species "other" (`_shared/engineCorpus/trajectory/scenarios.null.ts`, header `:1-15`:
+  "The rates are a grid, never one assumed value").
+* **Recommendation.** Ratify the grid as the null set the chance budget is measured on. E-4's number (the budget
+  itself) stays open and gates PR-31. **Why:** a grid that spans the plausible range is the honest null when no base
+  rate is known; picking one rate would be a clinical number we do not have.
+* **Counterexample tried.** *A healthy cat that vomits hairballs weekly in spring.* About 4 a month, above the grid's
+  top. **Held as a gap**, named for the real-vet list: is 3 a month the right ceiling for "healthy"?
+* **Direction:** neutral. **Verdict: agree; real-vet list** (are these base rates plausible for healthy cats and dogs?).
+
+---
+
+## 2.3 Before PR-19 goes live (EN-8, the weight lane)
+
+Spec: `docs/nyx-weight-lane-requirements.md` §5 and §9 (`:158-200`, `:271-286`). Not built; behind the Engines v3 flag
+when it is. **The case on the record:** 4.4 kg in June, 3.73 kg on 2026-09-16, a 15.2% loss no engine can see
+(`:252-260`). Under D7 as written it raises the firm row once June is re-entered; under PMD-9 alone it stays silent
+for good unless June was a clinic weight; under PMD-9 plus W2's noise-scaled rule it raises the firm row
+(0.67 kg > 0.6 kg).
+
+### W1 · PMD-9, confirmed levels
+
+* **Today:** no card. **Spec:** a clinic reading is a confirmed level on its own; two consecutive home readings confirm
+  the level both reached (`:162-164`).
+* **Recommendation:** adopt, **only together with W2**. **Why:** D7 as written anchors on any single reading, and the
+  critique measured it flagging 87% of stable monthly weighed cats (PMD-9, `docs/engines-v3-critique-2026-09.md:848-856`);
+  a lane that fires on most healthy cats will be ignored. PMD-9 brings that to 6% and catches 99% of true losses.
+* **Counterexamples tried.** (1) *The Nyx record:* PMD-9 alone is silent forever on 4.4 home then 3.73 clinic.
+  **Broken alone, held with W2**, which is why they are one ruling. (2) *A steady 1.5% a week loss on monthly
+  weigh-ins* never confirming a peak (spec §12 attack 1): **held**, fixed in the spec by confirming from pairs.
+* **Direction:** louder than today; **quieter than D7**. **Verdict: needs your sign-off.** Harness proof is missing:
+  `EN-8` is not observed until PR-19 feeds weights to the corpus (`passLines.ts:50-57`), and the critique's figures
+  were run on its own wording; the spec says PR-16 re-runs them on the exact definition before PMD-9 is ruled
+  (`:178`). So: sign off now for the dark build; the lane does not go live until that re-run is on the record.
+
+### W2 · noise-scaled confirmation
+
+* **Spec:** a difference of at least 3 × 0.2 kg raises the row whether or not either end is confirmed (`:180`).
+* **The defect in the wording.** 0.6 kg is 20% of a 3 kg cat and 2% of a 30 kg dog, and the spec does not say whether
+  the 5% line still applies. As written, a 30 kg dog dropping 0.6 kg (2%) raises a row the lines say is not one.
+* **Recommendation:** a 0.6 kg difference **confirms both ends**; the row still needs the 5% line. **Why:** it keeps
+  W2's purpose (catching the Nyx record and a single high reading) without inventing a second, unscaled line.
+* **Counterexample tried.** *The Nyx record:* 0.67 kg and 15% clears both. **Held.** *A 3 kg kitten-sized adult cat
+  losing 0.4 kg (13%) on single readings:* not caught by W2, caught by W1 once two readings agree. **Held, slower.**
+* **Direction:** louder than PMD-9 alone; for large dogs, quieter than the spec's literal wording but not than D7.
+  **Verdict: adopt provisionally.**
+
+### W3 · the mixed instrument margin for dogs
+
+* **Spec:** a clinic level against a home level must clear the line plus the band (`:166`); the sheet decides whether
+  it scales with body weight (`:200`). As written the band is "≤ 5% and ≤ 0.5 lb", so above about 4.5 kg the 0.5 lb
+  term binds and every dog gets a fixed margin of about 0.23 kg. It does not scale.
+* **Recommendation:** leave the formula; put the question to the vet. **Why:** whether a home scale's error grows with
+  the animal (owner holds the dog, subtracts themselves) is an instrument fact we have no source for.
+* **Direction:** neutral. **Verdict: real-vet list.**
+
+### W4 · the lines, the window and the noise band
+
+* Soft 5% ("Worth raising with your vet"), firm 10% ("Worth booking a vet visit") as a share of the confirmed high
+  (`:143-144`, `:165`); 12 months (`:156`); noise band ≤ 5% and ≤ 0.5 lb, the caveat only when one end rests on a
+  single reading (`:186`; today's descriptive band is `lib/chartCopy.ts:182`, `:228`).
+* **Recommendation:** adopt. **Why:** the lines are D7's own; the window is the pre-diagnosis year; the band narrows a
+  caveat so it cannot sit over a slow real loss (spec §12 attack 5).
+* **Counterexample tried.** *A healthy cat at 4.12 kg in March, 3.90 kg in July on a kitchen scale* (5.3%): under
+  W1 it needs two agreeing readings before it can fire. **Held with W1.**
+* **Direction:** louder than today, same as D7. **Verdict: adopt provisionally; real-vet list** (5% and 10%).
+
+### W5 · juveniles
+
+* **Spec:** under 12 months by birthday, a confirmed drop clearing the band raises the soft row at any percentage;
+  "no gain in four weeks" ships off; unknown birthday reads adult (`:198`).
+* **Recommendation:** adopt. **Why:** the brief's "no gain" rule gave a growing kitten a false card in 62% to 98% of
+  runs (PMD-9); a rule that fires on most kittens teaches owners to ignore the lane.
+* **Counterexample tried.** *A kitten that stops growing because it is sick.* "No gain" off misses it until it loses.
+  **Broken, accepted:** the cost of B is measured and the cost of A is not, so this needs your sign-off.
+* **Direction:** louder than today; quieter than D7's juvenile wording. **Verdict: needs your sign-off**; real-vet list
+  (what growth stall in a kitten should prompt a call?).
+
+### W6 · planned loss
+
+* **Spec:** set from a vet plan only; while it runs the soft line is off and the firm line becomes a rate of 2% of
+  body weight a week; pre-plan readings never anchor again (`:199`).
+* **Recommendation:** adopt. **Why:** without it a vet directed diet produces a card every week; with it, the case the
+  vet cares about (losing too fast, a hepatic lipidosis risk in an overweight cat) still fires.
+* **Counterexample tried.** *A plan that ends and the cat keeps losing.* Pre-plan readings never anchor, so the loss is
+  measured from the plan's end level. **Held**, by design (spec §12 attack 12).
+* **Direction:** quieter than D7 while a plan runs. **Verdict: needs your sign-off; real-vet list** (is 2% a week the
+  right rate for a cat?). The plan row is W6 of the EN-8 client work (PR-37), still open.
+
+### W7 · rank
+
+* **Spec:** `weight_loss: 2`, after the photo red flag and intake decline, before chronicity (`:206`). Since written,
+  PR-14d put `symptom_burden: 2` in the same order (`supabase/functions/generate-signal/detection.ts:6914-6920`).
+* **Recommendation:** weight sits below the burden card and above chronicity. **Why:** four or more vomits this week is
+  the more acute ask; a confirmed loss over months is the more serious finding than a course of vomiting alone.
+* **Direction:** neutral. **Verdict: agree only.**
+
+### W8 · species "other"
+
+* **Spec:** descriptive only, no row, until this sheet says otherwise (`:200`). D7 as ruled made no species exception.
+* **Recommendation (A):** species "other" gets the rows at the same lines. **Why:** E-6 keeps the louder rule where the
+  quieter one has no proof, and a 10% loss in a rabbit or a ferret is not less worth a call.
+* **Counterexample tried.** *A bearded dragon's seasonal weight swing.* A false row. **Held as an over-fire**, and on
+  the real-vet list with the dog items (R-4).
+* **Direction:** A louder than the spec, same as D7. **Verdict: adopt provisionally.**
+
+---
+
+## 2.4 Before PR-23 goes live (EN-9 server) and around PR-22
+
+### C1 · concern words and co-sign sources
+
+The critique (PMD-10, `docs/engines-v3-critique-2026-09.md:858`) sends these to this sheet. **No later spec proposes
+them** (searched the care state, incident tiers and daily look specs for "co-sign" and "concern word"). There is
+nothing to rule. **Recommendation:** the PR-23 session files the proposal as its first step, and it returns here as a
+row. **Verdict: missing input.**
+
+### C2 · "too soon to read"
+
+Ruled 42 days provisionally on 2026-09-29 for the visit and a masking course's tail "until CUL-583 rules per drug"
+(`docs/nyx-care-state-requirements.md:224-225`; built in PR-22). **Recommendation:** ratify 42 days; per drug values
+go to the real-vet list. **Direction:** neutral. **Verdict: agree; real-vet list.**
+
+---
+
+## 2.5 Before Wave 4 goes live: PR-26 and PR-28 (EN-3, EN-4, EN-7)
+
+Spec: `docs/nyx-incident-tiers-requirements.md` §7 (`:88-130`). Its own rule (`:90`): louder rows adopted
+provisionally, quieter rows wait on harness proof, your sign-off and the vet review. **All of Wave 4 goes live only
+after CUL-1312.**
+
+### T1 · T23, a normal stool after a vomit (PR-26, built dark)
+
+* **Today:** any vomit in 24 h puts `concurrent_vomiting` on every stool read, with the call
+  (`supabase/functions/analyze-stool/index.ts:94`, `:416-418`, copy `:457-458`). **Built dark:** withdrawn only after a
+  complete read shows Bristol 2 to 4, not logged Loose, the vomiting not meeting the repeat rule, and the cat intake
+  arm not met (`:97-120`).
+* **Recommendation:** adopt as built. **Why:** today's flag puts a false sentence ("Vomiting and loose stool
+  together…") on a formed stool.
+* **Counterexample tried.** *A cat with one vomit and no food for a day, then a formed stool.* The intake arm keeps the
+  call. **Held** (PR-26's adversarial F1 and F2, `:103-114`).
+* **Direction: quieter.** **Verdict: needs your sign-off.** Harness proof missing until CUL-1439 makes EN-7 observable.
+
+### T2 · T19, the model's own call
+
+Maps to call today, words kept, counted separately (`docs/nyx-incident-tiers-requirements.md:116`; `clinical-guardrails`
+Pattern 2). **Neutral. Agree only.**
+
+### T3 · T3, vomiting plus lethargy
+
+* **Today:** `concurrent_lethargy` when lethargy is within 24 h before the read time
+  (`supabase/functions/analyze-vomit/context.ts:38`, `:104`, `:193`) → worth a call; the Noticed door says call today
+  (`lib/lookEmergency.ts:122-124`, `:147-149`). **Built dark:** call now, lethargy within 24 h either side of the vomit
+  (`lib/incidentFloor.ts:49`, `:95`, `:185-187`); the read time flag kept, so nothing is quieter.
+* **Recommendation:** adopt as built; move the Noticed door to match in CUL-1436. **Why:** the same animal must not get
+  call now on one surface and call today on the other.
+* **Counterexample tried.** *Lethargy logged 30 h after a vomit on a very late read.* Today's read time window could
+  reach it; the floor's 24 h after cannot, but the read time flag still fires the call. **Held** (PR-28's review: "nothing
+  is quieter than today under any flag combination").
+* **Direction:** louder. **Verdict: adopt provisionally.**
+
+### T4 · T4, three in 24 hours for a cat
+
+* **Today:** `repeated_vomiting` at three in 24 h → call today (`_shared/vomitRepeat.ts:16-17`, `:29`).
+* **Recommendation:** keep call today. **Why:** the clustered shapes already reach call now (T1: three in 30 minutes;
+  T2: three in 4 h, `lib/incidentFloor.ts:44-48`); three spread over a day is the "today" pattern. Declining the louder
+  option is deliberate: "now" sends owners to emergency care on a pattern most vets triage by phone.
+* **Direction:** neutral. **Verdict: real-vet list.**
+
+### T5 · T5a, two logs within four hours
+
+Stays call today as shipped (`_shared/vomitRepeat.ts:14-15`, `:28`); the EN-4 draft's "keep an eye out" is quieter with
+no proof. **Neutral. Agree only.**
+
+### T6 · T5c, merging logs and found piles
+
+* **Today:** T5a counts raw logs. The 30 minute merge and found pile exclusion exist only inside the louder T1/T2 rows
+  (`lib/incidentFloor.ts:44`, `:171-182`).
+* **Recommendation:** merge logs no more than 10 minutes apart into one onset (a double tap is the record's artefact,
+  not the animal's); **keep counting found piles** as onsets for T5a. **Why:** a found pile is a real vomit whose time
+  is unknown; dropping it is the absence based quieting the guardrails forbid.
+* **Counterexample tried.** *Two real vomits 8 minutes apart.* Merged into one onset: quieter on a real pair. **Broken
+  at the margin, accepted:** the burst rule (T1, three in 30 min) still sees a third.
+* **Direction: quieter** (the merge). **Verdict: needs your sign-off**; harness proof missing until CUL-1439.
+
+### T7 · T6, a dog's second vomit in 24 hours
+
+Built dark as call today (`lib/incidentFloor.ts:50-51`, `:96`, `:195`); matches the Noticed door
+(`lib/lookEmergency.ts:152-154`). **Louder. Adopt provisionally.**
+
+### T8 · T10b, a "not eating" rung for dogs
+
+* **Today:** the read's intake arm is cat only (`analyze-vomit/index.ts:322`); the Noticed door gives dogs only
+  "Subdued and no food for 24 hours", which needs lethargy too (`lib/lookEmergency.ts:142-144`).
+* **Recommendation:** a dog with no food seen in 24 hours plus a vomit is call today. **Why:** vomiting and not eating
+  together is the pairing a vet asks about in either species; a refusal alone in a dog stays quiet, since dogs skip
+  meals more benignly than cats.
+* **Counterexample tried.** *A dog that skipped breakfast after a garbage raid and vomited once.* Call today: an
+  over-fire, survivable. **Held.**
+* **Direction:** louder. **Verdict: adopt provisionally; real-vet list.**
+
+### T9 · T11, bloat
+
+Held for capture until "nothing came up" can be logged (GAP-14; `lib/incidentFloor.ts:26-27`); the static dog line stays
+on the watch-for list. **Neutral. Agree only.**
+
+### T10 · T22, known conditions
+
+No condition list is captured yet (EN-15 is discovery). **Recommendation:** none until conditions are captured.
+**Neutral. Real-vet list** (which conditions, if any, should move a vomit up one rung?).
+
+### T11 · the persistence rung, 2 or 3 days
+
+* **Today:** `persistenceMinDays: 3` (`supabase/functions/generate-signal/detection.ts:2542`; the floor's
+  `FLOOR_PERSISTENCE_DAYS = 3`, `lib/incidentFloor.ts:53`).
+* **Recommendation:** keep 3. **Why, measured:** on PR-15's null pets the burden card shows to 21.8% at 3 and **48.2% at
+  2** (`docs/sessions/2026-09-29-engines-v3-pr14d-burden-card.md:62`). Declining the louder option is deliberate: a card
+  shown to half of healthy pets stops being a safety card.
+* **Direction:** neutral. **Verdict: real-vet list.**
+
+### T12 · absolute burden, 4 in 7 days
+
+`burdenMuteMinEpisodes: 4` (`detection.ts:2538`, "provisional, FCEAI severe … CUL-583 ratifies"). **Recommendation:**
+ratify. **Neutral. Agree; real-vet list.**
+
+---
+
+## 2.6 Before PR-29 (EN-6, the photo rows)
+
+None of these is built; no run order row names T13 to T18 explicitly, so the PR-29 attribution is inferred from
+`_shared/incident-analysis.ts:349-351`.
+
+* **T13 · fresh blood.** Today `fresh_red` → worth a call (`analyze-vomit/index.ts:256-258`); there is no quantity
+  field. **Recommendation:** any fresh red blood stays call today until a quantity field exists; "a lot" or clots,
+  once captured, is call now. Declining the table's call now for every streak is deliberate: a streak after hard
+  retching is common, and call now without quantity would send most of them to emergency care. **Real-vet list.**
+* **T14 · foreign material.** Today `suspected_foreign_material` → worth a call (`:259-261`). **Recommendation:** call
+  today; string, thread, tinsel or ribbon in a cat is call now (linear foreign bodies); a toy fragment in a bright dog
+  stays call today. **Louder (the string half). Adopt provisionally.**
+* **T15 · a visible tablet.** Today only the model's own call. **Recommendation:** call today; call now on a critical
+  drug once T20's list exists. **Louder. Adopt provisionally.**
+* **T16 · plant material in a cat.** Today folded into foreign material (`:163`). **Recommendation:** ask
+  "Could Pixel have chewed a lily, or anything from a bouquet?" Yes · No · Not sure. Yes is call now; Not sure is call
+  today with lilies named. **Louder. Adopt provisionally; real-vet list** (should Not sure be call now?).
+* **T17 · drugs and age.** T21 (a course started in the last 14 days plus vomiting → call today) and T7 (an unknown age
+  reads young, built at `lib/incidentFloor.ts:52`) are adopted provisionally (louder). **The critical drug list (T20)
+  is a clinical list and the team will not write it**; it goes to the real-vet list, and T20 and T17's call now half
+  stay held until it exists.
+
+---
+
+## 2.7 Before PR-30 (EN-5, intake evidence)
+
+### I1 · T10, the Noticed predicate in the read
+
+* **Today:** the cat intake arm fires on no Most or All meal in 24 h (`analyze-vomit/index.ts:322-324`); the Noticed
+  predicate ("two of the last three qualifying meals refused or picked", `lib/lookEmergencyFacts.ts:40-43`) is not in
+  the read. The spec makes T10 replace the arm (quieter) and keeps T10c in union until it passes (`:105-106`, `:177`).
+* **Recommendation:** run both in union; do not replace. **Why:** replacement is quieter with no proof; the union is
+  what the spec already ships meanwhile. **Verdict: agree** (A changes nothing).
+
+### I2 · the free-fed check's words (nyx-voice read)
+
+Drafted (`docs/nyx-incident-tiers-requirements.md:152`; mock `docs/culprit-incident-tiers-mockups.html:781`): "Did you
+see Pixel eat since 6 PM yesterday? … Yes · No, she wouldn't · Didn't see". **Recommendation:** "Have you seen Pixel eat
+since 6 PM yesterday?" Yes · No, she wouldn't · Haven't seen. **Why:** "since" needs the perfect tense, and the third
+answer should match the question. "Haven't seen" and no answer still store intake not observable, never normal.
+**Voice:** pet by name, plain, no exclamation, the honest answer is offered as a fine one (Patterns 1, 5, 8). **Pass.**
+**Neutral. Adopt provisionally.**
+
+### I3 · "A little"
+
+* **Spec:** "A little" maps to `some`, "to confirm with CUL-583" (`:154`).
+* **Recommendation:** map it to `picked`. **Why:** "A little" in answer to "has she eaten a meal?" is a few bites, the
+  Picked definition in Part 1's R15; and the Noticed predicate counts refused or picked, so `some` would let a cat that
+  ate a few bites escape it.
+* **Counterexample tried.** *An owner who means "about half".* Stored as picked: an over-fire on the intake rung,
+  survivable. **Held.**
+* **Direction:** louder. **Verdict: adopt provisionally.**
+
+### I4 · CUL-1195's refused-meal strings
+
+* **Today (provisional, #990):** the six strings at `supabase/functions/generate-signal/phrasing.ts:430` (clause
+  `:417-420`) and `:451`; `lib/signalCopy.ts:1700` and `:1863`; `lib/signalHomeLine.ts:125-126`;
+  `lib/patternsTrial.ts:287`. "Followed" is computed with no window of its own (`lib/mealTiming.ts:535-539`, header
+  `:54-63`): a refusal anywhere between the last eaten meal and the vomit counts, so up to about 24 hours.
+* **Recommendation:** ratify the six as worded, and add "worth mentioning to your vet" to the three card surfaces that
+  end bare (the timing card face, the trial card and the Patterns panel); the terse Home row stays as is because it
+  opens the card. No time window. **Why:** a window would drop long gap refusals from the count (quieter); the tail is
+  the guard against the hunger reading ("give her a snack") that open point 2 raises.
+* **Counterexample tried.** *A refusal 10 hours before a vomit.* Disclosed (PR #990's pass). **Held**, over-inclusive
+  toward escalation.
+* **Direction:** louder (the tail). **Verdict: adopt provisionally;** whether the clause should distinguish minutes from
+  hours goes to the real-vet list with I5.
+
+### I5 · CUL-1196, refused then vomited within minutes
+
+* **Today:** unbuilt; no spec proposes a value. The lane fact exists (`afterRefusal`, `lib/mealTiming.ts:535-539`). The
+  critique's counterexample: the alternate night refuser escapes EN-5 and detector ②, "and only CUL-1196 would catch
+  her" (`docs/engines-v3-critique-2026-09.md:701`).
+* **Recommendation:** build it as a line on the cat intake card (it rides the intake lane, CUL-189), not a new card,
+  dark until built. Values are the vet's: the window, the floor and the species go to the real-vet list; the build
+  starts from the existing 30 minute rapid band (`lib/mealTiming.ts:242`) and two episodes on two days, and its
+  absence says nothing. **Why:** a new safety card for a pattern with no floor on record would crowd Home (Principle 3);
+  a line on the card that already owns intake does not.
+* **Direction:** louder. **Verdict: adopt provisionally (dark until built); real-vet list.**
+
+---
+
+## 2.8 Before PR-32 (EN-11) and every lane's GA
+
+* **E1 · worsening's sensitivity first floor.** No value is proposed anywhere; the shipped floor is
+  `worseningMinEpisodes: 2`, `worseningDenseDayFloor: 4` (`detection.ts:2528-2534`). EN-11 must show detection no worse
+  than it on the harness (the one wave the harness observes). **Agree only.**
+* **D1 · dogs and species "other" (R-4).** Ruled row by row above (W8, T7, T8, T9); no blanket rule. **Agree only.**
+
+---
+
+## 2.9 The real-vet list from Part 2 (for CUL-1312)
+
+1. **N4:** are 0.5 to 3 vomits a month plausible base rates for healthy cats and dogs, and is 3 the right ceiling?
+2. **W3:** does a home scale's error grow with a dog's size?
+3. **W4:** 5% soft and 10% firm weight loss lines.
+4. **W5:** what growth stall in a kitten should prompt a call?
+5. **W6:** is 2% a week the right planned loss rate for a cat?
+6. **W8 / D1:** weight lines for species "other".
+7. **C2:** "too soon to read" windows per drug.
+8. **T4:** three vomits in 24 hours in a cat: today or now?
+9. **T8:** a dog with no food in 24 hours plus a vomit: call today?
+10. **T10:** which known conditions, if any, move a vomit up one rung?
+11. **T11:** persistence at 2 or 3 days running.
+12. **T12:** 4 vomits in 7 days as the burden line.
+13. **T13:** fresh blood: when is it call now?
+14. **T16:** a cat with plant material and an owner who is not sure about lilies: call now?
+15. **T17:** the critical drug list.
+16. **I4 / I5:** refused then vomited: the window, the floor, the species, and whether minutes versus hours should be
+    said.
