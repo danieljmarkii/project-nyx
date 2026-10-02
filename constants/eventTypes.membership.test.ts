@@ -522,9 +522,9 @@ const WALK: WalkRow[] = [
     },
   },
   {
-    list: 'ALL_SIGNS + DRUG_CLASS_EFFECTS (generate-signal/careContext.ts)',
+    list: 'ALL_SIGNS + DRUG_CLASS_EFFECTS (lib/maskingSpans.ts, shared with generate-signal/careContext.ts)',
     governs: 'EN-10\'s drug table (CUL-1420): which signs a medication course is drawn beside, and which signs it may MASK, so a zero is withheld. Placement only — every count is the chronicity lane\'s own episodes',
-    read: () => scan('supabase/functions/generate-signal/careContext.ts', 'const ALL_SIGNS', 'export const DRUG_NAME_CLASSES'),
+    read: () => scan('lib/maskingSpans.ts', 'const ALL_SIGNS', 'export const DRUG_NAME_CLASSES'),
     cough: { now: true, decision: 'YES — a systemic steroid masks every sign, and inhaled corticosteroids, antitussives and bronchodilators mask cough (§5.1\'s rows, verbatim). Absent, a zero cough count would print beside prednisone: the "it worked" reading §5.1 forbids.' },
     sneeze: { now: true, decision: 'YES — in ALL_SIGNS only (a systemic steroid masks it). No lane carries sneeze today, so no line is drawn beside it; the membership is there before a finding can be, the SYMPTOM_LABEL precedent.' },
     check_in: { now: false, decision: 'NO — a look is not a sign a drug moves, and it never reaches a context line (the logging pull excludes it; see the whole-source row).' },

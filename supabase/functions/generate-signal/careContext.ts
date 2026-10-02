@@ -45,7 +45,27 @@
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 import { localDayIndex, localDayIndexOf } from '../../../lib/utils.ts'
 import { careClaimReason } from '../../../lib/careClaimScreens.ts'
+import {
+  assessCourse,
+  courseEffectOn,
+  maskingSpansFor,
+  windowTouchesSpan,
+  MASK_TAIL_DAYS,
+  VISIT_NO_ZERO_DAYS,
+  type MaskCourse,
+} from '../../../lib/maskingSpans.ts'
 import type { CareContextLine, Finding, SymptomEvent, SymptomType } from './detection.ts'
+import { SYMPTOM_LABEL } from './phrasing.ts'
+
+export {
+  courseEffectOn,
+  DRUG_CLASS_EFFECTS,
+  DRUG_NAME_CLASSES,
+  MASK_TAIL_DAYS,
+  resolveDrugClasses,
+  VISIT_NO_ZERO_DAYS,
+  type DrugClass,
+} from '../../../lib/maskingSpans.ts'
 
 const MS_PER_DAY = 86_400_000
 
@@ -66,18 +86,8 @@ export interface CareContextFacts {
 }
 
 /** A medication course, reduced to what the lines need. */
-export interface CourseFact {
-  /** The owner's own name for it (`medications.drug_name`, NOT NULL). What the line prints. */
-  drugLabel: string
-  /** Every name the table may match: the drug name, the library item's generic and brand. */
-  names: readonly string[]
-  /** DATE. Null means the start is unknown, and a course with no start gets no line. */
-  startedOn: string | null
-  /** DATE, inclusive; null while ongoing. */
-  endedOn: string | null
-  /** `medications.status`; absent in rows that did not select it. */
-  status?: string | null
-}
+/** A medication course, reduced to what the lines need (the shared `MaskCourse`). */
+export type CourseFact = MaskCourse
 
 /** The running diet trial, or null. `running` is the pipeline's `isTrialRunning` (B-422). */
 export interface TrialFact {
@@ -97,220 +107,11 @@ export interface CareContextArgs {
   episodeGapHours: number
 }
 
-// ── The drug table (a stub for CUL-583) ───────────────────────────────────────
+// ── The drug table and the spans (shared with the app, CUL-1440) ──────────────
+// The table, `resolveDrugClasses`, `courseEffectOn`, the course placement and the span rule
+// live in `lib/maskingSpans.ts`, so the Signal screen and Get ready withhold exactly the zeros
+// these lines withhold. Re-exported here for the callers and tests that import them from here.
 
-export type DrugClass =
-  | 'systemic_corticosteroid'
-  | 'inhaled_corticosteroid'
-  | 'antiemetic_gi_protectant'
-  | 'antidiarrheal'
-  | 'antipruritic'
-  | 'antitussive_bronchodilator'
-  | 'nsaid'
-  | 'gi_upset_other'
-
-const ALL_SIGNS: readonly SymptomType[] = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough', 'sneeze']
-const VOMIT_DIARRHEA: readonly SymptomType[] = ['vomit', 'diarrhea']
-
-/** What each class can do to a sign: hide it (`masks`) or bring it on (`causes`). */
-export const DRUG_CLASS_EFFECTS: Record<DrugClass, { masks: readonly SymptomType[]; causes: readonly SymptomType[] }> = {
-  systemic_corticosteroid: { masks: ALL_SIGNS, causes: [] },
-  inhaled_corticosteroid: { masks: ['cough'], causes: [] },
-  antiemetic_gi_protectant: { masks: ['vomit'], causes: [] },
-  antidiarrheal: { masks: ['diarrhea'], causes: [] },
-  // Cyclosporine both masks itch and causes GI upset (§5.1 lists it in both rows).
-  antipruritic: { masks: ['itch', 'scratch'], causes: [] },
-  antitussive_bronchodilator: { masks: ['cough'], causes: [] },
-  nsaid: { masks: [], causes: VOMIT_DIARRHEA },
-  gi_upset_other: { masks: [], causes: VOMIT_DIARRHEA },
-}
-
-// Lowercased name tokens → classes. A name may carry more than one class (cyclosporine).
-// Generic names and the common veterinary brands; §5.1's rows, nothing added beyond them.
-export const DRUG_NAME_CLASSES: Record<string, readonly DrugClass[]> = {
-  // Systemic corticosteroids — every concern.
-  prednisone: ['systemic_corticosteroid'],
-  prednisolone: ['systemic_corticosteroid'],
-  pred: ['systemic_corticosteroid'],
-  dexamethasone: ['systemic_corticosteroid'],
-  methylprednisolone: ['systemic_corticosteroid'],
-  medrol: ['systemic_corticosteroid'],
-  'depo-medrol': ['systemic_corticosteroid'],
-  // "Depo" alone is how owners write a depot injection (Depo-Medrol, Depo-Provera); both are
-  // hormonal and treated as masking, the conservative side.
-  depo: ['systemic_corticosteroid'],
-  triamcinolone: ['systemic_corticosteroid'],
-  budesonide: ['systemic_corticosteroid'],
-  'temaril-p': ['systemic_corticosteroid'],
-  // Inhaled corticosteroids — cough.
-  fluticasone: ['inhaled_corticosteroid'],
-  flovent: ['inhaled_corticosteroid'],
-  // Antiemetics and GI protectants — vomiting.
-  maropitant: ['antiemetic_gi_protectant'],
-  cerenia: ['antiemetic_gi_protectant'],
-  ondansetron: ['antiemetic_gi_protectant'],
-  zofran: ['antiemetic_gi_protectant'],
-  metoclopramide: ['antiemetic_gi_protectant'],
-  reglan: ['antiemetic_gi_protectant'],
-  famotidine: ['antiemetic_gi_protectant'],
-  pepcid: ['antiemetic_gi_protectant'],
-  omeprazole: ['antiemetic_gi_protectant'],
-  prilosec: ['antiemetic_gi_protectant'],
-  pantoprazole: ['antiemetic_gi_protectant'],
-  sucralfate: ['antiemetic_gi_protectant'],
-  carafate: ['antiemetic_gi_protectant'],
-  // Antidiarrheals, metronidazole, tylosin, probiotics — diarrhea.
-  metronidazole: ['antidiarrheal'],
-  flagyl: ['antidiarrheal'],
-  tylosin: ['antidiarrheal'],
-  tylan: ['antidiarrheal'],
-  probiotic: ['antidiarrheal'],
-  probiotics: ['antidiarrheal'],
-  fortiflora: ['antidiarrheal'],
-  proviable: ['antidiarrheal'],
-  loperamide: ['antidiarrheal'],
-  imodium: ['antidiarrheal'],
-  'pro-pectalin': ['antidiarrheal'],
-  pectalin: ['antidiarrheal'],
-  // Antipruritics — itch and scratch.
-  oclacitinib: ['antipruritic'],
-  apoquel: ['antipruritic'],
-  lokivetmab: ['antipruritic'],
-  cytopoint: ['antipruritic'],
-  cyclosporine: ['antipruritic', 'gi_upset_other'],
-  ciclosporin: ['antipruritic', 'gi_upset_other'],
-  atopica: ['antipruritic', 'gi_upset_other'],
-  // Antitussives and bronchodilators — cough.
-  hydrocodone: ['antitussive_bronchodilator'],
-  hycodan: ['antitussive_bronchodilator'],
-  butorphanol: ['antitussive_bronchodilator'],
-  torbugesic: ['antitussive_bronchodilator'],
-  dextromethorphan: ['antitussive_bronchodilator'],
-  theophylline: ['antitussive_bronchodilator'],
-  aminophylline: ['antitussive_bronchodilator'],
-  terbutaline: ['antitussive_bronchodilator'],
-  albuterol: ['antitussive_bronchodilator'],
-  // NSAIDs — can cause vomiting and diarrhea.
-  carprofen: ['nsaid'],
-  rimadyl: ['nsaid'],
-  meloxicam: ['nsaid'],
-  metacam: ['nsaid'],
-  robenacoxib: ['nsaid'],
-  onsior: ['nsaid'],
-  grapiprant: ['nsaid'],
-  galliprant: ['nsaid'],
-  firocoxib: ['nsaid'],
-  previcox: ['nsaid'],
-  deracoxib: ['nsaid'],
-  deramaxx: ['nsaid'],
-  // Doxycycline, methimazole, chemotherapy — can cause vomiting and diarrhea.
-  doxycycline: ['gi_upset_other'],
-  methimazole: ['gi_upset_other'],
-  felimazole: ['gi_upset_other'],
-  chlorambucil: ['gi_upset_other'],
-  leukeran: ['gi_upset_other'],
-  lomustine: ['gi_upset_other'],
-  ccnu: ['gi_upset_other'],
-  vincristine: ['gi_upset_other'],
-  cyclophosphamide: ['gi_upset_other'],
-  doxorubicin: ['gi_upset_other'],
-  carboplatin: ['gi_upset_other'],
-  toceranib: ['gi_upset_other'],
-  palladia: ['gi_upset_other'],
-}
-
-// Words that say how a drug is given, how much or how often, or which salt it is, never what
-// it is. Stripped before a name is judged, so "Prednisolone 5mg tablets" resolves as
-// prednisolone and "Buddy's pills" as nothing.
-const FORM_WORDS = new Set([
-  'mg', 'mcg', 'ml', 'g', 'kg', 'iu', 'u', 'units', 'tab', 'tabs', 'tablet', 'tablets', 'pill', 'pills', 'capsule',
-  'capsules', 'cap', 'caps', 'chew', 'chews', 'chewable', 'chewables', 'liquid', 'suspension', 'solution', 'syrup',
-  'oral', 'inj', 'injection', 'injectable', 'shot', 'cream', 'ointment', 'drops', 'drop', 'gel', 'spray', 'inhaler',
-  'daily', 'bid', 'sid', 'tid', 'eod', 'q', 'h', 'hr', 'hrs', 'x', 'per', 'day', 'days', 'once', 'twice', 'a', 'an',
-  'the', 'of', 'for', 's', 'dose', 'doses', 'half', 'quarter', 'generic', 'compounded', 'flavored', 'flavoured',
-  'er', 'sr', 'xr', 'maleate', 'sodium', 'hydrochloride', 'hcl', 'acetate', 'phosphate', 'succinate', 'tartrate',
-  'citrate', 'besylate', 'sulfate', 'hyclate', 'monohydrate', 'my', 'his', 'her', 'dog', 'cat', 'pet', 'med', 'meds',
-  'medicine', 'medication',
-  // Brand suffixes and release forms (adversarial final pass, PR-22): without these, "Pepcid AC"
-  // or a cat's lifelong "Methimazole transdermal" failed toward disclosure and masked every sign.
-  'transdermal', 'powder', 'slurry', 'delayed', 'release', 'delayed-release', 'extended', 'extended-release',
-  'odt', 'hfa', 'otc', 'ac', 'sp', 'dc', 'a-d', 'forte', 'pro',
-])
-
-/** A word's classes, and whether any part of it is unknown. The whole word is looked up
- *  first ("depo-medrol", "temaril-p"); otherwise a hyphenated word is a COMBINATION and every
- *  part must be known or a form word ("Cerenia-injectable" resolves; "Metronidazole-Prednisolone"
- *  resolves to both; "Metro-Pred" has an unknown part). Adversarial review, PR-22: taking the
- *  first part alone read a compounded steroid as metronidazole only. */
-function readWord(w: string): { classes: DrugClass[]; unknown: boolean } {
-  const direct = DRUG_NAME_CLASSES[w]
-  if (direct) return { classes: [...direct], unknown: false }
-  const parts = w.split('-').filter((x) => x && !FORM_WORDS.has(x))
-  if (parts.length <= 1 && !w.includes('-')) return { classes: [], unknown: true }
-  const classes: DrugClass[] = []
-  let unknown = false
-  for (const part of parts) {
-    const c = DRUG_NAME_CLASSES[part]
-    if (c) classes.push(...c)
-    else unknown = true
-  }
-  return { classes, unknown }
-}
-
-// A name that joins two things ("+", "/", "&", a hyphenated word) is a combination: it is never
-// set aside as a nickname, because an unknown member may mask.
-const COMBINATION = /[+/&]|[a-z]-[a-z]/i
-
-/**
- * The classes a course's names resolve to, or null for DISCLOSURE (shown beside every concern,
- * masking every sign). Matched on whole words, never substrings ("Predator" is not a steroid).
- *
- * A name resolves only when EVERY word in it that is not a form or dose word is in the table.
- * A name that half-resolves ("Carprofen + mirtazapine", "Rimadyl (Depo shot at clinic)") is a
- * combination with an unknown member, which may mask the sign, so the whole course fails
- * toward disclosure (adversarial review, PR-22: one known NSAID used to hide an antiemetic).
- * A name with no known word at all (an owner's nickname) is set aside if another name — the
- * library item's generic or brand — resolves in full; if none does, null.
- */
-export function resolveDrugClasses(names: readonly string[]): DrugClass[] | null {
-  const found = new Set<DrugClass>()
-  let anyFull = false
-  for (const name of names) {
-    const words = (name ?? '').toLowerCase().split(/[^a-z-]+/).filter((w) => w && !FORM_WORDS.has(w))
-    if (words.length === 0) continue
-    const read = words.map(readWord)
-    const known = read.filter((r) => r.classes.length > 0)
-    if (known.length === 0) {
-      // A nickname ("Buddy's pills") is set aside; an unreadable combination is not.
-      if (COMBINATION.test(name)) return null
-      continue
-    }
-    if (read.some((r) => r.unknown)) return null
-    anyFull = true
-    for (const r of known) for (const cls of r.classes) found.add(cls)
-  }
-  return anyFull ? [...found].sort() : null
-}
-
-/** How a course relates to one sign: it can hide it, bring it on, or neither. */
-export function courseEffectOn(classes: DrugClass[] | null, sign: SymptomType): { shown: boolean; masks: boolean } {
-  if (classes === null) return { shown: true, masks: true } // unresolved: like a systemic steroid
-  const masks = classes.some((c) => DRUG_CLASS_EFFECTS[c].masks.includes(sign))
-  const causes = classes.some((c) => DRUG_CLASS_EFFECTS[c].causes.includes(sign))
-  return { shown: masks || causes, masks }
-}
-
-// ── The rules' constants ──────────────────────────────────────────────────────
-
-// ⚠ Both windows are 42 days, not the spec's 14, until CUL-583 rules per drug: a depot
-// steroid (Depo-Medrol) acts for 3 to 6 weeks, longer in cats, and lokivetmab (Cytopoint) for
-// 4 to 8 (adversarial review, PR-22). Raised on CUL-1420 as a better-than-the-rule brief.
-/** A masking course withholds zeros from its start until this many days after its end. */
-export const MASK_TAIL_DAYS = 42
-/** A visit is treated as an unrecorded masking drug given that day (an injection never enters
- *  `medications`): every window overlapping [visit, visit + this] withholds its zero, and the
- *  visit line carries the disclosure while it is this recent. */
-export const VISIT_NO_ZERO_DAYS = 42
 /** §4.2's current-window floor (10 of 14 days with anything logged), as a fraction. A zero
  *  shows only when the window's logging clears it. */
 export const ZERO_COVERAGE_FLOOR = 10 / 14
@@ -420,41 +221,30 @@ export function linesForSign(sign: SymptomType, args: CareContextArgs): CareCont
     return { count: c, logged: k }
   }
 
-  // Every course with what it can do to this sign, and whether it is on board today or ended
-  // inside the masking tail. A course marked ended with no end date is taken to have ended
-  // today (its end is unknown, so it may have been yesterday).
+  // Every course with what it can do to this sign, placed against today by the shared
+  // `assessCourse` (the app's spans read the same placement, CUL-1440).
   const assessed = args.courses.map((c) => {
-    const start = c.startedOn ? localDayIndexOf(c.startedOn, tz) : null
-    const ended = c.status === 'completed' || c.status === 'stopped'
-    const endIdx = c.endedOn ? localDayIndexOf(c.endedOn, tz) : null
-    const end = endIdx !== null ? endIdx : ended ? today : null
-    const started = start !== null && start <= today
-    const onBoard = started && (end === null || (end >= today && !(ended && endIdx === null)))
-    const inTail = started && !onBoard && end !== null && today - end <= MASK_TAIL_DAYS
+    const x = assessCourse(c, today, tz)
     // An owner's label that itself makes a care claim ("Cerenia (helped last time)") is never
     // printed; the library's name, or a plain noun, stands in (CUL-1271's screen).
     const fallback = c.names[0] ? c.names[0][0].toUpperCase() + c.names[0].slice(1) : 'A medication'
     const label = careClaimReason(c.drugLabel) === null ? c.drugLabel : fallback
-    return { c, label, start, end, endKnown: endIdx !== null, onBoard, inTail, effect: courseEffectOn(resolveDrugClasses([c.drugLabel, ...c.names]), sign) }
+    return { c, label, start: x.start, end: x.end, endKnown: x.endKnown, onBoard: x.onBoard, inTail: x.inTail, resolved: x.classes !== null, effect: courseEffectOn(x.classes, sign) }
   })
 
-  // Where a zero may not appear for this sign: every masking course from its start to its end
-  // plus the tail, and a visit as an unrecorded masking drug. A window that OVERLAPS any span
-  // withholds its zero, so a window partly under a steroid never reads as "none since".
-  const maskSpans: [number, number][] = []
-  for (const x of assessed) {
-    if (x.start === null || x.start > today || !x.effect.masks) continue
-    maskSpans.push([x.start, (x.onBoard || x.end === null ? today : x.end) + MASK_TAIL_DAYS])
-  }
+  // Where a zero may not appear for this sign: the shared span rule (`lib/maskingSpans.ts`),
+  // every masking course from its start to its end plus the tail, and the visit as an
+  // unrecorded masking drug. A window that OVERLAPS any span withholds its zero, so a window
+  // partly under a steroid never reads as "none since".
   const visitOn = args.facts.lastVisitOn
   const v = visitOn ? localDayIndexOf(visitOn, tz) : null
-  if (v !== null && v < today) maskSpans.push([v, v + VISIT_NO_ZERO_DAYS])
+  const maskSpans = maskingSpansFor(sign, { courses: args.courses, lastVisitOn: visitOn, todayIndex: today, timeZone: tz })
 
   // A zero is withheld (§5.1, the header): in a window a masking span overlaps, or on a thinly
   // logged window.
   const zeroWithheld = (c: Counted, w: Window): boolean =>
     c.count === 0 &&
-    (maskSpans.some(([a, b]) => a <= w.fromDay + w.length - 1 && b >= w.fromDay) ||
+    (windowTouchesSpan(maskSpans, w.fromDay, w.fromDay + w.length - 1) ||
       (c.logged as number) < ZERO_COVERAGE_FLOOR * w.length)
 
   const lines: CareContextLine[] = []
@@ -465,36 +255,41 @@ export function linesForSign(sign: SymptomType, args: CareContextArgs): CareCont
   const drawn = assessed
     .filter((x) => (x.onBoard || x.inTail) && x.effect.shown)
     .sort((a, b) => (a.start as number) - (b.start as number) || a.label.localeCompare(b.label))
-  for (const { c, label, start, end, onBoard, endKnown } of drawn) {
+  for (const { c, label, start, end, onBoard, endKnown, effect, resolved } of drawn) {
     const s = start as number
+    // D3 (CUL-1440): a course that can hide the sign says so on every form of its line, so the
+    // line's SHAPE never gives a zero away (the count-less form used to print only at zero) and
+    // "Most recent 8 days ago" beside it is read with the drug in view. A name the table cannot
+    // resolve masks like a steroid, and says "may": the app does not know what it is.
+    const hides = effect.masks ? ` It ${resolved ? 'can' : 'may'} hide ${SYMPTOM_LABEL[sign]}.` : ''
     const on = formatDay(s, today)
     const anchorOn = c.startedOn as string
     if (!onBoard) {
       const to = end as number
       // No end date on record: say it stopped, never an end the record does not hold.
-      const text = !endKnown ? `${label} since ${on}, stopped.` : to > s ? `${label}, ${on} to ${formatDay(to, today)}.` : `${label}, ${on}.`
+      const text = (!endKnown ? `${label} since ${on}, stopped.` : to > s ? `${label}, ${on} to ${formatDay(to, today)}.` : `${label}, ${on}.`) + hides
       lines.push({ kind: 'course', anchorOn, days: to - s + 1, count: null, loggedDays: null, drugLabel: label, text })
       continue
     }
     const n = today - s
     if (n < 1) {
-      lines.push({ kind: 'course', anchorOn, days: 0, count: null, loggedDays: null, drugLabel: label, text: `${label} since ${on}.` })
+      lines.push({ kind: 'course', anchorOn, days: 0, count: null, loggedDays: null, drugLabel: label, text: `${label} since ${on}.${hides}` })
       continue
     }
     // Counted from the day after the start: the start day's episodes may predate the first dose.
     const w = { fromDay: s + 1, length: n }
     const got = count(w)
     if (got.count === null) {
-      lines.push({ kind: 'course', anchorOn, days: n, count: null, loggedDays: null, drugLabel: label, text: `${label} since ${on}, ${days(n)}.` })
+      lines.push({ kind: 'course', anchorOn, days: n, count: null, loggedDays: null, drugLabel: label, text: `${label} since ${on}, ${days(n)}.${hides}` })
     } else if (zeroWithheld(got, w)) {
       lines.push({
         kind: 'course', anchorOn, days: n, count: null, loggedDays: got.logged, drugLabel: label,
-        text: `${label} since ${on}, ${days(n)}. Started ${days(n)} ago.`,
+        text: `${label} since ${on}, ${days(n)}, with something logged on ${got.logged} of ${n}.${hides}`,
       })
     } else {
       lines.push({
         kind: 'course', anchorOn, days: n, count: got.count, loggedDays: got.logged, drugLabel: label,
-        text: `${label} since ${on}, ${days(n)}: ${episodes(got.count)}, with something logged on ${got.logged} of ${n}.`,
+        text: `${label} since ${on}, ${days(n)}: ${episodes(got.count)}, with something logged on ${got.logged} of ${n}.${hides}`,
       })
     }
   }
