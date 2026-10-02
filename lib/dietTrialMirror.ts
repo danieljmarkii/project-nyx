@@ -23,7 +23,7 @@
 //   medications           → diet_trials      (pet-scoped lifecycle row)
 //   feeding_arrangements  → diet_trial_foods (pet-child, dated, soft-deleted)
 
-import { visitLandedSql } from './syncQueue';
+import { petTrialsVisitLandedSql, visitLandedSql } from './syncQueue';
 
 // ── Local schema (mirrors migrations 040 + 041) ──────────────────────────────
 //
@@ -178,10 +178,14 @@ export const DIET_TRIAL_SCHEMA_SQL = `
 // date — a fresh attempt rather than a permanently-parked row.
 // A trial started from the after-visit screen names its visit; it waits for that visit
 // to land (`visitLandedSql`, lib/syncQueue.ts), or the server's same-pet guard
-// refuses it with a terminal 23514.
+// refuses it with a terminal 23514. And while it waits, the pet's other queued trials
+// wait with it (`petTrialsVisitLandedSql`): the drain can only push an ending ahead of
+// a start if it is handed both, and a start sent alone over a held ending is a terminal
+// 23505.
 export const DIET_TRIAL_PUSH_QUEUE_SQL =
   `SELECT * FROM diet_trials WHERE synced = 0 AND sync_error IS NULL
-     AND ${visitLandedSql('diet_trials')} LIMIT 100`;
+     AND ${visitLandedSql('diet_trials')}
+     AND ${petTrialsVisitLandedSql()} LIMIT 100`;
 
 export const DIET_TRIAL_FOOD_PUSH_QUEUE_SQL =
   'SELECT * FROM diet_trial_foods WHERE synced = 0 AND sync_error IS NULL LIMIT 100';

@@ -416,6 +416,30 @@ export function visitLandedSql(table: VisitLinkedTable): string {
        AND gate_v.synced = 0 AND gate_v.sync_error IS NULL)`;
 }
 
+/**
+ * A pet's queued diet trials wait together while any one of them waits on its visit.
+ *
+ * `visitLandedSql` holds only the row that names the visit, and on `diet_trials` that is
+ * not enough. The trials drain pushes an ENDING before a STARTING row, so migration 040's
+ * one-active-trial index never sees two active trials for a pet; but it can only order
+ * the rows the queue read hands it. End trial A at a visit that has not landed (the
+ * after-visit screen links it, then ends it) and start trial B: A is held, the drain sees
+ * B alone, pushes it while the server still holds A active, and the 23505 is TERMINAL, so
+ * the trial the owner just started is quarantined. So while any of a pet's queued trials
+ * waits on a visit, every queued trial of that pet waits with it, and once the visit
+ * lands they reach the drain together, ending first. Another pet's trials are untouched,
+ * and a visit that has landed or been quarantined holds nothing, as above.
+ *
+ * The outer statement must read `diet_trials` unaliased, as `visitLandedSql`'s must.
+ */
+export function petTrialsVisitLandedSql(): string {
+  return `NOT EXISTS (SELECT 1 FROM diet_trials gate_t
+     JOIN vet_visits gate_tv ON gate_tv.id = gate_t.vet_visit_id
+     WHERE gate_t.pet_id = diet_trials.pet_id
+       AND gate_t.synced = 0 AND gate_t.sync_error IS NULL
+       AND gate_tv.synced = 0 AND gate_tv.sync_error IS NULL)`;
+}
+
 // Table names are compile-time literals from SYNC_QUEUES, never caller data —
 // which is what makes interpolating them (an SQL IDENTIFIER cannot be bound to a
 // `?` placeholder) safe by construction rather than by luck. Same argument as

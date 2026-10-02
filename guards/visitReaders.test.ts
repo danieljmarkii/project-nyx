@@ -109,8 +109,10 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
     why:
       'visitLandedSql — the push-order gate (release QA, 2026-10-02): the four queues ' +
       'whose rows name a visit hold a row while that visit has not landed, because the ' +
-      'server refuses it with a terminal 23514 otherwise. It reads only the visit\'s ' +
-      'sync state (`synced`, `sync_error`) as a yes/no inside a push SELECT, returns ' +
+      'server refuses it with a terminal 23514 otherwise; and petTrialsVisitLandedSql, ' +
+      'which holds a pet\'s other queued trials beside one waiting on its visit, so the ' +
+      'drain can still push an ending before a start. Both read only the visit\'s ' +
+      'sync state (`synced`, `sync_error`) as a yes/no inside a push SELECT, return ' +
       'no visit column to any caller, and so can never reach a count.',
   },
   // NOT HERE, and it was on the first draft: `lib/hydration.ts`. It holds both table

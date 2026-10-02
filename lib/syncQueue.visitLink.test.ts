@@ -77,6 +77,9 @@ function picked(db: Db, table: VisitLinkedTable): string[] {
   return (db.prepare(PUSH_QUEUE_SQL[table]()).all() as { id: string }[]).map((r) => r.id).sort();
 }
 
+/** Every row the fixture below queues, none of them quarantined. */
+const EVERY_QUEUED_ROW = ['after-landing', 'after-quarantine', 'link-not-held-here', 'no-link', 'other-pet', 'waits'];
+
 describe.each([...VISIT_LINKED_TABLES])('the %s push queue', (table) => {
   let db: Db;
   beforeEach(async () => {
@@ -84,28 +87,88 @@ describe.each([...VISIT_LINKED_TABLES])('the %s push queue', (table) => {
     insert(db, 'vet_visits', { id: 'v-waiting', pet_id: 'pet-1', synced: 0 });
     insert(db, 'vet_visits', { id: 'v-landed', pet_id: 'pet-1', synced: 1 });
     insert(db, 'vet_visits', { id: 'v-quarantined', pet_id: 'pet-1', synced: 0, sync_error: '23514: refused' });
-    const child = (id: string, vetVisitId: string | null) =>
-      insert(db, table, { id, pet_id: 'pet-1', vet_visit_id: vetVisitId, synced: 0 });
+    const child = (id: string, vetVisitId: string | null, petId = 'pet-1') =>
+      insert(db, table, { id, pet_id: petId, vet_visit_id: vetVisitId, synced: 0 });
     child('waits', 'v-waiting');
     child('after-landing', 'v-landed');
     child('after-quarantine', 'v-quarantined');
     child('no-link', null);
     child('link-not-held-here', 'v-elsewhere');
+    child('other-pet', null, 'pet-2');
   });
   afterEach(() => db.close());
 
-  it('holds a row whose visit has not landed, and only that row', () => {
-    expect(picked(db, table)).toEqual(['after-landing', 'after-quarantine', 'link-not-held-here', 'no-link']);
+  if (table === 'diet_trials') {
+    // Trials hold more than the one row: while one of a pet's queued trials waits on its
+    // visit, all of that pet's queued trials wait with it (`petTrialsVisitLandedSql`; each
+    // arm of that clause is pinned in the next describe).
+    it("holds every queued trial of the pet while one waits on its visit, and no other pet's", () => {
+      expect(picked(db, table)).toEqual(['other-pet']);
+    });
+  } else {
+    it('holds a row whose visit has not landed, and only that row', () => {
+      expect(picked(db, table)).toEqual(['after-landing', 'after-quarantine', 'link-not-held-here', 'no-link', 'other-pet']);
+    });
+  }
+
+  it('pushes the held row, and anything it held, once its visit lands', () => {
+    db.prepare('UPDATE vet_visits SET synced = 1 WHERE id = ?').run('v-waiting');
+    expect(picked(db, table)).toEqual(EVERY_QUEUED_ROW);
   });
 
-  it('pushes the held row once its visit lands', () => {
-    db.prepare('UPDATE vet_visits SET synced = 1 WHERE id = ?').run('v-waiting');
-    expect(picked(db, table)).toContain('waits');
+  it('holds nothing once its visit is quarantined: there is no landing left to wait for', () => {
+    db.prepare(`UPDATE vet_visits SET sync_error = '23514: refused' WHERE id = ?`).run('v-waiting');
+    expect(picked(db, table)).toEqual(EVERY_QUEUED_ROW);
   });
 
   it('still skips a quarantined row, whatever its visit', () => {
     db.prepare(`UPDATE ${table} SET sync_error = '23514: refused' WHERE id = 'after-landing'`).run();
     expect(picked(db, table)).not.toContain('after-landing');
+  });
+});
+
+// The pet-level hold on diet trials (`petTrialsVisitLandedSql`), arm by arm, in the shape
+// it exists for: trial A linked to a visit that has not landed and then ended, trial B
+// started beside it with no link. The drain can only push A's ending ahead of B if it is
+// handed both, so B must wait while A does. Each case below breaks exactly one arm of the
+// clause, so deleting that arm reds exactly one case.
+describe('the diet_trials queue holds a pet\'s trials together while one waits on its visit', () => {
+  let db: Db;
+  beforeEach(async () => {
+    db = await runtimeDb();
+    insert(db, 'vet_visits', { id: 'v-waiting', pet_id: 'pet-1', synced: 0 });
+    insert(db, 'diet_trials', { id: 'a-ending', pet_id: 'pet-1', status: 'abandoned', vet_visit_id: 'v-waiting', synced: 0 });
+    insert(db, 'diet_trials', { id: 'b-starting', pet_id: 'pet-1', status: 'active', vet_visit_id: null, synced: 0 });
+    insert(db, 'diet_trials', { id: 'other-pet', pet_id: 'pet-2', status: 'active', vet_visit_id: null, synced: 0 });
+  });
+  afterEach(() => db.close());
+
+  it("holds the start beside the held ending, and not another pet's trial (the pet arm)", () => {
+    expect(picked(db, 'diet_trials')).toEqual(['other-pet']);
+  });
+
+  it('releases both together once the visit lands (the visit-synced arm)', () => {
+    db.prepare('UPDATE vet_visits SET synced = 1 WHERE id = ?').run('v-waiting');
+    expect(picked(db, 'diet_trials')).toEqual(['a-ending', 'b-starting', 'other-pet']);
+  });
+
+  it('releases both once the visit is quarantined (the visit-quarantine arm)', () => {
+    db.prepare(`UPDATE vet_visits SET sync_error = '23514: refused' WHERE id = ?`).run('v-waiting');
+    expect(picked(db, 'diet_trials')).toEqual(['a-ending', 'b-starting', 'other-pet']);
+  });
+
+  it('a trial parked on its own refusal holds none of its siblings (the trial-quarantine arm)', () => {
+    // A row an older build pushed ahead of its visit and had refused (the bug d8992fa
+    // closed): it never pushes again, so waiting on it would be waiting for nothing.
+    db.prepare(`UPDATE diet_trials SET sync_error = '23514: refused' WHERE id = ?`).run('a-ending');
+    expect(picked(db, 'diet_trials')).toEqual(['b-starting', 'other-pet']);
+  });
+
+  it('a trial already landed holds nothing, even when its visit has an unsent edit (the trial-synced arm)', () => {
+    // The visit landed, the trial landed naming it, and the owner then edited the visit,
+    // which queues it again. The server already holds both, so nothing needs to wait.
+    db.prepare('UPDATE diet_trials SET synced = 1 WHERE id = ?').run('a-ending');
+    expect(picked(db, 'diet_trials')).toEqual(['b-starting', 'other-pet']);
   });
 });
 
