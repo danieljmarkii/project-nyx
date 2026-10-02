@@ -358,6 +358,13 @@ Deno.test('EN-10 wiring — flag-off makes neither read, and the facts reach the
   )
   const call = src.slice(src.indexOf('runSignalPipeline({'), src.indexOf('})', src.indexOf('runSignalPipeline({')))
   assertStrictEquals(/\bcareContextFacts,/.test(call), true, 'the shell no longer hands the pipeline its EN-10 facts')
+  // EN-11 (PR-32, CUL-1141): the fingerprint hashes the config the pipeline detects with, chosen
+  // on the same literal key pipeline.ts reads (a second site the pipeline guard cannot see).
+  assertStrictEquals(
+    /config:\s*isEngineKeyOn\(engineFlags, 'engines_v3_en11'\)\s*\?\s*EN11_CONFIG\s*:\s*DEFAULT_CONFIG/.test(src),
+    true,
+    'the fingerprint no longer hashes the EN-11 config under its key',
+  )
   // vet_visits is read inside readCareContextFacts and nowhere else in the shell.
   const fn = src.slice(src.indexOf('export async function readCareContextFacts('))
   assertStrictEquals(src.split(".from('vet_visits')").length - 1, 1)

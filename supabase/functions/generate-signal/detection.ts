@@ -2139,7 +2139,8 @@ export interface DetectionConfig {
    * EN-11, insight honesty (Engines v3 PR-32, CUL-1141), behind `engines_v3_en11`. ABSENT on
    * DEFAULT_CONFIG, so every lane is byte-identical to before for an account without the key;
    * `EN11_CONFIG` carries it and the shells pick that config only while the key is on
-   * (`isEngineKeyOn(flags, 'engines_v3_en11')` in pipeline.ts and report.ts). Present, it does four things and nothing else:
+   * (`isEngineKeyOn(flags, 'engines_v3_en11')` in pipeline.ts and report.ts, and index.ts for the
+   * fingerprint; each pinned by a test). Present, it does four things and nothing else:
    *
    *   1. The Early food tier is RETIRED (D5 / E-5 = B, PM 2026-09-26): ① emits Established only,
    *      as the vet report already does (§8.5). Every reason that used to "cap at Early" (a
@@ -2152,6 +2153,9 @@ export interface DetectionConfig {
    *      association stronger backwards than forwards (on ⑤, at least as strong) cannot be told
    *      apart from feeding changed by the episode (Farrington 2009: SCCS assumes the event does
    *      not move the exposure), so the forward card is withheld and no sentence is added.
+   *      Stated limit: the reversed arm reads what was OFFERED, the forward arm what was eaten
+   *      (CUL-1190), so a culprit the owner keeps offering after episodes and the pet refuses
+   *      can be withheld. It can only withhold.
    *   4. ①'s control windows may not sit in the `postEpisodeControlExclusionHours` after a GI
    *      episode, where the owner's response to the episode (a bland meal, a skipped staple) is
    *      the exposure, not the pet's ordinary diet.

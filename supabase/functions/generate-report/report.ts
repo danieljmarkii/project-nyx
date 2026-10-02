@@ -759,7 +759,9 @@ export interface ReportInput {
    * REQUIRED, never defaulted, like `audience`: PR 6's share-link mint (view-report) must
    * resolve the owner's flags rather than inherit "off" by omission. EN-11 (`engines_v3_en11`,
    * PR-32, CUL-1141) is the first phase that reads it: the detection config (`runDetection`'s
-   * call site). With every key off the report is byte-identical to before this field existed.
+   * call site), and it ran `vet-report-cold-read` in its PR, as every later phase that reads
+   * this field must. With every key off the report is byte-identical to before this field existed
+   * (report.test.ts, "EN-11 — the report drops…").
    */
   engineFlags: EngineFlags
 }

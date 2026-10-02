@@ -114,7 +114,7 @@ Deno.test('④ — at the floor the card fires under EN-11 with the tier it fire
   assert.deepEqual(on, off, 'at or above the floor EN-11 changes nothing about the card')
   // One below the floor: silent under EN-11, a card today.
   const below = input([sign('itch', 18), ...itch.slice(1)], MEALS)
-  assert.equal(detectWorsening(below, DEFAULT_CONFIG).length, floor - 1 >= 2 ? 1 : 0)
+  assert.equal(detectWorsening(below, DEFAULT_CONFIG).length, 1)
   assert.deepEqual(detectWorsening(below, EN11_CONFIG), [])
 })
 
