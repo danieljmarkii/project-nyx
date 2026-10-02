@@ -109,6 +109,17 @@ describe('the nudge and the look', () => {
     expect(t.getByText('1 more event today')).toBeTruthy();
   });
 
+  it('counts a hidden weight, dose or normal stool as an event; only the look is left out', () => {
+    mockUseEvents.mockReturnValue({
+      todayEvents: [
+        ev('m1', 'meal'), ev('m2', 'meal'), ev('m3', 'meal'),
+        ev('w1', 'weight_check'), ev('d1', 'medication'), ev('s1', 'stool_normal'), look('l1'),
+      ],
+    });
+    const t = render(<TodayZone />);
+    expect(t.getByText('3 more events today')).toBeTruthy();
+  });
+
   it('OFF THE FLAG the shipped nudge is unchanged on an empty day', () => {
     mockFlagOn = false;
     mockUseEvents.mockReturnValue({ todayEvents: [] });

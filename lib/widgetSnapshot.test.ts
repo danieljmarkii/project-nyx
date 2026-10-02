@@ -375,4 +375,20 @@ describe('publishWidgetSnapshots — the 7-day pips over the real coverage read'
     expect(pip(1)).toMatchObject({ logged: true, symptomLogged: false });
     expect(pip(2)).toMatchObject({ logged: false, symptomLogged: false });
   });
+
+  it('lights a day holding a weight, a dose or a normal stool, a look beside it or not', async () => {
+    insertEvent('weight-1', 'weight_check', localNoon(3));
+    insertEvent('dose-1', 'medication', localNoon(4));
+    insertEvent('stool-1', 'stool_normal', localNoon(5));
+    insertEvent('look-2', 'check_in', localNoon(5));
+
+    const { snapshots } = await publishWidgetSnapshots([PET]);
+
+    const pip = (daysAgo: number) =>
+      snapshots[0].sevenDays?.find((d) => d.dayKey === toLocalDayKey(localNoon(daysAgo)));
+    // Only the look is skipped: a pip is any logging, not only meals and symptoms.
+    for (const daysAgo of [3, 4, 5]) {
+      expect([daysAgo, pip(daysAgo)]).toMatchObject([daysAgo, { logged: true, symptomLogged: false }]);
+    }
+  });
 });

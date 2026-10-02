@@ -37,10 +37,12 @@ export interface SignalState {
   isLoading: boolean;
   /** E1 building-state headline inputs (B-721 SR-2, §6): the B-421 local-day count
    * from the pet's first logged event (day-1-inclusive, min 1) and the total
-   * non-deleted event count. Computed from the pet's local events for EVERY state
-   * (only E1 renders them today), from the same SQLite read as the presence split.
-   * They hold Day 1 / 0 events only before the first read lands (EMPTY_LOCAL_CONTEXT)
-   * — which is why BuildingStateV2 holds the day-count clause back at eventCount 0. */
+   * non-deleted event count, daily looks excluded (a look counts toward recency only,
+   * CUL-1468). Computed from the pet's local events for EVERY state (only E1 renders
+   * them today), from the same SQLite read as the presence split. They hold Day 1 /
+   * 0 events before the first read lands (EMPTY_LOCAL_CONTEXT) and for a record of
+   * looks alone (CUL-1484), which is why BuildingStateV2 holds the day-count clause
+   * back at eventCount 0. */
   dayNumber: number;
   eventCount: number;
   /** B-721 SR-3 (§5.3) — true while a fresh log's debounced regen is in flight for the

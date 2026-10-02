@@ -102,3 +102,15 @@ it('looks beside real logs move nothing: the count, Day 1 and the state come fro
   // Day-1-inclusive from the first MEAL five days back, never from the look twelve back.
   expect(result.current.dayNumber).toBe(6);
 });
+
+it('a deleted look is not the owner being here', async () => {
+  log('meal', localNoon(5));
+  mockDb
+    .prepare('INSERT INTO events (id, pet_id, event_type, occurred_at, deleted_at) VALUES (?, ?, ?, ?, ?)')
+    .run(`e-${++seq}`, PET.id, LOOK, justNow(), justNow());
+  const { result } = renderHook(() => useSignal());
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  // An undone look is not in the record, so the record is as quiet as it was without it.
+  expect(result.current.displayState).toBe('stale');
+  expect(result.current.eventCount).toBe(1);
+});

@@ -402,4 +402,29 @@ describe('a daily look is not observability', () => {
     expect(facts!.beforeLoggedDays).toBe(1);
     expect(facts!.duringLoggedDays).toBe(1);
   });
+
+  // The clause names the BEFORE-stretch's looks, so only a look inside it may set the flag.
+  // 30 June is the day the read's lower pad fetches (one day before the 1–14 July stretch),
+  // so it is a row production can hand over, and it is outside the stretch in every zone.
+  it('only a look inside the before-stretch is named: one during the trial or on the pad day is not', async () => {
+    for (const lookAt of [at(2026, 7, 20), at(2026, 6, 30)]) {
+      const facts = await load([ev('check_in', lookAt), ev('itch', at(2026, 7, 21))]);
+      expect([lookAt, facts!.beforeHasLooks]).toEqual([lookAt, false]);
+      expect(buildOutcomeSheet({ facts: facts!, petName: 'Mochi' }).comparisonLine).toMatch(/^Nothing was logged in the 2 weeks/);
+    }
+  });
+
+  it('a look is skipped by its type, never by its day: a weight on the look’s own day is a logged day', async () => {
+    const facts = await load([
+      ev('check_in', at(2026, 7, 4, 9)),
+      ev('weight_check', at(2026, 7, 4, 18)),
+      ev('itch', at(2026, 7, 20)),
+    ]);
+    expect(facts!.beforeTracked).toBe(true);
+    expect(facts!.beforeLoggedDays).toBe(1);
+    expect(facts!.beforeHasLooks).toBe(true);
+    expect(buildOutcomeSheet({ facts: facts!, petName: 'Mochi' }).comparisonLine).toContain(
+      'only 1 of those 14 days has anything logged besides what you noticed',
+    );
+  });
 });
