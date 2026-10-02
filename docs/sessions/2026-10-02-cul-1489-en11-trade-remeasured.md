@@ -1,6 +1,9 @@
 # CUL-1489: EN-11's trade, re-measured before the ruling
 
 **Date:** 2026-10-02 · **Mode:** DISCOVERY · **Branch:** `claude/practical-goodall-x2hlh3`
+**One thing:** P1 L1 — The strategy kernel: diagnosis, guiding policy, coherent action · check: pending
+
+Shipped via #1005 (this record only). The brief is on CUL-1489; the decision stays with the PM.
 
 No engine code changed. The deliverable is the revised decision brief, posted on the issue. This record holds the method and the numbers behind it.
 
