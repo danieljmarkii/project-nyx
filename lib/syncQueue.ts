@@ -404,11 +404,16 @@ export type VisitLinkedTable = (typeof VISIT_LINKED_TABLES)[number];
  * course or trial in the same tick), and a visit push that fails transiently loses it
  * outright (release QA, 2026-10-02).
  *
- * So each of these queues holds a row while its visit is still waiting to land; the
- * looks drain's `e.synced = 1` is the same rule. A visit that is itself quarantined
- * holds nothing, because there is no landing left to wait for and the row's own
- * refusal is the honest end (`repairRefusedVisitLinks` repairs courses and trials).
- * A row that names no visit, or a visit this phone does not hold, is unaffected.
+ * So each of these queues holds a row while its visit is still waiting to land: the
+ * looks drain's `e.synced = 1`, except for a parent that is quarantined. A visit that
+ * is itself quarantined holds nothing, because there is no landing left to wait for. The
+ * row goes up and takes its own answer: it lands if the server holds an earlier version
+ * of the visit, and otherwise it is refused with the same 23514 and quarantined, counted
+ * as needing the owner rather than as waiting for a connection. Nothing here repairs it:
+ * `repairRefusedVisitLinks` clears a refused link only when the link does not resolve on
+ * this phone, and a quarantined visit still does, so the row stays parked (an edit
+ * re-arms it, and while the visit stays refused it is refused again). A row that names
+ * no visit, or a visit this phone does not hold, is unaffected.
  */
 export function visitLandedSql(table: VisitLinkedTable): string {
   return `NOT EXISTS (SELECT 1 FROM vet_visits gate_v
