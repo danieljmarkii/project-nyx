@@ -307,8 +307,10 @@ export type MaskSpan =
 
 export interface MaskingInput {
   courses: readonly MaskCourse[]
-  /** The most recent visit strictly before today (a DATE), or null. */
-  lastVisitOn: string | null
+  /** Every visit strictly before today the caller can see (DATEs). The server's lines count from
+   *  the last visit only and hand in that one; a screen whose charts reach back weeks hands in
+   *  every visit, because the rule is "within 42 days of a visit", not of the last one. */
+  visitsOn: readonly string[]
   todayIndex: number
   timeZone: string | undefined
 }
@@ -317,7 +319,7 @@ export interface MaskingInput {
  * Every span inside which a zero of `sign` may not be shown: each course that can mask it,
  * from its start to its end (today while it runs) plus MASK_TAIL_DAYS, and the last visit,
  * from its day to VISIT_NO_ZERO_DAYS after. A course that has not started yet masks nothing.
- * Courses first, in start order, then the visit: the order a caption names them in.
+ * Courses first, in start order, then the visits in date order: the order a caption names them in.
  */
 export function maskingSpansFor(sign: MaskSign, input: MaskingInput): MaskSpan[] {
   const today = input.todayIndex
@@ -335,9 +337,12 @@ export function maskingSpansFor(sign: MaskSign, input: MaskingInput): MaskSpan[]
       unresolved: x.classes === null,
     })
   }
-  const v = input.lastVisitOn ? localDayIndexOf(input.lastVisitOn, input.timeZone) : null
-  if (input.lastVisitOn && v !== null && v < today) {
-    spans.push({ kind: 'visit', fromDay: v, toDay: v + VISIT_NO_ZERO_DAYS, visitOn: input.lastVisitOn })
+  const visits = input.visitsOn
+    .map((on) => ({ on, v: localDayIndexOf(on, input.timeZone) }))
+    .filter((x): x is { on: string; v: number } => x.v !== null && x.v < today)
+    .sort((a, b) => a.v - b.v)
+  for (const { on, v } of visits) {
+    spans.push({ kind: 'visit', fromDay: v, toDay: v + VISIT_NO_ZERO_DAYS, visitOn: on })
   }
   return spans
 }

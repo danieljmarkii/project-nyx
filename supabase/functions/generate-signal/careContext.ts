@@ -238,7 +238,7 @@ export function linesForSign(sign: SymptomType, args: CareContextArgs): CareCont
   // partly under a steroid never reads as "none since".
   const visitOn = args.facts.lastVisitOn
   const v = visitOn ? localDayIndexOf(visitOn, tz) : null
-  const maskSpans = maskingSpansFor(sign, { courses: args.courses, lastVisitOn: visitOn, todayIndex: today, timeZone: tz })
+  const maskSpans = maskingSpansFor(sign, { courses: args.courses, visitsOn: visitOn ? [visitOn] : [], todayIndex: today, timeZone: tz })
 
   // A zero is withheld (§5.1, the header): in a window a masking span overlaps, or on a thinly
   // logged window.

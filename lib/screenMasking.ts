@@ -10,7 +10,8 @@ import {
 } from './maskingSpans';
 import { trialResponseLineCompares, trialResponseSoFarLine } from './dietTrialCard';
 import type { TrialResponseCounts } from './trialResponseCounts';
-import { readLatestVisitBefore } from './visitWindow';
+import { readVisitDaysBefore } from './visitWindow';
+import type { CachedFinding } from './signal';
 import { dayKeyFromIndex, formatCalendarDate, localDayIndexOf } from './utils';
 
 // No zero beside a masking drug or a recent visit, on the screens around EN-10's lines
@@ -67,8 +68,8 @@ export function screenMaskingOf(input: {
   sign: MaskSign;
   signWord: string;
   courses: readonly MaskCourse[];
-  /** The most recent visit strictly before today, or null. */
-  lastVisitOn: string | null;
+  /** Every visit strictly before today (each is a 42-day span, not only the last). */
+  visitsOn: readonly string[];
   /** The device's local day key for today. */
   today: string;
 }): ScreenMasking {
@@ -77,7 +78,7 @@ export function screenMaskingOf(input: {
     signWord: input.signWord,
     spans: maskingSpansFor(input.sign, {
       courses: input.courses,
-      lastVisitOn: input.lastVisitOn,
+      visitsOn: input.visitsOn,
       todayIndex: indexOfKey(input.today),
       timeZone: undefined,
     }),
@@ -176,11 +177,13 @@ export function maskScriptRows(m: ScreenMasking | null, todayKey: string): MaskS
       const c = s.course;
       const start = dateWordOfIndex(s.fromDay);
       const when = c.onBoard
-        ? `since ${start}`
+        ? ` since ${start}`
         : c.endKnown && c.end !== null && c.end > s.fromDay
-          ? `${start} to ${dateWordOfIndex(c.end)}`
-          : `since ${start}, stopped`;
-      rows.push({ label: 'On board', value: `${courseLabel(c.course)} ${when}. It ${hideVerb(s)} ${m.signWord}.` });
+          ? `, ${start} to ${dateWordOfIndex(c.end)}`
+          : ` since ${start}, stopped`;
+      // "On board" only while it is: an ended course inside its tail still masks, and says so
+      // under its own label (the adversarial pass: "On board · stopped" was untrue).
+      rows.push({ label: c.onBoard ? 'On board' : 'Recently on', value: `${courseLabel(c.course)}${when}. It ${hideVerb(s)} ${m.signWord}.` });
     } else {
       rows.push({ label: 'Last visit', value: `${dateWordOfKey(s.visitOn)}. Anything given there isn't in the record.` });
     }
@@ -228,6 +231,41 @@ export async function readMaskCourses(db: MaskingDb, petId: string): Promise<Mas
     }));
 }
 
+/** What the masking is built from: the pet's courses and its visit days, read once per screen
+ *  and turned into spans per sign. `'unreadable'` when the read failed (every window masked). */
+export type MaskingRecord = { courses: MaskCourse[]; visitsOn: string[] } | 'unreadable';
+
+/**
+ * The pet's masking record, or null when the Signal row was not written with EN-10 on (every
+ * caller then renders as before, and nothing is read). A failed read is `'unreadable'`.
+ */
+export async function loadMaskingRecord(input: {
+  petId: string;
+  today: string;
+  engineFlags: unknown;
+  db?: MaskingDb;
+}): Promise<MaskingRecord | null> {
+  if (!signalRowHasEn10(input.engineFlags)) return null;
+  const db = input.db ?? getDb();
+  try {
+    const [courses, visitsOn] = await Promise.all([
+      readMaskCourses(db, input.petId),
+      readVisitDaysBefore(db, input.petId, input.today),
+    ]);
+    return { courses, visitsOn };
+  } catch (e) {
+    console.warn('[screenMasking] the record could not be read; every window is masked:', e);
+    return 'unreadable';
+  }
+}
+
+/** One sign's masking from the record. */
+export function maskingFor(record: MaskingRecord | null, sign: MaskSign, signWord: string, today: string): ScreenMasking | null {
+  if (record === null) return null;
+  if (record === 'unreadable') return unreadableMasking(sign, signWord);
+  return screenMaskingOf({ sign, signWord, courses: record.courses, visitsOn: record.visitsOn, today });
+}
+
 /**
  * The masking for one sign of one pet, or null when the Signal row was not written with
  * EN-10 on (every caller then renders as before). A failed read masks everything (the header).
@@ -240,18 +278,8 @@ export async function loadScreenMasking(input: {
   engineFlags: unknown;
   db?: MaskingDb;
 }): Promise<ScreenMasking | null> {
-  if (!signalRowHasEn10(input.engineFlags)) return null;
-  const db = input.db ?? getDb();
-  try {
-    const [courses, lastVisitOn] = await Promise.all([
-      readMaskCourses(db, input.petId),
-      readLatestVisitBefore(db, input.petId, input.today),
-    ]);
-    return screenMaskingOf({ sign: input.sign, signWord: input.signWord, courses, lastVisitOn, today: input.today });
-  } catch (e) {
-    console.warn('[screenMasking] the record could not be read; every window is masked:', e);
-    return unreadableMasking(input.sign, input.signWord);
-  }
+  const record = await loadMaskingRecord(input);
+  return maskingFor(record, input.sign, input.signWord, input.today);
 }
 
 // ── The trial's vomiting sentence (D2) ────────────────────────────────────────
@@ -299,8 +327,11 @@ export function maskedTrialSentence(
  *  beside the dates, and whether its comparing row must stay quiet. */
 export interface PhoneScriptMasking {
   rows: MaskScriptRow[];
-  /** Drop the script's comparing row (the chronicity halves, the worsening week before). */
+  /** Drop the script's comparing row (the chronicity halves, the worsening week before), and
+   *  the counted-halves box beside it. */
   withholdCompare: boolean;
+  /** Keep only the recent window's count in that row (a rise over a masked zero). */
+  recentOnly: boolean;
 }
 
 /**
@@ -309,6 +340,27 @@ export interface PhoneScriptMasking {
  * windows' day spans, already placed on the calendar by the caller. Quiet when a span touches
  * the recent window and it fell or is zero, or touches the prior window and it is zero.
  */
+/**
+ * What a script may print of an engine-counted compare (counterexample 5, and the adversarial
+ * pass's rise case): `'withhold'` on a fall or a zero in the recent window a span touches;
+ * `'recent_only'` when only the PRIOR window is a touched zero and the recent one rose, so the
+ * escalation-direction count still reaches the vet without the zero beside it; else `'show'`.
+ */
+export type EngineCompareMode = 'show' | 'recent_only' | 'withhold';
+
+export function engineCompareMode(
+  m: ScreenMasking | null,
+  recent: { fromKey: string; toKey: string; count: number },
+  prior: { fromKey: string; toKey: string; count: number },
+): EngineCompareMode {
+  if (!m) return 'show';
+  const recentTouched = touches(m, recent.fromKey, recent.toKey);
+  const priorTouched = touches(m, prior.fromKey, prior.toKey);
+  if (recentTouched && (recent.count === 0 || recent.count < prior.count)) return 'withhold';
+  if (priorTouched && prior.count === 0) return recent.count > 0 ? 'recent_only' : 'withhold';
+  return 'show';
+}
+
 export function engineCompareWithheld(
   m: ScreenMasking | null,
   recent: { fromKey: string; toKey: string; count: number },
@@ -324,4 +376,55 @@ export function engineCompareWithheld(
 /** Day key `days` before `key`. */
 export function keyMinus(key: string, days: number): string {
   return dayKeyFromIndex(indexOfKey(key) - days);
+}
+
+// ── Findings whose own sentence compares (the adversarial pass, findings 1 and 2) ─
+
+/**
+ * Whether a cached finding's OWN sentence must not be shown beside a masking span: the Signal
+ * screen sets it aside and Get ready drops its row. Three sentences count a window themselves:
+ *   • `trial_response` ("0 in the trial's 30 days, compared with 12 in the 49 days before"): a
+ *     zero or a fall in the trial's days, or a zero in the baseline, a span touches;
+ *   • a falling `reflection` ("1 this week, down from 5"): the engine's two weeks, by the same
+ *     two-window rule as the phone script's compare;
+ *   • the `stood_down` marker ("No vomiting logged in 14 days"): its quiet window touches a span.
+ * `m` is the masking for the finding's own sign. Everything else carries no compare of its own.
+ */
+export function findingWithheldByMask(
+  finding: CachedFinding['finding'],
+  m: ScreenMasking | null,
+  todayKey: string,
+  generatedOn: string | null,
+): boolean {
+  if (!m) return false;
+  const anchor = generatedOn ?? todayKey;
+  const slack = generatedOn ? 0 : 1;
+  if (finding.type === 'trial_response') {
+    const today = indexOfKey(todayKey);
+    const start = today - Math.max(1, Math.floor(finding.trialDayNumber)) + 1;
+    const trialTouched = touches(m, dayKeyFromIndex(start), todayKey);
+    const baseTouched = touches(m, dayKeyFromIndex(start - finding.baselineWindowDays), dayKeyFromIndex(start - 1));
+    if (trialTouched) {
+      if (finding.pooledTrialCount === 0) return true;
+      const trialRate = finding.pooledTrialCount / Math.max(1, finding.trialDayNumber);
+      const baseRate = finding.pooledBaselineCount / Math.max(1, finding.baselineWindowDays);
+      if (trialRate < baseRate) return true;
+    }
+    return baseTouched && finding.pooledBaselineCount === 0;
+  }
+  if (finding.type === 'reflection') {
+    const w = Math.max(1, Math.floor(finding.windowDays));
+    return (
+      engineCompareMode(
+        m,
+        { fromKey: keyMinus(anchor, w + 1), toKey: todayKey, count: finding.currentCount },
+        { fromKey: keyMinus(anchor, 2 * w + 1 + slack), toKey: keyMinus(anchor, w - 1), count: finding.priorCount },
+      ) !== 'show'
+    );
+  }
+  if (finding.type === 'stood_down') {
+    const from = keyMinus(anchor, Math.max(1, Math.floor(finding.recencyDays)) + slack);
+    return touches(m, from, todayKey);
+  }
+  return false;
 }

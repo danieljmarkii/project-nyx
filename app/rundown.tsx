@@ -30,7 +30,8 @@ import {
 } from '../lib/dietTrialFacts';
 import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
 import { readSignalCache } from '../lib/signal';
-import { loadScreenMasking, maskedTrialSentence } from '../lib/screenMasking';
+import { findingWithheldByMask, loadMaskingRecord, maskedTrialSentence, maskingFor } from '../lib/screenMasking';
+import { signalSymptomOf } from '../lib/signalWindows';
 import { symptomWord } from '../lib/signalCopy';
 import { signalTrialWindowOf } from '../lib/signalScreen';
 import { syncPendingVetAppointments } from '../lib/sync';
@@ -566,28 +567,35 @@ async function buildForAppointment(
   // a masking drug or a recent visit it stays quiet where it would compare a fall or print a zero
   // (Get ready lists the courses below it, so the drug is on this page). Only on a Signal written
   // with EN-10 on; otherwise the sentence is exactly the strip's.
+  const today = toLocalDayKey(new Date(nowMs));
+  const maskRecord = signalRow
+    ? await loadMaskingRecord({ petId: subjectId, today, engineFlags: signalRow.engineFlags })
+    : null;
   const counts = trialInput?.trialResponse ?? null;
   const running = trialScreenModel && trialScreenModel.kind === 'trial' ? trialScreenModel : null;
-  const vomitMasking =
-    running?.vomiting != null && counts && pet
-      ? await loadScreenMasking({
-          petId: pet.id,
-          sign: 'vomit',
-          signWord: symptomWord('vomit'),
-          today: toLocalDayKey(new Date(nowMs)),
-          engineFlags: signalRow?.engineFlags ?? null,
-        })
-      : null;
+  const vomitMasking = maskingFor(maskRecord, 'vomit', symptomWord('vomit'), today);
   const trialScreen =
     running && vomitMasking && counts
-      ? { ...running, vomiting: maskedTrialSentence(vomitMasking, counts, running.vomiting, toLocalDayKey(new Date(nowMs))) }
+      ? { ...running, vomiting: maskedTrialSentence(vomitMasking, counts, running.vomiting, today) }
       : trialScreenModel;
+  // The Signal rows are quoted VERBATIM, so a row whose own sentence compares a window a masking
+  // span touches (a trial pair, a falling reflection, a stood-down line) is dropped rather than
+  // rewritten (the adversarial pass, findings 1 and 2). Dropping can only empty the list, never
+  // turn a failed read into a quiet one: `null` stays `null`.
+  const generatedOn = signalRow?.generatedAt ? toLocalDayKey(new Date(signalRow.generatedAt)) : null;
+  const findings = signalRow
+    ? signalRow.findings.filter((f) => {
+        const sign = f.finding.type === 'trial_response' ? 'vomit' : signalSymptomOf(f.finding);
+        const m = sign ? maskingFor(maskRecord, sign, symptomWord(sign), today) : null;
+        return !findingWithheldByMask(f.finding, m, today, generatedOn);
+      })
+    : null;
   if (loadIdRef.current !== myId) {
     return { rows: [], signalUnavailable: false };
   }
 
   return buildWorthRaising({
-    findings: signalRow ? signalRow.findings : null,
+    findings,
     // CUL-1364: Home's trial anchor, for THIS pet's running trial (C-9), on the build's clock.
     signalAnchor: {
       generatedAt: signalRow ? signalRow.generatedAt : null,

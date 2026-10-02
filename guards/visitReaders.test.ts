@@ -222,7 +222,10 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'the rundown (CUL-1127) and the report (HV-15) share. It reads visited_at to ' +
       'return ONE day, the START of a window, as a branded SinceVisitDay: never a visit ' +
       'row, never a count. The visit contributes no row and no number to whatever the ' +
-      'window then counts (the report\'s rung-1 entry below is the same kind of reader).',
+      'window then counts (the report\'s rung-1 entry below is the same kind of reader). ' +
+      'Also readVisitDaysBefore (CUL-1440): the same one-column read, returning the visit DAYS ' +
+      'before today so the Signal screen and Get ready can treat each as a 42-day masking span ' +
+      '(a zero is withheld inside it); still never a row and never a count.',
   },
 
   // ── The Signal shell (AC 10 as amended 2026-09-28; CUL-1420, Engines v3 PR-22) ──

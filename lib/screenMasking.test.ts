@@ -7,6 +7,7 @@ jest.mock('./supabase', () => ({ supabase: { from: jest.fn() } }));
 import {
   courseLabel,
   engineCompareWithheld,
+  findingWithheldByMask,
   loadScreenMasking,
   maskCaption,
   maskedTrialSentence,
@@ -31,7 +32,7 @@ const pred = (startedOn = '2026-09-21', endedOn: string | null = null): MaskCour
 });
 
 const masking = (courses: MaskCourse[], lastVisitOn: string | null = null, sign: 'vomit' | 'cough' = 'vomit') =>
-  screenMaskingOf({ sign, signWord: sign === 'vomit' ? 'vomiting' : 'coughing', courses, lastVisitOn, today: TODAY });
+  screenMaskingOf({ sign, signWord: sign === 'vomit' ? 'vomiting' : 'coughing', courses, visitsOn: lastVisitOn ? [lastVisitOn] : [], today: TODAY });
 
 /** Day 30 of a trial that started Aug 29: 0 vomits in it, 7 in the 49 days before. */
 const counts = (over: Partial<TrialResponseCounts> = {}): TrialResponseCounts => ({
@@ -169,5 +170,48 @@ describe('the spans and the words', () => {
     expect(engineCompareWithheld(m, recent, { fromKey: '2026-08-01', toKey: '2026-08-29', count: 2 })).toBe(false);
     expect(engineCompareWithheld(m, { ...recent, count: 1 }, { fromKey: '2026-08-01', toKey: '2026-08-29', count: 4 })).toBe(true);
     expect(engineCompareWithheld(null, { ...recent, count: 0 }, { fromKey: '2026-08-01', toKey: '2026-08-29', count: 4 })).toBe(false);
+  });
+});
+
+describe('the adversarial pass · findings whose own sentence compares', () => {
+  const trialPair = (pooledTrialCount: number, pooledBaselineCount: number) =>
+    ({
+      type: 'trial_response',
+      priorityClass: 'insight',
+      trialDayNumber: 30,
+      targetDurationDays: 56,
+      trialLoggedDays: 28,
+      baselineLoggedDays: 40,
+      baselineWindowDays: 49,
+      pooledTrialCount,
+      pooledBaselineCount,
+      rapid: { trial: 0, baseline: 0 },
+      long: { trial: 0, baseline: 0 },
+      rapidWindowMinutes: 30,
+      longGapHours: 6,
+    }) as unknown as Parameters<typeof findingWithheldByMask>[0];
+
+  it('1 · a trial pair with 0 in the trial beside prednisone is set aside; a rise is not', () => {
+    const m = masking([pred('2026-08-25')]);
+    expect(findingWithheldByMask(trialPair(0, 12), m, TODAY, TODAY)).toBe(true);
+    expect(findingWithheldByMask(trialPair(4, 12), m, TODAY, TODAY)).toBe(true); // a rate fall
+    expect(findingWithheldByMask(trialPair(12, 12), m, TODAY, TODAY)).toBe(false); // a rate rise
+    expect(findingWithheldByMask(trialPair(0, 12), null, TODAY, TODAY)).toBe(false); // flag off
+  });
+
+  it('2 · a falling reflection beside Cerenia is set aside; a stood-down line inside a span too', () => {
+    const cerenia: MaskCourse = { drugLabel: 'Cerenia', names: [], startedOn: '2026-09-05', endedOn: null, status: 'active' };
+    const m = masking([cerenia]);
+    const reflection = { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 1, priorCount: 5, direction: 'improving', windowDays: 7 } as unknown as Parameters<typeof findingWithheldByMask>[0];
+    expect(findingWithheldByMask(reflection, m, TODAY, TODAY)).toBe(true);
+    const stoodDown = { type: 'stood_down', priorityClass: 'insight', symptomType: 'vomit', recencyDays: 14, stoodDownAt: '2026-09-27T08:00:00Z' } as unknown as Parameters<typeof findingWithheldByMask>[0];
+    expect(findingWithheldByMask(stoodDown, m, TODAY, TODAY)).toBe(true);
+    expect(findingWithheldByMask(stoodDown, masking([]), TODAY, TODAY)).toBe(false);
+  });
+
+  it('a course inside its tail is "Recently on", never "On board"', () => {
+    expect(maskScriptRows(masking([pred('2026-09-01', '2026-09-10')]), TODAY)).toEqual([
+      { label: 'Recently on', value: 'Prednisone, Sep 1 to Sep 10. It can hide vomiting.' },
+    ]);
   });
 });

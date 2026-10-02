@@ -51,9 +51,12 @@ import { CORRELATION_SYMPTOM_TYPES, readFeedingRows, readFreeFedSpans, TIMING_SY
 import { readSignalCache, type CachedFinding, type SignalFinding } from './signal';
 import { careContextLinesOf } from './careContext';
 import {
-  engineCompareWithheld,
+  engineCompareMode,
+  findingWithheldByMask,
   keyMinus,
-  loadScreenMasking,
+  loadMaskingRecord,
+  maskingFor,
+  type EngineCompareMode,
   maskCaption,
   maskScriptRows,
   maskedTrialSentence,
@@ -659,7 +662,9 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     compare,
     compareWithheld: withheldReason,
     lanes,
-    episodes: galleryOf(inWeeks, input.verdicts, weekly.weeks.length),
+    // A masked record with nothing in the drawn weeks prints no "0 in these 5 weeks" (CUL-1440,
+    // the adversarial pass): the gallery's count line is a count over those weeks too.
+    episodes: inWeeks.length === 0 && weeklyMaskOf(input.masking, weekly, input.today) ? null : galleryOf(inWeeks, input.verdicts, weekly.weeks.length),
     why: whyLines(input, compare, withheld, compare ? compareMaskOf(input.masking, compare, specs) : null),
     context: careContextLinesOf(finding),
     safety,
@@ -751,26 +756,28 @@ function scriptMaskingOf(input: SignalScreenInput): PhoneScriptMasking | null {
   const f = input.cached.finding;
   const anchor = input.generatedOn ?? input.today;
   const slack = input.generatedOn ? 0 : 1;
-  let withholdCompare = false;
+  let mode: EngineCompareMode = 'show';
   if (f.type === 'symptom_chronicity' && f.compare) {
     const h = f.compare.halfDays;
     // The halves are instant windows ending at the run; one day of slack each way places them
     // on the calendar without ever narrowing what they cover.
-    withholdCompare = engineCompareWithheld(
+    mode = engineCompareMode(
       m,
       { fromKey: keyMinus(anchor, h + 1), toKey: input.today, count: f.compare.recentCount },
       { fromKey: keyMinus(anchor, 2 * h + 1 + slack), toKey: keyMinus(anchor, h - 1), count: f.compare.priorCount },
     );
   } else if (f.type === 'symptom_worsening') {
-    const h = Math.max(1, Math.floor(f.windowDays / 2));
+    // `windowDays` is EACH window's length (detection.ts: current [now − 7d, now), prior
+    // [now − 14d, now − 7d)), not the pair's: the adversarial pass caught half-width windows.
+    const w = Math.max(1, Math.floor(f.windowDays));
     const days = f.trigger === 'more_days';
-    withholdCompare = engineCompareWithheld(
+    mode = engineCompareMode(
       m,
-      { fromKey: keyMinus(anchor, h), toKey: input.today, count: days ? f.currentDays : f.currentCount },
-      { fromKey: keyMinus(anchor, 2 * h + slack), toKey: keyMinus(anchor, h - 1), count: days ? f.priorDays : f.priorCount },
+      { fromKey: keyMinus(anchor, w + 1), toKey: input.today, count: days ? f.currentDays : f.currentCount },
+      { fromKey: keyMinus(anchor, 2 * w + 1 + slack), toKey: keyMinus(anchor, w - 1), count: days ? f.priorDays : f.priorCount },
     );
   }
-  return { rows: maskScriptRows(m, input.today), withholdCompare };
+  return { rows: maskScriptRows(m, input.today), withholdCompare: mode !== 'show', recentOnly: mode === 'recent_only' };
 }
 
 // ── The loader ────────────────────────────────────────────────────────────────
@@ -785,7 +792,11 @@ export type SignalScreenLoad =
   | { status: 'unsupported'; petName: string }
   /** The finding is in the cache and Home withholds it: a falling vomit pair over a pet that
    *  may not be eating (TS-9 · CUL-1305). Never "missing": that would read as "it stopped". */
-  | { status: 'withheld'; petName: string };
+  | { status: 'withheld'; petName: string }
+  /** The finding's OWN sentence compares a window a masking span touches (CUL-1440): a trial
+   *  pair, a falling reflection or a stood-down line beside a drug that can hide the sign. Set
+   *  aside, with the drug named, never "missing" (it has not stopped). */
+  | { status: 'set_aside'; petName: string; lines: string[] };
 
 /** The unsupported state's copy (CUL-1218): true, and no promise the app cannot keep. */
 export const UNSUPPORTED_LINE = "I can't show this kind of signal yet.";
@@ -1181,16 +1192,23 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   }
   // CUL-1440: where a zero of the finding's sign may not appear on this screen. Null unless the
   // row was written with EN-10 on, and then every surface below renders exactly as before.
-  const sign = signalSymptomOf(cached.finding);
-  const masking = sign
-    ? await loadScreenMasking({ petId, sign, signWord: symptomWord(sign), today, engineFlags: row?.engineFlags ?? null })
-    : null;
+  const maskRecord = await loadMaskingRecord({ petId, today, engineFlags: row?.engineFlags ?? null });
+  // A trial pair counts vomiting whatever its own field says; every other finding, its sign.
+  const sign = cached.finding.type === 'trial_response' ? 'vomit' : signalSymptomOf(cached.finding);
+  const masking = sign ? maskingFor(maskRecord, sign, symptomWord(sign), today) : null;
+  const generatedOn = row?.generatedAt ? toLocalDayKey(new Date(row.generatedAt)) : null;
+  // A finding whose own sentence compares a window beside a masking span is set aside, with the
+  // drug named (the adversarial pass, findings 1 and 2): the sentence is the server's, drawn
+  // whole, so nothing on this screen could take its zero or its fall back out.
+  if (findingWithheldByMask(cached.finding, masking, today, generatedOn)) {
+    return { status: 'set_aside', petName, lines: setAsideLines(masking as ScreenMasking, petName, cached.finding.type, today) };
+  }
   // The strip's vomiting sentence, quiet where it would compare a fall, or print a zero, beside a
-  // masking span (counterexample 3, D2).
+  // masking span (counterexample 3, D2). It counts vomiting, whatever the finding's sign.
   const stripLine = trialFacts ? (resolveTrialStrip(trialFacts)?.trialResponseLine ?? null) : null;
   const trialVomitingLine =
     trialFacts?.trialResponse && stripLine != null
-      ? maskedTrialSentence(await vomitMasking(petId, today, row?.engineFlags ?? null, masking), trialFacts.trialResponse, stripLine, today)
+      ? maskedTrialSentence(maskingFor(maskRecord, 'vomit', symptomWord('vomit'), today), trialFacts.trialResponse, stripLine, today)
       : stripLine;
 
   // The doses that could fall inside either window the lines name: read from the earlier
@@ -1222,21 +1240,23 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     // `trialFacts` is null only when the read threw (a trial-less pet answers the base input).
     trialUnanswered: pet != null && trialFacts == null,
     masking,
-    generatedOn: row?.generatedAt ? toLocalDayKey(new Date(row.generatedAt)) : null,
+    generatedOn,
   });
   return { status: 'ready', model, petName };
 }
 
-/** The trial sentence counts VOMITING, whatever the finding's sign: its masking is vomiting's.
- *  Reuses the screen's own when the sign is vomiting; reads again otherwise (same gate). */
-async function vomitMasking(
-  petId: string,
-  today: string,
-  engineFlags: unknown,
-  screen: ScreenMasking | null,
-): Promise<ScreenMasking | null> {
-  if (screen?.sign === 'vomit') return screen;
-  return loadScreenMasking({ petId, sign: 'vomit', signWord: symptomWord('vomit'), today, engineFlags });
+/** How far back the set-aside screen looks for the spans it names: the widest window a
+ *  finding that compares can reach (a trial's 49-day baseline plus a capped trial). */
+const SET_ASIDE_LOOKBACK_DAYS = 49 + MAX_COMPARE_DAYS;
+
+/** The set-aside screen's words: what is on board, why the comparison is set aside, the vet. */
+export function setAsideLines(m: ScreenMasking, petName: string, type: SignalFinding['type'] | 'stood_down', today: string): string[] {
+  const named = maskCaption(m, keyMinus(today, SET_ASIDE_LOOKBACK_DAYS), today, { zeroWithheld: false, unit: 'window' });
+  const why =
+    type === 'stood_down'
+      ? `A quiet stretch beside it isn't a sign ${petName}'s ${m.signWord} has settled, so this is set aside for now.`
+      : `Fewer episodes beside it isn't a sign of getting better, so this comparison is set aside for now.`;
+  return [...(named ? [named] : []), why, `If you're worried about ${petName}, your vet is the best call.`];
 }
 
 /** One entry per episode through the engine's collapse, for a caller holding instants —

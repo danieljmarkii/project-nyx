@@ -192,6 +192,12 @@ export function SignalScreen({ petId, identity }: Props) {
             <ThemedText key={i} style={styles.stateText}>{line}</ThemedText>
           ))}
         </View>
+      ) : load.status === 'set_aside' ? (
+        <View style={styles.centered} testID="signal-screen-set-aside">
+          {load.lines.map((line, i) => (
+            <ThemedText key={i} style={styles.stateText}>{line}</ThemedText>
+          ))}
+        </View>
       ) : load.status === 'unsupported' ? (
         <View style={styles.centered} testID="signal-screen-unsupported">
           <ThemedText style={styles.stateText}>{UNSUPPORTED_LINE}</ThemedText>

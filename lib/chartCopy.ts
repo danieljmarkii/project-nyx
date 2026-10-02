@@ -71,7 +71,8 @@ export function weeklyBarsA11yLabel(
     `${capitalize(noun)} by week, ${n} ${pluralize(n, 'week')} from ${dateWord(model.firstKey)} to ${dateWord(model.lastKey)}, weeks starting Sunday.`,
   );
   parts.push(
-    `Counts by week: ${model.weeks.map((w, i) => (masked?.[i] === true && w.count === 0 ? 'shaded' : String(w.count))).join(', ')}. ${model.total} in these ${n} ${pluralize(n, 'week')}.`,
+    // A total of 0 over shaded weeks is the zero again, spoken (the adversarial pass): unsaid.
+    `Counts by week: ${model.weeks.map((w, i) => (masked?.[i] === true && w.count === 0 ? 'shaded' : String(w.count))).join(', ')}.${masked?.some(Boolean) === true && model.total === 0 ? '' : ` ${model.total} in these ${n} ${pluralize(n, 'week')}.`}`,
   );
   if (masked != null && masked.some(Boolean) && maskCaption) parts.push(`Shaded weeks: ${maskCaption}`);
   parts.push(

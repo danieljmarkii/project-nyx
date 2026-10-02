@@ -81,7 +81,7 @@ describe('CUL-1440 · 1 · the weekly bars beside prednisone', () => {
   // Cough Sep 17–19, prednisone Sep 21, today Sep 27 (the issue's record).
   const today = '2026-09-27';
   const episodes = [episode('2026-09-17', 9), episode('2026-09-18', 9), episode('2026-09-19', 9), episode('2026-08-20', 9)];
-  const masking = screenMaskingOf({ sign: 'cough', signWord: 'coughing', courses: [course('Prednisone', '2026-09-21')], lastVisitOn: null, today });
+  const masking = screenMaskingOf({ sign: 'cough', signWord: 'coughing', courses: [course('Prednisone', '2026-09-21')], visitsOn: [], today });
 
   it('marks the prednisone week masked, so its zero loses its numeral, and names the drug', () => {
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(chronicityCough()), today, episodes, masking }));
@@ -108,7 +108,7 @@ describe('CUL-1440 · 1 · the weekly bars beside prednisone', () => {
       sign: 'cough',
       signWord: 'coughing',
       courses: [course('Prednisone', '2026-09-21')],
-      lastVisitOn: '2026-09-10',
+      visitsOn: ['2026-09-10'],
       today,
     });
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(chronicityCough()), today, episodes, masking: withVisit }));
@@ -137,7 +137,7 @@ describe('CUL-1440 · 2 · the drawn compare beside maropitant', () => {
     windowDays: 56,
   };
   const episodes = [-55, -52, -49, -45, -42, -38, -35].map((d) => episode(shift(today, d), 19));
-  const masking = screenMaskingOf({ sign: 'vomit', signWord: 'vomiting', courses: [course('Maropitant', shift(today, -30))], lastVisitOn: null, today });
+  const masking = screenMaskingOf({ sign: 'vomit', signWord: 'vomiting', courses: [course('Maropitant', shift(today, -30))], visitsOn: [], today });
 
   it('draws the compare with the recent window masked, and its why line names the drug, never "compared as counts"', () => {
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(finding), today, episodes, masking }));
@@ -165,7 +165,7 @@ describe('CUL-1440 · 4 and 5 · the phone script', () => {
   const episodes = [episode('2026-09-19', 9)];
 
   it('4 · names the drug beside "Most recent", so the date is read with the drug in view', () => {
-    const masking = screenMaskingOf({ sign: 'cough', signWord: 'coughing', courses: [course('Prednisone', '2026-09-21')], lastVisitOn: null, today });
+    const masking = screenMaskingOf({ sign: 'cough', signWord: 'coughing', courses: [course('Prednisone', '2026-09-21')], visitsOn: [], today });
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(chronicityCough()), today, episodes, masking }));
     const facts = phoneScript(model.finding, 'Nyx', false, model.scriptMasking);
     expect(facts).not.toBeNull();
@@ -180,11 +180,14 @@ describe('CUL-1440 · 4 and 5 · the phone script', () => {
     const finding = chronicityCough({
       compare: { halfDays: 28, recentCount: 5, priorCount: 0, recentLoggingDays: 27, priorLoggingDays: 25, comparable: true },
     });
-    const masking = screenMaskingOf({ sign: 'cough', signWord: 'coughing', courses: [], lastVisitOn: '2026-08-20', today });
+    const masking = screenMaskingOf({ sign: 'cough', signWord: 'coughing', courses: [], visitsOn: ['2026-08-20'], today });
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(finding), today, episodes, masking, generatedOn: today }));
     expect(model.scriptMasking?.withholdCompare).toBe(true);
+    // 0 → 5 is a rise: the recent count stays (the escalation direction); the zero beside it goes.
+    expect(model.scriptMasking?.recentOnly).toBe(true);
     const facts = phoneScript(model.finding, 'Nyx', false, model.scriptMasking)!;
-    expect(facts.some((f) => f.label.startsWith('Recent '))).toBe(false);
+    expect(facts).toContainEqual({ label: 'Recent 4 weeks', value: '5 · logged on 27 of the recent 28 days' });
+    expect(facts.map((f) => f.value).join(' ')).not.toMatch(/before: 0/);
     expect(facts).toContainEqual({ label: 'Last visit', value: "Aug 20. Anything given there isn't in the record." });
     // The same row with no masking still prints (flag off is unchanged).
     expect(phoneScript(finding, 'Nyx', false, null)!.some((f) => f.label.startsWith('Recent '))).toBe(true);
@@ -194,9 +197,64 @@ describe('CUL-1440 · 4 and 5 · the phone script', () => {
     const finding = chronicityCough({
       compare: { halfDays: 28, recentCount: 5, priorCount: 2, recentLoggingDays: 27, priorLoggingDays: 25, comparable: true },
     });
-    const masking = screenMaskingOf({ sign: 'cough', signWord: 'coughing', courses: [], lastVisitOn: '2026-08-20', today });
+    const masking = screenMaskingOf({ sign: 'cough', signWord: 'coughing', courses: [], visitsOn: ['2026-08-20'], today });
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(finding), today, episodes, masking, generatedOn: today }));
     expect(model.scriptMasking?.withholdCompare).toBe(false);
+  });
+
+  it('5 · a fall to the recent half beside the span withholds the row outright', () => {
+    const finding = chronicityCough({
+      compare: { halfDays: 28, recentCount: 1, priorCount: 6, recentLoggingDays: 27, priorLoggingDays: 25, comparable: true },
+    });
+    const masking = screenMaskingOf({ sign: 'cough', signWord: 'coughing', courses: [course('Prednisone', '2026-09-21')], visitsOn: [], today });
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(finding), today, episodes, masking, generatedOn: today }));
+    expect(model.scriptMasking).toMatchObject({ withholdCompare: true, recentOnly: false });
+    expect(phoneScript(model.finding, 'Nyx', false, model.scriptMasking)!.some((f) => f.label.startsWith('Recent '))).toBe(false);
+  });
+
+  it('worsening: the engine\'s windows are each `windowDays` long, so a visit span ending Sep 21 touches the week before', () => {
+    // The adversarial pass's record: today Sep 30, visit Aug 10 (span to Sep 21), current 4, prior 0.
+    const worsening = {
+      type: 'symptom_worsening' as const,
+      priorityClass: 'safety' as const,
+      symptomType: 'vomit' as const,
+      currentCount: 4,
+      priorCount: 0,
+      currentDays: 3,
+      priorDays: 0,
+      trigger: 'more_episodes' as const,
+      tier: 'firm' as const,
+      windowDays: 7,
+    };
+    const masking = screenMaskingOf({ sign: 'vomit', signWord: 'vomiting', courses: [], visitsOn: ['2026-08-10'], today: '2026-09-30' });
+    const model = buildSignalScreenModel(
+      inputOf({ cached: cachedOf(worsening as unknown as CachedFinding['finding']), today: '2026-09-30', episodes: [episode('2026-09-28', 9)], masking, generatedOn: '2026-09-30' }),
+    );
+    expect(model.scriptMasking?.withholdCompare).toBe(true);
+    expect(phoneScript(model.finding, 'Nyx', false, model.scriptMasking)!.some((f) => f.label === 'Week before')).toBe(false);
+  });
+});
+
+describe('CUL-1440 · the adversarial pass · zeros that are not a bar\'s numeral', () => {
+  it('every visit is a span, not only the last: a July visit still shades August', () => {
+    const masking = screenMaskingOf({ sign: 'cough', signWord: 'coughing', courses: [], visitsOn: ['2026-07-20', '2026-09-25'], today: '2026-09-30' });
+    const model = buildSignalScreenModel(
+      inputOf({ cached: cachedOf(chronicityCough()), today: '2026-09-30', episodes: [episode('2026-07-05', 9)], masking }),
+    );
+    const weeks = model.weekly!.weeks;
+    const aug9 = weeks.findIndex((w) => w.startKey === '2026-08-09');
+    expect(aug9).toBeGreaterThanOrEqual(0);
+    expect(weeks[aug9].count).toBe(0);
+    expect(model.weeklyMask!.masked[aug9]).toBe(true);
+  });
+
+  it('a masked record with nothing in the drawn weeks prints no gallery count ("0 in these 5 weeks")', () => {
+    const masking = screenMaskingOf({ sign: 'cough', signWord: 'coughing', courses: [course('Prednisone', '2026-08-01')], visitsOn: [], today: '2026-09-27' });
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(chronicityCough()), today: '2026-09-27', episodes: [], masking }));
+    expect(model.weekly!.total).toBe(0);
+    expect(model.episodes).toBeNull();
+    // Flag off, the same record keeps its gallery line as before.
+    expect(buildSignalScreenModel(inputOf({ cached: cachedOf(chronicityCough()), today: '2026-09-27', episodes: [], masking: null })).episodes).not.toBeNull();
   });
 });
 
@@ -227,7 +285,7 @@ describe('CUL-1440 · 6 · the lanes split at a masking course inside the trial'
   ];
 
   it('three lanes, the last hatched and named, and the diet never stands alone', () => {
-    const masking = screenMaskingOf({ sign: 'vomit', signWord: 'vomiting', courses: [course('Prednisone', '2026-09-21')], lastVisitOn: null, today });
+    const masking = screenMaskingOf({ sign: 'vomit', signWord: 'vomiting', courses: [course('Prednisone', '2026-09-21')], visitsOn: [], today });
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(finding), today, episodes, trial, masking }));
     const lanes = model.lanes!.lanes;
     expect(lanes.map((l) => l.label)).toEqual([

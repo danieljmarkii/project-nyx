@@ -135,3 +135,27 @@ export async function readLatestVisitBefore(
   }
   return latestVisitBefore(days, today);
 }
+
+/**
+ * Every live visit day strictly before `today` for one pet, oldest first (CUL-1440): the masking
+ * spans on the Signal screen and Get ready take each visit as an unrecorded masking drug for 42
+ * days, and their charts reach back weeks, so the last visit alone is not enough. Days only:
+ * never a visit row, never a count. THROWS on a failed read, as `readLatestVisitBefore` does.
+ */
+export async function readVisitDaysBefore(db: VisitDaysDb, petId: string, today: string): Promise<string[]> {
+  const todayIndex = todayIndexOf(today);
+  let rows: { visited_at: string | null }[];
+  try {
+    rows = await db.getAllAsync<{ visited_at: string | null }>(VISIT_DAYS_SQL, [petId]);
+  } catch (e) {
+    console.error('[visitWindow] reading the visit days failed:', e);
+    throw e;
+  }
+  const days: number[] = [];
+  for (const row of rows) {
+    if (typeof row.visited_at !== 'string') continue;
+    const index = recordDayIndex(row.visited_at);
+    if (index !== null && index < todayIndex) days.push(index);
+  }
+  return [...new Set(days)].sort((a, b) => a - b).map((i) => dayKeyFromIndex(i));
+}

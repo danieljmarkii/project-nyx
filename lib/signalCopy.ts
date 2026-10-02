@@ -1977,13 +1977,35 @@ export function phoneScript(
    *  after the dates, and `withholdCompare` drops the comparing row (a zero, or a fall, in a
    *  window a span touches). Null where the screen is not under EN-10's rule, which is the
    *  script as it always was. Required — a default here would be the decision (C-37). */
-  masking: { rows: readonly PhoneScriptFact[]; withholdCompare: boolean } | null,
+  masking: { rows: readonly PhoneScriptFact[]; withholdCompare: boolean; recentOnly: boolean } | null,
 ): PhoneScriptFact[] | null {
   const facts = phoneScriptFacts(finding, petName, withholdFallingVomit, masking?.withholdCompare === true);
-  if (!facts || !masking || masking.rows.length === 0) return facts;
+  if (!facts || !masking) return facts;
+  // A rise over a masked zero keeps its recent count (the escalation direction) without the zero
+  // beside it: the chronicity compare row, recent half only.
+  const withRecent =
+    masking.recentOnly && finding.type === 'symptom_chronicity' && finding.compare
+      ? insertBefore(facts, 'Most recent', chronicityRecentOnlyFact(finding.compare))
+      : facts;
   // Only the scripts that read a sign's count aloud carry the drug beside it.
-  if (finding.type !== 'symptom_chronicity' && finding.type !== 'symptom_worsening') return facts;
-  return [...facts, ...masking.rows];
+  if (masking.rows.length === 0) return withRecent;
+  if (finding.type !== 'symptom_chronicity' && finding.type !== 'symptom_worsening' && finding.type !== 'symptom_burden') return withRecent;
+  return [...withRecent, ...masking.rows];
+}
+
+function insertBefore(facts: PhoneScriptFact[], label: string, fact: PhoneScriptFact): PhoneScriptFact[] {
+  const i = facts.findIndex((f) => f.label === label);
+  return i < 0 ? [...facts, fact] : [...facts.slice(0, i), fact, ...facts.slice(i)];
+}
+
+/** The chronicity compare row with the recent half only (CUL-1440): "Recent 4 weeks · 9 ·
+ *  logged on 27 of the recent 28 days". */
+export function chronicityRecentOnlyFact(c: ChronicityCompare): PhoneScriptFact {
+  const w = compareHalfWeeks(c);
+  return {
+    label: `Recent ${weeksWord(w)}`,
+    value: `${c.recentCount} · logged on ${c.recentLoggingDays} of the recent ${c.halfDays} days`,
+  };
 }
 
 function phoneScriptFacts(
