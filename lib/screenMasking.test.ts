@@ -7,6 +7,7 @@ jest.mock('./supabase', () => ({ supabase: { from: jest.fn() } }));
 import {
   courseLabel,
   engineCompareWithheld,
+  findingMaskVerdict,
   findingWithheldByMask,
   loadScreenMasking,
   maskCaption,
@@ -213,5 +214,63 @@ describe('the adversarial pass · findings whose own sentence compares', () => {
     expect(maskScriptRows(masking([pred('2026-09-01', '2026-09-10')]), TODAY)).toEqual([
       { label: 'Recently on', value: 'Prednisone, Sep 1 to Sep 10. It can hide vomiting.' },
     ]);
+  });
+});
+
+describe('the second adversarial pass', () => {
+  const pair = (pooledTrialCount: number, pooledBaselineCount: number, trialDayNumber: number) =>
+    ({
+      type: 'trial_response',
+      priorityClass: 'insight',
+      trialDayNumber,
+      targetDurationDays: 56,
+      trialLoggedDays: 20,
+      baselineLoggedDays: 40,
+      baselineWindowDays: 49,
+      pooledTrialCount,
+      pooledBaselineCount,
+      rapid: { trial: 0, baseline: 0 },
+      long: { trial: 0, baseline: 0 },
+      rapidWindowMinutes: 30,
+      longGapHours: 6,
+    }) as unknown as Parameters<typeof findingWithheldByMask>[0];
+  const at = (today: string, visitsOn: string[], courses: MaskCourse[] = []) =>
+    screenMaskingOf({ sign: 'vomit', signWord: 'vomiting', courses, visitsOn, today });
+
+  it('N1 · a cache written on day 20, read on Sep 30, is placed from the day it was written', () => {
+    // Trial Sep 1; the visit Jul 22 spans to Sep 2, touching trial days 1–2 only.
+    const m = at('2026-09-30', ['2026-07-22']);
+    expect(findingWithheldByMask(pair(0, 12, 20), m, '2026-09-30', '2026-09-20')).toBe(true);
+    // One day stale: written Sep 29 (day 29), visit Jul 21 (span ends Sep 1, trial day 1).
+    expect(findingWithheldByMask(pair(0, 12, 29), at('2026-09-30', ['2026-07-21']), '2026-09-30', '2026-09-29')).toBe(true);
+  });
+
+  it('N2 · a rise over a masked baseline zero keeps the trial count, never "fewer" copy', () => {
+    const cerenia: MaskCourse = { drugLabel: 'Cerenia', names: [], startedOn: '2026-07-20', endedOn: '2026-07-25', status: 'completed' };
+    const m = at('2026-09-30', [], [cerenia]);
+    const v = findingMaskVerdict(pair(6, 0, 30), m, '2026-09-30', '2026-09-30');
+    expect(v.mode).toBe('rise_kept');
+    expect(findingMaskVerdict(pair(0, 0, 30), m, '2026-09-30', '2026-09-30').mode).toBe('set_aside');
+  });
+
+  it('N3 · two visits inside 42 days: only the newer is the "Last visit"', () => {
+    expect(maskScriptRows(at('2026-09-30', ['2026-09-10', '2026-09-25']), '2026-09-30').map((r) => r.label)).toEqual(['Visit', 'Last visit']);
+  });
+
+  it('N5 · a density-withheld fall states no prior, so only its own zero sets it aside', () => {
+    const m = at(TODAY, [], [{ drugLabel: 'Cerenia', names: [], startedOn: '2026-09-05', endedOn: null, status: 'active' }]);
+    const reflection = (currentCount: number) =>
+      ({
+        type: 'reflection',
+        priorityClass: 'insight',
+        symptomType: 'vomit',
+        currentCount,
+        priorCount: 5,
+        direction: 'improving',
+        windowDays: 7,
+        density: { comparable: false, currentLoggingDays: 3, priorLoggingDays: 7 },
+      }) as unknown as Parameters<typeof findingWithheldByMask>[0];
+    expect(findingWithheldByMask(reflection(1), m, TODAY, TODAY)).toBe(false);
+    expect(findingWithheldByMask(reflection(0), m, TODAY, TODAY)).toBe(true);
   });
 });

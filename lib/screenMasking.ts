@@ -185,7 +185,9 @@ export function maskScriptRows(m: ScreenMasking | null, todayKey: string): MaskS
       // under its own label (the adversarial pass: "On board · stopped" was untrue).
       rows.push({ label: c.onBoard ? 'On board' : 'Recently on', value: `${courseLabel(c.course)}${when}. It ${hideVerb(s)} ${m.signWord}.` });
     } else {
-      rows.push({ label: 'Last visit', value: `${dateWordOfKey(s.visitOn)}. Anything given there isn't in the record.` });
+      // Spans run oldest first: only the newest visit is the "Last visit" (the second pass).
+      const newer = m.spans.some((o) => o.kind === 'visit' && o.fromDay > s.fromDay);
+      rows.push({ label: newer ? 'Visit' : 'Last visit', value: `${dateWordOfKey(s.visitOn)}. Anything given there isn't in the record.` });
     }
   }
   return rows;
@@ -380,51 +382,84 @@ export function keyMinus(key: string, days: number): string {
 
 // ── Findings whose own sentence compares (the adversarial pass, findings 1 and 2) ─
 
+/** What a finding's own sentence may do beside a masking span, and the window it counted. */
+export interface FindingMaskVerdict {
+  /** `show`: untouched. `set_aside`: a zero or a fall in a window a span touches. `rise_kept`: a
+   *  trial pair that ROSE over a baseline zero a span touches, whose trial count must still reach
+   *  the reader (D2: a rise always shows) without the zero beside it. */
+  mode: 'show' | 'set_aside' | 'rise_kept';
+  /** The days the finding's sentence counted, earliest to today: what the set-aside names. */
+  fromKey: string;
+  toKey: string;
+}
+
 /**
  * Whether a cached finding's OWN sentence must not be shown beside a masking span: the Signal
  * screen sets it aside and Get ready drops its row. Three sentences count a window themselves:
  *   • `trial_response` ("0 in the trial's 30 days, compared with 12 in the 49 days before"): a
  *     zero or a fall in the trial's days, or a zero in the baseline, a span touches;
  *   • a falling `reflection` ("1 this week, down from 5"): the engine's two weeks, by the same
- *     two-window rule as the phone script's compare;
+ *     two-window rule as the phone script's compare (a density-withheld one states no prior, so
+ *     only its own zero counts);
  *   • the `stood_down` marker ("No vomiting logged in 14 days"): its quiet window touches a span.
+ * Every window is placed from the day the engine COUNTED (`generatedOn`): a cache row written
+ * yesterday says "day 29", and placing it from today shifts every window a day late (the second
+ * adversarial pass). With no date, a day of slack widens each window toward the past.
  * `m` is the masking for the finding's own sign. Everything else carries no compare of its own.
  */
+export function findingMaskVerdict(
+  finding: CachedFinding['finding'],
+  m: ScreenMasking | null,
+  todayKey: string,
+  generatedOn: string | null,
+): FindingMaskVerdict {
+  const anchor = generatedOn ?? todayKey;
+  const slack = generatedOn ? 0 : 1;
+  const show = (fromKey: string): FindingMaskVerdict => ({ mode: 'show', fromKey, toKey: todayKey });
+  if (finding.type === 'trial_response') {
+    const start = indexOfKey(anchor) - Math.max(1, Math.floor(finding.trialDayNumber)) + 1;
+    const baseFrom = dayKeyFromIndex(start - finding.baselineWindowDays - slack);
+    const verdict = (mode: FindingMaskVerdict['mode']): FindingMaskVerdict => ({ mode, fromKey: baseFrom, toKey: todayKey });
+    if (!m) return verdict('show');
+    const trialTouched = touches(m, dayKeyFromIndex(start - slack), todayKey);
+    const baseTouched = touches(m, baseFrom, dayKeyFromIndex(start - 1));
+    if (trialTouched) {
+      if (finding.pooledTrialCount === 0) return verdict('set_aside');
+      const trialRate = finding.pooledTrialCount / Math.max(1, finding.trialDayNumber);
+      const baseRate = finding.pooledBaselineCount / Math.max(1, finding.baselineWindowDays);
+      if (trialRate < baseRate) return verdict('set_aside');
+    }
+    if (baseTouched && finding.pooledBaselineCount === 0) return verdict(finding.pooledTrialCount > 0 ? 'rise_kept' : 'set_aside');
+    return verdict('show');
+  }
+  if (finding.type === 'reflection') {
+    const w = Math.max(1, Math.floor(finding.windowDays));
+    const recent = { fromKey: keyMinus(anchor, w + 1), toKey: todayKey, count: finding.currentCount };
+    const prior = { fromKey: keyMinus(anchor, 2 * w + 1 + slack), toKey: keyMinus(anchor, w - 1), count: finding.priorCount };
+    if (!m) return show(prior.fromKey);
+    // A density-withheld fall states this week's count alone ("1 this week"), no prior: only its
+    // own zero can be the "it worked" reading (the second pass: setting a non-zero aside over-hid).
+    const statesPrior = !(finding.direction === 'improving' && finding.density && !finding.density.comparable);
+    const mode = statesPrior
+      ? engineCompareMode(m, recent, prior)
+      : recent.count === 0 && touches(m, recent.fromKey, recent.toKey)
+        ? 'withhold'
+        : 'show';
+    return { mode: mode === 'show' ? 'show' : 'set_aside', fromKey: prior.fromKey, toKey: todayKey };
+  }
+  if (finding.type === 'stood_down') {
+    const from = keyMinus(anchor, Math.max(1, Math.floor(finding.recencyDays)) + slack);
+    return { mode: m && touches(m, from, todayKey) ? 'set_aside' : 'show', fromKey: from, toKey: todayKey };
+  }
+  return show(todayKey);
+}
+
+/** Whether the finding's own sentence must not be shown (Get ready drops the row). */
 export function findingWithheldByMask(
   finding: CachedFinding['finding'],
   m: ScreenMasking | null,
   todayKey: string,
   generatedOn: string | null,
 ): boolean {
-  if (!m) return false;
-  const anchor = generatedOn ?? todayKey;
-  const slack = generatedOn ? 0 : 1;
-  if (finding.type === 'trial_response') {
-    const today = indexOfKey(todayKey);
-    const start = today - Math.max(1, Math.floor(finding.trialDayNumber)) + 1;
-    const trialTouched = touches(m, dayKeyFromIndex(start), todayKey);
-    const baseTouched = touches(m, dayKeyFromIndex(start - finding.baselineWindowDays), dayKeyFromIndex(start - 1));
-    if (trialTouched) {
-      if (finding.pooledTrialCount === 0) return true;
-      const trialRate = finding.pooledTrialCount / Math.max(1, finding.trialDayNumber);
-      const baseRate = finding.pooledBaselineCount / Math.max(1, finding.baselineWindowDays);
-      if (trialRate < baseRate) return true;
-    }
-    return baseTouched && finding.pooledBaselineCount === 0;
-  }
-  if (finding.type === 'reflection') {
-    const w = Math.max(1, Math.floor(finding.windowDays));
-    return (
-      engineCompareMode(
-        m,
-        { fromKey: keyMinus(anchor, w + 1), toKey: todayKey, count: finding.currentCount },
-        { fromKey: keyMinus(anchor, 2 * w + 1 + slack), toKey: keyMinus(anchor, w - 1), count: finding.priorCount },
-      ) !== 'show'
-    );
-  }
-  if (finding.type === 'stood_down') {
-    const from = keyMinus(anchor, Math.max(1, Math.floor(finding.recencyDays)) + slack);
-    return touches(m, from, todayKey);
-  }
-  return false;
+  return findingMaskVerdict(finding, m, todayKey, generatedOn).mode !== 'show';
 }

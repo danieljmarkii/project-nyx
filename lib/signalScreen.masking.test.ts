@@ -8,9 +8,9 @@
 jest.mock('./db', () => ({ getDb: () => ({ getAllAsync: jest.fn() }) }));
 jest.mock('./supabase', () => ({ supabase: { from: jest.fn() } }));
 
-import { buildSignalScreenModel, type SignalScreenEpisode, type SignalScreenInput } from './signalScreen';
+import { buildSignalScreenModel, setAsideLines, type SignalScreenEpisode, type SignalScreenInput } from './signalScreen';
 import type { CachedFinding, SymptomChronicityFinding, TimeOfDayClusteringFinding, PostprandialTimingFinding } from './signal';
-import { screenMaskingOf } from './screenMasking';
+import { findingMaskVerdict, screenMaskingOf } from './screenMasking';
 import type { MaskCourse } from './maskingSpans';
 import type { SignalTrialWindow } from './signalWindows';
 import { phoneScript } from './signalCopy';
@@ -303,5 +303,38 @@ describe('CUL-1440 · 6 · the lanes split at a masking course inside the trial'
     expect(model.lanes!.lanes.map((l) => l.label)).toEqual(['Before the trial', 'In the trial']);
     expect(model.lanes!.lanes.some((l) => l.masked === true)).toBe(false);
     expect(model.lanesMaskCaption).toBeNull();
+  });
+});
+
+describe('CUL-1440 · the set-aside screen', () => {
+  it('a rise over a masked baseline zero keeps its count and never says "fewer"', () => {
+    const finding = {
+      type: 'trial_response',
+      priorityClass: 'insight',
+      trialDayNumber: 30,
+      targetDurationDays: 56,
+      trialLoggedDays: 28,
+      baselineLoggedDays: 40,
+      baselineWindowDays: 49,
+      pooledTrialCount: 6,
+      pooledBaselineCount: 0,
+      rapid: { trial: 0, baseline: 0 },
+      long: { trial: 0, baseline: 0 },
+      rapidWindowMinutes: 30,
+      longGapHours: 6,
+    } as unknown as CachedFinding['finding'];
+    const m = screenMaskingOf({
+      sign: 'vomit',
+      signWord: 'vomiting',
+      courses: [course('Cerenia', '2026-07-20', '2026-07-25')],
+      visitsOn: [],
+      today: '2026-09-30',
+    });
+    const v = findingMaskVerdict(finding, m, '2026-09-30', '2026-09-30');
+    const lines = setAsideLines(m, 'Nyx', finding, v);
+    expect(lines.join(' ')).toContain("6 episodes of vomiting in the trial's 30 days.");
+    expect(lines.join(' ')).toContain('Cerenia from Jul 20 can hide vomiting.');
+    expect(lines.join(' ')).not.toMatch(/Fewer/);
+    expect(lines.join(' ')).not.toMatch(/\b0\b/);
   });
 });

@@ -52,7 +52,8 @@ import { readSignalCache, type CachedFinding, type SignalFinding } from './signa
 import { careContextLinesOf } from './careContext';
 import {
   engineCompareMode,
-  findingWithheldByMask,
+  findingMaskVerdict,
+  type FindingMaskVerdict,
   keyMinus,
   loadMaskingRecord,
   maskingFor,
@@ -1200,8 +1201,9 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   // A finding whose own sentence compares a window beside a masking span is set aside, with the
   // drug named (the adversarial pass, findings 1 and 2): the sentence is the server's, drawn
   // whole, so nothing on this screen could take its zero or its fall back out.
-  if (findingWithheldByMask(cached.finding, masking, today, generatedOn)) {
-    return { status: 'set_aside', petName, lines: setAsideLines(masking as ScreenMasking, petName, cached.finding.type, today) };
+  const maskVerdict = findingMaskVerdict(cached.finding, masking, today, generatedOn);
+  if (maskVerdict.mode !== 'show') {
+    return { status: 'set_aside', petName, lines: setAsideLines(masking as ScreenMasking, petName, cached.finding, maskVerdict) };
   }
   // The strip's vomiting sentence, quiet where it would compare a fall, or print a zero, beside a
   // masking span (counterexample 3, D2). It counts vomiting, whatever the finding's sign.
@@ -1245,18 +1247,29 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   return { status: 'ready', model, petName };
 }
 
-/** How far back the set-aside screen looks for the spans it names: the widest window a
- *  finding that compares can reach (a trial's 49-day baseline plus a capped trial). */
-const SET_ASIDE_LOOKBACK_DAYS = 49 + MAX_COMPARE_DAYS;
-
-/** The set-aside screen's words: what is on board, why the comparison is set aside, the vet. */
-export function setAsideLines(m: ScreenMasking, petName: string, type: SignalFinding['type'] | 'stood_down', today: string): string[] {
-  const named = maskCaption(m, keyMinus(today, SET_ASIDE_LOOKBACK_DAYS), today, { zeroWithheld: false, unit: 'window' });
+/** The set-aside screen's words: what is on board, why the comparison is set aside, the vet.
+ *  It names only the spans that touch the days the finding counted (`verdict`'s window), so it
+ *  can never name a drug that had nothing to do with it. */
+export function setAsideLines(m: ScreenMasking, petName: string, finding: CachedFinding['finding'], verdict: FindingMaskVerdict): string[] {
+  const named = maskCaption(m, verdict.fromKey, verdict.toKey, { zeroWithheld: false, unit: 'window' });
+  const vet = `If you're worried about ${petName}, your vet is the best call.`;
+  const lead = named ? [named] : [];
+  if (verdict.mode === 'rise_kept' && finding.type === 'trial_response') {
+    // A rise over a masked baseline zero: the trial's count stays (D2: a rise always shows), the
+    // zero beside it does not.
+    const n = finding.pooledTrialCount;
+    const d = finding.trialDayNumber;
+    return [
+      ...lead,
+      `${n} ${plural(n, 'episode')} of ${m.signWord} in the trial's ${d} ${plural(d, 'day')}. The weeks before the trial aren't compared here.`,
+      vet,
+    ];
+  }
   const why =
-    type === 'stood_down'
+    finding.type === 'stood_down'
       ? `A quiet stretch beside it isn't a sign ${petName}'s ${m.signWord} has settled, so this is set aside for now.`
       : `Fewer episodes beside it isn't a sign of getting better, so this comparison is set aside for now.`;
-  return [...(named ? [named] : []), why, `If you're worried about ${petName}, your vet is the best call.`];
+  return [...lead, why, vet];
 }
 
 /** One entry per episode through the engine's collapse, for a caller holding instants —
