@@ -95,11 +95,15 @@ const EMPTY_LOCAL_CONTEXT: LocalSignalContext = {
 // Read straight from local SQLite (fast, offline-capable, same pattern as
 // useTrend) so the empty-state distinctions work without a network round-trip.
 //
-// A daily look (`check_in`) is not in this read: a look never enters the engine, a count
-// or a floor (daily-look spec R1, §5.6). The engine never sees one, so a look must not
-// make a quiet record read as active, lift it over the "substantial history" floor into
-// "no clear patterns" (a claim about data the engine never had), add to "{k} events so
-// far", or move Day 1 earlier. `lib/signalScreen.ts`'s `readLoggedDays` is the precedent.
+// A daily look (`check_in`) is in this read for ONE question only, recency. A look never
+// enters the engine, a count or a floor (daily-look spec R1, §5.6): it must not lift a
+// record over the "substantial history" floor into "no clear patterns" (a claim about
+// data the engine never had), add to "{k} events so far", or move Day 1 earlier, so
+// `total` and `earliest` skip it (`lib/signalScreen.ts`'s `readLoggedDays` is the
+// precedent). But `recent` keeps it: `stale` turns the watching read off, and with it
+// the escalate-only gap row, so an owner who answers the look every day while the
+// gaps between vomits shorten must not be told the record has gone quiet
+// (adversarial-reviewer; the same hole for an owner who logs nothing is CUL-1468).
 //
 // The look's type mirrors `lib/monthReads.ts`'s LOOK_EVENT_TYPE (same value, same question:
 // the one row that is never coverage), not imported: that module's import chain reaches the
@@ -111,11 +115,11 @@ function getLocalSignalContext(petId: string): LocalSignalContext {
     const now = Date.now();
     const recentCutoff = new Date(now - RECENT_ACTIVITY_MS).toISOString();
     const rows = getDb().getAllSync<{ total: number; recent: number; earliest: string | null }>(
-      `SELECT COUNT(*) AS total,
+      `SELECT COUNT(CASE WHEN event_type != ? THEN 1 END) AS total,
               COUNT(CASE WHEN occurred_at >= ? THEN 1 END) AS recent,
-              MIN(occurred_at) AS earliest
-       FROM events WHERE pet_id = ? AND deleted_at IS NULL AND event_type != ?`,
-      [recentCutoff, petId, LOOK_EVENT_TYPE],
+              MIN(CASE WHEN event_type != ? THEN occurred_at END) AS earliest
+       FROM events WHERE pet_id = ? AND deleted_at IS NULL`,
+      [LOOK_EVENT_TYPE, recentCutoff, LOOK_EVENT_TYPE, petId],
     );
     const r = rows[0];
     const total = r?.total ?? 0;

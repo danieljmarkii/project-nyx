@@ -39,8 +39,11 @@ jest.mock('expo-router', () => ({
 let mockLocalRowsByPet: Record<string, { total: number; recent: number; earliest: string | null }> = {};
 jest.mock('../lib/db', () => ({
   getDb: () => ({
+    // Keyed on whichever parameter names a seeded pet, so the read's parameter order is
+    // free to change (the look type is bound twice, around the cutoff).
     getAllSync: (_sql: string, params: unknown[]) => [
-      mockLocalRowsByPet[String(params[1])] ?? { total: 0, recent: 0, earliest: null },
+      mockLocalRowsByPet[params.map(String).find((p) => p in mockLocalRowsByPet) ?? ''] ??
+        { total: 0, recent: 0, earliest: null },
     ],
   }),
 }));

@@ -1,11 +1,14 @@
-// A daily look never enters the Signal's empty-state counts (daily-look spec R1, §5.6).
+// A daily look never enters the Signal's empty-state counts (daily-look spec R1, §5.6),
+// and still counts as the owner being here.
 //
 // useSignal reads the pet's events from local SQLite to pick E1 (building), E2 ("no clear
 // patterns yet") or stale, and to write "Day {n} — {k} events so far". The engine never
 // reads a look (generate-signal pulls symptoms, meals and medications only), so a look
-// counted here makes a quiet record read as active, lifts a thin record over the
-// substantial-history floor into E2 (a claim about data the engine never had), inflates
-// {k} and moves Day 1 earlier. This runs the hook's REAL query over a real schema.
+// counted there lifts a thin record over the substantial-history floor into E2 (a claim
+// about data the engine never had), inflates {k} and moves Day 1 earlier. Recency is the
+// one place it stays: `stale` turns the watching read and its gap row off, and an owner
+// answering every day has not gone quiet (SignalZone.lookRecency.test.tsx pins the row).
+// This runs the hook's REAL query over a real schema.
 
 import { DatabaseSync } from 'node:sqlite';
 import { renderHook, waitFor } from '@testing-library/react-native';
@@ -65,13 +68,27 @@ beforeEach(() => {
   usePetStore.setState({ pets: [PET], activePet: PET });
 });
 
-it('a record of looks alone reads as quiet, counts nothing and starts no day', async () => {
+it('a record of looks alone counts nothing and starts no day, and has not gone quiet', async () => {
   answerLooksDaily();
   const { result } = renderHook(() => useSignal());
   await waitFor(() => expect(result.current.isLoading).toBe(false));
-  expect(result.current.displayState).toBe('stale');
+  // Thirteen looks over twelve days, counted, would be E2's "no clear patterns yet".
+  expect(result.current.displayState).toBe('building');
   expect(result.current.eventCount).toBe(0);
   expect(result.current.dayNumber).toBe(1);
+});
+
+it('a record whose only recent row is a look is not stale; with no look it is', async () => {
+  log('meal', localNoon(5));
+  const quiet = renderHook(() => useSignal());
+  await waitFor(() => expect(quiet.result.current.isLoading).toBe(false));
+  expect(quiet.result.current.displayState).toBe('stale');
+  quiet.unmount();
+  log(LOOK, justNow());
+  const answered = renderHook(() => useSignal());
+  await waitFor(() => expect(answered.result.current.isLoading).toBe(false));
+  expect(answered.result.current.displayState).toBe('building');
+  expect(answered.result.current.eventCount).toBe(1);
 });
 
 it('looks beside real logs move nothing: the count, Day 1 and the state come from the logs', async () => {
