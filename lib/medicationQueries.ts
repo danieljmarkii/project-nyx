@@ -57,6 +57,9 @@ export const ACTIVE_REGIMEN_FOR_DRUG_QUERY =
 // is half of the dose's in-doubt state; the other half is THIS meal's own intake, which
 // the caller already holds, so the vehicle screen can ask `isComboDoseInDoubt` without a
 // second read. An aggregate column, so it changes no row count for any reader.
+// With several paired doses the link's target is still the representative (MIN) dose,
+// which may be the one that WAS answered; the tag is the meal's any-dose state, so it
+// can only ever flag more, never reassure.
 export const PAIRED_DOSE_REVERSE_JOIN = `
      LEFT JOIN (
        SELECT pad.paired_event_id AS meal_id,
