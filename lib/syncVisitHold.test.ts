@@ -37,6 +37,8 @@ const mockLocal = {
   db: null as InstanceType<typeof DatabaseSync> | null,
   /** Every local read, in order. A drain is seen to run by its queue read. */
   reads: [] as string[],
+  /** A read matching this throws, as a failing disk would: a drain that fails. */
+  failReads: null as RegExp | null,
 };
 
 const mockServer = {
@@ -147,6 +149,7 @@ function mockAdapter() {
     },
     getAllAsync: async (sql: string, params: unknown[] = []) => {
       mockLocal.reads.push(sql);
+      if (mockLocal.failReads?.test(sql)) throw new Error('disk I/O error');
       return db().prepare(sql).all(...(params as never[]));
     },
     getFirstAsync: async (sql: string, params: unknown[] = []) =>
@@ -191,6 +194,8 @@ import {
   syncPendingDietTrialFoods,
   syncPendingDietTrials,
   syncPendingMedications,
+  syncPendingVetAppointments,
+  syncPendingVetDocuments,
   syncPendingVetVisits,
 } from './sync';
 import {
@@ -202,10 +207,16 @@ import {
 } from './dietTrialSetup';
 import { startRegimen } from './medicationSetup';
 import { insertMedicationDose, rateDoseAdherence } from './medicationDose';
-import { linkCourseToVisit, linkTrialToVisit, logVetVisit } from './vetVisits';
+import { bookVetAppointment, linkCourseToVisit, linkTrialToVisit, logVetVisit } from './vetVisits';
 
 const PET = 'pet-1';
 const TODAY = '2026-10-01';
+
+const COURSE: RegimenWritePayload = {
+  medication_item_id: null, drug_name: 'Cerenia', dose_amount: '16 mg', route: 'oral',
+  doses_per_day: 1, schedule_notes: null, indication: 'vomiting', prescribed_by: null,
+  started_at: '2026-09-28', target_duration_days: 5, target_duration_doses: null,
+};
 
 function trialInput(foodId: string, startedAt: string): StartTrialInput {
   return {
@@ -264,6 +275,7 @@ beforeEach(async () => {
   }
   await applyColumnUpgrades(async (sql) => mockLocal.db!.exec(sql));
   mockLocal.reads.length = 0;
+  mockLocal.failReads = null;
   mockServer.rows.clear();
   mockServer.writes.length = 0;
   mockServer.answers.clear();
@@ -411,23 +423,82 @@ describe('a visit landing sends what waited on it', () => {
     expect(drainRuns()).toEqual(VISITS_DRAIN);
   });
 
-  it('follows a run already in flight rather than starting a second beside it (C-24)', async () => {
-    // A trial whose push is on the wire, slowly, when the visit lands.
-    const openTrials = slowWrites('diet_trials');
-    await startDietTrial(trialInput('food-c', TODAY));
-    await settle();
-    expect(drainRuns().diet_trials).toBe(1);
+  /**
+   * One run of each queue the visit kicks, put on the wire: the queue's own write path
+   * and push (a document is a hydrated one, no local file, that the owner renamed here),
+   * with that queue's writes slowed so the run is still waiting on the server. The doses
+   * and foods cases land their parent first, so only the child's run is slow.
+   */
+  const ON_THE_WIRE: [string, () => Promise<void>][] = [
+    ['vet_appointments', async () => {
+      await bookVetAppointment({ petId: PET, scheduledAt: '2026-10-08T09:30:00.000Z' });
+      void syncPendingVetAppointments();
+    }],
+    ['vet_documents', async () => {
+      mockLocal.db!.prepare(
+        `INSERT INTO vet_documents (id, pet_id, document_group_id, source, storage_path, mime_type,
+           title, local_uri, synced)
+         VALUES ('doc-1', ?, 'group-1', 'camera', 'pet-1/group-1/0.pdf', 'application/pdf', 'Bloods', '', 0)`,
+      ).run(PET);
+      void syncPendingVetDocuments();
+    }],
+    ['medications', async () => {
+      await startRegimen({ petId: PET, payload: COURSE });
+    }],
+    ['medication_administrations', async () => {
+      // The course lands (only the doses table is slow); the dose's own push is the slow one.
+      const { id: course } = await startRegimen({ petId: PET, payload: COURSE });
+      await settle();
+      await insertMedicationDose({
+        petId: PET, medicationItemId: null, medicationId: course, adherence: 'given',
+        occurredAt: new Date('2026-10-01T08:00:00.000Z'),
+      });
+    }],
+    ['diet_trials', async () => {
+      await startDietTrial(trialInput('food-c', TODAY));
+    }],
+    ['diet_trial_foods', async () => {
+      // The trial lands; its first allowed food's push is the slow one.
+      await startDietTrial(trialInput('food-c', TODAY));
+    }],
+  ];
 
+  it.each(ON_THE_WIRE)(
+    'follows a %s run already on the wire rather than starting a second beside it (C-24)',
+    async (queue, putOnTheWire) => {
+      const open = slowWrites(queue);
+      await putOnTheWire();
+      await settle();
+      const onTheWire = drainRuns()[queue];
+      expect(onTheWire).toBeGreaterThanOrEqual(1);
+      expect(writesTo(queue)).toEqual([]); // still waiting on the server
+
+      await logVetVisit({ petId: PET, visitedAt: TODAY });
+      await syncPendingVetVisits();
+      await settle();
+      // The visit's run of this queue waits behind the one on the wire; a second read
+      // beside it would be two drains of one queue at once.
+      expect(drainRuns()[queue]).toBe(onTheWire);
+
+      open();
+      await settle();
+      expect(writesTo(queue).length).toBeGreaterThan(0);
+      expect(drainRuns()[queue]).toBe(onTheWire + 1);
+    },
+  );
+
+  it.each([
+    ['medication_administrations', 'medications'],
+    ['diet_trial_foods', 'diet_trials'],
+  ])('logs a %s failure under its own name, never as %s', async (child, parent) => {
+    mockLocal.failReads = new RegExp(`^\\s*SELECT \\* FROM ${child} WHERE`);
     await logVetVisit({ petId: PET, visitedAt: TODAY });
     await syncPendingVetVisits();
     await settle();
-    // The visit's run waits behind the one on the wire; a second read beside it would be
-    // two drains of one queue at once.
-    expect(drainRuns().diet_trials).toBe(1);
 
-    openTrials();
-    await settle();
-    expect(drainRuns().diet_trials).toBe(2);
+    const warned = (console.warn as unknown as jest.Mock).mock.calls.map((c) => String(c[0]));
+    expect(warned).toContain(`[sync] ${child} push after a visit landed failed (queued):`);
+    expect(warned).not.toContain(`[sync] ${parent} push after a visit landed failed (queued):`);
   });
 });
 
@@ -435,12 +506,6 @@ describe('a visit landing sends what waited on it', () => {
 // course. A course reads unsent whenever it carries an edit not yet pushed, and here it
 // cannot be pushed at all, so a dose held behind it would never be corrected.
 describe('a dose correction under a course with an unsent edit', () => {
-  const COURSE: RegimenWritePayload = {
-    medication_item_id: null, drug_name: 'Cerenia', dose_amount: '16 mg', route: 'oral',
-    doses_per_day: 1, schedule_notes: null, indication: 'vomiting', prescribed_by: null,
-    started_at: '2026-09-28', target_duration_days: 5, target_duration_doses: null,
-  };
-
   it('is sent on the next doses drain, so the server learns the dose was refused', async () => {
     // A course, and a dose of it logged Given, both long since on the server.
     const { id: course } = await startRegimen({ petId: PET, payload: COURSE });

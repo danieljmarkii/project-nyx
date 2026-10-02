@@ -1275,16 +1275,20 @@ export function syncPendingVetVisits(): Promise<void> {
  * a trial lands; this link only makes that explicit.
  */
 function sendWhatWaitedOnVisits(): void {
+  // Each stage logs under its own queue's name, so a doses or foods failure is never
+  // reported as its parent's.
   const queued = (what: string) => (e: unknown) =>
     console.warn(`[sync] ${what} push after a visit landed failed (queued):`, e);
   syncPendingVetAppointments().catch(queued('vet_appointments'));
   syncPendingVetDocuments().catch(queued('vet_documents'));
-  syncPendingMedications()
-    .then(() => syncPendingMedicationAdministrations())
-    .catch(queued('medications'));
-  syncPendingDietTrials()
-    .then(() => syncPendingDietTrialFoods())
-    .catch(queued('diet_trials'));
+  syncPendingMedications().then(
+    () => syncPendingMedicationAdministrations().catch(queued('medication_administrations')),
+    queued('medications'),
+  );
+  syncPendingDietTrials().then(
+    () => syncPendingDietTrialFoods().catch(queued('diet_trial_foods')),
+    queued('diet_trials'),
+  );
 }
 
 async function drainVetVisitsQueue(): Promise<void> {

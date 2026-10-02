@@ -1300,9 +1300,11 @@ export async function addTrialFood(params: {
   notifyTrialChanged();
 
   // Fire-and-forget, same contract as `startDietTrial`: offline the row stays
-  // queued at `synced = 0` and the next cycle picks it up. The parent trial
-  // landed long ago, so this is the child pass alone — there is no ordering
-  // hazard to respect here.
+  // queued at `synced = 0` and the next cycle picks it up. The child pass alone is
+  // enough, and there is no ordering for this caller to keep: the foods queue holds
+  // this row while its trial is still unsent (an edit to it in flight, say), since
+  // migration 041 would refuse it terminally, and the trials drain sends it the
+  // moment that trial lands.
   syncPendingDietTrialFoods().catch((err) =>
     console.warn('[dietTrialSetup] add-trial-food sync failed (queued):', err),
   );
