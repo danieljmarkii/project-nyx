@@ -14,9 +14,11 @@
 //     BEFORE trigger, so it fires ahead of the foreign key: the refusal is 23514, never
 //     the non-terminal 23503.
 //
-// All three are TERMINAL on this client, so every case here is about a row quarantined
+// All three are TERMINAL on this client, so a hold that fails here is a row quarantined
 // on its first try ("couldn't be saved", with no door to fix it), not one that waits a
-// cycle. The food cache is left empty, so the food pre-sync never makes a request.
+// cycle. The last describe is the other half: once the visit lands, what waited on it
+// is sent at once, each queue once, through its serialized entry point. The food cache
+// is left empty, so the food pre-sync never makes a request.
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
