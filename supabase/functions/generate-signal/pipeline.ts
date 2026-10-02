@@ -22,6 +22,10 @@
 //     vanish), and RESOLVED here, inside the same fence the handler had (a throw costs the
 //     marker, never the run). The merge is `assembleSignal`, after the shell has phrased.
 //
+// EN-11 (PR-32, CUL-1141), behind `engines_v3_en11`, is the first key that changes what is
+// detected: it picks the detection config (EN11_CONFIG), so it is a SIGNAL_ENGINE_KEYS key and
+// no stand-down is minted across its flip. Its C-36 guard is signalPipeline.test.ts (c-en11).
+//
 // The first gated step is EN-10's context lines (PR-22, CUL-1420), behind `engines_v3_en10`:
 // `careContextFacts` (the last visit's DATE and the days with anything logged) is read by the
 // shell only while that key is on, and the step decorates the findings after everything else
@@ -35,11 +39,13 @@
 import {
   detectSignals,
   detectCoverage,
+  risingBelowCardFloor,
   stripInternalOnsets,
   computeReflectionDensity,
   computeChronicityCompare,
   doseToMedicationWindow,
   DEFAULT_CONFIG,
+  EN11_CONFIG,
   type Finding,
   type CoverageDiagnostic,
   type SymptomEvent,
@@ -53,6 +59,7 @@ import {
   type OccurredAtConfidence,
   type IncidentAnalysisInput,
   type DetectionInput,
+  type DetectionConfig,
   type ReflectionDensity,
   type ChronicityCompare,
   type MedOnBoardContext,
@@ -532,9 +539,13 @@ export interface SignalPipelineResult {
 
 // `careContextStep` exists for the flag-off guard, which hands in a step that changes every
 // finding so its running is always visible; production always takes EN10_CONTEXT_STEP.
+// `en11Config` likewise (Engines v3 PR-32, CUL-1141): the guard hands in a config that throws on
+// any read, so a gate that lets it through is a red test, never a quiet difference; production
+// always takes EN11_CONFIG.
 export function runSignalPipeline(
   args: SignalPipelineInput,
   careContextStep: CareContextStep = EN10_CONTEXT_STEP,
+  en11Config: DetectionConfig = EN11_CONFIG,
 ): SignalPipelineResult {
   const { prior: priorSignal, nowMs, engineFlags } = args
   const rows = canonicalRows(args.rows)
@@ -632,8 +643,11 @@ export function runSignalPipeline(
     timezone,
     now: new Date(nowMs).toISOString(),
   }
+  // EN-11 (Engines v3 PR-32, CUL-1141): the one config every step below reads. DEFAULT_CONFIG
+  // unless `engines_v3_en11` is on, so flag off is the same object as before.
+  const config = isEngineKeyOn(engineFlags, 'engines_v3_en11') ? en11Config : DEFAULT_CONFIG
   // Engines v3 PR-14d (CUL-1410): one card per sign where the burden card and ④ say the same week.
-  const detected = suppressWorseningUnderBurden(detectSignals(input, DEFAULT_CONFIG))
+  const detected = suppressWorseningUnderBurden(detectSignals(input, config))
   // CUL-989 step 3, BEFORE curation so a withheld card never holds a slot under the cap.
   const ranked = readIncomplete ? withholdOverIncompleteRead(detected) : detected
 
@@ -647,7 +661,7 @@ export function runSignalPipeline(
   //     the reflection detector reads, the med context from the same medication rows the
   //     confounder pass reads. `ranked` is untouched — nothing here changes what fires or how
   //     it ranks (§11 AC). A null density / medContext leaves the finding unchanged.
-  const reflectionDensity: ReflectionDensity | null = computeReflectionDensity(input, DEFAULT_CONFIG)
+  const reflectionDensity: ReflectionDensity | null = computeReflectionDensity(input, config)
   const medOnBoard: MedOnBoardContext | null = computeMedOnBoard(nowMs, medDoseFacts)
   const decoratedWithOnsets = curated.map((r) => {
     // L3 (CUL-9): photo composition is PER-FINDING (each vomit timing finding has its own window +
@@ -668,7 +682,7 @@ export function runSignalPipeline(
     // shown, and an easing shown from a partial record is the reassurance the ruling withholds.
     const chronicityCompare: ChronicityCompare | null =
       r.finding.type === 'symptom_chronicity' && !readIncomplete
-        ? computeChronicityCompare(input, r.finding.symptomType, DEFAULT_CONFIG)
+        ? computeChronicityCompare(input, r.finding.symptomType, config)
         : null
     return {
       rank: r.rank,
@@ -689,8 +703,15 @@ export function runSignalPipeline(
   const strippedFindings = stripInternalOnsets(decoratedWithOnsets.map((r) => r.finding))
   // CUL-989: over an incomplete read every count is a floor, and the finding says so; and no
   // safety card is softened below the tier the previous Signal showed (holdPriorTiers).
+  //
+  // NOT gated on the flag state (Engines v3 PR-32 adversarial pass, D1). Carrying the previous
+  // safety cards only ever keeps a warning, so it is right across a flag change and over a flag
+  // read that did not answer. Gating it on `standDownMintAllowed` was harmless while no Signal key
+  // existed; once engines_v3_en11 became one, a failed flag read during an incomplete read dropped
+  // 7 of 8 carried safety cards for EVERY account, flag off included. The gate belongs to the one
+  // sentence that says a finding went away (the stand-down mint below), and only there.
   const priorSafety =
-    readIncomplete && priorSignal && standDownMintAllowed(priorSignal.engineFlags, engineFlags, SIGNAL_ENGINE_KEYS)
+    readIncomplete && priorSignal
       ? readPriorSafetyEntries(priorSignal.findings, priorSignal.generatedAt, nowMs)
       : []
   const decoratedBase = decoratedWithOnsets.map((r, i) => ({
@@ -713,7 +734,7 @@ export function runSignalPipeline(
         trial: trialRow && dietTrialActive ? trialFactOf(trialRow) : null,
         timezone,
         nowMs,
-        episodeGapHours: DEFAULT_CONFIG.symptomEpisodeGapHours,
+        episodeGapHours: config.symptomEpisodeGapHours,
       })
       : decoratedBase
   // CUL-989: and no safety card the previous Signal showed disappears on an incomplete read.
@@ -738,6 +759,7 @@ export function runSignalPipeline(
     symptomEvents,
     freeFedFoodIds,
     nowMs,
+    risingBelowCardFloor: risingBelowCardFloor(input, config),
   })
 
   // 5. Cache. Empty findings = building/stale (§3.3), NEVER an all-clear (§9).
@@ -754,7 +776,7 @@ export function runSignalPipeline(
   // detectors are individually safe on a truly-empty pet (rate_meals needs ≥1 meal,
   // staple_washout needs a single protein + symptoms), so a pure building pet
   // yields []. Per §9 these describe DATA COVERAGE, never wellness.
-  const coverage: CoverageDiagnostic[] = isBuilding ? detectCoverage(input, DEFAULT_CONFIG) : []
+  const coverage: CoverageDiagnostic[] = isBuilding ? detectCoverage(input, config) : []
 
   // 5b. The labeled stand-down (CUL-786): mint a marker for a chronicity course that
   //     stopped on its recency floor with logging held across the gap (standDown.ts
@@ -787,7 +809,7 @@ export function runSignalPipeline(
         priorGeneratedAtMs,
         current: curated.map((r) => r.finding),
         input,
-        config: DEFAULT_CONFIG,
+        config,
         nowMs,
       })
     } catch (err) {

@@ -129,6 +129,7 @@ Deno.test('extractNumbers — digits and number-words, word-boundaried', () => {
 
 Deno.test('buildSummaryPacket — safety finding leads and sets hasSafety', () => {
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [worseningFinding()],
     mealEvents: ratedChickenMeals(6),
@@ -146,6 +147,7 @@ Deno.test('buildSummaryPacket — finished-rate is OMITTED alongside a safety co
   // A healthy-looking month rate must never sit next to a current concern and read as
   // reassurance. Protein (neutral) may appear; the finished-rate clause must not.
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [declineFinding()],
     mealEvents: ratedChickenMeals(8, 'all'),
@@ -164,6 +166,7 @@ Deno.test('buildSummaryPacket — finished-rate is OMITTED alongside a safety co
 
 Deno.test('buildSummaryPacket — quiet pet: descriptive intake + finished-rate, no reassurance', () => {
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [],
     mealEvents: ratedChickenMeals(10, 'all'),
@@ -187,6 +190,7 @@ Deno.test('buildSummaryPacket — a hidden SECONDARY protein can win the clause 
   // slice 6), so the summary sat above a card it disagreed with. Chicken: 5 meals; duck: 3;
   // salmon: 2 — the secondary wins outright, no tie-break involved.
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [],
     mealEvents: [
@@ -213,6 +217,7 @@ Deno.test('buildSummaryPacket — a structural tie yields NO protein clause, nev
   // alphabetical tie-break would render "Chicken was the most-logged meal protein" on a
   // duck formula, decided by 'c' < 'd'. A tied superlative is false as stated → no clause.
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [],
     mealEvents: Array.from({ length: 6 }, (_, i) =>
@@ -230,6 +235,7 @@ Deno.test('buildSummaryPacket — the protein-clause floor still counts MEALS, n
   // 3 meals × 2 proteins each = 6 instances but 3 identified meals — below the 4-meal floor,
   // so no protein clause is invented off a thin record.
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [],
     mealEvents: Array.from({ length: 3 }, (_, i) =>
@@ -245,6 +251,7 @@ Deno.test('buildSummaryPacket — the protein-clause floor still counts MEALS, n
 
 Deno.test('buildSummaryPacket — reflection drives the lead when no safety finding', () => {
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [reflectionFinding()],
     mealEvents: ratedChickenMeals(6),
@@ -260,6 +267,7 @@ Deno.test('buildSummaryPacket — reflection drives the lead when no safety find
 
 Deno.test('buildSummaryPacket — descriptive symptom fallback when symptoms logged but no finding', () => {
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [],
     mealEvents: [],
@@ -276,6 +284,7 @@ Deno.test('buildSummaryPacket — descriptive symptom fallback when symptoms log
 
 Deno.test('buildSummaryPacket — out-of-window meals/symptoms are excluded from the month', () => {
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [],
     mealEvents: ratedChickenMeals(6).map((m) => ({ ...m, occurredAt: daysAgoIso(45) })),
@@ -290,6 +299,7 @@ Deno.test('buildSummaryPacket — out-of-window meals/symptoms are excluded from
 Deno.test('buildSummaryPacket — below-floor intake never invents a ranking', () => {
   // 3 meals < MIN_MEALS_FOR_RANKING(4): no protein clause, no finished-rate clause.
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [],
     mealEvents: ratedChickenMeals(3),
@@ -306,6 +316,7 @@ Deno.test('buildSummaryPacket — free-fed meals excluded from finished-rate (§
   // 5 meals all free-fed → denominator below floor → no finished-rate clause.
   const meals = ratedChickenMeals(5).map((m) => ({ ...m, foodItemId: 'free-bowl' }))
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [],
     mealEvents: meals,
@@ -327,6 +338,7 @@ Deno.test('buildSummaryPacket — treats excluded from finished-rate denominator
     ...ratedChickenMeals(2),
   ]
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [],
     mealEvents: meals,
@@ -341,6 +353,7 @@ Deno.test('buildSummaryPacket — treats excluded from finished-rate denominator
 
 Deno.test('buildSummaryPacket — allowedNumbers covers every number in the template', () => {
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [worseningFinding({ trigger: 'more_episodes', currentCount: 6, currentDays: 4, priorCount: 2 })],
     mealEvents: ratedChickenMeals(6),
@@ -357,6 +370,7 @@ Deno.test('buildSummaryPacket — allowedNumbers covers every number in the temp
 
 Deno.test('buildSummaryPacket — capped at four sentences, safety kept first', () => {
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [declineFinding(), worseningFinding()],
     mealEvents: ratedChickenMeals(8),
@@ -375,11 +389,16 @@ Deno.test('buildSummaryPacket — capped at four sentences, safety kept first', 
 
 Deno.test('summaryTemplate — every emittable shape (with a typical food label) passes its own validator and never reassures', () => {
   const scenarios: SummaryFactPacket[] = [
-    buildSummaryPacket({ petName: 'Pixel', findings: [worseningFinding()], mealEvents: ratedChickenMeals(6), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
-    buildSummaryPacket({ petName: 'Pixel', findings: [declineFinding({ trigger: 'consecutive_low', daysBelowBaseline: 3, refusedFoodLabel: null })], mealEvents: ratedChickenMeals(8), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
-    buildSummaryPacket({ petName: 'Pixel', findings: [reflectionFinding({ direction: 'flat', currentCount: 3, priorCount: 3 })], mealEvents: ratedChickenMeals(6), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
-    buildSummaryPacket({ petName: 'Pixel', findings: [], mealEvents: ratedChickenMeals(10), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
-    buildSummaryPacket({ petName: 'Pixel', findings: [], mealEvents: [], symptomEvents: [symptom(), symptom()], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
+    buildSummaryPacket({
+    risingBelowCardFloor: false, petName: 'Pixel', findings: [worseningFinding()], mealEvents: ratedChickenMeals(6), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
+    buildSummaryPacket({
+    risingBelowCardFloor: false, petName: 'Pixel', findings: [declineFinding({ trigger: 'consecutive_low', daysBelowBaseline: 3, refusedFoodLabel: null })], mealEvents: ratedChickenMeals(8), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
+    buildSummaryPacket({
+    risingBelowCardFloor: false, petName: 'Pixel', findings: [reflectionFinding({ direction: 'flat', currentCount: 3, priorCount: 3 })], mealEvents: ratedChickenMeals(6), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
+    buildSummaryPacket({
+    risingBelowCardFloor: false, petName: 'Pixel', findings: [], mealEvents: ratedChickenMeals(10), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
+    buildSummaryPacket({
+    risingBelowCardFloor: false, petName: 'Pixel', findings: [], mealEvents: [], symptomEvents: [symptom(), symptom()], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
   ]
   for (const packet of scenarios) {
     assert.ok(packet, 'scenario should produce a packet')
@@ -399,6 +418,7 @@ Deno.test('summaryTemplate — a screened FOOD NAME is inert in v1 but is a mode
   // reject it, so before model phrasing is ever re-enabled the food-name span must be exempted
   // (B-096). This test pins both halves of that reality so the limitation can't be forgotten.
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [declineFinding({ trigger: 'refused_normal_food', refusedFoodLabel: 'Royal Canin Recovery' })],
     mealEvents: ratedChickenMeals(6),
@@ -416,7 +436,8 @@ Deno.test('summaryTemplate — a screened FOOD NAME is inert in v1 but is a mode
 
 Deno.test('summaryTemplate — a safety summary always routes to the vet', () => {
   for (const f of [worseningFinding(), declineFinding(), worseningFinding({ tier: 'soft', trigger: 'more_days' })]) {
-    const packet = buildSummaryPacket({ petName: 'Pixel', findings: [f], mealEvents: ratedChickenMeals(6), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!
+    const packet = buildSummaryPacket({
+    risingBelowCardFloor: false, petName: 'Pixel', findings: [f], mealEvents: ratedChickenMeals(6), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!
     assert.match(summaryTemplate(packet), /\bvet\b/i)
   }
 })
@@ -425,6 +446,7 @@ Deno.test('summaryTemplate — a safety summary always routes to the vet', () =>
 
 function quietPacket(): SummaryFactPacket {
   return buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [],
     mealEvents: ratedChickenMeals(10),
@@ -436,6 +458,7 @@ function quietPacket(): SummaryFactPacket {
 
 function safetyPacket(): SummaryFactPacket {
   return buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [worseningFinding()],
     mealEvents: ratedChickenMeals(6),
@@ -592,6 +615,7 @@ Deno.test('shouldPhraseWithModel — safety & quiet are template-only; only refl
   assert.equal(shouldPhraseWithModel(safetyPacket()), false)
   assert.equal(shouldPhraseWithModel(quietPacket()), false)
   const reflective = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [reflectionFinding()],
     mealEvents: ratedChickenMeals(6),
@@ -613,6 +637,7 @@ Deno.test('validateSummary — rejects the reflection-path leaks the re-review f
   // them so the dormant guard is hardened for any future re-enable. allowedNumbers {1,4} from
   // an improving reflection packet, so the vocabulary screens (not numbers) must do the work.
   const p = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [reflectionFinding()], // "1 ... down from 4"
     mealEvents: ratedChickenMeals(6),
@@ -641,6 +666,7 @@ Deno.test('buildSummaryPacket — never drops a safety clause to honour the cap 
   // Five safety findings (more than the 4-sentence cap can hold) — all must survive, an
   // over-long safety summary beats a dropped concern (Principle 3 > the layout cap).
   const packet = buildSummaryPacket({
+    risingBelowCardFloor: false,
     petName: 'Pixel',
     findings: [
       worseningFinding({ symptomType: 'vomit' }),
@@ -670,4 +696,20 @@ Deno.test('number-swap inversion on a safety packet is prevented by RESTRAINT, n
   // ...which is EXACTLY why a safety summary is NEVER sent to the model: it ships the
   // deterministic template, so the model can never produce this inversion.
   assert.equal(shouldPhraseWithModel(p), false)
+})
+
+// EN-11 (Engines v3 PR-32, adversarial pass D4): a sign rising below EN-11's card floor has no
+// safety card, so `hasSafety` is false, and the finished-meal rate must still stay out.
+Deno.test('buildSummaryPacket — finished-rate is OMITTED while a sign rises below the EN-11 card floor', () => {
+  const args = {
+    petName: 'Pixel',
+    findings: [],
+    mealEvents: ratedChickenMeals(8, 'all'),
+    symptomEvents: [],
+    freeFedFoodIds: new Set<string>(),
+    nowMs: NOW_MS,
+  }
+  const rate = (p: ReturnType<typeof buildSummaryPacket>) => p?.clauses.some((c) => /finished most or all/.test(c)) ?? false
+  assert.equal(rate(buildSummaryPacket({ ...args, risingBelowCardFloor: false })), true, 'premise: a quiet pet carries the rate')
+  assert.equal(rate(buildSummaryPacket({ ...args, risingBelowCardFloor: true })), false)
 })

@@ -8,6 +8,10 @@
 //     even when a step that changes every finding is handed in and the shell's facts are
 //     populated. Deleting the gate reds it; a gate that never opens reds the next test; and
 //     with the real step on, the row differs from flag-off ONLY by the lines it adds.
+// (c-en11) Engines v3 PR-32 (CUL-1141), the first key that changes what is detected: with
+//     engines_v3_en11 off, the pipeline never reads EN-11's config (one that throws on any read
+//     is handed in), so deleting the gate reds it; with it on, the config is read on every case;
+//     and with the real config on, no safety card appears that flag-off did not show.
 // (d) The care record is RESERVED: read by nothing. PR-23 (EN-9's care state) flips this
 //     test on purpose, in the PR that starts reading it.
 // (e) The pipeline is a function of its input: the same input twice gives the same result,
@@ -36,6 +40,7 @@ import {
   type SignalPayload,
 } from '../../generate-signal/pipeline.ts'
 import { ENGINE_KEYS, SIGNAL_DECORATING_KEYS, SIGNAL_ENGINE_KEYS, type EngineFlags } from '../engineFlags.ts'
+import { EN11_CONFIG, type DetectionConfig } from '../../generate-signal/detection.ts'
 import { hasBannedSignalVocabulary, validatePhrasing } from '../../generate-signal/phrasing.ts'
 import { EN10_CONTEXT_STEP, type CareContextFacts, type CareContextStep } from '../../generate-signal/careContext.ts'
 import { careClaimReason } from '../../../../lib/careClaimScreens.ts'
@@ -65,10 +70,12 @@ const run = (
   incompletePulls: readonly string[] = [],
   careContextFacts: CareContextFacts | null = null,
   step: CareContextStep = EN10_CONTEXT_STEP,
+  en11Config: DetectionConfig = EN11_CONFIG,
 ) =>
   runSignalPipeline(
     { rows: c.rows, incompletePulls, prior: c.prior, nowMs: Date.parse(c.nowIso), engineFlags, careRecord, careContextFacts },
     step,
+    en11Config,
   )
 const payload = (c: SignalPipelineCase, engineFlags?: EngineFlags, careRecord?: CareRecord): SignalPayload =>
   templatePayload(run(c, engineFlags, careRecord))
@@ -137,20 +144,22 @@ Deno.test('(c) tripwire: the Signal keys are exactly the ones with an absence gu
   // tests (the row changes only by its field); a new one needs its own absence guard beside
   // them, and a key that changes what is detected goes in SIGNAL_ENGINE_KEYS instead.
   assertEquals([...SIGNAL_DECORATING_KEYS], [EN10], 'a new decorating key needs its own absence guard beside (c)')
-  assertEquals([...SIGNAL_ENGINE_KEYS], [], 'a Signal key that changes detection needs its own absence guard beside (c)')
+  assertEquals([...SIGNAL_ENGINE_KEYS], [EN11], 'a Signal key that changes detection needs its own absence guard beside (c-en11)')
   assertStrictEquals(ON_STATES.length >= 2 && OFF_STATES.length >= 3, true, 'the flag states lost a side')
 })
 
 Deno.test('(c) flag-off equals EN-10\'s step absent, even with populated facts and a step that changes everything', () => {
-  // Compared with every key off and the step absent: no Signal key reaches the stand-down gate
-  // (SIGNAL_ENGINE_KEYS is empty), so a failed flag read or a flip mints exactly as today.
+  // Compared under the SAME flags with the step absent: since PR-32 a Signal key (en11) reaches
+  // detection and the stand-down gate, so each state is its own baseline, and only EN-10's step
+  // may differ between the two sides.
   for (const c of SIGNAL_PIPELINE_CORPUS) {
-    const absent = run(c, OFF, EMPTY_CARE_RECORD, [], null, ABSENT)
     for (const [label, flags] of OFF_STATES) {
+      const absent = run(c, flags, EMPTY_CARE_RECORD, [], null, ABSENT)
       assertEquals(run(c, flags, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS, SENTINEL), absent, `${c.name}: ${label}`)
     }
     // Key on, but the shell's read failed (null facts): no step either.
     for (const [label, flags] of ON_STATES) {
+      const absent = run(c, flags, EMPTY_CARE_RECORD, [], null, ABSENT)
       assertEquals(run(c, flags, EMPTY_CARE_RECORD, [], null, SENTINEL), absent, `${c.name}: ${label}, no facts`)
     }
   }
@@ -176,8 +185,9 @@ Deno.test('(c) the gate opens for engines_v3_en10: the step runs on every case w
 Deno.test('(c) the real step changes nothing but the lines: presence, rank, sentence and summary hold', () => {
   let lined = 0
   for (const c of SIGNAL_PIPELINE_CORPUS) {
-    const base = payload(c, OFF)
     for (const [label, flags] of ON_STATES) {
+      // The same flags less EN-10's key: the row EN-10 decorates (en11 may have changed it).
+      const base = payload(c, { ...flags, on: flags.on.filter((k) => k !== EN10) })
       const result = run(c, flags, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS)
       const p = templatePayload(result)
       assertEquals(withoutLines(p), base, `${c.name}: ${label}`)
@@ -206,6 +216,56 @@ Deno.test('(c) over an incomplete read the step does not run, key on or off', ()
       )
     }
   }
+})
+
+// ── (c-en11) EN-11, the first key that changes detection (PR-32, CUL-1141) ──
+// A config that throws on any read: the C-36 "feature absent" for a config, since a gate that
+// lets it through cannot stay quiet.
+const THROWING_CONFIG = new Proxy({} as DetectionConfig, {
+  get: () => {
+    throw new Error('EN-11 config read')
+  },
+})
+const EN11 = 'engines_v3_en11'
+const EN11_OFF_STATES = Object.entries(FLAG_STATES).filter(([, f]) => !f.on.includes(EN11))
+const EN11_ON_STATES = Object.entries(FLAG_STATES).filter(([, f]) => f.on.includes(EN11))
+
+Deno.test('(c-en11) flag off never reads EN-11\'s config: the row is the one with it absent', () => {
+  assertStrictEquals(EN11_ON_STATES.length >= 2 && EN11_OFF_STATES.length >= 3, true, 'the flag states lost a side')
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    for (const [label, flags] of EN11_OFF_STATES) {
+      assertEquals(run(c, flags, EMPTY_CARE_RECORD, [], null, EN10_CONTEXT_STEP, THROWING_CONFIG), run(c, flags), `${c.name}: ${label}`)
+    }
+  }
+})
+
+Deno.test('(c-en11) the gate opens: with engines_v3_en11 on, every case reads EN-11\'s config', () => {
+  let opened = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    for (const [label, flags] of EN11_ON_STATES) {
+      assertThrows(() => run(c, flags, EMPTY_CARE_RECORD, [], null, EN10_CONTEXT_STEP, THROWING_CONFIG), Error, 'EN-11 config read', `${c.name}: ${label}`)
+      opened++
+    }
+  }
+  assertStrictEquals(opened >= SIGNAL_PIPELINE_CORPUS.length * 2, true, `the gate opened on only ${opened} runs`)
+})
+
+Deno.test('(c-en11) the real config adds no safety card and moves nothing over an empty record', () => {
+  // EN-11 only withholds insight cards and raises ④'s floor, so flag on shows no safety card
+  // flag off did not. (An insight card may appear: a withheld one frees a curation slot.)
+  const ON: EngineFlags = { on: [EN11], readOk: true }
+  let changed = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const off = payload(c, OFF)
+    const on = payload(c, ON)
+    const safety = (p: SignalPayload) =>
+      p.findings.filter((e) => (e.finding as { priorityClass?: string }).priorityClass === 'safety').map((e) => e.finding.type)
+    for (const t of safety(on)) assertStrictEquals(safety(off).includes(t), true, `${c.name}: ${t} appeared under EN-11`)
+    if (JSON.stringify(types(on)) !== JSON.stringify(types(off))) changed++
+    if (off.isBuilding) assertStrictEquals(on.isBuilding, true, `${c.name}: an empty row gained a card`)
+  }
+  // Non-vacuity: the corpus holds a case EN-11 changes (the 2-vs-0 worsening case).
+  assertStrictEquals(changed >= 1, true, 'no corpus case moves under EN-11, so this test checks nothing')
 })
 
 Deno.test('(d) the reserved care record is read by nothing (PR-23 flips this on purpose)', () => {
@@ -438,6 +498,33 @@ Deno.test('(k) a partial read of the SAME record never weakens or drops a safety
     }
   }
   assertStrictEquals(probed >= 12, true, `only ${probed} truncations probed`)
+})
+
+// Engines v3 PR-32 (adversarial pass, D1): carrying the previous safety cards over an incomplete
+// read never depends on the flags. Every flag state, a read that did not answer, and a flip either
+// way: the emptied run keeps every safety card the prior row held.
+Deno.test('(k-flags) the carry never depends on the flag state: a failed flag read or a flip loses no safety card', () => {
+  const states: [string, unknown, EngineFlags][] = [
+    ...Object.entries(FLAG_STATES).map(([label, f]) => [label, [], f] as [string, unknown, EngineFlags]),
+    ['engines_v3_en11 rolled back', ['engines_v3_en11'], OFF],
+    ['engines_v3_en11 turned on', [], { on: ['engines_v3_en11'], readOk: true }],
+  ]
+  let carried = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const fullSafety = payload(c).findings.filter((e) => e.finding.type !== 'stood_down' && e.finding.priorityClass === 'safety')
+    if (fullSafety.length === 0) continue
+    for (const [label, priorFlags, flags] of states) {
+      const prior: PriorSignal = { findings: payload(c).findings, generatedAt: c.nowIso, engineFlags: priorFlags }
+      const nowIso = new Date(Date.parse(c.nowIso) + 86_400_000).toISOString()
+      const emptied: SignalPipelineCase = { ...c, nowIso, prior, rows: { ...c.rows, symptoms: [], meals: [], incidentAnalyses: [], doseEvents: [] } }
+      const keys = templatePayload(run(emptied, flags, EMPTY_CARE_RECORD, INCOMPLETE)).findings.map((e) => cardKey(e.finding))
+      for (const e of fullSafety) {
+        assertStrictEquals(keys.includes(cardKey(e.finding)), true, `${c.name} / ${label}: lost ${cardKey(e.finding)}`)
+        carried++
+      }
+    }
+  }
+  assertStrictEquals(carried >= 20, true, `only ${carried} carries checked`)
 })
 
 Deno.test('(k2) with no prior, a partial read still never shows the empty-record headline', () => {

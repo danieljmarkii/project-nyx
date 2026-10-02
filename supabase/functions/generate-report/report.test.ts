@@ -4847,3 +4847,43 @@ Deno.test('a refusal-stopped trial with no meals logged names no appendix that i
     assert.ok(printed.has(m[1]), `a sentence names appendix ${m[1]}, which is not printed`)
   }
 })
+
+// ── EN-11 (Engines v3 PR-32, CUL-1141): the report's detection under engines_v3_en11 ──
+// The first phase that reads ReportInput.engineFlags. A record with two vomits this week and
+// none the week before: today the report prints a worsening flag (2 vs 0); under EN-11 ④'s
+// card floor withholds it. Every other key, and a failed read, leaves the report as today.
+function en11Input(on: string[], readOk = true): ReportInput {
+  const events: ReportEventInput[] = []
+  for (let d = 10; d <= 30; d++) {
+    const date = `2026-06-${String(d).padStart(2, '0')}`
+    for (const time of ['11:30:00', '22:15:00']) {
+      events.push(makeEvent({
+        // Fixed ids: makeEvent's counter would make two calls differ by id alone.
+        id: `en11-meal-${date}-${time}`,
+        type: 'meal',
+        occurredAt: at(date, time),
+        meal: {
+          foodItemId: 'f-kibble', intakeRating: 'all' as never, quantity: null, foodType: 'meal', format: 'kibble' as never,
+          primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: null, extractionConfidence: null,
+          brand: 'Acme', productName: 'Chicken Kibble',
+        },
+      }))
+    }
+  }
+  events.push(makeEvent({ id: 'en11-vomit-1', type: 'vomit', occurredAt: at('2026-06-28', '11:10:00') }))
+  events.push(makeEvent({ id: 'en11-vomit-2', type: 'vomit', occurredAt: at('2026-06-30', '22:40:00') }))
+  return baseInput({ events, engineFlags: { on: on as never, readOk } })
+}
+const worseningKinds = (input: ReportInput) =>
+  assembleReport(input).safetyFlags.filter((f) => f.kind === 'symptom_worsening')
+
+Deno.test('EN-11 — the report drops the 2-vs-0 worsening flag only under engines_v3_en11', () => {
+  const off = assembleReport(en11Input([]))
+  assert.equal(worseningKinds(en11Input([])).length, 1, 'premise: today the report flags 2 vs 0')
+  assert.equal(worseningKinds(en11Input(['engines_v3_en11'])).length, 0)
+  // Every other key, and a read that did not answer, is today's report exactly.
+  for (const k of ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en4', 'engines_v3_en10']) {
+    assert.deepEqual(assembleReport(en11Input([k])), off, k)
+  }
+  assert.deepEqual(assembleReport(en11Input([], false)), off, 'a failed read')
+})

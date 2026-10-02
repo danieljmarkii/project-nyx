@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EN-11 on Home</title>
+<meta name="description" content="EN-11 frames, round 1 (Engines v3 PR-32, CUL-1141): the App Review demo's beef card under EN-11, the stand-down line each withdrawn card leaves on the GA day, and the worsening floor with the reflection mute held.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+  /* ============================================================
+     EN-11 frames (Engines v3 PR-32, CUL-1141), styled from docs/culprit-engines-v3-mockups.html.
+     Original header of that stylesheet follows. Engines v3 on Home, mock round 3 (CUL-1139 + CUL-1144, 2026-09-28; rounds 1-2 in git).
+     The Engines v3 strategy page (docs/culprit-engines-step-change.html)
+     drew a Home the rules cannot produce; the design critique
+     (docs/engines-v3-critique-2026-09.md, CUL-1268) asked for it to be
+     redrawn as the rules would render it before D3 is ruled, and for
+     TD-4 and E-3 to be drawn both ways. Round 2 (EN-9's care states,
+     EN-3's tiers) republishes to this URL after E-2, E-3 and TD-4.
+     House system: the Design v2 device round's tokens
+     (docs/culprit-design-v2-device-mockups.html); frames render the
+     app's real light tokens (constants/theme.ts) in both page themes.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --note-ink: #7A4E00; --note-wash: #FDF3DC; --note-rule: #E3B85C;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    /* The app's own light tokens, inside the phone frames in both page themes. */
+    --app-ground: #FAFAFA; --app-card: #FFFFFF; --app-subtle: #F4F4F5; --app-ink: #0A0A0A;
+    --app-ink-2: #525252; --app-ink-3: #737373; --app-rule: #E7E5E4;
+    --app-rose: #F43F5E; --app-rose-ink: #B4123B; --app-rose-soft: #FBB6C3;
+    --app-teal: #00C2A8; --app-teal-ink: #0B7B6C; --app-teal-wash: #E0FBF7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8A86BA;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --note-ink: #F5C26B; --note-wash: rgba(245,194,107,0.12); --note-rule: rgba(245,194,107,0.45);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8A86BA;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --note-ink: #F5C26B; --note-wash: rgba(245,194,107,0.12); --note-rule: rgba(245,194,107,0.45);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  a { color: var(--teal-ink); text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 3px; border-radius: 3px; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 64ch; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 500; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.needs { color: var(--note-ink); background: var(--note-wash); }
+  .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
+
+  /* The ledger: each critique finding, and what moved on the page */
+  .ledger { display: grid; gap: 0; margin: 26px 0 0; }
+  .ledger div { display: grid; grid-template-columns: 250px 1fr; gap: 16px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-block: 9px; }
+  .ledger div > b { color: var(--ink); font-weight: 500; }
+  @media (max-width: 680px) { .ledger div { grid-template-columns: 1fr; gap: 3px; } }
+  .rule-key { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 22px; font-size: 13.5px; color: var(--ink-2); }
+  .rule-key span { display: inline-flex; align-items: center; gap: 8px; }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 36px 0 6px; }
+  p { margin: 0 0 14px; }
+  .col p:last-child { margin-bottom: 0; }
+
+  /* Frames */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 26px; align-items: flex-start; }
+  .frame { display: flex; flex-direction: column; gap: 12px; width: 316px; max-width: 100%; }
+  .frame-cap { display: flex; flex-direction: column; gap: 5px; }
+  .frame-cap b { font-size: 14.5px; font-weight: 600; }
+  .frame-cap span, .frame-cap li { font-size: 13.5px; color: var(--ink-2); }
+  .frame-cap .pill { font-size: 10.5px; color: var(--teal-ink); }
+  .frame-cap .pill.dir { color: var(--ink-2); }
+  .frame-cap .pill.needs { color: var(--note-ink); }
+  .frame-cap ul { margin: 2px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+  .option { border: 1px dashed var(--rule); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 14px; max-width: 100%; }
+  .option-head { display: flex; flex-direction: column; gap: 4px; }
+  .option-head::before { content: "Option, drawn for the decision, not the current proposal"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  .option-head b { font-size: 15px; }
+  .option-head span { font-size: 13.5px; color: var(--ink-2); max-width: 60ch; }
+  .option .frames { margin-top: 0; }
+  .side { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 26px; align-items: flex-start; }
+
+  /* The phone */
+  .phone { width: 316px; max-width: 100%; background: var(--app-ground); border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.14); padding: 14px 12px 16px; color: var(--app-ink); font-family: var(--sans); font-variant-numeric: tabular-nums; font-size: 13px; line-height: 1.4; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 10px; }
+  .phone.short { padding-bottom: 12px; }
+  .appbar { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 2px; }
+  .appbar .pet { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, #3a3a3a, #8a8a8a); }
+  .askpill { font-size: 12px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 3px 10px; display: flex; align-items: center; gap: 5px; }
+  .askpill i { width: 6px; height: 6px; border-radius: 50%; background: var(--app-teal); display: inline-block; }
+  .card { background: var(--app-card); border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); }
+  .zone-label { font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-3); margin-bottom: 8px; }
+  .row-divider { height: 1px; background: var(--app-rule); margin: 11px 0; }
+  .zone-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; font-size: 10.5px; color: var(--app-ink-3); }
+  .zone-foot span:last-child { font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; white-space: nowrap; }
+  .fade-bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 54px; background: linear-gradient(rgba(250,250,250,0), var(--app-ground)); pointer-events: none; }
+
+  /* Signal rows (CUL-1270 as built: headline, count, ask, door) */
+  .door { display: flex; align-items: center; gap: 10px; position: relative; }
+  .door .body { flex: 1; min-width: 0; }
+  .railed { border-left: 3px solid var(--app-rose); padding-left: 10px; }
+  .railed.watch { border-left-color: var(--app-rose-soft); }
+  .plain-row { padding-left: 13px; }
+  .eyebrow-s { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); font-weight: 500; }
+  .head { font-size: 14px; font-weight: 600; line-height: 1.3; }
+  .head.serif { font-family: var(--serif); font-weight: 500; font-size: 18px; line-height: 1.22; }
+  .asktxt { font-size: 12px; color: var(--app-rose-ink); font-weight: 500; margin-top: 2px; }
+  .sub { font-size: 11.5px; color: var(--app-ink-2); margin-top: 2px; }
+  .sub .ask-in { color: var(--app-rose-ink); }
+  .state { display: inline-block; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 4px; padding: 1px 5px; margin-right: 4px; vertical-align: 1px; }
+  .chev { width: 22px; height: 22px; flex-shrink: 0; color: var(--app-ink-3); }
+  .chev svg { display: block; }
+  .chev.big { width: 28px; height: 28px; border-radius: 50%; background: var(--app-subtle); display: grid; place-items: center; }
+  .lane { display: block; margin-top: 6px; }
+  .answers { display: flex; flex-wrap: wrap; column-gap: 16px; row-gap: 16px; margin-top: 9px; }
+  .answers span { font-size: 12px; font-weight: 500; border: 1px solid var(--app-rule); border-radius: 999px; padding: 6px 12px; min-height: 30px; display: inline-flex; align-items: center; color: var(--app-ink); background: var(--app-card); }
+  .answers span.pri { border-color: var(--app-ink); }
+
+  /* Strips (shipped register: context, never urgency) */
+  .strip { background: var(--app-card); border-radius: 14px; padding: 11px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .strip .sh { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; }
+  .strip .sh i { font-style: normal; color: var(--app-ink-3); font-weight: 400; }
+  .strip .sl { font-size: 11.5px; color: var(--app-ink-2); margin-top: 2px; }
+  .strip .bar { height: 4px; background: var(--app-subtle); border-radius: 2px; margin-top: 7px; overflow: hidden; }
+  .strip .bar b { display: block; height: 100%; background: var(--app-teal); border-radius: 2px; }
+  .strip .doors { display: flex; gap: 20px; margin-top: 8px; font-size: 12px; font-weight: 500; color: var(--app-teal-ink); }
+  .ghost { display: grid; gap: 8px; padding: 2px 0; }
+  .ghost i { display: block; height: 8px; border-radius: 4px; background: var(--app-rule); }
+  .ghost i:nth-child(2) { width: 72%; } .ghost i:nth-child(3) { width: 84%; }
+
+  /* Screens (Design v2's Signal screen and forms) */
+  .screen-head { background: var(--app-card); border-radius: 18px; padding: 14px; }
+  .back { font-size: 20px; color: var(--app-ink-2); line-height: 1; margin-bottom: 8px; }
+  .screen-title { font-family: var(--serif); font-size: 21px; line-height: 1.2; letter-spacing: -0.005em; margin-bottom: 6px; }
+  .screen-sent { font-size: 12px; color: var(--app-ink-2); line-height: 1.45; }
+  .mini-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); margin: 12px 0 6px; }
+  .photo { height: 96px; border-radius: 10px; background: radial-gradient(circle at 38% 42%, #d8c9a8, #9c8a66 55%, #6e6048); position: relative; }
+  .photo::after { content: ""; position: absolute; left: 58%; top: 40%; width: 22px; height: 12px; border-radius: 4px; background: #4b4b52; transform: rotate(-18deg); }
+  .qblock { background: var(--app-subtle); border-radius: 12px; padding: 11px 12px 12px; margin-top: 12px; }
+  .qblock .q { font-size: 13px; font-weight: 600; line-height: 1.35; }
+  .qblock .qs { font-size: 11.5px; color: var(--app-ink-2); margin-top: 3px; }
+  .qblock .answers span { background: var(--app-card); }
+  .form-row { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-top: 1px solid var(--app-rule); }
+  .form-row:first-of-type { border-top: 0; }
+  .form-row .fr-h { font-size: 13px; font-weight: 600; }
+  .form-row .fr-s { font-size: 11.5px; color: var(--app-ink-2); }
+  .seg { display: flex; gap: 0; margin-top: 7px; border: 1px solid var(--app-rule); border-radius: 10px; overflow: hidden; }
+  .seg span { flex: 1; text-align: center; font-size: 11.5px; font-weight: 500; padding: 7px 4px; min-height: 32px; display: grid; place-items: center; border-left: 1px solid var(--app-rule); }
+  .seg span:first-child { border-left: 0; }
+  .seg span.on { background: var(--app-ink); color: #fff; }
+  .read-pill { display: inline-block; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; border-radius: 999px; padding: 3px 9px; }
+  .read-pill.call { color: #fff; background: var(--app-rose); }
+  .read-pill.watchfor { color: var(--app-ink-2); background: var(--app-subtle); }
+  .obs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .obs span { font-size: 11px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 3px 9px; color: var(--app-ink-2); }
+  .correction { margin-top: 10px; border-top: 1px solid var(--app-rule); padding-top: 9px; font-size: 11.5px; color: var(--app-ink-2); }
+  .correction b { color: var(--app-ink); font-weight: 600; }
+  .struck { color: var(--app-ink-3); }
+
+  /* The annotation layer: never app chrome. Marks a row the rules cannot draw yet. */
+  .needs-tag { display: inline-block; margin-bottom: 5px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em; color: #7A4E00; background: #FDF3DC; border: 1px solid #E3B85C; border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+  .needs-box { outline: 1.5px dashed #E3B85C; outline-offset: 4px; border-radius: 6px; }
+  .note { font-size: 13.5px; color: var(--ink-2); background: var(--note-wash); border-left: 3px solid var(--note-rule); padding: 10px 14px; border-radius: 0 6px 6px 0; max-width: 72ch; }
+  .note b { color: var(--ink); }
+
+  /* Briefs */
+  .briefs { display: grid; gap: 18px; margin-top: 24px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px; font-size: 14.5px; color: var(--ink-2); display: flex; flex-direction: column; gap: 8px; }
+  .brief h4 { margin: 0; font-size: 16px; color: var(--ink); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .brief p { margin: 0; }
+  .brief b { color: var(--ink); }
+  .brief ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+  .conflict { border-left: 3px solid var(--rose-ink); padding-left: 12px; }
+  .next-list { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); font-size: 14.5px; max-width: 72ch; }
+  footer { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13.5px; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 8px 18px; }
+
+  /* Round 2: the loop diagram and the new screen parts */
+  .archive { margin-top: 18px; font-size: 14px; color: var(--ink-2); }
+  .archive summary { cursor: pointer; color: var(--ink-2); font-size: 13.5px; }
+  .archive summary:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 3px; border-radius: 3px; }
+  .ledger q { font-style: italic; quotes: "\201C" "\201D"; }
+  .diagram { margin: 28px 0 0; max-width: 980px; }
+  .diagram-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; color: var(--ink); }
+  .diagram-scroll svg { display: block; width: 100%; min-width: 760px; height: auto; }
+  .diagram figcaption { font-size: 13.5px; color: var(--ink-2); margin-top: 10px; max-width: 72ch; }
+  .d-lane { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; fill: var(--ink-3); }
+  .d-label { font-family: var(--sans); font-size: 13px; font-weight: 500; fill: var(--ink); }
+  .d-small { font-family: var(--sans); font-size: 11.5px; fill: var(--ink-2); }
+  .d-node { fill: var(--paper-2); stroke: var(--rule); stroke-width: 1.2; }
+  .d-node-raised { stroke: var(--rose-ink); }
+  .d-node-new { stroke: var(--teal-ink); stroke-dasharray: 4 3; }
+  .d-shipped { stroke: var(--ink-3); stroke-width: 1.4; fill: none; }
+  .d-shipped-fill { fill: var(--ink-3); }
+  .d-new { stroke: var(--teal-ink); stroke-width: 2; fill: none; }
+  .d-new-fill { fill: var(--teal-ink); }
+  .d-new-text { fill: var(--teal-ink); font-weight: 500; }
+  .d-boundary { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 2 4; }
+  .links { display: flex; gap: 20px; margin-top: 8px; font-size: 12px; font-weight: 500; color: var(--app-teal-ink); }
+  .links span { min-height: 30px; display: inline-flex; align-items: center; }
+  .field { margin-top: 10px; border: 1px solid var(--app-rule); border-radius: 10px; padding: 10px; font-size: 12.5px; line-height: 1.45; min-height: 74px; color: var(--app-ink); }
+  .field.slim { min-height: 36px; color: var(--app-ink-3); }
+  .save { margin-top: 12px; background: var(--app-ink); color: #fff; border-radius: 12px; text-align: center; font-weight: 600; font-size: 13px; padding: 10px; }
+  .tick-row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; min-height: 36px; border-top: 1px solid var(--app-rule); }
+  .tick-row i { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--app-ink-3); flex-shrink: 0; position: relative; }
+  .tick-row.on i { background: var(--app-teal-ink); border-color: var(--app-teal-ink); }
+  .tick-row.on i::after { content: ""; position: absolute; left: 5px; top: 1px; width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .choice { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 44px; border-top: 1px solid var(--app-rule); font-size: 13px; font-weight: 500; }
+  .choice em { font-style: normal; font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; }
+  .vv-row { display: flex; flex-direction: column; gap: 2px; padding: 9px 0; border-top: 1px solid var(--app-rule); font-size: 12px; color: var(--app-ink-2); }
+  .vv-row b { font-size: 13px; color: var(--app-ink); font-weight: 600; }
+  .vv-note { font-style: italic; color: var(--app-ink-2); }
+  .frame-cap code, .brief code, .col code { font-family: var(--mono); font-size: 0.86em; }
+  /* Round 3 additions: the care-state tag, the source line, the spoken label under a frame,
+     the zone card's small context lines (EN-10), and the tables in §06. */
+  .state.with { color: var(--app-teal-ink); background: var(--app-teal-wash); }
+  .state.again { color: #fff; background: var(--app-rose); }
+  .ctx { font-size: 11px; color: var(--app-ink-2); margin-top: 4px; display: flex; gap: 6px; align-items: baseline; }
+  .ctx::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--app-ink-3); flex-shrink: 0; transform: translateY(-1px); }
+  .disclose { font-size: 11px; color: var(--app-ink-2); margin-top: 8px; border-top: 1px solid var(--app-rule); padding-top: 7px; }
+  .spoken { font-size: 12.5px; color: var(--ink-2); border-left: 2px solid var(--rule); padding-left: 10px; font-style: italic; }
+  .spoken::before { content: "VoiceOver: "; font-style: normal; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+  .offline { font-size: 10.5px; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 999px; padding: 3px 9px; align-self: flex-start; }
+  .flagbar { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); text-align: center; }
+  .reject { outline: 1.5px solid var(--rose-ink); outline-offset: 4px; border-radius: 6px; }
+  .reject-tag { display: inline-block; margin-bottom: 5px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em; color: #fff; background: #B4123B; border-radius: 4px; padding: 1px 5px; }
+  table.spec { border-collapse: collapse; width: 100%; max-width: 980px; margin-top: 22px; font-size: 13.5px; }
+  table.spec th, table.spec td { text-align: left; vertical-align: top; border-top: 1px solid var(--rule); padding: 9px 12px 9px 0; }
+  table.spec th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+  table.spec td { color: var(--ink-2); }
+  table.spec td:first-child { color: var(--ink); font-weight: 500; }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-scroll table { min-width: 720px; }
+  .edit { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 18px; font-size: 14px; color: var(--ink-2); max-width: 80ch; margin-top: 14px; }
+  .edit del { color: var(--rose-ink); }
+  .edit ins { color: var(--teal-ink); text-decoration: none; border-bottom: 1px solid var(--teal-ink); }
+  .edit .where { font-family: var(--mono); font-size: 11px; color: var(--ink-3); display: block; margin-bottom: 6px; letter-spacing: 0.04em; }
+  /* Round 4 (CUL-1440): the weekly bars, the masking span, the phone script, the lanes. */
+  .wb { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 8px; position: relative; }
+  .wb .wk { display: flex; flex-direction: column; align-items: center; gap: 3px; position: relative; padding-top: 2px; border-radius: 6px; }
+  .wb .wk.span { background: repeating-linear-gradient(135deg, var(--app-subtle) 0 5px, var(--app-card) 5px 9px); }
+  .wb .num { font-size: 11px; font-weight: 600; color: var(--app-ink-2); min-height: 15px; font-variant-numeric: tabular-nums; }
+  .wb .num.gone { color: transparent; }
+  .wb .num.hl { outline: 1.5px solid var(--app-rose); outline-offset: 1px; border-radius: 3px; color: var(--app-rose-ink); padding: 0 3px; }
+  .wb .well { height: 52px; width: 100%; display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid var(--app-rule); }
+  .wb .b { width: 60%; max-width: 22px; background: var(--app-rose); border-radius: 3px 3px 0 0; }
+  .wb .b.part { background: var(--app-rose-soft); }
+  .wb .b.zero { height: 2px; background: var(--app-rule); border-radius: 1px; }
+  .wb .d { font-size: 9.5px; color: var(--app-ink-3); }
+  .spanlabel { font-size: 10.5px; color: var(--app-ink-2); margin-top: 6px; display: flex; gap: 6px; align-items: baseline; }
+  .spanlabel i { width: 14px; height: 9px; border-radius: 2px; flex-shrink: 0; background: repeating-linear-gradient(135deg, var(--app-rule) 0 3px, var(--app-card) 3px 6px); border: 1px solid var(--app-rule); }
+  .why { font-size: 11.5px; color: var(--app-ink-2); line-height: 1.45; padding: 6px 0; border-top: 1px solid var(--app-rule); }
+  .why.hl { color: var(--app-rose-ink); background: var(--rose-wash); border-radius: 4px; padding: 6px; }
+  .cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .cmp div { background: var(--app-subtle); border-radius: 8px; padding: 7px 8px; font-size: 11px; color: var(--app-ink-2); }
+  .cmp b { display: block; font-size: 17px; color: var(--app-ink); font-weight: 600; }
+  .cmp .hl b { color: var(--app-rose-ink); }
+  .script { display: grid; grid-template-columns: 82px 1fr; gap: 0 8px; font-size: 11.5px; margin-top: 4px; }
+  .script dt { color: var(--app-ink-3); padding: 5px 0; border-top: 1px solid var(--app-rule); }
+  .script dd { margin: 0; color: var(--app-ink); padding: 5px 0; border-top: 1px solid var(--app-rule); }
+  .script .hl { color: var(--app-rose-ink); }
+  .script .add { color: var(--app-teal-ink); }
+  .lanes2 { margin-top: 6px; display: grid; gap: 6px; }
+  .lanes2 .ln { font-size: 10.5px; color: var(--app-ink-2); }
+  .lanes2 .track { height: 18px; border-radius: 6px; background: var(--app-subtle); position: relative; }
+  .lanes2 .track i { position: absolute; top: 5px; width: 8px; height: 8px; border-radius: 50%; background: var(--app-rose); }
+  .lanes2 .hlbox { outline: 1.5px solid var(--app-rose); outline-offset: 3px; border-radius: 6px; }
+  .order-tag { font-family: var(--mono); font-size: 9px; color: var(--app-ink-3); letter-spacing: 0.06em; }
+  /* Round 5 (CUL-1440): CompareBars as shipped, the three-lane split, the hatched track. */
+  .cb { display: grid; gap: 8px; margin-top: 8px; }
+  .cb .r { display: grid; grid-template-columns: 34% 1fr; gap: 8px; align-items: start; }
+  .cb .lab { font-size: 10.5px; color: var(--app-ink-2); line-height: 1.3; }
+  .cb .lab small { display: block; color: var(--app-ink-3); font-size: 10px; }
+  .cb .tr { display: flex; align-items: center; gap: 5px; }
+  .cb .track { flex: 1; height: 11px; border-radius: 3px; background: var(--app-subtle); overflow: hidden; }
+  .cb .track.span { background: repeating-linear-gradient(135deg, var(--app-subtle) 0 5px, var(--app-card) 5px 9px); outline: 1px solid var(--app-rule); }
+  .cb .fill { height: 100%; background: var(--app-rose); }
+  .cb .fill.before { background: var(--app-rose-soft); }
+  .cb .n { font-size: 11px; font-weight: 600; min-width: 14px; text-align: right; font-variant-numeric: tabular-nums; }
+  .cb .n.hl { color: var(--app-rose-ink); outline: 1.5px solid var(--app-rose); outline-offset: 1px; border-radius: 3px; }
+  .cb .ticks { display: flex; gap: 1px; margin-top: 3px; }
+  .cb .ticks i { flex: 1; height: 4px; border-radius: 1px; background: var(--app-ink-3); }
+  .cb .ticks i.o { background: transparent; outline: 1px solid var(--app-rule); outline-offset: -1px; }
+  .ln3 { display: grid; gap: 9px; margin-top: 6px; }
+  .ln3 .hd { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--app-ink-2); }
+  .ln3 .hd b { font-weight: 600; color: var(--app-ink); }
+  .ln3 .tk { height: 20px; border-radius: 6px; position: relative; background: linear-gradient(90deg, var(--app-subtle) 0 20%, var(--app-card) 20% 84%, var(--app-subtle) 84%); outline: 1px solid var(--app-rule); outline-offset: -1px; }
+  .ln3 .tk.span { background: repeating-linear-gradient(135deg, var(--app-subtle) 0 5px, var(--app-card) 5px 9px); }
+  .ln3 .tk i { position: absolute; top: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--app-rose); }
+  .ln3 .bk { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--app-ink-3); padding: 0 2px; }
+  .ln3 .ax { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--app-ink-3); }
+  .ln3 .un { font-size: 10px; color: var(--app-ink-2); }
+  .ln3.lead { outline: 1.5px solid var(--app-rose); outline-offset: 4px; border-radius: 6px; }
+  .door-link { color: var(--app-teal-ink); font-weight: 500; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
+  .chips span { font-size: 11.5px; font-weight: 500; border: 1px solid var(--app-rule); border-radius: 999px; padding: 5px 10px; min-height: 30px; display: inline-flex; align-items: center; background: var(--app-card); }
+  .chips span.on { border-color: var(--app-ink); }
+  .state.knows { color: var(--app-teal-ink); background: var(--app-teal-wash); }
+  .consequence { font-size: 10.5px; color: var(--app-ink-3); margin-top: 3px; }
+  /* EN-11 additions: the stand-down register (no rail, no door, one calm line). */
+  .standdown { padding-left: 13px; }
+  .standdown .head { font-weight: 500; color: var(--app-ink-2); }
+  .standdown .sub { color: var(--app-ink-2); line-height: 1.45; }
+  .empty-zone { font-size: 12px; color: var(--app-ink-2); line-height: 1.45; padding-left: 13px; }
+  .gone { opacity: 0.38; text-decoration: line-through; }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Round 1 · 2026-10-02 · CUL-1141</span><span>Engines v3 PR-32 · EN-11</span><span>built dark behind engines_v3_en11</span></p>
+    <h1>EN-11 on Home: what goes, what is said in its place, and what stays</h1>
+    <p class="standfirst">EN-11 makes the Signal say less and mean it. Early food cards are retired (D5 = B, you ruled 9/26), the worsening card needs three episodes in a week instead of two, and a food or after-meal pattern that is as strong <i>after</i> each vomit as before it is withheld. Every change removes a card or raises a floor; none adds one. The plan asked for frames first, for two things: the demo pet's beef card, and the line each withdrawn card leaves on the day EN-11 goes live. Both are here, with one call for you in §04.</p>
+    <div class="ledger" aria-label="What this page draws">
+      <div><b>The demo's beef card (critique PMD-8)</b><span>Early on 4 exposures today. Under EN-11 it is withheld and Cooper's Home carries the intake card alone. <span class="pill">§01</span></span></div>
+      <div><b>The GA-day stand-down line (critique GAP-30)</b><span>One calm line in the slot of each card EN-11 withdraws, minted once at go-live. Drawn here; not built in PR-32. <span class="pill open">decide §04</span> <span class="pill">§02</span></span></div>
+      <div><b>The worsening floor and the split (CUL-1411)</b><span>2 vs 0 is no longer a safety card, and the calm "down" card stays muted exactly as today. <span class="pill">§03</span></span></div>
+    </div>
+    <div class="rule-key">
+      <span><span class="pill">current</span> the proposal</span>
+      <span><span class="pill open">decide</span> still yours to rule</span>
+      <span><span class="pill needs">needs X</span> a row the rules can't draw until X lands</span>
+    </div>
+  </header>
+
+  <!-- §01 -->
+  <section id="demo">
+    <div class="sec-head"><span class="sec-num">01</span><h2>Cooper, the App Review demo pet</h2></div>
+    <div class="col">
+      <p>Cooper is the reviewer's dog: a venison trial, four beef treats each followed by a vomit, and two days of eating less. Today his Home shows two findings. The beef card is Early: four matched days, exact p = 0.125, where Established needs significance after correction. No test at this size could pass it, which is why D5 retired the tier rather than giving it one.</p>
+    </div>
+    <div class="frames">
+
+      <div class="frame">
+        <div class="phone" aria-label="Cooper's Home today, flag off">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Cooper</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door"><div class="body"><div class="head">Cooper has eaten less than usual the last two days</div><div class="sub">Both meals, two days running · <span class="ask-in">worth keeping an eye on, and a word with your vet if it carries on</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="plain-row door"><div class="body"><div class="head">Vomiting after beef, an early pattern</div><div class="sub">Within about 12 hours of beef</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Cooper's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+          <div class="strip"><div class="sh">Venison trial · day 19 of 42 <i>›</i></div><div class="sl">4 meals off the trial diet</div><div class="bar"><b style="width:45%"></b></div></div>
+          <div class="fade-bottom"></div>
+        </div>
+        <div class="frame-cap"><b>1a · Today, flag off <span class="pill dir">shipped</span></b><span>What App Review sees on 1.2.0. The beef row is the demo's headline insight, and it is the Early tier D5 retired.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Cooper's Home under EN-11">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Cooper</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door"><div class="body"><div class="head">Cooper has eaten less than usual the last two days</div><div class="sub">Both meals, two days running · <span class="ask-in">worth keeping an eye on, and a word with your vet if it carries on</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Cooper's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+          <div class="strip"><div class="sh">Venison trial · day 19 of 42 <i>›</i></div><div class="sl">4 meals off the trial diet</div><div class="bar"><b style="width:45%"></b></div></div>
+          <div class="fade-bottom"></div>
+        </div>
+        <div class="frame-cap"><b>1b · Under EN-11 <span class="pill">current</span></b><span>The beef card is withheld. The intake card is untouched, and the trial strip still counts the four off-diet beef meals, so the reviewer still sees the trial catching them. Pinned by <code>demoStory.detection.test.ts</code> at all 24 seed hours. Never a floor tuned to keep this card (PMD-8).</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- §02 -->
+  <section id="standdown">
+    <div class="sec-head"><span class="sec-num">02</span><h2>The line a withdrawn card leaves on the day EN-11 goes live</h2></div>
+    <div class="col">
+      <p>A card that fails a new rule vanishes overnight, and an owner reads a vanished card as an all-clear (critique GAP-30). The engine already refuses to say "the pet changed" across a flag change: EN-11 is the first key in <code>SIGNAL_ENGINE_KEYS</code>, so no shipped stand-down is minted across its flip. What the critique asks for is a different line, about the <i>rule</i>, minted once, in the card's slot, with no rail, no push, no haptic. These frames are a team draft, nyx-voice to re-read at build.</p>
+    </div>
+    <div class="frames">
+
+      <div class="frame">
+        <div class="phone short" aria-label="Home on GA day, an Early card withdrawn">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="standdown"><div class="head">Vomiting after turkey</div><div class="sub">We now show a food pattern only once the logs make it clear. Turkey came before 3 of Nyx's vomits, too few to tell from chance. That isn't an all-clear for turkey.</div></div>
+            <div class="zone-foot"><span>A read of Nyx's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>2a · An Early food card, GA day <span class="pill">current</span></b><span>Logged counts from the card it replaces, never a new claim. It says the rule changed, not that the pet did, and keeps the ratified "That isn't an all-clear." Shown for 7 days, then the slot is empty. Never on the vet report (Early never reached it).</span></div>
+        <p class="spoken">Vomiting after turkey. We now show a food pattern only once the logs make it clear. Turkey came before 3 of Nyx's vomits, too few to tell from chance. That isn't an all-clear for turkey.</p>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="Home on GA day, a 2 vs 0 worsening card withdrawn">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="standdown"><div class="head">Itching, this week</div><div class="sub">We now raise a rise in itching once it reaches 3 episodes in a week. Nyx's is at 2, up from 0. That isn't an all-clear. If it keeps climbing, it comes back here.</div></div>
+            <div class="zone-foot"><span>A read of Nyx's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>2b · A worsening card under the new floor, GA day <span class="pill">current</span></b><span>The dogfood case (brief §2 R4). The ask goes, because 2 vs 0 is p = 0.25 at best; the line says what would bring it back. It never says "down" or "settled".</span></div>
+        <p class="spoken">Itching, this week. We now raise a rise in itching once it reaches 3 episodes in a week. Nyx's is at 2, up from 0. That isn't an all-clear. If it keeps climbing, it comes back here.</p>
+      </div>
+
+      <div class="frame reject">
+        <div class="phone short" aria-label="The rejected version: the card vanishes">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <span class="reject-tag">rejected · GAP-30</span>
+            <div class="zone-label">Signal</div>
+            <div class="empty-zone">Nothing new to flag. Keep logging and patterns will show here.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>What flipping the flag alone does</b><span>The building copy in the slot of yesterday's card: an owner who saw "worth a word with your vet" last night reads this as the problem going away.</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- §03 -->
+  <section id="floor">
+    <div class="sec-head"><span class="sec-num">03</span><h2>The worsening floor, with the calm card still muted</h2></div>
+    <div class="col">
+      <p>Nyx's vomiting is falling, 5 to 3 a week, and her itching went from 0 to 2. Today the itch raises a safety card, and the same check keeps the calm "vomiting is down" card off Home. EN-11 raises the card's floor to 3. The check that mutes the calm card does not move (CUL-1411), so the itch's card goes and the calm card does not arrive in its place.</p>
+    </div>
+    <div class="frames">
+
+      <div class="frame">
+        <div class="phone short" aria-label="Today: the itch's 2 vs 0 card">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door"><div class="body"><div class="head">Itching, 2 episodes this week</div><div class="sub">None the week before · <span class="ask-in">worth a word with your vet</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Nyx's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>3a · Today, flag off <span class="pill dir">shipped</span></b><span>A safety ask on two itches, the case the issue names.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="EN-11 without the split: the calm card arrives">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <span class="reject-tag">rejected · no split</span>
+            <div class="zone-label">Signal</div>
+            <div class="plain-row door"><div class="body"><div class="head">Vomiting, week over week</div><div class="sub">3 episodes this week, down from 5</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Nyx's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>The floor raised in one place</b><span>One shared check for both: raise it and the mute rises with it, so the safety card leaves and a soothing one walks in over a rising itch. This is what <code>detection.en11.test.ts</code> goes red on.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="EN-11 with the split">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="standdown"><div class="head">Itching, this week</div><div class="sub">We now raise a rise in itching once it reaches 3 episodes in a week. Nyx's is at 2, up from 0. That isn't an all-clear. If it keeps climbing, it comes back here.</div></div>
+            <div class="zone-foot"><span>A read of Nyx's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>3b · Under EN-11, GA day <span class="pill">current</span></b><span>The itch's card is gone and its line is in the slot (2b). No calm vomit card: the mute still fires at 2. From day 8 the slot is the building copy unless something new fires. At 3 itches in a week the card comes back with today's tier.</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- §04 -->
+  <section id="decide">
+    <div class="sec-head"><span class="sec-num">04</span><h2>For you</h2></div>
+    <div class="briefs">
+      <div class="brief">
+        <h4>When EN-11 goes live <span class="pill">ruled 9/26</span></h4>
+        <p><b>Deciding:</b> nothing new. You ruled it: after the 1.2.0 App Review, or with a demo re-spec. Restated so the GA session meets it.</p>
+        <p><b>Consequence:</b> the key stays unseeded and off for every account until then. A demo re-spec would mean 6 beef exposures, which reaches Established honestly (the demo spec §3.2 measured it), not a floor moved to keep 4.</p>
+      </div>
+      <div class="brief">
+        <h4>The GA-day line (§02) <span class="pill open">decide</span></h4>
+        <p><b>Deciding:</b> whether EN-11's GA waits on building the line in §02.</p>
+        <ul>
+          <li><b>A · build it before GA (recommended):</b> a rule-change marker minted once, on the first regeneration under the key, for each Early food or worsening card the prior row held and this run lacks; 7 days; Home only. <i>Why:</i> GAP-30 is CONFIRMED, and the vanish is the reassurance the stand-down exists to stop.</li>
+          <li><b>B · GA without it:</b> the cards vanish into the building copy (the rejected frame).</li>
+        </ul>
+        <p><b>Consequence:</b> A is a server half (a new marker type beside <code>stood_down</code>) and an app half (the row), filed as <a href="https://linear.app/projectnyx/issue/CUL-1486">CUL-1486</a>; EN-11's GA follows it and Design v2's GA for the row.</p>
+      </div>
+      <div class="brief">
+        <h4>Worsening's floor value (ruling sheet E1) <span class="pill open">decide at GA</span></h4>
+        <p><b>Deciding:</b> the number behind 2b and 3b, provisionally 3.</p>
+        <p><b>Options:</b> see PR-32's body for the measured flag-on against flag-off lines at floors 3, 4 and 5. <b>3 (recommended):</b> the smallest floor that never asks on 2 vs 0. 4 was the first draft and the adversarial pass broke it: diarrhea, itch and skin have no burden card, so three days of diarrhea after a quiet week got no ask at all.</p>
+        <p><b>Consequence:</b> the go-live run at 1,000 seeds per scenario reads PR-16's EN-11 lines at the value you rule.</p>
+        <p><b>Also before GA:</b> the vet report never renders the burden card, so once 2 vs 0 goes it needs a dated recent-onset line with no trend word (the cold read's blocking finding, <a href="https://linear.app/projectnyx/issue/CUL-1487">CUL-1487</a>).</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Round 1 of one page. Built dark in PR-32; the spec is CUL-1141 and its comments. Styles from <code>docs/culprit-engines-v3-mockups.html</code>.</span>
+    <a href="https://linear.app/projectnyx/issue/CUL-1141">CUL-1141</a>
+    <a href="https://linear.app/projectnyx/issue/CUL-1411">CUL-1411</a>
+    <a href="https://github.com/danieljmarkii/project-nyx/blob/main/docs/engines-v3-critique-2026-09.md">The critique</a>
+  </footer>
+</div>
+</body>
+</html>

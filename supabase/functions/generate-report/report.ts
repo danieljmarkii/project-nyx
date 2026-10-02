@@ -53,6 +53,8 @@ import {
   detectCoverage,
   doseToMedicationWindow,
   DEFAULT_CONFIG,
+  EN11_CONFIG,
+  type DetectionConfig,
   CORRELATION_SYMPTOM_TYPES,
   type Species,
   type IntakeRating,
@@ -142,7 +144,7 @@ import {
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
 import type { TrialDietRefusal, TrialSpecies } from '../../../lib/dietTrial.ts'
-import type { EngineFlags } from '../_shared/engineFlags.ts'
+import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 export type {
   TrialBlock,
   TrialExposure,
@@ -755,10 +757,11 @@ export interface ReportInput {
    * gate the report on the same key.
    *
    * REQUIRED, never defaulted, like `audience`: PR 6's share-link mint (view-report) must
-   * resolve the owner's flags rather than inherit "off" by omission. NOTHING READS IT YET —
-   * no phase gates the report today — so every report is byte-identical to before this
-   * field existed. The first phase that reads it says so in its PR and runs
-   * `vet-report-cold-read`.
+   * resolve the owner's flags rather than inherit "off" by omission. EN-11 (`engines_v3_en11`,
+   * PR-32, CUL-1141) is the first phase that reads it: the detection config (`runDetection`'s
+   * call site), and it ran `vet-report-cold-read` in its PR, as every later phase that reads
+   * this field must. With every key off the report is byte-identical to before this field existed
+   * (report.test.ts, "EN-11 — the report drops…").
    */
   engineFlags: EngineFlags
 }
@@ -3205,7 +3208,7 @@ function regimenEndIso(endedAt: string | null): string | null {
   return new Date(ms + MS_PER_DAY).toISOString()
 }
 
-function runDetection(detInput: DetectionInput): DetectionExtract {
+function runDetection(detInput: DetectionInput, config: DetectionConfig): DetectionExtract {
   // Signals v2 composition (CUL-564). The report renders the v2 timing taxonomy: a lone ⑤
   // (`postprandial_timing`), its empty-stomach mirror `empty_stomach_timing` (L1), and the merged
   // ⑤+L1 `timing_story` — which is the point of the adoption, since the pre-v2 path silently dropped
@@ -3214,7 +3217,7 @@ function runDetection(detInput: DetectionInput): DetectionExtract {
   // dedicated diet-trial section answers that at higher fidelity — PM 2026-08-21) and L4
   // `gap_shortening` (a sub-floor watching row the report's §8.5 Established-only discipline excludes;
   // Appendix A + the §3.5 trend chart already carry the cadence — Dr. Chen 2026-08-21).
-  const ranked = detectSignals(detInput, DEFAULT_CONFIG)
+  const ranked = detectSignals(detInput, config)
   const established: EstablishedCorrelation[] = []
   const timing: TimingFinding[] = []
   let intakeDecline: IntakeDeclineFinding | null = null
@@ -3348,7 +3351,7 @@ function runDetection(detInput: DetectionInput): DetectionExtract {
   // exactly the no-threshold case (skip the extra engine pass otherwise).
   let stapleProtein: string | null = null
   if (established.length === 0) {
-    for (const c of detectCoverage(detInput, DEFAULT_CONFIG)) {
+    for (const c of detectCoverage(detInput, config)) {
       if (c.type === 'staple_washout') {
         stapleProtein = (c as StapleWashoutDiagnostic).protein
         break
@@ -4159,7 +4162,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
 
   // ── Detection reuse (§7 / §8.5) ──────────────────────────────────────────────
   const detInput = buildDetectionInput(input, scope, windowEvents, droppedEventIds)
-  const detection = runDetection(detInput)
+  // EN-11 (Engines v3 PR-32, CUL-1141): the report's detection takes the Signal's EN-11 config
+  // under the same key, so the report and Home cannot disagree about which worsening and which
+  // food lines exist. Under it the report loses ④'s rows below the card floor and any
+  // Established or timing line the reversed-in-time control withholds; Early never reached it.
+  const detection = runDetection(
+    detInput,
+    isEngineKeyOn(input.engineFlags, 'engines_v3_en11') ? EN11_CONFIG : DEFAULT_CONFIG,
+  )
 
   const correlation: CorrelationSummary = {
     established: detection.established,

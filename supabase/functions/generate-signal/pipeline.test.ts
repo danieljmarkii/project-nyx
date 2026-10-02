@@ -113,3 +113,10 @@ Deno.test('nothing pipeline.ts imports, however deep, is fetched from the networ
   for (const outside of unscanned) assertStrictEquals(outside.startsWith('lib/'), true, `${outside} is outside lib/`)
   assertEquals(remote, [])
 })
+
+// EN-11 (PR-32, adversarial pass D4): the summary hears a sign rising below the card floor from
+// the run's own config, so a finished-meal rate never fills the space a withheld card left.
+Deno.test('the summary is told when a sign rises below the EN-11 card floor, over the run\'s config', async () => {
+  const src = blankComments(await Deno.readTextFile(PIPELINE))
+  assertStrictEquals(/risingBelowCardFloor:\s*risingBelowCardFloor\(input,\s*config\)/.test(src), true, 'the summary no longer hears the withheld rise')
+})

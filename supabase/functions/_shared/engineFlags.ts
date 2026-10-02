@@ -40,16 +40,22 @@ import { resolveAllowlistFlag } from './flags.ts'
 // modes that run them on every vomit with no photo read. It acts only where engines_v3_en3
 // also writes tiers, since the floor's answer IS a tier. NOT SEEDED, like en3: absent reads
 // as off, and it goes live only after the real-vet review (CUL-1312).
-export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en4', 'engines_v3_en10'] as const
+// engines_v3_en11: EN-11, insight honesty (Engines v3 PR-32, CUL-1141): the Early food tier
+// retired, ④'s worsening card floor, and the reversed-in-time control on the food and post-meal
+// lanes (detection.ts `EN11_CONFIG`). The Signal AND the vet report read it. NOT SEEDED, like en3:
+// absent reads as off. It goes live after the 1.2.0 App Review (the demo pet's beef card is Early).
+export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en4', 'engines_v3_en10', 'engines_v3_en11'] as const
 export type EngineKey = typeof ENGINE_KEYS[number]
 
-// The keys the SIGNAL engine (generate-signal) reads that can change WHAT IT DETECTS. Empty
-// today. A Signal phase that changes which findings exist, their rank or their sentence adds
-// its key here in the PR that makes the Signal read it. The stand-down gate compares only
+// The keys the SIGNAL engine (generate-signal) reads that can change WHAT IT DETECTS. A Signal
+// phase that changes which findings exist, their rank or their sentence adds its key here in
+// the PR that makes the Signal read it. EN-11 (engines_v3_en11, PR-32) is the first: it removes
+// Early food cards and raises ④'s floor, so a card that vanishes across its flip vanished
+// because the rule changed, and no stand-down may say the pet did. The stand-down gate compares only
 // these (standDownMintAllowed, below): a key that cannot change what the Signal detects
 // cannot make a finding vanish, so flipping it must not cost an owner a stand-down
 // (adversarial review, PR-11a).
-export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = []
+export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = ['engines_v3_en11']
 
 // The keys the Signal reads that only DECORATE a finding it already made: they add a field,
 // and change no finding's presence, rank or sentence. Proven per key by the corpus guard
