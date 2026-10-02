@@ -75,7 +75,11 @@ export function TodayZone() {
   // event today", where the 1 was the owner's own answer to a question. The rows in the
   // strip are unchanged; a look off the end is reachable through "Full day ›" like any
   // other row.
-  const remaining = eventsToday.filter((e) => !isLookRow(e)).length - MAX_SHOWN;
+  //
+  // So it counts the rows the strip did NOT show, less any look among them — never the
+  // non-look total less the cap, which under-counts whenever a look is one of the rows
+  // SHOWN: a look and four meals rendered "1 more" over two hidden meals.
+  const remaining = eventsToday.slice(MAX_SHOWN).filter((e) => !isLookRow(e)).length;
   const isEmpty = eventsToday.length === 0;
 
   // T-9 / E-8 — THE NUDGE AND THE LOOK. A `check_in` is not a thing that happened to

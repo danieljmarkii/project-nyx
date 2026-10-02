@@ -52,19 +52,33 @@ const COMMITTED_FLOOR = path.join(REPO_ROOT, 'scripts', 'groom', 'floor.json');
 
 jest.setTimeout(120_000);
 
-/** Deterministic identity + no user config leaking in from the runner. */
-const GIT_ENV = {
-  ...process.env,
-  GIT_AUTHOR_NAME: 'groom guard',
-  GIT_AUTHOR_EMAIL: 'guard@example.invalid',
-  GIT_COMMITTER_NAME: 'groom guard',
-  GIT_COMMITTER_EMAIL: 'guard@example.invalid',
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_SYSTEM: '/dev/null',
-};
+/**
+ * Deterministic identity, no user config leaking in from the runner, and no REPOSITORY
+ * leaking in either. Git exports GIT_DIR (and its siblings) to every hook it runs, and
+ * from a linked worktree GIT_DIR is an absolute path, so under the pre-push hook each
+ * fixture command acted on the host repository instead of the fixture: `init --bare`
+ * flipped the host to `core.bare = true` and the fixture's six commits landed on the
+ * checked-out branch (measured 2026-10-02, a push from an agent worktree). So every
+ * inherited GIT_* variable is dropped, and read per call so the test below can plant one.
+ */
+function gitEnv(): NodeJS.ProcessEnv {
+  const inherited: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of Object.keys(inherited)) {
+    if (key.startsWith('GIT_')) delete inherited[key];
+  }
+  return {
+    ...inherited,
+    GIT_AUTHOR_NAME: 'groom guard',
+    GIT_AUTHOR_EMAIL: 'guard@example.invalid',
+    GIT_COMMITTER_NAME: 'groom guard',
+    GIT_COMMITTER_EMAIL: 'guard@example.invalid',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_SYSTEM: '/dev/null',
+  };
+}
 
 function git(cwd: string, args: string[]): string {
-  return execFileSync('git', args, { cwd, encoding: 'utf8', env: GIT_ENV, stdio: 'pipe' });
+  return execFileSync('git', args, { cwd, encoding: 'utf8', env: gitEnv(), stdio: 'pipe' });
 }
 
 interface Run {
@@ -78,7 +92,7 @@ function sh(script: string, cwd: string, env: Record<string, string> = {}): Run 
     const out = execFileSync('bash', [script], {
       cwd,
       encoding: 'utf8',
-      env: { ...GIT_ENV, ...env },
+      env: { ...gitEnv(), ...env },
       stdio: 'pipe',
     });
     return { code: 0, out };
@@ -91,7 +105,7 @@ function sh(script: string, cwd: string, env: Record<string, string> = {}): Run 
 /** Run an inline shell expression in `cwd`, returning only its exit code. */
 function shc(expr: string, cwd: string): number {
   try {
-    execFileSync('bash', ['-c', expr], { cwd, encoding: 'utf8', env: GIT_ENV, stdio: 'pipe' });
+    execFileSync('bash', ['-c', expr], { cwd, encoding: 'utf8', env: gitEnv(), stdio: 'pipe' });
     return 0;
   } catch (e) {
     return (e as { status?: number }).status ?? -1;
@@ -241,6 +255,34 @@ describe('scripts/groom/preflight.sh', () => {
     const r = sh(PREFLIGHT, bare, { GROOM_FLOOR_FILE: floorOf(1) });
     expect(r.code).toBe(2);
     expect(r.out).toContain('refs/remotes/origin/main');
+  });
+
+  // THE HOST-REPO REGRESSION (2026-10-02). Git exports GIT_DIR to its hooks, so these
+  // fixtures once ran against whichever repository the pre-push hook was pushing from. A
+  // decoy repository stands in for that host: the fixture's commands must act on their
+  // own clone, and the decoy must come out exactly as it went in, still without a commit.
+  it('ignores a GIT_DIR inherited from the caller, so a hook run cannot write to the host repo', () => {
+    const decoy = path.join(root, 'decoy');
+    fs.mkdirSync(decoy, { recursive: true });
+    git(decoy, ['init', '--quiet', '--initial-branch=main']);
+    const clone = cloneAt('isolation');
+
+    const previous = process.env.GIT_DIR;
+    process.env.GIT_DIR = path.join(decoy, '.git');
+    try {
+      expect(git(clone, ['rev-parse', '--absolute-git-dir']).trim()).toBe(
+        fs.realpathSync(path.join(clone, '.git')),
+      );
+      fs.writeFileSync(path.join(clone, 'h.txt'), 'a commit made while a hook is running\n', 'utf8');
+      git(clone, ['add', 'h.txt']);
+      git(clone, ['commit', '--quiet', '-m', 'hook-time']);
+      expect(sh(PREFLIGHT, clone, { GROOM_FLOOR_FILE: floorOf(6) }).code).toBe(0);
+    } finally {
+      if (previous === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = previous;
+    }
+
+    expect(shc('git rev-parse --verify --quiet HEAD', decoy)).not.toBe(0);
   });
 
   // MUTATION. Each assertion is removed from a copy of the source and the case it owns

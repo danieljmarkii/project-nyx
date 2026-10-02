@@ -4792,3 +4792,58 @@ Deno.test('CUL-1274 — an unrated log followed by two CONFLICTING re-logs stays
     assert.ok(flag, `${label}: the decline still flags`)
   }
 })
+
+// ── The report's CPU budget: formatters per zone, never per event (release QA, 2026-10-02) ──
+// Building an Intl.DateTimeFormat costs ~75 µs, and the report built one per formatted date,
+// about nine per event. Once every pull paged (CUL-975) the whole lookback reached the
+// assembly, and a 3,000-event record measured 1.6–2.5 s of CPU against Supabase's 2 s cap,
+// past which the request dies with a 546 and the owner sees "Something went wrong". Counted
+// rather than timed, so the bound holds on any machine.
+Deno.test('a 1,000-event report builds formatters per zone, not per event', () => {
+  const base = buildNyxInput()
+  const events: ReportEventInput[] = []
+  for (let k = 0; events.length < 1_000; k++) {
+    for (const e of base.events) {
+      // An hour apart per copy, so no copy collapses into the same-minute de-dup.
+      events.push({ ...e, id: `${e.id}-copy${k}`, occurredAt: new Date(Date.parse(e.occurredAt) - k * 3_600_000).toISOString() })
+    }
+  }
+  const Real = Intl.DateTimeFormat
+  let built = 0
+  function Counting(...args: ConstructorParameters<typeof Intl.DateTimeFormat>): Intl.DateTimeFormat {
+    built++
+    return new Real(...args)
+  }
+  Object.defineProperty(Intl, 'DateTimeFormat', { value: Counting, configurable: true, writable: true })
+  try {
+    renderReport(assembleReport({ ...base, events }))
+  } finally {
+    Object.defineProperty(Intl, 'DateTimeFormat', { value: Real, configurable: true, writable: true })
+  }
+  assert.ok(built < 100, `built ${built} formatters for ${events.length} events`)
+})
+
+// A trial stopped because the pet refused the food pointed the vet at appendix E for the
+// intake ratings even with no meals logged, when no appendix E is printed (release QA,
+// 2026-10-02: 64 of 2,000 fuzzed reports, every one this path). Every appendix a sentence
+// names must be one the document prints.
+Deno.test('a refusal-stopped trial with no meals logged names no appendix that is not printed', () => {
+  const trial = {
+    id: 't1', foodItemId: null, startedAt: '2026-06-10', targetDurationDays: 56, status: 'abandoned',
+    completedAt: null, endedAt: '2026-06-18', indication: 'gi', outcome: null, outcomeNotes: null,
+    stoppedReason: 'refused', vetName: null, foodLabel: 'RC Hydrolyzed', primaryProtein: null, allowedFoods: [],
+  } as unknown as ReportInput['dietTrials'][number]
+  const snap = assembleReport(baseInput({
+    events: [makeEvent({ type: 'vomit', occurredAt: '2026-06-20T14:00:00Z' })],
+    dietTrials: [trial],
+  }))
+  const html = renderReport(snap)
+  const text = plainText(html)
+  const printed = new Set([...html.matchAll(/Appendix ([A-Z]) (?:&mdash;|—)/g)].map((m) => m[1]))
+  // Non-vacuity: the refusal is on the page, and the fixture has no appendix E to point at.
+  assert.ok(text.includes('clinical finding in its own right'), 'the refusal reads')
+  assert.ok(!printed.has('E'), 'no meals logged, so no appendix E')
+  for (const m of text.matchAll(/appendi(?:x|ces) ([A-Z])\b/gi)) {
+    assert.ok(printed.has(m[1]), `a sentence names appendix ${m[1]}, which is not printed`)
+  }
+})

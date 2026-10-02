@@ -11,7 +11,8 @@
 // first): it loads EVERY pet, ordered active-first via the shipped
 // `orderPetsActiveFirst`, and hands them to the builder in that order. Recompute
 // triggers mirror the other Home loaders — the pet set, the active pet, and every
-// hydration tick (an event another device pushed changes what "today" holds).
+// hydration tick (an event another device pushed changes what "today" holds) — plus
+// the Today store, for a log saved from the sheet over this screen.
 import { useEffect, useState } from 'react';
 import { getTimeline } from '../lib/db';
 import {
@@ -25,6 +26,7 @@ import { loadTrialPredicateFacts } from '../lib/dietTrialFacts';
 import { loadMedStripInput } from '../lib/medStripFacts';
 import { usePetStore, orderPetsActiveFirst, type Pet } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
+import { useEventStore } from '../store/eventStore';
 
 // A day's events for one pet is a small set — at most two days here (the fire-day
 // anchor's fallback window spans the fired-for day through today); the local-day
@@ -46,6 +48,14 @@ export function useDaySummary(firedForMs?: number | null): DaySummaryState {
   const pets = usePetStore((s) => s.pets);
   const activePetId = usePetStore((s) => s.activePet?.id ?? null);
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
+  // The log sheet is an overlay, so a save from "Log an event" here never re-focused or
+  // re-mounted this screen, and it went on saying "Nothing in {pet}'s record today" over
+  // the row the owner had just added. The sheet's save prepends to the Today store and
+  // Undo removes from it, so its count and newest id move on both. Read as primitives,
+  // not the array: Home re-sets the array on every reload and a patch rebuilds it, and
+  // each re-run of the read below starts from the loading state.
+  const todayCount = useEventStore((s) => s.todayEvents.length);
+  const todayHeadId = useEventStore((s) => s.todayEvents[0]?.id ?? null);
   const [state, setState] = useState<DaySummaryState>({ status: 'loading', model: null });
 
   useEffect(() => {
@@ -137,7 +147,7 @@ export function useDaySummary(firedForMs?: number | null): DaySummaryState {
     return () => {
       cancelled = true;
     };
-  }, [pets, activePetId, hydrationTick, firedForMs]);
+  }, [pets, activePetId, hydrationTick, firedForMs, todayCount, todayHeadId]);
 
   return state;
 }

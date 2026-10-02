@@ -93,7 +93,7 @@ import {
 // here is the drift the guard test forbids elsewhere. `localDayIndex*` are the tz-aware day-boundary
 // helpers the trial card counts with (B-421); L2 windows in day-INDEX space (never `index * MS_PER_DAY`,
 // which is UTC midnight of the date — the owner's local midnight only at UTC, the B-517 inversion).
-import { localDayIndex, localDayIndexOf, trialDayCounter } from '../../../lib/utils.ts'
+import { dateTimeFormat, localDayIndex, localDayIndexOf, trialDayCounter } from '../../../lib/utils.ts'
 // The two-window rate-contrast render-gate (Signals v2 / CUL-6; §3). L2's comparison SENTENCE
 // is licensed only when this C-test gate passes over the pooled counts (with logged-days
 // exposure) — the "counts always render; a comparison sentence only when the gate passes"
@@ -4512,7 +4512,7 @@ const BURDEN_SYMPTOM_TYPE: SymptomType = 'vomit'
 function isValidTimeZone(tz: string | undefined): tz is string {
   if (!tz) return false
   try {
-    new Intl.DateTimeFormat('en-US', { timeZone: tz })
+    dateTimeFormat('en-US', { timeZone: tz })
     return true
   } catch {
     return false
@@ -5255,7 +5255,7 @@ const TIMEOFDAY_SYMPTOM_TYPE: SymptomType = 'vomit'
  */
 function localHourOfDay(ms: number, timezone: string): number | null {
   try {
-    const parts = new Intl.DateTimeFormat('en-US', {
+    const parts = dateTimeFormat('en-US', {
       timeZone: timezone,
       hour: 'numeric',
       hour12: false,

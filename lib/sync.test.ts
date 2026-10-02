@@ -669,6 +669,16 @@ describe('refreshFoodCache / refreshMedicationCache — per-account scoping (FR-
 // So the assertion that matters is not "the helper works" but "all four callers
 // emit the SAME payload". These tests drive each writer end-to-end through the
 // real supabase call chain and compare the food_items upsert they produce.
+/**
+ * The table a read is FROM (its first FROM), so a mocked read can answer per queue. A
+ * drain that lands rows can kick another drain (a landed trial runs the foods queue,
+ * drainDietTrialsQueue), and that drain's read must find its own queue, not the rows
+ * meant for the drain under test: production never holds trials in the foods queue.
+ */
+function readTable(sql: string): string | undefined {
+  return /^\s*SELECT\s[\s\S]*?\bFROM\s+(\w+)/.exec(String(sql))?.[1];
+}
+
 describe('presyncFoodItems — one payload across all four callers (B-451)', () => {
   // The cache row as SQLite actually hands it back: booleans are INTEGER, the
   // protein set is JSON text. Both need transforming on the way to Postgres.
@@ -734,12 +744,14 @@ describe('presyncFoodItems — one payload across all four callers (B-451)', () 
     return p;
   }
 
-  // The cache read is the only query that mentions food_items_cache; everything
-  // else the writer asks for is its own push queue.
-  function queueReturns(rows: unknown[], cache: unknown[] = [CACHE_ROW]) {
-    mockGetAllAsync.mockImplementation((sql: string) =>
-      Promise.resolve(String(sql).includes('food_items_cache') ? cache : rows),
-    );
+  // The cache read answers from `cache`, the writer's own push queue from `rows`, and
+  // any other queue (one a landed row kicks) finds nothing queued.
+  function queueReturns(rows: unknown[], cache: unknown[] = [CACHE_ROW], queue?: string) {
+    mockGetAllAsync.mockImplementation((sql: string) => {
+      const table = readTable(sql);
+      if (table === 'food_items_cache') return Promise.resolve(cache);
+      return Promise.resolve(queue === undefined || table === queue ? rows : []);
+    });
   }
 
   beforeEach(() => {
@@ -761,17 +773,17 @@ describe('presyncFoodItems — one payload across all four callers (B-451)', () 
     errorSpy.mockRestore();
   });
 
-  const CALLERS: [string, unknown[], () => Promise<void>][] = [
-    ['syncPendingMeals', [MEAL], syncPendingMeals],
-    ['syncPendingFeedingArrangements', [ARRANGEMENT], syncPendingFeedingArrangements],
-    ['syncPendingDietTrials', [TRIAL_ROW], syncPendingDietTrials],
-    ['syncPendingDietTrialFoods', [TRIAL_FOOD_ROW], syncPendingDietTrialFoods],
+  const CALLERS: [string, unknown[], () => Promise<void>, string][] = [
+    ['syncPendingMeals', [MEAL], syncPendingMeals, 'meals'],
+    ['syncPendingFeedingArrangements', [ARRANGEMENT], syncPendingFeedingArrangements, 'feeding_arrangements'],
+    ['syncPendingDietTrials', [TRIAL_ROW], syncPendingDietTrials, 'diet_trials'],
+    ['syncPendingDietTrialFoods', [TRIAL_FOOD_ROW], syncPendingDietTrialFoods, 'diet_trial_foods'],
   ];
 
   it.each(CALLERS)(
     '%s pre-syncs food_items with the full payload — proteins carried, INTEGERs coerced',
-    async (_name, rows, run) => {
-      queueReturns(rows);
+    async (_name, rows, run, queue) => {
+      queueReturns(rows, undefined, queue);
       await run();
 
       expect(mockFrom).toHaveBeenCalledWith('food_items');
@@ -790,7 +802,7 @@ describe('presyncFoodItems — one payload across all four callers (B-451)', () 
 
   it.each(CALLERS)(
     '%s pre-syncs BEFORE the dependent upsert — the FK target lands first',
-    async (_name, rows, run) => {
+    async (_name, rows, run, queue) => {
       const order: string[] = [];
       foodUpsert.mockImplementation(() => {
         order.push('food_items');
@@ -800,7 +812,7 @@ describe('presyncFoodItems — one payload across all four callers (B-451)', () 
         order.push('dependent');
         return dependentResult();
       });
-      queueReturns(rows);
+      queueReturns(rows, undefined, queue);
       await run();
 
       expect(order[0]).toBe('food_items');
@@ -810,13 +822,13 @@ describe('presyncFoodItems — one payload across all four callers (B-451)', () 
 
   it.each(CALLERS)(
     '%s still attempts the dependent upsert when the pre-sync fails (best-effort)',
-    async (_name, rows, run) => {
+    async (_name, rows, run, queue) => {
       // A pre-sync failure is logged, not thrown. If the food genuinely is not
       // there the dependent upsert fails its own FK check (23503, non-terminal)
       // and stays queued — but if it IS there, a transient pre-sync blip must not
       // strand a perfectly pushable row for the cycle.
       foodUpsert.mockResolvedValue({ error: { message: 'network blip' } });
-      queueReturns(rows);
+      queueReturns(rows, undefined, queue);
       await run();
 
       expect(dependentUpsert).toHaveBeenCalled();
@@ -829,10 +841,10 @@ describe('presyncFoodItems — one payload across all four callers (B-451)', () 
 
   it.each(CALLERS)(
     '%s does not touch food_items when the cache has no matching row',
-    async (_name, rows, run) => {
+    async (_name, rows, run, queue) => {
       // An id in the queue with nothing cached for it: emitting an empty upsert
       // would be a pointless round-trip on every cycle.
-      queueReturns(rows, []);
+      queueReturns(rows, [], queue);
       await run();
       expect(foodUpsert).not.toHaveBeenCalled();
       expect(dependentUpsert).toHaveBeenCalled();
@@ -877,9 +889,9 @@ describe('presyncFoodItems — one payload across all four callers (B-451)', () 
     expect(payload[0].proteins).toEqual([]);
   });
 
-  it.each(CALLERS)('%s never pre-syncs without a session (Pattern 4)', async (_name, rows, run) => {
+  it.each(CALLERS)('%s never pre-syncs without a session (Pattern 4)', async (_name, rows, run, queue) => {
     mockGetSession.mockResolvedValue({ data: { session: null } });
-    queueReturns(rows);
+    queueReturns(rows, undefined, queue);
     await run();
     expect(mockFrom).not.toHaveBeenCalled();
   });
@@ -924,10 +936,12 @@ describe('syncPendingDietTrials / syncPendingDietTrialFoods (B-417 PR 2)', () =>
   };
 
   // The food_items pre-sync (Pattern 6) reads food_items_cache first; every test
-  // returns [] for it so the pre-sync no-ops, then the queue rows.
-  function queueReturns(rows: unknown[]) {
+  // returns [] for it so the pre-sync no-ops, then the queue rows, for the queue under
+  // test only: a landed trial now runs the foods queue too, and that read must find the
+  // foods queue, not these rows.
+  function queueReturns(rows: unknown[], queue: 'diet_trials' | 'diet_trial_foods' = 'diet_trials') {
     mockGetAllAsync.mockImplementation((sql: string) =>
-      Promise.resolve(sql.includes('food_items_cache') ? [] : rows),
+      Promise.resolve(readTable(sql) === queue ? rows : []),
     );
   }
 
@@ -1119,7 +1133,7 @@ describe('syncPendingDietTrials / syncPendingDietTrialFoods (B-417 PR 2)', () =>
   it('pushes a removal as a soft delete on the upsert payload, never a DELETE', async () => {
     // The cross-device acceptance criterion: a food removed on device A stops
     // being permitted on device B. That only works if deleted_at TRAVELS.
-    queueReturns([{ ...FOOD_ROW, deleted_at: '2026-07-14T09:00:00.000Z' }]);
+    queueReturns([{ ...FOOD_ROW, deleted_at: '2026-07-14T09:00:00.000Z' }], 'diet_trial_foods');
     selectSpy.mockResolvedValue({ data: [{ id: 'df1' }], error: null });
 
     await syncPendingDietTrialFoods();
@@ -1137,7 +1151,7 @@ describe('syncPendingDietTrials / syncPendingDietTrialFoods (B-417 PR 2)', () =>
     // UNIQUE (diet_trial_id, food_item_id, role, allowed_from). The local mirror
     // replicates it so this normally fails at the action — but a row that reached
     // the queue anyway must not be retried for the life of the install.
-    queueReturns([FOOD_ROW]);
+    queueReturns([FOOD_ROW], 'diet_trial_foods');
     selectSpy.mockResolvedValue({ data: null, error: { code: '23505', message: 'dup membership' } });
 
     await syncPendingDietTrialFoods();
@@ -1529,8 +1543,7 @@ describe('file-bearing writers charge a thrown upload failure (B-586)', () => {
 describe('reapStalePendingFoods (B-369)', () => {
   let selectFinal: jest.Mock;
   let ltFn: jest.Mock;
-  let eq2: jest.Mock;
-  let eq1: jest.Mock;
+  let eqFn: jest.Mock;
   let deleteFn: jest.Mock;
 
   beforeEach(() => {
@@ -1539,12 +1552,13 @@ describe('reapStalePendingFoods (B-369)', () => {
     mockFrom.mockReset();
     mockRunAsync.mockReset();
     mockRunAsync.mockResolvedValue(undefined);
-    // supabase.from('food_items').delete().eq().eq().lt().select('id')
+    // supabase.from('food_items').delete().eq()…eq().lt().select('id'): every .eq records
+    // its filter, so a test reads the whole predicate the delete was scoped by.
     selectFinal = jest.fn().mockResolvedValue({ data: [], error: null });
     ltFn = jest.fn().mockReturnValue({ select: selectFinal });
-    eq2 = jest.fn().mockReturnValue({ lt: ltFn });
-    eq1 = jest.fn().mockReturnValue({ eq: eq2 });
-    deleteFn = jest.fn().mockReturnValue({ eq: eq1 });
+    const chain: { eq: jest.Mock; lt: jest.Mock } = { eq: jest.fn(), lt: ltFn };
+    eqFn = chain.eq.mockReturnValue(chain);
+    deleteFn = jest.fn().mockReturnValue(chain);
     mockFrom.mockReturnValue({ delete: deleteFn });
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -1555,12 +1569,23 @@ describe('reapStalePendingFoods (B-369)', () => {
 
     expect(mockFrom).toHaveBeenCalledWith('food_items');
     expect(deleteFn).toHaveBeenCalled();
-    expect(eq1).toHaveBeenCalledWith('created_by_user_id', 'user-A'); // account scope (belt-and-braces w/ RLS)
-    expect(eq2).toHaveBeenCalledWith('ai_extraction_status', 'pending'); // only in-progress captures
+    expect(eqFn).toHaveBeenCalledWith('created_by_user_id', 'user-A'); // account scope (belt-and-braces w/ RLS)
+    expect(eqFn).toHaveBeenCalledWith('ai_extraction_status', 'pending'); // only in-progress captures
     const [col, cutoff] = ltFn.mock.calls[0] as [string, string];
     expect(col).toBe('created_at');
     expect(new Date(cutoff).getTime()).toBeLessThan(Date.now()); // a past cutoff (now - 30 min)
     expect(selectFinal).toHaveBeenCalledWith('id');
+  });
+
+  // CUL-769: retrying extraction re-writes 'pending' onto a CONFIRMED food, whose
+  // created_at is long past the threshold, so status + age alone deleted it (and its
+  // trial and feeding links, which CASCADE). Only a never-confirmed capture still
+  // carries the placeholder name, so the delete is scoped by it, on both columns.
+  it('deletes only rows still carrying the capture placeholder, never a confirmed food', async () => {
+    await reapStalePendingFoods();
+
+    expect(eqFn).toHaveBeenCalledWith('brand', 'Extracting…');
+    expect(eqFn).toHaveBeenCalledWith('product_name', 'Extracting…');
   });
 
   it('purges the reaped rows from the local cache so the phantom tile disappears now', async () => {

@@ -1300,9 +1300,11 @@ export async function addTrialFood(params: {
   notifyTrialChanged();
 
   // Fire-and-forget, same contract as `startDietTrial`: offline the row stays
-  // queued at `synced = 0` and the next cycle picks it up. The parent trial
-  // landed long ago, so this is the child pass alone — there is no ordering
-  // hazard to respect here.
+  // queued at `synced = 0` and the next cycle picks it up. The child pass alone is
+  // enough, and there is no ordering for this caller to keep: the foods queue holds
+  // this row while its trial is still unsent (an edit to it in flight, say), since
+  // migration 041 would refuse it terminally, and the trials drain sends it the
+  // moment that trial lands.
   syncPendingDietTrialFoods().catch((err) =>
     console.warn('[dietTrialSetup] add-trial-food sync failed (queued):', err),
   );
@@ -1382,9 +1384,10 @@ export async function startDietTrial(input: StartTrialInput): Promise<string> {
   // / OS-denied — the offer's own gates decide whether the banner ever shows).
   void surfaceOfferForValueMoment('trial');
 
-  // Parent before children on the wire too — a child whose parent has not landed
-  // FK-fails with a 23503, which PR 2 classifies NON-terminal, so it would simply
-  // retry. Ordering makes the common case land in one cycle instead of two.
+  // Parent before children on the wire too. A child sent ahead of its trial is refused by
+  // migration 041's same-pet check with a TERMINAL 23514 (it runs before the foreign key),
+  // so it would be quarantined on its first try; the foods queue now waits for its trial
+  // to land (`parentLandedSql`), and this ordering makes the common case land in one cycle.
   syncPendingDietTrials()
     .then(() => syncPendingDietTrialFoods())
     .catch((err) => console.warn('[dietTrialSetup] trial sync failed (queued):', err));

@@ -9,6 +9,7 @@ import {
   readSignalsAndRefresh,
 } from '../lib/signal';
 import type { CachedFinding } from '../lib/signal';
+import * as signalCopy from '../lib/signalCopy';
 
 // Multi-pet safety regression (code-reviewed on B-284 PR N2): a naive "read
 // petId from one store, findings from another hook's state" pairing can, on a
@@ -38,8 +39,11 @@ jest.mock('expo-router', () => ({
 let mockLocalRowsByPet: Record<string, { total: number; recent: number; earliest: string | null }> = {};
 jest.mock('../lib/db', () => ({
   getDb: () => ({
+    // Keyed on whichever parameter names a seeded pet, so the read's parameter order is
+    // free to change (the look type is bound twice, around the cutoff).
     getAllSync: (_sql: string, params: unknown[]) => [
-      mockLocalRowsByPet[String(params[1])] ?? { total: 0, recent: 0, earliest: null },
+      mockLocalRowsByPet[params.map(String).find((p) => p in mockLocalRowsByPet) ?? ''] ??
+        { total: 0, recent: 0, earliest: null },
     ],
   }),
 }));
@@ -229,6 +233,48 @@ describe('useCrossPetSafetyBanner — switch-settle self-banner (B-151)', () => 
       usePetStore.getState().selectPet(PET_B.id);
     });
     await waitFor(() => expect(result.current?.petId).toBe(PET_A.id));
+  });
+});
+
+describe("useCrossPetSafetyBanner — the screen reads the template, never the owner's words", () => {
+  // The banner fails safe to silence on a screen hit, and the screens' vocabulary is everyday
+  // English, so screening the owner's words silenced real safety findings: a dog called Trigger
+  // ("trigger" is causal vocabulary), a food called "Healthy Weight" (reassurance).
+  const TRIGGER = { id: 'pet-t', name: 'Trigger' } as any;
+  const refused: CachedFinding = {
+    ...finding,
+    finding: {
+      ...finding.finding,
+      trigger: 'refused_normal_food',
+      refusedFoodLabel: "Hill's Science Diet Healthy Weight",
+    } as CachedFinding['finding'],
+  };
+
+  beforeEach(() => {
+    mockedRefresh.mockReset();
+    usePetStore.setState({ pets: [PET_A, TRIGGER], activePet: PET_A });
+    mockedRefresh.mockImplementation(
+      async (ids: string[]) => new Map(ids.map((id) => [id, id === TRIGGER.id ? [refused] : []])),
+    );
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('a dog called Trigger who turned down "Healthy Weight" still gets the banner, in the owner\'s words', async () => {
+    const { result } = renderHook(() => useCrossPetSafetyBanner());
+    await waitFor(() => expect(result.current?.petId).toBe(TRIGGER.id));
+    expect(result.current?.text).toBe(
+      "Trigger turned down Hill's Science Diet Healthy Weight, which they usually finish — worth a look.",
+    );
+  });
+
+  it('hands the screen the template, and a screen hit still fails safe to silence', async () => {
+    const screen = jest.spyOn(signalCopy, 'validateBannerPhrasing').mockReturnValue(false);
+    const { result } = renderHook(() => useCrossPetSafetyBanner());
+    await waitFor(() => expect(screen).toHaveBeenCalled());
+    expect(screen).toHaveBeenCalledWith(signalCopy.bannerCopy(refused.finding as signalCopy.BannerSafetyFinding, 'Trigger').screened);
+    expect(screen.mock.calls[0][0]).not.toMatch(/Trigger|Healthy/);
+    expect(result.current).toBeNull();
   });
 });
 

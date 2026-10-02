@@ -26,6 +26,9 @@ jest.mock('../../store/petStore', () => {
   };
 });
 jest.mock('../../lib/sync', () => ({ syncPendingVetAppointments: jest.fn(async () => undefined) }));
+// The foreground read, controllable: a resume is an inactive → active edge (F8).
+const mockAppActive = { current: true };
+jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => mockAppActive.current }));
 
 const mockHome = { current: null as unknown };
 // Per-pet answers plus a controllable hold, so a test can park ONE read open while a
@@ -69,8 +72,9 @@ import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { AppointmentStrip } from './AppointmentStrip';
-import { cancelVetAppointment, type HomeAppointment } from '../../lib/vetVisits';
+import { cancelVetAppointment, readHomeAppointment, type HomeAppointment } from '../../lib/vetVisits';
 import { markAppointmentAsked } from '../../lib/appointmentAsked';
+import { useSyncStore } from '../../store/syncStore';
 
 function homeAppointment(phase: 'upcoming' | 'after'): HomeAppointment {
   return {
@@ -109,6 +113,7 @@ beforeEach(() => {
   activePet.current = { id: 'p1', name: 'Mochi', species: 'cat' };
   mockDetail.current = null;
   mockDetail.fail = false;
+  mockAppActive.current = true;
 });
 
 describe('outside the window', () => {
@@ -359,5 +364,58 @@ describe('a slow read for the previous pet cannot hide the current pet’s strip
       mockGate.release?.();
     });
     expect(r.queryByText('Second Clinic')).toBeTruthy();
+  });
+});
+
+// ── F8 — Home does not lose focus, so focus alone cannot keep the strip true ─────
+//
+// The strip read only on focus, and Home stays the focused route through both events
+// that move its answer: the app resuming (an overnight background left "Today" on a day
+// that had passed, and the after-the-day ask a day late) and a sync cycle landing rows
+// (an appointment booked on another device stayed off Home until the owner left it).
+describe('re-reading without a focus change (F8)', () => {
+  it('a sync cycle that lands an appointment draws it on the Home already open', async () => {
+    const r = render(<AppointmentStrip />);
+    await act(async () => {});
+    expect(r.toJSON()).toBeNull();
+
+    // Booked on the household's other phone; this device's sync hydrates it and bumps
+    // the tick. Nothing moves focus.
+    mockHome.current = homeAppointment('upcoming');
+    await act(async () => {
+      useSyncStore.getState().bumpHydrationTick();
+    });
+    expect(await r.findByText('Tuesday · 3:00 pm')).toBeTruthy();
+    expect(readHomeAppointment).toHaveBeenCalledTimes(2);
+  });
+
+  it('the return to the foreground re-reads, so the passed day becomes the ask', async () => {
+    mockHome.current = homeAppointment('upcoming');
+    const r = render(<AppointmentStrip />);
+    await r.findByText('Get ready');
+
+    // Backgrounded overnight. Going inactive reads nothing.
+    mockAppActive.current = false;
+    r.rerender(<AppointmentStrip />);
+    await act(async () => {});
+    expect(readHomeAppointment).toHaveBeenCalledTimes(1);
+
+    // Morning: the same row now reads as passed, which only a re-read can say.
+    mockHome.current = homeAppointment('after');
+    mockAppActive.current = true;
+    r.rerender(<AppointmentStrip />);
+    expect(await r.findByText('Did Tuesday’s visit happen?')).toBeTruthy();
+    expect(r.queryByText('Get ready')).toBeNull();
+  });
+
+  it('reads ONCE on mount: both triggers fire on a change, never on arrival', async () => {
+    // The focus effect has just read; a second read on mount would be a wasted query
+    // racing the first.
+    mockHome.current = homeAppointment('upcoming');
+    const r = render(<AppointmentStrip />);
+    await r.findByText('Get ready');
+    r.rerender(<AppointmentStrip />);
+    await act(async () => {});
+    expect(readHomeAppointment).toHaveBeenCalledTimes(1);
   });
 });

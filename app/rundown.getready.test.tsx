@@ -124,21 +124,29 @@ const mockAppointment = {
   deleted_at: null,
 };
 const mockAppointments: Record<string, unknown> = {};
+// The LAX read's answer where it differs from the live one. A booking whose visit was
+// logged is still a row to `readAppointmentById` (the notes screen keeps working on it)
+// and is gone from `readEditableAppointment`, the live read Get ready asks (F4). Stated as
+// what each read returns rather than as the SQL clause re-derived here (C-34); the clause
+// itself is proven against a real database in lib/vetVisitWrites.test.ts.
+const mockLaxAppointments: Record<string, unknown> = {};
 jest.mock('../lib/vetVisits', () => {
   const actual = jest.requireActual('../lib/vetVisits');
+  // `in`, not `??`: an override of `null` is how this fixture says "the read finds
+  // nothing" (a cancelled, deleted or logged row), and `null ?? mockAppointment` would
+  // hand back the appointment instead — a removal test that silently asserted the
+  // opposite of what it claimed. Caught by the test failing, which is the only
+  // reason the distinction is written down here.
+  const live = (id: string) => (id in mockAppointments ? mockAppointments[id] : mockAppointment);
   return {
     // `requireActual` rather than a hand-written stub: `buildAppointmentView`,
     // `parseAppointmentQuestions` and the formatters are PURE, and a mock standing in
-    // for a pure function is a rule re-derived in the test file (C-34). Only the two
+    // for a pure function is a rule re-derived in the test file (C-34). Only the
     // functions that touch the database are replaced.
     ...actual,
-    // `in`, not `??`: an override of `null` is how this fixture says "the read finds
-    // nothing" (a cancelled or deleted row), and `null ?? mockAppointment` would
-    // hand back the appointment instead — a removal test that silently asserted the
-    // opposite of what it claimed. Caught by the test failing, which is the only
-    // reason the distinction is written down here.
+    readEditableAppointment: jest.fn(async (id: string) => live(id)),
     readAppointmentById: jest.fn(async (id: string) =>
-      id in mockAppointments ? mockAppointments[id] : mockAppointment,
+      id in mockLaxAppointments ? mockLaxAppointments[id] : live(id),
     ),
     saveAppointmentQuestions: jest.fn(async () => undefined),
   };
@@ -187,6 +195,7 @@ beforeEach(() => {
   mockTrialFacts.current = null;
   mockTrialFacts.fail = false;
   for (const k of Object.keys(mockAppointments)) delete mockAppointments[k];
+  for (const k of Object.keys(mockLaxAppointments)) delete mockLaxAppointments[k];
   (buildRundown as jest.Mock).mockResolvedValue(FIXTURE);
 });
 
@@ -448,6 +457,85 @@ describe('a Signal that has never been generated is not "nothing standing"', () 
   });
 });
 
+// ── F7 — a stalled Signal read cannot hold the page ─────────────────────────────
+//
+// The cache is the page's one network read, and the client sets no fetch timeout, so on
+// clinic Wi-Fi that is up but silent the request neither answered nor failed: the owner
+// sat on "Pulling the record together…" for the minute the OS took to give up, over a
+// rundown that was already built. The bound is 4 s (`SIGNAL_CACHE_WAIT_MS`); the clock is
+// faked so the test can stand on either side of it.
+describe('a Signal read that never answers does not hold the page (F7)', () => {
+  /** The `ai_signals` chain's terminal call, the one place the network answers. */
+  function signalRead(): jest.Mock {
+    const { supabase: client } = jest.requireMock('../lib/supabase') as { supabase: { from: jest.Mock } };
+    return (client.from('ai_signals') as unknown as { maybeSingle: jest.Mock }).maybeSingle;
+  }
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('draws the local rundown and the gap line once the bound passes', async () => {
+    // Up and silent: the request neither answers nor fails.
+    signalRead().mockImplementationOnce(() => new Promise(() => {}));
+    jest.useFakeTimers();
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+
+    // `advanceTimersByTimeAsync` lets the load's local reads settle before the clock moves,
+    // so the bound is measured from the moment the network read was issued.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(3_999);
+    });
+    // Inside the bound the page still waits: a slow answer is worth having.
+    expect(r.queryByTestId('rundown-block')).toBeNull();
+    expect(r.getByText(/Pulling .*record together/)).toBeTruthy();
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1);
+    });
+    expect(r.getByTestId('rundown-block')).toBeTruthy();
+    expect(r.getByText('Your questions')).toBeTruthy();
+    // The gap line, verbatim the offline case's: the Signal is named as missing rather than
+    // the list being shown as complete.
+    expect(r.getByText(/Signal couldn’t be read on this device/)).toBeTruthy();
+  });
+
+  it('uses an answer that lands inside the bound', async () => {
+    // The control: a slow but healthy read is still the page's, so the quiet record
+    // (an answered cache with no findings) carries no gap line.
+    signalRead().mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(
+            () =>
+              resolve({
+                data: {
+                  signal_text: null,
+                  is_building: false,
+                  findings: [],
+                  coverage: [],
+                  generated_at: new Date().toISOString(),
+                  expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+                },
+                error: null,
+              }),
+            2_000,
+          );
+        }),
+    );
+    jest.useFakeTimers();
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(2_000);
+    });
+    expect(r.getByTestId('rundown-block')).toBeTruthy();
+    expect(r.queryByText(/Signal couldn’t be read/)).toBeNull();
+  });
+});
+
 // ── CUL-952 — Get ready re-reads after the edit it now launches ────────────────
 //
 // This screen is the one ⋯ *Change the appointment* opens the editor FROM, and it
@@ -496,7 +584,7 @@ describe('re-reading after the edit this screen launches (CUL-952)', () => {
     const r = render(<RundownScreen />);
     await waitFor(() => expect(r.getByText(/Get ready for/)).toBeTruthy());
 
-    // `cancelVetAppointment` stamps `cancelled_at`, and `readAppointmentById`
+    // `cancelVetAppointment` stamps `cancelled_at`, and `readEditableAppointment`
     // filters cancelled rows — so this is what the real read returns afterwards.
     mockAppointments['appt-1'] = null;
     await refocus();
@@ -509,6 +597,27 @@ describe('re-reading after the edit this screen launches (CUL-952)', () => {
     // rundown, which is the honest fallback rather than an error.
     expect(r.getByTestId('rundown-block')).toBeTruthy();
     delete mockAppointments['appt-1'];
+  });
+
+  it('drops the Get-ready chrome once the visit has been logged (F4)', async () => {
+    // Take notes → Done → How did it go? → Save → Done replaces each screen in turn and
+    // leaves THIS one underneath, so Back from the saved visit lands here over a booking
+    // that is now a visit. It came back looking upcoming, and its Take notes → Done → Save
+    // logged the same visit a second time.
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await waitFor(() => expect(r.getByText(/Get ready for/)).toBeTruthy());
+    expect(r.getByText('Take notes')).toBeTruthy();
+
+    // The record after the save: still a row to the lax read, gone from the live one.
+    mockLaxAppointments['appt-1'] = { ...mockAppointment, vet_visit_id: 'visit-1' };
+    mockAppointments['appt-1'] = null;
+    await refocus();
+
+    await waitFor(() => expect(r.queryByText(/Get ready for/)).toBeNull());
+    expect(r.queryByText('Take notes')).toBeNull();
+    // The plain rundown, as for a cancelled booking.
+    expect(r.getByTestId('rundown-block')).toBeTruthy();
   });
 });
 

@@ -1163,7 +1163,10 @@ export interface AppointmentDetail extends LocalVetAppointment {
   notes_draft: string | null;
 }
 
-/** One appointment by id, for Get ready. Null for a missing, deleted or cancelled row. */
+/**
+ * One appointment by id, whether or not its visit has been logged. Null for a missing,
+ * deleted or cancelled row. Get ready reads `readEditableAppointment` instead (F4).
+ */
 export async function readAppointmentById(appointmentId: string): Promise<AppointmentDetail | null> {
   const rows = await getDb().getAllAsync<AppointmentDetail>(
     `SELECT ${APPOINTMENT_COLUMNS}, questions, notes_draft FROM vet_appointments
@@ -1188,6 +1191,13 @@ export async function readAppointmentById(appointmentId: string): Promise<Appoin
  * gets one answer, rather than composing it from a laxer read plus a column check of
  * its own — which is also why the check lives here and not there: `guards/visitReaders`
  * makes this the one file the companion may name these columns in.
+ *
+ * GET READY ASKS IT TOO (F4). Every door into Get ready opens a LIVE booking (Home's
+ * strip, the visits list, the Pet-tab card and the trial screen all read
+ * `LIVE_APPOINTMENT_SQL`), and its own ⋯ opens the edit this read guards. Read through the laxer function, a booking whose visit had
+ * just been logged came back on Back looking upcoming, and its *Take notes* led on to
+ * a second "How did it go?" for a visit already saved. Through this one it is no longer
+ * a booking, and the page falls back to the plain rundown as it does for a cancelled one.
  */
 export async function readEditableAppointment(
   appointmentId: string,
@@ -1198,6 +1208,18 @@ export async function readEditableAppointment(
     [appointmentId],
   );
   return rows[0] ?? null;
+}
+
+/**
+ * The visit this booking was logged as, or null while it is still a booking.
+ *
+ * Read through here rather than off the row, because `guards/visitReaders` makes this
+ * the one file the companion's screens read the link column through. A DOOR, never a
+ * number: the after-visit screen uses it to send a booking that is already a visit on
+ * to that visit, instead of offering to log it a second time (F4).
+ */
+export function visitLoggedFrom(appointment: Pick<LocalVetAppointment, 'vet_visit_id'>): string | null {
+  return appointment.vet_visit_id;
 }
 
 // ── The owner's questions (spec §4.1 B1 "Your questions") ───────────────────────
@@ -1798,6 +1820,13 @@ export interface VisitFromAppointmentInput {
  *
  * The draft is MOVED, not copied: `notes_draft` is nulled in the same transaction so
  * the record holds one copy of what the owner typed.
+ *
+ * ONCE PER BOOKING. The attendance UPDATE matches only a booking with no visit yet, so
+ * a second log of the same appointment rolls its own INSERT back rather than minting a
+ * second visit and re-pointing the booking at it, which orphaned the first (F4: Back
+ * from the saved visit landed on a Get ready that still looked live, and its Take
+ * notes → Done → Save did exactly that). First visit wins, like the course and trial
+ * links below.
  */
 export async function logVisitFromAppointment(input: VisitFromAppointmentInput): Promise<string> {
   const { newId = uuid, now = new Date() } = input;
@@ -1830,14 +1859,15 @@ export async function logVisitFromAppointment(input: VisitFromAppointmentInput):
       `UPDATE vet_appointments
           SET vet_visit_id = ?, notes_draft = NULL,
               updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
-        WHERE id = ?`,
+        WHERE id = ? AND vet_visit_id IS NULL`,
       [id, nowIso, appt.id],
     );
     if (res.changes === 0) {
-      // Inside the transaction, so the visit INSERT above rolls back with it. An
-      // appointment that vanished under the screen (deleted on another device) must
-      // not leave a half-attended pair behind.
-      throw new Error(`logVisitFromAppointment: no appointment row matched id ${appt.id}`);
+      // Inside the transaction, so the visit INSERT above rolls back with it. Two ways
+      // here, and neither may leave a visit behind: an appointment that vanished under
+      // the screen (deleted on another device) would leave a half-attended pair, and
+      // one ALREADY logged would gain a second visit (see the header).
+      throw new Error(`logVisitFromAppointment: no unlogged appointment row matched id ${appt.id}`);
     }
   });
 

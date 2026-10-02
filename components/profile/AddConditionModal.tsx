@@ -9,6 +9,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
+import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
 
 export interface Condition {
   id: string;
@@ -21,6 +22,13 @@ export interface Condition {
 }
 
 type ConditionStatus = 'active' | 'monitoring';
+
+/** "Sep 2026" for a condition's DATE, or null when there is none to show. Local components:
+ *  `new Date('2026-09-01')` is UTC midnight, the previous month anywhere west of UTC. */
+export function diagnosedMonthLabel(diagnosedAt: string | null): string | null {
+  const day = diagnosedAt ? dayKeyToLocalDate(diagnosedAt) : null;
+  return day ? day.toLocaleDateString([], { year: 'numeric', month: 'short' }) : null;
+}
 
 const STATUS_OPTIONS: { value: ConditionStatus; label: string; description: string }[] = [
   { value: 'active', label: 'Active', description: 'Currently affecting the pet' },
@@ -54,8 +62,12 @@ export function AddConditionModal({
         setStatus(
           existingCondition.status === 'resolved' ? 'active' : existingCondition.status,
         );
+        // `diagnosed_at` is a DATE: a calendar day, read and written in LOCAL components.
+        // `new Date('2026-09-01')` is UTC midnight (Aug 31 anywhere west of UTC), and
+        // `toISOString()` hands back the UTC day (tomorrow, for an evening pick in the US),
+        // which is the day the vet report then printed.
         setDiagnosedAt(
-          existingCondition.diagnosed_at ? new Date(existingCondition.diagnosed_at) : null,
+          existingCondition.diagnosed_at ? dayKeyToLocalDate(existingCondition.diagnosed_at) : null,
         );
       } else {
         setConditionName('');
@@ -78,7 +90,7 @@ export function AddConditionModal({
       const payload = {
         condition_name: trimmed,
         status,
-        diagnosed_at: diagnosedAt ? diagnosedAt.toISOString().split('T')[0] : null,
+        diagnosed_at: diagnosedAt ? toLocalDayKey(diagnosedAt) : null,
       };
 
       if (isEditing && existingCondition) {

@@ -87,6 +87,7 @@ import type { ContaminationFact } from './trial.ts'
 // Same list formatter the owner-facing contaminant copy uses — one spelling of
 // "chicken, salmon and beef" across the product (B-351 slice 5).
 import { proteinList } from '../../../lib/trialProtein.ts'
+import { dateTimeFormat } from '../../../lib/utils.ts'
 
 // ── HTML escaping — EVERY interpolated data string flows through here ────────────
 // The snapshot carries owner-entered free text (pet name, food labels, notes, drug
@@ -189,7 +190,7 @@ function fmtLocalDayScoped(iso: string, tz: string | null, windowEndDayKey: stri
   if (tz) {
     try {
       year = Number(
-        new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric' }).format(new Date(ms)),
+        dateTimeFormat('en-US', { timeZone: tz, year: 'numeric' }).format(new Date(ms)),
       )
     } catch {
       /* invalid IANA zone → UTC fallback below */
@@ -206,7 +207,7 @@ function fmtLocalDay(iso: string, tz: string | null): string {
   if (Number.isNaN(ms)) return h(iso)
   if (tz) {
     try {
-      const parts = new Intl.DateTimeFormat('en-US', {
+      const parts = dateTimeFormat('en-US', {
         timeZone: tz,
         month: 'short',
         day: 'numeric',
@@ -227,7 +228,7 @@ function fmtLocalTime(iso: string, tz: string | null): string {
   if (Number.isNaN(ms)) return '—'
   if (tz) {
     try {
-      return new Intl.DateTimeFormat('en-GB', {
+      return dateTimeFormat('en-GB', {
         timeZone: tz,
         hour: '2-digit',
         minute: '2-digit',
@@ -1457,7 +1458,7 @@ function localDayKeyOf(iso: string, tz: string | null): string {
   if (Number.isNaN(ms)) return iso.slice(0, 10)
   if (tz) {
     try {
-      return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(
+      return dateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(
         new Date(ms),
       )
     } catch {
@@ -2073,7 +2074,11 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         // report's closing sentence had not been.
         `<b>${
           wide ? 'Food going uneaten' : 'Refusal of a prescribed diet'
-        } is a clinical finding in its own right</b>, not a preference.${feline} Shown because it is present in the log; it is not a measure of how much was eaten overall. Intake ratings in appendix&nbsp;E.`,
+        } is a clinical finding in its own right</b>, not a preference.${feline} Shown because it is present in the log; it is not a measure of how much was eaten overall.${
+          // Only where appendix E is printed: a refusal-stopped trial with no meals
+          // logged has none, and the pointer dangled (release QA, 2026-10-02).
+          mealsAppendixVisible(snap) ? ' Intake ratings in appendix&nbsp;E.' : ''
+        }`,
       )
       return flagRow('Diet not eaten', bits.join(' '))
     }
@@ -2834,7 +2839,7 @@ function dietTrialSection(snap: ReportSnapshot): string {
       } of the trial predate any logging and are reported as untracked, not as missed.`,
     )
   }
-  recordBits.push(...exposureSentences(t))
+  recordBits.push(...exposureSentences(t, mealsAppendixVisible(snap)))
   // ── B-530: THE WEIGHT FACT IS NO LONGER A PASSENGER ON THE REFUSAL BRANCH ───
   //
   // It used to be pushed from INSIDE `exposureSentences`' refusal branch, so the
@@ -3921,7 +3926,7 @@ function exposureBreakdown(t: NonNullable<ReportSnapshot['trial']>): ExposureBre
  *     was refused) — a diet that was not eaten cannot be read as one that was
  *     followed, and this is a RULE, not a copy preference.
  */
-function exposureSentences(t: NonNullable<ReportSnapshot['trial']>): string[] {
+function exposureSentences(t: NonNullable<ReportSnapshot['trial']>, mealsAppendix: boolean): string[] {
   // THE REFUSAL SENTENCE IS COMPUTED FIRST AND BELONGS TO BOTH BRANCHES BELOW (B-530).
   //
   // It used to live inside branch 2 only, and branch 1 returned EARLY — so the state
@@ -3979,7 +3984,12 @@ function exposureSentences(t: NonNullable<ReportSnapshot['trial']>): string[] {
       // on this page; this was the one that was unresolvable in principle rather than
       // by accident. Appendix E is named for what it actually holds — grouped intake
       // ratings, not one row per feeding (itemising it is B-486).
-      `A diet that was not eaten cannot be read as one that was followed, so no adherence figure is reported for this trial. <b>Refusal of food is a clinical finding in its own right</b> &mdash; the intake ratings behind it are summarised in appendix&nbsp;E.`,
+      //
+      // And only where appendix E is printed (`mealsAppendix`): with no meals logged there is
+      // none, and this pointer dangled on exactly the refusal-stopped trial (release QA).
+      `A diet that was not eaten cannot be read as one that was followed, so no adherence figure is reported for this trial. <b>Refusal of food is a clinical finding in its own right</b>${
+        mealsAppendix ? ' &mdash; the intake ratings behind it are summarised in appendix&nbsp;E' : ''
+      }.`,
     )
     return bits
   }
