@@ -722,6 +722,45 @@ https://claude.ai/artifact/DQbPKibWVQTB6rAdDvyHmh (source: `docs/clinical-ruling
 | **E2** | EN-11's GA (CUL-1489) | EN-11 cuts chance cards on healthy pets (83% to 28%) and false food culprits (44% to 0), but catches worsening less and later (new diarrhea 60% to 7%; a vomiting doubling caught 85% to 46%, in 22 days instead of 7.5), so it misses E1's bar | Keep the food half (D5 = B); rework worsening before GA, then re-run PR-16's line, the reversed controls measured too | B: ship as built, amending E-6 · C: drop the worsening floor from EN-11 | A neutral (GA waits); **B quieter** | Agree (A); B **needs your sign-off** |
 | **D1** | every lane's GA | Dogs and species "other" (R-4) | Per row above (W8, T7, T8, T9); no blanket rule | none | n/a | Agree only |
 
+
+## 2.0a Rulings received (PM, 2026-10-02)
+
+**"All agree except C1b B, E2 A."** Every Part 2 row is now ruled:
+
+* **C1b: B.** T-5 stands: a look never enters the engine and raises nothing. No look word lifts an escalation; the
+  Noticed door's "Subdued and hiding" row stays a threshold that can never be met; CUL-845 keeps the question.
+  The C1b real-vet question is moot.
+* **⚠ E2: A, re-opened the same evening.** CUL-1489's re-measure (posted 21:18Z, minutes before this ruling, by a
+  parallel session; `docs/sessions/2026-10-02-cul-1489-en11-trade-remeasured.md`) found that **A's persistence arm
+  cannot fire at these rates** (diarrhea on 3 days running happens to under 1% of cats in 56 days at 1.5 a month), and
+  that above chance EN-11 catches the vomit doubling about as well as today (+21 against +23 points; the cost is the
+  first ask, a median of 16 days against 5). It replaced A/B/C with **B′** (ship floor 3, amend E-6 to read detection
+  above a placebo; recommended there), **A′** (rework the floor relative to each pet's own rate before GA, the nearest
+  match to A's intent) and **C**. The card the PM ruled on carried the original A. **E2 is open again until the PM
+  picks B′, A′ or C;** CUL-1495, filed for the original A, is on hold. The text below records the ruling as given.
+  Original: EN-11's GA waits on one detection PR. It gives diarrhea, itch and skin the burden card's persistence arm
+  or a dated onset line, restores vomiting's doubling detection (85% shipped against 46% under EN-11), and puts the
+  reversed-in-time controls on ① and ⑤ on PR-16's re-run. Then the PR-16 line is re-run against E1's bar. B's E-6
+  amendment is not taken.
+* **Every other row: agree (A)**, as written after the §2.9 rewrites. That includes the sign-off rows: **C1a**
+  (co-signs inside the 5% cap), **W1** (with W2 and the 10%-below-a-single-reading fix), **W5** (firm at 10%,
+  unknown birthday reads young), **W6** (a lapse date and a cumulative line), **T1** (the fourth condition; dark until
+  built) and **T6** (witnessed logs, T5a only). For W8 and I1, A was taken, so neither B sign-off arises.
+* **Not ruled here:** CUL-1390's own product calls W3 to W7 (§2.3's map). Those stay open on CUL-1390.
+
+**What each ruling now lets start.**
+
+| Build | Unblocked by | What it can start | Still gated on |
+|---|---|---|---|
+| PR-19, the weight lane (CUL-1413) | W1 to W8 | The dark build with the ruled values and fixes | PR-18; going live needs PMD-9 re-run on the exact definition by cadence; PR-37 needs CUL-1390 W3 to W7 |
+| CUL-1444, the pass lines | N2 | Now: both lines to 0.05, the 59–75% / 64–81% figure re-measured | Nothing |
+| PR-23, the care state server (CUL-1417) | C1a, N1, N2, C2 | Co-signs in the build: diarrhea or vomiting and lethargy on 2+ days, new before the anchor and after the answer; `EN-9.scored` at 0; 42 days | Going live needs corpus null diarrhea, lethargy and refused/picked ratings, then PR-16's combined 5% line; source 3 waits on GAP-28's shared intake module |
+| PR-26 and PR-28, Wave 4 | T1 to T12 | T23's fourth condition (dark); the T5a-only witnessed merge; T3, T7 and T8 as louder rows | Wave 4 goes live after CUL-1312 and CUL-1439 |
+| PR-29, the photo rows (CUL-1137) | T13 to T17 | String in a cat is call now; tablet call today; the lily question; a new course is call today; unknown age reads young | The critical drug list (the vet's) |
+| PR-30, intake evidence (CUL-1136) | I1 to I5 | Both intake checks in union; the free-fed words with the pronoun rule; "A little" stores Picked; the six strings with the voice edits; the refused-then-vomited line, dark | CUL-1118's D2; ships only with EN-8 |
+| EN-11's GA (CUL-1489) | E2 | ⚠ Nothing yet: E2 re-opened as B′ / A′ / C (CUL-1495 on hold) | The PM's pick |
+| PR-31 | N4 | The null set is ratified | E-4's budget |
+
 ---
 
 ## 2.2 Before PR-16's lines are used (the scorecard, merged as #993)
@@ -1286,6 +1325,9 @@ No proposed string carries an exclamation mark, a jargon term, a reassurance or 
 
 ### E2 · EN-11's trade (CUL-1489, from PR-32, #1002)
 
+> ⚠ **Superseded on CUL-1489, 2026-10-02 21:18Z:** a re-measure replaced the A/B/C below with B′ / A′ / C (see §2.0a).
+> The row is kept as ruled; E2 is open again.
+
 * **Question.** EN-11, built dark in PR-32, misses E1's bar. On PR-16's synthetic pets (30 seeds per scenario) it cuts
   chance "worth a word with your vet" cards on healthy pets from 83% to 28%, and false food culprits from 44% to 0, but
   it catches worsening more slowly: a new run of diarrhea 7% of the time instead of 60%, a doubling of vomiting in 22
@@ -1372,4 +1414,4 @@ own `adversarial-reviewer` pass on the code.
 17. **W1:** is "10% below a single earlier reading" the right line for raising a soft row on one high reading?
 18. **W6:** what cumulative loss should end a planned-loss quiet when the plan names no target (placeholder 10%)?
 19. **C1a:** which new signs beside chronic vomiting or diarrhea should bring a watched concern back, and on how many days?
-20. **C1b:** is *Off* (or *Hunched*) plus one vomit really call now, and should *Drinking less* in a vomiting cat lift a call?
+20. ~~**C1b:** is *Off* plus one vomit call now?~~ Moot: C1b ruled B (T-5 stands).
