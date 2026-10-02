@@ -8,6 +8,7 @@ import {
   courseLabel,
   engineCompareWithheld,
   findingMaskVerdict,
+  maskSignalRows,
   findingWithheldByMask,
   loadScreenMasking,
   maskCaption,
@@ -272,5 +273,46 @@ describe('the second adversarial pass', () => {
       }) as unknown as Parameters<typeof findingWithheldByMask>[0];
     expect(findingWithheldByMask(reflection(1), m, TODAY, TODAY)).toBe(false);
     expect(findingWithheldByMask(reflection(0), m, TODAY, TODAY)).toBe(true);
+  });
+});
+
+describe('the third adversarial pass · Get ready keeps a rise', () => {
+  const rise = {
+    rank: 0,
+    text: "We've logged 6 episodes of vomiting in the trial's 30 days, compared with 0 in the 49 days before it.",
+    finding: {
+      type: 'trial_response',
+      priorityClass: 'insight',
+      trialDayNumber: 30,
+      targetDurationDays: 56,
+      trialLoggedDays: 28,
+      baselineLoggedDays: 40,
+      baselineWindowDays: 49,
+      pooledTrialCount: 6,
+      pooledBaselineCount: 0,
+      rapid: { trial: 0, baseline: 0 },
+      long: { trial: 0, baseline: 0 },
+      rapidWindowMinutes: 30,
+      longGapHours: 6,
+    },
+  } as unknown as Parameters<typeof maskSignalRows>[0][number];
+  const fall = { ...rise, finding: { ...rise.finding, pooledTrialCount: 0, pooledBaselineCount: 12 } } as typeof rise;
+  const record = {
+    courses: [{ drugLabel: 'Cerenia', names: [], startedOn: '2026-07-20', endedOn: '2026-07-25', status: 'completed' }],
+    visitsOn: [],
+  };
+  const signOf = () => 'vomit' as const;
+  const wordOf = () => 'vomiting';
+
+  it('G1 · a rise over a masked baseline zero keeps its row, without the zero', () => {
+    const out = maskSignalRows([rise], record, signOf, wordOf, '2026-09-30', '2026-09-30');
+    expect(out).toHaveLength(1);
+    expect(out[0].text).toBe("6 episodes of vomiting in the trial's 30 days. The weeks before the trial aren't compared here.");
+  });
+
+  it('a fall beside the span is dropped; flag off keeps every row as it came', () => {
+    const prednisone = { courses: [{ drugLabel: 'Prednisone', names: [], startedOn: '2026-08-25', endedOn: null, status: 'active' }], visitsOn: [] };
+    expect(maskSignalRows([fall], prednisone, signOf, wordOf, '2026-09-30', '2026-09-30')).toEqual([]);
+    expect(maskSignalRows([rise, fall], null, signOf, wordOf, '2026-09-30', '2026-09-30')).toEqual([rise, fall]);
   });
 });

@@ -30,7 +30,7 @@ import {
 } from '../lib/dietTrialFacts';
 import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
 import { readSignalCache } from '../lib/signal';
-import { findingWithheldByMask, loadMaskingRecord, maskedTrialSentence, maskingFor } from '../lib/screenMasking';
+import { loadMaskingRecord, maskedTrialSentence, maskingFor, maskSignalRows } from '../lib/screenMasking';
 import { signalSymptomOf } from '../lib/signalWindows';
 import { symptomWord } from '../lib/signalCopy';
 import { signalTrialWindowOf } from '../lib/signalScreen';
@@ -583,12 +583,17 @@ async function buildForAppointment(
   // rewritten (the adversarial pass, findings 1 and 2). Dropping can only empty the list, never
   // turn a failed read into a quiet one: `null` stays `null`.
   const generatedOn = signalRow?.generatedAt ? toLocalDayKey(new Date(signalRow.generatedAt)) : null;
+  // A trial pair that ROSE over a masked baseline zero keeps its row in the Signal screen's own
+  // words, never dropped (D2: a rise always shows; the third adversarial pass).
   const findings = signalRow
-    ? signalRow.findings.filter((f) => {
-        const sign = f.finding.type === 'trial_response' ? 'vomit' : signalSymptomOf(f.finding);
-        const m = sign ? maskingFor(maskRecord, sign, symptomWord(sign), today) : null;
-        return !findingWithheldByMask(f.finding, m, today, generatedOn);
-      })
+    ? maskSignalRows(
+        signalRow.findings,
+        maskRecord,
+        (f) => (f.type === 'trial_response' ? 'vomit' : signalSymptomOf(f)),
+        symptomWord,
+        today,
+        generatedOn,
+      )
     : null;
   if (loadIdRef.current !== myId) {
     return { rows: [], signalUnavailable: false };

@@ -11,7 +11,7 @@ import {
 import { trialResponseLineCompares, trialResponseSoFarLine } from './dietTrialCard';
 import type { TrialResponseCounts } from './trialResponseCounts';
 import { readVisitDaysBefore } from './visitWindow';
-import type { CachedFinding } from './signal';
+import type { CachedFinding, TrialResponseFinding } from './signal';
 import { dayKeyFromIndex, formatCalendarDate, localDayIndexOf } from './utils';
 
 // No zero beside a masking drug or a recent visit, on the screens around EN-10's lines
@@ -462,4 +462,41 @@ export function findingWithheldByMask(
   generatedOn: string | null,
 ): boolean {
   return findingMaskVerdict(finding, m, todayKey, generatedOn).mode !== 'show';
+}
+
+/** A trial pair that ROSE over a masked baseline zero, said without the zero (D2): "6 episodes
+ *  of vomiting in the trial's 30 days. The weeks before the trial aren't compared here." The
+ *  Signal screen's set-aside state and Get ready's row both say it in these words. */
+export function riseKeptSentence(finding: TrialResponseFinding, signWord: string): string {
+  const n = finding.pooledTrialCount;
+  const d = finding.trialDayNumber;
+  return `${n} ${n === 1 ? 'episode' : 'episodes'} of ${signWord} in the trial's ${d} ${d === 1 ? 'day' : 'days'}. The weeks before the trial aren't compared here.`;
+}
+
+/**
+ * Get ready's Signal rows beside the masking (the adversarial passes): a row whose own sentence
+ * compares a masked window is dropped, a trial pair that ROSE over a masked baseline zero keeps
+ * its row in `riseKeptSentence`'s words, and every other row passes untouched. `signOf` and
+ * `wordOf` are the caller's (the sign a finding counts, and its owner word). A null record (the
+ * flag off) returns the list as it came.
+ */
+export function maskSignalRows<T extends CachedFinding>(
+  findings: readonly T[],
+  record: MaskingRecord | null,
+  signOf: (f: T['finding']) => MaskSign | null,
+  wordOf: (sign: MaskSign) => string,
+  todayKey: string,
+  generatedOn: string | null,
+): T[] {
+  if (record === null) return [...findings];
+  return findings.flatMap((f) => {
+    const sign = signOf(f.finding);
+    const m = sign ? maskingFor(record, sign, wordOf(sign), todayKey) : null;
+    const verdict = findingMaskVerdict(f.finding, m, todayKey, generatedOn);
+    if (verdict.mode === 'show') return [f];
+    if (verdict.mode === 'rise_kept' && f.finding.type === 'trial_response' && m) {
+      return [{ ...f, text: riseKeptSentence(f.finding, m.signWord) }];
+    }
+    return [];
+  });
 }

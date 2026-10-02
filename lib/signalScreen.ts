@@ -53,6 +53,7 @@ import { careContextLinesOf } from './careContext';
 import {
   engineCompareMode,
   findingMaskVerdict,
+  riseKeptSentence,
   type FindingMaskVerdict,
   keyMinus,
   loadMaskingRecord,
@@ -1257,13 +1258,7 @@ export function setAsideLines(m: ScreenMasking, petName: string, finding: Cached
   if (verdict.mode === 'rise_kept' && finding.type === 'trial_response') {
     // A rise over a masked baseline zero: the trial's count stays (D2: a rise always shows), the
     // zero beside it does not.
-    const n = finding.pooledTrialCount;
-    const d = finding.trialDayNumber;
-    return [
-      ...lead,
-      `${n} ${plural(n, 'episode')} of ${m.signWord} in the trial's ${d} ${plural(d, 'day')}. The weeks before the trial aren't compared here.`,
-      vet,
-    ];
+    return [...lead, riseKeptSentence(finding, m.signWord), vet];
   }
   const why =
     finding.type === 'stood_down'
