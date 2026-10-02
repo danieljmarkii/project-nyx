@@ -1,6 +1,6 @@
 # Quick Win sweep: the comment blanker reads the parser, the meal's dose link says Unconfirmed, the Home-write guard derives its helpers
 
-**Date:** 2026-10-01 · **Branch:** `claude/brave-hypatia-lgzqiv` · shipped via #996 · the whole Quick Win pool (three open issues), three shipped, one commit each; one `code-reviewer` pass
+**Date:** 2026-10-01 · **Branch:** `claude/brave-hypatia-lgzqiv` · shipped via #996 · the whole Quick Win pool (three open issues), three shipped, one commit each plus one review follow-up each; one `code-reviewer` pass (small fixes before merge: `RAW_MUTATION` missed `INSERT OR …` / `REPLACE INTO` / interpolated tables, and the blanker's TS/TSX fallback had no test; both fixed and mutation-proven)
 
 | Issue | Outcome | Proof |
 |---|---|---|
@@ -14,5 +14,6 @@
 | CUL-1321 | **Gated: clinical** (escalation predicate in a trigger; adversarial review) | EN-3's tier column has landed, so "calmer" needs redefining |
 | CUL-1362, CUL-1286 | **Left as they are**, still accurate | 1286 re-verified in `lib/weightUnits.ts`; it looks like a fair Quick Win candidate |
 | CUL-1447 | **Filed:** the Deno suites' own blanker copy has the same desync | Measured: 194 lines in `generate-report/render.ts` |
+| CUL-1449 | **Filed (Quick Win):** History's dose-row "Unconfirmed" pill sets its text in the bright rose, not the ink (C-1) | `code-reviewer`, pre-existing |
 
 **Lesson:** a sweep pool that keeps passing over the same items as "over an hour" stops draining. Two of three here had been skipped three times. A probe that sized each one in minutes (the derived-writer dry run, the desync measurement) showed both were mechanical, once nobody had to guess at the size.
