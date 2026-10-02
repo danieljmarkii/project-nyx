@@ -1,8 +1,10 @@
 # CUL-1489: E2 ruled B′
 
 **Date:** 2026-10-02 · **Mode:** DISCOVERY (recording a ruling) · **Branch:** `claude/cul-1489-ruling-e2-3j7xkr`
+**One thing (re-ask):** P1 L1 — The strategy kernel (asked again on today's ruling: name B′'s diagnosis in one sentence) · check: pending
+**One thing:** P2 L1 — Reversibility: one-way and two-way doors · check: pending
 
-Shipped via the draft PR on this branch (a document only; no code or threshold moved).
+Shipped via #1006 (a document only; no code or threshold moved).
 
 ## What happened
 
@@ -26,3 +28,11 @@ replaced the original A/B/C with B′ / A′ / C and re-opened §2.0a's "E2 A".
 E-6's detection line is one rule, so §2.0b states that the amended reading applies to every harness-measured quieter
 row from here on, without re-opening the rows already signed off (W1, W5, W6, T1, T6) and without touching Part 1's
 non-harness rows. The PM can narrow it to EN-11 alone with one line.
+
+## Definition of Done
+
+Docs-only session. Acceptance (CUL-1489 as asked): ruling recorded as §2.0b ✓ · CUL-1495 rewritten to match ✓ ·
+CUL-1489 closed ✓ · CUL-583 answered, then closed on the PM's word ✓. Types / tests: N/A, no code (the pre-commit hook
+ran the full suite green anyway). Adversarial review: N/A, no logic changed; §2.0b states the ruling's two evidence
+limits (30 seeds, no lone-diarrhea pet) and routes each to a gate. Personas: Product Owner ✓ (issue trail), Data
+Scientist ✓ (the amended line's definition), Dr. Chen ✓ (the A′ contingency kept as a gate), Designer N/A, T&S N/A.
