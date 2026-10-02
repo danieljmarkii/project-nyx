@@ -1,6 +1,7 @@
 # GitHub hygiene: the audit and the files a session could fix
 
-**Date:** 2026-10-02 · **Branch:** `claude/elegant-planck-llx0c2` · CUL-1490 · scope: repo health, no app code, no schema, no deploy.
+**Date:** 2026-10-02 · **Branch:** `claude/elegant-planck-llx0c2` · shipped via #1003 · CUL-1490 · scope: repo health, no app code, no schema, no deploy.
+**One thing:** G5 L1 — Protection: required checks are why `main` cannot go red silently · check: pending
 
 ## The ask
 
@@ -37,3 +38,13 @@ The PM noticed the repo had no real README and asked what else was missing, with
 ## Filed
 
 Follow-ups live in Linear and are linked from CUL-1490 rather than named here, so the merge closes only CUL-1490: the PM's half (visibility ruling, settings toggles, the branch prune run, the stale PR round) and the lint job.
+
+## Verification
+
+Local pre-push: `tsc` and the full jest suite (601 suites, 13,348 tests) green. CI on #1003: all three required checks green. The prune script was driven against a local bare remote covering every category (merged, merged-then-pushed, closed unmerged, open, no PR, `main`), plus an empty `gh` answer.
+
+## Residuals
+
+- The `Waiting on PM` queue is far over its cap of 30. The PM's half of this audit was still filed as one issue, because only the repo owner can change these settings and the visibility ruling is on the never-list (privacy).
+- `scripts/repo-hygiene/prune-merged-branches.sh` has no automated test; it is an operator script run once by hand, and its proof is the fixture run above.
+
