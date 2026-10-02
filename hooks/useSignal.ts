@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { getDb } from '../lib/db';
+import type { EventTypeKey } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 import {
@@ -93,6 +94,18 @@ const EMPTY_LOCAL_CONTEXT: LocalSignalContext = {
 
 // Read straight from local SQLite (fast, offline-capable, same pattern as
 // useTrend) so the empty-state distinctions work without a network round-trip.
+//
+// A daily look (`check_in`) is not in this read: a look never enters the engine, a count
+// or a floor (daily-look spec R1, §5.6). The engine never sees one, so a look must not
+// make a quiet record read as active, lift it over the "substantial history" floor into
+// "no clear patterns" (a claim about data the engine never had), add to "{k} events so
+// far", or move Day 1 earlier. `lib/signalScreen.ts`'s `readLoggedDays` is the precedent.
+//
+// The look's type mirrors `lib/monthReads.ts`'s LOOK_EVENT_TYPE (same value, same question:
+// the one row that is never coverage), not imported: that module's import chain reaches the
+// sync fabric and the network client. Typed against the event-type keys so a rename reds tsc.
+const LOOK_EVENT_TYPE: EventTypeKey = 'check_in';
+
 function getLocalSignalContext(petId: string): LocalSignalContext {
   try {
     const now = Date.now();
@@ -101,8 +114,8 @@ function getLocalSignalContext(petId: string): LocalSignalContext {
       `SELECT COUNT(*) AS total,
               COUNT(CASE WHEN occurred_at >= ? THEN 1 END) AS recent,
               MIN(occurred_at) AS earliest
-       FROM events WHERE pet_id = ? AND deleted_at IS NULL`,
-      [recentCutoff, petId],
+       FROM events WHERE pet_id = ? AND deleted_at IS NULL AND event_type != ?`,
+      [recentCutoff, petId, LOOK_EVENT_TYPE],
     );
     const r = rows[0];
     const total = r?.total ?? 0;
@@ -308,8 +321,10 @@ export function useCrossPetSafetyBanner(): CrossPetBanner | null {
           }
           const copy = bannerCopy(selected.finding, selected.pet.name);
           // Defense-in-depth (§4): suppress on any guardrail drift — fail safe to
-          // silence, never a bad escalation, never a reassurance.
-          if (!validateBannerPhrasing(copy.text)) {
+          // silence, never a bad escalation, never a reassurance. The screen reads the
+          // TEMPLATE (`screened`), never the owner's words: a food called "Healthy
+          // Weight" or a dog called Trigger once silenced a real safety finding here.
+          if (!validateBannerPhrasing(copy.screened)) {
             setBanner(null);
             return;
           }
