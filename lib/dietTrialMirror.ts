@@ -23,7 +23,7 @@
 //   medications           → diet_trials      (pet-scoped lifecycle row)
 //   feeding_arrangements  → diet_trial_foods (pet-child, dated, soft-deleted)
 
-import { petTrialsVisitLandedSql, visitLandedSql } from './syncQueue';
+import { parentLandedSql, petTrialsVisitLandedSql, visitLandedSql } from './syncQueue';
 
 // ── Local schema (mirrors migrations 040 + 041) ──────────────────────────────
 //
@@ -187,8 +187,13 @@ export const DIET_TRIAL_PUSH_QUEUE_SQL =
      AND ${visitLandedSql('diet_trials')}
      AND ${petTrialsVisitLandedSql()} LIMIT 100`;
 
+// An allowed food waits for its trial to land (`parentLandedSql`): migration 041's
+// same-pet trigger runs ahead of the foreign key, so a food sent before its trial is a
+// terminal 23514, not a retry. A trial can wait a while: behind its own visit, or beside
+// a sibling trial that waits on one.
 export const DIET_TRIAL_FOOD_PUSH_QUEUE_SQL =
-  'SELECT * FROM diet_trial_foods WHERE synced = 0 AND sync_error IS NULL LIMIT 100';
+  `SELECT * FROM diet_trial_foods WHERE synced = 0 AND sync_error IS NULL
+     AND ${parentLandedSql('diet_trial_foods')} LIMIT 100`;
 
 // The active trial for one pet, from the mirror. Replaces the Supabase read the
 // widget publisher used to do (§3.4), which is why the AIRPLANE-MODE acceptance

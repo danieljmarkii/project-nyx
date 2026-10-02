@@ -278,6 +278,9 @@ describe('the push queues skip quarantined rows', () => {
   it('applies the same quarantine filter to the allowed set', () => {
     const db = freshDb();
     insertTrial(db);
+    // The trial has landed: an allowed food waits for its trial (parentLandedSql), and
+    // that hold is pinned in lib/syncQueue.visitLink.test.ts. This case is the filter.
+    db.exec(`UPDATE diet_trials SET synced = 1 WHERE id = 'trial-1'`);
     db.exec(`INSERT INTO diet_trial_foods
       (id, diet_trial_id, pet_id, food_item_id, role, food_label, allowed_from)
       VALUES ('f1', 'trial-1', 'pet-1', 'food-1', 'primary_diet', 'RC HP', '2026-07-10')`);

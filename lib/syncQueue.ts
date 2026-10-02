@@ -440,6 +440,49 @@ export function petTrialsVisitLandedSql(): string {
        AND gate_tv.synced = 0 AND gate_tv.sync_error IS NULL)`;
 }
 
+/**
+ * The child queues whose server row needs its PARENT already on the server, and the
+ * column that names the parent. A runtime map, so a test can check it against every
+ * local column of that shape.
+ *
+ *   • diet_trial_foods → diet_trials. Migration 041's same-pet trigger runs BEFORE the
+ *     foreign key, so a food sent ahead of its trial is refused with 23514, which is
+ *     TERMINAL: the allowed set is quarantined on its first try.
+ *   • medication_administrations → medications. A plain foreign key (020), so a dose
+ *     sent ahead of its course is a 23503: not terminal, but each drain spends one of the
+ *     row's MAX_SYNC_ATTEMPTS on it, and at the cap the dose is quarantined for good.
+ *
+ * A parent can wait for a while now: a trial or course that names an unsent visit is
+ * held (above), and its children would otherwise go out every drain in the meantime.
+ */
+export const PARENT_GATED_QUEUES = {
+  diet_trial_foods: { parent: 'diet_trials', column: 'diet_trial_id' },
+  medication_administrations: { parent: 'medications', column: 'medication_id' },
+} as const;
+export type ParentGatedQueue = keyof typeof PARENT_GATED_QUEUES;
+
+/**
+ * A child row is never pushed ahead of its parent: it waits while the parent is on this
+ * phone and still waiting to land (`synced = 0`, not quarantined). The looks drain's
+ * `e.synced = 1` is the same idea, with two differences that are deliberate. A parent
+ * that is QUARANTINED holds nothing, as a quarantined visit holds nothing: there is no
+ * landing left to wait for, and a child held behind it would count as pending forever,
+ * telling the owner to find a connection no connection will help. The child goes up and
+ * takes its own answer: it lands if the parent's earlier version is on the server, and
+ * otherwise meets its own refusal, terminal for a food and the attempt budget for a dose,
+ * after which it is counted as quarantined rather than pending. And a child that names
+ * no parent (an ad-hoc dose has no course) or a parent this phone does not hold is
+ * unaffected.
+ *
+ * The outer statement must read the child table unaliased, as `visitLandedSql`'s must.
+ */
+export function parentLandedSql(child: ParentGatedQueue): string {
+  const { parent, column } = PARENT_GATED_QUEUES[child];
+  return `NOT EXISTS (SELECT 1 FROM ${parent} gate_p
+     WHERE gate_p.id = ${child}.${column}
+       AND gate_p.synced = 0 AND gate_p.sync_error IS NULL)`;
+}
+
 // Table names are compile-time literals from SYNC_QUEUES, never caller data —
 // which is what makes interpolating them (an SQL IDENTIFIER cannot be bound to a
 // `?` placeholder) safe by construction rather than by luck. Same argument as

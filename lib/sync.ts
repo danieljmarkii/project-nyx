@@ -41,6 +41,7 @@ import {
   pushGuardColumn,
   RLS_FILTERED_ERROR,
   NOT_QUARANTINED_SQL,
+  parentLandedSql,
   visitLandedSql,
   type SyncFailureClass,
 } from './syncQueue';
@@ -2011,6 +2012,12 @@ async function drainMedicationsQueue(): Promise<void> {
 // governs only the separate case of a historical dose surviving a LATER regimen
 // deletion — migration 020 — NOT insert ordering: an insert referencing a missing
 // regimen is rejected, not nulled.)
+//
+// The REGIMEN half is no longer left to call order: the queue read holds a dose whose
+// course is on this phone and still waiting to land (`parentLandedSql`). A course can
+// now wait a while, behind the visit it names, and every drain in between would have
+// sent its doses into a 23503 and spent one of each dose's MAX_SYNC_ATTEMPTS. The event
+// half still rides the call order above.
 export function syncPendingMedicationAdministrations(): Promise<void> {
   return serializeQueuePush('medication_administrations', drainMedicationAdministrationsQueue);
 }
@@ -2022,7 +2029,8 @@ async function drainMedicationAdministrationsQueue(): Promise<void> {
   const db = getDb();
 
   const unsynced = await db.getAllAsync<LocalMedicationAdministration>(
-    `SELECT * FROM medication_administrations WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 100`,
+    `SELECT * FROM medication_administrations WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+       AND ${parentLandedSql('medication_administrations')} LIMIT 100`,
   );
   if (unsynced.length === 0) return;
 
@@ -2104,9 +2112,13 @@ async function drainDietTrialsQueue(): Promise<void> {
 
 // Flush unsynced allowed-set rows (B-417). Runs AFTER syncPendingDietTrials in
 // the same cycle so the parent trial exists server-side before its children
-// reference it — the meals→events ordering rule. A child whose parent's push
-// failed this cycle FK-fails (23503, non-terminal) and stays queued; both retry
-// next cycle, so an allowed food never lands orphaned.
+// reference it — the meals→events ordering rule. And the queue read holds a child
+// whose trial is still waiting to land (DIET_TRIAL_FOOD_PUSH_QUEUE_SQL,
+// `parentLandedSql`), because a child sent first is NOT a retry: migration 041's
+// same-pet trigger runs ahead of the foreign key and refuses it with 23514, which is
+// terminal, so the allowed set would be quarantined on its first try. A trial can
+// wait a while (behind the visit it names, or beside a sibling trial that does), so
+// the order of these two calls is not enough on its own.
 export function syncPendingDietTrialFoods(): Promise<void> {
   return serializeQueuePush('diet_trial_foods', drainDietTrialFoodsQueue);
 }
@@ -3416,8 +3428,9 @@ async function pushAllQueues(): Promise<void> {
   await syncPendingMedications();
   await syncPendingMedicationAdministrations();
   // B-417: trials before their allowed set — diet_trial_foods.diet_trial_id
-  // FKs to diet_trials server-side, so the parent must land first or the child
-  // FK-fails (23503, non-terminal) and waits a cycle. Both pre-sync their own
+  // FKs to diet_trials server-side, and 041's same-pet trigger refuses a child whose
+  // trial is not there with a TERMINAL 23514. The foods drain holds such a child
+  // itself (`parentLandedSql`); this order saves it a cycle. Both pre-sync their own
   // food_items (Pattern 6).
   await syncPendingDietTrials();
   await syncPendingDietTrialFoods();

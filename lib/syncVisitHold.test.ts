@@ -151,7 +151,7 @@ import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
-import { syncPendingDietTrials, syncPendingVetVisits } from './sync';
+import { syncPendingDietTrialFoods, syncPendingDietTrials, syncPendingVetVisits } from './sync';
 import { endActiveTrial, startDietTrial, type StartTrialInput } from './dietTrialSetup';
 import { linkTrialToVisit, logVetVisit } from './vetVisits';
 
@@ -257,5 +257,24 @@ describe('a trial started beside an ending that waits on its visit', () => {
     expect(localRow('diet_trials', trialA)).toMatchObject({ synced: 1, sync_error: null });
     expect(localRow('diet_trials', trialB)).toMatchObject({ synced: 1, sync_error: null });
     expect(foodsOf(trialB)).toHaveLength(1);
+  });
+
+  // Code review item 3. `startDietTrial` pushes the trial, then its allowed set. B is
+  // held, so its food would otherwise go out alone and meet 041's trigger.
+  it("holds B's allowed food while B waits, and sends it once B has landed", async () => {
+    const [food] = foodsOf(trialB);
+    expect(food).toBeDefined();
+    expect(writesTo('diet_trial_foods')).toEqual([]);
+    expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0 });
+
+    mockServer.visitWriteFails = null;
+    await syncPendingVetVisits();
+    await syncPendingDietTrials();
+    await syncPendingDietTrialFoods();
+    await settle();
+
+    expect(writesTo('diet_trial_foods')).toEqual([[food]]);
+    expect(serverRow('diet_trial_foods', food)).toMatchObject({ diet_trial_id: trialB });
+    expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 1, sync_error: null });
   });
 });
