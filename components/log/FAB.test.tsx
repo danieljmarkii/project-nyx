@@ -41,7 +41,7 @@ jest.mock('../pet/PetSwitcherSheet', () => ({
   },
 }));
 
-import { Animated, Text } from 'react-native';
+import { Alert, Animated, Text } from 'react-native';
 import { act, render, fireEvent } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { FAB, HiddenUnderFabMenu } from './FAB';
@@ -682,5 +682,37 @@ describe('FAB — a pill does nothing while the menu is closing', () => {
 
     await act(async () => { fireEvent.press(view.getByText(/Hills/)); });
     expect(insertMeal).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── A one-tap food whose write fails (QA, 1.2.0) ─────────────────────────────────
+//
+// The quick-meal path was a `try … finally` with no `catch`, and the pill calls it
+// without awaiting: a failed write wrote nothing, said nothing, and surfaced only as an
+// unhandled rejection. A failed write is always said (CUL-575), in the words the
+// sheet's confirm and /log already use.
+describe('FAB — a one-tap food whose write fails', () => {
+  it('says so in the shared words, confirms nothing, and leaves the row to retry', async () => {
+    insertMeal.mockReset();
+    insertMeal.mockRejectedValueOnce(new Error('disk I/O error'));
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet', food_type: 'meal' },
+    ]);
+    useMomentStore.setState({ visible: false, payload: null, removed: false });
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const view = await openMenu();
+      await act(async () => { fireEvent.press(view.getByText(/Hills/)); });
+
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(alert).toHaveBeenCalledWith("Couldn't save that", 'Something went wrong. Please try again.');
+      // Nothing landed, so no card claims it did, and the menu is still up to retry.
+      expect(useMomentStore.getState().payload).toBeNull();
+      expect(view.getByText(/Hills/)).toBeTruthy();
+    } finally {
+      alert.mockRestore();
+      logged.mockRestore();
+    }
   });
 });

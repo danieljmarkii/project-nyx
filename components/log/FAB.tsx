@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, type ReactNode } from 'react';
 import {
   TouchableOpacity, StyleSheet, View, Animated, BackHandler,
-  Pressable,
+  Pressable, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { ChevronDown, Plus } from 'lucide-react-native';
@@ -340,12 +340,26 @@ export function FAB() {
       // insertMeal owns the event+meal write, the food-recency touch, the sync
       // push, AND the AI-Signal regen (B-059) — so this quick-log path can't
       // drift out of sync with the other entry points the way it once did.
-      const { eventId, occurredAtIso, now } = await insertMeal({
-        petId: pet.id,
-        foodId: food.id,
-        occurredAt: new Date(),
-        occurredAtSource: 'now',
-      });
+      let written: Awaited<ReturnType<typeof insertMeal>>;
+      try {
+        written = await insertMeal({
+          petId: pet.id,
+          foodId: food.id,
+          occurredAt: new Date(),
+          occurredAtSource: 'now',
+        });
+      } catch (e) {
+        // A failed write is always said (CUL-575), in the words every other log path
+        // uses. The pill calls this without awaiting, so before this catch a failure
+        // wrote nothing, said nothing, and surfaced only as an unhandled rejection. The
+        // menu stays open and the row is the retry. Scoped to the WRITE: below it the
+        // meal is on disk, and a step that threw there must never say a saved meal
+        // failed, because the retry that invites would write it twice (B-336).
+        console.error('[FAB] quick meal write failed:', e);
+        Alert.alert("Couldn't save that", 'Something went wrong. Please try again.');
+        return;
+      }
+      const { eventId, occurredAtIso, now } = written;
 
       const foodType =
         food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
