@@ -54,3 +54,18 @@ is the sheet's §1.5. Part 2 had no separate adversarial pass.
   retitles before merging or reopens afterwards.
 - The cold read's three original agenda asks (left-censoring, unlogged-medication caveat, the delta render) were out
   of the scope the PM set for Part 1 and were not re-verified.
+
+## After the first wrap (2026-10-01 to 2026-10-02)
+
+- **Part 1 is fully ruled** (sheet §1.0a). R2: agree, explicitly. R12: option E, deferring to the product team; E keeps
+  the one-tap `Keep going`, which takes a gut trial to twelve weeks, and adds a *Your vet said a different length*
+  link to the existing window sheet. R13a: agree, after a plain-language explanation that nothing is breached, only
+  the app's own record lagging. Every other row: agree, deferring to the recommendations.
+- **R12 was revisited** because the PM asked "why not just ask the owner". The app already does, through *Change the
+  window*. The milestone's one-tap default exists on purpose (§4.3), so option E keeps both. The answer and options E
+  and F are recorded in §1.0a.
+- **A walkthrough page**, `docs/clinical-ruling-walkthrough.html`
+  (https://claude.ai/artifact/Ri2RingyKaCfopHAHCG5TP), gives the PM's steps in order, with the three real decisions
+  written as briefs.
+- **#995 was retitled** to carry no issue id, the body was cleared of issue ids, and the PR was marked ready. Merging
+  it closes nothing. The PM presses merge; this session is barred from merging.
