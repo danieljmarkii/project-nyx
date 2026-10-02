@@ -89,6 +89,7 @@ import type {
   ReflectionFinding,
   SymptomWorseningFinding,
   SymptomChronicityFinding,
+  SymptomBurdenFinding,
   PostprandialTimingFinding,
   TimeOfDayClusteringFinding,
   TimingStoryFinding,
@@ -1744,7 +1745,26 @@ const candidate = (id: string, findings: AnyFinding[]) => ({
   findings: findings.map((f, i) => cached(f, i)),
 });
 
-// Every banner copy variant, for the guardrail sweep.
+// Engines v3 PR-14d's burden card (CUL-1410): the run arm, the count arm, and both.
+const burden = (over: Partial<SymptomBurdenFinding> = {}): SymptomBurdenFinding => ({
+  type: 'symptom_burden',
+  priorityClass: 'safety',
+  symptomType: 'vomit',
+  count: 4,
+  days: 3,
+  runDays: 3,
+  daysSinceRunEnd: 0,
+  countArm: true,
+  persistenceArm: false,
+  tier: 'soon',
+  windowDays: 7,
+  ...over,
+});
+
+// Every banner copy variant, for the guardrail sweep. EVERY type the banner can carry and
+// every symptom key its templates name: for a variant missing here, the runtime screen is
+// the only guard, and a hit silences the whole banner (adversarial-reviewer, release QA:
+// "urgent" injected into the burden template left every suite green).
 const ALL_BANNER_FINDINGS: BannerSafetyFinding[] = [
   incidentRedFlag({ flags: ['blood'], flaggedIncidentCount: 1 }),
   incidentRedFlag({ flags: ['foreign_material'], flaggedIncidentCount: 1 }),
@@ -1753,19 +1773,36 @@ const ALL_BANNER_FINDINGS: BannerSafetyFinding[] = [
   intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: null }),
   intakeDecline({ trigger: 'consecutive_low', daysBelowBaseline: 1 }),
   intakeDecline({ trigger: 'consecutive_low', daysBelowBaseline: 4 }),
-  ...(['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction'] as const).flatMap(
+  burden({ countArm: true, persistenceArm: false, count: 4 }),
+  burden({ countArm: false, persistenceArm: true, runDays: 3, tier: 'today' }),
+  burden({ countArm: true, persistenceArm: true, count: 6, runDays: 4, tier: 'today' }),
+  ...(['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough', 'sneeze'] as const).flatMap(
     (symptomType) => [
       worsening({ trigger: 'more_episodes', symptomType }),
       worsening({ trigger: 'more_days', symptomType }),
     ],
   ),
-  ...(['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction'] as const).flatMap(
+  ...(['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough', 'sneeze'] as const).flatMap(
     (symptomType) => [
       chronicity({ tier: 'firm', symptomType }),
       chronicity({ tier: 'standard', symptomType }),
     ],
   ),
 ];
+
+it('the sweep covers every type the banner can carry (a new one must join it)', () => {
+  // A Record over the union: a type added to BannerSafetyFinding without a key here is a
+  // compile error, and one with a key but no variant above reds this test.
+  const carried: Record<BannerSafetyFinding['type'], true> = {
+    incident_red_flag: true,
+    intake_decline: true,
+    symptom_burden: true,
+    symptom_chronicity: true,
+    symptom_worsening: true,
+  };
+  const swept = new Set(ALL_BANNER_FINDINGS.map((f) => f.type));
+  expect([...swept].sort()).toEqual(Object.keys(carried).sort());
+});
 
 describe('selectCrossPetSafetyFinding', () => {
   it('returns null with no candidates', () => {
