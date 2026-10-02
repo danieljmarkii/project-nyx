@@ -169,7 +169,8 @@ function course(over: Partial<ActiveCourse> = {}): ActiveCourse {
 /** Every RN `Modal` currently in the rendered tree. */
 const modals = () => screen.UNSAFE_queryAllByType(Modal);
 
-beforeEach(() => {
+/** Every mock and fixture back to its default: what each test starts from. */
+function freshScreen(): void {
   jest.restoreAllMocks();
   jest.clearAllMocks();
   mockLogFromAppointment.mockImplementation(async () => 'new-visit');
@@ -182,7 +183,22 @@ beforeEach(() => {
   // Reset, not just cleared: the CUL-951 trial suite swaps this read's implementation,
   // and `clearAllMocks` keeps implementations.
   jest.requireMock('../../lib/dietTrialSetup').getActiveTrialForPet.mockImplementation(async () => null);
-});
+}
+
+// COLD-CACHE WARM-UP, with its own timeout (the AddMedicationModal precedent, CUL-1155).
+// Measured on an empty jest cache (release QA, 2026-10-02): this file's first test took
+// ~4.5 s against ~0.5 s warm, a hair under the 5 s default, because jest-expo transforms
+// React Native's lazily-`require`d internals during the first render, and CI always runs
+// cold. The warm-up renders the screen once; every test then starts from freshScreen()
+// and keeps the 5 s default, so a real hang still reports quickly.
+beforeAll(async () => {
+  freshScreen();
+  render(<AfterVisitScreen />);
+  await screen.findByText('Save Nyx’s visit');
+  screen.unmount();
+}, 60000);
+
+beforeEach(freshScreen);
 
 describe('AC 11 — the screen writes under the appointment’s pet', () => {
   it('saves under pet A even after the store’s active pet moves to B', async () => {
