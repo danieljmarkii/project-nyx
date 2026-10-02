@@ -1,6 +1,9 @@
 import { supabase } from './supabase';
 import { getDb } from './db';
 import { getDeviceTimezone } from './profile';
+// The row predicate rather than monthReads' LOOK_EVENT_TYPE: lookDisplay has no RN or
+// lucide edge, where monthReads reaches constants/eventTypes (see the note below).
+import { isLookRow } from './lookDisplay';
 // Type-only: erased at build, so this module stays free of the lucide/RN dependency
 // constants/eventTypes.ts pulls in (lib/ask.ts is deliberately unit-testable offline).
 import type { EventTypeKey } from '../constants/eventTypes';
@@ -470,28 +473,25 @@ interface LocalPresence {
 
 function readLocalPresence(petId: string): LocalPresence {
   try {
-    const rows = getDb().getAllSync<{
-      total: number;
-      vomit: number;
-      stool: number;
-      meal: number;
-      weight: number;
-    }>(
-      `SELECT COUNT(*) AS total,
-              COUNT(CASE WHEN event_type = 'vomit' THEN 1 END) AS vomit,
-              COUNT(CASE WHEN event_type IN ('diarrhea','stool_normal') THEN 1 END) AS stool,
-              COUNT(CASE WHEN event_type = 'meal' THEN 1 END) AS meal,
-              COUNT(CASE WHEN event_type = 'weight_check' THEN 1 END) AS weight
-       FROM events WHERE pet_id = ? AND deleted_at IS NULL`,
+    // One row per event type, summed here rather than in SQL so the total can leave the
+    // daily look out through the shared row predicate (`isLookRow`). A look is the
+    // owner's answer to a question, never a count (daily-look spec §2 item 5), and Ask
+    // is blind to looks in v1 — so a record holding only looks is still the designed
+    // empty record here, not a fresh state with nothing to suggest.
+    const rows = getDb().getAllSync<{ event_type: string; n: number }>(
+      `SELECT event_type, COUNT(*) AS n
+       FROM events WHERE pet_id = ? AND deleted_at IS NULL
+       GROUP BY event_type`,
       [petId],
     );
-    const r = rows[0];
+    const countOf = (matches: (type: string) => boolean): number =>
+      rows.reduce((sum, r) => (matches(r.event_type) ? sum + r.n : sum), 0);
     return {
-      total: r?.total ?? 0,
-      hasVomit: (r?.vomit ?? 0) > 0,
-      hasStool: (r?.stool ?? 0) > 0,
-      hasMeal: (r?.meal ?? 0) > 0,
-      hasWeight: (r?.weight ?? 0) > 0,
+      total: countOf((type) => !isLookRow({ event_type: type })),
+      hasVomit: countOf((type) => type === 'vomit') > 0,
+      hasStool: countOf((type) => type === 'diarrhea' || type === 'stool_normal') > 0,
+      hasMeal: countOf((type) => type === 'meal') > 0,
+      hasWeight: countOf((type) => type === 'weight_check') > 0,
     };
   } catch {
     // Local DB unreadable — no chips (the input still works; empty ≠ error).
