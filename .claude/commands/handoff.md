@@ -20,10 +20,12 @@ Emit **only** the Dev Handoff: the runtime command sequence + the Manual QA scri
 
 4. **Emit the Manual QA Script** in the required numbered format (CLAUDE.md / runbook): start from a known state, golden path first then 1–2 edge cases, tell the PM what to expect at each step, and tie each check back to the issue's acceptance criteria. If the change is backend-only, the QA script is the curl/SQL/dashboard steps instead.
 
+5. **Emit the One thing block** (the `learning` skill): one concept this push illustrated, at the PM's level, with one check question. Skip it if one was already taught this session. `/wrap` records it in the session record later; `/handoff` writes nothing to disk.
+
 ## Rules
 
 - Always `git checkout <the handoff branch>` **before** pulling — the one non-negotiable git rule (CLAUDE.md). If the PM hits a git snag, point them at `docs/git-first-aid.md`.
 - Emit only the one runtime that matches the session — do not dump both.
-- This command deliberately does **not** run the DoD, write the session record, reconcile Linear, or emit the Session Summary. That's `/wrap`'s job.
+- This command deliberately does **not** run the DoD, write a ledger line, write the session record, reconcile Linear, or emit the Session Summary. That's `/wrap`'s job.
 
 $ARGUMENTS

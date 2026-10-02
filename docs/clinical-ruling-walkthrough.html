@@ -1,0 +1,286 @@
+<title>Clinical Rulings Walkthrough</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,650&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one reading column. A step rail (checkable, in order), with the three real decisions as briefs inside step 1. Same palette as the ruling sheet page so the two read as one set. */
+:root {
+  --bg: #f6f7f5;
+  --surface: #ffffff;
+  --ink: #1d2422;
+  --muted: #5d6965;
+  --line: #dde3e0;
+  --accent: #1f6f66;
+  --accent-soft: #e2f0ed;
+  --loud: #9a3b1f;
+  --loud-soft: #f8e6de;
+  --quiet: #6a4fa0;
+  --quiet-soft: #ece6f6;
+  --neutral-soft: #eceeed;
+  --font-display: "Literata", Georgia, "Times New Roman", serif;
+  --font-body: "Public Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121615; --surface: #1a201e; --ink: #e5ebe8; --muted: #9aa7a2; --line: #2c3532;
+    --accent: #6cc3b6; --accent-soft: #1d3330; --loud: #f0a07f; --loud-soft: #3a2219;
+    --quiet: #b9a3e6; --quiet-soft: #2a2238; --neutral-soft: #242b29; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121615; --surface: #1a201e; --ink: #e5ebe8; --muted: #9aa7a2; --line: #2c3532;
+  --accent: #6cc3b6; --accent-soft: #1d3330; --loud: #f0a07f; --loud-soft: #3a2219;
+  --quiet: #b9a3e6; --quiet-soft: #2a2238; --neutral-soft: #242b29; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15.5px; line-height: 1.55; }
+.wrap { max-width: 44rem; margin: 0 auto; padding-inline: 16px; padding-block: 28px 64px; display: flex; flex-direction: column; gap: 32px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 650; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: 1.9rem; line-height: 1.15; }
+h2 { font-size: 1.3rem; }
+h3 { font-size: 1.05rem; font-weight: 500; line-height: 1.35; }
+p, ul, ol { margin: 0; }
+a { color: var(--accent); }
+code { font-family: var(--font-mono); font-size: 0.84em; }
+.eyebrow { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.lede { color: var(--muted); }
+header { display: flex; flex-direction: column; gap: 10px; }
+
+.glance { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: 8px; }
+.glance div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.glance b { font-family: var(--font-display); font-size: 1.5rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.glance span { font-size: 0.82rem; color: var(--muted); }
+
+.progress { font-size: 0.85rem; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+.bar { flex: 1; height: 6px; background: var(--neutral-soft); border-radius: 999px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+
+.steps { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.step.done { opacity: 0.62; }
+.step-head { display: flex; gap: 12px; align-items: flex-start; }
+.step-head input { width: 22px; height: 22px; margin: 2px 0 0; accent-color: var(--accent); flex: none; cursor: pointer; }
+.step-head label { display: flex; flex-direction: column; gap: 4px; cursor: pointer; min-width: 0; }
+.when { font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.when.now { color: var(--loud); }
+.body { display: flex; flex-direction: column; gap: 10px; padding-left: 34px; font-size: 0.95rem; }
+.body ul, .body ol { padding-left: 1.2rem; display: flex; flex-direction: column; gap: 4px; }
+
+.brief { border: 1px solid var(--line); border-left: 3px solid var(--quiet); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
+.brief.cut { border-left-color: var(--loud); }
+.brief-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rid { font-family: var(--font-mono); font-size: 0.82rem; color: var(--accent); }
+.pill { display: inline-flex; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.p-loud { background: var(--loud-soft); color: var(--loud); }
+.p-quiet { background: var(--quiet-soft); color: var(--quiet); }
+.p-neutral { background: var(--neutral-soft); color: var(--muted); }
+.kv { display: grid; grid-template-columns: 6.5rem 1fr; gap: 4px 10px; font-size: 0.9rem; }
+.kv dt { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; padding-top: 2px; }
+.kv dd { margin: 0; min-width: 0; }
+@media (max-width: 30rem) { .kv { grid-template-columns: 1fr; } .kv dd { margin-bottom: 6px; } .body { padding-left: 0; } }
+
+.batch { display: flex; flex-wrap: wrap; gap: 6px; }
+.batch a { font-family: var(--font-mono); font-size: 0.8rem; text-decoration: none; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); }
+.cta { display: inline-flex; align-self: flex-start; font-weight: 600; font-size: 0.92rem; text-decoration: none; padding: 9px 14px; border-radius: 8px; background: var(--accent); color: var(--surface); }
+.note { font-size: 0.86rem; color: var(--muted); }
+.copyrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.copyrow code { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; user-select: all; overflow-wrap: anywhere; }
+.copyrow button { font: inherit; font-size: 0.82rem; font-weight: 600; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+input:focus-visible, a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.foot { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">CUL-583 · what's on your plate</span>
+    <h1>Clinical rulings walkthrough</h1>
+    <p class="lede">Seven steps, in order. Most of Part 1 is a batch you can agree to in one pass. Three rows need real judgment, and they're written out below so you can decide from this page.</p>
+  </header>
+
+  <section class="glance" aria-label="At a glance">
+    <div><b>3</b><span>real decisions in Part 1</span></div>
+    <div><b>13</b><span>rows to agree in a batch</span></div>
+    <div><b>~30 min</b><span>to rule Part 1</span></div>
+    <div><b>3</b><span>rows to land before the 1.2.0 cut (R1, R2, R4)</span></div>
+  </section>
+
+  <div class="progress"><span id="prog-label">0 of 7 done</span><span class="bar"><i id="prog-bar"></i></span></div>
+
+  <ol class="steps" id="steps">
+
+    <li class="step" data-step="1">
+      <div class="step-head">
+        <input type="checkbox" id="s1" aria-describedby="s1-t">
+        <label for="s1"><span class="when now">Now · gates the 1.2.0 cut</span><h2 id="s1-t">Rule the three real decisions in Part 1</h2></label>
+      </div>
+      <div class="body">
+        <p>These are the rows where the team cannot simply adopt the recommendation under your E-6 rule: one changes how a warning reads, one removes prompts, and one makes the app count less.</p>
+
+        <div class="brief cut">
+          <div class="brief-head"><span class="rid">R2 · CUL-54(a)</span><span class="pill p-loud">Before the cut · must-have</span><span class="pill p-neutral">Your explicit agree</span></div>
+          <h3>May the trial card say "needs a call today" from refusals that are weeks old?</h3>
+          <dl class="kv">
+            <dt>Deciding</dt><dd>What the card says when the only refusals it can see are older than two weeks.</dd>
+            <dt>Recommend</dt><dd><b>A:</b> switch to a dated past tense only when nothing in the last 14 days was left unfinished. "On 2 days between 3 and 4 March, 3 of the 3 trial-diet feedings you rated were left unfinished… If Mochi still isn't eating it, a cat that isn't eating needs a call today." Any recent unfinished meal keeps today's wording.</dd>
+            <dt>Other</dt><dd>B: let the card disappear after 14 quiet days. C: leave it.</dd>
+            <dt>Weigh</dt><dd>A fires on exactly the same records as today. Only the tense softens, and only on stale evidence. B would silence a cat whose owner simply stopped rating.</dd>
+            <dt>Unblocks</dt><dd>The one fix the cut can't ship without.</dd>
+          </dl>
+          <a class="note" href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r2">Open the R2 card →</a>
+        </div>
+
+        <div class="brief">
+          <div class="brief-head"><span class="rid">R12 · CUL-367</span><span class="pill p-quiet">Fewer asks</span><span class="pill p-neutral">Your explicit agree</span></div>
+          <h3>Gut trials get five "This trial is done" prompts before twelve weeks. Change it?</h3>
+          <dl class="kv">
+            <dt>Deciding</dt><dd>What one tap on <i>Keep going</i> does on a gut trial.</dd>
+            <dt>Recommend</dt><dd><b>A:</b> one tap moves a gut trial to 84 days, or 14 days past today if that's later. Starting windows stay as they are.</dd>
+            <dt>Other</dt><dd>B: extend gut by 4 weeks, like skin. C: keep +2 weeks. D: separate "is it working" from "when may it stop" (a much larger build).</dd>
+            <dt>Weigh</dt><dd>It protects the trial; the card's own note already says gut diets run about three months. But it removes three check-in prompts, and E-6 counts a muted ask as quieter, so it needs your yes. A dog that isn't responding can still stop at any time.</dd>
+            <dt>Unblocks</dt><dd>The trial extension spec's PR 5. Cat gut's 42-day start goes to the real-vet list (no feline gut source exists).</dd>
+          </dl>
+          <a class="note" href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r12">Open the R12 card →</a>
+        </div>
+
+        <div class="brief">
+          <div class="brief-head"><span class="rid">R13a · CUL-758 / 757</span><span class="pill p-quiet">Quieter</span><span class="pill p-neutral">Needs your sign-off</span></div>
+          <h3>Should the trial's own prescribed diet count as an off-diet breach before the app recorded it as the diet?</h3>
+          <dl class="kv">
+            <dt>Deciding</dt><dd>Whether meals of the prescribed food, eaten before the app knew it was the trial food, count against the owner on the card, in Ask and on the vet report.</dd>
+            <dt>Recommend</dt><dd><b>A:</b> no, but only before that food's first trial-diet entry, never after one ends. Those meals leave the count and the chart, still block any "clean trial" claim, and show as a gap in the record.</dd>
+            <dt>Other</dt><dd>B: keep counting them, with a caption. C: exclude only when it's the trial's only diet.</dd>
+            <dt>Weigh</dt><dd>Today a dog that ate the prescribed diet at every meal shows "9 of 10 off-diet" on the vet report. But A makes the app count less, and no harness can test trial counts, so the proof is a property test the build session writes. The first draft of A was broken by review (it would have called a withdrawn diet "clean"); the version here closes that.</dd>
+            <dt>Unblocks</dt><dd>Two vet report bugs. Without your sign-off, today's count stays.</dd>
+          </dl>
+          <a class="note" href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r13a">Open the R13a card →</a>
+        </div>
+      </div>
+    </li>
+
+    <li class="step" data-step="2">
+      <div class="step-head">
+        <input type="checkbox" id="s2" aria-describedby="s2-t">
+        <label for="s2"><span class="when now">Now · same sitting</span><h2 id="s2-t">Agree to the rest of Part 1 in one pass</h2></label>
+      </div>
+      <div class="body">
+        <p>These thirteen rows either make the app speak up more (adopted on your agree under E-6), add a disclosure, or confirm what already ships. Skim the cards, change any you disagree with, then tap Agree.</p>
+        <div class="batch" aria-label="Rows to agree">
+          <a href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r1">R1 ★</a><a href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r3">R3</a><a href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r4">R4</a><a href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r5">R5</a><a href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r6">R6</a><a href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r7">R7</a><a href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r8">R8</a><a href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r9">R9</a><a href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r10">R10</a><a href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r11">R11</a><a href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r13b">R13b</a><a href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r14">R14</a><a href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh#r15">R15</a>
+        </div>
+        <ul>
+          <li><b>R1 ★ is the most dangerous item on the agenda:</b> a cat fed once a day, whose food the app can't recognise, refusing every bowl stays silent for nine days. A makes it speak on day 3. It should land before the cut.</li>
+          <li><b>R10</b> (chronicity 6 → 5) is louder but costs something: about 4% of healthy occasional vomiters would see the card, against about 1.4% today. Agree if you accept that trade.</li>
+        </ul>
+        <a class="cta" href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh">Open the ruling cards</a>
+      </div>
+    </li>
+
+    <li class="step" data-step="3">
+      <div class="step-head">
+        <input type="checkbox" id="s3" aria-describedby="s3-t">
+        <label for="s3"><span class="when now">Now · 1 minute</span><h2 id="s3-t">Post your rulings on CUL-583</h2></label>
+      </div>
+      <div class="body">
+        <p>The ruling cards page has a "Copy rulings" box at the bottom. Paste it as a comment on CUL-583. That comment is what the build sessions read as their spec.</p>
+        <a class="note" href="https://linear.app/projectnyx/issue/CUL-583">CUL-583 on Linear →</a>
+      </div>
+    </li>
+
+    <li class="step" data-step="4">
+      <div class="step-head">
+        <input type="checkbox" id="s4" aria-describedby="s4-t">
+        <label for="s4"><span class="when">Today · 2 minutes</span><h2 id="s4-t">Retitle, then merge PR #995</h2></label>
+      </div>
+      <div class="body">
+        <p>The PR only adds documents, and CI is green. Its title contains <code>CUL-583</code>, and merging a PR closes every issue its title names, so <b>retitle it first</b> or CUL-583 closes before Part 2 is ruled.</p>
+        <div class="copyrow"><span class="note">New title:</span><code id="newtitle">The clinical ruling sheet, parts 1 and 2</code><button type="button" data-copy="newtitle">Copy</button></div>
+        <p class="note">Then squash merge. If CUL-583 still flips to Done, set it back to In Progress.</p>
+        <a class="note" href="https://github.com/danieljmarkii/project-nyx/pull/995">PR #995 on GitHub →</a>
+      </div>
+    </li>
+
+    <li class="step" data-step="5">
+      <div class="step-head">
+        <input type="checkbox" id="s5" aria-describedby="s5-t">
+        <label for="s5"><span class="when">After you rule · start in parallel</span><h2 id="s5-t">Kick off the build sessions</h2></label>
+      </div>
+      <div class="body">
+        <p>Your Part 1 rulings unblock four sessions that touch different files. They can run at the same time; the only overlap to sequence is the card and report sessions if R13a's change lands in the shared trial file.</p>
+        <ol>
+          <li><b>Trial card</b>: R1, R2, R4, R5, R7, R8, R9. R1, R2 and R4 land before the cut.</li>
+          <li><b>Vet report</b>: R6, R13a's report half, R14.</li>
+          <li><b>Chronicity</b>: R10, with its two tests re-pinned openly.</li>
+          <li><b>Back-dated permitted extras</b>: R13b, its own PR because it changes how rows are written.</li>
+        </ol>
+        <div class="copyrow"><span class="note">First prompt:</span><code id="prompt1">Read CUL-583's newest comments for my Part 1 rulings, then docs/clinical-ruling-sheet-2026-10.md §1.1 and §1.2. Build the trial-card rows I ruled (R1, R2, R4, R5, R7, R8, R9) in lib/dietTrial.ts and lib/dietTrialCard.ts, on a new sub-issue under CUL-54. Plan first, mock R7 and R8 first, run adversarial-reviewer on the code. R1, R2 and R4 land before the CUL-559 cut.</code><button type="button" data-copy="prompt1">Copy</button></div>
+      </div>
+    </li>
+
+    <li class="step" data-step="6">
+      <div class="step-head">
+        <input type="checkbox" id="s6" aria-describedby="s6-t">
+        <label for="s6"><span class="when">Just in time · Engines v3</span><h2 id="s6-t">Rule Part 2, one group before each PR needs it</h2></label>
+      </div>
+      <div class="body">
+        <p>Part 2 is in the full sheet (§2), grouped by the PR each row gates. Most rows are agree. These are the ones that need you:</p>
+        <ul>
+          <li><b>Before PR-19 (the weight lane):</b> <span class="pill p-quiet">Sign-off</span> W1, confirm a weight before it can raise a card (cuts false cards on stable cats from 87% to 6%), which only works paired with W2. Also W5, juveniles with "no gain in four weeks" off, and W6, a planned-loss mode. All three are quieter than your D7 rule, so each needs your yes.</li>
+          <li><b>Before Wave 4 goes live:</b> <span class="pill p-quiet">Sign-off</span> T1, a normal stool after a vomit stops calling. T6, two logs ten minutes apart count as one vomit.</li>
+          <li><b>Before PR-23:</b> C1, concern words and co-sign sources. Nobody has proposed these yet, so there's nothing to rule (filed as CUL-1445).</li>
+          <li><b>Housekeeping, no decision:</b> CUL-1444 fixes a scorecard line that still reads your 28 September ruling as unruled.</li>
+        </ul>
+        <p class="note">Part 2 has not had its own adversarial review yet. Ask for one before ruling the sign-off rows.</p>
+      </div>
+    </li>
+
+    <li class="step" data-step="7">
+      <div class="step-head">
+        <input type="checkbox" id="s7" aria-describedby="s7-t">
+        <label for="s7"><span class="when">Before Wave 4 goes live</span><h2 id="s7-t">Book the real-vet review, then close CUL-583</h2></label>
+      </div>
+      <div class="body">
+        <p>CUL-1312 is your one paid review with a practising vet. It blocks nothing until Wave 4 goes live. The sheet's real-vet lists (§1.6 and §2.9) are the question sheet: 7 questions from Part 1 and 16 from Part 2, including the 5% and 10% weight lines, the critical drug list, and whether "about half" is the right line between Some and Most.</p>
+        <p>Close CUL-583 by hand once both parts are ruled. Nothing closes it automatically, by design.</p>
+        <a class="note" href="https://linear.app/projectnyx/issue/CUL-1312">CUL-1312 on Linear →</a>
+      </div>
+    </li>
+  </ol>
+
+  <p class="foot">The full sheet with every citation and counterexample: <code>docs/clinical-ruling-sheet-2026-10.md</code> on <a href="https://github.com/danieljmarkii/project-nyx/pull/995">PR #995</a>. Your ticks stay on this device.</p>
+</div>
+
+<script>
+const KEY = "ruling-walkthrough-steps";
+let state = {};
+try { state = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { state = {}; }
+const boxes = Array.from(document.querySelectorAll('.step input[type="checkbox"]'));
+function paint() {
+  let n = 0;
+  boxes.forEach((b) => {
+    b.checked = !!state[b.id];
+    b.closest(".step").classList.toggle("done", b.checked);
+    if (b.checked) n++;
+  });
+  document.getElementById("prog-label").textContent = n + " of " + boxes.length + " done";
+  document.getElementById("prog-bar").style.width = (100 * n / boxes.length) + "%";
+}
+boxes.forEach((b) => b.addEventListener("change", () => {
+  state[b.id] = b.checked;
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+  paint();
+}));
+paint();
+document.querySelectorAll("button[data-copy]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const el = document.getElementById(btn.dataset.copy);
+    const done = () => { btn.textContent = "Copied"; setTimeout(() => { btn.textContent = "Copy"; }, 1600); };
+    const fallback = () => {
+      const r = document.createRange(); r.selectNodeContents(el);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      btn.textContent = "Selected";
+    };
+    try { navigator.clipboard.writeText(el.textContent).then(done, fallback); } catch (e) { fallback(); }
+  });
+});
+</script>

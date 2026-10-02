@@ -52,10 +52,19 @@ export const ACTIVE_REGIMEN_FOR_DRUG_QUERY =
 // selecting `COALESCE(pd.dose_count,0) AS paired_dose_count, pd.rep_event_id AS
 // paired_dose_event_id, pdmi.generic_name AS paired_dose_drug_name`. Aliases pad/pade/
 // pdma/pdmi are distinct from the forward join's pe/pm/pf so they can't collide.
+//
+// CUL-382 — `unrated_count` is how many of those doses have no adherence answer yet. It
+// is half of the dose's in-doubt state; the other half is THIS meal's own intake, which
+// the caller already holds, so the vehicle screen can ask `isComboDoseInDoubt` without a
+// second read. An aggregate column, so it changes no row count for any reader.
+// With several paired doses the link's target is still the representative (MIN) dose,
+// which may be the one that WAS answered; the tag is the meal's any-dose state, so it
+// can only ever flag more, never reassure.
 export const PAIRED_DOSE_REVERSE_JOIN = `
      LEFT JOIN (
        SELECT pad.paired_event_id AS meal_id,
               COUNT(*) AS dose_count,
+              SUM(CASE WHEN pad.adherence IS NULL THEN 1 ELSE 0 END) AS unrated_count,
               MIN(pad.event_id) AS rep_event_id
        FROM medication_administrations pad
        JOIN events pade ON pade.id = pad.event_id AND pade.deleted_at IS NULL

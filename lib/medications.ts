@@ -673,6 +673,22 @@ export function isComboDoseInDoubt(params: {
   );
 }
 
+// CUL-382 — the same state read from the VEHICLE's side: is ANY dose given inside this
+// meal still in doubt? Routed through `isComboDoseInDoubt` rather than restating it (one
+// predicate, so the meal's tag and the dose's own note cannot disagree): a dose with no
+// adherence answer, inside a vehicle reported not finished, is in doubt. The count is the
+// paired doses with null adherence (`paired_dose_unrated_count`); the intake is the
+// meal's own, read live so changing it on the meal's screen moves the tag at once.
+export function isAnyPairedDoseInDoubt(params: {
+  vehicleIntake: string | null | undefined;
+  unratedDoseCount: number;
+}): boolean {
+  return (
+    params.unratedDoseCount > 0 &&
+    isComboDoseInDoubt({ isCombo: true, vehicleIntake: params.vehicleIntake, adherence: null })
+  );
+}
+
 // The adherence-row line on a dose completion card (and the retroactive confirm sheet).
 //
 // THE RULE (B-172): we ASSERT only what the owner asserted, and ASK whenever the record

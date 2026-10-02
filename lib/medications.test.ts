@@ -49,6 +49,7 @@ import {
   isVehicleNotFinished,
   initialComboDoseAdherence,
   isComboDoseInDoubt,
+  isAnyPairedDoseInDoubt,
   doseAdherencePrompt,
   drugDisplayName,
   isGivenAssumed,
@@ -2474,5 +2475,26 @@ describe('courseEndPromptLede (B-719) — the fact lede', () => {
     });
     expect(lede).not.toMatch(/dose/i);
     expect(lede).not.toMatch(/given|taken|missed/i);
+  });
+});
+
+// CUL-382 — the vehicle side of the same state, through the same predicate.
+describe('isAnyPairedDoseInDoubt — the meal-side "Unconfirmed" tag', () => {
+  it('is in doubt when an unanswered dose sits in a vehicle reported not finished', () => {
+    expect(isAnyPairedDoseInDoubt({ vehicleIntake: 'refused', unratedDoseCount: 1 })).toBe(true);
+    expect(isAnyPairedDoseInDoubt({ vehicleIntake: 'picked', unratedDoseCount: 2 })).toBe(true);
+  });
+
+  it('is not in doubt once every paired dose is answered', () => {
+    expect(isAnyPairedDoseInDoubt({ vehicleIntake: 'refused', unratedDoseCount: 0 })).toBe(false);
+  });
+
+  it('agrees with the dose-side predicate on every intake the meal can hold', () => {
+    // One predicate: the meal's tag shows exactly when the dose's own note would.
+    for (const intake of [null, undefined, 'refused', 'picked', 'some', 'most', 'all']) {
+      expect(isAnyPairedDoseInDoubt({ vehicleIntake: intake, unratedDoseCount: 1 })).toBe(
+        isComboDoseInDoubt({ isCombo: true, vehicleIntake: intake, adherence: null }),
+      );
+    }
   });
 });
