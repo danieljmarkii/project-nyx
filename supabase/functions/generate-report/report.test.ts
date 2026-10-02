@@ -4823,3 +4823,27 @@ Deno.test('a 1,000-event report builds formatters per zone, not per event', () =
   assert.ok(built < 100, `built ${built} formatters for ${events.length} events`)
 })
 
+// A trial stopped because the pet refused the food pointed the vet at appendix E for the
+// intake ratings even with no meals logged, when no appendix E is printed (release QA,
+// 2026-10-02: 64 of 2,000 fuzzed reports, every one this path). Every appendix a sentence
+// names must be one the document prints.
+Deno.test('a refusal-stopped trial with no meals logged names no appendix that is not printed', () => {
+  const trial = {
+    id: 't1', foodItemId: null, startedAt: '2026-06-10', targetDurationDays: 56, status: 'abandoned',
+    completedAt: null, endedAt: '2026-06-18', indication: 'gi', outcome: null, outcomeNotes: null,
+    stoppedReason: 'refused', vetName: null, foodLabel: 'RC Hydrolyzed', primaryProtein: null, allowedFoods: [],
+  } as unknown as ReportInput['dietTrials'][number]
+  const snap = assembleReport(baseInput({
+    events: [makeEvent({ type: 'vomit', occurredAt: '2026-06-20T14:00:00Z' })],
+    dietTrials: [trial],
+  }))
+  const html = renderReport(snap)
+  const text = plainText(html)
+  const printed = new Set([...html.matchAll(/Appendix ([A-Z]) (?:&mdash;|—)/g)].map((m) => m[1]))
+  // Non-vacuity: the refusal is on the page, and the fixture has no appendix E to point at.
+  assert.ok(text.includes('clinical finding in its own right'), 'the refusal reads')
+  assert.ok(!printed.has('E'), 'no meals logged, so no appendix E')
+  for (const m of text.matchAll(/appendi(?:x|ces) ([A-Z])\b/gi)) {
+    assert.ok(printed.has(m[1]), `a sentence names appendix ${m[1]}, which is not printed`)
+  }
+})
