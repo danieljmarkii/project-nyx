@@ -2898,6 +2898,19 @@ async function hydrateMedications(db: Db, stale: () => boolean): Promise<void> {
       ],
     );
   }
+  // CUL-1459 — fill a local NULL visit link from the server, for every row fetched (the
+  // hydrateDietTrials step, for the same reason: an upgraded phone kept NULL where the server
+  // holds the link, and the next edit to the course pushed it over the server's). Only a
+  // NULL, only on a synced row, no updated_at: it queues nothing.
+  if (stale()) return;
+  for (const m of rows) {
+    if (!m.vet_visit_id) continue;
+    await db.runAsync(
+      `UPDATE medications SET vet_visit_id = ?
+       WHERE id = ? AND vet_visit_id IS NULL AND synced = 1`,
+      [m.vet_visit_id, m.id],
+    );
+  }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
   if (stale()) return;
   if (wm) await setWatermark('medications', wm);
@@ -3026,6 +3039,30 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
         t.vet_visit_id ?? null,
         t.created_at, t.updated_at,
       ],
+    );
+  }
+  // CUL-1459 — fill a local NULL from the server for every row fetched, whether or not LWW
+  // rewrote it: the window's provenance and the visit link. The re-pull after the column
+  // upgrade (COLUMN_UPGRADES `rehydrate`) returns rows whose updated_at equals the local copy,
+  // which reconcileBatch rightly leaves alone, so without this an upgraded phone kept NULL
+  // where the server holds a value, and its next edit to the trial pushed that NULL over it.
+  // Fills only a NULL (COALESCE), only on a synced row, and touches no other column and no
+  // updated_at: it records values the server already has, and queues nothing. The CUL-1396
+  // shape.
+  if (stale()) return;
+  for (const t of rows) {
+    const vetDirected = t.target_duration_vet_directed == null ? null : t.target_duration_vet_directed ? 1 : 0;
+    if (t.target_duration_days_initial == null && t.target_duration_set_at == null
+      && vetDirected == null && t.vet_visit_id == null) continue;
+    await db.runAsync(
+      `UPDATE diet_trials SET
+         target_duration_days_initial = COALESCE(target_duration_days_initial, ?),
+         target_duration_set_at = COALESCE(target_duration_set_at, ?),
+         target_duration_vet_directed = COALESCE(target_duration_vet_directed, ?),
+         vet_visit_id = COALESCE(vet_visit_id, ?)
+       WHERE id = ? AND synced = 1`,
+      [t.target_duration_days_initial ?? null, t.target_duration_set_at ?? null, vetDirected,
+       t.vet_visit_id ?? null, t.id],
     );
   }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
