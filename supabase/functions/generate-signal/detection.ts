@@ -2158,9 +2158,11 @@ export interface DetectionConfig {
    *      can be withheld. It can only withhold.
    *   4. ①'s control windows may not sit in the `postEpisodeControlExclusionHours` after a GI
    *      episode, where the owner's response to the episode (a bland meal, a skipped staple) is
-   *      the exposure, not the pet's ordinary diet; and each control day serves one case at most,
+   *      the exposure, not the pet's ordinary diet; each control day serves one case at most,
    *      because the exclusion can leave only a few, and a day reused for every case made a staple
-   *      skipped that day read Established (adversarial pass, D2).
+   *      skipped that day read Established (adversarial pass, D2); and no control sits more than
+   *      `maxControlDistanceDays` from its case, because without replacement the matcher otherwise
+   *      walked back past a diet change (second pass, D2).
    *
    * Every change only REMOVES an insight card or raises a safety card's floor; none adds a
    * finding. The safety floor is the one that can delay an ask, which is why EN-11 goes live
@@ -2179,6 +2181,8 @@ export interface DetectionConfig {
     worseningCardMinEpisodes: number
     /** ①'s control-window exclusion after a GI episode, in hours. PROVISIONAL (CUL-583). */
     postEpisodeControlExclusionHours: number
+    /** ①'s furthest control day from its case, in days. PROVISIONAL (CUL-583). */
+    maxControlDistanceDays: number
   }
   chronicity: {
     /**
@@ -2941,6 +2945,10 @@ export const EN11_CONFIG: DetectionConfig = {
     // 24 h was the first draft and failed this PR's own reverse-causation fixture: a two-day bland
     // diet left the next control window inside it, and the staple read guilty (detection.en11.test).
     postEpisodeControlExclusionHours: 48,
+    // 7 days: a referent the same week as its case, so a diet that changed between them cannot
+    // make a pair (the time-stratified case-crossover's short referent window). 14 still let a
+    // staple begun two days before the vomiting reach three discordant pairs.
+    maxControlDistanceDays: 7,
   },
 }
 
@@ -3626,6 +3634,11 @@ export function detectCorrelations(
         if (dist * MS_PER_DAY <= windowMs) continue
         if (dist >= bestDist) continue // never skips a strictly-closer day; ties → earliest
         if (en11 && usedControlDays.has(d)) continue // EN-11: without replacement
+        // EN-11: and never further than `maxControlDistanceDays` from the case. Without a cap the
+        // matcher walked past the used days to the weeks before a diet change, so a staple begun
+        // ten days before the vomiting read Established (second adversarial pass, D2). A case
+        // with no control inside the cap stays unmatched, which only ever quietens.
+        if (en11 && dist > en11.maxControlDistanceDays) continue
         const ctrlAnchorMs = d * MS_PER_DAY + timeOfDay
         if (en11 && inPostEpisodeHours(ctrlAnchorMs)) continue // EN-11 rule 4
         const ctrlWin = windowExposures(ctrlAnchorMs, windowMs)

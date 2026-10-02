@@ -212,6 +212,24 @@ Deno.test('① — rule 4 never reuses one control day for every case (adversari
   assert.deepEqual(detectCorrelations(i, EN11_CONFIG), [])
 })
 
+Deno.test('① — no control reaches back past a diet change (second adversarial pass D2)', () => {
+  // Chicken twice daily; salmon at noon daily from day 20 (no gaps); a vomit at 20:00 every second
+  // day from day 30, through day 58 (now = day 60, so the record runs into June). Without a cap,
+  // matching without replacement used days 29..20, then walked back to the pre-salmon days and
+  // named salmon Established (16 pairs, b = 6). Flag off washes it out.
+  const days = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, k) => from + k)
+  const iso = (n: number, hour: number) => new Date(Date.UTC(2026, 4, 1 + n, hour)).toISOString()
+  const at0 = (n: number, hour: number, protein: string): MealEvent => ({ ...meal(1, hour, protein), occurredAt: iso(n, hour) })
+  for (const [salmonFrom, every] of [[20, 2], [25, 2], [28, 2], [30, 3], [25, 3]] as const) {
+    const meals = [...days(0, 60).flatMap((n) => [at0(n, 8, 'chicken'), at0(n, 18, 'chicken')]), ...days(salmonFrom, 60).map((n) => at0(n, 12, 'salmon'))]
+    const vomits = days(30, 59).filter((n) => (n - 30) % every === 0).map((n) => ({ ...sign('vomit', 1, 20), occurredAt: iso(n, 20) }))
+    const i = { ...input(vomits, meals), now: iso(60, 21) }
+    const label = `salmon from day ${salmonFrom}, vomits every ${every} days`
+    assert.equal(detectCorrelations(i, DEFAULT_CONFIG).some((f) => f.proteins.includes('salmon')), false, `premise, ${label}`)
+    assert.equal(detectCorrelations(i, EN11_CONFIG).some((f) => f.proteins.includes('salmon')), false, label)
+  }
+})
+
 // ── ①: the reversed-in-time control ────────────────────────────────────────────────────
 //
 // A food the owner reaches for BECAUSE of the vomiting: rice at noon on each vomit day, and a late
@@ -242,13 +260,18 @@ Deno.test('① — a food fed after each episode: Established today, withheld un
 })
 
 Deno.test('① — a day-level culprit (fed at both meals of the days it is fed) is NOT withheld: a tie keeps the card', () => {
-  // Beef at breakfast and dinner on six beef days, a vomit mid-morning on each: beef is in both
-  // windows of every episode. That is a real culprit's day-level exposure, so the reversed
-  // control must not take it (strictly stronger backwards, never a tie).
-  const beefDays = [2, 5, 8, 11, 14, 17]
-  const meals = daily(0, 26, 'chicken', [8, 20]).filter((m) => !beefDays.includes(new Date(m.occurredAt).getUTCDate()))
-  for (const d of beefDays) meals.push(meal(d, 8, 'beef'), meal(d, 20, 'beef'))
-  const i = input(beefDays.map((d) => sign('vomit', d, 11)), meals)
+  // Beef at breakfast and dinner one day a week, a vomit mid-morning on each beef day: beef is in
+  // both windows of every episode. That is a real culprit's day-level exposure, so the reversed
+  // control must not take it (strictly stronger backwards, never a tie). Weekly, so the 48 h
+  // exclusion and the 7-day cap leave each case its own control in the same week.
+  const days = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, k) => from + k)
+  const iso = (n: number, hour: number) => new Date(Date.UTC(2026, 4, 1 + n, hour)).toISOString()
+  const beefDays = [3, 10, 17, 24, 31, 38, 45]
+  const meals: MealEvent[] = days(0, 50).flatMap((n) =>
+    [8, 20].map((h) => ({ ...meal(1, h, beefDays.includes(n) ? 'beef' : 'chicken'), occurredAt: iso(n, h) }))
+  )
+  const vomits = beefDays.map((n) => ({ ...sign('vomit', 1, 11), occurredAt: iso(n, 11) }))
+  const i = { ...input(vomits, meals), now: iso(50, 12) }
   const off = detectCorrelations(i, DEFAULT_CONFIG).filter((f) => f.protein === 'beef')
   assert.equal(off.length, 1)
   assert.equal(off[0].tier, 'established', JSON.stringify(off))
