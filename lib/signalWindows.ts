@@ -50,7 +50,7 @@ import {
 } from './chartModels';
 import type { SignalFinding, SignalSymptomType } from './signal';
 import { MIN_INTERPRETABLE_DAYS } from './dietTrial';
-import { dayKeyFromIndex, localDayIndexOf } from './utils';
+import { dayKeyFromIndex, formatCalendarDate, localDayIndexOf } from './utils';
 
 /** The chart's default lookback, for a finding type whose payload carries none. It is the
  *  chart's choice, NOT a window any such finding counted: a correlation reads the engine's
@@ -334,14 +334,30 @@ export function signalLaneSpec(
   trial: SignalTrialWindow | null,
   /** One lane over the lookback even on a trial (CUL-1216: the caller withholds the split). */
   undivided: boolean = false,
+  /**
+   * A masking course that started INSIDE the trial's lane (CUL-1440, D4): the trial's lane splits
+   * at its start, "In the trial, Aug 29 to Sep 20 · In the trial, on Prednisone from Sep 21", so
+   * the drug is in the picture before the diet takes the credit. Ignored outside the trial's lane.
+   */
+  split: { day: string; drug: string } | null = null,
 ): SignalLaneSpec[] {
   const [before, during] = signalCompareSpec(finding, today, trial);
   const endOf = (w: SignalWindowSpec) => dayKeyFromIndex(indexOf(w.startDay, 'startDay') + w.days - 1);
   if (trial && !trialTooYoungToCompare(trial) && !undivided) {
-    return [
-      { label: 'Before the trial', startDay: before.startDay, endDay: endOf(before) },
-      { label: 'In the trial', startDay: during.startDay, endDay: endOf(during) },
-    ];
+    const lanes: SignalLaneSpec[] = [{ label: 'Before the trial', startDay: before.startDay, endDay: endOf(before) }];
+    const from = indexOf(during.startDay, 'startDay');
+    const to = indexOf(endOf(during), 'endDay');
+    const at = split ? indexOf(split.day, 'split.day') : null;
+    if (split && at !== null && at > from && at <= to) {
+      const word = (k: string) => formatCalendarDate(k) ?? k;
+      lanes.push(
+        { label: `In the trial, ${word(during.startDay)} to ${word(dayKeyFromIndex(at - 1))}`, startDay: during.startDay, endDay: dayKeyFromIndex(at - 1) },
+        { label: `In the trial, on ${split.drug} from ${word(split.day)}`, startDay: split.day, endDay: endOf(during) },
+      );
+    } else {
+      lanes.push({ label: 'In the trial', startDay: during.startDay, endDay: endOf(during) });
+    }
+    return lanes;
   }
   const days = signalWindowDays(finding);
   const todayIdx = indexOf(today, 'today');
@@ -356,6 +372,10 @@ export interface SignalLanesInput {
   episodes: readonly SignalEpisodeDay[];
   /** One lane even on a trial — the caller withholds the before/in-trial split. */
   undivided?: boolean;
+  /** Where the trial's lane splits at a masking course's start (CUL-1440, D4). */
+  split?: { day: string; drug: string } | null;
+  /** Whether a lane's dates touch a masking span (CUL-1440): it is drawn hatched. */
+  laneMasked?: (startDay: string, endDay: string) => boolean;
 }
 
 export interface SignalLanesModel {
@@ -365,7 +385,7 @@ export interface SignalLanesModel {
 
 /** The timing lanes, laid with the shipped panel's own geometry (`laneDots`). */
 export function signalLanes(input: SignalLanesInput): SignalLanesModel {
-  const specs = signalLaneSpec(input.finding, input.today, input.trial, input.undivided ?? false);
+  const specs = signalLaneSpec(input.finding, input.today, input.trial, input.undivided ?? false, input.split ?? null);
   const lanes = specs.map((spec) => {
     const start = indexOf(spec.startDay, 'lane.startDay');
     const end = indexOf(spec.endDay, 'lane.endDay');
@@ -378,7 +398,10 @@ export function signalLanes(input: SignalLanesInput): SignalLanesModel {
         })
         .map((e) => e.minutesSinceMeal),
     };
-    return laneDots(laneInput);
+    const lane = laneDots(laneInput);
+    return input.laneMasked?.(spec.startDay, spec.endDay)
+      ? { ...lane, masked: true, window: { startDay: spec.startDay, endDay: spec.endDay } }
+      : lane;
   });
   return { lanes, axis: timingLanesAxis() };
 }

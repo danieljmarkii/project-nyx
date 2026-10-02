@@ -688,6 +688,11 @@ export interface SignalCacheRow {
    *  was selected here (never in practice: the column has always had a default). */
   generatedAt: string | null;
   expiresAt: string;
+  /** The row's `engine_flags` stamp (migration 075): the engine keys on when it was written.
+   *  Read for one decision only, whether EN-10's no-zero rule governs the screens around its
+   *  lines (`lib/screenMasking.ts`, CUL-1440). Absent on a row built without it, which reads as
+   *  "not written under EN-10", the flag-off screen. */
+  engineFlags?: unknown;
 }
 
 // ── Cache read (RLS-scoped to the owner via the caller's session) ─────────────
@@ -696,7 +701,7 @@ export interface SignalCacheRow {
 export async function readSignalCache(petId: string): Promise<SignalCacheRow | null> {
   const { data, error } = await supabase
     .from('ai_signals')
-    .select('signal_text, is_building, findings, coverage, generated_at, expires_at')
+    .select('signal_text, is_building, findings, coverage, generated_at, expires_at, engine_flags')
     .eq('pet_id', petId)
     .order('expires_at', { ascending: false })
     .limit(1)
@@ -710,6 +715,7 @@ export async function readSignalCache(petId: string): Promise<SignalCacheRow | n
     coverage: Array.isArray(data.coverage) ? (data.coverage as CoverageDiagnostic[]) : [],
     generatedAt: (data.generated_at as string | null) ?? null,
     expiresAt: data.expires_at as string,
+    engineFlags: (data as { engine_flags?: unknown }).engine_flags ?? null,
   };
 }
 

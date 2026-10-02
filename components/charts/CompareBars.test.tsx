@@ -98,3 +98,34 @@ describe('CompareBars — the §05 row', () => {
     spy.mockRestore();
   });
 });
+
+// CUL-1440 (counterexample 2, D1): a window a masking span touches is hatched and a zero there
+// loses its numeral; its strip and its coverage line stay, so the gap is never read as no data.
+describe('CompareBars — a masking span (CUL-1440)', () => {
+  const zero = compareWindows(
+    { label: 'Earlier 10 days', startDay: '2026-07-01', days: 10, episodeDays: ['2026-07-02', '2026-07-05'], loggedDays: days('0', 10) },
+    { label: 'Recent 10 days', startDay: '2026-07-11', days: 10, episodeDays: [], loggedDays: days('10', 10) },
+  );
+  const caption = 'Maropitant from Jul 11 can hide vomiting.';
+
+  it('the masked zero loses its numeral and gains the hatch; the strip and the caption stay', () => {
+    const { getByTestId, getAllByTestId, queryByTestId } = render(
+      <CompareBars model={zero} noun="vomiting" masked={[false, true]} maskCaption={caption} />,
+    );
+    expect(String(getByTestId('compare-count-1').props.children).trim()).toBe('');
+    expect(getByTestId('compare-count-0').props.children).toBe(2);
+    expect(getByTestId('compare-hatch-1')).toBeTruthy();
+    expect(queryByTestId('compare-hatch-0')).toBeNull();
+    expect(getAllByTestId(/^compare-tick-1-\d+-logged$/)).toHaveLength(10);
+    expect(getByTestId('compare-mask-caption').props.children).toBe(caption);
+    const label: string = getByTestId('compare-bars').props.accessibilityLabel;
+    expect(label).toContain('recent 10 days, shaded');
+    expect(label).not.toMatch(/\b0 in recent/);
+  });
+
+  it('without `masked` the zero prints, as today', () => {
+    const { getByTestId, queryByTestId } = render(<CompareBars model={zero} noun="vomiting" />);
+    expect(getByTestId('compare-count-1').props.children).toBe(0);
+    expect(queryByTestId(/^compare-hatch-/)).toBeNull();
+  });
+});

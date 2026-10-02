@@ -296,7 +296,14 @@ function Hero({
   if (!FLIGHT_ENABLED) {
     return (
       <View style={styles.section} testID="signal-section-weekly">
-        <WeeklyBars model={model.weekly} noun={model.noun} drawIn={drawIn} identity={model.identity} />
+        <WeeklyBars
+          model={model.weekly}
+          noun={model.noun}
+          drawIn={drawIn}
+          identity={model.identity}
+          masked={model.weeklyMask?.masked}
+          maskCaption={model.weeklyMask?.caption ?? null}
+        />
       </View>
     );
   }
@@ -308,7 +315,14 @@ function Hero({
       testID="signal-section-weekly"
     >
       <View onLayout={onInnerLayout} style={{ width: inner, transform: [{ scale }], transformOrigin: 'top left' }} testID="signal-hero">
-        <WeeklyBars model={model.weekly} noun={model.noun} drawIn={drawIn} identity={model.identity} />
+        <WeeklyBars
+          model={model.weekly}
+          noun={model.noun}
+          drawIn={drawIn}
+          identity={model.identity}
+          masked={model.weeklyMask?.masked}
+          maskCaption={model.weeklyMask?.caption ?? null}
+        />
       </View>
     </View>
   );
@@ -348,7 +362,13 @@ function Body({
       <ThemedText style={styles.sectionTitle} accessibilityRole="header">
         Timed from meals
       </ThemedText>
-      <TimingLanes lanes={model.lanes.lanes} axis={model.lanes.axis} drawIn={drawIn} identity={model.identity} />
+      <TimingLanes
+        lanes={model.lanes.lanes}
+        axis={model.lanes.axis}
+        drawIn={drawIn}
+        identity={model.identity}
+        maskCaption={model.lanesMaskCaption}
+      />
     </View>
   ) : null;
   const aroundThis =
@@ -391,6 +411,8 @@ function Body({
               drawIn={drawIn}
               identity={model.identity}
               drawDelayMs={SIGNAL_OPEN_MOTION.landDelayMs}
+              masked={model.compareMask?.masked}
+              maskCaption={model.compareMask?.caption ?? null}
             />
           </View>
         ) : null}
@@ -411,6 +433,7 @@ function Body({
             petName={petName}
             trialRunning={false}
             withholdFallingVomit={model.withholdFallingVomit}
+            masking={model.scriptMasking}
           />
         </View>
       ) : null}

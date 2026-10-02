@@ -57,13 +57,23 @@ export function weeklyOutsideLine(model: WeeklyBucketsModel): string | null {
  * total, CUL-223), the logged days per week, the partial week's days so far, the mark,
  * and anything the window left out.
  */
-export function weeklyBarsA11yLabel(model: WeeklyBucketsModel, noun: string): string {
+export function weeklyBarsA11yLabel(
+  model: WeeklyBucketsModel,
+  noun: string,
+  /** The weeks a masking span touches (CUL-1440): a zero there is said as "shaded", never "0". */
+  masked?: readonly boolean[],
+  /** What the shading stands for, said after the counts. */
+  maskCaption?: string | null,
+): string {
   const n = model.weeks.length;
   const parts: string[] = [];
   parts.push(
     `${capitalize(noun)} by week, ${n} ${pluralize(n, 'week')} from ${dateWord(model.firstKey)} to ${dateWord(model.lastKey)}, weeks starting Sunday.`,
   );
-  parts.push(`Counts by week: ${model.weeks.map((w) => w.count).join(', ')}. ${model.total} in these ${n} ${pluralize(n, 'week')}.`);
+  parts.push(
+    `Counts by week: ${model.weeks.map((w, i) => (masked?.[i] === true && w.count === 0 ? 'shaded' : String(w.count))).join(', ')}. ${model.total} in these ${n} ${pluralize(n, 'week')}.`,
+  );
+  if (masked != null && masked.some(Boolean) && maskCaption) parts.push(`Shaded weeks: ${maskCaption}`);
   parts.push(
     `Days logged per week: ${model.weeks
       .map((w) => (w.days.every((d) => d === 'ahead') ? 'not yet' : `${w.loggedCount} of ${w.daysSoFar}`))
@@ -81,10 +91,18 @@ export function weeklyBarsA11yLabel(model: WeeklyBucketsModel, noun: string): st
 
 /** "Vomiting: 19 in the 55 days before, logged 44 of 55 days; 21 in the trial's 55 days,
  *  logged 51 of 55 days." The noun is the same lower-case word every chart takes. */
-export function compareBarsA11yLabel(model: CompareWindowsModel, noun: string): string {
+export function compareBarsA11yLabel(
+  model: CompareWindowsModel,
+  noun: string,
+  /** Which window a masking span touches (CUL-1440): a zero there is said as "shaded". */
+  masked?: readonly [boolean, boolean],
+  maskCaption?: string | null,
+): string {
   const [a, b] = model.windows;
   const lower = (s: string) => (s.length === 0 ? s : s[0].toLowerCase() + s.slice(1));
-  return `${capitalize(noun)}: ${a.count} in ${lower(a.label)}, ${a.coverageLine}; ${b.count} in ${lower(b.label)}, ${b.coverageLine}.`;
+  const said = (w: typeof a, i: number) => (masked?.[i] === true && w.count === 0 ? `${lower(w.label)}, shaded` : `${w.count} in ${lower(w.label)}`);
+  const base = `${capitalize(noun)}: ${said(a, 0)}, ${a.coverageLine}; ${said(b, 1)}, ${b.coverageLine}.`;
+  return masked != null && masked.some(Boolean) && maskCaption ? `${base} Shaded: ${maskCaption}` : base;
 }
 
 /** The lanes' caption under the counts — what the three numbers under each lane are. */
@@ -93,12 +111,29 @@ export function lanesBucketCaption(rapidWindowMinutes: number, longGapHours: num
 }
 
 /** Every lane in one sentence, then the untimed disclosure — the shipped panel's bar. */
-export function timingLanesA11yLabel(lanes: readonly LaneModel[], rapidWindowMinutes: number, longGapHours: number): string {
+export function timingLanesA11yLabel(
+  lanes: readonly LaneModel[],
+  rapidWindowMinutes: number,
+  longGapHours: number,
+  /** What a masked lane's shading stands for (CUL-1440). */
+  maskCaption?: string | null,
+): string {
   const per = lanes.map((l) => {
+    // A masked lane says it is shaded, and never speaks a zero (D1).
+    if (l.masked === true && l.total === 0) return `${l.label}: shaded.`;
     const [r, m, g] = l.bucketCounts;
-    return `${l.label}: ${l.timedLine}. ${r} under ${rapidWindowMinutes} minutes, ${m} between ${rapidWindowMinutes} minutes and ${longGapHours} hours, ${g} after ${longGapHours} hours.`;
+    const buckets: [number, string][] = [
+      [r, `under ${rapidWindowMinutes} minutes`],
+      [m, `between ${rapidWindowMinutes} minutes and ${longGapHours} hours`],
+      [g, `after ${longGapHours} hours`],
+    ];
+    // In a masked lane a zero bucket is not said at all; the others keep their counts.
+    const said = buckets.filter(([n]) => l.masked !== true || n > 0).map(([n, where]) => `${n} ${where}`);
+    const shaded = l.masked === true ? ', shaded' : '';
+    return `${l.label}${shaded}: ${l.timedLine}.${said.length > 0 ? ` ${said.join(', ')}.` : ''}`;
   });
-  return `Timed from meals. ${per.join(' ')} ${lanesUntimedLine(lanes)}`;
+  const masked = lanes.some((l) => l.masked === true) && maskCaption ? ` Shaded: ${maskCaption}` : '';
+  return `Timed from meals. ${per.join(' ')} ${lanesUntimedLine(lanes)}${masked}`;
 }
 
 export type DayMarkCoverage = 'logged' | 'left_some' | 'unlogged' | 'ahead';

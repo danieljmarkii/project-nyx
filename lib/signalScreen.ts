@@ -50,6 +50,18 @@ import { drugDisplayName } from './medications';
 import { CORRELATION_SYMPTOM_TYPES, readFeedingRows, readFreeFedSpans, TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import { readSignalCache, type CachedFinding, type SignalFinding } from './signal';
 import { careContextLinesOf } from './careContext';
+import {
+  engineCompareWithheld,
+  keyMinus,
+  loadScreenMasking,
+  maskCaption,
+  maskScriptRows,
+  maskedTrialSentence,
+  courseLabel,
+  touches,
+  type PhoneScriptMasking,
+  type ScreenMasking,
+} from './screenMasking';
 import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, reflectionExpandedExtras, symptomWord } from './signalCopy';
 import { isFallingVomitPair, signalSaysNotEating, visibleFindings } from './signalVisible';
 import {
@@ -158,6 +170,16 @@ export interface SignalScreenInput {
   /** The trial read failed, so `trial` is null by ignorance, not by fact (C-12): a falling
    *  week line then withholds (CUL-1216 re-review, N1). */
   trialUnanswered: boolean;
+  /**
+   * Where a zero of this finding's sign may not appear (CUL-1440): a masking drug on board or in
+   * its tail, or a recent visit (`lib/screenMasking.ts`). Null when the Signal row was not
+   * written with EN-10 on, which is the screen exactly as it was. Required — a default here would
+   * be the decision (C-37).
+   */
+  masking: ScreenMasking | null;
+  /** The day the engine counted (the cache row's `generated_at`, local), the end of the windows
+   *  a safety script's compare row states. Null: today stands in, widened by a day. */
+  generatedOn: string | null;
 }
 
 export interface GalleryTile {
@@ -208,6 +230,14 @@ export interface SignalScreenModel {
   /** The not-eating register as the phone script needs it: withhold a falling vomit
    *  chronicity compare unless the facts answered "eating" (CUL-1216, fail closed). */
   withholdFallingVomit: boolean;
+  /** The weekly bars' masked weeks and their caption (CUL-1440, D1); null when none is masked. */
+  weeklyMask: { masked: boolean[]; caption: string | null } | null;
+  /** The compare's masked windows and their caption (D1); null when neither is masked. */
+  compareMask: { masked: [boolean, boolean]; caption: string | null } | null;
+  /** The lanes' caption when a lane is masked (the lanes carry `masked` themselves). */
+  lanesMaskCaption: string | null;
+  /** The safety phone script's masking rows and compare gate (D3); null off EN-10's rule. */
+  scriptMasking: PhoneScriptMasking | null;
 }
 
 function plural(n: number, one: string, many = `${one}s`): string {
@@ -433,6 +463,9 @@ export function whyLines(
   input: SignalScreenInput,
   compare: CompareWindowsModel | null,
   withheld: { reason: FallingPairWithheld; compare: CompareWindowsModel; gateLogged: readonly [number, number] } | null = null,
+  /** The drawn compare's masking (CUL-1440): its caption replaces "Compared as counts", because
+   *  two windows beside a drug that can hide the sign are not a before and after (D2). */
+  compareMask: { masked: [boolean, boolean]; caption: string | null } | null = null,
 ): string[] {
   const { finding } = input.cached;
   const lines: string[] = [evidenceText(finding, input.petName)];
@@ -461,8 +494,11 @@ export function whyLines(
     // drifting trial — 19 over 55 logged days vs 5 over 16, one rate — reads as a 4×
     // improvement from the bars alone; the sentence is where the reader learns why not
     // (adversarial pass, B3). Naming the asymmetry is not the word "fairly".
+    const logged = `Two windows of ${n} ${plural(n, 'day')}, with symptoms or meals logged on ${a.loggedCount} and ${b.loggedCount} of them.`;
     lines.push(
-      `Two windows of ${n} ${plural(n, 'day')}, with symptoms or meals logged on ${a.loggedCount} and ${b.loggedCount} of them. Compared as counts, not a verdict on how ${input.petName} is doing.`,
+      compareMask?.caption
+        ? `${logged} ${compareMask.caption} So they aren't a before and after.`
+        : `${logged} Compared as counts, not a verdict on how ${input.petName} is doing.`,
     );
   } else if (trialTooYoungToCompare(input.trial)) {
     // The floor, said (B1): no compare below `MIN_COMPARE_DAYS` days on the diet.
@@ -540,6 +576,10 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
       context: careContextLinesOf(finding),
       safety,
       withholdFallingVomit: input.notEating !== false,
+      weeklyMask: null,
+      compareMask: null,
+      lanesMaskCaption: null,
+      scriptMasking: scriptMaskingOf(input),
     };
   }
 
@@ -581,17 +621,29 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
   // The lanes time against meals, which the engine does for vomiting only (the shipped
   // panel's symptom); a cough has no "minutes after eating".
   const laneEpisodes = input.episodes.map((e) => ({ dayKey: e.dayKey, minutesSinceMeal: e.minutesSinceMeal }));
+  // CUL-1440 (D4): a masking course that started inside the trial's lane splits it, and every
+  // lane whose dates a span touches is hatched. Null masking: exactly the lanes as before.
+  const laneMasking = input.masking
+    ? {
+        split: laneSplitOf(input.masking, finding, input.today, input.trial),
+        laneMasked: (from: string, to: string) => touches(input.masking, from, to),
+      }
+    : {};
   const split =
-    symptom === TIMING_SYMPTOM_TYPE ? signalLanes({ finding, today: input.today, trial: input.trial, episodes: laneEpisodes }) : null;
+    symptom === TIMING_SYMPTOM_TYPE
+      ? signalLanes({ finding, today: input.today, trial: input.trial, episodes: laneEpisodes, ...laneMasking })
+      : null;
   // The two trial lanes ("Before the trial · In the trial") are a before/during pair too,
   // over the screen's own windows (adversarial pass, F2). They stay split where they show
   // the timing shape on a flat or rising count; on a safety screen (one compare, the
   // engine's — BRK-39) and wherever the in-trial lane holds FEWER episodes (the pair ruling
   // (a) and the not-eating gate withhold), they are one undivided lane over the lookback.
-  const undivide =
-    split != null && split.lanes.length === 2 && (safety || split.lanes[1].total < split.lanes[0].total);
+  // With a masking course splitting the trial's lane there are three lanes; "the in-trial
+  // lane" is then every lane after the first, summed, so the ruling reads the same question.
+  const inTrialTotal = split ? split.lanes.slice(1).reduce((a, l) => a + l.total, 0) : 0;
+  const undivide = split != null && split.lanes.length >= 2 && (safety || inTrialTotal < split.lanes[0].total);
   const lanes = undivide
-    ? signalLanes({ finding, today: input.today, trial: input.trial, episodes: laneEpisodes, undivided: true })
+    ? signalLanes({ finding, today: input.today, trial: input.trial, episodes: laneEpisodes, undivided: true, laneMasked: laneMasking.laneMasked })
     : split;
   const inWeeks = episodesInWeeks(input.episodes, weekly, input.today);
 
@@ -607,11 +659,117 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     compareWithheld: withheldReason,
     lanes,
     episodes: galleryOf(inWeeks, input.verdicts, weekly.weeks.length),
-    why: whyLines(input, compare, withheld),
+    why: whyLines(input, compare, withheld, compare ? compareMaskOf(input.masking, compare, specs) : null),
     context: careContextLinesOf(finding),
     safety,
     withholdFallingVomit: input.notEating !== false,
+    weeklyMask: weeklyMaskOf(input.masking, weekly, input.today),
+    compareMask: compare ? compareMaskOf(input.masking, compare, specs) : null,
+    lanesMaskCaption: lanesMaskCaptionOf(input.masking, lanes, input.today),
+    scriptMasking: scriptMaskingOf(input),
   };
+}
+
+// ── The masking (CUL-1440) ────────────────────────────────────────────────────
+// Every chart keeps its marks inside a masking span and drops only a zero's numeral (D1); a
+// sentence that compares two windows goes quiet on a fall beside one (D2). The rules and the
+// words are `lib/screenMasking.ts`'s; these place them on this screen's windows.
+
+function lastDrawnDay(endKey: string, today: string): string {
+  return indexOf(endKey) > indexOf(today) ? today : endKey;
+}
+
+/** The weeks a span touches, and the words under the bars. Null when none is touched. */
+export function weeklyMaskOf(
+  m: ScreenMasking | null,
+  weekly: WeeklyBucketsModel,
+  today: string,
+): { masked: boolean[]; caption: string | null } | null {
+  if (!m) return null;
+  const masked = weekly.weeks.map((w) => touches(m, w.startKey, lastDrawnDay(w.endKey, today)));
+  if (!masked.some(Boolean)) return null;
+  const zeroWithheld = weekly.weeks.some((w, i) => masked[i] && w.count === 0);
+  const caption = maskCaption(m, weekly.firstKey, lastDrawnDay(weekly.weeks[weekly.weeks.length - 1].endKey, today), {
+    zeroWithheld,
+    unit: 'week',
+  });
+  return { masked, caption };
+}
+
+/** The compare's masked windows and the words under it. Null when neither is touched. */
+export function compareMaskOf(
+  m: ScreenMasking | null,
+  compare: CompareWindowsModel,
+  specs: readonly [SignalWindowSpec, SignalWindowSpec],
+): { masked: [boolean, boolean]; caption: string | null } | null {
+  if (!m) return null;
+  const endOf = (w: SignalWindowSpec) => dayKeyFromIndex(indexOf(w.startDay) + w.days - 1);
+  const masked: [boolean, boolean] = [touches(m, specs[0].startDay, endOf(specs[0])), touches(m, specs[1].startDay, endOf(specs[1]))];
+  if (!masked[0] && !masked[1]) return null;
+  return { masked, caption: maskCaption(m, specs[0].startDay, endOf(specs[1]), { zeroWithheld: false, unit: 'window' }) };
+}
+
+/** The words under the lanes when one is hatched. */
+function lanesMaskCaptionOf(m: ScreenMasking | null, lanes: SignalLanesModel | null, today: string): string | null {
+  if (!m || !lanes || !lanes.lanes.some((l) => l.masked === true)) return null;
+  const hatched = lanes.lanes.filter((l) => l.masked === true && l.window != null);
+  if (hatched.length === 0) return null;
+  const zeroWithheld = hatched.some((l) => l.total === 0 || l.bucketCounts.includes(0));
+  const from = hatched.map((l) => (l.window as { startDay: string }).startDay).sort()[0];
+  const to = hatched.map((l) => (l.window as { endDay: string }).endDay).sort().reverse()[0];
+  return maskCaption(m, from, lastDrawnDay(to, today), { zeroWithheld, unit: 'lane' });
+}
+
+/** Where the trial's lane splits: the first masking COURSE that started inside the trial and
+ *  on or before today (D4). A visit never splits a lane; its span only hatches one. */
+function laneSplitOf(
+  m: ScreenMasking,
+  finding: SignalFinding,
+  today: string,
+  trial: SignalTrialWindow | null,
+): { day: string; drug: string } | null {
+  if (!trial || m.unreadable) return null;
+  const during = signalCompareSpec(finding, today, trial)[1];
+  const from = indexOf(during.startDay);
+  const to = indexOf(today);
+  for (const span of m.spans) {
+    if (span.kind !== 'course') continue;
+    if (span.fromDay > from && span.fromDay <= to) {
+      return { day: dayKeyFromIndex(span.fromDay), drug: courseLabel(span.course.course) };
+    }
+  }
+  return null;
+}
+
+/** The safety phone script's masking (D3): the rows naming each span on board, and whether its
+ *  comparing row must stay quiet. The engine counted the script's windows at `generatedOn`; with
+ *  no date, today stands in and the windows widen by a day toward it. */
+function scriptMaskingOf(input: SignalScreenInput): PhoneScriptMasking | null {
+  const m = input.masking;
+  if (!m) return null;
+  const f = input.cached.finding;
+  const anchor = input.generatedOn ?? input.today;
+  const slack = input.generatedOn ? 0 : 1;
+  let withholdCompare = false;
+  if (f.type === 'symptom_chronicity' && f.compare) {
+    const h = f.compare.halfDays;
+    // The halves are instant windows ending at the run; one day of slack each way places them
+    // on the calendar without ever narrowing what they cover.
+    withholdCompare = engineCompareWithheld(
+      m,
+      { fromKey: keyMinus(anchor, h + 1), toKey: input.today, count: f.compare.recentCount },
+      { fromKey: keyMinus(anchor, 2 * h + 1 + slack), toKey: keyMinus(anchor, h - 1), count: f.compare.priorCount },
+    );
+  } else if (f.type === 'symptom_worsening') {
+    const h = Math.max(1, Math.floor(f.windowDays / 2));
+    const days = f.trigger === 'more_days';
+    withholdCompare = engineCompareWithheld(
+      m,
+      { fromKey: keyMinus(anchor, h), toKey: input.today, count: days ? f.currentDays : f.currentCount },
+      { fromKey: keyMinus(anchor, 2 * h + slack), toKey: keyMinus(anchor, h - 1), count: days ? f.priorDays : f.priorCount },
+    );
+  }
+  return { rows: maskScriptRows(m, input.today), withholdCompare };
 }
 
 // ── The loader ────────────────────────────────────────────────────────────────
@@ -1020,7 +1178,19 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     if (notEating === null) throw new Error('the not-eating register has not answered');
     return { status: 'withheld', petName };
   }
-  const trialVomitingLine = trialFacts ? (resolveTrialStrip(trialFacts)?.trialResponseLine ?? null) : null;
+  // CUL-1440: where a zero of the finding's sign may not appear on this screen. Null unless the
+  // row was written with EN-10 on, and then every surface below renders exactly as before.
+  const sign = signalSymptomOf(cached.finding);
+  const masking = sign
+    ? await loadScreenMasking({ petId, sign, signWord: symptomWord(sign), today, engineFlags: row?.engineFlags ?? null })
+    : null;
+  // The strip's vomiting sentence, quiet where it would compare a fall, or print a zero, beside a
+  // masking span (counterexample 3, D2).
+  const stripLine = trialFacts ? (resolveTrialStrip(trialFacts)?.trialResponseLine ?? null) : null;
+  const trialVomitingLine =
+    trialFacts?.trialResponse && stripLine != null
+      ? maskedTrialSentence(await vomitMasking(petId, today, row?.engineFlags ?? null, masking), trialFacts.trialResponse, stripLine, today)
+      : stripLine;
 
   // The doses that could fall inside either window the lines name: read from the earlier
   // window's first day, one day wide of it (a UTC instant is at most a day off a local
@@ -1050,8 +1220,22 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     trialVomitingLine,
     // `trialFacts` is null only when the read threw (a trial-less pet answers the base input).
     trialUnanswered: pet != null && trialFacts == null,
+    masking,
+    generatedOn: row?.generatedAt ? toLocalDayKey(new Date(row.generatedAt)) : null,
   });
   return { status: 'ready', model, petName };
+}
+
+/** The trial sentence counts VOMITING, whatever the finding's sign: its masking is vomiting's.
+ *  Reuses the screen's own when the sign is vomiting; reads again otherwise (same gate). */
+async function vomitMasking(
+  petId: string,
+  today: string,
+  engineFlags: unknown,
+  screen: ScreenMasking | null,
+): Promise<ScreenMasking | null> {
+  if (screen?.sign === 'vomit') return screen;
+  return loadScreenMasking({ petId, sign: 'vomit', signWord: symptomWord('vomit'), today, engineFlags });
 }
 
 /** One entry per episode through the engine's collapse, for a caller holding instants —

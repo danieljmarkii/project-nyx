@@ -157,6 +157,8 @@ function input(cached: CachedFinding, over: Partial<SignalScreenInput> = {}): Si
     notEating: false,
     trialVomitingLine: null,
     trialUnanswered: false,
+    masking: null,
+    generatedOn: null,
     ...over,
   };
 }

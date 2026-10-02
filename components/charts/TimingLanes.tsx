@@ -8,6 +8,7 @@ import { LANE_GEOMETRY, LANE_HEIGHT_PT } from '../../lib/patternsTiming';
 import { lanesBucketCaption, timingLanesA11yLabel } from '../../lib/chartCopy';
 import { ThemedText } from '../ui/ThemedText';
 import { useDrawIn } from '../motion/drawInMotion';
+import { MaskHatch } from './MaskHatch';
 
 // TimingLanes — the shipped "timed from meals" lane as small multiples on one axis
 // (CUL-1064; design authority `docs/culprit-design-v4-mockups.html` §03, the `lane()`
@@ -42,6 +43,9 @@ interface Props {
   axis: LaneAxis;
   drawIn?: boolean;
   identity?: string;
+  /** The words under the lanes naming what a hatched lane stands for (CUL-1440); drawn only
+   *  when a lane is `masked`. */
+  maskCaption?: string | null;
 }
 
 // The shipped lane's pixels, read from the one place both drawings share
@@ -52,7 +56,7 @@ const ROW_GAP = LANE_GEOMETRY.rowGap;
 const JITTER_CAP = LANE_GEOMETRY.jitterCap;
 const LANE_HEIGHT = LANE_HEIGHT_PT;
 
-export function TimingLanes({ lanes, axis, drawIn = false, identity = 'lanes' }: Props) {
+export function TimingLanes({ lanes, axis, drawIn = false, identity = 'lanes', maskCaption = null }: Props) {
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
   const dotCount = lanes.reduce((a, l) => a + l.dots.length, 0);
@@ -76,7 +80,7 @@ export function TimingLanes({ lanes, axis, drawIn = false, identity = 'lanes' }:
 
   let dotIndex = 0;
   return (
-    <View accessible accessibilityLabel={timingLanesA11yLabel(lanes, rapidWindowMinutes, longGapHours)} testID="timing-lanes">
+    <View accessible accessibilityLabel={timingLanesA11yLabel(lanes, rapidWindowMinutes, longGapHours, maskCaption)} testID="timing-lanes">
       <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
         {lanes.map((lane, l) => (
           <View key={lane.label} style={styles.laneBlock} testID={`timing-lane-${l}`}>
@@ -84,8 +88,10 @@ export function TimingLanes({ lanes, axis, drawIn = false, identity = 'lanes' }:
               <ThemedText style={styles.laneLabel} numberOfLines={1}>
                 {lane.label}
               </ThemedText>
+              {/* A masked lane with nothing in it shows its hatch and its window, never
+                  "0 timed of 0" (CUL-1440, D1). */}
               <ThemedText style={styles.timedLine} testID={`timing-timed-${l}`}>
-                {lane.timedLine}
+                {lane.masked === true && lane.total === 0 ? ' ' : lane.timedLine}
               </ThemedText>
             </View>
             {/* ONE measurement, off the first lane: the lanes are stacked full-width in one
@@ -93,6 +99,7 @@ export function TimingLanes({ lanes, axis, drawIn = false, identity = 'lanes' }:
                 by side would break that and needs a per-lane measure — it is an assumption
                 of this layout, stated here rather than left to be discovered. */}
             <View style={styles.lane} onLayout={l === 0 ? onLayout : undefined} testID={`timing-lane-track-${l}`}>
+              {lane.masked === true && <MaskHatch testID={`timing-hatch-${l}`} />}
               {width > 0 && (
                 <>
                   <View style={[styles.band, { left: 0, width: axis.rapidBandEnd * width }]} />
@@ -122,16 +129,17 @@ export function TimingLanes({ lanes, axis, drawIn = false, identity = 'lanes' }:
                 </>
               )}
             </View>
-            {/* The three counts, one under each region. Always text; a zero is a zero. */}
+            {/* The three counts, one under each region. Always text; a zero is a zero, except
+                inside a masked lane, where it loses its numeral (CUL-1440, D1). */}
             <Animated.View style={[styles.bucketRow, labelStyle]}>
               <ThemedText style={[styles.bucket, { left: 2 }]} testID={`timing-bucket-${l}-0`}>
-                {lane.bucketCounts[0]}
+                {bucketWord(lane, 0)}
               </ThemedText>
               <ThemedText style={[styles.bucket, { left: width > 0 ? axis.rapidBandEnd * width + 3 : '22%' }]} testID={`timing-bucket-${l}-1`}>
-                {lane.bucketCounts[1]}
+                {bucketWord(lane, 1)}
               </ThemedText>
               <ThemedText style={[styles.bucket, { left: width > 0 ? axis.longBandStart * width + 3 : '86%' }]} testID={`timing-bucket-${l}-2`}>
-                {lane.bucketCounts[2]}
+                {bucketWord(lane, 2)}
               </ThemedText>
             </Animated.View>
           </View>
@@ -146,6 +154,11 @@ export function TimingLanes({ lanes, axis, drawIn = false, identity = 'lanes' }:
           ))}
         </View>
         <Animated.View style={labelStyle}>
+          {lanes.some((l) => l.masked === true) && maskCaption != null && (
+            <ThemedText style={styles.caption} testID="timing-mask-caption">
+              {maskCaption}
+            </ThemedText>
+          )}
           <ThemedText style={styles.caption}>{lanesBucketCaption(rapidWindowMinutes, longGapHours)}</ThemedText>
           {/* NOT optional — see the header. */}
           <ThemedText style={styles.untimed} testID="timing-untimed-line">
@@ -155,6 +168,12 @@ export function TimingLanes({ lanes, axis, drawIn = false, identity = 'lanes' }:
       </View>
     </View>
   );
+}
+
+/** A bucket's count as drawn: a zero in a masked lane loses its numeral (CUL-1440, D1). */
+function bucketWord(lane: LaneModel, k: 0 | 1 | 2): number | string {
+  const n = lane.bucketCounts[k];
+  return lane.masked === true && n === 0 ? ' ' : n;
 }
 
 const styles = StyleSheet.create({

@@ -2686,16 +2686,24 @@ export interface TrialStripModel {
  * density but symptom-logging attrition) is the app-wide didn't-log≠didn't-happen limit and the OPEN
  * PR-3 fewer-direction decision — the standing line now inherits whatever the card's posture becomes.
  */
-export function trialResponseStandingLine(counts: TrialResponseCounts): string | null {
+/** Whether the standing line takes its two-window form (trial · before) rather than the
+ *  trial-so-far form. One answer for the line and for anything that gates it (CUL-1440's
+ *  masking rule withholds the COMPARING form on a fall, never the trial-so-far count). */
+export function trialResponseLineCompares(counts: TrialResponseCounts): boolean {
   const floor = TRIAL_RESPONSE_COUNTS_DEFAULTS.minLoggingDaysPerWindow;
-  const days = counts.trialDayNumber === 1 ? 'day' : 'days';
   // A reduction on non-comparable logging is the reassurance-risk case — withhold the baseline clause
   // (drop to trial-so-far). A flat/increase (the escalation direction) is never withheld.
   const reduction = counts.trialCount < counts.baselineCount;
-  const showComparison =
+  return (
     counts.trialLoggedDays >= floor &&
     counts.baselineLoggedDays >= floor &&
-    (counts.densityComparable || !reduction);
+    (counts.densityComparable || !reduction)
+  );
+}
+
+export function trialResponseStandingLine(counts: TrialResponseCounts): string | null {
+  const days = counts.trialDayNumber === 1 ? 'day' : 'days';
+  const showComparison = trialResponseLineCompares(counts);
   if (showComparison) {
     if (counts.trialCount + counts.baselineCount === 0) return null;
     // B-775 — both windows in the SAME unit (days, not "7 weeks") + a "longer stretch" cue when the
@@ -2708,7 +2716,14 @@ export function trialResponseStandingLine(counts: TrialResponseCounts): string |
     const lengthCue = baselineDays >= counts.trialDayNumber * 1.5 ? ', a longer stretch' : '';
     return `Vomiting: ${counts.trialCount} in the trial's ${counts.trialDayNumber} ${days} · ${counts.baselineCount} in the ${baselineDays} ${baselineDayNoun} before${lengthCue}.`;
   }
+  return trialResponseSoFarLine(counts);
+}
+
+/** The standing line's trial-so-far form ("Vomiting: 3 in the trial's 30 days."), or null at
+ *  zero. The one spelling, for the line and for CUL-1440's masked fallback. */
+export function trialResponseSoFarLine(counts: TrialResponseCounts): string | null {
   if (counts.trialCount === 0) return null;
+  const days = counts.trialDayNumber === 1 ? 'day' : 'days';
   return `Vomiting: ${counts.trialCount} in the trial's ${counts.trialDayNumber} ${days}.`;
 }
 

@@ -179,6 +179,8 @@ function mockInput(over: Partial<SignalScreenInput> = {}): SignalScreenInput {
     notEating: false,
     trialVomitingLine: null,
     trialUnanswered: false,
+    masking: null,
+    generatedOn: null,
     ...over,
   };
 }

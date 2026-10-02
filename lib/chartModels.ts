@@ -424,6 +424,13 @@ export interface LaneModel {
   untimedCount: number;
   /** "13 timed of 19". */
   timedLine: string;
+  /** A masking span touches this lane's dates (CUL-1440): it is drawn in the grey hatch, and a
+   *  zero in it loses its numeral. Absent: not masked. Set by the caller, never by `laneDots`,
+   *  which knows minutes, not dates. */
+  masked?: boolean;
+  /** The lane's dates (inclusive day keys), set alongside `masked` so a caption can name only the
+   *  spans that touch a hatched lane. */
+  window?: { startDay: string; endDay: string };
 }
 
 export interface LaneAxis {
@@ -480,9 +487,11 @@ export function lanesUntimedLine(lanes: readonly LaneModel[]): string {
   const counts = lanes.map((l) => l.untimedCount);
   const sum = counts.reduce((a, b) => a + b, 0);
   if (sum === 0) {
-    return lanes.length > 1
+    return lanes.length === 2
       ? 'Every episode on both lanes could be timed against a meal.'
-      : 'Every episode could be timed against a meal.';
+      : lanes.length > 2
+        ? 'Every episode on the lanes could be timed against a meal.'
+        : 'Every episode could be timed against a meal.';
   }
   const joined = lanes.length > 1 ? counts.join(' + ') : String(sum);
   const noun = plural(sum, 'episode');

@@ -64,7 +64,7 @@ describe('an out-of-union symptomType renders plainly, never "undefined"', () =>
   });
 
   it('the vet phone script names the sign with the humanized token', () => {
-    const facts = phoneScript(chronicity({ symptomType: OUT_OF_UNION }), 'Juniper', false);
+    const facts = phoneScript(chronicity({ symptomType: OUT_OF_UNION }), 'Juniper', false, null);
     expect(facts).not.toBeNull();
     const sign = facts!.find((f) => f.label === 'Sign');
     expect(sign?.value).toBe('labored breathing');

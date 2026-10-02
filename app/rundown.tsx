@@ -30,6 +30,8 @@ import {
 } from '../lib/dietTrialFacts';
 import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
 import { readSignalCache } from '../lib/signal';
+import { loadScreenMasking, maskedTrialSentence } from '../lib/screenMasking';
+import { symptomWord } from '../lib/signalCopy';
 import { signalTrialWindowOf } from '../lib/signalScreen';
 import { syncPendingVetAppointments } from '../lib/sync';
 import {
@@ -40,7 +42,7 @@ import {
   type AppointmentQuestion,
   type AppointmentDetail,
 } from '../lib/vetVisits';
-import { uuid } from '../lib/utils';
+import { toLocalDayKey, uuid } from '../lib/utils';
 import { profileFocusHref } from '../lib/profileFocus';
 import { reportHref } from '../lib/reportRoute';
 
@@ -523,7 +525,7 @@ async function buildForAppointment(
       // `row.findings` is already `[]` when the engine ran and found nothing, so the
       // genuinely-quiet record still renders mock B1b. The row's `generated_at` rides with
       // them: it is half the trial anchor (CUL-1364).
-      .then((row) => (row ? { findings: row.findings, generatedAt: row.generatedAt } : null))
+      .then((row) => (row ? { findings: row.findings, generatedAt: row.generatedAt, engineFlags: row.engineFlags ?? null } : null))
       // A throw is the other unreadable case (offline, or a failed request).
       .catch(() => null),
     pet
@@ -545,7 +547,7 @@ async function buildForAppointment(
   // TS-8: the screen's model over the SAME input this page already read, for the same pet.
   // An unloadable trial is the screen's own `unreadable` state, which the recheck renders
   // nothing for, and the row falls back to the strip's, which is null too: no row.
-  const trialScreen =
+  const trialScreenModel =
     trialScreenLive && pet
       ? buildTrialScreenModel({
           petId: pet.id,
@@ -560,6 +562,29 @@ async function buildForAppointment(
           appointment: null,
         })
       : null;
+  // CUL-1440 (counterexample 3, D2): the recheck quotes the strip's vomiting sentence, and beside
+  // a masking drug or a recent visit it stays quiet where it would compare a fall or print a zero
+  // (Get ready lists the courses below it, so the drug is on this page). Only on a Signal written
+  // with EN-10 on; otherwise the sentence is exactly the strip's.
+  const counts = trialInput?.trialResponse ?? null;
+  const running = trialScreenModel && trialScreenModel.kind === 'trial' ? trialScreenModel : null;
+  const vomitMasking =
+    running?.vomiting != null && counts && pet
+      ? await loadScreenMasking({
+          petId: pet.id,
+          sign: 'vomit',
+          signWord: symptomWord('vomit'),
+          today: toLocalDayKey(new Date(nowMs)),
+          engineFlags: signalRow?.engineFlags ?? null,
+        })
+      : null;
+  const trialScreen =
+    running && vomitMasking && counts
+      ? { ...running, vomiting: maskedTrialSentence(vomitMasking, counts, running.vomiting, toLocalDayKey(new Date(nowMs))) }
+      : trialScreenModel;
+  if (loadIdRef.current !== myId) {
+    return { rows: [], signalUnavailable: false };
+  }
 
   return buildWorthRaising({
     findings: signalRow ? signalRow.findings : null,

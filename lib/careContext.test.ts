@@ -114,7 +114,7 @@ describe('careContextLinesOf', () => {
       const server = linesForSign('cough', args([at('2026-09-17'), at('2026-09-18'), at('2026-09-19')].map((d) => symptom('cough', d))));
       const out = careContextLinesOf(chronicity(server));
       expect(out).toEqual(server.map((l) => l.text));
-      expect(out[0]).toBe('Prednisone since Sep 21, 6 days. Started 6 days ago.');
+      expect(out[0]).toBe('Prednisone since Sep 21, 6 days, with something logged on 6 of 6. It can hide coughing.');
       expect(out.join(' ')).not.toMatch(/\b0 episodes?\b/);
     });
   });
