@@ -6,6 +6,12 @@
 // runtime dependency on lib/db, so it unit-tests without the expo-sqlite stack.
 import type { FoodIntakeStat, PickerFood } from './db';
 
+// The placeholder a photo capture's food_items row carries until extraction names it
+// (app/food-capture.tsx). It is also the reaper's proof that a 'pending' row was never
+// confirmed (lib/sync.ts reapStalePendingFoods): the status alone is not, because
+// retrying extraction re-writes 'pending' onto a confirmed food (CUL-769).
+export const PENDING_CAPTURE_LABEL = 'Extracting…';
+
 export interface GroupedFoods {
   meals: PickerFood[];
   treats: PickerFood[];

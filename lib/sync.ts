@@ -45,6 +45,7 @@ import {
   type SyncFailureClass,
 } from './syncQueue';
 import { proteinsToCacheText, proteinsFromCacheText } from './protein';
+import { PENDING_CAPTURE_LABEL } from './food';
 import { wordsToLocalText, wordsFromLocalText } from './lookWordsCodec';
 import {
   VET_DOCUMENTS_BUCKET,
@@ -1778,10 +1779,14 @@ export async function refreshFoodCache(): Promise<void> {
 // never ran.
 //
 // Extraction is a seconds-long server-side call, so a 'pending' row older than this
-// threshold is a dead capture, not one in flight. A COMMITTED food is never left
-// 'pending' (commitFood always writes completed / failed / manual), so a 'pending'
-// row is un-confirmed and, in the overwhelming common case, un-referenced — the meal
-// is only logged after the confirm step. The threshold is generous on purpose: the
+// threshold is a dead capture, not one in flight. The status alone does NOT prove a row
+// was never confirmed: retrying extraction on a confirmed food writes 'pending' to the
+// server, and a retry that dies leaves it there, on a food whose created_at is long past
+// the threshold, so this sweep hard-deleted it with its trial and feeding links (CUL-769).
+// The capture's placeholder name is the proof: only an un-confirmed capture still carries
+// PENDING_CAPTURE_LABEL as both brand and product, so the delete requires it. A dead
+// capture is un-referenced in the overwhelming common case — the meal is only logged
+// after the confirm step. The threshold is generous on purpose: the
 // phantom is untidy, not harmful, and a live capture the owner is slowly editing
 // self-heals anyway (commitFood upserts by id, re-creating the row if a sweep removed
 // it mid-edit).
@@ -1813,6 +1818,8 @@ export async function reapStalePendingFoods(): Promise<void> {
     .delete()
     .eq('created_by_user_id', session.user.id)
     .eq('ai_extraction_status', 'pending')
+    .eq('brand', PENDING_CAPTURE_LABEL)
+    .eq('product_name', PENDING_CAPTURE_LABEL)
     .lt('created_at', cutoff)
     .select('id');
   // Log on failure, never throw — this is a best-effort tidy that must not break a

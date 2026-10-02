@@ -1529,8 +1529,7 @@ describe('file-bearing writers charge a thrown upload failure (B-586)', () => {
 describe('reapStalePendingFoods (B-369)', () => {
   let selectFinal: jest.Mock;
   let ltFn: jest.Mock;
-  let eq2: jest.Mock;
-  let eq1: jest.Mock;
+  let eqFn: jest.Mock;
   let deleteFn: jest.Mock;
 
   beforeEach(() => {
@@ -1539,12 +1538,13 @@ describe('reapStalePendingFoods (B-369)', () => {
     mockFrom.mockReset();
     mockRunAsync.mockReset();
     mockRunAsync.mockResolvedValue(undefined);
-    // supabase.from('food_items').delete().eq().eq().lt().select('id')
+    // supabase.from('food_items').delete().eq()…eq().lt().select('id'): every .eq records
+    // its filter, so a test reads the whole predicate the delete was scoped by.
     selectFinal = jest.fn().mockResolvedValue({ data: [], error: null });
     ltFn = jest.fn().mockReturnValue({ select: selectFinal });
-    eq2 = jest.fn().mockReturnValue({ lt: ltFn });
-    eq1 = jest.fn().mockReturnValue({ eq: eq2 });
-    deleteFn = jest.fn().mockReturnValue({ eq: eq1 });
+    const chain: { eq: jest.Mock; lt: jest.Mock } = { eq: jest.fn(), lt: ltFn };
+    eqFn = chain.eq.mockReturnValue(chain);
+    deleteFn = jest.fn().mockReturnValue(chain);
     mockFrom.mockReturnValue({ delete: deleteFn });
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -1555,12 +1555,23 @@ describe('reapStalePendingFoods (B-369)', () => {
 
     expect(mockFrom).toHaveBeenCalledWith('food_items');
     expect(deleteFn).toHaveBeenCalled();
-    expect(eq1).toHaveBeenCalledWith('created_by_user_id', 'user-A'); // account scope (belt-and-braces w/ RLS)
-    expect(eq2).toHaveBeenCalledWith('ai_extraction_status', 'pending'); // only in-progress captures
+    expect(eqFn).toHaveBeenCalledWith('created_by_user_id', 'user-A'); // account scope (belt-and-braces w/ RLS)
+    expect(eqFn).toHaveBeenCalledWith('ai_extraction_status', 'pending'); // only in-progress captures
     const [col, cutoff] = ltFn.mock.calls[0] as [string, string];
     expect(col).toBe('created_at');
     expect(new Date(cutoff).getTime()).toBeLessThan(Date.now()); // a past cutoff (now - 30 min)
     expect(selectFinal).toHaveBeenCalledWith('id');
+  });
+
+  // CUL-769: retrying extraction re-writes 'pending' onto a CONFIRMED food, whose
+  // created_at is long past the threshold, so status + age alone deleted it (and its
+  // trial and feeding links, which CASCADE). Only a never-confirmed capture still
+  // carries the placeholder name, so the delete is scoped by it, on both columns.
+  it('deletes only rows still carrying the capture placeholder, never a confirmed food', async () => {
+    await reapStalePendingFoods();
+
+    expect(eqFn).toHaveBeenCalledWith('brand', 'Extracting…');
+    expect(eqFn).toHaveBeenCalledWith('product_name', 'Extracting…');
   });
 
   it('purges the reaped rows from the local cache so the phantom tile disappears now', async () => {

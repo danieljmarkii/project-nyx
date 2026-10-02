@@ -39,7 +39,7 @@ import { insertMeal } from '../lib/meals';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 import { seedPickerProteins, pickerProteinsToSet, pickerProteinWrite, proteinsToCacheText } from '../lib/protein';
-import { foodIntakeKey } from '../lib/food';
+import { PENDING_CAPTURE_LABEL, foodIntakeKey } from '../lib/food';
 import { sourceAfterPointEdit } from '../lib/eventTimeEdit';
 import { ProteinDisclosure, proteinSummaryLine } from '../components/food/ProteinDisclosure';
 import { TrialContaminantSheet } from '../components/food/TrialContaminantSheet';
@@ -405,8 +405,8 @@ export default function FoodCaptureScreen() {
       // success. created_by_user_id is required by the RLS insert policy.
       const { error: insertError } = await supabase.from('food_items').insert({
         id: foodId,
-        brand: 'Extracting…',
-        product_name: 'Extracting…',
+        brand: PENDING_CAPTURE_LABEL,
+        product_name: PENDING_CAPTURE_LABEL,
         format: 'other',
         // food_type is intentionally NOT set here — the user picks it on the
         // confirm screen. commitFood writes it through to food_items on save.
