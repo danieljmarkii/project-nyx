@@ -6,6 +6,11 @@ import { clearRecoveryRequest } from './recoveryMarker';
 import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
 import { useOnboardingDraftStore } from '../store/onboardingDraftStore';
 import { useMomentStore } from '../store/momentStore';
+import { useUiStore } from '../store/uiStore';
+import { useEventStore } from '../store/eventStore';
+import { useSnackbarStore } from '../store/snackbarStore';
+import { useAskStore } from '../store/askStore';
+import { useHistoryListStore } from '../store/historyListStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
 import { clearCachedAppConfig } from './appConfig';
 import { clearBetaOptIns } from './betaFeatures';
@@ -192,6 +197,45 @@ export async function wipeLocalSession(): Promise<void> {
   // second health value — to that payload. Same FR-9 parity rule as the App Group and
   // notification wipes above: wipe every place account data rests, not just SQLite.
   useMomentStore.setState({ visible: false, payload: null, removed: false });
+  // The same leak through the root-mounted SHEETS. The log sheet and the intake door
+  // each open on a request in the UI store and mount in the root layout, so a sign-out
+  // landing while one was up left it over the next person's login screen, still naming
+  // the previous owner's pet and holding any note typed into it. The capture overlay
+  // goes with them: its summary names the pet too. Requests only: `logSheetOpens` is the
+  // sheet's mount key, and `fabMenuOpen` mirrors the FAB's own menu, which the FAB
+  // releases when it unmounts. Best-effort: nothing here may stop the teardown.
+  try {
+    useUiStore.setState({ logSheet: null, intakeDoor: null, captureOverlay: null });
+  } catch (e) {
+    console.warn('[session] closing the open sheets failed:', e);
+  }
+  // The rest of the record resting in memory (rls-privacy-reviewer, release QA 1.2.0).
+  // Today's events live in the event store, which nothing wiped, and the legacy Home's
+  // TodayZone filters them by date, not by pet, with no pet gate: the next account's
+  // Home painted the previous owner's same-day symptoms ("1 vomit · 1 loose stool
+  // logged") until its own pets arrived. The snackbar keeps its payload through
+  // `hide()` (a food's name, an Undo closure), Ask holds the last conversation about the
+  // previous pet, and History's list store holds its rows. Each step on its own, so one
+  // failure never skips another; nothing here may stop the teardown.
+  const inMemory: [string, () => void][] = [
+    ['today', () => useEventStore.setState({ todayEvents: [], todayRead: null })],
+    ['snackbar', () => {
+      useSnackbarStore.getState().hide();
+      useSnackbarStore.setState({ payload: null });
+    }],
+    ['ask', () => {
+      useAskStore.getState().focusPet(null);
+      useAskStore.getState().startNew();
+    }],
+    ['history', () => useHistoryListStore.getState().reset()],
+  ];
+  for (const [what, clear] of inMemory) {
+    try {
+      clear();
+    } catch (e) {
+      console.warn(`[session] clearing ${what} from memory failed:`, e);
+    }
+  }
   // Clear any half-finished onboarding entry (a typed pet name/type) so it can't
   // carry into the next account's onboarding on this device (B-251 PR 7).
   useOnboardingDraftStore.getState().reset();

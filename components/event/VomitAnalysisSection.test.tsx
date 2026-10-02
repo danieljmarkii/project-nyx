@@ -96,6 +96,28 @@ function row(over: Record<string, unknown> = {}): Record<string, unknown> {
   };
 }
 
+// COLD-CACHE WARM-UP, with its own timeout (the AddMedicationModal precedent, CUL-1155).
+// Measured: the FIRST render in this file costs ~3.8 s on an empty jest cache and ~0.3 s
+// after, because jest-expo transforms React Native's lazily-`require`d internals during
+// render rather than at import. CI always runs cold, so whichever test rendered first
+// went over the 5 s default under a full suite's load (main went red on #996, a change
+// to guards only). The warm-up renders the heaviest tree (a calm read with its grid,
+// fold control and Re-run), then clears every trace a test could read: the row, the
+// fold store and the mocks' call history. Each TEST keeps the default bound, so a
+// genuine hang still reports in five seconds.
+beforeAll(async () => {
+  mockRow = row({
+    status: 'completed', recommendation: 'monitor', read_text: 'Yellow, foamy, mostly bile.',
+    colour: 'yellow', consistency: 'foamy', contents: ['bile'], blood_present: 'none_visible',
+  });
+  const tree = render(<VomitAnalysisSection eventId="warm-up" petId="pet-warm-up" petName="Rex" hasPhoto />);
+  await tree.findByText('Keep an eye out');
+  tree.unmount();
+  mockRow = null;
+  await AsyncStorage.clear();
+  jest.clearAllMocks();
+}, 60000);
+
 describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
   afterEach(() => { mockRow = null; });
 

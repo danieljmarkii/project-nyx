@@ -80,6 +80,7 @@ jest.mock('./useReadLandingAnnouncement', () => {
 });
 jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
 import { Alert, LayoutAnimation } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
@@ -101,6 +102,26 @@ function row(over: Record<string, unknown> = {}): Record<string, unknown> {
     edited_at: null, dismissed_at: null, error: null, ...over,
   };
 }
+
+// COLD-CACHE WARM-UP, with its own timeout (the AddMedicationModal precedent, CUL-1155).
+// Measured on an empty jest cache: this file's first test took ~3.7 s against ~0.1 s
+// warm, because jest-expo transforms React Native's lazily-`require`d internals during
+// the first render; its sibling VomitAnalysisSection turned main red the same way on
+// #996. The warm-up renders a read with its card and observations, then clears every
+// trace a test could read. Each TEST keeps the 5 s default, so a real hang still shows.
+beforeAll(async () => {
+  mockRow = row({
+    status: 'completed', recommendation: 'monitor',
+    read_text: 'A single photo on its own can’t tell you how Rex’s gut is doing.',
+    stool_consistency: 'type_6_mushy',
+  });
+  const tree = render(<StoolAnalysisSection eventId="warm-up" petId="pet-warm-up" petName="Rex" hasPhoto />);
+  await tree.findByText('Soft and mushy');
+  tree.unmount();
+  mockRow = null;
+  await AsyncStorage.clear();
+  jest.clearAllMocks();
+}, 60000);
 
 describe('StoolAnalysisSection — cap/flag render states', () => {
   afterEach(() => { mockRow = null; });

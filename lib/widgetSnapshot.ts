@@ -32,6 +32,9 @@ import { isTrialRunning } from './dietTrial';
 import { loadTrialPredicateFacts } from './dietTrialFacts';
 import { ACTIVE_DIET_TRIAL_QUERY } from './dietTrialMirror';
 import { drugDisplayName } from './medications';
+// `isLookRow`, not monthReads' LOOK_EVENT_TYPE: monthReads reaches lib/supabase at
+// import (through readCopy), and the publisher has no other reason to load it.
+import { isLookRow } from './lookDisplay';
 import { getSnapshotDirectory } from './appGroup';
 // toLocalDayKey (not feedingArrangements' localDateString twin): utils is
 // dependency-free, so the publisher doesn't drag the sync/supabase import graph
@@ -505,9 +508,12 @@ async function readSnapshotInputs(pet: SnapshotPet, now: Date) {
     occurredAt: r.occurred_at,
   }));
 
-  // The 7-day coverage row (§2.5 pips) — ANY event is a tick; a symptom also lights
-  // the rose pip. Fetch the last 7 local days (buffered); buildSevenDays re-buckets
-  // by local day and drops anything outside its own window.
+  // The 7-day coverage row (§2.5 pips) — ANY event but a look is a tick; a symptom also
+  // lights the rose pip. A look is the owner's answer to a question, not something that
+  // happened to the pet, and it never enters another surface's coverage (daily-look spec
+  // §2 item 5): a look-only day stays an unlit pip, as it stays unlogged on the month
+  // (`lib/monthReads.ts`). Fetch the last 7 local days (buffered); buildSevenDays
+  // re-buckets by local day and drops anything outside its own window.
   const sevenStartMs = bounds.startMs - (WIDGET_SEVEN_DAYS - 1) * 86_400_000;
   const coverageRows = await db.getAllAsync<{ event_type: string; occurred_at: string }>(
     `SELECT event_type, occurred_at FROM events
@@ -515,10 +521,12 @@ async function readSnapshotInputs(pet: SnapshotPet, now: Date) {
        AND occurred_at >= ? AND occurred_at < ?`,
     [petId, new Date(sevenStartMs - bufferMs).toISOString(), new Date(bounds.endMs + bufferMs).toISOString()],
   );
-  const sevenDayEvents: SevenDayEventRow[] = coverageRows.map((r) => ({
-    occurredAt: r.occurred_at,
-    isSymptom: SYMPTOM_EVENT_SET.has(r.event_type),
-  }));
+  const sevenDayEvents: SevenDayEventRow[] = coverageRows
+    .filter((r) => !isLookRow(r))
+    .map((r) => ({
+      occurredAt: r.occurred_at,
+      isSymptom: SYMPTOM_EVENT_SET.has(r.event_type),
+    }));
 
   // The trial's COVERAGE numbers + the covered-day set the strip paints, from the
   // shared predicate — the SAME five reads + `computeTrialFacts` the trial card

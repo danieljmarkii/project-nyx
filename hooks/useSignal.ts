@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { getDb } from '../lib/db';
+import type { EventTypeKey } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 import {
@@ -36,10 +37,12 @@ export interface SignalState {
   isLoading: boolean;
   /** E1 building-state headline inputs (B-721 SR-2, §6): the B-421 local-day count
    * from the pet's first logged event (day-1-inclusive, min 1) and the total
-   * non-deleted event count. Computed from the pet's local events for EVERY state
-   * (only E1 renders them today), from the same SQLite read as the presence split.
-   * They hold Day 1 / 0 events only before the first read lands (EMPTY_LOCAL_CONTEXT)
-   * — which is why BuildingStateV2 holds the day-count clause back at eventCount 0. */
+   * non-deleted event count, daily looks excluded (a look counts toward recency only,
+   * CUL-1468). Computed from the pet's local events for EVERY state (only E1 renders
+   * them today), from the same SQLite read as the presence split. They hold Day 1 /
+   * 0 events before the first read lands (EMPTY_LOCAL_CONTEXT) and for a record of
+   * looks alone (CUL-1484), which is why BuildingStateV2 holds the day-count clause
+   * back at eventCount 0. */
   dayNumber: number;
   eventCount: number;
   /** B-721 SR-3 (§5.3) — true while a fresh log's debounced regen is in flight for the
@@ -93,16 +96,32 @@ const EMPTY_LOCAL_CONTEXT: LocalSignalContext = {
 
 // Read straight from local SQLite (fast, offline-capable, same pattern as
 // useTrend) so the empty-state distinctions work without a network round-trip.
+//
+// A daily look (`check_in`) is in this read for ONE question only, recency. A look never
+// enters the engine, a count or a floor (daily-look spec R1, §5.6): it must not lift a
+// record over the "substantial history" floor into "no clear patterns" (a claim about
+// data the engine never had), add to "{k} events so far", or move Day 1 earlier, so
+// `total` and `earliest` skip it (`lib/signalScreen.ts`'s `readLoggedDays` is the
+// precedent). But `recent` keeps it: `stale` turns the watching read off, and with it
+// the escalate-only gap row, so an owner who answers the look every day while the
+// gaps between vomits shorten must not be told the record has gone quiet
+// (adversarial-reviewer; the same hole for an owner who logs nothing is CUL-1468).
+//
+// The look's type mirrors `lib/monthReads.ts`'s LOOK_EVENT_TYPE (same value, same question:
+// the one row that is never coverage), not imported: that module's import chain reaches the
+// sync fabric and the network client. Typed against the event-type keys so a rename reds tsc.
+const LOOK_EVENT_TYPE: EventTypeKey = 'check_in';
+
 function getLocalSignalContext(petId: string): LocalSignalContext {
   try {
     const now = Date.now();
     const recentCutoff = new Date(now - RECENT_ACTIVITY_MS).toISOString();
     const rows = getDb().getAllSync<{ total: number; recent: number; earliest: string | null }>(
-      `SELECT COUNT(*) AS total,
+      `SELECT COUNT(CASE WHEN event_type != ? THEN 1 END) AS total,
               COUNT(CASE WHEN occurred_at >= ? THEN 1 END) AS recent,
-              MIN(occurred_at) AS earliest
+              MIN(CASE WHEN event_type != ? THEN occurred_at END) AS earliest
        FROM events WHERE pet_id = ? AND deleted_at IS NULL`,
-      [recentCutoff, petId],
+      [LOOK_EVENT_TYPE, recentCutoff, LOOK_EVENT_TYPE, petId],
     );
     const r = rows[0];
     const total = r?.total ?? 0;
@@ -308,8 +327,10 @@ export function useCrossPetSafetyBanner(): CrossPetBanner | null {
           }
           const copy = bannerCopy(selected.finding, selected.pet.name);
           // Defense-in-depth (§4): suppress on any guardrail drift — fail safe to
-          // silence, never a bad escalation, never a reassurance.
-          if (!validateBannerPhrasing(copy.text)) {
+          // silence, never a bad escalation, never a reassurance. The screen reads the
+          // TEMPLATE (`screened`), never the owner's words: a food called "Healthy
+          // Weight" or a dog called Trigger once silenced a real safety finding here.
+          if (!validateBannerPhrasing(copy.screened)) {
             setBanner(null);
             return;
           }

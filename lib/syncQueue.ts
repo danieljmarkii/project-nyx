@@ -386,6 +386,111 @@ export const QUARANTINE_COLUMNS = ['sync_attempts', 'sync_error'] as const;
  */
 export const NOT_QUARANTINED_SQL = 'sync_error IS NULL';
 
+/** The queues whose rows can name a vet visit (`vet_visit_id`). A runtime list, so a
+ *  test can check it against every local table that carries the column. */
+export const VISIT_LINKED_TABLES = ['vet_appointments', 'medications', 'diet_trials', 'vet_documents'] as const;
+export type VisitLinkedTable = (typeof VISIT_LINKED_TABLES)[number];
+
+/**
+ * A row that names a vet visit is never pushed ahead of that visit.
+ *
+ * The server guards every write carrying `vet_visit_id` with a same-pet trigger that
+ * LOOKS THE VISIT UP (migrations 045, 066, 067). A visit still on this phone is
+ * invisible to it, so the row is refused with 23514, which is TERMINAL here: the row
+ * is quarantined on its first try, the banner says it "couldn't be saved" with no door
+ * to fix it, and for an appointment the server never learns the visit attended it.
+ * `pushAllQueues` orders visits first, but a screen that pushes one queue directly
+ * races that order (the after-visit screen pushes the visit and its appointment,
+ * course or trial in the same tick), and a visit push that fails transiently loses it
+ * outright (release QA, 2026-10-02).
+ *
+ * So each of these queues holds a row while its visit is still waiting to land: the
+ * looks drain's `e.synced = 1`, except for a parent that is quarantined. A visit that
+ * is itself quarantined holds nothing, because there is no landing left to wait for. The
+ * row goes up and takes its own answer: it lands if the server holds an earlier version
+ * of the visit, and otherwise it is refused with the same 23514 and quarantined, counted
+ * as needing the owner rather than as waiting for a connection. Nothing here repairs it:
+ * `repairRefusedVisitLinks` clears a refused link only when the link does not resolve on
+ * this phone, and a quarantined visit still does, so the row stays parked (an edit
+ * re-arms it, and while the visit stays refused it is refused again). A row that names
+ * no visit, or a visit this phone does not hold, is unaffected.
+ */
+export function visitLandedSql(table: VisitLinkedTable): string {
+  return `NOT EXISTS (SELECT 1 FROM vet_visits gate_v
+     WHERE gate_v.id = ${table}.vet_visit_id
+       AND gate_v.synced = 0 AND gate_v.sync_error IS NULL)`;
+}
+
+/**
+ * A pet's queued diet trials wait together while any one of them waits on its visit.
+ *
+ * `visitLandedSql` holds only the row that names the visit, and on `diet_trials` that is
+ * not enough. The trials drain pushes an ENDING before a STARTING row, so migration 040's
+ * one-active-trial index never sees two active trials for a pet; but it can only order
+ * the rows the queue read hands it. End trial A at a visit that has not landed (the
+ * after-visit screen links it, then ends it) and start trial B: A is held, the drain sees
+ * B alone, pushes it while the server still holds A active, and the 23505 is TERMINAL, so
+ * the trial the owner just started is quarantined. So while any of a pet's queued trials
+ * waits on a visit, every queued trial of that pet waits with it, and once the visit
+ * lands they reach the drain together, ending first. Another pet's trials are untouched,
+ * and a visit that has landed or been quarantined holds nothing, as above.
+ *
+ * The outer statement must read `diet_trials` unaliased, as `visitLandedSql`'s must.
+ */
+export function petTrialsVisitLandedSql(): string {
+  return `NOT EXISTS (SELECT 1 FROM diet_trials gate_t
+     JOIN vet_visits gate_tv ON gate_tv.id = gate_t.vet_visit_id
+     WHERE gate_t.pet_id = diet_trials.pet_id
+       AND gate_t.synced = 0 AND gate_t.sync_error IS NULL
+       AND gate_tv.synced = 0 AND gate_tv.sync_error IS NULL)`;
+}
+
+/**
+ * The child queues whose server row needs its PARENT already on the server, and the
+ * column that names the parent. A runtime map, so a test can check it against every
+ * local column of that shape.
+ *
+ *   • diet_trial_foods → diet_trials. Migration 041's same-pet trigger runs BEFORE the
+ *     foreign key, so a food sent ahead of its trial is refused with 23514, which is
+ *     TERMINAL: the allowed set is quarantined on its first try. A trial can wait a
+ *     while (behind the visit it names, or beside a sibling trial that does, above, or
+ *     with an edit of its own in flight), and its foods would otherwise go out alone in
+ *     the meantime. The trials drain sends a held food once its trial lands.
+ *
+ * A dose is deliberately NOT here, though it names its course the same way
+ * (`medication_administrations.medication_id`). Sent ahead of its course it meets a plain
+ * foreign key (020): a 23503, retried on the next drain, with no same-pet trigger on that
+ * pair. Waiting would cost more than that. A course reads unsent whenever it has an edit
+ * not yet pushed (and for as long as it names a visit that cannot land), and a held dose
+ * is a held CORRECTION: a dose re-rated from Given to Refused would leave the server
+ * saying Given (code review of 074fd18). The scan that keeps this map honest names that
+ * exemption and its reason (lib/syncQueue.visitLink.test.ts).
+ */
+export const PARENT_GATED_QUEUES = {
+  diet_trial_foods: { parent: 'diet_trials', column: 'diet_trial_id' },
+} as const;
+export type ParentGatedQueue = keyof typeof PARENT_GATED_QUEUES;
+
+/**
+ * A child row is never pushed ahead of its parent: it waits while the parent is on this
+ * phone and still waiting to land (`synced = 0`, not quarantined). The looks drain's
+ * `e.synced = 1` is the same idea, with two differences that are deliberate. A parent
+ * that is QUARANTINED holds nothing, as a quarantined visit holds nothing: there is no
+ * landing left to wait for, and a child held behind it would count as pending forever,
+ * telling the owner to find a connection no connection will help. The child goes up and
+ * takes its own answer: it lands if the parent's earlier version is on the server, and
+ * otherwise meets 041's refusal and is counted as quarantined rather than pending. And a
+ * child whose parent this phone does not hold is unaffected.
+ *
+ * The outer statement must read the child table unaliased, as `visitLandedSql`'s must.
+ */
+export function parentLandedSql(child: ParentGatedQueue): string {
+  const { parent, column } = PARENT_GATED_QUEUES[child];
+  return `NOT EXISTS (SELECT 1 FROM ${parent} gate_p
+     WHERE gate_p.id = ${child}.${column}
+       AND gate_p.synced = 0 AND gate_p.sync_error IS NULL)`;
+}
+
 // Table names are compile-time literals from SYNC_QUEUES, never caller data —
 // which is what makes interpolating them (an SQL IDENTIFIER cannot be bound to a
 // `?` placeholder) safe by construction rather than by luck. Same argument as

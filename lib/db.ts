@@ -304,7 +304,13 @@ export async function clearLocalData(): Promise<void> {
   // handed to the share sheet) and persistRemoteObject's download temp. Both live in
   // one transient directory so this call can clear them wholesale. Before it existed
   // they survived sign-out AND account deletion (B-478 VF-6, rls-privacy-reviewer).
-  clearTransientFiles();
+  // Guarded although it does not throw by design: it runs BEFORE the row deletes, so an
+  // escape here would leave the whole local record on the device (fail open).
+  try {
+    clearTransientFiles();
+  } catch (e) {
+    console.warn('[wipe] transient file cleanup skipped:', e);
+  }
 
   // Clear the synced tables. FK-safe order (children first) so the deletes
   // never trip a foreign-key constraint regardless of cascade settings.

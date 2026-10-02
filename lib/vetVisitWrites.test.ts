@@ -316,6 +316,26 @@ describe('logVisitFromAppointment', () => {
     expect(mockDb.prepare('SELECT * FROM vet_visits').all()).toEqual([]);
   });
 
+  it('logs a booking ONCE: a second log rolls back and the first visit keeps the booking (F4)', async () => {
+    // Back from the saved visit used to land on a Get ready that still looked live, and
+    // its Take notes → Done → Save called this again for the same booking: a second
+    // visit, and the booking re-pointed at it, orphaning the first. The lax read still
+    // hands the logged booking back (the notes screen keeps working on it), so nothing
+    // upstream of this write can be the last line.
+    seedVisit('visit-1');
+    seedAppointment({ vet_visit_id: 'visit-1' });
+    const appt = await readAppointmentById(APPT);
+    expect(appt).not.toBeNull();
+
+    await expect(
+      logVisitFromAppointment({ appointment: appt!, visitedAt: '2026-09-16', newId: () => 'visit-2' }),
+    ).rejects.toThrow();
+    // The INSERT ran inside the transaction and rolled back with it.
+    expect(mockDb.prepare('SELECT id FROM vet_visits').all().map((r) => r.id)).toEqual(['visit-1']);
+    expect(appointmentRow().vet_visit_id).toBe('visit-1');
+    expect(appointmentRow().synced).toBe(1);
+  });
+
   it('writes the day key it was GIVEN — never one derived from a UTC clock', async () => {
     // CUL-946 is this bug, live on the screen this replaces: `toISOString()` yields
     // the UTC day, so every evening visit in the Americas is saved as tomorrow. This

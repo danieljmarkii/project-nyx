@@ -17,6 +17,7 @@ import { usePetStore } from '../store/petStore';
 import { useIsOnline } from '../hooks/useIsOnline';
 import { useAskStore } from '../store/askStore';
 import { useUiStore } from '../store/uiStore';
+import { useEventStore } from '../store/eventStore';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { Skeleton } from '../components/ui/Skeleton';
 import { AskChip } from '../components/ask/AskChip';
@@ -80,12 +81,26 @@ export default function AskScreen() {
   const scrollRef = useRef<ScrollView>(null);
 
   // On focus: re-scope the conversation to the active pet (resets on a pet switch or an
-  // idle timeout, D8) and (re)load the data-aware suggested chips from local SQLite.
+  // idle timeout, D8).
   useFocusEffect(
     useCallback(() => {
       focusPet(petId);
+    }, [petId, focusPet]),
+  );
+
+  // (Re)load the data-aware suggested chips from local SQLite: on focus, and again when
+  // the Today store moves while this screen is focused. The empty record's door opens the
+  // log sheet over this screen, and a sheet is an overlay, so the screen never lost focus
+  // and went on saying the record was empty after the owner had logged. The sheet's save
+  // prepends to the Today store and Undo removes from it. Kept apart from `focusPet` on
+  // purpose: re-running that can end an idle conversation, and a log is not a visit.
+  const todayCount = useEventStore((s) => s.todayEvents.length);
+  const todayHeadId = useEventStore((s) => s.todayEvents[0]?.id ?? null);
+  useFocusEffect(
+    useCallback(() => {
       if (petId) setSuggestions(loadAskSuggestions(petId, petName));
-    }, [petId, petName, focusPet]),
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- the Today store is the trigger; the read itself is local SQLite
+    }, [petId, petName, todayCount, todayHeadId]),
   );
 
   // Keep the newest message in view as the conversation grows / a think starts.

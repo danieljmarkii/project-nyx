@@ -41,9 +41,11 @@ import {
   pushGuardColumn,
   RLS_FILTERED_ERROR,
   NOT_QUARANTINED_SQL,
+  visitLandedSql,
   type SyncFailureClass,
 } from './syncQueue';
 import { proteinsToCacheText, proteinsFromCacheText } from './protein';
+import { PENDING_CAPTURE_LABEL } from './food';
 import { wordsToLocalText, wordsFromLocalText } from './lookWordsCodec';
 import {
   VET_DOCUMENTS_BUCKET,
@@ -1250,6 +1252,45 @@ export function syncPendingVetVisits(): Promise<void> {
   return serializeQueuePush('vet_visits', drainVetVisitsQueue);
 }
 
+/**
+ * Once a visit lands, send what was waiting on it.
+ *
+ * A row that names a visit is held until the visit lands (`visitLandedSql`), and so are
+ * the rows held with it: a pet's other queued trials (`petTrialsVisitLandedSql`), and a
+ * held trial's allowed foods (`parentLandedSql`). A held course's doses are not held (see
+ * drainMedicationAdministrationsQueue); one sent while its course waited met a 23503 and
+ * is still queued. Holding is half of it. The push that was held does not come back by
+ * itself, and this app has no timer: the after-visit screen mints the visit and ends a
+ * trial in one tap, the trial's own push finds the visit unsent and holds it, and the
+ * trial then sat until the next foreground or reconnect. So the visits drain sends those
+ * queues as soon as one lands.
+ *
+ * Through each queue's PUBLIC entry point, never its drain, so every run goes through
+ * serializeQueuePush (C-24): a run already in flight is followed rather than doubled,
+ * and inside pushAllQueues the calls that come next simply join these. Fire-and-forget
+ * (the visit's push is not theirs to wait on, and a failure stays queued), and none of
+ * them pushes visits, so this cannot recurse. A trial's foods and a course's doses run
+ * after their parent's run: a dose refused while its course waited lands once the course
+ * has, and the foods would follow anyway, since the trials drain sends them itself when
+ * a trial lands; this link only makes that explicit.
+ */
+function sendWhatWaitedOnVisits(): void {
+  // Each stage logs under its own queue's name, so a doses or foods failure is never
+  // reported as its parent's.
+  const queued = (what: string) => (e: unknown) =>
+    console.warn(`[sync] ${what} push after a visit landed failed (queued):`, e);
+  syncPendingVetAppointments().catch(queued('vet_appointments'));
+  syncPendingVetDocuments().catch(queued('vet_documents'));
+  syncPendingMedications().then(
+    () => syncPendingMedicationAdministrations().catch(queued('medication_administrations')),
+    queued('medications'),
+  );
+  syncPendingDietTrials().then(
+    () => syncPendingDietTrialFoods().catch(queued('diet_trial_foods')),
+    queued('diet_trials'),
+  );
+}
+
 async function drainVetVisitsQueue(): Promise<void> {
   const db = getDb();
 
@@ -1262,7 +1303,7 @@ async function drainVetVisitsQueue(): Promise<void> {
   }>(`SELECT * FROM vet_visits WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 50`);
 
   if (unsyncedVisits.length > 0) {
-    await pushRows(db, 'vet_visits', unsyncedVisits, (v) => ({
+    const landed = await pushRows(db, 'vet_visits', unsyncedVisits, (v) => ({
       id: v.id, pet_id: v.pet_id, visited_at: v.visited_at,
       clinic_name: v.clinic_name, vet_name: v.vet_name,
       reason: v.reason, notes: v.notes, next_visit_at: v.next_visit_at,
@@ -1273,6 +1314,8 @@ async function drainVetVisitsQueue(): Promise<void> {
       deleted_at: v.deleted_at,
       created_at: v.created_at, updated_at: v.updated_at,
     }));
+    // Before the photos below: what waits on the visit should not also wait on them.
+    if (landed.size > 0) sendWhatWaitedOnVisits();
   }
 
   // Sync vet visit attachments
@@ -1353,6 +1396,7 @@ async function drainVetDocumentsQueue(): Promise<void> {
 
   const unsynced = await db.getAllAsync<LocalVetDocument>(
     `SELECT * FROM vet_documents WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+        AND ${visitLandedSql('vet_documents')}
       ORDER BY created_at LIMIT 20`,
   );
 
@@ -1480,7 +1524,10 @@ async function drainVetAppointmentsQueue(): Promise<void> {
     questions: string | null; notes_draft: string | null;
     vet_visit_id: string | null; cancelled_at: string | null;
     deleted_at: string | null; created_at: string; updated_at: string;
-  }>(`SELECT * FROM vet_appointments WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 50`);
+  }>(
+    `SELECT * FROM vet_appointments WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+       AND ${visitLandedSql('vet_appointments')} LIMIT 50`,
+  );
 
   if (unsynced.length === 0) return;
 
@@ -1773,10 +1820,17 @@ export async function refreshFoodCache(): Promise<void> {
 // never ran.
 //
 // Extraction is a seconds-long server-side call, so a 'pending' row older than this
-// threshold is a dead capture, not one in flight. A COMMITTED food is never left
-// 'pending' (commitFood always writes completed / failed / manual), so a 'pending'
-// row is un-confirmed and, in the overwhelming common case, un-referenced — the meal
-// is only logged after the confirm step. The threshold is generous on purpose: the
+// threshold is a dead capture, not one in flight. The status alone does NOT prove a row
+// was never confirmed: retrying extraction on a confirmed food writes 'pending' to the
+// server, and a retry that dies leaves it there, on a food whose created_at is long past
+// the threshold, so this sweep hard-deleted it with its trial and feeding links (CUL-769).
+// So the delete also requires the capture's placeholder, PENDING_CAPTURE_LABEL, as both
+// brand and product: a food the SERVER saw confirmed carries the owner's names. That is
+// narrower than "the owner never confirmed", and the gap is real: commitFood's remote
+// write is fire-and-forget, so a confirm lost on a bad connection leaves the placeholder
+// on the server, refreshFoodCache writes it back over the local names, and this sweep
+// still deletes that food (CUL-1467). A dead capture is un-referenced in the common
+// case — the meal is only logged after the confirm step. The threshold is generous on purpose: the
 // phantom is untidy, not harmful, and a live capture the owner is slowly editing
 // self-heals anyway (commitFood upserts by id, re-creating the row if a sweep removed
 // it mid-edit).
@@ -1808,6 +1862,8 @@ export async function reapStalePendingFoods(): Promise<void> {
     .delete()
     .eq('created_by_user_id', session.user.id)
     .eq('ai_extraction_status', 'pending')
+    .eq('brand', PENDING_CAPTURE_LABEL)
+    .eq('product_name', PENDING_CAPTURE_LABEL)
     .lt('created_at', cutoff)
     .select('id');
   // Log on failure, never throw — this is a best-effort tidy that must not break a
@@ -1973,7 +2029,8 @@ async function drainMedicationsQueue(): Promise<void> {
   const db = getDb();
 
   const unsynced = await db.getAllAsync<LocalMedication>(
-    `SELECT * FROM medications WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 100`,
+    `SELECT * FROM medications WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+       AND ${visitLandedSql('medications')} LIMIT 100`,
   );
   if (unsynced.length === 0) return;
 
@@ -1995,6 +2052,13 @@ async function drainMedicationsQueue(): Promise<void> {
 // governs only the separate case of a historical dose surviving a LATER regimen
 // deletion — migration 020 — NOT insert ordering: an insert referencing a missing
 // regimen is rejected, not nulled.)
+//
+// DELIBERATELY NOT HELD FOR ITS COURSE, unlike an allowed food for its trial
+// (`PARENT_GATED_QUEUES`, lib/syncQueue.ts, says why at length). A dose sent ahead of
+// its course is a retryable 23503; a dose held behind it is a held correction, and a
+// course reads unsent whenever it has an edit not yet pushed, indefinitely while it
+// names a visit that cannot land. A held re-rating left the server saying Given about a
+// dose the owner had corrected to Refused (code review of 074fd18).
 export function syncPendingMedicationAdministrations(): Promise<void> {
   return serializeQueuePush('medication_administrations', drainMedicationAdministrationsQueue);
 }
@@ -2045,6 +2109,26 @@ async function drainDietTrialsQueue(): Promise<void> {
   const foodIds = [...new Set(unsynced.map((t) => t.food_item_id).filter(Boolean))] as string[];
   await presyncFoodItems(db, session.user.id, foodIds, 'diet trial');
 
+  const landed = await pushEndingTrialsFirst(db, unsynced);
+
+  // An allowed food waits for its trial to land (`parentLandedSql`), and only this drain
+  // knows when one has. A trial the server already holds still reads unsent while an edit
+  // to it is in flight (a longer window, a protein, a visit link), so a food added in the
+  // meantime is held, and its own push has come and gone. Nothing else would send it
+  // again until the next foreground (code review of 074fd18). So whenever a trial lands,
+  // the foods queue runs once more, through its public entry point (C-24). That includes
+  // a run whose starting pass was held back: the ending trials that did land release
+  // their own foods.
+  if (landed.size > 0) {
+    syncPendingDietTrialFoods().catch((e) =>
+      console.warn('[sync] diet_trial_foods push after a trial landed failed (queued):', e),
+    );
+  }
+}
+
+/** The trials push, in the two ordered passes below. Returns every trial that landed,
+ *  from either pass. */
+async function pushEndingTrialsFirst(db: Db, unsynced: LocalDietTrial[]): Promise<Set<string>> {
   // TWO PASSES, ENDING TRIALS FIRST — the wire half of PR 3's "complete-then-start
   // must be ORDERED" (§3.3). Migration 040 made the active-trial index UNIQUE, so
   // an owner who ends one trial and starts another while offline queues two rows
@@ -2069,28 +2153,36 @@ async function drainDietTrialsQueue(): Promise<void> {
   // quarantined row drops out of the queue, so this cannot starve).
   const ending = unsynced.filter((t) => t.status !== 'active');
   const starting = unsynced.filter((t) => t.status === 'active');
+  const landed = new Set<string>();
 
   if (ending.length > 0) {
-    const landed = await pushRows(db, 'diet_trials', ending, dietTrialRowToRemote);
-    const stuck = ending.filter((t) => !landed.has(t.id));
+    const endingLanded = await pushRows(db, 'diet_trials', ending, dietTrialRowToRemote);
+    endingLanded.forEach((id) => landed.add(id));
+    const stuck = ending.filter((t) => !endingLanded.has(t.id));
     if (stuck.length > 0) {
       console.warn(
         `[sync] diet_trials: ${stuck.length} ending trial(s) did not land — ` +
         'holding the starting rows this cycle so they cannot 23505',
       );
-      return;
+      return landed;
     }
   }
   if (starting.length > 0) {
-    await pushRows(db, 'diet_trials', starting, dietTrialRowToRemote);
+    (await pushRows(db, 'diet_trials', starting, dietTrialRowToRemote)).forEach((id) => landed.add(id));
   }
+  return landed;
 }
 
 // Flush unsynced allowed-set rows (B-417). Runs AFTER syncPendingDietTrials in
 // the same cycle so the parent trial exists server-side before its children
-// reference it — the meals→events ordering rule. A child whose parent's push
-// failed this cycle FK-fails (23503, non-terminal) and stays queued; both retry
-// next cycle, so an allowed food never lands orphaned.
+// reference it — the meals→events ordering rule. And the queue read holds a child
+// whose trial is still waiting to land (DIET_TRIAL_FOOD_PUSH_QUEUE_SQL,
+// `parentLandedSql`), because a child sent first is NOT a retry: migration 041's
+// same-pet trigger runs ahead of the foreign key and refuses it with 23514, which is
+// terminal, so the allowed set would be quarantined on its first try. A trial can
+// wait a while (behind the visit it names, beside a sibling trial that does, or just
+// with an edit in flight), so the order of these two calls is not enough on its own;
+// and a food held that way is sent by drainDietTrialsQueue once its trial lands.
 export function syncPendingDietTrialFoods(): Promise<void> {
   return serializeQueuePush('diet_trial_foods', drainDietTrialFoodsQueue);
 }
@@ -2885,6 +2977,19 @@ async function hydrateMedications(db: Db, stale: () => boolean): Promise<void> {
       ],
     );
   }
+  // CUL-1459 — fill a local NULL visit link from the server, for every row fetched (the
+  // hydrateDietTrials step, for the same reason: an upgraded phone kept NULL where the server
+  // holds the link, and the next edit to the course pushed it over the server's). Only a
+  // NULL, only on a synced row, no updated_at: it queues nothing.
+  if (stale()) return;
+  for (const m of rows) {
+    if (!m.vet_visit_id) continue;
+    await db.runAsync(
+      `UPDATE medications SET vet_visit_id = ?
+       WHERE id = ? AND vet_visit_id IS NULL AND synced = 1`,
+      [m.vet_visit_id, m.id],
+    );
+  }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
   if (stale()) return;
   if (wm) await setWatermark('medications', wm);
@@ -3013,6 +3118,30 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
         t.vet_visit_id ?? null,
         t.created_at, t.updated_at,
       ],
+    );
+  }
+  // CUL-1459 — fill a local NULL from the server for every row fetched, whether or not LWW
+  // rewrote it: the window's provenance and the visit link. The re-pull after the column
+  // upgrade (COLUMN_UPGRADES `rehydrate`) returns rows whose updated_at equals the local copy,
+  // which reconcileBatch rightly leaves alone, so without this an upgraded phone kept NULL
+  // where the server holds a value, and its next edit to the trial pushed that NULL over it.
+  // Fills only a NULL (COALESCE), only on a synced row, and touches no other column and no
+  // updated_at: it records values the server already has, and queues nothing. The CUL-1396
+  // shape.
+  if (stale()) return;
+  for (const t of rows) {
+    const vetDirected = t.target_duration_vet_directed == null ? null : t.target_duration_vet_directed ? 1 : 0;
+    if (t.target_duration_days_initial == null && t.target_duration_set_at == null
+      && vetDirected == null && t.vet_visit_id == null) continue;
+    await db.runAsync(
+      `UPDATE diet_trials SET
+         target_duration_days_initial = COALESCE(target_duration_days_initial, ?),
+         target_duration_set_at = COALESCE(target_duration_set_at, ?),
+         target_duration_vet_directed = COALESCE(target_duration_vet_directed, ?),
+         vet_visit_id = COALESCE(vet_visit_id, ?)
+       WHERE id = ? AND synced = 1`,
+      [t.target_duration_days_initial ?? null, t.target_duration_set_at ?? null, vetDirected,
+       t.vet_visit_id ?? null, t.id],
     );
   }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
@@ -3353,16 +3482,19 @@ async function pushAllQueues(): Promise<void> {
   // CUL-899 VV-1: an appointment's vet_visit_id is nullable, so no server FK forces
   // this order — but trg_vet_appointments_visit_same_pet (migration 066) looks the
   // visit up, and a visit logged in the same session that has not landed yet is
-  // invisible to it, so the row would be refused and wait a cycle. Pushing visits
-  // first (above) means the attendance link finds its target already committed.
+  // invisible to it. That refusal is 23514, which is TERMINAL, not a wait. Pushing
+  // visits first (above) means the attendance link finds its target already
+  // committed, and the drain itself holds a row whose visit has not landed
+  // (`visitLandedSql`), for the callers that push one queue directly.
   // Same argument, same position as vet_documents.
   await syncPendingVetAppointments();
   await syncPendingFeedingArrangements();
   await syncPendingMedications();
   await syncPendingMedicationAdministrations();
   // B-417: trials before their allowed set — diet_trial_foods.diet_trial_id
-  // FKs to diet_trials server-side, so the parent must land first or the child
-  // FK-fails (23503, non-terminal) and waits a cycle. Both pre-sync their own
+  // FKs to diet_trials server-side, and 041's same-pet trigger refuses a child whose
+  // trial is not there with a TERMINAL 23514. The foods drain holds such a child
+  // itself (`parentLandedSql`); this order saves it a cycle. Both pre-sync their own
   // food_items (Pattern 6).
   await syncPendingDietTrials();
   await syncPendingDietTrialFoods();

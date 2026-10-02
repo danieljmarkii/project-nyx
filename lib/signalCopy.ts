@@ -2181,10 +2181,13 @@ export function selectCrossPetSafetyFinding<P extends { id: string }>(
 }
 
 export interface BannerCopy {
-  /** Full sentence — the a11y label + the guardrail-validation input. Always starts with the pet name. */
+  /** Full sentence — the a11y label. Always starts with the pet name. */
   text: string;
   /** The sentence with the leading pet name removed, so the name can render bold (mock A3). */
   rest: string;
+  /** The same sentence with the owner's words (the pet name, a refused food's label) replaced
+   *  by stand-ins — the guardrail screen's input, never rendered. */
+  screened: string;
 }
 
 // Template-only, derived from the finding's structured fields (§4): one specific,
@@ -2194,13 +2197,30 @@ export interface BannerCopy {
 // word (nyx-voice). The sentence always opens with the pet name so the component
 // can bold it; `text === petName + rest` by construction.
 export function bannerCopy(finding: BannerSafetyFinding, petName: string): BannerCopy {
-  const rest = bannerRest(finding);
-  return { text: `${petName}${rest}`, rest };
+  const food = finding.type === 'intake_decline' ? truncateFoodLabel(finding.refusedFoodLabel) : null;
+  const rest = bannerRest(finding, food);
+  return {
+    text: `${petName}${rest}`,
+    rest,
+    // A stand-in only where the owner's word is: a blank label keeps the no-label sentence.
+    screened: `${SCREEN_PET_NAME}${bannerRest(finding, food === null ? null : SCREEN_FOOD_LABEL)}`,
+  };
 }
 
+// The guardrail screen reads the APP's words, never the owner's. The pet name and a refused
+// food's label are owner-typed data the sentence quotes, and the screens' vocabulary is
+// everyday English: "Healthy Weight" and "a/d Urgent Care" are foods, not an all-clear or an
+// alarm, and a dog called Trigger is not a causal claim. Screening them failed safe to silence
+// on a REAL safety finding, which is the one thing this banner exists to say. So the screen
+// runs over the template with both replaced by stand-ins that trip nothing; the owner's words
+// render as typed, exactly as the pet's own Signal card quotes them.
+const SCREEN_PET_NAME = 'Pixel';
+const SCREEN_FOOD_LABEL = 'the food';
+
 // A long free-text food label (the meal-log stores brand + product in TEXT
-// columns) must not blow validateBannerPhrasing's length cap and silently suppress
-// a REAL safety finding — so cap the rendered label, keeping the banner visible.
+// columns) would stretch the banner over several lines — so cap the rendered
+// label. (It once also blew the guardrail's length cap and silenced the banner;
+// the screen now reads a stand-in, so the cap is a layout rule only.)
 function truncateFoodLabel(label: string | null): string | null {
   const f = label?.trim();
   if (!f) return null;
@@ -2211,7 +2231,7 @@ function truncateFoodLabel(label: string | null): string | null {
 // The sentence AFTER the pet name. The name is prepended by bannerCopy, so the
 // rest never repeats it — it refers to the pet as "they" where needed (matching
 // the Signal evidence copy), so the leading name can render bold once (mock A3).
-function bannerRest(finding: BannerSafetyFinding): string {
+function bannerRest(finding: BannerSafetyFinding, food: string | null): string {
   if (finding.type === 'incident_red_flag') {
     // Per-incident visual red flag (B-340) — the teaser names WHAT the logged photo showed
     // (blood / foreign material), calmly. "possible …" keeps it an unconfirmed AI read; the
@@ -2225,7 +2245,6 @@ function bannerRest(finding: BannerSafetyFinding): string {
   }
   if (finding.type === 'intake_decline') {
     if (finding.trigger === 'refused_normal_food') {
-      const food = truncateFoodLabel(finding.refusedFoodLabel);
       // Names the refused food (intake, not a timing-only finding — naming it is
       // intended and clinically appropriate, as in the Signal template). With no
       // label, drop the trailing clause so the sentence doesn't read "a meal they
@@ -2285,6 +2304,8 @@ const BANNER_ALARM_RE =
 // validatePhrasing applies to the banner (§4): the template copy is guardrail-clean
 // by construction, but this screens it as defense-in-depth. Any drift FAILS SAFE —
 // the caller drops the banner (silence), never a bad escalation, never a reassurance.
+// The caller hands it `BannerCopy.screened`, never `text`: the owner's words are not
+// the app's claim, and screening them silenced real findings (see bannerCopy).
 export function validateBannerPhrasing(text: string): boolean {
   const t = text?.trim() ?? '';
   if (t.length < 8 || t.length > 200) return false;

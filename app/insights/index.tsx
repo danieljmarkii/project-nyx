@@ -145,18 +145,6 @@ export default function PatternsScreen() {
     optedIn: lookOptedIn,
     species: activePet?.species,
   });
-  // Arm 2 of the withheld predicate. The SAME loader Home uses (`useDietTrial`), and the
-  // same fail-closed read: `input` is retained across a pet switch, so a non-null input is
-  // not proof it belongs to this pet, and an unconfirmed record is `null` — ignorance, which
-  // `lookWithheldState` resolves to 'unknown' and `lookWithheld` then fails CLOSED on. A
-  // quiet run drawn during the switch window is the one direction that cannot be taken back.
-  const { input: trialInput, inputIsForPet: trialFactsFresh } = useDietTrial(activePet?.id ?? null);
-  const trialNotEating = trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : null;
-
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [cards, setCards] = useState<DashboardCard[]>([]);
-  const [dashState, setDashState] = useState<DashboardState>('empty');
-
   // Design v2 (D2-5 / CUL-1067; `docs/culprit-design-v4-mockups.html` §04): flag-on the
   // page is the month first, then the weight as dots by date, then the "what Nyx ate"
   // cards and the shipped Timing / Trial / What you noticed panels unchanged; the
@@ -165,6 +153,27 @@ export default function PatternsScreen() {
   // behind the gate: the month instrument mounts flag-on only, and the weight series is
   // the same read the old card already makes.
   const designV2 = useDesignV2();
+  // The trial loader has two readers, and both are dark: Noticed's withheld predicate
+  // (below) and design_v2's trial mark on the month (`trialMark`). With neither live it
+  // reads nothing — a null id is the loader's `no_pet`, whose `input` stays null.
+  const { input: trialInput, inputIsForPet: trialFactsFresh } = useDietTrial(
+    noticedLive || designV2 ? (activePet?.id ?? null) : null,
+  );
+  // Arm 2 of the withheld predicate. The SAME loader Home uses (`useDietTrial`), and the
+  // same fail-closed read: `input` is retained across a pet switch, so a non-null input is
+  // not proof it belongs to this pet, and an unconfirmed record is `null` — ignorance, which
+  // `lookWithheldState` resolves to 'unknown' and `lookWithheld` then fails CLOSED on. A
+  // quiet run drawn during the switch window is the one direction that cannot be taken back.
+  //
+  // Null whenever Noticed is not live, where nothing reads it: it is one of `load`'s
+  // deps, so a trial read answering for the month's mark alone would otherwise re-key
+  // `load` and re-run the whole dashboard read through the focus effect.
+  const trialNotEating = noticedLive && trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : null;
+
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [cards, setCards] = useState<DashboardCard[]>([]);
+  const [dashState, setDashState] = useState<DashboardState>('empty');
+
   const [weightSeries, setWeightSeries] = useState<{ readings: WeightReading[]; count: number }>({ readings: [], count: 0 });
   // Bumped on every focus load while the flag is on: the month re-reads the current
   // month, and "today" is re-derived — a screen left open across midnight moves on.

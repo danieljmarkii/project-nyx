@@ -324,12 +324,17 @@ describe('buildSuggestionChips — data-aware, seeded from the pet (§3.2)', () 
 describe('loadAskSuggestions — local SQLite read', () => {
   afterEach(() => jest.clearAllMocks());
 
-  it('reports total + builds chips from the presence row', () => {
+  it('reports total + builds chips from the presence rows', () => {
+    // One row per event type, the read's shape (`GROUP BY event_type`).
     mockedGetDb.mockReturnValue({
-      getAllSync: () => [{ total: 12, vomit: 3, stool: 0, meal: 9, weight: 2 }],
+      getAllSync: () => [
+        { event_type: 'vomit', n: 3 },
+        { event_type: 'meal', n: 9 },
+        { event_type: 'weight_check', n: 2 },
+      ],
     });
     const s = loadAskSuggestions('p1', 'Pixel');
-    expect(s.total).toBe(12);
+    expect(s.total).toBe(14);
     expect(s.chips.length).toBeGreaterThan(0);
     expect(s.chips.some((c) => /vomit/i.test(c))).toBe(true);
   });
@@ -340,6 +345,73 @@ describe('loadAskSuggestions — local SQLite read', () => {
     });
     const s = loadAskSuggestions('p1', 'Pixel');
     expect(s).toEqual({ total: 0, chips: [] });
+  });
+});
+
+// ── The presence read over the REAL schema: a look is not a record ───────────
+//
+// `total` decides Ask's designed empty-record state. A daily look is the owner's answer
+// to a question, never a count (daily-look spec §2 item 5), and Ask is blind to looks in
+// v1 — so a record holding only looks is still an empty one to Ask. Driven over the
+// production SQL and DDL on node:sqlite, so the assertion is about what the read
+// actually returns rather than about a row a mock hands back.
+describe('loadAskSuggestions — the presence read leaves looks out of the total', () => {
+  const { DatabaseSync } = require('node:sqlite');
+  let raw: InstanceType<typeof DatabaseSync>;
+
+  function insertEvent(id: string, type: string, opts: { pet?: string; deleted?: boolean } = {}) {
+    const at = '2026-09-20T12:00:00.000Z';
+    raw
+      .prepare(
+        `INSERT INTO events (id, pet_id, event_type, occurred_at, occurred_at_confidence, notes,
+                             source, created_at, updated_at, deleted_at, synced)
+         VALUES (?, ?, ?, ?, 'witnessed', NULL, 'manual', ?, ?, ?, 1)`,
+      )
+      .run(id, opts.pet ?? 'p1', type, at, at, at, opts.deleted ? at : null);
+  }
+
+  beforeEach(async () => {
+    const { BASE_SCHEMA_SQL, applyColumnUpgrades } = jest.requireActual('./localSchema');
+    raw = new DatabaseSync(':memory:');
+    raw.exec(BASE_SCHEMA_SQL);
+    await applyColumnUpgrades(async (sql: string) => {
+      try {
+        raw.exec(sql);
+      } catch {
+        /* a table the base schema does not hold: not one this read touches */
+      }
+    });
+    mockedGetDb.mockReturnValue({
+      getAllSync: (sql: string, params: unknown[] = []) => raw.prepare(sql).all(...(params as never[])),
+    });
+  });
+
+  afterEach(() => {
+    raw.close();
+    jest.clearAllMocks();
+  });
+
+  it('a record holding only looks is an empty record to Ask', () => {
+    insertEvent('l1', 'check_in');
+    insertEvent('l2', 'check_in');
+    expect(loadAskSuggestions('p1', 'Pixel')).toEqual({ total: 0, chips: [] });
+  });
+
+  it('counts every other row beside a look, and builds the chips from them', () => {
+    insertEvent('l1', 'check_in');
+    insertEvent('m1', 'meal');
+    insertEvent('v1', 'vomit');
+    insertEvent('s1', 'stool_normal');
+    insertEvent('w1', 'weight_check');
+    insertEvent('m2', 'meal', { deleted: true });
+    insertEvent('x1', 'meal', { pet: 'p2' });
+    const s = loadAskSuggestions('p1', 'Pixel');
+    // Four of this pet's surviving rows; the look, the deleted meal and the other pet's
+    // meal are not among them.
+    expect(s.total).toBe(4);
+    expect(s.chips).toEqual(
+      buildSuggestionChips({ total: 4, hasVomit: true, hasStool: true, hasMeal: true, hasWeight: true }, 'Pixel'),
+    );
   });
 });
 

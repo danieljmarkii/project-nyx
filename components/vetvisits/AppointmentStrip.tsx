@@ -1,11 +1,13 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { ThemedText } from '../ui/ThemedText';
 import { AppointmentBlock } from './AppointmentBlock';
+import { useAppActive } from '../../hooks/useAppActive';
 import { usePetStore } from '../../store/petStore';
+import { useSyncStore } from '../../store/syncStore';
 import { syncPendingVetAppointments } from '../../lib/sync';
 import {
   cancelVetAppointment,
@@ -112,6 +114,36 @@ export function AppointmentStrip() {
       load();
     }, [load]),
   );
+
+  // ── Focus is not enough on Home (F8) ──────────────────────────────────────────
+  // Home does not LOSE focus in either of the two ways this strip's answer moves:
+  //
+  //   • the app RESUMING. Home stays the focused route through a background, so after
+  //     a night away the strip still said "Today" for a day that had passed and asked
+  //     "Did … happen?" a day late. The label is built at read time
+  //     (`readHomeAppointment`'s `now`), so a re-read is what moves it.
+  //   • a sync cycle LANDING ROWS (`hydrationTick`). An appointment booked on another
+  //     device, or hydrated after sign-in, stayed off Home until the owner left it and
+  //     came back.
+  //
+  // Each is keyed to a CHANGE, a tick not yet seen or an inactive → active edge, so
+  // neither fires on mount, where the focus effect has just read. Both go through
+  // `load`, so the load id still lets only the newest answer land.
+  const hydrationTick = useSyncStore((s) => s.hydrationTick);
+  const tickSeen = useRef(hydrationTick);
+  useEffect(() => {
+    if (tickSeen.current === hydrationTick) return;
+    tickSeen.current = hydrationTick;
+    load();
+  }, [hydrationTick, load]);
+
+  const appActive = useAppActive();
+  const wasActive = useRef(appActive);
+  useEffect(() => {
+    const resumed = appActive && !wasActive.current;
+    wasActive.current = appActive;
+    if (resumed) load();
+  }, [appActive, load]);
 
   if (!appointment || loadedFor !== petId) return null;
 

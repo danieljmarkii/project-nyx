@@ -80,4 +80,19 @@ describe('LogSheetHost', () => {
     // One sheet at a time: each fresh mount replaced the one before it.
     expect(mockLifecycle.unmounts).toBe(2);
   });
+
+  // The other side of "every open mounts a fresh sheet": a second open while one is up
+  // is not an open. A quick double tap on a door landed it while the first sheet was
+  // still sliding in, and the bumped key unmounted that presenting Modal and mounted
+  // another (the CUL-662 iOS wedge class). The sheet on screen keeps its request.
+  it('a second open while the sheet is up bumps the key once, never re-keying the sheet', () => {
+    render(<LogSheetHost />);
+    const opensBefore = useUiStore.getState().logSheetOpens;
+    act(() => { useUiStore.getState().openLogSheet(); });
+    act(() => { useUiStore.getState().openLogSheet('vomit'); });
+    expect(useUiStore.getState().logSheetOpens).toBe(opensBefore + 1);
+    expect(mockLifecycle.mounts).toBe(2);
+    expect(mockLifecycle.unmounts).toBe(1);
+    expect(mockLastProps.current).toMatchObject({ visible: true, initialType: null });
+  });
 });

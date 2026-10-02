@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from 'expo-router';
@@ -31,6 +31,7 @@ import { TodayCard } from '../../components/designV2/home/TodayCard';
 import { CoverageDoor } from '../../components/designV2/home/CoverageDoor';
 import { HOME_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
+import { useUiStore } from '../../store/uiStore';
 
 /**
  * The slice of the tab navigator this screen needs to hear a Home-tab re-tap.
@@ -71,7 +72,18 @@ export default function HomeScreen() {
   // inside the card, composed below (CUL-1220, BRK-16).
   const [todayCardBox, setTodayCardBox] = useState<LayoutBox | null>(null);
   const [lookHeaderBox, setLookHeaderBox] = useState<LayoutBox | null>(null);
+  // The scroll offset lives in a ref, and reaches state (re-rendering the whole feed)
+  // only while the Noticed grid is open: `LookExits` draws nothing unless the grid has
+  // published its overlay, so a scroll with the grid closed has nothing to repaint.
+  // Setting state on every event re-rendered Home ten times a second for every account.
+  const scrollYRef = useRef(0);
   const [scrollY, setScrollY] = useState(0);
+  const gridOpen = useUiStore((s) => s.captureOverlay !== null);
+  // The grid opens at the offset the ref kept while it was closed. A LAYOUT effect, so
+  // the frame that first draws the exits is never painted against a stale offset.
+  useLayoutEffect(() => {
+    if (gridOpen) setScrollY(scrollYRef.current);
+  }, [gridOpen]);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
 
   // Re-tapping the Home tab scrolls the feed back to the Signal (spec §2 SHOULD).
@@ -237,7 +249,10 @@ export default function HomeScreen() {
           ref={scrollRef}
           contentContainerStyle={[styles.scroll, designV2 && styles.scrollV2]}
           showsVerticalScrollIndicator={false}
-          onScroll={(e) => setScrollY(e.nativeEvent.contentOffset.y)}
+          onScroll={(e) => {
+            scrollYRef.current = e.nativeEvent.contentOffset.y;
+            if (gridOpen) setScrollY(scrollYRef.current);
+          }}
           // 16ms would repaint the exits every frame for a decision that only changes
           // at two thresholds; 100ms is under the eye's tolerance for a control
           // appearing and costs a fraction of the bridge traffic.

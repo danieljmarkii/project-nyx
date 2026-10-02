@@ -23,6 +23,8 @@
 //   medications           → diet_trials      (pet-scoped lifecycle row)
 //   feeding_arrangements  → diet_trial_foods (pet-child, dated, soft-deleted)
 
+import { parentLandedSql, petTrialsVisitLandedSql, visitLandedSql } from './syncQueue';
+
 // ── Local schema (mirrors migrations 040 + 041) ──────────────────────────────
 //
 // Extracted as a string (not inlined in initDb like events/meals) ONLY so the
@@ -174,11 +176,25 @@ export const DIET_TRIAL_SCHEMA_SQL = `
 // sets `synced = 0, sync_error = NULL` in the same statement. Clearing the error
 // is what makes an owner-visible fix — completing the other trial, changing a
 // date — a fresh attempt rather than a permanently-parked row.
+// A trial started from the after-visit screen names its visit; it waits for that visit
+// to land (`visitLandedSql`, lib/syncQueue.ts), or the server's same-pet guard
+// refuses it with a terminal 23514. And while it waits, the pet's other queued trials
+// wait with it (`petTrialsVisitLandedSql`): the drain can only push an ending ahead of
+// a start if it is handed both, and a start sent alone over a held ending is a terminal
+// 23505.
 export const DIET_TRIAL_PUSH_QUEUE_SQL =
-  'SELECT * FROM diet_trials WHERE synced = 0 AND sync_error IS NULL LIMIT 100';
+  `SELECT * FROM diet_trials WHERE synced = 0 AND sync_error IS NULL
+     AND ${visitLandedSql('diet_trials')}
+     AND ${petTrialsVisitLandedSql()} LIMIT 100`;
 
+// An allowed food waits for its trial to land (`parentLandedSql`): migration 041's
+// same-pet trigger runs ahead of the foreign key, so a food sent before its trial is a
+// terminal 23514, not a retry. A trial can wait a while: behind its own visit, beside a
+// sibling trial that waits on one, or with an edit of its own in flight. The trials
+// drain sends the held food once the trial lands.
 export const DIET_TRIAL_FOOD_PUSH_QUEUE_SQL =
-  'SELECT * FROM diet_trial_foods WHERE synced = 0 AND sync_error IS NULL LIMIT 100';
+  `SELECT * FROM diet_trial_foods WHERE synced = 0 AND sync_error IS NULL
+     AND ${parentLandedSql('diet_trial_foods')} LIMIT 100`;
 
 // The active trial for one pet, from the mirror. Replaces the Supabase read the
 // widget publisher used to do (§3.4), which is why the AIRPLANE-MODE acceptance

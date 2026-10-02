@@ -61,12 +61,23 @@ import {
   repairRefusedVisitLinks,
   updateVisitDetails,
   VetVisitLinkRefused,
+  visitLoggedFrom,
   type ActiveCourse,
   type AppointmentDetail,
 } from '../../lib/vetVisits';
 
-/** Which sheet is up. At most ONE is ever mounted — see the CUL-662 note below. */
-type Sheet = { kind: 'med'; editing: Regimen | null } | { kind: 'trial' } | null;
+/**
+ * Which sheet is up. At most ONE is ever mounted — see the CUL-662 note below.
+ *
+ * *Changed*'s editor carries `linkedNow`, whether the verdict's own link write landed.
+ * `linkCourseToVisit` is first-wins, so a course prescribed at an earlier visit keeps
+ * that visit, and the line the saved edit leaves must not claim this one (F5).
+ */
+type Sheet =
+  | { kind: 'med'; editing: null }
+  | { kind: 'med'; editing: Regimen; linkedNow: boolean }
+  | { kind: 'trial' }
+  | null;
 
 // "How did it go?" (CUL-902 VV-4; mocks D1 + D2) — the plan becomes records.
 //
@@ -174,6 +185,24 @@ export default function AfterVisitScreen() {
   const load = useCallback(async () => {
     try {
       const appt = appointmentId ? await readAppointmentById(appointmentId) : null;
+      // A booking that is ALREADY a visit, opened fresh, goes to that visit (F4). This
+      // screen's save would otherwise log it again: a second `vet_visits` row, with the
+      // booking re-pointed at it. Reachable from any door still offering the booking
+      // after its visit was saved: a list, a strip or a notes screen that has not
+      // re-read, here or on another phone.
+      //
+      // Only on the FIRST load, before the form is seeded, and only while this screen has
+      // made no visit of its own. On a re-focus (back from food-capture) the booking is
+      // attended BY THIS SCREEN and must stay put, and a seeded form holds what the owner
+      // typed, which a redirect would drop. (No visit is made before the form is seeded,
+      // so `seeded` is the operative half; `visitIdRef` names the fact being protected.)
+      // That re-focus is also why `readAppointmentById` stays lax rather than hiding a
+      // logged booking: this screen re-reads its own.
+      const loggedAs = appt ? visitLoggedFrom(appt) : null;
+      if (loggedAs && !seeded.current && visitIdRef.current === null) {
+        router.replace(`/vet-visits/${loggedAs}`);
+        return;
+      }
       setAppointment(appt);
       const forPetId = appt?.pet_id ?? screenPetId;
       if (!forPetId) {
@@ -296,8 +325,13 @@ export default function AfterVisitScreen() {
       forgetPaperwork(appointment.id).catch(console.error);
     }
 
-    syncPendingVetVisits().catch(console.error);
-    syncPendingVetAppointments().catch(console.error);
+    // The visit first, then the appointment that names it: the server's same-pet guard
+    // looks the visit up, so an appointment that lands first is refused with a terminal
+    // 23514. The drain also holds it until the visit lands (`visitLandedSql`); this
+    // order just saves it a cycle.
+    syncPendingVetVisits()
+      .then(() => syncPendingVetAppointments())
+      .catch(console.error);
     return id;
   }, [appointment, fields, petId, paperwork]);
 
@@ -391,8 +425,11 @@ export default function AfterVisitScreen() {
         // prescribed at an earlier visit keeps saying so, and the line below must not
         // claim otherwise (CUL-825 — ask, never assert).
         linkedNow = await linkCourseToVisit(course.id, id);
-        syncPendingMedications().catch(console.error);
-        if (verdict === 'changed') setSheet({ kind: 'med', editing: toRegimen(course) });
+        // The visit before the course that now names it (see `ensureVisit`).
+        syncPendingVetVisits()
+          .then(() => syncPendingMedications())
+          .catch(console.error);
+        if (verdict === 'changed') setSheet({ kind: 'med', editing: toRegimen(course), linkedNow });
       }
       setCourseVerdicts((prev) => ({ ...prev, [course.id]: verdict }));
       note(
@@ -771,7 +808,10 @@ export default function AfterVisitScreen() {
                   endedTrial={endedTrial}
                   onTrialVerdict={handleTrialVerdict}
                   onStartTrial={openTrialSheet}
-                  onAddFood={() => router.push('/food-capture')}
+                  // `returnTo=back`: food-capture otherwise ends in `dismissAll()`, which pops
+                  // every root-stack screen above the tabs, this one included, and loses the
+                  // unsaved form (the trial-foods precedent, B-625).
+                  onAddFood={() => router.push('/food-capture?returnTo=back')}
                   nextVisitAt={nextVisitAt}
                   onPickNextVisit={handlePickNextVisit}
                   paperworkCount={paperwork.length}
@@ -807,7 +847,12 @@ export default function AfterVisitScreen() {
                 note({
                   key: `course:${regimen.id}`,
                   title: `${regimen.drug_name} changed`,
-                  note: 'linked to this visit',
+                  // The verdict's answer, carried rather than re-asserted (F5): the edit
+                  // (`updateRegimen`) never writes the link, so whether this visit is the
+                  // course's provenance was settled when *Changed* was tapped. This
+                  // used to say "linked to this visit" for every course, overwriting the
+                  // honest line the verdict had just written.
+                  note: sheet.editing !== null && sheet.linkedNow ? 'linked to this visit' : 'still on it',
                 });
                 if (petId) void loadPlan(petId);
               }}
@@ -830,12 +875,13 @@ export default function AfterVisitScreen() {
               onStarted={handleTrialStarted}
               onAddFood={() => {
                 // The pending re-open lives in a REF consumed once on focus, never in
-                // state (C-22 / CUL-170): food-capture ends in `router.dismissAll()`,
-                // so without this the owner lands back here with no sheet and every
-                // reason to think the trial saved.
+                // state (C-22 / CUL-170), so the owner lands back here WITH the sheet.
+                // `returnTo=back` is what brings them back here at all: food-capture
+                // otherwise ends in `router.dismissAll()`, which pops this root-stack
+                // screen along with it (the trial-foods precedent, B-625).
                 resumeTrialSheet.current = true;
                 setSheet(null);
-                router.push('/food-capture');
+                router.push('/food-capture?returnTo=back');
               }}
               onLogFirstMeal={() => {
                 setSheet(null);

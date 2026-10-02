@@ -89,6 +89,7 @@ import type {
   ReflectionFinding,
   SymptomWorseningFinding,
   SymptomChronicityFinding,
+  SymptomBurdenFinding,
   PostprandialTimingFinding,
   TimeOfDayClusteringFinding,
   TimingStoryFinding,
@@ -1744,7 +1745,26 @@ const candidate = (id: string, findings: AnyFinding[]) => ({
   findings: findings.map((f, i) => cached(f, i)),
 });
 
-// Every banner copy variant, for the guardrail sweep.
+// Engines v3 PR-14d's burden card (CUL-1410): the run arm, the count arm, and both.
+const burden = (over: Partial<SymptomBurdenFinding> = {}): SymptomBurdenFinding => ({
+  type: 'symptom_burden',
+  priorityClass: 'safety',
+  symptomType: 'vomit',
+  count: 4,
+  days: 3,
+  runDays: 3,
+  daysSinceRunEnd: 0,
+  countArm: true,
+  persistenceArm: false,
+  tier: 'soon',
+  windowDays: 7,
+  ...over,
+});
+
+// Every banner copy variant, for the guardrail sweep. EVERY type the banner can carry and
+// every symptom key its templates name: for a variant missing here, the runtime screen is
+// the only guard, and a hit silences the whole banner (adversarial-reviewer, release QA:
+// "urgent" injected into the burden template left every suite green).
 const ALL_BANNER_FINDINGS: BannerSafetyFinding[] = [
   incidentRedFlag({ flags: ['blood'], flaggedIncidentCount: 1 }),
   incidentRedFlag({ flags: ['foreign_material'], flaggedIncidentCount: 1 }),
@@ -1753,19 +1773,36 @@ const ALL_BANNER_FINDINGS: BannerSafetyFinding[] = [
   intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: null }),
   intakeDecline({ trigger: 'consecutive_low', daysBelowBaseline: 1 }),
   intakeDecline({ trigger: 'consecutive_low', daysBelowBaseline: 4 }),
-  ...(['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction'] as const).flatMap(
+  burden({ countArm: true, persistenceArm: false, count: 4 }),
+  burden({ countArm: false, persistenceArm: true, runDays: 3, tier: 'today' }),
+  burden({ countArm: true, persistenceArm: true, count: 6, runDays: 4, tier: 'today' }),
+  ...(['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough', 'sneeze'] as const).flatMap(
     (symptomType) => [
       worsening({ trigger: 'more_episodes', symptomType }),
       worsening({ trigger: 'more_days', symptomType }),
     ],
   ),
-  ...(['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction'] as const).flatMap(
+  ...(['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough', 'sneeze'] as const).flatMap(
     (symptomType) => [
       chronicity({ tier: 'firm', symptomType }),
       chronicity({ tier: 'standard', symptomType }),
     ],
   ),
 ];
+
+it('the sweep covers every type the banner can carry (a new one must join it)', () => {
+  // A Record over the union: a type added to BannerSafetyFinding without a key here is a
+  // compile error, and one with a key but no variant above reds this test.
+  const carried: Record<BannerSafetyFinding['type'], true> = {
+    incident_red_flag: true,
+    intake_decline: true,
+    symptom_burden: true,
+    symptom_chronicity: true,
+    symptom_worsening: true,
+  };
+  const swept = new Set(ALL_BANNER_FINDINGS.map((f) => f.type));
+  expect([...swept].sort()).toEqual(Object.keys(carried).sort());
+});
 
 describe('selectCrossPetSafetyFinding', () => {
   it('returns null with no candidates', () => {
@@ -1996,7 +2033,52 @@ describe('bannerCopy', () => {
       expect(ALARM_RE.test(text)).toBe(false);
       // And it passes the runtime guardrail screen the hook applies.
       expect(validateBannerPhrasing(text)).toBe(true);
+      expect(validateBannerPhrasing(bannerCopy(f, 'Pixel').screened)).toBe(true);
     }
+  });
+
+  // The screen reads the APP's words, never the owner's. Real product names and pet names the
+  // screens' everyday vocabulary catches: screened inside the rendered sentence, each one
+  // silenced a REAL safety banner, because the hook fails safe to silence.
+  const OWNER_FOODS = [
+    "Hill's Science Diet Healthy Weight", // reassurance: "healthy"
+    'a/d Urgent Care', // alarm: "urgent" (the recovery food of a very sick pet)
+    'Oxbow Critical Care', // alarm: "critical"
+    'Fussy Cat Chicken', // dismissive: "fussy"
+    'Allergy Relief Chews', // causal: "allergy"
+    'Yum! Chicken', // the no-"!" rule
+  ];
+  const OWNER_PET_NAMES = ['Trigger', 'Danger', 'Ok', 'Bam!'];
+
+  it("the screen's input is the template: a food's name never silences a refused-food banner", () => {
+    for (const label of OWNER_FOODS) {
+      const c = bannerCopy(intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: label }), 'Juniper');
+      expect(c.text).toContain(label); // rendered as the owner typed it
+      // Non-vacuity: the full sentence DOES trip the screen — this is the silence that shipped.
+      expect(validateBannerPhrasing(c.text)).toBe(false);
+      expect(c.screened).not.toContain(label);
+      expect(validateBannerPhrasing(c.screened)).toBe(true);
+    }
+  });
+
+  it("the screen's input is the template: a pet's name never silences any of its banners", () => {
+    for (const name of OWNER_PET_NAMES) {
+      for (const f of ALL_BANNER_FINDINGS) {
+        const c = bannerCopy(f, name);
+        expect(c.text.startsWith(name)).toBe(true);
+        expect(validateBannerPhrasing(c.text)).toBe(false);
+        expect(c.screened.startsWith(name)).toBe(false);
+        expect(validateBannerPhrasing(c.screened)).toBe(true);
+      }
+    }
+  });
+
+  it('the stand-in keeps the template branch: a blank label screens the no-label sentence', () => {
+    const blank = bannerCopy(intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: '  ' }), 'Juniper');
+    expect(blank.text).toBe('Juniper turned down a meal they usually finish — worth a look.');
+    expect(blank.screened).toBe('Pixel turned down a meal they usually finish — worth a look.');
+    const named = bannerCopy(intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: 'tuna pâté' }), 'Juniper');
+    expect(named.screened).toBe('Pixel turned down the food, which they usually finish — worth a look.');
   });
 });
 

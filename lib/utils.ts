@@ -97,6 +97,26 @@ export function formatLongDate(date: string | null): string | null {
 
 const MS_PER_DAY = 86_400_000;
 
+// One Intl.DateTimeFormat per (locale, options), built on first use and reused.
+//
+// Building one costs ~75 µs, and per-date call sites built a fresh one for every value they
+// formatted: about nine per event in the vet report, whose CPU then grew ~0.8 ms per event
+// toward Supabase's 2 s cap (release QA, 2026-10-02). A formatter is immutable once built, so
+// sharing it is safe. The constructor throws on an unknown IANA zone BEFORE anything is
+// cached, so a caller's try/catch fallback behaves exactly as with a fresh `new`. The cache is
+// bounded by the zones in use times the handful of option shapes callers pass.
+const DATE_TIME_FORMATS = new Map<string, Intl.DateTimeFormat>();
+
+export function dateTimeFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let format = DATE_TIME_FORMATS.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, options);
+    DATE_TIME_FORMATS.set(key, format);
+  }
+  return format;
+}
+
 // Epoch-day index (whole days since 1970-01-01) of the calendar day `ms` falls on.
 //
 // The index is built from CALENDAR COMPONENTS via Date.UTC rather than by dividing a
@@ -117,7 +137,7 @@ const MS_PER_DAY = 86_400_000;
 export function localDayIndex(ms: number, timeZone?: string): number {
   if (timeZone) {
     try {
-      const parts = new Intl.DateTimeFormat('en-US', {
+      const parts = dateTimeFormat('en-US', {
         timeZone,
         year: 'numeric',
         month: 'numeric',
@@ -226,7 +246,7 @@ export function resolveIanaZone(
     if (typeof c === 'string' && c.length > 0) {
       try {
         // Intl throws (RangeError) on an unknown zone; a valid one constructs cleanly.
-        new Intl.DateTimeFormat('en-US', { timeZone: c });
+        dateTimeFormat('en-US', { timeZone: c });
         return c;
       } catch {
         // not a zone this runtime knows — try the next candidate

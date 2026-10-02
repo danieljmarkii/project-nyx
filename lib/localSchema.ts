@@ -543,9 +543,16 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   // TEXT like every other timestamp in this mirror; vet_directed is INTEGER
   // because SQLite has no BOOLEAN, and NULL vs 0 is deliberately no distinction
   // (both are silence — spec §5.1's two-sided rule).
-  { table: 'diet_trials', column: 'target_duration_days_initial', type: 'INTEGER' },
-  { table: 'diet_trials', column: 'target_duration_set_at', type: 'TEXT' },
-  { table: 'diet_trials', column: 'target_duration_vet_directed', type: 'INTEGER' },
+  //
+  // `rehydrate` (CUL-1459): "travels down through the normal hydrate" was true only for rows
+  // the server changed AFTER this build. A phone upgrading from a build without these
+  // columns had already pulled every trial, and a re-pull at the same updated_at is rightly
+  // skipped by LWW, so the columns stayed NULL here, and the next local edit to the trial
+  // pushed those NULLs over the server's values. The reset re-pulls the table once, and
+  // hydrateDietTrials fills a local NULL from the server.
+  { table: 'diet_trials', column: 'target_duration_days_initial', type: 'INTEGER', rehydrate: true },
+  { table: 'diet_trials', column: 'target_duration_set_at', type: 'TEXT', rehydrate: true },
+  { table: 'diet_trials', column: 'target_duration_vet_directed', type: 'INTEGER', rehydrate: true },
   // B-671 / Daily Recap DR-6 — the pet-name warmth opt-in. `notification_preferences`
   // shipped in B-661 PR 2 (migration 050) WITHOUT this column, so on any device that
   // already has the table CREATE TABLE IF NOT EXISTS (NOTIFICATION_SCHEMA_SQL) is a
@@ -563,13 +570,15 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   // them. (vet_appointments itself needs no entry — it is a new table, so the
   // CREATE above serves fresh and upgrading devices alike.)
   //
-  // All nullable, no default, nothing to backfill: no visit has ever been deleted
-  // and no course or trial has ever named one, so NULL is the honest value for
-  // every existing row — which is also exactly what the server migration left
-  // behind (verified: 0 of 7 live rows non-null at apply time).
+  // All nullable, no default, nothing to backfill LOCALLY: at apply time no visit had
+  // been deleted and no course or trial named one (verified: 0 of 7 live rows non-null).
+  // The links have been written since, so a phone upgrading from a build without these
+  // columns re-pulls both tables once and fills a local NULL from the server (`rehydrate`,
+  // CUL-1459). Otherwise its next edit to a linked course or trial would push NULL over
+  // the server's link.
   { table: 'vet_visits', column: 'deleted_at', type: 'TEXT' },
-  { table: 'medications', column: 'vet_visit_id', type: 'TEXT' },
-  { table: 'diet_trials', column: 'vet_visit_id', type: 'TEXT' },
+  { table: 'medications', column: 'vet_visit_id', type: 'TEXT', rehydrate: true },
+  { table: 'diet_trials', column: 'vet_visit_id', type: 'TEXT', rehydrate: true },
   // Engines v3 PR-12 (CUL-1267) / migration 075 — the read copy's three stamps. The copy
   // shipped in HV-5 without them, so an installed phone has the table and only this path
   // can add them. Nullable, no default: NULL is "written before the stamps", which is

@@ -318,7 +318,8 @@ function setScope(patch: Partial<ReturnType<typeof defaultHistoryScope>>) {
   });
 }
 
-beforeEach(async () => {
+/** A fresh database, stores and mocks: what every test starts from. */
+async function freshWorld(): Promise<void> {
   jest.clearAllMocks();
   // Motion on, known before the first render (CUL-1123): the tests that need Reduce Motion
   // set it the same way before they render.
@@ -349,7 +350,31 @@ beforeEach(async () => {
     useHistoryListStore.getState().reset();
     useEventStore.setState({ todayEvents: [] });
   });
-});
+}
+
+// COLD-CACHE WARM-UP, with its own timeout (the AddMedicationModal precedent, CUL-1155).
+// Measured on an empty jest cache (release QA, 2026-10-02): this file's first test took
+// ~5.8 s and timed out, and the renderer it tore down took the next 26 tests with it.
+// jest-expo transforms React Native's lazily-`require`d internals (SectionList, the
+// pressables, Animated) during the first render, and CI always runs cold. The warm-up
+// renders a seeded week once on a fresh world. Every test still starts from its own
+// fresh world.
+//
+// AND A WARM BUDGET OF 15 s. Warm, the paging tests are this file's heaviest: "a day on
+// older pages" renders 40 days and pages back three times, 2.7 s alone on a 4-core box.
+// Under a full parallel run on a loaded machine it passed 5 s (the release QA pre-push,
+// load average ~12), and one timeout here is never one failure: the renderer it leaves
+// mid-act took the next 26 tests with it. A real hang still reports, in 15 s.
+jest.setTimeout(15_000);
+
+beforeAll(async () => {
+  await freshWorld();
+  seedWeek();
+  const view = await renderList();
+  view.unmount();
+}, 60000);
+
+beforeEach(freshWorld);
 
 // ── The count line, the headers, the strip: one read (AC 1, the screen half) ─────
 

@@ -332,3 +332,18 @@ describe('/log — the widget\'s pet applies once per open (CUL-1119)', () => {
     expect(usePetStore.getState().activePet?.id).toBe('p1');
   });
 });
+
+// QA (1.2.0) — the `?type=` param is untrusted, and `in` let an inherited key through:
+// `?type=toString` reached the simple step with no label and crashed on `.toLowerCase()`.
+// `?type=check_in` opened a confirm that writes a bare look parent with no `looks` child,
+// a second door to the daily look (E-6). Each lands on the type picker instead, which is
+// what any other type this screen cannot log does.
+describe('/log — a ?type= this screen cannot log opens the type picker', () => {
+  it.each(['toString', '__proto__', 'check_in'])('?type=%s', (type) => {
+    mockTypeParam = type;
+    const { getByText, queryByText } = render(<LogScreen />);
+    expect(getByText('Log for Biscuit')).toBeTruthy();
+    expect(queryByText('Log noticed')).toBeNull();
+    expect(mockInsertSimpleEvent).not.toHaveBeenCalled();
+  });
+});

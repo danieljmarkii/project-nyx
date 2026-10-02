@@ -314,7 +314,7 @@ Most sessions now begin by pasting an issue from Linear (team Culprit) via its *
 1. **Orient** as `/kickoff` does, but scoped to *this* issue — skim `STATUS.md` for the routing, then read the "Read These Before Writing Any Code" docs for the surface it touches; don't switch to a different task. The issue's **description and its comments** are the spec; newest comment wins on conflict.
 2. **Name the mode** — only once step 0's claim is yours (a contested claim is a stop, not a mode) — infer it (a `Feature`/`Fix` or `Research`/`Spec` label is a hint when present, but issues are largely unlabeled, so don't depend on one):
    - **BUILD** (feature / fix / migration / tooling) → deliver **code + a draft PR**. For anything non-trivial, **post a short plan (files touched + approach) and wait for a go-ahead before coding** — skip the plan only for genuinely mechanical fixes. **Anything touching RLS, Storage, deletion, or export is never "mechanical"**: always plan first and run the `rls-privacy-reviewer`.
-   - **DISCOVERY** (research / investigation / a spec / a design-mock / a decision) → deliver a **recommendation or brief for the PM, posted to the issue** — not merged code, and never start building the thing you were asked to evaluate. Open a draft PR only if the deliverable is itself a committed file (a doc or mock).
+   - **DISCOVERY** (research / investigation / a spec / a design-mock / a decision) → deliver a **recommendation or brief for the PM, posted to the issue** — not merged code, and never start building the thing you were asked to evaluate. Open a PR only if the deliverable is itself a committed file (a doc or mock); it merges once finished, never parked as a draft.
 3. **Close out** — BUILD with `/wrap`; DISCOVERY with an outcome comment on the issue (+ a `docs/sessions/` record if substantial). Either way the PR **must reference `CUL-NNN`** — the agent's `claude/<slug>` branch won't (§ Git Workflow → "Merge → Linear status") — it's one PR per session, and **out-of-scope work you discover → file a new `CUL` issue**, never folded in.
 
 The BUILD **plan-gate** (plan before code) is the one net-new rule of the 2026-08-16 pass; the rest restates existing conventions at the moment they are most skipped. Keep the Linear prompt template a router, not a rulebook.
@@ -463,7 +463,7 @@ Produce this summary automatically at the end of every session without being ask
 ### PM Action Items
 [Consolidated list of every action only the PM can take, deduplicated across the session. Examples: apply migration X; deploy Edge Function Y; provision secret Z; rule on open question W; run an on-device check.
 
-**Each one gets a Linear home before the wrap ends** — either a new issue (team Culprit, `Todo`, the **`Waiting on PM`** label, the single remaining step named in the first line) or a comment on the issue it belongs to. Then list them here as `CUL-NNN — <action>`, so the summary is a set of links rather than a second, drifting checklist. That drift is exactly what this section used to feed: 102 unchecked bullets accumulated in `STATUS.md` and roughly half of them were already done. If there are none, write "None."]
+**Each one gets a Linear home before the wrap ends** — either a new issue (team Culprit, `Todo`, the **`Waiting on PM`** label, the single remaining step named in the first line) or a comment on the issue it belongs to. Then list them here as `CUL-NNN — <action>`, so the summary is a set of links rather than a second, drifting checklist. If there are none, write "None."]
 
 ### Recommended Next Steps
 [Ordered list of what to tackle next session, with rationale for the ordering. **Explicitly surface parallelism + efficiencies** — which items are independent and can run concurrently (disjoint files / no logical dependency), which are gated on a PM/expert decision vs. ready-to-run, and any single decision that unblocks several tracks. Don't present a linear plan when the work can fan out.]
@@ -515,9 +515,7 @@ Claude Code cannot edit this directly. Flag when it needs updating in the sessio
 
 ## Backlog Protocol
 
-**The backlog lives in Linear (migration complete, 2026-08-15).** `docs/backlog.md` grew past being a usable "where are we" answer (453 KB, session-start scans reduced to `grep`) — Linear gives real filtering/priority/status instead. **Linear (team Culprit, `linear.app/projectnyx`) is the source of truth for all backlog items; `docs/backlog.md` is now a frozen historical record.** All 487 open/in-progress rows were ported to issues `CUL-28`–`CUL-514` (verified 487/487, no rows lost, no duplicates), each tagged `Legacy` with a `_Migrated from docs/backlog.md (B-NNN)_` footer that traces it back to its original row. Rows already belonging to an active build-track project (**Signals v2 — the record, decomposed**, **The Daily Recap**) went into that project; everything else went into the **Legacy Backlog** project. **Do not add rows to `docs/backlog.md` — it is frozen. File new items in Linear** (below).
-
-**New items go to Linear, not the markdown file, effective now:**
+**The backlog lives in Linear (team Culprit, `linear.app/projectnyx`) since 2026-08-15; `docs/backlog.md` is a frozen historical record, never added to.** Its 487 open rows became `CUL-28`–`CUL-514`, tagged `Legacy` with a `_Migrated from docs/backlog.md (B-NNN)_` footer; those outside a live track sit in the **Legacy Backlog** project.
 
 **When to file an issue:** any time you're about to say "we should do X later," "noted for future," or the PM says any of those phrases. File it immediately, in-session, before continuing the conversation — via the Linear MCP tools (`mcp__Linear__save_issue`). Do not batch-file at session end and do not wait for PM approval — filing an issue is reversible and cheap; losing the item is not.
 
@@ -534,7 +532,13 @@ Claude Code cannot edit this directly. Flag when it needs updating in the sessio
 
 **`view backlog` command:** when the PM types `view backlog`, `show backlog`, `what's in the backlog`, or any natural-language equivalent, use the Linear MCP `list_issues` tool (team `Culprit`) and present grouped by priority, surfacing anything whose description names a live track at the top. Linear is the whole answer — **do not also read `docs/backlog.md`** (frozen; it only holds the pre-migration history of already-ported rows). Do not invoke this proactively at every session start — only on request, or when a scan reveals an item that blocks a live track.
 
-**Distinction from Open Questions:** Open Questions are *unresolved decisions* that need PM input to unblock work — these stay in this file's Open Questions table, not Linear. Backlog items are *resolved deferrals* — we know what to do, just not now. If an item needs a decision, it goes in Open Questions; if it needs execution at a later time, it goes in Linear.
+**Distinction from Open Questions:** an unresolved decision goes in the Open Questions table; a resolved deferral (we know what, not when) goes in Linear.
+
+**The PM queue is the `Waiting on PM` label (CUL-1366; PM rulings 2026-09-27, 2026-10-02).** Before adding to it:
+- **Decide what is yours.** Off the never-list, copy inside `nyx-voice`, UX detail inside a ratified spec or mock round, and a doc edit that only matches shipped code are team calls: the persona decides, logs it on the issue, and the PM can reverse it. A persona conflict still escalates.
+- **One issue per review round**, never one per finding; **device checks file per TestFlight cut**, never per PR.
+- **WIP cap 30, counted on the label.** Over it, a low-risk call carrying your recommendation is applied and logged, not filed. The never-list always files: clinical, safety invariant, privacy/RLS, money / Pets > $, schema, App Store, irreversible.
+- Draining it (six lanes, the 72h default window, the dockets, the 21-day rule) is `backlog-groomer` step 12.
 
 **Working the issues in Linear — the per-issue trail (instituted 2026-08-16).** Now that the backlog lives in Linear, the decisions and scope changes that used to land only in `docs/sessions/` and backlog rows should also live **on the issue** — where the work is tracked and where the next session looks first. The convention for any session (or persona) building against a `CUL-NNN`:
 
@@ -554,7 +558,7 @@ When a question is resolved, mark it resolved with the decision and date rather 
 
 If a blocking question remains unanswered after one full session, document a provisional decision and flag it for PM confirmation rather than stalling indefinitely.
 
-**Stale question triage.** Any question with status `Open` across **three or more sessions** gets a forced re-evaluation at the next session start: (a) still relevant — keep open; (b) no longer relevant — mark resolved with rationale; (c) ready for a provisional decision — write one and flag for PM confirmation; (d) belongs in the backlog instead — move it to `docs/backlog.md` and remove from this table. Do not let questions sit untouched indefinitely; an aged-out question is usually one of these four things, not actually "still open."
+**Stale question triage.** Any question with status `Open` across **three or more sessions** gets a forced re-evaluation at the next session start: (a) still relevant — keep open; (b) no longer relevant — mark resolved with rationale; (c) ready for a provisional decision — write one and flag for PM confirmation; (d) a deferral — file it in Linear and remove the row.
 
 ### Open
 

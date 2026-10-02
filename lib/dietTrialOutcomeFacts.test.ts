@@ -23,6 +23,7 @@ jest.mock('./feedingArrangements', () => ({
 }));
 
 import { loadTrialOutcomeFacts } from './dietTrialOutcomeFacts';
+import { buildOutcomeSheet } from './dietTrialCompletion';
 
 /** Local noon on a calendar date, so no fixture sits on a day boundary — the
  *  boundary is LOCAL midnight and that is precisely what is under test. */
@@ -323,6 +324,107 @@ describe('W1 — cough/sneeze render as their own per-type deltas', () => {
         { symptomType: 'cough', label: 'Cough', before: 1, during: 2 },
         { symptomType: 'sneeze', label: 'Sneeze', before: 0, during: 1 },
       ]),
+    );
+  });
+});
+
+// ── A daily look is not observability (daily-look spec §2 item 5) ──────────────
+//
+// `beforeTracked` and the logged-day counts answer "was the record being kept?". A look
+// is the owner's answer to a question, not a row about the pet, and it never enters a
+// count, a coverage line or a trial verdict. Counted, a before-stretch holding only looks
+// read as TRACKED, and the outcome sheet printed "0 before" for every symptom logged
+// during the trial — a fabricated baseline, read as the diet making things worse, on
+// the screen that ends the trial. The read returns looks (its SQL takes every type), so
+// a fixture holding them is the shape production hands over.
+describe('a daily look is not observability', () => {
+  it('a before-stretch holding only looks is untracked', async () => {
+    const facts = await load([
+      ev('check_in', at(2026, 7, 3)),
+      ev('check_in', at(2026, 7, 9)),
+      ev('itch', at(2026, 7, 20)),
+    ]);
+    expect(facts!.beforeTracked).toBe(false);
+    expect(facts!.beforeLoggedDays).toBe(0);
+  });
+
+  it('so the sheet names the stretch untracked and prints no "0 before" line', async () => {
+    const facts = await load([
+      ev('check_in', at(2026, 7, 3)),
+      ev('check_in', at(2026, 7, 9)),
+      ev('itch', at(2026, 7, 20)),
+    ]);
+    const sheet = buildOutcomeSheet({ facts: facts!, petName: 'Mochi' });
+    // Never "Nothing was logged" over the owner's looks (T-9, §5.1 row 1b): the looks are
+    // named as what was logged, and still counted as nothing (adversarial-reviewer).
+    expect(sheet.comparisonLine).toBe(
+      'Apart from what you noticed, nothing was logged in the 2 weeks before the trial started, so there’s nothing to compare these with.',
+    );
+    expect(sheet.factLines).toEqual(['Itch/Scratch: 1 during the trial.']);
+  });
+
+  it('a thin stretch beside looks counts its logged days without them, and says so', async () => {
+    const days = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const facts = await load([
+      ...days.map((d) => ev('check_in', at(2026, 7, d))),
+      ev('itch', at(2026, 7, 11)),
+      ev('itch', at(2026, 7, 20)),
+    ]);
+    expect(facts!.beforeLoggedDays).toBe(1);
+    const sheet = buildOutcomeSheet({ facts: facts!, petName: 'Mochi' });
+    expect(sheet.comparisonLine).toBe(
+      'Compared with the 2 weeks before it started — though only 1 of those 14 days has anything logged besides what you noticed, so there’s much less to compare with than it looks.',
+    );
+  });
+
+  it('with no looks the sheet keeps its plain sentences', async () => {
+    const empty = await load([ev('itch', at(2026, 7, 20))]);
+    expect(buildOutcomeSheet({ facts: empty!, petName: 'Mochi' }).comparisonLine).toMatch(/^Nothing was logged in the 2 weeks/);
+    const thin = await load([ev('itch', at(2026, 7, 11)), ev('itch', at(2026, 7, 12)), ev('itch', at(2026, 7, 20))]);
+    expect(buildOutcomeSheet({ facts: thin!, petName: 'Mochi' }).comparisonLine).toContain('only 2 of those 14 days have anything logged, so');
+  });
+
+  it('only the look is skipped: a weight, a dose or a normal stool beside it is still logging', async () => {
+    for (const type of ['weight_check', 'medication', 'stool_normal']) {
+      const facts = await load([ev('check_in', at(2026, 7, 3)), ev(type, at(2026, 7, 4)), ev('itch', at(2026, 7, 20))]);
+      expect([type, facts!.beforeTracked, facts!.beforeLoggedDays]).toEqual([type, true, 1]);
+    }
+  });
+
+  it('nor does a look add a logged day to either stretch', async () => {
+    const facts = await load([
+      ev('check_in', at(2026, 7, 3)),
+      ev('meal', at(2026, 7, 4)),
+      ev('check_in', at(2026, 7, 20)),
+      ev('itch', at(2026, 7, 21)),
+    ]);
+    expect(facts!.beforeTracked).toBe(true);
+    expect(facts!.beforeLoggedDays).toBe(1);
+    expect(facts!.duringLoggedDays).toBe(1);
+  });
+
+  // The clause names the BEFORE-stretch's looks, so only a look inside it may set the flag.
+  // 30 June is the day the read's lower pad fetches (one day before the 1–14 July stretch),
+  // so it is a row production can hand over, and it is outside the stretch in every zone.
+  it('only a look inside the before-stretch is named: one during the trial or on the pad day is not', async () => {
+    for (const lookAt of [at(2026, 7, 20), at(2026, 6, 30)]) {
+      const facts = await load([ev('check_in', lookAt), ev('itch', at(2026, 7, 21))]);
+      expect([lookAt, facts!.beforeHasLooks]).toEqual([lookAt, false]);
+      expect(buildOutcomeSheet({ facts: facts!, petName: 'Mochi' }).comparisonLine).toMatch(/^Nothing was logged in the 2 weeks/);
+    }
+  });
+
+  it('a look is skipped by its type, never by its day: a weight on the look’s own day is a logged day', async () => {
+    const facts = await load([
+      ev('check_in', at(2026, 7, 4, 9)),
+      ev('weight_check', at(2026, 7, 4, 18)),
+      ev('itch', at(2026, 7, 20)),
+    ]);
+    expect(facts!.beforeTracked).toBe(true);
+    expect(facts!.beforeLoggedDays).toBe(1);
+    expect(facts!.beforeHasLooks).toBe(true);
+    expect(buildOutcomeSheet({ facts: facts!, petName: 'Mochi' }).comparisonLine).toContain(
+      'only 1 of those 14 days has anything logged besides what you noticed',
     );
   });
 });

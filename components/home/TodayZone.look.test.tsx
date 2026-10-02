@@ -90,6 +90,36 @@ describe('the nudge and the look', () => {
     expect(t.getByText(/1 more event today/)).toBeTruthy();
   });
 
+  // The caption counts what the strip did NOT show. A look INSIDE the first three rows
+  // takes a slot, so every meal it pushes past the cap is hidden and must be counted:
+  // subtracting the cap from the non-look total under-counts by the look's slot.
+  it('counts every event a shown look pushed past the cap', () => {
+    mockUseEvents.mockReturnValue({
+      todayEvents: [look('l1'), ev('m1', 'meal'), ev('m2', 'meal'), ev('m3', 'meal'), ev('m4', 'meal')],
+    });
+    const t = render(<TodayZone />);
+    expect(t.getByText('2 more events today')).toBeTruthy();
+  });
+
+  it('says "1 more" when a shown look pushes the third meal off the strip', () => {
+    mockUseEvents.mockReturnValue({
+      todayEvents: [look('l1'), ev('m1', 'meal'), ev('m2', 'meal'), ev('m3', 'meal')],
+    });
+    const t = render(<TodayZone />);
+    expect(t.getByText('1 more event today')).toBeTruthy();
+  });
+
+  it('counts a hidden weight, dose or normal stool as an event; only the look is left out', () => {
+    mockUseEvents.mockReturnValue({
+      todayEvents: [
+        ev('m1', 'meal'), ev('m2', 'meal'), ev('m3', 'meal'),
+        ev('w1', 'weight_check'), ev('d1', 'medication'), ev('s1', 'stool_normal'), look('l1'),
+      ],
+    });
+    const t = render(<TodayZone />);
+    expect(t.getByText('3 more events today')).toBeTruthy();
+  });
+
   it('OFF THE FLAG the shipped nudge is unchanged on an empty day', () => {
     mockFlagOn = false;
     mockUseEvents.mockReturnValue({ todayEvents: [] });

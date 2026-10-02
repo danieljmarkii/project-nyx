@@ -108,12 +108,12 @@ export function NamedCompletionCard() {
   const bottomOffset = overRecord
     ? insets.bottom + theme.space2
     : TAB_BAR_HEIGHT + FAB_CLEARANCE;
-  // Read inside the async reversal below rather than off that closure: the write is
-  // awaited, and the owner can leave the record while it is in flight. A stale
-  // `true` there would pop a screen they had already left (CUL-170's shape — the
+  // The route, read inside the async reversal below rather than off that closure: the
+  // write is awaited, and the owner can leave the record while it is in flight. A
+  // stale value there would pop a screen they had already left (CUL-170's shape — the
   // one-shot navigation lives in a ref, never in a captured value).
-  const overRecordRef = useRef(overRecord);
-  overRecordRef.current = overRecord;
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
 
   const translateY = useRef(new Animated.Value(80)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -244,7 +244,12 @@ export function NamedCompletionCard() {
     // log path. Only on 'removed': a failed or ignored reversal left the row in
     // place, and dismissing there would take the owner away from a record that
     // still exists, on the one path where they were told it might not have worked.
-    if (result === 'removed' && overRecordRef.current) router.back();
+    // And only over the removed event's OWN record: the card outlives navigation, so
+    // an owner can log A, open B while A's card dwells, and tap Undo. B is still in
+    // the record, and popping it would dismiss a screen this card says nothing about.
+    if (result === 'removed' && pathnameRef.current === `${RECORD_ROUTE_PREFIX}${eventId}`) {
+      router.back();
+    }
   }
 
   async function handleUndo() {
