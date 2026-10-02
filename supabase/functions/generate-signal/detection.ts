@@ -2158,7 +2158,9 @@ export interface DetectionConfig {
    *      can be withheld. It can only withhold.
    *   4. ①'s control windows may not sit in the `postEpisodeControlExclusionHours` after a GI
    *      episode, where the owner's response to the episode (a bland meal, a skipped staple) is
-   *      the exposure, not the pet's ordinary diet.
+   *      the exposure, not the pet's ordinary diet; and each control day serves one case at most,
+   *      because the exclusion can leave only a few, and a day reused for every case made a staple
+   *      skipped that day read Established (adversarial pass, D2).
    *
    * Every change only REMOVES an insight card or raises a safety card's floor; none adds a
    * finding. The safety floor is the one that can delay an ask, which is why EN-11 goes live
@@ -2171,6 +2173,8 @@ export interface DetectionConfig {
      * two-window test (current | total ~ Binomial(n, 1/2) under equal rates) cannot defend it:
      * the smallest p a count of k can reach is 0.5^k, so 2 vs 0 is p = 0.25 at best. PROVISIONAL;
      * the value is CUL-583 ruling-sheet item E1, measured on PR-16's lines in this PR's body.
+     * A sign rising below this floor still mutes ③ and withholds the summary's finished-meal
+     * clause (`risingBelowCardFloor`), so the band is silence, never a calm sentence.
      */
     worseningCardMinEpisodes: number
     /** ①'s control-window exclusion after a GI episode, in hours. PROVISIONAL (CUL-583). */
@@ -2926,11 +2930,13 @@ export const DEFAULT_CONFIG: DetectionConfig = {
 export const EN11_CONFIG: DetectionConfig = {
   ...DEFAULT_CONFIG,
   en11: {
-    // 4: the smallest count whose best case (4 vs 0, p = 0.0625) an exact two-window test comes
-    // near a conventional bar, one above the burden card's persistence rung (3 days running), and
-    // equal to the burden card's count arm, so for vomit "④ is silent below 4" never leaves a
-    // count the burden card does not already own. Measured, not chosen on the corpus: PR body.
-    worseningCardMinEpisodes: 4,
+    // 3: the smallest floor that never asks on 2 vs 0 (the dogfood case; p = 0.25 at best). The
+    // first draft had 4, the smallest count an exact two-window test brings near a conventional
+    // bar (p = 0.0625 at 4 vs 0), and the adversarial pass broke it (D4): diarrhea, itch and skin
+    // have no burden card, so 3 days of diarrhea after a quiet week got no ask at all, and vomit
+    // at 3 in one day fell between the burden card's two arms. 3 vs 0 (p = 0.125) still asks, as
+    // today. PROVISIONAL; CUL-583's E1 rules the value on PR-16's lines (the PR body has 3, 4, 5).
+    worseningCardMinEpisodes: 3,
     // 48 h: the usual bland-diet span after a vomit, the owner's response rather than the diet.
     // 24 h was the first draft and failed this PR's own reverse-causation fixture: a two-day bland
     // diet left the next control window inside it, and the staple read guilty (detection.en11.test).
@@ -3549,6 +3555,12 @@ export function detectCorrelations(
     const exclusionMs = en11 ? en11.postEpisodeControlExclusionHours * MS_PER_HOUR : 0
     const inPostEpisodeHours = (ctrlAnchorMs: number): boolean =>
       exclusionOnsets.some((e) => e <= ctrlAnchorMs && ctrlAnchorMs - windowMs < e + exclusionMs)
+    // EN-11: each control DAY serves one case at most (matching without replacement). Rule 4 can
+    // leave a frequent vomiter only a few control days, and with replacement every case paired
+    // with the same one: a staple skipped on that day read b = n, c = 0 and printed Established
+    // (adversarial pass, D2). One day reused n times is one observation, not n. Without
+    // replacement the pairs collapse to the days that exist, and the floors below decide.
+    const usedControlDays = new Set<number>()
     const mealDays = Array.from(new Set(meals.map((m) => Math.floor(m.ms / MS_PER_DAY)))).sort(
       (a, b) => a - b,
     )
@@ -3613,6 +3625,7 @@ export function detectCorrelations(
         // 12h vomit window any different day already qualifies.)
         if (dist * MS_PER_DAY <= windowMs) continue
         if (dist >= bestDist) continue // never skips a strictly-closer day; ties → earliest
+        if (en11 && usedControlDays.has(d)) continue // EN-11: without replacement
         const ctrlAnchorMs = d * MS_PER_DAY + timeOfDay
         if (en11 && inPostEpisodeHours(ctrlAnchorMs)) continue // EN-11 rule 4
         const ctrlWin = windowExposures(ctrlAnchorMs, windowMs)
@@ -3621,6 +3634,7 @@ export function detectCorrelations(
         bestDist = dist
       }
       if (!bestCtrl) continue // no eligible control → this case can't be matched
+      if (en11) usedControlDays.add(Math.floor(bestCtrl.anchorMs / MS_PER_DAY))
       for (const p of caseWin.standingProteins) freeFedProteins.add(p)
       for (const p of bestCtrl.standingProteins) freeFedProteins.add(p)
       for (const p of caseWin.standingPrimaries) freeFedPrimaries.add(p)
@@ -4330,13 +4344,25 @@ function isWorsening(s: SymptomStat, cfg: DetectionConfig['reflection']): boolea
  *
  * What the split gives up, stated: "③ goes silent ⟺ ④ speaks" becomes "④ speaks ⟹ ③ is
  * silent". Between the two floors both are silent. That band is SILENCE, never a reassurance,
- * which is the direction §9 allows; for vomit the burden card owns every count at or above its
- * own floor (`reflection.burdenMuteMinEpisodes`), so the band there is at most the counts below
- * it. Flag off (`en11` absent) the two predicates are the same function call.
+ * which is the direction §9 allows, and the summary withholds its finished-meal clause over it
+ * (`risingBelowCardFloor`). Flag off (`en11` absent) the two predicates are the same call.
  */
 function isWorseningCard(s: SymptomStat, config: DetectionConfig): boolean {
   if (!isWorsening(s, config.reflection)) return false
   return config.en11 === undefined || s.currentCount >= config.en11.worseningCardMinEpisodes
+}
+
+/**
+ * EN-11 (Engines v3 PR-32, adversarial pass D4): is any tracked sign rising by today's worsening
+ * test (`isWorsening`, ③'s mute) while below ④'s card floor? Then nothing on Home says so, and
+ * the summary must not add a reassuring-shaped clause in the space (summary.ts). With the flag
+ * off the two predicates are one, so this is always false.
+ */
+export function risingBelowCardFloor(input: DetectionInput, config: DetectionConfig): boolean {
+  if (config.en11 === undefined) return false
+  const windowed = computeWindowedStats(input, config)
+  if (!windowed || !windowed.loggingEligible) return false
+  return windowed.stats.some((s) => isWorsening(s, config.reflection) && !isWorseningCard(s, config))
 }
 
 export function detectReflections(
@@ -5315,25 +5341,45 @@ export function detectPostprandialTiming(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
 ): PostprandialTimingFinding[] {
+  const c = postprandialCandidate(input, config)
+  return c && !c.reversedHit ? [c.finding] : []
+}
+
+/**
+ * EN-11 (adversarial pass D3): the ⑤ finding the reversed-in-time control withheld, if any. It
+ * is shown nowhere; detectSignals hands it to ⑥'s suppression only, so withholding ⑤ never
+ * unmasks a ⑥ card ⑤ was suppressing (a new card is not what a withhold may produce). Always []
+ * without `config.en11`.
+ */
+function withheldPostprandial(input: DetectionInput, config: DetectionConfig): PostprandialTimingFinding[] {
+  if (config.en11 === undefined) return []
+  const c = postprandialCandidate(input, config)
+  return c && c.reversedHit ? [c.finding] : []
+}
+
+function postprandialCandidate(
+  input: DetectionInput,
+  config: DetectionConfig,
+): { finding: PostprandialTimingFinding; reversedHit: boolean } | null {
   const cfg = config.postprandial
   const scan = scanVomitTiming(input, config)
-  if (!scan) return []
+  if (!scan) return null
   const { dist, totalEpisodes, inWindowFeedings, nowMs } = scan
   const recencyMs = cfg.recencyDays * MS_PER_DAY
 
   const eligibleCount = dist.eligibleCount
   // Denominator floor (adversarial-review fix, B-078/B-081): "N of M" needs a real M.
   // Also guards the fraction division below (minEligibleEpisodes ≥ 1).
-  if (eligibleCount < cfg.minEligibleEpisodes) return []
+  if (eligibleCount < cfg.minEligibleEpisodes) return null
   const rapidEpisodes = dist.eligible.filter((e) => e.band === 'rapid')
   const rapidCount = rapidEpisodes.length
 
   // Floors (§3.3) — ALL must pass. Below-floor is SILENCE, never an inverted "not
   // meal-related" claim (§3.5).
-  if (rapidCount < cfg.minRapidEpisodes) return []
-  if (rapidCount / eligibleCount < cfg.minRapidFraction) return []
+  if (rapidCount < cfg.minRapidEpisodes) return null
+  if (rapidCount / eligibleCount < cfg.minRapidFraction) return null
   // Recency: a stale cluster must not lead today's surface.
-  if (!rapidEpisodes.some((e) => nowMs - e.onsetMs <= recencyMs)) return []
+  if (!rapidEpisodes.some((e) => nowMs - e.onsetMs <= recencyMs)) return null
 
   // The GRAZING GUARD (§3.3) — observed rapid must clear 2× the chance-expected count.
   // feedingRatePerDay = timed-eligible feedings ÷ distinct days carrying one (in-window).
@@ -5342,7 +5388,7 @@ export function detectPostprandialTiming(
   const expectedRapid =
     eligibleCount * Math.min(1, (feedingRatePerDay * cfg.rapidWindowMinutes) / 1440)
   if (rapidCount < Math.max(cfg.minRapidEpisodes, cfg.minObservedToExpectedRatio * expectedRapid)) {
-    return []
+    return null
   }
 
   // EN-11 rule 3 (CUL-1141), the reversed-in-time control: the same eligible episodes, the same
@@ -5352,15 +5398,20 @@ export function detectPostprandialTiming(
   // logged together, a pet fed when it is sick), and the card is withheld. A tie withholds, as on
   // ①. An episode whose window runs past now is left out of the reversed count only, which can
   // only keep the card (a lower reversed count), never add one.
+  let reversedHit = false
   if (config.en11) {
     const rapidMs = cfg.rapidWindowMinutes * 60_000
+    // Long-band (empty-stomach) episodes are left out: one on a fixed schedule sits just before
+    // the next meal, so a meal follows it by construction, and counting it cancelled the rapid
+    // half exactly when L1 fired (adversarial pass D3: a timing_story became a lone L1 card).
     const reversedRapid = dist.eligible.filter(
       (e) =>
+        e.band !== 'long' &&
         e.onsetMs + rapidMs <= nowMs &&
         // `>=`: a meal logged at the vomit's own instant reads on both sides, so it can only tie.
         scan.allFeedings.some((f) => f >= e.onsetMs && f <= e.onsetMs + rapidMs),
     ).length
-    if (reversedRapid >= rapidCount) return []
+    reversedHit = reversedRapid >= rapidCount
   }
 
   // Payload. "Including the last two" = the two most-recent ELIGIBLE episodes are both rapid.
@@ -5374,8 +5425,9 @@ export function detectPostprandialTiming(
     new Set(rapidEpisodes.map((e) => e.feedingForm).filter((f): f is string => f != null)),
   )
 
-  return [
-    {
+  return {
+    reversedHit,
+    finding: {
       type: 'postprandial_timing',
       priorityClass: 'insight',
       symptomType: POSTPRANDIAL_SYMPTOM_TYPE,
@@ -5391,7 +5443,7 @@ export function detectPostprandialTiming(
       associationalOnly: true,
       windowDays: cfg.windowDays,
     },
-  ]
+  }
 }
 
 // ── Detector ⑥: time-of-day clustering (B-079 — descriptive lane Phase 2) ────
@@ -7751,7 +7803,13 @@ export function detectSignals(
   // delete the onsets before the shell ever sees them — the exact bug that left retained food dead on
   // the lone empty_stomach card. suppressWorseningWhenChronic (⑦→④, B-182) is a disjoint type pair
   // from the timing lane, so its position is free.
-  const composed = composeTimingStory(suppressTimeOfDayWhenPostprandial(findings, config))
+  // EN-11 (D3): a ⑤ the reversed-in-time control withheld still suppresses the ⑥ it would have,
+  // then leaves before composition; flag off `withheld` is empty and this is the shipped line.
+  const withheld = withheldPostprandial(input, config)
+  const suppressed = withheld.length === 0
+    ? suppressTimeOfDayWhenPostprandial(findings, config)
+    : suppressTimeOfDayWhenPostprandial([...findings, ...withheld], config).filter((f) => !withheld.includes(f as PostprandialTimingFinding))
+  const composed = composeTimingStory(suppressed)
   const tiered = holdChronicityTier(suppressWorseningWhenChronic(composed), input, config)
   return rankFindings(discloseCoughVomitAdjacency(tiered), input.pet)
 }

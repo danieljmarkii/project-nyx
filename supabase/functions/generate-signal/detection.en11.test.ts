@@ -17,6 +17,7 @@ import {
   detectReflections,
   detectSignals,
   detectWorsening,
+  risingBelowCardFloor,
   type DetectionInput,
   type MealEvent,
   type SymptomEvent,
@@ -104,6 +105,16 @@ Deno.test('CUL-1411 — the split: ③ stays silent over the 2-vs-0 itch under E
   assert.equal(types.includes('reflection'), false, JSON.stringify(types))
 })
 
+Deno.test('risingBelowCardFloor — true only under EN-11, for a rise the card floor withholds', () => {
+  const i = input([...FALLING_VOMIT, ...ITCH_2_VS_0], MEALS)
+  assert.equal(risingBelowCardFloor(i, DEFAULT_CONFIG), false, 'flag off: never')
+  assert.equal(risingBelowCardFloor(i, EN11_CONFIG), true)
+  // At the floor the card speaks, so nothing is withheld.
+  const atFloor = input([sign('itch', 25), sign('itch', 27), sign('itch', 29)], MEALS)
+  assert.equal(detectWorsening(atFloor, EN11_CONFIG).length, 1)
+  assert.equal(risingBelowCardFloor(atFloor, EN11_CONFIG), false)
+})
+
 Deno.test('④ — at the floor the card fires under EN-11 with the tier it fires with today', () => {
   const floor = EN11_CONFIG.en11!.worseningCardMinEpisodes
   const itch = Array.from({ length: floor }, (_, k) => sign('itch', 24 + k))
@@ -131,15 +142,28 @@ Deno.test('① — an Early card today is withheld under EN-11; an Established o
   assert.equal(off[0].tier, 'early')
   assert.deepEqual(detectCorrelations(early, EN11_CONFIG), [])
 
-  // Established: six beef days, six vomits, p = 0.0156 against a corrected 0.025.
+  // Established: six beef days, six vomits, p = 0.0156 against a corrected 0.025, with a logged
+  // week before the run to draw controls from.
   const established = input(
-    [1, 2, 3, 4, 5, 6].map((d) => sign('vomit', d, 11)),
-    [...daily(1, 12, 'chicken', [9]), ...[1, 2, 3, 4, 5, 6].map((d) => meal(d, 10, 'beef'))],
+    [8, 9, 10, 11, 12, 13].map((d) => sign('vomit', d, 11)),
+    [...daily(1, 19, 'chicken', [9]), ...[8, 9, 10, 11, 12, 13].map((d) => meal(d, 10, 'beef'))],
   )
   const offE = detectCorrelations(established, DEFAULT_CONFIG)
   assert.equal(offE.length, 1)
   assert.equal(offE[0].tier, 'established')
   assert.deepEqual(detectCorrelations(established, EN11_CONFIG), offE)
+})
+
+Deno.test('① — the stated cost: a run logged from its first day, with too few control days after it, is withheld', () => {
+  // The same six-day run with nothing logged before it (the owner who starts logging mid-bout).
+  // Rule 4 bars the two days after the run and each control day serves one case, so four pairs
+  // remain, below Established's five. Quieter, never reassuring: nothing is said about beef.
+  const run = input(
+    [1, 2, 3, 4, 5, 6].map((d) => sign('vomit', d, 11)),
+    [...daily(1, 12, 'chicken', [9]), ...[1, 2, 3, 4, 5, 6].map((d) => meal(d, 10, 'beef'))],
+  )
+  assert.equal(detectCorrelations(run, DEFAULT_CONFIG)[0]?.tier, 'established')
+  assert.deepEqual(detectCorrelations(run, EN11_CONFIG), [])
 })
 
 // ── ①: the control windows after an episode (the bland-diet case) ──────────────────────
@@ -175,6 +199,17 @@ Deno.test('① — 24 h of exclusion would not have been enough for a two-day bl
   const short = { ...EN11_CONFIG, en11: { ...EN11_CONFIG.en11!, postEpisodeControlExclusionHours: 24 } }
   const chicken = detectCorrelations(blandDietRecord(), short).find((f) => f.protein === 'chicken')
   assert.equal(chicken?.tier, 'established')
+})
+
+Deno.test('① — rule 4 never reuses one control day for every case (adversarial pass D2: a staple skipped once)', () => {
+  // Chicken twice daily and salmon at noon daily, salmon skipped on day 9 only; a vomit at 20:00
+  // every second day from day 10. The 48 h exclusion leaves day 9 the only nearby control, and
+  // with replacement every case paired with it: salmon read b = n, c = 0, Established.
+  const meals = [...daily(1, 29, 'chicken', [8, 18]), ...daily(1, 29, 'salmon', [12]).filter((m) => !m.occurredAt.startsWith('2026-05-09'))]
+  const vomits = [10, 12, 14, 16, 18, 20, 22, 24, 26, 28].map((d) => sign('vomit', d, 20))
+  const i = input(vomits, meals)
+  assert.deepEqual(detectCorrelations(i, DEFAULT_CONFIG), [], 'premise: flag off washes the staple out')
+  assert.deepEqual(detectCorrelations(i, EN11_CONFIG), [])
 })
 
 // ── ①: the reversed-in-time control ────────────────────────────────────────────────────
@@ -249,4 +284,44 @@ Deno.test('⑤ — a meal as often within half an hour AFTER the vomit as before
   const off = detectPostprandialTiming(rapidRecord(true), DEFAULT_CONFIG)
   assert.equal(off.length, 1, 'premise: today fires on the household rhythm')
   assert.deepEqual(detectPostprandialTiming(rapidRecord(true), EN11_CONFIG), [])
+})
+
+// ── ⑤'s withhold never unmasks or reshapes another timing card (adversarial pass D3) ───
+
+const timingTypes = (i: DetectionInput, config: typeof DEFAULT_CONFIG) =>
+  detectSignals(i, config).map((r) => r.finding.type).filter((t) => /timing|timeofday/.test(t)).sort()
+
+Deno.test('⑤ — withheld under EN-11, it still suppresses the ⑥ it suppressed today (no new card)', () => {
+  // Fed at 07:00 and 19:00; a vomit 10 minutes after dinner on eight evenings, and the owner
+  // refills the bowl 20 minutes after each vomit (the reversed control's hit).
+  const symptomEvents: SymptomEvent[] = []
+  const mealEvents: MealEvent[] = []
+  for (let d = 10; d <= 29; d++) {
+    mealEvents.push(meal(d, 7, 'chicken'), meal(d, 19, 'chicken'))
+    if (d >= 22) {
+      symptomEvents.push(sign('vomit', d, 19, 10))
+      mealEvents.push(meal(d, 19, 'chicken', { occurredAt: at(d, 19, 30) }))
+    }
+  }
+  const i = { ...input(symptomEvents, mealEvents), timezone: 'UTC' }
+  const off = timingTypes(i, DEFAULT_CONFIG)
+  assert.ok(off.includes('postprandial_timing'), `premise ${off}`)
+  assert.equal(off.includes('timeofday_clustering'), false, `premise ${off}`)
+  const on = timingTypes(i, EN11_CONFIG)
+  assert.equal(on.includes('postprandial_timing'), false, `${on}`)
+  assert.equal(on.includes('timeofday_clustering'), false, `withholding ⑤ unmasked ⑥: ${on}`)
+})
+
+Deno.test('⑤ — pre-breakfast vomits never count backwards: the timing story stays one card', () => {
+  // Fed at 07:00, 13:00 and 19:00; four vomits at 13:15 (rapid) and eight at 06:45 (empty
+  // stomach, a meal 15 minutes later by schedule). Today one timing_story; under EN-11 the same.
+  const symptomEvents: SymptomEvent[] = []
+  const mealEvents: MealEvent[] = []
+  for (let d = 10; d <= 29; d++) mealEvents.push(meal(d, 7, 'chicken'), meal(d, 13, 'chicken'), meal(d, 19, 'chicken'))
+  for (const d of [26, 27, 28, 29]) symptomEvents.push(sign('vomit', d, 13, 15))
+  for (const d of [14, 15, 16, 17, 18, 19, 20, 21]) symptomEvents.push(sign('vomit', d, 6, 45))
+  const i = { ...input(symptomEvents, mealEvents), timezone: 'UTC' }
+  const off = timingTypes(i, DEFAULT_CONFIG)
+  assert.deepEqual(off, ['timing_story'], `premise ${off}`)
+  assert.deepEqual(timingTypes(i, EN11_CONFIG), off)
 })

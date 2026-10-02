@@ -500,6 +500,33 @@ Deno.test('(k) a partial read of the SAME record never weakens or drops a safety
   assertStrictEquals(probed >= 12, true, `only ${probed} truncations probed`)
 })
 
+// Engines v3 PR-32 (adversarial pass, D1): carrying the previous safety cards over an incomplete
+// read never depends on the flags. Every flag state, a read that did not answer, and a flip either
+// way: the emptied run keeps every safety card the prior row held.
+Deno.test('(k-flags) the carry never depends on the flag state: a failed flag read or a flip loses no safety card', () => {
+  const states: [string, unknown, EngineFlags][] = [
+    ...Object.entries(FLAG_STATES).map(([label, f]) => [label, [], f] as [string, unknown, EngineFlags]),
+    ['engines_v3_en11 rolled back', ['engines_v3_en11'], OFF],
+    ['engines_v3_en11 turned on', [], { on: ['engines_v3_en11'], readOk: true }],
+  ]
+  let carried = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const fullSafety = payload(c).findings.filter((e) => e.finding.type !== 'stood_down' && e.finding.priorityClass === 'safety')
+    if (fullSafety.length === 0) continue
+    for (const [label, priorFlags, flags] of states) {
+      const prior: PriorSignal = { findings: payload(c).findings, generatedAt: c.nowIso, engineFlags: priorFlags }
+      const nowIso = new Date(Date.parse(c.nowIso) + 86_400_000).toISOString()
+      const emptied: SignalPipelineCase = { ...c, nowIso, prior, rows: { ...c.rows, symptoms: [], meals: [], incidentAnalyses: [], doseEvents: [] } }
+      const keys = templatePayload(run(emptied, flags, EMPTY_CARE_RECORD, INCOMPLETE)).findings.map((e) => cardKey(e.finding))
+      for (const e of fullSafety) {
+        assertStrictEquals(keys.includes(cardKey(e.finding)), true, `${c.name} / ${label}: lost ${cardKey(e.finding)}`)
+        carried++
+      }
+    }
+  }
+  assertStrictEquals(carried >= 20, true, `only ${carried} carries checked`)
+})
+
 Deno.test('(k2) with no prior, a partial read still never shows the empty-record headline', () => {
   for (const c of SIGNAL_PIPELINE_CORPUS) {
     const p = templatePayload(run({ ...c, prior: null }, OFF, EMPTY_CARE_RECORD, INCOMPLETE))

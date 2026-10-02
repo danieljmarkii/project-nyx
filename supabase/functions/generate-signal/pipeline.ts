@@ -39,6 +39,7 @@
 import {
   detectSignals,
   detectCoverage,
+  risingBelowCardFloor,
   stripInternalOnsets,
   computeReflectionDensity,
   computeChronicityCompare,
@@ -702,8 +703,15 @@ export function runSignalPipeline(
   const strippedFindings = stripInternalOnsets(decoratedWithOnsets.map((r) => r.finding))
   // CUL-989: over an incomplete read every count is a floor, and the finding says so; and no
   // safety card is softened below the tier the previous Signal showed (holdPriorTiers).
+  //
+  // NOT gated on the flag state (Engines v3 PR-32 adversarial pass, D1). Carrying the previous
+  // safety cards only ever keeps a warning, so it is right across a flag change and over a flag
+  // read that did not answer. Gating it on `standDownMintAllowed` was harmless while no Signal key
+  // existed; once engines_v3_en11 became one, a failed flag read during an incomplete read dropped
+  // 7 of 8 carried safety cards for EVERY account, flag off included. The gate belongs to the one
+  // sentence that says a finding went away (the stand-down mint below), and only there.
   const priorSafety =
-    readIncomplete && priorSignal && standDownMintAllowed(priorSignal.engineFlags, engineFlags, SIGNAL_ENGINE_KEYS)
+    readIncomplete && priorSignal
       ? readPriorSafetyEntries(priorSignal.findings, priorSignal.generatedAt, nowMs)
       : []
   const decoratedBase = decoratedWithOnsets.map((r, i) => ({
@@ -751,6 +759,7 @@ export function runSignalPipeline(
     symptomEvents,
     freeFedFoodIds,
     nowMs,
+    risingBelowCardFloor: risingBelowCardFloor(input, config),
   })
 
   // 5. Cache. Empty findings = building/stale (§3.3), NEVER an all-clear (§9).

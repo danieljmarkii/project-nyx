@@ -377,6 +377,14 @@ export interface BuildSummaryArgs {
   /** Food ids currently free-fed for this pet (intake-rate exclusion, §11 #6). */
   freeFedFoodIds: ReadonlySet<string>
   nowMs: number
+  /**
+   * EN-11 (Engines v3 PR-32, adversarial pass D4): a sign is rising by today's worsening test but
+   * below EN-11's card floor, so no safety card says so. The finished-meal rate is then withheld
+   * exactly as it is beside a safety card: "finished 47 of 47 meals" over a cat with two days of
+   * diarrhea is the reassurance the clause's own rule forbids. Always false with the flag off
+   * (`risingBelowCardFloor`). Required, never defaulted (C-37).
+   */
+  risingBelowCardFloor: boolean
 }
 
 /**
@@ -392,7 +400,7 @@ export interface BuildSummaryArgs {
  *      as a summary.
  */
 export function buildSummaryPacket(args: BuildSummaryArgs): SummaryFactPacket | null {
-  const { petName, findings, mealEvents, symptomEvents, freeFedFoodIds, nowMs } = args
+  const { petName, findings, mealEvents, symptomEvents, freeFedFoodIds, nowMs, risingBelowCardFloor } = args
   const { startMs, endMs } = monthWindowBounds(nowMs)
 
   const clauses: string[] = []
@@ -445,7 +453,7 @@ export function buildSummaryPacket(args: BuildSummaryArgs): SummaryFactPacket | 
     clauses.push(proteinClause(protein.protein, petName))
     evidence.add('intake')
   }
-  if (!hasSafety && clauses.length < MAX_SUMMARY_SENTENCES) {
+  if (!hasSafety && !risingBelowCardFloor && clauses.length < MAX_SUMMARY_SENTENCES) {
     const rate = finishedMealRate(inWindowMeals, freeFedFoodIds)
     if (rate) {
       clauses.push(finishedRateClause(rate.finished, rate.rated, petName))
