@@ -1,0 +1,36 @@
+# Dependabot (CUL-1490).
+#
+# GitHub Actions: CI pins every action to a full commit SHA with the version in a
+# trailing comment (ci.yml explains why). Dependabot bumps both together, which is
+# the chore a human had to remember. Monthly, one grouped PR, so it never competes
+# with feature work for review.
+#
+# npm: SECURITY UPDATES ONLY. `open-pull-requests-limit: 0` turns version updates
+# off while security updates still run (they also need "Dependabot security
+# updates" switched on in the repo's Code security settings). Expo pins most of
+# the tree to the SDK, so routine bumps belong in a deliberate SDK upgrade
+# session, not a bot PR; a security fix lands as one PR, through CI, where a
+# native-affecting change is visible before the next TestFlight cut.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: 'ci'
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      npm-security:
+        applies-to: security-updates
+        patterns: ['*']
+    commit-message:
+      prefix: 'deps'
