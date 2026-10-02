@@ -240,6 +240,18 @@ export function FAB() {
     if (open && !closing.current) closeMenu(); else openMenu();
   }, [open, openMenu, closeMenu]);
 
+  // A pill acts only while the menu is staying open. A close keeps every pill mounted,
+  // under the finger, for the ~180ms it animates, so a quick second tap used to act
+  // again: a second log-sheet open while the first sheet was still sliding in (the
+  // CUL-662 wedge class; the store now refuses that too), a second /log push, the
+  // switcher's Modal presenting over the sheet's, or a second meal from a one-tap food
+  // (its `logging` guard has already released by then). Read from the ref, so the
+  // answer is current at the tap rather than at the last render.
+  const whileOpen = (action: () => void) => () => {
+    if (closing.current) return;
+    action();
+  };
+
   // Beat 1. Motion only: under Reduce Motion the disc does not scale (beat 8).
   const pressIn = useCallback(() => {
     if (reducedMotionNow()) return;
@@ -464,7 +476,7 @@ export function FAB() {
         node: (
           <TouchableOpacity
             style={[styles.pill, styles.logForPill]}
-            onPress={() => setSwitcherVisible(true)}
+            onPress={whileOpen(() => setSwitcherVisible(true))}
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel={`Logging for ${activePet.name} — switch pet`}
@@ -494,7 +506,7 @@ export function FAB() {
       node: (
         <TouchableOpacity
           style={styles.pill}
-          onPress={() => { closeMenu(); openLogSheet(); }}
+          onPress={whileOpen(() => { closeMenu(); openLogSheet(); })}
           activeOpacity={0.7}
           accessibilityRole="button"
         >
@@ -518,7 +530,7 @@ export function FAB() {
       node: (
         <TouchableOpacity
           style={styles.pill}
-          onPress={() => { closeMenu(); openLogSheet('diarrhea'); }}
+          onPress={whileOpen(() => { closeMenu(); openLogSheet('diarrhea'); })}
           activeOpacity={0.7}
           accessibilityRole="button"
         >
@@ -534,7 +546,7 @@ export function FAB() {
       node: (
         <TouchableOpacity
           style={styles.pill}
-          onPress={() => { closeMenu(); openLogSheet('vomit'); }}
+          onPress={whileOpen(() => { closeMenu(); openLogSheet('vomit'); })}
           activeOpacity={0.7}
           accessibilityRole="button"
         >
@@ -551,7 +563,7 @@ export function FAB() {
       node: (
         <TouchableOpacity
           style={styles.pill}
-          onPress={() => { closeMenu(); router.push('/log?type=meal'); }}
+          onPress={whileOpen(() => { closeMenu(); router.push('/log?type=meal'); })}
           activeOpacity={0.7}
           accessibilityRole="button"
         >
@@ -573,7 +585,7 @@ export function FAB() {
         node: (
           <TouchableOpacity
             style={styles.pill}
-            onPress={() => handleQuickMeal(food)}
+            onPress={whileOpen(() => { void handleQuickMeal(food); })}
             activeOpacity={0.7}
             disabled={logging !== null}
             accessibilityRole="button"
