@@ -154,3 +154,43 @@ describe('WeeklyBars — the §05 row', () => {
     expect(style.transformOrigin).toBe('bottom');
   });
 });
+
+// CUL-1440 (counterexample 1, D1): the weeks a masking span touches are hatched, a zero there
+// loses its numeral and keeps its stub, a non-zero week keeps its number, and the caption names
+// the drug. Absent `masked`, the chart above is byte for byte the §05 row.
+describe('WeeklyBars — a masking span (CUL-1440)', () => {
+  const masked = [false, true, true];
+  const caption = 'Prednisone from Sep 13 can hide vomiting. So a quiet week there isn\'t a sign it has settled.';
+
+  it('drops only a masked zero\'s numeral; the stub and every other number stay', () => {
+    const { getByTestId } = render(<WeeklyBars model={model} noun="vomiting" masked={masked} maskCaption={caption} />);
+    expect(model.weeks[1].count).toBe(0);
+    expect(getByTestId('weekly-count-1').props.children).not.toBe(0);
+    expect(String(getByTestId('weekly-count-1').props.children).trim()).toBe('');
+    expect(getByTestId('weekly-bar-1')).toBeTruthy(); // the stub: the week was counted
+    expect(getByTestId('weekly-count-2').props.children).toBe(1); // a non-zero masked week keeps it
+    expect(getByTestId('weekly-count-0').props.children).toBe(3);
+  });
+
+  it('hatches exactly the masked weeks and names what the hatch stands for', () => {
+    const { queryByTestId, getByTestId } = render(<WeeklyBars model={model} noun="vomiting" masked={masked} maskCaption={caption} />);
+    expect(queryByTestId('weekly-hatch-0')).toBeNull();
+    expect(getByTestId('weekly-hatch-1')).toBeTruthy();
+    expect(getByTestId('weekly-hatch-2')).toBeTruthy();
+    expect(getByTestId('weekly-mask-caption').props.children).toBe(caption);
+  });
+
+  it('the spoken label never says the masked zero, and says the caption', () => {
+    const { getByTestId } = render(<WeeklyBars model={model} noun="vomiting" masked={masked} maskCaption={caption} />);
+    const label: string = getByTestId('weekly-bars').props.accessibilityLabel;
+    expect(label).toContain('Counts by week: 3, shaded, 1.');
+    expect(label).toContain(`Shaded weeks: ${caption}`);
+  });
+
+  it('without `masked` nothing is hatched and the zero prints (flag off)', () => {
+    const { queryByTestId, getByTestId } = render(<WeeklyBars model={model} noun="vomiting" />);
+    expect(queryByTestId(/^weekly-hatch-/)).toBeNull();
+    expect(queryByTestId('weekly-mask-caption')).toBeNull();
+    expect(getByTestId('weekly-count-1').props.children).toBe(0);
+  });
+});

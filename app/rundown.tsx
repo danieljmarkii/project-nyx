@@ -30,6 +30,9 @@ import {
 } from '../lib/dietTrialFacts';
 import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
 import { readSignalCache } from '../lib/signal';
+import { loadMaskingRecord, maskedTrialSentence, maskingFor, maskSignalRows } from '../lib/screenMasking';
+import { signalSymptomOf } from '../lib/signalWindows';
+import { symptomWord } from '../lib/signalCopy';
 import { signalTrialWindowOf } from '../lib/signalScreen';
 import { syncPendingVetAppointments } from '../lib/sync';
 import {
@@ -40,7 +43,7 @@ import {
   type AppointmentQuestion,
   type AppointmentDetail,
 } from '../lib/vetVisits';
-import { uuid } from '../lib/utils';
+import { toLocalDayKey, uuid } from '../lib/utils';
 import { profileFocusHref } from '../lib/profileFocus';
 import { reportHref } from '../lib/reportRoute';
 
@@ -572,7 +575,7 @@ async function buildForAppointment(
         // `row.findings` is already `[]` when the engine ran and found nothing, so the
         // genuinely-quiet record still renders mock B1b. The row's `generated_at` rides with
         // them: it is half the trial anchor (CUL-1364).
-        .then((row) => (row ? { findings: row.findings, generatedAt: row.generatedAt } : null))
+        .then((row) => (row ? { findings: row.findings, generatedAt: row.generatedAt, engineFlags: row.engineFlags ?? null } : null))
         // A throw is the other unreadable case (offline, or a failed request).
         .catch(() => null),
       // And a read that has done neither by the bound is the third (F7).
@@ -597,7 +600,7 @@ async function buildForAppointment(
   // TS-8: the screen's model over the SAME input this page already read, for the same pet.
   // An unloadable trial is the screen's own `unreadable` state, which the recheck renders
   // nothing for, and the row falls back to the strip's, which is null too: no row.
-  const trialScreen =
+  const trialScreenModel =
     trialScreenLive && pet
       ? buildTrialScreenModel({
           petId: pet.id,
@@ -612,9 +615,44 @@ async function buildForAppointment(
           appointment: null,
         })
       : null;
+  // CUL-1440 (counterexample 3, D2): the recheck quotes the strip's vomiting sentence, and beside
+  // a masking drug or a recent visit it stays quiet where it would compare a fall or print a zero
+  // (Get ready lists the courses below it, so the drug is on this page). Only on a Signal written
+  // with EN-10 on; otherwise the sentence is exactly the strip's.
+  const today = toLocalDayKey(new Date(nowMs));
+  const maskRecord = signalRow
+    ? await loadMaskingRecord({ petId: subjectId, today, engineFlags: signalRow.engineFlags })
+    : null;
+  const counts = trialInput?.trialResponse ?? null;
+  const running = trialScreenModel && trialScreenModel.kind === 'trial' ? trialScreenModel : null;
+  const vomitMasking = maskingFor(maskRecord, 'vomit', symptomWord('vomit'), today);
+  const trialScreen =
+    running && vomitMasking && counts
+      ? { ...running, vomiting: maskedTrialSentence(vomitMasking, counts, running.vomiting, today) }
+      : trialScreenModel;
+  // The Signal rows are quoted VERBATIM, so a row whose own sentence compares a window a masking
+  // span touches (a trial pair, a falling reflection, a stood-down line) is dropped rather than
+  // rewritten (the adversarial pass, findings 1 and 2). Dropping can only empty the list, never
+  // turn a failed read into a quiet one: `null` stays `null`.
+  const generatedOn = signalRow?.generatedAt ? toLocalDayKey(new Date(signalRow.generatedAt)) : null;
+  // A trial pair that ROSE over a masked baseline zero keeps its row in the Signal screen's own
+  // words, never dropped (D2: a rise always shows; the third adversarial pass).
+  const findings = signalRow
+    ? maskSignalRows(
+        signalRow.findings,
+        maskRecord,
+        (f) => (f.type === 'trial_response' ? 'vomit' : signalSymptomOf(f)),
+        symptomWord,
+        today,
+        generatedOn,
+      )
+    : null;
+  if (loadIdRef.current !== myId) {
+    return { rows: [], signalUnavailable: false };
+  }
 
   return buildWorthRaising({
-    findings: signalRow ? signalRow.findings : null,
+    findings,
     // CUL-1364: Home's trial anchor, for THIS pet's running trial (C-9), on the build's clock.
     signalAnchor: {
       generatedAt: signalRow ? signalRow.generatedAt : null,

@@ -8,6 +8,7 @@ import { dateWord, markWord, weeklyBarsA11yLabel, weeklyOutsideLine } from '../.
 import { ThemedText } from '../ui/ThemedText';
 import { DRAW_IN_ORIGIN, useDrawIn } from '../motion/drawInMotion';
 import { CoverageTick } from './CoverageTick';
+import { MaskHatch } from './MaskHatch';
 
 // WeeklyBars — a bar per week, unsmoothed, to the §05 standard (CUL-1064; design authority
 // `docs/culprit-design-v4-mockups.html` §03 / §04, the `bars()` drawing).
@@ -39,6 +40,15 @@ interface Props {
   identity?: string;
   /** The tallest bar's height in pt. */
   plotHeight?: number;
+  /**
+   * The weeks a masking span touches (CUL-1440, D1): a drug that can hide the sign was on board,
+   * or a visit was recent. Each such week is drawn in the grey hatch and a zero there loses its
+   * NUMERAL (the baseline stub stays: the week was counted); a non-zero week keeps its number.
+   * One entry per week. Absent: no week is masked, the chart as it always was.
+   */
+  masked?: readonly boolean[];
+  /** The words under the chart naming what the hatch stands for; drawn only with `masked`. */
+  maskCaption?: string | null;
 }
 
 const DEFAULT_PLOT_HEIGHT = 64;
@@ -48,7 +58,7 @@ const MIN_BAR_HEIGHT = 4;
 const ZERO_STUB_HEIGHT = 2;
 const MAX_BAR_WIDTH = 26;
 
-export function WeeklyBars({ model, noun, drawIn = false, identity = 'weekly', plotHeight = DEFAULT_PLOT_HEIGHT }: Props) {
+export function WeeklyBars({ model, noun, drawIn = false, identity = 'weekly', plotHeight = DEFAULT_PLOT_HEIGHT, masked, maskCaption = null }: Props) {
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
   const { markStyle, labelStyle } = useDrawIn({
@@ -71,7 +81,7 @@ export function WeeklyBars({ model, noun, drawIn = false, identity = 'weekly', p
   const middle = n >= 5 && n % 2 === 1 ? Math.floor(n / 2) : -1;
 
   return (
-    <View accessible accessibilityLabel={weeklyBarsA11yLabel(model, noun)} testID="weekly-bars">
+    <View accessible accessibilityLabel={weeklyBarsA11yLabel(model, noun, masked, maskCaption)} testID="weekly-bars">
       <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
         {/* The header line: the mark's words at the left, the partial week's at the right. */}
         <Animated.View style={[styles.headerRow, labelStyle]}>
@@ -92,15 +102,18 @@ export function WeeklyBars({ model, noun, drawIn = false, identity = 'weekly', p
           )}
           {model.weeks.map((week, i) => {
             const isZero = week.count === 0;
+            const isMasked = masked?.[i] === true;
             const h = isZero ? ZERO_STUB_HEIGHT : Math.max(MIN_BAR_HEIGHT, (week.count / model.max) * plotHeight);
             return (
               <View key={week.startKey} style={styles.column} testID={`weekly-week-${i}`}>
+                {isMasked && <MaskHatch testID={`weekly-hatch-${i}`} />}
                 <Animated.View style={labelStyle}>
+                  {/* A masked zero keeps the row's height and drops only its numeral (D1). */}
                   <ThemedText
                     style={[styles.count, i === n - 1 && styles.countLast]}
                     testID={`weekly-count-${i}`}
                   >
-                    {week.count}
+                    {isMasked && isZero ? ' ' : week.count}
                   </ThemedText>
                 </Animated.View>
                 <View style={[styles.barWell, { height: plotHeight }]}>
@@ -129,6 +142,15 @@ export function WeeklyBars({ model, noun, drawIn = false, identity = 'weekly', p
           <Animated.View style={labelStyle}>
             <ThemedText style={styles.outside} testID="weekly-outside-line">
               {outside}
+            </ThemedText>
+          </Animated.View>
+        )}
+
+        {/* The masking span, named (CUL-1440): what the hatch stands for, in words. */}
+        {masked != null && masked.some(Boolean) && maskCaption != null && (
+          <Animated.View style={labelStyle}>
+            <ThemedText style={styles.outside} testID="weekly-mask-caption">
+              {maskCaption}
             </ThemedText>
           </Animated.View>
         )}

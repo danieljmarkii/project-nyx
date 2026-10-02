@@ -72,6 +72,7 @@ import {
   trialResponseTimedReconciliationLine,
   worseningNewSampleLine,
 } from '../../lib/signalCopy';
+import type { PhoneScriptMasking } from '../../lib/screenMasking';
 import { DotLane, EvidenceBox, PhoneScript, StackedCompare } from './SignalReceipts';
 import type { CachedFinding, InsightType, PriorityClass, SignalFinding } from '../../lib/signal';
 
@@ -337,6 +338,7 @@ export function ExpandedReceipts({
   petName,
   trialRunning,
   withholdFallingVomit,
+  masking,
 }: {
   finding: SignalFinding;
   petName: string;
@@ -344,6 +346,10 @@ export function ExpandedReceipts({
   /** The pet's not-eating register (CUL-1216, BRK-6): a falling vomit chronicity compare is
    *  withheld from the box and the phone script beside it. Required — no fail-open default. */
   withholdFallingVomit: boolean;
+  /** A masking drug or a recent visit beside the script (CUL-1440): its rows join the script and
+   *  `withholdCompare` drops the counted halves, box and row alike. Null off the Signal screen's
+   *  EN-10 rule (Home's expand), the receipts as they always were. Required (C-37). */
+  masking: PhoneScriptMasking | null;
 }) {
   if (isTimingFinding(finding)) {
     const disclosure = timingControlDisclosure(finding);
@@ -377,14 +383,15 @@ export function ExpandedReceipts({
       </EvidenceBox>
     );
   }
-  const facts = phoneScript(finding, petName, withholdFallingVomit);
+  const facts = phoneScript(finding, petName, withholdFallingVomit, masking);
   if (facts) {
     // v1.1-b (CUL-787): a chronicity finding whose cache carries the counted 4-week halves
     // draws them ABOVE the script, in the same "Counted honestly" box the reflection lane
     // uses — the two counts, the logged-days line, and (falling only) the why-it-stands
     // clause. Expand-only: the face and the sentence stay exactly as shipped (§3.5), and an
     // old cache (no `compare`) renders the pre-v1.1-b expand byte-identically.
-    const compare = finding.type === 'symptom_chronicity' ? chronicityCompareExtras(finding, withholdFallingVomit) : null;
+    const compare =
+      finding.type === 'symptom_chronicity' && masking?.withholdCompare !== true ? chronicityCompareExtras(finding, withholdFallingVomit) : null;
     return (
       <>
         {compare ? (
@@ -827,6 +834,9 @@ export function InsightCard({
                   petName={petName}
                   trialRunning={trialRunning}
                   withholdFallingVomit={withholdFallingVomit}
+                  // Home's expand is not under EN-10's screen rule (CUL-1440 covers the Signal
+                  // screen and Get ready; Home's trial strip is CUL-1443).
+                  masking={null}
                 />
               )}
             </>

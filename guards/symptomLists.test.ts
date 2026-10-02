@@ -68,7 +68,9 @@ const REGISTERED: Record<string, string> = {
   'supabase/functions/generate-signal/detection.ts': 'CORRELATION_SYMPTOM_TYPES — the engine fetch + lanes (per-lane map = 3b)',
   'supabase/functions/generate-signal/phrasing.ts': 'server SYMPTOM_LABEL — engine owner copy (cough lands with 3b)',
   'supabase/functions/generate-signal/careContext.ts':
-    'ALL_SIGNS + DRUG_CLASS_EFFECTS — EN-10\'s drug table: which signs a course is shown beside and may mask (CUL-1420). Decides where a context line is DRAWN and when a zero is withheld, never what is counted; its walk row is in constants/eventTypes.membership.test.ts',
+    'trialCovers — which signs a trial\'s indication covers (gi → vomit, diarrhea; skin → itch, scratch), so a trial line is DRAWN beside them (CUL-1420). Placement only, never what is counted. Its drug table moved to lib/maskingSpans.ts (CUL-1440); this entry was the file\'s registration before the move and still covers this membership',
+  'lib/maskingSpans.ts':
+    'MaskSign + ALL_SIGNS + DRUG_CLASS_EFFECTS — EN-10\'s drug table, shared by the server lines and the app\'s charts (CUL-1420, lifted here by CUL-1440): which signs a course is shown beside and may mask. Decides where a context line is DRAWN and when a zero is withheld, never what is counted; its walk row is in constants/eventTypes.membership.test.ts',
   'supabase/functions/generate-report/report.ts': 'REPORT_SYMPTOM_TYPES — the report frequency section (3b co-work)',
   'lib/sameMinuteDuplicates.ts':
     'SAME_MINUTE_OBSERVATION_TYPES — the same-minute duplicate rule History v2 and the vet report share (CUL-1161; the report moves onto it in HV-15). Its members are the report\'s by construction, held equal by lib/sameMinuteDuplicates.test.ts',

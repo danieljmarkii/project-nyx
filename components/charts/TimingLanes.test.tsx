@@ -107,3 +107,34 @@ describe('TimingLanes — the §05 row', () => {
     spy.mockRestore();
   });
 });
+
+// CUL-1440 (counterexample 6, D4): a lane whose dates a masking span touches is hatched; with
+// nothing in it it shows its window, never "0 timed of 0", and a zero bucket loses its numeral.
+describe('TimingLanes — a masked lane (CUL-1440)', () => {
+  const onDrug = { ...laneDots(laneOf('In the trial, on Prednisone from Sep 21', [12], 1)), masked: true };
+  const empty = { ...laneDots(laneOf('In the trial, on Prednisone from Sep 21', [], 0)), masked: true };
+  const caption = 'Prednisone from Sep 21 can hide vomiting.';
+
+  it('hatches the masked lane, keeps its non-zero counts, drops its zero buckets', () => {
+    const { getByTestId, queryByTestId } = render(<TimingLanes lanes={[before, onDrug]} axis={axis} maskCaption={caption} />);
+    expect(queryByTestId('timing-hatch-0')).toBeNull();
+    expect(getByTestId('timing-hatch-1')).toBeTruthy();
+    expect(getByTestId('timing-timed-1').props.children).toBe('1 timed of 1');
+    expect(getByTestId('timing-bucket-1-0').props.children).toBe(1);
+    expect(String(getByTestId('timing-bucket-1-1').props.children).trim()).toBe('');
+    expect(getByTestId('timing-mask-caption').props.children).toBe(caption);
+  });
+
+  it('an empty masked lane shows its window and never "0 timed of 0"', () => {
+    const { getByTestId } = render(<TimingLanes lanes={[before, empty]} axis={axis} maskCaption={caption} />);
+    expect(String(getByTestId('timing-timed-1').props.children).trim()).toBe('');
+    const label: string = getByTestId('timing-lanes').props.accessibilityLabel;
+    expect(label).toContain('In the trial, on Prednisone from Sep 21: shaded.');
+    expect(label).not.toContain('0 timed of 0');
+  });
+
+  it('three lanes: the untimed line never says "both lanes"', () => {
+    const { getByTestId } = render(<TimingLanes lanes={[before, during, onDrug]} axis={axis} />);
+    expect(getByTestId('timing-untimed-line').props.children).not.toContain('both lanes');
+  });
+});

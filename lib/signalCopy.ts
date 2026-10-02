@@ -1973,6 +1973,46 @@ export function phoneScript(
   /** The pet's not-eating register (CUL-1216): true drops a FALLING vomit chronicity compare
    *  row (`chronicityCompareWithheld`). Required — a default here would be the decision. */
   withholdFallingVomit: boolean,
+  /** A masking drug or a recent visit beside this script (CUL-1440, D3): its rows name each one
+   *  after the dates, and `withholdCompare` drops the comparing row (a zero, or a fall, in a
+   *  window a span touches). Null where the screen is not under EN-10's rule, which is the
+   *  script as it always was. Required — a default here would be the decision (C-37). */
+  masking: { rows: readonly PhoneScriptFact[]; withholdCompare: boolean; recentOnly: boolean } | null,
+): PhoneScriptFact[] | null {
+  const facts = phoneScriptFacts(finding, petName, withholdFallingVomit, masking?.withholdCompare === true);
+  if (!facts || !masking) return facts;
+  // A rise over a masked zero keeps its recent count (the escalation direction) without the zero
+  // beside it: the chronicity compare row, recent half only.
+  const withRecent =
+    masking.recentOnly && finding.type === 'symptom_chronicity' && finding.compare
+      ? insertBefore(facts, 'Most recent', chronicityRecentOnlyFact(finding.compare))
+      : facts;
+  // Only the scripts that read a sign's count aloud carry the drug beside it.
+  if (masking.rows.length === 0) return withRecent;
+  if (finding.type !== 'symptom_chronicity' && finding.type !== 'symptom_worsening' && finding.type !== 'symptom_burden') return withRecent;
+  return [...withRecent, ...masking.rows];
+}
+
+function insertBefore(facts: PhoneScriptFact[], label: string, fact: PhoneScriptFact): PhoneScriptFact[] {
+  const i = facts.findIndex((f) => f.label === label);
+  return i < 0 ? [...facts, fact] : [...facts.slice(0, i), fact, ...facts.slice(i)];
+}
+
+/** The chronicity compare row with the recent half only (CUL-1440): "Recent 4 weeks · 9 ·
+ *  logged on 27 of the recent 28 days". */
+export function chronicityRecentOnlyFact(c: ChronicityCompare): PhoneScriptFact {
+  const w = compareHalfWeeks(c);
+  return {
+    label: `Recent ${weeksWord(w)}`,
+    value: `${c.recentCount} · logged on ${c.recentLoggingDays} of the recent ${c.halfDays} days`,
+  };
+}
+
+function phoneScriptFacts(
+  finding: SignalFinding,
+  petName: string,
+  withholdFallingVomit: boolean,
+  withholdCompare: boolean,
 ): PhoneScriptFact[] | null {
   if (finding.type === 'symptom_burden') {
     return [
@@ -1995,7 +2035,7 @@ export function phoneScript(
     return [
       { label: 'Sign', value: symptom },
       { label: 'This week', value: thisWeek },
-      { label: 'Week before', value: weekBefore },
+      ...(withholdCompare ? [] : [{ label: 'Week before', value: weekBefore }]),
       { label: 'Watched over', value: `the last ${finding.windowDays} days` },
     ];
   }
@@ -2018,7 +2058,7 @@ export function phoneScript(
       // most-recent date so the script still reads oldest-fact → newest-fact.
       // CUL-1216 (BRK-6): withheld when it falls, counts vomiting, and the pet is not known
       // to be eating — the ask and every other row stay.
-      ...(finding.compare && !chronicityCompareWithheld(finding, withholdFallingVomit)
+      ...(finding.compare && !withholdCompare && !chronicityCompareWithheld(finding, withholdFallingVomit)
         ? [chronicityComparePhoneScriptFact(finding.compare)]
         : []),
       { label: 'Most recent', value: recencyPhrase(finding.daysSinceLastEpisode) },

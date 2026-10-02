@@ -18,7 +18,7 @@ import {
   type TrialFact,
 } from './careContext.ts'
 import type { Finding, SymptomEvent, SymptomType } from './detection.ts'
-import { hasBannedSignalVocabulary } from './phrasing.ts'
+import { hasBannedSignalVocabulary, SYMPTOM_LABEL } from './phrasing.ts'
 import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 
 const DAY = 86_400_000
@@ -62,7 +62,7 @@ Deno.test('5a — the vomiting screen: the course above the visit, each its own 
     symptom('vomit', at('2026-09-23')), symptom('vomit', at('2026-09-26')), // after it
   ]
   assertEquals(texts('vomit', argsOf({ symptoms: vomits, courses: [PRED] })), [
-    'Prednisone since Sep 21, 6 days: 2 episodes, with something logged on 6 of 6.',
+    'Prednisone since Sep 21, 6 days: 2 episodes, with something logged on 6 of 6. It can hide vomiting.',
     'Since the Sep 16 visit, 11 days: 4 episodes, with something logged on 11 of 11. Anything given at the visit isn\'t in the record.',
   ])
 })
@@ -70,7 +70,7 @@ Deno.test('5a — the vomiting screen: the course above the visit, each its own 
 Deno.test('5b — a zero beside a drug start: the course line states its start and stops; the visit keeps its count', () => {
   const coughs = [symptom('cough', at('2026-09-17')), symptom('cough', at('2026-09-18')), symptom('cough', at('2026-09-19'))]
   assertEquals(texts('cough', argsOf({ symptoms: coughs, courses: [PRED] })), [
-    'Prednisone since Sep 21, 6 days. Started 6 days ago.',
+    'Prednisone since Sep 21, 6 days, with something logged on 6 of 6. It can hide coughing.',
     'Since the Sep 16 visit, 11 days: 3 episodes, with something logged on 11 of 11. Anything given at the visit isn\'t in the record.',
   ])
 })
@@ -148,7 +148,7 @@ Deno.test('a drug that only CAUSES a sign may sit beside a zero; one that affect
   // Thin logging (5 of 30 days): the zero is withheld.
   const thin = [0, 3, 6, 9, 12].map((d) => at(dayKey(d), 7))
   assertEquals(texts('vomit', argsOf({ courses: [nsaid] }, { lastVisitOn: null, loggedAt: thin })), [
-    'Metacam since Aug 28, 30 days. Started 30 days ago.',
+    'Metacam since Aug 28, 30 days, with something logged on 5 of 30.',
   ])
   // Metacam can move neither itching nor coughing.
   assertEquals(linesForSign('itch', argsOf({ courses: [nsaid] }, { lastVisitOn: null })), [])
@@ -158,7 +158,7 @@ Deno.test('a drug name the table cannot resolve shows beside every concern and m
   const mystery: CourseFact = { drugLabel: 'Grandma\'s drops', names: [], startedOn: dayKey(30), endedOn: null, status: 'active' }
   for (const sign of ['vomit', 'diarrhea', 'itch', 'scratch', 'cough', 'sneeze', 'skin_reaction'] as SymptomType[]) {
     const [line] = linesForSign(sign, argsOf({ courses: [mystery] }, { lastVisitOn: null }))
-    assertStrictEquals(line.text, 'Grandma\'s drops since Aug 28, 30 days. Started 30 days ago.', sign)
+    assertStrictEquals(line.text, `Grandma's drops since Aug 28, 30 days, with something logged on 30 of 30. It may hide ${SYMPTOM_LABEL[sign]}.`, sign)
   }
 })
 
@@ -190,13 +190,13 @@ Deno.test('a recent visit withholds the zero on EVERY line, not only its own (Cy
     'Since the Sep 15 visit, 12 days, with something logged on 12 of 12. Anything given at the visit isn\'t in the record.',
   ])
   const doxy: CourseFact = { drugLabel: 'Doxycycline', names: [], startedOn: dayKey(5), endedOn: null, status: 'active' }
-  assertStrictEquals(texts('vomit', argsOf({ courses: [doxy] }, { lastVisitOn: dayKey(5) }))[0], 'Doxycycline since Sep 22, 5 days. Started 5 days ago.')
+  assertStrictEquals(texts('vomit', argsOf({ courses: [doxy] }, { lastVisitOn: dayKey(5) }))[0], 'Doxycycline since Sep 22, 5 days, with something logged on 5 of 5.')
 })
 
 Deno.test('a window older than the read states its span and no count', () => {
   assertEquals(texts('vomit', argsOf({}, { lastVisitOn: dayKey(200) })), ['Since the Mar 11 visit, 200 days.'])
   const old: CourseFact = { ...PRED, startedOn: dayKey(190) }
-  assertStrictEquals(texts('vomit', argsOf({ courses: [old] }, { lastVisitOn: null }))[0], 'Prednisone since Mar 21, 190 days.')
+  assertStrictEquals(texts('vomit', argsOf({ courses: [old] }, { lastVisitOn: null }))[0], 'Prednisone since Mar 21, 190 days. It can hide vomiting.')
 })
 
 // ── Counting ──────────────────────────────────────────────────────────────────
@@ -220,11 +220,11 @@ Deno.test('the day is the owner\'s: an evening episode in Los Angeles counts on 
 
 Deno.test('a course ended inside its tail draws its dates and no count; past the tail, nothing', () => {
   assertEquals(texts('vomit', argsOf({ courses: [{ ...PRED, endedOn: dayKey(1), status: 'completed' }] }, { lastVisitOn: null })), [
-    'Prednisone, Sep 21 to Sep 26.',
+    'Prednisone, Sep 21 to Sep 26. It can hide vomiting.',
   ])
   // Marked stopped with no end date: taken to have ended today.
   assertEquals(texts('vomit', argsOf({ courses: [{ ...PRED, endedOn: null, status: 'stopped' }] }, { lastVisitOn: null })), [
-    'Prednisone since Sep 21, stopped.',
+    'Prednisone since Sep 21, stopped. It can hide vomiting.',
   ])
   for (const c of [
     { ...PRED, startedOn: '2026-07-01', endedOn: dayKey(43), status: 'completed' },
@@ -234,7 +234,7 @@ Deno.test('a course ended inside its tail draws its dates and no count; past the
     assertEquals(linesForSign('vomit', argsOf({ courses: [c] }, { lastVisitOn: null })), [], JSON.stringify(c))
   }
   // Ending today, it is still on board today.
-  assertStrictEquals(texts('vomit', argsOf({ courses: [{ ...PRED, endedOn: dayKey(0) }] }, { lastVisitOn: null }))[0], 'Prednisone since Sep 21, 6 days. Started 6 days ago.')
+  assertStrictEquals(texts('vomit', argsOf({ courses: [{ ...PRED, endedOn: dayKey(0) }] }, { lastVisitOn: null }))[0], 'Prednisone since Sep 21, 6 days, with something logged on 6 of 6. It can hide vomiting.')
 })
 
 Deno.test('a window partly under a masking course never shows a zero, and the course is named above the trial', () => {
@@ -242,7 +242,7 @@ Deno.test('a window partly under a masking course never shows a zero, and the co
   const pred: CourseFact = { drugLabel: 'Prednisolone', names: [], startedOn: dayKey(40), endedOn: dayKey(20), status: 'completed' }
   const trial: TrialFact = { startedOn: dayKey(40), targetDurationDays: 84, indication: 'gi', targetProtein: 'rabbit' }
   assertEquals(texts('vomit', argsOf({ courses: [pred], trial }, { lastVisitOn: null })), [
-    'Prednisolone, Aug 18 to Sep 7.',
+    'Prednisolone, Aug 18 to Sep 7. It can hide vomiting.',
     'Rabbit trial, day 41 of 84, with something logged on 41 of its 41 days.',
   ])
   // A course that STARTED after an old steroid's span may show its zero.
@@ -257,7 +257,7 @@ Deno.test('a half-resolved name fails toward disclosure (an unknown member may m
   for (const name of ['Carprofen + mirtazapine', 'Metacam w/ Entyce', 'Onsior + steroid injection', 'Rimadyl (Depo shot at clinic)']) {
     assertStrictEquals(resolveDrugClasses([name]), null, name)
     const c: CourseFact = { drugLabel: name, names: [], startedOn: dayKey(20), endedOn: null, status: 'active' }
-    assertStrictEquals(texts('vomit', argsOf({ courses: [c] }, { lastVisitOn: null }))[0].endsWith('Started 20 days ago.'), true, name)
+    assertStrictEquals(texts('vomit', argsOf({ courses: [c] }, { lastVisitOn: null }))[0].endsWith('with something logged on 20 of 20. It may hide vomiting.'), true, name)
   }
 })
 
@@ -275,7 +275,7 @@ Deno.test('a hyphenated or joined compound never resolves as its first drug', ()
   const c: CourseFact = { drugLabel: 'Metronidazole-Prednisolone', names: [], startedOn: dayKey(15), endedOn: null, status: 'active' }
   const trial: TrialFact = { startedOn: dayKey(15), targetDurationDays: 56, indication: 'gi', targetProtein: 'rabbit' }
   assertEquals(texts('vomit', argsOf({ courses: [c], trial }, { lastVisitOn: null })), [
-    'Metronidazole-Prednisolone since Sep 12, 15 days. Started 15 days ago.',
+    'Metronidazole-Prednisolone since Sep 12, 15 days, with something logged on 15 of 15. It can hide vomiting.',
     'Rabbit trial, day 16 of 56, with something logged on 16 of its 16 days.',
   ])
 })
@@ -308,8 +308,8 @@ Deno.test('an owner label that makes a care claim is never printed; the library 
   const label = 'Pred (it is working)'
   assertStrictEquals(careClaimReason(label) !== null, true, 'fixture premise: the screen flags the label')
   const c: CourseFact = { drugLabel: label, names: ['prednisolone'], startedOn: dayKey(20), endedOn: null, status: 'active' }
-  assertEquals(texts('vomit', argsOf({ courses: [c] }, { lastVisitOn: null })), ['Prednisolone since Sep 7, 20 days. Started 20 days ago.'])
-  assertEquals(texts('vomit', argsOf({ courses: [{ ...c, names: [] }] }, { lastVisitOn: null })), ['A medication since Sep 7, 20 days. Started 20 days ago.'])
+  assertEquals(texts('vomit', argsOf({ courses: [c] }, { lastVisitOn: null })), ['Prednisolone since Sep 7, 20 days, with something logged on 20 of 20. It may hide vomiting.'])
+  assertEquals(texts('vomit', argsOf({ courses: [{ ...c, names: [] }] }, { lastVisitOn: null })), ['A medication since Sep 7, 20 days, with something logged on 20 of 20. It may hide vomiting.'])
 })
 
 Deno.test('a year appears only when the date is not in this year', () => {
@@ -337,7 +337,7 @@ Deno.test('the drug table matches whole words of any name, never a substring, ne
 
 Deno.test('a course matched through the library item\'s generic name', () => {
   const nick: CourseFact = { drugLabel: 'Buddy\'s pills', names: ['maropitant'], startedOn: dayKey(30), endedOn: null, status: 'active' }
-  assertEquals(texts('vomit', argsOf({ courses: [nick] }, { lastVisitOn: null })), ['Buddy\'s pills since Aug 28, 30 days. Started 30 days ago.'])
+  assertEquals(texts('vomit', argsOf({ courses: [nick] }, { lastVisitOn: null })), ['Buddy\'s pills since Aug 28, 30 days, with something logged on 30 of 30. It can hide vomiting.'])
   assertEquals(linesForSign('itch', argsOf({ courses: [nick] }, { lastVisitOn: null })), [])
 })
 

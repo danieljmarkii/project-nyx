@@ -7,6 +7,7 @@ import { compareBarsA11yLabel } from '../../lib/chartCopy';
 import { ThemedText } from '../ui/ThemedText';
 import { DRAW_IN_ORIGIN, useDrawIn } from '../motion/drawInMotion';
 import { CoverageTick } from './CoverageTick';
+import { MaskHatch } from './MaskHatch';
 
 // CompareBars — two windows as two bars, to the §05 standard (CUL-1064; design authority
 // `docs/culprit-design-v4-mockups.html` §03, the `compare()` drawing).
@@ -39,6 +40,14 @@ interface Props {
   /** Hold the draw this long — the Signal screen's compare lands at 200ms, and a draw that
    *  started inside a view still at opacity 0 would play unseen (CUL-1223). */
   drawDelayMs?: number;
+  /**
+   * Which of the two windows a masking span touches (CUL-1440, D1): its track is drawn in the
+   * grey hatch and a zero there loses its numeral; the fill, a non-zero count and the logged-day
+   * strip stay. Absent: neither is masked, the chart as it always was.
+   */
+  masked?: readonly [boolean, boolean];
+  /** The words under the chart naming what the hatch stands for; drawn only with `masked`. */
+  maskCaption?: string | null;
 }
 
 const TRACK_HEIGHT = 11;
@@ -46,7 +55,7 @@ const TRACK_HEIGHT = 11;
  *  with its "0" beside the empty track. */
 const MIN_FILL_FRAC = 0.02;
 
-export function CompareBars({ model, noun, drawIn = false, identity = 'compare', drawDelayMs = 0 }: Props) {
+export function CompareBars({ model, noun, drawIn = false, identity = 'compare', drawDelayMs = 0, masked, maskCaption = null }: Props) {
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
   const { markStyle, labelStyle } = useDrawIn({
@@ -60,10 +69,11 @@ export function CompareBars({ model, noun, drawIn = false, identity = 'compare',
   });
 
   return (
-    <View accessible accessibilityLabel={compareBarsA11yLabel(model, noun)} testID="compare-bars">
+    <View accessible accessibilityLabel={compareBarsA11yLabel(model, noun, masked, maskCaption)} testID="compare-bars">
       <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden style={styles.rows}>
         {model.windows.map((w, i) => {
           const frac = w.count === 0 ? 0 : Math.max(MIN_FILL_FRAC, w.count / model.max);
+          const isMasked = masked?.[i] === true;
           return (
             <View key={i} style={styles.row} testID={`compare-window-${i}`}>
               <View style={styles.labels}>
@@ -77,6 +87,7 @@ export function CompareBars({ model, noun, drawIn = false, identity = 'compare',
               <View style={styles.trackColumn}>
                 <View style={styles.trackRow}>
                   <View style={styles.track}>
+                    {isMasked && <MaskHatch testID={`compare-hatch-${i}`} />}
                     {frac > 0 && (
                       <Animated.View
                         testID={`compare-bar-${i}`}
@@ -85,8 +96,10 @@ export function CompareBars({ model, noun, drawIn = false, identity = 'compare',
                     )}
                   </View>
                   <Animated.View style={labelStyle}>
+                    {/* A masked zero drops only its numeral (D1); the empty track and its
+                        strip still say the window was counted and how much was logged. */}
                     <ThemedText style={styles.count} testID={`compare-count-${i}`}>
-                      {w.count}
+                      {isMasked && w.count === 0 ? ' ' : w.count}
                     </ThemedText>
                   </Animated.View>
                 </View>
@@ -99,6 +112,11 @@ export function CompareBars({ model, noun, drawIn = false, identity = 'compare',
             </View>
           );
         })}
+        {masked != null && masked.some(Boolean) && maskCaption != null && (
+          <ThemedText style={styles.maskCaption} testID="compare-mask-caption">
+            {maskCaption}
+          </ThemedText>
+        )}
       </View>
     </View>
   );
@@ -161,6 +179,11 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
     fontVariant: ['tabular-nums'],
     minWidth: 20,
+  },
+  maskCaption: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    lineHeight: theme.lineHeightXS,
   },
   strip: {
     flexDirection: 'row',
