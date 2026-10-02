@@ -52,7 +52,7 @@ Exit codes, so an unattended caller can say *which* assertion failed: `0` sound 
    | Genuinely in flight | An open PR, **or** a claim comment whose branch tip is ≤14 days old | Leave it |
    | Work in review | An open PR referencing it | → `In Review` (step 2) |
    | Abandoned claim | Claim comment names a branch whose **tip commit is >14 days old**; no open or merged PR references the issue; no later comment releases the claim | → `Todo`, with a comment naming the branch **and its tip date** |
-   | Blocked on the PM | Title/label says the remainder is a device pass, a dashboard toggle, a ruling | **Surface, don't sweep** — see below |
+   | Blocked on the PM | Carries `Waiting on PM`, or the title/body says the remainder is a device pass, a dashboard toggle, a ruling | → `Todo`, keeping (or adding) `Waiting on PM`, with a comment saying the label now carries the wait — see below |
    | Never claimed, never started | No claim comment, no branch, no PR, weeks old | → `Todo`, with a comment saying what was verified |
 
    **Read the claim comment, not the status** (`/kickoff` step 0 — `**Claimed** — branch …`): it names the branch and the UTC time. Status alone names no branch and cannot distinguish any of these.
@@ -71,7 +71,7 @@ Exit codes, so an unattended caller can say *which* assertion failed: `0` sound 
 
    **Three rows, one population — read them in table order and stop at the first match.** The rows below "work in review" are not mutually exclusive on their face, and the wrong order sweeps a PM-blocked issue to `Todo`: CUL-425 has no claim comment and is weeks old (the *never claimed* row) and its own newest comment says "leaving **In Progress**, blocked on the PM UI action" (the *blocked-on-the-PM* row, which wins). Likewise CUL-847 carries a claim comment **and** a later comment releasing that claim while the issue waits on rulings — a released claim is not an abandoned one.
 
-   The **blocked-on-the-PM** row is a live convention collision, not a bug to fix silently: CUL-624 made `In Progress` mean *a session has claimed this*, and thirteen issues use it to mean *waiting on you*. Report it; let the PM rule. (CUL-923's `Needs PM` state is the structural fix.)
+   The **blocked-on-the-PM** row used to be a convention collision: CUL-624 made `In Progress` mean *a session has claimed this*, and issues used it to mean *waiting on you*. **Ruled 2026-10-02 (PM, CUL-1448): "waiting on the PM" stays a LABEL, not a workflow state** (CUL-923's `Needs PM` state was declined). So the two questions ride two fields: the status says whether a session holds the issue, the label says whether you owe it something. A live claim blocked mid-build keeps `In Progress` *and* gets the label (row 1 catches it first); a PM-blocked issue with no live claim is `Todo` plus the label.
 
    **Codifying these as typed predicates with their own mutation suite is CUL-926**, which also owns the general detector-liveness clause — *every detector must be shown to fire at least once against a real-board fixture*. This step is the corrected rule; that issue is where it stops being prose.
 
@@ -104,6 +104,8 @@ Exit codes, so an unattended caller can say *which* assertion failed: `0` sound 
 9. **Enforce the issue contract.** Every issue needs: a title, a plain-English `TL;DR` opener (PM directive 2026-08-26), a description that leads with **Why:** and names **Blocks:** (or `—`), a `priority`, an `Area: *` label, and a current `state`. Flag any issue missing the *why*.
 
    **A project is NOT part of the contract** (PM, 2026-09-26, CUL-1284). An issue joins a live project only when it extends that project's work; a standalone issue takes no project, and that is correct, not a gap. Requiring one is what turned Legacy Backlog into a dumping ground: 153 issues filed natively after the cutover landed there because it was the only "neutral" home. The `Area: *` label is what keeps a project-less issue findable, so that is the field to enforce.
+
+   **Strip dead queue labels.** `Waiting on PM` and `Quick Win` each say what someone should *do next*, so both go false when the issue closes, and a label does not leave by itself (the reason CUL-923 wanted a state). Every pass lists issues in a completed, canceled or duplicate state carrying either one and removes it with `removeLabels`. Exactly those two: every other label says what an issue *is* and stays, and `Propose close` stays on a pruned issue on purpose (step 13).
 
    **Legacy Backlog is closed to new issues.** It holds the rows migrated from `docs/backlog.md` (CUL-28 → CUL-514, label `Legacy`) and nothing else. Every pass lists open issues in that project created after 2026-08-16 (`list_issues` with `project: "Legacy Backlog"` and `createdAt: "2026-08-16"`) and moves each to the live project it extends, or to no project with an `Area: *` label. Closed ones stay where they are. A non-empty list means a session broke the rule, so name the issues in the report.
 

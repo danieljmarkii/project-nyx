@@ -34,3 +34,12 @@ Decision brief in chat; PM chose **(b)**: propose, then cancel automatically aft
 ## Lesson
 
 A queue with a mandated add and no mandated remove only grows (retro 2026-09, L1), and a proposal with no expiry is the same queue one label deep. The veto window is what turns `Propose close` from a second backlog into a drain.
+
+## Second ruling, same session: the PM queue stays a label
+
+The PM asked whether "needs the PM" should be a label (usable at any stage) and whether a PM persona could decide the low-stakes calls. Briefs in chat; rulings:
+
+- **1a — `Waiting on PM` stays a label.** CUL-923's `Needs PM` workflow state is declined and #841 closed as superseded. The label's one flaw (it outlives the issue's close) is now a groomer step: step 9 strips `Waiting on PM` and `Quick Win` from completed, canceled and duplicate issues every pass. Step 4's collision resolves by rule: the status says whether a session holds the issue, the label says whether the PM owes it something.
+- **2b — the queue drain is built separately, under CUL-1366** (the 2026-09-27 rulings: team decision rights, the 72h veto window on low-risk calls, the never-list), not folded into this PR.
+
+`operating-kit/` still teaches "a state, not a label" for new projects. It is a template for other repos and was left alone; whether to change it is noted on CUL-1366.
