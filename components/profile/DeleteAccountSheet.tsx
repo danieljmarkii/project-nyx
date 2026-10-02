@@ -90,15 +90,24 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
       // to fire the SIGNED_OUT wipe + route to auth without a doomed server
       // round-trip. Leave inFlight set — the route swap unmounts this sheet.
       useAuthStore.getState().setJustDeletedAccount(true);
-      await supabase.auth.signOut({ scope: 'local' }).catch(async (e) => {
+      // signOut normally emits SIGNED_OUT, whose handler runs the FR-9 wipe and
+      // routes to auth. It can fail two ways, and in both that may not have fired:
+      // a throw, or a RESOLVED `{ error }`. auth-js hands back a network or 5xx
+      // failure of /logout without throwing and without removing the session
+      // (CUL-1461). Either way, run the same teardown here (idempotent if it did
+      // fire) so a deleted account never leaves pet-health data on the device, then
+      // route to auth ourselves.
+      const teardown = async (e: unknown) => {
         console.warn('[DeleteAccountSheet] local signOut after delete failed:', e);
-        // signOut normally emits SIGNED_OUT, whose handler runs the FR-9 wipe and
-        // routes to auth. If it threw, that may not have fired — so run the same
-        // teardown here (idempotent if it did) so a deleted account never leaves
-        // pet-health data on the device, then route to auth ourselves.
         await wipeLocalSession();
         router.replace('/(auth)/login');
-      });
+      };
+      try {
+        const { error } = await supabase.auth.signOut({ scope: 'local' });
+        if (error) await teardown(error);
+      } catch (e) {
+        await teardown(e);
+      }
       return;
     }
     setInFlight(false);
