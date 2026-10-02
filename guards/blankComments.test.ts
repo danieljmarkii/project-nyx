@@ -4,6 +4,8 @@
 // backtick inside a string inside a `${}`, opened a "string" that ran on, and the
 // comment after it stayed in the scan as code.
 
+import * as ts from 'typescript';
+
 import { blankComments } from './blankComments';
 
 /** The comment's text is gone; every line keeps its place. */
@@ -77,6 +79,22 @@ describe('blankComments — the contract every caller relies on', () => {
       'gone',
     );
     expect(out).toContain("It's");
+  });
+
+  it('falls back to the other kind when the guessed one does not parse', () => {
+    // The hint (a `</` in a string) says TSX first; the type assertion makes TSX fail, so
+    // the TS parse must win. Without the error count the guess alone decides and this
+    // comment survives (the code-reviewer's mutant).
+    expectBlanked("const s = '</div>';\nconst n = <number>v;\n// gone( in prose\n", 'gone');
+  });
+
+  it('reads the parser\'s own error list, which the kind choice depends on', () => {
+    // Not on the public type: pin it, so a TypeScript that drops it reds here rather than
+    // silently degrading every caller to the order guess.
+    const bad = ts.createSourceFile('x.ts', 'const = ;', ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
+    const diags = (bad as unknown as { parseDiagnostics?: readonly unknown[] }).parseDiagnostics;
+    expect(Array.isArray(diags)).toBe(true);
+    expect(diags?.length).toBeGreaterThan(0);
   });
 
   it('blanks an unterminated block comment to the end, never past it', () => {
