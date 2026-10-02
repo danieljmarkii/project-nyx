@@ -1,6 +1,6 @@
 # The groomer prunes: a retirement sweep, a 7-day veto window, a board count
 
-**Date:** 2026-10-02 · **Branch:** `claude/zen-fermi-fimkib` · shipped via the PR for CUL-1448 · Mode: DISCOVERY that became BUILD on the PM's ruling.
+**Date:** 2026-10-02 · **Branch:** `claude/zen-fermi-fimkib` · shipped via #997 · Mode: DISCOVERY that became BUILD on the PM's ruling.
 
 ## What the PM asked
 
@@ -43,3 +43,7 @@ The PM asked whether "needs the PM" should be a label (usable at any stage) and 
 - **2b — the queue drain is built separately, under CUL-1366** (the 2026-09-27 rulings: team decision rights, the 72h veto window on low-risk calls, the never-list), not folded into this PR.
 
 `operating-kit/` still teaches "a state, not a label" for new projects. It is a template for other repos and was left alone; whether to change it is noted on CUL-1366.
+
+## Closed out
+
+Linear: CUL-1448 (this build); CUL-923 canceled, #841 closed (ruling 1a); CUL-1366 carries ruling 2b and its build kickoff. PM steps after merge: run the CUL-1366 build session, then the full grooming pass whose prompt is on CUL-1448, then veto any `Propose close` within 7 days of that pass.
