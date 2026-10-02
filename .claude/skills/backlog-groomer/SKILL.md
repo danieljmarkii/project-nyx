@@ -1,6 +1,6 @@
 ---
 name: backlog-groomer
-description: Use this skill to groom and reconcile Nyx's backlog in **Linear** (team Culprit, `linear.app/projectnyx`) — the operational procedure behind the Product Owner persona. Triggers include the PM asking to "groom the backlog", "reconcile the backlog", "clean up the backlog", "what's stale", "what are the quick wins", "find something small to pick up", or any session scan that needs to check Linear against reality; closing out a shipped item; or whenever a session record claims something shipped that Linear still lists as `Todo` / `In Progress`. Loads the reconciliation procedure: match issue status against merged PRs/commits AND open PRs AND the deploy runs and holds, fix stale statuses, clear abandoned claims, re-prioritize aged high-priority items, triage and label quick wins, audit recently-closed issues for unfinished business, and dedupe near-duplicate issues — without inventing scope (new product scope is a PM decision, routed to Open Questions, never a silent Linear edit). For the lens/judgment behind this procedure see the Product Owner persona in `docs/personas.md`; this skill is the how. Note: `docs/backlog.md` is frozen (migrated to Linear 2026-08-15) — this skill operates on Linear, not that file.
+description: Use this skill to groom and reconcile Nyx's backlog in **Linear** (team Culprit, `linear.app/projectnyx`) — the operational procedure behind the Product Owner persona. Triggers include the PM asking to "groom the backlog", "reconcile the backlog", "clean up the backlog", "what's stale", "what are the quick wins", "find something small to pick up", or any session scan that needs to check Linear against reality; closing out a shipped item; or whenever a session record claims something shipped that Linear still lists as `Todo` / `In Progress`. Loads the reconciliation procedure: match issue status against merged PRs/commits AND open PRs AND the deploy runs and holds, fix stale statuses, clear abandoned claims, re-prioritize aged high-priority items, triage and label quick wins, audit recently-closed issues for unfinished business, dedupe near-duplicate issues, and prune what no longer belongs (retired surfaces, stale low-priority issues, closed-project leftovers) through a `Propose close` label and a 7-day veto window — without inventing scope (new product scope is a PM decision, routed to Open Questions, never a silent Linear edit). For the lens/judgment behind this procedure see the Product Owner persona in `docs/personas.md`; this skill is the how. Note: `docs/backlog.md` is frozen (migrated to Linear 2026-08-15) — this skill operates on Linear, not that file.
 ---
 
 # Backlog Groomer (Linear)
@@ -12,6 +12,8 @@ The backlog lives in **Linear** (team **Culprit** — `linear.app/projectnyx`); 
 The backlog drifts from reality in a specific, recurring way: an item ships in the codebase and gets narrated as "done" in a session record, but its issue in Linear stays `Todo` / `In Progress`. The native GitHub↔Linear integration closes this automatically **when a PR references the issue** (CLAUDE.md § Git Workflow → "Merge → Linear status") — but agent sessions run on `claude/<slug>` branches that don't reference the issue, so their merges can leave the status stale. Grooming closes that gap.
 
 **That original drift is now largely solved, and the drift has moved.** Measured 2026-09-06 over the 26 PRs merged since the previous pass: every issue named in them was already `Done`. The claim protocol (CUL-624) plus `/wrap` step 4 are holding. What drifts *now* is `In Progress` (which means three different things), work that merged but was never deployed, and issues that closed carrying unfinished business. Steps 0–8 are ordered accordingly.
+
+**And the board only grew.** Until 2026-10-02 no step removed an issue: obsolete work stayed open because nothing asked whether its surface still existed, and 51 `Propose close` labels waited a week on a hand bulk cancel. Steps 12–14 prune, with a 7-day veto window as the safety net, and count the board so a pass can tell whether it shrank.
 
 ## Step 0 — assert the evidence base, before anything else
 
@@ -97,7 +99,7 @@ Exit codes, so an unattended caller can say *which* assertion failed: `0` sound 
 
 7. **Audit recently-CLOSED issues for unfinished business.** Grooming has always looked only at open issues, which misses a failure mode the tracker creates: every `CUL-NNN` a PR names goes `Done` when it merges (CLAUDE.md § Merge → Linear status, CUL-1397), so an issue can go `Done` still carrying open decisions. Scan issues closed since the last pass for a title or body naming something unresolved, and check whether a successor issue actually carries it. CUL-810 closed `Done` while its own title named four unruled decisions (D1 / D6 / DB-3 / DB-4) that neither successor mentions. **Flag; do not re-open and do not file a replacement** — whether they still need a home is the PM's call.
 
-8. **Re-evaluate aged priorities.** Any Urgent/High issue open across multiple sessions without progress is one of: (a) genuinely blocked — state the blocker in a comment; (b) mis-prioritized — lower its `priority` with a one-line why; (c) effectively dead — flag to the PM, don't silently cancel. Watch for a cluster that shares **one** blocker: most of the Urgent tier waits on the single Dr. Chen sitting CUL-583 exists to schedule.
+8. **Re-evaluate aged priorities.** Any Urgent/High issue open across multiple sessions without progress is one of: (a) genuinely blocked — state the blocker in a comment; (b) mis-prioritized — lower its `priority` with a one-line why; (c) effectively dead — `Propose close` with a reason (step 12), so the veto window decides; never cancel it outright. Watch for a cluster that shares **one** blocker: most of the Urgent tier waits on the single Dr. Chen sitting CUL-583 exists to schedule.
 
 9. **Enforce the issue contract.** Every issue needs: a title, a plain-English `TL;DR` opener (PM directive 2026-08-26), a description that leads with **Why:** and names **Blocks:** (or `—`), a `priority`, an `Area: *` label, and a current `state`. Flag any issue missing the *why*.
 
@@ -108,6 +110,47 @@ Exit codes, so an unattended caller can say *which* assertion failed: `0` sound 
 10. **De-duplicate.** Linear assigns IDs server-side, so there are no duplicate IDs to chase — the pass is *semantic*. If an issue restates an existing one, prefer linking them (`relatedTo`) or folding one into the other over leaving two live. Flag near-duplicates to the PM with a recommendation on which framing to keep; mark a true duplicate with the `Duplicate` state (or `duplicateOf`). Two deploy issues asking for the identical command is the common shape here.
 
 11. **Surface what's relevant now.** List any issue whose project is a live build-track (`list_projects`, or `STATUS.md`'s Current phase table), plus any stale Urgent/High issues, at the top of your report.
+
+12. **Prune what no longer belongs on the board** (PM ruling 2026-10-02, CUL-1448). Steps 1–11 keep the board *true*; this step keeps it *small*. Nothing else in the procedure removes an issue, and a board with a mandated add and no mandated remove only grows (retro 2026-09, L1). Every prune goes through one door: the `Propose close` label plus a reason comment, then step 13's veto window. **A pass never cancels an issue on the day it proposes it.**
+
+    **12a. Retirement sweep.** List what retired since the last pass: a flag retired (its GA issue `Done`, its key gone from `origin/main`), a project moved to Completed or Canceled, a spec marked 🧊 or superseded in CLAUDE.md's Read-These table, a component or screen file deleted. Search open issues for each retired surface by every name it goes by: the flag key, the file and component names, and the spoken name (*Home v1*, *the Trend card*, *the Today strip*). Then sort each hit:
+
+    | Verdict | Test | Action |
+    |---|---|---|
+    | Dies with the surface | Everything it asks for lives only on the retired surface; the file or symbol it names is gone from `origin/main` (check, per step 5) | `Propose close`, reason `obsolete`, naming the PR that retired it |
+    | The idea carries over | The ask is a data, copy, clinical, accessibility or sync rule that the successor surface also has to honour, not a pixel on the old one | **Not a prune.** Comment restating it against the successor, and move it to the successor's project if that project is live |
+    | Unclear | Neither test settles it | `Propose close`, reason `obsolete`, the comment naming what would keep it, so the veto is an easy call |
+
+    **Before the retirement lands, mark; don't propose.** While an old surface still ships to anyone (a flag-off cohort, the build in the App Store or TestFlight), its bugs are live bugs. Comment `Dies at CUL-NNN` (the issue that retires it) and add it as `relatedTo`; the first pass that finds that issue `Done` and its PR merged proposes the whole batch. Worked example: `design_v2` retires at D2-8 (CUL-1071). Until that merges, every account outside the beta sees Home v1, so CUL-1185 (v1's Today strip can show the previous pet's day under the new pet's name) is a live correctness bug, not a prune.
+
+    **12b. Staleness decay.** An open issue that is **all** of: not Urgent or High; in no live project (none, Legacy Backlog, or a Completed or Canceled project); not updated in **60 days** (`updatedAt`) → `Propose close`, reason `stale`. Bulk label passes bump `updatedAt`, which makes this test fail toward keeping, never toward cancelling; that is the right direction. The comment says in one line what the issue asked for, so the PM can veto from the comment alone.
+
+    **12c. Closed project leftovers.** When a project goes Completed or Canceled, sort each of its open issues: move it to the live project it extends, or to no project with an `Area: *` label (step 9), or `Propose close` (reason `obsolete` or `stale`). No open issue stays in a closed project.
+
+    **Never proposed, by any branch of this step:** `Gate: clinical` · `Gate: privacy` · `Area: Privacy/RLS` · a `Bug` or `Area: Correctness` issue on a surface still shipped to users · anything carrying `Waiting on PM` (it is a question, and the PM queue answers it) · anything with a comment in the last **14 days**. Pets > $: a safety or data integrity issue leaves the board by being fixed or by a PM ruling, never by expiry.
+
+    **The reason is one of four, on the comment's first line:** `obsolete` (the surface is retired; cite the PR) · `superseded by CUL-NNN` (another issue carries the work; if it merely restates it, use step 10's `Duplicate` instead) · `won't do` (conflicts with a principle or a ruling; cite it) · `stale` (12b). A fixed vocabulary is what lets step 14 count which kind of prune comes back.
+
+    The comment, in this shape:
+
+    > **Propose close — obsolete.** The Trend card leaves Home at D2-8 (#NNN); the Design v2 Home has none. Remove the `Propose close` label to keep this; otherwise the first grooming pass on or after **2026-10-09** cancels it, and it can be reopened any time. — Product Owner lens, grooming pass 2026-10-02
+
+    Apply with `addLabels: ["Propose close"]`, never `labels` (see *Linear mechanics*). **Sign every comment** `— Product Owner lens, grooming pass <date>`: the MCP posts as the PM's own account, so the signature is the only thing that tells step 13 a pass's comment from a person's.
+
+13. **Run the veto window.** List open issues labelled `Propose close`. For each, find its newest proposal comment (first line `**Propose close —`) and decide:
+
+    | Found | Action |
+    |---|---|
+    | The window (**7 days** from the proposal comment) has passed, the label is still on, no comment after the proposal other than a grooming pass's own, and no exempt label from step 12 | → `Canceled`. Keep the label (it marks *how* the issue left, for step 14), and comment: `Canceled after the veto window (proposed <date>, reason <reason>). Reopen any time.` |
+    | Any comment after the proposal by someone other than a grooming pass, or an exempt label added since | **Do not cancel.** Someone engaged, or the issue became a safety one; list it under *Needs PM decision* with the comment's first line or the label |
+    | Window not yet passed | Leave it; list it with its cancel date |
+    | The label is gone but a proposal comment exists | The PM kept it. **Never re-propose for the same reason.** Only a new retirement event (12a) reopens the question, and the new comment names that event |
+
+    **Proposals made before this rule** (the 51 labelled from 2026-09-24 onward, whose reason sits in the newest comment) did not carry a cancel date when they were made. Their clock starts at the first pass that runs under this step: that pass posts one dated comment on each in the shape above (the reason copied from the old comment) and lists them all under *Prune* with their cancel date. Nobody's issue is cancelled on a clock they were never shown.
+
+    The cancel is the only write in this step, and every input to it is an artifact: the label, the proposal comment's timestamp, and the absence of a later comment. When CUL-922's write table lands, it belongs in the table's writable half on those grounds; the label *add* in step 12 is a judgment and follows the table's rule for judgments.
+
+14. **Count the board.** Report, since the last pass: issues opened, issues closed (`Done` · `Canceled` · `Duplicate`), the net, and the open total. Then the prune line: proposed this pass, cancelled after the window, kept by the PM (label removed), and **reopened after a cancel** (an open issue carrying a `Canceled after the veto window` comment). The reopened count is the step's own check: if reopens pass **10%** of cancels over the trailing four passes, 12b is too aggressive. Raise the 60 days, and say so in the report rather than quietly. A pass that closes 20 while 60 arrive has not shrunk anything, and the count is what keeps a long *Applied* list from reading as progress.
 
 ## Don't re-file the last pass's open calls
 
@@ -123,7 +166,8 @@ Each grooming pass leaves an outcome issue carrying the calls it deliberately st
 
 - **Do not invent scope.** Grooming reconciles and re-orders existing issues; it never adds new product scope. If grooming reveals a real decision, that belongs in CLAUDE.md → Open Questions, surfaced to the PM — NOT resolved by a status edit. (Filing a genuinely-new *deferral* as a new Linear issue is still proactive and fine — that's the Backlog Protocol; it's *scope decisions* that route to the PM.)
 - **Do not re-prioritize against the PM's explicit ordering** without surfacing it as a question first.
-- **Closing keeps the issue.** Move it to `Done` with a resolving PR/session reference; Linear keeps the record. Never cancel an item just to clear the board.
+- **Closing keeps the issue.** Move it to `Done` with a resolving PR/session reference; Linear keeps the record.
+- **A cancel only ever follows an unvetoed `Propose close`** (steps 12–13). Never cancel on the day you propose, never past an exemption in step 12, and never to make the board count look better. Superseded the 2026-08 rule "never cancel an item just to clear the board" (PM, 2026-10-02, CUL-1448): pruning is now a step, and the veto window is its safety net.
 - **A convention collision is a PM ruling, not a sweep.** When two rules give one field two meanings (step 4), report it with a recommendation and leave the board alone.
 
 ## Output format
@@ -152,6 +196,16 @@ Each grooming pass leaves an outcome issue carrying the calls it deliberately st
 
 ### Closed but unfinished
 - CUL-NNN — <what it closed still carrying, and whether a successor holds it>
+
+### Prune
+- proposed: CUL-NNN (obsolete, #N) · CUL-NNN (stale) · …
+- marked to die later: CUL-NNN → dies at CUL-MMM
+- cancelled after the window: CUL-NNN (proposed <date>, <reason>)
+- waiting: CUL-NNN cancels on <date> · engaged, not cancelled: CUL-NNN (<comment's first line>)
+
+### Board count
+- opened <N> · closed <N> (Done <N> / Canceled <N> / Duplicate <N>) · net <±N> · open total <N>
+- prune: proposed <N> · cancelled <N> · kept by PM <N> · reopened after cancel <N>
 
 ### Blocks the Current Phase (<phase>)
 - CUL-NNN <title> — <why it's relevant now>
