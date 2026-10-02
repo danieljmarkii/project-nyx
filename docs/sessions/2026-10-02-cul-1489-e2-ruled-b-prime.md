@@ -18,7 +18,8 @@ replaced the original A/B/C with B′ / A′ / C and re-opened §2.0a's "E2 A".
   B′ ships them too. CUL-1495 is now the GA verdict run: the amended line at 1,000 seeds, the reversed controls' own
   line, and the A′ contingency if CUL-1494's lone-diarrhea cat misses its vet ask. Blocked by CUL-1493, 1494, 1441, 1442.
 * **CUL-1493 / CUL-1494** told they are now GA gates. **CUL-1489** closed.
-* **CUL-583:** every row in Parts 1 and 2 is now ruled. Left for the PM to close by hand, per its own outcome comment.
+* **CUL-583:** every row in Parts 1 and 2 is now ruled. Closed on the PM's word the same evening; what remains lives on
+  CUL-1390 (W3 to W7), CUL-1312 (the real-vet list) and the build issues.
 
 ## The one call this session made
 
