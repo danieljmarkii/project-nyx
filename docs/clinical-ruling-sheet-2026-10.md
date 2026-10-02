@@ -738,6 +738,7 @@ https://claude.ai/artifact/DQbPKibWVQTB6rAdDvyHmh (source: `docs/clinical-ruling
   above a placebo; recommended there), **A′** (rework the floor relative to each pet's own rate before GA, the nearest
   match to A's intent) and **C**. The card the PM ruled on carried the original A. **E2 is open again until the PM
   picks B′, A′ or C;** CUL-1495, filed for the original A, is on hold. The text below records the ruling as given.
+  ⚠ **Ruled B′ on 2026-10-02; see §2.0b.**
   Original: EN-11's GA waits on one detection PR. It gives diarrhea, itch and skin the burden card's persistence arm
   or a dated onset line, restores vomiting's doubling detection (85% shipped against 46% under EN-11), and puts the
   reversed-in-time controls on ① and ⑤ on PR-16's re-run. Then the PR-16 line is re-run against E1's bar. B's E-6
@@ -758,8 +759,58 @@ https://claude.ai/artifact/DQbPKibWVQTB6rAdDvyHmh (source: `docs/clinical-ruling
 | PR-26 and PR-28, Wave 4 | T1 to T12 | T23's fourth condition (dark); the T5a-only witnessed merge; T3, T7 and T8 as louder rows | Wave 4 goes live after CUL-1312 and CUL-1439 |
 | PR-29, the photo rows (CUL-1137) | T13 to T17 | String in a cat is call now; tablet call today; the lily question; a new course is call today; unknown age reads young | The critical drug list (the vet's) |
 | PR-30, intake evidence (CUL-1136) | I1 to I5 | Both intake checks in union; the free-fed words with the pronoun rule; "A little" stores Picked; the six strings with the voice edits; the refused-then-vomited line, dark | CUL-1118's D2; ships only with EN-8 |
-| EN-11's GA (CUL-1489) | E2 | ⚠ Nothing yet: E2 re-opened as B′ / A′ / C (CUL-1495 on hold) | The PM's pick |
+| EN-11's GA (CUL-1489) | E2 | ⚠ Superseded by §2.0b (E2 = B′) | See §2.0b |
 | PR-31 | N4 | The null set is ratified | E-4's budget |
+
+## 2.0b E2 ruled: B′ (PM, 2026-10-02)
+
+**"E2 = B′."** The PM picked from the re-measured options on CUL-1489, and this replaces the "E2 A" in §2.0a. The
+evidence is CUL-1489's re-measure comment (21:18Z) and `docs/sessions/2026-10-02-cul-1489-en11-trade-remeasured.md`.
+
+**What was ruled.**
+
+* **EN-11 ships its worsening floor at 3, as built in PR-32.** The food half ships too (D5 = B: false food culprits
+  44% to 0, at no cost to worsening detection).
+* **E-6's detection line is amended.** "Detection no worse than shipped" (E1's bar) now reads **detection above
+  chance**: a quieter change's catch rate *minus* the same scenario's placebo (the same pets and draws with the injected
+  rise removed), flag on against flag off. It is read beside **any vet ask within 56 days, with its median delay
+  stated**. The re-measure showed why the old line could not be met: the shipped rate counts chance cards (62% of the
+  vomit-doubling cats are "caught" with no doubling), so any change that removes chance cards failed it by construction.
+* **What the ruling accepts, stated plainly:** above chance, EN-11 catches the vomit doubling about as well as today
+  (+21 against +23 points; at 30 seeds the noise is about ±13, so this is no visible difference, not a pass). The first
+  vet ask on a doubling cat comes later: a median of **16 days against 5**. The diarrhea card itself catches far less
+  above chance (+7 against +50 points); in the corpus that never cost the cat a vet ask, because every diarrhea onset
+  rides a vomit rise. That last fact is why CUL-1494 is a gate.
+* **Not taken:** A′ (a per-pet floor before GA) and C (drop the floor). A′ is held as the contingency below.
+
+**EN-11's GA now waits on four things,** all of them already filed:
+
+| Gate | What it settles |
+|---|---|
+| CUL-1493 · the placebo arm in PR-16's scorecard | Makes the amended line computable in CI rather than in a scratch probe |
+| CUL-1494 · a cat whose diarrhea rises on its own | The one case where the floor could cost an owner the vet ask. **If EN-11 misses the vet ask on its moderate rise, A′ becomes the gate** |
+| CUL-1487 · the vet report's dated recent-onset line | Two episodes after a quiet spell still reach the vet, as dates and counts with no trend word (the Dr. Chen lens's condition for silence on Home) |
+| CUL-1495 · the GA verdict run, rewritten for B′ | The amended line at the go-live size (1,000 seeds, after CUL-1441 / CUL-1442), and a line of its own for EN-11's two reversed-in-time controls on ① and ⑤ |
+
+**Why the reversed controls stay a gate under B′.** §2.8 found they are quieter and unmeasured, and that holds under every
+option, not only A and C: B′ ships them as built. The re-measure did not measure them. So they get their own line on
+the amended reading in the GA run (CUL-1495), or come back to the PM as a quieter row.
+
+**Scope of the amendment.** E-6's detection line is one rule, so the amended reading applies to every harness-measured
+quieter row from here on, wherever the harness can run a placebo. Rows already signed off in §2.0a (W1, W5, W6, T1, T6)
+are not re-opened by it. Surfaces the harness does not score (Part 1's trial card and report rows) are untouched: their
+substitute proofs stand as written.
+
+**What changes elsewhere.**
+
+* **CUL-1495** is rewritten from the original A's rework (which the re-measure showed cannot fire at these rates) to
+  the B′ GA verdict run in the table above. It builds no detection change unless CUL-1494 triggers A′.
+* **CUL-1489** is done.
+* **CUL-583**: with E2 ruled, every row in Parts 1 and 2 has a ruling. What remains lives on other issues (CUL-1390's
+  own W3 to W7, the real-vet list on CUL-1312, and each build issue).
+
+**Adversarial note.** The ruling rests on 30 seeds, where +21 and +23 cannot be told apart, and on a corpus with no
+lone diarrhea rise. Both limits are what CUL-1495 and CUL-1494 exist to close, and EN-11 stays dark until they do.
 
 ---
 
@@ -1327,6 +1378,7 @@ No proposed string carries an exclamation mark, a jargon term, a reassurance or 
 
 > ⚠ **Superseded on CUL-1489, 2026-10-02 21:18Z:** a re-measure replaced the A/B/C below with B′ / A′ / C (see §2.0a).
 > The row is kept as ruled; E2 is open again.
+> ⚠ **Ruled B′, 2026-10-02 (§2.0b).**
 
 * **Question.** EN-11, built dark in PR-32, misses E1's bar. On PR-16's synthetic pets (30 seeds per scenario) it cuts
   chance "worth a word with your vet" cards on healthy pets from 83% to 28%, and false food culprits from 44% to 0, but
