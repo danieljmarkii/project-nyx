@@ -65,8 +65,18 @@ import {
   type AppointmentDetail,
 } from '../../lib/vetVisits';
 
-/** Which sheet is up. At most ONE is ever mounted — see the CUL-662 note below. */
-type Sheet = { kind: 'med'; editing: Regimen | null } | { kind: 'trial' } | null;
+/**
+ * Which sheet is up. At most ONE is ever mounted — see the CUL-662 note below.
+ *
+ * *Changed*'s editor carries `linkedNow`, whether the verdict's own link write landed.
+ * `linkCourseToVisit` is first-wins, so a course prescribed at an earlier visit keeps
+ * that visit, and the line the saved edit leaves must not claim this one (F5).
+ */
+type Sheet =
+  | { kind: 'med'; editing: null }
+  | { kind: 'med'; editing: Regimen; linkedNow: boolean }
+  | { kind: 'trial' }
+  | null;
 
 // "How did it go?" (CUL-902 VV-4; mocks D1 + D2) — the plan becomes records.
 //
@@ -400,7 +410,7 @@ export default function AfterVisitScreen() {
         syncPendingVetVisits()
           .then(() => syncPendingMedications())
           .catch(console.error);
-        if (verdict === 'changed') setSheet({ kind: 'med', editing: toRegimen(course) });
+        if (verdict === 'changed') setSheet({ kind: 'med', editing: toRegimen(course), linkedNow });
       }
       setCourseVerdicts((prev) => ({ ...prev, [course.id]: verdict }));
       note(
@@ -818,7 +828,12 @@ export default function AfterVisitScreen() {
                 note({
                   key: `course:${regimen.id}`,
                   title: `${regimen.drug_name} changed`,
-                  note: 'linked to this visit',
+                  // The verdict's answer, carried rather than re-asserted (F5): the edit
+                  // (`updateRegimen`) never writes the link, so whether this visit is the
+                  // course's provenance was settled when *Changed* was tapped. This
+                  // used to say "linked to this visit" for every course, overwriting the
+                  // honest line the verdict had just written.
+                  note: sheet.editing !== null && sheet.linkedNow ? 'linked to this visit' : 'still on it',
                 });
                 if (petId) void loadPlan(petId);
               }}
