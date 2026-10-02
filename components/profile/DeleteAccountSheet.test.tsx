@@ -78,6 +78,9 @@ it('a clean local sign-out leaves the wipe to the SIGNED_OUT handler', async () 
 function expectNothingOfTheAccountLeft() {
   expect(mockWipe).toHaveBeenCalledTimes(1);
   expect(mockRemoveItem).toHaveBeenCalledWith('sb-test-auth-token');
+  expect(mockRemoveItem).toHaveBeenCalledWith('sb-test-auth-token-code-verifier');
+  // The credential goes before anything slower: an app killed mid-teardown keeps nothing.
+  expect(Math.max(...mockRemoveItem.mock.invocationCallOrder)).toBeLessThan(mockWipe.mock.invocationCallOrder[0]);
   expect(useAuthStore.getState().session).toBeNull();
   expect(mockReplace).toHaveBeenCalledWith('/(auth)/login');
 }

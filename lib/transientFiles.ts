@@ -41,8 +41,10 @@ export const PRINT_DIR = 'Print';
 // and expo-document-picker (`DocumentPicker/`: each vet PDF picked, `copyToCacheDirectory`).
 // `persistCapture` COPIES out of them and never removes the source, so the originals of
 // every health photo and document outlived sign-out and account deletion (the CUL-1045
-// class, one folder over; rls-privacy-reviewer). Nothing reads them after the capture
-// that wrote them, and the wipe runs only at sign-out, so the whole folder goes.
+// class, one folder over; rls-privacy-reviewer). The wipe runs only at sign-out, so the
+// whole folder goes. The one reader left at that moment is a row whose `local_uri` fell
+// back to the picker's own path when `persistCapture` could not copy it, and the same
+// wipe deletes that row.
 export const PICKER_CACHE_DIRS = ['ImagePicker', 'ImageManipulator', 'DocumentPicker'] as const;
 
 // Builds before CUL-1045 wrote the clinic-named report copy into the cache ROOT, which

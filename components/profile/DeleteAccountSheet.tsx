@@ -99,15 +99,18 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
       // fire) so a deleted account never leaves pet-health data on the device, then
       // route to auth ourselves.
       //
-      // The teardown also does what auth-js's own `_removeSession` and the SIGNED_OUT
-      // handler would have, since neither ran: it removes the persisted session (the
-      // deleted account's email and tokens, in both keychain tiers; the App Group tier
-      // survives uninstall) and clears the store's session, which otherwise keeps sync
-      // armed and lets Back from the login screen re-enter the app as the deleted account
-      // (rls-privacy-reviewer). Same order as the handler: wipe, then the session.
+      // The teardown also does the storage half of auth-js's own `_removeSession` and what
+      // the SIGNED_OUT handler would have, since neither ran: it removes the persisted
+      // session (the deleted account's email and tokens, in both keychain tiers, which
+      // survive uninstall) and the PKCE verifier beside it, and clears the store's
+      // session, which otherwise keeps sync armed and lets Back from the login screen
+      // re-enter the app as the deleted account (rls-privacy-reviewer). The keychain goes
+      // FIRST: an app killed mid-teardown must not leave the credential behind. Then the
+      // handler's own order: wipe, then the session.
       const teardown = async (e: unknown) => {
         console.warn('[DeleteAccountSheet] local signOut after delete failed:', e);
         await ChunkedSecureStoreAdapter.removeItem(AUTH_STORAGE_KEY);
+        await ChunkedSecureStoreAdapter.removeItem(`${AUTH_STORAGE_KEY}-code-verifier`);
         await wipeLocalSession();
         useAuthStore.getState().setSession(null);
         router.replace('/(auth)/login');
