@@ -2149,9 +2149,9 @@ export interface DetectionConfig {
    *   2. ④'s card needs `worseningCardMinEpisodes` current-window episodes (see that field).
    *      ③'s mute keeps `reflection.worseningMinEpisodes`, today's sensitivity (CUL-1411).
    *   3. A REVERSED-IN-TIME control on ① and ⑤ (the food window placed after each episode). An
-   *      association that is at least as strong backwards as forwards cannot be told apart from
-   *      feeding changed by the episode (Farrington 2009: SCCS assumes the event does not move
-   *      the exposure), so the forward card is withheld and no sentence is added.
+   *      association stronger backwards than forwards (on ⑤, at least as strong) cannot be told
+   *      apart from feeding changed by the episode (Farrington 2009: SCCS assumes the event does
+   *      not move the exposure), so the forward card is withheld and no sentence is added.
    *   4. ①'s control windows may not sit in the `postEpisodeControlExclusionHours` after a GI
    *      episode, where the owner's response to the episode (a bland meal, a skipped staple) is
    *      the exposure, not the pet's ordinary diet.
@@ -2927,8 +2927,10 @@ export const EN11_CONFIG: DetectionConfig = {
     // equal to the burden card's count arm, so for vomit "④ is silent below 4" never leaves a
     // count the burden card does not already own. Measured, not chosen on the corpus: PR body.
     worseningCardMinEpisodes: 4,
-    // 24 h: the bland-meal / skipped-meal day after a vomit (the owner's response, not the diet).
-    postEpisodeControlExclusionHours: 24,
+    // 48 h: the usual bland-diet span after a vomit, the owner's response rather than the diet.
+    // 24 h was the first draft and failed this PR's own reverse-causation fixture: a two-day bland
+    // diet left the next control window inside it, and the staple read guilty (detection.en11.test).
+    postEpisodeControlExclusionHours: 48,
   },
 }
 
@@ -3459,7 +3461,7 @@ export function detectCorrelations(
     symptomEventCount: number
     /**
      * EN-11 (CUL-1141): the reversed-in-time control hit. The cluster clears the Early bar with
-     * the food window placed AFTER each episode, at least as strongly as it does before it, so
+     * the food window placed AFTER each episode, more strongly than it does before it, so
      * the forward association cannot be told apart from feeding changed by the episode. Always
      * false without `config.en11`.
      */
@@ -3785,9 +3787,11 @@ export function detectCorrelations(
       // EN-11 rule 3, the reversed-in-time control: the SAME matched pairs, each window moved to
       // the hours after its anchor, the same Early bar, and the forward risk difference to beat.
       // Read on what was OFFERED (any member), because offering is the owner's response the
-      // control exists to catch. "At least as strong backwards" (>=), so a tie withholds: an
-      // association the record shows equally on both sides of the episode is the one it cannot
-      // order in time.
+      // control exists to catch. STRICTLY stronger backwards (>): a tie keeps the forward card.
+      // A food fed at both meals of the days it is fed (beef at breakfast and dinner, a vomit
+      // mid-morning) is in both windows of every episode, and that is the day-level exposure of a
+      // real culprit, not feeding the episode moved. A food the owner reaches for BECAUSE of the
+      // vomiting is after nearly every episode and before only some, which is what this catches.
       let reversedHit = false
       if (en11) {
         let bRev = 0
@@ -3806,7 +3810,7 @@ export function detectCorrelations(
           bRev >= cfg.earlyMinDiscordantCaseOnly &&
           bRev > cRev &&
           rdRev >= cfg.earlyMinRiskDifference &&
-          rdRev >= (b - c) / pairs.length
+          rdRev > (b - c) / pairs.length
       }
       candidates.push({
         proteins: cluster,
