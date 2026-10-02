@@ -386,6 +386,36 @@ export const QUARANTINE_COLUMNS = ['sync_attempts', 'sync_error'] as const;
  */
 export const NOT_QUARANTINED_SQL = 'sync_error IS NULL';
 
+/** The queues whose rows can name a vet visit (`vet_visit_id`). A runtime list, so a
+ *  test can check it against every local table that carries the column. */
+export const VISIT_LINKED_TABLES = ['vet_appointments', 'medications', 'diet_trials', 'vet_documents'] as const;
+export type VisitLinkedTable = (typeof VISIT_LINKED_TABLES)[number];
+
+/**
+ * A row that names a vet visit is never pushed ahead of that visit.
+ *
+ * The server guards every write carrying `vet_visit_id` with a same-pet trigger that
+ * LOOKS THE VISIT UP (migrations 045, 066, 067). A visit still on this phone is
+ * invisible to it, so the row is refused with 23514, which is TERMINAL here: the row
+ * is quarantined on its first try, the banner says it "couldn't be saved" with no door
+ * to fix it, and for an appointment the server never learns the visit attended it.
+ * `pushAllQueues` orders visits first, but a screen that pushes one queue directly
+ * races that order (the after-visit screen pushes the visit and its appointment,
+ * course or trial in the same tick), and a visit push that fails transiently loses it
+ * outright (release QA, 2026-10-02).
+ *
+ * So each of these queues holds a row while its visit is still waiting to land; the
+ * looks drain's `e.synced = 1` is the same rule. A visit that is itself quarantined
+ * holds nothing, because there is no landing left to wait for and the row's own
+ * refusal is the honest end (`repairRefusedVisitLinks` repairs courses and trials).
+ * A row that names no visit, or a visit this phone does not hold, is unaffected.
+ */
+export function visitLandedSql(table: VisitLinkedTable): string {
+  return `NOT EXISTS (SELECT 1 FROM vet_visits gate_v
+     WHERE gate_v.id = ${table}.vet_visit_id
+       AND gate_v.synced = 0 AND gate_v.sync_error IS NULL)`;
+}
+
 // Table names are compile-time literals from SYNC_QUEUES, never caller data —
 // which is what makes interpolating them (an SQL IDENTIFIER cannot be bound to a
 // `?` placeholder) safe by construction rather than by luck. Same argument as

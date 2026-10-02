@@ -23,6 +23,8 @@
 //   medications           → diet_trials      (pet-scoped lifecycle row)
 //   feeding_arrangements  → diet_trial_foods (pet-child, dated, soft-deleted)
 
+import { visitLandedSql } from './syncQueue';
+
 // ── Local schema (mirrors migrations 040 + 041) ──────────────────────────────
 //
 // Extracted as a string (not inlined in initDb like events/meals) ONLY so the
@@ -174,8 +176,12 @@ export const DIET_TRIAL_SCHEMA_SQL = `
 // sets `synced = 0, sync_error = NULL` in the same statement. Clearing the error
 // is what makes an owner-visible fix — completing the other trial, changing a
 // date — a fresh attempt rather than a permanently-parked row.
+// A trial started from the after-visit screen names its visit; it waits for that visit
+// to land (`visitLandedSql`, lib/syncQueue.ts), or the server's same-pet guard
+// refuses it with a terminal 23514.
 export const DIET_TRIAL_PUSH_QUEUE_SQL =
-  'SELECT * FROM diet_trials WHERE synced = 0 AND sync_error IS NULL LIMIT 100';
+  `SELECT * FROM diet_trials WHERE synced = 0 AND sync_error IS NULL
+     AND ${visitLandedSql('diet_trials')} LIMIT 100`;
 
 export const DIET_TRIAL_FOOD_PUSH_QUEUE_SQL =
   'SELECT * FROM diet_trial_foods WHERE synced = 0 AND sync_error IS NULL LIMIT 100';

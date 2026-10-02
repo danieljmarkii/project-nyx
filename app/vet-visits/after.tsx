@@ -296,8 +296,13 @@ export default function AfterVisitScreen() {
       forgetPaperwork(appointment.id).catch(console.error);
     }
 
-    syncPendingVetVisits().catch(console.error);
-    syncPendingVetAppointments().catch(console.error);
+    // The visit first, then the appointment that names it: the server's same-pet guard
+    // looks the visit up, so an appointment that lands first is refused with a terminal
+    // 23514. The drain also holds it until the visit lands (`visitLandedSql`); this
+    // order just saves it a cycle.
+    syncPendingVetVisits()
+      .then(() => syncPendingVetAppointments())
+      .catch(console.error);
     return id;
   }, [appointment, fields, petId, paperwork]);
 
@@ -391,7 +396,10 @@ export default function AfterVisitScreen() {
         // prescribed at an earlier visit keeps saying so, and the line below must not
         // claim otherwise (CUL-825 — ask, never assert).
         linkedNow = await linkCourseToVisit(course.id, id);
-        syncPendingMedications().catch(console.error);
+        // The visit before the course that now names it (see `ensureVisit`).
+        syncPendingVetVisits()
+          .then(() => syncPendingMedications())
+          .catch(console.error);
         if (verdict === 'changed') setSheet({ kind: 'med', editing: toRegimen(course) });
       }
       setCourseVerdicts((prev) => ({ ...prev, [course.id]: verdict }));

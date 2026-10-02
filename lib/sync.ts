@@ -41,6 +41,7 @@ import {
   pushGuardColumn,
   RLS_FILTERED_ERROR,
   NOT_QUARANTINED_SQL,
+  visitLandedSql,
   type SyncFailureClass,
 } from './syncQueue';
 import { proteinsToCacheText, proteinsFromCacheText } from './protein';
@@ -1353,6 +1354,7 @@ async function drainVetDocumentsQueue(): Promise<void> {
 
   const unsynced = await db.getAllAsync<LocalVetDocument>(
     `SELECT * FROM vet_documents WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+        AND ${visitLandedSql('vet_documents')}
       ORDER BY created_at LIMIT 20`,
   );
 
@@ -1480,7 +1482,10 @@ async function drainVetAppointmentsQueue(): Promise<void> {
     questions: string | null; notes_draft: string | null;
     vet_visit_id: string | null; cancelled_at: string | null;
     deleted_at: string | null; created_at: string; updated_at: string;
-  }>(`SELECT * FROM vet_appointments WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 50`);
+  }>(
+    `SELECT * FROM vet_appointments WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+       AND ${visitLandedSql('vet_appointments')} LIMIT 50`,
+  );
 
   if (unsynced.length === 0) return;
 
@@ -1973,7 +1978,8 @@ async function drainMedicationsQueue(): Promise<void> {
   const db = getDb();
 
   const unsynced = await db.getAllAsync<LocalMedication>(
-    `SELECT * FROM medications WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 100`,
+    `SELECT * FROM medications WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+       AND ${visitLandedSql('medications')} LIMIT 100`,
   );
   if (unsynced.length === 0) return;
 
@@ -3353,8 +3359,10 @@ async function pushAllQueues(): Promise<void> {
   // CUL-899 VV-1: an appointment's vet_visit_id is nullable, so no server FK forces
   // this order — but trg_vet_appointments_visit_same_pet (migration 066) looks the
   // visit up, and a visit logged in the same session that has not landed yet is
-  // invisible to it, so the row would be refused and wait a cycle. Pushing visits
-  // first (above) means the attendance link finds its target already committed.
+  // invisible to it. That refusal is 23514, which is TERMINAL, not a wait. Pushing
+  // visits first (above) means the attendance link finds its target already
+  // committed, and the drain itself holds a row whose visit has not landed
+  // (`visitLandedSql`), for the callers that push one queue directly.
   // Same argument, same position as vet_documents.
   await syncPendingVetAppointments();
   await syncPendingFeedingArrangements();
