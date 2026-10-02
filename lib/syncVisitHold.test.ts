@@ -12,7 +12,12 @@
 //   • 066 / 067's visit guard — a row naming a visit the server lacks is 23514;
 //   • 041's allowed-food guard — a food naming a trial the server lacks is 23514. A
 //     BEFORE trigger, so it fires ahead of the foreign key: the refusal is 23514, never
-//     the non-terminal 23503.
+//     the non-terminal 23503;
+//   • a dose's parents: 020's foreign keys to its event and its course (23503, which is
+//     NOT terminal) and 023's paired-event guard (23514).
+//
+// The local half is the real lib/db.ts too: expo-sqlite is mapped onto node:sqlite, so
+// a write path's own db.ts helper (updateDoseAdherence) runs as it does on the phone.
 //
 // All three are TERMINAL on this client, so a hold that fails here is a row quarantined
 // on its first try ("couldn't be saved", with no door to fix it), not one that waits a
@@ -58,6 +63,23 @@ function mockServerRefusal(table: string, row: Row): ServerError | null {
       return {
         code: '23514',
         message: `vet_visit_id ${row.vet_visit_id} must reference a vet visit for the same pet (${row.pet_id})`,
+      };
+    }
+  }
+  if (table === 'medication_administrations') {
+    const fk = (column: string, parent: string) => ({
+      code: '23503',
+      message: `insert or update on table "medication_administrations" violates foreign key constraint on ${column} (${parent})`,
+    });
+    if (!mockServerTable('events').has(String(row.event_id))) return fk('event_id', 'events');
+    if (row.medication_id != null && !mockServerTable('medications').has(String(row.medication_id))) {
+      return fk('medication_id', 'medications');
+    }
+    const paired = row.paired_event_id == null ? null : mockServerTable('events').get(String(row.paired_event_id));
+    if (row.paired_event_id != null && (!paired || paired.pet_id !== row.pet_id)) {
+      return {
+        code: '23514',
+        message: `paired_event_id ${row.paired_event_id} must reference an event for the same pet (${row.pet_id})`,
       };
     }
   }
@@ -140,11 +162,10 @@ function mockAdapter() {
   };
 }
 
-jest.mock('./db', () => ({
-  getDb: () => mockAdapter(),
-  getWatermark: async () => null,
-  setWatermark: async () => undefined,
-}));
+// The real lib/db.ts, over this file's database: its getDb() opens expo-sqlite once and
+// keeps the handle, and the handle reads mockLocal.db at call time, so each test's fresh
+// database is the one every module writes to.
+jest.mock('expo-sqlite', () => ({ openDatabaseSync: () => mockAdapter() }));
 jest.mock('./supabase', () => ({
   supabase: {
     auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
@@ -160,9 +181,17 @@ import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
-import { syncPendingDietTrialFoods, syncPendingDietTrials, syncPendingVetVisits } from './sync';
+import { type RegimenWritePayload } from './medications';
+import {
+  syncPendingDietTrialFoods,
+  syncPendingDietTrials,
+  syncPendingMedications,
+  syncPendingVetVisits,
+} from './sync';
 import { endActiveTrial, startDietTrial, type StartTrialInput } from './dietTrialSetup';
-import { linkTrialToVisit, logVetVisit } from './vetVisits';
+import { startRegimen } from './medicationSetup';
+import { insertMedicationDose, rateDoseAdherence } from './medicationDose';
+import { linkCourseToVisit, linkTrialToVisit, logVetVisit } from './vetVisits';
 
 const PET = 'pet-1';
 const TODAY = '2026-10-01';
@@ -387,5 +416,50 @@ describe('a visit landing sends what waited on it', () => {
     openTrials();
     await settle();
     expect(drainRuns().diet_trials).toBe(2);
+  });
+});
+
+// The decision on 074fd18 (the code review's case b): a dose is never held for its
+// course. A course reads unsent whenever it carries an edit not yet pushed, and here it
+// cannot be pushed at all, so a dose held behind it would never be corrected.
+describe('a dose correction under a course with an unsent edit', () => {
+  const COURSE: RegimenWritePayload = {
+    medication_item_id: null, drug_name: 'Cerenia', dose_amount: '16 mg', route: 'oral',
+    doses_per_day: 1, schedule_notes: null, indication: 'vomiting', prescribed_by: null,
+    started_at: '2026-09-28', target_duration_days: 5, target_duration_doses: null,
+  };
+
+  it('is sent on the next doses drain, so the server learns the dose was refused', async () => {
+    // A course, and a dose of it logged Given, both long since on the server.
+    const { id: course } = await startRegimen({ petId: PET, payload: COURSE });
+    await settle();
+    const dose = await insertMedicationDose({
+      petId: PET, medicationItemId: null, medicationId: course, adherence: 'given',
+      occurredAt: new Date('2026-10-01T08:00:00.000Z'),
+    });
+    await settle();
+    expect(serverRow('medication_administrations', dose.administrationId)).toMatchObject({ adherence: 'given' });
+
+    // At the vet, *Keep* links the course to a visit that cannot land, so the course now
+    // carries an edit it cannot send.
+    mockServer.visitAnswer = DROPPED;
+    const visit = await logVetVisit({ petId: PET, visitedAt: TODAY });
+    await syncPendingVetVisits();
+    expect(await linkCourseToVisit(course, visit)).toBe(true);
+    await syncPendingMedications();
+    await settle();
+    expect(localRow('medications', course)).toMatchObject({ synced: 0, sync_error: null });
+
+    // The owner corrects the dose: it was refused, not given. Its own push goes at once.
+    mockServer.writes.length = 0;
+    await rateDoseAdherence(dose.eventId, 'refused');
+    await settle();
+
+    expect(writesTo('medication_administrations')).toEqual([[dose.administrationId]]);
+    expect(serverRow('medication_administrations', dose.administrationId)).toMatchObject({ adherence: 'refused' });
+    expect(localRow('medication_administrations', dose.administrationId))
+      .toMatchObject({ adherence: 'refused', synced: 1, sync_error: null });
+    // The course still waits on its visit; the dose did not need it to land.
+    expect(localRow('medications', course)).toMatchObject({ synced: 0, sync_error: null });
   });
 });

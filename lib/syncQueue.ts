@@ -452,17 +452,21 @@ export function petTrialsVisitLandedSql(): string {
  *
  *   • diet_trial_foods → diet_trials. Migration 041's same-pet trigger runs BEFORE the
  *     foreign key, so a food sent ahead of its trial is refused with 23514, which is
- *     TERMINAL: the allowed set is quarantined on its first try.
- *   • medication_administrations → medications. A plain foreign key (020), so a dose
- *     sent ahead of its course is a 23503: not terminal, but each drain spends one of the
- *     row's MAX_SYNC_ATTEMPTS on it, and at the cap the dose is quarantined for good.
+ *     TERMINAL: the allowed set is quarantined on its first try. A trial can wait a
+ *     while (behind the visit it names, or beside a sibling trial that does, above), and
+ *     its foods would otherwise go out alone in the meantime.
  *
- * A parent can wait for a while now: a trial or course that names an unsent visit is
- * held (above), and its children would otherwise go out every drain in the meantime.
+ * A dose is deliberately NOT here, though it names its course the same way
+ * (`medication_administrations.medication_id`). Sent ahead of its course it meets a plain
+ * foreign key (020): a 23503, retried on the next drain, with no same-pet trigger on that
+ * pair. Waiting would cost more than that. A course reads unsent whenever it has an edit
+ * not yet pushed (and for as long as it names a visit that cannot land), and a held dose
+ * is a held CORRECTION: a dose re-rated from Given to Refused would leave the server
+ * saying Given (code review of 074fd18). The scan that keeps this map honest names that
+ * exemption and its reason (lib/syncQueue.visitLink.test.ts).
  */
 export const PARENT_GATED_QUEUES = {
   diet_trial_foods: { parent: 'diet_trials', column: 'diet_trial_id' },
-  medication_administrations: { parent: 'medications', column: 'medication_id' },
 } as const;
 export type ParentGatedQueue = keyof typeof PARENT_GATED_QUEUES;
 
@@ -474,10 +478,8 @@ export type ParentGatedQueue = keyof typeof PARENT_GATED_QUEUES;
  * landing left to wait for, and a child held behind it would count as pending forever,
  * telling the owner to find a connection no connection will help. The child goes up and
  * takes its own answer: it lands if the parent's earlier version is on the server, and
- * otherwise meets its own refusal, terminal for a food and the attempt budget for a dose,
- * after which it is counted as quarantined rather than pending. And a child that names
- * no parent (an ad-hoc dose has no course) or a parent this phone does not hold is
- * unaffected.
+ * otherwise meets 041's refusal and is counted as quarantined rather than pending. And a
+ * child whose parent this phone does not hold is unaffected.
  *
  * The outer statement must read the child table unaliased, as `visitLandedSql`'s must.
  */

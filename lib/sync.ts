@@ -41,7 +41,6 @@ import {
   pushGuardColumn,
   RLS_FILTERED_ERROR,
   NOT_QUARANTINED_SQL,
-  parentLandedSql,
   visitLandedSql,
   type SyncFailureClass,
 } from './syncQueue';
@@ -1258,18 +1257,21 @@ export function syncPendingVetVisits(): Promise<void> {
  *
  * A row that names a visit is held until the visit lands (`visitLandedSql`), and so are
  * the rows held with it: a pet's other queued trials (`petTrialsVisitLandedSql`), and a
- * held trial's allowed foods and a held course's doses (`parentLandedSql`). Holding is
- * half of it. The push that was held does not come back by itself, and this app has no
- * timer: the after-visit screen mints the visit and ends a trial in one tap, the trial's
- * own push finds the visit unsent and holds it, and the trial then sat until the next
- * foreground or reconnect. So the visits drain sends those queues as soon as one lands.
+ * held trial's allowed foods (`parentLandedSql`). A held course's doses are not held (see
+ * drainMedicationAdministrationsQueue); one sent while its course waited met a 23503 and
+ * is still queued. Holding is half of it. The push that was held does not come back by
+ * itself, and this app has no timer: the after-visit screen mints the visit and ends a
+ * trial in one tap, the trial's own push finds the visit unsent and holds it, and the
+ * trial then sat until the next foreground or reconnect. So the visits drain sends those
+ * queues as soon as one lands.
  *
  * Through each queue's PUBLIC entry point, never its drain, so every run goes through
  * serializeQueuePush (C-24): a run already in flight is followed rather than doubled,
  * and inside pushAllQueues the calls that come next simply join these. Fire-and-forget
  * (the visit's push is not theirs to wait on, and a failure stays queued), and none of
  * them pushes visits, so this cannot recurse. A trial's foods and a course's doses run
- * after their parent's run, because they wait on the parent landing, not on the visit.
+ * after their parent's run: the foods wait on the trial landing, not on the visit, and a
+ * dose refused while its course waited lands once the course has.
  */
 function sendWhatWaitedOnVisits(): void {
   const queued = (what: string) => (e: unknown) =>
@@ -2046,11 +2048,12 @@ async function drainMedicationsQueue(): Promise<void> {
 // deletion — migration 020 — NOT insert ordering: an insert referencing a missing
 // regimen is rejected, not nulled.)
 //
-// The REGIMEN half is no longer left to call order: the queue read holds a dose whose
-// course is on this phone and still waiting to land (`parentLandedSql`). A course can
-// now wait a while, behind the visit it names, and every drain in between would have
-// sent its doses into a 23503 and spent one of each dose's MAX_SYNC_ATTEMPTS. The event
-// half still rides the call order above.
+// DELIBERATELY NOT HELD FOR ITS COURSE, unlike an allowed food for its trial
+// (`PARENT_GATED_QUEUES`, lib/syncQueue.ts, says why at length). A dose sent ahead of
+// its course is a retryable 23503; a dose held behind it is a held correction, and a
+// course reads unsent whenever it has an edit not yet pushed, indefinitely while it
+// names a visit that cannot land. A held re-rating left the server saying Given about a
+// dose the owner had corrected to Refused (code review of 074fd18).
 export function syncPendingMedicationAdministrations(): Promise<void> {
   return serializeQueuePush('medication_administrations', drainMedicationAdministrationsQueue);
 }
@@ -2062,8 +2065,7 @@ async function drainMedicationAdministrationsQueue(): Promise<void> {
   const db = getDb();
 
   const unsynced = await db.getAllAsync<LocalMedicationAdministration>(
-    `SELECT * FROM medication_administrations WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
-       AND ${parentLandedSql('medication_administrations')} LIMIT 100`,
+    `SELECT * FROM medication_administrations WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 100`,
   );
   if (unsynced.length === 0) return;
 

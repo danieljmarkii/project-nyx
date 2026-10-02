@@ -43,7 +43,7 @@ async function runtimeDb(): Promise<Db> {
 
 /** A drain's row-selection statement exactly as lib/sync.ts ships it. */
 function shippedSelect(
-  table: Exclude<VisitLinkedTable, 'diet_trials'> | Exclude<ParentGatedQueue, 'diet_trial_foods'>,
+  table: Exclude<VisitLinkedTable, 'diet_trials'> | 'medication_administrations',
 ): string {
   const src = readFileSync(join(__dirname, 'sync.ts'), 'utf8');
   const start = src.indexOf(`\`SELECT * FROM ${table} WHERE synced = 0`);
@@ -194,14 +194,14 @@ it('every local table carrying vet_visit_id is a gated queue', async () => {
 
 // ── A child of a held parent is held too (code review of d8992fa, item 3) ──────
 //
-// The visit gate holds a trial or a course; their children (an allowed food, a dose)
-// would still go out ahead of them, into a terminal 23514 (041) or a budget-spending
-// 23503. `parentLandedSql` holds them while the parent waits. The same replay of the
-// SHIPPED statements as above, one per gated child.
+// The visit gate holds a trial; its allowed foods would still go out ahead of it, into
+// 041's terminal 23514. `parentLandedSql` holds them while the trial waits. The same
+// replay of the SHIPPED statements as above, one per gated child. A dose is deliberately
+// not gated (code review of 074fd18): the exemption is registered, with its reason, in
+// the scan at the end, and pinned on the shipped statement just below.
 
 const CHILD_PUSH_QUEUE_SQL: Record<ParentGatedQueue, () => string> = {
   diet_trial_foods: () => DIET_TRIAL_FOOD_PUSH_QUEUE_SQL,
-  medication_administrations: () => shippedSelect('medication_administrations'),
 };
 
 function pickedChildren(db: Db, child: ParentGatedQueue): string[] {
@@ -216,55 +216,82 @@ describe.each(Object.keys(PARENT_GATED_QUEUES) as ParentGatedQueue[])('the %s pu
     insert(db, parent, { id: 'p-waiting', pet_id: 'pet-1', synced: 0 });
     insert(db, parent, { id: 'p-landed', pet_id: 'pet-1', synced: 1 });
     insert(db, parent, { id: 'p-quarantined', pet_id: 'pet-1', synced: 0, sync_error: '23514: refused' });
-    const row = (id: string, parentId: string | null) => {
-      // A dose is its event's child on this phone (a real foreign key), one per event.
-      if (child === 'medication_administrations') insert(db, 'events', { id: `ev-${id}`, pet_id: 'pet-1' });
-      insert(db, child, {
-        id, pet_id: 'pet-1', [column]: parentId, synced: 0,
-        ...(child === 'medication_administrations' ? { event_id: `ev-${id}` } : {}),
-      });
-    };
+    const row = (id: string, parentId: string) =>
+      insert(db, child, { id, pet_id: 'pet-1', [column]: parentId, synced: 0 });
     row('waits', 'p-waiting');
     row('after-landing', 'p-landed');
     row('after-quarantine', 'p-quarantined');
     row('parent-not-held-here', 'p-elsewhere');
-    // An ad-hoc dose names no course; an allowed food always names its trial.
-    if (child === 'medication_administrations') row('no-parent', null);
   });
   afterEach(() => db.close());
 
-  const unheld = () => [
-    'after-landing', 'after-quarantine', 'parent-not-held-here',
-    ...(child === 'medication_administrations' ? ['no-parent'] : []),
-  ].sort();
+  const UNHELD = ['after-landing', 'after-quarantine', 'parent-not-held-here'];
 
   it(`holds a row whose ${parent} row has not landed, and only that row`, () => {
-    expect(pickedChildren(db, child)).toEqual(unheld());
+    expect(pickedChildren(db, child)).toEqual(UNHELD);
   });
 
   it('pushes the held row once its parent lands', () => {
     db.prepare(`UPDATE ${parent} SET synced = 1 WHERE id = ?`).run('p-waiting');
-    expect(pickedChildren(db, child)).toEqual([...unheld(), 'waits'].sort());
+    expect(pickedChildren(db, child)).toEqual([...UNHELD, 'waits'].sort());
   });
 
   it('holds nothing behind a quarantined parent: there is no landing left to wait for', () => {
     db.prepare(`UPDATE ${parent} SET sync_error = '23514: refused' WHERE id = ?`).run('p-waiting');
-    expect(pickedChildren(db, child)).toEqual([...unheld(), 'waits'].sort());
+    expect(pickedChildren(db, child)).toEqual([...UNHELD, 'waits'].sort());
   });
 
   it('still skips a quarantined row, whatever its parent', () => {
-    db.prepare(`UPDATE ${child} SET sync_error = '23503: fk' WHERE id = 'after-landing'`).run();
+    db.prepare(`UPDATE ${child} SET sync_error = '23514: refused' WHERE id = 'after-landing'`).run();
     expect(pickedChildren(db, child)).not.toContain('after-landing');
   });
 });
 
+// The decision, on the shipped statement: a dose goes out whatever its course is doing.
+// A course with an edit not yet pushed reads `synced = 0`, and a dose correction held
+// behind it would leave the server with the uncorrected dose.
+it('the medication_administrations queue sends a dose whatever its course is doing', async () => {
+  const db = await runtimeDb();
+  insert(db, 'medications', { id: 'course-with-unsent-edit', pet_id: 'pet-1', synced: 0 });
+  insert(db, 'medications', { id: 'course-landed', pet_id: 'pet-1', synced: 1 });
+  const dose = (id: string, courseId: string | null) => {
+    // A dose is its event's child on this phone (a real foreign key), one per event.
+    insert(db, 'events', { id: `ev-${id}`, pet_id: 'pet-1' });
+    insert(db, 'medication_administrations', {
+      id, event_id: `ev-${id}`, pet_id: 'pet-1', medication_id: courseId, synced: 0,
+    });
+  };
+  dose('under-unsent-edit', 'course-with-unsent-edit');
+  dose('under-landed-course', 'course-landed');
+  dose('ad-hoc', null);
+  const picked = (db.prepare(shippedSelect('medication_administrations')).all() as { id: string }[])
+    .map((r) => r.id).sort();
+  db.close();
+  expect(picked).toEqual(['ad-hoc', 'under-landed-course', 'under-unsent-edit']);
+});
+
+/**
+ * Parent columns the push deliberately does NOT wait on, each with its reason (C-32: an
+ * exemption earns its place, and one whose column disappears reds the scan below).
+ */
+const UNGATED_PARENT_COLUMNS: Record<string, string> = {
+  'medication_administrations.medication_id -> medications':
+    'A dose sent ahead of its course meets a plain foreign key (020): a 23503, retried on ' +
+    'the next drain, with no same-pet trigger on the pair. Holding it would hold a ' +
+    'correction behind any unsent course edit, indefinitely behind a visit link that cannot ' +
+    'land, and a dose re-rated Given to Refused left the server saying Given (code review ' +
+    'of 074fd18; pinned in lib/syncVisitHold.test.ts).',
+};
+
 // Derived from the schema rather than from the map under test (C-38): every column on a
 // queue table that names another queue table's row by the `<parent>_id` convention is a
-// parent the push must wait for. Two parents are out of this scan's scope and say so:
-// `vet_visit_id` is the visit gate's (pinned above), and `event_id` is each event
-// child's own drain's (meals, weight checks and looks join `events`; event attachments
-// and doses do not, which this scan does not judge).
-it('every queue column that names another queue table\'s row is parent-gated', async () => {
+// parent the push must wait for, or an exemption that says why it does not. Out of this
+// scan's scope, and said so: `vet_visit_id` is the visit gate's (pinned above); a dose's
+// EVENT parents (`event_id`, and `paired_event_id`, whose 023 trigger refuses with a
+// terminal 23514) are tracked separately; and the other `event_id` children are each
+// their own drain's (meals, weight checks and looks join `events`; event attachments do
+// not, which this scan does not judge).
+it('every queue column that names another queue table\'s row is parent-gated, or exempt with a reason', async () => {
   const db = await runtimeDb();
   const queues = (db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all() as { name: string }[])
     .map((r) => r.name)
@@ -278,9 +305,11 @@ it('every queue column that names another queue table\'s row is parent-gated', a
     }
   }
   db.close();
-  // Non-vacuity: the convention does find the parents this gate exists for.
-  expect(found.length).toBeGreaterThan(0);
-  expect(found.sort()).toEqual(
-    Object.entries(PARENT_GATED_QUEUES).map(([child, { parent, column }]) => `${child}.${column} -> ${parent}`).sort(),
-  );
+  const gated = Object.entries(PARENT_GATED_QUEUES).map(([child, { parent, column }]) => `${child}.${column} -> ${parent}`);
+  // Non-vacuity: the convention finds both the gated parent and the exempt one.
+  expect(found.length).toBeGreaterThanOrEqual(2);
+  expect(found.sort()).toEqual([...gated, ...Object.keys(UNGATED_PARENT_COLUMNS)].sort());
+  // A column is gated or exempt, never both, and an exemption says why.
+  expect(gated.filter((g) => g in UNGATED_PARENT_COLUMNS)).toEqual([]);
+  for (const why of Object.values(UNGATED_PARENT_COLUMNS)) expect(why.length).toBeGreaterThan(80);
 });
