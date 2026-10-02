@@ -355,8 +355,40 @@ describe('a daily look is not observability', () => {
       ev('itch', at(2026, 7, 20)),
     ]);
     const sheet = buildOutcomeSheet({ facts: facts!, petName: 'Mochi' });
-    expect(sheet.comparisonLine).toMatch(/^Nothing was logged in the 2 weeks before the trial started/);
+    // Never "Nothing was logged" over the owner's looks (T-9, §5.1 row 1b): the looks are
+    // named as what was logged, and still counted as nothing (adversarial-reviewer).
+    expect(sheet.comparisonLine).toBe(
+      'Apart from what you noticed, nothing was logged in the 2 weeks before the trial started, so there’s nothing to compare these with.',
+    );
     expect(sheet.factLines).toEqual(['Itch/Scratch: 1 during the trial.']);
+  });
+
+  it('a thin stretch beside looks counts its logged days without them, and says so', async () => {
+    const days = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const facts = await load([
+      ...days.map((d) => ev('check_in', at(2026, 7, d))),
+      ev('itch', at(2026, 7, 11)),
+      ev('itch', at(2026, 7, 20)),
+    ]);
+    expect(facts!.beforeLoggedDays).toBe(1);
+    const sheet = buildOutcomeSheet({ facts: facts!, petName: 'Mochi' });
+    expect(sheet.comparisonLine).toBe(
+      'Compared with the 2 weeks before it started — though only 1 of those 14 days has anything logged besides what you noticed, so there’s much less to compare with than it looks.',
+    );
+  });
+
+  it('with no looks the sheet keeps its plain sentences', async () => {
+    const empty = await load([ev('itch', at(2026, 7, 20))]);
+    expect(buildOutcomeSheet({ facts: empty!, petName: 'Mochi' }).comparisonLine).toMatch(/^Nothing was logged in the 2 weeks/);
+    const thin = await load([ev('itch', at(2026, 7, 11)), ev('itch', at(2026, 7, 12)), ev('itch', at(2026, 7, 20))]);
+    expect(buildOutcomeSheet({ facts: thin!, petName: 'Mochi' }).comparisonLine).toContain('only 2 of those 14 days have anything logged, so');
+  });
+
+  it('only the look is skipped: a weight, a dose or a normal stool beside it is still logging', async () => {
+    for (const type of ['weight_check', 'medication', 'stool_normal']) {
+      const facts = await load([ev('check_in', at(2026, 7, 3)), ev(type, at(2026, 7, 4)), ev('itch', at(2026, 7, 20))]);
+      expect([type, facts!.beforeTracked, facts!.beforeLoggedDays]).toEqual([type, true, 1]);
+    }
   });
 
   it('nor does a look add a logged day to either stretch', async () => {
