@@ -73,8 +73,8 @@ coverage, never print it as a rate below the coverage floor). It is listed in §
   than the trial itself, so meals of the prescribed food in between look to the app like a food that is not on the
   list. A stops calling those meals off-diet and shows them as a gap in the record. The build still owes the property
   test named in the row.
-* **R12: open.** The PM asked why the app doesn't just ask the owner how long to extend. The answer and a revised
-  option are below; R12 waits on the PM's pick.
+* **R12: E (2026-10-02), the PM deferring to the product team** after asking why the app doesn't just ask the owner
+  how long to extend. The answer and option E are below.
 
 **R12, revisited.** The app already asks. *Change the window* (`components/profile/TrialWindowPanel.tsx`, reached from
 the trial's Manage door) lets an owner set any total ("How long is this trial now?"), and its spec forbids Culprit
