@@ -441,6 +441,10 @@ export interface TimelineRow {
   paired_dose_count: number;
   paired_dose_event_id: string | null;
   paired_dose_drug_name: string | null;
+  // CUL-382 — how many of those doses have NO adherence answer (null). With this meal's
+  // own intake it decides whether any dose given inside it is still in doubt
+  // (`isAnyPairedDoseInDoubt`). 0 on a row with no paired dose.
+  paired_dose_unrated_count: number;
   // The daily look's child (CUL-869 / N-3), NULL on every other row — joined here
   // for exactly the reason `weight_kg` is one line above it: `looks` is a 1:1 child
   // with no `deleted_at` of its own, so the honest read of it is one that already
@@ -507,6 +511,7 @@ export async function getTimeline(
             COALESCE(pd.dose_count, 0) AS paired_dose_count,
             pd.rep_event_id AS paired_dose_event_id,
             pdmi.generic_name AS paired_dose_drug_name,
+            COALESCE(pd.unrated_count, 0) AS paired_dose_unrated_count,
             lk.outcome AS look_outcome, lk.words AS look_words, lk.notes AS look_note
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
@@ -551,6 +556,7 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
             COALESCE(pd.dose_count, 0) AS paired_dose_count,
             pd.rep_event_id AS paired_dose_event_id,
             pdmi.generic_name AS paired_dose_drug_name,
+            COALESCE(pd.unrated_count, 0) AS paired_dose_unrated_count,
             lk.outcome AS look_outcome, lk.words AS look_words, lk.notes AS look_note
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
