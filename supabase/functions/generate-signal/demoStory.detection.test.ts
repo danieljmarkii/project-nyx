@@ -37,6 +37,8 @@ import { strict as assert } from 'node:assert';
 import {
   detectSignals,
   DEFAULT_CONFIG,
+  EN11_CONFIG,
+  type DetectionConfig,
   type DetectionInput,
   type MealEvent,
   type SymptomEvent,
@@ -100,8 +102,8 @@ interface Summary {
   findingTypes: string[];
 }
 
-function analyze(seedMs: number, readMs: number = seedMs): Summary {
-  const ranked = detectSignals(toInput(seedMs, readMs), DEFAULT_CONFIG);
+function analyze(seedMs: number, readMs: number = seedMs, config: DetectionConfig = DEFAULT_CONFIG): Summary {
+  const ranked = detectSignals(toInput(seedMs, readMs), config);
   const findings = ranked.map((r) => r.finding);
   const correlations = findings.filter(
     (f): f is CorrelationFinding => f.type === 'food_symptom_correlation',
@@ -226,5 +228,22 @@ Deno.test('demo story — survival: ① is durable, ② decays past the next UTC
       null,
       `② must have decayed at read +${dh}h (this is WHY the cadence re-seeds)`,
     );
+  }
+});
+
+// Engines v3 PR-32 (EN-11, CUL-1141; critique PMD-8). Under `engines_v3_en11` the Early tier is
+// retired, so the demo's headline beef card (Early on 4 exposures, p = 0.125) is withheld and
+// Cooper's Home carries the intake card alone. This is why EN-11 goes live after the 1.2.0 App
+// Review or with a demo re-spec, never with a floor tuned to the demo: pinned here so the GA
+// session meets it as a red test if the demo account is ever allowlisted first.
+Deno.test('demo story — under EN-11 the beef card is withheld and ② still fires, at every seed hour', () => {
+  for (let h = 0; h < 24; h++) {
+    const seed = UTC_MIDNIGHT + h * HOUR + 30 * 60_000;
+    const off = analyze(seed);
+    const on = analyze(seed, seed, EN11_CONFIG);
+    assert.equal(off.beef?.tier, 'early', `h=${h}: premise, the shipped demo card is Early`);
+    assert.equal(on.beef, undefined, `h=${h}: EN-11 withholds the Early beef card`);
+    assert.equal(on.intakeTrigger, off.intakeTrigger, `h=${h}: ② is untouched`);
+    assert.deepEqual(on.findingTypes, off.findingTypes.filter((t) => t !== 'food_symptom_correlation'), `h=${h}`);
   }
 });
