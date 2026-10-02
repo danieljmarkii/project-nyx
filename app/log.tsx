@@ -43,6 +43,16 @@ import { exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, O
 
 type Step = 'type' | 'food' | 'medication' | 'simple' | 'weight';
 
+// The `?type=` param is untrusted (a deep link, the widget's door), so it opens a step
+// only for a type this screen can log. Own keys only, never `in`: an inherited key
+// (`toString`, `__proto__`) passed as an event type with no label and crashed the simple
+// step on `.toLowerCase()` (History's same param, B-378). And never `check_in`: a look's
+// only door is the Noticed card (E-6), and this screen would write a bare `check_in` row
+// with no `looks` child. Anything else falls back to the type picker.
+function isLoggableTypeParam(value: string): value is Exclude<EventTypeKey, 'check_in'> {
+  return Object.prototype.hasOwnProperty.call(EVENT_TYPES, value) && value !== 'check_in';
+}
+
 // B-010 — the time fields a logged event carries. occurred_at is always a
 // single derived point; confidence + window bounds describe its certainty.
 type TimeFields = {
@@ -206,8 +216,8 @@ export default function LogModal() {
       setSelectedType('weight_check');
       seedWeightPrefill();
       setStep('weight');
-    } else if (typeParam in EVENT_TYPES) {
-      const t = typeParam as EventTypeKey;
+    } else if (isLoggableTypeParam(typeParam)) {
+      const t = typeParam;
       setSelectedType(t);
       // Same D10 reset as handleTypeSelect: today this branch runs on a fresh
       // mount whose defaults already equal the reset, but the guarantee must be

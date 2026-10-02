@@ -39,7 +39,7 @@ import { PetSwitcherSheet } from '../../components/pet/PetSwitcherSheet';
 import { HEADER_CHEVRON_SIZE, headerSwitcherLabel } from '../../lib/headerName';
 import { EditPetModal } from '../../components/profile/EditPetModal';
 import { WeightTrendCard } from '../../components/profile/WeightTrendCard';
-import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
+import { AddConditionModal, Condition, diagnosedMonthLabel } from '../../components/profile/AddConditionModal';
 import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicationModal';
 import { endRegimen } from '../../lib/medicationSetup';
 import { StartTrialModal } from '../../components/profile/StartTrialModal';
@@ -1314,12 +1314,9 @@ export default function ProfileScreen() {
                 <View style={styles.conditionInner}>
                   <View style={styles.conditionInfo}>
                     <ThemedText style={styles.conditionName}>{condition.condition_name}</ThemedText>
-                    {condition.diagnosed_at && (
+                    {diagnosedMonthLabel(condition.diagnosed_at) !== null && (
                       <ThemedText style={styles.conditionDate}>
-                        Diagnosed{' '}
-                        {new Date(condition.diagnosed_at).toLocaleDateString([], {
-                          year: 'numeric', month: 'short',
-                        })}
+                        Diagnosed {diagnosedMonthLabel(condition.diagnosed_at)}
                       </ThemedText>
                     )}
                   </View>

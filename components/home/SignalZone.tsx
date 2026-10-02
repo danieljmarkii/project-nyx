@@ -1152,10 +1152,11 @@ function BuildingStateV2({
   const showWatching = showGap || showNeeds;
   return (
     <View>
-      {/* eventCount 0 ⇒ the pre-read sentinel (a real building pet always has ≥1 recent
-          event — deriveDisplayState requires hasRecentActivity), so hold the day-count
-          clause back for that one load frame rather than flash a fabricated
-          "Day 1 — 0 events so far". Once the local read lands it renders in full. */}
+      {/* eventCount 0 ⇒ the pre-read sentinel, or a record holding only daily looks (a
+          look keeps the pet recent but never counts, CUL-1468), so hold the day-count
+          clause back rather than print a fabricated "Day 1 — 0 events so far". For the
+          sentinel that is one load frame; a looks-only record keeps it until a real log
+          lands, and its change row stays at week 1 meanwhile (CUL-1484). */}
       <ThemedText
         style={styles.v2Headline}
         accessibilityLabel={

@@ -322,6 +322,18 @@ describe('NamedCompletionCard — Undo over the record (CUL-802)', () => {
     expect(mockBack).not.toHaveBeenCalled();
   });
 
+  // QA (1.2.0). The card outlives navigation: log A, open record B while A's card
+  // dwells, tap Undo. A is removed, and B is still in the record, so B is not this
+  // card's to dismiss. The dismissal used to key on "some record is open" and popped B.
+  it('does not dismiss a DIFFERENT record that happens to be open', async () => {
+    mockPathname = '/event/e2';
+    const view = render(<NamedCompletionCard />);
+    seed();
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+    expect(view.getByText('Removed')).toBeTruthy();
+    expect(mockBack).not.toHaveBeenCalled();
+  });
+
   it('never navigates from a tabs screen — there is nothing to dismiss', async () => {
     const view = render(<NamedCompletionCard />);
     seed();

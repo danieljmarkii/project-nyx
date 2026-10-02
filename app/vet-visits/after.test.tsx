@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import AfterVisitScreen from './after';
 import { router } from 'expo-router';
 import { StartTrialModal } from '../../components/profile/StartTrialModal';
+import { AddMedicationModal, type Regimen } from '../../components/profile/AddMedicationModal';
 import type { ActiveCourse, AppointmentDetail } from '../../lib/vetVisits';
 
 // CUL-902 VV-4 — the after-visit screen's own wiring (§7 AC 7 and AC 11).
@@ -27,11 +28,15 @@ const mockRepair = jest.fn(async (_petId: string) => 0);
 let mockAppointment: AppointmentDetail | null = null;
 let mockCourses: ActiveCourse[] = [];
 
+// The registered focus callback, kept so a test can fire the re-focus a return from a
+// pushed route (food-capture) produces (F4).
+const mockFocus: { current: null | (() => void | (() => void)) } = { current: null };
 jest.mock('expo-router', () => ({
   Redirect: () => null,
   router: { back: jest.fn(), push: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true) },
   useFocusEffect: (cb: () => void | (() => void)) => {
     const { useEffect } = require('react');
+    mockFocus.current = cb;
     useEffect(() => cb(), []);
   },
   useLocalSearchParams: () => ({ appointment: 'appt-1' }),
@@ -169,7 +174,8 @@ function course(over: Partial<ActiveCourse> = {}): ActiveCourse {
 /** Every RN `Modal` currently in the rendered tree. */
 const modals = () => screen.UNSAFE_queryAllByType(Modal);
 
-beforeEach(() => {
+/** Every mock and fixture back to its default: what each test starts from. */
+function freshScreen(): void {
   jest.restoreAllMocks();
   jest.clearAllMocks();
   mockLogFromAppointment.mockImplementation(async () => 'new-visit');
@@ -182,7 +188,22 @@ beforeEach(() => {
   // Reset, not just cleared: the CUL-951 trial suite swaps this read's implementation,
   // and `clearAllMocks` keeps implementations.
   jest.requireMock('../../lib/dietTrialSetup').getActiveTrialForPet.mockImplementation(async () => null);
-});
+}
+
+// COLD-CACHE WARM-UP, with its own timeout (the AddMedicationModal precedent, CUL-1155).
+// Measured on an empty jest cache (release QA, 2026-10-02): this file's first test took
+// ~4.5 s against ~0.5 s warm, a hair under the 5 s default, because jest-expo transforms
+// React Native's lazily-`require`d internals during the first render, and CI always runs
+// cold. The warm-up renders the screen once; every test then starts from freshScreen()
+// and keeps the 5 s default, so a real hang still reports quickly.
+beforeAll(async () => {
+  freshScreen();
+  render(<AfterVisitScreen />);
+  await screen.findByText('Save Nyx’s visit');
+  screen.unmount();
+}, 60000);
+
+beforeEach(freshScreen);
 
 describe('AC 11 — the screen writes under the appointment’s pet', () => {
   it('saves under pet A even after the store’s active pet moves to B', async () => {
@@ -282,6 +303,16 @@ describe('AC 7 — exactly one Modal (the CUL-662 pin)', () => {
 
     fireEvent.press(screen.getByLabelText('Start a trial — A new food to try?'));
     await waitFor(() => expect(modals()).toHaveLength(1));
+  });
+
+  it('Add the food returns HERE after the capture, never to a tab', async () => {
+    // food-capture's default exit is dismissAll(), which pops every root-stack screen
+    // above the tabs, this one and its unsaved answers included.
+    render(<AfterVisitScreen />);
+    await screen.findByText('A new food to try?');
+
+    fireEvent.press(screen.getByLabelText('Add the food — A new food to try?'));
+    expect(router.push).toHaveBeenCalledWith('/food-capture?returnTo=back');
   });
 
   it('the visit exists BEFORE a sheet opens, so a new course can carry its link', async () => {
@@ -440,6 +471,54 @@ describe('AC 7 — the plan rows read the record before they ask', () => {
     expect(screen.queryByText('linked to this visit')).toBeNull();
   });
 
+  /**
+   * *Changed*, then the course's own editor saves. The sheet's props are taken while it is
+   * open and driven in the order the real modal calls them (`onClose`, then `onUpdated`
+   * with the row it wrote), because the line comes from the closure the sheet was handed.
+   */
+  async function changeAndSave(): Promise<void> {
+    render(<AfterVisitScreen />);
+    await screen.findByText('Cerenia');
+    fireEvent.press(screen.getByText('Changed'));
+    await waitFor(() => expect(modals()).toHaveLength(1));
+    const sheet = screen.UNSAFE_getByType(AddMedicationModal).props as {
+      existingRegimen: Regimen;
+      onClose: () => void;
+      onUpdated: (regimen: Regimen) => void;
+    };
+    await act(async () => {
+      sheet.onClose();
+      sheet.onUpdated({ ...sheet.existingRegimen, dose_amount: '24 mg' });
+    });
+    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await screen.findByText('Saved to Nyx’s visits');
+  }
+
+  it('*Changed* on a course an EARLIER visit prescribed never claims this one (F5)', async () => {
+    // The *Keep* case above, through the editor: the link write is first-wins and returns
+    // false, the verdict's line says "still on it" — and the edit's save used to overwrite
+    // it with "linked to this visit", so the moment told the owner this visit prescribed a
+    // course that March's did.
+    mockCourses = [course({ vetVisitId: 'visit-march' })];
+    mockLinkCourse.mockResolvedValue(false);
+    await changeAndSave();
+
+    expect(screen.getByText('Cerenia changed')).toBeTruthy();
+    expect(screen.getByText('still on it')).toBeTruthy();
+    expect(screen.queryByText('linked to this visit')).toBeNull();
+  });
+
+  it('*Changed* on a course with no visit of its own says this visit linked it', async () => {
+    // The other half, so a fix that simply never claims the link reds too.
+    mockCourses = [course()];
+    await changeAndSave();
+
+    expect(mockLinkCourse.mock.calls[0]).toEqual(['med-1', 'new-visit']);
+    expect(screen.getByText('Cerenia changed')).toBeTruthy();
+    expect(screen.getByText('linked to this visit')).toBeTruthy();
+    expect(screen.queryByText('still on it')).toBeNull();
+  });
+
   it('*Stopped* ends the course once confirmed, and does NOT link it', async () => {
     mockCourses = [course()];
     const alert = answerAlertWith('Stop it');
@@ -510,6 +589,67 @@ describe('CUL-945 — the quarantine repair runs where the owner already is', ()
     render(<AfterVisitScreen />);
     await screen.findByText('Save Nyx’s visit');
     await waitFor(() => expect(mockRepair).toHaveBeenCalledWith('pet-a'));
+  });
+});
+
+// F4 — a booking that is already a visit is never logged a second time. Back from the
+// saved visit used to land on a Get ready that still looked live; its Take notes → Done
+// opened this screen over the logged booking, and Save minted a second `vet_visits` row
+// and re-pointed the booking at it. The lax read hands the logged booking back by design
+// (this screen re-reads its OWN on a re-focus), so the rule lives in `load`.
+describe('F4 — a booking already logged goes to its visit, once', () => {
+  /** Re-enter the screen the way returning from a pushed route (food-capture) does. */
+  async function refocus(): Promise<void> {
+    await act(async () => {
+      mockFocus.current?.();
+    });
+    // The repair runs AFTER the redirect check, so its second call says the re-read got
+    // past it: an absence of a redirect below is an answer, not a load still in flight.
+    await waitFor(() => expect(mockRepair).toHaveBeenCalledTimes(2));
+  }
+
+  it('opened fresh, it goes to the visit the booking became — no form, no second visit', async () => {
+    mockAppointment = appointment({ vet_visit_id: 'visit-1' });
+    render(<AfterVisitScreen />);
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/vet-visits/visit-1'));
+    expect(router.replace).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Save Nyx’s visit')).toBeNull();
+    expect(mockLogFromAppointment).not.toHaveBeenCalled();
+    // The booking IS on the record, so the screen must not say otherwise on its way out.
+    expect(screen.queryByText(/no longer on the record/)).toBeNull();
+  });
+
+  it('a re-focus after THIS screen logged the visit keeps the form', async () => {
+    // The re-read the lax read exists for: the first plan action logged the visit, so
+    // coming back from food-capture finds the booking attended, by this screen.
+    mockCourses = [course()];
+    render(<AfterVisitScreen />);
+    await screen.findByText('Cerenia');
+    await act(async () => {
+      fireEvent.press(screen.getByText('Keep'));
+    });
+    await waitFor(() => expect(mockLinkCourse).toHaveBeenCalledTimes(1));
+
+    mockAppointment = appointment({ vet_visit_id: 'new-visit' });
+    await refocus();
+
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(screen.getByText('Save Nyx’s visit')).toBeTruthy();
+  });
+
+  it('a re-focus after ANOTHER phone logged it keeps the form the owner is filling in', async () => {
+    // No visit of this screen's own, so only "the form is seeded" holds the redirect
+    // back. Leaving would drop what the owner typed; the write refuses the duplicate
+    // instead (lib/vetVisitWrites.test.ts, F4).
+    render(<AfterVisitScreen />);
+    await screen.findByText('Save Nyx’s visit');
+
+    mockAppointment = appointment({ vet_visit_id: 'visit-elsewhere' });
+    await refocus();
+
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(screen.getByText('Save Nyx’s visit')).toBeTruthy();
   });
 });
 
@@ -779,7 +919,8 @@ describe('CUL-1092 — *Switched* stays lit only once a new trial has started', 
     // The sheet closes for food capture and reopens on the way back (C-22).
     await act(async () => { screen.UNSAFE_getByType(StartTrialModal).props.onAddFood(); });
 
-    expect(router.push).toHaveBeenCalledWith('/food-capture');
+    // Pops back HERE on save; a bare push ends in dismissAll() and loses this screen.
+    expect(router.push).toHaveBeenCalledWith('/food-capture?returnTo=back');
     expect(lit('Switched')).toBeTruthy();
   });
 });

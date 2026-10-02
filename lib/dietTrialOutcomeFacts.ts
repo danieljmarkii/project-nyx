@@ -7,6 +7,7 @@
 // sight.
 import { SYMPTOM_EVENT_TYPES } from './analytics';
 import { getDb } from './db';
+import { isLookRow } from './lookDisplay';
 import { symptomLabel } from './metricDetail';
 import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
 import type { TrialOutcomeFacts, TrialSymptomDelta } from './dietTrialCompletion';
@@ -100,6 +101,7 @@ export async function loadTrialOutcomeFacts(args: {
     const beforeAnyDays = new Set<string>();
     const duringAnyDays = new Set<string>();
 
+    let beforeHasLooks = false;
     for (const r of rows) {
       const ms = Date.parse(r.occurred_at);
       if (!Number.isFinite(ms)) continue;
@@ -107,6 +109,16 @@ export async function loadTrialOutcomeFacts(args: {
       const inDuring = key >= startKey && key <= duringEndKey;
       const inBefore = !inDuring && key >= beforeStartKey && key < startKey;
       if (!inDuring && !inBefore) continue;
+      // A DAILY LOOK IS NOT OBSERVABILITY. It is the owner's answer to a question, never
+      // a row about the pet, and it never enters a count, a coverage line or a trial
+      // verdict (daily-look spec §2 item 5). Counted here, a before-stretch holding only
+      // looks read as TRACKED, and the sheet printed "0 before" for every symptom logged
+      // during the trial — the fabricated baseline `beforeTracked` exists to prevent. Its
+      // PRESENCE is kept, so the sheet never says nothing was logged over the looks.
+      if (isLookRow(r)) {
+        if (inBefore) beforeHasLooks = true;
+        continue;
+      }
 
       (inDuring ? duringAnyDays : beforeAnyDays).add(key);
 
@@ -141,6 +153,7 @@ export async function loadTrialOutcomeFacts(args: {
       duringDays,
       beforeDays,
       beforeTracked: beforeAnyDays.size > 0,
+      beforeHasLooks,
       beforeLoggedDays: beforeAnyDays.size,
       duringLoggedDays: duringAnyDays.size,
       symptoms,

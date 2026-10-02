@@ -329,6 +329,14 @@ export interface TrialOutcomeFacts {
   beforeLoggedDays: number;
   /** The same count for the trial stretch, so the two are comparable. */
   duringLoggedDays: number;
+  /**
+   * Whether the before stretch holds a daily look. A PRESENCE flag, never a number: a
+   * look is not observability and enters none of the counts above. It exists only so the
+   * sheet's absence sentences say what the owner DID log instead of "Nothing was logged"
+   * over days that hold their looks (the daily-look spec's T-9 / §5.1 row 1b: the look is
+   * named as the act, never counted as the day). Absent reads as no looks.
+   */
+  beforeHasLooks?: boolean;
   /** Every symptom type with activity in either stretch, most-during first. */
   symptoms: TrialSymptomDelta[];
   meals: { before: TrialMealDensity; during: TrialMealDensity };
@@ -544,20 +552,26 @@ export function buildOutcomeSheet(args: {
 }): TrialOutcomeSheetModel {
   const { facts, petName } = args;
 
+  // Looks are never counted below, so where the stretch holds any, each absence clause
+  // names them as what the owner did log, rather than saying nothing was logged.
+  const noticed = facts.beforeHasLooks === true;
   const comparisonLine = !facts.beforeTracked
     ? // Named as untracked, never counted as zero. The owner is told plainly that
       // the comparison cannot be made, rather than shown a number that implies it
       // was made and came out well.
-      `Nothing was logged in the ${spanPhrase(facts.beforeDays)} before the trial ` +
-      'started, so there’s nothing to compare these with.'
+      `${noticed ? 'Apart from what you noticed, nothing' : 'Nothing'} was logged in the ` +
+      `${spanPhrase(facts.beforeDays)} before the trial started, so there’s nothing to ` +
+      'compare these with.'
     : isSparseBefore(facts)
       ? // The middle case, and the one that flatters. The stretch is named by the
         // days it can actually see rather than by its calendar length, so a
         // four-day install-during-a-flare window never renders as "the 8 weeks
         // before it started". Disclosure, not a floor.
         `Compared with the ${spanPhrase(facts.beforeDays)} before it started — though ` +
-        `only ${facts.beforeLoggedDays} of those ${facts.beforeDays} days have anything ` +
-        'logged, so there’s much less to compare with than it looks.'
+        `only ${facts.beforeLoggedDays} of those ${facts.beforeDays} days ` +
+        `${facts.beforeLoggedDays === 1 ? 'has' : 'have'} anything logged` +
+        `${noticed ? ' besides what you noticed' : ''}, so there’s much less to compare ` +
+        'with than it looks.'
       : `Compared with the ${spanPhrase(facts.beforeDays)} before it started.`;
 
   const factLines =

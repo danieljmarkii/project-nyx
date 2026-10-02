@@ -144,7 +144,8 @@ interface UiState {
    *  at mount (EventTypeSheet's `initialType`), while a close keeps the instance so the
    *  Modal still slides out. */
   logSheetOpens: number;
-  /** Open the log sheet at its grid, or straight at the confirm for `initialType`. */
+  /** Open the log sheet at its grid, or straight at the confirm for `initialType`. A
+   *  no-op while a sheet is already up: the open that is on screen wins. */
   openLogSheet: (initialType?: LogSheetConfirmType) => void;
   closeLogSheet: () => void;
   /** True while the FAB's menu is open. The tabs layout reads it to hide everything
@@ -162,11 +163,17 @@ export const useUiStore = create<UiState>((set) => ({
   closeIntakeDoor: () => set({ intakeDoor: null }),
   logSheet: null,
   logSheetOpens: 0,
+  // A second open while the sheet is up changes nothing. The host keys the sheet on the
+  // open count, so a second request used to unmount a Modal that was still sliding in
+  // and mount another in its place: a quick double tap on any door (the FAB's rows, the
+  // Home nudge, the day summary, Ask) re-keyed the sheet mid-presentation, the CUL-662
+  // iOS wedge class. Returning the same state object notifies no subscriber.
   openLogSheet: (initialType) =>
-    set((st) => ({
-      logSheet: { initialType: initialType ?? null },
-      logSheetOpens: st.logSheetOpens + 1,
-    })),
+    set((st) =>
+      st.logSheet
+        ? st
+        : { logSheet: { initialType: initialType ?? null }, logSheetOpens: st.logSheetOpens + 1 },
+    ),
   closeLogSheet: () => set({ logSheet: null }),
   fabMenuOpen: false,
   setFabMenuOpen: (fabMenuOpen) => set({ fabMenuOpen }),

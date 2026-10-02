@@ -1,7 +1,8 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { File, Paths } from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { getSyncStatus } from './db';
+import { transientDirectory } from './transientFiles';
 import { supabase } from './supabase';
 import { syncNow } from './sync';
 import { getDeviceTimezone } from './profile';
@@ -201,9 +202,19 @@ export async function shareReportPdf(report: VetReport): Promise<boolean> {
   // Rename the temp print output to a clinic-friendly name for the share sheet and
   // the vet's filing. Best-effort — a copy failure falls back to the raw uri so
   // sharing is never blocked (mirrors persistCapture's never-throw-on-copy rule).
+  //
+  // CUL-1045: neither file may outlive the account. The named copy is the whole
+  // clinical record under the pet's name, so it goes in the transient directory the
+  // sign-out wipe clears (lib/transientFiles.ts, the stageForShare precedent). It sat
+  // in the cache root, past sign-out AND account deletion. expo-print's own temp
+  // (<Caches>/Print/<uuid>.pdf) is deleted once the share sheet has closed, and the
+  // wipe also clears that folder, because a process that dies with the sheet open
+  // never reaches the `finally`.
   let shareUri = uri;
   try {
-    const dest = new File(Paths.cache, reportPdfFilename(report.petName, report.startDate, report.endDate));
+    const dir = transientDirectory();
+    dir.create({ intermediates: true, idempotent: true });
+    const dest = new File(dir, reportPdfFilename(report.petName, report.startDate, report.endDate));
     if (dest.exists) dest.delete();
     new File(uri).copy(dest);
     shareUri = dest.uri;
@@ -211,10 +222,23 @@ export async function shareReportPdf(report: VetReport): Promise<boolean> {
     shareUri = uri;
   }
 
-  await Sharing.shareAsync(shareUri, {
-    mimeType: 'application/pdf',
-    UTI: 'com.adobe.pdf',
-    dialogTitle: 'Send vet report',
-  });
+  try {
+    await Sharing.shareAsync(shareUri, {
+      mimeType: 'application/pdf',
+      UTI: 'com.adobe.pdf',
+      dialogTitle: 'Send vet report',
+    });
+  } finally {
+    deletePrintTemp(uri);
+  }
   return true;
+}
+
+function deletePrintTemp(uri: string): void {
+  try {
+    const temp = new File(uri);
+    if (temp.exists) temp.delete();
+  } catch (e) {
+    console.warn('[pdf] print temp cleanup skipped:', e);
+  }
 }

@@ -77,6 +77,11 @@ import { refreshReadCopy } from './sync';
 import { supabase } from './supabase';
 import { isHistoryDoorTapSpent, isWidgetPetTapSpent, spendHistoryDoorTap, spendWidgetPetTap } from './spentTaps';
 import { useSyncStore } from '../store/syncStore';
+import { useUiStore } from '../store/uiStore';
+import { useEventStore } from '../store/eventStore';
+import { useSnackbarStore } from '../store/snackbarStore';
+import { useAskStore } from '../store/askStore';
+import { useHistoryListStore } from '../store/historyListStore';
 
 const GATE_KEY = 'nyx.recoveryInProgress';
 const t0 = 1_700_000_000_000;
@@ -245,6 +250,73 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     (clearLocalData as jest.Mock).mockRejectedValueOnce(new Error('sqlite gone'));
     await expect(wipeLocalSession()).resolves.toBeUndefined();
     expect(clearWidgetTimeline).toHaveBeenCalled();
+  });
+
+  // QA (1.2.0). The log sheet and the intake door open on a request in the UI store and
+  // mount in the ROOT layout, above the auth redirect, so an involuntary sign-out landing
+  // while one was up left it over the next person's login screen, naming the previous
+  // owner's pet and holding any typed note. The moment-store reset's leak, for sheets.
+  it('takes down the root-mounted sheets, so none outlives the session', async () => {
+    useUiStore.setState({
+      logSheet: { initialType: 'vomit' },
+      intakeDoor: { petId: 'pet-a', petName: 'Mochi', sex: 'female', cardHasSelections: true },
+      captureOverlay: {
+        summary: 'Mochi · off, didn’t want the walk', inViewport: true, busy: false,
+        onBack: jest.fn(), onDone: jest.fn(), drawsDoneBar: true,
+      },
+    });
+    await wipeLocalSession();
+    const ui = useUiStore.getState();
+    expect(ui.logSheet).toBeNull();
+    expect(ui.intakeDoor).toBeNull();
+    expect(ui.captureOverlay).toBeNull();
+  });
+
+  // The record resting in memory goes too (rls-privacy-reviewer, release QA 1.2.0): the
+  // event store's today list painted the previous owner's same-day symptoms on the next
+  // account's legacy Home, which filters by date and has no pet gate.
+  it("takes the previous account's in-memory record with it: today, the snackbar, Ask, History", async () => {
+    useEventStore.setState({
+      todayEvents: [{ id: 'e1', pet_id: 'pet-a', event_type: 'vomit' } as never],
+      todayRead: { petId: 'pet-a', state: 'ready' },
+    });
+    useSnackbarStore.setState({ visible: true, payload: { message: 'Removed Hill’s z/d' } as never });
+    useAskStore.setState({ petId: 'pet-a', messages: [{ id: 'm1', role: 'user', text: 'Is Mochi itchy?' } as never] });
+    useHistoryListStore.setState({ snapshot: { petId: 'pet-a' } as never });
+    await wipeLocalSession();
+    expect(useEventStore.getState().todayEvents).toEqual([]);
+    expect(useEventStore.getState().todayRead).toBeNull();
+    expect(useSnackbarStore.getState()).toMatchObject({ visible: false, payload: null });
+    expect(useAskStore.getState()).toMatchObject({ petId: null, messages: [] });
+    expect(useHistoryListStore.getState().snapshot).toBeNull();
+  });
+
+  it('a store that throws while clearing never keeps the others, or the teardown, from running', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await recordRecoveryRequest('jordan@example.com', t0);
+    useAskStore.setState({ petId: 'pet-a', messages: [{ id: 'm1', role: 'user', text: 'Is Mochi itchy?' } as never] });
+    const unsubscribe = useEventStore.subscribe(() => { throw new Error('listener threw'); });
+    try {
+      await expect(wipeLocalSession()).resolves.toBeUndefined();
+    } finally {
+      unsubscribe();
+    }
+    expect(useAskStore.getState().messages).toEqual([]);
+    expect(await readRecoveryRequest()).toBeNull();
+  });
+
+  it('a failure taking the sheets down never stops the teardown', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await recordRecoveryRequest('jordan@example.com', t0);
+    useUiStore.setState({ logSheet: { initialType: null } });
+    const unsubscribe = useUiStore.subscribe(() => { throw new Error('listener threw'); });
+    try {
+      await expect(wipeLocalSession()).resolves.toBeUndefined();
+    } finally {
+      unsubscribe();
+    }
+    // A step that runs after the sheets still ran.
+    expect(await readRecoveryRequest()).toBeNull();
   });
 
   it('clears the recovery marker — it is the previous owner’s email (B-280 FR-12)', async () => {

@@ -14,7 +14,15 @@ jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 // momentStore reaches the sync layer, which fails fast without the client env.
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../../lib/storage', () => ({ getPublicUrl: () => null }));
-jest.mock('../../lib/haptics', () => ({ openMenu: jest.fn() }));
+// The commit verbs too: a one-tap food that lands reveals its meal card, and the
+// moment store plays the card's haptic at that reveal.
+jest.mock('../../lib/haptics', () => ({
+  openMenu: jest.fn(),
+  commitRoutine: jest.fn(),
+  commitSymptom: jest.fn(),
+  selectChip: jest.fn(),
+  destructiveConfirm: jest.fn(),
+}));
 jest.mock('../../lib/db', () => ({ getRecentFoods: jest.fn(async () => []) }));
 jest.mock('../../lib/meals', () => ({ insertMeal: jest.fn() }));
 jest.mock('../../lib/trialContaminant', () => ({
@@ -33,12 +41,13 @@ jest.mock('../pet/PetSwitcherSheet', () => ({
   },
 }));
 
-import { Animated, Text } from 'react-native';
+import { Alert, Animated, Text } from 'react-native';
 import { act, render, fireEvent } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { FAB, HiddenUnderFabMenu } from './FAB';
 import { usePetStore } from '../../store/petStore';
 import { useUiStore } from '../../store/uiStore';
+import { useMomentStore } from '../../store/momentStore';
 import { useReducedMotionStore } from '../../store/reducedMotionStore';
 
 function seedPets(count: number) {
@@ -616,6 +625,94 @@ describe('FAB — motion, and the Reduce Motion frame (beat 8)', () => {
       expect(discGlyphRotations(view)).toEqual(['45deg']);
     } finally {
       stagger.mockRestore();
+    }
+  });
+});
+
+// ── A second tap while the menu is closing (QA, 1.2.0) ───────────────────────────
+//
+// A pill tap closes the menu, and the close keeps every pill mounted, under the finger,
+// while it animates. A quick second tap in that window used to act again: a second sheet
+// open while the first was still sliding in, a second /log push, the switcher presenting
+// over the sheet, a second one-tap meal. The store now refuses a second sheet open by
+// itself (LogSheetHost.test.tsx), so here its open is swapped for a counter: that refusal
+// must not be what turns this suite green. Fake timers hold the close mid-animation,
+// which is the window under test.
+const { insertMeal } = require('../../lib/meals') as { insertMeal: jest.Mock };
+
+describe('FAB — a pill does nothing while the menu is closing', () => {
+  const realOpenLogSheet = useUiStore.getState().openLogSheet;
+  beforeEach(() => {
+    insertMeal.mockReset();
+    jest.useFakeTimers();
+  });
+  afterEach(async () => {
+    act(() => { useMomentStore.getState().hide(); });
+    await settleAnimations();
+    jest.useRealTimers();
+    useUiStore.setState({ openLogSheet: realOpenLogSheet });
+  });
+
+  it('after one pill, a second tap on any pill asks for nothing', async () => {
+    const openLogSheet = jest.fn();
+    useUiStore.setState({ openLogSheet });
+    const view = await openMenu();
+    fireEvent.press(view.getByText('More events'));
+    expect(openLogSheet).toHaveBeenCalledTimes(1);
+
+    for (const row of ACTION_ROWS) fireEvent.press(view.getByText(row));
+    fireEvent.press(view.getByLabelText('Logging for Nyx — switch pet'));
+
+    expect(openLogSheet).toHaveBeenCalledTimes(1);
+    expect(router.push).not.toHaveBeenCalled();
+    expect(view.queryByText('switcher-open')).toBeNull();
+  });
+
+  it('a one-tap food tapped again during the close writes one meal', async () => {
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet', food_type: 'meal' },
+    ]);
+    insertMeal.mockResolvedValue({
+      eventId: 'm1', occurredAtIso: '2026-10-02T12:00:00.000Z', now: '2026-10-02T12:00:00.000Z',
+    });
+    const view = await openMenu();
+    await act(async () => { fireEvent.press(view.getByText(/Hills/)); });
+    // The meal landed and the menu is on its way out, with the row's spinner released.
+    expect(insertMeal).toHaveBeenCalledTimes(1);
+
+    await act(async () => { fireEvent.press(view.getByText(/Hills/)); });
+    expect(insertMeal).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── A one-tap food whose write fails (QA, 1.2.0) ─────────────────────────────────
+//
+// The quick-meal path was a `try … finally` with no `catch`, and the pill calls it
+// without awaiting: a failed write wrote nothing, said nothing, and surfaced only as an
+// unhandled rejection. A failed write is always said (CUL-575), in the words the
+// sheet's confirm and /log already use.
+describe('FAB — a one-tap food whose write fails', () => {
+  it('says so in the shared words, confirms nothing, and leaves the row to retry', async () => {
+    insertMeal.mockReset();
+    insertMeal.mockRejectedValueOnce(new Error('disk I/O error'));
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet', food_type: 'meal' },
+    ]);
+    useMomentStore.setState({ visible: false, payload: null, removed: false });
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const view = await openMenu();
+      await act(async () => { fireEvent.press(view.getByText(/Hills/)); });
+
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(alert).toHaveBeenCalledWith("Couldn't save that", 'Something went wrong. Please try again.');
+      // Nothing landed, so no card claims it did, and the menu is still up to retry.
+      expect(useMomentStore.getState().payload).toBeNull();
+      expect(view.getByText(/Hills/)).toBeTruthy();
+    } finally {
+      alert.mockRestore();
+      logged.mockRestore();
     }
   });
 });

@@ -1,0 +1,667 @@
+// What holding a row for its vet visit does to the rows BESIDE it (the code review of
+// d8992fa, release QA 2026-10-02).
+//
+// d8992fa holds a row that names a visit until the visit lands, because the server's
+// same-pet guard refuses it with a TERMINAL 23514 otherwise. This file drives the hold's
+// neighbours end to end: the production write paths (`logVetVisit`, `linkTrialToVisit`,
+// `endActiveTrial`, `startDietTrial`), which fire their own pushes exactly as they do on
+// the phone, and the production drains in lib/sync.ts, over the runtime schema in
+// node:sqlite, against an emulated server that refuses what the real one refuses:
+//
+//   • 040's one-active-trial index — a second active trial for a pet is 23505;
+//   • 066 / 067's visit guard — a row naming a visit the server lacks is 23514;
+//   • 041's allowed-food guard — a food naming a trial the server lacks is 23514. A
+//     BEFORE trigger, so it fires ahead of the foreign key: the refusal is 23514, never
+//     the non-terminal 23503;
+//   • a dose's parents: 020's foreign keys to its event and its course (23503, which is
+//     NOT terminal) and 023's paired-event guard (23514).
+//
+// The local half is the real lib/db.ts too: expo-sqlite is mapped onto node:sqlite, so
+// a write path's own db.ts helper (updateDoseAdherence) runs as it does on the phone.
+//
+// All three are TERMINAL on this client, so a hold that fails here is a row quarantined
+// on its first try ("couldn't be saved", with no door to fix it), not one that waits a
+// cycle. The last describe is the other half: once the visit lands, what waited on it
+// is sent at once, each queue once, through its serialized entry point. The food cache
+// is left empty, so the food pre-sync never makes a request.
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { DatabaseSync } = require('node:sqlite');
+
+type Row = Record<string, unknown>;
+type ServerError = { code?: string; message: string };
+type ServerAnswer = { data: { id: string }[] | null; error: ServerError | null };
+
+// `mock`-prefixed so the factories below may read them; they are read at call time.
+const mockLocal = {
+  db: null as InstanceType<typeof DatabaseSync> | null,
+  /** Every local read, in order. A drain is seen to run by its queue read. */
+  reads: [] as string[],
+  /** A read matching this throws, as a failing disk would: a drain that fails. */
+  failReads: null as RegExp | null,
+};
+
+const mockServer = {
+  rows: new Map<string, Map<string, Row>>(),
+  /** Every write request the server received, in order, with the ids it carried. */
+  writes: [] as { table: string; ids: string[] }[],
+  /** A table named here answers every write with this: a dropped connection, a write a
+   *  policy filtered, a refusal. */
+  answers: new Map<string, ServerAnswer>(),
+  /** A row named here (by id) is refused with this, whatever it says. */
+  refuse: new Map<string, ServerError>(),
+  /** A write to a table named here waits until the test opens it: a slow request. */
+  slow: new Map<string, { gate: Promise<void>; open: () => void }>(),
+};
+
+function mockServerTable(table: string): Map<string, Row> {
+  if (!mockServer.rows.has(table)) mockServer.rows.set(table, new Map());
+  return mockServer.rows.get(table)!;
+}
+
+/** The server's refusal of one row, by the triggers it runs before the write. */
+function mockServerRefusal(table: string, row: Row): ServerError | null {
+  const refused = mockServer.refuse.get(String(row.id));
+  if (refused) return refused;
+  if (row.vet_visit_id != null) {
+    const visit = mockServerTable('vet_visits').get(String(row.vet_visit_id));
+    if (!visit || visit.pet_id !== row.pet_id) {
+      return {
+        code: '23514',
+        message: `vet_visit_id ${row.vet_visit_id} must reference a vet visit for the same pet (${row.pet_id})`,
+      };
+    }
+  }
+  if (table === 'medication_administrations') {
+    const fk = (column: string, parent: string) => ({
+      code: '23503',
+      message: `insert or update on table "medication_administrations" violates foreign key constraint on ${column} (${parent})`,
+    });
+    if (!mockServerTable('events').has(String(row.event_id))) return fk('event_id', 'events');
+    if (row.medication_id != null && !mockServerTable('medications').has(String(row.medication_id))) {
+      return fk('medication_id', 'medications');
+    }
+    const paired = row.paired_event_id == null ? null : mockServerTable('events').get(String(row.paired_event_id));
+    if (row.paired_event_id != null && (!paired || paired.pet_id !== row.pet_id)) {
+      return {
+        code: '23514',
+        message: `paired_event_id ${row.paired_event_id} must reference an event for the same pet (${row.pet_id})`,
+      };
+    }
+  }
+  if (table === 'diet_trial_foods') {
+    const trial = mockServerTable('diet_trials').get(String(row.diet_trial_id));
+    if (!trial || trial.pet_id !== row.pet_id) {
+      return {
+        code: '23514',
+        message: `diet_trial_id ${row.diet_trial_id} must reference a diet trial for the same pet (${row.pet_id})`,
+      };
+    }
+  }
+  return null;
+}
+
+/** One upsert statement: every row lands, or none does. */
+function mockServerWrite(table: string, payload: Row[]): ServerAnswer {
+  mockServer.writes.push({ table, ids: payload.map((r) => String(r.id)) });
+  const forced = mockServer.answers.get(table);
+  if (forced) return forced;
+  const staged = new Map([...mockServerTable(table)].map(([id, r]) => [id, { ...r }]));
+  for (const row of payload) {
+    const refused = mockServerRefusal(table, row);
+    if (refused) return { data: null, error: refused };
+    staged.set(String(row.id), { ...(staged.get(String(row.id)) ?? {}), ...row });
+    // A unique index is checked row by row, so the order inside a statement counts too.
+    if (table === 'diet_trials'
+      && [...staged.values()].filter((t) => t.pet_id === row.pet_id && t.status === 'active').length > 1) {
+      return {
+        data: null,
+        error: { code: '23505', message: 'duplicate key value violates unique constraint "idx_diet_trials_active"' },
+      };
+    }
+  }
+  mockServer.rows.set(table, staged);
+  return { data: payload.map((r) => ({ id: String(r.id) })), error: null };
+}
+
+function mockServerFrom(table: string) {
+  return {
+    upsert: (payload: Row | Row[]) => ({
+      select: async () => {
+        await mockServer.slow.get(table)?.gate;
+        return mockServerWrite(table, Array.isArray(payload) ? payload : [payload]);
+      },
+    }),
+  };
+}
+
+/** The expo-sqlite surface the write paths and drains use, over node:sqlite. Returns
+ *  `{ changes }` as expo-sqlite does: a narrower mock hides the zero-row branches (C-39). */
+function mockAdapter() {
+  const db = () => {
+    if (!mockLocal.db) throw new Error('no local database');
+    return mockLocal.db;
+  };
+  return {
+    runAsync: async (sql: string, params: unknown[] = []) => {
+      const r = db().prepare(sql).run(...(params as never[]));
+      return { changes: Number(r.changes), lastInsertRowId: Number(r.lastInsertRowid) };
+    },
+    getAllAsync: async (sql: string, params: unknown[] = []) => {
+      mockLocal.reads.push(sql);
+      if (mockLocal.failReads?.test(sql)) throw new Error('disk I/O error');
+      return db().prepare(sql).all(...(params as never[]));
+    },
+    getFirstAsync: async (sql: string, params: unknown[] = []) =>
+      db().prepare(sql).get(...(params as never[])) ?? null,
+    execAsync: async (sql: string) => {
+      db().exec(sql);
+    },
+    withTransactionAsync: async (cb: () => Promise<void>) => {
+      db().exec('BEGIN');
+      try {
+        await cb();
+        db().exec('COMMIT');
+      } catch (e) {
+        db().exec('ROLLBACK');
+        throw e;
+      }
+    },
+  };
+}
+
+// The real lib/db.ts, over this file's database: its getDb() opens expo-sqlite once and
+// keeps the handle, and the handle reads mockLocal.db at call time, so each test's fresh
+// database is the one every module writes to.
+jest.mock('expo-sqlite', () => ({ openDatabaseSync: () => mockAdapter() }));
+jest.mock('./supabase', () => ({
+  supabase: {
+    auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+    from: (table: string) => mockServerFrom(table),
+  },
+}));
+jest.mock('./storage', () => ({ uploadPhoto: jest.fn(), compressForUpload: jest.fn() }));
+jest.mock('./dailyRecapOffer', () => ({
+  surfaceOfferForValueMoment: jest.fn().mockResolvedValue(undefined),
+}));
+
+import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
+import { MEDICATION_SCHEMA_SQL } from './medications';
+import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
+import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
+import { type RegimenWritePayload } from './medications';
+import {
+  syncPendingDietTrialFoods,
+  syncPendingDietTrials,
+  syncPendingMedications,
+  syncPendingVetAppointments,
+  syncPendingVetDocuments,
+  syncPendingVetVisits,
+} from './sync';
+import {
+  addTrialFood,
+  changeTrialWindow,
+  endActiveTrial,
+  startDietTrial,
+  type StartTrialInput,
+} from './dietTrialSetup';
+import { startRegimen } from './medicationSetup';
+import { insertMedicationDose, rateDoseAdherence } from './medicationDose';
+import { bookVetAppointment, linkCourseToVisit, linkTrialToVisit, logVetVisit } from './vetVisits';
+
+const PET = 'pet-1';
+const TODAY = '2026-10-01';
+
+const COURSE: RegimenWritePayload = {
+  medication_item_id: null, drug_name: 'Cerenia', dose_amount: '16 mg', route: 'oral',
+  doses_per_day: 1, schedule_notes: null, indication: 'vomiting', prescribed_by: null,
+  started_at: '2026-09-28', target_duration_days: 5, target_duration_doses: null,
+};
+
+function trialInput(foodId: string, startedAt: string): StartTrialInput {
+  return {
+    petId: PET,
+    primaryFoods: [{ id: foodId, brand: `Brand ${foodId}`, product_name: 'Dry', food_type: 'dry' }],
+    permittedFoods: [],
+    indication: 'skin',
+    targetDurationDays: 56,
+    startedAt,
+    vetName: null,
+    targetProtein: null,
+  };
+}
+
+/** Let every push the write paths fired run to its end. The drains only await the
+ *  adapters above, which resolve on the microtask queue, so a macrotask turn drains them. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+}
+
+/** A dropped connection: no SQLSTATE, so it costs the row nothing. */
+const DROPPED: ServerAnswer = { data: null, error: { message: 'TypeError: Network request failed' } };
+
+/** Make every write to `table` wait until the returned function is called. */
+function slowWrites(table: string): () => void {
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  mockServer.slow.set(table, { gate, open });
+  return open;
+}
+
+/** How many times each queue was read for a push: one read per drain run. */
+function drainRuns(): Record<string, number> {
+  const runs: Record<string, number> = {};
+  for (const sql of mockLocal.reads) {
+    const m = /^\s*SELECT \* FROM (\w+) WHERE synced = 0/.exec(sql);
+    if (m) runs[m[1]] = (runs[m[1]] ?? 0) + 1;
+  }
+  return runs;
+}
+
+const writesTo = (table: string) => mockServer.writes.filter((w) => w.table === table).map((w) => w.ids);
+const serverRow = (table: string, id: string) => mockServerTable(table).get(id);
+const localRow = (table: string, id: string) =>
+  mockLocal.db!.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) as Row;
+const foodsOf = (trialId: string) =>
+  (mockLocal.db!.prepare('SELECT id FROM diet_trial_foods WHERE diet_trial_id = ?').all(trialId) as { id: string }[])
+    .map((r) => r.id);
+
+beforeEach(async () => {
+  mockLocal.db = new DatabaseSync(':memory:');
+  for (const sql of [BASE_SCHEMA_SQL, MEDICATION_SCHEMA_SQL, DIET_TRIAL_SCHEMA_SQL, NOTIFICATION_SCHEMA_SQL]) {
+    mockLocal.db.exec(sql);
+  }
+  await applyColumnUpgrades(async (sql) => mockLocal.db!.exec(sql));
+  mockLocal.reads.length = 0;
+  mockLocal.failReads = null;
+  mockServer.rows.clear();
+  mockServer.writes.length = 0;
+  mockServer.answers.clear();
+  mockServer.refuse.clear();
+  mockServer.slow.clear();
+  jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+});
+
+afterEach(async () => {
+  for (const { open } of mockServer.slow.values()) open();
+  await settle();
+  jest.restoreAllMocks();
+  mockLocal.db?.close();
+  mockLocal.db = null;
+});
+
+// Code review item 1. Trial A is linked to a visit that has not landed and then ended
+// (the after-visit screen's *Ended*: `linkTrialToVisit`, then `endActiveTrial`), and trial
+// B is started with no link. The drain pushes an ending before a start so the server
+// never sees two active trials, but it can only order what its queue read returns.
+describe('a trial started beside an ending that waits on its visit', () => {
+  let trialA: string;
+  let trialB: string;
+  let visit: string;
+
+  beforeEach(async () => {
+    // Trial A, started weeks ago, has long since landed.
+    trialA = await startDietTrial(trialInput('food-a', '2026-08-06'));
+    await settle();
+    expect(serverRow('diet_trials', trialA)).toMatchObject({ status: 'active' });
+    expect(localRow('diet_trials', trialA)).toMatchObject({ synced: 1 });
+    mockServer.writes.length = 0;
+
+    // The after-visit screen: the visit is minted and its push goes out, and the network
+    // drops it. A dropped connection costs the visit nothing; it is simply still unsent.
+    mockServer.answers.set('vet_visits', DROPPED);
+    visit = await logVetVisit({ petId: PET, visitedAt: TODAY });
+    await syncPendingVetVisits();
+    // *Ended*: the link first, then the ending, whose own push fires at once.
+    await linkTrialToVisit(trialA, visit);
+    await endActiveTrial({ trialId: trialA, reason: 'vet_advised', endedOn: TODAY });
+    await settle();
+    // Trial B, before the visit has landed. Its push fires at once too.
+    trialB = await startDietTrial(trialInput('food-b', TODAY));
+    await settle();
+    expect(localRow('vet_visits', visit)).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0 });
+  });
+
+  it('sends neither trial while the visit is unsent: the trials table sees no request at all', () => {
+    expect(writesTo('diet_trials')).toEqual([]);
+    // Both still queued and clean: waiting, not refused.
+    expect(localRow('diet_trials', trialA)).toMatchObject({ status: 'abandoned', synced: 0, sync_error: null });
+    expect(localRow('diet_trials', trialB)).toMatchObject({ status: 'active', synced: 0, sync_error: null });
+  });
+
+  it('sends both once the visit lands, the ending first, and quarantines neither', async () => {
+    mockServer.answers.delete('vet_visits');
+    await syncPendingVetVisits();
+    await syncPendingDietTrials();
+    await settle();
+
+    expect(serverRow('vet_visits', visit)).toBeDefined();
+    expect(writesTo('diet_trials')).toEqual([[trialA], [trialB]]);
+    expect(serverRow('diet_trials', trialA)).toMatchObject({ status: 'abandoned', vet_visit_id: visit });
+    expect(serverRow('diet_trials', trialB)).toMatchObject({ status: 'active' });
+    expect(localRow('diet_trials', trialA)).toMatchObject({ synced: 1, sync_error: null });
+    expect(localRow('diet_trials', trialB)).toMatchObject({ synced: 1, sync_error: null });
+    expect(foodsOf(trialB)).toHaveLength(1);
+  });
+
+  // Code review item 3. `startDietTrial` pushes the trial, then its allowed set. B is
+  // held, so its food would otherwise go out alone and meet 041's trigger.
+  it("holds B's allowed food while B waits, and sends it once B has landed", async () => {
+    const [food] = foodsOf(trialB);
+    expect(food).toBeDefined();
+    expect(writesTo('diet_trial_foods')).toEqual([]);
+    expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0 });
+
+    mockServer.answers.delete('vet_visits');
+    await syncPendingVetVisits();
+    await syncPendingDietTrials();
+    await syncPendingDietTrialFoods();
+    await settle();
+
+    expect(writesTo('diet_trial_foods')).toEqual([[food]]);
+    expect(serverRow('diet_trial_foods', food)).toMatchObject({ diet_trial_id: trialB });
+    expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 1, sync_error: null });
+  });
+
+  // Code review item 2. The trials' own pushes were held and do not come back by
+  // themselves; nothing here but the visit's push is called.
+  it("needs no other push: the visit landing sends A, then B, then B's food", async () => {
+    const [food] = foodsOf(trialB);
+    mockServer.answers.delete('vet_visits');
+    await syncPendingVetVisits();
+    await settle();
+
+    expect(writesTo('diet_trials')).toEqual([[trialA], [trialB]]);
+    expect(writesTo('diet_trial_foods')).toEqual([[food]]);
+    expect(localRow('diet_trials', trialA)).toMatchObject({ synced: 1, sync_error: null });
+    expect(localRow('diet_trials', trialB)).toMatchObject({ synced: 1, sync_error: null });
+    expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 1, sync_error: null });
+  });
+});
+
+// Code review item 2: when a visit lands, the queues that wait on visits are sent at
+// once, each through its public entry point. A drain run is seen by its queue read.
+describe('a visit landing sends what waited on it', () => {
+  /** The visits drain's own two reads: its rows, then its photos. */
+  const VISITS_DRAIN = { vet_visits: 1, vet_visit_attachments: 1 };
+
+  it('runs each queue that waits on a visit exactly once, and the visits queue only once', async () => {
+    await logVetVisit({ petId: PET, visitedAt: TODAY });
+    await syncPendingVetVisits();
+    await settle();
+
+    expect(drainRuns()).toEqual({
+      ...VISITS_DRAIN,
+      vet_appointments: 1,
+      vet_documents: 1,
+      medications: 1,
+      medication_administrations: 1,
+      diet_trials: 1,
+      diet_trial_foods: 1,
+    });
+  });
+
+  it.each([
+    ['the connection drops', DROPPED],
+    ['a policy filters the write (no row comes back)', { data: [], error: null }],
+    ['the server refuses the visit', { data: null, error: { code: '23514', message: 'refused' } }],
+  ] as [string, ServerAnswer][])('runs none of them when nothing lands: %s', async (_case, answer) => {
+    mockServer.answers.set('vet_visits', answer);
+    await logVetVisit({ petId: PET, visitedAt: TODAY });
+    await syncPendingVetVisits();
+    await settle();
+
+    expect(writesTo('vet_visits').length).toBeGreaterThan(0); // the visit did go out
+    expect(drainRuns()).toEqual(VISITS_DRAIN);
+  });
+
+  it('runs none of them when there is no visit to send', async () => {
+    await syncPendingVetVisits();
+    await settle();
+    expect(drainRuns()).toEqual(VISITS_DRAIN);
+  });
+
+  /**
+   * One run of each queue the visit kicks, put on the wire: the queue's own write path
+   * and push (a document is a hydrated one, no local file, that the owner renamed here),
+   * with that queue's writes slowed so the run is still waiting on the server. The doses
+   * and foods cases land their parent first, so only the child's run is slow.
+   */
+  const ON_THE_WIRE: [string, () => Promise<void>][] = [
+    ['vet_appointments', async () => {
+      await bookVetAppointment({ petId: PET, scheduledAt: '2026-10-08T09:30:00.000Z' });
+      void syncPendingVetAppointments();
+    }],
+    ['vet_documents', async () => {
+      mockLocal.db!.prepare(
+        `INSERT INTO vet_documents (id, pet_id, document_group_id, source, storage_path, mime_type,
+           title, local_uri, synced)
+         VALUES ('doc-1', ?, 'group-1', 'camera', 'pet-1/group-1/0.pdf', 'application/pdf', 'Bloods', '', 0)`,
+      ).run(PET);
+      void syncPendingVetDocuments();
+    }],
+    ['medications', async () => {
+      await startRegimen({ petId: PET, payload: COURSE });
+    }],
+    ['medication_administrations', async () => {
+      // The course lands (only the doses table is slow); the dose's own push is the slow one.
+      const { id: course } = await startRegimen({ petId: PET, payload: COURSE });
+      await settle();
+      await insertMedicationDose({
+        petId: PET, medicationItemId: null, medicationId: course, adherence: 'given',
+        occurredAt: new Date('2026-10-01T08:00:00.000Z'),
+      });
+    }],
+    ['diet_trials', async () => {
+      await startDietTrial(trialInput('food-c', TODAY));
+    }],
+    ['diet_trial_foods', async () => {
+      // The trial lands; its first allowed food's push is the slow one.
+      await startDietTrial(trialInput('food-c', TODAY));
+    }],
+  ];
+
+  it.each(ON_THE_WIRE)(
+    'follows a %s run already on the wire rather than starting a second beside it (C-24)',
+    async (queue, putOnTheWire) => {
+      const open = slowWrites(queue);
+      await putOnTheWire();
+      await settle();
+      const onTheWire = drainRuns()[queue];
+      expect(onTheWire).toBeGreaterThanOrEqual(1);
+      expect(writesTo(queue)).toEqual([]); // still waiting on the server
+
+      await logVetVisit({ petId: PET, visitedAt: TODAY });
+      await syncPendingVetVisits();
+      await settle();
+      // The visit's run of this queue waits behind the one on the wire; a second read
+      // beside it would be two drains of one queue at once.
+      expect(drainRuns()[queue]).toBe(onTheWire);
+
+      open();
+      await settle();
+      expect(writesTo(queue).length).toBeGreaterThan(0);
+      expect(drainRuns()[queue]).toBe(onTheWire + 1);
+    },
+  );
+
+  it.each([
+    ['medication_administrations', 'medications'],
+    ['diet_trial_foods', 'diet_trials'],
+  ])('logs a %s failure under its own name, never as %s', async (child, parent) => {
+    mockLocal.failReads = new RegExp(`^\\s*SELECT \\* FROM ${child} WHERE`);
+    await logVetVisit({ petId: PET, visitedAt: TODAY });
+    await syncPendingVetVisits();
+    await settle();
+
+    const warned = (console.warn as unknown as jest.Mock).mock.calls.map((c) => String(c[0]));
+    expect(warned).toContain(`[sync] ${child} push after a visit landed failed (queued):`);
+    expect(warned).not.toContain(`[sync] ${parent} push after a visit landed failed (queued):`);
+  });
+});
+
+// The decision on 074fd18 (the code review's case b): a dose is never held for its
+// course. A course reads unsent whenever it carries an edit not yet pushed, and here it
+// cannot be pushed at all, so a dose held behind it would never be corrected.
+describe('a dose correction under a course with an unsent edit', () => {
+  it('is sent on the next doses drain, so the server learns the dose was refused', async () => {
+    // A course, and a dose of it logged Given, both long since on the server.
+    const { id: course } = await startRegimen({ petId: PET, payload: COURSE });
+    await settle();
+    const dose = await insertMedicationDose({
+      petId: PET, medicationItemId: null, medicationId: course, adherence: 'given',
+      occurredAt: new Date('2026-10-01T08:00:00.000Z'),
+    });
+    await settle();
+    expect(serverRow('medication_administrations', dose.administrationId)).toMatchObject({ adherence: 'given' });
+
+    // At the vet, *Keep* links the course to a visit that cannot land, so the course now
+    // carries an edit it cannot send.
+    mockServer.answers.set('vet_visits', DROPPED);
+    const visit = await logVetVisit({ petId: PET, visitedAt: TODAY });
+    await syncPendingVetVisits();
+    expect(await linkCourseToVisit(course, visit)).toBe(true);
+    await syncPendingMedications();
+    await settle();
+    expect(localRow('medications', course)).toMatchObject({ synced: 0, sync_error: null });
+
+    // The owner corrects the dose: it was refused, not given. Its own push goes at once.
+    mockServer.writes.length = 0;
+    await rateDoseAdherence(dose.eventId, 'refused');
+    await settle();
+
+    expect(writesTo('medication_administrations')).toEqual([[dose.administrationId]]);
+    expect(serverRow('medication_administrations', dose.administrationId)).toMatchObject({ adherence: 'refused' });
+    expect(localRow('medication_administrations', dose.administrationId))
+      .toMatchObject({ adherence: 'refused', synced: 1, sync_error: null });
+    // The course still waits on its visit; the dose did not need it to land.
+    expect(localRow('medications', course)).toMatchObject({ synced: 0, sync_error: null });
+  });
+});
+
+// The code review of 074fd18, case c: a food held behind its trial is sent when the
+// TRIAL's push lands, with no visit anywhere. A trial the server already holds reads
+// unsent while an edit to it is in flight, a food added in that window is held (041
+// would refuse it terminally otherwise), and the food's own push has come and gone.
+describe("a food held behind its own trial's unsent edit", () => {
+  /** The edits below are made as of this instant, so the window math never depends on
+   *  the day the suite runs (C-29). */
+  const EDIT_AT = new Date('2026-10-01T12:00:00.000Z');
+  const FOOD_B = { id: 'food-b', brand: 'Brand food-b', product_name: 'Wet', food_type: 'wet' };
+
+  /** Trial A on the server; then, with the trials push dropped, its window moved and a
+   *  food added to it. Returns the food's row id. */
+  async function heldFood(trialId: string): Promise<string> {
+    mockServer.answers.set('diet_trials', DROPPED);
+    await changeTrialWindow({ trialId, targetDurationDays: 84, now: EDIT_AT });
+    await settle();
+    const food = await addTrialFood({ trialId, petId: PET, food: FOOD_B, allowedFrom: TODAY, now: EDIT_AT });
+    await settle();
+    expect(localRow('diet_trials', trialId)).toMatchObject({ synced: 0, sync_error: null });
+    expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 0, sync_error: null });
+    return food;
+  }
+
+  it("is sent in the same pass that lands the trial's edit, with no visit anywhere", async () => {
+    const trial = await startDietTrial(trialInput('food-a', '2026-08-06'));
+    await settle();
+    const food = await heldFood(trial);
+    expect(writesTo('diet_trial_foods').flat()).not.toContain(food);
+
+    // Back online: the next trials push (a foreground, say) lands the edit. Nothing here
+    // runs the foods queue.
+    mockServer.answers.delete('diet_trials');
+    mockServer.writes.length = 0;
+    await syncPendingDietTrials();
+    await settle();
+
+    expect(writesTo('diet_trials')).toEqual([[trial]]);
+    expect(serverRow('diet_trials', trial)).toMatchObject({ target_duration_days: 84 });
+    expect(writesTo('diet_trial_foods')).toEqual([[food]]);
+    expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 1, sync_error: null });
+  });
+
+  it('is sent when that pass stops early too: its trial ended and landed, a sibling did not', async () => {
+    const trial = await startDietTrial(trialInput('food-a', '2026-08-06'));
+    const otherPets = await startDietTrial({ ...trialInput('food-o', '2026-08-06'), petId: 'pet-2' });
+    await settle();
+    const food = await heldFood(trial);
+    // Still offline: both trials are ended, so the next push is an ending pass of two.
+    await endActiveTrial({ trialId: trial, reason: 'vet_advised', endedOn: TODAY });
+    await endActiveTrial({ trialId: otherPets, reason: 'vet_advised', endedOn: TODAY });
+    await settle();
+
+    // Back online, and the server refuses the other pet's ending: the pass stops there,
+    // holding any start, with this trial landed.
+    mockServer.answers.delete('diet_trials');
+    mockServer.refuse.set(otherPets, { code: '23514', message: 'refused' });
+    mockServer.writes.length = 0;
+    await syncPendingDietTrials();
+    await settle();
+
+    expect(localRow('diet_trials', otherPets)).toMatchObject({ synced: 0 });
+    expect(String(localRow('diet_trials', otherPets).sync_error)).toContain('23514');
+    expect(localRow('diet_trials', trial)).toMatchObject({ status: 'abandoned', synced: 1, sync_error: null });
+    expect(writesTo('diet_trial_foods')).toEqual([[food]]);
+    expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 1, sync_error: null });
+  });
+
+  it('runs the foods queue once per trials push, however many trials land', async () => {
+    // An ending and a start in one push, so both passes land.
+    const ending = await startDietTrial(trialInput('food-a', '2026-08-06'));
+    await settle();
+    mockServer.answers.set('diet_trials', DROPPED);
+    await endActiveTrial({ trialId: ending, reason: 'vet_advised', endedOn: TODAY });
+    const starting = await startDietTrial(trialInput('food-b', TODAY));
+    await settle();
+
+    mockServer.answers.delete('diet_trials');
+    mockServer.writes.length = 0;
+    mockLocal.reads.length = 0;
+    await syncPendingDietTrials();
+    await settle();
+
+    expect(writesTo('diet_trials')).toEqual([[ending], [starting]]);
+    expect(drainRuns()).toEqual({ diet_trials: 1, diet_trial_foods: 1 });
+    expect(writesTo('diet_trial_foods')).toEqual([foodsOf(starting)]);
+  });
+
+  it('follows a foods run already in flight rather than starting a second beside it (C-24)', async () => {
+    const trial = await startDietTrial(trialInput('food-a', '2026-08-06'));
+    const otherPets = await startDietTrial({ ...trialInput('food-o', '2026-08-06'), petId: 'pet-2' });
+    await settle();
+    const held = await heldFood(trial);
+    // A food for the other pet's trial, which is on the server: its push goes out, slowly.
+    const openFoods = slowWrites('diet_trial_foods');
+    await addTrialFood({ trialId: otherPets, petId: 'pet-2', food: FOOD_B, allowedFrom: TODAY, now: EDIT_AT });
+    await settle();
+    const onTheWire = drainRuns().diet_trial_foods;
+
+    mockServer.answers.delete('diet_trials');
+    await syncPendingDietTrials();
+    await settle();
+    // The trial landed and the foods queue was kicked; that run waits behind the one on
+    // the wire, where a second read beside it would be two drains of one queue at once.
+    expect(localRow('diet_trials', trial)).toMatchObject({ synced: 1 });
+    expect(drainRuns().diet_trial_foods).toBe(onTheWire);
+
+    openFoods();
+    await settle();
+    expect(drainRuns().diet_trial_foods).toBe(onTheWire + 1);
+    expect(localRow('diet_trial_foods', held)).toMatchObject({ synced: 1, sync_error: null });
+  });
+
+  it('runs no foods queue when no trial lands', async () => {
+    const trial = await startDietTrial(trialInput('food-a', '2026-08-06'));
+    await settle();
+    await heldFood(trial);
+
+    mockLocal.reads.length = 0;
+    await syncPendingDietTrials(); // the push is still dropped
+    await settle();
+
+    expect(drainRuns()).toEqual({ diet_trials: 1 });
+  });
+});
