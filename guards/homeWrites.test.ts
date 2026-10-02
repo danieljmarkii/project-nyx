@@ -151,7 +151,9 @@ const NOT_RECORD_WRITES: Record<string, string> = {
   setWatermark: 'sync bookkeeping: the last-pulled marker per table',
   refreshFoodCache: 'the food catalog cache, re-read from the server',
   refreshMedicationCache: 'the medication catalog cache, re-read from the server',
-  reapStalePendingFoods: 'the catalog cache\u2019s own cleanup of abandoned extractions',
+  reapStalePendingFoods:
+    'deletes abandoned PENDING food placeholders (server and cache) that no record row ' +
+    'points at; called only from the sync layer',
   flushLegacyCatalogCachesIfNeeded: 'a one-time local cache migration',
   initDb: 'creates and migrates the local database',
   clearLocalData: 'the sign-out wipe of the local database',
@@ -174,8 +176,14 @@ const NOT_RECORD_WRITES: Record<string, string> = {
  *
  * Raw SQL inside a CARD, a hook or a store is a different animal: there is no reason
  * for one to hand-write a mutation except to get around the helpers this guard names.
+ *
+ * CUL-1154 review: SQLite's conflict clauses (`INSERT OR IGNORE INTO`, `INSERT OR REPLACE
+ * INTO`, `REPLACE INTO`, `UPDATE OR …`) and a table named by interpolation
+ * (`UPDATE ${table} SET`) are mutations too, and `lib/captureInbox.ts` and the event
+ * screens write in exactly those shapes. The first regex saw none of them.
  */
-const RAW_MUTATION = /\b(INSERT\s+INTO|UPDATE\s+[A-Za-z_][\w.]*\s+SET|DELETE\s+FROM)\b/i;
+const RAW_MUTATION =
+  /\b(INSERT\s+(?:OR\s+\w+\s+)?INTO|REPLACE\s+INTO|UPDATE\s+(?:OR\s+\w+\s+)?[\w.${}]+\s+SET|DELETE\s+FROM)\b/i;
 
 /**
  * The two write classes Home carries, keyed by the file that owns each.
@@ -505,7 +513,9 @@ interface DerivedWriters {
  * counts, but a call resolves to a private function only inside its own module. The
  * closure runs to a fixed point.
  *
- * BLIND SPOTS, stated so they do not read as coverage (C-38): methods on an object or a
+ * BLIND SPOTS, stated so they do not read as coverage (C-38): SQL the RAW_MUTATION
+ * regex does not recognise (it reads the conflict-clause and interpolated-table shapes,
+ * but not, say, a verb assembled from strings), methods on an object or a
  * class, a function passed as a value and called through a parameter, SQL built by
  * concatenation across statements, and writers declared outside `lib/` (a store or a
  * hook that writes directly is caught where it sits, by the raw-SQL and PostgREST
@@ -531,10 +541,22 @@ export function deriveWriters(root: string): DerivedWriters {
     const sf = ts.createSourceFile(relFile, src, ts.ScriptTarget.Latest, true, kind);
     return { relFile, src, sf };
   });
-  const isExported = (n: ts.Node): boolean =>
+  const hasExportModifier = (n: ts.Node): boolean =>
     ts.canHaveModifiers(n) && (ts.getModifiers(n) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+  // A local function exported later by a bare `export { name }` list counts as exported.
+  const exportListOf = (sf: ts.SourceFile): Set<string> => {
+    const out = new Set<string>();
+    for (const stmt of sf.statements) {
+      if (ts.isExportDeclaration(stmt) && !stmt.moduleSpecifier && stmt.exportClause && ts.isNamedExports(stmt.exportClause)) {
+        for (const el of stmt.exportClause.elements) out.add((el.propertyName ?? el.name).text);
+      }
+    }
+    return out;
+  };
 
   for (const { relFile, src, sf } of parsed) {
+    const listed = exportListOf(sf);
+    const isExported = (n: ts.Node, name: string): boolean => hasExportModifier(n) || listed.has(name);
     const consts = new Set<string>();
     for (const stmt of sf.statements) {
       if (!ts.isVariableStatement(stmt)) continue;
@@ -543,13 +565,15 @@ export function deriveWriters(root: string): DerivedWriters {
         const text = blankComments(src.slice(decl.initializer.getStart(sf), decl.initializer.end));
         if (!RAW_MUTATION.test(text)) continue;
         consts.add(decl.name.text);
-        if (isExported(stmt)) exportedSql.add(decl.name.text);
+        if (isExported(stmt, decl.name.text)) exportedSql.add(decl.name.text);
       }
     }
     localSql.set(relFile, consts);
   }
 
   for (const { relFile, src, sf } of parsed) {
+    const listed = exportListOf(sf);
+    const isExported = (n: ts.Node, name: string): boolean => hasExportModifier(n) || listed.has(name);
     const mutationLines = new Set(postgrestMutations(relFile, src));
     const consts = localSql.get(relFile) ?? new Set<string>();
     const add = (name: string, exported: boolean, body: ts.Node) => {
@@ -565,12 +589,12 @@ export function deriveWriters(root: string): DerivedWriters {
     };
     for (const stmt of sf.statements) {
       if (ts.isFunctionDeclaration(stmt) && stmt.name && stmt.body) {
-        add(stmt.name.text, isExported(stmt), stmt.body);
+        add(stmt.name.text, isExported(stmt, stmt.name.text), stmt.body);
       } else if (ts.isVariableStatement(stmt)) {
         for (const decl of stmt.declarationList.declarations) {
           const init = decl.initializer;
           if (ts.isIdentifier(decl.name) && init && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))) {
-            add(decl.name.text, isExported(stmt), init.body);
+            add(decl.name.text, isExported(stmt, decl.name.text), init.body);
           }
         }
       }
@@ -578,7 +602,7 @@ export function deriveWriters(root: string): DerivedWriters {
   }
 
   // An excluded name is neither a writer nor a path to one.
-  const excluded = (fn: Fn) => fn.exported && fn.name in NOT_RECORD_WRITES;
+  const excluded = (fn: Fn) => fn.exported && Object.hasOwn(NOT_RECORD_WRITES, fn.name);
   const beforeExclusions = new Set<string>();
   for (let pass = 0; pass < 2; pass += 1) {
     // Pass 0 ignores the exclusions (for the staleness test), pass 1 applies them.
@@ -918,6 +942,11 @@ describe('the detector itself', () => {
     expect(find('await updateEvent(id, { notes });\n').map((f) => f.what)).toEqual(['updateEvent(']);
   });
 
+  it('FLAGS an INSERT OR REPLACE in a Home card', () => {
+    const findings = find('await getDb().runAsync(`INSERT OR REPLACE INTO events (id) VALUES (?)`, [id]);\n');
+    expect(findings.map((f) => f.what)).toEqual(['raw SQL mutation']);
+  });
+
   it('FLAGS raw SQL that mutates a table', () => {
     const findings = find('await getDb().runAsync(`INSERT INTO events (id) VALUES (?)`, [id]);\n');
     expect(findings.map((f) => f.what)).toEqual(['raw SQL mutation']);
@@ -1169,6 +1198,19 @@ describe('the derived write helpers (CUL-1154)', () => {
       });
       expect([...names]).toEqual([]);
       expect([...beforeExclusions].sort()).toEqual(['pull', 'setWatermark']);
+    });
+
+    it('takes the conflict-clause and interpolated-table shapes, and a bare export list', () => {
+      // The code-reviewer's probe: none of these derived before the regex was widened.
+      const { names } = derive({
+        'a.ts':
+          'export async function ignore() { await db.runAsync(`INSERT OR IGNORE INTO events (id) VALUES (?)`); }\n' +
+          'export async function replace() { await db.runAsync(`INSERT OR REPLACE INTO meals (id) VALUES (?)`); }\n' +
+          'export async function bare() { await db.runAsync(`REPLACE INTO looks (id) VALUES (?)`); }\n' +
+          'export async function anyTable(t) { await db.runAsync(`UPDATE ${t} SET synced = 0`); }\n' +
+          'async function late() { await db.runAsync(`DELETE FROM looks`); }\nexport { late };\n',
+      });
+      expect([...names].sort()).toEqual(['anyTable', 'bare', 'ignore', 'late', 'replace']);
     });
 
     it('says which file declares each writer, which is what lets a module call its own', () => {
