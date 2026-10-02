@@ -771,7 +771,10 @@ export default function AfterVisitScreen() {
                   endedTrial={endedTrial}
                   onTrialVerdict={handleTrialVerdict}
                   onStartTrial={openTrialSheet}
-                  onAddFood={() => router.push('/food-capture')}
+                  // `returnTo=back`: food-capture otherwise ends in `dismissAll()`, which pops
+                  // every root-stack screen above the tabs, this one included, and loses the
+                  // unsaved form (the trial-foods precedent, B-625).
+                  onAddFood={() => router.push('/food-capture?returnTo=back')}
                   nextVisitAt={nextVisitAt}
                   onPickNextVisit={handlePickNextVisit}
                   paperworkCount={paperwork.length}
@@ -830,12 +833,13 @@ export default function AfterVisitScreen() {
               onStarted={handleTrialStarted}
               onAddFood={() => {
                 // The pending re-open lives in a REF consumed once on focus, never in
-                // state (C-22 / CUL-170): food-capture ends in `router.dismissAll()`,
-                // so without this the owner lands back here with no sheet and every
-                // reason to think the trial saved.
+                // state (C-22 / CUL-170), so the owner lands back here WITH the sheet.
+                // `returnTo=back` is what brings them back here at all: food-capture
+                // otherwise ends in `router.dismissAll()`, which pops this root-stack
+                // screen along with it (the trial-foods precedent, B-625).
                 resumeTrialSheet.current = true;
                 setSheet(null);
-                router.push('/food-capture');
+                router.push('/food-capture?returnTo=back');
               }}
               onLogFirstMeal={() => {
                 setSheet(null);

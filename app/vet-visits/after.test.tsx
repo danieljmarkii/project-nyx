@@ -284,6 +284,16 @@ describe('AC 7 — exactly one Modal (the CUL-662 pin)', () => {
     await waitFor(() => expect(modals()).toHaveLength(1));
   });
 
+  it('Add the food returns HERE after the capture, never to a tab', async () => {
+    // food-capture's default exit is dismissAll(), which pops every root-stack screen
+    // above the tabs, this one and its unsaved answers included.
+    render(<AfterVisitScreen />);
+    await screen.findByText('A new food to try?');
+
+    fireEvent.press(screen.getByLabelText('Add the food — A new food to try?'));
+    expect(router.push).toHaveBeenCalledWith('/food-capture?returnTo=back');
+  });
+
   it('the visit exists BEFORE a sheet opens, so a new course can carry its link', async () => {
     // §5.1: a NEW course carries the visit link in its OWN insert, "never a follow-up
     // UPDATE a crash can lose". That is only possible if the visit id exists at the
@@ -779,7 +789,8 @@ describe('CUL-1092 — *Switched* stays lit only once a new trial has started', 
     // The sheet closes for food capture and reopens on the way back (C-22).
     await act(async () => { screen.UNSAFE_getByType(StartTrialModal).props.onAddFood(); });
 
-    expect(router.push).toHaveBeenCalledWith('/food-capture');
+    // Pops back HERE on save; a bare push ends in dismissAll() and loses this screen.
+    expect(router.push).toHaveBeenCalledWith('/food-capture?returnTo=back');
     expect(lit('Switched')).toBeTruthy();
   });
 });
