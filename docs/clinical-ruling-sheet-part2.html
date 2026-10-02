@@ -1,0 +1,401 @@
+<title>Clinical Ruling Sheet, Part 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,650&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one narrow reading column; a summary strip, then one ruling card per row, then the real-vet list. */
+:root {
+  --bg: #f6f7f5;
+  --surface: #ffffff;
+  --ink: #1d2422;
+  --muted: #5d6965;
+  --line: #dde3e0;
+  --accent: #1f6f66;
+  --accent-soft: #e2f0ed;
+  --loud: #9a3b1f;
+  --loud-soft: #f8e6de;
+  --quiet: #6a4fa0;
+  --quiet-soft: #ece6f6;
+  --neutral-soft: #eceeed;
+  --font-display: "Literata", Georgia, "Times New Roman", serif;
+  --font-body: "Public Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121615; --surface: #1a201e; --ink: #e5ebe8; --muted: #9aa7a2; --line: #2c3532;
+    --accent: #6cc3b6; --accent-soft: #1d3330; --loud: #f0a07f; --loud-soft: #3a2219;
+    --quiet: #b9a3e6; --quiet-soft: #2a2238; --neutral-soft: #242b29; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121615; --surface: #1a201e; --ink: #e5ebe8; --muted: #9aa7a2; --line: #2c3532;
+  --accent: #6cc3b6; --accent-soft: #1d3330; --loud: #f0a07f; --loud-soft: #3a2219;
+  --quiet: #b9a3e6; --quiet-soft: #2a2238; --neutral-soft: #242b29; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15.5px; line-height: 1.55; }
+.wrap { max-width: 44rem; margin: 0 auto; padding-inline: 16px; padding-block: 28px 64px; display: flex; flex-direction: column; gap: 28px; }
+h1, h2 { font-family: var(--font-display); font-weight: 650; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: 1.9rem; line-height: 1.15; }
+h2 { font-size: 1.3rem; }
+p { margin: 0; }
+.eyebrow { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.lede { color: var(--muted); max-width: 40rem; }
+header { display: flex; flex-direction: column; gap: 10px; }
+.rules { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+.rule { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
+.rule b { font-weight: 600; }
+.pill { display: inline-flex; align-items: center; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.p-loud { background: var(--loud-soft); color: var(--loud); }
+.p-quiet { background: var(--quiet-soft); color: var(--quiet); }
+.p-neutral { background: var(--neutral-soft); color: var(--muted); }
+.p-cut { background: var(--accent-soft); color: var(--accent); }
+.list { display: flex; flex-direction: column; gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.card.top { border-color: var(--quiet); }
+.gate { font-family: var(--font-mono); font-size: 0.78rem; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.grp { display: flex; flex-direction: column; gap: 4px; padding-top: 10px; }
+.grp h2 { font-size: 1.15rem; }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rid { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 500; color: var(--accent); }
+.issue { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
+.q { font-family: var(--font-display); font-size: 1.06rem; font-weight: 500; line-height: 1.4; }
+.rec { border-left: 3px solid var(--accent); padding-left: 10px; }
+.rec .lab, .opts .lab { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; display: block; }
+.opts { font-size: 0.92rem; color: var(--muted); }
+.verdict { font-size: 0.9rem; }
+.verdict b { font-weight: 600; }
+details { font-size: 0.9rem; }
+summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+details[open] summary { margin-bottom: 6px; }
+details p + p { margin-top: 6px; }
+.choose { display: flex; flex-wrap: wrap; gap: 6px; }
+.choose button { font: inherit; font-size: 0.85rem; font-weight: 500; padding: 6px 12px; min-height: 36px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+.choose button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+button:focus-visible, summary:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.out { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.out textarea { width: 100%; min-height: 9rem; font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; resize: vertical; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn { font: inherit; font-weight: 600; font-size: 0.9rem; padding: 8px 14px; min-height: 40px; border-radius: 8px; border: 0; background: var(--accent); color: var(--surface); cursor: pointer; }
+.status { font-size: 0.85rem; color: var(--muted); }
+ol.vet { margin: 0; padding-left: 1.3rem; display: flex; flex-direction: column; gap: 6px; }
+code { font-family: var(--font-mono); font-size: 0.85em; }
+.foot { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; }
+.foot a { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">CUL-583 · Part 2 · Engines v3</span>
+    <h1>The clinical ruling sheet, Part 2</h1>
+    <p class="lede">Forty rows, grouped by the build each one gates so you can rule just in time. Answer each with <b>agree</b> (take option A) or a letter. The eight rows that need your explicit sign-off come first, each with the PR it holds. The rest are agree-only or adopted provisionally under E-6.</p>
+  </header>
+
+  <section class="rules" aria-label="How E-6 sorts the rows">
+    <div class="rule"><span class="pill p-loud">Louder</span><span>Speaks up more. <b>Adopted provisionally</b> on your agree.</span></div>
+    <div class="rule"><span class="pill p-quiet">Quieter</span><span>Speaks up less. <b>Needs your sign-off</b> and harness proof. Without both, the louder behaviour stays.</span></div>
+    <div class="rule"><span class="pill p-neutral">Neutral</span><span>Wording, ordering or a ratification. <b>Your agree</b> is enough.</span></div>
+  </section>
+
+  <p class="status">Harness fact: the synthetic test pets score EN-11 only today. Weight waits on PR-19, the care state on PR-23, the incident tiers on CUL-1439. So every quieter row outside EN-11 has <b>no harness proof yet</b>, and says when it can.</p>
+
+  <div class="list" id="rows"></div>
+
+  <section class="out" aria-labelledby="out-h">
+    <h2 id="out-h">Your rulings</h2>
+    <p class="status">Tap a choice on each card. Your picks stay on this device. Copy them and paste into a CUL-583 comment.</p>
+    <textarea id="out" readonly aria-label="Your rulings as text"></textarea>
+    <div class="row">
+      <button class="btn" id="copy" type="button">Copy rulings</button>
+      <span class="status" id="copied" role="status"></span>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:10px" aria-labelledby="vet-h">
+    <h2 id="vet-h">For the real-vet review</h2>
+    <p class="status">The thinnest evidence in Part 2. These go to CUL-1312 and block nothing.</p>
+    <ol class="vet">
+      <li>N4: are 0.5 to 3 vomits a month plausible for healthy cats and dogs?</li>
+      <li>W1 / W4: the 5% and 10% lines, and "10% below a single reading" for a soft row.</li>
+      <li>W3: does a home scale's error grow with a dog's size?</li>
+      <li>W5: what growth stall in a kitten should prompt a call?</li>
+      <li>W6: is 2% a week the right planned-loss rate for a cat, and what cumulative loss should end the quiet?</li>
+      <li>W8: weight lines for species "other".</li>
+      <li>C1a: which new signs beside chronic vomiting or diarrhea should bring a watched concern back?</li>
+      <li>C1b: is Off plus one vomit really call now? Should Drinking less lift a call?</li>
+      <li>C2: "too soon to read" windows per drug.</li>
+      <li>T4, T11, T12: three in 24 hours today or now; persistence 2 or 3 days; 4 in 7 days as the burden line.</li>
+      <li>T8, T10, T13, T16, T17: dogs not eating plus a vomit; known conditions; fresh blood; a cat and an unsure lily answer; the critical drug list.</li>
+      <li>I4 / I5: refused then vomited, the window, the floor, the species.</li>
+    </ol>
+  </section>
+
+  <p class="foot">Full sheet, with file and line citations and every counterexample: <code>docs/clinical-ruling-sheet-2026-10.md</code> §2 on <a href="https://github.com/danieljmarkii/project-nyx/pull/1004">draft PR #1004</a>. An isolated adversarial review failed the first draft on six rows (T1, C1a, W1/W2, W6, T6, C1b). All were rewritten, and this page shows the revised versions; the record is §2.9. Part 1 is ruled: <a href="https://claude.ai/artifact/KogqNFeWk8CKTd2juAinQh">Part 1's page</a>.</p>
+</div>
+<script>
+const GROUPS = {
+  sign: ["Needs your explicit sign-off", "Rule these first. Each names the build it holds."],
+  pr16: ["The scorecard's lines (PR-16, PR-31)", "Test lines and the healthy-pet set. Agree only."],
+  pr19: ["The weight lane (PR-19)", "Built dark; goes live after PMD-9 is re-run on the exact definition."],
+  pr23: ["The care state (PR-22, PR-23)", ""],
+  wave4: ["Incident tiers (PR-26, PR-28; Wave 4)", "All of Wave 4 goes live only after the paid vet review (CUL-1312)."],
+  pr29: ["Photo rows (PR-29)", ""],
+  pr30: ["Intake evidence (PR-30)", ""],
+  pr32: ["EN-11 and every lane's GA (PR-32)", ""]
+};
+const ROWS = [
+  // ── Sign-off first
+  { id: "C1a", issue: "CUL-1445", group: "sign", gate: "PR-23", dir: "loud", dirLabel: "Louder than the spec", top: true,
+    q: "While a concern sits with the vet, which other sign brings it back?",
+    a: "Three co-signs: loose stools (or vomiting, for a diarrhea concern) on 2 or more days, lethargy on 2 or more days, or the Noticed intake check met (two of the last three meals refused or picked). Each must be absent in the 28 days before the answer's anchor and dated after the answer. Presence only. They share the 5% cap you ruled, with PR-16 setting the day floor.",
+    opts: "B: the spec as written (no co-signs)",
+    verdict: "Needs your explicit agree: it spends the 5% cap, and PR-23's live gate waits on corpus work.",
+    why: "A vet's “come back if it continues” was about vomiting alone. A cat that now also has diarrhea or is not eating is the classic reason to call again.",
+    tried: "The first draft broke four ways: a reference taken after the visit hid new diarrhea; a re-answered trial bounced straight back; a separate budget re-raised 8 to 15% of stable pets; the synthetic pets can't see lethargy or refusals. All four fixed." },
+  { id: "C1b", issue: "CUL-845", group: "sign", gate: "no Wave 3 PR", dir: "loud", dirLabel: "Louder; amends T-5", top: true,
+    q: "May a word on the daily look, like Off or Hiding, lift a vomit or stool escalation?",
+    a: "Yes, escalate only, within 24 hours either side. Off or Hunched lifts to call now, matching the Noticed door. Hiding, Not herself, Trembling, A film across the eye, and a dog's Didn't want the walk lift to call today. It writes no row, moves no count, and an edit never lowers it.",
+    opts: "B: T-5 stands (a look raises nothing)",
+    verdict: "Needs your explicit agree: it amends your T-5 of 9 September.",
+    why: "The morning after a vomit, Sam taps Off and Hiding, the signs a vet would ask about, and today nothing changes.",
+    tried: "The first draft gave Off plus a vomit call today while the Noticed door on the same card said call now. Fixed. Three words were left out with no reason (added), and undo was unruled (the row now says the word was removed; the call stays)." },
+  { id: "W1", issue: "PMD-9", group: "sign", gate: "PR-19", dir: "quiet", dirLabel: "Quieter than D7", top: true,
+    q: "Must a weight level be confirmed (a clinic reading, or two home readings that agree) before it can raise a card?",
+    a: "Yes, together with W2, plus one louder fix: a confirmed level 10% or more below a single earlier reading raises the soft row, saying the high was one reading.",
+    opts: "B: D7 as written (any single reading anchors)",
+    verdict: "Needs your sign-off. Sign off for the dark build; the lane goes live only after PMD-9 is re-run on the exact definition, by weighing cadence.",
+    why: "On a stable 4 kg cat weighed monthly, D7 gives a false card in 87% of years; confirmation brings it to 6%.",
+    tried: "Re-simulated: 6% holds at monthly weighing only (25% fortnightly, 59% weekly). A single 4.2 kg then three 3.73 kg readings was silent for good; the 10% fix catches it. A 1.5% a week loss is caught two readings late and one tier low." },
+  { id: "W5", issue: "Juveniles", group: "sign", gate: "PR-19", dir: "quiet", dirLabel: "Quieter than D7", top: true,
+    q: "Kittens and puppies: any confirmed drop raises the row, a 10% drop is firm, “no gain in four weeks” stays off, and an unknown birthday reads young?",
+    a: "Adopt, with the two fixes from the review: firm at 10%, and an unknown birthday reads young (as T17 already rules).",
+    opts: "B: keep “no gain” on",
+    verdict: "Needs your sign-off. Both costs are on record.",
+    why: "“No gain” gave a growing kitten a false card in 62 to 98% of runs.",
+    tried: "A kitten that peaks then slides, weighed weekly, raises a row at the seventh reading (21% down); D7's wording at the fourth. A sick kitten that stops growing is missed until it loses. Both stated." },
+  { id: "W6", issue: "Planned loss", group: "sign", gate: "PR-19, PR-37", dir: "quiet", dirLabel: "Quieter than D7", top: true,
+    q: "While a vet's weight-loss plan runs, should the soft line be off and the firm line become “more than 2% a week”?",
+    a: "Yes, plus two fixes: the plan lapses at its recheck date (or 12 weeks), and a cumulative line runs during it (the plan's target, or 10% if none). Who may set a plan is CUL-1390 W6, not this row.",
+    opts: "B: no planned-loss state",
+    verdict: "Needs your sign-off, plus real-vet list.",
+    why: "Without it, a vet-directed diet produces a card every week. With it, losing too fast still fires.",
+    tried: "A plan losing 1.5% a week for 30 weeks (about 36%) was silent indefinitely as specced. The cumulative line now fires near week 7, and the plan lapses at week 12." },
+  { id: "T1", issue: "T23", group: "sign", gate: "PR-26, Wave 4", dir: "quiet", dirLabel: "Quieter", top: true,
+    q: "A formed stool after a recent vomit: may the stool read stop calling?",
+    a: "Only with a fourth condition: the call stays whenever EN-4's floor meets any rung on the vomits beside the stool. Until that is built, T23 stays dark.",
+    opts: "B: today's call stands",
+    verdict: "Needs your sign-off. No harness proof until CUL-1439.",
+    why: "Today a formed stool carries a false sentence about loose stool and vomiting together.",
+    tried: "A dog with two photoless vomits 10 hours apart, then a photographed formed stool: as built, the only call the vomits ever got was withdrawn. Fixed by the fourth condition." },
+  { id: "T6", issue: "T5c", group: "sign", gate: "PR-28, Wave 4", dir: "quiet", dirLabel: "Quieter (the merge)", top: true,
+    q: "Should two witnessed vomit logs 10 minutes apart count as one onset?",
+    a: "Yes, for the two-in-four-hours rule only (never for three-in-24 or the stool check). Found piles never merge and keep counting.",
+    opts: "B: both halves as specced · C: neither",
+    verdict: "Needs your sign-off. No harness proof until CUL-1439.",
+    why: "A double tap is the record's artefact, not the animal's. A found pile is a real vomit with an unknown time.",
+    tried: "Two real vomits 8 minutes apart, nothing else: they go from call today to no call. The earlier consolation (“the burst rule sees a third”) did not apply. Stated as a plain cost." },
+  { id: "E2", issue: "CUL-1489", group: "sign", gate: "EN-11 GA", dir: "neutral", dirLabel: "A neutral · B quieter", top: true,
+    q: "EN-11 cuts chance cards on healthy pets from 83% to 28%, but catches a vomiting doubling 46% of the time instead of 85% (22 days instead of 7.5) and new diarrhea 7% instead of 60%. What now?",
+    a: "Keep the food half (D5 = B), rework worsening before GA, then re-run PR-16's line. Measure the reversed-in-time controls too.",
+    opts: "B: ship as built, amending E-6 · C: drop the worsening floor from EN-11",
+    verdict: "A or C: agree. B needs your sign-off as an E-6 amendment.",
+    why: "The food half delivers what you ruled in D5 (false food culprits 44% to 0). The worsening half misses your “no slower than shipped” bar.",
+    tried: "The filing left out the vomiting doubling's drop in detection and two quieter, unmeasured reversed controls that A and C ship. Both added." },
+
+  // ── PR-16 / PR-31
+  { id: "N1", issue: "EN-9.scored", group: "pr16", gate: "PR-16", dir: "neutral", dirLabel: "Neutral (stricter)",
+    q: "How many more cats may the care state leave unscored with the flag on than off?",
+    a: "0.", opts: "B: a count-noise tolerance", verdict: "Agree only",
+    why: "Both arms draw every number from the same seeded streams, so the counts should be identical.",
+    tried: "The acknowledgement exception: it covers only detections after the ask, which is the same in both arms. Held." },
+  { id: "N2", issue: "re-raise lines", group: "pr16", gate: "PR-16, PR-23", dir: "neutral", dirLabel: "Neutral (housekeeping)",
+    q: "The re-raise pass lines still read “unruled” after your 28 September ruling. Fix?",
+    a: "Set both to 0.05 in the next PR that touches the file, and re-measure the stale 59–75% / 64–81% figure.", opts: "none", verdict: "Agree only",
+    why: "The ruling exists; the code hasn't caught up.", tried: "Two sources disagree on the drafted trigger's re-raise rate; the build re-measures rather than picking." },
+  { id: "N3", issue: "pass lines", group: "pr16", gate: "PR-16", dir: "neutral",
+    q: "The other unruled pass lines: rule them now?",
+    a: "No. Rule each in the PR that turns its wave on, from a measured noise band.", opts: "B: rule all now", verdict: "Agree only",
+    why: "None can be ruled usefully before the harness observes its wave.", tried: "None needed." },
+  { id: "N4", issue: "D4 nulls", group: "pr16", gate: "PR-31", dir: "neutral",
+    q: "Ratify PR-15's 13 healthy-pet scenarios (0.5 to 3 vomits a month) as the null set?",
+    a: "Ratify the grid. The chance budget itself stays open for PR-31.", opts: "none", verdict: "Agree, plus real-vet list",
+    why: "A grid is the honest null when no base rate is known.", tried: "A cat with weekly spring hairballs sits above the grid's top. Held as a gap for the vet." },
+
+  // ── PR-19 remaining
+  { id: "W2", issue: "noise-scaled", group: "pr19", gate: "PR-19", dir: "loud", dirLabel: "Louder than PMD-9",
+    q: "Should a drop of 0.6 kg (three times the scale's noise) count without confirmation?",
+    a: "It confirms both ends; the row still needs the 5% line.", opts: "B: 0.6 kg alone raises the row", verdict: "Adopt provisionally",
+    why: "0.6 kg is 20% of a 3 kg cat and 2% of a 30 kg dog.", tried: "The first draft's own example (3.0 kg once, then 2.6 kg twice) was silent; W1's new fix catches it." },
+  { id: "W3", issue: "dog margin", group: "pr19", gate: "PR-19", dir: "neutral",
+    q: "Does the clinic-versus-home margin scale with a dog's size?",
+    a: "No formula change; ask the vet.", opts: "B: scale it", verdict: "Real-vet list",
+    why: "We have no source on how home-scale error grows with the animal.", tried: "None needed." },
+  { id: "W4", issue: "lines", group: "pr19", gate: "PR-19", dir: "loud", dirLabel: "Louder; same as D7",
+    q: "Soft at 5%, firm at 10%, a 12-month window, and the noise band only when one end is a single reading?",
+    a: "Adopt as specced.", opts: "none", verdict: "Adopt provisionally, plus real-vet list",
+    why: "The lines are D7's own.", tried: "A kitchen-scale 5.3% drop needs two agreeing readings under W1. Held." },
+  { id: "W7", issue: "rank", group: "pr19", gate: "PR-19", dir: "neutral", dirLabel: "Neutral (ordering)",
+    q: "Where does the weight row rank?",
+    a: "Below the burden card, above chronicity.", opts: "B: above the burden card", verdict: "Agree only",
+    why: "Four or more vomits this week is the more acute ask.", tried: "None needed." },
+  { id: "W8", issue: "species other", group: "pr19", gate: "PR-19", dir: "loud", dirLabel: "A louder · B quieter",
+    q: "Do rabbits, ferrets and other species get the weight rows?",
+    a: "Yes, at the same lines (D7 as ruled).", opts: "B: descriptive only (the spec)", verdict: "A: adopt provisionally. B needs your sign-off.",
+    why: "A 10% loss in a rabbit is no less worth a call.", tried: "A ferret's seasonal swing raises a row every year. An accepted over-fire." },
+
+  // ── care state
+  { id: "C2", issue: "too soon", group: "pr23", gate: "PR-22 (shipped)", dir: "neutral",
+    q: "Ratify 42 days as the “too soon to read” window after a visit or a masking course?",
+    a: "Ratify 42 days; per-drug values go to the vet.", opts: "none", verdict: "Agree, plus real-vet list",
+    why: "Already built provisionally.", tried: "None needed." },
+
+  // ── Wave 4
+  { id: "T2", issue: "T19", group: "wave4", gate: "PR-26", dir: "neutral",
+    q: "The model's own call, with no field behind it: call today?", a: "Ratify.", opts: "none", verdict: "Agree only",
+    why: "Words kept, counted separately.", tried: "None needed." },
+  { id: "T3", issue: "T3", group: "wave4", gate: "PR-28", dir: "loud",
+    q: "Vomiting plus lethargy within 24 hours either side: call now?",
+    a: "Call now, as built; the Noticed door moves to match (CUL-1436).", opts: "B: call today", verdict: "Adopt provisionally",
+    why: "One animal must not get call now on one surface and call today on another.", tried: "Lethargy 30 h after a late-read vomit: the read-time flag still calls. Held." },
+  { id: "T4", issue: "T4", group: "wave4", gate: "PR-28", dir: "neutral", dirLabel: "Neutral (no change)",
+    q: "Three vomits in 24 hours in a cat: today or now?", a: "Today, as shipped.", opts: "B: now", verdict: "Real-vet list",
+    why: "The clustered shapes already reach call now.", tried: "None needed." },
+  { id: "T5", issue: "T5a", group: "wave4", gate: "PR-28", dir: "neutral", dirLabel: "Neutral (no change)",
+    q: "Two vomits within 4 hours stay call today?", a: "Yes, as shipped.", opts: "B: keep an eye out", verdict: "Agree only",
+    why: "B is quieter with no proof.", tried: "None needed." },
+  { id: "T7", issue: "T6", group: "wave4", gate: "PR-28", dir: "loud",
+    q: "A dog's second vomit in 24 hours: call today?", a: "Yes, as built.", opts: "none", verdict: "Adopt provisionally",
+    why: "Matches the Noticed door.", tried: "None needed." },
+  { id: "T8", issue: "T10b", group: "wave4", gate: "PR-28, PR-30", dir: "loud",
+    q: "A dog with no food seen in 24 hours plus a vomit: call today?",
+    a: "Yes. A refusal alone in a dog stays quiet.", opts: "B: refusal alone · C: no", verdict: "Adopt provisionally, plus real-vet list",
+    why: "Vomiting and not eating together is the pairing a vet asks about.", tried: "A dog that skipped breakfast after a garbage raid: an over-fire, survivable." },
+  { id: "T9", issue: "T11", group: "wave4", gate: "PR-28", dir: "neutral",
+    q: "Dog bloat: keep it held until “nothing came up” can be logged?", a: "Yes; the static warning line stays.", opts: "none", verdict: "Agree only",
+    why: "There is no capture for unproductive retching yet.", tried: "None needed." },
+  { id: "T10", issue: "T22", group: "wave4", gate: "PR-28", dir: "neutral", dirLabel: "Neutral (no change)",
+    q: "Should known conditions move a vomit up one rung?", a: "None until conditions are captured.", opts: "B: one rung up for a named list", verdict: "Real-vet list",
+    why: "No condition list exists yet.", tried: "None needed." },
+  { id: "T11", issue: "persistence", group: "wave4", gate: "PR-28", dir: "neutral", dirLabel: "Neutral (no change)",
+    q: "Persistence rung: 3 days running, or 2?", a: "3, as shipped.", opts: "B: 2", verdict: "Real-vet list",
+    why: "At 2 the burden card reaches 48% of healthy pets; at 3, 22%.", tried: "Measured on PR-15's null pets." },
+  { id: "T12", issue: "burden", group: "wave4", gate: "PR-28", dir: "neutral",
+    q: "Absolute burden: 4 or more vomits in 7 days?", a: "Ratify, as shipped.", opts: "none", verdict: "Agree, plus real-vet list",
+    why: "Provisional from FCEAI's severe band.", tried: "None needed." },
+
+  // ── PR-29
+  { id: "T13", issue: "fresh blood", group: "pr29", gate: "PR-29", dir: "neutral", dirLabel: "Neutral now",
+    q: "Fresh blood: a streak or a lot?", a: "Any fresh red blood stays call today until a quantity field exists; a lot, once captured, is call now.", opts: "B: any fresh blood is call now", verdict: "Real-vet list",
+    why: "A streak after hard retching is common.", tried: "None needed." },
+  { id: "T14", issue: "foreign body", group: "pr29", gate: "PR-29", dir: "loud",
+    q: "Foreign material in a vomit?", a: "Call today; string, thread or ribbon in a cat is call now; a toy fragment in a bright dog stays call today.", opts: "B: all call now", verdict: "Adopt provisionally",
+    why: "Linear foreign bodies in cats are the dangerous case.", tried: "None needed." },
+  { id: "T15", issue: "a tablet", group: "pr29", gate: "PR-29", dir: "loud",
+    q: "A visible tablet or pill?", a: "Call today; call now on a critical drug once that list exists.", opts: "none", verdict: "Adopt provisionally",
+    why: "Today only the model's own call covers it.", tried: "None needed." },
+  { id: "T16", issue: "lilies", group: "pr29", gate: "PR-29", dir: "loud",
+    q: "Plant material in a cat's vomit?", a: "Ask “Could Pixel have chewed a lily, or anything from a bouquet?” Yes is call now; Not sure is call today with lilies named.", opts: "B: Not sure is call now", verdict: "Adopt provisionally, plus real-vet list",
+    why: "Lilies are the plant a vet asks about first.", tried: "Voice read: names the plant and where it comes from, without alarm. Pass." },
+  { id: "T17", issue: "drugs, age", group: "pr29", gate: "PR-29", dir: "loud",
+    q: "New courses, unknown age, and the critical drug list?", a: "A course started in the last 14 days plus vomiting is call today; an unknown age reads young; the drug list is the vet's to write.", opts: "none", verdict: "Adopt provisionally; the list goes to the vet",
+    why: "The team will not write a clinical drug list.", tried: "None needed." },
+
+  // ── PR-30
+  { id: "I1", issue: "T10", group: "pr30", gate: "PR-30", dir: "loud", dirLabel: "A louder · B quieter",
+    q: "Replace the cat's 24-hour intake check with the Noticed check?", a: "No. Run both together until the harness shows the Noticed check alone is no worse.", opts: "B: replace", verdict: "A: adopt provisionally. B needs your sign-off.",
+    why: "Replacing is quieter with no proof.", tried: "Two meals rated Some in 24 hours: today's check fires, the Noticed check does not. So B is quieter, and A (adding a check) is louder." },
+  { id: "I2", issue: "free-fed", group: "pr30", gate: "PR-30", dir: "neutral", dirLabel: "Neutral (wording)",
+    q: "The free-fed check's words?", a: "“Have you seen Pixel eat since 6 PM yesterday?” Yes · No, she wouldn't · Haven't seen. The pronoun follows the pet's recorded sex; unknown reads “they”.", opts: "B: as drafted (“Did you see …”)", verdict: "Adopt provisionally",
+    why: "“Since” takes the perfect tense; the third answer matches the question.", tried: "Voice read: Haven't seen stores “not observable”, never normal. Pass." },
+  { id: "I3", issue: "A little", group: "pr30", gate: "PR-30", dir: "loud",
+    q: "What does “A little” store?", a: "Picked, not Some.", opts: "B: Some (the spec)", verdict: "Adopt provisionally",
+    why: "A few bites is Picked, and the Noticed check counts refused or picked.", tried: "An owner who meant about half: an over-fire, survivable." },
+  { id: "I4", issue: "CUL-1195", group: "pr30", gate: "PR-30", dir: "loud", dirLabel: "Louder (the tail)",
+    q: "Ratify the six “followed a refused meal” strings?", a: "Yes, with two voice edits: “That's worth mentioning to your vet.” on the three card surfaces that lack it, and the trial card reworded so its middot can't split the claim. No time window.", opts: "B: add a window · C: ratify as is", verdict: "Adopt provisionally",
+    why: "A window would drop long-gap refusals from the count; the tail guards against reading it as hunger.", tried: "A refusal 10 hours before a vomit is disclosed. Over-inclusive toward escalation; held." },
+  { id: "I5", issue: "CUL-1196", group: "pr30", gate: "PR-30", dir: "loud",
+    q: "Refused, then vomited within minutes, as its own flag?", a: "A line on the cat intake card, not a new card; dark until built; values go to the vet.", opts: "B: a new safety card · C: no", verdict: "Adopt provisionally, plus real-vet list",
+    why: "A new card with no floor on record would crowd Home.", tried: "None needed." },
+
+  // ── PR-32 / GA
+  { id: "E1", issue: "worsening floor", group: "pr32", gate: "PR-32", dir: "neutral",
+    q: "Worsening's sensitivity-first floor?", a: "EN-11 must show detection no worse than the shipped floor. (E2 is what happened when it didn't.)", opts: "none", verdict: "Agree only",
+    why: "No value was proposed anywhere.", tried: "None needed." },
+  { id: "D1", issue: "dogs, other", group: "pr32", gate: "every GA", dir: "neutral", dirLabel: "n/a",
+    q: "A blanket rule for dogs and species “other”?", a: "No; row by row (W8, T7, T8, T9).", opts: "none", verdict: "Agree only",
+    why: "Each lane's dog question is different.", tried: "None needed." }
+];
+
+const DIR = { loud: ["p-loud", "Louder"], quiet: ["p-quiet", "Quieter"], neutral: ["p-neutral", "Neutral"] };
+const KEY = "ruling-sheet-part2-choices";
+let picks = {};
+try { picks = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { picks = {}; }
+
+function choicesFor(r) {
+  const letters = (r.opts.match(/\b([B-D]):/g) || []).map((m) => m[0]);
+  return ["Agree"].concat(letters);
+}
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+
+const list = document.getElementById("rows");
+let lastGroup = null;
+ROWS.forEach((r) => {
+  if (r.group !== lastGroup) {
+    lastGroup = r.group;
+    const g = GROUPS[r.group];
+    const sec = el("div", "grp");
+    sec.append(el("h2", null, g[0]));
+    if (g[1]) sec.append(el("p", "status", g[1]));
+    list.append(sec);
+  }
+  const card = el("article", "card" + (r.top ? " top" : ""));
+  card.id = r.id.toLowerCase();
+  const head = el("div", "card-head");
+  head.append(el("span", "rid", r.id), el("span", "issue", r.issue));
+  const d = DIR[r.dir];
+  head.append(el("span", "pill " + d[0], r.dirLabel || d[1]));
+  head.append(el("span", "gate", "gates " + r.gate));
+  card.append(head, el("p", "q", r.q));
+  const rec = el("div", "rec");
+  rec.append(el("span", "lab", "A, recommended"), el("p", null, r.a));
+  const opts = el("p", "opts"); opts.append(el("span", "lab", "Other options")); opts.append(document.createTextNode(r.opts));
+  const ver = el("p", "verdict"); ver.append(el("b", null, "Verdict: "), document.createTextNode(r.verdict));
+  const det = el("details"); det.append(el("summary", null, "Why, and what was tried"), el("p", null, r.why), el("p", null, "Tried: " + r.tried));
+  const ch = el("div", "choose"); ch.setAttribute("role", "group"); ch.setAttribute("aria-label", "Your ruling on " + r.id);
+  choicesFor(r).forEach((c) => {
+    const b = el("button", null, c); b.type = "button"; b.id = "pick-" + r.id + "-" + c;
+    b.setAttribute("aria-pressed", picks[r.id] === c ? "true" : "false");
+    b.addEventListener("click", () => {
+      picks[r.id] = picks[r.id] === c ? undefined : c;
+      if (!picks[r.id]) delete picks[r.id];
+      try { localStorage.setItem(KEY, JSON.stringify(picks)); } catch (e) {}
+      ch.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", picks[r.id] === x.textContent ? "true" : "false"));
+      render();
+    });
+    ch.append(b);
+  });
+  card.append(rec, opts, ver, det, ch);
+  list.append(card);
+});
+
+const out = document.getElementById("out");
+function render() {
+  const lines = ROWS.map((r) => r.id + " (" + r.issue + "): " + (picks[r.id] ? picks[r.id].toLowerCase() : "not ruled yet"));
+  const n = ROWS.filter((r) => picks[r.id]).length;
+  out.value = "Part 2 rulings, " + n + " of " + ROWS.length + " ruled\n" + lines.join("\n");
+}
+render();
+try {
+  const h = (location.hash || "").slice(1);
+  const t = h && document.getElementById(h);
+  if (t) t.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+} catch (e) {}
+document.getElementById("copy").addEventListener("click", () => {
+  const msg = document.getElementById("copied");
+  const done = () => { msg.textContent = "Copied. Paste it into a CUL-583 comment."; };
+  try {
+    navigator.clipboard.writeText(out.value).then(done, () => { out.select(); msg.textContent = "Selected. Copy it from the box."; });
+  } catch (e) { out.select(); msg.textContent = "Selected. Copy it from the box."; }
+});
+</script>
