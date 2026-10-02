@@ -23,6 +23,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 type Row = Record<string, unknown>;
 type ServerError = { code?: string; message: string };
+type ServerAnswer = { data: { id: string }[] | null; error: ServerError | null };
 
 // `mock`-prefixed so the factories below may read them; they are read at call time.
 const mockLocal = {
@@ -35,8 +36,11 @@ const mockServer = {
   rows: new Map<string, Map<string, Row>>(),
   /** Every write request the server received, in order, with the ids it carried. */
   writes: [] as { table: string; ids: string[] }[],
-  /** When set, the answer to a `vet_visits` write: a dropped connection, say. */
-  visitWriteFails: null as ServerError | null,
+  /** When set, the answer to every `vet_visits` write: a dropped connection, a write a
+   *  policy filtered, a refusal. */
+  visitAnswer: null as ServerAnswer | null,
+  /** A write to a table named here waits until the test opens it: a slow request. */
+  slow: new Map<string, { gate: Promise<void>; open: () => void }>(),
 };
 
 function mockServerTable(table: string): Map<string, Row> {
@@ -68,9 +72,9 @@ function mockServerRefusal(table: string, row: Row): ServerError | null {
 }
 
 /** One upsert statement: every row lands, or none does. */
-function mockServerWrite(table: string, payload: Row[]): { data: { id: string }[] | null; error: ServerError | null } {
+function mockServerWrite(table: string, payload: Row[]): ServerAnswer {
   mockServer.writes.push({ table, ids: payload.map((r) => String(r.id)) });
-  if (table === 'vet_visits' && mockServer.visitWriteFails) return { data: null, error: mockServer.visitWriteFails };
+  if (table === 'vet_visits' && mockServer.visitAnswer) return mockServer.visitAnswer;
   const staged = new Map([...mockServerTable(table)].map(([id, r]) => [id, { ...r }]));
   for (const row of payload) {
     const refused = mockServerRefusal(table, row);
@@ -92,7 +96,10 @@ function mockServerWrite(table: string, payload: Row[]): { data: { id: string }[
 function mockServerFrom(table: string) {
   return {
     upsert: (payload: Row | Row[]) => ({
-      select: async () => mockServerWrite(table, Array.isArray(payload) ? payload : [payload]),
+      select: async () => {
+        await mockServer.slow.get(table)?.gate;
+        return mockServerWrite(table, Array.isArray(payload) ? payload : [payload]);
+      },
     }),
   };
 }
@@ -177,6 +184,29 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
 }
 
+/** A dropped connection: no SQLSTATE, so it costs the row nothing. */
+const DROPPED: ServerAnswer = { data: null, error: { message: 'TypeError: Network request failed' } };
+
+/** Make every write to `table` wait until the returned function is called. */
+function slowWrites(table: string): () => void {
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  mockServer.slow.set(table, { gate, open });
+  return open;
+}
+
+/** How many times each queue was read for a push: one read per drain run. */
+function drainRuns(): Record<string, number> {
+  const runs: Record<string, number> = {};
+  for (const sql of mockLocal.reads) {
+    const m = /^\s*SELECT \* FROM (\w+) WHERE synced = 0/.exec(sql);
+    if (m) runs[m[1]] = (runs[m[1]] ?? 0) + 1;
+  }
+  return runs;
+}
+
 const writesTo = (table: string) => mockServer.writes.filter((w) => w.table === table).map((w) => w.ids);
 const serverRow = (table: string, id: string) => mockServerTable(table).get(id);
 const localRow = (table: string, id: string) =>
@@ -194,11 +224,13 @@ beforeEach(async () => {
   mockLocal.reads.length = 0;
   mockServer.rows.clear();
   mockServer.writes.length = 0;
-  mockServer.visitWriteFails = null;
+  mockServer.visitAnswer = null;
+  mockServer.slow.clear();
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
 
 afterEach(async () => {
+  for (const { open } of mockServer.slow.values()) open();
   await settle();
   jest.restoreAllMocks();
   mockLocal.db?.close();
@@ -224,7 +256,7 @@ describe('a trial started beside an ending that waits on its visit', () => {
 
     // The after-visit screen: the visit is minted and its push goes out, and the network
     // drops it. A dropped connection costs the visit nothing; it is simply still unsent.
-    mockServer.visitWriteFails = { message: 'TypeError: Network request failed' };
+    mockServer.visitAnswer = DROPPED;
     visit = await logVetVisit({ petId: PET, visitedAt: TODAY });
     await syncPendingVetVisits();
     // *Ended*: the link first, then the ending, whose own push fires at once.
@@ -245,7 +277,7 @@ describe('a trial started beside an ending that waits on its visit', () => {
   });
 
   it('sends both once the visit lands, the ending first, and quarantines neither', async () => {
-    mockServer.visitWriteFails = null;
+    mockServer.visitAnswer = null;
     await syncPendingVetVisits();
     await syncPendingDietTrials();
     await settle();
@@ -267,7 +299,7 @@ describe('a trial started beside an ending that waits on its visit', () => {
     expect(writesTo('diet_trial_foods')).toEqual([]);
     expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0 });
 
-    mockServer.visitWriteFails = null;
+    mockServer.visitAnswer = null;
     await syncPendingVetVisits();
     await syncPendingDietTrials();
     await syncPendingDietTrialFoods();
@@ -276,5 +308,82 @@ describe('a trial started beside an ending that waits on its visit', () => {
     expect(writesTo('diet_trial_foods')).toEqual([[food]]);
     expect(serverRow('diet_trial_foods', food)).toMatchObject({ diet_trial_id: trialB });
     expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 1, sync_error: null });
+  });
+
+  // Code review item 2. The trials' own pushes were held and do not come back by
+  // themselves; nothing here but the visit's push is called.
+  it("needs no other push: the visit landing sends A, then B, then B's food", async () => {
+    const [food] = foodsOf(trialB);
+    mockServer.visitAnswer = null;
+    await syncPendingVetVisits();
+    await settle();
+
+    expect(writesTo('diet_trials')).toEqual([[trialA], [trialB]]);
+    expect(writesTo('diet_trial_foods')).toEqual([[food]]);
+    expect(localRow('diet_trials', trialA)).toMatchObject({ synced: 1, sync_error: null });
+    expect(localRow('diet_trials', trialB)).toMatchObject({ synced: 1, sync_error: null });
+    expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 1, sync_error: null });
+  });
+});
+
+// Code review item 2: when a visit lands, the queues that wait on visits are sent at
+// once, each through its public entry point. A drain run is seen by its queue read.
+describe('a visit landing sends what waited on it', () => {
+  /** The visits drain's own two reads: its rows, then its photos. */
+  const VISITS_DRAIN = { vet_visits: 1, vet_visit_attachments: 1 };
+
+  it('runs each queue that waits on a visit exactly once, and the visits queue only once', async () => {
+    await logVetVisit({ petId: PET, visitedAt: TODAY });
+    await syncPendingVetVisits();
+    await settle();
+
+    expect(drainRuns()).toEqual({
+      ...VISITS_DRAIN,
+      vet_appointments: 1,
+      vet_documents: 1,
+      medications: 1,
+      medication_administrations: 1,
+      diet_trials: 1,
+      diet_trial_foods: 1,
+    });
+  });
+
+  it.each([
+    ['the connection drops', DROPPED],
+    ['a policy filters the write (no row comes back)', { data: [], error: null }],
+    ['the server refuses the visit', { data: null, error: { code: '23514', message: 'refused' } }],
+  ] as [string, ServerAnswer][])('runs none of them when nothing lands: %s', async (_case, answer) => {
+    mockServer.visitAnswer = answer;
+    await logVetVisit({ petId: PET, visitedAt: TODAY });
+    await syncPendingVetVisits();
+    await settle();
+
+    expect(writesTo('vet_visits').length).toBeGreaterThan(0); // the visit did go out
+    expect(drainRuns()).toEqual(VISITS_DRAIN);
+  });
+
+  it('runs none of them when there is no visit to send', async () => {
+    await syncPendingVetVisits();
+    await settle();
+    expect(drainRuns()).toEqual(VISITS_DRAIN);
+  });
+
+  it('follows a run already in flight rather than starting a second beside it (C-24)', async () => {
+    // A trial whose push is on the wire, slowly, when the visit lands.
+    const openTrials = slowWrites('diet_trials');
+    await startDietTrial(trialInput('food-c', TODAY));
+    await settle();
+    expect(drainRuns().diet_trials).toBe(1);
+
+    await logVetVisit({ petId: PET, visitedAt: TODAY });
+    await syncPendingVetVisits();
+    await settle();
+    // The visit's run waits behind the one on the wire; a second read beside it would be
+    // two drains of one queue at once.
+    expect(drainRuns().diet_trials).toBe(1);
+
+    openTrials();
+    await settle();
+    expect(drainRuns().diet_trials).toBe(2);
   });
 });

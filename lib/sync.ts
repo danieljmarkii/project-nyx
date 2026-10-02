@@ -1253,6 +1253,37 @@ export function syncPendingVetVisits(): Promise<void> {
   return serializeQueuePush('vet_visits', drainVetVisitsQueue);
 }
 
+/**
+ * Once a visit lands, send what was waiting on it.
+ *
+ * A row that names a visit is held until the visit lands (`visitLandedSql`), and so are
+ * the rows held with it: a pet's other queued trials (`petTrialsVisitLandedSql`), and a
+ * held trial's allowed foods and a held course's doses (`parentLandedSql`). Holding is
+ * half of it. The push that was held does not come back by itself, and this app has no
+ * timer: the after-visit screen mints the visit and ends a trial in one tap, the trial's
+ * own push finds the visit unsent and holds it, and the trial then sat until the next
+ * foreground or reconnect. So the visits drain sends those queues as soon as one lands.
+ *
+ * Through each queue's PUBLIC entry point, never its drain, so every run goes through
+ * serializeQueuePush (C-24): a run already in flight is followed rather than doubled,
+ * and inside pushAllQueues the calls that come next simply join these. Fire-and-forget
+ * (the visit's push is not theirs to wait on, and a failure stays queued), and none of
+ * them pushes visits, so this cannot recurse. A trial's foods and a course's doses run
+ * after their parent's run, because they wait on the parent landing, not on the visit.
+ */
+function sendWhatWaitedOnVisits(): void {
+  const queued = (what: string) => (e: unknown) =>
+    console.warn(`[sync] ${what} push after a visit landed failed (queued):`, e);
+  syncPendingVetAppointments().catch(queued('vet_appointments'));
+  syncPendingVetDocuments().catch(queued('vet_documents'));
+  syncPendingMedications()
+    .then(() => syncPendingMedicationAdministrations())
+    .catch(queued('medications'));
+  syncPendingDietTrials()
+    .then(() => syncPendingDietTrialFoods())
+    .catch(queued('diet_trials'));
+}
+
 async function drainVetVisitsQueue(): Promise<void> {
   const db = getDb();
 
@@ -1265,7 +1296,7 @@ async function drainVetVisitsQueue(): Promise<void> {
   }>(`SELECT * FROM vet_visits WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 50`);
 
   if (unsyncedVisits.length > 0) {
-    await pushRows(db, 'vet_visits', unsyncedVisits, (v) => ({
+    const landed = await pushRows(db, 'vet_visits', unsyncedVisits, (v) => ({
       id: v.id, pet_id: v.pet_id, visited_at: v.visited_at,
       clinic_name: v.clinic_name, vet_name: v.vet_name,
       reason: v.reason, notes: v.notes, next_visit_at: v.next_visit_at,
@@ -1276,6 +1307,8 @@ async function drainVetVisitsQueue(): Promise<void> {
       deleted_at: v.deleted_at,
       created_at: v.created_at, updated_at: v.updated_at,
     }));
+    // Before the photos below: what waits on the visit should not also wait on them.
+    if (landed.size > 0) sendWhatWaitedOnVisits();
   }
 
   // Sync vet visit attachments
