@@ -7,7 +7,8 @@
 // locally, and the next local edit pushed those NULLs over the server's values: the vet
 // report's "window extended … at the vet's direction" (TE-4) and the visit link. This builds
 // the tables as that build had them, runs initDb's upgrade-and-reset sequence, and replays
-// the fill statements lib/sync.ts ships.
+// the fill statements lib/sync.ts ships. Which rows the fill runs over (every row fetched,
+// not only the ones LWW rewrote) is the hydrate loop's, pinned in hydrateTrialProvenance.test.ts.
 
 import * as fs from 'fs';
 import * as path from 'path';
