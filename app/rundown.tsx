@@ -69,7 +69,10 @@ import { reportHref } from '../lib/reportRoute';
 //
 // The cache is a network read (it is on Home too), so offline it simply does not
 // answer. That is handed to `buildWorthRaising` as `findings: null` — distinct from
-// an empty list — and the section says so rather than falling silent (C-12).
+// an empty list — and the section says so rather than falling silent (C-12). A read
+// that neither answers nor fails is given `SIGNAL_CACHE_WAIT_MS` and then counts as
+// the same unreadable state, so a stalled connection costs the page its Signal rows,
+// never the page.
 //
 // ── THE PET IS THE APPOINTMENT'S ────────────────────────────────────────────────
 // In Get-ready mode every read is scoped to `appointment.pet_id`, never to
@@ -486,6 +489,45 @@ export default function RundownScreen() {
 }
 
 /**
+ * How long Get ready waits on the Signal cache before drawing the page without it (F7).
+ *
+ * The cache is the page's one NETWORK read, and `lib/supabase.ts` sets no fetch
+ * timeout: on a connection that is up but stalled (clinic Wi-Fi) the request neither
+ * answers nor fails until the OS gives up, about a minute later. Everything else on
+ * the page is local and already built, and the owner sat on "Pulling … together" in
+ * the waiting room for all of it. Past the bound the read counts as unreadable, the
+ * case the gap line already names, so the page says the Signal is missing instead of
+ * waiting for it. Four seconds is well past a healthy read and well short of an owner
+ * giving up on the screen.
+ */
+const SIGNAL_CACHE_WAIT_MS = 4_000;
+
+/**
+ * `read`'s answer, or null if it has not given one within `ms`. A rejection is null too.
+ *
+ * The read is not cancelled (a promise cannot be) and is left to finish on its own.
+ * That is safe only because it is a SELECT, so the abandoned read writes nothing.
+ * Racing a call that WRITES is the defect `lib/trialContaminant.ts`'s
+ * `noteTrialFlagShown` header records: the loser went on to spend a budget for a
+ * heads-up nobody was shown.
+ */
+function answeredWithin<T>(read: Promise<T | null>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const bound = setTimeout(() => resolve(null), ms);
+    read.then(
+      (value) => {
+        clearTimeout(bound);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(bound);
+        resolve(null);
+      },
+    );
+  });
+}
+
+/**
  * Worth raising, for this appointment's pet.
  *
  * The Signal cache is read here and its FAILURE is kept distinct from its emptiness
@@ -508,24 +550,28 @@ async function buildForAppointment(
   // One clock for every read and the build, so the two trial reads bound the same window.
   const nowMs = Date.now();
   const [signalRow, trialInput, recheckRead] = await Promise.all([
-    readSignalCache(subjectId)
-      // `row ? row.findings : null` — NOT `row?.findings ?? []`, and the difference is
-      // the whole point of the two states.
-      //
-      // `readSignalCache` returns null when there is NO CACHE ROW, and it gets there
-      // without throwing: PostgREST's `maybeSingle()` answers zero rows with
-      // `{data: null, error: null}`. So the `?? []` form turned "the engine has never
-      // run for this pet" into "the engine found nothing" — `signalUnavailable` false,
-      // no gap line, and the quiet-record treatment on a record nobody has looked at.
-      // Reachable on a new pet booking a first appointment, and on any pet whose regens
-      // have never succeeded. Absence of a computed finding is not absence of a finding.
-      //
-      // `row.findings` is already `[]` when the engine ran and found nothing, so the
-      // genuinely-quiet record still renders mock B1b. The row's `generated_at` rides with
-      // them: it is half the trial anchor (CUL-1364).
-      .then((row) => (row ? { findings: row.findings, generatedAt: row.generatedAt } : null))
-      // A throw is the other unreadable case (offline, or a failed request).
-      .catch(() => null),
+    answeredWithin(
+      readSignalCache(subjectId)
+        // `row ? row.findings : null` — NOT `row?.findings ?? []`, and the difference is
+        // the whole point of the two states.
+        //
+        // `readSignalCache` returns null when there is NO CACHE ROW, and it gets there
+        // without throwing: PostgREST's `maybeSingle()` answers zero rows with
+        // `{data: null, error: null}`. So the `?? []` form turned "the engine has never
+        // run for this pet" into "the engine found nothing" — `signalUnavailable` false,
+        // no gap line, and the quiet-record treatment on a record nobody has looked at.
+        // Reachable on a new pet booking a first appointment, and on any pet whose regens
+        // have never succeeded. Absence of a computed finding is not absence of a finding.
+        //
+        // `row.findings` is already `[]` when the engine ran and found nothing, so the
+        // genuinely-quiet record still renders mock B1b. The row's `generated_at` rides with
+        // them: it is half the trial anchor (CUL-1364).
+        .then((row) => (row ? { findings: row.findings, generatedAt: row.generatedAt } : null))
+        // A throw is the other unreadable case (offline, or a failed request).
+        .catch(() => null),
+      // And a read that has done neither by the bound is the third (F7).
+      SIGNAL_CACHE_WAIT_MS,
+    ),
     pet
       ? loadDietTrialFacts({
           pet: { id: pet.id, name: pet.name, species: pet.species, sex: pet.sex },
