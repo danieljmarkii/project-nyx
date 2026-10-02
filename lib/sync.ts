@@ -1270,8 +1270,9 @@ export function syncPendingVetVisits(): Promise<void> {
  * and inside pushAllQueues the calls that come next simply join these. Fire-and-forget
  * (the visit's push is not theirs to wait on, and a failure stays queued), and none of
  * them pushes visits, so this cannot recurse. A trial's foods and a course's doses run
- * after their parent's run: the foods wait on the trial landing, not on the visit, and a
- * dose refused while its course waited lands once the course has.
+ * after their parent's run: a dose refused while its course waited lands once the course
+ * has, and the foods would follow anyway, since the trials drain sends them itself when
+ * a trial lands; this link only makes that explicit.
  */
 function sendWhatWaitedOnVisits(): void {
   const queued = (what: string) => (e: unknown) =>
@@ -2104,6 +2105,26 @@ async function drainDietTrialsQueue(): Promise<void> {
   const foodIds = [...new Set(unsynced.map((t) => t.food_item_id).filter(Boolean))] as string[];
   await presyncFoodItems(db, session.user.id, foodIds, 'diet trial');
 
+  const landed = await pushEndingTrialsFirst(db, unsynced);
+
+  // An allowed food waits for its trial to land (`parentLandedSql`), and only this drain
+  // knows when one has. A trial the server already holds still reads unsent while an edit
+  // to it is in flight (a longer window, a protein, a visit link), so a food added in the
+  // meantime is held, and its own push has come and gone. Nothing else would send it
+  // again until the next foreground (code review of 074fd18). So whenever a trial lands,
+  // the foods queue runs once more, through its public entry point (C-24). That includes
+  // a run whose starting pass was held back: the ending trials that did land release
+  // their own foods.
+  if (landed.size > 0) {
+    syncPendingDietTrialFoods().catch((e) =>
+      console.warn('[sync] diet_trial_foods push after a trial landed failed (queued):', e),
+    );
+  }
+}
+
+/** The trials push, in the two ordered passes below. Returns every trial that landed,
+ *  from either pass. */
+async function pushEndingTrialsFirst(db: Db, unsynced: LocalDietTrial[]): Promise<Set<string>> {
   // TWO PASSES, ENDING TRIALS FIRST — the wire half of PR 3's "complete-then-start
   // must be ORDERED" (§3.3). Migration 040 made the active-trial index UNIQUE, so
   // an owner who ends one trial and starts another while offline queues two rows
@@ -2128,21 +2149,24 @@ async function drainDietTrialsQueue(): Promise<void> {
   // quarantined row drops out of the queue, so this cannot starve).
   const ending = unsynced.filter((t) => t.status !== 'active');
   const starting = unsynced.filter((t) => t.status === 'active');
+  const landed = new Set<string>();
 
   if (ending.length > 0) {
-    const landed = await pushRows(db, 'diet_trials', ending, dietTrialRowToRemote);
-    const stuck = ending.filter((t) => !landed.has(t.id));
+    const endingLanded = await pushRows(db, 'diet_trials', ending, dietTrialRowToRemote);
+    endingLanded.forEach((id) => landed.add(id));
+    const stuck = ending.filter((t) => !endingLanded.has(t.id));
     if (stuck.length > 0) {
       console.warn(
         `[sync] diet_trials: ${stuck.length} ending trial(s) did not land — ` +
         'holding the starting rows this cycle so they cannot 23505',
       );
-      return;
+      return landed;
     }
   }
   if (starting.length > 0) {
-    await pushRows(db, 'diet_trials', starting, dietTrialRowToRemote);
+    (await pushRows(db, 'diet_trials', starting, dietTrialRowToRemote)).forEach((id) => landed.add(id));
   }
+  return landed;
 }
 
 // Flush unsynced allowed-set rows (B-417). Runs AFTER syncPendingDietTrials in
@@ -2152,8 +2176,9 @@ async function drainDietTrialsQueue(): Promise<void> {
 // `parentLandedSql`), because a child sent first is NOT a retry: migration 041's
 // same-pet trigger runs ahead of the foreign key and refuses it with 23514, which is
 // terminal, so the allowed set would be quarantined on its first try. A trial can
-// wait a while (behind the visit it names, or beside a sibling trial that does), so
-// the order of these two calls is not enough on its own.
+// wait a while (behind the visit it names, beside a sibling trial that does, or just
+// with an edit in flight), so the order of these two calls is not enough on its own;
+// and a food held that way is sent by drainDietTrialsQueue once its trial lands.
 export function syncPendingDietTrialFoods(): Promise<void> {
   return serializeQueuePush('diet_trial_foods', drainDietTrialFoodsQueue);
 }

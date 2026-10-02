@@ -453,8 +453,9 @@ export function petTrialsVisitLandedSql(): string {
  *   • diet_trial_foods → diet_trials. Migration 041's same-pet trigger runs BEFORE the
  *     foreign key, so a food sent ahead of its trial is refused with 23514, which is
  *     TERMINAL: the allowed set is quarantined on its first try. A trial can wait a
- *     while (behind the visit it names, or beside a sibling trial that does, above), and
- *     its foods would otherwise go out alone in the meantime.
+ *     while (behind the visit it names, or beside a sibling trial that does, above, or
+ *     with an edit of its own in flight), and its foods would otherwise go out alone in
+ *     the meantime. The trials drain sends a held food once its trial lands.
  *
  * A dose is deliberately NOT here, though it names its course the same way
  * (`medication_administrations.medication_id`). Sent ahead of its course it meets a plain

@@ -43,9 +43,11 @@ const mockServer = {
   rows: new Map<string, Map<string, Row>>(),
   /** Every write request the server received, in order, with the ids it carried. */
   writes: [] as { table: string; ids: string[] }[],
-  /** When set, the answer to every `vet_visits` write: a dropped connection, a write a
+  /** A table named here answers every write with this: a dropped connection, a write a
    *  policy filtered, a refusal. */
-  visitAnswer: null as ServerAnswer | null,
+  answers: new Map<string, ServerAnswer>(),
+  /** A row named here (by id) is refused with this, whatever it says. */
+  refuse: new Map<string, ServerError>(),
   /** A write to a table named here waits until the test opens it: a slow request. */
   slow: new Map<string, { gate: Promise<void>; open: () => void }>(),
 };
@@ -57,6 +59,8 @@ function mockServerTable(table: string): Map<string, Row> {
 
 /** The server's refusal of one row, by the triggers it runs before the write. */
 function mockServerRefusal(table: string, row: Row): ServerError | null {
+  const refused = mockServer.refuse.get(String(row.id));
+  if (refused) return refused;
   if (row.vet_visit_id != null) {
     const visit = mockServerTable('vet_visits').get(String(row.vet_visit_id));
     if (!visit || visit.pet_id !== row.pet_id) {
@@ -98,7 +102,8 @@ function mockServerRefusal(table: string, row: Row): ServerError | null {
 /** One upsert statement: every row lands, or none does. */
 function mockServerWrite(table: string, payload: Row[]): ServerAnswer {
   mockServer.writes.push({ table, ids: payload.map((r) => String(r.id)) });
-  if (table === 'vet_visits' && mockServer.visitAnswer) return mockServer.visitAnswer;
+  const forced = mockServer.answers.get(table);
+  if (forced) return forced;
   const staged = new Map([...mockServerTable(table)].map(([id, r]) => [id, { ...r }]));
   for (const row of payload) {
     const refused = mockServerRefusal(table, row);
@@ -188,7 +193,13 @@ import {
   syncPendingMedications,
   syncPendingVetVisits,
 } from './sync';
-import { endActiveTrial, startDietTrial, type StartTrialInput } from './dietTrialSetup';
+import {
+  addTrialFood,
+  changeTrialWindow,
+  endActiveTrial,
+  startDietTrial,
+  type StartTrialInput,
+} from './dietTrialSetup';
 import { startRegimen } from './medicationSetup';
 import { insertMedicationDose, rateDoseAdherence } from './medicationDose';
 import { linkCourseToVisit, linkTrialToVisit, logVetVisit } from './vetVisits';
@@ -255,7 +266,8 @@ beforeEach(async () => {
   mockLocal.reads.length = 0;
   mockServer.rows.clear();
   mockServer.writes.length = 0;
-  mockServer.visitAnswer = null;
+  mockServer.answers.clear();
+  mockServer.refuse.clear();
   mockServer.slow.clear();
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
@@ -287,7 +299,7 @@ describe('a trial started beside an ending that waits on its visit', () => {
 
     // The after-visit screen: the visit is minted and its push goes out, and the network
     // drops it. A dropped connection costs the visit nothing; it is simply still unsent.
-    mockServer.visitAnswer = DROPPED;
+    mockServer.answers.set('vet_visits', DROPPED);
     visit = await logVetVisit({ petId: PET, visitedAt: TODAY });
     await syncPendingVetVisits();
     // *Ended*: the link first, then the ending, whose own push fires at once.
@@ -308,7 +320,7 @@ describe('a trial started beside an ending that waits on its visit', () => {
   });
 
   it('sends both once the visit lands, the ending first, and quarantines neither', async () => {
-    mockServer.visitAnswer = null;
+    mockServer.answers.delete('vet_visits');
     await syncPendingVetVisits();
     await syncPendingDietTrials();
     await settle();
@@ -330,7 +342,7 @@ describe('a trial started beside an ending that waits on its visit', () => {
     expect(writesTo('diet_trial_foods')).toEqual([]);
     expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0 });
 
-    mockServer.visitAnswer = null;
+    mockServer.answers.delete('vet_visits');
     await syncPendingVetVisits();
     await syncPendingDietTrials();
     await syncPendingDietTrialFoods();
@@ -345,7 +357,7 @@ describe('a trial started beside an ending that waits on its visit', () => {
   // themselves; nothing here but the visit's push is called.
   it("needs no other push: the visit landing sends A, then B, then B's food", async () => {
     const [food] = foodsOf(trialB);
-    mockServer.visitAnswer = null;
+    mockServer.answers.delete('vet_visits');
     await syncPendingVetVisits();
     await settle();
 
@@ -384,7 +396,7 @@ describe('a visit landing sends what waited on it', () => {
     ['a policy filters the write (no row comes back)', { data: [], error: null }],
     ['the server refuses the visit', { data: null, error: { code: '23514', message: 'refused' } }],
   ] as [string, ServerAnswer][])('runs none of them when nothing lands: %s', async (_case, answer) => {
-    mockServer.visitAnswer = answer;
+    mockServer.answers.set('vet_visits', answer);
     await logVetVisit({ petId: PET, visitedAt: TODAY });
     await syncPendingVetVisits();
     await settle();
@@ -442,7 +454,7 @@ describe('a dose correction under a course with an unsent edit', () => {
 
     // At the vet, *Keep* links the course to a visit that cannot land, so the course now
     // carries an edit it cannot send.
-    mockServer.visitAnswer = DROPPED;
+    mockServer.answers.set('vet_visits', DROPPED);
     const visit = await logVetVisit({ petId: PET, visitedAt: TODAY });
     await syncPendingVetVisits();
     expect(await linkCourseToVisit(course, visit)).toBe(true);
@@ -461,5 +473,130 @@ describe('a dose correction under a course with an unsent edit', () => {
       .toMatchObject({ adherence: 'refused', synced: 1, sync_error: null });
     // The course still waits on its visit; the dose did not need it to land.
     expect(localRow('medications', course)).toMatchObject({ synced: 0, sync_error: null });
+  });
+});
+
+// The code review of 074fd18, case c: a food held behind its trial is sent when the
+// TRIAL's push lands, with no visit anywhere. A trial the server already holds reads
+// unsent while an edit to it is in flight, a food added in that window is held (041
+// would refuse it terminally otherwise), and the food's own push has come and gone.
+describe("a food held behind its own trial's unsent edit", () => {
+  /** The edits below are made as of this instant, so the window math never depends on
+   *  the day the suite runs (C-29). */
+  const EDIT_AT = new Date('2026-10-01T12:00:00.000Z');
+  const FOOD_B = { id: 'food-b', brand: 'Brand food-b', product_name: 'Wet', food_type: 'wet' };
+
+  /** Trial A on the server; then, with the trials push dropped, its window moved and a
+   *  food added to it. Returns the food's row id. */
+  async function heldFood(trialId: string): Promise<string> {
+    mockServer.answers.set('diet_trials', DROPPED);
+    await changeTrialWindow({ trialId, targetDurationDays: 84, now: EDIT_AT });
+    await settle();
+    const food = await addTrialFood({ trialId, petId: PET, food: FOOD_B, allowedFrom: TODAY, now: EDIT_AT });
+    await settle();
+    expect(localRow('diet_trials', trialId)).toMatchObject({ synced: 0, sync_error: null });
+    expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 0, sync_error: null });
+    return food;
+  }
+
+  it("is sent in the same pass that lands the trial's edit, with no visit anywhere", async () => {
+    const trial = await startDietTrial(trialInput('food-a', '2026-08-06'));
+    await settle();
+    const food = await heldFood(trial);
+    expect(writesTo('diet_trial_foods').flat()).not.toContain(food);
+
+    // Back online: the next trials push (a foreground, say) lands the edit. Nothing here
+    // runs the foods queue.
+    mockServer.answers.delete('diet_trials');
+    mockServer.writes.length = 0;
+    await syncPendingDietTrials();
+    await settle();
+
+    expect(writesTo('diet_trials')).toEqual([[trial]]);
+    expect(serverRow('diet_trials', trial)).toMatchObject({ target_duration_days: 84 });
+    expect(writesTo('diet_trial_foods')).toEqual([[food]]);
+    expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 1, sync_error: null });
+  });
+
+  it('is sent when that pass stops early too: its trial ended and landed, a sibling did not', async () => {
+    const trial = await startDietTrial(trialInput('food-a', '2026-08-06'));
+    const otherPets = await startDietTrial({ ...trialInput('food-o', '2026-08-06'), petId: 'pet-2' });
+    await settle();
+    const food = await heldFood(trial);
+    // Still offline: both trials are ended, so the next push is an ending pass of two.
+    await endActiveTrial({ trialId: trial, reason: 'vet_advised', endedOn: TODAY });
+    await endActiveTrial({ trialId: otherPets, reason: 'vet_advised', endedOn: TODAY });
+    await settle();
+
+    // Back online, and the server refuses the other pet's ending: the pass stops there,
+    // holding any start, with this trial landed.
+    mockServer.answers.delete('diet_trials');
+    mockServer.refuse.set(otherPets, { code: '23514', message: 'refused' });
+    mockServer.writes.length = 0;
+    await syncPendingDietTrials();
+    await settle();
+
+    expect(localRow('diet_trials', otherPets)).toMatchObject({ synced: 0 });
+    expect(String(localRow('diet_trials', otherPets).sync_error)).toContain('23514');
+    expect(localRow('diet_trials', trial)).toMatchObject({ status: 'abandoned', synced: 1, sync_error: null });
+    expect(writesTo('diet_trial_foods')).toEqual([[food]]);
+    expect(localRow('diet_trial_foods', food)).toMatchObject({ synced: 1, sync_error: null });
+  });
+
+  it('runs the foods queue once per trials push, however many trials land', async () => {
+    // An ending and a start in one push, so both passes land.
+    const ending = await startDietTrial(trialInput('food-a', '2026-08-06'));
+    await settle();
+    mockServer.answers.set('diet_trials', DROPPED);
+    await endActiveTrial({ trialId: ending, reason: 'vet_advised', endedOn: TODAY });
+    const starting = await startDietTrial(trialInput('food-b', TODAY));
+    await settle();
+
+    mockServer.answers.delete('diet_trials');
+    mockServer.writes.length = 0;
+    mockLocal.reads.length = 0;
+    await syncPendingDietTrials();
+    await settle();
+
+    expect(writesTo('diet_trials')).toEqual([[ending], [starting]]);
+    expect(drainRuns()).toEqual({ diet_trials: 1, diet_trial_foods: 1 });
+    expect(writesTo('diet_trial_foods')).toEqual([foodsOf(starting)]);
+  });
+
+  it('follows a foods run already in flight rather than starting a second beside it (C-24)', async () => {
+    const trial = await startDietTrial(trialInput('food-a', '2026-08-06'));
+    const otherPets = await startDietTrial({ ...trialInput('food-o', '2026-08-06'), petId: 'pet-2' });
+    await settle();
+    const held = await heldFood(trial);
+    // A food for the other pet's trial, which is on the server: its push goes out, slowly.
+    const openFoods = slowWrites('diet_trial_foods');
+    await addTrialFood({ trialId: otherPets, petId: 'pet-2', food: FOOD_B, allowedFrom: TODAY, now: EDIT_AT });
+    await settle();
+    const onTheWire = drainRuns().diet_trial_foods;
+
+    mockServer.answers.delete('diet_trials');
+    await syncPendingDietTrials();
+    await settle();
+    // The trial landed and the foods queue was kicked; that run waits behind the one on
+    // the wire, where a second read beside it would be two drains of one queue at once.
+    expect(localRow('diet_trials', trial)).toMatchObject({ synced: 1 });
+    expect(drainRuns().diet_trial_foods).toBe(onTheWire);
+
+    openFoods();
+    await settle();
+    expect(drainRuns().diet_trial_foods).toBe(onTheWire + 1);
+    expect(localRow('diet_trial_foods', held)).toMatchObject({ synced: 1, sync_error: null });
+  });
+
+  it('runs no foods queue when no trial lands', async () => {
+    const trial = await startDietTrial(trialInput('food-a', '2026-08-06'));
+    await settle();
+    await heldFood(trial);
+
+    mockLocal.reads.length = 0;
+    await syncPendingDietTrials(); // the push is still dropped
+    await settle();
+
+    expect(drainRuns()).toEqual({ diet_trials: 1 });
   });
 });

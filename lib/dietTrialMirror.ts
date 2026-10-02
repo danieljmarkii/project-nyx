@@ -189,8 +189,9 @@ export const DIET_TRIAL_PUSH_QUEUE_SQL =
 
 // An allowed food waits for its trial to land (`parentLandedSql`): migration 041's
 // same-pet trigger runs ahead of the foreign key, so a food sent before its trial is a
-// terminal 23514, not a retry. A trial can wait a while: behind its own visit, or beside
-// a sibling trial that waits on one.
+// terminal 23514, not a retry. A trial can wait a while: behind its own visit, beside a
+// sibling trial that waits on one, or with an edit of its own in flight. The trials
+// drain sends the held food once the trial lands.
 export const DIET_TRIAL_FOOD_PUSH_QUEUE_SQL =
   `SELECT * FROM diet_trial_foods WHERE synced = 0 AND sync_error IS NULL
      AND ${parentLandedSql('diet_trial_foods')} LIMIT 100`;
