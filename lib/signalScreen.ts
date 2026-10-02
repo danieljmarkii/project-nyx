@@ -58,6 +58,7 @@ import {
   maskScriptRows,
   maskedTrialSentence,
   courseLabel,
+  withClause,
   touches,
   type PhoneScriptMasking,
   type ScreenMasking,
@@ -497,7 +498,7 @@ export function whyLines(
     const logged = `Two windows of ${n} ${plural(n, 'day')}, with symptoms or meals logged on ${a.loggedCount} and ${b.loggedCount} of them.`;
     lines.push(
       compareMask?.caption
-        ? `${logged} ${compareMask.caption} So they aren't a before and after.`
+        ? `${logged} ${withClause(compareMask.caption, "so they aren't a before and after")}`
         : `${logged} Compared as counts, not a verdict on how ${input.petName} is doing.`,
     );
   } else if (trialTooYoungToCompare(input.trial)) {

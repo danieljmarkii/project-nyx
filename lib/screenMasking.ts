@@ -136,7 +136,7 @@ export function maskCaption(
 ): string | null {
   if (!m) return null;
   if (m.unreadable) {
-    return `The medication record couldn't be read just now, so no count of ${m.signWord} here shows a 0.`;
+    return `The medication record couldn't be checked just now, so no zero is shown here. Try again in a moment.`;
   }
   const touched = spansTouching(m.spans, indexOfKey(fromKey), indexOfKey(toKey));
   if (touched.length === 0) return null;
@@ -147,9 +147,15 @@ export function maskCaption(
   );
   if (opts.zeroWithheld) {
     const where = opts.unit === 'week' ? 'a quiet week there' : opts.unit === 'lane' ? 'a quiet stretch there' : 'a low count there';
-    parts.push(`So ${where} isn't a sign it has settled.`);
+    // Joined to the last sentence, never a bare "So …" fragment (the voice pass).
+    parts[parts.length - 1] = withClause(parts[parts.length - 1], `so ${where} isn't a sign it has settled`);
   }
   return parts.join(' ');
+}
+
+/** "X can hide coughing." + "so …" → "X can hide coughing, so …." */
+export function withClause(sentence: string, clause: string): string {
+  return `${sentence.replace(/\.$/, '')}, ${clause}.`;
 }
 
 /** One phone-script row naming a masking span on board now (D3): "On board" for a course,

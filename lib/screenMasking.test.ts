@@ -121,7 +121,7 @@ describe('the gate', () => {
     const m = await loadScreenMasking({ petId: 'p', sign: 'vomit', signWord: 'vomiting', today: TODAY, engineFlags: ['engines_v3_en10'], db: d });
     expect(m?.unreadable).toBe(true);
     expect(touches(m, '2020-01-01', '2020-01-02')).toBe(true);
-    expect(maskCaption(m, '2026-09-01', TODAY, { zeroWithheld: true, unit: 'week' })).toContain("couldn't be read");
+    expect(maskCaption(m, '2026-09-01', TODAY, { zeroWithheld: true, unit: 'week' })).toContain("couldn't be checked just now");
   });
 });
 

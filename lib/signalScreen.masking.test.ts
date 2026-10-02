@@ -90,8 +90,8 @@ describe('CUL-1440 · 1 · the weekly bars beside prednisone', () => {
     expect(weeks[last].count).toBe(0); // fixture premise: the week under the drug is a zero
     expect(model.weeklyMask).not.toBeNull();
     expect(model.weeklyMask!.masked[last]).toBe(true);
-    expect(model.weeklyMask!.caption).toContain('Prednisone from Sep 21 can hide coughing.');
-    expect(model.weeklyMask!.caption).toContain("isn't a sign it has settled");
+    expect(model.weeklyMask!.caption).toContain('Prednisone from Sep 21 can hide coughing');
+    expect(model.weeklyMask!.caption).toBe("Prednisone from Sep 21 can hide coughing, so a quiet week there isn't a sign it has settled.");
   });
 
   it('leaves a zero week that touches no span alone (the Sep 7 week keeps its 0)', () => {
@@ -115,7 +115,7 @@ describe('CUL-1440 · 1 · the weekly bars beside prednisone', () => {
     const weeks = model.weekly!.weeks;
     const sep6 = weeks.findIndex((w) => w.startKey === '2026-09-06');
     expect(model.weeklyMask!.masked[sep6]).toBe(true);
-    expect(model.weeklyMask!.caption).toContain("Anything given at the Sep 10 visit isn't in the record.");
+    expect(model.weeklyMask!.caption).toContain("Anything given at the Sep 10 visit isn't in the record");
   });
 });
 
@@ -146,7 +146,7 @@ describe('CUL-1440 · 2 · the drawn compare beside maropitant', () => {
     // Maropitant started 30 days ago, inside the earlier window's last days too: both touch the span.
     expect(model.compareMask).toEqual({ masked: [true, true], caption: expect.stringContaining('can hide vomiting') });
     const why = model.why.join(' ');
-    expect(why).toContain("So they aren't a before and after.");
+    expect(why).toContain("can hide vomiting, so they aren't a before and after.");
     expect(why).not.toContain('Compared as counts');
   });
 
@@ -237,7 +237,7 @@ describe('CUL-1440 · 6 · the lanes split at a masking course inside the trial'
     ]);
     expect(lanes.map((l) => l.masked === true)).toEqual([false, false, true]);
     expect(lanes[2].total).toBe(3);
-    expect(model.lanesMaskCaption).toContain('Prednisone from Sep 21 can hide vomiting.');
+    expect(model.lanesMaskCaption).toContain('Prednisone from Sep 21 can hide vomiting');
   });
 
   it('flag off: the two lanes exactly as before', () => {
