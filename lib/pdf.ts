@@ -207,8 +207,9 @@ export async function shareReportPdf(report: VetReport): Promise<boolean> {
   // clinical record under the pet's name, so it goes in the transient directory the
   // sign-out wipe clears (lib/transientFiles.ts, the stageForShare precedent). It sat
   // in the cache root, past sign-out AND account deletion. expo-print's own temp
-  // (<Caches>/Print/<uuid>.pdf) is outside every wipe, so it is deleted once the
-  // share sheet has closed.
+  // (<Caches>/Print/<uuid>.pdf) is deleted once the share sheet has closed, and the
+  // wipe also clears that folder, because a process that dies with the sheet open
+  // never reaches the `finally`.
   let shareUri = uri;
   try {
     const dir = transientDirectory();

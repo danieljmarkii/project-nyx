@@ -14,6 +14,7 @@ import {
 import { supabase } from './supabase';
 import { getSyncStatus } from './db';
 import { clearTransientFiles } from './transientFiles';
+import { waitFor } from '@testing-library/react-native';
 import { syncNow } from './sync';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -42,17 +43,29 @@ jest.mock('expo-file-system', () => {
   class Directory {
     uri: string;
     constructor(...parts: unknown[]) { this.uri = join(parts); }
-    get exists() { return mockFs.dirs.has(this.uri); }
+    // A directory exists if it was created OR holds a file, as on disk (expo-print
+    // creates <Caches>/Print itself; nothing here calls create() for it).
+    get exists() {
+      return mockFs.dirs.has(this.uri) || [...mockFs.files.keys()].some((k) => k.startsWith(`${this.uri}/`));
+    }
     create() { mockFs.dirs.add(this.uri); }
     delete() {
       for (const key of [...mockFs.files.keys()]) if (key.startsWith(`${this.uri}/`)) mockFs.files.delete(key);
       mockFs.dirs.delete(this.uri);
+    }
+    // The files directly inside this directory (what the legacy root sweep walks).
+    list() {
+      const prefix = `${this.uri}/`;
+      return [...mockFs.files.keys()]
+        .filter((key) => key.startsWith(prefix) && !key.slice(prefix.length).includes('/'))
+        .map((key) => new File(key));
     }
   }
   class File {
     uri: string;
     constructor(...parts: unknown[]) { this.uri = join(parts); }
     get exists() { return mockFs.files.has(this.uri); }
+    get name() { return this.uri.slice(this.uri.lastIndexOf('/') + 1); }
     delete() { mockFs.files.delete(this.uri); }
     copy(dest: { uri: string }) {
       if (mockFs.copyThrows) throw new Error('copy failed');
@@ -232,6 +245,33 @@ describe('shareReportPdf', () => {
     clearTransientFiles();
 
     expect([...mockFs.files.keys()]).toEqual([]);
+  });
+
+  // The process can die with the share sheet open (the owner leaves to look up the
+  // vet's address and iOS kills the app), and then the `finally` never runs. The
+  // print temp is the whole record too, so the wipe clears expo-print's folder itself.
+  it('a share the app never returns from still leaves nothing after the wipe', async () => {
+    mockedIsAvailable.mockResolvedValue(true);
+    mockedShare.mockImplementation(() => new Promise(() => {}));
+    void shareReportPdf(report);
+    await waitFor(() => expect(mockedShare).toHaveBeenCalled());
+    expect(mockFs.files.has(PRINT_TEMP)).toBe(true);
+
+    clearTransientFiles();
+
+    expect([...mockFs.files.keys()]).toEqual([]);
+  });
+
+  // Builds before CUL-1045 left the named copy in the cache ROOT, where nothing else
+  // would ever find it. The wipe sweeps that one name shape and leaves the rest alone.
+  it('the wipe also removes the report copies older builds left in the cache root', () => {
+    mockFs.files.set(`file:///cache/${NAMED}`, '%PDF old build');
+    mockFs.files.set('file:///cache/Mr-O-Malley-vet-report.pdf', '%PDF old build, no range');
+    mockFs.files.set('file:///cache/unrelated.json', '{}');
+
+    clearTransientFiles();
+
+    expect([...mockFs.files.keys()]).toEqual(['file:///cache/unrelated.json']);
   });
 });
 
