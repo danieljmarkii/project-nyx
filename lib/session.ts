@@ -6,6 +6,7 @@ import { clearRecoveryRequest } from './recoveryMarker';
 import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
 import { useOnboardingDraftStore } from '../store/onboardingDraftStore';
 import { useMomentStore } from '../store/momentStore';
+import { useUiStore } from '../store/uiStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
 import { clearCachedAppConfig } from './appConfig';
 import { clearBetaOptIns } from './betaFeatures';
@@ -192,6 +193,18 @@ export async function wipeLocalSession(): Promise<void> {
   // second health value — to that payload. Same FR-9 parity rule as the App Group and
   // notification wipes above: wipe every place account data rests, not just SQLite.
   useMomentStore.setState({ visible: false, payload: null, removed: false });
+  // The same leak through the root-mounted SHEETS. The log sheet and the intake door
+  // each open on a request in the UI store and mount in the root layout, so a sign-out
+  // landing while one was up left it over the next person's login screen, still naming
+  // the previous owner's pet and holding any note typed into it. The capture overlay
+  // goes with them: its summary names the pet too. Requests only: `logSheetOpens` is the
+  // sheet's mount key, and `fabMenuOpen` mirrors the FAB's own menu, which the FAB
+  // releases when it unmounts. Best-effort: nothing here may stop the teardown.
+  try {
+    useUiStore.setState({ logSheet: null, intakeDoor: null, captureOverlay: null });
+  } catch (e) {
+    console.warn('[session] closing the open sheets failed:', e);
+  }
   // Clear any half-finished onboarding entry (a typed pet name/type) so it can't
   // carry into the next account's onboarding on this device (B-251 PR 7).
   useOnboardingDraftStore.getState().reset();

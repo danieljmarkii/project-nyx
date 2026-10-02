@@ -77,6 +77,7 @@ import { refreshReadCopy } from './sync';
 import { supabase } from './supabase';
 import { isHistoryDoorTapSpent, isWidgetPetTapSpent, spendHistoryDoorTap, spendWidgetPetTap } from './spentTaps';
 import { useSyncStore } from '../store/syncStore';
+import { useUiStore } from '../store/uiStore';
 
 const GATE_KEY = 'nyx.recoveryInProgress';
 const t0 = 1_700_000_000_000;
@@ -245,6 +246,40 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     (clearLocalData as jest.Mock).mockRejectedValueOnce(new Error('sqlite gone'));
     await expect(wipeLocalSession()).resolves.toBeUndefined();
     expect(clearWidgetTimeline).toHaveBeenCalled();
+  });
+
+  // QA (1.2.0). The log sheet and the intake door open on a request in the UI store and
+  // mount in the ROOT layout, above the auth redirect, so an involuntary sign-out landing
+  // while one was up left it over the next person's login screen, naming the previous
+  // owner's pet and holding any typed note. The moment-store reset's leak, for sheets.
+  it('takes down the root-mounted sheets, so none outlives the session', async () => {
+    useUiStore.setState({
+      logSheet: { initialType: 'vomit' },
+      intakeDoor: { petId: 'pet-a', petName: 'Mochi', sex: 'female', cardHasSelections: true },
+      captureOverlay: {
+        summary: 'Mochi · off, didn’t want the walk', inViewport: true, busy: false,
+        onBack: jest.fn(), onDone: jest.fn(), drawsDoneBar: true,
+      },
+    });
+    await wipeLocalSession();
+    const ui = useUiStore.getState();
+    expect(ui.logSheet).toBeNull();
+    expect(ui.intakeDoor).toBeNull();
+    expect(ui.captureOverlay).toBeNull();
+  });
+
+  it('a failure taking the sheets down never stops the teardown', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await recordRecoveryRequest('jordan@example.com', t0);
+    useUiStore.setState({ logSheet: { initialType: null } });
+    const unsubscribe = useUiStore.subscribe(() => { throw new Error('listener threw'); });
+    try {
+      await expect(wipeLocalSession()).resolves.toBeUndefined();
+    } finally {
+      unsubscribe();
+    }
+    // A step that runs after the sheets still ran.
+    expect(await readRecoveryRequest()).toBeNull();
   });
 
   it('clears the recovery marker — it is the previous owner’s email (B-280 FR-12)', async () => {
