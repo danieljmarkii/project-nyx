@@ -35,7 +35,7 @@ import { syncPendingVetAppointments } from '../lib/sync';
 import {
   buildAppointmentView,
   parseAppointmentQuestions,
-  readAppointmentById,
+  readEditableAppointment,
   saveAppointmentQuestions,
   type AppointmentQuestion,
   type AppointmentDetail,
@@ -195,7 +195,13 @@ export default function RundownScreen() {
     try {
       // The appointment decides the subject in Get-ready mode. Resolved FIRST,
       // because everything below is scoped to its pet.
-      const appointment = wantsGetReady ? await readAppointmentById(appointmentId) : null;
+      //
+      // Through the LIVE read (F4): a booking whose visit has been logged is no longer
+      // upcoming, so it resolves to null like a cancelled one and the page falls back
+      // to the plain rundown. The laxer `readAppointmentById` handed it back, and Back
+      // from the saved visit landed on a Get ready that still offered *Take notes* —
+      // whose Done → Save logged the same visit a second time.
+      const appointment = wantsGetReady ? await readEditableAppointment(appointmentId) : null;
       const subjectId = appointment?.pet_id ?? usePetStore.getState().activePet?.id ?? null;
       if (!subjectId) {
         if (loadIdRef.current === myId) setStatus('error');

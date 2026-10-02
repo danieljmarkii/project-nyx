@@ -28,11 +28,15 @@ const mockRepair = jest.fn(async (_petId: string) => 0);
 let mockAppointment: AppointmentDetail | null = null;
 let mockCourses: ActiveCourse[] = [];
 
+// The registered focus callback, kept so a test can fire the re-focus a return from a
+// pushed route (food-capture) produces (F4).
+const mockFocus: { current: null | (() => void | (() => void)) } = { current: null };
 jest.mock('expo-router', () => ({
   Redirect: () => null,
   router: { back: jest.fn(), push: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true) },
   useFocusEffect: (cb: () => void | (() => void)) => {
     const { useEffect } = require('react');
+    mockFocus.current = cb;
     useEffect(() => cb(), []);
   },
   useLocalSearchParams: () => ({ appointment: 'appt-1' }),
@@ -585,6 +589,67 @@ describe('CUL-945 — the quarantine repair runs where the owner already is', ()
     render(<AfterVisitScreen />);
     await screen.findByText('Save Nyx’s visit');
     await waitFor(() => expect(mockRepair).toHaveBeenCalledWith('pet-a'));
+  });
+});
+
+// F4 — a booking that is already a visit is never logged a second time. Back from the
+// saved visit used to land on a Get ready that still looked live; its Take notes → Done
+// opened this screen over the logged booking, and Save minted a second `vet_visits` row
+// and re-pointed the booking at it. The lax read hands the logged booking back by design
+// (this screen re-reads its OWN on a re-focus), so the rule lives in `load`.
+describe('F4 — a booking already logged goes to its visit, once', () => {
+  /** Re-enter the screen the way returning from a pushed route (food-capture) does. */
+  async function refocus(): Promise<void> {
+    await act(async () => {
+      mockFocus.current?.();
+    });
+    // The repair runs AFTER the redirect check, so its second call says the re-read got
+    // past it: an absence of a redirect below is an answer, not a load still in flight.
+    await waitFor(() => expect(mockRepair).toHaveBeenCalledTimes(2));
+  }
+
+  it('opened fresh, it goes to the visit the booking became — no form, no second visit', async () => {
+    mockAppointment = appointment({ vet_visit_id: 'visit-1' });
+    render(<AfterVisitScreen />);
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/vet-visits/visit-1'));
+    expect(router.replace).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Save Nyx’s visit')).toBeNull();
+    expect(mockLogFromAppointment).not.toHaveBeenCalled();
+    // The booking IS on the record, so the screen must not say otherwise on its way out.
+    expect(screen.queryByText(/no longer on the record/)).toBeNull();
+  });
+
+  it('a re-focus after THIS screen logged the visit keeps the form', async () => {
+    // The re-read the lax read exists for: the first plan action logged the visit, so
+    // coming back from food-capture finds the booking attended, by this screen.
+    mockCourses = [course()];
+    render(<AfterVisitScreen />);
+    await screen.findByText('Cerenia');
+    await act(async () => {
+      fireEvent.press(screen.getByText('Keep'));
+    });
+    await waitFor(() => expect(mockLinkCourse).toHaveBeenCalledTimes(1));
+
+    mockAppointment = appointment({ vet_visit_id: 'new-visit' });
+    await refocus();
+
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(screen.getByText('Save Nyx’s visit')).toBeTruthy();
+  });
+
+  it('a re-focus after ANOTHER phone logged it keeps the form the owner is filling in', async () => {
+    // No visit of this screen's own, so only "the form is seeded" holds the redirect
+    // back. Leaving would drop what the owner typed; the write refuses the duplicate
+    // instead (lib/vetVisitWrites.test.ts, F4).
+    render(<AfterVisitScreen />);
+    await screen.findByText('Save Nyx’s visit');
+
+    mockAppointment = appointment({ vet_visit_id: 'visit-elsewhere' });
+    await refocus();
+
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(screen.getByText('Save Nyx’s visit')).toBeTruthy();
   });
 });
 

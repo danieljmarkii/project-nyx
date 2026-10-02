@@ -61,6 +61,7 @@ import {
   repairRefusedVisitLinks,
   updateVisitDetails,
   VetVisitLinkRefused,
+  visitLoggedFrom,
   type ActiveCourse,
   type AppointmentDetail,
 } from '../../lib/vetVisits';
@@ -184,6 +185,24 @@ export default function AfterVisitScreen() {
   const load = useCallback(async () => {
     try {
       const appt = appointmentId ? await readAppointmentById(appointmentId) : null;
+      // A booking that is ALREADY a visit, opened fresh, goes to that visit (F4). This
+      // screen's save would otherwise log it again: a second `vet_visits` row, with the
+      // booking re-pointed at it. Reachable from any door still offering the booking
+      // after its visit was saved: a list, a strip or a notes screen that has not
+      // re-read, here or on another phone.
+      //
+      // Only on the FIRST load, before the form is seeded, and only while this screen has
+      // made no visit of its own. On a re-focus (back from food-capture) the booking is
+      // attended BY THIS SCREEN and must stay put, and a seeded form holds what the owner
+      // typed, which a redirect would drop. (No visit is made before the form is seeded,
+      // so `seeded` is the operative half; `visitIdRef` names the fact being protected.)
+      // That re-focus is also why `readAppointmentById` stays lax rather than hiding a
+      // logged booking: this screen re-reads its own.
+      const loggedAs = appt ? visitLoggedFrom(appt) : null;
+      if (loggedAs && !seeded.current && visitIdRef.current === null) {
+        router.replace(`/vet-visits/${loggedAs}`);
+        return;
+      }
       setAppointment(appt);
       const forPetId = appt?.pet_id ?? screenPetId;
       if (!forPetId) {
