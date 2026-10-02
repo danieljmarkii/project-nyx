@@ -13,6 +13,7 @@ import {
 } from './pdf';
 import { supabase } from './supabase';
 import { getSyncStatus } from './db';
+import { clearTransientFiles } from './transientFiles';
 import { syncNow } from './sync';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -30,23 +31,38 @@ jest.mock('./sync', () => ({ syncNow: jest.fn() }));
 jest.mock('expo-print', () => ({ printToFileAsync: jest.fn() }));
 jest.mock('expo-sharing', () => ({ isAvailableAsync: jest.fn(), shareAsync: jest.fn() }));
 
-// File.copy throws when this is set — drives the "clinic-name copy failed → share the
-// raw temp uri" fallback branch (mock-prefixed so jest can hoist the factory over it).
-const mockFileControl = { copyThrows: false };
-jest.mock('expo-file-system', () => ({
-  Paths: { cache: { uri: 'file:///cache' } },
-  File: class {
+// An in-memory cache directory, so where the report lands and what the sign-out wipe
+// leaves behind are asserted by enumerating files rather than by reading the code
+// (CUL-1045). `copyThrows` drives the "clinic-name copy failed → share the raw temp
+// uri" fallback (mock-prefixed so jest can hoist the factory over it).
+const mockFs = { files: new Map<string, string>(), dirs: new Set<string>(), copyThrows: false };
+jest.mock('expo-file-system', () => {
+  const join = (parts: unknown[]) =>
+    parts.map((p) => (typeof p === 'string' ? p : (p as { uri: string }).uri)).join('/');
+  class Directory {
     uri: string;
-    constructor(...parts: unknown[]) {
-      this.uri = parts.map((p) => (typeof p === 'string' ? p : (p as { uri: string }).uri)).join('/');
+    constructor(...parts: unknown[]) { this.uri = join(parts); }
+    get exists() { return mockFs.dirs.has(this.uri); }
+    create() { mockFs.dirs.add(this.uri); }
+    delete() {
+      for (const key of [...mockFs.files.keys()]) if (key.startsWith(`${this.uri}/`)) mockFs.files.delete(key);
+      mockFs.dirs.delete(this.uri);
     }
-    get exists() { return false; }
-    delete() {}
-    copy() {
-      if (mockFileControl.copyThrows) throw new Error('copy failed');
+  }
+  class File {
+    uri: string;
+    constructor(...parts: unknown[]) { this.uri = join(parts); }
+    get exists() { return mockFs.files.has(this.uri); }
+    delete() { mockFs.files.delete(this.uri); }
+    copy(dest: { uri: string }) {
+      if (mockFs.copyThrows) throw new Error('copy failed');
+      const body = mockFs.files.get(this.uri);
+      if (body === undefined) throw new Error(`no such file: ${this.uri}`);
+      mockFs.files.set(dest.uri, body);
     }
-  },
-}));
+  }
+  return { Paths: { cache: { uri: 'file:///cache' } }, Directory, File };
+});
 
 const mockedInvoke = supabase.functions.invoke as jest.Mock;
 const mockedIsAvailable = Sharing.isAvailableAsync as jest.Mock;
@@ -141,11 +157,26 @@ describe('shareReportPdf', () => {
     html: '<html>Nyx</html>', petName: 'Nyx', startDate: '2026-04-04', endDate: '2026-07-03', scopeBasis: 'fallback_90d', photoCount: 0,
     trialAllowedListMissing: false,
   };
+  // Where expo-print really writes (ExpoPrintToFile.swift): <Caches>/Print/<uuid>.pdf.
+  const PRINT_TEMP = 'file:///cache/Print/print-tmp.pdf';
+  const NAMED = 'Nyx-vet-report-2026-04-04-to-2026-07-03.pdf';
+  // What existed at the moment the share sheet received the file: a share of a file
+  // that is already gone would "succeed" here and send the vet nothing.
+  let presentAtShare: boolean | null = null;
+
   beforeEach(() => {
+    mockFs.files.clear();
+    mockFs.dirs.clear();
+    mockFs.copyThrows = false;
+    presentAtShare = null;
     mockedIsAvailable.mockReset();
-    mockedShare.mockReset().mockResolvedValue(undefined);
-    mockedPrint.mockReset().mockResolvedValue({ uri: 'file:///cache/print-tmp.pdf' });
-    mockFileControl.copyThrows = false;
+    mockedShare.mockReset().mockImplementation(async (uri: string) => {
+      presentAtShare = mockFs.files.has(uri);
+    });
+    mockedPrint.mockReset().mockImplementation(async () => {
+      mockFs.files.set(PRINT_TEMP, '%PDF-1.7 the whole record');
+      return { uri: PRINT_TEMP };
+    });
   });
 
   it('returns false and never prints when the platform has no share sheet', async () => {
@@ -156,24 +187,51 @@ describe('shareReportPdf', () => {
     expect(mockedShare).not.toHaveBeenCalled();
   });
 
-  it('renders the html to a PDF and shares the clinic-named file', async () => {
+  it('renders the html to a PDF and shares the clinic-named copy from the transient directory', async () => {
     mockedIsAvailable.mockResolvedValue(true);
     const ok = await shareReportPdf(report);
     expect(ok).toBe(true);
     expect(mockedPrint).toHaveBeenCalledWith({ html: report.html });
     // Shares the renamed clinic-friendly file, not the raw temp uri.
     expect(mockedShare).toHaveBeenCalledWith(
-      'file:///cache/Nyx-vet-report-2026-04-04-to-2026-07-03.pdf',
+      `file:///cache/transient/${NAMED}`,
       expect.objectContaining({ mimeType: 'application/pdf', UTI: 'com.adobe.pdf' }),
     );
+    expect(presentAtShare).toBe(true);
+    // expo-print's temp is outside every wipe, so it goes once the sheet has closed.
+    expect(mockFs.files.has(PRINT_TEMP)).toBe(false);
   });
 
   it('falls back to the raw temp uri (never blocks sharing) when the rename copy fails', async () => {
     mockedIsAvailable.mockResolvedValue(true);
-    mockFileControl.copyThrows = true;
+    mockFs.copyThrows = true;
     const ok = await shareReportPdf(report);
     expect(ok).toBe(true);
-    expect(mockedShare).toHaveBeenCalledWith('file:///cache/print-tmp.pdf', expect.anything());
+    expect(mockedShare).toHaveBeenCalledWith(PRINT_TEMP, expect.anything());
+    expect(presentAtShare).toBe(true); // deleted after the share, never before it
+    expect(mockFs.files.has(PRINT_TEMP)).toBe(false);
+  });
+
+  it('a share that throws still deletes the print temp', async () => {
+    mockedIsAvailable.mockResolvedValue(true);
+    mockedShare.mockRejectedValue(new Error('share sheet failed'));
+    await expect(shareReportPdf(report)).rejects.toThrow('share sheet failed');
+    expect(mockFs.files.has(PRINT_TEMP)).toBe(false);
+  });
+
+  // CUL-1045, proved by behaviour rather than by reading the diff: the report is the
+  // whole clinical record under the pet's name, and the sign-out wipe (lib/db.ts →
+  // clearTransientFiles, which account deletion also runs) must leave none of it behind.
+  // An absence proves a wipe only when the thing wiped was there, so the copy is
+  // asserted present first.
+  it('leaves no copy of the report in the cache once the sign-out wipe has run', async () => {
+    mockedIsAvailable.mockResolvedValue(true);
+    await shareReportPdf(report);
+    expect(mockFs.files.has(`file:///cache/transient/${NAMED}`)).toBe(true);
+
+    clearTransientFiles();
+
+    expect([...mockFs.files.keys()]).toEqual([]);
   });
 });
 
