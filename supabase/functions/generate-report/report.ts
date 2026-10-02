@@ -101,6 +101,7 @@ import {
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
 import { isFreeFedIntakeMeal, parseFreeFedIntakeSpans } from '../../../lib/freeFedIntake.ts'
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
+import { dateTimeFormat } from '../../../lib/utils.ts'
 // CUL-226 — the SHARED vomit-contents presence leaves: the SAME food/hair/bile atoms L3's
 // photoComposition reads (same dependency-free, both-runtimes rationale as foodFormat above), so
 // the report's contents descriptor and the Signal card can't drift on a future token edit. Only the
@@ -782,7 +783,7 @@ function localDayKey(iso: string, tz: string | null): string | null {
   if (tz) {
     try {
       // en-CA renders as YYYY-MM-DD; timeZone converts the UTC instant to the local day.
-      return new Intl.DateTimeFormat('en-CA', {
+      return dateTimeFormat('en-CA', {
         timeZone: tz,
         year: 'numeric',
         month: '2-digit',

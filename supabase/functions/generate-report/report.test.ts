@@ -4792,3 +4792,34 @@ Deno.test('CUL-1274 — an unrated log followed by two CONFLICTING re-logs stays
     assert.ok(flag, `${label}: the decline still flags`)
   }
 })
+
+// ── The report's CPU budget: formatters per zone, never per event (release QA, 2026-10-02) ──
+// Building an Intl.DateTimeFormat costs ~75 µs, and the report built one per formatted date,
+// about nine per event. Once every pull paged (CUL-975) the whole lookback reached the
+// assembly, and a 3,000-event record measured 1.6–2.5 s of CPU against Supabase's 2 s cap,
+// past which the request dies with a 546 and the owner sees "Something went wrong". Counted
+// rather than timed, so the bound holds on any machine.
+Deno.test('a 1,000-event report builds formatters per zone, not per event', () => {
+  const base = buildNyxInput()
+  const events: ReportEventInput[] = []
+  for (let k = 0; events.length < 1_000; k++) {
+    for (const e of base.events) {
+      // An hour apart per copy, so no copy collapses into the same-minute de-dup.
+      events.push({ ...e, id: `${e.id}-copy${k}`, occurredAt: new Date(Date.parse(e.occurredAt) - k * 3_600_000).toISOString() })
+    }
+  }
+  const Real = Intl.DateTimeFormat
+  let built = 0
+  function Counting(...args: ConstructorParameters<typeof Intl.DateTimeFormat>): Intl.DateTimeFormat {
+    built++
+    return new Real(...args)
+  }
+  Object.defineProperty(Intl, 'DateTimeFormat', { value: Counting, configurable: true, writable: true })
+  try {
+    renderReport(assembleReport({ ...base, events }))
+  } finally {
+    Object.defineProperty(Intl, 'DateTimeFormat', { value: Real, configurable: true, writable: true })
+  }
+  assert.ok(built < 100, `built ${built} formatters for ${events.length} events`)
+})
+

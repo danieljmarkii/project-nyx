@@ -87,6 +87,7 @@ import type { ContaminationFact } from './trial.ts'
 // Same list formatter the owner-facing contaminant copy uses — one spelling of
 // "chicken, salmon and beef" across the product (B-351 slice 5).
 import { proteinList } from '../../../lib/trialProtein.ts'
+import { dateTimeFormat } from '../../../lib/utils.ts'
 
 // ── HTML escaping — EVERY interpolated data string flows through here ────────────
 // The snapshot carries owner-entered free text (pet name, food labels, notes, drug
@@ -189,7 +190,7 @@ function fmtLocalDayScoped(iso: string, tz: string | null, windowEndDayKey: stri
   if (tz) {
     try {
       year = Number(
-        new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric' }).format(new Date(ms)),
+        dateTimeFormat('en-US', { timeZone: tz, year: 'numeric' }).format(new Date(ms)),
       )
     } catch {
       /* invalid IANA zone → UTC fallback below */
@@ -206,7 +207,7 @@ function fmtLocalDay(iso: string, tz: string | null): string {
   if (Number.isNaN(ms)) return h(iso)
   if (tz) {
     try {
-      const parts = new Intl.DateTimeFormat('en-US', {
+      const parts = dateTimeFormat('en-US', {
         timeZone: tz,
         month: 'short',
         day: 'numeric',
@@ -227,7 +228,7 @@ function fmtLocalTime(iso: string, tz: string | null): string {
   if (Number.isNaN(ms)) return '—'
   if (tz) {
     try {
-      return new Intl.DateTimeFormat('en-GB', {
+      return dateTimeFormat('en-GB', {
         timeZone: tz,
         hour: '2-digit',
         minute: '2-digit',
@@ -1457,7 +1458,7 @@ function localDayKeyOf(iso: string, tz: string | null): string {
   if (Number.isNaN(ms)) return iso.slice(0, 10)
   if (tz) {
     try {
-      return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(
+      return dateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(
         new Date(ms),
       )
     } catch {

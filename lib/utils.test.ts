@@ -2,12 +2,14 @@ import {
   archiveBlockedCopy,
   archiveConfirmBody,
   confidenceUpdateForEdit,
+  dateTimeFormat,
   dayKeyToLocalDate,
   deriveOccurredAt,
   describeOccurredAt,
   formatLongDate,
   formatTime,
   formatUtcDayShort,
+  localDayIndex,
   petAgeShort,
   petIdentityLine,
   petPronouns,
@@ -429,5 +431,41 @@ describe('resolveIanaZone (B-443 — request zone wins, then stored, then null)'
     expect(resolveIanaZone(null, undefined)).toBe(null);
     expect(resolveIanaZone('nope', '')).toBe(null);
     expect(resolveIanaZone()).toBe(null);
+  });
+});
+
+// One formatter per (locale, options), reused: building one costs ~75 µs, and per-date call
+// sites built one per value they formatted, which put the vet report's CPU on a curve toward
+// Supabase's 2 s cap (release QA, 2026-10-02). Each test uses a zone no other test here does,
+// because the cache is module-level and outlives a test.
+describe('dateTimeFormat', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('builds one formatter for a zone and hands it back on every later call', () => {
+    const built = jest.spyOn(Intl, 'DateTimeFormat');
+    const first = dateTimeFormat('en-US', { timeZone: 'Pacific/Chatham', year: 'numeric' });
+    for (let i = 0; i < 1_000; i++) {
+      expect(dateTimeFormat('en-US', { timeZone: 'Pacific/Chatham', year: 'numeric' })).toBe(first);
+    }
+    expect(built).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps zones and option shapes apart', () => {
+    const a = dateTimeFormat('en-US', { timeZone: 'Asia/Kathmandu', year: 'numeric' });
+    expect(dateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', year: 'numeric' })).not.toBe(a);
+    expect(dateTimeFormat('en-US', { timeZone: 'Asia/Kathmandu', month: 'numeric' })).not.toBe(a);
+    expect(dateTimeFormat('en-GB', { timeZone: 'Asia/Kathmandu', year: 'numeric' })).not.toBe(a);
+  });
+
+  it('an unknown zone throws every time and caches nothing, so callers still fall back', () => {
+    expect(() => dateTimeFormat('en-US', { timeZone: 'Not/AZone' })).toThrow(RangeError);
+    expect(() => dateTimeFormat('en-US', { timeZone: 'Not/AZone' })).toThrow(RangeError);
+  });
+
+  it('localDayIndex over a thousand instants in one zone builds at most one formatter', () => {
+    const built = jest.spyOn(Intl, 'DateTimeFormat');
+    const start = Date.UTC(2026, 0, 1, 12);
+    for (let d = 0; d < 1_000; d++) localDayIndex(start + d * 3_600_000, 'America/St_Johns');
+    expect(built.mock.calls.length).toBeLessThanOrEqual(1);
   });
 });
