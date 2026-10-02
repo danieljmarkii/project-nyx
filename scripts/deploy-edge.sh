@@ -23,21 +23,22 @@
 #   4. Syntax-checks the bundle offline (`node --check`).
 #   5. Prints the bundle path, sha256, and exact deploy instructions.
 #
-# By default it does NOT deploy — it builds and prints instructions. Pass
-# `--deploy` (with SUPABASE_ACCESS_TOKEN set) to upload the bundle itself, which
-# is the path to prefer: it ships the exact bytes just verified here.
-#
-# The MCP `deploy_edge_function` call remains the no-token fallback, but it has a
-# size ceiling (B-455): it takes the bundle as an inline tool parameter, so an
-# agent has to reproduce the artifact byte-for-byte, and generate-report is 240 KB.
-# Above roughly a few tens of KB that is not a safe way to move a file.
+# By default it does NOT deploy — it builds and prints instructions. `--deploy`
+# (with SUPABASE_ACCESS_TOKEN set) uploads the bundle itself, shipping the exact
+# bytes just verified here. Since CUL-1147 that is what the Deploy Edge Functions
+# workflow runs for every function a merge to main changed; a session never runs
+# `--deploy` by hand (docs/edge-deploy-runbook.md § Break glass is the exception).
+# With `--deploy`, a test run that does not pass is a hard failure, never a warning.
 #
 # USAGE
 #   scripts/deploy-edge.sh <function-name> [--no-test] [--minify] [--out PATH]
+#   scripts/deploy-edge.sh --provision-only
 #
 #   <function-name>   directory under supabase/functions/ (e.g. generate-signal)
 #   --deploy          ALSO deploy the bundle (needs SUPABASE_ACCESS_TOKEN); without
 #                     this the script only builds and prints instructions
+#   --provision-only  install the pinned esbuild + Supabase CLI and exit (the
+#                     workflow does this in a step that cannot see the token)
 #   --no-verify-jwt   deploy with JWT verification off (view-report ONLY)
 #   --project-ref REF override the project (default aigchluqluzuhtbfllgh)
 #   --no-test         skip the deno test verification step
@@ -53,10 +54,20 @@ RUN_TESTS=1
 MINIFY=0
 OUT=""
 DEPLOY=0
+PROVISION_ONLY=0
 NO_VERIFY_JWT=0
 PROJECT_REF="${SUPABASE_PROJECT_REF:-aigchluqluzuhtbfllgh}"
 
-usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+# Exact versions, so the Codespace and the workflow bundle and upload with the same
+# tools, and so the workflow never runs an unpinned package where the token can
+# reach it. Bump deliberately; the next deploy of every function then uses the new one.
+ESBUILD_VERSION="0.28.2"
+SUPABASE_CLI_VERSION="2.117.0"
+# Only installed when no system deno exists (the workflow always has one, from
+# setup-deno); pinned to the same version ci.yml tests with.
+DENO_NPM_VERSION="2.9.4"
+
+usage() { sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -64,6 +75,7 @@ while [ $# -gt 0 ]; do
     --minify)  MINIFY=1; shift ;;
     --out)     OUT="${2:?--out needs a path}"; shift 2 ;;
     --deploy)  DEPLOY=1; shift ;;
+    --provision-only) PROVISION_ONLY=1; RUN_TESTS=0; shift ;;
     --no-verify-jwt) NO_VERIFY_JWT=1; shift ;;
     --project-ref)   PROJECT_REF="${2:?--project-ref needs a ref}"; shift 2 ;;
     -h|--help) usage 0 ;;
@@ -72,17 +84,19 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$FUNCTION" ] || { echo "error: function name required" >&2; usage 1; }
+[ "$PROVISION_ONLY" = 1 ] || [ -n "$FUNCTION" ] || { echo "error: function name required" >&2; usage 1; }
 
 # ----- paths -----------------------------------------------------------------
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-FUNC_DIR="supabase/functions/${FUNCTION}"
-ENTRY="${FUNC_DIR}/index.ts"
-[ -d "$FUNC_DIR" ] || { echo "error: no such function directory: $FUNC_DIR" >&2; exit 1; }
-[ -f "$ENTRY" ]    || { echo "error: no entrypoint: $ENTRY" >&2; exit 1; }
-[ -z "$OUT" ] && OUT=".edge-build/${FUNCTION}/index.ts"
+if [ "$PROVISION_ONLY" = 0 ]; then
+  FUNC_DIR="supabase/functions/${FUNCTION}"
+  ENTRY="${FUNC_DIR}/index.ts"
+  [ -d "$FUNC_DIR" ] || { echo "error: no such function directory: $FUNC_DIR" >&2; exit 1; }
+  [ -f "$ENTRY" ]    || { echo "error: no entrypoint: $ENTRY" >&2; exit 1; }
+  [ -z "$OUT" ] && OUT=".edge-build/${FUNCTION}/index.ts"
+fi
 
 BIN="$REPO_ROOT/node_modules/.bin"
 log()  { printf '\n\033[1m▸ %s\033[0m\n' "$*"; }
@@ -90,20 +104,38 @@ warn() { printf '\033[33m  ⚠ %s\033[0m\n' "$*"; }
 ok()   { printf '\033[32m  ✓ %s\033[0m\n' "$*"; }
 
 # ----- 1. provision tools ----------------------------------------------------
-# esbuild + deno are NOT runtime deps of the app, so they live out of package.json
-# and are installed on demand. CRITICAL: install both in ONE `npm install` — a
+# esbuild, the Supabase CLI (only when deploying) and deno (only when no system
+# deno exists) are NOT runtime deps of the app, so they live out of package.json
+# and are installed on demand. CRITICAL: install them in ONE `npm install` — a
 # second `npm install --no-save X` PRUNES the first not-saved package (npm removes
-# anything extraneous to the lockfile). This bit us during B-082 validation.
-need_tools=()
-[ -x "$BIN/esbuild" ] || need_tools+=("esbuild")
-if [ "$RUN_TESTS" = 1 ]; then
-  command -v deno >/dev/null 2>&1 || [ -x "$BIN/deno" ] || need_tools+=("deno")
+# anything extraneous to the lockfile). This bit us during B-082 validation. So
+# when any one of them is missing or at the wrong version, the whole set goes in
+# together.
+has_version() { [ -x "$BIN/$1" ] && [ "$("$BIN/$1" --version 2>/dev/null | head -1)" = "$2" ]; }
+want=("esbuild@${ESBUILD_VERSION}")
+stale=0
+has_version esbuild "$ESBUILD_VERSION" || stale=1
+if [ "$DEPLOY" = 1 ] || [ "$PROVISION_ONLY" = 1 ]; then
+  want+=("supabase@${SUPABASE_CLI_VERSION}")
+  has_version supabase "$SUPABASE_CLI_VERSION" || stale=1
 fi
-if [ "${#need_tools[@]}" -gt 0 ]; then
-  log "Provisioning ${need_tools[*]} (npm install --no-save, single command)"
-  npm install --no-save "${need_tools[@]}" >/dev/null 2>&1 \
-    && ok "installed ${need_tools[*]}" \
-    || { echo "error: failed to install ${need_tools[*]}" >&2; exit 1; }
+if [ "$RUN_TESTS" = 1 ] && ! command -v deno >/dev/null 2>&1; then
+  want+=("deno@${DENO_NPM_VERSION}")
+  [ -x "$BIN/deno" ] || stale=1
+fi
+if [ "$stale" = 1 ]; then
+  # esbuild and the Supabase CLI ship their binaries as optional dependencies and
+  # need no install script; the deno package links its binary in one.
+  scripts_flag=(--ignore-scripts)
+  case " ${want[*]} " in *" deno@"*) scripts_flag=() ;; esac
+  log "Provisioning ${want[*]} (npm install --no-save, single command)"
+  npm install --no-save ${scripts_flag[@]+"${scripts_flag[@]}"} "${want[@]}" >/dev/null 2>&1 \
+    && ok "installed ${want[*]}" \
+    || { echo "error: failed to install ${want[*]}" >&2; exit 1; }
+fi
+if [ "$PROVISION_ONLY" = 1 ]; then
+  ok "esbuild $("$BIN/esbuild" --version), supabase CLI $("$BIN/supabase" --version)"
+  exit 0
 fi
 ESBUILD="$BIN/esbuild"
 DENO="$(command -v deno >/dev/null 2>&1 && command -v deno || echo "$BIN/deno")"
@@ -138,7 +170,9 @@ if [ "$RUN_TESTS" = 1 ] && ls "$FUNC_DIR"/*.test.ts >/dev/null 2>&1; then
   # permissions error dressed up as a test failure. `.github/workflows/ci.yml`
   # has carried the flag since B-390; this is the same grant, read-only and
   # scoped to the same directory.
-  if timeout 180 "$DENO" test --allow-read=supabase/functions "${TEST_DIRS[@]}" >"$test_log" 2>&1; then
+  # `--lock=deno.lock`, as in ci.yml: every remote module the suite loads is
+  # checked against its committed hash.
+  if timeout 180 "$DENO" test --lock=deno.lock --allow-read=supabase/functions "${TEST_DIRS[@]}" >"$test_log" 2>&1; then
     # `|| true` keeps the count-extraction from tripping set -e/pipefail if a
     # suite somehow prints no "N passed" line.
     ok "tests passed ($(grep -oE '[0-9]+ passed' "$test_log" | tail -1 || true))"
@@ -150,6 +184,10 @@ if [ "$RUN_TESTS" = 1 ] && ls "$FUNC_DIR"/*.test.ts >/dev/null 2>&1; then
     # into the warn branch if the npm deno package ever pins an older major.
     if grep -qE '\| [1-9][0-9]* failed' "$test_log" || grep -qiE 'FAILED\.' "$test_log"; then
       echo "error: deno tests FAILED — fix before deploying" >&2; exit 1
+    elif [ "$DEPLOY" = 1 ]; then
+      # The warn branches below exist for a sandbox that cannot fetch test deps.
+      # A deploy never ships code whose tests did not pass, whatever the reason.
+      echo "error: deno tests did not complete (exit $rc); --deploy never ships code whose tests did not pass" >&2; exit 1
     elif [ "$rc" = 124 ]; then
       warn "deno test timed out — remote test deps unreachable in this sandbox."
       warn "Run 'deno test $FUNC_DIR/' in a networked env to verify behaviour."
@@ -241,7 +279,8 @@ if [ "$DEPLOY" = 1 ]; then
     warn "deploying with verify_jwt DISABLED — correct only for view-report"
   fi
 
-  npx --yes supabase@latest "${deploy_args[@]}"
+  # The pinned CLI provisioned in step 1, never `npx supabase@latest`.
+  "$BIN/supabase" "${deploy_args[@]}"
   ok "deployed — confirm the version bumped and status is ACTIVE:"
   echo "     https://supabase.com/dashboard/project/$PROJECT_REF/functions/$FUNCTION/details"
   echo "     Then smoke-test: a JWT'd call with a bogus id should return a clean 4xx, not WORKER_ERROR."
@@ -256,21 +295,8 @@ $(printf '\033[1m✅ Deploy-ready bundle\033[0m')
    path     : $OUT
    sha256   : $SHA
 
-$(printf '\033[1mDeploy (recommended — Supabase MCP, no token needed):\033[0m')
-   Have the agent call deploy_edge_function with:
-     project_id      : aigchluqluzuhtbfllgh
-     name            : $FUNCTION
-     entrypoint_path : index.ts
-     verify_jwt      : true        (PRESERVE the function's existing setting —
-                                    all 5 current functions are true; for a NEW
-                                    function check list_edge_functions first)
-     files           : [{ name: "index.ts", content: <contents of $OUT> }]
-   Then confirm: list_edge_functions shows a version bump + ACTIVE, and a live
-   boot smoke-test (anon call with a bogus petId) returns a clean 4xx, not a
-   WORKER_ERROR. Read the deployed source back and diff its sha256 against the
-   value above to prove fidelity. See docs/edge-deploy-runbook.md.
-
-$(printf '\033[1mAlternative (only if SUPABASE_ACCESS_TOKEN is configured):\033[0m')
-   npx supabase functions deploy $FUNCTION --project-ref aigchluqluzuhtbfllgh
-   (bundles from source itself; this script's artifact is then unused.)
+This build is for local verification. Deploys run from the Deploy Edge
+Functions workflow: merging to main deploys every function whose code changed,
+and Actions → Deploy Edge Functions → Run workflow redeploys or rolls one back.
+Break glass (Actions unavailable): docs/edge-deploy-runbook.md.
 EOF

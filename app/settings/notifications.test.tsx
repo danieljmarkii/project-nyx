@@ -158,6 +158,66 @@ describe('4th state — pref synced on, but this device never granted', () => {
     await waitFor(() => utils.getByText(/Biscuit.s day, gathered up/)); // the primer, not a disable
     expect(mockApply).not.toHaveBeenCalled();
   });
+
+  // CUL-472. The OFF above is correct and stays; what was missing is that nothing
+  // on screen said why, so an owner who remembers switching this on reads a
+  // correct switch as a broken one.
+  it('says why the switch is off, in the informational register', async () => {
+    const utils = await renderReady();
+    expect(
+      utils.getByText('On for your account — switch it on here to allow it on this phone too.'),
+    ).toBeTruthy();
+    // Not an error, and not the denied state's door.
+    expect(utils.queryByText(/Notifications are off for Culprit/)).toBeNull();
+    expect(utils.queryByRole('button', { name: 'Open Settings' })).toBeNull();
+  });
+});
+
+// The hint reports a fact about ANOTHER device, so the three states it must stay
+// out of are worth pinning individually — each is a different way of being wrong:
+// a claim with no evidence, a second explanation for one off switch, and a
+// sentence contradicting the switch beside it.
+describe('the 4th-state hint stays out of the other three states (CUL-472)', () => {
+  const HINT = 'On for your account — switch it on here to allow it on this phone too.';
+
+  it('is absent when the account pref is off — there is nothing to report', async () => {
+    mockEnsure.mockResolvedValue('undetermined');
+    mockRead.mockResolvedValue(false);
+    const utils = await renderReady();
+    expect(utils.queryByText(HINT)).toBeNull();
+  });
+
+  // A denied device carries its own banner; two explanations for one off switch
+  // is worse than none.
+  it('is absent on a denied device even with the pref synced on', async () => {
+    mockEnsure.mockResolvedValue('denied');
+    mockRead.mockResolvedValue(true);
+    const utils = render(<NotificationsScreen />);
+    await waitFor(() => utils.getByText(/Notifications are off for Culprit/));
+    expect(utils.queryByText(HINT)).toBeNull();
+  });
+
+  // The interactive fresh-toggle case, which the synced-pref tests above cannot
+  // reach: the undetermined branch of handleToggleDailySummary optimistically sets
+  // enabled=true so the primer does not rise over a switch that snapped back off.
+  // That is THIS device's unconfirmed intent, not the account's state, so the
+  // sentence "On for your account" is false for as long as the primer is open.
+  it('is absent while the primer is open on a device with nothing synced on', async () => {
+    mockEnsure.mockResolvedValue('undetermined');
+    mockRead.mockResolvedValue(false); // fresh device — nothing on for the account
+    const utils = await renderReady();
+    fireEvent(utils.getByLabelText('Daily summary'), 'valueChange', true);
+    await waitFor(() => utils.getByRole('button', { name: 'Turn on' })); // primer up
+    expect(utils.queryByText(HINT)).toBeNull();
+  });
+
+  it('is absent once this device has granted — the switch is on and says so', async () => {
+    mockEnsure.mockResolvedValue('granted');
+    mockRead.mockResolvedValue(true);
+    const utils = await renderReady();
+    expect(utils.getByLabelText('Daily summary').props.value).toBe(true);
+    expect(utils.queryByText(HINT)).toBeNull();
+  });
 });
 
 describe('state (b) granted', () => {

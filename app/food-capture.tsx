@@ -22,6 +22,7 @@ import { ThemedText, fontFamilyForWeight } from '../components/ui/ThemedText';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { FilterChip } from '../components/ui/FilterChip';
 import { ChipGroup } from '../components/ui/ChipGroup';
+import { Header } from '../components/ui/Header';
 import {
   ProteinSetPicker,
   type ProteinSetPickerHandle,
@@ -847,7 +848,7 @@ export default function FoodCaptureScreen() {
   if (step === 'intro') {
     return (
       <SafeAreaView style={styles.container}>
-        <Header title="Add a food" onClose={() => router.back()} />
+        <Header title="Add a food" leading="close" onLeadingPress={() => router.back()} />
         <ScrollView contentContainerStyle={styles.introScroll}>
           <ThemedText style={styles.introHeading}>Add the front of the package</ThemedText>
           <ThemedText style={styles.introBody}>
@@ -898,7 +899,7 @@ export default function FoodCaptureScreen() {
       : () => runUploadAndExtract(frontPhoto!, ingredientsPhoto, barcodePhoto);
     return (
       <SafeAreaView style={styles.container}>
-        <Header title="Add a food" onBack={() => setStep('intro')} />
+        <Header title="Add a food" leading="back" onLeadingPress={() => setStep('intro')} />
         <ScrollView contentContainerStyle={styles.introScroll}>
           <PhotoChecklist
             front={frontPhoto}
@@ -1084,7 +1085,8 @@ export default function FoodCaptureScreen() {
           title="Edit food"
           // Only return to Confirm if there's valid AI-extracted data to show
           // — when extraction failed, that screen would be empty.
-          onBack={frontPhoto && !extractionFailed ? () => setStep('confirm') : () => router.back()}
+          leading="back"
+          onLeadingPress={frontPhoto && !extractionFailed ? () => setStep('confirm') : () => router.back()}
         />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.formScroll} keyboardShouldPersistTaps="handled">
@@ -1195,30 +1197,6 @@ export default function FoodCaptureScreen() {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-function Header({ title, onClose, onBack }: { title: string; onClose?: () => void; onBack?: () => void }) {
-  return (
-    <View style={styles.header}>
-      {onBack ? (
-        <TouchableOpacity onPress={onBack} style={styles.headerSide} hitSlop={10}>
-          {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face (CUL-364 §7). */}
-          <Text style={styles.headerBack}>←</Text>
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.headerSide} />
-      )}
-      <ThemedText style={styles.headerTitle}>{title}</ThemedText>
-      {onClose ? (
-        <TouchableOpacity onPress={onClose} style={styles.headerSide} hitSlop={10}>
-          {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face (CUL-364 §7). */}
-          <Text style={styles.headerClose}>✕</Text>
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.headerSide} />
-      )}
-    </View>
-  );
-}
-
 // Visual progress through the three encouraged shots. Each tile is itself
 // tappable — empty slots open the photo source picker, filled slots offer
 // to replace. Lets the user fill out of order.
@@ -1272,35 +1250,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colorSurface,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: theme.space2,
-    paddingVertical: theme.space2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-  },
-  headerSide: {
-    width: 40,
-    height: 32,
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: theme.textLG,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-    textAlign: 'center',
-  },
-  headerBack: {
-    fontSize: 22,
-    color: theme.colorTextPrimary,
-  },
-  headerClose: {
-    fontSize: 18,
-    color: theme.colorTextSecondary,
-    textAlign: 'right',
   },
 
   introScroll: {

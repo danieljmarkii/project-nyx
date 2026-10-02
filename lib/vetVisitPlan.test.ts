@@ -4,10 +4,18 @@ import {
   DEFAULT_RECHECK_WEEKS,
   defaultRecheckDate,
   describeVisitSave,
+  endTrialCopy,
+  linkedLinesAsOf,
+  mergePlanCourses,
+  settledVerdictLine,
+  stopCourseCopy,
+  trialMomentTitle,
+  visitAnchorsAnything,
   trialVerdictLabel,
   VISIT_OFFLINE_LINE,
   type LinkedLine,
 } from './vetVisitPlan';
+import { ANCHORED_WINDOW_NAMES } from './historyWindows';
 
 // CUL-902 VV-4 — the after-visit view model, and in particular the ONE clinically
 // load-bearing string on the saved moment: what the save did to the vet report's
@@ -118,23 +126,31 @@ describe('the report-window sentence (AC 9)', () => {
     expect(s.reportLine).toBeNull();
   });
 
-  it('says NOTHING about Home either for a future-dated visit — the truer sentence is the worse one', () => {
-    // Home's anchor IS unbounded, so "since last visit starts again from here" would
-    // be literally true — and that is the harm: the rundown then renders an absence
-    // over a window that cannot contain anything, which is a false all-clear on the
-    // surface an owner reads in the exam room.
+  it('says NOTHING about the since-visit window either for a future-dated visit', () => {
+    // When the rundown's anchor was an unbounded MAX(visited_at) this sentence would
+    // have been literally true, and that was the harm: the rundown rendered an absence
+    // over a window that could not contain anything. It takes the report's bound now
+    // (CUL-1127), so the sentence would be false as well.
     expect(describeVisitSave({ petName: 'Mochi', consequence: future, linked: [] }).homeLine)
       .toBeNull();
   });
 
-  it('moves Home’s "since last visit" on any latest visit, today’s included', () => {
-    // Home's anchor is an UNBOUNDED MAX(visited_at) (`lib/rundown.ts`), so it moves
-    // the moment this visit is the latest — a DIFFERENT bound from the report's, and
-    // the reason these are two sentences rather than one.
+  it('moves "Since the last vet visit" when the report moves, never before (CUL-1127)', () => {
+    // The rundown takes the report's bound (`lib/visitWindow.ts`, H-11): a visit dated
+    // today starts the window TOMORROW, so the moment must not tell the owner it
+    // "starts again from here" today, while the tile they open next still shows the
+    // previous visit. The report line already carries the "From tomorrow" timing.
     expect(describeVisitSave({ petName: 'Mochi', consequence: today, linked: [] }).homeLine)
-      .toContain('Since last visit');
+      .toBeNull();
     expect(describeVisitSave({ petName: 'Mochi', consequence: earlier, linked: [] }).homeLine)
-      .toContain('Since last visit');
+      .toBe('“Since the last vet visit” starts again from here.');
+  });
+
+  it('the moment\'s quoted name is the one the rundown tile prints', () => {
+    // One name for one window (CUL-1126): a quote that differs from the tile it points
+    // at reads as a second window.
+    const line = describeVisitSave({ petName: 'Mochi', consequence: earlier, linked: [] }).homeLine;
+    expect(line).toContain(`“${ANCHORED_WINDOW_NAMES.visit}”`);
   });
 
   it('never asserts wellness, in any branch (clinical-guardrails Pattern 8)', () => {
@@ -211,5 +227,210 @@ describe('defaultRecheckDate — the "in six weeks" seed', () => {
     // The seed is handed to a date picker, which renders its local day. Midnight
     // would be one hour from crossing on a spring-forward day.
     expect(defaultRecheckDate(new Date(2026, 2, 1, 0, 5)).getHours()).toBe(12);
+  });
+});
+
+// ── The shared anchor predicate (CUL-953 item 1) ─────────────────────────────
+//
+// `visitAnchorsAnything` was extracted from `describeVisitSave` when the EDIT
+// screen gained a second reader. The extraction is the point: the editor makes the
+// same claim one step EARLIER — under the date picker, before the write — and it
+// was making it unconditionally, so correcting a typo on a March visit with April's
+// already on record told an owner they had moved their report window.
+//
+// One question, one function. These cases pin the rule at the level both surfaces
+// now read it at, so a change made for one of them cannot quietly apply to only one.
+describe('visitAnchorsAnything — what the report window and Home key off', () => {
+  it('is true for the latest visit dated before today — the anchor already', () => {
+    expect(visitAnchorsAnything({ isLatest: true, dayRelation: 'before_today' })).toBe(true);
+  });
+
+  it('is true for the latest visit dated today — the anchor tomorrow', () => {
+    // The report's rung 1 is strictly before today, so this visit anchors the
+    // window from tomorrow. It still ANCHORS, which is what this predicate asks;
+    // which of the two sentences to print is describeVisitSave's separate job.
+    expect(visitAnchorsAnything({ isLatest: true, dayRelation: 'today' })).toBe(true);
+  });
+
+  it('is false for a FUTURE-dated visit even though it is the latest', () => {
+    // A future row anchors nothing and is claimed for nothing: the report skips it
+    // until the day arrives, and so does the rundown since it took the same bound
+    // (CUL-1127); its old unbounded MAX(visited_at) would have adopted it.
+    expect(visitAnchorsAnything({ isLatest: true, dayRelation: 'after_today' })).toBe(false);
+  });
+
+  it('is false for a visit logged behind one already on record', () => {
+    // The case that made the edit screen lie: a March visit corrected while April's
+    // is on file moves neither surface.
+    expect(visitAnchorsAnything({ isLatest: false, dayRelation: 'before_today' })).toBe(false);
+    expect(visitAnchorsAnything({ isLatest: false, dayRelation: 'today' })).toBe(false);
+  });
+
+  it('is the same rule describeVisitSave speaks — asserted, not assumed', () => {
+    // The extraction's whole value is that these cannot diverge, so the agreement
+    // is checked rather than trusted: wherever the predicate says a visit anchors
+    // nothing, the moment must also be silent about both surfaces, and wherever it
+    // says it anchors, the moment must speak about both.
+    const cases = [
+      { isLatest: true, dayRelation: 'before_today' as const },
+      { isLatest: true, dayRelation: 'today' as const },
+      { isLatest: true, dayRelation: 'after_today' as const },
+      { isLatest: false, dayRelation: 'before_today' as const },
+      { isLatest: false, dayRelation: 'today' as const },
+      { isLatest: false, dayRelation: 'after_today' as const },
+    ];
+    for (const consequence of cases) {
+      const s = describeVisitSave({ petName: 'Mochi', consequence, linked: [] });
+      const anchors = visitAnchorsAnything(consequence);
+      // The since-visit line moves with the report, so it is said only once the visit
+      // already anchors it: before today. Today's visit starts it tomorrow (CUL-1127).
+      expect(s.homeLine !== null).toBe(anchors && consequence.dayRelation === 'before_today');
+      expect(s.reportLine !== null).toBe(anchors);
+    }
+  });
+});
+
+// CUL-951 — the one safety net on *Stopped* / *Ended*, and what the row says after.
+describe('the Stopped / Ended confirm (CUL-951)', () => {
+  it('names the course, the pet and the day it ends', () => {
+    const c = stopCourseCopy({ drugName: 'Motozol', petName: 'Nyx', endLabel: 'Sep 22' });
+    expect(c.title).toBe('Stop Motozol?');
+    expect(c.body).toBe(
+      'Nyx’s Motozol course ends today, Sep 22. Its logged doses stay on the timeline and in vet reports.',
+    );
+    expect(c.keepLabel).toBe('Keep it');
+    expect(c.confirmLabel).toBe('Stop it');
+  });
+
+  it('trims a drug name the record stored with padding', () => {
+    expect(stopCourseCopy({ drugName: ' Cerenia ', petName: 'Nyx', endLabel: 'Sep 22' }).title)
+      .toBe('Stop Cerenia?');
+  });
+
+  it('names the trial by its food, and the day it ends', () => {
+    const c = endTrialCopy({ foodLabel: 'Hill’s z/d', petName: 'Juniper', endLabel: 'Sep 22' });
+    expect(c.title).toBe('End the Hill’s z/d trial?');
+    expect(c.body).toBe(
+      'Juniper’s trial ends today, Sep 22. Everything logged during it stays on the timeline and in vet reports.',
+    );
+    expect(c.confirmLabel).toBe('End it');
+  });
+
+  it('never reads "the Diet trial trial" for a trial with no food name', () => {
+    expect(endTrialCopy({ foodLabel: null, petName: 'Nyx', endLabel: 'Sep 22' }).title)
+      .toBe('End the diet trial?');
+    expect(endTrialCopy({ foodLabel: '  ', petName: 'Nyx', endLabel: 'Sep 22' }).title)
+      .toBe('End the diet trial?');
+  });
+
+  it('makes the same promise about entries as the course confirm — no silent gap between the two', () => {
+    // Read back to back in one recheck, a trial confirm that drops "and in vet reports"
+    // reads as "ending the trial takes it out of the report".
+    const trial = endTrialCopy({ foodLabel: 'Hill’s z/d', petName: 'Nyx', endLabel: 'Sep 22' });
+    const course = stopCourseCopy({ drugName: 'Motozol', petName: 'Nyx', endLabel: 'Sep 22' });
+    expect(trial.body).toMatch(/stays on the timeline and in vet reports\.$/);
+    expect(course.body).toMatch(/stay on the timeline and in vet reports\.$/);
+  });
+
+  it('carries no exclamation mark and never says the cancel is the *Keep* verdict', () => {
+    const all = [
+      stopCourseCopy({ drugName: 'Motozol', petName: 'Nyx', endLabel: 'Sep 22' }),
+      endTrialCopy({ foodLabel: 'Hill’s z/d', petName: 'Nyx', endLabel: 'Sep 22' }),
+    ];
+    for (const c of all) {
+      expect(`${c.title} ${c.body} ${c.keepLabel} ${c.confirmLabel}`).not.toMatch(/!/);
+      // The cancel is a phrase, not the bare chip label: *Keep* would read as the
+      // verdict it is not.
+      expect(c.keepLabel).not.toBe('Keep');
+    }
+  });
+});
+
+describe('settledVerdictLine — the row says what happened instead of vanishing', () => {
+  it('says "today" on the day it was written', () => {
+    expect(settledVerdictLine({ verdict: 'stopped', endedOn: '2026-09-22', today: '2026-09-22', endLabel: 'Sep 22' }))
+      .toBe('Stopped today');
+    expect(settledVerdictLine({ verdict: 'ended', endedOn: '2026-09-22', today: '2026-09-22', endLabel: 'Sep 22' }))
+      .toBe('Ended today');
+  });
+
+  it('names the day once it is no longer today — a screen left open past midnight', () => {
+    expect(settledVerdictLine({ verdict: 'stopped', endedOn: '2026-09-22', today: '2026-09-23', endLabel: 'Sep 22' }))
+      .toBe('Stopped Sep 22');
+  });
+});
+
+describe('mergePlanCourses — a settled course keeps its place across a re-read', () => {
+  const a = { id: 'a', v: 1 };
+  const b = { id: 'b', v: 1 };
+  const c = { id: 'c', v: 1 };
+
+  it('keeps a settled course the active read no longer returns, in the place it held', () => {
+    // `b` was stopped: the read filters `status = 'active'` and drops it.
+    expect(mergePlanCourses([a, b, c], [a, c], new Set(['b'])).map((x) => x.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('drops an UNSETTLED course the read no longer returns — the record wins there', () => {
+    // Ended on another surface: nothing on this screen answered it, so nothing on this
+    // screen should keep claiming it is running.
+    expect(mergePlanCourses([a, b, c], [a, c], new Set()).map((x) => x.id)).toEqual(['a', 'c']);
+  });
+
+  it('takes the fresh row for everything not settled (a *Changed* dose shows)', () => {
+    const a2 = { id: 'a', v: 2 };
+    expect(mergePlanCourses([a, b], [a2, b], new Set())[0]).toBe(a2);
+  });
+
+  it('keeps the settled SNAPSHOT even if the read returns the row again', () => {
+    // A settled row is an answer given; a late read must not re-open its chips.
+    const b2 = { id: 'b', v: 2 };
+    expect(mergePlanCourses([a, b], [a, b2], new Set(['b']))[1]).toBe(b);
+  });
+
+  it('appends a newly added course after the rows already on screen', () => {
+    expect(mergePlanCourses([a, b], [c, a, b], new Set()).map((x) => x.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('is the fresh read on first load', () => {
+    expect(mergePlanCourses([], [c, a], new Set()).map((x) => x.id)).toEqual(['c', 'a']);
+  });
+});
+
+describe('the saved moment says what ended once, with its day (CUL-1092)', () => {
+  const label = (day: string) => (day === '2026-09-22' ? 'Sep 22' : `?${day}`);
+
+  it('names the day at the SAVE, so a save after midnight does not say "today"', () => {
+    // Answered at 11:58 pm, saved at 12:01 am: the line was written the day before.
+    const lines: LinkedLine[] = [
+      { key: 'course:1', title: 'Motozol', note: 'Stopped today', settled: { verdict: 'stopped', endedOn: '2026-09-22' } },
+      { key: 'trial', title: 'Hill’s z/d trial', note: 'Ended today', settled: { verdict: 'ended', endedOn: '2026-09-22' } },
+      { key: 'course:2', title: 'Cerenia kept', note: 'linked to this visit' },
+    ];
+    expect(linkedLinesAsOf(lines, '2026-09-23', label).map((l) => l.note)).toEqual([
+      'Stopped Sep 22',
+      'Ended Sep 22',
+      'linked to this visit',
+    ]);
+  });
+
+  it('says "today" on a same-day save, in the settled row\'s own words', () => {
+    const lines: LinkedLine[] = [
+      { key: 'course:1', title: 'Motozol', note: 'x', settled: { verdict: 'stopped', endedOn: '2026-09-22' } },
+    ];
+    const [line] = linkedLinesAsOf(lines, '2026-09-22', label);
+    expect(line.note).toBe(
+      settledVerdictLine({ verdict: 'stopped', endedOn: '2026-09-22', today: '2026-09-22', endLabel: 'Sep 22' }),
+    );
+    expect(line.note).toBe('Stopped today');
+  });
+
+  it('names a trial as a trial, never the bare food, which reads as the FOOD ending', () => {
+    expect(trialMomentTitle('Hill’s z/d')).toBe('Hill’s z/d trial');
+    expect(trialMomentTitle('  Hill’s z/d  ')).toBe('Hill’s z/d trial');
+  });
+
+  it('never reads "Diet trial trial" for a trial with no food name', () => {
+    expect(trialMomentTitle(null)).toBe('Diet trial');
+    expect(trialMomentTitle('   ')).toBe('Diet trial');
   });
 });

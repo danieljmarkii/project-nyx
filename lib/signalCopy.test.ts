@@ -65,6 +65,7 @@ import {
   timingStoryMealLaneModel,
   timingStoryClockLaneModel,
   timingStoryControlDisclosure,
+  timingStoryRefusalLine,
   photoCompositionLines,
   timingStoryVetLine,
   DOT_LANE_MAX,
@@ -72,6 +73,7 @@ import {
   TRIAL_RTM_CONFOUND,
   trialResponseCompareRows,
   trialResponseTimedReconciliationLine,
+  trialResponseRefusalLine,
   trialResponseDayBadge,
   trialResponseSampleLine,
   trialResponseDensityLine,
@@ -1109,6 +1111,34 @@ describe('evidenceText — reflection (B-051)', () => {
     expect(CAUSAL_RE.test(s)).toBe(false);
     expect(REASSURANCE_RE.test(s)).toBe(false);
   });
+  // CUL-1216 (BRK-4): the counterexample — logging fell to 4 of 7 days, the engine withheld
+  // the pair, and *Why* still said "down from 5". Live for every account.
+  it('improving on incomparable logging density: never mints "down from", states this week only', () => {
+    const s = evidenceText(
+      reflection({
+        direction: 'improving',
+        currentCount: 1,
+        priorCount: 5,
+        density: { comparable: false, currentLoggingDays: 4, priorLoggingDays: 7 },
+      }),
+      'Nyx',
+    );
+    expect(s).not.toMatch(/down from|the week before|last week/);
+    expect(s).toContain('1 episode of vomiting for Nyx this week.');
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+  it('improving on COMPARABLE density keeps "down from" (the gate withholds only what it must)', () => {
+    const s = evidenceText(
+      reflection({
+        direction: 'improving',
+        currentCount: 2,
+        priorCount: 5,
+        density: { comparable: true, currentLoggingDays: 7, priorLoggingDays: 7 },
+      }),
+      'Nyx',
+    );
+    expect(s).toContain('down from 5 episodes the week before');
+  });
 });
 
 describe('sampleLine — symptom-worsening (④)', () => {
@@ -1349,7 +1379,7 @@ describe('symptom-chronicity (⑦, B-182) — client copy', () => {
     });
 
     it('phoneScript adds an "Also mention" row naming the other sign and the one reason episodes may be mis-filed', () => {
-      const facts = phoneScript(chronicity({ symptomType: 'vomit', coughVomitAdjacent: true }), 'Nyx');
+      const facts = phoneScript(chronicity({ symptomType: 'vomit', coughVomitAdjacent: true }), 'Nyx', false);
       const row = facts?.find((f) => f.label === 'Also mention');
       expect(row).toBeTruthy();
       expect(row?.value).toBe(
@@ -1360,12 +1390,12 @@ describe('symptom-chronicity (⑦, B-182) — client copy', () => {
       // Last row: it is a rider on the script, after the sign's own facts.
       expect(facts?.[facts.length - 1]).toEqual(row);
       // And the cough-led card names vomiting.
-      const c = phoneScript(chronicity({ symptomType: 'cough', coughVomitAdjacent: true }), 'Nyx');
+      const c = phoneScript(chronicity({ symptomType: 'cough', coughVomitAdjacent: true }), 'Nyx', false);
       expect(c?.find((f) => f.label === 'Also mention')?.value).toMatch(/^vomiting as well/);
     });
 
     it('phoneScript carries no "Also mention" row when the finding is not marked', () => {
-      const facts = phoneScript(chronicity({ symptomType: 'vomit' }), 'Nyx');
+      const facts = phoneScript(chronicity({ symptomType: 'vomit' }), 'Nyx', false);
       expect(facts?.map((f) => f.label)).not.toContain('Also mention');
     });
   });
@@ -1663,6 +1693,7 @@ describe('A2 timing card — evidenceText + guardrails (timing only, never a mec
       ...timingStoryBandRows(timingStory()).map((r) => r.label),
       timingStorySampleLine(timingStory()),
       timingStoryControlDisclosure(timingStory()) ?? '',
+      timingStoryRefusalLine(emptyStomach({ longCount: 11, eligibleCount: 11, longAfterRefusalCount: 11 })) ?? '',
       timingStoryVetLine(timingStory({ photoComposition: { hair: { count: 1, denominator: 3 } } })),
       timingStoryVetLine(emptyStomach({ clockBand: undefined, clockCount: undefined })),
       evidenceText(timingStory(), 'Nyx'),
@@ -2001,6 +2032,16 @@ describe('validateBannerPhrasing', () => {
     expect(validateBannerPhrasing('hi')).toBe(false);
     expect(validateBannerPhrasing('a'.repeat(201))).toBe(false);
   });
+
+  // CUL-1271 — the strategy page's own caption passed this screen at ffacb4e.
+  it('rejects delegation / containment and treatment attribution (CUL-1271)', () => {
+    expect(validateBannerPhrasing("Juniper's vomiting is in the vet's hands now, with 4 episodes since.")).toBe(false);
+    expect(validateBannerPhrasing("Juniper's vomiting is under control since the Sep 16 visit.")).toBe(false);
+    expect(validateBannerPhrasing("The prednisone seems to be helping Juniper's cough.")).toBe(false);
+    expect(validateBannerPhrasing("Juniper's cough has settled since the prednisone started.")).toBe(false);
+    // The honest form of the same fact still passes.
+    expect(validateBannerPhrasing('Juniper has vomited 4 times since the Sep 16 visit — worth a look.')).toBe(true);
+  });
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2290,14 +2331,14 @@ describe('a11y labels are full sentences (§11)', () => {
 
 describe('phoneScript — the safety phone-call facts (§4/§9)', () => {
   it('is null for every non-safety type (the script is safety-only)', () => {
-    expect(phoneScript(correlation(), 'Nyx')).toBeNull();
-    expect(phoneScript(reflection(), 'Nyx')).toBeNull();
-    expect(phoneScript(postprandial(), 'Nyx')).toBeNull();
-    expect(phoneScript(timeofday(), 'Nyx')).toBeNull();
+    expect(phoneScript(correlation(), 'Nyx', false)).toBeNull();
+    expect(phoneScript(reflection(), 'Nyx', false)).toBeNull();
+    expect(phoneScript(postprandial(), 'Nyx', false)).toBeNull();
+    expect(phoneScript(timeofday(), 'Nyx', false)).toBeNull();
   });
 
   it('worsening: symptom + this-week/last-week counts + window, NO recency (payload has none)', () => {
-    const facts = phoneScript(worsening({ symptomType: 'vomit', currentCount: 5, priorCount: 2, currentDays: 3, windowDays: 14 }), 'Nyx');
+    const facts = phoneScript(worsening({ symptomType: 'vomit', currentCount: 5, priorCount: 2, currentDays: 3, windowDays: 14 }), 'Nyx', false);
     expect(facts).toEqual([
       { label: 'Sign', value: 'vomiting' },
       { label: 'This week', value: '5 episodes on 3 days' },
@@ -2309,13 +2350,13 @@ describe('phoneScript — the safety phone-call facts (§4/§9)', () => {
   });
 
   it('worsening (more_days arm): talks in days, never miscounts on the episode axis', () => {
-    const facts = phoneScript(worsening({ trigger: 'more_days', currentDays: 4, priorDays: 2, symptomType: 'itch' }), 'Nyx');
+    const facts = phoneScript(worsening({ trigger: 'more_days', currentDays: 4, priorDays: 2, symptomType: 'itch' }), 'Nyx', false);
     expect(facts).toContainEqual({ label: 'This week', value: '4 days with itching' });
     expect(facts).toContainEqual({ label: 'Week before', value: '2 days' });
   });
 
   it('chronicity: carries the recency line (payload has daysSinceLastEpisode)', () => {
-    const facts = phoneScript(chronicity({ daysSinceLastEpisode: 1, episodeCount: 20, activeWeeks: 6, windowDays: 56, firstOnsetIso: '2026-05-15T08:00:00.000Z' }), 'Nyx');
+    const facts = phoneScript(chronicity({ daysSinceLastEpisode: 1, episodeCount: 20, activeWeeks: 6, windowDays: 56, firstOnsetIso: '2026-05-15T08:00:00.000Z' }), 'Nyx', false);
     // "First logged", not "Ongoing since" (CUL-687): this row sat directly above
     // "Most recent — N days ago", so the read-aloud script asserted a continuing state and
     // then dated its last observation weeks back. Cough's widened recency floor made that
@@ -2327,7 +2368,7 @@ describe('phoneScript — the safety phone-call facts (§4/§9)', () => {
   });
 
   it('incident_red_flag: carries what a photo showed + a most-recent date', () => {
-    const facts = phoneScript(incidentRedFlag({ flags: ['blood'], incidentType: 'vomit', flaggedIncidentCount: 2, mostRecentFlaggedIso: '2026-07-16T08:00:00.000Z' }), 'Nyx');
+    const facts = phoneScript(incidentRedFlag({ flags: ['blood'], incidentType: 'vomit', flaggedIncidentCount: 2, mostRecentFlaggedIso: '2026-07-16T08:00:00.000Z' }), 'Nyx', false);
     expect(facts).toContainEqual({ label: 'What a photo showed', value: "possible blood in Nyx's vomiting" });
     expect(facts).toContainEqual({ label: 'From', value: '2 logged photos' });
     expect(facts).toContainEqual({ label: 'Most recent', value: 'July 16' });
@@ -2335,7 +2376,7 @@ describe('phoneScript — the safety phone-call facts (§4/§9)', () => {
 
   it('intake_decline (refusal): names the refused food, capping a long free-text label', () => {
     const longLabel = 'Some Very Long Brand Name Premium Grain-Free Ocean Whitefish Recipe';
-    const facts = phoneScript(intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: longLabel, ratedMealsConsidered: 9 }), 'Nyx');
+    const facts = phoneScript(intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: longLabel, ratedMealsConsidered: 9 }), 'Nyx', false);
     expect(facts?.[0]).toEqual({ label: 'Concern', value: 'refused a food normally eaten' });
     const food = facts?.find((f) => f.label === 'Food');
     expect(food).toBeTruthy();
@@ -2343,7 +2384,7 @@ describe('phoneScript — the safety phone-call facts (§4/§9)', () => {
   });
 
   it('intake_decline (consecutive low): span + comparison, no invented recency', () => {
-    const facts = phoneScript(intakeDecline({ trigger: 'consecutive_low', daysBelowBaseline: 3, ratedMealsConsidered: 9 }), 'Nyx');
+    const facts = phoneScript(intakeDecline({ trigger: 'consecutive_low', daysBelowBaseline: 3, ratedMealsConsidered: 9 }), 'Nyx', false);
     expect(facts).toEqual([
       { label: 'Concern', value: 'eating less than usual' },
       { label: 'How long', value: '3 days below the usual' },
@@ -2362,7 +2403,7 @@ describe('phoneScript — the safety phone-call facts (§4/§9)', () => {
       intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: 'Chicken & Rice' }),
     ];
     for (const f of safety) {
-      const facts = phoneScript(f, 'Nyx');
+      const facts = phoneScript(f, 'Nyx', false);
       expect(facts).not.toBeNull();
       const blob = facts!.map((x) => `${x.label} ${x.value}`).join(' ');
       expect(blob).not.toMatch(REASSURANCE_RE);
@@ -2433,6 +2474,47 @@ describe('trialResponseCompareRows (CUL-13 / B-766 — the two-sided count rows)
   it('B-766: an OLD cache (no `mid`) renders the pre-B-766 two-row form — never a crash', () => {
     const rows = trialResponseCompareRows(trialResponse({ mid: undefined }));
     expect(rows.map((r) => r.label)).toEqual(['Within 30 min of eating', '6h or more after eating']);
+  });
+});
+
+describe('CUL-1195 — the long band says when its vomits followed a refused bowl (provisional wording)', () => {
+  it('the timing card: the subset beside the long count, on either shape', () => {
+    expect(timingStoryRefusalLine(emptyStomach({ longCount: 11, eligibleCount: 11, longAfterRefusalCount: 11 }))).toBe(
+      '11 of the 11 episodes 6h or more after eating followed a refused meal.',
+    );
+    const story = timingStory();
+    expect(timingStoryRefusalLine(timingStory({ long: { ...story.long, afterRefusalCount: 1 } }))).toBe(
+      `1 of the ${story.long.count} episodes 6h or more after eating followed a refused meal.`,
+    );
+  });
+  it('the timing card: nothing at zero, on an old cache, or on a non-number — never "none followed"', () => {
+    expect(timingStoryRefusalLine(emptyStomach({ longAfterRefusalCount: 0 }))).toBeNull();
+    expect(timingStoryRefusalLine(emptyStomach())).toBeNull();
+    expect(timingStoryRefusalLine(emptyStomach({ longAfterRefusalCount: Number.NaN }))).toBeNull();
+  });
+  it('the timing card: a malformed count never exceeds the long count', () => {
+    expect(timingStoryRefusalLine(emptyStomach({ longCount: 4, longAfterRefusalCount: 9 }))).toMatch(/^4 of the 4 episodes/);
+  });
+  it('the trial card: each window that has one, a subset of the long row', () => {
+    expect(
+      trialResponseRefusalLine(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 2 } })),
+    ).toBe('Of those 6h or more after eating, 3 in the trial · 2 before it followed a refused meal.');
+    expect(
+      trialResponseRefusalLine(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 0 } })),
+    ).toBe('Of those 6h or more after eating, 3 in the trial followed a refused meal.');
+  });
+  it('the trial card: a window with none is never printed as a zero (a fall would read as the trial fixing it)', () => {
+    const line = trialResponseRefusalLine(trialResponse({ long: { trial: 2, baseline: 7 }, longAfterRefusal: { trial: 0, baseline: 2 } }));
+    expect(line).toBe('Of those 6h or more after eating, 2 before it followed a refused meal.');
+    expect(line).not.toMatch(/\b0\b/);
+  });
+  it('the trial card: nothing when neither window has one, or on an old cache; clamped per window', () => {
+    expect(trialResponseRefusalLine(trialResponse({ longAfterRefusal: { trial: 0, baseline: 0 } }))).toBeNull();
+    expect(trialResponseRefusalLine(trialResponse())).toBeNull();
+    // long.trial is 0 in the fixture, so a malformed trial count clamps to zero and only the baseline speaks.
+    expect(trialResponseRefusalLine(trialResponse({ longAfterRefusal: { trial: 5, baseline: 2 } }))).toBe(
+      'Of those 6h or more after eating, 2 before it followed a refused meal.',
+    );
   });
 });
 
@@ -2518,6 +2600,7 @@ describe('trial card copy — guardrails (CUL-13)', () => {
     const strings = [
       ...trialResponseCompareRows(trialResponse()).map((r) => r.label),
       trialResponseTimedReconciliationLine(trialResponse()) ?? '',
+      trialResponseRefusalLine(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 0 } })) ?? '',
       trialResponseDayBadge(trialResponse()),
       trialResponseSampleLine(trialResponse()),
       trialResponseDensityLine(trialResponse()),
@@ -2575,10 +2658,10 @@ describe('symptom-chronicity — the counted 4-week compare (v1.1-b, CUL-787)', 
   });
 
   it('the why-it-stands clause renders beneath a FALLING pair only', () => {
-    expect(chronicityCompareExtras(chronicity({ compare: nyx }))?.whyItStands).toBe(CHRONICITY_WHY_IT_STANDS);
-    expect(chronicityCompareExtras(chronicity({ compare: thin }))?.whyItStands).toBe(CHRONICITY_WHY_IT_STANDS);
-    expect(chronicityCompareExtras(chronicity({ compare: rising }))?.whyItStands).toBeNull();
-    expect(chronicityCompareExtras(chronicity({ compare: flat }))?.whyItStands).toBeNull();
+    expect(chronicityCompareExtras(chronicity({ compare: nyx }), false)?.whyItStands).toBe(CHRONICITY_WHY_IT_STANDS);
+    expect(chronicityCompareExtras(chronicity({ compare: thin }), false)?.whyItStands).toBe(CHRONICITY_WHY_IT_STANDS);
+    expect(chronicityCompareExtras(chronicity({ compare: rising }), false)?.whyItStands).toBeNull();
+    expect(chronicityCompareExtras(chronicity({ compare: flat }), false)?.whyItStands).toBeNull();
   });
 
   it('the clause is the option-(a) reword — it never says "cause" (CAUSAL_RE) and carries the ask', () => {
@@ -2596,7 +2679,7 @@ describe('symptom-chronicity — the counted 4-week compare (v1.1-b, CUL-787)', 
       'You also logged on fewer days in the recent 4 weeks — 10, against 28 before — so a lower count there can be fewer logs, not fewer episodes.',
     );
     // The withheld line never removes the counts: the rows still print both halves (S2).
-    expect(chronicityCompareExtras(chronicity({ compare: thin }))?.rows.map((r) => r.count)).toEqual([2, 12]);
+    expect(chronicityCompareExtras(chronicity({ compare: thin }), false)?.rows.map((r) => r.count)).toEqual([2, 12]);
   });
 
   it('the withheld form renders on a FALLING thin-logged pair ONLY — a rising or flat pair over thin logging keeps the disclosure (§3.3)', () => {
@@ -2615,13 +2698,13 @@ describe('symptom-chronicity — the counted 4-week compare (v1.1-b, CUL-787)', 
   });
 
   it('an old cache (no compare) renders the pre-v1.1-b expand: no box, no script row', () => {
-    expect(chronicityCompareExtras(chronicity())).toBeNull();
-    const labels = phoneScript(chronicity(), 'Nyx')!.map((f) => f.label);
+    expect(chronicityCompareExtras(chronicity(), false)).toBeNull();
+    const labels = phoneScript(chronicity(), 'Nyx', false)!.map((f) => f.label);
     expect(labels).toEqual(['Sign', 'First logged', 'How often', 'Most recent']);
   });
 
   it('the phone script gains ONE two-sided row between the total and the most-recent date, denominators on the row', () => {
-    const facts = phoneScript(chronicity({ compare: nyx }), 'Nyx')!;
+    const facts = phoneScript(chronicity({ compare: nyx }), 'Nyx', false)!;
     expect(facts.map((f) => f.label)).toEqual(['Sign', 'First logged', 'How often', 'Recent 4 weeks', 'Most recent']);
     expect(facts[3].value).toBe('2 · the 4 before: 12 · logged on 27 of the recent 28 days, and 28 of the 28 before');
     expect(chronicityComparePhoneScriptFact(rising).value).toBe('9 · the 4 before: 0 · logged on 26 of the recent 28 days, and 0 of the 28 before');

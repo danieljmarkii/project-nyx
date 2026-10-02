@@ -172,25 +172,64 @@ describe('the entry point to PR 3’s start-a-trial modal', () => {
     )).toBeTruthy();
   });
 
-  it('suppresses the header affordance on the empty card and says "Replace" on a running one', () => {
+  it('suppresses the header affordance on the empty card and says "Manage" on a running one', () => {
     // no_trial: the body carries "Start a diet trial", so the header manage
     // affordance is suppressed rather than shown as a duplicate "+ Start".
     const empty = render(
       <DietTrialCard model={resolveTrialCard({ ...input(), trial: null })} onManage={jest.fn()} />,
     );
     expect(empty.queryByText('+ Start')).toBeNull();
-    expect(empty.queryByText('Change')).toBeNull();
+    expect(empty.queryByText('Manage')).toBeNull();
 
-    // A running trial: the header opens the end-and-replace sheet, so it says what
-    // it does — "Replace" — never "Change" (which read as an edit).
+    // A running trial: the header opens the two-row door (D6a, CUL-1040), so it
+    // names the door rather than either act. Neither of its predecessors survives:
+    // "Replace" was honest only while ending was all it could do, and "Change" read
+    // as an edit and routed an active card to its own destruction.
     const running = render(
       <DietTrialCard model={resolveTrialCard(input())} onManage={jest.fn()} />,
     );
-    expect(running.getByText('Replace')).toBeTruthy();
+    expect(running.getByText('Manage')).toBeTruthy();
+    expect(running.queryByText('Replace')).toBeNull();
     expect(running.queryByText('Change')).toBeNull();
   });
 
-  it('opens the start modal from the empty card body, and end-and-replace from a running header', () => {
+  it('ANNOUNCES the door, never "Start a diet trial", on a running trial', () => {
+    // THE REGRESSION THIS TEST EXISTS FOR (CUL-1040, caught by `pm-feature-review`).
+    // The label was `manageLabel === 'Replace' ? … : 'Start a diet trial'`, so when
+    // D6a relabelled the verb to `Manage` the comparison went dead and EVERY running
+    // trial — day 53 of 56 included — announced "Start a diet trial" on the control
+    // that opens the benign door. That is CUL-156's own fear spoken aloud, to the
+    // owners least able to check the screen against it.
+    //
+    // Asserted on the RESPONDER's own label rather than through a text query, because
+    // the defect was invisible to one: the visible string was already correct.
+    const running = render(
+      <DietTrialCard model={resolveTrialCard(input())} onManage={jest.fn()} />,
+    );
+    const label = running.getByText('Manage');
+    let node: any = label;
+    while (node && node.props?.accessibilityRole !== 'button') node = node.parent;
+    expect(node).not.toBeNull();
+    expect(node.props.accessibilityLabel).toBe('Manage this diet trial');
+    expect(node.props.accessibilityLabel).not.toMatch(/start/i);
+  });
+
+  it('…and still announces the start form on a terminal card', () => {
+    // The other arm, so the fix is not "hardcode one string": a completed trial's
+    // header really is the start path, and `+ Start` must say so.
+    const completed = render(
+      <DietTrialCard
+        model={resolveTrialCard({ ...input(), trial: { ...input().trial!, status: 'completed', endedAt: '2026-07-01' } })}
+        onManage={jest.fn()}
+      />,
+    );
+    const label = completed.getByText('+ Start');
+    let node: any = label;
+    while (node && node.props?.accessibilityRole !== 'button') node = node.parent;
+    expect(node.props.accessibilityLabel).toBe('Start a diet trial');
+  });
+
+  it('opens the start modal from the empty card body, and the door from a running header', () => {
     // The empty card has ONE start door now — the body CTA, not a duplicate header.
     const onStart = jest.fn();
     const empty = render(
@@ -204,12 +243,14 @@ describe('the entry point to PR 3’s start-a-trial modal', () => {
     expect(onStart).toHaveBeenCalledTimes(1);
     expect(empty.queryByText('+ Start')).toBeNull();
 
-    // On a running trial the header "Replace" is the way into end-and-replace.
+    // On a running trial the header "Manage" is the way into both acts. The CARD
+    // does not know which one the owner picks — that is the sheet's, and the host
+    // routes on `trialManageTarget`, never on this string.
     const onManage = jest.fn();
     const running = render(
       <DietTrialCard model={resolveTrialCard(input())} onManage={onManage} />,
     );
-    fireEvent.press(running.getByText('Replace'));
+    fireEvent.press(running.getByText('Manage'));
     expect(onManage).toHaveBeenCalledTimes(1);
   });
 });

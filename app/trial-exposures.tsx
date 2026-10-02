@@ -23,8 +23,14 @@
 // `unknown` renders a spinner, never an empty list — an empty exposures screen over
 // a record nobody could read is a fabricated all-clear, which is the exact
 // reassurance-on-absence `clinical-guardrails` forbids. `no_trial` says so plainly.
-// A `ready` trial whose facts could not be computed renders the same spinner path
+// A `ready` trial whose facts could not be computed renders the unreadable line
 // for the same reason: null facts are not a clean record.
+//
+// ── WHOSE TRIAL (CUL-1297) ──────────────────────────────────────────────────
+//
+// The pet comes from `?pet=`, falling back to the active pet when a door sends
+// none (every door today). The screen reads and names THAT pet, never swaps in
+// the active one (C-9), and says so when the pet is no longer in the account.
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -35,7 +41,8 @@ import { SectionLabel } from '../components/ui/SectionLabel';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { ExposureReasonSheet } from '../components/profile/ExposureReasonSheet';
 import { useTrialFacts } from '../hooks/useTrialFacts';
-import { usePetStore } from '../store/petStore';
+import { useTrialRoutePet } from '../hooks/useTrialRoutePet';
+import { TRIAL_ROUTE_PET_GONE } from '../lib/trialFoodsScreen';
 import {
   buildTrialExposuresScreen,
   noTrialExposuresLine,
@@ -47,12 +54,14 @@ import {
 import { ThemedText } from '../components/ui/ThemedText';
 
 export default function TrialExposuresScreen() {
-  const activePet = usePetStore((s) => s.activePet);
-  const petName = activePet?.name ?? 'your pet';
-  const state = useTrialFacts();
+  const { petId, petName, known } = useTrialRoutePet();
+  const state = useTrialFacts(known ? petId : null);
   const [open, setOpen] = useState<TrialExposureRow | null>(null);
 
-  const model = state.status === 'ready' ? buildTrialExposuresScreen(petName, state.facts) : null;
+  // A pet the account does not hold draws nothing but the pet-gone line, whatever
+  // the read says (it reads nothing for that pet, so this is belt and braces).
+  const model =
+    known && state.status === 'ready' ? buildTrialExposuresScreen(petName, state.facts) : null;
 
   // A `ready` trial whose model came back null is a record that could not be read
   // or computed — the same fact as a thrown read, reached one layer down, and it
@@ -65,7 +74,11 @@ export default function TrialExposuresScreen() {
 
       {model === null ? (
         <View style={styles.centered}>
-          {state.status === 'no_trial' ? (
+          {!known ? (
+            <ThemedText testID="trial-exposures-pet-gone" style={styles.quiet}>
+              {TRIAL_ROUTE_PET_GONE}
+            </ThemedText>
+          ) : state.status === 'no_trial' ? (
             <ThemedText testID="trial-exposures-no-trial" style={styles.quiet}>
               {noTrialExposuresLine(petName)}
             </ThemedText>

@@ -4,8 +4,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { ChevronRight, Camera } from 'lucide-react-native';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
+import { EventSilhouette } from '../../components/designV2/waits/EventSilhouette';
+import { useDesignV2 } from '../../hooks/useDesignV2';
 import * as ImagePicker from 'expo-image-picker';
-import { File } from 'expo-file-system';
 import { theme } from '../../constants/theme';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import {
@@ -17,19 +18,19 @@ import {
   getMealForEvent,
   getDoseForEvent,
   getDoubleDoseFlag,
-  updateMealIntake,
-  updateDoseAdherence,
-  updateDoseHowGiven,
   TimelineRow,
 } from '../../lib/db';
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
 import { detachEventAttachment, detachOtherEventAttachments } from '../../lib/attachments';
-import { resolveEventPhotoDisplay, addPhotoHeroCopy } from '../../lib/eventPhoto';
+import { resolveEventPhotoDisplay, addPhotoHeroCopy, EVENT_HERO_HEIGHT } from '../../lib/eventPhoto';
+import { localFileExists } from '../../lib/localFile';
 import { foodFormatTag } from '../../lib/food';
 import { kgToLbs } from '../../lib/weight';
 import { supabase } from '../../lib/supabase';
-import { syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
+import { rateDoseAdherence, recordDoseHowGiven } from '../../lib/medicationDose';
+import { rateMealIntake } from '../../lib/meals';
 import { reverseLoggedEvent } from '../../lib/undoLog';
+import { removeConfirmCopy } from '../../lib/completionCard';
 import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain, awaitAnalysisChain } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
@@ -41,7 +42,7 @@ import { AdherenceChipRow, DoseAdherence } from '../../components/log/AdherenceC
 import { VehicleChipRow } from '../../components/log/VehicleChipRow';
 import {
   doubleDoseNote, DoubleDoseResult, asDoseVehicle,
-  isComboDoseInDoubt, doseInDoubtNote,
+  isComboDoseInDoubt, isAnyPairedDoseInDoubt, doseInDoubtNote, DOSE_IN_DOUBT_TAG,
   pairedVehicleLinkLabel, pairedDoseLinkLabel, type DoseVehicle,
 } from '../../lib/medications';
 import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
@@ -51,7 +52,7 @@ import { EmptyState, Header, PhotoViewer } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { isStoolEvent, hasPerIncidentRead } from '../../constants/eventTypes';
 
-const HERO_HEIGHT = 320;
+const HERO_HEIGHT = EVENT_HERO_HEIGHT;
 const SIGNED_URL_TTL_SEC = 60 * 60;
 // The hero and the full-screen viewer render the SAME resolved URI, so serving a
 // screen-sized transform (imgproxy — Pro) instead of the multi-MB original means
@@ -77,22 +78,6 @@ function formatRelative(iso: string): string {
   const diffDay = Math.round(diffHr / 24);
   if (diffDay < 7) return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
   return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
-}
-
-// A captured photo's `local_uri` points into the OS cache directory (where
-// expo-image-picker drops its output) and is never copied to persistent
-// storage. iOS reclaims that directory under storage pressure, leaving a stale
-// path whose file no longer exists — which would render the hero <Image> blank.
-// Treat a missing local file the same as a hydrated row (no on-device file) so
-// rendering falls back to the signed Storage URL, which is always uploaded.
-function localFileExists(uri: string): boolean {
-  try {
-    return new File(uri).exists;
-  } catch {
-    // Not a managed path (e.g. content:// URI) — assume unavailable and let the
-    // signed-URL fallback take over.
-    return false;
-  }
 }
 
 function formatDate(iso: string): string {
@@ -126,12 +111,19 @@ function confidenceWord(confidence: string | null | undefined): string | null {
 // when there is nothing to point at (a null label OR no target) — which is how the
 // soft-delete drop works: removing the other side nulls the label/target and the link
 // vanishes, never dangling at an event gone from History.
+//
+// CUL-382 — `inDoubt` adds the History row's calm "Unconfirmed" pill, so a meal whose
+// dose may never have gone down says so where the owner reviews the meal, not only on
+// the dose's own screen. The pill is part of the link's spoken label too: the label
+// replaces the children for a screen reader, so a pill left out of it is unheard.
 function ComboLinkRow({
   label,
   targetEventId,
+  inDoubt = false,
 }: {
   label: string | null;
   targetEventId: string | null | undefined;
+  inDoubt?: boolean;
 }) {
   if (!label || !targetEventId) return null;
   return (
@@ -140,9 +132,14 @@ function ComboLinkRow({
       onPress={() => router.push({ pathname: '/event/[id]', params: { id: targetEventId } })}
       activeOpacity={0.7}
       accessibilityRole="link"
-      accessibilityLabel={label}
+      accessibilityLabel={inDoubt ? `${label}, ${DOSE_IN_DOUBT_TAG}` : label}
     >
       <ThemedText style={styles.comboLinkText} numberOfLines={1}>{label}</ThemedText>
+      {inDoubt ? (
+        <View style={styles.inDoubtTag}>
+          <ThemedText style={styles.inDoubtTagText}>{DOSE_IN_DOUBT_TAG}</ThemedText>
+        </View>
+      ) : null}
       <ChevronRight size={16} color={theme.colorAccent} strokeWidth={2} />
     </TouchableOpacity>
   );
@@ -160,6 +157,10 @@ export default function EventDetailScreen() {
   // The storage_path the signed URLs in state are a handle ON. Holding a URL across a
   // refocus is only sound while the photo behind it is the same photo (CUL-302 review).
   const signedForPathRef = useRef<string | null>(null);
+  // True while Remove is asking the record for a photo, before its confirm is up (CUL-1125
+  // review): a second tap in that gap would raise a second confirm, and two confirmed
+  // Removes would pop the stack twice.
+  const removeAskingRef = useRef(false);
   const [remoteUrl, setRemoteUrl] = useState<string | null>(null);
   // Raw (non-transformed) signed URL, resolved in parallel as a fallback for when
   // the transformed URL can't load (image transformations unavailable). B-207.
@@ -190,6 +191,7 @@ export default function EventDetailScreen() {
   const [doubleDose, setDoubleDose] = useState<DoubleDoseResult | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
   const [loading, setLoading] = useState(true);
+  const designV2 = useDesignV2();
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // The name of the pet this EVENT belongs to, not whichever pet is active
@@ -351,8 +353,8 @@ export default function EventDetailScreen() {
     // Optimistic update — keep the screen responsive while the write happens.
     setIntakeRating(next);
     try {
-      await updateMealIntake(event.id, next);
-      syncPendingMeals().catch(console.error);
+      // The shared write path, which also refreshes the Signal (CUL-1087).
+      await rateMealIntake(event.id, next);
     } catch (e) {
       console.error('[event-detail] failed to update intake rating:', e);
       setIntakeRating(prev);
@@ -371,8 +373,7 @@ export default function EventDetailScreen() {
     if (next === prev) return;
     setAdherence(next);
     try {
-      await updateDoseAdherence(event.id, next);
-      syncPendingMedicationAdministrations().catch(console.error);
+      await rateDoseAdherence(event.id, next);
     } catch (e) {
       console.error('[event-detail] failed to update adherence:', e);
       setAdherence(prev);
@@ -400,8 +401,7 @@ export default function EventDetailScreen() {
     if (next === prev) return;
     setHowGiven(next);
     try {
-      await updateDoseHowGiven(event.id, next);
-      syncPendingMedicationAdministrations().catch(console.error);
+      await recordDoseHowGiven(event.id, next);
     } catch (e) {
       console.error('[event-detail] failed to update vehicle:', e);
       setHowGiven(prev);
@@ -473,53 +473,30 @@ export default function EventDetailScreen() {
     // attachment has hydrated pays nothing. On a read failure we fall back to the
     // state — no false claim about a photo we cannot see, and a local SQLite failure
     // here means the delete below is about to fail too and say so.
-    let hasPhoto = attachment !== null;
-    if (!hasPhoto) {
-      try {
-        hasPhoto = (await getEventAttachment(event.id)) !== null;
-      } catch (e) {
-        console.warn('[event-detail] attachment re-check before delete failed:', e);
-      }
-    }
-    // CUL-869 — the same fact, one record type over. A look's note is the owner's
-    // own words about her animal and nothing recreates it: no surface in the app
-    // shows a removed one, and unlike the event itself she cannot simply write it
-    // again from memory of what she saw. So Remove names it, exactly as it names a
-    // photo, and for the identical comprehension reason (T-22, C-21).
     //
-    // NO re-check here, and that is not an inconsistency with the photo above. The
-    // photo's `attachment` is a SEPARATE async read that lands after `event`, so
-    // `null` is ambiguous between "no photo" and "not answered yet" — the C-12 gap
-    // this footer is live inside. `look_note` arrives ON the event row, joined in the
-    // same SELECT (lib/db.ts), so by the time there is an `event` to remove there is
-    // a definite answer about its note.
-    const isLook = isLookRow(event);
-    const hasNote = isLook && !!event.look_note?.trim();
-    const label = EVENT_TYPES[event.event_type as EventTypeKey]?.label ?? 'event';
-    // "the Noticed" — the sentence template was written for NOUN labels, and every
-    // type had one until `check_in` arrived with a past participle. Fixed by naming
-    // the SUBJECT per type rather than by rewording the template, so every other
-    // type's confirm is byte-identical to what it has always said.
-    const subject = isLook ? 'what you noticed' : `the ${label}`;
-    // Composed rather than branched, matching the completion card's Undo one surface
-    // over (NamedCompletionCard). A chain would let the photo clause silently
-    // suppress the note-loss warning on a record carrying both — latent today, since
-    // `check_in` is `hasPhoto: false` and the editor no longer offers the row, but
-    // two sibling confirms about the same destructive act must not disagree about
-    // how many facts they are willing to say.
-    // Phrases lower-case, the sentence capitalises its own first letter, so joining
-    // two never produces "…and The note…" mid-sentence.
-    const takesWithIt = [
-      hasPhoto ? 'the photo you attached' : null,
-      hasNote ? 'the note you wrote' : null,
-    ].filter((x): x is string => x !== null);
-    const clause = takesWithIt.join(' and ');
-    const lead = `This will remove ${subject} from history.`;
+    // One confirm per Remove: a tap that lands while the read is out is dropped. The
+    // flag clears before the confirm is raised, in the same synchronous run, so the
+    // next tap after it can only land on the confirm (which is modal) or after it.
+    if (removeAskingRef.current) return;
+    removeAskingRef.current = true;
+    let hasPhoto = attachment !== null;
+    try {
+      if (!hasPhoto) hasPhoto = (await getEventAttachment(event.id)) !== null;
+    } catch (e) {
+      console.warn('[event-detail] attachment re-check before delete failed:', e);
+    } finally {
+      removeAskingRef.current = false;
+    }
+    // The NOTE, and the sentence around both facts, come from the one composer every
+    // removal confirm shares (`removeConfirmCopy`, lib/completionCard.ts; CUL-1125).
+    // It names an event's own note as well as a look's (CUL-869 named only the look's),
+    // and it needs no re-check here, unlike the photo above: both note columns arrive
+    // ON the event row, joined in the same SELECT (lib/db.ts), so by the time there is
+    // an `event` to remove there is a definite answer about its note.
+    const copy = removeConfirmCopy(event, { hasAttachment: hasPhoto });
     Alert.alert(
-      'Remove this log?',
-      clause
-        ? `${lead} ${clause.charAt(0).toUpperCase()}${clause.slice(1)} will be removed with it.`
-        : lead,
+      copy.title,
+      copy.body,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -704,9 +681,15 @@ export default function EventDetailScreen() {
   }
 
   if (loading && !event) {
+    // D2-7 (CUL-1068): behind `design_v2` the local-row read is the screen's own
+    // silhouette, never a spinner; flag-off the whorl, untouched.
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingState}><WhorlSpinner size="md" ground="day" /></View>
+        {designV2 ? (
+          <EventSilhouette />
+        ) : (
+          <View style={styles.loadingState}><WhorlSpinner size="md" ground="day" /></View>
+        )}
       </SafeAreaView>
     );
   }
@@ -828,6 +811,12 @@ export default function EventDetailScreen() {
             testID="event-hero-photo"
             activeOpacity={0.95}
             onPress={() => setPhotoViewerVisible(true)}
+            // CUL-1275 — an unlabelled touchable over an image announced as a bare
+            // "button". An image has no visible text for the label to differ from (C-7),
+            // so it names what the photo is of; the hint says what the tap does.
+            accessibilityRole="imagebutton"
+            accessibilityLabel={`${label} photo`}
+            accessibilityHint="Opens the photo full screen"
           >
             <Image
               source={{ uri: photoUri }}
@@ -991,6 +980,10 @@ export default function EventDetailScreen() {
                 drugName: event.paired_dose_drug_name,
               })}
               targetEventId={event.paired_dose_event_id}
+              inDoubt={isAnyPairedDoseInDoubt({
+                vehicleIntake: intakeRating,
+                unratedDoseCount: event.paired_dose_unrated_count ?? 0,
+              })}
             />
           ) : null}
 
@@ -1271,6 +1264,23 @@ const styles = StyleSheet.create({
     color: theme.colorAccentInk,
     fontWeight: theme.fontWeightMedium,
     flexShrink: 1,
+  },
+  // CUL-382 — the History row's in-doubt pill (`EventRow` inDoubtTag), with the rose INK
+  // for its text: the bright rose is a glyph tint, and this is text on the light rose
+  // ground (C-1). It never shrinks; the drug name in the label yields first.
+  inDoubtTag: {
+    flexShrink: 0,
+    paddingHorizontal: theme.space1,
+    paddingVertical: theme.spaceMicro,
+    borderRadius: theme.radiusFull,
+    borderWidth: 1,
+    borderColor: theme.colorEventSymptom,
+    backgroundColor: theme.colorEventSymptomLight,
+  },
+  inDoubtTagText: {
+    fontSize: theme.textXS,
+    fontWeight: theme.fontWeightMedium,
+    color: theme.colorEventSymptomInk,
   },
   // The retroactive combo entry (B-325). Accent text, ≥44pt tap target (the 3am-test
   // floor) via minHeight; a top hairline so it reads as a distinct, optional add-on beneath

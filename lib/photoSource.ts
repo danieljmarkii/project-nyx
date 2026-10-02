@@ -10,10 +10,11 @@
 // surfaces were the outliers, and they were the two that mattered most.
 //
 // It lives in lib/ rather than in either screen because the rule was duplicated
-// across both of them, and the one that is NOT behind a beta flag (app/log.tsx —
-// log_picker_v2 is seeded dark) is the one with no test file. Sharing the rule is
-// what puts the live path under the same coverage as the dark one. Same reasoning,
-// and the same denial-names-the-other-source copy, as lib/vetDocumentPickers.ts.
+// across both of them (app/log.tsx and the log sheet's confirm), and when it was
+// extracted the full-screen path — then the only one every account could reach —
+// was the one with no test file. Sharing the rule puts both paths under one
+// coverage. Same reasoning, and the same denial-names-the-other-source copy, as
+// lib/vetDocumentPickers.ts.
 
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';

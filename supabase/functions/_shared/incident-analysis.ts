@@ -28,6 +28,12 @@
 //     deterministic per-type template (B-060 — the guarantee is STRUCTURAL,
 //     enforced by selectReadText).
 //   - Re-analysis never clobbers a human-edited row (Pattern 7).
+//   - Re-analysis never lowers a stored escalation; only the owner's own
+//     correction does (CUL-1201 part 2, resolveReanalysisWrite).
+//   - A run that fails keeps the escalation it had already computed (CUL-815,
+//     buildRescueRead), and no write is decided on an unanswered read of the
+//     STORED ROW (CUL-817). The context and attachment reads still fail open
+//     (CUL-119, CUL-1327); this contract does not cover them yet.
 //   - Unreadable input degrades honestly — never 500s, never reassures (Pattern 5).
 // A descriptor cannot weaken any of the above: it controls which findings
 // become flags, never what flags do. If a future incident type genuinely needs
@@ -46,6 +52,29 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { fetchWithTimeout } from './http.ts'
+// Engines v3 (PR-11a, CUL-1267): the rollout flag, read fail-closed for the record's owner,
+// and the one writer of every stamp migration 075 added (the rule is on engineStamps.ts).
+import { isEngineKeyOn, type EngineFlags, type EngineKey } from './engineFlags.ts'
+import { readEngineFlags } from './engineFlagsRead.ts'
+import { buildIncidentStamps, stampIncidentWrite, type IncidentStamps } from './engineStamps.ts'
+// The ONE quiet-verdict list, shared with the phone (CUL-1277). Every guard below that
+// protects an escalation already in the RECORD reads it, so a verdict a later rule wrote
+// (EN-3's tiers, a flag rolled back) is protected like `worth_a_call`. The free-text gates
+// (Pattern 10) deliberately do NOT: see `selectReadText`.
+import { isEscalationVerdict, isQuietVerdict } from '../../../lib/incidentVerdict.ts'
+// The tier order (EN-3, CUL-1133; Engines v3 PR-26): one import-free module beside the quiet
+// list, shared with the phone. See "The tier" below for what this file does with it.
+import {
+  effectiveTierRank,
+  type IncidentTier,
+  isIncidentTier,
+  TIER_RANK,
+  tierForVerdict,
+  tierRank,
+} from '../../../lib/incidentTier.ts'
+// EN-4's floor (Engines v3 PR-28): only its tier type is named here; the rule itself runs in
+// the vomit descriptor, which hands its answer over as ContextualRun.minTier.
+import { FLOOR_READ_HOURS, type FloorTier } from '../../../lib/incidentFloor.ts'
 
 export type { SupabaseClient }
 
@@ -129,16 +158,21 @@ export function applyEscalationFloor(params: {
 // contextual flag computed from the record) is NEVER collapsed: presence always
 // escalates (Pattern 2). The caller relies on the floor running FIRST, so every such
 // escalation is already `worth_a_call` before this guard inspects the verdict.
+// ONLY A QUIET VERDICT COLLAPSES (CUL-1277): the question is "is this benign enough that an
+// unseen frame could hide the flag?", so it asks the quiet list rather than excusing the
+// one literal escalation. A verdict the floor learns to emit later (EN-3) is never
+// collapsed until someone decides it is quiet.
 // usable === 0 is the fully-unreadable case (photoUnreadable), handled separately,
 // not here. Pure + exported so this count boundary is unit-tested rather than
 // asserted inline in the un-tested pipeline.
 export function shouldCollapsePartialRead(params: {
   usableCount: number
   totalCount: number
-  recommendation: Recommendation
+  // Text, so the guard is testable (and safe) over a verdict this code cannot name.
+  recommendation: string
 }): boolean {
   const partial = params.usableCount > 0 && params.usableCount < params.totalCount
-  return partial && params.recommendation !== 'worth_a_call'
+  return partial && isQuietVerdict(params.recommendation)
 }
 
 // ── Read-text selection (B-060 — the mechanism, framework-owned) ──────────────
@@ -151,6 +185,14 @@ export function shouldCollapsePartialRead(params: {
 // denylist was tried and rejected: it missed ~86% of plausible model
 // reassurance phrasings — adversarial review 2026-06-24. The guarantee is
 // structural, not lexical.)
+//
+// THE LITERAL STAYS HERE, ON PURPOSE (CUL-1277). The escalation guards in this file
+// ask the shared quiet list (`isEscalationVerdict`), because they PROTECT a verdict
+// already in the record and must fail toward keeping it. This gate and
+// `selectDescription` below do the opposite job: they RELEASE the model's own words,
+// so they must fail toward withholding them (Pattern 10). On "not quiet", a verdict
+// nobody has defined yet would carry model prose. A new escalating value earns free
+// text only when its own change (EN-3) says so, here, in words.
 
 export interface IncidentCopy<TFlag extends string = string> {
   // Floor escalated on CONTEXT — names the contextual reason (highest-acuity
@@ -166,6 +208,66 @@ export interface IncidentCopy<TFlag extends string = string> {
   visualFlagFallback(petName: string, visualFlags: string[]): string
   // not_enough_to_say — unclear photo, not the subject, or no photo at all.
   noFlag(petName: string, hasPhoto: boolean): string
+  // Optional (EN-0, CUL-1130; vomit's flag-on copy only). A contextual escalation over
+  // a photo that was read AND escalated on its own (a visual flag, or the model's own
+  // worth_a_call): the read names the photo finding FIRST, from a template, then the
+  // context. A copy without it keeps step 1's contextual template, so stool and
+  // flag-off vomit are unchanged. Never handed the model's words (Pattern 10).
+  contextualWithPhotoFinding?(petName: string, flags: TFlag[], visualFlags: string[]): string
+}
+
+// A descriptor's contextual flags with the copy this run's words come from (see
+// IncidentDescriptor.computeContextualFlags).
+export interface ContextualRun<TFlag extends string = string, TAnalysis = unknown> {
+  flags: TFlag[]
+  copy: IncidentCopy<TFlag>
+  // Optional (EN-7, CUL-1138; stool's flag-on rule only): a second look at the flags once the
+  // photo has been read. Stool's concurrent_vomiting is right beside a loose stool and adds
+  // nothing beside a formed one, and only the read can tell them apart.
+  //
+  // `withdrawable` names the flags the read may take away. It is a DELIBERATE framework
+  // change to "a descriptor cannot weaken the floor", bounded three ways, all enforced here
+  // (mergeAfterRead and the call site), never left to the descriptor:
+  //   · a flag not named in `withdrawable` can never leave;
+  //   · the hook runs only on a COMPLETE read: every photo on the event reached the model
+  //     and a parsed analysis came back. A capped run, an unreadable or partly read photo,
+  //     no photo and a failed call never reach it, so each of them keeps every flag the
+  //     record gave (B-203's reasoning: an unseen frame could hold what the read ones lack);
+  //   · the flags computed before the read are what the cap branch and the rescue write, so
+  //     a withdrawal can only follow a read that happened.
+  // The hook may also ADD flags and choose the copy the words come from.
+  //   · and only on a SINGLE-photo event: the model returns one set of structured fields for
+  //     every frame it saw, so a multi-photo read cannot say that each frame shows what a
+  //     withdrawal needs (adversarial round 2, R3). A multi-photo read may still ADD.
+  // `stored` is the fresh read taken straight after the vision call (step 6a, the row step 9
+  // decides on) with `afterReadColumns` selected, so an owner's correction, even one made
+  // during the call, can outrank the model (Pattern 7: the owner's edit wins; R2, R2c).
+  withdrawable?: TFlag[]
+  afterRead?(analysis: TAnalysis | null, stored: Record<string, unknown> | null): { flags: TFlag[]; copy: IncidentCopy<TFlag> }
+  // Optional (EN-4, CUL-1134; the vomit floor under engines_v3_en4 only): the least call tier
+  // the record earns (lib/incidentFloor.ts). It can only RAISE the tier a write carries, and
+  // only on a write that escalates with a contextual flag, which the descriptor adds beside
+  // it; absent, every tier is the map's answer, exactly as before (tieredReadFields).
+  minTier?: FloorTier
+}
+
+// The post-read hook's answer, folded in: every pre-vision flag stays, in its order, and
+// the hook's additions follow. The hook's copy is taken, since it knows about both halves.
+export function mergeAfterRead<TFlag extends string>(
+  before: { flags: TFlag[]; copy: IncidentCopy<TFlag>; withdrawable?: readonly TFlag[] },
+  after: { flags: TFlag[]; copy: IncidentCopy<TFlag> },
+): { flags: TFlag[]; copy: IncidentCopy<TFlag> } {
+  const withdrawable = before.withdrawable ?? []
+  const kept = before.flags.filter((f) => after.flags.includes(f) || !withdrawable.includes(f))
+  const added = after.flags.filter((f) => !kept.includes(f))
+  return { flags: [...kept, ...added], copy: after.copy }
+}
+
+export function resolveContextualRun<TFlag extends string, TAnalysis = unknown>(
+  result: TFlag[] | ContextualRun<TFlag, TAnalysis>,
+  fallback: IncidentCopy<TFlag>,
+): ContextualRun<TFlag, TAnalysis> {
+  return Array.isArray(result) ? { flags: result, copy: fallback } : result
 }
 
 export function selectReadText<TFlag extends string>(
@@ -178,11 +280,21 @@ export function selectReadText<TFlag extends string>(
     modelReadText: string | null
     photoUnreadable: boolean
     hasPhoto: boolean
+    // The model's OWN recommendation was worth_a_call. Read only by step 1's photo-first
+    // branch, and only to pick a template; the model's words stay out of it.
+    modelEscalated?: boolean
   },
 ): string {
   const { petName, recommendation, contextualFlags, visualFlags, modelReadText, photoUnreadable, hasPhoto } = params
   // 1. Floor escalated on CONTEXT — the model's photo-only read may contradict it.
-  if (contextualFlags.length > 0) return copy.contextual(petName, contextualFlags)
+  //    With a photo finding of its own, a copy that can say so names it first (EN-0).
+  if (contextualFlags.length > 0) {
+    const photoFinding = hasPhoto && !photoUnreadable && (visualFlags.length > 0 || params.modelEscalated === true)
+    if (photoFinding && copy.contextualWithPhotoFinding) {
+      return copy.contextualWithPhotoFinding(petName, contextualFlags, visualFlags)
+    }
+    return copy.contextual(petName, contextualFlags)
+  }
   // 2. Unreadable photo — honest failure, never reassures, never the model's words.
   if (photoUnreadable) return copy.photoUnreadable(petName)
   // 3. Escalation — the ONLY path that surfaces the model's free text (a model-
@@ -224,6 +336,64 @@ export function selectDescription(params: {
   return maySurface ? params.modelDescription : null
 }
 
+// ── The tier (EN-3, CUL-1133; Engines v3 PR-26) ──────────────────────────────
+// docs/nyx-incident-tiers-requirements.md §1. Under `engines_v3_en3` every write that sets
+// `recommendation` also sets `tier`: the full write-back, the owner-edited update, the
+// capped escalation and the failure path's rescue. The partial-read collapse needs no case
+// of its own, because the tier is derived from the verdict AFTER the collapse. With the key
+// off no write names the column, so every write is today's, byte for byte, and a tier an
+// earlier flag-on run wrote stays on the row (readers take the louder column).
+//
+// THE MAP (tierForVerdict, lib/incidentTier.ts) is the only decision here: worth_a_call →
+// call_today, monitor → logged, not_enough_to_say → not_enough_to_say. Nothing in this PR
+// writes call_now. Every escalation the engine makes today is a "same as today" row of the
+// spec's §7 table at call today; the louder rows (the vomit counts, lethargy, the photo
+// findings) arrive with the rules that decide them (PR-28, PR-29), each with its review.
+// A vomit with no photo read is not_enough_to_say in both columns, never logged: the floor
+// already returns not_enough_to_say for no photo, an unreadable one and one that does not
+// show the subject, and only a read photo reaches monitor.
+//
+// THE MODEL'S OWN ESCALATION (GAP-31, row T19) maps to call today like any other, keeps its
+// words (selectReadText is unchanged), and is told apart by tierReasonOf: a call with no
+// contextual and no visual flag is the model's alone. That is derivable from the row, so an
+// evaluation (PR-17) counts it from the same three columns.
+export const TIER_ENGINE_KEY = 'engines_v3_en3' as const
+
+export function tieredReadFields<TFlag extends string>(
+  readFields: AnalysisReadFields<TFlag>,
+  tiersOn: boolean,
+  minTier?: FloorTier,
+): AnalysisReadFields<TFlag> {
+  if (!tiersOn) return readFields
+  return { ...readFields, tier: raisedTier(tierForVerdict(readFields.recommendation), readFields, minTier) }
+}
+
+// EN-4 (CUL-1134): the floor's call tier lifts a write's tier, never lowers it, and only on a
+// write that is a contextual escalation. A write whose contextual flags are gone (EN-7's
+// withdrawal, a partial-read collapse to not_enough_to_say) carries no floor: the floor's
+// answer was a reading of the flags it added, so without them it has nothing to stand on.
+export function raisedTier(
+  mapped: IncidentTier,
+  fields: { recommendation: Recommendation; contextual_flags: readonly string[] },
+  minTier: FloorTier | undefined,
+): IncidentTier {
+  if (!minTier || fields.recommendation !== 'worth_a_call' || fields.contextual_flags.length === 0) return mapped
+  return tierRank(minTier) > tierRank(mapped) ? minTier : mapped
+}
+
+export type TierReason = 'contextual' | 'visual' | 'model_only' | 'logged' | 'not_enough_to_say'
+
+export function tierReasonOf(fields: {
+  tier: IncidentTier
+  contextual_flags: readonly string[]
+  visual_flags: readonly string[]
+}): TierReason {
+  if (fields.tier === 'logged' || fields.tier === 'not_enough_to_say') return fields.tier
+  if (fields.contextual_flags.length > 0) return 'contextual'
+  if (fields.visual_flags.length > 0) return 'visual'
+  return 'model_only'
+}
+
 // ── Write-back decision (Pattern 7 — the never-clobber guard, B-028) ──────────
 // The n=1 read + flags always refresh (so the deterministic floor can
 // re-escalate on worsening context); the structured CLINICAL fields are the
@@ -231,6 +401,9 @@ export function selectDescription(params: {
 
 export interface AnalysisReadFields<TFlag extends string = string> {
   recommendation: Recommendation
+  // EN-3's tier, beside the verdict. Present exactly when this run is under
+  // `engines_v3_en3` (tieredReadFields); absent, the write is byte-for-byte today's.
+  tier?: IncidentTier
   read_text: string | null
   visual_flags: string[]
   contextual_flags: TFlag[]
@@ -249,6 +422,33 @@ export type AnalysisWriteBack =
 // identity keys. Identity (event_id / pet_id / incident_type) is spread AFTER
 // structuredValues so a descriptor bug can never override row identity; the
 // read fields land last, matching the shipped vomit semantics.
+//
+// A NEW READ CLEARS THE OWNER'S "HIDE" (CUL-1323, PM-ruled 2026-09-27). A
+// dismissal is a statement about the words the owner read, and this write puts a
+// read there they have not seen. The words can repeat (the templated reads do),
+// and clearing on a repeat only ever shows the owner more, so the rule does not
+// ask whether they changed. Before this, `dismissed_at` belonged to the INCIDENT:
+// an owner who hid a calm read and later asked for a new one (Try again, a
+// replaced photo, Ask's live read) got a Worth a call rendered as "AI note
+// hidden", with the escalation on the record and off the screen. It is set here,
+// in the one builder every read goes through (both modes, and the capped path's
+// contextual escalation), and AFTER the read fields so no caller can carry an old
+// dismissal forward. It is a presentation state, not a clinical field, so the
+// never-clobber guarantee below is untouched.
+//
+// The other writes, each pinned end to end in incident-analysis.pipeline.test.ts:
+//   · the failure write (`buildFailureWrite`) records no new read and leaves the
+//     hide alone, EXCEPT its rescue, which writes an escalation's words and clears
+//     it for the same reason this builder does;
+//   · a HOLD (`resolveReanalysisWrite`) keeps the stored escalation's words and
+//     clears the hide too: it is a new read, and a hide on file may predate the client
+//     that asks which words it was made on (see ReanalysisWrite).
+// The sink scan in incident-analysis.test.ts fails the build on a write of read
+// words that comes from none of these. The ORDER half is the client's: a Hide
+// writes only over the read on screen (lib/analysisDismissal.ts), so on that client
+// a read landing first is never hidden unseen. A build already on a phone hides
+// unconditionally, and nothing here can refuse it; that residual, and the rows the
+// old bug left hidden, are CUL-1357.
 export function buildAnalysisWriteBack<TFlag extends string>(params: {
   humanEdited: boolean
   eventId: string
@@ -258,9 +458,9 @@ export function buildAnalysisWriteBack<TFlag extends string>(params: {
   readFields: AnalysisReadFields<TFlag>
 }): AnalysisWriteBack {
   if (params.humanEdited) {
-    // ONLY the read columns. No structured field, no ai_raw_payload — that's the
-    // never-clobber guarantee, by construction.
-    return { mode: 'update', values: { ...params.readFields } }
+    // ONLY the read columns (and the hide they supersede). No structured field,
+    // no ai_raw_payload — that's the never-clobber guarantee, by construction.
+    return { mode: 'update', values: { ...params.readFields, dismissed_at: null } }
   }
   return {
     mode: 'upsert',
@@ -270,8 +470,272 @@ export function buildAnalysisWriteBack<TFlag extends string>(params: {
       pet_id: params.petId,
       incident_type: params.incidentType,
       ...params.readFields,
+      dismissed_at: null,
     },
   }
+}
+
+// ── The stored row, as a re-analysis must read it (CUL-817, CUL-1201, CUL-532) ──
+
+// A read that has not answered is never an empty record (the CUL-575 rule, applied
+// server-side). Step 3b used to drop this error, so an unreachable table read as "no
+// row" and every guard below took its permissive branch: an owner's edits upserted
+// over, a completed read capped over. Throwing lands in the catch, which re-reads and
+// fails closed on its own (CUL-812), and it throws before the gate, so no usage unit
+// is spent on a run that could not have written safely.
+export function existingRowOrThrow<T>(
+  result: { data: T | null; error: { message: string } | null },
+): T | null {
+  if (result.error) throw new Error(`Existing analysis read failed: ${result.error.message}`)
+  return result.data ?? null
+}
+
+// The stored row as the pipeline selects it (readStoredRow): the typed columns every
+// decision reads, plus the descriptor's red-flag columns by name.
+export type StoredRow = Record<string, unknown> & {
+  pet_id?: string | null
+  edited_at?: string | null
+  status?: string | null
+  recommendation?: string | null
+  tier?: string | null
+}
+
+// What a re-analysis learns about the row already on file: every field a write
+// decision below switches on, and nothing else.
+export interface StoredAnalysis {
+  recommendation: string | null
+  // EN-3's tier (079). NULL on every row written before PR-26 or with the key off; the
+  // guards below read the louder of it and `recommendation`, so NULL never protects less
+  // than today.
+  tier: string | null
+  status: string | null
+  // edited_at is set: the owner has corrected a structured field (Pattern 7).
+  edited: boolean
+  // The red flags the stored structured columns assert now: the owner's word once
+  // edited. The descriptor's present-only derivation (Pattern 9), never the cached
+  // visual_flags, which an owner edit deliberately leaves stale.
+  presentFlags: string[]
+  // dismissed_at is set: the owner's hide is on the row (CUL-1323). A hold clears it.
+  hidden: boolean
+}
+
+export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
+  descriptor: Pick<IncidentDescriptor<TAnalysis, TFlag>, 'presentFlagsFromStructured'>,
+  row: Record<string, unknown> | null,
+): StoredAnalysis | null {
+  if (!row) return null
+  return {
+    recommendation: typeof row.recommendation === 'string' ? row.recommendation : null,
+    tier: typeof row.tier === 'string' ? row.tier : null,
+    status: typeof row.status === 'string' ? row.status : null,
+    edited: !!row.edited_at,
+    presentFlags: descriptor.presentFlagsFromStructured(row),
+    hidden: !!row.dismissed_at,
+  }
+}
+
+// A hold keeps the stored verdict, read text, flags and structured columns exactly as
+// they are. The one thing it may write is the STATUS, when the stored row is not a
+// finished read (a CUL-812 or CUL-815 rescue left it 'failed'): this run did finish,
+// so the row takes this run's status ('completed', or 'uncertain' for a read that
+// could not say) and drops the stale error. Left 'failed', the row would disable Edit,
+// and Ask's A8 would re-run a live read, and spend a unit, on every question about it.
+//
+// And it clears the owner's hide (CUL-1323): a hold is a new read, and the ruling is
+// that every new read clears it. "Those are the words the owner hid" is true only of a
+// hide made through the compare-and-set client (lib/analysisDismissal.ts). Builds
+// already on phones send an unconditional Hide, so a stale screen can hide a Worth a
+// call that landed unseen, and rows the pre-CUL-1323 bug left hidden are on file now.
+// Kept, that hide would stand over the escalation across every calmer read after it
+// (adversarial round 2). Cleared, the escalation shows, and the owner can hide it again.
+// This repairs such a row only when another read runs, and a hidden row offers no
+// Re-run, so it is a mitigation, not the fix: CUL-1357 carries the server-side one.
+export type ReanalysisWrite =
+  | AnalysisWriteBack
+  | { mode: 'hold'; values: { status?: string; error?: null; dismissed_at?: null } | null }
+
+// The step-9 write decision. Two rules on top of Pattern 7's never-clobber:
+//
+// 1. NEVER LOWER A STORED ESCALATION (CUL-1201 part 2, ruled 2026-09-26). A second
+//    run of one incident that sees less is absence, and absence is not wellness. The
+//    escalation stands across re-reads and photo swaps, contextual ones included:
+//    both descriptors count their context windows back from Date.now() (CUL-131), so
+//    a context that lapsed because a day passed cannot be told from one the owner
+//    corrected by deleting a duplicate. An escalation replacing an escalation is not a
+//    lowering and writes as before.
+//
+//    There is deliberately NO owner-correction exception here yet. The obvious one
+//    ("an edited row whose red-flag columns the owner cleared") was built and broken
+//    by the adversarial pass: ai_raw_payload is frozen at the read the owner edited
+//    (Pattern 7), so it cannot say whether the STORED verdict came from that read or
+//    from a later re-escalation the owner never saw (owner clears a false flag on
+//    photo 1, photo 2 re-escalates on real blood, photo 3 reads clean: the exception
+//    fired and lowered photo 2's escalation). An owner-lowers path needs a read-time
+//    stamp to compare edited_at against (CUL-1201 part 1, PR-10) or an explicit
+//    owner act on the verdict itself (CUL-1107 / CUL-409). Until then the verdict
+//    errs loud; Home and the vet report already honour the owner's cleared field,
+//    because they derive from the structured columns (Pattern 9).
+//
+// 2. A STORED RED FLAG CARRIES; A STORED ABSENCE DOES NOT (CUL-532). When the stored
+//    structured columns assert a red flag this run's columns don't, the write refreshes
+//    the read fields only, so a re-read that could not see (a fully unreadable photo, a
+//    collapsed partial read) or saw less no longer nulls "fresh red blood" off the
+//    record Home and the vet report derive from. The issue's literal fix (preserve on
+//    any prior real analysis) was rejected: it would also stop a replaced photo's NEW
+//    findings reaching Home and the report on every row (CUL-1110's defect, widened),
+//    and keep a stale "Blood: none visible" under a read that saw nothing.
+//
+// Known residual, owned by CUL-1110: a run that re-asserts none of a stored flag but
+// finds a different one keeps the stored columns, so the new finding reaches the card
+// (the verdict and read escalate) but not the structured fields. The per-field union
+// needs per-field provenance for ai_raw_payload, which is CUL-1110's design.
+// Does the stored row hold over this run's read? Rule 1 above, in ranks (lib/incidentTier.ts):
+// a stored escalation holds over a calmer VERDICT. "Stored escalation" is the louder of the
+// row's two columns, so with no tier on the row (every pre-PR-26 row, every flag-off row) it is
+// exactly today's test, the CUL-1277 allowlist included. A tier written under the key keeps
+// protecting after a rollback, and after a client lowered `recommendation` beside it
+// (CUL-1321's M1): the tier is frozen to clients (079), the verdict is not.
+//
+// An escalation over an escalation is never held, whatever the tiers: the new run may carry
+// a finding the stored one lacks (fresh blood on a re-read), and a hold would keep it off the
+// structured columns Home and the vet report derive from (adversarial F3 on this PR). Its
+// TIER cannot step down instead: keepLouderTier below.
+export function holdsOver(
+  stored: Pick<StoredAnalysis, 'recommendation' | 'tier'>,
+  next: Pick<AnalysisReadFields, 'recommendation'>,
+): boolean {
+  return effectiveTierRank(stored) !== TIER_RANK.quiet && !isEscalationVerdict(next.recommendation)
+}
+
+// Never-lower on the call tiers (spec §1; the PR-04b note on CUL-1133): a tiered call written
+// over a louder stored call carries the stored tier, so a call now is never replaced by a call
+// today while the new run's findings and words still land. Only a known stored tier is kept:
+// a verdict alone never mints a tier. The quiet tiers are not touched, so logged ↔
+// not_enough_to_say stays free (B-203, CUL-812), and flag-off (no tier on the write) is today.
+export function keepLouderTier<TFlag extends string>(
+  stored: Pick<StoredAnalysis, 'tier'> | null,
+  readFields: AnalysisReadFields<TFlag>,
+): AnalysisReadFields<TFlag> {
+  if (!stored || readFields.tier === undefined || !isIncidentTier(stored.tier)) return readFields
+  const storedRank = tierRank(stored.tier)
+  if (storedRank === TIER_RANK.quiet || storedRank <= tierRank(readFields.tier)) return readFields
+  return { ...readFields, tier: stored.tier }
+}
+
+export function resolveReanalysisWrite<TFlag extends string>(params: {
+  stored: StoredAnalysis | null
+  eventId: string
+  petId: string
+  incidentType: string
+  structuredValues: Record<string, unknown>
+  nextPresentFlags: string[]
+  readFields: AnalysisReadFields<TFlag>
+  // EN-4's floor-only write (CUL-1134): it read no photo, so it has no structured values of
+  // its own and writes the read columns alone, whatever the row. Absent, today's decision.
+  readFieldsOnly?: boolean
+}): ReanalysisWrite {
+  const { stored, readFields } = params
+  if (stored && holdsOver(stored, readFields)) {
+    const settle = stored.status !== 'completed' && stored.status !== 'uncertain'
+    if (!settle && !stored.hidden) return { mode: 'hold', values: null }
+    return {
+      mode: 'hold',
+      values: {
+        ...(settle ? { status: readFields.status, error: null } : {}),
+        ...(stored.hidden ? { dismissed_at: null } : {}),
+      },
+    }
+  }
+  const readFieldsKept = keepLouderTier(stored, readFields)
+  const dropsStoredFlag = !!stored &&
+    stored.presentFlags.some((flag) => !params.nextPresentFlags.includes(flag))
+  return buildAnalysisWriteBack({
+    humanEdited: (params.readFieldsOnly === true && stored !== null) || (stored?.edited ?? false) || dropsStoredFlag,
+    eventId: params.eventId,
+    petId: params.petId,
+    incidentType: params.incidentType,
+    structuredValues: params.structuredValues,
+    readFields: readFieldsKept,
+  })
+}
+
+// ── Whose row is it (CUL-1203) ────────────────────────────────────────────────
+//
+// The analysis row is looked up by event_id, and before CUL-1203 nothing tied a
+// row's event_id to its pet_id: RLS checked only that the pet was the writer's,
+// and the events(id) FK is checked without RLS. So any signed-in account holding
+// another account's event id could plant a row {victim's event, own pet,
+// edited_at}, and the humanEdited branch's update — keyed on event_id alone —
+// wrote the victim pet's read (its name in read_text) into the attacker's row.
+// Migration 074 makes that row unwritable (same-pet on insert, both columns
+// frozen on update, no client INSERT). This half makes the write-back unable to
+// reach a row that is not the event's, whatever the database lets in:
+//
+//   · analysisRowMatchesEvent — the row read at step 3b must carry the EVENT's
+//     pet. A row that does not is refused before any write, the usage counter
+//     included. 074 makes such a row unmakeable and its apply refuses if one
+//     already exists, so the one live source is an event moved between an
+//     owner's own pets by hand (CUL-882). For a row mismatched at rest this is
+//     the fix, not a tripwire: without it a re-read's upsert or an unkeyed
+//     update would still write into that row.
+//   · updateAnalysisRow — every UPDATE keys on event_id AND the event's pet_id.
+//     Adding a filter that can match nothing turns a wrong row into a silent
+//     no-op, so the zero-row case is an error here (C-39: a write that matches
+//     nothing is said, never swallowed).
+//
+// The upserts need neither: they already carry the event's pet_id as a value,
+// and 074 refuses the conflict update that would move a row's pet_id.
+
+// Fails CLOSED: a row whose pet_id did not come back (a select that forgot the
+// column) is treated as another pet's, never as a match.
+export function analysisRowMatchesEvent(
+  existing: { pet_id?: string | null } | null,
+  eventPetId: string,
+): boolean {
+  if (!existing) return true
+  return existing.pet_id === eventPetId
+}
+
+export async function updateAnalysisRow(
+  client: SupabaseClient,
+  key: { eventId: string; petId: string },
+  values: Record<string, unknown>,
+): Promise<{ error: string | null }> {
+  const { data, error } = await client
+    .from('event_ai_analysis')
+    .update(values)
+    .eq('event_id', key.eventId)
+    .eq('pet_id', key.petId)
+    .select('id')
+  if (error) return { error: error.message }
+  if (!data || data.length === 0) {
+    return { error: 'no event_ai_analysis row for this event and pet' }
+  }
+  return { error: null }
+}
+
+// The one place an AnalysisWriteBack reaches the table, both modes. Two other
+// writes keep their own shapes — the cap / disabled state upsert and the
+// failure write — and each carries the event's pet_id as a value (the upsert)
+// or goes through updateAnalysisRow (the error-only update).
+//
+// And the one place a builder's words meet their stamps (Engines v3 PR-11a): every
+// write-back carries read words, so every one is stamped here, after the builder has
+// decided the values (engineStamps.ts owns which stamps a write carries). `stamps` is
+// required and nullable, never defaulted (C-37): only a test that is not about stamps
+// passes null, and it has to say so.
+export async function applyAnalysisWriteBack(
+  client: SupabaseClient,
+  key: { eventId: string; petId: string },
+  unstamped: AnalysisWriteBack,
+  stamps: IncidentStamps | null,
+): Promise<{ error: string | null }> {
+  const writeBack = stamps ? stampIncidentWrite(unstamped, stamps) : unstamped
+  if (writeBack.mode === 'update') return updateAnalysisRow(client, key, writeBack.values)
+  const { error } = await client
+    .from('event_ai_analysis')
+    .upsert(writeBack.values, { onConflict: 'event_id' })
+  return { error: error ? error.message : null }
 }
 
 // ── The failure write (CUL-812 / CUL-539) ────────────────────────────────────
@@ -303,41 +767,162 @@ export function buildAnalysisWriteBack<TFlag extends string>(params: {
 // only hidden behind the retry frame until the read succeeds. Widening on
 // edited_at would re-admit the stale-benign-read hazard above for no data gain.
 //
-// The client half of this rule is `escalationSurvivesFailure` in lib/analysis.ts
-// — defence in depth, and the half that reaches owners first (this function's
-// deploy rides the held CUL-557 chain, and it cannot repair rows already flipped).
-// The two must move together.
+// The client half of this rule is `escalationSurvivesFailure` in
+// lib/incidentReadState.ts — defence in depth, and the half that can repair rows
+// already flipped. The two must move together, and since CUL-1277 they cannot drift:
+// both ask `isEscalationVerdict` (lib/incidentVerdict.ts), so ANY verdict off the quiet
+// list survives, not only the literal. A row holding a verdict a later rule wrote
+// (EN-3's `call_now`, then a flag rollback to this code) is an escalation the record
+// already earned; this function must not flip it to 'failed' because it cannot name it.
 
 export type FailureWrite =
   | { mode: 'upsert'; values: Record<string, unknown> }
+  | { mode: 'rescue'; values: Record<string, unknown> }
   | { mode: 'error-only'; values: { error: string } }
   | { mode: 'skip' }
+
+// ── The rescue (CUL-815) — an escalation THIS run computed survives the run failing ──
+//
+// CUL-812 protects an escalation already IN the record. This is the other half: an
+// escalation the failing run had already worked out and never wrote. Step 3 computes
+// the contextual flags from the record alone, before the photo is fetched, precisely so
+// they survive a capped or flagged-off read (§5.4); a storage error, a 529 from the
+// model or a failed write-back used to throw them away with the rest of the run, and
+// the owner saw "Couldn't finish reading this one" where a warning belonged
+// (clinical-guardrails Pattern 5: the failure path runs the contextual floor anyway).
+//
+// The rescue carries the READ fields only (never a structured column), so it cannot
+// null a prior finding or an owner's edit. Its status is 'failed' because that is true:
+// the photo read did not finish. The client already renders a failed row carrying an
+// escalation as the escalation (`escalationSurvivesFailure`), and CUL-819's disclosure
+// needs the fact that the latest read didn't finish.
+export interface RescueRead<TFlag extends string = string> {
+  recommendation: Recommendation
+  // Present exactly when the run was under the tier key (withRescueTier); the rescue then
+  // writes it beside the verdict like every other write of words.
+  tier?: IncidentTier
+  read_text: string
+  visual_flags: string[]
+  contextual_flags: TFlag[]
+}
+
+// The escalation the catch should keep, or null. `computed` is the run's own post-floor
+// read when it got that far (a visual escalation whose write-back then failed is the
+// CUL-815 variant); otherwise the contextual flags alone decide, read through the same
+// selectReadText as the cap branch, so the words are the ones a capped run would show.
+// A computed read that did not escalate is never rescued: absence is not carried.
+export function buildRescueRead<TFlag extends string>(
+  copy: IncidentCopy<TFlag>,
+  params: {
+    computed: RescueRead<TFlag> | null
+    contextualFlags: TFlag[]
+    petName: string
+    hasPhoto: boolean
+  },
+): RescueRead<TFlag> | null {
+  if (params.computed && isEscalationVerdict(params.computed.recommendation)) return params.computed
+  if (params.contextualFlags.length === 0) return null
+  return {
+    recommendation: 'worth_a_call',
+    read_text: selectReadText(copy, {
+      petName: params.petName,
+      recommendation: 'worth_a_call',
+      contextualFlags: params.contextualFlags,
+      visualFlags: [],
+      modelReadText: null,
+      photoUnreadable: false,
+      hasPhoto: params.hasPhoto,
+    }),
+    visual_flags: [],
+    contextual_flags: params.contextualFlags,
+  }
+}
+
+// The rescue's tier, under the key: the same map as every other write, from the verdict the
+// rescue carries (a computed read's tier, when it had one, is that same map's answer).
+export function withRescueTier<TFlag extends string>(
+  rescue: RescueRead<TFlag> | null,
+  tiersOn: boolean,
+  minTier?: FloorTier,
+): RescueRead<TFlag> | null {
+  if (!rescue || !tiersOn) return rescue
+  return { ...rescue, tier: raisedTier(tierForVerdict(rescue.recommendation), rescue, minTier) }
+}
 
 // `existing` is the row read AT THE MOMENT OF THIS DECISION, not at step 3b — see
 // the call site for why the difference matters. `existingReadFailed` says that read
 // itself errored, which is NOT the same as "no row": the caller cannot tell an empty
 // table from an unreachable one, and on this surface an unproven write is worse than
-// a missing retry button, so it fails CLOSED.
+// a missing retry button, so it fails CLOSED. `rescue` is required, not defaulted: a
+// default on a safety decision is that decision (C-37), and "no rescue" must be said.
 export function buildFailureWrite(params: {
-  existing: { recommendation?: string | null } | null
+  existing: Pick<StoredAnalysis, 'recommendation' | 'presentFlags'> & { tier?: string | null } | null
   existingReadFailed: boolean
   eventId: string
   petId: string | null
   incidentType: string | null
   message: string
+  rescue: RescueRead | null
+  // The stamps the rescue's words carry (engineStamps.ts). Only the rescue writes words,
+  // so only the rescue is stamped; the error-only and plain failure shapes leave the
+  // row's stamps describing the read it still holds. Required for the same reason as
+  // `rescue` (C-37); null only where a caller has none (a test not about stamps).
+  stamps: IncidentStamps | null
 }): FailureWrite {
   // The table requires pet_id + incident_type NOT NULL: if we failed before the
   // event loaded we have nothing valid to write at all.
   if (!params.petId || !params.incidentType) return { mode: 'skip' }
 
   // We could not read what is there. Writing 'failed' blind is exactly the bug this
-  // guard exists to stop, so write nothing: the row keeps whatever it holds.
+  // guard exists to stop, so write nothing: the row keeps whatever it holds. A rescue
+  // is not attempted either: the table just refused a read, and a skip is the one
+  // outcome that is safe whatever the row holds.
   if (params.existingReadFailed) return { mode: 'skip' }
 
-  if (params.existing?.recommendation === 'worth_a_call') {
+  // The louder of the two columns (lib/incidentTier.ts): with no tier on the row this is
+  // exactly isEscalationVerdict(recommendation); a tier written under the key protects too.
+  if (params.existing && effectiveTierRank(params.existing) !== TIER_RANK.quiet) {
     // Record the error alongside for observability; leave status, recommendation
     // and read_text exactly as the record earned them. A later successful read
-    // clears `error` via readFields (error: null).
+    // clears `error` via readFields (error: null). A rescue would only swap one
+    // escalation's words for another's, so the stored one stands.
+    return { mode: 'error-only', values: { error: params.message } }
+  }
+
+  if (params.rescue) {
+    // Identity + read fields only. PostgREST's upsert updates exactly the columns it
+    // is sent, so an existing row's structured fields and edited_at are untouched and
+    // a fresh row's are null, which is right for a read that never finished.
+    //
+    // And the owner's hide goes (CUL-1323). This is the one failure shape that writes
+    // WORDS: an escalation over a row that held none, so words the owner has not seen.
+    // A hide they made on the calm read before it would otherwise stand over them, and
+    // "AI note hidden" would sit where the warning belongs.
+    const rescue: FailureWrite & { mode: 'rescue' } = {
+      mode: 'rescue',
+      values: {
+        event_id: params.eventId,
+        pet_id: params.petId,
+        incident_type: params.incidentType,
+        recommendation: params.rescue.recommendation,
+        ...(params.rescue.tier !== undefined ? { tier: params.rescue.tier } : {}),
+        read_text: params.rescue.read_text,
+        visual_flags: params.rescue.visual_flags,
+        contextual_flags: params.rescue.contextual_flags,
+        status: 'failed',
+        error: params.message,
+        dismissed_at: null,
+      },
+    }
+    return params.stamps ? stampIncidentWrite(rescue, params.stamps) : rescue
+  }
+
+  if (params.existing && params.existing.presentFlags.length > 0) {
+    // A stored red flag with a calm verdict beside it (vomit rows whose model left
+    // visual_flags empty, CUL-534). The failure frame renders ahead of the card and
+    // hides the observation grid, so "Couldn't finish reading this one" would stand
+    // over "Blood: fresh red" on the record. Presence carries: keep the row, note the
+    // error (CUL-532's class, on this write path).
     return { mode: 'error-only', values: { error: params.message } }
   }
 
@@ -351,6 +936,25 @@ export function buildFailureWrite(params: {
       error: params.message,
     },
   }
+}
+
+// ── Is the existing row a real analysis? (the cap path's never-bury guard) ─────
+// A row holding an escalation is a real analysis whatever its STATUS says (CUL-812):
+// the pre-guard failure write flipped only status + error, so a 'failed' row can still
+// carry the escalation a previous read earned, and the client renders it as one. The
+// cap / disabled branch of runIncidentAnalysis reads this to decide whether a cap STATE
+// may be written; without the escalation clause it would write 'capped' over a live
+// "Worth a call". ANY escalation, not the literal (CUL-1277): a verdict a later rule wrote
+// (EN-3's tiers, then a flag rollback) is protected the same way. Pure + exported so the
+// clause is tested rather than asserted inline in the untested pipeline.
+export function isRealAnalysis(
+  existing: { status?: string | null; recommendation?: string | null; tier?: string | null } | null | undefined,
+): boolean {
+  if (!existing) return false
+  if (existing.status !== 'pending' && existing.status !== 'failed') return true
+  // The louder column (EN-3): identical to isEscalationVerdict(recommendation) on a row with
+  // no tier, and a call tier written under the key is protected the same way.
+  return effectiveTierRank(existing) !== TIER_RANK.quiet
 }
 
 // ── Cap + flag gate (Monetization Track 2, T2-3 / B-329 + B-001) ──────────────
@@ -470,7 +1074,7 @@ const MAX_PHOTOS_PER_ANALYSIS = 3
 const VISION_MAX_TOKENS = 1024
 
 type ClaudeMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
-interface ImagePart { data: string; mediaType: ClaudeMediaType }
+export interface ImagePart { data: string; mediaType: ClaudeMediaType }
 
 // Claude rejects a request whose declared media_type doesn't match the actual
 // bytes. Photos are uploaded with a hardcoded .jpg name + image/jpeg
@@ -607,6 +1211,15 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   systemPrompt: string
   tool: Record<string, unknown>
   userMessageText: string
+  // This descriptor's half of the row's rule_version stamp (the framework's half is
+  // FRAMEWORK_RULE_VERSION in engineStamps.ts). Bump it with any change to which
+  // findings become flags or to the contextual flags' derivation: a row must say which
+  // rules made it (critique R-1). Shape: [a-z0-9]+, e.g. 'vomit1'.
+  ruleVersion: string
+  // Optional (EN-4, CUL-1134): the engine key that turns on this type's record-only floor and
+  // the 'floor' / 'refloor' request modes. Absent (stool), those modes are refused. With the
+  // key off for the owner they are refused too, before anything is written.
+  floorEngineKey?: EngineKey
   // Parse + sanitize the tool_use result into the per-type analysis; null when
   // the model returned no usable tool call.
   parseToolResult(response: ClaudeResponse): TAnalysis | null
@@ -622,10 +1235,18 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   // (stool's repeated_loose_stool needs to know if this event is 'diarrhea' —
   // B-247 PR 3). It is PRE-vision context, so it neither reaches the model nor
   // depends on the vision result: escalation still survives the cap.
+  // `engineFlags` is the Engines v3 flag state resolved for the record's owner
+  // (engineFlags.ts); a descriptor that gates a rule on a key reads it here, and one
+  // that gates nothing ignores it.
+  //
+  // It may return the flags alone, or the flags with the copy THIS run's words come from
+  // (a ContextualRun): EN-0's vomit copy states the record the flags were computed over,
+  // so it is built per run. Every read this run writes (the full read, the capped
+  // escalation, the failure rescue) takes that copy; without one, `copy` below.
   computeContextualFlags(
     userClient: SupabaseClient,
-    event: { petId: string; occurredAt: string; species: string; eventType: string },
-  ): Promise<TFlag[]>
+    event: { eventId: string; petId: string; occurredAt: string; species: string; eventType: string; engineFlags: EngineFlags },
+  ): Promise<TFlag[] | ContextualRun<TFlag, TAnalysis>>
   // Per-type owner-facing read templates. Every new descriptor's strings need
   // their own reassurance-word regex test (Pattern 8) — not inherited.
   copy: IncidentCopy<TFlag>
@@ -635,6 +1256,20 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   // by the B-203 partial-read collapse — in which case all per-type columns must be
   // null (nothing to preserve, and nothing partial-view to carry onto the report).
   buildStructuredValues(analysis: TAnalysis | null): Record<string, unknown>
+  // The structured columns a red flag lives in (Pattern 9): step 3b selects exactly
+  // these, so presentFlagsFromStructured must read nothing else (each descriptor's
+  // suite pins that).
+  redFlagColumns: readonly string[]
+  // Optional (EN-7): further stored columns step 3b selects for a ContextualRun.afterRead to
+  // read (stool's owner-editable consistency). Never read by the red-flag derivation.
+  afterReadColumns?: readonly string[]
+  // The PRESENT red flags a row of structured column values asserts, present-only:
+  // never a flag on 'unsure', 'no', 'none_visible' or null. Run on the stored row, on
+  // the stored ai_raw_payload mapped through buildStructuredValues, and on this run's
+  // columns, so a re-analysis can tell what it would take off the record
+  // (resolveReanalysisWrite). Mirrors generate-signal's deriveIncidentFlags for the
+  // type's family; each descriptor's suite pins the parity (C-34: same question).
+  presentFlagsFromStructured(row: Record<string, unknown>): string[]
 }
 
 // ── Vision call ────────────────────────────────────────────────────────────────
@@ -686,11 +1321,231 @@ interface RequestBody {
   // default-off, so analyze-vomit/analyze-stool behaviour is unchanged for every existing
   // caller — the regression proof (each function's index.test.ts passing unmodified) holds.
   transform_only?: boolean
+  // EN-4 (CUL-1134), refused unless the descriptor has a floor and its key is on for the
+  // record's owner:
+  //   'floor'   — the record's rules only, over the event: never a Storage download, a model
+  //               call or a cap unit. A photographed event whose photo has not been read yet
+  //               is left to that read; one already read is only ever RAISED.
+  //   'refloor' — event_id names a lethargy, meal or vomit log (live or soft-deleted); every
+  //               live vomit of that pet within 24 h of it either way (72 h for a vomit) is
+  //               floored again, each as a 'floor' request.
+  // Absent: today's read, byte for byte.
+  mode?: 'floor' | 'refloor'
+}
+
+// The pipeline's three outside dependencies, injectable so a test can drive the REAL
+// pipeline (every branch, every write, in order) through a fake database and a fake
+// model: the pure helpers above are only as good as the wiring that calls them, and a
+// source scan of that wiring was shown to pass five realistic broken rebases
+// (adversarial pass, PR-04b). The two deployed functions pass nothing and get
+// LIVE_PIPELINE_DEPS; nothing else is swapped, so the auth, RLS and service-role
+// boundaries are the production ones.
+export interface PipelineDeps {
+  // User-scoped client: RLS enforces that the caller owns the event's pet.
+  userClient(authHeader: string): SupabaseClient
+  // Service-role client: storage download + trusted write-back.
+  adminClient(): SupabaseClient
+  vision<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
+    descriptor: IncidentDescriptor<TAnalysis, TFlag>,
+    images: ImagePart[],
+  ): Promise<TAnalysis | null>
+}
+
+export const LIVE_PIPELINE_DEPS: PipelineDeps = {
+  userClient: (authHeader) =>
+    createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: authHeader } } },
+    ),
+  adminClient: () =>
+    createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    ),
+  vision: runVisionCall,
+}
+
+// ── EN-4's floor-only writes (Engines v3 PR-28, CUL-1134) ──────────────────────
+// docs/nyx-incident-tiers-requirements.md §8. Both are reached only through a request mode the
+// pipeline has already refused unless the descriptor has a floor and its key and the tier key
+// are on for the record's owner.
+
+// A floor-only run over a read the photo already produced. The record's rules may RAISE that
+// read and nothing else: with no contextual flag, or no tier and no flag the row does not
+// already carry, nothing is written. The words become the contextual template for the reason,
+// led by what the photo showed (from the stored visual flags, never the model's text: Pattern
+// 9 / 10), and the write goes through resolveReanalysisWrite (read columns only, the stored
+// structured fields and the owner's edits untouched, the stored tier kept when louder) and
+// applyAnalysisWriteBack, the one stamped sink. Exported for the pipeline suite.
+export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
+  descriptor: IncidentDescriptor<TAnalysis, TFlag>,
+  adminClient: SupabaseClient,
+  p: {
+    eventId: string
+    petId: string
+    incidentType: string
+    petName: string
+    contextualFlags: TFlag[]
+    copy: IncidentCopy<TFlag>
+    minTier: FloorTier | undefined
+    existing: StoredRow
+    stamps: IncidentStamps
+  },
+): Promise<Response> {
+  const nothing = () => Response.json({ success: true, skipped: 'nothing_raised' }, { headers: CORS_HEADERS })
+  if (p.contextualFlags.length === 0) return nothing()
+
+  // The two cached columns this run keeps: what the photo showed, and the flags already on
+  // the row (a floor-only run never takes a flag off the record).
+  const { data: cached, error: cachedErr } = await adminClient
+    .from('event_ai_analysis')
+    .select('visual_flags, contextual_flags')
+    .eq('event_id', p.eventId)
+    .eq('pet_id', p.petId)
+    .maybeSingle<{ visual_flags: string[] | null; contextual_flags: string[] | null }>()
+  if (cachedErr || !cached) throw new Error(`Floor read of the stored flags failed${cachedErr ? `: ${cachedErr.message}` : ''}`)
+  const storedContextual = (cached.contextual_flags ?? []) as TFlag[]
+  // An owner edit leaves the cached visual_flags stale on purpose (Pattern 7), so an edited
+  // row's photo finding comes from its structured columns, the owner's word (adversarial D5).
+  // presentFlagsFromStructured names foreign material 'foreign_material'; the read's words
+  // know it as 'suspected_foreign_material'.
+  const visualFlags = cached.visual_flags ?? []
+  const leadFlags = p.existing.edited_at
+    ? descriptor.presentFlagsFromStructured(p.existing).map((f) => (f === 'foreign_material' ? 'suspected_foreign_material' : f))
+    : visualFlags
+  const contextual = [...storedContextual, ...p.contextualFlags.filter((f) => !storedContextual.includes(f))]
+
+  const next = raisedTier(tierForVerdict('worth_a_call'), { recommendation: 'worth_a_call', contextual_flags: contextual }, p.minTier)
+  const addsFlag = contextual.length > storedContextual.length
+  if (tierRank(next) <= effectiveTierRank(p.existing) && !addsFlag) return nothing()
+
+  const readFields: AnalysisReadFields<TFlag> = {
+    recommendation: 'worth_a_call',
+    tier: next,
+    read_text: selectReadText(p.copy, {
+      petName: p.petName,
+      recommendation: 'worth_a_call',
+      contextualFlags: contextual,
+      visualFlags: leadFlags,
+      modelReadText: null,
+      photoUnreadable: false,
+      hasPhoto: true,
+      // A stored call with no flag behind it was the model's own: the photo finding still leads.
+      modelEscalated: !p.existing.edited_at && storedContextual.length === 0 && visualFlags.length === 0 && p.existing.recommendation === 'worth_a_call',
+    }),
+    visual_flags: visualFlags,
+    contextual_flags: contextual,
+    status: 'completed',
+    error: null,
+  }
+  const stored = snapshotStoredAnalysis(descriptor, p.existing)
+  const writeBack = resolveReanalysisWrite({
+    stored,
+    eventId: p.eventId,
+    petId: p.petId,
+    incidentType: p.incidentType,
+    structuredValues: {},
+    nextPresentFlags: stored?.presentFlags ?? [],
+    readFields,
+    readFieldsOnly: true,
+  })
+  if (writeBack.mode === 'hold') return nothing() // unreachable: this write always escalates
+  const { error } = await applyAnalysisWriteBack(adminClient, { eventId: p.eventId, petId: p.petId }, writeBack, p.stamps)
+  if (error) throw new Error(`DB write failed: ${error}`)
+  return Response.json(
+    { success: true, floor: true, recommendation: 'worth_a_call', tier: writeBack.values.tier ?? next },
+    { headers: CORS_HEADERS },
+  )
+}
+
+// The event types whose log re-floors the vomits before it (spec §8.3, §8.6): lethargy (T3),
+// a meal (a refusal is today's feline arm), and a vomit (a late-logged one counts for its
+// neighbours).
+export const REFLOOR_TRIGGER_TYPES = ['lethargy', 'meal', 'vomit'] as const
+// Both ways from the trigger (adversarial D2): lethargy counts 24 h either side of a vomit
+// (T3), so lethargy backdated before a vomit already logged must reach it; and a vomit
+// logged late, backdated before its neighbours, must reach them (spec §8.6, amended v0.3).
+// 72 h covers T8's three spans. The re-run is raise-only, so reading wider only reaches more
+// vomits and can lower none.
+export const REFLOOR_WINDOW_HOURS = 24
+export const REFLOOR_VOMIT_WINDOW_HOURS = FLOOR_READ_HOURS
+
+// The 24-hour re-run. Each vomit goes through this same pipeline as a 'floor' request with the
+// caller's JWT, so it inherits every guard the floor-only mode has (the flag refusal, the
+// ownership-scoped event read, CUL-1203's row check, never-lower) and makes no Storage
+// download, no model call and no cap unit (pinned by the pipeline suite with a throwing
+// Storage and model). Sequential, so two vomits of one bout never race each other's reads.
+async function runRefloor<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
+  descriptor: IncidentDescriptor<TAnalysis, TFlag>,
+  req: Request,
+  deps: PipelineDeps,
+  authHeader: string,
+  triggerEventId: string,
+): Promise<Response> {
+  const userClient = deps.userClient(authHeader)
+  try {
+    const { data: { user }, error: authErr } = await userClient.auth.getUser()
+    if (authErr || !user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
+
+    const { data: trigger } = await userClient
+      .from('events')
+      .select('id, pet_id, event_type, occurred_at, pets(user_id)')
+      .eq('id', triggerEventId)
+      // No deleted_at filter (adversarial D4): a soft delete is a trigger (spec §8.3). Deleting
+      // a meal rated All can raise the feline arm. Only the pet and the time are used, and
+      // RLS scopes the read to the caller's pets.
+      .maybeSingle()
+    if (!trigger) return Response.json({ error: 'Event not found' }, { status: 404, headers: CORS_HEADERS })
+    if (!(REFLOOR_TRIGGER_TYPES as readonly string[]).includes(trigger.event_type as string)) {
+      return Response.json({ error: 'Event does not re-floor' }, { status: 400, headers: CORS_HEADERS })
+    }
+    const pet = (Array.isArray(trigger.pets) ? trigger.pets[0] : trigger.pets) as { user_id?: string | null } | null
+    const engineFlags = await readEngineFlags(userClient, typeof pet?.user_id === 'string' ? pet.user_id : null)
+    if (!(descriptor.floorEngineKey && isEngineKeyOn(engineFlags, descriptor.floorEngineKey) && isEngineKeyOn(engineFlags, TIER_ENGINE_KEY))) {
+      return Response.json({ success: true, skipped: 'floor_off' }, { headers: CORS_HEADERS })
+    }
+
+    const atMs = Date.parse(trigger.occurred_at as string)
+    if (!Number.isFinite(atMs)) return Response.json({ success: true, refloored: 0 }, { headers: CORS_HEADERS })
+    const reach = trigger.event_type === 'vomit' ? REFLOOR_VOMIT_WINDOW_HOURS : REFLOOR_WINDOW_HOURS
+    const { data: vomits, error: vomitErr } = await userClient
+      .from('events')
+      .select('id, occurred_at')
+      .eq('pet_id', trigger.pet_id as string)
+      .in('event_type', descriptor.eventTypes)
+      .is('deleted_at', null)
+      .gte('occurred_at', new Date(atMs - reach * 3_600_000).toISOString())
+      .lte('occurred_at', new Date(atMs + reach * 3_600_000).toISOString())
+      .order('occurred_at', { ascending: true })
+      .order('id', { ascending: true })
+    if (vomitErr) throw new Error(`Re-floor read failed: ${vomitErr.message}`)
+
+    const results: { event_id: string; status: number }[] = []
+    for (const v of (vomits ?? []) as { id: string }[]) {
+      const res = await runIncidentAnalysis(
+        descriptor,
+        new Request(req.url, {
+          method: 'POST',
+          headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event_id: v.id, mode: 'floor' }),
+        }),
+        deps,
+      )
+      results.push({ event_id: v.id, status: res.status })
+    }
+    return Response.json({ success: true, refloored: results.length, results }, { headers: CORS_HEADERS })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error(`${descriptor.functionName} refloor error:`, message)
+    return Response.json({ error: 'Re-floor failed', detail: message }, { status: 500, headers: CORS_HEADERS })
+  }
 }
 
 export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
   descriptor: IncidentDescriptor<TAnalysis, TFlag>,
   req: Request,
+  deps: PipelineDeps = LIVE_PIPELINE_DEPS,
 ): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS })
@@ -714,23 +1569,57 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // Transform-only opt-in (B-228 A8). Any non-`true` value keeps the shipped raw-for-small
   // fetch — so an untrusted/garbled body can only ever tighten the fetch, never loosen it.
   const forceTransform = body.transform_only === true
+  if (body.mode !== undefined && body.mode !== 'floor' && body.mode !== 'refloor') {
+    return Response.json({ error: 'Unknown mode' }, { status: 400, headers: CORS_HEADERS })
+  }
+  if (body.mode !== undefined && !descriptor.floorEngineKey) {
+    return Response.json({ error: 'This read has no floor-only mode' }, { status: 400, headers: CORS_HEADERS })
+  }
+  if (body.mode === 'refloor') return runRefloor(descriptor, req, deps, authHeader, eventId)
+  const floorOnly = body.mode === 'floor'
 
-  // User-scoped client: RLS enforces that the caller owns the event's pet.
-  const userClient = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_ANON_KEY')!,
-    { global: { headers: { Authorization: authHeader } } },
-  )
-  // Service-role client: storage download + trusted write-back.
-  const adminClient = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  )
+  const userClient = deps.userClient(authHeader)
+  const adminClient = deps.adminClient()
 
   // Known once the event loads; needed to write a valid failure row (the
   // table requires pet_id + incident_type NOT NULL).
   let petIdForFailure: string | null = null
   let incidentTypeForFailure: string | null = null
+  // What the catch needs to keep an escalation this run already computed (CUL-815).
+  // Declared out here because a `const` inside the try is out of scope in the catch,
+  // which is how the contextual flags used to be lost.
+  let petNameForFailure = 'your pet'
+  let hasPhotoForFailure = false
+  let contextualFlagsForFailure: TFlag[] = []
+  let copyForFailure: IncidentCopy<TFlag> = descriptor.copy
+  let computedRead: RescueRead<TFlag> | null = null
+  // The stamps this run's words carry (engineStamps.ts). Out here for the same reason as
+  // the rescue's inputs: the catch's rescue writes words, so it writes their stamps.
+  let stampsForFailure: IncidentStamps | null = null
+  // Whether this run writes tiers (EN-3), for the same reason: the rescue writes one.
+  let tiersOnForFailure = false
+  // EN-4's floor tier, for the same reason: a rescued call carries the tier the record earned.
+  let minTierForFailure: FloorTier | undefined
+
+  // The stored row, read with every column a write decision switches on. Read twice:
+  // at step 3b for the cap branch, and again at step 9, because the vision call
+  // between them takes 10-60s and a sibling run (Ask's A8 read holds no analysis-
+  // chain claim) or an owner edit can land inside it. A read error throws (CUL-817).
+  // pet_id: every decision on the row first checks it is this event's (CUL-1203).
+  // dismissed_at: a hold clears the owner's hide, so it has to know one is there (CUL-1323).
+  // tier: every guard reads the louder of it and `recommendation` (EN-3, lib/incidentTier.ts).
+  const storedColumns = [
+    'id', 'pet_id', 'edited_at', 'status', 'recommendation', 'tier', 'dismissed_at',
+    ...descriptor.redFlagColumns, ...(descriptor.afterReadColumns ?? []),
+  ].join(', ')
+  const readStoredRow = async (): Promise<StoredRow | null> =>
+    existingRowOrThrow(
+      await adminClient
+        .from('event_ai_analysis')
+        .select(storedColumns)
+        .eq('event_id', eventId)
+        .maybeSingle<StoredRow>(),
+    )
 
   try {
     // 0. Verify the caller uid from the JWT (§4.6). record_ai_usage derives the
@@ -746,7 +1635,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //    this descriptor's type.
     const { data: event } = await userClient
       .from('events')
-      .select('id, pet_id, event_type, occurred_at, deleted_at, pets(name, species)')
+      .select('id, pet_id, event_type, occurred_at, deleted_at, pets(name, species, user_id)')
       .eq('id', eventId)
       .is('deleted_at', null)
       .maybeSingle()
@@ -758,7 +1647,9 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       return Response.json({ error: descriptor.wrongEventTypeMessage }, { status: 400, headers: CORS_HEADERS })
     }
 
-    const pet = (Array.isArray(event.pets) ? event.pets[0] : event.pets) as { name: string; species: string } | null
+    const pet = (Array.isArray(event.pets) ? event.pets[0] : event.pets) as
+      | { name: string; species: string; user_id?: string | null }
+      | null
     const petName = pet?.name ?? 'your pet'
     const species = pet?.species ?? 'unknown'
     const petId = event.pet_id as string
@@ -768,16 +1659,46 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     const incidentType = event.event_type as string
     petIdForFailure = petId
     incidentTypeForFailure = incidentType
+    petNameForFailure = petName
+
+    // 1b. The Engines v3 flag, for the record's OWNER (pets.user_id off the RLS-scoped
+    //     read above), failing closed: a missing, malformed or unreadable row is off
+    //     (engineFlags.ts). A failed read runs the flag-off engine and says so in the
+    //     stamp (engine_flags '{}'), which is the truth about the run.
+    const engineFlags = await readEngineFlags(userClient, typeof pet?.user_id === 'string' ? pet.user_id : null)
+    const tiersOn = isEngineKeyOn(engineFlags, TIER_ENGINE_KEY)
+    tiersOnForFailure = tiersOn
+
+    // 1c. EN-4's floor-only mode (CUL-1134) runs only under its key AND the tier key (the
+    //     floor's answer is a tier), for the owner. Refused here, before any read that could
+    //     lead to a write: flag-off never runs the floor-only path (spec §8.10).
+    const floorOn = !!descriptor.floorEngineKey && isEngineKeyOn(engineFlags, descriptor.floorEngineKey) && tiersOn
+    if (floorOnly && !floorOn) {
+      return Response.json({ success: true, skipped: 'floor_off' }, { headers: CORS_HEADERS })
+    }
 
     // 2. Photo(s) for this event (ordered). May be empty (logged without a photo).
     const { data: attachments } = await userClient
       .from('event_attachments')
-      .select('storage_path')
+      .select('id, storage_path')
       .eq('event_id', eventId)
       .order('sort_order', { ascending: true })
 
     const photoPaths = (attachments ?? []).map((a) => a.storage_path as string)
     const hasPhoto = photoPaths.length > 0
+    hasPhotoForFailure = hasPhoto
+
+    // 2b. The stamps every write of read words below carries (engineStamps.ts).
+    const stamps = await buildIncidentStamps({
+      attachmentIds: (attachments ?? []).map((a) => a.id),
+      descriptorRuleVersion: descriptor.ruleVersion,
+      engineFlags,
+      model: descriptor.model,
+      systemPrompt: descriptor.systemPrompt,
+      tool: descriptor.tool,
+      userMessageText: descriptor.userMessageText,
+    })
+    stampsForFailure = stamps
 
     // 3. Deterministic contextual flags FIRST (§5.4 step 2 — the reorder). These
     //    are DB reads, fully independent of the vision result (they already run
@@ -785,29 +1706,61 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //    therefore SURVIVE the cap. This is what guarantees a capped /
     //    flagged-off incident still escalates when the context warrants it — the
     //    invariant the adversarial review must try to break.
-    const contextualFlags = await descriptor.computeContextualFlags(userClient, { petId, occurredAt, species, eventType: incidentType })
+    const contextRun = resolveContextualRun(
+      await descriptor.computeContextualFlags(userClient, {
+        eventId,
+        petId,
+        occurredAt,
+        species,
+        eventType: incidentType,
+        engineFlags,
+      }),
+      descriptor.copy,
+    )
+    let contextualFlags = contextRun.flags
+    let copy = contextRun.copy
+    contextualFlagsForFailure = contextualFlags
+    copyForFailure = copy
+    let minTier = contextRun.minTier
+    minTierForFailure = minTier
 
     // 3b. Existing analysis row — honors the never-clobber guard (B-028) in every
     //     write path below, and decides whether a cap/disabled STATE may be written
-    //     (it must never bury an already-completed or owner-edited read).
-    const { data: existing } = await adminClient
-      .from('event_ai_analysis')
-      .select('id, edited_at, status, recommendation')
-      .eq('event_id', eventId)
-      .maybeSingle()
-    const humanEdited = !!existing?.edited_at
-    // A row holding a `worth_a_call` is a real analysis whatever its STATUS says
-    // (CUL-812). A 'failed' row can still carry the escalation a previous read
-    // earned — the pre-guard failure write flipped only status + error, and the
-    // client now renders those rows as the escalations they are. Without this
-    // clause the cap / disabled branch below treats them as "nothing to protect"
-    // and writes 'capped' over one, which the client checks BEFORE the card: the
-    // owner taps re-run on a live "Worth a call" and watches it become a cap band.
-    const existingRealAnalysis =
-      !!existing && (
-        (existing.status !== 'pending' && existing.status !== 'failed') ||
-        existing.recommendation === 'worth_a_call'
+    //     (it must never bury an already-completed or owner-edited read). An
+    //     unanswered read throws here, before the gate spends a unit (CUL-817); the
+    //     catch then keeps the contextual flags just computed (CUL-815).
+    const existing = await readStoredRow()
+    // CUL-1203: a row filed under another pet is not this event's read, and every
+    // decision below (humanEdited, existingRealAnalysis) would otherwise be taken
+    // on a stranger's row. Refused here, before the usage counter and before any
+    // write — a direct return, so the catch's failure write never runs over it.
+    // The client maps any non-2xx to its calm retry line; nothing new is shown.
+    if (!analysisRowMatchesEvent(existing, petId)) {
+      console.error(`${descriptor.functionName}: analysis row for event ${eventId} is filed under another pet; refusing to write`)
+      return Response.json(
+        { error: 'Analysis row does not belong to this event' },
+        { status: 409, headers: CORS_HEADERS },
       )
+    }
+    // 3c. EN-4's floor-only run over a PHOTOGRAPHED event (CUL-1134). It never downloads the
+    //     photo, never calls the model, never spends a cap unit (spec §8.2, §8.6): everything
+    //     the photo said is already on the stored row. With no stored read the photo's own
+    //     read has not run yet, and that read computes this same floor, so this run leaves it
+    //     alone. A photo-less event goes on down the ordinary path, which makes none of those
+    //     three calls without a photo (steps 4 and 6 run only `if (hasPhoto)`).
+    if (floorOnly && hasPhoto) {
+      if (!existing) {
+        return Response.json({ success: true, skipped: 'photo_read_pending' }, { headers: CORS_HEADERS })
+      }
+      return await writeFloorOverStoredRead(descriptor, adminClient, {
+        eventId, petId, incidentType, petName, contextualFlags, copy, minTier, existing, stamps,
+      })
+    }
+
+    const humanEdited = !!existing?.edited_at
+    // A row holding an escalation is a real analysis whatever its STATUS says
+    // (CUL-812; any escalation since CUL-1277) — `isRealAnalysis` carries the why.
+    const existingRealAnalysis = isRealAnalysis(existing)
 
     // 4. Flag + cap gate (§5.4 step 3) — immediately before the vision call, AFTER
     //    the escalation-flag computation above. The cap/flag gate the MODEL CALL, so
@@ -847,8 +1800,13 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         // Only a truly-fresh row (no prior real analysis) takes the full upsert, where
         // null structured fields are correct (there is nothing to preserve — same as a
         // photo-less escalation).
-        const preserveStructured = humanEdited || existingRealAnalysis
-        const readText = selectReadText(descriptor.copy, {
+        // Widened to ANY existing row (CUL-532's class, adversarial pass on PR-04b): a
+        // 'failed' or 'pending' row is not a "real analysis" but can still hold a prior
+        // read's fresh red blood (a 529 flips status and nothing else). This write has
+        // no structured data of its own to contribute, so an existing row has nothing
+        // for it to overwrite and everything for it to lose.
+        const preserveStructured = humanEdited || existingRealAnalysis || existing !== null
+        const readText = selectReadText(copy, {
           petName,
           recommendation: cappedRec, // worth_a_call
           contextualFlags,
@@ -857,26 +1815,28 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           photoUnreadable: false,
           hasPhoto,
         })
-        const readFields: AnalysisReadFields<TFlag> = {
+        const readFields: AnalysisReadFields<TFlag> = tieredReadFields({
           recommendation: cappedRec,
           read_text: readText,
           visual_flags: [],
           contextual_flags: contextualFlags,
           status: 'completed',
           error: null,
-        }
+        }, tiersOn, minTier)
+        // Under the tier key a capped call never steps a louder stored call down (spec §1,
+        // the PR-04b note): it keeps the stored tier, from the step-3b row, because this branch
+        // makes no vision call and so has no window for a sibling to land in.
+        const readFieldsKept = keepLouderTier(snapshotStoredAnalysis(descriptor, existing), readFields)
         const writeBack = buildAnalysisWriteBack({
           humanEdited: preserveStructured,
           eventId,
           petId,
           incidentType,
           structuredValues: descriptor.buildStructuredValues(null),
-          readFields,
+          readFields: readFieldsKept,
         })
-        const { error: writeError } = writeBack.mode === 'update'
-          ? await adminClient.from('event_ai_analysis').update(writeBack.values).eq('event_id', eventId)
-          : await adminClient.from('event_ai_analysis').upsert(writeBack.values, { onConflict: 'event_id' })
-        if (writeError) throw new Error(`DB write failed: ${writeError.message}`)
+        const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps)
+        if (writeError) throw new Error(`DB write failed: ${writeError}`)
       } else if (!existingRealAnalysis) {
         // No escalation AND no prior real analysis to protect → record the cap /
         // disabled STATE (§4.5) so the client renders its designed state (T2-4).
@@ -933,7 +1893,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       } else {
         const imageParts = await Promise.all(usableBlobs.map(blobToImagePart))
         try {
-          analysis = await runVisionCall(descriptor, imageParts)
+          analysis = await deps.vision(descriptor, imageParts)
           if (!analysis) throw new Error('Vision model did not return an analysis')
         } catch (visionErr) {
           const msg = visionErr instanceof Error ? visionErr.message : String(visionErr)
@@ -950,6 +1910,59 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           }
         }
       }
+    }
+
+    // 6a. The FRESH read of the stored row step 9 decides on (see readStoredRow for why the
+    //     vision call's window matters). Read here, straight after that call, so the post-read
+    //     hook below reads the same row step 9 does: an owner edit that landed during the
+    //     call is seen by both (adversarial round 3, R2c). Everything between here and step 9
+    //     is pure, so the window step 9 guards is unchanged.
+    const freshRow = await readStoredRow()
+    // CUL-1203 again, on the fresh read: a row that is not this event's must not steer
+    // a hold or a write. It can only appear mid-run if the event moved between one
+    // owner's pets (CUL-882); throwing lands in the catch, which folds the mismatch into
+    // "could not read" and writes nothing.
+    if (!analysisRowMatchesEvent(freshRow, petId)) {
+      throw new Error('Analysis row does not belong to this event')
+    }
+
+    // 6a'. EN-4 (CUL-1134, adversarial D3): the record's rules again, after the vision call.
+    //     A lethargy or a vomit logged during the 10-60 s call is re-floored by its own log,
+    //     but that re-floor skips this event (no stored row yet: `photo_read_pending`), so
+    //     this run is the only one that can see it. Raise-only: flags are added, never
+    //     dropped, and the floor's tier only moves up. Under the floor keys only, so every
+    //     other run is exactly today's.
+    if (floorOn) {
+      const late = resolveContextualRun(
+        await descriptor.computeContextualFlags(userClient, { eventId, petId, occurredAt, species, eventType: incidentType, engineFlags }),
+        descriptor.copy,
+      )
+      const added = late.flags.filter((f) => !contextualFlags.includes(f))
+      const lateRaises = !!late.minTier && (!minTier || tierRank(late.minTier) > tierRank(minTier))
+      if (added.length > 0 || lateRaises) {
+        contextualFlags = [...contextualFlags, ...added]
+        copy = late.copy
+        if (lateRaises) minTier = late.minTier
+        contextualFlagsForFailure = contextualFlags
+        copyForFailure = copy
+        minTierForFailure = minTier
+      }
+    }
+
+    // 6b. The flags' second look, once the photo is read (EN-7; ContextualRun.afterRead).
+    //     Only on a COMPLETE read: every photo on the event reached the model and a parsed
+    //     analysis came back. Anything less keeps every flag step 3 computed. The rescue
+    //     takes the merged run, so a write that fails after this point keeps its result.
+    const completeRead = analysis !== null && photoPaths.length > 0 && usableReadCount === photoPaths.length
+    if (contextRun.afterRead && completeRead) {
+      const merged = mergeAfterRead(
+        { flags: contextualFlags, copy, withdrawable: photoPaths.length === 1 ? contextRun.withdrawable : [] },
+        contextRun.afterRead(analysis, freshRow),
+      )
+      contextualFlags = merged.flags
+      copy = merged.copy
+      contextualFlagsForFailure = contextualFlags
+      copyForFailure = copy
     }
 
     // 7. Escalation floor (contextual flags from step 3 + the model's visual flags).
@@ -985,7 +1998,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // escalation path; the monitor / no-flag path is a deterministic template, so a
     // single sample can never assert an all-clear (the n=1 invariant, made structural
     // after a denylist proved too leaky to be the net — adversarial review 2026-06-24).
-    const readText = selectReadText(descriptor.copy, {
+    const readText = selectReadText(copy, {
       petName,
       recommendation,
       contextualFlags,
@@ -993,6 +2006,9 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       modelReadText: analysis?.read_text ?? null,
       photoUnreadable,
       hasPhoto,
+      // The model's own call counts as a photo finding only on a photo it says shows the
+      // subject: a not-vomit photo is never described as holding one.
+      modelEscalated: !!analysis && descriptor.appearsToShowSubject(analysis) && analysis.recommendation === 'worth_a_call',
     })
 
     // 8b. Post-floor gate on the model's free-text `description` (CUL-152 / B-179 — see
@@ -1013,41 +2029,61 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
 
     const status = recommendation === 'not_enough_to_say' ? 'uncertain' : 'completed'
 
-    // 9. Write-back, never clobbering a human-edited row (existing read at step 3b).
-    // If the owner has edited any structured field (edited_at set), preserve all
-    // editable facts and the cached original; only refresh the (non-editable) read +
-    // flags so the deterministic floor can still escalate on worsening context.
-    const readFields: AnalysisReadFields<TFlag> = {
+    // From here the run has a verdict of its own; if the write below fails, the catch
+    // keeps it when it escalates (CUL-815's variant: a visual escalation this run found
+    // over a stored 'monitor', lost to a failed write-back).
+    computedRead = withRescueTier(
+      { recommendation, read_text: readText, visual_flags: visualFlags, contextual_flags: contextualFlags },
+      tiersOn,
+      minTier,
+    )
+
+    // 9. Write-back. Never clobbers a human-edited row (Pattern 7), never lowers a
+    // stored escalation, never takes a stored red flag off the record
+    // (resolveReanalysisWrite). Decided on a FRESH read of the row, not step 3b's: see
+    // readStoredRow for why that window matters.
+    const readFields: AnalysisReadFields<TFlag> = tieredReadFields({
       recommendation,
       read_text: readText,
       visual_flags: visualFlags,
       contextual_flags: contextualFlags,
       status,
       error: null,
+    }, tiersOn, minTier)
+    if (readFields.tier) {
+      console.info(`${descriptor.functionName}: tier ${readFields.tier} (${tierReasonOf({ ...readFields, tier: readFields.tier })})`)
     }
 
-    const writeBack = buildAnalysisWriteBack({
-      humanEdited,
+    const structuredValues = descriptor.buildStructuredValues(analysis)
+    const stored = snapshotStoredAnalysis(descriptor, freshRow)
+    const writeBack = resolveReanalysisWrite({
+      stored,
       eventId,
       petId,
       incidentType,
-      structuredValues: descriptor.buildStructuredValues(analysis),
+      structuredValues,
+      nextPresentFlags: descriptor.presentFlagsFromStructured(structuredValues),
       readFields,
     })
 
-    let writeError
-    if (writeBack.mode === 'update') {
-      ;({ error: writeError } = await adminClient
-        .from('event_ai_analysis')
-        .update(writeBack.values)
-        .eq('event_id', eventId))
-    } else {
-      ;({ error: writeError } = await adminClient
-        .from('event_ai_analysis')
-        .upsert(writeBack.values, { onConflict: 'event_id' }))
+    // A hold writes no stamp: the words it keeps are an earlier run's (engineStamps.ts).
+    if (writeBack.mode === 'hold') {
+      console.info(`${descriptor.functionName}: held a stored escalation over a calmer read (CUL-1201)`)
+      if (writeBack.values) {
+        const { error: settleError } = await updateAnalysisRow(adminClient, { eventId, petId }, writeBack.values)
+        if (settleError) throw new Error(`DB write failed: ${settleError}`)
+      }
+      // No flags in the body: this run's are what it saw, not what the row holds, and
+      // every caller re-reads the row rather than trusting a response (lib/analysis.ts,
+      // ask/index.ts runLivePhotoRead).
+      return Response.json(
+        { success: true, held: true, recommendation: stored?.recommendation ?? null },
+        { headers: CORS_HEADERS },
+      )
     }
 
-    if (writeError) throw new Error(`DB write failed: ${writeError.message}`)
+    const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps)
+    if (writeError) throw new Error(`DB write failed: ${writeError}`)
 
     return Response.json(
       { success: true, recommendation, contextual_flags: contextualFlags, visual_flags: visualFlags },
@@ -1069,16 +2105,22 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // serialize it). Reading at the moment of the write decision is the only version
     // of this check whose window is worth nothing. A read error is not "no row" — it
     // fails closed in buildFailureWrite.
-    let latest: { recommendation?: string | null } | null = null
+    // It reads the red-flag columns too, so a stored red flag under a calm verdict is
+    // kept visible rather than hidden behind the retry frame (buildFailureWrite).
+    let latest: StoredAnalysis | null = null
     let latestReadFailed = false
     if (petIdForFailure && incidentTypeForFailure) {
       const { data: latestRow, error: latestErr } = await adminClient
         .from('event_ai_analysis')
-        .select('recommendation')
+        .select(storedColumns)
         .eq('event_id', eventId)
-        .maybeSingle()
-      latest = latestRow ?? null
-      latestReadFailed = !!latestErr
+        .maybeSingle<StoredRow>()
+      latest = snapshotStoredAnalysis(descriptor, latestRow ?? null)
+      // CUL-1203, the same rule as step 3b: a row filed under another pet is not
+      // this event's, so its recommendation must not steer the failure write. It
+      // folds into "could not read" on purpose — buildFailureWrite then writes
+      // nothing, which is the fail-closed answer for a row we will not touch.
+      latestReadFailed = !!latestErr || !analysisRowMatchesEvent(latestRow ?? null, petIdForFailure)
     }
 
     const failureWrite = buildFailureWrite({
@@ -1088,14 +2130,25 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       petId: petIdForFailure,
       incidentType: incidentTypeForFailure,
       message,
+      rescue: withRescueTier(
+        buildRescueRead(copyForFailure, {
+          computed: computedRead,
+          contextualFlags: contextualFlagsForFailure,
+          petName: petNameForFailure,
+          hasPhoto: hasPhotoForFailure,
+        }),
+        tiersOnForFailure,
+        minTierForFailure,
+      ),
+      stamps: stampsForFailure,
     })
-    if (failureWrite.mode === 'error-only') {
-      await adminClient
-        .from('event_ai_analysis')
-        .update(failureWrite.values)
-        .eq('event_id', eventId)
-        .then(() => undefined)
-    } else if (failureWrite.mode === 'upsert') {
+    // Best-effort, as before: a failure write that fails is not re-reported. It is
+    // keyed on the event's pet like every other update (CUL-1203); buildFailureWrite
+    // returns 'skip' whenever petIdForFailure is null, so the guard below is a
+    // narrowing for the type checker, never a second decision.
+    if (failureWrite.mode === 'error-only' && petIdForFailure) {
+      await updateAnalysisRow(adminClient, { eventId, petId: petIdForFailure }, failureWrite.values)
+    } else if (failureWrite.mode === 'upsert' || failureWrite.mode === 'rescue') {
       await adminClient
         .from('event_ai_analysis')
         .upsert(failureWrite.values, { onConflict: 'event_id' })

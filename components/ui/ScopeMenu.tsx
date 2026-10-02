@@ -1,5 +1,5 @@
-import { ComponentType, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ComponentType, Fragment, useRef, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, ChevronDown } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
@@ -32,6 +32,22 @@ export interface ScopeMenuOption {
   // Optional identity glyph rendered before the label in the sheet. When any
   // option carries one, icon-less siblings get an empty slot so labels align.
   icon?: GlyphComponent;
+  // History v2's sheets (HV-9 / CUL-1166; spec §3.8, §3.9) — each optional, and a
+  // row that sets none of them renders exactly as it always has.
+  // A count at the row's end, already formatted ('1,094'). The caller decides when a
+  // row may carry one (a read that hasn't answered shows none, never a 0).
+  count?: string;
+  // A quiet second line under the label ('since May 14', '4 not read').
+  detail?: string;
+  // A sub-row of the option above it, indented and a size down (a medication course
+  // under Medication).
+  nested?: boolean;
+  // A section label drawn above this row, inside the sheet ('What the record holds',
+  // a year over its months).
+  section?: string;
+  // What VoiceOver reads for the row when it says more than its label (its detail and
+  // its count). Defaults to the label.
+  accessibilityLabel?: string;
 }
 
 interface Props {
@@ -46,16 +62,51 @@ interface Props {
   // drill-in, B-308). When set it labels the pill and no option row reads
   // selected; picking any option switches away from it (upstream clears it).
   overrideLabel?: string | null;
+  // The pill's words when they are not the selected option's label: a window's short
+  // name ('Since Jul 26' for the row 'Since the trial started'). Unlike
+  // `overrideLabel`, the selected row stays selected. (HV-9)
+  pillLabel?: string;
+  // A count after the pill's words, semibold, never truncated: 'Vomit · 13'. (HV-9)
+  pillCount?: string | null;
+  // What VoiceOver reads for the pill when it says more than `prefix: label` (the
+  // count, with its noun). (HV-9)
+  pillAccessibilityLabel?: string;
+  // A set long enough to run past the sheet's fold (History v2's type sheet, ~19 rows):
+  // open with the selected row in view rather than at the top, and flash the scroll
+  // indicator so the rows past the fold read as there, never as the end of the list
+  // (B-146's hidden option, turned vertical). Off by default. (HV-9)
+  openAtSelected?: boolean;
 }
+
+// How much of the list above the selected row stays in view when a sheet opens at it:
+// about one row, so the owner can see it is not the top.
+const SELECTED_ROW_PEEK = 48;
 
 export function ScopeMenu({
   options, value, onChange, sheetLabel, accessibilityPrefix, overrideLabel,
+  pillLabel: pillText, pillCount, pillAccessibilityLabel, openAtSelected,
 }: Props) {
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
+  // One jump to the selected row per opening: a later layout (a count arriving and
+  // resizing a row) must never pull the list back from where the owner scrolled.
+  const landedOnSelected = useRef(false);
+
+  function openSheet() {
+    landedOnSelected.current = false;
+    setOpen(true);
+  }
+
+  function landOnSelected(e: LayoutChangeEvent) {
+    if (landedOnSelected.current) return;
+    landedOnSelected.current = true;
+    // An instant jump on opening, never animated: nothing moves under the owner's eye.
+    scrollRef.current?.scrollTo({ y: Math.max(0, e.nativeEvent.layout.y - SELECTED_ROW_PEEK), animated: false });
+  }
 
   const active = options.find((o) => o.key === value) ?? options[0];
-  const pillLabel = overrideLabel ?? active.label;
+  const pillLabel = overrideLabel ?? pillText ?? active.label;
   // The pill tints when any non-default scope is applied so a filtered list is
   // always legible AS filtered from the header alone — "why is my history
   // short?" should never require opening the sheet to answer.
@@ -71,7 +122,7 @@ export function ScopeMenu({
     <>
       <TouchableOpacity
         style={[styles.pill, filtered && styles.pillActive]}
-        onPress={() => setOpen(true)}
+        onPress={openSheet}
         activeOpacity={0.7}
         // Pill is ~32pt tall; expand the vertical tap zone to the 44pt floor
         // (Designer anti-pattern: sub-44pt targets without hitSlop). Vertical
@@ -80,7 +131,7 @@ export function ScopeMenu({
         // reasoning as FilterChip). Width already clears 44pt from content.
         hitSlop={{ top: 8, bottom: 8 }}
         accessibilityRole="button"
-        accessibilityLabel={`${accessibilityPrefix}: ${pillLabel}`}
+        accessibilityLabel={pillAccessibilityLabel ?? `${accessibilityPrefix}: ${pillLabel}`}
       >
         <ThemedText
           style={[styles.pillLabel, filtered && styles.pillLabelActive]}
@@ -88,6 +139,13 @@ export function ScopeMenu({
         >
           {pillLabel}
         </ThemedText>
+        {pillCount ? (
+          // Its own text so the words ellipsize and the number never does: a cut
+          // count is a wrong count.
+          <ThemedText style={[styles.pillLabel, styles.pillCount, filtered && styles.pillLabelActive]}>
+            {`· ${pillCount}`}
+          </ThemedText>
+        ) : null}
         <ChevronDown
           size={15}
           color={filtered ? theme.colorAccent : theme.colorTextTertiary}
@@ -104,20 +162,44 @@ export function ScopeMenu({
             {/* Longer sets (the 10-row event-type lens) can outgrow a small
                 screen; the sheet caps its height and the rows scroll INSIDE it
                 with the native indicator visible — never a hidden overflow. */}
-            <ScrollView style={styles.optionScroll} bounces={false}>
+            <ScrollView
+              ref={scrollRef}
+              style={styles.optionScroll}
+              bounces={false}
+              {...(openAtSelected ? { onLayout: () => scrollRef.current?.flashScrollIndicators() } : {})}
+            >
               {options.map((o, i) => {
                 const selected = overrideLabel == null && o.key === value;
                 const isLast = i === options.length - 1;
                 const Icon = o.icon;
-                return (
+                const check = selected ? <Check size={18} color={theme.colorAccent} strokeWidth={2.5} /> : null;
+                const label = (
+                  <ThemedText
+                    style={
+                      o.nested
+                        ? [styles.optionLabel, styles.optionLabelNested, selected && styles.optionLabelSelected]
+                        : [styles.optionLabel, selected && styles.optionLabelSelected]
+                    }
+                  >
+                    {o.label}
+                  </ThemedText>
+                );
+                // Every History v2 addition is drawn only when its field is set, so a
+                // row that sets none renders the tree it always rendered.
+                const row = (
                   <TouchableOpacity
-                    key={o.key ?? 'all'}
-                    style={[styles.optionRow, isLast && styles.optionRowLast]}
+                    key={o.section ? undefined : (o.key ?? 'all')}
+                    style={
+                      o.nested
+                        ? [styles.optionRow, styles.optionRowNested, isLast && styles.optionRowLast]
+                        : [styles.optionRow, isLast && styles.optionRowLast]
+                    }
                     onPress={() => handleSelect(o.key)}
                     activeOpacity={0.7}
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
-                    accessibilityLabel={o.label}
+                    accessibilityLabel={o.accessibilityLabel ?? o.label}
+                    {...(openAtSelected && selected ? { onLayout: landOnSelected } : {})}
                   >
                     <View style={styles.optionMain}>
                       {hasIcons ? (
@@ -131,12 +213,34 @@ export function ScopeMenu({
                           ) : null}
                         </View>
                       ) : null}
-                      <ThemedText style={[styles.optionLabel, selected && styles.optionLabelSelected]}>
-                        {o.label}
-                      </ThemedText>
+                      {o.detail ? (
+                        <View style={styles.optionText}>
+                          {label}
+                          <ThemedText style={styles.optionDetail}>{o.detail}</ThemedText>
+                        </View>
+                      ) : (
+                        label
+                      )}
                     </View>
-                    {selected ? <Check size={18} color={theme.colorAccent} strokeWidth={2.5} /> : null}
+                    {o.count ? (
+                      <View style={styles.optionEnd}>
+                        <ThemedText style={[styles.optionCount, selected && styles.optionCountSelected]}>
+                          {o.count}
+                        </ThemedText>
+                        {check}
+                      </View>
+                    ) : (
+                      check
+                    )}
                   </TouchableOpacity>
+                );
+                return o.section ? (
+                  <Fragment key={o.key ?? 'all'}>
+                    <SectionLabel label={o.section} header style={styles.sectionLabel} />
+                    {row}
+                  </Fragment>
+                ) : (
+                  row
                 );
               })}
             </ScrollView>
@@ -177,6 +281,10 @@ const styles = StyleSheet.create({
   },
   pillLabelActive: {
     color: theme.colorAccentInk,
+  },
+  pillCount: {
+    fontWeight: theme.weightSemibold,
+    flexShrink: 0,
   },
   // Sheet styles mirror PetSwitcherSheet so every bottom sheet dims and reads
   // identically (scrim, grabber, radius, safe-area padding).
@@ -240,5 +348,38 @@ const styles = StyleSheet.create({
   optionLabelSelected: {
     color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
+  },
+  // ── History v2's rows (HV-9): each drawn only when its option field is set ──
+  sectionLabel: {
+    marginTop: theme.space2,
+    marginBottom: theme.spaceMicro,
+  },
+  optionRowNested: {
+    paddingLeft: theme.space2,
+  },
+  optionLabelNested: {
+    fontSize: theme.textMD,
+  },
+  optionText: {
+    flexShrink: 1,
+  },
+  optionDetail: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+    marginTop: theme.spaceMicro,
+  },
+  optionEnd: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+    flexShrink: 0,
+  },
+  optionCount: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+    fontVariant: ['tabular-nums'],
+  },
+  optionCountSelected: {
+    color: theme.colorAccentInk,
   },
 });

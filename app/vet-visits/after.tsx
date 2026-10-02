@@ -1,19 +1,22 @@
 import { useCallback, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Header } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
-import { AfterVisitBody, type AfterVisitFields, type TrialRow } from '../../components/vetvisits/AfterVisitBody';
+import {
+  AfterVisitBody,
+  type AfterVisitFields,
+  type EndedTrialRow,
+  type TrialRow,
+} from '../../components/vetvisits/AfterVisitBody';
 import { VisitSavedMoment } from '../../components/vetvisits/VisitSavedMoment';
 import { AddMedicationModal, type Regimen } from '../../components/profile/AddMedicationModal';
 import { StartTrialModal } from '../../components/profile/StartTrialModal';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
-import { commitVisit } from '../../lib/haptics';
+import { commitVisit, destructiveConfirm } from '../../lib/haptics';
 import { syncPendingMedications, syncPendingVetAppointments, syncPendingVetVisits } from '../../lib/sync';
 import { linkVetDocumentVisit } from '../../lib/vetDocumentLibrary';
 import { endRegimen } from '../../lib/medicationSetup';
@@ -21,14 +24,22 @@ import {
   describeActiveTrial,
   endActiveTrial,
   getActiveTrialForPet,
+  TrialEndRefused,
   type ActiveTrialSummary,
 } from '../../lib/dietTrialSetup';
 import { captureVisitPaperwork, forgetPaperwork, readPaperworkFor } from '../../lib/visitPaperwork';
 import {
   courseVerdictLabel,
   describeVisitSave,
+  endTrialCopy,
+  linkedLinesAsOf,
+  mergePlanCourses,
+  settledLinkedLine,
+  stopCourseCopy,
+  trialMomentTitle,
   trialVerdictLabel,
   type CourseVerdict,
+  type EndConfirmCopy,
   type LinkedLine,
   type TrialVerdict,
   type VisitSaveSummary,
@@ -76,14 +87,10 @@ type Sheet = { kind: 'med'; editing: Regimen | null } | { kind: 'trial' } | null
 // statement that it did — and if the app dies next, the visit is on the record with
 // what they had entered rather than lost.
 //
-// `pet_id` COMES FROM THE APPOINTMENT (AC 11). The shipped `app/vet-visit.tsx` reads
-// `activePet` at save time (`:117`); a hydration pull can move the active pet under
-// a half-filled screen, and the row would be written under a pet nobody chose.
+// `pet_id` COMES FROM THE APPOINTMENT (AC 11). The retired `app/vet-visit.tsx` read
+// `activePet` at save time; a hydration pull can move the active pet under a
+// half-filled screen, and the row would be written under a pet nobody chose.
 export default function AfterVisitScreen() {
-  const eligible = useAllowlistFlag('vet_visits');
-  const optedIn = useBetaOptIn('vet_visits');
-  const enabled = eligible && optedIn;
-
   const { appointment: appointmentId } = useLocalSearchParams<{ appointment?: string }>();
   const activePet = usePetStore((s) => s.activePet);
   const pets = usePetStore((s) => s.pets);
@@ -108,6 +115,20 @@ export default function AfterVisitScreen() {
   const [trial, setTrial] = useState<ActiveTrialSummary | null>(null);
   const [courseVerdicts, setCourseVerdicts] = useState<Record<string, CourseVerdict>>({});
   const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
+  // CUL-951: what *Stopped* and *Ended* settled, so the row can SAY so rather than
+  // vanish. The course re-read filters `status = 'active'` and the trial read returns
+  // null once ended, so without these the answered row left the screen — and the
+  // trial's left *Start a trial* in its place.
+  //
+  // The ids are held in a REF as well as state, because `loadPlan` is a stable
+  // callback that merges every re-read against them and must see an id the instant it
+  // is added, not a render later (C-22's reasoning, as for `visitIdRef`).
+  const settledCourseIds = useRef<Set<string>>(new Set());
+  const [settledCourses, setSettledCourses] = useState<Record<string, string>>({});
+  const [endedTrial, setEndedTrial] = useState<EndedTrialRow | null>(null);
+  // The answer *Switched* replaced, put back if the trial sheet closes with no trial
+  // started (CUL-1092): the old trial is still running, so nothing was switched.
+  const verdictBeforeSwitch = useRef<TrialVerdict | null>(null);
   const [nextVisitAt, setNextVisitAt] = useState<string | null>(null);
   const [paperwork, setPaperwork] = useState<string[]>([]);
   const [linked, setLinked] = useState<LinkedLine[]>([]);
@@ -146,16 +167,11 @@ export default function AfterVisitScreen() {
       readActiveCourses(forPetId),
       getActiveTrialForPet(forPetId),
     ]);
-    setCourses(nextCourses);
+    setCourses((prev) => mergePlanCourses(prev, nextCourses, settledCourseIds.current));
     setTrial(activeTrial);
   }, []);
 
   const load = useCallback(async () => {
-    if (!enabled) {
-      setLoading(false);
-      setLoaded(true);
-      return;
-    }
     try {
       const appt = appointmentId ? await readAppointmentById(appointmentId) : null;
       setAppointment(appt);
@@ -180,7 +196,7 @@ export default function AfterVisitScreen() {
         setFields({
           // The appointment's own day, read as a LOCAL calendar day — the instant is
           // stored UTC and `toISOString().slice(0, 10)` would log an evening visit in
-          // the Americas as tomorrow (CUL-946, live on the screen this replaces).
+          // the Americas as tomorrow (CUL-946, the retired `app/vet-visit.tsx`'s bug).
           //
           // CLAMPED, because this screen is reachable from *Next* — an appointment
           // that has NOT happened yet — and the picker's `maximumDate` constrains a
@@ -201,7 +217,7 @@ export default function AfterVisitScreen() {
     } finally {
       setLoading(false);
     }
-  }, [enabled, appointmentId, screenPetId, loadPlan]);
+  }, [appointmentId, screenPetId, loadPlan]);
 
   useFocusEffect(
     useCallback(() => {
@@ -306,7 +322,52 @@ export default function AfterVisitScreen() {
     Alert.alert('That didn’t save', 'Try that again in a moment.');
   }
 
-  async function handleCourseVerdict(course: ActiveCourse, verdict: CourseVerdict) {
+  /**
+   * The one safety net on a destructive chip (CUL-951; C-21, confirm XOR reversal).
+   *
+   * The confirm comes BEFORE anything is written — including the visit row
+   * `ensureVisit` would create — so *Keep it* leaves the screen exactly as it was: no
+   * chip selected, no visit minted by a tap the owner took back. The rigid haptic is
+   * on the confirm, never on the chip that opened it (`lib/haptics`: a buzz on the
+   * opener would say something was destroyed while the owner still has a way out).
+   */
+  function confirmEnd(copy: EndConfirmCopy, onConfirm: () => void) {
+    Alert.alert(copy.title, copy.body, [
+      { text: copy.keepLabel, style: 'cancel' },
+      {
+        text: copy.confirmLabel,
+        style: 'destructive',
+        onPress: () => {
+          destructiveConfirm();
+          onConfirm();
+        },
+      },
+    ]);
+  }
+
+  function handleCourseVerdict(course: ActiveCourse, verdict: CourseVerdict) {
+    if (busyRow) return;
+    // ONE day value, named in the confirm AND handed to the write, so the date the
+    // owner agreed to is the date the record gets — a second `new Date()` at write
+    // time could land on the other side of midnight from the one on screen.
+    const endOn = localDateKey(new Date());
+    if (verdict !== 'stopped') {
+      void applyCourseVerdict(course, verdict, endOn);
+      return;
+    }
+    confirmEnd(
+      stopCourseCopy({
+        drugName: course.drugName,
+        // The RECORD's pet, read here rather than from the render's `petName`: this
+        // runs from an event, and naming the pet is not worth a closure-order bet.
+        petName: resolveRecordPetName(pets, petId),
+        endLabel: formatVisitDate(endOn),
+      }),
+      () => void applyCourseVerdict(course, 'stopped', endOn),
+    );
+  }
+
+  async function applyCourseVerdict(course: ActiveCourse, verdict: CourseVerdict, endOn: string) {
     if (busyRow) return;
     setBusyRow(course.id);
     let linkedNow = false;
@@ -318,8 +379,13 @@ export default function AfterVisitScreen() {
         // the owner's LOCAL calendar (B-441): `endRegimen` writes no date it did not
         // receive. No link: `vet_visit_id` is where a course CAME FROM, and a course
         // stopped here started somewhere else.
-        await endRegimen(course.id, localDateKey(new Date()));
+        await endRegimen(course.id, endOn);
         syncPendingMedications().catch(console.error);
+        // Settled BEFORE the re-read below, which would otherwise drop the row: the
+        // read filters `status = 'active'`, and the merge keeps only ids it can see
+        // in this set (CUL-951 — the row says what happened instead of vanishing).
+        settledCourseIds.current.add(course.id);
+        setSettledCourses((prev) => ({ ...prev, [course.id]: endOn }));
       } else {
         // The RETURN says whether the link landed: it is first-wins, so a course
         // prescribed at an earlier visit keeps saying so, and the line below must not
@@ -329,11 +395,22 @@ export default function AfterVisitScreen() {
         if (verdict === 'changed') setSheet({ kind: 'med', editing: toRegimen(course) });
       }
       setCourseVerdicts((prev) => ({ ...prev, [course.id]: verdict }));
-      note({
-        key: `course:${course.id}`,
-        title: `${course.drugName} ${courseVerdictLabel(verdict)}`,
-        note: verdict === 'stopped' ? 'ended today' : linkedNow ? 'linked to this visit' : 'still on it',
-      });
+      note(
+        verdict === 'stopped'
+          ? settledLinkedLine({
+              key: `course:${course.id}`,
+              title: course.drugName,
+              verdict: 'stopped',
+              endedOn: endOn,
+              today: localDateKey(new Date()),
+              endLabel: formatVisitDate(endOn),
+            })
+          : {
+              key: `course:${course.id}`,
+              title: `${course.drugName} ${courseVerdictLabel(verdict)}`,
+              note: linkedNow ? 'linked to this visit' : 'still on it',
+            },
+      );
       if (petId) await loadPlan(petId);
     } catch (err) {
       sayFailed(err, 'course verdict');
@@ -342,7 +419,27 @@ export default function AfterVisitScreen() {
     }
   }
 
-  async function handleTrialVerdict(verdict: TrialVerdict) {
+  function handleTrialVerdict(verdict: TrialVerdict) {
+    if (busyRow || !trial) return;
+    if (verdict !== 'ended') {
+      void applyTrialVerdict(verdict);
+      return;
+    }
+    // ONE day value, named in the confirm AND handed to `endActiveTrial` — the
+    // course path's rule, for the same reason: computed twice, the day on screen and
+    // the day written can straddle midnight while the dialog is open.
+    const endOn = localDateKey(new Date());
+    confirmEnd(
+      endTrialCopy({
+        foodLabel: trial.foodLabel,
+        petName: resolveRecordPetName(pets, petId),
+        endLabel: formatVisitDate(endOn),
+      }),
+      () => void applyTrialVerdict('ended', endOn),
+    );
+  }
+
+  async function applyTrialVerdict(verdict: TrialVerdict, endOn: string | null = null) {
     if (busyRow || !trial) return;
     setBusyRow('trial');
     try {
@@ -352,6 +449,7 @@ export default function AfterVisitScreen() {
         // owns that flow: its `blocked` step ends the running trial as part of the
         // same action that creates the next one. Opening it is the whole of *Switched*
         // — a second implementation here would be a second ordering to get wrong.
+        verdictBeforeSwitch.current = trialVerdict;
         setSheet({ kind: 'trial' });
         setTrialVerdict(verdict);
         return;
@@ -361,22 +459,61 @@ export default function AfterVisitScreen() {
       // before the end means a crash between the two leaves a running trial with its
       // provenance recorded rather than an ended one with none.
       const linkedNow = await linkTrialToVisit(trial.id, id);
+      let endedOn = endOn ?? localDateKey(new Date());
       if (verdict === 'ended') {
         const { complete } = describeActiveTrial(trial);
-        await endActiveTrial({
-          trialId: trial.id,
-          // 'The vet said to stop' is literally what happened on this screen. On a
-          // trial that has reached its target the honest token is `completed`, which
-          // is also the only one `endActiveTrial` will attach an outcome to.
-          reason: complete ? 'completed' : 'vet_advised',
+        try {
+          await endActiveTrial({
+            trialId: trial.id,
+            // 'The vet said to stop' is literally what happened on this screen. On a
+            // trial that has reached its target the honest token is `completed`, which
+            // is also the only one `endActiveTrial` will attach an outcome to.
+            reason: complete ? 'completed' : 'vet_advised',
+            // The day the confirm showed. Only *Ended* reaches this branch, and only
+            // through the confirm, so it is always present here.
+            endedOn: endOn ?? undefined,
+          });
+        } catch (e) {
+          if (!(e instanceof TrialEndRefused)) throw e;
+          // CUL-1329 — the trial was already ended (on another device, or from the
+          // Pet tab) after this screen read it. That first ending is the record and
+          // is left alone. The owner's answer is still true — the trial IS over — so
+          // the row settles as ended, on the day the RECORD holds rather than the day
+          // this confirm showed (which would be a date nothing wrote). With no
+          // readable stored day, or no row at all, re-read and say nothing: "try
+          // again" would be advice to repeat something that cannot succeed.
+          if (e.reason !== 'not_running' || !e.endedOn || !/^\d{4}-\d{2}-\d{2}$/.test(e.endedOn)) {
+            if (petId) await loadPlan(petId);
+            return;
+          }
+          endedOn = e.endedOn;
+        }
+        // The row stays, saying the trial ended — and it does NOT turn into *Start a
+        // trial*, which is what the null trial read below would otherwise render: the
+        // app asking to start a trial a second after the owner said the vet stopped
+        // one (CUL-951). *Switched* is this screen's end-and-start path.
+        setEndedTrial({
+          label: trial.foodLabel?.trim() || 'Diet trial',
+          endedOn,
         });
       }
       setTrialVerdict(verdict);
-      note({
-        key: 'trial',
-        title: `${trial.foodLabel?.trim() || 'Diet trial'} ${trialVerdictLabel(verdict)}`,
-        note: verdict === 'ended' ? 'ended today' : linkedNow ? 'linked to this visit' : 'still running',
-      });
+      note(
+        verdict === 'ended'
+          ? settledLinkedLine({
+              key: 'trial',
+              title: trialMomentTitle(trial.foodLabel),
+              verdict: 'ended',
+              endedOn,
+              today: localDateKey(new Date()),
+              endLabel: formatVisitDate(endedOn),
+            })
+          : {
+              key: 'trial',
+              title: `${trialMomentTitle(trial.foodLabel)} ${trialVerdictLabel(verdict)}`,
+              note: linkedNow ? 'linked to this visit' : 'still running',
+            },
+      );
       if (petId) await loadPlan(petId);
     } catch (err) {
       sayFailed(err, 'trial verdict');
@@ -505,7 +642,9 @@ export default function AfterVisitScreen() {
         describeVisitSave({
           petName: resolveRecordPetName(pets, petId),
           consequence,
-          linked,
+          // As of the SAVE, so a course stopped before midnight and saved after it
+          // names its day rather than saying "today" (CUL-1092).
+          linked: linkedLinesAsOf(linked, localDateKey(new Date()), (day) => formatVisitDate(day)),
         }),
       );
       // A soft impact, never a success chime (the issue's ruling). `commitRoutine`
@@ -540,7 +679,9 @@ export default function AfterVisitScreen() {
       title: `${regimen.drug_name} started`,
       note: written?.vetVisitId ? 'linked to this visit' : 'started',
     });
-    setCourses(courses);
+    // Merged, not replaced: a course stopped earlier on this screen is absent from
+    // the active read and must keep its settled row (CUL-951).
+    setCourses((prev) => mergePlanCourses(prev, courses, settledCourseIds.current));
   }
 
   async function handleTrialStarted(trialId: string) {
@@ -551,7 +692,7 @@ export default function AfterVisitScreen() {
     const active = petId ? await getActiveTrialForPet(petId) : null;
     note({
       key: 'trial',
-      title: `${active?.foodLabel?.trim() || 'Diet trial'} started`,
+      title: `${trialMomentTitle(active?.foodLabel)} started`,
       // Asked of the RECORD at the moment the line is written (CUL-825): the trial
       // carries the link only if `startDietTrial` accepted it, and a line claiming a
       // link the row does not hold would be the moment lying about provenance.
@@ -559,8 +700,6 @@ export default function AfterVisitScreen() {
     });
     if (petId) await loadPlan(petId);
   }
-
-  if (!enabled) return <Redirect href="/(tabs)/profile" />;
 
   const petName = resolveRecordPetName(pets, petId);
   const trialRow: TrialRow | null = trial
@@ -624,10 +763,12 @@ export default function AfterVisitScreen() {
                   onChangeField={(key, value) => setFields((prev) => ({ ...prev, [key]: value }))}
                   courses={courses}
                   courseVerdicts={courseVerdicts}
+                  settledCourses={settledCourses}
                   onCourseVerdict={handleCourseVerdict}
                   onAddCourse={openMedicationSheet}
                   trial={trialRow}
                   trialVerdict={trialVerdict}
+                  endedTrial={endedTrial}
                   onTrialVerdict={handleTrialVerdict}
                   onStartTrial={openTrialSheet}
                   onAddFood={() => router.push('/food-capture')}
@@ -679,7 +820,13 @@ export default function AfterVisitScreen() {
               petName={petName}
               species={pets.find((p) => p.id === petId)?.species ?? null}
               vetVisitId={visitId}
-              onClose={() => setSheet(null)}
+              onClose={() => {
+                setSheet(null);
+                // Only a trial that STARTS switches anything, and a start never lands
+                // here: `handleTrialStarted` closes the sheet itself. Closed without
+                // one, *Switched* goes back to the answer it replaced (CUL-1092).
+                setTrialVerdict((v) => (v === 'switched' ? verdictBeforeSwitch.current : v));
+              }}
               onStarted={handleTrialStarted}
               onAddFood={() => {
                 // The pending re-open lives in a REF consumed once on focus, never in
@@ -692,7 +839,10 @@ export default function AfterVisitScreen() {
               }}
               onLogFirstMeal={() => {
                 setSheet(null);
-                router.push('/log');
+                // The button says "Log a meal for {pet}", so it lands on the meal
+                // logger, as its twin on the Pet tab does (CUL-503, PM-ruled
+                // 2026-09-23). It used to push the bare type picker.
+                router.push('/log?type=meal');
               }}
             />
           ) : null}

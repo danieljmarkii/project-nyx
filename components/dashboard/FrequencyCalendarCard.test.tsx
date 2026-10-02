@@ -3,7 +3,7 @@ jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet:
 
 import { Text } from 'react-native';
 import { render, fireEvent } from '@testing-library/react-native';
-import { FrequencyCalendarCard, buildHeatRows } from './FrequencyCalendarCard';
+import { FrequencyCalendarCard, buildHeatRows, pagingBoundLine } from './FrequencyCalendarCard';
 import { symptomFrequencyDefinition } from '../../lib/dashboardCards';
 import type { DayFrequencyBucket } from '../../lib/analytics';
 
@@ -100,9 +100,13 @@ describe('FrequencyCalendarCard — month paging + drill-in', () => {
       />,
     );
     expect(getByText('June 2026')).toBeTruthy();
-    // Next is at the current month → disabled; prev is enabled.
+    // Next is at the current month → disabled; prev is enabled. The disabled one
+    // carries its reason in the label (CUL-327): `disabled` makes VoiceOver say
+    // "dimmed", and a bare "Next month" leaves that unexplained (C-7).
     expect(getByLabelText('Previous month').props.accessibilityState).toMatchObject({ disabled: false });
-    expect(getByLabelText('Next month').props.accessibilityState).toMatchObject({ disabled: true });
+    expect(
+      getByLabelText('Next month — already at the current month').props.accessibilityState,
+    ).toMatchObject({ disabled: true });
   });
 
   it('a disabled nav arrow does not fire its callback', () => {
@@ -117,7 +121,7 @@ describe('FrequencyCalendarCard — month paging + drill-in', () => {
         onNextMonth={onNext}
       />,
     );
-    fireEvent.press(getByLabelText('Next month'));
+    fireEvent.press(getByLabelText('Next month — already at the current month'));
     expect(onNext).not.toHaveBeenCalled();
   });
 
@@ -206,6 +210,76 @@ describe('FrequencyCalendarCard — month paging + drill-in', () => {
 });
 
 // ── B-310: the noun / unit / selector props (a "Calendar"-titled, multi-lens card) ───
+
+// CUL-327 — the paging bound, said in words.
+//
+// The unit under test is `pagingBoundLine` (pure, so every combination is cheap)
+// PLUS one rendered assertion per direction, because the defect is that the bound
+// is invisible on screen — a pure test alone would pass over a helper nobody
+// renders. Proven by mutation: dropping the <ThemedText> reds the rendered pair,
+// and inverting either branch of the helper reds the pure table.
+describe('pagingBoundLine — the bound in words (CUL-327)', () => {
+  it('names the forward bound at the current month', () => {
+    expect(pagingBoundLine(true, false)).toBe('Current month');
+  });
+
+  it('names the backward bound at the oldest logged month', () => {
+    expect(pagingBoundLine(false, true)).toBe('Oldest month with logs');
+  });
+
+  // A pet whose first log is this month. Two stacked fragments would read as a
+  // contradiction, so it is one sentence rather than both lines.
+  it('names both bounds in one line when neither direction can page', () => {
+    expect(pagingBoundLine(false, false)).toBe('Current month, and the oldest with logs');
+  });
+
+  // The line has to EARN its place: one that shows on every month stops carrying
+  // information, and this is the common case.
+  it('says nothing when paging is unbounded in both directions', () => {
+    expect(pagingBoundLine(true, true)).toBeNull();
+  });
+});
+
+describe('FrequencyCalendarCard — the bound is on screen (CUL-327)', () => {
+  const monthBuckets = [bucket('2026-06-07', 0), bucket('2026-06-08', 2)];
+
+  const renderAt = (canGoPrev: boolean, canGoNext: boolean) =>
+    render(
+      <FrequencyCalendarCard
+        title="Vomiting"
+        buckets={monthBuckets}
+        symptomType="vomit"
+        monthLabel="June 2026"
+        canGoPrev={canGoPrev}
+        canGoNext={canGoNext}
+        onPrevMonth={jest.fn()}
+        onNextMonth={jest.fn()}
+      />,
+    );
+
+  it('renders the bound line beneath the nav row at the forward bound', () => {
+    const { getByTestId } = renderAt(true, false);
+    expect(getByTestId('calendar-paging-bound').props.children).toBe('Current month');
+  });
+
+  it('renders the bound line at the backward bound', () => {
+    const { getByTestId } = renderAt(false, true);
+    expect(getByTestId('calendar-paging-bound').props.children).toBe('Oldest month with logs');
+  });
+
+  it('renders no bound line mid-range', () => {
+    const { queryByTestId } = renderAt(true, true);
+    expect(queryByTestId('calendar-paging-bound')).toBeNull();
+  });
+
+  // Paging off (the non-paging dashboard card) has no bounds to name.
+  it('renders no bound line when the card is not in paging mode', () => {
+    const { queryByTestId } = render(
+      <FrequencyCalendarCard title="Vomiting" buckets={monthBuckets} symptomType="vomit" />,
+    );
+    expect(queryByTestId('calendar-paging-bound')).toBeNull();
+  });
+});
 
 describe('FrequencyCalendarCard — noun / unit / selector (B-310)', () => {
   const monthBuckets = [bucket('2026-06-07', 0), bucket('2026-06-08', 2)];

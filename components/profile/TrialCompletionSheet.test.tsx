@@ -11,9 +11,22 @@
 // must be `mock`-prefixed.
 
 const mockEndActiveTrial = jest.fn().mockResolvedValue(undefined);
-jest.mock('../../lib/dietTrialSetup', () => ({
-  endActiveTrial: (...args: unknown[]) => mockEndActiveTrial(...args),
-}));
+// `TrialEndRefused` is a stand-in with the real class's structured fields (the
+// `profile.trialLifecycle.test.tsx` precedent): the sheet's `instanceof` reads the
+// class off this same mocked module, so the stand-in is what it switches on.
+jest.mock('../../lib/dietTrialSetup', () => {
+  class TrialEndRefused extends Error {
+    readonly reason: 'not_found' | 'not_running';
+    constructor(args: { reason: 'not_found' | 'not_running' }) {
+      super(`endActiveTrial refused (${args.reason})`);
+      this.reason = args.reason;
+    }
+  }
+  return {
+    endActiveTrial: (...args: unknown[]) => mockEndActiveTrial(...args),
+    TrialEndRefused,
+  };
+});
 
 const mockLoadFacts = jest.fn();
 jest.mock('../../lib/dietTrialOutcomeFacts', () => ({
@@ -21,7 +34,9 @@ jest.mock('../../lib/dietTrialOutcomeFacts', () => ({
 }));
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Alert } from 'react-native';
 import { TrialCompletionSheet } from './TrialCompletionSheet';
+import { TrialEndRefused } from '../../lib/dietTrialSetup';
 import type { TrialOutcomeFacts } from '../../lib/dietTrialCompletion';
 
 const TRIAL = {
@@ -60,7 +75,7 @@ function renderSheet(props: Partial<React.ComponentProps<typeof TrialCompletionS
 }
 
 beforeEach(() => {
-  mockEndActiveTrial.mockClear();
+  mockEndActiveTrial.mockReset().mockResolvedValue(undefined);
   mockLoadFacts.mockReset().mockResolvedValue(FACTS);
 });
 
@@ -235,5 +250,62 @@ describe('the decision step (the overrun entry)', () => {
     const tree = renderSheet({ entry: 'decision', dayCounter: 61 });
     fireEvent.press(tree.getByTestId('trial-decision-stopped_early'));
     expect(tree.getByText('What got in the way?')).toBeTruthy();
+  });
+});
+
+// CUL-1329 — a stale sheet over a trial that was already ended (on the other host, or
+// on another device whose ending has hydrated). The write path refuses; the sheet's
+// job is to re-read and get out of the way, never to say "have another go".
+describe('an ending the record refused', () => {
+  let alert: jest.SpyInstance;
+  beforeEach(() => {
+    alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  });
+  afterEach(() => alert.mockRestore());
+
+  it.each(['not_running', 'not_found'] as const)(
+    '%s on *This trial is done*: re-reads, closes, and says nothing',
+    async (reason) => {
+      mockEndActiveTrial.mockRejectedValueOnce(new TrialEndRefused({ reason }));
+      const onChanged = jest.fn();
+      const onClose = jest.fn();
+      const tree = renderSheet({ onChanged, onClose });
+      await waitFor(() => tree.getByText('Save'));
+      await act(async () => { fireEvent.press(tree.getByText('Save')); });
+
+      expect(mockEndActiveTrial).toHaveBeenCalledTimes(1);
+      expect(onChanged).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(alert).not.toHaveBeenCalled();
+    },
+  );
+
+  it('not_running on *Stopped early*: the same — the first ending is the record', async () => {
+    mockEndActiveTrial.mockRejectedValueOnce(new TrialEndRefused({ reason: 'not_running' }));
+    const onChanged = jest.fn();
+    const onClose = jest.fn();
+    const tree = renderSheet({ entry: 'stopped_early', onChanged, onClose });
+    fireEvent.press(tree.getByTestId('trial-stop-refused'));
+    await act(async () => { fireEvent.press(tree.getByText('Save')); });
+
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  it('a genuine failure still says so, and keeps the sheet open', async () => {
+    // The refusal branch must not swallow the case the alert is true for.
+    mockEndActiveTrial.mockRejectedValueOnce(new Error('SQLITE_BUSY'));
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const onChanged = jest.fn();
+    const onClose = jest.fn();
+    const tree = renderSheet({ entry: 'stopped_early', onChanged, onClose });
+    fireEvent.press(tree.getByTestId('trial-stop-refused'));
+    await act(async () => { fireEvent.press(tree.getByText('Save')); });
+
+    expect(alert).toHaveBeenCalledWith('That didn’t save', expect.any(String));
+    expect(onChanged).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    err.mockRestore();
   });
 });

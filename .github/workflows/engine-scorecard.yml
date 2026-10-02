@@ -1,0 +1,59 @@
+# The engine scorecard (Engines v3 PR-16, EN-1, CUL-1131): what a change to the engines does to
+# alert burden and to detection, measured on PR-15's committed synthetic pets and printed as a
+# diff against supabase/functions/generate-signal/eval/scorecard.json.
+#
+# REPORTS, NEVER BLOCKS. Its own workflow so it can never join the `main` ruleset's required
+# checks by accident (those are named in ci.yml), and so its path filter scopes it to the PRs
+# that can move a row. A moved row is information for the reviewer, not a failure: the run step
+# exits non-zero only when the harness itself broke (it threw, or it measured nothing), and even
+# then this check is not required, so it cannot hold a merge. It is not `continue-on-error`,
+# because a broken harness should show red rather than a green that measured nothing.
+#
+# Only the committed synthetic pets, never an export (PMD-12; the engine-replay README). Pass
+# lines are read at the go-live size offline (ADEMP.md §5), never here: at three seeds a
+# comparison's verdict is noise.
+name: Engine scorecard
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/functions/generate-signal/**'
+      - 'supabase/functions/analyze-*/**'
+      - 'supabase/functions/_shared/**'
+      # The engine imports ten lib/ modules today (careClaimScreens, dietTrial, freeFedIntake,
+      # mealTiming, protein, proteinRelation, rateContrast, symptomEpisodes, utils, vomitContents)
+      # and Home's ask reaches more. A hand list of them would rot the day one more is imported,
+      # so the whole directory: a client-only PR costs a two-minute run that prints "no row moved".
+      - 'lib/**'
+      - 'scripts/engine-scorecard/**'
+      - 'jest.scorecard.config.js'
+      - '.github/workflows/engine-scorecard.yml'
+
+concurrency:
+  group: engine-scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scorecard:
+    name: Engine scorecard (reported, not gating)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Prints the diff and the pass lines to the log and to the job summary.
+      - name: Scorecard diff against the committed file
+        run: npm run scorecard

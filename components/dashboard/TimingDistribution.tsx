@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { theme } from '../../constants/theme';
-import type { TimingPanelModel } from '../../lib/patternsTiming';
+import { LANE_GEOMETRY, LANE_HEIGHT_PT, type TimingPanelModel } from '../../lib/patternsTiming';
 import { ThemedText } from '../ui/ThemedText';
 
 // TimingDistribution — the shared-band dot lane for the Patterns "Timing" panel
@@ -19,11 +19,13 @@ import { ThemedText } from '../ui/ThemedText';
 // and long bands shaded a subtle grey (region grouping, NOT a verdict colour), the
 // episode dots in the app's symptom rose. No red/green, no fill that reads as good/bad.
 
-const DOT_SIZE = 7;
+// The pixels are shared with the Signal screen's `TimingLanes` (CUL-1064) through
+// `lib/patternsTiming.ts`, so the two drawings of one episode agree to the point.
+const DOT_SIZE = LANE_GEOMETRY.dotSize;
 const DOT_R = DOT_SIZE / 2;
-const ROW_GAP = 10; // px between jitter rows
-const JITTER_CAP = 3; // rows above/below centre before density just stacks (bounded height)
-const LANE_HEIGHT = 2 * (JITTER_CAP * ROW_GAP + DOT_R) + 8;
+const ROW_GAP = LANE_GEOMETRY.rowGap; // px between jitter rows
+const JITTER_CAP = LANE_GEOMETRY.jitterCap; // rows above/below centre before density just stacks (bounded height)
+const LANE_HEIGHT = LANE_HEIGHT_PT;
 
 interface Props {
   model: TimingPanelModel;

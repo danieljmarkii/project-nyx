@@ -21,7 +21,8 @@
 // the entire pantry, and G2 is two-sided: a mark's ABSENCE is not a verdict either.
 // The type signatures carry that: `string | null`, never a `{ onList: boolean }`
 // that invites a caller to render the false branch.
-import { formatLongDate } from './utils';
+import { toLocalDayKey } from './utils';
+import { recordDay } from './recordDates';
 import {
   trialListFoodsOn,
   trialListMembership,
@@ -215,7 +216,8 @@ export function trialMembershipLine(
   const hit = trialListMembership(set, food, atMs);
   if (!hit) return null;
   const onList = `On ${petName}’s trial list`;
-  const date = formatLongDate(hit.allowedFrom);
+  // The house form (H-10; PM ruling on CUL-1126), judged on the caller's own clock.
+  const date = hit.allowedFrom ? recordDay(hit.allowedFrom, toLocalDayKey(new Date(atMs))) : null;
   return date === null ? onList : `${onList} · since ${date}`;
 }
 

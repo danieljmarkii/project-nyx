@@ -48,6 +48,7 @@ import {
   setVetDocumentDate,
   softDeleteVetDocument,
   restoreVetDocument,
+  formatVetDocumentDate,
 } from './vetDocumentLibrary';
 
 type Row = Record<string, unknown>;
@@ -312,7 +313,9 @@ function pageRow(over: Partial<VetDocumentPageRow> = {}): VetDocumentPageRow {
     storage_path: 'pet-1/p1.jpg',
     mime_type: 'image/jpeg',
     page_index: 0,
-    created_at: '2026-07-20T10:00:00.000Z',
+    // Local components, not a UTC literal — see the note on the library's cover()
+    // fixture. The detail cover reads this through localDayStemOf.
+    created_at: new Date(2026, 6, 20, 10).toISOString(),
     ...over,
   };
 }
@@ -638,5 +641,38 @@ describe('vetDocumentShareFilename — every component is sanitised', () => {
     });
     expect(name).not.toMatch(/[/\\]/);
     expect(name.startsWith('.')).toBe(false);
+  });
+});
+
+// ── The `document_date ?? created_at` fallback arm (CUL-959) ─────────────────
+// The library row's sibling, same class, same reason — see the long note in
+// lib/vetDocumentLibrary.test.ts. Asserted on THIS module rather than trusted to
+// the library's pass: the three sites share a helper, not a call, so a fix
+// applied to one says nothing about the other two.
+describe('buildVetDocumentDetail — the created_at fallback reads the LOCAL day', () => {
+  const now = new Date('2026-07-26T12:00:00Z');
+  const localIso = (y: number, mo: number, d: number, h = 0) =>
+    new Date(y, mo - 1, d, h).toISOString();
+  const localLabel = (y: number, mo: number, d: number) =>
+    formatVetDocumentDate(`${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`, now);
+
+  it('names the filing day in both hemispheres', () => {
+    // 23:00 local diverges from the UTC day for negative offsets, 01:00 for
+    // positive — one alone only guards the zone whoever wrote it lives in.
+    for (const hour of [23, 1]) {
+      const d = buildVetDocumentDetail(
+        [pageRow({ document_date: null, created_at: localIso(2026, 7, 20, hour) })],
+        now,
+      );
+      expect(d?.title).toBe(`Document — ${localLabel(2026, 7, 20)}`);
+    }
+  });
+
+  it('leaves a real document_date on its LEXICAL read', () => {
+    const d = buildVetDocumentDetail(
+      [pageRow({ document_date: '2026-07-20', created_at: localIso(2026, 7, 26, 23) })],
+      now,
+    );
+    expect(d?.title).toBe('Document — Jul 20');
   });
 });

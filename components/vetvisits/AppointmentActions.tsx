@@ -3,14 +3,52 @@ import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
-  /** Opens "At the vet" — absent once the appointment's day has passed. */
+  /**
+   * Opens the notes screen. Present from the moment the booking exists (CUL-966) —
+   * this door has no window and no phase.
+   */
   onAtTheVet?: () => void;
-  onHowDidItGo: () => void;
+  /**
+   * Opens "How did it go?". Optional because the doors are gated SEPARATELY and
+   * this is one of the gated ones: see the header note.
+   */
+  onHowDidItGo?: () => void;
+  /**
+   * Cancels the appointment (CUL-952). Rendered only where the app is ASKING whether
+   * the visit happened — the *Waiting on you* bucket — because "it didn't happen" is
+   * an answer to a question, and on a booking still ahead there is no question yet.
+   * Moving a future booking is `onChange`'s job; this one is for a day that passed.
+   */
+  onDidntHappen?: () => void;
+  /**
+   * Opens the appointment's own edit (CUL-952). Optional only so this component
+   * stays usable by a caller that has no route for it; every shipped caller passes
+   * it, because a booking with no way to change it is the defect this closes.
+   */
+  onChange?: () => void;
   /** Named in both labels, so a multi-pet list never leaves "which pet" to position. */
   petName: string;
+  /**
+   * The appointment's own `when` ('Wed, Oct 28'), appended to every label (CUL-970).
+   * Once *Next* holds more than one booking, "Take notes for Pip's visit" is read out
+   * identically per row, and a screen-reader user cannot tell which booking a door is
+   * for. Optional only for a caller that renders one booking alone.
+   */
+  when?: string;
 }
 
-// The two doors under a booked appointment (CUL-902 VV-4).
+// The two doors under a booked appointment (CUL-902 VV-4; re-gated CUL-966).
+//
+// THE TWO DOORS ARE GATED SEPARATELY, AND THE ASYMMETRY IS THE POINT. Until CUL-966
+// both were withheld together until the appointment's own day, and the reason given
+// was a mis-tap on a recheck booked six weeks out. That reason only ever described
+// *How did it go?*, which writes a `vet_visits` row, marks the booking attended and
+// moves the vet report's window with no way back before VV-6's delete. *Take notes*
+// writes a draft on a row that already exists and is harmless at any distance — and
+// withholding it was the defect: the PM wanted to start jotting days in advance and
+// the app opened the field on the morning of. So notes are ungated and the finish
+// door keeps its gate, which is why BOTH props are optional and neither implies the
+// other.
 //
 // A SEPARATE COMPONENT, not props on `AppointmentBlock`, because that block is ONE
 // `accessible` node on purpose — it reads "Tuesday · 3:00 pm, Riverside Animal
@@ -18,11 +56,27 @@ interface Props {
 // placed inside an `accessible` container is hidden from assistive tech entirely.
 // The block states; this acts.
 //
-// *Get ready* and *Change the appointment* are VV-5's and are LEFT OUT rather than
-// rendered inert: `disabled` is an accessibility claim that a control exists and is
-// unavailable (C-7), which would be a lie about one that has not been built. The
-// doors arrive with their destinations — the rule `AppointmentBlock` already states.
-export function AppointmentActions({ onAtTheVet, onHowDidItGo, petName }: Props) {
+// *Get ready* is not a door in this row: it is the appointment BLOCK above it, which
+// opens Get ready wherever it renders (CUL-987 D1) — a fourth labelled door here would
+// be a second way to the same place. The doors arrive with their destinations, the
+// rule CUL-952 was: *Change the appointment* shipped on Get ready's ⋯ with no
+// destination, so it pushed the visits list, where the only control is *Add*.
+//
+// THE ORDER IS FIXED HERE, not per caller, and it is chosen so one order reads
+// correctly in both buckets. Under *Next* the row is `Take notes · Change` (plus the
+// finish door on the day); under *Waiting on you* it is
+// `Take notes · How did it go? · It didn't happen · Change`. The two ANSWERS land
+// adjacent, which is what that section is asking for, and *Change* sits last as the
+// least-common action — while the shipped order under *Next* is untouched.
+export function AppointmentActions({
+  onAtTheVet,
+  onHowDidItGo,
+  onDidntHappen,
+  onChange,
+  petName,
+  when,
+}: Props) {
+  const which = when ? `, ${when}` : '';
   return (
     <View style={styles.row}>
       {onAtTheVet ? (
@@ -31,20 +85,51 @@ export function AppointmentActions({ onAtTheVet, onHowDidItGo, petName }: Props)
           onPress={onAtTheVet}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel={`Take notes at ${petName}’s visit`}
+          accessibilityLabel={`Take notes for ${petName}’s visit${which}`}
         >
-          <ThemedText style={styles.actionLabel}>At the vet</ThemedText>
+          <ThemedText style={styles.actionLabel}>Take notes</ThemedText>
         </TouchableOpacity>
       ) : null}
-      <TouchableOpacity
-        style={styles.action}
-        onPress={onHowDidItGo}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel={`Log how ${petName}’s visit went`}
-      >
-        <ThemedText style={styles.actionLabel}>How did it go?</ThemedText>
-      </TouchableOpacity>
+      {onHowDidItGo ? (
+        <TouchableOpacity
+          style={styles.action}
+          onPress={onHowDidItGo}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`Log how ${petName}’s visit went${which}`}
+        >
+          <ThemedText style={styles.actionLabel}>How did it go?</ThemedText>
+        </TouchableOpacity>
+      ) : null}
+      {onDidntHappen ? (
+        <TouchableOpacity
+          style={styles.action}
+          onPress={onDidntHappen}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          // The label says whose and what, because the visible text is a bare
+          // pronoun — "It didn’t happen" announced alone, out of the block above it,
+          // names nothing.
+          accessibilityLabel={`${petName}’s visit didn’t happen${which}`}
+        >
+          {/* Home's own verb, verbatim (`AppointmentStrip`'s *It didn’t*), so one
+              write has one name wherever the app offers it. Here it carries NO
+              five-day window: past that the strip stops asking and this list is the
+              only surface left that can answer. */}
+          <ThemedText style={styles.actionLabel}>It didn’t happen</ThemedText>
+        </TouchableOpacity>
+      ) : null}
+      {onChange ? (
+        <TouchableOpacity
+          style={styles.action}
+          onPress={onChange}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`Change ${petName}’s appointment${which}`}
+        >
+          <ThemedText style={styles.actionLabel}>Change</ThemedText>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }

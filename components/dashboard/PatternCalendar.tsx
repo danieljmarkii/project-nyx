@@ -155,6 +155,16 @@ export function PatternCalendar({
   // all-clear; §11 #2). The seeded current month is always cached, so this only reaches an
   // actually-failed page fetch.
   const monthErrored = !loading && !cache.has(shownKey);
+  // `earliestMonth === null` collapses into canGoPrev=false here, which CUL-327's
+  // bound line then reports as "oldest month with logs" — a claim that there ARE
+  // logs. Two things produce that null (`getEarliestEventMonth`): a pet with no
+  // non-deleted events at all, and a row whose `occurred_at` will not parse.
+  // Neither is reachable while this is on screen: `lib/dashboardScreen.ts:318` only
+  // builds the CalendarCard when `views.length > 0`, which requires a symptom count
+  // or an intake decline — rows in the same `events` table that read scans. The
+  // invariant is held by two files agreeing and nothing else, so if the card's
+  // gating ever stops requiring an event, the bound line needs a third state
+  // (no floor) rather than silently asserting a floor that isn't there.
   const canGoPrev = earliestMonth ? compareCalendarMonth(month, earliestMonth) > 0 : false;
   const canGoNext = compareCalendarMonth(month, currentMonth) < 0;
 

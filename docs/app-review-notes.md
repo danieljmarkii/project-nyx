@@ -50,6 +50,9 @@ A camera and photos prompt appears only if you attach a photo to a log entry. No
 Account deletion
 Settings includes a working, permanent Delete Account option. Deleting this demo account removes its seeded history, so please avoid deleting it unless you are specifically testing that flow.
 
+Early access
+Settings contains an optional early-access section for pre-release features; all listed features are functional.
+
 Intentionally empty surfaces (a designed empty state, not a bug)
 - The optional Home Screen widget shows "No pet in this slot yet" on this account.
 - The notifications screen (Settings) shows its off state until you turn notifications on.
@@ -70,6 +73,7 @@ support@getculprit.app — we respond the same day.
 - **ASC field limit** — the fenced block is under the 4,000-character Notes limit. ✓
 - **Golden path matches the seed** — Cooper on a venison elimination trial, "Day 19 of 42"; four off-diet beef exposures; **card order ② then ① (the intake-dip safety card leads, the beef-correlation pattern card follows** — Principle 3, safety insights lead). ✓
 - **No real credentials** — the password is a placeholder (§1); the username is the public support address. ✓
+- **Never "beta"** — the early-access line in the block is the PM-ruled wording, verbatim (CUL-70, D8, 2026-08-20), and in the app the shelf reads "Early access" wherever it is shown or spoken, because "beta" reads as Guideline 2.2 ("demos, betas, and trial versions") in a skim. The section renders only for an account on an early-access allowlist, so the demo account shows it only if it is on one. ✓
 
 ### Delta from spec §7 (flag for PM)
 §7 item 8 lists four reachable-but-empty surfaces (widget, medication, vet-document, notifications). Per this PR's brief, the block above names **widget + notifications only** — the two an unguided reviewer actually reaches (the widget from the Home Screen, notifications from Settings). The shipped bottom nav is Home / History / Foods / Pet, so medication and vet-files are secondary surfaces inside the Pet profile whose designed empty states are self-explanatory; naming every empty surface invites the reviewer curiosity R-12d exists to avoid (the same reason Ask is dropped). If you'd rather name all four, add two lines to the "Intentionally empty surfaces" section.

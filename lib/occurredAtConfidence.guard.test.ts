@@ -29,6 +29,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, relative } from 'path';
+import { blankComments } from '../guards/blankComments';
 
 const ROOT = join(__dirname, '..');
 const SCAN_DIRS = ['app', 'components', 'lib', 'store', 'hooks'];
@@ -42,7 +43,10 @@ const ALLOWED: Record<string, string> = {
     'confirm screen SHOWS and lets them change), never from an inference the owner cannot see.',
   'lib/medicationDose.ts':
     'insertMedicationDose — you do not discover that you gave a pill. Administration is an ' +
-    'act the owner performs, so the B-010 found/window path never applies.',
+    'act the owner performs, so the B-010 found/window path never applies. optimisticDoseRow ' +
+    'is the store\u2019s mirror of that row (History v2 HV-6), built from the same write\u2019s ' +
+    'result at the same instant; the picker and the label capture\u2019s first dose both ' +
+    'prepend through it, so neither restates the claim.',
   'lib/weight.ts':
     'insertWeightCheck — you read the scale. occurred_at is now, or a time the owner set ' +
     'themselves via the back-dating escape hatch.',
@@ -72,9 +76,6 @@ const ALLOWED: Record<string, string> = {
   'app/food-capture.tsx':
     'Photo capture that also logs the meal. prependEvent mirroring the row insertMeal just ' +
     'wrote, at the EXIF-seeded time the owner saw and could change on the confirm screen.',
-  'app/medication-capture.tsx':
-    'Label capture that also logs the first dose. prependEvent mirroring the row ' +
-    'insertMedicationDose just wrote, at now.',
   'components/log/FAB.tsx':
     'One-tap meal from the FAB. prependEvent mirroring the row insertMeal just wrote, at now.',
   'components/ui/MealCompletionCard.tsx':
@@ -123,6 +124,13 @@ const ALLOWED: Record<string, string> = {
     'found/window path can never apply to one. The mirror matters because the card renders ' +
     'the arrival from this in-memory row before Home re-reads the record, so a mirror that ' +
     'disagreed with the insert would show a confidence the database does not hold.',
+  'components/designV2/home/LookHeader.tsx':
+    'The look as Today\u2019s header behind design_v2 (D2-4 / CUL-1066). The SAME mirror ' +
+    'LookCard makes, for the same reason: prependEvent restates the row insertLook just ' +
+    'wrote, at the clock instant of the tap, so the answered row draws from the in-memory ' +
+    'row before Home re-reads the record. A look is a perception at a moment the owner was ' +
+    'present for; nothing here reads a clock the owner did not see and no metadata is ' +
+    'consulted. One tap is one word is one look, so the claim is per row and never inferred.',
 };
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
@@ -171,11 +179,21 @@ function assertedConfidences(src: string): Set<string> {
   return found;
 }
 
+/**
+ * A file's write-path confidences, read from its CODE: comments are blanked first, in
+ * one pass (C-18, the shared walker). CUL-869 tripped the raw-source scan with an
+ * explanatory comment in app/edit-event.tsx, and the only remedy the red offered was
+ * the allowlist, which exempts the one file this guard exists for (CUL-885).
+ */
+function writePathConfidences(src: string): Set<string> {
+  return assertedConfidences(blankComments(src));
+}
+
 function scan(): Map<string, Set<string>> {
   const hits = new Map<string, Set<string>>();
   for (const dir of SCAN_DIRS) {
     for (const file of sourceFiles(join(ROOT, dir))) {
-      const found = assertedConfidences(readFileSync(file, 'utf8'));
+      const found = writePathConfidences(readFileSync(file, 'utf8'));
       if (found.size > 0) hits.set(relative(ROOT, file).split('\\').join('/'), found);
     }
   }
@@ -225,6 +243,13 @@ describe('occurred_at_confidence write paths (B-448)', () => {
     expect(hardcoded).toEqual([]);
   });
 
+  it('reads code, never comments: a sentence about the rule is not a write path (CUL-885)', () => {
+    // Both comment shapes blank, and the write beside them still reads.
+    expect([...writePathConfidences(`// occurred_at_confidence: 'witnessed' is the claim a meal makes`)]).toEqual([]);
+    expect([...writePathConfidences(`/* the unit is confidence: { value: 'witnessed' } */`)]).toEqual([]);
+    expect([...writePathConfidences(`// why\nconst row = { occurred_at_confidence: 'witnessed' };`)]).toEqual(['witnessed']);
+  });
+
   it('leaves the edit path out entirely — an edit restates nothing it was not told', () => {
     // The B-448 leak itself. app/edit-event.tsx wrote its form's seeded default on
     // every save, promoting legacy NULL rows to 'witnessed' while the owner was
@@ -244,7 +269,9 @@ describe('occurred_at_confidence write paths (B-448)', () => {
 // write in two different shapes and every other suite stayed green; these are
 // the assertions that go red.
 describe('app/edit-event.tsx — the save may only write an ASSERTED confidence (B-448)', () => {
-  const src = readFileSync(join(ROOT, 'app/edit-event.tsx'), 'utf8');
+  // Code only (CUL-885): a comment holding one of the shapes below could otherwise pad
+  // a count or satisfy a `toContain` while the real line is gone.
+  const src = blankComments(readFileSync(join(ROOT, 'app/edit-event.tsx'), 'utf8'));
   // The single updateEvent call, from the identifier to the closing `});`.
   const updateCall = /await updateEvent\([\s\S]*?\n {6}\}\);/.exec(src)?.[0] ?? '';
 

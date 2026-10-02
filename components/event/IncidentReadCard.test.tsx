@@ -1,3 +1,10 @@
+// The Design v2 gate (D2-7): off by default, flipped per test below. Mocked because the
+// real hook reaches the Supabase client, and because the gate is a FACT this suite sets.
+const mockUseDesignV2 = jest.fn(() => false);
+jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockUseDesignV2() }));
+jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
+jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
+
 import { render, fireEvent } from '@testing-library/react-native';
 import { theme } from '../../constants/theme';
 import {
@@ -7,6 +14,7 @@ import {
   INCIDENT_READ_HIDE_LABEL,
   INCIDENT_READ_PENDING_LABEL,
   RAIL_TICK_HEIGHT,
+  RAIL_WIDTH,
 } from './IncidentReadCard';
 
 function railStyle(getByTestId: (id: string) => { props: { style: unknown } }) {
@@ -109,5 +117,38 @@ describe('IncidentReadPending (§5.2)', () => {
     // was already standing there rather than from nowhere.
     expect(tick).toBeTruthy();
     expect(tick.backgroundColor).toBe(theme.colorBorderStrong);
+  });
+
+  // D2-7 (CUL-1068) — behind `design_v2` the whorl goes and the tick itself breathes,
+  // in the same slot, only while a read is being PRODUCED.
+  describe('behind design_v2', () => {
+    const hidden = { includeHiddenElements: true };
+    beforeEach(() => mockUseDesignV2.mockReturnValue(true));
+    afterEach(() => mockUseDesignV2.mockReturnValue(false));
+
+    it('a read being produced: the breathing tick, no whorl, the same 3×16 mark', () => {
+      const { getByText, queryByTestId, UNSAFE_root } = render(<IncidentReadPending working />);
+      expect(getByText(INCIDENT_READ_PENDING_LABEL)).toBeTruthy();
+      const { StyleSheet } = require('react-native');
+      const tick = queryByTestId('design-v2-tick', hidden);
+      expect(tick).toBeTruthy();
+      const style = StyleSheet.flatten(tick!.props.style);
+      expect(style.width).toBe(RAIL_WIDTH);
+      expect(style.height).toBe(RAIL_TICK_HEIGHT);
+      // The whorl is gone: nothing in the box is an SVG.
+      expect(UNSAFE_root.findAllByType(require('react-native-svg').default)).toHaveLength(0);
+    });
+
+    it('a local row being read (not a request): the still tick, and no whorl either', () => {
+      const { queryByTestId, UNSAFE_root } = render(<IncidentReadPending />);
+      expect(queryByTestId('design-v2-tick', hidden)).toBeNull();
+      const { StyleSheet, View } = require('react-native');
+      const still = UNSAFE_root
+        .findAllByType(View)
+        .map((n: { props: { style?: unknown } }) => StyleSheet.flatten(n.props.style) ?? {})
+        .find((s: { height?: number }) => s.height === RAIL_TICK_HEIGHT);
+      expect(still).toBeTruthy();
+      expect(UNSAFE_root.findAllByType(require('react-native-svg').default)).toHaveLength(0);
+    });
   });
 });

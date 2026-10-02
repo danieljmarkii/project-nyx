@@ -186,8 +186,8 @@ export const LOOK_WORDS: Record<LookSpecies, readonly LookWord[]> = {
 };
 
 /**
- * The seven head words per species that sit on the COMPACT card, exempt from the
- * unfold (T-13).
+ * The head words per species that sit on the COMPACT card, exempt from the unfold
+ * (T-13): seven for a dog, eight for a cat (D2-4 — see the cat row).
  *
  * A SAFETY LIST, NOT A LAYOUT. The seven are chosen on clinical yield: the highest-
  * yield ambiguous signs — the nausea prodrome (`lip_licking`) and, for a cat, the
@@ -200,8 +200,14 @@ export const LOOK_WORDS: Record<LookSpecies, readonly LookWord[]> = {
  * rather than left to be discovered.
  */
 export const LOOK_HEAD_WORDS: Record<LookSpecies, readonly string[]> = {
-  // Off · Sleeping more · Hiding · Not grooming · Lip-licking · Outside the box · Lively
-  cat: ['subdued', 'sleeping_more', 'hiding', 'not_grooming', 'lip_licking', 'outside_box', 'lively'],
+  // Off · Sleeping more · Hiding · Not grooming · Lip-licking · Outside the box · Lively · Played
+  //
+  // EIGHT for a cat since D2-4 (CUL-1066; the round-4 page §01, ruled): `played` joins as
+  // the second POSITIVE, so the good direction has two words at the same cost as the bad
+  // one (§4.1 rule 5) and an ordinary evening — she chased a toy — is one tap, not an
+  // unfold. A Tier-2 edit to daily-look §4, written at D2-8; the dog row's second positive
+  // (`played` or `full_walk`) is Dr. Chen's call there and is NOT taken here.
+  cat: ['subdued', 'sleeping_more', 'hiding', 'not_grooming', 'lip_licking', 'outside_box', 'lively', 'played'],
   // Off · Sleeping more · Didn't want the walk · Restless · Not greeting · Lip-licking · Lively
   dog: ['subdued', 'sleeping_more', 'walk_refused', 'restless', 'not_greeting', 'lip_licking', 'lively'],
 };

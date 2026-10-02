@@ -19,83 +19,73 @@
 //                  failed (§2 hard rule).
 //
 // The phrasing / curation / guardrail logic is the pure ./phrasing.ts module
-// (unit-tested offline in phrasing.test.ts, mirroring detection.ts). This file
-// is the I/O shell: DB reads, the Claude call, and the cache write. It runs with
-// the caller's JWT so RLS enforces pet ownership on every read and the cache
-// write — no service role needed (no storage, no cross-user data).
+// (unit-tested offline in phrasing.test.ts, mirroring detection.ts). Every step
+// between the reads and the phrasing (map, detect, curate, decorate, the summary
+// packet, the stand-down) is the pure ./pipeline.ts (Engines v3 PR-11b), which the
+// EN-1 harness runs with no database. This file is the I/O shell: DB reads, the
+// Claude call, and the cache write. It runs with the caller's JWT so RLS enforces
+// pet ownership on every read and the cache write.
+//
+// ONE service-role write (Engines v3 PR-11a, CUL-1378 ruled at the plan): the row per
+// served finding in `signal_shown_log`, keyed on the pet id the caller's own RLS-scoped
+// `pets` read just returned. The admin client is built for that insert and does nothing
+// else (_shared/engineStamps.ts insertShownLog carries why the log must not be
+// client-writable).
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
-  detectSignals,
-  detectCoverage,
-  stripInternalOnsets,
-  computeReflectionDensity,
-  computeChronicityCompare,
-  doseToMedicationWindow,
   DEFAULT_CONFIG,
   CORRELATION_SYMPTOM_TYPES,
   RED_FLAG_INCIDENT_TYPES,
   type Finding,
-  type CoverageDiagnostic,
-  type SymptomEvent,
-  type MealEvent,
-  type FeedingArrangement,
-  type MedicationWindow,
-  type SymptomType,
-  type IntakeRating,
-  type FoodFormat,
-  type Species,
-  type OccurredAtConfidence,
-  type IncidentAnalysisInput,
-  type DetectionInput,
-  type ReflectionDensity,
-  type ChronicityCompare,
-  type MedOnBoardContext,
-  type PhotoComposition,
 } from './detection.ts'
-// SR-4 (B-721 §5.4) — the medication-on-board payload decoration. Pure, offline-tested
-// (medContext.test.ts); attaches the additive med context + carries the density onto the
-// findings AFTER detection, so the engine's output is untouched.
+// Engines v3 PR-11b (CUL-1267): every step between the reads and the phrasing, pure. This
+// file reads, phrases and writes; ./pipeline.ts decides what the Signal says.
 import {
-  computeMedOnBoard,
-  decorateFinding,
-  resolveDrugLabel,
-  type MedDoseFact,
-} from './medContext.ts'
-// L3 (Signals v2 / CUL-9 §2 L3) — photo-record composition evidence decoration. Pure, offline-tested
-// (photoComposition.test.ts); attaches retained-food/hair/bile counts (present-only, tristate) onto
-// the vomit timing findings AFTER detection, so the engine's output is untouched.
-import { computePhotoComposition, type PhotoAnalysisInput } from './photoComposition.ts'
-// B-422's effective end, from the ONE module that owns it. Imported across the
-// function boundary exactly as `./protein.ts` already re-exports `lib/protein.ts`
-// — a second copy of `start + target + grace` living here is the failure mode.
-import { isTrialRunning } from '../../../lib/dietTrial.ts'
+  assembleSignal,
+  runSignalPipeline,
+  templateSummary,
+  type ActiveTrialRow,
+  type ArrangementRow,
+  type IncidentAnalysisRow,
+  type MealEventRow,
+  type MedDoseEventRow,
+  type PriorSignal,
+  type RegimenRow,
+  type SymptomRow,
+} from './pipeline.ts'
 // Abort the Claude phrasing/summary calls after a bounded timeout (CUL-258). Both
 // callers already fall back to the deterministic template on any throw, so a timeout
 // degrades safely — it just stops a hung upstream from holding the function open.
 import { fetchWithTimeout } from '../_shared/http.ts'
+// CUL-989 — CUL-975's paged reader, shared with generate-report and ask.
+import { fetchAll, incompletePullNames } from '../_shared/pull.ts'
 import {
   templateForFinding,
   validatePhrasing,
-  curateFindings,
-  buildBuildingText,
   phrasingPayload,
   PHRASE_TOOL,
   PHRASING_SYSTEM,
-  type CachedFinding,
 } from './phrasing.ts'
 // CUL-786 (Signal fold v1.1-a) — the labeled stand-down. Pure, offline-tested (standDown.test.ts);
-// minted HERE, after curation / phrasing / the summary packet, so the marker can never reach the
-// cap, the model, the summary, or the vet report (which re-runs detection and never reads this cache).
+// minted in ./pipeline.ts, after curation and the summary packet, and merged after phrasing, so
+// the marker can never reach the cap, the model, the summary, or the vet report (which re-runs
+// detection and never reads this cache).
+import { type CachedEntry } from './standDown.ts'
+// Engines v3 (PR-11a, CUL-1267): the rollout flag, read fail-closed for the pet's owner, and
+// the one writer of the cache row's stamps and the shown log.
+import { readEngineFlags } from '../_shared/engineFlagsRead.ts'
+import { isEngineKeyOn } from '../_shared/engineFlags.ts'
+// EN-10 (PR-22): the owner's local day, for the visit read's upper bound.
+import { dayKeyFromIndex, localDayIndex } from '../../../lib/utils.ts'
+import type { CareContextFacts } from './careContext.ts'
 import {
-  mergeStandDowns,
-  readPriorEntries,
-  resolveStandDowns,
-  type CachedEntry,
-} from './standDown.ts'
+  buildShownLogRows,
+  engineFingerprint,
+  insertShownLog,
+  signalStampValues,
+} from '../_shared/engineStamps.ts'
 import {
-  buildSummaryPacket,
-  summaryTemplate,
   summaryModelPayload,
   validateSummary,
   shouldPhraseWithModel,
@@ -123,7 +113,19 @@ const LOOKBACK_DAYS = 180
 // daily-cached call (B-001 cost). Bump this one constant if voice disappoints.
 const PHRASING_MODEL = 'claude-haiku-4-5'
 
+// The Signal engine's version, one input to the cache row's engine_fingerprint (with
+// DEFAULT_CONFIG, the phrasing model and the Engines flags; engineStamps.ts). Bump it with
+// any change to detection, curation, decoration or phrasing that can change what a pet's
+// Signal says: the fingerprint cannot see a code change this number does not record.
+export const SIGNAL_ENGINE_VERSION = 'signal.5' // signal.5: PR-14e (CUL-1195), the long band carries and says its refused-bowl subset. signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
+
 const MS_PER_DAY = 86_400_000
+
+// CUL-989 — how long a Signal computed from an incomplete read is served before the client
+// regenerates it. Short, because the shortfall is usually a write racing a multi-page pull,
+// which the next read does not repeat; not zero, because a record past the page ceiling is
+// incomplete on every read and the per-pet cap should not be spent re-reading it each open.
+const INCOMPLETE_READ_TTL_MS = 60 * 60 * 1000
 
 // ── Phrasing call (the only LLM use; reasoning stays deterministic upstream) ──
 
@@ -238,27 +240,24 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled 
 // the silent removal of vet-routing. Any failure → the deterministic template. Never throws,
 // never reassures, never blank.
 async function phraseSummaryText(packet: SummaryFactPacket, phrasingEnabled = true): Promise<CachedSummary> {
-  const template = summaryTemplate(packet)
-  const base: Omit<CachedSummary, 'text' | 'source'> = {
-    evidence: packet.evidence,
-    hasSafety: packet.hasSafety,
-    quiet: packet.quiet,
-  }
+  // The deterministic form lives in ./pipeline.ts, so the harness and this function build it
+  // one way. Every return below is it except the one validated model sentence.
+  const templated = templateSummary(packet)
   // T2-3 (§5.3): the phrasing flag also forces the summary to its template. (v1
   // ships template-only anyway via SUMMARY_MODEL_PHRASING_ENABLED; this keeps the
   // flag authoritative if the model path is ever re-enabled.)
-  if (!phrasingEnabled) return { ...base, text: template, source: 'template' }
+  if (!phrasingEnabled) return templated
   // Restraint (PR-4 adversarial review). v1 ships TEMPLATE-ONLY — SUMMARY_MODEL_PHRASING_ENABLED
   // is false, so the model is never called (the summary is a descriptive count statement, phrased
   // template-only like ③/④/⑤/⑥; see the kill-switch doc). Even when re-enabled, the model stays
   // off SAFETY and QUIET summaries (shouldPhraseWithModel) — those are always deterministic.
   if (!SUMMARY_MODEL_PHRASING_ENABLED || !shouldPhraseWithModel(packet)) {
-    return { ...base, text: template, source: 'template' }
+    return templated
   }
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
   if (!apiKey) {
     console.warn('generate-signal: ANTHROPIC_API_KEY unset — summary using template')
-    return { ...base, text: template, source: 'template' }
+    return templated
   }
   try {
     const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
@@ -286,7 +285,7 @@ async function phraseSummaryText(packet: SummaryFactPacket, phrasingEnabled = tr
     })
     if (!res.ok) {
       console.warn(`generate-signal: summary API ${res.status} — using template`)
-      return { ...base, text: template, source: 'template' }
+      return templated
     }
     const data = (await res.json()) as {
       content?: Array<{ type: string; name?: string; input?: { summary?: string } }>
@@ -296,325 +295,31 @@ async function phraseSummaryText(packet: SummaryFactPacket, phrasingEnabled = tr
     )
     const summary = block?.input?.summary?.trim()
     if (summary && validateSummary(summary, packet)) {
-      return { ...base, text: summary, source: 'model' }
+      return { ...templated, text: summary, source: 'model' }
     }
     console.warn('generate-signal: summary missing or failed validation — using template')
-    return { ...base, text: template, source: 'template' }
+    return templated
   } catch (err) {
     console.warn('generate-signal: summary error — using template:', err)
-    return { ...base, text: template, source: 'template' }
+    return templated
   }
 }
 
 // ── DB → DetectionInput mapping ───────────────────────────────────────────────
+// Moved to ./pipeline.ts (Engines v3 PR-11b) with every step between the reads and the
+// phrasing. Re-exported for the existing suites (index.test.ts imports them from here).
+export { mapMedDoseFacts, type RegimenRow, type MedDoseEventRow } from './pipeline.ts'
 
-interface SymptomRow {
-  id: string
-  event_type: string
-  occurred_at: string
-  occurred_at_confidence: string | null
-  severity: number | null
-}
-
-type FoodItemJoin = {
-  primary_protein: string | null
-  // B-351 slice 1's captured set. Detection reads it through readProteinSet, which
-  // hoists primary_protein to position 0 — so a legacy row where the column is still
-  // NULL/empty degrades to exactly today's single-protein behavior.
-  proteins: string[] | null
-  food_type: string | null
-  // B-102 PR 5: physical-form enum. Read so detection can derive the human-food provenance
-  // covariate (computeHumanFoodProvenance); ignored by every existing detector.
-  format: string | null
-  brand: string
-  product_name: string
-}
-type MealJoin = {
-  food_item_id: string | null
-  intake_rating: string | null
-  food_items: FoodItemJoin | FoodItemJoin[] | null
-}
-interface MealEventRow {
-  id: string
-  occurred_at: string
-  occurred_at_confidence: string | null
-  meals: MealJoin | MealJoin[] | null
-}
-
-function first<T>(v: T | T[] | null | undefined): T | null {
-  if (v == null) return null
-  return Array.isArray(v) ? (v[0] ?? null) : v
-}
-
-function mapSymptomRows(rows: SymptomRow[]): SymptomEvent[] {
-  return rows.map((r) => ({
-    id: r.id,
-    type: r.event_type as SymptomType,
-    occurredAt: r.occurred_at,
-    // B-010 timestamp confidence (B-078): gates timed-eligibility for the descriptive
-    // lane (⑤). NULL/absent ⇒ ignored by ①–④, ineligible for ⑤'s strict witnessed gate.
-    occurredAtConfidence: (r.occurred_at_confidence ?? null) as OccurredAtConfidence | null,
-    severity: r.severity,
-  }))
-}
-
-interface ArrangementRow {
-  id: string
-  food_item_id: string | null
-  is_shared: boolean
-  active_from: string | null
-  active_until: string | null
-  food_items:
-    | { primary_protein: string | null; proteins: string[] | null }
-    | { primary_protein: string | null; proteins: string[] | null }[]
-    | null
-}
-
-// Map active free_choice arrangements to standing exposures (B-040 R1, PR 4). Only
-// free_choice rows are fetched (meal_fed is vet-report metadata, not a standing
-// exposure — its intake IS the discrete meal stream). is_shared → 'low' attribution
-// (multi-cat shared bowl, deferred); in R1 is_shared is always FALSE → 'high'
-// (single-pet free-fed: no other pet could have eaten it). Forward-compatible for free.
-function mapArrangementRows(rows: ArrangementRow[]): FeedingArrangement[] {
-  return rows.map((r) => {
-    const fi = first(r.food_items)
-    return {
-      id: r.id,
-      primaryProtein: fi?.primary_protein ?? null,
-      // B-351 slice 6 — every protein a standing bowl carries is uncontrolled background.
-      proteins: fi?.proteins ?? null,
-      activeFrom: r.active_from,
-      activeUntil: r.active_until,
-      attributionConfidence: r.is_shared ? 'low' : 'high',
-    }
-  })
-}
-
-// ── Medication confounder windows (B-117 PR 9, §8) ────────────────────────────
-// Two DB shapes resolve to one MedicationWindow span set (see detection.ts):
-//   • a `medications` regimen row → a continuous span [started_at, ended_at].
-//   • an administered `medication` dose event → a POINT at occurred_at.
-// Both run with the caller's JWT, so medications_owner / medication_administrations_owner
-// RLS scope them to the owner's pets — no service role, like every other read here.
-
-export interface RegimenRow {
-  // SR-4 (§5.4): `id` + `drug_name` are read so an administered dose linked to this regimen
-  // can be named ("{drug} course"). drug_name is NOT NULL on the regimen (migration 020),
-  // the reliable owner-facing label; both are inert to the confounder pass.
-  id: string
-  drug_name: string
-  medication_item_id: string | null
-  started_at: string | null // DATE; parses to that day's UTC midnight = start-of-day (correct span start)
-  ended_at: string | null // DATE; the drug is on board through the WHOLE day → end-of-day-inclusive below
-}
-
-type MedItemJoin = { generic_name: string | null; brand_name: string | null }
-type MedAdminJoin = {
-  // SR-4 (§5.4): `medication_id` links the dose to its regimen (→ drug_name); the nested
-  // `medication_items` names an ad-hoc / regimen-unlinked dose (brand, else generic). Both
-  // are label sources for the med-on-board context, inert to the confounder pass.
-  medication_id: string | null
-  medication_item_id: string | null
-  medication_items: MedItemJoin | MedItemJoin[] | null
-  adherence: string | null
-  // B-156 PR C1: the meal/treat event this dose rode inside (a pill in a Delectable), or null
-  // for a standalone dose. Migration 023; nullable FK → events(id). Used to (a) attribute the
-  // vehicle food to the drug and (b) reconcile an in-doubt combo dose's on-board status (B-174).
-  paired_event_id: string | null
-}
-export interface MedDoseEventRow {
-  occurred_at: string
-  medication_administrations: MedAdminJoin | MedAdminJoin[] | null
-}
-
-// A regimen's DATE end is inclusive of the whole ended_at day (the pet took it that day), so
-// push activeUntil to that day's END — mirrors classifyArrangements' free-feeding +1-day. Done
-// HERE (not in the engine) because dose windows are precise instants the engine must NOT widen;
-// keeping the DATE-vs-timestamp knowledge in the caller lets classifyMedicationWindows stay a
-// pure instant-span parser. An unparseable end is passed through raw → the engine drops it.
-function regimenEndIso(endedAt: string | null): string | null {
-  if (endedAt == null) return null // still active → on board through now (engine: +Infinity)
-  const ms = Date.parse(endedAt)
-  if (Number.isNaN(ms)) return endedAt
-  return new Date(ms + MS_PER_DAY).toISOString()
-}
-
-function mapMedicationWindows(
-  regimens: RegimenRow[],
-  doseEvents: MedDoseEventRow[],
-  // B-156 PR C1 / B-174: meal/treat event id → its intake rating, for resolving a combo dose's
-  // paired vehicle. A vehicle that is soft-deleted or out-of-lookback is simply absent here →
-  // the lookup is null → the dose keeps the §5.1 default (the safe, conservative on-board read).
-  mealIntakeById: Map<string, IntakeRating | null>,
-): MedicationWindow[] {
-  const windows: MedicationWindow[] = regimens.map((r) => ({
-    medicationItemId: r.medication_item_id,
-    activeFrom: r.started_at,
-    activeUntil: regimenEndIso(r.ended_at),
-  }))
-  for (const e of doseEvents) {
-    const admin = first(e.medication_administrations)
-    if (!admin) continue // a medication event with no child (shouldn't happen — 1:1); nothing to place
-    // doseToMedicationWindow DROPS missed/refused (drug not given → not on board), DROPS an
-    // unconfirmed combo dose whose vehicle was refused/picked (B-174 — carrier not eaten → drug
-    // not delivered), and returns a point window for the rest. The clinically load-bearing
-    // filter lives in that pure, tested helper, never inline here.
-    const pairedVehicleIntake = admin.paired_event_id
-      ? (mealIntakeById.get(admin.paired_event_id) ?? null)
-      : null
-    const w = doseToMedicationWindow({
-      medicationItemId: admin.medication_item_id,
-      occurredAt: e.occurred_at,
-      adherence: admin.adherence,
-      pairedVehicleIntake,
-    })
-    if (w) windows.push(w)
-  }
-  return windows
-}
-
-// SR-4 (§5.4) — the administered, NAMEABLE dose facts for the med-on-board context, built
-// from the SAME regimen + dose rows the confounder pass reads. It reuses doseToMedicationWindow
-// as the on-board filter, so a fact here is EXACTLY a dose the engine treats as on-board
-// (missed / refused / the B-174 in-doubt combo dose all dropped identically — one definition,
-// never a second). Each surviving dose is named regimen-first (medication_id → the regimen's
-// NOT-NULL drug_name), else by its library item (brand, else generic). A dose that names
-// neither is EXCLUDED (it cannot fill "{drug}" — never a blank or guessed name). Empty ⇒
-// computeMedOnBoard returns null ⇒ no context line, byte-identical to pre-SR-4.
-export function mapMedDoseFacts(
-  regimens: RegimenRow[],
-  doseEvents: MedDoseEventRow[],
-  mealIntakeById: Map<string, IntakeRating | null>,
-): MedDoseFact[] {
-  const drugNameByRegimenId = new Map<string, string>()
-  for (const r of regimens) {
-    if (r.id && r.drug_name) drugNameByRegimenId.set(r.id, r.drug_name)
-  }
-  const facts: MedDoseFact[] = []
-  for (const e of doseEvents) {
-    const admin = first(e.medication_administrations)
-    if (!admin) continue
-    const pairedVehicleIntake = admin.paired_event_id
-      ? (mealIntakeById.get(admin.paired_event_id) ?? null)
-      : null
-    const onBoard = doseToMedicationWindow({
-      medicationItemId: admin.medication_item_id,
-      occurredAt: e.occurred_at,
-      adherence: admin.adherence,
-      pairedVehicleIntake,
-    })
-    if (!onBoard) continue // not administered / not on board — never named as a logged dose
-    const item = first(admin.medication_items)
-    const label = resolveDrugLabel(
-      admin.medication_id ? drugNameByRegimenId.get(admin.medication_id) : undefined,
-      item?.generic_name,
-      item?.brand_name,
-    )
-    if (!label) continue // unnameable — excluded from the context
-    facts.push({ occurredAt: e.occurred_at, drugLabel: label })
-  }
-  return facts
-}
-
-// `pairedEventIds` = the set of meal/treat event ids that are the VEHICLE for a live (non-soft-
-// deleted) medication dose (B-156 PR C1). A meal in this set is the drug's carrier, so detection
-// attributes its protein to the drug rather than crediting it as a food correlate. Empty (no
-// combos logged) ⇒ no meal is flagged ⇒ byte-identical to pre-B-156 behavior.
-function mapMealRows(rows: MealEventRow[], pairedEventIds: Set<string>): MealEvent[] {
-  return rows.map((r) => {
-    const meal = first(r.meals)
-    const fi = first(meal?.food_items)
-    return {
-      id: r.id,
-      occurredAt: r.occurred_at,
-      // B-156 PR C1: this meal/treat carried a co-logged dose → attribute it to the drug.
-      isMedicationVehicle: pairedEventIds.has(r.id),
-      // B-010 timestamp confidence (B-078): a feeding is timed-eligible when 'witnessed'
-      // OR NULL (meals are inherently witnessed; legacy NULL carries the same semantics).
-      occurredAtConfidence: (r.occurred_at_confidence ?? null) as OccurredAtConfidence | null,
-      foodItemId: meal?.food_item_id ?? null,
-      primaryProtein: fi?.primary_protein ?? null,
-      // B-351 slice 6 — the food's FULL captured protein set, so a hidden secondary
-      // (the chicken in a "duck" formula) enters the case-crossover exposure set
-      // instead of being dropped on the floor. NULL/absent degrades to the primary.
-      proteins: fi?.proteins ?? null,
-      intakeRating: (meal?.intake_rating ?? null) as IntakeRating | null,
-      foodType: (fi?.food_type ?? null) as 'meal' | 'treat' | 'other' | null,
-      // B-102 PR 5: feeds the human-food provenance covariate. Not yet surfaced anywhere
-      // (no card — requirements §7); detectors ①–⑥ ignore it, so this is inert to the live
-      // Signal today. The covariate (computeHumanFoodProvenance) is exported + tested for a
-      // future detector / the Step-9 vet report to consume.
-      format: (fi?.format ?? null) as FoodFormat | null,
-      foodLabel: fi ? `${fi.brand} ${fi.product_name}`.trim() : null,
-      // attributionConfidence omitted → 'high' (today's per-pet logging
-      // semantics). B-040 will supply 'low' for shared / free-fed bowls.
-    }
-  })
-}
-
-// ── Per-incident visual red flags (B-340) ─────────────────────────────────────
-// The Home safety-lane input for a blood / foreign-material flag the owner photographed. Read from
-// event_ai_analysis (RLS-scoped by the caller's JWT, like every read here — the row's own
-// event_ai_analysis_owner policy), INNER-joined to events so we get the incident's occurred_at AND
-// enforce the two contracts the pure engine relies on: the analyzed event must be NON-soft-deleted
-// (deleted_at IS NULL) and within the lookback. We filter to the analysed incident families —
-// 'vomit' (B-340) and the two stool event types 'stool_normal' / 'diarrhea' (B-364, migration 034).
-// We do NOT filter on status or on the cached visual_flags/recommendation — the engine DERIVES the
-// flag from the owner-editable structured fields (blood_present for vomit, stool_blood_present for
-// stool, foreign_material_present shared), which is exactly what makes an owner override clear the
-// Home card by construction (B-339). Absent rows ⇒ [] ⇒ the detector is silent.
-type IncidentEventJoin = { occurred_at: string } | { occurred_at: string }[] | null
-interface IncidentAnalysisRow {
-  event_id: string
-  incident_type: string
-  status: string // async pipeline state — L3 (CUL-9) reads only 'completed'; the red-flag lane ignores it
-  blood_present: string | null // vomit blood (vomit_blood)
-  stool_blood_present: string | null // stool blood (stool_tristate, migration 034) — B-364
-  foreign_material_present: string | null // shared across families (013)
-  contents: string[] | null // vomit_content[] — L3 hair/retained-food (CUL-9); null on non-vomit / illegible
-  bile_present: string | null // vomit_tristate — L3 bile (CUL-9); the authoritative bile field (013)
-  events: IncidentEventJoin
-}
-
-function mapIncidentAnalyses(rows: IncidentAnalysisRow[]): IncidentAnalysisInput[] {
-  const out: IncidentAnalysisInput[] = []
-  for (const r of rows) {
-    const ev = first(r.events)
-    if (!ev?.occurred_at) continue // no joined (non-deleted, in-window) event → skip defensively
-    out.push({
-      eventId: r.event_id,
-      incidentType: r.incident_type, // raw ('vomit'|'stool_normal'|'diarrhea'); the engine maps → family
-      occurredAt: ev.occurred_at,
-      bloodPresent: r.blood_present, // read only for the vomit family
-      stoolBloodPresent: r.stool_blood_present, // read only for the stool family (B-364)
-      foreignMaterialPresent: r.foreign_material_present,
-    })
-  }
-  return out
-}
-
-/**
- * L3 (CUL-9) — project the SAME event_ai_analysis rows into the photo-composition input. Separate
- * from mapIncidentAnalyses so the red-flag lane's projection stays clean (blood/foreign only); this
- * one carries the completed/vomit gate's raw material (status + contents + the authoritative bile
- * field) and the parsed occurred ms. computePhotoComposition applies the completed/vomit filter, so
- * this maps every row; a row with no joined event is skipped defensively (occurredMs would be NaN).
- */
-function mapPhotoAnalyses(rows: IncidentAnalysisRow[]): PhotoAnalysisInput[] {
-  const out: PhotoAnalysisInput[] = []
-  for (const r of rows) {
-    const ev = first(r.events)
-    if (!ev?.occurred_at) continue
-    out.push({
-      occurredMs: Date.parse(ev.occurred_at),
-      status: r.status,
-      incidentType: r.incident_type,
-      contents: r.contents,
-      bilePresent: r.bile_present,
-    })
-  }
-  return out
-}
+// CUL-1099: the dose pull resolves now (its embed names its FK), and the engine still does not
+// read it. The adversarial pass on turning the dose rows on found they can SUPPRESS a true
+// food correlate (a pill pocket that is the allergen, marked a drug vehicle; an as-needed
+// antiemetic given after each vomit, read as a confounder that withdraws the vomit lane) and
+// ADD claims (a new correlate once pocket exposures leave both arms; the med-on-board line),
+// so by Engines v3's rule they go behind a flag rather than ship on this PR's proof. Held
+// false, the Signal's output is byte-identical to what production has shown since June, when
+// every dose read failed. CUL-1425 replaces this constant with a registered Engines key, gated
+// in the pipeline, once the corpus guard it must rewrite is free to edit.
+export const SIGNAL_DOSE_LANES_ON = false as boolean
 
 // ── Cap + flag gate (Monetization Track 2, T2-3 / B-329 + B-001) ──────────────
 // docs/monetization-and-throttling-requirements.md §4–§5. Per-function COPY of the
@@ -787,53 +492,79 @@ const handler = async (req: Request): Promise<Response> => {
     // 1. Load pet, symptom events, meal events, active diet trial — all
     //    ownership-scoped by RLS via the caller's JWT. Soft-deleted rows are
     //    excluded here (the detection module's documented contract).
+    //
+    //    CUL-989 — every multi-row pull goes through `fetchAll` (_shared/pull.ts), newest-first
+    //    on a TOTAL key, so a record past PostgREST's `max-rows` is read in full and a shortfall
+    //    that does happen drops the OLDEST rows and is REPORTED, never silent. Before this every
+    //    pull was a bare select that kept the oldest rows and dropped the newest, so a detector
+    //    asking "is this still happening?" would have read a record that stopped before today.
+    //    And every read's error is now read: a failed query throws (a 500, and the client keeps
+    //    its cached Signal) instead of arriving as an empty record written with a fresh TTL.
+    //    No exception: the dose pull's was deleted with the hint that made it resolve (CUL-1099).
     const [
       petRes,
-      symptomsRes,
-      mealsRes,
+      symptomsPull,
+      mealsPull,
       trialRes,
-      arrangementsRes,
+      arrangementsPull,
       profileRes,
-      regimensRes,
-      doseEventsRes,
-      incidentAnalysesRes,
+      regimensPull,
+      doseEventsPull,
+      incidentAnalysesPull,
     ] =
       await Promise.all([
-      supabase.from('pets').select('name, species').eq('id', petId).maybeSingle(),
-      supabase
+      supabase.from('pets').select('id, name, species, user_id').eq('id', petId).maybeSingle(),
+      fetchAll<SymptomRow>('events', (r) => r.id, (from, to) =>
+        supabase
         .from('events')
-        .select('id, event_type, occurred_at, occurred_at_confidence, severity')
+        .select('id, event_type, occurred_at, occurred_at_confidence, severity', { count: 'exact' })
         .eq('pet_id', petId)
         .in('event_type', [...CORRELATION_SYMPTOM_TYPES])
         .is('deleted_at', null)
-        .gte('occurred_at', lookbackIso),
-      supabase
+        .gte('occurred_at', lookbackIso)
+        .order('occurred_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)),
+      fetchAll<MealEventRow>('events', (r) => r.id, (from, to) =>
+        supabase
         .from('events')
         .select(
           'id, occurred_at, occurred_at_confidence, meals(food_item_id, intake_rating, food_items(primary_protein, proteins, food_type, format, brand, product_name))',
+          { count: 'exact' },
         )
         .eq('pet_id', petId)
         .eq('event_type', 'meal')
         .is('deleted_at', null)
-        .gte('occurred_at', lookbackIso),
+        .gte('occurred_at', lookbackIso)
+        .order('occurred_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)),
       // `started_at` + `target_duration_days` are selected so the B-422 effective
       // end can be derived here; `select('id')` was enough only while `active`
       // was believed to mean "running today".
+      // `indication` + `target_protein` feed EN-10's trial line only (PR-22); inert otherwise.
       supabase
         .from('diet_trials')
-        .select('id, started_at, target_duration_days')
+        .select('id, started_at, target_duration_days, indication, target_protein')
         .eq('pet_id', petId)
         .eq('status', 'active')
         .limit(1),
       // Active free-fed standing facts (B-040 R1, PR 4). No lookback filter: a
       // free_choice bowl set months ago and still down is a current standing exposure.
       // The active-window overlap is resolved inside detection, not the query.
-      supabase
+      fetchAll<ArrangementRow>('feeding_arrangements', (r) => r.id, (from, to) =>
+        supabase
         .from('feeding_arrangements')
-        .select('id, food_item_id, is_shared, active_from, active_until, food_items(primary_protein, proteins)')
+        .select(
+          'id, food_item_id, created_at, is_shared, active_from, active_until, ended_at, food_items(primary_protein, proteins)',
+          { count: 'exact' },
+        )
         .eq('pet_id', petId)
         .eq('method', 'free_choice')
-        .is('deleted_at', null),
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)),
       // Caller's IANA timezone (B-079, detector ⑥). RLS on user_profiles scopes to the
       // owner's own row (auth.uid() = id), so this returns the pet owner's profile. Absent
       // / unreadable ⇒ undefined ⇒ ⑥ stays silent (never guess UTC — §4.2).
@@ -843,20 +574,40 @@ const handler = async (req: Request): Promise<Response> => {
       // completed course is a valid historical confounder, and the [from,until] overlap with
       // the bounded symptom set is resolved inside detection. Status is irrelevant to the
       // span — started_at + ended_at fully define it (active → null end → through now).
-      supabase.from('medications').select('id, drug_name, medication_item_id, started_at, ended_at').eq('pet_id', petId),
+      // Ordered on `created_at`, not the nullable `started_at` (the generate-report reason).
+      fetchAll<RegimenRow>('medications', (r) => r.id, (from, to) =>
+        supabase
+        .from('medications')
+        // `status` and the library item's names feed EN-10's course lines only (PR-22). One FK
+        // from medications to medication_items, so the embed needs no hint.
+        .select('id, drug_name, medication_item_id, started_at, ended_at, status, medication_items(generic_name, brand_name)', { count: 'exact' })
+        .eq('pet_id', petId)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)),
       // Administered medication dose events (B-117 PR 9) — point exposures at occurred_at, the
       // dominant signal today since logged doses are regimen-unlinked (B-135). Same shape as the
       // meals join; soft-deleted + out-of-lookback rows excluded here (the engine's contract).
       // missed/refused doses are filtered in mapMedicationWindows (doseToMedicationWindow).
-      supabase
+      // The embed NAMES its FK (CUL-1099): migration 023 gave medication_administrations a
+      // second FK to events (`paired_event_id`), so a bare `medication_administrations(...)`
+      // is ambiguous and the live API answers PGRST201. Until this hint the read failed on
+      // every call and was taken as "no doses"; it now throws like every pull here.
+      // `guards/medAdminEmbedHint.test.ts` fails the build on an unhinted embed.
+      fetchAll<MedDoseEventRow & { id: string }>('events', (r) => r.id, (from, to) =>
+        supabase
         .from('events')
         .select(
-          'occurred_at, medication_administrations(medication_id, medication_item_id, adherence, paired_event_id, medication_items(generic_name, brand_name))',
+          'id, occurred_at, medication_administrations!medication_administrations_event_id_fkey(medication_id, medication_item_id, adherence, paired_event_id, medication_items(generic_name, brand_name))',
+          { count: 'exact' },
         )
         .eq('pet_id', petId)
         .eq('event_type', 'medication')
         .is('deleted_at', null)
-        .gte('occurred_at', lookbackIso),
+        .gte('occurred_at', lookbackIso)
+        .order('occurred_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)),
       // Per-incident visual red flags (B-340 vomit + B-364 stool) — the owner-editable structured
       // fields from event_ai_analysis for this pet's analysed incidents, INNER-joined to events so a
       // soft-deleted or out-of-lookback incident is excluded (the engine's contract) and we get
@@ -865,234 +616,86 @@ const handler = async (req: Request): Promise<Response> => {
       // from the structured fields (override-aware), never the cached visual_flags. `status`,
       // `contents` + `bile_present` are added for L3 photo composition (CUL-9), which reads the same
       // rows but filters to completed VOMIT reads itself (computePhotoComposition). Empty ⇒ silent.
-      supabase
+      fetchAll<IncidentAnalysisRow>('event_ai_analysis', (r) => r.event_id, (from, to) =>
+        supabase
         .from('event_ai_analysis')
         .select(
           'event_id, incident_type, status, blood_present, stool_blood_present, foreign_material_present, contents, bile_present, events!inner(occurred_at)',
+          { count: 'exact' },
         )
         .eq('pet_id', petId)
         .in('incident_type', [...RED_FLAG_INCIDENT_TYPES])
         .is('events.deleted_at', null)
-        .gte('events.occurred_at', lookbackIso),
+        .gte('events.occurred_at', lookbackIso)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)),
     ])
 
-    const pet = petRes.data as { name: string; species: string } | null
+    // The single-row reads throw on an error too (a failed trial read is not "no trial": it
+    // would unmute ⑧–⑩ and demote the correlation band for a pet mid-trial).
+    if (petRes.error) throw new Error(`pets read failed: ${petRes.error.message}`)
+    if (trialRes.error) throw new Error(`diet_trials read failed: ${trialRes.error.message}`)
+    // The zone alone degrades rather than throws: its documented absence is "detector ⑥ stays
+    // silent" (and the trial predicate's UTC fallback), a silence rather than a false calm.
+    if (profileRes.error) console.warn('generate-signal: user_profiles read failed, no timezone:', profileRes.error.message)
+
+    // CUL-989 step 3 — which pulls did not read to the end. Named for the log and handed to the
+    // pipeline, which withholds every reassuring or resolving entry and states counts as floors.
+    // The dose pull counts only while the engine reads it: an unread pull cannot make this
+    // run's record incomplete, and counting it would change output the dark gate holds still.
+    const incompletePulls = incompletePullNames({
+      symptoms: symptomsPull,
+      meals: mealsPull,
+      arrangements: arrangementsPull,
+      regimens: regimensPull,
+      ...(SIGNAL_DOSE_LANES_ON ? { doseEvents: doseEventsPull } : {}),
+      incidentAnalyses: incidentAnalysesPull,
+    })
+    if (incompletePulls.length > 0) {
+      // Error level on purpose: this is the line whose absence let CUL-975 run for a week.
+      console.error('generate-signal incomplete pulls:', petId, incompletePulls.join(', '))
+    }
+
+    const pet = petRes.data as { id: string; name: string; species: string; user_id: string | null } | null
     if (!pet) {
       return Response.json({ error: 'Pet not found' }, { status: 404, headers: CORS_HEADERS })
     }
-    const petName = pet.name || 'your pet'
 
-    const mealRows = (mealsRes.data ?? []) as MealEventRow[]
-    const doseRows = (doseEventsRes.data ?? []) as MedDoseEventRow[]
-    // B-156 PR C1 — the dose↔vehicle pairing, derived ONCE from the two already-fetched,
-    // RLS-scoped, non-soft-deleted sets. A dose's `paired_event_id` names the meal/treat event
-    // it rode inside. Two uses below, both keyed off this one join:
-    //   • `pairedEventIds` → which meals are drug vehicles (attribute the food to the drug).
-    //   • `mealIntakeById` → the vehicle's intake, to reconcile an in-doubt combo dose (B-174).
-    // No combos logged ⇒ both empty ⇒ detection behaves exactly as before B-156.
-    const pairedEventIds = new Set<string>()
-    for (const e of doseRows) {
-      const pid = first(e.medication_administrations)?.paired_event_id
-      if (pid) pairedEventIds.add(pid)
-    }
-    const mealIntakeById = new Map<string, IntakeRating | null>()
-    for (const r of mealRows) {
-      mealIntakeById.set(r.id, (first(r.meals)?.intake_rating ?? null) as IntakeRating | null)
-    }
+    // 1b. The Engines v3 flag, for the pet's OWNER, failing closed (engineFlags.ts). A read
+    //     that did not answer runs the flag-off engine and stamps '{}' (the truth about this
+    //     run). The Signal's one gated step is EN-10's context lines (engines_v3_en10, 1d).
+    const engineFlags = await readEngineFlags(supabase, typeof pet.user_id === 'string' ? pet.user_id : null)
 
-    const symptomEvents = mapSymptomRows((symptomsRes.data ?? []) as SymptomRow[])
-    const mealEvents = mapMealRows(mealRows, pairedEventIds)
-    const arrangementRows = (arrangementsRes.data ?? []) as ArrangementRow[]
-    const feedingArrangements = mapArrangementRows(arrangementRows)
-    // Foods CURRENTLY free-fed (active_until IS NULL) — the §11 #6 exclusion set for the
-    // summary's finished-rate. Matches the client's getActiveArrangementsForPet definition
-    // (free_choice + active_until IS NULL + not deleted) so the dashboard card and the
-    // summary agree on which foods' intake isn't directly observed.
-    const freeFedFoodIds = new Set<string>(
-      arrangementRows.filter((r) => r.active_until === null && r.food_item_id).map((r) => r.food_item_id as string),
-    )
-    // B-079 (⑥): the owner's IANA timezone. A non-string / empty value ⇒ undefined ⇒ ⑥ silent.
-    const profile = profileRes.data as { timezone: string | null } | null
-    const timezone = profile?.timezone || undefined
-    // B-422 — `dietTrialActive` MEANS "on a diet trial today", and `status =
-    // 'active'` stopped meaning that the moment nothing auto-completed a trial.
-    //
-    // What this flag buys is entirely suppression and promotion: it fully mutes
-    // detectors ⑧ staple-washout, ⑨ meal-type-collapse and ⑩ diet-churn (each
-    // correctly — during a trial the constant staple IS the elimination diet, and
-    // telling the owner to vary it sabotages the trial), and it promotes
-    // `food_symptom_correlation` to band 1. Read off a trial that finished in
-    // March, all four of those are wrong in the same direction: the engine stays
-    // quiet about a real dietary pattern, and leads with a weak correlation,
-    // forever. A stale flag here does not produce a wrong sentence — it produces
-    // a permanently missing one, which is why it went unnoticed.
-    //
-    // The zone is the owner's, matching every other day boundary in this function
-    // (§5.1 / B-421); absent ⇒ the shared helper's own UTC fallback, which is the
-    // same posture `dietTrialStatus` takes — a day counter off by one beats no
-    // answer.
-    const trialRow = ((trialRes.data ?? []) as { started_at: string; target_duration_days: number }[])[0]
-    const dietTrialActive =
-      trialRow !== undefined &&
-      isTrialRunning(
-        { startedAt: trialRow.started_at, targetDurationDays: trialRow.target_duration_days },
-        nowMs,
-        timezone,
+    // 1d. EN-10 (PR-22, CUL-1420): the two facts the context lines need, read ONLY while the
+    //     key is on, so flag-off makes neither read. `readCareContextFacts` carries the rules;
+    //     null (any failure, or an incomplete logging pull) means no lines, never a wrong one.
+    const careContextFacts: CareContextFacts | null = isEngineKeyOn(engineFlags, 'engines_v3_en10')
+      ? await readCareContextFacts(
+        supabase,
+        petId,
+        lookbackIso,
+        dayKeyFromIndex(localDayIndex(nowMs, (profileRes.data as { timezone: string | null } | null)?.timezone ?? undefined)),
       )
-    // B-117 PR 9 (§8): medication confounder windows — regimen spans + administered dose points.
-    // Empty (no meds logged) ⇒ detectCorrelations behaves exactly as before.
-    const regimenRows = (regimensRes.data ?? []) as RegimenRow[]
-    const medicationWindows = mapMedicationWindows(regimenRows, doseRows, mealIntakeById)
-    // SR-4 (§5.4): the med-on-board context's dose facts — administered, nameable doses from
-    // the SAME rows above. Purely additive; nothing here feeds detection.
-    const medDoseFacts = mapMedDoseFacts(regimenRows, doseRows, mealIntakeById)
-    // B-340: per-incident visual red-flag inputs (vomit blood / foreign material), derived
-    // downstream from the owner-editable structured fields. Empty ⇒ the red-flag lane is silent.
-    const incidentAnalysisRows = (incidentAnalysesRes.data ?? []) as IncidentAnalysisRow[]
-    const incidentAnalyses = mapIncidentAnalyses(incidentAnalysisRows)
-    // L3 (CUL-9): the photo-composition projection of the same rows — completed VOMIT reads only
-    // (the filter lives in computePhotoComposition). Empty ⇒ no timing card carries composition.
-    const photoAnalyses = mapPhotoAnalyses(incidentAnalysisRows)
-
-    // 2. Detect — the pure engine ranks already-true findings (safety leads).
-    const input: DetectionInput = {
-      pet: { name: petName, species: pet.species as Species, dietTrialActive },
-      symptomEvents,
-      mealEvents,
-      feedingArrangements,
-      medicationWindows,
-      incidentAnalyses,
-      // Signals v2 (CUL-8) — the active trial for the L2 trial-response lane. The SAME row
-      // `dietTrialActive` is derived from (id/started_at/target_duration_days), passed through so the
-      // lane can place its trial-era-vs-baseline windows and count "day N of M". The detector
-      // re-checks `isTrialRunning` itself (the one predicate) — passing the row when it exists, and
-      // letting the lane gate, keeps the trial-active flag and the lane on ONE definition. Absent
-      // (no active trial) ⇒ the lane is silent, byte-identical to pre-CUL-8.
-      dietTrial: trialRow
-        ? { startedAt: trialRow.started_at, targetDurationDays: trialRow.target_duration_days }
-        : undefined,
-      timezone,
-      now: new Date(nowMs).toISOString(),
-    }
-    const ranked = detectSignals(input, DEFAULT_CONFIG)
-
-    // 3. Curate — cap the insight tail; safety findings always kept.
-    const curated = curateFindings(ranked)
-
-    // 3b. Decorate (SR-4, B-721 §5.4 + §3.3) — attach the additive payload to the curated
-    //     findings BEFORE phrasing, so templateReflection sees the falling-comparison density
-    //     gate and each cached finding carries medContext for the client (SR-5). Both facts are
-    //     computed POST-detection from data already in hand: the density from the same events
-    //     the reflection detector reads, the med context from the same medication rows the
-    //     confounder pass reads. `ranked` is untouched — nothing here changes what fires or how
-    //     it ranks (§11 AC). A null density / medContext leaves the finding unchanged.
-    const reflectionDensity: ReflectionDensity | null = computeReflectionDensity(input, DEFAULT_CONFIG)
-    const medOnBoard: MedOnBoardContext | null = computeMedOnBoard(nowMs, medDoseFacts)
-    const decoratedWithOnsets = curated.map((r) => {
-      // L3 (CUL-9): photo composition is PER-FINDING (each vomit timing finding has its own window +
-      // long-episode set), unlike the once-per-regen density/medContext, so it is computed here inside
-      // the map. It reads the finding's `longEpisodeOnsets` for the retained-food join, which is why
-      // detectSignals leaves the onsets in place (see its note) and the strip happens just below. Null
-      // for every non-timing finding and whenever no marker was seen (present-only).
-      const photoComposition: PhotoComposition | null = computePhotoComposition(
-        r.finding,
-        photoAnalyses,
-        nowMs,
-      )
-      // v1.1-b (CUL-787): the counted 4-week halves of ⑦'s lookback, PER chronicity finding (each
-      // has its own symptom type), computed from the same events the detector read. Attached here,
-      // after detection, so the valve that mutes ③ while ⑦ fires is untouched — the change an
-      // easing course shows lives inside the safety card's expand, never as a second calm card.
-      const chronicityCompare: ChronicityCompare | null =
-        r.finding.type === 'symptom_chronicity'
-          ? computeChronicityCompare(input, r.finding.symptomType, DEFAULT_CONFIG)
-          : null
-      return {
-        rank: r.rank,
-        finding: decorateFinding(
-          r.finding,
-          reflectionDensity,
-          medOnBoard,
-          photoComposition,
-          chronicityCompare,
-        ),
-      }
+      : null
+    const fingerprint = await engineFingerprint({
+      engine: 'generate-signal',
+      version: SIGNAL_ENGINE_VERSION,
+      config: DEFAULT_CONFIG,
+      phrasingModel: PHRASING_MODEL,
+      engineFlags: engineFlags.on,
     })
-    // Strip the internal onset arrays now that BOTH consumers have run — the episode-set-aware
-    // suppression (inside detectSignals) and L3's retained-food join (just above). This is
-    // detectSignals's old final step, relocated here (CUL-9) because L3 needs the onsets alive through
-    // decoration; it keeps the raw per-episode timestamps out of the phrasing / cache / HTTP layer
-    // (CUL-7 finding ②), including the copy that rides on a merged timing_story's `long` block.
-    const strippedFindings = stripInternalOnsets(decoratedWithOnsets.map((r) => r.finding))
-    const decorated = decoratedWithOnsets.map((r, i) => ({ rank: r.rank, finding: strippedFindings[i] }))
 
-    // 4. Phrase — one sentence per finding, in parallel, each falling back to
-    //    its template independently. The set is never blank because the LLM
-    //    failed (§2): a failed call yields the template, not a dropped card.
-    const cachedFindings: CachedFinding[] = await Promise.all(
-      decorated.map(async (r) => ({
-        rank: r.rank,
-        text: await phraseFinding(r.finding, petName, phrasingEnabled),
-        finding: r.finding,
-      })),
-    )
-
-    // 4b. AI summary (B-023 PR 4). Assemble a DETERMINISTIC fact packet from the curated
-    //     findings + the descriptive intake aggregates (computed over the same in-memory
-    //     meal/symptom arrays — no second DB read), then phrase it (Haiku join-and-smooth,
-    //     validateSummary-gated, deterministic template fallback). Null when nothing is
-    //     substantive — the client then renders its own "still gathering" state. Reads only
-    //     the cards' data, so it is grounded in what the dashboard shows.
-    const summaryPacket = buildSummaryPacket({
-      petName,
-      findings: curated.map((r) => r.finding),
-      mealEvents,
-      symptomEvents,
-      freeFedFoodIds,
-      nowMs,
-    })
-    const summary: CachedSummary | null = summaryPacket ? await phraseSummaryText(summaryPacket, phrasingEnabled) : null
-
-    // 5. Cache. Empty findings = building/stale (§3.3), NEVER an all-clear (§9).
-    const isBuilding = cachedFindings.length === 0
-    const hasRecentActivity = [...symptomEvents, ...mealEvents].some(
-      (e) => nowMs - Date.parse(e.occurredAt) <= 2 * MS_PER_DAY,
-    )
-    const signalText = isBuilding
-      ? buildBuildingText(petName, hasRecentActivity)
-      : cachedFindings[0].text
-
-    // Coverage diagnostics (B-053) — the "why no signal yet?" reasons. We compute
-    // them whenever there are NO findings (isBuilding); the server cannot know which
-    // empty-state the client will derive (building/no_pattern/stale needs the local
-    // hasSubstantialHistory the server doesn't have), so it caches coverage for any
-    // empty result and the CLIENT renders the top diagnostic only on no_pattern. The
-    // detectors are individually safe on a truly-empty pet (rate_meals needs ≥1 meal,
-    // staple_washout needs a single protein + symptoms), so a pure building pet
-    // yields []. Per §9 these describe DATA COVERAGE, never wellness.
-    const coverage: CoverageDiagnostic[] = isBuilding ? detectCoverage(input, DEFAULT_CONFIG) : []
-
-    // 5b. The labeled stand-down (CUL-786). Read the PRIOR row before it is replaced — the
-    //     only memory the engine has of what the card said last time — and mint a marker for a
-    //     chronicity course that stopped on its recency floor with logging held across the gap
-    //     (standDown.ts carries the four conditions). Read with the caller's JWT like every
-    //     other read here, so RLS scopes it to the owner. A failed read withholds the marker
-    //     (today's wordless vanish — the safe direction for a sentence about absence), warned.
-    //     `isBuilding` / `signalText` / the summary above were computed over the REAL findings
-    //     and stay byte-identical; only the cached array gains the marker, in the card's former
-    //     slot. An older client renders the unknown type as nothing (the G10 pin).
-    //     The WHOLE block is fenced (code review, 2026-09-03): a throw anywhere in it — the
-    //     read, the resolution, the merge — must cost the marker, never the regen. Without
-    //     the fence it would fall to the handler's outer catch and no row would be written,
-    //     blanking the pet's Signal over a bug in the one part of the payload that is
-    //     decoration on the record rather than the record.
-    let cachedEntries: CachedEntry[] = cachedFindings
+    // 1c. The previous cache row, read BEFORE it is replaced: the only memory the engine has
+    //     of what the card said last time (the labeled stand-down, CUL-786). Read with the
+    //     caller's JWT like every other read here, so RLS scopes it to the owner. A failed
+    //     read withholds the marker (today's wordless vanish, the safe direction for a
+    //     sentence about absence), warned. Fenced: a throw costs the marker, never the regen.
+    let prior: PriorSignal | null = null
     try {
-      let prior: ReturnType<typeof readPriorEntries> = []
-      let priorGeneratedAtMs: number | null = null
       const { data: priorRow, error: priorError } = await supabase
         .from('ai_signals')
-        .select('findings, generated_at')
+        .select('findings, generated_at, engine_flags')
         .eq('pet_id', petId)
         .order('expires_at', { ascending: false })
         .limit(1)
@@ -1100,24 +703,58 @@ const handler = async (req: Request): Promise<Response> => {
       if (priorError) {
         console.warn('generate-signal: prior ai_signals read failed — no stand-down minted:', priorError.message)
       } else if (priorRow) {
-        prior = readPriorEntries(priorRow.findings)
-        const gen = Date.parse(String(priorRow.generated_at ?? ''))
-        priorGeneratedAtMs = Number.isFinite(gen) ? gen : null
+        prior = { findings: priorRow.findings, generatedAt: priorRow.generated_at, engineFlags: priorRow.engine_flags }
       }
-      const standDowns = resolveStandDowns({
-        prior,
-        priorGeneratedAtMs,
-        current: curated.map((r) => r.finding),
-        input,
-        config: DEFAULT_CONFIG,
-        nowMs,
-      })
-      cachedEntries = mergeStandDowns(cachedFindings, standDowns, petName)
-    } catch (standDownErr) {
-      const detail = standDownErr instanceof Error ? standDownErr.message : String(standDownErr)
-      console.warn('generate-signal: stand-down resolution failed — findings written without a marker:', detail)
-      cachedEntries = cachedFindings
+    } catch (priorErr) {
+      const detail = priorErr instanceof Error ? priorErr.message : String(priorErr)
+      console.warn('generate-signal: prior ai_signals read failed — no stand-down minted:', detail)
     }
+
+    // 2–3. Detect, curate, decorate, build the summary packet and resolve the stand-downs:
+    //      the pure pipeline (./pipeline.ts), over exactly the rows read above. The care
+    //      record is reserved for EN-9 (PR-23) and read by nothing yet, so no read feeds it.
+    const result = runSignalPipeline({
+      rows: {
+        pet: { name: pet.name, species: pet.species },
+        symptoms: symptomsPull.rows,
+        meals: mealsPull.rows,
+        activeTrials: (trialRes.data ?? []) as ActiveTrialRow[],
+        arrangements: arrangementsPull.rows,
+        timezone: (profileRes.data as { timezone: string | null } | null)?.timezone ?? null,
+        regimens: regimensPull.rows,
+        doseEvents: SIGNAL_DOSE_LANES_ON ? doseEventsPull.rows : [],
+        incidentAnalyses: incidentAnalysesPull.rows,
+      },
+      incompletePulls,
+      prior,
+      nowMs,
+      engineFlags,
+      careRecord: { ownerAnswers: [], appointments: [] },
+      careContextFacts,
+    })
+    // 4. Phrase — one sentence per finding, in parallel, each falling back to
+    //    its template independently. The set is never blank because the LLM
+    //    failed (§2): a failed call yields the template, not a dropped card.
+    //    CUL-989: over an incomplete read every card is its template, which is where the
+    //    "at least N" lives; a model sentence could restate a floor as a total.
+    const phraseWithModel = phrasingEnabled && result.incompleteDisclosure === null
+    const texts = await Promise.all(
+      result.findings.map((r) => phraseFinding(r.finding, result.petName, phraseWithModel)),
+    )
+    // 4b. AI summary (B-023 PR 4): the pipeline's deterministic fact packet, phrased
+    //     (validateSummary-gated, template fallback). Null when nothing is substantive.
+    //     Over an incomplete read the pipeline hands the disclosure instead (CUL-989 step 3:
+    //     it withholds and SAYS SO), and there is no packet to phrase.
+    const summary: CachedSummary | null = result.incompleteDisclosure
+      ?? (result.summaryPacket ? await phraseSummaryText(result.summaryPacket, phrasingEnabled) : null)
+
+    // 5. Cache. Empty findings = building/stale (§3.3), NEVER an all-clear (§9).
+    const payload = assembleSignal(result, texts, summary)
+    if (payload.standDownError !== null) {
+      console.warn('generate-signal: stand-down resolution failed — findings written without a marker:', payload.standDownError)
+    }
+    const { signalText, isBuilding, coverage } = payload
+    const cachedEntries: CachedEntry[] = payload.findings
 
     // Replace the pet's cached signal (last-write-wins; keeps row count bounded
     // without a unique constraint, matching the project's sync philosophy).
@@ -1129,11 +766,48 @@ const handler = async (req: Request): Promise<Response> => {
       findings: cachedEntries,
       coverage,
       summary,
+      // CUL-989: a row computed from an incomplete read expires in an hour, not the column's
+      // 24h default, so the next open retries the read instead of serving the withheld state
+      // (and its disclosure) for a day.
+      ...signalStampValues(engineFlags, fingerprint),
+      ...(incompletePulls.length > 0 ? { expires_at: new Date(nowMs + INCOMPLETE_READ_TTL_MS).toISOString() } : {}),
     })
     if (insertError) throw new Error(`ai_signals write failed: ${insertError.message}`)
 
+    // 6. What the Signal showed (MFU-3): one row per served entry, identity + tier + a hash
+    //    of the text. Service role, keyed on the id the RLS-scoped pets read returned (the
+    //    ownership check). Fenced like the stand-down: the log is measurement, and a failure
+    //    here must cost its rows, never the Signal the owner is waiting for.
+    try {
+      const rows = await buildShownLogRows({
+        petId: pet.id,
+        generatedAtIso: new Date(nowMs).toISOString(),
+        entries: cachedEntries,
+        engineFlags,
+        fingerprint,
+      })
+      const adminClient = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      )
+      const { error: logError } = await insertShownLog(adminClient, rows)
+      if (logError) console.warn('generate-signal: the shown-log write failed:', logError)
+    } catch (logErr) {
+      const detail = logErr instanceof Error ? logErr.message : String(logErr)
+      console.warn('generate-signal: the shown-log write failed:', detail)
+    }
+
     return Response.json(
-      { is_building: isBuilding, signal_text: signalText, findings: cachedEntries, coverage, summary },
+      {
+        is_building: isBuilding,
+        signal_text: signalText,
+        findings: cachedEntries,
+        coverage,
+        summary,
+        // CUL-989: which pulls did not read to the end ([] on a complete read). The cache row
+        // has no column for it; the summary carries the owner-facing half.
+        record_incomplete: incompletePulls,
+      },
       { headers: CORS_HEADERS },
     )
   } catch (err) {
@@ -1143,6 +817,70 @@ const handler = async (req: Request): Promise<Response> => {
       { error: 'Signal generation failed', detail: message },
       { status: 500, headers: CORS_HEADERS },
     )
+  }
+}
+
+// ── EN-10's reads (Engines v3 PR-22, CUL-1420) ────────────────────────────────
+//
+// The Signal shell is the ONE engine reader of a vet table (vet visits spec AC 10, amended
+// 2026-09-28; registered in guards/visitReaders.test.ts with its column list). It reads one
+// column, `visited_at`, of one row: the most recent non-deleted visit before the owner's today. The date starts a window; it never enters a count, a floor or a test statistic, and
+// no clinic, vet, reason or note is selected. Caller's JWT, so RLS scopes it to the owner.
+//
+// The logging pull is every non-deleted event in the lookback, of every type but the daily
+// look's `check_in` parent (a look never enters another surface's coverage line), for the
+// "something logged on k of n" half of each line. Paged like every pull here (CUL-989).
+//
+// Fails toward NO LINES: a failed read or an incomplete logging pull returns null, logged. A
+// line with a wrong window, or a coverage count that is a floor, is worse than no line.
+export async function readCareContextFacts(
+  supabase: SupabaseClient,
+  petId: string,
+  lookbackIso: string,
+  todayKey: string,
+): Promise<CareContextFacts | null> {
+  try {
+    const [visitRes, loggedPull] = await Promise.all([
+      supabase
+        .from('vet_visits')
+        .select('visited_at')
+        .eq('pet_id', petId)
+        .is('deleted_at', null)
+        // Strictly before today: a visit dated today opens no window yet, and must not hide the
+        // one before it (a recheck today over a Depo-Medrol visit ten days ago).
+        .lt('visited_at', todayKey)
+        .order('visited_at', { ascending: false })
+        .limit(1),
+      fetchAll<{ id: string; occurred_at: string }>('events', (r) => r.id, (from, to) =>
+        supabase
+          .from('events')
+          .select('id, occurred_at', { count: 'exact' })
+          .eq('pet_id', petId)
+          .neq('event_type', 'check_in')
+          .is('deleted_at', null)
+          .gte('occurred_at', lookbackIso)
+          .order('occurred_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)),
+    ])
+    if (visitRes.error) {
+      console.warn('generate-signal: vet_visits read failed, no context lines:', visitRes.error.message)
+      return null
+    }
+    if (incompletePullNames({ logged: loggedPull }).length > 0) {
+      console.warn('generate-signal: the logging pull was incomplete, no context lines:', petId)
+      return null
+    }
+    // The error was read above; an absent row is "no visit on record", a real answer.
+    const visit = (visitRes.data as { visited_at: string | null }[] | null)?.[0]
+    return {
+      lastVisitOn: typeof visit?.visited_at === 'string' ? visit.visited_at : null,
+      loggedAt: loggedPull.rows.map((r) => r.occurred_at),
+      readSinceIso: lookbackIso,
+    }
+  } catch (err) {
+    console.warn('generate-signal: context-line reads failed, no context lines:', err instanceof Error ? err.message : String(err))
+    return null
   }
 }
 

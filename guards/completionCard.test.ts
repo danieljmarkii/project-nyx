@@ -32,6 +32,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankComments } from './blankComments';
 import { createFixtureRoot, removeFixtureRoot, writeFixture } from './fixtureRoot';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -128,26 +129,24 @@ const DEFINITIONS = ['lib/meals.ts', 'lib/medicationDose.ts', 'lib/looks.ts', 'l
 
 const EXEMPTION = /\/\/\s*completion-card-ok:\s*\S+/;
 
-/**
- * Comments out, code in. Both halves of this scan need it, and the first run without
- * it proved why in both directions:
- *
- *   • FALSE POSITIVE. `app/(tabs)/foods.tsx` was flagged as an unwired meal writer on
- *     the strength of the prose "skips insertMeal (the capture screen already branches
- *     on that)" — a sentence ABOUT the rule, matched as a call to it.
- *   • FALSE NEGATIVE, the costlier direction. `app/log.tsx` and `components/log/FAB.tsx`
- *     both carry a comment containing the word `showMeal` — the very warning this guard
- *     was built to replace. Matching raw source would let a future path satisfy the rule
- *     by pasting that comment along with the code, which is exactly how the comment
- *     failed in the first place.
- *
- * Deliberately a lexical strip, not a parse: block comments (so JSX `{/* … *\/}` goes
- * too), then line comments. It will also blank the tail of a string containing `//`,
- * which cannot produce a false result here — nothing this scans for lives inside a URL.
- */
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
-}
+// Comments out, code in: every read below goes through the shared single-pass blanker
+// (`guards/blankComments.ts`, C-18). Both halves of this scan need it, and the first run
+// without it proved why in both directions:
+//
+//   • FALSE POSITIVE. `app/(tabs)/foods.tsx` was flagged as an unwired meal writer on
+//     the strength of the prose "skips insertMeal (the capture screen already branches
+//     on that)" — a sentence ABOUT the rule, matched as a call to it.
+//   • FALSE NEGATIVE, the costlier direction. `app/log.tsx` and `components/log/FAB.tsx`
+//     both carry a comment containing the word `showMeal` — the very warning this guard
+//     was built to replace. Matching raw source would let a future path satisfy the rule
+//     by pasting that comment along with the code, which is exactly how the comment
+//     failed in the first place.
+//
+// This used to be a local `.replace()` chain whose header said a `//` inside a string
+// could only blank that string's tail. It blanked the rest of the LINE, and a `/*` inside
+// a string (a MIME glob, `'image/*'`) blanked everything up to the next block-comment
+// close in the file, so a real write after either went unseen (CUL-884). The detector
+// tests below pin both shapes.
 
 // `root` is threaded through the walk rather than read from the module constant, so
 // this guard's detector fixtures can live in a temp tree instead of inside `app/`,
@@ -189,13 +188,13 @@ function sourceFiles(root: string): string[] {
  * form, so the bounded form is always present in a genuinely wired file.
  */
 function wiresHandle(src: string, handle: string): boolean {
-  return new RegExp(`\\b${handle}\\b`).test(stripComments(src));
+  return new RegExp(`\\b${handle}\\b`).test(blankComments(src));
 }
 
 function callSites(helper: string, root: string): string[] {
   const call = new RegExp(`\\b${helper}\\s*\\(`);
   return sourceFiles(root).filter((rel) =>
-    call.test(stripComments(fs.readFileSync(path.join(root, rel), 'utf8'))),
+    call.test(blankComments(fs.readFileSync(path.join(root, rel), 'utf8'))),
   );
 }
 
@@ -241,7 +240,7 @@ describe('§5 — every commit path routes through its completion card', () => {
     // dead weight that silently widens the hole it was granted for.
     const stale = Object.keys(EXEMPT).filter((rel) => {
       if (!fs.existsSync(path.join(ROOT, rel))) return true;
-      const src = stripComments(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+      const src = blankComments(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
       return !RULES.some((r) => new RegExp(`\\b${r.helper}\\s*\\(`).test(src));
     });
     expect(stale).toEqual([]);
@@ -283,6 +282,25 @@ describe('the detector itself', () => {
     // The `app/(tabs)/foods.tsx` false positive from this guard's first run.
     write(`{/* skips insertMeal (the capture screen branches) */}\n`);
     expect(callSites('insertMeal', root)).not.toContain(REL);
+  });
+
+  it('FLAGS a write that sits after a URL literal on the same line (C-18)', () => {
+    // CUL-884: the old chain read the URL's `//` as a comment and blanked the rest of
+    // the line, the write with it.
+    write(`const HELP = 'https://example.com/help'; const r = await insertMeal({ petId, foodId });\n`);
+    expect(callSites('insertMeal', root)).toContain(REL);
+  });
+
+  it("FLAGS a write that sits after a '/*' inside a string (C-18)", () => {
+    // The same chain paired a MIME glob's `/*` with the next block-comment close in the
+    // file and blanked everything between; `'image/*'` is ordinary in a capture screen.
+    write([
+      `const ACCEPT = ['image/*'];`,
+      `const r = await insertMeal({ petId, foodId });`,
+      `{/* a later JSX comment */}`,
+      '',
+    ].join('\n'));
+    expect(callSites('insertMeal', root)).toContain(REL);
   });
 
   it('does NOT accept a commented-out handle as wiring', () => {

@@ -212,6 +212,9 @@ describe('AC-FOUND — witnessed / open-ended / bounded', () => {
       // CUL-802 — reported up so the host can decide where the owner lands. False
       // here: nothing was attached, so this vomit goes back to Home as it always has.
       hasAttachment: false,
+      // CUL-964 — its sibling, for the beat's Undo gate: whether this removal would
+      // take a note the owner cannot re-write. False for the same reason.
+      hasNote: false,
     });
   });
 
@@ -313,6 +316,25 @@ describe('SimpleEventConfirm — the draft it reports up', () => {
     expect(latestDraft(onDraftChange).hasNote).toBe(false);
     fireEvent.changeText(input, 'threw up on the rug');
     expect(latestDraft(onDraftChange).hasNote).toBe(true);
+  });
+
+  it('reports the note UP with the write, on the same trim the row was written with', async () => {
+    // CUL-964 — the beat's Undo gate names what a removal would take with it, and this
+    // is the only component that knows a note was typed. Asserted on the SAME
+    // expression the write uses (`notes.trim()`), because a gate that named a note the
+    // row does not hold teaches the owner to distrust what the dialog says — and one
+    // that missed a real note destroys her sentence without a word.
+    const { getByPlaceholderText, getByText, onLogged } = renderConfirm('vomit');
+    fireEvent.changeText(getByPlaceholderText('Add a note (optional)'), '   ');
+    fireEvent.press(getByText('Log it'));
+    await waitFor(() => expect(onLogged).toHaveBeenCalled());
+    expect(onLogged.mock.calls[0][0].hasNote).toBe(false);
+
+    const second = renderConfirm('vomit');
+    fireEvent.changeText(second.getByPlaceholderText('Add a note (optional)'), 'threw up on the rug');
+    fireEvent.press(second.getByText('Log it'));
+    await waitFor(() => expect(second.onLogged).toHaveBeenCalled());
+    expect(second.onLogged.mock.calls[0][0].hasNote).toBe(true);
   });
 
   it('switching to "Found it" counts — it changes the confidence that gets written', () => {

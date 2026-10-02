@@ -13,8 +13,11 @@ import { LOOK_WORDS, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, lookWordKind } from
 import { TREND_SYMPTOM_TYPES } from '../lib/trendSummary';
 import { SYMPTOM_EVENT_TYPES } from '../lib/analytics';
 import { eventTintCategory, describeDayEvent } from '../lib/dayEvents';
+import { HISTORY_TYPE_KEYS, emptyDayFacts, type HistoryFilter } from '../lib/historyDays';
+import { stripMarkOf, type StripWindow } from '../lib/stripMarks';
 import type { TimelineRow } from '../lib/db';
 import { theme } from './theme';
+import { blankComments } from '../guards/blankComments';
 
 // ── The HR-6 membership walk for W1 (cough + sneeze) — CUL-675 ───────────────
 //
@@ -77,22 +80,22 @@ function declBlock(relPath: string, marker: string, terminator: string): string 
   return src.slice(start, end + terminator.length);
 }
 
-/** Comments out, code in (the completionCard-guard lesson, re-learned here on 3b-s1:
- *  the LANE_SYMPTOM_TYPES cell DOCSTRINGS say "cough: NEVER (§9)" — prose about the
- *  membership, matched by the Record-key regex as the membership). Same-length
- *  replacement so marker/terminator offsets stay honest. */
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
-    .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
+/** What a block of source DECLARES for each walked leaf. Comments out, code in (the
+ *  completionCard-guard lesson, re-learned here on 3b-s1: the LANE_SYMPTOM_TYPES cell
+ *  DOCSTRINGS say "cough: NEVER (§9)", prose about the membership that the Record-key
+ *  regex reads as the membership). The shared single-pass blanker (C-18, CUL-884)
+ *  replaces a `.replace()` chain that read a URL's `//` or a glob's `/*` inside a string
+ *  as a comment opener and blanked a real member after it. A leaf lives in a list as a
+ *  quoted member ('cough') OR as a Record key (cough:): the label maps use the key form,
+ *  and missing it read three joined rows as absent. */
+function declaredKeys(src: string): WalkReading {
+  const code = blankComments(src);
+  const has = (key: string) => new RegExp(`'${key}'|\\b${key}\\s*:`).test(code);
+  return { cough: has('cough'), sneeze: has('sneeze'), check_in: has('check_in') };
 }
 
 function scan(relPath: string, marker: string, terminator: string): WalkReading {
-  const block = stripComments(declBlock(relPath, marker, terminator));
-  // A leaf lives in a list as a quoted member ('cough') OR as a Record key (cough:) —
-  // the label maps use the key form, and missing it read three joined rows as absent.
-  const has = (key: string) => new RegExp(`'${key}'|\\b${key}\\s*:`).test(block);
-  return { cough: has('cough'), sneeze: has('sneeze'), check_in: has('check_in') };
+  return declaredKeys(declBlock(relPath, marker, terminator));
 }
 
 const inSet = (set: ReadonlySet<string> | readonly string[]) => (): WalkReading => {
@@ -104,7 +107,15 @@ const inSet = (set: ReadonlySet<string> | readonly string[]) => (): WalkReading 
 const WALK: WalkRow[] = [
   {
     list: 'SYMPTOM_TYPES (constants/eventTypes.ts)',
-    governs: 'row-surface tint + the soft commit haptic (§8a de-symptomization)',
+    governs: 'row-surface tint + the soft commit haptic (§8a de-symptomization). Transitive consumers (C-11): '
+      + 'History v2\'s All-symptoms filter, its rose day-header words and its symptom compare door '
+      + '(lib/historyDays.ts, CUL-1161) ride this set, so a leaf that joins it joins those the same day; '
+      + 'stool_normal stays out, so the Stool filter and its header word are neutral, as its rows are. '
+      + 'So does History v2\'s week strip ROSE (lib/stripMarks.ts, CUL-1165): All symptoms roses any leaf '
+      + 'of this set and a type filter roses its own leaf exactly when the leaf is in it (through '
+      + 'isSymptomFilter), so stool_normal\'s filter draws a neutral line, as its rows do. All types does '
+      + 'NOT ride it: that rose is the Patterns month\'s vomiting-episode mark, so a cough day is never rose '
+      + 'there (the set equality is asserted below, over the shipped function)',
     read: inSet(SYMPTOM_TYPES),
     cough: { now: true, decision: 'YES — joins in THIS PR (§6 pairing rule)' },
     sneeze: { now: true, decision: 'YES — joins in THIS PR (§6 pairing rule)' },
@@ -485,24 +496,38 @@ const WALK: WalkRow[] = [
     governs: 'T-5 at its strongest: not "no lane" but "the string does not occur". Covers loggingDaysInWindow, countsTowardComparisonGate and every future consumer of a fetched row in one assertion',
     read: () => {
       const dir = join(ROOT, 'supabase/functions/generate-signal');
-      const src = readdirSync(dir)
+      const files = readdirSync(dir)
         .filter((f) => /\.ts$/.test(f) && !/\.test\.ts$/.test(f))
-        .map((f) => stripComments(readFileSync(join(dir, f), 'utf8')))
-        .join('\n');
-      const has = (key: string) => new RegExp(`'${key}'|\\b${key}\\s*:`).test(src);
-      return { cough: has('cough'), sneeze: has('sneeze'), check_in: has('check_in') };
+        .map((f) => declaredKeys(readFileSync(join(dir, f), 'utf8')));
+      return {
+        cough: files.some((r) => r.cough),
+        sneeze: files.some((r) => r.sneeze),
+        check_in: files.some((r) => r.check_in),
+      };
     },
     cough: { now: true, decision: 'YES — present since 3b (the universe, the fetch, the chronicity cell, the label). Read as "the engine knows this word", never as a lane membership: the per-lane row above is the ruling.' },
     sneeze: { now: true, decision: 'YES — typed and nameable at W1 though not fetched (§9). Same reading as cough.' },
     check_in: {
-      now: false,
-      decision: 'NO — ZERO OCCURRENCES, which is a stronger claim than any single list can make and '
+      now: true,
+      decision: 'YES, AS AN EXCLUSION ONLY (CUL-1420, Engines v3 PR-22) — exactly one occurrence, '
+        + '`.neq(\'event_type\', \'check_in\')` in index.ts readCareContextFacts, which keeps a look OUT '
+        + 'of EN-10\'s "something logged on k of n" (a look never enters another surface\'s coverage '
+        + 'line). Pinned below to that one occurrence. The ruling it replaced, kept for the record: '
+        + 'NO — ZERO OCCURRENCES, which is a stronger claim than any single list can make and '
         + 'the one the third adversarial pass actually verified ("check_in is 0x in '
         + 'supabase/functions/"). It is the whole of T-5 in one assertion: the engine cannot read, '
         + 'count, gate or name a look because the value is not in its source. The day N-6 teaches '
         + 'generate-REPORT about looks this row is untouched — the scope is the engine directory '
         + 'alone, deliberately, so the report can gain Appendix G without loosening the engine.',
     },
+  },
+  {
+    list: 'ALL_SIGNS + DRUG_CLASS_EFFECTS (generate-signal/careContext.ts)',
+    governs: 'EN-10\'s drug table (CUL-1420): which signs a medication course is drawn beside, and which signs it may MASK, so a zero is withheld. Placement only — every count is the chronicity lane\'s own episodes',
+    read: () => scan('supabase/functions/generate-signal/careContext.ts', 'const ALL_SIGNS', 'export const DRUG_NAME_CLASSES'),
+    cough: { now: true, decision: 'YES — a systemic steroid masks every sign, and inhaled corticosteroids, antitussives and bronchodilators mask cough (§5.1\'s rows, verbatim). Absent, a zero cough count would print beside prednisone: the "it worked" reading §5.1 forbids.' },
+    sneeze: { now: true, decision: 'YES — in ALL_SIGNS only (a systemic steroid masks it). No lane carries sneeze today, so no line is drawn beside it; the membership is there before a finding can be, the SYMPTOM_LABEL precedent.' },
+    check_in: { now: false, decision: 'NO — a look is not a sign a drug moves, and it never reaches a context line (the logging pull excludes it; see the whole-source row).' },
   },
   {
     list: 'LOOK_WORDS + LOOK_HEAD_WORDS (constants/lookWords.ts)',
@@ -556,6 +581,28 @@ const WALK: WalkRow[] = [
     },
   },
   {
+    list: 'SAME_MINUTE_OBSERVATION_TYPES (lib/sameMinuteDuplicates.ts)',
+    governs:
+      'which types collapse BY TYPE in the same-minute duplicate rule History v2 discloses and the vet '
+      + 'report drops (CUL-1161; the report adopts the module in HV-15). A REPORT mirror, not a client '
+      + 'list: DEDUP_OBSERVATION_TYPES = REPORT_SYMPTOM_TYPES + stool_normal, held equal by the '
+      + 'differential in lib/sameMinuteDuplicates.test.ts, so this row flips when that row does',
+    read: () => scan('lib/sameMinuteDuplicates.ts', 'export const SAME_MINUTE_OBSERVATION_TYPES', ']);'),
+    cough: {
+      now: true,
+      decision: 'YES — REPORT_SYMPTOM_TYPES holds cough (3b session 2), so a cough logged twice inside a '
+        + 'minute is one incident in the report, and History must disclose that pair or its count and '
+        + 'the report\'s disagree with nothing to say why (PMD-10).',
+    },
+    sneeze: { now: true, decision: 'YES — same ground: sneeze is in REPORT_SYMPTOM_TYPES.' },
+    check_in: {
+      now: false,
+      decision: 'NO — a look is outside the population both surfaces read (the report filters it at its '
+        + 'input boundary, History\'s population excludes it), so it can only ever reach the rule as '
+        + '`keep|<id>`, never collapsed and never counted.',
+    },
+  },
+  {
     list: 'signalWatching gap row (lib/signalWatching.ts)',
     governs: 'the sub-floor "watching" register — vomit-anchored BY DESIGN (v1 scoped to the dominant symptom)',
     read: () => scan('lib/signalWatching.ts', 'export const WATCHING_GAP_SYMPTOM_LABEL', ';'),
@@ -572,6 +619,26 @@ const WALK: WalkRow[] = [
       decision: 'NO — the sub-floor watching register is vomit-anchored and is a claim about what the '
         + 'ENGINE is watching. A look is not watched by anything; the card\'s own footer says what '
         + 'coverage it has, with its own denominator (T-16).',
+    },
+  },
+  {
+    list: 'care_acknowledgements.symptom_type CHECK (supabase/migrations/082_care_record.sql)',
+    governs: 'which signs an owner\'s "my vet knows" answer may be stored for (EN-9, CUL-1415): the '
+      + 'signs that can BE a concern, chronicity ∪ worsening (care-state spec §3.1). guards/careRecord.test.ts '
+      + 'pins it to LANE_SYMPTOM_TYPES, so a lane that widens reds until a migration widens the CHECK',
+    read: () => scan('supabase/migrations/082_care_record.sql',
+      'symptom_type  TEXT        NOT NULL CHECK', '),'),
+    cough: {
+      now: true,
+      decision: 'YES — cough is in the chronicity cell (§9 cough row), so a chronic cough is a concern and '
+        + 'the owner may say the vet knows about it. One sign per row (GAP-29): a cough answer never '
+        + 'covers vomiting.',
+    },
+    sneeze: { now: false, decision: 'NO — data-only at W1 (§9); no lane fires on it, so it is never a concern' },
+    check_in: {
+      now: false,
+      decision: 'NO — a look is not a sign and no lane reads it, so it is never a concern and never '
+        + 'carries a care state.',
     },
   },
 ];
@@ -601,7 +668,72 @@ describe('membership walk (HR-6) — every list decided, current state == decide
     // +1 (CUL-874 / N-5): LOOK_LEAF_TWINS — the one object that names a look word and a
     // symptom leaf together. It sits BELOW the discovery guard's three-distinct-key floor
     // (two leaves), so the walk is the only place its membership decision can live.
-    expect(WALK).toHaveLength(22);
+    // +1 (CUL-1161 / HV-4): SAME_MINUTE_OBSERVATION_TYPES, the shared duplicate rule's set.
+    // +1 (CUL-1420 / PR-22): EN-10's drug table (careContext.ts).
+    // +1 (CUL-1415 / PR-21): the care_acknowledgements sign CHECK (migration 082).
+    expect(WALK).toHaveLength(25);
+  });
+});
+
+// The reader under every text row, driven directly (CUL-884). A member AFTER a string
+// holding a comment opener must still read as present: the chained blanker this file
+// used to carry made a URL's `//` a line comment and a glob's `/*` a block running to
+// the next `*/`, so both cases below read as absent.
+// History v2's week strip rides SYMPTOM_TYPES transitively (C-11, CUL-1165), so its
+// decision lives here as a set equality over the SHIPPED function rather than a registry
+// entry: registering lib/stripMarks.ts in guards/symptomLists.test.ts would exempt it from
+// the scan that must catch it declaring a list of its own (C-32).
+describe('the week strip\u2019s rose per filter (History v2 spec §3.4; CUL-1165)', () => {
+  const day = '2026-09-19';
+  const window: StripWindow = {
+    fromDay: '2026-09-01',
+    toDay: '2026-09-25',
+    recordStart: '2026-09-01',
+    petName: 'Nyx',
+    courseName: null,
+    claimsFrom: '2026-09-01',
+  };
+  const roseUnder = (filter: HistoryFilter, byType: Record<string, number>) =>
+    stripMarkOf({ ...emptyDayFacts(day), total: 1, byType }, filter, window, '2026-09-25').state === 'rose';
+
+  it('a type filter roses its own leaf exactly for the leaves of SYMPTOM_TYPES', () => {
+    const rosed = HISTORY_TYPE_KEYS.filter((type) => roseUnder({ kind: 'type', type }, { [type]: 1 }));
+    expect(new Set(rosed)).toEqual(new Set([...SYMPTOM_TYPES]));
+  });
+
+  it('stool_normal\u2019s decision: its filter draws a neutral line, never the rose', () => {
+    expect(roseUnder({ kind: 'type', type: 'stool_normal' }, { stool_normal: 1 })).toBe(false);
+  });
+
+  it('All symptoms roses every leaf of the set, and nothing outside it', () => {
+    for (const type of HISTORY_TYPE_KEYS) {
+      expect(roseUnder({ kind: 'symptoms' }, { [type]: 1 })).toBe(SYMPTOM_TYPES.has(type));
+    }
+  });
+
+  it('All types does not ride the set: only a vomiting episode is rose, as on the month', () => {
+    for (const type of HISTORY_TYPE_KEYS) expect(roseUnder({ kind: 'all' }, { [type]: 1 })).toBe(false);
+    const episode = stripMarkOf({ ...emptyDayFacts(day), total: 1, byType: { vomit: 1 }, vomitEpisode: true }, { kind: 'all' }, window, '2026-09-25');
+    expect(episode.state).toBe('rose');
+  });
+});
+
+describe('the walk\u2019s source reader blanks comments, never strings (C-18)', () => {
+  it('a member after a URL literal on the same line reads as present', () => {
+    expect(declaredKeys(`const DOCS = 'https://example.com/help'; const L = ['cough'];`).cough).toBe(true);
+  });
+
+  it("a member after a '/*' inside a string reads as present", () => {
+    const src = [
+      `const ACCEPT = ['image/*', 'application/pdf'];`,
+      `const LABELS = { sneeze: 'Sneezing' };`,
+      `/* a later comment, whose close the old chain paired with the glob */`,
+    ].join('\n');
+    expect(declaredKeys(src).sneeze).toBe(true);
+  });
+
+  it('prose in a comment still reads as absent (the 3b-s1 docstring lesson)', () => {
+    expect(declaredKeys(`/** cough: NEVER (§9) */ const L = ['vomit'];`).cough).toBe(false);
   });
 });
 
@@ -704,7 +836,7 @@ describe('§6 pairing rule — CATEGORY_TINT and SYMPTOM_TYPES move together', (
 });
 
 describe('the §7 detail-contract rows — the per-leaf capture/detail contract, pinned', () => {
-  it('cough: witnessed-by-construction, no photo, Breathing family, all species, v2-gated tile', () => {
+  it('cough: witnessed-by-construction, no photo, Breathing family, all species', () => {
     expect(EVENT_TYPES.cough).toMatchObject({
       label: 'Cough',
       family: 'respiratory',
@@ -713,7 +845,6 @@ describe('the §7 detail-contract rows — the per-leaf capture/detail contract,
       confidenceModel: 'witnessed', // D10 — no Saw it / Found it; a window claim is unwritable
       hasFood: false,
       hasSeverity: false,
-      v2Only: true,             // the TILE is gated; the vocabulary is not (§12 FL-1)
     });
   });
 
@@ -726,13 +857,7 @@ describe('the §7 detail-contract rows — the per-leaf capture/detail contract,
       confidenceModel: 'witnessed',
       hasFood: false,
       hasSeverity: false,
-      v2Only: true,
     });
-  });
-
-  it('exactly the W1 pair is v2-gated — pre-W1 leaves are untouched by the flag', () => {
-    const gated = (Object.keys(EVENT_TYPES) as EventTypeKey[]).filter((k) => EVENT_TYPES[k].v2Only);
-    expect(gated.sort()).toEqual(['cough', 'sneeze']);
   });
 
   it('both are symptoms (tint + calm-not-celebrate beat + soft commit haptic all derive from this)', () => {
@@ -840,5 +965,23 @@ describe('§8 degradation contract — what a build that does NOT know a leaf re
     const display = describeDayEvent(row);
     expect(display.title).toBe('Event');
     expect(display.category).toBe('other');
+  });
+});
+
+// The whole-source row's check_in decision, pinned to its one occurrence (CUL-1420): the
+// engine names the look only to exclude it from EN-10's logging pull. A second occurrence (a
+// look counted, gated or named) reds here and needs its own walk decision.
+describe('the engine names the daily look only to exclude it (CUL-1420)', () => {
+  it('exactly one occurrence under generate-signal/, and it is the logging pull’s exclusion', () => {
+    const dir = join(ROOT, 'supabase/functions/generate-signal');
+    const hits = readdirSync(dir)
+      .filter((f) => /\.ts$/.test(f) && !/\.test\.ts$/.test(f))
+      .flatMap((f) =>
+        blankComments(readFileSync(join(dir, f), 'utf8'))
+          .split('\n')
+          .filter((line) => line.includes('check_in'))
+          .map((line) => `${f}: ${line.trim()}`),
+      );
+    expect(hits).toEqual(["index.ts: .neq('event_type', 'check_in')"]);
   });
 });

@@ -29,6 +29,8 @@ export type InsightType =
   | 'intake_decline'
   | 'reflection'
   | 'symptom_worsening'
+  // Engines v3 PR-14d (CUL-1410) — absolute burden, the safety card that needs no earlier week.
+  | 'symptom_burden'
   | 'symptom_chronicity'
   | 'postprandial_timing'
   | 'timeofday_clustering'
@@ -123,6 +125,28 @@ export interface ChronicityCompare {
   priorLoggingDays: number;
   /** Whether the two halves were logged with comparable density (§3.3 — the SR-4 rule). */
   comparable: boolean;
+}
+
+// EN-10's context lines (Engines v3 PR-22 server, PR-38 client; docs/nyx-care-state-requirements.md
+// §5). A window, the count of the finding's sign in it and the days with anything logged, beside a
+// visit, a diet trial or a medication course. The server composes `text` deterministically (no
+// model ever phrases it) and has already withheld every zero the §5.1 rules forbid, so the client
+// RELAYS the sentence and never recomposes one from the numbers. Mirror of detection.ts
+// CareContextLine. OPTIONAL on each line-bearing finding: absent while `engines_v3_en10` is off,
+// on a cache written before PR-22, and wherever no line applies. Read through
+// `careContextLinesOf` (lib/careContext.ts), never off the field directly.
+export interface CareContextLine {
+  kind: 'course' | 'trial' | 'visit';
+  /** The DATE the window hangs on: the course start, the trial start or the visit day. */
+  anchorOn: string;
+  /** Days in the window. */
+  days: number;
+  /** Null when the line states no count (a withheld zero, or a window the read does not reach). */
+  count: number | null;
+  loggedDays: number | null;
+  /** The owner's name for the drug, on a course line only. */
+  drugLabel?: string;
+  text: string;
 }
 
 export interface CorrelationFinding {
@@ -224,6 +248,33 @@ export interface SymptomWorseningFinding {
   windowDays: number;
 }
 
+// Absolute symptom burden (Engines v3 PR-14d, CUL-1410; the critique's GAP-5) — the SAFETY card
+// for a high count with NO earlier week to compare to: 4+ vomits in 7 days, or a vomit on 3+
+// consecutive local days. Vomit only. A count and a run of days, never causal, never a severity
+// verdict, never reassures; ranks below intake-decline and above chronicity. On Home it replaces
+// a same-sign ④ card (the server drops it: one card per sign per week). Mirror of detection.ts
+// SymptomBurdenFinding (rendered fields; the server-only `associationalOnly` marker is omitted).
+// `tier` is the ask: 'today' = "worth a call to your vet today", 'soon' = "worth booking a vet
+// visit soon" (④'s firm ask, so the replacement never asks for less).
+export type BurdenTier = 'today' | 'soon';
+export interface SymptomBurdenFinding {
+  type: 'symptom_burden';
+  priorityClass: 'safety';
+  symptomType: SignalSymptomType;
+  /** Vomits in the window, re-logs within 60 s collapsed. */
+  count: number;
+  /** Distinct local days in the window with a vomit. */
+  days: number;
+  /** The run of consecutive local days the card states. */
+  runDays: number;
+  /** Local days since that run's last day (0 = it includes today). */
+  daysSinceRunEnd: number;
+  countArm: boolean;
+  persistenceArm: boolean;
+  tier: BurdenTier;
+  windowDays: number;
+}
+
 // Symptom chronicity / persistence (⑦, B-182) — the SAFETY-class lane that fires on
 // DURATION + sustained burden + still-ongoing, orthogonal to ④'s week-over-week delta.
 // It states the sentence the engine never said: "this has been going on for weeks and is
@@ -253,6 +304,8 @@ export interface SymptomChronicityFinding {
    *  script only). Optional because every finding cached before that engine version lacks it,
    *  and an old cache renders exactly the pre-v1.1-b card. */
   compare?: ChronicityCompare;
+  /** EN-10 (PR-38) — the visit, trial and course lines; absent otherwise (flag off / old cache / none apply). */
+  careContext?: CareContextLine[];
 }
 
 // The labeled stand-down (CUL-786 — Signal fold v1.1-a; spec §0 DF-9(a)). NOT a finding: a
@@ -317,6 +370,8 @@ export interface PostprandialTimingFinding {
    *  false/undefined ⇒ the gated split (fail-safe: only an explicit `true` clears the gate). Ships
    *  together with `eligibleMinutes`; its exact predicate is validation-gated (§7). */
   timingReliable?: boolean;
+  /** EN-10 (PR-38) — the visit, trial and course lines; absent otherwise (flag off / old cache / none apply). */
+  careContext?: CareContextLine[];
 }
 
 // Time-of-day clustering (⑥, B-079) — a descriptive count of witnessed vomiting episodes
@@ -345,6 +400,8 @@ export interface TimeOfDayClusteringFinding {
   windowDays: number;
   /** SR-4 (§5.4) — medication on board in the context window; absent otherwise (old cache / no course). */
   medContext?: MedOnBoardContext;
+  /** EN-10 (PR-38) — the visit, trial and course lines; absent otherwise (flag off / old cache / none apply). */
+  careContext?: CareContextLine[];
 }
 
 // ── L3 photo-record composition (Signals v2 / B-755 / CUL-9 §2 L3) ────────────
@@ -400,6 +457,9 @@ export interface EmptyStomachTimingFinding {
   lastTwoEligibleLong: boolean;
   /** Median HOURS-since-feeding across the long episodes — the actual observed timing (evidence). */
   medianHoursSinceFeeding: number;
+  /** Of `longCount`, the episodes whose last bowl before the onset was refused (CUL-1195): a
+   *  disclosure beside the long count. Optional so a cache written before the field renders as before. */
+  longAfterRefusalCount?: number;
   /** Forms of the feedings before the long episodes — vet-report parity ONLY, never the claim (§9.1). */
   feedingFormsInEvidence: string[];
   /** Clock concentration of the LONG episodes (evidence — the 2–8am fact renders in the expand). Absent
@@ -413,6 +473,8 @@ export interface EmptyStomachTimingFinding {
   medContext?: MedOnBoardContext;
   /** L3 (CUL-9 §2 L3) — photographed-content evidence; absent otherwise (old cache / no photos). */
   photoComposition?: PhotoComposition;
+  /** EN-10 (PR-38) — the visit, trial and course lines; absent otherwise (flag off / old cache / none apply). */
+  careContext?: CareContextLine[];
 }
 
 // The combined timing card (A2 — Signals v2 / B-755 / CUL-7 / CUL-12, D1). A
@@ -451,6 +513,8 @@ export interface TimingStoryFinding {
     count: number;
     medianHoursSinceFeeding: number;
     lastTwoEligible: boolean;
+    /** Of `count`, the long episodes after a refused bowl (CUL-1195). Optional for older caches. */
+    afterRefusalCount?: number;
     feedingFormsInEvidence: string[];
     clockBand?: { startLocalHour: number; windowHours: number };
     clockCount?: number;
@@ -459,6 +523,8 @@ export interface TimingStoryFinding {
   medContext?: MedOnBoardContext;
   /** L3 (CUL-9 §2 L3) — photographed-content evidence; absent otherwise (old cache / no photos). */
   photoComposition?: PhotoComposition;
+  /** EN-10 (PR-38) — the visit, trial and course lines; absent otherwise (flag off / old cache / none apply). */
+  careContext?: CareContextLine[];
 }
 
 // The event-driven trial card (L2 — the wedge; Signals v2 / B-755 / CUL-8 / CUL-13, D3). Surfaces
@@ -501,6 +567,9 @@ export interface TrialResponseFinding {
   rapid: { trial: number; baseline: number };
   mid?: { trial: number; baseline: number };
   long: { trial: number; baseline: number };
+  /** Of `long` per window, the episodes whose last bowl was refused (CUL-1195) — a subset of the
+   *  long row. Optional: a cache written before the field reads as it did, with no line. */
+  longAfterRefusal?: { trial: number; baseline: number };
   /** The rapid band boundary in minutes (30) — the rapid row label. */
   rapidWindowMinutes: number;
   /** The empty-stomach band boundary in hours (6) — the long row label. */
@@ -530,6 +599,7 @@ export type SignalFinding =
   | IntakeDeclineFinding
   | ReflectionFinding
   | SymptomWorseningFinding
+  | SymptomBurdenFinding
   | SymptomChronicityFinding
   | PostprandialTimingFinding
   | TimeOfDayClusteringFinding

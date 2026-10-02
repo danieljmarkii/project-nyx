@@ -6,6 +6,7 @@ const INITIAL = {
   pendingCount: 0,
   oldestPendingAt: null,
   coldStartHydrating: false,
+  coldStartHandoff: 0,
   hydrationTick: 0,
   signalTick: 0,
   signalAcknowledging: {},
@@ -60,6 +61,17 @@ describe('syncStore', () => {
     useSyncStore.getState().bumpHydrationTick();
     expect(useSyncStore.getState().coldStartHydrating).toBe(false);
     expect(useSyncStore.getState().hydrationTick).toBe(1);
+  });
+
+  it('bumpColdStartHandoff is its own monotonic tick — never the hydration tick (D2-7)', () => {
+    // The handoff is the fact a first-frame draw-in arms on; the hydration tick bumps
+    // on EVERY cycle, so arming on it would replay the draw on each sync (C-30).
+    expect(useSyncStore.getState().coldStartHandoff).toBe(0);
+    useSyncStore.getState().bumpColdStartHandoff();
+    expect(useSyncStore.getState().coldStartHandoff).toBe(1);
+    expect(useSyncStore.getState().hydrationTick).toBe(0);
+    useSyncStore.getState().bumpHydrationTick();
+    expect(useSyncStore.getState().coldStartHandoff).toBe(1);
   });
 
   it('bumpSignalTick increments independently of hydrationTick (B-150 regen refresh)', () => {

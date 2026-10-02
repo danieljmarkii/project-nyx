@@ -1,18 +1,25 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, Alert, Switch, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../constants/theme';
-import { Header, PrimaryButton, SectionLabel } from '../components/ui';
+import { Header, PrimaryButton, SectionLabel, ThemedText } from '../components/ui';
 import { NightMoment } from '../components/brand/NightMoment';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
+import { ReportSilhouette } from '../components/designV2/waits/ReportSilhouette';
+import { Tick } from '../components/designV2/waits/Tick';
+import { useDesignV2 } from '../hooks/useDesignV2';
 import { ChipGroup } from '../components/ui/ChipGroup';
 import { usePetStore } from '../store/petStore';
 import { useAllowlistFlag } from '../hooks/useAppConfig';
 import { useBetaOptIn } from '../lib/betaFeatures';
-import { toLocalDayKey, dayKeyToLocalDate } from '../lib/utils';
+import { toLocalDayKey } from '../lib/utils';
+import { readVetLibrary } from '../lib/vetDocumentLibrary';
+import { VET_FILES_ENTRY_ENABLED } from '../lib/vetFilesEntry';
+import { CUSTOM_RANGE_SETTLE_MS, isCustomWindowEdit, reportScopeLine } from '../lib/reportRange';
+import { REPORT_PET_GONE, resolveReportSubject } from '../lib/reportRoute';
 import {
   flushBeforeReport, generateVetReport, reportFreshnessLine, shareReportPdf,
   type VetReport, type VetReportParams,
@@ -36,6 +43,23 @@ import {
 // disclosure is rendered *inside* the report HTML by render.ts — this screen only
 // picks the window; it never renders the disclosure itself.
 //
+// The send moment (R-16, CUL-998): the bar above "Send to vet" tells the owner what
+// the report is about to say to the vet, before it says it. Two lines, each only
+// when true of THIS report: that no allowed-food list is set for the running trial
+// (the report's own verdict, returned by the function), and that the vet documents
+// saved on the profile do not travel with the PDF (CUL-457). Principle 1: a line,
+// never a form — the flow gains no decision it did not already have.
+//
+// THE `Set it up` DOOR WAS CUT BEFORE SHIPPING (CUL-1004). The issue paired the
+// allowed-list line with a button into the allowed-set screen, and the pm-feature-
+// review walk found the button could not keep its promise: the only writer of a
+// `primary_diet` row is starting a trial (`addTrialFood` refuses that role by design,
+// §5.5 D-A), so the line could never clear — and on a trial with no rows at all the
+// destination resolves to `unknown` and spins with no copy. A button that cannot
+// work costs more trust than the ambush it prevents; the line alone carries the
+// clinical value. The button returns with a door that can set a running trial's
+// diet, gated on a hydrated set the way the profile already gates its own.
+//
 // A dedicated "Last 90 days" preset is deliberately NOT offered here: passing an
 // explicit 90-day window makes the server label the report "Custom range" (any
 // override ⇒ basis 'custom'), which reads as a hand-picked crop to the vet even
@@ -44,6 +68,12 @@ import {
 // fast-follow (B-236). Meanwhile the last-90-days case is still covered: it's what
 // "Default" resolves to when there's no visit/trial, and "Custom…" opens
 // pre-filled to exactly the last 90 days.
+//
+// WHOSE REPORT (CUL-1334). The pet comes from `?pet=`, falling back to the active pet
+// when a door sends none (`lib/reportRoute.ts`). Every read here — the generator's pet
+// id, the vet-documents read, the name in the build wait — takes THAT pet, never the
+// active one (C-9). A `?pet=` the account does not hold renders the pet-gone line and
+// builds nothing: it never falls back to the active pet's report.
 
 type Status = 'loading' | 'ready' | 'error';
 type RangeMode = 'default' | 'custom';
@@ -58,28 +88,20 @@ const RANGE_OPTIONS: { value: RangeMode; label: string }[] = [
   { value: 'custom', label: 'Custom…' },
 ];
 
-// toLocalDayKey / dayKeyToLocalDate live in lib/utils (unit-tested there) — the
-// server treats window bounds as local calendar days, so both avoid a UTC
-// round-trip that would shift the day for owners behind UTC.
-
-function formatDayKey(key: string): string {
-  const d = dayKeyToLocalDate(key);
-  return d ? d.toLocaleDateString([], { month: 'short', day: 'numeric' }) : key;
-}
+// toLocalDayKey lives in lib/utils (unit-tested there) — the server treats window
+// bounds as local calendar days, so it avoids a UTC round-trip that would shift the
+// day for owners behind UTC. The resolved window is printed by `reportScopeLine`
+// (lib/reportRange), through the one date formatter.
 
 function formatFieldDate(d: Date): string {
   return d.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-const SCOPE_BASIS_LABEL: Record<string, string> = {
-  since_visit: 'Since your last visit',
-  diet_trial: 'Active diet trial',
-  fallback_90d: 'Last 90 days',
-  custom: 'Custom range',
-};
-
 export default function ReportScreen() {
+  const { pet: petParam } = useLocalSearchParams<{ pet?: string | string[] }>();
   const activePet = usePetStore((s) => s.activePet);
+  const pets = usePetStore((s) => s.pets);
+  const subject = resolveReportSubject(petParam, activePet, pets);
   const insets = useSafeAreaInsets();
   const [status, setStatus] = useState<Status>('loading');
   const [report, setReport] = useState<VetReport | null>(null);
@@ -106,7 +128,8 @@ export default function ReportScreen() {
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
 
-  const petId = activePet?.id;
+  const petId = subject.kind === 'pet' ? subject.petId : undefined;
+  const petName = subject.kind === 'pet' ? subject.petName : null;
   const customStartKey = toLocalDayKey(customStart);
   const customEndKey = toLocalDayKey(customEnd);
 
@@ -124,11 +147,34 @@ export default function ReportScreen() {
     return { ...base, startDate: customStartKey, endDate: customEndKey };
   }, [petId, rangeMode, customStartKey, customEndKey, includeNotes]);
 
+  // CUL-371 — the params the report is actually BUILT from. An edit of the custom
+  // window already on screen (From, then To) settles for CUSTOM_RANGE_SETTLE_MS before
+  // it lands here, so the two taps cost one build instead of two; every other change
+  // (the first request, a pet change, Default ↔ Custom) lands at once. The decision is
+  // `isCustomWindowEdit` (lib/reportRange, pure, tested); this is only its timer. The
+  // ref mirrors the state so the effect can compare against what LANDED, not against
+  // an edit still waiting — a third tap inside the window compares to the built report.
+  const [settledParams, setSettledParams] = useState<VetReportParams | null>(requestParams);
+  const settledRef = useRef<VetReportParams | null>(requestParams);
+  useEffect(() => {
+    const land = () => {
+      settledRef.current = requestParams;
+      setSettledParams(requestParams);
+    };
+    if (!isCustomWindowEdit(settledRef.current, requestParams)) {
+      land();
+      return undefined;
+    }
+    const timer = setTimeout(land, CUSTOM_RANGE_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [requestParams]);
+
   // `token` guards against a stale response: if the pet or the selected range
   // changes while a generate call is in flight, the older response must not
   // overwrite the newer one.
   const load = useCallback(
     async (token?: { cancelled: boolean }) => {
+      const requestParams = settledParams;
       if (!requestParams) {
         setErrorMsg('Add a pet before generating a report.');
         setStatus('error');
@@ -162,11 +208,12 @@ export default function ReportScreen() {
         setStatus('error');
       }
     },
-    [requestParams],
+    [settledParams],
   );
 
-  // Regenerate whenever the pet or the chosen window changes. The report is a
-  // snapshot; changing the range re-generates against the latest data.
+  // Regenerate whenever the pet or the chosen window changes (once a custom-window
+  // edit has settled — above). The report is a snapshot; changing the range
+  // re-generates against the latest data.
   useEffect(() => {
     const token = { cancelled: false };
     load(token);
@@ -174,6 +221,31 @@ export default function ReportScreen() {
       token.cancelled = true;
     };
   }, [load]);
+
+  // R-16 (CUL-457) — does this pet have any saved vet document? Read locally, the same
+  // read the profile's Vet Files card makes. Three states on purpose (C-12): `null`
+  // until the read answers (or when it fails, or when Vet Files is not an entry point
+  // yet), and the line renders only on a POSITIVE answer — an absent line makes no claim,
+  // and the profile card carries the same truth for the owner who lands there instead.
+  // The answer is cleared BEFORE a new pet's read starts, so a pet change never leaves
+  // the previous pet's line on screen for the frames the read takes (code review).
+  const [hasVetDocuments, setHasVetDocuments] = useState<boolean | null>(null);
+  useEffect(() => {
+    setHasVetDocuments(null);
+    if (!VET_FILES_ENTRY_ENABLED || !petId) return undefined;
+    let cancelled = false;
+    readVetLibrary(petId)
+      .then((rows) => {
+        if (!cancelled) setHasVetDocuments(rows.length > 0);
+      })
+      .catch((e) => {
+        console.warn('[Report] vet-library read failed:', e);
+        if (!cancelled) setHasVetDocuments(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [petId]);
 
   const onShare = useCallback(async () => {
     if (!report) return;
@@ -201,7 +273,7 @@ export default function ReportScreen() {
   // window on screen while the new one is still generating (stale-label guard).
   const resolvedLabel =
     status === 'ready' && report && report.startDate && report.endDate
-      ? `${SCOPE_BASIS_LABEL[report.scopeBasis] ?? 'Report range'} · ${formatDayKey(report.startDate)} – ${formatDayKey(report.endDate)}`
+      ? reportScopeLine(report.scopeBasis, report.startDate, report.endDate, toLocalDayKey(new Date()))
       : null;
 
   // Soft refresh: once a report exists, a range change re-generates it *in place*
@@ -219,11 +291,34 @@ export default function ReportScreen() {
   const lookOptedIn = useBetaOptIn('daily_look');
   const showNotesOption = lookEligible && lookOptedIn;
 
+  // D2-7 (CUL-1068): behind `design_v2` the first build's wait is the report's own
+  // silhouette with the tick beside "Writing {pet}'s report…", and the soft-refresh
+  // pill's whorl is the tick. Flag-off is the night moment and the whorl, untouched.
+  // The screen holds the gate; `components/designV2/waits/` draws.
+  const designV2 = useDesignV2();
+  const building = status === 'loading' && !report;
+
+  // A `?pet=` naming a pet the account does not hold (a stale link, an archived pet):
+  // say so, and build nothing. `requestParams` is null here, so no generate call and no
+  // documents read was made for it; the back control is the way out.
+  if (subject.kind === 'unknown_pet') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <Header title="Vet report" leading="back" onLeadingPress={() => router.back()} />
+        <View style={styles.center}>
+          <ThemedText testID="report-pet-gone" style={styles.muted}>
+            {REPORT_PET_GONE}
+          </ThemedText>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header title="Vet report" leading="back" onLeadingPress={() => router.back()} />
 
-      {activePet && (
+      {petId !== undefined && (
         <View style={styles.rangeBar}>
           <SectionLabel label="Report range" />
           <ChipGroup
@@ -278,8 +373,9 @@ export default function ReportScreen() {
               calendar (the native iOS placement), so the dismiss control is visible
               the moment the tall picker opens instead of below the fold on a small
               screen. Android uses a self-dismissing modal, so no toolbar there. The
-              date already applies live (the report re-generates on change), so "Done"
-              just collapses the calendar to reveal the updated report. */}
+              date already applies live (the report re-generates once the edit
+              settles), so "Done" just collapses the calendar to reveal the updated
+              report. */}
           {Platform.OS === 'ios' && (showStartPicker || showEndPicker) && rangeMode === 'custom' && (
             <View style={styles.pickerToolbar}>
               <TouchableOpacity
@@ -377,7 +473,7 @@ export default function ReportScreen() {
               // pointerEvents=none so the report stays scrollable underneath.
               <View style={styles.updatingOverlay} pointerEvents="none">
                 <View style={styles.updatingPill}>
-                  <WhorlSpinner size="sm" ground="day" />
+                  {designV2 ? <Tick working={regenerating} /> : <WhorlSpinner size="sm" ground="day" />}
                   <Text style={styles.updatingText}>Updating…</Text>
                 </View>
               </View>
@@ -400,13 +496,47 @@ export default function ReportScreen() {
                 Includes {report.photoCount} photo{report.photoCount === 1 ? '' : 's'} from logged incidents.
               </Text>
             )}
-            <PrimaryButton
-              // Disabled while regenerating — the visible report is the PREVIOUS
-              // window; never let the owner share a stale range to the vet.
-              label={sharing ? 'Preparing PDF…' : 'Send to vet'}
-              onPress={onShare}
-              disabled={sharing || regenerating}
-            />
+            {hasVetDocuments === true && (
+              // R-16 (CUL-457) — D14's truth at the moment it matters. The Vet Files card
+              // already says it on the profile; this is the screen where the owner is
+              // actually sending something, and both persona reviews assumed a saved
+              // document rode along. Same register as the photos line: a fact about what
+              // this document holds — and, because this is the one screen where the
+              // owner has a next action, the remedy in the card's own words rather than
+              // a bare gap (pm-feature-review). A sentence, not a door: the send moment
+              // gains no navigational choice. Stops being true the day the paperclip
+              // (CUL-450) ships, at which point this line goes with it.
+              <ThemedText style={styles.barPhotos}>
+                Your saved vet documents aren’t part of this report. Share them one at a time from Vet Files.
+              </ThemedText>
+            )}
+            {report.trialAllowedListMissing ? (
+              // R-16 (CUL-861) — the report is about to tell the vet, more than once,
+              // that nothing was checked against an allowed-food list. Say it here
+              // first, and name whose trial it is (the report's own pet, never the
+              // active one — C-9). ONE send control in this state: `Send anyway` IS
+              // the send, labelled for what the owner just read — never a second
+              // button under "Send to vet". The `Set it up` door is CUL-1004 (header).
+              <>
+                <ThemedText style={styles.barStale}>
+                  No allowed-food list is set for {report.petName || 'your pet'}’s trial, so the report can’t
+                  check feedings against it.
+                </ThemedText>
+                <PrimaryButton
+                  label={sharing ? 'Preparing PDF…' : 'Send anyway'}
+                  onPress={onShare}
+                  disabled={sharing || regenerating}
+                />
+              </>
+            ) : (
+              <PrimaryButton
+                // Disabled while regenerating — the visible report is the PREVIOUS
+                // window; never let the owner share a stale range to the vet.
+                label={sharing ? 'Preparing PDF…' : 'Send to vet'}
+                onPress={onShare}
+                disabled={sharing || regenerating}
+              />
+            )}
             <Text style={styles.barHint}>
               Creates a PDF you can email, message, or AirDrop to your vet.
             </Text>
@@ -414,12 +544,18 @@ export default function ReportScreen() {
         </>
       )}
       {/* First build — a full-screen wait with nothing to show yet → the night moment
-          (§6). Real work on the pet's behalf, expected >~2s. */}
-      <NightMoment
-        visible={status === 'loading' && !report}
-        title={activePet ? `Building ${activePet.name}’s report…` : 'Building the report…'}
-        subtitle="Pulling together the full record."
-      />
+          (§6). Real work on the pet's behalf, expected >~2s. Flag-on, the report's own
+          silhouette in the same slot: it is mounted only while building, since it has
+          no dissolve of its own — the report's blocks become the page. */}
+      {designV2 ? (
+        building && <ReportSilhouette petName={petName} working={building} />
+      ) : (
+        <NightMoment
+          visible={building}
+          title={petName ? `Building ${petName}’s report…` : 'Building the report…'}
+          subtitle="Pulling together the full record."
+        />
+      )}
       </View>
     </SafeAreaView>
   );

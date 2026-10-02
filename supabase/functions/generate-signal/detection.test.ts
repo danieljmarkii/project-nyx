@@ -1248,6 +1248,321 @@ Deno.test('detectCorrelations — B-156 PR C1: no vehicle flag is byte-identical
   assert.equal(findings[0].tier, 'established', 'no vehicle flag ⇒ unchanged behavior')
 })
 
+// ── Detector ①: CUL-1190 — a refusal can only withdraw evidence for the refused food ──
+//
+// ① used to read no intake rating, so a bowl the owner rated Refused counted FOR its food
+// like one she finished: tuna offered only on bad days and refused every time came out
+// "established", identical to the same record rated All. "Did food go in" is the timing
+// lane's rule (CUL-1122, `feedingIsEatingAnchor`): Refused is not eating; Picked at, Some,
+// Most, All and unrated are.
+//
+// Two adversarial passes then broke every reading that let a refusal count AGAINST a food
+// or move a pair (refused = absent; refused = skip the pair). Their fixtures are below as
+// regressions, and the property test at the end pins the invariant that survived: with the
+// ratings removed, the engine makes every finding it makes with them, at the same tier or
+// higher, over the same family.
+
+/** A tuna feeding on each of `days` at 10:00, rated `rating` (null = unrated). */
+const tunaOn = (days: number[], rating: IntakeRating | null, foodType: MealEvent['foodType'] = 'meal'): MealEvent[] =>
+  days.map((d) => meal({ occurredAt: at(d, 10), primaryProtein: 'tuna', intakeRating: rating, foodType }))
+
+/** A feeding of `protein` on `day` at `hour`, rated `r` (null = unrated). */
+const fed = (day: number, protein: string, hour: number, r: IntakeRating | null, over: Partial<MealEvent> = {}) =>
+  meal({ occurredAt: at(day, hour), primaryProtein: protein, intakeRating: r, ...over })
+
+const BAD_DAYS = [1, 2, 3, 4, 5, 6, 7, 8]
+const badDayVomits = () => BAD_DAYS.map((d) => symptom('vomit', at(d, 11)))
+
+Deno.test('detectCorrelations — CUL-1190: tuna offered only on bad days and REFUSED every time is never the culprit', () => {
+  const run = (rating: IntakeRating | null) =>
+    detectCorrelations(
+      input({ mealEvents: [...staple(1, 16, 'chicken', 9), ...tunaOn(BAD_DAYS, rating)], symptomEvents: badDayVomits() }),
+    )
+  // The fixture is live: eaten, this tuna is the textbook established correlate (8 of 8
+  // case windows, no control), so the refused run below is silent for the RATING alone.
+  const eaten = run('all').find((f) => f.protein === 'tuna')
+  assert.ok(eaten, 'eaten tuna on every bad day fires')
+  assert.equal(eaten!.tier, 'established')
+  assert.equal(eaten!.caseExposed, 8)
+  assert.equal(eaten!.controlExposed, 0)
+
+  const refused = run('refused')
+  assert.equal(refused.some((f) => f.protein === 'tuna'), false, 'a food she never ate is never blamed for her bad days')
+  assert.equal(refused.length, 0, 'and nothing else is manufactured in its place (the staple still washes out)')
+})
+
+Deno.test('detectCorrelations — CUL-1190: Picked at and unrated ARE exposures (only Refused is withdrawn)', () => {
+  // Picked at: a few bites is enough for a food reaction, and it is the ruled answer for
+  // timing too (CUL-1122, Dr. Chen lens). Unrated: ratings are exception-only (CUL-1118),
+  // so an unrated bowl is presumed eaten; reading it as refused would invent a refusal and
+  // silence every unrated record's correlations.
+  const tierFor = (rating: IntakeRating | null) =>
+    detectCorrelations(
+      input({ mealEvents: [...staple(1, 16, 'chicken', 9), ...tunaOn(BAD_DAYS, rating)], symptomEvents: badDayVomits() }),
+    ).find((f) => f.protein === 'tuna')?.tier
+  for (const rating of ['picked', 'some', 'most', 'all', null] as const) {
+    assert.equal(tierFor(rating), 'established', `tuna rated ${rating ?? 'unrated'} is an exposure`)
+  }
+})
+
+Deno.test('detectCorrelations — CUL-1190: a refused TREAT is withdrawn too (the rule reads the rating, never the food type)', () => {
+  const run = (rating: IntakeRating | null) =>
+    detectCorrelations(
+      input({
+        mealEvents: [...staple(1, 16, 'chicken', 9), ...tunaOn(BAD_DAYS, rating, 'treat')],
+        symptomEvents: badDayVomits(),
+      }),
+    )
+  assert.equal(run('all').some((f) => f.protein === 'tuna'), true, 'an eaten tuna treat is an exposure')
+  assert.equal(run('refused').some((f) => f.protein === 'tuna'), false, 'a refused tuna treat is not')
+})
+
+Deno.test('detectCorrelations — CUL-1190: a refused case is withdrawn, never removed — the matched set keeps it', () => {
+  // Tuna eaten before 2 of 8 vomits and refused before the other 6. The 6 refusals stop
+  // counting FOR tuna, but their pairs stay in the matched set: the card reads 2 of 8, not
+  // 2 of 2. (Removing them was the second cut, and it both inflated the risk difference
+  // and printed "2/2 exposed cases" beside an 8-episode record.)
+  const mealEvents = [...staple(1, 16, 'chicken', 9), ...BAD_DAYS.map((d) => fed(d, 'tuna', 10, d <= 2 ? null : 'refused'))]
+  const tuna = detectCorrelations(input({ mealEvents, symptomEvents: badDayVomits() })).find((f) => f.protein === 'tuna')
+  assert.ok(tuna)
+  assert.equal(tuna!.matchedPairs, 8)
+  assert.equal(tuna!.caseExposed, 2)
+  assert.equal(tuna!.discordantCaseOnly, 2)
+  assert.equal(tuna!.tier, 'early', 'two of eight is a pattern to watch, not an established one')
+})
+
+Deno.test('detectCorrelations — CUL-1190: a refused bowl keeps its window eligible and moves no OTHER finding', () => {
+  // beef is the real correlate (the canonical Established fixture, days 1–6). Days 20 and 22
+  // each carry a vomit whose 12h window holds nothing but a tuna bowl: the chicken staple
+  // stops at day 12, so tuna is the only thing that makes those two case windows eligible.
+  const mealEvents = (rating: IntakeRating) => [
+    ...staple(1, 12, 'chicken', 9),
+    ...[1, 2, 3, 4, 5, 6].map((d) => pMeal(d, 'beef', 10)),
+    ...tunaOn([20, 22], rating),
+    ...staple(24, 30, 'chicken', 9), // symptom-free control days for the two late cases
+  ]
+  const symptomEvents = [...[1, 2, 3, 4, 5, 6, 20, 22].map((d) => symptom('vomit', at(d, 11)))]
+  const beefFor = (rating: IntakeRating) =>
+    detectCorrelations(input({ mealEvents: mealEvents(rating), symptomEvents })).find((f) => f.protein === 'beef')
+
+  const refused = beefFor('refused')
+  const eaten = beefFor('all')
+  assert.ok(refused && eaten, 'beef fires either way')
+  assert.equal(eaten!.matchedPairs, 8, 'fixture: both late cases pair when the tuna is eaten')
+  assert.equal(refused!.matchedPairs, 8, 'a refused bowl still makes its window logging-eligible')
+  assert.equal(refused!.discordantCaseOnly, eaten!.discordantCaseOnly)
+  assert.equal(refused!.discordantControlOnly, eaten!.discordantControlOnly)
+  assert.equal(refused!.correctedAlpha, eaten!.correctedAlpha, 'the Bonferroni family did not move')
+  assert.equal(refused!.tier, eaten!.tier)
+})
+
+Deno.test('detectCorrelations — CUL-1190: one refused staple bowl the day after a vomiting cluster manufactures no finding', () => {
+  // ADV-1 (first pass): chicken daily; vomits on days 1–8; on day 9 she will not eat. Day 9 is
+  // every case's nearest symptom-free day, so the matcher picks it as the control 8 times.
+  // Read as ABSENT, that one refusal made "chicken, established, 8/0". ADV-1f: the same with
+  // a salmon treat eaten on day 9, which keeps the window eligible whatever a refused bowl
+  // counts for. A control-side refusal reads as offered, exactly as before CUL-1190.
+  const vomits = [1, 2, 3, 4, 5, 6, 7, 8].map((d) => symptom('vomit', at(d, 11)))
+  const days = (r: IntakeRating | null) => [
+    ...[1, 2, 3, 4, 5, 6, 7, 8].map((d) => fed(d, 'chicken', 9, null)),
+    fed(9, 'chicken', 9, r),
+    ...[10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map((d) => fed(d, 'chicken', 9, null)),
+  ]
+  for (const extra of [fed(15, 'beef', 14, null), fed(9, 'salmon', 8, null, { foodType: 'treat' })]) {
+    for (const r of ['all', 'refused'] as const) {
+      const findings = detectCorrelations(input({ mealEvents: [...days(r), extra], symptomEvents: vomits }))
+      assert.equal(
+        findings.some((f) => f.proteins.includes('chicken')),
+        false,
+        `day 9 ${r}, with ${extra.primaryProtein}: a refusal is not evidence chicken was absent`,
+      )
+    }
+  }
+})
+
+Deno.test('detectCorrelations — CUL-1190: a pet refusing everything on sick days does not exonerate the real culprit', () => {
+  // ADV-5 (first pass, Dr. Chen): beef precedes every vomit on days 1–6; on days 10, 12 and 14
+  // she vomits and refuses both bowls; beef is eaten without a vomit on 9, 11 and 13. Read as
+  // ABSENT, the sick days became "vomited with no beef" (three c pairs) and beef fell to
+  // Early, which the vet report drops. A refusal never counts against a food.
+  const mealEvents: MealEvent[] = []
+  for (let d = 1; d <= 30; d++) mealEvents.push(fed(d, 'chicken', 9, [10, 12, 14].includes(d) ? 'refused' : null))
+  for (const d of [1, 2, 3, 4, 5, 6, 9, 11, 13]) mealEvents.push(fed(d, 'beef', 10, null))
+  for (const d of [10, 12, 14]) mealEvents.push(fed(d, 'beef', 10, 'refused'))
+  const symptomEvents = [1, 2, 3, 4, 5, 6, 10, 12, 14].map((d) => symptom('vomit', at(d, 11)))
+  const beef = detectCorrelations(input({ mealEvents, symptomEvents })).find((f) => f.protein === 'beef')
+  assert.ok(beef, 'beef still fires')
+  assert.equal(beef!.tier, 'established')
+  assert.equal(beef!.discordantCaseOnly, 6)
+  assert.equal(beef!.discordantControlOnly, 0, 'the refusal days are not counted against beef')
+})
+
+Deno.test('detectCorrelations — CUL-1190: a withdrawn case counts against nothing, the risk-difference gate included (F1)', () => {
+  // Third pass: tuna eaten before 6 vomits with none on the control day (b = 6); on 5 more sick
+  // days she refused tuna that she had eaten on the control day. The withdrawn cases are in
+  // neither b nor c, but the old `caseExposed/n − controlExposed/n` gate still counted their
+  // controls, read each as a control-only pair, and dropped tuna: the cut-1 exoneration by
+  // another route. The gate is (b − c)/n.
+  const mealEvents: MealEvent[] = []
+  for (let d = 1; d <= 23; d++) mealEvents.push(fed(d, 'chicken', 7, null))
+  const caseDays = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22]
+  caseDays.forEach((d, i) => {
+    if (i < 6) mealEvents.push(fed(d, 'tuna', 8, null))
+    else {
+      mealEvents.push(fed(d, 'tuna', 8, 'refused'))
+      mealEvents.push(fed(d - 1, 'tuna', 8, null))
+    }
+  })
+  const symptomEvents = caseDays.map((d) => symptom('vomit', at(d, 14)))
+  const tuna = detectCorrelations(input({ mealEvents, symptomEvents })).find((f) => f.protein === 'tuna')
+  assert.ok(tuna, 'the culprit is not dropped')
+  assert.equal(tuna!.discordantCaseOnly, 6)
+  assert.equal(tuna!.discordantControlOnly, 0)
+  assert.equal(tuna!.matchedPairs, 11)
+  assert.equal(tuna!.tier, 'established', 'as the ratings-blind engine has it')
+})
+
+Deno.test('detectCorrelations — CUL-1190: a bowl eaten in the same window wins over one refused (ADV-3b)', () => {
+  // The nausea prodrome: beef eaten at 10:00, beef refused at 17:00, vomit at 20:00. Beef went
+  // in, so the case counts for it; the later refusal withdraws nothing.
+  const mealEvents = [
+    ...staple(1, 16, 'chicken', 9),
+    ...[1, 2, 3, 4, 5, 6].flatMap((d) => [fed(d, 'beef', 10, null), fed(d, 'beef', 17, 'refused')]),
+  ]
+  const symptomEvents = [1, 2, 3, 4, 5, 6].map((d) => symptom('vomit', at(d, 20)))
+  const beef = detectCorrelations(input({ mealEvents, symptomEvents })).find((f) => f.protein === 'beef')
+  assert.equal(beef?.tier, 'established')
+  assert.equal(beef?.caseExposed, 6)
+})
+
+Deno.test('detectCorrelations — CUL-1190: control-side refusals cannot cull the pairs that argue against a food (ATK-1)', () => {
+  // Second pass: skipping a pair when the food was refused in the CONTROL window removes only
+  // pairs that argue against it (a b pair has no food on the control side to refuse), so it
+  // biased the test toward positives. Deterministic shape: 6 cases with beef eaten and none
+  // on the control; 5 with beef refused and eaten on the control; 4 with no beef and beef
+  // refused on the control. The ratings-blind engine is silent; the skip made "beef,
+  // established, 6/0".
+  // Cases on even days 2..30, each matched to the odd day before it (the nearest, earliest).
+  // (`at` builds May dates, so the record stops at day 31.)
+  const mealEvents: MealEvent[] = []
+  const symptomEvents: SymptomEvent[] = []
+  for (let d = 1; d <= 31; d++) mealEvents.push(fed(d, 'chicken', 9, null))
+  for (let k = 1; k <= 15; k++) {
+    const caseDay = 2 * k
+    symptomEvents.push(symptom('vomit', at(caseDay, 11)))
+    if (k <= 6) mealEvents.push(fed(caseDay, 'beef', 10, null))
+    else if (k <= 11) {
+      mealEvents.push(fed(caseDay, 'beef', 10, 'refused'))
+      mealEvents.push(fed(caseDay - 1, 'beef', 10, null))
+    } else mealEvents.push(fed(caseDay - 1, 'beef', 10, 'refused'))
+  }
+  const findings = detectCorrelations(input({ mealEvents, symptomEvents }))
+  const blind = detectCorrelations(input({ mealEvents: mealEvents.map((m) => ({ ...m, intakeRating: null })), symptomEvents }))
+  assert.equal(blind.some((f) => f.protein === 'beef'), false, 'fixture: the ratings-blind engine is silent')
+  assert.equal(findings.some((f) => f.protein === 'beef'), false, 'and refusals cannot make it speak')
+})
+
+Deno.test('detectCorrelations — CUL-1190: one refused topper cannot split a joint candidate into two certified antigens (ATK-3f)', () => {
+  // Second pass: chicken kibble and a duck topper at 10:00 before all 8 vomits, a beef staple,
+  // the topper refused on one case day. Nothing separates the two proteins, so they stay one
+  // joint candidate ("chicken and duck"), capped at Early. The skip design gave chicken AND
+  // duck their own Established cards.
+  const mealEvents = [
+    ...staple(1, 16, 'beef', 9),
+    ...BAD_DAYS.map((d) => fed(d, 'chicken', 10, null)),
+    ...BAD_DAYS.map((d) => fed(d, 'duck', 10, d === 3 ? 'refused' : null)),
+  ]
+  const findings = detectCorrelations(input({ mealEvents, symptomEvents: badDayVomits() }))
+  assert.equal(findings.some((f) => f.tier === 'established'), false, 'no single antigen is certified')
+  const joint = findings.find((f) => f.jointCandidate)
+  assert.deepEqual(joint?.proteins, ['chicken', 'duck'])
+  assert.equal(joint?.tier, 'early')
+  assert.equal(joint?.caseExposed, 8, 'the chicken went in on day 3, so the joint case still counts')
+})
+
+Deno.test('detectCorrelations — CUL-1190: a refused shared bowl still caps attribution (a refusal never lifts the floor)', () => {
+  // The Established beef fixture plus a seventh vomit whose window holds only a refused,
+  // low-attribution (shared-bowl) beef feeding. That case is withdrawn, but the shared bowl
+  // was still offered, so beef stays capped at Early, as it is with the ratings removed.
+  const mealEvents = [
+    ...staple(1, 12, 'chicken', 9),
+    ...[1, 2, 3, 4, 5, 6].map((d) => pMeal(d, 'beef', 10)),
+    fed(20, 'beef', 10, 'refused', { attributionConfidence: 'low' }),
+    ...staple(21, 30, 'chicken', 9),
+  ]
+  const symptomEvents = [1, 2, 3, 4, 5, 6, 20].map((d) => symptom('vomit', at(d, 11)))
+  const beef = detectCorrelations(input({ mealEvents, symptomEvents })).find((f) => f.protein === 'beef')
+  assert.equal(beef?.attributionFloor, 'low')
+  assert.equal(beef?.tier, 'early')
+})
+
+Deno.test('detectCorrelations — CUL-1190: a rating on one food cannot move the family (ADV-4b)', () => {
+  // First pass: [duck, rabbit] on case days 2 and 4, [venison, rabbit] on 6 and 8. Reading the
+  // refused venison bowls as ABSENT merged rabbit into duck and promoted an unrelated beef
+  // finding. Clusters are built on what was offered, so the family cannot move.
+  const beefFor = (v: IntakeRating | null) => {
+    const mealEvents = [
+      ...staple(1, 22, 'chicken', 9),
+      ...[2, 4, 6, 8, 10, 12, 14, 16, 18, 19].map((d) => fed(d, 'beef', 10, null)),
+      ...[2, 4].map((d) => fed(d, 'duck', 8, null, { proteins: ['duck', 'rabbit'] })),
+      ...[6, 8].map((d) => fed(d, 'venison', 8, v, { proteins: ['venison', 'rabbit'] })),
+    ]
+    const symptomEvents = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20].map((d) => symptom('vomit', at(d, 11)))
+    return detectCorrelations(input({ mealEvents, symptomEvents })).find((f) => f.protein === 'beef')
+  }
+  const eaten = beefFor(null)
+  const refused = beefFor('refused')
+  assert.ok(eaten && refused)
+  assert.equal(refused!.correctedAlpha, eaten!.correctedAlpha, 'the family holds')
+  assert.equal(refused!.tier, eaten!.tier, "a rating about venison never moves beef's tier")
+  assert.equal(eaten!.tier, 'early', 'fixture: beef sits just outside Established (p ≈ 0.0107 vs 0.01)')
+})
+
+Deno.test('detectCorrelations — CUL-1190 property: a refusal only ever withdraws (every finding is one the ratings-blind engine makes, no weaker there)', () => {
+  // The invariant, over generated records rather than chosen ones: strip every rating and
+  // the engine must make every finding it made with them, over the same family, at the same
+  // tier or higher, with at least as many case-only pairs and no more control-only ones.
+  // The generator is the second pass's null model with refusals made deliberately adversarial:
+  // a staple, one or two intermittent foods (some multi-protein), runs of vomit days, and
+  // refusals concentrated on the day before and after each run.
+  let seed = 1190
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return seed / 2147483648
+  }
+  const RATINGS: (IntakeRating | null)[] = ['refused', 'refused', 'refused', 'picked', 'all', null]
+  const rank = (t: string) => (t === 'established' ? 2 : 1)
+  let compared = 0
+  for (let rec = 0; rec < 250; rec++) {
+    const days = 28
+    const vomitDays = new Set<number>()
+    for (let d = 1; d <= days; d++) if (rand() < 0.12) for (let k = 0; k < 1 + Math.floor(rand() * 3); k++) vomitDays.add(d + k)
+    const near = (d: number) => vomitDays.has(d) || vomitDays.has(d - 1) || vomitDays.has(d + 1)
+    const rate = (d: number) => (near(d) && rand() < 0.7 ? RATINGS[Math.floor(rand() * RATINGS.length)] : null)
+    const mealEvents: MealEvent[] = []
+    for (let d = 1; d <= days; d++) {
+      mealEvents.push(fed(d, 'chicken', 9, rand() < 0.3 ? rate(d) : null))
+      if (rand() < 0.5) mealEvents.push(fed(d, 'tuna', 10, rate(d)))
+      if (rand() < 0.35) mealEvents.push(fed(d, 'duck', 8, rate(d), { proteins: ['duck', 'rabbit'] }))
+      if (rand() < 0.2) mealEvents.push(fed(d, 'venison', 8, rate(d), { proteins: ['venison', 'rabbit'], foodType: 'treat' }))
+    }
+    const symptomEvents = [...vomitDays].filter((d) => d <= days).map((d) => symptom('vomit', at(d, 11)))
+    const rated = detectCorrelations(input({ mealEvents, symptomEvents }))
+    const blind = detectCorrelations(input({ mealEvents: mealEvents.map((m) => ({ ...m, intakeRating: null })), symptomEvents }))
+    for (const f of rated) {
+      compared++
+      const g = blind.find((x) => x.protein === f.protein && x.symptomType === f.symptomType)
+      assert.ok(g, `record ${rec}: ${f.protein} fires with ratings but not without`)
+      assert.ok(rank(f.tier) <= rank(g!.tier), `record ${rec}: ${f.protein} is ${f.tier} with ratings, ${g!.tier} without`)
+      assert.equal(f.correctedAlpha, g!.correctedAlpha, `record ${rec}: the family moved`)
+      assert.equal(f.matchedPairs, g!.matchedPairs, `record ${rec}: the matched set moved`)
+      assert.ok(f.discordantCaseOnly <= g!.discordantCaseOnly, `record ${rec}: b rose`)
+      assert.equal(f.discordantControlOnly, g!.discordantControlOnly, `record ${rec}: c moved`)
+    }
+  }
+  assert.ok(compared > 30, `non-vacuity: the generator must produce findings to compare (got ${compared})`)
+})
+
 // ── Detector ①: B-052 protein-key canonicalization (read-time) ───────────────
 
 Deno.test('detectCorrelations — B-052: by-product/casing variants pool into one protein', () => {
@@ -1685,19 +2000,126 @@ Deno.test('detectReflections — a lone single worsening log does NOT blank a st
 })
 
 Deno.test('detectReflections — surfaces ONE reflection (the symptom most present right now)', () => {
+  // Both current counts sit BELOW burdenMuteMinEpisodes (4), so the only thing under test is
+  // the one-card selection. (Was vomit 4/5 before PR-14c; a week of 4 is now a muted week.)
   const symptomEvents = [
-    // vomit current 4 / prior 5 (improving) — the more present symptom
-    symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    // vomit current 3 / prior 5 (improving) — the more present symptom
+    symptom('vomit', at(24, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
     symptom('vomit', at(17, 8)), symptom('vomit', at(18, 8)), symptom('vomit', at(19, 8)),
     symptom('vomit', at(20, 8)), symptom('vomit', at(21, 8)),
-    // diarrhea current 3 / prior 3 (flat) — also qualifies but is less present
-    symptom('diarrhea', at(24, 9)), symptom('diarrhea', at(26, 9)), symptom('diarrhea', at(28, 9)),
+    // diarrhea current 2 / prior 3 (improving) — also qualifies but is less present
+    symptom('diarrhea', at(24, 9)), symptom('diarrhea', at(26, 9)),
     symptom('diarrhea', at(17, 9)), symptom('diarrhea', at(19, 9)), symptom('diarrhea', at(21, 9)),
   ]
   const findings = detectReflections(input({ symptomEvents }))
   assert.equal(findings.length, 1, 'one reflection only — never a wall of count cards')
   assert.equal(findings[0].symptomType, 'vomit', 'the symptom with the highest current count wins')
-  assert.equal(findings[0].currentCount, 4)
+  assert.equal(findings[0].currentCount, 3)
+})
+
+// ── PR-14c (CUL-1311 GAP-5): the absolute-burden gate ────────────────────────
+// The worsening and chronicity gates are both RELATIVE. A not-yet-chronic pet at 6 then 5
+// cleared both and got a calm "down from 6". These pin the third gate at its boundary, off
+// the shipped constant (C-34: never a restated literal).
+
+/**
+ * `n` vomits on distinct days from `firstDay`, 08:00 each (one episode a day). The current window
+ * opens at May 23 12:00, so a current week starts on the 24th and a prior week on the 17th.
+ */
+const vomitDays = (firstDay: number, n: number) =>
+  Array.from({ length: n }, (_, i) => symptom('vomit', at(firstDay + i, 8)))
+
+Deno.test('detectReflections — PR-14c: 6 then 5 a week, not chronic, gets NO "down" card (the GAP-5 defect)', () => {
+  const symptomEvents = [...vomitDays(17, 6), ...vomitDays(24, 5)] // prior 6 (17–22) · current 5 (24–28)
+  const inp = input({ symptomEvents })
+  // Non-vacuity: the two relative gates really are open on this record, so the silence is ours.
+  // Not worsening (5 < 6 episodes, 5 < 6 days) and not chronic (a 12-day span, under ⑦'s floor).
+  assert.deepEqual(detectWorsening(inp), [], 'worsening does not fire — the relative gate is open')
+  assert.deepEqual(detectChronicity(inp), [], 'chronicity does not fire — the course is too short')
+  assert.deepEqual(detectReflections(inp), [])
+  // And the mute is the burden gate: raise the floor past 5 and the calm card comes back.
+  const lifted = detectReflections(inp, {
+    ...DEFAULT_CONFIG,
+    reflection: { ...DEFAULT_CONFIG.reflection, burdenMuteMinEpisodes: 6 },
+  })
+  assert.equal(lifted.length, 1)
+  assert.equal(lifted[0].direction, 'improving')
+})
+
+Deno.test('detectReflections — PR-14c: the boundary is exact (floor − 1 renders, floor mutes)', () => {
+  const floor = DEFAULT_CONFIG.reflection.burdenMuteMinEpisodes
+  const below = detectReflections(input({ symptomEvents: [...vomitDays(17, floor + 1), ...vomitDays(24, floor - 1)] }))
+  assert.equal(below.length, 1, `a week of ${floor - 1} still reflects`)
+  assert.equal(below[0].currentCount, floor - 1)
+  const at_ = detectReflections(input({ symptomEvents: [...vomitDays(17, floor + 1), ...vomitDays(24, floor)] }))
+  assert.deepEqual(at_, [], `a week of ${floor} is muted`)
+  // Flat at the floor is muted too: "about the same" over a severe week is the same reassurance.
+  const flat = detectReflections(input({ symptomEvents: [...vomitDays(17, floor), ...vomitDays(24, floor)] }))
+  assert.deepEqual(flat, [])
+})
+
+Deno.test('detectReflections — PR-14c: the gate is pet-wide (a heavy vomit week mutes a calm itch card)', () => {
+  // vomit flat at 4 a week (neither rising nor chronic); itch 5 → 3, which would render.
+  const floor = DEFAULT_CONFIG.reflection.burdenMuteMinEpisodes
+  const itch = [
+    symptom('itch', at(24, 9)), symptom('itch', at(26, 9)), symptom('itch', at(28, 9)),
+    symptom('itch', at(17, 9)), symptom('itch', at(18, 9)), symptom('itch', at(19, 9)),
+    symptom('itch', at(20, 9)), symptom('itch', at(21, 9)),
+  ]
+  assert.equal(detectReflections(input({ symptomEvents: itch })).length, 1, 'itch alone renders')
+  const symptomEvents = [...itch, ...vomitDays(17, floor), ...vomitDays(24, floor)]
+  assert.deepEqual(detectReflections(input({ symptomEvents })), [])
+})
+
+Deno.test('detectReflections — PR-14c: a re-log of one vomit inside a minute counts once', () => {
+  // Four taps on one vomit (20s apart) are one vomit under the report's §5.11 rule, so a
+  // re-logging owner does not mute a genuinely calm week. Current = 3 vomits, prior = 5.
+  const relog = (sec: number) => symptom('vomit', `2026-05-24T08:00:${String(sec).padStart(2, '0')}.000Z`)
+  const symptomEvents = [
+    relog(0), relog(20), relog(40), relog(59),
+    symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    ...vomitDays(17, 5),
+  ]
+  const findings = detectReflections(input({ symptomEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].currentCount, 3)
+})
+
+Deno.test('detectReflections — PR-14c: separate same-day episodes count (4 episodes on 2 days mutes)', () => {
+  // Kills the `currentDays` mutant: episodes ≠ days here, and 4 episodes is the floor.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(24, 14)), symptom('vomit', at(26, 8)), symptom('vomit', at(26, 14)),
+    ...vomitDays(17, 6),
+  ]
+  assert.deepEqual(detectReflections(input({ symptomEvents })), [])
+})
+
+Deno.test('detectReflections — PR-14c: a CHAINED heavy week mutes (30 vomits that collapse to 3 episodes)', () => {
+  // Adversarial record A: ten vomits 2.5h apart on the 24th, 26th and 28th. The 3h chain makes each
+  // day ONE episode (3 vs 5 → "down from 5"), but a vet counts thirty vomits.
+  const day = (d: number) =>
+    Array.from({ length: 10 }, (_, i) => symptom('vomit', new Date(Date.parse(at(d, 0)) + i * 150 * 60_000).toISOString()))
+  const symptomEvents = [...day(24), ...day(26), ...day(28), ...vomitDays(17, 5)]
+  const inp = input({ symptomEvents })
+  assert.equal(
+    detectReflections(inp, { ...DEFAULT_CONFIG, reflection: { ...DEFAULT_CONFIG.reflection, burdenMuteMinEpisodes: 1e9 } })[0]
+      ?.currentCount,
+    3,
+    'non-vacuity: without the gate this record renders a 3-episode "down from 5"',
+  )
+  assert.deepEqual(detectReflections(inp), [])
+})
+
+Deno.test('detectReflections — PR-14c: a chain straddling the window start still counts its in-window vomits', () => {
+  // Adversarial record D: a chain opens 1h before the current window (May 23 11:00) and drips every
+  // 2.5h well into it. The episode lands in the PRIOR week; its in-window vomits are this week's.
+  const chain = Array.from({ length: 12 }, (_, i) => symptom('vomit', new Date(Date.parse(at(23, 11)) + i * 150 * 60_000).toISOString()))
+  const symptomEvents = [...chain, symptom('vomit', at(27, 8)), symptom('vomit', at(28, 8)), ...vomitDays(17, 3)]
+  assert.deepEqual(detectReflections(input({ symptomEvents })), [])
+})
+
+Deno.test('DEFAULT_CONFIG — PR-14c burden floor is pinned at FCEAI severe (a change is a CUL-583 ruling)', () => {
+  assert.equal(DEFAULT_CONFIG.reflection.burdenMuteMinEpisodes, 4)
 })
 
 // ── Detector ④: symptom-frequency worsening (the deterministic worsening lane) ──
@@ -1934,9 +2356,13 @@ Deno.test('detectSignals — end to end: a worsening pet leads with the safety w
   // Prior window needs ≥3 logged days for the rise to be trustworthy (fake-rise guard).
   const mealEvents = [meal({ occurredAt: at(18, 8) }), meal({ occurredAt: at(19, 8) })]
   const ranked = detectSignals(input({ pet: cat, symptomEvents, mealEvents }))
-  assert.equal(ranked.length, 1)
-  assert.equal(ranked[0].finding.type, 'symptom_worsening')
-  assert.equal(ranked[0].finding.priorityClass, 'safety')
+  // Four vomits this week, three of them on consecutive days: the burden card (PR-14d, CUL-1410)
+  // fires beside ④ and leads it. detectSignals keeps both (the vet report reads ④); only the
+  // Home pipeline drops the same-sign ④ under it (pipeline.ts suppressWorseningUnderBurden).
+  assert.equal(ranked.length, 2)
+  assert.equal(ranked[0].finding.type, 'symptom_burden')
+  assert.equal(ranked[1].finding.type, 'symptom_worsening')
+  assert.ok(ranked.every((r) => r.finding.priorityClass === 'safety'))
 })
 
 // ── Detector ⑦: symptom chronicity / persistence (B-182) ─────────────────────
@@ -4296,6 +4722,25 @@ Deno.test('detectCoverage — B-070: NOT dominant (60/40) → silent, no false s
   )
 })
 
+Deno.test('detectCoverage — CUL-1190: the staple is still measured over what was OFFERED (the copy says so)', () => {
+  // ① reads a refused bowl as no exposure, but this diagnostic deliberately does not:
+  // the vet report's sentence is "X is in most of what {pet} is offered" (cold read round
+  // 10), and a measure over eaten feedings printed it here about chicken at 6 of 16
+  // feedings offered (the adversarial pass's ADV-6). The copy's word decides the measure.
+  const mealEvents = [
+    ...Array.from({ length: 6 }, (_, i) => ratedProteinMeal(10 + i, 'chicken', 'all')),
+    ...Array.from({ length: 10 }, (_, i) =>
+      meal({ occurredAt: at(10 + i, 18), primaryProtein: 'beef', intakeRating: 'refused', foodType: 'meal' }),
+    ),
+  ]
+  const symptomEvents = [symptom('vomit', at(12, 7)), symptom('vomit', at(18, 7)), symptom('vomit', at(24, 7))]
+  assert.equal(
+    findDiag(detectCoverage(input({ pet: cat, mealEvents, symptomEvents })), 'staple_washout'),
+    undefined,
+    'chicken is 6 of 16 feedings offered: never "most of what she is offered"',
+  )
+})
+
 Deno.test('detectCoverage — B-070: a genuinely mixed-source staple reports stapleSource=mixed', () => {
   // Chicken dominates exposures (12 of 14 ≈ 86%) but is split evenly across meals and
   // treats (6/6) — neither kind is the ≥80% majority → the day-based "most days" register,
@@ -5031,7 +5476,7 @@ Deno.test('stripInternalOnsets (CUL-9) — strips a merged timing_story\'s long.
     longGapHours: 6,
     windowDays: 60,
     rapid: { count: 2, medianMinutesSinceFeeding: 15, lastTwoEligible: false, feedingFormsInEvidence: [] },
-    long: { count: 4, medianHoursSinceFeeding: 9, lastTwoEligible: true, feedingFormsInEvidence: [], longEpisodeOnsets: [111, 222] },
+    long: { count: 4, medianHoursSinceFeeding: 9, lastTwoEligible: true, afterRefusalCount: 0, feedingFormsInEvidence: [], longEpisodeOnsets: [111, 222] },
     associationalOnly: true,
   }
   const stripped = stripInternalOnsets([story])[0] as TimingStoryFinding

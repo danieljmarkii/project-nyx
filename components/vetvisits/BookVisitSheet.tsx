@@ -142,7 +142,7 @@ export function BookVisitSheet({
    * reopening the picker.
    *
    * That is not a cosmetic slip. `vet_visits.visited_at` is the date the report's
-   * window rung 1 keys off, the rundown's `MAX(visited_at)` trusts, and the Vet
+   * window rung 1 keys off, the rundown's since-visit bound reads, and the Vet
    * Files link picker lists — the reason migration 066 put bookings in a separate
    * table at all was to make "a visit that happened" unable to hold a future date.
    * A future row written through this sheet would have walked straight past that.
@@ -158,8 +158,30 @@ export function BookVisitSheet({
     // A visit that happened is remembered as a day with no time, so a time
     // carried over from the booked arm would be written nowhere and shown
     // nowhere — clearing it keeps the sheet honest about what it will save.
-    if (next === 'happened') setTime(null);
+    if (next === 'happened') {
+      setTime(null);
+      // Closed with it, or switching back to Booked would reopen the wheel on 9:00
+      // over a field reading Optional: the CUL-984 disagreement, reached sideways.
+      setShowTimePicker(false);
+    }
     if (!isLegalForMode(day, next, today)) setDay(today);
+  }
+
+  // CUL-984 — on iOS the time picker is an inline spinner, and a spinner fires
+  // `onChange` only when its wheel MOVES. It opened on 9:00 with nothing committed,
+  // so an owner who wanted 9:00 opened it, saved, and booked no time. Opening it with
+  // no time now commits the seed it shows: the field reads what the wheel reads.
+  // "No time" stays representable through Clear, which appears the moment a time
+  // exists and closes the wheel. Android's picker is a dialog that commits on OK.
+  function toggleTimePicker() {
+    const opening = !showTimePicker;
+    setShowTimePicker(opening);
+    if (opening && Platform.OS === 'ios' && !time) setTime(defaultTimeOfDay(day));
+  }
+
+  function clearTime() {
+    setTime(null);
+    setShowTimePicker(false);
   }
 
   function submit() {
@@ -250,7 +272,7 @@ export function BookVisitSheet({
                 <View style={styles.timeRow}>
                   <TouchableOpacity
                     style={[styles.value, styles.timeValue]}
-                    onPress={() => setShowTimePicker((v) => !v)}
+                    onPress={toggleTimePicker}
                     activeOpacity={0.7}
                     accessibilityRole="button"
                     accessibilityLabel={time ? `Time, ${formatTime(time)}` : 'Time, not set'}
@@ -265,7 +287,7 @@ export function BookVisitSheet({
                       that something is there to remove (C-7). */}
                   {time ? (
                     <TouchableOpacity
-                      onPress={() => setTime(null)}
+                      onPress={clearTime}
                       style={styles.clearTime}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       accessibilityRole="button"
@@ -364,21 +386,29 @@ export function BookVisitSheet({
 
             {/* Says what the save does elsewhere in the app, in the tense it is
                 true in — and ONLY what is true today.
-                
-                Mock E3 reads "Shows on Home five days before. No reminder yet",
-                and the frame is drawn in a world where the Home strip (A2, VV-5)
-                exists. It does not exist yet. An owner who books Tuesday's recheck,
-                reads that sentence, then watches Home for five days and sees
-                nothing concludes the save failed — which is worse than saying
-                nothing at all. The line returns, verbatim, with the strip.
-                
-                The `happened` half stays, because it is true now and it is the one
+
+                Mock E3's line — "Shows on Home five days before. No reminder yet"
+                — was WITHHELD while the Home strip (A2, VV-5) did not exist, on the
+                reasoning that an owner who books Tuesday's recheck, reads it, then
+                watches Home for five days and sees nothing concludes the save
+                failed. The note that withheld it said it would return, verbatim,
+                with the strip. VV-5 shipped the strip and the copy did not follow,
+                which left the last thing an owner reads before booking describing
+                only what the app WON'T do (CUL-953 item 2).
+
+                Returned verbatim. The "five" is the strip's own
+                `APPOINTMENT_WINDOW_DAYS`, spelled as a word because that is how the
+                sentence reads — and pinned to the constant by a test rather than
+                interpolated, so widening the window reds a check that names this
+                line instead of silently leaving it wrong.
+
+                The `happened` half is unchanged — true then, true now, and the one
                 consequence of this save the owner cannot see: a logged visit moves
                 the vet report's window. Never "from today" — the report's rung 1 is
                 strictly before today (§4.1 D2, AC 9). */}
             <ThemedText style={styles.footnote}>
               {isBooked
-                ? 'No reminder yet — that is its own step.'
+                ? 'Shows on Home five days before. No reminder yet.'
                 : 'Your next vet report starts from this visit.'}
             </ThemedText>
           </ScrollView>

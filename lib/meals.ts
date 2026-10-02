@@ -16,10 +16,11 @@
 // per surface, and keeping them out keeps lib/ free of a store dependency. Each
 // caller still calls prependEvent with the ids this helper returns.
 
-import { getDb } from './db';
+import { getDb, getEventPetId, updateMealIntake } from './db';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 import { triggerSignalRegenDebounced } from './signal';
 import { uuid } from './utils';
+import { useSyncStore } from '../store/syncStore';
 
 export interface InsertMealParams {
   petId: string;
@@ -107,6 +108,11 @@ export async function insertMeal(params: InsertMealParams): Promise<InsertMealRe
     );
   });
 
+  // A rated insert (the intake door) is a rating too: Home re-reads, so its row says what
+  // the record says even where a caller's optimistic mirror left the rating off (History
+  // v2 HV-6's adversarial pass, B1: the day row folds an unrated bowl into a run).
+  if (intakeRating !== null) notifyIntakeChanged();
+
   // Deliberately OUTSIDE the transaction, AND swallowed: last_used_at is a
   // local-only recency stamp for the picker's ordering, with no server column and
   // no bearing on the health record. Excluding it from the transaction stops a
@@ -138,4 +144,47 @@ export async function insertMeal(params: InsertMealParams): Promise<InsertMealRe
   triggerSignalRegenDebounced(petId);
 
   return { eventId, mealId, occurredAtIso, now };
+}
+
+// A rating also decides what counts as eating (CUL-1122): a bowl rated Refused is never the
+// meal a vomit is timed from, so Home's timing line has to re-read the feedings after one. The
+// card re-reads on `hydrationTick` and is otherwise keyed on today's event ids, which a rating
+// does not change (and last night's bowl, inside the lookback, is not among today's rows at
+// all), so a rating given after the vomit left "5 min after eating" standing over a refused
+// bowl. The move the trial and medication writes already make (`notifyTrialChanged` in
+// lib/dietTrialSetup.ts): a local write counts as a hydration, here in the write path, so no
+// screen that rates a meal has to know Home exists.
+function notifyIntakeChanged(): void {
+  try {
+    useSyncStore.getState().bumpHydrationTick();
+  } catch (e) {
+    // The rating is saved; a refresh-signal failure must not fail it.
+    console.warn('[rateMealIntake] hydration tick failed:', e);
+  }
+}
+
+// Rate (or clear) a logged meal's intake after the fact: the ONE write path for a
+// rating given on the completion card, the meal's own screen or the edit screen
+// (CUL-1087). The same freshness rule as `insertMeal`, for the same reason: all three
+// wrote the rating and none refreshed the Signal, so a rating that turned a cat's
+// breakfast into a decline stayed off Home until something else rebuilt it.
+// `lib/meals.test.ts` fails the build on a file outside this module that names
+// `updateMealIntake`.
+//
+// Throws only when the WRITE fails, so a caller's revert still means "not saved". The
+// push and the regen are fire-and-forget after it. The regen is for the pet on the
+// row, looked up rather than passed in: every caller is a record screen that may be
+// showing a pet who is not the active one (C-9).
+export async function rateMealIntake(
+  eventId: string,
+  rating: Parameters<typeof updateMealIntake>[1],
+): Promise<void> {
+  await updateMealIntake(eventId, rating);
+  notifyIntakeChanged();
+  syncPendingMeals().catch((e) => console.error('[rateMealIntake] sync push failed:', e));
+  getEventPetId(eventId)
+    .then((petId) => {
+      if (petId) triggerSignalRegenDebounced(petId);
+    })
+    .catch((e) => console.warn('[rateMealIntake] pet lookup failed; Signal not refreshed:', e));
 }

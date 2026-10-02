@@ -284,7 +284,7 @@ describe('daysSinceLastVomitEpisode', () => {
 // ── windowedTimedEligibleCount — the honest "have" for the timing row ─────────────
 describe('windowedTimedEligibleCount', () => {
   const witnessed = (ms: number): { ms: number; confidence: OnsetConfidence | null } => ({ ms, confidence: 'witnessed' });
-  const meal = (ms: number): FeedingInput => ({ ms, confidence: 'witnessed', form: 'meal' });
+  const meal = (ms: number): FeedingInput => ({ id: `meal-${ms}`, ms, confidence: 'witnessed', intakeRating: null, form: 'meal' });
   const NO_FREE_FED: FreeFedSpan[] = [];
 
   it('counts eligible (meal-timeable, witnessed-onset) episodes in the 60-day window', () => {

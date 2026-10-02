@@ -13,6 +13,7 @@
 // (Principle 1: zero decisions at the moment of the event).
 
 import type { VisitConsequence } from './vetVisits';
+import { ANCHORED_WINDOW_NAMES } from './historyWindows';
 
 // ── The next-visit row ──────────────────────────────────────────────────────────
 
@@ -84,6 +85,136 @@ export function trialVerdictLabel(verdict: TrialVerdict): string {
   }
 }
 
+// ── The one safety net on *Stopped* / *Ended* (CUL-951) ─────────────────────────
+
+/**
+ * The confirm an owner sees before *Stopped* ends a course or *Ended* ends a trial.
+ *
+ * A CONFIRM BEFORE, NOT A WAY BACK AFTER (C-21 — exactly one safety net per
+ * destructive action; PM ruling 2026-09-22). Reversal would mean un-ending a course,
+ * which the app has no concept of, and the H1 register says *Ended* comes only from
+ * an owner action — so the action is made deliberate rather than undoable.
+ *
+ * The chips are three of equal weight and only one of them is irreversible, which is
+ * why the dialog NAMES what ends and WHEN: "Stop it?" over a bare chip would confirm
+ * the tap, not the consequence. The date is passed in by the caller as a label, the
+ * `courseRowSubtitle` precedent (this module formats no dates of its own), and the
+ * caller hands the SAME day to the write, so the date the owner is shown and the date
+ * the record gets are one value.
+ *
+ * *Keep it* is the cancel and mock round 6's A7 wording: it answers "Stop Motozol?"
+ * with what actually happens — the course stays. It does NOT select the *Keep* chip;
+ * the row goes back to its resting state, unanswered.
+ */
+export interface EndConfirmCopy {
+  title: string;
+  body: string;
+  /** The cancel — nothing is written. */
+  keepLabel: string;
+  /** The destructive button. */
+  confirmLabel: string;
+}
+
+export function stopCourseCopy(args: {
+  drugName: string;
+  petName: string;
+  /** 'Sep 22' — the day `endRegimen` will write, formatted by the caller. */
+  endLabel: string;
+}): EndConfirmCopy {
+  const drug = args.drugName.trim();
+  return {
+    title: `Stop ${drug}?`,
+    // The second sentence is the Pet tab's own end-medication confirm
+    // (`confirmEndRegimen`), word for word: the claim is about the DOSES, which are
+    // events and untouched by the course's status — so it holds whatever the report
+    // does with the ended course itself.
+    body: `${args.petName}’s ${drug} course ends today, ${args.endLabel}. Its logged doses stay on the timeline and in vet reports.`,
+    keepLabel: 'Keep it',
+    confirmLabel: 'Stop it',
+  };
+}
+
+export function endTrialCopy(args: {
+  /** The trial's food, or null — never the row's 'Diet trial' stand-in, which would
+   *  read "End the Diet trial trial?". */
+  foodLabel: string | null;
+  petName: string;
+  /** 'Sep 22' — the day `endActiveTrial` will write. */
+  endLabel: string;
+}): EndConfirmCopy {
+  const food = args.foodLabel?.trim();
+  return {
+    title: food ? `End the ${food} trial?` : 'End the diet trial?',
+    // The same claim the course confirm makes about its doses, and for the same
+    // reason it holds: it is about the ENTRIES logged during the trial — events, which
+    // ending the trial does not touch — not about how the report renders the trial
+    // itself (that reads `ended_at` first, `trialEndValue` in generate-report). A
+    // first draft said "the timeline" alone, and beside the course confirm's "and in
+    // vet reports" the gap read as "ending the trial takes it out of the report"
+    // (pm-feature-review, Jordan).
+    body: `${args.petName}’s trial ends today, ${args.endLabel}. Everything logged during it stays on the timeline and in vet reports.`,
+    keepLabel: 'Keep it',
+    confirmLabel: 'End it',
+  };
+}
+
+/**
+ * What a row says once *Stopped* or *Ended* has been confirmed — the row stays where
+ * it was and says what happened, instead of vanishing (CUL-951).
+ *
+ * The vanishing was the only feedback the screen gave: the course re-read filters
+ * `status = 'active'`, so an answered row simply left the list, and a trial left
+ * behind *Start a trial* — the app asking to start one a second after the owner said
+ * the vet stopped one.
+ *
+ * "today" only while it is still today. A screen left open past midnight would
+ * otherwise go on saying "today" about yesterday, so the other branch names the day.
+ */
+export function settledVerdictLine(args: {
+  verdict: 'stopped' | 'ended';
+  /** 'YYYY-MM-DD' — the day the write recorded. */
+  endedOn: string;
+  /** 'YYYY-MM-DD' — the reading device's local today. */
+  today: string;
+  /** 'Sep 22', for the not-today branch. */
+  endLabel: string;
+}): string {
+  const verb = args.verdict === 'stopped' ? 'Stopped' : 'Ended';
+  return args.endedOn === args.today ? `${verb} today` : `${verb} ${args.endLabel}`;
+}
+
+/**
+ * The course list after a re-read, with every course settled on this screen kept in
+ * the place it held (CUL-951).
+ *
+ * The re-read is the right source for everything ELSE — a course added through the
+ * sheet, a dose amount changed through *Changed* — so this only overrides it for the
+ * rows the owner has already answered with *Stopped*, which the read can no longer
+ * see (it filters `status = 'active'`). Order is the previous render's, with any new
+ * course appended: a list that re-sorted under the owner's thumb after every answer
+ * would put the next chip where the last one was.
+ *
+ * Generic over the row so the rule is testable without the record's shape.
+ */
+export function mergePlanCourses<T extends { id: string }>(
+  prev: ReadonlyArray<T>,
+  fresh: ReadonlyArray<T>,
+  settledIds: ReadonlySet<string>,
+): T[] {
+  const freshById = new Map(fresh.map((c) => [c.id, c] as const));
+  const kept: T[] = [];
+  for (const c of prev) {
+    if (settledIds.has(c.id)) kept.push(c);
+    else {
+      const next = freshById.get(c.id);
+      if (next) kept.push(next);
+    }
+  }
+  const seen = new Set(kept.map((c) => c.id));
+  for (const c of fresh) if (!seen.has(c.id)) kept.push(c);
+  return kept;
+}
+
 // ── The saved moment (mock D2) ──────────────────────────────────────────────────
 
 /** One line of "what was linked", in the order the moment lists them. */
@@ -94,6 +225,66 @@ export interface LinkedLine {
   title: string;
   /** 'linked to this visit', 'added'. */
   note: string;
+  /** A course stopped or a trial ended on this screen. Its note names the day, so it
+   *  is re-derived at the save by `linkedLinesAsOf` rather than kept as written. */
+  settled?: { verdict: 'stopped' | 'ended'; endedOn: string };
+}
+
+/**
+ * The moment's line for a course stopped or a trial ended here (CUL-1092).
+ *
+ * The note is the settled row's own sentence (`settledVerdictLine`), so the verb is
+ * said once: the lines used to read "Motozol stopped · ended today". The title is the
+ * course or the trial, with no verb of its own.
+ */
+export function settledLinkedLine(args: {
+  key: string;
+  title: string;
+  verdict: 'stopped' | 'ended';
+  /** 'YYYY-MM-DD' — the day the write recorded. */
+  endedOn: string;
+  /** 'YYYY-MM-DD' — the reading device's local today. */
+  today: string;
+  /** 'Sep 22', for the not-today branch. */
+  endLabel: string;
+}): LinkedLine {
+  const { key, title, verdict, endedOn } = args;
+  return { key, title, note: settledVerdictLine(args), settled: { verdict, endedOn } };
+}
+
+/**
+ * The linked lines as of the day the owner SAVES, not the day each was answered.
+ *
+ * A course stopped at 11:58 pm and saved at 12:01 am was stopped yesterday, and a note
+ * written when the chip was tapped would go on saying "today". `dayLabel` formats the
+ * other branch's date; this module formats none of its own.
+ */
+export function linkedLinesAsOf(
+  lines: readonly LinkedLine[],
+  today: string,
+  dayLabel: (day: string) => string,
+): LinkedLine[] {
+  return lines.map((line) =>
+    line.settled
+      ? settledLinkedLine({
+          key: line.key,
+          title: line.title,
+          ...line.settled,
+          today,
+          endLabel: dayLabel(line.settled.endedOn),
+        })
+      : line,
+  );
+}
+
+/**
+ * A trial as the moment names it: "Hill's z/d trial". The bare food read as the FOOD
+ * ending ("Hill's z/d ended"). With no food on record it is "Diet trial", never
+ * "Diet trial trial" (the `endTrialCopy` rule).
+ */
+export function trialMomentTitle(foodLabel: string | null | undefined): string {
+  const food = foodLabel?.trim();
+  return food ? `${food} trial` : 'Diet trial';
 }
 
 export interface VisitSaveSummary {
@@ -109,7 +300,9 @@ export interface VisitSaveSummary {
    * one.
    */
   reportLine: string | null;
-  /** Home's "since last visit", or null when this visit is not the anchor. */
+  /** "Since the last vet visit" (the rundown and History), or null when this visit does
+   *  not start it yet: not the anchor, or dated today (it starts tomorrow, as the
+   *  report's line already says). */
   homeLine: string | null;
   linked: LinkedLine[];
   /** The Vet Files offline line, verbatim (§4.1 D2). */
@@ -118,6 +311,28 @@ export interface VisitSaveSummary {
 
 /** Vet Files' own offline line, word for word — one promise, one wording. */
 export const VISIT_OFFLINE_LINE = 'On this phone now — backs up when you’re online';
+
+/**
+ * Does this visit, as dated, anchor anything the owner can see?
+ *
+ * A FUTURE-DATED visit anchors nothing and is claimed for nothing: the report skips it
+ * until the day arrives, and since CUL-1127 so does the rundown's "since the last vet
+ * visit", which takes the same bound (`lib/visitWindow.ts`, H-11). Before that the
+ * rundown's unbounded `MAX(visited_at)` WOULD adopt it and render an absence over a
+ * window that cannot contain anything, which is why this gates both lines rather than
+ * only the report's: a true sentence about a false window is the worse of the two.
+ *
+ * EXPORTED because the saved moment is no longer its only reader. The EDIT screen
+ * carried the consequence as an unconditional sentence — *"Moving this date moves
+ * where {pet}'s vet report starts"* — under a date field on every visit, so
+ * correcting a typo on a March visit told an owner they had moved their report
+ * window (CUL-953 item 1). It is the same question, so it is the same function:
+ * a second copy of this rule beside an editor is how the two drift, and the
+ * screen that drifts is the one making the claim BEFORE the write.
+ */
+export function visitAnchorsAnything(consequence: VisitConsequence): boolean {
+  return consequence.isLatest && consequence.dayRelation !== 'after_today';
+}
 
 /**
  * The moment's copy, derived from what the record now says.
@@ -143,12 +358,7 @@ export function describeVisitSave(args: {
   linked: LinkedLine[];
 }): VisitSaveSummary {
   const { petName, consequence, linked } = args;
-  // A FUTURE-DATED visit anchors nothing and is claimed for nothing — not the report,
-  // which skips it until the day arrives, and not Home, whose unbounded
-  // `MAX(visited_at)` WOULD adopt it and then render an absence over a window that
-  // cannot contain anything. The second is why this gates both lines rather than only
-  // the report's: a true sentence about a false window is the worse of the two.
-  const anchorsAnything = consequence.isLatest && consequence.dayRelation !== 'after_today';
+  const anchorsAnything = visitAnchorsAnything(consequence);
 
   let reportLine: string | null = null;
   if (anchorsAnything && consequence.dayRelation === 'before_today') {
@@ -162,10 +372,18 @@ export function describeVisitSave(args: {
   return {
     heading: `Saved to ${petName}’s visits`,
     reportLine,
-    // Home's "since last visit" is anchored on the pet's most recent visit with no
-    // before-today bound, so it moves the moment this visit becomes the latest —
-    // which is why it is a separate sentence from the report's, not a clause in it.
-    homeLine: anchorsAnything ? '“Since last visit” on Home starts again from here.' : null,
+    // The rundown's "Since the last vet visit" (Get ready) and History's window take the
+    // report's own bound since CUL-1127 (the latest visit STRICTLY BEFORE today, H-11),
+    // so they move when the report does. Dated before today, this visit starts all of
+    // them now, and the line says so in the window's one name. Dated today it starts
+    // them tomorrow, which the report line already says; a second sentence claiming the
+    // window "starts again from here" today was true only while the rundown's anchor
+    // was an unbounded `MAX(visited_at)`, and would now contradict the tile the owner
+    // opens next.
+    homeLine:
+      anchorsAnything && consequence.dayRelation === 'before_today'
+        ? `“${ANCHORED_WINDOW_NAMES.visit}” starts again from here.`
+        : null,
     linked,
     offlineLine: VISIT_OFFLINE_LINE,
   };

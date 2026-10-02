@@ -1,0 +1,73 @@
+# The time-axis sibling of CI's timezone leg (CUL-832, after CUL-831).
+#
+# A calendar time bomb is a test fixture pinned to a DATE, judged against a real-clock
+# window: an inbox that drops captures after 45 days, a trial's 56-day grace, "is this
+# reading from this year". It passes every day until the calendar crosses the window,
+# then blocks every push in the repo on a date rather than on a change, with a failure
+# message that points nowhere near time. CUL-831 found one the hard way.
+#
+# This runs the whole jest suite with the wall clock moved forward (jest.clockSkew.js),
+# so a fixture that will go off inside the skew goes off HERE first, on a schedule,
+# naming its file while there is still time to fix it. guards/clockSkew.test.ts proves
+# each run really was skewed, so a shim that stops loading reds this job rather than
+# passing it over nothing.
+#
+# The skews: 30 days (what goes off this month), 180 (the next six months, the value
+# CUL-831's fix was proved with) and 400 (past a full year, so every New Year's rollover
+# is seen well ahead). All three were green on 2026-09-24 once CUL-832 defused the two
+# it found: lib/signalScreen.test.ts (would have gone off 2026-11-14) and
+# components/designV2/patterns/WeightCard.test.tsx (2027-01-01).
+#
+# Deliberately NOT a pull-request check. A skewed red is a warning about a coming date,
+# not a fault in the change under review, and a required check that reds on the calendar
+# is the very failure this job exists to prevent.
+name: Clock skew
+
+on:
+  schedule:
+    # Mondays, 09:17 UTC: early in the PM's week, off the top of the hour.
+    - cron: '17 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  jest-clock-skew:
+    name: App (jest, clock moved forward)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Every skew runs even after one fails: which days broke is what dates the bomb.
+      - name: Jest with the clock moved forward
+        shell: bash
+        run: |
+          set -uo pipefail
+          skews=(30 180 400)
+          failed=()
+          for days in "${skews[@]}"; do
+            echo "::group::CLOCK_SKEW_DAYS=${days}"
+            if CLOCK_SKEW_DAYS="${days}" npx jest --ci --config jest.clockSkew.config.js; then
+              echo "+${days} days: green"
+            else
+              failed+=("+${days}")
+            fi
+            echo "::endgroup::"
+          done
+          if [ "${#failed[@]}" -ne 0 ]; then
+            echo "::error::jest failed with the clock moved forward ${failed[*]} days. A fixture is pinned to a date and judged against a real-clock window, so it will go red by itself on a coming date (CUL-831, CUL-832). Anchor the fixture to Date.now(), or pin the suite's clock with jest.setSystemTime; do not widen the window or drop a skew."
+            exit 1
+          fi
+          echo "All ${#skews[@]} skews green."

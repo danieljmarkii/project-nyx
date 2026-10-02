@@ -23,6 +23,14 @@ interface Props {
   onChangeField: <K extends keyof VisitEditFields>(key: K, value: VisitEditFields[K]) => void;
   saving: boolean;
   onSave: () => void;
+  /**
+   * Whether this visit, at the date currently in the picker, is the one the vet
+   * report's window and Home's "since last visit" key off — the caller's read of
+   * `visitAnchorsAnything`, so the note and the saved moment answer one question.
+   * False while the record has not answered yet: an unmade claim is recoverable,
+   * a false one is not.
+   */
+  movesReportWindow: boolean;
 }
 
 // Editing a visit as written (mock D3's ⋯ *Edit*).
@@ -37,7 +45,14 @@ interface Props {
 // screen — the vet report's window rung 1 and Home's "since last visit" both key off
 // `visited_at` — so the note under it says so rather than leaving the owner to find
 // out from a report.
-export function VisitEditBody({ petName, fields, onChangeField, saving, onSave }: Props) {
+export function VisitEditBody({
+  petName,
+  fields,
+  onChangeField,
+  saving,
+  onSave,
+  movesReportWindow,
+}: Props) {
   const [showDayPicker, setShowDayPicker] = useState(false);
 
   return (
@@ -71,9 +86,18 @@ export function VisitEditBody({ petName, fields, onChangeField, saving, onSave }
           }}
         />
       )}
-      <ThemedText style={styles.dateNote}>
-        Moving this date moves where {petName}’s vet report starts.
-      </ThemedText>
+      {/* Only for the visit that actually anchors the window. Rendered
+          unconditionally, this told an owner correcting a typo on a March visit —
+          with April's already on record — that they had just moved their report
+          window, which is false and is the kind of false an owner cannot check
+          (CUL-953 item 1). `describeVisitSave` was already careful about exactly
+          this for the SAVED moment; the editor makes the claim one step earlier,
+          so it asks the same predicate rather than carrying its own. */}
+      {movesReportWindow && (
+        <ThemedText style={styles.dateNote}>
+          Moving this date moves where {petName}’s vet report starts.
+        </ThemedText>
+      )}
 
       <SectionLabel label="Where" style={styles.label} />
       <TextField

@@ -1,0 +1,328 @@
+// Home under `design_v2` — the async half of the flag-off proof, and the FAB's inset
+// (D2-4 / CUL-1066; C-41, C-5).
+//
+// `guards/designV2FlagOff.test.tsx` proves the SYNCHRONOUS half: Home's first frame is
+// byte-identical with the namespace stubbed. It cannot see a node whose render waits on
+// a read, and Today's spine is exactly that shape — its rows come from the store and its
+// reads (the photo set, the read's verdict) land a tick later. So this file renders Home
+// over a fixture that WOULD answer — a photographed vomit in today's store, its verdict
+// in the phone's copy — and asserts, flag-off, that no spine row renders and the copy is
+// never read; then, flag-on, that both happen. An absence proves a gate only when the
+// thing gated was available to leak (C-41).
+//
+// Since HV-5 (CUL-1162) the verdict is the phone's copy (`event_ai_verdicts`), never a
+// server read, so the SERVER is stubbed to throw on any call here and must never be
+// called: the last case is the issue's acceptance line, "with the network off, Home's
+// spine shows the rose".
+
+jest.mock('react-native-safe-area-context', () => {
+  const { View } = require('react-native');
+  return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
+});
+jest.mock('expo-router', () => ({
+  router: { push: jest.fn() },
+  useNavigation: () => ({ isFocused: () => true, addListener: () => () => {} }),
+}));
+// The shipped cards, as markers: this file is about Today's spine and the door, not the
+// Signal. (The order file pins where each sits.)
+const marker = (name: string) => {
+  const { View } = require('react-native');
+  const React = require('react');
+  return () => React.createElement(View, { testID: `zone-${name}` });
+};
+jest.mock('../../components/home/HomeHeader', () => ({ HomeHeader: marker('header') }));
+jest.mock('../../components/home/PullToRefreshSky', () => ({ PullToRefreshSky: marker('sky') }));
+jest.mock('../../components/home/CrossPetSafetyBanner', () => ({ CrossPetSafetyBanner: marker('cross') }));
+jest.mock('../../components/home/SignalZone', () => ({ SignalZone: marker('signal') }));
+jest.mock('../../components/vetvisits/AppointmentStrip', () => ({ AppointmentStrip: marker('appointment') }));
+jest.mock('../../components/home/TrialStrip', () => ({ TrialStrip: marker('trial') }));
+jest.mock('../../components/home/MedStrip', () => ({ MedStrip: marker('med') }));
+jest.mock('../../components/home/LookCard', () => ({ LookCard: marker('look') }));
+jest.mock('../../components/home/LookExits', () => ({ LookExits: marker('look-exits'), exitVisibility: () => ({}), lookRectInPage: () => null }));
+jest.mock('../../components/home/TodayZone', () => ({ TodayZone: marker('today') }));
+jest.mock('../../components/home/TrendZone', () => ({ TrendZone: marker('trend') }));
+jest.mock('../../components/designV2/home/LookHeader', () => ({ LookHeader: marker('look-header') }));
+jest.mock('../../hooks/useDietTrial', () => ({ useDietTrial: () => ({ input: null, inputIsForPet: true }) }));
+jest.mock('../../hooks/useMedStrips', () => ({ useMedStrips: () => ({ input: null }) }));
+// The sync layer as the analysis chain meets it: the landed read's save puts the
+// server's current verdict into the phone's copy and says whether it moved.
+let mockServerVerdict = 'monitor';
+jest.mock('../../lib/sync', () => ({
+  syncNow: jest.fn(),
+  syncPendingEvents: jest.fn(async () => {}),
+  ensureEventAttachmentsSynced: jest.fn(async () => {}),
+  refreshReadCopy: jest.fn(async () => {
+    const before = mockCopyRows[0]?.recommendation;
+    mockCopyRows = [{ event_id: 'v1', status: 'completed', recommendation: mockServerVerdict, updated_at: new Date().toISOString() }];
+    return before !== mockServerVerdict;
+  }),
+}));
+jest.mock('../../lib/signal', () => ({ regenerateSignal: jest.fn() }));
+jest.mock('../../lib/haptics', () => ({ pullThreshold: jest.fn() }));
+let mockDesignV2 = false;
+jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockDesignV2 }));
+jest.mock('../../store/petStore', () => {
+  const pet = { id: 'p1', name: 'Nyx', species: 'cat', sex: 'female' };
+  const state = { activePet: pet, pets: [pet] };
+  return {
+    usePetStore: Object.assign((sel?: (s: typeof state) => unknown) => (sel ? sel(state) : state), {
+      getState: () => state,
+    }),
+  };
+});
+// The store's rows, through the real event store, so the fixture is the one Home would
+// actually read; the loader is a no-op (the fixture is already in the store).
+jest.mock('../../hooks/useEvents', () => ({
+  useEvents: () => ({
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    todayEvents: require('../../store/eventStore').useEventStore((s: any) => s.todayEvents),
+    loadTodayEvents: jest.fn(),
+    prependEvent: jest.fn(),
+  }),
+}));
+// The LOCAL reads answer as the record would: the photographed events have a photo, no
+// feedings, no spans, a month with one logged day, and the phone's copy of each read
+// (HV-5). The attachment and copy reads answer ONLY for the ids they are asked about, as
+// the real `IN (…)` queries do (C-39: a mock that answers every question hides a caller
+// that never asked it, which is exactly CUL-1197's shape).
+let mockCopyRows: Record<string, unknown>[] = [];
+let mockPhotographed = new Set<string>(['v1']);
+const mockDb = {
+  getAllAsync: jest.fn(async (sql: string, params: unknown[] = []) => {
+    if (/FROM event_attachments/.test(sql)) {
+      return params.filter((id) => mockPhotographed.has(id as string)).map((event_id) => ({ event_id }));
+    }
+    if (/FROM event_ai_verdicts/.test(sql)) return mockCopyRows.filter((r) => params.includes(r.event_id));
+    if (/FROM events WHERE/.test(sql)) return [{ occurred_at: new Date().toISOString() }];
+    // The door's record start (CUL-1221): the fixture's one event, today's, is the record.
+    if (/FROM events\s+WHERE[\s\S]*ORDER BY occurred_at ASC/.test(sql)) return [{ occurred_at: new Date().toISOString() }];
+    return [];
+  }),
+};
+jest.mock('../../lib/db', () => ({ getDb: () => mockDb }));
+// The SERVER, off: any call throws. Home's verdict comes from the copy, so no case below
+// may call it, flag on or off.
+const mockFrom = jest.fn(() => {
+  throw new Error('offline: Home must not reach the server for a verdict');
+});
+let mockInvokeRelease: ((v: { error: null }) => void) | null = null;
+const mockInvoke = jest.fn(() => new Promise((r) => { mockInvokeRelease = r as (v: { error: null }) => void; }));
+jest.mock('../../lib/supabase', () => ({
+  supabase: {
+    from: (...a: unknown[]) => mockFrom(...(a as [])),
+    functions: { invoke: (...a: unknown[]) => mockInvoke(...(a as [])) },
+  },
+}));
+// The REAL claim registry and the real announcement that tells Home about a chain (the
+// sync store is real too, so the tick it moves is the one Home rereads on). Only the
+// realtime watch is stubbed: it is a socket, not a rule.
+jest.mock('../../lib/analysis', () => ({
+  ...jest.requireActual('../../lib/analysis'),
+  watchAnalysisRow: () => () => {},
+}));
+
+import { act, render, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
+import { FAB_SCROLL_INSET_FLOOR, HOME_V2_SCROLL_INSET } from '../../lib/fabFootprint';
+import { analysisChainOutstanding, claimAnalysisChain, triggerVomitAnalysis, type AnalysisChainClaim } from '../../lib/analysis';
+import { useEventStore } from '../../store/eventStore';
+import HomeScreen from './index';
+
+const vomitNow = () => ({
+  id: 'v1',
+  pet_id: 'p1',
+  event_type: 'vomit',
+  occurred_at: new Date().toISOString(),
+  occurred_at_confidence: 'witnessed',
+});
+
+const copyRow = (recommendation: string | null, status = 'completed') => ({
+  event_id: 'v1',
+  status,
+  recommendation,
+  updated_at: new Date().toISOString(),
+});
+const copyReads = () =>
+  mockDb.getAllAsync.mock.calls.filter(([sql]) => /FROM event_ai_verdicts/.test(sql as string));
+
+beforeEach(() => {
+  mockFrom.mockClear();
+  mockDb.getAllAsync.mockClear();
+  mockPhotographed = new Set(['v1']);
+  mockCopyRows = [copyRow('monitor')];
+  useEventStore.setState({ todayEvents: [vomitNow() as never], todayRead: { petId: 'p1', state: 'ready' } });
+});
+
+describe('flag-off: Home renders no spine row and reads no verdict (C-41)', () => {
+  it('over a fixture that would answer', async () => {
+    mockDesignV2 = false;
+    const t = render(<HomeScreen />);
+    await act(async () => {});
+    await act(async () => {});
+    expect(t.queryByTestId('home-spine')).toBeNull();
+    expect(t.queryByTestId('spine-node-v1')).toBeNull();
+    expect(t.queryByTestId('coverage-door')).toBeNull();
+    expect(copyReads()).toEqual([]);
+    expect(mockFrom).not.toHaveBeenCalled();
+    // The fixture was available to leak: the shipped zones rendered around it.
+    expect(t.getByTestId('zone-today')).toBeTruthy();
+  });
+});
+
+describe('flag-on: the spine draws the row, the copy is read, the door speaks coverage', () => {
+  it('and the same fixture now reaches the phone’s copy and the node, never the server', async () => {
+    mockDesignV2 = true;
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(t.getByTestId('spine-node-v1')).toBeTruthy());
+    await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
+    // The copy says monitor: a calm read draws nothing on the row (HV-6, §3.6 rule 7), so
+    // once the copy has landed the row carries neither the grey mark nor a word.
+    await waitFor(() => expect(t.queryByTestId('spine-unread-v1')).toBeNull());
+    expect(t.queryByTestId('spine-verdict-v1')).toBeNull();
+    expect(t.getByTestId('coverage-door')).toBeTruthy();
+    // The fixture's only event is today's, so the record starts today: no ratio yet, and
+    // today is never a counted day (CUL-1221).
+    await waitFor(() => expect(t.getByText(/the record starts today/)).toBeTruthy());
+    expect(t.queryByTestId('zone-today')).toBeNull();
+    expect(t.queryByTestId('zone-trend')).toBeNull();
+    expect(t.queryByTestId('zone-med')).toBeNull();
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+});
+
+describe('with the network off, the spine shows the rose (HV-5 / CUL-1162, AC 21)', () => {
+  it('a worth-a-call read draws its rose word from the phone’s copy, the server throwing on any call', async () => {
+    mockDesignV2 = true;
+    mockCopyRows = [copyRow('worth_a_call')];
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it('a failed re-read over a live escalation still draws the rose (CUL-812)', async () => {
+    mockDesignV2 = true;
+    mockCopyRows = [copyRow('worth_a_call', 'failed')];
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
+  });
+
+  it('a photographed vomit whose read the phone does not hold is never drawn calm: it says "Photo not read"', async () => {
+    mockDesignV2 = true;
+    mockCopyRows = [];
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
+    await waitFor(() => expect(t.getByText('Photo not read')).toBeTruthy());
+    expect(t.queryByTestId('spine-verdict-v1')).toBeNull();
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it('an unclear read (not enough to say) is never drawn calm either: "Photo not read" (the PM’s 2026-09-25 ruling)', async () => {
+    mockDesignV2 = true;
+    mockCopyRows = [copyRow('not_enough_to_say', 'uncertain')];
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
+    await waitFor(() => expect(t.getByText('Photo not read')).toBeTruthy());
+  });
+});
+
+describe('the read gate follows the record, never the tint (CUL-1197)', () => {
+  it('a photographed normal-looking stool whose read is worth a call shows the rose on Home', async () => {
+    mockDesignV2 = true;
+    mockPhotographed = new Set(['s1']);
+    mockCopyRows = [{ ...copyRow('worth_a_call'), event_id: 's1' }];
+    useEventStore.setState({
+      todayEvents: [{ ...vomitNow(), id: 's1', event_type: 'stool_normal' } as never],
+      todayRead: { petId: 'p1', state: 'ready' },
+    });
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(t.getByTestId('spine-verdict-s1').props.children).toBe('Worth a call'));
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+});
+
+describe('a read Home never saw start still reaches it (the adversarial pass’s F1 on #912)', () => {
+  it('a chain claimed after Home drew the row: the calm row gives way to the tick while it runs, the rose once it lands', async () => {
+    mockDesignV2 = true;
+    mockCopyRows = [copyRow('monitor')];
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
+    await waitFor(() => expect(t.queryByTestId('spine-unread-v1')).toBeNull());
+    // The owner replaces the photo on the record screen: a chain Home did not sample.
+    let claim: AnalysisChainClaim | null = null;
+    act(() => {
+      claim = claimAnalysisChain('v1');
+    });
+    expect(claim).not.toBeNull();
+    await waitFor(() => expect(t.getByText('Reading the photo…')).toBeTruthy());
+    expect(t.queryByTestId('spine-verdict-v1')).toBeNull();
+    // The read lands: the chain saves it to the copy, then settles.
+    mockCopyRows = [copyRow('worth_a_call')];
+    await act(async () => {
+      claim?.settle(true);
+    });
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it('a re-run that held no claim lands after the chain it waited on settled: Home still gets the rose (second pass)', async () => {
+    // The adversarial reviewer's reproduction on #912, with its last assertions turned
+    // around: before the fix the copy held the rose and Home kept the calm words until
+    // some unrelated tick.
+    mockDesignV2 = true;
+    mockServerVerdict = 'monitor';
+    mockCopyRows = [copyRow('monitor')];
+    const t = render(<HomeScreen />);
+    await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
+    await waitFor(() => expect(t.queryByTestId('spine-unread-v1')).toBeNull());
+    // The record screen replaces the photo: its chain.
+    let owner: AnalysisChainClaim | null = null;
+    act(() => {
+      owner = claimAnalysisChain('v1');
+    });
+    await waitFor(() => expect(t.getByText('Reading the photo…')).toBeTruthy());
+    // Re-run, tapped while that chain runs: its trigger finds the claim taken.
+    let rerun!: Promise<{ error: string | null }>;
+    act(() => {
+      rerun = triggerVomitAnalysis('v1');
+    });
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(1));
+    const releaseRerun = mockInvokeRelease!;
+    // The owner's chain lands first (monitor) and settles.
+    await act(async () => {
+      owner!.settle(true);
+    });
+    // The owner's chain landed calm: the tick is gone and the row is quiet again.
+    await waitFor(() => expect(t.queryByText('Reading the photo…')).toBeNull());
+    expect(t.queryByTestId('spine-verdict-v1')).toBeNull();
+    expect(analysisChainOutstanding('v1')).toBe(false);
+    // The re-run lands after it, as worth_a_call, and nothing else happens.
+    mockServerVerdict = 'worth_a_call';
+    await act(async () => {
+      releaseRerun({ error: null });
+      await rerun;
+    });
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+});
+
+describe('the scroll inset clears the FAB (C-5)', () => {
+  const insetOf = (t: ReturnType<typeof render>) => {
+    const scroll = t.UNSAFE_getByType(require('react-native').ScrollView);
+    return (StyleSheet.flatten(scroll.props.contentContainerStyle) as { paddingBottom?: number }).paddingBottom;
+  };
+  it('flag-on: the content carries the page’s inset, at or above the floor', async () => {
+    mockDesignV2 = true;
+    const t = render(<HomeScreen />);
+    expect(insetOf(t)).toBe(HOME_V2_SCROLL_INSET);
+    expect(HOME_V2_SCROLL_INSET).toBeGreaterThanOrEqual(FAB_SCROLL_INSET_FLOOR);
+    await act(async () => {});
+  });
+  it('flag-off: the shipped inset is unchanged and was already above the floor', async () => {
+    mockDesignV2 = false;
+    const t = render(<HomeScreen />);
+    expect(insetOf(t)).toBe(100);
+    expect(100).toBeGreaterThanOrEqual(FAB_SCROLL_INSET_FLOOR);
+    await act(async () => {});
+  });
+});

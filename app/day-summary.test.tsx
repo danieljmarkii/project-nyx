@@ -26,6 +26,9 @@ jest.mock('expo-router', () => {
   };
 });
 
+// TS-6: the trial screen's flag, off unless a test says otherwise.
+let mockTrialScreenLive = false;
+jest.mock('../hooks/useTrialScreen', () => ({ useTrialScreen: () => mockTrialScreenLive }));
 const mockState = jest.fn();
 jest.mock('../hooks/useDaySummary', () => ({ useDaySummary: () => mockState() }));
 // The in-context offer (DR-3) is stubbed off for the four-state wiring tests (its
@@ -52,6 +55,7 @@ jest.mock('../store/syncStore', () => ({
 import { fireEvent, render } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import DaySummaryScreen from './day-summary';
+import { useUiStore } from '../store/uiStore';
 import type { DaySummaryModel, DaySummarySection } from '../lib/daySummary';
 
 function section(over: Partial<DaySummarySection> & { petId: string; petName: string }): DaySummarySection {
@@ -73,7 +77,10 @@ function model(over: Partial<DaySummaryModel>): DaySummaryModel {
 const spineRow = (id: string, title: string, category: DaySummarySection['rows'][number]['category'] = 'meal') =>
   ({ id, eventType: 'meal', category, title, detail: null, formatTag: null, time: '9:00 AM', timeMs: 0, subline: null });
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  useUiStore.setState({ logSheet: null });
+});
 
 describe('DaySummaryScreen — four-state wiring', () => {
   it('error state renders a message + retry, never a false empty; retry bumps hydration', () => {
@@ -84,7 +91,10 @@ describe('DaySummaryScreen — four-state wiring', () => {
     expect(mockBump).toHaveBeenCalledTimes(1);
   });
 
-  it('zero-log renders the designed empty state; the CTA opens the quick-log', () => {
+  // The quick-log is the app's one log sheet (CUL-503), mounted at the root so it
+  // presents over this pushed screen. It pushed the full-screen /log picker before;
+  // this reds if it goes back to that.
+  it('zero-log renders the designed empty state; the CTA opens the log sheet', () => {
     mockState.mockReturnValue({
       status: 'ready',
       anchorMs: Date.parse('2026-08-15T21:00:00Z'),
@@ -92,8 +102,10 @@ describe('DaySummaryScreen — four-state wiring', () => {
     });
     const { getByText } = render(<DaySummaryScreen />);
     expect(getByText('Nothing in Biscuit’s record today')).toBeTruthy();
+    expect(useUiStore.getState().logSheet).toBeNull();
     fireEvent.press(getByText('Log an event'));
-    expect(router.push).toHaveBeenCalledWith('/log');
+    expect(useUiStore.getState().logSheet).toEqual({ initialType: null });
+    expect(router.push).not.toHaveBeenCalled();
   });
 
   it('single-pet ready renders lead + spine + trial strip + forward line', () => {
@@ -151,6 +163,8 @@ describe('the strips deep-link to their own card', () => {
     }),
   });
 
+  // TS-6's flag-off proof (the decider entry in `guards/trialScreenFlagOff.test.tsx`
+  // names this test): with `trial_screen` off, the strip links exactly as it did before.
   it('the trial strip opens the trial card', () => {
     mockState.mockReturnValue(
       ready({ trialStrip: { title: 'Whitefish trial', fact: 'Day 12 of 28' } }),
@@ -161,6 +175,35 @@ describe('the strips deep-link to their own card', () => {
     const href = (router.push as jest.Mock).mock.calls[0][0];
     expect(href.pathname).toBe('/(tabs)/profile');
     expect(href.params.focus).toBe('trial');
+  });
+
+  it('under trial_screen, the trial strip opens the recap pet’s trial screen (TS-6)', () => {
+    mockTrialScreenLive = true;
+    try {
+      mockState.mockReturnValue(
+        ready({ trialStrip: { title: 'Whitefish trial', fact: 'Day 12 of 28' } }),
+      );
+      const { getByText } = render(<DaySummaryScreen />);
+      fireEvent.press(getByText('Whitefish trial'));
+      expect(router.push).toHaveBeenCalledTimes(1);
+      expect(router.push).toHaveBeenCalledWith('/trial/p1');
+    } finally {
+      mockTrialScreenLive = false;
+    }
+  });
+
+  it('under trial_screen, a med strip still opens its own card', () => {
+    mockTrialScreenLive = true;
+    try {
+      mockState.mockReturnValue(
+        ready({ medStrips: [{ key: 'item-amox', title: 'Amoxicillin · day 5 of 14', fact: null, isConcern: false }] }),
+      );
+      const { getByText } = render(<DaySummaryScreen />);
+      fireEvent.press(getByText('Amoxicillin · day 5 of 14'));
+      expect((router.push as jest.Mock).mock.calls[0][0].params.focus).toBe('medications');
+    } finally {
+      mockTrialScreenLive = false;
+    }
   });
 
   it('each med strip carries ITS OWN key, not the first one on the screen', () => {

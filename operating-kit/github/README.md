@@ -1,0 +1,1 @@
+Install as `.github/PULL_REQUEST_TEMPLATE.md` and `.github/workflows/ci.yml` (drop the `.template` suffix and fill the placeholders). Then, in GitHub settings, create a ruleset on `main` that requires both check names, with an empty bypass list. Until that ruleset exists, CI is advice, not a gate.

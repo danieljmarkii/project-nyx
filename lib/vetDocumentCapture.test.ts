@@ -611,6 +611,43 @@ describe('the saved moment’s copy (D2-r2)', () => {
     const rows = build([page({ exifIso: new Date(2025, 11, 19, 10, 0).toISOString() })]);
     expect(savedMomentCopy('Pixel', rows, NOW).cardTitle).toBe('Document — Dec 19, 2025');
   });
+
+  // ── The `document_date ?? created_at` fallback arm (CUL-959) ───────────────
+  //
+  // Third of the three sites, same class as the library row and the detail cover
+  // — the long note lives in lib/vetDocumentLibrary.test.ts. `created_at` is an
+  // instant and the formatter parses lexically, so an unadapted read renders the
+  // UTC day rather than the owner's.
+  //
+  // Built BY HAND rather than through `build()`, and that is the point: this
+  // module's own `buildVetDocumentRows` always resolves a `document_date`
+  // (`input.documentDate ?? vetDocumentDateFromPages(...)`), which is exactly why
+  // the fallback is dormant today. A fixture routed through the real builder
+  // could not reach this branch at all, and would have been green over nothing.
+  describe('the created_at fallback reads the LOCAL day', () => {
+    const localIso = (y: number, mo: number, d: number, h = 0) =>
+      new Date(y, mo - 1, d, h).toISOString();
+
+    const dateless = (createdAt: string): LocalVetDocument => ({
+      ...build([page()])[0],
+      document_date: null,
+      created_at: createdAt,
+    });
+
+    it('names the filing day in both hemispheres', () => {
+      // 23:00 local diverges from the UTC day for negative offsets, 01:00 for
+      // positive. One alone only guards one half of the world.
+      for (const hour of [23, 1]) {
+        expect(savedMomentCopy('Pixel', [dateless(localIso(2026, 7, 26, hour))], NOW).cardTitle)
+          .toBe('Document — Jul 26');
+      }
+    });
+
+    it('leaves a real document_date on its LEXICAL read', () => {
+      const row = { ...dateless(localIso(2026, 7, 26, 23)), document_date: '2026-07-20' };
+      expect(savedMomentCopy('Pixel', [row], NOW).cardTitle).toBe('Document — Jul 20');
+    });
+  });
 });
 
 describe('the add sheet’s copy (D1-r2)', () => {

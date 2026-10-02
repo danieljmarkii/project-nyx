@@ -184,7 +184,12 @@ function cover(overrides: Partial<VetDocumentGroupRow> = {}): VetDocumentGroupRo
     local_uri: '',
     storage_path: 'pet-1/d1.jpg',
     mime_type: 'image/jpeg',
-    created_at: '2026-07-26T10:00:00Z',
+    // Built from LOCAL components, not a UTC literal: the render path reads this
+    // through localDayStemOf, so 'Jul 26' is only a stable expectation when the
+    // instant is 2026-07-26 on the DEVICE's clock. As a UTC literal this fixture
+    // asserted the runner's zone, and passed only because the code under it had
+    // the matching bug (CUL-959; B-514's rule, one column over).
+    created_at: new Date(2026, 6, 26, 10).toISOString(),
     ...overrides,
   };
 }
@@ -518,26 +523,26 @@ describe('restoreCountdownLabel', () => {
   });
 });
 
-// This label composes the SAME field read two different ways — the stem lexically
-// off the stored UTC text (`formatVetDocumentDate`), the countdown in LOCAL
-// calendar days (`daysLeftToRestore`) — so no single instant pins both halves in
-// every zone, and the local-component fixtures used above make the stem move
-// instead. (The seam is real, and cheap in practice; filed as B-640 rather than
-// fixed under a test-hygiene change.)
+// This label composes the SAME field twice, so both halves must read it the same
+// way. Until CUL-127 they did not: the stem came off the stored UTC text lexically
+// (`formatVetDocumentDate`) while the countdown indexed LOCAL calendar days
+// (`daysLeftToRestore`), and no single instant could pin both in every zone — which
+// is why this cluster used to sit on UTC literals at a shared time-of-day, pinning
+// the countdown's DIFFERENCE while leaving the stem un-exercised by construction.
 //
-// So this cluster stays on UTC literals AT THE SAME TIME OF DAY, which is
-// zone-invariant for a different reason than the ones above rather than by luck:
-// the stem is lexical, so it never moves at all; and two instants sharing a
-// time-of-day shift by the same offset in any zone, so the DIFFERENCE between
-// their local days — which is all the countdown reads — is preserved everywhere.
-// Keep `now` and every `deleted_at` here on the same time-of-day; 11:00Z against a
-// 12:00Z "now" is what broke the sibling assertions at UTC+12:45.
+// Now that both halves read local calendar days, the fixtures are built from local
+// components like the countdown's own (`localIso`), and the two boundary-hugging
+// cases below are the point of the describe rather than incidental to it: they are
+// the hours where a UTC stem and a local countdown part company, one in each
+// direction. They pass identically at UTC — the device zone IS the UTC day there,
+// so no fixture can separate the two readings — and it is the non-UTC CI job
+// (UTC+14 / +12:45 / −10) that holds this fix in place.
 describe('buildDeletedVetDocumentRow', () => {
-  const now = new Date('2026-07-26T12:00:00Z');
+  const now = NOW_LOCAL;
 
   it('states the window where the undo is', () => {
     const row = buildDeletedVetDocumentRow(
-      { ...cover({ title: 'Senior panel' }), deleted_at: '2026-07-24T12:00:00Z' },
+      { ...cover({ title: 'Senior panel' }), deleted_at: localIso(2026, 7, 24, 12) },
       now,
     );
     expect(row.title).toBe('Senior panel');
@@ -546,10 +551,33 @@ describe('buildDeletedVetDocumentRow', () => {
 
   it('carries the countdown for a document near the end of its window', () => {
     const row = buildDeletedVetDocumentRow(
-      { ...cover(), deleted_at: '2026-06-27T12:00:00Z' },
+      { ...cover(), deleted_at: localIso(2026, 6, 27, 12) },
       now,
     );
     expect(row.deletedLabel).toBe('Deleted Jun 27 · 1 day left');
+  });
+
+  // Deleted late in the evening: west of UTC the instant has already rolled into
+  // the next UTC day, so the old lexical stem said "Jul 25" beside a countdown that
+  // had correctly stayed on the 24th.
+  it('dates the stem by the owner’s evening, not the UTC day it has rolled into', () => {
+    const row = buildDeletedVetDocumentRow(
+      { ...cover(), deleted_at: localIso(2026, 7, 24, 23, 30) },
+      now,
+    );
+    expect(row.deletedLabel).toBe('Deleted Jul 24 · 28 days left');
+  });
+
+  // And the mirror, which is the half a one-sided fix would leave standing: east of
+  // UTC an early-morning delete has not yet reached that UTC day, so the old stem
+  // said "Jul 23". Both directions, or the guard only covers the hemisphere whose
+  // fixture someone happened to write.
+  it('dates the stem by the owner’s early morning, not the UTC day still behind it', () => {
+    const row = buildDeletedVetDocumentRow(
+      { ...cover(), deleted_at: localIso(2026, 7, 24, 0, 30) },
+      now,
+    );
+    expect(row.deletedLabel).toBe('Deleted Jul 24 · 28 days left');
   });
 });
 
@@ -662,5 +690,107 @@ describe('isSignatureStale', () => {
     // Safe direction is a redundant re-sign, never a render against a token whose
     // age we cannot vouch for.
     expect(isSignatureStale(urls, new Map(), 'pet-1/doc-1.jpg', T0)).toBe(true);
+  });
+});
+
+// ── The `document_date ?? created_at` fallback arm (CUL-959) ─────────────────
+//
+// `document_date` is a DATE — no time, no zone — and must keep the lexical read
+// `formatVetDocumentDate` gives it. `created_at` is a TIMESTAMPTZ, and read the
+// same way it yields the UTC calendar day, so a document filed late evening west
+// of UTC (or early morning east of it) renders a date the owner's own phone
+// disagrees with. Same class as CUL-127's deleted-row stem, one `??` over.
+//
+// DORMANT TODAY, and asserted anyway: `document_date` is nullable in the schema
+// (044: "Nullable for a document whose date is genuinely unknown") but no shipped
+// write path produces a null, so this arm is a real branch guarding a state the
+// app does not yet create. The day it does — a "date unknown" affordance on
+// capture — is the day this would have started lying, silently, to one hemisphere.
+//
+// WHAT HOLDS THESE: the non-UTC CI job (`App (jest, non-UTC timezones)`). On a UTC
+// runner the device zone IS the UTC day, so the pre-fix code and the fixed code
+// agree and nothing here can fail — that is a property of the bug, not a gap in
+// the fixture, and it is why both directions are covered rather than one:
+// 23:00 local diverges only for negative offsets, 01:00 local only for positive.
+describe('buildVetLibraryRow — the created_at fallback reads the LOCAL day', () => {
+  // The label the owner's phone would print for that local calendar day, derived
+  // from the same components the fixture is built from. True in every zone,
+  // including UTC, which is what lets one expectation serve all three CI zones.
+  const localLabel = (y: number, mo: number, d: number) =>
+    formatVetDocumentDate(`${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`, NOW);
+
+  it('names the filing day for a late-evening instant (diverges west of UTC)', () => {
+    const row = buildVetLibraryRow(
+      cover({ document_date: null, created_at: localIso(2026, 7, 26, 23) }),
+      NOW,
+    );
+    expect(row.dateLabel).toBe(localLabel(2026, 7, 26));
+  });
+
+  it('names the filing day for an early-morning instant (diverges east of UTC)', () => {
+    const row = buildVetLibraryRow(
+      cover({ document_date: null, created_at: localIso(2026, 7, 26, 1) }),
+      NOW,
+    );
+    expect(row.dateLabel).toBe(localLabel(2026, 7, 26));
+  });
+
+  it('lets a real document_date win over the filing instant', () => {
+    // What this pins is the `??` PRECEDENCE, and precision matters here: a mutant
+    // that wrapped the WHOLE expression rather than the fallback left this green,
+    // because localDayStemOf is the identity on a well-formed 'YYYY-MM-DD'. A
+    // mutant that lets created_at win reds it. So the claim is "the printed date
+    // is the document's own", not "the helper sits on one arm" — the second is
+    // intent, and the source comment is where it is argued.
+    //
+    // The `created_at` is deliberately a DIFFERENT day from the document_date, so
+    // a regression that read it instead cannot hide behind a matching label.
+    const row = buildVetLibraryRow(
+      cover({ document_date: '2026-07-20', created_at: localIso(2026, 7, 26, 23) }),
+      NOW,
+    );
+    expect(row.dateLabel).toBe('Jul 20');
+  });
+
+  it('reads every spelling of one instant to the same day', () => {
+    // Our own database has THREE spellings for one instant, and only two of them
+    // say so: PostgREST returns '…T08:00:00+00:00' or '…Z', while the local
+    // table's own default is SQLite's datetime('now') — '2026-07-26 08:00:00',
+    // UTC, with nothing that marks it (lib/localSchema.ts). `Date.parse` reads
+    // that third form as LOCAL, so without normalisation a row filed at 08:00 UTC
+    // lands on a different day at every non-zero offset: the same off-by-one this
+    // fix is about, arriving through the PARSE instead of the format.
+    //
+    // Asserted as agreement between the spellings rather than against a literal
+    // day. A literal is the trap the rest of this block documents — the first
+    // draft of this very test expected 'Jul 26' and was asserting the UTC day,
+    // which is wrong at UTC-10 where that instant genuinely is the 25th.
+    const labelFor = (createdAt: string) =>
+      buildVetLibraryRow(cover({ document_date: null, created_at: createdAt }), NOW).dateLabel;
+
+    const zoneless = '2026-07-26 08:00:00';
+    const zulu = '2026-07-26T08:00:00Z';
+    const offset = '2026-07-26T08:00:00+00:00';
+
+    // Non-vacuity floor: three inputs that are one instant and three DIFFERENT
+    // strings. Without this, a normaliser that collapsed them to one literal
+    // before the comparison would satisfy the equality below while measuring
+    // nothing (C-40's rule for exactly this pair).
+    expect(new Set([zoneless, zulu, offset]).size).toBe(3);
+    expect(new Date(zoneless.replace(' ', 'T') + 'Z').getTime()).toBe(new Date(zulu).getTime());
+
+    expect(labelFor(zoneless)).toBe(labelFor(zulu));
+    expect(labelFor(offset)).toBe(labelFor(zulu));
+    // And it is a real label, not two matching blanks.
+    expect(labelFor(zulu)).not.toBe('');
+  });
+
+  it('renders no date rather than a wrong one when the instant is unparseable', () => {
+    // localDayStemOf returns '' for an unindexable stamp and the formatter returns
+    // '' for a stem it cannot match — the row falls back to the untitled default,
+    // which is the honest outcome. A row that invents a date here would be worse
+    // than one that shows none.
+    const row = buildVetLibraryRow(cover({ document_date: null, created_at: 'not a date' }), NOW);
+    expect(row.dateLabel).toBe('');
   });
 });

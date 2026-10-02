@@ -1,7 +1,9 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
-import { ActiveArrangementView, formatCalendarDate } from '../../lib/feedingArrangements';
+import { ActiveArrangementView } from '../../lib/feedingArrangements';
+import { recordDay } from '../../lib/recordDates';
+import { toLocalDayKey } from '../../lib/utils';
 
 // B-040 R1 §6a — the persistent ambient strip pinned to the top of History.
 // A free-fed bowl has no events, so it would otherwise go out of sight / out of
@@ -10,12 +12,15 @@ import { ActiveArrangementView, formatCalendarDate } from '../../lib/feedingArra
 // edit affordance (managing it lives in the food domain — library + food detail).
 export function FreeFeedingStrip({ arrangements }: { arrangements: ActiveArrangementView[] }) {
   if (arrangements.length === 0) return null;
+  // A bowl put down last year reads "since Nov 3, 2025", never a bare date that looks
+  // like this autumn (H-10, CUL-1126).
+  const today = toLocalDayKey(new Date());
   return (
     <View style={styles.strip}>
       <ThemedText style={styles.label}>Always available</ThemedText>
       <View style={styles.items}>
         {arrangements.map((a) => {
-          const since = formatCalendarDate(a.active_from);
+          const since = a.active_from ? recordDay(a.active_from, today) : null;
           return (
             <View key={a.id} style={styles.itemRow}>
               <View style={styles.dot} />

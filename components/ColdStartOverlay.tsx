@@ -1,6 +1,9 @@
 import { useSyncStore } from '../store/syncStore';
 import { usePetStore } from '../store/petStore';
+import { useDesignV2 } from '../hooks/useDesignV2';
 import { NightMoment } from './brand/NightMoment';
+import { ColdStartSilhouette } from './designV2/waits/ColdStartSilhouette';
+import { TAB_HEIGHT } from './nav/NyxTabBar';
 
 // B-054 §6 — block-only-when-empty cold-start state, rebuilt onto the B-284 §6 night
 // moment (the marquee full-screen wait: night → dissolve → Home).
@@ -24,12 +27,25 @@ import { NightMoment } from './brand/NightMoment';
 // existing account the pet lands fast (typically alongside the hydration), so that
 // pre-pet window is short and is NOT the misleading populated-but-empty timeline B-054
 // fixes — we accept it rather than render a nameless "Catching up on 's history…".
+//
+// Behind `design_v2` (D2-7 / CUL-1068) the wait is Home's own silhouette, which
+// crossfades into Home when the store hydrates — no night screen, no takeover (round 2,
+// R2-4; the Whorl and the night moment retire from the working app at GA). The pet
+// gate stays for both: the silhouette is Home's shape, and Home exists only with a pet,
+// so it can no more sit over onboarding than the night moment could. Flag-off is the
+// night moment exactly as before — this file holds the gate and the namespace draws
+// (`guards/designV2FlagOff.test.tsx`).
 export function ColdStartOverlay() {
   const coldStartHydrating = useSyncStore((s) => s.coldStartHydrating);
   const activePet = usePetStore((s) => s.activePet);
+  const designV2 = useDesignV2();
   const petName = activePet?.name;
 
   if (!petName) return null;
+
+  if (designV2) {
+    return <ColdStartSilhouette hydrating={coldStartHydrating} tabBarHeight={TAB_HEIGHT} />;
+  }
 
   return (
     <NightMoment

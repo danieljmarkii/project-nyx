@@ -45,8 +45,14 @@ jest.mock('../../lib/feedingArrangements', () => ({
   getActiveArrangementsForPet: jest.fn(() => Promise.resolve([])),
   getBoundaryMarkers: jest.fn(() => Promise.resolve([])),
 }));
+// The Remove confirm's composer (lib/completionCard, CUL-1125) reaches lib/weight, which
+// imports the Supabase client at module scope, and its env guard throws under jest.
+jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../../lib/db', () => ({
   getTimeline: jest.fn(),
+  // Remove asks the record for a photo before its confirm (CUL-1125). No photo unless
+  // a test says so.
+  getEventAttachment: jest.fn(() => Promise.resolve(null)),
 }));
 // Mocked for the same reason store/momentStore.test.ts mocks it: lib/undoLog pulls in
 // lib/sync and (since CUL-641) lib/weight, both of which reach lib/supabase, whose
@@ -63,18 +69,18 @@ jest.mock('../../store/petStore', () => {
   const activePet = { id: 'p1', name: 'Rex', species: 'dog' };
   const state = { activePet };
   return {
-    usePetStore: Object.assign(() => state, { getState: () => mockPetState }),
+    usePetStore: Object.assign(() => state, {
+      // Read at module load too: History v2's scope and list stores (HV-3, HV-7), which the
+      // tab imports, take the active pet and subscribe before any test body runs, when
+      // `mockPetState` is not assigned yet. A mock narrower than the real API hides that
+      // dependency (C-39).
+      getState: () => mockPetState ?? state,
+      subscribe: () => () => {},
+    }),
   };
 });
 // Mutable so a test can simulate the owner switching pets mid-write.
 let mockPetState: { activePet: { id: string } | null } = { activePet: { id: 'p1' } };
-// CUL-904 VV-6 — the vet-visit timeline row, behind the `vet_visits` rollout flag.
-// Mutable so one suite can drive both sides of the gate.
-let mockVetVisitsFlag = false;
-jest.mock('../../hooks/useAppConfig', () => ({
-  useAllowlistFlag: () => mockVetVisitsFlag,
-}));
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => mockVetVisitsFlag }));
 // The READ is stubbed; every pure rule in the module is the real one
 // (`jest.requireActual`), because the rule is not what needs standing in — C-34,
 // where a mock that replaced a pure predicate hid the defect it was covering for.
@@ -93,14 +99,19 @@ jest.mock('../../components/history/DateScopeControl', () => ({ DateScopeControl
 jest.mock('../../components/history/TypeScopeControl', () => ({ TypeScopeControl: () => null }));
 jest.mock('../../components/history/FreeFeedingStrip', () => ({ FreeFeedingStrip: () => null }));
 jest.mock('../../components/history/BoundaryMarkerRow', () => ({ BoundaryMarkerRow: () => null }));
-// EventRow stubbed to its wiring: the label (so a row is identifiable) and the
-// delete affordance (so the failure path is reachable).
+// EventRow stubbed to its wiring: the label (so a row is identifiable), the delete
+// affordance (so the failure path is reachable), and a dose's course name (so the row
+// mapper's line for it is checkable, CUL-1124).
 jest.mock('../../components/history/EventRow', () => {
   const { Text, TouchableOpacity, View } = require('react-native');
   return {
-    EventRow: ({ event, onDelete }: { event: { id: string }; onDelete: () => void }) => (
+    EventRow: ({ event, onDelete }: {
+      event: { id: string; regimen_drug_name?: string | null };
+      onDelete: () => void;
+    }) => (
       <View testID={`row-${event.id}`}>
         <Text>{`event ${event.id}`}</Text>
+        {event.regimen_drug_name ? <Text>{`course ${event.regimen_drug_name}`}</Text> : null}
         <TouchableOpacity testID={`delete-${event.id}`} onPress={onDelete}>
           <Text>Remove</Text>
         </TouchableOpacity>
@@ -113,13 +124,14 @@ import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import HistoryScreen from './history';
 import { router } from 'expo-router';
-import { getTimeline } from '../../lib/db';
+import { getEventAttachment, getTimeline } from '../../lib/db';
 import { readVisitsForHistory } from '../../lib/vetVisits';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { useEventStore, NyxEvent } from '../../store/eventStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
 
 const mockGetTimeline = getTimeline as jest.Mock;
+const mockGetEventAttachment = getEventAttachment as jest.Mock;
 const mockReadVisits = readVisitsForHistory as jest.Mock;
 // CUL-641 — Remove is no longer a bare softDeleteEvent; it is the SAME reversal the
 // completion card's Undo performs, so a side-effect added to one is inherited by both.
@@ -145,8 +157,8 @@ let showSpy: jest.SpyInstance;
 beforeEach(() => {
   jest.clearAllMocks();
   mockParams = {};
-  mockVetVisitsFlag = false;
   mockReadVisits.mockResolvedValue([]);
+  mockGetEventAttachment.mockResolvedValue(null);
   mockPetState = { activePet: { id: 'p1' } };
   useEventStore.setState({ todayEvents: [] });
   showSpy = jest.spyOn(useSnackbarStore.getState(), 'show').mockImplementation(() => {});
@@ -157,8 +169,10 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-/** Fire the destructive button of the last Alert.alert confirm. */
+/** Fire the destructive button of the last Alert.alert confirm. The confirm lands a
+ *  tick after the press, once the record has been asked for a photo (CUL-1125). */
 async function confirmRemove() {
+  await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
   const [, , buttons] = (Alert.alert as jest.Mock).mock.calls.at(-1) ?? [];
   const remove = (buttons as { text: string; onPress?: () => void }[]).find(
     (b) => b.text === 'Remove',
@@ -171,6 +185,9 @@ describe('History — the read states', () => {
     // A read that hasn't answered yet.
     mockGetTimeline.mockReturnValue(new Promise(() => {}));
     const { queryByText, queryByTestId } = render(<HistoryScreen />);
+    // Every OTHER read answers (the visits, the bowl), inside act: the list's read being
+    // out is enough on its own to hold the skeleton up.
+    await act(async () => {});
 
     // Hidden from assistive tech by design, so the query has to opt in.
     expect(queryByTestId('history-skeleton', { includeHiddenElements: true })).toBeTruthy();
@@ -312,13 +329,163 @@ describe('History — a delete that fails', () => {
   });
 });
 
+// ── What the Remove confirm names (CUL-1125) ─────────────────────────────────────
+//
+// History's Remove is the likeliest door to a weeks-old record, and it used to name a
+// look's note and nothing else: a meal whose note the owner typed, or a photographed
+// vomit, went with no word about either. It now says what the record screen and the
+// completion card's Undo say, from the one composer they share. The photo needs a read
+// (History's rows never carry attachments); the note rides on the row.
+
+describe('History — the Remove confirm names what goes with the record', () => {
+  /** The body (second argument) of the confirm, once it has landed. */
+  async function confirmBody(): Promise<string> {
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    return (Alert.alert as jest.Mock).mock.calls.at(-1)?.[1] as string;
+  }
+
+  /** A row with the note / look columns a test sets on top of `row()`'s defaults. */
+  async function pressRemoveOn(r: { id: string } & Record<string, unknown>) {
+    mockGetTimeline.mockResolvedValue([r]);
+    const view = render(<HistoryScreen />);
+    await waitFor(() => expect(view.getByText(`event ${r.id}`)).toBeTruthy());
+    fireEvent.press(view.getByTestId(`delete-${r.id}`));
+    return view;
+  }
+
+  it('names a note the owner typed on a meal', async () => {
+    await pressRemoveOn({ ...row('e1'), notes: 'Only ate the topper' });
+    expect(await confirmBody()).toBe(
+      'This will remove the Meal from history. The note you wrote will be removed with it.',
+    );
+  });
+
+  it('names the photo, asked of the record', async () => {
+    mockGetEventAttachment.mockResolvedValue({ id: 'att-1', local_uri: 'file:///x.jpg' });
+    await pressRemoveOn({ ...row('e1'), event_type: 'vomit' });
+    expect(await confirmBody()).toBe(
+      'This will remove the Vomit from history. The photo you attached will be removed with it.',
+    );
+    expect(mockGetEventAttachment).toHaveBeenCalledWith('e1');
+  });
+
+  it('names BOTH, as one sentence — never the note alone over a photographed record', async () => {
+    mockGetEventAttachment.mockResolvedValue({ id: 'att-1', local_uri: 'file:///x.jpg' });
+    await pressRemoveOn({ ...row('e1'), event_type: 'vomit', notes: 'Grass first' });
+    expect(await confirmBody()).toBe(
+      'This will remove the Vomit from history. ' +
+        'The photo you attached and the note you wrote will be removed with it.',
+    );
+  });
+
+  it('still names a look\'s note, and calls the look what you noticed', async () => {
+    await pressRemoveOn({
+      ...row('e1'),
+      event_type: 'check_in',
+      look_outcome: 'off',
+      look_words: '[]',
+      look_note: 'Hung back on the walk',
+    });
+    expect(await confirmBody()).toBe(
+      'This will remove what you noticed from history. The note you wrote will be removed with it.',
+    );
+  });
+
+  it('says only what goes: a bare record gets the lead alone', async () => {
+    await pressRemoveOn(row('e1'));
+    expect(await confirmBody()).toBe('This will remove the Meal from history.');
+  });
+
+  // The confirm now waits on a read, so a second tap can land before it is up (the
+  // CUL-1125 review). One Remove, one confirm.
+  it('a second tap while the photo check is out raises one confirm, not two', async () => {
+    let release!: (v: unknown) => void;
+    mockGetEventAttachment.mockReturnValue(new Promise((r) => { release = r; }));
+    const view = await pressRemoveOn(row('e1'));
+    fireEvent.press(view.getByTestId('delete-e1'));
+    await act(async () => { release(null); });
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(mockGetEventAttachment).toHaveBeenCalledTimes(1);
+  });
+
+  it('the guard lets go: after a failed check, the next Remove still raises its confirm', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGetEventAttachment.mockRejectedValueOnce(new Error('database is locked'));
+    const view = await pressRemoveOn(row('e1'));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(1));
+    fireEvent.press(view.getByTestId('delete-e1'));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(2));
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed photo read makes no photo claim, and the confirm still comes', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGetEventAttachment.mockRejectedValue(new Error('database is locked'));
+    await pressRemoveOn({ ...row('e1'), notes: 'A note' });
+    expect(await confirmBody()).toBe(
+      'This will remove the Meal from history. The note you wrote will be removed with it.',
+    );
+    expect(warn).toHaveBeenCalled();
+  });
+});
+
+// ── Paging after a Remove (CUL-1078) ─────────────────────────────────────────────
+//
+// `getTimeline` is OFFSET-paginated. A removed row leaves the table, so every row
+// after it moves up one place, and a next page read from the old offset starts one
+// row too far in. The skipped row is never shown and nothing says so.
+
+describe('History — paging after a Remove', () => {
+  /** A full first page, sized by the screen's own `limit` argument rather than a
+   *  restated constant, so "Load more" is on screen. Later pages come back empty. */
+  function fullFirstPage() {
+    mockGetTimeline.mockImplementation(async (_pet: string, limit: number, offset: number) =>
+      offset === 0
+        ? Array.from({ length: limit }, (_, i) =>
+            row(`e${i}`, new Date(Date.UTC(2026, 7, 24, 9) - i * 60_000).toISOString()))
+        : []);
+  }
+
+  const offsetOfLastRead = () => mockGetTimeline.mock.calls.at(-1)?.[2];
+  const pageSize = () => mockGetTimeline.mock.calls[0][1] as number;
+
+  it('reads the next page from one row earlier once a Remove has landed', async () => {
+    fullFirstPage();
+    const view = render(<HistoryScreen />);
+    await waitFor(() => expect(view.getByText('event e0')).toBeTruthy());
+
+    fireEvent.press(view.getByTestId('delete-e0'));
+    await confirmRemove();
+    await waitFor(() => expect(view.queryByText('event e0')).toBeNull());
+
+    await act(async () => { fireEvent.press(view.getByText('Load more')); });
+
+    expect(offsetOfLastRead()).toBe(pageSize() - 1);
+  });
+
+  it('keeps the offset when the Remove fails and the row comes back', async () => {
+    fullFirstPage();
+    const view = render(<HistoryScreen />);
+    await waitFor(() => expect(view.getByText('event e0')).toBeTruthy());
+    mockReverse.mockRejectedValueOnce(new Error('write failed'));
+
+    fireEvent.press(view.getByTestId('delete-e0'));
+    await confirmRemove();
+    await waitFor(() => expect(view.getByText('event e0')).toBeTruthy());
+
+    await act(async () => { fireEvent.press(view.getByText('Load more')); });
+
+    // The row is still in the table, so nothing after it moved.
+    expect(offsetOfLastRead()).toBe(pageSize());
+  });
+});
+
 // ── The vet visit row (CUL-904 VV-6; spec §4.1 History + §7 AC 10) ──────────────
 //
-// The gate's other half. `guards/vetVisitsFlagOff.test.tsx` compares whole trees
-// but renders them SYNCHRONOUSLY, so it cannot see a row whose render waits on an
-// async read — measured in VV-6 by deleting the gate below and watching that suite
-// stay green. This is where the row's flag is actually falsifiable, because the
-// data is controllable here and the effects are flushed.
+// The row renders for every account since GA (CUL-905). Its reads are asserted
+// here rather than through a whole-tree snapshot because the row waits on an async
+// read, and this is where the data is controllable and the effects are flushed.
 
 /** Local midnight of a 'YYYY-MM-DD', the shape readVisitsForHistory returns. */
 function visitRow(id: string, visitedAt: string, over: Record<string, unknown> = {}) {
@@ -336,7 +503,6 @@ function visitRow(id: string, visitedAt: string, over: Record<string, unknown> =
 
 describe('History — the vet visit row', () => {
   it('renders a visit in the stream, with the record it names', async () => {
-    mockVetVisitsFlag = true;
     mockGetTimeline.mockResolvedValue([]);
     mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
 
@@ -348,7 +514,6 @@ describe('History — the vet visit row', () => {
   });
 
   it('opens the VISIT, not an event screen', async () => {
-    mockVetVisitsFlag = true;
     mockGetTimeline.mockResolvedValue([]);
     mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
 
@@ -365,27 +530,12 @@ describe('History — the vet visit row', () => {
     });
   });
 
-  it('flag-off: no row, and no read of the table at all', async () => {
-    mockVetVisitsFlag = false;
-    mockGetTimeline.mockResolvedValue([]);
-    // The read would answer if it were called, so a missing row can only mean the
-    // gate held — rather than the fixture simply being empty, which is the way
-    // this test would otherwise pass over the defect.
-    mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
-
-    const { queryByText, getByText } = render(<HistoryScreen />);
-
-    await waitFor(() => expect(getByText('Nothing logged yet')).toBeTruthy());
-    expect(queryByText('Vet visit')).toBeNull();
-    // Dark means dark (G0): the flag gates the READ as well as the row, so a
-    // non-allowlisted owner's device never queries the companion's tables.
-    expect(mockReadVisits).not.toHaveBeenCalled();
-  });
-
   it('a type lens is a lens over EVENTS, so the visit leaves with the markers', async () => {
-    mockVetVisitsFlag = true;
     mockParams = { type: 'meal', window: '30d', ts: '1' };
-    mockGetTimeline.mockResolvedValue([row('e1')]);
+    // A row the 30-day read can return, anchored to the clock (C-29): the page places
+    // each row on its parsed instant (CUL-1073), so a row outside the window is dropped
+    // the way the real query drops it (C-35).
+    mockGetTimeline.mockResolvedValue([row('e1', new Date(Date.now() - 86_400_000).toISOString())]);
     mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
 
     const { getByText, queryByText } = render(<HistoryScreen />);
@@ -404,7 +554,6 @@ describe('History — the vet visit row', () => {
   // could see. It moved to lib/historyTimeline.test.ts, over the data.
 
   it('is not an events row: the timeline query is untouched and it renders through its own component', async () => {
-    mockVetVisitsFlag = true;
     mockGetTimeline.mockResolvedValue([row('e1')]);
     mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
 
@@ -423,7 +572,6 @@ describe('History — the vet visit row', () => {
   });
 
   it('the retry re-reads visits too, not just the timeline', async () => {
-    mockVetVisitsFlag = true;
     mockGetTimeline.mockRejectedValueOnce(new Error('transient'));
     const { getByText } = render(<HistoryScreen />);
     await waitFor(() => expect(getByText("Couldn't load history")).toBeTruthy());
@@ -446,7 +594,6 @@ describe('History — the vet visit row', () => {
 
 describe('History — the visit read is a second source, and the screen treats it as one', () => {
   it('does not say "Nothing logged yet" over a pet whose only record is a vet visit', async () => {
-    mockVetVisitsFlag = true;
     // The timeline answers EMPTY and answers FIRST — the ordinary case for a pet
     // with a visit and no logged events, and the one that used to render a claim
     // about the record before the second source had spoken.
@@ -466,7 +613,6 @@ describe('History — the visit read is a second source, and the screen treats i
   });
 
   it('renders the error state when the VISIT read fails — not an empty record', async () => {
-    mockVetVisitsFlag = true;
     mockGetTimeline.mockResolvedValue([]);
     mockReadVisits.mockRejectedValue(new Error('disk gone'));
 
@@ -480,18 +626,7 @@ describe('History — the visit read is a second source, and the screen treats i
     expect(queryByText(/disk gone/)).toBeNull();
   });
 
-  it('flag-off still reaches the designed empty state rather than skeletoning forever', async () => {
-    // The other edge of the same gate: with the flag off no visit read happens, so
-    // nothing is ever going to answer and the empty state must not wait for it.
-    mockVetVisitsFlag = false;
-    mockGetTimeline.mockResolvedValue([]);
-
-    const { getByText } = render(<HistoryScreen />);
-    await waitFor(() => expect(getByText('Nothing logged yet')).toBeTruthy());
-  });
-
   it('an older visit read resolving last cannot clobber the fresher rows', async () => {
-    mockVetVisitsFlag = true;
     mockGetTimeline.mockRejectedValueOnce(new Error('transient'));
     const deferred: Array<(rows: unknown[]) => void> = [];
     mockReadVisits.mockImplementation(
@@ -519,26 +654,24 @@ describe('History — the visit read is a second source, and the screen treats i
     expect(getByText('Vet visit')).toBeTruthy();
     expect(queryByText('Nothing logged yet')).toBeNull();
   });
+});
 
-  it('a flag resolving while History is on screen does not reset the timeline', async () => {
-    // `useAllowlistFlag` re-resolves on foreground and on sign-in, so this happens
-    // to a mounted, focused History tab in ordinary use. The focus callback's deps
-    // are what decide whether that is free or costs the owner their place: with the
-    // flag in them, expo-router re-invokes the whole focus body — offset back to 0,
-    // the expanded row collapsed, every page re-queried — for a config refresh.
-    mockVetVisitsFlag = false;
-    mockGetTimeline.mockResolvedValue([row('e1')]);
-    const { getByText, rerender } = render(<HistoryScreen />);
-    await waitFor(() => expect(getByText('event e1')).toBeTruthy());
+// ── A dose's course name reaches the row (CUL-1124) ─────────────────────────────
+//
+// `rowToEvent` is an explicit mapper and the field is OPTIONAL on NyxEvent, so leaving
+// its line out compiles clean (the B-568 trap): every dose of a course typed in by hand
+// would go back to reading "Medication" with nothing red anywhere.
 
-    const timelineCallsBefore = mockGetTimeline.mock.calls.length;
-    mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
-    mockVetVisitsFlag = true;
-    await act(async () => { rerender(<HistoryScreen />); });
-
-    // The visits arrive — the standalone effect owns that...
-    await waitFor(() => expect(getByText('Vet visit')).toBeTruthy());
-    // ...and the timeline was not re-read to get them.
-    expect(mockGetTimeline.mock.calls.length).toBe(timelineCallsBefore);
+describe('History — the row mapper carries a dose\'s course name', () => {
+  it('a dose of a course typed in by hand reaches the row with the course\'s name', async () => {
+    mockGetTimeline.mockResolvedValue([{
+      ...row('d1'),
+      event_type: 'medication',
+      medication_item_id: null,
+      adherence: 'refused',
+      regimen_drug_name: 'Metronidazole',
+    }]);
+    const { findByText } = render(<HistoryScreen />);
+    await findByText('course Metronidazole');
   });
 });

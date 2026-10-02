@@ -49,6 +49,29 @@ export function mealRowLabel(foodType: string | null | undefined): 'Meal' | 'Tre
   return foodType === 'treat' ? 'Treat' : 'Meal';
 }
 
+/**
+ * THE food label: brand · product, the way EventRow, the day drill-in and the shared day
+ * row (Home and History v2) name a food. A blank part drops; nothing left is null.
+ *
+ * One function since History v2 HV-6 (CUL-1163, rule K): `lib/patternsTiming.ts` kept a
+ * second copy joined by a bare space for the timing lane's form label, which is evidence
+ * the owner never reads, and the two had already drifted on blanks (`lib/dayEvents.ts`'s
+ * kept a whitespace-only brand, the lane's dropped it). It lives HERE, in a module whose
+ * only runtime import is the import-free `lib/foodFormat.ts`, because the timing lane must
+ * not pull `lib/dayEvents.ts`'s import graph (which reaches the Supabase client) just to
+ * name a feeding. It takes the two names rather than a row, so the lane's SQL shape
+ * (`brand`, `product_name`) and a timeline row both call it.
+ */
+export function foodLabelOf(
+  brand: string | null | undefined,
+  product: string | null | undefined,
+): string | null {
+  const b = brand?.trim() || null;
+  const p = product?.trim() || null;
+  if (b && p) return `${b} · ${p}`;
+  return p ?? b;
+}
+
 // ── Food-format display labels (B-106 / B-568) ────────────────────────────────
 // The map and the event-surface tag live in lib/foodFormat.ts — a dependency-free
 // module so the Deno Edge Functions can import the SAME copy (generate-report names

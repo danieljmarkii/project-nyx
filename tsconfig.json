@@ -11,8 +11,8 @@
     // First needed by lib/trialProtein.ts (B-351 slice 5).
     "allowImportingTsExtensions": true
   },
-  // `supabase/functions` is Deno-typed (its own `deno test` type-check is the gate,
-  // and it is the ONLY type check over that path). `scripts/**/*.deno.ts` is the same
+  // `supabase/functions` is Deno-typed: CI's Deno job is its type check (`deno test`
+  // for what the suites reach, `deno check` over the whole tree, CUL-782). `scripts/**/*.deno.ts` is the same
   // graph living outside that directory — a Deno entry point that imports the Edge
   // Function modules — so it carries the suffix to stay out of the app's tsc run
   // rather than being excluded by name, which the next such script would forget.
@@ -23,5 +23,5 @@
   // (scripts/w1-other-row-swap/predictChronicity.deno.ts) landed back in the app's
   // tsc run and failed on `Deno` being undefined. The suffix was carrying its half of
   // the contract; the pattern was not.
-  "exclude": ["supabase/functions", "docs/design-system", "scripts/**/*.deno.ts"]
+  "exclude": ["supabase/functions", "docs/design-system", "scripts/**/*.deno.ts", ".claude/worktrees"]
 }

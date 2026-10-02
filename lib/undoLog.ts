@@ -93,6 +93,7 @@
 // only ever reduce what the record claims.
 
 import { getEventPetId, softDeleteEvent } from './db';
+import { noteRemoval } from './removalNotice';
 import { triggerSignalRegenDebounced } from './signal';
 import { syncPendingEvents } from './sync';
 import { reconcileWeightSnapshotAfterDelete } from './weight';
@@ -120,6 +121,10 @@ export async function reverseLoggedEvent(
   opts?: { restoreWeightSnapshotToKg: number | null },
 ): Promise<void> {
   await softDeleteEvent(eventId);
+  // HV-10 (CUL-1167) — the list the owner returns to folds this row away rather than
+  // letting it vanish (History v2 §4). Noted only once the local write has landed: a
+  // reversal that failed must never fold a row that is still in the record.
+  noteRemoval(eventId);
   // CUL-641 — unconditional: the helper decides for itself whether this event was
   // a weigh-in. Awaited, but only its local half is (the server write inside is
   // fired and not waited on), so a reversal still resolves at local-write speed.

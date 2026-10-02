@@ -53,6 +53,10 @@ export interface NyxEvent {
   paired_food_name?: string | null;
   drug_generic_name?: string | null;
   drug_brand_name?: string | null;
+  // CUL-1124 — the name of the course the dose was logged against, the second source of
+  // a dose's name after the item (`lib/doseDisplay.ts`). Carried by the timeline read
+  // (`getTimeline`) and Today's (`lib/todayEventsQuery.ts`, History v2 HV-6).
+  regimen_drug_name?: string | null;
   // B-156 PR B4 — the reverse combo link (vehicle → dose), for the cross-link on a
   // meal/treat row that carried co-logged dose(s). The mirror of paired_* above so the
   // combo reads from BOTH sides without merging. count = NON-DELETED paired doses (0 on a
@@ -76,8 +80,20 @@ export interface NyxEvent {
   look_note?: string | null;
 }
 
+/** Where Today's read stands, FOR WHICH PET (C-12 — a read that hasn't answered is never
+ *  an empty record; the first frame is `todayEvents=[]` for every pet, so a surface that
+ *  draws an empty state off the array alone lies for a frame on every cold open and on
+ *  every pet switch). Written only by `useEvents.loadTodayEvents`; read by Home's Design
+ *  v2 spine (D2-4), which draws a skeleton until `ready` and a retry on `failed`. */
+export interface TodayRead {
+  petId: string;
+  state: 'loading' | 'ready' | 'failed';
+}
+
 interface EventState {
   todayEvents: NyxEvent[];
+  todayRead: TodayRead | null;
+  setTodayRead: (read: TodayRead | null) => void;
   setTodayEvents: (events: NyxEvent[]) => void;
   prependEvent: (event: NyxEvent) => void;
   removeFromToday: (eventId: string) => void;
@@ -94,9 +110,16 @@ interface EventState {
 
 export const useEventStore = create<EventState>((set) => ({
   todayEvents: [],
+  todayRead: null,
+  setTodayRead: (todayRead) => set({ todayRead }),
   setTodayEvents: (todayEvents) => set({ todayEvents }),
+  // Idempotent by id, as restoreToToday is: a write that re-reads Home (a rated insert, a
+  // re-rating) can land that read BEFORE its caller's optimistic prepend, and the read's row
+  // is the record's (the HV-6 second adversarial pass: the intake door's bowl drawn twice).
   prependEvent: (event) =>
-    set((state) => ({ todayEvents: [event, ...state.todayEvents] })),
+    set((state) =>
+      state.todayEvents.some((e) => e.id === event.id) ? state : { todayEvents: [event, ...state.todayEvents] },
+    ),
   removeFromToday: (eventId) =>
     set((state) => ({
       todayEvents: state.todayEvents.filter((e) => e.id !== eventId),

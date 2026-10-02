@@ -62,15 +62,17 @@ function mockReads(opts: { profile?: ReadResult; pets?: ReadResult; throwReads?:
 
 let setOnboarded: jest.Mock;
 let setPets: jest.Mock;
+let markPetsLoaded: jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
   setOnboarded = jest.fn();
   setPets = jest.fn();
+  markPetsLoaded = jest.fn();
   // Override the store actions with spies; the in-flight-pet guard reads
   // getState().pets, which stays [] here (setPets is a stub), so a genuinely
   // petless account still reaches the onboarding redirect.
-  usePetStore.setState({ pets: [], activePet: null, isOnboarded: false, setOnboarded, setPets });
+  usePetStore.setState({ pets: [], activePet: null, isOnboarded: false, petsLoaded: false, setOnboarded, setPets, markPetsLoaded });
 });
 
 describe('usePet gate wiring', () => {
@@ -93,6 +95,10 @@ describe('usePet gate wiring', () => {
     renderHook(() => usePet());
     await waitFor(() => expect(setOnboarded).toHaveBeenCalledWith(true));
     expect(mockedReplace).not.toHaveBeenCalled();
+    // CUL-1336: every pet archived is an ANSWERED empty list, never a cold start — the
+    // trial screen reads this to show "not in your account" instead of a skeleton forever.
+    expect(markPetsLoaded).toHaveBeenCalled();
+    expect(setPets).not.toHaveBeenCalled();
   });
 
   it('routes a fresh account (no pet, null flag) into onboarding after the retry', async () => {
@@ -107,6 +113,7 @@ describe('usePet gate wiring', () => {
       timeout: 3000,
     });
     expect(setOnboarded).toHaveBeenCalledWith(false);
+    expect(markPetsLoaded).toHaveBeenCalled();
   });
 
   it('never onboards or bounces when the reads THROW (offline cold start)', async () => {
@@ -118,6 +125,8 @@ describe('usePet gate wiring', () => {
     await new Promise((r) => setTimeout(r, 800));
     expect(mockedReplace).not.toHaveBeenCalled();
     expect(setOnboarded).not.toHaveBeenCalled();
+    // A read that never answered is not an empty list (CUL-1336, C-12).
+    expect(markPetsLoaded).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 
@@ -132,6 +141,8 @@ describe('usePet gate wiring', () => {
     await new Promise((r) => setTimeout(r, 800));
     expect(mockedReplace).not.toHaveBeenCalled();
     expect(setOnboarded).not.toHaveBeenCalled();
+    // A read that never answered is not an empty list (CUL-1336, C-12).
+    expect(markPetsLoaded).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 });

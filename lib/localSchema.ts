@@ -64,6 +64,12 @@ export const BASE_SCHEMA_SQL = `
       pet_id        TEXT NOT NULL,
       weight_kg     REAL NOT NULL,
       notes         TEXT,
+      -- Migration 081 (EN-8, CUL-1412): where the reading was taken and how that was
+      -- decided. The defaults are the server's (the W2 backfill), so a device's rows
+      -- and the server's agree without a pull; insertWeightCheck writes both
+      -- explicitly. No CHECK, as elsewhere in this mirror: the server's is the authority.
+      source        TEXT NOT NULL DEFAULT 'home_scale',
+      source_basis  TEXT NOT NULL DEFAULT 'legacy',
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
       synced        INTEGER NOT NULL DEFAULT 0,
@@ -162,6 +168,43 @@ export const BASE_SCHEMA_SQL = `
       sync_attempts INTEGER NOT NULL DEFAULT 0,
       sync_error    TEXT,
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS event_ai_verdicts (
+      -- The per-incident read's copy on the phone (History v2 §5.3, HV-5 / CUL-1162), so
+      -- "Worth a call" never waits on the network. FOUR columns of the server's analysis
+      -- row plus its three read stamps (below), and nothing else: never the read's words
+      -- (no surface that reads this shows any) and never the hide stamp (Hide never
+      -- touches the rose). lib/readCopy.test.ts pins this column set against the real
+      -- DDL. Written ONLY by lib/readCopy.ts (the
+      -- sync pull, and a read landing on this device); read only through it; wiped at
+      -- sign-out with the rest of the account's record (LOCAL_WIPE_TABLES).
+      --
+      -- No local FK to events, on purpose (the vet_documents precedent): a verdict can
+      -- land before its event does (the events step failed this cycle), and an FK would
+      -- turn that ordinary transient into a verdict dropped on the floor, which here is a
+      -- missing rose. Every reader asks by an event id it already holds. No synced
+      -- column: the copy is server-owned and never pushed.
+      event_id        TEXT PRIMARY KEY,
+      status          TEXT NOT NULL,
+      recommendation  TEXT,
+      -- The server's updated_at, verbatim: the pull's watermark and the last write wins key.
+      updated_at      TEXT NOT NULL,
+      -- Engines v3 PR-12 (CUL-1267, migration 075): the three READ stamps, mirrored so the
+      -- phone can tell whether the verdict above speaks for the photo it shows
+      -- (lib/readCopy.ts, photoSetStale). Never the payload stamps (model_id, prompt_hash):
+      -- they describe the model's raw output, which the phone never holds. All three NULL
+      -- on a read written before the stamps existed; engine_flags is the server's text[]
+      -- as a JSON array, so NULL (pre-stamp) and '[]' (every key off) stay apart. Declared
+      -- here AND in COLUMN_UPGRADES, the vet_visits.deleted_at precedent.
+      photo_set_key   TEXT,
+      rule_version    TEXT,
+      engine_flags    TEXT,
+      -- EN-3 (CUL-1133, migration 079): the read's tier beside the verdict, mirrored so
+      -- History, the month and the gallery speak the tier through the one word map
+      -- (lib/incidentTierWords.ts) without waiting on the network. NULL on every read
+      -- written before the Engines v3 key; declared here AND in COLUMN_UPGRADES.
+      tier            TEXT
     );
 
     CREATE TABLE IF NOT EXISTS vet_visits (
@@ -277,9 +320,9 @@ export const BASE_SCHEMA_SQL = `
     --
     -- A SEPARATE TABLE FROM vet_visits, AND THAT IS THE WHOLE POINT (G3). Every
     -- reader of vet_visits — here and server-side — means "a visit that
-    -- happened", and two of them say so only by being unbounded: lib/rundown.ts
-    -- readLastVisitDate is a bare MAX(visited_at), and vetDocumentDetail's link
-    -- picker is reverse-chron with no upper bound. A booking stored in that table
+    -- happened", and some say so only by being unbounded: vetDocumentDetail's link
+    -- picker is reverse-chron with no upper bound, as the rundown's MAX(visited_at)
+    -- was until it took the shared bound (CUL-1127). A booking stored in that table
     -- would become "your last visit" and silently move the rundown's whole
     -- what-changed-since window. Two tables makes that unwritable rather than
     -- something four readers each have to remember to filter.
@@ -345,6 +388,7 @@ export const BASE_SCHEMA_SQL = `
       method        TEXT NOT NULL DEFAULT 'free_choice',
       active_from   TEXT,
       active_until  TEXT,
+      ended_at      TEXT,
       is_shared     INTEGER NOT NULL DEFAULT 0,
       notes         TEXT,
       deleted_at    TEXT,
@@ -410,6 +454,14 @@ export interface ColumnUpgrade {
   readonly column: string;
   /** Full SQLite type + constraints, e.g. `TEXT NOT NULL DEFAULT 'app'`. */
   readonly type: string;
+  /**
+   * CUL-1396 — re-pull this table's server rows once, on the upgrade that adds the column.
+   * An older build hydrated those rows WITHOUT the column and advanced the table's watermark
+   * past them, so without a reset the upgraded phone never learns values the server already
+   * holds (the migration's backfill, or another device's writes). Set only where a reader
+   * depends on the server's value; the re-pull costs one full fetch of the table.
+   */
+  readonly rehydrate?: true;
 }
 
 export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
@@ -457,6 +509,16 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   // legitimately has no filename worth keeping, and no pre-048 row has one to
   // recover, so NULL is the honest value for both.
   { table: 'vet_documents', column: 'source_filename', type: 'TEXT' },
+  // CUL-1396 / migration 076 — the instant a free-fed bowl came up, beside the local DATE
+  // `active_until`. `feeding_arrangements` predates this build, so only this path can add it.
+  // Nullable, no default, nothing to backfill locally: the server's backfill travels down
+  // through hydrate, and a row ended before this build honestly has no recorded instant.
+  //
+  // `rehydrate`: an older build pulled every arrangement without this column and moved the
+  // watermark past them, including 076's backfilled rows and any row a current build ended
+  // meanwhile. Nothing else would re-pull them, and the intake detectors would read the date
+  // fallback on the phone while the server read the instant (adversarial round 4, E2).
+  { table: 'feeding_arrangements', column: 'ended_at', type: 'TEXT', rehydrate: true },
   // B-704 / migration 053 — the owner-stated trial protein + its provenance stamp.
   // `diet_trials` predates this build, so CREATE TABLE IF NOT EXISTS cannot add the
   // columns to an already-installed device — only this can. Both nullable, no
@@ -466,6 +528,24 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   // TEXT locally like every other timestamp column in the diet-trial mirror.
   { table: 'diet_trials', column: 'target_protein', type: 'TEXT' },
   { table: 'diet_trials', column: 'target_protein_set_at', type: 'TEXT' },
+  // CUL-1037 / migration 068 — window provenance: the record of a window that
+  // MOVED. Same reason as 053 above: `diet_trials` predates this build, so
+  // CREATE TABLE IF NOT EXISTS is a no-op on an already-installed device and only
+  // this path can add the columns. Without it, the PR 2 write path's local
+  // `UPDATE diet_trials SET target_duration_days_initial = ?` throws "no such
+  // column" on every upgrading phone while working perfectly on a fresh simulator
+  // — the exact failure this list exists to prevent.
+  //
+  // All three nullable, no default, nothing to backfill LOCALLY: the server
+  // migration's backfill travels down through the normal hydrate once PR 2 adds
+  // these to its select, and a local guess would be the app writing down a value
+  // the owner never stated. target_duration_set_at holds an ISO/UTC string, so
+  // TEXT like every other timestamp in this mirror; vet_directed is INTEGER
+  // because SQLite has no BOOLEAN, and NULL vs 0 is deliberately no distinction
+  // (both are silence — spec §5.1's two-sided rule).
+  { table: 'diet_trials', column: 'target_duration_days_initial', type: 'INTEGER' },
+  { table: 'diet_trials', column: 'target_duration_set_at', type: 'TEXT' },
+  { table: 'diet_trials', column: 'target_duration_vet_directed', type: 'INTEGER' },
   // B-671 / Daily Recap DR-6 — the pet-name warmth opt-in. `notification_preferences`
   // shipped in B-661 PR 2 (migration 050) WITHOUT this column, so on any device that
   // already has the table CREATE TABLE IF NOT EXISTS (NOTIFICATION_SCHEMA_SQL) is a
@@ -490,6 +570,23 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   { table: 'vet_visits', column: 'deleted_at', type: 'TEXT' },
   { table: 'medications', column: 'vet_visit_id', type: 'TEXT' },
   { table: 'diet_trials', column: 'vet_visit_id', type: 'TEXT' },
+  // Engines v3 PR-12 (CUL-1267) / migration 075 — the read copy's three stamps. The copy
+  // shipped in HV-5 without them, so an installed phone has the table and only this path
+  // can add them. Nullable, no default: NULL is "written before the stamps", which is
+  // exactly what a row pulled by an earlier build is. lib/readCopy.ts re-pulls every row
+  // once under a new watermark key and fills them from the server.
+  { table: 'event_ai_verdicts', column: 'photo_set_key', type: 'TEXT' },
+  { table: 'event_ai_verdicts', column: 'rule_version', type: 'TEXT' },
+  { table: 'event_ai_verdicts', column: 'engine_flags', type: 'TEXT' },
+  { table: 'event_ai_verdicts', column: 'tier', type: 'TEXT' },
+  // Engines v3 PR-18 (CUL-1412) / migration 081 — each weight reading's source. The table
+  // shipped in B-186 without them, so only this path reaches an installed phone. The constant
+  // defaults are the server's backfill (W2: home_scale, 'legacy'), true for every row an
+  // earlier build wrote. `rehydrate`: an earlier build that pulled a row a current build
+  // wrote on another device (source 'entry' now, 'clinic' once PR-37 ships) would otherwise
+  // keep the default here while the server holds the real label.
+  { table: 'weight_checks', column: 'source', type: "TEXT NOT NULL DEFAULT 'home_scale'", rehydrate: true },
+  { table: 'weight_checks', column: 'source_basis', type: "TEXT NOT NULL DEFAULT 'legacy'", rehydrate: true },
   // B-398 — the quarantine pair, on every queue table. Generated from SYNC_QUEUES
   // rather than typed out twelve times, so the set that gets the columns and the
   // set the badge counts are provably the same set.
@@ -514,14 +611,21 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
 export async function applyColumnUpgrades(
   exec: (sql: string) => Promise<unknown>,
   upgrades: readonly ColumnUpgrade[] = COLUMN_UPGRADES,
-): Promise<void> {
+): Promise<ColumnUpgrade[]> {
+  // Returns the entries this call actually ADDED (the ALTER succeeded), so the caller can act
+  // once, on the launch that gained a column — `initDb` re-pulls each `rehydrate` table. The
+  // re-pull's statement lives in `lib/db.ts`, the write layer, not here: this module sits in
+  // Home's import closure, where a raw mutation is a Home write (C-33, guards/homeWrites).
+  const added: ColumnUpgrade[] = [];
   for (const u of upgrades) {
     try {
       await exec(`ALTER TABLE ${u.table} ADD COLUMN ${u.column} ${u.type}`);
+      added.push(u);
     } catch {
       // Column already exists ("duplicate column name") — the intended no-op.
     }
   }
+  return added;
 }
 
 // ── The sign-out FILE wipe, derived rather than hand-listed (B-519) ──────────

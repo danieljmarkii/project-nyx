@@ -1,6 +1,8 @@
 import {
   parseAskResponse,
   resolveTapThrough,
+  ASK_HISTORY_V1,
+  tapThroughNeedsTrialWindow,
   tapThroughLabel,
   isSymptomShapedQuestion,
   isRundownRequest,
@@ -123,20 +125,20 @@ describe('askQuestion — the network call', () => {
 
 describe('resolveTapThrough — provenance navigation (real routes only)', () => {
   it('opens a single event detail', () => {
-    expect(resolveTapThrough({ kind: 'events', eventIds: ['e1'] })).toEqual({ pathname: '/event/[id]', params: { id: 'e1' } });
+    expect(resolveTapThrough({ kind: 'events', eventIds: ['e1'] }, ASK_HISTORY_V1)).toEqual({ pathname: '/event/[id]', params: { id: 'e1' } });
   });
 
   it('opens the FIRST (most-recent) event when several — no multi-event route exists', () => {
-    expect(resolveTapThrough({ kind: 'events', eventIds: ['e1', 'e2', 'e3'] })).toEqual({ pathname: '/event/[id]', params: { id: 'e1' } });
+    expect(resolveTapThrough({ kind: 'events', eventIds: ['e1', 'e2', 'e3'] }, ASK_HISTORY_V1)).toEqual({ pathname: '/event/[id]', params: { id: 'e1' } });
   });
 
   // B-378 — a History-renderable symptom filter opens the FILTERED History list (audit the
   // count at its source), NOT Patterns. window rides through in History's own vocabulary.
   it('routes a History-renderable symptom filter to the filtered History list', () => {
-    expect(resolveTapThrough({ kind: 'filter', symptomType: 'vomit', window: '30d' })).toEqual({
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'vomit', window: '30d' }, ASK_HISTORY_V1)).toEqual({
       pathname: '/(tabs)/history', params: { type: 'vomit', window: '30d' },
     });
-    expect(resolveTapThrough({ kind: 'filter', symptomType: 'diarrhea', window: '7d' })).toEqual({
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'diarrhea', window: '7d' }, ASK_HISTORY_V1)).toEqual({
       pathname: '/(tabs)/history', params: { type: 'diarrhea', window: '7d' },
     });
   });
@@ -147,48 +149,113 @@ describe('resolveTapThrough — provenance navigation (real routes only)', () =>
   // since_trial_start — which History has no preset for — keep the window-agnostic Patterns
   // route rather than widening to a superset the count can't reconcile.
   it('offers History only on an exact window match, else keeps Patterns', () => {
-    expect(resolveTapThrough({ kind: 'filter', symptomType: 'vomit', window: 'all' })).toEqual({
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'vomit', window: 'all' }, ASK_HISTORY_V1)).toEqual({
       pathname: '/(tabs)/history', params: { type: 'vomit' },
     });
-    expect(resolveTapThrough({ kind: 'filter', symptomType: 'vomit', window: '14d' })).toEqual({ pathname: '/insights/[metric]', params: { metric: 'vomit' } });
-    expect(resolveTapThrough({ kind: 'filter', symptomType: 'lethargy', window: 'since_trial_start' })).toEqual({ pathname: '/insights/[metric]', params: { metric: 'lethargy' } });
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'vomit', window: '14d' }, ASK_HISTORY_V1)).toEqual({ pathname: '/insights/[metric]', params: { metric: 'vomit' } });
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'lethargy', window: 'since_trial_start' }, ASK_HISTORY_V1)).toEqual({ pathname: '/insights/[metric]', params: { metric: 'lethargy' } });
     // an unstated window can't be reconciled to a History scope either → Patterns
-    expect(resolveTapThrough({ kind: 'filter', symptomType: 'itch' })).toEqual({ pathname: '/insights/[metric]', params: { metric: 'itch' } });
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'itch' }, ASK_HISTORY_V1)).toEqual({ pathname: '/insights/[metric]', params: { metric: 'itch' } });
   });
 
   // A symptom History has no filter chip for (scratch/skin_reaction) keeps the Patterns detail —
   // the honest destination, since History would drop the type filter and show everything.
   it('keeps a non-History-renderable symptom on its Patterns detail', () => {
-    expect(resolveTapThrough({ kind: 'filter', symptomType: 'scratch', window: '30d' })).toEqual({ pathname: '/insights/[metric]', params: { metric: 'scratch' } });
-    expect(resolveTapThrough({ kind: 'filter', symptomType: 'skin_reaction' })).toEqual({ pathname: '/insights/[metric]', params: { metric: 'skin_reaction' } });
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'scratch', window: '30d' }, ASK_HISTORY_V1)).toEqual({ pathname: '/insights/[metric]', params: { metric: 'scratch' } });
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'skin_reaction' }, ASK_HISTORY_V1)).toEqual({ pathname: '/insights/[metric]', params: { metric: 'skin_reaction' } });
   });
 
   it('routes a non-symptom / symptomless filter to the Patterns index', () => {
-    expect(resolveTapThrough({ kind: 'filter', window: '7d' })).toEqual({ pathname: '/insights' });
+    expect(resolveTapThrough({ kind: 'filter', window: '7d' }, ASK_HISTORY_V1)).toEqual({ pathname: '/insights' });
     // 'meal' is not a symptom metric → index, never a dead /insights/[metric] or a History link.
-    expect(resolveTapThrough({ kind: 'filter', symptomType: 'meal' })).toEqual({ pathname: '/insights' });
+    expect(resolveTapThrough({ kind: 'filter', symptomType: 'meal' }, ASK_HISTORY_V1)).toEqual({ pathname: '/insights' });
   });
 
   it('returns null when nothing is linkable', () => {
-    expect(resolveTapThrough(null)).toBeNull();
-    expect(resolveTapThrough({ kind: 'events', eventIds: [] })).toBeNull();
+    expect(resolveTapThrough(null, ASK_HISTORY_V1)).toBeNull();
+    expect(resolveTapThrough({ kind: 'events', eventIds: [] }, ASK_HISTORY_V1)).toBeNull();
   });
 });
 
 describe('tapThroughLabel', () => {
   it('names where it actually lands', () => {
-    expect(tapThroughLabel({ kind: 'events', eventIds: ['e1'] })).toBe('Open the event');
+    expect(tapThroughLabel({ kind: 'events', eventIds: ['e1'] }, ASK_HISTORY_V1)).toBe('Open the event');
     // Several events open the LATEST one (no multi-event route), so the label must say so.
-    expect(tapThroughLabel({ kind: 'events', eventIds: ['e1', 'e2'] })).toBe('Open the latest event');
+    expect(tapThroughLabel({ kind: 'events', eventIds: ['e1', 'e2'] }, ASK_HISTORY_V1)).toBe('Open the latest event');
     // B-378 — a History-renderable symptom with an EXACT window opens the filtered History list.
-    expect(tapThroughLabel({ kind: 'filter', symptomType: 'vomit', window: '7d' })).toBe('Open in History');
+    expect(tapThroughLabel({ kind: 'filter', symptomType: 'vomit', window: '7d' }, ASK_HISTORY_V1)).toBe('Open in History');
     // A non-exact window (14d) can't reconcile → Patterns; the label follows the real route.
-    expect(tapThroughLabel({ kind: 'filter', symptomType: 'vomit', window: '14d' })).toBe('Open in Patterns');
+    expect(tapThroughLabel({ kind: 'filter', symptomType: 'vomit', window: '14d' }, ASK_HISTORY_V1)).toBe('Open in Patterns');
     // A symptom History can't render still opens Patterns.
-    expect(tapThroughLabel({ kind: 'filter', symptomType: 'scratch', window: '7d' })).toBe('Open in Patterns');
-    expect(tapThroughLabel({ kind: 'filter', window: '7d' })).toBe('Open in Patterns');
-    expect(tapThroughLabel(null)).toBeNull();
-    expect(tapThroughLabel({ kind: 'events', eventIds: [] })).toBeNull();
+    expect(tapThroughLabel({ kind: 'filter', symptomType: 'scratch', window: '7d' }, ASK_HISTORY_V1)).toBe('Open in Patterns');
+    expect(tapThroughLabel({ kind: 'filter', window: '7d' }, ASK_HISTORY_V1)).toBe('Open in Patterns');
+    expect(tapThroughLabel(null, ASK_HISTORY_V1)).toBeNull();
+    expect(tapThroughLabel({ kind: 'events', eventIds: [] }, ASK_HISTORY_V1)).toBeNull();
+  });
+});
+
+// HV-11 (CUL-1168, closes CUL-498): with `history_v2` on, the window table (local days)
+// reproduces two more of Ask's windows exactly, and the link lands on the table's own span.
+describe('resolveTapThrough under history_v2 (HV-11)', () => {
+  const V2 = { historyV2: true, trialWindowOffered: true };
+  const V2_NO_TRIAL = { historyV2: true, trialWindowOffered: false };
+
+  it('Last 14 days and Since the trial started open History (CUL-498); flag off they stay on Patterns', () => {
+    const fourteen = { kind: 'filter' as const, symptomType: 'vomit', window: '14d' };
+    const trial = { kind: 'filter' as const, symptomType: 'vomit', window: 'since_trial_start' };
+    expect(resolveTapThrough(fourteen, V2)).toEqual({ pathname: '/(tabs)/history', params: { type: 'vomit', window: '14d' } });
+    expect(resolveTapThrough(trial, V2)).toEqual({ pathname: '/(tabs)/history', params: { type: 'vomit', window: 'trial' } });
+    expect(tapThroughLabel(fourteen, V2)).toBe('Open in History');
+    expect(tapThroughLabel(trial, V2)).toBe('Open in History');
+    // Flag off: today's routes, byte for byte.
+    expect(resolveTapThrough(fourteen, ASK_HISTORY_V1)).toEqual({ pathname: '/insights/[metric]', params: { metric: 'vomit' } });
+    expect(resolveTapThrough(trial, ASK_HISTORY_V1)).toEqual({ pathname: '/insights/[metric]', params: { metric: 'vomit' } });
+  });
+
+  it('the trial window only where History offers it: a trial past its grace stays on Patterns (B-378: never a superset)', () => {
+    const trial = { kind: 'filter' as const, symptomType: 'lethargy', window: 'since_trial_start' };
+    expect(resolveTapThrough(trial, V2_NO_TRIAL)).toEqual({ pathname: '/insights/[metric]', params: { metric: 'lethargy' } });
+    expect(tapThroughLabel(trial, V2_NO_TRIAL)).toBe('Open in Patterns');
+  });
+
+  it('the windows flag off already reached land the same, and a non-History symptom still opens Patterns', () => {
+    for (const reach of [ASK_HISTORY_V1, V2]) {
+      expect(resolveTapThrough({ kind: 'filter', symptomType: 'vomit', window: '7d' }, reach)).toEqual({
+        pathname: '/(tabs)/history', params: { type: 'vomit', window: '7d' },
+      });
+      expect(resolveTapThrough({ kind: 'filter', symptomType: 'scratch', window: '14d' }, reach)).toEqual({
+        pathname: '/insights/[metric]', params: { metric: 'scratch' },
+      });
+    }
+  });
+
+  it('asks for the trial only when the answer counted since the trial started, on a History symptom, flag on', () => {
+    const trial = { kind: 'filter' as const, symptomType: 'vomit', window: 'since_trial_start' };
+    expect(tapThroughNeedsTrialWindow(trial, true)).toBe(true);
+    expect(tapThroughNeedsTrialWindow(trial, false)).toBe(false);
+    expect(tapThroughNeedsTrialWindow({ ...trial, window: '7d' }, true)).toBe(false);
+    expect(tapThroughNeedsTrialWindow({ ...trial, symptomType: 'scratch' }, true)).toBe(false);
+    expect(tapThroughNeedsTrialWindow({ kind: 'events', eventIds: ['e1'] }, true)).toBe(false);
+    expect(tapThroughNeedsTrialWindow(null, true)).toBe(false);
+  });
+
+  it('AC 28: the link\'s Last 7 days is History\'s Last 7 days, local days from the one window table', () => {
+    // Drive the real sender into the real reader and the real table (C-34). Today is built
+    // from local components, so the non-UTC CI zones decide how far it sits from UTC (C-29).
+    const { historyDoorRequestOf } = require('./historyDoorParams') as typeof import('./historyDoorParams');
+    const { resolveWindow } = require('./historyWindows') as typeof import('./historyWindows');
+    const { toLocalDayKey } = require('./utils') as typeof import('./utils');
+    const now = new Date(2026, 8, 21, 23, 30); // 11:30 PM local, Sep 21
+    const today = toLocalDayKey(now);
+    const facts = { petId: 'p1', today, firstRecordDay: '2026-01-01', trial: null, sinceVisit: null };
+    for (const [askWindow, days, from] of [['7d', 7, '2026-09-15'], ['14d', 14, '2026-09-08'], ['30d', 30, '2026-08-23']] as const) {
+      const nav = resolveTapThrough({ kind: 'filter', symptomType: 'vomit', window: askWindow }, V2);
+      expect(nav?.pathname).toBe('/(tabs)/history');
+      const request = historyDoorRequestOf({ ...(nav as { params: Record<string, string> }).params, ts: '1' });
+      const resolved = resolveWindow(request!.window!, facts);
+      expect(resolved.label.long).toBe(`Last ${days} days`);
+      expect(resolved.bounds).toEqual({ fromDay: from, toDay: '2026-09-21' });
+    }
   });
 });
 

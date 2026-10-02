@@ -1,0 +1,245 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { router } from 'expo-router';
+import { theme } from '../../../constants/theme';
+import type { GalleryTile, SignalScreenEpisodes } from '../../../lib/signalScreen';
+import { EVENT_ATTACHMENT_BUCKET } from '../../../lib/attachments';
+import { getSignedUrl } from '../../../lib/storage';
+import { localFileExists } from '../../../lib/localFile';
+import { resolveTilePhoto, tileNeedsRemote, TILE_PHOTO_FAILED_LABEL, type TileSource } from '../../../lib/tilePhoto';
+import { TIER_WORDS } from '../../../lib/incidentTierWords';
+import { ThemedText } from '../../ui/ThemedText';
+
+// EpisodeGallery — the photographed episodes on the Signal's screen (D2-3 · CUL-1065;
+// design authority `docs/culprit-design-v4-mockups.html` §03 "The episodes · 21, nine
+// photographed").
+//
+// EACH TILE CARRIES ITS OWN READ, IN THE SHIPPED WORDS. `INCIDENT_REC_LABEL` is the one
+// map the per-incident read and Home's spine node share (`lib/incidentReadState.ts`),
+// never restated, so "Keep an eye out" here is the same "Keep an eye out" on the record. There is no summary line, no "the other
+// three": Dr. Chen's round-3 finding is that an aggregate over reads reassures, and the
+// model has no field to put one in. A tile with no read says "No read yet" — the absence
+// of a verdict is never wellness.
+//
+// A tile is a door to its record (`app/event/[id]`), where the photo is the hero and the
+// read is in full — the incident spec's D1: a photographed episode lands on its record.
+//
+// The photos are the owner's own record, served exactly as the record screen serves
+// them: the on-device file when it is still there, else a signed URL from the private
+// bucket (RLS-scoped, one-hour TTL), transformed to a tile, else the raw original when the
+// transform cannot load — never a public URL, never cached anywhere new (T&S). The order
+// lives in `lib/tilePhoto.ts`; a tile whose every source fails says so (CUL-1269).
+//
+// The spoken label is the whole tile in one sentence — "Sep 17, 5:11 PM, photographed,
+// read as Keep an eye out" — so VoiceOver hears the date, the time and the read (§06,
+// Trust & Safety: gallery tiles need spoken labels).
+//
+// A haptic never belongs here: this file paints `worth_a_call`, and it is named in
+// `guards/haptics.test.ts`'s ALWAYS_SCANNED (proven by mutation on CUL-1065).
+
+const BUCKET = EVENT_ATTACHMENT_BUCKET;
+const SIGNED_URL_TTL_SEC = 60 * 60;
+/** A square tile transform — a few tens of KB, not the multi-MB original (B-207's rule).
+ *  Signed PER TILE on purpose: the batch signer (`getSignedUrls`, the Foods grid's
+ *  primitive) has no transform — the Storage API signs a transform one URL at a time —
+ *  and nine 320px tiles are a few hundred KB where nine originals are tens of MB. The
+ *  request count is bounded by the photographed episodes in the drawn weeks. */
+const TILE_TRANSFORM = { width: 320, height: 320, resize: 'cover' as const };
+
+// The words come from the one tier-word map (EN-3, `lib/incidentTierWords.ts`). A tile is
+// narrow, so a call takes the map's short chip ("Call now"); its sentence for a screen
+// reader takes the full phrase. An earlier-rule read's short form IS its label, so those
+// tiles say exactly what they said before.
+/** "No read yet" — an episode whose photo has no verdict on the record (pending, failed,
+ *  or never read). Said, never blank: a missing word under a photo reads as "nothing found". */
+export const NO_READ_LABEL = 'No read yet';
+
+export function verdictWord(verdict: GalleryTile['verdict']): string {
+  return verdict ? TIER_WORDS[verdict].short : NO_READ_LABEL;
+}
+
+/** The tile in one sentence, for the screen reader. */
+export function tileA11yLabel(tile: GalleryTile): string {
+  const when = tile.timeWord ? `${tile.dateWord}, ${tile.timeWord}` : tile.dateWord;
+  return tile.verdict
+    ? `${when}, photographed, read as ${TIER_WORDS[tile.verdict].label}`
+    : `${when}, photographed, ${NO_READ_LABEL.toLowerCase()}`;
+}
+
+interface Props {
+  episodes: SignalScreenEpisodes;
+}
+
+export function EpisodeGallery({ episodes }: Props) {
+  return (
+    <View testID="episode-gallery">
+      <View style={styles.header}>
+        <ThemedText style={styles.title} accessibilityRole="header">
+          The episodes
+        </ThemedText>
+        <ThemedText style={styles.count} testID="episode-count-line">
+          {episodes.countLine}
+        </ThemedText>
+      </View>
+      {episodes.tiles.length > 0 ? (
+        <View style={styles.grid}>
+          {episodes.tiles.map((tile) => (
+            <Tile key={tile.eventId} tile={tile} />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function Tile({ tile }: { tile: GalleryTile }) {
+  const { localUri, storagePath } = tile.photo;
+  // A stale cache path is no local file at all (CUL-1269): asked once per path, the way
+  // the record screen asks before it trusts the same column.
+  const local = useMemo(() => (localUri && localFileExists(localUri) ? localUri : null), [localUri]);
+  const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
+  const [transform, setTransform] = useState<TileSource>(undefined);
+  const [raw, setRaw] = useState<TileSource>(undefined);
+  const needsRemote = tileNeedsRemote(local, failed);
+
+  // A new photo on the same tile starts its chain over. Skipped on mount, where the
+  // initial state already is the fresh chain (no wasted render per tile).
+  const sourceKey = `${local ?? ''}|${storagePath}`;
+  const lastSourceKey = useRef(sourceKey);
+  useEffect(() => {
+    if (lastSourceKey.current === sourceKey) return;
+    lastSourceKey.current = sourceKey;
+    setFailed(new Set());
+    setTransform(undefined);
+    setRaw(undefined);
+  }, [sourceKey]);
+
+  useEffect(() => {
+    if (!needsRemote) return;
+    let cancelled = false;
+    // Both signed together, as the record screen does: only the chosen URL is ever
+    // downloaded, and a failed transform swaps to the raw original without a second wait.
+    // A signing failure is an unavailable source, never a silent forever-grey tile.
+    getSignedUrl(BUCKET, storagePath, SIGNED_URL_TTL_SEC, TILE_TRANSFORM)
+      .then((url) => !cancelled && setTransform(url))
+      .catch(() => !cancelled && setTransform(null));
+    getSignedUrl(BUCKET, storagePath, SIGNED_URL_TTL_SEC)
+      .then((url) => !cancelled && setRaw(url))
+      .catch(() => !cancelled && setRaw(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [needsRemote, storagePath]);
+
+  const photo = resolveTilePhoto({ local, transform, raw }, failed);
+  const markFailed = (uri: string) => setFailed((prev) => (prev.has(uri) ? prev : new Set(prev).add(uri)));
+
+  return (
+    <Pressable
+      onPress={() => router.push(`/event/${tile.eventId}`)}
+      accessibilityRole="button"
+      accessibilityLabel={photo.kind === 'failed' ? `${tileA11yLabel(tile)}, ${TILE_PHOTO_FAILED_LABEL.toLowerCase()}` : tileA11yLabel(tile)}
+      accessibilityHint="Opens this episode's record"
+      style={styles.tile}
+      testID={`episode-tile-${tile.eventId}`}
+    >
+      <View style={styles.photoWell}>
+        {photo.kind === 'photo' ? (
+          <Image
+            key={photo.uri}
+            source={{ uri: photo.uri }}
+            style={styles.photo}
+            accessibilityIgnoresInvertColors
+            onError={() => markFailed(photo.uri)}
+            testID={`episode-photo-${tile.eventId}`}
+          />
+        ) : photo.kind === 'failed' ? (
+          // Said, never a blank square: an empty well under a date reads as "nothing here".
+          <ThemedText style={styles.photoFailed} testID={`episode-photo-failed-${tile.eventId}`}>
+            {TILE_PHOTO_FAILED_LABEL}
+          </ThemedText>
+        ) : null}
+      </View>
+      <ThemedText style={styles.date} numberOfLines={1}>
+        {tile.dateWord}
+      </ThemedText>
+      {/* The read, in the record's own words. `worth_a_call` takes the symptom INK — text
+          on a light ground (C-1), never the bright glyph tint. */}
+      <ThemedText
+        style={[styles.verdict, tile.verdict && TIER_WORDS[tile.verdict].call ? styles.verdictCall : null]}
+        numberOfLines={2}
+        testID={`episode-verdict-${tile.eventId}`}
+      >
+        {verdictWord(tile.verdict)}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
+const TILE_WIDTH = '23%';
+
+const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: theme.space1,
+    marginBottom: theme.space1,
+  },
+  title: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextPrimary,
+  },
+  count: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    fontVariant: ['tabular-nums'],
+    flexShrink: 1,
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    // Adjacent doors (C-5): no slop on the tiles, so the gap is the whole separation.
+    columnGap: theme.space1,
+    rowGap: theme.space2,
+  },
+  tile: {
+    width: TILE_WIDTH,
+    minHeight: 44,
+  },
+  photoWell: {
+    aspectRatio: 1,
+    borderRadius: theme.radiusSmall,
+    backgroundColor: theme.colorSurfaceSubtle,
+    overflow: 'hidden',
+  },
+  photo: {
+    width: '100%',
+    height: '100%',
+  },
+  photoFailed: {
+    flex: 1,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    paddingTop: theme.space3,
+    paddingHorizontal: theme.space1,
+    fontSize: theme.textXS,
+    lineHeight: theme.lineHeightXS,
+    color: theme.colorTextSecondary,
+  },
+  date: {
+    marginTop: theme.space0_5,
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+  },
+  verdict: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightMedium,
+    lineHeight: theme.lineHeightXS,
+    color: theme.colorTextSecondary,
+  },
+  verdictCall: {
+    color: theme.colorEventSymptomInk,
+  },
+});

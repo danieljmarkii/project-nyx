@@ -11,9 +11,16 @@ import { ComingSoonLabel } from '../components/settings/ComingSoonLabel';
 import { OwnerNameRow } from '../components/profile/OwnerNameRow';
 import { DeleteAccountSheet } from '../components/profile/DeleteAccountSheet';
 import { supabase } from '../lib/supabase';
-import { buildSupportMailto, formatAppVersion } from '../lib/support';
+import { buildSupportMailto, formatAppVersion, formatJsBundle } from '../lib/support';
 import { showNoMailFallback } from '../lib/supportFallback';
-import { APP_VERSION, APP_BUILD, PLATFORM } from '../lib/appInfo';
+import {
+  APP_VERSION,
+  APP_BUILD,
+  PLATFORM,
+  JS_UPDATE_ID,
+  JS_CHANNEL,
+  JS_IS_EMBEDDED,
+} from '../lib/appInfo';
 import {
   SUPPORT_EMAIL,
   PRIVACY_POLICY_URL,
@@ -76,6 +83,8 @@ export default function SettingsScreen() {
       version: APP_VERSION,
       build: APP_BUILD,
       platform: PLATFORM,
+      // Unabbreviated here: triage matches this against an EAS update (CUL-690).
+      jsBundle: formatJsBundle(JS_UPDATE_ID, JS_IS_EMBEDDED, JS_CHANNEL),
     });
     try {
       const canOpen = await Linking.canOpenURL(url);
@@ -234,17 +243,19 @@ export default function SettingsScreen() {
             onPress={() => router.push('/settings/notifications')}
             accessibilityHint="Opens your notification settings"
           />
-          {/* Beta features (B-712) — rendered ONLY for an eligible account (Gate 1).
+          {/* Early access (B-712) — rendered ONLY for an eligible account (Gate 1).
               Points at the self-serve opt-in shelf. The "N on" count (OPEN-2,
               resolved PR 4) is a quiet trailing note shown only when ≥1 beta is
               eligible AND opted in — hidden at 0 so an eligible owner who's turned
               nothing on sees a clean doorway, not a deadening "0 on" (Principle 5).
               Notifications is always present above, so this is a normal (non-`first`)
-              row. */}
+              row. Owner-facing it is never "beta" (CUL-70): the word reads as an
+              unfinished app to App Review (Guideline 2.2), so the label, the subtitle,
+              and what VoiceOver speaks all say early access; the code's names stay. */}
           {betaEligible && (
             <SettingsRow
-              label="Beta features"
-              sublabel="Try features early, while we’re still building them"
+              label="Early access"
+              sublabel="Try new features early"
               chevron
               trailing={
                 activeBetaCount > 0 ? (
@@ -252,12 +263,12 @@ export default function SettingsScreen() {
                 ) : undefined
               }
               onPress={() => router.push('/settings/beta')}
-              // Fold the count into the label so a screen reader hears "Beta
-              // features, 1 on", not just the trailing decorative Text.
+              // Fold the count into the label so a screen reader hears "Early
+              // access, 1 on", not just the trailing decorative Text.
               accessibilityLabel={
-                activeBetaCount > 0 ? `Beta features, ${activeBetaCount} on` : undefined
+                activeBetaCount > 0 ? `Early access, ${activeBetaCount} on` : undefined
               }
-              accessibilityHint="Opens the beta features you can switch on"
+              accessibilityHint="Opens the early-access features you can switch on"
             />
           )}
         </Card>
@@ -357,6 +368,14 @@ export default function SettingsScreen() {
         </Card>
 
         <Text style={styles.version}>Culprit v{formatAppVersion(APP_VERSION, APP_BUILD)}</Text>
+        {/* The JS bundle (CUL-690). The line above names the installed binary and
+            does not move on an OTA, so on its own it cannot answer "are these two
+            devices running the same code?". Its own line, quieter than the brand
+            line and abbreviated: this is a diagnostic an owner may read past, not
+            something they are being told. */}
+        <Text style={styles.jsBundle}>
+          {formatJsBundle(JS_UPDATE_ID, JS_IS_EMBEDDED, JS_CHANNEL, { abbreviate: true })}
+        </Text>
 
         <View style={styles.bottomPad} />
       </ScrollView>
@@ -459,6 +478,12 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
     marginTop: theme.space1,
+  },
+  jsBundle: {
+    textAlign: 'center',
+    fontFamily: theme.fontBody,
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
   },
   bottomPad: {
     height: theme.space4,

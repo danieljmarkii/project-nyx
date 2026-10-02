@@ -31,6 +31,8 @@ import {
   pruneFoldStore,
   readFoldEntries,
   reconcileFolds,
+  setFactsFor,
+  subscribeFoldStore,
   writeFoldEntries,
   type BackBecauseReason,
   type PetFoldEntries,
@@ -62,7 +64,7 @@ const EMPTY: PetFoldEntries = {};
 /** The record's facts for one finding — the standing safety types carry the newest-episode
  *  witness (CUL-785); every other type has none. */
 export function recordFactsFor(finding: SignalFinding, lastEpisodes: LastEpisodeDates): RecordFacts {
-  if (finding.type === 'symptom_chronicity' || finding.type === 'symptom_worsening') {
+  if (finding.type === 'symptom_chronicity' || finding.type === 'symptom_worsening' || finding.type === 'symptom_burden') {
     return { lastEpisodeIso: lastEpisodes[finding.symptomType] ?? null };
   }
   return {};
@@ -104,6 +106,18 @@ export function useSignalFold({
   latestRecord.current = lastEpisodes;
   const recordOf = useCallback((f: SignalFinding) => recordFactsFor(f, latestRecord.current), []);
 
+  // D2-3 (CUL-1065): the Signal's own screen writes a fold for THIS pet from off Home
+  // (*Keep it compact on Home*). The store's knock bumps a tick that re-runs the read
+  // below, so the card is a strip when the owner comes back — without a regen, without a
+  // focus, without the findings changing. A knock for another pet is ignored.
+  const [foldTick, setFoldTick] = useState(0);
+  useEffect(() => {
+    if (!petId) return;
+    return subscribeFoldStore((changedPet) => {
+      if (changedPet === petId) setFoldTick((t) => t + 1);
+    });
+  }, [petId]);
+
   useEffect(() => {
     if (!petId || !answered) return;
     let cancelled = false;
@@ -126,7 +140,9 @@ export function useSignalFold({
     return () => {
       cancelled = true;
     };
-  }, [petId, answered, findingsKey, recordKey, recordOf]);
+    // `foldTick` is an input by intent: it says the store moved under us.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [petId, answered, findingsKey, recordKey, recordOf, foldTick]);
 
   // Every owner action applies to this render's entries and writes the whole map back
   // (the store is per pet; the shell handles the blob). The write is a plain side effect
@@ -163,7 +179,10 @@ export function useSignalFold({
       if (!canFold(finding)) return;
       const key = foldIdentity(finding);
       const nowIso = new Date().toISOString();
-      commit((prev) => ({ ...prev, [key]: foldedEntry(finding, nowIso, recordOf(finding)) }));
+      // The set's facts (the cough↔vomit pair, CUL-1273) as of the fold, from the same
+      // settled set the reconcile reads.
+      const set = setFactsFor(finding, latestFindings.current.map((f) => f.finding));
+      commit((prev) => ({ ...prev, [key]: foldedEntry(finding, nowIso, recordOf(finding), set) }));
     },
     [commit, recordOf],
   );

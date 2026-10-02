@@ -60,12 +60,14 @@ import {
   timingStoryClockLaneModel,
   timingStoryControlDisclosure,
   timingStoryMealLaneModel,
+  timingStoryRefusalLine,
   timingStorySampleLine,
   timingStoryVetLine,
   trialResponseCompareRows,
   trialResponseDayBadge,
   trialResponseDensityLine,
   trialResponseDietStructureLine,
+  trialResponseRefusalLine,
   trialResponseSampleLine,
   trialResponseTimedReconciliationLine,
   worseningNewSampleLine,
@@ -182,10 +184,14 @@ function TimingStoryBody({ cached, isLead }: InsightBodyProps) {
   // Registry-keyed, so this is always a story type; the guard narrows the union for the
   // copy helpers (and is a defensive null for an impossible call).
   if (!isTimingStory(finding)) return null;
+  // CUL-1195 — the long band's refused-bowl disclosure sits directly under the count it qualifies
+  // (null at zero: the face never says "none followed a refused meal").
+  const refusal = timingStoryRefusalLine(finding);
   return (
     <View style={styles.body}>
       <ThemedText style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</ThemedText>
       <StackedCompare rows={timingStoryBandRows(finding)} />
+      {refusal ? <ThemedText style={styles.sample}>{refusal}</ThemedText> : null}
       <View style={styles.metaRow}>
         <Badge label={TIMING_STORY_BADGE} variant="muted" />
         <ThemedText style={styles.sample}>{timingStorySampleLine(finding)}</ThemedText>
@@ -212,11 +218,14 @@ function TrialResponseBody({ cached, isLead }: InsightBodyProps) {
   // row, only when the timed bands don't already sum to the pooled lead (else null). It is what makes
   // the face foot: three bands (the timed episodes) + this remainder = the pooled count in the lead.
   const reconciliation = trialResponseTimedReconciliationLine(finding);
+  // CUL-1195 — the long row's refused-bowl subset, both windows (null when neither has one).
+  const refusal = trialResponseRefusalLine(finding);
   return (
     <View style={styles.body}>
       <ThemedText style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</ThemedText>
       <StackedCompare rows={trialResponseCompareRows(finding)} />
       {reconciliation ? <ThemedText style={styles.sample}>{reconciliation}</ThemedText> : null}
+      {refusal ? <ThemedText style={styles.sample}>{refusal}</ThemedText> : null}
       <View style={styles.metaRow}>
         <Badge label={trialResponseDayBadge(finding)} variant="muted" />
         <ThemedText style={styles.sample}>{trialResponseSampleLine(finding)}</ThemedText>
@@ -321,14 +330,20 @@ function cardFaceReceiptA11y(finding: SignalFinding): string | null {
 // safety expands render the phone-call script — the facts to say on a vet call (§9). A
 // FALLING reflection (SR-5) draws its density disclosure/withheld line + the mid-trial
 // adjacency. Correlation still adds nothing here (its sample line carries it — S10).
-function ExpandedReceipts({
+// Exported for the Signal's own screen (D2-3 / CUL-1065), which carries the safety
+// phone script under the flag — the same receipts, never a second script.
+export function ExpandedReceipts({
   finding,
   petName,
   trialRunning,
+  withholdFallingVomit,
 }: {
   finding: SignalFinding;
   petName: string;
   trialRunning: boolean;
+  /** The pet's not-eating register (CUL-1216, BRK-6): a falling vomit chronicity compare is
+   *  withheld from the box and the phone script beside it. Required — no fail-open default. */
+  withholdFallingVomit: boolean;
 }) {
   if (isTimingFinding(finding)) {
     const disclosure = timingControlDisclosure(finding);
@@ -362,14 +377,14 @@ function ExpandedReceipts({
       </EvidenceBox>
     );
   }
-  const facts = phoneScript(finding, petName);
+  const facts = phoneScript(finding, petName, withholdFallingVomit);
   if (facts) {
     // v1.1-b (CUL-787): a chronicity finding whose cache carries the counted 4-week halves
     // draws them ABOVE the script, in the same "Counted honestly" box the reflection lane
     // uses — the two counts, the logged-days line, and (falling only) the why-it-stands
     // clause. Expand-only: the face and the sentence stay exactly as shipped (§3.5), and an
     // old cache (no `compare`) renders the pre-v1.1-b expand byte-identically.
-    const compare = finding.type === 'symptom_chronicity' ? chronicityCompareExtras(finding) : null;
+    const compare = finding.type === 'symptom_chronicity' ? chronicityCompareExtras(finding, withholdFallingVomit) : null;
     return (
       <>
         {compare ? (
@@ -499,6 +514,9 @@ const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactEleme
   // Symptom-frequency worsening (④) — also a calm sentence, but a SAFETY finding, so
   // it rides the safety rail (via priorityClass) and leads the surface.
   symptom_worsening: SentenceBody,
+  // Absolute burden (Engines v3 PR-14d, CUL-1410) — a calm sentence on the SAFETY rail: the count
+  // or the run of days, with the ask its tier chose. Leads below intake-decline.
+  symptom_burden: SentenceBody,
   // Symptom chronicity / persistence (⑦, B-182) — a calm sentence on the SAFETY rail: the
   // "this has been going on for weeks and isn't resolving" statement. No confidence tag (a
   // deterministic count shows its sample size); leads the surface below intake-decline.
@@ -549,6 +567,12 @@ interface Props {
   // resolved once by SignalZone). Gates ONLY the falling reflection's mid-trial adjacency
   // line in the expanded state; default false, so every non-Home caller is unaffected.
   trialRunning?: boolean;
+  // CUL-1216 (BRK-6) — the pet's not-eating register, as SignalZone holds it (Home's
+  // fail-closed `isAnimalNotEating`, OR'd with an `intake_decline` in the Signal). True
+  // withholds a FALLING vomit chronicity compare from the expand and the phone script.
+  // Defaults to TRUE: a caller that does not know whether the pet is eating withholds the
+  // pair (a default on a safety decision is that decision, C-37 — so it is the safe one).
+  withholdFallingVomit?: boolean;
   // CUL-784 — the Signal fold (fold spec §3). `onFold` wires the `Keep it compact`
   // control; absent (a non-Home caller, the shipped tests) the control does not render
   // and the card behaves as shipped. The control also never renders for a finding this
@@ -581,6 +605,7 @@ export function InsightCard({
   isLead = false,
   compact = false,
   trialRunning = false,
+  withholdFallingVomit = true,
   onFold,
   backBecause = null,
   onTouch,
@@ -635,13 +660,15 @@ export function InsightCard({
   let receiptA11y: string | null = null;
   let faceMedLine: string | null = null;
   if (isTimingStory(cached.finding)) {
-    receiptA11y = stackedCompareA11yLabel(timingStoryBandRows(cached.finding));
+    const refusal = timingStoryRefusalLine(cached.finding);
+    receiptA11y = `${stackedCompareA11yLabel(timingStoryBandRows(cached.finding))}${refusal ? ` ${refusal}` : ''}`;
   } else if (isTrialResponse(cached.finding)) {
     // The trial card folds its band count rows, the B-766 un-timeable reconciliation (when present),
     // and the day badge into the label; its med line is in the EXPAND, not the face (unlike the ⑤/⑥
     // face med line), so it's not part of the collapsed label. VoiceOver hears the face foot too.
     const recon = trialResponseTimedReconciliationLine(cached.finding);
-    receiptA11y = `${stackedCompareA11yLabel(trialResponseCompareRows(cached.finding))}${recon ? ` ${recon}` : ''} ${trialResponseDayBadge(cached.finding)}.`;
+    const refusal = trialResponseRefusalLine(cached.finding);
+    receiptA11y = `${stackedCompareA11yLabel(trialResponseCompareRows(cached.finding))}${recon ? ` ${recon}` : ''}${refusal ? ` ${refusal}` : ''} ${trialResponseDayBadge(cached.finding)}.`;
   } else {
     receiptA11y = cardFaceReceiptA11y(cached.finding);
     faceMedLine = medContextLine(cached.finding);
@@ -795,7 +822,12 @@ export function InsightCard({
               ) : isTrial ? (
                 <TrialResponseExpanded finding={cached.finding} />
               ) : (
-                <ExpandedReceipts finding={cached.finding} petName={petName} trialRunning={trialRunning} />
+                <ExpandedReceipts
+                  finding={cached.finding}
+                  petName={petName}
+                  trialRunning={trialRunning}
+                  withholdFallingVomit={withholdFallingVomit}
+                />
               )}
             </>
           )}

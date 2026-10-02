@@ -1,4 +1,9 @@
-import { buildFeedbackSubject, buildSupportMailto, formatAppVersion } from './support';
+import {
+  buildFeedbackSubject,
+  buildSupportMailto,
+  formatAppVersion,
+  formatJsBundle,
+} from './support';
 
 // Pull the decoded subject/body back out of a mailto: URL so assertions read
 // against the real content the mail client will show, not the escaped bytes.
@@ -50,6 +55,45 @@ describe('formatAppVersion', () => {
   });
 });
 
+describe('formatJsBundle (CUL-690)', () => {
+  const ID = '9f6c6d92-b104-45f1-a6e8-5073b9597174';
+
+  it('says "embedded" for a device still on the binary\u2019s own bundle', () => {
+    expect(formatJsBundle(null, true, null)).toBe('embedded');
+  });
+
+  it('prefers "embedded" even if an id is somehow also present', () => {
+    // isEmbeddedLaunch is the authoritative answer to "which bundle is running";
+    // a stale id beside it must not be reported as the running one.
+    expect(formatJsBundle(ID, true, 'production')).toBe('embedded');
+  });
+
+  it('names the channel and the update for a device that has taken one', () => {
+    expect(formatJsBundle(ID, false, 'production')).toBe(`production \u00b7 ${ID}`);
+  });
+
+  it('abbreviates to the leading segment for the version foot', () => {
+    expect(formatJsBundle(ID, false, 'production', { abbreviate: true })).toBe(
+      'production \u00b7 9f6c6d92',
+    );
+  });
+
+  it('drops the channel prefix when none is configured, rather than printing a gap', () => {
+    expect(formatJsBundle(ID, false, null)).toBe(ID);
+    expect(formatJsBundle(ID, false, '   ')).toBe(ID);
+  });
+
+  // The state the whole readout turns on. A device we could not read is NOT a
+  // device on the embedded bundle: those two answers differ, and reporting the
+  // second for the first is exactly the confident-wrong reading this line exists
+  // to remove. Expo Go and a dev client both land here.
+  it('says "unknown" when it cannot tell \u2014 never "embedded"', () => {
+    expect(formatJsBundle(null, false, null)).toBe('unknown');
+    expect(formatJsBundle('', false, 'production')).toBe('unknown');
+    expect(formatJsBundle(undefined, false, undefined)).toBe('unknown');
+  });
+});
+
 describe('buildSupportMailto', () => {
   const ctx = { version: '1.0.0', build: '1', platform: 'ios' };
 
@@ -72,6 +116,21 @@ describe('buildSupportMailto', () => {
     const { body } = parseMailto(buildSupportMailto('support@getculprit.app', ctx));
     expect(body).toContain('App version: 1.0.0 (build 1)');
     expect(body).toContain('Platform: ios');
+  });
+
+  it('carries the JS bundle so an OTA-delivered bug is attributable (CUL-690)', () => {
+    const { body } = parseMailto(
+      buildSupportMailto('support@getculprit.app', { ...ctx, jsBundle: 'production \u00b7 9f6c6d92' }),
+    );
+    expect(body).toContain('JS bundle: production \u00b7 9f6c6d92');
+  });
+
+  it('reports an absent JS bundle as "unknown" rather than dropping the line', () => {
+    // A missing diagnostic line and a line reading "unknown" are different facts
+    // to whoever reads the report: the first looks like an older app, the second
+    // says we asked and could not tell.
+    const { body } = parseMailto(buildSupportMailto('support@getculprit.app', ctx));
+    expect(body).toContain('JS bundle: unknown');
   });
 
   it('percent-encodes the URL — no raw spaces or newlines leak through', () => {

@@ -26,21 +26,45 @@ import { theme } from '../../constants/theme';
 import { type IncidentArrival, type StageKind } from '../motion/arrivalMotion';
 import { ThemedText } from '../ui/ThemedText';
 import { IncidentReadPending } from './IncidentReadCard';
+import { type ReadLandingAnnouncer } from './useReadLandingAnnouncement';
 
 export const INCIDENT_READ_SECTION_LABEL = 'AI READ';
 
 export function IncidentReadSection({
   arrival,
   pending,
+  working = false,
+  announcer,
+  announcement = null,
   children,
 }: {
   arrival: IncidentArrival;
   /** The analysis has not resolved — the pending box is the section's whole content. */
   pending: boolean;
+  /** A read is being PRODUCED (the section's `working || status === 'pending'`), as
+   *  opposed to a local row being read — the pending tick breathes only for the first
+   *  (D2-7, behind `design_v2`). */
+  working?: boolean;
+  /** CUL-1275 — the host's landing announcer. The section reports what it is SHOWING, and
+   *  the host speaks it only when a read the owner was waiting for lands. */
+  announcer?: ReadLandingAnnouncer;
+  /** The landed content's first line, in its own words (the verdict label, the failed
+   *  line, the cap copy). Null for a state with nothing to say — a hidden note. */
+  announcement?: string | null;
   /** The landed content: the read card, or the failed / capped / not-enough card. */
   children?: ReactNode;
 }) {
   const { phase, inFlight, heldHeight, slotTop, values } = arrival;
+
+  // What a landing would speak, reported every commit from a layout effect so the host's
+  // edge — a parent layout effect, which runs after this one — reads the CURRENT line.
+  // Nothing while pending: the spinner copy is never what landed. Nulled on unmount, so
+  // a branch that renders no section can never be spoken with a stale line.
+  const spoken = pending ? null : announcement;
+  useLayoutEffect(() => {
+    announcer?.note(spoken);
+  }, [announcer, spoken]);
+  useLayoutEffect(() => () => announcer?.note(null), [announcer]);
 
   // What the arrival's edge reads for its other half. Reported from a LAYOUT effect so it
   // is written before the section's own edge effect runs (child before parent), and nulled
@@ -56,6 +80,7 @@ export function IncidentReadSection({
   if (pending) {
     slot = (
       <IncidentReadPending
+        working={working}
         onLayout={(e) => arrival.onPendingLayout(e.nativeEvent.layout.height, e.nativeEvent.layout.y)}
       />
     );
@@ -83,7 +108,11 @@ export function IncidentReadSection({
 
   return (
     <View testID="incident-read-section" style={styles.section}>
-      <ThemedText style={styles.sectionLabel}>{INCIDENT_READ_SECTION_LABEL}</ThemedText>
+      {/* A heading, so VoiceOver's rotor can jump to the read (CUL-1275) — the record
+          screen is long, and the read is what an owner comes back to it for. */}
+      <ThemedText style={styles.sectionLabel} accessibilityRole="header">
+        {INCIDENT_READ_SECTION_LABEL}
+      </ThemedText>
       {inFlight ? (
         <Animated.View
           testID="incident-read-ghost"

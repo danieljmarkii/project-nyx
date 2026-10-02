@@ -1,6 +1,12 @@
+import { Platform } from 'react-native';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { BookVisitSheet, type BookVisitSubmit } from './BookVisitSheet';
-import { localDateKey, type VisitPrefill } from '../../lib/vetVisits';
+import {
+  APPOINTMENT_WINDOW_DAYS,
+  composeScheduledAt,
+  localDateKey,
+  type VisitPrefill,
+} from '../../lib/vetVisits';
 
 // CUL-900 VV-2 — the booking sheet (mock E3).
 //
@@ -89,7 +95,7 @@ describe('switching the arm carries the date with it', () => {
     // `maximumDate` only constrain the PICKER, and a date already in state when
     // the arm flips was re-validated by nothing. Submitting here used to write a
     // future `visited_at` — the one date the report's window, the rundown's
-    // MAX(visited_at) and the Vet Files picker all trust not to be one.
+    // since-visit bound and the Vet Files picker all trust not to be one.
     const onSubmit = renderSheet();
     fireEvent.press(screen.getByLabelText(/^Date, /));
     pick(daysFromToday(28));
@@ -144,6 +150,67 @@ describe('switching the arm carries the date with it', () => {
 
     expect(screen.queryByText('3:30 pm')).toBeNull();
     expect(screen.getByText('Optional')).toBeTruthy();
+  });
+});
+
+describe('the time picker’s 9:00 seed is a value on iOS (CUL-984)', () => {
+  // iOS draws the time picker as an inline spinner, and a spinner fires `onChange`
+  // only when its wheel MOVES. It opened on 9:00 with nothing committed, so an owner
+  // who wanted 9:00 opened it, saved, and booked no time. Android's picker is a
+  // dialog that answers on OK, so it keeps committing only what the dialog returns.
+  const realOS = Platform.OS;
+  afterEach(() => {
+    Platform.OS = realOS;
+  });
+
+  /** Today at `h`:`m`, through the sheet's own composer (C-34: never re-derived). */
+  function todayAt(h: number, m: number): string {
+    const d = new Date();
+    return composeScheduledAt(d, new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m));
+  }
+  const NO_TIME_TODAY = () => composeScheduledAt(new Date(), null);
+
+  it('iOS: opening the wheel and saving without spinning books the 9:00 it shows', () => {
+    Platform.OS = 'ios';
+    const onSubmit = renderSheet();
+    fireEvent.press(screen.getByLabelText('Time, not set'));
+    // The field reads what the wheel reads, before any save.
+    expect(screen.getByText('9:00 am')).toBeTruthy();
+    fireEvent.press(screen.getByText('Add the appointment'));
+    expect(onSubmit.mock.calls[0][0].scheduledAt).toBe(todayAt(9, 0));
+  });
+
+  it('iOS: Clear takes the time AND closes the wheel, so no time is booked', () => {
+    // Left open, the wheel would sit on a value over a field reading Optional: the
+    // same disagreement, reached from the other side.
+    Platform.OS = 'ios';
+    const onSubmit = renderSheet();
+    fireEvent.press(screen.getByLabelText('Time, not set'));
+    pick(new Date(2026, 8, 16, 15, 30));
+    fireEvent.press(screen.getByLabelText('Clear the time'));
+    expect(screen.getByText('Optional')).toBeTruthy();
+    expect(screen.queryAllByTestId('picker')).toHaveLength(0);
+    fireEvent.press(screen.getByText('Add the appointment'));
+    expect(onSubmit.mock.calls[0][0].scheduledAt).toBe(NO_TIME_TODAY());
+  });
+
+  it('iOS: switching the arm away and back does not reopen the wheel over Optional', () => {
+    Platform.OS = 'ios';
+    renderSheet();
+    fireEvent.press(screen.getByLabelText('Time, not set'));
+    fireEvent.press(screen.getByText('Already happened'));
+    fireEvent.press(screen.getByText('Booked'));
+    expect(screen.getByText('Optional')).toBeTruthy();
+    expect(screen.queryAllByTestId('picker')).toHaveLength(0);
+  });
+
+  it('Android: opening the dialog commits nothing until the dialog answers', () => {
+    Platform.OS = 'android';
+    const onSubmit = renderSheet();
+    fireEvent.press(screen.getByLabelText('Time, not set'));
+    expect(screen.getByText('Optional')).toBeTruthy();
+    fireEvent.press(screen.getByText('Add the appointment'));
+    expect(onSubmit.mock.calls[0][0].scheduledAt).toBe(NO_TIME_TODAY());
   });
 });
 
@@ -218,12 +285,25 @@ describe('the sheet asks its question, and requires only a date', () => {
     });
   });
 
-  it('does not promise a Home surface that has not been built', () => {
-    // VV-5 owns the Home strip. A booking that says it will appear there, five
-    // days running, when nothing will, reads to the owner as a failed save.
+  it('promises the Home strip now that VV-5 has built it', () => {
+    // THIS TEST USED TO ASSERT THE OPPOSITE, and the inversion is the record of
+    // why. The line was WITHHELD while the strip did not exist, because a booking
+    // that says it will appear on Home for five days when nothing will reads to
+    // the owner as a failed save. VV-5 shipped the strip; the copy did not follow,
+    // which left the last thing an owner reads before booking describing only what
+    // the app won't do (CUL-953 item 2).
     renderSheet();
-    expect(screen.queryByText(/Shows on Home/)).toBeNull();
+    expect(screen.getByText(/Shows on Home five days before/)).toBeTruthy();
+    // The other half stays true and stays said: there is still no reminder.
     expect(screen.getByText(/No reminder yet/)).toBeTruthy();
+  });
+
+  it('claims the window the strip actually carries', () => {
+    // The copy spells "five" as a word, so nothing in the sentence moves when the
+    // constant does. This is the tie: widen the strip's window and this reds,
+    // naming the line to change, instead of leaving a promise the strip no longer
+    // keeps. Bare equality is the assertion BECAUSE the string cannot compute it.
+    expect(APPOINTMENT_WINDOW_DAYS).toBe(5);
   });
 
   it('never says the report starts "from today"', () => {

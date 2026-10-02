@@ -174,7 +174,19 @@ export async function initDb(): Promise<void> {
   //
   // Runs AFTER all three CREATE blocks, so the medication/diet-trial tables its
   // entries target already exist.
-  await applyColumnUpgrades((sql) => database.execAsync(sql));
+  const addedColumns = await applyColumnUpgrades((sql) => database.execAsync(sql));
+
+  // CUL-1396 — a column an older build hydrated WITHOUT (`rehydrate` in COLUMN_UPGRADES): that
+  // build moved the table's watermark past every row, so clear it, once, on the launch that
+  // added the column, and the next hydrate pulls the table in full. Its own try per table:
+  // the column is already added, and a failure here only costs the refill, never the schema.
+  for (const table of new Set(addedColumns.filter((u) => u.rehydrate).map((u) => u.table))) {
+    try {
+      await database.runAsync('DELETE FROM sync_watermarks WHERE table_name = ?', [table]);
+    } catch (e) {
+      console.warn(`[initDb] could not reset the ${table} watermark after its column upgrade:`, e);
+    }
+  }
 
   // Backfill in its own try so it still runs if the ADD COLUMN above already
   // happened on a prior launch (a single try/catch would let a transient failure
@@ -409,6 +421,13 @@ export interface TimelineRow {
   paired_food_name: string | null;
   drug_generic_name: string | null;
   drug_brand_name: string | null;
+  // CUL-1124 — the name of the course (the `medications` regimen) the dose was logged
+  // against: a dose's second name, after its item's (`doseDrugLabel`). A course typed
+  // in by hand has no item, so without this every one of its doses read "Medication"
+  // while the vet report named it. NULL on a non-dose row, on a dose with no course,
+  // on one whose course has not reached this device, and on one linked to another
+  // pet's course: the join never borrows a name across pets.
+  regimen_drug_name: string | null;
   // B-156 PR B4 — the REVERSE combo link (vehicle → dose), for the cross-link shown on a
   // MEAL/treat row that carried co-logged dose(s). The forward fields above link a dose to
   // its vehicle; these are the mirror so the combo is legible from BOTH sides without
@@ -422,6 +441,10 @@ export interface TimelineRow {
   paired_dose_count: number;
   paired_dose_event_id: string | null;
   paired_dose_drug_name: string | null;
+  // CUL-382 — how many of those doses have NO adherence answer (null). With this meal's
+  // own intake it decides whether any dose given inside it is still in doubt
+  // (`isAnyPairedDoseInDoubt`). 0 on a row with no paired dose.
+  paired_dose_unrated_count: number;
   // The daily look's child (CUL-869 / N-3), NULL on every other row — joined here
   // for exactly the reason `weight_kg` is one line above it: `looks` is a 1:1 child
   // with no `deleted_at` of its own, so the honest read of it is one that already
@@ -484,9 +507,11 @@ export async function getTimeline(
             pm.intake_rating AS paired_vehicle_intake,
             pf.product_name AS paired_food_name,
             mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name,
+            rx.drug_name AS regimen_drug_name,
             COALESCE(pd.dose_count, 0) AS paired_dose_count,
             pd.rep_event_id AS paired_dose_event_id,
             pdmi.generic_name AS paired_dose_drug_name,
+            COALESCE(pd.unrated_count, 0) AS paired_dose_unrated_count,
             lk.outcome AS look_outcome, lk.words AS look_words, lk.notes AS look_note
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
@@ -495,13 +520,17 @@ export async function getTimeline(
      LEFT JOIN looks lk ON lk.event_id = e.id
      LEFT JOIN medication_administrations ma ON ma.event_id = e.id
      LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
+     LEFT JOIN medications rx ON rx.id = ma.medication_id AND rx.pet_id = e.pet_id
      LEFT JOIN events pe ON pe.id = ma.paired_event_id AND pe.deleted_at IS NULL
      LEFT JOIN meals pm ON pm.event_id = pe.id
      LEFT JOIN food_items_cache pf ON pf.id = pm.food_item_id
      ${PAIRED_DOSE_REVERSE_JOIN}
      WHERE e.pet_id = ? AND e.deleted_at IS NULL
      ${typeClause} ${dateClause} ${beforeClause}
-     ORDER BY e.occurred_at DESC
+     -- id breaks the tie (CUL-1078): History pages this by OFFSET, and occurred_at
+     -- alone lets a same-minute pair swap across a page seam, one row twice and the
+     -- other never.
+     ORDER BY e.occurred_at DESC, e.id DESC
      LIMIT ? OFFSET ?`,
     params,
   );
@@ -523,9 +552,11 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
             pm.intake_rating AS paired_vehicle_intake,
             pf.product_name AS paired_food_name,
             mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name,
+            rx.drug_name AS regimen_drug_name,
             COALESCE(pd.dose_count, 0) AS paired_dose_count,
             pd.rep_event_id AS paired_dose_event_id,
             pdmi.generic_name AS paired_dose_drug_name,
+            COALESCE(pd.unrated_count, 0) AS paired_dose_unrated_count,
             lk.outcome AS look_outcome, lk.words AS look_words, lk.notes AS look_note
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
@@ -534,6 +565,7 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
      LEFT JOIN looks lk ON lk.event_id = e.id
      LEFT JOIN medication_administrations ma ON ma.event_id = e.id
      LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
+     LEFT JOIN medications rx ON rx.id = ma.medication_id AND rx.pet_id = e.pet_id
      LEFT JOIN events pe ON pe.id = ma.paired_event_id AND pe.deleted_at IS NULL
      LEFT JOIN meals pm ON pm.event_id = pe.id
      LEFT JOIN food_items_cache pf ON pf.id = pm.food_item_id

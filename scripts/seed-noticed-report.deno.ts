@@ -170,6 +170,7 @@ for (const l of looks) {
 
 const input: ReportInput = {
   now: NOW,
+  engineFlags: { on: [], readOk: true },
   timezone: TZ,
   pet: {
     id: 'pet-nyx',

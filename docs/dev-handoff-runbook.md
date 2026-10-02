@@ -151,12 +151,12 @@ npm test
 ```
 Confirms automated tests pass locally. Do not push a chunk-completing PR with failing or skipped tests — fix or mark `tests: N/A` in the DoD with the Engineer's exemption rationale.
 
-**Backend deploys (Edge Functions + migrations) no longer belong in the phone handoff.** As of B-082 (2026-06-20) they run from the cloud session via the Supabase MCP — the agent applies the migration / deploys the function directly, so there is no "paste this into the dashboard" PM action item to emit. The full procedure is **`docs/edge-deploy-runbook.md`**. In brief:
+**Backend deploys (Edge Functions + migrations) never belong in the phone handoff.** Neither needs a PM command. The full procedure is **`docs/edge-deploy-runbook.md`**. In brief:
 
-- **Edge Function:** `scripts/deploy-edge.sh <name>` to bundle + verify, then the agent deploys the bundle via MCP `deploy_edge_function` and confirms the version bump + a boot smoke-test.
-- **Migration:** the agent applies it via MCP `apply_migration` then runs `get_advisors`. Migration discipline is unchanged (own PR, Migration Safety Pre-flight, migrate-before-deploy; `apply_migration` is a live write).
+- **Edge Function:** merging deploys it (CUL-1147: `.github/workflows/edge-deploy.yml` deploys, checks and records every function whose code changed). A change that must wait for an app build is marked `hold` in `supabase/functions/deploy-manifest.json` in the same PR.
+- **Migration:** the agent applies it via MCP `apply_migration` then runs `get_advisors`. Migration discipline is unchanged (own PR, Migration Safety Pre-flight, migrate before merging the code that needs it; `apply_migration` is a live write).
 
-_Dashboard-paste remains a manual fallback only if the MCP is unavailable in a session — see the runbook._
+_Break glass (Actions or the MCP unavailable): see the runbook._
 
 ---
 

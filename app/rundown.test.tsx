@@ -12,16 +12,25 @@ jest.mock('react-native-safe-area-context', () => {
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), back: jest.fn(), setParams: jest.fn() },
   useLocalSearchParams: () => ({}),
+  // The screen re-reads on FOCUS (CUL-952), so the mock has to provide the hook.
+  // The registered callback is kept so a test can fire a re-focus explicitly —
+  // without that, "it re-reads when you come back" is untestable and the stale-date
+  // defect this replaced would be invisible again.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    const { useEffect } = require('react');
+    focusCb.current = cb;
+    useEffect(() => cb(), [cb]);
+  },
 }));
-// CUL-903 — this screen is now the rundown AND Get ready, so it reads the companion
-// flag. Mocked OFF here on purpose: this suite's subject is the shipped rundown's
-// tap→route mapping, which must keep working with the companion dark.
-jest.mock('../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
-jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
+const focusCb: { current: null | (() => void | (() => void))} = { current: null };
 jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
+// The History doors read the gate (HV-11); flipped per test.
+let mockHistoryV2 = false;
+jest.mock('../hooks/useHistoryV2', () => ({ useHistoryV2: () => mockHistoryV2 }));
 // The env boundary. `lib/supabase` throws at IMPORT when the anon key is unset, and
 // this screen now reaches it (the Signal cache read Get ready quotes, and the trial
-// facts). Nothing here calls it — the flag is off above — so a bare stub is enough.
+// facts). Nothing here calls it — no appointment rides the route, so this is the
+// plain rundown — so a bare stub is enough.
 jest.mock('../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../store/petStore', () => {
   const state = { activePet: { id: 'p1', name: 'Mochi' } };
@@ -51,6 +60,7 @@ const tile = (key: RundownTile['key'], label: string, tap: RundownTap): RundownT
 });
 
 beforeEach(() => {
+  mockHistoryV2 = false;
   jest.clearAllMocks();
   (buildRundown as jest.Mock).mockResolvedValue({
     petName: 'Mochi',
@@ -83,3 +93,67 @@ describe('the Pet-tab doors (CUL-753)', () => {
     });
   });
 });
+
+describe('the log-a-visit door (CUL-942, CUL-905)', () => {
+  it('opens the booking sheet on its Already-happened arm, never the retired form', async () => {
+    // One way to log a visit: the Pet tab's *Log a past visit* lands on this same
+    // route. Until GA this pushed `/vet-visit`, the old write-only form, which was
+    // deleted with the flag — a push to it now would land on no screen at all.
+    (buildRundown as jest.Mock).mockResolvedValue({
+      petName: 'Mochi',
+      generatedAtMs: 0,
+      pastMedications: [],
+      facts: { courses: [], medItemNames: new Map(), lastVisitAt: null, weighIns: [] },
+      tiles: [
+        { key: 'since_visit', label: 'Since the last vet visit', value: 'No prior visit logged', tap: { kind: 'log-visit' }, empty: true },
+      ],
+    });
+    const { findByLabelText } = render(<RundownScreen />);
+    fireEvent.press(await findByLabelText(/^Since the last vet visit:/));
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith('/vet-visits?add=happened');
+  });
+});
+
+describe('the History doors (HV-11 / CUL-1168: registered in lib/historyDoors.ts)', () => {
+  function withHistoryTiles(): void {
+    (buildRundown as jest.Mock).mockResolvedValue({
+      petName: 'Mochi',
+      generatedAtMs: 0,
+      facts: { courses: [], medItemNames: new Map(), lastVisitAt: null, weighIns: [] },
+      tiles: [
+        tile('since_visit', 'Since the last vet visit', { kind: 'history', door: { scope: 'since-visit' } }),
+        tile('symptoms', 'Symptoms', { kind: 'history', door: { scope: 'symptoms-30d' } }),
+      ],
+      pastMedications: [tile('meds_past', 'Zyrtec', { kind: 'history', door: { scope: 'course', courseKey: 'item:zyr' } })],
+    });
+  }
+
+  it('flag off: every History tile pushes the bare route, as before', async () => {
+    withHistoryTiles();
+    const { findByLabelText } = render(<RundownScreen />);
+    for (const label of [/^Since the last vet visit:/, /^Symptoms:/, /^Zyrtec:/]) {
+      fireEvent.press(await findByLabelText(label));
+    }
+    expect((router.push as jest.Mock).mock.calls).toEqual([['/(tabs)/history'], ['/(tabs)/history'], ['/(tabs)/history']]);
+  });
+
+  it('flag on: each tile lands on the scope its claim is about', async () => {
+    mockHistoryV2 = true;
+    withHistoryTiles();
+    const { findByLabelText } = render(<RundownScreen />);
+    fireEvent.press(await findByLabelText(/^Since the last vet visit:/));
+    fireEvent.press(await findByLabelText(/^Symptoms:/));
+    fireEvent.press(await findByLabelText(/^Zyrtec:/));
+    const history = (params: Record<string, string>) => ({
+      pathname: '/(tabs)/history',
+      params: { ...params, ts: expect.any(String) },
+    });
+    expect((router.push as jest.Mock).mock.calls).toEqual([
+      [history({ window: 'visit' })],
+      [history({ type: 'symptoms', window: '30d' })],
+      [history({ course: 'item:zyr' })],
+    ]);
+  });
+});
+

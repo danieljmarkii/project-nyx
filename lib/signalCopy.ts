@@ -31,6 +31,7 @@ import type {
   StoodDownMarker,
   SignalSymptomType,
   StapleSource,
+  SymptomBurdenFinding,
   SymptomChronicityFinding,
   ChronicityCompare,
   SymptomWorseningFinding,
@@ -41,6 +42,8 @@ import type {
 import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
 import type { BackBecauseReason } from './signalFold';
 import { formatTimingBandLabel } from './timingBandLabels';
+import { careClaimReason } from './careClaimScreens';
+import { correlationCluster } from './findingIdentity';
 
 // A timing finding — the two types whose evidence renders as a receipt (SR-1, §4).
 type TimingFinding = PostprandialTimingFinding | TimeOfDayClusteringFinding;
@@ -86,7 +89,7 @@ const SYMPTOM_LABEL: Record<SignalSymptomType, string> = {
  *  ("labored_breathing" → "labored breathing") reads plainly instead of rendering literal
  *  "recurring undefined" on the cross-pet safety banner. The incidentFlagPhrase cache-defense
  *  below is the house precedent. */
-function symptomWord(symptomType: SignalSymptomType): string {
+export function symptomWord(symptomType: SignalSymptomType): string {
   return SYMPTOM_LABEL[symptomType] ?? String(symptomType).replace(/_/g, ' ');
 }
 
@@ -115,7 +118,7 @@ function count(n: number, one: string, many: string): string {
  * directly, so an old cached row can never render as an empty list.
  */
 export function proteinCluster(finding: CorrelationFinding): string[] {
-  return finding.proteins && finding.proteins.length > 0 ? finding.proteins : [finding.protein];
+  return correlationCluster(finding);
 }
 
 /** True when the engine could not separate this candidate's proteins (D5). */
@@ -136,7 +139,7 @@ const INCIDENT_FLAG_PHRASE: Record<IncidentFlagKind, string> = {
   blood: 'possible blood',
   foreign_material: 'possible foreign material',
 };
-function incidentFlagPhrase(flags: IncidentFlagKind[]): string {
+export function incidentFlagPhrase(flags: IncidentFlagKind[]): string {
   // The engine guarantees ≥1 flag (a finding is only emitted when deriveIncidentFlags is non-empty),
   // but this reads from the cache — defend a corrupt/empty array with a safe, still-escalating phrase
   // rather than rendering "undefined" on a safety card (never reassures either way).
@@ -158,7 +161,7 @@ function clockHourLabel(hour: number): string {
 
 // The cluster band in plain words (⑥): start 4 width 4 → "between 4am and 8am"; a
 // wrap-around start 23 width 4 → "between 11pm and 3am". Mirror of localHourBand in phrasing.ts.
-function localHourBand(startHour: number, windowHours: number): string {
+export function localHourBand(startHour: number, windowHours: number): string {
   const end = (startHour + windowHours) % 24;
   return `between ${clockHourLabel(startHour)} and ${clockHourLabel(end)}`;
 }
@@ -180,7 +183,7 @@ const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
-function onsetMonth(iso: string): string {
+export function onsetMonth(iso: string): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? 'then' : MONTH_NAMES[d.getUTCMonth()];
 }
@@ -549,6 +552,10 @@ export function sampleLine(finding: SignalFinding): string {
   if (finding.type === 'reflection') {
     return `${count(finding.currentCount, 'episode', 'episodes')} this week, ${finding.priorCount} last week`;
   }
+  if (finding.type === 'symptom_burden') {
+    // Engines v3 PR-14d (CUL-1410): the vomits and the days they fell on — the card's own two numbers.
+    return `${count(finding.count, 'vomit', 'vomits')} on ${count(finding.days, 'day', 'days')} this week`;
+  }
   if (finding.type === 'symptom_worsening') {
     // Show the axis that actually rose: days for the more_days arm, episodes otherwise.
     if (finding.trigger === 'more_days') {
@@ -803,13 +810,55 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
   }
   if (finding.type === 'reflection') {
     const symptom = symptomWord(finding.symptomType);
-    const trend =
-      finding.direction === 'improving'
+    // CUL-1216 (BRK-4): a falling pair the SR-4 density gate marked incomparable never mints
+    // "down from N" here either. The face already swaps to this week's count alone
+    // (`isReflectionDensityWithheld`) and the expanded box says why (`DENSITY_WITHHELD`), so
+    // this text states the week's count and nothing about last week — no second sentence
+    // about the gate, which the box beside it already carries. This path is live for every
+    // account (the shipped card's expand and the Design v2 screen's *Why* both read it).
+    // The same swap `isReflectionDensityWithheld` makes (spelled out: a type guard would
+    // narrow the else-branch of an already-narrowed reflection to `never`).
+    const withheld = finding.direction === 'improving' && finding.density?.comparable === false;
+    const trend = withheld
+      ? null
+      : finding.direction === 'improving'
         ? `down from ${count(finding.priorCount, 'episode', 'episodes')} the week before`
         : 'about the same as the week before';
     return (
-      `We've logged ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} this week — ${trend}. ` +
+      `We've logged ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} this week${trend ? ` — ${trend}` : ''}. ` +
       `This is a count we're tracking with you — not a diagnosis, and not a verdict on how ${petName} is doing. Keep logging and we'll keep watching the trend.`
+    );
+  }
+  if (finding.type === 'symptom_burden') {
+    // Engines v3 PR-14d (CUL-1410). Why this card speaks with no earlier week to compare to: the
+    // count or the run is the finding. Counts and days only — no cause, no severity word, and the
+    // ask the server's tier chose, in the server's own words.
+    if (finding.tier === 'today' && !finding.persistenceArm) {
+      // A 'today' held over an incomplete read (the server's holdPriorTier) with no qualifying run
+      // in what loaded: the count, never a run the record did not show.
+      return (
+        `We've logged ${count(finding.count, 'vomit', 'vomits')} for ${petName} this week. An earlier update ` +
+        `asked for a call to your vet today, and part of the record didn't load for this one — a read of ` +
+        `your logs, not a diagnosis.`
+      );
+    }
+    if (finding.tier === 'today') {
+      return (
+        `${petName} has vomited on ${count(finding.runDays, 'day', 'days')} in a row. Vomiting that comes back day ` +
+        `after day is worth a call to your vet today, whatever the week before looked like — a read of your logs, ` +
+        `not a diagnosis.`
+      );
+    }
+    if (finding.countArm) {
+      return (
+        `We've logged ${count(finding.count, 'vomit', 'vomits')} for ${petName} in the last ${finding.windowDays} ` +
+        `days, on ${count(finding.days, 'day', 'days')}. That many in a week is worth booking a vet visit soon, ` +
+        `whatever the week before looked like — a read of your logs, not a diagnosis.`
+      );
+    }
+    return (
+      `${petName} vomited on ${count(finding.runDays, 'day', 'days')} in a row earlier this week. A run like that is ` +
+      `worth booking a vet visit soon — a read of your logs, not a diagnosis.`
     );
   }
   if (finding.type === 'symptom_worsening') {
@@ -1135,11 +1184,26 @@ export interface ChronicityCompareExpanded {
   whyItStands: string | null;
 }
 
+/**
+ * A vomit chronicity course's FALLING compare beside a pet not known to be eating (CUL-1216,
+ * BRK-6): an empty stomach has less to bring up, so "Recent 4 weeks: 2 · the 4 before: 12" is
+ * the reassuring composition §5.2 forbids beside a refusal. The card stays (it is safety, and
+ * its ask does not move); only the pair goes, in the expand and in the phone script alike.
+ * A rise or a flat pair, and every other symptom, keep printing.
+ */
+export function chronicityCompareWithheld(f: SymptomChronicityFinding, withholdFallingVomit: boolean): boolean {
+  return withholdFallingVomit && f.symptomType === 'vomit' && f.compare != null && isChronicityCompareFalling(f.compare);
+}
+
 /** Everything the chronicity expand's "Counted honestly" box renders, or null when the cached
- *  finding carries no compare (an old cache — the pre-v1.1-b expand, byte-identical). */
-export function chronicityCompareExtras(f: SymptomChronicityFinding): ChronicityCompareExpanded | null {
+ *  finding carries no compare (an old cache — the pre-v1.1-b expand, byte-identical), or when
+ *  the compare is withheld beside a not-eating record (`chronicityCompareWithheld`). */
+export function chronicityCompareExtras(
+  f: SymptomChronicityFinding,
+  withholdFallingVomit: boolean,
+): ChronicityCompareExpanded | null {
   const c = f.compare;
-  if (!c) return null;
+  if (!c || chronicityCompareWithheld(f, withholdFallingVomit)) return null;
   return {
     rows: chronicityCompareRows(c),
     densityLine: chronicityCompareDensityLine(c),
@@ -1615,6 +1679,27 @@ export function timingStoryClockLaneModel(f: TimingStoryLike): DotLaneModel | nu
   return { dots, bands, axis: ['12am', '6am', '12pm', '6pm'] };
 }
 
+// CUL-1195 — PROVISIONAL wording, Dr. Chen's to ratify at the CUL-583 sitting (nyx-voice). The
+// long band is timed from the last meal EATEN (CUL-1122), which is true, and a cat who turns down
+// dinner and vomits minutes later still lands in it, the band whose owner reading is the
+// harmless-looking one. So the face says how many of the long episodes followed a refused bowl.
+// "Followed" is sequence, never cause. Present-only: null at zero or on a cache written before the
+// field, because "none followed a refused meal" would reassure over a record whose bowls are rated
+// only by exception (CUL-1118). Clamped to the long count, so a malformed cache can never print
+// "12 of the 11".
+function refusalCountOf(f: TimingStoryLike): number {
+  const raw = f.type === 'timing_story' ? f.long.afterRefusalCount : f.longAfterRefusalCount;
+  return raw == null || !Number.isFinite(raw) ? 0 : clampCount(raw, longCountOf(f));
+}
+
+/** The long band's refused-bowl disclosure, printed on the face under the three-band compare. Null
+ *  when no long episode followed a refused bowl (never a zero line). */
+export function timingStoryRefusalLine(f: TimingStoryLike): string | null {
+  const k = refusalCountOf(f);
+  if (k < 1) return null;
+  return `${k} of the ${count(longCountOf(f), 'episode', 'episodes')} ${f.longGapHours}h or more after eating followed a refused meal.`;
+}
+
 /** The honest un-timeable remainder (S2) — episodes we couldn't place against a meal at
  *  all. Null when every in-window episode was timeable (nothing to disclose). */
 export function timingStoryControlDisclosure(f: TimingStoryLike): string | null {
@@ -1756,6 +1841,28 @@ export function trialResponseTimedReconciliationLine(f: TrialResponseFinding): s
   return `Timed to a meal: ${timedTrial} of ${f.pooledTrialCount} in the trial · ${timedBaseline} of ${f.pooledBaselineCount} before.`;
 }
 
+/** CUL-1195 (provisional, as `timingStoryRefusalLine`): the long row's refused-bowl subset, so
+ *  "6h or more after eating: 3 · was 0" over a cat refusing the trial diet says what it holds. A
+ *  subset of the long row, never an addition, so the face still foots with the pooled lead.
+ *
+ *  PRESENT-ONLY PER WINDOW, deliberately NOT two-sided like the rows (adversarial pass): ratings are
+ *  exception-only (CUL-1118), so "0 in the trial" beside "2 before" is an absence claim, and on this
+ *  card a fall reads as "the trial fixed her refusals" — the falling-count-as-improvement trap. So a
+ *  window with none is left unsaid, never printed as a zero. Null when neither window has one, or on
+ *  a cache written before the field. Clamped per window. */
+export function trialResponseRefusalLine(f: TrialResponseFinding): string | null {
+  const r = f.longAfterRefusal;
+  if (!r) return null;
+  const safe = (n: number, max: number) => (Number.isFinite(n) ? clampCount(n, max) : 0);
+  const trial = safe(r.trial, f.long.trial);
+  const baseline = safe(r.baseline, f.long.baseline);
+  const parts = [trial > 0 ? `${trial} in the trial` : null, baseline > 0 ? `${baseline} before it` : null].filter(
+    (p): p is string => p != null,
+  );
+  if (parts.length === 0) return null;
+  return `Of those ${f.longGapHours}h or more after eating, ${parts.join(' · ')} followed a refused meal.`;
+}
+
 /** The day-count badge — "Day N of M" (target set) or "Day N" (unset). `target_duration_days` is the
  *  ONLY authority on trial length (never the elapsed days), matching the strip's own header. */
 export function trialResponseDayBadge(f: TrialResponseFinding): string {
@@ -1860,7 +1967,21 @@ function shortDateUTC(iso: string): string {
 /** The phone-call script facts for a SAFETY finding, or null for any other type (the
  *  script renders only on the safety expand). Each fact is one row (§4 phone script);
  *  the last recency row appears only when the payload carries a "most recent". */
-export function phoneScript(finding: SignalFinding, petName: string): PhoneScriptFact[] | null {
+export function phoneScript(
+  finding: SignalFinding,
+  petName: string,
+  /** The pet's not-eating register (CUL-1216): true drops a FALLING vomit chronicity compare
+   *  row (`chronicityCompareWithheld`). Required — a default here would be the decision. */
+  withholdFallingVomit: boolean,
+): PhoneScriptFact[] | null {
+  if (finding.type === 'symptom_burden') {
+    return [
+      { label: 'Sign', value: symptomWord(finding.symptomType) },
+      { label: 'This week', value: `${count(finding.count, 'vomit', 'vomits')} on ${count(finding.days, 'day', 'days')}` },
+      ...(finding.persistenceArm ? [{ label: 'Days in a row', value: String(finding.runDays) }] : []),
+      { label: 'Watched over', value: `the last ${finding.windowDays} days` },
+    ];
+  }
   if (finding.type === 'symptom_worsening') {
     const symptom = symptomWord(finding.symptomType);
     const thisWeek =
@@ -1895,7 +2016,11 @@ export function phoneScript(finding: SignalFinding, petName: string): PhoneScrip
       // v1.1-b (CUL-787): the counted halves as ONE two-sided row, only when the cache carries
       // them (an old cache renders the pre-v1.1-b script). Sits between the total and the
       // most-recent date so the script still reads oldest-fact → newest-fact.
-      ...(finding.compare ? [chronicityComparePhoneScriptFact(finding.compare)] : []),
+      // CUL-1216 (BRK-6): withheld when it falls, counts vomiting, and the pet is not known
+      // to be eating — the ask and every other row stay.
+      ...(finding.compare && !chronicityCompareWithheld(finding, withholdFallingVomit)
+        ? [chronicityComparePhoneScriptFact(finding.compare)]
+        : []),
       { label: 'Most recent', value: recencyPhrase(finding.daysSinceLastEpisode) },
       // The relay the owner READS ALOUD is the one place this mattered most and the one
       // place the first cut omitted it (adversarial pass, 2026-08-28): "mention both" is an
@@ -1968,20 +2093,25 @@ export function phoneScript(finding: SignalFinding, petName: string): PhoneScrip
 // top-ranked safety finding (a directly-photographed blood / foreign-body flag), and B-191's own
 // rationale applies with full force: a SECONDARY pet whose only flag is a photographed red flag
 // must be able to raise the banner, never stay silent while a lower-priority lane on another pet
-// would. chronicity (⑦, B-182/B-191) slots below intake_decline; worsening is last.
+// would. chronicity (⑦, B-182/B-191) slots below intake_decline; worsening is last. The burden
+// card (Engines v3 PR-14d, CUL-1410) is added deliberately, between intake_decline and chronicity
+// exactly as the engine ranks it: a pet vomiting on three days running, with no card of any other
+// lane, must be able to raise the banner, and its ask can be "today".
 const BANNER_SAFETY_PRIORITY: Record<
-  'incident_red_flag' | 'intake_decline' | 'symptom_chronicity' | 'symptom_worsening',
+  'incident_red_flag' | 'intake_decline' | 'symptom_burden' | 'symptom_chronicity' | 'symptom_worsening',
   number
 > = {
   incident_red_flag: 0,
   intake_decline: 1,
-  symptom_chronicity: 2,
-  symptom_worsening: 3,
+  symptom_burden: 2,
+  symptom_chronicity: 3,
+  symptom_worsening: 4,
 };
 
 export type BannerSafetyFinding =
   | IncidentRedFlagFinding
   | IntakeDeclineFinding
+  | SymptomBurdenFinding
   | SymptomChronicityFinding
   | SymptomWorseningFinding;
 
@@ -1991,6 +2121,7 @@ function isBannerSafetyFinding(f: SignalFinding): f is BannerSafetyFinding {
   return (
     f.type === 'incident_red_flag' ||
     f.type === 'intake_decline' ||
+    f.type === 'symptom_burden' ||
     f.type === 'symptom_chronicity' ||
     f.type === 'symptom_worsening'
   );
@@ -2107,6 +2238,13 @@ function bannerRest(finding: BannerSafetyFinding): string {
       finding.daysBelowBaseline <= 1 ? 'today' : `for ${finding.daysBelowBaseline} days`;
     return ` has eaten less than usual ${span} — worth a look.`;
   }
+  if (finding.type === 'symptom_burden') {
+    // Engines v3 PR-14d (CUL-1410) — the run or the count, the card's own words; the ask lives
+    // on the pet's Signal, like every banner.
+    return finding.persistenceArm
+      ? ` has vomited on ${finding.runDays} days in a row — worth a look.`
+      : ` has vomited ${finding.count} times this week — worth a look.`;
+  }
   if (finding.type === 'symptom_chronicity') {
     // ⑦ (B-182/B-191) — DURATION, not a week-over-week delta. Anchor to the onset
     // month (matching the pet's own chronicity Signal copy, "Since {month}, …") so
@@ -2155,6 +2293,10 @@ export function validateBannerPhrasing(text: string): boolean {
   if (BANNER_DISMISSIVE_RE.test(t)) return false;
   if (BANNER_CAUSAL_RE.test(t)) return false;
   if (BANNER_ALARM_RE.test(t)) return false;
+  // CUL-1271 — never hand the concern off ("in the vet's hands") or credit a treatment
+  // ("the prednisone is helping"). Imported, not mirrored: the same module the server
+  // screens use, so this arm cannot drift out of sync with phrasing.ts.
+  if (careClaimReason(t)) return false;
   return true;
 }
 
@@ -2286,6 +2428,11 @@ export function chronicityLastEpisodeFallbackIso(
  */
 export function stripNameLine(finding: SignalFinding): string | null {
   switch (finding.type) {
+    case 'symptom_burden':
+      // The arm that fired, no count (the count line carries it).
+      return finding.persistenceArm
+        ? `${capitalize(symptomWord(finding.symptomType))} days in a row`
+        : `${capitalize(symptomWord(finding.symptomType))} this week`;
     case 'symptom_chronicity':
       return `Recurring ${symptomWord(finding.symptomType)}`;
     case 'symptom_worsening':
@@ -2334,6 +2481,9 @@ export function stripNameLine(finding: SignalFinding): string | null {
  */
 export function stripAskLine(finding: SignalFinding): string | null {
   switch (finding.type) {
+    case 'symptom_burden':
+      // templateBurden: today → "worth a call to your vet today"; soon → "worth booking a vet visit soon".
+      return finding.tier === 'today' ? STRIP_ASKS.call : STRIP_ASKS.visit;
     case 'symptom_chronicity':
       // templateChronicity: firm → "worth booking a vet visit", else "worth a word with your vet".
       return finding.tier === 'firm' ? STRIP_ASKS.visit : STRIP_ASKS.tell;
@@ -2361,6 +2511,11 @@ function stripCount(finding: SignalFinding, ctx: StripContext, spoken: boolean):
   const lastLocal = ctx.lastEpisodeIso ? stripDayLocal(ctx.lastEpisodeIso) : null;
   const suffix = (day: StripDay | null): string => (day ? (spoken ? `, last ${day.spoken}` : ` · last ${day.short}`) : '');
   switch (finding.type) {
+    case 'symptom_burden':
+      // The run only when it is the arm that fired: a count-only card's run can be 1.
+      return finding.persistenceArm
+        ? `${finding.count} this week, ${finding.runDays} in a row${suffix(lastLocal)}`
+        : `${finding.count} this week${suffix(lastLocal)}`;
     case 'symptom_chronicity':
       // Dr. Chen's own strip form: the face's "14 episodes across 5 of the last 8 weeks" said
       // in fewer words, plus the date of the last episode from the record.

@@ -1,7 +1,7 @@
 import { Tabs, Redirect } from 'expo-router';
 import { View, StyleSheet } from 'react-native';
 import { usePet } from '../../hooks/usePet';
-import { FAB } from '../../components/log/FAB';
+import { FAB, HiddenUnderFabMenu } from '../../components/log/FAB';
 import { SyncBanner } from '../../components/ui';
 import { NyxTabBar, type TabBarProps } from '../../components/nav/NyxTabBar';
 import { useAuthStore } from '../../store/authStore';
@@ -23,23 +23,27 @@ export default function TabsLayout() {
 
   return (
     <View style={styles.root}>
-      <SyncBanner />
-      <Tabs
-        // The bar is ours, not Expo's (components/nav/NyxTabBar.tsx) — the default
-        // Tabs icon container clips a text-as-icon label, which is why this file
-        // owned a hand-rolled bar in the first place. CUL-599 moved the bar itself
-        // out to its own component so the Pet tab's fallback ladder can be tested;
-        // the layout is back to being a router.
-        tabBar={(props) => <NyxTabBar {...(props as unknown as TabBarProps)} />}
-        screenOptions={{ headerShown: false }}
-      >
-        <Tabs.Screen name="index" options={{ title: 'Home' }} />
-        <Tabs.Screen name="history" options={{ title: 'History' }} />
-        <Tabs.Screen name="foods" options={{ title: 'Foods' }} />
-        {/* The title is the pre-pet fallback only — the bar renders the active
-            pet's name here once the store has one (spec §1 D1/D2). */}
-        <Tabs.Screen name="profile" options={{ title: 'Pet' }} />
-      </Tabs>
+      {/* Everything under the FAB's menu, hidden from assistive tech while it is open
+          (CUL-322 / C-14): the menu's layer is modal, and this is its host. */}
+      <HiddenUnderFabMenu>
+        <SyncBanner />
+        <Tabs
+          // The bar is ours, not Expo's (components/nav/NyxTabBar.tsx) — the default
+          // Tabs icon container clips a text-as-icon label, which is why this file
+          // owned a hand-rolled bar in the first place. CUL-599 moved the bar itself
+          // out to its own component so the Pet tab's fallback ladder can be tested;
+          // the layout is back to being a router.
+          tabBar={(props) => <NyxTabBar {...(props as unknown as TabBarProps)} />}
+          screenOptions={{ headerShown: false }}
+        >
+          <Tabs.Screen name="index" options={{ title: 'Home' }} />
+          <Tabs.Screen name="history" options={{ title: 'History' }} />
+          <Tabs.Screen name="foods" options={{ title: 'Foods' }} />
+          {/* The title is the pre-pet fallback only — the bar renders the active
+              pet's name here once the store has one (spec §1 D1/D2). */}
+          <Tabs.Screen name="profile" options={{ title: 'Pet' }} />
+        </Tabs>
+      </HiddenUnderFabMenu>
       <FAB />
     </View>
   );

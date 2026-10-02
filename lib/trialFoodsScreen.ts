@@ -29,7 +29,8 @@
 import { getDietTrialProgress } from './analytics';
 import type { AllowedFood, TrialFoodRole } from './dietTrial';
 import { trialListFoodsOn, type TrialAllowedSet, type TrialAllowedSetTrial } from './trialAllowedSet';
-import { dayKeyToLocalDate, formatLongDate, toLocalDayKey } from './utils';
+import { dayKeyToLocalDate, toLocalDayKey } from './utils';
+import { recordDay } from './recordDates';
 
 // ── §4 copy pack, verbatim ──────────────────────────────────────────────────
 //
@@ -173,8 +174,9 @@ export function trialDayOn(trial: TrialAllowedSetTrial, dayKey: string): number 
  * is written at `started_at`). Nothing on the row records "this was an add", so
  * inferring it from a stored boolean would mean adding one.
  */
-export function membershipFact(trial: TrialAllowedSetTrial, food: AllowedFood): string {
-  const date = formatLongDate(food.allowedFrom);
+export function membershipFact(trial: TrialAllowedSetTrial, food: AllowedFood, today: string): string {
+  // The house form (H-10; PM ruling on CUL-1126): "since Jul 3", "since Dec 20, 2025".
+  const date = food.allowedFrom ? recordDay(food.allowedFrom, today) : null;
   if (!date) return 'On the list';
   const day = trialDayOn(trial, food.allowedFrom);
   if (day === null || day <= 1) return `On the list since ${date}`;
@@ -211,7 +213,7 @@ export function buildTrialFoodsScreen(
   const toRow = (f: AllowedFood): TrialFoodsRow => ({
     key: rowKey(f),
     label: f.label,
-    fact: membershipFact(set.trial, f),
+    fact: membershipFact(set.trial, f, toLocalDayKey(new Date(atMs))),
   });
 
   return {
@@ -278,9 +280,10 @@ export function buildAddTrialFoodSheet(
   // The LOCAL day, because that is the day key `addTrialFood` will write. Naming
   // a different date here than the row records is the one way this sheet could
   // lie, and it would only show up near midnight.
-  const today = formatLongDate(toLocalDayKey(new Date(nowMs)));
+  const todayKey = toLocalDayKey(new Date(nowMs));
+  const todayDate = recordDay(todayKey, todayKey);
   const joins = [
-    today ? `Today, ${today}` : 'Today',
+    todayDate ? `Today, ${todayDate}` : 'Today',
     progress ? `day ${progress.dayCounter}` : null,
   ]
     .filter((p): p is string => p !== null)
@@ -317,6 +320,18 @@ export function alreadyOnListNote(foodLabel: string): string {
 export function trialFoodsTitle(petName: string): string {
   return `What ${petName} can eat`;
 }
+
+/** CUL-400 — the allowed-set read threw. The same register as the exposures
+ *  screen's `TRIAL_EXPOSURES_UNREADABLE` (the two list screens answer the same
+ *  failure the same way): the cause, that nothing is lost, the next action. Never
+ *  an empty list — that would say nothing is permitted. */
+export const TRIAL_FOODS_UNREADABLE =
+  'Culprit couldn’t read this trial’s food list just now. Nothing has been lost — ' +
+  'this screen just couldn’t load it. Try again in a moment.';
+
+/** CUL-1297 — a `?pet=` naming a pet the account no longer holds (trial-screen
+ *  spec §4, verbatim). No id is echoed, and no other pet's trial stands in. */
+export const TRIAL_ROUTE_PET_GONE = 'This pet isn’t in your account any more.';
 
 export function noTrialLine(petName: string): string {
   return `${petName} isn’t on a diet trial right now. When one is running, the foods it allows show up here.`;

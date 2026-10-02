@@ -16,6 +16,8 @@ import {
   resolveCaps,
   computeResetsAt,
   mapMedDoseFacts,
+  readCareContextFacts,
+  SIGNAL_DOSE_LANES_ON,
   type FunctionCaps,
   type RegimenRow,
   type MedDoseEventRow,
@@ -201,3 +203,175 @@ Deno.test('mapMedDoseFacts — a dose whose regimen is absent from the set and h
 Deno.test('mapMedDoseFacts — no doses → no facts', () => {
   assertEquals(mapMedDoseFacts([regimen()], [], noIntake), [])
 })
+
+// ── EN-F wiring (Engines v3 PR-11a) ─────────────────────────────────────────────────────
+// The handler has no fake-client harness, so its three Engines v3 wirings are pinned on
+// the source; each rule itself is tested where it lives (engineStamps.test.ts,
+// standDown.test.ts). Proven by mutation when written: dropping any one of them reds this.
+
+Deno.test('EN-F wiring — the prior row is read with its flags, and minting is gated on them', async () => {
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  // PR-11b moved the gate into the pure pipeline; the read stays in the shell. Both halves
+  // are pinned where they now live: the shell selects the stamp and hands it over, and the
+  // pipeline gates the prior on it (behaviour: signalPipeline.test.ts).
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  const priorRead = src.slice(src.indexOf(".from('ai_signals')"), src.indexOf('runSignalPipeline({'))
+  assertStrictEquals(/\.select\('[^']*\bengine_flags\b[^']*'\)/.test(priorRead), true, 'the prior read no longer selects engine_flags')
+  assertStrictEquals(/engineFlags:\s*priorRow\.engine_flags\b/.test(priorRead), true, 'the prior read no longer hands its flags to the pipeline')
+  const pipeline = blankComments(await Deno.readTextFile(new URL('./pipeline.ts', import.meta.url)))
+  assertStrictEquals(
+    /priorForStandDowns\(\s*readPriorEntries\(priorSignal\.findings\),\s*standDownMintAllowed\(priorSignal\.engineFlags,\s*engineFlags,\s*SIGNAL_ENGINE_KEYS\),?\s*\)/
+      .test(pipeline),
+    true,
+    'the prior payload no longer passes through the EN-F gate',
+  )
+  // The hand-over itself (code review, PR-11b): dropping `prior` or the flags from the call
+  // passes every pin above and mints no stand-down, or gates on nothing.
+  const call = src.slice(src.indexOf('runSignalPipeline({'), src.indexOf('careRecord:', src.indexOf('runSignalPipeline({')))
+  for (const field of ['prior', 'nowMs', 'engineFlags']) {
+    assertStrictEquals(new RegExp(`\\b${field},`).test(call), true, `the shell no longer hands the pipeline its ${field}`)
+  }
+  assertStrictEquals(/payload\.standDownError !== null\)\s*\{\s*console\.warn\(/.test(src), true, 'a stand-down failure is no longer logged')
+  for (const [file, text] of [['index.ts', src], ['pipeline.ts', pipeline]]) {
+    assertStrictEquals(/prior = readPriorEntries\(/.test(text), false, `an ungated prior assignment is back in ${file}`)
+  }
+})
+
+Deno.test('EN-F wiring — the flag is read for the pet\'s owner, and the cache row carries the stamps', async () => {
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  assertStrictEquals(/readEngineFlags\(supabase,[^)]*pet\.user_id/.test(src), true, 'the flag is not read for the pet\'s owner')
+  const insert = src.slice(src.indexOf(".from('ai_signals').insert("))
+  assertStrictEquals(/\.\.\.signalStampValues\(engineFlags, fingerprint\)/.test(insert.slice(0, insert.indexOf('})'))), true, 'the cache row lost its stamps')
+})
+
+// ── CUL-1099 (Engines v3 PR-22a): the dose pull resolves, and the engine stays dark to it ──
+// The adversarial pass found the dose lanes can suppress a true food correlate and add claims,
+// so turning them on is CUL-1425's, behind an Engines key. Until then the pull is READ (so a
+// failure throws like every pull) and the pipeline is handed nothing, which is the output
+// production has shown since June. Pinned on the source, as the EN-F wirings above are.
+Deno.test('CUL-1099 — the dose pull names its FK, throws on failure, and feeds the engine nothing yet', async () => {
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  assertStrictEquals(
+    src.includes('medication_administrations!medication_administrations_event_id_fkey('),
+    true,
+    'the dose embed lost its FK hint (PGRST201 on the live API)',
+  )
+  assertStrictEquals(/readDosesAsToday|isAmbiguousEmbed/.test(src), false, 'an error-as-empty dose wrapper is back')
+  // Dark: CUL-1425 flips this through a registered Engines key, never by editing the constant.
+  assertStrictEquals(SIGNAL_DOSE_LANES_ON, false, 'the dose lanes were turned on outside an Engines key')
+  const call = src.slice(src.indexOf('runSignalPipeline({'), src.indexOf('careRecord:', src.indexOf('runSignalPipeline({')))
+  assertStrictEquals(/doseEvents: SIGNAL_DOSE_LANES_ON \? doseEventsPull\.rows : \[\],/.test(call), true, 'the pipeline is handed dose rows ungated')
+  const incomplete = src.slice(src.indexOf('incompletePullNames({'), src.indexOf('incidentAnalyses:', src.indexOf('incompletePullNames({')))
+  assertStrictEquals(/\.\.\.\(SIGNAL_DOSE_LANES_ON \? \{ doseEvents: doseEventsPull \} : \{\}\)/.test(incomplete), true, 'an unread dose pull can mark the record incomplete')
+})
+
+// ── EN-10's reads (Engines v3 PR-22, CUL-1420) ─────────────────────────────────────────
+// The shell reads `vet_visits` and the logging pull only while engines_v3_en10 is on, by one
+// column, and fails toward no lines. The gate and the prompt rule are pinned on the source;
+// the reads themselves run against a fake client that records every call.
+
+type Call = { table: string; ops: [string, unknown[]][] }
+function fakeClient(answer: (c: Call) => { data: unknown; error: unknown; count?: number }) {
+  const calls: Call[] = []
+  const client = {
+    from(table: string) {
+      const call: Call = { table, ops: [] }
+      calls.push(call)
+      const builder: Record<string, unknown> = {}
+      for (const op of ['select', 'eq', 'neq', 'is', 'lt', 'lte', 'gte', 'order', 'limit', 'range', 'in']) {
+        builder[op] = (...args: unknown[]) => {
+          call.ops.push([op, args])
+          return builder
+        }
+      }
+      builder.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
+        Promise.resolve().then(() => answer(call)).then(res, rej)
+      return builder
+    },
+  }
+  return { client: client as unknown as Parameters<typeof readCareContextFacts>[0], calls }
+}
+const LOOKBACK = '2026-04-01T00:00:00.000Z'
+const LOGGED = [{ id: 'e1', occurred_at: '2026-09-20T09:00:00.000Z' }, { id: 'e2', occurred_at: '2026-09-21T09:00:00.000Z' }]
+
+Deno.test('EN-10 reads — one column of the last visit before today, and every event but a look', async () => {
+  const { client, calls } = fakeClient((c) =>
+    c.table === 'vet_visits' ? { data: [{ visited_at: '2026-09-16' }], error: null } : { data: LOGGED, error: null, count: 2 },
+  )
+  const facts = await readCareContextFacts(client, 'pet-1', LOOKBACK, '2026-09-27')
+  assertEquals(facts, { lastVisitOn: '2026-09-16', loggedAt: LOGGED.map((r) => r.occurred_at), readSinceIso: LOOKBACK })
+  const visit = calls.find((c) => c.table === 'vet_visits')!
+  assertEquals(visit.ops, [
+    ['select', ['visited_at']],
+    ['eq', ['pet_id', 'pet-1']],
+    ['is', ['deleted_at', null]],
+    ['lt', ['visited_at', '2026-09-27']],
+    ['order', ['visited_at', { ascending: false }]],
+    ['limit', [1]],
+  ])
+  const events = calls.find((c) => c.table === 'events')!
+  assertEquals(events.ops.filter(([op]) => op !== 'range').slice(0, 5), [
+    ['select', ['id, occurred_at', { count: 'exact' }]],
+    ['eq', ['pet_id', 'pet-1']],
+    ['neq', ['event_type', 'check_in']],
+    ['is', ['deleted_at', null]],
+    ['gte', ['occurred_at', LOOKBACK]],
+  ])
+  assertEquals(calls.map((c) => c.table).sort(), ['events', 'vet_visits'])
+})
+
+Deno.test('EN-10 reads — no visit on record is an answer; a failed visit read or a short pull is no lines', async () => {
+  const none = await readCareContextFacts(
+    fakeClient((c) => (c.table === 'vet_visits' ? { data: [], error: null } : { data: LOGGED, error: null, count: 2 })).client,
+    'pet-1', LOOKBACK, '2026-09-27',
+  )
+  assertStrictEquals(none?.lastVisitOn, null)
+  const failed = await readCareContextFacts(
+    fakeClient((c) => (c.table === 'vet_visits' ? { data: null, error: { message: 'x' } } : { data: LOGGED, error: null, count: 2 })).client,
+    'pet-1', LOOKBACK, '2026-09-27',
+  )
+  assertStrictEquals(failed, null)
+  // The count says 5 rows exist and the read returned 2: incomplete, so no lines.
+  const short = await readCareContextFacts(
+    fakeClient((c) => (c.table === 'vet_visits' ? { data: [], error: null } : { data: LOGGED, error: null, count: 5 })).client,
+    'pet-1', LOOKBACK, '2026-09-27',
+  )
+  assertStrictEquals(short, null)
+  const thrown = await readCareContextFacts(
+    fakeClient(() => { throw new Error('network') }).client,
+    'pet-1', LOOKBACK, '2026-09-27',
+  )
+  assertStrictEquals(thrown, null)
+})
+
+Deno.test('EN-10 wiring — flag-off makes neither read, and the facts reach the pipeline', async () => {
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  // The one call site, behind the key.
+  assertStrictEquals(src.split('readCareContextFacts(').length - 1, 2, 'readCareContextFacts is defined once and called once')
+  assertStrictEquals(
+    /isEngineKeyOn\(engineFlags, 'engines_v3_en10'\)\s*\?\s*await readCareContextFacts\(/.test(src),
+    true,
+    'the EN-10 reads are no longer behind engines_v3_en10',
+  )
+  const call = src.slice(src.indexOf('runSignalPipeline({'), src.indexOf('})', src.indexOf('runSignalPipeline({')))
+  assertStrictEquals(/\bcareContextFacts,/.test(call), true, 'the shell no longer hands the pipeline its EN-10 facts')
+  // vet_visits is read inside readCareContextFacts and nowhere else in the shell.
+  const fn = src.slice(src.indexOf('export async function readCareContextFacts('))
+  assertStrictEquals(src.split(".from('vet_visits')").length - 1, 1)
+  assertStrictEquals(fn.includes(".from('vet_visits')"), true)
+})
+
+Deno.test('EN-10 — Ask\'s rule 10 is in the phrasing and summary prompts', async () => {
+  const { PHRASING_SYSTEM } = await import('./phrasing.ts')
+  const { SUMMARY_SYSTEM } = await import('./summary.ts')
+  for (const [name, prompt] of [['phrasing', PHRASING_SYSTEM], ['summary', SUMMARY_SYSTEM]] as const) {
+    assertStrictEquals(prompt.includes('VISITS, CARE AND TREATMENTS'), true, name)
+    assertStrictEquals(prompt.includes('DATED FACT beside a COUNT'), true, name)
+    assertStrictEquals(prompt.includes('under control'), true, name)
+    assertStrictEquals(prompt.includes('helping or working'), true, name)
+  }
+})
+

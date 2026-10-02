@@ -37,14 +37,16 @@
 //      pre-authorised hole for whatever lands in that file next.
 //
 // ── BY SHAPE, NOT BY BARE STRING (C-36, inverted) ────────────────────────────
-// VV-0 seeded a rollout FLAG whose key is also the string `vet_visits`, so a
-// bare-substring detector flags `lib/appConfig.ts`, `lib/betaFeatures.ts` and
+// VV-0 seeded a rollout FLAG whose key was also the string `vet_visits`, so a
+// bare-substring detector flagged `lib/appConfig.ts`, `lib/betaFeatures.ts` and
 // `app/settings/beta.tsx` — three files that read no table at all. C-36 measured the
 // same collision in the other direction on the daily look. Allow-listing them would
-// be the wrong fix twice over: it would excuse three files that need no excuse, and
+// have been the wrong fix twice over: it would excuse files that need no excuse, and
 // it would silently excuse a real read added to any of them later. So the detector
-// matches the SHAPE of a read — a SQL clause or a PostgREST `.from()` — and the
-// three flag files are asserted CLEAN as a measured property of the detector.
+// matches the SHAPE of a read — a SQL clause or a PostgREST `.from()`. The flag
+// retired at GA (CUL-905) and the live files no longer hold the key; the shape rule
+// stays, and the fixture test below still drives every shape the key took, so a
+// config key or a switch case that shares a table's name never reads as a hit.
 //
 // ── WHAT IS NOT SCANNED ──────────────────────────────────────────────────────
 // Test files and `guards/` itself. A guard's fixtures ARE the anti-pattern (C-18),
@@ -77,40 +79,61 @@ const SKIP_DIRS = new Set(['node_modules', '.git', '.expo', 'ios', 'android', 'd
 
 // ── The allow-set ────────────────────────────────────────────────────────────
 //
-// Every entry is a file EXCUSED from the prohibition above, with the kind of reader
-// it is. Nothing here computes over visits: the set is substrate (schema, sync,
-// wipe), the two vet-facing surfaces that are ABOUT visits, and the report's own
-// window resolution.
-const ALLOWED: Record<string, string> = {
+// Every entry is a file EXCUSED from the prohibition above, with the KINDS of access
+// it is excused for (CUL-937): `table`, a query against `vet_visits` /
+// `vet_appointments`, and `column`, a file that carries or writes `vet_visit_id`. A
+// file that does a kind its entry does not name reds exactly as a file with no entry
+// does, so an exemption for writing the link column is not also an exemption for a
+// `SELECT … FROM vet_visits` added to the same file later. Nothing here computes over
+// visits: the set is substrate (schema, sync, wipe), the two vet-facing surfaces that
+// are ABOUT visits, and the report's own window resolution.
+type Kind = 'table' | 'column';
+
+const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
   // ── Substrate: the tables exist, so something has to define and move them ──
-  'lib/localSchema.ts':
-    'DDL. Declares the local mirror of both tables and the derived wipe/upgrade sets. ' +
-    'Defines columns; reads no row.',
-  'lib/sync.ts':
-    'The push and the hydrate for both tables, plus the two link columns on the ' +
-    'medication and trial mirrors. Moves rows verbatim between devices and the ' +
-    'server; computes nothing over them.',
+  'lib/localSchema.ts': {
+    kinds: ['table', 'column'],
+    why:
+      'DDL. Declares the local mirror of both tables and the derived wipe/upgrade sets. ' +
+      'Defines columns; reads no row.',
+  },
+  'lib/sync.ts': {
+    kinds: ['table', 'column'],
+    why:
+      'The push and the hydrate for both tables, plus the two link columns on the ' +
+      'medication and trial mirrors. Moves rows verbatim between devices and the ' +
+      'server; computes nothing over them.',
+  },
   // NOT HERE, and it was on the first draft: `lib/hydration.ts`. It holds both table
   // names — in LOCAL_WIPE_TABLES, as bare strings in an array — and a comment about
   // the link column, and neither is a read. The staleness assertion below caught the
   // entry before this guard's first green run, which is the C-32 mechanism doing
   // exactly its job: an allow-set fills up with files someone considered unless
   // something makes each entry pay for itself.
-  'lib/db.ts':
-    'isLocalDataEmpty() — the cold-start overlay gate, and the ONE reader here that ' +
-    'deliberately omits `deleted_at IS NULL`. It asks "does this device hold any ' +
-    'rows at all?", not "what does the record say?", so a soft-deleted visit still ' +
-    'counts as a populated store. Reasoned at the call site.',
+  'lib/db.ts': {
+    kinds: ['table'],
+    why:
+      'isLocalDataEmpty() — the cold-start overlay gate, and the ONE reader here that ' +
+      'deliberately omits `deleted_at IS NULL`. It asks "does this device hold any ' +
+      'rows at all?", not "what does the record say?", so a soft-deleted visit still ' +
+      'counts as a populated store. Reasoned at the call site.',
+  },
 
   // ── The two provenance links: mappers only, no consumer ──
-  'lib/medications.ts':
-    'LocalMedication / RemoteMedicationUpsert carry vet_visit_id so the link can ' +
-    'travel. A pure mapper — nothing in this file branches on it, and no dose count ' +
-    'or course predicate reads it.',
-  'lib/dietTrialMirror.ts':
-    'LocalDietTrial / RemoteDietTrialUpsert carry vet_visit_id so the link can ' +
-    'travel. A pure mapper — trial coverage, adherence and `started_at` are ' +
-    'computed in lib/dietTrial.ts, which does not appear in this set.',
+  'lib/medications.ts': {
+    kinds: ['column'],
+    why:
+      'LocalMedication / RemoteMedicationUpsert carry vet_visit_id so the link can ' +
+      'travel. A pure mapper — nothing in this file branches on it, and no dose count ' +
+      'or course predicate reads it.',
+  },
+  'lib/dietTrialMirror.ts': {
+    kinds: ['column'],
+    why:
+      'LocalDietTrial / RemoteDietTrialUpsert carry vet_visit_id so the link can ' +
+      'travel. A pure mapper — trial coverage, adherence and `started_at` are ' +
+      'computed in lib/dietTrial.ts, which does not appear in this set.',
+  },
 
   // ── The two WRITERS of those links (CUL-901 / VV-3) ──
   //
@@ -120,71 +143,108 @@ const ALLOWED: Record<string, string> = {
   // can branch on a visit, count one, or let one move a date — which is the whole
   // prohibition (CUL-746, TG-5).
   //
-  // THE BLIND SPOT, stated rather than implied (C-38): `ALLOWED` excuses a FILE, not
-  // a KIND, so these two entries would also cover a `SELECT … FROM vet_visits` added
-  // to either file later — the thing they are supposed to be excused for NOT doing.
-  // Every entry above has the same hole; kind-scoping the allow-set (`column` here,
-  // `table` for the query readers) is CUL-937. Until then the reason string is the
-  // contract and a reviewer is what enforces it.
-  'lib/medicationSetup.ts':
-    'startRegimen writes medications.vet_visit_id in the regimen INSERT — the ' +
-    'provenance of a course started from the after-visit screen. Writes the column; ' +
-    'its ONE read of a visit is lib/vetVisitLink.ts\'s same-pet check (CUL-945), a ' +
-    'yes/no on the link it is about to write and never a value. The dose counts and ' +
-    'the course dates it also writes come from the form, never from the link.',
-  'lib/dietTrialSetup.ts':
-    'startDietTrial writes diet_trials.vet_visit_id in the trial INSERT, inside the ' +
-    'existing transaction (spec §5.1 — never a follow-up UPDATE). Writes the column; ' +
-    'same single read as medicationSetup — the CUL-945 same-pet check, a yes/no. ' +
-    '`started_at` and the target duration come from the owner\'s choices on the ' +
-    'setup sheet.',
-  'lib/vetVisitLink.ts':
-    'visitIsForPet — the CUL-945 same-pet check, and the ONLY thing in this file. It ' +
-    'answers a BOOLEAN about a link a write path is about to set, and reads no ' +
-    'column off the visit: no date, no clinic, no id is returned to a caller. It is ' +
-    'a separate module precisely so the two write paths that need it (which sit in ' +
-    'Home\'s import closure) do not have to pull lib/vetVisits.ts in with them — ' +
-    'guards/homeWrites.test.ts measured that when they did.',
-
-  // ── Surfaces that are ABOUT a visit ──
-  'app/vet-visit.tsx':
-    'The log-a-visit screen — it WRITES the vet_visits row and its attachments. ' +
-    'The one surface whose subject is the visit itself.',
-  'lib/rundown.ts':
-    'readLastVisitDate — the vet-visit rundown is by definition anchored to the last ' +
-    'visit. It reads the DATE to bound "what changed since then"; the visit ' +
-    'contributes no row to any count in the rundown.',
+  // Both are registered for `column` ONLY, and that is now enforced rather than
+  // stated (CUL-937): a `SELECT … FROM vet_visits` added to either file is a `table`
+  // hit its entry does not excuse, and it reds.
+  'lib/medicationSetup.ts': {
+    kinds: ['column'],
+    why:
+      'startRegimen writes medications.vet_visit_id in the regimen INSERT — the ' +
+      'provenance of a course started from the after-visit screen. Writes the column; ' +
+      'its ONE read of a visit is lib/vetVisitLink.ts\'s same-pet check (CUL-945), a ' +
+      'yes/no on the link it is about to write and never a value. The dose counts and ' +
+      'the course dates it also writes come from the form, never from the link.',
+  },
+  'lib/dietTrialSetup.ts': {
+    kinds: ['column'],
+    why:
+      'startDietTrial writes diet_trials.vet_visit_id in the trial INSERT, inside the ' +
+      'existing transaction (spec §5.1 — never a follow-up UPDATE). Writes the column; ' +
+      'same single read as medicationSetup — the CUL-945 same-pet check, a yes/no. ' +
+      '`started_at` and the target duration come from the owner\'s choices on the ' +
+      'setup sheet.',
+  },
+  'lib/vetVisitLink.ts': {
+    kinds: ['table'],
+    why:
+      'visitIsForPet — the CUL-945 same-pet check, and the ONLY thing in this file. It ' +
+      'answers a BOOLEAN about a link a write path is about to set, and reads no ' +
+      'column off the visit: no date, no clinic, no id is returned to a caller. It is ' +
+      'a separate module precisely so the two write paths that need it (which sit in ' +
+      'Home\'s import closure) do not have to pull lib/vetVisits.ts in with them — ' +
+      'guards/homeWrites.test.ts measured that when they did.',
+  },
 
   // ── Vet Files: a document may LINK to a visit (B-478 D7) ──
-  'lib/vetDocumentDetail.ts':
-    'VET_VISIT_OPTIONS_QUERY — the link picker, which must list the visits a ' +
-    'document can be filed under. Reads visit identity (date, clinic) for display.',
-  'lib/vetDocumentLibrary.ts':
-    'Reads and writes vet_documents.vet_visit_id — the document→visit link. A ' +
-    'document column, never a visit read.',
-  'lib/vetDocumentCapture.ts':
-    'Writes vet_documents.vet_visit_id (null on capture, per D7 — an upload never ' +
-    'mints or dates a visit). A document column.',
-  'lib/vetDocuments.ts':
-    'The vet_documents row types, which include the vet_visit_id link column.',
+  'lib/vetDocumentDetail.ts': {
+    kinds: ['table', 'column'],
+    why:
+      'VET_VISIT_OPTIONS_QUERY — the link picker, which must list the visits a ' +
+      'document can be filed under. Reads visit identity (date, clinic) for display.',
+  },
+  'lib/vetDocumentLibrary.ts': {
+    kinds: ['column'],
+    why:
+      'Reads and writes vet_documents.vet_visit_id — the document→visit link. A ' +
+      'document column, never a visit read.',
+  },
+  'lib/vetDocumentCapture.ts': {
+    kinds: ['column'],
+    why:
+      'Writes vet_documents.vet_visit_id (null on capture, per D7 — an upload never ' +
+      'mints or dates a visit). A document column.',
+  },
+  'lib/vetDocuments.ts': {
+    kinds: ['column'],
+    why:
+      'The vet_documents row types, which include the vet_visit_id link column.',
+  },
 
   // ── The companion's own model (CUL-900 VV-2) ──
-  'lib/vetVisits.ts':
-    'The read/write model behind the Pet-tab card, the list, booking and the visit ' +
-    'detail — the surfaces whose SUBJECT is the visit. It reads both tables and the ' +
-    'three link columns, and that is the point: it is the ONE file the companion\'s ' +
-    'screens read through, so components/vetvisits/ and app/vet-visits/ name neither ' +
-    'table and never appear in this set. Its link reads are COUNTS OF CHILDREN (which ' +
-    'courses, trials and documents name this visit) for the derived plan tags — the ' +
-    'visit contributes no number of its own to any surface, and nothing here feeds a ' +
-    'coverage line, a day count, Patterns or an engine input.',
+  'lib/vetVisits.ts': {
+    kinds: ['table', 'column'],
+    why:
+      'The read/write model behind the Pet-tab card, the list, booking and the visit ' +
+      'detail — the surfaces whose SUBJECT is the visit. It reads both tables and the ' +
+      'three link columns, and that is the point: it is the ONE file the companion\'s ' +
+      'screens read through, so components/vetvisits/ and app/vet-visits/ name neither ' +
+      'table and never appear in this set. Its link reads are COUNTS OF CHILDREN (which ' +
+      'courses, trials and documents name this visit) for the derived plan tags — the ' +
+      'visit contributes no number of its own to any surface, and nothing here feeds a ' +
+      'coverage line, a day count, Patterns or an engine input.',
+  },
+
+  // ── The shared visit bound (H-11, CUL-1160) ──
+  'lib/visitWindow.ts': {
+    kinds: ['table'],
+    why:
+      'readLatestVisitBefore — the ONE "since the last vet visit" bound that History, ' +
+      'the rundown (CUL-1127) and the report (HV-15) share. It reads visited_at to ' +
+      'return ONE day, the START of a window, as a branded SinceVisitDay: never a visit ' +
+      'row, never a count. The visit contributes no row and no number to whatever the ' +
+      'window then counts (the report\'s rung-1 entry below is the same kind of reader).',
+  },
+
+  // ── The Signal shell (AC 10 as amended 2026-09-28; CUL-1420, Engines v3 PR-22) ──
+  'supabase/functions/generate-signal/index.ts': {
+    kinds: ['table'],
+    why:
+      'readCareContextFacts — EN-10\'s context line, behind engines_v3_en10. The ONE engine ' +
+      'reader of a vet table: one column, `visited_at`, of the most recent visit, to start a ' +
+      'window ("Since the Sep 16 visit, 11 days: …"). Every count the line speaks is computed ' +
+      'from events alone (careContext.ts, which stays clean below); no clinic, vet, reason or ' +
+      'note is selected, pinned by SHELL_COLUMNS. PR-23 widens it to the appointment dates.',
+  },
 
   // ── The report ──
-  'supabase/functions/generate-report/index.ts':
-    'The scope cascade\'s rung 1 (§6): the report window may START at the last ' +
-    'visit. That is the ONE sanctioned use of a visit as an input, it is a ' +
-    'BOUNDARY rather than a count, and CUL-899 gave the pull `deleted_at IS NULL`. ' +
-    'No visit is ever counted as a logged day.',
+  'supabase/functions/generate-report/index.ts': {
+    kinds: ['table'],
+    why:
+      'The scope cascade\'s rung 1 (§6): the report window may START at the last ' +
+      'visit. That is the ONE sanctioned use of a visit as an input, it is a ' +
+      'BOUNDARY rather than a count, and CUL-899 gave the pull `deleted_at IS NULL`. ' +
+      'No visit is ever counted as a logged day.',
+  },
 };
 
 /**
@@ -198,15 +258,16 @@ const ALLOWED: Record<string, string> = {
 const MUST_STAY_CLEAN = [
   'supabase/functions/generate-signal/detection.ts',
   'supabase/functions/generate-signal/phrasing.ts',
+  // EN-10 (PR-22): the pure half. The visit reaches these as a DATE the shell read; neither
+  // may read a vet table itself (AC 10 as amended names the shell, and only the shell).
+  'supabase/functions/generate-signal/pipeline.ts',
+  'supabase/functions/generate-signal/careContext.ts',
   'lib/analytics.ts',
   'lib/dietTrial.ts',
   'lib/lookDayCounts.ts',
   'lib/looks.ts',
   'supabase/functions/ask/index.ts',
 ];
-
-/** The three VV-0 flag files. Not exemptions — a measured property of the detector. */
-const FLAG_KEY_ONLY = ['lib/appConfig.ts', 'lib/betaFeatures.ts', 'app/settings/beta.tsx'];
 
 /**
  * Files holding a PostgREST read whose table name is a VARIABLE.
@@ -251,14 +312,17 @@ const DYNAMIC_FROM_ALLOWED: Record<string, string> = {
 
 // ── The detector ─────────────────────────────────────────────────────────────
 
-const TABLES = '(?:vet_visits|vet_appointments)';
+// The care record (082, CUL-1415 / CUL-1416) joins the scanned set (care-state spec
+// §8.4): an owner's answer, a call and its ledger are vet-visit-family rows, so the same
+// rule binds them. No file reads them yet; PR-23 registers the shell's read.
+const TABLES = '(?:vet_visits|vet_appointments|care_acknowledgements|vet_calls|vet_call_follow_ups)';
 
 /**
  * A read or write of the table, by SHAPE. Both dialects the app speaks:
  * local SQLite (`FROM`/`INTO`/`UPDATE`/`JOIN`) and PostgREST (`.from('…')`).
  *
- * Anchored on a clause keyword rather than the bare name so the VV-0 flag key — the
- * same string, used as a config key and a switch case — is not a hit.
+ * Anchored on a clause keyword rather than the bare name so a bare mention — a config
+ * key or a switch case, the shapes the retired VV-0 flag key took — is not a hit.
  */
 const TABLE_PATTERNS: readonly RegExp[] = [
   new RegExp(`\\b(?:FROM|INTO|JOIN)\\s+${TABLES}\\b`, 'i'),
@@ -302,6 +366,31 @@ const DYNAMIC_FROM_PATTERN =
 export interface VisitReadFinding {
   readonly file: string;
   readonly kinds: readonly ('table' | 'column' | 'dynamic')[];
+}
+
+/**
+ * The hits the allow-set does not excuse: a file with no entry, or a KIND beyond the
+ * ones its entry names (CUL-937). A `dynamic` hit is `DYNAMIC_FROM_ALLOWED`'s to judge,
+ * so it is not counted here.
+ */
+export function unexcusedReaders(
+  findings: readonly VisitReadFinding[],
+  allowed: Readonly<Record<string, { readonly kinds: readonly Kind[] }>>,
+): string[] {
+  const out: string[] = [];
+  for (const f of findings) {
+    const registered: readonly string[] = allowed[f.file]?.kinds ?? [];
+    const extra = f.kinds.filter((k) => k !== 'dynamic' && !registered.includes(k));
+    if (extra.length === 0) continue;
+    // Printed with the kind, so a failure says what to do: a `column` hit on a new
+    // file is usually a link being consumed; a `table` hit is usually a new query.
+    out.push(
+      f.file in allowed
+        ? `${f.file} (${extra.join('+')}, registered for ${registered.join('+')} only)`
+        : `${f.file} (${extra.join('+')})`,
+    );
+  }
+  return out;
 }
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -412,13 +501,8 @@ describe('AC 10 — visit data never reaches a count, a coverage line or an engi
     }
   });
 
-  it('no file outside the allow-set reads visit data', () => {
-    const unexpected = findings.filter(
-      (f) => f.kinds.some((k) => k !== 'dynamic') && !(f.file in ALLOWED),
-    );
-    // Printed with the kind, so a failure says what to do: a `column` hit on a new
-    // file is usually a link being consumed; a `table` hit is usually a new query.
-    expect(unexpected.map((f) => `${f.file} (${f.kinds.join('+')})`)).toEqual([]);
+  it('no file outside the allow-set reads visit data, and no allowed file beyond its kinds', () => {
+    expect(unexcusedReaders(findings, ALLOWED)).toEqual([]);
   });
 
   it('no file reads a table through a VARIABLE without saying why it is safe', () => {
@@ -448,10 +532,21 @@ describe('AC 10 — visit data never reaches a count, a coverage line or an engi
     expect(stale).toEqual([]);
   });
 
+  it('and no stale KIND: a kind a file no longer does is the same hole (CUL-937)', () => {
+    // A file registered for `table` + `column` that stops reading the table would keep
+    // a pre-authorised `table` exemption for whatever query lands in it next.
+    const byFile = new Map(findings.map((f) => [f.file, f.kinds as readonly string[]]));
+    const stale = Object.entries(ALLOWED).flatMap(([file, { kinds }]) =>
+      kinds.filter((k) => !(byFile.get(file) ?? []).includes(k)).map((k) => `${file} (${k})`),
+    );
+    expect(stale).toEqual([]);
+  });
+
   it('every allowed file states what KIND of reader it is', () => {
     // "It reads the table" is not a reason — it is the thing being excused.
-    for (const [file, reason] of Object.entries(ALLOWED)) {
-      expect(`${file}: ${reason}`.length).toBeGreaterThan(file.length + 60);
+    for (const [file, { kinds, why }] of Object.entries(ALLOWED)) {
+      expect(kinds.length).toBeGreaterThan(0);
+      expect(`${file}: ${why}`.length).toBeGreaterThan(file.length + 60);
     }
   });
 
@@ -471,16 +566,68 @@ describe('AC 10 — visit data never reaches a count, a coverage line or an engi
       expect(fs.existsSync(path.join(ROOT, file))).toBe(true);
     }
   });
+});
 
-  it('the VV-0 flag key is not mistaken for the table (C-36, inverted)', () => {
-    // `vet_visits` is a rollout-flag key as well as a table name. These three files
-    // hold the key and read no row, so they must be clean WITHOUT an exemption —
-    // which is what keeps a real read added to any of them tomorrow a build failure.
-    for (const file of FLAG_KEY_ONLY) {
-      expect(fs.existsSync(path.join(ROOT, file))).toBe(true);
-      expect(found.has(file)).toBe(false);
-      expect(Object.keys(ALLOWED)).not.toContain(file);
+// ── The Signal shell's column list (AC 10 as amended, 2026-09-28) ────────────
+//
+// The amendment lets the shell read "by explicit column list", and names the columns. A kind
+// (`table`) says the file may query the table; it cannot say WHICH columns, and a `select('*')`
+// or a `select('visited_at, notes')` added beside the sanctioned read would pass the allow-set.
+// So every read of a vet table in the shell is extracted and its select list compared, as a
+// SET, with the columns the amendment names. PR-23 adds `vet_appointments`' three dates here.
+//
+// Blind spots, stated (C-38): the extractor reads the FIRST string-literal `.select(` after a
+// `.from('<vet table>')`, so a concatenated list (`'visited_at' + ', notes'`) reads as its first
+// literal and passes; filter and order columns (`.eq('reason', …)`) are not checked; a vet table
+// EMBEDDED from another table (`.from('events').select('id, vet_visits(notes)')`) is invisible
+// to this and to the table detector above; and the chain runs to the next `.from(`, so a later
+// unrelated `.select` can be attributed to it (a false red, the safe direction).
+
+const SHELL = 'supabase/functions/generate-signal/index.ts';
+const SHELL_COLUMNS: Record<string, readonly string[]> = {
+  vet_visits: ['visited_at'],
+};
+
+/** Every `.from('<vet table>')` in `src` with the select list that follows it. */
+export function vetTableSelects(src: string): { table: string; columns: string | null }[] {
+  const out: { table: string; columns: string | null }[] = [];
+  const re = new RegExp(`\\.from\\(\\s*['"\`](${TABLES.slice(3, -1)})['"\`]\\s*\\)`, 'g');
+  for (const m of src.matchAll(re)) {
+    // The select must be the chain's next call: a filter before it is still this chain, a
+    // second `.from(` is not.
+    const rest = src.slice((m.index ?? 0) + m[0].length);
+    const next = rest.search(/\.from\(/);
+    const chain = next === -1 ? rest : rest.slice(0, next);
+    const sel = /\.select\(\s*(['"`])([^'"`]*)\1/.exec(chain);
+    out.push({ table: m[1], columns: sel ? sel[2] : null });
+  }
+  return out;
+}
+
+describe('the Signal shell reads a vet table only by its sanctioned columns', () => {
+  const src = blankComments(fs.readFileSync(path.join(ROOT, SHELL), 'utf8'));
+  const reads = vetTableSelects(src);
+
+  it('finds the shell\'s read (non-vacuity)', () => {
+    expect(reads.map((r) => r.table)).toEqual(['vet_visits']);
+  });
+
+  it('every read names exactly the columns the amendment allows, never `*`', () => {
+    for (const r of reads) {
+      expect(r.columns).not.toBeNull();
+      const cols = (r.columns as string).split(',').map((c) => c.trim()).filter(Boolean).sort();
+      expect(cols).toEqual([...(SHELL_COLUMNS[r.table] ?? [])].sort());
     }
+  });
+
+  it('the extractor sees a widened list, a star and a missing select (proven)', () => {
+    expect(vetTableSelects(`sb.from('vet_visits').select('visited_at, notes').eq('a', 1)`)).toEqual([
+      { table: 'vet_visits', columns: 'visited_at, notes' },
+    ]);
+    expect(vetTableSelects(`sb.from('vet_visits').select('*')`)).toEqual([{ table: 'vet_visits', columns: '*' }]);
+    expect(vetTableSelects(`sb.from('vet_appointments').eq('x', 1); sb.from('events').select('id')`)).toEqual([
+      { table: 'vet_appointments', columns: null },
+    ]);
   });
 });
 
@@ -539,10 +686,12 @@ describe('the detector itself', () => {
     expect(hits()).toEqual(['lib/c.ts (table)']);
   });
 
-  it('IGNORES the VV-0 flag key in every shape it actually appears in', () => {
+  it('IGNORES a same-named config key in every shape the retired VV-0 flag took', () => {
     // The measured collision, driven rather than asserted about: the registry row,
-    // the switch case and the allowlist-key array from lib/betaFeatures.ts,
-    // app/settings/beta.tsx and lib/appConfig.ts.
+    // the switch case and the allowlist-key array the flag held in
+    // lib/betaFeatures.ts, app/settings/beta.tsx and lib/appConfig.ts until GA
+    // (CUL-905). Kept after the key left the tree because the property is the
+    // detector's, not the flag's.
     writeFixture(
       root,
       'lib/flags.ts',
@@ -664,11 +813,45 @@ describe('the detector itself', () => {
 //      transitive consumer is invisible to the scan"). Measured today: the allow-set
 //      exports exactly one thing that carries visit data, `VET_VISIT_OPTIONS_QUERY`
 //      (a query STRING, whose consumers are themselves scanned because using it means
-//      calling `db.getAllAsync`). `lib/rundown.ts`'s `readLastVisitDate` is NOT
-//      exported — the reviewer's specific example does not compile — so the hole is
+//      calling `db.getAllAsync`). `lib/rundown.ts`'s old `readLastVisitDate` was NOT
+//      exported — the reviewer's specific example did not compile, and since CUL-1127
+//      the rundown reads the shared bound instead — so the hole is
 //      narrower than reported, but the CLASS is real and it opens the moment VV-2
 //      exports its first `listAppointments()`. The rule for VV-2, stated here because
 //      that is when it will be needed: a helper that returns visit data is exported
 //      from an allow-listed file ONLY if its own callers are scanned too.
+//      `lib/visitWindow.ts` (CUL-1160) exports one visit-derived value on purpose: the
+//      window's first day, a branded `SinceVisitDay`. A single boundary day cannot be
+//      summed into a count, which is the property this limit protects, so its callers
+//      need no scan of their own; a helper returning visit ROWS would.
 //
 //   4. An `rpc()` to a server function that reads visits. No such function exists.
+
+// ── The allow-set excuses KINDS, not files (CUL-937) ─────────────────────────
+
+describe('the allow-set, by kind', () => {
+  it('FLAGS a registered file doing a kind its entry does not excuse', () => {
+    // The hole the file-wide allow-set had: `lib/medicationSetup.ts` is excused for
+    // writing the link column, and a SELECT over vet_visits added to it was covered by
+    // that same entry.
+    expect(
+      unexcusedReaders([{ file: 'lib/medicationSetup.ts', kinds: ['table', 'column'] }], ALLOWED),
+    ).toEqual(['lib/medicationSetup.ts (table, registered for column only)']);
+  });
+
+  it('passes the same file doing only what it is registered for', () => {
+    expect(unexcusedReaders([{ file: 'lib/medicationSetup.ts', kinds: ['column'] }], ALLOWED)).toEqual([]);
+  });
+
+  it('still FLAGS a file with no entry, with every kind it does', () => {
+    expect(unexcusedReaders([{ file: 'lib/coverage.ts', kinds: ['table', 'column'] }], ALLOWED)).toEqual([
+      'lib/coverage.ts (table+column)',
+    ]);
+  });
+
+  it('leaves a dynamic hit to its own registry', () => {
+    expect(
+      unexcusedReaders([{ file: 'lib/sync.ts', kinds: ['table', 'column', 'dynamic'] }], ALLOWED),
+    ).toEqual([]);
+  });
+});

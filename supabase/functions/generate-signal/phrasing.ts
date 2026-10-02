@@ -21,6 +21,7 @@ import type {
   IntakeDeclineFinding,
   ReflectionFinding,
   SymptomWorseningFinding,
+  SymptomBurdenFinding,
   SymptomChronicityFinding,
   PostprandialTimingFinding,
   EmptyStomachTimingFinding,
@@ -34,6 +35,7 @@ import type {
   RankedFinding,
   SymptomType,
 } from './detection.ts'
+import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 
 // §3.2 visible-card cap: governs the LOW/MEDIUM-priority insight set only.
 // Safety/concern findings are exempt — never withheld to honor the cap.
@@ -146,12 +148,52 @@ export function templateReflection(f: ReflectionFinding, petName: string): strin
   return `We've logged ${f.currentCount} ${noun} of ${symptom} for ${petName} this week — about the same as last week.`
 }
 
+// Engines v3 PR-14d (CUL-1410) — the burden card. A count and a run of days, routed to the vet
+// at the tier the engine resolved; never a cause, a mechanism or a severity word, never reassures.
+// Vomit only, so the verb is the plain one an owner would use ("vomited"), not the label.
+// 'today' names the run that earned it; 'soon' names the count when that arm holds, otherwise the
+// run, placed in the week (it ended at least two days ago, so "in a row" alone would read as now).
+export function templateBurden(f: SymptomBurdenFinding, petName: string): string {
+  const floor = f.countIsFloor ? 'at least ' : ''
+  const times = `${floor}${f.count} ${f.count === 1 ? 'time' : 'times'}`
+  const days = `${floor}${f.runDays} ${f.runDays === 1 ? 'day' : 'days'} in a row`
+  if (f.tier === 'today') {
+    // The run is stated only when it IS the persistence arm. A 'today' tier HELD from the previous
+    // Signal over an incomplete read (pipeline.ts holdPriorTier) can sit on a finding whose run no
+    // longer qualifies; stating it then printed "at least 1 days in a row — call today" (the
+    // adversarial pass). The count carries the held ask instead, and is true of any subset.
+    if (!f.persistenceArm) return `${petName} has vomited ${times} this week — worth a call to your vet today.`
+    const countClause = f.countArm ? `${times} this week, ` : ''
+    return `${petName} has vomited ${countClause}on ${days} — worth a call to your vet today.`
+  }
+  if (f.countArm) {
+    return `${petName} has vomited ${times} in the last ${f.windowDays} days — worth booking a vet visit soon.`
+  }
+  return `${petName} vomited on ${days} this week — worth booking a vet visit soon.`
+}
+
 export function templateWorsening(f: SymptomWorseningFinding, petName: string): string {
   // Detector ④ — descriptive frequency, routed to concern. Never causal, never a
   // severity verdict ("worse"), never reassures. Urgency rides the resolved tier
   // (density-anchored, decided in the engine). Calm register mirrors intake-decline.
   const symptom = SYMPTOM_LABEL[f.symptomType]
   const episodeNoun = f.currentCount === 1 ? 'episode' : 'episodes'
+
+  // CUL-989 — over an incomplete read every count is a floor. The card still escalates (the
+  // ruling), but the week-over-week clause goes: last week's count is a floor too, so "up from
+  // N" could name a rise the full record does not have. What stays is true of any subset.
+  if (f.countIsFloor) {
+    const ask =
+      f.tier === 'firm'
+        ? 'worth booking a vet visit soon'
+        : f.tier === 'soft'
+          ? 'worth keeping an eye on, and a word with your vet if it carries on'
+          : 'worth a word with your vet'
+    if (f.tier === 'standard') {
+      return `${petName} has had at least ${f.currentCount} ${episodeNoun} of ${symptom} this week — ${ask}.`
+    }
+    return `${petName} has had ${symptom} on at least ${f.currentDays} of the last ${f.windowDays} days — ${ask}.`
+  }
 
   if (f.tier === 'firm') {
     // Dense current week — symptoms on most days. Phrase the rise on the axis that
@@ -229,8 +271,10 @@ export function templateIncidentRedFlag(f: IncidentRedFlagFinding, petName: stri
       ? `${INCIDENT_FLAG_PHRASE.blood} and ${INCIDENT_FLAG_PHRASE.foreign_material}`
       : INCIDENT_FLAG_PHRASE[f.flags[0]]
   const when = onsetDay(f.mostRecentFlaggedIso)
+  // CUL-989 — over an incomplete read "a photo" may be one of several; the plural lead is true
+  // of one flagged photo or many, and it names the most recent date either way.
   const lead =
-    f.flaggedIncidentCount === 1
+    f.flaggedIncidentCount === 1 && !f.countIsFloor
       ? `A photo you logged of ${petName}'s ${symptom} showed ${phrase}, on ${when}`
       : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}, most recently on ${when}`
   return `${lead} — worth a call to your vet. This is a read of your logs, not a diagnosis.`
@@ -311,6 +355,14 @@ export function templateChronicity(f: SymptomChronicityFinding, petName: string)
   const adjacency = f.coughVomitAdjacent
     ? ` ${adjacencyBridge(f.symptomType)} — a cough can look like retching or end in vomiting. Mention both.`
     : ''
+  // CUL-989 — over an incomplete read the weeks and the count are floors, and the onset month is
+  // the one fact a read missing the OLDEST rows gets wrong in the calming direction (the course
+  // looks younger than it is: "since August" for a course that began in July, adversarial pass).
+  // So the floor arm drops the month and says "at least" twice; it is shorter than the shipped
+  // arm, so the cap above still holds (pinned on the same worst case in phrasing.test.ts).
+  if (f.countIsFloor) {
+    return `We've logged ${symptom} for ${petName} across at least ${f.activeWeeks} of the last ${windowWeeks} weeks — at least ${f.episodeCount} ${noun}. A symptom that keeps recurring over weeks is ${vetAsk}.${adjacency} This is a read of your logs, not a diagnosis.`
+  }
   return `We've logged ${symptom} for ${petName} across ${f.activeWeeks} of the last ${windowWeeks} weeks — ${f.episodeCount} ${noun} since ${onsetMonth(f.firstOnsetIso)}. A symptom that keeps recurring over weeks is ${vetAsk}.${adjacency} This is a read of your logs, not a diagnosis.`
 }
 
@@ -354,6 +406,19 @@ export function templateTimeOfDayClustering(f: TimeOfDayClusteringFinding, petNa
   return `${f.clusterCount} of ${petName}'s ${f.eligibleCount} timed ${symptom} episodes happened ${band} — a timing pattern worth mentioning to your vet.`
 }
 
+// CUL-1195 — PROVISIONAL wording, Dr. Chen's to ratify at the CUL-583 sitting (through nyx-voice).
+// The long band is timed from the last meal EATEN, which is true, and a cat who turns down dinner
+// and vomits minutes later still lands in it: "6 or more hours after eating" alone reads as the
+// harmless-looking pattern. So the sentence says how many of the long episodes followed a refused
+// bowl. "Followed" is sequence, never cause (CAUSAL_RE), and the clause is absent at zero: a
+// missing clause claims nothing, where "none followed a refused meal" would be a reassurance over
+// a record that may simply not rate its bowls (ratings are exception-only, CUL-1118).
+// `count` is optional so a finding built before the field existed renders as it did.
+function refusalClause(count: number | undefined, ofWhat: string): string {
+  if (count == null || count < 1) return ''
+  return `; ${count} of ${ofWhat} followed a refused meal`
+}
+
 export function templateEmptyStomachTiming(f: EmptyStomachTimingFinding, petName: string): string {
   // Detector L1 (Signals v2 / CUL-7 — the ⑤ mirror) — template-only (no LLM, like ③/④/⑤/⑥). Names
   // TIMING ONLY: "N or more hours after eating" is a timing reference, never the syndrome
@@ -362,7 +427,7 @@ export function templateEmptyStomachTiming(f: EmptyStomachTimingFinding, petName
   // count). Below-floor never reaches here (the engine stays silent).
   const symptom = SYMPTOM_LABEL[f.symptomType]
   const lastTwo = f.lastTwoEligibleLong ? ', including the last two' : ''
-  return `${f.longCount} of the ${f.eligibleCount} ${symptom} episodes we could time for ${petName} happened ${f.longGapHours} or more hours after eating${lastTwo} — a timing pattern worth mentioning to your vet.`
+  return `${f.longCount} of the ${f.eligibleCount} ${symptom} episodes we could time for ${petName} happened ${f.longGapHours} or more hours after eating${lastTwo}${refusalClause(f.longAfterRefusalCount, 'those')} — a timing pattern worth mentioning to your vet.`
 }
 
 export function templateTimingStory(f: TimingStoryFinding, petName: string): string {
@@ -383,7 +448,7 @@ export function templateTimingStory(f: TimingStoryFinding, petName: string): str
     f.long.clockBand && (f.long.clockCount ?? 0) >= 2
       ? `, ${f.long.clockCount} of them ${localHourBand(f.long.clockBand.startLocalHour, f.long.clockBand.windowHours)}`
       : ''
-  return `${petName}'s ${symptom} keeps two kinds of time — some soon after eating, and some a long time after${clock} — a timing pattern worth mentioning to your vet.`
+  return `${petName}'s ${symptom} keeps two kinds of time — some soon after eating, and some a long time after${clock}${refusalClause(f.long.afterRefusalCount, 'the long-after ones')} — a timing pattern worth mentioning to your vet.`
 }
 
 export function templateTrialResponse(f: TrialResponseFinding, petName: string): string {
@@ -418,7 +483,10 @@ export function templateTrialResponse(f: TrialResponseFinding, petName: string):
   // ("worth reviewing", never "working"/"better"); vomit-only (the round-2 masking fix), so "symptom
   // episodes" would over-claim a whole-body read the count does not support.
   const lengthCue = baselineDays >= trialDays * 1.5 ? ', a longer stretch' : ''
-  return `We've logged ${f.pooledTrialCount} ${trialNoun} of vomiting for ${petName} in the trial's ${trialDays} ${trialDayNoun}, compared with ${f.pooledBaselineCount} in the ${baselineDays} ${baselineDayNoun} before it${lengthCue} — worth reviewing with your vet.`
+  // CUL-989 — over an incomplete read both pooled counts are floors (only the more-during-trial
+  // direction reaches here then; the other is withheld in the pipeline).
+  const atLeast = f.countIsFloor ? 'at least ' : ''
+  return `We've logged ${atLeast}${f.pooledTrialCount} ${trialNoun} of vomiting for ${petName} in the trial's ${trialDays} ${trialDayNoun}, compared with ${atLeast}${f.pooledBaselineCount} in the ${baselineDays} ${baselineDayNoun} before it${lengthCue} — worth reviewing with your vet.`
 }
 
 /** Render one inter-episode gap (hours) as a friendly value + unit. ≥24h → whole days, else whole
@@ -462,6 +530,72 @@ export function templateGapShortening(f: GapShorteningFinding, petName: string):
   return `For ${petName}, the gaps between ${symptom} episodes have been ${sequence} — a pattern worth keeping an eye on.`
 }
 
+// CUL-989 — a safety card CARRIED from the previous Signal over an incomplete read. Never the
+// card's old sentence: that one was true on the day it was computed ("just turned down", "up from
+// 1 last week") and goes false as the days pass (adversarial pass, this PR). This names the lane,
+// dates the read that found it, keeps the card's own vet ask, and says why it is not re-checked.
+// No count, no "since": the numbers belong to a read this run could not repeat.
+export function templateCarried(f: Finding, petName: string, carriedFromIso: string): string {
+  const what =
+    f.type === 'symptom_chronicity'
+      ? `${SYMPTOM_LABEL[f.symptomType]} recurring over several weeks`
+      : f.type === 'symptom_worsening'
+        ? `${SYMPTOM_LABEL[f.symptomType]} coming more often`
+        : f.type === 'symptom_burden'
+          ? `${SYMPTOM_LABEL[f.symptomType]} on several days close together`
+        : f.type === 'intake_decline'
+          ? f.trigger === 'refused_normal_food'
+            ? 'turning down a food they usually eat'
+            : 'eating less than usual'
+          : f.type === 'incident_red_flag'
+            ? `a photo of ${INCIDENT_NOUN[f.incidentType]} showing ${f.flags.map((k) => INCIDENT_FLAG_PHRASE[k]).join(' and ')}`
+            : 'a pattern'
+  const ask =
+    f.type === 'incident_red_flag'
+      ? 'worth a call to your vet'
+      : f.type === 'symptom_burden'
+        ? f.tier === 'today'
+          ? 'worth a call to your vet'
+          : 'worth booking a vet visit'
+        : (f.type === 'symptom_chronicity' || f.type === 'symptom_worsening') && f.tier === 'firm'
+          ? 'worth booking a vet visit'
+          : 'worth a word with your vet'
+  return `An earlier read of ${petName}'s record, on ${onsetDay(carriedFromIso)}, showed ${what} — ${ask}. Part of the record didn't load for this update, so it hasn't been checked again yet.`
+}
+
+/**
+ * Whether `templateCarried` can render this prior entry with every word it needs. A prior row is
+ * read back from jsonb the owner can write, so a lane name alone is not enough: an unknown symptom
+ * printed "undefined", and a red flag with no `flags` threw inside the pipeline (adversarial
+ * third check, CUL-989). An entry that fails is simply not carried, which can only withhold.
+ */
+const CARRYABLE_TIERS = { soft: true, standard: true, firm: true }
+const CARRYABLE_BURDEN_TIERS = { today: true, soon: true }
+
+export function canRenderCarried(f: unknown): boolean {
+  if (!f || typeof f !== 'object') return false
+  const x = f as { type?: unknown; symptomType?: unknown; incidentType?: unknown; flags?: unknown; tier?: unknown; trigger?: unknown }
+  const known = (map: object, k: unknown) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k)
+  switch (x.type) {
+    case 'symptom_chronicity':
+    case 'symptom_worsening':
+      return known(SYMPTOM_LABEL, x.symptomType) && (x.tier === undefined || known(CARRYABLE_TIERS, x.tier))
+    case 'symptom_burden':
+      return known(SYMPTOM_LABEL, x.symptomType) && known(CARRYABLE_BURDEN_TIERS, x.tier)
+    case 'intake_decline':
+      return x.trigger === undefined || typeof x.trigger === 'string'
+    case 'incident_red_flag':
+      return (
+        known(INCIDENT_NOUN, x.incidentType) &&
+        Array.isArray(x.flags) &&
+        x.flags.length > 0 &&
+        x.flags.every((k) => known(INCIDENT_FLAG_PHRASE, k))
+      )
+    default:
+      return false
+  }
+}
+
 export function templateForFinding(finding: Finding, petName: string): string {
   switch (finding.type) {
     case 'food_symptom_correlation':
@@ -472,6 +606,8 @@ export function templateForFinding(finding: Finding, petName: string): string {
       return templateReflection(finding, petName)
     case 'symptom_worsening':
       return templateWorsening(finding, petName)
+    case 'symptom_burden':
+      return templateBurden(finding, petName)
     case 'symptom_chronicity':
       return templateChronicity(finding, petName)
     case 'postprandial_timing':
@@ -560,9 +696,29 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
   if (t.length < 8 || t.length > 320) return false
   if (t.includes('!')) return false // nyx-voice Pattern 4 — no manufactured enthusiasm
   if (hasBannedSignalVocabulary(t)) return false // §3.5 — no glyphs, no percentages, any type
+  // CUL-1271 — never hand a concern off ("under control", "in the vet's hands") or credit a
+  // treatment with an effect ("the prednisone is helping"), on ANY finding type. Neither class
+  // carries a wellness word, so the per-type lexicons below passed both; and neither depends on
+  // priority class (trial_response is insight-class and is exactly where "working" lives).
+  // Shared with Ask, the summary and the banner (lib/careClaimScreens.ts, one module).
+  if (careClaimReason(t)) return false
   if (finding.priorityClass === 'safety') {
     // Never reassure on a safety flag; never reframe a decline as fussiness.
     if (REASSURANCE_RE.test(t) || DISMISSIVE_RE.test(t)) return false
+  }
+  if (finding.type === 'symptom_burden') {
+    // Engines v3 PR-14d (CUL-1410): NO MODEL SENTENCE IS EVER ACCEPTED. The card's load is its ask
+    // ("a call to your vet today" vs "a vet visit soon") and its numbers, and no screen over a free
+    // sentence holds them: a keyword list let "probably something she ate" through, and a
+    // "the template's tail, any short prefix" rule let "Not urgent but Miso has vomited…" through
+    // (both found by review). This function's one runtime caller is index.ts's model path, so
+    // refusing here makes the card template-only: it always renders `templateBurden`, the fallback.
+    // (index.ts's own template-only list is outside PR-14d; CUL-1426 adds the type there, which
+    // only saves the call.) A CARRIED line is never model-phrased; it is held to its exact template
+    // so the corpus guard can screen it like every other carried card.
+    if (finding.carriedFrom === undefined) return false
+    const name = /^An earlier read of (.+)'s record, /.exec(t)?.[1]
+    return name !== undefined && t === templateCarried(finding, name, finding.carriedFrom)
   }
   if (finding.type === 'food_symptom_correlation') {
     // Associational only — the model may not assert causation.
@@ -736,6 +892,21 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       severity: 'calm_safety_flag', // surface clearly, never reassure
     }
   }
+  if (finding.type === 'symptom_burden') {
+    // Engines v3 PR-14d (CUL-1410). validatePhrasing refuses every model sentence for this type, so
+    // a model sentence never reaches the card; kept for shape-correctness and to
+    // narrow the union for the intake_decline fallthrough below. Counts only, no cause.
+    return {
+      insight_type: 'symptom_burden',
+      pet_name: petName,
+      symptom: SYMPTOM_LABEL[finding.symptomType],
+      count_this_week: finding.count,
+      consecutive_days: finding.runDays,
+      tier: finding.tier, // 'today' | 'soon'
+      relationship: 'descriptive_count',
+      severity: 'calm_safety_flag',
+    }
+  }
   if (finding.type === 'symptom_chronicity') {
     // Template-only (index.ts), so this payload is never actually sent to the model; kept
     // for shape-correctness and parity. Carries DURATION/RECURRENCE/COUNT only — no cause,
@@ -794,6 +965,7 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       eligible_count: finding.eligibleCount,
       long_gap_hours: finding.longGapHours,
       including_last_two: finding.lastTwoEligibleLong,
+      long_after_refusal_count: finding.longAfterRefusalCount,
       relationship: 'associational_timing', // a timing pattern we are noting — NOT a cause, NOT a mechanism
     }
   }
@@ -805,6 +977,7 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       symptom: SYMPTOM_LABEL[finding.symptomType],
       rapid_count: finding.rapid.count,
       long_count: finding.long.count,
+      long_after_refusal_count: finding.long.afterRefusalCount,
       eligible_count: finding.eligibleCount,
       window_minutes: finding.rapidWindowMinutes,
       long_gap_hours: finding.longGapHours,
@@ -907,4 +1080,10 @@ export const PHRASING_SYSTEM =
   '"improving". It is DESCRIPTIVE ONLY: NEVER suggest or imply a cause, and NEVER reassure — do not say ' +
   'the pet is fine/okay/healthy/all clear, and never imply that fewer or unchanged symptoms mean the pet ' +
   'is well. It is a count you are noting together, not a verdict. ' +
+  '(7) VISITS, CARE AND TREATMENTS (Ask\'s rule 10, shared): a vet visit, a medication or a diet ' +
+  'may appear only as a DATED FACT beside a COUNT that is in the JSON (in the shape "Since the {date} visit, ' +
+  '{n} vomiting episodes are logged."). NEVER describe a concern as handled or held: do not say it is ' +
+  'under control, covered, in the vet\'s hands, taken care of, dealt with, resolved, or that there is ' +
+  'nothing more to do. NEVER credit a treatment with an effect: do not say a medication, diet or visit ' +
+  'is helping or working, or that a symptom settled, eased or calmed since it started. ' +
   'Call phrase_insight with your one sentence.'

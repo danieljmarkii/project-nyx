@@ -1,5 +1,5 @@
 # Culprit — App Polish Requirements (Aug 2026)
-**Version:** 1.0 | **Status:** BUILD-READY | **Last Updated:** 2026-08-22
+**Version:** 1.1 | **Status:** BUILD-READY | **Last Updated:** 2026-09-14
 
 The build contract for the **Aug. 2026 Design Polish** track (Linear project, team Culprit). Born from the 2026-08-22 design/UX session: a four-lens audit (Jordan capture · Sam multi-pet · Designer periphery · PO Linear reconciliation) → three mock rounds, every decision PM-ruled same day. This doc is canonical; the Linear project links it as a Resource and the repo file wins on divergence.
 
@@ -65,10 +65,11 @@ Out of scope for this track, held in round 1's appendix for their own selection:
 Six registers today (named meal card / dose card / MedStrip teal line / full-white takeover / sheet beat / capture-screen ✓ glyph) → **two**:
 
 - **R1 · The named card** — the `MealCompletionCard` anatomy generalized: every full-screen commit (symptom, weight, capture-path meals/doses) lands a warm dark bottom card over a **dimmed** Home (never a white flash). It speaks the record's own sentence via `lib/logCopy` (`"Vomit · found by 5:33 PM"`, `"Weight · 12.4 lb"`) + `Saved to {pet}'s record`, and carries **Undo** + Change time. Symptom tone: calm — no gold, single soft tap.
-- **R2 · The in-place beat** — the sheet's mint check, for commits inside a surface (sheet confirm, MedStrip one-tap). Inherits the sentence; MedStrip's confirm gains the mark + haptic.
+- **R2 · The in-place beat** — the sheet's mint check, for commits inside a surface (sheet confirm, MedStrip one-tap). Inherits the sentence **and carries Undo** (PM-ruled 2026-09-14, CUL-964); MedStrip's confirm gains the mark + haptic. **Undo is a property of the REGISTER, not of a card:** a beat painted inside a surface is still a `momentStore` presentation, so it reaches the one shared reversal and inherits the dwell, the touch pause and the commit haptic with it. Its dwell is the one exception to the 5s below — an in-sheet beat holds the owner's screen, so it keeps the ≤2s earned-moment cap (1800ms) and buys time through the pause instead.
 
 **Rules:**
 - **Sentence rule:** a beat never says a bare "Logged" when `logCopy` can compose the sentence (History-parity derivation — the same `describeOccurredAt` path, so a beat can never over-claim).
+- **Undo renders unconditionally, on both registers.** It is never gated on tone, on what the record carries, or on there being another way back — the records with no in-place alternative are exactly the ones a conditional affordance would drop. R2's dwell is short, so the control is the FIRST thing the owner can reach on it. *(R2's original line specified the sentence only; that gap was found by the `pm-feature-review` GA read, 2026-09-13, at the moment the sheet was about to become the default symptom path — `app/edit-event.tsx` cannot change a row's `event_type`, so a mis-tapped stool segment was Remove-and-re-log through History.)*
 - **Undo semantics:** Undo soft-deletes the just-written event (`deleted_at` — the house rule; children/attachments ride the existing soft-delete path) and swaps the card to a quiet `Removed` line. Window = the card's visible dwell. A paired dose already logged against an undone meal keeps its own row; the cross-link resolves against the soft-deleted meal exactly as B-156 B4 already guarantees. Undo never touches sync ordering (the tombstone queues like any edit).
 - **Fail-safe unchanged:** B-156 G1 stands — an unanswered card still lands `unconfirmed`, never `given`; Undo adds a reversal, not a new path to an affirmative.
 - **Dwell:** the auto-dismiss timer pauses while the owner is touching the card (any interaction resets it) — answers the dose card's 9-chips-in-5s problem without redesigning the chips.
@@ -150,3 +151,4 @@ Project **"Aug. 2026 Design Polish"** (team Culprit). 18 PRs, one PR = one sessi
 | Version | Date | Summary |
 |---|---|---|
 | v1.0 | 2026-08-22 | Initial build contract. All decisions PM-ruled across mock rounds 1–3 same day; session `docs/sessions/2026-08-22-design-ux-opportunities.md`. |
+| v1.1 | 2026-09-14 | §5 R2 gains Undo, and the unconditional-Undo rule is stated for both registers (CUL-964, PM-ruled 2026-09-14). Dwell exception for an in-sheet beat recorded: 1800ms, with the touch pause rather than a longer base. |

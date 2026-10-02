@@ -21,10 +21,24 @@ const params: { current: Record<string, string> } = { current: {} };
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), back: jest.fn(), setParams: jest.fn() },
   useLocalSearchParams: () => params.current,
+  // The screen re-reads on FOCUS (CUL-952), so the mock has to provide the hook.
+  // The registered callback is kept so a test can fire a re-focus explicitly —
+  // without that, "it re-reads when you come back" is untestable and the stale-date
+  // defect this replaced would be invisible again.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    const { useEffect } = require('react');
+    focusCb.current = cb;
+    useEffect(() => cb(), [cb]);
+  },
 }));
+const focusCb: { current: null | (() => void | (() => void))} = { current: null };
 jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
-jest.mock('../hooks/useAppConfig', () => ({ useAllowlistFlag: () => true }));
-jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => true }));
+// The History doors read the gate (HV-11). On for the one suite that asks.
+const mockHistoryV2 = { on: false };
+jest.mock('../hooks/useHistoryV2', () => ({ useHistoryV2: () => mockHistoryV2.on }));
+// TS-8: the trial screen's gate. Off unless a test turns it on.
+const mockTrialScreen = { on: false };
+jest.mock('../hooks/useTrialScreen', () => ({ useTrialScreen: () => mockTrialScreen.on }));
 jest.mock('../store/petStore', () => {
   const pet = { id: 'p1', name: 'Mochi', species: 'cat', sex: 'female' };
   const state = { activePet: pet, pets: [pet] };
@@ -73,6 +87,10 @@ const mockTrialGate: { holdNext: boolean; release: null | (() => void) } = {
   holdNext: false,
   release: null,
 };
+// What the loader resolves to — null (no trial running) unless a test sets it.
+const mockTrialInput: { current: unknown } = { current: null };
+// CUL-1342: what the recheck's facts read resolves to (null: no trial), or a throw.
+const mockTrialFacts: { current: unknown; fail: boolean } = { current: null, fail: false };
 jest.mock('../lib/dietTrialFacts', () => ({
   loadDietTrialFacts: jest.fn(async () => {
     if (mockTrialGate.holdNext) {
@@ -81,7 +99,13 @@ jest.mock('../lib/dietTrialFacts', () => ({
         mockTrialGate.release = resolve;
       });
     }
-    return null;
+    return mockTrialInput.current;
+  }),
+  // CUL-1342: the recheck's oral-route read. Resolves `mockTrialFacts.current`, or throws
+  // when a test sets `mockTrialFacts.fail`.
+  loadTrialPredicateFacts: jest.fn(async () => {
+    if (mockTrialFacts.fail) throw new Error('db closed');
+    return mockTrialFacts.current;
   }),
 }));
 
@@ -108,7 +132,14 @@ jest.mock('../lib/vetVisits', () => {
     // for a pure function is a rule re-derived in the test file (C-34). Only the two
     // functions that touch the database are replaced.
     ...actual,
-    readAppointmentById: jest.fn(async (id: string) => mockAppointments[id] ?? mockAppointment),
+    // `in`, not `??`: an override of `null` is how this fixture says "the read finds
+    // nothing" (a cancelled or deleted row), and `null ?? mockAppointment` would
+    // hand back the appointment instead — a removal test that silently asserted the
+    // opposite of what it claimed. Caught by the test failing, which is the only
+    // reason the distinction is written down here.
+    readAppointmentById: jest.fn(async (id: string) =>
+      id in mockAppointments ? mockAppointments[id] : mockAppointment,
+    ),
     saveAppointmentQuestions: jest.fn(async () => undefined),
   };
 });
@@ -122,6 +153,7 @@ jest.mock('../lib/rundown', () => {
 });
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { router } from 'expo-router';
 import { buildRundown } from '../lib/rundown';
 import { supabase } from '../lib/supabase';
 import RundownScreen from './rundown';
@@ -133,7 +165,7 @@ const FIXTURE = {
   petName: 'Mochi',
   generatedAtMs: 0,
   tiles: [
-    { key: 'symptoms', label: 'Vomiting', value: '7 in 30 days · 3 this week', tap: { kind: 'history' } },
+    { key: 'symptoms', label: 'Vomiting', value: '7 in 30 days · 3 this week', tap: { kind: 'history', door: { scope: 'since-visit' } } },
     { key: 'appetite', label: 'Appetite', value: '41 of 48 meals finished', detail: 'meals logged on 27 of 30 days', tap: { kind: 'patterns' } },
     { key: 'weight', label: 'Weight', value: '4.0–4.2 kg', detail: '3 weigh-ins', tap: { kind: 'weight' } },
   ],
@@ -145,10 +177,15 @@ const FIXTURE = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockHistoryV2.on = false;
+  mockTrialScreen.on = false;
   params.current = {};
   mockAppointment.questions = null;
   mockTrialGate.holdNext = false;
   mockTrialGate.release = null;
+  mockTrialInput.current = null;
+  mockTrialFacts.current = null;
+  mockTrialFacts.fail = false;
   for (const k of Object.keys(mockAppointments)) delete mockAppointments[k];
   (buildRundown as jest.Mock).mockResolvedValue(FIXTURE);
 });
@@ -218,6 +255,54 @@ describe('AC 4 — the rundown is byte-identical in both modes', () => {
     const plain = render(<RundownScreen />);
     expect(await plain.findByText(/Share the rundown/)).toBeTruthy();
     expect(plain.queryByText(/Get ready for/)).toBeNull();
+  });
+});
+
+describe('the notes door (CUL-966)', () => {
+  it('opens the notes for THIS appointment — the door §4.1 C1 always specified', async () => {
+    // Get ready is where the questions are typed, and they become ticks on the notes
+    // screen. Until this, Get ready could not reach that screen: the only route in
+    // the app was the visits list, on the appointment's own day. So the page that
+    // collects the questions could not open the page that answers them.
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    fireEvent.press(await r.findByText('Take notes'));
+    expect(router.push).toHaveBeenCalledWith('/vet-visits/at-the-vet?appointment=appt-1');
+  });
+
+  it('is absent on the plain rundown, which has no appointment to take notes for', async () => {
+    params.current = {};
+    const r = render(<RundownScreen />);
+    await r.findByText(/Share the rundown/);
+    expect(r.queryByText('Take notes')).toBeNull();
+  });
+
+  it('leaves the report the single primary — the notes door is secondary (R-share)', async () => {
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    expect(await r.findByText('Send the vet report')).toBeTruthy();
+    expect(r.getByText('Take notes')).toBeTruthy();
+  });
+});
+
+// CUL-1334 — the report door names the appointment's pet. Get ready's subject is the
+// appointment's pet (AC 11), which need not be the active one (the trial screen opens Get
+// ready for whichever pet it shows), and a bare `/report` builds the ACTIVE pet's. A guard:
+// on the pre-CUL-1334 tree the push is the bare string.
+describe('the report door takes the appointment’s pet (CUL-1334)', () => {
+  it('Send the vet report opens the report of the pet the appointment is for, not the active one', async () => {
+    mockAppointments['appt-2'] = { ...mockAppointment, id: 'appt-2', pet_id: 'p2' };
+    params.current = { appointmentId: 'appt-2' };
+    const r = render(<RundownScreen />);
+    fireEvent.press(await r.findByText('Send the vet report'));
+    expect((router.push as jest.Mock).mock.calls).toEqual([[{ pathname: '/report', params: { pet: 'p2' } }]]);
+  });
+
+  it('the plain rundown is the active pet’s, and so is its report', async () => {
+    params.current = {};
+    const r = render(<RundownScreen />);
+    fireEvent.press(await r.findByText('Share the full vet report'));
+    expect((router.push as jest.Mock).mock.calls).toEqual([[{ pathname: '/report', params: { pet: 'p1' } }]]);
   });
 });
 
@@ -360,5 +445,379 @@ describe('a Signal that has never been generated is not "nothing standing"', () 
     expect(r.getByText('Your questions')).toBeTruthy();
     expect(r.queryByText(/Signal couldn’t be read/)).toBeNull();
     expect(r.queryByText(/nothing to raise/i)).toBeNull();
+  });
+});
+
+// ── CUL-952 — Get ready re-reads after the edit it now launches ────────────────
+//
+// This screen is the one ⋯ *Change the appointment* opens the editor FROM, and it
+// stays mounted underneath while that screen is pushed. Its load was keyed
+// `[petId, wantsGetReady, appointmentId]` — none of which change when the pushed
+// screen pops — so before CUL-952 gave that menu item a destination the staleness
+// was unreachable, and the moment it had one the headline path ended on the old
+// date. Found by `pm-feature-review`, not by a failing test, which is why the test
+// exists now.
+
+describe('re-reading after the edit this screen launches (CUL-952)', () => {
+  /** Re-enter the screen the way returning from a pushed route does. */
+  async function refocus() {
+    await act(async () => {
+      focusCb.current?.();
+    });
+  }
+
+  it('shows the MOVED day after the owner changes the appointment and comes back', async () => {
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+
+    const movedTo = new Date(Date.now() + 9 * 86_400_000);
+    movedTo.setHours(9, 30, 0, 0);
+    const before = r.getByText(/Get ready for/).parent;
+    expect(before).toBeTruthy();
+
+    // The clinic moved it. The edit screen wrote the row; this screen is underneath.
+    mockAppointments['appt-1'] = {
+      ...mockAppointment,
+      scheduled_at: movedTo.toISOString(),
+      clinic_name: 'Bayside Veterinary',
+    };
+    await refocus();
+
+    // The eyebrow and the sub-line are the appointment's OWN composed strings, so
+    // this asserts the screen re-read rather than that a formatter ran.
+    await waitFor(() => expect(r.getByText(/Bayside Veterinary/)).toBeTruthy());
+    expect(r.queryByText(/Riverside Animal Hospital/)).toBeNull();
+    delete mockAppointments['appt-1'];
+  });
+
+  it('drops the Get-ready chrome once the appointment has been removed (G5)', async () => {
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await waitFor(() => expect(r.getByText(/Get ready for/)).toBeTruthy());
+
+    // `cancelVetAppointment` stamps `cancelled_at`, and `readAppointmentById`
+    // filters cancelled rows — so this is what the real read returns afterwards.
+    mockAppointments['appt-1'] = null;
+    await refocus();
+
+    // A screen never shows a row that is no longer in the record. Without the
+    // re-read this page kept its title, its questions block and a ⋯ whose *Change
+    // the appointment* pushed a screen reading "no longer on the record".
+    await waitFor(() => expect(r.queryByText(/Get ready for/)).toBeNull());
+    // It does not go blank: `load` resolves a missing appointment to the plain
+    // rundown, which is the honest fallback rather than an error.
+    expect(r.getByTestId('rundown-block')).toBeTruthy();
+    delete mockAppointments['appt-1'];
+  });
+});
+
+// ── CUL-950 — the device's declines reach Worth raising, every one of them ─────────
+//
+// `buildWorthRaising` is proven in `lib/getReady.test.ts`; this is the WIRING, the one
+// line in this screen that carries the device's safety facts across. The adversarial
+// pass found it unguarded: `intakeDecline: []` in its place left every test green,
+// because the loader here was stubbed to "no trial" and nothing ever arrived to drop.
+describe('CUL-950 — the device’s intake declines reach the list', () => {
+  it('renders EVERY device decline, in the engine’s order, when the Signal cannot be read', async () => {
+    // The shape `loadDietTrialFacts` returns for a cat twelve days into a trial whose
+    // device holds two declines: the facts and the first one's sentence, from one read.
+    const low = 'Mochi has eaten less than usual today.';
+    const refusal = 'Mochi just turned down Purina Chicken Pâté, which Mochi normally eats.';
+    const started = new Date(Date.now() - 12 * 86_400_000);
+    mockTrialInput.current = {
+      trial: {
+        status: 'active',
+        startedAt: `${started.getFullYear()}-${String(started.getMonth() + 1).padStart(2, '0')}-${String(started.getDate()).padStart(2, '0')}`,
+        targetDurationDays: 42,
+        foodLabel: 'Hill’s z/d',
+      },
+      nowMs: Date.now(),
+      petName: 'Mochi',
+      species: 'cat',
+      intakeDeclineHeadline: low,
+      intakeDeclineFacts: [
+        { trigger: 'consecutive_low', refusedFoodLabel: null, headline: low },
+        { trigger: 'refused_normal_food', refusedFoodLabel: 'Purina Chicken Pâté', headline: refusal },
+      ],
+    };
+
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText(low)).toBeTruthy());
+    expect(r.getByText(refusal)).toBeTruthy();
+    expect(r.getByText('Worth raising')).toBeTruthy();
+
+    // The engine's order: the refusal is read to the vet before the low day.
+    const order = [refusal, low].map((t) => JSON.stringify(r.toJSON()).indexOf(t));
+    expect(order[0]).toBeGreaterThan(-1);
+    expect(order[0]).toBeLessThan(order[1]);
+  });
+});
+
+describe('the History doors land on the pet on screen, or not at all (HV-11 / CUL-1168, C-9)', () => {
+  // History shows the ACTIVE pet. A scoped door from a rundown about another pet's
+  // appointment would put that pet's claim over this pet's record, so it keeps the bare
+  // route (the pet itself is CUL-1252).
+  it('Get ready for the pet on screen: the tile lands on its scope', async () => {
+    mockHistoryV2.on = true;
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    fireEvent.press(await r.findByLabelText(/^Vomiting:/));
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/(tabs)/history', params: { window: 'visit', ts: expect.any(String) } });
+  });
+
+  it('Get ready for ANOTHER pet: the bare route, never a scope over the wrong record', async () => {
+    mockHistoryV2.on = true;
+    mockAppointments['appt-2'] = { ...mockAppointment, id: 'appt-2', pet_id: 'p2' };
+    params.current = { appointmentId: 'appt-2' };
+    const r = render(<RundownScreen />);
+    fireEvent.press(await r.findByLabelText(/^Vomiting:/));
+    expect(router.push).toHaveBeenCalledWith('/(tabs)/history');
+  });
+});
+
+
+// ── TS-8 (CUL-1304): the recheck, behind trial_screen ───────────────────────────
+//
+// The async half the flag-off guard cannot see (its comparison is the first frame, and the
+// recheck renders only after this page's load answers — C-41). Proven here over a RUNNING
+// trial the load really returns, so the absence flag-off is an absence of something that was
+// available to leak: the same fixture, flag-on, draws the questions.
+
+describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
+  function runningTrial() {
+    const started = new Date(Date.now() - 22 * 86_400_000);
+    return {
+      trial: {
+        id: 't1',
+        status: 'active',
+        startedAt: `${started.getFullYear()}-${String(started.getMonth() + 1).padStart(2, '0')}-${String(started.getDate()).padStart(2, '0')}`,
+        targetDurationDays: 56,
+        foodLabel: 'Royal Canin Rabbit',
+      },
+      nowMs: Date.now(),
+      petName: 'Mochi',
+      species: 'dog',
+      coverage: { daysLogged: 21, daysElapsed: 23 },
+      exposures: { totalFeedings: 22, offDiet: 0, items: [], mayStateRecordClean: true },
+    };
+  }
+
+  /** The facts read's answer for that trial (CUL-1342): one chewable logged four days ago.
+   *  Only the two fields the oral-route lane reads are real; the lane's behaviour over the
+   *  loader's true shapes is `lib/trialRecheck.test.ts`'s to prove. */
+  function chewableFacts(trialId = 't1') {
+    return {
+      trial: { id: trialId },
+      stoppedForRefusal: false,
+      facts: {
+        range: { startDayIndex: 0, endDayIndex: 22 },
+        oralRoute: [
+          {
+            eventId: 'd1',
+            occurredAt: new Date(Date.now() - 4 * 86_400_000).toISOString(),
+            drugLabel: 'Rimadyl',
+            trigger: 'chewable',
+          },
+        ],
+      },
+    };
+  }
+
+  async function getReadyWith(on: boolean) {
+    mockTrialScreen.on = on;
+    mockTrialInput.current = runningTrial();
+    mockTrialFacts.current = mockTrialFacts.current ?? chewableFacts();
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText('Worth raising')).toBeTruthy());
+    return r;
+  }
+
+  it('flag-off: the strip’s row, and no recheck node, over a trial that would answer', async () => {
+    const r = await getReadyWith(false);
+    expect(r.getByText(/day 23 of 56/)).toBeTruthy();
+    expect(r.getByText(/meals logged on 21 of 23 days/)).toBeTruthy();
+    expect(r.queryByTestId('recheck-questions')).toBeNull();
+    expect(r.queryByText(/What the vet will ask/)).toBeNull();
+    // No read is added for the feature: the page's one trial read, and nothing else.
+    const { loadDietTrialFacts, loadTrialPredicateFacts } = require('../lib/dietTrialFacts');
+    expect(loadDietTrialFacts).toHaveBeenCalledTimes(1);
+    // …and the recheck's facts read (CUL-1342) is flag-on only, over a fixture that would
+    // answer with a chewable if called.
+    expect(loadTrialPredicateFacts).not.toHaveBeenCalled();
+  });
+
+  it('a gate that flips after mount does not reload the page under the owner (code review)', async () => {
+    const r = await getReadyWith(false);
+    const reads = (buildRundown as jest.Mock).mock.calls.length;
+    mockTrialScreen.on = true;
+    r.rerender(<RundownScreen />);
+    await act(async () => {});
+    expect((buildRundown as jest.Mock).mock.calls.length).toBe(reads);
+    expect(r.getByText('Worth raising')).toBeTruthy();
+  });
+
+  it('a gate revoked while the page is open keeps the rows it built drawn in full (adversarial pass)', async () => {
+    const r = await getReadyWith(true);
+    await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
+    mockTrialScreen.on = false;
+    r.rerender(<RundownScreen />);
+    await act(async () => {});
+    expect(r.getByTestId('recheck-questions')).toBeTruthy();
+  });
+
+  it('flag-on: the same fixture draws the vet’s questions, naming the logged chewable (CUL-1342)', async () => {
+    const r = await getReadyWith(true);
+    await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
+    expect(r.getByText('Has Mochi had anything besides the trial diet, chewable medicine included?')).toBeTruthy();
+    expect(r.getByText('Meals logged on 21 of 23 days.')).toBeTruthy();
+    expect(r.getByText(/^Rimadyl · .* · flavoured chewable$/)).toBeTruthy();
+    expect(r.getByText(/^Rimadyl is a chewable, .*Keep giving it exactly as prescribed/)).toBeTruthy();
+    const { loadDietTrialFacts, loadTrialPredicateFacts } = require('../lib/dietTrialFacts');
+    expect(loadDietTrialFacts).toHaveBeenCalledTimes(1);
+    // One facts read, for the APPOINTMENT's pet (C-9), on the same clock as the trial read.
+    expect(loadTrialPredicateFacts).toHaveBeenCalledTimes(1);
+    expect((loadTrialPredicateFacts as jest.Mock).mock.calls[0][0]).toMatchObject({ id: 'p1' });
+    expect((loadTrialPredicateFacts as jest.Mock).mock.calls[0][1]).toBe(
+      (loadDietTrialFacts as jest.Mock).mock.calls[0][0].nowMs,
+    );
+    // Zero model calls still (AC 4), with the gate on.
+    expect(invoke).not.toHaveBeenCalled();
+  });
+  it('past the cap, the door opens the APPOINTMENT’s pet’s dose list (CUL-1342)', async () => {
+    const base = chewableFacts();
+    mockTrialFacts.current = {
+      ...base,
+      facts: {
+        ...base.facts,
+        oralRoute: Array.from({ length: 5 }, (_, i) => ({
+          eventId: `d${i}`,
+          occurredAt: new Date(Date.now() - (i + 1) * 86_400_000).toISOString(),
+          drugLabel: 'Rimadyl',
+          trigger: 'chewable',
+        })),
+      },
+    };
+    const r = await getReadyWith(true);
+    await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
+    expect(r.getAllByText(/^Rimadyl · .* · flavoured chewable$/)).toHaveLength(3);
+    (router.push as jest.Mock).mockClear();
+    fireEvent.press(r.getByText('See all 5 logged doses given by mouth'));
+    expect((router.push as jest.Mock).mock.calls).toEqual([
+      [{ pathname: '/trial-exposures', params: { pet: 'p1' } }],
+    ]);
+  });
+
+  it('a facts read that throws keeps the food-only heading and names no dose (C-12)', async () => {
+    mockTrialFacts.fail = true;
+    const r = await getReadyWith(true);
+    await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
+    // The page still builds (the read's failure is its own state, not the page's error).
+    expect(r.getByText('Has Mochi had anything besides the trial diet?')).toBeTruthy();
+    expect(r.getByText('Meals logged on 21 of 23 days.')).toBeTruthy();
+    expect(r.queryByText(/Rimadyl|chewable/)).toBeNull();
+  });
+
+  it('a facts read that answered for a different trial is not quoted', async () => {
+    mockTrialFacts.current = chewableFacts('t-other');
+    const r = await getReadyWith(true);
+    await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
+    expect(r.getByText('Has Mochi had anything besides the trial diet?')).toBeTruthy();
+    expect(r.queryByText(/Rimadyl/)).toBeNull();
+  });
+});
+
+// ── CUL-1364 — Worth raising reads the Signal's trial anchor ─────────────────────
+//
+// `buildWorthRaising`'s rule is `lib/getReady.trialAnchor.test.ts`'s; this is the WIRING:
+// the cache row's `generated_at` and the appointment pet's running trial must both reach it.
+// Rabbit's pair was counted yesterday afternoon on its day 21; the loader now returns the
+// trial the owner replaced it with (chicken, today) — or, as the control, rabbit itself.
+describe('CUL-1364 — an older trial’s pair on Get ready', () => {
+  const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1, 16);
+  const rabbitStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 21);
+  const trialInput = (startedAt: string) => ({
+    trial: { id: 't1', status: 'active', startedAt, targetDurationDays: 56, foodLabel: null },
+    nowMs: Date.now(),
+    petName: 'Mochi',
+    species: 'dog',
+  });
+  const sentence = (n: number, m: number) =>
+    `We've logged ${n} episodes of vomiting for Mochi in the trial's 21 days, compared with ${m} in the 49 days before it — worth reviewing with your vet.`;
+  const cacheWith = (dir: 'fewer_during_trial' | 'more_during_trial') => {
+    const [n, m] = dir === 'fewer_during_trial' ? [2, 11] : [11, 2];
+    const { supabase: client } = jest.requireMock('../lib/supabase') as { supabase: { from: jest.Mock } };
+    const chain = client.from('ai_signals') as unknown as { maybeSingle: jest.Mock };
+    chain.maybeSingle.mockResolvedValueOnce({
+      data: {
+        signal_text: null,
+        is_building: false,
+        coverage: [],
+        generated_at: yesterday.toISOString(),
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+        findings: [
+          {
+            rank: 1,
+            text: sentence(n, m),
+            finding: {
+              type: 'trial_response',
+              priorityClass: 'insight',
+              trialDayNumber: 21,
+              targetDurationDays: 56,
+              trialLoggedDays: 21,
+              baselineLoggedDays: 45,
+              baselineWindowDays: 49,
+              pooledTrialCount: n,
+              pooledBaselineCount: m,
+              rapid: { trial: 1, baseline: 1 },
+              long: { trial: 0, baseline: 0 },
+              rapidWindowMinutes: 30,
+              longGapHours: 6,
+              treatShare: { trial: null, baseline: null },
+              mealsPerDay: { trial: null, baseline: null },
+              comparisonDirection: dir,
+              trialWindowDays: 21,
+            },
+          },
+        ],
+      },
+      error: null,
+    });
+    return sentence(n, m);
+  };
+  const open = async () => {
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText('Worth raising')).toBeTruthy());
+    return r;
+  };
+
+  it('control: over the trial it counted, the falling pair is quoted', async () => {
+    const text = cacheWith('fewer_during_trial');
+    mockTrialInput.current = trialInput(dayKey(rabbitStart));
+    const r = await open();
+    expect(r.getByText(text)).toBeTruthy();
+  });
+
+  it('after the replace, the falling pair is not quoted', async () => {
+    const text = cacheWith('fewer_during_trial');
+    mockTrialInput.current = trialInput(dayKey(today));
+    const r = await open();
+    expect(r.queryByText(text)).toBeNull();
+  });
+
+  it('after the replace, the rising pair is quoted and named by its own day', async () => {
+    const text = cacheWith('more_during_trial');
+    mockTrialInput.current = trialInput(dayKey(today));
+    const r = await open();
+    expect(r.getByText(text)).toBeTruthy();
+    expect(r.getByText('Diet trial, day 21 of 56')).toBeTruthy();
   });
 });

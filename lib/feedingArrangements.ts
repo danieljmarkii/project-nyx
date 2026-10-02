@@ -259,17 +259,22 @@ export async function startFreeChoice(petId: string, foodItemId: string): Promis
 // Toggle OFF — end the active standing fact. Stamps active_until = today (the
 // "stopped" lifecycle boundary History renders in PR 3) and KEEPS the row for
 // correlation history; never hard-deletes. No-op if nothing is active.
+//
+// CUL-1396 — and `ended_at`, the instant itself. `active_until` is a local DATE and
+// `updated_at` is restamped by the server on every push, so without this the record
+// cannot say whether a meal rated on the take-up day was the bowl or a watched meal
+// (CUL-1086's intake-decline detectors need exactly that).
 export async function endFreeChoice(petId: string, foodItemId: string): Promise<void> {
   const db = getDb();
   const now = new Date().toISOString();
   await db.runAsync(
     `UPDATE feeding_arrangements
-       SET active_until = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
+       SET active_until = ?, ended_at = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
      WHERE pet_id = ? AND food_item_id = ?
        AND method = 'free_choice'
        AND active_until IS NULL
        AND deleted_at IS NULL`,
-    [localDateString(), now, petId, foodItemId],
+    [localDateString(), now, now, petId, foodItemId],
   );
   pushArrangements();
 }

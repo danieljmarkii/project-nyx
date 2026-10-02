@@ -1,0 +1,852 @@
+<title>Culprit — Diet trial extension</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     Diet trial extension — mock ROUND 2 (low-fi).
+     Build contract: docs/nyx-trial-extension-requirements.md v2.5.
+     ALL SEVEN RULED 2026-09-17 (D1/D2/D4/D6/D7 first pass,
+     D3/D5 second). D5 ratifies today's constant, so CUL-367's
+     alternative stays drawn — deferred to Dr. Chen, not retired.
+
+     D7 WAS RE-RULED THE SAME DAY, (a) -> (c): PR 0 executed (a)'s
+     premises and falsified two, so PR 1b became a mechanism change
+     rather than a render. §8 is rewritten to show what SHIPPED
+     (CUL-1038) instead of a decision, and its numbers are the
+     corrected report-path ones — the round-1 table quoted the
+     client read, which is not what the page prints.
+
+     Page convention (PM directive 2026-09-09): ONE proposal, and a
+     reaction round is not a second side-by-side. The options the
+     rulings retired have LEFT this page — git keeps them, at the
+     round-1 commits on branch claude/diet-trial-extension-3ad803
+     (D1's delta sheet, D6's card-body and inside-Replace doors).
+     What remains: the proposal, ONE labelled OPTION box (§7's, which
+     D5 deferred to CUL-367 rather than rejecting), and the frames
+     drawn to be rejected. §0 maps each reaction to what moved.
+
+     Document chrome matches the house mock system (protein /
+     med-strip / food-library rounds). DEVICE FRAMES stay light in
+     both themes on purpose — they render the app's light-mode
+     surfaces, and flipping them would misrepresent what ships.
+
+     Frame values are the real tokens from constants/theme.ts.
+     ============================================================ */
+
+  :root {
+    --paper:      #F5F4F9;
+    --paper-2:    #FFFFFF;
+    --ink:        #1B1A2E;
+    --ink-2:      #5F5C7A;
+    --ink-3:      #8B87A8;
+    --rule:       #DEDCE9;
+    --rule-soft:  #E9E7F1;
+    --teal:       #00C2A8;   /* theme.colorAccent */
+    --teal-ink:   #0B7B6C;   /* theme.colorAccentInk */
+    --teal-wash:  #E0FBF7;   /* theme.colorAccentLight */
+    --rose-ink:   #B4123B;
+    --rose-wash:  #FFE4E6;
+    --amber-ink:  #92610C;
+    --amber-wash: #FDF3DC;
+
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:     #13112E;
+      --paper-2:   #1D1A42;
+      --ink:       #ECEAF6;
+      --ink-2:     #A6A2CE;
+      --ink-3:     #706BA6;
+      --rule:      rgba(196,190,255,0.20);
+      --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink:  #4FD8C4;
+      --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink:  #FB7185;
+      --rose-wash: rgba(251,113,133,0.14);
+      --amber-ink: #E8B45A;
+      --amber-wash: rgba(232,180,90,0.13);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --amber-ink: #E8B45A; --amber-wash: rgba(232,180,90,0.13);
+  }
+
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  .col  { max-width: 68ch; }
+
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px;
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance;
+  }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  .draft {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; font-weight: 600;
+    color: var(--amber-ink); background: var(--amber-wash);
+    border-radius: 999px; padding: 4px 11px;
+  }
+  .draft::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-family: var(--sans); font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; }
+  .callout strong { color: var(--ink); }
+  .callout.warn { border-left-color: var(--rose-ink); }
+
+  /* ── The ledger ──────────────────────────────────────────── */
+  .ledger { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14.5px; }
+  .ledger th, .ledger td { text-align: left; vertical-align: top; padding: 11px 16px 11px 0; border-bottom: 1px solid var(--rule-soft); }
+  .ledger th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  .ledger td:first-child { font-family: var(--mono); font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+  .ledger td { color: var(--ink-2); }
+  .ledger td b { color: var(--ink); font-weight: 600; }
+  .tablewrap { overflow-x: auto; }
+
+  /* ── Frame tagging ───────────────────────────────────────── */
+  .tag {
+    display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono);
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600;
+    border-radius: 999px; padding: 3px 9px;
+  }
+  .tag.now     { color: var(--teal-ink); background: var(--teal-wash); }
+  .tag.today   { color: var(--ink-2);    background: var(--rule-soft); }
+  .tag.option  { color: var(--amber-ink); background: var(--amber-wash); }
+  .tag.never   { color: var(--rose-ink); background: var(--rose-wash); }
+
+  .compare { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 28px; align-items: flex-start; }
+  .compare figure { margin: 0; display: flex; flex-direction: column; gap: 12px; max-width: 340px; }
+  .compare figcaption { font-size: 13.5px; color: var(--ink-2); max-width: 340px; }
+  .compare figcaption b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 3px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+
+  /* An alternative still under decision is boxed, never loose. */
+  .optbox {
+    border: 1px dashed var(--rule); border-radius: 6px; padding: 18px;
+    background: color-mix(in srgb, var(--paper-2) 60%, transparent);
+  }
+
+  /* ── THE DEVICE FRAME — light in both themes, on purpose ──── */
+  .phone {
+    width: 320px; max-width: 100%;
+    background: #FAFAFA; border: 1px solid #EAEAEA; border-radius: 24px;
+    padding: 14px 14px 18px; color: #0A0A0A;
+    font-family: var(--sans); color-scheme: light; line-height: 1.5;
+  }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .sheet-cancel { font-size: 13px; color: #737373; }
+  .sheet-title { font-size: 15px; font-weight: 600; color: #0A0A0A; }
+  .sheet-spacer { width: 44px; }
+  .intro { font-size: 12.5px; color: #525252; line-height: 1.45; margin-bottom: 12px; }
+
+  /* The trial card itself */
+  .card { background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 16px; padding: 14px; }
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .card-title { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #737373; font-weight: 600; }
+  .card-manage { font-size: 12.5px; color: #0B7B6C; font-weight: 600; }
+  .day-line { font-size: 17px; font-weight: 600; color: #0A0A0A; letter-spacing: -0.01em; }
+  .food-line { font-size: 12.5px; color: #525252; margin-top: 2px; }
+  .bar { height: 5px; border-radius: 999px; background: #EAEAEA; margin: 11px 0 9px; overflow: hidden; }
+  .bar span { display: block; height: 100%; border-radius: 999px; background: #00C2A8; }
+  .fact { font-size: 12.5px; color: #525252; }
+  .fwd  { font-size: 12.5px; color: #0B7B6C; margin-top: 6px; }
+  .card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .btn { border-radius: 999px; font-size: 12.5px; font-weight: 600; padding: 9px 14px; text-align: center; }
+  .btn.pri { background: #0A0A0A; color: #FFFFFF; }
+  .btn.sec { background: #FFFFFF; border: 1px solid #D4D4D4; color: #0A0A0A; }
+  .btn.link { color: #0B7B6C; padding: 9px 2px; }
+  .btn.block { display: block; width: 100%; box-sizing: border-box; }
+
+  .f-label { font-size: 12px; font-weight: 600; color: #0A0A0A; letter-spacing: 0.02em; margin: 12px 0 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  .chip { border: 1px solid #EAEAEA; background: #FFFFFF; border-radius: 999px; font-size: 12px; color: #525252; padding: 6px 12px; }
+  .chip.on { background: #E0FBF7; border-color: #00C2A8; color: #0B7B6C; font-weight: 600; }
+  .chip.cur { border-style: dashed; color: #737373; }
+
+  .resolve {
+    background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 12px;
+    padding: 10px 12px; margin-top: 12px; font-size: 13px; color: #0A0A0A;
+  }
+  .resolve b { font-weight: 600; }
+  .resolve .sub { display: block; font-size: 11px; color: #737373; margin-top: 3px; }
+
+  .checkrow { display: flex; align-items: flex-start; gap: 9px; margin: 14px 0 4px; font-size: 12.5px; color: #0A0A0A; }
+  .checkrow .box { width: 15px; height: 15px; border: 1.5px solid #D4D4D4; border-radius: 4px; flex-shrink: 0; margin-top: 2px; }
+
+  .opt { background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 12px; padding: 11px 12px; margin-bottom: 7px; font-size: 13px; color: #0A0A0A; }
+  .opt .o-sub { display: block; font-size: 10.5px; color: #737373; margin-top: 2px; }
+  .opt.danger { border-color: #F5C2CB; }
+
+  /* Small non-phone specimens (the vet report) */
+  .specimen { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; padding: 20px 24px; margin-top: 16px; }
+  .specimen .s-k { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+  .report-line { font-family: var(--serif); font-size: 16.5px; margin: 0; color: var(--ink); }
+  .report-line .moved { background: var(--teal-wash); color: var(--teal-ink); border-radius: 3px; padding: 0 3px; }
+  .report-line .bad { background: var(--rose-wash); color: var(--rose-ink); border-radius: 3px; padding: 0 3px; }
+  .s-note { font-size: 13px; color: var(--ink-2); margin: 10px 0 0; }
+
+  .stack { display: grid; gap: 16px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; } }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">
+      <span>Culprit · Diet trial</span>
+      <span>Mock round 2</span>
+      <span>2026-09-17</span>
+      <span class="draft">all 7 ruled</span>
+    </p>
+    <h1>Changing a running trial&rsquo;s window</h1>
+    <p class="standfirst">
+      A vet directs twelve weeks on day 53 of a 56-day elimination trial and the app has nowhere to put that
+      instruction. <strong>Round 1 put seven calls side by side; all seven came back ruled on 17
+      September,</strong> so this round is one proposal with the retired options removed. The one frame still
+      boxed is §7's, and it is boxed because D5 <em>deferred</em> it to Dr. Chen rather than rejecting it.
+      <strong>D7 was then re-ruled the same day, (a) &rarr; (c)</strong>, and §8 now shows what shipped.
+      Build contract: <code>docs/nyx-trial-extension-requirements.md</code> v2.5.
+    </p>
+  </header>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">00</span><h2>What the rulings moved</h2></div>
+    <div class="col">
+      <p>Each reaction from 17 September, what it settled, and what changed on this page because of it.</p>
+    </div>
+    <div class="tablewrap">
+    <table class="ledger">
+      <thead><tr><th></th><th>The reaction</th><th>Ruled</th><th>What moved here</th></tr></thead>
+      <tbody>
+        <tr><td>D6</td><td><em>&ldquo;let&rsquo;s go w A. Your header recommendation&rdquo;</em></td><td><b>(a)</b> header <b>Manage</b> &rarr; two rows</td><td>§2 keeps one frame. The card-body and inside-Replace doors left the page.</td></tr>
+        <tr><td>D1</td><td><em>&ldquo;let&rsquo;s go w the total duration approach&rdquo;</em></td><td><b>(a)</b> totals</td><td>§3 keeps one frame. The delta sheet left the page.</td></tr>
+        <tr><td>D2</td><td rowspan="2"><em>&ldquo;I like the idea of adding that the trial was extended&rdquo;</em></td><td><b>(a)</b> three columns on <code>diet_trials</code></td><td>§5&rsquo;s proposal specimens are now the proposal, not an option. <b>Read as (a), not (b)&rsquo;s full history</b> &mdash; flagged on CUL-156, and cheap to change until PR 1.</td></tr>
+        <tr><td>D4</td><td><b>(a)</b> ask, unchecked by default</td><td>§5&rsquo;s third specimen is current. The box stays optional, and its absence stays silence.</td></tr>
+        <tr><td>D7</td><td><em>&ldquo;we&rsquo;ll go w your recommendation&rdquo;</em>, then re-ruled twice the same day</td><td><b>(a)</b> disclose &rarr; <b>(c)</b> freeze <em>and</em> disclose &rarr; <b>(c) as SPLIT</b>: the ratio is frozen, the verdict is the harsher of two readings</td><td>§8 rewritten twice. PR 0 falsified (a)&rsquo;s premises &mdash; a render cannot move the gates it was ruled to repair. Then 1b&rsquo;s own adversarial pass falsified the plain freeze: pinning the denominator opened the mirror defect. <b>§8 shows what shipped</b>, both halves.</td></tr>
+        <tr><td>D3</td><td rowspan="2"><em>&ldquo;I&rsquo;ll defer to the recommendation from the product team for the rest&rdquo;</em></td><td><b>(a)</b> forward-only in v1</td><td>§6 stands as the reason. The sheet offers no total at or below the current window, so the laundering path is closed by construction rather than by a render rule.</td></tr>
+        <tr><td>D5</td><td><b>(a)</b> ratify <code>+14</code> as-is</td><td>§7&rsquo;s option stays drawn and is relabelled <b>deferred</b>: CUL-367&rsquo;s finding stands, PR 5 is deferred rather than cancelled, and Dr. Chen still owns the numbers. <b>The first pass could not be ruled</b> &mdash; that brief carried no recommendation, deliberately. D1&rsquo;s ruling is what made one available.</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>What the owner has today</h2></div>
+    <div class="col">
+      <p>
+        The live trial behind this round: <em>Nyx, cat, indication</em> <code>gi</code><em>, started 26 July,
+        56-day window, day 53.</em> The vet has just said twelve weeks.
+      </p>
+    </div>
+
+    <div class="compare">
+      <figure>
+        <div class="phone">
+          <div class="card">
+            <div class="card-head">
+              <span class="card-title">Diet trial</span>
+              <span class="card-manage">Replace</span>
+            </div>
+            <div class="day-line">Day 53 of 56</div>
+            <div class="food-line">Royal Canin Selected Protein PR, Dry</div>
+            <div class="bar"><span style="width:95%"></span></div>
+            <div class="fact">51 of 53 days logged &middot; 2 feedings outside the trial diet</div>
+            <div class="card-actions">
+              <span class="btn link">What Nyx can eat</span>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>Day 53 &middot; as shipped</b>
+          One header affordance, <em>Replace</em>, and one link. Nothing here changes the window. The
+          milestone&rsquo;s three-way decision is gated on <code>overrunDays &gt;= 0</code> in every state,
+          so it is three days away.
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="phone">
+          <div class="sheet-head">
+            <span class="sheet-cancel">Cancel</span>
+            <span class="sheet-title">Start a diet trial</span>
+            <span class="sheet-spacer"></span>
+          </div>
+          <p class="intro">
+            Royal Canin Selected Protein PR, day 53 of 56. A pet can only be on one trial at a time, so
+            this one needs an ending before the next one starts.
+          </p>
+          <div class="opt danger">
+            End this trial and start a new one
+            <span class="o-sub">Nyx&rsquo;s 53 days are closed here. The new trial starts from today.</span>
+          </div>
+          <div class="btn pri block" style="margin-top:12px">End it and continue</div>
+        </div>
+        <figcaption>
+          <b>What <em>Replace</em> opens</b>
+          Honest about what it does &mdash; and what it does is split one clinical episode into two rows,
+          neither of which is the window the vet asked about. This is the only mid-trial control that
+          exists, and taking it to honour a twelve-week instruction is the worst available outcome.
+        </figcaption>
+      </figure>
+    </div>
+
+    <div class="callout warn">
+      <strong>The wedge user cannot record the wedge instruction.</strong> Everything below is one door onto
+      <code>extendTrial</code>, which already ships, is already tested, and is already unreachable before
+      the final day.
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>The door &mdash; D6 ruled (a)</h2></div>
+    <div class="col">
+      <p>
+        Two acts must never be confused: <strong>changing the window</strong> keeps one continuous episode;
+        <strong>replacing the trial</strong> ends it. The proposal gives them one door and two honest verbs.
+      </p>
+    </div>
+
+    <div class="compare">
+      <figure>
+        <div class="phone">
+          <div class="card">
+            <div class="card-head">
+              <span class="card-title">Diet trial</span>
+              <span class="card-manage">Manage</span>
+            </div>
+            <div class="day-line">Day 53 of 56</div>
+            <div class="food-line">Royal Canin Selected Protein PR, Dry</div>
+            <div class="bar"><span style="width:95%"></span></div>
+            <div class="fact">51 of 53 days logged &middot; 2 feedings outside the trial diet</div>
+            <div class="card-actions"><span class="btn link">What Nyx can eat</span></div>
+          </div>
+          <div style="height:10px"></div>
+          <div class="opt">
+            Change the window
+            <span class="o-sub">The trial keeps running &mdash; only its length changes</span>
+          </div>
+          <div class="opt">
+            Replace the trial
+            <span class="o-sub">End this one and start a new one</span>
+          </div>
+        </div>
+        <figcaption>
+          <b>Header <span class="tag now">ruled</span></b>
+          <code>Manage</code> opens two rows. The destructive act keeps exactly the tap count it has today;
+          the safe one is no cheaper and no more hidden. Fixes CUL-156&rsquo;s root &mdash; a header verb
+          that promised an edit it could not perform. It also makes the <code>trial_refusal</code>
+          card&rsquo;s existing label, <em>&ldquo;Change or end the trial&rdquo;</em>, true for the first
+          time: that action re-points here.
+        </figcaption>
+      </figure>
+
+
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>The sheet &mdash; D1 ruled totals</h2></div>
+    <div class="col">
+      <p>
+        A vet says <em>&ldquo;take it to twelve weeks&rdquo;</em>, never <em>&ldquo;add twenty-eight
+        days&rdquo;</em>. The proposal is denominated in what the owner was actually handed.
+      </p>
+    </div>
+
+    <div class="compare">
+      <figure>
+        <div class="phone">
+          <div class="sheet-head">
+            <span class="sheet-cancel">Cancel</span>
+            <span class="sheet-title">Change the window</span>
+            <span class="sheet-spacer"></span>
+          </div>
+          <p class="intro">
+            Nyx is on day 53. Your vet decides the length &mdash; this just records it.
+          </p>
+          <div class="f-label">How long is this trial now?</div>
+          <div class="chips">
+            <span class="chip cur">8 weeks &middot; now</span>
+            <span class="chip">10 weeks</span>
+            <span class="chip on">12 weeks</span>
+            <span class="chip">16 weeks</span>
+            <span class="chip">Something else</span>
+          </div>
+          <div class="resolve">
+            <b>12 weeks &mdash; ends 17 October.</b>
+            <span class="sub">That is 28 more days than the window you set.</span>
+          </div>
+          <div class="checkrow"><span class="box"></span><span>My vet asked for this</span></div>
+          <div class="btn pri block" style="margin-top:12px">Save the new window</div>
+        </div>
+        <figcaption>
+          <b>Totals <span class="tag now">ruled</span></b>
+          The owner picks the number the vet said. The app does the subtraction and shows the end date, which
+          is the thing they will actually plan around. <code>trialEndDayKey</code> already exists, so there is
+          no new date math. The delta sheet that stood here in round 1 is gone: before the milestone it could
+          not say whether &ldquo;4 more weeks&rdquo; meant four weeks past today or past the window&rsquo;s
+          end, and those are different days.
+        </figcaption>
+      </figure>
+
+    </div>
+
+    <div class="callout">
+      <strong>The milestone keeps its delta either way.</strong> There the owner has <em>not</em> been handed
+      a number, and the named one-tap default is what stops them tapping <em>done</em> at day 56 (Jordan,
+      §4.3). Two moments, two registers, one write.
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>After the change</h2></div>
+    <div class="col">
+      <p>
+        The card re-reads at once. <strong>The bar retreats from 95% to 63%</strong>, because the window got
+        longer &mdash; that is the truth, and it is not dressed as a setback, a warning, or a fresh start.
+      </p>
+    </div>
+
+    <div class="compare">
+      <figure>
+        <div class="phone">
+          <div class="card">
+            <div class="card-head">
+              <span class="card-title">Diet trial</span>
+              <span class="card-manage">Manage</span>
+            </div>
+            <div class="day-line">Day 53 of 84</div>
+            <div class="food-line">Royal Canin Selected Protein PR, Dry</div>
+            <div class="bar"><span style="width:63%"></span></div>
+            <div class="fact">51 of 53 days logged &middot; 2 feedings outside the trial diet</div>
+            <div class="fwd">The window now runs to 17 October.</div>
+            <div class="card-actions"><span class="btn link">What Nyx can eat</span></div>
+          </div>
+        </div>
+        <figcaption>
+          <b>Day 53 of 84 <span class="tag now">current</span></b>
+          One added line, for the rest of the day only. No exclamation mark, no &ldquo;great &mdash; keep
+          going&rdquo;, no coverage restated beside it. The <strong>off-diet count and its denominator</strong>
+          are byte-identical &mdash; verified under the tap. <strong>Coverage is not</strong>, on a trial past
+          its target &mdash; that was the defect §8 records, and PR 1b froze it.
+        </figcaption>
+      </figure>
+
+      <figure class="optbox">
+        <div class="phone" style="opacity:0.85">
+          <div class="card">
+            <div class="card-head">
+              <span class="card-title">Diet trial</span>
+              <span class="card-manage">Manage</span>
+            </div>
+            <div class="day-line">Day 53 of 84</div>
+            <div class="bar"><span style="width:63%"></span></div>
+            <div class="fwd" style="color:#92610C">Nice work &mdash; 31 days to go. You&rsquo;ve got this!</div>
+          </div>
+        </div>
+        <figcaption>
+          <b><span class="tag never">never</span> Drawn to be rejected</b>
+          Cheer, an exclamation mark, and a countdown that reads as a verdict on a trial the app is
+          forbidden to score. Included because it is the obvious thing to write here and the spine forbids
+          all three of it (TE-7, and the voice rule on manufactured enthusiasm).
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>What the vet reads &mdash; D2 and D4 ruled (a)</h2></div>
+    <div class="col">
+      <p>
+        <code>target_duration_days</code> is overwritten in place, so today an 8-week trial extended on day
+        56 is <strong>byte-identical, everywhere, to a 12-week trial started on day 1</strong>. That the
+        signs had not resolved at eight weeks is a finding, and the extension is the evidence of it.
+      </p>
+    </div>
+
+    <div class="stack">
+      <div class="specimen">
+        <p class="s-k">(c) &mdash; what ships today</p>
+        <p class="report-line">Elimination diet trial &mdash; day 60 of 84. Primary sign logged: <b>vomiting</b>.</p>
+        <p class="s-note">
+          Dr. Chen: <em>&ldquo;If the report shows me an 84-day window and nothing else, you have deleted
+          the finding and handed me a number.&rdquo;</em>
+        </p>
+      </div>
+
+      <div class="specimen">
+        <p class="s-k">(a) / (b) &mdash; the proposal, box unchecked</p>
+        <p class="report-line">
+          Elimination diet trial &mdash; day 60 of 84.
+          <span class="moved">Window extended from 56 days on 19 Sep (day 56).</span>
+          Primary sign logged: <b>vomiting</b>.
+        </p>
+        <p class="s-note">
+          The original window, and the day it moved. <strong>No clause attributes the change to anyone</strong>
+          &mdash; an unchecked box is silence, never &ldquo;the owner did this on their own&rdquo;.
+        </p>
+      </div>
+
+      <div class="specimen">
+        <p class="s-k">(a) / (b) &mdash; the proposal, D4 box checked</p>
+        <p class="report-line">
+          Elimination diet trial &mdash; day 60 of 84.
+          <span class="moved">Window extended from 56 days on 19 Sep (day 56), owner reports at the vet&rsquo;s
+          direction.</span>
+          Primary sign logged: <b>vomiting</b>.
+        </p>
+        <p class="s-note">
+          <strong>&ldquo;owner reports&rdquo; is load-bearing.</strong> The app cannot verify a vet
+          instruction and must never assert one &mdash; the same attribution discipline §4.3 applies to the
+          owner&rsquo;s outcome verdict.
+        </p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>D2 (a) vs (b) has no visual difference</strong> &mdash; three columns on <code>diet_trials</code>
+      versus a <code>diet_trial_window_changes</code> child table render the same sentence for a single
+      extension. They differ only on a trial extended <em>twice</em>, where (a) keeps the first and last
+      window and (b) keeps every step. The recommendation is (a), on this table&rsquo;s own precedent:
+      <code>target_protein_set_at</code> already ruled that <em>&ldquo;an edit is disclosed here, never
+      versioned &mdash; one value, whole-trial&rdquo;</em> (TP-3).
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>Why backward is a different act &mdash; D3 ruled forward-only</h2></div>
+    <div class="col">
+      <p>
+        The report&rsquo;s completed-trial line is computed against the <strong>current</strong> window
+        (<code>render.ts:3948</code>). Executed: a 56-day trial, shortened to 28 on day 28, then marked done.
+      </p>
+    </div>
+
+    <div class="specimen">
+      <p class="s-k"><span class="tag never">executed</span> &nbsp; 56-day trial &rarr; shortened to 28 &rarr; completed at day 28</p>
+      <p class="report-line"><span class="bad">Ran its course &mdash; the full window was completed.</span></p>
+      <p class="s-note">
+        An eight-week trial abandoned at four weeks, rendered to the clinician as one that completed its
+        full course. Nothing on the document contradicts it. <strong>This is why shortening cannot ride the
+        extension path</strong>, and why §5.1&rsquo;s original-window record is what makes the report safe
+        in either direction.
+      </p>
+    </div>
+
+    <div class="callout">
+      <strong>Ruled (a) on 17 September: forward-only in v1.</strong> This is not an argument against ever
+      shortening &mdash; an owner who typed 56 when the vet said 28 has a real correction to make, and an
+      honest existing path for it (<em>Replace the trial</em>, which records a <code>stopped_reason</code>).
+      It is an argument that shortening cannot ride the extension path while the completed-trial line is
+      computed against a mutable window. <strong>A future spec that re-opens this owes the render rule
+      first, not a UI control.</strong>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">07</span><h2>The GI preset &mdash; D5 ratified as-is, CUL-367 still open</h2></div>
+    <div class="col">
+      <p>
+        CUL-367 has been waiting since 2026-07-26 for a case. Here it is: the worked trial is
+        <code>indication = 'gi'</code>, so <code>extensionDays</code> returns <strong>14</strong>.
+      </p>
+    </div>
+
+    <div class="compare">
+      <figure>
+        <div class="phone">
+          <div class="card">
+            <div class="card-head"><span class="card-title">Diet trial</span><span class="card-manage">Manage</span></div>
+            <div class="day-line" style="font-family:var(--serif);font-size:21px">Day 56 of 56 &mdash; the window you set is done.</div>
+            <div class="fact" style="margin-top:8px">
+              Your vet decides when the diet changes. For gut problems, diets are often continued for around
+              three months even when things look better early.
+            </div>
+            <div class="card-actions" style="flex-direction:column;align-items:stretch">
+              <span class="btn pri">Keep going &mdash; 2 more weeks</span>
+              <span class="btn sec">This trial is done</span>
+              <span class="btn sec">Stopped early</span>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>As shipped <span class="tag today">today</span></b>
+          One tap lands on <strong>70 days</strong>, not 84. Reaching twelve weeks takes <strong>two</strong>
+          taps <strong>two weeks apart</strong> &mdash; and two more exposures of <em>This trial is done</em>
+          &mdash; to honour a single vet instruction. The note beside it already says &ldquo;around three
+          months&rdquo;.
+        </figcaption>
+      </figure>
+
+      <figure class="optbox">
+        <div class="phone">
+          <div class="card">
+            <div class="card-head"><span class="card-title">Diet trial</span><span class="card-manage">Manage</span></div>
+            <div class="day-line" style="font-family:var(--serif);font-size:21px">Day 56 of 56 &mdash; the window you set is done.</div>
+            <div class="fact" style="margin-top:8px">
+              Your vet decides when the diet changes. For gut problems, diets are often continued for around
+              three months even when things look better early.
+            </div>
+            <div class="card-actions" style="flex-direction:column;align-items:stretch">
+              <span class="btn pri">Keep going &mdash; 4 more weeks</span>
+              <span class="btn sec">This trial is done</span>
+              <span class="btn sec">Stopped early</span>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>Deferred to CUL-367 <span class="tag option">not built in v1</span></b>
+          <em>Drawn because it is deferred, not rejected.</em> The button would carry the window to the three
+          months the note beside it already names, exactly as <code>+28</code> already carries
+          skin&rsquo;s 8wk&rarr;12wk. <strong>D5 ratified today&rsquo;s <code>+14</code> for v1</strong>,
+          because D1&rsquo;s totals sheet now reaches any window on any day &mdash; the ladder is no longer
+          the only path to twelve weeks, which removes the urgency that would justify moving a clinical
+          default without a vet. <strong>CUL-367&rsquo;s finding stands and is not fixed by that:</strong> a
+          GI owner still meets <em>This trial is done</em> five times before twelve weeks where a skin owner
+          meets it twice. Dr. Chen owns the numbers; this frame is what they would be ratifying.
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">08</span><h2>The reassurance gate one tap moved &mdash; D7 re-ruled (c), and shipped</h2></div>
+    <div class="col">
+      <p>
+        Round 1 of this page asserted that coverage is untouched by an extension. The
+        <code>adversarial-reviewer</code> pass falsified that the same session; <strong>PR 0 then
+        falsified the fix</strong>. D7 was first ruled <b>(a) disclose it</b> &mdash; described as
+        &ldquo;a render, not a mechanism&rdquo; &mdash; but <code>belowCoverageFloor</code> is
+        <code>interpretability === 'does_not_support'</code> and <code>mayStateRecordClean</code> reads
+        <code>facts.interpretability</code>, and <em>neither reads</em> <code>closedByOverrun</code>.
+        A render cannot move them. Executed both ways: a frozen denominator fires every one of PR 0&rsquo;s
+        markers; (a)&rsquo;s render-only change fires none.
+      </p>
+      <p>
+        <strong>Re-ruled (c) on 17 September &mdash; freeze <em>and</em> disclose</strong>, and shipped as
+        PR 1b. The frames below are what the report prints now, not a proposal.
+      </p>
+    </div>
+
+    <div class="tablewrap">
+    <table class="ledger">
+      <thead><tr><th>dog&middot;gi, 28-day window, 10 of days 1&ndash;28 logged then daily to day 50, read on day 50</th><th>before the tap</th><th>after one tap &mdash; <b>shipped</b></th><th>after one tap &mdash; <span style="color:var(--rose-ink)">before PR 1b</span></th></tr></thead>
+      <tbody>
+        <tr><td>default scope &mdash; coverage</td><td><b>10 / 28</b></td><td><b>10 / 28</b></td><td><span class="bad">32 / 50</span></td></tr>
+        <tr><td><b>since the visit</b> (rung 1) &mdash; coverage</td><td><b>0 / 9</b></td><td><b>0 / 9</b></td><td><span class="bad">22 / 31</span></td></tr>
+        <tr><td>below floor</td><td><b>true</b></td><td><b>true</b></td><td><span class="bad">false</span></td></tr>
+        <tr><td>may state clean</td><td><b>false</b></td><td><b>false</b></td><td><span class="bad">true</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="col">
+      <p class="s-note" style="margin-top:2px">
+        <strong>The right-hand column is the corrected record.</strong> §5.4&rsquo;s original table quoted
+        <code>10 / 28 &rarr; 32 / 50</code> from <code>computeTrialFacts</code> with no scope &mdash; the
+        <em>client</em> read. The report always passes a scope, so those were never the numbers the page
+        printed. PR 0 drove the real render, and <strong>the rung-1 row is the one that matters</strong>:
+        a diet-trial owner was just at the vet, so the report scopes to <em>since the most recent visit</em>,
+        and a literal <b>zero</b> bought an affirmative all-clean claim.
+      </p>
+    </div>
+
+    <div class="stack">
+      <div class="specimen">
+        <p class="s-k"><span class="tag never">was</span> &nbsp; what the vet report printed across one tap</p>
+        <p class="report-line" style="margin-bottom:10px">
+          <span class="bad">The record is too sparse to read that as a clean elimination.</span>
+        </p>
+        <p class="report-line">
+          &darr;&nbsp; <span class="moved">22 feedings &mdash; all 22 matched the trial diet or a permitted food.</span>
+        </p>
+        <p class="s-note">
+          <strong>Zero new evidence.</strong> No meal logged, no exposure resolved; an owner tapped a button
+          about a calendar. It ran both ways &mdash; on a trial logged daily then silent, one tap
+          <em>withdrew</em> a clean claim.
+        </p>
+      </div>
+
+      <div class="specimen">
+        <p class="s-k"><span class="tag never">and the freeze alone was not the repair</span></p>
+        <p class="report-line" style="margin-bottom:10px">
+          <span class="bad">28 of 60 days &mdash; does not support interpreting this trial either way.</span>
+        </p>
+        <p class="report-line">
+          &darr;&nbsp; <span class="bad">28 of 28 days &mdash; supports interpreting it. All matched the
+          trial diet or a permitted food.</span>
+        </p>
+        <p class="s-note">
+          <strong>1b&rsquo;s own adversarial pass returned FAIL.</strong> A trial designed at 28 days,
+          extended to 84, logged on every one of days 1&ndash;28 and then silent, read on day 60: pinning
+          the denominator at the designed window <em>excluded</em> 32 un-logged days that sit
+          <strong>inside the window currently in force</strong>, and granted a clean claim the old code
+          withheld. B-422&rsquo;s justification is &ldquo;a vet who prescribed eight weeks should not read
+          a denominator of twelve&rdquo; &mdash; here the prescription in force <em>was</em> twelve weeks
+          and the vet read a denominator of four.
+          <br><br>
+          The mis-cut: D7(c) split belief from claims along one input, and this denominator has
+          <strong>three</strong> owner-movable ones &mdash; the target, the end date, and which of two
+          targets is authoritative. Pinning one moved the movement elsewhere; tapping <em>Complete</em>
+          became a claim-moving control. <strong>PM ruled (a): the ratio and the verdict are two
+          questions.</strong>
+        </p>
+      </div>
+
+      <div class="specimen">
+        <p class="s-k"><span class="tag now">shipped</span> &nbsp; half 1 &mdash; the RATIO is the window the trial was <em>designed</em> against</p>
+        <p class="report-line" style="margin-bottom:10px">
+          Meals logged on <b>0 of 9 days</b> (Jun 20 &ndash; Jun 28, 2026).
+          &nbsp;&rarr;&nbsp; Meals logged on <b>0 of 9 days</b> (Jun 20 &ndash; Jun 28, 2026).
+        </p>
+        <p class="s-note">
+          The clip bounds on <code>target_duration_days_initial</code> (migration 068) instead of the
+          mutable <code>target_duration_days</code>, so no owner action moves the printed number. It also
+          closes the tail-clip&rsquo;s <strong>head-clip route</strong>: with the window pinned there is no
+          logged day inside it for the head clip to follow.
+          <br><br>
+          <strong>What still moves, and should:</strong> the day line reads <em>day 50 of 64</em>. An
+          extension moves <em>belief</em> &mdash; how long this trial is running &mdash; and that is what the
+          tap is for.
+        </p>
+      </div>
+
+      <div class="specimen">
+        <p class="s-k"><span class="tag now">shipped</span> &nbsp; half 1b &mdash; the VERDICT is the harsher of two readings</p>
+        <p class="report-line">
+          Meals logged on <b>28 of 28 days</b> (Jun 1 &ndash; Jun 28, 2026).
+          <span class="moved">Coverage above is measured over the trial&rsquo;s original window.</span>
+          The trial has run 60 days in all; the 32 since that window closed are not in the ratio above,
+          and the record holds a meal on <b>0</b> of them.
+        </p>
+        <p class="s-note">
+          <code>interpretability</code> &mdash; and through it <code>belowCoverageFloor</code> and the
+          all-matched claim &mdash; is the <strong>less reassuring</strong> of the printed reading and one
+          taken over the window currently in force. Neither window gets to be the generous one, and that is
+          the whole mechanism: extending flatters the <em>live</em> window on a well-logged tail and
+          flatters the <em>designed</em> window on a silent one, so picking either can only ever fix one
+          direction. The harsher verdict fixes both. It is C-4&rsquo;s precedence rule and &sect;5.2&rsquo;s
+          <em>a floor may only ever move toward disclosing more</em>.
+          <br><br>
+          <strong>And the excluded span is a number</strong>, not a gesture (C-3). The first cut replaced a
+          quantified denominator with a clause; how many days the ratio leaves out, and how many hold a
+          meal, is what decides whether the reader should care.
+        </p>
+      </div>
+
+      <div class="specimen">
+        <p class="s-k"><span class="tag now">shipped</span> &nbsp; half 2 &mdash; the disclosure the clip has cited since B-422</p>
+        <p class="report-line">
+          Meals logged on <b>10 of 28 days</b> (Jun 1 &ndash; Jun 28, 2026).
+          <span class="moved">Coverage above is measured over the trial&rsquo;s original window.</span>
+          Feedings logged after it are still counted in the exposures below.
+        </p>
+        <p class="s-note">
+          Written in the register of the precedent one block away in the same document &mdash;
+          <em>&ldquo;The allowed list changed after the trial started&rdquo;</em> (<code>render.ts:2721</code>),
+          which discloses the other mid-trial change to the comparator. It also reaches the scan-grid tile,
+          and <code>interpretabilityStatement</code> now says <em>which</em> window it covered
+          (&ldquo;of the trial&rsquo;s prescribed window&rdquo;) because the day counter beside it may read
+          past that denominator.
+          <br><br>
+          <strong>It does not say the window moved.</strong> That is
+          <code>target_duration_set_at</code>, which nothing writes until PR 2, and §5&rsquo;s sentence
+          (&ldquo;Window extended from 56 days on 19 Sep&rdquo;) is PR 4&rsquo;s.
+        </p>
+      </div>
+
+      <div class="specimen">
+        <p class="s-k">The debt this pays off</p>
+        <p class="report-line" style="font-size:14px">
+          <code>lib/dietTrial.ts</code> &mdash; <em>&ldquo;not the B-422 tail clip (that is the
+          trial&rsquo;s own prescribed window closing, and <code>closedByOverrun</code> discloses it)&rdquo;</em>
+        </p>
+        <p class="s-note">
+          For four months <code>closedByOverrun</code> was read by <strong>nothing in production</strong> &mdash;
+          its definition, that comment, and its own test file. A comment writing a cheque the code does not
+          cash (C-38), sitting inside the clip whose whole justification was the disclosure. The cheque is
+          now cashed on the report.
+        </p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>What PR 1b does not write: the column itself.</strong> The freeze READS
+      <code>target_duration_days_initial</code> and the device never writes it back, because the code
+      review traced a clobber: an upgrading phone holds NULL in that column until a hydrate fills it, the
+      push is a full-row upsert, and the sync pushes before it pulls &mdash; so a <em>Keep going</em> tap
+      before that row&rsquo;s first hydrate would have erased the backfill and silently returned the report
+      to the arithmetic above, for exactly the trials the freeze protects. No client-side stamp fixes it;
+      every variant writes a plausible wrong number instead of an honest blank. The database has to refuse
+      the write, which is a migration and therefore its own PR: <strong>1c</strong>, which now blocks PR 2.
+      Until it lands the freeze covers every trial that existed when 068 applied, and a trial started from
+      now on falls back to today&rsquo;s behaviour &mdash; reachable only after it overruns its own window
+      and is then extended.
+    </div>
+
+    <div class="callout">
+      <strong>One residual, priced and accepted: TE-6 is DIRECTIONAL.</strong> The <em>withdrawing</em>
+      direction still moves &mdash; a trial logged on every prescribed day then silent, extended, goes
+      <em>supports</em> &rarr; <em>does not support</em> on the tap. It cannot be closed alongside the
+      reassuring one: that record and the mirror above are <strong>structurally identical</strong> and
+      demand opposite things of the gate, so closing either opens the other. Executed on both code
+      versions, so it is a property of the problem, not of a fix &mdash; the code before this PR moved it
+      too. <strong>Ruled 17 September: an owner action may move a claim toward MORE disclosure, never
+      toward less</strong>, which is the rule &sect;5.2 already states for the exposure floor and
+      <code>clinical-guardrails</code> for every claim gate. A claim withdrawn costs the owner; a claim
+      granted over a month of silence costs the patient. The residual is an executable expected failure
+      rather than a note.
+    </div>
+
+    <div class="callout warn">
+      <strong>What PR 1b does not ship: the owner&rsquo;s card sentence.</strong> The <em>freeze</em> reaches
+      the trial card (its facts come through the same module), so the flip is gone there too &mdash; the body
+      no longer goes from <em>&ldquo;Culprit isn&rsquo;t saying how many matched&rdquo;</em> to
+      <em>&ldquo;all 32 matched&rdquo;</em> on a tap. What the card still lacks is its own overrun sentence,
+      the one that explains <em>&ldquo;56 of 56 days&rdquo;</em> sitting under <em>&ldquo;Day 84&rdquo;</em>.
+      That is <b>B-592</b>, filed since B-422 and deliberately unwritten: the card in
+      <code>nyx-diet-trial-mockups.html</code> is design-locked, and this repo does not invent strings for it
+      outside a mock round. Jordan&rsquo;s constraint governs when it is drawn &mdash; the owner who has
+      drifted past the target is close to quitting, so the line reads as a prompt to close the trial, never
+      as a scold about the days they did not log.
+    </div>
+  </section>
+
+</div>

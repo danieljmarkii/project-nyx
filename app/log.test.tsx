@@ -15,13 +15,15 @@ const mockReplace = jest.fn();
 const mockBack = jest.fn();
 const mockPush = jest.fn();
 let mockTypeParam: string | undefined = 'vomit';
+// The widget's own params (CUL-1119): its log links carry `pet` and `src`, never a `ts`.
+let mockWidgetParams: Record<string, string> = {};
 jest.mock('expo-router', () => ({
   router: {
     replace: (...a: unknown[]) => mockReplace(...a),
     back: (...a: unknown[]) => mockBack(...a),
     push: (...a: unknown[]) => mockPush(...a),
   },
-  useLocalSearchParams: () => (mockTypeParam ? { type: mockTypeParam } : {}),
+  useLocalSearchParams: () => ({ ...(mockTypeParam ? { type: mockTypeParam } : {}), ...mockWidgetParams }),
 }));
 jest.mock('react-native-safe-area-context', () => ({
   SafeAreaView: require('react-native').View,
@@ -93,6 +95,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   mockTypeParam = 'vomit';
+  mockWidgetParams = {};
   usePetStore.setState({
     pets: [{ id: 'p1', name: 'Biscuit' }] as never,
     activePet: { id: 'p1', name: 'Biscuit' } as never,
@@ -183,6 +186,66 @@ describe('/log — the landing after Save (CUL-802)', () => {
 // defect's actual shape — the guard has to latch synchronously, before the first
 // handler's first await yields — and an `await` between the presses would let the
 // write settle and test nothing.
+describe('/log — replacing a photo replaces its date (CUL-956)', () => {
+  /** An EXIF `DateTimeOriginal` for a moment `hoursAgo` back, in local time as a camera
+   *  writes it. Anchored to the clock so the future-stamp guard keeps it (C-29). */
+  function exifStamp(hoursAgo: number): string {
+    const d = new Date(Date.now() - hoursAgo * 3_600_000);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}:${p(d.getMonth() + 1)}:${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  }
+
+  async function takePhoto(
+    press: () => void,
+    asset: { uri: string; exif: Record<string, unknown> },
+  ): Promise<void> {
+    launchCamera.mockResolvedValue({ canceled: false, assets: [{ width: 3024, height: 4032, ...asset }] });
+    const before = launchCamera.mock.calls.length;
+    press();
+    await act(async () => { pressAlert('Take photo'); });
+    await waitFor(() => expect(launchCamera.mock.calls.length).toBe(before + 1));
+  }
+
+  function savedAttachment(): { uri: string; takenAt: string | null } {
+    return (mockInsertSimpleEvent.mock.calls[0][0] as {
+      attachment: { uri: string; takenAt: string | null };
+    }).attachment;
+  }
+
+  it('a replacement with no stamp does not inherit the first photo’s', async () => {
+    const { getByText } = render(<LogScreen />);
+    await takePhoto(() => fireEvent.press(getByText('Attach photo')), {
+      uri: 'file:///tmp/first.jpg',
+      exif: { DateTimeOriginal: exifStamp(2) },
+    });
+    // A screenshot, a shared image, a stripped file: no DateTimeOriginal at all.
+    await takePhoto(() => fireEvent.press(getByText('Photo attached · tap to replace')), {
+      uri: 'file:///tmp/second.jpg',
+      exif: {},
+    });
+    fireEvent.press(getByText('Log vomit'));
+    await waitFor(() => expect(mockInsertSimpleEvent).toHaveBeenCalledTimes(1));
+    expect(savedAttachment()).toEqual(expect.objectContaining({ uri: 'file:///tmp/second.jpg', takenAt: null }));
+  });
+
+  it('a replacement with its own stamp carries its own, not the first one’s', async () => {
+    const { getByText } = render(<LogScreen />);
+    await takePhoto(() => fireEvent.press(getByText('Attach photo')), {
+      uri: 'file:///tmp/first.jpg',
+      exif: { DateTimeOriginal: exifStamp(5) },
+    });
+    const second = exifStamp(1);
+    await takePhoto(() => fireEvent.press(getByText('Photo attached · tap to replace')), {
+      uri: 'file:///tmp/second.jpg',
+      exif: { DateTimeOriginal: second },
+    });
+    fireEvent.press(getByText('Log vomit'));
+    await waitFor(() => expect(mockInsertSimpleEvent).toHaveBeenCalledTimes(1));
+    const [date, time] = second.split(' ');
+    expect(savedAttachment().takenAt).toBe(new Date(`${date.replace(/:/g, '-')}T${time}`).toISOString());
+  });
+});
+
 describe('/log — the double-submit guard (CUL-822, CUL-251)', () => {
   it('a double-tapped simple confirm writes ONE event', async () => {
     const { getByText } = render(<LogScreen />);
@@ -247,5 +310,25 @@ describe('/log — the weight confirm double-submit guard (CUL-251)', () => {
     await waitFor(() => expect(Alert.alert).toHaveBeenCalledWith("Couldn't save that", expect.any(String)));
     fireEvent.press(confirm);
     await waitFor(() => expect(mockInsertWeightCheck).toHaveBeenCalledTimes(2));
+  });
+});
+
+// CUL-1119 — the REAL `useWidgetPetLink` runs here (this suite never stubbed it). The
+// widget opens this modal on its own pet; the owner may still switch on the way to Save,
+// and that switch has to stick, or the log lands on the widget's pet.
+describe('/log — the widget\'s pet applies once per open (CUL-1119)', () => {
+  it('opens on the widget\'s pet, and a switch made while the screen is open sticks', async () => {
+    usePetStore.setState({
+      pets: [{ id: 'p1', name: 'Biscuit' }, { id: 'p2', name: 'Mochi' }] as never,
+      activePet: { id: 'p1', name: 'Biscuit' } as never,
+    });
+    mockWidgetParams = { pet: 'p2', src: 'widget' };
+    render(<LogScreen />);
+    await waitFor(() => expect(usePetStore.getState().activePet?.id).toBe('p2'));
+
+    act(() => usePetStore.getState().selectPet('p1'));
+    // Let every effect the switch re-ran settle before reading the answer.
+    await act(async () => {});
+    expect(usePetStore.getState().activePet?.id).toBe('p1');
   });
 });

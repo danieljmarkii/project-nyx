@@ -36,7 +36,7 @@ function freshDb(): Db {
       id TEXT PRIMARY KEY, pet_id TEXT NOT NULL, event_type TEXT NOT NULL,
       occurred_at TEXT NOT NULL, occurred_at_confidence TEXT, deleted_at TEXT
     );
-    CREATE TABLE meals (id TEXT PRIMARY KEY, event_id TEXT NOT NULL, food_item_id TEXT);
+    CREATE TABLE meals (id TEXT PRIMARY KEY, event_id TEXT NOT NULL, food_item_id TEXT, intake_rating TEXT);
     CREATE TABLE food_items_cache (
       id TEXT PRIMARY KEY, food_type TEXT, brand TEXT, product_name TEXT
     );
@@ -54,8 +54,10 @@ function ev(id: string, pet: string, type: string, at: string, conf: string | nu
      VALUES (?, ?, ?, ?, ?, ?)`,
   ).all(id, pet, type, at, conf, del);
 }
-function meal(id: string, eventId: string, foodItemId: string | null) {
-  mockDb.prepare(`INSERT INTO meals (id, event_id, food_item_id) VALUES (?, ?, ?)`).all(id, eventId, foodItemId);
+function meal(id: string, eventId: string, foodItemId: string | null, intakeRating: string | null = null) {
+  mockDb
+    .prepare(`INSERT INTO meals (id, event_id, food_item_id, intake_rating) VALUES (?, ?, ?, ?)`)
+    .all(id, eventId, foodItemId, intakeRating);
 }
 function food(id: string, type: string, brand: string, product: string) {
   mockDb.prepare(`INSERT INTO food_items_cache (id, food_type, brand, product_name) VALUES (?, ?, ?, ?)`).all(
@@ -108,7 +110,23 @@ describe('getTimingPanel — the three reads run end-to-end against a real engin
     expect(model!.eligibleCount).toBe(2);
     const [rapid, mid, long] = model!.bandRows;
     expect([rapid.count, mid.count, long.count]).toEqual([1, 0, 1]);
-    expect(model!.untimedReasons).toEqual({ not_witnessed: 1, free_fed: 1, no_preceding_feeding: 0 });
+    expect(model!.untimedReasons).toEqual({ not_witnessed: 1, free_fed: 1, refused_only: 0, no_preceding_feeding: 0 });
+  });
+
+  it('CUL-1122: a refused bowl read from the table never anchors — the episode is untimed and says why', async () => {
+    // A lone 22:00 bowl the pet refused, and a witnessed vomit five minutes later. Nothing else was
+    // logged in the day before, so the lane has nothing she ate to time it from.
+    ev('e_refused', 'p3', 'meal', '2026-05-10T22:00:00Z', 'witnessed');
+    meal('m_refused', 'e_refused', 'f_kibble', 'refused');
+    ev('v_after', 'p3', 'vomit', '2026-05-10T22:05:00Z', 'witnessed');
+    const model = await getTimingPanel('p3');
+    expect(model!.eligibleCount).toBe(0);
+    expect(model!.untimedReasons).toEqual({ not_witnessed: 0, free_fed: 0, refused_only: 1, no_preceding_feeding: 0 });
+    // The same bowl rated Picked at IS eating: the vomit is five minutes after it.
+    mockDb.prepare(`UPDATE meals SET intake_rating = 'picked' WHERE id = 'm_refused'`).all();
+    const picked = await getTimingPanel('p3');
+    expect(picked!.eligibleCount).toBe(1);
+    expect(picked!.bandRows[0]).toMatchObject({ band: 'rapid', count: 1, medianMinutes: 5 });
   });
 
   it('returns null for a pet with no vomiting logged', async () => {

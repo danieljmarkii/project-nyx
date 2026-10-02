@@ -168,7 +168,7 @@ const emptyStomach = (over: Partial<EmptyStomachTimingFinding> = {}): EmptyStoma
   bandCounts: { rapid: 1, mid: 2, long: 5 },
   totalEpisodes: 9,
   longGapHours: 6,
-  lastTwoEligibleLong: true,
+  lastTwoEligibleLong: true, longAfterRefusalCount: 0,
   medianHoursSinceFeeding: 9.5,
   feedingFormsInEvidence: ['kibble'],
   clockBand: { startLocalHour: 4, windowHours: 4 },
@@ -194,6 +194,7 @@ const timingStory = (over: Partial<TimingStoryFinding> = {}): TimingStoryFinding
     count: 5,
     medianHoursSinceFeeding: 9.5,
     lastTwoEligible: false,
+    afterRefusalCount: 0,
     feedingFormsInEvidence: ['kibble'],
     clockBand: { startLocalHour: 4, windowHours: 4 },
     clockCount: 4,
@@ -215,6 +216,7 @@ const trialResponse = (over: Partial<TrialResponseFinding> = {}): TrialResponseF
   rapid: { trial: 0, baseline: 4 },
   mid: { trial: 0, baseline: 2 },
   long: { trial: 0, baseline: 5 },
+  longAfterRefusal: { trial: 0, baseline: 0 },
   rapidWindowMinutes: 30,
   longGapHours: 6,
   treatShare: { trial: 0.1, baseline: 0.3 },
@@ -385,6 +387,40 @@ Deno.test('phrasingPayload — carries the whole cluster, so a member can never 
   const payload = phrasingPayload(joint(), 'Mochi') as Record<string, unknown>
   assert.deepEqual(payload.proteins, ['chicken', 'duck'])
   assert.equal(payload.protein, 'chicken and duck', 'even the scalar names both')
+})
+
+// ── CUL-1271: delegation / containment and treatment attribution ─────────────────
+// Neither class carries a wellness word, so the safety branch's reassurance lexicon passed
+// both at ffacb4e. The shared arms (lib/careClaimScreens.ts) now close them on every
+// model-phrasable branch that screens reassurance or cause.
+const CUL1271_SENTENCES = [
+  "Pixel's vomiting is in the vet's hands now, with 4 episodes since.",
+  "Pixel's vomiting is under control since the Sep 16 visit.",
+  'Your vet has it covered, so there is nothing more to do about the vomiting.',
+  "The prednisone seems to be helping Pixel's cough.",
+  "Pixel's cough has settled since the prednisone started.",
+  // The adversarial pass on the first push: any pet's name, the fronted clause, the intake
+  // comparison that passed the safety intake screen.
+  "It's in Pixel's vet's hands now.",
+  "Since the prednisone started, Pixel's cough has settled.",
+  "Pixel's appetite has come back since the visit.",
+]
+
+Deno.test('validatePhrasing — rejects delegation and treatment attribution on EVERY finding type (CUL-1271)', () => {
+  // The check runs before the per-type branches, so the insight-class lanes that skip the safety
+  // branch (trial_response — where "working" lives — gap_shortening, the timing lanes) hold too.
+  for (const f of [
+    intakeDecline(), worsening(), chronicity(), incidentRedFlag(), reflection(), correlation({ tier: 'early' }),
+    postprandial(), emptyStomach(), timingStory(), timeofday(), trialResponse(), gapShortening(),
+  ]) {
+    for (const t of CUL1271_SENTENCES) {
+      assert.equal(validatePhrasing(t, f), false, `${f.type}: ${t}`)
+    }
+  }
+})
+
+Deno.test('validatePhrasing — the honest dated count still passes a safety finding (CUL-1271)', () => {
+  assert.ok(validatePhrasing('Pixel has vomited 4 times since the Sep 16 visit — worth a word with your vet.', worsening()))
 })
 
 // ── templateIntakeDecline (safety — never reassure, never "picky") ──────────────
@@ -974,7 +1010,7 @@ Deno.test('templateEmptyStomachTiming — drops "the last two" when they were no
 Deno.test('templateTimingStory — names the bimodal SHAPE in words (B-755 two-kinds), never reprints the band counts (S10)', () => {
   // The override's `long` carries no clockBand → the shape sentence with no clock clause.
   const t = templateTimingStory(
-    timingStory({ eligibleCount: 12, rapid: { count: 4, medianMinutesSinceFeeding: 18, lastTwoEligible: true, feedingFormsInEvidence: [] }, long: { count: 5, medianHoursSinceFeeding: 9, lastTwoEligible: false, feedingFormsInEvidence: [] } }),
+    timingStory({ eligibleCount: 12, rapid: { count: 4, medianMinutesSinceFeeding: 18, lastTwoEligible: true, feedingFormsInEvidence: [] }, long: { count: 5, medianHoursSinceFeeding: 9, lastTwoEligible: false, afterRefusalCount: 0, feedingFormsInEvidence: [] } }),
     'Nyx',
   )
   assert.ok(/two kinds of time/.test(t), 'names the bimodal shape')
@@ -1446,4 +1482,87 @@ Deno.test('every template — no banned glyph/percentage vocabulary, any type (f
     assert.equal(hasBannedSignalVocabulary(t), false, `banned vocab in ${f.type}: ${t}`)
     assert.ok(validatePhrasing(t, f), `${f.type} template must pass its own validation: ${t}`)
   }
+})
+
+// ── CUL-989 — the "at least N" arms (a finding the pipeline floored over an incomplete read) ──
+
+Deno.test('CUL-989 chronicity floor arm: "at least" on the count, and it still fits the cap on the worst case', () => {
+  // The worst case the cap test above pins (longest month, longest ask, adjacency, 3-digit count),
+  // plus the floor's nine characters and a longer pet name than that test's.
+  for (const tier of ['firm', 'standard'] as const) {
+    const s = templateChronicity(
+      chronicity({
+        tier,
+        symptomType: 'cough',
+        episodeCount: 137,
+        activeWeeks: 8,
+        daysSinceLastEpisode: 0,
+        firstOnsetIso: '2026-09-15T08:00:00.000Z',
+        coughVomitAdjacent: true,
+        countIsFloor: true,
+      }),
+      'Bartholomew',
+    )
+    assert.ok(/across at least 8 of the last 8 weeks — at least 137 episodes\./.test(s), s)
+    // No onset month over a partial read: it is the fact a missing-oldest read gets wrong.
+    assert.doesNotMatch(s, /since/)
+    assert.ok(s.length <= 320, `${tier}: ${s.length} chars over the 320 cap: ${s}`)
+    assert.ok(validatePhrasing(s, chronicity({ tier, symptomType: 'cough' })))
+  }
+  // Absent ⇒ the shipped sentence, byte for byte.
+  assert.equal(templateChronicity(chronicity(), 'Rex').includes('at least'), false)
+})
+
+Deno.test('CUL-989 worsening floor arm: at least, still escalates, and names no week-over-week comparison', () => {
+  const cases: [WorseningTier, WorseningTrigger, RegExp, RegExp][] = [
+    ['firm', 'more_episodes', /on at least 5 of the last 7 days/, /booking a vet visit soon/],
+    ['firm', 'more_days', /on at least 5 of the last 7 days/, /booking a vet visit soon/],
+    ['soft', 'more_days', /on at least 5 of the last 7 days/, /word with your vet if it carries on/],
+    ['standard', 'more_episodes', /at least 4 episodes of vomiting this week/, /worth a word with your vet/],
+  ]
+  for (const [tier, trigger, count, ask] of cases) {
+    const f = worsening({ tier, trigger, currentCount: 4, priorCount: 1, currentDays: 5, priorDays: 1, windowDays: 7, countIsFloor: true })
+    const s = templateWorsening(f, 'Rex')
+    assert.match(s, count)
+    assert.match(s, ask)
+    // The prior week is a floor too, so "up from N" could name a rise the record does not have.
+    assert.doesNotMatch(s, /up from|after none|last week|the week before/)
+    assert.ok(validatePhrasing(s, f), s)
+  }
+})
+
+Deno.test('CUL-989 trial response and red flag floor arms', () => {
+  const t = templateTrialResponse(trialResponse({ countIsFloor: true }), 'Rex')
+  assert.equal((t.match(/\bat least\b/g) ?? []).length, 2, t)
+  assert.equal(templateTrialResponse(trialResponse(), 'Rex').includes('at least'), false)
+  // One flagged photo over a partial read may be one of several: the plural lead is true of both.
+  const one = incidentRedFlag({ flaggedIncidentCount: 1, countIsFloor: true })
+  assert.match(templateIncidentRedFlag(one, 'Rex'), /^Photos you logged/)
+  assert.match(templateIncidentRedFlag(incidentRedFlag({ flaggedIncidentCount: 1 }), 'Rex'), /^A photo you logged/)
+})
+
+// ── CUL-1195: the long-band sentence says when its vomits followed a refused bowl (provisional) ──
+
+Deno.test('CUL-1195 — L1 sentence names the refused-bowl subset beside the long count, and stays inside every screen', () => {
+  const t = templateEmptyStomachTiming(emptyStomach({ longCount: 11, eligibleCount: 11, longAfterRefusalCount: 11 }), 'Pixel')
+  assert.ok(t.includes('11 of those followed a refused meal'), t)
+  assert.ok(t.endsWith('a timing pattern worth mentioning to your vet.'), t)
+  assert.ok(validatePhrasing(t, emptyStomach({ longCount: 11, eligibleCount: 11, longAfterRefusalCount: 11 })), t)
+})
+
+Deno.test('CUL-1195 — L1 sentence at zero refusals is byte-identical to before: no "none followed" claim', () => {
+  const t = templateEmptyStomachTiming(emptyStomach({ longAfterRefusalCount: 0 }), 'Nyx')
+  assert.ok(!/refus/i.test(t), t)
+  // A cache written before the field existed reads the same way.
+  const { longAfterRefusalCount: _drop, ...legacy } = emptyStomach()
+  assert.equal(templateEmptyStomachTiming(legacy as EmptyStomachTimingFinding, 'Nyx'), t)
+})
+
+Deno.test('CUL-1195 — timing_story sentence carries the long band’s refused-bowl subset, never a count at zero', () => {
+  const base = timingStory()
+  const withRefusal = timingStory({ long: { ...base.long, afterRefusalCount: 3 } })
+  const t = templateTimingStory(withRefusal, 'Nyx')
+  assert.ok(t.includes('3 of the long-after ones followed a refused meal'), t)
+  assert.ok(validatePhrasing(t, withRefusal), t)
+  assert.ok(!/refus/i.test(templateTimingStory(timingStory({ long: { ...base.long, afterRefusalCount: 0 } }), 'Nyx')))
 })

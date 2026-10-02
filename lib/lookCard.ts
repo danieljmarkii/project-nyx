@@ -85,6 +85,15 @@ export function lookQuestion(petName: string, sex: 'male' | 'female' | 'unknown'
   return `How does ${petName} seem right now, compared with ${petPronouns(sex).possessive} usual?`;
 }
 
+/** The HEADER's question (D2-4 / CUL-1066; the round-4 page §01, ruled) — *How does Nyx
+ *  seem today?* The card's question above names the reference (*compared with her
+ *  usual*) because it sits alone on its own card; the header sits at the top of Today,
+ *  where "today" is the frame the whole section already carries, so the reference is
+ *  the section's. Still about now, still never names a morning (R9). */
+export function lookHeaderQuestion(petName: string): string {
+  return `How does ${petName} seem today?`;
+}
+
 /** The folded ask row, once the day holds a look: the question, one line, re-openable
  *  in place (§3.1a — this row IS the second look). */
 export function lookFoldedAsk(petName: string): string {

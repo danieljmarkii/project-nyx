@@ -1,0 +1,1015 @@
+<title>Engines v3 on Home</title>
+<meta name="description" content="Engines v3 mock round 3: every care state from day 30 of a GI trial, My vet knows as a dated fact, the call record and its follow-up with notifications off, and EN-10's lines.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+  /* ============================================================
+     Engines v3 on Home, mock round 3 (CUL-1139 + CUL-1144, 2026-09-28; rounds 1-2 in git).
+     The Engines v3 strategy page (docs/culprit-engines-step-change.html)
+     drew a Home the rules cannot produce; the design critique
+     (docs/engines-v3-critique-2026-09.md, CUL-1268) asked for it to be
+     redrawn as the rules would render it before D3 is ruled, and for
+     TD-4 and E-3 to be drawn both ways. Round 2 (EN-9's care states,
+     EN-3's tiers) republishes to this URL after E-2, E-3 and TD-4.
+     House system: the Design v2 device round's tokens
+     (docs/culprit-design-v2-device-mockups.html); frames render the
+     app's real light tokens (constants/theme.ts) in both page themes.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --note-ink: #7A4E00; --note-wash: #FDF3DC; --note-rule: #E3B85C;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    /* The app's own light tokens, inside the phone frames in both page themes. */
+    --app-ground: #FAFAFA; --app-card: #FFFFFF; --app-subtle: #F4F4F5; --app-ink: #0A0A0A;
+    --app-ink-2: #525252; --app-ink-3: #737373; --app-rule: #E7E5E4;
+    --app-rose: #F43F5E; --app-rose-ink: #B4123B; --app-rose-soft: #FBB6C3;
+    --app-teal: #00C2A8; --app-teal-ink: #0B7B6C; --app-teal-wash: #E0FBF7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8A86BA;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --note-ink: #F5C26B; --note-wash: rgba(245,194,107,0.12); --note-rule: rgba(245,194,107,0.45);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8A86BA;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --note-ink: #F5C26B; --note-wash: rgba(245,194,107,0.12); --note-rule: rgba(245,194,107,0.45);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  a { color: var(--teal-ink); text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 3px; border-radius: 3px; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 64ch; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 500; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.needs { color: var(--note-ink); background: var(--note-wash); }
+  .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
+
+  /* The ledger: each critique finding, and what moved on the page */
+  .ledger { display: grid; gap: 0; margin: 26px 0 0; }
+  .ledger div { display: grid; grid-template-columns: 250px 1fr; gap: 16px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-block: 9px; }
+  .ledger div > b { color: var(--ink); font-weight: 500; }
+  @media (max-width: 680px) { .ledger div { grid-template-columns: 1fr; gap: 3px; } }
+  .rule-key { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 22px; font-size: 13.5px; color: var(--ink-2); }
+  .rule-key span { display: inline-flex; align-items: center; gap: 8px; }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 36px 0 6px; }
+  p { margin: 0 0 14px; }
+  .col p:last-child { margin-bottom: 0; }
+
+  /* Frames */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 26px; align-items: flex-start; }
+  .frame { display: flex; flex-direction: column; gap: 12px; width: 316px; max-width: 100%; }
+  .frame-cap { display: flex; flex-direction: column; gap: 5px; }
+  .frame-cap b { font-size: 14.5px; font-weight: 600; }
+  .frame-cap span, .frame-cap li { font-size: 13.5px; color: var(--ink-2); }
+  .frame-cap .pill { font-size: 10.5px; color: var(--teal-ink); }
+  .frame-cap .pill.dir { color: var(--ink-2); }
+  .frame-cap .pill.needs { color: var(--note-ink); }
+  .frame-cap ul { margin: 2px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+  .option { border: 1px dashed var(--rule); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 14px; max-width: 100%; }
+  .option-head { display: flex; flex-direction: column; gap: 4px; }
+  .option-head::before { content: "Option, drawn for the decision, not the current proposal"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  .option-head b { font-size: 15px; }
+  .option-head span { font-size: 13.5px; color: var(--ink-2); max-width: 60ch; }
+  .option .frames { margin-top: 0; }
+  .side { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 26px; align-items: flex-start; }
+
+  /* The phone */
+  .phone { width: 316px; max-width: 100%; background: var(--app-ground); border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.14); padding: 14px 12px 16px; color: var(--app-ink); font-family: var(--sans); font-variant-numeric: tabular-nums; font-size: 13px; line-height: 1.4; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 10px; }
+  .phone.short { padding-bottom: 12px; }
+  .appbar { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 2px; }
+  .appbar .pet { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, #3a3a3a, #8a8a8a); }
+  .askpill { font-size: 12px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 3px 10px; display: flex; align-items: center; gap: 5px; }
+  .askpill i { width: 6px; height: 6px; border-radius: 50%; background: var(--app-teal); display: inline-block; }
+  .card { background: var(--app-card); border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); }
+  .zone-label { font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-3); margin-bottom: 8px; }
+  .row-divider { height: 1px; background: var(--app-rule); margin: 11px 0; }
+  .zone-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; font-size: 10.5px; color: var(--app-ink-3); }
+  .zone-foot span:last-child { font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; white-space: nowrap; }
+  .fade-bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 54px; background: linear-gradient(rgba(250,250,250,0), var(--app-ground)); pointer-events: none; }
+
+  /* Signal rows (CUL-1270 as built: headline, count, ask, door) */
+  .door { display: flex; align-items: center; gap: 10px; position: relative; }
+  .door .body { flex: 1; min-width: 0; }
+  .railed { border-left: 3px solid var(--app-rose); padding-left: 10px; }
+  .railed.watch { border-left-color: var(--app-rose-soft); }
+  .plain-row { padding-left: 13px; }
+  .eyebrow-s { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); font-weight: 500; }
+  .head { font-size: 14px; font-weight: 600; line-height: 1.3; }
+  .head.serif { font-family: var(--serif); font-weight: 500; font-size: 18px; line-height: 1.22; }
+  .asktxt { font-size: 12px; color: var(--app-rose-ink); font-weight: 500; margin-top: 2px; }
+  .sub { font-size: 11.5px; color: var(--app-ink-2); margin-top: 2px; }
+  .sub .ask-in { color: var(--app-rose-ink); }
+  .state { display: inline-block; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 4px; padding: 1px 5px; margin-right: 4px; vertical-align: 1px; }
+  .chev { width: 22px; height: 22px; flex-shrink: 0; color: var(--app-ink-3); }
+  .chev svg { display: block; }
+  .chev.big { width: 28px; height: 28px; border-radius: 50%; background: var(--app-subtle); display: grid; place-items: center; }
+  .lane { display: block; margin-top: 6px; }
+  .answers { display: flex; flex-wrap: wrap; column-gap: 16px; row-gap: 16px; margin-top: 9px; }
+  .answers span { font-size: 12px; font-weight: 500; border: 1px solid var(--app-rule); border-radius: 999px; padding: 6px 12px; min-height: 30px; display: inline-flex; align-items: center; color: var(--app-ink); background: var(--app-card); }
+  .answers span.pri { border-color: var(--app-ink); }
+
+  /* Strips (shipped register: context, never urgency) */
+  .strip { background: var(--app-card); border-radius: 14px; padding: 11px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .strip .sh { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; }
+  .strip .sh i { font-style: normal; color: var(--app-ink-3); font-weight: 400; }
+  .strip .sl { font-size: 11.5px; color: var(--app-ink-2); margin-top: 2px; }
+  .strip .bar { height: 4px; background: var(--app-subtle); border-radius: 2px; margin-top: 7px; overflow: hidden; }
+  .strip .bar b { display: block; height: 100%; background: var(--app-teal); border-radius: 2px; }
+  .strip .doors { display: flex; gap: 20px; margin-top: 8px; font-size: 12px; font-weight: 500; color: var(--app-teal-ink); }
+  .ghost { display: grid; gap: 8px; padding: 2px 0; }
+  .ghost i { display: block; height: 8px; border-radius: 4px; background: var(--app-rule); }
+  .ghost i:nth-child(2) { width: 72%; } .ghost i:nth-child(3) { width: 84%; }
+
+  /* Screens (Design v2's Signal screen and forms) */
+  .screen-head { background: var(--app-card); border-radius: 18px; padding: 14px; }
+  .back { font-size: 20px; color: var(--app-ink-2); line-height: 1; margin-bottom: 8px; }
+  .screen-title { font-family: var(--serif); font-size: 21px; line-height: 1.2; letter-spacing: -0.005em; margin-bottom: 6px; }
+  .screen-sent { font-size: 12px; color: var(--app-ink-2); line-height: 1.45; }
+  .mini-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); margin: 12px 0 6px; }
+  .photo { height: 96px; border-radius: 10px; background: radial-gradient(circle at 38% 42%, #d8c9a8, #9c8a66 55%, #6e6048); position: relative; }
+  .photo::after { content: ""; position: absolute; left: 58%; top: 40%; width: 22px; height: 12px; border-radius: 4px; background: #4b4b52; transform: rotate(-18deg); }
+  .qblock { background: var(--app-subtle); border-radius: 12px; padding: 11px 12px 12px; margin-top: 12px; }
+  .qblock .q { font-size: 13px; font-weight: 600; line-height: 1.35; }
+  .qblock .qs { font-size: 11.5px; color: var(--app-ink-2); margin-top: 3px; }
+  .qblock .answers span { background: var(--app-card); }
+  .form-row { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-top: 1px solid var(--app-rule); }
+  .form-row:first-of-type { border-top: 0; }
+  .form-row .fr-h { font-size: 13px; font-weight: 600; }
+  .form-row .fr-s { font-size: 11.5px; color: var(--app-ink-2); }
+  .seg { display: flex; gap: 0; margin-top: 7px; border: 1px solid var(--app-rule); border-radius: 10px; overflow: hidden; }
+  .seg span { flex: 1; text-align: center; font-size: 11.5px; font-weight: 500; padding: 7px 4px; min-height: 32px; display: grid; place-items: center; border-left: 1px solid var(--app-rule); }
+  .seg span:first-child { border-left: 0; }
+  .seg span.on { background: var(--app-ink); color: #fff; }
+  .read-pill { display: inline-block; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; border-radius: 999px; padding: 3px 9px; }
+  .read-pill.call { color: #fff; background: var(--app-rose); }
+  .read-pill.watchfor { color: var(--app-ink-2); background: var(--app-subtle); }
+  .obs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .obs span { font-size: 11px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 3px 9px; color: var(--app-ink-2); }
+  .correction { margin-top: 10px; border-top: 1px solid var(--app-rule); padding-top: 9px; font-size: 11.5px; color: var(--app-ink-2); }
+  .correction b { color: var(--app-ink); font-weight: 600; }
+  .struck { color: var(--app-ink-3); }
+
+  /* The annotation layer: never app chrome. Marks a row the rules cannot draw yet. */
+  .needs-tag { display: inline-block; margin-bottom: 5px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em; color: #7A4E00; background: #FDF3DC; border: 1px solid #E3B85C; border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+  .needs-box { outline: 1.5px dashed #E3B85C; outline-offset: 4px; border-radius: 6px; }
+  .note { font-size: 13.5px; color: var(--ink-2); background: var(--note-wash); border-left: 3px solid var(--note-rule); padding: 10px 14px; border-radius: 0 6px 6px 0; max-width: 72ch; }
+  .note b { color: var(--ink); }
+
+  /* Briefs */
+  .briefs { display: grid; gap: 18px; margin-top: 24px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px; font-size: 14.5px; color: var(--ink-2); display: flex; flex-direction: column; gap: 8px; }
+  .brief h4 { margin: 0; font-size: 16px; color: var(--ink); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .brief p { margin: 0; }
+  .brief b { color: var(--ink); }
+  .brief ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+  .conflict { border-left: 3px solid var(--rose-ink); padding-left: 12px; }
+  .next-list { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); font-size: 14.5px; max-width: 72ch; }
+  footer { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13.5px; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 8px 18px; }
+
+  /* Round 2: the loop diagram and the new screen parts */
+  .archive { margin-top: 18px; font-size: 14px; color: var(--ink-2); }
+  .archive summary { cursor: pointer; color: var(--ink-2); font-size: 13.5px; }
+  .archive summary:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 3px; border-radius: 3px; }
+  .ledger q { font-style: italic; quotes: "\201C" "\201D"; }
+  .diagram { margin: 28px 0 0; max-width: 980px; }
+  .diagram-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; color: var(--ink); }
+  .diagram-scroll svg { display: block; width: 100%; min-width: 760px; height: auto; }
+  .diagram figcaption { font-size: 13.5px; color: var(--ink-2); margin-top: 10px; max-width: 72ch; }
+  .d-lane { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; fill: var(--ink-3); }
+  .d-label { font-family: var(--sans); font-size: 13px; font-weight: 500; fill: var(--ink); }
+  .d-small { font-family: var(--sans); font-size: 11.5px; fill: var(--ink-2); }
+  .d-node { fill: var(--paper-2); stroke: var(--rule); stroke-width: 1.2; }
+  .d-node-raised { stroke: var(--rose-ink); }
+  .d-node-new { stroke: var(--teal-ink); stroke-dasharray: 4 3; }
+  .d-shipped { stroke: var(--ink-3); stroke-width: 1.4; fill: none; }
+  .d-shipped-fill { fill: var(--ink-3); }
+  .d-new { stroke: var(--teal-ink); stroke-width: 2; fill: none; }
+  .d-new-fill { fill: var(--teal-ink); }
+  .d-new-text { fill: var(--teal-ink); font-weight: 500; }
+  .d-boundary { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 2 4; }
+  .links { display: flex; gap: 20px; margin-top: 8px; font-size: 12px; font-weight: 500; color: var(--app-teal-ink); }
+  .links span { min-height: 30px; display: inline-flex; align-items: center; }
+  .field { margin-top: 10px; border: 1px solid var(--app-rule); border-radius: 10px; padding: 10px; font-size: 12.5px; line-height: 1.45; min-height: 74px; color: var(--app-ink); }
+  .field.slim { min-height: 36px; color: var(--app-ink-3); }
+  .save { margin-top: 12px; background: var(--app-ink); color: #fff; border-radius: 12px; text-align: center; font-weight: 600; font-size: 13px; padding: 10px; }
+  .tick-row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; min-height: 36px; border-top: 1px solid var(--app-rule); }
+  .tick-row i { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--app-ink-3); flex-shrink: 0; position: relative; }
+  .tick-row.on i { background: var(--app-teal-ink); border-color: var(--app-teal-ink); }
+  .tick-row.on i::after { content: ""; position: absolute; left: 5px; top: 1px; width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .choice { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 44px; border-top: 1px solid var(--app-rule); font-size: 13px; font-weight: 500; }
+  .choice em { font-style: normal; font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; }
+  .vv-row { display: flex; flex-direction: column; gap: 2px; padding: 9px 0; border-top: 1px solid var(--app-rule); font-size: 12px; color: var(--app-ink-2); }
+  .vv-row b { font-size: 13px; color: var(--app-ink); font-weight: 600; }
+  .vv-note { font-style: italic; color: var(--app-ink-2); }
+  .frame-cap code, .brief code, .col code { font-family: var(--mono); font-size: 0.86em; }
+  /* Round 3 additions: the care-state tag, the source line, the spoken label under a frame,
+     the zone card's small context lines (EN-10), and the tables in §06. */
+  .state.with { color: var(--app-teal-ink); background: var(--app-teal-wash); }
+  .state.again { color: #fff; background: var(--app-rose); }
+  .ctx { font-size: 11px; color: var(--app-ink-2); margin-top: 4px; display: flex; gap: 6px; align-items: baseline; }
+  .ctx::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--app-ink-3); flex-shrink: 0; transform: translateY(-1px); }
+  .disclose { font-size: 11px; color: var(--app-ink-2); margin-top: 8px; border-top: 1px solid var(--app-rule); padding-top: 7px; }
+  .spoken { font-size: 12.5px; color: var(--ink-2); border-left: 2px solid var(--rule); padding-left: 10px; font-style: italic; }
+  .spoken::before { content: "VoiceOver: "; font-style: normal; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+  .offline { font-size: 10.5px; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 999px; padding: 3px 9px; align-self: flex-start; }
+  .flagbar { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); text-align: center; }
+  .reject { outline: 1.5px solid var(--rose-ink); outline-offset: 4px; border-radius: 6px; }
+  .reject-tag { display: inline-block; margin-bottom: 5px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em; color: #fff; background: #B4123B; border-radius: 4px; padding: 1px 5px; }
+  table.spec { border-collapse: collapse; width: 100%; max-width: 980px; margin-top: 22px; font-size: 13.5px; }
+  table.spec th, table.spec td { text-align: left; vertical-align: top; border-top: 1px solid var(--rule); padding: 9px 12px 9px 0; }
+  table.spec th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+  table.spec td { color: var(--ink-2); }
+  table.spec td:first-child { color: var(--ink); font-weight: 500; }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-scroll table { min-width: 720px; }
+  .edit { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 18px; font-size: 14px; color: var(--ink-2); max-width: 80ch; margin-top: 14px; }
+  .edit del { color: var(--rose-ink); }
+  .edit ins { color: var(--teal-ink); text-decoration: none; border-bottom: 1px solid var(--teal-ink); }
+  .edit .where { font-family: var(--mono); font-size: 11px; color: var(--ink-3); display: block; margin-bottom: 6px; letter-spacing: 0.04em; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Round 3 · 2026-09-28 · PMD-4, tolerance, AC 10 ruled</span><span>Engines v3 · CUL-1139 · CUL-1144</span><span>supersedes round 2 at this URL</span></p>
+    <h1>The care state and the outcome loop, drawn from day 30 of a GI trial</h1>
+    <p class="standfirst">Round 2 drew the loop between the Signal and vet visits. You ruled it: the owner's answer acknowledges a concern, one sign at a time; a recheck date hands the concern to the appointment strip; a call's note lives in Vet visits; the engine's shell may read owner answers and dates. This round draws every state that follows from those rulings, on a dog whose vet started his diet trial before the app was on the phone. It is one proposal, and on Sep 28 you ruled its three open calls (§07). The one conflict left for the build, TD-5, sits in a labelled box in §04. Round 2 is in git.</p>
+
+    <div class="ledger" aria-label="What was ruled since round 2 and what moved on this page">
+      <div><b>E-2 = A restated · "My vet knows" acknowledges, per sign, as a dated fact</b><span>Drawn as a source like any other. The row names who said what and when. <span class="pill">ruled · §01 §02</span></span></div>
+      <div><b>E-3 as restated</b><span>A recheck hands the concern to the appointment strip (frame 1e). No calendar question here; that stays CUL-1290. <span class="pill">ruled · §01</span></span></div>
+      <div><b>N-1 = A · the call is its own record in Vet visits</b><span>Drawn in full: the list, the record, the follow-up, and what happens with notifications off. <span class="pill">ruled · §04</span></span></div>
+      <div><b>AC 10 = amend (plan review defaults, 9/26)</b><span>The exact text of the edit is in §07 for your approval before it's written into the vet visits spec. <span class="pill">approved 9/28 · §07</span></span></div>
+      <div><b>"Draw Jordan's case" (plan review)</b><span>The subject is Otis, a dog on a hydrolyzed trial his vet started on Aug 26. The app went on the phone on Aug 29. No visit on record could ever acknowledge anything for him. <span class="pill">§01</span></span></div>
+      <div><b>PMD-4 · does a vet-directed trial acknowledge?</b><span>Ruled A: the app asks the owner once, per sign, while a trial runs (1b). The tap-only alternative left the page. <span class="pill">ruled A · §01</span></span></div>
+      <div><b>EN-9's re-raise tolerance</b><span>Ruled A: at most 5% of stable pets asked again within eight weeks, with the sensitivity that buys measured and reported. <span class="pill">ruled A · §07</span></span></div>
+      <div><b>An adversarial pass on the draft (2026-09-28)</b><span>It failed the first draft on eleven counts, all taken. The biggest: the re-raise test caught 2 to 4% of real doublings, pets vomiting on half their days could never come back, and an old answer outlived its concern. Drawn here: frozen references and a latch (1f), the recheck rule (1e), the weight line (1c, 1d), drug before trial (5a), "something logged" everywhere. <span class="pill">spec §4</span></span></div>
+      <div><b>Round 2's loop (ticks at the vet, "How did it go?", the past-visit question)</b><span>Unchanged and still current, carried to §08 in the new words. Its follow-up and Vet visits frames are replaced by §04; the snapshot option left the page (E-2 ruled). <span class="pill dir">§08</span></span></div>
+      <div><b>Round 2 promised EN-3's tiers on every surface</b><span>Moved to PR-24's own page, per the plan review. Nothing about tiers is drawn here. <span class="pill dir">moved</span></span></div>
+    </div>
+    <div class="rule-key">
+      <span><span class="pill">current</span> the proposal</span>
+      <span><span class="pill open">decide</span> still yours to rule</span>
+      <span><span class="pill needs">needs X</span> a row the rules can't draw until X lands</span>
+    </div>
+  </header>
+
+  <!-- §01 -->
+  <section id="states">
+    <div class="sec-head"><span class="sec-num">01</span><h2>Otis, day 30 of his trial: every care state</h2></div>
+    <div class="col">
+      <p>Otis is Jordan's dog. His vet put him on a hydrolyzed diet on Aug 26 for vomiting and loose stool. Jordan installed the app on Aug 29 and set up the trial on Sep 1. It's Sep 30, day 30 of 56. The app has never seen a vet visit for Otis, so under the ruled model nothing can acknowledge either concern until Jordan says so. These frames run left to right through what Home says in each state.</p>
+      <p>Two rules hold in every frame. A care state quiets a standing ask only: never an intake decline, a photo red flag, a call-tier read or the burden card. And each sign is its own concern: answering for the vomiting never quiets the loose stool.</p>
+    </div>
+    <div class="frames">
+
+      <div class="frame">
+        <div class="phone" aria-label="Otis's Home on day 30, both concerns raised">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Otis</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door"><div class="body"><div class="head">Vomiting in 4 of the last 5 weeks</div><div class="sub">11 episodes since Aug 29 · <span class="ask-in">worth booking a vet visit</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed door"><div class="body"><div class="head">Loose stool in 5 of the last 5 weeks</div><div class="sub">17 days since Aug 29 · <span class="ask-in">worth booking a vet visit</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Otis's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+          <div class="strip"><div class="sh">Hydrolyzed trial · day 30 of 56 <i>›</i></div><div class="sl">Hill's z/d · ends Oct 26</div><div class="bar"><b style="width:54%"></b></div></div>
+          <div class="fade-bottom"></div>
+        </div>
+        <div class="frame-cap"><b>1a · Raised: nothing answered yet <span class="pill">current</span></b><span>This is Otis's Home today, and it's what the engine says for the rest of the trial if nobody answers. It asks for a visit his vet already made. The PMD-4 question is what gets Jordan out of this frame.</span></div>
+        <p class="spoken">Recurring vomiting. Worth a vet visit. 11 episodes since August 29.</p>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="The vomiting finding's screen asking whether the vet started the trial for it">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Vomiting in 4 of the last 5 weeks</div>
+            <div class="screen-sent">11 episodes since Aug 29. A symptom that keeps coming back over weeks is worth booking a vet visit.</div>
+            <div class="qblock">
+              <div class="q">Otis is on a hydrolyzed trial since Sep 1. Did his vet start it for his vomiting?</div>
+              <div class="qs">If you say yes, Home stops asking you to book while the trial runs.</div>
+              <div class="answers"><span class="pri">Yes, for this</span><span>No</span><span>Not sure</span></div>
+            </div>
+            <div class="mini-label">Or</div>
+            <div class="answers" style="margin-top:0"><span>Book a visit</span><span>My vet knows</span><span>Not yet</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>1b · The one question, while a trial runs <span class="pill">PMD-4 ruled A</span></b><span>Asked on the finding's screen only, once per sign, never on Home. "Yes, for this" stores a dated acknowledgement scoped to the trial. "No" and "Not sure" store nothing and leave the round 2 answers underneath. Nothing is matched from the trial's indication; the owner says which sign.</span></div>
+      </div>
+
+      <div class="frame">
+            <div class="phone short" aria-label="The finding's screen with only the round 2 answers">
+              <div class="screen-head">
+                <div class="back">‹</div>
+                <div class="screen-title">Vomiting in 4 of the last 5 weeks</div>
+                <div class="screen-sent">11 episodes since Aug 29. A symptom that keeps coming back over weeks is worth booking a vet visit.</div>
+                <div class="qblock">
+                  <div class="q">Worth booking a vet visit</div>
+                  <div class="answers"><span class="pri">Book a visit</span><span>My vet knows</span><span>Not yet</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="frame-cap"><b>B · the tap only</b><span>Correct, but the trial on the strip below plays no part.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Home after Jordan said the vet started the trial for the vomiting">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Otis</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door"><div class="body"><div class="head">Loose stool in 5 of the last 5 weeks</div><div class="sub">17 days since Aug 29 · <span class="ask-in">worth booking a vet visit</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed watch door needs-box"><div class="body"><span class="needs-tag">needs PR-23</span><div class="head"><span class="state with">With your vet</span>Vomiting</div><div class="sub">You said his vet started the trial for it. 9 episodes in the 30 days of the trial, with something logged on 29 of them. Last weighed Aug 26.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Otis's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+          <div class="strip"><div class="sh">Hydrolyzed trial · day 30 of 56 <i>›</i></div><div class="sl">Hill's z/d · ends Oct 26</div><div class="bar"><b style="width:54%"></b></div></div>
+          <div class="fade-bottom"></div>
+        </div>
+        <div class="frame-cap"><b>1c · With your vet, because of the trial <span class="pill">current</span></b>
+          <ul>
+            <li>Raised concerns sort above ones with your vet. The loose stool still asks: one answer, one sign.</li>
+            <li>The row keeps the safety rail, lighter, and says who said what. It names the count and the logging behind it, never a comparison it didn't test.</li>
+            <li>The count starts on the trial's first day, because that's what the answer was about.</li>
+          </ul>
+        </div>
+        <p class="spoken">Vomiting, with your vet. You said his vet started the trial for it. 9 episodes in the 30 days of the trial, with something logged on 29 of them.</p>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Home on October 14 after My vet knows for the loose stool">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Otis</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed watch door"><div class="body"><div class="head"><span class="state with">With your vet</span>Vomiting</div><div class="sub">You said his vet started the trial for it. 11 episodes in the 44 days of the trial, with something logged on 42 of them. Last weighed Aug 26.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed watch door"><div class="body"><div class="head"><span class="state with">With your vet</span>Loose stool</div><div class="sub">You said on Sep 30 his vet knows. 6 days with loose stool since, with something logged on 13 of 14.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Otis's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+          <div class="strip"><div class="sh">Hydrolyzed trial · day 44 of 56 <i>›</i></div><div class="sl">Hill's z/d · ends Oct 26</div><div class="bar"><b style="width:79%"></b></div></div>
+          <div class="fade-bottom"></div>
+        </div>
+        <div class="frame-cap"><b>1d · With your vet, because you said so <span class="pill">current</span></b><span>"My vet knows" is a dated fact like any other source (§02). The sentence names the date it was said. Counts start the day after the answer.</span></div>
+        <p class="spoken">Loose stool, with your vet. You said on September 30 his vet knows. 6 days with loose stool since, with something logged on 13 of 14.</p>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Home with a recheck booked">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Otis</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed watch door"><div class="body"><div class="head"><span class="state with">With your vet</span>Vomiting</div><div class="sub">You said his vet started the trial for it. Recheck booked for Oct 27.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed watch door"><div class="body"><div class="head"><span class="state with">With your vet</span>Loose stool</div><div class="sub">You said on Sep 30 his vet knows. Recheck booked for Oct 27.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Otis's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+          <div class="strip"><div class="sh">Vet visit · Tue Oct 27 <i>›</i></div><div class="sl">Recheck · vomiting, loose stool</div><div class="doors"><span>Get ready</span><span>Add a question</span></div></div>
+          <div class="fade-bottom"></div>
+        </div>
+        <div class="frame-cap"><b>1e · Recheck booked <span class="pill">current · E-3</span></b><span>The appointment strip holds the one ask, in its own register. The rows name the date and ask nothing. Only an appointment about these signs counts: one booked from the finding, one whose reason names the sign, or one Jordan confirms ("Is the Oct 27 visit about his vomiting?"). A dental four months out never quiets anything.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Home when the vomiting is back because it is coming more often">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Otis</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door needs-box"><div class="body"><span class="needs-tag">needs PR-16 · PR-23</span><div class="eyebrow-s">Back because it's coming more often</div><div class="head">Vomiting in 6 of the last 6 weeks</div><div class="sub">8 episodes in the last 2 weeks; 5 in the 4 weeks before the trial. You said his vet started the trial for it. <span class="ask-in">Worth a word with your vet</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed watch door"><div class="body"><div class="head"><span class="state with">With your vet</span>Loose stool</div><div class="sub">You said on Sep 30 his vet knows. 6 days with loose stool since, with something logged on 13 of 14.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Otis's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+          <div class="fade-bottom"></div>
+        </div>
+        <div class="frame-cap"><b>1f · Back, on a tested change <span class="pill">current</span></b><span>It comes back above the rows that are with your vet, under the fold spec's "Back because" line. It states the two counts its test compared, against a reference frozen before the trial, and keeps the earlier answer as a fact. It stays back, ask and all, until Jordan answers again: a quieter fortnight never drops it quietly. Nothing else brings a concern back: not a calendar, not a single bad day (§03, 3d). A steady dog that never improves does not come back in v1; that is CUL-1290.</span></div>
+        <p class="spoken">Back because it's coming more often. Recurring vomiting. Worth a word with your vet. 8 episodes in the last 2 weeks; 5 in the 4 weeks before the trial.</p>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Home with a with-your-vet row under an intake decline and a photo call">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Otis</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door"><div class="body"><div class="eyebrow-s">Photo read · Oct 16</div><div class="head serif">Possible blood in a vomit photo</div><div class="asktxt">Worth a call to your vet</div></div><span class="chev big"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed door"><div class="body"><div class="head">Otis has refused 3 meals in 2 days</div><div class="sub"><span class="ask-in">Worth a call to your vet</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed watch door"><div class="body"><div class="head"><span class="state with">With your vet</span>Vomiting</div><div class="sub">You said his vet started the trial for it. 12 episodes in the 46 days of the trial, with something logged on 44 of them.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Otis's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+          <div class="fade-bottom"></div>
+        </div>
+        <div class="frame-cap"><b>1g · A care state never quiets safety <span class="pill">current</span></b><span>The photo call and the intake decline lead with their asks whole. The vomiting row stays with your vet: a single read is an escalation of its own (§04), not a change in the recurring pattern. A test pins that no care state removes or reorders these three card types or the burden card.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Home the day after the trial ended">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Otis</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door"><div class="body"><div class="head">Vomiting in 7 of the last 8 weeks</div><div class="sub">The trial ended Oct 26. 13 episodes in its 56 days. <span class="ask-in">Worth booking a vet visit</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed watch door"><div class="body"><div class="head"><span class="state with">With your vet</span>Loose stool</div><div class="sub">You said on Sep 30 his vet knows. 7 days with loose stool since, with something logged on 25 of 27.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Otis's logs, not a diagnosis.</span><span>All patterns ›</span></div>
+          </div>
+          <div class="fade-bottom"></div>
+        </div>
+        <div class="frame-cap"><b>1h · The trial ends, and its answer ends with it <span class="pill">current · PMD-4</span></b><span>An acknowledgement scoped to the trial lasts as long as the trial's original length; extending the trial asks again rather than stretching the answer. If the vomiting is still recurring the day after, it asks again, stating the trial as a fact, never a result. A recheck booked for the trial's end (1e) would carry it instead. "My vet knows" lasts until the loose stool stands down; if it ever comes back as a new course, it starts raised again.</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- §02 -->
+  <section id="myvetknows">
+    <div class="sec-head"><span class="sec-num">02</span><h2>"My vet knows", as a dated acknowledgement</h2></div>
+    <div class="col">
+      <p>For an owner whose vet is involved outside the app: a phone call last month, a vet who is a friend, a visit that was never logged. The tap is a fact the owner states, stored with the date it was said, for one sign. It's never inferred, never shared by the other sign in a sentence, and it's reversible the same way every other answer is: a new row that supersedes it, never an edit.</p>
+    </div>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone short" aria-label="The loose stool finding's screen with its three answers">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Loose stool in 5 of the last 5 weeks</div>
+            <div class="screen-sent">17 days with loose stool since Aug 29. A symptom that keeps coming back over weeks is worth booking a vet visit.</div>
+            <div class="qblock">
+              <div class="q">Worth booking a vet visit</div>
+              <div class="answers"><span class="pri">Book a visit</span><span>My vet knows</span><span>Not yet</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>2a · The three answers <span class="pill">current</span></b><span>"Not yet" claims no action and writes nothing. It is never removed: it's what keeps the other two honest (fold spec §3.3, Jordan).</span></div>
+      </div>
+      <div class="frame">
+        <div class="phone short" aria-label="After My vet knows">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Loose stool in 5 of the last 5 weeks</div>
+            <div class="screen-sent">17 days with loose stool since Aug 29.</div>
+            <div class="qblock">
+              <div class="q">You told us on Sep 30 that Otis's vet knows about his loose stool.</div>
+              <div class="qs">Home will stop asking you to book. It comes back if the loose stool comes more often than it has been, or if he starts refusing meals.</div>
+              <div class="links"><span>Undo</span></div>
+            </div>
+            <div class="mini-label">Vomiting is separate</div>
+            <div class="qs" style="font-size:11.5px;color:#525252">Answering here doesn't change what Home says about his vomiting.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>2b · Recorded, dated, one sign <span class="pill">current</span></b><span>The promise names only what the record can see: a count the test compares, and refusals Jordan logs. It never says "we'll watch his weight" for a dog with one weigh-in. Undo writes a retraction row, and the concern is raised again at once.</span></div>
+        <p class="spoken">You told us on September 30 that Otis's vet knows about his loose stool. Home will stop asking you to book.</p>
+      </div>
+      <div class="frame">
+        <div class="phone short" aria-label="The same fact in Vet visits">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Vet visits</div>
+            <div class="mini-label">Coming up</div>
+            <div class="vv-row"><b>Tue Oct 27</b>Recheck · vomiting, loose stool</div>
+            <div class="mini-label">Past</div>
+            <div class="vv-row"><b>Wed Sep 30 · you noted</b>His vet knows about his loose stool</div>
+            <div class="vv-row"><b>Wed Sep 30 · you noted</b>His vet started the hydrolyzed trial for his vomiting</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>2c · Where the facts live <span class="pill">current</span></b><span>Every acknowledgement is listed in the pet's Vet visits as "you noted", beside the calls and visits, so an owner can see and undo it. Not in History's day rows: an acknowledgement is not something that happened to the pet.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- §03 -->
+  <section id="undrawn">
+    <div class="sec-head"><span class="sec-num">03</span><h2>The states the critique said were undrawn</h2></div>
+    <div class="col">
+      <p>GAP-17 listed them: zero with its coverage condition, the re-raise (1f), no weight, a dog, offline, and flag-off with a state already written. GAP-29 adds the cough and vomiting pair. Each is drawn as the one row or screen that changes.</p>
+    </div>
+    <div class="frames">
+
+      <div class="frame">
+        <div class="phone short" aria-label="A with-your-vet row with no episodes since">
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed watch door"><div class="body"><div class="head"><span class="state with">With your vet</span>Vomiting</div><div class="sub">You said his vet started the trial for it. None logged in the 16 days since Oct 1, with something logged on 15 of them.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>3a · Zero, with logging behind it <span class="pill">current</span></b><span>A zero is said only when logging covers the window (the floor in the spec, §4.3), and always with the days logged. It is never "no vomiting", never a verdict, never a reason to leave the "with your vet" state. The stand-down line that ships today ("That isn't an all-clear") takes over only when the detector itself stops firing.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="A with-your-vet row when logging lapsed">
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed watch door"><div class="body"><div class="head"><span class="state with">With your vet</span>Vomiting</div><div class="sub">You said his vet started the trial for it. Something logged on 5 of the last 14 days, too few to count from.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>3b · Logging lapsed <span class="pill">current</span></b><span>Below the floor the row stops counting and says why. That's the honest version of BRK-4's miss: the test can't see a doubling behind a lapse, so the row says it can't see. It asks nothing; the daily look and the nudge budget own reminders.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="The finding's screen with no weigh-in since the acknowledgement">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Vomiting, with your vet</div>
+            <div class="screen-sent">You said his vet started the trial for it. 9 episodes in the 30 days of the trial, with something logged on 29 of them.</div>
+            <div class="mini-label">Weight</div>
+            <div class="qs" style="font-size:12px;color:#525252">Last weighed Aug 26, at the clinic. Nothing logged since.</div>
+            <div class="links"><span>Log a weigh-in</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>3c · No weight since the answer <span class="pill">current</span></b><span>A record fact with its date, on the finding's screen and in Get ready. Until EN-8 is live, the Home row also carries "Last weighed Aug 26." as a fact line with no door (drawn in 1c and 1d, left off other frames for height); the weigh-in door stays here, off Home. No-scale household: "Log a weigh-in" offers "At the vet" as a source and the line reads "Last weighed Aug 26, at the clinic" forever without a nudge. The weight card itself is EN-8's.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="A dog's single bad day under the care state">
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door"><div class="body"><div class="eyebrow-s">Vomit · Oct 3, 7:40 PM</div><div class="head serif">Otis vomited 3 times today</div><div class="asktxt">Worth a call to your vet</div></div><span class="chev big"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed watch door"><div class="body"><div class="head"><span class="state with">With your vet</span>Vomiting</div><div class="sub">You said his vet started the trial for it. 12 episodes in the 33 days of the trial, with something logged on 32 of them.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>3d · A dog: one bad day is its own escalation <span class="pill">current</span></b><span>A dog that raids the bin has spikes a cat rarely does. The re-raise test needs the rise to hold across two evaluations, so one day never brings the recurring concern back. The day's own call comes from the per-incident read and leads, whatever the care state. Dogs have no FCEAI bands; the test is the same count test for both species.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="An answer given offline">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Loose stool in 5 of the last 5 weeks</div>
+            <div class="qblock">
+              <div class="q">You told us on Sep 30 that Otis's vet knows about his loose stool.</div>
+              <div class="qs">Saved on this phone. Home updates once you're back online.</div>
+              <div class="links"><span>Undo</span></div>
+            </div>
+          </div>
+          <span class="offline">Offline</span>
+        </div>
+        <div class="frame-cap"><b>3e · Offline <span class="pill">current</span></b><span>The answer is written locally first and syncs later. Home keeps the cached Signal, which still asks, until the server recomputes: the care state is the server's, so a phone never quiets a card on its own. The screen says so rather than letting the owner think it didn't take.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="flagbar">Engines v3 flag turned off for this account</div>
+        <div class="phone short" aria-label="Home with the flag off after answers were written">
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door"><div class="body"><div class="head">Vomiting in 4 of the last 5 weeks</div><div class="sub">11 episodes since Aug 29 · <span class="ask-in">worth booking a vet visit</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+          </div>
+          <div class="screen-head" style="margin-top:2px">
+            <div class="screen-title" style="font-size:16px">Vet visits</div>
+            <div class="vv-row"><b>Wed Sep 30 · you noted</b>His vet started the hydrolyzed trial for his vomiting</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>3f · Flag off, with a state already written <span class="pill">current</span></b><span>Home is today's Home, byte for byte, and asks again. Nothing is lost: the answers are rows, still listed in Vet visits, and they take effect again when the flag returns. Flag-off code never reads the answer table. A kill switch can make Home louder, never quieter.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="Nyx's cough and vomiting, one with the vet and one raised">
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door"><div class="body"><div class="head">Coughing in 7 of the last 8 weeks</div><div class="sub">23 episodes since August · <span class="ask-in">worth booking a vet visit</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed watch door"><div class="body"><div class="head"><span class="state with">With your vet</span>Vomiting</div><div class="sub">You said you talked about it at the Sep 16 visit. 4 episodes since, with something logged on 7 of 7 days. Coughing is logged too.</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>3g · Cough and vomiting stay two concerns <span class="pill">current</span></b><span>Nyx's owner answered for the vomiting only. The cough still asks. While the pair is co-chronic, every surface speaking for either keeps the shipped disclosure in its own register: a clause on the Home row ("Coughing is logged too"), the full sentence on the screen and in Get ready. Relabelling a cough as a vomit never quiets either.</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- §04 -->
+  <section id="call">
+    <div class="sec-head"><span class="sec-num">04</span><h2>The call record, and the follow-up with notifications off</h2></div>
+    <div class="col">
+      <p>A call-tier ask (a photo read, an intake decline) is an escalation, not a recurring concern. "I've called" never quiets it; it records the call. The call is its own small record in Vet visits, never an <code>events</code> row (Ask reads every event's notes) and never a <code>vet_visits</code> row (it would move the vet report's window). One escalation per bout owes at most one follow-up, however many reads the bout had.</p>
+      <p>Notifications default off, and the foundation has no server scheduler. So the follow-up is drawn the way most owners will meet it: inside the app, on their next open after two days. The confirmation never promises a day it can't keep.</p>
+    </div>
+    <div class="frames">
+
+      <div class="frame">
+        <div class="phone short" aria-label="After I've called, with notifications off">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Possible blood in a vomit photo</div>
+            <div class="screen-sent">A photo you logged of Otis's vomit showed what may be blood, on October 16. Worth a call to your vet.</div>
+            <div class="qblock">
+              <div class="q">You called on Oct 16.</div>
+              <div class="qs">In a couple of days we'll ask what the vet said, here and in Otis's vet visits. It's kept there too.</div>
+              <div class="links"><span>Add a note</span><span>Undo</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>4a · "I've called", notifications off <span class="pill">current</span></b><span>No "We'll ask on Friday": nothing can deliver that promise with notifications off. The sentence says where the question will be. With the follow-ups category on, it reads "We'll send a reminder in a couple of days" and nothing more specific.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="Home two days later with the follow-up door on the escalation row">
+          <div class="card">
+            <div class="zone-label">Signal</div>
+            <div class="railed door"><div class="body"><div class="eyebrow-s">Photo read · Oct 16</div><div class="head serif">Possible blood in a vomit photo</div><div class="asktxt">Worth a call to your vet</div><div class="sub">You called on Oct 16. What did the vet say? ›</div></div><span class="chev big"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>4b · How it arrives: a line on the row it's about <span class="pill">current</span></b><span>From 48 hours after the call, the escalation's own row gains one line. It's navigation, so Home gains no write class. It's the day's one nudge (Principle 4). The ask above it stays word for word: a stored escalation is never lowered by an answer.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="The follow-up screen">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">What did the vet say?</div>
+            <div class="screen-sent">About the photo from Oct 16. You called on Oct 16.</div>
+            <div class="choice">Wants to see him <em>Book the visit ›</em></div>
+            <div class="choice">Started a treatment <em>Add it ›</em></div>
+            <div class="choice">Keep watching</div>
+            <div class="choice">It was something else</div>
+            <div class="choice">Couldn't reach them</div>
+            <div class="mini-label">If they said</div>
+            <div class="q" style="font-size:12.5px;font-weight:600">Did your vet think it was worth the call?</div>
+            <div class="answers"><span>Yes</span><span>No</span><span>Didn't say</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>4c · The follow-up <span class="pill">current</span></b><span>Round 2's set plus two answers GAP-23 asked for: "It was something else" (the vet named another cause; it never re-types the event) and whether the vet thought the call was worth it, which is the only label that says whether the warning was right. Nothing reads as "he's fine". Answered once, then never again, on any phone.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="The call record in Vet visits">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Call · Fri Oct 16</div>
+            <div class="screen-sent">About the photo from Oct 16 (possible blood).</div>
+            <div class="mini-label">The vet said</div>
+            <div class="vv-row"><b>Keep watching</b>Answered Oct 19 · worth the call: yes</div>
+            <div class="mini-label">Your note</div>
+            <div class="field">Dr. Patel thinks it was the red chew. Bring him in if it happens twice.</div>
+            <div class="qs" style="margin-top:8px">The app's AI never reads this note.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>4d · The call record <span class="pill">current · N-1</span></b><span>Its own row in its own table, listed in Vet visits (2c) and as a row in History on the day of the call. The note is owner-only text: no model reads it, it never enters a count, and it goes in export and deletion like every health record. The answer can be changed by a new row; the history of the change is kept.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="The follow-up after seven days with no answer">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Call · Fri Oct 16</div>
+            <div class="screen-sent">About the photo from Oct 16 (possible blood).</div>
+            <div class="mini-label">The vet said</div>
+            <div class="qs" style="font-size:12px;color:#525252">Not recorded. <span style="color:#0B7B6C;font-weight:500">Add it ›</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>4e · Unanswered for seven days <span class="pill">current</span></b><span>The Home line goes away quietly and the ledger marks it expired. It never asks louder and never asks twice (the foundation's fail-safe silence). The record keeps a door for the owner who wants to add it later.</span></div>
+      </div>
+
+      <div class="option">
+        <div class="option-head"><b>TD-5 · a "Not yet" on a call-now read (persona conflict, no recommendation)</b><span>Dr. Chen: the finding's screen asks once more that evening. Jordan: "Not yet" behaves exactly as today. Left by the plan review to the build session; drawn here so the build session inherits a picture, not a sentence. Neither option notifies.</span></div>
+        <div class="frames">
+          <div class="frame">
+            <div class="phone short" aria-label="The evening re-ask">
+              <div class="screen-head">
+                <div class="back">‹</div>
+                <div class="screen-title">Possible blood in a vomit photo</div>
+                <div class="qblock">
+                  <div class="q">Still worth a call tonight. Many clinics have an after-hours line.</div>
+                  <div class="answers"><span class="pri">I've called</span><span>Not yet</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="frame-cap"><b>Dr. Chen's version</b><span>Once, the next time the screen opens after 6 PM. Then never again for that escalation.</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- §05 -->
+  <section id="context">
+    <div class="sec-head"><span class="sec-num">05</span><h2>EN-10's lines: dates and counts, never a result</h2></div>
+    <div class="col">
+      <p>When a pet is on a trial, a course or has had a visit, the finding's screen says so beside its counts. Each line carries its day count and the logging behind it. It never compares before and after, and it never shows a zero beside a drug's start, because a steroid can hide the very sign being counted. A drug is shown beside every concern it can move, not only the one it was started for.</p>
+    </div>
+    <div class="frames">
+
+      <div class="frame reject">
+        <div class="phone short" aria-label="The rejected version: prednisone beside the cough only">
+          <div class="screen-head">
+            <span class="reject-tag">rejected · GAP-19</span>
+            <div class="screen-title">Coughing, with your vet</div>
+            <div class="ctx">Prednisone since Sep 21: 1 cough logged since. Too soon to read.</div>
+            <div class="screen-title" style="margin-top:12px">Vomiting, with your vet</div>
+            <div class="ctx">Since the Sep 16 visit: 4 episodes, down from 13.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>What the plan drew, and why not</b><span>The steroid sits beside the cough only (it was started for it), though it acts on the gut too. The trial is missing. "Too soon to read" promises a verdict later. "Down from 13" is a comparison nobody tested.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="Nyx's vomiting finding with EN-10's lines">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Vomiting, with your vet</div>
+            <div class="screen-sent">You said you talked about it at the Sep 16 visit. Coughing is logged too. A cough can look like retching, so either count may hold some of the other.</div>
+            <div class="mini-label">Around this</div>
+            <div class="ctx">Prednisone since Sep 21, 6 days: 2 episodes, with something logged on 6 of 6.</div>
+            <div class="ctx needs-box"><span><span class="needs-tag">needs PR-22</span><br>Rabbit trial, day 64 of 84: 18 episodes in its 64 days, with something logged on 62.</span></div>
+            <div class="ctx">Since the Sep 16 visit, 11 days: 4 episodes, with something logged on 11 of 11.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>5a · The vomiting screen <span class="pill">current</span></b><span>Three lines, each its own window with its own count and its own logging. The prednisone line is here because a steroid can move vomiting too, and it comes first, above the trial, so the diet is never the first explanation a reader meets. It's matched by drug class, never by the free-text reason. A drug the table can't resolve shows beside every concern.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="Nyx's cough finding with EN-10's lines">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Coughing in 7 of the last 8 weeks</div>
+            <div class="screen-sent">23 episodes since August. Worth booking a vet visit. Vomiting is logged too.</div>
+            <div class="mini-label">Around this</div>
+            <div class="ctx">Since the Sep 16 visit, 11 days: 3 coughs, with something logged on 11 of 11.</div>
+            <div class="ctx">Prednisone since Sep 21, 6 days. Started 6 days ago.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>5b · Zero beside a drug start <span class="pill">current</span></b><span>No cough has been logged since the prednisone started. The line says when it started and stops: a zero there would read as "it worked", and a steroid can mask a cough. The trial line is absent because the rabbit trial doesn't cover coughing.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="Get ready's worth raising row with the lines">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Get ready</div>
+            <div class="mini-label">Worth raising</div>
+            <div class="vv-row"><b>Vomiting in 5 of the last 8 weeks</b>You said you talked about it at the Sep 16 visit. Since then, 11 days: 4 episodes, with something logged on 11 of 11. Prednisone since Sep 21. Coughing is logged too.</div>
+            <div class="vv-row"><b>Coughing in 7 of the last 8 weeks</b>23 episodes since August. Prednisone since Sep 21.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>5c · Relayed whole <span class="pill">current</span></b><span>Get ready, Ask and the Signal screen relay each finding's cached sentence as it is, so every sentence names the pet's sign, the source and its date, and the count with its window. "1 cough logged since" never arrives on its own.</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- §06 -->
+  <section id="spoken">
+    <div class="sec-head"><span class="sec-num">06</span><h2>The spoken contract</h2></div>
+    <div class="col">
+      <p>Each state is a sentence a screen reader says whole, in the fold spec's §7 shape: name, then the ask (kept, whenever there is one), then the count with dates in full. Never "seen", "acknowledged", "dismissed" or "resolved". A state that changes is announced once, from the fact that changed, on both platforms.</p>
+    </div>
+    <div class="table-scroll">
+      <table class="spec">
+        <thead><tr><th>State</th><th>Home row label (spoken)</th><th>Announced when</th></tr></thead>
+        <tbody>
+          <tr><td>Raised</td><td>Recurring vomiting. Worth a vet visit. 11 episodes since August 29.</td><td>As today</td></tr>
+          <tr><td>With your vet</td><td>Vomiting, with your vet. You said his vet started the trial for it. 9 episodes in the 30 days of the trial, with something logged on 29 of them.</td><td>Once, on the finding's screen, as the answer saves</td></tr>
+          <tr><td>Recheck booked</td><td>Vomiting, with your vet. Recheck booked for October 27.</td><td>No announcement (the booking form announces its own save)</td></tr>
+          <tr><td>Back</td><td>Back because it's coming more often. Recurring vomiting. Worth a word with your vet. 8 episodes in the last 2 weeks; 5 in the 4 weeks before the trial.</td><td>Once, when Home next renders it (the fold's "Back because" rule)</td></tr>
+          <tr><td>Too little logging</td><td>Vomiting, with your vet. Something logged on 5 of the last 14 days, too few to count from.</td><td>No announcement</td></tr>
+          <tr><td>Follow-up owed</td><td>…Worth a call to your vet. You called on October 16. What did the vet say?</td><td>No announcement; the line is part of the row's label</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note" style="margin-top:18px"><b>Colour never carries the state alone.</b> "With your vet" is a word tag on a lighter rail; "Back" is a word line. A deuteranope reading the rails alone still has the words.</p>
+  </section>
+
+  <!-- §07 -->
+  <section id="decide">
+    <div class="sec-head"><span class="sec-num">07</span><h2>What you ruled on Sep 28</h2></div>
+    <div class="col"><p><b>Ruled 2026-09-28:</b> PMD-4 A, tolerance A, AC 10 approved. The briefs stay below as the record. The one conflict left is TD-5 (§04), decided at PR-36.</p></div>
+    <div class="briefs">
+      <div class="brief">
+        <h4>AC 10 · the Tier-2 edit <span class="pill">approved</span></h4>
+        <p><b>Deciding:</b> the exact words that go into the vet visits spec, ruled "amend" on 9/26.</p>
+        <p><b>Options:</b> <b>approve as written below (recommended)</b>: it names the one new reader and what may cross. Or reword.</p>
+        <p><b>Consequence:</b> PR-21 writes it with the guard change; PR-22 and PR-23 may then read answers and dates.</p>
+      </div>
+      <div class="brief">
+        <h4>PMD-4 · does a vet-directed trial acknowledge? <span class="pill">ruled A</span></h4>
+        <p><b>Deciding:</b> whether Jordan gets out of 1a through his trial.</p>
+        <ul>
+          <li><b>A, through the owner's answer (recommended):</b> while a trial runs, the finding's screen asks once, per sign, whether the vet started it for that sign; "yes" acknowledges until the trial ends (1b, 1c, 1h). <i>Why:</i> it's E-2's rule applied to the wedge, and nothing is matched on an indication.</li>
+          <li><b>A, from the record:</b> a trial with <code>vet_visit_id</code>, a vet name or the vet-directed box acknowledges its indication's signs with no question. Faster, but the box means "the owner ticked it", and GI covers two signs the owner never named.</li>
+          <li><b>B:</b> trials never acknowledge; "My vet knows" only.</li>
+        </ul>
+        <p><b>Consequence:</b> A adds a trial scope and an end to the acknowledgement row (PR-21), and one question to the finding's screen (PR-35). Courses follow the same rule, via "Did the vet start this for it?" on the course.</p>
+      </div>
+      <div class="brief">
+        <h4>EN-9's re-raise tolerance <span class="pill">ruled A</span></h4>
+        <p><b>Deciding:</b> how often a stable pet's owner may be asked again for nothing, now that the adversarial pass showed the drafted pair can't both hold. At 2 a week, no count test catches a doubling reliably within four weeks, so fast worsening is left to the burden card and the dense-day arm.</p>
+        <ul>
+          <li><b>A · cap false returns at 5% of stable pets in eight weeks (recommended),</b> and take the sensitivity that buys, reported per base rate. <i>Why:</i> noise is what sank the drafted trigger (59 to 81% re-asked), and the fast cases have their own nets.</li>
+          <li><b>B · cap at 10%:</b> roughly twice the sensitivity at a low base, twice the noise.</li>
+          <li><b>C · set a sensitivity floor first</b> (e.g. half of doublings caught within eight weeks) and accept the noise it costs.</li>
+        </ul>
+        <p><b>Consequence:</b> PR-16 measures the whole frontier on 1,000+ synthetic pets per scenario; you pick the point; PR-23 waits until the chosen setting meets it.</p>
+      </div>
+    </div>
+
+    <h3>The AC 10 edit, as written into the vet visits spec v1.3</h3>
+    <div class="edit">
+      <span class="where">docs/nyx-vet-visits-requirements.md · §7 AC 10 · v1.2 → v1.3</span>
+      10. A visit row in History taps to the visit; <code>guards/visitReaders.test.ts</code> pins the reader set — visits never appear in any count, coverage line, Patterns panel or engine input. <ins><b>Amended 2026-09-28 (CUL-1139, Engines v3 AC 10 ruling of 2026-09-26):</b> one reader crosses the line, and only with dates and owner answers. The Signal engine's shell (<code>supabase/functions/generate-signal/</code> outside <code>detection.ts</code> and <code>phrasing.ts</code>, which stay in the guard's must-stay-clean list) may read <code>vet_visits.visited_at</code>, <code>vet_appointments.scheduled_at</code> / <code>cancelled_at</code> / <code>deleted_at</code>, and the owner's acknowledgement rows, by explicit column list, to set a finding's care state and to state a visit date on EN-10's context line. No visit, appointment or answer enters a count, a floor, a window or a test statistic: every count the care state speaks is computed from events alone, from a date the owner's answer names. Notes, reasons, clinic and vet names never leave the vet tables for an engine. The guard's allow-set gains the shell with <code>kinds: ['table']</code> and a column-list assertion.</ins>
+    </div>
+    <div class="edit">
+      <span class="where">docs/nyx-vet-visits-requirements.md · §5.6, last sentence</span>
+      …a select added to <code>detection.ts</code>, <code>analytics.ts</code>, any coverage line or Patterns panel reds the build; proven by mutation (C-18). <ins>The one engine reader is the Signal shell (AC 10 as amended), registered with its column list; <code>detection.ts</code> and <code>phrasing.ts</code> stay pinned at zero reads.</ins>
+    </div>
+  </section>
+
+  <!-- §08 -->
+  <section id="loop">
+    <div class="sec-head"><span class="sec-num">08</span><h2>The loop from round 2, still current <span class="pill dir">carried forward</span></h2></div>
+    <div class="col">
+      <p>Today the two features barely touch. Get ready quotes the Signal's findings, and that's the only link. The Signal never hears that a visit happened, what was discussed, or when the vet wants to see her again. So it keeps asking.</p>
+      <p>The proposal connects them at every step, in both directions. Going down, the Signal opens doors into vet visits: book a visit, record a call. Going up, only owner answers and dates cross back: "Talked about it", "I've called", a recheck date. A visit never becomes a number in the engine. That line is AC 10 in the vet visits spec, and letting owner answers and dates cross it is the one amendment this needs (§07).</p>
+    </div>
+
+    <figure class="diagram">
+      <div class="diagram-scroll">
+        <svg viewBox="0 0 940 360" role="img" aria-label="The loop: a raised Signal concern opens doors into vet visits (record a call, book a visit), Get ready quotes it, the room and How did it go? record the owner's answer and the recheck date, and those answers flow back up to put the concern with your vet until a tested change raises it again.">
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-shipped-fill"/></marker>
+            <marker id="ahn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-new-fill"/></marker>
+          </defs>
+          <text x="10" y="26" class="d-lane">THE SIGNAL</text>
+          <text x="935" y="246" text-anchor="end" class="d-lane">VET VISITS</text>
+
+          <!-- the AC 10 line -->
+          <line x1="0" y1="200" x2="940" y2="200" class="d-boundary"/>
+          <text x="935" y="193" text-anchor="end" class="d-small">AC 10 line</text>
+
+          <!-- Signal nodes -->
+          <rect x="90" y="40" width="120" height="56" rx="10" class="d-node d-node-raised"/>
+          <text x="150" y="73" text-anchor="middle" class="d-label">Raised</text>
+          <rect x="570" y="40" width="120" height="56" rx="10" class="d-node"/>
+          <text x="630" y="73" text-anchor="middle" class="d-label">With your vet</text>
+          <rect x="810" y="40" width="120" height="56" rx="10" class="d-node d-node-raised"/>
+          <text x="870" y="73" text-anchor="middle" class="d-label">Raised again</text>
+
+          <!-- Vet visit nodes -->
+          <rect x="10" y="260" width="120" height="56" rx="10" class="d-node d-node-new"/>
+          <text x="70" y="293" text-anchor="middle" class="d-label">Phone call</text>
+          <rect x="170" y="260" width="120" height="56" rx="10" class="d-node"/>
+          <text x="230" y="293" text-anchor="middle" class="d-label">Appointment</text>
+          <rect x="330" y="260" width="120" height="56" rx="10" class="d-node"/>
+          <text x="390" y="293" text-anchor="middle" class="d-label">Get ready</text>
+          <rect x="490" y="260" width="120" height="56" rx="10" class="d-node"/>
+          <text x="550" y="293" text-anchor="middle" class="d-label">At the vet</text>
+          <rect x="650" y="260" width="120" height="56" rx="10" class="d-node"/>
+          <text x="710" y="293" text-anchor="middle" class="d-label">How did it go?</text>
+          <rect x="810" y="260" width="120" height="56" rx="10" class="d-node"/>
+          <text x="870" y="293" text-anchor="middle" class="d-label">Recheck booked</text>
+
+          <!-- shipped: the visit's own path -->
+          <line x1="290" y1="288" x2="328" y2="288" class="d-shipped" marker-end="url(#ah)"/>
+          <line x1="450" y1="288" x2="488" y2="288" class="d-shipped" marker-end="url(#ah)"/>
+          <line x1="610" y1="288" x2="648" y2="288" class="d-shipped" marker-end="url(#ah)"/>
+          <line x1="770" y1="288" x2="808" y2="288" class="d-shipped" marker-end="url(#ah)"/>
+          <text x="310" y="340" text-anchor="middle" class="d-small">5 days out</text>
+          <text x="470" y="340" text-anchor="middle" class="d-small">on the day</text>
+          <text x="630" y="340" text-anchor="middle" class="d-small">after</text>
+          <text x="790" y="340" text-anchor="middle" class="d-small">next visit</text>
+
+          <!-- shipped: Worth raising quotes the finding -->
+          <line x1="205" y1="96" x2="378" y2="257" class="d-shipped" marker-end="url(#ah)"/>
+          <text x="300" y="150" class="d-small">quoted in Worth raising</text>
+
+          <!-- shipped: the engine re-raises on a change -->
+          <line x1="690" y1="68" x2="807" y2="68" class="d-shipped" marker-end="url(#ah)"/>
+          <text x="749" y="58" text-anchor="middle" class="d-small">a tested change</text>
+
+          <!-- new: doors down -->
+          <line x1="125" y1="96" x2="82" y2="257" class="d-new" marker-end="url(#ahn)"/>
+          <text x="96" y="140" text-anchor="end" class="d-small d-new-text">I've called</text>
+          <line x1="170" y1="96" x2="214" y2="257" class="d-new" marker-end="url(#ahn)"/>
+          <text x="196" y="182" text-anchor="start" class="d-small d-new-text">Book a visit</text>
+          <line x1="130" y1="300" x2="168" y2="300" class="d-new" marker-end="url(#ahn)"/>
+          <text x="150" y="340" text-anchor="middle" class="d-small d-new-text">wants to see her</text>
+
+          <!-- new: answers and dates up -->
+          <line x1="705" y1="258" x2="642" y2="99" class="d-new" marker-end="url(#ahn)"/>
+          <text x="646" y="140" text-anchor="end" class="d-small d-new-text">talked about it</text>
+          <line x1="845" y1="258" x2="694" y2="92" class="d-new" marker-end="url(#ahn)"/>
+          <text x="748" y="140" text-anchor="start" class="d-small d-new-text">recheck date</text>
+        </svg>
+      </div>
+      <figcaption>Teal is new in Engines v3; grey ships today. Doors go down freely, because they are navigation. Only owner answers and dates cross back up, and no visit ever enters a count. When the concern comes back, the next Get ready leads with it, which is how the loop closes.</figcaption>
+    </figure>
+
+    <div class="frames">
+      <div class="frame">
+        <div class="phone short" aria-label="The vomiting Signal screen with Book a visit, My vet knows and Not yet">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Vomiting in 5 of the last 8 weeks</div>
+            <div class="screen-sent">13 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too. A cough can look like retching or end in vomiting. Mention both.</div>
+            <div class="qblock">
+              <div class="q">Worth booking a vet visit</div>
+              <div class="answers"><span class="pri">Book a visit</span><span>My vet knows</span><span>Not yet</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>1 · The finding opens the door <span class="pill">current</span></b><span>On a visit-level ask, the first answer is a door into vet visits. "My vet knows" is the plain tap (E-2's option C), kept for an owner who already sorted it outside the app.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="A new appointment with the reason filled in from the finding">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Book a vet visit</div>
+            <div class="form-row"><span class="fr-s">Reason</span><span class="fr-h">Vomiting in 5 of the last 8 weeks</span></div>
+            <div class="form-row"><span class="fr-s">When</span><span class="fr-h">Choose a day</span></div>
+            <div class="form-row"><span class="fr-s">Clinic</span><span class="fr-h">Riverside Animal Clinic</span></div>
+            <div class="qs" style="margin-top:6px">It'll be first on Get ready.</div>
+            <div class="save">Save</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>2 · Booked from the finding <span class="pill">current</span></b><span>The vet visits booking form that ships today, with the reason carried in from the finding's title. The appointment strip, Get ready and "Worth raising" all run as shipped from here.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="At the vet, with Worth raising rows the owner can tick">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">At the vet</div>
+            <div class="mini-label">Worth raising</div>
+            <div class="tick-row on"><i></i><span>Vomiting in 5 of the last 8 weeks</span></div>
+            <div class="tick-row on"><i></i><span>Coughing in 7 of the last 8 weeks</span></div>
+            <div class="tick-row"><i></i><span>Rabbit trial · day 53 of 84</span></div>
+            <div class="mini-label">Your questions</div>
+            <div class="tick-row"><i></i><span>Could the cough be asthma?</span></div>
+            <div class="field slim">Notes</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>3 · Ticked in the room <span class="pill">current</span></b><span>The owner's questions can already be ticked. Worth raising rows become tickable too. A tick records the owner's answer, not the list that was shown, so this is still option A, not the snapshot.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="How did it go, pre-filled from the ticks, with a recheck booked">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">How did it go?</div>
+            <div class="screen-sent">Nyx's visit, Wed Sep 16</div>
+            <div class="mini-label">What Home was raising</div>
+            <div class="form-row"><span class="fr-h">Vomiting in 5 of the last 8 weeks</span><div class="seg" role="radiogroup" aria-label="Vomiting"><span class="on">Talked about it</span><span>Not this time</span><span>Later</span></div></div>
+            <div class="form-row"><span class="fr-h">Coughing in 7 of the last 8 weeks</span><div class="seg" role="radiogroup" aria-label="Coughing"><span class="on">Talked about it</span><span>Not this time</span><span>Later</span></div></div>
+            <div class="mini-label">The plan</div>
+            <div class="form-row"><span class="fr-h">Prednisone</span><span class="fr-s">New · started Sep 21</span></div>
+            <div class="form-row"><span class="fr-h">Next visit</span><span class="fr-s">Wed Oct 14 · recheck</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>4 · The answers go back up <span class="pill">current</span></b><span>The ticks arrive pre-selected, and "Later" is on every row, as today. "Talked about it" moves the concern to With your vet. The recheck row, which ships today and books an appointment, gives the row its date (1e). The new course becomes EN-10's context line.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="A visit already in the record: one question on the finding's screen">
+          <div class="screen-head">
+            <div class="back">‹</div>
+            <div class="screen-title">Vomiting in 5 of the last 8 weeks</div>
+            <div class="screen-sent">13 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit.</div>
+            <div class="qblock">
+              <div class="q">Nyx saw the vet on Sep 16. Did you talk about her vomiting?</div>
+              <div class="answers"><span class="pri">Talked about it</span><span>Not this time</span><span>Later</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>5 · For a visit already on record <span class="pill">current</span></b><span>Sep 16 had no Get ready, so it gets one question on the finding's screen. That's at most one question a day across all concerns, and never on Home. It's how an existing record gets out of the raised state at GA.</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    <span>Round 3 of one page. Rounds 1 and 2 are in git (e6fb38f and the round 2 commit on main). The spec is <code>docs/nyx-care-state-requirements.md</code>.</span>
+    <a href="https://linear.app/projectnyx/issue/CUL-1139">CUL-1139</a>
+    <a href="https://linear.app/projectnyx/issue/CUL-1144">CUL-1144</a>
+    <a href="https://linear.app/projectnyx/issue/CUL-1146">CUL-1146 rulings</a>
+    <a href="https://github.com/danieljmarkii/project-nyx/blob/main/docs/engines-v3-critique-2026-09.md">The critique</a>
+  </footer>
+</div>

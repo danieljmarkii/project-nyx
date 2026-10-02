@@ -241,6 +241,28 @@ describe('InsightCard — SR-1 card-face receipts', () => {
     expect(render(<InsightCard cached={c} petName="Nyx" />).queryByLabelText(label, { exact: false })).toBeTruthy();
   });
 
+  it('CUL-1195: the timing card face says how many long-band vomits followed a refused bowl, and VoiceOver hears it', () => {
+    const line = '7 of the 7 episodes 6h or more after eating followed a refused meal.';
+    const node = <InsightCard cached={anyCached(emptyStomach({ longAfterRefusalCount: 7 }))} petName="Nyx" />;
+    expect(render(node).queryByText(line)).toBeTruthy();
+    expect(a11yLabelOf(node)).toContain(line);
+    // Nothing at zero: the face never says "none followed a refused meal".
+    const zero = render(<InsightCard cached={anyCached(emptyStomach({ longAfterRefusalCount: 0 }))} petName="Nyx" />);
+    expect(zero.queryByText(/refused meal/)).toBeNull();
+  });
+
+  it('CUL-1195: the trial card face carries the long row’s refused-bowl subset, both windows', () => {
+    const line = 'Of those 6h or more after eating, 3 in the trial followed a refused meal.';
+    const node = (
+      <InsightCard
+        cached={anyCached(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 0 } }))}
+        petName="Nyx"
+      />
+    );
+    expect(render(node).queryByText(line)).toBeTruthy();
+    expect(a11yLabelOf(node)).toContain(line);
+  });
+
   it('a large-n timing card degrades to the compare (no dot lane) on the card face', () => {
     const finding = postprandial({ eligibleCount: 20, totalEpisodes: 24, rapidCount: 12 });
     const view = render(<InsightCard cached={anyCached(finding)} petName="Nyx" />);
@@ -679,7 +701,7 @@ describe('InsightCard — the counted 4-week compare inside the chronicity card 
   });
 
   it('the expand draws the compare box ABOVE the phone script, with the clause, on a falling pair', () => {
-    const view = render(<InsightCard cached={anyCached(chronicity({ compare: falling }))} petName="Nyx" />);
+    const view = render(<InsightCard cached={anyCached(chronicity({ compare: falling }))} petName="Nyx" withholdFallingVomit={false} />);
     fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('Counted honestly')).toBeTruthy();
     expect(view.queryByText('Recent 4 weeks')).toBeTruthy();
@@ -701,11 +723,39 @@ describe('InsightCard — the counted 4-week compare inside the chronicity card 
 
   it('a thin-logged falling pair keeps both counts and swaps in the withheld line', () => {
     const thin = { ...falling, recentLoggingDays: 10, comparable: false };
-    const view = render(<InsightCard cached={anyCached(chronicity({ compare: thin }))} petName="Nyx" />);
+    const view = render(<InsightCard cached={anyCached(chronicity({ compare: thin }))} petName="Nyx" withholdFallingVomit={false} />);
     fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText(/so a lower count there can be fewer logs, not fewer episodes/)).toBeTruthy();
     expect(view.queryByText(/Fewer lately doesn't change the ask/)).toBeTruthy();
     expect(view.queryByText('The 4 before')).toBeTruthy();
+  });
+
+  // CUL-1216 (BRK-6): an easing vomit course beside a not-eating record — the pair goes from
+  // the box AND the script (an empty stomach has less to bring up); the card and its ask stay.
+  // The prop defaults to withholding: a caller that does not know whether the pet is eating
+  // never prints the pair.
+  it('a falling VOMIT pair beside a not-eating record is withheld from the box and the script; the ask stays', () => {
+    for (const el of [
+      <InsightCard key="on" cached={anyCached(chronicity({ compare: falling }))} petName="Nyx" withholdFallingVomit />,
+      <InsightCard key="default" cached={anyCached(chronicity({ compare: falling }))} petName="Nyx" />,
+    ]) {
+      const view = render(el);
+      fireEvent.press(view.getByTestId('insight-face'));
+      expect(view.queryByText('Counted honestly')).toBeNull();
+      expect(view.queryByText(/Recent 4 weeks/)).toBeNull();
+      expect(view.queryByText('If you call your clinic, the facts to have ready')).toBeTruthy();
+      view.unmount();
+    }
+  });
+
+  it('the not-eating gate never takes a RISE, nor another symptom’s fall', () => {
+    const up = render(<InsightCard cached={anyCached(chronicity({ compare: rising }))} petName="Nyx" withholdFallingVomit />);
+    fireEvent.press(up.getByTestId('insight-face'));
+    expect(up.queryByText(/Recent 4 weeks: 9 · the 4 before: 0/)).toBeTruthy();
+    up.unmount();
+    const cough = render(<InsightCard cached={anyCached(chronicity({ symptomType: 'cough', compare: falling }))} petName="Nyx" withholdFallingVomit />);
+    fireEvent.press(cough.getByTestId('insight-face'));
+    expect(cough.queryByText(/Recent 4 weeks: 2 · the 4 before: 12/)).toBeTruthy();
   });
 
   it('an old cache (no compare) renders the pre-v1.1-b expand: the script alone', () => {

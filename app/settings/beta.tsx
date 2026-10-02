@@ -2,11 +2,13 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Eye, FlaskConical, Info, LayoutGrid, Shapes, SquarePen, Stethoscope } from 'lucide-react-native';
+import { Eye, FlaskConical, Info, LayoutGrid, Palette, ScrollText } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaShelf } from '../../hooks/useBetaShelf';
+import { lookCardLive } from '../../lib/lookCard';
+import { usePetStore } from '../../store/petStore';
 import {
   BETA_REGISTRY,
   useBetaOptIn,
@@ -16,9 +18,16 @@ import {
 import type { AllowlistFlagKey } from '../../lib/appConfig';
 import { ThemedText } from '../../components/ui/ThemedText';
 
-// Beta features — the self-serve shelf (B-712 PR 3, spec §5 / §2). A cohort-gated
+// Early access — the self-serve shelf (B-712 PR 3, spec §5 / §2). A cohort-gated
 // page where an eligible owner opts into unfinished features, one at a time. The
 // widget is the only beta in v1.
+//
+// OWNER-FACING, IT IS "EARLY ACCESS", NEVER "BETA" (CUL-70, D8 ruled 2026-08-20).
+// "Beta" pattern-matches App Review Guideline 2.2 ("demos, betas, and trial versions
+// don't belong on the App Store") in a reviewer's skim, so every string this screen
+// shows or speaks says early access. The code keeps its names (`BETA_REGISTRY`, the
+// `settings/beta` route, the flag keys): they are never shown, and renaming them buys
+// a migration for nothing.
 //
 // TWO GATES, NEVER CONFLATED (spec §2):
 //   • Gate 1 — eligibility (server allowlist, resolved by useAllowlistFlag). Owned
@@ -43,7 +52,10 @@ type IconComponent = ComponentType<{ size?: number; color?: string; strokeWidth?
 // BETA_REGISTRY is UI-free data (so it unit-tests in plain jest and useWidgetSnapshots
 // can read the opt-in without a screen's import graph). A `switch` with a default
 // keeps any future key renderable without an exhaustiveness burden.
-function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?: string } {
+function presentationFor(
+  key: AllowlistFlagKey,
+  ctx: { dailyLookOn: boolean },
+): { Icon: IconComponent; onHint?: string } {
   switch (key) {
     case 'widget_enabled':
       // The hint only makes sense on the widget: iOS makes the OWNER add a widget
@@ -59,46 +71,40 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
         onHint:
           'It’s on. If it isn’t on your home screen yet, touch and hold an empty area, tap +, then find Culprit and add it.',
       };
-    case 'log_picker_v2':
-      // No on-state hint: the new log picker takes effect the moment it's on — the owner
-      // reaches it by tapping the FAB, nothing to place or do (unlike the widget). A
-      // distinct "log an entry" glyph helps it read apart from the widget (grid) card.
-      return { Icon: SquarePen };
-    case 'event_types_v2':
-      // No on-state hint either: once the capture PRs land, the new types simply
-      // appear in the log picker — nothing to place or do. A "kinds of things" glyph
-      // (Shapes), distinct from the widget grid and the picker pen; deliberately not
-      // a "+" mark, which reads as a tappable add-affordance on a non-interactive
-      // tile (the pm-feature-review finding on the hint glyph).
-      return { Icon: Shapes };
     case 'daily_look':
       // No on-state hint: Noticed appears as a once-a-day card on Home the moment
       // it's on — nothing to place or do (unlike the widget), and at N-0 no
       // consumer renders behind it yet. An "eye" glyph reads as noticing/looking,
       // distinct from the widget grid, the picker pen and the taxonomy shapes.
       return { Icon: Eye };
-    case 'vet_visits':
-      // An on-state hint, like the widget's and unlike the rest: this is the one
-      // beta whose surfaces stay invisible until there is an appointment on file,
-      // so an owner who flips it on and sees no change would reasonably think it
-      // broke. A stethoscope reads as the vet, distinct from the widget grid, the
-      // picker pen, the taxonomy shapes and Noticed's eye.
+    case 'design_v2':
+      // The on-state hint. Three lanes landed the same day, each writing it for the
+      // surface it shipped (D2-4 / CUL-1066 Home's Today; D2-5 / CUL-1067 the month on
+      // Patterns; D2-3 / CUL-1065 the Signal card and its screen), so it names all three
+      // and nothing more (the VV-0 lesson: a hint that says "nothing to see yet" is true
+      // the day it ships and false the day after). A palette reads as "how the app
+      // looks", distinct from the widget grid, the picker pen, the taxonomy shapes,
+      // Noticed's eye and the vet's stethoscope.
       //
-      // Rewritten by CUL-900 (VV-2), which is the PR that made it true: the
-      // Pet-tab card now exists, so the hint names where to go. VV-0's version
-      // said "there is nothing to see yet", which was accurate the day it shipped
-      // and false the moment the card landed — the tripwire in
-      // guards/vetVisitsFlagOff.test.tsx named this string as one of the three
-      // things the first consumer owed, and this is that debt paid.
-      //
-      // It names the CARD, not the screens behind it: what an owner can act on
-      // today is one card on the pet's profile, and everything else in the track
-      // (the Home strip, Get ready, the after-visit capture) is still being built.
-      // A hint that promised those would be the same dead end in a new place.
+      // The daily look's clause rides only when the look is on for this account
+      // (CUL-1220, BRK-21): `design_v2` does not widen the `daily_look` rollout, so an
+      // account outside Noticed's cohort has no look at the top of Today to be told about.
       return {
-        Icon: Stethoscope,
+        Icon: Palette,
+        onHint: ctx.dailyLookOn
+          ? 'It’s on. Home’s Signal leads with its chart — tap it for the Signal’s own screen; Today reads as one line per moment, with the daily look at the top and the month’s coverage at the foot; open Patterns to see the month with its weekly bars and the weight drawn by date.'
+          : 'It’s on. Home’s Signal leads with its chart — tap it for the Signal’s own screen; Today reads as one line per moment, with the month’s coverage at the foot; open Patterns to see the month with its weekly bars and the weight drawn by date.',
+      };
+    case 'history_v2':
+      // The on-state hint, written by the lane that drew the list (HV-7, CUL-1164) for
+      // what it shipped and nothing more (the VV-0 lesson): the day cards, the lines
+      // between them and the count line. The strip (HV-8) and the pinned row (HV-9) add
+      // their own clause when they land. A scroll of text reads as "the record you can
+      // read", distinct from the widget grid, Noticed's eye and the redesign's palette.
+      return {
+        Icon: ScrollText,
         onHint:
-          'It’s on. Open your pet’s profile and look for Vet visits, under the vet report — book the next appointment there, or log one that already happened.',
+          'It’s on. Open History: each day is its own card with its counts at the top, the days with nothing logged are named between them, and the line above the days says what the counts cover.',
       };
     default:
       return { Icon: FlaskConical };
@@ -109,12 +115,19 @@ function BetaFeatureCard({ feature }: { feature: BetaFeature }) {
   const eligible = useAllowlistFlag(feature.key);
   const optedIn = useBetaOptIn(feature.key);
   const setOptIn = useBetaOptInStore((s) => s.setOptIn);
+  // Both hooks run every render (never short-circuited): the daily look's own two gates.
+  const dailyLookEligible = useAllowlistFlag('daily_look');
+  const dailyLookOptedIn = useBetaOptIn('daily_look');
+  // The header's own predicate, species included (the code review; C-34): a pet the look
+  // has no vocabulary for gets no header, so the hint must not promise one.
+  const activeSpecies = usePetStore((s) => s.activePet?.species);
+  const dailyLookOn = lookCardLive({ eligible: dailyLookEligible, optedIn: dailyLookOptedIn, species: activeSpecies });
 
   // Gate 1: no card for a beta the account isn't in the cohort for (belt-and-braces
   // with the eligibility-gated Settings row that pushes this screen).
   if (!eligible) return null;
 
-  const { Icon, onHint } = presentationFor(feature.key);
+  const { Icon, onHint } = presentationFor(feature.key, { dailyLookOn });
 
   return (
     <Card style={styles.betaCard}>
@@ -122,26 +135,22 @@ function BetaFeatureCard({ feature }: { feature: BetaFeature }) {
         <View style={styles.iconTile}>
           <Icon size={21} color={theme.colorAccentInk} strokeWidth={1.9} />
         </View>
+        {/* No per-card "Beta" pill (CUL-70): inside a shelf titled Early access it
+            said the page's own title again, and it put the word App Review reads as
+            "unfinished app" on every card. */}
         <View style={styles.headLead}>
-          <View style={styles.titleRow}>
-            <Text style={styles.title}>{feature.title}</Text>
-            {/* The "Beta" pill — the calm on-brand mark register (IntakeBadge's
-                positive tint), not a tappable chip. Sets expectations without
-                over-promising: unfinished, may change. */}
-            <View style={styles.pill} pointerEvents="none">
-              <ThemedText style={styles.pillText}>Beta</ThemedText>
-            </View>
-          </View>
+          <Text style={styles.title}>{feature.title}</Text>
         </View>
         <Switch
           value={optedIn}
           onValueChange={(next) => setOptIn(feature.key, next)}
           trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
           ios_backgroundColor={theme.colorBorderStrong}
-          // Fold "beta" into the control's own label so a screen-reader user toggling
-          // it hears "Home screen widget, beta" — the pill is a separate Text, and the
-          // switch shouldn't rely on adjacency to say what kind of feature it gates.
-          accessibilityLabel={`${feature.title}, beta`}
+          // The switch names the feature it gates: RN's Switch takes no label from
+          // the Text beside it. The label once added ", beta" to stand in for the
+          // pill; with the pill gone and the screen titled Early access, a
+          // screen-reader user hears what a sighted owner reads (CUL-70).
+          accessibilityLabel={feature.title}
         />
       </View>
 
@@ -178,7 +187,7 @@ export default function BetaFeaturesScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <Header title="Beta features" leading="back" onLeadingPress={handleBack} />
+      <Header title="Early access" leading="back" onLeadingPress={handleBack} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {eligible.length === 0 ? (
@@ -200,8 +209,8 @@ export default function BetaFeaturesScreen() {
             </View>
             <ThemedText style={styles.emptyTitle}>Nothing to try right now</ThemedText>
             <ThemedText style={styles.emptyBody}>
-              Beta features come and go while we build. When there’s one ready for your account,
-              you’ll find it here.
+              Early-access features come and go while we build. When there’s one ready for your
+              account, you’ll find it here.
             </ThemedText>
           </View>
         ) : (
@@ -225,10 +234,17 @@ export default function BetaFeaturesScreen() {
                 reversible; the reason the opt-in is safe to try. "pulled" (the locked
                 round-1 mock's word), not "switched off" — the intro already owns "switch
                 it back off" for the owner's own control, so reusing it here for OUR
-                retraction would double-duty the same phrase (nyx-voice PR 4 pass). */}
+                retraction would double-duty the same phrase (nyx-voice PR 4 pass).
+                CUL-224: the promise is scoped to what is ALREADY in the record. The
+                page-level "won't affect your records" was true only while the one beta
+                (the widget) read and never wrote; the shelf now carries betas an owner
+                records THROUGH (the log picker, Noticed, Vet visits), so a blanket
+                "won't affect" would be false the moment one of them is on. What stays
+                true for every beta, read-only or not: switching one on rewrites nothing
+                the owner has already logged. */}
             <Text style={styles.note}>
-              Beta features may change or be pulled while we keep working on them. Turning one on
-              won’t affect your records.
+              Early-access features may change or be pulled while we keep working on them. Turning
+              one on doesn’t change anything already in your records.
             </Text>
           </>
         )}
@@ -279,31 +295,10 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space1,
-    flexWrap: 'wrap',
-  },
   title: {
     fontFamily: theme.fontBodySemibold,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
-  },
-  // The pill mirrors IntakeBadge's calm "positive" mark: accent-light fill + darkened
-  // teal small-caps ink — a status tag, never a teal-outlined tappable chip.
-  pill: {
-    paddingHorizontal: theme.space1,
-    paddingVertical: theme.spaceMicro,
-    borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorAccentLight,
-  },
-  pillText: {
-    fontSize: theme.textXS,
-    fontWeight: theme.weightMedium,
-    textTransform: 'uppercase',
-    letterSpacing: theme.trackingWide,
-    color: theme.colorAccentInk,
   },
   blurb: {
     fontFamily: theme.fontBody,

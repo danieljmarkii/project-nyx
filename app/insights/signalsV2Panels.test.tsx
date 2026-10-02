@@ -9,6 +9,10 @@ jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
+// Design v2 (D2-5): the screen imports the month's reads, which reach lib/supabase at
+// import time; this suite never turns the redesign on, so the stub is for the import
+// edge only (app/insights/designV2.test.tsx covers the flag-on wiring).
+jest.mock('../../lib/monthReads', () => ({ readMonthFacts: jest.fn(), readDayRows: jest.fn() }));
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
@@ -20,7 +24,7 @@ jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet:
 jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
 jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
 jest.mock('../../hooks/useDietTrial', () => ({
-  useDietTrial: () => ({ input: null, isLoading: false, reload: jest.fn(), inputIsForActivePet: false }),
+  useDietTrial: () => ({ input: null, isLoading: false, reload: jest.fn(), inputIsForPet: false }),
 }));
 jest.mock('../../lib/looks', () => ({
   loadLookDays: jest.fn(async () => []),
@@ -103,7 +107,7 @@ function setActivePet() {
 }
 
 const timingModel = buildTimingDistribution({
-  feedings: [{ ms: ms('2026-05-01T08:00:00Z'), confidence: 'witnessed', form: 'Kibble' }],
+  feedings: [{ id: 'f1', ms: ms('2026-05-01T08:00:00Z'), confidence: 'witnessed', intakeRating: null, form: 'Kibble' }],
   vomitOnsets: [{ ms: ms('2026-05-01T08:15:00Z'), confidence: 'witnessed' }],
   freeFedSpans: [],
 });
@@ -112,7 +116,7 @@ const trialModel = buildTrialSoFar({
   exposureRange: { startDayIndex: 100, endDayIndex: 130 },
   foodLabel: 'Royal Canin HP',
   vomitOnsets: [{ ms: 105 * MS_PER_DAY + 8.3 * 3_600_000, confidence: 'witnessed' }],
-  feedings: [{ ms: 105 * MS_PER_DAY + 8 * 3_600_000, confidence: 'witnessed', form: 'Kibble', foodType: 'meal' }],
+  feedings: [{ id: 'f2', ms: 105 * MS_PER_DAY + 8 * 3_600_000, confidence: 'witnessed', intakeRating: null, form: 'Kibble', foodType: 'meal' }],
   freeFedSpans: [],
   symptomEventMs: [105 * MS_PER_DAY + 8.3 * 3_600_000],
   dayIndexOf: (m) => Math.floor(m / MS_PER_DAY),
@@ -166,7 +170,7 @@ describe('PatternsScreen — Signals v2 panels (GA)', () => {
       exposureRange: { startDayIndex: 100, endDayIndex: 130 },
       foodLabel: 'Royal Canin HP',
       vomitOnsets: [], // just-started trial, nothing logged yet
-      feedings: [{ ms: 101 * MS_PER_DAY + 8 * 3_600_000, confidence: 'witnessed', form: 'Kibble', foodType: 'meal' }],
+      feedings: [{ id: 'f3', ms: 101 * MS_PER_DAY + 8 * 3_600_000, confidence: 'witnessed', intakeRating: null, form: 'Kibble', foodType: 'meal' }],
       freeFedSpans: [],
       symptomEventMs: [],
       dayIndexOf: (m) => Math.floor(m / MS_PER_DAY),

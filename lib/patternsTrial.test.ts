@@ -18,6 +18,7 @@ import {
   trialPhenotypeState,
   trialPhenotypeSampleLine,
   trialPhenotypeUntimedLine,
+  trialPhenotypeRefusalLine,
   trialNoneTimeableLine,
   trialTreatShareValue,
   trialMealsPerDayValue,
@@ -37,12 +38,12 @@ const dayIndexOf = (ms: number): number => Math.floor(ms / MS_PER_DAY);
 // evidence-window clip is exercised.
 function scenario(overrides: Partial<TrialSoFarInput> = {}): TrialSoFarInput {
   const feedings: FeedingRow[] = [
-    { ms: at(90, 8), confidence: 'witnessed', form: 'Kibble', foodType: 'meal' }, // pre-trial
-    { ms: at(105, 8), confidence: 'witnessed', form: 'Kibble', foodType: 'meal' },
-    { ms: at(106, 12), confidence: 'witnessed', form: 'Treat', foodType: 'treat' },
-    { ms: at(107, 12), confidence: 'witnessed', form: 'Treat', foodType: 'treat' },
-    { ms: at(110, 20), confidence: 'witnessed', form: 'Wet', foodType: 'meal' },
-    { ms: at(120, 9), confidence: 'witnessed', form: 'Kibble', foodType: 'meal' },
+    { id: 'f1', ms: at(90, 8), confidence: 'witnessed', intakeRating: null, form: 'Kibble', foodType: 'meal' }, // pre-trial
+    { id: 'f2', ms: at(105, 8), confidence: 'witnessed', intakeRating: null, form: 'Kibble', foodType: 'meal' },
+    { id: 'f3', ms: at(106, 12), confidence: 'witnessed', intakeRating: null, form: 'Treat', foodType: 'treat' },
+    { id: 'f4', ms: at(107, 12), confidence: 'witnessed', intakeRating: null, form: 'Treat', foodType: 'treat' },
+    { id: 'f5', ms: at(110, 20), confidence: 'witnessed', intakeRating: null, form: 'Wet', foodType: 'meal' },
+    { id: 'f6', ms: at(120, 9), confidence: 'witnessed', intakeRating: null, form: 'Kibble', foodType: 'meal' },
   ];
   const vomitOnsets = [
     { ms: at(90, 8, 15), confidence: 'witnessed' as const }, // rapid, OUT of window
@@ -100,7 +101,7 @@ describe('buildTrialSoFar — phenotype rows through lib/mealTiming, windowed on
         { ms: at(99, 23), confidence: 'witnessed' }, // bout onset, pre-window
         { ms: at(100, 1), confidence: 'witnessed' }, // 2h later — SAME episode, in-window instant
       ],
-      feedings: [{ ms: at(99, 22), confidence: 'witnessed', form: 'Kibble', foodType: 'meal' }],
+      feedings: [{ id: 'f7', ms: at(99, 22), confidence: 'witnessed', intakeRating: null, form: 'Kibble', foodType: 'meal' }],
     });
     const m = buildTrialSoFar(s)!;
     // One episode, placed by its collapsed onset (day 99) → OUT of window. Never split
@@ -186,3 +187,35 @@ describe('copy — count-anchored, never verdicted (§2 L2 / §6)', () => {
     expect(trialHonestyLine()).not.toContain('!');
   });
 });
+
+describe('CUL-1195 — the trial panel says when a long-band vomit followed a refused bowl', () => {
+  // The scenario's one long episode (day 111 04:00, timed from day 110 20:00) with a refused bowl
+  // at 03:55 before it: still timed from the meal eaten, still long, now disclosed.
+  const refusedBefore: FeedingRow = { id: 'r1', ms: at(111, 3, 55), confidence: 'witnessed', intakeRating: 'refused', form: 'Kibble', foodType: 'meal' };
+
+  it('counts the long episodes after a refused bowl, and moves no band', () => {
+    const base = scenario();
+    const m = buildTrialSoFar(scenario({ feedings: [...base.feedings, refusedBefore] }))!;
+    expect(m.phenotype.bandRows.map((r) => r.count)).toEqual([1, 1, 1]);
+    expect(m.phenotype.longAfterRefusalCount).toBe(1);
+    expect(trialPhenotypeRefusalLine(m.phenotype, m.config)).toBe('1 of the 1 episode 6h or more after eating followed a refused meal.');
+  });
+
+  it('nothing without a refused bowl — never a "none followed" line', () => {
+    const m = buildTrialSoFar(scenario())!;
+    expect(m.phenotype.longAfterRefusalCount).toBe(0);
+    expect(trialPhenotypeRefusalLine(m.phenotype, m.config)).toBeNull();
+  });
+
+  it('a refusal outside the trial window is not counted: the window clips the episode, and the count with it', () => {
+    const base = scenario();
+    const m = buildTrialSoFar(
+      scenario({
+        vomitOnsets: [...base.vomitOnsets, { ms: at(91, 4), confidence: 'witnessed' }],
+        feedings: [...base.feedings, { ...refusedBefore, id: 'r0', ms: at(91, 3, 55) }],
+      }),
+    )!;
+    expect(m.phenotype.longAfterRefusalCount).toBe(0);
+  });
+});
+

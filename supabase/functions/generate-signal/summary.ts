@@ -47,6 +47,7 @@ import type { Finding, MealEvent, SymptomEvent } from './detection.ts'
 import { intakeScore } from './detection.ts'
 import { SYMPTOM_LABEL, templateForFinding } from './phrasing.ts'
 import { readProteinSet } from './protein.ts'
+import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 
 const MS_PER_DAY = 86_400_000
 
@@ -533,6 +534,13 @@ export const SUMMARY_SYSTEM =
   '(6) Intake is descriptive only — never call the pet "picky" or describe a food as a ' +
   'preference, favourite, or something the pet "likes". ' +
   '(7) If any draft sentence mentions the vet, KEEP that guidance in your summary. ' +
+  '(8) VISITS, CARE AND TREATMENTS (Ask\'s rule 10, shared): a vet visit, a medication or a diet ' +
+  'may appear only as a DATED FACT beside a COUNT that is in the draft (in the shape "Since the {date} visit, ' +
+  '{n} vomiting episodes are logged."). NEVER describe a concern as handled or held: do not say it is ' +
+  'under control, covered, in the vet\'s hands, taken care of, dealt with, resolved, or that there is ' +
+  'nothing more to do. NEVER credit a treatment with an effect: do not say a medication, diet or visit ' +
+  'is helping or working, or that a symptom settled, eased or calmed since it started. ' +
+
   'Call write_summary with your two-to-four-sentence summary.'
 
 // ── Restraint: whether/which summaries the model phrases ───────────────────────────────
@@ -598,6 +606,10 @@ export function validateSummary(text: string, packet: SummaryFactPacket): boolea
   if (PREFERENCE_RE.test(t)) return false
   if (CAUSAL_RE.test(t)) return false
   if (DISEASE_RE.test(t)) return false
+  // CUL-1271 — the shared delegation / treatment-attribution arms. This list already bans
+  // "under control", "help*" and "thanks to"; the shared arms add "has it covered", "in the
+  // vet's hands", "nothing more to do", "is working", "settled since" and kin.
+  if (careClaimReason(t)) return false
 
   // A safety summary must keep routing the owner to the vet — the model may not smooth the
   // concern into a bare observation. The template always says "vet" on a safety summary.

@@ -9,8 +9,11 @@ import { EmptyState, ThemedText } from '../../components/ui';
 import { SkeletonRows } from '../../components/ui/Skeleton';
 import { DateScopeControl } from '../../components/history/DateScopeControl';
 import { TypeScopeControl } from '../../components/history/TypeScopeControl';
-import { DAY_KEY_RE, effectiveRange, coerceDatePreset } from '../../lib/historyDateFilter';
-import type { DatePreset } from '../../lib/historyDateFilter';
+import {
+  coerceDatePreset, dayScopeFromParams, effectiveRange, historyDayLabel, inRange,
+} from '../../lib/historyDateFilter';
+import type { DatePreset, DayScope } from '../../lib/historyDateFilter';
+import { readHistoryPage } from '../../lib/historyPage';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import { EventRow } from '../../components/history/EventRow';
 import { BoundaryMarkerRow } from '../../components/history/BoundaryMarkerRow';
@@ -20,14 +23,11 @@ import { useWidgetPetLink } from '../../hooks/useWidgetPetLink';
 import { useEventStore, NyxEvent } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
-import { getTimeline, TimelineRow } from '../../lib/db';
+import { getEventAttachment, type TimelineRow } from '../../lib/db';
 import { syncNow } from '../../lib/sync';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { destructiveConfirm, pullThreshold } from '../../lib/haptics';
-import { formatUtcDayShort } from '../../lib/utils';
-import { isLookRow } from '../../lib/lookDisplay';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
+import { removeConfirmCopy } from '../../lib/completionCard';
 import { readVisitsForHistory, HistoryVisitRow } from '../../lib/vetVisits';
 import { VisitTimelineRow } from '../../components/vetvisits/VisitTimelineRow';
 import { ListItem, mergeTimelineItems } from '../../lib/historyTimeline';
@@ -35,14 +35,34 @@ import {
   getActiveArrangementsForPet, getBoundaryMarkers,
   ActiveArrangementView, BoundaryMarker,
 } from '../../lib/feedingArrangements';
+import { useHistoryV2 } from '../../hooks/useHistoryV2';
+import { HistoryScreen } from '../../components/historyV2/HistoryScreen';
+
+// History v2 (HV-1 / CUL-1158; spec §5.1, H-8) — the gate, and only the gate. Flag off
+// is today's screen, byte for byte (`HistoryScreenV1` below, untouched); flag on is the
+// v2 composition root, whose drawing lives in `components/historyV2/` so the flag-off
+// guard can stub it (C-36). Two components rather than an early return in v1's body:
+// a flag that flips while the tab is mounted then swaps screens instead of changing
+// the number of hooks v1 calls. v1 is deleted at GA (HV-14).
+export default function HistoryTab() {
+  const historyV2 = useHistoryV2();
+  return historyV2 ? <HistoryScreen /> : <HistoryScreenV1 />;
+}
 
 const PAGE_SIZE = 50;
+
+// What the list draws in place of an answer that is not the active pet's (CUL-1120).
+// Module constants so a hidden answer hands `merged` the same identity every render.
+const NO_EVENTS: NyxEvent[] = [];
+const NO_ARRANGEMENTS: ActiveArrangementView[] = [];
+const NO_MARKERS: BoundaryMarker[] = [];
+const NO_VISITS: HistoryVisitRow[] = [];
 
 type LoadEvents = (
   currentOffset: number,
   type: EventTypeKey | null,
   preset: DatePreset,
-  day: string | null,
+  day: DayScope | null,
   replace: boolean,
 ) => Promise<void>;
 
@@ -81,6 +101,10 @@ function rowToEvent(row: TimelineRow): NyxEvent {
     paired_food_name: row.paired_food_name,
     drug_generic_name: row.drug_generic_name,
     drug_brand_name: row.drug_brand_name,
+    // CUL-1124 — the course's name, a dose's second name. The B-568 trap again: optional
+    // on NyxEvent, so leaving this line out compiles clean and every dose of a course
+    // typed in by hand goes back to reading "Medication".
+    regimen_drug_name: row.regimen_drug_name,
     paired_dose_count: row.paired_dose_count,
     paired_dose_event_id: row.paired_dose_event_id,
     paired_dose_drug_name: row.paired_dose_drug_name,
@@ -103,23 +127,27 @@ function coerceEventTypeKey(value: string | undefined | null): EventTypeKey | nu
     : null;
 }
 
-export default function HistoryScreen() {
+function HistoryScreenV1() {
   const { activePet } = usePetStore();
-  // Two doorways deep-link here with ?date=…&ts=<nonce>: the Home "Today" doorway (§8,
-  // ?date=today) and the Calendar v3 drill-in (B-308, ?date=YYYY-MM-DD → a single UTC
-  // day). `ts` is a nonce so the filter re-applies even when this tab is already mounted (a
-  // doorway tap is not a remount). Either filter is fully clearable — picking any date
-  // scope clears it.
-  // W5 adds a third: the widget's status column deep-links here with
-  // ?date=YYYY-MM-DD&pet=<id> — the day AND whose day it is.
-  // B-378 adds a fourth: Ask's answer-card provenance deep-links here with
-  // ?type=<event_type>&window=<preset>&ts=<nonce> to open the filtered list an answer's count
-  // was drawn from ("audit the whole count at its source") instead of a single event. A
-  // type/window link and a date link are mutually exclusive — Ask sends one shape or the other.
+  const activePetId = activePet?.id ?? null;
+  // Doorways deep-link here with a `ts` nonce, so a filter re-applies even when this tab
+  // is already mounted (a doorway tap is not a remount). Any filter is fully clearable —
+  // picking any date scope clears it.
+  //   • ?date=today — the Today preset (Ask's History chip).
+  //   • ?date=YYYY-MM-DD — the flag-off Calendar v3 drill-in (B-308), a UTC day.
+  //   • ?date=YYYY-MM-DD&pet=<id>&src=widget — the widget (W5): the owner's LOCAL day,
+  //     and whose day it is. Frozen: History reads what it sends (H-7).
+  //   • ?day=YYYY-MM-DD — the Design v2 month's door (CUL-1073), a LOCAL day.
+  //   • ?type=<event_type>&window=<preset> — Ask's answer-card provenance (B-378): the
+  //     filtered list an answer's count was drawn from ("audit the whole count at its
+  //     source"). A type/window link and a date link are mutually exclusive.
+  // A day link is read BY SENDER (`dayScopeFromParams`), never by flag: one `?date=`
+  // cannot mean two clocks, and an existing parameter never changes meaning in place.
   const params = useLocalSearchParams<{
-    date?: string; ts?: string; pet?: string; type?: string; window?: string;
+    date?: string; day?: string; src?: string; ts?: string; pet?: string; type?: string; window?: string;
   }>();
-  useWidgetPetLink(params.pet);
+  // The widget's pet and its day are one tap: both are spent on the same `ts` (CUL-1119).
+  useWidgetPetLink(params.pet, params.ts);
   // A type/window deep-link (B-378) and a date deep-link are separate doorways; whichever the
   // navigation carried seeds the initial filter. `hasFilterLink` distinguishes a fresh
   // type/window arrival from an ordinary mount so the date-based seeds don't fight it.
@@ -129,27 +157,34 @@ export default function HistoryScreen() {
   const initialDatePreset: DatePreset = hasFilterLink
     ? initialWindowPreset
     : params.date === 'today' ? 'today' : null;
-  const initialDay: string | null =
-    !hasFilterLink && params.date && DAY_KEY_RE.test(params.date) ? params.date : null;
+  const initialDay: DayScope | null = hasFilterLink
+    ? null
+    : dayScopeFromParams({ date: params.date, day: params.day, src: params.src });
   const { removeFromToday, restoreToToday, todayEvents } = useEventStore();
-  // The `vet_visits` rollout flag (G0). Dark means dark: it gates the READ as well
-  // as the row, so flag-off this screen issues no query against the table and
-  // `visits` stays empty — which is what makes the rendered tree identical to an
-  // app without the companion (AC 0, guards/vetVisitsFlagOff.test.tsx).
-  const vetVisitsEnabled = useAllowlistFlag('vet_visits') && useBetaOptIn('vet_visits');
   // B-054 §6 — reactive refresh-after-hydrate: re-read the timeline when a sync
   // cycle finishes while this tab is open, so another device's writes appear
   // without a manual pull-to-refresh.
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
 
+  // CUL-1120 — every answer below is STAMPED with the pet it answered for (the `*For`
+  // fields, AppointmentStrip's `loadedFor`), and only the active pet's answers are drawn
+  // (`isActivePets`, above `merged`). A pet switch therefore draws the skeleton until the
+  // new pet's reads answer (C-12), never the previous pet's rows under the new pet's
+  // name, and a failed read after a switch draws the error state. It did not: a list
+  // that is not empty never shows the error, so the old pet's rows stayed up with
+  // nothing on screen to say anything was wrong. The loaders' load ids stop a late
+  // answer from being WRITTEN; the stamps stop an old one from being DRAWN.
   const [events, setEvents] = useState<NyxEvent[]>([]);
+  const [eventsFor, setEventsFor] = useState<string | null>(null);
   // B-040 R1 §6a — free-feeding standing facts: the pinned ambient strip
   // (currently-active arrangements) + the inline lifecycle boundary markers.
   const [arrangements, setArrangements] = useState<ActiveArrangementView[]>([]);
   const [markers, setMarkers] = useState<BoundaryMarker[]>([]);
-  // Vet visits on the timeline (CUL-904 VV-6), behind the rollout flag. Held as its
-  // own list rather than mapped into `events`: see the ListItem union above.
+  const [freeFeedingFor, setFreeFeedingFor] = useState<string | null>(null);
+  // Vet visits on the timeline (CUL-904 VV-6). Held as its own list rather than
+  // mapped into `events`: see the ListItem union above.
   const [visits, setVisits] = useState<HistoryVisitRow[]>([]);
+  const [visitsFor, setVisitsFor] = useState<string | null>(null);
   // C-12 for the SECOND source. `loaded` / `loadError` below are driven by
   // `loadEvents` alone, which was complete while every row in the stream came from
   // the timeline query. It is not any more: a pet whose only record is a vet visit
@@ -159,10 +194,10 @@ export default function HistoryScreen() {
   // exact sentence CUL-575 built this state machine to stop, arriving through a
   // source the machine did not know about.
   //
-  // Set once and never reset, matching `loaded`: a later refresh keeps the rows on
-  // screen rather than flashing a skeleton over them.
-  const [visitsAnswered, setVisitsAnswered] = useState(false);
-  const [visitsError, setVisitsError] = useState(false);
+  // Never reset for the same pet, matching `loadedFor`: a later refresh keeps the rows
+  // on screen rather than flashing a skeleton over them.
+  const [visitsAnsweredFor, setVisitsAnsweredFor] = useState<string | null>(null);
+  const [visitsErrorFor, setVisitsErrorFor] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -171,22 +206,28 @@ export default function HistoryScreen() {
   // over a read it never completed. The day-summary screen refuses to do this
   // (day-summary.tsx: "A failed read is NEVER rendered as 'nothing logged'"); History
   // holds the same line.
-  const [loadError, setLoadError] = useState(false);
-  // Whether a read has ever ANSWERED for this screen. `loading` alone can't carry the
+  const [loadErrorFor, setLoadErrorFor] = useState<string | null>(null);
+  // Whether a read has ever ANSWERED for this pet. `loading` alone can't carry the
   // first paint: it starts false and only flips inside the focus effect, so the very
   // first frame had merged=[] + loading=false and rendered "Nothing logged yet" for a
-  // beat before the rows landed. (Foods gates its empty state on the same flag.)
-  const [loaded, setLoaded] = useState(false);
+  // beat before the rows landed. (Foods gates its empty state on the same flag.) Per
+  // pet, because the first frame after a switch is the same frame again (CUL-1120).
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<EventTypeKey | null>(initialTypeFilter);
   const [datePreset, setDatePreset] = useState<DatePreset>(initialDatePreset);
-  // A single-day filter from the Calendar v3 drill-in (B-308). Mutually exclusive with
-  // datePreset — whichever the owner picked last wins; picking a preset clears the day.
-  const [dayFilter, setDayFilter] = useState<string | null>(initialDay);
+  // A single-day filter from a day doorway (B-308), with the clock its sender counted the
+  // day on. Mutually exclusive with datePreset — whichever the owner picked last wins;
+  // picking a preset clears the day.
+  const [dayFilter, setDayFilter] = useState<DayScope | null>(initialDay);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Ref-based guard prevents concurrent loads even when the callback is stale
+  // True while the newest list read is out, readable from a stale callback. Load more
+  // waits on it; a replace never does (CUL-1120, `loadEvents`).
   const loadingRef = useRef(false);
+  // True while Remove is asking the record for a photo, before its confirm is up (CUL-1125
+  // review): a second tap in that gap would raise a second confirm for the same row.
+  const removeAskingRef = useRef(false);
 
   // Keep the current filters reachable from the hydration-tick effect without
   // making them its deps (which would re-fire it on every filter change, where
@@ -203,29 +244,50 @@ export default function HistoryScreen() {
   // always points at the current closure (a captured binding would go stale).
   const loadEventsRef = useRef<LoadEvents | null>(null);
 
+  // CUL-1120 — the list's reads, newest wins. A REPLACE always starts and supersedes
+  // whatever is out. The guard that stood here (`if (loadingRef.current) return`) threw
+  // away the NEWER request: a pet switch, a filter picked or a door tapped while a read
+  // was out never read at all, and the old read's rows landed under the new pet's name
+  // or the new pill and stayed until something else reloaded. An APPEND (Load more)
+  // still waits its turn: it extends the list on screen, so it starts only when nothing
+  // is out and the list is the active pet's. The id catches an answer that arrives out
+  // of order; the pet check, one a switch overtook before a newer read was asked. They
+  // protect different things (`loadVisits` holds both for the same reason).
+  const eventsLoadIdRef = useRef(0);
+  // Whose rows `events` holds, readable from the loaders' stale closures.
+  const eventsForRef = useRef<string | null>(null);
+  eventsForRef.current = eventsFor;
+
   const loadEvents = useCallback<LoadEvents>(async (
     currentOffset: number,
     type: EventTypeKey | null,
     preset: DatePreset,
-    day: string | null,
+    day: DayScope | null,
     replace: boolean,
   ) => {
-    if (!activePet || loadingRef.current) return;
+    if (!activePet) return;
+    const petId = activePet.id;
+    if (!replace && (loadingRef.current || eventsForRef.current !== petId)) return;
+    const myId = ++eventsLoadIdRef.current;
+    const answersForScreen = () =>
+      myId === eventsLoadIdRef.current && usePetStore.getState().activePet?.id === petId;
     loadingRef.current = true;
     setLoading(true);
     // Cleared per attempt, not per mount: a retry that succeeds must take the error
     // state down, and a retry that fails must leave it up.
-    setLoadError(false);
+    setLoadErrorFor(null);
     try {
-      const { after, before } = effectiveRange(preset, day);
-      const rows = await getTimeline(
-        activePet.id,
+      // The scope's bounds are parsed, never compared as text (C-40): `readHistoryPage`
+      // over-fetches in SQL and places each row on its parsed instant. `fetched` is the
+      // QUERY's count, which is what OFFSET pages; `hasMore` is the query's own answer.
+      const { rows, fetched, hasMore: more } = await readHistoryPage(
+        petId,
         PAGE_SIZE,
         currentOffset,
         type,
-        after,
-        before,
+        effectiveRange(preset, day),
       );
+      if (!answersForScreen()) return;
       const mapped = rows.map(rowToEvent);
       setEvents((prev: NyxEvent[]) => {
         if (replace) return mapped;
@@ -239,11 +301,17 @@ export default function HistoryScreen() {
         const seen = new Set(prev.map((e) => e.id));
         return [...prev, ...mapped.filter((e) => !seen.has(e.id))];
       });
-      setHasMore(rows.length === PAGE_SIZE);
-      setOffset(currentOffset + rows.length);
+      setEventsFor(petId);
+      setHasMore(more);
+      setOffset(currentOffset + fetched);
+      setLoadedFor(petId);
     } catch (e) {
+      // Logged whoever it answers for (no silent failures); only the newest read, for
+      // the pet on screen, may put the screen in its error state.
       console.error('[history] load failed:', e);
-      setLoadError(true);
+      if (!answersForScreen()) return;
+      setLoadErrorFor(petId);
+      setLoadedFor(petId);
       // An APPEND failure can't use the error state below — there are rows on screen,
       // so the list isn't empty and the owner would just see "Load more" do nothing.
       // (`replace` is false only after a first page already landed.) Same defect, the
@@ -252,13 +320,22 @@ export default function HistoryScreen() {
         useSnackbarStore.getState().show({
           message: "Couldn't load more history.",
           actionLabel: 'Try again',
-          onAction: () => { void loadEventsRef.current?.(currentOffset, type, preset, day, false); },
+          // Only while this is still the newest read. After a refresh, a filter or a pet
+          // switch, `currentOffset` is a place in a list that is no longer on screen,
+          // and paging the new list from it would skip rows nothing ever shows.
+          onAction: () => {
+            if (myId !== eventsLoadIdRef.current) return;
+            void loadEventsRef.current?.(currentOffset, type, preset, day, false);
+          },
         });
       }
     } finally {
-      loadingRef.current = false;
-      setLoading(false);
-      setLoaded(true);
+      // The in-flight flags belong to the newest read: a superseded one finishing must
+      // not tell the screen nothing is loading while its successor still is.
+      if (myId === eventsLoadIdRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
     }
   }, [activePet]);
   loadEventsRef.current = loadEvents;
@@ -266,21 +343,30 @@ export default function HistoryScreen() {
   // Free-feeding standing facts (§6a): the active arrangements for the pinned
   // strip + the lifecycle boundary markers for the stream. Cheap reads (few
   // rows); re-run on focus and after a hydrate so another device's toggle shows.
+  // The newest read for the pet on screen wins, `loadEvents`' two checks (CUL-1120).
+  const freeFeedingLoadIdRef = useRef(0);
   const loadFreeFeeding = useCallback(async () => {
+    const myId = ++freeFeedingLoadIdRef.current;
     if (!activePet) {
       setArrangements([]);
       setMarkers([]);
+      setFreeFeedingFor(null);
       return;
     }
+    const petId = activePet.id;
     try {
       const [active, bm] = await Promise.all([
-        getActiveArrangementsForPet(activePet.id),
-        getBoundaryMarkers(activePet.id),
+        getActiveArrangementsForPet(petId),
+        getBoundaryMarkers(petId),
       ]);
+      if (myId !== freeFeedingLoadIdRef.current) return;
+      if (usePetStore.getState().activePet?.id !== petId) return;
       setArrangements(active);
       setMarkers(bm);
+      setFreeFeedingFor(petId);
     } catch (e) {
-      // No silent failures (house rule). Leave prior state; focus re-runs this.
+      // No silent failures (house rule). Leave prior state; focus re-runs this. After a
+      // switch that state is the previous pet's, and its stamp keeps it off screen.
       console.warn('[history] free-feeding load failed:', e);
     }
   }, [activePet]);
@@ -301,18 +387,18 @@ export default function HistoryScreen() {
 
   const loadVisits = useCallback(async () => {
     const myId = ++visitLoadIdRef.current;
-    if (!vetVisitsEnabled || !activePet) {
+    if (!activePet) {
+      // Nothing to wait for, and nothing to stamp: with no pet the screen never draws
+      // the skeleton (`showSkeleton` needs one), so no read is held open here.
       setVisits([]);
-      // Nothing to wait for, so the empty state must not be held behind a read that
-      // is never going to happen — flag-off this screen would skeleton forever.
-      setVisitsAnswered(true);
-      setVisitsError(false);
+      setVisitsFor(null);
+      setVisitsErrorFor(null);
       return;
     }
     const petId = activePet.id;
     // Cleared per attempt, not per mount: a retry that succeeds takes the error
     // state down, and one that fails leaves it up (the `loadEvents` rule).
-    setVisitsError(false);
+    setVisitsErrorFor(null);
     try {
       const rows = await readVisitsForHistory(petId);
       // The read is async and the owner can switch pets while it is in flight, so
@@ -324,6 +410,7 @@ export default function HistoryScreen() {
       if (myId !== visitLoadIdRef.current) return;
       if (usePetStore.getState().activePet?.id !== petId) return;
       setVisits(rows);
+      setVisitsFor(petId);
     } catch (e) {
       // No silent failures (house rule). With rows already on screen this leaves
       // prior state and lets the next focus retry — the posture `loadFreeFeeding`
@@ -331,22 +418,17 @@ export default function HistoryScreen() {
       // to "Nothing logged yet": that is a claim about the record, over a read that
       // failed. The flag below is what the empty-state gate reads.
       console.warn('[history] load vet visits failed:', e);
-      if (myId === visitLoadIdRef.current) setVisitsError(true);
+      if (myId === visitLoadIdRef.current) setVisitsErrorFor(petId);
     } finally {
-      if (myId === visitLoadIdRef.current) setVisitsAnswered(true);
+      // Stamped with the pet this read was for, so an answer for a pet no longer on
+      // screen is never taken as the new pet's (CUL-1120).
+      if (myId === visitLoadIdRef.current) setVisitsAnsweredFor(petId);
     }
-  }, [vetVisitsEnabled, activePet?.id]);
+  }, [activePet?.id]);
 
-  // Its own effect, keyed on the loader's identity, because the FLAG is the thing
-  // that changes after mount: `useAllowlistFlag` re-resolves on foreground and on
-  // sign-in, so an owner allowlisted mid-session would otherwise wait for a
-  // re-focus to see their visits — and one dropped from the allowlist would keep
-  // seeing them. The `!enabled` branch above is what makes the second half true.
-  useEffect(() => { void loadVisits(); }, [loadVisits]);
-
-  // Reached from the hydration effect below, whose deps are deliberately narrow —
-  // the loadEventsRef precedent. Adding `loadVisits` to those deps would re-fire a
-  // full timeline reload every time the flag resolved.
+  // Reached from the focus and hydration effects below, whose deps are deliberately
+  // narrow — the loadEventsRef precedent: adding `loadVisits` to them would re-run a
+  // full timeline reload whenever the loader's identity changed.
   const loadVisitsRef = useRef(loadVisits);
   loadVisitsRef.current = loadVisits;
 
@@ -384,16 +466,15 @@ export default function HistoryScreen() {
       setExpandedId(null);
       loadEvents(0, typeFilter, datePreset, dayFilter, true);
       loadFreeFeeding();
-      // Through the ref, and the flag is deliberately NOT in the deps below — the
-      // same rule the hydration effect follows, which this first got wrong.
-      // `useFocusEffect` re-runs its outer effect whenever the memoized callback's
-      // identity changes and calls it IMMEDIATELY when the screen is focused
-      // (expo-router/build/useFocusEffect.js: `if (navigation.isFocused())`, deps
-      // `[effect, navigation, optionalNavigation]`) — it is not gated on a real
-      // focus event. So a flag resolving on foreground or sign-in, with History on
-      // screen, would run this whole body: offset reset to 0, the expanded card
+      // Through the ref, so the loader is NOT in the deps below — the same rule the
+      // hydration effect follows. `useFocusEffect` re-runs its outer effect whenever
+      // the memoized callback's identity changes and calls it IMMEDIATELY when the
+      // screen is focused (expo-router/build/useFocusEffect.js: `if
+      // (navigation.isFocused())`, deps `[effect, navigation, optionalNavigation]`) —
+      // it is not gated on a real focus event. So any extra dep that moved with History
+      // on screen would run this whole body: offset reset to 0, the expanded card
       // collapsed under the owner's finger, and the entire timeline re-queried.
-      // The standalone effect above already re-runs `loadVisits` on a flag change.
+      // `activePet` is already a dep, so a pet switch reaches the new pet's visits here.
       void loadVisitsRef.current();
     }, [activePet, typeFilter, datePreset, dayFilter]),
   );
@@ -417,9 +498,8 @@ export default function HistoryScreen() {
   // doorway tap doesn't remount). The `ts` nonce changes per tap; the ref guards against
   // re-applying on unrelated re-renders. Setting the filter state re-runs the focus effect
   // (which reloads). First mount is handled by the initial* seeds above, so the ref is seeded
-  // to that ts to avoid a redundant re-apply. Handles the Home "Today" doorway (?date=today),
-  // the Calendar drill-in (?date=YYYY-MM-DD, B-308), AND Ask's provenance link
-  // (?type=&window=, B-378).
+  // to that ts to avoid a redundant re-apply. Handles every doorway in the table at the
+  // top: the Today preset, a day on its sender's clock, and Ask's provenance link.
   const appliedDateTsRef = useRef<string | null>(
     initialDatePreset || initialDay || hasFilterLink ? params.ts ?? null : null,
   );
@@ -434,34 +514,40 @@ export default function HistoryScreen() {
       setDatePreset(coerceDatePreset(params.window));
       return;
     }
-    if (!params.date) return;
     if (params.date === 'today') {
       appliedDateTsRef.current = params.ts;
       setTypeFilter(null);
       setDayFilter(null);
       setDatePreset('today');
-    } else if (DAY_KEY_RE.test(params.date)) {
+      return;
+    }
+    const day = dayScopeFromParams({ date: params.date, day: params.day, src: params.src });
+    if (day) {
       appliedDateTsRef.current = params.ts;
       setTypeFilter(null);
       setDatePreset(null);
-      setDayFilter(params.date);
+      setDayFilter(day);
     }
-  }, [params.date, params.ts, params.type, params.window]);
+  }, [params.date, params.day, params.src, params.ts, params.type, params.window]);
 
   // Real-time: prepend new events logged via FAB while this tab is visible
   const latestTodayId = todayEvents[0]?.id;
   useEffect(() => {
     if (!latestTodayId) return;
+    // Only into the list of the pet it belongs to (CUL-1120). Today's list can still
+    // hold the previous pet's rows while its own re-read is out (`loadTodayEvents` has
+    // no late-answer guard), and a row put here would draw under this pet's name.
+    if (todayEvents[0]?.pet_id !== eventsForRef.current) return;
     setEvents((prev: NyxEvent[]) => {
       if (prev.some((e: NyxEvent) => e.id === latestTodayId)) return prev;
       const newEvent = todayEvents[0];
       if (!newEvent) return prev;
       if (typeFilter && newEvent.event_type !== typeFilter) return prev;
       // Respect BOTH the preset cutoff and a single-day filter's upper bound — a freshly
-      // logged event outside the current scope shouldn't jump into a filtered view.
-      const { after, before } = effectiveRange(datePreset, dayFilter);
-      if (after && newEvent.occurred_at < after) return prev;
-      if (before && newEvent.occurred_at >= before) return prev;
+      // logged event outside the current scope shouldn't jump into a filtered view. The
+      // same parsed predicate the read uses (C-40), so a row's day never depends on how
+      // its instant is spelled.
+      if (!inRange(newEvent.occurred_at, effectiveRange(datePreset, dayFilter))) return prev;
       return [newEvent, ...prev];
     });
   }, [latestTodayId]);
@@ -517,27 +603,37 @@ export default function HistoryScreen() {
     router.push({ pathname: '/vet-visits/[id]', params: { id: visit.id } });
   }
 
-  function handleDelete(event: NyxEvent) {
-    // CUL-869 — two things, both the record screen's confirm one surface over.
+  async function handleDelete(event: NyxEvent) {
+    // The record screen's confirm, one surface over, from the one composer every
+    // removal confirm shares (`removeConfirmCopy`, lib/completionCard.ts; CUL-1125):
+    // it names the record, and then everything that goes with it that nothing
+    // recreates. This is the likeliest door to a weeks-old record, so it is the one
+    // that can least afford to stay silent about either.
     //
-    // The SUBJECT is named per type: the sentence template was written for noun
-    // labels and `check_in`'s is "Noticed", so it read "the Noticed". Every other
-    // type's string is unchanged.
+    // The NOTE rides on the row itself (`notes`, and a look's `look_note`, joined in
+    // the same SELECT), so there is nothing to wait for. The PHOTO does not: History's
+    // rows never read attachments, so the record is asked here, exactly as the record
+    // screen asks it (CUL-825). A failed read falls back to no photo: no claim about
+    // one we cannot see, and a local read failing here means the removal below is
+    // about to fail too, and say so.
     //
-    // The NOTE is named when there is one (C-21). A look's note is the owner's own
-    // words and nothing recreates it — and this is the likeliest door to a week-old
-    // look, so it is the one that could least afford to stay silent. The fact rides
-    // on the row itself (`look_note`, joined in the same SELECT), so unlike the
-    // record screen's photo there is no read that might not have answered yet.
-    const isLook = isLookRow(event);
-    const label = EVENT_TYPES[event.event_type as EventTypeKey]?.label ?? 'event';
-    const subject = isLook ? 'what you noticed' : `the ${label}`;
-    const hasNote = isLook && !!event.look_note?.trim();
+    // One confirm per Remove: a tap that lands while the read is out is dropped. The
+    // flag clears before the confirm is raised, in the same synchronous run, so the
+    // next tap after it can only land on the confirm (which is modal) or after it.
+    if (removeAskingRef.current) return;
+    removeAskingRef.current = true;
+    let hasAttachment = false;
+    try {
+      hasAttachment = (await getEventAttachment(event.id)) !== null;
+    } catch (e) {
+      console.warn('[history] attachment check before delete failed:', e);
+    } finally {
+      removeAskingRef.current = false;
+    }
+    const copy = removeConfirmCopy(event, { hasAttachment });
     Alert.alert(
-      'Remove this log?',
-      hasNote
-        ? `This will remove ${subject} from history. The note you wrote will be removed with it.`
-        : `This will remove ${subject} from history.`,
+      copy.title,
+      copy.body,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -567,16 +663,32 @@ export default function HistoryScreen() {
               // nulled, because this path cannot know what the reading displaced
               // (lib/weight.ts, delete side).
               await reverseLoggedEvent(event.id);
+              // CUL-1078 — the row has left the table, so every row after it moved up
+              // one and the next page must start one earlier. Only here, once the
+              // write has landed: a failed Remove puts the row back. Starting a row
+              // early costs nothing, since the dedupe on append drops the repeat
+              // (B-198); starting a row late skips one that nothing ever shows.
+              // Only the list the row was on: after a pet switch the list on screen
+              // is another pet's, where this row never held a place (CUL-1120).
+              if (eventsForRef.current === event.pet_id) {
+                setOffset((prev: number) => Math.max(0, prev - 1));
+              }
             } catch (e) {
               console.error('[history] soft delete failed:', e);
-              setEvents((prev: NyxEvent[]) => {
-                const idx = prev.findIndex(
-                  (e: NyxEvent) => new Date(e.occurred_at) < new Date(event.occurred_at),
-                );
-                const next = [...prev];
-                next.splice(idx === -1 ? prev.length : idx, 0, event);
-                return next;
-              });
+              // Back into the list it came from, and only that one (CUL-1120): after a
+              // pet switch the list on screen is another pet's, and the row would draw
+              // under that pet's name. The removal failed, so the next read of this
+              // row's own pet finds it anyway.
+              if (eventsForRef.current === event.pet_id) {
+                setEvents((prev: NyxEvent[]) => {
+                  const idx = prev.findIndex(
+                    (e: NyxEvent) => new Date(e.occurred_at) < new Date(event.occurred_at),
+                  );
+                  const next = [...prev];
+                  next.splice(idx === -1 ? prev.length : idx, 0, event);
+                  return next;
+                });
+              }
               // Home reloads Today on mount and on a hydration tick, not on focus — so
               // without this the app goes on hiding an event that is still in the
               // record, on the one surface the owner checks most (CUL-575).
@@ -602,15 +714,28 @@ export default function HistoryScreen() {
     );
   }
 
+  // CUL-1120 — only the active pet's answers are drawn; see the stamps at the top.
+  const isActivePets = (answeredFor: string | null) =>
+    answeredFor !== null && answeredFor === activePetId;
+  const shownEvents = isActivePets(eventsFor) ? events : NO_EVENTS;
+  const shownArrangements = isActivePets(freeFeedingFor) ? arrangements : NO_ARRANGEMENTS;
+  const shownMarkers = isActivePets(freeFeedingFor) ? markers : NO_MARKERS;
+  const shownVisits = isActivePets(visitsFor) ? visits : NO_VISITS;
+  const loaded = isActivePets(loadedFor);
+  const loadError = isActivePets(loadErrorFor);
+  const visitsAnswered = isActivePets(visitsAnsweredFor);
+  const visitsError = isActivePets(visitsErrorFor);
+
   // The merged stream. The rule itself lives in `lib/historyTimeline.ts`, pure, so
   // it can be asserted over data — its effect is at the TAIL of a virtualized list,
   // which a rendered-tree test cannot see (measured; the file's header has it).
   const merged = useMemo<ListItem[]>(() => {
     const { after, before } = effectiveRange(datePreset, dayFilter);
     return mergeTimelineItems({
-      events, markers, visits, typeFilter, after, before, hasMore,
+      events: shownEvents, markers: shownMarkers, visits: shownVisits,
+      typeFilter, after, before, hasMore,
     });
-  }, [events, markers, visits, typeFilter, datePreset, dayFilter, hasMore]);
+  }, [shownEvents, shownMarkers, shownVisits, typeFilter, datePreset, dayFilter, hasMore]);
 
   // The three "nothing on screen" states, kept mutually exclusive and in priority
   // order (CUL-575). Before this, the screen had ONE of them: an empty list, which a
@@ -632,7 +757,7 @@ export default function HistoryScreen() {
   const handleRetry = useCallback(() => {
     setOffset(0);
     setHasMore(true);
-    setVisitsError(false);
+    setVisitsErrorFor(null);
     loadEvents(0, typeFilter, datePreset, dayFilter, true);
     loadFreeFeeding();
     void loadVisits();
@@ -655,7 +780,7 @@ export default function HistoryScreen() {
             <DateScopeControl
               value={datePreset}
               onChange={handleDatePreset}
-              dayLabel={dayFilter ? formatUtcDayShort(dayFilter) : null}
+              dayLabel={dayFilter ? historyDayLabel(dayFilter.key) : null}
             />
           </View>
         </View>
@@ -669,7 +794,7 @@ export default function HistoryScreen() {
           Vomit reads incongruously. Hidden under any other type filter; the
           markers in the stream are already type-gated the same way (§6a). */}
       {(typeFilter === null || typeFilter === 'meal') && (
-        <FreeFeedingStrip arrangements={arrangements} />
+        <FreeFeedingStrip arrangements={shownArrangements} />
       )}
 
       {/* Event list — flex: 1 so it fills remaining space regardless of event count */}

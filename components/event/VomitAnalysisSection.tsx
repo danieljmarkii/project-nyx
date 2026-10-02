@@ -20,6 +20,14 @@ import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import {
+  writeAnalysisDismissal,
+  shownRead,
+  sameShown,
+  VOMIT_DISMISSAL_COLUMNS,
+  READ_CHANGED_TITLE,
+  READ_CHANGED_BODY,
+} from '../../lib/analysisDismissal';
+import {
   triggerVomitAnalysis,
   awaitAnalysisChain,
   watchAnalysisRow,
@@ -30,7 +38,20 @@ import {
   VomitEditableFields,
   EditableVomitField,
 } from '../../lib/analysis';
-import { escalationSurvivesFailure } from '../../lib/incidentReadState';
+import {
+  escalationSurvivesFailure,
+  escalationSurvivesReRead,
+  incidentReadLabel,
+  quietVerdictUnfinished,
+} from '../../lib/incidentReadState';
+import { isQuietVerdict } from '../../lib/incidentVerdict';
+import {
+  EARLIER_READ_LABEL,
+  isCallRow,
+  isTieredRow,
+  TIER_WORDS,
+  tierDisplayOf,
+} from '../../lib/incidentTierWords';
 import { VomitFieldsEditor } from './VomitFieldsEditor';
 import { vomitCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -41,7 +62,11 @@ import {
   BLOOD_OPTIONS,
 } from './vomitFields';
 import { ThemedText } from '../ui/ThemedText';
-import { IncidentReadCard, RAIL_TICK_HEIGHT } from './IncidentReadCard';
+import {
+  IncidentReadCard, RAIL_TICK_HEIGHT, INCIDENT_READ_FAILED_LINE, INCIDENT_READ_NOT_ENOUGH_LINE,
+  INCIDENT_RE_READING_PHOTO_LINE, INCIDENT_RE_READING_LINE,
+} from './IncidentReadCard';
+import { useReadLandingAnnouncement } from './useReadLandingAnnouncement';
 import { IncidentReadSection } from './IncidentReadSection';
 import { ObservationGrid } from './ObservationGrid';
 import { useIncidentArrival } from '../motion/arrivalMotion';
@@ -56,11 +81,16 @@ import { useObservationFold } from './useObservationFold';
 // the never-reassure invariant survives the cap by construction (there is no path
 // from either to a reassuring verdict).
 type Status = 'pending' | 'completed' | 'failed' | 'uncertain' | 'capped' | 'read_disabled';
-type Recommendation = 'worth_a_call' | 'monitor' | 'not_enough_to_say';
 
 interface AnalysisRow {
   status: Status;
-  recommendation: Recommendation | null;
+  // Text, not the shipped three-value union (CUL-1277): the server can hold a verdict this
+  // build has never seen, and a type that says otherwise is what let `REC_LABEL[rec]`
+  // render a blank label. Every read of it goes through `lib/incidentVerdict.ts`.
+  recommendation: string | null;
+  /** EN-3's tier beside the verdict (migration 079), written only under the Engines v3
+   *  key. Read only through the tier-word map (`lib/incidentTierWords.ts`). */
+  tier?: string | null;
   read_text: string | null;
   description: string | null;
   colour: string | null;
@@ -73,19 +103,40 @@ interface AnalysisRow {
   ai_raw_payload: Record<string, unknown> | null;
   edited_at: string | null;
   dismissed_at: string | null;
+  /** Bumped by trigger on every write (013). The landing announcement reads it to tell a
+   *  read that was written from a wait that ended with nothing written (CUL-1275). */
+  updated_at?: string | null;
   error: string | null;
+  /** The Engines keys the read was written under: a new-rule read speaks its tier. */
+  engine_flags?: string[] | null;
 }
+
+/** Two copies of the row hold the same READ: the same state, verdict and words. The
+ *  owner's Hide / Show is not part of it — that is what a copy may differ in while the
+ *  owner's own write is in flight. */
+function sameRead(a: AnalysisRow, b: AnalysisRow): boolean {
+  return (
+    a.status === b.status &&
+    a.recommendation === b.recommendation &&
+    (a.tier ?? null) === (b.tier ?? null) &&
+    a.read_text === b.read_text
+  );
+}
+
+/** Two copies of the row SHOW the same thing: the same read, equally hidden or shown.
+ *  Decides whether a re-run's wait may re-base on the server's copy (CUL-1275 — see
+ *  `handleRetry`). */
+function showsSameRead(a: AnalysisRow, b: AnalysisRow): boolean {
+  return sameRead(a, b) && !!a.dismissed_at === !!b.dismissed_at;
+}
+
+/** The hidden note's line: rendered, and spoken when a read lands behind it. */
+const DISMISSED_LINE = 'AI note hidden';
 
 const SELECT_COLS =
   'status, recommendation, read_text, description, colour, contents, consistency, ' +
   'blood_present, bile_present, foreign_material_present, foreign_material_note, ' +
-  'ai_raw_payload, edited_at, dismissed_at, error';
-
-const REC_LABEL: Record<Recommendation, string> = {
-  worth_a_call: 'Worth a call',
-  monitor: 'Keep an eye out',
-  not_enough_to_say: 'Not enough to say yet',
-};
+  'ai_raw_payload, edited_at, dismissed_at, updated_at, error, tier, engine_flags';
 
 export function VomitAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
@@ -97,6 +148,12 @@ export function VomitAnalysisSection(
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const cancelled = useRef(false);
+  // The row as the screen holds it NOW, for a handler that awaits across a render. A re-run
+  // over an escalation leaves the card (and its Hide) on screen for the whole wait, so the
+  // owner can change the hide mid-flight; a restore that read only the tap-time copy would
+  // quietly undo that (CUL-827, adversarial #3).
+  const latestRow = useRef<AnalysisRow | null | undefined>(undefined);
+  latestRow.current = row;
   const watchTeardown = useRef<(() => void) | null>(null);
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
@@ -139,6 +196,14 @@ export function VomitAnalysisSection(
     identity: eventId,
     tickHeight: RAIL_TICK_HEIGHT,
   });
+  // CUL-1275 — the landing's screen-reader half. The same FACT as the arrival
+  // (`awaitingRead`) but not its gates: it speaks a re-read over an owner edit, and a
+  // photoless contextual escalation that never showed a pending box — see the hook.
+  const announcer = useReadLandingAnnouncement({
+    awaitingRead,
+    identity: eventId,
+    version: row?.updated_at ?? null,
+  });
 
   const fetchRow = useCallback(async (): Promise<AnalysisRow | null> => {
     const { data } = await supabase
@@ -156,6 +221,9 @@ export function VomitAnalysisSection(
     const next = await fetchRow();
     if (cancelled.current) return true; // unmounted — stop the watch
     if (next && next.status !== 'pending') {
+      // ONE commit, row first (React batches the two). The landing announcement reads the
+      // row at the instant `working` falls: a fall that lands before the row would find the
+      // change marker unmoved and say nothing about the read that follows it (CUL-1275).
       setRow(next);
       setWorking(false);
       return true;
@@ -225,36 +293,117 @@ export function VomitAnalysisSection(
   async function handleRetry() {
     setRetrying(true);
     cancelled.current = false;
-    setRow((r) => (r ? { ...r, status: 'pending', error: null } : r));
-    const { error } = await triggerVomitAnalysis(eventId);
+    // What the owner is looking at when they tap — the render this handler came from.
+    const shown = row ?? null;
+    // CUL-1275 — WHERE THE WAIT STARTS. The landing announcement compares the row's
+    // `updated_at` from the start of the wait to its end, so the row the pending mark is
+    // written over decides the baseline. Two failures bound the choice (the adversarial
+    // pass, rounds 2 and 3):
+    //   · the LOCAL copy alone is stale after the owner's own writes (Hide / Show, a field
+    //     edit move the server's marker, not this copy's), so a re-run the server then
+    //     SKIPS read as written and re-spoke the old verdict;
+    //   · the SERVER copy alone treats "the server already had it" as "the owner already
+    //     saw it" — a Worth a call written by a path this section was not watching (the
+    //     photo-add re-read, another device) then arrives on screen through a skipped
+    //     re-run and is never spoken.
+    // So the wait re-bases on the server's row only when it SHOWS what the screen already
+    // shows; otherwise the local baseline stands and anything new counts as a landing.
+    // Caught, like every read below: a throw here would leave `retrying` set, and that is a
+    // re-read that never ends (CUL-827). A failed read re-bases on the screen's own copy.
+    const fresh = await fetchRow().catch(() => null);
+    if (cancelled.current) return;
+    const base = fresh && shown && showsSameRead(fresh, shown) ? fresh : shown;
+    if (base) setRow({ ...base, status: 'pending', error: null });
+    // A REJECTED invoke is a refused one (CUL-827). The trigger catches its own throws
+    // today, but the pending mark above must come off on every path that did not start a
+    // read, not only on the ones that return an error: a throw here would skip the restore
+    // below and leave `retrying` set, which renders as a re-read that never ends.
+    const { error } = await triggerVomitAnalysis(eventId).catch((e: unknown) => ({
+      error: e instanceof Error ? e.message : String(e),
+    }));
     // Navigated away mid-trigger — don't setState or open a watch on an
     // unmounted instance (mirrors start()'s guard after the same await).
     if (cancelled.current) return;
-    setRetrying(false);
     if (error) {
       // `error` is the raw functions.invoke message (lib/analysis.ts) — a
-      // transport string, not owner copy. Log it, show the calm retry line.
+      // transport string, not owner copy. Log it, show the calm retry line — at once,
+      // not behind the re-read below (which can hang for a fetch timeout).
       console.warn('[vomit-analysis] retry failed:', error);
       Alert.alert('Could not start analysis', 'Try again in a moment.');
+      // The pending mark comes off — before CUL-1275 it stayed, parking the section on
+      // "Reading the photo…" with nothing watching and a stored Worth a call out of sight
+      // for the rest of the visit. Back onto the server's row AS IT IS NOW: an error is
+      // usually the function's own 500, which has already written the attempt's failure
+      // (`buildFailureWrite` records `failed` over any row that is not a Worth a call), so
+      // the copy read BEFORE the trigger would put a calm verdict back in front of a read
+      // that just failed — the pairing `escalationSurvivesFailure` exists to refuse
+      // (adversarial round 5). Re-read, and let the render's own rules decide. From the
+      // not-enough frame too, whose "Not enough to say" is not a read (CUL-820).
+      //
+      // If the re-read ITSELF fails, the pre-trigger copy may stand in only where the
+      // asymmetry says it is still true — a Worth a call, which a failure never
+      // overwrites. A calm copy is never put back after a failure the client could not
+      // confirm (round 6); the owner keeps what they already saw, and nothing is spoken.
+      //
+      // The owner's own latest Hide / Show is kept — but only over the SAME read (it may
+      // not have reached the server yet). A NEW read takes the server's: since CUL-1323
+      // (PM-ruled 2026-09-27) a real read clears the hide server-side, because a
+      // dismissal belongs to the words the owner read, so carrying this screen's older
+      // hide onto new words would re-hide what the server has just shown. A read the
+      // owner has not been shown is a landing, told to the announcer outright rather than
+      // left to the pending write and this one committing apart (round 4, F1).
+      const after = await fetchRow().catch(() => null);
+      if (cancelled.current) return;
+      const server = after ?? (escalationSurvivesFailure(fresh) ? fresh : null);
+      const keepScreenHide = !!shown && !!server && sameRead(server, shown);
+      // The screen's hide as it is NOW, not at the tap: over an escalation the card stayed
+      // up through the wait, and a Hide or Show made during it is the owner's latest word.
+      const screenHide = latestRow.current ? latestRow.current.dismissed_at : shown?.dismissed_at ?? null;
+      const back = server
+        ? { ...server, dismissed_at: keepScreenHide ? screenHide : server.dismissed_at }
+        : base && { ...base, dismissed_at: screenHide };
+      if (back) {
+        if (server && !(shown && showsSameRead(server, shown))) announcer.expectLanding();
+        setRow(back);
+      }
+      // Held until the row is back, so Re-run cannot be pressed into a second retry
+      // while the first is still restoring.
+      setRetrying(false);
       return;
     }
+    setRetrying(false);
     setWorking(true);
     beginWatch();
   }
 
+  // CUL-1323 — Hide and Show write only over the read on screen, its words and its
+  // red-flag observations (lib/analysisDismissal). When the read changed underneath
+  // (a replaced photo, a second device), the record is shown and said, never hidden
+  // unseen.
   async function setDismissed(dismiss: boolean) {
     if (!row) return;
+    const shown = row;
     const nextIso = dismiss ? new Date().toISOString() : null;
-    const prev = row.dismissed_at;
-    setRow({ ...row, dismissed_at: nextIso }); // optimistic
-    const { error } = await supabase
-      .from('event_ai_analysis')
-      .update({ dismissed_at: nextIso })
-      .eq('event_id', eventId);
-    if (error) {
-      setRow({ ...row, dismissed_at: prev });
-      Alert.alert('Could not update', 'Try again in a moment.');
+    setRow({ ...shown, dismissed_at: nextIso }); // optimistic
+    const seen = shownRead(shown, VOMIT_DISMISSAL_COLUMNS);
+    const outcome = await writeAnalysisDismissal(eventId, seen, nextIso);
+    if (outcome === 'written') return;
+    const latest = outcome === 'read_changed' ? await fetchRow() : null;
+    if (latest && !sameShown(latest, seen)) {
+      setRow(latest);
+      Alert.alert(READ_CHANGED_TITLE, READ_CHANGED_BODY);
+      return;
     }
+    // Roll back the HIDE only, over the row as it is now (CUL-827, adversarial round 2):
+    // over an escalation the card stays up through a re-run, so `shown` may be the re-run's
+    // pending-marked copy, and putting it back whole would re-mark a row whose restore has
+    // already landed. Over different words, what is on screen already stands.
+    setRow((cur) =>
+      cur && cur.recommendation === shown.recommendation && cur.read_text === shown.read_text
+        ? { ...cur, dismissed_at: shown.dismissed_at }
+        : cur ?? shown,
+    );
+    Alert.alert('Could not update', 'Try again in a moment.');
   }
 
   // Persist owner edits to the structured fields (B-028). A no-op save (nothing
@@ -286,15 +435,27 @@ export function VomitAnalysisSection(
   // stays silent until it resolves (to an escalation, or to nothing), so the
   // section never appears-then-vanishes on the common photoless path (B-363).
   if (hasPhoto && row === undefined && !working) {
-    return <IncidentReadSection arrival={arrival} pending />;
+    return <IncidentReadSection arrival={arrival} announcer={announcer} pending />;
   }
 
   const status: Status | undefined = row?.status;
 
-  // Pending / actively working. Same photoless rule: no spinner for a photoless
-  // event — a contextual escalation pops in clean when it resolves (B-363).
-  if (hasPhoto && (working || status === 'pending')) {
-    return <IncidentReadSection arrival={arrival} pending />;
+  // A read is being produced: the server was asked and is being watched (`working`), or
+  // the owner's Re-run is under way (`retrying`, from the tap: its first step is a read
+  // that can hang for a fetch timeout, and a calm verdict must not stand beside a re-read
+  // cue for it — adversarial #2). NOT `status === 'pending'` alone (CUL-827): the pending mark outlives a watch that gave
+  // up, and keyed on it the section rendered "Reading the photo…" for the rest of the
+  // visit with nothing watching and no control to press. A row still marked pending with
+  // nothing in flight falls through to the frames below, each of which carries a retry.
+  const reading = working || retrying;
+
+  // Pending / actively working — UNLESS the record already holds an escalation, which
+  // stays on screen through the re-read with the re-read shown in place beside it
+  // (CUL-827; see escalationSurvivesReRead for why a calm verdict does not). Same
+  // photoless rule: no spinner for a photoless event — a contextual escalation pops in
+  // clean when it resolves (B-363).
+  if (hasPhoto && reading && !escalationSurvivesReRead(row)) {
+    return <IncidentReadSection arrival={arrival} announcer={announcer} pending working />;
   }
 
   // Failed — UNLESS the record already holds an escalation, which outlives a failed
@@ -304,9 +465,14 @@ export function VomitAnalysisSection(
   // escalationSurvivesFailure for why the rule is asymmetric.
   if (status === 'failed' && !escalationSurvivesFailure(row)) {
     return (
-      <IncidentReadSection arrival={arrival} pending={false}>
+      <IncidentReadSection
+        arrival={arrival}
+        announcer={announcer}
+        announcement={INCIDENT_READ_FAILED_LINE}
+        pending={false}
+      >
         <View style={styles.failedBox}>
-          <ThemedText style={styles.failedText}>Couldn't finish reading this one.</ThemedText>
+          <ThemedText style={styles.failedText}>{INCIDENT_READ_FAILED_LINE}</ThemedText>
           <TouchableOpacity
             style={styles.retryBtn}
             onPress={handleRetry}
@@ -338,7 +504,12 @@ export function VomitAnalysisSection(
   // daily cap of 10.
   if (status === 'capped') {
     return (
-      <IncidentReadSection arrival={arrival} pending={false}>
+      <IncidentReadSection
+        arrival={arrival}
+        announcer={announcer}
+        announcement={vomitCapCopy(petName, 'daily')}
+        pending={false}
+      >
         <View style={styles.capBox}>
           <ThemedText style={styles.capText}>{vomitCapCopy(petName, 'daily')}</ThemedText>
         </View>
@@ -359,18 +530,32 @@ export function VomitAnalysisSection(
   // contextual escalation is never hidden. Auto-refreshing the section the instant a
   // photo lands is a tracked follow-up (B-370). Matches the read_disabled branch: no
   // dead affordance, no empty frame (B-363).
-  if (!hasPhoto && (!row?.recommendation || row.recommendation === 'not_enough_to_say')) {
+  //
+  // A QUIET verdict stands only on a read that FINISHED (CUL-1277): on a status this
+  // build does not know, it is no read at all, which is the same frame a row with no
+  // verdict takes (here, nothing; below, the honest retry). An escalation is never held
+  // to this: presence escalates at any status.
+  const unfinishedQuiet = quietVerdictUnfinished(row);
+  // A call in EITHER column is never suppressed here (EN-3: the louder column, the same
+  // max every other surface reads); only a row with no call reaches these two frames.
+  const callStands = isCallRow(row);
+  if (!hasPhoto && !callStands && (!row?.recommendation || row.recommendation === 'not_enough_to_say' || unfinishedQuiet)) {
     return null;
   }
 
   // No analysis and not working (e.g. gave up, or an unclear/unsynced photo). Only
   // reached WITH a photo now — the retry is legitimate (the photo may not have
   // synced yet, the documented race triggerVomitAnalysis guards against).
-  if (!row || !row.recommendation) {
+  if (!row || (!row.recommendation && !callStands) || unfinishedQuiet) {
     return (
-      <IncidentReadSection arrival={arrival} pending={false}>
+      <IncidentReadSection
+        arrival={arrival}
+        announcer={announcer}
+        announcement={INCIDENT_READ_NOT_ENOUGH_LINE}
+        pending={false}
+      >
         <View style={styles.neutralCard}>
-          <ThemedText style={styles.readText}>Not enough to say about this one yet.</ThemedText>
+          <ThemedText style={styles.readText}>{INCIDENT_READ_NOT_ENOUGH_LINE}</ThemedText>
           <TouchableOpacity onPress={handleRetry} hitSlop={16} disabled={retrying}>
             <ThemedText style={styles.linkText}>{retrying ? 'Working…' : 'Try analysis'}</ThemedText>
           </TouchableOpacity>
@@ -380,8 +565,24 @@ export function VomitAnalysisSection(
     );
   }
 
-  const rec = row.recommendation;
+  // The verdict that picks the card's tone. A call held in the TIER beside a null or quiet
+  // verdict (a writer bug, a rolled-back build's write) is still a call, and on an
+  // unstamped row no tier tone is passed, so the verdict itself must say so: otherwise the
+  // card draws grey under "Worth a call" (adversarial pass on PR-27, round 2).
+  const rec = callStands && (row.recommendation === null || isQuietVerdict(row.recommendation))
+    ? 'worth_a_call'
+    : (row.recommendation ?? 'worth_a_call');
   const dismissed = !!row.dismissed_at;
+  // EN-3 (CUL-1133): which words stand, through the one map. Null on an earlier-rule read's
+  // tone/action (it keeps today's card), never null for a call.
+  const tiered = isTieredRow(row);
+  const display = tiered ? tierDisplayOf(row) : null;
+  // CUL-819 (a) is WITHHELD for now: the phone cannot tell a held call whose latest run
+  // failed from one whose later run finished calm and was held, because the server's hold
+  // writes nothing and leaves the old `error` standing (CUL-1432 item 8). A line known to be
+  // false in that case is not shipped; `heldCallDisclosureOf` (tested) is wired here when
+  // the server clears `error` on a hold. The call itself draws the same either way.
+  const heldDisclosure: string | null = null;
 
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
@@ -390,10 +591,21 @@ export function VomitAnalysisSection(
   );
 
   return (
-    <IncidentReadSection arrival={arrival} pending={false}>
+    <IncidentReadSection
+      arrival={arrival}
+      announcer={announcer}
+      // The verdict, in the enum's own words — or, over a hidden note, what the screen
+      // says: that it is hidden. NOT silence. Since CUL-1323 a new read clears the hide
+      // server-side, so this line is reached when the row moved WITHOUT new words — an
+      // error-only write over a hidden Worth a call — or before that server change is
+      // live. Saying "hidden" tells the owner something landed and where to find it,
+      // without speaking what they chose to hide.
+      announcement={dismissed ? DISMISSED_LINE : heldDisclosure ? `${incidentReadLabel(row)}. ${heldDisclosure}` : incidentReadLabel(row)}
+      pending={false}
+    >
       {dismissed ? (
         <View style={styles.dismissedRow}>
-          <ThemedText style={styles.dismissedText}>AI note hidden</ThemedText>
+          <ThemedText style={styles.dismissedText}>{DISMISSED_LINE}</ThemedText>
           <TouchableOpacity onPress={() => setDismissed(false)} hitSlop={16}>
             <ThemedText style={styles.linkText}>Show</ThemedText>
           </TouchableOpacity>
@@ -401,7 +613,15 @@ export function VomitAnalysisSection(
       ) : (
         <IncidentReadCard
           verdict={rec}
-          label={REC_LABEL[rec]}
+          // The words live in lib/incidentReadState.ts since D2-4 (CUL-1066), so Home's spine
+          // node and this card cannot name one verdict two ways; a verdict this build does
+          // not know is spoken as the escalation, never blank (CUL-1277).
+          label={incidentReadLabel(row)}
+          // EN-3: the tier's tone and action line from the map; both absent on an
+          // earlier-rule read, which draws today's card.
+          tone={display ? TIER_WORDS[display].tone : undefined}
+          action={display ? TIER_WORDS[display].action : null}
+          disclosure={heldDisclosure}
           readText={row.read_text}
           onHide={() => setDismissed(true)}
           arrival={arrival.rail}
@@ -430,7 +650,10 @@ export function VomitAnalysisSection(
               onCancel={() => setEditing(false)}
             />
           ) : undefined}
-          escalating={rec === 'worth_a_call'}
+          // Any verdict off the quiet list, one this build does not know included: its
+          // facts never fold (CUL-1277).
+          escalating={isCallRow(row)}
+          heading={heldDisclosure ? EARLIER_READ_LABEL : undefined}
           folded={folded}
           onToggleFold={setFolded}
         />
@@ -442,13 +665,28 @@ export function VomitAnalysisSection(
           Two slopped controls facing each other at a zero gap overlap (C-5), and the fix
           for controls already flush is to grow the BOX — `rerunRow` carries the 44pt
           floor in `minHeight` instead. */}
+      {/* CUL-827 — over an escalation a re-read no longer swaps the card for the pending
+          box, so the re-read is shown HERE, in place, and the control is unavailable for
+          as long as it runs (its label says why). Once nothing is in flight — the read
+          landed, the invoke was refused, or the watch gave up — it is `Re-run analysis`
+          again, so no path leaves an escalation beside a wait with no way on. */}
       {!dismissed && !editing ? (
         <TouchableOpacity
           onPress={handleRetry}
-          disabled={retrying}
-          style={styles.rerunRow}
+          disabled={retrying || reading}
+          accessibilityRole="button"
+          style={[styles.rerunRow, retrying || reading ? styles.rerunRowReading : null]}
         >
-          <ThemedText style={styles.linkText}>{retrying ? 'Re-running…' : 'Re-run analysis'}</ThemedText>
+          {retrying || reading ? (
+            <>
+              <WhorlSpinner size="sm" ground="day" />
+              <ThemedText style={styles.rerunReadingText}>
+                {hasPhoto ? INCIDENT_RE_READING_PHOTO_LINE : INCIDENT_RE_READING_LINE}
+              </ThemedText>
+            </>
+          ) : (
+            <ThemedText style={styles.linkText}>Re-run analysis</ThemedText>
+          )}
         </TouchableOpacity>
       ) : null}
     </IncidentReadSection>
@@ -475,11 +713,17 @@ function buildObservations(row: AnalysisRow): Observation[] {
   // observation feeding the report, distinct from the n=1 read's reassurance ban).
   const blood = labelFor(BLOOD_OPTIONS, row.blood_present);
   if (blood) out.push({ field: 'blood_present', label: 'Blood', value: blood });
-  // Foreign material. The 'yes' path shows the model's own note, UNCHANGED by this change:
-  // the model is prompted to set the suspected_foreign_material visual flag on 'yes', so a
-  // 'yes' note normally rides a worth_a_call card (Pattern-10-compliant). That coupling is
-  // not structurally enforced at the floor (which trusts the model's visual_flags array,
-  // not a flag derived from the enum — CUL-534), but closing it is out of scope here. On
+  // Foreign material. The 'yes' path shows the model's own note. Since CUL-534 (the
+  // analyze-stool parity) analyze-vomit's parse DERIVES the suspected_foreign_material
+  // visual flag from foreign_material_present === 'yes', so a 'yes' the model wrote reaches
+  // this row on a worth_a_call card. That is NOT full Pattern-10 compliance: the note is not
+  // gated on the model's OWN escalation, so when the floor escalated on the derived flag
+  // over a model 'monitor', the note is text the model wrote for a monitor call and can
+  // minimise ("a piece of string, usually passes"). Gating it is CUL-1318. Three rows can
+  // also show 'yes' beside a non-escalated verdict: one analysed before CUL-534 deployed;
+  // one the OWNER edited to 'yes' (an edit refreshes the field, never the cached
+  // recommendation — Pattern 7); and one re-run after any owner edit, where the verdict
+  // comes from the fresh read while this row shows the frozen fields (CUL-409). On
   // 'unsure' the card is
   // 'monitor', and CUL-240 (B-042) surfaces the previously-hidden finding there — but the
   // note is model-authored FREE TEXT with no schema constraint, no parse gate, and no
@@ -571,6 +815,17 @@ const styles = StyleSheet.create({
     // Pinned explicitly because the 44pt floor depends on it and the slop that used to
     // reach it is gone (C-5).
     minHeight: 44,
+  },
+  // The in-place re-read (CUL-827): the spinner and its line side by side, in the row's
+  // own box so the 44pt floor above still holds.
+  rerunRowReading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+  },
+  rerunReadingText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
   },
   dismissedRow: {
     flexDirection: 'row',

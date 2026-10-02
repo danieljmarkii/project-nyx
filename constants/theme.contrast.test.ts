@@ -104,6 +104,110 @@ describe('the bright category colours do NOT clear AA as text on light', () => {
   });
 });
 
+describe('the FAB pair — an indigo disc and its teal plus (CUL-322, D3 = C)', () => {
+  // A NON-TEXT target (WCAG 1.4.11): the disc must clear 3:1 against the ground it
+  // floats over, and the plus 3:1 against the disc. Three grounds, because the FAB
+  // floats over Home's colorNeutralLight container, the white Cards scrolling under
+  // it, and — while its menu is open — the indigo scrim laid over both.
+  //
+  // CUL-1063 shipped the disc as colorAccentInk, the one teal that cleared 3:1 with
+  // a white plus, and the PM read it on device as drab. D3 = C inverts the pair: the
+  // brand night is the disc and the BRIGHT teal is the glyph, the one place it passes
+  // (in-app brand spec §1 rule 3 names the FAB as its one exception).
+  const NON_TEXT = 3;
+
+  const passing: ReadonlyArray<[label: string, fg: string, bg: string]> = [
+    ['the disc on the app ground', theme.colorBrandNightElevated, theme.colorNeutralLight],
+    ['the disc over a white Card', theme.colorBrandNightElevated, theme.colorSurface],
+    ['the disc over its own open scrim', theme.colorBrandNightElevated, over(theme.colorScrimNight, theme.colorNeutralLight)],
+    ['the teal plus on the disc', theme.colorAccent, theme.colorBrandNightElevated],
+  ];
+
+  it.each(passing)('%s clears 3:1', (_label, fg, bg) => {
+    expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+
+  // The failing halves, each the pair a later "tidy" would reach for. A white plus
+  // on the bright teal is why CUL-1063 could not draw the round-4 frame; the bright
+  // teal as the disc fails both grounds. Without these rows either edit is green.
+  const failing: ReadonlyArray<[label: string, fg: string, bg: string]> = [
+    ['the bright accent as the disc, on the app ground', theme.colorAccent, theme.colorNeutralLight],
+    ['the bright accent as the disc, over a white Card', theme.colorAccent, theme.colorSurface],
+    ['a white plus on the bright accent', theme.colorTextOnDark, theme.colorAccent],
+  ];
+
+  it.each(failing)('%s does NOT — so it is never the FAB', (_label, fg, bg) => {
+    expect(contrastRatio(fg, bg)).toBeLessThan(NON_TEXT);
+  });
+
+  it('records the measured ratios the PR body and the brand spec cite', () => {
+    expect(contrastRatio(theme.colorBrandNightElevated, theme.colorNeutralLight)).toBeCloseTo(14.25, 2);
+    expect(contrastRatio(theme.colorBrandNightElevated, theme.colorSurface)).toBeCloseTo(14.87, 2);
+    expect(contrastRatio(theme.colorAccent, theme.colorBrandNightElevated)).toBeCloseTo(6.57, 2);
+    expect(contrastRatio(theme.colorAccent, theme.colorNeutralLight)).toBeCloseTo(2.17, 2);
+  });
+});
+
+/** An `rgba(r, g, b, a)` token laid over an opaque ground, as the eye sees it: the one
+ *  honest way to measure a translucent mark (WCAG measures the rendered colours). */
+function over(rgba: string, ground: string): string {
+  const m = /^rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)$/.exec(rgba);
+  if (!m) throw new Error(`not an rgba token: ${rgba}`);
+  const alpha = Number(m[4]);
+  const g = ground.replace('#', '');
+  const bg = [0, 2, 4].map((i) => parseInt(g.slice(i, i + 2), 16));
+  const mixed = [m[1], m[2], m[3]].map((v, i) => Math.round(Number(v) * alpha + bg[i] * (1 - alpha)));
+  return `#${mixed.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+describe('the day mark’s line — a NON-TEXT mark, told apart by shape (CUL-1165)', () => {
+  // History v2 spec §3.4 / §5.7, AC 26. The line under a logged day, whole or broken
+  // (a meal left unfinished; under a medication filter, a dose not given in full), is a
+  // graphical object, so its floor is WCAG 1.4.11's 3:1 against the box it sits in, not
+  // the 4.5:1 text floor. The broken line is the SAME colour, dashed: the difference is
+  // shape, so it only reads if the colour itself is visible. Two boxes carry a line: the
+  // white one of a logged day, and the rose one of a vomit day, where the line draws white
+  // and still breaks, so an unfinished meal on a vomit day is not painted over.
+  const NON_TEXT = 3;
+
+  const passing: ReadonlyArray<[label: string, line: string, box: string]> = [
+    ['the logged line on a logged day’s white box', theme.colorAccentGlyph, theme.colorSurface],
+    ['the line on a vomit day’s rose box (solid white)', theme.colorTextOnDark, theme.colorEventSymptom],
+  ];
+
+  it.each(passing)('%s clears 3:1', (_label, line, box) => {
+    expect(contrastRatio(line, box)).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+
+  // The failing half: the three colours this change retired. Each one drew a line an
+  // owner could not see, and the paler "left some" line was the only thing telling an
+  // unfinished meal apart, so a later "soften the line back" is a red build here rather
+  // than a tidy-looking diff.
+  const failing: ReadonlyArray<[label: string, line: string, box: string]> = [
+    ['the retired logged line (colorAccentSoft) on white', theme.colorAccentSoft, theme.colorSurface],
+    ['the retired left-some line (colorAccentWashDeep) on white', theme.colorAccentWashDeep, theme.colorSurface],
+    ['the retired on-rose line (55% white) on the rose', over(theme.colorTextOnDarkFaint, theme.colorEventSymptom), theme.colorEventSymptom],
+    // And the brand teal itself, so "just use colorAccent" is not the tempting repair.
+    ['the brand teal on white', theme.colorAccent, theme.colorSurface],
+  ];
+
+  it.each(failing)('%s does NOT, so it is never the line', (_label, line, box) => {
+    expect(contrastRatio(line, box)).toBeLessThan(NON_TEXT);
+  });
+
+  it('records the measured ratios', () => {
+    expect(contrastRatio(theme.colorAccentGlyph, theme.colorSurface)).toBeCloseTo(3.27, 2);
+    expect(contrastRatio(theme.colorTextOnDark, theme.colorEventSymptom)).toBeCloseTo(3.67, 2);
+    expect(contrastRatio(theme.colorAccentSoft, theme.colorSurface)).toBeCloseTo(1.64, 2);
+    expect(contrastRatio(theme.colorAccentWashDeep, theme.colorSurface)).toBeCloseTo(1.18, 2);
+    expect(contrastRatio(over(theme.colorTextOnDarkFaint, theme.colorEventSymptom), theme.colorEventSymptom)).toBeCloseTo(2.0, 2);
+  });
+
+  it('the glyph is not a text colour: it fails AA on white, where text takes the ink', () => {
+    expect(contrastRatio(theme.colorAccentGlyph, theme.colorSurface)).toBeLessThan(AA_NORMAL_TEXT);
+  });
+});
+
 describe('and on a DARK ground the pairing INVERTS — which is why the sweep was a walk', () => {
   // CUL-744 repointed 76 of the 81 accent-as-text sites to the ink and deliberately left
   // five alone. This block is why those five are correct rather than missed.

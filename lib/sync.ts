@@ -53,6 +53,8 @@ import {
   vetDocumentRowToRemote,
   type LocalVetDocument,
 } from './vetDocuments';
+import { pullReadCopies, pullReadCopyFor } from './readCopy';
+import { useAuthStore } from '../store/authStore';
 
 type Db = ReturnType<typeof getDb>;
 
@@ -943,6 +945,8 @@ async function drainWeightChecksQueue(): Promise<void> {
     pet_id: string;
     weight_kg: number;
     notes: string | null;
+    source: string;
+    source_basis: string;
     created_at: string;
     updated_at: string;
   }>(
@@ -960,6 +964,10 @@ async function drainWeightChecksQueue(): Promise<void> {
     pet_id: w.pet_id,
     weight_kg: w.weight_kg,
     notes: w.notes,
+    // Migration 081. Sent every time, so the server never labels a current build's
+    // reading by its default ('legacy' is for builds that do not know the column).
+    source: w.source,
+    source_basis: w.source_basis,
     created_at: w.created_at,
     // B-055 — send the client updated_at. The set_updated_at trigger rewrites
     // it to server-NOW on the conflict-update branch (server-time LWW), so this
@@ -1897,7 +1905,7 @@ async function drainFeedingArrangementsQueue(): Promise<void> {
 
   const unsynced = await db.getAllAsync<{
     id: string; pet_id: string; food_item_id: string; method: string;
-    active_from: string | null; active_until: string | null; is_shared: number;
+    active_from: string | null; active_until: string | null; ended_at: string | null; is_shared: number;
     notes: string | null; deleted_at: string | null; created_at: string; updated_at: string;
   }>(`SELECT * FROM feeding_arrangements WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 100`);
 
@@ -1912,6 +1920,10 @@ async function drainFeedingArrangementsQueue(): Promise<void> {
   await pushRows(db, 'feeding_arrangements', unsynced, (a) => ({
     id: a.id, pet_id: a.pet_id, food_item_id: a.food_item_id, method: a.method,
     active_from: a.active_from, active_until: a.active_until,
+    // CUL-1396 — the take-up instant. A row this device has not ended pushes null, which
+    // is also the server's value for it; a row another device ended reaches this one by
+    // hydrate carrying its instant, so an echo of it pushes that instant back unchanged.
+    ended_at: a.ended_at ?? null,
     is_shared: Boolean(a.is_shared), notes: a.notes,
     deleted_at: a.deleted_at, created_at: a.created_at, updated_at: a.updated_at,
   }));
@@ -2179,7 +2191,8 @@ interface RemoteMeal {
 }
 interface RemoteWeightCheck {
   id: string; event_id: string; pet_id: string; weight_kg: number;
-  notes: string | null; created_at: string; updated_at: string;
+  notes: string | null; source: string; source_basis: string; // migration 081
+  created_at: string; updated_at: string;
 }
 interface RemoteLook {
   id: string; event_id: string; pet_id: string; outcome: string; local_day: string;
@@ -2219,6 +2232,7 @@ interface RemoteVetDocument {
 interface RemoteFeedingArrangement {
   id: string; pet_id: string; food_item_id: string; method: string | null;
   active_from: string | null; active_until: string | null; is_shared: boolean | null;
+  ended_at?: string | null; // CUL-1396 / migration 076
   notes: string | null; deleted_at: string | null; created_at: string; updated_at: string;
 }
 interface RemoteMedication {
@@ -2250,6 +2264,12 @@ interface RemoteDietTrial {
   ended_at: string | null; transition_started_at: string | null;
   // migration 053 (B-704) — owner-stated trial protein + its provenance stamp.
   target_protein: string | null; target_protein_set_at: string | null;
+  // migration 068 (CUL-1039) — window provenance. `vet_directed` arrives as a JSON
+  // BOOLEAN and is stored as INTEGER (SQLite has none); NULL stays NULL on the way
+  // down, never normalised to false (§5.1's two-sided rule).
+  target_duration_days_initial: number | null;
+  target_duration_set_at: string | null;
+  target_duration_vet_directed: boolean | null;
   vet_visit_id: string | null; // CUL-899 VV-1 — provenance only (migration 066)
   created_at: string; updated_at: string;
 }
@@ -2395,7 +2415,7 @@ async function hydrateWeightChecks(db: Db, stale: () => boolean): Promise<void> 
   const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteWeightCheck>(
     'weight_checks',
-    'id, event_id, pet_id, weight_kg, notes, created_at, updated_at',
+    'id, event_id, pet_id, weight_kg, notes, source, source_basis, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -2404,7 +2424,8 @@ async function hydrateWeightChecks(db: Db, stale: () => boolean): Promise<void> 
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
   if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
   for (const w of toWrite) {
-    // DO UPDATE refreshes the mutable fields only (weight_kg, notes); identity
+    // DO UPDATE refreshes the mutable fields only (weight_kg, notes, and 081's
+    // source + source_basis, which an owner correction changes); identity
     // columns (event_id, pet_id) and created_at are immutable and deliberately
     // omitted from the SET — created_at appears in the column list for the INSERT
     // branch only, so that asymmetry is correct, not B-057 drift (mirrors
@@ -2412,13 +2433,33 @@ async function hydrateWeightChecks(db: Db, stale: () => boolean): Promise<void> 
     // never clobbers a row with an unpushed local edit.
     await db.runAsync(
       `INSERT INTO weight_checks
-        (id, event_id, pet_id, weight_kg, notes, created_at, updated_at, synced)
-       VALUES (?,?,?,?,?,?,?,1)
+        (id, event_id, pet_id, weight_kg, notes, source, source_basis, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          weight_kg=excluded.weight_kg, notes=excluded.notes,
+         source=excluded.source, source_basis=excluded.source_basis,
          updated_at=excluded.updated_at, synced=1
        WHERE weight_checks.synced = 1`,
-      [w.id, w.event_id, w.pet_id, w.weight_kg, w.notes ?? null, w.created_at, w.updated_at],
+      [w.id, w.event_id, w.pet_id, w.weight_kg, w.notes ?? null, w.source, w.source_basis,
+        w.created_at, w.updated_at],
+    );
+  }
+  // Migration 081 (CUL-1412) — fill the source label from the server for every row fetched,
+  // whether or not LWW rewrote it: the CUL-1396 shape. The re-pull after the column upgrade
+  // (COLUMN_UPGRADES `rehydrate`) returns rows whose `updated_at` equals the local copy, which
+  // `reconcileBatch` rightly leaves alone, so without this an upgraded phone keeps the default
+  // where the server holds another device's label, and its next push of a weight edit would
+  // send that stale default back up. Only a synced row: its content is the server's, so the
+  // server's current label is the right one; an unpushed edit is never touched. No
+  // `updated_at` comparison (two spellings of one instant do not compare as text, C-40), no
+  // `updated_at` write, nothing queued.
+  if (stale()) return;
+  for (const w of rows) {
+    if (!w.source || !w.source_basis) continue;
+    await db.runAsync(
+      `UPDATE weight_checks SET source = ?, source_basis = ?
+       WHERE id = ? AND synced = 1 AND (source IS NOT ? OR source_basis IS NOT ?)`,
+      [w.source, w.source_basis, w.id, w.source, w.source_basis],
     );
   }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
@@ -2747,7 +2788,7 @@ async function hydrateFeedingArrangements(db: Db, stale: () => boolean): Promise
   const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteFeedingArrangement>(
     'feeding_arrangements',
-    'id, pet_id, food_item_id, method, active_from, active_until, is_shared, notes, deleted_at, created_at, updated_at',
+    'id, pet_id, food_item_id, method, active_from, active_until, ended_at, is_shared, notes, deleted_at, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -2758,18 +2799,34 @@ async function hydrateFeedingArrangements(db: Db, stale: () => boolean): Promise
   for (const a of toWrite) {
     await db.runAsync(
       `INSERT INTO feeding_arrangements
-        (id, pet_id, food_item_id, method, active_from, active_until, is_shared, notes,
+        (id, pet_id, food_item_id, method, active_from, active_until, ended_at, is_shared, notes,
          deleted_at, created_at, updated_at, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,1)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          food_item_id=excluded.food_item_id, method=excluded.method,
          active_from=excluded.active_from, active_until=excluded.active_until,
+         ended_at=excluded.ended_at,
          is_shared=excluded.is_shared, notes=excluded.notes,
          deleted_at=excluded.deleted_at, updated_at=excluded.updated_at, synced=1
        WHERE feeding_arrangements.synced = 1`,
       [a.id, a.pet_id, a.food_item_id, a.method ?? 'free_choice',
-       a.active_from ?? null, a.active_until ?? null, a.is_shared ? 1 : 0,
+       a.active_from ?? null, a.active_until ?? null, a.ended_at ?? null, a.is_shared ? 1 : 0,
        a.notes ?? null, a.deleted_at ?? null, a.created_at, a.updated_at],
+    );
+  }
+  // CUL-1396 — fill a local NULL `ended_at` from the server, for every row fetched, whether
+  // or not LWW rewrote it. The re-pull after the column upgrade (COLUMN_UPGRADES `rehydrate`)
+  // returns rows whose `updated_at` equals the local copy, which `reconcileBatch` rightly leaves
+  // alone, so without this the upgraded phone kept NULL where the server holds the instant.
+  // Fills only a NULL, only on a synced row, and touches no other column and no `updated_at`:
+  // it records a value the server already has, and queues nothing.
+  if (stale()) return;
+  for (const a of rows) {
+    if (!a.ended_at) continue;
+    await db.runAsync(
+      `UPDATE feeding_arrangements SET ended_at = ?
+       WHERE id = ? AND ended_at IS NULL AND synced = 1`,
+      [a.ended_at, a.id],
     );
   }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
@@ -2906,7 +2963,8 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
     'id, pet_id, food_item_id, started_at, target_duration_days, status, completed_at, ' +
       'vet_name, notes, food_label, indication, phase, outcome, outcome_notes, ' +
       'stopped_reason, ended_at, transition_started_at, target_protein, ' +
-      'target_protein_set_at, vet_visit_id, created_at, updated_at',
+      'target_protein_set_at, target_duration_days_initial, target_duration_set_at, ' +
+      'target_duration_vet_directed, vet_visit_id, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -2920,8 +2978,9 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
         (id, pet_id, food_item_id, started_at, target_duration_days, status, completed_at,
          vet_name, notes, food_label, indication, phase, outcome, outcome_notes,
          stopped_reason, ended_at, transition_started_at, target_protein, target_protein_set_at,
+         target_duration_days_initial, target_duration_set_at, target_duration_vet_directed,
          vet_visit_id, created_at, updated_at, synced, sync_error)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,NULL)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,NULL)
        ON CONFLICT(id) DO UPDATE SET
          pet_id=excluded.pet_id, food_item_id=excluded.food_item_id,
          started_at=excluded.started_at, target_duration_days=excluded.target_duration_days,
@@ -2931,6 +2990,9 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
          outcome_notes=excluded.outcome_notes, stopped_reason=excluded.stopped_reason,
          ended_at=excluded.ended_at, transition_started_at=excluded.transition_started_at,
          target_protein=excluded.target_protein, target_protein_set_at=excluded.target_protein_set_at,
+         target_duration_days_initial=excluded.target_duration_days_initial,
+         target_duration_set_at=excluded.target_duration_set_at,
+         target_duration_vet_directed=excluded.target_duration_vet_directed,
          vet_visit_id=excluded.vet_visit_id,
          updated_at=excluded.updated_at, synced=1, sync_error=NULL
        WHERE diet_trials.synced = 1`,
@@ -2941,6 +3003,13 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
         t.outcome ?? null, t.outcome_notes ?? null, t.stopped_reason ?? null,
         t.ended_at ?? null, t.transition_started_at ?? null,
         t.target_protein ?? null, t.target_protein_set_at ?? null,
+        // BOOLEAN → INTEGER, and `?? null` is NOT enough on its own here: `false`
+        // is falsy, so a nullish-coalesce alone would let it through, and `false`
+        // is not a value SQLite will bind. Three states, mapped one to one —
+        // true→1, false→0, null/undefined→NULL — because §5.1 needs NULL and false
+        // to mean the same thing downstream WITHOUT the pull inventing either.
+        t.target_duration_days_initial ?? null, t.target_duration_set_at ?? null,
+        t.target_duration_vet_directed == null ? null : t.target_duration_vet_directed ? 1 : 0,
         t.vet_visit_id ?? null,
         t.created_at, t.updated_at,
       ],
@@ -2972,36 +3041,44 @@ async function hydrateDietTrialFoods(db: Db, stale: () => boolean): Promise<void
   const localById = await loadLocalRowMeta(db, 'diet_trial_foods', rows.map((r) => r.id), 'updated_at');
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
   if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
-  for (const f of toWrite) {
-    // NATURAL-KEY COLLISION RESOLUTION, and it is not optional — without it a
-    // single colliding local row throws and aborts the rest of the table's
-    // hydration. Full argument (and the proof that the `synced = 0` guard is both
-    // safe and complete) lives with the statement in lib/dietTrialMirror.ts.
-    await db.runAsync(DIET_TRIAL_FOOD_COLLISION_SQL, [
-      f.diet_trial_id, f.food_item_id, f.role, f.allowed_from, f.id,
-    ]);
-    // identity columns (diet_trial_id, pet_id, food_item_id) and created_at are
-    // immutable and deliberately omitted from the SET — created_at appears in the
-    // column list for the INSERT branch only, so that asymmetry is correct, not
-    // B-057 drift (mirrors hydrateMeals).
-    await db.runAsync(
-      `INSERT INTO diet_trial_foods
-        (id, diet_trial_id, pet_id, food_item_id, role, food_label, allowed_from,
-         allowed_until, deleted_at, created_at, updated_at, synced, sync_error)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,1,NULL)
-       ON CONFLICT(id) DO UPDATE SET
-         role=excluded.role, food_label=excluded.food_label,
-         allowed_from=excluded.allowed_from, allowed_until=excluded.allowed_until,
-         deleted_at=excluded.deleted_at, updated_at=excluded.updated_at,
-         synced=1, sync_error=NULL
-       WHERE diet_trial_foods.synced = 1`,
-      [
-        f.id, f.diet_trial_id, f.pet_id, f.food_item_id, f.role ?? 'primary_diet',
-        f.food_label, f.allowed_from, f.allowed_until ?? null, f.deleted_at ?? null,
-        f.created_at, f.updated_at,
-      ],
-    );
-  }
+  // CUL-305 — the allowed set lands as ONE unit. The log-time trial heads-up reads
+  // this table's row count to decide whether a meal was off-diet, and its verdict
+  // spends a one-per-food-per-trial budget the owner never gets back; a reader that
+  // caught this loop half-way on a second device saw a wet+dry trial as single-food
+  // and burned that budget on a false heads-up. Inside one transaction no reader
+  // observes a partial set: it sees the set as it was, or the set as it is.
+  await db.withTransactionAsync(async () => {
+    for (const f of toWrite) {
+      // NATURAL-KEY COLLISION RESOLUTION, and it is not optional — without it a
+      // single colliding local row throws and aborts the rest of the table's
+      // hydration. Full argument (and the proof that the `synced = 0` guard is both
+      // safe and complete) lives with the statement in lib/dietTrialMirror.ts.
+      await db.runAsync(DIET_TRIAL_FOOD_COLLISION_SQL, [
+        f.diet_trial_id, f.food_item_id, f.role, f.allowed_from, f.id,
+      ]);
+      // identity columns (diet_trial_id, pet_id, food_item_id) and created_at are
+      // immutable and deliberately omitted from the SET — created_at appears in the
+      // column list for the INSERT branch only, so that asymmetry is correct, not
+      // B-057 drift (mirrors hydrateMeals).
+      await db.runAsync(
+        `INSERT INTO diet_trial_foods
+          (id, diet_trial_id, pet_id, food_item_id, role, food_label, allowed_from,
+           allowed_until, deleted_at, created_at, updated_at, synced, sync_error)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,1,NULL)
+         ON CONFLICT(id) DO UPDATE SET
+           role=excluded.role, food_label=excluded.food_label,
+           allowed_from=excluded.allowed_from, allowed_until=excluded.allowed_until,
+           deleted_at=excluded.deleted_at, updated_at=excluded.updated_at,
+           synced=1, sync_error=NULL
+         WHERE diet_trial_foods.synced = 1`,
+        [
+          f.id, f.diet_trial_id, f.pet_id, f.food_item_id, f.role ?? 'primary_diet',
+          f.food_label, f.allowed_from, f.allowed_until ?? null, f.deleted_at ?? null,
+          f.created_at, f.updated_at,
+        ],
+      );
+    }
+  });
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
   if (stale()) return;
   if (wm) await setWatermark('diet_trial_foods', wm);
@@ -3159,6 +3236,13 @@ export async function hydrateFromCloud(): Promise<void> {
   if (stale()) return;
   await runHydrationStep('event_attachments', () => hydrateEventAttachments(db, stale));
   if (stale()) return;
+  // HV-5 (CUL-1162): the per-incident read's copy on the phone. No local FK to events,
+  // so the order is free; it sits beside the attachments it describes. The step's body
+  // is `lib/readCopy.ts`, the one module allowed to write the copy, which is why it
+  // lives there and not inline here, and why this file names neither table, not even in
+  // the step's label (`guards/readState.test.ts` keeps it that way).
+  await runHydrationStep('verdict copy', () => pullReadCopies(db, stale));
+  if (stale()) return;
   await runHydrationStep('vet_visits', () => hydrateVetVisits(db, stale));
   if (stale()) return;
   await runHydrationStep('vet_visit_attachments', () => hydrateVetVisitAttachments(db, stale));
@@ -3194,6 +3278,42 @@ export async function hydrateFromCloud(): Promise<void> {
   if (stale()) return;
   // B-661: account-scoped, no local FK — order is free. Last, after the mirrors.
   await runHydrationStep('notification_preferences', () => hydrateNotificationPreferences(db, stale));
+}
+
+// HV-5 (CUL-1162) — a per-incident read that just landed on THIS device, saved to the
+// phone's copy at the moment it lands rather than at the next sync cycle. Called by the
+// analysis chain before it settles and by the realtime watch before each check
+// (`lib/analysis.ts`); the reason is `lib/readCopy.ts`'s header. It lives here, not
+// there, because the sign-out epoch does: a sign-out landing mid-save must not write the
+// previous account's verdict into the copy the wipe just cleared (FR-9). The session is
+// checked first (supabase-sync Pattern 4). Never throws: a landed read that could not be
+// copied is not something a caller can act on, and the next cycle's pull brings it.
+// Resolves true when the copy CHANGED, which is the watch's cue to tell Home.
+//
+// TWO sessions must agree, not one (the rls-privacy-reviewer's R1 on #912). A chain is
+// fire-and-forget from the log path, so it can settle long after the account that
+// started it is gone. On an ordinary sign-out auth-js drops its session first and the
+// check above returns. The §6.4 recovery swap is the other order: step 3 nulls the
+// APP's session, step 4 wipes this device while auth-js still holds the previous
+// account's live session, and only step 5 hands over. A chain settling inside that
+// window saw a live session and captured the post-wipe epoch, so nothing was stale: it
+// wrote the previous account's verdict into the copy the wipe had just cleared, where
+// no later wipe removed it. The app's session is the one step 3 nulls, so it is read
+// synchronously, right before the epoch is taken, and must name the same account. AFTER
+// the await, never before it: a getSession slow enough to span step 3 and the wipe would
+// otherwise carry a gate read from before the swap (`lib/readCopySync.test.ts` pins it).
+export async function refreshReadCopy(eventId: string): Promise<boolean> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return false;
+    const appSession = useAuthStore.getState().session;
+    if (!appSession || appSession.user.id !== session.user.id) return false;
+    const epoch = signOutEpoch;
+    return (await pullReadCopyFor(getDb(), eventId, () => signOutEpoch !== epoch)) > 0;
+  } catch (e) {
+    console.warn('[sync] read copy refresh failed:', e);
+    return false;
+  }
 }
 
 // One full sync cycle: push local writes UP, then pull remote rows DOWN

@@ -108,10 +108,16 @@ describe('PatternCalendar — paging + drill-in (B-284 N5b container)', () => {
     expect(A.getIntakeDeclineByMonth).not.toHaveBeenCalled();
   });
 
-  it('forward paging is disabled at the current month', () => {
-    const { getByLabelText } = renderCalendar();
-    fireEvent.press(getByLabelText('Next month')); // at June (current) → no-op
+  it('forward paging is disabled at the current month, and says so (CUL-327)', () => {
+    const { getByLabelText, getByTestId } = renderCalendar();
+    // The label carries the reason now: `disabled` makes VoiceOver say "dimmed",
+    // and a bare "Next month" leaves that unexplained (C-7).
+    fireEvent.press(getByLabelText('Next month — already at the current month')); // at June → no-op
     expect(A.getSymptomFrequencyByMonth).not.toHaveBeenCalled();
+    // …and the sighted reader gets the same reason. Asserted HERE as well as in the
+    // card's own suite because this is where the bound is actually DERIVED
+    // (canGoNext off `currentMonth`); the card suite only proves it renders a prop.
+    expect(getByTestId('calendar-paging-bound').props.children).toBe('Current month');
   });
 
   it('tapping a day fetches that UTC day bounded [after, before) and opens the drill-in (B-308)', async () => {

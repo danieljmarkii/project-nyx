@@ -14,6 +14,16 @@ jest.mock('react-native-safe-area-context', () => {
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
+// Design v2 (D2-5): the screen now imports the month's reads, which reach lib/supabase
+// at import time. This suite is the FLAG-OFF path — `useAllowlistFlag` is false above, so
+// `useDesignV2` is false and nothing behind it mounts or reads; the stub exists for the
+// import edge only. The flag-on wiring and the async flag-off proof are app/insights/
+// designV2.test.tsx.
+// This suite flips EVERY allowlist flag on (`mockFlagOn`), which would also turn the
+// Design v2 gate on and swap the page for the month; the redesign is not under test
+// here, so its one gate is pinned off at the hook (the file the guard names).
+jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => false }));
+jest.mock('../../lib/monthReads', () => ({ readMonthFacts: jest.fn(), readDayRows: jest.fn() }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
 // The three gates, mutable per test.
@@ -22,7 +32,7 @@ let mockOptedIn = true;
 jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => mockFlagOn }));
 jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => mockOptedIn }));
 jest.mock('../../hooks/useDietTrial', () => ({
-  useDietTrial: () => ({ input: null, isLoading: false, reload: jest.fn(), inputIsForActivePet: false }),
+  useDietTrial: () => ({ input: null, isLoading: false, reload: jest.fn(), inputIsForPet: false }),
 }));
 
 const mockLoadLookDays = jest.fn();

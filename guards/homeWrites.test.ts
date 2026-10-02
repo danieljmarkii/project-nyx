@@ -19,9 +19,14 @@
 // ── BY EFFECT, NOT BY NAME ───────────────────────────────────────────────────
 // The first shape of this guard let four writes through (the adversarial pass, gap 10),
 // because it looked for the names of the two allowed helpers. This one asks what a file
-// can REACH: every write helper the app has, plus raw SQL that mutates a synced table.
-// A `saveLook()` wrapper is caught because the wrapper's own file is in the closure and
-// contains the call.
+// can REACH: the write helpers named in WRITE_CALLS, raw SQL that mutates a synced table,
+// and a direct PostgREST mutation (`client.from(t).update(…)`, CUL-1106 — the shape
+// neither of the first two could see). A `saveLook()` wrapper is caught because the
+// wrapper's own file is in the closure and contains the call. The helper names are
+// DERIVED by effect too (CUL-1154): every `lib/` function that mutates, directly or
+// through another, is a write helper whether or not anyone remembered to list it. The
+// hand list `WRITE_CALLS` survives as a floor, and `NOT_RECORD_WRITES` names the writes
+// that are not the record's, each with its reason.
 //
 // ── THE CLOSURE ──────────────────────────────────────────────────────────────
 // Computed, never hand-listed (the deploy manifest's shape): `app/(tabs)/index.tsx`
@@ -116,7 +121,46 @@ const WRITE_CALLS = [
   'logVetVisit',
   'cancelVetAppointment',
   'saveAppointmentQuestions',
+  // CUL-1106 — the owner's edits to the per-incident read, and the first writes the
+  // PostgREST detector found in Home's closure. Named for the same reason as the four
+  // above: `lib/analysis.ts` joins WRITE_PATH (Home reaches it for the read's state),
+  // which silences its own mutations, and these names are what survive that.
+  'saveVomitFieldEdits',
+  'saveStoolFieldEdits',
 ];
+
+/**
+ * The derived writers that are NOT writes to the record (CUL-1154), and why.
+ *
+ * Derivation by effect finds every `lib/` function that mutates a table, and some
+ * tables are not the record: the sync layer's bookkeeping, the catalog caches, the local
+ * database's own lifecycle. These are the layer that makes any row durable, or the
+ * device's housekeeping, never a control on Home writing a row (the header's DRAIN
+ * argument). An entry here does not propagate either: a function whose only write is
+ * through one of these is not a writer.
+ *
+ * Each entry must still be a derived writer (the staleness test below), so a rename or a
+ * removal cannot leave a name here pre-authorising whatever takes it next (C-32). Adding
+ * one is the same act as adding to the allow-set: say why, and never to clear a finding
+ * that is a write to the record.
+ */
+const NOT_RECORD_WRITES: Record<string, string> = {
+  syncNow: 'the drain: pushes rows already written and pulls the mirror; adds nothing',
+  hydrateFromCloud: 'the pull: mirrors rows the server already holds',
+  ensureEventAttachmentsSynced: 'the attachment drain, the per-incident read\u2019s precondition',
+  setWatermark: 'sync bookkeeping: the last-pulled marker per table',
+  refreshFoodCache: 'the food catalog cache, re-read from the server',
+  refreshMedicationCache: 'the medication catalog cache, re-read from the server',
+  reapStalePendingFoods:
+    'deletes abandoned PENDING food placeholders (server and cache) that no record row ' +
+    'points at; called only from the sync layer',
+  flushLegacyCatalogCachesIfNeeded: 'a one-time local cache migration',
+  initDb: 'creates and migrates the local database',
+  clearLocalData: 'the sign-out wipe of the local database',
+  writeCopies:
+    'the per-incident read\u2019s verdict copy (lib/readCopy.ts in WRITE_PATH): it mirrors ' +
+    'rows the SERVER wrote, so the realtime watch Home starts is a pull, not a write',
+};
 
 /**
  * Raw SQL that mutates. The three verbs, in the shapes this codebase writes them.
@@ -132,8 +176,14 @@ const WRITE_CALLS = [
  *
  * Raw SQL inside a CARD, a hook or a store is a different animal: there is no reason
  * for one to hand-write a mutation except to get around the helpers this guard names.
+ *
+ * CUL-1154 review: SQLite's conflict clauses (`INSERT OR IGNORE INTO`, `INSERT OR REPLACE
+ * INTO`, `REPLACE INTO`, `UPDATE OR …`) and a table named by interpolation
+ * (`UPDATE ${table} SET`) are mutations too, and `lib/captureInbox.ts` and the event
+ * screens write in exactly those shapes. The first regex saw none of them.
  */
-const RAW_MUTATION = /\b(INSERT\s+INTO|UPDATE\s+[A-Za-z_][\w.]*\s+SET|DELETE\s+FROM)\b/i;
+const RAW_MUTATION =
+  /\b(INSERT\s+(?:OR\s+\w+\s+)?INTO|REPLACE\s+INTO|UPDATE\s+(?:OR\s+\w+\s+)?[\w.${}]+\s+SET|DELETE\s+FROM)\b/i;
 
 /**
  * The two write classes Home carries, keyed by the file that owns each.
@@ -175,6 +225,15 @@ const ALLOW: Record<string, readonly string[]> = {
   // coverage line, Patterns or an engine input. The two guards compose: that one
   // bounds what a visit may influence, this one bounds what Home may write.
   'components/vetvisits/AppointmentStrip.tsx': ['cancelVetAppointment'],
+  // CUL-1066 (D2-4) — THE LOOK, AS TODAY'S HEADER behind `design_v2`. The same class as
+  // `LookCard` (the carve-out §0.1 opened for the look on 2026-09-10), reached through a
+  // second file because flag-on Home draws the look here and not there; it is not a
+  // fourth class. Exactly `insertLook`: the header has no note field (the note stays on
+  // the record screen, T-22), so `updateLookNote` is NOT allowed here — a helper this
+  // file does not reach is a hole the allow-set would be pre-authorising (C-32). Flag-on,
+  // `MedStrip`'s confirm is not mounted, so Home's live write classes under the flag are
+  // two: this look and the appointment strip's resolution.
+  'components/designV2/home/LookHeader.tsx': ['insertLook'],
 };
 
 /**
@@ -195,7 +254,9 @@ const ALLOW: Record<string, readonly string[]> = {
  * bug is worse than no message. Per-helper, each module is silent about the writes it
  * owns and loud about every other one in it.
  *
- * Raw SQL is exempt here and NOWHERE ELSE. That replaces the first cut's directory rule
+ * Raw SQL and direct PostgREST mutations are exempt here and NOWHERE ELSE (the second
+ * since CUL-1106, which measured 13 such writes in `lib/sync.ts` and `lib/weight.ts`, all
+ * of them the sync fabric). That replaces the first cut's directory rule
  * (`components/`, `hooks/`, `store/`), which the adversarial pass walked straight
  * through with a `lib/homeIntakeConfirm.ts` holding a raw `INSERT INTO events`, called
  * from a Home chip: the suite stayed green while *Nothing unusual* wrote a meal row on
@@ -216,13 +277,17 @@ const WRITE_PATH: Record<string, { helpers: readonly string[]; why: string }> = 
   },
   'lib/meals.ts': { helpers: ['insertMeal'], why: 'declares insertMeal' },
   'lib/medicationDose.ts': {
-    helpers: ['insertMedicationDose'],
-    why: 'declares insertMedicationDose',
+    helpers: ['insertMedicationDose', 'updateDoseAdherence', 'updateDoseHowGiven'],
+    why:
+      'declares insertMedicationDose, and rateDoseAdherence / recordDoseHowGiven, the ' +
+      'refresh-and-push wrappers over lib/db.ts\u2019s two dose edits',
   },
   'lib/simpleEvent.ts': { helpers: ['insertSimpleEvent'], why: 'declares insertSimpleEvent' },
   'lib/undoLog.ts': {
-    helpers: ['reverseLoggedEvent', 'softDeleteEvent'],
-    why: 'declares the ONE shared reversal, whose implementation is softDeleteEvent (C-20)',
+    helpers: ['reverseLoggedEvent', 'softDeleteEvent', 'reconcileWeightSnapshotAfterDelete'],
+    why:
+      'declares the ONE shared reversal, whose implementation is softDeleteEvent (C-20), ' +
+      'and which un-writes a weigh-in\u2019s snapshot on the way out (CUL-641)',
   },
   'lib/sync.ts': {
     helpers: [],
@@ -254,6 +319,28 @@ const WRITE_PATH: Record<string, { helpers: readonly string[]; why: string }> = 
   'lib/feedingArrangements.ts': {
     helpers: [],
     why: 'the arrangements mirror, written by the sync layer',
+  },
+  'lib/analysis.ts': {
+    helpers: ['saveVomitFieldEdits', 'saveStoolFieldEdits'],
+    why:
+      'declares both owner edits to the per-incident read (CUL-1106), a direct ' +
+      'PostgREST update because event_ai_analysis is server-owned (its structured ' +
+      'fields are never mirrored locally; the verdict copy below never holds them). ' +
+      'Home reaches this module for the read\u2019s state (TodayCard) and writes ' +
+      'nothing through it; both helpers are in WRITE_CALLS, so a Home card that calls ' +
+      'one is still caught BY NAME.',
+  },
+  // HV-5 (CUL-1162) \u2014 registered the PR it SHIPS (C-32). Home's spine reads the read's
+  // verdict from this module, so its one upsert is in Home's closure; without this entry
+  // the raw-SQL detector reds on it, and marking it `home-write-ok` would call sync
+  // fabric a Home write class.
+  'lib/readCopy.ts': {
+    helpers: [],
+    why:
+      'the per-incident read\u2019s verdict copy (History v2 \u00a75.3): its one upsert ' +
+      'mirrors rows the SERVER wrote, called by the sync pull, the analysis chain and ' +
+      'the realtime watch. Home only READS through it (readAnalysisRows); nothing an ' +
+      'owner does on Home writes the copy, and it holds no record of its own.',
   },
 };
 
@@ -289,7 +376,7 @@ function importedWriteHelpers(absFile: string, src: string): { helper: string; l
         // `propertyName` is the name AT THE SOURCE when the import is aliased
         // (`insertMeal as _x`), and undefined otherwise.
         const imported = (element.propertyName ?? element.name).text;
-        if (WRITE_CALLS.includes(imported)) {
+        if (writeHelpers().includes(imported)) {
           out.push({
             helper: imported,
             line: sf.getLineAndCharacterOfPosition(element.getStart(sf)).line + 1,
@@ -331,6 +418,239 @@ function opaqueSpecifiers(absFile: string, src: string): number[] {
   };
   visit(sf);
   return out;
+}
+
+/** The PostgREST verbs that change a row. `select` is a read and `rpc` is a function
+ *  call the guard cannot see into (a stated blind spot, below). */
+const POSTGREST_MUTATIONS = new Set(['insert', 'update', 'upsert', 'delete']);
+
+/**
+ * Every direct PostgREST mutation in a file — `client.from(<table>).insert(…)` and its
+ * three siblings — by line (CUL-1106).
+ *
+ * The third detector, beside the named helpers and the raw SQL, because neither of
+ * those sees this shape: a card or a hook calling the client itself writes a synced
+ * table without a helper name or a line of SQL. The per-incident read's edit and hide
+ * writes (`lib/analysis.ts`) are exactly this shape; none is on Home today.
+ *
+ * Read off the TS parser, like the imports above, not a regex: the chain is usually
+ * split over lines, and a sentence about `.from('events').update(` in a comment or a
+ * string is not a call. The table argument may be anything, so a table named through a
+ * variable counts too, and so does a builder held in a local first
+ * (`const q = client.from(t); q.update(…)`, the code-reviewer's case). The line is the
+ * chain's first, where a marker above it reads.
+ *
+ * BLIND SPOTS, stated so they do not read as coverage (C-38): a mutation behind
+ * `.rpc(…)`, a Storage `upload` / `remove`, a builder that crosses a function boundary
+ * (passed as an argument, returned from a helper), and a client method reached through a
+ * wrapper this file does not name. None has a Home caller today. The local-binding match
+ * is by NAME across the file, not by scope, so it errs loud: a same-named local in
+ * another function that happens to have a `delete` would be flagged, never missed.
+ */
+function postgrestMutations(absFile: string, src: string): number[] {
+  const kind = absFile.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(absFile, src, ts.ScriptTarget.Latest, true, kind);
+  const out: number[] = [];
+  const isFromCall = (n: ts.Node): boolean =>
+    ts.isCallExpression(n) &&
+    ts.isPropertyAccessExpression(n.expression) &&
+    n.expression.name.text === 'from';
+  // Locals initialised to a builder, so `q.update(…)` counts as `client.from(t).update(…)`.
+  const builders = new Set<string>();
+  const collect = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer !== undefined &&
+      isFromCall(node.initializer)
+    ) {
+      builders.add(node.name.text);
+    }
+    node.forEachChild(collect);
+  };
+  collect(sf);
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      POSTGREST_MUTATIONS.has(node.expression.name.text)
+    ) {
+      const receiver = node.expression.expression;
+      if (isFromCall(receiver) || (ts.isIdentifier(receiver) && builders.has(receiver.text))) {
+        out.push(sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1);
+      }
+    }
+    node.forEachChild(visit);
+  };
+  visit(sf);
+  return out;
+}
+
+// ── the derived write helpers (CUL-1154) ──────────────────────────────────────
+
+/** A call: `name(`, the shape the helper match has always used. */
+const CALLED = /\b([A-Za-z_$][\w$]*)\s*\(/g;
+
+/** The directory derivation walks: where every write helper is declared today. */
+const HELPER_DIR = 'lib';
+
+interface DerivedWriters {
+  /** Every exported writer's name, minus `NOT_RECORD_WRITES`. */
+  names: Set<string>;
+  /** The files each such name is exported from. */
+  declaredIn: Map<string, Set<string>>;
+  /** Every exported writer BEFORE the exclusions, for the staleness test. */
+  beforeExclusions: Set<string>;
+}
+
+/**
+ * Every `lib/` function that writes, found by what it does rather than by its name.
+ *
+ * A function WRITES when its body holds a raw SQL mutation, references a module-level
+ * constant holding one (`addTrialFood` runs `TRIAL_FOOD_INSERT_SQL`, so its body never
+ * says INSERT), or makes a direct PostgREST mutation; or when it calls a function that
+ * writes. Private functions take part, so an exported wrapper over a private writer
+ * counts, but a call resolves to a private function only inside its own module. The
+ * closure runs to a fixed point.
+ *
+ * BLIND SPOTS, stated so they do not read as coverage (C-38): SQL the RAW_MUTATION
+ * regex does not recognise (it reads the conflict-clause and interpolated-table shapes,
+ * but not, say, a verb assembled from strings), methods on an object or a
+ * class, a function passed as a value and called through a parameter, SQL built by
+ * concatenation across statements, and writers declared outside `lib/` (a store or a
+ * hook that writes directly is caught where it sits, by the raw-SQL and PostgREST
+ * detectors, because it is in Home's closure). Calls match by NAME, so a same-named
+ * function in another module errs loud, never quiet.
+ */
+export function deriveWriters(root: string): DerivedWriters {
+  interface Fn { file: string; name: string; exported: boolean; callees: Set<string>; writes: boolean }
+  const fns: Fn[] = [];
+  const dir = path.join(root, HELPER_DIR);
+  const files = fs.existsSync(dir)
+    ? fs.readdirSync(dir).filter((n) => /\.tsx?$/.test(n) && !n.includes('.test.')).sort()
+    : [];
+
+  // Module-level constants whose text is a mutation, by file, plus the exported ones by
+  // name (a writer may import its statement from a sibling module).
+  const localSql = new Map<string, Set<string>>();
+  const exportedSql = new Set<string>();
+  const parsed = files.map((name) => {
+    const relFile = `${HELPER_DIR}/${name}`;
+    const src = fs.readFileSync(path.join(dir, name), 'utf8');
+    const kind = name.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+    const sf = ts.createSourceFile(relFile, src, ts.ScriptTarget.Latest, true, kind);
+    return { relFile, src, sf };
+  });
+  const hasExportModifier = (n: ts.Node): boolean =>
+    ts.canHaveModifiers(n) && (ts.getModifiers(n) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+  // A local function exported later by a bare `export { name }` list counts as exported.
+  const exportListOf = (sf: ts.SourceFile): Set<string> => {
+    const out = new Set<string>();
+    for (const stmt of sf.statements) {
+      if (ts.isExportDeclaration(stmt) && !stmt.moduleSpecifier && stmt.exportClause && ts.isNamedExports(stmt.exportClause)) {
+        for (const el of stmt.exportClause.elements) out.add((el.propertyName ?? el.name).text);
+      }
+    }
+    return out;
+  };
+
+  for (const { relFile, src, sf } of parsed) {
+    const listed = exportListOf(sf);
+    const isExported = (n: ts.Node, name: string): boolean => hasExportModifier(n) || listed.has(name);
+    const consts = new Set<string>();
+    for (const stmt of sf.statements) {
+      if (!ts.isVariableStatement(stmt)) continue;
+      for (const decl of stmt.declarationList.declarations) {
+        if (!ts.isIdentifier(decl.name) || !decl.initializer) continue;
+        const text = blankComments(src.slice(decl.initializer.getStart(sf), decl.initializer.end));
+        if (!RAW_MUTATION.test(text)) continue;
+        consts.add(decl.name.text);
+        if (isExported(stmt, decl.name.text)) exportedSql.add(decl.name.text);
+      }
+    }
+    localSql.set(relFile, consts);
+  }
+
+  for (const { relFile, src, sf } of parsed) {
+    const listed = exportListOf(sf);
+    const isExported = (n: ts.Node, name: string): boolean => hasExportModifier(n) || listed.has(name);
+    const mutationLines = new Set(postgrestMutations(relFile, src));
+    const consts = localSql.get(relFile) ?? new Set<string>();
+    const add = (name: string, exported: boolean, body: ts.Node) => {
+      const text = blankComments(src.slice(body.getStart(sf), body.end));
+      const first = sf.getLineAndCharacterOfPosition(body.getStart(sf)).line + 1;
+      const last = sf.getLineAndCharacterOfPosition(body.end).line + 1;
+      let postgrest = false;
+      for (let line = first; line <= last && !postgrest; line += 1) postgrest = mutationLines.has(line);
+      const words = new Set(text.match(/[A-Za-z_$][\w$]*/g) ?? []);
+      const viaConst = [...consts, ...exportedSql].some((c) => words.has(c));
+      const callees = new Set([...text.matchAll(CALLED)].map((m) => m[1]));
+      fns.push({ file: relFile, name, exported, callees, writes: RAW_MUTATION.test(text) || postgrest || viaConst });
+    };
+    for (const stmt of sf.statements) {
+      if (ts.isFunctionDeclaration(stmt) && stmt.name && stmt.body) {
+        add(stmt.name.text, isExported(stmt, stmt.name.text), stmt.body);
+      } else if (ts.isVariableStatement(stmt)) {
+        for (const decl of stmt.declarationList.declarations) {
+          const init = decl.initializer;
+          if (ts.isIdentifier(decl.name) && init && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))) {
+            add(decl.name.text, isExported(stmt, decl.name.text), init.body);
+          }
+        }
+      }
+    }
+  }
+
+  // An excluded name is neither a writer nor a path to one.
+  const excluded = (fn: Fn) => fn.exported && Object.hasOwn(NOT_RECORD_WRITES, fn.name);
+  const beforeExclusions = new Set<string>();
+  for (let pass = 0; pass < 2; pass += 1) {
+    // Pass 0 ignores the exclusions (for the staleness test), pass 1 applies them.
+    const live = fns.map((fn) => ({ ...fn }));
+    const skip = (fn: Fn) => pass === 1 && excluded(fn);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      const writers = live.filter((fn) => fn.writes && !skip(fn));
+      for (const fn of live) {
+        if (fn.writes || skip(fn)) continue;
+        const reaches = writers.some(
+          (w) => (w.file === fn.file || w.exported) && w !== fn && fn.callees.has(w.name),
+        );
+        if (reaches) {
+          fn.writes = true;
+          grew = true;
+        }
+      }
+    }
+    const exportedWriters = live.filter((fn) => fn.exported && fn.writes && !skip(fn));
+    if (pass === 0) {
+      for (const fn of exportedWriters) beforeExclusions.add(fn.name);
+      continue;
+    }
+    const declaredIn = new Map<string, Set<string>>();
+    for (const fn of exportedWriters) {
+      const set = declaredIn.get(fn.name) ?? new Set<string>();
+      set.add(fn.file);
+      declaredIn.set(fn.name, set);
+    }
+    return { names: new Set(declaredIn.keys()), declaredIn, beforeExclusions };
+  }
+  throw new Error('unreachable');
+}
+
+let derivedCache: DerivedWriters | null = null;
+/** The live tree's derived writers, computed once per run. */
+function liveWriters(): DerivedWriters {
+  derivedCache ??= deriveWriters(ROOT);
+  return derivedCache;
+}
+
+let helpersCache: string[] | null = null;
+/** Every helper name the detector matches: the hand list and the derived set. */
+function writeHelpers(): string[] {
+  helpersCache ??= [...new Set([...WRITE_CALLS, ...liveWriters().names])].sort();
+  return helpersCache;
 }
 
 /** Every relative specifier a file imports or re-exports, via the TS parser rather than
@@ -433,8 +753,17 @@ function exempted(rawLines: string[], line: number): boolean {
 /** Every write this file can reach that its allow-entry does not permit. */
 export function findWrites(relPath: string, rawSource: string): WriteFinding[] {
   const writePath = WRITE_PATH[relPath];
-  const allowed = [...(ALLOW[relPath] ?? []), ...(writePath?.helpers ?? [])];
-  const rawSqlCounts = writePath === undefined;
+  // A module is silent about the writers it DECLARES (CUL-1154): `lib/vetVisits.ts`
+  // calling its own `saveNotesDraft` is the layer's business. It stays loud about every
+  // writer declared anywhere else, which is the adversarial pass's `insertLook` →
+  // `insertSimpleEvent` case.
+  const declaredHere = [...liveWriters().declaredIn]
+    .filter(([, files]) => files.has(relPath))
+    .map(([name]) => name);
+  const allowed = [...(ALLOW[relPath] ?? []), ...(writePath?.helpers ?? []), ...declaredHere];
+  // The write layer's own statements (raw SQL, direct PostgREST) are its business;
+  // anywhere else in Home's closure they are a write.
+  const directWritesCount = writePath === undefined;
   const blanked = blankComments(rawSource);
   const rawLines = rawSource.split('\n');
   const blankedLines = blanked.split('\n');
@@ -447,8 +776,9 @@ export function findWrites(relPath: string, rawSource: string): WriteFinding[] {
 
   blankedLines.forEach((text, index) => {
     const line = index + 1;
-    for (const helper of WRITE_CALLS) {
-      if (!new RegExp(`\\b${helper}\\s*\\(`).test(text)) continue;
+    const called = new Set([...text.matchAll(CALLED)].map((m) => m[1]));
+    for (const helper of writeHelpers()) {
+      if (!called.has(helper)) continue;
       if (allowed.includes(helper)) continue;
       if (exempted(rawLines, line)) {
         exemptedHelpers.add(helper);
@@ -456,13 +786,20 @@ export function findWrites(relPath: string, rawSource: string): WriteFinding[] {
       }
       findings.push({ file: relPath, line, what: `${helper}(` });
     }
-    if (rawSqlCounts && RAW_MUTATION.test(text) && !exempted(rawLines, line)) {
+    if (directWritesCount && RAW_MUTATION.test(text) && !exempted(rawLines, line)) {
       findings.push({ file: relPath, line, what: 'raw SQL mutation' });
     }
   });
 
   // The import-level reach, so an alias cannot hide a call (see `importedWriteHelpers`).
   const abs = relPath.endsWith('.tsx') ? relPath : relPath;
+
+  if (directWritesCount) {
+    for (const line of postgrestMutations(abs, rawSource)) {
+      if (exempted(rawLines, line)) continue;
+      findings.push({ file: relPath, line, what: 'direct PostgREST mutation' });
+    }
+  }
   for (const hit of importedWriteHelpers(abs, rawSource)) {
     if (allowed.includes(hit.helper) || exemptedHelpers.has(hit.helper)) continue;
     if (exempted(rawLines, hit.line)) continue;
@@ -540,10 +877,20 @@ describe('§3.2 — Home carries exactly two write classes', () => {
     // question to the PM before a line of the strip was written. The amendment is
     // recorded in `docs/nyx-med-strip-requirements.md` §0.1; the reason it qualifies
     // is on the ALLOW entry above.
+    //
+    // It fired a THIRD time on CUL-1066 (D2-4), and that one is NOT a new class: the
+    // look, drawn by a second file (`components/designV2/home/LookHeader.tsx`) behind
+    // `design_v2`, reaching ONE of the look's two helpers. It passes the three tests
+    // above in the same words the note did — the look's own row, no new record, ruled
+    // (the round-4 page §01). What the flag changes is which classes are MOUNTED: flag-on
+    // the med strip is not, so live Home carries two (the look, the appointment strip);
+    // the allow-set still names the med strip because the file still exists, still
+    // writes, and is still mounted flag-off — the closure walks files, not flags.
     expect(ALLOW).toEqual({
       'components/home/MedStrip.tsx': ['insertMedicationDose'],
       'components/home/LookCard.tsx': ['insertLook', 'updateLookNote'],
       'components/vetvisits/AppointmentStrip.tsx': ['cancelVetAppointment'],
+      'components/designV2/home/LookHeader.tsx': ['insertLook'],
     });
   });
 
@@ -593,6 +940,11 @@ describe('the detector itself', () => {
 
   it('FLAGS an UPDATE — an edit from a Home row is a Home write', () => {
     expect(find('await updateEvent(id, { notes });\n').map((f) => f.what)).toEqual(['updateEvent(']);
+  });
+
+  it('FLAGS an INSERT OR REPLACE in a Home card', () => {
+    const findings = find('await getDb().runAsync(`INSERT OR REPLACE INTO events (id) VALUES (?)`, [id]);\n');
+    expect(findings.map((f) => f.what)).toEqual(['raw SQL mutation']);
   });
 
   it('FLAGS raw SQL that mutates a table', () => {
@@ -671,11 +1023,201 @@ describe('the detector itself', () => {
     expect(findings).toEqual([]);
   });
 
+  it('FLAGS a direct PostgREST mutation, split over lines as the client is written (CUL-1106)', () => {
+    const findings = find(
+      "await supabase\n  .from('event_ai_analysis')\n  .update({ dismissed_at: now })\n  .eq('event_id', id);\n",
+    );
+    // At the chain's first line, where a marker above it would sit.
+    expect(findings).toEqual([{ file: REL, line: 1, what: 'direct PostgREST mutation' }]);
+  });
+
+  it('FLAGS every mutating verb, and a table named through a variable', () => {
+    const src = [
+      "await sb.from('events').insert(row);",
+      "await sb.from('meals').upsert(row);",
+      "await sb.from('looks').delete().eq('id', id);",
+      'await sb.from(TABLE).update(patch);',
+    ].join('\n');
+    expect(find(src).map((f) => f.line)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('FLAGS a builder bound to a local and mutated on a later line', () => {
+    // The code-reviewer's case: the verb's receiver is an identifier, not the `.from()`
+    // call, so a detector that only reads the chain misses it.
+    const findings = find("const q = supabase.from('events');\nawait q.update({ notes }).eq('id', id);\n");
+    expect(findings.map((f) => [f.line, f.what])).toEqual([[2, 'direct PostgREST mutation']]);
+  });
+
+  it('IGNORES a local bound to anything other than a builder', () => {
+    expect(find('const seen = new Set(ids);\nseen.delete(id);\n')).toEqual([]);
+  });
+
+  it('IGNORES a PostgREST read, and the chain inside a comment or a string', () => {
+    expect(find("const { data } = await sb.from('events').select('*').eq('id', id);\n")).toEqual([]);
+    expect(find("// sb.from('events').update(x) would be a third class\n")).toEqual([]);
+    expect(find("const doc = \"sb.from('events').update(x)\";\n")).toEqual([]);
+  });
+
+  it('CLEARS a marked PostgREST site', () => {
+    expect(find("// home-write-ok: the fixture's reason\nawait sb.from('events').update(x);\n")).toEqual([]);
+  });
+
+  it('FLAGS a Home card calling a per-incident edit BY NAME, though its module is registered', () => {
+    expect(find('await saveVomitFieldEdits(id, edits);\n').map((f) => f.what)).toEqual([
+      'saveVomitFieldEdits(',
+    ]);
+  });
+
+  it('leaves the write layer’s own PostgREST alone, exactly as its raw SQL', () => {
+    // `lib/sync.ts` pushes every synced table this way: it is the layer, not a control.
+    expect(findWrites('lib/sync.ts', "await supabase.from('events').upsert(rows);\n")).toEqual([]);
+  });
+
+  it('does NOT see an rpc or a Storage upload: the blind spots the detector states', () => {
+    // Pinned so the detector's header and its reach cannot drift apart unseen (C-38):
+    // widen the detector and this test says to update the sentence.
+    expect(find("await sb.rpc('record_ai_usage', { p });\n")).toEqual([]);
+    expect(find("await sb.storage.from('nyx-photos').upload(path, blob);\n")).toEqual([]);
+  });
+
   it('lets an allowed file make ONLY its own write', () => {
     const src = 'await insertLook({ petId });\nawait insertSimpleEvent({ type: "itch" });\n';
     const findings = findWrites('components/home/LookCard.tsx', src);
     // The third adversarial pass's mutant: the look's own write passes, the prompted
     // symptom row does not.
     expect(findings.map((f) => f.what)).toEqual(['insertSimpleEvent(']);
+  });
+});
+
+describe('the derived write helpers (CUL-1154)', () => {
+  it('finds the record writes the hand list never named', () => {
+    // The issue's own list, measured at d2c5c0c: every one of these wrote to the record
+    // and none was on WRITE_CALLS, so a Home card calling one shipped green.
+    const names = liveWriters().names;
+    for (const helper of [
+      'insertWeightCheck', 'updateWeightCheck', 'updateMealIntake', 'rateMealIntake',
+      'updateMealFood', 'updateDoseAdherence', 'updateDoseHowGiven', 'startDietTrial',
+      'endActiveTrial', 'addTrialFood', 'archiveFood', 'linkCourseToVisit', 'softDeleteVetDocument',
+    ]) {
+      expect([helper, names.has(helper)]).toEqual([helper, true]);
+    }
+  });
+
+  it('FLAGS a Home card calling a write helper no list names', () => {
+    expect(WRITE_CALLS).not.toContain('insertWeightCheck');
+    const root = createFixtureRoot('home-writes-derived', ['components/home']);
+    try {
+      const rel = 'components/home/HomeWriteFixture.tsx';
+      const src = 'await insertWeightCheck({ petId, kg: 4.2 });\n';
+      writeFixture(root, rel, src);
+      expect(findWrites(rel, src).map((f) => f.what)).toEqual(['insertWeightCheck(']);
+    } finally {
+      removeFixtureRoot(root);
+    }
+  });
+
+  it('pins the exclusions, and each one is still a writer it has to exclude', () => {
+    // A name here that derivation no longer finds is dead weight that would
+    // pre-authorise whatever takes the name next (C-32).
+    const { beforeExclusions, names } = liveWriters();
+    const stale = Object.keys(NOT_RECORD_WRITES).filter((n) => !beforeExclusions.has(n));
+    expect(stale).toEqual([]);
+    expect(Object.keys(NOT_RECORD_WRITES).filter((n) => names.has(n))).toEqual([]);
+    expect(Object.keys(NOT_RECORD_WRITES).sort()).toEqual([
+      'clearLocalData', 'ensureEventAttachmentsSynced', 'flushLegacyCatalogCachesIfNeeded',
+      'hydrateFromCloud', 'initDb', 'reapStalePendingFoods', 'refreshFoodCache',
+      'refreshMedicationCache', 'setWatermark', 'syncNow', 'writeCopies',
+    ]);
+  });
+
+  describe('the derivation, over a fixture lib/', () => {
+    let root = '';
+    beforeEach(() => {
+      root = createFixtureRoot('home-writes-derive', ['lib']);
+    });
+    afterEach(() => {
+      removeFixtureRoot(root);
+    });
+
+    const derive = (files: Record<string, string>) => {
+      for (const [name, src] of Object.entries(files)) writeFixture(root, `lib/${name}`, src);
+      return deriveWriters(root);
+    };
+
+    it('takes a function holding a raw SQL mutation, and leaves a read', () => {
+      const { names } = derive({
+        'a.ts':
+          'export async function save() { await db.runAsync(`UPDATE events SET notes = ?`, [n]); }\n' +
+          'export async function load() { return db.getAllAsync(`SELECT * FROM events`); }\n',
+      });
+      expect([...names]).toEqual(['save']);
+    });
+
+    it('takes a function whose statement lives in a module constant', () => {
+      // The `addTrialFood` shape: the body names the constant, never the verb.
+      const { names } = derive({
+        'a.ts':
+          'const INSERT_SQL = `INSERT INTO diet_trial_foods (id) VALUES (?)`;\n' +
+          'export async function addFood(id) { await db.runAsync(INSERT_SQL, [id]); }\n',
+      });
+      expect([...names]).toEqual(['addFood']);
+    });
+
+    it('takes a direct PostgREST mutation', () => {
+      const { names } = derive({
+        'a.ts': "export async function hide(id) {\n  await sb\n    .from('x')\n    .update({ h: true });\n}\n",
+      });
+      expect([...names]).toEqual(['hide']);
+    });
+
+    it('takes an exported wrapper over a private writer, and a writer in another module', () => {
+      const { names } = derive({
+        'a.ts':
+          'async function raw() { await db.runAsync(`DELETE FROM looks WHERE id = ?`, [i]); }\n' +
+          'export async function removeLook(i) { await raw(); }\n',
+        'b.ts': "import { removeLook } from './a';\nexport async function tidy(i) { await removeLook(i); }\n",
+      });
+      expect([...names].sort()).toEqual(['removeLook', 'tidy']);
+    });
+
+    it('does not resolve a PRIVATE writer across modules', () => {
+      const { names } = derive({
+        'a.ts': 'async function raw() { await db.runAsync(`DELETE FROM looks`); }\nexport const x = 1;\n',
+        'b.ts': 'async function raw() { return 1; }\nexport async function calm() { await raw(); }\n',
+      });
+      expect([...names]).toEqual([]);
+    });
+
+    it('does not carry an excluded write through its callers', () => {
+      // `setWatermark` is sync bookkeeping; a pull that only moves a watermark is not a
+      // record write, and neither is the function that calls the pull.
+      const { names, beforeExclusions } = derive({
+        'a.ts':
+          'export async function setWatermark(t) { await db.runAsync(`UPDATE watermarks SET t = ?`, [t]); }\n' +
+          'export async function pull() { await setWatermark(1); }\n',
+      });
+      expect([...names]).toEqual([]);
+      expect([...beforeExclusions].sort()).toEqual(['pull', 'setWatermark']);
+    });
+
+    it('takes the conflict-clause and interpolated-table shapes, and a bare export list', () => {
+      // The code-reviewer's probe: none of these derived before the regex was widened.
+      const { names } = derive({
+        'a.ts':
+          'export async function ignore() { await db.runAsync(`INSERT OR IGNORE INTO events (id) VALUES (?)`); }\n' +
+          'export async function replace() { await db.runAsync(`INSERT OR REPLACE INTO meals (id) VALUES (?)`); }\n' +
+          'export async function bare() { await db.runAsync(`REPLACE INTO looks (id) VALUES (?)`); }\n' +
+          'export async function anyTable(t) { await db.runAsync(`UPDATE ${t} SET synced = 0`); }\n' +
+          'async function late() { await db.runAsync(`DELETE FROM looks`); }\nexport { late };\n',
+      });
+      expect([...names].sort()).toEqual(['anyTable', 'bare', 'ignore', 'late', 'replace']);
+    });
+
+    it('says which file declares each writer, which is what lets a module call its own', () => {
+      const { declaredIn } = derive({
+        'a.ts': 'export async function save() { await db.runAsync(`INSERT INTO events (id) VALUES (?)`); }\n',
+      });
+      expect([...(declaredIn.get('save') ?? [])]).toEqual(['lib/a.ts']);
+    });
   });
 });

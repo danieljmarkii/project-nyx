@@ -7,6 +7,7 @@ import PetGenderScreen from './pet-gender';
 // when no pet exists, Skip advancing to the age step leaving sex='unknown' (its
 // insert default, no write), and Continue writing the picked sex before advancing.
 // Gender now PUSHES the age step (was replace → Home) so back-nav returns here.
+// CUL-130: the Skip reads "Not sure? Skip", the age step's rescue wording.
 
 const mockUpdatePet = jest.fn();
 let mockActivePet: unknown = { id: 'pet-1', name: 'Luna', species: 'cat', sex: 'unknown' };
@@ -53,6 +54,15 @@ describe('PetGenderScreen', () => {
     fireEvent.press(getByTestId('onboarding-skip'));
     expect(mockedPush).toHaveBeenCalledWith('/onboarding/pet-age');
     expect(mockedFrom).not.toHaveBeenCalled(); // sex stays 'unknown' — no write
+  });
+
+  // CUL-130 — the rescue owner who does not know the sex is who this Skip is FOR, so
+  // it says so, exactly as the age step's does. Read off the rendered label rather
+  // than the prop, so a header that drops `skipLabel` reds here too.
+  it('labels the skip for the don\'t-know case, matching the age step', () => {
+    const { getByTestId, getByText } = render(<PetGenderScreen />);
+    expect(getByText('Not sure? Skip')).toBeTruthy();
+    expect(getByTestId('onboarding-skip').props.accessibilityLabel).toBe('Not sure? Skip');
   });
 
   it('Continue writes the picked sex then advances to the age step', async () => {

@@ -112,6 +112,74 @@ const ALWAYS_SCANNED = [
   // the card ticks on every chip tap and must stay unscanned, so the withheld half had to
   // leave it. Proven by mutation — a `selectChip` import here reds the build.
   'components/home/LookWithheldEntry.tsx',
+  // CUL-1064 (D2-1) — the month's day mark. It paints a photo dot in the rose when the
+  // per-incident read said `worth_a_call`, and carries none of the MARKERS (it is a
+  // square over the caller's facts). C-16's third turn: a NEW file that paints a safety
+  // verdict is named here the PR it ships, not the PR after a buzz lands on it. Proven by
+  // mutation — a `commitSymptom` import there reds the build.
+  'components/charts/DayMark.tsx',
+  // CUL-1065 (D2-3) — the Signal's own screen and its episode gallery. The gallery paints
+  // each photographed episode's read in the shipped words, `worth_a_call` included, in the
+  // symptom ink; the screen hosts it and the safety phone script. Neither carries the
+  // MARKERS (the verdict key rides a model field, the script comes in through an import),
+  // so both are named here the PR they ship — C-16's rule, its fourth turn. Proven by
+  // mutation on CUL-1065: a `commitSymptom` import in each reds the build.
+  'components/designV2/signal/SignalScreen.tsx',
+  'components/designV2/signal/EpisodeGallery.tsx',
+  // CUL-1069 (D2-6) — the Signal chart's flight: the module that owns the spring and the
+  // root host that draws the clone. The landing is exactly where a "landed" buzz would
+  // read as natural, on the chart of a screen that paints `worth_a_call`; neither file
+  // carries the MARKERS (a `.ts` hook is invisible to `walk()` — the fold's own reason —
+  // and the host draws whatever element it is handed). Named the PR they ship (C-16);
+  // proven by mutation on CUL-1069: a `commitSymptom` import in each reds the build.
+  'components/motion/flightMotion.ts',
+  'components/motion/FlightHost.tsx',
+  // CUL-1066 (D2-4) — Home's spine node. It paints a landed `worth_a_call` in the rose
+  // ink beneath a photographed vomit and hosts the read's ARRIVAL on that node — the
+  // exact moment a "landed" buzz would read as natural (the incident arrival's G4). It
+  // carries none of the MARKERS (the verdict is a `tone` off the pure model, never the
+  // enum word), so it is named by hand. Proven by mutation — a `selectChip` import there
+  // reds the build. Its sibling `LookHeader.tsx` is deliberately NOT here: the header
+  // ticks on every chip tap (`selectChip`, T-10) and is not a safety surface; the
+  // emergency door it opens is its own scanned file (`LookEmergencySheet.tsx`). Moved to
+  // `components/dayRow/` by History v2 (HV-1 / CUL-1158) — the row Home and History
+  // share — and followed here in the same PR (a stale path reds "every always-scanned
+  // safety surface still exists" below; the entry belongs to the file, wherever it lives).
+  'components/dayRow/SpineNodeRow.tsx',
+  // CUL-1067 (D2-5) — the month instrument draws `DayMark` (and so `worth_a_call`)
+  // over a whole month and lists a day's incidents in place; the motion hook beneath
+  // that day is where a "landed" haptic would read as natural, exactly the fold's and
+  // the arrival's case above. Both named the PR they ship; proven by mutation (a
+  // `commitSymptom` import in either reds the build).
+  'components/designV2/patterns/MonthInstrument.tsx',
+  'components/motion/openInPlaceMotion.ts',
+  // HV-5 (CUL-1162) — the one read predicate. It paints nothing, and it is named anyway
+  // because History v2's spec puts the READ itself in this scan (§4: "a haptic on
+  // anything safety-bearing (the haptics guard's scan includes History v2's read)"):
+  // every surface's `worth_a_call` is decided here, so a "the read escalated" buzz added
+  // to it would fire from Home, the month, the Signal screen and History at once, from a
+  // `.ts` file `walk()` cannot see. Proven by mutation on CUL-1162: a `commitSymptom`
+  // import there reds the build. The painters come with their own sessions (HV-6, HV-7).
+  'lib/readState.ts',
+  // HV-7 (CUL-1164) — History v2's list and its day card. The card lays every day's rows
+  // down the thread through the shared row, so a photographed vomit's `worth_a_call` and
+  // its arrival are drawn inside it, and the list hosts every card, the pull to refresh
+  // and the landing; the landing is a "you are here" beat a buzz would read as natural
+  // for, and it lands on vomit days. Neither carries the MARKERS (the verdict is the row's,
+  // one import away), so both are named the PR they ship (C-16). Proven by mutation on
+  // CUL-1164: a `commitSymptom` import in either reds the build.
+  'components/historyV2/DayCard.tsx',
+  'components/historyV2/HistoryList.tsx',
+  // HV-10 (CUL-1167) — the first paint and a removal's fold. The thread module and its
+  // renderer land every row of a day, a photographed vomit's `worth_a_call` among them, and
+  // fade a removed one out: "the day drew in" and "the row is gone" are two beats a buzz
+  // would read as natural for, on vomit days. Home's spine under `history_v2` paints the
+  // same rows and hosts the read's arrival on its node, the case `SpineNodeRow.tsx` is
+  // named for above. None carries the MARKERS, so all three are named the PR they ship
+  // (C-16). Proven by mutation on CUL-1167: a `commitSymptom` import in each reds the build.
+  'components/motion/threadMotion.ts',
+  'components/motion/ThreadDraw.tsx',
+  'components/historyV2/HomeSpine.tsx',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;

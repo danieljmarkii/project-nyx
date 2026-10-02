@@ -1,0 +1,86 @@
+-- ============================================================
+-- history_v2 — seed the History v2 rollout flag
+-- (History v2 · the record you can read, HV-1 / CUL-1158)
+-- See: docs/nyx-history-v2-requirements.md v1.1 §5.1 (the flag, H-8) and the
+--      design_v2 template (070) it mirrors verbatim — a dark allowlist flag,
+--      flag-off byte-identical, seed-first, a beta shelf before GA, retire on a
+--      PM GA call only.
+-- ============================================================
+-- History rebuilt as the record you can read (the pinned row, the count line,
+-- the week strip, day cards over the row Home shares) ships DARK behind one
+-- allowlist flag so every History v2 client PR (HV-7 the list, HV-8 the strip,
+-- HV-9 the pinned row, HV-10 the motion, HV-11 the doorways) lands invisible
+-- and the screen can bake on a hand-picked cohort before it reaches anyone
+-- else. This migration seeds that single eligibility flag. Seed-first: the
+-- seed + the client registration + the shelf row + the flag-off guard land
+-- with the gate (HV-1), before any v2 screen draws a row.
+--
+--   history_v2   Eligibility for the History v2 surfaces. Resolved client-side
+--                by resolveAllowlistFlag (lib/appConfig.ts) against the
+--                caller's uid, then AND-ed with the beta-shelf opt-in (the
+--                B-712 two-gate shape) in hooks/useHistoryV2.ts — the one hook
+--                every gated surface reads. Flag-off => the History tab (and,
+--                from HV-10, Home's first paint under design_v2) is
+--                byte-identical to today; flag-on + opted-in => the v2 screen
+--                (components/historyV2/) renders.
+--
+-- H-8 (PM, 2026-09-24): "I'm fine shipping it behind its own flag." A ROLLOUT
+-- GATE ONLY, never a Premium gate — History is the record itself, care not
+-- convenience (Principle 7) — so GA is every account (HV-14 flips it, then the
+-- removal PR deletes the key, the shelf row, the hook, the guard and v1).
+--
+-- CLIENT-RENDER-ONLY (`serverCost: false`): like design_v2 (070), this flag
+-- gates only what the CLIENT draws. No Edge Function reads the key, and nothing
+-- behind it changes a write path or a record: History v2 reads the local record
+-- the app already holds. So there is deliberately NO server-side registration
+-- of this key (supabase/functions/_shared/flags.ts is a generic resolver), and
+-- the B-712 "server-cost betas must gate server-side" rule is checked and does
+-- not bite.
+--
+-- THE ALLOWLIST SHAPE (B-712): the experimental-flag primitive seeded for Ask
+-- (037) and reused by 054/055/056/061/063/065/070, verbatim —
+--   {"enabled": bool, "allowlist": ["<user-uuid>", …]}
+-- enabled=true => on for everyone (the GA end state); else on iff the caller's
+-- uid is in allowlist; malformed/absent => fail CLOSED (off). No new mechanism,
+-- table, column or policy: app_config (030) and its read-only-to-authenticated
+-- RLS are inherited unchanged.
+--
+-- SHIP-DARK (default nobody): {"enabled": false, "allowlist": []} is eligible
+-- for no one, so creating this row changes nothing an owner can see. Cohort
+-- enablement (the PM's uid, HV-13's device pass) is a later, recorded config
+-- UPDATE, deliberately NOT baked into this seed: a re-applied seed must never
+-- reset a live allowlist. The App Review demo account (CUL-188) is NOT
+-- allowlisted: allowlist values are readable by every authenticated client
+-- (B-744), so listing it would leak its UUID.
+--
+-- Scope: one app_config row — a config seed, not DDL. It rides the same PR as
+-- the client registration (lib/appConfig.ts, lib/betaFeatures.ts,
+-- app/settings/beta.tsx), the hook, the namespace and the flag-off guard, the
+-- 055/056/061/063/065/070 composition, and for the same reason: the seed is
+-- inert without the registration (extractAllowlistFlags picks only known keys)
+-- and the shelf card self-gates on an eligibility that is false for every
+-- account under this seed. Also riding the PR, NOT behind this flag: the row
+-- History and Home share, lifted out of components/designV2/ with its time
+-- column wrapping instead of truncating (spec §5.5, AC 19).
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (purely additive — 1 new seed row in an existing table;
+--                     no column, type, table, row, or policy is dropped,
+--                     renamed, retyped, or altered.)
+--   Rollback:     DELETE FROM app_config WHERE key = 'history_v2';
+--   Backfill:     N/A — one brand-new config row; no existing data is read or
+--                 written.
+--   Affected tables: app_config (INSERT only). Row-count sanity check before
+--                 applying:
+--                   SELECT key FROM app_config WHERE key = 'history_v2';
+--                   -- expect: 0 rows (the key does not exist yet)
+-- ============================================================
+
+-- ON CONFLICT DO NOTHING makes the seed idempotent AND safe: if this migration is
+-- ever re-applied after the flag has been flipped/allowlisted in prod, it
+-- preserves the live value rather than resetting it to the shipped-dark seed.
+-- (Same discipline as the 030/037/054/055/056/061/063/065/070 seeds.)
+
+INSERT INTO app_config (key, value) VALUES
+  ('history_v2', '{"enabled": false, "allowlist": []}'::jsonb)
+ON CONFLICT (key) DO NOTHING;

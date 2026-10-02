@@ -7,10 +7,15 @@
 // `describeDayEvent` mapper, the optional fact-only sub-line, the category that picks
 // the node tint). It computes nothing and judges nothing.
 //
-// NIGHT-ONLY. The recap is always-night (R-1), so the spine reads the night tokens
-// directly; DR-2's horizontal lane is its own component and shares only the tint
-// CONSTANTS (`NODE_TINT_NIGHT`/`NODE_TINT_DAY`, `nodeTints.ts`) so the two node
-// languages cannot drift.
+// TWO GROUNDS (D2-4 / CUL-1066). The recap is always-night (R-1) and that stays its
+// default; Home's Design v2 spine draws the same thread on the day ground, so the
+// GROUND is a prop and the two tint maps come from `nodeTints.ts` — the day tints are
+// the ones DR-2's lane already reads, so a meal is the same teal and a symptom the same
+// rose whether it is a bead on the night spine, a dot on the lane or a node on Home.
+// The row CHROME — the time column, the rail, the thread, the ground-ringed dot — is
+// `SpineRowFrame`, exported so the day row Home and History share (`components/dayRow/`,
+// History v2 HV-1) draws the same bead and thread and only its BODY differs (the compact
+// line, the read, the photo glyph). One node language, two bodies; never two threads.
 //
 // The connecting thread is drawn per-row as two absolute line segments in the rail
 // column (RN has no `::before`): a top segment (omitted on the first row) and a
@@ -18,34 +23,101 @@
 // ground-ringed dot painted on top. Adjacent rows' segments meet at the row boundary,
 // so the thread reads continuous while the first dot has nothing above it and the last
 // nothing below.
-import { memo, useCallback } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { memo, useCallback, type ReactNode } from 'react';
+import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { router } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import type { DaySummaryRow } from '../../lib/daySummary';
-import { NODE_TINT_NIGHT, NODE_DOT_SIZE, NODE_DOT_RING, nodeDotColors } from './nodeTints';
+import type { EventTintCategory } from '../../lib/dayEvents';
+import {
+  NODE_TINT_DAY,
+  NODE_TINT_NIGHT,
+  NODE_DOT_SIZE,
+  NODE_DOT_RING,
+  nodeDotColors,
+} from './nodeTints';
 import { ThemedText } from '../ui/ThemedText';
+
+export type SpineGround = 'night' | 'day';
 
 // Geometry — the rail column that carries the dot + thread, and where the dot's
 // centre sits from the row top (so the thread segments and the title line up). The dot
 // SIZE + ring come from the shared node constants so the spine and DR-2's Home lane
-// draw the same bead (nodeTints.ts).
-const TIME_W = 56;
-const RAIL_W = 18;
+// draw the same bead (nodeTints.ts). The two column widths are EXPORTED (History v2,
+// HV-1): a row that indents under the time and the rail (a run's opened members, a
+// History day card's date-only items) derives its inset from these, never re-types them.
+//
+// TIME_W is 60, not the mock's 56 (PM, 2026-09-25, CUL-1183). Measured with Geist 400 at
+// the column's 11pt: every single time fits 56, but a run across noon's first line,
+// "11:30 AM –", is 58.7pt, so at 56 it fell to three lines. 60 fits it with 1.3pt spare
+// (and a found window's "06:00 AM–", 55.9pt, with 4.1), and it is the mock's own
+// proportion at our size (56px at the mock's 10.5px is 58.7pt at 11). Home, History and
+// the Daily Recap move together, because this constant is the one they all read.
+export const TIME_W = 60;
+export const RAIL_W = 18;
 const DOT = NODE_DOT_SIZE;
 const LINE_W = 2;
 const DOT_TOP = 3; // marginTop lifting the dot to the title's first line
 const DOT_CENTER_Y = DOT_TOP + DOT / 2;
 const LINE_LEFT = (RAIL_W - LINE_W) / 2;
+/** The row's gap between its three columns (`styles.row.gap`). */
+const ROW_GAP = theme.space1;
+
+/** The per-ground colours the frame and the default body read. The night set is the
+ *  shipped one, verbatim; the day set is Home's light ground (D2-4), where small
+ *  informational text takes the secondary / tertiary INKS (C-1: the bright category
+ *  tints are glyph tints, never text on a light ground). */
+const GROUND = {
+  night: {
+    tints: NODE_TINT_NIGHT,
+    ring: theme.colorBrandNight,
+    thread: theme.colorBorderOnNight,
+    // Muted (7.6:1), not faint (3.8:1) — the time is small INFORMATIONAL text, so it
+    // must clear AA on the night ground, unlike a decorative glyph (night AA pass).
+    time: theme.colorTextOnNightMuted,
+    title: theme.colorTextOnNight,
+    detail: theme.colorTextOnNightMuted,
+    chevron: theme.colorTextOnNightMuted,
+    pressed: theme.colorBrandNightElevated,
+  },
+  day: {
+    tints: NODE_TINT_DAY,
+    ring: theme.colorSurface,
+    thread: theme.colorBorder,
+    time: theme.colorTextTertiary,
+    title: theme.colorTextPrimary,
+    detail: theme.colorTextSecondary,
+    chevron: theme.colorAccentInk,
+    pressed: theme.colorSurfaceSubtle,
+  },
+} as const;
+
+/**
+ * Where the thread runs, as the frame draws it: its centre from a row's left edge, the
+ * dot's centre from a row's top (where each segment meets the next), its width, and its
+ * colour on the day ground. Exported for the one thing that must stand exactly on the
+ * thread without being a row: the first paint's drawing line (History v2, HV-10 /
+ * CUL-1167; `components/motion/ThreadDraw.tsx`), which lies over the rows' own segments
+ * while they land and leaves once they have. Read from here, never re-derived, so the two
+ * cannot drift apart by a point (C-34).
+ */
+export const SPINE_THREAD = {
+  x: TIME_W + ROW_GAP + RAIL_W / 2,
+  dotCenterY: DOT_CENTER_Y,
+  lineW: LINE_W,
+  dayColor: GROUND.day.thread,
+} as const;
 
 interface Props {
   rows: DaySummaryRow[];
   /** Overridable so the test drives navigation without a router mock. */
   onPressRow?: (id: string) => void;
+  /** Night by default — the recap's own register (R-1). */
+  ground?: SpineGround;
 }
 
-function DaySpineImpl({ rows, onPressRow }: Props) {
+function DaySpineImpl({ rows, onPressRow, ground = 'night' }: Props) {
   return (
     <View style={styles.spine}>
       {rows.map((row, i) => (
@@ -55,6 +127,7 @@ function DaySpineImpl({ rows, onPressRow }: Props) {
           isFirst={i === 0}
           isLast={i === rows.length - 1}
           onPressRow={onPressRow}
+          ground={ground}
         />
       ))}
     </View>
@@ -63,17 +136,129 @@ function DaySpineImpl({ rows, onPressRow }: Props) {
 
 export const DaySpine = memo(DaySpineImpl);
 
+// ── The frame — the chrome every spine row shares ─────────────────────────────
+
+/** A no-break space: glues a clock time to its meridiem, and a range's first time to
+ *  its dash. */
+const NBSP = '\u00A0';
+
+/**
+ * The time column's text, shaped so it WRAPS instead of cutting off (History v2, HV-1;
+ * spec §3.6, AC 19: "a range breaks after its dash, each time unbreakable"). The column
+ * is a fixed `TIME_W`, so a run's range always takes two lines and a time at a large text
+ * size may too; where the break falls is the whole design:
+ *   • inside a clock time, the space before its meridiem becomes a no-break space, so
+ *     "12:41 PM" never splits into "12:41" / "PM";
+ *   • a spaced range dash takes a no-break space BEFORE it and keeps the ordinary one
+ *     after it, so "12:41 – 5:07 PM" reads "12:41 –" / "5:07 PM", never "12:41" / "– 5:07 PM".
+ * A prefix word ("by", "after") keeps its own break on purpose: "by 07:02 AM" is 64pt of
+ * Geist at the column's 11pt, wider than the column, so the break lands after "by"
+ * rather than inside the time. A narrow no-break space the platform's formatter already
+ * put before the meridiem (U+202F) is left as it is. The shaping only ever swaps a
+ * space for a no-break space, so the text says exactly what it said before.
+ */
+export function timeColumnText(time: string): string {
+  return time
+    .replace(/(\d{1,2}[:.]\d{2}) (?=[AaPp]\.?[Mm]\.?)/g, `$1${NBSP}`)
+    .replace(/ – /g, `${NBSP}– `);
+}
+
+export interface SpineRowFrameProps {
+  ground: SpineGround;
+  category: EventTintCategory;
+  isFirst: boolean;
+  isLast: boolean;
+  /** The time column's text ("9:15 AM", "12:41 – 5:07 PM"). */
+  time: string;
+  /** A small tag under the time, for a time the owner did not witness ("FOUND",
+   *  "ESTIMATED"; History v2 §3.6). Absent, the column is exactly what it was. */
+  timeTag?: string | null;
+  /** The row's body — the caller's, laid to the right of the rail. */
+  children: ReactNode;
+  /** The trailing control's slot (a chevron, or nothing). */
+  trailing?: ReactNode;
+  /** Pressed-state styling, passed through from the enclosing Pressable. */
+  pressed?: boolean;
+  style?: StyleProp<ViewStyle>;
+}
+
+/**
+ * The time, the rail with its thread and dot, and a body slot. Layout only — no
+ * press handling, no navigation, no copy — so a caller decides what the row IS (a
+ * doorway, a disclosure, a fact) and this decides only what a spine row LOOKS like.
+ */
+export function SpineRowFrame({
+  ground,
+  category,
+  isFirst,
+  isLast,
+  time,
+  timeTag = null,
+  children,
+  trailing,
+  pressed = false,
+  style,
+}: SpineRowFrameProps) {
+  const g = GROUND[ground];
+  // CUL-869 — fill and ring come from the shared rule rather than from this
+  // component, so a look is the hollow bead on the spine that the lane already
+  // draws (nodeTints.ts). `styles.dot` still supplies the geometry and every other
+  // category's ground-coloured ring; this inverts exactly the two colours for a
+  // look and touches no geometry, so nothing moves.
+  const { fill, ring } = nodeDotColors(category, g.tints, g.ring);
+  return (
+    <View
+      style={[
+        styles.row,
+        isLast ? styles.rowLast : styles.rowGap,
+        pressed && { backgroundColor: g.pressed, borderRadius: theme.radiusSmall },
+        style,
+      ]}
+    >
+      {/* No line cap (History v2, AC 19): the time wraps inside its fixed column instead
+          of truncating, at the default size and at the largest. The row grows from its
+          44pt floor (`minHeight`, never `height`) and the thread's segments stretch with
+          it. The row's spoken label carries the plain string; this is the drawn one. */}
+      {timeTag ? (
+        // The tag rides in the time's own fixed column, under it, held to the same rules:
+        // no line cap, nothing that clips, free to grow downward (AC 19).
+        <View style={styles.timeColumn}>
+          <ThemedText style={[styles.timeInColumn, { color: g.time }]}>{timeColumnText(time)}</ThemedText>
+          <ThemedText style={[styles.timeTag, { color: g.detail }]}>{timeTag}</ThemedText>
+        </View>
+      ) : (
+        <ThemedText style={[styles.time, { color: g.time }]}>{timeColumnText(time)}</ThemedText>
+      )}
+
+      <View style={styles.rail}>
+        {!isFirst && <View style={[styles.line, styles.lineTop, { backgroundColor: g.thread }]} />}
+        {!isLast && <View style={[styles.line, styles.lineBottom, { backgroundColor: g.thread }]} />}
+        <View style={[styles.dot, { backgroundColor: fill, borderColor: ring }]} />
+      </View>
+
+      <View style={styles.body}>{children}</View>
+
+      {trailing}
+    </View>
+  );
+}
+
+// ── The recap's own row — a doorway into the event ────────────────────────────
+
 function SpineRow({
   row,
   isFirst,
   isLast,
   onPressRow,
+  ground,
 }: {
   row: DaySummaryRow;
   isFirst: boolean;
   isLast: boolean;
   onPressRow?: (id: string) => void;
+  ground: SpineGround;
 }) {
+  const g = GROUND[ground];
   const open = useCallback(() => {
     if (onPressRow) onPressRow(row.id);
     else router.push({ pathname: '/event/[id]', params: { id: row.id } });
@@ -89,56 +274,42 @@ function SpineRow({
     `${row.subline ? `, ${row.subline}` : ''}` +
     `, ${row.time}. Opens details`;
 
-  // CUL-869 — fill and ring come from the shared rule rather than from this
-  // component, so a look is the hollow bead on the spine that the lane already
-  // draws (nodeTints.ts). `styles.dot` still supplies the geometry and every other
-  // category's ground-coloured ring; this inverts exactly the two colours for a
-  // look and touches no geometry, so nothing moves.
-  const { fill, ring } = nodeDotColors(row.category, NODE_TINT_NIGHT, theme.colorBrandNight);
-
   return (
-    <Pressable
-      onPress={open}
-      accessibilityRole="button"
-      accessibilityLabel={a11yLabel}
-      style={({ pressed }) => [
-        styles.row,
-        isLast ? styles.rowLast : styles.rowGap,
-        pressed && styles.rowPressed,
-      ]}
-    >
-      <ThemedText style={styles.time} numberOfLines={1}>
-        {row.time}
-      </ThemedText>
-
-      <View style={styles.rail}>
-        {!isFirst && <View style={[styles.line, styles.lineTop]} />}
-        {!isLast && <View style={[styles.line, styles.lineBottom]} />}
-        <View style={[styles.dot, { backgroundColor: fill, borderColor: ring }]} />
-      </View>
-
-      <View style={styles.body}>
-        <View style={styles.titleLine}>
-          <ThemedText style={styles.title} numberOfLines={1}>
-            {row.title}
-            {/* geist-ok: nested span — differs from its parent only in colour, so it must stay a
-                raw <Text> and inherit the parent's resolved Geist face. A ThemedText here injects its
-                own family and breaks RN's native text cascade, shipping a face change mid-sentence
-                (CUL-607). */}
-            {row.detail ? <Text style={styles.detail}> · {row.detail}</Text> : null}
-          </ThemedText>
-          {/* B-568 — the wet/dry variant, a sibling of the truncating title (never
-              appended to it) so it survives a long prescription product name. Matches
-              the drill-in (DayEventsSheet) / History (EventRow) register: one mapper,
-              all surfaces name a food identically. */}
-          {row.formatTag ? (
-            <ThemedText style={styles.formatTag} numberOfLines={1}>{row.formatTag}</ThemedText>
+    <Pressable onPress={open} accessibilityRole="button" accessibilityLabel={a11yLabel}>
+      {({ pressed }) => (
+        <SpineRowFrame
+          ground={ground}
+          category={row.category}
+          isFirst={isFirst}
+          isLast={isLast}
+          time={row.time}
+          pressed={pressed}
+          trailing={<ChevronRight size={15} color={g.chevron} strokeWidth={2} />}
+        >
+          <View style={styles.titleLine}>
+            <ThemedText style={[styles.title, { color: g.title }]} numberOfLines={1}>
+              {row.title}
+              {/* geist-ok: nested span — differs from its parent only in colour, so it must stay a
+                  raw <Text> and inherit the parent's resolved Geist face. A ThemedText here injects its
+                  own family and breaks RN's native text cascade, shipping a face change mid-sentence
+                  (CUL-607). */}
+              {row.detail ? <Text style={{ color: g.detail }}> · {row.detail}</Text> : null}
+            </ThemedText>
+            {/* B-568 — the wet/dry variant, a sibling of the truncating title (never
+                appended to it) so it survives a long prescription product name. Matches
+                the drill-in (DayEventsSheet) / History (EventRow) register: one mapper,
+                all surfaces name a food identically. */}
+            {row.formatTag ? (
+              <ThemedText style={[styles.formatTag, { color: g.detail }]} numberOfLines={1}>
+                {row.formatTag}
+              </ThemedText>
+            ) : null}
+          </View>
+          {row.subline ? (
+            <ThemedText style={[styles.sub, { color: g.detail }]}>{row.subline}</ThemedText>
           ) : null}
-        </View>
-        {row.subline ? <ThemedText style={styles.sub}>{row.subline}</ThemedText> : null}
-      </View>
-
-      <ChevronRight size={15} color={theme.colorTextOnNightMuted} strokeWidth={2} />
+        </SpineRowFrame>
+      )}
     </Pressable>
   );
 }
@@ -148,7 +319,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: theme.space1,
+    gap: ROW_GAP,
     // The whole row is the tap target. `minHeight` bounds the border-box (padding
     // sits INSIDE it in Yoga), so a plain single-line row would otherwise fall to
     // ~40pt regardless of the gap below — under the 44pt floor, and worst on the LAST
@@ -158,17 +329,29 @@ const styles = StyleSheet.create({
   },
   rowGap: { paddingBottom: theme.space2 },
   rowLast: { paddingBottom: theme.spaceMicro },
-  rowPressed: { backgroundColor: theme.colorBrandNightElevated, borderRadius: theme.radiusSmall },
 
   time: {
     width: TIME_W,
     paddingTop: theme.spaceMicro,
     textAlign: 'right',
     fontSize: theme.textXS,
-    // Muted (7.6:1), not faint (3.8:1) — the time is small INFORMATIONAL text, so it
-    // must clear AA on the night ground, unlike a decorative glyph (night AA pass).
-    color: theme.colorTextOnNightMuted,
     fontVariant: ['tabular-nums'],
+  },
+  // With a tag: the column is a View of the same width, and the time inside it keeps
+  // the time's own type.
+  timeColumn: { width: TIME_W, paddingTop: theme.spaceMicro, alignItems: 'flex-end' },
+  timeInColumn: {
+    textAlign: 'right',
+    fontSize: theme.textXS,
+    fontVariant: ['tabular-nums'],
+  },
+  timeTag: {
+    marginTop: theme.spaceMicro,
+    textAlign: 'right',
+    fontSize: theme.textMicro,
+    fontWeight: theme.weightMedium,
+    letterSpacing: theme.trackingWide,
+    textTransform: 'uppercase',
   },
 
   rail: { width: RAIL_W, alignItems: 'center' },
@@ -176,7 +359,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: LINE_LEFT,
     width: LINE_W,
-    backgroundColor: theme.colorBorderOnNight,
   },
   lineTop: { top: 0, height: DOT_CENTER_Y },
   lineBottom: { top: DOT_CENTER_Y, bottom: 0 },
@@ -187,7 +369,6 @@ const styles = StyleSheet.create({
     borderRadius: DOT / 2,
     borderWidth: NODE_DOT_RING,
     // The ground-coloured ring makes the node read as a bead cutting the thread.
-    borderColor: theme.colorBrandNight,
     zIndex: 1,
   },
 
@@ -201,11 +382,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnNight,
     // flexShrink:1 (RN's default is 0) so the title yields to the format tag beside it.
     flexShrink: 1,
   },
-  detail: { color: theme.colorTextOnNightMuted },
   // B-568 — the wet/dry variant tag. Same tracked-uppercase register as the drill-in
   // (DayEventsSheet) / History (EventRow), so a food is named identically across the
   // three timeline surfaces. Muted (7.6:1), NOT faint — it is small INFORMATIONAL text
@@ -213,7 +392,6 @@ const styles = StyleSheet.create({
   // time and sub-line. flexShrink:0 holds its width so the title is what truncates.
   formatTag: {
     fontSize: theme.textXS,
-    color: theme.colorTextOnNightMuted,
     letterSpacing: theme.trackingWide,
     fontWeight: theme.weightMedium,
     flexShrink: 0,
@@ -221,7 +399,6 @@ const styles = StyleSheet.create({
   sub: {
     fontSize: theme.textXS,
     // Muted (7.6:1) — "Trial diet" is informational small text, so it clears AA.
-    color: theme.colorTextOnNightMuted,
     marginTop: theme.spaceMicro,
   },
 });

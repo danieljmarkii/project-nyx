@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Header, SectionLabel } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
@@ -11,16 +11,19 @@ import { AppointmentActions } from '../../components/vetvisits/AppointmentAction
 import { VisitRow } from '../../components/vetvisits/VisitRow';
 import { VetVisitsEmptyState } from '../../components/vetvisits/VetVisitsEmptyState';
 import { BookVisitSheet, type BookVisitSubmit, type VisitMode } from '../../components/vetvisits/BookVisitSheet';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments, syncPendingVetVisits } from '../../lib/sync';
 import {
   bookVetAppointment,
+  cancelVetAppointment,
   EMPTY_VET_VISITS_HOME,
   logVetVisit,
+  readAppointmentById,
   readVetVisitsHome,
   readVisitPrefill,
+  removeAppointmentCopy,
+  type AppointmentDetail,
+  type AppointmentView,
   type VetVisitsHome,
   type VisitPrefill,
 } from '../../lib/vetVisits';
@@ -35,24 +38,19 @@ function listNames(names: string[]): string {
 
 // Vet visits — the list (CUL-900 VV-2; mocks E1, E2, E3).
 //
-// Behind the `vet_visits` rollout flag (G0). The GATE lives here; the DRAWING
-// lives in components/vetvisits/, and that split is enforced rather than
-// conventional: guards/vetVisitsFlagOff.test.tsx proves flag-off equivalence by
-// stubbing that namespace, so UI written inline in this file would be invisible to
-// it. Anything owner-visible added to this screen belongs in a namespace module.
+// The screen holds the reads and the writes; the DRAWING lives in
+// components/vetvisits/. During the beta a flag-off guard enforced that split by
+// stubbing the namespace; since GA (CUL-905) it is a convention, kept because it
+// keeps this file about state rather than pixels.
 export default function VetVisitsScreen() {
-  const eligible = useAllowlistFlag('vet_visits');
-  const optedIn = useBetaOptIn('vet_visits');
-  const enabled = eligible && optedIn;
-
   const activePet = usePetStore((s) => s.activePet);
   const pets = usePetStore((s) => s.pets);
 
   // The pet this SCREEN is about, captured once and never re-read from the store
   // (CUL-574 / AC 11).
   //
-  // The shipped `app/vet-visit.tsx` does the opposite — it reads `activePet` at
-  // SAVE time (`:117`) — and the spec names that as the shape this track must not
+  // The retired `app/vet-visit.tsx` did the opposite — it read `activePet` at
+  // SAVE time — and the spec names that as the shape this track must not
   // inherit. It is not hypothetical here: `setPets` resolves the active selection
   // during hydration, so a pull landing while this screen is open can move
   // `activePet` under a half-filled booking sheet, and the row would be written
@@ -101,8 +99,7 @@ export default function VetVisitsScreen() {
   );
 
   const load = useCallback(async () => {
-    // A dark feature reads nothing either: the gate is not only about pixels.
-    if (!enabled || !petId) {
+    if (!petId) {
       setLoading(false);
       setLoaded(true);
       return;
@@ -119,7 +116,7 @@ export default function VetVisitsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [enabled, petId]);
+  }, [petId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -186,6 +183,23 @@ export default function VetVisitsScreen() {
             'Saved, apart from one',
             `${listNames(failedFor)} did not get an appointment. Add it again from their profile.`,
           );
+        } else if (input.alsoForPetIds.length > 0) {
+          // The success half, and it needs saying out loud for a reason particular
+          // to this control: the sheet closes onto a list scoped to the OTHER pet,
+          // where a second pet's new appointment is invisible by definition. The
+          // owner flipped a switch promising a booking and was shown nothing that
+          // it happened — with only the FAILURE path naming anyone, the quiet
+          // outcome was the one that looked like nothing occurred (CUL-953 item 4).
+          //
+          // Named, not counted, for the reason the failure path is: in a two-cat
+          // household the name is the only cue that says which booking this was.
+          const alsoNames = input.alsoForPetIds.map((id) => resolveRecordPetName(pets, id));
+          Alert.alert(
+            'Saved',
+            alsoNames.length === 1
+              ? `${alsoNames[0]} has one too — it shows on their own visits.`
+              : `${listNames(alsoNames)} have one too — each shows on their own visits.`,
+          );
         }
         return;
       }
@@ -210,12 +224,59 @@ export default function VetVisitsScreen() {
     }
   }
 
-  // A dark feature is dark on every door, including a deep link. No chrome, no
-  // title, nothing that names a feature the account is not in — the owner lands
-  // where the entry point would have been. A `<Redirect>` rather than an effect,
-  // the `(tabs)/_layout.tsx` precedent: it resolves before anything paints, so
-  // there is no frame of the feature to see.
-  if (!enabled) return <Redirect href="/(tabs)/profile" />;
+  /**
+   * The second answer (CUL-952). *Waiting on you* asked "did this happen?" and
+   * offered only *How did it go?* — the other answer lived on Home, and only for
+   * five days, so a booking missed by a week was furniture in this bucket forever,
+   * telling the owner to log a visit that never happened.
+   *
+   * The confirm's words come from `removeAppointmentCopy`, shared with the Home
+   * strip and the edit screen; the `Alert` is here because this namespace is where
+   * the screen lives.
+   */
+  async function confirmDidntHappen(appt: AppointmentView) {
+    // The prep is read at PRESS TIME, from the record (CUL-987 D2): the list's view
+    // never selects the questions or the draft, and the confirm has to name them when
+    // they are about to go with the row. A failed read is a failed remove — never a
+    // confirm missing the sentence that makes "Nothing else changes" true.
+    let detail: AppointmentDetail | null;
+    try {
+      detail = await readAppointmentById(appt.id);
+    } catch (err) {
+      console.warn('[vet-visits] prep read failed:', err);
+      Alert.alert('Couldn\u2019t remove it', 'The appointment is still here \u2014 try again.');
+      return;
+    }
+    const copy = removeAppointmentCopy(appt.scheduledAt, petName, {
+      questions: detail?.questions ?? null,
+      notesDraft: detail?.notes_draft ?? null,
+    });
+    Alert.alert(copy.title, copy.body, [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: 'Remove it',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await cancelVetAppointment(appt.id);
+            syncPendingVetAppointments().catch(console.error);
+            await load();
+          } catch (err) {
+            console.warn('[vet-visits] cancel failed:', err);
+            // Never silent: the row stays put, so the owner can see it is still
+            // there and try again (the Home strip's shape).
+            Alert.alert('Couldn\u2019t remove it', 'The appointment is still here \u2014 try again.');
+          }
+        },
+      },
+    ]);
+  }
+
+  /** Get ready for this booking — the block's door (CUL-987 D1). The appointment's
+   *  own id rides the route, so Get ready scopes itself to ITS pet (AC 11). */
+  function openGetReady(appointmentId: string) {
+    router.push({ pathname: '/rundown', params: { appointmentId } });
+  }
 
   // Empty means the RECORD is empty — no history, nothing booked, and nothing
   // waiting on an answer. `awaiting` counts: a booking whose day has passed is
@@ -288,23 +349,71 @@ export default function VetVisitsScreen() {
           {home.next ? (
             <View style={styles.section}>
               <SectionLabel label="Next" header />
-              <AppointmentBlock appointment={home.next} style={styles.nextBlock} />
-              {/* ON THE DAY ONLY. `next` reaches weeks into the future, and both
-                  doors are about a visit that is happening or has just happened — so
-                  on a recheck booked six weeks out they are a mis-tap that consumes
-                  the booking (the save marks it attended, and there is no way back
-                  before VV-6's delete). A future appointment's door is *Get ready*,
-                  which is VV-5's; until then the block states and does not act.
+              <AppointmentBlock
+                appointment={home.next}
+                style={styles.nextBlock}
+                // CUL-987 D1: the block opens Get ready wherever it renders.
+                onPress={() => openGetReady(home.next!.id)}
+              />
+              {/* THE GATE SPLITS (CUL-966). It used to withhold BOTH doors until the
+                  appointment's own day, for a reason that only ever described one of
+                  them: *How did it go?* on a recheck booked six weeks out is a
+                  mis-tap that consumes the booking (the save marks it attended, and
+                  there is no way back before VV-6's delete). *Take notes* writes a
+                  draft on a row that already exists and is harmless at any distance
+                  — and withholding it was the defect the PM hit on device: the app
+                  opened the notes field on the morning of a visit people prepare for
+                  over weeks. So notes are always here and the finish door keeps the
+                  gate that was always its own.
 
                   The appointment's OWN id and pet ride the route (AC 11) — the
                   screens it opens never ask the store which pet this is. */}
-              {home.next.isToday ? (
-                <AppointmentActions
-                  petName={petName}
-                  onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${home.next?.id}`)}
-                  onHowDidItGo={() => router.push(`/vet-visits/after?appointment=${home.next?.id}`)}
-                />
-              ) : null}
+              <AppointmentActions
+                petName={petName}
+                when={home.next.when}
+                onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${home.next?.id}`)}
+                onHowDidItGo={
+                  home.next.isToday
+                    ? () => router.push(`/vet-visits/after?appointment=${home.next?.id}`)
+                    : undefined
+                }
+                // Round 2 of the mock drew this door and the build shipped it with
+                // nowhere to go (CUL-952). No *It didn't happen* here: on a booking
+                // still ahead the app has not asked anything yet, so there is no
+                // question to answer — moving it is what a future booking wants.
+                onChange={() =>
+                  router.push(`/vet-visits/edit-appointment?appointment=${home.next?.id}`)
+                }
+              />
+              {/* EVERY OTHER UPCOMING BOOKING (CUL-970). This section used to hold
+                  one row because the read kept one, so a second booking — a recheck
+                  in three weeks and the annual in six months — was on no screen at
+                  all. The lead keeps its card; the rest are plain rows under it, each
+                  with its own doors, because each is a booking the owner may want to
+                  take notes on or move. Same gates as the lead: *How did it go?* only
+                  on the day. */}
+              {home.later.map((appt) => (
+                <View key={appt.id} style={styles.laterRow}>
+                  <AppointmentBlock
+                    appointment={appt}
+                    style={styles.laterBlock}
+                    onPress={() => openGetReady(appt.id)}
+                  />
+                  <AppointmentActions
+                    petName={petName}
+                    when={appt.when}
+                    onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${appt.id}`)}
+                    onHowDidItGo={
+                      appt.isToday
+                        ? () => router.push(`/vet-visits/after?appointment=${appt.id}`)
+                        : undefined
+                    }
+                    onChange={() =>
+                      router.push(`/vet-visits/edit-appointment?appointment=${appt.id}`)
+                    }
+                  />
+                </View>
+              ))}
             </View>
           ) : null}
 
@@ -318,19 +427,40 @@ export default function VetVisitsScreen() {
               <SectionLabel label="Waiting on you" header />
               {home.awaiting.map((appt) => (
                 <View key={appt.id}>
-                  <AppointmentBlock appointment={appt} style={styles.nextBlock} />
-                  {/* No *At the vet* here: the day has passed, and a door into the
-                      in-room notes surface would be offering the owner a room they
-                      have left. The draft they typed there is not lost — it seeds
-                      the notes field on the screen this opens. */}
+                  <AppointmentBlock
+                    appointment={appt}
+                    style={styles.nextBlock}
+                    // A passed day too (the PM's "all faces"): Get ready's ⋯ holds
+                    // *Change*, beside the one on this row.
+                    onPress={() => openGetReady(appt.id)}
+                  />
+                  {/* Notes are here too (CUL-966: no gate means no gate). The first
+                      draft withheld them on the reasoning that the day has passed and
+                      this would offer "a room they have left" — but the owner reading
+                      this row has not logged the visit yet, and what they remember of
+                      it is exactly what this field is for. It is also lossless either
+                      way: the draft seeds the notes on the screen beside it. */}
                   <AppointmentActions
                     petName={petName}
+                    when={appt.when}
+                    onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${appt.id}`)}
                     onHowDidItGo={() => router.push(`/vet-visits/after?appointment=${appt.id}`)}
+                    onDidntHappen={() => void confirmDidntHappen(appt)}
+                    // *Change* is here too, not only under *Next*, because the
+                    // commonest reason a booking lands in this bucket is that the
+                    // visit MOVED and nobody told the app. Without it the only
+                    // recovery is remove-and-rebook, which discards the questions
+                    // the owner prepared on Get ready — the thing that screen
+                    // exists for.
+                    onChange={() =>
+                      router.push(`/vet-visits/edit-appointment?appointment=${appt.id}`)
+                    }
                   />
                 </View>
               ))}
               <ThemedText style={styles.awaitingNote}>
-                This day has passed. Log the visit to move it into {petName}’s history.
+                This day has passed. Log the visit to move it into {petName}’s history, or
+                say it didn’t happen.
               </ThemedText>
             </View>
           ) : null}
@@ -429,6 +559,19 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorSurface,
     borderWidth: 1,
     borderColor: theme.colorBorder,
+  },
+  laterRow: {
+    // A plain row: no card ground, a rule above it. The doors sit on the section's
+    // edge exactly as the lead's do.
+    marginTop: theme.space2,
+    paddingTop: theme.space2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colorBorder,
+  },
+  laterBlock: {
+    // The lead block's inner padding, without its ground, so the date stamps of every
+    // booking under *Next* sit in one column.
+    paddingHorizontal: 12,
   },
   list: {
     marginTop: 4,

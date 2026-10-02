@@ -1,0 +1,803 @@
+# Diet-trial extension — changing a running trial's window
+
+**Version:** 2.5 (BUILD-READY — every decision ruled, TE-6 included; PR 1b SHIPPED) | Last Updated: 2026-09-17
+**Changed at 2.4 (2026-09-17, after 1b's mandatory adversarial pass returned FAIL — CUL-1038):**
+**D7(c) is RE-CUT: the RATIO and the VERDICT are two questions.** A plain freeze closed §5.4's
+reassuring direction and opened its mirror — pinning the denominator at the designed window EXCLUDED
+un-logged days inside the window currently in force and manufactured a clean read (`28 of 60
+does_not_support` → `28 of 28 supports`, executed on the rendered page). **PM ruled (a):** the printed
+ratio stays over the designed window and no owner action moves it; `interpretability` is the **less
+reassuring** of that reading and one taken over the window in force. Neither window gets to be the
+generous one, which is what closes both directions at once. §5.4 gains a second ⚠ block, and **TE-6 is
+amended: the rule is DIRECTIONAL** (PM, same day) — an owner action may move a claim toward more
+disclosure, never toward less. The undirected form is unachievable, and that is a property of the problem,
+proven on both code versions.
+
+**Changed at 2.3 (2026-09-17, after PR 1b shipped — CUL-1038):** **D7(c) is BUILT, reads-only**, and the
+plan gains **PR 1c (CUL-1051)** — a ratchet migration that blocks PR 2. The coverage
+denominator is frozen at `target_duration_days_initial` and the overrun is disclosed on the vet report;
+PR 0's four §5.4 markers are promoted to plain tests. §5.4 gains a ⚠ **REPAIRED** block; §7's PR table
+marks 1b shipped. Three things the build settled that the spec did not say: the freeze is scoped to a NEW
+predicate (`trialCoverageWindowEndDayIndex`) and `trialTargetEndDayIndex` deliberately keeps reading the
+live target, because D7(c) splits BELIEF from CLAIMS; `startDietTrial` must STAMP the column at creation
+or the freeze covers no trial started after 068; and the card's own overrun sentence stays B-592's, since
+the card is design-locked and the disclosure this PR shipped is the report's.
+**Changed at 2.2 (2026-09-17, after PR 0 shipped):** **D7 RE-RULED to (c) — freeze AND disclose.** PR 0
+(CUL-1036, #867) executed D7(a)'s premises and falsified two: (a) is a render and cannot move the gates it
+was ruled to repair, and the defect is neither reachable at the milestone nor mid-window — it is
+**overrun-only**, behind two taps. §5.4's table is corrected against the REAL report path (the old figures
+were the client read; the since-visit scope goes 0 of 9 → 22 of 31), §5.6's "no live Deno render" debt is
+paid, and **PR 1 is now a hard prerequisite for PR 1b**. Nothing else in the plan moved.
+**Changed at 2.1 (2026-09-17, second pass):** **D3 and D5 ruled to the team's recommendations** — the
+window is forward-only in v1, and `extensionDays('gi') = 14` is ratified as-is with CUL-367 left open for
+Dr. Chen. **Every decision in §6 is now closed and the whole PR plan is unblocked.**
+**Changed at 2.0 (2026-09-17 PM reactions):** **D1, D2, D4, D6 and D7 are RULED** — each brief keeps its
+options verbatim and carries a ⚠ stamp. The sheet is denominated in totals (D1a); the record gains three
+columns on `diet_trials` (D2a) including the vet-directed boolean (D4a); the door is the header's `Manage`
+(D6a); and **D7(a) makes the coverage disclosure PR 1b, the track's first behaviour change**, because it
+repairs something live today. D3 and D5 were carried to 2.1.
+**Changed at 1.1 (2026-09-16):** the `adversarial-reviewer` pass returned **FAIL** and falsified draft 1's TE-6.
+Coverage is *not* untouched by an extension (§5.4), so TE-6 is now a requirement rather than an assertion,
+§5.3 is narrowed to the exposure half that held, §5.4–§5.6 are new, and **D7 is new and is the most serious
+decision in the set**. Nothing was quietly corrected: draft 1's claim is named where it stood.
+**Linear home:** CUL-156 · **Pairs with:** CUL-367 (the GI arithmetic, Dr. Chen ratification), CUL-254, CUL-267
+**Spec this amends:** `docs/nyx-diet-trial-requirements.md` §4.3 (the milestone) — this document does not replace it.
+
+---
+
+## 0. Why this exists, and the case that produced it
+
+On 2026-09-16 the PM's own cat was on day 53 of a 56-day elimination trial when the vet directed a move to
+**twelve weeks**. The app had nowhere to put that instruction. This is not a hypothetical, and the shape of
+the failure is worse than "a missing button":
+
+| What the owner has | What the app offers on day 53 |
+|---|---|
+| A vet instruction: *continue to 12 weeks* | Nothing. No control on any surface changes the window. |
+| Three days until the window ends | Wait. The milestone appears only when `dayCounter >= targetDays`. |
+| A card header labelled **Replace** | A flow that **ends** the trial and starts a new one — two rows, two partial windows, and the 53 days of record detached from the 31 that follow. |
+
+And on day 56, when the milestone does appear, the one-tap extension for this trial is
+**`Keep going — 2 more weeks`** → a 70-day window. Not 12 weeks. Reaching 84 days takes **two** taps
+**two weeks apart**, each of which also presents `This trial is done`.
+
+> **The wedge is "the owner sent home with a diet trial."** A vet instruction about that trial's length is
+> the single most consequential thing such an owner is ever told, and it is the one thing the product
+> cannot record.
+
+**The live trial that produced this spec** (read 2026-09-16, service-role, scoped to the owner):
+`cat · indication 'gi' · started 2026-07-26 · target 56 · day 53 · Royal Canin Selected Protein PR`.
+It is used as the worked example throughout; `TE-W` marks a rule it directly produced.
+
+### 0.1 What already exists (verified in the tree, not assumed)
+
+- `extendTrial` (`lib/dietTrialSetup.ts:743`) — a real, working write. One column, `target_duration_days`.
+- `nextTargetDays` / `extensionDays` (`lib/dietTrialCompletion.ts:89,118`) — the arithmetic, with the
+  "cannot set a target at or below the current day" clamp.
+- `handleExtendTrial` (`app/(tabs)/profile.tsx:431`) — the one-tap, no-confirm caller.
+
+**None of it is reachable before the target end date.** `stateFor` (`lib/dietTrialCard.ts:1169`) returns
+`milestone` only at `overrunDays === 0` and `overrun` above it; every other route to the decision sheet —
+including the ones on the refusal and intake-decline replacement cards — is gated on `overrunDays >= 0`
+(`lib/dietTrialCard.ts:1576`, `:1619`, `:1789`). There is no mid-trial path, in any state.
+
+So this is **not a new capability. It is a missing door onto a capability that shipped in PR 6.** That
+distinction sets the scope: the write path, the arithmetic and the clamp are already built and tested.
+
+---
+
+## 1. Scope
+
+**In:** a mid-trial way to change a running trial's window; the provenance that change owes the record; the
+vet report's rendering of a window that moved; the milestone preset's arithmetic where this spec's case
+falsifies it.
+
+**Out:** `paused` (refused at A-2, and nothing here re-opens it — an extension is the *opposite* of a pause);
+trial-milestone notifications (CUL-107); the rechallenge/reintroduction phase (CUL-297); changing a trial's
+*foods* mid-trial (shipped, B-616); changing its start date.
+
+---
+
+## 2. The spine — seven rules that govern every surface below
+
+**TE-1 · One clinical episode is one row.** An extension is an `UPDATE` to `target_duration_days`. It is
+never a second `diet_trials` row. This is not new; it is `extendTrial`'s own stated reason for existing, and
+the reason P-2 refused `paused`. The mid-trial door exists **because** the only mid-trial control today
+(`Replace`) violates it.
+
+**TE-2 · The owner states a TOTAL; the app never asks for a delta. (TE-W)** A vet says *"take it to twelve
+weeks"*, never *"add twenty-eight days"*. The mid-trial sheet is denominated in the total length of the
+trial, with its end date shown, and the app does the subtraction. The milestone's existing `Keep going — N
+more weeks` one-tap is **unchanged** — there, the owner has not been handed a number and a named default is
+the correct affordance (§4.3, and Jordan's review of it). Two moments, two registers, one write.
+
+**TE-3 · The window moves forward only. (D3a, ruled 2026-09-17.)** Extending is ordinary. Shortening can
+convert a trial that was stopped early into one that "ran its course" on the vet report — see §5.2, which
+is a laundering path, not a cosmetic issue — so the sheet offers no total at or below the current window,
+and shortening routes to `Replace the trial`, which ends the trial honestly and records a `stopped_reason`.
+A future spec that re-opens this owes §5.2 a render rule first, not a UI control.
+
+**TE-4 · A window that moved is a clinical fact, and the record must keep it.** `target_duration_days` is
+overwritten in place, so today an 8-week trial extended on day 56 is byte-identical, everywhere, to a
+12-week trial started on day 1. *That the signs had not resolved at eight weeks* is a finding — and it is
+the finding the extension is evidence of. The precedent is already on this table: `target_protein_set_at`
+exists so the report can say *"protein confirmed day N"* (TP-3). The window owes the same. **D2 rules the
+mechanism.**
+
+**TE-5 · Culprit never proposes an extension.** The app may present the milestone decision — the owner must
+resolve it — but it may never raise "should this trial be longer?" on its own. Trial length is a clinical
+judgment; the product's job is to *record* the vet's, not to issue one. The mid-trial control is therefore
+a **door the owner opens**, never a prompt, a badge, or a nudge (Principles 3 and 4).
+
+**TE-6 · An extension may not move a claim about the record TOWARD REASSURANCE when the record did not
+change.** ⚠ **The direction was RULED 2026-09-17 (PM), after 1b's adversarial pass proved the undirected
+form unachievable.** Draft 1 stated the rule without a direction. That cannot be built: a record with a
+perfect designed window followed by silence, then extended, and the mirror the pass found are
+*structurally identical* and demand opposite things of the gate — freeze it and the reassuring direction
+re-opens, follow the live window and the withdrawing one does. Executed on both code versions, so this is
+a property of the problem rather than of a fix.
+
+So the rule takes the direction the rest of this repo already uses: **an owner action may move a claim
+toward MORE disclosure, never toward less.** §5.2 states it for the exposure floor (*a floor may only ever
+move toward disclosing more*), `clinical-guardrails` states it for every claim gate, and C-4 names
+precedence as the only honest resolution when two counts over one population disagree. A claim withdrawn
+costs the owner; a claim granted over a month of silence costs the patient.
+
+**What that buys, mechanically (D7c as split, §5.4):** the RATIO a surface prints is measured over the
+designed window and moves in neither direction; the VERDICT is the less reassuring of that reading and one
+over the window in force. The residual — the withdrawing direction still moves — is recorded as an
+executable expected failure in `guards/trialWindow.test.ts`, not hidden.
+
+The rest of this rule is unchanged, and is still a
+**requirement on the build, not a description of today** — stated as an assertion in draft 1 and falsified
+by the adversarial pass the same session. On an **un-ended trial past its target**, the B-422 coverage tail
+clip bounds the coverage denominator at the *current* target (`lib/dietTrial.ts:2201-2206`), so one
+extension tap moves `belowCoverageFloor` and `mayStateRecordClean` **in the reassuring direction, with zero
+new evidence, retroactively over days already reported**. §5.4 has the executed case. D7 rules the repair.
+
+What is genuinely untouched, and must stay so: **off-diet exposures and their denominator**. Every
+exposure loop bounds on `evidenceEnd` and only `range`/`coverage` use the clipped `endDayIndex`, so
+extending can never delete a logged exposure — verified under the tap. That asymmetry is deliberate
+(§5.2's floor may only move toward disclosing more) and is the half of the invariant that held.
+
+The progress bar's denominator (`progress.fraction`) also moves. That one is honest and must not be
+dressed as a setback. See §4.3.
+
+**TE-7 · The extension is never a verdict, in either direction.** Extending does not mean the trial is
+failing; it does not mean it is working. The copy says what was recorded and what the new window is, and
+nothing about what it means (§6.1: *Culprit never scores the trial*).
+
+---
+
+## 3. The failure this replaces
+
+`trialManageVerb` (`lib/dietTrialCard.ts`) returns **`Replace`** for every running-trial state. That label
+is *honest about current capability* and was a deliberate improvement over `Change`, which "read as an EDIT
+and routed an active trial, on `day_one` the card's ONLY control, straight to its own destruction"
+(CUL-156's root cause, verbatim from the card's own docstring).
+
+The relabel fixed the lie. **It did not fix the missing capability, and one state still carries the old
+wording**: the `trial_refusal` card offers `Change or end the trial` (`lib/dietTrialCard.ts:1608`) — which
+can only end it.
+
+Once a real edit exists, the header becomes a door to **two** acts that must never be confused:
+
+| Act | What it does to the record | Reversible? |
+|---|---|---|
+| **Change the window** | One row, one continuous episode, a longer window | Yes — change it again |
+| **Replace the trial** | Ends this trial (`abandoned`/`completed`), starts a new one | No |
+
+---
+
+## 4. The surfaces
+
+### 4.1 The door — the trial card header
+
+The header affordance on a **running** trial becomes **`Manage`**, opening a two-row sheet:
+
+> **Change the window** — the trial keeps running; only its length changes
+> **Replace the trial** — end this one and start a new one *(the existing flow, with its existing confirm)*
+
+On a terminal or degenerate card the header is unchanged (`+ Start`). The `trial_refusal` card's
+`Change or end the trial` action is re-pointed at this sheet, which makes its existing label true.
+
+**Suppression is unchanged** and stays keyed on the body's actual actions, never on `state`
+(`trialManageLabel` — the regression `code-reviewer` caught on 2026-08-06 must not be re-introduced).
+
+### 4.2 The sheet — *Change the window*
+
+Denominated in totals (TE-2). For the worked case, opened on day 53 of 56:
+
+> **How long is this trial now?**
+> Nyx is on day 53. Your vet decides the length — this just records it.
+>
+> `8 weeks` *(current)* · `10 weeks` · **`12 weeks`** · `16 weeks` · `Something else`
+>
+> **12 weeks — ends 17 October.** That is 28 more days than the window you set.
+>
+> ☐ My vet asked for this
+>
+> `Save the new window` · `Cancel`
+
+Rules:
+
+- **Chips are a `ChipGroup`**, wrapping and accessible — never a horizontal scroll (house rule, B-146).
+  Closed set of whole weeks; `Something else` opens a numeric day entry.
+- **The current window is always present and marked**, so the owner can see what they are changing from,
+  and so "leave it alone" is an explicit option rather than the Cancel button (filter-UX rule: defaults are
+  explicit options).
+- **The end date is shown, always**, and recomputed as the chip changes. `trialEndDayKey` /
+  `formatTrialEndDate` already exist (`lib/dietTrialSetup.ts:156,165`) — no new date math.
+- **A total at or below the current day is refused in the UI**, not just clamped in the write. The owner
+  gets a reason (*"Nyx is already on day 53"*), never a silent correction. The `nextTargetDays` clamp stays
+  as the belt-and-braces guarantee behind it.
+- **The vet checkbox is unchecked by default and never required.** Checking it records the owner's
+  statement, which is exactly how the report must attribute it (§5.1). It is one optional question on a
+  deliberate, non-event surface — Principle 1 governs the moment of the event, and this is not one.
+- **This write takes a confirm-free `Save`, but is not one-tap from the card.** The milestone's no-confirm
+  extension is correct *there* (the named default is the whole affordance). Here the owner has already
+  crossed a sheet and picked a number, so the sheet's own `Save` is the confirmation. It is reversible in
+  full — re-open and change it again — so it earns confirm-XOR-reversal on the reversal side (CUL-645).
+
+### 4.3 The card after the change
+
+The card re-reads immediately (`notifyTrialChanged` already does this). For the worked case it goes from
+`Day 53 of 56` to `Day 53 of 84`, and the progress bar retreats from 95% to 63%.
+
+**That retreat must not be dressed as a setback (TE-6).** It is the truth: the window is longer. The card
+adds one line for the rest of the day the window changed, and no longer:
+
+> The window now runs to 17 October.
+
+No celebration, no `!`, no "great — keep going", no restatement of coverage next to it. The state machine is
+untouched: the card is in whatever state §4.2 of the trial spec says it is in, with one extra `forward` line.
+
+### 4.4 The milestone — unchanged, except its arithmetic
+
+The three-way decision row, its weighting, and the one-tap `Keep going` all stay exactly as §4.3 specifies.
+**What this spec's case falsifies is `extensionDays`' GI value** — see D5. That is CUL-367's open Dr. Chen
+ratification, which this case moves from theoretical to observed, and it is ruled there, not here.
+
+---
+
+## 5. The record and the vet report
+
+### 5.1 What the report must be able to say
+
+Today the report can render, for the worked case after an extension, only:
+
+> `Elimination diet trial — day 60 of 84.`
+
+A clinician reading that has no way to learn that the window was eight weeks until day 56. What it owes:
+
+> `Elimination diet trial — day 60 of 84. Window extended from 56 days on 19 Sep (day 56), owner reports
+> at the vet's direction.`
+
+Three things are load-bearing in that sentence:
+
+1. **The original window**, because the trial was designed against it.
+2. **The day it moved**, because *when* an extension was decided is the clinical signal — a window extended
+   at day 56 says the signs had not resolved at eight weeks.
+3. **"owner reports"**, because the app cannot verify a vet instruction and must never assert one (the same
+   attribution discipline §4.3 applies to the owner's outcome verdict).
+
+If the vet checkbox is unchecked, the clause is simply absent. **The absence is never rendered as "the
+owner did this on their own"** — an unchecked box is silence, not a claim (the two-sided rule the trial
+spec applies to off-diet marking: *a mark's absence is never a verdict*).
+
+### 5.2 The laundering path a backward move opens — the reason D3 exists
+
+`render.ts:3948` renders a completed trial's stop-reason line against the **current** `target_duration_days`:
+
+```
+const short = t.targetDurationDays - t.trialDaysElapsed
+if (short > 0) return `Marked complete at day ${…} — ${short} days short of the ${…}-day window.`
+return 'Ran its course — the full window was completed.'
+```
+
+**Executed:** a 56-day trial, owner shortens the window to 28 on day 28, then taps `This trial is done`.
+`short = 0`, and the report prints **"Ran its course — the full window was completed."** An eight-week
+trial abandoned at four weeks is rendered to the clinician as one that completed its full course. Nothing
+on the document contradicts it.
+
+This is not an argument against ever shortening — an owner who typed 56 when the vet said 28 has a real
+correction to make, and CUL-156 was filed for exactly that direction. It is the argument that **shortening
+cannot ride the same path as extending**, and that whatever D3 rules, §5.1's original-window record is the
+thing that makes the report safe either way.
+
+### 5.3 What does *not* change
+
+Off-diet exposures, **their** denominator, the §5.3 rung order, `classifyFeeding`, and the allowed set.
+Every exposure loop bounds on `evidenceEnd`, and only `range`/`coverage` use the clipped `endDayIndex`
+(`lib/dietTrial.ts`'s own comment: letting the clip bound the feeding loop *"would silently DROP a treat
+fed on day 2 … which is the one direction a floor may never move"*). **Verified under the tap:** two real
+off-diet feedings inside the clipped tail survive an extension with identical counts.
+
+> **Draft 1 said coverage was in this list. It is not.** See §5.4 — the correction is load-bearing, and it
+> is the reason D7 exists.
+
+### 5.4 The finding the adversarial pass returned — one tap moves a reassurance gate
+
+**Executed** (`adversarial-reviewer`, 2026-09-16, against the shipped modules). A dog·gi trial on the
+shipped 28-day default; the owner logs 10 of days 1–28, then every day from 29 to 50; the report is pulled
+on trial day 50:
+
+| | coverage | interpretability | `belowCoverageFloor` | `mayStateRecordClean` |
+|---|---|---|---|---|
+| before the tap | 10 / 28 (36%) | `does_not_support` | **true** | **false** |
+| after one `Keep going` (target → 64) | 32 / 50 (64%) | `partially_supports` | **false** | **true** |
+
+> ⚠ **CORRECTED 2026-09-17 by PR 0 (CUL-1036), which EXECUTED the report rather than transcribing it.**
+> The figures above are the CLIENT read — `computeTrialFacts` with no scope. `generate-report/trial.ts:802`
+> always passes `scopeStart`/`scopeEnd`, so these were never the numbers this page prints. §5.6 records
+> the gap in its own words ("two report strings were transcribed, not executed"); it is now paid off, and
+> **the real numbers are worse**, because the scope a diet-trial owner actually gets is rung 1 — *since the
+> most recent vet visit*, the shortest window on the page, and the scope that by construction fits an owner
+> who was just told to start an elimination diet:
+>
+> | scope | before the tap | after one tap |
+> |---|---|---|
+> | default | Meals logged on **10 of 28** days | **32 of 50** days |
+> | **since the visit (rung 1)** | Meals logged on **0 of 9** days | **22 of 31** days |
+>
+> A literal **zero** becomes *"all 22 matched the trial diet or a permitted food."*
+>
+> **And the tap deletes the page's own disclosure.** The day line goes from *"day 50 — 22 days past the
+> 28-day window"* to *"day 50 of 64"* — the one sentence telling the clinician this trial outran the window
+> it was designed against. The claim below that "nothing on any surface says the window moved" understates
+> it: the thing that did say so is the casualty. The owner's card does the same, from *"Culprit isn't
+> saying how many matched"* to *"all 32 matched"*.
+>
+> **The ceiling is also higher than this table.** An owner who logs nothing in the prescribed window and
+> every day after it goes **0 of 28 `does_not_support` → 22 of 22, fraction 1.0, `supports`**, clean claim
+> granted — the HEAD clip following the target once the tail clip releases, with
+> `untrackedDaysBeforeFirstLog` fabricated at 28 so the page asserts the first 28 days pre-date any
+> logging. They are ordinary un-logged trial days. That is the head clip's own documented forbidden
+> direction, re-entered through the target. D7(c)'s freeze closes it; D7(a) would not have.
+
+> **⚠ REPAIRED 2026-09-17 by PR 1b (CUL-1038), D7(c).** Everything above is the record of what the app
+> did; this is what it does now. The coverage clip bounds on a NEW predicate,
+> `trialCoverageWindowEndDayIndex`, which reads `target_duration_days_initial` (migration 068, backfilled
+> for every live row) and falls back to the live target only where nothing recorded the designed window.
+> Executed on the rendered page, both scopes: **default 10 of 28 → 10 of 28; since-visit 0 of 9 → 0 of 9**,
+> both still *"too sparse to read that as a clean elimination"*, across the same tap. The reversed direction
+> and the head-clip ceiling hold too, and the head clip closes *because* of the freeze rather than beside it.
+>
+> **Three things the build settled that this section did not say:**
+>
+> 1. **The freeze is scoped to a new predicate, not to `trialTargetEndDayIndex`.** That function, and
+>    `trialEffectiveEndDayIndex` / `isTrialRunning` through it, still read the live `target_duration_days`
+>    and must. D7(c) splits BELIEF (is this trial running — an extension is *supposed* to move it, and
+>    detector suppression reads it) from CLAIMS ABOUT THE RECORD (TE-6 — no owner action may move them).
+>    Freezing both would have withdrawn belief from the trial the owner just extended.
+> 2. **The device HYDRATES the column and may not WRITE it — and that is the shape the code review forced,
+>    not the shape 1b started in.** 068's backfill covers every row that existed when it applied and nothing
+>    after, so the first cut of 1b stamped the column at creation and forwarded it on the push. The
+>    `code-reviewer` pass traced a full clobber through that: `COLUMN_UPGRADES` adds the column to an
+>    installed device with nothing backfilled locally, `pushRows` is a real full-row upsert that sets every
+>    column present in the payload, and `syncNow` is push-before-pull with `extendTrial` firing its own
+>    immediate push — so a `Keep going` tap before that row's first hydrate would erase the backfill
+>    permanently and silently return the report to the pre-repair arithmetic, for exactly the trials the
+>    freeze protects. No client-side stamp fixes it: every variant writes a plausible wrong number
+>    (`COALESCE(initial, current)` on an already-extended trial records the EXTENDED window as the designed
+>    one) instead of an honest NULL. **1b is therefore reads-only** — hydrate select, report pull, freeze,
+>    disclosure — and the ratchet migration that makes writing safe is **CUL-1051 (PR 1c), which now blocks
+>    PR 2.** The prohibition is pinned by a mutation-proven test on `dietTrialRowToRemote`, because
+>    `PENDING_MAPPER_COLUMNS` alone reads as "not yet" rather than "not until".
+> 3. **The residual is a row with no recorded designed window**, which keeps the pre-repair arithmetic
+>    exactly. There is no safe constant to substitute — the clipped window is the reassuring read on a record
+>    that went silent and the unclipped one is the reassuring read on a record that started late, so a
+>    fail-safe cannot pick a side. Pinned as a test (`guards/trialWindow.test.ts` G5) rather than left
+>    implicit. **Its scope is NOT bounded by a create-stamp** — item 2's re-cut removed that, so
+>    every trial created until CUL-1051 + PR 2 land carries a NULL designed window, which is 100% of
+>    new trials rather than a legacy tail. And the reach is wider than first written: the condition is
+>    (the target moved) AND (the calendar is past the designed end), **in either order** — the day-28
+>    milestone tap reaches it 22 days later with no overrun ever having preceded it.
+>
+> **The disclosure half says what `closedByOverrun` knows and no more:** *"This trial has run past the window
+> it was designed against — coverage is measured over that window, so the days since are not in the ratio
+> above. Feedings logged in them are still counted in the exposures below."* It does **not** say the window
+> moved; that is `target_duration_set_at`, and §5.1's sentence is PR 4's. **The owner's card gets the freeze
+> but not a sentence** — B-592 owns that copy and the card is design-locked (see §5.4's card note below).
+
+> **⚠ RE-CUT 2026-09-17 by 1b's own adversarial pass — the freeze alone was not the repair.**
+> The block above is what the plain freeze did. The mandatory pass then executed the other direction and
+> returned **FAIL**: pinning the denominator at the designed window excludes un-logged days that lie
+> **inside the window currently in force**, and on a trial designed at 28 days, extended to 84, logged on
+> every one of days 1–28 and then silent, read on day 60, the rendered report went from
+> *"28 of 60 … does not support interpreting this trial either way — the gaps are larger than the record"*
+> to *"28 of 28 … supports interpreting it"* plus the all-matched claim. B-422's justification is *"a vet
+> who prescribed eight weeks should not read a denominator of twelve"*; there the prescription in force
+> **was** twelve weeks and the vet read a denominator of four.
+>
+> **The mis-cut, in one line:** D7(c) split BELIEF from CLAIMS along `target_duration_days`, but this
+> denominator has **three** owner-movable inputs — the target, `ended_at`, and (via the freeze) which of
+> two targets is authoritative. Pinning one redistributed the movement onto the other two.
+>
+> **PM ruling (a), 2026-09-17 — the RATIO and the VERDICT are two questions:**
+>
+> * **The ratio a surface prints** is measured over the window the trial was **designed** against. It is a
+>   statement about the record and no owner action moves it. This is the freeze, unchanged.
+> * **The verdict** (`interpretability` → `belowCoverageFloor` → `mayStateRecordClean`) is the **less
+>   reassuring** of that reading and a second one taken over the window **currently in force**, bounded by
+>   today (`leastReassuring`, `gateCoverage`). Un-logged days inside the live window are gaps, and gaps are
+>   what the floor exists to catch.
+> * **The excluded span is stated as a number** — how many elapsed days the ratio leaves out and how many
+>   of them hold a meal. The first cut had replaced a quantified denominator with an unquantified clause
+>   (C-3).
+>
+> Neither window may be the generous one, and that is the whole mechanism: extending flatters the LIVE
+> window on a well-logged tail and flatters the DESIGNED window on a silent one, so picking either window
+> can only ever fix one direction. Taking the harsher verdict fixes both. It is C-4's precedence rule and
+> §5.2's *a floor may only ever move toward disclosing more*.
+>
+> **Also repaired by the same pass, and each was its own defect:** the disclosure switches on a render
+> condition (`coverageClippedAtWindowEnd`) rather than the trial-state fact, because the first cut printed
+> *"the days since are not in the ratio above"* over a ratio composed **entirely** of days since on a
+> since-visit scope opening after the window closed — no extension required, and the standard second-report
+> shape; its copy now describes the MEASURE instead of asserting an overrun the day counter denies on an
+> extended trial; and `interpretabilityStatement` says **original**, not *prescribed*, because on an
+> extended trial the prescribed window is the longer one printed on the same page.
+>
+> **⚠ ONE RESIDUAL, RULED 2026-09-17 — TE-6 IS DIRECTIONAL (PM).** §5.4's *withdrawing* direction still
+> moves: a trial logged on every prescribed day then silent, extended, goes `supports` →
+> `does_not_support` on the tap. It cannot be closed alongside the reassuring one — that record and the
+> mirror above are structurally identical and demand opposite things of the gate, so closing either opens
+> the other (executed both ways; pre-change code moved it here too). **The PM ruled the rule directional:
+> an owner action may move a claim toward MORE disclosure, never toward less** — see TE-6, which now
+> carries it. The marker stays an expected failure recording the residual, and that is its permanent
+> state rather than a waiting one.
+
+What the vet report prints across that tap:
+
+> *"The record is too sparse to read that as a clean elimination"* → **"32 feedings — all 32 matched the
+> trial diet or a permitted food."**
+
+The mechanism: the tail clip applies only while `overrunUnended` (`!endedAt && evidenceEnd > targetEnd`).
+Extending pushes `targetEnd` past the evidence, the clip stops applying, and the denominator jumps from
+the old window to the full elapsed range. It runs both ways — on a trial logged daily to day 28 then
+silent to day 90, one tap moves `supports` → `does_not_support` and *withdraws* a clean claim.
+
+**Three things make this the session's most serious finding.** The gate is §5.2's protection against the
+app reassuring an owner off a record it cannot read; it is now movable by an owner action that carries no
+information about the record; and **nothing on any surface says the window moved.**
+
+**And the disclosure the clip's own justification cites does not exist.** `lib/dietTrial.ts:2223` says the
+tail clip is fine because *"`closedByOverrun` discloses it"*. Repo-wide, `closedByOverrun` is read by
+**nothing in production** — its definition, one comment, and its own test file. C-38's *"a comment writing
+a cheque the code does not cash"*, sitting inside the clip whose whole justification is the disclosure.
+
+**The precedent that settles what to do.** The report already discloses the *other* mid-trial change to
+the comparator (`render.ts:2721`):
+
+> **"The allowed list changed after the trial started"** — the dates above are when each food was
+> permitted, and feedings are scored against the list in force on the day.
+
+A mid-trial change to the **window** is the larger claim and has no equivalent anywhere. §5.1's sentence is
+that equivalent.
+
+### 5.5 Three more, from the same pass
+
+- **The value diverges from the owner's intent, without bound, in overrun.** `nextTargetDays` extends from
+  `max(currentTarget, dayCounter)`, which is right for the owner-facing promise ("4 more weeks" means four
+  weeks from today) and wrong for the report, which reads the same integer as *the prescribed window*. A
+  56-day trial tapped on day 140 writes **168** — rendered to a clinician as a 24-week elimination
+  prescription, which is not a thing. One integer, two meanings.
+- **The extension resurrects a retired trial, unbounded and unlabelled.** Past
+  `TRIAL_OVERRUN_GRACE_DAYS`, `isTrialRunning` is false; the `overrun` card's one action —
+  **"Tell Culprit what's next"**, a label that says nothing about a window — reaches the decision sheet and
+  one tap re-arms the widget projection, three Signal suppressions, the L2 trial-response lane, the report
+  anchor and the allowed-set belief gate. The mechanism is intended (the constant's own docstring calls the
+  tap *"the sanctioned way to move the window"*); the unbounded, unlabelled reach is not.
+- **The extension ladder cannot land on the clinically named total.** On the shipped **cat·gi default of
+  42 days**, an owner told "twelve weeks" on day 53 walks 42 → 67 → 81 → 95. **84 is never reachable** —
+  they stop three days short of the ACVIM window or overshoot it by eleven. §4.3 names that window as the
+  live clinical harm. (The worked trial escapes this only because its target was set to 56 by hand.)
+
+### 5.6 What held
+
+Stated because a list of only failures is not a falsification pass:
+
+- `nextTargetDays`' acceptance criterion — 1,280 degenerate input combinations, **zero** violations of
+  "target strictly above the current day"; NaN degrades to "one more day" rather than throwing.
+- The exposure floor survives the tap (§5.3).
+- The decline and refusal replacements still outrank the milestone, so a cat that has stopped eating is
+  never offered a bare `Keep going` with the safety fact stripped.
+- `detectTrialResponse`'s rate denominators are target-independent — an extension cannot move a rate.
+- LWW cannot strand an extension: `synced = 0` in the same statement, and `hydrateDietTrials`' `synced = 1`
+  backstop means a pull cannot clobber an unpushed one.
+
+**Not tested, and owed:** ~~no live Deno render (two report strings were transcribed, not executed…)~~ —
+**paid off 2026-09-17 by PR 0 (#867)**, which drives raw events → `assembleReport` → `renderReport` across
+a target move on both report scopes (`generate-report/trial.test.ts`). It corrected §5.4's table; see the
+⚠ block there. Still owed: **concurrent extension from two devices**, an LWW column write where both
+owners believe theirs landed. The mid-trial door makes that far likelier than a once-per-milestone path
+does — it belongs in PR 2's test plan.
+
+---
+
+## 6. Decisions — five ruled 2026-09-17, two outstanding
+
+Each is a decision brief: what changes, the options with a recommendation, what it unblocks. **A ruled
+brief keeps its options verbatim** — the record of what was weighed is the point, and a rewritten brief
+loses it. The ruling is stamped at the top.
+
+### D1 — Totals or deltas on the mid-trial sheet
+
+> ⚠ **RULED 2026-09-17 — (a) totals.** PM: *"let's go w the total duration approach"*.
+
+**Deciding:** whether the sheet asks *"how long is this trial now?"* (8/10/**12**/16 weeks) or *"how much
+longer?"* (+2/+4/+8 weeks).
+**Options:**
+- **(a) Totals — recommended.** Matches the sentence the owner carries out of the clinic ("twelve weeks");
+  the app does the subtraction. Mock frame 4a.
+- (b) Deltas. Consistent with the milestone's `Keep going — 4 more weeks`, but requires the owner to do
+  arithmetic against a day counter to honour a vet instruction. Mock frame 4b.
+**Why (a):** the one input the owner actually possesses is the total. (b) makes them convert it, at the
+exact moment an error costs four weeks of a restrictive diet — **and before the milestone, (b) is
+ambiguous on its face.** `nextTargetDays` extends from `max(currentTarget, dayCounter)`, so on day 53 of a
+56-day trial *"4 more weeks"* writes **84** (four weeks past the window's end) while the owner reads it as
+day 81 (four weeks past today). At the milestone the two coincide, which is why the milestone can keep its
+delta; mid-trial they never do, and a sheet cannot be honest about which it means without naming the
+total anyway.
+**Consequence:** rules the sheet's copy and chips; does not touch the milestone, which keeps its delta.
+
+### D2 — How the record keeps the fact that the window moved
+
+> ⚠ **RULED 2026-09-17 — (a) three columns on `diet_trials`.** PM: *"I like the idea of adding that the
+> trial was extended"*, ruled jointly with D4. (c) is rejected; the mechanism takes the recommendation,
+> on `target_protein_set_at`'s precedent. **If the intent was (b)'s full history, say so before PR 1** —
+> it is the one place this reading could be wrong, and the migration is the moment it is cheap.
+
+**Deciding:** the mechanism behind §5.1's report sentence.
+**Options:**
+- **(a) Three columns on `diet_trials` — recommended.** `target_duration_days_initial INTEGER`,
+  `target_duration_set_at TIMESTAMPTZ`, `target_duration_vet_directed BOOLEAN`. One migration, additive,
+  nullable, no new table, no new RLS surface, no local-mirror table, no wipe-list entry.
+- (b) A `diet_trial_window_changes` child table — full history of every change.
+- (c) Nothing; the report renders only the current window.
+**Why (a):** this table has already ruled this exact question once — `target_protein_set_at`'s contract is
+*"an edit is disclosed here, never versioned — one value, whole-trial"* (TP-3, migration 053). (b) buys the
+middle steps of a multi-step extension, which is marginal, at the cost of a table, its RLS, its SQLite
+mirror, its `LOCAL_WIPE_TABLES` entry and its sync pass. (c) is what ships today and is what §5.1 rejects.
+**Consequence:** (a) or (b) gate the report work; (c) closes §5.1 and leaves the vet report unable to
+distinguish a 12-week trial from an extended 8-week one, permanently.
+
+### D3 — May the window move backward at all?
+
+> ⚠ **RULED 2026-09-17 — (a) forward-only in v1.** PM deferred to the team's recommendation. The sheet
+> offers no total at or below the current window; shortening routes to `Replace the trial`, which already
+> ends the trial honestly and records a `stopped_reason`. §5.2's laundering path is closed by construction
+> rather than by a new render rule, and TE-3 stops being conditional.
+
+**Deciding:** whether *Change the window* offers totals below the current one.
+**Options:**
+- **(a) Forward-only in v1 — recommended.** Shortening routes to `Replace the trial`, which already ends
+  the trial honestly and records a `stopped_reason`.
+- (b) Allow it, gated on D2(a)/(b) so the original window is always on the report beside it.
+- (c) Allow it freely.
+**Why (a):** §5.2 is executed, not theoretical, and (a) closes it with no new render logic. CUL-156's
+"entered 28, vet meant 56" case is forward and is fully served. The "entered 56, vet meant 28" case is
+rarer and has an honest existing path.
+**Consequence:** (a) halves the build and defers nothing the worked case needs. (c) ships §5.2's laundering
+path.
+
+### D4 — Does the app ask whether the vet directed it?
+
+> ⚠ **RULED 2026-09-17 — (a) ask.** Ruled jointly with D2. The boolean joins D2's column set and the
+> attribution clause is rendered only when checked; an unchecked box stays silence (§5.1).
+
+**Deciding:** the §4.2 checkbox.
+**Options:**
+- **(a) One optional, unchecked checkbox — recommended.** Renders §5.1's attribution clause when checked;
+  silence when not.
+- (b) No question; the report says only that the window moved and when.
+**Why (a):** *"owner reports the vet extended this to twelve weeks"* and *"the owner extended this"* are
+different clinical facts, and Dr. Chen reads the report to decide what to do next. It is one optional tap on
+a deliberate surface.
+**Consequence:** (a) adds one boolean to D2's column set and one clause to the report. (b) drops both.
+
+### D5 — The GI extension arithmetic (CUL-367, now observed)
+
+> ⚠ **RULED 2026-09-17 — (a) ratify as-is for v1.** Ruled on the second pass, to the recommendation that
+> **only D1's ruling made available**: the totals sheet reaches any window on any day, so the GI ladder is
+> no longer the only path to twelve weeks, and that removes the urgency that would have justified moving a
+> clinically load-bearing default without a vet.
+>
+> **What this ruling does NOT do, stated plainly so it is not mistaken for a close:** CUL-367's finding
+> stands. A GI owner still meets `This trial is done` five times before twelve weeks where a skin owner
+> meets it twice, and the note beside the button still says "around three months" above a button offering
+> two weeks. **PR 5 is deferred, not cancelled**, and CUL-367 stays open for Dr. Chen's ratification with
+> the mid-trial sheet as the escape hatch in the meantime.
+>
+> The first pass could not be ruled: *"I'll go w the recommendation"* arrived against a brief that
+> deliberately carried **none**, and inventing one would have attributed a clinical call to the PM that
+> nobody made. The options below are the first pass's, verbatim.
+
+**Deciding:** whether `extensionDays('gi') = 14` survives, given that the worked case needs **two** taps
+**two weeks apart** — and two more exposures of `This trial is done` — to honour a single vet instruction.
+**Options:**
+- **(a) Ratify as-is**, and let the new mid-trial sheet carry any non-preset length.
+- **(b) Make the GI preset reach the clinically named total** (→ 84 where the current target is below it),
+  mirroring what `+28` already does for skin's 8wk→12wk.
+- (c) Raise GI to `+28` flat.
+**Recommendation withheld — this is Dr. Chen's ratification, not the team's call** (CUL-367 has said so
+since 2026-07-26; this spec supplies the observed case it was waiting for).
+**Consequence:** (b)/(c) change one constant and its tests. (a) leans the whole GI path on D1's sheet,
+which raises D1's priority.
+
+### D6 — Where *Change the window* lives
+
+> ⚠ **RULED 2026-09-17 — (a) header `Manage` → a two-row sheet.** PM: *"let's go w A. Your header
+> recommendation"*.
+
+**Deciding:** the door.
+**Options:**
+- **(a) Header `Manage` → two-row sheet — recommended.** Mock frame 3.
+- (b) A second action on the card body, beside the existing ones.
+- (c) A third row inside the existing Replace sheet.
+**Why (a):** it resolves CUL-156's actual root — a header verb that promised an edit it could not perform —
+and keeps the destructive act behind the same number of taps it has today. (b) puts a settings-shaped
+control on an intelligence surface and competes with the card's own actions; (c) hides the safe act inside
+the dangerous one's flow.
+**Consequence:** (a) touches `trialManageVerb` / `trialManageLabel` and adds one sheet.
+
+### D7 — The coverage gate that one tap can move (§5.4) — **new, and the most serious**
+
+> ⚠ **RE-RULED 2026-09-17 (second pass, same day) — (c) freeze AND disclose.** The first ruling was (a),
+> and it is kept below because the record of what was weighed is the point. It was superseded when PR 0
+> (CUL-1036) executed the premises it rested on and found two of them false:
+>
+> 1. **(a) cannot repair what it was ruled to repair.** D7(a) is a render, by its own words. But
+>    `belowCoverageFloor` is `interpretability === 'does_not_support'` and `mayStateRecordClean` reads
+>    `facts.interpretability`, both computed in `lib/dietTrial.ts`, and **neither reads
+>    `closedByOverrun`**. Executed both ways against the shipped module: a frozen denominator fires every
+>    one of PR 0's four §5.4 markers; (a)'s render-only change fires none. (a) would have landed with the
+>    suite green and the hazard fully intact.
+> 2. **"Already reachable at the milestone" and "only multiplied by this feature" are both false.** At
+>    `overrunDays === 0` the clip is not applying (`evidenceEnd > targetEnd` is false), so the milestone
+>    tap is **inert** — executed, day 28 of 28 → 42 moves nothing. A mid-window extension is inert too
+>    (day 20 of 56 → 84 moves nothing). The hazard is **overrun-only**, and it is reached by
+>    `Tell Culprit what's next` → the sheet, which is two taps behind a label naming nothing about a
+>    window — not "one tap of `Keep going`".
+>
+> (c) was the brief's own "right eventual answer and the wrong v1 scope"; that scoping rested on (a) being
+> sufficient. **PR 1b is therefore a mechanism change, and PR 1 is a hard prerequisite for it rather than a
+> parallel track** — the freeze needs D2a's `target_duration_days_initial`, which PR 1 is already adding.
+> `adversarial-reviewer` was already mandatory on 1b (§7) and is now mandatory for a second reason: this
+> changes a shipped clinical gate's arithmetic.
+>
+> **SHIPPED 2026-09-17 (CUL-1038).** See §5.4's ⚠ REPAIRED block for what the build settled beyond this
+> ruling — the belief/claim split that kept `trialTargetEndDayIndex` on the live target, the create-stamp
+> the freeze needed to cover any trial started after 068, and the residual it cannot cover.
+>
+> **The freeze closes the head-clip route as a side effect, and that is load-bearing rather than lucky.**
+> §5.4's ceiling (recorded in the ⚠ block there) runs through the HEAD clip following the target once the
+> tail clip releases; with the denominator pinned at the original target the head clip has no log inside
+> the window to follow, so 0 of 28 stays 0 of 28. Verified by executing the freeze against PR 0's ceiling
+> marker. Had (a) shipped, that route would have stayed open and undisclosed.
+>
+> _The original ruling, superseded:_ ⚠ ~~**RULED 2026-09-17 — (a) disclose it.** PM took the
+> recommendation. `range.closedByOverrun` is wired to every surface that states a coverage figure, which
+> is what `lib/dietTrial.ts:2223` has claimed since B-422. (d) is rejected — the reassurance flip is not
+> shipped knowingly. **This becomes PR 1b and it is the first behaviour change of the track**, because it
+> repairs something live today rather than gating something new.~~
+
+**Deciding:** what happens to the coverage denominator, and to `belowCoverageFloor` / `mayStateRecordClean`,
+when the window moves. **This is already reachable today at the milestone; it is not created by this
+feature, only multiplied by it.**
+**Options:**
+- **(a) Disclose it — recommended, and cheapest.** Wire `range.closedByOverrun` to the surfaces that state
+  a coverage figure, which is what `lib/dietTrial.ts:2223` already claims happens. The field exists, is
+  computed, is tested, and is read by nothing. The report's precedent sentence is written and shipping one
+  block away (`allowedSetChangedAfterStart`), so this is a render, not a mechanism.
+- (b) Freeze the coverage denominator at the original target (needs D2(a)/(b)), so no owner action can move
+  a claim about the record.
+- (c) Both: freeze the gate, disclose the window move.
+- (d) Nothing. The gate stays movable and undisclosed.
+**Why (a):** it closes the falsification — the number and its dependence become visible in the same breath
+— at the cost of one wiring, and it pays off a guarded-comment debt (C-38) that predates this track. (b) is
+more defensible in principle but changes a shipped clinical gate's arithmetic, which is its own adversarial
+pass; (c) is the right eventual answer and the wrong v1 scope.
+**Consequence:** (a) or (c) add a PR ahead of PR 3 and make D2 a hard prerequisite rather than a nicety.
+**(d) knowingly ships a reassurance flip an owner can trigger with one tap** — and is called out here so
+that ruling, if it is the ruling, is made rather than defaulted into.
+
+---
+
+## 7. PR plan — every decision ruled; the whole plan is unblocked
+
+Five PRs, one per session, in this order. **Every ruling is in as of 2026-09-17**, so the order below is a
+sequencing constraint rather than a gate. PR 5 is the one exception: deferred by D5, not cancelled.
+
+| PR | What | Gated on |
+|---|---|---|
+| **0** | `guards/` + tests pinning today's behaviour: no mid-trial route to `trial_extend` in any state; the `nextTargetDays` clamp; §5.2's shortening render and §5.4's gate flip each as a **failing** test that documents the hazard | — |
+| **1** | Migration: D2's three columns, additive + nullable + backfill `target_duration_days_initial = target_duration_days` for the 1 live row. Own PR, Migration Safety Pre-flight, `rls-privacy-reviewer`. **PR 1b now depends on this** (D7c), so it is no longer parallel to 1b | ✅ D2a, D4a |
+| **1b** | ✅ **SHIPPED 2026-09-17 (CUL-1038), re-cut twice.** D7(c) as ruled (a): the printed RATIO is frozen at `target_duration_days_initial` (`trialCoverageWindowEndDayIndex`) and the VERDICT is the less reassuring of that and the window in force (`leastReassuring` / `gateCoverage`); the overrun is disclosed on the coverage sentence, the scan tile and `interpretabilityStatement`, with the excluded span as a number. §5.4's forward + ceiling markers promoted; **the reversed marker is back to an expected failure** (TE-6's direction is open). §5.2's still red by D3a. **READS-ONLY** — the device hydrates the column and never writes it. **Owes a `generate-report` redeploy.** | ✅ D7c · PR 1 |
+| **1c** | **NEW, and it blocks PR 2.** Migration: a `BEFORE UPDATE` ratchet on `diet_trials` so no client can move `target_duration_days_initial` from a value back to NULL. Own PR, Migration Safety Pre-flight, `rls-privacy-reviewer`. Unblocks the push mapper, the create-stamp and PR 2's write path. **CUL-1051** | — |
+| **2** | The predicate + write path: `changeTrialWindow` beside `extendTrial` (one arithmetic home — `nextTargetDays` is not forked), the paired-null provenance contract, the local mirror, **the concurrent-extension LWW case (§5.6)**, and the forward-only refusal | ✅ D2a, D3a |
+| **3** | The door + the sheet: `Manage`, `TrialWindowSheet`, the `trial_refusal` re-point, `ChipGroup` of **totals** (none at or below the current day), the end-date line, the vet-directed box, §4.3's forward line | ✅ D1a, D3a, D4a, D6a |
+| **4** | The vet report: §5.1's sentence, the attribution clause, **a `deno test` over `render.test.ts` with a mutated `targetDurationDays` (§5.6's untested half)**, `generate-report` redeploy (**note the standing deploy discipline — the function is at v15 and the ledger is `pending`**) | ✅ D2a, D4a · PR 1 |
+| **5** | D5's constant — **deferred, not cancelled.** Owned by CUL-367, unblocked by Dr. Chen's ratification, never by this spec | CUL-367 (Dr. Chen) |
+
+**PRs 0, 1 and 1b have shipped. PR 1c (CUL-1051) is new and blocks PR 2. PR 5 is deferred to CUL-367.**
+Two ordering changes since v2.1: **PR 1 → PR 1b is a hard dependency**, not a convenience (D7c); and
+**PR 1c now sits between 1b and 2**, because 1b could only be made safe by declining to write the column
+and the write path cannot land until the database refuses to lose it.
+
+**Adversarial review is mandatory on PRs 1b, 2 and 4** — the write moves a denominator the vet report
+renders, which is the clinically load-bearing class, and §5.4 is what happens when that is assumed rather
+than executed. PR 4 additionally owes a `vet-report-cold-read` once rendered.
+
+---
+
+## 8. Acceptance criteria (draft — the QA persona's list)
+
+1. On day 53 of 56, the trial card's header opens a sheet offering **Change the window**. *(TE-W)*
+2. Choosing `12 weeks` writes `target_duration_days = 84` on the **same row**; `diet_trials` row count for
+   the pet is unchanged. *(TE-1)*
+3. The sheet shows the end date for every option, and the current window is present and marked. *(§4.2)*
+4. A total at or below the current day cannot be submitted, and the refusal says why. *(§4.2)*
+5. After the change the card reads `Day 53 of 84`; the off-diet count and **its** denominator are
+   byte-identical to before. *(§5.3)*
+5b. No window change can move `belowCoverageFloor` or `mayStateRecordClean` toward reassurance without
+   either a disclosure beside the number or a frozen denominator, per D7 — asserted by driving the real
+   `computeTrialFacts` over §5.4's fixture, never by re-deriving the rule in the test. *(TE-6, §5.4)*
+6. Nothing anywhere prompts, badges or nudges the owner to extend. *(TE-5)*
+7. No copy on any extension surface asserts the trial is working, failing, complete or on track. *(TE-7)*
+8. The vet report names the original window and the day it moved; with the box unchecked, no clause
+   attributes the change to anyone. *(§5.1)*
+9. A shortened window can never render "Ran its course — the full window was completed" over a window that
+   was shortened to fit. *(§5.2)*
+10. Flag-off / D-ruled-out paths are byte-identical to today (C-36's absence-equivalence shape).
+
+---
+
+## 9. Persona positions on record
+
+- **Dr. Chen (Veterinarian).** Supports, with D2 as the condition: *"A trial that was extended at eight
+  weeks tells me the signs had not resolved at eight weeks. If the report shows me an 84-day window and
+  nothing else, you have deleted the finding and handed me a number."* Also holds D5 open — ratification
+  owed since 2026-07-26.
+- **Sam (cat owner, the worked case).** *"My vet told me twelve weeks. I do not want to compute a delta
+  against a day counter to tell the app that."* → TE-2, D1(a).
+- **Jordan (diet-trial dog owner).** Warns against disturbing the milestone: the named-default one-tap is
+  what stops her tapping `done` at day 56. → §4.4 leaves it alone.
+- **Sr. Data Scientist.** Held, in draft 1, that the target is not a denominator for coverage or exposures
+  and that this merely had to stay true. **Half of that was wrong, and the `adversarial-reviewer` broke it
+  the same session** (§5.4): the target *is* the coverage denominator's bound on an un-ended overrun trial,
+  and one tap moves a reassurance gate. The exposure half held. Position now: D7 is the condition, D2 is
+  its prerequisite, and D3(a) still follows from §5.2.
+
+  > **Adversarial review — DoD line.** *Executed a dog·gi 28-day trial logged 10/28 then daily to day 50 →
+  > one tap of "Keep going — 2 more weeks" moves `belowCoverageFloor` true→false and `mayStateRecordClean`
+  > false→true with **zero new evidence**, flipping the report from "too sparse to read as a clean
+  > elimination" to "all 32 matched" ✗ **BROKE** (`lib/dietTrial.ts:2201-2206`); executed the backward move
+  > 56→28 at day 28 → `stoppedReasonLine` prints "Ran its course — the full window was completed" ✗ **BROKE**
+  > (`render.ts:3948`); executed the cat·gi default 42 against a vet's 84-day directive → ladder is
+  > 42→67→81→95, **84 unreachable** ✗ **BROKE**; swept 1,280 degenerate inputs to `nextTargetDays` → 0
+  > violations of "target > dayCounter" ✓ HELD; executed two off-diet feedings inside the clipped tail →
+  > counts identical before and after the tap, §5.2's floor survives ✓ HELD.*
+- **Sr. Product Designer.** Backs D6(a); requires §4.3's no-setback framing and that nothing added here can
+  raise a prompt (Principles 3, 4). Notes the `trial_refusal` label becomes true for the first time.
+- **Trust & Safety.** D2(a) adds no new reader, grant or surface; rides the existing pet-ownership cascade.
+  The vet-directed boolean is an owner statement, not a clinical record — the report's attribution wording
+  is the control.
+- **Product Owner.** CUL-156 has sat at **Low** in the Legacy Backlog since 2026-08-15. The worked case is
+  its falsification: the app's stated wedge user could not record the single most consequential instruction
+  their vet gave them.
+
+**No persona conflict was escalated.** The one genuine tension — Designer's "one door, honest verbs" against
+the house preference for not growing the card's control surface — resolves inside D6 rather than above it.
+
+---
+
+## 10. Open, and deliberately not ruled here
+
+- **CUL-267** — `TRIAL_OVERRUN_GRACE_DAYS = 56` ratification. An extension interacts with it (a longer
+  window pushes the effective end out by the same amount) but does not change its question.
+- **CUL-254** — the overrun card's missing sentence. A mid-trial door reduces how often an owner lands
+  there; it does not fix the state.
+- **CUL-107** — trial-milestone notifications. TE-5 constrains anything built there: a scheduled
+  notification may say the window is up, never that it should be longer.

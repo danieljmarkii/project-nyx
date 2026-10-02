@@ -85,7 +85,7 @@
 //   WITHHOLD THE READING when the record cannot support it.
 //   NEVER WITHHOLD THE FLOOR — the off-diet count is owed in every state.
 //
-import { getDietTrialProgress } from './analytics';
+import { getDietTrialProgress, type IntakeDeclineFlag } from './analytics';
 import {
   // The fire predicate's own floors, reused BY THE STAND-DOWN so the two
   // directions cannot drift apart — see `liveRefusal`.
@@ -99,11 +99,12 @@ import {
 import { milestoneNote, trialDecisionChoices, type TrialOutcome } from './dietTrialCompletion';
 import { type TrialProteinSource } from './trialProtein';
 import { proteinTrialLabel } from './trialProteinPicker';
-import { localDayIndexOf, MONTHS } from './utils';
+import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
+import { recordDay, recordRange } from './recordDates';
 import type { TrialIndication } from './dietTrialSetup';
 import { TRIAL_RESPONSE_COUNTS_DEFAULTS, type TrialResponseCounts } from './trialResponseCounts';
-
-const MS_PER_DAY = 86_400_000;
+import { windowMovedTodayLine } from './trialWindowSheet';
+import { trialStartDayKey } from './trialWindowDates';
 
 // ── Inputs ───────────────────────────────────────────────────────────────────
 
@@ -126,6 +127,17 @@ export interface TrialCardTrial {
   targetDurationDays: number;
   /** `diet_trials.food_label`, else the joined food's "Brand Product". */
   foodLabel?: string | null;
+  /**
+   * `diet_trials.target_duration_set_at` — migration 068, written by
+   * `changeTrialWindow` on EVERY window change (CUL-1037/CUL-1039).
+   *
+   * The resolver reads it for one thing only: §4.3's line, for the rest of the
+   * local day the window moved. Null means the window has never moved, which is
+   * not the same fact as "never moved through the sheet" — the milestone's one-tap
+   * delegates to the same write path and stamps it too (CUL-1039's handoff, point
+   * 3). The predicate is only ever *did this window move*.
+   */
+  targetDurationSetAt?: string | null;
   /** The stored `stopped_reason`. PR 3's `endActiveTrial` writes a closed set of
    *  TOKENS (`vet_advised` / `refused` / `other` / `completed`), documented in
    *  `lib/dietTrialSetup.ts` as load-bearing — so this resolver maps the tokens
@@ -222,6 +234,35 @@ export interface TrialExposureFacts {
    * how the last two attempts at this wiring deleted real findings.
    */
   mayStateRecordClean: boolean;
+  /**
+   * Feedings naming no food (`meals.food_item_id` null and no usable food key —
+   * most often a food deleted out from under its meals). `computeTrialFacts`
+   * excludes them from BOTH sides of `totalFeedings` / `offDiet` while coverage
+   * still counts their days, so without this the card read "Meals logged on 20 of
+   * 20 days." above "Nothing logged against the trial yet." — both true, read as a
+   * contradiction, and never explained (CUL-1338). It only ever ADDS a disclosure;
+   * no line reads it to decide a claim (`mayStateRecordClean` already withholds on
+   * it upstream).
+   *
+   * OPTIONAL, and that is the opposite call from `mayStateRecordClean`'s, made on
+   * the direction of the default: absent reads as 0, which is the pre-CUL-1338
+   * card exactly — a missed construction site loses a disclosure it never had, and
+   * can surface no claim. The one production writer (`lib/dietTrialFacts.ts`) sets
+   * it, and `trialScreenModel.test.ts` drives that loader end to end.
+   */
+  unclassifiable?: number;
+}
+
+/**
+ * One device-local intake-decline flag, carried whole: which decline it is, the food
+ * a refusal names, and the sentence `declineHeadline` composed for it. The identity
+ * fields are the flag's own, never parsed back out of the sentence.
+ */
+export interface IntakeDeclineFact {
+  trigger: IntakeDeclineFlag['trigger'];
+  /** The refused food's label (`refused_normal_food` only), or null when unnamed. */
+  refusedFoodLabel: string | null;
+  headline: string;
 }
 
 export interface TrialCardInput {
@@ -234,6 +275,21 @@ export interface TrialCardInput {
   exposures?: TrialExposureFacts | null;
   /** §5.2 — a live intake-decline flag REPLACES the adherence line entirely. */
   intakeDeclineHeadline?: string | null;
+  /**
+   * EVERY live intake-decline flag the device holds, in the detector's order, each
+   * with its own sentence — where `intakeDeclineHeadline` is the first one's sentence
+   * alone. Set by `loadDietTrialFacts` in the same statement, from the same read, so
+   * `intakeDeclineFacts[0].headline === intakeDeclineHeadline` whenever both exist.
+   *
+   * Read by Get ready only (CUL-950). The card, the strip and the completion sheet
+   * keep reading the headline, because they state ONE decline and replace a line
+   * with it. Get ready has to know WHICH decline each sentence is, so it can drop
+   * the phone's sentence when the Signal says the same thing — and keep it when the
+   * Signal says something else. Optional so the dozens of hand-built inputs across
+   * the card's tests need not carry it; Get ready treats its absence as "unknown
+   * decline", which never matches and therefore never suppresses anything.
+   */
+  intakeDeclineFacts?: readonly IntakeDeclineFact[];
   /**
    * The WHOLE-RANGE refusal (`lib/dietTrial.TrialFacts.rangeRefusal`) — a
    * history, where `trialDietRefusal` is a now-fact.
@@ -496,12 +552,14 @@ const DECISION_ACTION_ID: Record<'extend' | 'complete' | 'stopped_early', TrialC
 
 // ── Small pure helpers ───────────────────────────────────────────────────────
 
-/** "3 July". Formatted from the day INDEX rather than via `toLocaleDateString`
- *  so the string is identical under every device locale and test environment —
- *  a date on this card is read next to a vet's instructions, not localised. */
-export function formatTrialDate(dayIndex: number): string {
-  const d = new Date(dayIndex * MS_PER_DAY);
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+/** "Jul 3", or "Jul 3, 2025" outside the current year: the house form through the one
+ *  formatter (`lib/recordDates.ts`, H-10; PM ruling on CUL-1126, 2026-09-25, which moved
+ *  every trial surface off the day-first "3 July" so the card, the trial lists and
+ *  History name one date one way). Locale-independent, since a date on this card is read
+ *  next to a vet's instructions. `today` is the caller's day key, from its own `nowMs`. */
+export function formatTrialDate(dayIndex: number, today: string): string {
+  const key = dayKeyFromIndex(dayIndex);
+  return recordDay(key, today) ?? key;
 }
 
 /** Day 1 IS the start day, so the last day of an N-day window is start + N - 1.
@@ -549,7 +607,13 @@ function exposureLine(ex: TrialExposureFacts): string {
   // record that is simply empty. The count alone is the honest line here: it
   // makes no claim in either direction, which is the same reason the
   // pre-classifier path renders it bare.
-  if (total <= 0) return 'Nothing logged against the trial yet.';
+  //
+  // …UNLESS THE RECORD IS NOT EMPTY (CUL-1338). Feedings that name no food are on
+  // the record and counted by coverage, but on neither side of this sentence, so
+  // "Nothing logged" printed under "Meals logged on 20 of 20 days" with nothing
+  // saying why. The disclosure replaces it: a count of what could not be checked,
+  // which claims nothing about what the pet ate in either direction.
+  if (total <= 0) return unclassifiableLine(ex, false) ?? 'Nothing logged against the trial yet.';
   if (ex.offDiet <= 0) {
     // THE COUNT STAYS, THE CLAIM GOES (round 5 ①) — AND THE WITHHOLDING IS NAMED.
     //
@@ -574,6 +638,31 @@ function exposureLine(ex: TrialExposureFacts): string {
         'diet on this record.';
   }
   return `${total} ${noun} in total — ${total - ex.offDiet} matched, ${ex.offDiet} did not.`;
+}
+
+/**
+ * CUL-1338 — the feedings the exposure sentence cannot hold, said as a count.
+ *
+ * A LIMIT OF THE RECORD, NEVER A READING OF IT. It names what could not be checked
+ * and stops: no "the rest matched", no "so far so good", nothing an owner of a pet
+ * that may not be eating could take as an all-clear (§5.2, n=1). `more` when a
+ * feeding total renders beside it, because these are NOT inside that total —
+ * without the word, "30 feedings in total" and "2 logged feedings don't name a
+ * food" read as the 2 being among the 30. The noun is `feedings`, the exposure
+ * sentence's own treat-inclusive population, because that is what is counted
+ * (C-3: the neighbouring sentence's predicate). The caller says whether a total
+ * renders beside it, rather than this function guessing from `totalFeedings`: a
+ * "more" with no total on the line has no referent.
+ */
+function unclassifiableLine(ex: TrialExposureFacts, besideTotal: boolean): string | null {
+  const n = ex.unclassifiable ?? 0;
+  if (n <= 0) return null;
+  const more = besideTotal ? ' more' : '';
+  return n === 1
+    ? `1${more} logged feeding doesn’t name a food, so it can’t be checked against the ` +
+        'trial diet.'
+    : `${n}${more} logged feedings don’t name a food, so they can’t be checked against ` +
+        'the trial diet.';
 }
 
 /** Below this many wholly-unmatched feedings, "nothing matched" is not yet a
@@ -800,7 +889,7 @@ export function isAnimalNotEating(input: TrialCardInput): boolean {
  * firing on a day-2 some/all/some dog. Both are OVER-fire, the survivable
  * direction, which is why they are filed rather than guessed at here.
  */
-function liveRefusal(input: TrialCardInput): TrialDietRefusal | null {
+export function liveRefusal(input: TrialCardInput): TrialDietRefusal | null {
   if (input.trialDietRefusal) return input.trialDietRefusal;
   if (input.rangeRefusal && input.rangeRefusalSpansEpisodes === true && !isEatingNow(input)) {
     return input.rangeRefusal;
@@ -1198,16 +1287,50 @@ function degenerateStateFor(trial: TrialCardTrial | null): TrialCardState {
  * §1097), so suppressing on `state` alone would strand those cards with zero
  * controls. (Regression: caught by `code-reviewer`, 2026-08-06.)
  *
- * When it IS shown, the verb says what `onManage` opens: on a RUNNING trial the
- * ordered end-and-replace sheet ("Replace" — never "Change", which read as an EDIT
- * and routed an active trial, and on `day_one` the card's ONLY control, straight to
- * its own destruction); on a terminal/degenerate card the start form ("+ Start").
+ * When it IS shown, the verb says what `onManage` opens: on a RUNNING trial a
+ * two-row door ("Manage" — D6a, CUL-1040); on a terminal/degenerate card the start
+ * form ("+ Start").
+ *
+ * WHY THE VERB MOVED, AND WHY IT IS NOT "CHANGE" (CUL-156). It said `Replace`
+ * because that is what it did: the only mid-trial control ENDED the trial and
+ * started a new one. `Change` was tried first and was worse — it read as an EDIT
+ * and routed an active trial, on `day_one` the card's ONLY control, straight to its
+ * own destruction. The relabel fixed the lie and left the missing capability.
+ *
+ * `Manage` is honest about BOTH acts now that both exist, and it is deliberately
+ * neither of their verbs: *Change the window* keeps one continuous episode and is
+ * reversible; *Replace the trial* ends it and is not. A header that named either
+ * one would be promising the other. The destructive act keeps exactly the tap count
+ * it had, and the safe one is no cheaper (§4.1, mock §2).
  */
 export function trialManageLabel(
   model: Pick<TrialCardModel, 'state' | 'actions'>,
 ): string | null {
   if (model.actions.some((a) => a.id === 'start_trial')) return null;
   return trialManageVerb(model.state);
+}
+
+/**
+ * WHERE the header affordance goes — the destination half of `trialManageLabel`.
+ *
+ * TWO FUNCTIONS, ONE FACT, AND THEY CANNOT DRIFT. The verb and the destination are
+ * both derived from `state` through the same exhaustive switch shape, and the
+ * suppression is the SAME expression in both (the body's actual actions, never
+ * `state` — see `trialManageLabel`'s own note on the two `abandoned` branches that
+ * ship `actions: []`). `dietTrialCard.test.ts` asserts the biconditional: a null
+ * label iff a null target, over every state. A host that read the destination off
+ * the verb's STRING would be one relabel away from routing a running trial into the
+ * start form, which is the CUL-156 failure with the arrow reversed.
+ *
+ *   `window_door` — the running trial's two acts (CUL-1040 §4.1, D6a).
+ *   `start_trial` — a terminal or degenerate card, where there is no window to
+ *                   change and the verb is `+ Start`.
+ */
+export function trialManageTarget(
+  model: Pick<TrialCardModel, 'state' | 'actions'>,
+): 'window_door' | 'start_trial' | null {
+  if (model.actions.some((a) => a.id === 'start_trial')) return null;
+  return trialManageVerb(model.state) === '+ Start' ? 'start_trial' : 'window_door';
 }
 
 function trialManageVerb(state: TrialCardState): string {
@@ -1225,7 +1348,7 @@ function trialManageVerb(state: TrialCardState): string {
     case 'intake_decline':
     case 'free_fed':
     case 'trial_refusal':
-      return 'Replace';
+      return 'Manage';
     default: {
       // Exhaustive: a new TrialCardState fails to compile here rather than
       // silently inheriting "Replace".
@@ -1281,8 +1404,46 @@ export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
   if (state === 'completed') return completedCard(input, ctx, register);
   if (state === 'abandoned') return abandonedCard(input, ctx, register);
 
-  return activeCard(input, ctx, state, register);
+  return withWindowMovedLine(activeCard(input, ctx, state, register), input, ctx);
 }
+
+/**
+ * §4.3 — one `forward` line, for the rest of the local day the window moved.
+ *
+ * APPLIED AT THE ONE CALL SITE RATHER THAN IN EACH BRANCH, because §4.3's own
+ * words are that "the state machine is untouched: the card is in whatever state
+ * §4.2 of the trial spec says it is in, with one extra `forward` line". Four of
+ * the running branches build `lines` from a literal and four from `recordRegion`,
+ * so a per-branch push would be eight edits and a ninth state shipping without it.
+ *
+ * WHAT IT MUST NOT BECOME (TE-7, and the mock draws the rejected version
+ * explicitly): no cheer, no `!`, no countdown, no coverage restated beside it. The
+ * bar retreating from 95% to 63% is the truth of a longer window and is not
+ * dressed as a setback. The copy itself is in `lib/trialWindowSheet.ts`.
+ *
+ * LAST, after the record region and its caveats, which is where the mock draws it
+ * — the window is a fact about the trial, not a qualifier on the record above it.
+ */
+function withWindowMovedLine(
+  model: TrialCardModel,
+  input: TrialCardInput,
+  ctx: TrialContext,
+): TrialCardModel {
+  const text = windowMovedTodayLine({
+    targetDurationSetAt: input.trial?.targetDurationSetAt ?? null,
+    currentTargetDays: ctx.trial.targetDurationDays,
+    startDayKey: trialStartDayKey(ctx.trial.startedAt),
+    nowMs: input.nowMs,
+  });
+  if (!text) return model;
+  return { ...model, lines: [...model.lines, { role: 'forward', text }] };
+}
+
+// `started_at` is a DATE column but arrives as an ISO instant from some readers, and
+// the end-date math takes a day key. `trialStartDayKey` owns the branch; this file
+// used to slice the first ten characters under a comment claiming that was the same
+// normalisation, which it was not — see that function's own note for the off-by-one
+// it produced ON THIS CARD (CUL-1040).
 
 // ── Compose: the register's body, then the disclosures the table allows ──────
 
@@ -1406,7 +1567,8 @@ function pushRegisterBody(
         role: 'fact',
         text:
           ex && ex.offDiet > 0
-            ? `${n} ${noun} logged so far; ${ex.offDiet} were not the trial diet.`
+            ? `${n} ${noun} logged so far; ${ex.offDiet} ${ex.offDiet === 1 ? 'was' : 'were'} not ` +
+              'the trial diet.'
             : `${n} ${noun} logged so far.`,
       });
       lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
@@ -1453,6 +1615,14 @@ function pushRegisterBody(
       if (!ex) return;
       if (input.coverage) lines.push({ role: 'fact', text: coverageLine(input.coverage) });
       lines.push({ role: 'fact', text: exposureLine(ex) });
+      // THE MIXED CASE (CUL-1338): some feedings classified, some naming no food.
+      // `exposureLine` already carries the disclosure when the total is zero; here
+      // it follows the total it is outside of, and it is also the reason the
+      // withheld variant ("Culprit isn't saying how many matched…") never stated.
+      if (ex.totalFeedings > 0) {
+        const unnamed = unclassifiableLine(ex, true);
+        if (unnamed) lines.push({ role: 'fact', text: unnamed });
+      }
       lines.push({
         role: 'qualifier',
         text: BLIND_SPOT_QUALIFIER + (ex.offDiet > 0 && !caveat ? floorSuffix(ex.offDiet) : ''),
@@ -1510,6 +1680,9 @@ function activeCard(
 ): TrialCardModel {
   const { trial, startIndex, progress, overrunDays } = ctx;
   const endIndex = trialEndDayIndex(startIndex, trial.targetDurationDays);
+  // The card's one day key, from its own clock: every date it prints judges "the
+  // current year" against this (H-10).
+  const today = toLocalDayKey(new Date(input.nowMs));
 
   const base = {
     // B-704 — "{Protein} trial" when a protein resolves, else "Diet trial". The
@@ -1547,7 +1720,7 @@ function activeCard(
       state,
       dayLine: dayLineFor(progress, overrunDays),
       dayLineRole: 'meta',
-      windowLine: windowLineFor(endIndex, overrunDays),
+      windowLine: windowLineFor(endIndex, overrunDays, today),
       lines,
       // THE DECLINE REPLACES THE RECORD LINES, NOT THE WAY OUT OF THE TRIAL.
       //
@@ -1593,7 +1766,7 @@ function activeCard(
       state,
       dayLine: dayLineFor(progress, overrunDays),
       dayLineRole: 'meta',
-      windowLine: windowLineFor(endIndex, overrunDays),
+      windowLine: windowLineFor(endIndex, overrunDays, today),
       lines: recordRegion(register, input, rc),
       // Same argument as the decline branch above: at or past the window a bar
       // pinned at 100% is completion vocabulary drawn in pixels, and drawing it
@@ -1691,7 +1864,14 @@ function activeCard(
     // directly above "2 logged feedings were outside the trial diet" — a flat
     // self-contradiction on the card whose whole job is being true about the
     // record. Something WAS logged; only a meal wasn't.
-    if ((input.coverage?.daysLogged ?? 0) === 0 && (input.exposures?.totalFeedings ?? 0) === 0) {
+    //
+    // Same for a feeding that names no food (CUL-1338): it is on the record and in
+    // neither count. Day 1 takes no reading, so the line is simply not said.
+    if (
+      (input.coverage?.daysLogged ?? 0) === 0 &&
+      (input.exposures?.totalFeedings ?? 0) === 0 &&
+      (input.exposures?.unclassifiable ?? 0) === 0
+    ) {
       lines.push({ role: 'fact', text: 'Nothing logged yet today.' });
     }
     lines.push({
@@ -1704,7 +1884,7 @@ function activeCard(
       state,
       dayLine: dayLineFor(progress, overrunDays),
       dayLineRole: 'meta',
-      windowLine: windowLineFor(endIndex, overrunDays),
+      windowLine: windowLineFor(endIndex, overrunDays, today),
       lines,
       actions: [viewAllowedFoodsAction(input.petName)],
     };
@@ -1730,7 +1910,7 @@ function activeCard(
       state,
       dayLine: dayLineFor(progress, overrunDays),
       dayLineRole: 'meta',
-      windowLine: windowLineFor(endIndex, overrunDays),
+      windowLine: windowLineFor(endIndex, overrunDays, today),
       lines,
       actions: [viewAllowedFoodsAction(input.petName)],
     };
@@ -1749,7 +1929,7 @@ function activeCard(
       state,
       dayLine: dayLineFor(progress, overrunDays),
       dayLineRole: 'meta',
-      windowLine: windowLineFor(endIndex, overrunDays),
+      windowLine: windowLineFor(endIndex, overrunDays, today),
       lines: recordRegion(register, input, rc),
       actions: [viewAllowedFoodsAction(input.petName)],
     };
@@ -1784,7 +1964,7 @@ function activeCard(
       state,
       dayLine: dayLineFor(progress, overrunDays),
       dayLineRole: 'meta',
-      windowLine: windowLineFor(endIndex, overrunDays),
+      windowLine: windowLineFor(endIndex, overrunDays, today),
       lines,
       actions: [{ id: 'milestone', label: 'Tell Culprit what’s next', emphasis: 'link' }],
     };
@@ -1817,7 +1997,7 @@ function activeCard(
     state,
     dayLine: dayLineFor(progress, overrunDays),
     dayLineRole: 'meta',
-    windowLine: windowLineFor(endIndex, overrunDays),
+    windowLine: windowLineFor(endIndex, overrunDays, today),
     lines,
     actions: [
       ...(state === 'exposures' && (input.exposures?.offDiet ?? 0) > 0
@@ -1906,11 +2086,13 @@ function pushFloorSentence(
 ): void {
   const ex = input.exposures;
   if (!ex || ex.offDiet <= 0) return;
-  const noun = ex.offDiet === 1 ? 'feeding' : 'feedings';
+  // THE VERB AGREES WITH THE COUNT, NOT ONLY THE NOUN (CUL-1335): "1 logged
+  // feeding were" shipped because the noun was singularised and the verb was not.
+  const noun = ex.offDiet === 1 ? 'feeding was' : 'feedings were';
   const stem =
     lead === 'separately'
-      ? `Separately, ${ex.offDiet} logged ${noun} were outside the trial diet.`
-      : `${ex.offDiet} logged ${noun} were outside the trial diet.`;
+      ? `Separately, ${ex.offDiet} logged ${noun} outside the trial diet.`
+      : `${ex.offDiet} logged ${noun} outside the trial diet.`;
   lines.push({
     role: 'fact',
     text: stem + (caveat ? '' : floorSuffix(ex.offDiet)),
@@ -2112,10 +2294,10 @@ function dayLineFor(
   return `Day ${progress.dayCounter} of ${progress.targetDays}`;
 }
 
-function windowLineFor(endIndex: number, overrunDays: number): string {
+function windowLineFor(endIndex: number, overrunDays: number, today: string): string {
   return overrunDays > 0
-    ? `Window ended ${formatTrialDate(endIndex)}`
-    : `Ends ${formatTrialDate(endIndex)}`;
+    ? `Window ended ${formatTrialDate(endIndex, today)}`
+    : `Ends ${formatTrialDate(endIndex, today)}`;
 }
 
 /** State 4's single combined sentence — deliberately one paragraph, because the
@@ -2129,16 +2311,24 @@ function soFarLine(input: TrialCardInput): string {
   // "Of what's on the record so far: meals on 0 of 12 days, 0 feedings in total."
   // — a Principle-5 empty state, written and shipped, on the one state that most
   // needs it, unreachable. The emptiness test is the CONTENT, not the shape.
+  //
+  // AND FEEDINGS THAT NAME NO FOOD ARE CONTENT (CUL-1338): they are on the record
+  // but in neither the day count's projection on the trial screen nor the feeding
+  // total, so without this the empty state printed over a logged record.
+  const ex = input.exposures;
+  const namesTotal = !!ex && ex.totalFeedings > 0;
+  const unnamed = ex ? unclassifiableLine(ex, namesTotal) : null;
   const nothingLogged =
-    (input.coverage?.daysLogged ?? 0) === 0 && (input.exposures?.totalFeedings ?? 0) === 0;
+    (input.coverage?.daysLogged ?? 0) === 0 && (ex?.totalFeedings ?? 0) === 0 && !unnamed;
   if (nothingLogged) return 'Nothing is on the record for this trial yet.';
 
   const parts: string[] = [];
   if (input.coverage) {
     parts.push(`meals on ${input.coverage.daysLogged} of ${input.coverage.daysElapsed} days`);
   }
-  const ex = input.exposures;
-  if (ex) {
+  // "0 feedings in total" beside a disclosure of unnamed feedings is the same
+  // contradiction one register over; the disclosure alone carries the count.
+  if (ex && !(ex.totalFeedings === 0 && unnamed)) {
     const noun = ex.totalFeedings === 1 ? 'feeding' : 'feedings';
     parts.push(`${ex.totalFeedings} ${noun} in total`);
     // Same gate as `exposureLine`. This sentence carried its own copy of the
@@ -2150,11 +2340,11 @@ function soFarLine(input: TrialCardInput): string {
       parts.push(`all ${ex.totalFeedings} matched the trial diet or a permitted food`);
     }
   }
-  if (parts.length === 0) return 'Nothing is on the record for this trial yet.';
+  if (parts.length === 0) return unnamed ?? 'Nothing is on the record for this trial yet.';
   const joined = parts.length === 1
     ? parts[0]
     : `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
-  return `Of what’s on the record so far: ${joined}.`;
+  return `Of what’s on the record so far: ${joined}.` + (unnamed ? ` ${unnamed}` : '');
 }
 
 /** §5.6 multi-pet. Gates the CLAIM, in the household where it is most likely
@@ -2178,17 +2368,22 @@ function pushScopeCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
 
 // ── States 7a / 7b (terminal) ────────────────────────────────────────────────
 
-/** "3 July – 27 August · 56 days". The end date is `ended_at` when it exists —
+/** "Jul 3 – Aug 27 · 56 days", the year stated once outside the current year
+ *  ("Jul 3 – Aug 27, 2025 · 56 days"; H-10). The end date is `ended_at` when it exists —
  *  §3.1 makes that column non-optional precisely so an ABANDONED trial has an
  *  end at all; without it `report.ts` reads a null end as "still ongoing" and
  *  the day counter renders "Day 104 of 28". */
-function terminalRange(trial: TrialCardTrial, startIndex: number): string | null {
+function terminalRange(trial: TrialCardTrial, startIndex: number, today: string): string | null {
   const endIndex = trial.endedAt
     ? localDayIndexOf(trial.endedAt)
     : trialEndDayIndex(startIndex, trial.targetDurationDays);
   if (endIndex === null) return null;
   const days = Math.max(1, endIndex - startIndex + 1);
-  return `${formatTrialDate(startIndex)} – ${formatTrialDate(endIndex)} · ${days} ${days === 1 ? 'day' : 'days'}`;
+  // An end recorded before the start prints the start alone, never an inverted window.
+  const dates =
+    recordRange(dayKeyFromIndex(startIndex), dayKeyFromIndex(endIndex), today) ??
+    formatTrialDate(startIndex, today);
+  return `${dates} · ${days} ${days === 1 ? 'day' : 'days'}`;
 }
 
 function outcomeSentence(petName: string, outcome: TrialOutcome): string {
@@ -2222,7 +2417,7 @@ function completedCard(
   // the owner CALLED a refusal and not the one the record shows was one.
   const lines = recordRegion(register, input, {
     terminal: true,
-    dayCount: terminalDayCount(trial, startIndex),
+    dayCount: terminalDayCount(trial, startIndex, toLocalDayKey(new Date(input.nowMs))),
     // 7a never names a refusal: the owner tapped "This trial is done", so there
     // is no reason of theirs for the "different diet, not a different plan" note
     // to answer.
@@ -2254,7 +2449,7 @@ function completedCard(
     state: 'completed',
     kicker: `${trialIdentityLabel(input.trial)} · finished`,
     foodLabel: trial.foodLabel ?? null,
-    dayLine: terminalRange(trial, startIndex),
+    dayLine: terminalRange(trial, startIndex, toLocalDayKey(new Date(input.nowMs))),
     dayLineRole: 'meta',
     windowLine: null,
     // A finished window has no progress left to encode; a full bar here would be
@@ -2321,8 +2516,8 @@ function wasRefused(trial: TrialCardTrial): boolean {
 }
 
 /** "56 days", else the pronoun-ish fallback the withheld sentence reads with. */
-function terminalDayCount(trial: TrialCardTrial, startIndex: number): string {
-  return terminalRange(trial, startIndex)?.split('· ')[1] ?? 'these days';
+function terminalDayCount(trial: TrialCardTrial, startIndex: number, today: string): string {
+  return terminalRange(trial, startIndex, today)?.split('· ')[1] ?? 'these days';
 }
 
 /**
@@ -2344,15 +2539,33 @@ function terminalDayCount(trial: TrialCardTrial, startIndex: number): string {
  * the feeding total but never the off-diet count, so an owner who rated three of
  * 124 meals lost twelve genuine exposures from the card.
  */
+/** "these 56 days were" / "this day was" — `terminalDayCount` can return "1 day",
+ *  and "these 1 day were" shipped alongside the CUL-1335 agreement bugs. */
+function withheldDaysPhrase(dayCount: string): string {
+  if (dayCount === 'these days') return 'these days were';
+  if (dayCount === '1 day') return 'this day was';
+  return `these ${dayCount} were`;
+}
+
 function refusalWithheldLine(input: TrialCardInput, dayCount: string): string {
+  const ex = input.exposures;
+  // CUL-1338, the terminal half: "meals offered on 18 of 19 days, 0 feedings in
+  // total" over meals that name no food is the same contradiction as the live
+  // card's. The zero total yields to the disclosure, which follows the sentence.
+  const namesTotal = !!ex && !!input.coverage && ex.totalFeedings > 0;
+  const unnamed = ex ? unclassifiableLine(ex, namesTotal) : null;
+  const total = ex && !(ex.totalFeedings === 0 && unnamed)
+    ? `, ${ex.totalFeedings} ${ex.totalFeedings === 1 ? 'feeding' : 'feedings'} in total`
+    : '';
   return (
-    `Culprit isn’t showing how clean ${dayCount === 'these days' ? 'these days' : `these ${dayCount}`} were. ` +
+    `Culprit isn’t showing how clean ${withheldDaysPhrase(dayCount)}. ` +
     'A diet that wasn’t eaten can’t be read as one that was followed' +
     (input.coverage
       ? ` — the record is meals offered on ${input.coverage.daysLogged} of ${input.coverage.daysElapsed} days` +
-        (input.exposures ? `, ${input.exposures.totalFeedings} feedings in total` : '') +
+        total +
         ', and what your vet needs from it is the refusal.'
-      : ', and what your vet needs from it is the refusal.')
+      : ', and what your vet needs from it is the refusal.') +
+    (unnamed ? ` ${unnamed}` : '')
   );
 }
 
@@ -2363,7 +2576,7 @@ function abandonedCard(
 ): TrialCardModel {
   const { trial, startIndex } = ctx;
   const lines: TrialCardLine[] = [];
-  const range = terminalRange(trial, startIndex);
+  const range = terminalRange(trial, startIndex, toLocalDayKey(new Date(input.nowMs)));
 
   if (trial.stoppedReason) {
     lines.push({ role: 'lead', text: stoppedBecauseLine(input.petName, trial) });
@@ -2528,10 +2741,12 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   // forbids on the card for the same reason.
   //
   // R1 puts the refusal fact on the same footing. The strip has no room for the
-  // register itself — that lives on the Pet tab's card — but it must not do the
-  // one thing it could do wrong here, which is render a tidy coverage line as if
-  // the trial were proceeding normally. Silence on Home, the register one tap
-  // away; never a reassuring summary of a trial the record says isn't running.
+  // register itself — that lives on the Pet tab's card (under `trial_screen`: on the
+  // trial's own screen, with its first sentence on the Pet tab's door, TS-6 ruling
+  // (a′)) — but it must not do the one thing it could do wrong here, which is render
+  // a tidy coverage line as if the trial were proceeding normally. Silence on Home,
+  // the register one tap away; never a reassuring summary of a trial the record says
+  // isn't running.
   if (input.intakeDeclineHeadline) {
     // A live safety flag suppresses the strip's record lines — the vomit-count line included (CUL-13):
     // a two-sided count next to "the pet stopped eating" is exactly the reassuring-summary composition
@@ -2544,8 +2759,8 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   const endIndex = trialEndDayIndex(startIndex, trial.targetDurationDays);
   parts.push(
     overrunDays > 0
-      ? `window ended ${formatTrialDate(endIndex)}`
-      : `ends ${formatTrialDate(endIndex)}`,
+      ? `window ended ${formatTrialDate(endIndex, toLocalDayKey(new Date(input.nowMs)))}`
+      : `ends ${formatTrialDate(endIndex, toLocalDayKey(new Date(input.nowMs)))}`,
   );
   // THE STRIP IS STRICTER THAN THE CARD, DELIBERATELY — AND ITS RULE IS NOW ONE
   // SENTENCE: Home states the ratio only when the record carries NONE of the

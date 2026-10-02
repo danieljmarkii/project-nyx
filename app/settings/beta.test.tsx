@@ -1,4 +1,5 @@
 import { act, render } from '@testing-library/react-native';
+import { usePetStore } from '../../store/petStore';
 import BetaFeaturesScreen from './beta';
 import { __resetAppConfigForTest } from '../../hooks/useAppConfig';
 import {
@@ -66,7 +67,7 @@ describe('BetaFeaturesScreen — zero eligible betas (B-729)', () => {
     const { getByText, queryByText, queryAllByRole } = render(<BetaFeaturesScreen />);
 
     expect(getByText('Nothing to try right now')).toBeTruthy();
-    expect(getByText(/Beta features come and go while we build/)).toBeTruthy();
+    expect(getByText(/Early-access features come and go while we build/)).toBeTruthy();
 
     // The action-promising intro and the honesty note are gone with the cards —
     // there is nothing to switch on and nothing "on" to be honest about.
@@ -78,11 +79,11 @@ describe('BetaFeaturesScreen — zero eligible betas (B-729)', () => {
 
 describe('BetaFeaturesScreen — eligible account', () => {
   it('renders a card per eligible beta and no empty state', () => {
-    setAllowlist({ widget_enabled: gatedToPm, event_types_v2: gatedToPm });
+    setAllowlist({ widget_enabled: gatedToPm, daily_look: gatedToPm });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);
 
     expect(getByText('Home screen widget')).toBeTruthy();
-    expect(getByText('More event types')).toBeTruthy();
+    expect(getByText('Noticed')).toBeTruthy();
     expect(getByText(/Switch one on to try it early/)).toBeTruthy();
     expect(queryByText('Nothing to try right now')).toBeNull();
   });
@@ -104,13 +105,27 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(queryByText(/Switch one on to try it early/)).toBeNull();
   });
 
-  it('a non-eligible beta’s card still self-gates away while others render', () => {
-    setAllowlist({ event_types_v2: gatedToPm });
+  it('scopes the honesty note to what is ALREADY in the record — never a blanket promise (CUL-224)', () => {
+    // The page-level "won’t affect your records" was true only while the one beta
+    // (the widget) read and never wrote. The shelf now carries betas an owner records
+    // THROUGH — Noticed here, which writes a look (the case first used the log
+    // picker, retired with CUL-962) — so the note may promise only what holds for
+    // every beta: switching one on rewrites nothing already logged.
+    setAllowlist({ daily_look: gatedToPm });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);
 
-    expect(getByText('More event types')).toBeTruthy();
+    expect(getByText('Noticed')).toBeTruthy();
+    expect(getByText(/Turning one on doesn’t change anything already in your records\./)).toBeTruthy();
+    expect(queryByText(/won’t affect your records/)).toBeNull();
+  });
+
+  it('a non-eligible beta’s card still self-gates away while others render', () => {
+    setAllowlist({ design_v2: gatedToPm });
+    const { getByText, queryByText } = render(<BetaFeaturesScreen />);
+
+    expect(getByText('Design v2')).toBeTruthy();
     expect(queryByText('Home screen widget')).toBeNull();
-    expect(queryByText('Log screen redesign')).toBeNull();
+    expect(queryByText('Noticed')).toBeNull();
   });
 
   it('renders the Noticed card for an allowlisted account, self-gated otherwise (CUL-866)', () => {
@@ -125,21 +140,142 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(getByText('Noticed')).toBeTruthy();
     expect(getByText(/once-a-day note of how they seemed/)).toBeTruthy();
     expect(queryByText('Home screen widget')).toBeNull();
-    expect(queryByText('More event types')).toBeNull();
+    expect(queryByText('Design v2')).toBeNull();
   });
 
-  it('renders the Vet visits card for an allowlisted account, self-gated otherwise (CUL-898)', () => {
-    // VV-0 AC: app/settings/beta.tsx renders the Vet visits row ONLY for an
-    // allowlisted account. Allowlisted for vet_visits → the card renders (title +
-    // blurb); the betas this account isn't allowlisted for stay gated away. The
-    // zero-eligible case (dark seed reaches nobody → no Vet visits card, empty
-    // state) is the B-729 test above.
-    setAllowlist({ vet_visits: gatedToPm });
-    const { getByText, queryByText } = render(<BetaFeaturesScreen />);
+  it('renders the Design v2 card for an allowlisted account, opt-in default off (CUL-1062)', () => {
+    // D2-0 AC: the Beta shelf shows the Design v2 row ONLY for eligible accounts;
+    // opt-in is default off; being eligible turns nothing on. Allowlisted for
+    // design_v2 → the card renders (title + the PM-ruled blurb) with its switch
+    // OFF; the betas this account isn't allowlisted for stay gated away. The
+    // zero-eligible case (dark seed reaches nobody → no card) is the B-729 test
+    // above.
+    setAllowlist({ design_v2: gatedToPm });
+    const { getByText, queryByText, getByRole } = render(<BetaFeaturesScreen />);
 
-    expect(getByText('Vet visits')).toBeTruthy();
-    expect(getByText(/Everything around a vet appointment/)).toBeTruthy();
+    expect(getByText('Design v2')).toBeTruthy();
+    expect(getByText(/Switch it off and the app is exactly as it was/)).toBeTruthy();
+    expect(getByRole('switch').props.value).toBe(false);
     expect(queryByText('Home screen widget')).toBeNull();
     expect(queryByText('Noticed')).toBeNull();
+  });
+
+  it('renders the History v2 card for an allowlisted account only, opt-in default off (CUL-1158)', () => {
+    // HV-1 AC: the shelf lists History v2 for an eligible account only. Allowlisted
+    // for history_v2 → the card renders (title + blurb) with its switch OFF. The
+    // zero-eligible case (the dark seed reaches nobody → no card) is the B-729 test above.
+    setAllowlist({ history_v2: gatedToPm });
+    const { getByText, queryByText, getByRole } = render(<BetaFeaturesScreen />);
+
+    expect(getByText('History v2')).toBeTruthy();
+    expect(getByText(/Switch it off and History is exactly as it was/)).toBeTruthy();
+    expect(getByRole('switch').props.value).toBe(false);
+    expect(queryByText('Design v2')).toBeNull();
+    expect(queryByText('Noticed')).toBeNull();
+
+    // Off, no hint; opted in, the hint names what HV-7 drew (CUL-1164) and nothing it
+    // did not: no strip, no filter, no search yet.
+    expect(queryByText(/^It’s on\./)).toBeNull();
+    act(() => useBetaOptInStore.getState().setOptIn('history_v2', true));
+    expect(getByRole('switch').props.value).toBe(true);
+    expect(getByText(/^It’s on\. Open History: each day is its own card/)).toBeTruthy();
+  });
+
+  // CUL-1220 / BRK-21 — design_v2 does not widen the daily_look rollout, so the hint
+  // names the look at the top of Today only for an account the look is on for.
+  it('the Design v2 hint names the daily look only when the look is on for this account', () => {
+    setAllowlist({ design_v2: gatedToPm });
+    const off = render(<BetaFeaturesScreen />);
+    act(() => useBetaOptInStore.getState().setOptIn('design_v2', true));
+    expect(off.getByText(/^It’s on\. Home’s Signal/)).toBeTruthy();
+    expect(off.queryByText(/daily look/)).toBeNull();
+    off.unmount();
+
+    usePetStore.setState({ activePet: { id: 'p1', name: 'Mochi', species: 'cat' } as never });
+    setAllowlist({ design_v2: gatedToPm, daily_look: gatedToPm });
+    act(() => useBetaOptInStore.getState().setOptIn('daily_look', true));
+    const on = render(<BetaFeaturesScreen />);
+    expect(on.getByText(/with the daily look at the top/)).toBeTruthy();
+    usePetStore.setState({ activePet: null });
+  });
+
+  it('…and not for a pet the look has no vocabulary for (species other: the header never draws)', () => {
+    usePetStore.setState({ activePet: { id: 'p9', name: 'Kiwi', species: 'other' } as never });
+    setAllowlist({ design_v2: gatedToPm, daily_look: gatedToPm });
+    act(() => {
+      useBetaOptInStore.getState().setOptIn('design_v2', true);
+      useBetaOptInStore.getState().setOptIn('daily_look', true);
+    });
+    const t = render(<BetaFeaturesScreen />);
+    expect(t.getByText(/^It’s on\. Home’s Signal/)).toBeTruthy();
+    expect(t.queryByText(/daily look at the top/)).toBeNull();
+    usePetStore.setState({ activePet: null });
+  });
+
+  it('a different account is not shown the History v2 card', () => {
+    setAllowlist({ history_v2: { enabled: false, allowlist: ['someone-else'] } });
+    const { getByText, queryByText } = render(<BetaFeaturesScreen />);
+
+    expect(queryByText('History v2')).toBeNull();
+    expect(getByText('Nothing to try right now')).toBeTruthy();
+  });
+});
+
+// CUL-70 (D8, ruled 2026-08-20): owner-facing, the shelf is "Early access". "Beta"
+// pattern-matches App Review Guideline 2.2 in a reviewer's skim, and a screen-reader
+// user hears the accessibility props, so the word is checked in what the screen
+// SHOWS and in what it SPEAKS. The code keeps its names; only rendered strings count.
+
+// Every string the rendered host tree shows (text children) or speaks (label, hint).
+function shownOrSpoken(tree: unknown): string[] {
+  if (typeof tree === 'string') return [tree];
+  if (tree === null || typeof tree !== 'object') return [];
+  if (Array.isArray(tree)) return tree.flatMap(shownOrSpoken);
+  const node = tree as { props?: Record<string, unknown>; children?: unknown };
+  const spoken = [node.props?.accessibilityLabel, node.props?.accessibilityHint].filter(
+    (v): v is string => typeof v === 'string',
+  );
+  return [...spoken, ...shownOrSpoken(node.children ?? null)];
+}
+
+const BETA_WORD = /\bbetas?\b/i;
+
+describe('BetaFeaturesScreen — says early access, never beta (CUL-70)', () => {
+  it('shows and speaks no "beta" with every card up and a hint open', () => {
+    setAllowlist({ widget_enabled: gatedToPm, daily_look: gatedToPm, design_v2: gatedToPm, history_v2: gatedToPm });
+    useBetaOptInStore.getState().setOptIn('widget_enabled', true);
+    const { toJSON } = render(<BetaFeaturesScreen />);
+    const strings = shownOrSpoken(toJSON());
+
+    // Non-vacuity: the walk reached the title, the cards, the on-state hint and the
+    // footer note, so an empty list cannot pass for a clean one.
+    expect(strings).toContain('Early access');
+    expect(strings).toContain('Home screen widget');
+    expect(strings.some((t) => t.startsWith('It’s on. If it isn’t on your home screen'))).toBe(true);
+    expect(strings.some((t) => t.includes('Early-access features may change'))).toBe(true);
+
+    expect(strings.filter((t) => BETA_WORD.test(t))).toEqual([]);
+  });
+
+  it('shows and speaks no "beta" in the empty state either', () => {
+    const { toJSON } = render(<BetaFeaturesScreen />);
+    const strings = shownOrSpoken(toJSON());
+
+    expect(strings).toContain('Nothing to try right now');
+    expect(strings.filter((t) => BETA_WORD.test(t))).toEqual([]);
+  });
+
+  it('labels each switch with its feature’s title and nothing else', () => {
+    // The pill is gone, so the label no longer carries a ", beta" to stand in for it:
+    // VoiceOver says the title the owner reads, then "switch", then its state.
+    setAllowlist({ widget_enabled: gatedToPm, daily_look: gatedToPm, design_v2: gatedToPm, history_v2: gatedToPm });
+    const { getAllByRole } = render(<BetaFeaturesScreen />);
+
+    expect(getAllByRole('switch').map((sw) => sw.props.accessibilityLabel)).toEqual([
+      'Home screen widget',
+      'Noticed',
+      'Design v2',
+      'History v2',
+    ]);
   });
 });

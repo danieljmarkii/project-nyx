@@ -1,6 +1,6 @@
 # Diet Trial Lifecycle — Requirements
 
-**Version:** 1.0 — **BUILD-READY. Every gate, conflict and design decision is ruled; mocks are design-locked.** | **Last Updated:** 2026-07-25
+**Version:** 1.0 — **BUILD-READY. Every gate, conflict and design decision is ruled; mocks are design-locked.** | **Last Updated:** 2026-09-26
 **Backlog:** B-417 | **Status:** problem, evidence, schema, UX, detection model, vet-report render, PR plan and acceptance criteria — all ratified.
 
 > **Readiness in one line:** **all seven PRs are specified and buildable.** PR 5 sequences after B-351 completes (PM is finishing it now). Two clinical values carry **provisional decisions pending Dr. Chen's ratification** and are named at the PR that consumes them — neither blocks a build.
@@ -339,11 +339,11 @@ The single **"% compliance"** string is deleted — **and so is the compliance-b
 
 **Three UI rulings from the mock round:**
 
-- **A running trial appears on Home** — a **compact strip** (day count, day-progress bar, one line), rendered **only while a trial is active**, sitting **below `SignalZone` and above `TodayZone`**. Deliberate placement: Principle 3 says safety insights always lead, and a trial is *context*, not an insight. Tapping opens the Pet tab card. The Pet tab is not a surface the wedge owner visits daily; the trial is the thing they live with for eight weeks.
+- **A running trial appears on Home** — a **compact strip** (day count, day-progress bar, one line), rendered **only while a trial is active**, sitting **below `SignalZone` and above `TodayZone`**. Deliberate placement: Principle 3 says safety insights always lead, and a trial is *context*, not an insight. Tapping opens the Pet tab card. The Pet tab is not a surface the wedge owner visits daily; the trial is the thing they live with for eight weeks. **⚠ RULED 2026-09-26 (CUL-1291, T-5):** behind the `trial_screen` flag the strip opens the trial's own screen, `/trial/[pet]`, and the Pet tab keeps a one-row door; §4.1 is unchanged. See `docs/nyx-trial-screen-requirements.md`. This sentence is rewritten at that project's GA.
 - **The card carries no "Log a meal" action.** Logging is the FAB (`components/log/FAB.tsx`). A second door to the same room is not a feature.
 - **A-3 is CUT** (PM, 2026-07-25). No mid-trial "long middle" state. Owners are motivated by their own animal; the app does not need to coach them through week four.
 
-**One card, one layout.** The eleven states are *which strings occupy the fact and note lines* — a switch, not eleven components. This matters for scoping: the whole feature is **six screens** (start sheet, the card, one reason sheet, the milestone + outcome sheet, and two list screens).
+**One card, one layout.** The eleven states are *which strings occupy the fact and note lines* — a switch, not eleven components. This matters for scoping: the whole feature is **six screens** (start sheet, the card, one reason sheet, the milestone + outcome sheet, and two list screens). **⚠ RULED 2026-09-26:** a seventh, the trial's own screen (`docs/nyx-trial-screen-requirements.md`), hosts the card's states in a new layout from the same resolver.
 
 > **Jordan's binding constraint on state 4:** the sub-floor card must not go blank, empty or scary. *"The owner below the floor is by definition the one logging least, which is the one closest to quitting; handing them the emptiest, most disapproving card in the app is exactly backwards."*
 

@@ -100,13 +100,19 @@ export interface TrialAllowedSetReady {
 }
 
 /** `unknown` → render nothing (R2). `no_trial` → render nothing either, but for
- *  a reason the caller may legitimately act on (FR-4's clean disappearance). */
+ *  a reason the caller may legitimately act on (FR-4's clean disappearance).
+ *  `unreadable` (CUL-400) → the read THREW. Every marking surface renders nothing
+ *  for it, exactly as for `unknown`; it is split out only so the screen that
+ *  LISTS the set can say it could not read it, rather than spin over a failure
+ *  that will not resolve on its own. `unknown` stays the one state that does. */
 export type TrialAllowedSet =
   | { status: 'unknown' }
+  | { status: 'unreadable' }
   | { status: 'no_trial' }
   | TrialAllowedSetReady;
 
 export const UNKNOWN_ALLOWED_SET: TrialAllowedSet = { status: 'unknown' };
+export const UNREADABLE_ALLOWED_SET: TrialAllowedSet = { status: 'unreadable' };
 
 /** What a surface renders for a food that IS on the list. Null is the only other
  *  answer — there is no "not on the list" value, because D2 is positive marking
@@ -314,8 +320,11 @@ interface AllowedRow {
  *
  * THE FOUR OUTCOMES, and the one that is easy to get wrong:
  *
- *   • read threw            → `unknown` (transient — the db may not be open yet
- *                             on a cold start; ask again next tick).
+ *   • read threw            → `unreadable` (CUL-400). Not `no_trial`, and not
+ *                             `unknown` either: `unknown` is the spinner, and a
+ *                             spinner over a read that keeps throwing is a screen
+ *                             that never answers. The hook still re-reads on the
+ *                             next hydration tick, so a transient throw recovers.
  *   • no active row         → `no_trial`.
  *   • row not running       → `no_trial` (B-422: a stale active trial is not a
  *                             trial the owner is on today, and FR-4's chrome
@@ -346,7 +355,7 @@ export async function loadTrialAllowedSet(
     // permanently on one transient failure, and a quiet surface looks identical
     // to a correct one.
     console.error('[trialAllowedSet] read failed:', e);
-    return { status: 'unknown' };
+    return { status: 'unreadable' };
   }
 
   if (!trial) return { status: 'no_trial' };

@@ -24,7 +24,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { InsightType, SignalFinding } from './signal';
-import { proteinCluster } from './signalCopy';
+import { findingIdentity } from './findingIdentity';
 
 export const SIGNAL_FOLD_STORAGE_KEY = 'nyx.signalFold';
 
@@ -92,26 +92,12 @@ export function canFold(finding: SignalFinding): boolean {
 // ── Identity (§5.2) — the finding key, never `rank` ───────────────────────────
 
 /**
- * `type` + the noun the sentence is about. Rank is presentation and moves as findings
- * come and go; the key must survive a re-rank so a fold follows its finding. A lone
- * `postprandial_timing` that becomes a `timing_story` is a NEW identity and renders open
- * — correct: the card's shape changed.
+ * `type` + the noun the sentence is about. The derivation lives in `lib/findingIdentity.ts`
+ * so generate-signal writes the same key into `signal_shown_log` (Engines v3 PR-11a); this
+ * name stays the phone's.
  */
 export function foldIdentity(finding: SignalFinding): string {
-  switch (finding.type) {
-    case 'food_symptom_correlation':
-      // The cluster, sorted — a member joining is a new key (a new identity, §5.3).
-      return `${finding.type}:${[...proteinCluster(finding)].sort().join('+')}`;
-    case 'incident_red_flag':
-      // A fold on a vomit flag never covers a later stool flag.
-      return `${finding.type}:${finding.incidentType}`;
-    case 'trial_response':
-    case 'intake_decline':
-      // One per pet.
-      return finding.type;
-    default:
-      return `${finding.type}:${finding.symptomType}`;
-  }
+  return findingIdentity(finding);
 }
 
 // ── The material-change table (§5.3) ──────────────────────────────────────────
@@ -120,10 +106,42 @@ export function foldIdentity(finding: SignalFinding): string {
 // — a count that rose, a newer episode, a tier that changed, a member that joined, a new
 // week's pair. A window sliding an old episode out is not the pet changing and must not
 // re-open the card. Hence the asymmetry: counts are INCREASE-ONLY; tiers, booleans and
-// directions re-open on ANY change. The table is data so the property test in
-// `signalFold.test.ts` can walk every row rather than restate it.
+// directions re-open on ANY change — except where the direction IS the claim the line makes
+// (CUL-1273): a correlation tier re-opens on PROMOTION only, because "this pattern is now
+// established" is false over a demotion and no allowed line is true of one; and the cough↔vomit
+// note re-opens only when it ARRIVES WITH THE PAIR, because the note sits on one card of the two
+// and hops between them as old episodes age out, which is a window slide. The table is data so
+// the property test in `signalFold.test.ts` can walk every row rather than restate it.
 
-export type MaterialKind = 'increase' | 'decrease' | 'turn_on' | 'change' | 'later';
+export type MaterialKind = 'increase' | 'decrease' | 'turn_on' | 'promote' | 'change' | 'later';
+
+/**
+ * What the rest of the finding SET says about a finding that no single card carries (CUL-1273).
+ * `set.*` paths in a `MaterialSpec` read from here, never from the finding.
+ *
+ * The cough↔vomit pair is the one such fact. The engine marks the pair's disclosure on ONE card
+ * (`coughVomitAdjacent`, on whichever of the two courses leads), and which one leads flips at
+ * unchanged counts as old onsets age out of the window: 7 times in 54 co-chronic evenings on
+ * the dogfood replay. Keyed to the card's own flag, every hop read as "the vet ask changed" on
+ * the card it landed on. The pair is derived from the engine's own mark (a card in the set
+ * carries the note), so there is still one predicate for "these two are a pair", and it is the
+ * server's.
+ */
+export interface SetFacts {
+  /** Both courses of the cough↔vomit pair are chronic (this card is one of them). */
+  coughVomitPair?: boolean | null;
+}
+
+/** The set's facts for one finding: the pair fact on a cough or vomiting chronicity card, and
+ *  `undefined` on every other card, so no other card's fingerprint gains a key (a stored
+ *  fingerprint that gains one reads as changed, which clears a Back-because line). */
+export function setFactsFor(finding: SignalFinding, findings: readonly SignalFinding[]): SetFacts | undefined {
+  if (finding.type !== 'symptom_chronicity') return undefined;
+  if (finding.symptomType !== 'cough' && finding.symptomType !== 'vomit') return undefined;
+  return {
+    coughVomitPair: findings.some((f) => f.type === 'symptom_chronicity' && f.coughVomitAdjacent === true),
+  };
+}
 
 /**
  * What the LOCAL RECORD knows about a finding that the cached payload does not — read by
@@ -148,8 +166,13 @@ export interface MaterialSpec {
   increaseOnly: readonly string[];
   /** Re-opens only when the value FALLS (a newer episode: `daysSinceLastEpisode`). */
   decreaseOnly: readonly string[];
-  /** Re-opens only when the flag TURNS ON (the cough↔vomit adjacency). */
-  turnOn: readonly string[];
+  /** Re-opens only when the flag TURNS ON on this card while the pair-level fact at `pair` was
+   *  not already on in the stored fingerprint: a flag that arrived with its pair, never one that
+   *  moved to this card from the other one (the cough↔vomit note, CUL-1273). */
+  arrivesWithPair: readonly { path: string; pair: string }[];
+  /** Re-opens only when the value moves UP `order` (a promotion). A move down, or a value outside
+   *  the order, stays folded and the fingerprint follows it (the correlation tier, CUL-1273). */
+  promoteOnly: readonly { path: string; order: readonly string[] }[];
   /** Re-opens on ANY change. */
   anyChange: readonly string[];
   /** ISO instants (from `RecordFacts`) that re-open only when they move LATER — a newer
@@ -169,7 +192,9 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     // A newer episode — catches the net-zero day when a new episode lands as an old one
     // ages out of the window.
     decreaseOnly: ['daysSinceLastEpisode'],
-    turnOn: ['coughVomitAdjacent'],
+    // The note arriving on this card WITH the pair, never the note hopping between the two.
+    arrivesWithPair: [{ path: 'coughVomitAdjacent', pair: 'set.coughVomitPair' }],
+    promoteOnly: [],
     anyChange: ['tier'],
     // The record's newest episode — the witness that survives a saturated course (above).
     laterInstant: ['record.lastEpisodeIso'],
@@ -178,25 +203,43 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
   symptom_worsening: {
     increaseOnly: ['currentCount', 'currentDays'],
     decreaseOnly: [],
-    turnOn: [],
+    arrivesWithPair: [],
+    promoteOnly: [],
     anyChange: ['tier', 'trigger'],
     laterInstant: ['record.lastEpisodeIso'],
     reason: (field, kind) => (kind === 'later' ? 'new_episode' : kind === 'increase' ? 'new_week' : 'ask_changed'),
   },
+  // Engines v3 PR-14d (CUL-1410): more vomits or a longer run re-opens, as does a run that now
+  // ends nearer today (a newer episode) or a changed ask ('soon' → 'today').
+  symptom_burden: {
+    increaseOnly: ['count', 'runDays'],
+    decreaseOnly: ['daysSinceRunEnd'],
+    arrivesWithPair: [],
+    promoteOnly: [],
+    anyChange: ['tier'],
+    laterInstant: ['record.lastEpisodeIso'],
+    reason: (field) => (field === 'tier' ? 'ask_changed' : 'new_episode'),
+  },
   food_symptom_correlation: {
     increaseOnly: ['matchedPairs', 'symptomEventCount'],
     decreaseOnly: [],
-    turnOn: [],
+    arrivesWithPair: [],
+    // Early → Established only. A demotion (a medication confounder capping the tier) stays
+    // folded: "this pattern is now established" would be false over it, and the card has no vet
+    // ask that moves with the tier, so no allowed line is true of it. The face's *Early pattern*
+    // tag says it when the owner opens the strip.
+    promoteOnly: [{ path: 'tier', order: ['early', 'established'] }],
     laterInstant: [],
     // A member joining the cluster is a NEW KEY (foldIdentity), so it never reaches here.
-    anyChange: ['tier', 'jointCandidate', 'jointGuidance'],
-    reason: (field, kind) =>
-      kind === 'increase' ? 'new_episode' : field === 'tier' ? 'tier_established' : 'ask_changed',
+    anyChange: ['jointCandidate', 'jointGuidance'],
+    reason: (_field, kind) =>
+      kind === 'increase' ? 'new_episode' : kind === 'promote' ? 'tier_established' : 'ask_changed',
   },
   postprandial_timing: {
     increaseOnly: ['rapidCount', 'eligibleCount'],
     decreaseOnly: [],
-    turnOn: [],
+    arrivesWithPair: [],
+    promoteOnly: [],
     laterInstant: [],
     anyChange: ['lastTwoEligibleRapid'],
     reason: timingReason,
@@ -204,7 +247,8 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
   timeofday_clustering: {
     increaseOnly: ['clusterCount', 'eligibleCount'],
     decreaseOnly: [],
-    turnOn: [],
+    arrivesWithPair: [],
+    promoteOnly: [],
     laterInstant: [],
     anyChange: ['clusterStartLocalHour', 'clusterWindowHours'],
     reason: timingReason,
@@ -212,7 +256,8 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
   empty_stomach_timing: {
     increaseOnly: ['bandCounts.rapid', 'bandCounts.mid', 'bandCounts.long', 'eligibleCount', 'clockCount'],
     decreaseOnly: [],
-    turnOn: [],
+    arrivesWithPair: [],
+    promoteOnly: [],
     laterInstant: [],
     anyChange: ['lastTwoEligibleLong'],
     reason: timingReason,
@@ -220,7 +265,8 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
   timing_story: {
     increaseOnly: ['bandCounts.rapid', 'bandCounts.mid', 'bandCounts.long', 'eligibleCount', 'long.clockCount'],
     decreaseOnly: [],
-    turnOn: [],
+    arrivesWithPair: [],
+    promoteOnly: [],
     laterInstant: [],
     anyChange: ['rapid.lastTwoEligible', 'long.lastTwoEligible'],
     reason: timingReason,
@@ -228,7 +274,8 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
   reflection: {
     increaseOnly: [],
     decreaseOnly: [],
-    turnOn: [],
+    arrivesWithPair: [],
+    promoteOnly: [],
     laterInstant: [],
     // The pair IS the finding; a new week's pair is a new fact.
     anyChange: ['currentCount', 'priorCount', 'direction', 'density.comparable'],
@@ -237,7 +284,8 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
   trial_response: {
     increaseOnly: [],
     decreaseOnly: [],
-    turnOn: [],
+    arrivesWithPair: [],
+    promoteOnly: [],
     laterInstant: [],
     // The server already emits only on "changed materially".
     anyChange: ['pooledTrialCount', 'pooledBaselineCount', 'comparisonDirection', 'rapid.trial', 'mid.trial', 'long.trial'],
@@ -249,7 +297,8 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     // until the engine moves the field. Kept as the §5.3 table states it.
     increaseOnly: ['daysBelowBaseline'],
     decreaseOnly: [],
-    turnOn: [],
+    arrivesWithPair: [],
+    promoteOnly: [],
     laterInstant: [],
     anyChange: ['trigger', 'refusedFoodLabel'],
     reason: (_field, kind) => (kind === 'increase' ? 'intake_day' : 'ask_changed'),
@@ -257,7 +306,8 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
   incident_red_flag: {
     increaseOnly: ['flaggedIncidentCount'],
     decreaseOnly: [],
-    turnOn: [],
+    arrivesWithPair: [],
+    promoteOnly: [],
     laterInstant: [],
     anyChange: ['mostRecentFlaggedIso', 'flags'],
     reason: () => 'photo_record',
@@ -270,7 +320,8 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
   stood_down: {
     increaseOnly: [],
     decreaseOnly: [],
-    turnOn: [],
+    arrivesWithPair: [],
+    promoteOnly: [],
     laterInstant: [],
     anyChange: [],
     reason: () => 'new_episode',
@@ -293,16 +344,30 @@ function readPath(finding: SignalFinding, path: string): string | number | boole
 }
 
 /** Every path a spec names, in one list. */
-function specPaths(spec: MaterialSpec): string[] {
-  return [...spec.increaseOnly, ...spec.decreaseOnly, ...spec.turnOn, ...spec.anyChange, ...spec.laterInstant];
+export function specPaths(spec: MaterialSpec): string[] {
+  return [
+    ...spec.increaseOnly,
+    ...spec.decreaseOnly,
+    ...spec.arrivesWithPair.flatMap(({ path, pair }) => [path, pair]),
+    ...spec.promoteOnly.map(({ path }) => path),
+    ...spec.anyChange,
+    ...spec.laterInstant,
+  ];
 }
 
-/** The finding's material fields (§5.3), by dotted path, plus `type` — and the record's
- *  facts under `record.*` when the caller has them (absent → `null`, like any missing field). */
-export function foldFingerprint(finding: SignalFinding, record: RecordFacts = {}): FoldFingerprint {
+/** The finding's material fields (§5.3), by dotted path, plus `type` — the record's facts under
+ *  `record.*` when the caller has them (absent → `null`, like any missing field), and the set's
+ *  facts under `set.*`. A `set.*` path is written only when the caller passed the set: with no
+ *  set in hand the pair is UNKNOWN, not off, so the key is left out and `materialChange` skips it
+ *  as it skips any field a stored fingerprint never carried; the next reconcile writes it. */
+export function foldFingerprint(finding: SignalFinding, record: RecordFacts = {}, set?: SetFacts): FoldFingerprint {
   const spec = MATERIAL_FIELDS[finding.type];
   const fp: FoldFingerprint = { type: finding.type };
   for (const path of specPaths(spec)) {
+    if (path.startsWith('set.')) {
+      if (set) fp[path] = readPath(set as unknown as SignalFinding, path.slice('set.'.length));
+      continue;
+    }
     fp[path] = path.startsWith('record.')
       ? readPath(record as unknown as SignalFinding, path.slice('record.'.length))
       : readPath(finding, path);
@@ -340,8 +405,17 @@ export function materialChange(prev: FoldFingerprint, next: FoldFingerprint): Ba
   for (const f of spec.anyChange) {
     if (has(f) && prev[f] !== next[f]) return spec.reason(f, 'change');
   }
-  for (const f of spec.turnOn) {
-    if (has(f) && next[f] === true && prev[f] !== true) return spec.reason(f, 'turn_on');
+  for (const { path, order } of spec.promoteOnly) {
+    const a = typeof prev[path] === 'string' ? order.indexOf(prev[path] as string) : -1;
+    const b = typeof next[path] === 'string' ? order.indexOf(next[path] as string) : -1;
+    if (has(path) && a >= 0 && b > a) return spec.reason(path, 'promote');
+  }
+  for (const { path, pair } of spec.arrivesWithPair) {
+    // Both keys must be stored: a fingerprint from before the pair fact existed cannot say
+    // whether the flag arrived or hopped, so it decides nothing (the upgrade rule above).
+    if (has(path) && has(pair) && next[path] === true && prev[path] !== true && prev[pair] !== true) {
+      return spec.reason(path, 'turn_on');
+    }
   }
   for (const f of spec.increaseOnly) {
     const a = asNumber(prev[f]);
@@ -401,6 +475,8 @@ function sameFingerprint(a: FoldFingerprint, b: FoldFingerprint): boolean {
  *   4. A `reopened` entry whose fingerprint changed at all is deleted (the line clears).
  *   5. The record's witness (`record.lastEpisodeIso`) re-opens on a LATER instant only, and a
  *      read that did not answer never erases the witness a fold already holds.
+ *   6. The set's facts (`set.*`, CUL-1273) are read from `findings` itself, so every card's
+ *      fingerprint carries the pair it belongs to.
  *
  * `nowIso` is passed in, never read here: the only clock this function touches is the
  * timestamp it STAMPS on a release, and the decision never depends on it. Returns the
@@ -425,7 +501,10 @@ export function reconcileFolds(
       changed = true;
       continue;
     }
-    const fp = keepWitnesses(entry.fingerprint, foldFingerprint(finding, recordOf(finding)));
+    const fp = keepWitnesses(
+      entry.fingerprint,
+      foldFingerprint(finding, recordOf(finding), setFactsFor(finding, findings)),
+    );
     if (entry.state === 'folded') {
       const reason = materialChange(entry.fingerprint, fp);
       if (reason) {
@@ -444,9 +523,16 @@ export function reconcileFolds(
 }
 
 /** A fresh `folded` entry for a finding the owner just compacted, carrying the record's
- *  facts as of the fold so the next episode is judged against where the record IS. */
-export function foldedEntry(finding: SignalFinding, nowIso: string, record: RecordFacts = {}): FoldEntry {
-  return { state: 'folded', fingerprint: foldFingerprint(finding, record), foldedAtIso: nowIso };
+ *  facts as of the fold so the next episode is judged against where the record IS, and the
+ *  set's facts when the caller has the set (without them the pair is left unknown, never
+ *  written as off: see `foldFingerprint`). */
+export function foldedEntry(
+  finding: SignalFinding,
+  nowIso: string,
+  record: RecordFacts = {},
+  set?: SetFacts,
+): FoldEntry {
+  return { state: 'folded', fingerprint: foldFingerprint(finding, record, set), foldedAtIso: nowIso };
 }
 
 // ── The AsyncStorage shell ────────────────────────────────────────────────────
@@ -455,9 +541,26 @@ export function foldedEntry(finding: SignalFinding, nowIso: string, record: Reco
 // read-modify-write, and the zone fires it un-awaited; a `clearSignalFold()` landing
 // between the read and the write would let the stale write put the WHOLE previous
 // account's map back after `wipeLocalSession()` had already returned clean. Capture the
-// epoch on entry, re-check before writing, abandon on a wipe. Module-local because this
-// module's clear IS the key's only wipe.
+// epoch on entry, re-check before writing, abandon on a wipe — AND re-check after the
+// write, repairing if a clear landed anywhere inside the call (CUL-826: the pre-write
+// check alone holds for most interleavings, not all; see `writeFoldEntries` and
+// `clearSignalFold`, which bumps on both sides of its removal for the same reason).
+// Module-local because this module's clear IS the key's only wipe.
 let clearEpoch = 0;
+
+/**
+ * The post-write half of the guard, shared by every writer here. A clear whose removal
+ * landed between a writer's pre-write re-check and its `setItem` leaves the writer's
+ * blob on disk AFTER `wipeLocalSession()` returned clean — so the writer re-reads the
+ * epoch once its write is down and removes the key if a clear happened at any point
+ * during the call. After a wipe, empty is the correct state, so this can only ever
+ * discard the calling write's own entry; the next legitimate write puts it back.
+ */
+async function repairIfClearedSince(epoch: number): Promise<void> {
+  if (clearEpoch !== epoch) {
+    await AsyncStorage.removeItem(SIGNAL_FOLD_STORAGE_KEY);
+  }
+}
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v);
@@ -533,9 +636,35 @@ export async function writeFoldEntries(petId: string, entries: PetFoldEntries): 
     if (Object.keys(entries).length === 0) delete store[petId];
     else store[petId] = entries;
     await AsyncStorage.setItem(SIGNAL_FOLD_STORAGE_KEY, JSON.stringify(store));
+    await repairIfClearedSince(epoch);
   } catch (e) {
     console.warn('[signalFold] write failed:', e);
+    return;
   }
+  notifyFoldStore(petId);
+}
+
+// ── A second writer (D2-3 · CUL-1065) ─────────────────────────────────────────
+// The Signal's own screen folds the Home card from OFF Home (*Keep it compact on Home*),
+// so Home's `useSignalFold` needs to hear that the store moved while it was not looking:
+// its reconcile keys on the findings' content, and a fold written elsewhere changes no
+// finding. One in-process listener list, notified after a successful write, keyed by pet
+// so a listener for another pet ignores it. Never persisted, never synced — the store on
+// disk is still the one source; this is only the knock on the door.
+
+type FoldStoreListener = (petId: string) => void;
+const foldListeners = new Set<FoldStoreListener>();
+
+/** Hear every successful `writeFoldEntries`. Returns the unsubscribe. */
+export function subscribeFoldStore(listener: FoldStoreListener): () => void {
+  foldListeners.add(listener);
+  return () => {
+    foldListeners.delete(listener);
+  };
+}
+
+function notifyFoldStore(petId: string): void {
+  for (const l of foldListeners) l(petId);
 }
 
 /**
@@ -554,6 +683,7 @@ export async function pruneFoldStore(keepPetIds: readonly string[]): Promise<voi
     if (stale.length === 0) return;
     for (const id of stale) delete store[id];
     await AsyncStorage.setItem(SIGNAL_FOLD_STORAGE_KEY, JSON.stringify(store));
+    await repairIfClearedSince(epoch);
   } catch (e) {
     console.warn('[signalFold] prune failed:', e);
   }
@@ -564,12 +694,18 @@ export async function pruneFoldStore(keepPetIds: readonly string[]): Promise<voi
  * BY NAME. Best-effort and idempotent, like every other clear on that path.
  */
 export async function clearSignalFold(): Promise<void> {
-  // Bumped BEFORE the removal, so a write whose read straddles this clear is caught by the
-  // re-check rather than racing the removal itself.
+  // Bumped on BOTH sides of the removal (CUL-826; the observation-fold sibling's fix).
+  // The bump before it catches a write already in flight. It does NOT catch a write that
+  // STARTS after the bump and whose read straddles the removal: that write snapshots the
+  // already-bumped epoch, reads the pre-wipe blob, and its re-check compares equal — so
+  // it writes the previous account's map back after `wipeLocalSession()` has returned
+  // clean. The bump after the removal makes any write whose read spans it see a change.
   clearEpoch++;
   try {
     await AsyncStorage.removeItem(SIGNAL_FOLD_STORAGE_KEY);
   } catch (e) {
     console.warn('[signalFold] clear failed:', e);
+  } finally {
+    clearEpoch++;
   }
 }

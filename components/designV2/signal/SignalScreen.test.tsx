@@ -1,0 +1,731 @@
+// The Signal's own screen and its route (D2-3 · CUL-1065). The model is the REAL builder
+// over a production-shaped fixture (C-35) — the mock's Thursday, the rabbit trial, Cerenia
+// inside the window, nine photographed episodes — and the loader alone is stubbed, so the
+// sections, the words and the order are the shipped ones. The route is rendered both
+// ways: flag-off it draws the inline screen and issues no read (the flag-off guard's
+// stated async blind spot, paid here); flag-on it mounts the screen for the route's pet.
+
+jest.mock('../../../lib/supabase', () => ({ supabase: { from: jest.fn(), functions: { invoke: jest.fn() } } }));
+const mockLoadSignalScreen = jest.fn();
+jest.mock('../../../lib/signalScreen', () => {
+  const actual = jest.requireActual('../../../lib/signalScreen');
+  return { ...actual, loadSignalScreen: (...a: unknown[]) => mockLoadSignalScreen(...a) };
+});
+const mockReduced = jest.fn(() => false);
+jest.mock('../../../hooks/useReducedMotion', () => ({ useReducedMotion: () => mockReduced() }));
+jest.mock('../../../hooks/useAppActive', () => ({ useAppActive: () => true }));
+jest.mock('../../../hooks/useLastEpisodeDates', () => ({ readLastEpisodeIso: () => '2026-09-17T22:11:00.000Z' }));
+const mockWriteFoldEntries = jest.fn(async (..._a: unknown[]) => undefined);
+const mockReadFoldEntries = jest.fn(async (..._a: unknown[]) => ({}));
+jest.mock('../../../lib/signalFold', () => {
+  const actual = jest.requireActual('../../../lib/signalFold');
+  return {
+    ...actual,
+    readFoldEntries: (...a: unknown[]) => mockReadFoldEntries(...a),
+    writeFoldEntries: (...a: unknown[]) => mockWriteFoldEntries(...a),
+  };
+});
+jest.mock('../../../lib/storage', () => ({ getSignedUrl: jest.fn(async () => 'https://signed.example/tile.jpg') }));
+const mockRouter = { back: jest.fn(), push: jest.fn() };
+const mockStackScreen = jest.fn((..._a: unknown[]) => null);
+let mockParams: Record<string, string> = {};
+// The factory reads the `mock*` bindings LAZILY (jest hoists the mock above the consts).
+jest.mock('expo-router', () => ({
+  router: { back: (...a: unknown[]) => mockRouter.back(...a), push: (...a: unknown[]) => mockRouter.push(...a) },
+  Stack: { Screen: (props: unknown) => mockStackScreen(props) },
+  useLocalSearchParams: () => mockParams,
+}));
+const mockFocus = jest.fn((..._a: unknown[]) => true);
+jest.mock('../../../lib/a11yFocus', () => ({ focusAccessibility: (...a: unknown[]) => mockFocus(...a) }));
+jest.mock('react-native-safe-area-context', () => {
+  const { View } = require('react-native');
+  return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
+});
+const mockUseDesignV2 = jest.fn(() => false);
+jest.mock('../../../hooks/useDesignV2', () => ({ useDesignV2: () => mockUseDesignV2() }));
+// The weekly chart, real, with its props recorded — the flown chart must not draw in (D2-6).
+const mockWeeklyProps = jest.fn();
+jest.mock('../../charts/WeeklyBars', () => {
+  const actual = jest.requireActual('../../charts/WeeklyBars');
+  return {
+    ...actual,
+    WeeklyBars: (props: Record<string, unknown>) => {
+      mockWeeklyProps(props);
+      return actual.WeeklyBars(props);
+    },
+  };
+});
+// The measurement is the platform's; the suite plays it (D2-6): the hero's window rect.
+let mockHeroRect: { x: number; y: number; width: number; height: number } | null = { x: 16, y: 180, width: 361, height: 168 };
+jest.mock('../../../lib/measureNode', () => ({
+  measureNodeInWindow: (_node: unknown, cb: (r: unknown) => void) => cb(mockHeroRect),
+}));
+
+import { act, configure, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Animated, Dimensions, StyleSheet } from 'react-native';
+import { SignalScreen, SCRIPT_TITLE, WHY_TITLE } from './SignalScreen';
+import { CARE_CONTEXT_TITLE } from '../../../lib/careContext';
+import { NO_READ_LABEL } from './EpisodeGallery';
+import SignalRoute, { OFF_TITLE } from '../../../app/signal/[id]';
+import { TIER_WORDS } from '../../../lib/incidentTierWords';
+import { buildSignalScreenModel, screenLeadsWithLanes, type SignalScreenEpisode, type SignalScreenInput } from '../../../lib/signalScreen';
+import type { CachedFinding, IntakeDeclineFinding, SymptomChronicityFinding } from '../../../lib/signal';
+import { SIGNAL_OPEN_MOTION } from '../../motion/signalOpenMotion';
+import { FLIGHT_MOTION, abortFlight, getFlightState, landFlight, setHeroReady, settleOutbound, stageFlight } from '../../motion/flightMotion';
+import { createElement } from 'react';
+import { usePetStore } from '../../../store/petStore';
+import { dayKeyFromIndex, localDayIndexOf } from '../../../lib/utils';
+
+const shift = (key: string, d: number) => dayKeyFromIndex((localDayIndexOf(key) as number) + d);
+const THURSDAY = '2026-09-17';
+const TRIAL_START = '2026-07-25';
+
+const chronicity: SymptomChronicityFinding = {
+  type: 'symptom_chronicity',
+  priorityClass: 'safety',
+  symptomType: 'vomit',
+  episodeCount: 21,
+  spanDays: 55,
+  activeWeeks: 7,
+  symptomDays: 18,
+  daysSinceLastEpisode: 0,
+  firstOnsetIso: '2026-07-01T00:00:00Z',
+  tier: 'firm',
+  windowDays: 56,
+};
+const benign: CachedFinding = {
+  rank: 0,
+  text: 'Nyx has vomited 21 times in the trial’s 55 days, against 19 in the 55 before.',
+  finding: { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 2, priorCount: 3, direction: 'flat', windowDays: 14 },
+};
+const safety: CachedFinding = { rank: 0, text: 'Nyx has vomited 21 times across 7 of the last 8 weeks. Worth a vet visit.', finding: chronicity };
+const timingCached: CachedFinding = {
+  rank: 1,
+  text: '9 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating — a timing pattern worth mentioning to your vet.',
+  finding: {
+    type: 'postprandial_timing',
+    priorityClass: 'insight',
+    symptomType: 'vomit',
+    rapidCount: 9,
+    eligibleCount: 10,
+    totalEpisodes: 21,
+    rapidWindowMinutes: 30,
+    lastTwoEligibleRapid: false,
+    medianMinutesSinceFeeding: 12,
+    feedingFormsInEvidence: [],
+    windowDays: 56,
+  },
+};
+
+function episode(dayKey: string, hour: number, over: Partial<SignalScreenEpisode> = {}): SignalScreenEpisode {
+  const [y, m, d] = dayKey.split('-').map(Number);
+  return {
+    eventId: `ev-${dayKey}-${hour}`,
+    occurredAt: new Date(y, m - 1, d, hour, 11).toISOString(),
+    dayKey,
+    minutesSinceMeal: null,
+    photo: null,
+    ...over,
+  };
+}
+
+function input(cached: CachedFinding, over: Partial<SignalScreenInput> = {}): SignalScreenInput {
+  const episodes: SignalScreenEpisode[] = [];
+  for (let i = 0; i < 21; i++) episodes.push(episode(shift(TRIAL_START, (i * 13) % 55), 17, { minutesSinceMeal: i % 3 === 0 ? 3 + i : null }));
+  for (let i = 0; i < 19; i++) episodes.push(episode(shift(TRIAL_START, -1 - ((i * 7) % 55)), 9));
+  const photographed = episodes.slice(0, 9);
+  for (const e of photographed) e.photo = { localUri: null, storagePath: `pet/${e.eventId}/photo.jpg` };
+  const loggedDays: string[] = [];
+  for (let i = -70; i <= 0; i++) loggedDays.push(shift(THURSDAY, i));
+  return {
+    cached,
+    petName: 'Nyx',
+    today: THURSDAY,
+    trial: { startDay: TRIAL_START, identity: 'Rabbit trial', dayCounter: 55, targetDays: 56, foodLabel: 'Royal Canin Selected Protein PR' },
+    episodes,
+    loggedDays,
+    recordStart: shift(THURSDAY, -200),
+    verdicts: {
+      [photographed[0].eventId]: 'monitor',
+      [photographed[1].eventId]: 'monitor',
+      [photographed[2].eventId]: 'worth_a_call',
+      [photographed[3].eventId]: 'not_enough_to_say',
+      [photographed[4].eventId]: null,
+    },
+    doses: ['2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12'].map((dayKey) => ({ drugLabel: 'Cerenia', dayKey })),
+    gateLoggedDays: over.loggedDays ?? loggedDays,
+    notEating: false,
+    trialVomitingLine: null,
+    trialUnanswered: false,
+    ...over,
+  };
+}
+
+const ready = (cached: CachedFinding, over: Partial<SignalScreenInput> = {}) => ({
+  status: 'ready' as const,
+  model: buildSignalScreenModel(input(cached, over)),
+  petName: 'Nyx',
+});
+// Off a trial, where the screen draws its compare (CUL-1216: a running trial's before/during
+// statement is the strip's sentence, and nothing is drawn).
+const noTrial = { trial: null };
+
+/** Every string rendered anywhere in the tree. */
+function allText(json: unknown, out: string[] = []): string[] {
+  if (json == null) return out;
+  if (typeof json === 'string') {
+    out.push(json);
+    return out;
+  }
+  if (Array.isArray(json)) {
+    for (const c of json) allText(c, out);
+    return out;
+  }
+  const node = json as { children?: unknown };
+  allText(node.children, out);
+  return out;
+}
+
+/** The testIDs in tree order. */
+function testIds(json: unknown, out: string[] = []): string[] {
+  if (json == null || typeof json !== 'object') return out;
+  if (Array.isArray(json)) {
+    for (const c of json) testIds(c, out);
+    return out;
+  }
+  const node = json as { props?: { testID?: string }; children?: unknown };
+  if (node.props?.testID) out.push(node.props.testID);
+  testIds(node.children, out);
+  return out;
+}
+
+// The charts hide their drawn nodes from assistive tech behind one spoken label; the
+// queries here read the drawing (the chart suites' own setting).
+configure({ defaultIncludeHiddenElements: true });
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockReduced.mockReturnValue(false);
+  mockUseDesignV2.mockReturnValue(false);
+  mockParams = {};
+});
+
+describe('SignalScreen — the sections, in the ruled order', () => {
+  it('title · bars · sentence · lanes · episodes · why — and a reflection draws no compare (CUL-1359)', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(benign, noTrial));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    const ids = testIds(view.toJSON());
+    const order = [
+      'signal-screen-title',
+      'signal-section-weekly',
+      'signal-section-sentence',
+      'signal-section-lanes',
+      'signal-section-episodes',
+      'signal-section-why',
+    ].map((id) => ids.indexOf(id));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // The reflection's claim IS the engine's week pair, in its sentence: no local redraw of it.
+    expect(view.queryByTestId('signal-section-compare')).toBeNull();
+    expect(view.queryByTestId('compare-bars')).toBeNull();
+    expect(view.queryByTestId('signal-section-script')).toBeNull();
+    expect(mockLoadSignalScreen).toHaveBeenCalledWith('pet-1', 'reflection:vomit');
+  });
+
+  it('a TIMING finding leads with its own evidence: title · lanes · sentence · compare · bars (D2 = a, CUL-1270)', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(timingCached, noTrial));
+    const view = render(<SignalScreen petId="pet-1" identity="postprandial_timing:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    expect(view.getByTestId('signal-screen-title').props.children.props.children).toBe('Vomiting soon after meals');
+    const ids = testIds(view.toJSON());
+    const order = [
+      'signal-screen-title',
+      'signal-section-lanes',
+      'signal-section-sentence',
+      'signal-section-compare',
+      'signal-section-weekly',
+      'signal-section-episodes',
+      'signal-section-why',
+    ].map((id) => ids.indexOf(id));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('which finding leads with the lanes: the three that claim time-from-a-meal, and only when there are lanes', () => {
+    const lanes = buildSignalScreenModel(input(timingCached)).lanes;
+    expect(lanes).not.toBeNull();
+    const as = (type: string) => ({ finding: { ...timingCached.finding, type } as never, lanes });
+    expect(screenLeadsWithLanes(as('postprandial_timing'))).toBe(true);
+    expect(screenLeadsWithLanes(as('empty_stomach_timing'))).toBe(true);
+    expect(screenLeadsWithLanes(as('timing_story'))).toBe(true);
+    for (const t of ['symptom_chronicity', 'reflection', 'timeofday_clustering', 'symptom_worsening', 'food_symptom_correlation']) {
+      expect(screenLeadsWithLanes(as(t))).toBe(false);
+    }
+    expect(screenLeadsWithLanes({ finding: timingCached.finding, lanes: null })).toBe(false);
+  });
+
+  it('the compare says "logged N of M days" for both windows and adjudicates nothing; the lanes carry the untimed line', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(timingCached, noTrial));
+    const view = render(<SignalScreen petId="pet-1" identity="postprandial_timing:vomit" />);
+    await waitFor(() => expect(view.getByTestId('compare-bars')).toBeTruthy());
+    expect(view.getByTestId('compare-coverage-0').props.children).toMatch(/^logged \d+ of 28 days$/);
+    expect(view.getByTestId('compare-coverage-1').props.children).toMatch(/^logged \d+ of 28 days$/);
+    expect(view.getByTestId('timing-untimed-line').props.children).toMatch(/couldn't be timed against a meal/);
+    const text = allText(view.toJSON()).join(' ').toLowerCase();
+    expect(text).not.toMatch(/\bfair/);
+  });
+
+  it('every photographed episode carries its OWN read in the shipped words; no aggregate verdict anywhere', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('episode-gallery')).toBeTruthy());
+    const model = ready(benign).model;
+    const tiles = model.episodes?.tiles ?? [];
+    expect(tiles).toHaveLength(9);
+    for (const tile of tiles) {
+      const verdict = view.getByTestId(`episode-verdict-${tile.eventId}`);
+      expect(verdict.props.children).toBe(tile.verdict ? TIER_WORDS[tile.verdict].short : NO_READ_LABEL);
+      const door = view.getByTestId(`episode-tile-${tile.eventId}`);
+      expect(door.props.accessibilityLabel).toMatch(tile.verdict ? new RegExp(`photographed, read as ${TIER_WORDS[tile.verdict].label}$`) : /photographed, no read yet$/);
+    }
+    expect(view.getByTestId('episode-count-line').props.children).toBe(model.episodes?.countLine);
+    const text = allText(view.toJSON()).join(' ').toLowerCase();
+    expect(text).not.toContain('the other');
+    // A tile is a door to its record.
+    fireEvent.press(view.getByTestId(`episode-tile-${tiles[0].eventId}`));
+    expect(mockRouter.push).toHaveBeenCalledWith(`/event/${tiles[0].eventId}`);
+  });
+
+  it('"Why" names Cerenia inside the trial window, and the diet line', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByText(WHY_TITLE)).toBeTruthy());
+    expect(view.getByText("Cerenia was given Sep 9–12, inside the trial's 55 days.")).toBeTruthy();
+    expect(view.getByText('Day 55 of 56 on Royal Canin Selected Protein PR.')).toBeTruthy();
+  });
+
+  // CUL-1216 (BRK-39): the ask first — the sentence that carries it and the phone script sit
+  // under the title, above every chart, the gallery and the why; no local compare is drawn and
+  // no "not a verdict" line reads calm beside it.
+  it('a safety finding gets the screen too, with the ask first: title · sentence · script · bars · episodes · why', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(safety, noTrial));
+    const view = render(<SignalScreen petId="pet-1" identity="symptom_chronicity:vomit" />);
+    await waitFor(() => expect(view.getByText(SCRIPT_TITLE)).toBeTruthy());
+    const ids = testIds(view.toJSON());
+    const order = [
+      'signal-screen-title',
+      'signal-section-sentence',
+      'signal-section-script',
+      'signal-section-weekly',
+      'signal-section-episodes',
+      'signal-section-why',
+    ].map((id) => ids.indexOf(id));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(view.queryByTestId('signal-section-compare')).toBeNull();
+    expect(allText(view.toJSON()).join(' ')).not.toMatch(/not a verdict/);
+    expect(view.getByTestId('signal-screen-title')).toBeTruthy();
+  });
+
+  it('VoiceOver focus is asked onto the title when the model arrives (the wiring; the focus itself is the device pass)', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    expect(mockFocus).not.toHaveBeenCalled();
+    await waitFor(() => expect(view.getByTestId('signal-screen-title')).toBeTruthy());
+    await waitFor(() => expect(mockFocus).toHaveBeenCalledTimes(1));
+    // The node handed over is the title's — a mounted host node, not null.
+    expect(mockFocus.mock.calls[0][0]).toBeTruthy();
+    expect(view.getByTestId('signal-screen-title').props.accessibilityRole).toBe('header');
+  });
+
+  it('the opening: the landing is armed once on arrival; reduced motion arms nothing', async () => {
+    const timing = jest.spyOn(Animated, 'timing');
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-section-sentence')).toBeTruthy());
+    // The landing's two values: delay 200 over the fold's 300 (a bar's own stagger can also
+    // reach 200ms, at the fold's 420 — told apart by the duration).
+    const isLanding = (c: unknown[]) => {
+      const o = c[1] as { delay?: number; duration?: number };
+      return o.delay === SIGNAL_OPEN_MOTION.landDelayMs && o.duration === SIGNAL_OPEN_MOTION.landMs;
+    };
+    const landing = timing.mock.calls.filter(isLanding);
+    expect(landing).toHaveLength(2);
+    view.unmount();
+    timing.mockClear();
+    mockReduced.mockReturnValue(true);
+    const still = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(still.getByTestId('signal-section-sentence')).toBeTruthy());
+    expect(timing.mock.calls.filter(isLanding)).toHaveLength(0);
+    timing.mockRestore();
+  });
+
+  it('there is no fold under Design v2 (CUL-1285): no control, and the fold store is neither read nor written', async () => {
+    for (const cached of [safety, benign, timingCached]) {
+      mockLoadSignalScreen.mockResolvedValue(ready(cached));
+      const view = render(<SignalScreen petId="pet-1" identity={`${cached.finding.type}:vomit`} />);
+      await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+      expect(view.queryByTestId('signal-section-fold')).toBeNull();
+      expect(view.queryByText(/Keep it compact|Show it in full/)).toBeNull();
+      view.unmount();
+    }
+    expect(mockReadFoldEntries).not.toHaveBeenCalled();
+    expect(mockWriteFoldEntries).not.toHaveBeenCalled();
+  });
+
+  it('the missing state names the route’s pet, never the active one (C-9)', async () => {
+    mockLoadSignalScreen.mockResolvedValue({ status: 'missing', petName: 'Nyx' });
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-missing')).toBeTruthy());
+    expect(view.getByText("This signal isn't in Nyx's picture any more.")).toBeTruthy();
+  });
+
+  // TS-9 (CUL-1305): a finding Home withholds says WHY, never "not in the picture", which over
+  // a vomiting finding could read as "it stopped" (C-37: return the reason).
+  // CUL-1218: a type this build cannot title — honest, and never "gone".
+  it('the unsupported state says the app cannot show it yet; it never says the signal is gone', async () => {
+    mockLoadSignalScreen.mockResolvedValue({ status: 'unsupported', petName: 'Nyx' });
+    const view = render(<SignalScreen petId="pet-1" identity="gap_shortening:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-unsupported')).toBeTruthy());
+    expect(view.getByText("I can't show this kind of signal yet.")).toBeTruthy();
+    expect(view.queryByTestId('signal-screen-missing')).toBeNull();
+    expect(view.queryByTestId('signal-screen-title')).toBeNull();
+  });
+
+  it('the withheld state explains and points to the vet; it never says the signal is gone', async () => {
+    mockLoadSignalScreen.mockResolvedValue({ status: 'withheld', petName: 'Nyx' });
+    const view = render(<SignalScreen petId="pet-1" identity="trial_response" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-withheld')).toBeTruthy());
+    expect(view.getByText("This one is set aside while Nyx may not be eating. Fewer vomits from an empty stomach isn't a sign of getting better.")).toBeTruthy();
+    expect(view.getByText("If you're worried about Nyx, your vet is the best call.")).toBeTruthy();
+    expect(view.queryByTestId('signal-screen-missing')).toBeNull();
+  });
+
+  it('an unanswered register is a failed read with Try again, and the screen re-reads once the pets arrive', async () => {
+    const pets = usePetStore.getState().pets;
+    usePetStore.setState({ pets: [] as never });
+    mockLoadSignalScreen.mockRejectedValue(new Error('the not-eating register has not answered'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const view = render(<SignalScreen petId="pet-1" identity="trial_response" />);
+    await waitFor(() => expect(view.getByText('Try again')).toBeTruthy());
+    expect(view.queryByTestId('signal-screen-missing')).toBeNull();
+    const calls = mockLoadSignalScreen.mock.calls.length;
+    mockLoadSignalScreen.mockResolvedValue({ status: 'withheld', petName: 'Nyx' });
+    await act(async () => {
+      usePetStore.setState({ pets: [{ id: 'pet-1', name: 'Nyx', species: 'cat' }] as never });
+    });
+    expect(mockLoadSignalScreen.mock.calls.length).toBe(calls + 1);
+    await waitFor(() => expect(view.getByTestId('signal-screen-withheld')).toBeTruthy());
+    warn.mockRestore();
+    usePetStore.setState({ pets });
+  });
+
+  it('an intake decline: title + sentence + why + script, no charts, no gallery, no fold control', async () => {
+    const intake: IntakeDeclineFinding = { type: 'intake_decline', priorityClass: 'safety', trigger: 'consecutive_low', species: 'cat', daysBelowBaseline: 3, refusedFoodLabel: null, ratedMealsConsidered: 9 };
+    mockLoadSignalScreen.mockResolvedValue(ready({ rank: 0, text: 'Nyx has eaten less than usual for 3 days. Call your vet today.', finding: intake }));
+    const view = render(<SignalScreen petId="pet-1" identity="intake_decline" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    expect(view.queryByTestId('signal-section-weekly')).toBeNull();
+    expect(view.queryByTestId('signal-section-compare')).toBeNull();
+    expect(view.queryByTestId('signal-section-lanes')).toBeNull();
+    expect(view.queryByTestId('signal-section-episodes')).toBeNull();
+    expect(view.getByTestId('signal-section-why')).toBeTruthy();
+    expect(view.getByTestId('signal-section-script')).toBeTruthy();
+    expect(view.queryByTestId('signal-section-fold')).toBeNull();
+  });
+});
+
+// EN-10 (CUL-1421; mock §05 5a / 5b): the server's lines under *Around this*.
+const PRED_LINE = 'Prednisone since Sep 21, 6 days: 2 episodes, with something logged on 6 of 6.';
+const VISIT_LINE = 'Since the Sep 16 visit, 11 days: 4 episodes, with something logged on 11 of 11.';
+const withLines = (cached: CachedFinding): CachedFinding => ({
+  ...cached,
+  finding: {
+    ...cached.finding,
+    careContext: [
+      { kind: 'course', anchorOn: '2026-09-21', days: 6, count: 2, loggedDays: 6, drugLabel: 'Prednisone', text: PRED_LINE },
+      { kind: 'visit', anchorOn: '2026-09-16', days: 11, count: 4, loggedDays: 11, text: VISIT_LINE },
+    ],
+  } as CachedFinding['finding'],
+});
+
+describe('SignalScreen — around this (EN-10, CUL-1421)', () => {
+  it('an insight screen draws the lines directly under the sentence, in the server’s order', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(withLines(timingCached), noTrial));
+    const view = render(<SignalScreen petId="pet-1" identity="postprandial_timing:vomit" />);
+    await waitFor(() => expect(view.getByText(CARE_CONTEXT_TITLE)).toBeTruthy());
+    const ids = testIds(view.toJSON());
+    const sentence = ids.indexOf('signal-section-sentence');
+    const context = ids.indexOf('signal-section-context');
+    expect(context).toBeGreaterThan(sentence);
+    // Nothing between the sentence block and the lines but the sentence block's own children.
+    expect(ids.slice(sentence + 1, context).every((id) => id.startsWith('compare') || id === 'signal-section-compare' || id.startsWith('signal-compare'))).toBe(true);
+    const lines = view.getAllByTestId('signal-context-line').map((n) => allText(n).join(''));
+    expect(lines).toEqual([PRED_LINE, VISIT_LINE]);
+  });
+
+  it('a safety screen keeps the ask and its script together: the lines follow the script', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(withLines(safety), noTrial));
+    const view = render(<SignalScreen petId="pet-1" identity="symptom_chronicity:vomit" />);
+    await waitFor(() => expect(view.getByText(CARE_CONTEXT_TITLE)).toBeTruthy());
+    const ids = testIds(view.toJSON());
+    expect(ids.indexOf('signal-section-script')).toBeGreaterThan(ids.indexOf('signal-section-sentence'));
+    expect(ids.indexOf('signal-section-context')).toBeGreaterThan(ids.indexOf('signal-section-script'));
+    expect(ids.indexOf('signal-section-context')).toBeLessThan(ids.indexOf('signal-section-weekly'));
+  });
+
+  it('no lines (the key off, or a cache from before PR-22): no section, and the screen is what it was', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(safety, noTrial));
+    const view = render(<SignalScreen petId="pet-1" identity="symptom_chronicity:vomit" />);
+    await waitFor(() => expect(view.getByText(SCRIPT_TITLE)).toBeTruthy());
+    expect(view.queryByTestId('signal-section-context')).toBeNull();
+    expect(view.queryByText(CARE_CONTEXT_TITLE)).toBeNull();
+  });
+
+  it('the model carries the lines verbatim, and none when the finding has none', () => {
+    expect(buildSignalScreenModel(input(withLines(safety), noTrial)).context).toEqual([PRED_LINE, VISIT_LINE]);
+    expect(buildSignalScreenModel(input(safety, noTrial)).context).toEqual([]);
+  });
+});
+
+describe('the route, app/signal/[id]', () => {
+  it('flag-off: the inline screen, no namespace node, and NO read is issued (the guard’s async half)', () => {
+    mockParams = { id: 'reflection:vomit', pet: 'pet-1' };
+    mockUseDesignV2.mockReturnValue(false);
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalRoute />);
+    expect(view.getByTestId('signal-route-off')).toBeTruthy();
+    expect(view.getByText(OFF_TITLE)).toBeTruthy();
+    expect(view.queryByTestId('signal-screen')).toBeNull();
+    expect(mockLoadSignalScreen).not.toHaveBeenCalled();
+  });
+
+  it('flag-on: mounts the screen for the route’s pet and identity, and rises with the fold’s physics', async () => {
+    mockParams = { id: 'reflection:vomit', pet: 'pet-1' };
+    mockUseDesignV2.mockReturnValue(true);
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalRoute />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    expect(mockLoadSignalScreen).toHaveBeenCalledWith('pet-1', 'reflection:vomit');
+    const options = (mockStackScreen.mock.calls[0][0] as unknown as { options: Record<string, unknown> }).options;
+    expect(options.animation).toBe('slide_from_bottom');
+    expect(options.animationDuration).toBe(SIGNAL_OPEN_MOTION.riseMs);
+    expect(options.gestureEnabled).toBe(true);
+  });
+
+  it('flag-on with a malformed link falls to the inline screen; reduced motion turns the transition off', () => {
+    mockParams = { id: 'reflection:vomit' };
+    mockUseDesignV2.mockReturnValue(true);
+    mockReduced.mockReturnValue(true);
+    const view = render(<SignalRoute />);
+    expect(view.getByTestId('signal-route-off')).toBeTruthy();
+    expect(mockLoadSignalScreen).not.toHaveBeenCalled();
+    const options = (mockStackScreen.mock.calls[0][0] as unknown as { options: Record<string, unknown> }).options;
+    expect(options.animation).toBe('none');
+  });
+});
+
+describe('the flight’s landing (D2-6 · CUL-1069)', () => {
+  // The test window (jest-expo's 750pt) — the hero's ratio is derived from it, as the screen does.
+  const WINDOW = Dimensions.get('window').width;
+  const INNER = WINDOW - 2 * 24 - 2 * 24 - 3 - 16;
+  const OUTER = WINDOW - 2 * 16;
+  const RATIO = OUTER / INNER;
+  const SOURCE = { x: 67, y: 300, width: INNER, height: 130 };
+  const layoutHero = (view: ReturnType<typeof render>) =>
+    fireEvent(view.getByTestId('signal-hero'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: INNER, height: 130 } } });
+  const stage = (identity = 'reflection:vomit') =>
+    stageFlight({ identity, title: 'Vomiting, the last 8 weeks', source: SOURCE, element: createElement('View') });
+  let resolveLoad: ((v: unknown) => void) | null = null;
+  const pending = () =>
+    new Promise((resolve) => {
+      resolveLoad = resolve;
+    });
+
+  beforeEach(() => {
+    abortFlight();
+    mockHeroRect = { x: 16, y: 180, width: 361, height: 168 };
+    resolveLoad = null;
+  });
+  afterEach(() => abortFlight());
+
+  it('while the read is in flight: the Header, the title the card handed over, and the hero SLOT at the clone’s size — measured, it lands the flight', () => {
+    stage();
+    mockLoadSignalScreen.mockReturnValue(pending());
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    expect(view.getByTestId('signal-flight-skeleton')).toBeTruthy();
+    expect(view.getByText('Vomiting, the last 8 weeks')).toBeTruthy();
+    const slot = view.getByTestId('signal-hero-slot');
+    const style = StyleSheet.flatten(slot.props.style);
+    // The slot is the clone's box scaled by the same ratio the hero uses.
+    expect(style.width).toBe(OUTER);
+    expect(style.height).toBeCloseTo(SOURCE.height * RATIO, 6);
+    expect(getFlightState().phase).toBe('staged');
+    act(() => {
+      fireEvent(slot, 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: OUTER, height: style.height } } });
+    });
+    expect(getFlightState().phase).toBe('outbound');
+    expect(getFlightState().flight?.target).toEqual(mockHeroRect);
+  });
+
+  it('the hero mounts HIDDEN under the clone, does not draw in, reports its rect and its existence — and the release is one commit', async () => {
+    stage();
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    const hero = view.getByTestId('signal-section-weekly');
+    expect(StyleSheet.flatten(hero.props.style)).toMatchObject({ opacity: 0 });
+    // The chart that flew in is the static frame: no draw in.
+    expect(view.getByTestId('weekly-bars')).toBeTruthy();
+    expect(mockWeeklyProps).toHaveBeenLastCalledWith(expect.objectContaining({ drawIn: false }));
+    expect(view.getByTestId('signal-hero').props.style.transform[0].scale).toBeCloseTo(RATIO, 10);
+    expect(view.getByTestId('signal-hero').props.style.width).toBe(INNER);
+    // The inner lays out → the wrapper reserves the scaled height and reports the rect.
+    act(() => layoutHero(view));
+    expect(getFlightState().phase).toBe('outbound');
+    expect(getFlightState().flight?.target).toEqual(mockHeroRect);
+    expect(getFlightState().flight?.heroReady).toBe(true);
+    expect(StyleSheet.flatten(view.getByTestId('signal-section-weekly').props.style).height).toBeCloseTo(130 * RATIO, 6);
+    // The spring rests: the store goes idle in ONE update, and the hero shows in that render.
+    act(() => settleOutbound());
+    expect(getFlightState().phase).toBe('idle');
+    expect(StyleSheet.flatten(view.getByTestId('signal-section-weekly').props.style).opacity).toBeUndefined();
+  });
+
+  // TS-9 (CUL-1305, adversarial re-check): the gate can answer withheld for a card Home drew a
+  // beat before a regen; the clone of its falling bars must not stay painted over that answer.
+  it.each([
+    ['withheld', { status: 'withheld', petName: 'Nyx' }],
+    ['missing', { status: 'missing', petName: 'Nyx' }],
+  ])('a load that settles %s abandons the flown-in chart', async (_label, answer) => {
+    stage();
+    mockLoadSignalScreen.mockReturnValue(pending());
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    const slot = view.getByTestId('signal-hero-slot');
+    act(() => {
+      fireEvent(slot, 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: OUTER, height: 100 } } });
+    });
+    expect(getFlightState().phase).toBe('outbound');
+    await act(async () => {
+      resolveLoad?.(answer);
+    });
+    expect(getFlightState().phase).toBe('idle');
+    expect(getFlightState().flight).toBeNull();
+  });
+
+  it('Back reverses the flight before the pop; the hero hides again under the returning clone', async () => {
+    stage();
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    act(() => layoutHero(view));
+    act(() => settleOutbound());
+    expect(getFlightState().phase).toBe('idle');
+    fireEvent.press(view.getByLabelText('Back'));
+    expect(getFlightState().phase).toBe('inbound');
+    expect(mockRouter.back).toHaveBeenCalledTimes(1);
+    expect(StyleSheet.flatten(view.getByTestId('signal-section-weekly').props.style)).toMatchObject({ opacity: 0 });
+  });
+
+  it('a screen that did NOT fly in never reverses on Back, and its chart draws in as D2-3 shipped', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    expect(view.queryByTestId('signal-flight-skeleton')).toBeNull();
+    expect(mockWeeklyProps).toHaveBeenLastCalledWith(expect.objectContaining({ drawIn: true }));
+    fireEvent.press(view.getByLabelText('Back'));
+    expect(getFlightState().phase).toBe('idle');
+    expect(mockRouter.back).toHaveBeenCalledTimes(1);
+  });
+
+  it('a second screen for the same finding that did NOT fly in never reverses the first one’s lingering record', async () => {
+    stage();
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const first = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(first.getByTestId('signal-screen-body')).toBeTruthy());
+    act(() => layoutHero(first));
+    act(() => settleOutbound());
+    expect(getFlightState()).toMatchObject({ phase: 'idle', flight: { identity: 'reflection:vomit' } });
+    const second = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(second.getByTestId('signal-screen-body')).toBeTruthy());
+    fireEvent.press(second.getByLabelText('Back'));
+    expect(getFlightState().phase).toBe('idle');
+    expect(mockRouter.back).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaving any other way (the gesture) aborts the flight — the record too, so a later visit cannot reverse onto it', async () => {
+    stage();
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    act(() => layoutHero(view));
+    act(() => settleOutbound());
+    expect(getFlightState().flight).not.toBeNull();
+    view.unmount();
+    expect(getFlightState()).toEqual({ phase: 'idle', flight: null });
+  });
+
+  it('unmounting during the reverse leaves the inbound flight alone — the host is flying it home', async () => {
+    stage();
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    act(() => layoutHero(view));
+    act(() => settleOutbound());
+    fireEvent.press(view.getByLabelText('Back'));
+    view.unmount();
+    expect(getFlightState().phase).toBe('inbound');
+  });
+
+  it('a flight staged for ANOTHER finding is not this screen’s: no skeleton, no reverse, and it is not aborted by this screen', async () => {
+    stage('reflection:diarrhea');
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    expect(view.queryByTestId('signal-flight-skeleton')).toBeNull();
+    fireEvent.press(view.getByLabelText('Back'));
+    expect(getFlightState().phase).toBe('staged');
+    view.unmount();
+    expect(getFlightState().phase).toBe('staged');
+  });
+
+  it('a late read: the flight lands on the slot and rests before the hero exists; the hero’s arrival is the release', async () => {
+    stage();
+    mockLoadSignalScreen.mockReturnValue(pending());
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    act(() => {
+      fireEvent(view.getByTestId('signal-hero-slot'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: OUTER, height: 168 } } });
+    });
+    act(() => settleOutbound());
+    expect(getFlightState().phase).toBe('landed');
+    await act(async () => {
+      resolveLoad?.(ready(benign));
+    });
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    expect(StyleSheet.flatten(view.getByTestId('signal-section-weekly').props.style)).toMatchObject({ opacity: 0 });
+    act(() => layoutHero(view));
+    expect(getFlightState().phase).toBe('idle');
+    expect(StyleSheet.flatten(view.getByTestId('signal-section-weekly').props.style).opacity).toBeUndefined();
+  });
+
+  it('the route: a staged flight suppresses the slide — a fade at the flight’s ground beat — and latches it for the pop', async () => {
+    mockParams = { id: 'reflection:vomit', pet: 'pet-1' };
+    mockUseDesignV2.mockReturnValue(true);
+    mockReduced.mockReturnValue(false);
+    stage();
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalRoute />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    const first = (mockStackScreen.mock.calls[0][0] as unknown as { options: Record<string, unknown> }).options;
+    expect(first.animation).toBe('fade');
+    expect(first.animationDuration).toBe(FLIGHT_MOTION.groundMs);
+    expect(first.gestureEnabled).toBe(true);
+    // Released — the store is idle — and the route still says fade: the pop uses the push's transition.
+    act(() => layoutHero(view));
+    act(() => settleOutbound());
+    expect(getFlightState().phase).toBe('idle');
+    const last = (mockStackScreen.mock.calls[mockStackScreen.mock.calls.length - 1][0] as unknown as { options: Record<string, unknown> }).options;
+    expect(last.animation).toBe('fade');
+  });
+});

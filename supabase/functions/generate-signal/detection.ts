@@ -14,7 +14,9 @@
 //      layer: "Nyx vomited 4 times this week — same as last." Counts/streaks,
 //      NO causal claim. Renders only for a FLAT or IMPROVING (falling) trend; a
 //      worsening trend is suppressed — never normalized as a neutral reflection
-//      — and a zero-symptom week is never surfaced (absence ≠ wellness, §9).)
+//      — and a zero-symptom week is never surfaced (absence ≠ wellness, §9). Nor
+//      does it render over a heavy week in any direction: the absolute-burden gate,
+//      PR-14c / CUL-1311, mutes it while any sign is at burdenMuteMinEpisodes.)
 //   ④ symptom-frequency worsening          (the deterministic worsening lane — the
 //      SAFETY-class counterpart to ③. ③'s worsening gate suppresses a rising trend
 //      and, until now, nothing fired in its place — a one-way valve into silence
@@ -70,6 +72,7 @@ import { canonicalizeProtein, readProteinSet } from './protein.ts'
 import {
   classifyEpisodeSet,
   collapseEpisodes,
+  feedingIsEatingAnchor,
   timedEligibleFeedings,
   type FeedingInput,
   type FreeFedSpan,
@@ -81,6 +84,11 @@ import {
 // (spec §2 L2, G9). `localDayIndex`/`localDayIndexOf` are the same day-boundary helpers the
 // trial card counts "day N of M" with (B-421), so L2's day-count cannot drift from the card's.
 import { isTrialRunning } from '../../../lib/dietTrial.ts'
+import {
+  isFreeFedIntakeMeal,
+  parseFreeFedIntakeSpans,
+  type FreeFedIntakeSpan,
+} from '../../../lib/freeFedIntake.ts'
 // `trialDayCounter` is the ONE "day N of M" formula (B-449) — re-spelling `max(1, end - start + 1)`
 // here is the drift the guard test forbids elsewhere. `localDayIndex*` are the tz-aware day-boundary
 // helpers the trial card counts with (B-421); L2 windows in day-INDEX space (never `index * MS_PER_DAY`,
@@ -373,7 +381,12 @@ export interface MealEvent {
    * keeps every existing detection test green.
    */
   proteins?: string[] | null
-  /** WSAVA intake rating; null for legacy/unrated rows or non-meal foods (treats/other). */
+  /**
+   * WSAVA intake rating; null for legacy/unrated rows. A treat can carry one too (the
+   * completion card offers intake for meals AND treats), so ② filters on foodType itself,
+   * while ① and ⑤ read the rating whatever the food type (a refused treat is not eaten,
+   * CUL-1122 / CUL-1190).
+   */
   intakeRating: IntakeRating | null
   /** food_items.food_type — only 'meal' contributes to the intake baseline (migration 010/011). */
   foodType: 'meal' | 'treat' | 'other' | null
@@ -487,6 +500,18 @@ export interface FeedingArrangement {
    * bowl = 'low' (is_shared, deferred to the multi-pet sprint). Absent → 'high'.
    */
   attributionConfidence?: AttributionConfidence | null
+  /**
+   * CUL-1086 — the free-fed food, and the instant its row was written (the toggle-on). The
+   * intake lane (② + rate_meals) reads these, through `lib/freeFedIntake.ts`, to tell a bowl's
+   * rating from a watched meal BY DATE; the correlation lanes ignore both. Absent ⇒ the
+   * arrangement excludes no rating (the pre-CUL-1086 behavior), so both production callers
+   * populate them: `generate-signal/index.ts` mapArrangementRows and the report's
+   * buildDetectionInput, each pinned by a test.
+   */
+  foodItemId?: string | null
+  createdAt?: string | null
+  /** CUL-1396 / migration 076 — the toggle-off instant; null while down or on a pre-076 end. */
+  endedAt?: string | null
 }
 
 /**
@@ -749,6 +774,8 @@ export type InsightType =
   | 'intake_decline'
   | 'reflection'
   | 'symptom_worsening'
+  // Engines v3 PR-14d (CUL-1410): absolute burden, the safety card that needs no earlier week.
+  | 'symptom_burden'
   | 'symptom_chronicity'
   | 'postprandial_timing'
   // Signals v2 (B-755 / CUL-7): the empty-stomach ≥6h lane (L1, the ⑤ mirror) and the
@@ -780,6 +807,44 @@ export type EvidenceTier = 'early' | 'established'
 interface FindingBase {
   type: InsightType
   priorityClass: PriorityClass
+  /**
+   * CUL-989 — set by the pipeline, never by a detector, when a pull behind this run came back
+   * INCOMPLETE. Every count on the finding is then a floor (the read holds a subset of the
+   * record), and the templates state it as "at least N". Absent on a complete read, so a
+   * finding from a complete read is byte-identical to one computed before this field existed.
+   */
+  countIsFloor?: true
+  /**
+   * CUL-989 — set by the pipeline on a safety card CARRIED from the previous Signal over an
+   * incomplete read: the ISO instant of the read that last computed it. Never set by a detector.
+   */
+  carriedFrom?: string
+  /**
+   * EN-10 (Engines v3 PR-22, CUL-1420) — set by the pipeline, never by a detector, behind
+   * `engines_v3_en10`: the visit, trial and course lines the finding's screen draws beside its
+   * counts (careContext.ts). Dates and counts only, never a comparison. Absent when the key is
+   * off or no line applies, so such a finding is byte-identical to one from before the field.
+   */
+  careContext?: CareContextLine[]
+}
+
+/**
+ * One EN-10 context line (docs/nyx-care-state-requirements.md §5.1). A window, the count of
+ * the finding's sign in it and the days with anything logged. `count` is null when the line
+ * states no count (a withheld zero, or a window the read does not reach); `loggedDays` is null
+ * only for the latter. `text` is the deterministic sentence; no model ever phrases it.
+ */
+export interface CareContextLine {
+  kind: 'course' | 'trial' | 'visit'
+  /** The DATE the window hangs on: the course start, the trial start or the visit day. */
+  anchorOn: string
+  /** Days in the window. */
+  days: number
+  count: number | null
+  loggedDays: number | null
+  /** The owner's name for the drug, on a course line only. */
+  drugLabel?: string
+  text: string
 }
 
 /**
@@ -1137,13 +1202,65 @@ export interface SymptomWorseningFinding extends FindingBase {
 }
 
 /**
+ * Copy-urgency tier for a burden finding. Resolved here, never in copy.
+ *   - 'today' — the persistence run ended today or yesterday (local): "worth a call to your
+ *               vet today" (EN-4's rung, the incident-tiers table's T8).
+ *   - 'soon'  — the count arm alone, or a run that ended earlier in the week: "worth booking a
+ *               vet visit soon". That is detector ④'s FIRM ask, deliberately: the Home pipeline
+ *               drops a same-sign ④ card under this one, so this card's quietest ask must be no
+ *               quieter than the loudest ask it replaces.
+ */
+export type BurdenTier = 'today' | 'soon'
+
+/**
+ * Absolute symptom burden (Engines v3 PR-14d, CUL-1410; CUL-1311 scope 2, GAP-5). The SAFETY
+ * card for a high count with NO earlier week to compare it to. Every other symptom lane is
+ * relative: ④ needs a rise over a logged prior week, ⑦ needs three weeks of history. So a cat
+ * quiet last week that vomits Monday, Tuesday and Wednesday, or a new account's cat vomiting most
+ * days in its first week, got no safety card at all, and PR-14c's valve only removed the calm
+ * one. This owns that case.
+ *
+ * Vomit only (FCEAI's severe band is stated for vomiting). Purely DESCRIPTIVE: a count and a run
+ * of days, no cause, no mechanism, no severity word, no diagnosis. NEVER reassures; its absence is
+ * silence, not wellness. It needs no logging-eligibility floor: it speaks on the presence of
+ * logged vomits, and an unlogged vomit can only make it quieter (the escalation-safe direction).
+ */
+export interface SymptomBurdenFinding extends FindingBase {
+  type: 'symptom_burden'
+  priorityClass: 'safety'
+  symptomType: SymptomType
+  /** Vomits logged in the window, re-logs within 60 s collapsed (the ONE count PR-14c's valve reads). */
+  count: number
+  /** Distinct local days in the window carrying a vomit. */
+  days: number
+  /**
+   * The run of consecutive local days carrying a vomit that the card states: the most recent one
+   * long enough to fire the persistence arm, else the longest (inside the window).
+   */
+  runDays: number
+  /** Local days since that run's last day (0 = it includes today). */
+  daysSinceRunEnd: number
+  /** The count arm holds: at least `reflection.burdenMuteMinEpisodes` vomits in the window. */
+  countArm: boolean
+  /** The persistence arm holds: a vomit on at least `burden.persistenceMinDays` consecutive local days. */
+  persistenceArm: boolean
+  tier: BurdenTier
+  /** The window, in days (the reflection lane's, so "this week" means one thing). */
+  windowDays: number
+  /** Hard marker for the phrasing layer + reviewers: counts only, never causal. */
+  associationalOnly: true
+}
+
+/**
  * Copy-urgency tier for a chronicity finding (detector ⑦, B-182). Anchored on DURATION
  * (chronicity's natural urgency axis), NOT the week-over-week delta (that is ④'s axis):
  *   - 'firm'     — a long course (`spanDays ≥ firmSpanDays`, ≥6 weeks): "...worth booking
  *                  a vet visit." Also inherited (PR 2) when the same symptom is ALSO worsening
  *                  week-over-week — the §4.5 valve coupling, applied in the composition layer
  *                  (suppressWorseningWhenChronic), NOT in resolveChronicityTier (which stays
- *                  pure/span-only and has no view of the worsening findings).
+ *                  pure/span-only and has no view of the worsening findings). And HELD
+ *                  (CUL-1272) once earned, until the course's count falls below the count it
+ *                  was earned at or the course stands down — holdChronicityTier, below.
  *   - 'standard' — a present-and-recurring course (span in [minSpanDays, firmSpanDays)):
  *                  "...worth a word with your vet."
  * There is deliberately NO 'soft' register (one fewer than ④): a symptom recurring for
@@ -1323,6 +1440,15 @@ export interface EmptyStomachTimingFinding extends FindingBase {
   lastTwoEligibleLong: boolean
   /** Median HOURS-since-feeding across the long episodes — the actual observed timing (evidence + vet report). */
   medianHoursSinceFeeding: number
+  /**
+   * Of `longCount`, the episodes whose last bowl before the onset was REFUSED (CUL-1195, via
+   * `lib/mealTiming`'s `afterRefusal`). Timing from the last meal eaten is true, and a cat who turns
+   * down dinner and vomits minutes later still lands in this band, whose owner reading is the
+   * harmless-looking one, so the Signal surfaces printing the long count print this beside it when ≥ 1
+   * (the vet report's timing line does not yet: CUL-1430, sequenced after CUL-1002's deploy).
+   * A DISCLOSURE, never a gate: it moves no band, no floor and no fire decision.
+   */
+  longAfterRefusalCount: number
   /** Forms of the feedings before the long episodes — EVIDENCE/vet-report ONLY, never the claim (§9.1). */
   feedingFormsInEvidence: string[]
   /**
@@ -1392,6 +1518,8 @@ export interface TimingStoryFinding extends FindingBase {
     count: number
     medianHoursSinceFeeding: number
     lastTwoEligible: boolean
+    /** Of `count`, the episodes after a refused bowl — L1's `longAfterRefusalCount`, verbatim (CUL-1195). */
+    afterRefusalCount: number
     feedingFormsInEvidence: string[]
     clockBand?: { startLocalHour: number; windowHours: number }
     clockCount?: number
@@ -1474,6 +1602,12 @@ export interface TrialResponseFinding extends FindingBase {
   rapid: { trial: number; baseline: number }
   mid: { trial: number; baseline: number }
   long: { trial: number; baseline: number }
+  /**
+   * Of `long` per window, the episodes whose last bowl before the onset was REFUSED (CUL-1195) — a
+   * subset of the long row, never added to it. A cat refusing the trial diet and vomiting minutes
+   * later reads "6h or more: 3 · was 0" without it. Context only, like the rows: it triggers nothing.
+   */
+  longAfterRefusal: { trial: number; baseline: number }
   /** The post-prandial band boundary in minutes (30) — the `rapid` row label. */
   rapidWindowMinutes: number
   /** The empty-stomach band boundary in hours (6) — the `long` row label. */
@@ -1720,6 +1854,7 @@ export type Finding =
   | IntakeDeclineFinding
   | ReflectionFinding
   | SymptomWorseningFinding
+  | SymptomBurdenFinding
   | SymptomChronicityFinding
   | PostprandialTimingFinding
   | EmptyStomachTimingFinding
@@ -1963,6 +2098,42 @@ export interface DetectionConfig {
      * than not". Tune on real data, not a re-decision.
      */
     worseningDenseDayFloor: number
+    /**
+     * Absolute-burden mute floor (PR-14c, CUL-1311 GAP-5): the whole reflection layer stays
+     * silent while ANY tracked sign has at least this many current-window logs (re-logs of one
+     * vomit collapsed, never the 3h episode chain), whatever last week held. The worsening and chronicity gates are both RELATIVE (a rise, or weeks
+     * of history), so a pet at 6 then 5 a week, not yet chronic, cleared both and got a calm
+     * "down from 6". A high count is not a reassuring count, whichever way it moved.
+     *
+     * Reassurance-direction only: it removes a calm card and never adds a finding, so it
+     * ships on its own proof (E-1 A amended). PROVISIONAL at 4: FCEAI's "severe" band for
+     * vomiting is 4 or more in 7 days, applied pet-wide to every sign like the other two
+     * gates. The ratified value is a CUL-583 ruling-sheet item.
+     *
+     * SHARED with the burden card's count arm (PR-14d, CUL-1410), over the SAME count
+     * (`SymptomStat.currentLogs`): for vomit, "③ goes silent on burden ⟺ the burden card
+     * speaks" holds by construction, the valve pattern `isWorsening` set. For the other lane
+     * signs the mute still has no card of its own (the card is vomit only).
+     */
+    burdenMuteMinEpisodes: number
+  }
+  /**
+   * The burden card's persistence arm (Engines v3 PR-14d, CUL-1410: EN-4's rung, the
+   * incident-tiers table's T8). Its count arm reads `reflection.burdenMuteMinEpisodes`.
+   */
+  burden: {
+    /**
+     * A vomit on at least this many consecutive LOCAL days inside the window fires the card.
+     * PROVISIONAL at 3 (T8's proposed row; the critique says "2 to 3"). The CUL-583 sheet rules
+     * 2 or 3; the corpus report prints the chance rate at both.
+     */
+    persistenceMinDays: number
+    /**
+     * A run whose last day is at most this many local days ago carries the 'today' ask.
+     * 1 = the run includes today or yesterday: "call today" is honest about a run that is
+     * still going, and becomes "book a visit soon" once a whole day has passed without one.
+     */
+    todayMaxDaysSinceRunEnd: number
   }
   chronicity: {
     /**
@@ -2362,6 +2533,14 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     // week shows symptoms on ≥4 of 7 days. Anchored to density, not a raw count cutoff,
     // so the one new escalation boundary is clinically defensible (see WorseningTier).
     worseningDenseDayFloor: 4,
+    // PR-14c (CUL-1311): provisional, FCEAI severe (4+ in 7 days). CUL-583 ratifies.
+    // Also the burden card's count arm (PR-14d, CUL-1410).
+    burdenMuteMinEpisodes: 4,
+  },
+  // PR-14d (CUL-1410): provisional, T8 ("vomiting 3 days running: call today"). CUL-583 rules 2 or 3.
+  burden: {
+    persistenceMinDays: 3,
+    todayMaxDaysSinceRunEnd: 1,
   },
   // B-182 detector ⑦ (symptom chronicity) floors (§6). Clinically-anchored v1 defaults
   // (PM/Dr. Chen D2 — recommend-and-proceed, pending ratification): a course is "chronic"
@@ -2827,6 +3006,15 @@ interface ClassifiedMeal {
    * correlate — see MealEvent.isMedicationVehicle. Defaults false (no pairing).
    */
   isMedicationVehicle: boolean
+  /**
+   * Food went in (CUL-1190): false only when the owner rated the feeding Refused, read
+   * through `feedingIsEatingAnchor`, the one "did food go in" rule `lib/mealTiming.ts`
+   * holds for the timing lane (CUL-1122). Picked at is eating (a few bites is enough for a
+   * food reaction), and so is an unrated bowl (ratings are exception-only, CUL-1118).
+   * Read ONLY where ① credits a case exposure (see `refusedOnly` in windowExposures);
+   * every other use of a feeding, including the staple-washout count, is unchanged.
+   */
+  eaten: boolean
 }
 
 /**
@@ -2853,6 +3041,7 @@ function classifyMeals(mealEvents: MealEvent[]): ClassifiedMeal[] {
       attribution: (m.attributionConfidence ?? 'high') as AttributionConfidence,
       foodType: m.foodType ?? null,
       isMedicationVehicle: m.isMedicationVehicle === true, // B-156 PR C1; absent ⇒ false
+      eaten: feedingIsEatingAnchor(m.intakeRating), // CUL-1190; unrated ⇒ eaten
     }))
     .filter((m): m is ClassifiedMeal => m.proteins.length > 0 && Number.isFinite(m.ms))
     .sort((x, y) => x.ms - y.ms)
@@ -3122,6 +3311,10 @@ export function detectCorrelations(
   // logging-eligibility for an absence claim (the B-027/B-050 logging-gap guard).
   const windowExposures = (anchorMs: number, windowMs: number) => {
     const exposures = new Map<string, AttributionConfidence>()
+    // CUL-1190: proteins that were in the window ONLY through feedings she refused. They
+    // stay in `exposures` (offered, exactly as before), so clustering, the family and every
+    // control window are untouched; the candidate loop reads this set on the CASE side only.
+    const eatenProteins = new Set<string>()
     let mealCount = 0
     for (const m of meals) {
       if (m.ms > anchorMs) break // sorted ascending — nothing later precedes the anchor
@@ -3143,8 +3336,10 @@ export function detectCorrelations(
         if (m.attribution === 'low' || !exposures.has(protein)) {
           exposures.set(protein, m.attribution)
         }
+        if (m.eaten) eatenProteins.add(protein)
       }
     }
+    const refusedOnly = new Set([...exposures.keys()].filter((p) => !eatenProteins.has(p)))
     const windowStart = anchorMs - windowMs
     let standingInWindow = false
     const standingProteins = new Set<string>()
@@ -3172,7 +3367,7 @@ export function detectCorrelations(
         break
       }
     }
-    return { exposures, mealCount, standingInWindow, standingProteins, standingPrimaries, medActive }
+    return { exposures, refusedOnly, mealCount, standingInWindow, standingProteins, standingPrimaries, medActive }
   }
 
   interface Candidate {
@@ -3272,6 +3467,8 @@ export function detectCorrelations(
     const pairs: {
       caseExp: Map<string, AttributionConfidence>
       ctrlExp: Map<string, AttributionConfidence>
+      /** Proteins in the case window only through refused feedings (CUL-1190). */
+      caseRefusedOnly: Set<string>
       /** A free-fed standing exposure was in the case OR control window (B-040 confounder). */
       standing: boolean
       /** A medication was on board in the CASE window (B-117 PR 9 confounder analysis). */
@@ -3329,6 +3526,7 @@ export function detectCorrelations(
       pairs.push({
         caseExp: caseWin.exposures,
         ctrlExp: bestCtrl.exposures,
+        caseRefusedOnly: caseWin.refusedOnly,
         standing: caseWin.standingInWindow || bestCtrl.standingInWindow,
         medInCase: caseWin.medActive,
         medInControl: bestCtrl.medActive,
@@ -3435,8 +3633,31 @@ export function detectCorrelations(
       for (const p of pairs) {
         const inCase = p.caseExp.has(representative)
         const inCtrl = p.ctrlExp.has(representative)
+        // CUL-1190 — A REFUSAL CAN ONLY WITHDRAW EVIDENCE FOR THE FOOD SHE REFUSED.
+        //
+        // A case exposure counts FOR the cluster only if some member went in: a bowl she
+        // refused before a vomit is not evidence the food caused it. Before this, tuna
+        // offered only on bad days and refused every time read "established, 8/0".
+        //
+        // Nothing else reads the rating, and that is the design, not an omission. Two
+        // adversarial passes broke every reading that let a refusal count AGAINST a food
+        // or move a pair: a refusal is driven by the illness (a nauseous pet refuses before
+        // a vomit, a recovering one the day after), so reading it as ABSENT let the illness
+        // choose the exposure (one refused staple bowl on the day the matcher picks as
+        // every control made "chicken, established, 8/0"; a dog refusing everything on sick
+        // days demoted its real culprit), and skipping the pair instead biased the test
+        // toward positives, because only the pairs that argue AGAINST a food have it on the
+        // control side to be refused (false Established rose several-fold in simulation).
+        // So a control-side refusal reads exactly as before (offered), a withdrawn case is
+        // counted in neither b nor c, the matched set and the clusters are the offered
+        // reading's, and b can only fall, c is unchanged, the risk difference can only
+        // fall. Every finding is one the ratings-blind engine also made, at the same tier
+        // or lower: `detection.test.ts` holds that as a property over generated records.
+        const inCaseEaten = inCase && !cluster.every((member) => p.caseRefusedOnly.has(member))
+        if (inCaseEaten) caseExposed++
+        // The attribution floor still reads every OFFERED case exposure, as before: a
+        // refused shared bowl cannot lift the floor, only leave it where it was.
         if (inCase) {
-          caseExposed++
           for (const member of cluster) {
             if (p.caseExp.get(member) === 'low') attributionFloor = 'low'
           }
@@ -3453,7 +3674,7 @@ export function detectCorrelations(
             if (p.ctrlExp.get(member) === 'low') attributionFloor = 'low'
           }
         }
-        if (inCase && !inCtrl) b++
+        if (inCaseEaten && !inCtrl) b++
         else if (!inCase && inCtrl) c++
       }
       candidates.push({
@@ -3496,7 +3717,13 @@ export function detectCorrelations(
       standingConfounder,
       medicationPresent,
     } = cand
-    const riskDifference = caseExposed / matchedPairs - controlExposed / matchedPairs
+    // (b − c) / n, from integers. Over a ratings-blind record this equals the old
+    // caseExposed/n − controlExposed/n exactly (concordant pairs cancel), minus the float
+    // wobble that let a true 0.2 fail at 0.3 − 0.1 and pass at 0.8 − 0.6. CUL-1190 needs
+    // the discordant form: a withdrawn case keeps its control's count in controlExposed
+    // (the food WAS offered there), so the difference form read it as a control-only pair
+    // and dropped a b = 6, c = 0 culprit the pet refused on five other sick days.
+    const riskDifference = (b - c) / matchedPairs
 
     // Positive, case-direction enrichment only, with a coincidence guard on discordants.
     if (riskDifference < cfg.earlyMinRiskDifference) continue
@@ -3584,15 +3811,38 @@ interface RatedMeal {
 }
 
 /**
- * Rated meals only: 'meal'-type foods with a real intake rating, sorted ascending.
- * Treats/other and unrated rows are excluded so a logging gap can never masquerade
- * as a decline. Shared by detectIntakeDecline AND the B-053 rate_meals coverage
- * diagnostic so the "rated meal" definition (the line-710 coverage floor) has ONE
- * source and cannot drift.
+ * The intake lane's free-fed spans (CUL-1086, §11 #6): a rating logged while its food's bowl was
+ * down is a bowl, not a watched meal. BY DATE, through the one predicate the phone also uses
+ * (`lib/freeFedIntake.ts`), so the two detectors cannot disagree on which meals they read.
  */
-function classifyRatedMeals(mealEvents: MealEvent[]): RatedMeal[] {
+function intakeFreeFedSpans(input: DetectionInput): FreeFedIntakeSpan[] {
+  return parseFreeFedIntakeSpans(
+    (input.feedingArrangements ?? []).map((a) => ({
+      foodItemId: a.foodItemId ?? null,
+      createdAt: a.createdAt ?? null,
+      activeFrom: a.activeFrom,
+      activeUntil: a.activeUntil,
+      endedAt: a.endedAt ?? null,
+    })),
+  )
+}
+
+function isFreeFedMeal(m: MealEvent, spans: readonly FreeFedIntakeSpan[]): boolean {
+  return isFreeFedIntakeMeal(m.foodItemId, Date.parse(m.occurredAt), spans)
+}
+
+/**
+ * Rated meals only: 'meal'-type foods with a real intake rating, free-fed bowl ratings excluded
+ * by date, sorted ascending. Treats/other and unrated rows are excluded so a logging gap can
+ * never masquerade as a decline. Shared by detectIntakeDecline AND the B-053 rate_meals coverage
+ * diagnostic so the "rated meal" definition (the line-710 coverage floor) has ONE source and
+ * cannot drift. The phone's classifyRatedMeals (`lib/analytics.ts`) is this meal for meal;
+ * `lib/intakeDeclineParity.test.ts` drives both real detectors and requires the same verdict.
+ */
+function classifyRatedMeals(mealEvents: MealEvent[], freeFedSpans: readonly FreeFedIntakeSpan[]): RatedMeal[] {
   return mealEvents
     .filter((m) => m.foodType === 'meal' && m.intakeRating != null)
+    .filter((m) => !isFreeFedMeal(m, freeFedSpans))
     .map((m) => ({
       ms: Date.parse(m.occurredAt),
       occurredAt: m.occurredAt,
@@ -3625,7 +3875,7 @@ export function detectIntakeDecline(
   const nowMs = Date.parse(input.now)
   if (!Number.isFinite(nowMs)) return []
 
-  const ratedMeals = classifyRatedMeals(input.mealEvents)
+  const ratedMeals = classifyRatedMeals(input.mealEvents, intakeFreeFedSpans(input))
 
   // Coverage floor: too few rated meals → SILENT. Silence is not an all-clear (§9);
   // the composition layer renders the building/stale state, never "intake is fine".
@@ -3767,7 +4017,7 @@ export function detectIntakeDecline(
 // ① nor ② fired (the dogfooding case that opened B-051: a constant-staple diet
 // washes ① out and steady intake keeps ② silent, yet the owner has logged heavily).
 //
-// Three guardrails, all enforced here and re-asserted by the phrasing layer:
+// Four guardrails, all enforced here:
 //   (1) DIRECTION — render only for current ≤ prior (flat or falling). A rising
 //       trend is SUPPRESSED, never reframed as a neutral reflection (Dr. Chen's
 //       §7.1 amendment #5 — worsening is the safety lane's job, not ③'s).
@@ -3775,6 +4025,9 @@ export function detectIntakeDecline(
 //       is reassurance-by-absence (§9), the exact thing the layer must not do.
 //   (3) LOGGING-ELIGIBILITY — both windows must be actively logged, so a logging
 //       gap can't read as "improving" (the recurring §9 / B-027 / B-050 trap).
+//   (4) BURDEN — never render while any sign's current count is at the burden
+//       floor, whichever way it moved (PR-14c, CUL-1311 GAP-5): "down from 6" over
+//       a week of 5 is a reassurance about a week a vet would call severe.
 //
 // Surfaces at most ONE reflection (the symptom most present right now) so the
 // Signal stays calm — never a wall of count cards.
@@ -3792,6 +4045,13 @@ interface SymptomStat {
   priorCount: number
   currentDays: number
   priorDays: number
+  /**
+   * Current-window LOGS with only near-duplicate re-logs collapsed (the report's §5.11 rule,
+   * `INCIDENT_RELOG_DEDUP_MS`), NOT the 3h episode chain. Read only by ③'s burden gate
+   * (PR-14c): the chain has no length cap, so ten vomits 2.5h apart are one episode, and a
+   * floor stated in vomits (FCEAI) must count vomits (CUL-1311 adversarial pass, record A).
+   */
+  currentLogs: number
 }
 
 interface WindowedStats {
@@ -3876,12 +4136,18 @@ function computeWindowedStats(input: DetectionInput, config: DetectionConfig): W
     const onsets = toEpisodeOnsets(msList, config.symptomEpisodeGapHours)
     const cur = onsets.filter((ms) => ms >= currentStart && ms < nowMs)
     const pri = onsets.filter((ms) => ms >= priorStart && ms < currentStart)
+    // Every raw log in the window, re-logs collapsed: a chain straddling the window's start
+    // files its whole episode under the prior week, but its in-window vomits still count here.
+    const currentLogs = countFlaggedClusters(
+      msList.filter((ms) => ms >= currentStart && ms < nowMs).map((ms) => ({ ms, flagged: true })),
+    )
     stats.push({
       symptomType,
       currentCount: cur.length,
       priorCount: pri.length,
       currentDays: new Set(cur.map((ms) => Math.floor(ms / MS_PER_DAY))).size,
       priorDays: new Set(pri.map((ms) => Math.floor(ms / MS_PER_DAY))).size,
+      currentLogs,
     })
   }
   return { stats, loggingEligible }
@@ -3950,6 +4216,23 @@ export function detectReflections(
   if (chronicityStats?.some((s) => isChronic(s, input.pet.species, config.chronicity) && s.loggingEligible)) {
     return []
   }
+
+  // GLOBAL absolute-burden gate (PR-14c, CUL-1311 GAP-5). The two gates above are both
+  // relative: worsening needs a rise over last week, chronicity needs three weeks of
+  // history. A cat at 6 vomits last week and 5 this week, in its first weeks of logging,
+  // cleared both and got "down from 6" on a week a vet would call severe. So the layer
+  // also stays silent while ANY sign's current count is at or above the burden floor.
+  // Unlike the two above it has no safety twin yet: the burden card is CUL-1311 scope 2,
+  // so today this mute leaves the case to the safety lanes that already exist rather than
+  // handing it to a card of its own. Silence is not an all-clear; a calm sentence over a
+  // severe week is the thing it removes.
+  //
+  // It counts VOMITS, not 3h episodes: the floor is FCEAI's, stated in vomits, and the episode
+  // chain has no length cap (ten vomits 2.5h apart are one episode; a 36h drip of fifteen is
+  // one). So it reads the re-log-deduped log count; re-logs of one vomit inside a minute stay
+  // one (the vet report's §5.11 rule). That count is never below the episode count (each
+  // onset is a log 3h+ from the next, and a re-log cluster spans a minute), so it needs no max.
+  if (stats.some((s) => s.currentLogs >= cfg.burdenMuteMinEpisodes)) return []
 
   // Candidates: flat-or-improving on BOTH episode count AND symptom-day spread, on a
   // real current count, with enough history in the busier window to state a trend.
@@ -4189,6 +4472,141 @@ export function detectWorsening(
       trigger,
       tier: resolveWorseningTier(s, trigger, cfg),
       windowDays: cfg.windowDays,
+    },
+  ]
+}
+
+// ── Detector ⑧b: absolute burden (Engines v3 PR-14d, CUL-1410 — the card with no earlier week) ──
+//
+// The one symptom lane that needs no comparison. ③ is muted over a heavy week (PR-14c's valve),
+// ④ needs a rise over a LOGGED prior week, ⑦ needs three weeks of history, and the per-incident
+// read (analyze-vomit) counts only 2 in 4 h and 3 in 24 h and never runs on a vomit logged without
+// a photo. So the critique's counterexample (GAP-5: a quiet cat vomits Monday, Tuesday and
+// Wednesday mornings, no photos) reached Home as nothing, and EN-4, EN-11 and D5 each make the
+// first weeks quieter still. This card owns the case, and must be live before any of them.
+//
+// Two arms, one card, both over ③/④'s window so "this week" means one thing:
+//   • COUNT — `reflection.burdenMuteMinEpisodes` (provisional 4, FCEAI severe) or more vomits,
+//     read off the SAME `SymptomStat.currentLogs` the valve reads: re-logs of one vomit within
+//     60 s collapse, and nothing else does, because the 3h episode chain has no length cap (the
+//     PR-14c adversarial pass). One number, two consumers: the valve mutes ③ on vomit exactly when
+//     this arm speaks.
+//   • PERSISTENCE — a vomit on `burden.persistenceMinDays` (provisional 3) consecutive LOCAL days
+//     (EN-4's rung). Local, because "three days running" is the owner's three days: a cat that
+//     vomits at 11 pm in Los Angeles vomited that day, not the next UTC one. With no usable zone
+//     the day boundary is unknown, so every whole-hour offset is read and only what holds in all
+//     of them is claimed (never a UTC guess, and never the loudest offset: see detectBurden).
+//
+// No logging-eligibility floor, on purpose: the card speaks on the PRESENCE of logged vomits, and
+// a logging gap can only hide vomits, which makes it quieter, never louder. A found pile counts
+// like a witnessed vomit (T4: found piles count); its time is when it was found, which can only
+// move it inside the week, never add one.
+//
+// SILENCE IS NEVER WELLNESS: below both arms the card is silent and emits nothing. It never says a
+// week was calm.
+
+const BURDEN_SYMPTOM_TYPE: SymptomType = 'vomit'
+
+/** True for a zone Intl can resolve. `localDayIndex` silently falls back to the device zone
+ *  (UTC on the server) for anything else, which is a guess this detector must not make. */
+function isValidTimeZone(tz: string | undefined): tz is string {
+  if (!tz) return false
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function detectBurden(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): SymptomBurdenFinding[] {
+  const windowed = computeWindowedStats(input, config)
+  if (!windowed) return []
+  const stat = windowed.stats.find((s) => s.symptomType === BURDEN_SYMPTOM_TYPE)
+  const count = stat?.currentLogs ?? 0
+  if (count === 0) return []
+
+  const nowMs = Date.parse(input.now)
+  const windowStart = nowMs - config.reflection.windowDays * MS_PER_DAY
+  const cfg = config.burden
+  const msList = input.symptomEvents
+    .filter((s) => s.type === BURDEN_SYMPTOM_TYPE)
+    .map((s) => Date.parse(s.occurredAt))
+    .filter((ms) => Number.isFinite(ms) && ms >= windowStart && ms < nowMs)
+
+  // Which calendar the days are counted in. With a valid zone, the owner's. With none (a null
+  // `user_profiles.timezone`, an invalid string, or a profile read that failed), the day boundary
+  // is unknown. A UTC guess is wrong either way (it split an evening Los Angeles run into two
+  // days), and so is the LOUDEST offset: it turned three vomits inside 26 hours into "3 days in a
+  // row — call today" and pulled a run that ended two days ago forward to "yesterday" (the
+  // adversarial second pass). So every whole-hour offset a pet can live at (UTC−12 … UTC+14) is
+  // read and the QUIETEST reading is stated: a run is claimed only if it holds wherever the owner
+  // is, and the ask is the one every zone agrees with. Priced residual, accepted: a zone-less
+  // pet's evening run can go unstated by this arm (the count arm is unaffected). Zone-less is
+  // rare: the app stamps the device's zone into the profile on launch (lib/profile.ts).
+  const calendars: ((ms: number) => number)[] = isValidTimeZone(input.timezone)
+    ? [(ms) => localDayIndex(ms, input.timezone)]
+    : Array.from({ length: 27 }, (_, i) => (ms: number) => Math.floor((ms + (i - 12) * 3_600_000) / MS_PER_DAY))
+
+  let best: { runDays: number; runEnd: number; today: number; days: number; persistenceArm: boolean } | null = null
+  for (const dayOf of calendars) {
+    const days = new Set(msList.map(dayOf))
+    const today = dayOf(nowMs)
+    // Runs of consecutive days, oldest first. The run the card states is the MOST RECENT one long
+    // enough to fire the persistence arm (it decides the ask: a 4-day run early in the week must
+    // not turn a 3-day run ending today into "book a visit soon"); failing that, the longest.
+    const sorted = [...days].sort((a, b) => a - b)
+    const runs: { len: number; end: number }[] = []
+    for (let i = 0; i < sorted.length; i++) {
+      if (i > 0 && sorted[i] === sorted[i - 1] + 1) {
+        runs[runs.length - 1].len++
+        runs[runs.length - 1].end = sorted[i]
+      } else {
+        runs.push({ len: 1, end: sorted[i] })
+      }
+    }
+    if (runs.length === 0) return [] // no vomit in the window (count > 0 makes this unreachable)
+    const qualifying = runs.filter((r) => r.len >= cfg.persistenceMinDays)
+    const run =
+      qualifying.length > 0
+        ? qualifying[qualifying.length - 1]
+        : runs.reduce((a, b) => (b.len >= a.len ? b : a))
+    const reading = { runDays: run.len, runEnd: run.end, today, days: days.size, persistenceArm: qualifying.length > 0 }
+    // Quietest first: no qualifying run beats one, then the OLDER run end, then the shorter run.
+    const quieter =
+      best === null ||
+      (!reading.persistenceArm && best.persistenceArm) ||
+      (reading.persistenceArm === best.persistenceArm &&
+        (reading.today - reading.runEnd > best.today - best.runEnd ||
+          (reading.today - reading.runEnd === best.today - best.runEnd && reading.runDays < best.runDays)))
+    if (quieter) best = reading
+  }
+  if (best === null) return []
+  const { runDays, runEnd, today, persistenceArm } = best
+
+  const countArm = count >= config.reflection.burdenMuteMinEpisodes
+  if (!countArm && !persistenceArm) return []
+
+  const daysSinceRunEnd = Math.max(0, today - runEnd)
+  const tier: BurdenTier =
+    persistenceArm && daysSinceRunEnd <= cfg.todayMaxDaysSinceRunEnd ? 'today' : 'soon'
+  return [
+    {
+      type: 'symptom_burden',
+      priorityClass: 'safety',
+      symptomType: BURDEN_SYMPTOM_TYPE,
+      count,
+      days: best.days,
+      runDays,
+      daysSinceRunEnd,
+      countArm,
+      persistenceArm,
+      tier,
+      windowDays: config.reflection.windowDays,
+      associationalOnly: true,
     },
   ]
 }
@@ -4462,7 +4880,8 @@ function resolveChronicityTier(
 // NOTE: the §4.6 firm-tier INHERITANCE arm (firm when the same symptom is also worsening
 // week-over-week) is applied downstream in suppressWorseningWhenChronic, not here — that fact
 // is only knowable from the COMPOSED finding set, and keeping this resolver pure/span-only is
-// what let PR 1 ship it with no untested clinical path.
+// what let PR 1 ship it with no untested clinical path. The HOLD (CUL-1272: a firm tier
+// earned on an earlier day of the same course) is downstream too, in holdChronicityTier.
 
 export function detectChronicity(
   input: DetectionInput,
@@ -4576,7 +4995,11 @@ export function detectChronicity(
 // NOTE (Signals v2 / CUL-7): ⑤'s former inline `TimedFeeding` + `classifyTimedFeedings` +
 // `nearestPreceding` + `freeFedNear` + the rapid-band test are GONE — they moved to
 // `lib/mealTiming.ts` (the one meal-relative timing predicate, G9) in PR 1 and are called via
-// `classifyEpisodeSet` in `scanVomitTiming` below. ⑤ and L1 (empty-stomach) both read that ONE
+// `classifyEpisodeSet` in `scanVomitTiming` below. Since CUL-1122 that predicate also reads the
+// intake rating: a feeding the owner rated Refused is never the meal an episode is timed from
+// (Picked at is; the ruling is in the module header), which moves an episode only where a refusal
+// was its anchor. A record with no Refused rating is byte-identical
+// (detection.intakeTiming.test.ts). ⑤ and L1 (empty-stomach) both read that ONE
 // distribution, so their bands, denominators and eligibility can never drift (§3, the §5.3
 // diet-trial lesson pre-empted). The rewrite is behaviour-preserving IN EVERY OWNER-FACING FIELD —
 // the gate order, boundary inclusivity and NULL-tolerant-feeding / strict-witnessed-onset asymmetry
@@ -4682,12 +5105,15 @@ function scanVomitTiming(input: DetectionInput, config: DetectionConfig): Timing
   const windowStart = nowMs - config.postprandial.windowDays * MS_PER_DAY
   const timingConfig = timingConfigFor(config)
 
-  // Feedings: DB rows → FeedingInput (parse the instant; carry the evidence-only form). The
-  // NULL-tolerant witnessed filter + sort live in `lib/mealTiming.ts` (`classifyEpisodeSet`
-  // prepares them once), so a caller can't forget it and anchor a claim on an estimated feeding.
+  // Feedings: DB rows → FeedingInput (the event id, the instant, the intake rating, the
+  // evidence-only form). The NULL-tolerant witnessed filter, the refusal rule (a Refused bowl never
+  // anchors — CUL-1122) and the sort all live in `lib/mealTiming.ts` (`classifyEpisodeSet` prepares
+  // them once), so a caller can't forget one and anchor a claim on an estimated or refused feeding.
   const feedings: FeedingInput[] = input.mealEvents.map((m) => ({
+    id: m.id,
     ms: Date.parse(m.occurredAt),
     confidence: m.occurredAtConfidence ?? null,
+    intakeRating: m.intakeRating,
     form: m.foodLabel ?? m.foodType ?? null,
   }))
   // Free-fed standing facts (B-040): a bowl available in the preceding window makes
@@ -4711,7 +5137,9 @@ function scanVomitTiming(input: DetectionInput, config: DetectionConfig): Timing
     timingConfig,
   )
 
-  const allFeedings = timedEligibleFeedings(feedings).map((f) => f.ms) // sorted ascending
+  // The EATING anchors (a refused bowl is out, CUL-1122), sorted ascending: the same set the episodes
+  // were timed against, so ⑤'s grazing rate and L1's base rate count what eating was, as the numerator does.
+  const allFeedings = timedEligibleFeedings(feedings).map((f) => f.ms)
   const inWindowFeedings = allFeedings.filter((ms) => ms >= windowStart && ms <= nowMs)
 
   return { dist, totalEpisodes: inWindowEpisodes.length, inWindowFeedings, allFeedings, nowMs }
@@ -5180,6 +5608,7 @@ export function detectEmptyStomachTiming(
       longGapHours: cfg.longGapHours,
       lastTwoEligibleLong,
       medianHoursSinceFeeding,
+      longAfterRefusalCount: dist.afterRefusalCounts.long,
       feedingFormsInEvidence,
       clockBand,
       clockCount,
@@ -5423,8 +5852,10 @@ export function detectTrialResponse(
   // trigger). Collapse vomit episodes on the FULL list, classify each through the ONE predicate,
   // then split the eligible episodes by window + band (collapse-then-window).
   const feedings: FeedingInput[] = input.mealEvents.map((m) => ({
+    id: m.id,
     ms: Date.parse(m.occurredAt),
     confidence: m.occurredAtConfidence ?? null,
+    intakeRating: m.intakeRating,
     form: m.foodLabel ?? m.foodType ?? null,
   }))
   const freeFedSpans: FreeFedSpan[] = classifyArrangements(input.feedingArrangements ?? []).map(
@@ -5445,6 +5876,9 @@ export function detectTrialResponse(
     band: 'rapid' | 'mid' | 'long',
     pred: (di: number | null) => boolean,
   ): number => dist.eligible.filter((e) => e.band === band && pred(dayIndexOf(e.onsetMs))).length
+  // The long row's refused-bowl subset (CUL-1195), placed by the same local-day predicates.
+  const longAfterRefusalInWindow = (pred: (di: number | null) => boolean): number =>
+    dist.eligible.filter((e) => e.band === 'long' && e.afterRefusal && pred(dayIndexOf(e.onsetMs))).length
 
   // Diet-structure deltas (§2 L2 — context rows, the observable half of the RTM confound). Never a
   // verdict: `treatShare` over classifiable feedings, `mealsPerDay` over logged days. Placed by the
@@ -5491,6 +5925,10 @@ export function detectTrialResponse(
       long: {
         trial: bandInWindow('long', inTrialEra),
         baseline: bandInWindow('long', inBaseline),
+      },
+      longAfterRefusal: {
+        trial: longAfterRefusalInWindow(inTrialEra),
+        baseline: longAfterRefusalInWindow(inBaseline),
       },
       rapidWindowMinutes: config.postprandial.rapidWindowMinutes,
       longGapHours: config.emptyStomach.longGapHours,
@@ -5725,14 +6163,21 @@ function detectRateMeals(
   // Only meaningful when the owner IS logging meals — otherwise "rate a few meals"
   // is a non-sequitur (that's the building/empty case, not a coverage gap). We gate
   // on raw meal-type events, NOT rated ones, since the whole point is unrated meals.
-  const mealsLogged = input.mealEvents.filter((m) => m.foodType === 'meal').length
+  //
+  // CUL-1086: a meal logged while its bowl was down counts for neither half. Its rating never
+  // reaches ②, so asking the owner to rate it would be advice that cannot wake the lane; a pet
+  // fed only from a free-fed bowl gets no nudge (the phone reads that pet the same way).
+  const freeFedSpans = intakeFreeFedSpans(input)
+  const mealsLogged = input.mealEvents.filter(
+    (m) => m.foodType === 'meal' && !isFreeFedMeal(m, freeFedSpans),
+  ).length
   if (mealsLogged === 0) return null
 
   // The line-710 floor: too few RATED meals to establish an intake baseline → ②
   // stays silent. If the floor is already met, ②'s silence is NOT a coverage gap
   // (intake is simply steady) — no diagnostic. This is what gives a healthy,
   // well-rated pet (Nyx) staple_washout instead of a spurious rate-meals nudge.
-  const ratedMeals = classifyRatedMeals(input.mealEvents).length
+  const ratedMeals = classifyRatedMeals(input.mealEvents, freeFedSpans).length
   const needed = config.intakeDecline.minRatedMealsForBaseline
   if (ratedMeals >= needed) return null
 
@@ -6353,6 +6798,10 @@ export const DETECTOR_REGISTRY: Detector[] = [
   { type: 'food_symptom_correlation', detect: detectCorrelations },
   { type: 'intake_decline', detect: detectIntakeDecline },
   { type: 'symptom_worsening', detect: detectWorsening },
+  // Engines v3 PR-14d (CUL-1410): absolute burden, safety class. Additive here: detectSignals
+  // drops nothing for it, so the vet report (which ignores the type) keeps every flag it had. The
+  // Home pipeline alone drops a same-sign ④ under it (pipeline.ts, suppressWorseningUnderBurden).
+  { type: 'symptom_burden', detect: detectBurden },
   // Detector ⑦ (B-182). Live in detectSignals (PR 1), with its within-safety-band RANKING
   // (SAFETY_TYPE_ORDER: chronicity above worsening) and composition couplings — the
   // ③-suppression valve (§4.4) and same-symptom ④-suppression with firm-tier inheritance
@@ -6404,7 +6853,7 @@ export const DETECTOR_REGISTRY: Detector[] = [
 //   4  gap_shortening (L4, CUL-10) — the sub-floor watching/quiet row; the engine's
 //      quietest, ranked below even reflection so it leads only when nothing else exists.
 function priorityBand(finding: Finding, ctx: PetContext): number {
-  if (finding.priorityClass === 'safety') return 0 // incident_red_flag, intake_decline, symptom_chronicity, symptom_worsening
+  if (finding.priorityClass === 'safety') return 0 // incident_red_flag, intake_decline, symptom_burden, symptom_chronicity, symptom_worsening
   // The gap-shortening lane (L4, CUL-10) is the QUIETEST insight — a sub-floor watching row shown while
   // real-world behavior is still being observed (§2 L4, D5). It ranks BELOW even reflection so it only
   // ever leads when nothing louder exists, which is exactly the sub-floor state it is built for. Band 4
@@ -6459,11 +6908,15 @@ const INSIGHT_TYPE_ORDER: Record<string, number> = {
 //   • chronicity (⑦, B-182) outranks the week-over-week worsening bump — the vet council ranked
 //     sustained chronicity ABOVE the bump as the more clinically established concern (Consensus
 //     #3): "this has gone on for weeks" is a more complete statement than "up 2 this week".
+//   • burden (PR-14d, CUL-1410) sits between intake-decline and chronicity: it is this week's
+//     count, and its ask can be "today"; chronicity's is at most "book a visit". Both show when
+//     they co-fire (duration and this week's burden are different statements).
 const SAFETY_TYPE_ORDER: Record<string, number> = {
   incident_red_flag: 0,
   intake_decline: 1,
-  symptom_chronicity: 2,
-  symptom_worsening: 3,
+  symptom_burden: 2,
+  symptom_chronicity: 3,
+  symptom_worsening: 4,
 }
 
 /**
@@ -6642,6 +7095,7 @@ function composeTimingStory(findings: Finding[]): Finding[] {
         count: es.longCount,
         medianHoursSinceFeeding: es.medianHoursSinceFeeding,
         lastTwoEligible: es.lastTwoEligibleLong,
+        afterRefusalCount: es.longAfterRefusalCount,
         feedingFormsInEvidence: es.feedingFormsInEvidence,
         clockBand: es.clockBand,
         clockCount: es.clockCount,
@@ -6681,7 +7135,7 @@ function composeTimingStory(findings: Finding[]): Finding[] {
  * missing). Lives in the COMPOSITION layer (like suppressTimeOfDayWhenPostprandial) so each
  * detector stays pure and independently unit-testable; runs before ranking.
  */
-function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
+export function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
   const chronicTypes = new Set(
     findings
       .filter((f): f is SymptomChronicityFinding => f.type === 'symptom_chronicity')
@@ -6705,6 +7159,298 @@ function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
         ? { ...f, tier: 'firm' as ChronicityTier }
         : f,
     )
+}
+
+/**
+ * The furthest back `holdChronicityTier` replays. A replay at `t` reads events back to
+ * `t − windowDays − symptomEpisodeGapHours` (see `replayInputAsOf`), so 120 days back reads
+ * about 176 days back: inside `generate-signal`'s 180-day fetch, so every instant it replays is
+ * replayed over the record the live run reads. A firm tier earned further back than this no
+ * longer anchors a hold (a stated blind spot of `holdChronicityTier`).
+ */
+export const CHRONICITY_HOLD_MAX_DAYS = 120
+
+/**
+ * The most instants one `holdChronicityTier` call steps through, across all its cards (each step
+ * replays ④, and ⑦ when its stretch changes). The walk runs only for a chronicity card both arms
+ * left at 'standard', and stops at the first earned instant that binds; this caps the rest.
+ * Measured 2026-09-26 (Deno, the worst case: every instant in reach):
+ *
+ *   | record                                   | steps a day | full 120-day walk | reach at the cap |
+ *   | the dogfood record                       |  6.1        |  87 ms            | 115 days         |
+ *   | 3 symptom logs a day + 3 meals           | 13          | 180 ms            |  53 days         |
+ *   | 6 a day                                  | 18          | 350 ms            |  40 days         |
+ *   | 12 a day                                 | 31          | 990 ms            |  22 days         |
+ *   | 24 a day                                 | 56          | 2.9 s             |  13 days         |
+ *
+ * Supabase allows 2 s of CPU per request, and `generate-report` runs this beside its render, so
+ * the cap holds the walk near 0.3 s at the heaviest logging. Past it: no hold, today's
+ * behaviour, never below it (a stated blind spot).
+ */
+export const CHRONICITY_HOLD_MAX_STEPS = 700
+
+/**
+ * The instants in `(now − CHRONICITY_HOLD_MAX_DAYS, now)` at which the tier `holdChronicityTier`
+ * reads for a `pending` card can change, newest first. Between two consecutive instants that
+ * tier, the card's count and whether it fires all stay put, so replaying just after each one
+ * reads every state the card was in, at ANY time of day.
+ *
+ * Why this and not a daily grid (adversarial pass, 2026-09-26): Home regenerates seconds after
+ * each log and whenever its 24h cache lapses, so one day holds reads at several times. A grid
+ * 24h apart from `now` saw a five-hour ④ blip from a morning read and never from an evening
+ * one, and the card flipped firm/standard twice a day at an unchanged count.
+ *
+ * Every `now`-dependence behind that tier, and the instant it turns at (W = ④'s week):
+ *   - ⑦ for a pending sign reads only that sign's onsets in its lookback: an onset enters at `e`
+ *     and leaves at `e + windowDays`, and the recency floor lapses at
+ *     `last + (ongoingRecencyDays + 1)` days (a floored day count, so it fails once a whole extra
+ *     day has passed). Span, active weeks and the span-halves logging guard read only those
+ *     onsets. Other signs' ⑦ instants are irrelevant to the pending card and are left out.
+ *   - ④ (which lends the inherited arm, one card for the most-worsening sign) reads every
+ *     `symptomDelta` sign's onsets in its two weeks: `e`, `e + W`, `e + 2W`.
+ *   - ④'s logging floor counts distinct UTC days carrying an event IT counts (the comparison-gate
+ *     signs and meals): a day is in the current week from its first such event until its last
+ *     + W, and in the prior week a week later. The bounds are taken over exactly those events: a
+ *     wider set does not add instants, it REPLACES a day's true first event and drops the instant
+ *     a later meal made ④ eligible (adversarial pass 2, a morning cough before an evening meal).
+ * Every event of a sign is taken as a possible onset (a superset: an extra replay is harmless).
+ *
+ * Returns every instant (`all`), and separately the ones at which ⑦'s answer for a pending card
+ * can change (`chronicity`), both newest first. Between two `chronicity` instants ⑦ returns the
+ * same for the pending cards, so the walk replays ⑦ only there and carries it across the rest:
+ * ⑦ is ~80% of a replay's cost, and most instants are ④'s.
+ */
+export function holdChangeInstants(
+  input: DetectionInput,
+  config: DetectionConfig,
+  nowMs: number,
+  pending: ReadonlySet<SymptomType>,
+): { all: number[]; chronicity: number[] } {
+  const W = config.reflection.windowDays * MS_PER_DAY
+  const L = config.chronicity.windowDays * MS_PER_DAY
+  const floorMs = nowMs - CHRONICITY_HOLD_MAX_DAYS * MS_PER_DAY
+  const worseningSigns: ReadonlySet<string> = new Set(LANE_SYMPTOM_TYPES.symptomDelta)
+  const out = new Set<number>()
+  const chronicityOut = new Set<number>()
+  const add = (ms: number, chronicity = false): void => {
+    if (ms > floorMs && ms < nowMs) {
+      out.add(ms)
+      if (chronicity) chronicityOut.add(ms)
+    }
+  }
+  const dayBounds = new Map<number, [number, number]>()
+  const noteDay = (ms: number): void => {
+    const day = Math.floor(ms / MS_PER_DAY)
+    const b = dayBounds.get(day)
+    if (!b) dayBounds.set(day, [ms, ms])
+    else {
+      if (ms < b[0]) b[0] = ms
+      if (ms > b[1]) b[1] = ms
+    }
+  }
+  for (const e of input.symptomEvents) {
+    const ms = Date.parse(e.occurredAt)
+    if (!Number.isFinite(ms)) continue
+    if (worseningSigns.has(e.type)) {
+      add(ms)
+      add(ms + W)
+      add(ms + 2 * W)
+    }
+    if (pending.has(e.type)) {
+      const recency =
+        (chronicityFloorsFor(e.type, input.pet.species, config.chronicity).ongoingRecencyDays + 1) * MS_PER_DAY
+      add(ms, true)
+      add(ms + L, true)
+      add(ms + recency, true)
+    }
+    if (countsTowardComparisonGate(e)) noteDay(ms)
+  }
+  for (const m of input.mealEvents) {
+    const ms = Date.parse(m.occurredAt)
+    if (Number.isFinite(ms)) noteDay(ms)
+  }
+  for (const [first, last] of dayBounds.values()) {
+    add(first)
+    add(last + W)
+    add(first + W)
+    add(last + 2 * W)
+  }
+  const newestFirst = (xs: Set<number>): number[] => [...xs].sort((a, b) => b - a)
+  return { all: newestFirst(out), chronicity: newestFirst(chronicityOut) }
+}
+
+/**
+ * The record as ⑦ or ④ would read it at an earlier instant `t`, cut to what that detector can
+ * see: symptoms and meals from `t − reach − one episode gap` up to `t`, where `reach` is ⑦'s
+ * lookback for ⑦ and ④'s two weeks for ④ (`'chronicity'` / `'worsening'`). The cut is a cost
+ * measure, and it is EXACT for its detector (pinned by an equivalence property in
+ * `detection.chronicityHold.test.ts`):
+ *   - nothing ⑦ counts reaches before `t − windowDays`, nothing ④ counts before `t − 2W`, and
+ *     neither counts anything at or after `t`;
+ *   - episodes collapse by CHAINING each event to its predecessor of the same type, so only
+ *     the first event of a type inside the cut can be read differently from the full record,
+ *     and one gap of margin puts it either outside every window or genuinely an onset.
+ * Sorted once; each call is two binary searches.
+ */
+export function replayInputAsOf(
+  input: DetectionInput,
+  config: DetectionConfig,
+): (t: number, detector: 'chronicity' | 'worsening') => DetectionInput {
+  const margin = config.symptomEpisodeGapHours * MS_PER_HOUR + 1
+  const reachMs = {
+    chronicity: config.chronicity.windowDays * MS_PER_DAY + margin,
+    worsening: 2 * config.reflection.windowDays * MS_PER_DAY + margin,
+  }
+  const byTime = <T extends { occurredAt: string }>(rows: readonly T[]): { ms: number[]; rows: T[] } => {
+    const kept = rows
+      .map((row) => ({ row, ms: Date.parse(row.occurredAt) }))
+      .filter((x) => Number.isFinite(x.ms))
+      .sort((a, b) => a.ms - b.ms)
+    return { ms: kept.map((x) => x.ms), rows: kept.map((x) => x.row) }
+  }
+  // First index whose instant is ≥ `ms`.
+  const lowerBound = (arr: number[], ms: number): number => {
+    let lo = 0
+    let hi = arr.length
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1
+      if (arr[mid] < ms) lo = mid + 1
+      else hi = mid
+    }
+    return lo
+  }
+  const symptoms = byTime(input.symptomEvents)
+  const meals = byTime(input.mealEvents)
+  return (t: number, detector: 'chronicity' | 'worsening'): DetectionInput => {
+    const from = t - reachMs[detector]
+    return {
+      ...input,
+      now: new Date(t).toISOString(),
+      symptomEvents: symptoms.rows.slice(lowerBound(symptoms.ms, from), lowerBound(symptoms.ms, t)),
+      mealEvents: meals.rows.slice(lowerBound(meals.ms, from), lowerBound(meals.ms, t)),
+    }
+  }
+}
+
+/**
+ * CUL-1272 (BRK-10) — a chronicity card's FIRM ask holds until the course's count FALLS or
+ * the course STANDS DOWN, never because a comparison window slid.
+ *
+ * The defect: `suppressWorseningWhenChronic` lends ⑦ the firm tier only while the dropped ④
+ * exists, and ④ is a week-over-week comparison. When its week slid past, the vomiting card went
+ * from "worth booking a vet visit" to "worth a word with your vet" at 16 episodes, stayed soft
+ * while the count rose to 18, and firmed again at 19 (Nyx, 6/15 to 6/24). Nothing improved;
+ * the window moved. An owner reads a softer ask as the app being less worried. The span arm
+ * has the same shape at its edge (PM ruling (a), 2026-09-26): a six-week course whose first
+ * episode ages out of the 8-week lookback drops below `firmSpanDays` while still going.
+ *
+ * The rule: a card resolving to 'standard' now is held 'firm' when, in the SAME course (it
+ * fired at every instant in between), there is an earlier instant at which it EARNED firm (the
+ * span arm or the inheritance arm, exactly as `suppressWorseningWhenChronic` composes them then)
+ * at a count at or below its `episodeCount` now. That is the one rule under which the promise
+ * holds for any reads an owner makes: an owner told "book a visit" at 12 is never told "a word"
+ * at 12 or more later in the course. Anchoring on the MOST RECENT earned instant instead broke it
+ * (adversarial pass, 2026-09-26): an episode at 17:00 took the count to 13 while firm, an old one
+ * aged out at 18:00, and the card read "book" at 12 in the afternoon and "a word" at 12 that
+ * evening. Only EARNED instants anchor (a held instant is firm because of an earned one at a
+ * count no higher, so counting it changes nothing). The count is the one the card prints, over
+ * its own 8-week lookback, so a release is that number falling below every count the course
+ * was judged firm at; without a deletion, that is old episodes aging out.
+ *
+ * How: replay the SHIPPED detectors just after each instant at which their answer can change
+ * (`holdChangeInstants`), newest first, over the record cut to what they can see
+ * (`replayInputAsOf`). Between two such instants nothing changes, so this reads every state the
+ * course was in, whatever time of day `now` is, including a stand-down of any length. Sound
+ * because both detectors read only onsets strictly before their `now` and episodes chain
+ * forward, so a later event never moves an earlier onset. The anchor is what the record, as
+ * known now, says about the earlier instant: a back-filled episode can make an earlier instant
+ * earn firm that the owner was never shown, and the ask rising on that new fact is escalation.
+ * Nothing here restates a floor. Stateless on purpose: a hold kept in the Signal cache would be
+ * lost on a cache miss and would never reach the vet report, which runs this same
+ * `detectSignals`.
+ *
+ * What it guarantees, and what the tests pin:
+ *   - It only ever RAISES a tier (an OR on top of both arms): it never loses a warning, and it
+ *     never changes whether a card fires or the order of the cards.
+ *   - Between any two reads of a course that fired throughout, at any times of day, a firm read
+ *     is never followed by a standard one at the same or a higher count.
+ * Stated blind spots (not coverage):
+ *   - The walk reaches back CHRONICITY_HOLD_MAX_DAYS and steps through at most
+ *     CHRONICITY_HOLD_MAX_STEPS instants (a reach of 13 to 115 days, by how much is logged).
+ *     Past either, no hold: today's behaviour.
+ *   - It replays whatever the live read returned; a read the database capped (CUL-989) is
+ *     replayed capped.
+ *   - The vet report hands the engine only its own window's events, and its window START is
+ *     fixed, so it can hold MORE often than Home: for a window of 56 days or less nothing ages
+ *     out of it, the count cannot fall, and a hold there ends only when the course stands down.
+ *     Nothing renders the report's tier today (render.ts prints no chronicity tier).
+ */
+export function holdChronicityTier(
+  findings: Finding[],
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): Finding[] {
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return findings
+  // symptomType → the count now, for every card the two arms left at 'standard'. The walk stops
+  // early for a card at its first qualifying anchor, and otherwise runs to the start of its
+  // course (or a cap).
+  const pending = new Map<SymptomType, number>()
+  for (const f of findings) {
+    if (f.type === 'symptom_chronicity' && f.tier !== 'firm') pending.set(f.symptomType, f.episodeCount)
+  }
+  if (pending.size === 0) return findings
+
+  const asOf = replayInputAsOf(input, config)
+  const { all, chronicity } = holdChangeInstants(input, config, nowMs, new Set(pending.keys()))
+  const held = new Set<SymptomType>()
+  // ⑦ as of the newest ⑦ instant at or before the one being replayed; `chronicityIdx` walks
+  // down `chronicity` in step with the main walk, so each ⑦ stretch is replayed once. Within a
+  // stretch the pending cards' sign, tier and count are fixed, and those are all this walk and
+  // `suppressWorseningWhenChronic` read; a carried finding's `daysSinceLastEpisode` goes stale.
+  let chronicityIdx = 0
+  let chronicityKey: number | null = null
+  let chronicityThen: SymptomChronicityFinding[] = []
+  let steps = 0
+  for (const instant of all) {
+    if (pending.size === 0 || steps >= CHRONICITY_HOLD_MAX_STEPS) break
+    // Just after the instant: every window boundary is closed on one side, and 1ms inside the
+    // next stretch reads the state that holds until the following instant.
+    const t = instant + 1
+    steps++
+    while (chronicityIdx < chronicity.length && chronicity[chronicityIdx] > instant) chronicityIdx++
+    // The ⑦ stretch this instant sits in starts at `chronicity[chronicityIdx]`, or (below every
+    // ⑦ instant in reach) at the walk's floor: either way one replay serves the whole stretch.
+    const key = chronicityIdx < chronicity.length ? chronicity[chronicityIdx] : -Infinity
+    if (key !== chronicityKey) {
+      chronicityThen = detectChronicity(asOf(t, 'chronicity'), config)
+      chronicityKey = key
+    }
+    // The tier the card EARNED then: both arms, composed by the shipped rule.
+    const earned = suppressWorseningWhenChronic([
+      ...chronicityThen,
+      ...detectWorsening(asOf(t, 'worsening'), config),
+    ])
+    for (const [symptomType, countNow] of pending) {
+      const then = earned.find(
+        (f): f is SymptomChronicityFinding => f.type === 'symptom_chronicity' && f.symptomType === symptomType,
+      )
+      if (!then) {
+        // The course was not firing then: it stood down, and whatever it earned before
+        // belongs to an earlier course. No hold.
+        pending.delete(symptomType)
+      } else if (then.tier === 'firm' && countNow >= then.episodeCount) {
+        held.add(symptomType)
+        pending.delete(symptomType)
+      }
+      // Firm at a HIGHER count than now, or standard: keep walking. An earlier firm instant at a
+      // count no higher than now still binds, and only the start of the course ends the walk.
+    }
+  }
+  if (held.size === 0) return findings
+  return findings.map((f) =>
+    f.type === 'symptom_chronicity' && held.has(f.symptomType) ? { ...f, tier: 'firm' as ChronicityTier } : f,
+  )
 }
 
 /**
@@ -6809,6 +7555,9 @@ export function detectSignals(
   //      L1's long onsets onto the merged card's `long` block for L3's retained-food join.
   //   3. suppressWorseningWhenChronic — ⑦ suppresses same-symptom ④ with firm-tier inheritance
   //      (§4.5/§5); disjoint type pair from the timing lane, so its position is free.
+  //   4. holdChronicityTier (CUL-1272) — a firm tier earned on an earlier day of the same course
+  //      holds until the count falls or the course stands down. After 3, because it reads the
+  //      tier 3 resolved; before the adjacency mark and ranking, neither of which reads tier.
   //
   // The internal onset arrays are NOT stripped here (CUL-9). They must survive `detectSignals`'s
   // return so the I/O shell's L3 decoration (computePhotoComposition) can join retained food to the
@@ -6819,5 +7568,6 @@ export function detectSignals(
   // the lone empty_stomach card. suppressWorseningWhenChronic (⑦→④, B-182) is a disjoint type pair
   // from the timing lane, so its position is free.
   const composed = composeTimingStory(suppressTimeOfDayWhenPostprandial(findings, config))
-  return rankFindings(discloseCoughVomitAdjacency(suppressWorseningWhenChronic(composed)), input.pet)
+  const tiered = holdChronicityTier(suppressWorseningWhenChronic(composed), input, config)
+  return rankFindings(discloseCoughVomitAdjacency(tiered), input.pet)
 }

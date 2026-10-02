@@ -28,6 +28,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankComments } from './blankComments';
 
 const ROOT = path.resolve(__dirname, '..');
 const SCAN_DIRS = ['app', 'components', 'constants', 'lib', 'store', 'hooks', 'widgets', 'supabase/functions'];
@@ -66,7 +67,11 @@ const REGISTERED: Record<string, string> = {
   'lib/dietTrialFacts.ts': 'TRIAL_RESPONSE_LOGGED_DAY_TYPES — trial logged-day denominator (3b-coupled, PM brief open)',
   'supabase/functions/generate-signal/detection.ts': 'CORRELATION_SYMPTOM_TYPES — the engine fetch + lanes (per-lane map = 3b)',
   'supabase/functions/generate-signal/phrasing.ts': 'server SYMPTOM_LABEL — engine owner copy (cough lands with 3b)',
+  'supabase/functions/generate-signal/careContext.ts':
+    'ALL_SIGNS + DRUG_CLASS_EFFECTS — EN-10\'s drug table: which signs a course is shown beside and may mask (CUL-1420). Decides where a context line is DRAWN and when a zero is withheld, never what is counted; its walk row is in constants/eventTypes.membership.test.ts',
   'supabase/functions/generate-report/report.ts': 'REPORT_SYMPTOM_TYPES — the report frequency section (3b co-work)',
+  'lib/sameMinuteDuplicates.ts':
+    'SAME_MINUTE_OBSERVATION_TYPES — the same-minute duplicate rule History v2 and the vet report share (CUL-1161; the report moves onto it in HV-15). Its members are the report\'s by construction, held equal by lib/sameMinuteDuplicates.test.ts',
   'supabase/functions/generate-report/render.ts':
     'symptomLabel switch — report display labels (guard-discovered 2026-08-27; safe humanizing default; proper cough/sneeze labels are 3b report co-work)',
   'supabase/functions/ask/tools.ts': 'ASK_SYMPTOM_TYPES — Ask server counts (G5; edits with 3b)',
@@ -75,15 +80,6 @@ const REGISTERED: Record<string, string> = {
 };
 
 const EXEMPTION = /\/\/\s*symptom-list-ok:\s*\S+/;
-
-/** Comments out, code in — the completionCard guard’s lesson, both directions: prose
- *  about a list must not register as one, and a list must not hide in a comment.
- *  Offsets are preserved (same-length replacement) so cluster spans stay honest. */
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
-    .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
-}
 
 function walk(dir: string, out: string[] = []): string[] {
   if (!fs.existsSync(dir)) return out;
@@ -110,7 +106,10 @@ const KEY_PATTERN = new RegExp(
 
 /** The distinct-key sets of every ≥MIN_DISTINCT_KEYS literal cluster in the source. */
 export function findListSites(rawSource: string): string[][] {
-  const src = stripComments(rawSource);
+  // Comments out, code in, both directions: prose about a list must not register as
+  // one, and a list must not hide in a comment. The shared single-pass blanker (C-18,
+  // CUL-884) keeps offsets, so cluster spans stay honest, and reads strings as strings.
+  const src = blankComments(rawSource);
   const hits: { key: string; at: number }[] = [];
   let m: RegExpExecArray | null;
   KEY_PATTERN.lastIndex = 0;
@@ -182,8 +181,27 @@ describe('symptom-list discovery guard', () => {
     expect(findListSites(`const s = "vomit' + 'cough' plus "sneeze`)).toEqual([]);
   });
 
+  // C-18's two string hazards (CUL-884). The chained `.replace()` blanker this file used to
+  // carry read comment openers inside strings: a URL's `//` blanked the rest of its line,
+  // and a MIME glob's `/*` blanked everything up to the next `*/` in the file. Either way a
+  // real list after it went unseen, and both shapes are ordinary in this codebase.
+  it('red-check: a list after a URL literal on the same line is still found (C-18)', () => {
+    const synthetic = `const DOCS = 'https://example.com/help'; const L = ['vomit', 'cough', 'lethargy'];`;
+    expect(findListSites(synthetic)).toEqual([['vomit', 'cough', 'lethargy']]);
+  });
+
+  it("red-check: a list after a '/*' inside a string is still found (C-18)", () => {
+    const synthetic = [
+      `const ACCEPT = ['image/*', 'application/pdf'];`,
+      `const L = ['vomit', 'cough', 'lethargy'];`,
+      `/* a later comment, whose close the old chain paired with the glob */`,
+    ].join('\n');
+    expect(findListSites(synthetic)).toEqual([['vomit', 'cough', 'lethargy']]);
+  });
+
   it('prose about keys and two-key family maps do not count', () => {
     expect(findListSites(`// vomit, diarrhea and cough are symptom keys`)).toEqual([]);
+    expect(findListSites(`/** vomit: yes; cough: never; sneeze: never */ const x = 1;`)).toEqual([]);
     expect(findListSites(`const INCIDENT = { vomit: 'vomiting', diarrhea: 'stool' };`)).toEqual([]);
     expect(findListSites(`const copy = 'A cough after meals is worth logging';`)).toEqual([]);
   });

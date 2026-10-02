@@ -32,6 +32,7 @@ import { theme } from '../constants/theme';
 import { ThemedText, fontFamilyForWeight } from '../components/ui/ThemedText';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { ChipGroup } from '../components/ui/ChipGroup';
+import { Header } from '../components/ui/Header';
 import { MedicationNameChips } from '../components/medication/MedicationNameChips';
 import { NightMoment } from '../components/brand/NightMoment';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
@@ -41,7 +42,7 @@ import { useEventStore } from '../store/eventStore';
 import { useMomentStore } from '../store/momentStore';
 import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
-import { insertMedicationDose } from '../lib/medicationDose';
+import { insertMedicationDose, optimisticDoseRow } from '../lib/medicationDose';
 import {
   initialStrengthConfirmed, canSaveMedicationCapture, drugDisplayName,
   MEDICATION_FORM_OPTIONS, MEDICATION_ROUTE_OPTIONS,
@@ -383,19 +384,21 @@ export default function MedicationCaptureScreen() {
         doseAmount: null,   // honest-null; the drug's strength is NOT the dose
         occurredAt: new Date(),
       });
-      prependEvent({
-        id: result.eventId,
-        pet_id: pet.id,
-        event_type: 'medication',
-        occurred_at: result.occurredAtIso,
-        occurred_at_confidence: 'witnessed',
-        severity: null,
-        notes: null,
-        source: 'manual',
-        deleted_at: null,
-        created_at: result.now,
-        updated_at: result.now,
-      });
+      // The same facts the write carried (`optimisticDoseRow`): the adherence and the
+      // drug's names, so Home's row says *Given* and names the drug before its next read
+      // (History v2 HV-6), where a bare row read as an unnamed, unrated dose.
+      prependEvent(
+        optimisticDoseRow(
+          {
+            petId: pet.id,
+            adherence: 'given',
+            howGiven: null,
+            pairedEventId: null,
+            drug: { id: medicationItemId, generic_name: trimmedGeneric, brand_name: trimmedBrand },
+          },
+          result,
+        ),
+      );
 
       // CUL-613 — the first-dose path ends on the REAL dose completion card, not
       // this screen's hand-rolled ✓. That beat showed the word "Logged" over a dose
@@ -488,7 +491,7 @@ export default function MedicationCaptureScreen() {
   if (step === 'intro') {
     return (
       <SafeAreaView style={styles.container}>
-        <Header title="Add a medication" onClose={() => router.back()} />
+        <Header title="Add a medication" leading="close" onLeadingPress={() => router.back()} />
         <ScrollView contentContainerStyle={styles.introScroll}>
           <ThemedText style={styles.introHeading}>Snap the medication label</ThemedText>
           <ThemedText style={styles.introBody}>
@@ -627,7 +630,8 @@ export default function MedicationCaptureScreen() {
         <Header
           title="Medication details"
           // Return to Confirm only when there is AI-extracted data to show.
-          onBack={labelPhoto && !extractionFailed ? () => setStep('confirm') : () => router.back()}
+          leading="back"
+          onLeadingPress={labelPhoto && !extractionFailed ? () => setStep('confirm') : () => router.back()}
         />
         <KeyboardAvoidingView style={styles.kav} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.formScroll} keyboardShouldPersistTaps="handled">
@@ -719,30 +723,6 @@ export default function MedicationCaptureScreen() {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-function Header({ title, onClose, onBack }: { title: string; onClose?: () => void; onBack?: () => void }) {
-  return (
-    <View style={styles.header}>
-      {onBack ? (
-        <TouchableOpacity onPress={onBack} style={styles.headerSide} hitSlop={10}>
-          {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face (CUL-654). */}
-          <Text style={styles.headerBack}>←</Text>
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.headerSide} />
-      )}
-      <ThemedText style={styles.headerTitle}>{title}</ThemedText>
-      {onClose ? (
-        <TouchableOpacity onPress={onClose} style={styles.headerSide} hitSlop={10}>
-          {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face (CUL-654). */}
-          <Text style={styles.headerClose}>✕</Text>
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.headerSide} />
-      )}
-    </View>
-  );
-}
-
 // The §6.5 strength-confirmation control. Shown wherever a strength can be saved,
 // so the gate is uniform across the confirm and edit screens. It's a real toggle —
 // ticking confirms, tapping again takes the confirmation back. Editing the strength
@@ -788,35 +768,6 @@ const styles = StyleSheet.create({
   },
   kav: {
     flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: theme.space2,
-    paddingVertical: theme.space2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-  },
-  headerSide: {
-    width: 40,
-    height: 32,
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: theme.textLG,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-    textAlign: 'center',
-  },
-  headerBack: {
-    fontSize: 22,
-    color: theme.colorTextPrimary,
-  },
-  headerClose: {
-    fontSize: 18,
-    color: theme.colorTextSecondary,
-    textAlign: 'right',
   },
 
   introScroll: {

@@ -16,6 +16,7 @@ import { theme } from '../constants/theme';
 import { usePetStore } from '../store/petStore';
 import { useIsOnline } from '../hooks/useIsOnline';
 import { useAskStore } from '../store/askStore';
+import { useUiStore } from '../store/uiStore';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { Skeleton } from '../components/ui/Skeleton';
 import { AskChip } from '../components/ask/AskChip';
@@ -31,6 +32,7 @@ import {
   type AskSuggestions,
 } from '../lib/ask';
 import { askCapCopy } from '../constants/monetizationCopy';
+import { reducedMotionNow } from '../store/reducedMotionStore';
 
 // Ask — the client surface (B-228, PR A5; requirements §3, §4, §9.3). Owner-initiated
 // Q&A over THIS pet's own record. States: fresh (chips-first) → thinking (whorl +
@@ -66,6 +68,9 @@ export default function AskScreen() {
   const resolveAnswer = useAskStore((s) => s.resolveAnswer);
   const resolveCapped = useAskStore((s) => s.resolveCapped);
   const resolveDisabled = useAskStore((s) => s.resolveDisabled);
+  // The empty record's door opens the app's one log sheet (CUL-503), mounted at the root
+  // so it presents over this pushed screen.
+  const openLogSheet = useUiStore((s) => s.openLogSheet);
 
   const petId = activePet?.id ?? null;
   const petName = activePet?.name ?? 'your pet';
@@ -84,9 +89,10 @@ export default function AskScreen() {
   );
 
   // Keep the newest message in view as the conversation grows / a think starts.
+  // Under Reduce Motion the view jumps (CUL-1123), read when the scroll fires.
   useEffect(() => {
     if (messages.length > 0 || thinking) {
-      const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
+      const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: !reducedMotionNow() }), 60);
       return () => clearTimeout(t);
     }
   }, [messages.length, thinking]);
@@ -177,7 +183,7 @@ export default function AskScreen() {
           {disabled ? (
             <Text style={styles.disabledLine}>Ask isn't available on this account right now.</Text>
           ) : emptyRecord ? (
-            <EmptyRecord petName={petName} onLog={() => router.push('/log')} />
+            <EmptyRecord petName={petName} onLog={() => openLogSheet()} />
           ) : fresh ? (
             <FreshState
               petName={petName}

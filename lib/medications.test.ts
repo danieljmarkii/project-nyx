@@ -49,6 +49,7 @@ import {
   isVehicleNotFinished,
   initialComboDoseAdherence,
   isComboDoseInDoubt,
+  isAnyPairedDoseInDoubt,
   doseAdherencePrompt,
   drugDisplayName,
   isGivenAssumed,
@@ -601,6 +602,30 @@ describe('attributeDosesToRegimens — dose→regimen counting (B-135 item+windo
       [dose({ occurred_at: '2026-06-12T08:00:00+00:00' })],
     );
     expect(t.get('r')?.given).toBe(1);
+  });
+
+  // The MIRROR of the start-date boundary above, and it was missing (CUL-976). `ended_at` is a
+  // DATE and `occurred_at` a full instant, so a raw `occurred_at > ended_at` is TRUE for every
+  // dose on the final day — the whole last day of a course was dropped, silently, and only the
+  // day AFTER the end was ever tested. Both bounds now compare the dose's day key against the
+  // DATE column, so the two boundaries are symmetric by construction.
+  it('counts a dose logged on the END date (date vs timestamp boundary)', () => {
+    const t = attributeDosesToRegimens(
+      [reg({ id: 'r', started_at: '2026-06-10', ended_at: '2026-06-15' })],
+      [
+        dose({ occurred_at: '2026-06-15T00:00:00+00:00' }), // first thing on the last day
+        dose({ occurred_at: '2026-06-15T21:30:00+00:00' }), // last thing on the last day
+      ],
+    );
+    expect(t.get('r')?.given).toBe(2);
+  });
+
+  it('still excludes a dose on the day after the end date', () => {
+    const t = attributeDosesToRegimens(
+      [reg({ id: 'r', started_at: '2026-06-10', ended_at: '2026-06-15' })],
+      [dose({ occurred_at: '2026-06-16T00:00:00+00:00' })],
+    );
+    expect(t.get('r')?.given).toBe(0);
   });
 
   it('ignores soft-deleted doses and ad-hoc doses with no item id', () => {
@@ -2450,5 +2475,26 @@ describe('courseEndPromptLede (B-719) — the fact lede', () => {
     });
     expect(lede).not.toMatch(/dose/i);
     expect(lede).not.toMatch(/given|taken|missed/i);
+  });
+});
+
+// CUL-382 — the vehicle side of the same state, through the same predicate.
+describe('isAnyPairedDoseInDoubt — the meal-side "Unconfirmed" tag', () => {
+  it('is in doubt when an unanswered dose sits in a vehicle reported not finished', () => {
+    expect(isAnyPairedDoseInDoubt({ vehicleIntake: 'refused', unratedDoseCount: 1 })).toBe(true);
+    expect(isAnyPairedDoseInDoubt({ vehicleIntake: 'picked', unratedDoseCount: 2 })).toBe(true);
+  });
+
+  it('is not in doubt once every paired dose is answered', () => {
+    expect(isAnyPairedDoseInDoubt({ vehicleIntake: 'refused', unratedDoseCount: 0 })).toBe(false);
+  });
+
+  it('agrees with the dose-side predicate on every intake the meal can hold', () => {
+    // One predicate: the meal's tag shows exactly when the dose's own note would.
+    for (const intake of [null, undefined, 'refused', 'picked', 'some', 'most', 'all']) {
+      expect(isAnyPairedDoseInDoubt({ vehicleIntake: intake, unratedDoseCount: 1 })).toBe(
+        isComboDoseInDoubt({ isCombo: true, vehicleIntake: intake, adherence: null }),
+      );
+    }
   });
 });

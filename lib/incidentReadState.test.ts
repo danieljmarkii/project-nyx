@@ -1,4 +1,4 @@
-import { escalationSurvivesFailure } from './incidentReadState';
+import { escalationSurvivesFailure, escalationSurvivesReRead } from './incidentReadState';
 
 describe('escalationSurvivesFailure — an escalation outlives a failed re-read (CUL-812)', () => {
   it('rescues a worth_a_call row from the failure frame', () => {
@@ -18,5 +18,23 @@ describe('escalationSurvivesFailure — an escalation outlives a failed re-read 
     expect(escalationSurvivesFailure({})).toBe(false);
     expect(escalationSurvivesFailure(null)).toBe(false);
     expect(escalationSurvivesFailure(undefined)).toBe(false);
+  });
+});
+
+describe('escalationSurvivesReRead — an escalation stays on screen through a re-read (CUL-827)', () => {
+  it('holds a worth_a_call, and a verdict this build does not know yet', () => {
+    expect(escalationSurvivesReRead({ recommendation: 'worth_a_call' })).toBe(true);
+    expect(escalationSurvivesReRead({ recommendation: 'call_now' })).toBe(true);
+  });
+
+  it('does NOT hold a quiet verdict in front of a read that has not finished', () => {
+    expect(escalationSurvivesReRead({ recommendation: 'monitor' })).toBe(false);
+    expect(escalationSurvivesReRead({ recommendation: 'not_enough_to_say' })).toBe(false);
+  });
+
+  it('holds nothing when there is no read', () => {
+    expect(escalationSurvivesReRead({ recommendation: null })).toBe(false);
+    expect(escalationSurvivesReRead(null)).toBe(false);
+    expect(escalationSurvivesReRead(undefined)).toBe(false);
   });
 });

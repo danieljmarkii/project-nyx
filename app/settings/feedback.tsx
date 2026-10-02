@@ -14,9 +14,16 @@ import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Header, PrimaryButton, SectionLabel } from '../../components/ui';
 import { ChipGroup, ChipGroupOption } from '../../components/ui/ChipGroup';
-import { buildFeedbackSubject, buildSupportMailto } from '../../lib/support';
+import { buildFeedbackSubject, buildSupportMailto, formatJsBundle } from '../../lib/support';
 import { showNoMailFallback } from '../../lib/supportFallback';
-import { APP_VERSION, APP_BUILD, PLATFORM } from '../../lib/appInfo';
+import {
+  APP_VERSION,
+  APP_BUILD,
+  PLATFORM,
+  JS_UPDATE_ID,
+  JS_CHANNEL,
+  JS_IS_EMBEDDED,
+} from '../../lib/appInfo';
 import { SUPPORT_EMAIL } from '../../constants/links';
 
 // "Share feedback" — a lightweight in-app composer (spec §6 / §D8). Product
@@ -73,6 +80,9 @@ export default function FeedbackScreen() {
       version: APP_VERSION,
       build: APP_BUILD,
       platform: PLATFORM,
+      // Unabbreviated, like the support path: an OTA-delivered bug reported here
+      // was otherwise indistinguishable from the build before it (CUL-690).
+      jsBundle: formatJsBundle(JS_UPDATE_ID, JS_IS_EMBEDDED, JS_CHANNEL),
       subject: buildFeedbackSubject(categoryLabel),
       body: trimmed,
     });
@@ -117,6 +127,19 @@ export default function FeedbackScreen() {
           <View style={styles.intro}>
             <Text style={styles.prompt}>What's working? What could be better?</Text>
             <Text style={styles.replyNote}>We read every note; we can't always reply.</Text>
+            {/* The reply expectation above is only half the answer: an owner who
+                picked the friendlier-sounding "Share feedback" to report something
+                BROKEN has landed in the no-guaranteed-reply channel and has no way
+                to know the other one exists (CUL-250 / B-299). Names the route out
+                rather than opening a second mailto here — one composer, one
+                destination, no duplicate of app/settings.tsx's support builder.
+                Placed with the expectation, before the note is written, for the
+                same reason that one is: an owner redirected after investing in a
+                note has already paid for the wrong door. */}
+            <Text style={styles.replyNote}>
+              Something not working? Contact support, back on the You screen — we usually reply to
+              those within a day.
+            </Text>
           </View>
 
           <View style={styles.section}>

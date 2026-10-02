@@ -1,5 +1,8 @@
 import { visibleFindings } from './signalVisible';
+import { countedAnotherTrial, signalTrialWindowFor, type SignalTrialAnchor } from './signalTrialAnchor';
+import { signalTitle } from './signalTitle';
 import { isStoodDown } from './signalCopy';
+import { careContextLinesOf } from './careContext';
 import {
   splitPastCourses,
   pastMedTileValue,
@@ -9,11 +12,16 @@ import {
 // The C-19-correct date formatter (year-stamped outside this year), and the
 // companion's own — Get ready is a companion surface.
 import { formatVisitDate } from './vetVisits';
-import type { CachedFinding } from './signal';
+import { toLocalDayKey } from './utils';
+import type { CachedFinding, IntakeDeclineFinding, IntakeDeclineTrigger, SignalFinding } from './signal';
 import type { Rundown, RundownTile } from './rundown';
-import type { TrialStripModel } from './dietTrialCard';
+import type { TrialCardInput, TrialStripModel } from './dietTrialCard';
 import type { MedicationCourse } from './medicationHistory';
 import type { MedItemName } from './rundown';
+import type { TrialScreenModel } from './trialScreenModel';
+import type { TrialResponseCounts } from './trialResponseCounts';
+import { buildTrialRecheck, withoutSymptoms, type TrialRecheck } from './trialRecheck';
+import type { TrialFactsState } from '../hooks/useTrialFacts';
 
 // "Worth raising" — the Get-ready block (CUL-903 VV-5; spec §4.1 B1, §7 AC 5, mock B1).
 //
@@ -29,7 +37,8 @@ import type { MedItemName } from './rundown';
 //
 // Concretely, the four sources and what each contributes:
 //   • the Signal   → `CachedFinding.text`, the server-composed phrased sentence, the
-//                    exact string `InsightCard` renders on Home. Never re-phrased.
+//                    exact string `InsightCard` renders on Home. Never re-phrased. Its
+//                    detail is EN-10's lines, the strings the finding's screen draws.
 //   • the trial    → `TrialStripModel.header` / `.line`, the exact strings the Home
 //                    trial strip renders.
 //   • a course     → `pastMedTileValue` / `pastMedEndDetail`, the exact strings the
@@ -79,6 +88,12 @@ export interface WorthRaisingRow {
   sourceLabel: string;
   /** True for a Signal finding whose own priority class is safety. Never capped away. */
   isSafety: boolean;
+  /**
+   * The trial row grown into the vet's recheck questions (TS-8), on the trial row only
+   * and only while the `trial_screen` gate is live. Absent on every other row, and on
+   * the trial row flag-off, which keeps today's header + line.
+   */
+  recheck?: TrialRecheck;
 }
 
 export interface WorthRaising {
@@ -118,22 +133,121 @@ export interface WorthRaisingInput {
   /** The cached findings, or null when the cache could not be read (see above). */
   findings: CachedFinding[] | null;
   /** Home's B-789 suppression, passed through so the two surfaces cannot disagree. */
-  suppressTrialResponse: boolean;
+  withholdFallingVomit: boolean;
+  /**
+   * The Signal's trial anchor (CUL-1360 / CUL-1364): the cache row's `generated_at` and
+   * the trial running for the APPOINTMENT's pet (`signalTrialWindowOf`). The same anchor
+   * Home's stack reads, so a trial finding counted over a trial since replaced gets Home's
+   * answer here: a falling pair is not quoted, a rising one is quoted with its own day
+   * named. REQUIRED, never defaulted (C-37): a default would quote an older trial's
+   * reassurance under the new trial's row by writing nothing.
+   */
+  signalAnchor: SignalTrialAnchor;
   /** `resolveTrialStrip`'s model for this pet, or null when no trial is running. */
   trialStrip: TrialStripModel | null;
   /**
-   * The DEVICE-LOCAL intake-decline headline (`TrialCardInput.intakeDeclineHeadline`),
-   * or null. Separate from `trialStrip` because `resolveTrialStrip` deliberately
-   * DISCARDS it — see `intakeRow`.
+   * The trial screen's own model for this pet (`buildTrialScreenModel`) when the
+   * `trial_screen` gate is live, else null — and null is today's trial row, byte for
+   * byte. REQUIRED, never defaulted (C-37): on a refusing cat this is what carries the
+   * refusal onto the page, and a default would drop it by writing nothing.
    */
-  intakeDeclineHeadline: string | null;
+  trialScreen: TrialScreenModel | null;
+  /**
+   * The trial's predicate facts, read for the recheck's oral-route lane (CUL-1342: the
+   * chewable and food-paired doses `buildTrialRecheck` quotes under *anything besides the
+   * trial diet*). Built with `recheckFactsState`, so a read that failed or answered for a
+   * different trial is `unreadable`. REQUIRED, never defaulted (C-37): a default would
+   * leave a logged chewable off the page by writing nothing. Read only with `trialScreen`.
+   */
+  trialFacts: TrialFactsState;
+  /**
+   * The device's own vomiting counts behind the recheck's symptoms sentence
+   * (`TrialCardInput.trialResponse`), or null. Read only to decide whether the Signal's
+   * trial-response row says the SAME thing (see `sameVomitingSnapshot`). REQUIRED, never
+   * defaulted (C-37): a default would read as "not the same", which is the safe answer,
+   * but a caller that forgets it should be told so by the compiler.
+   */
+  trialResponseCounts: TrialResponseCounts | null;
+  /**
+   * The DEVICE-LOCAL intake declines (`localIntakeDeclines`), every flag the device
+   * holds, empty when it holds none. Separate from `trialStrip` because
+   * `resolveTrialStrip` deliberately DISCARDS them — see `intakeRow`.
+   *
+   * Structured, not a sentence, because this module has to know WHICH decline each
+   * one is: a phone decline the Signal already states is dropped, and one the Signal
+   * does not state is kept (`mergeIntake`, CUL-950). REQUIRED, never defaulted — a
+   * default here would hand over a safety fact by writing nothing (C-37).
+   */
+  intakeDecline: readonly LocalIntakeDecline[];
   /** The rundown built for this same screen — quoted, and the source of `facts`. */
   rundown: Rundown;
   nowMs: number;
 }
 
+/**
+ * One decline the device holds: which it is, the food a refusal names, and its
+ * sentence. `trigger: null` is an UNKNOWN decline (a sentence with no flag behind
+ * it), and an unknown decline matches nothing — so it is never the one dropped.
+ */
+export interface LocalIntakeDecline {
+  trigger: IntakeDeclineTrigger | null;
+  refusedFoodLabel: string | null;
+  headline: string;
+}
+
+/**
+ * The trial input's declines, as this module takes them.
+ *
+ * `loadDietTrialFacts` sets `intakeDeclineFacts` beside the headline from the same
+ * read, so in production the facts are always there. An input built any other way
+ * may carry only the sentence; that becomes an UNKNOWN decline, which is kept
+ * whatever the Signal says. The failure is an extra row, never a dropped one.
+ */
+export function localIntakeDeclines(
+  trial: Pick<TrialCardInput, 'intakeDeclineHeadline' | 'intakeDeclineFacts'> | null,
+): LocalIntakeDecline[] {
+  if (!trial) return [];
+  if (trial.intakeDeclineFacts) return [...trial.intakeDeclineFacts];
+  return trial.intakeDeclineHeadline
+    ? [{ trigger: null, refusedFoodLabel: null, headline: trial.intakeDeclineHeadline }]
+    : [];
+}
+
+/**
+ * The engine's order for two intake declines — a MIRROR of `rankFindings`' intake
+ * comparator (`supabase/functions/generate-signal/detection.ts`, "an outright refusal
+ * leads a consecutive-low"). Same value and the same question — which of two intake
+ * declines the owner meets first — so it is mirrored and the source named (C-34), and
+ * `getReady.test.ts` reads the engine's comparator and fails if the two ever differ.
+ * CUL-1084 proposes swapping the engine's order; when it lands, this moves with it.
+ *
+ * Why the engine's order and not this page's own: the vet hears the same order the
+ * owner saw on Home that morning, and a stale cache catching up never makes the two
+ * rows swap places between one opening and the next (the CUL-950 panel, 2026-09-22).
+ */
+export const INTAKE_TRIGGER_ORDER: Readonly<Record<IntakeDeclineTrigger, number>> = {
+  refused_normal_food: 0,
+  consecutive_low: 1,
+};
+
 export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
-  const signalRows = buildSignalRows(input);
+  const signal = buildSignalRows(input);
+  const weight = weightRow(input.rundown);
+  // TS-8: with the gate live, the trial row is the screen's model under the vet's
+  // questions, and the weight row folds into its *Weight?* (PM ruling D2) so the page
+  // says the weight once. Null flag-off, or with no running trial on the screen's read:
+  // the row below is then today's, from the strip.
+  const recheck = input.trialScreen
+    ? buildTrialRecheck({
+        screen: input.trialScreen,
+        rundown: input.rundown,
+        weight: weight && weight.id === 'weight-stale' ? { text: weight.text, detail: weight.detail } : null,
+        statedDeclines: input.intakeDecline.map((d) => d.headline),
+        facts: input.trialFacts,
+        nowMs: input.nowMs,
+      })
+    : null;
+  const trial = recheck ? recheckRow(recheck) : trialRow(input.trialStrip);
   // The trial leads the optional rows, the Signal's insight findings follow, and the
   // course and the weight gap come last.
   //
@@ -157,8 +271,8 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
   // The ORDER is what fixes the displacement — the two weakest rows yield, not the
   // Signal's band.
   const optional = [
-    trialRow(input.trialStrip),
-    ...signalRows.filter((r) => !r.isSafety),
+    trial && !trial.isSafety ? trial : null,
+    ...signal.filter((s) => !s.row.isSafety).map((s) => s.row),
     courseRow(
       input.rundown.facts.courses,
       input.rundown.facts.medItemNames,
@@ -168,7 +282,7 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
       // disagree with the rows printed under it about which courses exist.
       input.rundown.generatedAtMs,
     ),
-    weightRow(input.rundown),
+    recheck ? null : weight,
   ].filter((r): r is WorthRaisingRow => r !== null);
 
   // THE PARTITION IS THE SAFETY RULE. Every safety row leads and sits ABOVE the cap;
@@ -176,12 +290,45 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
   // every ordinary case this is also the server's order — but it holds even if the
   // engine ever ranked a benign finding higher, which is what AC 5 requires.
   //
-  // The device-local decline joins them, AHEAD of the server's, because it is the row
-  // that survives when the server cannot be reached at all (see `intakeRow`).
-  const localIntake = intakeRow(input.intakeDeclineHeadline);
-  const safety = [...(localIntake ? [localIntake] : []), ...signalRows.filter((r) => r.isSafety)];
+  // The device-local declines join them, each one only if the Signal is not already
+  // saying it (see `mergeIntake`).
+  const safety = mergeIntake(
+    signal.filter((s) => s.row.isSafety),
+    input.intakeDecline,
+  );
+  // A trial row carrying a safety register (a refusal, or the ask under a decline) joins
+  // the band, after the clinical lane's rows: the trial's own register is ordered below
+  // `detectIntakeDecline` everywhere both fire (`dietTrialCard`, `stateFor`).
+  if (trial?.isSafety) safety.push(trial);
+  const rows = [...safety, ...optional.slice(0, WORTH_RAISING_CAP)];
+
+  // ONE VOMITING COMPARISON PER PAGE, ONLY WHEN THEY ARE ONE (adversarial passes, TS-8;
+  // G6 / CUL-746). The recheck's *symptoms* answer is the Home strip's sentence, computed
+  // on the device now; a Signal `trial_response` row is the engine's, from a cache this page
+  // never refreshes (AC 4). When both describe the same snapshot (same trial day, same two
+  // counts) printing both reads one fact twice, so the recheck's question goes and the
+  // Signal's phrased row stays.
+  //
+  // When they DIFFER, both stay. The first cut dropped the device's line whenever a Signal
+  // row was printed, and the re-run broke it: a cache written on day 30 ("2 in the trial's
+  // 30 days · 10 before") replaced the device's day-33 rise ("14 in the trial's 33 days"),
+  // so Get ready showed only the stale fall while Home showed the rise (S7). Two sentences
+  // that each carry their own day count are a duplication the reader can resolve; a dropped
+  // escalation is not. Asked of the rows actually PRINTED, so a Signal row capped away
+  // leaves the strip's sentence in place.
+  const duplicateTrialResponse = signal.some(
+    (s) =>
+      s.finding.type === 'trial_response' &&
+      rows.includes(s.row) &&
+      sameVomitingSnapshot(s.finding, input.trialResponseCounts),
+  );
+  const at = rows.findIndex((r) => r.recheck);
+  if (duplicateTrialResponse && at !== -1) {
+    const row = rows[at];
+    rows[at] = { ...row, recheck: withoutSymptoms(row.recheck as TrialRecheck) };
+  }
   return {
-    rows: [...safety, ...optional.slice(0, WORTH_RAISING_CAP)],
+    rows,
     signalUnavailable: input.findings === null,
   };
 }
@@ -205,8 +352,12 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
  * and no test — and deleted rather than kept, because a line that looks like it
  * enforces the safety rule while enforcing nothing is worse than no line: the next
  * reader trusts it.
+ *
+ * Each row travels with the finding it quotes, inside this module only, so the
+ * intake merge can ask WHICH decline a Signal row states from the finding's own
+ * fields rather than from its sentence (which may be model-phrased).
  */
-function buildSignalRows(input: WorthRaisingInput): WorthRaisingRow[] {
+function buildSignalRows(input: WorthRaisingInput): SignalEntry[] {
   if (!input.findings) return [];
   // AT MOST ONE STAND-DOWN MARKER. They are ABSENCE statements — *"Vomiting has been
   // quiet for 14 days. That isn't an all-clear."* — and one is useful context at a
@@ -218,17 +369,178 @@ function buildSignalRows(input: WorthRaisingInput): WorthRaisingRow[] {
   // where it appears nowhere else. The rundown block has a tile for timing and none for
   // a correlation; the correlation is the row with no second home.
   let standDowns = 0;
-  return visibleFindings(input.findings, input.suppressTrialResponse, input.nowMs)
+  return visibleFindings(input.findings, input.withholdFallingVomit, input.nowMs, input.signalAnchor)
     .filter((f) => !isStoodDown(f.finding) || ++standDowns <= 1)
     .map((f, i) => ({
-      id: `signal-${i}`,
-      // VERBATIM. The Change Contract's phrased, count-anchored sentence is the unit.
-      text: f.text,
-      detail: null,
-      source: 'signal' as const,
-      sourceLabel: 'from the Signal',
-      isSafety: f.finding.priorityClass === 'safety',
+      finding: f.finding,
+      row: {
+        id: `signal-${i}`,
+        // VERBATIM. The Change Contract's phrased, count-anchored sentence is the unit.
+        text: f.text,
+        // CUL-1364: a rising trial pair counted over a trial since replaced says "in the
+        // trial's 22 days" under a trial row reading day 1. It is named by its own day, the
+        // title Home gives it ("Diet trial, day 22 of 56"); every other row has no detail.
+        // EN-10 (CUL-1421, mock §05 5c): a chronicity or timing row carries the finding's
+        // visit, trial and course lines as its detail, VERBATIM and in the server's order —
+        // the same strings the finding's own screen draws under *Around this*, so this row
+        // quotes and never counts (G6). The two details never meet: only a trial-response
+        // finding can count another trial, and the reader takes no lines off that type.
+        detail: countedAnotherTrial(f.finding, input.signalAnchor)
+          ? signalTitle(f.finding, signalTrialWindowFor(f.finding, input.signalAnchor))
+          : careContextDetail(f.finding),
+        source: 'signal' as const,
+        sourceLabel: 'from the Signal',
+        isSafety: f.finding.priorityClass === 'safety',
+      },
     }));
+}
+
+/** EN-10's lines as one quoted detail, or null when the finding carries none. */
+function careContextDetail(finding: SignalFinding): string | null {
+  const lines = careContextLinesOf(finding);
+  return lines.length > 0 ? lines.join(' ') : null;
+}
+
+/**
+ * Whether the Signal's trial-response finding and the device's counts are one snapshot:
+ * the same trial day and the same pooled trial and baseline counts. Anything less (a stale
+ * cache, a different trial, a missing count) is "not the same", and both sentences print.
+ */
+function sameVomitingSnapshot(finding: SignalFinding, counts: TrialResponseCounts | null): boolean {
+  if (finding.type !== 'trial_response' || !counts) return false;
+  return (
+    finding.trialDayNumber === counts.trialDayNumber &&
+    finding.pooledTrialCount === counts.trialCount &&
+    finding.pooledBaselineCount === counts.baselineCount
+  );
+}
+
+/** A Signal row and the finding it quotes. Never leaves this module. */
+interface SignalEntry {
+  row: WorthRaisingRow;
+  finding: SignalFinding;
+}
+
+/**
+ * The safety band: the Signal's safety rows with the device's own declines merged
+ * in — each device decline only when the Signal is NOT already stating it (CUL-950).
+ *
+ * ── WHY THIS EXISTS ──────────────────────────────────────────────────────────────
+ * The device and the Signal run the same intake detector, so on a reachable cache
+ * they usually say the same thing — and printing both put one hunger strike on the
+ * list twice, as two numbered items, on the page read aloud to the vet.
+ *
+ * ── WHY IT IS NOT "DROP THE DEVICE ROW WHEN THE CACHE ANSWERED" ──────────────────
+ * That would be a SUPPRESSION, and the device row exists precisely to prevent one
+ * (`intakeRow`). A cache can answer with no decline at all (the evidence aged out),
+ * so the question is asked of the Signal rows this list will PRINT, never of
+ * `input.findings` or of whether the read succeeded.
+ *
+ * ── WHY IT IS NOT "DROP IT WHEN THE SIGNAL CARRIES ANY INTAKE DECLINE" ───────────
+ * The two are the same detector over two different SNAPSHOTS of the record. Get
+ * ready reads the cache without refreshing it (AC 4), a rating added after the fact
+ * never regenerates it (CUL-1087), and the server counts free-fed bowls the device
+ * excludes (CUL-1086). So the cache can hold yesterday's "turned down Chicken Pâté"
+ * while the device knows the cat ate well under baseline TODAY — the first day of
+ * the 48-hour window. Dropping on any decline read the vet the refusal and not the
+ * anorexia. The adversarial pass measured it; the product panel ruled (1), 7/7.
+ *
+ * ── WHAT "THE SAME DECLINE" MEANS ────────────────────────────────────────────────
+ * The same trigger; for a refusal, also the same food. See `sameDecline`.
+ *
+ * ── WHERE A DEVICE ROW THAT SURVIVES GOES ────────────────────────────────────────
+ * Among the Signal's intake rows, in the ENGINE's trigger order (see
+ * `INTAKE_TRIGGER_ORDER`); the Signal's own rows are never re-ordered, only joined.
+ * With no Signal intake row at all, the device rows lead the band — the position
+ * the lone device row always held, and the one that matters most with a dead cache.
+ */
+function mergeIntake(
+  signalSafety: readonly SignalEntry[],
+  local: readonly LocalIntakeDecline[],
+): WorthRaisingRow[] {
+  // The Signal's intake declines AS RETURNED — the rows this list prints.
+  const signalIntake = signalSafety.flatMap((s) =>
+    s.finding.type === 'intake_decline' ? [s.finding] : [],
+  );
+  const survivors = local
+    .filter((l) => !signalIntake.some((f) => sameDecline(l, f)))
+    .map((l) => ({ row: intakeRow(l), rank: intakeRank(l.trigger) }))
+    // Stable, so two device rows of one rank keep the detector's order.
+    .sort((a, b) => a.rank - b.rank);
+
+  const placed: { row: WorthRaisingRow; rank: number | null }[] = signalSafety.map((s) => ({
+    row: s.row,
+    rank: s.finding.type === 'intake_decline' ? intakeRank(s.finding.trigger) : null,
+  }));
+  const firstIntake = placed.findIndex((p) => p.rank !== null);
+  if (firstIntake === -1) return [...survivors.map((s) => s.row), ...placed.map((p) => p.row)];
+
+  // The engine ranks intake declines together, so they are one contiguous run. A
+  // device row goes after every row of its run whose rank is not greater than its
+  // own: after the Signal's refusal and before its consecutive-low, and after a
+  // Signal row of its own rank (the order the owner already saw on Home comes first).
+  for (const survivor of survivors) {
+    let at = firstIntake;
+    while (at < placed.length) {
+      const rank = placed[at].rank;
+      if (rank === null || rank > survivor.rank) break;
+      at++;
+    }
+    placed.splice(at, 0, survivor);
+  }
+  return placed.map((p) => p.row);
+}
+
+/** An unknown decline leads its run: it is the one whose place nothing can argue. */
+function intakeRank(trigger: IntakeDeclineTrigger | null): number {
+  return trigger === null ? -1 : INTAKE_TRIGGER_ORDER[trigger];
+}
+
+/**
+ * Whether the Signal row states the SAME decline the device holds. Read off the
+ * finding's own fields, never its sentence — the Signal's text may be the model's.
+ *
+ * ── THE IDENTITY ─────────────────────────────────────────────────────────────────
+ *   • An unknown device decline matches nothing. The failure is an extra row.
+ *   • A different trigger is a different fact. "Ate less than usual today" and
+ *     "turned down Chicken Pâté" are two things to tell a vet, and the server itself
+ *     emits them as two rows when both fire.
+ *   • `consecutive_low` is identified by its trigger alone. Its day count is the
+ *     species constant on both sides (`daysBelowBaseline`: cat 1, dog 2), so two
+ *     `consecutive_low`s for one pet cannot disagree about anything.
+ *   • A refusal is identified by its FOOD as well. Two normally-eaten foods refused
+ *     on consecutive days is the move from aversion to anorexia — the history
+ *     Dr. Chen said she most needs — and a trigger-only match read the vet the
+ *     older food and dropped the newer one.
+ *   • A device refusal with NO food name matches any Signal refusal. The device
+ *     cannot show it is a second food, and printing both would read one refusal to
+ *     the vet as two ("Chicken Pâté" and "a food they usually finish"). DEFENSIVE,
+ *     and unreachable today (adversarial pass): the device's meal read drops a meal
+ *     whose food row is missing (`classifyRatedMeals` keeps `foodType === 'meal'`
+ *     only), and the capture forms refuse a blank brand and product. It is the ruled
+ *     answer for the day that read changes, not a path anything takes now.
+ *   • A Signal refusal with no food name matches only an unnamed device refusal, so
+ *     a named device refusal is kept beside it. Rare (the server's food row was
+ *     missing), and it errs toward stating the food. `!= null`, not `!== null`: a
+ *     cache written by an older engine may lack the field entirely, and that must
+ *     read as unnamed rather than crash the page.
+ *
+ * Labels compare trimmed and case-folded only (Class A). The two sides build them
+ * the same way from NOT NULL columns, so they differ only after a rename — and a
+ * rename shows both rows, which is the safe direction.
+ */
+function sameDecline(local: LocalIntakeDecline, signal: IntakeDeclineFinding): boolean {
+  if (local.trigger === null || local.trigger !== signal.trigger) return false;
+  if (local.trigger === 'consecutive_low') return true;
+  if (local.refusedFoodLabel === null) return true;
+  return (
+    signal.refusedFoodLabel != null &&
+    foldLabel(local.refusedFoodLabel) === foldLabel(signal.refusedFoodLabel)
+  );
+}
+
+function foldLabel(label: string): string {
+  return label.trim().toLowerCase();
 }
 
 /**
@@ -243,22 +555,31 @@ function buildSignalRows(input: WorthRaisingInput): WorthRaisingRow[] {
  * findings come from a network cache and this comes from SQLite.
  *
  * The measured shape (adversarial re-run): a cat on day 12 of a hydrolyzed trial whose
- * device holds `consecutive_low`, `daysBelowBaseline: 3` — the 48-hour feline hepatic-
- * lipidosis window — with the cache unreachable. Worth raising rendered one row, the
- * trial's day count, under a gap line asserting that the local half of this page was
- * COMPLETE. It was not.
+ * device holds `consecutive_low` — the 48-hour feline hepatic-lipidosis window — with
+ * the cache unreachable. Worth raising rendered one row, the trial's day count, under a
+ * gap line asserting that the local half of this page was COMPLETE. It was not. (The
+ * pass recorded `daysBelowBaseline: 3`, which the detector cannot emit: the count is
+ * the species constant, 1 for a cat. Corrected under CUL-950 — C-35.)
  *
- * `isSafety: true` and above the cap, like any other safety row. Quoted verbatim from
- * the same object `trialRow` quotes, so the two cannot disagree about the same pet.
+ * One row per decline the device holds that the Signal is not already stating
+ * (`mergeIntake`). `isSafety: true` and above the cap, like any other safety row.
+ * Quoted verbatim from the sentence `declineHeadline` composed for that flag.
  */
-function intakeRow(headline: string | null): WorthRaisingRow | null {
-  if (!headline) return null;
+function intakeRow(decline: LocalIntakeDecline): WorthRaisingRow {
   return {
-    id: 'intake-decline',
-    text: headline,
+    // Keyed by the decline, so two device rows never share a React key.
+    id: `intake-${decline.trigger ?? 'decline'}`,
+    text: decline.headline,
     detail: null,
     source: 'intake',
-    sourceLabel: 'from this device’s record',
+    // Was "from this device's record", which carried an IMPLEMENTATION fact — this
+    // row comes from SQLite while the Signal's come from a network cache — into the
+    // one label on the page most likely to be read aloud in a consulting room. The
+    // distinction is real and it is load-bearing in the comment above; it is not a
+    // distinction an owner has, or a vet needs, and "this device's" reads as a
+    // hedge about whether the record is the whole record (CUL-953 item 5). Plain,
+    // and identical to its siblings, because the owner meets one record.
+    sourceLabel: 'from the record',
     isSafety: true,
   };
 }
@@ -277,6 +598,24 @@ function trialRow(strip: TrialStripModel | null): WorthRaisingRow | null {
     source: 'trial',
     sourceLabel: 'from the trial',
     isSafety: false,
+  };
+}
+
+/**
+ * The running trial under the vet's recheck questions (TS-8). Every string in it is quoted
+ * (`buildTrialRecheck`); `text` / `detail` carry the header and sub-line so a reader of
+ * the row that does not know `recheck` (the plain-text accessibility label) still says
+ * which trial it is.
+ */
+function recheckRow(recheck: TrialRecheck): WorthRaisingRow {
+  return {
+    id: 'trial',
+    text: recheck.title,
+    detail: recheck.subline,
+    source: 'trial',
+    sourceLabel: 'from the trial',
+    isSafety: recheck.isSafety,
+    recheck,
   };
 }
 
@@ -328,13 +667,16 @@ function courseRow(
   // one behind it while the block below named them both.
   const course = shown.find((c) => c.source === 'doses' && c.dosesLogged >= 2);
   if (!course) return null;
+  // The rundown's own day, so the quoted strings carry the same years the block below
+  // prints for the same course (H-10: a year only outside the current year).
+  const today = toLocalDayKey(new Date(nowMs));
   return screen({
     id: `course-${course.key}`,
     // `resolveCourseName` is the RUNDOWN's own namer, exported rather than reimplemented.
     // The first cut had a private copy without its `?? 'Medication'` fallback, which is
     // how the two surfaces came to disagree about whether a course had a name at all.
-    text: `${resolveCourseName(course, names)} — ${pastMedTileValue(course)}`,
-    detail: pastMedEndDetail(course),
+    text: `${resolveCourseName(course, names)} — ${pastMedTileValue(course, today)}`,
+    detail: pastMedEndDetail(course, today),
     source: 'course',
     sourceLabel: 'from the course',
     isSafety: false,
@@ -361,8 +703,9 @@ function courseRow(
  *      IS STILL THE NEWEST ONE. Nothing has been measured since they last saw this
  *      animal, which is precisely the thing worth saying out loud at the next visit.
  *      Bounded to a visit STRICTLY BEFORE TODAY, the report's own rung-1 rule: the
- *      date behind it is an unbounded `MAX(visited_at)`, and a future-dated row made
- *      the gate fire over a pet weighed an hour ago.
+ *      date behind it was once an unbounded `MAX(visited_at)`, and a future-dated row
+ *      made the gate fire over a pet weighed an hour ago (the rundown now hands over
+ *      the shared bound, CUL-1127; the gate keeps its own check).
  *
  * Gate 2 fires only for a pet with a logged prior visit, so a first-time owner sees
  * it only through gate 1. That under-fires rather than over-claims, which is the
@@ -404,16 +747,16 @@ function weightRow(rundown: Rundown): WorthRaisingRow | null {
   if (Number.isNaN(newestMs) || Number.isNaN(visitMs)) return null;
 
   // A FUTURE-DATED VISIT IS NOT "THE LAST VISIT" (adversarial pass). `facts.lastVisitAt`
-  // is `readLastVisitDate`'s unbounded `MAX(visited_at)` — the reader migration 066 and
-  // CLAUDE.md both name as undefended — so a visit row dated tomorrow made this gate
-  // fire against a pet weighed an hour ago and print "Last weighed Sep 11 — before the
-  // last visit" on a page that also says the visit has not happened. Live today via
-  // CUL-946, which serialises `visited_at` through `toISOString()` and stores every
-  // evening's visit as tomorrow.
+  // was once `readLastVisitDate`'s unbounded `MAX(visited_at)`, so a visit row dated
+  // tomorrow made this gate fire against a pet weighed an hour ago and print "Last
+  // weighed Sep 11 — before the last visit" on a page that also says the visit has not
+  // happened (CUL-946 stored every evening's visit as tomorrow).
   //
-  // The bound is the report's own rung 1 — STRICTLY BEFORE TODAY (`report.ts` skips
-  // today- and future-dated visits) — so this page and the document it hands the vet
-  // agree about which visit is the last one.
+  // Since CUL-1127 `buildRundown` fills it from the shared bound (`lib/visitWindow.ts`):
+  // the latest visit STRICTLY BEFORE the rundown's day, the report's own rung 1, so this
+  // page and the document it hands the vet agree about which visit is the last one. The
+  // check below stays because the rule belongs to this gate, not to its one producer: a
+  // rundown built any other way (a fixture, a future caller) must not reopen the hole.
   // THE RUNDOWN'S CLOCK, like every other read in this module. A fresh `new Date()`
   // here was a THIRD clock (the re-run found it): the gate judged "today" on the wall
   // clock while the sentence below printed its date off `generatedAtMs`, so the two

@@ -166,6 +166,25 @@ function monthNameOf(monthLabel?: string): string | null {
  *  clause only shows when a single day carried more than one (a flat 1-per-day spread has no
  *  meaningful peak to call out). An empty month is honest, never an all-clear: "No vomiting
  *  logged in June." (§11 #2). */
+/** The paging bound, said in words — CUL-327.
+ *
+ *  A dimmed chevron is the only signal today that paging has hit its end, so an
+ *  owner taps it and nothing happens. This names the bound the owner is actually
+ *  standing on. It is chrome, not lens copy, which is why it lives here beside
+ *  "Previous month" rather than being passed in like noun/unit/definition.
+ *
+ *  Both bounds at once is a real state, not a defensive branch: a pet whose first
+ *  log is this month has no month to page to in either direction, and two stacked
+ *  fragments would read as a contradiction. `null` when paging is unbounded — a
+ *  line that appears on every month would stop carrying information.
+ */
+export function pagingBoundLine(canGoPrev: boolean, canGoNext: boolean): string | null {
+  if (!canGoPrev && !canGoNext) return 'Current month, and the oldest with logs';
+  if (!canGoNext) return 'Current month';
+  if (!canGoPrev) return 'Oldest month with logs';
+  return null;
+}
+
 function summaryLine(noun: string, grid: HeatGrid, unit: string, monthLabel?: string): string {
   if (grid.daysWithEvents === 0) {
     const monthName = monthNameOf(monthLabel);
@@ -220,6 +239,7 @@ export function FrequencyCalendarCard({
   const copyNoun = noun ?? title;
   const grid = buildHeatRows(buckets, symptomType);
   const paging = monthLabel != null;
+  const boundLine = pagingBoundLine(canGoPrev, canGoNext);
   // Legacy (non-paging) mode keeps the swap-body empty state; paging always shows the
   // grid so the owner can page/drill into a month with no charted symptom.
   const showEmptyBody = !paging && grid.daysWithEvents === 0;
@@ -255,7 +275,13 @@ export function FrequencyCalendarCard({
             disabled={!canGoPrev}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel="Previous month"
+            // `disabled` is an accessibility CLAIM — RN copies it into
+            // accessibilityState and VoiceOver speaks "dimmed", so the label owes
+            // the reason (C-7). Sighted readers get the same reason from the bound
+            // line below the row.
+            accessibilityLabel={
+              canGoPrev ? 'Previous month' : 'Previous month — already at the oldest month with logs'
+            }
             accessibilityState={{ disabled: !canGoPrev }}
             style={styles.navBtn}
           >
@@ -270,7 +296,9 @@ export function FrequencyCalendarCard({
             disabled={!canGoNext}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel="Next month"
+            accessibilityLabel={
+              canGoNext ? 'Next month' : 'Next month — already at the current month'
+            }
             accessibilityState={{ disabled: !canGoNext }}
             style={styles.navBtn}
           >
@@ -280,6 +308,15 @@ export function FrequencyCalendarCard({
             />
           </Pressable>
         </View>
+      )}
+
+      {/* CUL-327 — under the row rather than beside a chevron: the nav row is a
+          space-between ‹ label › and text in it would both unbalance the centred
+          label and put copy inside a 32pt control's reach (C-5). */}
+      {paging && boundLine != null && (
+        <ThemedText testID="calendar-paging-bound" style={styles.pagingBound}>
+          {boundLine}
+        </ThemedText>
       )}
 
       {showEmptyBody ? (
@@ -425,6 +462,12 @@ const styles = StyleSheet.create({
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  pagingBound: {
+    fontSize: theme.textXS,
+    color: theme.colorTextSecondary,
+    textAlign: 'center',
+    marginTop: theme.spaceMicro,
   },
   monthLabel: {
     fontSize: theme.textSM,

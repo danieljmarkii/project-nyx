@@ -26,6 +26,7 @@ import { LOOK_COVERAGE_FLOOR_DAYS, LOOK_COVERAGE_WINDOW_DAYS } from './lookCover
 import { LOOK_PAIRING_DISCLOSURE } from './lookPairing';
 import { LOOK_OPENING_CHIP_KEY, LOOK_WORDS, LOOK_VOCAB_VERSION } from '../constants/lookWords';
 import { localDayIndex, dayKeyFromIndex } from './utils';
+import { lookDatedWithYear } from './lookReceipts';
 import type { LookDayRow } from './lookDayCounts';
 
 const NOW = Date.now();
@@ -425,7 +426,14 @@ describe('the withheld state (item 12, T-20)', () => {
     ]
       .filter(Boolean)
       .join(' ');
-    expect(printed).not.toContain('24');
+    // A record-anchored DATE is not a count (C-19), so the dates the card prints come out
+    // first, through the formatter that prints them. Left in, the check read the calendar
+    // rather than the card: the first marked day is two days back, so on the 26th of any
+    // month "first marked Sep 24, 2026" tripped it (CUL-1250).
+    const dates = record.map((r) => lookDatedWithYear(r.localDay)).filter((d): d is string => d !== null);
+    const undated = dates.reduce((text, d) => text.split(d).join(''), printed);
+    expect(printed).toContain('first marked');
+    expect(undated).not.toContain('24');
   });
 
   it('drops the calibration line too — it prints an answered-day count', () => {

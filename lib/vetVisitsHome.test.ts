@@ -33,9 +33,9 @@ jest.mock('./db', () => ({
   }),
 }));
 
-function appointmentRow(scheduledAt: string) {
+function appointmentRow(scheduledAt: string, id = 'a1') {
   return {
-    id: 'a1',
+    id,
     pet_id: 'pet-a',
     scheduled_at: scheduledAt,
     clinic_name: 'Riverside Animal Hospital',
@@ -122,6 +122,67 @@ describe('a no-time booking for today survives the server round-trip', () => {
 
     expect(home.next).toBeNull();
     expect(home.awaiting).toHaveLength(1);
+  });
+});
+
+// ── CUL-970 — every upcoming booking, not just the soonest ──────────────────────
+
+describe('a second upcoming booking is on the record’s list, not dropped', () => {
+  const NOW = new Date(2026, 8, 16, 9, 30);
+  const at = (y: number, m: number, d: number, h = 0) => composeScheduledAt(new Date(y, m, d), h ? new Date(y, m, d, h) : null);
+
+  it('keeps the recheck AND the annual — next is the soonest, later holds the rest', async () => {
+    // What a vet sends an owner home with: a recheck in three weeks, the annual in six
+    // months. The read used to return `upcoming[0]` and drop the second on the floor.
+    rows.appointments = [
+      appointmentRow(at(2026, 9, 7), 'recheck'),
+      appointmentRow(at(2027, 2, 16), 'annual'),
+    ];
+
+    const home = await readVetVisitsHome('pet-a', NOW);
+
+    expect(home.next?.id).toBe('recheck');
+    expect(home.later.map((a) => a.id)).toEqual(['annual']);
+    expect(home.awaiting).toEqual([]);
+  });
+
+  it('holds nothing when there is one booking — the common case is unchanged', async () => {
+    rows.appointments = [appointmentRow(at(2026, 9, 7), 'recheck')];
+    const home = await readVetVisitsHome('pet-a', NOW);
+    expect(home.next?.id).toBe('recheck');
+    expect(home.later).toEqual([]);
+  });
+
+  it('never puts a passed booking in later, nor an upcoming one in awaiting', async () => {
+    rows.appointments = [
+      appointmentRow(at(2026, 8, 10), 'passed'),
+      appointmentRow(at(2026, 8, 20), 'soon'),
+      appointmentRow(at(2026, 10, 1), 'far'),
+    ];
+    const home = await readVetVisitsHome('pet-a', NOW);
+    expect(home.next?.id).toBe('soon');
+    expect(home.later.map((a) => a.id)).toEqual(['far']);
+    expect(home.awaiting.map((a) => a.id)).toEqual(['passed']);
+  });
+
+  it('orders by INSTANT, whatever order the read hands the rows back in (C-40)', async () => {
+    // The SQL orders by `scheduled_at` TEXT, and the two spellings of one instant
+    // (`.000Z` locally, `+00:00` after a sync) do not compare as text. The stub DB
+    // returns rows in the order given, so this fixture is deliberately NOT in time
+    // order: the only thing that can put them right is the in-memory sort by parsed
+    // instant — the old `upcoming[0]` would have named the afternoon row "next".
+    const morning = at(2026, 9, 7, 9);
+    const noon = at(2026, 9, 7, 12).replace(/\.\d{3}Z$/, '+00:00');
+    const afternoon = at(2026, 9, 7, 15);
+    rows.appointments = [
+      appointmentRow(afternoon, 'afternoon'),
+      appointmentRow(morning, 'morning'),
+      appointmentRow(noon, 'noon'),
+    ];
+
+    const home = await readVetVisitsHome('pet-a', NOW);
+
+    expect([home.next?.id, ...home.later.map((a) => a.id)]).toEqual(['morning', 'noon', 'afternoon']);
   });
 });
 

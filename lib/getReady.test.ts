@@ -5,13 +5,26 @@
 // writing it here keeps the reason next to the thing it explains.
 jest.mock('./supabase', () => ({ supabase: {} }));
 
-import { buildWorthRaising, WORTH_RAISING_CAP } from './getReady';
+import * as fs from 'fs';
+import * as path from 'path';
+
+import {
+  buildWorthRaising,
+  INTAKE_TRIGGER_ORDER,
+  localIntakeDeclines,
+  WORTH_RAISING_CAP,
+} from './getReady';
+import { detectIntakeDecline } from './analytics';
+import { intakeDeclineFacts } from './dietTrialFacts';
 import { medHistoryCutoffMs } from './rundown';
+import { visibleFindings } from './signalVisible';
+import type { AnalyticsMeal, IntakeDeclineFlag } from './analytics';
 import type { WorthRaisingInput } from './getReady';
-import type { CachedFinding, SignalFinding } from './signal';
+import type { CachedFinding, IntakeDeclineFinding, SignalFinding } from './signal';
 import type { Rundown, RundownTile } from './rundown';
 import type { MedicationCourse, MedicationCourseEnd } from './medicationHistory';
 import type { TrialStripModel } from './dietTrialCard';
+import type { TrialScreenTrial } from './trialScreenModel';
 
 // "Worth raising" — the quoting rules, the cap, and the two never-say invariants
 // (CUL-903 VV-5; spec §7 AC 5).
@@ -73,12 +86,15 @@ function finding(over: Partial<CachedFinding> & { text: string; rank: number }):
     finding:
       over.finding ??
       ({
+        // A FLAT week (CUL-1216): a falling vomit pair is withheld beside an intake decline,
+        // and these fixtures sit beside one to test ORDER and the CAP, not that rule — which
+        // has its own case below ('a falling vomit week beside an intake decline').
         type: 'reflection',
         priorityClass: 'insight',
         symptomType: 'vomit',
         currentCount: 2,
-        priorCount: 5,
-        direction: 'improving',
+        priorCount: 2,
+        direction: 'flat',
         windowDays: 30,
       } satisfies SignalFinding),
   };
@@ -89,17 +105,132 @@ const SAFETY = {
   priorityClass: 'safety',
   trigger: 'consecutive_low',
   species: 'cat',
-  daysBelowBaseline: 3,
+  // 1, never 3: `daysBelowBaseline` is the species constant on both the phone and the
+  // server (cat 1, dog 2). This fixture said 3 until CUL-950 — a shape the detector
+  // cannot emit for a cat, which is what C-35 forbids.
+  daysBelowBaseline: 1,
   refusedFoodLabel: null,
   ratedMealsConsidered: 8,
 } satisfies SignalFinding;
 
+// ── Intake fixtures built by the REAL detector (CUL-950) ──────────────────────────
+//
+// C-35: a fixture shaped unlike production is green over nothing. So the device's
+// declines are not hand-written here — they are what `detectIntakeDecline` returns
+// over a meal record, turned into facts by the loader's own `intakeDeclineFacts`.
+// The Signal's side is the SAME detector run at an EARLIER clock over an EARLIER
+// record, which is exactly how the two come apart in production: Get ready reads a
+// cache written before the owner's latest logs (AC 4 never refreshes it).
+//
+// The detector buckets days by UTC date, so the clock is pinned to UTC noon of the
+// run's own day (C-29: anchored to the clock, never to a literal) and every meal sits
+// between 08:00 and 11:00 UTC — the same answer in every CI timezone.
+const HOUR = 3_600_000;
+const DETECT_NOW = Math.floor(NOW / DAY) * DAY + 12 * HOUR;
+const CACHE_NOW = DETECT_NOW - DAY; // the cache was written yesterday at noon
+
+const CHICKEN = { id: 'f-chicken', label: 'Purina Chicken Pâté' };
+const SALMON = { id: 'f-salmon', label: 'Purina Salmon Loaf' };
+
+function meal(
+  daysAgo: number,
+  hourUtc: number,
+  food: { id: string; label: string | null },
+  intakeRating: 'all' | 'most' | 'some' | 'picked' | 'refused',
+): AnalyticsMeal {
+  return {
+    ms: DETECT_NOW - 12 * HOUR - daysAgo * DAY + hourUtc * HOUR,
+    foodItemId: food.id,
+    foodLabel: food.label,
+    foodType: 'meal',
+    primaryProtein: null,
+    intakeRating,
+  };
+}
+
+/**
+ * Ten days of a cat finishing both of her foods — the baseline a decline departs from.
+ * `chicken` lets one record carry the food under a different label on the device,
+ * the way a stale food cache or a rename leaves it.
+ */
+function baseline(chicken: { id: string; label: string | null } = CHICKEN): AnalyticsMeal[] {
+  return Array.from({ length: 10 }, (_, i) => [
+    meal(i + 3, 8, chicken, 'all'),
+    meal(i + 3, 10, SALMON, 'all'),
+  ]).flat();
+}
+
+function detect(meals: AnalyticsMeal[], nowMs: number): IntakeDeclineFlag[] {
+  const result = detectIntakeDecline({
+    species: 'cat',
+    nowMs,
+    meals,
+    freeFedSpans: [],
+  });
+  return result.status === 'watch' ? result.flags : [];
+}
+
+/**
+ * The server's cached findings for these flags: the engine's rank order (an outright
+ * refusal leads a consecutive-low — `rankFindings`), and the template's sentence
+ * (`generate-signal/phrasing.ts` `templateIntakeDecline`, mirrored — the app's
+ * type-check does not reach `supabase/functions`). The merge never reads this text;
+ * it is here so the verbatim assertions quote a real Signal sentence.
+ *
+ * NARROWER THAN THE TEMPLATE, and loudly so (C-36): it mirrors only the one-day span
+ * ("today"), because every fixture here is a cat and a cat's `daysBelowBaseline` is
+ * always 1. The template's "the last N days" branch is not mirrored; a fixture that
+ * reaches it throws here rather than going green over a sentence production never
+ * writes.
+ */
+function signalFrom(flags: IntakeDeclineFlag[], pet = 'Mochi'): CachedFinding[] {
+  if (flags.some((f) => f.trigger === 'consecutive_low' && f.daysBelowBaseline > 1)) {
+    throw new Error('signalFrom mirrors only the one-day span; extend it before using a multi-day fixture');
+  }
+  const serverOrder = [...flags].sort(
+    (a, b) => (a.trigger === 'refused_normal_food' ? 0 : 1) - (b.trigger === 'refused_normal_food' ? 0 : 1),
+  );
+  return serverOrder.map((f, i) => ({
+    rank: i,
+    text:
+      f.trigger === 'refused_normal_food'
+        ? `${pet} just turned down ${f.refusedFoodLabel ?? 'a food they usually finish'}, which ${pet} normally eats — worth keeping an eye on, and a word with your vet if it carries on.`
+        : `${pet} has eaten less than usual today — worth keeping an eye on, and a word with your vet if it carries on.`,
+    finding: {
+      type: 'intake_decline',
+      priorityClass: 'safety',
+      trigger: f.trigger,
+      species: 'cat',
+      daysBelowBaseline: f.daysBelowBaseline,
+      refusedFoodLabel: f.refusedFoodLabel,
+      ratedMealsConsidered: f.ratedMealsConsidered,
+    },
+  }));
+}
+
+/** A cat that ate little today, and nothing else: `[consecutive_low]`. */
+function catLowFlag(): IntakeDeclineFlag {
+  const flags = detect(
+    [...baseline(), meal(0, 8, SALMON, 'picked'), meal(0, 10, SALMON, 'picked')],
+    DETECT_NOW,
+  );
+  expect(flags.map((f) => f.trigger)).toEqual(['consecutive_low']);
+  return flags[0];
+}
+
 function input(over: Partial<WorthRaisingInput> = {}): WorthRaisingInput {
   return {
     findings: [],
-    suppressTrialResponse: false,
+    withholdFallingVomit: false,
+    // No trial anchor: the cache's stamp and the running trial are unknown (CUL-1364's
+    // cases set both).
+    signalAnchor: { generatedAt: null, trial: null },
     trialStrip: null,
-    intakeDeclineHeadline: null,
+    trialScreen: null,
+    // No oral-route read answered (CUL-1342's lane is `trialRecheck.test.ts`'s to prove).
+    trialFacts: { status: 'unknown' },
+    trialResponseCounts: null,
+    intakeDecline: [],
     rundown: rundown(),
     nowMs: NOW,
     ...over,
@@ -447,13 +578,31 @@ describe('the B-789 suppression is inherited, not re-derived', () => {
     // intake, so the relative-decline detector never fires. Home withholds this
     // sentence; re-deriving "the leading findings" here would bring it back as a
     // thing to RAISE WITH A VET, over a starving cat.
-    const { rows } = buildWorthRaising(input({ findings: [reassuring], suppressTrialResponse: true }));
+    const { rows } = buildWorthRaising(input({ findings: [reassuring], withholdFallingVomit: true }));
     expect(rows).toHaveLength(0);
   });
 
   it('lets it through when the record shows no refusal', () => {
-    const { rows } = buildWorthRaising(input({ findings: [reassuring], suppressTrialResponse: false }));
+    const { rows } = buildWorthRaising(input({ findings: [reassuring], withholdFallingVomit: false }));
     expect(rows).toHaveLength(1);
+  });
+
+  // CUL-1216 (BRK-6): the same register now takes every falling vomit pair, and the Signal's
+  // own intake decline is a register on its own — a pet with no trial has no other.
+  it('a falling vomit week beside an intake decline is not raised with the vet; the flat week is', () => {
+    const falling = finding({
+      text: 'Mochi vomited 2 times this week, down from 5 the week before.',
+      rank: 1,
+      finding: { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 2, priorCount: 5, direction: 'improving', windowDays: 14 },
+    });
+    const flat = finding({ text: 'Mochi vomited 2 times this week, about the same.', rank: 2 });
+    const decline = finding({ text: 'Mochi has finished 2 of 6 meals rated since Tuesday.', rank: 0, finding: SAFETY });
+    const texts = buildWorthRaising(input({ findings: [decline, falling, flat], withholdFallingVomit: false })).rows.map((r) => r.text);
+    expect(texts).not.toContain(falling.text);
+    expect(texts).toContain(flat.text);
+    // Without the decline and with the pet eating, the falling week is raised as before.
+    const eating = buildWorthRaising(input({ findings: [falling], withholdFallingVomit: false })).rows.map((r) => r.text);
+    expect(eating).toContain(falling.text);
   });
 });
 
@@ -567,9 +716,10 @@ describe('the course row asks a question the record can actually answer', () => 
 
 describe('the weight gate refuses a future "last visit"', () => {
   it('stays silent when the last visit has not happened yet', () => {
-    // `facts.lastVisitAt` is `readLastVisitDate`'s unbounded MAX(visited_at), which
-    // CLAUDE.md names as undefended — and CUL-946 puts a tomorrow-dated row there for
-    // every visit logged after ~5pm PDT. Without the bound this printed
+    // `facts.lastVisitAt` was once `readLastVisitDate`'s unbounded MAX(visited_at), and
+    // CUL-946 put a tomorrow-dated row there for every visit logged after ~5pm PDT. The
+    // rundown now hands over the shared bound (CUL-1127), and this pins the gate's OWN
+    // check for any rundown built another way. Without the bound this printed
     // "Last weighed <today> — before the last visit" over a pet weighed an hour ago.
     const tomorrow = new Date(NOW + DAY).toISOString().slice(0, 10);
     const { rows } = buildWorthRaising(
@@ -665,11 +815,16 @@ describe('the course window runs on the RUNDOWN’s clock, not a fresh one', () 
 // ── The RE-RUN's findings (CUL-903, 2026-09-11 — C-19's re-falsification) ─────────
 
 describe('the device’s OWN intake decline is a row, and survives with no network', () => {
-  const HEADLINE = 'Mochi has left most of their food for 3 days.';
+  // What `loadDietTrialFacts` hands over for a cat whose device holds a single-day
+  // decline: the flag's identity and the sentence `declineHeadline` wrote for it. The
+  // headline was "left most of their food for 3 days" until CUL-950 — a sentence the
+  // detector cannot produce for a cat (its count is 1, "today").
+  const LOCAL = intakeDeclineFacts([catLowFlag()], 'Mochi');
+  const HEADLINE = LOCAL[0].headline;
 
   it('renders it as a SAFETY row even when the Signal cache is unreachable', () => {
     // The measured failure: a cat on day 12 of a hydrolyzed trial whose device holds
-    // `consecutive_low`, `daysBelowBaseline: 3` — the 48-hour feline hepatic-lipidosis
+    // `consecutive_low` (recorded then as `daysBelowBaseline: 3`; it is 1) — the 48-hour feline hepatic-lipidosis
     // window — with the cache offline. Worth raising rendered ONE row, the trial's day
     // count, under a gap line asserting the local half of this page was complete.
     //
@@ -678,7 +833,7 @@ describe('the device’s OWN intake decline is a row, and survives with no netwo
     const { rows, signalUnavailable } = buildWorthRaising(
       input({
         findings: null,
-        intakeDeclineHeadline: HEADLINE,
+        intakeDecline: LOCAL,
         trialStrip: {
           header: 'Diet trial · day 12 of 42',
           line: null,
@@ -691,17 +846,35 @@ describe('the device’s OWN intake decline is a row, and survives with no netwo
     expect(rows[0].text).toBe(HEADLINE);
     expect(rows[0].isSafety).toBe(true);
     expect(rows[0].source).toBe('intake');
+    // CUL-953 item 5. This read "from this device's record", which carried an
+    // implementation fact — this row comes from SQLite, the Signal's from a network
+    // cache — into the label on the page most likely to be read aloud in a
+    // consulting room. The local-vs-cached split is real and stays argued in the
+    // source; it is not a distinction the owner has, and "this device's" reads as a
+    // hedge about whether the record is the whole record. Plain, and identical to
+    // its siblings, because the owner meets one record.
+    expect(rows[0].sourceLabel).toBe('from the record');
+  });
+
+  it('never labels the row in implementation language', () => {
+    // The defect was one WORD of provenance vocabulary on a safety row, so the
+    // assertion is about the register rather than the exact string: no label on this
+    // page may name a device, a cache, a table or a sync state.
+    const { rows } = buildWorthRaising(input({ intakeDecline: LOCAL }));
+    for (const row of rows) {
+      expect(row.sourceLabel).not.toMatch(/device|cache|local|sync|database|table/i);
+    }
   });
 
   it('keeps it above the cap, like any other safety row', () => {
     const benign = Array.from({ length: 9 }, (_, i) => finding({ text: `Benign ${i}.`, rank: i + 1 }));
-    const { rows } = buildWorthRaising(input({ findings: benign, intakeDeclineHeadline: HEADLINE }));
+    const { rows } = buildWorthRaising(input({ findings: benign, intakeDecline: LOCAL }));
     expect(rows[0].text).toBe(HEADLINE);
     expect(rows.length).toBeGreaterThan(WORTH_RAISING_CAP);
   });
 
   it('is absent when the device holds no decline', () => {
-    const { rows } = buildWorthRaising(input({ intakeDeclineHeadline: null }));
+    const { rows } = buildWorthRaising(input({ intakeDecline: [] }));
     expect(rows.some((r) => r.source === 'intake')).toBe(false);
   });
 });
@@ -770,5 +943,676 @@ describe('one clock, everywhere in this module', () => {
       }),
     );
     expect(rows.some((r) => r.source === 'weight')).toBe(false);
+  });
+});
+
+// ── CUL-950: one decline, one row — and never a suppression ───────────────────────
+//
+// The device and the Signal run the same intake detector, so on a reachable cache
+// they usually say the same thing, and the list printed one hunger strike twice. The
+// fix drops a device decline ONLY when a Signal row on this list states the same
+// decline (the trigger; for a refusal, the food too). Every case below is a record
+// run through the real detector, with the Signal's side computed at an earlier clock
+// over an earlier record — the way a cache Get ready never refreshes goes stale.
+//
+// Proven by mutation, each rule red on the case named for it: no dedupe, dedupe on
+// "the cache answered", dedupe on any intake decline, trigger-only identity, a
+// nameless refusal never matching, no case fold, an unknown decline matching, both
+// placement shortcuts, placement walking past another lane's row, a strict null check
+// on an older cache's missing food field, and a swapped engine order. The screen's
+// wiring (the declines dropped, or only the first passed) is proven red in
+// `app/rundown.getready.test.tsx`, and the loader's in `lib/dietTrialFacts.test.ts`.
+//
+// Two mutants survive and are EQUIVALENT in production, stated rather than tested
+// around: removing the label `.trim()` (both sides already trim), and removing the
+// `consecutive_low` early return (its food field is always null on both sides).
+//
+// STATED BLIND SPOT (C-36): the merge reads the Signal rows this list RETURNS, not
+// `input.findings`. Today the two are the same set of intake declines —
+// `visibleFindings` removes only a suppressed trial response and an expired stand-down
+// — so a mutant reading the raw findings survives every case here, and no fixture a
+// caller can produce tells them apart. The tripwire at the end of this block reds if
+// that premise ever changes, which is the moment the difference starts to matter.
+
+describe('CUL-950 — a decline the Signal already states is printed once, the Signal’s', () => {
+  it('the reported bug: the same decline on both sides renders ONE row, the Signal’s sentence', () => {
+    const record = [...baseline(), meal(0, 8, SALMON, 'picked'), meal(0, 10, SALMON, 'picked')];
+    const flags = detect(record, DETECT_NOW);
+    expect(flags.map((f) => f.trigger)).toEqual(['consecutive_low']); // the premise
+    const findings = signalFrom(flags); // a fresh cache over the same record
+
+    const { rows } = buildWorthRaising(
+      input({ findings, intakeDecline: intakeDeclineFacts(flags, 'Mochi') }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].text).toBe(findings[0].text);
+    expect(rows[0].source).toBe('signal');
+  });
+
+  it('both triggers on both sides: the Signal’s two rows, and none of the device’s', () => {
+    // A cat that refused her usual food yesterday AND ate little today. The server
+    // emits the two as two findings; the device holds the same two.
+    const record = [
+      ...baseline(),
+      meal(1, 8, CHICKEN, 'refused'),
+      meal(1, 9, SALMON, 'all'),
+      meal(1, 10, SALMON, 'all'),
+      meal(0, 8, SALMON, 'picked'),
+      meal(0, 10, SALMON, 'picked'),
+    ];
+    const flags = detect(record, DETECT_NOW);
+    expect(flags.map((f) => f.trigger).sort()).toEqual(['consecutive_low', 'refused_normal_food']);
+    const findings = signalFrom(flags);
+
+    const { rows } = buildWorthRaising(
+      input({ findings, intakeDecline: intakeDeclineFacts(flags, 'Mochi') }),
+    );
+    expect(rows.map((r) => r.text)).toEqual(findings.map((f) => f.text));
+    expect(rows.every((r) => r.source === 'signal')).toBe(true);
+  });
+});
+
+describe('CUL-950 — a decline the Signal does NOT state is never dropped', () => {
+  // The panel's deciding case and the adversarial pass's counterexample. Yesterday
+  // the cat refused her usual Chicken Pâté but finished the rest, and the cache was
+  // written then. Today she ate little — logged offline, or rated after the fact,
+  // neither of which regenerates the cache. For a cat, one low day is the first day
+  // of the 48-hour window.
+  const yesterday = [
+    ...baseline(),
+    meal(1, 8, CHICKEN, 'refused'),
+    meal(1, 9, SALMON, 'all'),
+    meal(1, 10, SALMON, 'all'),
+  ];
+  const today = [...yesterday, meal(0, 8, SALMON, 'picked'), meal(0, 10, SALMON, 'picked')];
+
+  it('premise: the cache holds only the refusal, the device holds the refusal AND today’s decline', () => {
+    expect(detect(yesterday, CACHE_NOW).map((f) => f.trigger)).toEqual(['refused_normal_food']);
+    expect(detect(today, DETECT_NOW).map((f) => f.trigger)).toEqual([
+      'consecutive_low',
+      'refused_normal_food',
+    ]);
+  });
+
+  it('keeps today’s decline beside the Signal’s refusal, and drops only the duplicate refusal', () => {
+    const findings = signalFrom(detect(yesterday, CACHE_NOW));
+    const local = intakeDeclineFacts(detect(today, DETECT_NOW), 'Mochi');
+    const { rows } = buildWorthRaising(input({ findings, intakeDecline: local }));
+
+    // The engine's order: the refusal, then the decline — as Home ranks them.
+    expect(rows.map((r) => [r.source, r.text])).toEqual([
+      ['signal', findings[0].text],
+      ['intake', 'Mochi has eaten less than usual today.'],
+    ]);
+    expect(rows.every((r) => r.isSafety)).toBe(true);
+  });
+
+  it('keeps a refusal of a DIFFERENT food — two foods in two days is not one fact', () => {
+    // Yesterday: Chicken Pâté refused (the cache). Today: the owner opened the Salmon
+    // Loaf and she refused that too, while finishing her Chicken. Dr. Chen: the move
+    // from one food to several is the move from aversion to anorexia.
+    const record = [
+      ...yesterday,
+      meal(0, 8, SALMON, 'refused'),
+      meal(0, 9, CHICKEN, 'all'),
+      meal(0, 10, CHICKEN, 'all'),
+    ];
+    const cache = detect(yesterday, CACHE_NOW);
+    const device = detect(record, DETECT_NOW);
+    expect(device.map((f) => [f.trigger, f.refusedFoodLabel])).toEqual([
+      ['refused_normal_food', SALMON.label],
+    ]);
+
+    const findings = signalFrom(cache);
+    const { rows } = buildWorthRaising(
+      input({ findings, intakeDecline: intakeDeclineFacts(device, 'Mochi') }),
+    );
+    expect(rows.map((r) => [r.source, r.text])).toEqual([
+      ['signal', findings[0].text],
+      ['intake', 'Mochi just turned down Purina Salmon Loaf, which Mochi normally eats.'],
+    ]);
+  });
+
+  it('places a device refusal AHEAD of a Signal decline — the engine’s order, not the source’s', () => {
+    // The reverse: the cache holds yesterday's low day, the device holds today's refusal.
+    const lowYesterday = [
+      ...baseline(),
+      meal(1, 8, CHICKEN, 'picked'),
+      meal(1, 10, SALMON, 'picked'),
+    ];
+    const record = [
+      ...lowYesterday,
+      meal(0, 8, SALMON, 'refused'),
+      meal(0, 9, CHICKEN, 'all'),
+      meal(0, 10, CHICKEN, 'all'),
+    ];
+    const cache = detect(lowYesterday, CACHE_NOW);
+    const device = detect(record, DETECT_NOW);
+    expect(cache.map((f) => f.trigger)).toEqual(['consecutive_low']);
+    expect(device.map((f) => f.trigger)).toEqual(['refused_normal_food']);
+
+    const findings = signalFrom(cache);
+    const { rows } = buildWorthRaising(
+      input({ findings, intakeDecline: intakeDeclineFacts(device, 'Mochi') }),
+    );
+    expect(rows.map((r) => [r.source, r.text])).toEqual([
+      ['intake', 'Mochi just turned down Purina Salmon Loaf, which Mochi normally eats.'],
+      ['signal', findings[0].text],
+    ]);
+  });
+
+  it('still gives the optional rows all four slots when two intake rows lead', () => {
+    const findings = [
+      ...signalFrom(detect(yesterday, CACHE_NOW)),
+      ...Array.from({ length: 9 }, (_, i) => finding({ text: `Benign ${i}.`, rank: 10 + i })),
+    ];
+    const { rows } = buildWorthRaising(
+      input({ findings, intakeDecline: intakeDeclineFacts(detect(today, DETECT_NOW), 'Mochi') }),
+    );
+    expect(rows.filter((r) => r.isSafety)).toHaveLength(2);
+    expect(rows.filter((r) => !r.isSafety)).toHaveLength(WORTH_RAISING_CAP);
+  });
+});
+
+describe('CUL-950 — the device’s rows when the Signal has no intake row to state', () => {
+  // The record: a cat that ate little today and refused her Chicken Pâté yesterday.
+  const record = [
+    ...baseline(),
+    meal(1, 8, CHICKEN, 'refused'),
+    meal(1, 9, SALMON, 'all'),
+    meal(1, 10, SALMON, 'all'),
+    meal(0, 8, SALMON, 'picked'),
+    meal(0, 10, SALMON, 'picked'),
+  ];
+  const local = () => intakeDeclineFacts(detect(record, DETECT_NOW), 'Mochi');
+  const DEVICE_ROWS = [
+    'Mochi just turned down Purina Chicken Pâté, which Mochi normally eats.',
+    'Mochi has eaten less than usual today.',
+  ];
+
+  it('cache unreachable: EVERY device decline renders, in the engine’s order', () => {
+    // The (A) ruling: not `flags[0]` alone. Reading only the first flag printed "eaten
+    // less than usual today" and never mentioned the refused food.
+    const { rows, signalUnavailable } = buildWorthRaising(
+      input({ findings: null, intakeDecline: local() }),
+    );
+    expect(signalUnavailable).toBe(true);
+    expect(rows.map((r) => r.text)).toEqual(DEVICE_ROWS);
+    expect(rows.every((r) => r.source === 'intake' && r.isSafety)).toBe(true);
+    expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length); // distinct React keys
+  });
+
+  it('cache answered with NOTHING (the evidence was not there yet): the device rows render', () => {
+    // Written before either decline existed — the aged-out / not-yet-in shape. "The
+    // cache answered" is not the test; a Signal row stating the decline is.
+    const cache = detect(baseline(), CACHE_NOW);
+    expect(cache).toEqual([]);
+    const { rows, signalUnavailable } = buildWorthRaising(
+      input({ findings: signalFrom(cache), intakeDecline: local() }),
+    );
+    expect(signalUnavailable).toBe(false);
+    expect(rows.map((r) => r.text)).toEqual(DEVICE_ROWS);
+  });
+
+  it('cache answered with a DIFFERENT safety finding: the device rows still render, and lead', () => {
+    const redFlag = finding({
+      text: 'Mochi’s vomit on Tuesday had what looked like blood in it — worth a call to your vet.',
+      rank: 0,
+      finding: {
+        type: 'incident_red_flag',
+        priorityClass: 'safety',
+        incidentType: 'vomit',
+        flags: ['blood'],
+        mostRecentFlaggedIso: new Date(DETECT_NOW - 2 * DAY).toISOString(),
+        flaggedIncidentCount: 1,
+        windowDays: 14,
+      } satisfies SignalFinding,
+    });
+    const { rows } = buildWorthRaising(input({ findings: [redFlag], intakeDecline: local() }));
+    expect(rows.map((r) => r.text)).toEqual([...DEVICE_ROWS, redFlag.text]);
+  });
+
+  it('neither side holds a decline: no intake row at all', () => {
+    const quiet = detect(baseline(), DETECT_NOW);
+    expect(quiet).toEqual([]);
+    for (const findings of [signalFrom(detect(baseline(), CACHE_NOW)), null]) {
+      const { rows } = buildWorthRaising(
+        input({ findings, intakeDecline: intakeDeclineFacts(quiet, 'Mochi') }),
+      );
+      expect(rows.some((r) => r.source === 'intake')).toBe(false);
+    }
+  });
+});
+
+describe('CUL-950 — what counts as the SAME refused food', () => {
+  const refusedYesterday = (chicken: { id: string; label: string | null }) => [
+    ...baseline(chicken),
+    meal(1, 8, chicken, 'refused'),
+    meal(1, 9, SALMON, 'all'),
+    meal(1, 10, SALMON, 'all'),
+  ];
+  // The server's side always names the food: `brand` and `product_name` are NOT NULL.
+  const findings = () => signalFrom(detect(refusedYesterday(CHICKEN), CACHE_NOW));
+  const deviceSeeing = (chicken: { id: string; label: string | null }) =>
+    intakeDeclineFacts(detect(refusedYesterday(chicken), DETECT_NOW), 'Mochi');
+
+  it('a device refusal with NO food name matches the Signal’s refusal (defensive — unreachable today)', () => {
+    // NOT A SHAPE PRODUCTION CREATES TODAY, and labelled so (C-35/C-36). The device's
+    // meal read drops a meal whose food row is missing (`classifyRatedMeals` keeps
+    // `foodType === 'meal'` only), and the capture forms refuse a blank brand and
+    // product — so a device refusal never carries a null label now. This pins the
+    // panel's ruled answer for the day that read changes: one refusal, read once.
+    const local = deviceSeeing({ id: CHICKEN.id, label: null });
+    expect(local.map((l) => [l.trigger, l.refusedFoodLabel])).toEqual([['refused_normal_food', null]]);
+    const { rows } = buildWorthRaising(input({ findings: findings(), intakeDecline: local }));
+    // One refusal, read once — not "Chicken Pâté" and "a food they usually finish".
+    expect(rows.map((r) => r.source)).toEqual(['signal']);
+  });
+
+  it('a label that differs only in case is the same food', () => {
+    const { rows } = buildWorthRaising(
+      input({ findings: findings(), intakeDecline: deviceSeeing({ id: CHICKEN.id, label: 'purina chicken PÂTÉ' }) }),
+    );
+    expect(rows.map((r) => r.source)).toEqual(['signal']);
+  });
+
+  it('a RENAMED food shows both rows — the known leftover, and the safe direction', () => {
+    // The device's cache has the new name, the Signal's sentence the old one. The
+    // label is the only identity the Signal's finding carries, so the rename reads as
+    // two foods: an extra row the owner can see, never a dropped one.
+    const { rows } = buildWorthRaising(
+      input({
+        findings: findings(),
+        intakeDecline: deviceSeeing({ id: CHICKEN.id, label: 'Purina Chicken Pâté Kitten' }),
+      }),
+    );
+    expect(rows.map((r) => r.source)).toEqual(['signal', 'intake']);
+  });
+});
+
+describe('CUL-950 — two more shapes the adversarial pass tried', () => {
+  it('seats a surviving device row INSIDE the intake run, above a later safety row', () => {
+    // The Signal leads with its refusal and follows with a chronicity card (the
+    // engine's safety order: intake before chronicity). The device's low day is not
+    // on the list, so it joins the intake run — after the refusal, and never below a
+    // row from another lane.
+    const yesterday = [
+      ...baseline(),
+      meal(1, 8, CHICKEN, 'refused'),
+      meal(1, 9, SALMON, 'all'),
+      meal(1, 10, SALMON, 'all'),
+    ];
+    const today = [...yesterday, meal(0, 8, SALMON, 'picked'), meal(0, 10, SALMON, 'picked')];
+    const chronicity = finding({
+      text: 'Mochi has been vomiting on and off for 5 weeks — worth a word with your vet.',
+      rank: 1,
+      finding: {
+        type: 'symptom_chronicity',
+        priorityClass: 'safety',
+        symptomType: 'vomit',
+        episodeCount: 9,
+        spanDays: 35,
+        activeWeeks: 5,
+        symptomDays: 9,
+        daysSinceLastEpisode: 3,
+        firstOnsetIso: new Date(DETECT_NOW - 35 * DAY).toISOString(),
+        tier: 'standard',
+        windowDays: 90,
+      } satisfies SignalFinding,
+    });
+    const findings = [...signalFrom(detect(yesterday, CACHE_NOW)), chronicity];
+    const { rows } = buildWorthRaising(
+      input({ findings, intakeDecline: intakeDeclineFacts(detect(today, DETECT_NOW), 'Mochi') }),
+    );
+    expect(rows.map((r) => r.text)).toEqual([
+      findings[0].text,
+      'Mochi has eaten less than usual today.',
+      chronicity.text,
+    ]);
+  });
+
+  it('reads a cached refusal from an older engine (no food field) as unnamed, not as a crash', () => {
+    // The engine writes `refusedFoodLabel` on every intake finding today; a cache from
+    // before that field would lack it. It must read as an unnamed Signal refusal — the
+    // named device refusal is kept beside it — never throw and take the page down.
+    const [cached] = signalFrom(
+      detect(
+        [...baseline(), meal(1, 8, CHICKEN, 'refused'), meal(1, 9, SALMON, 'all'), meal(1, 10, SALMON, 'all')],
+        CACHE_NOW,
+      ),
+    );
+    const { refusedFoodLabel: _dropped, ...olderShape } = cached.finding as IntakeDeclineFinding;
+    const legacy = { ...cached, finding: olderShape as unknown as SignalFinding };
+    const local = intakeDeclineFacts(
+      detect(
+        [...baseline(), meal(1, 8, CHICKEN, 'refused'), meal(1, 9, SALMON, 'all'), meal(1, 10, SALMON, 'all')],
+        DETECT_NOW,
+      ),
+      'Mochi',
+    );
+    const { rows } = buildWorthRaising(input({ findings: [legacy], intakeDecline: local }));
+    expect(rows.map((r) => r.source)).toEqual(['signal', 'intake']);
+  });
+});
+
+describe('CUL-950 — an input with no decline facts behind its sentence', () => {
+  const headline = 'Mochi has eaten less than usual today.';
+
+  it('adapts the trial input: facts when present, an UNKNOWN decline for a bare sentence, nothing for none', () => {
+    const facts = intakeDeclineFacts([catLowFlag()], 'Mochi');
+    expect(localIntakeDeclines({ intakeDeclineHeadline: headline, intakeDeclineFacts: facts })).toEqual(facts);
+    expect(localIntakeDeclines({ intakeDeclineHeadline: headline })).toEqual([
+      { trigger: null, refusedFoodLabel: null, headline },
+    ]);
+    expect(localIntakeDeclines({ intakeDeclineHeadline: null })).toEqual([]);
+    expect(localIntakeDeclines(null)).toEqual([]);
+  });
+
+  it('an unknown decline is never dropped, even beside the same sentence from the Signal', () => {
+    // The failure the missing field is allowed to cause is an EXTRA row. It may never
+    // be a missing one.
+    const findings = signalFrom([catLowFlag()]);
+    const { rows } = buildWorthRaising(
+      input({ findings, intakeDecline: localIntakeDeclines({ intakeDeclineHeadline: headline }) }),
+    );
+    expect(rows.map((r) => r.source)).toEqual(['intake', 'signal']);
+  });
+});
+
+describe('CUL-950 — the intake order is the ENGINE’s, pinned to its source (C-34)', () => {
+  it('matches `rankFindings`’ intake comparator in generate-signal/detection.ts', () => {
+    // A mirrored constant answering the same question, so it is read off the source
+    // rather than trusted to drift together. CUL-1084 proposes swapping the engine's
+    // order; when it does, this reds until Get ready moves with it.
+    const src = fs.readFileSync(
+      path.resolve(__dirname, '../supabase/functions/generate-signal/detection.ts'),
+      'utf8',
+    );
+    const block = /x\.type === 'intake_decline' && y\.type === 'intake_decline'\)\s*\{\s*const order: Record<IntakeDeclineTrigger, number> = \{([^}]*)\}/.exec(
+      src,
+    );
+    expect(block).not.toBeNull();
+    const engine = Object.fromEntries(
+      Array.from((block as RegExpExecArray)[1].matchAll(/(\w+):\s*(\d+)/g), (m) => [m[1], Number(m[2])]),
+    );
+    expect(engine).toEqual(INTAKE_TRIGGER_ORDER);
+  });
+});
+
+describe('CUL-950 — the premise the blind spot above rests on', () => {
+  it('`visibleFindings` never withholds an intake decline, under either suppression state', () => {
+    // If this ever reds, the Signal's returned rows and its raw findings stop being the
+    // same set of intake declines. The merge already reads the returned rows, so it
+    // stays correct — but the survived mutant above starts to matter, and the case
+    // that separates the two can finally be written. Write it then.
+    const findings = signalFrom(
+      detect(
+        [
+          ...baseline(),
+          meal(1, 8, CHICKEN, 'refused'),
+          meal(1, 9, SALMON, 'all'),
+          meal(1, 10, SALMON, 'all'),
+          meal(0, 8, SALMON, 'picked'),
+          meal(0, 10, SALMON, 'picked'),
+        ],
+        DETECT_NOW,
+      ),
+    );
+    expect(findings).toHaveLength(2);
+    for (const suppress of [true, false]) {
+      expect(visibleFindings(findings, suppress, DETECT_NOW)).toEqual(findings);
+    }
+  });
+});
+
+// ── TS-8 (CUL-1304): the trial row grown into the recheck ──────────────────────────
+//
+// Where the grown row goes, what it displaces and what stays byte-identical flag-off. The
+// ANSWERS are held to the trial screen in `trialRecheck.test.ts`, over the real loaders;
+// this block is about placement, so the screen model here is a hand fixture in the shape
+// `buildTrialScreenModel` returns for a running trial.
+
+function screenTrial(over: Partial<TrialScreenTrial> = {}): TrialScreenTrial {
+  return {
+    kind: 'trial',
+    state: 'clean',
+    petName: 'Mochi',
+    title: 'Rabbit trial · day 23 of 56',
+    subline: 'Royal Canin Rabbit · since Jul 3 · ends Aug 27',
+    safety: null,
+    forTheCall: null,
+    headline: null,
+    decision: null,
+    allowedFoods: null,
+    ledger: null,
+    ledgerUnreadable: null,
+    facts: [
+      { role: 'fact', text: 'Meals logged on 21 of 23 days.' },
+      { role: 'fact', text: '22 feedings in total, all the trial diet.' },
+    ],
+    vomiting: "Vomiting: 3 in the trial's 23 days · 11 in the 49 days before, a longer stretch.",
+    notEating: false,
+    qualifier: null,
+    standingMeta: null,
+    standingNote: null,
+    exposures: null,
+    getReady: null,
+    report: null,
+    actions: [],
+    manage: null,
+    ...over,
+  };
+}
+
+const RUNNING_STRIP: TrialStripModel = {
+  header: 'Rabbit trial · day 23 of 56',
+  line: 'Royal Canin Rabbit · ends Aug 27 · meals logged on 21 of 23 days',
+  progressFraction: 0.41,
+  trialResponseLine: null,
+};
+
+describe('TS-8 — the trial row asks the recheck questions (behind trial_screen)', () => {
+  it('flag-off (trialScreen null) the trial row is today’s, from the strip, with no recheck', () => {
+    const { rows } = buildWorthRaising(input({ trialStrip: RUNNING_STRIP, trialScreen: null }));
+    expect(rows[0]).toEqual({
+      id: 'trial',
+      text: RUNNING_STRIP.header,
+      detail: RUNNING_STRIP.line,
+      source: 'trial',
+      sourceLabel: 'from the trial',
+      isSafety: false,
+    });
+    expect('recheck' in rows[0]).toBe(false);
+  });
+
+  it('flag-on the trial row carries the questions, under the screen’s title and sub-line', () => {
+    const { rows } = buildWorthRaising(input({ trialStrip: RUNNING_STRIP, trialScreen: screenTrial() }));
+    const trial = rows.find((r) => r.id === 'trial')!;
+    expect(trial.text).toBe('Rabbit trial · day 23 of 56');
+    expect(trial.detail).toBe('Royal Canin Rabbit · since Jul 3 · ends Aug 27');
+    expect(trial.recheck!.questions.map((q) => q.key)).toEqual(['by_mouth', 'symptoms', 'weight']);
+    expect(trial.isSafety).toBe(false);
+    // It is still one row against the cap, in the trial's slot (first of the optional rows).
+    expect(rows[0]).toBe(trial);
+  });
+
+  it('the weight row folds into the trial row’s *Weight?* — the page says the weight once (D2)', () => {
+    const lastVisitAt = new Date(NOW - 30 * DAY).toISOString().slice(0, 10);
+    const stale = rundown({ facts: { courses: [], medItemNames: NAMES, lastVisitAt, weighIns: [weighIn(60)] } });
+    // Non-vacuity: flag-off, the same record raises the weight row.
+    const off = buildWorthRaising(input({ rundown: stale, trialStrip: RUNNING_STRIP }));
+    const offWeight = off.rows.find((r) => r.source === 'weight')!;
+    expect(offWeight.text).toContain('before the last visit');
+
+    const on = buildWorthRaising(input({ rundown: stale, trialStrip: RUNNING_STRIP, trialScreen: screenTrial() }));
+    expect(on.rows.filter((r) => r.source === 'weight')).toEqual([]);
+    const weightQ = on.rows[0].recheck!.questions.find((q) => q.key === 'weight')!;
+    expect(weightQ.answers.map((a) => a.text)).toEqual([offWeight.text, offWeight.detail]);
+  });
+
+  it('the weight row stays when there is no running trial to fold into', () => {
+    const lastVisitAt = new Date(NOW - 30 * DAY).toISOString().slice(0, 10);
+    const stale = rundown({ facts: { courses: [], medItemNames: NAMES, lastVisitAt, weighIns: [weighIn(60)] } });
+    const ended = screenTrial({ state: 'completed' });
+    const { rows } = buildWorthRaising(input({ rundown: stale, trialStrip: null, trialScreen: ended }));
+    expect(rows.map((r) => r.source)).toEqual(['weight']);
+  });
+
+  it('a refusing trial leads as a safety row, above the cap and after the clinical lane (Principle 3)', () => {
+    const refusal = screenTrial({
+      state: 'trial_refusal',
+      safety: [
+        '4 feedings of the 5 trial-diet feedings you’ve rated were left unfinished, across 2 days.',
+        'A diet Mochi isn’t eating can’t answer the question the trial was started for.',
+      ],
+      facts: [],
+      vomiting: null,
+    });
+    const benign = [1, 2, 3, 4, 5].map((i) => finding({ text: `Benign finding ${i}.`, rank: i }));
+    const signalSafety = finding({ text: 'Mochi has eaten less than usual.', rank: 0, finding: SAFETY });
+    const { rows } = buildWorthRaising(
+      input({ findings: [signalSafety, ...benign], trialStrip: RUNNING_STRIP, trialScreen: refusal }),
+    );
+    expect(rows[0].text).toBe('Mochi has eaten less than usual.');
+    expect(rows[1].id).toBe('trial');
+    expect(rows[1].isSafety).toBe(true);
+    // The cap still governs the optional rows below: four benign findings, none displaced
+    // by the trial, which now sits above the cap.
+    expect(rows.slice(2).map((r) => r.text)).toEqual(benign.slice(0, WORTH_RAISING_CAP).map((f) => f.text));
+  });
+
+  it('the device’s decline headline is not repeated inside the trial row', () => {
+    const headline = 'Mochi has eaten less than usual for 1 day.';
+    const decline = screenTrial({
+      state: 'intake_decline',
+      safety: [headline, 'A cat that stops eating needs a call today, whatever the trial is doing.'],
+      facts: [],
+      vomiting: null,
+    });
+    const { rows } = buildWorthRaising(
+      input({
+        trialStrip: RUNNING_STRIP,
+        trialScreen: decline,
+        intakeDecline: [{ trigger: 'consecutive_low', refusedFoodLabel: null, headline }],
+      }),
+    );
+    expect(rows[0].text).toBe(headline);
+    const eating = rows[1].recheck!.questions.find((q) => q.key === 'eating')!;
+    expect(eating.answers.map((a) => a.text)).toEqual([
+      'A cat that stops eating needs a call today, whatever the trial is doing.',
+    ]);
+    // The headline appears once on the list.
+    const all = rows.flatMap((r) => [r.text, ...(r.recheck?.questions.flatMap((q) => q.answers.map((a) => a.text)) ?? [])]);
+    expect(all.filter((t) => t === headline)).toHaveLength(1);
+  });
+});
+
+describe('TS-8 — one vomiting comparison per page, only when they are one (adversarial passes: G6, S7)', () => {
+  const DEVICE = {
+    trialDayNumber: 37,
+    trialCount: 1,
+    baselineCount: 18,
+    trialLoggedDays: 30,
+    baselineLoggedDays: 40,
+    baselineWindowDays: 70,
+    densityComparable: true,
+    trialLastEpisodeDayIndex: null,
+  };
+  function signalTrial(day: number, trialCount: number, baselineCount: number, rank = 1) {
+    return finding({
+      text: `Vomiting: ${trialCount} in the trial’s ${day} days · ${baselineCount} in the 70 days before.`,
+      rank,
+      finding: {
+        type: 'trial_response',
+        priorityClass: 'insight',
+        trialDayNumber: day,
+        pooledTrialCount: trialCount,
+        pooledBaselineCount: baselineCount,
+      } as unknown as SignalFinding,
+    });
+  }
+  const symptomsAsked = (rows: ReturnType<typeof buildWorthRaising>['rows']) =>
+    rows.find((r) => r.recheck)!.recheck!.questions.map((q) => q.key).includes('symptoms');
+
+  it('the same snapshot prints once: the recheck’s question goes, the Signal’s row stays', () => {
+    const same = signalTrial(37, 1, 18);
+    // Non-vacuity: without the Signal row, the recheck asks it.
+    const alone = buildWorthRaising(
+      input({ trialStrip: RUNNING_STRIP, trialScreen: screenTrial(), trialResponseCounts: DEVICE }),
+    );
+    expect(symptomsAsked(alone.rows)).toBe(true);
+
+    const { rows } = buildWorthRaising(
+      input({ findings: [same], trialStrip: RUNNING_STRIP, trialScreen: screenTrial(), trialResponseCounts: DEVICE }),
+    );
+    expect(symptomsAsked(rows)).toBe(false);
+    expect(rows.map((r) => r.text)).toContain(same.text);
+  });
+
+  it('a stale cache that says less keeps the device’s fresh rise on the page (the re-run’s break)', () => {
+    // Cache from day 30 says 2; the device on day 33 knows 14.
+    const stale = signalTrial(30, 2, 10);
+    const device = { ...DEVICE, trialDayNumber: 33, trialCount: 14, baselineCount: 10 };
+    const { rows } = buildWorthRaising(
+      input({ findings: [stale], trialStrip: RUNNING_STRIP, trialScreen: screenTrial(), trialResponseCounts: device }),
+    );
+    expect(symptomsAsked(rows)).toBe(true);
+    expect(rows.map((r) => r.text)).toContain(stale.text);
+  });
+
+  it('no device counts is never "the same"', () => {
+    const { rows } = buildWorthRaising(
+      input({ findings: [signalTrial(37, 1, 18)], trialStrip: RUNNING_STRIP, trialScreen: screenTrial() }),
+    );
+    expect(symptomsAsked(rows)).toBe(true);
+  });
+
+  it('keeps the strip’s sentence when the Signal’s row is capped away', () => {
+    const benign = [2, 3, 4, 5].map((i) => finding({ text: `Benign finding ${i}.`, rank: i }));
+    const capped = signalTrial(37, 1, 18, 9);
+    const { rows } = buildWorthRaising(
+      input({ findings: [...benign, capped], trialStrip: RUNNING_STRIP, trialScreen: screenTrial(), trialResponseCounts: DEVICE }),
+    );
+    expect(rows.map((r) => r.text)).not.toContain(capped.text);
+    expect(symptomsAsked(rows)).toBe(true);
+  });
+});
+
+describe('EN-10 (CUL-1421) — a Signal row quotes its context lines as its detail', () => {
+  const PRED_LINE = 'Prednisone since Sep 21, 6 days: 2 episodes, with something logged on 6 of 6.';
+  const VISIT_LINE = 'Since the Sep 16 visit, 11 days: 4 episodes, with something logged on 11 of 11.';
+  const chronic = (careContext?: unknown): SignalFinding =>
+    ({
+      type: 'symptom_chronicity',
+      priorityClass: 'safety',
+      symptomType: 'vomit',
+      episodeCount: 11,
+      spanDays: 40,
+      activeWeeks: 5,
+      symptomDays: 10,
+      daysSinceLastEpisode: 1,
+      firstOnsetIso: new Date(NOW - 40 * DAY).toISOString(),
+      tier: 'standard',
+      windowDays: 56,
+      ...(careContext === undefined ? {} : { careContext }),
+    }) as SignalFinding;
+  const TEXT = 'Mochi has vomited 11 times across 5 of the last 8 weeks. Worth a vet visit.';
+
+  it('the lines ride under the sentence, verbatim and in the server’s order (mock 5c)', () => {
+    const lines = [
+      { kind: 'course', anchorOn: '2026-09-21', days: 6, count: 2, loggedDays: 6, drugLabel: 'Prednisone', text: PRED_LINE },
+      { kind: 'visit', anchorOn: '2026-09-16', days: 11, count: 4, loggedDays: 11, text: VISIT_LINE },
+    ];
+    const { rows } = buildWorthRaising(input({ findings: [finding({ text: TEXT, rank: 0, finding: chronic(lines) })] }));
+    expect(rows[0].text).toBe(TEXT);
+    expect(rows[0].detail).toBe(`${PRED_LINE} ${VISIT_LINE}`);
+  });
+
+  it('no lines (the key off, an old cache, or a malformed set): the row is what it was', () => {
+    for (const careContext of [undefined, [], [{ kind: 'visit', text: VISIT_LINE }, { kind: 'appointment', text: 'x' }]]) {
+      const { rows } = buildWorthRaising(input({ findings: [finding({ text: TEXT, rank: 0, finding: chronic(careContext) })] }));
+      expect(rows[0].text).toBe(TEXT);
+      expect(rows[0].detail).toBeNull();
+    }
   });
 });

@@ -1,0 +1,617 @@
+<title>Design v2 on the Phone</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* ============================================================
+     Design v2 on the Phone — round 1. The PM's first reactions to the
+     Design v2 build on a real device (2026-09-26): the Signal is too
+     heavy on Home and hard to get into, two vomiting screens read as
+     one, the month's rows were dead, some photos were grey, and the
+     FAB is drab and could move better. CUL-1270 (the Signal), CUL-322
+     (the FAB), with CUL-320 and CUL-1269 built in the same PR.
+     House system: the round-4 page's tokens (docs/culprit-design-v4-mockups.html);
+     frames render the app's real light tokens (constants/theme.ts).
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --night: #13112E; --night-2: #251F57; --moonlit: #4FD8C4;
+    --gold-wash: #FDF6E3;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    /* The app's own light tokens, used inside the phone frames in both page themes. */
+    --app-ground: #FAFAFA; --app-card: #FFFFFF; --app-subtle: #F4F4F5; --app-ink: #0A0A0A;
+    --app-ink-2: #525252; --app-ink-3: #737373; --app-rule: #E7E5E4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --gold-wash: rgba(251,191,36,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --gold-wash: rgba(251,191,36,0.14);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  a { color: var(--teal-ink); }
+  .ledger { display: grid; gap: 8px; margin: 26px 0 8px; }
+  .ledger div { display: grid; grid-template-columns: 210px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 8px; }
+  @media (max-width: 640px) { .ledger div { grid-template-columns: 1fr; gap: 4px; } }
+  .ledger q { font-style: italic; color: var(--ink); quotes: "“" "”"; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+
+  /* Frames */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 28px; align-items: flex-start; }
+  .frame { display: flex; flex-direction: column; gap: 12px; width: 316px; max-width: 100%; }
+  .frame-cap { display: flex; flex-direction: column; gap: 4px; }
+  .frame-cap b { font-size: 14.5px; }
+  .frame-cap span { font-size: 13.5px; color: var(--ink-2); }
+  .frame.option { border: 1px dashed var(--rule); border-radius: 18px; padding: 12px; width: 342px; }
+  .frame.option > .frame-cap::before { content: "Option, drawn for the decision"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  .phone { width: 316px; max-width: 100%; background: var(--app-ground); border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); padding: 14px 12px 16px; color: var(--app-ink); font-family: var(--sans); font-variant-numeric: tabular-nums; font-size: 13px; line-height: 1.4; position: relative; overflow: hidden; }
+  .appbar { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 12px; }
+  .appbar .pet { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, #3a3a3a, #8a8a8a); }
+  .ask { font-size: 12px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 3px 10px; display: flex; align-items: center; gap: 5px; }
+  .ask i { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); display: inline-block; }
+  .card { background: var(--app-card); border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); }
+  .zone-label { display: flex; justify-content: space-between; align-items: baseline; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-3); margin-bottom: 8px; }
+  .zone-label a { color: var(--teal-ink); text-transform: none; letter-spacing: 0; font-size: 12px; text-decoration: none; font-weight: 500; }
+  .serif-lead { font-family: var(--serif); font-size: 21px; line-height: 1.22; letter-spacing: -0.005em; }
+  .para { font-size: 12.5px; line-height: 1.45; color: var(--app-ink); }
+  .receipt { font-size: 10.5px; color: var(--app-ink-3); margin-top: 6px; }
+  .railed { border-left: 3px solid var(--rose); padding-left: 10px; }
+  .row-divider { height: 1px; background: var(--app-rule); margin: 11px 0; }
+  .fade-bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 60px; background: linear-gradient(transparent, var(--app-ground)); }
+
+  /* The door rows */
+  .door { display: flex; align-items: center; gap: 10px; }
+  .door .body { flex: 1; min-width: 0; }
+  .door .eyebrow-s { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); font-weight: 500; }
+  .door .head { font-size: 14px; font-weight: 600; line-height: 1.3; }
+  .door .head.serif { font-family: var(--serif); font-weight: 500; font-size: 18px; line-height: 1.22; }
+  .door .asktxt { font-size: 12px; color: #B4123B; font-weight: 500; margin-top: 2px; }
+  .door .sub { font-size: 11.5px; color: var(--app-ink-2); margin-top: 2px; }
+  .chev { width: 22px; height: 22px; flex-shrink: 0; color: var(--app-ink-3); }
+  .chev.big { width: 28px; height: 28px; border-radius: 50%; background: var(--app-subtle); display: grid; place-items: center; }
+  .chev svg { display: block; }
+  .zone-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; font-size: 10.5px; color: var(--app-ink-3); }
+  .zone-foot a { font-size: 11.5px; color: var(--teal-ink); text-decoration: none; font-weight: 500; white-space: nowrap; }
+  .lane { display: block; margin-top: 7px; }
+  .compact-row { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-top: 1px solid var(--app-rule); font-size: 12.5px; }
+  .compact-row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--rose); flex-shrink: 0; }
+  .compact-row .dot.ins { background: var(--teal); }
+  .compact-row .t { flex: 1; min-width: 0; }
+  .compact-row .t b { font-weight: 600; }
+  .compact-row .t span { color: #B4123B; }
+
+  /* Screen headers */
+  .screen-head { background: var(--app-card); border-radius: 18px; padding: 14px; }
+  .back { font-size: 20px; color: var(--app-ink-2); line-height: 1; margin-bottom: 8px; }
+  .screen-title { font-family: var(--serif); font-size: 22px; line-height: 1.2; letter-spacing: -0.005em; margin-bottom: 6px; }
+  .screen-sent { font-size: 12px; color: var(--app-ink-2); line-height: 1.45; }
+  .mini-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); margin: 12px 0 6px; }
+  .same { outline: 2px solid var(--rose); outline-offset: 3px; border-radius: 4px; }
+
+  /* Day panel + tiles (built) */
+  .daypanel { background: var(--app-subtle); border-radius: 10px; display: flex; overflow: hidden; }
+  .daypanel .rail { width: 3px; background: var(--teal-ink); flex-shrink: 0; }
+  .daypanel .inner { flex: 1; padding: 10px 10px 6px 12px; }
+  .daypanel .dtitle { font-weight: 600; font-size: 13px; }
+  .daypanel .dsub { font-size: 11px; color: var(--app-ink-2); margin-bottom: 4px; }
+  .drow { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 12.5px; border-radius: 8px; padding: 0 4px; }
+  .drow.pressed { background: var(--app-card); }
+  .drow .ic { width: 24px; height: 24px; border-radius: 50%; background: var(--app-card); display: grid; place-items: center; font-size: 11px; }
+  .drow .tt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .drow .tm { color: var(--app-ink-2); font-size: 11.5px; }
+  .drow .fmt { font-size: 10px; color: var(--app-ink-3); letter-spacing: 0.06em; }
+  .hist-link { color: var(--teal-ink); font-size: 12px; font-weight: 500; min-height: 36px; display: flex; align-items: center; }
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 6px; }
+  .tile .well { aspect-ratio: 1; border-radius: 6px; background: var(--app-subtle); overflow: hidden; display: grid; place-items: center; text-align: center; font-size: 9.5px; color: var(--app-ink-2); padding: 3px; line-height: 1.25; }
+  .tile .well.photo { background: radial-gradient(circle at 40% 40%, #d8c9a8, #9c8a66 55%, #6e6048); }
+  .tile .well.photo.b { background: radial-gradient(circle at 60% 55%, #cbb993, #8d7a58 60%, #5d5040); }
+  .tile .well.photo.c { background: radial-gradient(circle at 45% 60%, #e2d6ba, #a8966f 55%, #776748); }
+  .tile .d { font-size: 9.5px; color: var(--app-ink-3); margin-top: 3px; }
+  .tile .v { font-size: 9.5px; color: var(--app-ink-2); font-weight: 500; }
+  .tile .v.call { color: #B4123B; }
+
+  /* FAB colour swatches */
+  .fab-stage { position: relative; height: 150px; background: var(--app-ground); border-radius: 0 0 24px 24px; overflow: hidden; border-top: 1px solid var(--app-rule); }
+  .fab-stage .tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 58px; background: var(--app-card); border-top: 1px solid var(--app-rule); display: flex; justify-content: space-around; align-items: center; font-size: 10px; color: var(--app-ink-3); }
+  .fab-stage .tabs b { color: var(--app-ink); font-weight: 600; }
+  .fab-stage .ghost { position: absolute; left: 14px; right: 80px; top: 16px; display: grid; gap: 8px; }
+  .fab-stage .ghost i { display: block; height: 9px; border-radius: 4px; background: var(--app-rule); }
+  .fab-stage .ghost i:nth-child(2) { width: 70%; } .fab-stage .ghost i:nth-child(3) { width: 84%; }
+  .fabdisc { position: absolute; right: 16px; bottom: 72px; width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; box-shadow: 0 6px 16px rgba(19,17,46,0.28); }
+  .fabdisc svg { width: 22px; height: 22px; }
+  .contrast { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .contrast .ok { color: var(--teal-ink); } .contrast .no { color: var(--rose-ink); }
+
+  /* Accent system strips */
+  .kit { background: var(--app-card); border-radius: 18px; padding: 14px; display: grid; gap: 12px; color: var(--app-ink); }
+  .btn { border-radius: 12px; padding: 11px 14px; font-weight: 600; font-size: 13px; text-align: center; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { border: 1px solid var(--app-rule); border-radius: 999px; padding: 5px 11px; font-size: 12px; }
+  .kit .link { font-size: 12.5px; font-weight: 500; }
+  .kit .bars { display: flex; gap: 5px; align-items: flex-end; height: 42px; }
+  .kit .bars i { flex: 1; border-radius: 3px 3px 0 0; display: block; }
+  .kit .note { font-size: 10.5px; color: var(--app-ink-3); }
+
+  /* The live FAB demo */
+  .demo-wrap { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 28px; align-items: flex-start; }
+  .demo-phone { height: 560px; padding: 0; background: var(--app-ground); touch-action: none; user-select: none; -webkit-user-select: none; }
+  .demo-home { padding: 16px 14px; display: grid; gap: 10px; transition: filter 260ms ease, transform 320ms cubic-bezier(.2,.8,.2,1); transform-origin: 80% 90%; }
+  .demo-home .card { padding: 12px; }
+  .demo-scrim { position: absolute; inset: 0; background: rgba(19,17,46,0.34); opacity: 0; pointer-events: none; transition: opacity 240ms ease; -webkit-backdrop-filter: blur(0px); backdrop-filter: blur(0px); }
+  .demo-phone.open .demo-scrim { opacity: 1; pointer-events: auto; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  .demo-phone.open .demo-home { transform: scale(0.97); }
+  .demo-tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 62px; background: var(--app-card); border-top: 1px solid var(--app-rule); display: flex; justify-content: space-around; align-items: center; font-size: 10px; color: var(--app-ink-3); }
+  .demo-tabs b { color: var(--app-ink); }
+  .dfab { position: absolute; right: 18px; bottom: 78px; width: 58px; height: 58px; border-radius: 50%; border: 0; background: var(--night-2); display: grid; place-items: center; box-shadow: 0 8px 22px rgba(19,17,46,0.34); cursor: pointer; transition: transform 160ms cubic-bezier(.3,.7,.4,1.4), background 200ms ease; z-index: 3; }
+  .dfab:focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }
+  .dfab.down { transform: scale(0.9); }
+  .dfab .glyph { width: 24px; height: 24px; transition: transform 380ms cubic-bezier(.34,1.56,.64,1); }
+  .demo-phone.open .dfab .glyph { transform: rotate(135deg); }
+  .dfab .ring { position: absolute; inset: -6px; border-radius: 50%; border: 2px solid var(--teal); opacity: 0; transform: scale(0.8); }
+  .dfab.holding .ring { animation: ring 380ms ease-out forwards; }
+  @keyframes ring { to { opacity: 1; transform: scale(1); } }
+  .fan { position: absolute; right: 18px; bottom: 150px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; z-index: 3; pointer-events: none; }
+  .demo-phone.open .fan { pointer-events: auto; }
+  .fan-item { display: flex; align-items: center; gap: 10px; background: var(--app-card); color: var(--app-ink); border-radius: 999px; padding: 10px 16px 10px 12px; font-size: 13.5px; font-weight: 500; box-shadow: 0 6px 18px rgba(19,17,46,0.18); opacity: 0; transform: translate(18px, 26px) scale(0.6); transform-origin: 100% 100%; transition: opacity 180ms ease, transform 300ms cubic-bezier(.34,1.4,.64,1), background 120ms ease; cursor: pointer; border: 0; font-family: var(--sans); min-height: 44px; }
+  .fan-item .gi { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; }
+  .fan-item.hot { background: var(--night-2); color: #fff; transform: scale(1.06) !important; }
+  .fan-item .meta { font-size: 11px; color: var(--app-ink-3); font-weight: 400; }
+  .fan-item.hot .meta { color: #A6A2CE; }
+  .demo-phone.open .fan-item { opacity: 1; transform: none; }
+  .fan-sep { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #fff; opacity: 0; transition: opacity 200ms ease 120ms; padding-right: 6px; }
+  .demo-phone.open .fan-sep { opacity: 0.8; }
+  .toast { position: absolute; left: 12px; right: 12px; bottom: 76px; background: var(--app-card); border-radius: 16px; padding: 12px 14px; box-shadow: 0 10px 28px rgba(19,17,46,0.2); font-size: 13px; display: flex; gap: 10px; align-items: center; transform: translateY(20px); opacity: 0; transition: all 260ms cubic-bezier(.2,.8,.2,1); z-index: 4; pointer-events: none; }
+  .toast.show { transform: none; opacity: 1; }
+  .toast .tick { width: 24px; height: 24px; border-radius: 50%; background: var(--teal-wash); color: var(--teal-ink); display: grid; place-items: center; font-weight: 700; flex-shrink: 0; }
+  .toast b { display: block; }
+  .toast span { color: var(--app-ink-2); font-size: 12px; }
+  .beats { flex: 1; min-width: 280px; max-width: 60ch; }
+  .beats ol { padding-left: 20px; margin: 0; display: grid; gap: 10px; font-size: 14.5px; color: var(--ink-2); }
+  .beats ol b { color: var(--ink); }
+  .demo-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .demo-controls button { font-family: var(--sans); font-size: 13px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink); border-radius: 999px; padding: 7px 14px; cursor: pointer; }
+  .demo-controls button[aria-pressed="true"] { border-color: var(--teal-ink); color: var(--teal-ink); }
+  .demo-controls button:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .demo-home, .dfab, .dfab .glyph, .fan-item, .toast, .demo-scrim { transition: opacity 150ms linear !important; }
+    .demo-phone.open .dfab .glyph { transform: none; }
+    .dfab.holding .ring { animation: none; opacity: 1; transform: none; }
+  }
+  .demo-phone.rm .demo-home, .demo-phone.rm .dfab, .demo-phone.rm .dfab .glyph, .demo-phone.rm .fan-item, .demo-phone.rm .toast { transition: opacity 150ms linear !important; }
+  .demo-phone.rm.open .demo-home { transform: none; }
+  .demo-phone.rm.open .dfab .glyph { transform: none; }
+  .demo-phone.rm .fan-item { transform: none !important; }
+
+  /* Briefs */
+  .briefs { display: grid; gap: 18px; margin-top: 24px; }
+  .brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .brief h4 { margin: 0 0 8px; font-size: 15.5px; color: var(--ink); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .brief p { margin: 0 0 6px; }
+  .brief b { color: var(--ink); }
+  .conflict { border-left: 3px solid var(--rose-ink); padding-left: 12px; margin: 8px 0; }
+  .built { display: inline-flex; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Round 1 · ruled 2026-09-26</span><span>Design v2 · device reactions</span><span>2026-09-26</span></p>
+    <h1>Design v2, on the phone</h1>
+    <p class="standfirst">Six reactions from the first real day with the Design v2 build, drawn against Nyx's actual record. Two are fixed in #922. The PM ruled the other four on 2026-09-26 (D1 B, D2 a, D3 C, D4 park, D5 a); the options not chosen have left the page, and git keeps them at commit 2460a58. What remains is the proposal each build issue builds.</p>
+    <div class="ledger">
+      <div><b>1 · The Signal's screens</b><span><q>Beautiful. Make navigation way easier… less Signal on Home, more affordances directing to the screens.</q> <span class="pill">ruled B · CUL-1270</span></span></div>
+      <div><b>1a · Grey photo boxes</b><span>A stale on-device path was trusted, and a failed thumbnail never fell back to the full photo. <span class="pill">built · §04</span></span></div>
+      <div><b>2 · Tapping a day's event</b><span>The month's day rows were dead. Each row is now a door to its record. <span class="pill">built · §03</span></span></div>
+      <div><b>3 · Two signals, one screen</b><span>Routing was correct. Two vomiting findings produce twin screens with the same title shape, bars and gallery. <span class="pill">ruled (a) · CUL-1270</span></span></div>
+      <div><b>4 · Text heavy</b><span><q>Signals is SO text heavy. It's overwhelming.</q> This is the same fix as #1. <span class="pill">ruled B · CUL-1270</span></span></div>
+      <div><b>5 · FAB teal</b><span><q>Drab… maybe the Culprit dark blue/purple.</q> <span class="pill">D3 ruled C · CUL-322</span> <span class="pill dir">D4 parked · CUL-1279</span></span></div>
+      <div><b>6 · FAB interaction</b><span><q>What can we do to make this world class?</q> <span class="pill">ruled (a) · CUL-322, then CUL-1278</span></span></div>
+    </div>
+  </header>
+
+  <!-- §01 -->
+  <section id="signal">
+    <div class="sec-head"><span class="sec-num">01</span><h2>The Signal on Home: a door per finding, and far fewer words</h2></div>
+    <div class="col">
+      <p>Nyx's Signal today holds four findings: a foreign-material photo read, vomiting in 5 of 8 weeks, coughing in 7 of 8 weeks, and vomiting soon after meals. As built, the first three are full paragraphs, each ending with the same disclaimer. Only "Open ›" in the header looks like a door, and it always opens the top card.</p>
+      <p>The ruled design keeps the three things safety requires. The ask stays on Home, in words, and never moves behind a tap. Safety findings lead. A safety card never gains a chart (S1). What moves to the screen is the explanation, the receipts and the cross-mentions. The disclaimer is said once for the whole zone.</p>
+    </div>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="ask"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label"><span>Signal</span><a>Open ›</a></div>
+            <div class="railed"><div class="serif-lead">A photo you logged of Nyx's vomiting showed possible foreign material, on September 22 — worth a call to your vet. This is a read of your logs, not a diagnosis.</div><div class="receipt">From an AI read of 1 logged photo</div></div>
+            <div class="row-divider"></div>
+            <div class="railed"><div class="para">We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis.</div><div class="receipt">14 episodes across 5 of the last 8 weeks</div></div>
+            <div class="row-divider"></div>
+            <div class="railed"><div class="para">We've logged coughing for Nyx across 7 of the last 8 weeks — 23 episodes since August. A symptom that keeps recurring over weeks is worth booking…</div></div>
+          </div>
+          <div class="fade-bottom"></div>
+        </div>
+        <div class="frame-cap"><b>As built</b><span>About 150 words before the fourth finding. No card looks tappable.</span></div>
+      </div>
+
+
+      <div class="frame">
+        <div class="phone">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="ask"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label"><span>Signal</span></div>
+            <div class="railed door"><div class="body"><div class="eyebrow-s">Photo read · Sep 22</div><div class="head serif">Possible foreign material in a vomit photo</div><div class="asktxt">Worth a call to your vet</div></div><span class="chev big"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed door"><div class="body"><div class="head">Vomiting in 5 of the last 8 weeks</div><div class="sub">14 episodes since August · <span style="color:#B4123B">worth booking a visit</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="railed door"><div class="body"><div class="head">Coughing in 7 of the last 8 weeks</div><div class="sub">23 episodes since August · <span style="color:#B4123B">worth booking a visit</span></div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="row-divider"></div>
+            <div class="door" style="padding-left:13px"><div class="body"><div class="head">Vomiting soon after meals</div>
+              <svg class="lane" viewBox="0 0 220 30" width="100%" height="30" role="img" aria-label="9 of 10 timed episodes within 30 minutes of eating">
+                <rect x="0" y="6" width="66" height="14" rx="3" fill="#E0FBF7"/>
+                <line x1="0" y1="13" x2="220" y2="13" stroke="#E7E5E4" stroke-width="1"/>
+                <g fill="#F43F5E"><circle cx="8" cy="13" r="3.4"/><circle cx="15" cy="13" r="3.4"/><circle cx="22" cy="13" r="3.4"/><circle cx="29" cy="13" r="3.4"/><circle cx="36" cy="13" r="3.4"/><circle cx="43" cy="13" r="3.4"/><circle cx="50" cy="13" r="3.4"/><circle cx="57" cy="13" r="3.4"/><circle cx="62" cy="13" r="3.4"/><circle cx="160" cy="13" r="3.4"/></g>
+                <text x="0" y="29" font-size="8" fill="#737373" font-family="Geist, sans-serif">0</text>
+                <text x="56" y="29" font-size="8" fill="#737373" font-family="Geist, sans-serif">30 min</text>
+                <text x="196" y="29" font-size="8" fill="#737373" font-family="Geist, sans-serif">4 h</text>
+              </svg>
+              <div class="sub">9 of 10 timed episodes within 30 min</div></div><span class="chev"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="zone-foot"><span>A read of Nyx's logs, not a diagnosis.</span><a>All patterns ›</a></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>The ruled design (B) <span class="pill">current · CUL-1270</span></b><span>Insight cards show a thumbnail of the evidence their screen draws, which invites the tap. Safety cards stay words.</span></div>
+      </div>
+
+    </div>
+    <div class="col" style="margin-top:28px">
+      <p><b>How it is built (CUL-1270).</b> The Home line is composed from the finding's own fields, the way the lead card's title is today. It never truncates the server's sentence, so the count on Home and the count on the screen come from one source (CUL-1217). The fold still works: a folded card collapses to its headline row, and its chevron still opens the screen. "Open ›" leaves the header, because every card now carries its own door.</p>
+    </div>
+  </section>
+
+  <!-- §02 -->
+  <section id="twins">
+    <div class="sec-head"><span class="sec-num">02</span><h2>Two findings, twin screens</h2></div>
+    <div class="col">
+      <p>The routing is correct. Each finding opens its own screen, and I checked the four on Nyx's live Signal. The two vomiting findings still produce near-identical screens. Their titles differ only in the window ("the last 8 weeks", "the last 60 days"), and both draw the same weekly bars and the same photo gallery, because both count the same vomit rows. The fix is for the title to name the finding's claim, and for the screen to open on the evidence only that finding has.</p>
+    </div>
+    <div class="frames">
+      <div class="frame">
+        <div class="screen-head">
+          <div class="back">‹</div>
+          <div class="screen-title"><span class="same">Vomiting, the last 8 weeks</span></div>
+          <div class="screen-sent">We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since August…</div>
+          <div class="mini-label">This week and the 8 before</div>
+          <svg viewBox="0 0 280 60" width="100%" height="60" role="img" aria-label="Weekly vomiting bars"><g fill="#F43F5E"><rect x="4" y="44" width="22" height="12" rx="2"/><rect x="34" y="30" width="22" height="26" rx="2"/><rect x="64" y="56" width="22" height="0"/><rect x="94" y="38" width="22" height="18" rx="2"/><rect x="124" y="20" width="22" height="36" rx="2"/><rect x="154" y="56" width="22" height="0"/><rect x="184" y="44" width="22" height="12" rx="2"/><rect x="214" y="32" width="22" height="24" rx="2"/><rect x="244" y="50" width="22" height="6" rx="2"/></g><line x1="0" y1="56.5" x2="280" y2="56.5" stroke="#E7E5E4"/></svg>
+        </div>
+        <div class="frame-cap"><b>As built · symptom_chronicity</b><span>Bars, then the compare, then the gallery.</span></div>
+      </div>
+      <div class="frame">
+        <div class="screen-head">
+          <div class="back">‹</div>
+          <div class="screen-title"><span class="same">Vomiting, the last 60 days</span></div>
+          <div class="screen-sent">9 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating…</div>
+          <div class="mini-label">This week and the 8 before</div>
+          <svg viewBox="0 0 280 60" width="100%" height="60" role="img" aria-label="The same weekly vomiting bars"><g fill="#F43F5E"><rect x="4" y="44" width="22" height="12" rx="2"/><rect x="34" y="30" width="22" height="26" rx="2"/><rect x="94" y="38" width="22" height="18" rx="2"/><rect x="124" y="20" width="22" height="36" rx="2"/><rect x="184" y="44" width="22" height="12" rx="2"/><rect x="214" y="32" width="22" height="24" rx="2"/><rect x="244" y="50" width="22" height="6" rx="2"/></g><line x1="0" y1="56.5" x2="280" y2="56.5" stroke="#E7E5E4"/></svg>
+        </div>
+        <div class="frame-cap"><b>As built · postprandial_timing</b><span>The same bars and gallery. The timing lanes sit further down.</span></div>
+      </div>
+      <div class="frame">
+        <div class="screen-head">
+          <div class="back">‹</div>
+          <div class="screen-title">Vomiting in 5 of the last 8 weeks</div>
+          <div class="screen-sent">14 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit.</div>
+          <div class="mini-label">Weeks with vomiting · 5 of 8</div>
+          <svg viewBox="0 0 280 60" width="100%" height="60" role="img" aria-label="Weekly vomiting bars"><g fill="#F43F5E"><rect x="4" y="44" width="22" height="12" rx="2"/><rect x="34" y="30" width="22" height="26" rx="2"/><rect x="94" y="38" width="22" height="18" rx="2"/><rect x="124" y="20" width="22" height="36" rx="2"/><rect x="184" y="44" width="22" height="12" rx="2"/><rect x="214" y="32" width="22" height="24" rx="2"/><rect x="244" y="50" width="22" height="6" rx="2"/></g><line x1="0" y1="56.5" x2="280" y2="56.5" stroke="#E7E5E4"/></svg>
+        </div>
+        <div class="frame-cap"><b>Ruled (a) · the recurrence <span class="pill">current</span></b><span>The title states the claim. The bars lead because weeks are the evidence.</span></div>
+      </div>
+      <div class="frame">
+        <div class="screen-head">
+          <div class="back">‹</div>
+          <div class="screen-title">Vomiting soon after meals</div>
+          <div class="screen-sent">9 of the 10 episodes we could time happened within 30 minutes of eating.</div>
+          <div class="mini-label">Minutes from the last meal · 10 timed</div>
+          <svg viewBox="0 0 280 44" width="100%" height="44" role="img" aria-label="Timing lane: 9 of 10 within 30 minutes">
+            <rect x="0" y="8" width="84" height="18" rx="3" fill="#E0FBF7"/>
+            <line x1="0" y1="17" x2="280" y2="17" stroke="#E7E5E4"/>
+            <g fill="#F43F5E"><circle cx="10" cy="17" r="4.2"/><circle cx="19" cy="17" r="4.2"/><circle cx="28" cy="17" r="4.2"/><circle cx="37" cy="17" r="4.2"/><circle cx="46" cy="17" r="4.2"/><circle cx="55" cy="17" r="4.2"/><circle cx="64" cy="17" r="4.2"/><circle cx="72" cy="17" r="4.2"/><circle cx="79" cy="17" r="4.2"/><circle cx="204" cy="17" r="4.2"/></g>
+            <text x="0" y="40" font-size="9" fill="#737373" font-family="Geist, sans-serif">0</text>
+            <text x="70" y="40" font-size="9" fill="#737373" font-family="Geist, sans-serif">30 min</text>
+            <text x="256" y="40" font-size="9" fill="#737373" font-family="Geist, sans-serif">4 h</text>
+          </svg>
+        </div>
+        <div class="frame-cap"><b>Ruled (a) · the timing <span class="pill">current</span></b><span>The lane leads, because timing is this finding's evidence. The bars move below it.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- §03 -->
+  <section id="month">
+    <div class="sec-head"><span class="sec-num">03</span><h2>The month's day rows are doors</h2></div>
+    <div class="col"><p><span class="built">Built in this PR · CUL-320</span></p><p>Every row of the open day now opens its record, the same screen Home's spine and History open. Each row is at least 44pt tall with no overlapping hit areas, answers the press on the panel's own ground, and carries a small chevron. "Open in History" stays at the foot.</p></div>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone" style="padding:12px">
+          <div class="daypanel"><i class="rail"></i><div class="inner">
+            <div class="dtitle">Thursday, September 17</div>
+            <div class="dsub">Vomit logged 2 times · everything this day:</div>
+            <div class="drow"><span class="ic" style="color:#0FA08B">✕</span><span class="tt">Royal Canin · Selected Protein PR</span><span class="fmt">WET</span><span class="tm">5:47 AM</span><span class="chev" style="width:14px">›</span></div>
+            <div class="drow"><span class="ic" style="color:#0FA08B">✕</span><span class="tt">Royal Canin · Selected Protein PR</span><span class="fmt">DRY</span><span class="tm">10:55 AM</span><span class="chev" style="width:14px">›</span></div>
+            <div class="drow pressed"><span class="ic" style="color:#F43F5E">◌</span><span class="tt">Vomit</span><span class="tm">10:58 AM</span><span class="chev" style="width:14px">›</span></div>
+            <div class="drow"><span class="ic" style="color:#F43F5E">≋</span><span class="tt">Cough</span><span class="tm">5:09 PM</span><span class="chev" style="width:14px">›</span></div>
+            <div class="hist-link">Open in History · Sep 17 ›</div>
+          </div></div>
+        </div>
+        <div class="frame-cap"><b>Built · the Vomit row, pressed</b><span>A tap opens the 10:58 AM record, with its photo and its read.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- §04 -->
+  <section id="tiles">
+    <div class="sec-head"><span class="sec-num">04</span><h2>The episode photos never end grey</h2></div>
+    <div class="col"><p><span class="built">Built in this PR · CUL-1269</span></p><p>The gallery now serves a photo the way the record screen does. It checks that the on-device file still exists, since iOS clears its cache under storage pressure. It falls back to the full photo when the thumbnail fails. When everything fails, it says so. A tile is still a door to its record, so the owner is never stuck.</p></div>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone" style="padding:14px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px"><b style="font-size:13.5px">The episodes</b><span style="font-size:11px;color:var(--app-ink-2)">14, four photographed</span></div>
+          <div class="tiles">
+            <div class="tile"><div class="well photo"></div><div class="d">Sep 22</div><div class="v call">Worth a call</div></div>
+            <div class="tile"><div class="well photo b"></div><div class="d">Sep 17</div><div class="v">Keep an eye out</div></div>
+            <div class="tile"><div class="well">Photo didn't load</div><div class="d">Sep 11</div><div class="v">Keep an eye out</div></div>
+            <div class="tile"><div class="well photo c"></div><div class="d">Sep 5</div><div class="v">No read yet</div></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>Built · the third tile after every source failed</b><span>Before this fix, that tile, and any tile with an evicted cache file, was an empty grey square.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- §05 -->
+  <section id="colour">
+    <div class="sec-head"><span class="sec-num">05</span><h2>The FAB's colour, and whether teal stays the app's accent</h2></div>
+    <div class="col">
+      <p>The FAB shipped in the darker teal because the bright teal failed contrast: a white plus on #00C2A8 measures 2.17:1 against the 3:1 minimum. The darker teal passes but reads muddy, which is the drab you saw. The Culprit indigo clears contrast by a wide margin. The in-app brand spec (2026-07-10, rule 3) says indigo is only ever a ground and teal is the sole interactive accent. The ruling keeps the brand's teal as the live spark on the plus and puts indigo behind it, with the FAB named as rule 3's one exception.</p>
+    </div>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone" style="padding:0;border-radius:24px"><div class="fab-stage"><div class="ghost"><i></i><i></i><i></i></div><div class="fabdisc" style="background:#0B7B6C"><svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div></div></div>
+        <div class="frame-cap"><b>A · As built, teal ink #0B7B6C</b><span class="contrast"><span class="ok">plus 5.17:1</span><span class="ok">disc 4.95:1</span></span></div>
+      </div>
+      <div class="frame">
+        <div class="phone" style="padding:0;border-radius:24px"><div class="fab-stage"><div class="ghost"><i></i><i></i><i></i></div><div class="fabdisc" style="background:#251F57"><svg viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="2.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div></div></div>
+        <div class="frame-cap"><b>Ruled (C): indigo disc, bright teal plus <span class="pill">current · CUL-322</span></b><span class="contrast"><span class="ok">plus 6.57:1</span><span class="ok">disc 14.3:1</span></span><span>The Culprit mark in miniature: the night ground with the signal on it. Bright teal finally gets used, in the one place it passes.</span></div>
+      </div>
+    </div>
+
+    <h3>"A teal revamp all around": what the app would look like with indigo as the action colour</h3>
+    <div class="col"><p>Drawn to show the scale of the change, not proposed for this PR. On the right, indigo takes every primary action (buttons, the FAB, selected chips) and teal keeps what it means in the data: meals, the charts' calm marks, the live dot. The Signal's rose is unchanged in both.</p></div>
+    <div class="frames">
+      <div class="frame">
+        <div class="kit">
+          <div class="btn" style="background:#0B7B6C;color:#fff">Send the vet report</div>
+          <div class="chips"><span class="chip" style="background:#E0FBF7;border-color:#0B7B6C;color:#08685B;font-weight:600">Ate all</span><span class="chip">Left some</span><span class="chip">Refused</span></div>
+          <div class="link" style="color:#0B7B6C">See all of Nyx's patterns ›</div>
+          <div class="bars"><i style="height:40%;background:#00C2A8"></i><i style="height:70%;background:#00C2A8"></i><i style="height:55%;background:#00C2A8"></i><i style="height:90%;background:#00C2A8"></i><i style="height:65%;background:#00C2A8"></i></div>
+          <div class="note">Today · teal is both "tap me" and "meals"</div>
+        </div>
+        <div class="frame-cap"><b>Today · one accent</b></div>
+      </div>
+      <div class="frame">
+        <div class="kit">
+          <div class="btn" style="background:#251F57;color:#fff">Send the vet report</div>
+          <div class="chips"><span class="chip" style="background:#251F57;border-color:#251F57;color:#fff;font-weight:600">Ate all</span><span class="chip">Left some</span><span class="chip">Refused</span></div>
+          <div class="link" style="color:#3B3285">See all of Nyx's patterns ›</div>
+          <div class="bars"><i style="height:40%;background:#00C2A8"></i><i style="height:70%;background:#00C2A8"></i><i style="height:55%;background:#00C2A8"></i><i style="height:90%;background:#00C2A8"></i><i style="height:65%;background:#00C2A8"></i></div>
+          <div class="note">Indigo means "tap me"; teal means data</div>
+        </div>
+        <div class="frame-cap"><b>Indigo actions, teal data <span class="pill dir">parked · CUL-1279</span></b><span>This touches every screen and rewrites brand rule 3. It needs its own round and the contrast guard's full walk.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- §06 -->
+  <section id="motion">
+    <div class="sec-head"><span class="sec-num">06</span><h2>The FAB, as one gesture</h2></div>
+    <div class="col">
+      <p>The best loggers do two things the current FAB doesn't. The menu grows out of the button instead of appearing as a panel, and one press can go all the way to a saved log. Try both on the phone below: <b>tap</b> the button to open the fan, or <b>press and hold</b>, slide to an item, and let go. Drawn with option C's colours.</p>
+    </div>
+    <div class="demo-wrap">
+      <div>
+        <div class="phone demo-phone" id="demo">
+          <div class="demo-home">
+            <div class="appbar" style="padding-bottom:4px"><span class="pet"><i class="avatar"></i>Nyx</span><span class="ask"><i></i>Ask</span></div>
+            <div class="card"><div class="zone-label"><span>Signal</span></div><div class="railed"><div style="font-family:var(--serif);font-size:17px;line-height:1.25">Possible foreign material in a vomit photo</div><div style="font-size:12px;color:#B4123B;margin-top:2px">Worth a call to your vet</div></div></div>
+            <div class="card"><div class="zone-label"><span>Today</span></div><div style="display:grid;gap:7px;font-size:12.5px"><span>5:47 AM · Royal Canin, wet</span><span>10:55 AM · Royal Canin, dry</span><span style="color:#B4123B">10:58 AM · Vomit</span></div></div>
+          </div>
+          <div class="demo-scrim" id="scrim"></div>
+          <div class="fan" id="fan" role="menu" aria-label="Log for Nyx">
+            <span class="fan-sep">Log for Nyx</span>
+            <button class="fan-item" role="menuitem" data-log="More events" style="transition-delay:150ms"><span class="gi" style="background:#F4F4F5">⋯</span>More events</button>
+            <button class="fan-item" role="menuitem" data-log="Loose stool" style="transition-delay:110ms"><span class="gi" style="background:#FFE4E6;color:#B4123B">≈</span>Loose stool</button>
+            <button class="fan-item" role="menuitem" data-log="Vomit" style="transition-delay:75ms"><span class="gi" style="background:#FFE4E6;color:#B4123B">◌</span>Vomit</button>
+            <button class="fan-item" role="menuitem" data-log="Royal Canin, dry" style="transition-delay:40ms"><span class="gi" style="background:#E0FBF7;color:#0B7B6C">✕</span><span>Royal Canin, dry <span class="meta">· usual 3 PM</span></span></button>
+            <button class="fan-item" role="menuitem" data-log="Royal Canin, wet" style="transition-delay:0ms"><span class="gi" style="background:#E0FBF7;color:#0B7B6C">✕</span><span>Royal Canin, wet <span class="meta">· usual 6 AM</span></span></button>
+          </div>
+          <button class="dfab" id="dfab" aria-label="Log for Nyx" aria-haspopup="menu" aria-expanded="false">
+            <i class="ring"></i>
+            <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="2.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <div class="toast" id="toast" role="status" aria-live="polite"><span class="tick">✓</span><span><b id="toast-title">Vomit, 3:12 PM</b><span>Logged for Nyx · Undo</span></span></div>
+          <div class="demo-tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div>
+        </div>
+        <div class="demo-controls">
+          <button id="rm-toggle" aria-pressed="false">Show the Reduce Motion frame</button>
+        </div>
+      </div>
+      <div class="beats">
+        <ol>
+          <li><b>Touch-down answers before release.</b> The disc compresses to 90% the instant a finger lands. Today nothing moves until the finger lifts.</li>
+          <li><b>The plus turns with weight.</b> A 135° spring with a small overshoot lands on ×, replacing today's 45° linear turn.</li>
+          <li><b>Home steps back.</b> A soft indigo scrim with a light blur, and Home settles to 97%. The menu reads as in front of Home, not stuck on top of it.</li>
+          <li><b>The menu grows out of the button.</b> Items fan up from the disc's corner, nearest first, 35–40ms apart. Recent foods sit closest to the thumb, and each names the time it is usually fed.</li>
+          <li><b>Hold, slide, release</b> <span class="pill dir">later · CUL-1278</span> Hold for 250ms and a teal ring closes around the disc. Slide over an item and it lifts, with a selection tick each time you cross into a new one. Let go on it and it logs. One gesture, no decisions at the moment of the event (Principle 1).</li>
+          <li><b>The completion beat names the record.</b> "Vomit, 3:12 PM · Logged for Nyx · Undo" routes through the existing completion card (C-17), so this surface never invents its own confirmation.</li>
+          <li><b>Close is faster than open.</b> Items retract in reverse order in about 180ms. Open is a moment; close is getting out of the way.</li>
+          <li><b>Reduce Motion is a crossfade.</b> No turn, no fan, no scale. It is the frame BRK-37 found missing, and the button gains its role and a modal menu at the same time.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- Rulings -->
+  <section id="decide">
+    <div class="sec-head"><span class="sec-num">07</span><h2>The rulings, and what each one builds</h2></div>
+    <div class="briefs">
+      <div class="brief">
+        <h4>D1 · The Signal on Home <span class="pill">ruled B</span></h4>
+        <p>Every card becomes a headline, the ask and a chevron. Insight cards carry a small chart; safety cards stay words, with every ask on Home. The disclaimer is said once per zone, and the header's "Open ›" retires. The S1 wording edit ("plain" is not "long") is written in the build PR. <b>Build:</b> CUL-1270.</p>
+      </div>
+      <div class="brief">
+        <h4>D2 · Twin screens <span class="pill">ruled (a)</span></h4>
+        <p>The title names the finding's claim, and the screen opens on the finding's own evidence. It lands with D1, since the Home headline and the screen title are the same words. <b>Build:</b> CUL-1270.</p>
+      </div>
+      <div class="brief">
+        <h4>D3 · The FAB's colour <span class="pill">ruled C</span></h4>
+        <p>An indigo #251F57 disc with a bright teal #00C2A8 plus. In-app brand rule 3 gains one exception, the FAB, written in the build PR. <b>Build:</b> CUL-322.</p>
+      </div>
+      <div class="brief">
+        <h4>D4 · Indigo as the app's action colour <span class="pill dir">parked</span></h4>
+        <p>Judged after the indigo FAB has been on a phone. <b>Parked as:</b> CUL-1279.</p>
+      </div>
+      <div class="brief">
+        <h4>D5 · The FAB choreography <span class="pill">ruled (a)</span></h4>
+        <p>Press-down, the spring turn, the scrim, the fan, the completion card, the faster close and the Reduce Motion frame ship with the colour, closing BRK-37. Hold-and-slide follows after a device test. <b>Build:</b> CUL-322, then CUL-1278.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  var phone = document.getElementById('demo');
+  var fab = document.getElementById('dfab');
+  var items = Array.prototype.slice.call(document.querySelectorAll('.fan-item'));
+  var toast = document.getElementById('toast');
+  var toastTitle = document.getElementById('toast-title');
+  var scrim = document.getElementById('scrim');
+  var rmBtn = document.getElementById('rm-toggle');
+  var holdTimer = null, holding = false, hot = null, toastTimer = null, pointerDown = false;
+  var HOLD_MS = 250;
+
+  function setOpen(open) {
+    phone.classList.toggle('open', open);
+    fab.setAttribute('aria-expanded', open ? 'true' : 'false');
+    fab.setAttribute('aria-label', open ? 'Close' : 'Log for Nyx');
+    items.forEach(function (el, i) {
+      // Open: nearest first. Close: reverse order, faster.
+      el.style.transitionDelay = open ? ((items.length - 1 - i) * 38) + 'ms' : (i * 18) + 'ms';
+    });
+    if (!open) setHot(null);
+  }
+  function setHot(el) {
+    if (hot === el) return;
+    if (hot) hot.classList.remove('hot');
+    hot = el;
+    if (hot) hot.classList.add('hot');
+  }
+  function now() {
+    var d = new Date();
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  function log(what) {
+    setOpen(false);
+    toastTitle.textContent = what + ', ' + now();
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2600);
+  }
+
+  fab.addEventListener('pointerdown', function (e) {
+    pointerDown = true;
+    fab.classList.add('down');
+    try { fab.setPointerCapture(e.pointerId); } catch (err) {}
+    if (phone.classList.contains('open')) return;
+    holdTimer = setTimeout(function () {
+      holding = true;
+      fab.classList.add('holding');
+      setOpen(true);
+    }, HOLD_MS);
+  });
+  fab.addEventListener('pointermove', function (e) {
+    if (!holding) return;
+    var under = document.elementFromPoint(e.clientX, e.clientY);
+    var item = under && under.closest ? under.closest('.fan-item') : null;
+    setHot(item);
+  });
+  function release() {
+    if (!pointerDown) return;
+    pointerDown = false;
+    fab.classList.remove('down');
+    clearTimeout(holdTimer);
+    if (holding) {
+      holding = false;
+      fab.classList.remove('holding');
+      if (hot) { log(hot.getAttribute('data-log')); }
+      else { setOpen(false); }
+      return;
+    }
+    setOpen(!phone.classList.contains('open'));
+  }
+  fab.addEventListener('pointerup', release);
+  fab.addEventListener('pointercancel', function () {
+    pointerDown = false; holding = false; clearTimeout(holdTimer);
+    fab.classList.remove('down', 'holding'); setHot(null);
+  });
+  fab.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setOpen(!phone.classList.contains('open'));
+      if (phone.classList.contains('open')) items[items.length - 1].focus();
+    }
+    if (e.key === 'Escape') setOpen(false);
+  });
+  items.forEach(function (el) {
+    el.addEventListener('click', function () { log(el.getAttribute('data-log')); });
+    el.addEventListener('keydown', function (e) { if (e.key === 'Escape') { setOpen(false); fab.focus(); } });
+  });
+  scrim.addEventListener('click', function () { setOpen(false); });
+  rmBtn.addEventListener('click', function () {
+    var on = !phone.classList.contains('rm');
+    phone.classList.toggle('rm', on);
+    rmBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+})();
+</script>

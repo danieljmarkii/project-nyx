@@ -20,11 +20,17 @@
 import { Animated, View, StyleSheet, TouchableOpacity, type LayoutChangeEvent } from 'react-native';
 import { theme } from '../../constants/theme';
 import { type ArrivalRail } from '../motion/arrivalMotion';
+import { useDesignV2 } from '../../hooks/useDesignV2';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
+import { Tick } from '../designV2/waits/Tick';
 import { ThemedText } from '../ui/ThemedText';
+import { isQuietVerdict } from '../../lib/incidentVerdict';
+import { type TierTone } from '../../lib/incidentTierWords';
 
-/** The shipped recommendation enum. Named here only to pick a tone. */
-export type IncidentVerdict = 'worth_a_call' | 'monitor' | 'not_enough_to_say';
+/** The verdict the record holds, named here only to pick a tone. Text, not the shipped
+ *  three-value union: a server may hold a verdict this build has never seen (CUL-1277),
+ *  and the tone below is decided by the quiet list, never by the literal. */
+export type IncidentVerdict = string;
 
 export const INCIDENT_READ_DISCLAIMER =
   'This is a quick read of a single moment, not a diagnosis.';
@@ -32,6 +38,17 @@ export const INCIDENT_READ_DISCLAIMER =
 export const INCIDENT_READ_HIDE_LABEL = 'Hide this note';
 /** §5.5 — "Reading the photo…" on the photographed path (was "Reading this one…"). */
 export const INCIDENT_READ_PENDING_LABEL = 'Reading the photo…';
+/** CUL-827 — a re-read running beside an escalation that stays on screen: the in-place
+ *  sibling of the pending line, in the Re-run control's slot. The photoless line is for a
+ *  contextual escalation (repeated vomiting, a concurrent symptom) that has no photo to read. */
+export const INCIDENT_RE_READING_PHOTO_LINE = 'Reading the photo again…';
+export const INCIDENT_RE_READING_LINE = 'Reading this one again…';
+/** The failed read's line, and the no-recommendation read's. Named here (CUL-1275) because
+ *  each is now said twice — on screen, and to a screen reader when it lands — and both
+ *  sections say them, so one string per line keeps the two channels and the two surfaces
+ *  from drifting apart. */
+export const INCIDENT_READ_FAILED_LINE = "Couldn't finish reading this one.";
+export const INCIDENT_READ_NOT_ENOUGH_LINE = 'Not enough to say about this one yet.';
 
 /** The rail's width, and the height of its pending TICK (§5.2). Exported because PR 3's
  *  arrival animates the tick to the card's height and needs the same two numbers. */
@@ -42,39 +59,64 @@ export const RAIL_TICK_HEIGHT = 16;
  * The pending state: a 16pt tick of rail beside the whorl and the copy. The tick is what
  * PR 3 grows into the card's rail, so the read does not arrive from nowhere — it arrives
  * from the mark that was already standing there.
+ *
+ * Behind `design_v2` (D2-7 / CUL-1068) the whorl goes and the tick itself breathes —
+ * "the photo is the hero, the tick breathes" (round 2 §06) — in the same 3×16 slot, so
+ * the arrival grows out of exactly the mark it did before. `working` is the section's
+ * own fact (the server has been asked, or the row says it is being read): the breathing
+ * tick renders only then. The other pending case — a local row being READ off storage
+ * when an old incident is opened — is a fetch, not a request (arrivalMotion's own
+ * distinction), and keeps the still tick, flag-on and flag-off alike.
  */
-export function IncidentReadPending({ onLayout }: { onLayout?: (e: LayoutChangeEvent) => void }) {
+export function IncidentReadPending({
+  onLayout,
+  working = false,
+}: {
+  onLayout?: (e: LayoutChangeEvent) => void;
+  /** A read is being produced — the section's `working || status === 'pending'`. */
+  working?: boolean;
+}) {
+  const designV2 = useDesignV2();
   return (
     <View style={styles.pendingBox} onLayout={onLayout}>
-      <View style={styles.pendingTick} />
-      <WhorlSpinner size="sm" ground="day" />
+      {designV2 && working ? <Tick working={working} /> : <View style={styles.pendingTick} />}
+      {!designV2 && <WhorlSpinner size="sm" ground="day" />}
       <ThemedText style={styles.pendingText}>{INCIDENT_READ_PENDING_LABEL}</ThemedText>
     </View>
   );
 }
 
-/**
- * The two verdicts that may render CALM. Deliberately an allowlist, not
- * `verdict === 'worth_a_call'`: a value outside the shipped enum — a server that gains a
- * fourth recommendation before this build does — would otherwise take the grey rail, and
- * a grey rail is a positive claim that this is not an escalation. Absence of a known
- * escalation is not calm (Pattern 1's shape, applied to the presentation layer), so the
- * unknown case fails toward the rose. It costs a false alarm at worst; the other
- * direction costs a missed one.
- */
-const CALM_VERDICTS: readonly string[] = ['monitor', 'not_enough_to_say'];
+// The verdicts that may render with a grey rail are an ALLOWLIST, not
+// `verdict === 'worth_a_call'`: a value outside the shipped enum — a server that gains a
+// fourth recommendation before this build does — would otherwise take the grey rail, and
+// a grey rail is a positive claim that this is not an escalation. Absence of a known
+// escalation is not calm (Pattern 1's shape, applied to the presentation layer), so the
+// unknown case fails toward the rose. It costs a false alarm at worst; the other
+// direction costs a missed one. The list is `QUIET_VERDICTS` in `lib/incidentVerdict.ts`
+// since CUL-1277, the one the sections' fold, the failure rescue and the server read too.
 
 export function IncidentReadCard({
   verdict,
   label,
+  tone,
+  action,
+  disclosure,
   readText,
   onHide,
   arrival,
   onMeasure,
 }: {
   verdict: IncidentVerdict;
-  /** The enum's copy, verbatim from the section's own REC_LABEL map. */
+  /** The words, from the tier-word map (`lib/incidentTierWords.ts`) — never mapped here. */
   label: string;
+  /** The tier's tone from the map (EN-3). Absent, the tone is decided from the verdict as
+   *  it always was, so an earlier-rule read draws today's card to the byte. A value off the
+   *  quiet list is never drawn grey whatever tone is passed: the rose is decided first. */
+  tone?: TierTone;
+  /** A call's action line from the map (the service, and what to do if it is closed). */
+  action?: string | null;
+  /** CUL-819 (a): the latest read did not finish, said beside the call it left standing. */
+  disclosure?: string | null;
   readText?: string | null;
   onHide: () => void;
   /** Beat 1 of the arrival (CUL-804), while it is running; null every other moment —
@@ -86,14 +128,19 @@ export function IncidentReadCard({
    *  rail's apparent growth rate depend on the verdict. G4 says it must not. */
   onMeasure?: (height: number) => void;
 }) {
-  const attn = !CALM_VERDICTS.includes(verdict);
+  const attn = !isQuietVerdict(verdict) || tone === 'call_filled' || tone === 'call_outline';
+  // Fill against outline tells call now from call today beside the words (GAP-32). An
+  // earlier-rule call, and any call drawn without a tone, keeps today's filled card.
+  const outline = attn && tone === 'call_outline';
+  const quietTone = tone === 'neutral' || tone === 'muted' ? tone : verdict === 'monitor' ? 'neutral' : 'muted';
   return (
     <View
       testID="incident-read-card"
       onLayout={onMeasure ? (e) => onMeasure(e.nativeEvent.layout.height) : undefined}
       style={[
         styles.card,
-        attn ? styles.cardAttn : verdict === 'monitor' ? styles.cardNeutral : styles.cardMuted,
+        attn ? (outline ? styles.cardAttnOutline : styles.cardAttn)
+        : quietTone === 'neutral' ? styles.cardNeutral : styles.cardMuted,
       ]}
     >
       {/* The rail LEAVES the row's flow for the commit that animates layout, and takes an
@@ -126,13 +173,17 @@ export function IncidentReadCard({
           style={[
             styles.verdict,
             attn ? styles.verdictAttn
-            : verdict === 'monitor' ? styles.verdictNeutral
+            : quietTone === 'neutral' ? styles.verdictNeutral
             : styles.verdictMuted,
           ]}
         >
           {label}
         </ThemedText>
+        {attn && action ? <ThemedText style={styles.action}>{action}</ThemedText> : null}
         {readText ? <ThemedText style={styles.readText}>{readText}</ThemedText> : null}
+        {attn && disclosure ? (
+          <ThemedText testID="incident-read-disclosure" style={styles.disclosure}>{disclosure}</ThemedText>
+        ) : null}
         <ThemedText style={styles.disclaimer}>{INCIDENT_READ_DISCLAIMER}</ThemedText>
         {/* The visible text IS the accessible name — never a label that differs from it
             (C-7). This replaces the shipped `✕`, which announced nothing at all. */}
@@ -163,6 +214,12 @@ const styles = StyleSheet.create({
   cardAttn: {
     backgroundColor: theme.colorEventSymptomLight,
     borderColor: theme.colorEventSymptomBorder,
+  },
+  // Call today: the rose outline on the plain surface. The rail and the words carry the
+  // rose too, so the tier never rests on the border's hue alone.
+  cardAttnOutline: {
+    backgroundColor: theme.colorSurface,
+    borderColor: theme.colorEventSymptom,
   },
   cardNeutral: {
     backgroundColor: theme.colorSurfaceSubtle,
@@ -204,6 +261,17 @@ const styles = StyleSheet.create({
   verdictAttn: { color: theme.colorEventSymptomInk },
   verdictNeutral: { color: theme.colorTextSecondary },
   verdictMuted: { color: theme.colorTextTertiary },
+  action: {
+    fontSize: theme.textMD,
+    fontWeight: theme.fontWeightMedium,
+    color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightBody,
+  },
+  disclosure: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightBody,
+  },
   readText: {
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,

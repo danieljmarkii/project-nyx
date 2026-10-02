@@ -67,6 +67,9 @@ export interface TrialPhenotypeFacts {
   untimedCount: number;
   /** Every in-window vomit episode (timeable + untimed). */
   totalCount: number;
+  /** Of the in-window LONG-band episodes, those whose last bowl before the onset was refused
+   *  (CUL-1195, `lib/mealTiming`'s `afterRefusal`) — a subset of the long row, never added to it. */
+  longAfterRefusalCount: number;
 }
 
 export interface TrialStructureFacts {
@@ -185,6 +188,7 @@ export function buildTrialSoFar(input: TrialSoFarInput): TrialSoFarModel | null 
       timeableCount: eligibleInWindow.length,
       untimedCount: untimedInWindow,
       totalCount: eligibleInWindow.length + untimedInWindow,
+      longAfterRefusalCount: eligibleInWindow.filter((e) => e.band === 'long' && e.afterRefusal).length,
     },
     structure: {
       treatShare: classifiable > 0 ? treats / classifiable : null,
@@ -268,6 +272,19 @@ export function trialPhenotypeUntimedLine(p: TrialPhenotypeFacts): string | null
   return p.untimedCount === 1
     ? `1 more episode couldn't be timed against a meal.`
     : `${p.untimedCount} more episodes couldn't be timed against a meal.`;
+}
+
+/** CUL-1195 — PROVISIONAL wording (Dr. Chen at CUL-583, nyx-voice), the Signal card's line on
+ *  this panel: how many of the trial's long-band episodes followed a refused bowl. The long band
+ *  is timed from the last meal eaten, so a cat refusing the trial diet and vomiting minutes later
+ *  reads "6h or more after eating" without it. Present-only (null at zero — never "none followed a
+ *  refused meal", which would reassure over bowls rated only by exception). */
+export function trialPhenotypeRefusalLine(p: TrialPhenotypeFacts, config: MealTimingConfig): string | null {
+  const long = p.bandRows.find((r) => r.band === 'long')?.count ?? 0;
+  const k = Math.min(p.longAfterRefusalCount, long);
+  if (k < 1) return null;
+  const eps = long === 1 ? 'episode' : 'episodes';
+  return `${k} of the ${long} ${eps} ${timingBandLabel('long', config)} followed a refused meal.`;
 }
 
 /** The treat-share row value, e.g. "7% of meals & treats" — or the honest no-data form.

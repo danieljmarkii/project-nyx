@@ -18,10 +18,47 @@ export function formatAppVersion(
   return rawBuild ? `${v} (build ${rawBuild})` : v;
 }
 
+// The JS-bundle half of "which build is this?" (CUL-690). `formatAppVersion` above
+// describes the installed binary and does not move on an `eas update`; this names
+// the JavaScript actually running.
+//
+// Three states, and the third is the point. An `isEmbeddedLaunch` device is running
+// the bundle baked into the binary and says so. A device that has taken an update
+// reports its id, prefixed by the channel when one is configured, because "which
+// channel" is the first thing triage asks after "which bundle". Anything else —
+// Expo Go, a dev client, a read that threw — is UNKNOWN, never "embedded": those two
+// are only the same answer if you assume the thing you could not read, and a
+// diagnostic that guesses is worse than one that abstains.
+//
+// `abbreviate` is for the version foot, where a full UUID would be a line of noise
+// on a screen an owner reads: the leading segment is enough to tell two bundles
+// apart by eye, which is the whole on-device question. The mailto carries the id in
+// full, because triage matches it against an EAS update rather than eyeballing it.
+export function formatJsBundle(
+  updateId: string | null | undefined,
+  isEmbedded: boolean,
+  channel: string | null | undefined,
+  opts: { abbreviate?: boolean } = {},
+): string {
+  if (isEmbedded) return 'embedded';
+  const id = (updateId ?? '').trim();
+  if (!id) return 'unknown';
+  const shown = opts.abbreviate ? id.split('-')[0] : id;
+  const ch = (channel ?? '').trim();
+  return ch ? `${ch} \u00b7 ${shown}` : shown;
+}
+
 export interface SupportMailContext {
   version: string | null | undefined;
   build: string | number | null | undefined;
   platform: string | null | undefined;
+  // The JS bundle, already formatted by the caller (CUL-690) — this module stays
+  // free of expo-updates for the same reason it stays free of expo-constants.
+  // Optional so an existing caller keeps composing a valid mail; an absent one
+  // degrades to "unknown" in the footer rather than dropping the line, because a
+  // MISSING diagnostic line and a line reading "unknown" are different facts to
+  // whoever is reading the report.
+  jsBundle?: string | null | undefined;
   // Optional overrides so the §D8 feedback composer can reuse this helper:
   // a "[Feedback]"-tagged subject and the owner's typed note above the footer.
   subject?: string;
@@ -48,6 +85,7 @@ export function buildSupportMailto(email: string, ctx: SupportMailContext): stri
     '—',
     `App version: ${formatAppVersion(ctx.version, ctx.build)}`,
     `Platform: ${(ctx.platform ?? '').trim() || 'unknown'}`,
+    `JS bundle: ${(ctx.jsBundle ?? '').trim() || 'unknown'}`,
   ].join('\n');
 
   // Leading blank lines give the owner somewhere to write above the footer when

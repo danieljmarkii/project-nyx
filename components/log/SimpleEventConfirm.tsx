@@ -59,11 +59,19 @@ interface Props {
   // component knows whether a photo was attached, and the record shape deliberately
   // cannot carry it (it describes the TIME claim, nothing else) — so it is its own
   // field rather than a widening of `record`.
+  //
+  // `hasNote` rides along for the same reason one field over (CUL-645 widened by
+  // CUL-869, applied here by CUL-964): the beat's Undo confirms before it removes
+  // anything the owner cannot make again, and this confirm is the ONE path that can
+  // produce both — it offers a photo and a note on the same screen. Re-logging the
+  // event is easy; re-writing the sentence she typed at 2am about what she saw is not,
+  // and no surface in the app exposes a soft-deleted one.
   onLogged: (result: {
     eventId: string;
     occurredAtIso: string;
     record: LoggedRecord;
     hasAttachment: boolean;
+    hasNote: boolean;
   }) => void;
   /** CUL-612 — what the owner has put into this confirm so far, so the HOST can
    *  guard its own dismissal paths (a backdrop tap destroys this component, and a
@@ -385,6 +393,11 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
         // same reason the record is built from `tf`: what the host acts on must be
         // what landed in the row.
         hasAttachment: !!photo,
+        // The note the write above actually carried — `notes.trim()`, the same
+        // expression passed to insertSimpleEvent, not the raw field: whitespace is not
+        // a note, and a gate that named one the row does not hold would teach the owner
+        // to distrust what the dialog says.
+        hasNote: notes.trim().length > 0,
         // Built from `tf` — the SAME buildTimeFields derivation the summary pill reads
         // and the write above used, so the beat cannot say something the row does not
         // hold. Passing the pill's own string instead would have been shorter and

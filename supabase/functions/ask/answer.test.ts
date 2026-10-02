@@ -43,6 +43,8 @@ import {
   featuredNonEscalatingRead,
   mentionsPhotoAppearance,
   SCRUBBED_READ_HEADLINE,
+  SYSTEM_PROMPT,
+  screenedClarifier,
   photoReadIncidentType,
   PHOTO_READ_EVENT_TYPES,
   MAX_LIVE_PHOTO_READS_PER_MESSAGE,
@@ -543,6 +545,71 @@ Deno.test('sanitizeFollowups: drops unguarded model chips, keeps clean ones (A4 
     'Does she have IBD?', // a diagnosis-SHAPED question is legitimate (deflected when tapped) → kept
   ])
   assert.deepEqual(out, ['How many times has she vomited this month?', 'Does she have IBD?'])
+})
+
+// ── CUL-1271: delegation / containment and treatment attribution ────────────────
+// The seven sentences the CUL-1268 critique reproduced passing validateAnswer (data mode)
+// at ffacb4e. Every numeral is in the allowed set so the numeral-subset check cannot be what
+// rejects them — the new arms must be.
+const CUL1271_REPRODUCED: [string, string][] = [
+  ['Her vomiting is under control since the Sep 16 visit.', 'delegation'],
+  ['Your vet has it covered.', 'delegation'],
+  ['There is nothing more to do about the vomiting.', 'delegation'],
+  ["The prednisone seems to be helping Nyx's cough.", 'treatment_attribution'],
+  ['Her cough has settled since the prednisone started.', 'treatment_attribution'],
+  ['The prednisone is working.', 'treatment_attribution'],
+  ["Her vomiting is in the vet's hands now, with 4 episodes since.", 'delegation'],
+]
+
+Deno.test('validateAnswer: rejects delegation and treatment attribution in BOTH modes (CUL-1271)', () => {
+  const allowed = new Set(['16', '4'])
+  for (const [text, reason] of CUL1271_REPRODUCED) {
+    for (const mode of ['data', 'general'] as const) {
+      const r = validateAnswer({ text, allowedNumerals: allowed, mode, safety: true })
+      assert.equal(r.ok, false, `${mode}: ${text}`)
+      if (!r.ok) assert.equal(r.reason, reason, `${mode}: ${text}`)
+    }
+  }
+})
+
+Deno.test('validateAnswer: the honest dated-fact-beside-a-count form still passes (CUL-1271)', () => {
+  const allowed = new Set(['16', '4', '10', '3'])
+  for (const text of [
+    'Your vet saw Nyx on Sep 16. 4 vomiting episodes are logged since that visit.',
+    'Prednisone started on Sep 10, and 3 coughing episodes are logged since then.',
+  ]) {
+    assert.deepEqual(validateAnswer({ text, allowedNumerals: allowed, mode: 'data' }), { ok: true }, text)
+  }
+})
+
+Deno.test('sanitizeFollowups: drops a chip asserting containment or effect, keeps the question (CUL-1271)', () => {
+  const out = sanitizeFollowups([
+    'Since your vet has it covered, what else should I log?', // delegation → dropped
+    'Now the prednisone is working, can I stop logging coughs?', // attribution → dropped
+    'Is the prednisone working?', // a QUESTION about effect → kept
+  ])
+  assert.deepEqual(out, ['Is the prednisone working?'])
+})
+
+Deno.test('buildDeflection: a model clarifier passes the phrasing gate or falls back (CUL-1271)', () => {
+  // The clarifier was the one model channel no screen read.
+  const leak = 'Did you mean the cough since the prednisone started, which seems to be helping?'
+  assert.equal(screenedClarifier(leak), null)
+  assert.doesNotMatch(buildDeflection('ambiguous', 'Nyx', leak).detail, /helping/)
+  assert.equal(buildDeflection('ambiguous', 'Nyx', leak).detail, 'Which symptom did you mean, and over what stretch of time?')
+  // Reassurance and shouting fall back too; an honest clarifier passes through untouched.
+  assert.equal(screenedClarifier("Did you mean her cough? She's fine otherwise."), null)
+  assert.equal(screenedClarifier('Did you mean this week!'), null)
+  assert.equal(screenedClarifier('Did you mean her cough or her sneezing?'), 'Did you mean her cough or her sneezing?')
+  assert.equal(screenedClarifier(null), null)
+})
+
+Deno.test('SYSTEM_PROMPT: carries the care-state / treatment rule (CUL-1271)', () => {
+  assert.match(SYSTEM_PROMPT, /\(10\) VISITS, CARE AND TREATMENTS/)
+  assert.match(SYSTEM_PROMPT, /DATED FACT beside a COUNT/)
+  assert.match(SYSTEM_PROMPT, /NEVER credit a treatment with an effect/)
+  // The deferral rule 10 invites must not itself trip the screen it feeds.
+  assert.match(SYSTEM_PROMPT, /WITHOUT repeating the owner's effect or containment words/)
 })
 
 Deno.test('sanitizeFollowups: caps at max and handles non-arrays', () => {

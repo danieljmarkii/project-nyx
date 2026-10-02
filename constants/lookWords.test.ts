@@ -86,9 +86,11 @@ describe('the look vocabulary — the counts and the shape', () => {
 });
 
 describe('the head words (T-13) — a safety list, not a layout', () => {
-  it('cat: Off · Sleeping more · Hiding · Not grooming · Lip-licking · Outside the box · Lively', () => {
+  it('cat: Off · Sleeping more · Hiding · Not grooming · Lip-licking · Outside the box · Lively · Played', () => {
+    // `played` is the eighth since D2-4 (CUL-1066): the second positive, at the same cost
+    // as the seven concerns (§4.1 rule 5). A Tier-2 edit to §4, written at D2-8.
     expect(LOOK_HEAD_WORDS.cat).toEqual([
-      'subdued', 'sleeping_more', 'hiding', 'not_grooming', 'lip_licking', 'outside_box', 'lively',
+      'subdued', 'sleeping_more', 'hiding', 'not_grooming', 'lip_licking', 'outside_box', 'lively', 'played',
     ]);
   });
 
@@ -98,8 +100,10 @@ describe('the head words (T-13) — a safety list, not a layout', () => {
     ]);
   });
 
-  it.each(SPECIES)('%s: seven, every one a real word of that species', (s) => {
-    expect(LOOK_HEAD_WORDS[s]).toHaveLength(7);
+  it.each(SPECIES)('%s: the compact row, every one a real word of that species', (s) => {
+    // Seven for a dog; eight for a cat since D2-4 (CUL-1066) added `played`, the second
+    // positive, so the good direction costs the same tap as the bad one (§4.1 rule 5).
+    expect(LOOK_HEAD_WORDS[s]).toHaveLength(s === 'cat' ? 8 : 7);
     const keys = new Set(LOOK_WORDS[s].map((w) => w.key));
     for (const key of LOOK_HEAD_WORDS[s]) expect(keys.has(key)).toBe(true);
   });

@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 
+import { stripSqlComments } from '../guards/sqlComments';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // The security posture of every SECURITY DEFINER / trigger function this repo
 // owns, derived by REPLAYING `supabase/migrations/` in filename order and
@@ -87,6 +89,34 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     definer: true, pinned: true, execute: [],
     why: 'CUL-867 (Noticed N-1) — DEFINER so the parent lookup is not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
   },
+  // 074 (CUL-1203): a per-incident read may only sit on an event of its own pet.
+  // The INSERT arm is the lookup (so DEFINER, the B-520 class); the UPDATE arm
+  // freezes event_id / pet_id and reads nothing.
+  enforce_event_ai_analysis_same_pet: {
+    definer: true, pinned: true, execute: [],
+    why: 'CUL-1203 (074) — DEFINER so the insert lookup is not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
+  },
+  // 082 (CUL-1415 / CUL-1416): the care record's one same-pet guard over three
+  // tables. DEFINER for the lookups; its ownership arm reads auth.uid() so a write
+  // naming another account's pet is refused here, closing the 047-class oracle.
+  enforce_care_record_same_pet: {
+    definer: true, pinned: true, execute: [],
+    why: 'CUL-1415 / CUL-1416 (082) — DEFINER so the parent lookups are not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
+  },
+  // 075 (CUL-1201 part 3): event_ai_analysis's updated_at, strictly increasing.
+  // Reads nothing, so INVOKER; a trigger fires without an EXECUTE check, so no
+  // client role needs it.
+  set_updated_at_monotonic: {
+    definer: false, pinned: true, execute: [],
+    why: 'CUL-1201 (075) — reads no table, so INVOKER; search_path pinned and revoked so it is not RPC-callable.',
+  },
+  // 075 (CUL-1267): a client UPDATE may not move a read's stamps. INVOKER is the
+  // point, not a default: it judges `current_user`, which under DEFINER would be
+  // the owner, and the freeze would stop nothing.
+  freeze_event_ai_analysis_stamps: {
+    definer: false, pinned: true, execute: [],
+    why: 'CUL-1267 (075) — must stay INVOKER (it tests current_user; DEFINER would freeze nothing); pinned and revoked so it is not RPC-callable.',
+  },
 
   // ── B-403: the auth/utility functions ─────────────────────────────────────
   handle_new_user: {
@@ -107,56 +137,44 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     definer: true, pinned: true, execute: ['authenticated'],
     why: 'B-403 — assessed and KEPT for authenticated (6 Edge Functions call it with the caller JWT and fail OPEN on error); anon/PUBLIC closed since 031.',
   },
+
+  // ── CUL-1051 (069): the trial-window ratchet ──────────────────────────────
+  // INVOKER on purpose, and the asymmetry with the B-520 block above is the
+  // point: those four do a cross-table lookup that RLS would filter, this one
+  // reads NOTHING — it compares two columns of the row in front of it. Elevation
+  // would be privilege with no purpose, and since it raises nothing it cannot
+  // become the CUL-867/C-31 cross-account oracle a DEFINER guard with a RAISE
+  // can. Revoked anyway so the trigger family has one posture (067's note).
+  enforce_diet_trial_initial_window_ratchet: {
+    definer: false, pinned: true, execute: [],
+    why: 'CUL-1051 (069) — INVOKER because it reads nothing and raises nothing; revoked to keep the trigger family uniform.',
+  },
+
+  // ── CUL-694 (072): the displaced-weight keeper ────────────────────────────
+  // DEFINER for a different reason than the B-520 block: not so a lookup escapes
+  // RLS, but because the table it writes has NO client INSERT policy on purpose
+  // (the trigger is its only writer). Its one read is its own table scoped to
+  // OLD.id, and it raises nothing (C-31). Revoked, so the elevation is reachable
+  // only by firing, never by RPC.
+  preserve_displaced_pet_weight: {
+    definer: true, pinned: true, execute: [],
+    why: 'CUL-694 (072) — DEFINER because clients hold no INSERT policy on pet_weight_displacements; revoked so it is not RPC-callable.',
+  },
 };
 
+// ⚠ KNOWN GAP, stated because an undocumented blind spot reads as coverage
+// (C-38). `NAMES` is `Object.keys(EXPECTED)` and every regex below is built from
+// that alternation, so this registry is an INCLUSION list: a function missing
+// from it is not asserted loosely, it is not looked at AT ALL. Three trigger
+// functions are currently outside it — `enforce_diet_trial_visit_same_pet`
+// (066), `enforce_vet_visit_pet_immutable` and `enforce_vet_visit_link_same_pet`
+// (067), the last of which IS `SECURITY DEFINER`. Registering them means ruling
+// on each one's intended posture, which is a Trust & Safety call per function
+// rather than a mechanical add, so it is filed as its own issue rather than
+// folded into CUL-1051's migration PR. Do not read a green run here as "every
+// trigger function in the repo is hardened".
+
 // ── SQL lexing ───────────────────────────────────────────────────────────────
-
-// Strip `--` and `/* */` comments while respecting single-quoted strings AND
-// dollar-quoted bodies. Dollar-quoting is the part `lib/storagePolicies.test.ts`
-// does not need and this test does: every function body here is `$$ … $$`, and
-// 047's rollback section is a large block of commented-out SQL that would
-// otherwise replay as if it were live — which is exactly the M4 failure that
-// test documents, in a file that has far more commented SQL than live SQL.
-function stripSqlComments(sql: string): string {
-  let out = '';
-  for (let i = 0; i < sql.length; i++) {
-    const rest = sql.slice(i);
-
-    // Dollar-quoted body: copy verbatim through the matching closing tag.
-    const dollar = /^\$([A-Za-z_]\w*)?\$/.exec(rest);
-    if (dollar) {
-      const tag = dollar[0];
-      const end = sql.indexOf(tag, i + tag.length);
-      const stop = end === -1 ? sql.length : end + tag.length;
-      out += sql.slice(i, stop);
-      i = stop - 1;
-      continue;
-    }
-
-    const c = sql[i];
-    if (c === "'") {
-      const end = sql.indexOf("'", i + 1);
-      const stop = end === -1 ? sql.length : end + 1;
-      out += sql.slice(i, stop);
-      i = stop - 1;
-      continue;
-    }
-    if (c === '-' && sql[i + 1] === '-') {
-      while (i < sql.length && sql[i] !== '\n') i++;
-      out += '\n';
-      continue;
-    }
-    if (c === '/' && sql[i + 1] === '*') {
-      i += 2;
-      while (i < sql.length && !(sql[i] === '*' && sql[i + 1] === '/')) i++;
-      i++;
-      out += ' ';
-      continue;
-    }
-    out += c;
-  }
-  return out;
-}
 
 // Split on `;` at top level. A function body is full of them, so the same
 // dollar-quote awareness is required here or every `CREATE FUNCTION` shatters.

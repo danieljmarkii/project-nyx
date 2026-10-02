@@ -19,6 +19,12 @@ jest.mock('react-native-safe-area-context', () => {
   };
 });
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
+// Design v2 (D2-5): the screen now imports the month's reads, which reach lib/supabase
+// at import time. This suite is the FLAG-OFF path — `useAllowlistFlag` is false above, so
+// `useDesignV2` is false and nothing behind it mounts or reads; the stub exists for the
+// import edge only. The flag-on wiring and the async flag-off proof are app/insights/
+// designV2.test.tsx.
+jest.mock('../../lib/monthReads', () => ({ readMonthFacts: jest.fn(), readDayRows: jest.fn() }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
 // Noticed (CUL-874 / N-5). This suite is the FLAG-OFF path: `useAllowlistFlag` returns
@@ -30,7 +36,7 @@ jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet:
 jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
 jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
 jest.mock('../../hooks/useDietTrial', () => ({
-  useDietTrial: () => ({ input: null, isLoading: false, reload: jest.fn(), inputIsForActivePet: false }),
+  useDietTrial: () => ({ input: null, isLoading: false, reload: jest.fn(), inputIsForPet: false }),
 }));
 jest.mock('../../lib/looks', () => ({
   loadLookDays: jest.fn(async () => []),

@@ -1,14 +1,12 @@
 import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Header } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { VisitDetailBody } from '../../components/vetvisits/VisitDetailBody';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { readVetVisitDetail, type VetVisitDetail } from '../../lib/vetVisits';
 
@@ -18,10 +16,6 @@ import { readVetVisitDetail, type VetVisitDetail } from '../../lib/vetVisits';
 // `deleted_at` — a control that soft-deletes a visit the live report still counts
 // would move nothing an owner can see.
 export default function VetVisitScreen() {
-  const eligible = useAllowlistFlag('vet_visits');
-  const optedIn = useBetaOptIn('vet_visits');
-  const enabled = eligible && optedIn;
-
   const { id } = useLocalSearchParams<{ id: string }>();
   const pets = usePetStore((s) => s.pets);
 
@@ -31,7 +25,7 @@ export default function VetVisitScreen() {
   const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
-    if (!enabled || !id) {
+    if (!id) {
       setLoading(false);
       setLoaded(true);
       return;
@@ -52,15 +46,13 @@ export default function VetVisitScreen() {
     } finally {
       setLoading(false);
     }
-  }, [enabled, id]);
+  }, [id]);
 
   useFocusEffect(
     useCallback(() => {
       load();
     }, [load]),
   );
-
-  if (!enabled) return <Redirect href="/(tabs)/profile" />;
 
   // The RECORD's pet, never the active one (CUL-574 / AC 11): open a visit, switch
   // the store's active pet, and this screen still names the pet whose visit it is.

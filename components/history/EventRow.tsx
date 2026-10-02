@@ -8,13 +8,15 @@ import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
 import { IntakeRating } from '../log/IntakeChipRow';
 import { IntakeBadge } from '../log/IntakeBadge';
-import { AdherenceChipRow, DoseAdherence } from '../log/AdherenceChipRow';
+import { AdherenceChipRow } from '../log/AdherenceChipRow';
 import {
   vehicleLabel, isComboDoseInDoubt, DOSE_IN_DOUBT_TAG,
-  pairedVehicleLinkLabel, pairedDoseLinkLabel, formatDrugLabel,
+  pairedVehicleLinkLabel, pairedDoseLinkLabel,
 } from '../../lib/medications';
+import { asDoseAdherence, doseDrugLabel } from '../../lib/doseDisplay';
 import { foodFormatTag, mealRowLabel } from '../../lib/food';
-import { describeOccurredAt } from '../../lib/utils';
+import { describeOccurredAt, toLocalDayKey } from '../../lib/utils';
+import { recordDay } from '../../lib/recordDates';
 import { kgToLbs } from '../../lib/weight';
 import { describeLook, lookSummary, isLookRow } from '../../lib/lookDisplay';
 import { usePetStore } from '../../store/petStore';
@@ -60,8 +62,18 @@ interface Props {
 
 const FALLBACK_CONFIG = { label: 'Event', hasSeverity: false };
 
-function formatDatePart(iso: string): string {
-  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+/**
+ * The row's date, the event's LOCAL day through the one formatter (H-10, CUL-1126): "Sep 16"
+ * in the current year, "Sep 16, 2025" outside it, so a row paged back past New Year never
+ * reads as this year's. `today` is a parameter so the rule is testable; each row reads its
+ * own at render, so two rows could disagree only if a render straddled New Year's midnight,
+ * which a list History v2 replaces does not earn a threaded prop for. An unreadable
+ * instant prints nothing rather than "Invalid Date".
+ */
+export function formatDatePart(iso: string, today: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '';
+  return recordDay(toLocalDayKey(at), today) ?? '';
 }
 
 export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete }: Props) {
@@ -92,9 +104,18 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
   // Medication dose (B-117 PR 8): the drug name (generic, brand appended when it
   // adds info) + the read-only adherence chip — the dose twin of foodLabel + the
   // intake badge. AdherenceChipRow renders nothing for a NULL rating, so an unrated
-  // dose stays as quiet as an unrated meal. Shared with TodayZone via formatDrugLabel
-  // (B-161) so the two row surfaces agree on how a dose names its drug.
-  const drugLabel = formatDrugLabel(event.drug_generic_name, event.drug_brand_name);
+  // dose stays as quiet as an unrated meal. The item's name is TodayZone's rule too
+  // (formatDrugLabel, B-161); this row adds the course's name after it, for a course
+  // typed in by hand, which has no item (CUL-1124, `lib/doseDisplay.ts`).
+  const isDose = event.event_type === 'medication';
+  const drugLabel = isDose
+    ? doseDrugLabel({
+      genericName: event.drug_generic_name,
+      brandName: event.drug_brand_name,
+      regimenDrugName: event.regimen_drug_name,
+    })
+    : null;
+  const adherence = asDoseAdherence(event.adherence);
 
   // B-156 Slice B — a quiet read-only vehicle line ("In a treat"), shown only when
   // the owner recorded how the dose was given. NULL/unrecognized → nothing, so an
@@ -107,11 +128,21 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
   // daily scan which dose still needs confirming, without opening every one. The detail
   // screen carries the full ask + the chips to resolve it. Not an alarm; the owner
   // answering (anywhere) clears it by giving the dose an explicit adherence.
+  //
+  // The NARROWED adherence, as the record screen reads it (`app/event/[id].tsx`): a
+  // value this build does not know draws no chip, so it must count as unanswered here
+  // too, or the row would go silent on a dose the record screen marks in doubt.
   const doseInDoubt = isComboDoseInDoubt({
     isCombo: !!event.paired_event_id,
     vehicleIntake: event.paired_vehicle_intake,
-    adherence: event.adherence ?? null,
+    adherence,
   });
+
+  // CUL-1124 — the dose line holds the name AND the chip, so it renders for a dose with
+  // either. It used to render only for a named dose, and took the chip with it: a dose
+  // nothing named showed no Given, Partial, Missed or Refused at all, so a refusal read
+  // exactly like a given dose.
+  const showDoseLine = isDose && (drugLabel !== null || doseInDoubt || adherence !== null);
 
   // Weight reading (B-186 PR 4): the measured value in lbs — the weight analog of
   // foodLabel/drugLabel. The value IS the event (there's no badge to pair it with),
@@ -158,7 +189,7 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
   // two different times, and so the note-less branch is the ORIGINAL element.
   const timeText = (
     <ThemedText style={styles.time}>
-      {formatDatePart(event.occurred_at)}, {timeDisplay.compact}
+      {formatDatePart(event.occurred_at, toLocalDayKey(new Date()))}, {timeDisplay.compact}
     </ThemedText>
   );
 
@@ -250,9 +281,17 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
           targetEventId={event.paired_dose_event_id}
         />
 
-        {drugLabel ? (
+        {showDoseLine ? (
           <View style={styles.foodLine}>
-            <ThemedText style={styles.foodName} numberOfLines={1}>{drugLabel}</ThemedText>
+            {/* With nothing to name the drug, the slot stays EMPTY, never a sentence
+                (the PM's ruling on CUL-1124): "no medicine named" would be false while
+                the dose's item or course is still on its way to this phone. The spacer
+                keeps the chip on the right rail it holds under a named dose. */}
+            {drugLabel ? (
+              <ThemedText style={styles.foodName} numberOfLines={1}>{drugLabel}</ThemedText>
+            ) : (
+              <View style={styles.drugNameSpacer} />
+            )}
             {/* Read-only adherence badge — concern states (partial/missed/refused)
                 light rose, 'given' lights accent; NULL renders nothing. An in-doubt
                 combo dose (null adherence) shows the rose "Unconfirmed" tag instead. */}
@@ -263,7 +302,7 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
                 <ThemedText style={styles.inDoubtTagText}>{DOSE_IN_DOUBT_TAG}</ThemedText>
               </View>
             ) : (
-              <AdherenceChipRow value={(event.adherence ?? null) as DoseAdherence | null} />
+              <AdherenceChipRow value={adherence} />
             )}
           </View>
         ) : null}
@@ -394,6 +433,11 @@ const styles = StyleSheet.create({
     // flex:1 lets the name absorb all slack and truncate, pinning the
     // read-only intake badge flush-right under the timestamp so it reads
     // as a scannable right rail instead of drifting with text length.
+    flex: 1,
+  },
+  // The empty name slot of a dose nothing names (CUL-1124): takes the name's flex so the
+  // chip stays flush right, where it sits under every named dose.
+  drugNameSpacer: {
     flex: 1,
   },
   vehicleNote: {

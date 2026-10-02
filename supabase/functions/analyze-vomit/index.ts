@@ -11,8 +11,10 @@
 // on the ABSENCE of one. The recommendation enum has no reassuring value.
 //
 // Escalation = context-assembled floor (PM 2026-05-24):
-//   - the vision model raises VISUAL flags (blood, suspected foreign
-//     material) from the photo;
+//   - VISUAL flags (blood, suspected foreign material) come from the photo:
+//     derived from the model's structured fields (blood_present,
+//     foreign_material_present) and unioned with the model's own array, so
+//     a flag the model drops still escalates (CUL-534, stool parity);
 //   - this function computes CONTEXTUAL flags (repeated vomiting, feline
 //     reduced intake, concurrent lethargy) deterministically from
 //     events+meals, and they FORCE 'worth_a_call' regardless of the photo
@@ -37,17 +39,32 @@ import {
   type FunctionCaps,
   type IncidentCopy,
   type IncidentDescriptor,
+  type ContextualRun,
   type AnalysisWriteBack,
   type AnalysisReadFields as IncidentAnalysisReadFields,
   getToolUseInput,
   sanitizeEnum,
   sanitizeEnumArray,
-  hoursBetween,
   applyEscalationFloor as applyIncidentEscalationFloor,
   selectReadText as selectIncidentReadText,
   buildAnalysisWriteBack as buildIncidentAnalysisWriteBack,
   runIncidentAnalysis,
 } from '../_shared/incident-analysis.ts'
+import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
+import { meetsVomitRepeatRuleAt } from '../_shared/vomitRepeat.ts'
+import type { FloorResult, FloorTier } from '../../../lib/incidentFloor.ts'
+import {
+  buildFloor,
+  buildVomitContext,
+  floorIsOn,
+  floorReadWindows,
+  vomitAnchoredReads,
+  vomitContextWindows,
+  type ContextInput,
+  type IntakeRecord,
+  type FloorRows,
+  type VomitContextRows,
+} from './context.ts'
 
 // The incident-agnostic pure helpers moved to the shared pipeline module in the
 // D2 refactor; re-export them — and their parameter/return types, i.e. the full
@@ -64,20 +81,10 @@ export {
 export type { FunctionCaps, GateState, AnalysisWriteBack } from '../_shared/incident-analysis.ts'
 
 // ── Clinical thresholds (Dr. Chen, 2026-05-24) ────────────────────────────────
-const REPEAT_VOMIT_SHORT_WINDOW_HOURS = 4
-const REPEAT_VOMIT_SHORT_WINDOW_COUNT = 2
-const REPEAT_VOMIT_DAY_WINDOW_HOURS = 24
-const REPEAT_VOMIT_DAY_WINDOW_COUNT = 3
-// Feline reduced-intake fires at the 24h edge (not the textbook 48h) because
-// it only ever fires alongside an active vomit incident — vomiting + anorexia
-// compounds risk toward the hepatic-lipidosis window.
-const FELINE_REDUCED_INTAKE_HOURS = 24
-const CONCURRENT_LETHARGY_HOURS = 24
-// Intake-tracking baseline window: the feline flag keys off ABSENCE of
-// positive intake, which conflates "didn't eat" with "didn't log". Only fire
-// it for owners who actually track intake — i.e. who have rated a meal in the
-// last week — so we never flag a non-logger. (Data caveat, B-027.)
-const INTAKE_BASELINE_WINDOW_DAYS = 7
+// The repeat rule (two within 4 h, three within 24 h) lives in _shared/vomitRepeat.ts,
+// one predicate shared with analyze-stool's EN-7 check (Engines v3 PR-26, C-34).
+// The context windows (feline intake, lethargy, the intake-tracking baseline) and the
+// derivation over them live in ./context.ts, the pure builder (Engines v3 PR-11a).
 
 // ── Enum vocabularies (must match the DB enums in migration 013) ──────────────
 const COLOURS = ['clear', 'white', 'yellow', 'green', 'brown', 'tan', 'pink_red', 'dark_red', 'black_coffee_ground', 'mixed', 'unsure'] as const
@@ -222,9 +229,36 @@ export function parseAnalysisToolResult(response: ClaudeResponse): VomitAnalysis
 
   const appears = input.appears_to_show_vomit === true
   const contents = sanitizeEnumArray(input.contents, CONTENTS)
-  const visualFlags = sanitizeEnumArray(input.visual_flags, VISUAL_FLAGS)
   const modelRecommendation = sanitizeEnum(input.recommendation, RECOMMENDATIONS) as Recommendation | null
   const recommendation = (modelRecommendation ?? 'not_enough_to_say') as Recommendation
+  const bloodPresent = sanitizeEnum(input.blood_present, BLOOD)
+  const foreignPresent = sanitizeEnum(input.foreign_material_present, TRISTATE)
+
+  // Escalating visual flags are DERIVED from the structured clinical fields, then
+  // unioned with any the model set — NEVER the model's array alone (CUL-534; the
+  // analyze-stool template, its adversarial ①, 2026-07-17). A model that records
+  // blood_present = fresh_red / coffee_ground, or foreign_material_present = yes, but
+  // drops the flag from visual_flags AND self-selects monitor would otherwise get
+  // "Keep an eye out" beside its own "Blood: Coffee-ground" row. Deriving here makes the
+  // floor escalate on the PRESENCE of the recorded finding, so a fresh read's card agrees
+  // with the readers that already derive from these fields (generate-signal
+  // deriveIncidentFlags, generate-report unionPresentFlags, ask derivePresentFlags —
+  // clinical-guardrails Pattern 9). It derives from the MODEL's fields, not an owner's
+  // edited ones: a re-run over an edited row still takes its verdict from the fresh read
+  // (CUL-409). It deliberately derives even when appears_to_show_vomit is false: every
+  // reader escalates on these fields without checking it, as stool's floor does, and a
+  // wrong call costs a phone call where a missed haematemesis does not. Present-only: 'unsure' and 'none_visible' derive nothing (an unsure
+  // blood read is CUL-240's soft trigger, never a floor-forcing flag), so this can only
+  // ADD escalations. The model's own read_text / description stay gated on the model's
+  // self-escalation below, so a derived escalation surfaces the deterministic
+  // visualFlagFallback, never prose the model wrote for a monitor read.
+  const visualFlags = Array.from(new Set(sanitizeEnumArray(input.visual_flags, VISUAL_FLAGS)))
+  if ((bloodPresent === 'fresh_red' || bloodPresent === 'coffee_ground') && !visualFlags.includes('blood')) {
+    visualFlags.push('blood')
+  }
+  if (foreignPresent === 'yes' && !visualFlags.includes('suspected_foreign_material')) {
+    visualFlags.push('suspected_foreign_material')
+  }
 
   // B-060 / clinical-guardrails Ambiguity #2 (CUL-152 / B-179): the model emits TWO
   // free-text fields — read_text AND description — and both reach the owner (the
@@ -251,9 +285,9 @@ export function parseAnalysisToolResult(response: ClaudeResponse): VomitAnalysis
     colour: sanitizeEnum(input.colour, COLOURS),
     contents: contents.length > 0 ? contents : null,
     consistency: sanitizeEnum(input.consistency, CONSISTENCIES),
-    blood_present: sanitizeEnum(input.blood_present, BLOOD),
+    blood_present: bloodPresent,
     bile_present: sanitizeEnum(input.bile_present, TRISTATE),
-    foreign_material_present: sanitizeEnum(input.foreign_material_present, TRISTATE),
+    foreign_material_present: foreignPresent,
     // foreign_material_note is model-authored free text, left ungated at parse: it is a
     // short factual fragment description consumed by the structured-fields path (the owner
     // editor and the 'yes'-tier detail/report render), not an n=1 "read". It is NOT true
@@ -272,31 +306,14 @@ export function parseAnalysisToolResult(response: ClaudeResponse): VomitAnalysis
   }
 }
 
-export interface ContextInput {
-  species: string
-  // occurred_at (ISO) of every non-deleted vomit event in the last 24h,
-  // INCLUDING the event being analysed. Uses occurred_at (B-010 representative
-  // point) — imprecise for windowed events but the agreed sort/representative key.
-  recentVomitTimes: string[]
-  thisEventOccurredAt: string
-  // True if the cat has had a meal rated 'most'/'all' within the feline window.
-  hasRecentPositiveIntake: boolean
-  // True if the owner actually tracks intake (any rated meal in the baseline
-  // window) — guards the feline flag against absence-of-logging false positives.
-  tracksIntake: boolean
-  // True if a non-deleted lethargy event was logged within the lethargy window.
-  hasRecentLethargy: boolean
-}
+// The context shape moved to the pure builder with its derivation; re-exported so this
+// file stays the suite's single import surface.
+export type { ContextInput } from './context.ts'
 
 export function computeContextualFlags(input: ContextInput): ContextualFlag[] {
   const flags: ContextualFlag[] = []
 
-  const within = (hours: number) =>
-    input.recentVomitTimes.filter((t) => hoursBetween(t, input.thisEventOccurredAt) <= hours).length
-  if (
-    within(REPEAT_VOMIT_SHORT_WINDOW_HOURS) >= REPEAT_VOMIT_SHORT_WINDOW_COUNT ||
-    within(REPEAT_VOMIT_DAY_WINDOW_HOURS) >= REPEAT_VOMIT_DAY_WINDOW_COUNT
-  ) {
+  if (meetsVomitRepeatRuleAt(input.recentVomitTimes, input.thisEventOccurredAt)) {
     flags.push('repeated_vomiting')
   }
 
@@ -383,20 +400,26 @@ function buildMonitorReadText(petName: string): string {
   return `A single photo on its own can't tell you how ${p} is doing. Keep an eye on ${p} — if it happens again, or ${p} seems unwell or goes off food, your vet is the best call.`
 }
 
-// Escalation on a model-raised visual flag, used when the model didn't write its own
-// read. Names the present concern plainly (the safe direction) and routes to the vet.
-function buildVisualFlagReadText(petName: string, visualFlags: string[]): string {
-  const p = petName || 'your pet'
+// What the photo showed, from the visual flags alone (never the model's words). With no
+// flag, the model's own worth_a_call is the finding, named without a noun it did not give.
+function seenInPhoto(visualFlags: string[]): string {
   const hasBlood = visualFlags.includes('blood')
   const hasForeign = visualFlags.includes('suspected_foreign_material')
-  const seen = hasBlood && hasForeign
+  return hasBlood && hasForeign
     ? "what looks like blood, and something that doesn't look like food,"
     : hasBlood
       ? 'what looks like blood'
       : hasForeign
         ? "something that doesn't look like food"
         : 'something worth a closer look'
-  return `I can see ${seen} in this photo. That's worth a call to your vet about ${p}.`
+}
+
+// Escalation on a visual flag (model-raised or derived from the structured fields,
+// CUL-534), used when the model didn't write its own escalation read. Names the present
+// concern plainly (the safe direction) and routes to the vet.
+function buildVisualFlagReadText(petName: string, visualFlags: string[]): string {
+  const p = petName || 'your pet'
+  return `I can see ${seenInPhoto(visualFlags)} in this photo. That's worth a call to your vet about ${p}.`
 }
 
 // Photo present but unreadable (oversize / undecodable format). Honest about the
@@ -415,6 +438,152 @@ const VOMIT_COPY: IncidentCopy<ContextualFlag> = {
   visualFlagFallback: buildVisualFlagReadText,
   noFlag: buildNoFlagReadText,
 }
+
+// ── EN-0's copy (CUL-1130): the read states the record, anchored to the vomit ──────────
+// Runs only with engines_v3_en0 on for the record's owner (vomitContextualRun below);
+// flag-off every read is VOMIT_COPY's, word for word.
+//
+// The intake template no longer concludes. The shipped "hasn't eaten a full meal
+// recently" was false wherever meals were logged but not rated (the 9/4 read had four,
+// the 9/22 read six), and "recently" was measured from whenever the read ran. This one
+// says what the record held when the read ran, in the app's own rating words, over the
+// window that fired ("before this vomit", or the 24 h before the read when only the
+// read-time half fired). Every clause is pinned to the vomit or to the read's own moment,
+// so the words stay true once stored; none is relative to the day the owner reads them
+// (critique GAP-1). The escalation is unchanged: the
+// feline flag still forces worth_a_call.
+function intakeRecordSentence(p: string, record: IntakeRecord): string {
+  // Past tense, pinned to the moment of the read: a meal back-filled later cannot make it
+  // false (the adversarial pass on this PR: "are logged" went false beside a held
+  // escalation once the morning's meals landed).
+  if (record.window === 'before_vomit') {
+    const span = 'in the 24 hours before this vomit'
+    if (record.mealsLogged === 0) return `When I read this, no meals were logged for ${p} ${span}.`
+    if (record.mealsLogged === 1) return `When I read this, one meal was logged for ${p} ${span}, and it wasn't marked Most or All.`
+    return `When I read this, ${record.mealsLogged} meals were logged for ${p} ${span}, and none was marked Most or All.`
+  }
+  const span = 'in the 24 hours before then'
+  if (record.mealsLogged === 0) return `When I read this, no meals had been logged for ${p} ${span}.`
+  if (record.mealsLogged === 1) return `When I read this, one meal had been logged for ${p} ${span}, and it wasn't marked Most or All.`
+  return `When I read this, ${record.mealsLogged} meals had been logged for ${p} ${span}, and none was marked Most or All.`
+}
+
+export function buildEn0ContextualReadText(petName: string, flags: ContextualFlag[], intakeRecord?: IntakeRecord): string {
+  if (flags.includes('feline_reduced_intake')) {
+    const p = petName || 'your pet'
+    // EN0_CONTEXT_STEP sets the record whenever this flag can fire; the line after `??`
+    // is the defensive form, still a statement about the log, never a conclusion.
+    const record = intakeRecord
+      ? intakeRecordSentence(p, intakeRecord)
+      : `The meal log doesn't show ${p} eating most or all of a meal around this vomit.`
+    return `${record} In a cat that's vomiting, that's worth a call to your vet sooner rather than later.`
+  }
+  return buildContextualReadText(petName, flags)
+}
+
+// A contextual escalation over a photo that escalated on its own: the photo finding leads,
+// named from the visual flags by the same template the visual-only read uses, then the
+// context. On 9/22 the possible foreign material went unsaid behind the intake sentence.
+export function buildEn0PhotoFirstReadText(
+  petName: string,
+  flags: ContextualFlag[],
+  visualFlags: string[],
+  intakeRecord?: IntakeRecord,
+): string {
+  return `I can see ${seenInPhoto(visualFlags)} in this photo. ${buildEn0ContextualReadText(petName, flags, intakeRecord)}`
+}
+
+export function en0VomitCopy(context: ContextInput): IncidentCopy<ContextualFlag> {
+  return {
+    ...VOMIT_COPY,
+    contextual: (petName, flags) => buildEn0ContextualReadText(petName, flags, context.intakeRecord),
+    contextualWithPhotoFinding: (petName, flags, visualFlags) =>
+      buildEn0PhotoFirstReadText(petName, flags, visualFlags, context.intakeRecord),
+  }
+}
+
+// The flags, and flag-on the copy their words come from. The same key gates the context
+// step (context.ts) and this copy; flag-off returns the flags alone, so the pipeline uses
+// VOMIT_COPY exactly as before.
+export function vomitContextualRun(
+  context: ContextInput,
+  engineFlags: EngineFlags,
+): ContextualFlag[] | ContextualRun<ContextualFlag> {
+  const flags = computeContextualFlags(context)
+  const en0 = isEngineKeyOn(engineFlags, 'engines_v3_en0')
+  // EN-4: `floor` is set only when its keys are on (assembleContext), and adds only when it
+  // names a tier, so every other run is exactly the one above.
+  if (context.floor?.tier) {
+    const base = en0 ? en0VomitCopy(context) : VOMIT_COPY
+    return {
+      flags: [...flags, ...floorFlags(context.floor).filter((f) => !flags.includes(f))],
+      copy: en4VomitCopy(base, context.floor),
+      minTier: context.floor.tier,
+    }
+  }
+  return en0 ? { flags, copy: en0VomitCopy(context) } : flags
+}
+
+// ── EN-4's floor (Engines v3 PR-28, CUL-1134) ───────────────────────────────────────
+// The floor RAISES through the flags the read already knows, so the verdict stays
+// worth_a_call and installed builds (which read only `recommendation` and the flags) keep
+// today's words; the new tier rides beside it. Every count row is repeated vomiting, and T3 is
+// lethargy beside the vomit: no new flag value, nothing a shipped reader cannot render.
+const FLOOR_FLAG: Readonly<Record<FloorResult['rows'][number], ContextualFlag>> = {
+  T1: 'repeated_vomiting',
+  T2: 'repeated_vomiting',
+  T3: 'concurrent_lethargy',
+  T6: 'repeated_vomiting',
+  T7: 'repeated_vomiting',
+  T8: 'repeated_vomiting',
+}
+
+export function floorFlags(floor: FloorResult): ContextualFlag[] {
+  return [...new Set(floor.rows.map((r) => FLOOR_FLAG[r]))]
+}
+
+// The floor's words: what the record holds, then why it matters, and never how soon (the chip
+// and the record's action line carry that through the tier-word map, and resolve it against
+// the clock; a stored sentence cannot). "Vomits logged" and times thrown up, never
+// "episodes" (GAP-10). Pattern 8 covers every sentence (index.test.ts).
+export function floorSentence(petName: string, floor: FloorResult, row: FloorResult['rows'][number]): string {
+  const p = petName || 'Your pet'
+  switch (row) {
+    case 'T1':
+      return `${p} has thrown up ${floor.counts.burst} times within about half an hour. That many close together needs a call to your vet.`
+    case 'T2':
+      return `${p} has thrown up at ${floor.counts.span} separate times within about 4 hours. Vomiting that keeps coming back like that needs a call to your vet.`
+    case 'T3':
+      return `${p} has been vomiting and was also logged as low on energy. Together, those need a call to your vet.`
+    case 'T8':
+      return `${p} has vomited on three days in a row. Vomiting that keeps up day after day needs a call to your vet.`
+    case 'T6':
+      return `${p} has thrown up twice within a day. In a dog, that needs a call to your vet.`
+    case 'T7':
+      return floor.ageUnknown
+        ? `${p} has thrown up twice within a day. ${p}'s birthday isn't on file, so this is read the way it would be for a young animal, which can get dehydrated quickly. That needs a call to your vet.`
+        : `${p} has thrown up twice within a day, and is under six months old. A young animal can get dehydrated quickly, so that needs a call to your vet.`
+  }
+}
+
+// Highest acuity leads, one reason, as the shipped template does: a call-now row first, then
+// the intake sentence the base copy writes (a cat not eating around a vomit), then a call-today
+// row. `rows` come loudest first from the floor.
+export function en4VomitCopy(base: IncidentCopy<ContextualFlag>, floor: FloorResult): IncidentCopy<ContextualFlag> {
+  const lead = floor.rows[0]
+  const contextual = (petName: string, flags: ContextualFlag[]): string => {
+    if (floor.tier === 'call_now' || !flags.includes('feline_reduced_intake')) return floorSentence(petName, floor, lead)
+    return base.contextual(petName, flags)
+  }
+  return {
+    ...base,
+    contextual,
+    contextualWithPhotoFinding: (petName, flags, visualFlags) =>
+      `I can see ${seenInPhoto(visualFlags)} in this photo. ${contextual(petName, flags)}`,
+  }
+}
+
+export type { FloorTier }
 
 // The load-bearing read selection, pure + exported so the never-reassure guarantee is
 // unit-tested rather than asserted by a comment. The model's free text reaches the
@@ -486,35 +655,64 @@ export const STRUCTURED_FIELD_KEYS = [
   'description',
 ] as const
 
+// The columns a vomit red flag lives in, and the present-only read of them (Pattern 9).
+// The shared pipeline runs it on the stored row, the stored ai_raw_payload and this
+// run's columns, so a re-read never takes a stored red flag off the record
+// (CUL-532, CUL-1201). Answers the same question as generate-signal's
+// deriveIncidentFlags for the vomit family; the parity test imports it (C-34).
+export const RED_FLAG_COLUMNS = ['blood_present', 'foreign_material_present'] as const
+
+export function presentFlagsFromStructured(row: Record<string, unknown>): string[] {
+  const flags: string[] = []
+  if (row.blood_present === 'fresh_red' || row.blood_present === 'coffee_ground') flags.push('blood')
+  if (row.foreign_material_present === 'yes') flags.push('foreign_material')
+  return flags
+}
+
 // ── Context assembly (DB reads, ownership-scoped via the caller JWT) ───────────
+// The reads only. What they mean is ./context.ts's (buildVomitContext), which is pure,
+// so the harness and the guard corpus can drive it without a database.
 
 async function assembleContext(
   userClient: SupabaseClient,
+  eventId: string,
   petId: string,
   thisEventOccurredAt: string,
   species: string,
+  engineFlags: EngineFlags,
 ): Promise<ContextInput> {
-  const now = Date.now()
-  const dayAgo = new Date(now - 24 * 3_600_000).toISOString()
-  const intakeBaselineAgo = new Date(now - INTAKE_BASELINE_WINDOW_DAYS * 86_400_000).toISOString()
-  const felineWindowAgo = new Date(now - FELINE_REDUCED_INTAKE_HOURS * 3_600_000).toISOString()
-  const lethargyWindowAgo = new Date(now - CONCURRENT_LETHARGY_HOURS * 3_600_000).toISOString()
+  const nowMs = Date.now()
+  const w = vomitContextWindows(nowMs)
+  // Flag-on only: the anchored rows the shipped reads below do not cover (context.ts).
+  const anchored = vomitAnchoredReads(nowMs, thisEventOccurredAt, engineFlags)
+  const anchoredRead = (eventType: 'vomit' | 'meal', select: string, r: { fromIso: string; toIso: string; beforeIso: string } | null) =>
+    r
+      ? userClient
+        .from('events')
+        .select(select)
+        .eq('pet_id', petId)
+        .eq('event_type', eventType)
+        .is('deleted_at', null)
+        .gte('occurred_at', r.fromIso)
+        .lte('occurred_at', r.toIso)
+        .lt('occurred_at', r.beforeIso)
+      : Promise.resolve({ data: [] as unknown[] })
 
-  const [vomitsRes, lethargyRes, mealEventsRes] = await Promise.all([
+  const [vomitsRes, lethargyRes, mealEventsRes, anchoredVomitsRes, anchoredMealsRes] = await Promise.all([
     userClient
       .from('events')
       .select('occurred_at')
       .eq('pet_id', petId)
       .eq('event_type', 'vomit')
       .is('deleted_at', null)
-      .gte('occurred_at', dayAgo),
+      .gte('occurred_at', w.vomitsSinceIso),
     userClient
       .from('events')
-      .select('id')
+      .select('id, occurred_at')
       .eq('pet_id', petId)
       .eq('event_type', 'lethargy')
       .is('deleted_at', null)
-      .gte('occurred_at', lethargyWindowAgo)
+      .gte('occurred_at', w.lethargySinceIso)
       .limit(1),
     // Meal events in the intake baseline window, with their intake rating.
     userClient
@@ -523,33 +721,56 @@ async function assembleContext(
       .eq('pet_id', petId)
       .eq('event_type', 'meal')
       .is('deleted_at', null)
-      .gte('occurred_at', intakeBaselineAgo),
+      .gte('occurred_at', w.intakeBaselineSinceIso),
+    anchoredRead('vomit', 'occurred_at', anchored?.vomits ?? null),
+    anchoredRead('meal', 'occurred_at, meals(intake_rating)', anchored?.meals ?? null),
   ])
 
-  const recentVomitTimes = (vomitsRes.data ?? []).map((r) => r.occurred_at as string)
-  // Ensure this event is represented even if the read raced its own write.
-  if (!recentVomitTimes.includes(thisEventOccurredAt)) recentVomitTimes.push(thisEventOccurredAt)
-
-  const hasRecentLethargy = (lethargyRes.data ?? []).length > 0
-
-  type MealEventRow = { occurred_at: string; meals: { intake_rating: string | null } | { intake_rating: string | null }[] | null }
-  const mealRows = (mealEventsRes.data ?? []) as MealEventRow[]
-  const ratingOf = (m: MealEventRow): string | null => {
-    const meal = Array.isArray(m.meals) ? m.meals[0] : m.meals
-    return meal?.intake_rating ?? null
+  const rows: VomitContextRows = {
+    vomits: [...(vomitsRes.data ?? []), ...(anchoredVomitsRes.data ?? [])] as VomitContextRows['vomits'],
+    lethargy: (lethargyRes.data ?? []) as VomitContextRows['lethargy'],
+    meals: [...(mealEventsRes.data ?? []), ...(anchoredMealsRes.data ?? [])] as VomitContextRows['meals'],
   }
-  const tracksIntake = mealRows.some((m) => ratingOf(m) !== null)
-  const hasRecentPositiveIntake = mealRows.some(
-    (m) => m.occurred_at >= felineWindowAgo && (ratingOf(m) === 'most' || ratingOf(m) === 'all'),
-  )
+  const context = buildVomitContext({ rows, thisEventOccurredAt, species, nowMs, engineFlags })
+  if (!floorIsOn(engineFlags)) return context
+  return { ...context, floor: buildFloor(await readFloorRows(userClient, petId, thisEventOccurredAt), eventId, thisEventOccurredAt, species) }
+}
 
+// EN-4's reads (only under its keys): the vomits with their confidence three days either side,
+// the lethargy a day either side, and the birthday. Each read that does not answer THROWS: a
+// floor over rows it could not see would read absence as calm, and the pipeline's catch keeps
+// every contextual flag the shipped reads already found (CUL-815). Each window is days, so a
+// pet's rows stay far below PostgREST's max-rows (C-42 names report pulls, which this is not).
+async function readFloorRows(userClient: SupabaseClient, petId: string, thisEventOccurredAt: string): Promise<FloorRows> {
+  const vomitMs = Date.parse(thisEventOccurredAt)
+  if (!Number.isFinite(vomitMs)) return { vomits: [], lethargy: [], birthDate: null }
+  const w = floorReadWindows(vomitMs)
+  const [vomitsRes, lethargyRes, petRes] = await Promise.all([
+    userClient
+      .from('events')
+      .select('id, occurred_at, occurred_at_confidence')
+      .eq('pet_id', petId)
+      .eq('event_type', 'vomit')
+      .is('deleted_at', null)
+      .gte('occurred_at', w.vomitsFromIso)
+      .lte('occurred_at', w.vomitsToIso),
+    userClient
+      .from('events')
+      .select('occurred_at')
+      .eq('pet_id', petId)
+      .eq('event_type', 'lethargy')
+      .is('deleted_at', null)
+      .gte('occurred_at', w.lethargyFromIso)
+      .lte('occurred_at', w.lethargyToIso),
+    userClient.from('pets').select('date_of_birth').eq('id', petId).maybeSingle(),
+  ])
+  for (const r of [vomitsRes, lethargyRes, petRes]) {
+    if (r.error) throw new Error(`Floor read failed: ${r.error.message}`)
+  }
   return {
-    species,
-    recentVomitTimes,
-    thisEventOccurredAt,
-    hasRecentPositiveIntake,
-    tracksIntake,
-    hasRecentLethargy,
+    vomits: (vomitsRes.data ?? []) as FloorRows['vomits'],
+    lethargy: (lethargyRes.data ?? []) as FloorRows['lethargy'],
+    birthDate: ((petRes.data as { date_of_birth?: string | null } | null)?.date_of_birth) ?? null,
   }
 }
 
@@ -567,7 +788,9 @@ const FLAG_KEY = 'ai_vomit_read_enabled'
 
 // ── The vomit descriptor (D2) ───────────────────────────────────────────────────
 
-const VOMIT_DESCRIPTOR: IncidentDescriptor<VomitAnalysis, ContextualFlag> = {
+// Exported for pipeline.test.ts, which drives the real descriptor through the shared
+// pipeline with the EN-0 key on and off.
+export const VOMIT_DESCRIPTOR: IncidentDescriptor<VomitAnalysis, ContextualFlag> = {
   functionName: 'analyze-vomit',
   eventTypes: ['vomit'],
   wrongEventTypeMessage: 'Event is not a vomit event',
@@ -578,12 +801,22 @@ const VOMIT_DESCRIPTOR: IncidentDescriptor<VomitAnalysis, ContextualFlag> = {
   systemPrompt: SYSTEM_PROMPT,
   tool: ANALYZE_TOOL,
   userMessageText: 'Analyse this photo of pet vomit.',
+  // The descriptor half of rule_version (engineStamps.ts): bump with any change to
+  // which findings become flags or to the contextual derivation (./context.ts).
+  // 'vomit2': EN-0's union step and copy (CUL-1130). Flag-off rows carry it too; their
+  // derivation is vomit1's, and their engine_flags stamp ('{}') says so.
+  // 'vomit3': EN-4's floor (CUL-1134), which adds flags and a tier only under
+  // engines_v3_en4 + engines_v3_en3; flag-off rows carry it too and derive as vomit2 did.
+  ruleVersion: 'vomit3',
+  floorEngineKey: 'engines_v3_en4',
   parseToolResult: parseAnalysisToolResult,
   appearsToShowSubject: (analysis) => analysis.appears_to_show_vomit,
-  computeContextualFlags: async (userClient, { petId, occurredAt, species }) =>
-    computeContextualFlags(await assembleContext(userClient, petId, occurredAt, species)),
+  computeContextualFlags: async (userClient, { eventId, petId, occurredAt, species, engineFlags }) =>
+    vomitContextualRun(await assembleContext(userClient, eventId, petId, occurredAt, species, engineFlags), engineFlags),
   copy: VOMIT_COPY,
   buildStructuredValues: buildVomitStructuredValues,
+  redFlagColumns: RED_FLAG_COLUMNS,
+  presentFlagsFromStructured,
 }
 
 const handler = (req: Request): Promise<Response> => runIncidentAnalysis(VOMIT_DESCRIPTOR, req)

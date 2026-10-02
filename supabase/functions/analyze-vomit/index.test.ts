@@ -18,15 +18,24 @@ import {
   selectDescription,
   buildAnalysisWriteBack,
   STRUCTURED_FIELD_KEYS,
+  RED_FLAG_COLUMNS,
+  presentFlagsFromStructured,
   detectImageMediaType,
   bytesToBase64,
   resolveGateState,
   resolveFlagValue,
   resolveCaps,
+  buildEn0ContextualReadText,
+  buildEn0PhotoFirstReadText,
+  en0VomitCopy,
+  vomitContextualRun,
   type ContextInput,
   type VomitAnalysis,
   type FunctionCaps,
 } from './index.ts'
+import { deriveIncidentFlags } from '../generate-signal/detection.ts'
+import { selectReadText as selectSharedReadText, shouldCollapsePartialRead } from '../_shared/incident-analysis.ts'
+import type { IntakeRecord } from './context.ts'
 
 // ── Cap + flag gate (T2-3) ────────────────────────────────────────────────────
 // analyze-vomit free caps are daily 10 / monthly 200, identical across tiers (D-M2).
@@ -332,6 +341,163 @@ Deno.test('parseAnalysisToolResult — model sets a visual flag but self-selects
   })
   assertEquals(read.toLowerCase().includes('blood'), true)     // names the present concern
   assertEquals(/\b(worry|normal|typical|fine)\b/i.test(read), false) // never the soft model line
+})
+
+// ── CUL-534: the floor escalates on the STRUCTURED red flag, not the model's
+// (droppable) visual_flags array — analyze-stool's adversarial ① (2026-07-17), brought
+// to vomit. A model that records blood / foreign material but omits the flag AND
+// self-selects monitor must still escalate, and must surface the deterministic
+// flag-named read, never the prose it wrote for a monitor read. ──
+
+// The shared pipeline's steps 7–8b over one parse, so each case below asserts what the
+// owner would actually see, not only the array.
+function floorAndRead(r: VomitAnalysis) {
+  const rec = applyEscalationFloor({
+    modelRecommendation: r.recommendation,
+    appearsToShowVomit: r.appears_to_show_vomit,
+    hasPhoto: true,
+    visualFlags: r.visual_flags,
+    contextualFlags: [],
+  })
+  const read = selectReadText({
+    petName: 'Mochi', recommendation: rec, contextualFlags: [],
+    visualFlags: r.visual_flags, modelReadText: r.read_text, photoUnreadable: false, hasPhoto: true,
+  })
+  const description = selectDescription({
+    modelDescription: r.description, recommendation: rec, contextualFlags: [], photoUnreadable: false,
+  })
+  return { rec, read, description }
+}
+
+Deno.test('parseAnalysisToolResult — derives "blood" from blood_present=coffee_ground when the model omits the flag and says monitor (CUL-534)', () => {
+  // The Engines v3 critique's case (CUL-1268 MFU-9): pre-fix this read "Keep an eye out"
+  // beside its own "Blood: Coffee-ground" row while Home's card, deriving from the
+  // field, said to call.
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true,
+    blood_present: 'coffee_ground',
+    visual_flags: [],          // the model dropped the flag...
+    recommendation: 'monitor', // ...and under-called the recommendation
+    description: 'Some dark flecks in brown liquid, nothing unusual after a meal.', // must NOT surface
+    read_text: 'Keep an eye out, this looks fairly typical.',                     // must NOT surface
+  }))!
+  assertEquals(r.visual_flags, ['blood']) // derived from the structured field
+  assertStrictEquals(r.read_text, null)
+  assertStrictEquals(r.description, null)
+  const { rec, read, description } = floorAndRead(r)
+  assertStrictEquals(rec, 'worth_a_call')
+  assertEquals(read.toLowerCase().includes('blood'), true)
+  assertEquals(/keep an eye|typical|unusual|fine|normal/i.test(read), false)
+  assertStrictEquals(description, null)
+})
+
+Deno.test('parseAnalysisToolResult — derives "blood" from blood_present=fresh_red when the flag is omitted (CUL-534)', () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true, blood_present: 'fresh_red', visual_flags: [], recommendation: 'monitor',
+  }))!
+  assertEquals(r.visual_flags, ['blood'])
+  assertStrictEquals(floorAndRead(r).rec, 'worth_a_call')
+})
+
+Deno.test('parseAnalysisToolResult — derives "suspected_foreign_material" from foreign_material_present=yes when the flag is omitted (CUL-534)', () => {
+  // The CUL-240 round-2 residual: a 'yes' + 'monitor' row put the model's raw note on a
+  // monitor card through VomitAnalysisSection's 'yes' path. With the flag derived, a
+  // 'yes' foreign read cannot leave the floor as anything but worth_a_call.
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true,
+    foreign_material_present: 'yes',
+    foreign_material_note: 'looks like a piece of string, usually passes',
+    visual_flags: [],
+    recommendation: 'monitor',
+  }))!
+  assertEquals(r.visual_flags, ['suspected_foreign_material'])
+  const { rec, read } = floorAndRead(r)
+  assertStrictEquals(rec, 'worth_a_call')
+  assertEquals(read.includes("doesn't look like food"), true)
+  assertEquals(read.includes('string'), false) // the note never reaches the read
+})
+
+Deno.test('parseAnalysisToolResult — derives both flags when both fields are present; the fallback names both (CUL-534)', () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true, blood_present: 'fresh_red', foreign_material_present: 'yes',
+    visual_flags: [], recommendation: 'not_enough_to_say',
+  }))!
+  assertEquals([...r.visual_flags].sort(), ['blood', 'suspected_foreign_material'])
+  const { rec, read } = floorAndRead(r)
+  assertStrictEquals(rec, 'worth_a_call')
+  assertEquals(read.includes('blood') && read.includes("doesn't look like food"), true)
+})
+
+Deno.test('parseAnalysisToolResult — no double-count when the model sets both the field and the flag (CUL-534)', () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true,
+    blood_present: 'fresh_red',
+    foreign_material_present: 'yes',
+    visual_flags: ['blood', 'suspected_foreign_material', 'blood'], // a repeat is collapsed too
+    recommendation: 'worth_a_call',
+  }))!
+  assertEquals(r.visual_flags, ['blood', 'suspected_foreign_material']) // union, exactly one each
+})
+
+Deno.test("parseAnalysisToolResult — a model-set flag with no supporting field is kept (the union only ADDS) (CUL-534)", () => {
+  // The derivation never removes a flag the model raised: escalate on presence in
+  // either signal, never the weaker of the two.
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true, blood_present: 'unsure', visual_flags: ['blood'], recommendation: 'monitor',
+  }))!
+  assertEquals(r.visual_flags, ['blood'])
+  assertStrictEquals(floorAndRead(r).rec, 'worth_a_call')
+})
+
+Deno.test('parseAnalysisToolResult — present-only: unsure / none_visible / no / a hallucinated value derive NO flag (CUL-534)', () => {
+  // Pattern 9's derivation is present-only. An 'unsure' blood read is CUL-240's soft
+  // trigger (a label on the card), never a floor-forcing flag; deriving one here would
+  // put every hard-to-read photo on "Worth a call".
+  for (const [blood, foreign] of [
+    ['none_visible', 'no'],
+    ['unsure', 'unsure'],
+    ['none_visible', 'unsure'],
+    ['unsure', 'no'],
+    ['bright_red', 'maybe'], // invalid enums sanitize to null, then derive nothing
+  ]) {
+    const r = parseAnalysisToolResult(makeToolUse({
+      appears_to_show_vomit: true, blood_present: blood, foreign_material_present: foreign,
+      visual_flags: [], recommendation: 'monitor',
+    }))!
+    assertEquals(r.visual_flags, [], `${blood} / ${foreign}`)
+    assertStrictEquals(floorAndRead(r).rec, 'monitor', `${blood} / ${foreign}`)
+  }
+})
+
+Deno.test('parseAnalysisToolResult — derives even when appears_to_show_vomit is false: a recorded finding escalates over "not vomit" (CUL-534)', () => {
+  // Deliberate, and pinned so a later "only derive on a vomit photo" gate cannot slip in:
+  // every reader (deriveIncidentFlags, unionPresentFlags, derivePresentFlags) escalates on
+  // these fields without checking appears, as stool's floor does. Gating here would bring
+  // back the split this issue closes: "Not enough to say" on the card, "call" on Home.
+  // Dr. Chen: a wrong call costs a phone call; a haematemesis misread as "not vomit" does not.
+  for (const fields of [
+    { blood_present: 'fresh_red' },
+    { foreign_material_present: 'yes' },
+  ]) {
+    const r = parseAnalysisToolResult(makeToolUse({
+      appears_to_show_vomit: false, ...fields, visual_flags: [], recommendation: 'not_enough_to_say',
+    }))!
+    assertEquals(r.visual_flags.length, 1, JSON.stringify(fields))
+    assertStrictEquals(floorAndRead(r).rec, 'worth_a_call', JSON.stringify(fields))
+  }
+})
+
+Deno.test('parseAnalysisToolResult — a partial read whose readable photo records blood escalates instead of collapsing (CUL-534)', () => {
+  // Pipeline step 7b: a benign partial read collapses to not_enough_to_say and drops the
+  // structured fields. Before CUL-534 a coffee_ground-with-no-flag partial read collapsed,
+  // erasing the finding from the card AND from every reader of the fields. The derived flag
+  // escalates at step 7, which runs first, so the collapse never fires.
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_vomit: true, blood_present: 'coffee_ground', visual_flags: [], recommendation: 'monitor',
+  }))!
+  const { rec } = floorAndRead(r)
+  assertStrictEquals(rec, 'worth_a_call')
+  assertStrictEquals(shouldCollapsePartialRead({ usableCount: 1, totalCount: 2, recommendation: rec }), false)
 })
 
 // ── selectDescription: the POST-FLOOR gate that gives `description` the same
@@ -651,6 +817,138 @@ Deno.test('selectReadText — every deterministic template it emits never reassu
   }
 })
 
+// ── EN-0 (CUL-1130): the read states the record, and names the photo finding first ──────
+// Flag-on only (vomitContextualRun). Pattern 8 over every string the EN-0 copy can build,
+// Pattern 10 unchanged (the model's words never ride a contextual read), and the two reads
+// the issue names, word for word.
+
+type VFlag = 'repeated_vomiting' | 'feline_reduced_intake' | 'concurrent_lethargy'
+const EN0_RECORDS: (IntakeRecord | undefined)[] = [
+  undefined,
+  ...(['before_vomit', 'before_read'] as const).flatMap((window) => [0, 1, 2, 6].map((mealsLogged) => ({ window, mealsLogged }))),
+]
+const FLAG_SETS: VFlag[][] = [
+  ['feline_reduced_intake'], ['repeated_vomiting'], ['concurrent_lethargy'],
+  ['repeated_vomiting', 'feline_reduced_intake', 'concurrent_lethargy'],
+]
+const VISUAL_SETS = [[], ['blood'], ['suspected_foreign_material'], ['blood', 'suspected_foreign_material']]
+
+function en0Strings(): string[] {
+  const out: string[] = []
+  for (const pet of ['Mochi', '']) {
+    for (const record of EN0_RECORDS) {
+      for (const flags of FLAG_SETS) {
+        out.push(buildEn0ContextualReadText(pet, flags, record))
+        for (const visual of VISUAL_SETS) out.push(buildEn0PhotoFirstReadText(pet, flags, visual, record))
+      }
+    }
+  }
+  return out
+}
+
+Deno.test('EN-0 copy — every string it can build never reassures, never shouts, never concludes (Pattern 8)', () => {
+  const all = en0Strings()
+  assertEquals(all.length > 300, true)
+  for (const t of all) {
+    assertEquals(REASSURE_VOCAB.test(t), false, `reassured: "${t}"`)
+    assertEquals(t.includes('!'), false, t)
+    // The shipped conclusion, and any clause relative to the day the owner reads it (GAP-1).
+    assertEquals(/hasn't eaten|\brecently\b|\byesterday\b|\btoday\b|\blast night\b/i.test(t), false, `concluded or dated: "${t}"`)
+    assertEquals(/vet/.test(t), true, `no route to the vet: "${t}"`)
+  }
+})
+
+Deno.test('EN-0 copy — the 8/19 read states the six unrated meals before the vomit', () => {
+  assertStrictEquals(
+    buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'before_vomit', mealsLogged: 6 }),
+    "When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+  )
+})
+
+Deno.test('EN-0 copy — ate, vomited, then refused, read late: the record before the READ, said so', () => {
+  assertStrictEquals(
+    buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'before_read', mealsLogged: 2 }),
+    "When I read this, 2 meals had been logged for Nyx in the 24 hours before then, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+  )
+  assertStrictEquals(
+    buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'before_vomit', mealsLogged: 0 }),
+    "When I read this, no meals were logged for Nyx in the 24 hours before this vomit. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+  )
+})
+
+Deno.test('EN-0 copy — the 9/22 read names the possible foreign material first, then the meals', () => {
+  assertStrictEquals(
+    buildEn0PhotoFirstReadText('Nyx', ['feline_reduced_intake'], ['suspected_foreign_material'], { window: 'before_vomit', mealsLogged: 6 }),
+    "I can see something that doesn't look like food in this photo. When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+  )
+})
+
+Deno.test('EN-0 copy — repeated vomiting and lethargy keep their shipped words', () => {
+  for (const flags of [['repeated_vomiting'], ['concurrent_lethargy'], ['repeated_vomiting', 'concurrent_lethargy']] as VFlag[][]) {
+    assertStrictEquals(buildEn0ContextualReadText('Mochi', flags), buildContextualReadText('Mochi', flags))
+  }
+})
+
+const en0Ctx: ContextInput = {
+  species: 'cat', recentVomitTimes: [], thisEventOccurredAt: '2026-09-22T01:30:00Z',
+  hasRecentPositiveIntake: false, tracksIntake: true, hasRecentLethargy: false,
+  intakeRecord: { window: 'before_vomit', mealsLogged: 6 },
+}
+const en0Base = { ...base, recommendation: 'worth_a_call' as const, contextualFlags: ['feline_reduced_intake'] as VFlag[] }
+const MODEL_WORDS = 'MODEL WORDS: a totally normal hairball, nothing to worry about.'
+
+Deno.test('EN-0 selection — a visual flag leads; the model\'s words never ride a contextual read (Pattern 10)', () => {
+  const out = selectSharedReadText(en0VomitCopy(en0Ctx), { ...en0Base, visualFlags: ['blood'], modelReadText: MODEL_WORDS, modelEscalated: true })
+  assertEquals(out.startsWith('I can see what looks like blood in this photo. When I read this, 6 meals were logged'), true, out)
+  assertEquals(out.includes('MODEL WORDS'), false)
+})
+
+Deno.test('EN-0 selection — the model\'s own call with no visual flag leads from a template ("the model\'s own call included")', () => {
+  const out = selectSharedReadText(en0VomitCopy(en0Ctx), { ...en0Base, modelReadText: MODEL_WORDS, modelEscalated: true })
+  assertEquals(out.startsWith('I can see something worth a closer look in this photo.'), true, out)
+  assertEquals(out.includes('MODEL WORDS'), false)
+})
+
+Deno.test('EN-0 selection — no photo finding, no lead: a calm model read, an unreadable photo, no photo', () => {
+  const plain = buildEn0ContextualReadText('Mochi', ['feline_reduced_intake'], en0Ctx.intakeRecord)
+  const copy = en0VomitCopy(en0Ctx)
+  assertStrictEquals(selectSharedReadText(copy, { ...en0Base, modelEscalated: false }), plain)
+  assertStrictEquals(selectSharedReadText(copy, { ...en0Base, visualFlags: ['blood'], photoUnreadable: true, modelEscalated: true }), plain)
+  assertStrictEquals(selectSharedReadText(copy, { ...en0Base, visualFlags: ['blood'], hasPhoto: false, modelEscalated: true }), plain)
+})
+
+Deno.test('EN-0 selection — every non-contextual path is VOMIT_COPY\'s, word for word', () => {
+  const copy = en0VomitCopy(en0Ctx)
+  for (const p of [
+    { ...base, recommendation: 'monitor' as const },
+    { ...base, recommendation: 'worth_a_call' as const, visualFlags: ['blood'], modelReadText: null },
+    { ...base, recommendation: 'worth_a_call' as const, visualFlags: ['blood'], modelReadText: MODEL_WORDS },
+    { ...base, recommendation: 'not_enough_to_say' as const },
+    { ...base, recommendation: 'not_enough_to_say' as const, hasPhoto: false },
+    { ...base, recommendation: 'not_enough_to_say' as const, photoUnreadable: true },
+  ]) {
+    assertStrictEquals(selectSharedReadText(copy, p), selectReadText(p))
+  }
+})
+
+Deno.test('EN-0 gate — flag-off hands the pipeline the flags alone (VOMIT_COPY stands); flag-on, the EN-0 copy', () => {
+  const off = vomitContextualRun(en0Ctx, { on: [], readOk: true })
+  const failed = vomitContextualRun(en0Ctx, { on: [], readOk: false })
+  assertEquals(off, ['feline_reduced_intake'])
+  assertEquals(failed, ['feline_reduced_intake'])
+  const on = vomitContextualRun(en0Ctx, { on: ['engines_v3_en0'], readOk: true })
+  assertEquals(Array.isArray(on), false)
+  if (Array.isArray(on)) return
+  assertEquals(on.flags, ['feline_reduced_intake'])
+  assertStrictEquals(on.copy.contextual('Nyx', on.flags), buildEn0ContextualReadText('Nyx', on.flags, en0Ctx.intakeRecord))
+})
+
+Deno.test('flag-off selection — a contextual read over a visual finding keeps the shipped contextual words', () => {
+  // VOMIT_COPY has no photo-first template, so step 1 is unchanged for flag-off vomit.
+  const out = selectReadText({ ...en0Base, visualFlags: ['blood'], modelReadText: MODEL_WORDS })
+  assertStrictEquals(out, buildContextualReadText('Mochi', ['feline_reduced_intake']))
+})
+
 // ── buildAnalysisWriteBack — the never-clobber guard (B-028) ───────────────────
 // The bit that was untested until this PR: a re-analysis of a row the owner has
 // edited must refresh ONLY the read, never the structured clinical fields the vet
@@ -732,4 +1030,57 @@ Deno.test('buildAnalysisWriteBack — un-edited row with a failed vision call st
   assertStrictEquals(wb.values.ai_raw_payload, null)
   assertStrictEquals(wb.values.blood_present, null)
   assertStrictEquals(wb.values.recommendation, 'not_enough_to_say')
+})
+
+// ── presentFlagsFromStructured — the stored red flags a re-read may not take off (CUL-532, CUL-1201) ──
+
+Deno.test('presentFlagsFromStructured (vomit) — the same answer as generate-signal\'s deriveIncidentFlags, every value', () => {
+  // C-34: a mirrored rule must answer the same question. Home derives the red-flag card from
+  // these columns; the re-read guard must see exactly the flags Home would show, or it
+  // protects a flag Home never raised, or lets one Home did raise be erased.
+  const bloods = ['none_visible', 'fresh_red', 'coffee_ground', 'unsure', null, 'not_an_enum_value']
+  const tristates = ['yes', 'no', 'unsure', null]
+  let checked = 0
+  for (const blood of bloods) {
+    for (const foreign of tristates) {
+      const ours = presentFlagsFromStructured({ blood_present: blood, foreign_material_present: foreign })
+      const home = deriveIncidentFlags({
+        eventId: 'evt',
+        incidentType: 'vomit',
+        occurredAt: '2026-09-01T12:00:00Z',
+        bloodPresent: blood,
+        stoolBloodPresent: 'yes', // stool's column: must never count for a vomit row
+        foreignMaterialPresent: foreign,
+      })
+      assertEquals(ours, home, `blood=${blood} foreign=${foreign}`)
+      checked++
+    }
+  }
+  assertStrictEquals(checked, 24)
+})
+
+Deno.test('presentFlagsFromStructured (vomit) — reads ONLY the columns step 3b selects (RED_FLAG_COLUMNS)', () => {
+  // Non-vacuity: the selected columns alone produce every flag.
+  assertEquals(presentFlagsFromStructured({ blood_present: 'fresh_red', foreign_material_present: 'yes' }), ['blood', 'foreign_material'])
+  // Every other structured column set to a present-looking value, the red-flag columns
+  // absent: nothing. A derivation that read an unselected column would see it here and
+  // never on a real stored row, where only RED_FLAG_COLUMNS are fetched.
+  const decoy: Record<string, unknown> = { stool_blood_present: 'yes' }
+  for (const key of STRUCTURED_FIELD_KEYS) {
+    if (!(RED_FLAG_COLUMNS as readonly string[]).includes(key)) decoy[key] = 'yes'
+  }
+  assertEquals(presentFlagsFromStructured(decoy), [])
+})
+
+Deno.test('presentFlagsFromStructured (vomit) — a stored ai_raw_payload maps through the column set to the same flags', () => {
+  // The pipeline reads the model's original flags by running the stored payload through
+  // buildStructuredValues; the full-upsert values are exactly that mapping.
+  const wb = buildAnalysisWriteBack({
+    humanEdited: false,
+    eventId: 'evt',
+    petId: 'pet',
+    analysis: { ...sampleAnalysis, blood_present: 'coffee_ground', foreign_material_present: 'yes' },
+    readFields: freshReadFields,
+  })
+  assertEquals(presentFlagsFromStructured(wb.values), ['blood', 'foreign_material'])
 })

@@ -26,7 +26,7 @@ import { Card } from '../ui/Card';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { ThemedText } from '../ui/ThemedText';
 import { TrialContaminantNote } from '../food/TrialContaminantNote';
-import { trialManageLabel } from '../../lib/dietTrialCard';
+import { trialManageLabel, trialManageTarget } from '../../lib/dietTrialCard';
 import type {
   TrialCardActionId,
   TrialCardLine,
@@ -63,11 +63,26 @@ interface Props {
 
 export function DietTrialCard({ model, actions, onManage, busyAction, style, onLayout }: Props) {
   // The header affordance's label, or null to hide it. The resolver owns the
-  // per-state judgement (`trialManageLabel`: running → "Replace", empty/abandoned
-  // → suppressed since the body already carries a Start CTA, completed → "+ Start"),
-  // replacing the old '+ Start'/'Change' split that labelled a destructive
-  // end-and-replace as a benign "Change".
+  // per-state judgement (`trialManageLabel`: running → "Manage", empty/abandoned
+  // → suppressed since the body already carries a Start CTA, completed → "+ Start").
   const manageLabel = trialManageLabel(model);
+  // …and WHERE it goes, read from the resolver rather than inferred from the label
+  // above (CUL-1040).
+  //
+  // THE ACCESSIBILITY LABEL IS DERIVED FROM THE TARGET FOR A MEASURED REASON. It used
+  // to be `manageLabel === 'Replace' ? 'Replace this diet trial' : 'Start a diet
+  // trial'`, and when D6a relabelled the verb to `Manage` that comparison went dead:
+  // every running trial — day 53 of 56 included — announced **"Start a diet trial"**
+  // on the control that opens the benign door. That is CUL-156's own fear ("will this
+  // restart my trial?") spoken aloud, to the owners least able to check the screen
+  // against it, and it is what C-7 means by never inventing a label that differs from
+  // the visible text. Caught by `pm-feature-review` as Sam, not by a test.
+  //
+  // A string compare against a verb is the wrong mechanism, not just the wrong
+  // string — `guards/trialWindow.test.ts` asserts that very thing one layer down,
+  // about the host's routing, and this file was reading the verb the same way. Both
+  // now switch on `trialManageTarget`.
+  const manageTarget = trialManageTarget(model);
   // NORMALISED, because the prop is optional and `undefined !== null`. The first
   // cut compared `busyAction !== null` directly, so on every surface that does not
   // pass the prop at all — which is every state but the milestone — the guard read
@@ -86,7 +101,7 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style, onL
             style={styles.manageTouch}
             accessibilityRole="button"
             accessibilityLabel={
-              manageLabel === 'Replace' ? 'Replace this diet trial' : 'Start a diet trial'
+              manageTarget === 'start_trial' ? 'Start a diet trial' : 'Manage this diet trial'
             }
           >
             <ThemedText style={styles.manageText}>{manageLabel}</ThemedText>

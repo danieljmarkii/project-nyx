@@ -17,6 +17,7 @@ jest.mock('../../store/petStore', () => ({ usePetStore: () => mockUsePetStore() 
 import { fireEvent, render } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { TodayZone } from './TodayZone';
+import { useUiStore } from '../../store/uiStore';
 import type { NyxEvent } from '../../store/eventStore';
 
 /** A minimal today event — the fields TodayZone + EventStripRow read; the rest are
@@ -27,6 +28,7 @@ function ev(id: string, event_type: string): NyxEvent {
 
 beforeEach(() => {
   (router.push as jest.Mock).mockReset();
+  useUiStore.setState({ logSheet: null });
   mockUseEvents.mockReset();
   mockUsePetStore.mockReturnValue({ activePet: { id: 'p1', name: 'Biscuit' } });
 });
@@ -88,7 +90,10 @@ describe('TodayZone v2 — the recap band', () => {
     expect(t.queryByText(/more event/)).toBeNull();
   });
 
-  it('zero-log: renders the empty nudge (no count line) and routes it to the quick-log', () => {
+  // The nudge opens the app's one log sheet (CUL-503), through the store: this card is
+  // in Home's import closure and must never import the sheet, which writes rows. It
+  // pushed the full-screen /log picker before, and this reds if it goes back to that.
+  it('zero-log: renders the empty nudge (no count line) and opens the log sheet from it', () => {
     mockUseEvents.mockReturnValue({ todayEvents: [] });
     const t = render(<TodayZone />);
 
@@ -97,7 +102,9 @@ describe('TodayZone v2 — the recap band', () => {
     expect(t.queryByTestId('today-count-line')).toBeNull();
 
     const nudge = t.getByText(/Nothing logged yet/);
+    expect(useUiStore.getState().logSheet).toBeNull();
     fireEvent.press(nudge);
-    expect(router.push).toHaveBeenCalledWith('/log');
+    expect(useUiStore.getState().logSheet).toEqual({ initialType: null });
+    expect(router.push).not.toHaveBeenCalled();
   });
 });

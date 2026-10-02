@@ -74,7 +74,7 @@ jest.mock('../../store/petStore', () => {
   };
 });
 
-import { render, waitFor, fireEvent } from '@testing-library/react-native';
+import { act, render, waitFor, fireEvent } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import EventDetailScreen from './[id]';
 
@@ -189,5 +189,102 @@ describe('the confirm survives the attachment-read window (C-12)', () => {
 
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
     expect(alertBody()).toBe('This will remove the Vomit from history.');
+  });
+});
+
+// CUL-1125 — the NOTE. The confirm used to name only a look's note, so an owner removing
+// a meal or a vomit whose note they had typed was told nothing about it, while the
+// completion card's Undo, one surface over, already named it. Both columns a note can
+// live in arrive on the event row, so no read stands between the tap and the answer.
+describe('the Remove confirm names an event\'s note (CUL-1125)', () => {
+  it('names a note the owner typed on the event', async () => {
+    mockGetEventAttachment.mockResolvedValue(null);
+    mockGetEventById.mockResolvedValue({ ...baseRow, notes: 'Grass first, then this' });
+    await pressRemove();
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    expect(alertBody()).toBe(
+      'This will remove the Vomit from history. The note you wrote will be removed with it.',
+    );
+  });
+
+  it('names the photo AND the note, as one sentence, when the record carries both', async () => {
+    mockGetEventAttachment.mockResolvedValue(withPhoto);
+    mockGetEventById.mockResolvedValue({ ...baseRow, notes: 'Grass first, then this' });
+    await pressRemove();
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    expect(alertBody()).toBe(
+      'This will remove the Vomit from history. ' +
+        'The photo you attached and the note you wrote will be removed with it.',
+    );
+  });
+
+  it('stays silent about a note that is only whitespace', async () => {
+    mockGetEventAttachment.mockResolvedValue(null);
+    mockGetEventById.mockResolvedValue({ ...baseRow, notes: '  \n ' });
+    await pressRemove();
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    expect(alertBody()).toBe('This will remove the Vomit from history.');
+  });
+});
+
+// The CUL-1125 review: Remove waits on a read before its confirm is up, so a second tap
+// can land in that gap. Two confirms, both accepted, would reverse the record twice and
+// pop the stack twice, landing the owner a screen further back than where they came from.
+describe('one Remove, one confirm', () => {
+  it('a second tap while the photo re-check is out raises one confirm, not two', async () => {
+    mockGetEventAttachment.mockResolvedValueOnce(null); // the screen's own load: no photo yet
+    const view = render(<EventDetailScreen />);
+    await waitFor(() => expect(view.getByText('Remove')).toBeTruthy());
+
+    let release!: (v: unknown) => void;
+    mockGetEventAttachment.mockReturnValue(new Promise((r) => { release = r; }));
+    fireEvent.press(view.getByText('Remove'));
+    fireEvent.press(view.getByText('Remove'));
+    await act(async () => { release(null); });
+
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+  });
+
+  it('the guard lets go: after a failed re-check, the next Remove still raises its confirm', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGetEventAttachment.mockResolvedValueOnce(null);
+    const view = render(<EventDetailScreen />);
+    await waitFor(() => expect(view.getByText('Remove')).toBeTruthy());
+
+    mockGetEventAttachment.mockRejectedValueOnce(new Error('database is locked'));
+    fireEvent.press(view.getByText('Remove'));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(1));
+    mockGetEventAttachment.mockResolvedValue(null);
+    fireEvent.press(view.getByText('Remove'));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(2));
+    warn.mockRestore();
+  });
+});
+
+// HV-10 (CUL-1167; History v2 §4 "Open a record"): VoiceOver focus lands on the record's
+// Back button. The push itself moves it: a new screen's first element takes focus, so the
+// contract this screen owns is that Back COMES first. Walked over the rendered tree in
+// document order, every node a screen reader stops on (an explicit `accessible`, a role, or
+// a label) counted; the first must be Back.
+describe('the record opens with VoiceOver on Back (HV-10)', () => {
+  type Node = { props: Record<string, unknown>; children: (Node | string)[] | null };
+  function firstStop(node: Node | string | null): Node | null {
+    if (node === null || typeof node === 'string') return null;
+    const p = node.props;
+    if (p.accessible === true || p.accessibilityRole != null || p.accessibilityLabel != null) return node;
+    for (const c of node.children ?? []) {
+      const hit = firstStop(c);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  it('the first thing a screen reader reaches on the record is the Back button', async () => {
+    const view = render(<EventDetailScreen />);
+    await waitFor(() => expect(view.getByText('Remove')).toBeTruthy());
+    const first = firstStop(view.toJSON() as unknown as Node);
+    expect(first?.props.accessibilityLabel).toBe('Back');
+    expect(first?.props.accessibilityRole).toBe('button');
   });
 });
