@@ -30,6 +30,7 @@ Examples: `2026-07-25-password-recovery-design.md`, `2026-07-24-widget-pr-w5.md`
 - **One file per session. Never edit another session's file.** That is the whole point — the moment two sessions write the same file, the collision is back.
 - **Never delete old ones.** They are append-only history and cost nothing to leave in place. This directory is deliberately *not* under `STATUS.md`'s size budget: it is the archive, and `STATUS.md` is the working state.
 - **Name the PR** (`shipped via #NNN`) so the entry can be traced to a diff.
+- **The `**One thing:**` line** (written by `/wrap`, under `**Date:**`) is the PM's learning ledger. Format and meaning: `docs/learning/curriculum.md` §4.
 - **Prose is welcome here.** The density that `STATUS.md` had to keep pruning has a home now. Keep `STATUS.md` scannable by writing the detail in this file instead.
 - **Within a single day, filename order is not chronological.** Day granularity is what anyone actually reads; use `git log` if exact ordering matters.
 
