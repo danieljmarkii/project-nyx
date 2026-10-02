@@ -2135,6 +2135,43 @@ export interface DetectionConfig {
      */
     todayMaxDaysSinceRunEnd: number
   }
+  /**
+   * EN-11, insight honesty (Engines v3 PR-32, CUL-1141), behind `engines_v3_en11`. ABSENT on
+   * DEFAULT_CONFIG, so every lane is byte-identical to before for an account without the key;
+   * `EN11_CONFIG` carries it and the shells pick that config only while the key is on
+   * (`isEngineKeyOn(flags, 'engines_v3_en11')` in pipeline.ts and report.ts). Present, it does four things and nothing else:
+   *
+   *   1. The Early food tier is RETIRED (D5 / E-5 = B, PM 2026-09-26): ① emits Established only,
+   *      as the vet report already does (§8.5). Every reason that used to "cap at Early" (a
+   *      joint candidate, a shared bowl, a standing bowl, a drug on board, the uncorrected test)
+   *      now withholds the card. Withheld candidates still count toward the Bonferroni family:
+   *      they were tested.
+   *   2. ④'s card needs `worseningCardMinEpisodes` current-window episodes (see that field).
+   *      ③'s mute keeps `reflection.worseningMinEpisodes`, today's sensitivity (CUL-1411).
+   *   3. A REVERSED-IN-TIME control on ① and ⑤ (the food window placed after each episode). An
+   *      association that is at least as strong backwards as forwards cannot be told apart from
+   *      feeding changed by the episode (Farrington 2009: SCCS assumes the event does not move
+   *      the exposure), so the forward card is withheld and no sentence is added.
+   *   4. ①'s control windows may not sit in the `postEpisodeControlExclusionHours` after a GI
+   *      episode, where the owner's response to the episode (a bland meal, a skipped staple) is
+   *      the exposure, not the pet's ordinary diet.
+   *
+   * Every change only REMOVES an insight card or raises a safety card's floor; none adds a
+   * finding. The safety floor is the one that can delay an ask, which is why EN-11 goes live
+   * on PR-16's pass line ("worsening detection no slower than shipped"), never on its own proof.
+   */
+  en11?: {
+    /**
+     * ④'s firing floor under EN-11: the current window needs at least this many episodes. 2 vs 0
+     * fired a safety card on 4 of 14 evenings of the dogfood record (brief §V.1), and an exact
+     * two-window test (current | total ~ Binomial(n, 1/2) under equal rates) cannot defend it:
+     * the smallest p a count of k can reach is 0.5^k, so 2 vs 0 is p = 0.25 at best. PROVISIONAL;
+     * the value is CUL-583 ruling-sheet item E1, measured on PR-16's lines in this PR's body.
+     */
+    worseningCardMinEpisodes: number
+    /** ①'s control-window exclusion after a GI episode, in hours. PROVISIONAL (CUL-583). */
+    postEpisodeControlExclusionHours: number
+  }
   chronicity: {
     /**
      * Lookback in days (detector ⑦, B-182 §6). 56 = exactly 8 now-anchored weekly buckets;
@@ -2877,6 +2914,24 @@ export const DEFAULT_CONFIG: DetectionConfig = {
   },
 }
 
+/**
+ * EN-11's config (Engines v3 PR-32, CUL-1141): DEFAULT_CONFIG plus the `en11` block, and nothing
+ * else changed, so the flag moves exactly the four things that block's comment names. Never
+ * constructed at a call site.
+ */
+export const EN11_CONFIG: DetectionConfig = {
+  ...DEFAULT_CONFIG,
+  en11: {
+    // 4: the smallest count whose best case (4 vs 0, p = 0.0625) an exact two-window test comes
+    // near a conventional bar, one above the burden card's persistence rung (3 days running), and
+    // equal to the burden card's count arm, so for vomit "④ is silent below 4" never leaves a
+    // count the burden card does not already own. Measured, not chosen on the corpus: PR body.
+    worseningCardMinEpisodes: 4,
+    // 24 h: the bland-meal / skipped-meal day after a vomit (the owner's response, not the diet).
+    postEpisodeControlExclusionHours: 24,
+  },
+}
+
 // ── Statistics: one-sided Fisher's exact test ───────────────────────────────
 
 // Log-factorial via a running sum of logs. Sample sizes here are small (tens of
@@ -3402,6 +3457,13 @@ export function detectCorrelations(
      */
     medicationPresent: boolean
     symptomEventCount: number
+    /**
+     * EN-11 (CUL-1141): the reversed-in-time control hit. The cluster clears the Early bar with
+     * the food window placed AFTER each episode, at least as strongly as it does before it, so
+     * the forward association cannot be told apart from feeding changed by the episode. Always
+     * false without `config.en11`.
+     */
+    reversedHit: boolean
   }
   const candidates: Candidate[] = []
   // ── The Bonferroni family FLOOR (adversarial review, slice 6) ──────────────────────
@@ -3441,6 +3503,24 @@ export function detectCorrelations(
   // (adversarial review, B-117 PR 9 — a real tier wart, though never a false reassurance).
   let suppressedFamilyCount = 0
 
+  // EN-11 (CUL-1141). Both reads below exist only while `config.en11` does.
+  const en11 = config.en11
+  const correlationNowMs = Date.parse(input.now)
+  // The GI episodes an owner responds to by changing what the pet eats (a bland meal, a skipped
+  // staple). Their following hours are no control's (EN-11 rule 4). Two types, by name: vomiting
+  // and diarrhea are what move a bowl; an itch does not.
+  const giOnsets: number[] = en11
+    ? (['vomit', 'diarrhea'] as const).flatMap((t) =>
+      toEpisodeOnsets(
+        input.symptomEvents
+          .filter((s) => s.type === t)
+          .map((s) => Date.parse(s.occurredAt))
+          .filter((ms) => Number.isFinite(ms)),
+        config.symptomEpisodeGapHours,
+      )
+    )
+    : []
+
   for (const symptomType of LANE_SYMPTOM_TYPES.correlation) {
     const windowHours =
       config.correlationWindowHoursByType[symptomType] ?? config.correlationWindowHours
@@ -3457,6 +3537,12 @@ export function detectCorrelations(
 
     // Days carrying a symptom episode of this type are ineligible as control days.
     const symptomDays = new Set(onsets.map((o) => Math.floor(o / MS_PER_DAY)))
+    // EN-11 rule 4: this symptom's own episodes and every GI episode, each barring the hours after
+    // it from any control window. Empty without `config.en11`, so the matcher is unchanged.
+    const exclusionOnsets = en11 ? [...giOnsets, ...onsets] : []
+    const exclusionMs = en11 ? en11.postEpisodeControlExclusionHours * MS_PER_HOUR : 0
+    const inPostEpisodeHours = (ctrlAnchorMs: number): boolean =>
+      exclusionOnsets.some((e) => e <= ctrlAnchorMs && ctrlAnchorMs - windowMs < e + exclusionMs)
     const mealDays = Array.from(new Set(meals.map((m) => Math.floor(m.ms / MS_PER_DAY)))).sort(
       (a, b) => a - b,
     )
@@ -3475,6 +3561,13 @@ export function detectCorrelations(
       medInCase: boolean
       /** A medication was on board in the matched CONTROL window (B-117 PR 9). */
       medInControl: boolean
+      /**
+       * EN-11 rule 3: what was OFFERED in the window of the same length AFTER the case onset and
+       * after the control anchor. Null without `config.en11`, or when either window runs past
+       * now (an unfinished window reads as absence, which would bias the control toward keeping
+       * the forward card).
+       */
+      reversed: { caseExp: Map<string, AttributionConfidence>; ctrlExp: Map<string, AttributionConfidence> } | null
     }[] = []
     // Proteins under an active free-fed arrangement that was in-window for ≥1 matched
     // pair (case OR control) of this symptom. These are excluded from candidacy — a
@@ -3497,6 +3590,7 @@ export function detectCorrelations(
       const timeOfDay = onset - caseDay * MS_PER_DAY
 
       let bestCtrl: {
+        anchorMs: number
         exposures: Map<string, AttributionConfidence>
         standingInWindow: boolean
         standingProteins: Set<string>
@@ -3513,9 +3607,11 @@ export function detectCorrelations(
         // 12h vomit window any different day already qualifies.)
         if (dist * MS_PER_DAY <= windowMs) continue
         if (dist >= bestDist) continue // never skips a strictly-closer day; ties → earliest
-        const ctrlWin = windowExposures(d * MS_PER_DAY + timeOfDay, windowMs)
+        const ctrlAnchorMs = d * MS_PER_DAY + timeOfDay
+        if (en11 && inPostEpisodeHours(ctrlAnchorMs)) continue // EN-11 rule 4
+        const ctrlWin = windowExposures(ctrlAnchorMs, windowMs)
         if (ctrlWin.mealCount === 0) continue // control window not logging-eligible
-        bestCtrl = ctrlWin
+        bestCtrl = { anchorMs: ctrlAnchorMs, ...ctrlWin }
         bestDist = dist
       }
       if (!bestCtrl) continue // no eligible control → this case can't be matched
@@ -3530,6 +3626,15 @@ export function detectCorrelations(
         standing: caseWin.standingInWindow || bestCtrl.standingInWindow,
         medInCase: caseWin.medActive,
         medInControl: bestCtrl.medActive,
+        reversed:
+          en11 &&
+            onset + windowMs <= correlationNowMs &&
+            bestCtrl.anchorMs + windowMs <= correlationNowMs
+            ? {
+              caseExp: windowExposures(onset + windowMs, windowMs).exposures,
+              ctrlExp: windowExposures(bestCtrl.anchorMs + windowMs, windowMs).exposures,
+            }
+            : null,
       })
     }
 
@@ -3677,6 +3782,32 @@ export function detectCorrelations(
         if (inCaseEaten && !inCtrl) b++
         else if (!inCase && inCtrl) c++
       }
+      // EN-11 rule 3, the reversed-in-time control: the SAME matched pairs, each window moved to
+      // the hours after its anchor, the same Early bar, and the forward risk difference to beat.
+      // Read on what was OFFERED (any member), because offering is the owner's response the
+      // control exists to catch. "At least as strong backwards" (>=), so a tie withholds: an
+      // association the record shows equally on both sides of the episode is the one it cannot
+      // order in time.
+      let reversedHit = false
+      if (en11) {
+        let bRev = 0
+        let cRev = 0
+        let nRev = 0
+        for (const p of pairs) {
+          if (!p.reversed) continue
+          nRev++
+          const inCaseRev = cluster.some((member) => p.reversed!.caseExp.has(member))
+          const inCtrlRev = cluster.some((member) => p.reversed!.ctrlExp.has(member))
+          if (inCaseRev && !inCtrlRev) bRev++
+          else if (!inCaseRev && inCtrlRev) cRev++
+        }
+        const rdRev = nRev > 0 ? (bRev - cRev) / nRev : 0
+        reversedHit =
+          bRev >= cfg.earlyMinDiscordantCaseOnly &&
+          bRev > cRev &&
+          rdRev >= cfg.earlyMinRiskDifference &&
+          rdRev >= (b - c) / pairs.length
+      }
       candidates.push({
         proteins: cluster,
         jointCandidate: cluster.length > 1,
@@ -3691,6 +3822,7 @@ export function detectCorrelations(
         standingConfounder,
         medicationPresent,
         symptomEventCount,
+        reversedHit,
       })
     }
   }
@@ -3758,6 +3890,11 @@ export function detectCorrelations(
       pValue <= correctedAlpha
         ? 'established'
         : 'early'
+
+    // EN-11 (CUL-1141): Early is retired (D5 = B), so every cap above withholds, and a reversed-
+    // in-time hit withholds an Established card too. Both after the family was sized, so a
+    // withheld card can never loosen another's bar.
+    if (en11 && (tier === 'early' || cand.reversedHit)) continue
 
     findings.push({
       type: 'food_symptom_correlation',
@@ -4165,13 +4302,33 @@ function computeWindowedStats(input: DetectionInput, config: DetectionConfig): W
  * THIS IS THE VALVE. Detector ③ SUPPRESSES when any symptom satisfies it; detector ④
  * FIRES on exactly the symptoms that satisfy it. One predicate, two consumers — so "③
  * goes silent ⟺ ④ speaks" holds by construction and the one-way-valve-into-silence
- * (re-run brief §3/§6.1) cannot reopen via drift.
+ * (re-run brief §3/§6.1) cannot reopen via drift. Under EN-11 ④ reads `isWorseningCard`,
+ * which is this AND a higher floor, and only the "④ speaks ⟹ ③ is silent" half holds
+ * (CUL-1411; the band between is silence, see `isWorseningCard`).
  */
 function isWorsening(s: SymptomStat, cfg: DetectionConfig['reflection']): boolean {
   return (
     s.currentCount >= cfg.worseningMinEpisodes &&
     (s.currentCount > s.priorCount || s.currentDays > s.priorDays)
   )
+}
+
+/**
+ * ④'s firing predicate: `isWorsening`, and under EN-11 (CUL-1141) also a current count of at
+ * least `en11.worseningCardMinEpisodes`. THE SPLIT (CUL-1411): ③'s mute keeps calling
+ * `isWorsening` at today's floor, so raising the CARD's floor can never reopen a soothing card.
+ * Without the split the same check that mutes ③ would rise with it, and an itch at 3 vs 1 would
+ * lose its safety card AND get a calm "vomit down from 4" beside it.
+ *
+ * What the split gives up, stated: "③ goes silent ⟺ ④ speaks" becomes "④ speaks ⟹ ③ is
+ * silent". Between the two floors both are silent. That band is SILENCE, never a reassurance,
+ * which is the direction §9 allows; for vomit the burden card owns every count at or above its
+ * own floor (`reflection.burdenMuteMinEpisodes`), so the band there is at most the counts below
+ * it. Flag off (`en11` absent) the two predicates are the same function call.
+ */
+function isWorseningCard(s: SymptomStat, config: DetectionConfig): boolean {
+  if (!isWorsening(s, config.reflection)) return false
+  return config.en11 === undefined || s.currentCount >= config.en11.worseningCardMinEpisodes
 }
 
 export function detectReflections(
@@ -4441,7 +4598,8 @@ export function detectWorsening(
   // the fake-rise guard: a rise measured against a dark prior week is not trustworthy.
   if (!windowed || !windowed.loggingEligible) return []
 
-  const worsening = windowed.stats.filter((s) => isWorsening(s, cfg))
+  // ④ fires on the card predicate; ③'s mute (detectReflections) keeps `isWorsening` (CUL-1411).
+  const worsening = windowed.stats.filter((s) => isWorseningCard(s, config))
   if (worsening.length === 0) return []
 
   // One card only — the most-worsening symptom: largest episode rise, then larger
@@ -5177,6 +5335,24 @@ export function detectPostprandialTiming(
     eligibleCount * Math.min(1, (feedingRatePerDay * cfg.rapidWindowMinutes) / 1440)
   if (rapidCount < Math.max(cfg.minRapidEpisodes, cfg.minObservedToExpectedRatio * expectedRapid)) {
     return []
+  }
+
+  // EN-11 rule 3 (CUL-1141), the reversed-in-time control: the same eligible episodes, the same
+  // rapid window placed AFTER each onset, against the same eating anchors. A meal that follows a
+  // vomit within the window is not caused by the meal; when that happens at least as often as a
+  // meal preceding one, the timing is the logging or the household rhythm (a meal and a vomit
+  // logged together, a pet fed when it is sick), and the card is withheld. A tie withholds, as on
+  // ①. An episode whose window runs past now is left out of the reversed count only, which can
+  // only keep the card (a lower reversed count), never add one.
+  if (config.en11) {
+    const rapidMs = cfg.rapidWindowMinutes * 60_000
+    const reversedRapid = dist.eligible.filter(
+      (e) =>
+        e.onsetMs + rapidMs <= nowMs &&
+        // `>=`: a meal logged at the vomit's own instant reads on both sides, so it can only tie.
+        scan.allFeedings.some((f) => f >= e.onsetMs && f <= e.onsetMs + rapidMs),
+    ).length
+    if (reversedRapid >= rapidCount) return []
   }
 
   // Payload. "Including the last two" = the two most-recent ELIGIBLE episodes are both rapid.
