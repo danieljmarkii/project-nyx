@@ -1,6 +1,6 @@
 ---
 name: backlog-groomer
-description: Use this skill to groom and reconcile Nyx's backlog in **Linear** (team Culprit, `linear.app/projectnyx`) — the operational procedure behind the Product Owner persona. Triggers include the PM asking to "groom the backlog", "reconcile the backlog", "clean up the backlog", "what's stale", "what are the quick wins", "find something small to pick up", or any session scan that needs to check Linear against reality; closing out a shipped item; or whenever a session record claims something shipped that Linear still lists as `Todo` / `In Progress`. Loads the reconciliation procedure: match issue status against merged PRs/commits AND open PRs AND the deploy runs and holds, fix stale statuses, clear abandoned claims, report aged high-priority items for re-prioritization, triage and label quick wins, audit recently-closed issues for unfinished business, and report near-duplicates for dedup — bounded by § What an unattended pass may WRITE, which lists the only field edits an unattended run may make and sends everything else to the report. Never invents scope (new product scope is a PM decision, routed to Open Questions, never a silent Linear edit). For the lens/judgment behind this procedure see the Product Owner persona in `docs/personas.md`; this skill is the how. Note: `docs/backlog.md` is frozen (migrated to Linear 2026-08-15) — this skill operates on Linear, not that file.
+description: Use this skill to groom and reconcile Nyx's backlog in **Linear** (team Culprit, `linear.app/projectnyx`) — the operational procedure behind the Product Owner persona. Triggers include the PM asking to "groom the backlog", "reconcile the backlog", "clean up the backlog", "what's stale", "what are the quick wins", "find something small to pick up", or any session scan that needs to check Linear against reality; closing out a shipped item; or whenever a session record claims something shipped that Linear still lists as `Todo` / `In Progress`. Loads the reconciliation procedure: match issue status against merged PRs/commits AND open PRs AND the deploy runs and holds, fix stale statuses, clear abandoned claims, report aged high-priority items for re-prioritization, triage and label quick wins, audit recently-closed issues for unfinished business, report near-duplicates for dedup, and prune what no longer belongs (retired surfaces, stale low-priority issues, closed-project leftovers) through a `Propose close` label and a 7-day veto window — bounded by § What an unattended pass may WRITE, which lists the only field edits an unattended run may make and sends everything else to the report. Never invents scope (new product scope is a PM decision, routed to Open Questions, never a silent Linear edit). For the lens/judgment behind this procedure see the Product Owner persona in `docs/personas.md`; this skill is the how. Note: `docs/backlog.md` is frozen (migrated to Linear 2026-08-15) — this skill operates on Linear, not that file.
 ---
 
 # Backlog Groomer (Linear)
@@ -12,6 +12,8 @@ The backlog lives in **Linear** (team **Culprit** — `linear.app/projectnyx`); 
 The backlog drifts from reality in a specific, recurring way: an item ships in the codebase and gets narrated as "done" in a session record, but its issue in Linear stays `Todo` / `In Progress`. The native GitHub↔Linear integration closes this automatically **when a PR references the issue** (CLAUDE.md § Git Workflow → "Merge → Linear status") — but agent sessions run on `claude/<slug>` branches that don't reference the issue, so their merges can leave the status stale. Grooming closes that gap.
 
 **That original drift is now largely solved, and the drift has moved.** Measured 2026-09-06 over the 26 PRs merged since the previous pass: every issue named in them was already `Done`. The claim protocol (CUL-624) plus `/wrap` step 4 are holding. What drifts *now* is `In Progress` (which means three different things), work that merged but was never deployed, and issues that closed carrying unfinished business. Steps 0–8 are ordered accordingly.
+
+**And the board only grew.** Until 2026-10-02 no step removed an issue: obsolete work stayed open because nothing asked whether its surface still existed, and 51 `Propose close` labels waited a week on a hand bulk cancel. Steps 12–14 prune, with a 7-day veto window as the safety net, and count the board so a pass can tell whether it shrank.
 
 ## Step 0 — assert the evidence base, before anything else
 
@@ -31,7 +33,7 @@ Exit codes, so an unattended caller can say *which* assertion failed: `0` sound 
 
 **The governing rule:** *an unattended pass writes only where a named artifact determines the write. If the evidence is a sentence you wrote, it is a report line.*
 
-Everything below follows from that one sentence, and it is checkable **from the pass's own output** without opening Linear: every line under **Applied this pass** carries its artifact — a PR number, a branch name and its tip date, a state category. A written line with no artifact beside it is a visible protocol violation.
+Everything below follows from that one sentence, and it is checkable **from the pass's own output** without opening Linear: every line under **Applied this pass** carries its artifact — a PR number, a branch name and its tip date, a state category, a proposal's timestamp. A written line with no artifact beside it is a visible protocol violation.
 
 This table binds an **unattended** run — a scheduled Routine, `scripts/groom/apply.*`, any pass with no PM in the conversation. A pass run *with* the PM may go further, but it asks in that conversation and the answer is the authorisation. **The PM having scheduled the Routine is not that answer** — scheduling authorises the pass to run, and this table is what it authorises the pass to do.
 
@@ -46,18 +48,34 @@ This table binds an **unattended** run — a scheduled Routine, `scripts/groom/a
 | 4 · never claimed · blocked on the PM | **report** | — absence of evidence is not evidence (L7); and a convention collision is a ruling |
 | 5 · narrowed against the tree | **report** | — |
 | 6 · `Quick Win` **add** | **report** | — the definition is *grabbable today*, and grabbability is a judgment that decays |
-| 6 · dead-label **strip** | remove `Quick Win` / `Waiting on PM` — that set only | the issue's state category, `completed` or `canceled` |
+| 6 · dead-label **strip** | remove `Quick Win` / `Waiting on PM` — that set only | the issue's state category, `completed`, `canceled` or `duplicate` |
 | 7 · closed but unfinished | **report** | — whether it still needs a home is the PM's call |
 | 8 · priority | **report** | — the aging is a fact; the re-rank is the PM's ordering |
 | 9 · contract | **report** | — |
 | 10 · dedup | **report** | — "these two are the same issue" is a sentence you wrote |
 | 11 · what's relevant now | **report** | — |
+| 12 · `Propose close` **add**, from 12a / 12b / 12c only, reason `obsolete` or `stale` | add the label, plus the signed proposal comment with its cancel date | the triggering event: the PR that retired the surface (12a), the `updatedAt` date (12b), the project's Completed or Canceled state (12c). **A judgment, admitted as a proposal** — see *The one proposal*, below |
+| 12 · `superseded by` · `won't do` | **report** | — no event triggers either; both are sentences you wrote |
+| 12 · project moves, `relatedTo` for *Dies at* | **report** | — which project an idea belongs to is a judgment, and it takes effect the moment it is written |
+| 13 · cancel after the window | → `Canceled` | the label, the proposal comment's timestamp, and no later comment except a pass's own |
+| 13 · engaged proposals | **report** | — a person spoke; that is a PM decision |
+| 14 · board count | **report** | — |
 
 **Clause 1 — why an attachment, and why an attachment alone is not enough.** The attachment is the artifact because it is what the integration acts on: on #806's merge the two issues carrying one moved to `Done`, while the four named in the body without one held their state and were never linked at all (CUL-803). **A bare mention is not evidence.** But an attachment is not proof of *intent*: a `CUL` **range** in a PR title creates an attachment on **both endpoints**, and #829's title read `… (CUL-919 … CUL-928)` — the integration attached and assigned both, and merging would have marked two issues `Done` with neither fix made (retro §2 F6, found live on the audit's own PR, after this rule was first drafted). So the clause is the attachment **and** a second signal of intent — and the second signal must tie the issue to **that PR**: a closing keyword naming the issue in that PR's title or body, **or** the issue's own claim comment naming that PR's head branch. The retro's draft said "or the issue already in a started state", and that is defeated by F6's own shape — a range title attaches an unrelated issue, and a session that claimed and died leaves it `In Progress` indefinitely, so ambient state plus a stray attachment closes it. A started state is ambient; a branch name and a keyword are artifacts. **And the pass may never mint the attachment it then reads as its own evidence** — attaching is `/wrap`'s job and a human's commitment (CLAUDE.md § Git Workflow); a detector that can author its own evidence is measuring itself.
 
 **Expected yield of clause 1: approximately zero, and that is correct.** An attachment present at merge is exactly what makes the integration close the issue itself, so `{still open} ∩ {merged PR} ∩ {attachment}` is nearly empty by construction. Clause 1 is a **boundary**, not a detector — it exists to forbid closing on a bare mention. Written here up front so no later session widens it to make a pass look productive. Two consecutive passes (08-29, 09-06) already found zero status drift; that is the fixture working, not a pass underperforming.
 
-**What the label strip is, and what it is not.** Stripping a needs-attention label from closed and cancelled issues is the highest-yield safe write on the board — ~70 dead `Quick Win` and ~5 dead `Waiting on PM` on pass one — and it fixes exactly one thing: *the board does not match reality*. **It does essentially nothing for queue length.** A first pass reports an impressive write count; that count is not a drain and must never be reported as one. (CUL-923's `Needs PM` state makes the `Waiting on PM` half of it unrepresentable rather than swept — which is the real fix, and the reason this sweep is not the win.)
+**The one proposal — why step 12's label add is a write.** Strictly applied, the governing rule forbids it: in 12a's *Unclear* row the verdict is a judgment, and a judgment is a report line. Ruled 2026-10-02 (PM, CUL-922): it is a permitted write, because it is **announced and vetoable rather than terminal**, and the table now carries that distinction. A write qualifies as a proposal only when all five hold:
+
+1. **It changes nothing but its own label.** No state, priority, project or relation moves; the issue stays open and everyone's view of it is unchanged.
+2. **It is announced in the same breath.** A signed comment names the reason, the cancel date and the one gesture that vetoes it.
+3. **The veto is one gesture, and it sticks.** Removing the label keeps the issue, and step 13 never re-proposes it for the same reason.
+4. **Nothing acts on it until the window closes.** The terminal write is step 13's cancel, and that write is artifact-determined: the label, a timestamp, the absence of a later comment.
+5. **It still names an artifact.** The judgment is only whether an issue fits an event; the event itself (a retiring PR, an `updatedAt` date, a project's state) goes on the *Applied* line, so the output check still works.
+
+Step 12's exemption list still binds, ahead of all five. **Nothing else in this skill is a proposal.** A `Quick Win` takes effect the moment the PM sorts by it, a `Duplicate` closes the issue, a priority reorders the queue, and a project move changes where it is read: none of them has a window between the write and its effect, which is the whole difference.
+
+**What the label strip is, and what it is not.** Stripping a needs-attention label from closed and cancelled issues is the highest-yield safe write on the board — ~70 dead `Quick Win` and ~5 dead `Waiting on PM` on pass one — and it fixes exactly one thing: *the board does not match reality*. **It does essentially nothing for queue length.** A first pass reports an impressive write count; that count is not a drain and must never be reported as one. (CUL-923 proposed a `Needs PM` state to make the `Waiting on PM` half unrepresentable; CUL-1448 declined it on 2026-10-02, so the label stays the wait, and this strip is standing hygiene rather than a stopgap. It is still not the win.)
 
 ## The grooming pass — run in order
 
@@ -84,7 +102,7 @@ Every step below is bounded by the table above. Where a step's prose and the tab
    | Genuinely in flight | An open PR, **or** a claim comment whose branch tip is ≤14 days old | Leave it |
    | Work in review | An open PR referencing it | → `In Review` (step 2) |
    | Abandoned claim | Claim comment names a branch whose **tip commit is >14 days old**; no open or merged PR references the issue; no later comment releases the claim **or says the issue is waiting on the PM** | → `Todo`, with a comment naming the branch **and its tip date**. The one write in this step |
-   | Blocked on the PM | Title/label says the remainder is a device pass, a dashboard toggle, a ruling | **Surface, don't sweep** — see below |
+   | Blocked on the PM | Carries `Waiting on PM`, or the title/body says the remainder is a device pass, a dashboard toggle, a ruling | **Report.** An attended pass moves it to `Todo`, keeping (or adding) `Waiting on PM`, with a comment saying the label now carries the wait — see below |
    | Never claimed, never started | No claim comment, no branch, no PR, weeks old | **Report.** Its whole evidence is four absences, and L7 is that absence is not a detector — this row and *blocked on the PM* above it are told apart only by reading the issue, which is why CUL-425 would have been swept. An attended pass moves it to `Todo`, with a comment saying what was verified |
 
    **Read the claim comment, not the status** (`/kickoff` step 0 — `**Claimed** — branch …`): it names the branch and the UTC time. Status alone names no branch and cannot distinguish any of these.
@@ -103,7 +121,7 @@ Every step below is bounded by the table above. Where a step's prose and the tab
 
    **Three rows, one population — read them in table order and stop at the first match.** The rows below "work in review" are not mutually exclusive on their face, and the wrong order sweeps a PM-blocked issue to `Todo`: CUL-425 has no claim comment and is weeks old (the *never claimed* row) and its own newest comment says "leaving **In Progress**, blocked on the PM UI action" (the *blocked-on-the-PM* row, which wins). Likewise CUL-847 carries a claim comment **and** a later comment releasing that claim while the issue waits on rulings — a released claim is not an abandoned one.
 
-   The **blocked-on-the-PM** row is a live convention collision, not a bug to fix silently: CUL-624 made `In Progress` mean *a session has claimed this*, and thirteen issues use it to mean *waiting on you*. Report it; let the PM rule. (CUL-923's `Needs PM` state is the structural fix.)
+   The **blocked-on-the-PM** row used to be a convention collision: CUL-624 made `In Progress` mean *a session has claimed this*, and issues used it to mean *waiting on you*. **Ruled 2026-10-02 (PM, CUL-1448): "waiting on the PM" stays a LABEL, not a workflow state** (CUL-923's `Needs PM` state was declined). So the two questions ride two fields: the status says whether a session holds the issue, the label says whether you owe it something. A live claim blocked mid-build keeps `In Progress` *and* gets the label (row 1 catches it first); a PM-blocked issue with no live claim is `Todo` plus the label. **That ruling settles what the row's write would be, not who may make it:** telling this row from *never claimed* still means reading the issue, so an unattended pass reports both and an attended pass applies the seating above.
 
    **Codifying these as typed predicates with their own mutation suite is CUL-926**, which also owns the general detector-liveness clause — *every detector must be shown to fire at least once against a real-board fixture*. This step is the corrected rule; that issue is where it stops being prose.
 
@@ -129,21 +147,62 @@ Every step below is bounded by the table above. Where a step's prose and the tab
 
    **Adding the label is a recommendation, not a write.** Grabbability is the half 8 of those 10 failures turned on, it is a judgment, and it decays — so an unattended pass lists its candidates with the body-read verdict beside each and applies none of them. An attended pass applies them with **`addLabels: ["Quick Win"]`** — never `labels`, which replaces the whole set and would silently strip `Waiting on PM` / `Legacy` / `Area: *` across the board.
 
-   **The strip is the write.** `removeLabels` **`Quick Win` or `Waiting on PM`** — that is the whole set, not an example of one — from every issue whose state category is `completed` or `canceled`. Never `Area: *`, never `Legacy`, never any other label: those describe what an issue *is* and stay true after it closes, while these two describe what someone should *do next* and cannot. The state category is the artifact and nothing is judged, which is what makes this the one label edit an unattended pass may make. Before reporting the count, read what the boundary section says it is worth: it is board accuracy, not a drain.
+   **The strip is the write.** `removeLabels` **`Quick Win` or `Waiting on PM`** — that is the whole set, not an example of one — from every issue whose state category is `completed`, `canceled` or `duplicate` (Linear gives `Duplicate` its own category, so a pass that checks only the first two misses it). Never `Area: *`, never `Legacy`, never any other label: those describe what an issue *is* and stay true after it closes, while these two describe what someone should *do next* and cannot. `Propose close` is not in the set either: it stays on a pruned issue on purpose, because step 14 counts how an issue left by it. The state category is the artifact and nothing is judged, which is what makes this the one label edit an unattended pass may make. Before reporting the count, read what the boundary section says it is worth: it is board accuracy, not a drain.
 
 7. **Audit recently-CLOSED issues for unfinished business.** Grooming has always looked only at open issues, which misses a failure mode the tracker creates: every `CUL-NNN` a PR names goes `Done` when it merges (CLAUDE.md § Merge → Linear status, CUL-1397), so an issue can go `Done` still carrying open decisions. Scan issues closed since the last pass for a title or body naming something unresolved, and check whether a successor issue actually carries it. CUL-810 closed `Done` while its own title named four unruled decisions (D1 / D6 / DB-3 / DB-4) that neither successor mentions. **Flag; do not re-open and do not file a replacement** — whether they still need a home is the PM's call.
 
-8. **Re-evaluate aged priorities — report, never write.** Any Urgent/High issue open across multiple sessions without progress is one of: (a) genuinely blocked — state the blocker in a comment; (b) mis-prioritized — **recommend** the lower priority with a one-line why, and leave the field alone; (c) effectively dead — flag to the PM, don't silently cancel. Priority is the PM's ordering and no artifact determines it: the aging is a fact, the re-rank is a judgment. (This step used to instruct the write while Hard rules forbade it — the contradiction CUL-922 removed.) Watch for a cluster that shares **one** blocker: most of the Urgent tier waits on the single Dr. Chen sitting CUL-583 exists to schedule.
+8. **Re-evaluate aged priorities — report, never write.** Any Urgent/High issue open across multiple sessions without progress is one of: (a) genuinely blocked — state the blocker in a comment; (b) mis-prioritized — **recommend** the lower priority with a one-line why, and leave the field alone; (c) effectively dead — **recommend** `Propose close` with a reason; never cancel it outright. Step 12's own branches cannot reach it (12b excludes Urgent and High), and the proposal write in the boundary table is scoped to those branches, so an attended pass applies the label on the PM's word and the veto window still decides. Priority is the PM's ordering and no artifact determines it: the aging is a fact, the re-rank is a judgment. (This step used to instruct the write while Hard rules forbade it — the contradiction CUL-922 removed.) Watch for a cluster that shares **one** blocker: most of the Urgent tier waits on the single Dr. Chen sitting CUL-583 exists to schedule.
 
 9. **Enforce the issue contract.** Every issue needs: a title, a plain-English `TL;DR` opener (PM directive 2026-08-26), a description that leads with **Why:** and names **Blocks:** (or `—`), a `priority`, an `Area: *` label, and a current `state`. Flag any issue missing the *why*.
 
    **A project is NOT part of the contract** (PM, 2026-09-26, CUL-1284). An issue joins a live project only when it extends that project's work; a standalone issue takes no project, and that is correct, not a gap. Requiring one is what turned Legacy Backlog into a dumping ground: 153 issues filed natively after the cutover landed there because it was the only "neutral" home. The `Area: *` label is what keeps a project-less issue findable, so that is the field to enforce.
 
-   **Legacy Backlog is closed to new issues.** It holds the rows migrated from `docs/backlog.md` (CUL-28 → CUL-514, label `Legacy`) and nothing else. Every pass lists open issues in that project created after 2026-08-16 (`list_issues` with `project: "Legacy Backlog"` and `createdAt: "2026-08-16"`) and moves each to the live project it extends, or to no project with an `Area: *` label. Closed ones stay where they are. A non-empty list means a session broke the rule, so name the issues in the report.
+   **Legacy Backlog is closed to new issues.** It holds the rows migrated from `docs/backlog.md` (CUL-28 → CUL-514, label `Legacy`) and nothing else. Every pass lists open issues in that project created after 2026-08-16 (`list_issues` with `project: "Legacy Backlog"` and `createdAt: "2026-08-16"`) and names, for each, the live project it extends or no project with an `Area: *` label; an attended pass makes the move. Closed ones stay where they are. A non-empty list means a session broke the rule, so name the issues in the report.
 
 10. **De-duplicate — report, never write.** Linear assigns IDs server-side, so there are no duplicate IDs to chase — the pass is *semantic*, and "these two are the same issue" is a sentence you wrote, not an artifact. Report near-duplicates with a recommendation on which framing to keep and why. **An unattended pass never sets `Duplicate` or `duplicateOf`, never folds one issue into another, and never adds `relatedTo`** — that is the PM's call, or an attended pass's on the PM's word. Two deploy issues asking for the identical command is the common shape here.
 
 11. **Surface what's relevant now.** List any issue whose project is a live build-track (`list_projects`, or `STATUS.md`'s Current phase table), plus any stale Urgent/High issues, at the top of your report.
+
+12. **Prune what no longer belongs on the board** (PM ruling 2026-10-02, CUL-1448). Steps 1–11 keep the board *true*; this step keeps it *small*. Nothing else in the procedure removes an issue, and a board with a mandated add and no mandated remove only grows (retro 2026-09, L1). Every prune goes through one door: the `Propose close` label plus a reason comment, then step 13's veto window. **A pass never cancels an issue on the day it proposes it.**
+
+    **12a. Retirement sweep.** List what retired since the last pass: a flag retired (its GA issue `Done`, its key gone from `origin/main`), a project moved to Completed or Canceled, a spec marked 🧊 or superseded in CLAUDE.md's Read-These table, a component or screen file deleted. Search open issues for each retired surface by every name it goes by: the flag key, the file and component names, and the spoken name (*Home v1*, *the Trend card*, *the Today strip*). Then sort each hit:
+
+    | Verdict | Test | Action |
+    |---|---|---|
+    | Dies with the surface | Everything it asks for lives only on the retired surface; the file or symbol it names is gone from `origin/main` (check, per step 5) | `Propose close`, reason `obsolete`, naming the PR that retired it |
+    | The idea carries over | The ask is a data, copy, clinical, accessibility or sync rule that the successor surface also has to honour, not a pixel on the old one | **Not a prune.** Comment restating it against the successor, and report the successor's project if that project is live; an attended pass makes the move |
+    | Unclear | Neither test settles it | `Propose close`, reason `obsolete`, the comment naming what would keep it, so the veto is an easy call |
+
+    **Before the retirement lands, mark; don't propose.** While an old surface still ships to anyone (a flag-off cohort, the build in the App Store or TestFlight), its bugs are live bugs. Comment `Dies at CUL-NNN` (the issue that retires it), and report the `relatedTo` for an attended pass to add (step 10: an unattended pass adds no relation); the first pass that finds that issue `Done` and its PR merged proposes the whole batch. Worked example: `design_v2` retires at D2-8 (CUL-1071). Until that merges, every account outside the beta sees Home v1, so CUL-1185 (v1's Today strip can show the previous pet's day under the new pet's name) is a live correctness bug, not a prune.
+
+    **12b. Staleness decay.** An open issue that is **all** of: not Urgent or High; in no live project (none, Legacy Backlog, or a Completed or Canceled project); not updated in **60 days** (`updatedAt`) → `Propose close`, reason `stale`. Bulk label passes bump `updatedAt`, which makes this test fail toward keeping, never toward cancelling; that is the right direction. The comment says in one line what the issue asked for, so the PM can veto from the comment alone.
+
+    **12c. Closed project leftovers.** When a project goes Completed or Canceled, sort each of its open issues: the live project it extends, or no project with an `Area: *` label (step 9), or `Propose close` (reason `obsolete` or `stale`). The moves are report lines an attended pass applies; the proposal is the write. No open issue stays in a closed project.
+
+    **Never proposed, by any branch of this step:** `Gate: clinical` · `Gate: privacy` · `Area: Privacy/RLS` · a `Bug` or `Area: Correctness` issue on a surface still shipped to users · anything carrying `Waiting on PM` (it is a question, and the PM queue answers it) · anything with a comment in the last **14 days**. Pets > $: a safety or data integrity issue leaves the board by being fixed or by a PM ruling, never by expiry.
+
+    **The reason is one of four, on the comment's first line:** `obsolete` (the surface is retired; cite the PR) · `superseded by CUL-NNN` (another issue carries the work; if it merely restates it, use step 10's `Duplicate` instead) · `won't do` (conflicts with a principle or a ruling; cite it) · `stale` (12b). A fixed vocabulary is what lets step 14 count which kind of prune comes back.
+
+    The comment, in this shape:
+
+    > **Propose close — obsolete.** The Trend card leaves Home at D2-8 (#NNN); the Design v2 Home has none. Remove the `Propose close` label to keep this; otherwise the first grooming pass on or after **2026-10-09** cancels it, and it can be reopened any time. — Product Owner lens, grooming pass 2026-10-02
+
+    Apply with `addLabels: ["Propose close"]`, never `labels` (see *Linear mechanics*). **Sign every comment** `— Product Owner lens, grooming pass <date>`: the MCP posts as the PM's own account, so the signature is the only thing that tells step 13 a pass's comment from a person's.
+
+13. **Run the veto window.** List open issues labelled `Propose close`. For each, find its newest proposal comment (first line `**Propose close —`) and decide:
+
+    | Found | Action |
+    |---|---|
+    | The window (**7 days** from the proposal comment) has passed, the label is still on, no comment after the proposal other than a grooming pass's own, and no exempt label from step 12 | → `Canceled`. Keep the label (it marks *how* the issue left, for step 14), and comment: `Canceled after the veto window (proposed <date>, reason <reason>). Reopen any time.` |
+    | Any comment after the proposal by someone other than a grooming pass, or an exempt label added since | **Do not cancel.** Someone engaged, or the issue became a safety one; list it under *Needs PM decision* with the comment's first line or the label |
+    | Window not yet passed | Leave it; list it with its cancel date |
+    | The label is gone but a proposal comment exists | The PM kept it. **Never re-propose for the same reason.** Only a new retirement event (12a) reopens the question, and the new comment names that event |
+
+    **Proposals made before this rule** (the 51 labelled from 2026-09-24 onward, whose reason sits in the newest comment) did not carry a cancel date when they were made. Their clock starts at the first pass that runs under this step: that pass posts one dated comment on each in the shape above (the reason copied from the old comment) and lists them all under *Prune* with their cancel date. Nobody's issue is cancelled on a clock they were never shown.
+
+    The cancel is the only write in this step, and every input to it is an artifact: the label, the proposal comment's timestamp, and the absence of a later comment. That is why it sits in the boundary table's writable half. The label *add* in step 12 sits there too, on narrower grounds: it is the one judgment the table lets an unattended pass write, because it is a proposal (§ *What an unattended pass may WRITE*, *The one proposal*).
+
+14. **Count the board.** Report, since the last pass: issues opened, issues closed (`Done` · `Canceled` · `Duplicate`), the net, and the open total. Then the prune line: proposed this pass, cancelled after the window, kept by the PM (label removed), and **reopened after a cancel** (an open issue carrying a `Canceled after the veto window` comment). The reopened count is the step's own check: if reopens pass **10%** of cancels over the trailing four passes, 12b is too aggressive. Raise the 60 days, and say so in the report rather than quietly. A pass that closes 20 while 60 arrive has not shrunk anything, and the count is what keeps a long *Applied* list from reading as progress.
 
 ## Don't re-file the last pass's open calls
 
@@ -159,7 +218,9 @@ Each grooming pass leaves an outcome issue carrying the calls it deliberately st
 
 - **Do not invent scope.** Grooming reconciles and re-orders existing issues; it never adds new product scope. If grooming reveals a real decision, that belongs in CLAUDE.md → Open Questions, surfaced to the PM — NOT resolved by a status edit. (Filing a genuinely-new *deferral* as a new Linear issue is still proactive and fine — that's the Backlog Protocol; it's *scope decisions* that route to the PM.)
 - **Do not re-prioritize against the PM's explicit ordering** without surfacing it as a question first.
-- **Closing keeps the issue.** Move it to `Done` with a resolving PR/session reference; Linear keeps the record. Never cancel an item just to clear the board.
+- **Closing keeps the issue.** Move it to `Done` with a resolving PR/session reference; Linear keeps the record.
+- **A cancel only ever follows an unvetoed `Propose close`** (steps 12–13). Never cancel on the day you propose, never past an exemption in step 12, and never to make the board count look better. Superseded the 2026-08 rule "never cancel an item just to clear the board" (PM, 2026-10-02, CUL-1448): pruning is now a step, and the veto window is its safety net.
+- **A proposal is the only judgment a pass may write, and only in the shape the boundary table names.** `Propose close` from step 12's branches, reason `obsolete` or `stale`, announced with its cancel date. Never extend the exception by analogy: a `Quick Win`, a `Duplicate`, a priority or a project move has no window between the write and its effect.
 - **A convention collision is a PM ruling, not a sweep.** When two rules give one field two meanings (step 4), report it with a recommendation and leave the board alone.
 - **The write boundary is the whole licence, not a default.** § What an unattended pass may WRITE lists every field edit an unattended run may make; anything absent from that table is a report line, *including anything elsewhere in this file phrased as an instruction*. Where a step and the table disagree, the table wins. A contradiction between the two is what CUL-922 was filed to end, so fix the step rather than following it.
 
@@ -177,8 +238,10 @@ Two halves, and the split is the point: **Applied this pass** is the write log a
 - CUL-NNN: In Progress → Done — PR #N, attachment + <closing keyword | claim comment names PR head branch>
 - CUL-NNN: Todo → In Review — PR #N
 - CUL-NNN: In Progress → Todo — abandoned claim, branch `claude/<slug>`, tip <ISO date>, no PR
-- labels stripped: <N> Quick Win, <N> Waiting on PM — all on issues in state category completed/canceled
+- labels stripped: <N> Quick Win, <N> Waiting on PM — all on issues in state category completed/canceled/duplicate
 (board accuracy, not a drain — see the boundary section before quoting the count)
+- CUL-NNN: Propose close — <obsolete, #N | stale, updated <date> | obsolete, project <name> Completed>, cancels on <date>
+- CUL-NNN: → Canceled — veto window closed, proposed <date>, reason <reason>, no later comment
 
 ### Reported, not applied
 **Quick win candidates** — <N> bodies read, <N> recommended: CUL-NNN, … · rejected: CUL-NNN (<PM call in body | options menu | scope | parked>)
@@ -187,6 +250,8 @@ Two halves, and the split is the point: **Applied this pass** is the write log a
 **Priority, aged** — CUL-NNN: Urgent since <date>, no progress — recommend <Medium> because <why>
 **Possible duplicates** — CUL-NNN ↔ CUL-MMM: <which framing to keep, and why>
 **Contract** — CUL-NNN: <missing why | no project | …>
+**Prune, not applied** — marked to die later: CUL-NNN → dies at CUL-MMM · waiting: CUL-NNN cancels on <date> · engaged, not cancelled: CUL-NNN (<comment's first line>) · recommended (superseded / won't do / Urgent-High dead): CUL-NNN (<reason>)
+**Board count** — opened <N> · closed <N> (Done <N> / Canceled <N> / Duplicate <N>) · net <±N> · open total <N> · prune: proposed <N> · cancelled <N> · kept by PM <N> · reopened after cancel <N>
 **Closed but unfinished** — CUL-NNN: <what it closed still carrying, and whether a successor holds it>
 **In Progress, not swept** — CUL-NNN: <never claimed | blocked on the PM — which, and how you told>
 **Blocks the Current Phase (<phase>)** — CUL-NNN <title>: <why it's relevant now>
@@ -195,4 +260,4 @@ Two halves, and the split is the point: **Applied this pass** is the write log a
 - <anything that's actually an Open Question, not a deferral>
 ```
 
-Apply only what § What an unattended pass may WRITE permits — via `save_issue` / `removeLabels` — and log each one under **Applied this pass** with its artifact beside it. Everything else is a report line; route anything under "Needs PM decision" to the PM and to CLAUDE.md → Open Questions. The old justification for writing more broadly than this was *reversible and cheap*, and it is not one: the cost of a wrong write is the PM's trust in the board, not the API call.
+Apply only what § What an unattended pass may WRITE permits — via `save_issue` / `removeLabels` / `addLabels: ["Propose close"]` — and log each one under **Applied this pass** with its artifact beside it. Everything else is a report line; route anything under "Needs PM decision" to the PM and to CLAUDE.md → Open Questions. The old justification for writing more broadly than this was *reversible and cheap*, and it is not one: the cost of a wrong write is the PM's trust in the board, not the API call.
