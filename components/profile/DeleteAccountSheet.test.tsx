@@ -5,7 +5,12 @@
 
 const mockSignOut = jest.fn();
 jest.mock('../../lib/supabase', () => ({
+  AUTH_STORAGE_KEY: 'sb-test-auth-token',
   supabase: { auth: { signOut: (...a: unknown[]) => mockSignOut(...a) } },
+}));
+const mockRemoveItem = jest.fn(async (_key: string) => undefined);
+jest.mock('../../lib/secureStore', () => ({
+  ChunkedSecureStoreAdapter: { removeItem: (key: string) => mockRemoveItem(key) },
 }));
 const mockReplace = jest.fn();
 jest.mock('expo-router', () => ({ router: { replace: (...a: unknown[]) => mockReplace(...a) } }));
@@ -23,8 +28,12 @@ jest.mock('../../lib/account', () => {
 });
 
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import type { Session } from '@supabase/supabase-js';
 import { DeleteAccountSheet } from './DeleteAccountSheet';
 import { DELETE_CONFIRM_PHRASE } from '../../lib/account';
+import { useAuthStore } from '../../store/authStore';
+
+const DELETED = { access_token: 't', user: { id: 'u-deleted', email: 'deleted@example.com' } } as unknown as Session;
 
 async function confirmDeletion() {
   render(<DeleteAccountSheet visible petNames={['Nyx']} onClose={jest.fn()} />);
@@ -49,6 +58,8 @@ beforeEach(() => {
   mockSignOut.mockReset();
   mockReplace.mockReset();
   mockWipe.mockClear();
+  mockRemoveItem.mockClear();
+  useAuthStore.getState().setSession(DELETED);
 });
 
 it('a clean local sign-out leaves the wipe to the SIGNED_OUT handler', async () => {
@@ -57,18 +68,28 @@ it('a clean local sign-out leaves the wipe to the SIGNED_OUT handler', async () 
   expect(mockSignOut).toHaveBeenCalledWith({ scope: 'local' });
   expect(mockWipe).not.toHaveBeenCalled();
   expect(mockReplace).not.toHaveBeenCalled();
+  // auth-js removed the stored session itself, and the handler clears the store.
+  expect(mockRemoveItem).not.toHaveBeenCalled();
 });
 
-it('a sign-out that RESOLVES with an error still wipes the phone and routes to sign-in', async () => {
+// What a failed /logout leaves undone, besides the wipe: the persisted session (the
+// deleted account's email and tokens, in the keychain) and the store's session (sync
+// stays armed; Back from the login screen re-enters the app as the deleted account).
+function expectNothingOfTheAccountLeft() {
+  expect(mockWipe).toHaveBeenCalledTimes(1);
+  expect(mockRemoveItem).toHaveBeenCalledWith('sb-test-auth-token');
+  expect(useAuthStore.getState().session).toBeNull();
+  expect(mockReplace).toHaveBeenCalledWith('/(auth)/login');
+}
+
+it('a sign-out that RESOLVES with an error still leaves nothing of the account on the phone', async () => {
   mockSignOut.mockResolvedValue({ error: { name: 'AuthRetryableFetchError', status: 0 } });
   await confirmDeletion();
-  expect(mockWipe).toHaveBeenCalledTimes(1);
-  expect(mockReplace).toHaveBeenCalledWith('/(auth)/login');
+  expectNothingOfTheAccountLeft();
 });
 
-it('a sign-out that throws still wipes the phone and routes to sign-in', async () => {
+it('a sign-out that throws still leaves nothing of the account on the phone', async () => {
   mockSignOut.mockRejectedValue(new Error('network down'));
   await confirmDeletion();
-  expect(mockWipe).toHaveBeenCalledTimes(1);
-  expect(mockReplace).toHaveBeenCalledWith('/(auth)/login');
+  expectNothingOfTheAccountLeft();
 });

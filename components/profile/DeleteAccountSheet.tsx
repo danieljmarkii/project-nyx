@@ -8,7 +8,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
-import { supabase } from '../../lib/supabase';
+import { AUTH_STORAGE_KEY, supabase } from '../../lib/supabase';
+import { ChunkedSecureStoreAdapter } from '../../lib/secureStore';
 import { useAuthStore } from '../../store/authStore';
 import { useIsOnline } from '../../hooks/useIsOnline';
 import { getIsOnline } from '../../lib/network';
@@ -97,9 +98,18 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
       // (CUL-1461). Either way, run the same teardown here (idempotent if it did
       // fire) so a deleted account never leaves pet-health data on the device, then
       // route to auth ourselves.
+      //
+      // The teardown also does what auth-js's own `_removeSession` and the SIGNED_OUT
+      // handler would have, since neither ran: it removes the persisted session (the
+      // deleted account's email and tokens, in both keychain tiers; the App Group tier
+      // survives uninstall) and clears the store's session, which otherwise keeps sync
+      // armed and lets Back from the login screen re-enter the app as the deleted account
+      // (rls-privacy-reviewer). Same order as the handler: wipe, then the session.
       const teardown = async (e: unknown) => {
         console.warn('[DeleteAccountSheet] local signOut after delete failed:', e);
+        await ChunkedSecureStoreAdapter.removeItem(AUTH_STORAGE_KEY);
         await wipeLocalSession();
+        useAuthStore.getState().setSession(null);
         router.replace('/(auth)/login');
       };
       try {

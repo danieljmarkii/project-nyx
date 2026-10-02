@@ -1783,10 +1783,13 @@ export async function refreshFoodCache(): Promise<void> {
 // was never confirmed: retrying extraction on a confirmed food writes 'pending' to the
 // server, and a retry that dies leaves it there, on a food whose created_at is long past
 // the threshold, so this sweep hard-deleted it with its trial and feeding links (CUL-769).
-// The capture's placeholder name is the proof: only an un-confirmed capture still carries
-// PENDING_CAPTURE_LABEL as both brand and product, so the delete requires it. A dead
-// capture is un-referenced in the overwhelming common case — the meal is only logged
-// after the confirm step. The threshold is generous on purpose: the
+// So the delete also requires the capture's placeholder, PENDING_CAPTURE_LABEL, as both
+// brand and product: a food the SERVER saw confirmed carries the owner's names. That is
+// narrower than "the owner never confirmed", and the gap is real: commitFood's remote
+// write is fire-and-forget, so a confirm lost on a bad connection leaves the placeholder
+// on the server, refreshFoodCache writes it back over the local names, and this sweep
+// still deletes that food (CUL-1467). A dead capture is un-referenced in the common
+// case — the meal is only logged after the confirm step. The threshold is generous on purpose: the
 // phantom is untidy, not harmful, and a live capture the owner is slowly editing
 // self-heals anyway (commitFood upserts by id, re-creating the row if a sweep removed
 // it mid-edit).

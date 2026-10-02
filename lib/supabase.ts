@@ -1,6 +1,7 @@
 import { createClient, processLock } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
 import { ChunkedSecureStoreAdapter } from './secureStore';
+import { authStorageKeyFor } from './authStorageKey';
 
 // Fail fast with an actionable message if config is missing. Without this
 // guard, an absent/placeholder env var builds a client that sends an empty
@@ -25,6 +26,11 @@ if (isPlaceholder(supabaseUrl) || isPlaceholder(supabaseAnonKey)) {
       'the new values get inlined).',
   );
 }
+
+// The key the session below is persisted under (supabase-js's default; this client
+// names none). For the post-deletion teardown, which must remove the session when a
+// failed /logout left auth-js unable to (CUL-1461).
+export const AUTH_STORAGE_KEY = authStorageKeyFor(supabaseUrl!);
 
 // Non-null assertions are safe here: the guard above throws on any
 // missing/placeholder value before execution reaches this point.

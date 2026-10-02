@@ -11,12 +11,13 @@ const mockClearTransientFiles = jest.fn();
 jest.mock('./transientFiles', () => ({
   clearTransientFiles: () => mockClearTransientFiles(),
 }));
+const mockExec = jest.fn(async (_sql: string) => undefined);
 jest.mock('expo-sqlite', () => ({
   openDatabaseSync: () => ({
     getAllAsync: async () => [],
     getFirstAsync: async () => null,
     runAsync: async () => ({ changes: 0 }),
-    execAsync: async () => undefined,
+    execAsync: (sql: string) => mockExec(sql),
   }),
 }));
 jest.mock('expo-file-system', () => ({
@@ -27,8 +28,27 @@ jest.mock('expo-file-system', () => ({
 }));
 
 import { clearLocalData } from './db';
+import { LOCAL_WIPE_TABLES } from './hydration';
+
+beforeEach(() => {
+  mockClearTransientFiles.mockReset();
+  mockExec.mockClear();
+});
 
 it('every wipe clears the transient files: the shared report, staged documents, print temps', async () => {
   await clearLocalData();
   expect(mockClearTransientFiles).toHaveBeenCalledTimes(1);
+});
+
+// The file step runs BEFORE the row deletes, so an escape from it would leave the whole
+// local record on a device that changes hands (fail open; rls-privacy-reviewer).
+it('a file step that throws never skips the row wipe: every table is still cleared', async () => {
+  jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  mockClearTransientFiles.mockImplementation(() => {
+    throw new Error('cache directory unreachable');
+  });
+  await expect(clearLocalData()).resolves.toBeUndefined();
+  const deleted = mockExec.mock.calls.map(([sql]) => sql);
+  expect(LOCAL_WIPE_TABLES.length).toBeGreaterThan(10);
+  for (const table of LOCAL_WIPE_TABLES) expect(deleted).toContain(`DELETE FROM ${table}`);
 });
