@@ -9,7 +9,11 @@
 
 jest.mock('expo-file-system', () => ({
   Directory: class {},
-  File: class {},
+  // `write` so the publish path below can complete a pet: the snapshot is only
+  // returned once its file has been written.
+  File: class {
+    write(): void {}
+  },
   Paths: { appleSharedContainers: {} },
 }));
 jest.mock('expo-sqlite', () => ({ openDatabaseSync: jest.fn() }));
@@ -27,10 +31,17 @@ jest.mock('./appGroup', () => ({
 import {
   buildWidgetSnapshot,
   localDayBounds,
+  publishWidgetSnapshots,
   WIDGET_SNAPSHOT_SCHEMA_VERSION,
   type SnapshotMealRow,
   type SnapshotPet,
 } from './widgetSnapshot';
+import { getDb } from './db';
+import { getSnapshotDirectory } from './appGroup';
+import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
+import { MEDICATION_SCHEMA_SQL } from './medications';
+import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
+import { toLocalDayKey } from './utils';
 
 const PET: SnapshotPet = { id: 'pet-1', name: 'Pixel', species: 'cat' };
 
@@ -291,5 +302,77 @@ describe('localDayBounds', () => {
     const now = new Date(2026, 6, 24, 0, 5);
     const { startIso } = localDayBounds(now);
     expect(new Date(startIso).getTime()).toBe(new Date(2026, 6, 24, 0, 0).getTime());
+  });
+});
+
+// ── The 7-day pips over the REAL coverage read (a look is not coverage) ──────
+//
+// The coverage read is private to the publisher, so this drives
+// `publishWidgetSnapshots` itself: the production SQL over the production DDL on
+// node:sqlite (the lib/historyQueries.test.ts shape), down to the pips the widget
+// draws. A look is the owner's answer to a question, never another surface's
+// coverage (daily-look spec §2 item 5), so a day holding only a look stays unlit.
+
+const { DatabaseSync } = require('node:sqlite');
+
+describe('publishWidgetSnapshots — the 7-day pips over the real coverage read', () => {
+  let raw: InstanceType<typeof DatabaseSync>;
+
+  /** Local noon `daysAgo` days before now: the publisher reads the real clock (C-29). */
+  const localNoon = (daysAgo: number): Date => {
+    const d = new Date();
+    d.setHours(12, 0, 0, 0);
+    d.setDate(d.getDate() - daysAgo);
+    return d;
+  };
+
+  function insertEvent(id: string, type: string, at: Date) {
+    const iso = at.toISOString();
+    raw
+      .prepare(
+        `INSERT INTO events (id, pet_id, event_type, occurred_at, occurred_at_confidence, notes,
+                             source, created_at, updated_at, deleted_at, synced)
+         VALUES (?, ?, ?, ?, 'witnessed', NULL, 'manual', ?, ?, NULL, 1)`,
+      )
+      .run(id, PET.id, type, iso, iso, iso);
+  }
+
+  beforeEach(async () => {
+    raw = new DatabaseSync(':memory:');
+    raw.exec(BASE_SCHEMA_SQL);
+    raw.exec(MEDICATION_SCHEMA_SQL);
+    raw.exec(DIET_TRIAL_SCHEMA_SQL);
+    await applyColumnUpgrades(async (sql: string) => {
+      try {
+        raw.exec(sql);
+      } catch {
+        /* a column one of the constants above already declares */
+      }
+    });
+    (getDb as jest.Mock).mockReturnValue({
+      getAllAsync: async (sql: string, params: unknown[] = []) => raw.prepare(sql).all(...(params as never[])),
+      getFirstAsync: async (sql: string, params: unknown[] = []) =>
+        raw.prepare(sql).get(...(params as never[])) ?? null,
+    });
+    (getSnapshotDirectory as jest.Mock).mockReturnValue({ list: () => [] });
+  });
+
+  afterEach(() => {
+    (getSnapshotDirectory as jest.Mock).mockReturnValue(null);
+    raw.close();
+  });
+
+  it('leaves a look-only day unlit, and still lights a day with a meal', async () => {
+    insertEvent('look-1', 'check_in', localNoon(2));
+    insertEvent('meal-1', 'meal', localNoon(1));
+
+    const { snapshots } = await publishWidgetSnapshots([PET]);
+
+    expect(snapshots).toHaveLength(1);
+    const pip = (daysAgo: number) =>
+      snapshots[0].sevenDays?.find((d) => d.dayKey === toLocalDayKey(localNoon(daysAgo)));
+    // Non-vacuity: the read reaches the pips, so a day with a meal lights.
+    expect(pip(1)).toMatchObject({ logged: true, symptomLogged: false });
+    expect(pip(2)).toMatchObject({ logged: false, symptomLogged: false });
   });
 });
