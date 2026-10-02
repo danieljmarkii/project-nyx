@@ -1,8 +1,10 @@
 # Engines v3: no zero beside a masking drug or a recent visit (CUL-1440)
 
 **Date:** 2026-10-02
+**One thing (re-ask):** G1 L1 — A commit is a saved snapshot · check: pending
+**One thing:** G2 L1 — A branch is a movable label on the chain · check: pending
 
-Shipped via #994 (draft). It gates turning `engines_v3_en10` on for any account (PM ruling, 2026-09-30).
+Shipped via #994. It gates turning `engines_v3_en10` on for any account (PM ruling, 2026-09-30).
 
 ## What happened
 
