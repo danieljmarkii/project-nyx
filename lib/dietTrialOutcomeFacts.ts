@@ -7,6 +7,7 @@
 // sight.
 import { SYMPTOM_EVENT_TYPES } from './analytics';
 import { getDb } from './db';
+import { isLookRow } from './lookDisplay';
 import { symptomLabel } from './metricDetail';
 import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
 import type { TrialOutcomeFacts, TrialSymptomDelta } from './dietTrialCompletion';
@@ -101,6 +102,12 @@ export async function loadTrialOutcomeFacts(args: {
     const duringAnyDays = new Set<string>();
 
     for (const r of rows) {
+      // A DAILY LOOK IS NOT OBSERVABILITY. It is the owner's answer to a question, never
+      // a row about the pet, and it never enters a count, a coverage line or a trial
+      // verdict (daily-look spec §2 item 5). Counted here, a before-stretch holding only
+      // looks read as TRACKED, and the sheet printed "0 before" for every symptom logged
+      // during the trial — the fabricated baseline `beforeTracked` exists to prevent.
+      if (isLookRow(r)) continue;
       const ms = Date.parse(r.occurred_at);
       if (!Number.isFinite(ms)) continue;
       const key = toLocalDayKey(new Date(ms));

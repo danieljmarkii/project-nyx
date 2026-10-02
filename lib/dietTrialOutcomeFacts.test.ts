@@ -23,6 +23,7 @@ jest.mock('./feedingArrangements', () => ({
 }));
 
 import { loadTrialOutcomeFacts } from './dietTrialOutcomeFacts';
+import { buildOutcomeSheet } from './dietTrialCompletion';
 
 /** Local noon on a calendar date, so no fixture sits on a day boundary — the
  *  boundary is LOCAL midnight and that is precisely what is under test. */
@@ -324,5 +325,49 @@ describe('W1 — cough/sneeze render as their own per-type deltas', () => {
         { symptomType: 'sneeze', label: 'Sneeze', before: 0, during: 1 },
       ]),
     );
+  });
+});
+
+// ── A daily look is not observability (daily-look spec §2 item 5) ──────────────
+//
+// `beforeTracked` and the logged-day counts answer "was the record being kept?". A look
+// is the owner's answer to a question, not a row about the pet, and it never enters a
+// count, a coverage line or a trial verdict. Counted, a before-stretch holding only looks
+// read as TRACKED, and the outcome sheet printed "0 before" for every symptom logged
+// during the trial — a fabricated baseline, read as the diet making things worse, on
+// the screen that ends the trial. The read returns looks (its SQL takes every type), so
+// a fixture holding them is the shape production hands over.
+describe('a daily look is not observability', () => {
+  it('a before-stretch holding only looks is untracked', async () => {
+    const facts = await load([
+      ev('check_in', at(2026, 7, 3)),
+      ev('check_in', at(2026, 7, 9)),
+      ev('itch', at(2026, 7, 20)),
+    ]);
+    expect(facts!.beforeTracked).toBe(false);
+    expect(facts!.beforeLoggedDays).toBe(0);
+  });
+
+  it('so the sheet names the stretch untracked and prints no "0 before" line', async () => {
+    const facts = await load([
+      ev('check_in', at(2026, 7, 3)),
+      ev('check_in', at(2026, 7, 9)),
+      ev('itch', at(2026, 7, 20)),
+    ]);
+    const sheet = buildOutcomeSheet({ facts: facts!, petName: 'Mochi' });
+    expect(sheet.comparisonLine).toMatch(/^Nothing was logged in the 2 weeks before the trial started/);
+    expect(sheet.factLines).toEqual(['Itch/Scratch: 1 during the trial.']);
+  });
+
+  it('nor does a look add a logged day to either stretch', async () => {
+    const facts = await load([
+      ev('check_in', at(2026, 7, 3)),
+      ev('meal', at(2026, 7, 4)),
+      ev('check_in', at(2026, 7, 20)),
+      ev('itch', at(2026, 7, 21)),
+    ]);
+    expect(facts!.beforeTracked).toBe(true);
+    expect(facts!.beforeLoggedDays).toBe(1);
+    expect(facts!.duringLoggedDays).toBe(1);
   });
 });
