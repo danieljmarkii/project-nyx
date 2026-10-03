@@ -558,10 +558,10 @@ export function LookCard({ trialNotEating = false, safety, onLayout }: Props) {
    * the third look of the day — and the product review named the correlation that makes it
    * worst: the day an owner answers three times is the symptomatic day.
    *
-   * So the cap governs the entries that earned NOTHING. In practice this adds at most one
-   * row (a receipt belongs to one entry per word, and the card renders one line), and it
-   * adds it only on a day the record had something to say — which is the day T-15's "never
-   * a feed" was never arguing about.
+   * So the cap governs the entries that said NOTHING. With the concern-word rule below it
+   * adds at most one row per concern word the capped rows do not already show, and only on
+   * a day the record had something to say — which is the day T-15's "never a feed" was
+   * never arguing about.
    */
   //
   // ── AND EVERY CONCERN WORD STAYS ON THE CARD (CUL-909) ─────────────────────
