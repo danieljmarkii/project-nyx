@@ -326,7 +326,7 @@ describe('readHistoryRecord', () => {
         expect([key, filter, pill.count]).toEqual([key, filter, filter.kind === 'all' ? null : String(lineTotal?.count)]);
         const line = countLineOf({
           filter,
-          search: null,
+          filterLabel: 'Not read without a search', search: null,
           window: { longName: 'window', anchorDay: null, isAllTime: false, isTrial: false, range: bounds, recordFrom: null, pastPlannedEnd: false },
           facts: windowed,
           course: filter.kind === 'course' ? { name: 'Motozol', days: (data.courses ?? [])[0].days } : null,

@@ -14,10 +14,16 @@
 // A pet switch resets the scope inside the pet store's own update (HV-3), so this row
 // never shows one pet's name over another pet's filter; the two sheets close because they
 // are keyed on the pet, and the field closes with the scope (AC 13).
+//
+// The pet's name is the same door Home's is (CUL-1532, call 2a): it opens the shipped
+// "Your pets" sheet, with a chevron only when there is a second pet to switch to. The sheet
+// is also the household's "Add a pet" door, so the name stays tappable for a one-pet
+// household, exactly as on Home.
 import { useMemo, useState } from 'react';
 import { Keyboard, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { Search } from 'lucide-react-native';
+import { ChevronDown, Search } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 import { ThemedText } from '../ui/ThemedText';
 import { SearchField } from './SearchField';
 import { TypeSheet } from './TypeSheet';
@@ -25,6 +31,7 @@ import { WindowSheet } from './WindowSheet';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useHistoryRecordFacts } from '../../hooks/useHistoryRecordFacts';
 import { useBetaOptIn } from '../../lib/betaFeatures';
+import { HEADER_CHEVRON_GAP, HEADER_CHEVRON_SIZE, headerSwitcherLabel } from '../../lib/headerName';
 import { PHOTO_READING_OFF, pinnedRowViewOf, searchLabelOf } from '../../lib/historyControls';
 import { lookCardLive } from '../../lib/lookCard';
 import { useHistoryToday } from '../../store/historyListStore';
@@ -37,7 +44,8 @@ const TOUCH_FLOOR = 44;
 const SEARCH_CIRCLE = 32;
 
 export function PinnedRow() {
-  const { activePet } = usePetStore();
+  const { activePet, pets } = usePetStore();
+  const [switcherVisible, setSwitcherVisible] = useState(false);
   const filter = useHistoryScopeStore((s) => s.filter);
   const windowKey = useHistoryScopeStore((s) => s.window);
   const searchOpen = useHistoryScopeStore((s) => s.searchOpen);
@@ -65,21 +73,54 @@ export function PinnedRow() {
 
   if (!activePet) return null;
   const petId = activePet.id;
+  const multiPet = pets.length > 1;
 
   return (
     <View style={styles.container} testID="history-v2-pinned-row">
       <View style={styles.row}>
-        <ThemedText accessibilityRole="header" numberOfLines={1} style={styles.petName}>
-          {activePet.name}
-        </ThemedText>
+        <TouchableOpacity
+          style={styles.petDoor}
+          onPress={() => {
+            Keyboard.dismiss();
+            setSwitcherVisible(true);
+          }}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={headerSwitcherLabel(activePet.name, multiPet)}
+          testID="history-v2-pet-door"
+        >
+          <ThemedText numberOfLines={1} style={styles.petName}>
+            {activePet.name}
+          </ThemedText>
+          {multiPet ? (
+            <ChevronDown
+              size={HEADER_CHEVRON_SIZE}
+              color={theme.colorTextSecondary}
+              strokeWidth={1.75}
+              style={styles.chevron}
+            />
+          ) : null}
+        </TouchableOpacity>
         <View style={styles.controls}>
           {/* A sheet opened while the search field is focused must not sit under the
               keyboard, so a touch on either pill puts the keyboard away first. */}
           <View style={styles.typePill} onTouchStart={Keyboard.dismiss} testID="history-v2-type-pill">
-            <TypeSheet petId={petId} filter={filter} rows={view.typeRows} pill={view.typePill} />
+            <TypeSheet
+              petId={petId}
+              filter={filter}
+              rows={view.typeRows}
+              pill={view.typePill}
+              caption={view.typeCaption}
+            />
           </View>
           <View style={styles.windowPill} onTouchStart={Keyboard.dismiss} testID="history-v2-window-pill">
-            <WindowSheet petId={petId} current={view.currentWindow} rows={view.windowRows} pill={view.windowPill} />
+            <WindowSheet
+              petId={petId}
+              current={view.currentWindow}
+              rows={view.windowRows}
+              pill={view.windowPill}
+              caption={view.windowCaption}
+            />
           </View>
           <TouchableOpacity
             style={styles.searchButton}
@@ -102,6 +143,7 @@ export function PinnedRow() {
       {searchOpen ? (
         <SearchField key={petId} petId={petId} petName={activePet.name} focusTick={focusTick} />
       ) : null}
+      <PetSwitcherSheet visible={switcherVisible} onClose={() => setSwitcherVisible(false)} />
     </View>
   );
 }
@@ -122,6 +164,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: TOUCH_FLOOR,
     gap: theme.space1,
+  },
+  // The name and its chevron: one tap target at the row's 44pt floor, with no slop, so it
+  // shares no hit area with the type pill beside it (C-5). It gives way on a narrow phone
+  // as the bare name did (the note above).
+  petDoor: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: TOUCH_FLOOR,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  chevron: {
+    marginLeft: HEADER_CHEVRON_GAP,
+    flexShrink: 0,
   },
   petName: {
     flexShrink: 1,

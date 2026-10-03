@@ -421,12 +421,23 @@ export interface TypeSheetCounts {
   courses: Record<string, DoseFacts>;
   photographed: number;
   noted: number;
+  /** Meals left unfinished: the day header's own count (`DayFacts.mealsNotFinished`, a
+   *  treat never in it), summed over the window for the Meal row's second line (CUL-1532). */
+  mealsNotFinished: number;
 }
 
 export function typeSheetCountsOf(days: ReadonlyMap<string, DayFacts>): TypeSheetCounts {
   const byType = {} as Record<HistoryTypeKey, number>;
   for (const t of HISTORY_TYPE_KEYS) byType[t] = 0;
-  const out: TypeSheetCounts = { all: 0, symptoms: 0, byType, courses: {}, photographed: 0, noted: 0 };
+  const out: TypeSheetCounts = {
+    all: 0,
+    symptoms: 0,
+    byType,
+    courses: {},
+    photographed: 0,
+    noted: 0,
+    mealsNotFinished: 0,
+  };
   for (const f of days.values()) {
     out.all += f.total;
     out.symptoms += symptomCountOf(f);
@@ -439,6 +450,7 @@ export function typeSheetCountsOf(days: ReadonlyMap<string, DayFacts>): TypeShee
     }
     out.photographed += f.photographed;
     out.noted += f.noted;
+    out.mealsNotFinished += f.mealsNotFinished;
   }
   return out;
 }
@@ -938,6 +950,9 @@ export interface CountLineWindow {
 
 export interface CountLineInput {
   filter: HistoryFilter;
+  /** The filter as the type pill names it (`filterLabelOf`): the search line names it, so a
+   *  search inside a filter never reads as a search of the whole record (CUL-1532). */
+  filterLabel: string;
   /** The search text, or null / empty when no search is open. */
   search: string | null;
   window: CountLineWindow;
@@ -1023,9 +1038,12 @@ export function countLineOf(input: CountLineInput): CountLine {
   const windowHead = [head, ...qualifiers].join(' · ');
   const term = input.search?.trim() ?? '';
   if (term.length > 0) {
+    // Search stays inside the filter (R-2), so the line says which one: *Searching for
+    // "chicken" · Vomit · All time*. All types narrows nothing and is not named.
+    const scope = filter.kind === 'all' ? windowHead : `${input.filterLabel} · ${windowHead}`;
     return {
       kind: 'search',
-      line1: { lead: 'Searching for ', strong: `“${term}”`, tail: ` · ${windowHead}` },
+      line1: { lead: 'Searching for ', strong: `“${term}”`, tail: ` · ${scope}` },
       line2: SEARCH_COUNTS_NOTHING,
     };
   }

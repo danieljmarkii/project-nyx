@@ -14,6 +14,8 @@ interface Props {
   petId: string;
   /** The filter on screen. */
   filter: HistoryFilter;
+  /** What the rows' numbers count, or null when they show none (CUL-1532). */
+  caption: string | null;
   rows: readonly SheetRow<HistoryFilter>[];
   pill: TypePill;
 }
@@ -23,7 +25,7 @@ function keyOf(filter: HistoryFilter): string | null {
   return filter.kind === 'all' ? null : filterId(filter);
 }
 
-export function TypeSheet({ petId, filter, rows, pill }: Props) {
+export function TypeSheet({ petId, filter, rows, pill, caption }: Props) {
   const { options, byKey } = useMemo(() => {
     const map = new Map<string | null, HistoryFilter>();
     const opts: ScopeMenuOption[] = rows.map((row) => {
@@ -57,6 +59,7 @@ export function TypeSheet({ petId, filter, rows, pill }: Props) {
       pillCount={pill.count}
       pillAccessibilityLabel={pill.accessibilityLabel}
       openAtSelected
+      caption={caption}
     />
   );
 }

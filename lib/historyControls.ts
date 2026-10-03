@@ -38,6 +38,7 @@ import {
   formatCount,
   inRange,
   notGivenInFullText,
+  SEARCH_COUNTS_NOTHING,
   unconfirmedText,
   typeSheetCountsOf,
   windowTotalOf,
@@ -118,6 +119,100 @@ export function searchPlaceholderOf(readsNotes: boolean): string {
 /** Photographed rows whose read is `unread` (§5.4): '4 not read'. Null at zero. */
 export function notReadText(n: number): string | null {
   return n > 0 ? `${formatCount(n)} not read` : null;
+}
+
+/** Meals left unfinished in the window (CUL-1532, call 3a): '7 not finished', the day
+ *  header's count summed, so a cat refusing food never reads as routine one level above the
+ *  rows. Null at zero. */
+export function notFinishedText(n: number): string | null {
+  return n > 0 ? `${formatCount(n)} not finished` : null;
+}
+
+// ── The sheets' captions (CUL-1532, call 1a) ─────────────────────────────────────
+// One line under each sheet's label saying what its numbers count, because the scope goes
+// where the reader meets the number (C-3): a "Loose stool 0" is a fact about a window only
+// once the sheet names the window. The type sheet names the WINDOW its rows count; the
+// window sheet names the FILTER each of its rows counts. While a search is open neither
+// sheet counts, and both say why in the count line's own words (one string, one place).
+// With no numbers on the rows (the read still out, failed, or an empty record) there is
+// nothing to scope, so no caption: a caption over bare rows would claim counts not shown.
+
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+function upperFirst(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** The type sheet's caption: the window every row's number counts. 'Logged since May 14',
+ *  'Logged today', 'Logged in the last 7 days', 'Logged since the trial started, Jul 26',
+ *  'Logged in September'. */
+export function typeSheetCaptionOf(resolved: ResolvedWindow): string {
+  const { key, label } = resolved;
+  switch (key.kind) {
+    case 'all':
+      return label.sheetSub === null ? 'Logged in all time' : `Logged ${label.sheetSub}`;
+    case 'today':
+      return 'Logged today';
+    case 'last':
+      return `Logged in the ${lowerFirst(label.long)}`;
+    case 'trial':
+    case 'visit':
+      return label.anchor === null ? `Logged ${lowerFirst(label.long)}` : `Logged ${lowerFirst(label.long)}, ${label.anchor}`;
+    case 'month':
+      return `Logged in ${label.long}`;
+  }
+}
+
+/** The window sheet's caption: the filter every row's number counts. 'Vomits logged in each
+ *  window'; a dose filter by its name, never "doses" (CUL-1193); null under Noticed, where
+ *  no row counts (H-9). */
+export function windowSheetCaptionOf(filter: HistoryFilter, courses: readonly HistoryCourse[]): string | null {
+  switch (filter.kind) {
+    case 'noticed':
+      return null;
+    case 'all':
+      return 'Everything logged, in each window';
+    case 'photographed':
+      return 'Logged with a photo, in each window';
+    case 'noted':
+      return 'Logged with a note, in each window';
+    default:
+      return countsDoses(filter)
+        ? `${filterLabelOf(filter, courses)}, logged in each window`
+        : `${upperFirst(filterNoun(filter, 2))} logged in each window`;
+  }
+}
+
+// ── Search inside a filter (CUL-1532, call 4a) ───────────────────────────────────
+// Search stays inside the filter (R-2). An empty result under a filter is a fact about the
+// filter's rows, never the record's, so it says the filter is on and offers the rest.
+
+/** The action that keeps the words and drops the filter. */
+export const SEARCH_ALL_TYPES_LABEL = 'Search all types';
+
+/** What the list says when a search inside a filter finds nothing. Null under All types,
+ *  where the record-wide line ("Nothing matches …") is already true. */
+export function searchInFilterMissOf(
+  filter: HistoryFilter,
+  word: string,
+  courses: readonly HistoryCourse[],
+): { title: string; body: string } | null {
+  if (filter.kind === 'all') return null;
+  const label = filterLabelOf(filter, courses);
+  const quoted = `“${word}”`;
+  // What the search looked at, in the count's own nouns ('vomits', 'doses'); the two record
+  // filters and Noticed are not nouns, so they read as what the rows hold.
+  const looked =
+    filter.kind === 'photographed'
+      ? { title: `Nothing with a photo mentions ${quoted}`, what: 'what has a photo' }
+      : filter.kind === 'noted'
+        ? { title: `Nothing with a note mentions ${quoted}`, what: 'what has a note' }
+        : filter.kind === 'noticed'
+          ? { title: `Nothing you noticed mentions ${quoted}`, what: 'what you noticed' }
+          : { title: `No ${filterNoun(filter, 2)} mention ${quoted}`, what: filterNoun(filter, 2) };
+  return { title: looked.title, body: `The ${label} filter is on, so this search looked only at ${looked.what}.` };
 }
 
 // ── Days ─────────────────────────────────────────────────────────────────────────
@@ -259,7 +354,9 @@ export function typeSheetRows(input: TypeSheetInput): SheetRow<HistoryFilter>[] 
 
   const currentCourse = current.kind === 'course' ? current.courseKey : null;
   for (const type of TYPE_SHEET_ORDER) {
-    rows.push(rowOf({ kind: 'type', type }, EVENT_TYPES[type].label, num(counts?.byType[type])));
+    // Meal names its meals not finished, as Photographed names its unread photos (call 3a).
+    const detail = type === 'meal' && shown ? [notFinishedText(counts?.mealsNotFinished ?? 0)] : [];
+    rows.push(rowOf({ kind: 'type', type }, EVENT_TYPES[type].label, num(counts?.byType[type]), detail));
     if (type !== 'medication') continue;
     for (const course of courses) {
       const doses = counts?.courses[course.key];
@@ -436,6 +533,10 @@ export interface PinnedRowInput {
 }
 
 export interface PinnedRowView {
+  /** What the type sheet's numbers count, or null when it shows none (call 1a). */
+  typeCaption: string | null;
+  /** What the window sheet's numbers count, or null when it shows none. */
+  windowCaption: string | null;
   typeRows: SheetRow<HistoryFilter>[];
   typePill: TypePill;
   windowRows: SheetRow<HistoryWindowKey>[];
@@ -461,7 +562,17 @@ export function pinnedRowViewOf(input: PinnedRowInput): PinnedRowView {
   const courses = record?.courses ?? [];
   const showCounts = search === null;
   const notRead = counted?.notReadDays && resolved ? sumIn(counted.notReadDays, resolved.bounds) : null;
+  // The captions follow the rows: a search silences every number and says why; rows with no
+  // numbers get no caption (the header's C-12 rule, restated for the line that scopes them).
+  const typeCaption = !showCounts ? SEARCH_COUNTS_NOTHING : windowDays !== null && resolved ? typeSheetCaptionOf(resolved) : null;
+  const windowCaption = !showCounts
+    ? SEARCH_COUNTS_NOTHING
+    : counted !== null
+      ? windowSheetCaptionOf(filter, courses)
+      : null;
   return {
+    typeCaption,
+    windowCaption,
     typeRows: typeSheetRows({
       counts: windowDays ? typeSheetCountsOf(windowDays) : null,
       showCounts,

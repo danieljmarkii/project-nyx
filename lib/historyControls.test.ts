@@ -25,8 +25,13 @@ import {
   TYPE_SHEET_ORDER,
   daysIn,
   emptyWindowFacts,
+  SEARCH_ALL_TYPES_LABEL,
   filterLabelOf,
+  notFinishedText,
   notReadText,
+  searchInFilterMissOf,
+  typeSheetCaptionOf,
+  windowSheetCaptionOf,
   pinnedRowViewOf,
   searchPlaceholderOf,
   spokenCountOf,
@@ -43,6 +48,7 @@ import {
 import { historyDateFormatFor } from './historyDateFormat';
 import {
   HISTORY_TYPE_KEYS,
+  SEARCH_COUNTS_NOTHING,
   buildDayFacts,
   countLineOf,
   courseDaysOf,
@@ -338,7 +344,7 @@ describe('the course sub-rows (AC 30, CUL-488, CUL-1193)', () => {
     const cet = COURSES.find((c) => c.name === 'Cetirizine HCl') as HistoryCourse;
     const line = countLineOf({
       filter: { kind: 'course', courseKey: cet.key },
-      search: null,
+      filterLabel: 'Not read without a search', search: null,
       window: { longName: 'All time', anchorDay: null, isAllTime: true, isTrial: false, range: ALL_RANGE, recordFrom: null, pastPlannedEnd: false },
       facts: {
         petId: PET,
@@ -734,5 +740,180 @@ describe('the helpers', () => {
     expect(searchPlaceholderOf(false)).toBe('Foods, medicines');
     expect(searchPlaceholderOf(false)).not.toMatch(/note/i);
     expect(searchPlaceholderOf(true)).toBe('Foods, medicines, your notes');
+  });
+});
+
+// ── CUL-1532: HV-9 calls 1a, 3a, 4a ────────────────────────────────────────────────
+
+describe('call 3a: Meal names its meals not finished', () => {
+  // The fixture's meals: May 14 all eaten, Sep 22 refused, Sep 24 most. The day facts'
+  // own predicate decides which were not finished; the sheet only sums it.
+  const mealRow = (input: TypeSheetInput) => byLabel(typeSheetRows(input), EVENT_TYPES.meal.label);
+  const summed = [...RECORD.values()].reduce((n, f) => n + f.mealsNotFinished, 0);
+
+  it('the Meal row carries the day headers’ count, summed over the window', () => {
+    expect(summed).toBeGreaterThan(0);
+    expect(typeSheetCountsOf(RECORD).mealsNotFinished).toBe(summed);
+    const row = mealRow(typeInput());
+    expect(row.detail).toBe(`${summed} not finished`);
+    expect(row.accessibilityLabel).toBe(`Meal, ${summed} not finished, ${row.count} logged`);
+  });
+
+  it('says nothing at zero: a window holding only the finished May 14 meal', () => {
+    const may = daysIn(RECORD, { fromDay: RECORD_START, toDay: '2026-05-31' });
+    expect(mealRow(typeInput({ counts: typeSheetCountsOf(may) })).detail).toBeNull();
+  });
+
+  it('goes quiet with every other number while a search is open, and before the read answers', () => {
+    expect(mealRow(typeInput({ showCounts: false })).detail).toBeNull();
+    expect(mealRow(typeInput({ counts: null })).detail).toBeNull();
+  });
+
+  it('only the Meal row carries it', () => {
+    for (const row of typeSheetRows(typeInput())) {
+      if (row.label !== EVENT_TYPES.meal.label) expect(row.detail ?? '').not.toMatch(/not finished/);
+    }
+  });
+
+  it('notFinishedText: null at zero, formatted above it', () => {
+    expect(notFinishedText(0)).toBeNull();
+    expect(notFinishedText(7)).toBe('7 not finished');
+    expect(notFinishedText(1200)).toBe('1,200 not finished');
+  });
+});
+
+describe('call 1a: each sheet says what its numbers count', () => {
+  it('the type sheet names the window, in every kind of window', () => {
+    const cases: [HistoryWindowKey, string][] = [
+      [ALL_TIME, 'Logged since May 14'],
+      [{ kind: 'today' }, 'Logged today'],
+      [{ kind: 'last', days: 7 }, 'Logged in the last 7 days'],
+      [{ kind: 'trial' }, 'Logged since the trial started, Jul 26'],
+      [{ kind: 'visit' }, 'Logged since the last vet visit, Sep 16'],
+      [{ kind: 'month', month: '2026-09' }, 'Logged in September'],
+    ];
+    for (const [key, text] of cases) expect([key, typeSheetCaptionOf(resolveWindow(key, FACTS))]).toEqual([key, text]);
+  });
+
+  it('the window sheet names the filter, in the count’s own noun, and a dose filter never as "doses"', () => {
+    const motozol = COURSES.find((c) => c.name === 'Motozol') as HistoryCourse;
+    const cases: [HistoryFilter, string | null][] = [
+      [{ kind: 'all' }, 'Everything logged, in each window'],
+      [{ kind: 'symptoms' }, 'Symptoms logged in each window'],
+      [{ kind: 'type', type: 'vomit' }, 'Vomits logged in each window'],
+      [{ kind: 'type', type: 'weight_check' }, 'Weigh-ins logged in each window'],
+      [{ kind: 'type', type: 'medication' }, 'Medication, logged in each window'],
+      [{ kind: 'course', courseKey: motozol.key }, 'Motozol, logged in each window'],
+      [{ kind: 'photographed' }, 'Logged with a photo, in each window'],
+      [{ kind: 'noted' }, 'Logged with a note, in each window'],
+      [{ kind: 'noticed' }, null],
+    ];
+    for (const [filter, text] of cases) expect([filter, windowSheetCaptionOf(filter, COURSES)]).toEqual([filter, text]);
+  });
+
+  describe('through pinnedRowViewOf', () => {
+    const ANSWER: HistoryRecordData = {
+      petId: PET,
+      windowFacts: FACTS,
+      range: ALL_RANGE,
+      recordDays: RECORD,
+      courses: COURSES,
+      notReadDays: new Map(),
+    };
+    const viewOf = (over: Partial<PinnedRowInput> = {}) =>
+      pinnedRowViewOf({
+        record: ANSWER,
+        filter: { kind: 'type', type: 'vomit' },
+        window: { kind: 'trial' },
+        search: null,
+        lookLive: true,
+        readingOff: false,
+        today: TODAY,
+        ...over,
+      });
+
+    it('names the window that APPLIES and the filter on screen', () => {
+      expect(viewOf()).toMatchObject({
+        typeCaption: 'Logged since the trial started, Jul 26',
+        windowCaption: 'Vomits logged in each window',
+      });
+      // A window asked for but not offered falls back to All time, and the caption says so.
+      const noTrial = viewOf({ record: { ...ANSWER, windowFacts: { ...FACTS, trial: null } } });
+      expect(noTrial.typeCaption).toBe('Logged since May 14');
+    });
+
+    it('a search takes the numbers off both sheets, and both say why in the count line’s words', () => {
+      expect(viewOf({ search: 'rabbit' })).toMatchObject({
+        typeCaption: SEARCH_COUNTS_NOTHING,
+        windowCaption: SEARCH_COUNTS_NOTHING,
+      });
+    });
+
+    it('no numbers, no caption: the read still out or failed, and a record with nothing in it', () => {
+      expect(viewOf({ record: null })).toMatchObject({ typeCaption: null, windowCaption: null });
+      const empty = { ...ANSWER, windowFacts: { ...FACTS, firstRecordDay: null }, recordDays: new Map() };
+      expect(viewOf({ record: empty })).toMatchObject({ typeCaption: null, windowCaption: null });
+    });
+
+    it('a caption appears exactly when the rows carry numbers', () => {
+      for (const over of [{}, { search: 'rabbit' }, { record: null }] as Partial<PinnedRowInput>[]) {
+        const view = viewOf(over);
+        const numbered = view.typeRows.some((r) => r.count !== null);
+        expect([over, view.typeCaption !== null && view.typeCaption !== SEARCH_COUNTS_NOTHING]).toEqual([over, numbered]);
+      }
+    });
+  });
+});
+
+describe('call 4a: a search inside a filter says the filter is on', () => {
+  const motozol = () => COURSES.find((c) => c.name === 'Motozol') as HistoryCourse;
+
+  it('All types is the whole record: the record-wide line stands, so nothing here', () => {
+    expect(searchInFilterMissOf({ kind: 'all' }, 'chicken', COURSES)).toBeNull();
+  });
+
+  it('names the filter and what the search looked at, in the count’s own nouns', () => {
+    const cases: [HistoryFilter, string, string][] = [
+      [{ kind: 'type', type: 'vomit' }, 'No vomits mention “chicken”', 'The Vomit filter is on, so this search looked only at vomits.'],
+      [{ kind: 'symptoms' }, 'No symptoms mention “chicken”', 'The All symptoms filter is on, so this search looked only at symptoms.'],
+      [{ kind: 'course', courseKey: motozol().key }, 'No doses mention “chicken”', 'The Motozol filter is on, so this search looked only at doses.'],
+      [{ kind: 'photographed' }, 'Nothing with a photo mentions “chicken”', 'The Photographed filter is on, so this search looked only at what has a photo.'],
+      [{ kind: 'noted' }, 'Nothing with a note mentions “chicken”', 'The With a note filter is on, so this search looked only at what has a note.'],
+    ];
+    for (const [filter, title, body] of cases) {
+      expect([filter, searchInFilterMissOf(filter, 'chicken', COURSES)]).toEqual([filter, { title, body }]);
+    }
+  });
+
+  it('the way out keeps the words and names what it opens', () => {
+    expect(SEARCH_ALL_TYPES_LABEL).toBe('Search all types');
+  });
+
+  it('the count line’s search form names the filter, and All types is not named', () => {
+    const lineOf = (filter: HistoryFilter) =>
+      countLineOf({
+        filter,
+        filterLabel: filterLabelOf(filter, COURSES),
+        search: 'chicken',
+        window: { longName: 'All time', anchorDay: null, isAllTime: true, isTrial: false, range: ALL_RANGE, recordFrom: null, pastPlannedEnd: false },
+        facts: {
+          petId: PET,
+          range: ALL_RANGE,
+          days: RECORD,
+          firsts: { record: RECORD_START, look: null, byType: {}, symptoms: null, photographed: null, noted: null },
+          duplicates: { total: 0, byType: {} },
+        },
+        course: null,
+        trialRange: null,
+        today: TODAY,
+        dates: DATES,
+      });
+    expect(lineOf({ kind: 'type', type: 'vomit' })).toMatchObject({
+      kind: 'search',
+      line1: { lead: 'Searching for ', strong: '“chicken”', tail: ' · Vomit · All time' },
+      line2: SEARCH_COUNTS_NOTHING,
+    });
+    expect(lineOf({ kind: 'course', courseKey: motozol().key })).toMatchObject({ line1: { tail: ' · Motozol · All time' } });
+    expect(lineOf({ kind: 'all' })).toMatchObject({ line1: { tail: ' · All time' } });
   });
 });
