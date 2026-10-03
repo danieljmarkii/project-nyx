@@ -234,6 +234,19 @@ describe('ruling sheet §2.3 counterexamples', () => {
     expect(story(loss, { plans: [broken] }).row?.tier).toBe('firm');
   });
 
+  it('W6 · a recheck date before the start is read as none (adversarial pass 3)', () => {
+    const readings = [home(6.0, '2026-01-01'), home(6.02, '2026-01-02'), home(5.4, '2026-09-25'), home(5.42, '2026-09-26')];
+    const typo = { startedAt: '2026-09-20T12:00:00Z', recheckAt: '2026-02-01T00:00:00Z' };
+    // Read as a running plan from Sep 20 (12 weeks): the earlier loss is pre-plan and does not
+    // anchor, but no history is erased by a phantom end on Feb 1.
+    expect(story(readings, { plans: [typo] }).row).toBeNull();
+    expect(story(readings).row).not.toBeNull();
+    // An older typo plan lapses 12 weeks after its start (Apr 4), not on its phantom recheck;
+    // the readings before its start still never anchor again (attack 12).
+    const old = { startedAt: '2026-01-10T12:00:00Z', recheckAt: '2025-12-01T00:00:00Z' };
+    expect(story(readings, { plans: [old] }).row).toBeNull();
+  });
+
   it('W6 · a plan that ended at its goal: the cat holding there raises nothing (counterexample 1)', () => {
     const readings = [home(7.0, '2026-03-02'), home(7.01, '2026-03-09'), home(6.3, '2026-06-20'), home(6.31, '2026-06-27'), home(6.3, '2026-09-01'), home(6.31, '2026-09-20')];
     expect(story(readings, { plans: [{ startedAt: '2026-03-01T00:00:00Z', recheckAt: '2026-07-15T00:00:00Z', endedAt: '2026-06-30T00:00:00Z' }] }).row).toBeNull();
@@ -288,6 +301,25 @@ describe('stand-downs (spec §5.5, attack 11)', () => {
     // The row names the level the stand-down kept (the lower of the regained pair), never the
     // March high before it.
     expect(s.row?.says.highBefore).toMatchObject({ kg: 4.49, confirmed: true });
+  });
+
+  // Adversarial pass 3.
+  it('a vet-confirmed regain anchors the next finding: a relapse after it raises a row', () => {
+    const readings = [
+      home(5.0, '2026-06-01'), home(5.02, '2026-06-02'), home(4.4, '2026-07-01'), home(4.42, '2026-07-02'),
+      clinic(5.1, '2026-08-01'), home(4.3, '2026-09-10'), home(4.32, '2026-09-11'),
+    ];
+    expect(story(readings, { standDowns: ['2026-08-02T00:00:00Z'] }).row).toMatchObject({ tier: 'firm', high: { kg: 5.1, source: 'clinic' } });
+  });
+
+  it('a spike and its pre-filled copy before a stand-down never become the anchor', () => {
+    const readings = [
+      home(5.0, '2026-08-01'), home(5.02, '2026-08-02'), home(4.4, '2026-08-10'), home(4.42, '2026-08-11'),
+      home(5.5, '2026-08-20'), home(5.5, '2026-08-21'), home(4.4, '2026-09-10'), home(4.42, '2026-09-11'),
+    ];
+    expect(story(readings, { standDowns: ['2026-08-22T00:00:00Z'] }).row).toBeNull();
+    const sameInstant = [home(6.32, '2026-08-01'), home(7.38, '2026-08-02'), home(7.38, '2026-08-02'), home(6.3, '2026-09-10'), home(6.31, '2026-09-11')];
+    expect(story(sameInstant, { standDowns: ['2026-08-03T00:00:00Z'] }).row).toBeNull();
   });
 
   // Adversarial pass 2: a row raised on a single low reading, then stood down, came straight back.

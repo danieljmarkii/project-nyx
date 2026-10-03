@@ -251,7 +251,12 @@ function boundaryAt(counted: readonly Indexed[], t: number, notBefore: number): 
   const before = counted.filter((x) => x.ms <= t && x.ms >= notBefore)
   if (before.length === 0) return { floor: t, anchor: null }
   const last = before[before.length - 1]
-  const prev = before.length >= 2 ? before[before.length - 2] : null
+  // A clinic reading is a level on its own (a vet-confirmed regain anchors the next finding).
+  if (last.r.source === 'clinic') return { floor: t, anchor: last }
+  // Exact copies collapse first: a pre-filled copy of a spike must not pair with it (§4.3).
+  let k = before.length - 2
+  while (k >= 0 && isExactCopy(before[k].r, last.r)) k--
+  const prev = k >= 0 ? before[k] : null
   return { floor: t, anchor: prev !== null && prev.r.kg < last.r.kg ? prev : last }
 }
 
@@ -290,7 +295,9 @@ function validPlanStart(plan: WeightPlan, nowMs: number): number | null {
 /** When a plan stops quieting the lines: its end, else its recheck date, else 12 weeks on. */
 function planEndMs(plan: WeightPlan, startMs: number): number {
   const endMs = plan.endedAt ? Date.parse(plan.endedAt) : NaN
-  const recheckMs = plan.recheckAt ? Date.parse(plan.recheckAt) : NaN
+  // A recheck date before the plan's start is a typo, read as no recheck (adversarial pass 3).
+  const rawRecheck = plan.recheckAt ? Date.parse(plan.recheckAt) : NaN
+  const recheckMs = Number.isFinite(rawRecheck) && rawRecheck > startMs ? rawRecheck : NaN
   const lapseMs = Number.isFinite(recheckMs) ? recheckMs : startMs + WEIGHT_RULES.planLapseDays * MS_PER_DAY
   return Number.isFinite(endMs) ? Math.min(endMs, lapseMs) : lapseMs
 }
