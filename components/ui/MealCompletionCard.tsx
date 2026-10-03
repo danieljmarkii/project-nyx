@@ -20,6 +20,7 @@ import { formatTime } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
 import { mealFlagCopy, membershipFlagCopy } from '../../lib/trialContaminant';
 import { foodFormatTag } from '../../lib/food';
+import { unfinishedIntakePhrase } from '../../lib/dayEvents';
 import { AddTrialFoodSheet } from '../profile/AddTrialFoodSheet';
 import { buildAddTrialFoodSheet, ADD_TRIAL_FOOD_ERROR } from '../../lib/trialFoodsScreen';
 import { addTrialFood, foodLabel, type TrialFoodSelection } from '../../lib/dietTrialSetup';
@@ -390,12 +391,15 @@ export function MealCompletionCard() {
   // "Refused · Royal Canin HP", never "Logged · …" over an animal that did not eat
   // (C-17 applied to the half of the record the title used to drop). It follows the
   // record live, so a correction on the chips re-titles the card to match; the beat's
-  // haptic is the reveal's alone (`playCommitHaptic`). The phrases are the drill-in's
-  // (`lib/dayEvents.ts` INTAKE_PHRASE), so the card never says a warmer word than the
-  // row it wrote.
+  // haptic is the reveal's alone (`playCommitHaptic`). The phrase is READ from the
+  // drill-in's map (`unfinishedIntakePhrase`), never retyped, so the card never says a
+  // warmer word than the row it wrote. "Food picked at" is the same passive as
+  // "Food logged", on purpose: the nameless fallback keeps one shape.
   const decline = isIntakeDecline(meal?.intakeRating);
-  const verb = meal?.intakeRating === 'refused' ? 'Refused' : meal?.intakeRating === 'picked' ? 'Picked at' : 'Logged';
-  const headline = foodName ? `${verb} · ${foodName}` : `Food ${verb.toLowerCase()}`;
+  const phrase = decline ? unfinishedIntakePhrase(meal?.intakeRating) ?? 'logged' : 'logged';
+  const headline = foodName
+    ? `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)} · ${foodName}`
+    : `Food ${phrase}`;
   // Name the MEAL's pet, not the active one. The flag is already targeted
   // correctly either way (evaluateMealLogTimeFlag runs against payload.petId, the
   // pet captured at log time), but a queue-then-switch would otherwise print
@@ -617,9 +621,10 @@ export function MealCompletionCard() {
               {/* CUL-894 — on the intake door's card the owner has ALREADY answered (the
                   sheet asked the same question a second ago), so the row is her answer
                   held up for correction, not a second ask. Keyed on what the card was
-                  presented with, the same fact the clear-guard above reads. */}
+                  presented with, the same fact the clear-guard above reads — and on a
+                  rating still standing, so a row she has since cleared asks again. */}
               <ThemedText style={styles.intakeLabel}>
-                {presentedIntake.current.rating !== null
+                {presentedIntake.current.rating !== null && payload.intakeRating !== null
                   ? 'You said · tap another to change'
                   : `How much did ${mealPetName} eat?`}
               </ThemedText>

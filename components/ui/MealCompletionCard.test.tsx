@@ -447,14 +447,19 @@ describe('MealCompletionCard — a refusal is acknowledged, never celebrated (CU
     view.getByText('Picked at · PetCo Dental Treats');
   });
 
-  it('the nameless fallback still says what happened', () => {
-    seedMeal({ foodType: 'meal', intakeRating: 'refused', foodBrand: null, foodProductName: null });
+  it.each([
+    ['refused', 'Food refused'],
+    ['picked', 'Food picked at'],
+    ['all', 'Food logged'],
+  ] as const)('the nameless fallback on %s still says what happened', (rating, title) => {
+    seedMeal({ foodType: 'meal', intakeRating: rating, foodBrand: null, foodProductName: null });
     const view = render(<MealCompletionCard />);
-    view.getByText('Food refused');
+    view.getByText(title);
   });
 
   it('drops the gold halo over a refusal and keeps it on an eaten meal', () => {
-    // Mutation-checked: render the halo unconditionally and the first assertion reds.
+    // Mutation-checked 2026-10-03: with the halo rendered unconditionally the first
+    // assertion reds.
     seedMeal({ foodType: 'meal', intakeRating: 'refused' });
     const refused = render(<MealCompletionCard />);
     expect(haloOf(refused)).toBeUndefined();
@@ -473,6 +478,11 @@ describe('MealCompletionCard — a refusal is acknowledged, never celebrated (CU
   });
 
   it('a pre-door card still asks, and re-titles when she answers Refused here', async () => {
+    const { AccessibilityInfo, Platform } = jest.requireActual<typeof import('react-native')>('react-native');
+    const prevOS = Platform.OS;
+    Platform.OS = 'ios';
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    try {
     seedMeal({ foodType: 'meal', intakeRating: null });
     const view = render(<MealCompletionCard />);
     view.getByText('How much did Biscuit eat?');
@@ -481,7 +491,24 @@ describe('MealCompletionCard — a refusal is acknowledged, never celebrated (CU
       fireEvent.press(view.getByText('Refused'));
     });
     view.getByText('Refused · PetCo Dental Treats');
+    // The re-title is spoken, not only painted (CUL-1275's iOS half).
+    expect(announce).toHaveBeenLastCalledWith(
+      `Refused · PetCo Dental Treats. ${formatTime(new Date('2026-06-07T14:00:00.000Z'))}`,
+    );
     // The question stays a question: she answered it on THIS card.
+    view.getByText('How much did Biscuit eat?');
+    } finally {
+      announce.mockRestore();
+      Platform.OS = prevOS;
+    }
+  });
+
+  it('a door card she corrects and then clears asks again', async () => {
+    seedMeal({ foodType: 'meal', intakeRating: 'refused' });
+    const view = render(<MealCompletionCard />);
+    await act(async () => { fireEvent.press(view.getByText('Some')); });
+    await act(async () => { fireEvent.press(view.getByText('Some')); });
+    expect(useMomentStore.getState().payload).toMatchObject({ intakeRating: null });
     view.getByText('How much did Biscuit eat?');
   });
 });
