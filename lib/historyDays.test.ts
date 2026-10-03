@@ -495,7 +495,11 @@ describe('AC 1 — the count line, the type sheet and every day header agree, ev
       if (n === 0) expect(mark.state).toBe('quiet');
       else {
         expect(mark.state).not.toBe('quiet');
-        expect(mark.label).toMatch(new RegExp(`, ${n} [^,]*logged`));
+        // Meal speaks the header's own split (CUL-1243): its parts sum to the day's count.
+        if (filter.kind === 'type' && filter.type === 'meal') {
+          const spokenParts = mealSplitParts(n, f.treats).join(' and ');
+          expect(mark.label).toContain(`, ${spokenParts} logged`);
+        } else expect(mark.label).toMatch(new RegExp(`, ${n} [^,]*logged`));
       }
     }
     if (window.range.toDay >= '2026-09-02' && window.range.fromDay <= TODAY && facts.days.size > 0) expect(spoken).toBeGreaterThan(0);
@@ -1281,5 +1285,35 @@ describe('CUL-1244 (PM-ruled (b)) — a look-only day is a card whose header is 
     });
     expect(out[0]).toEqual({ kind: 'day', day: TODAY });
     expect(dayHeaderOf(dayFactsOn(quiet, TODAY), { kind: 'all' }, { isToday: true })).toEqual([]);
+  });
+});
+
+describe('CUL-1244 — the week strip agrees with the list about a look-only day', () => {
+  const facts = factsFor(WINDOWS.all.range);
+  const strip = (filter: HistoryFilter): StripWindow => ({
+    fromDay: WINDOWS.all.range.fromDay,
+    toDay: WINDOWS.all.range.toDay,
+    recordStart: facts.firsts.record,
+    petName: 'Nyx',
+    courseName: null,
+    claimsFrom: claimsFromOf(facts.firsts, filter, null),
+  });
+
+  it('under All types its cell is a door to the card, and still says what coverage says (nothing logged)', () => {
+    const lookOnly = dayFactsOn(facts.days, '2026-09-12');
+    const all: HistoryFilter = { kind: 'all' };
+    const sections = listSectionsOf({ span: WINDOWS.all.range, facts, filter: all, course: null, itemDays: new Set(), today: TODAY });
+    expect(sections).toContainEqual({ kind: 'day', day: '2026-09-12' });
+    const mark = stripMarkOf(lookOnly, all, strip(all), TODAY);
+    expect(mark.tappable).toBe(true);
+    expect(mark.label).toContain('nothing logged');
+  });
+
+  it('a look-only TODAY under All types is a door too, where the open day otherwise is not one before the claims', () => {
+    const today = { ...dayFactsOn(facts.days, TODAY), total: 0, byType: {}, looked: true };
+    const all: HistoryFilter = { kind: 'all' };
+    const early: StripWindow = { ...strip(all), claimsFrom: null };
+    expect(stripMarkOf(today, all, early, TODAY).tappable).toBe(true);
+    expect(stripMarkOf({ ...today, looked: false }, all, early, TODAY).tappable).toBe(false);
   });
 });

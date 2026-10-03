@@ -80,6 +80,7 @@ jest.mock('../../lib/historyQueries', () => ({
   readHistoryFacts: jest.fn(async () => mockFacts()),
   readDayPage: jest.fn(async () => mockPage()),
   readWholeDays: jest.fn(async () => new Map()),
+  readLookRows: jest.fn(async () => new Map()),
   readHistoryCourses: jest.fn(async () => []),
 }));
 jest.mock('../../lib/dietTrialFacts', () => ({

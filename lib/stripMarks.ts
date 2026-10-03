@@ -72,9 +72,11 @@ import {
   absenceText,
   dayCountFor,
   filterNoun,
+  filterShowsDay,
   formatCount,
   isDayKey,
   isSymptomFilter,
+  mealSplitParts,
   shiftDay,
   type CourseDays,
   type DayFacts,
@@ -219,12 +221,14 @@ function brokenOf(f: DayFacts, filter: HistoryFilter): { count: number; text: (n
 
 /** The filtered count in the header's nouns: "2 vomits logged", "1 Cetirizine HCl dose
  *  logged". A course names its drug when the caller knows it. */
-function presentText(filter: HistoryFilter, k: number, courseName: string | null): string {
+function presentText(filter: HistoryFilter, k: number, courseName: string | null, treats: number | null = null): string {
   if (filter.kind === 'course' && courseName) {
     return `${formatCount(k)} ${courseName} ${k === 1 ? 'dose' : 'doses'} logged`;
   }
   // The record filters' nouns are phrases ("with a photo"), which go after the verb.
   if (filter.kind === 'photographed' || filter.kind === 'noted') return `${formatCount(k)} logged ${filterNoun(filter, k)}`;
+  // Meal speaks meals and treats apart, as the header above it does (CUL-1243).
+  if (filter.kind === 'type' && filter.type === 'meal' && treats !== null) return `${mealSplitParts(k, treats).join(' and ')} logged`;
   return `${formatCount(k)} ${filterNoun(filter, k)} logged`;
 }
 
@@ -280,9 +284,12 @@ export function stripMarkOf(f: DayFacts, filter: HistoryFilter, window: StripWin
   if (filter.kind === 'noticed') return mark('noticed', 'none', head, f.looked);
 
   if (f.total === 0) {
+    // Still "nothing logged", as coverage counts it (R-1), even on a look-only day; but under
+    // All types that day is a card in the list (CUL-1244), so its cell is a door to it.
+    const shown = filterShowsDay(f, filter);
     return isToday
-      ? mark('open', 'none', `${word}, today, nothing logged yet`, listHolds(false))
-      : mark('unlogged', 'none', `${word}, nothing logged`, listHolds(false));
+      ? mark('open', 'none', `${word}, today, nothing logged yet`, listHolds(shown))
+      : mark('unlogged', 'none', `${word}, nothing logged`, listHolds(shown));
   }
 
   const total = `${formatCount(f.total)} logged in all`;
@@ -302,7 +309,7 @@ export function stripMarkOf(f: DayFacts, filter: HistoryFilter, window: StripWin
     const none = absenceText(filter, window.courseName) ?? 'nothing of this kind logged';
     return mark('quiet', 'none', [head, none, total].join(', '), listHolds(false));
   }
-  const parts = [head, presentText(filter, k, window.courseName), total];
+  const parts = [head, presentText(filter, k, window.courseName, f.treats), total];
   if (broken.count > 0) parts.push(broken.text(broken.count));
   return mark(isSymptomFilter(filter) ? 'rose' : 'logged', broken.count > 0 ? 'broken' : 'solid', parts.join(', '), listHolds(true));
 }

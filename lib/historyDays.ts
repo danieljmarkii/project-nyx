@@ -1110,7 +1110,7 @@ export function dayHeaderOf(
   if (f.total === 0) {
     // A card with nothing in the population that still holds something (a date-only item,
     // or an answered look drawn as a row under All types, CUL-1244) shows the date alone.
-    if (opts.hasItems || (filter.kind === 'all' && f.looked)) return [];
+    if (opts.hasItems || filterShowsDay(f, filter)) return [];
     return [{ text: opts.isToday ? 'nothing logged yet' : 'nothing logged', tone: 'neutral' }];
   }
   const total: DayHeaderPart = { text: `${formatCount(f.total)} logged`, tone: 'total' };
@@ -1262,6 +1262,18 @@ export function claimsFromOf(firsts: FirstDays, filter: HistoryFilter, course: C
 }
 
 /**
+ * Whether a filter draws rows on this day: the one answer the list's cards and the week
+ * strip's doors share. Under All types an answered look is drawn as a row (CUL-1244,
+ * PM-ruled (b)), so a look-only day is a card, never a gap line's "nothing logged". It is
+ * still counted nowhere: coverage keeps calling it unlogged (`unloggedDaysOf`, R-1).
+ */
+export function filterShowsDay(f: DayFacts, filter: HistoryFilter): boolean {
+  if (filter.kind === 'noticed') return f.looked;
+  if (filter.kind === 'all') return f.total > 0 || f.looked;
+  return (dayCountFor(f, filter) ?? 0) > 0;
+}
+
+/**
  * The list, newest day first, as sections. Pure, so every absence rule is a table test.
  *
  * Two kinds of thing appear, under two different rules:
@@ -1331,15 +1343,7 @@ export function listSectionsOf(input: ListSectionsInput): HistorySection[] {
   for (const day of daysDescending(lo, hi)) {
     const f = dayFactsOn(facts.days, day);
     const hasItems = itemDays.has(day);
-    // Under All types an answered look is drawn as a row (CUL-1244, PM-ruled (b)), so a
-    // look-only day is a card, never a gap line's "nothing logged". It is still counted
-    // nowhere: coverage keeps calling it unlogged (`unloggedDaysOf`, R-1).
-    const shows =
-      filter.kind === 'noticed'
-        ? f.looked
-        : filter.kind === 'all'
-          ? f.total > 0 || f.looked
-          : (dayCountFor(f, filter) ?? 0) > 0;
+    const shows = filterShowsDay(f, filter);
 
     if (shows || (filter.kind === 'all' && hasItems)) {
       flushBoth();
