@@ -6,6 +6,8 @@ description: End-of-session wrap-up — run the DoD, write the session record, c
 
 Run the project's end-of-session ritual **in this exact order**. This is the canonical close-out — do not improvise a different shape. The goal is that every session ends the same way, and the PM always walks away knowing *what shipped* and *exactly what prompt to paste next*.
 
+**A session launched by `/dispatch` runs `/wrap --dispatched` instead** (§ Dispatched sessions, below): the same record keeping, a five-line return in place of everything written for a human reader.
+
 CLAUDE.md (the stable operating manual) is the source of truth for the formats referenced below — follow it, don't restate it from memory. `STATUS.md` is a pointer card and usually needs no edit at all (step 3b); the volatile state lives in Linear.
 
 ## Steps
@@ -62,9 +64,33 @@ CLAUDE.md (the stable operating manual) is the source of truth for the formats r
 
 7. **Emit the One thing block** (the PM's learning loop; procedure in the `learning` skill, curriculum in `docs/learning/curriculum.md`). One concept this session's own work illustrated, at the PM's level, with one check question. If `/handoff` already taught one this session, record that one instead of adding a second. Add its ledger line to the session record from step 3a, right under the `**Date:**` line: `**One thing:** <ID> L<n> — <title> · check: pending` (grade it `correct` / `missed` if the PM answers before the record is committed). If the session illustrated no new concept, write `**One thing:** none — <reason>`. With `/wrap and merge`, pick the concept and write its line at step 3a, so it rides in the PR before the merge; an answer that arrives after the merge is graded by the next session's re-ask, never by an edit. A re-asked check from an earlier session gets its own `**One thing (re-ask):**` line here; never edit the earlier record.
 
-8. **End with the Next Session Kickoff block — this is mandatory and always last.** Even if the session was inconclusive, produce a copy-pasteable recommended first prompt that names the issue (`CUL-NNN`), the file/doc to read first, and any PM Action Item that is a prerequisite. Include 1–2 alternate prompts if other tracks are live. This is the single most-relied-on output of the wrap — never skip or bury it.
+8. **End with the Next Session Kickoff block — this is mandatory and always last** (except under `--dispatched`, whose return block is last). Even if the session was inconclusive, produce a copy-pasteable recommended first prompt that names the issue (`CUL-NNN`), the file/doc to read first, and any PM Action Item that is a prerequisite. Include 1–2 alternate prompts if other tracks are live. This is the single most-relied-on output of the wrap — never skip or bury it.
 
    **Surface efficiencies, not just a linear next step.** When two or more tracks are independent — *disjoint files, no logical dependency either direction* — say so explicitly and note they can run **concurrently as separate sessions/branches** (name any shared-file collision to expect — `STATUS.md` is no longer one of them for most sessions, since a wrap normally doesn't touch it). Flag any single decision that unblocks multiple tracks, any batchable work, and which items are **ready-to-run vs. gated on a PM/expert call**. The recommended prompt is still the best *single* next step; the alternates + a short "Parallel / efficiencies" note exist so the PM can fan work out instead of running a needlessly serial plan. Don't present a linear plan when the work can fan out.
+
+## Dispatched sessions (`/wrap --dispatched`, CUL-1505)
+
+A session `/dispatch` launched has no human reading its chat: the PM reads the dispatcher's round digest, and the dispatcher decides what runs next. So `--dispatched` keeps every step that writes the record and drops every step written for a reader. **The order differs from a normal wrap**, because the record must ride in the PR and the return must report the merge:
+
+1. **Before the merge:** steps 1–4 unchanged. That means the DoD with its adversarial line, the session record in `docs/sessions/` (committed to the PR, `shipped via #<n>`), the issue status, the outcome comment that releases the claim, and PM actions filed on the label.
+2. **Then the merge, or the stop**, under the prompt's merge conditions.
+3. **Then the post-merge read-back** from step 4: every issue the PR named, reopened if it closed early.
+4. **Last, the Dispatch return**, printed and sent to the dispatcher as the body of the single closing message the prompt describes (its first line is the wake line):
+
+   ```
+   Dispatch return · PR-<NN> · <CUL-NNN> · #<n> <merged | open, left for the PM: <the merge condition that failed>>
+   For the owner: <one plain sentence of what changed, or "nothing visible; <what the engine or the team gets>">
+   Needs the PM: <CUL-NNN — the action>, or "nothing"
+   Filed: <CUL-NNN — title>, or "nothing"
+   Residual: <the one thing a reviewer should know>, or "none"
+   ```
+
+What changes in the other steps:
+
+- **Step 5 (Session Summary):** replaced by the return.
+- **Step 6 (Dev Handoff):** nothing in chat. The Manual QA Script goes in the PR body, where the TestFlight cut's device sitting finds it. There are no runtime commands.
+- **Step 7 (One thing):** written only when the prompt says `Teach: yes`. The ledger line goes in the record as usual (`**One thing:** <ID> L<n> — <title> · check: pending`). The block itself goes in the record under a `## Teach` heading, and again under `## Teach` at the end of the return, so the dispatcher can quote it. No line of the block may start with `**One thing`, because the ledger is read by grepping that prefix. Without `Teach: yes`, the ledger line reads `**One thing:** none — dispatched session, not this round's teach row`.
+- **Step 8 (Next Session Kickoff):** none. The real next steps go to Linear as issues or comments, where the dispatcher reads them.
 
 ## Rules
 
