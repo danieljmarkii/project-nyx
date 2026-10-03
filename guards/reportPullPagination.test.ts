@@ -435,7 +435,10 @@ describe('CUL-989 — an incomplete pull is acted on, in each function, and no r
   it('generate-signal hands the incomplete pulls to the pipeline and logs them at error level', () => {
     // The pipeline's side (withhold the reassuring, floor the rest, disclose) is proven by
     // behaviour in _shared/engineCorpus/signalPipeline.test.ts (g)–(j); this pins the wire.
-    expect(signal).toMatch(/const incompletePulls = incompletePullNames\(\{/);
+    // The row pulls are named here; under engines_v3_en8 a failed weight read joins them
+    // (PR-19, CUL-1413), so what the pipeline is handed is that composed list.
+    expect(signal).toMatch(/const readPulls = incompletePullNames\(\{/);
+    expect(signal).toMatch(/const incompletePulls = en8On && weightFacts === null \? \[\.\.\.readPulls, 'weights'\] : readPulls/);
     expect(signal).toMatch(/runSignalPipeline\(\{[\s\S]*?\n\s*incompletePulls,\n/);
     expect(signal).toMatch(/console\.error\('generate-signal incomplete pulls:'/);
     // Over an incomplete read no card goes to the model: the "at least" lives in the template.
