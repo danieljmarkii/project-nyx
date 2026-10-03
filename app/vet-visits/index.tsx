@@ -59,8 +59,17 @@ export default function VetVisitsScreen() {
   // Captured on the first non-null active pet (the store is empty for a frame on a
   // cold start) and frozen after. Everything on this screen — the read, the
   // prefill, the writes, and which pets "Also for" may offer — is scoped to it.
+  // A door that names its pet (the Signal screen's "Book a visit", Engines v3 PR-35) is
+  // about THAT pet, the finding's, never the store's current one (C-9). Only a pet this
+  // account holds is taken; anything else falls back to the active pet.
+  const { pet: petParam, reason: reasonParam } = useLocalSearchParams<{ pet?: string; reason?: string }>();
   const [screenPetId, setScreenPetId] = useState<string | null>(null);
-  if (screenPetId === null && activePet) setScreenPetId(activePet.id);
+  if (screenPetId === null && petParam && pets.some((p) => p.id === petParam)) setScreenPetId(petParam);
+  else if (screenPetId === null && activePet) setScreenPetId(activePet.id);
+  // The reason the door carried, held once like `pendingAdd` below and cleared with it.
+  const [carriedReason] = useState<string | null>(() =>
+    typeof reasonParam === 'string' && reasonParam.trim().length > 0 ? reasonParam.trim().slice(0, 200) : null,
+  );
   const petId = screenPetId;
   // Named from the id, never from `activePet` — there is no `?? activePet?.name`
   // rung, because `resolveRecordPetName` already falls back to an anonymous label
@@ -130,7 +139,7 @@ export default function VetVisitsScreen() {
           // Clear the request at its source too. Without this the URL still reads
           // `?add=booked` on every later focus of this screen, which is a standing
           // instruction nobody issued.
-          router.setParams({ add: undefined });
+          router.setParams({ add: undefined, reason: undefined });
         }
       });
       return () => {
@@ -489,6 +498,7 @@ export default function VetVisitsScreen() {
           petName={petName}
           otherPets={otherPets}
           prefill={prefill}
+          initialReason={sheetMode === 'booked' ? carriedReason : null}
           busy={saving}
           onClose={() => setSheetMode(null)}
           onSubmit={handleSubmit}

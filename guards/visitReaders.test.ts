@@ -228,6 +228,18 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'coverage line, a day count, Patterns or an engine input.',
   },
 
+  // ── EN-9's answers (Engines v3 PR-35, CUL-1418; care-state spec §3.2) ──
+  'lib/careAnswers.ts': {
+    kinds: ['table', 'column'],
+    why:
+      'readCareQuestionRecord reads the id and visited_at of the pet\'s LATEST visit, so the ' +
+      'finding screen can ask its one question ("Did you talk about the vomiting?") and, on ' +
+      'yes, write care_acknowledgements.vet_visit_id as the answer\'s provenance. The visit ' +
+      'is asked about, never counted: it contributes no row and no number to any surface, and ' +
+      'the answer is the owner\'s (AC 10 as amended 2026-09-28: only owner answers and dates ' +
+      'cross back up).',
+  },
+
   // ── The shared visit bound (H-11, CUL-1160) ──
   'lib/visitWindow.ts': {
     kinds: ['table'],

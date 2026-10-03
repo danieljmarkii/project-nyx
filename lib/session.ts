@@ -19,6 +19,7 @@ import { clearDailyRecapOffer } from './dailyRecapOffer';
 import { clearSignalArrival } from './signalArrival';
 import { clearSignalFold } from './signalFold';
 import { clearAppointmentAsked } from './appointmentAsked';
+import { clearCareQuestionAsked } from './careQuestionAsked';
 import { clearLookWithheld } from './lookWithheld';
 import { clearObservationFold } from './observationFold';
 import { cancelPendingSignalRegens } from './signal';
@@ -340,4 +341,9 @@ export async function wipeLocalSession(): Promise<void> {
   // animal had a vet appointment on a particular day. Same FR-9 parity rule as the rest
   // of this list.
   await clearAppointmentAsked();
+  // Engines v3 PR-35 — the care questions' ask-once memory (`lib/careQuestionAsked.ts`):
+  // which trial, course or visit this device already asked about, keyed by its id, and
+  // the day it last asked. Each key names a record in the previous owner's account; same
+  // FR-9 parity rule.
+  await clearCareQuestionAsked();
 }
