@@ -135,6 +135,8 @@ Deno.test('§4.6 a true doubling at full logging comes back, with the compared p
   const s = careStateOf(out[0].finding)!
   assertStrictEquals(s.state, 'raised_again')
   assert(s.text!.startsWith('Back because '), s.text!)
+  // PR-35: the back line also travels on its own, so Home never splits the sentence to find it.
+  assert(s.backLine && s.backLine.startsWith('Back because ') && s.text!.startsWith(s.backLine), String(s.backLine))
   assert(s.text!.includes('worth booking a vet visit'), 'the lane\'s own ask comes back word for word')
   assert(s.text!.includes('You said on Aug 1 Nyx\'s vet knows.'), 'the earlier answer stays, as a fact')
 })

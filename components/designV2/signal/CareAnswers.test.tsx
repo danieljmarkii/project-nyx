@@ -25,12 +25,12 @@ jest.mock('../../../lib/careQuestionAsked', () => ({
 const mockPushRoute = jest.fn();
 jest.mock('expo-router', () => ({ router: { push: (a: unknown) => mockPushRoute(a) } }));
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { toLocalDayKey } from '../../../lib/utils';
 import type { CareStateView } from '../../../lib/careState';
 import { CareAnswers, NOT_YET_LINE, TAKEN_BACK } from './CareAnswers';
 
-const RAISED: CareStateView = { state: 'raised', sign: 'diarrhea', text: null };
+const RAISED: CareStateView = { state: 'raised', sign: 'diarrhea', text: null, backLine: null };
 
 function renderAnswers(view: CareStateView = RAISED) {
   return render(
@@ -48,9 +48,9 @@ beforeEach(() => {
 });
 
 it('renders nothing on a concern the vet already knows about: there is no ask to answer', () => {
-  renderAnswers({ state: 'with_vet', sign: 'diarrhea', text: 'x' });
+  renderAnswers({ state: 'with_vet', sign: 'diarrhea', text: 'x', backLine: null });
   expect(screen.queryByTestId('care-answers')).toBeNull();
-  renderAnswers({ state: 'recheck_booked', sign: 'diarrhea', text: 'x' });
+  renderAnswers({ state: 'recheck_booked', sign: 'diarrhea', text: 'x', backLine: null });
   expect(screen.queryByTestId('care-answers')).toBeNull();
 });
 
@@ -125,4 +125,34 @@ it('"No" and "Not sure" write nothing and settle the question; "Later" writes no
   fireEvent.press(await screen.findByText('Later'));
   expect(mockSettle).not.toHaveBeenCalled();
   expect(mockRecord).not.toHaveBeenCalled();
+});
+
+it('a double tap writes ONE answer, so an Undo takes back everything it says it does', async () => {
+  let release: (v: string) => void = () => {};
+  mockRecord.mockImplementationOnce(() => new Promise<string>((r) => { release = r; }));
+  renderAnswers();
+  const button = screen.getByText('My vet knows');
+  // Both taps in ONE act: no re-render between them, as two taps inside one frame on a device.
+  act(() => {
+    fireEvent.press(button);
+    fireEvent.press(button);
+  });
+  release('answer-1');
+  await screen.findByTestId('care-answers-told');
+  expect(mockRecord).toHaveBeenCalledTimes(1);
+});
+
+it('a concern that came back asks no question about the past (adversarial F1): only the three answers', async () => {
+  mockRecordState = {
+    trial: { id: 't1', startedAt: '2026-09-01', foodLabel: null },
+    courses: [],
+    latestVisit: { id: 'v1', visitedAt: '2026-09-16' },
+  };
+  const { readCareQuestionRecord } = jest.requireMock('../../../lib/careAnswers');
+  (readCareQuestionRecord as jest.Mock).mockClear();
+  renderAnswers({ state: 'raised_again', sign: 'diarrhea', text: 'Back because x. y', backLine: 'Back because x.' });
+  expect(screen.getByText('My vet knows')).toBeTruthy();
+  await waitFor(() => expect(screen.queryByTestId('care-question')).toBeNull());
+  // The read never runs for it: nothing asks about the trial or the visit.
+  expect(readCareQuestionRecord).not.toHaveBeenCalled();
 });

@@ -52,6 +52,7 @@ import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { careAnswerLanded, pushCareAnswers, recordCareAnswer, retractCareAnswer } from './careAnswers';
+import { notifySignedOut } from './sync';
 
 const PET = 'pet-a';
 let ids = 0;
@@ -155,4 +156,35 @@ describe('the push (drainCareAcknowledgementsQueue)', () => {
     expect(row(visitAnswer).synced).toBe(0);
     expect(row(undo).synced).toBe(0);
   });
+
+  it('an offline answer and its Undo land in ONE drain, and the Signal regenerates once, after both (adversarial F2)', async () => {
+    const id = await recordCareAnswer({ petId: PET, sign: 'vomit', source: 'my_vet_knows', anchorOn: '2026-09-30' }, nextId);
+    const undo = await retractCareAnswer(id, nextId);
+    await pushCareAnswers();
+    expect(mockInserts.map((r) => r.id)).toEqual([id, undo]);
+    expect(row(undo).synced).toBe(1);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+  });
+
+  it('a row that landed still regenerates when a later row stops the drain offline (code review)', async () => {
+    const first = await recordCareAnswer({ petId: PET, sign: 'vomit', source: 'my_vet_knows', anchorOn: '2026-09-30' }, nextId);
+    const second = await recordCareAnswer({ petId: 'pet-b', sign: 'cough', source: 'my_vet_knows', anchorOn: '2026-09-30' }, nextId);
+    mockServer = (r) => (r.id === second ? { data: null, error: { code: '', message: 'offline' } } : { data: [{ id: r.id as string }], error: null });
+    await pushCareAnswers();
+    expect(row(first).synced).toBe(1);
+    expect(mockRegen).toHaveBeenCalledWith(PET);
+    expect(mockRegen).not.toHaveBeenCalledWith('pet-b');
+  });
+
+  it('a sign-out while an insert is in the air marks nothing and arms no regen for the old account (CUL-642 class)', async () => {
+    const id = await recordCareAnswer({ petId: PET, sign: 'vomit', source: 'my_vet_knows', anchorOn: '2026-09-30' }, nextId);
+    mockServer = (r) => {
+      notifySignedOut();
+      return { data: [{ id: r.id as string }], error: null };
+    };
+    await pushCareAnswers();
+    expect(row(id).synced).toBe(0);
+    expect(mockRegen).not.toHaveBeenCalled();
+  });
 });
+

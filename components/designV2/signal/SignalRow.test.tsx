@@ -205,8 +205,8 @@ describe('the trial card names the local trial, as its screen does', () => {
 // ── EN-9's care state on Home (Engines v3 PR-35, CUL-1418; mock round 3 §01, D6) ──────────
 describe('a concern with a care state', () => {
   const chronic = SAFETY[0] as Extract<SignalFinding, { type: 'symptom_chronicity' }>;
-  const withState = (state: string, text: string | null): CachedFinding =>
-    cached({ ...chronic, careState: { state, text } } as unknown as SignalFinding);
+  const withState = (state: string, text: string | null, backLine: string | null = null): CachedFinding =>
+    cached({ ...chronic, careState: { state, text, backLine } } as unknown as SignalFinding);
 
   it('"Your vet knows": the tag, the sign, the server’s sentence and what the state does, with no ask', () => {
     const r = render(
@@ -240,9 +240,14 @@ describe('a concern with a care state', () => {
 
   it('back on a tested change: the "Back because" line above the shipped headline, and the ask intact', () => {
     const r = render(
-      <SignalRow cached={withState('raised_again', 'Back because the vomiting is coming more often. Lane sentence.')} petId="p1" onOpen={() => {}} generatedAt={null} />,
+      <SignalRow
+        cached={withState('raised_again', 'Back because Mr. Biggles has also vomited on 2 days since Sep 3. Lane sentence.', 'Back because Mr. Biggles has also vomited on 2 days since Sep 3.')}
+        petId="p1"
+        onOpen={() => {}}
+        generatedAt={null}
+      />,
     );
-    expect(r.getByTestId('signal-row-back').props.children).toBe('Back because the vomiting is coming more often.');
+    expect(r.getByTestId('signal-row-back').props.children).toBe('Back because Mr. Biggles has also vomited on 2 days since Sep 3.');
     expect(r.getByTestId('signal-row-ask')).toBeTruthy();
     expect(r.queryByTestId('signal-row-care-tag')).toBeNull();
   });

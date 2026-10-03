@@ -13,8 +13,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // DEVICE-LOCAL, on purpose, the `lib/appointmentAsked.ts` shape: one key, a sanitized blob,
 // every operation best-effort, cleared BY NAME in `wipeLocalSession`. A server column would
 // say "this account was asked", which is untrue (a DEVICE was). The cost, stated: a second
-// phone may ask once more. A question answered with "Yes" needs no memory at all: the
-// answer is a row, the concern moves to "Your vet knows" and the question is gone.
+// phone may ask once more. A "Yes" is settled here too: it writes a row, but the server
+// may refuse it (a lapse rule the phone cannot see), and a refused yes must not come back
+// every day.
 
 export const CARE_QUESTION_ASKED_STORAGE_KEY = 'nyx.careQuestionAsked';
 

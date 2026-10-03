@@ -123,10 +123,14 @@ describe('the watched row’s body and the back line', () => {
     expect(careStateBody(view('with_vet', 'You said on Sep 30 his vet knows.'))).toBe('You said on Sep 30 his vet knows.');
   });
 
-  it('reads the back line off a raised-again sentence only', () => {
-    expect(careBackLine(view('raised_again', 'Back because the vomiting is coming more often. Vomiting in 6 of the last 6 weeks.'))).toBe(
-      'Back because the vomiting is coming more often.',
-    );
+  it('reads the back line from its own field, never by splitting the sentence (a pet called "Mr. Biggles")', () => {
+    const back = careStateViewOf({
+      type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'vomit',
+      careState: { state: 'raised_again', text: 'Back because Mr. Biggles has also vomited on 2 days since Sep 3. Lane.', backLine: 'Back because Mr. Biggles has also vomited on 2 days since Sep 3.' },
+    } as never)!;
+    expect(careBackLine(back)).toBe('Back because Mr. Biggles has also vomited on 2 days since Sep 3.');
+    // An older cache without the field: no back line, and nothing guessed out of the text.
+    expect(careBackLine(view('raised_again', 'Back because the vomiting is coming more often. Lane.'))).toBeNull();
     expect(careBackLine(view('with_vet', 'Back because x.'))).toBeNull();
   });
 });

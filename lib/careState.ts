@@ -48,6 +48,8 @@ export interface CareStateView {
   sign: CareSign;
   /** The server's template sentence (AC 8); null on `raised`. */
   text: string | null;
+  /** `raised_again` only: the server's "Back because …" sentence, or null. */
+  backLine: string | null;
 }
 
 /** The concern's care state, or null: the flag is off, the cache is old, the finding is not
@@ -60,9 +62,10 @@ export function careStateViewOf(finding: SignalFinding): CareStateView | null {
   if (state === null) return null;
   const sign = (CARE_SIGNS as readonly string[]).includes(finding.symptomType) ? (finding.symptomType as CareSign) : null;
   if (sign === null) return null;
-  const raw = (finding as { careState?: { text?: unknown } }).careState?.text;
-  const text = typeof raw === 'string' && raw.trim().length > 0 ? raw : null;
-  return { state, sign, text: state === 'raised' ? null : text };
+  const fact = (finding as { careState?: { text?: unknown; backLine?: unknown } }).careState;
+  const text = typeof fact?.text === 'string' && fact.text.trim().length > 0 ? fact.text : null;
+  const back = typeof fact?.backLine === 'string' && /^Back because /.test(fact.backLine) ? fact.backLine : null;
+  return { state, sign, text: state === 'raised' ? null : text, backLine: state === 'raised_again' ? back : null };
 }
 
 /** A raised or raised-again concern: the ask stands, and the owner may answer it. */
@@ -92,10 +95,11 @@ export function careStateBody(view: CareStateView): string | null {
   return body.length > 0 ? body : view.text;
 }
 
-/** A raised-again row's "Back because …" sentence (DF-8), the first of the server's text,
- *  or null. The row prints it above the lane's own headline and ask. */
+/** A raised-again row's "Back because …" sentence (DF-8), as the server wrote it on its own
+ *  (`careState.backLine`), or null. Never split out of the full sentence: a pet's name can
+ *  carry a full stop ("Mr. Biggles"). An older cache without the field draws no back line,
+ *  and the row keeps the lane's own headline and ask, so nothing goes quieter. */
 export function careBackLine(view: CareStateView): string | null {
-  if (view.state !== 'raised_again' || view.text === null) return null;
-  const m = /^Back because[^.]*\./.exec(view.text);
-  return m ? m[0] : null;
+  if (view.state !== 'raised_again') return null;
+  return view.backLine;
 }

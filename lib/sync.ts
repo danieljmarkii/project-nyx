@@ -3468,15 +3468,6 @@ let syncCycleInFlight = false;
 // the wipe deletes whatever it hydrates, moments later.
 // ── Engines v3 PR-35: the owner's care answers ──────────────────────────────────
 
-/** Called with each pet whose answers just reached the server. `lib/careAnswers.ts`
- *  registers the Signal regen here, because the care state is the server's and only a
- *  regen run AFTER the row landed can read it (§3.3). A setter rather than an import:
- *  lib/signal.ts already imports this module. */
-let careAnswerLandedListener: ((petId: string) => void) | null = null;
-export function setCareAnswerLandedListener(listener: ((petId: string) => void) | null): void {
-  careAnswerLandedListener = listener;
-}
-
 /**
  * Push the owner's queued care answers (`care_acknowledgements`, migration 082).
  *
@@ -3491,54 +3482,86 @@ export function setCareAnswerLandedListener(listener: ((petId: string) => void) 
  * link up before the foreign keys can answer, so a row sent ahead of its visit, trial,
  * course or retracted answer is refused with a terminal 23514.
  *
- * Oldest first, one row at a time: an Undo's retraction must follow its answer, and the
- * gate already holds it until the answer is marked; the order saves it a cycle.
+ * RE-SELECTS UNTIL NOTHING MOVES. An Undo is held behind its answer, so one read sends the
+ * answer and leaves the Undo for a later sync, and the regen between them would show
+ * "Your vet knows" over a choice the owner already took back (adversarial F2). So the drain
+ * reads again after each pass that landed something, and regenerates once, at the end.
+ *
+ * THE CARE STATE IS THE SERVER'S, so each pet whose answers landed gets a Signal regen
+ * (only a regen run after the row landed can read it, §3.3). Fired for every row that
+ * landed, even when a later row stopped the drain on a transient error.
+ *
+ * SIGN-OUT (CUL-642's class, rls-privacy-reviewer): the regen is armed after a network
+ * round trip, so it could otherwise arm after `wipeLocalSession` cancelled every pending
+ * regen and carry the previous owner's pet id under the next account's token. The drain
+ * captures the sign-out epoch and stops, marking and arming nothing, once it moves.
  */
 export function syncPendingCareAcknowledgements(): Promise<void> {
   return serializeQueuePush('care_acknowledgements', drainCareAcknowledgementsQueue);
 }
 
+const CARE_ACK_MAX_PASSES = 5;
+
 async function drainCareAcknowledgementsQueue(): Promise<void> {
+  const epoch = signOutEpoch;
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
   const db = getDb();
-  const rows = await db.getAllAsync<{
-    id: string; pet_id: string; symptom_type: string; source: string; anchor_on: string;
-    vet_visit_id: string | null; diet_trial_id: string | null; medication_id: string | null;
-    retracts: string | null;
-  }>(
-    `SELECT * FROM care_acknowledgements WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+  const landedPets = new Set<string>();
+  try {
+    for (let pass = 0; pass < CARE_ACK_MAX_PASSES; pass++) {
+      if (epoch !== signOutEpoch) return;
+      const rows = await db.getAllAsync<{
+        id: string; pet_id: string; symptom_type: string; source: string; anchor_on: string;
+        vet_visit_id: string | null; diet_trial_id: string | null; medication_id: string | null;
+        retracts: string | null;
+      }>(
+        `SELECT * FROM care_acknowledgements WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
        AND ${visitLandedSql('care_acknowledgements')}
        AND ${parentLandedSql('care_acknowledgements')}
      ORDER BY created_at ASC, rowid ASC LIMIT 50`,
-  );
-  const landedPets = new Set<string>();
-  for (const r of rows) {
-    const { data, error } = await supabase
-      .from('care_acknowledgements')
-      .insert({
-        id: r.id, pet_id: r.pet_id, symptom_type: r.symptom_type, source: r.source,
-        anchor_on: r.anchor_on, vet_visit_id: r.vet_visit_id, diet_trial_id: r.diet_trial_id,
-        medication_id: r.medication_id, retracts: r.retracts,
-      })
-      .select('id');
-    if (error && error.code !== '23505') {
-      if (classifySyncFailure(error) === 'transient') {
-        console.warn('[sync] care_acknowledgements push failed (retrying next cycle):', error.message);
-        return;
+      );
+      let landedThisPass = 0;
+      for (const r of rows) {
+        const { data, error } = await supabase
+          .from('care_acknowledgements')
+          .insert({
+            id: r.id, pet_id: r.pet_id, symptom_type: r.symptom_type, source: r.source,
+            anchor_on: r.anchor_on, vet_visit_id: r.vet_visit_id, diet_trial_id: r.diet_trial_id,
+            medication_id: r.medication_id, retracts: r.retracts,
+          })
+          .select('id');
+        // A sign-out landed while the request was in the air: this account's rows are gone
+        // from the phone, and nothing more may be marked or armed for them.
+        if (epoch !== signOutEpoch) return;
+        if (error && error.code !== '23505') {
+          if (classifySyncFailure(error) === 'transient') {
+            console.warn('[sync] care_acknowledgements push failed (retrying next cycle):', error.message);
+            return;
+          }
+          await recordPushFailure(db, 'care_acknowledgements', r, error);
+          continue;
+        }
+        if (!error && !((data ?? []) as { id: string }[]).some((d) => d.id === r.id)) {
+          console.warn(`[sync] care_acknowledgements row ${r.id} returned no id (RLS-blocked?) — left queued`);
+          await recordPushFailure(db, 'care_acknowledgements', r, RLS_FILTERED_ERROR);
+          continue;
+        }
+        await markSyncedInsertOnly(db, 'care_acknowledgements', [r.id]);
+        landedPets.add(r.pet_id);
+        landedThisPass += 1;
       }
-      await recordPushFailure(db, 'care_acknowledgements', r, error);
-      continue;
+      if (landedThisPass === 0) break;
     }
-    if (!error && !((data ?? []) as { id: string }[]).some((d) => d.id === r.id)) {
-      console.warn(`[sync] care_acknowledgements row ${r.id} returned no id (RLS-blocked?) — left queued`);
-      await recordPushFailure(db, 'care_acknowledgements', r, RLS_FILTERED_ERROR);
-      continue;
+  } finally {
+    if (landedPets.size > 0 && epoch === signOutEpoch) {
+      // Required lazily: lib/signal.ts imports this module, so a top-level import would be
+      // a cycle. By the time a row has landed, both modules are long loaded.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { triggerSignalRegenDebounced } = require('./signal') as typeof import('./signal');
+      for (const petId of landedPets) triggerSignalRegenDebounced(petId);
     }
-    await markSyncedInsertOnly(db, 'care_acknowledgements', [r.id]);
-    landedPets.add(r.pet_id);
   }
-  for (const petId of landedPets) careAnswerLandedListener?.(petId);
 }
 
 async function pushAllQueues(): Promise<void> {

@@ -83,3 +83,22 @@ describe('the confirmation after "My vet knows" (mock 2b)', () => {
     expect(`${c.said} ${c.does}`).not.toMatch(/\b(weight|weigh|seen|acknowledged|resolved|watching|stood down|fine|better)\b/i);
   });
 });
+
+describe('a course or trial from long before the concern (adversarial F3)', () => {
+  it('is not asked about as started "for" a sign that began months later', () => {
+    expect(careQuestionsFor({ ...base, courses: [{ id: 'm0', drugName: 'methimazole', startedAt: '2025-01-10' }] })).toEqual([]);
+    expect(careQuestionsFor({ ...base, trial: { id: 't0', startedAt: '2026-05-01', foodLabel: null } })).toEqual([]);
+  });
+
+  it('Jordan\u2019s case still asks: a trial started days before the first logged vomit', () => {
+    expect(careQuestionsFor({ ...base, onsetIso: '2026-08-29', trial: { id: 't1', startedAt: '2026-08-26', foodLabel: null } })).toHaveLength(1);
+  });
+
+  it('stamps the year on a date from another year, so an old course never reads as recent', () => {
+    const [q] = careQuestionsFor({
+      ...base, today: '2027-01-20', onsetIso: '2026-12-01',
+      courses: [{ id: 'm1', drugName: 'Cerenia', startedAt: '2026-12-15' }],
+    });
+    expect(q.text).toBe("Otis has been on Cerenia since Dec 15, 2026. Did Otis' vet start it for the vomiting?");
+  });
+});

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
@@ -75,9 +75,20 @@ export function CareAnswers({ petId, petName, view, noun, title, onsetIso }: Pro
   const [phase, setPhase] = useState<Phase>({ kind: 'answering' });
   const open = careStateTakesAnswers(view);
 
+  // A tap's write in flight, held in a REF: `phase` is state, so a second tap in the same
+  // frame would pass a state guard and write a second row, and an Undo then retracts only
+  // one of them while the screen says Home will ask again (code review).
+  const inFlight = useRef(false);
+
   // The one question: the first the ask-once memory allows today.
+  //
+  // NEVER ON A CONCERN THAT CAME BACK (adversarial F1). Every question asks about something
+  // that happened BEFORE the re-raise (the trial, the course, the last visit), and the
+  // server's latch releases on any answer written after it: "Talked about it" for the Sep 16
+  // visit would quiet a worsening the Sep 16 visit never saw. §4.5 wants an answer dated
+  // after the re-raise, which only "My vet knows" (today) and a new visit can give.
   useEffect(() => {
-    if (!open) return;
+    if (!open || view.state === 'raised_again') return;
     let cancelled = false;
     void (async () => {
       try {
@@ -101,7 +112,7 @@ export function CareAnswers({ petId, petName, view, noun, title, onsetIso }: Pro
     return () => {
       cancelled = true;
     };
-  }, [open, petId, petName, view.sign, noun, onsetIso]);
+  }, [open, view.state, petId, petName, view.sign, noun, onsetIso]);
 
   const announcement =
     phase.kind === 'told' ? `${phase.said}${phase.does ? ` ${phase.does}` : ''}` : phase.kind === 'taken_back' ? TAKEN_BACK : null;
@@ -109,6 +120,8 @@ export function CareAnswers({ petId, petName, view, noun, title, onsetIso }: Pro
 
   const save = useCallback(
     async (write: () => Promise<string>, said: string, does: string | null) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
       setPhase({ kind: 'saving' });
       try {
         const answerId = await write();
@@ -119,6 +132,8 @@ export function CareAnswers({ petId, petName, view, noun, title, onsetIso }: Pro
         console.warn('[care-answers] save failed:', e);
         setPhase({ kind: 'answering' });
         Alert.alert('That didn’t save', 'Try that again in a moment.');
+      } finally {
+        inFlight.current = false;
       }
     },
     [],
@@ -136,6 +151,8 @@ export function CareAnswers({ petId, petName, view, noun, title, onsetIso }: Pro
           <Answer
             label="Undo"
             onPress={async () => {
+              if (inFlight.current) return;
+              inFlight.current = true;
               try {
                 await retractCareAnswer(phase.answerId);
                 await pushCareAnswers();
@@ -143,6 +160,8 @@ export function CareAnswers({ petId, petName, view, noun, title, onsetIso }: Pro
               } catch (e) {
                 console.warn('[care-answers] undo failed:', e);
                 Alert.alert('That didn’t save', 'Try that again in a moment.');
+              } finally {
+                inFlight.current = false;
               }
             }}
           />
@@ -159,6 +178,9 @@ export function CareAnswers({ petId, petName, view, noun, title, onsetIso }: Pro
       : q.kind === 'trial'
         ? `You said ${petName}’s vet started the trial for the ${noun}.`
         : `You said ${petName}’s vet started it for the ${noun}.`;
+    // Settled on yes too: the answer is a row, but the server may refuse it (a visit before
+    // the course it judges by), and a refused yes must not be asked again every day.
+    void settleCareQuestion(q.key, today);
     await save(
       () => recordCareAnswer({ petId, sign: view.sign, ...q.write }),
       said,

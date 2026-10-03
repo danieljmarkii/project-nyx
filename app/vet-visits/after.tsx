@@ -240,13 +240,15 @@ export default function AfterVisitScreen() {
         void Promise.all([
           readHomeConcerns(forPetId),
           appt ? readCareVisitTicks(appt.id) : Promise.resolve(new Set<string>()),
-        ]).then(([rows, ticks]) => {
-          tickedSigns.current = ticks;
-          setHomeConcerns(rows ?? []);
-          setConcernAnswers(
-            Object.fromEntries((rows ?? []).filter((r) => ticks.has(r.sign)).map((r) => [r.sign, 'talked' as const])),
-          );
-        });
+        ])
+          .then(([rows, ticks]) => {
+            tickedSigns.current = ticks;
+            setHomeConcerns(rows ?? []);
+            setConcernAnswers(
+              Object.fromEntries((rows ?? []).filter((r) => ticks.has(r.sign)).map((r) => [r.sign, 'talked' as const])),
+            );
+          })
+          .catch((e) => console.warn('[after-visit] Home concerns read failed:', e));
         seeded.current = true;
         const prefill = appt ? null : await readVisitPrefill(forPetId);
         setFields({
@@ -700,16 +702,23 @@ export default function AfterVisitScreen() {
       // `note` is state, read by the moment below from this render's closure, so the lines
       // written here are also carried into the moment directly.
       const careLines: LinkedLine[] = [];
-      for (const c of homeConcerns) {
+      for (const c of answerableConcerns(homeConcerns, visitedOn)) {
         if (concernAnswers[c.sign] !== 'talked' || answeredSigns.current.has(c.sign)) continue;
-        await recordCareAnswer({
-          petId,
-          sign: c.sign,
-          source: tickedSigns.current.has(c.sign) ? 'at_vet_tick' : 'visit_answer',
-          anchorOn: visitedOn,
-          vetVisitId: id,
-        });
+        // Claimed BEFORE the await: a second Save in the same frame passes the `saving` state
+        // guard, and must not write the answer twice (code review). Released if the write fails.
         answeredSigns.current.add(c.sign);
+        try {
+          await recordCareAnswer({
+            petId,
+            sign: c.sign,
+            source: tickedSigns.current.has(c.sign) ? 'at_vet_tick' : 'visit_answer',
+            anchorOn: visitedOn,
+            vetVisitId: id,
+          });
+        } catch (e) {
+          answeredSigns.current.delete(c.sign);
+          throw e;
+        }
         const line: LinkedLine = { key: `care:${c.sign}`, title: c.title, note: 'talked about it' };
         careLines.push(line);
         note(line);
@@ -874,7 +883,7 @@ export default function AfterVisitScreen() {
                   busyRow={busyRow}
                   saving={saving}
                   onSave={handleSave}
-                  homeConcerns={homeConcerns}
+                  homeConcerns={answerableConcerns(homeConcerns, localDateKey(fields.visitedAt))}
                   concernAnswers={concernAnswers}
                   onConcernAnswer={(c, answer) => setConcernAnswers((prev) => ({ ...prev, [c.sign]: answer }))}
                 />
@@ -976,6 +985,13 @@ function toRegimen(course: ActiveCourse): Regimen {
     status: 'active',
     ended_at: null,
   };
+}
+
+/** The concerns a visit on `visitedOn` can be asked about: none whose answer could not be
+ *  true for that day (a visit before the concern began, or before it came back). Re-derived
+ *  from the date field, so moving the visit date moves the list with it. */
+function answerableConcerns(rows: readonly HomeConcernRow[], visitedOn: string): HomeConcernRow[] {
+  return rows.filter((r) => r.answerableFrom === null || visitedOn >= r.answerableFrom);
 }
 
 const styles = StyleSheet.create({

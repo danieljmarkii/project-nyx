@@ -104,11 +104,11 @@ jest.mock('../../lib/vetVisits', () => {
 
 // EN-9 (Engines v3 PR-35): what Home was raising. Empty by default, the flag-off case (no
 // care state written), so every test above the EN-9 block renders the pre-PR-35 screen.
-let mockConcerns: Array<{ sign: string; title: string; state: string }> | null = [];
+let mockConcerns: Array<{ sign: string; title: string; state: string; answerableFrom?: string | null }> | null = [];
 let mockTicks = new Set<string>();
 const mockRecordCareAnswer = jest.fn(async (_input: Record<string, unknown>) => 'answer-1');
 jest.mock('../../lib/careVisitConcerns', () => ({
-  readHomeConcerns: jest.fn(async () => mockConcerns),
+  readHomeConcerns: jest.fn(async () => mockConcerns?.map((c) => ({ answerableFrom: null, ...c })) ?? null),
   readCareVisitTicks: jest.fn(async () => mockTicks),
   clearCareVisitTicksFor: jest.fn(async () => undefined),
 }));
@@ -1066,4 +1066,19 @@ describe('What Home was raising (EN-9, Engines v3 PR-35)', () => {
     await waitFor(() => expect(mockRecordCareAnswer).toHaveBeenCalledTimes(1));
     expect(mockRecordCareAnswer.mock.calls[0][0]).toEqual(expect.objectContaining({ sign: 'vomit', source: 'visit_answer' }));
   });
+
+  it('offers no concern a visit on that day could not have been about, and writes none (adversarial F1)', async () => {
+    // The visit is Sep 16 (the appointment's day); the vomiting came back on Sep 20.
+    mockConcerns = [
+      { sign: 'vomit', title: 'Vomiting in 6 of the last 6 weeks', state: 'raised_again', answerableFrom: '2026-09-20' },
+    ];
+    mockTicks = new Set(['vomit']);
+    render(<AfterVisitScreen />);
+    await screen.findByText('Save Nyx’s visit');
+    await waitFor(() => expect(screen.queryByTestId('after-visit-home-concerns')).toBeNull());
+    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalledTimes(1));
+    expect(mockRecordCareAnswer).not.toHaveBeenCalled();
+  });
 });
+

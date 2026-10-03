@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { careStateViewOf, type CareSign, type CareStateValue } from './careState';
 import { readSignalCache } from './signal';
 import { signalTitle } from './signalTitle';
+import { localDayOf } from './careQuestions';
 
 // What Home was raising, carried into the vet visit (Engines v3 PR-35, CUL-1418;
 // docs/nyx-care-state-requirements.md §3.2, §3.4; mock round 2's loop, §08 frames 3 and 4).
@@ -32,6 +33,18 @@ export interface HomeConcernRow {
   /** The finding's title as Home and the Signal screen show it. */
   title: string;
   state: CareStateValue;
+  /**
+   * The first visit day an answer about this concern can be TRUE for, or null when the
+   * record cannot say (a worsening card alone): the server then judges it.
+   *
+   *   - the concern's onset (⑦'s `firstOnsetIso`): a visit before the vomiting began was not
+   *     about it (§3.2; the server refuses it too, but the saved moment would still say
+   *     "talked about it");
+   *   - on a concern that CAME BACK, the day of the Signal that says so: the re-raise is on or
+   *     before it, and §4.5 releases the latch only on an answer dated after the re-raise. A
+   *     visit backdated before that is about the old course, not the worsening (adversarial F1).
+   */
+  answerableFrom: string | null;
 }
 
 /**
@@ -48,13 +61,28 @@ export async function readHomeConcerns(petId: string): Promise<HomeConcernRow[] 
     return null;
   }
   if (!cache) return [];
+  const onsetBySign = new Map<string, string>();
+  for (const c of cache.findings) {
+    if (c.finding.type !== 'symptom_chronicity') continue;
+    const day = localDayOf(c.finding.firstOnsetIso);
+    if (day) onsetBySign.set(c.finding.symptomType, day);
+  }
+  const cacheDay = localDayOf(cache.generatedAt);
   const out: HomeConcernRow[] = [];
   const seen = new Set<CareSign>();
   for (const c of [...cache.findings].sort((a, b) => a.rank - b.rank)) {
     const view = careStateViewOf(c.finding);
     if (!view || seen.has(view.sign)) continue;
     seen.add(view.sign);
-    out.push({ sign: view.sign, title: signalTitle(c.finding, null), state: view.state });
+    const bounds = [onsetBySign.get(view.sign) ?? null, view.state === 'raised_again' ? cacheDay : null]
+      .filter((d): d is string => d !== null)
+      .sort();
+    out.push({
+      sign: view.sign,
+      title: signalTitle(c.finding, null),
+      state: view.state,
+      answerableFrom: bounds.length > 0 ? bounds[bounds.length - 1] : null,
+    });
   }
   return out;
 }

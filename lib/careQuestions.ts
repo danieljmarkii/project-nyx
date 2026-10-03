@@ -79,6 +79,32 @@ export interface CareQuestionInput {
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * How long before a concern's first logged episode a trial or course may have started and
+ * still be asked about as started "for" it. A vet starts a course for a sign the pet already
+ * shows; the owner may have logged it late (Jordan's trial began Aug 26, his first logged
+ * vomit is Aug 29), so the bound is generous, but a methimazole course from January is not
+ * "for" vomiting that began in September (adversarial F3). Refusing to ASK is the louder
+ * direction: the concern keeps its ask, and "My vet knows" is still one tap away.
+ */
+export const COURSE_BEFORE_ONSET_DAYS = 60;
+
+function dayIndex(day: string): number {
+  const [y, m, d] = day.split('-').map(Number);
+  return Math.round(Date.UTC(y, m - 1, d) / 86_400_000);
+}
+
+/** "Sep 1", or "Jan 10, 2025" when the year is not this one (C-19: a year-less date reads as
+ *  this year's, and "since Jan 10" would make an old course look recent). */
+function dateWords(day: string, today: string): string {
+  const base = formatCalendarDate(day) ?? day;
+  return day.slice(0, 4) === today.slice(0, 4) ? base : `${base}, ${day.slice(0, 4)}`;
+}
+
+function startedForSign(start: string, onset: string | null): boolean {
+  return onset === null || dayIndex(start) >= dayIndex(onset) - COURSE_BEFORE_ONSET_DAYS;
+}
+
 /** A stored date as a local day: a bare DATE stays itself, an instant takes its local day. */
 export function localDayOf(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -98,9 +124,10 @@ export function careQuestionsFor(input: CareQuestionInput): CareQuestion[] {
   const out: CareQuestion[] = [];
   const vets = possessive(petName);
 
+  const onset = localDayOf(input.onsetIso);
   const trialStart = localDayOf(input.trial?.startedAt);
-  if (input.trial && trialStart && trialStart <= today) {
-    const since = formatCalendarDate(trialStart);
+  if (input.trial && trialStart && trialStart <= today && startedForSign(trialStart, onset)) {
+    const since = dateWords(trialStart, today);
     const what = input.trial.foodLabel ? `the ${input.trial.foodLabel} trial` : 'a diet trial';
     out.push({
       kind: 'trial',
@@ -115,11 +142,11 @@ export function careQuestionsFor(input: CareQuestionInput): CareQuestion[] {
 
   for (const c of input.courses) {
     const start = localDayOf(c.startedAt);
-    if (!start || start > today) continue;
+    if (!start || start > today || !startedForSign(start, onset)) continue;
     out.push({
       kind: 'course',
       key: `course:${c.id}:${sign}`,
-      text: `${petName} has been on ${c.drugName} since ${formatCalendarDate(start)}. Did ${vets} vet start it for the ${noun}?`,
+      text: `${petName} has been on ${c.drugName} since ${dateWords(start, today)}. Did ${vets} vet start it for the ${noun}?`,
       hint: 'If you say yes, Home stops asking you to book while the course runs.',
       yes: 'Yes, for this',
       others: ['No', 'Not sure'],
@@ -127,13 +154,12 @@ export function careQuestionsFor(input: CareQuestionInput): CareQuestion[] {
     });
   }
 
-  const onset = localDayOf(input.onsetIso);
   const visit = input.latestVisit;
   if (visit && onset && DAY_RE.test(visit.visitedAt) && visit.visitedAt >= onset && visit.visitedAt <= today) {
     out.push({
       kind: 'visit',
       key: `visit:${visit.id}:${sign}`,
-      text: `${petName} saw the vet on ${formatCalendarDate(visit.visitedAt)}. Did you talk about the ${noun}?`,
+      text: `${petName} saw the vet on ${dateWords(visit.visitedAt, today)}. Did you talk about the ${noun}?`,
       hint: null,
       yes: 'Talked about it',
       others: ['Not this time', 'Later'],

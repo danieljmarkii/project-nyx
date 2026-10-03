@@ -1,6 +1,5 @@
 import { getDb } from './db';
-import { setCareAnswerLandedListener, syncPendingCareAcknowledgements } from './sync';
-import { triggerSignalRegenDebounced } from './signal';
+import { syncPendingCareAcknowledgements } from './sync';
 import { uuid } from './utils';
 import type { CareSign } from './careState';
 import type { CareQuestionCourse, CareQuestionTrial, CareQuestionVisit } from './careQuestions';
@@ -15,7 +14,9 @@ import { getActiveTrialForPet } from './dietTrialSetup';
 // (§3.3, mock 3e): a written answer changes nothing on Home until the server has read it.
 // So every write here ends by pushing the queue, and the Signal regenerates only once a
 // row has LANDED (the listener below), never on the write itself: a regen that ran ahead
-// of the row would recompute the old state and hold it until the next one.
+// of the row would recompute the old state and hold it until the next one. The regen is the
+// drain's (lib/sync.ts), so a row queued offline regenerates whichever sync lands it, after
+// an app restart too.
 //
 // APPEND-ONLY. 082 grants no UPDATE, so an Undo is a NEW row whose `retracts` names the
 // old one, carrying the old row's source and links (the table's CHECKs tie each source to
@@ -44,19 +45,8 @@ interface LocalCareAnswer {
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// The care state is the server's, so only a row that reached it can move Home. Registered on
-// the first write or push (never at module load, so importing this module has no effect of
-// its own): a row queued while offline then lands on a later sync in the same app session.
-let listening = false;
-function listenForLandings(): void {
-  if (listening) return;
-  listening = true;
-  setCareAnswerLandedListener((petId) => triggerSignalRegenDebounced(petId));
-}
-
 /** Push the queue. Never rejects: a failed push leaves the row queued for the next cycle. */
 export async function pushCareAnswers(): Promise<void> {
-  listenForLandings();
   try {
     await syncPendingCareAcknowledgements();
   } catch (err) {
