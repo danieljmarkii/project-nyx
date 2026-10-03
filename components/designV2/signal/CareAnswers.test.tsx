@@ -156,3 +156,18 @@ it('a concern that came back asks no question about the past (adversarial F1): o
   // The read never runs for it: nothing asks about the trial or the visit.
   expect(readCareQuestionRecord).not.toHaveBeenCalled();
 });
+
+it('on a concern that came back, "My vet knows" confirms first and offers no Undo (pass 2, N2)', async () => {
+  const { Alert } = require('react-native');
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation((...args: unknown[]) => {
+    const buttons = args[2] as Array<{ text: string; onPress?: () => void }>;
+    buttons.find((b) => b.text === 'My vet knows')?.onPress?.();
+  });
+  renderAnswers({ state: 'raised_again', sign: 'diarrhea', text: 'Back because x. y', backLine: 'Back because x.' });
+  fireEvent.press(screen.getByText('My vet knows'));
+  await screen.findByTestId('care-answers-told');
+  expect(alert).toHaveBeenCalledTimes(1);
+  expect(mockRecord).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText('Undo')).toBeNull();
+  alert.mockRestore();
+});

@@ -186,5 +186,19 @@ describe('the push (drainCareAcknowledgementsQueue)', () => {
     expect(row(id).synced).toBe(0);
     expect(mockRegen).not.toHaveBeenCalled();
   });
+
+  it('holds the regen while an Undo of a landed answer is still waiting (pass 2, N3)', async () => {
+    const id = await recordCareAnswer({ petId: PET, sign: 'vomit', source: 'my_vet_knows', anchorOn: '2026-09-30' }, nextId);
+    const undo = await retractCareAnswer(id, nextId);
+    mockServer = (r) => (r.id === undo ? { data: null, error: { code: '', message: 'offline' } } : { data: [{ id: r.id as string }], error: null });
+    await pushCareAnswers();
+    expect(row(id).synced).toBe(1);
+    expect(row(undo).synced).toBe(0);
+    expect(mockRegen).not.toHaveBeenCalled();
+    // The next drain lands the Undo, and only then does the Signal regenerate.
+    mockServer = (r) => ({ data: [{ id: r.id as string }], error: null });
+    await pushCareAnswers();
+    expect(mockRegen).toHaveBeenCalledWith(PET);
+  });
 });
 

@@ -66,7 +66,7 @@ interface Props {
 type Phase =
   | { kind: 'answering' }
   | { kind: 'saving' }
-  | { kind: 'told'; answerId: string; said: string; does: string | null; offline: boolean }
+  | { kind: 'told'; answerId: string; said: string; does: string | null; offline: boolean; undo: boolean }
   | { kind: 'not_yet' }
   | { kind: 'taken_back' };
 
@@ -88,6 +88,8 @@ export function CareAnswers({ petId, petName, view, noun, title, onsetIso }: Pro
   // visit would quiet a worsening the Sep 16 visit never saw. §4.5 wants an answer dated
   // after the re-raise, which only "My vet knows" (today) and a new visit can give.
   useEffect(() => {
+    // A question from an earlier state never outlives it (pass 2, N4).
+    setQuestion(null);
     if (!open || view.state === 'raised_again') return;
     let cancelled = false;
     void (async () => {
@@ -119,7 +121,7 @@ export function CareAnswers({ petId, petName, view, noun, title, onsetIso }: Pro
   useLiveRegionAnnouncement(announcement, phase.kind === 'told' ? phase.answerId : phase.kind);
 
   const save = useCallback(
-    async (write: () => Promise<string>, said: string, does: string | null) => {
+    async (write: () => Promise<string>, said: string, does: string | null, net: 'undo' | 'none' = 'undo') => {
       if (inFlight.current) return;
       inFlight.current = true;
       setPhase({ kind: 'saving' });
@@ -127,7 +129,7 @@ export function CareAnswers({ petId, petName, view, noun, title, onsetIso }: Pro
         const answerId = await write();
         await pushCareAnswers();
         const landed = await careAnswerLanded(answerId).catch(() => false);
-        setPhase({ kind: 'told', answerId, said, does, offline: !landed });
+        setPhase({ kind: 'told', answerId, said, does, offline: !landed, undo: net === 'undo' });
       } catch (e) {
         console.warn('[care-answers] save failed:', e);
         setPhase({ kind: 'answering' });
@@ -147,25 +149,27 @@ export function CareAnswers({ petId, petName, view, noun, title, onsetIso }: Pro
         <ThemedText style={styles.said}>{phase.said}</ThemedText>
         {phase.does ? <ThemedText style={styles.does}>{phase.does}</ThemedText> : null}
         {phase.offline ? <ThemedText style={styles.quiet} testID="care-answers-offline">{CARE_SAVED_OFFLINE}</ThemedText> : null}
-        <View style={styles.row}>
-          <Answer
-            label="Undo"
-            onPress={async () => {
-              if (inFlight.current) return;
-              inFlight.current = true;
-              try {
-                await retractCareAnswer(phase.answerId);
-                await pushCareAnswers();
-                setPhase({ kind: 'taken_back' });
-              } catch (e) {
-                console.warn('[care-answers] undo failed:', e);
-                Alert.alert('That didn’t save', 'Try that again in a moment.');
-              } finally {
-                inFlight.current = false;
-              }
-            }}
-          />
-        </View>
+        {phase.undo ? (
+          <View style={styles.row}>
+            <Answer
+              label="Undo"
+              onPress={async () => {
+                if (inFlight.current) return;
+                inFlight.current = true;
+                try {
+                  await retractCareAnswer(phase.answerId);
+                  await pushCareAnswers();
+                  setPhase({ kind: 'taken_back' });
+                } catch (e) {
+                  console.warn('[care-answers] undo failed:', e);
+                  Alert.alert('That didn’t save', 'Try that again in a moment.');
+                } finally {
+                  inFlight.current = false;
+                }
+              }}
+            />
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -228,7 +232,28 @@ export function CareAnswers({ petId, petName, view, noun, title, onsetIso }: Pro
           disabled={busy}
           onPress={() => {
             const c = myVetKnowsConfirmation(petName, noun, today);
-            void save(() => recordCareAnswer({ petId, sign: view.sign, source: 'my_vet_knows', anchorOn: today }), c.said, c.does);
+            const write = () => void save(
+              () => recordCareAnswer({ petId, sign: view.sign, source: 'my_vet_knows', anchorOn: today }),
+              c.said,
+              c.does,
+              view.state === 'raised_again' ? 'none' : 'undo',
+            );
+            if (view.state !== 'raised_again') {
+              write();
+              return;
+            }
+            // ON A CONCERN THAT CAME BACK the safety net is a confirm BEFORE, not an Undo after
+            // (C-21: exactly one). An Undo here would hand the server an older answer with no
+            // latch left to hold it, so Home would stay quiet while this screen said it would
+            // ask again (adversarial pass 2, N2; the server half is filed separately).
+            Alert.alert(
+              `Tell us ${petName}’s vet knows?`,
+              `The ${noun} came back since your last answer. Home will stop asking you to book, and this can’t be taken back here.`,
+              [
+                { text: 'Not yet', style: 'cancel' },
+                { text: 'My vet knows', onPress: write },
+              ],
+            );
           }}
         />
         <Answer label="Not yet" disabled={busy} onPress={() => setPhase({ kind: 'not_yet' })} />

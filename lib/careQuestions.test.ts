@@ -102,3 +102,11 @@ describe('a course or trial from long before the concern (adversarial F3)', () =
     expect(q.text).toBe("Otis has been on Cerenia since Dec 15, 2026. Did Otis' vet start it for the vomiting?");
   });
 });
+
+it('asks no trial or course question when the onset is unknown (a worsening card alone, pass 2 N1)', () => {
+  expect(careQuestionsFor({
+    ...base, onsetIso: null,
+    trial: { id: 't1', startedAt: '2026-09-01', foodLabel: null },
+    courses: [{ id: 'm0', drugName: 'methimazole', startedAt: '2025-01-10' }],
+  })).toEqual([]);
+});

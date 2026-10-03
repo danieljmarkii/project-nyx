@@ -101,8 +101,10 @@ function dateWords(day: string, today: string): string {
   return day.slice(0, 4) === today.slice(0, 4) ? base : `${base}, ${day.slice(0, 4)}`;
 }
 
+/** With no onset (a worsening card alone) nothing bounds how old the course may be, so it is
+ *  not asked about at all, the visit question's rule (adversarial pass 2, N1). */
 function startedForSign(start: string, onset: string | null): boolean {
-  return onset === null || dayIndex(start) >= dayIndex(onset) - COURSE_BEFORE_ONSET_DAYS;
+  return onset !== null && dayIndex(start) >= dayIndex(onset) - COURSE_BEFORE_ONSET_DAYS;
 }
 
 /** A stored date as a local day: a bare DATE stays itself, an instant takes its local day. */

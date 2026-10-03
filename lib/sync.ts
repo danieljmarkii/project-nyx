@@ -3559,7 +3559,20 @@ async function drainCareAcknowledgementsQueue(): Promise<void> {
       // a cycle. By the time a row has landed, both modules are long loaded.
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { triggerSignalRegenDebounced } = require('./signal') as typeof import('./signal');
-      for (const petId of landedPets) triggerSignalRegenDebounced(petId);
+      for (const petId of landedPets) {
+        // An Undo of an answer that HAS landed, still waiting here (its push stopped on a
+        // transient error): a regen now would draw "Your vet knows" over a choice the owner
+        // took back, and write the quiet state the next run reads as its prior (adversarial
+        // pass 2, N3). The regen waits for the drain that lands the Undo.
+        const pendingUndo = await db.getFirstAsync<{ id: string }>(
+          `SELECT u.id FROM care_acknowledgements u
+             JOIN care_acknowledgements a ON a.id = u.retracts
+            WHERE u.pet_id = ? AND u.synced = 0 AND u.sync_error IS NULL AND a.synced = 1
+            LIMIT 1`,
+          [petId],
+        );
+        if (!pendingUndo) triggerSignalRegenDebounced(petId);
+      }
     }
   }
 }
