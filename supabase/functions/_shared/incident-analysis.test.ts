@@ -374,7 +374,7 @@ Deno.test('CUL-1323 — the failure write touches the hide ONLY when its rescue 
   // words over a row that held none, so it clears.
   const base = {
     eventId: 'evt-1', petId: 'pet-1', incidentType: 'vomit',
-    message: 'Claude API error 529', existingReadFailed: false, rescue: null, stamps: null,
+    message: 'Claude API error 529', existingReadFailed: false, floorOnly: false, rescue: null, stamps: null,
   }
   for (const existing of [{ recommendation: 'worth_a_call', presentFlags: [] }, { recommendation: 'monitor', presentFlags: [] }, null]) {
     const write = buildFailureWrite({ ...base, existing })
@@ -404,7 +404,7 @@ Deno.test('CUL-1323 — a HOLD writes no words, clears a hide it finds, and writ
   })
   const call = (s: StoredAnalysis | null, recommendation: 'worth_a_call' | 'monitor') =>
     resolveReanalysisWrite({
-      stored: s, eventId: 'evt', petId: 'pet', incidentType: 'vomit',
+      stored: s, eventId: 'evt', petId: 'pet', incidentType: 'vomit', readComplete: true,
       structuredValues: {}, nextPresentFlags: [], readFields: { ...READ_FIELDS, recommendation },
     })
   assertEquals(call(stored({ hidden: true }), 'monitor'), { mode: 'hold', values: { dismissed_at: null } })
@@ -518,7 +518,7 @@ const FAILURE_BASE = {
   petId: 'pet-1',
   incidentType: 'vomit',
   message: 'Claude API error 529',
-  existingReadFailed: false,
+  existingReadFailed: false, floorOnly: false,
   rescue: null,
   // Not about stamps; engineStamps.test.ts pins what a stamped rescue carries.
   stamps: null,
@@ -741,7 +741,7 @@ const readOf = (recommendation: 'worth_a_call' | 'monitor' | 'not_enough_to_say'
   error: null,
 })
 
-const resolve = (s: StoredAnalysis | null, next: AnalysisReadFields, nextPresentFlags: string[] = []) =>
+const resolve = (s: StoredAnalysis | null, next: AnalysisReadFields, nextPresentFlags: string[] = [], readComplete = true) =>
   resolveReanalysisWrite({
     stored: s,
     eventId: 'evt',
@@ -750,6 +750,7 @@ const resolve = (s: StoredAnalysis | null, next: AnalysisReadFields, nextPresent
     structuredValues: { blood_present: 'none_visible', ai_raw_payload: { new: 'read' } },
     nextPresentFlags,
     readFields: next,
+    readComplete,
   })
 
 Deno.test('resolveReanalysisWrite — a photo escalation is HELD over a calmer re-read (Dr. Chen\'s confirmed case)', () => {
@@ -808,11 +809,32 @@ Deno.test('resolveReanalysisWrite — CUL-1509: a held run clears the error an e
   assertEquals(resolve(stored({ errored: false }), readOf('monitor')), { mode: 'hold', values: null })
 })
 
+Deno.test('resolveReanalysisWrite — CUL-1509: a held run that did NOT read every photo keeps the error (the line stays true)', () => {
+  // An unreadable replaced photo, or a partial read collapsed to not_enough_to_say: that run
+  // hit a read problem too, so "The latest read hit a problem" must not go (adversarial pass).
+  assertEquals(resolve(stored({ errored: true }), readOf('not_enough_to_say'), [], false), { mode: 'hold', values: null })
+  // A failed row still settles its status (Edit, Ask's A8), but the error stays.
+  assertEquals(
+    resolve(stored({ errored: true, status: 'failed' }), readOf('not_enough_to_say'), [], false),
+    { mode: 'hold', values: { status: 'uncertain' } },
+  )
+  // The hide still clears: it is about the words, and a hold is a new read (CUL-1323).
+  assertEquals(resolve(stored({ errored: true, hidden: true }), readOf('not_enough_to_say'), [], false), { mode: 'hold', values: { dismissed_at: null } })
+})
+
+Deno.test('buildFailureWrite — CUL-1509: a floor-only run never writes the error-only shape (it read no photo)', () => {
+  // Over a call, and over a stored red flag under a calm verdict: both error-only branches.
+  for (const existing of [{ recommendation: 'worth_a_call', presentFlags: [] }, { recommendation: 'monitor', presentFlags: ['blood'] }]) {
+    assertStrictEquals(buildFailureWrite({ ...FAILURE_BASE, existing, floorOnly: false }).mode, 'error-only')
+    assertEquals(buildFailureWrite({ ...FAILURE_BASE, existing, floorOnly: true }), { mode: 'skip' })
+  }
+})
+
 Deno.test('the error-only failure and the hold round-trip: a failed run then a calm run leaves no error standing', () => {
   // buildFailureWrite over a finished call writes the error only; snapshot the row it leaves
   // and hand that to the next calm run's write decision, the order runIncidentAnalysis takes.
   const failure = buildFailureWrite({
-    existing: { recommendation: 'worth_a_call', presentFlags: [] }, existingReadFailed: false,
+    existing: { recommendation: 'worth_a_call', presentFlags: [] }, existingReadFailed: false, floorOnly: false,
     eventId: 'evt', petId: 'pet', incidentType: 'vomit', message: 'Claude API error 529', rescue: null, stamps: null,
   })
   assertEquals(failure, { mode: 'error-only', values: { error: 'Claude API error 529' } })

@@ -383,6 +383,24 @@ Deno.test('pipeline CUL-1509 — a failed re-read then a calm one: the call stan
   assertStrictEquals(w.row?.blood_col, 'yes')
 })
 
+Deno.test('pipeline CUL-1509 — a re-read that could not open the photo keeps the error: that read hit a problem too', async () => {
+  // A call stands; a re-read fails (529) and the line shows; the retry's photo comes back
+  // undecodable (Claude 400 → photoUnreadable → not_enough_to_say → held). Nothing read the
+  // photo, so "The latest read hit a problem" stays (adversarial pass on CUL-1509).
+  const w = makeWorld({
+    row: { id: 'a1', recommendation: 'worth_a_call', status: 'completed', visual_flags: ['blood'], read_text: 'MODEL: blood', blood_col: 'yes' },
+    vision: overloaded,
+  })
+  await run(w)
+  w.vision = () => { throw new Error('Claude API error 400: could not process image') }
+  w.writes = []
+  const r = await run(w)
+  assertStrictEquals(r.body.held, true)
+  assertEquals(w.writes, [])
+  assertStrictEquals(w.row?.error, 'Claude API error 529: overloaded')
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+})
+
 Deno.test('pipeline CUL-1201 × CUL-1277 — a stored verdict this build does not know is held too', async () => {
   const w = makeWorld({
     row: { recommendation: 'call_now', status: 'completed', blood_col: 'no' },

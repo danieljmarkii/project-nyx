@@ -190,7 +190,7 @@ Deno.test('the failure write: only the RESCUE (words) is stamped; error-only and
   const s: IncidentStamps = await stampsFor({ engineFlags: ON })
   const base = {
     eventId: 'evt-1', petId: 'pet-1', incidentType: 'vomit', message: 'Claude API error 529',
-    existingReadFailed: false, stamps: s,
+    existingReadFailed: false, floorOnly: false, stamps: s,
   }
   const rescue = { recommendation: 'worth_a_call' as const, read_text: 'Worth a call.', visual_flags: [], contextual_flags: ['repeated_vomiting'] }
   const rescued = buildFailureWrite({ ...base, existing: { recommendation: 'monitor', presentFlags: [] }, rescue })
