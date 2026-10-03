@@ -17,6 +17,10 @@
 //     record, populated facts and a step that throws; with it on and the facts in hand, the
 //     step runs on every case; over an incomplete read or with no facts it never runs; and the
 //     real step leaves every escalation's finding untouched and never lowers its rank (AC-3).
+// (c-en8) Engines v3 PR-19 (CUL-1413), EN-8's weight lane: with engines_v3_en8 off, the pipeline
+//     equals the pipeline handed no weight facts, even when the facts hold a record that raises
+//     the firm row; with it on, that row appears on every case; and the lane adds a finding
+//     without moving or removing any other.
 // (d) The care record is read by the care-state step alone: flag off, a populated record
 //     changes nothing (PR-23 flipped the PR-11b "read by nothing" pin into this).
 // (e) The pipeline is a function of its input: the same input twice gives the same result,
@@ -45,7 +49,7 @@ import {
   type SignalPayload,
 } from '../../generate-signal/pipeline.ts'
 import { ENGINE_KEYS, SIGNAL_DECORATING_KEYS, SIGNAL_ENGINE_KEYS, type EngineFlags } from '../engineFlags.ts'
-import { EN11_CONFIG, type DetectionConfig } from '../../generate-signal/detection.ts'
+import { EN11_CONFIG, type DetectionConfig, type WeightLaneInput } from '../../generate-signal/detection.ts'
 import { hasBannedSignalVocabulary, validatePhrasing } from '../../generate-signal/phrasing.ts'
 import { EN10_CONTEXT_STEP, type CareContextFacts, type CareContextStep } from '../../generate-signal/careContext.ts'
 import { careStateOf, concernSignOf, EN9_CARE_STATE_STEP, type CareStateStep } from '../../generate-signal/careState.ts'
@@ -78,9 +82,10 @@ const run = (
   step: CareContextStep = EN10_CONTEXT_STEP,
   en11Config: DetectionConfig = EN11_CONFIG,
   careStep: CareStateStep = EN9_CARE_STATE_STEP,
+  weightFacts: WeightLaneInput | null = null,
 ) =>
   runSignalPipeline(
-    { rows: c.rows, incompletePulls, prior: c.prior, nowMs: Date.parse(c.nowIso), engineFlags, careRecord, careContextFacts },
+    { rows: c.rows, incompletePulls, prior: c.prior, nowMs: Date.parse(c.nowIso), engineFlags, careRecord, careContextFacts, weightFacts },
     step,
     en11Config,
     careStep,
@@ -142,6 +147,7 @@ const SENTINEL: CareContextStep = (findings) =>
   }))
 const EN10 = 'engines_v3_en10'
 const EN9 = 'engines_v3_en9'
+const EN8 = 'engines_v3_en8'
 // EN-10's guards hold EN-9 off: EN-9 reads the same facts and has its own guard (c-en9), so a
 // state with it on would compare two steps at once.
 const NO_EN9 = Object.entries(FLAG_STATES).map(([l, f]) => [l, { ...f, on: f.on.filter((k) => k !== EN9) }] as const)
@@ -156,7 +162,7 @@ Deno.test('(c) tripwire: the Signal keys are exactly the ones with an absence gu
   // tests (the row changes only by its field); a new one needs its own absence guard beside
   // them, and a key that changes what is detected goes in SIGNAL_ENGINE_KEYS instead.
   assertEquals([...SIGNAL_DECORATING_KEYS], [EN10], 'a new decorating key needs its own absence guard beside (c)')
-  assertEquals([...SIGNAL_ENGINE_KEYS], [EN9, EN11], 'a Signal key that changes a sentence or a rank needs its own absence guard beside (c-en9) / (c-en11)')
+  assertEquals([...SIGNAL_ENGINE_KEYS], [EN8, EN9, EN11], 'a Signal key that changes a sentence or a rank needs its own absence guard beside (c-en8) / (c-en9) / (c-en11)')
   assertStrictEquals(ON_STATES.length >= 2 && OFF_STATES.length >= 3, true, 'the flag states lost a side')
 })
 
@@ -368,13 +374,62 @@ Deno.test('(c-en9) D1: a card carried over an incomplete read never carries a ca
       generatedAt: new Date(Date.parse(c.nowIso) - 3_600_000).toISOString(),
       engineFlags: [],
     }
-    const r = runSignalPipeline({ rows: { ...c.rows, symptoms: [] }, incompletePulls: ['symptoms'], prior: planted, nowMs: Date.parse(c.nowIso), engineFlags: { on: [EN9], readOk: true }, careRecord: EMPTY_CARE_RECORD, careContextFacts: POPULATED_CARE_CONTEXT_FACTS })
+    const r = runSignalPipeline({ rows: { ...c.rows, symptoms: [] }, incompletePulls: ['symptoms'], prior: planted, nowMs: Date.parse(c.nowIso), engineFlags: { on: [EN9], readOk: true }, careRecord: EMPTY_CARE_RECORD, careContextFacts: POPULATED_CARE_CONTEXT_FACTS, weightFacts: null })
     for (const e of r.carried) {
       carried++
       assertStrictEquals('careState' in (e.finding as object), false, `${c.name}: ${e.finding.type} carried a care state`)
     }
   }
   assertStrictEquals(carried >= 3, true, `only ${carried} carried cards: the test checks too little`)
+})
+
+// ── (c-en8) EN-8, the weight lane (PR-19, CUL-1413) ──
+// Weigh-ins that raise the firm row on ANY case: an absence proves the gate only when the thing
+// gated was available to leak (C-41). Dated relative to each case's clock.
+const weightFactsFor = (c: SignalPipelineCase): WeightLaneInput => {
+  const at = (days: number) => new Date(Date.parse(c.nowIso) - days * 86_400_000).toISOString()
+  return {
+    readings: [
+      { kg: 4.4, occurredAt: at(90), source: 'home_scale' },
+      { kg: 4.41, occurredAt: at(83), source: 'home_scale' },
+      { kg: 3.73, occurredAt: at(3), source: 'clinic' },
+    ],
+    dateOfBirth: '2020-01-01',
+  }
+}
+const withWeight = (c: SignalPipelineCase, flags: EngineFlags) =>
+  run(c, flags, EMPTY_CARE_RECORD, [], null, EN10_CONTEXT_STEP, EN11_CONFIG, EN9_CARE_STATE_STEP, weightFactsFor(c))
+const EN8_OFF_STATES = Object.entries(FLAG_STATES).filter(([, f]) => !f.on.includes(EN8))
+const EN8_ON_STATES = Object.entries(FLAG_STATES).filter(([, f]) => f.on.includes(EN8))
+
+Deno.test('(c-en8) flag off never reads the weight facts: the row is the one handed none', () => {
+  assertStrictEquals(EN8_ON_STATES.length >= 2 && EN8_OFF_STATES.length >= 3, true, 'the flag states lost a side')
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    for (const [label, flags] of EN8_OFF_STATES) {
+      assertEquals(withWeight(c, flags), run(c, flags), `${c.name}: ${label}`)
+    }
+  }
+})
+
+Deno.test('(c-en8) the gate opens: with engines_v3_en8 on, the weight row appears on every case', () => {
+  let opened = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    for (const [label, flags] of EN8_ON_STATES) {
+      const types = withWeight(c, flags).findings.map((r) => r.finding.type)
+      assertStrictEquals(types.includes('weight_loss'), true, `${c.name}: ${label}`)
+      opened++
+    }
+  }
+  assertStrictEquals(opened >= SIGNAL_PIPELINE_CORPUS.length * 2, true, `the gate opened on only ${opened} runs`)
+})
+
+Deno.test('(c-en8) the lane adds its row and moves nothing else: every other finding keeps its order', () => {
+  const ON: EngineFlags = { on: [EN8], readOk: true }
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const others = (p: SignalPayload) =>
+      p.findings.filter((e) => e.finding.type !== 'weight_loss').map((e) => JSON.stringify(e.finding))
+    assertEquals(others(templatePayload(withWeight(c, ON))), others(templatePayload(run(c, ON))), c.name)
+  }
 })
 
 Deno.test('(d) the care record is read by the care-state step alone: flag off, a populated record changes nothing', () => {
@@ -407,6 +462,7 @@ Deno.test('(f) a throw while resolving the stand-down costs the marker, never th
     engineFlags: OFF,
     careRecord: EMPTY_CARE_RECORD,
     careContextFacts: null,
+    weightFacts: null,
   })
   assertStrictEquals(result.standDownError, 'boom')
   assertEquals(result.standDowns, [])

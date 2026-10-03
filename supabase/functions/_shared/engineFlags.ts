@@ -49,7 +49,11 @@ import { resolveAllowlistFlag } from './flags.ts'
 // every other safety finding. It changes a card's sentence and rank, so it is a SIGNAL key. NOT
 // SEEDED, like en3: absent reads as off. It goes live after PR-16's combined 5% line holds on a
 // corpus with null diarrhea, lethargy and refused or picked ratings (CUL-1417, PM 10/02).
-export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en4', 'engines_v3_en9', 'engines_v3_en10', 'engines_v3_en11'] as const
+// engines_v3_en8: EN-8, the weight lane (Engines v3 PR-19, CUL-1413): the shell reads the pet's
+// weigh-ins with their source and its birthday, and detection may raise `weight_loss`. It adds a
+// finding, so it is a SIGNAL key. NOT SEEDED, like en3: absent reads as off. It goes live after
+// PMD-9 is re-run on lib/weightStory.ts's exact definition, by weighing cadence (ruling sheet W1).
+export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en4', 'engines_v3_en8', 'engines_v3_en9', 'engines_v3_en10', 'engines_v3_en11'] as const
 export type EngineKey = typeof ENGINE_KEYS[number]
 
 // The keys the SIGNAL engine (generate-signal) reads that can change WHAT IT DETECTS. A Signal
@@ -63,7 +67,9 @@ export type EngineKey = typeof ENGINE_KEYS[number]
 // EN-9 (engines_v3_en9, PR-23) is the second: it changes a concern's sentence and its rank. It
 // removes no finding, but a stand-down across its flip would compare two different engines'
 // sentences, so it is gated like EN-11.
-export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = ['engines_v3_en9', 'engines_v3_en11']
+// EN-8 (engines_v3_en8, PR-19) is the third: it adds the weight finding, so a weight card that
+// vanishes across its flip vanished because the lane went dark, never because the pet regained.
+export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = ['engines_v3_en8', 'engines_v3_en9', 'engines_v3_en11']
 
 // The keys the Signal reads that only DECORATE a finding it already made: they add a field,
 // and change no finding's presence, rank or sentence. Proven per key by the corpus guard

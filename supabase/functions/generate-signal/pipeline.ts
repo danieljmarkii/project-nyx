@@ -64,7 +64,9 @@ import {
   type ChronicityCompare,
   type MedOnBoardContext,
   type PhotoComposition,
+  type WeightLaneInput,
 } from './detection.ts'
+import type { WeightReading } from '../../../lib/weightStory.ts'
 // SR-4 (B-721 §5.4) — the medication-on-board payload decoration. Pure, offline-tested
 // (medContext.test.ts); attaches the additive med context + carries the density onto the
 // findings AFTER detection, so the engine's output is untouched.
@@ -444,6 +446,40 @@ export function mapPhotoAnalyses(rows: IncidentAnalysisRow[]): PhotoAnalysisInpu
 
 // ── The input contract ────────────────────────────────────────────────────────
 
+// EN-8 (PR-19, CUL-1413): a `weight_checks` row as index.ts reads it, embedded with its parent
+// event's instant (the soft-delete filter is the query's). `source` arrived with migration 081;
+// an unknown value, or a non-positive or unreadable weight, is dropped here rather than guessed.
+export interface WeightCheckRow {
+  id: string
+  weight_kg: number | string
+  source: string | null
+  source_basis: string | null
+  events: { occurred_at: string } | { occurred_at: string }[] | null
+}
+
+const WEIGHT_SOURCES = new Set(['clinic', 'home_scale', 'estimate'])
+const WEIGHT_SOURCE_BASES = new Set(['entry', 'owner', 'legacy'])
+
+export function mapWeightCheckRows(rows: readonly WeightCheckRow[]): WeightReading[] {
+  const out: WeightReading[] = []
+  for (const r of rows) {
+    const ev = first(r.events)
+    // PostgREST returns NUMERIC as a number today; a string is parsed rather than dropped.
+    const kg = typeof r.weight_kg === 'number' ? r.weight_kg : Number(r.weight_kg)
+    if (!ev || !Number.isFinite(kg) || kg <= 0) continue
+    if (typeof r.source !== 'string' || !WEIGHT_SOURCES.has(r.source)) continue
+    out.push({
+      kg,
+      occurredAt: ev.occurred_at,
+      source: r.source as WeightReading['source'],
+      ...(typeof r.source_basis === 'string' && WEIGHT_SOURCE_BASES.has(r.source_basis)
+        ? { sourceBasis: r.source_basis as NonNullable<WeightReading['sourceBasis']> }
+        : {}),
+    })
+  }
+  return out
+}
+
 // The active diet trial row (`diet_trials`, status 'active', limit 1).
 export interface ActiveTrialRow {
   started_at: string
@@ -500,6 +536,10 @@ export interface SignalPipelineInput {
   // and passes null otherwise. Each step re-checks its own key. Required, so no caller forgets
   // to say (C-37).
   careContextFacts: CareContextFacts | null
+  // EN-8 (PR-19, CUL-1413): the weight lane's facts (weigh-ins with their source, the
+  // birthday). The shell reads them only while `engines_v3_en8` is on, and passes null
+  // otherwise or when the read did not answer in full. Required, so no caller forgets (C-37).
+  weightFacts: WeightLaneInput | null
 }
 
 export interface RankedFinding {
@@ -638,6 +678,10 @@ export function runSignalPipeline(
       : undefined,
     timezone,
     now: new Date(nowMs).toISOString(),
+    // EN-8 (PR-19, CUL-1413): the weight lane reads `weight` and nothing else, so the key is
+    // absent from the input, never `undefined`, unless `engines_v3_en8` is on and the shell read
+    // the facts: flag off is the input from before the lane existed (signalPipeline.test.ts c-en8).
+    ...(args.weightFacts !== null && isEngineKeyOn(engineFlags, 'engines_v3_en8') ? { weight: args.weightFacts } : {}),
   }
   // EN-11 (Engines v3 PR-32, CUL-1141): the one config every step below reads. DEFAULT_CONFIG
   // unless `engines_v3_en11` is on, so flag off is the same object as before.

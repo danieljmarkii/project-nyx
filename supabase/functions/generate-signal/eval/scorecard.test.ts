@@ -76,6 +76,7 @@ Deno.test('the observer shows what the shipped pipeline returns for the same row
         engineFlags: FLAG_OFF,
         careRecord: EMPTY_CARE_RECORD,
         careContextFacts: null,
+        weightFacts: null,
       })
       // The prior only mints stand-down markers, which are not cards; the cards must agree.
       assertEquals(cards.map((c) => c.findingType), direct.findings.map((f) => f.finding.type))
