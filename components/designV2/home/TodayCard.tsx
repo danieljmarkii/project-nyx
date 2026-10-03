@@ -71,7 +71,7 @@ import { usePetStore } from '../../../store/petStore';
 import { useSyncStore } from '../../../store/syncStore';
 import { Card } from '../../ui/Card';
 import { SectionLabel } from '../../ui/SectionLabel';
-import { SkeletonRows } from '../../ui/Skeleton';
+import { Rows } from '../waits/Silhouette';
 import { ThemedText } from '../../ui/ThemedText';
 import { HomeSpine } from '../../historyV2/HomeSpine';
 import { createPaintLedger } from '../../motion/threadMotion';
@@ -328,7 +328,7 @@ export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpe
       <LookHeader trialNotEating={trialNotEating} onLayout={onLookLayout} />
 
       {readState === 'loading' ? (
-        <SkeletonRows count={3} leadingSize={11} paddingHorizontal={0} separator={false} />
+        <Rows count={3} leadingSize={11} paddingHorizontal={0} testID="today-silhouette" />
       ) : readState === 'failed' ? (
         <View style={styles.failed} testID="today-failed">
           <ThemedText style={styles.failedText}>{TODAY_FAILED_LINE}</ThemedText>

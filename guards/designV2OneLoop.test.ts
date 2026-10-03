@@ -8,13 +8,16 @@
 //   1. WRITTEN in the namespace. Every source under `components/designV2/` is read
 //      (comments blanked, the C-18 single-pass walker) for `Animated.loop(` and for an
 //      `iterations: -1` (the other spelling of "forever", on `Animated.timing`'s config
-//      or a Reanimated `withRepeat`). Exactly one file may match: the tick.
+//      or a Reanimated `withRepeat`). No file may match: the tick (`waits/Tick.tsx`)
+//      BINDS the breath, it does not spell it.
 //   2. IMPORTED into it. The namespace's transitive LOCAL import closure is walked the
 //      same way, excluding the namespace itself: the shipped `Skeleton` shimmer, the
 //      `WhorlSpinner` and the `CulpritMark` each carry a loop, and a silhouette that
 //      "reused Skeleton for its blocks" would put a second loop on screen flag-on with
-//      the first walk green. Nothing outside the namespace that the namespace reaches
-//      may loop.
+//      the first walk green. Exactly one module the namespace reaches may loop: the
+//      breath's one implementation, `useTickBreath` in `components/motion/arrivalMotion.ts`
+//      (CUL-1075 — D2-4's node grows its tick into the rail, so the breath must run on the
+//      node's own value; the arrival module owns it and `Tick` wraps it).
 //
 // STATED BLIND SPOTS (C-38: undocumented ones read as coverage). A loop composed by
 // hand — a `timing` whose completion callback restarts it, a `setInterval` driving
@@ -24,16 +27,13 @@
 // review; the second is D2-8's sweep, and the CLAUDE.md § Loading indicators rewrite
 // that lands with it.
 //
-// THE REGISTRY IS AN EXEMPTION (C-32), and it exists because step 2's four lanes were
-// built in parallel: lanes 1–3 landed the same day as this guard, each drawing its
-// sub-second waits with the shipped `Skeleton` (a shimmer, one `Animated.loop`) or the
-// `WhorlSpinner`, and D2-4 breathing its node's tick through the arrival's own value
-// (`TICK_BREATH` in `components/motion/arrivalMotion.ts` — the same 1400ms / 0.35, so
-// the tick's component reads its numbers from there). Each entry below names what
-// loops, who reaches it, and the issue that removes it; the staleness test reds an
-// entry the moment it stops looping or stops being reached, so the list can only
-// shrink. A new looping import is a new entry with a new owner, never a silent
-// addition — and the goal state is the empty registry.
+// THE REGISTRY IS AN EXEMPTION (C-32), and it is EMPTY — its goal state, reached by
+// CUL-1075. It existed because step 2's four lanes were built in parallel: lanes 1–3
+// drew their sub-second waits with the shipped `Skeleton` (a shimmer) or the
+// `WhorlSpinner`, and D2-4 breathed its node's tick with a second copy of the loop.
+// The waits are silhouettes now (`waits/Silhouette.tsx`, `waits/SignalSilhouette.tsx`)
+// and the breath has one implementation. The registry and its staleness test stay so a
+// future looping import is a new entry with a new owner, never a silent addition.
 //
 // Proven by mutation at the foot: a fixture namespace holding a planted loop outside
 // the tick, and a fixture module importing a looping helper, each red the walk.
@@ -44,22 +44,16 @@ import { createFixtureRoot, removeFixtureRoot, writeFixture } from './fixtureRoo
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const NAMESPACE_REL = 'components/designV2';
-/** The one file allowed to loop. */
+/** The tick: in the namespace, binds the breath, spells no loop. */
 const THE_TICK = 'components/designV2/waits/Tick.tsx';
+/** The breath's one implementation, and the one loop the namespace may reach. */
+const THE_BREATH = 'components/motion/arrivalMotion.ts';
 
 /**
- * Modules OUTSIDE the namespace that loop and that the namespace reaches today. An
- * exemption, each with its owner (C-32). Removed by CUL-1075 (the step-2 waits pass),
- * except the arrival's breath, which is the tick's second spelling and is unified there.
+ * Modules OUTSIDE the namespace, other than the breath, that loop and that the namespace
+ * reaches. An exemption, each with its owner (C-32). Emptied by CUL-1075; keep it empty.
  */
-const KNOWN_LOOP_IMPORTS: Readonly<Record<string, string>> = {
-  'components/motion/arrivalMotion.ts':
-    "D2-4's node breathes its tick through the arrival's own value so it can become the rail; the one carve-out, spelled twice — unified by CUL-1075",
-  'components/ui/Skeleton.tsx':
-    'the shimmer under the sub-second waits of SignalLeadCard, LookHeader, TodayCard and MonthInstrument (lanes 1–3) — swapped for waits/Silhouette by CUL-1075',
-  'components/brand/WhorlSpinner.tsx':
-    "SignalScreen's loading state (lane 1) — the screen's own silhouette by CUL-1075",
-};
+const KNOWN_LOOP_IMPORTS: Readonly<Record<string, string>> = {};
 
 const LOOP_RE = /\bAnimated\.loop\s*\(/;
 const FOREVER_RE = /\biterations\s*:\s*-1\b/;
@@ -133,15 +127,24 @@ describe('D2-7 — the tick is the only loop behind design_v2', () => {
     expect(inside).toContain(THE_TICK);
   });
 
-  it('exactly one file in the namespace loops: the tick', () => {
+  it('no file in the namespace spells a loop — the tick binds the breath, it does not write one', () => {
     const { written } = walk(REPO_ROOT, NAMESPACE_REL);
-    // Non-vacuous by construction: the tick MUST be found, or the detector reads nothing.
-    expect(written).toEqual([THE_TICK]);
+    expect(written).toEqual([]);
   });
 
-  it('nothing the namespace imports from outside itself loops, beyond the registered exemptions', () => {
+  it('exactly one module the namespace reaches loops: the breath, and the tick reaches it', () => {
     const { imported } = walk(REPO_ROOT, NAMESPACE_REL);
-    expect(imported.filter((r) => !(r in KNOWN_LOOP_IMPORTS))).toEqual([]);
+    // Non-vacuous by construction: the breath MUST be found, or the detector reads nothing.
+    expect(imported.filter((r) => !(r in KNOWN_LOOP_IMPORTS))).toEqual([THE_BREATH]);
+    expect(importClosure([path.join(REPO_ROOT, THE_TICK)]).map((a) => path.relative(REPO_ROOT, a).split(path.sep).join('/'))).toContain(
+      THE_BREATH,
+    );
+  });
+
+  it('the breath is spelled once in its module (one loop, not two)', () => {
+    const code = readCode(path.join(REPO_ROOT, THE_BREATH));
+    expect(code.match(/\bAnimated\.loop\s*\(/g)).toHaveLength(1);
+    expect(FOREVER_RE.test(code)).toBe(false);
   });
 
   it('every registered exemption still loops and is still reached — a stale entry is deleted, never kept', () => {
@@ -168,11 +171,12 @@ describe('the walk bites (proven by mutation, not by reading)', () => {
 
   beforeAll(() => {
     root = createFixtureRoot('design-v2-one-loop');
-    // A fixture namespace: its own tick (allowed), a silhouette that loops in place
-    // (the first walk's mutation), and a silhouette importing a looping helper from
-    // outside the namespace (the second walk's mutation) — plus a comment that spells
-    // the loop, which must NOT count.
-    writeFixture(root, 'components/designV2/waits/Tick.tsx', `import { Animated } from 'react-native';\nexport const l = Animated.loop(null as never);\n`);
+    // A fixture namespace: its own tick binding a fixture breath (the allowed import), a
+    // silhouette that loops in place (the first walk's mutation), and a silhouette
+    // importing a looping helper from outside the namespace (the second walk's mutation)
+    // — plus a comment that spells the loop, which must NOT count.
+    writeFixture(root, 'components/designV2/waits/Tick.tsx', `import { useTickBreath } from '../../motion/arrivalMotion';\nexport const t = useTickBreath;\n`);
+    writeFixture(root, 'components/motion/arrivalMotion.ts', `import { Animated } from 'react-native';\nexport const useTickBreath = () => Animated.loop(null as never);\n`);
     writeFixture(root, 'components/designV2/waits/Shimmer.tsx', `import { Animated } from 'react-native';\n// Animated.loop( in a comment is not a loop\nexport const l = Animated.loop(null as never);\n`);
     writeFixture(root, 'components/designV2/waits/Reuser.tsx', `import { Skeleton } from '../../ui/Skeleton';\nexport const s = Skeleton;\n`);
     writeFixture(root, 'components/ui/Skeleton.tsx', `import { Animated } from 'react-native';\nexport const Skeleton = Animated.timing(null as never, { iterations: -1 } as never);\n`);
@@ -183,15 +187,15 @@ describe('the walk bites (proven by mutation, not by reading)', () => {
 
   it('a planted loop in a second namespace file, and a looping import, are both found', () => {
     const { written, imported } = walk(root, NAMESPACE_REL);
-    expect(written).toEqual(['components/designV2/waits/Shimmer.tsx', 'components/designV2/waits/Tick.tsx']);
-    expect(imported).toEqual(['components/ui/Skeleton.tsx']);
+    expect(written).toEqual(['components/designV2/waits/Shimmer.tsx']);
+    expect(imported).toEqual(['components/motion/arrivalMotion.ts', 'components/ui/Skeleton.tsx']);
   });
 
   it('a comment spelling the loop does not count, and a quiet import does not either', () => {
     writeFixture(root, 'components/designV2/waits/Shimmer.tsx', `import { Animated } from 'react-native';\n// Animated.loop( in a comment is not a loop\nexport const l = 1;\n`);
     writeFixture(root, 'components/designV2/waits/Reuser.tsx', `import { q } from '../../ui/Quiet';\nexport const s = q;\n`);
     const { written, imported } = walk(root, NAMESPACE_REL);
-    expect(written).toEqual(['components/designV2/waits/Tick.tsx']);
-    expect(imported).toEqual([]);
+    expect(written).toEqual([]);
+    expect(imported).toEqual(['components/motion/arrivalMotion.ts']);
   });
 });

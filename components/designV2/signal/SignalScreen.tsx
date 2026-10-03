@@ -11,7 +11,7 @@ import { CARE_WATCHED_LINE, CARE_WATCHED_TAG, careStateViewOf } from '../../../l
 import { symptomWord } from '../../../lib/signalCopy';
 import { loadSignalScreen, screenLeadsWithLanes, UNSUPPORTED_LINE, withheldLines, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
 import { usePetStore } from '../../../store/petStore';
-import { WhorlSpinner } from '../../brand/WhorlSpinner';
+import { SignalSilhouette } from '../waits/SignalSilhouette';
 import { CompareBars } from '../../charts/CompareBars';
 import { TimingLanes } from '../../charts/TimingLanes';
 import { WeeklyBars } from '../../charts/WeeklyBars';
@@ -178,9 +178,7 @@ export function SignalScreen({ petId, identity }: Props) {
         flight ? (
           <FlightSkeleton flight={flight} windowWidth={windowWidth} />
         ) : (
-          <View style={styles.centered}>
-            <WhorlSpinner size="md" ground="day" />
-          </View>
+          <SignalSilhouette />
         )
       ) : load.status === 'failed' ? (
         <View style={styles.centered}>
@@ -226,7 +224,7 @@ export function SignalScreen({ petId, identity }: Props) {
 }
 
 /** The landing before the read answers: the Header is above, the title the card handed
- *  over, the slot the clone lands on, the whorl below — never a blank ground under a
+ *  over, the slot the clone lands on, the screen's lower silhouette below — never a blank ground under a
  *  chart that has already arrived. */
 function FlightSkeleton({ flight, windowWidth }: { flight: FlightRecord; windowWidth: number }) {
   const inner = leadChartWidth(windowWidth);
@@ -260,9 +258,7 @@ function FlightSkeleton({ flight, windowWidth }: { flight: FlightRecord; windowW
           testID="signal-hero-slot"
         />
       </View>
-      <View style={styles.centeredBelow}>
-        <WhorlSpinner size="md" ground="day" />
-      </View>
+      <SignalSilhouette withHead={false} />
     </View>
   );
 }
@@ -546,10 +542,6 @@ const styles = StyleSheet.create({
     padding: theme.space2,
     paddingBottom: theme.space6,
     gap: theme.space3,
-  },
-  centeredBelow: {
-    alignItems: 'center',
-    paddingVertical: theme.space6,
   },
   heroHidden: {
     opacity: 0,
