@@ -3187,13 +3187,15 @@ describe('an ended trial keeps the ask while the refusal is live (CUL-1337)', ()
     expect(planTrialCard(endedRefusing({ after: 0 })).register).toBe('trial_refusal');
   });
 
-  it('a missing ended_at takes the target end, the day the range renders', () => {
+  // The facts adapter hands the predicate the DECLARED end only, so a terminal row
+  // with no `ended_at` has a today-anchored window: its fact is a real now-fact,
+  // and no amount of elapsed time since the target end may stand it down.
+  it('a missing ended_at leaves the fact today-anchored, so it stays live', () => {
     const input = endedRefusing({ after: 1 });
     const noEnd = { ...input, trial: { ...input.trial!, endedAt: null } };
-    // started 2026-07-03, 56 days → the target end is 2026-08-27, ENDED itself.
     expect(planTrialCard(noEnd).register).toBe('trial_refusal');
-    const lapsed = { ...noEnd, nowMs: daysAfterEnd(REFUSAL_WINDOW_DAYS) };
-    expect(planTrialCard(lapsed).register).toBe('refusal_withheld');
+    const longAfter = { ...noEnd, nowMs: daysAfterEnd(REFUSAL_WINDOW_DAYS * 3) };
+    expect(planTrialCard(longAfter).register).toBe('trial_refusal');
   });
 
   it('the clinical decline still outranks it', () => {

@@ -1011,19 +1011,9 @@ function registerFor(
       // must still not take: it would give the day-2 misfire four more states.
       // The live-card residual is B-566, against #499's register.
       //
-      // AND IT DOES NOT READ THE NOW-FACT EITHER, which R1 makes worth naming
-      // because R1 is what put `trialDietRefusal` on this input in the first
-      // place. The two facts are not nested: a trial eaten for six weeks and
-      // refused for the last two clears the RANGE share and fires the recency
-      // one, so a terminal card can carry a now-fact with no range fact — and it
-      // routes to `record`. What is guaranteed there is that the AFFIRMATIVE
-      // CLAIM is withheld (`mayClaimAllMatched` reads the now-fact, so the
-      // adapter's `mayStateRecordClean` is already false). What is NOT guaranteed
-      // is that the finding is DISCLOSED, and this file's own `rangeRefusal`
-      // docstring says why that distinction matters. Routing it here would change
-      // what an owner reads on a finished trial, and it is the same "when may a
-      // register speak" question Dr. Chen owes a ruling on — so it is filed as
-      // B-570 rather than taken inside a wiring PR.
+      // THE NOW-FACT WAS THE SECOND HALF OF THIS NOTE (B-570): it routed to
+      // `record`, withholding the clean claim without disclosing the finding.
+      // CUL-1337 ruled it, below.
       //
       // ── RULED, CUL-1337 (PM, 2026-10-03) ──────────────────────────────────
       // The now-fact DOES route here now, and the reason is the escalation, not
@@ -1083,20 +1073,18 @@ function registerFor(
  * trial-diet lane has nothing left to watch (the diet is no longer offered), and
  * `detectIntakeDecline` is the watcher on whatever replaced it.
  *
- * A trial with no `ended_at` takes its target end, the same day `terminalRange`
- * renders as its range; a date that cannot be resolved at all keeps the shipped
- * behaviour (`false`).
+ * NO DECLARED END MEANS NO FROZEN ANCHOR. `lib/dietTrialFacts.ts` hands the
+ * predicate the DECLARED `ended_at` and nothing else, so a terminal row with a
+ * null or unparseable end has its window anchored at today, like a live trial's —
+ * the fact is a genuine now-fact and reads as live. Substituting the target end
+ * here (as `terminalRange` does for its DATE) would stand a live safety fact down
+ * on a guess about an anchor the facts never used (`code-reviewer`, CUL-1337).
  */
 function terminalRefusalIsLive(input: TrialCardInput, trial: TrialCardTrial): boolean {
   if (!input.trialDietRefusal) return false;
-  const startIndex = localDayIndexOf(trial.startedAt);
-  const endIndex = trial.endedAt
-    ? localDayIndexOf(trial.endedAt)
-    : startIndex === null
-      ? null
-      : trialEndDayIndex(startIndex, trial.targetDurationDays);
+  const endIndex = trial.endedAt ? localDayIndexOf(trial.endedAt) : null;
   const todayIndex = localDayIndexOf(toLocalDayKey(new Date(input.nowMs)));
-  if (endIndex === null || todayIndex === null) return false;
+  if (endIndex === null || todayIndex === null) return true;
   return todayIndex - endIndex < REFUSAL_WINDOW_DAYS;
 }
 
