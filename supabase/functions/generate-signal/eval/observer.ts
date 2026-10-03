@@ -112,6 +112,8 @@ export function makeSignalObserver(opts: SignalObserverOptions): Observer {
         engineFlags: flags,
         careRecord: en9 ? careAt(view.record, pet.key, T) : EMPTY_CARE_RECORD,
         careContextFacts: en9 ? careFactsAt(view.record, pet.key, T) : null,
+        // EN-8 (PR-19): the corpus feeds no weigh-ins yet (HARNESS_OBSERVES has no EN-8 line).
+        weightFacts: null,
       })
       prior.set(pet.key, { payload: templatePayload(result), generatedAt: view.nowIso })
       for (const r of result.findings) cards.push(cardOf(pet.key, r.finding, opts.askOf))
