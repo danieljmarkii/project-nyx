@@ -66,7 +66,7 @@ export interface EmitOptions {
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 /** A UUID literal cast to ::uuid. Throws on a malformed value (defense-in-depth). */
-function uuidLit(v: string): string {
+export function uuidLit(v: string): string {
   if (!UUID_RE.test(v)) throw new Error(`emitSeedSql: not a UUID: ${JSON.stringify(v)}`);
   return `'${v}'::uuid`;
 }
@@ -82,20 +82,20 @@ function uuidLit(v: string): string {
  * covers the full-tag and the partial-suffix cases at once; no real label
  * contains it (there is no such value in this story, but a future edit is checked).
  */
-function lit(v: string): string {
+export function lit(v: string): string {
   if (v.includes(`$${LIT_TAG}`)) {
     throw new Error(`emitSeedSql: value collides with the dollar-quote tag: ${JSON.stringify(v)}`);
   }
   return `$${LIT_TAG}$${v}$${LIT_TAG}$`;
 }
 
-function num(v: number | null | undefined): string {
+export function num(v: number | null | undefined): string {
   if (v == null) return 'NULL';
   if (!Number.isFinite(v)) throw new Error(`emitSeedSql: non-finite number: ${v}`);
   return String(v);
 }
 
-function bool(v: boolean): string {
+export function bool(v: boolean): string {
   return v ? 'TRUE' : 'FALSE';
 }
 
@@ -110,7 +110,7 @@ function bool(v: boolean): string {
 
 const UTC_MIDNIGHT = `date_trunc('day', now() AT TIME ZONE 'UTC')`;
 
-function instantSql(spec: TimeSpec): string {
+export function instantSql(spec: TimeSpec): string {
   const naive =
     `${UTC_MIDNIGHT}` +
     ` + INTERVAL '1 day' * (${spec.dayOffset})` +
@@ -121,7 +121,7 @@ function instantSql(spec: TimeSpec): string {
   return spec.clampToNow ? `LEAST(${instant}, now() - INTERVAL '5 minutes')` : instant;
 }
 
-function dateSql(dayOffset: number): string {
+export function dateSql(dayOffset: number): string {
   return `(${UTC_MIDNIGHT} + INTERVAL '1 day' * (${dayOffset}))::date`;
 }
 
@@ -133,7 +133,7 @@ function dateSql(dayOffset: number): string {
  * is set to `now()` (the "bumped updated_at" the upsert idempotency wants) rather
  * than `EXCLUDED.updated_at` — the seed never inserts an `updated_at` value.
  */
-function upsert(
+export function upsert(
   table: string,
   cols: string[],
   values: string[],

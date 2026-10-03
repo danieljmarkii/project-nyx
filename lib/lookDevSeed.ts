@@ -60,14 +60,17 @@ export function buildLookSeed(species: LookSpecies): SeedDay[] {
   const days: SeedDay[] = [
     // The three skipped days (3, 12, 17) are the point of the ratio: an owner who
     // answers most days, not every day, is the one the coverage line is written for.
-    { daysAgo: 0, outcome: 'observed', words: ['subdued', 'lip_licking'], vomit: true },
+    // Today is answered but carries no vomit (CUL-1222): the seed's pet is the fixture
+    // account's "quiet" Home, and a vomit today plus one four days back reads to the
+    // engine as a week that doubled — a safety card on the one pet meant to have none.
+    { daysAgo: 0, outcome: 'observed', words: ['subdued'] },
     { daysAgo: 1, outcome: 'nothing_unusual', words: [] },
     { daysAgo: 2, outcome: 'observed', words: [positive] },
     { daysAgo: 4, outcome: 'observed', words: ['lip_licking'], vomit: true },
     { daysAgo: 5, outcome: 'nothing_unusual', words: [] },
     { daysAgo: 6, outcome: 'observed', words: ['sleeping_more'] },
     { daysAgo: 7, outcome: 'nothing_unusual', words: [] },
-    { daysAgo: 8, outcome: 'observed', words: [positive, 'lively'] },
+    { daysAgo: 8, outcome: 'observed', words: ['lip_licking', 'lively'], vomit: true },
     // The first *Off* — nine days back, with a fortnight of answered days behind it.
     { daysAgo: 9, outcome: 'observed', words: ['subdued'] },
     { daysAgo: 10, outcome: 'nothing_unusual', words: [] },
