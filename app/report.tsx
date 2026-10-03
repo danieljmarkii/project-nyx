@@ -112,6 +112,14 @@ export default function ReportScreen() {
   // when the record was current; otherwise rendered next to the send action.
   const [staleLine, setStaleLine] = useState<string | null>(null);
 
+  // The option ships DARK with the rest of Noticed. Both gates, never one: eligibility
+  // (the allowlist) and the owner's own opt-in are two separate questions. Showing the
+  // control outside them would leak the feature onto every report screen before GA
+  // (CUL-876).
+  const lookEligible = useAllowlistFlag('daily_look');
+  const lookOptedIn = useBetaOptIn('daily_look');
+  const showNotesOption = lookEligible && lookOptedIn;
+
   const [rangeMode, setRangeMode] = useState<RangeMode>('default');
   // CUL-875 — *Include your Noticed notes* (T-22, §9 rule 4). Default ON: it is the
   // owner's own PDF, made to be handed to a vet, and the note is the context the report
@@ -142,10 +150,17 @@ export default function ReportScreen() {
     // `includeNotes` rides on both branches: it is a property of the DOCUMENT, not of
     // the window, and leaving it off the default branch would make the option silently
     // inert for every owner who never opens "Custom…".
-    const base = { petId, includeNotes };
+    //
+    // CUL-1464 — a HIDDEN switch sends false, never the state's default. "No gate, no
+    // look rows" is false: an owner who used Noticed and then opted out (or lost
+    // eligibility) still has look rows, and `generate-report` prints the appendix
+    // whenever rows exist, without reading the flag. Their notes would print under a
+    // control they cannot see. A hidden control is the private choice. Always an
+    // explicit boolean: the server reads an absent value as ON.
+    const base = { petId, includeNotes: showNotesOption && includeNotes };
     if (rangeMode === 'default') return base;
     return { ...base, startDate: customStartKey, endDate: customEndKey };
-  }, [petId, rangeMode, customStartKey, customEndKey, includeNotes]);
+  }, [petId, rangeMode, customStartKey, customEndKey, includeNotes, showNotesOption]);
 
   // CUL-371 — the params the report is actually BUILT from. An edit of the custom
   // window already on screen (From, then To) settles for CUSTOM_RANGE_SETTLE_MS before
@@ -281,15 +296,6 @@ export default function ReportScreen() {
   // unmounting the whole surface to a full-screen spinner on every tap (Calm bar).
   // The full spinner is reserved for the very first load, when there's nothing yet.
   const regenerating = status === 'loading' && report !== null;
-
-  // The option ships DARK with the rest of Noticed. Both gates, never one: eligibility
-  // (the allowlist) and the owner's own opt-in are two separate questions, and an account
-  // that has neither has no look rows, so the appendix the toggle governs cannot exist
-  // for it. Showing the control anyway would leak the feature onto every report screen
-  // before GA (CUL-876) and offer a switch over nothing.
-  const lookEligible = useAllowlistFlag('daily_look');
-  const lookOptedIn = useBetaOptIn('daily_look');
-  const showNotesOption = lookEligible && lookOptedIn;
 
   // D2-7 (CUL-1068): behind `design_v2` the first build's wait is the report's own
   // silhouette with the tick beside "Writing {pet}'s report…", and the soft-refresh

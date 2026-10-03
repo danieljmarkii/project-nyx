@@ -25,7 +25,11 @@ export interface VetReportParams {
   /**
    * CUL-875 — *Include your Noticed notes* (T-22, §9 rule 4). Governs whether the
    * sentences the owner wrote on her daily looks are printed in the report's Noticed
-   * appendix. Default ON, so omitting it keeps the spec's default.
+   * appendix.
+   *
+   * REQUIRED (CUL-1464): the server reads an absent value as ON, so an optional field
+   * hands every new caller the notes for writing nothing (C-37). The screen sends false
+   * whenever the switch is hidden.
    *
    * IT GOVERNS THE LOOK NOTE AND NOTHING ELSE TODAY. The older `events.notes` field —
    * the 300-character box on every symptom and meal — has printed verbatim in appendix A
@@ -34,7 +38,7 @@ export interface VetReportParams {
    * ruled, this flag must not be renamed to something that implies it covers both, and
    * the screen's copy says which notes it means.
    */
-  includeNotes?: boolean;
+  includeNotes: boolean;
 }
 
 export interface VetReport {
