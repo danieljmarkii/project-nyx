@@ -428,6 +428,91 @@ describe('MealCompletionCard — a rating stated ELSEWHERE is not erasable here 
   });
 });
 
+describe('MealCompletionCard — a refusal is acknowledged, never celebrated (CUL-894)', () => {
+  const haloOf = (view: ReturnType<typeof render>) => {
+    const flat = Object.assign({}, ...[view.getByTestId('meal-card-check').props.style].flat(Infinity).filter(Boolean));
+    return flat.shadowColor;
+  };
+
+  it('a refused reveal names the record, not the act', () => {
+    seedMeal({ foodType: 'meal', intakeRating: 'refused' });
+    const view = render(<MealCompletionCard />);
+    view.getByText('Refused · PetCo Dental Treats');
+    expect(view.queryByText('Logged · PetCo Dental Treats')).toBeNull();
+  });
+
+  it('a picked-at reveal names it in the drill-in\'s own words', () => {
+    seedMeal({ foodType: 'meal', intakeRating: 'picked' });
+    const view = render(<MealCompletionCard />);
+    view.getByText('Picked at · PetCo Dental Treats');
+  });
+
+  it.each([
+    ['refused', 'Food refused'],
+    ['picked', 'Food picked at'],
+    ['all', 'Food logged'],
+  ] as const)('the nameless fallback on %s still says what happened', (rating, title) => {
+    seedMeal({ foodType: 'meal', intakeRating: rating, foodBrand: null, foodProductName: null });
+    const view = render(<MealCompletionCard />);
+    view.getByText(title);
+  });
+
+  it('drops the gold halo over a refusal and keeps it on an eaten meal', () => {
+    // Mutation-checked 2026-10-03: with the halo rendered unconditionally the first
+    // assertion reds.
+    seedMeal({ foodType: 'meal', intakeRating: 'refused' });
+    const refused = render(<MealCompletionCard />);
+    expect(haloOf(refused)).toBeUndefined();
+    refused.unmount();
+    seedMeal({ eventId: 'e2', foodType: 'meal', intakeRating: 'all' });
+    const eaten = render(<MealCompletionCard />);
+    expect(haloOf(eaten)).toBeDefined();
+    eaten.getByText('Logged · PetCo Dental Treats');
+  });
+
+  it('the door\'s card holds up her answer rather than asking again', () => {
+    seedMeal({ foodType: 'meal', intakeRating: 'refused' });
+    const view = render(<MealCompletionCard />);
+    view.getByText('You said · tap another to change');
+    expect(view.queryByText('How much did Biscuit eat?')).toBeNull();
+  });
+
+  it('a pre-door card still asks, and re-titles when she answers Refused here', async () => {
+    const { AccessibilityInfo, Platform } = jest.requireActual<typeof import('react-native')>('react-native');
+    const prevOS = Platform.OS;
+    Platform.OS = 'ios';
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    try {
+    seedMeal({ foodType: 'meal', intakeRating: null });
+    const view = render(<MealCompletionCard />);
+    view.getByText('How much did Biscuit eat?');
+    view.getByText('Logged · PetCo Dental Treats');
+    await act(async () => {
+      fireEvent.press(view.getByText('Refused'));
+    });
+    view.getByText('Refused · PetCo Dental Treats');
+    // The re-title is spoken, not only painted (CUL-1275's iOS half).
+    expect(announce).toHaveBeenLastCalledWith(
+      `Refused · PetCo Dental Treats. ${formatTime(new Date('2026-06-07T14:00:00.000Z'))}`,
+    );
+    // The question stays a question: she answered it on THIS card.
+    view.getByText('How much did Biscuit eat?');
+    } finally {
+      announce.mockRestore();
+      Platform.OS = prevOS;
+    }
+  });
+
+  it('a door card she corrects and then clears asks again', async () => {
+    seedMeal({ foodType: 'meal', intakeRating: 'refused' });
+    const view = render(<MealCompletionCard />);
+    await act(async () => { fireEvent.press(view.getByText('Some')); });
+    await act(async () => { fireEvent.press(view.getByText('Some')); });
+    expect(useMomentStore.getState().payload).toMatchObject({ intakeRating: null });
+    view.getByText('How much did Biscuit eat?');
+  });
+});
+
 describe('MealCompletionCard — a rating refreshes the Signal (CUL-1087)', () => {
   it('a chip tap asks the Signal to rebuild for the meal\'s pet', async () => {
     // A rating tapped after the log's own regen has fired is the case the insert's

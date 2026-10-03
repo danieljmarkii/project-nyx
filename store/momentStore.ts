@@ -605,8 +605,16 @@ function armHide(set: (partial: Partial<MomentState>) => void, durationMs: numbe
 // double-tap. We acknowledge a 2am vomit log; we never congratulate it (Principle 4 —
 // the same rule that withholds the gold glow from that beat).
 //
-// Meal and dose cards are routine commits by construction — there is no symptom path
-// through them — so they take the success pattern.
+// Dose cards are routine commits by construction, and so is a meal revealed with no
+// rating or an eaten one. A meal REVEALED on a refusal is not (CUL-894): the intake
+// door (N-3b) writes the owner's "Refused" in its own sheet and reveals this card with
+// it lit, so the success double-tap would congratulate her for telling the app her pet
+// did not eat — the food-side twin of med-strip §N3 (never a cheery beat over a
+// refusal record). 'picked' rides with it: both are the decline arms the intake
+// invariant routes toward a health flag, never toward "picky".
+//
+// Read AT THE REVEAL only. A chip tapped afterwards is a correction on a card whose beat
+// already played, and a second buzz would be a second commit that never happened.
 function playCommitHaptic(payload: MomentPayload) {
   // T-10 — DONE IS SILENT. Not an oversight and not a tuning choice: a look writes no
   // symptom row, so `commitSymptom` would be a lie about what landed, and
@@ -621,7 +629,17 @@ function playCommitHaptic(payload: MomentPayload) {
   // one of its two implementations, which is how two copies drift. CUL-964 deleted
   // that copy by making the beat a presentation of this store.
   if ((payload.kind === 'named' || payload.kind === 'sheetBeat') && payload.tone === 'calm') commitSymptom();
+  else if (payload.kind === 'meal' && isIntakeDecline(payload.intakeRating)) commitSymptom();
   else commitRoutine();
+}
+
+/**
+ * The intake arms a meal card must not celebrate (CUL-894): a refusal and a picked-at
+ * bowl. One predicate for the haptic here and the card's mark + title, so the sound
+ * and the picture cannot disagree about which meals are a signal.
+ */
+export function isIntakeDecline(rating: IntakeRating | null | undefined): boolean {
+  return rating === 'refused' || rating === 'picked';
 }
 
 // Shared present/dismiss scheduling for both presentations. delayMs lets a
