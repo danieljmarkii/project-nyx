@@ -7,9 +7,10 @@
 //   • An EPISODE is a vomit row after the engine's re-log collapse (`episodeDaysOf`,
 //     D2-1) — four rows of one bout are one mark.
 //   • A CONTINUATION day holds a vomit row but no episode start: a bout that began the
-//     night before and went on past midnight (CUL-1226). The rose stays the episode's,
-//     but the day's WORDS follow its rows, so it is never spoken as "no vomiting" — the
-//     History strip's rule (`lib/stripMarks.ts`, NEVER A FALSE ABSENCE). The bout each
+//     night before and went on past midnight (CUL-1226). The corner count stays the
+//     episode's; the rose follows the rows (CUL-1530), and so do the day's WORDS, so it is
+//     never spoken as "no vomiting" — the History strip's rule (`lib/stripMarks.ts`,
+//     NEVER A FALSE ABSENCE). The bout each
 //     row belongs to is read off the engine's own collapse (`collapseEpisodes`, the same
 //     gap `episodeDaysOf` uses), never a restated gap (C-34).
 //   • The RECORD'S START is the first surviving event that is not a look, by its parsed
