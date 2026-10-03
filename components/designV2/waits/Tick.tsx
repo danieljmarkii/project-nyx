@@ -11,8 +11,10 @@
 //     round-4 test: if the loop is on screen, name the request it is waiting on. With
 //     `working` false the tick renders NOTHING; a still mark that is not waiting on
 //     anything is the caller's own View (the incident card's pending tick), not this.
-//   • THE ONE LOOP: `guards/designV2OneLoop.test.ts` walks the namespace and its import
-//     closure for `Animated.loop` and expects to find exactly this file.
+//   • THE ONE LOOP: the breath is implemented once, `useTickBreath` in
+//     `components/motion/arrivalMotion.ts`, which D2-4's node also calls on the value
+//     that grows into its rail (CUL-1075 unified the two spellings). This file binds it;
+//     `guards/designV2OneLoop.test.ts` finds the loop there and nowhere else flag-on.
 //   • ITS SHAPE: 3pt wide, 16pt tall — the rail's own tick (`RAIL_WIDTH` /
 //     `RAIL_TICK_HEIGHT` in `components/event/IncidentReadCard.tsx`), because the tick is
 //     the mark an arrival grows into: where a read lands, this becomes the rail of the
@@ -26,12 +28,12 @@
 //   • APP BLUR: the loop stops and the value is pinned at 1, so a native-driver loop
 //     never ticks on the UI thread while backgrounded (B-284 §1.5) and the owner never
 //     returns to a half-faded mark.
-import { useEffect, useRef } from 'react';
-import { Animated, Easing, StyleProp, StyleSheet, ViewStyle } from 'react-native';
+import { useRef } from 'react';
+import { Animated, StyleProp, StyleSheet, ViewStyle } from 'react-native';
 import { theme } from '../../../constants/theme';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { useAppActive } from '../../../hooks/useAppActive';
-import { TICK_BREATH } from '../../motion/arrivalMotion';
+import { TICK_BREATH, useTickBreath } from '../../motion/arrivalMotion';
 
 /**
  * The tick, written down (the Motion Designer's durations). The breath's two numbers
@@ -64,36 +66,7 @@ export function Tick({ working, style, testID = 'design-v2-tick' }: TickProps) {
   const breathe = working && !reduced && active;
   const opacity = useRef(new Animated.Value(1)).current;
 
-  useEffect(() => {
-    if (!breathe) {
-      opacity.setValue(1);
-      return;
-    }
-    const half = TICK_MOTION.breathMs / 2;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, {
-          toValue: TICK_MOTION.restOpacity,
-          duration: half,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: half,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => {
-      loop.stop();
-      // A native-driver animation never writes back to JS (the fold's `rest()` rule), so
-      // the value is pinned by hand or a later commit would seed mid-breath.
-      opacity.setValue(1);
-    };
-  }, [breathe, opacity]);
+  useTickBreath(opacity, breathe);
 
   if (!working) return null;
 

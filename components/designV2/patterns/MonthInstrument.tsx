@@ -28,7 +28,7 @@ import { WeeklyBars } from '../../charts/WeeklyBars';
 import { DayMark, DayMarkLine } from '../../charts/DayMark';
 import { EventIcon } from '../../event/EventIcon';
 import { FilterChip } from '../../ui/FilterChip';
-import { SkeletonCard } from '../../ui/Skeleton';
+import { Line, SilhouetteFrame, Surface } from '../waits/Silhouette';
 import { ThemedText } from '../../ui/ThemedText';
 import { useOpenInPlace } from '../../motion/openInPlaceMotion';
 
@@ -296,9 +296,13 @@ export function MonthInstrument({
 
       {loading || (!model && !failed) ? (
         // A read that has not answered is never an empty month (C-12).
-        <View testID="month-skeleton">
-          <SkeletonCard />
-        </View>
+        <SilhouetteFrame testID="month-skeleton">
+          <Surface style={styles.silhouette}>
+            <Line width="38%" height={11} />
+            <Line width="30%" height={22} />
+            <Line width="100%" height={11} />
+          </Surface>
+        </SilhouetteFrame>
       ) : failed || !model ? (
         <View style={styles.stateBox} testID="month-error">
           <ThemedText style={styles.line}>Couldn't load this month.</ThemedText>
@@ -668,6 +672,10 @@ function Legend({ model, layers }: { model: MonthModel; layers: MonthLayers }) {
 }
 
 const styles = StyleSheet.create({
+  silhouette: {
+    padding: theme.space3,
+    gap: theme.space2,
+  },
   card: {
     backgroundColor: theme.colorSurface,
     borderRadius: theme.radiusMedium,

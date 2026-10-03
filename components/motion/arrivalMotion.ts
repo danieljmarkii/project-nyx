@@ -513,6 +513,37 @@ export const TICK_BREATH = {
   lowOpacity: 0.35,
 } as const;
 
+/**
+ * The breath, implemented ONCE (CUL-1075). Behind `design_v2` this is the app's only
+ * `Animated.loop`: the node's waiting tick (below) and the standalone `Tick`
+ * (`components/designV2/waits/Tick.tsx`) both call it, each on the value its own view
+ * binds, so the carve-out has one spelling and `guards/designV2OneLoop.test.ts` finds it
+ * here and nowhere else. The node keeps its own value because that value's view grows
+ * into the rail; the standalone tick owns one because nothing follows it.
+ *
+ * `breathing` is the caller's whole decision (request in flight, motion allowed, app
+ * active). Off, the value is pinned at FULL opacity: reduced motion and blur alike
+ * render the tick present, never faded (§07), and a native-driver loop never writes
+ * back to JS, so the pin is by hand.
+ */
+export function useTickBreath(value: Animated.Value, breathing: boolean): void {
+  useEffect(() => {
+    if (!breathing) {
+      value.setValue(1);
+      return;
+    }
+    const half = TICK_BREATH.cycleMs / 2;
+    const breathe = (toValue: number) =>
+      Animated.timing(value, { toValue, duration: half, easing: Easing.inOut(Easing.sin), useNativeDriver: true });
+    const loop = Animated.loop(Animated.sequence([breathe(TICK_BREATH.lowOpacity), breathe(1)]));
+    loop.start();
+    return () => {
+      loop.stop();
+      value.setValue(1);
+    };
+  }, [breathing, value]);
+}
+
 export type NodeArrivalPhase = 'idle' | 'arriving' | 'crossfade';
 
 export interface NodeArrivalValues {
@@ -591,7 +622,6 @@ export function useNodeArrival({
   const railBeatArmed = useRef(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const running = useRef<Animated.CompositeAnimation[]>([]);
-  const breath = useRef<Animated.CompositeAnimation | null>(null);
   const mounted = useRef(true);
 
   const later = useCallback((ms: number, fn: () => void) => {
@@ -626,30 +656,7 @@ export function useNodeArrival({
 
   // ── The breath ──────────────────────────────────────────────────────────────
   const breathing = awaitingRead && !reducedMotion && appActive;
-  useEffect(() => {
-    if (!breathing) {
-      breath.current?.stop();
-      breath.current = null;
-      // Still, at FULL opacity — reduced motion and blur alike render the tick present,
-      // never faded (§07: "reduced motion renders it still at full opacity").
-      values.tickOpacity.setValue(1);
-      return;
-    }
-    const half = TICK_BREATH.cycleMs / 2;
-    const loop = Animated.loop(
-      Animated.sequence([
-        timing(values.tickOpacity, TICK_BREATH.lowOpacity, half, Easing.inOut(Easing.sin)),
-        timing(values.tickOpacity, 1, half, Easing.inOut(Easing.sin)),
-      ]),
-    );
-    breath.current = loop;
-    loop.start();
-    return () => {
-      loop.stop();
-      if (breath.current === loop) breath.current = null;
-      values.tickOpacity.setValue(1);
-    };
-  }, [breathing, timing, values]);
+  useTickBreath(values.tickOpacity, breathing);
 
   // ── The beats ───────────────────────────────────────────────────────────────
   const rest = useCallback(() => {
@@ -796,7 +803,6 @@ export function useNodeArrival({
     return () => {
       mounted.current = false;
       stopAll();
-      breath.current?.stop();
     };
   }, [stopAll]);
 

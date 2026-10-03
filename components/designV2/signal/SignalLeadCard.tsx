@@ -12,7 +12,7 @@ import { WeeklyBars } from '../../charts/WeeklyBars';
 import { RAIL_WIDTH } from '../../home/InsightCard';
 import { useColdStartDrawFact } from '../../motion/coldStartDraw';
 import { FLIGHT_ENABLED, FLIGHT_MOTION, flightActiveFor, retargetSource, stageFlight, useFlightState } from '../../motion/flightMotion';
-import { Skeleton } from '../../ui/Skeleton';
+import { Block, Line } from '../waits/Silhouette';
 import { ThemedText } from '../../ui/ThemedText';
 import { DOOR_A11Y_HINT, SignalRow } from './SignalRow';
 
@@ -163,9 +163,9 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit, ge
       <View style={styles.row} testID="signal-lead-skeleton">
         <View style={[styles.rail, { backgroundColor: rail }]} />
         <View style={styles.content} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          <Skeleton width="80%" height={theme.lineHeightSignal - 8} radius={theme.radiusSmall} />
-          <Skeleton height={72} radius={theme.radiusSmall} style={styles.skeletonChart} />
-          <Skeleton width="55%" height={theme.textSM} />
+          <Block width="80%" height={theme.lineHeightSignal - 8} />
+          <Block height={72} style={styles.skeletonChart} />
+          <Line width="55%" height={theme.textSM} />
         </View>
       </View>
     );

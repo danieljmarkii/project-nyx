@@ -39,6 +39,40 @@ export function Surface({ children, style }: { children: ReactNode; style?: Styl
 }
 
 /**
+ * `count` list rows — a leading block and the two stacked text lines every row in this
+ * app has — the static sibling of `SkeletonRows` (CUL-1075), same geometry, no sweep.
+ * Already one hidden unit, so a host drops it in where a list is coming.
+ */
+export function Rows({
+  count,
+  leadingSize = 36,
+  leadingRadius,
+  paddingHorizontal = theme.space3,
+  testID,
+}: {
+  count: number;
+  /** Edge of the leading block; a circle unless `leadingRadius` says otherwise. */
+  leadingSize?: number;
+  leadingRadius?: number;
+  paddingHorizontal?: number;
+  testID: string;
+}) {
+  return (
+    <SilhouetteFrame testID={testID}>
+      {Array.from({ length: count }, (_, i) => (
+        <View key={i} style={[styles.row, { paddingHorizontal }]}>
+          <Block width={leadingSize} height={leadingSize} radius={leadingRadius ?? leadingSize / 2} />
+          <View style={styles.rowText}>
+            <Line width="46%" height={13} />
+            <Line width="28%" height={11} />
+          </View>
+        </View>
+      ))}
+    </SilhouetteFrame>
+  );
+}
+
+/**
  * The frame every silhouette renders inside: one accessibility unit, hidden. `testID`
  * is how a screen's suite finds the silhouette, since a hidden frame is invisible to
  * the default queries — which is the point.
@@ -75,6 +109,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colorBorder,
     padding: theme.space2,
+    gap: theme.space1,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space2,
+    paddingVertical: theme.space2,
+  },
+  rowText: {
+    flex: 1,
     gap: theme.space1,
   },
 });

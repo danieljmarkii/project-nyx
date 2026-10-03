@@ -87,7 +87,7 @@ import { LookEmergencySheet } from '../../home/LookEmergencySheet';
 import { LookWithheldEntry, LookWithheldReasonLine, WITHHELD_UNDO_FADE_MS } from '../../home/LookWithheldEntry';
 import { useGridDisclosure, useLookArrival } from '../../motion/lookMotion';
 import { ThemedText } from '../../ui/ThemedText';
-import { Skeleton } from '../../ui/Skeleton';
+import { Line, SilhouetteFrame } from '../waits/Silhouette';
 
 /** The header's own copy. */
 export const LOOK_MORE = 'More…';
@@ -417,7 +417,9 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
           {shown.map((row) =>
             withheldState === 'unknown' && !carriesConcern(row, species) ? (
               <View key={row.id} style={styles.answered} testID="look-header-skeleton">
-                <Skeleton width="60%" height={13} />
+                <SilhouetteFrame testID="look-header-silhouette">
+                  <Line width="60%" height={13} />
+                </SilhouetteFrame>
               </View>
             ) : withholds(row) ? (
               <View key={row.id}>
