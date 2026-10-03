@@ -90,7 +90,7 @@ Without a flag, a run writes exactly these: step 0's reopens, releases and archi
    | **no PR number** or not a row (`—`, `parked`, a wave header, a `PM` row) | `CUL-1311 (pt 2)` |
    | anything else you cannot read with certainty | say what you could not read |
 
-   **Hotspots are one at a time regardless of lanes:** at most one ready or running row that writes a migration (its What column says *migration*, or its build note names `supabase/migrations/`); at most one that touches `CLAUDE.md`, `STATUS.md`, or a guard registry in `guards/` (read from a `Hotspot:` line in its build note, since file lists are not otherwise on the page). **Lane letters never decide a conflict** — they restart every wave (PR-11b, PR-20 and PR-24 are all "Lane A"). The *Never at the same time* section's **Allowed, and named** line is the one explicit permission to run rows side by side.
+   **Hotspots are one at a time regardless of lanes:** at most one ready or running row that writes a migration (its What column says *migration*, or its build note names `supabase/migrations/`); at most one that touches `CLAUDE.md`, `STATUS.md`, a guard registry in `guards/`, or another shared file the `steward` skill lists (§8: a namespace index, the beta shelf, the report's render file, a screen or the sync module several rows edit), read from a `Hotspot:` line in its build note, since file lists are not otherwise on the page. **Lane letters never decide a conflict** — they restart every wave (PR-11b, PR-20 and PR-24 are all "Lane A"). The *Never at the same time* section's **Allowed, and named** line is the one explicit permission to run rows side by side.
 
 4. **Cap.** `slots = 3 − rows in flight`, where *rows in flight* counts each row or `--row` issue once if it is **running** or **waiting on you** from step 0, or has a PR opened in the last 7 days that is still open, plus each live outside claim from step 1. Show the subtraction by name (`3 − PR-12 (#969) − PR-15 (running) = 1`). **A project's first dispatch has one slot**, whatever the arithmetic. Discovery rows (spec or mock only) count inside the cap like any other. Zero or fewer slots → say so, list what would be ready, and stop after step 6's report.
 
@@ -134,8 +134,10 @@ Without a flag, a run writes exactly these: step 0's reopens, releases and archi
    these holds on a fresh read taken immediately before the merge: it is not a draft; every
    check on its head commit has completed and passed (Claude Approvals included, where it
    runs); GitHub reports it mergeable with no conflict; the head is the commit those checks
-   ran on; the issue's Definition of Done passes, adversarial review included where the
-   issue requires it; and the PR holds no migration and needs none that is unapplied.
+   ran on and the one `scripts/steward/merge-check.sh` called CLEAN (or whose REVIEW you
+   cleared in writing, per the steward skill §5); the issue's Definition of Done passes,
+   adversarial review included where the issue requires it; and the PR holds no migration
+   and needs none that is unapplied.
    Anything short of that, leave the PR for the PM and say which condition failed. Merging
    runs the Edge Function deploy workflow on its own; that is allowed. Starting a deploy any
    other way is not.
@@ -273,7 +275,7 @@ Without a flag, a run writes exactly these: step 0's reopens, releases and archi
 - **After** holds only what must be true for the row to **start**: `PR-NN` tokens for merges, and rulings or PM actions the build itself needs. A release gate goes in the build note as `Merge gate: …` (the child builds and stops before merging); a GA gate goes there as `GA gate: …` (dispatch ignores it). Unblock kind *b* proposes the move when one is found in After.
 - **Never at the same time** uses `A → B → C` for strict order and `A, B, C, one at a time` for mutual exclusion; the **Allowed, and named** line lists rows that may run together despite sharing a lane.
 - **Critical path** lines (`**Critical path to …:** PR-11b → PR-09 → PR-13a`) set the ranking.
-- **Build notes** per PR carry done-when, verification, any `Merge gate:` / `GA gate:` lines, and a `Hotspot:` line naming a guard registry, `CLAUDE.md` or `STATUS.md` when the row touches one; **bundle prompts** for `⧉` rows carry the whole session prompt excerpt.
+- **Build notes** per PR carry done-when, verification, any `Merge gate:` / `GA gate:` lines, and a `Hotspot:` line naming a guard registry, `CLAUDE.md`, `STATUS.md` or a `steward` §8 shared file when the row touches one; **bundle prompts** for `⧉` rows carry the whole session prompt excerpt.
 - **`## Board`** is dispatch's, whole. Everything else on the page is the PM's.
 
 $ARGUMENTS
