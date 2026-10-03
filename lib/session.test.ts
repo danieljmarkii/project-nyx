@@ -291,6 +291,16 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     expect(useHistoryListStore.getState().snapshot).toBeNull();
   });
 
+  // CUL-1255: the sync banner's counts. The previous owner signed out past the unsent
+  // warning; the next account's banner must not say its entries are waiting.
+  it("zeroes the previous account's queue counts, which the wipe has just emptied", async () => {
+    useSyncStore.getState().setPendingStatus(3, '2026-10-01T08:00:00.000Z', 2);
+    await wipeLocalSession();
+    expect(useSyncStore.getState()).toMatchObject({
+      pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0,
+    });
+  });
+
   it('a store that throws while clearing never keeps the others, or the teardown, from running', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     await recordRecoveryRequest('jordan@example.com', t0);
@@ -571,5 +581,81 @@ describe('unsentSignOutWarning — the copy', () => {
     // And it must not tell them to check their connection: the flush just tried.
     expect(w.message.toLowerCase()).not.toContain('internet');
     expect(w.message).toContain('stay signed in');
+  });
+});
+
+// CUL-1255: every Zustand store is classified against the wipe. The list of stores comes
+// from the DIRECTORY, never from the registry below (C-38), so a new store reds this test
+// until someone decides whether it holds account state. WIPED means `lib/session.ts`
+// names the hook in code; RIDES means another store's reset clears it, and the file is
+// checked for that wiring; EXEMPT carries the reason it holds nothing of an account's.
+//
+// THE BLIND SPOT, stated (C-38): WIPED checks that the wipe NAMES the hook, not which
+// fields it clears. The per-store behaviour is asserted by the tests above; a field added
+// to a wiped store later is a review question this registry does not answer.
+describe('every store is classified against the sign-out wipe (CUL-1255)', () => {
+  const fs = jest.requireActual<typeof import('fs')>('fs');
+  const path = jest.requireActual<typeof import('path')>('path');
+  const STORE_DIR = path.join(__dirname, '..', 'store');
+
+  const WIPED: Record<string, string> = {
+    askStore: 'useAskStore',
+    eventStore: 'useEventStore',
+    historyListStore: 'useHistoryListStore',
+    momentStore: 'useMomentStore',
+    onboardingDraftStore: 'useOnboardingDraftStore',
+    petStore: 'usePetStore',
+    snackbarStore: 'useSnackbarStore',
+    syncStore: 'useSyncStore',
+    uiStore: 'useUiStore',
+  };
+  const RIDES: Record<string, { on: string; wiring: string }> = {
+    // Follows the active pet; the pet store's reset() above clears it.
+    historyScopeStore: { on: 'petStore', wiring: 'usePetStore.subscribe(' },
+  };
+  const EXEMPT: Record<string, string> = {
+    authStore: 'the session itself, nulled by the SIGNED_OUT handler; its recovery state ' +
+      'must SURVIVE this wipe, which the reset handler calls mid-attempt (spec §6.3, FR-12)',
+    foodLibraryStore: 'a version counter that tells screens to re-read; holds no rows',
+    reducedMotionStore: 'the OS Reduce Motion setting, a device fact (C-43)',
+  };
+
+  const stores = fs.readdirSync(STORE_DIR)
+    .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
+    .map((f) => f.replace(/\.ts$/, ''));
+  // Code only: a hook named in a comment is not a wipe.
+  const sessionCode = fs.readFileSync(path.join(__dirname, 'session.ts'), 'utf8')
+    .split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+
+  it('reads a real directory (non-vacuity floor)', () => {
+    expect(stores.length).toBeGreaterThanOrEqual(13);
+    expect(stores).toContain('eventStore');
+  });
+
+  it('classifies every store exactly once', () => {
+    for (const store of stores) {
+      const homes = [store in WIPED, store in RIDES, store in EXEMPT].filter(Boolean).length;
+      expect([store, homes]).toEqual([store, 1]);
+    }
+  });
+
+  it('names no store that no longer exists', () => {
+    for (const store of [...Object.keys(WIPED), ...Object.keys(RIDES), ...Object.keys(EXEMPT)]) {
+      expect(stores).toContain(store);
+    }
+  });
+
+  it('every WIPED store is named in the wipe, in code', () => {
+    for (const [store, hook] of Object.entries(WIPED)) {
+      expect([store, sessionCode.includes(`${hook}.`)]).toEqual([store, true]);
+    }
+  });
+
+  it('every RIDES store is wired to a store the wipe clears', () => {
+    for (const [store, { on, wiring }] of Object.entries(RIDES)) {
+      expect(WIPED).toHaveProperty(on);
+      const src = fs.readFileSync(path.join(STORE_DIR, `${store}.ts`), 'utf8');
+      expect([store, src.includes(wiring)]).toEqual([store, true]);
+    }
   });
 });

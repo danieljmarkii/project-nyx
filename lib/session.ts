@@ -11,6 +11,7 @@ import { useEventStore } from '../store/eventStore';
 import { useSnackbarStore } from '../store/snackbarStore';
 import { useAskStore } from '../store/askStore';
 import { useHistoryListStore } from '../store/historyListStore';
+import { useSyncStore } from '../store/syncStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
 import { clearCachedAppConfig } from './appConfig';
 import { clearBetaOptIns } from './betaFeatures';
@@ -228,6 +229,11 @@ export async function wipeLocalSession(): Promise<void> {
       useAskStore.getState().startNew();
     }],
     ['history', () => useHistoryListStore.getState().reset()],
+    // CUL-1255: the queue counts behind the sync banner. An owner who signed out past
+    // the "entries still on this phone" warning left them here, and the next account's
+    // banner said its entries were waiting until its own first cycle finished. The
+    // wipe above emptied the queue, so zero is the truth.
+    ['sync counts', () => useSyncStore.getState().setPendingStatus(0, null, 0)],
   ];
   for (const [what, clear] of inMemory) {
     try {
