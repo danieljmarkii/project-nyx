@@ -1,0 +1,555 @@
+<title>One Home Language</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* ============================================================
+     One Home Language, ROUND 1 (CUL-1519, from the CUL-1496 critique,
+     docs/home-design-language-critique-2026-10.md).
+     Layout: the house mock page (paper, serif section heads, phone frames
+     in wrapping rows). Frames render the app's REAL light tokens
+     (constants/theme.ts) on Nyx's record for Fri Oct 2, event for event.
+     Every frame is built by the script at the foot from one set of
+     component functions, so an option differs from its neighbour only in
+     the rule it is drawing.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --gold-ink: #6B4A0E; --gold-wash: #FDF6E3;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --gold-ink: #F5D38A; --gold-wash: rgba(251,191,36,0.14);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --gold-ink: #F5D38A; --gold-wash: rgba(251,191,36,0.14);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 8px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  .roundtag { display: inline-flex; align-items: center; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  a { color: var(--teal-ink); }
+  .howto { margin-top: 22px; border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 14px 18px; font-size: 14.5px; color: var(--ink-2); max-width: 78ch; }
+  .howto b { color: var(--ink); }
+  .howto ul { margin: 6px 0 0; padding-left: 18px; }
+  .howto li { margin-bottom: 3px; }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-id { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  p { margin: 0 0 14px; }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  .brief { margin: 18px 0 8px; padding: 18px 22px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; max-width: 78ch; }
+  .brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .brief p:last-child { margin-bottom: 0; }
+  .brief strong { color: var(--ink); }
+  .brief .rec { color: var(--teal-ink); font-weight: 600; }
+  .conflict { border-left: 2px solid var(--rose); padding: 2px 0 2px 18px; margin: 18px 0; font-size: 14.5px; color: var(--ink-2); max-width: 78ch; }
+  .conflict p { margin: 0 0 8px; }
+  .conflict strong { color: var(--ink); }
+  .react { margin-top: 26px; border-top: 1px dashed var(--rule); padding-top: 12px; font-size: 14.5px; color: var(--ink-2); max-width: 78ch; }
+  .react b { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal-ink); margin-right: 8px; }
+  table.t { border-collapse: collapse; width: 100%; font-size: 14px; margin: 14px 0 6px; min-width: 560px; }
+  table.t th { text-align: left; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule); }
+  table.t td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; color: var(--ink-2); }
+  table.t td:first-child { color: var(--ink); font-weight: 500; }
+  .tscroll { overflow-x: auto; max-width: 860px; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; border: 1px solid rgba(0,0,0,0.08); }
+
+  /* ── Frame rows ─────────────────────────────────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 28px; align-items: flex-start; }
+  .slot { width: 316px; max-width: 100%; min-width: 0; }
+  .optbox { border: 1px dashed var(--rule); border-radius: 6px; padding: 12px; width: 342px; max-width: 100%; }
+  .cap { margin: 12px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .tag { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; border-radius: 999px; padding: 2px 8px; margin-bottom: 8px; }
+  .tag.built { color: var(--ink-2); background: var(--rule-soft); }
+  .tag.cur { color: var(--teal-ink); background: var(--teal-wash); }
+  .tag.opt { color: var(--gold-ink); background: var(--gold-wash); }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 12px; font-size: 13px; color: var(--ink-2); align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; background: var(--paper-2); }
+  .seg button { font: inherit; font-size: 12.5px; border: 0; background: transparent; color: var(--ink-2); padding: 5px 11px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--teal-wash); color: var(--teal-ink); font-weight: 600; }
+  .seg button:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+
+  /* ── The phone (the app's light tokens, literal: this is a picture of the app) ── */
+  .phone { --k: 1; --xs: calc(var(--k) * 9px); --sm: calc(var(--k) * 10.6px); --md: calc(var(--k) * 12.2px); --lg: calc(var(--k) * 13.8px); --lead: calc(var(--k) * 15.4px); --q: calc(var(--k) * 16px);
+    width: 316px; max-width: 100%; background: #FAFAFA; border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); color: #0A0A0A; font-family: var(--sans); font-variant-numeric: tabular-nums; line-height: 1.35; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+  .phone.vp { height: 684px; }
+  .phone.crop { border-radius: 22px; }
+  .phone.big { --k: 1.45; }
+  .p-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 10px 96px; display: flex; flex-direction: column; gap: 10px; scrollbar-width: none; }
+  .p-scroll::-webkit-scrollbar { display: none; }
+  .phone.crop .p-scroll { padding-bottom: 12px; overflow: visible; }
+  .p-head { background: #FFFFFF; border-bottom: 1px solid #EAEAEA; display: flex; align-items: center; gap: 7px; padding: 30px 12px 9px; flex-shrink: 0; }
+  .p-ava { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #8C7B6B, #3B3029 70%); flex-shrink: 0; }
+  .p-name { font-size: var(--lg); font-weight: 600; }
+  .p-chev { color: #525252; font-size: var(--sm); }
+  .p-sp { flex: 1; }
+  .p-date { font-size: var(--sm); color: #525252; white-space: nowrap; }
+  .p-ask { border: 1px solid #D4D4D4; border-radius: 999px; padding: 3px 9px; font-size: var(--sm); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .p-ask i { width: 6px; height: 6px; border-radius: 50%; background: #00C2A8; display: inline-block; }
+  .p-me { width: 24px; height: 24px; border-radius: 50%; background: #0A0A0A; color: #FFFFFF; font-size: var(--sm); font-weight: 600; display: grid; place-items: center; flex-shrink: 0; }
+  .p-tabs { position: absolute; left: 0; right: 0; bottom: 0; background: #FFFFFF; border-top: 1px solid #EAEAEA; display: grid; grid-template-columns: repeat(4, 1fr); padding: 7px 0 16px; font-size: var(--xs); color: #737373; text-align: center; z-index: 2; }
+  .p-tabs b { color: #0A0A0A; font-weight: 600; position: relative; }
+  .p-tabs b::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: #00C2A8; }
+  .p-fab { position: absolute; right: 14px; bottom: 58px; width: 44px; height: 44px; border-radius: 50%; background: #251F57; display: grid; place-items: center; z-index: 3; box-shadow: 0 6px 16px rgba(19,17,46,0.28); }
+  .p-fab svg { width: 20px; height: 20px; }
+
+  /* cards */
+  .c { background: #FFFFFF; border-radius: 13px; }
+  .c.elev { box-shadow: 0 2px 10px rgba(0,0,0,0.10); padding: 17px 17px 14px; }
+  .c.bord { border: 1px solid #EAEAEA; padding: 17px; }
+  .c.one { box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.045); padding: 13px; }
+  .zl { font-size: var(--xs); letter-spacing: 0.09em; text-transform: uppercase; color: #737373; font-weight: 500; }
+  .zl.rec { color: #A3A3A3; }
+  .zl.gapbig { margin-bottom: 12px; }
+  .zl.gap { margin-bottom: 4px; }
+
+  /* signal rows */
+  .rw { display: flex; align-items: center; gap: 8px; padding: 9px 0; position: relative; }
+  .rw + .rw { border-top: 1px solid #EAEAEA; }
+  .rail { width: 2.5px; border-radius: 2px; align-self: stretch; flex-shrink: 0; }
+  .rail.g { position: absolute; left: -8px; top: 9px; bottom: 9px; }
+  .rail.rose { background: #F43F5E; }
+  .rail.teal { background: #00C2A8; }
+  .rb { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .eb { font-size: var(--xs); letter-spacing: 0.07em; text-transform: uppercase; color: #737373; }
+  .hl-lead { font-family: var(--serif); font-size: var(--lead); line-height: 1.22; letter-spacing: -0.005em; }
+  .hl { font-size: var(--md); font-weight: 600; line-height: 1.3; }
+  .sub { font-size: var(--sm); color: #525252; line-height: 1.4; }
+  .ask { color: #9F1239; font-weight: 500; }
+  .gl { font-size: var(--lg); color: #737373; width: 16px; text-align: center; flex-shrink: 0; line-height: 1; }
+  .well { width: 22px; height: 22px; border-radius: 50%; background: #F5F5F5; display: grid; place-items: center; color: #737373; font-size: var(--md); flex-shrink: 0; }
+  .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+  .disc { font-size: var(--xs); color: #737373; flex: 1; }
+  .lnk { font-size: var(--sm); font-weight: 500; white-space: nowrap; }
+  .lnk.teal { color: #0B7B6C; }
+  .lnk.inkl { color: #0A0A0A; }
+  .fold { font-size: var(--sm); color: #525252; }
+
+  /* receipts */
+  .lane { position: relative; height: 15px; background: #FAFAFA; border: 1px solid #EAEAEA; border-radius: 3px; margin-top: 4px; }
+  .lane .band { position: absolute; left: 0; top: 0; bottom: 0; width: 25%; background: #E0FBF7; border-right: 1px dashed #00C2A8; border-radius: 3px 0 0 3px; }
+  .lane .d { position: absolute; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: #F43F5E; }
+  .lane .d.out { background: #A3A3A3; }
+  .axis { display: flex; justify-content: space-between; font-size: var(--xs); color: #737373; margin-top: 2px; }
+  .cmp { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 6px; align-items: center; margin-top: 4px; font-size: var(--xs); color: #525252; }
+  .cmp .tr { height: 6px; background: #F0F0F0; border-radius: 3px; overflow: hidden; }
+  .cmp .fl { height: 100%; border-radius: 3px; }
+  .cmp .n { font-weight: 600; color: #0A0A0A; text-align: right; }
+
+  /* trial door */
+  .th { display: flex; align-items: center; gap: 8px; }
+  .th .hl { flex: 1; }
+  .bar { height: 3.5px; border-radius: 2px; background: #F0F0F0; overflow: hidden; margin-top: 6px; }
+  .bar i { display: block; height: 100%; width: 82.1%; border-radius: 2px; }
+  .tl { font-size: var(--sm); color: #525252; margin-top: 6px; line-height: 1.4; }
+  .tl3 { font-size: var(--sm); color: #737373; margin-top: 2px; line-height: 1.4; }
+  .ghost { border: 1px dashed #D4D4D4; border-radius: 6px; padding: 3px 6px; color: #A3A3A3; }
+
+  /* today */
+  .q { font-family: var(--serif); font-size: var(--q); line-height: 1.2; margin: 1px 0 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px 5px; }
+  .chip { border: 1px solid #D4D4D4; border-radius: 999px; padding: 4px 8px; font-size: var(--sm); line-height: 1.2; white-space: nowrap; }
+  .chip.door { border-color: transparent; background: #F0F0F0; font-weight: 500; }
+  .more { font-size: var(--sm); font-weight: 500; padding: 4px 3px; }
+  .cnt { font-size: var(--sm); color: #525252; border-top: 1px solid #EAEAEA; margin-top: 10px; padding-top: 9px; }
+  .cnt b { color: #0A0A0A; font-weight: 600; }
+  .spine { margin-top: 8px; display: flex; flex-direction: column; }
+  .sp { display: grid; grid-template-columns: 44px 12px 1fr; gap: 0 7px; position: relative; padding-bottom: 9px; }
+  .sp .tm { font-size: var(--xs); color: #737373; text-align: right; padding-top: 1px; white-space: nowrap; }
+  .sp .dt { position: relative; display: flex; justify-content: center; }
+  .sp .dt::before { content: ""; position: absolute; top: 0; bottom: -9px; left: 50%; width: 1.6px; margin-left: -0.8px; background: var(--thread, #EAEAEA); }
+  .sp:last-child .dt::before { bottom: 50%; }
+  .sp .dt i { width: 6px; height: 6px; border-radius: 50%; margin-top: 4px; position: relative; z-index: 1; box-shadow: 0 0 0 2px #FFFFFF; }
+  .sp .ct { font-size: var(--sm); color: #525252; line-height: 1.35; min-width: 0; }
+  .sp .ct b { color: #0A0A0A; font-weight: 500; }
+  .fm { font-size: var(--xs); letter-spacing: 0.06em; text-transform: uppercase; color: #737373; margin-right: 4px; }
+  .pil { display: inline-block; font-size: var(--xs); letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; border-radius: 999px; padding: 1px 6px; }
+  .cov { display: flex; align-items: center; gap: 10px; font-size: var(--md); }
+  .cov span { flex: 1; min-width: 0; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Round 1</span><span>CUL-1519 · from the CUL-1496 critique</span><span>Design v2 · Step 3b</span></p>
+    <h1>One Home Language</h1>
+    <p class="standfirst">You said Home feels like it speaks <strong>different design languages</strong>, and the critique agreed. This page draws the fix on Nyx's real Friday, Oct 2: three safety cards, one pattern, a rabbit trial on day 69, prednisone with breakfast, a cough at 11:06. <strong>Five decisions,</strong> each drawn side by side.</p>
+    <div class="howto">
+      <b>How to read it.</b>
+      <ul>
+        <li><span class="tag cur" style="margin:0 4px 0 0">current</span> frames are the proposal: every team recommendation applied.</li>
+        <li><span class="tag opt" style="margin:0 4px 0 0">option</span> frames sit in dashed boxes. They are drawn for a decision, not proposed.</li>
+        <li><span class="tag built" style="margin:0 4px 0 0">as shipped</span> is today's build, redrawn from your screenshots.</li>
+        <li>Each section ends with a <b>React</b> line. One answer per decision is enough; the build issues get filed from your answers.</li>
+      </ul>
+    </div>
+  </header>
+
+  <section id="s1">
+    <div class="sec-head"><span class="sec-id">§01</span><h2>Home today, and Home with every recommendation</h2></div>
+    <div class="col">
+      <p>Scroll inside each phone. Both frames are cut at a real phone height, so the bottom edge is the first screenful. On the left, the two card surfaces, the jumping text edge and the mixed door marks are the language problem. On the right, one surface, one text edge, one door mark, and a trial card that says one thing.</p>
+    </div>
+    <div class="frames">
+      <div class="slot"><span class="tag built">as shipped</span><div id="f-ship"></div>
+        <p class="cap"><b>Today's build</b>The Signal floats on a shadow; the others are outlined. Text starts in two places. The trial card holds seven lines and five numbers. "Left her food" is the last chip.</p></div>
+      <div class="slot"><span class="tag cur">current</span>
+        <div class="controls">
+          <span>Teal means</span>
+          <span class="seg" role="group" aria-label="Teal means"><button type="button" id="b-act" aria-pressed="true">you can act</button><button type="button" id="b-fact" aria-pressed="false">a good fact</button></span>
+          <span class="seg" role="group" aria-label="Text size"><button type="button" id="b-k1" aria-pressed="true">Default text</button><button type="button" id="b-k2" aria-pressed="false">Largest</button></span>
+        </div>
+        <div id="f-prop"></div>
+        <p class="cap"><b>The proposal</b>One surface. Rails sit in the gutter, so every card's text starts at one edge. A plain › on every door, the circle on the Signal's lead only. The pattern folds into a counted foot while a safety card leads. The trial card is its title, a neutral bar and the one line that could worry you. Teal has no recommendation (§05), so try both.</p></div>
+    </div>
+  </section>
+
+  <section id="s2">
+    <div class="sec-head"><span class="sec-id">§02 · G1</span><h2>One card surface, and one way to say "this opens"</h2></div>
+    <div class="brief">
+      <p><strong>Deciding:</strong> the surface, inset and door mark every Home card uses.</p>
+      <p><strong>(A) One soft-shadow surface, rails in the gutter, a plain › on every card and row door; the circle stays on the Signal's lead only.</strong> <span class="rec">Recommended:</span> all three Design v2 mocks drew one surface, and the Signal's chevrons came from your own reaction on device (CUL-1270).</p>
+      <p>(B) The same surface, but rows in a list of doors carry no mark; the lead keeps its circle and a single-card door keeps its ›. Mobile IA's dissent: it frees the 22pt column that makes the asks wrap.</p>
+      <p><strong>Consequence:</strong> either one builds a shared <code>HomeCard</code> under the Design v2 namespace and retires the trial card's circle, which amends the TS-5 frame.</p>
+    </div>
+    <div class="frames">
+      <div class="slot"><span class="tag cur">current · A</span><div id="f-g1a"></div><p class="cap"><b>A: › on every door</b>Every row says it opens. The circle marks the one row that leads.</p></div>
+      <div class="optbox"><span class="tag opt">option · B</span><div id="f-g1b"></div><p class="cap"><b>B: no mark on list rows</b>Quieter, and the asks wrap less. The rows rely on looking like rows to read as tappable.</p></div>
+    </div>
+    <p class="react"><b>React R-1</b>A or B? And does the shared surface feel calmer than the shadow and outline mix in §01?</p>
+  </section>
+
+  <section id="s3">
+    <div class="sec-head"><span class="sec-id">§03 · G2</span><h2>The trial card, in the Signal's grammar</h2></div>
+    <div class="brief">
+      <p><strong>Deciding:</strong> whether the trial card keeps TS-5's lines or becomes a title, a bar and one line.</p>
+      <p>(A) TS-5 as drawn, without the food name it never had: coverage, off-diet count, the vomiting pair.</p>
+      <p><strong>(B) Title, neutral bar, one line chosen accusing-first: the off-diet count when there is one, otherwise the end date. Everything else moves to the trial screen.</strong> <span class="rec">Recommended:</span> five numbers become one, about 95pt of the first screen comes back, and the two counts that could not name their window leave Home.</p>
+      <p>(C) B, plus the vomiting sentence whenever the safety and steroid gates allow it. Jordan's preference. Before the line leaves Home, Dr. Chen and the Data Scientist confirm the Signal still catches a smaller rise during a trial.</p>
+      <p><strong>Consequence:</strong> B makes CUL-1374's one-line card the everyday card and settles most of G3 by construction.</p>
+    </div>
+    <p class="col" style="font-size:14.5px;color:var(--ink-2)">Drawn on a calm day (no safety card, no masking drug), so every line each option allows is visible. On Nyx's real Oct 2 the vomiting pair is hidden in every option, because prednisone masks it (CUL-1443).</p>
+    <div class="frames">
+      <div class="optbox"><span class="tag opt">option · A</span><div id="f-g2a"></div><p class="cap"><b>A: TS-5's lines</b>Coverage now names its window (CUL-1498). Still three numbers and a pair.</p></div>
+      <div class="slot"><span class="tag cur">current · B</span><div id="f-g2b"></div><p class="cap"><b>B: one line</b>On a trial with nothing off-diet the line reads "Ends Oct 17".</p></div>
+      <div class="optbox"><span class="tag opt">option · C</span><div id="f-g2c"></div><p class="cap"><b>C: one line, plus the pair when allowed</b>The pair would vanish on any day a safety card or a masking drug is live.</p></div>
+    </div>
+    <p class="react"><b>React R-2</b>A, B or C? If B, is "3 off-diet feedings logged" the right one thing to keep?</p>
+  </section>
+
+  <section id="s4">
+    <div class="sec-head"><span class="sec-id">§04 · G3</span><h2>What the trial card may say while a safety card is up</h2></div>
+    <div class="brief">
+      <p><strong>Deciding:</strong> what the trial card prints when a safety card leads the Signal. A clinical call: you and Dr. Chen.</p>
+      <p>(A) Title and bar only, under any safety card. The Designer's preference.</p>
+      <p><strong>(B) Drop every line that reads as good news (the coverage ratio, a falling vomiting pair) and keep the off-diet count.</strong> <span class="rec">Recommended:</span> it extends your Sep 27 ruling (the lane hides under a safety card) from the lane to the words, and keeps the slip the vet needs to hear about.</p>
+      <p>(C) Only when the safety card is about the same sign: the pair drops to the trial's own count. Jordan's preference.</p>
+      <p>(D) As shipped.</p>
+      <p><strong>Consequence:</strong> one predicate the trial screen inherits. If you take G2 (B), the card already prints only the accusing line, so this decision only bites on G2 (A) or (C). That is why these four are drawn on A's lines.</p>
+    </div>
+    <p class="col" style="font-size:14.5px;color:var(--ink-2)">Nyx's real lead: a photo read of a vomit, "Possible foreign material", worth a call. The pair is drawn as it would print without the steroid, so the four rules are visible.</p>
+    <div class="frames">
+      <div class="optbox"><span class="tag opt">option · A</span><div id="f-g3a"></div><p class="cap"><b>A: title and bar</b>Nothing that could read as reassurance, and nothing that accuses either.</p></div>
+      <div class="slot"><span class="tag cur">current · B</span><div id="f-g3b"></div><p class="cap"><b>B: keep the slip, drop the comfort</b>The end date and the off-diet count stay.</p></div>
+      <div class="optbox"><span class="tag opt">option · C</span><div id="f-g3c"></div><p class="cap"><b>C: same sign only</b>The lead is about vomiting, so the pair drops to the trial's own count. The ratio stays.</p></div>
+      <div class="optbox"><span class="tag opt">option · D</span><div id="f-g3d"></div><p class="cap"><b>D: as shipped</b>"Fewer on the diet" sits two cards under "worth a call".</p></div>
+    </div>
+    <p class="react"><b>React R-3</b>A, B, C or D? This one goes to Dr. Chen with your answer.</p>
+  </section>
+
+  <section id="s5">
+    <div class="sec-head"><span class="sec-id">§05 · G4</span><h2>What teal means on Home</h2></div>
+    <div class="conflict">
+      <p><strong>Designer and Data Viz:</strong> teal means "you can act": links, a pressed chip, the + button. The meal dot keeps its teal as the one named exception.</p>
+      <p><strong>Jordan:</strong> owners already read teal as "a good fact": meals, ate most, given. Links are found by their ›, so they go to ink.</p>
+      <p><strong>PM decision needed:</strong> which one. Both sides agree the pattern's rail, the timing band and the trial bar leave teal, and rose stays the safety colour only. There is no team recommendation.</p>
+    </div>
+    <div class="frames">
+      <div class="optbox"><span class="tag opt">option · A</span><div id="f-g4a"></div><p class="cap"><b>A: teal is "you can act"</b>Links and the + are teal. MOST and GIVEN go grey.</p></div>
+      <div class="optbox"><span class="tag opt">option · B</span><div id="f-g4b"></div><p class="cap"><b>B: teal is "a good fact"</b>MOST and GIVEN stay teal. Links go to ink, the + to white.</p></div>
+    </div>
+    <div class="tscroll">
+      <table class="t">
+        <thead><tr><th>Mark on Home</th><th>As shipped</th><th>A · act</th><th>B · good fact</th></tr></thead>
+        <tbody>
+          <tr><td>Safety rail, ask text</td><td><span class="sw" style="background:#F43F5E"></span>rose</td><td><span class="sw" style="background:#F43F5E"></span>rose</td><td><span class="sw" style="background:#F43F5E"></span>rose</td></tr>
+          <tr><td>Pattern (insight) rail</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td>none</td><td>none</td></tr>
+          <tr><td>Timing band and bars</td><td><span class="sw" style="background:#E0FBF7"></span>teal wash</td><td><span class="sw" style="background:#737373"></span>grey</td><td><span class="sw" style="background:#737373"></span>grey</td></tr>
+          <tr><td>Trial progress bar</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td><span class="sw" style="background:#737373"></span>grey</td><td><span class="sw" style="background:#737373"></span>grey</td></tr>
+          <tr><td>Meal dot on the day</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td><span class="sw" style="background:#00C2A8"></span>teal (named exception, CUL-1279)</td><td><span class="sw" style="background:#00C2A8"></span>teal</td></tr>
+          <tr><td>MOST, GIVEN pills</td><td><span class="sw" style="background:#E0FBF7"></span>teal</td><td><span class="sw" style="background:#F0F0F0"></span>grey</td><td><span class="sw" style="background:#E0FBF7"></span>teal</td></tr>
+          <tr><td>Links ("Patterns ›", "More…")</td><td><span class="sw" style="background:#0B7B6C"></span>teal ink</td><td><span class="sw" style="background:#0B7B6C"></span>teal ink</td><td><span class="sw" style="background:#0A0A0A"></span>ink</td></tr>
+          <tr><td>The + button's glyph</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td><span class="sw" style="background:#FFFFFF"></span>white</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="react"><b>React R-4</b>A or B?</p>
+  </section>
+
+  <section id="s6">
+    <div class="sec-head"><span class="sec-id">§06 · G6</span><h2>The first screen, and a Signal that folds its patterns</h2></div>
+    <div class="brief">
+      <p><strong>Better than the rule.</strong> CUL-1285 (Sep 26) retired the Signal's fold because every card is already a row. It protected Home from a stored per-card state, a "Keep it compact" control, and "seen, never resolved".</p>
+      <p><strong>Deciding:</strong> whether, while a safety card leads, the pattern rows fold into the Signal's foot as a count.</p>
+      <p>(A) Every row open, as shipped.</p>
+      <p><strong>(B) Safety rows open; pattern rows fold into "1 more pattern · Patterns ›" while a safety card leads. Nothing is stored and there is no control, so every protection CUL-1285 kept still holds.</strong> <span class="rec">Recommended:</span> about 107pt back on this record, about 300pt on a busy one. When no safety card leads, the top pattern leads, open, as today.</p>
+      <p><strong>Consequence:</strong> lets the Principles v2.0 edit say "only safety cards may push the look below the first screen". On Oct 2 the look question starts more than a screen down.</p>
+    </div>
+    <div class="frames">
+      <div class="optbox"><span class="tag opt">option · A</span><div id="f-g6a"></div><p class="cap"><b>A: all open</b>The pattern draws the timing as two counted bars (CUL-1499), so even open it is honest about its times.</p></div>
+      <div class="slot"><span class="tag cur">current · B</span><div id="f-g6b"></div><p class="cap"><b>B: patterns fold under a safety lead</b>One line, counted, and the door is the same one the foot already had.</p></div>
+    </div>
+    <p class="react"><b>React R-5</b>A or B?</p>
+  </section>
+
+  <section id="s7">
+    <div class="sec-head"><span class="sec-id">§07</span><h2>Decided by the team, yours to veto</h2></div>
+    <div class="col">
+      <ul style="font-size:15px;color:var(--ink-2)">
+        <li><strong style="color:var(--ink)">Every count names its window.</strong> "12 episodes in these 8 weeks", never "since August" (CUL-1217).</li>
+        <li><strong style="color:var(--ink)">The coverage card says which days it counts:</strong> "October, before today · logged 1 of 1 day".</li>
+        <li><strong style="color:var(--ink)">One name per destination:</strong> "Patterns ›" in both places (CUL-1502).</li>
+        <li><strong style="color:var(--ink)">The refusal door comes first</strong> and looks like a door, not like a chip that writes (CUL-1501).</li>
+        <li><strong style="color:var(--ink)">The day's thread is one step darker</strong> so the spine reads as a line, pending the device pass (CUL-1070).</li>
+        <li><strong style="color:var(--ink)">One spacing for zone labels;</strong> small caps for labels and eyebrows only.</li>
+      </ul>
+      <p style="font-size:14px;color:var(--ink-3)">Not drawn here: dark mode and a real phone. Both are on the device pass, CUL-1070. Copy on this page has not had its <code>nyx-voice</code> pass.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  // ── Nyx, Fri Oct 2 (from the PM's device and the record) ──
+  var CHEV = '›';
+  var PLUS = function (c) { return '<svg viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'; };
+
+  // Teal modes. 'ship' is today's build.
+  function T(mode) {
+    var act = mode === 'act', fact = mode === 'fact';
+    return {
+      insightRail: mode === 'ship',
+      band: mode === 'ship',
+      trialBar: mode === 'ship' ? '#00C2A8' : '#737373',
+      meal: '#00C2A8',
+      pill: mode === 'act' ? { bg: '#F0F0F0', fg: '#525252' } : { bg: '#E0FBF7', fg: '#0B7B6C' },
+      link: fact ? 'inkl' : 'teal',
+      fab: fact ? '#FFFFFF' : '#00C2A8',
+      cmpFill: '#737373'
+    };
+  }
+
+  function phone(inner, o) {
+    o = o || {};
+    var cls = 'phone' + (o.crop ? ' crop' : ' vp') + (o.big ? ' big' : '');
+    var head = o.crop ? '' : '<div class="p-head"><span class="p-ava"></span><span class="p-name">Nyx</span><span class="p-chev">⌄</span><span class="p-sp"></span><span class="p-date">Fri, Oct 2</span><span class="p-ask"><i></i>Ask</span><span class="p-me">D</span></div>';
+    var chrome = o.crop ? '' : '<div class="p-fab">' + PLUS(o.fab || '#00C2A8') + '</div><div class="p-tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div>';
+    return '<div class="' + cls + '" style="' + (o.thread ? '--thread:' + o.thread : '') + '">' + head + '<div class="p-scroll">' + inner + '</div>' + chrome + '</div>';
+  }
+
+  function glyph(kind) {
+    if (kind === 'well') return '<span class="well" aria-hidden="true">' + CHEV + '</span>';
+    if (kind === 'bare') return '<span class="gl" aria-hidden="true">' + CHEV + '</span>';
+    return '';
+  }
+
+  // o: surface (elev|bord|one), rail (in|g), glyphs (ship|every|ruleD), insight (lane|cmp|fold|none), t (teal mode), count ('since'|'these'), link label, lead (true)
+  function signal(o) {
+    var rail = function (color, show) {
+      if (!show) return '';
+      return '<span class="rail ' + color + (o.rail === 'g' ? ' g' : '') + '"></span>';
+    };
+    var rowGlyph = o.glyphs === 'ruleD' ? '' : 'bare';
+    var html = '<div class="c ' + o.surface + '">';
+    html += '<div class="zl ' + (o.surface === 'elev' ? 'rec gapbig' : 'gap') + '">Signal</div>';
+    // safety lead
+    html += '<div class="rw">' + rail('rose', true) + '<div class="rb"><span class="eb">Photo read · Sep 22</span><span class="hl-lead">Possible foreign material in a vomit photo</span><span class="sub ask">Worth a call to your vet</span></div>' + glyph('well') + '</div>';
+    if (!o.leadOnly) {
+      var cnt = function (n) { return o.count === 'since' ? n + ' episodes since August' : n + ' episodes in these 8 weeks'; };
+      html += '<div class="rw">' + rail('rose', true) + '<div class="rb"><span class="hl">Coughing in 7 of the last 8 weeks</span><span class="sub">' + cnt(19) + ' · <span class="ask">worth booking a vet visit</span></span></div>' + glyph(rowGlyph) + '</div>';
+      html += '<div class="rw">' + rail('rose', true) + '<div class="rb"><span class="hl">Vomiting in 5 of the last 8 weeks</span><span class="sub">' + cnt(12) + ' · <span class="ask">worth booking a vet visit</span></span></div>' + glyph(rowGlyph) + '</div>';
+      if (o.insight === 'lane') {
+        var dots = '';
+        for (var i = 0; i < 8; i++) dots += '<span class="d" style="left:' + (2.2 + i * 2.8) + '%"></span>';
+        dots += '<span class="d out" style="left:62%"></span>';
+        html += '<div class="rw">' + rail('teal', o.t.insightRail) + '<div class="rb"><span class="hl">Vomiting soon after meals</span><div class="lane"><span class="band"></span>' + dots + '</div><div class="axis"><span>ate</span><span>30m</span><span>2h+</span></div><span class="sub">8 of 9 timed episodes within 30 min of eating</span></div>' + glyph('bare') + '</div>';
+      } else if (o.insight === 'cmp') {
+        html += '<div class="rw">' + rail('teal', o.t.insightRail) + '<div class="rb"><span class="hl">Vomiting soon after meals</span><div class="cmp"><span>Within 30 min of eating</span><span class="tr"><span class="fl" style="display:block;width:100%;background:' + o.t.cmpFill + '"></span></span><span class="n">8</span><span>Timed, but later</span><span class="tr"><span class="fl" style="display:block;width:12.5%;background:' + o.t.cmpFill + '"></span></span><span class="n">1</span></div><span class="sub">Timed episodes in the last 60 days</span></div>' + glyph(rowGlyph) + '</div>';
+      }
+    }
+    if (o.insight === 'fold') {
+      html += '<div class="foot"><span class="fold">1 more pattern</span><span class="lnk ' + o.t.link + '">' + o.linkLabel + ' ' + CHEV + '</span></div><div class="disc" style="margin-top:4px">A read of Nyx’s logs, not a diagnosis.</div>';
+    } else if (!o.leadOnly) {
+      html += '<div class="foot"><span class="disc">A read of Nyx’s logs, not a diagnosis.</span><span class="lnk ' + o.t.link + '">' + o.linkLabel + ' ' + CHEV + '</span></div>';
+    }
+    return html + '</div>';
+  }
+
+  // o: surface, grammar (ship|A|B|C), g3 (none|A|B|C|D), t, glyph (well|bare), ghostPair
+  function trial(o) {
+    var pair = 'Vomiting: 15 in the trial’s 69 days · 19 in the 49 days before.';
+    var line = '', third = '';
+    if (o.grammar === 'ship') {
+      line = 'Royal Canin Selected Protein PR, Dry · ends Oct 17 · meals logged on 56 of 56 days · 3 outside the trial diet';
+      third = pair;
+    } else if (o.grammar === 'A') {
+      var ratio = 'meals logged on 56 of the original 56 days';
+      var g3 = o.g3 || 'none';
+      if (g3 === 'A') { line = ''; third = ''; }
+      else if (g3 === 'B') { line = 'Ends Oct 17 · 3 off-diet feedings logged'; third = ''; }
+      else if (g3 === 'C') { line = 'Ends Oct 17 · ' + ratio + ' · 3 off-diet feedings logged'; third = 'Vomiting: 15 in the trial’s 69 days.'; }
+      else { line = 'Ends Oct 17 · ' + ratio + ' · 3 off-diet feedings logged'; third = pair; }
+    } else {
+      line = '3 off-diet feedings logged';
+      if (o.grammar === 'C') third = pair;
+    }
+    var h = '<div class="c ' + o.surface + '"><div class="th"><span class="hl">Rabbit trial · day 69 of 84</span>' + glyph(o.glyph) + '</div>';
+    h += '<div class="bar"><i style="background:' + o.t.trialBar + '"></i></div>';
+    if (line) h += '<div class="tl">' + line + '</div>';
+    if (third) h += '<div class="tl3">' + third + '</div>';
+    return h + '</div>';
+  }
+
+  // o: surface, order (ship|first), t, spine (bool), short (only header rows)
+  function today(o) {
+    var words = ['Off', 'Sleeping more', 'Hiding', 'Not grooming', 'Lip-licking', 'Outside the box', 'Lively', 'Played', 'Nothing unusual'];
+    var chips = '';
+    if (o.order === 'first') chips += '<span class="chip door">Left her food ' + CHEV + '</span>';
+    words.forEach(function (w) { chips += '<span class="chip">' + w + '</span>'; });
+    if (o.order !== 'first') chips += '<span class="chip">Left her food ' + CHEV + '</span>';
+    chips += '<span class="more" style="color:' + (o.t.link === 'teal' ? '#0B7B6C' : '#0A0A0A') + '">More…</span>';
+    var h = '<div class="c ' + o.surface + '"><div class="zl gap">Today</div><div class="q">How does Nyx seem today?</div><div class="chips">' + chips + '</div>';
+    if (o.spine) {
+      var pill = function (txt) { return '<span class="pil" style="background:' + o.t.pill.bg + ';color:' + o.t.pill.fg + '">' + txt + '</span>'; };
+      h += '<div class="cnt"><b>4</b> logged · 1 cough · 2 meals · 1 dose</div><div class="spine">';
+      h += '<div class="sp"><span class="tm">2:14 AM</span><span class="dt"><i style="background:' + o.t.meal + '"></i></span><span class="ct"><b>Meal</b> · Royal Canin · Selected Protein PR<br><span class="fm">Dry</span></span></div>';
+      h += '<div class="sp"><span class="tm">7:15 AM</span><span class="dt"><i style="background:' + o.t.meal + '"></i></span><span class="ct"><b>Meal</b> · Royal Canin · Selected Protein PR<br><span class="fm">Wet</span>' + pill('Most') + '<br>with Prednisone</span></div>';
+      h += '<div class="sp"><span class="tm">7:15 AM</span><span class="dt"><i style="background:#5B7A9E"></i></span><span class="ct"><b>Prednisone</b> · in the 7:15 AM meal<br>' + pill('Given') + '</span></div>';
+      h += '<div class="sp"><span class="tm">11:06 AM</span><span class="dt"><i style="background:#F43F5E"></i></span><span class="ct"><b>Cough</b></span></div>';
+      h += '</div>';
+    }
+    return h + '</div>';
+  }
+
+  function coverage(o) {
+    var label = o.proposed ? 'October, before today · logged 1 of 1 day' : 'October · logged 1 of 1 day';
+    return '<div class="c ' + o.surface + '"><div class="cov"><span>' + label + '</span><span class="lnk ' + o.t.link + '">Patterns ' + CHEV + '</span></div></div>';
+  }
+
+  // ── Compositions ──
+  function shipped() {
+    var t = T('ship');
+    return phone(
+      signal({ surface: 'elev', rail: 'in', glyphs: 'ship', insight: 'lane', t: t, count: 'since', linkLabel: 'All patterns' }) +
+      trial({ surface: 'bord', grammar: 'ship', t: t, glyph: 'well' }) +
+      today({ surface: 'bord', order: 'ship', t: t, spine: true }) +
+      coverage({ surface: 'bord', t: t }),
+      { fab: t.fab }
+    );
+  }
+
+  function proposal(mode, big) {
+    var t = T(mode);
+    return phone(
+      signal({ surface: 'one', rail: 'g', glyphs: 'every', insight: 'fold', t: t, count: 'these', linkLabel: 'Patterns' }) +
+      trial({ surface: 'one', grammar: 'B', t: t, glyph: 'bare' }) +
+      today({ surface: 'one', order: 'first', t: t, spine: true }) +
+      coverage({ surface: 'one', t: t, proposed: true }),
+      { fab: t.fab, big: big, thread: '#D4D4D4' }
+    );
+  }
+
+  function g1(rule) {
+    var t = T('act');
+    return phone(
+      signal({ surface: 'one', rail: 'g', glyphs: rule, insight: 'cmp', t: t, count: 'these', linkLabel: 'Patterns' }) +
+      trial({ surface: 'one', grammar: 'B', t: t, glyph: 'bare' }) +
+      today({ surface: 'one', order: 'first', t: t, spine: false }),
+      { crop: true }
+    );
+  }
+
+  function g2(grammar) {
+    var t = T('act');
+    return phone(trial({ surface: 'one', grammar: grammar, t: t, glyph: 'bare' }), { crop: true });
+  }
+
+  function g3(rule) {
+    var t = T('act');
+    return phone(
+      signal({ surface: 'one', rail: 'g', glyphs: 'every', insight: 'none', leadOnly: true, t: t }) +
+      trial({ surface: 'one', grammar: 'A', g3: rule, t: t, glyph: 'bare' }),
+      { crop: true }
+    );
+  }
+
+  function g4(mode) {
+    var t = T(mode);
+    return phone(
+      signal({ surface: 'one', rail: 'g', glyphs: 'every', insight: 'cmp', t: t, count: 'these', linkLabel: 'Patterns' }) +
+      trial({ surface: 'one', grammar: 'B', t: t, glyph: 'bare' }) +
+      today({ surface: 'one', order: 'first', t: t, spine: true }),
+      { crop: true, fab: t.fab, thread: '#D4D4D4' }
+    );
+  }
+
+  function g6(fold) {
+    var t = T('act');
+    return phone(signal({ surface: 'one', rail: 'g', glyphs: 'every', insight: fold ? 'fold' : 'cmp', t: t, count: 'these', linkLabel: 'Patterns' }), { crop: true });
+  }
+
+  function put(id, html) { var el = document.getElementById(id); if (el) el.innerHTML = html; }
+
+  var state = { mode: 'act', big: false };
+  function renderProp() { put('f-prop', proposal(state.mode, state.big)); }
+
+  put('f-ship', shipped());
+  renderProp();
+  put('f-g1a', g1('every'));
+  put('f-g1b', g1('ruleD'));
+  put('f-g2a', g2('A'));
+  put('f-g2b', g2('B'));
+  put('f-g2c', g2('C'));
+  put('f-g3a', g3('A'));
+  put('f-g3b', g3('B'));
+  put('f-g3c', g3('C'));
+  put('f-g3d', g3('D'));
+  put('f-g4a', g4('act'));
+  put('f-g4b', g4('fact'));
+  put('f-g6a', g6(false));
+  put('f-g6b', g6(true));
+
+  function bindSeg(aId, bId, onA, onB) {
+    var a = document.getElementById(aId), b = document.getElementById(bId);
+    a.addEventListener('click', function () { a.setAttribute('aria-pressed', 'true'); b.setAttribute('aria-pressed', 'false'); onA(); renderProp(); });
+    b.addEventListener('click', function () { b.setAttribute('aria-pressed', 'true'); a.setAttribute('aria-pressed', 'false'); onB(); renderProp(); });
+  }
+  bindSeg('b-act', 'b-fact', function () { state.mode = 'act'; }, function () { state.mode = 'fact'; });
+  bindSeg('b-k1', 'b-k2', function () { state.big = false; }, function () { state.big = true; });
+})();
+</script>
