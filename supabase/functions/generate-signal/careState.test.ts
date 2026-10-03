@@ -260,17 +260,18 @@ Deno.test('a relabelled record keeps the frozen reference once the record no lon
 // ── The latch (§4.5, AC 15) ──
 
 Deno.test('raised_again latches until an answer dated after it (AC 15)', () => {
-  const prior = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', careState: { state: 'raised_again', ackId: 'a', reason: 'rate' } } }]
+  const prior = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'raised_again', ackId: 'a', reason: 'rate' } } }]
   const a = ack({ id: 'a', daysAgo: 40 })
   // The record is quiet again; the prior said raised_again for this answer: it stays.
-  const s = stateOf({ symptoms: STABLE, acks: [a], priorFindings: prior })
+  const gen = NOW_MS - DAY
+  const s = stateOf({ symptoms: STABLE, acks: [a], priorFindings: prior, priorGeneratedAtMs: gen })
   assertStrictEquals(s.state, 'raised_again')
   assert(s.text!.includes('worth booking a vet visit'))
-  // A newer answer clears it.
-  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a, ack({ id: 'b', daysAgo: 2 })], priorFindings: prior }).state, 'with_vet')
-  // A prior for a DIFFERENT answer never latches this one (an owner-writable row cannot reach across).
-  const other = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', careState: { state: 'with_vet', ackId: 'a' } } }]
-  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a], priorFindings: other }).state, 'with_vet')
+  // A newer answer (written after the row that said raised_again) clears it.
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a, ack({ id: 'b', daysAgo: 0, createdAt: at(0, 13) })], priorFindings: prior, priorGeneratedAtMs: gen }).state, 'with_vet')
+  // A watched prior never latches anything.
+  const other = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'with_vet', ackId: 'a' } } }]
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a], priorFindings: other, priorGeneratedAtMs: gen }).state, 'with_vet')
 })
 
 // ── C1a co-signs ──
@@ -317,7 +318,10 @@ Deno.test('the pair: coughing turning chronic after the answer brings watched vo
   assertStrictEquals(s.reason, 'pair')
   // A cough course already running before the answer, and already on the prior row, is not a change.
   const old = { ...chronicity('cough'), firstOnsetIso: at(100) } as Finding
-  const prior = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'cough' } }]
+  const prior = [
+    { rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety' } },
+    { rank: 1, finding: { type: 'symptom_chronicity', symptomType: 'cough', priorityClass: 'safety' } },
+  ]
   assertStrictEquals(stateOf({ findings: [chronicity('vomit'), old], symptoms: STABLE, acks: [ack({ daysAgo: 40 })], priorFindings: prior, priorGeneratedAtMs: NOW_MS - DAY }).state, 'with_vet')
 })
 
@@ -389,4 +393,76 @@ Deno.test('every care-state sentence names the pet and the sign, passes the care
 Deno.test('no answer: the concern is raised and its own sentence stands (text null)', () => {
   const s = stateOf({ symptoms: STABLE })
   assertEquals([s.state, s.text, s.ackId], ['raised', null, null])
+})
+
+// ── The adversarial pass (2026-10-03), one regression per defect ──
+
+Deno.test('D2: an anchor in the future, or a "my vet knows" dated after it was written, is not an answer', () => {
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [ack({ daysAgo: 2, source: 'visit_answer', anchorOn: dayOf(-20) })] }).state, 'raised')
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [ack({ daysAgo: 10, anchorOn: dayOf(5) })] }).state, 'raised')
+})
+
+Deno.test('D3: a course with a target and no logged dose lapses at the 56-day cap', () => {
+  const c = ack({ daysAgo: 60, source: 'vet_started_course', anchorOn: dayOf(60), course: { drugLabel: 'Cerenia', startedOn: dayOf(60), endedOn: null, status: 'active', hasTarget: true, lastDoseAt: null } })
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [c] }).state, 'raised')
+})
+
+Deno.test('D4: an answer lapses when its concern left the set, and stays lapsed after it returns', () => {
+  const a = ack({ id: 'a', daysAgo: 30 })
+  // The previous row (written after the answer) held no vomiting concern.
+  const gone = [{ rank: 0, finding: { type: 'timeofday_clustering', priorityClass: 'insight', symptomType: 'vomit' } }]
+  const s = stateOf({ symptoms: STABLE, acks: [a], priorFindings: gone, priorGeneratedAtMs: NOW_MS - DAY })
+  assertEquals([s.state, s.lapsed], ['raised', ['a']])
+  // The next run's prior holds the concern again, raised, carrying the lapse: still raised.
+  const back = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'raised', ackId: null, lapsed: ['a'] } } }]
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a], priorFindings: back, priorGeneratedAtMs: NOW_MS - DAY }).state, 'raised')
+  // A newer answer stands.
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a, ack({ id: 'b', daysAgo: 0, createdAt: at(0, 13) })], priorFindings: back, priorGeneratedAtMs: NOW_MS - DAY }).state, 'with_vet')
+  // No prior row at all lapses nothing.
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a] }).state, 'with_vet')
+})
+
+Deno.test('D5: a re-raise never drops back to an older answer when the newer one lapses', () => {
+  const older = ack({ id: 'older', daysAgo: 60 })
+  const trial = ack({ id: 'trial', daysAgo: 30, source: 'vet_started_trial', anchorOn: dayOf(31), trial: { startedOn: dayOf(31), endedOn: dayOf(2), initialTargetDays: 56 } })
+  const prior = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'raised_again', ackId: 'trial', reason: 'rate' } } }]
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [older, trial], priorFindings: prior, priorGeneratedAtMs: NOW_MS - DAY }).state, 'raised_again')
+})
+
+Deno.test('D6: the pair reads whether the other sign was chronic when the answer was written, not the previous row', () => {
+  const cough = { ...chronicity('cough'), firstOnsetIso: at(100) } as Finding
+  const base = { findings: [chronicity('vomit'), cough], symptoms: STABLE, acks: [ack({ daysAgo: 40 })] }
+  const run = (was: boolean) => {
+    const a = args(base)
+    const out = EN9_CARE_STATE_STEP(base.findings.map((finding, rank) => ({ rank, finding })), { ...a, wasChronicAt: () => was })
+    return careStateOf(out.find((r) => (r.finding as { symptomType: string }).symptomType === 'vomit')!.finding)!
+  }
+  // Cough was not yet chronic at the answer: it turned after, whatever the previous row held.
+  assertEquals([run(false).state, run(false).reason], ['raised_again', 'pair'])
+  // It was already chronic: no change, no re-raise.
+  assertStrictEquals(run(true).state, 'with_vet')
+})
+
+Deno.test('D7: the reference stays frozen as the pre-anchor window leaves the read, and never slides', () => {
+  const old = ack({ id: 'old', daysAgo: 150 })
+  const at = (now: number, prior: unknown) => stateOf({ symptoms: STABLE, acks: [old], nowMs: now, priorFindings: prior, priorGeneratedAtMs: now - DAY, loggedDaysAgo: range(175, Math.round((NOW_MS - now) / DAY)).filter((d) => d >= -40) })
+  const first = at(NOW_MS, null)
+  assertStrictEquals(first.reference!.beforeAnchor, true)
+  // Day by day for 40 days, each run carrying the last row: the same window every time.
+  let prior: unknown = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: first } }]
+  for (let d = 1; d <= 40; d += 1) {
+    const s = at(NOW_MS + d * DAY, prior)
+    assertEquals(s.reference, first.reference, `day ${d}: the reference moved`)
+    prior = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: s } }]
+  }
+})
+
+Deno.test('N1: the dense-day arm counts only weeks wholly after the answer', () => {
+  // Vomiting on 6 of every 7 days, before and after an answer given 9 days ago. Under the old
+  // rule the first dense week could end on the answer day, so the persistence pair completed by
+  // day 7; now the first dense week must START on the answer day, so 9 days is too soon.
+  const sym = events('vomit', range(170, 0).filter((d) => d % 7 !== 3))
+  assertStrictEquals(stateOf({ symptoms: sym, acks: [ack({ daysAgo: 9 })] }).reason === 'dense', false)
+  // Sustained for long enough after the answer, the floor the engine trusts still brings it back.
+  assertStrictEquals(stateOf({ symptoms: sym, acks: [ack({ daysAgo: 30 })] }).reason, 'dense')
 })

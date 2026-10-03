@@ -176,6 +176,10 @@ export interface CareStateArgs {
   priorFindings: unknown
   /** When the previous row was generated, or null. */
   priorGeneratedAtMs: number | null
+  /** Whether `sign`'s chronicity lane fired over the record as it stood at `ms` (the pipeline
+   *  runs detection over the events up to then). Absent in unit tests: the pair falls back to
+   *  the other sign's first onset. */
+  wasChronicAt?: (sign: SymptomType, ms: number) => boolean
   config?: CareStateConfig
 }
 
@@ -209,6 +213,10 @@ export interface CareStateFact {
   /** The cached sentence for this state, template-only (AC 8). Null on `raised`: the lane's own
    *  sentence stands, phrased as it always was. */
   text: string | null
+  /** Answers about this sign that lapsed when the concern left the set (§3.2). Carried forward
+   *  run to run (only ever louder), because the run that saw the concern gone is the only one
+   *  that can tell. */
+  lapsed: string[]
 }
 
 export type WithCareState<F extends Finding = Finding> = F & { careState?: CareStateFact }
@@ -370,6 +378,11 @@ export function lapseReason(ack: AckFact, args: CareStateArgs, retracted: Readon
   if (!Number.isFinite(created) || anchor === null) return 'malformed'
   if (retracted.has(ack.id)) return 'retracted'
   if (created > args.nowMs) return 'future'
+  // A date the owner wrote can lie ahead (adversarial D2): an anchor after today, or a "my vet
+  // knows" / visit answer dated after it was written, would hold a count-less "with your vet"
+  // until the date arrived. Neither is an answer about what has happened.
+  if (anchor > today) return 'future_anchor'
+  if (ack.source !== 'vet_started_trial' && ack.source !== 'vet_started_course' && anchor > localDayIndex(created, tz)) return 'anchor_after_answer'
   // An answer given before this course began covered an earlier one (the January answer, a
   // stand-down, a September recurrence: born raised).
   if (courseStart === null || created < courseStart) return 'earlier_course'
@@ -402,15 +415,17 @@ export function lapseReason(ack: AckFact, args: CareStateArgs, retracted: Readon
       const last = Date.parse(c.lastDoseAt)
       if (Number.isFinite(last) && today > localDayIndex(last, tz) + cfg.courseAfterLastDoseDays) return 'course_last_dose'
     }
-    if (!c.hasTarget && today > localDayIndex(created, tz) + cfg.courseNoTargetCapDays) return 'course_cap'
+    // The 56-day cap binds a course with no target, and also one with a target but no logged
+    // dose (adversarial D3): otherwise an answer about a course nobody logs never ends.
+    if ((!c.hasTarget || c.lastDoseAt === null) && today > localDayIndex(created, tz) + cfg.courseNoTargetCapDays) return 'course_cap'
   }
   return null
 }
 
 /** The newest live answer for the sign, or null (the only one lapsed ⇒ raised). */
-export function liveAck(sign: SymptomType, args: CareStateArgs, cfg: CareStateConfig): AckFact | null {
+export function liveAck(sign: SymptomType, args: CareStateArgs, cfg: CareStateConfig, lapsed: ReadonlySet<string> = new Set()): AckFact | null {
   const acks = args.record.acknowledgements
-  const retracted = new Set(acks.filter((a) => a.retracts).map((a) => a.retracts as string))
+  const retracted = new Set([...acks.filter((a) => a.retracts).map((a) => a.retracts as string), ...lapsed])
   const start = courseStartMs(args, sign)
   const live = acks
     .filter((a) => a.sign === sign && !a.retracts)
@@ -439,7 +454,14 @@ function referenceAnchorDay(ack: AckFact, tz: string | undefined): number | null
  * and ends before today's current window starts. It never slides: a fixed rule over the record
  * finds the same window on every run. Null while no window qualifies.
  */
-export function referenceFor(sign: SymptomType, ack: AckFact, ix: DayIndex, cfg: CareStateConfig, tz: string | undefined): CareReference | null {
+export function referenceFor(
+  sign: SymptomType,
+  ack: AckFact,
+  ix: DayIndex,
+  cfg: CareStateConfig,
+  tz: string | undefined,
+  stored: CareReference | null = null,
+): CareReference | null {
   const anchor = referenceAnchorDay(ack, tz)
   if (anchor === null) return null
   const len = cfg.referenceDays
@@ -449,9 +471,18 @@ export function referenceFor(sign: SymptomType, ack: AckFact, ix: DayIndex, cfg:
   if (pre.from >= ix.firstFullDay) {
     const k = loggedIn(ix.logged, pre.from, pre.to)
     if (k >= floor) return { fromDay: pre.from, toDay: pre.to, episodes: countIn(onsets, pre.from, pre.to), loggedDays: k, beforeAnchor: true }
+  } else if (stored) {
+    // The window the rule picked has left the read (adversarial D7): the record can no longer
+    // say whether the pre-anchor window qualified, so the frozen one stands. Re-searching from
+    // the read's edge would slide a day each day.
+    return stored
   }
+  // The post-anchor search starts at the anchor, never at the read's edge: a start clamped to
+  // the edge would move forward each day. Once the anchor itself has left the read, there is no
+  // reference unless one was stored.
+  if (anchor + 1 < ix.firstFullDay) return stored
   const lastEnd = ix.today - cfg.currentDays
-  for (let from = Math.max(anchor + 1, ix.firstFullDay); from + len - 1 <= lastEnd; from += 1) {
+  for (let from = anchor + 1; from + len - 1 <= lastEnd; from += 1) {
     const to = from + len - 1
     const k = loggedIn(ix.logged, from, to)
     if (k >= floor) return { fromDay: from, toDay: to, episodes: countIn(onsets, from, to), loggedDays: k, beforeAnchor: false }
@@ -525,6 +556,8 @@ interface ReRaiseArgs {
   cfg: CareStateConfig
   /** The other sign of the cough/vomit pair, when its chronicity finding is live now. */
   pairOnsetIso: string | null
+  /** Whether the other sign's chronicity lane fired as of the answer (from the record). */
+  pairChronicAtAnswer: boolean | null
 }
 
 export function findReRaise(x: ReRaiseArgs): ReRaise | null {
@@ -559,7 +592,10 @@ export function findReRaise(x: ReRaiseArgs): ReRaise | null {
   {
     const days = ix.signDays(sign)
     const denseOn = (d: number) => countIn([...days], d - cfg.denseWindowDays + 1, d) >= cfg.denseDayFloor
-    const day = persistentDay((d) => covered(d) && denseOn(d), covered, evalFrom, ix.today, cfg)
+    // A dense week must lie wholly after the answer (adversarial N1): a week the owner had
+    // already seen when she answered is not a tested change.
+    const denseFrom = Math.max(evalFrom, localDayIndex(createdMs, tz) + cfg.denseWindowDays)
+    const day = persistentDay((d) => covered(d) && denseOn(d), covered, denseFrom, ix.today, cfg)
     if (day !== null) found.push({ reason: 'dense', onDay: day, denseDays: countIn([...days], day - cfg.denseWindowDays + 1, day) })
   }
 
@@ -587,11 +623,15 @@ export function findReRaise(x: ReRaiseArgs): ReRaise | null {
     }
   }
 
-  // The cough/vomit pair (GAP-29): the other sign's course turned chronic after the answer.
+  // The cough/vomit pair (GAP-29): the other sign's course turned chronic after the answer. Read
+  // from the record (was its lane firing when the answer was written?), never from the previous
+  // row, so a run that skipped the step cannot lose the transition (adversarial D6). Without
+  // that read, its first onset after the answer is the fallback.
   if (x.pairOnsetIso) {
     const onset = Date.parse(x.pairOnsetIso)
-    if (Number.isFinite(onset) && onset > createdMs) {
-      found.push({ reason: 'pair', onDay: ix.today, pairSign: sign === 'vomit' ? 'cough' : 'vomit', pairSinceDay: localDayIndex(onset, tz) })
+    const turned = x.pairChronicAtAnswer === null ? Number.isFinite(onset) && onset > createdMs : !x.pairChronicAtAnswer
+    if (turned) {
+      found.push({ reason: 'pair', onDay: ix.today, pairSign: sign === 'vomit' ? 'cough' : 'vomit', pairSinceDay: Number.isFinite(onset) ? Math.max(localDayIndex(onset, tz), localDayIndex(createdMs, tz)) : ix.today })
     }
   }
 
@@ -604,10 +644,10 @@ export function findReRaise(x: ReRaiseArgs): ReRaise | null {
 
 interface PriorCare {
   state: CareStateValue
-  ackId: string
+  ackId: string | null
   reason: ReRaiseReason | null
   reference: CareReference | null
-  text: string | null
+  lapsed: string[]
 }
 
 function isInt(x: unknown): x is number {
@@ -626,23 +666,39 @@ function readReference(raw: unknown, cfg: CareStateConfig): CareReference | null
 export function readPriorCare(raw: unknown, cfg: CareStateConfig): Map<string, PriorCare> {
   const out = new Map<string, PriorCare>()
   if (!Array.isArray(raw)) return out
+  const loud: Record<CareStateValue, number> = { with_vet: 0, recheck_booked: 0, raised: 1, raised_again: 2 }
   for (const e of raw) {
     const f = (e as { finding?: unknown } | null)?.finding as Record<string, unknown> | undefined
-    if (!f || typeof f !== 'object' || !CONCERN_TYPES.has(f.type as Finding['type'])) continue
+    if (!f || typeof f !== 'object' || !CONCERN_TYPES.has(f.type as Finding['type']) || typeof f.symptomType !== 'string') continue
     const c = f.careState as Record<string, unknown> | undefined
-    if (!c || typeof c !== 'object' || typeof c.ackId !== 'string' || typeof f.symptomType !== 'string') continue
+    if (!c || typeof c !== 'object') continue
     const state = c.state
-    if (state !== 'with_vet' && state !== 'recheck_booked' && state !== 'raised_again') continue
+    if (state !== 'raised' && state !== 'with_vet' && state !== 'recheck_booked' && state !== 'raised_again') continue
+    const lapsed = Array.isArray(c.lapsed) ? (c.lapsed as unknown[]).filter((x): x is string => typeof x === 'string') : []
     const prev = out.get(f.symptomType)
-    // Loudest wins when two lanes of one sign disagree: raised_again over the watched states.
-    if (prev && prev.state === 'raised_again') continue
+    // Loudest wins when two lanes of one sign disagree; the lapsed lists are pooled (louder too).
+    if (prev && loud[prev.state] >= loud[state]) {
+      prev.lapsed = [...new Set([...prev.lapsed, ...lapsed])]
+      continue
+    }
     out.set(f.symptomType, {
       state,
-      ackId: c.ackId,
+      ackId: typeof c.ackId === 'string' ? c.ackId : null,
       reason: c.reason === 'rate' || c.reason === 'dense' || c.reason === 'co_sign' || c.reason === 'pair' ? c.reason : null,
       reference: readReference(c.reference, cfg),
-      text: typeof c.text === 'string' ? c.text : null,
+      lapsed: [...new Set([...(prev?.lapsed ?? []), ...lapsed])],
     })
+  }
+  return out
+}
+
+/** The signs the prior row held a concern on (a chronicity or worsening safety card). */
+function priorConcernSigns(raw: unknown): Set<string> | null {
+  if (!Array.isArray(raw)) return null
+  const out = new Set<string>()
+  for (const e of raw) {
+    const f = (e as { finding?: unknown } | null)?.finding as Record<string, unknown> | undefined
+    if (f && CONCERN_TYPES.has(f.type as Finding['type']) && f.priorityClass === 'safety' && typeof f.symptomType === 'string') out.add(f.symptomType)
   }
   return out
 }
@@ -747,6 +803,8 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, args) => {
   const ix = indexRecord(args)
   const tz = args.timezone
   const prior = readPriorCare(args.priorFindings, cfg)
+  const priorSigns = priorConcernSigns(args.priorFindings)
+  const priorGen = args.priorGeneratedAtMs
   const chronicOnset = new Map<SymptomType, string>()
   for (const r of findings) {
     if (r.finding.type === 'symptom_chronicity') chronicOnset.set(r.finding.symptomType, r.finding.firstOnsetIso)
@@ -756,40 +814,48 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, args) => {
   const stateFor = (sign: SymptomType): CareStateFact => {
     const cached = bySign.get(sign)
     if (cached) return cached
-    const ack = liveAck(sign, args, cfg)
+    const p = prior.get(sign) ?? null
+    // §3.2: an answer lapses when its concern leaves the set (adversarial D4). The previous row
+    // is the record of that: written after the answer and holding no concern on this sign, it
+    // lapses every answer written before it. Lapses are carried, so they outlive that one row.
+    const lapsed = new Set<string>(p?.lapsed ?? [])
+    if (priorSigns !== null && priorGen !== null && !priorSigns.has(sign)) {
+      for (const a of args.record.acknowledgements) {
+        if (a.sign === sign && Date.parse(a.createdAt) < priorGen) lapsed.add(a.id)
+      }
+    }
+    const lapsedList = [...lapsed].sort()
+    const ack = liveAck(sign, args, cfg, lapsed)
     if (!ack) {
-      const raised: CareStateFact = { state: 'raised', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null, text: null }
+      const raised: CareStateFact = { state: 'raised', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null, text: null, lapsed: lapsedList }
       bySign.set(sign, raised)
       return raised
     }
-    const p = prior.get(sign)
-    const priorSame = p && p.ackId === ack.id ? p : null
-    // The frozen reference: rebuilt from the record when it can be (the same fixed rule finds the
-    // same window), the stored one only once the record no longer reaches it.
-    const reference = referenceFor(sign, ack, ix, cfg, tz) ?? priorSame?.reference ?? null
+    const createdMs = Date.parse(ack.createdAt)
+    // The frozen reference: rebuilt from the record while the rule's window is in the read, the
+    // stored one (this answer's own) once it is not (referenceFor, adversarial D7).
+    const stored = p && p.ackId === ack.id ? p.reference : null
+    const reference = referenceFor(sign, ack, ix, cfg, tz, stored)
     const pairSign: SymptomType | null = sign === 'vomit' ? 'cough' : sign === 'cough' ? 'vomit' : null
-    let pairOnsetIso = pairSign ? chronicOnset.get(pairSign) ?? null : null
-    // The pair turning chronic: when the prior row (written after the answer) lacked the other
-    // sign's chronicity card and this run has it, it turned chronic after the answer even if
-    // its first onset in the lookback is older.
-    if (pairSign && pairOnsetIso && args.priorGeneratedAtMs !== null && args.priorGeneratedAtMs > Date.parse(ack.createdAt)) {
-      const priorHad = Array.isArray(args.priorFindings) && (args.priorFindings as { finding?: { type?: unknown; symptomType?: unknown } }[])
-        .some((e) => e?.finding?.type === 'symptom_chronicity' && e.finding.symptomType === pairSign)
-      if (!priorHad) pairOnsetIso = new Date(Math.max(Date.parse(ack.createdAt) + 1, args.nowMs)).toISOString()
-    }
-    const rr = findReRaise({ sign, ack, reference, ix, args, cfg, pairOnsetIso })
-    const latched = priorSame?.state === 'raised_again'
+    const pairOnsetIso = pairSign ? chronicOnset.get(pairSign) ?? null : null
+    const pairChronicAtAnswer = pairSign && pairOnsetIso && args.wasChronicAt ? args.wasChronicAt(pairSign, createdMs) : null
+    const rr = findReRaise({ sign, ack, reference, ix, args, cfg, pairOnsetIso, pairChronicAtAnswer })
+    // §4.5 the latch: the previous row said raised_again, and this answer is no newer than that
+    // row. Keyed on time, never on the answer's id (adversarial D5): a newer answer lapsing must
+    // not hand the concern back to an older one, quietly.
+    const latched = p?.state === 'raised_again' && priorGen !== null && createdMs <= priorGen
     const drug = ack.source === 'vet_started_course' ? courseLabelFor(ack) : null
     const source = sourceSentence(ack, args.petName, ix.today, tz, drug)
     if (rr || latched) {
-      const reason: ReRaiseReason = rr?.reason ?? priorSame?.reason ?? 'rate'
+      const reason: ReRaiseReason = rr?.reason ?? p?.reason ?? 'rate'
       const back = rr ? backBecauseLine(rr, sign, args.petName, ix.today) : `Back because something changed since your answer.`
       const pair = rr ? pairLine(rr, reference, ix.today) : null
       const fact: CareStateFact = {
         state: 'raised_again', ackId: ack.id, source: ack.source, anchorOn: ack.anchorOn, reference, reason, recheckOn: null,
         // The lane's own sentence (its ask word for word) is spliced in per card below, since
         // chronicity and worsening for one sign share the state but not the sentence.
-        text: [back, LANE_TOKEN, pair, source].filter((s): s is string => !!s).join(' '),
+        text: [back, LANE_TOKEN, pair, source].filter((x): x is string => !!x).join(' '),
+        lapsed: lapsedList,
       }
       bySign.set(sign, fact)
       return fact
@@ -802,7 +868,8 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, args) => {
     const fact: CareStateFact = {
       state: recheck ? 'recheck_booked' : 'with_vet', ackId: ack.id, source: ack.source, anchorOn: ack.anchorOn, reference, reason: null,
       recheckOn: recheck ? recheck.on : null,
-      text: [head, source, tail].filter((s) => s.length > 0).join(' '),
+      text: [head, source, tail].filter((x) => x.length > 0).join(' '),
+      lapsed: lapsedList,
     }
     bySign.set(sign, fact)
     return fact

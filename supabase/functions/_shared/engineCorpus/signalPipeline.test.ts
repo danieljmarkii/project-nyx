@@ -356,6 +356,27 @@ Deno.test('(c-en9) AC-3: with every concern answered, every escalation keeps its
   assertStrictEquals(concerns >= 3 && escalations >= 3, true, `only ${concerns} concerns and ${escalations} escalations: the property checks too little`)
 })
 
+Deno.test('(c-en9) D1: a card carried over an incomplete read never carries a care state', () => {
+  // A prior row whose safety cards all carry a planted with_vet: over an incomplete read the
+  // carried cards come back without it, so nothing an old or owner-written row says can quiet them.
+  let carried = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const fresh = run(c)
+    if (!fresh.findings.some((r) => r.finding.priorityClass === 'safety')) continue
+    const planted: PriorSignal = {
+      findings: fresh.findings.map((r) => ({ rank: r.rank, text: 'x', finding: { ...r.finding, careState: { state: 'with_vet', ackId: 'z' } } })),
+      generatedAt: new Date(Date.parse(c.nowIso) - 3_600_000).toISOString(),
+      engineFlags: [],
+    }
+    const r = runSignalPipeline({ rows: { ...c.rows, symptoms: [] }, incompletePulls: ['symptoms'], prior: planted, nowMs: Date.parse(c.nowIso), engineFlags: { on: [EN9], readOk: true }, careRecord: EMPTY_CARE_RECORD, careContextFacts: POPULATED_CARE_CONTEXT_FACTS })
+    for (const e of r.carried) {
+      carried++
+      assertStrictEquals('careState' in (e.finding as object), false, `${c.name}: ${e.finding.type} carried a care state`)
+    }
+  }
+  assertStrictEquals(carried >= 3, true, `only ${carried} carried cards: the test checks too little`)
+})
+
 Deno.test('(d) the care record is read by the care-state step alone: flag off, a populated record changes nothing', () => {
   for (const c of SIGNAL_PIPELINE_CORPUS) {
     assertEquals(run(c, OFF, POPULATED_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS), run(c, OFF, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS), c.name)

@@ -755,6 +755,7 @@ export function runSignalPipeline(
         recencyDaysFor: (sign) => chronicityFloorsFor(sign, rows.pet.species as Species, config.chronicity).ongoingRecencyDays,
         priorFindings: priorSignal?.findings ?? null,
         priorGeneratedAtMs: priorMs(priorSignal),
+        wasChronicAt: chronicAsOf(input, config),
       })
       : withContext
   // CUL-989: and no safety card the previous Signal showed disappears on an incomplete read.
@@ -852,6 +853,29 @@ export function runSignalPipeline(
     incompleteDisclosure: readIncomplete
       ? incompleteReadDisclosure(petName, decorated.some((r) => r.finding.priorityClass === 'safety') || carried.length > 0)
       : null,
+  }
+}
+
+// The cough/vomit pair's transition (EN-9, adversarial D6): was the other sign's chronicity lane
+// firing when the answer was written? Detection over the record as it stood then (events up to
+// that instant, `now` at it), so a skipped run can never lose the change. Memoised per call.
+function chronicAsOf(input: DetectionInput, config: DetectionConfig): (sign: SymptomType, ms: number) => boolean {
+  const memo = new Map<string, boolean>()
+  return (sign, ms) => {
+    const key = `${sign}:${ms}`
+    const hit = memo.get(key)
+    if (hit !== undefined) return hit
+    const upTo = (iso: string) => Date.parse(iso) <= ms
+    const then: DetectionInput = {
+      ...input,
+      symptomEvents: input.symptomEvents.filter((e) => upTo(e.occurredAt)),
+      mealEvents: input.mealEvents.filter((e) => upTo(e.occurredAt)),
+      incidentAnalyses: (input.incidentAnalyses ?? []).filter((e) => upTo(e.occurredAt)),
+      now: new Date(ms).toISOString(),
+    }
+    const was = detectSignals(then, config).some((r) => r.finding.type === 'symptom_chronicity' && r.finding.symptomType === sign)
+    memo.set(key, was)
+    return was
   }
 }
 
@@ -1062,7 +1086,11 @@ function carryPriorSafety(prior: readonly PriorSafetyEntry[], current: readonly 
     .filter((p) => !shown.has(safetyKey(p.finding)))
     .filter((p) => !(p.finding.type === 'symptom_worsening' && burdenSigns.has(String(p.finding.symptomType))))
     .map((p, i) => {
-      const finding = { ...p.finding, carriedFrom: p.carriedFromIso } as Finding
+      // EN-9 (PR-23, adversarial D1): a carried card never carries a care state. It is the
+      // previous row's, owner-writable, and over an incomplete read no answer may quiet anything:
+      // the card comes back asking.
+      const { careState: _dropped, ...rest } = p.finding as Finding & { careState?: unknown }
+      const finding = { ...rest, carriedFrom: p.carriedFromIso } as Finding
       return { rank: i, text: templateCarried(finding, petName, p.carriedFromIso), finding }
     })
 }

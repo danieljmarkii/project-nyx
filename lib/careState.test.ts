@@ -38,6 +38,15 @@ describe('careStateValueOf / careStateQuietsAsk', () => {
   });
 });
 
+describe('D1: a care state on an escalation is ignored (AC 3)', () => {
+  it('an intake decline or red flag carrying a planted with_vet keeps its ask', () => {
+    const intake = { type: 'intake_decline', priorityClass: 'safety', careState: { state: 'with_vet' } } as unknown as SignalFinding;
+    const flag = { type: 'incident_red_flag', priorityClass: 'safety', careState: { state: 'with_vet' } } as unknown as SignalFinding;
+    expect(careStateQuietsAsk(intake)).toBe(false);
+    expect(careStateQuietsAsk(flag)).toBe(false);
+  });
+});
+
 describe("Home's ask under a care state", () => {
   it('flag off (no field) and raised keep the shipped ask; a watched concern asks nothing', () => {
     expect(signalHomeLine(chronicity())?.ask).toBe('worth booking a vet visit');

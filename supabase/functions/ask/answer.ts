@@ -1031,15 +1031,18 @@ export function leadingSafetyText(
     hasSafetyClass = true
     const text = (f.payload as { text?: unknown } | null)?.text
     if (typeof text !== 'string' || !text.trim()) continue
-    if (isWatchedPayload(f.payload)) watched.push(text.trim())
+    if (isWatchedPayload(f.type, f.payload)) watched.push(text.trim())
     else return text.trim()
   }
   if (watched.length > 0) return watched[0]
   return hasSafetyClass ? GENERIC_SAFETY_LEAD.replace('{pet}', petName) : null
 }
 
-/** A cached finding whose care state carries no ask: `with_vet` or `recheck_booked`. */
-export function isWatchedPayload(payload: unknown): boolean {
+/** A cached CONCERN whose care state carries no ask: `with_vet` or `recheck_booked`. A care state
+ *  on any other type (an escalation) is ignored: it can only come from a tampered or malformed
+ *  cache, and an escalation is never quieted (AC 3). */
+export function isWatchedPayload(type: unknown, payload: unknown): boolean {
+  if (type !== 'symptom_chronicity' && type !== 'symptom_worsening') return false
   const state = ((payload as { careState?: unknown } | null)?.careState as { state?: unknown } | undefined)?.state
   return state === 'with_vet' || state === 'recheck_booked'
 }

@@ -1672,6 +1672,7 @@ function relayPayload(payload: unknown): unknown {
 }
 
 function watchedRank(f: RelayedFinding): number {
+  if (f.type !== 'symptom_chronicity' && f.type !== 'symptom_worsening') return 0
   const state = ((f.payload as { careState?: { state?: unknown } } | null)?.careState)?.state
   return state === 'with_vet' || state === 'recheck_booked' ? 1 : 0
 }

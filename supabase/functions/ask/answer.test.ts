@@ -639,6 +639,9 @@ Deno.test('EN-9 AC 7: a watched concern leads only when nothing raised is live, 
   // Even where a stale or edited cache put the watched one first.
   assert.equal(leadingSafetyText([watched, raised]), raised.payload.text)
   assert.equal(leadingSafetyText([watched, back]), back.payload.text)
+  // D1: a care state planted on an escalation never demotes it.
+  const intake = { type: 'intake_decline', priorityClass: 'safety', payload: { text: 'Intake …', careState: { state: 'with_vet' } } }
+  assert.equal(leadingSafetyText([intake, watched]), intake.payload.text)
   // Alone, it still leads: a watched concern is never dropped from the safety lead.
   assert.equal(leadingSafetyText([watched]), watched.payload.text)
   // The verdicts a model could hang on "with your vet" are rejected (BRK-13).
