@@ -123,7 +123,7 @@ Deno.test('the exact conditional binomial: tails are right, and the test needs b
 Deno.test('§4.6 a stable cat at 2/week stays with your vet, and the row asks nothing (AC 4)', () => {
   const s = stateOf({ symptoms: STABLE, acks: [ack({ daysAgo: 40 })] })
   assertStrictEquals(s.state, 'with_vet')
-  assert(s.text!.startsWith("Nyx's vomiting, with your vet. You said on Aug 21 Nyx's vet knows. Since Aug 21, 40 days: "), s.text!)
+  assert(s.text!.startsWith("Nyx's vomiting, your vet knows. You said on Aug 21 Nyx's vet knows. Since Aug 21, 40 days: "), s.text!)
   assert(/: \d+ episodes, with something logged on 40 of 40\.$/.test(s.text!), s.text!)
   assertStrictEquals(/worth/i.test(s.text!), false, 'a watched row carries no ask')
 })

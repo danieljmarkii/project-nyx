@@ -632,7 +632,7 @@ Deno.test('leadingSafetyText: returns the first live safety finding verbatim, el
 Deno.test('EN-9 AC 7: a watched concern leads only when nothing raised is live, and the screens hold over its sentence', () => {
   const watched = {
     type: 'symptom_chronicity', priorityClass: 'safety',
-    payload: { text: "Nyx's vomiting, with your vet. You said on Sep 16 Nyx's vet knows. Since Sep 16, 14 days: 3 episodes, with something logged on 14 of 14.", careState: { state: 'with_vet' } },
+    payload: { text: "Nyx's vomiting, your vet knows. You said on Sep 16 Nyx's vet knows. Since Sep 16, 14 days: 3 episodes, with something logged on 14 of 14.", careState: { state: 'with_vet' } },
   }
   const raised = { type: 'symptom_chronicity', priorityClass: 'safety', payload: { text: 'Coughing for Nyx … worth a word with your vet.', careState: { state: 'raised' } } }
   const back = { type: 'symptom_chronicity', priorityClass: 'safety', payload: { text: 'Back because the vomiting is coming more often. … worth booking a vet visit.', careState: { state: 'raised_again' } } }
