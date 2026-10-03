@@ -29,8 +29,10 @@ import type { Scorecard } from './scorecard.ts'
 // foodPrecision, their rows kept as reporting), and the ninth's (a food detection is an EVENING
 // naming the culprit and nothing else), the tenth's (EN-11.culpritAbsent), and the eleventh's
 // (EN-11.stapleBlame).
-// Every value but the two ruled ones is null.
-const PINNED = 'ec3e44ad0f6ffa6fbc1b96901037994aba7a21de4b764a243d9b12898e2f0645'
+// Re-pinned 2026-10-03, PR-23 (CUL-1417): N1 (EN-9.scored = 0) and N2 (EN-9.reRaise and
+// EN-9.reRaiseEver = 0.05), ruled by the PM on 2026-10-02 (ruling sheet §2.2). Every other value
+// but the two ruled before is null.
+const PINNED = '0c314cf85a7d28f92eb170ac5d313804c581a565ef81bcbd70c63ce41919b15d'
 
 async function digest(lines: readonly PassLine[]): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(lines)))

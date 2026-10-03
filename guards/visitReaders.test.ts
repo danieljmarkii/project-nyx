@@ -250,7 +250,10 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'reader of a vet table: one column, `visited_at`, of the most recent visit, to start a ' +
       'window ("Since the Sep 16 visit, 11 days: …"). Every count the line speaks is computed ' +
       'from events alone (careContext.ts, which stays clean below); no clinic, vet, reason or ' +
-      'note is selected, pinned by SHELL_COLUMNS. PR-23 widens it to the appointment dates.',
+      'note is selected, pinned by SHELL_COLUMNS. readCareRecord (EN-9, PR-23, behind ' +
+      'engines_v3_en9) reads the owner\'s answers about a sign by explicit columns: the sign, ' +
+      'the source, the DATE it names, the trial or course it is scoped to, a retraction link and ' +
+      'when it was written; never the visit id. No appointment is read (CUL-1531).',
   },
 
   // ── The report ──
@@ -279,6 +282,8 @@ const MUST_STAY_CLEAN = [
   // may read a vet table itself (AC 10 as amended names the shell, and only the shell).
   'supabase/functions/generate-signal/pipeline.ts',
   'supabase/functions/generate-signal/careContext.ts',
+  // EN-9 (PR-23): the care state's pure step. The answers reach it as dated facts the shell read.
+  'supabase/functions/generate-signal/careState.ts',
   'lib/analytics.ts',
   'lib/dietTrial.ts',
   'lib/lookDayCounts.ts',
@@ -603,6 +608,9 @@ describe('AC 10 — visit data never reaches a count, a coverage line or an engi
 const SHELL = 'supabase/functions/generate-signal/index.ts';
 const SHELL_COLUMNS: Record<string, readonly string[]> = {
   vet_visits: ['visited_at'],
+  // EN-9 (PR-23): AC 10 as amended lets the shell read "the owner's acknowledgement rows, by
+  // explicit column list". `vet_visit_id` is deliberately absent: the answer's anchor IS the date.
+  care_acknowledgements: ['id', 'symptom_type', 'source', 'anchor_on', 'diet_trial_id', 'medication_id', 'retracts', 'created_at'],
 };
 
 /** Every `.from('<vet table>')` in `src` with the select list that follows it. */
@@ -626,7 +634,7 @@ describe('the Signal shell reads a vet table only by its sanctioned columns', ()
   const reads = vetTableSelects(src);
 
   it('finds the shell\'s read (non-vacuity)', () => {
-    expect(reads.map((r) => r.table)).toEqual(['vet_visits']);
+    expect(reads.map((r) => r.table).sort()).toEqual(['care_acknowledgements', 'vet_visits']);
   });
 
   it('every read names exactly the columns the amendment allows, never `*`', () => {
