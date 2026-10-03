@@ -1,6 +1,7 @@
 # Engines v3 PR-19 — the weight lane in detection.ts, dark
 
 **Date:** 2026-10-03
+**One thing:** none — dispatched session, not this round's teach row
 
 Shipped via #1014. Finishes CUL-1413.
 
@@ -100,3 +101,24 @@ The session first stopped before the wiring, because PR-23 (CUL-1417) owned `gen
 - **PMD-9 re-run by cadence:** PR-16 adds EN-8 to `HARNESS_OBSERVES` once the corpus feeds weigh-ins.
 - **PR-37:** the client (the Home row, the finding's screen, the source correction, W5's plain row, which must not quote `story.highBefore` without the boundary).
 - **CUL-1390 W3:** the vet report.
+
+## Definition of Done
+
+- **Acceptance (CUL-1413 and CUL-1135's PR-19 row):**
+  - The lane in `detection.ts` behind the flag ✓.
+  - The ruled values W1–W8 ✓.
+  - MFU-8's server registries, with typed completeness ✓.
+  - The adversarial pass on code ✓ (four passes, every break fixed and pinned).
+  - CUL-508 synthetic weights and PMD-9 by cadence: before GA, not this PR (the ruling sheet's W1 verdict).
+- **Not in this PR:**
+  - `nyx-voice` on the Home row and the finding's screen (PR-37).
+  - Ask's relay (Ask reads cached findings; the template-only card reaches it as text).
+  - The vet report (CUL-1390 W3).
+- **Types and tests:** `tsc`, `deno check`, `deno test supabase/functions/` (2,430) and the full jest suite (13,481) all green.
+- **Persona sign-off:**
+  - Data ✓ (four falsification passes).
+  - Engineer ✓ (C-36 flag-off guard proven red with the gate deleted; the carry guard proven red with `CARRYABLE` reverted).
+  - Designer: template wording, voice pass at PR-37.
+  - Dr. Chen: the rulings in CUL-1544.
+  - T&S ✓ (a caller-JWT read under RLS, soft-delete via the parent, no free text read).
+- **DoD line:** *Biostatistician: tried a stood-down drop resting on a single low reading (home pair, clinic plus home), a plan ending right after one, a spike plus its pre-filled copy before a stand-down, a clinic-confirmed regain then a relapse, a 2062 recheck typo, and a failed weight read after a shown card. Each one broke an earlier draft, and each now holds and is pinned by a test.*
