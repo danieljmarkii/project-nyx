@@ -1015,7 +1015,7 @@ function LiveStack({
   const leadIndex = ordered.findIndex((f) => !isStoodDown(f.finding));
   // CUL-1213 (BRK-47): a row is keyed by its finding's identity, never its rank, so a re-rank
   // moves a row rather than remounting another finding into it. A key two findings share
-  // (never on a payload today's engine writes) takes its rank so React still sees two rows.
+  // (never on a set the phone holds today) takes its rank so React still sees two rows.
   const sharedKeys = sharedFoldIdentities(ordered.map((f) => f.finding));
   return (
     <View>

@@ -1076,8 +1076,8 @@ describe('CUL-1213 — a fold is one finding’s, never its twin’s', () => {
     expect(sharedFoldIdentities([intake, refusal]).size).toBe(0);
   });
 
-  // The floor: a payload from an older derivation (a correlation cached without its symptom)
-  // can still put two findings under one key. Neither may fold or wear the other's line.
+  // The floor: a payload missing the field the key needs (here, two correlations without a
+  // symptom) puts two findings under one key. Neither may fold or wear the other's line.
   it('a key more than one finding claims is released, never judged', () => {
     const legacyA = { ...vomit, symptomType: undefined } as unknown as CorrelationFinding;
     const legacyB = { ...itch, symptomType: undefined } as unknown as CorrelationFinding;

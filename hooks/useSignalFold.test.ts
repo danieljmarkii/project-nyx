@@ -30,7 +30,7 @@ beforeEach(async () => {
   usePetStore.setState({ pets: [{ id: 'pet-1', name: 'Nyx' }] as never });
 });
 
-it('two findings under one key (a payload from an older derivation): both open, no line, no fold written', async () => {
+it('two findings under one key (a payload missing the symptom): both open, no line, no fold written', async () => {
   const a = { ...base, symptomType: undefined } as unknown as CorrelationFinding;
   const b = { ...base, symptomType: undefined, tier: 'established', matchedPairs: 7 } as unknown as CorrelationFinding;
   const key = foldIdentity(a);

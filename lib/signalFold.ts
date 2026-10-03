@@ -102,11 +102,12 @@ export function foldIdentity(finding: SignalFinding): string {
 
 /**
  * Every identity more than one finding in the set claims (CUL-1213). The engine's findings
- * are unique by construction (`findingIdentity.engine.test.ts` drives the real pipeline), so
- * this is empty on every payload the server writes today. It is the floor under a cached row
- * from an older derivation, or a future lane that emits two findings about one noun: a key
- * two cards share can never be folded, re-opened or opened as a screen, because whichever
- * card the reader acted on, the other would answer.
+ * are unique by construction (`findingIdentity.engine.test.ts` drives the real pipeline), and
+ * cached payloads already carry the symptom and the trigger, so this is empty on every set the
+ * phone holds today. It is the floor under a future lane that emits two findings about one
+ * noun (or a payload missing the field the key needs): a key two cards share is never folded
+ * or re-opened, and its screen loads `missing` rather than drawing the other card's evidence,
+ * because whichever card the reader acted on, the other would answer.
  */
 export function sharedFoldIdentities(findings: readonly SignalFinding[]): ReadonlySet<string> {
   const seen = new Set<string>();

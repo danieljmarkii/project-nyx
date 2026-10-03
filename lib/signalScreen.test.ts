@@ -1447,7 +1447,7 @@ describe('CUL-1213 — the Signal screen opens the finding the card named', () =
   });
 
   it('two findings answering to one key: the screen refuses to pick', async () => {
-    // A payload from an older derivation: both correlations cached without their symptom.
+    // A payload missing the field the key needs: both correlations without their symptom.
     const a = { ...vomit, symptomType: undefined } as unknown as CachedFinding['finding'];
     const b = { ...itch, symptomType: undefined } as unknown as CachedFinding['finding'];
     mockReadSignalCache.mockResolvedValue({ findings: [{ ...cachedOf(a), rank: 0 }, { ...cachedOf(b), rank: 1 }] });
